@@ -39,6 +39,10 @@ GlobalOpacityVector ComputeGlobalOpacityValues(
 GlobalImageData ComputeGlobalImageData(const GlobalTopologyData::TopologyVector& global_topology,
                                        const GlobalTopologyData::ParentIndexVector& parent_indices,
                                        const UberStruct::InstanceMap& uber_structs);
+void ComputeGlobalImageData(GlobalIndexVector& output_indices, GlobalImageVector& output_images,
+                            const GlobalTopologyData::TopologyVector& global_topology,
+                            const GlobalTopologyData::ParentIndexVector& parent_indices,
+                            const UberStruct::InstanceMap& uber_structs);
 
 }  // namespace flatland
 

@@ -5,6 +5,7 @@
 #include "src/ui/scenic/lib/flatland/uber_struct_system.h"
 
 #include <lib/syslog/cpp/macros.h>
+#include <lib/trace/event.h>
 
 #include <stack>
 
@@ -44,6 +45,7 @@ void UberStructSystem::RemoveSession(scheduling::SessionId session_id) {
 
 UberStructSystem::UpdateResults UberStructSystem::UpdateInstances(
     const std::unordered_map<scheduling::SessionId, scheduling::PresentId>& instances_to_update) {
+  TRACE_DURATION("gfx", "UberStructSystem::UpdateInstances");
   FLATLAND_VERBOSE_LOG << "UberStructSystem::UpdateSessions for " << instances_to_update.size()
                        << " sessions.";
   UpdateResults results;

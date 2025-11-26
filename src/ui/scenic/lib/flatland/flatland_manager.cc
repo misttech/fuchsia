@@ -245,7 +245,8 @@ void FlatlandManager::CreateFlatlandDisplay(
 
 void FlatlandManager::UpdateInstances(
     const std::unordered_map<scheduling::SessionId, scheduling::PresentId>& instances_to_update) {
-  TRACE_DURATION("gfx", "FlatlandManager::UpdateInstances");
+  TRACE_DURATION("gfx", "FlatlandManager::UpdateInstances", "count",
+                 TA_UINT64(instances_to_update.size()));
   CheckIsOnMainThread();
 
   const auto results = uber_struct_system_->UpdateInstances(instances_to_update);

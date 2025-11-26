@@ -449,25 +449,15 @@ void Flatland::Present(fuchsia_ui_composition::PresentArgs args) {
 
     uber_struct->local_topology = std::move(data.sorted_transforms);
 
+    uber_struct->local_matrices.reserve(matrices_.size());
     for (const auto& [handle, matrix_data] : matrices_) {
       uber_struct->local_matrices[handle] = matrix_data.GetMatrix();
     }
 
-    for (const auto& [handle, sample_region] : image_sample_regions_) {
-      uber_struct->local_image_sample_regions[handle] = sample_region;
-    }
-
-    for (const auto& [handle, opacity_value] : opacity_values_) {
-      uber_struct->local_opacity_values[handle] = opacity_value;
-    }
-
-    for (const auto& [handle, clip_region] : clip_regions_) {
-      uber_struct->local_clip_regions[handle] = clip_region;
-    }
-
-    for (const auto& [handle, hit_regions] : hit_regions_) {
-      uber_struct->local_hit_regions_map[handle] = hit_regions;
-    }
+    uber_struct->local_image_sample_regions = image_sample_regions_;
+    uber_struct->local_opacity_values = opacity_values_;
+    uber_struct->local_clip_regions = clip_regions_;
+    uber_struct->local_hit_regions_map = hit_regions_;
 
     // As per the default hit region policy, if the client has not explicitly set a hit region on
     // the root, add a full screen one.

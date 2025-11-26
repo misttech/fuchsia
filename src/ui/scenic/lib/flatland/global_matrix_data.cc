@@ -283,19 +283,26 @@ ImageRect CreateImageRect(const glm::mat3& matrix, const TransformClipRegion& cl
 
 }  // namespace
 
-// static
 GlobalMatrixVector ComputeGlobalMatrices(
     const GlobalTopologyData::TopologyVector& global_topology,
     const GlobalTopologyData::ParentIndexVector& parent_indices,
     const UberStruct::InstanceMap& uber_structs) {
+  GlobalMatrixVector output;
+  ComputeGlobalMatrices(output, global_topology, parent_indices, uber_structs);
+  return output;
+}
+
+void ComputeGlobalMatrices(GlobalMatrixVector& output,
+                           const GlobalTopologyData::TopologyVector& global_topology,
+                           const GlobalTopologyData::ParentIndexVector& parent_indices,
+                           const UberStruct::InstanceMap& uber_structs) {
   TRACE_DURATION("gfx", "ComputeGlobalMatrices");
-  GlobalMatrixVector matrices;
 
   if (global_topology.empty()) {
-    return matrices;
+    return;
   }
 
-  matrices.reserve(global_topology.size());
+  output.reserve(global_topology.size());
 
   // The root entry's parent pointer points to itself, so special case it.
   const auto& root_handle = global_topology.front();
@@ -305,10 +312,10 @@ GlobalMatrixVector ComputeGlobalMatrices(
   const auto root_matrix_kv = root_uber_struct_kv->second->local_matrices.find(root_handle);
 
   if (root_matrix_kv == root_uber_struct_kv->second->local_matrices.end()) {
-    matrices.emplace_back(glm::mat3());
+    output.emplace_back(glm::mat3());
   } else {
     const auto& matrix = root_matrix_kv->second;
-    matrices.emplace_back(matrix);
+    output.emplace_back(matrix);
   }
 
   for (size_t i = 1; i < global_topology.size(); ++i) {
@@ -322,22 +329,33 @@ GlobalMatrixVector ComputeGlobalMatrices(
     const auto matrix_kv = uber_struct_kv->second->local_matrices.find(handle);
 
     if (matrix_kv == uber_struct_kv->second->local_matrices.end()) {
-      matrices.emplace_back(matrices[parent_index]);
+      // This is *definitely* safe because we reserve storage above, so there is no chance of
+      // reallocation.  However, a close reading of the C++ spec requires this to be safe even
+      // with reallocation.
+      output.emplace_back(output[parent_index]);
     } else {
-      matrices.emplace_back(matrices[parent_index] * matrix_kv->second);
+      // See comment above.  This is safe even without a close reading of the C++ spec, because the
+      // argument is computed before `emplace_back()` is called.
+      output.emplace_back(output[parent_index] * matrix_kv->second);
     }
   }
-
-  return matrices;
 }
 
 GlobalImageSampleRegionVector ComputeGlobalImageSampleRegions(
     const GlobalTopologyData::TopologyVector& global_topology,
     const GlobalTopologyData::ParentIndexVector& parent_indices,
     const UberStruct::InstanceMap& uber_structs) {
+  GlobalImageSampleRegionVector output;
+  ComputeGlobalImageSampleRegions(output, global_topology, parent_indices, uber_structs);
+  return output;
+}
+
+void ComputeGlobalImageSampleRegions(GlobalImageSampleRegionVector& output,
+                                     const GlobalTopologyData::TopologyVector& global_topology,
+                                     const GlobalTopologyData::ParentIndexVector& parent_indices,
+                                     const UberStruct::InstanceMap& uber_structs) {
   TRACE_DURATION("gfx", "ComputeGlobalImageSampleRegions");
-  GlobalImageSampleRegionVector sample_regions;
-  sample_regions.reserve(global_topology.size());
+  output.reserve(global_topology.size());
   for (size_t i = 0; i < global_topology.size(); ++i) {
     // Every entry in the global topology comes from an UberStruct.
     const TransformHandle& handle = global_topology[i];
@@ -348,29 +366,37 @@ GlobalImageSampleRegionVector ComputeGlobalImageSampleRegions(
     if (regions_kv == uber_stuct_kv->second->local_image_sample_regions.end()) {
       // Only non-image nodes should get here. This gets pruned out when we select for
       // content images.
-      sample_regions.emplace_back(kInvalidSampleRegion);
+      output.emplace_back(kInvalidSampleRegion);
     } else {
-      sample_regions.emplace_back(regions_kv->second);
+      output.emplace_back(regions_kv->second);
     }
   }
-
-  return sample_regions;
 }
 
 GlobalTransformClipRegionVector ComputeGlobalTransformClipRegions(
     const GlobalTopologyData::TopologyVector& global_topology,
     const GlobalTopologyData::ParentIndexVector& parent_indices,
     const GlobalMatrixVector& matrix_vector, const UberStruct::InstanceMap& uber_structs) {
+  GlobalTransformClipRegionVector output;
+  ComputeGlobalTransformClipRegions(output, global_topology, parent_indices, matrix_vector,
+                                    uber_structs);
+  return output;
+}
+
+void ComputeGlobalTransformClipRegions(GlobalTransformClipRegionVector& output,
+                                       const GlobalTopologyData::TopologyVector& global_topology,
+                                       const GlobalTopologyData::ParentIndexVector& parent_indices,
+                                       const GlobalMatrixVector& matrix_vector,
+                                       const UberStruct::InstanceMap& uber_structs) {
   TRACE_DURATION("gfx", "ComputeGlobalTransformClipRegions");
   FX_DCHECK(global_topology.size() == parent_indices.size());
   FX_DCHECK(global_topology.size() == matrix_vector.size());
 
-  GlobalTransformClipRegionVector clip_regions;
   if (global_topology.empty()) {
-    return clip_regions;
+    return;
   }
 
-  clip_regions.reserve(global_topology.size());
+  output.reserve(global_topology.size());
 
   // The root entry's parent pointer points to itself, so special case it.
   const auto& root_handle = global_topology.front();
@@ -381,15 +407,15 @@ GlobalTransformClipRegionVector ComputeGlobalTransformClipRegions(
 
   // Process the root separately from the rest of the tree.
   if (root_regions_kv == root_uber_struct_kv->second->local_clip_regions.end()) {
-    clip_regions.emplace_back(kUnclippedRegion);
+    output.emplace_back(kUnclippedRegion);
   } else {
-    clip_regions.emplace_back(MatrixMultiplyRect(matrix_vector[0], root_regions_kv->second));
+    output.emplace_back(MatrixMultiplyRect(matrix_vector[0], root_regions_kv->second));
   }
 
   for (size_t i = 1; i < global_topology.size(); ++i) {
     const TransformHandle& handle = global_topology[i];
     const size_t parent_index = parent_indices[i];
-    auto parent_clip = clip_regions[parent_index];
+    auto parent_clip = output[parent_index];
 
     // Every entry in the global topology comes from an UberStruct.
     const auto uber_stuct_kv = uber_structs.find(handle.GetInstanceId());
@@ -401,7 +427,7 @@ GlobalTransformClipRegionVector ComputeGlobalTransformClipRegions(
     // intersection of the parent clip region and the current clip region, in the global
     // coordinate space.
     if (regions_kv == uber_stuct_kv->second->local_clip_regions.end()) {
-      clip_regions.emplace_back(parent_clip);
+      output.emplace_back(parent_clip);
     } else {
       // Calculate the global position of the current clip region.
       auto curr_clip = MatrixMultiplyRect(matrix_vector[i], regions_kv->second);
@@ -412,15 +438,12 @@ GlobalTransformClipRegionVector ComputeGlobalTransformClipRegions(
       auto [clipped_origin, clipped_extent] = ClipRectangle(parent_clip, curr_origin, curr_extent);
 
       // Add the intersection to the global clip vector.
-      clip_regions.emplace_back(
-          TransformClipRegion({.x = static_cast<int>(clipped_origin.x),
-                               .y = static_cast<int>(clipped_origin.y),
-                               .width = static_cast<int>(clipped_extent.x),
-                               .height = static_cast<int>(clipped_extent.y)}));
+      output.emplace_back(TransformClipRegion({.x = static_cast<int>(clipped_origin.x),
+                                               .y = static_cast<int>(clipped_origin.y),
+                                               .width = static_cast<int>(clipped_extent.x),
+                                               .height = static_cast<int>(clipped_extent.y)}));
     }
   }
-
-  return clip_regions;
 }
 
 GlobalHitRegionsMap ComputeGlobalHitRegions(
@@ -462,28 +485,38 @@ GlobalHitRegionsMap ComputeGlobalHitRegions(
   return global_hit_regions;
 }
 
-// static
 GlobalRectangleVector ComputeGlobalRectangles(
     const GlobalMatrixVector& matrices, const GlobalImageSampleRegionVector& sample_regions,
-    const GlobalTransformClipRegionVector& clip_regions,
+    const GlobalTransformClipRegionVector& clip_regions, const GlobalIndexVector& image_indices,
     const std::vector<allocation::ImageMetadata>& images) {
+  GlobalRectangleVector output;
+  ComputeGlobalRectangles(output, matrices, sample_regions, clip_regions, image_indices, images);
+  return output;
+}
+
+void ComputeGlobalRectangles(GlobalRectangleVector& output, const GlobalMatrixVector& matrices,
+                             const GlobalImageSampleRegionVector& sample_regions,
+                             const GlobalTransformClipRegionVector& clip_regions,
+                             const GlobalIndexVector& image_indices,
+                             const std::vector<allocation::ImageMetadata>& images) {
   TRACE_DURATION("gfx", "ComputeGlobalRectangles");
-  GlobalRectangleVector rectangles;
 
   if (matrices.empty() || sample_regions.empty()) {
-    return rectangles;
+    return;
   }
 
   FX_DCHECK(matrices.size() == sample_regions.size());
-  FX_DCHECK(matrices.size() == images.size());
+  FX_DCHECK(matrices.size() == clip_regions.size());
+  FX_DCHECK(image_indices.size() == images.size());
 
-  rectangles.reserve(matrices.size());
+  output.reserve(image_indices.size());
 
-  const uint32_t num = static_cast<uint32_t>(matrices.size());
-  for (uint32_t i = 0; i < num; i++) {
-    const auto& matrix = matrices[i];
-    const auto& clip = clip_regions[i];
-    const auto& sample = sample_regions[i];
+  for (uint32_t i = 0; i < image_indices.size(); i++) {
+    const size_t ii = image_indices[i];
+    FX_DCHECK(ii < matrices.size());
+    const auto& matrix = matrices[ii];
+    const auto& clip = clip_regions[ii];
+    const auto& sample = sample_regions[ii];
     const auto& image = images[i];
 
     {
@@ -501,10 +534,8 @@ GlobalRectangleVector ComputeGlobalRectangles(
         glm::ivec2(sample.x() + sample.width(), sample.y() + sample.height()),
         glm::ivec2(sample.x(), sample.y() + sample.height())};
 
-    rectangles.emplace_back(CreateImageRect(matrix, clip, unclipped_texel_uvs, image.flip));
+    output.emplace_back(CreateImageRect(matrix, clip, unclipped_texel_uvs, image.flip));
   }
-
-  return rectangles;
 }
 
 void CullRectanglesInPlace(GlobalRectangleVector* rectangles_in_out,

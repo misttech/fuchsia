@@ -21,6 +21,7 @@ FlatlandPresenterImpl::FlatlandPresenterImpl(async_dispatcher_t* main_dispatcher
 
 void FlatlandPresenterImpl::AccumulateReleaseFences(
     const std::unordered_map<scheduling::SessionId, scheduling::PresentId>& sessions_to_update) {
+  TRACE_DURATION("gfx", "FlatlandPresenterImpl::AccumulateReleaseFences");
   FX_DCHECK(main_dispatcher_ == async_get_default_dispatcher());
 
   for (const auto& [session_id, present_id] : sessions_to_update) {

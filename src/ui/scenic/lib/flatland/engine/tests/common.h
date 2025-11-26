@@ -84,10 +84,8 @@ class DisplayCompositorTestBase : public gtest::RealLoopFixture {
       auto [image_indices, images] = ComputeGlobalImageData(topology_data.topology_vector,
                                                             topology_data.parent_indices, snapshot);
 
-      auto image_rectangles =
-          ComputeGlobalRectangles(FilterByIndices(global_matrices, image_indices),
-                                  FilterByIndices(global_sample_regions, image_indices),
-                                  FilterByIndices(global_clip_regions, image_indices), images);
+      auto image_rectangles = ComputeGlobalRectangles(global_matrices, global_sample_regions,
+                                                      global_clip_regions, image_indices, images);
 
       link_system_->UpdateLinkWatchers(topology_data.topology_vector, topology_data.live_handles,
                                        global_matrices, snapshot);

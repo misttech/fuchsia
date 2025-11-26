@@ -45,46 +45,72 @@ class Engine {
          GetRootTransformFunc get_root_transform);
   ~Engine() = default;
 
-  // Builds a display list for the Flatland content tree rooted at |display|.
+  // Orchestrates the generation and submission of a frame to the `DisplayCompositor`.
+  //
+  // This updates scene topology and link watchers, culls invisible content, and
+  // handles first-frame startup logic to avoid driving the display before content
+  // is ready.
   void RenderScheduledFrame(uint64_t frame_number, zx::time presentation_time,
                             const FlatlandDisplay& display,
                             scheduling::FramePresentedCallback callback);
 
+  // Resets internal state to prepare for the next frame.
+  //
+  // This completes the frame cycle; it must be called after every invocation of
+  // `RenderScheduledFrame()` or `SkipRender()`. Attempting to render a new
+  // frame without cleaning up the previous one will trigger a DCHECK.
+  void CleanUpFrame();
+
   // Snapshots the current Flatland content tree rooted at |root_transform|. |root_transform| is set
   // from the root transform of the display returned from
   // |FlatlandManager::GetPrimaryFlatlandDisplayForRendering|.
-  view_tree::SubtreeSnapshot GenerateViewTreeSnapshot(const TransformHandle& root_transform) const;
+  view_tree::SubtreeSnapshot GenerateViewTreeSnapshot(const TransformHandle& root_transform);
 
   // Returns all renderables reachable from the display's root transform.
   Renderables GetRenderables(const FlatlandDisplay& display);
 
   // Signal all release fences and skip rendering.
-  void SkipRender(scheduling::FramePresentedCallback callback);
+  // `rotate_scene_state == true` is probably what you want, unless you know you don't.
+  void SkipRender(scheduling::FramePresentedCallback callback, bool rotate_scene_state = true);
 
  private:
-  // Initialize all inspect::Nodes, so that the Engine state can be observed.
-  void InitializeInspectObjects();
-
-  // Tally the frame result so that it can be displayed via Inspect.
-  void RecordFrameResult(DisplayCompositor::RenderFrameResult result);
-
+  // Holds the per-frame scene state that is generated from the latest UberStructs from each
+  // Flatland session, linked together by the LinkSystem.
   struct SceneState {
+    void Initialize(Engine& engine, TransformHandle root_transform);
+
+    // Clear all fields without deallocating memory.
+    void Clear();
+
     UberStruct::InstanceMap snapshot;
     flatland::GlobalTopologyData topology_data;
     flatland::GlobalMatrixVector global_matrices;
     flatland::GlobalImageVector images;
     flatland::GlobalIndexVector image_indices;
     flatland::GlobalRectangleVector image_rectangles;
+    flatland::GlobalTransformClipRegionVector clip_regions;
 
-    SceneState(Engine& engine, TransformHandle root_transform);
+    // Only used internally to compute `image_rectangles`, but stashed to avoid reallocating memory.
+    flatland::GlobalImageSampleRegionVector image_sample_regions;
   };
+
+  // Initialize all inspect::Nodes, so that the Engine state can be observed.
+  void InitializeInspectObjects();
+
+  // Tally the frame result so that it can be displayed via Inspect.
+  void RecordFrameResult(DisplayCompositor::RenderFrameResult result);
 
   std::shared_ptr<flatland::DisplayCompositor> flatland_compositor_;
   std::shared_ptr<flatland::FlatlandPresenterImpl> flatland_presenter_;
   std::shared_ptr<flatland::UberStructSystem> uber_struct_system_;
   std::shared_ptr<flatland::LinkSystem> link_system_;
 
-  flatland::GlobalTopologyData last_global_topology_data_ = {};
+  // Updated every frame, and cached for purposes like ViewTree generation.  These states are
+  // double-buffered; even though there are 3 variables, only 2 of them are non-null at any given
+  // moment.  Using 3 vars instead of 2 allows us to assert that usage invariants hold.
+  std::unique_ptr<SceneState> current_scene_state_;
+  std::unique_ptr<SceneState> previous_scene_state_;
+  std::unique_ptr<SceneState> cleared_scene_state_;
 
   bool first_frame_with_image_is_rendered_ = false;
 

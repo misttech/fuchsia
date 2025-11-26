@@ -7,6 +7,7 @@
 #include <lib/async/default.h>
 #include <lib/async/time.h>
 #include <lib/syslog/cpp/macros.h>
+#include <lib/trace/event.h>
 
 #include "src/ui/scenic/lib/utils/logging.h"
 
@@ -499,6 +500,8 @@ std::unordered_map<SessionId, PresentId> DefaultFrameScheduler::CollectUpdatesFo
 std::vector<zx::event> DefaultFrameScheduler::PrepareUpdates(
     const std::unordered_map<SessionId, PresentId>& updates, zx::time latched_time,
     uint64_t frame_number) {
+  TRACE_DURATION("gfx", "FrameScheduler::PrepareUpdates");
+
   latched_updates_.push(
       {.frame_number = frame_number, .updated_sessions = updates, .latched_time = latched_time});
   std::vector<zx::event> fences;
@@ -556,6 +559,10 @@ bool DefaultFrameScheduler::ApplyUpdates(zx::time target_presentation_time, zx::
 
   TRACE_FLOW_BEGIN("gfx", "scenic_frame", frame_number);
 
+  // TODO(https://fxbug.dev/460278647): together these take significant time.  There are several
+  // possibilities for optimization:
+  //   - return vector instead of unordered_map
+  //   - reuse memory instead of allocating extra frame (more effective with vectors than maps)
   const std::unordered_map<SessionId, PresentId> update_map =
       CollectUpdatesForThisFrame(target_presentation_time);
   std::vector<zx::event> fences_from_previous_presents =

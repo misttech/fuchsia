@@ -57,10 +57,18 @@ GlobalOpacityVector ComputeGlobalOpacityValues(
 GlobalImageData ComputeGlobalImageData(const GlobalTopologyData::TopologyVector& global_topology,
                                        const GlobalTopologyData::ParentIndexVector& parent_indices,
                                        const UberStruct::InstanceMap& uber_structs) {
-  TRACE_DURATION("gfx", "ComputeGlobalImageData");
+  GlobalImageData output;
+  ComputeGlobalImageData(output.indices, output.images, global_topology, parent_indices,
+                         uber_structs);
+  return output;
+}
 
-  GlobalIndexVector indices;
-  GlobalImageVector images;
+// static
+void ComputeGlobalImageData(GlobalIndexVector& output_indices, GlobalImageVector& output_images,
+                            const GlobalTopologyData::TopologyVector& global_topology,
+                            const GlobalTopologyData::ParentIndexVector& parent_indices,
+                            const UberStruct::InstanceMap& uber_structs) {
+  TRACE_DURATION("gfx", "ComputeGlobalImageData");
 
   const auto opacity_values =
       ComputeGlobalOpacityValues(global_topology, parent_indices, uber_structs);
@@ -75,11 +83,10 @@ GlobalImageData ComputeGlobalImageData(const GlobalTopologyData::TopologyVector&
     if (image_kv != uber_struct_kv->second->images.end()) {
       allocation::ImageMetadata image = image_kv->second;
       image.multiply_color[3] *= opacity_values[index];
-      images.push_back(image);
-      indices.push_back(index);
+      output_images.push_back(image);
+      output_indices.push_back(index);
     }
   }
-  return {.indices = std::move(indices), .images = std::move(images)};
 }
 
 }  // namespace flatland

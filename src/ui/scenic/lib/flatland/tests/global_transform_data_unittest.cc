@@ -38,7 +38,7 @@ ImageRect GetImageRectForMatrix(const glm::mat3& matrix, ImageFlip image_flip = 
       .width = kImageWidth, .height = kImageHeight, .flip = image_flip};
   const auto rectangles = ComputeGlobalRectangles(
       {matrix}, {ImageSampleRegion({.x = 0, .y = 0, .width = kImageWidth, .height = kImageHeight})},
-      {kUnclippedRegion}, {image});
+      {kUnclippedRegion}, /*image_indices=*/{0}, {image});
   EXPECT_EQ(rectangles.size(), 1ul);
   return rectangles[0];
 }
@@ -52,7 +52,7 @@ ImageRect GetImageRectForMatrixAndClip(const glm::mat3& matrix, const TransformC
       .width = kImageWidth, .height = kImageHeight, .flip = image_flip};
   const auto rectangles = ComputeGlobalRectangles(
       {matrix}, {ImageSampleRegion({.x = 0, .y = 0, .width = kImageWidth, .height = kImageHeight})},
-      {clip}, {image});
+      {clip}, /*image_indices=*/{0}, {image});
   EXPECT_EQ(rectangles.size(), 1ul);
   return rectangles[0];
 }

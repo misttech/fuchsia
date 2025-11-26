@@ -38,6 +38,10 @@ GlobalMatrixVector ComputeGlobalMatrices(
     const GlobalTopologyData::TopologyVector& global_topology,
     const GlobalTopologyData::ParentIndexVector& parent_indices,
     const UberStruct::InstanceMap& uber_structs);
+void ComputeGlobalMatrices(GlobalMatrixVector& output,
+                           const GlobalTopologyData::TopologyVector& global_topology,
+                           const GlobalTopologyData::ParentIndexVector& parent_indices,
+                           const UberStruct::InstanceMap& uber_structs);
 
 // Gathers the image sample regions for each transform in |global_topology| using the local
 // image sample regions in the |uber_structs|. If a transform doesn't have image sample
@@ -46,6 +50,10 @@ GlobalImageSampleRegionVector ComputeGlobalImageSampleRegions(
     const GlobalTopologyData::TopologyVector& global_topology,
     const GlobalTopologyData::ParentIndexVector& parent_indices,
     const UberStruct::InstanceMap& uber_structs);
+void ComputeGlobalImageSampleRegions(GlobalImageSampleRegionVector& output,
+                                     const GlobalTopologyData::TopologyVector& global_topology,
+                                     const GlobalTopologyData::ParentIndexVector& parent_indices,
+                                     const UberStruct::InstanceMap& uber_structs);
 
 // Gathers the image sample regions for each transform in |global_topology| using the local
 // image sample regions in the |uber_structs|. If a transform doesn't have image sample
@@ -57,6 +65,11 @@ GlobalTransformClipRegionVector ComputeGlobalTransformClipRegions(
     const GlobalTopologyData::TopologyVector& global_topology,
     const GlobalTopologyData::ParentIndexVector& parent_indices,
     const GlobalMatrixVector& matrix_vector, const UberStruct::InstanceMap& uber_structs);
+void ComputeGlobalTransformClipRegions(GlobalTransformClipRegionVector& output,
+                                       const GlobalTopologyData::TopologyVector& global_topology,
+                                       const GlobalTopologyData::ParentIndexVector& parent_indices,
+                                       const GlobalMatrixVector& matrix_vector,
+                                       const UberStruct::InstanceMap& uber_structs);
 
 // Aggregates the set of local hit regions for each transform in |global_topology| into a map of
 // global hit regions. This process involves two steps: first, convert all hit regions which are
@@ -76,7 +89,13 @@ using GlobalRectangleVector = std::vector<ImageRect>;
 GlobalRectangleVector ComputeGlobalRectangles(const GlobalMatrixVector& matrices,
                                               const GlobalImageSampleRegionVector& sample_regions,
                                               const GlobalTransformClipRegionVector& clip_regions,
+                                              const GlobalIndexVector& image_indices,
                                               const std::vector<allocation::ImageMetadata>& images);
+void ComputeGlobalRectangles(GlobalRectangleVector& output, const GlobalMatrixVector& matrices,
+                             const GlobalImageSampleRegionVector& sample_regions,
+                             const GlobalTransformClipRegionVector& clip_regions,
+                             const GlobalIndexVector& image_indices,
+                             const std::vector<allocation::ImageMetadata>& images);
 
 // Simple culling algorithm that checks if any of the input rectangles cover the entire display,
 // and if so, culls all rectangles that came before them (since rectangles are implicitly sorted
@@ -86,17 +105,6 @@ GlobalRectangleVector ComputeGlobalRectangles(const GlobalMatrixVector& matrices
 void CullRectanglesInPlace(GlobalRectangleVector* rectangles_in_out,
                            GlobalImageVector* images_in_out, uint64_t display_width,
                            uint64_t display_height);
-
-// Templatized function to retrieve a new vector containing a subset of the input vector values that
-// correspond to the provided indices.
-template <typename T>
-T FilterByIndices(const T& vector, const GlobalIndexVector& indices) {
-  T selection;
-  for (auto index : indices) {
-    selection.push_back(vector[index]);
-  }
-  return selection;
-}
 
 }  // namespace flatland
 

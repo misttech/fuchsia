@@ -318,6 +318,7 @@ TransformHandle::InstanceId LinkSystem::GetInstanceId() const { return instance_
 
 std::unordered_map<TransformHandle, TransformHandle> const
 LinkSystem::GetLinkChildToParentTransformMap() {
+  TRACE_DURATION("gfx", "LinkSystem::GetLinkChildToParentTransformMap");
   std::unordered_map<TransformHandle, TransformHandle> child_to_parent_map;
   std::scoped_lock lock(mutex_);
   for (const auto& [parent_transform_handle, child_end] : parent_to_child_map_) {

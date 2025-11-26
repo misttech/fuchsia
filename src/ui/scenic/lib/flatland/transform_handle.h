@@ -36,16 +36,9 @@ class TransformHandle {
   TransformHandle(TransformHandle&& other) = default;
   TransformHandle& operator=(TransformHandle&& other) = default;
 
-  bool operator==(const TransformHandle& rhs) const {
-    return instance_id_ == rhs.instance_id_ && transform_id_ == rhs.transform_id_;
-  }
-  bool operator!=(const TransformHandle& rhs) const {
-    return instance_id_ != rhs.instance_id_ || transform_id_ != rhs.transform_id_;
-  }
-  bool operator<(const TransformHandle& rhs) const {
-    return instance_id_ < rhs.instance_id_ ||
-           (instance_id_ == rhs.instance_id_ && transform_id_ < rhs.transform_id_);
-  }
+  // Default "Spaceship operator" generates all six comparison operators (==, !=, <, <=, >, >=)
+  // by comparing each field in the order declared.
+  auto operator<=>(const TransformHandle&) const = default;
 
   InstanceId GetInstanceId() const { return instance_id_; }
   uint64_t GetTransformId() const { return transform_id_; }

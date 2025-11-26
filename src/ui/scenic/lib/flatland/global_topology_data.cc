@@ -358,11 +358,47 @@ ViewTreeData ComputeViewTree(
 
 namespace flatland {
 
+void GlobalTopologyData::Clear() {
+  TRACE_DURATION("gfx", "GlobalTopologyVector::Clear");
+  {
+    TRACE_DURATION("gfx", "GlobalTopologyVector::Clear[vectors]");
+    topology_vector.clear();
+    child_counts.clear();
+    parent_indices.clear();
+    live_handles.clear();
+  }
+  {
+    TRACE_DURATION("gfx", "GlobalTopologyVector::Clear[unordered]");
+    view_refs.clear();
+    root_transforms.clear();
+    debug_names.clear();
+    clip_regions.clear();
+  }
+}
+
+bool GlobalTopologyData::IsCleared() const {
+  return topology_vector.empty() && child_counts.empty() && parent_indices.empty() &&
+         live_handles.empty() && view_refs.empty() && root_transforms.empty() &&
+         debug_names.empty() && clip_regions.empty();
+}
+
 // static
 GlobalTopologyData GlobalTopologyData::ComputeGlobalTopologyData(
     const UberStruct::InstanceMap& uber_structs, const LinkTopologyMap& links,
     TransformHandle::InstanceId link_instance_id, TransformHandle root) {
+  GlobalTopologyData output;
+  ComputeGlobalTopologyData(output, uber_structs, links, link_instance_id, root);
+  return output;
+}
+
+// static
+void GlobalTopologyData::ComputeGlobalTopologyData(GlobalTopologyData& output,
+                                                   const UberStruct::InstanceMap& uber_structs,
+                                                   const LinkTopologyMap& links,
+                                                   TransformHandle::InstanceId link_instance_id,
+                                                   TransformHandle root) {
   TRACE_DURATION("gfx", "flatland::ComputeGlobalTopologyData");
+  FX_DCHECK(output.IsCleared());
   // There should never be an UberStruct for the |link_instance_id|.
   FX_DCHECK(!uber_structs.contains(link_instance_id));
 
@@ -389,8 +425,7 @@ GlobalTopologyData GlobalTopologyData::ComputeGlobalTopologyData(
   };
   std::vector<ParentChildIterator> parent_counts;
 
-  GlobalTopologyData output;
-  auto& [topology_vector, child_counts, parent_indices, live_transforms, view_refs, root_transforms,
+  auto& [topology_vector, child_counts, parent_indices, live_handles, view_refs, root_transforms,
          debug_names, clip_regions] = output;
 
   // For the root of each local topology (i.e. the View), save the ViewRef, whether they're
@@ -515,7 +550,7 @@ GlobalTopologyData GlobalTopologyData::ComputeGlobalTopologyData(
 
     child_counts.push_back(current_entry.child_count);
     parent_indices.push_back(parent_counts.empty() ? 0 : parent_counts.back().parent_index);
-    live_transforms.insert(current_entry.handle);
+    live_handles.insert(current_entry.handle);
 
     // For the root of each local topology (i.e. the View), save the debug name if it is not empty.
     if (current_entry == vector[0] &&
@@ -560,8 +595,6 @@ GlobalTopologyData GlobalTopologyData::ComputeGlobalTopologyData(
   FX_CHECK(parent_counts.empty() ||
            (parent_counts.size() == 1 && parent_counts.back().children_left == 0));
 #endif
-
-  return output;
 }
 
 view_tree::SubtreeSnapshot GlobalTopologyData::GenerateViewTreeSnapshot(
@@ -589,20 +622,26 @@ view_tree::SubtreeSnapshot GlobalTopologyData::GenerateViewTreeSnapshot(
   view_tree = std::move(view_tree_temp);
 
   // Unconnected_views = all non-anonymous views (those with ViewRefs) not in the ViewTree.
-  for (const auto& [_, view_ref] : data.view_refs) {
-    if (view_ref != nullptr) {
-      if (!view_tree.contains(view_ref->koid())) {
-        unconnected_views.emplace(view_ref->koid());
+  {
+    TRACE_DURATION("gfx", "flatland::GenerateViewTreeSnapshot[unconnected_views]");
+    for (const auto& [_, view_ref] : data.view_refs) {
+      if (view_ref != nullptr) {
+        if (!view_tree.contains(view_ref->koid())) {
+          unconnected_views.emplace(view_ref->koid());
+        }
       }
     }
   }
 
   // Copy all non-anonymous ViewRefs from the ViewRefMap.
   ViewRefMap named_view_refs;
-  named_view_refs.reserve(data.view_refs.size());
-  for (auto& [key, value] : data.view_refs) {
-    if (!implicitly_anonymous_views.contains(key)) {
-      named_view_refs.emplace(key, value);
+  {
+    TRACE_DURATION("gfx", "flatland::GenerateViewTreeSnapshot[named_views]");
+    named_view_refs.reserve(data.view_refs.size());
+    for (auto& [key, value] : data.view_refs) {
+      if (!implicitly_anonymous_views.contains(key)) {
+        named_view_refs.emplace(key, value);
+      }
     }
   }
 
@@ -610,16 +649,19 @@ view_tree::SubtreeSnapshot GlobalTopologyData::GenerateViewTreeSnapshot(
   // important that it contains no references to live data. This means the hit testing closure must
   // contain only plain values or data with value semantics like shared_ptr<const>, to ensure that
   // it's safe to call from any thread.
-  hit_tester = [hit_test_data = HitTestingData{
-                    .transforms = data.topology_vector,
-                    .parent_indices = data.parent_indices,
-                    .root_transforms = data.root_transforms,
-                    .view_refs = std::move(named_view_refs),
-                    .hit_regions = std::move(hit_regions),
-                    .global_clip_regions = std::move(global_clip_regions),
-                }](zx_koid_t start_node, glm::vec2 world_point, bool is_semantic_hit_test) {
-    return HitTest(hit_test_data, start_node, world_point, is_semantic_hit_test);
-  };
+  {
+    TRACE_DURATION("gfx", "flatland::GenerateViewTreeSnapshot[hit_tester]");
+    hit_tester = [hit_test_data = HitTestingData{
+                      .transforms = data.topology_vector,
+                      .parent_indices = data.parent_indices,
+                      .root_transforms = data.root_transforms,
+                      .view_refs = std::move(named_view_refs),
+                      .hit_regions = std::move(hit_regions),
+                      .global_clip_regions = std::move(global_clip_regions),
+                  }](zx_koid_t start_node, glm::vec2 world_point, bool is_semantic_hit_test) {
+      return HitTest(hit_test_data, start_node, world_point, is_semantic_hit_test);
+    };
+  }
 
   return output;
 }

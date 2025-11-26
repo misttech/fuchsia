@@ -729,6 +729,9 @@ void App::InitializeHeartbeat(display::Display& display) {
         // fail, and checking the status of a `VkFence` is fairly expensive.
         if (escher_cleanup_)
           escher_cleanup_->Cleanup(/*ok_to_run_immediately=*/false);
+
+        // Clears scene state, so must happen after ViewTree update, etc.
+        flatland_engine_->CleanUpFrame();
       },
       /*on_frame_presented*/
       [this](auto latched_times, auto present_times) {

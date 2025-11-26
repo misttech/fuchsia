@@ -45,6 +45,7 @@ Engine::Engine(std::shared_ptr<DisplayCompositor> flatland_compositor,
       flatland_presenter_(std::move(flatland_presenter)),
       uber_struct_system_(std::move(uber_struct_system)),
       link_system_(std::move(link_system)),
+      cleared_scene_state_(std::make_unique<SceneState>()),
       inspect_node_(std::move(inspect_node)),
       get_root_transform_(std::move(get_root_transform)) {
   FX_DCHECK(flatland_compositor_);
@@ -65,7 +66,8 @@ void Engine::InitializeInspectObjects() {
       return fpromise::make_ok_promise(std::move(inspector));
     }
 
-    const SceneState scene_state(*this, *root_transform);
+    SceneState scene_state;
+    scene_state.Initialize(*this, *root_transform);
     std::ostringstream output;
     DumpScene(scene_state.snapshot, scene_state.topology_data, scene_state.images,
               scene_state.image_indices, scene_state.image_rectangles, output);
@@ -95,7 +97,14 @@ void Engine::RenderScheduledFrame(uint64_t frame_number, zx::time presentation_t
                  presentation_time.get());
   TRACE_FLOW_STEP("gfx", "scenic_frame", frame_number);
 
-  SceneState scene_state(*this, display.root_transform());
+  // Initialize scene state which will be cached and reused for the rest of the frame, including
+  // for non-rendering actions such as updating the view tree.
+  FX_DCHECK(!current_scene_state_);
+  FX_DCHECK(cleared_scene_state_);
+  current_scene_state_ = std::move(cleared_scene_state_);
+  SceneState& scene_state = *current_scene_state_;
+  scene_state.Initialize(*this, display.root_transform());
+
   display::Display* const hw_display = display.display();
 
 #if defined(USE_FLATLAND_VERBOSE_LOGGING)
@@ -121,6 +130,9 @@ void Engine::RenderScheduledFrame(uint64_t frame_number, zx::time presentation_t
   FLATLAND_VERBOSE_LOG << str.str();
 #endif
 
+  // TODO(https://fxbug.dev/460278647): Defer UpdateLinkWatchers() to `on_cpu_work_done()`.  Also
+  // UpdateDevicePixelRatio(), although we'd have to stash the device_pixel_ratio somewhere
+  // (maybe just in the SceneState?).
   link_system_->UpdateLinkWatchers(scene_state.topology_data.topology_vector,
                                    scene_state.topology_data.live_handles,
                                    scene_state.global_matrices, scene_state.snapshot);
@@ -143,17 +155,13 @@ void Engine::RenderScheduledFrame(uint64_t frame_number, zx::time presentation_t
   CullRectanglesInPlace(&scene_state.image_rectangles, &scene_state.images,
                         hw_display->width_in_px(), hw_display->height_in_px());
 
-  {
-    TRACE_DURATION("gfx", "flatland::Engine::RenderScheduledFrame[move topology_data]");
-    last_global_topology_data_ = std::move(scene_state.topology_data);
-  }
-
   // Don't render any initial frames if there is no image that could actually be rendered. We do
   // this to avoid triggering any changes in the display until we have content ready to render. We
   // invoke |callback| to continue the render loop.
   if (!first_frame_with_image_is_rendered_) {
     if (scene_state.images.empty()) {
-      SkipRender(std::move(callback));
+      // We already "rotated the scene state" above; doing it again would fail a CHECK.
+      SkipRender(std::move(callback), /*rotate_scene_state=*/false);
       return;
     }
     first_frame_with_image_is_rendered_ = true;
@@ -182,33 +190,49 @@ void Engine::RecordFrameResult(DisplayCompositor::RenderFrameResult result) {
   }
 }
 
-view_tree::SubtreeSnapshot Engine::GenerateViewTreeSnapshot(
-    const TransformHandle& root_transform) const {
-  TRACE_DURATION("gfx", "flatland::Engine::GenerateViewTreeSnapshot");
-  const auto& uber_struct_snapshot = uber_struct_system_->Snapshot();
-  const auto link_child_to_parent_transform_map = link_system_->GetLinkChildToParentTransformMap();
-  const auto& topology_data = last_global_topology_data_;
+void Engine::CleanUpFrame() {
+  TRACE_DURATION("gfx", "flatland::Engine::CleanUpFrame");
 
-  const auto matrix_vector = ComputeGlobalMatrices(
-      topology_data.topology_vector, topology_data.parent_indices, uber_struct_snapshot);
-  auto global_clip_regions =
-      ComputeGlobalTransformClipRegions(topology_data.topology_vector, topology_data.parent_indices,
-                                        matrix_vector, uber_struct_snapshot);
+  FX_DCHECK(current_scene_state_);
+  FX_DCHECK(!cleared_scene_state_);
+
+  // Only happens the first frame.
+  if (!previous_scene_state_) {
+    previous_scene_state_ = std::make_unique<SceneState>();
+  }
+
+  // Previous becomes cleared, current becomes previous.
+  cleared_scene_state_ = std::move(previous_scene_state_);
+  cleared_scene_state_->Clear();
+  previous_scene_state_ = std::move(current_scene_state_);
+}
+
+view_tree::SubtreeSnapshot Engine::GenerateViewTreeSnapshot(const TransformHandle& root_transform) {
+  TRACE_DURATION("gfx", "flatland::Engine::GenerateViewTreeSnapshot");
+
+  FX_DCHECK(current_scene_state_);
+  const auto& uber_struct_snapshot = current_scene_state_->snapshot;
+  const auto& topology_data = current_scene_state_->topology_data;
+  const auto& global_matrices = current_scene_state_->global_matrices;
+  const auto& global_clip_regions = current_scene_state_->clip_regions;
+  const auto link_child_to_parent_transform_map = link_system_->GetLinkChildToParentTransformMap();
+
   auto hit_regions =
       ComputeGlobalHitRegions(topology_data.topology_vector, topology_data.parent_indices,
-                              matrix_vector, uber_struct_snapshot);
+                              global_matrices, uber_struct_snapshot);
 
   return flatland::GlobalTopologyData::GenerateViewTreeSnapshot(
-      topology_data, std::move(hit_regions), std::move(global_clip_regions), matrix_vector,
+      topology_data, std::move(hit_regions), global_clip_regions, global_matrices,
       link_child_to_parent_transform_map);
 }
 
-// TODO(https://fxbug.dev/42162342) If we put Screenshot on its own thread, we should make this call
-// thread safe.
+// TODO(https://fxbug.dev/42162342) If we put Screenshot on its own thread, we should make this
+// call thread safe.
 Renderables Engine::GetRenderables(const FlatlandDisplay& display) {
   TransformHandle root = display.root_transform();
 
-  SceneState scene_state(*this, root);
+  SceneState scene_state;
+  scene_state.Initialize(*this, root);
   const auto hw_display = display.display();
   CullRectanglesInPlace(&scene_state.image_rectangles, &scene_state.images,
                         hw_display->width_in_px(), hw_display->height_in_px());
@@ -216,36 +240,79 @@ Renderables Engine::GetRenderables(const FlatlandDisplay& display) {
   return std::make_pair(std::move(scene_state.image_rectangles), std::move(scene_state.images));
 }
 
-Engine::SceneState::SceneState(Engine& engine, TransformHandle root_transform) {
-  TRACE_DURATION("gfx", "flatland::Engine::SceneState");
+void Engine::SceneState::Initialize(Engine& engine, TransformHandle root_transform) {
+  TRACE_DURATION("gfx", "flatland::Engine::SceneState::Initialize");
   snapshot = engine.uber_struct_system_->Snapshot();
 
   const auto links = engine.link_system_->GetResolvedTopologyLinks();
   const auto link_system_id = engine.link_system_->GetInstanceId();
 
-  topology_data = GlobalTopologyData::ComputeGlobalTopologyData(snapshot, links, link_system_id,
-                                                                root_transform);
-  global_matrices =
-      ComputeGlobalMatrices(topology_data.topology_vector, topology_data.parent_indices, snapshot);
+  GlobalTopologyData::ComputeGlobalTopologyData(/*output=*/topology_data, snapshot, links,
+                                                link_system_id, root_transform);
 
-  auto [indices, im] =
-      ComputeGlobalImageData(topology_data.topology_vector, topology_data.parent_indices, snapshot);
-  this->image_indices = std::move(indices);
-  this->images = std::move(im);
+  ComputeGlobalMatrices(/*output=*/global_matrices, topology_data.topology_vector,
+                        topology_data.parent_indices, snapshot);
 
-  const auto global_image_sample_regions = ComputeGlobalImageSampleRegions(
-      topology_data.topology_vector, topology_data.parent_indices, snapshot);
+  ComputeGlobalImageData(/*output_indices=*/this->image_indices, /*output_images=*/this->images,
+                         topology_data.topology_vector, topology_data.parent_indices, snapshot);
 
-  const auto global_clip_regions = ComputeGlobalTransformClipRegions(
-      topology_data.topology_vector, topology_data.parent_indices, global_matrices, snapshot);
+  ComputeGlobalImageSampleRegions(/*output=*/image_sample_regions, topology_data.topology_vector,
+                                  topology_data.parent_indices, snapshot);
 
-  image_rectangles =
-      ComputeGlobalRectangles(FilterByIndices(global_matrices, image_indices),
-                              FilterByIndices(global_image_sample_regions, image_indices),
-                              FilterByIndices(global_clip_regions, image_indices), images);
+  ComputeGlobalTransformClipRegions(/*output=*/clip_regions, topology_data.topology_vector,
+                                    topology_data.parent_indices, global_matrices, snapshot);
+
+  ComputeGlobalRectangles(/*output=*/image_rectangles, global_matrices, image_sample_regions,
+                          clip_regions, image_indices, images);
 }
 
-void Engine::SkipRender(scheduling::FramePresentedCallback callback) {
+void Engine::SceneState::Clear() {
+  TRACE_DURATION("gfx", "flatland::Engine::SceneState::Clear");
+  {
+    TRACE_DURATION("gfx", "flatland::Engine::SceneState::Clear[snapshot]");
+    snapshot.clear();
+  }
+  {
+    TRACE_DURATION("gfx", "flatland::Engine::SceneState::Clear[topology_data]");
+    topology_data.Clear();
+  }
+  {
+    TRACE_DURATION("gfx", "flatland::Engine::SceneState::Clear[global_matrices]");
+    global_matrices.clear();
+  }
+  {
+    TRACE_DURATION("gfx", "flatland::Engine::SceneState::Clear[images]");
+    images.clear();
+  }
+  {
+    TRACE_DURATION("gfx", "flatland::Engine::SceneState::Clear[image_indices]");
+    image_indices.clear();
+  }
+  {
+    TRACE_DURATION("gfx", "flatland::Engine::SceneState::Clear[image_rectangles]");
+    image_rectangles.clear();
+  }
+  {
+    TRACE_DURATION("gfx", "flatland::Engine::SceneState::Clear[clip_regions]");
+    clip_regions.clear();
+  }
+  {
+    TRACE_DURATION("gfx", "flatland::Engine::SceneState::Clear[image_sample_regions]");
+    image_sample_regions.clear();
+  }
+}
+
+void Engine::SkipRender(scheduling::FramePresentedCallback callback, bool rotate_scene_state) {
+  TRACE_DURATION("gfx", "flatland::Engine::SkipRender");
+
+  if (rotate_scene_state) {
+    // We don't populate the SceneState, but we still need to move it from "cleared" -> "current" in
+    // order to satisfy the checks when `CleanupFrame()` is called.
+    FX_DCHECK(!current_scene_state_);
+    FX_DCHECK(cleared_scene_state_);
+    current_scene_state_ = std::move(cleared_scene_state_);
+  }
+
   SignalAll(flatland_presenter_->TakeReleaseFences());
   const zx::time now = async::Now(async_get_default_dispatcher());
   callback({.render_done_time = now, .actual_presentation_time = now});

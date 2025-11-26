@@ -87,6 +87,12 @@ struct GlobalTopologyData {
   // TransformClipRegion for each transform handle.
   std::unordered_map<TransformHandle, TransformClipRegion> clip_regions;
 
+  // Clear all fields without freeing memory, so that it avoid reallocation when reused.
+  void Clear();
+
+  // Return true if all fields are cleared/empty.
+  bool IsCleared() const;
+
   // Computes the GlobalTopologyData consisting of all TransformHandles reachable from |root|.
   //
   // |root.GetInstanceId()| must be a key in |uber_structs|, and |root| must also be the first
@@ -106,6 +112,11 @@ struct GlobalTopologyData {
                                                       const LinkTopologyMap& links,
                                                       TransformHandle::InstanceId link_instance_id,
                                                       TransformHandle root);
+  static void ComputeGlobalTopologyData(GlobalTopologyData& output,
+                                        const UberStruct::InstanceMap& uber_structs,
+                                        const LinkTopologyMap& links,
+                                        TransformHandle::InstanceId link_instance_id,
+                                        TransformHandle root);
 
   static view_tree::SubtreeSnapshot GenerateViewTreeSnapshot(
       const GlobalTopologyData& data, HitRegions hit_regions,
