@@ -53,8 +53,6 @@ template("sdk_collection") {
   }
   if (host_os == "linux") {
     host_triple_os = "linux-gnu"
-  } else if (host_os == "mac") {
-    host_triple_os = "apple-darwin"
   } else if (host_os == "fuchsia") {
     host_triple_os = "fuchsia"
   } else {

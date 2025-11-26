@@ -172,8 +172,6 @@ template("idk") {
   }
   if (host_os == "linux") {
     host_triple_vendor_os = "unknown-linux-gnu"
-  } else if (host_os == "mac") {
-    host_triple_vendor_os = "apple-darwin"
   } else if (host_os == "fuchsia") {
     host_triple_vendor_os = "unknown-fuchsia"
   } else {
