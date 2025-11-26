@@ -25,6 +25,7 @@ from honeydew.affordances.connectivity.wlan.utils.types import (
     NetworkConfig,
     NetworkIdentifier,
     SecurityType,
+    WlanClientState,
 )
 from honeydew.affordances.connectivity.wlan.wlan_policy import wlan_policy
 from honeydew.transports.ffx import ffx as ffx_transport
@@ -872,6 +873,54 @@ class WlanPolicy(AsyncAdapter, wlan_policy.WlanPolicy):
             raise wlan_errors.HoneydewWlanError(
                 f"Networks still connected."
             ) from e
+
+    def clear_policy_state(
+        self,
+        *,
+        timeout: float
+        | None = wlan_policy.WlanPolicy.DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
+    ) -> wlan_policy.WlanPolicy.PreservedState:
+        client = self.get_update(timeout=timeout)
+        networks = self.get_saved_networks()
+        self.remove_all_networks()
+        _LOGGER.info("Saved networks cleared and preserved.")
+        return wlan_policy.WlanPolicy.PreservedState(
+            saved_networks=networks, client_connections_state=client.state
+        )
+
+    def restore_policy_state(
+        self,
+        preserved_state: wlan_policy.WlanPolicy.PreservedState,
+        *,
+        timeout: float
+        | None = wlan_policy.WlanPolicy.DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
+    ) -> None:
+        self.remove_all_networks(timeout=timeout)
+
+        if preserved_state.saved_networks is not None:
+            for network in preserved_state.saved_networks:
+                try:
+                    self.save_network(
+                        network.ssid,
+                        network.security_type,
+                        network.credential_value,
+                        timeout=timeout,
+                    )
+                except wlan_errors.HoneydewWlanError as e:
+                    _LOGGER.warning(
+                        'Failed to restore network "%s": %s', network.ssid, e
+                    )
+
+        if preserved_state.client_connections_state is not None:
+            if (
+                preserved_state.client_connections_state
+                is WlanClientState.CONNECTIONS_ENABLED
+            ):
+                self.start_client_connections(timeout=timeout)
+            else:
+                self.stop_client_connections(timeout=timeout)
+
+        _LOGGER.info("Preserved networks and client state restored.")
 
 
 class ClientStateUpdatesImpl(f_wlan_policy.ClientStateUpdatesServer):

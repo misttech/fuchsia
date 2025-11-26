@@ -4,6 +4,7 @@
 """Abstract base class for wlan policy affordance."""
 
 import abc
+from dataclasses import dataclass
 
 import fidl_fuchsia_wlan_policy as f_wlan_policy
 
@@ -12,6 +13,7 @@ from honeydew.affordances.connectivity.wlan.utils.types import (
     ClientStateSummary,
     NetworkConfig,
     SecurityType,
+    WlanClientState,
 )
 
 
@@ -19,6 +21,11 @@ class WlanPolicy(affordance.Affordance):
     """Abstract base class for WlanPolicy affordance."""
 
     DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT = 60
+
+    @dataclass
+    class PreservedState:
+        saved_networks: list[NetworkConfig] | None
+        client_connections_state: WlanClientState | None
 
     # List all the public methods
     @abc.abstractmethod
@@ -241,3 +248,20 @@ class WlanPolicy(affordance.Affordance):
         Raises:
             HoneydewWlanError: Failure to observe no connection within timeout.
         """
+
+    @abc.abstractmethod
+    def clear_policy_state(
+        self,
+        *,
+        timeout: float | None = DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
+    ) -> PreservedState:
+        """Clears saved networks and connection state."""
+
+    @abc.abstractmethod
+    def restore_policy_state(
+        self,
+        preserved_state: PreservedState,
+        *,
+        timeout: float | None = DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
+    ) -> None:
+        """Restores policy to a preserved state."""

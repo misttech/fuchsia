@@ -15,10 +15,10 @@ from honeydew.affordances.connectivity.wlan.utils.errors import (
 from honeydew.affordances.connectivity.wlan.utils.types import (
     ConnectionState,
     DisconnectStatus,
-    NetworkConfig,
     NetworkState,
     WlanClientState,
 )
+from honeydew.affordances.connectivity.wlan.wlan_policy import wlan_policy
 from honeydew.fuchsia_device.fuchsia_device import (
     FuchsiaDevice as HdFuchsiaDevice,
 )
@@ -31,12 +31,6 @@ DEFAULT_GET_UPDATE_TIMEOUT = 60
 
 class WlanPolicyControllerError(signals.ControllerError):
     pass
-
-
-@dataclass
-class PreservedState:
-    saved_networks: list[NetworkConfig] | None
-    client_connections_state: WlanClientState | None
 
 
 @dataclass
@@ -55,7 +49,9 @@ class WlanPolicyController:
     def __init__(
         self, honeydew: HdFuchsiaDevice, ssh: FuchsiaSSHProvider
     ) -> None:
-        self.preserved_networks_and_client_state: PreservedState | None = None
+        self.preserved_networks_and_client_state: (
+            wlan_policy.WlanPolicy.PreservedState | None
+        ) = None
         self.policy_configured = False
         self.honeydew = honeydew
         self.ssh = ssh
@@ -104,7 +100,7 @@ class WlanPolicyController:
                     and not self.preserved_networks_and_client_state
                 ):
                     self.preserved_networks_and_client_state = (
-                        self.remove_and_preserve_networks_and_client_state()
+                        self.honeydew.wlan_policy.clear_policy_state()
                     )
                 self.honeydew.wlan_policy.start_client_connections()
                 self.log.info(
@@ -132,14 +128,17 @@ class WlanPolicyController:
         self.policy_configured = False
 
     def clean_up(self) -> None:
-        if self.preserved_networks_and_client_state is not None:
-            # It is possible for policy to have been configured before, but
-            # deconfigured before test end. In this case, in must be setup
-            # before restoring networks
-            if not self.policy_configured:
-                self.configure_wlan(False)
+        if self.preserved_networks_and_client_state is None:
+            return
+        # It is possible for policy to have been configured before, but
+        # deconfigured before test end. In this case, in must be setup
+        # before restoring networks
+        if not self.policy_configured:
+            self.configure_wlan(False)
 
-        self.restore_preserved_networks_and_client_state()
+        self.honeydew.wlan_policy.restore_policy_state(
+            self.preserved_networks_and_client_state
+        )
 
     def _find_network(
         self,
@@ -286,61 +285,3 @@ class WlanPolicyController:
                 f" Waited:{timeout_sec}s"
             )
             raise WlanPolicyControllerError from last_err
-
-    def remove_and_preserve_networks_and_client_state(
-        self, timeout: int = DEFAULT_GET_UPDATE_TIMEOUT
-    ) -> PreservedState:
-        """Preserves networks already saved on devices before removing them.
-
-        This method is used to set up a clean test environment. Records the state of
-        client connections before tests.
-
-        Args:
-            timeout: Timeout in seconds for network operations.
-
-        Returns:
-            PreservedState: State of the client containing NetworkConfigs and client
-                connection state.
-            TimeoutError: Operation takes longer than expected.
-        """
-        client = self.honeydew.wlan_policy.get_update(timeout=timeout)
-        networks = self.honeydew.wlan_policy.get_saved_networks()
-        self.honeydew.wlan_policy.remove_all_networks()
-        self.log.info("Saved networks cleared and preserved.")
-        return PreservedState(
-            saved_networks=networks, client_connections_state=client.state
-        )
-
-    def restore_preserved_networks_and_client_state(self) -> None:
-        """Restore preserved networks and client state onto device."""
-        if self.preserved_networks_and_client_state is None:
-            self.log.info("No preserved networks or client state to restore")
-            return
-
-        self.honeydew.wlan_policy.remove_all_networks()
-
-        saved_networks = self.preserved_networks_and_client_state.saved_networks
-        if saved_networks is not None:
-            for network in saved_networks:
-                try:
-                    self.honeydew.wlan_policy.save_network(
-                        network.ssid,
-                        network.security_type,
-                        network.credential_value,
-                    )
-                except HoneydewWlanError as e:
-                    self.log.warning(
-                        'Failed to restore network "%s": %s', network.ssid, e
-                    )
-
-        client_state = (
-            self.preserved_networks_and_client_state.client_connections_state
-        )
-        if client_state is not None:
-            if client_state is WlanClientState.CONNECTIONS_ENABLED:
-                self.honeydew.wlan_policy.start_client_connections()
-            else:
-                self.honeydew.wlan_policy.stop_client_connections()
-
-        self.log.info("Preserved networks and client state restored.")
-        self.preserved_networks_and_client_state = None
