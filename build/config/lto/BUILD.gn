@@ -224,8 +224,6 @@ config("thinlto-rust") {
   # lld-link vs ld.lld.
   if (current_os == "win") {
     _cache_dir = "/lldltocache:"
-  } else if (current_os == "mac") {
-    _cache_dir = "-cache_path_lto,"
   } else {
     _cache_dir = "--thinlto-cache-dir="
   }

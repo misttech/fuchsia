@@ -22,9 +22,3 @@ declare_args() {
   # Controls whether to use the ML inliner in Clang to reduce size.
   clang_ml_inliner = true
 }
-
-# TODO(https://fxbug.dev/42082246): Enable clang_ml_inliner when
-# the mac-arm64 toolchain supports it.
-if (host_platform == "mac-arm64") {
-  clang_ml_inliner = false
-}

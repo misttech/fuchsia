@@ -10,10 +10,7 @@
 #  - "": For the default linker associated with the current compiler, e.g.
 #      this will be the BFD linker when using GCC.
 #
-if (current_os == "mac") {
-  # Only the native host linker works for macOS.
-  linker = ""
-} else if (is_gcc) {
+if (is_gcc) {
   # The "system default" with GCC means BFD ld.
   linker = ""
 } else {
