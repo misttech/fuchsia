@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <random>
+#include <string>
 
 #include "src/developer/debug/ipc/records.h"
 #include "src/developer/debug/shared/string_util.h"
@@ -25,6 +26,15 @@ bool MatchComponentUrl(std::string_view url, std::string_view pattern) {
     return new_url == pattern;
   }
   return url == pattern;
+}
+
+bool FilterApplies(const Filter* filter, const MatchedTask& task) {
+  // We have to be generous when matching to accommodate old IPC users, which just used opaque koid
+  // values without knowing whether or not they were a job or process, so |TaskType::kUnknown| can
+  // apply to all filters.
+  return task.type == TaskType::kUnknown ||
+         (filter->config.job_only && task.type == TaskType::kJob) ||
+         (!filter->config.job_only && task.type == TaskType::kProcess);
 }
 
 }  // namespace
@@ -83,54 +93,54 @@ std::map<uint64_t, AttachConfig> GetAttachConfigsForFilterMatches(
       continue;
     }
 
-    for (uint64_t matched_pid : match.matched_pids) {
-      const auto& attach_config = FilterConfig::ToAttachConfig(matched_filter->config);
+    for (const auto& match : match.matches) {
+      if (FilterApplies(matched_filter, match)) {
+        // At this point, we know we care about how the configuration of this filter will affect the
+        // final attach configuration. Go ahead and derive this filter's AttachConfig and then
+        // resolve the attach priority below if we need to.
+        //
+        // This way, we don't have to worry about whether or not this filter is "job only" or not.
+        const auto& attach_config = FilterConfig::ToAttachConfig(matched_filter->config);
 
-      auto inserted = pids_to_attach.insert({matched_pid, attach_config});
+        auto inserted = pids_to_attach.insert({match.koid, attach_config});
 
-      // Make sure we double check the mode after the insertion. If the pid had already been
-      // added to the map by a weak filter and this is a strong filter that also matched, then we
-      // should strongly attach. Conversely, a strong filter should never be overruled by a weak
-      // filter. If the filter id for this match is invalid or isn't found, perform a strong
-      // attach.
-      //
-      // A "no attach" configuration does not require weak to be set, but will also not override
-      // weakly attaching. Conversely, "no attach" will be overridden by a weak configuration (e.g.
-      //
-      // For Example:
-      //   Filter 1 {
-      //     ..
-      //     weak = true,
-      //     never_attach = false,
-      //   }
-      //
-      //   Filter 2 {
-      //     ..
-      //     weak = false,
-      //     never_attach = true,
-      //   }
-      //
-      // Filter 1 will override Filter 2, resulting in the claiming of the debug exception channel
-      // for the given matching target. In this example, this will result in an AttachConfig that
-      // looks like this:
-      //
-      //   AttachConfig {
-      //     ..
-      //     priority = kWeak,
-      //   }
-      //
-      // Likewise, if the positions are reversed, then weak will override never_attach, creating
-      // the same AttachConfig as above.
-      //
-      // TODO(https://fxbug.dev/376247181): revisit how to merge this configuration for job-only
-      // filters.
-      inserted.first->second.priority =
-          std::max(attach_config.priority, inserted.first->second.priority);
-
-      // If multiple filters match this pid, they should always have the same attach target. In
-      // other words, a job_only filter should only ever cause an attach to a job, and any other
-      // filter should always lead us to attach to a process.
-      FX_CHECK(inserted.first->second.target == attach_config.target);
+        // Make sure we double check the mode after the insertion. If the pid had already been
+        // added to the map by a weak filter and this is a strong filter that also matched, then we
+        // should strongly attach. Conversely, a strong filter should never be overruled by a weak
+        // filter. If the filter id for this match is invalid or isn't found, perform a strong
+        // attach.
+        //
+        // A "no attach" configuration does not require weak to be set, but will also not override
+        // weakly attaching. Conversely, "no attach" will be overridden by a weak configuration
+        // (e.g.
+        //
+        // For Example:
+        //   Filter 1 {
+        //     ..
+        //     weak = true,
+        //     never_attach = false,
+        //   }
+        //
+        //   Filter 2 {
+        //     ..
+        //     weak = false,
+        //     never_attach = true,
+        //   }
+        //
+        // Filter 1 will override Filter 2, resulting in the claiming of the debug exception channel
+        // for the given matching target. In this example, this will result in an AttachConfig that
+        // looks like this:
+        //
+        //   AttachConfig {
+        //     ..
+        //     priority = kWeak,
+        //   }
+        //
+        // Likewise, if the positions are reversed, then weak will override never_attach, creating
+        // the same AttachConfig as above.
+        inserted.first->second.priority =
+            std::max(attach_config.priority, inserted.first->second.priority);
+      }
     }
   }
 

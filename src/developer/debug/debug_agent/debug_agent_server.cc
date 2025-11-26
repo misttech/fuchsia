@@ -251,12 +251,8 @@ uint32_t DebugAgentServer::AttachToFilterMatches(
   // does not have support for size types.
   uint32_t attaches = 0;
 
-  std::vector<const debug_ipc::Filter*> ipc_filters;
-  ipc_filters.reserve(filters_.size());
-  std::ranges::transform(filters_, std::back_inserter(ipc_filters),
-                         [](const auto& pair) -> const debug_ipc::Filter* { return &pair.second; });
-
-  auto pids_to_attach = debug_ipc::GetAttachConfigsForFilterMatches(filter_matches, ipc_filters);
+  auto pids_to_attach =
+      debug_ipc::GetAttachConfigsForFilterMatches(filter_matches, debug_agent_->GetIpcFilters());
 
   for (const auto& [koid, attach_config] : pids_to_attach) {
     auto status = AttachWithConfig(koid, attach_config);
@@ -367,9 +363,9 @@ void DebugAgentServer::OnNotification(const debug_ipc::NotifyComponentStarting& 
   std::vector<debug_ipc::FilterMatch> filter_matches;
   for (const auto& match : notify.matching_filters) {
     // There will only ever be one koid per match.
-    FX_DCHECK(match.matched_pids.size() == 1);
+    FX_DCHECK(match.matches.size() == 1);
 
-    if (match.matched_pids[0] != ZX_KOID_INVALID) {
+    if (match.matches[0].koid != ZX_KOID_INVALID) {
       filter_matches.emplace_back(match);
     }
   }

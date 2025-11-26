@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <compare>
+#include <iterator>
 #include <optional>
 #include <string>
 #include <vector>
@@ -760,19 +761,50 @@ struct Filter {
   void Serialize(Serializer& ser, uint32_t ver) { ser | type | pattern | job_koid | id | config; }
 };
 
-// Reply indicating that a filter matched one or more processes.
+struct MatchedTask {
+  uint64_t koid;
+
+  TaskType type = TaskType::kProcess;
+
+  void Serialize(Serializer& ser, uint32_t ver) { ser | koid | type; }
+};
+
+// Reply indicating that a filter matched one or more tasks.
 struct FilterMatch {
   FilterMatch() = default;
-  FilterMatch(const Filter::Identifier& id, std::vector<uint64_t> pids)
-      : id(id), matched_pids(std::move(pids)) {}
+  FilterMatch(const Filter::Identifier& id, std::vector<MatchedTask> matches)
+      : id(id), matches(std::move(matches)) {}
 
   // See Filter::Identifier.
   Filter::Identifier id;
 
   // All of the pids that matched this filter.
-  std::vector<uint64_t> matched_pids;
+  std::vector<MatchedTask> matches;
 
-  void Serialize(Serializer& ser, uint32_t ver) { ser | id | matched_pids; }
+  void Serialize(Serializer& ser, uint32_t ver) {
+    ser | id;
+
+    if (ver < 77) {
+      // Old IPC users only know about the pids.
+      std::vector<uint64_t> pids(matches.size());
+      std::ranges::transform(matches, std::back_inserter(pids),
+                             [&](const auto& task) -> uint64_t { return task.koid; });
+
+      ser | pids;
+
+      matches.clear();
+      matches.reserve(pids.size());
+
+      // Deserializing means putting the pids back into our matched tasks. We lose the task type
+      // information.
+      std::ranges::transform(pids, std::back_inserter(matches), [&](uint64_t pid) -> MatchedTask {
+        return {.koid = pid, .type = TaskType::kUnknown};
+      });
+    } else {
+      // ver >= 77.
+      ser | matches;
+    }
+  }
 };
 
 #pragma pack(pop)

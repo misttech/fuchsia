@@ -17,6 +17,7 @@
 #include "src/developer/debug/debug_agent/mock_thread.h"
 #include "src/developer/debug/debug_agent/process_info_iterator.h"
 #include "src/developer/debug/ipc/protocol.h"
+#include "src/developer/debug/ipc/records.h"
 #include "src/developer/debug/shared/message_loop.h"
 #include "src/developer/debug/shared/result.h"
 #include "src/developer/debug/shared/test_with_loop.h"
@@ -107,7 +108,8 @@ TEST_F(DebugAgentServerTest, AddNewFilter) {
 
   // There should be one reported match.
   EXPECT_EQ(reply.matched_processes_for_filter.size(), 1u);
-  EXPECT_EQ(reply.matched_processes_for_filter[0].matched_pids.size(), 1u);
+  EXPECT_EQ(reply.matched_processes_for_filter[0].matches.size(), 1u);
+  EXPECT_EQ(debug_ipc::TaskType::kProcess, reply.matched_processes_for_filter[0].matches[0].type);
 
   // Now attach to the matching koid.
   EXPECT_EQ(AttachToMatchingKoids(reply), 1u);
@@ -122,12 +124,12 @@ TEST_F(DebugAgentServerTest, AddNewFilter) {
   EXPECT_EQ(status_reply.filters[0].config.recursive, false);
   EXPECT_EQ(status_reply.processes.size(), 1u);
   EXPECT_EQ(status_reply.processes[0].process_koid,
-            reply.matched_processes_for_filter[0].matched_pids[0]);
+            reply.matched_processes_for_filter[0].matches[0].koid);
 
   // Run the loop so the process has a chance to update its thread list.
   loop().RunUntilNoTasks();
 
-  auto proc = agent->GetDebuggedProcess(reply.matched_processes_for_filter[0].matched_pids[0]);
+  auto proc = agent->GetDebuggedProcess(reply.matched_processes_for_filter[0].matches[0].koid);
   auto thread_records = proc->GetThreadRecords();
 
   ASSERT_FALSE(thread_records.empty());
@@ -191,13 +193,14 @@ TEST_F(DebugAgentServerTest, AddNewFilter) {
 
   const auto& job4p1_match = std::ranges::find_if(
       reply.matched_processes_for_filter, [](const debug_ipc::FilterMatch& match) {
-        return std::ranges::any_of(match.matched_pids,
-                                   [](uint64_t pid) { return pid == kJob4Process1Koid; });
+        return std::ranges::any_of(
+            match.matches, [](const auto& match) { return match.koid == kJob4Process1Koid; });
       });
 
   ASSERT_NE(job4p1_match, reply.matched_processes_for_filter.end());
-  ASSERT_EQ(job4p1_match->matched_pids.size(), 1u);
-  EXPECT_EQ(job4p1_match->matched_pids[0], kJob4Process1Koid);
+  ASSERT_EQ(job4p1_match->matches.size(), 1u);
+  EXPECT_EQ(job4p1_match->matches[0].koid, kJob4Process1Koid);
+  EXPECT_EQ(job4p1_match->matches[0].type, debug_ipc::TaskType::kProcess);
 
   // We can issue an attach now. Since we're not doing any pre-filtering of koids we're already
   // attached to, this will also return the koid 26 attached above as well as the new one.
@@ -223,14 +226,16 @@ TEST_F(DebugAgentServerTest, AddNewFilter) {
                                                  });
 
   ASSERT_NE(third_filter_match, reply.matched_processes_for_filter.end());
-  EXPECT_EQ(third_filter_match->matched_pids.size(), 2u);
+  EXPECT_EQ(third_filter_match->matches.size(), 2u);
 
   constexpr zx_koid_t kJob5Koid = 35;
   constexpr zx_koid_t kJob51Koid = 38;
 
   // The order of the matches will always be in ascending order.
-  EXPECT_EQ(third_filter_match->matched_pids[0], kJob5Koid);
-  EXPECT_EQ(third_filter_match->matched_pids[1], kJob51Koid);
+  EXPECT_EQ(third_filter_match->matches[0].koid, kJob5Koid);
+  EXPECT_EQ(third_filter_match->matches[0].type, debug_ipc::TaskType::kJob);
+  EXPECT_EQ(third_filter_match->matches[1].koid, kJob51Koid);
+  EXPECT_EQ(third_filter_match->matches[1].type, debug_ipc::TaskType::kJob);
 
   // Now we test explicit attach requests. This will be the case if the filter is installed after
   // the component that matches is already launched and we have been notified of it. See the

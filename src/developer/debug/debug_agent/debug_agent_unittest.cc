@@ -683,8 +683,9 @@ TEST_F(DebugAgentTests, RecursiveFilterAppliesImplicitFilter) {
   // subpackaged component.
   ASSERT_EQ(reply.matched_processes_for_filter.size(), 1u);
   EXPECT_EQ(reply.matched_processes_for_filter[0].id, filters[0].filter.id);
-  EXPECT_EQ(reply.matched_processes_for_filter[0].matched_pids.size(), 1u);
-  EXPECT_EQ(reply.matched_processes_for_filter[0].matched_pids[0], kJob5P1Koid);
+  EXPECT_EQ(reply.matched_processes_for_filter[0].matches.size(), 1u);
+  EXPECT_EQ(reply.matched_processes_for_filter[0].matches[0].koid, kJob5P1Koid);
+  EXPECT_EQ(reply.matched_processes_for_filter[0].matches[0].type, debug_ipc::TaskType::kProcess);
 }
 
 TEST_F(DebugAgentTests, AttachToExistingJob) {
@@ -736,11 +737,12 @@ TEST_F(DebugAgentTests, JobOnlyFilter) {
   // Should have matched the existing component.
   EXPECT_EQ(reply.matched_processes_for_filter.size(), 1u);
   EXPECT_EQ(reply.matched_processes_for_filter[0].id, filter.id);
-  EXPECT_EQ(reply.matched_processes_for_filter[0].matched_pids.size(), 1u);
-  EXPECT_EQ(reply.matched_processes_for_filter[0].matched_pids[0], kJobKoid);
+  EXPECT_EQ(reply.matched_processes_for_filter[0].matches.size(), 1u);
+  EXPECT_EQ(reply.matched_processes_for_filter[0].matches[0].koid, kJobKoid);
+  EXPECT_EQ(reply.matched_processes_for_filter[0].matches[0].type, debug_ipc::TaskType::kJob);
 
   debug_ipc::AttachRequest attach_request;
-  attach_request.koid = reply.matched_processes_for_filter[0].matched_pids[0];
+  attach_request.koid = reply.matched_processes_for_filter[0].matches[0].koid;
   attach_request.config = debug_ipc::FilterConfig::ToAttachConfig(filter.config);
   debug_ipc::AttachReply attach_reply;
 
@@ -880,7 +882,7 @@ TEST_F(DebugAgentTests, DoNotAttachToChildJobs) {
   // We should have 1 filter match and two job koids.
   EXPECT_FALSE(reply.matched_processes_for_filter.empty());
   EXPECT_EQ(reply.matched_processes_for_filter.size(), 1u);
-  EXPECT_EQ(reply.matched_processes_for_filter[0].matched_pids.size(), 2u);
+  EXPECT_EQ(reply.matched_processes_for_filter[0].matches.size(), 2u);
 
   auto configs = debug_ipc::GetAttachConfigsForFilterMatches(
       reply.matched_processes_for_filter, harness.debug_agent()->GetIpcFilters());
@@ -959,11 +961,12 @@ TEST_F(DebugAgentTests, RecursiveJobOnlyFilterDoesNotCannibalizeChildComponents)
   // We should have gotten a filter created event.
   ASSERT_EQ(harness.stream_backend()->filters().size(), 1u);
   EXPECT_EQ(harness.stream_backend()->filters()[0].originating_filter_id, filter.id);
-  EXPECT_EQ(harness.stream_backend()->filters()[0].filter.pattern, kParentComponentMoniker);
-  EXPECT_FALSE(harness.stream_backend()->filters()[0].filter.config.job_only);
-  EXPECT_FALSE(harness.stream_backend()->filters()[0].filter.config.recursive);
-  EXPECT_TRUE(harness.stream_backend()->filters()[0].filter.config.never_attach);
+
   const auto& moniker_prefix_filter = harness.stream_backend()->filters()[0].filter;
+  EXPECT_EQ(moniker_prefix_filter.pattern, kParentComponentMoniker);
+  EXPECT_FALSE(moniker_prefix_filter.config.job_only);
+  EXPECT_FALSE(moniker_prefix_filter.config.recursive);
+  EXPECT_TRUE(moniker_prefix_filter.config.never_attach);
 
   // Now, we want to inject a new child component that matches both the original recursive job-only
   // filter and the new moniker prefix filter.
@@ -979,11 +982,11 @@ TEST_F(DebugAgentTests, RecursiveJobOnlyFilterDoesNotCannibalizeChildComponents)
   // looks like this now:
   //
   // j: 1001 root
-  //   j: 1002 parent-job
-  //     p: 1003 parent-job-p1 some/moniker fuchsia-pkg://some/url
+  //   j: 1002 parent-job some/moniker fuchsia-pkg://some/url
+  //     p: 1003 parent-job-p1
   //       t: 1004 initial-thread
-  //     j: 1005 child-job
-  //       p: 1006 child-job-p1 some/moniker/other/moniker fuchsia-pkg://some/other/url
+  //     j: 1005 child-job some/moniker/other/moniker fuchsia-pkg://some/other/url
+  //       p: 1006 child-job-p1
   //         t: 1007 initial-thread
   mock_system_interface->AddJob(std::move(child_job), kParentJobKoid, child_info);
 

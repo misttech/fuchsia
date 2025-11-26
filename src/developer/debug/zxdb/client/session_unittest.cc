@@ -9,6 +9,7 @@
 
 #include <gtest/gtest.h>
 
+#include "src/developer/debug/ipc/records.h"
 #include "src/developer/debug/shared/stream_buffer.h"
 #include "src/developer/debug/zxdb/client/breakpoint.h"
 #include "src/developer/debug/zxdb/client/breakpoint_settings.h"
@@ -189,8 +190,8 @@ void SessionSink::UpdateFilter(const debug_ipc::UpdateFilterRequest& request,
       // Basic simulation of filtering with only support for kFuzzyProcessName.
       if (filter.type == debug_ipc::Filter::Type::kProcessNameSubstr &&
           process.first.find(filter.pattern) != std::string::npos) {
-        reply.matched_processes_for_filter.emplace_back(
-            debug_ipc::FilterMatch(filter.id, {process.second}));
+        reply.matched_processes_for_filter.emplace_back(debug_ipc::FilterMatch(
+            filter.id, {{.koid = process.second, .type = debug_ipc::TaskType::kProcess}}));
       }
     }
   }

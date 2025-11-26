@@ -160,7 +160,8 @@ TEST_F(SystemTest, FilterMatchesAndRematching) {
   filter.id = debug_ipc::Filter::Identifier(1, debug_ipc::Filter::Originator::kZxdb);
   session().system().CreateNewFilter(filter);
 
-  session().system().OnFilterMatches({debug_ipc::FilterMatch(filter.id, {kProcessKoid})});
+  session().system().OnFilterMatches({debug_ipc::FilterMatch(
+      filter.id, {{.koid = kProcessKoid, .type = debug_ipc::TaskType::kProcess}})});
 
   // There should be an attach request.
   auto& requests = sink()->attach_requests_;
@@ -184,7 +185,8 @@ TEST_F(SystemTest, FilterMatchesAndRematching) {
       debug_ipc::AttachReply{.koid = kProcessKoid, .name = kProcessName});
 
   session().system().OnFilterMatches({debug_ipc::FilterMatch(
-      debug_ipc::Filter::Identifier(2, debug_ipc::Filter::Originator::kZxdb), {kProcessKoid})});
+      debug_ipc::Filter::Identifier(2, debug_ipc::Filter::Originator::kZxdb),
+      {{.koid = kProcessKoid, .type = debug_ipc::TaskType::kProcess}})});
 
   // The system should've reused the empty target.
   ASSERT_EQ(system_observer.target_create_count(), 0);
@@ -229,7 +231,8 @@ TEST_F(SystemTest, ExistenProcessShouldCreateTarget) {
   filter.type = debug_ipc::Filter::Type::kProcessNameSubstr;
   filter.id = debug_ipc::Filter::Identifier(1, debug_ipc::Filter::Originator::kZxdb);
   session().system().CreateNewFilter(filter);
-  session().system().OnFilterMatches({debug_ipc::FilterMatch(filter.id, {kProcessKoid2})});
+  session().system().OnFilterMatches({debug_ipc::FilterMatch(
+      filter.id, {{.koid = kProcessKoid2, .type = debug_ipc::TaskType::kProcess}})});
 
   // There should be an attach request.
   auto& requests = sink()->attach_requests_;

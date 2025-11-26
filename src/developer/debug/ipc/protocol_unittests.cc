@@ -756,30 +756,76 @@ TEST(Protocol, UpdateFilterRequest) {
   }
 }
 
+TEST(Protocol, UpdateFilterReplyWithVersion) {
+  UpdateFilterReply initial;
+
+  constexpr uint32_t kVersion = 76;
+
+  initial.matched_processes_for_filter.emplace_back(
+      Filter::Identifier(1, Filter::Originator::kUnknown),
+      std::vector<MatchedTask>{{.koid = 1234, .type = TaskType::kProcess}});
+  initial.matched_processes_for_filter.emplace_back(
+      Filter::Identifier(2, Filter::Originator::kUnknown),
+      std::vector<MatchedTask>{{.koid = 5678, .type = TaskType::kUnknown}});
+  initial.matched_processes_for_filter.emplace_back(
+      Filter::Identifier(3, Filter::Originator::kUnknown),
+      std::vector<MatchedTask>{{.koid = 4321, .type = TaskType::kUnknown},
+                               {.koid = 2345, .type = TaskType::kJob}});
+  initial.matched_processes_for_filter.emplace_back(
+      Filter::Identifier(4, Filter::Originator::kUnknown),
+      std::vector<MatchedTask>{{.koid = 9876, .type = TaskType::kProcess}});
+
+  UpdateFilterReply second;
+  ASSERT_TRUE(SerializeDeserialize(initial, &second, kVersion));
+  ASSERT_EQ(second.matched_processes_for_filter.size(), 4u);
+
+  for (size_t i = 0; i < initial.matched_processes_for_filter.size(); i++) {
+    EXPECT_EQ(initial.matched_processes_for_filter[i].id,
+              second.matched_processes_for_filter[i].id);
+    EXPECT_EQ(initial.matched_processes_for_filter[i].matches.size(),
+              second.matched_processes_for_filter[i].matches.size());
+
+    for (size_t j = 0; j < initial.matched_processes_for_filter[i].matches.size(); j++) {
+      // With old versions, the task type will be lost, but the koid value should be persisted.
+      EXPECT_EQ(initial.matched_processes_for_filter[i].matches[j].koid,
+                second.matched_processes_for_filter[i].matches[j].koid);
+      EXPECT_EQ(second.matched_processes_for_filter[i].matches[j].type, TaskType::kUnknown);
+    }
+  }
+}
+
 TEST(Protocol, UpdateFilterReply) {
   UpdateFilterReply initial;
 
   initial.matched_processes_for_filter.emplace_back(
-      Filter::Identifier(1, Filter::Originator::kUnknown), std::vector<uint64_t>{1234});
+      Filter::Identifier(1, Filter::Originator::kUnknown),
+      std::vector<MatchedTask>{{.koid = 1234, .type = TaskType::kProcess}});
   initial.matched_processes_for_filter.emplace_back(
-      Filter::Identifier(2, Filter::Originator::kUnknown), std::vector<uint64_t>{5678});
+      Filter::Identifier(2, Filter::Originator::kUnknown),
+      std::vector<MatchedTask>{{.koid = 5678, .type = TaskType::kUnknown}});
   initial.matched_processes_for_filter.emplace_back(
-      Filter::Identifier(3, Filter::Originator::kUnknown), std::vector<uint64_t>{4321, 2345});
+      Filter::Identifier(3, Filter::Originator::kUnknown),
+      std::vector<MatchedTask>{{.koid = 4321, .type = TaskType::kUnknown},
+                               {.koid = 2345, .type = TaskType::kJob}});
   initial.matched_processes_for_filter.emplace_back(
-      Filter::Identifier(4, Filter::Originator::kUnknown), std::vector<uint64_t>{9876});
+      Filter::Identifier(4, Filter::Originator::kUnknown),
+      std::vector<MatchedTask>{{.koid = 9876, .type = TaskType::kProcess}});
 
   UpdateFilterReply second;
   ASSERT_TRUE(SerializeDeserialize(initial, &second));
   ASSERT_EQ(second.matched_processes_for_filter.size(), 4u);
+
   for (size_t i = 0; i < initial.matched_processes_for_filter.size(); i++) {
     EXPECT_EQ(initial.matched_processes_for_filter[i].id,
               second.matched_processes_for_filter[i].id);
-    EXPECT_EQ(initial.matched_processes_for_filter[i].matched_pids.size(),
-              second.matched_processes_for_filter[i].matched_pids.size());
+    EXPECT_EQ(initial.matched_processes_for_filter[i].matches.size(),
+              second.matched_processes_for_filter[i].matches.size());
 
-    for (size_t j = 0; j < initial.matched_processes_for_filter[i].matched_pids.size(); j++) {
-      EXPECT_EQ(initial.matched_processes_for_filter[i].matched_pids[j],
-                second.matched_processes_for_filter[i].matched_pids[j]);
+    for (size_t j = 0; j < initial.matched_processes_for_filter[i].matches.size(); j++) {
+      EXPECT_EQ(initial.matched_processes_for_filter[i].matches[j].koid,
+                second.matched_processes_for_filter[i].matches[j].koid);
+      EXPECT_EQ(initial.matched_processes_for_filter[i].matches[j].type,
+                second.matched_processes_for_filter[i].matches[j].type);
     }
   }
 }

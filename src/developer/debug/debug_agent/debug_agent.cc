@@ -15,6 +15,7 @@
 #include <algorithm>
 #include <memory>
 #include <optional>
+#include <string>
 
 #include "src/developer/debug/debug_agent/arch.h"
 #include "src/developer/debug/debug_agent/binary_launcher.h"
@@ -556,15 +557,15 @@ void DebugAgent::OnUpdateFilter(const debug_ipc::UpdateFilterRequest& request,
     auto filter = Filter(debug_ipc_filter);
     // Search all of the known ELF processes in the system for a match.
     auto matched_processes = filter.ApplyToJob(root_job_->job_handle(), *system_interface_);
-    for (const auto& pid : matched_processes) {
+    for (const auto& match : matched_processes) {
       std::vector<debug_ipc::ComponentInfo> component_info;
 
-      if (auto process = system_interface().GetProcess(pid)) {
+      if (auto process = system_interface().GetProcess(match.koid)) {
         component_info = system_interface().GetComponentManager().FindComponentInfo(*process);
       } else if (filter.filter().config.job_only) {
         // If this filter was configured with job_only then the koid values provided here will be
         // the koid of the job itself.
-        component_info = system_interface().GetComponentManager().FindComponentInfo(pid);
+        component_info = system_interface().GetComponentManager().FindComponentInfo(match.koid);
       }
 
       auto result = CheckForRecursiveFilterMatches(filter, component_info);
@@ -754,7 +755,9 @@ std::vector<debug_ipc::FilterMatch> DebugAgent::AccumulateFilterMatches(
 
   std::ranges::for_each(filters_, [&](const Filter& filter) {
     if (filter.MatchesProcess(handle, *system_interface_)) {
-      matches.emplace_back(filter.filter().id, std::vector<uint64_t>{handle.GetKoid()});
+      matches.emplace_back(filter.filter().id,
+                           std::vector<debug_ipc::MatchedTask>{
+                               {.koid = handle.GetKoid(), .type = debug_ipc::TaskType::kProcess}});
     }
   });
 
@@ -1069,6 +1072,42 @@ void DebugAgent::OnProcessChanged(ProcessChangedHow how,
   } else if (auto matches = AccumulateFilterMatches(*process_handle); !matches.empty()) {
     matched_filters = std::move(matches);
     type = debug_ipc::NotifyProcessStarting::Type::kAttach;
+
+    FX_DCHECK(!matched_filters.empty());
+
+    const auto& attach_configs =
+        debug_ipc::GetAttachConfigsForFilterMatches(matched_filters, GetIpcFilters());
+
+    if (!attach_configs.empty()) {
+      // We should only end up with one attach configuration, even if we have many matching filters.
+      FX_DCHECK(attach_configs.size() == 1);
+      FX_DCHECK(attach_configs.contains(process_handle->GetKoid()));
+
+      // If we have a filter, then derive the attach configuration from that, otherwise use the
+      // default values specified in AttachConfig. This is safe to dereference since we assert that
+      // it's contained above.
+      attach_config = attach_configs.find(process_handle->GetKoid())->second;
+    } else if (!matched_filters.empty()) {
+      // Returns true if the given |match| is found in our list of installed filters and it is
+      // configured to be a job_only filter.
+      auto is_job_only = [this](const debug_ipc::FilterMatch match) -> bool {
+        const auto filter = debug_ipc::GetFilterForId(GetIpcFilters(), match.id);
+
+        if (filter == nullptr)
+          return false;
+
+        return filter->config.job_only;
+      };
+
+      if (std::ranges::all_of(matched_filters, is_job_only)) {
+        // If all of the matching filters were labeled as job-only, then we still want to make sure
+        // that we send a process starting event to the clients, but we explicitly do not want to
+        // claim its exception channel.
+        //
+        // This will be the case for non-recursive job-only filters.
+        attach_config.priority = debug_ipc::AttachConfig::Priority::kMinimal;
+      }
+    }
   } else {
 #ifdef __linux__
     // For now, unconditionally attach to all forked processes on Linux.
@@ -1077,23 +1116,6 @@ void DebugAgent::OnProcessChanged(ProcessChangedHow how,
 #else
     return;
 #endif
-  }
-
-  // If we have a filter, then derive the attach configuration from that, otherwise use the default
-  // values specified in AttachConfig.
-  //
-  // A note on compatibility for NotifyProcessStarting:
-  //
-  // In IPC version 76, NotifyProcessStarting was updated to report ALL matching filters, rather
-  // than just one. This has influence on how the attach configuration is derived here. Followup
-  // changes will add the necessary machinery to actually take action on all of the filters, rather
-  // than just deferring to the first one that we find matches. To accommodate this transition, we
-  // still defer to using the first matching filter to derive the attach configuration.
-  if (matched_filters.size() > 0) {
-    const auto found = debug_ipc::GetFilterForId(GetIpcFilters(), matched_filters[0].id);
-    FX_DCHECK(found);
-
-    attach_config = debug_ipc::FilterConfig::ToAttachConfig(found->config);
   }
 
   bool job_only = attach_config.target == debug_ipc::TaskType::kJob;
@@ -1232,8 +1254,9 @@ void DebugAgent::OnComponentStarted(const std::string& moniker, const std::strin
     // non-job-only filters match this component started event (process starting events come
     // separately via a job's DEBUGGER exception channel).
     if (job_koid != ZX_KOID_INVALID && filter->filter().config.job_only) {
-      component_started.matching_filters.emplace_back(filter->filter().id,
-                                                      std::vector<uint64_t>{job_koid});
+      component_started.matching_filters.emplace_back(
+          filter->filter().id, std::vector<debug_ipc::MatchedTask>{
+                                   {.koid = job_koid, .type = debug_ipc::TaskType::kJob}});
     }
   }
 

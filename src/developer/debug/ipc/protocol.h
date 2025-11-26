@@ -35,7 +35,7 @@ namespace debug_ipc {
 // CURRENT_SUPPORTED_API_LEVEL is equal to the numbered API level currently represented by "NEXT".
 // If not, continue reading the comments below.
 
-constexpr uint32_t kCurrentProtocolVersion = 76;
+constexpr uint32_t kCurrentProtocolVersion = 77;
 
 // How to decide kMinimumProtocolVersion
 // -------------------------------------

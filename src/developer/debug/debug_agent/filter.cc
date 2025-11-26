@@ -47,20 +47,20 @@ bool Filter::MatchesComponent(const std::string& moniker, const std::string& url
   return false;
 }
 
-std::vector<zx_koid_t> Filter::ApplyToJob(const JobHandle& job,
-                                          SystemInterface& system_interface) const {
-  std::vector<zx_koid_t> res;
+std::vector<debug_ipc::MatchedTask> Filter::ApplyToJob(const JobHandle& job,
+                                                       SystemInterface& system_interface) const {
+  std::vector<debug_ipc::MatchedTask> res;
   std::function<void(const JobHandle& job)> visit_each_job = [&](const JobHandle& job) {
     if (filter_.config.job_only) {
       // Don't add the root job.
       if (job.GetKoid() != system_interface.GetRootJob()->GetKoid() &&
           MatchesJob(job, system_interface)) {
-        res.push_back(job.GetKoid());
+        res.push_back({.koid = job.GetKoid(), .type = debug_ipc::TaskType::kJob});
       }
     } else {
       for (const auto& process : job.GetChildProcesses()) {
         if (MatchesProcess(*process, system_interface)) {
-          res.push_back(process->GetKoid());
+          res.push_back({.koid = process->GetKoid(), .type = debug_ipc::TaskType::kProcess});
         }
       }
     }

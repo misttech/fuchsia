@@ -39,7 +39,8 @@ class Filter {
   bool MatchesComponent(const std::string& moniker, const std::string& url) const;
 
   // Returns a list of processes that are under a job and matches the filter.
-  std::vector<zx_koid_t> ApplyToJob(const JobHandle& job, SystemInterface& system_interface) const;
+  std::vector<debug_ipc::MatchedTask> ApplyToJob(const JobHandle& job,
+                                                 SystemInterface& system_interface) const;
 
  private:
   debug_ipc::Filter filter_;
