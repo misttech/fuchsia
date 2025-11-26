@@ -45,11 +45,12 @@ _CLIENT_LISTENER_PROXY = FidlEndpoint(
     "core/wlancfg", "fuchsia.wlan.policy.ClientListener"
 )
 
-DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT = 10
-
 
 async def collect_network_config_iterator(
     iterator: (f_wlan_policy.NetworkConfigIteratorClient),
+    *,
+    timeout: float
+    | None = wlan_policy.WlanPolicy.DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
 ) -> (list[f_wlan_policy.NetworkConfigIteratorGetNextResponse]):
     """Collect all elements from a NetworkConfigIterator.
 
@@ -67,7 +68,7 @@ async def collect_network_config_iterator(
     elements = []
     while True:
         try:
-            response = await iterator.get_next()
+            response = await asyncio.wait_for(iterator.get_next(), timeout)
         except ZxStatus as status:
             if status.raw() == ZxStatus.ZX_ERR_PEER_CLOSED:
                 # The server closed the channel, signifying the end of elements.
@@ -83,6 +84,9 @@ async def collect_network_config_iterator(
 
 async def collect_scan_result_iterator(
     iterator: (f_wlan_policy.ScanResultIteratorClient),
+    *,
+    timeout: float
+    | None = wlan_policy.WlanPolicy.DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
 ) -> (list[f_wlan_policy.ScanResultIteratorGetNextResponse]):
     """Collect all elements from a ScanResultIterator.
 
@@ -100,7 +104,7 @@ async def collect_scan_result_iterator(
     elements = []
     while True:
         try:
-            result = await iterator.get_next()
+            result = await asyncio.wait_for(iterator.get_next(), timeout)
         except ZxStatus as status:
             if status.raw() == ZxStatus.ZX_ERR_PEER_CLOSED:
                 # The server closed the channel, signifying the end of elements.
@@ -226,7 +230,12 @@ class WlanPolicy(AsyncAdapter, wlan_policy.WlanPolicy):
     @asyncmethod
     # pylint: disable-next=invalid-overridden-method
     async def connect(
-        self, target_ssid: str, security_type: SecurityType
+        self,
+        target_ssid: str,
+        security_type: SecurityType,
+        *,
+        timeout: float
+        | None = wlan_policy.WlanPolicy.DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
     ) -> f_wlan_policy.RequestStatus:
         """Triggers connection to a network.
 
@@ -257,8 +266,11 @@ class WlanPolicy(AsyncAdapter, wlan_policy.WlanPolicy):
         )
 
         try:
-            resp = await self._client_controller.proxy.connect(
-                id_=NetworkIdentifier(target_ssid, security_type).to_fidl(),
+            resp = await asyncio.wait_for(
+                self._client_controller.proxy.connect(
+                    id_=NetworkIdentifier(target_ssid, security_type).to_fidl(),
+                ),
+                timeout,
             )
             return f_wlan_policy.RequestStatus(resp.status)
         except ZxStatus as status:
@@ -315,7 +327,12 @@ class WlanPolicy(AsyncAdapter, wlan_policy.WlanPolicy):
 
     @asyncmethod
     # pylint: disable-next=invalid-overridden-method
-    async def get_saved_networks(self) -> list[NetworkConfig]:
+    async def get_saved_networks(
+        self,
+        *,
+        timeout: float
+        | None = wlan_policy.WlanPolicy.DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
+    ) -> list[NetworkConfig]:
         """Gets networks saved on device.
 
         Returns:
@@ -349,7 +366,9 @@ class WlanPolicy(AsyncAdapter, wlan_policy.WlanPolicy):
             ) from status
 
         configs = []
-        for resp in await collect_network_config_iterator(iterator):
+        for resp in await collect_network_config_iterator(
+            iterator, timeout=timeout
+        ):
             for config in resp.configs:
                 configs.append(NetworkConfig.from_fidl(config))
         return configs
@@ -358,7 +377,9 @@ class WlanPolicy(AsyncAdapter, wlan_policy.WlanPolicy):
     # pylint: disable-next=invalid-overridden-method
     async def get_update(
         self,
-        timeout: float | None = None,
+        *,
+        timeout: float
+        | None = wlan_policy.WlanPolicy.DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
     ) -> ClientStateSummary:
         """Gets one client listener update.
 
@@ -390,7 +411,12 @@ class WlanPolicy(AsyncAdapter, wlan_policy.WlanPolicy):
             self._client_controller.updates.get(), timeout
         )
 
-    def remove_all_networks(self) -> None:
+    def remove_all_networks(
+        self,
+        *,
+        timeout: float
+        | None = wlan_policy.WlanPolicy.DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
+    ) -> None:
         """Deletes all saved networks on the device.
 
         Raises:
@@ -410,6 +436,7 @@ class WlanPolicy(AsyncAdapter, wlan_policy.WlanPolicy):
                 target_ssid=network.ssid,
                 security_type=network.security_type,
                 target_pwd=network.credential_value,
+                timeout=timeout,
             )
 
     @asyncmethod
@@ -419,6 +446,9 @@ class WlanPolicy(AsyncAdapter, wlan_policy.WlanPolicy):
         target_ssid: str,
         security_type: SecurityType,
         target_pwd: str | None = None,
+        *,
+        timeout: float
+        | None = wlan_policy.WlanPolicy.DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
     ) -> None:
         """Removes or "forgets" a network from saved networks.
 
@@ -460,7 +490,7 @@ class WlanPolicy(AsyncAdapter, wlan_policy.WlanPolicy):
                         ).to_fidl(),
                     ),
                 ),
-                timeout=DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
+                timeout,
             )
             if res.err:
                 raise wlan_errors.HoneydewWlanError(
@@ -478,6 +508,9 @@ class WlanPolicy(AsyncAdapter, wlan_policy.WlanPolicy):
         target_ssid: str,
         security_type: SecurityType,
         target_pwd: str | None = None,
+        *,
+        timeout: float
+        | None = wlan_policy.WlanPolicy.DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
     ) -> None:
         """Saves a network to the device.
 
@@ -506,14 +539,19 @@ class WlanPolicy(AsyncAdapter, wlan_policy.WlanPolicy):
         )
 
         try:
-            res = await self._client_controller.proxy.save_network(
-                config=f_wlan_policy.NetworkConfig(
-                    id_=f_wlan_policy.NetworkIdentifier(
-                        ssid=list(target_ssid.encode("utf-8")),
-                        type_=security_type.to_fidl(),
+            res = await asyncio.wait_for(
+                self._client_controller.proxy.save_network(
+                    config=f_wlan_policy.NetworkConfig(
+                        id_=f_wlan_policy.NetworkIdentifier(
+                            ssid=list(target_ssid.encode("utf-8")),
+                            type_=security_type.to_fidl(),
+                        ),
+                        credential=Credential.from_password(
+                            target_pwd
+                        ).to_fidl(),
                     ),
-                    credential=Credential.from_password(target_pwd).to_fidl(),
                 ),
+                timeout,
             )
             if res.err:
                 raise wlan_errors.HoneydewWlanError(
@@ -527,7 +565,12 @@ class WlanPolicy(AsyncAdapter, wlan_policy.WlanPolicy):
 
     @asyncmethod
     # pylint: disable-next=invalid-overridden-method
-    async def scan_for_networks(self) -> list[str]:
+    async def scan_for_networks(
+        self,
+        *,
+        timeout: float
+        | None = wlan_policy.WlanPolicy.DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
+    ) -> list[str]:
         """Scans for networks.
 
         Returns:
@@ -561,7 +604,9 @@ class WlanPolicy(AsyncAdapter, wlan_policy.WlanPolicy):
             ) from status
 
         scan_results = set()
-        responses = await collect_scan_result_iterator(iterator)
+        responses = await collect_scan_result_iterator(
+            iterator, timeout=timeout
+        )
         for r in responses:
             assert r.scan_results is not None, f"{r!r} missing scan_results"
             for scan_result in r.scan_results:
@@ -635,7 +680,12 @@ class WlanPolicy(AsyncAdapter, wlan_policy.WlanPolicy):
 
     @asyncmethod
     # pylint: disable-next=invalid-overridden-method
-    async def start_client_connections(self) -> None:
+    async def start_client_connections(
+        self,
+        *,
+        timeout: float
+        | None = wlan_policy.WlanPolicy.DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
+    ) -> None:
         """Enables device to initiate connections to networks.
 
         Either by auto-connecting to saved networks or acting on incoming calls
@@ -661,7 +711,7 @@ class WlanPolicy(AsyncAdapter, wlan_policy.WlanPolicy):
         try:
             resp = await asyncio.wait_for(
                 self._client_controller.proxy.start_client_connections(),
-                timeout=DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
+                timeout,
             )
             status = f_wlan_policy.RequestStatus(resp.status)
             if status != f_wlan_policy.RequestStatus.ACKNOWLEDGED:
@@ -676,7 +726,12 @@ class WlanPolicy(AsyncAdapter, wlan_policy.WlanPolicy):
 
     @asyncmethod
     # pylint: disable-next=invalid-overridden-method
-    async def stop_client_connections(self) -> None:
+    async def stop_client_connections(
+        self,
+        *,
+        timeout: float
+        | None = wlan_policy.WlanPolicy.DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
+    ) -> None:
         """Disables device for initiating connections to networks.
 
         Tears down any existing connections to WLAN networks and disables
@@ -699,7 +754,9 @@ class WlanPolicy(AsyncAdapter, wlan_policy.WlanPolicy):
         )
 
         try:
-            resp = await self._client_controller.proxy.stop_client_connections()
+            resp = await asyncio.wait_for(
+                self._client_controller.proxy.stop_client_connections(), timeout
+            )
             status = f_wlan_policy.RequestStatus(resp.status)
             if status != f_wlan_policy.RequestStatus.ACKNOWLEDGED:
                 raise wlan_errors.HoneydewWlanError(
@@ -732,6 +789,9 @@ class ClientStateUpdatesImpl(f_wlan_policy.ClientStateUpdatesServer):
     async def on_client_state_update(
         self,
         request: f_wlan_policy.ClientStateUpdatesOnClientStateUpdateRequest,
+        *,
+        timeout: float
+        | None = wlan_policy.WlanPolicy.DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
     ) -> None:
         """Detected a change to the state or registered listeners.
 
@@ -740,4 +800,4 @@ class ClientStateUpdatesImpl(f_wlan_policy.ClientStateUpdatesServer):
         """
         summary = ClientStateSummary.from_fidl(request.summary)
         _LOGGER.debug("OnClientStateUpdate called with %s", repr(summary))
-        await self._updates.put(summary)
+        await asyncio.wait_for(self._updates.put(summary), timeout)

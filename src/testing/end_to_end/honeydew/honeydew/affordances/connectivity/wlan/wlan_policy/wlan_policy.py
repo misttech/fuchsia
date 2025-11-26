@@ -18,10 +18,16 @@ from honeydew.affordances.connectivity.wlan.utils.types import (
 class WlanPolicy(affordance.Affordance):
     """Abstract base class for WlanPolicy affordance."""
 
+    DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT = 60
+
     # List all the public methods
     @abc.abstractmethod
     def connect(
-        self, target_ssid: str, security_type: SecurityType
+        self,
+        target_ssid: str,
+        security_type: SecurityType,
+        *,
+        timeout: float | None = DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
     ) -> f_wlan_policy.RequestStatus:
         """Triggers connection to a network.
 
@@ -49,7 +55,9 @@ class WlanPolicy(affordance.Affordance):
         """
 
     @abc.abstractmethod
-    def get_saved_networks(self) -> list[NetworkConfig]:
+    def get_saved_networks(
+        self, *, timeout: float | None = DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT
+    ) -> list[NetworkConfig]:
         """Gets networks saved on device.
 
         Returns:
@@ -63,7 +71,8 @@ class WlanPolicy(affordance.Affordance):
     @abc.abstractmethod
     def get_update(
         self,
-        timeout: float | None = None,
+        *,
+        timeout: float | None = DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
     ) -> ClientStateSummary:
         """Gets one client listener update.
 
@@ -90,7 +99,11 @@ class WlanPolicy(affordance.Affordance):
         """
 
     @abc.abstractmethod
-    def remove_all_networks(self) -> None:
+    def remove_all_networks(
+        self,
+        *,
+        timeout: float | None = DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
+    ) -> None:
         """Deletes all saved networks on the device.
 
         Raises:
@@ -104,6 +117,8 @@ class WlanPolicy(affordance.Affordance):
         target_ssid: str,
         security_type: SecurityType,
         target_pwd: str | None = None,
+        *,
+        timeout: float | None = DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
     ) -> None:
         """Removes or "forgets" a network from saved networks.
 
@@ -124,6 +139,8 @@ class WlanPolicy(affordance.Affordance):
         target_ssid: str,
         security_type: SecurityType,
         target_pwd: str | None = None,
+        *,
+        timeout: float | None = DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
     ) -> None:
         """Saves a network to the device.
 
@@ -138,7 +155,11 @@ class WlanPolicy(affordance.Affordance):
         """
 
     @abc.abstractmethod
-    def scan_for_networks(self) -> list[str]:
+    def scan_for_networks(
+        self,
+        *,
+        timeout: float | None = DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
+    ) -> list[str]:
         """Scans for networks.
 
         Returns:
@@ -162,7 +183,11 @@ class WlanPolicy(affordance.Affordance):
         """
 
     @abc.abstractmethod
-    def start_client_connections(self) -> None:
+    def start_client_connections(
+        self,
+        *,
+        timeout: float | None = DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
+    ) -> None:
         """Enables device to initiate connections to networks.
 
         Either by auto-connecting to saved networks or acting on incoming calls
@@ -177,7 +202,11 @@ class WlanPolicy(affordance.Affordance):
         """
 
     @abc.abstractmethod
-    def stop_client_connections(self) -> None:
+    def stop_client_connections(
+        self,
+        *,
+        timeout: float | None = DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
+    ) -> None:
         """Disables device for initiating connections to networks.
 
         Tears down any existing connections to WLAN networks and disables
