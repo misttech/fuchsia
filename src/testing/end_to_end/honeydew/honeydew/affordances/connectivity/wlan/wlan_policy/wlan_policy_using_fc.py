@@ -820,9 +820,6 @@ class ClientStateUpdatesImpl(f_wlan_policy.ClientStateUpdatesServer):
     async def on_client_state_update(
         self,
         request: f_wlan_policy.ClientStateUpdatesOnClientStateUpdateRequest,
-        *,
-        timeout: float
-        | None = wlan_policy.WlanPolicy.DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
     ) -> None:
         """Detected a change to the state or registered listeners.
 
@@ -831,4 +828,4 @@ class ClientStateUpdatesImpl(f_wlan_policy.ClientStateUpdatesServer):
         """
         summary = ClientStateSummary.from_fidl(request.summary)
         _LOGGER.debug("OnClientStateUpdate called with %s", repr(summary))
-        await asyncio.wait_for(self._updates.put(summary), timeout)
+        await self._updates.put(summary)
