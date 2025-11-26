@@ -1538,6 +1538,7 @@ default_rust_proc_macro_configs = default_shared_library_configs + [
 e2e_test_libs = [
   "//sdk/testing/sl4f/client",
   "//third_party/mobly($host_toolchain)",
+  "//src/testing/end_to_end/antlion($host_toolchain)",
   "//src/testing/end_to_end/honeydew($host_toolchain)",
 ]
 
@@ -1555,6 +1556,7 @@ if (host_os == "linux") {
 e2e_lib_unit_tests = [
   "//sdk/testing/sl4f/client:tests",
   "//tools/emulator:tests",
+  "//src/testing/end_to_end/antlion:unit_tests($host_toolchain)",
   "//src/testing/end_to_end/honeydew:unit_tests",
   "//src/testing/end_to_end/mobly_driver/tests/unit_tests:tests",
 ]
