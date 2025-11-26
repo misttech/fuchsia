@@ -4,7 +4,6 @@
 
 use anyhow::{Context, Result, anyhow};
 use fuchsia_hash::Hash;
-use fuchsia_merkle::MerkleTree;
 use fuchsia_pkg::PackageManifest;
 use pathdiff::diff_paths;
 use std::collections::BTreeMap;
@@ -45,12 +44,10 @@ impl BlobManifest {
     pub fn add_file(&mut self, path: impl AsRef<Path>) -> Result<()> {
         let file =
             File::open(&path).context(format!("Adding file: {}", path.as_ref().display()))?;
-        let merkle = MerkleTree::from_reader(&file)
-            .context(format!(
-                "Failed to calculate the merkle for file: {}",
-                &path.as_ref().display()
-            ))?
-            .root();
+        let merkle = fuchsia_merkle::root_from_reader(file).context(format!(
+            "Failed to calculate the merkle for file: {}",
+            &path.as_ref().display()
+        ))?;
         self.add_file_with_merkle(path, merkle);
         Ok(())
     }

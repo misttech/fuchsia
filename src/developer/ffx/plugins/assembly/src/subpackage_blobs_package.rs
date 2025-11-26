@@ -6,7 +6,6 @@ use anyhow::{Context, Result};
 use assembled_system::{AssembledSystem, PackagesMetadata};
 use assembly_subpackage_blobs_package::SubpackageBlobsPackageBuilder;
 use camino::Utf8Path;
-use fuchsia_merkle::MerkleTree;
 use fuchsia_pkg::PackageManifest;
 use log::info;
 use std::fs::File;
@@ -47,9 +46,8 @@ pub fn construct_subpackage_blobs_package(
 
     let subpackage_blobs_package = File::open(&subpackage_blobs_package_path)
         .context("Failed to open the subpackage blobs package")?;
-    let subpackage_blobs_merkle = MerkleTree::from_reader(&subpackage_blobs_package)
-        .context("Failed to calculate the subpackage blobs merkle")?
-        .root();
+    let subpackage_blobs_merkle = fuchsia_merkle::root_from_reader(subpackage_blobs_package)
+        .context("Failed to calculate the subpackage blobs merkle")?;
     info!("SubpackageBlobs merkle: {}", &subpackage_blobs_merkle);
 
     Ok(SubpackageBlobsPackage { manifest: build_results.manifest })

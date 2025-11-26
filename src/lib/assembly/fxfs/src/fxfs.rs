@@ -129,7 +129,6 @@ pub struct BlobJsonEntry {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use fuchsia_merkle::MerkleTree;
     use fuchsia_pkg::{BlobInfo, MetaPackage, PackageManifestBuilder};
     use std::io::Write as _;
     use std::path::Path;
@@ -141,7 +140,7 @@ mod tests {
     fn generate_test_manifest(name: &str, file_path: impl AsRef<Path>) -> PackageManifest {
         let source_path = file_path.as_ref().to_string_lossy().into_owned();
         let file = File::open(&file_path).unwrap();
-        let merkle = MerkleTree::from_reader(&file).unwrap().root();
+        let merkle = fuchsia_merkle::root_from_reader(&file).unwrap();
         let builder = PackageManifestBuilder::new(MetaPackage::from_name_and_variant_zero(
             name.parse().unwrap(),
         ));

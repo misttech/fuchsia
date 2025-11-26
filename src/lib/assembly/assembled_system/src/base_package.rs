@@ -8,7 +8,6 @@ use anyhow::{Context, Result};
 use assembly_base_package::BasePackageBuilder;
 use camino::{Utf8Path, Utf8PathBuf};
 use fuchsia_hash::Hash;
-use fuchsia_merkle::MerkleTree;
 use fuchsia_pkg::PackageManifest;
 use fuchsia_pkg::package_sets::AnchoredPackageSetType;
 use image_assembly_config::ImageAssemblyConfig;
@@ -73,9 +72,8 @@ pub fn construct_base_package(
         .context("Failed to build the base package")?;
 
     let base_package = File::open(&base_package_path).context("Failed to open the base package")?;
-    let base_merkle = MerkleTree::from_reader(&base_package)
-        .context("Failed to calculate the base merkle")?
-        .root();
+    let base_merkle = fuchsia_merkle::root_from_reader(base_package)
+        .context("Failed to calculate the base merkle")?;
     info!("Base merkle: {}", &base_merkle);
 
     // Write the merkle to a file.
