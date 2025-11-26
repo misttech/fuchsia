@@ -2,14 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use async_trait::async_trait;
 use fxfs_crypt_common::CryptBase;
-use fxfs_crypto::{
-    Crypt, EncryptionKey, FxfsKey, KeyPurpose, ObjectType, UnwrappedKey, WrappedKey, WrappingKey,
-    WrappingKeyId,
-};
-use log::error;
-use zx_status as zx;
+use fxfs_crypto::{KeyPurpose, WrappingKeyId};
 
 pub const DATA_KEY: [u8; 32] = [
     0x0, 0x1, 0x2, 0x3, 0x4, 0x5, 0x6, 0x7, 0x8, 0x9, 0xa, 0xb, 0xc, 0xd, 0xe, 0xf, 0x10, 0x11,
@@ -22,86 +16,14 @@ pub const METADATA_KEY: [u8; 32] = [
 const DATA_WRAPPING_KEY_ID: WrappingKeyId = u128::to_le_bytes(0);
 const METADATA_WRAPPING_KEY_ID: WrappingKeyId = u128::to_le_bytes(1);
 
-/// This struct provides the `Crypt` trait without any strong security.
+/// Creates a `CryptBase` instance pre-configured with insecure keys.
 ///
 /// It is intended for use only in test code where actual security is inconsequential.
-pub struct InsecureCrypt {
-    inner: CryptBase,
-}
-
-impl InsecureCrypt {
-    pub fn new() -> Self {
-        let inner = CryptBase::new();
-        inner.add_wrapping_key(DATA_WRAPPING_KEY_ID, DATA_KEY).unwrap();
-        inner.add_wrapping_key(METADATA_WRAPPING_KEY_ID, METADATA_KEY).unwrap();
-        inner.set_active_key(KeyPurpose::Data, DATA_WRAPPING_KEY_ID).unwrap();
-        inner.set_active_key(KeyPurpose::Metadata, METADATA_WRAPPING_KEY_ID).unwrap();
-        Self { inner }
-    }
-
-    pub fn use_fxfs_keys_for_fscrypt_dirs(&mut self) {
-        self.inner.use_fxfs_keys_for_fscrypt_dirs();
-    }
-
-    /// Simulates a crypt instance prematurely terminating.  All requests will fail.
-    pub fn shutdown(&self) {
-        self.inner.shutdown();
-    }
-
-    pub fn add_wrapping_key(&self, id: WrappingKeyId, key: WrappingKey) {
-        match key {
-            WrappingKey::Aes256GcmSiv(key) => {
-                self.inner.add_wrapping_key(id, key).unwrap();
-            }
-            _ => unimplemented!(),
-        }
-    }
-
-    pub fn remove_wrapping_key(&self, id: &WrappingKeyId) {
-        self.inner.forget_wrapping_key(id).unwrap();
-    }
-
-    /// Fscrypt in INO_LBLK32 and INO_LBLK64 modes mix the filesystem_uuid into key derivation
-    /// functions. Crypt should be told the uuid ahead of time to support decryption of migrated
-    /// data. (Note that we make an assumption that there is only one filesystem.)
-    pub fn set_filesystem_uuid(&mut self, uuid: &[u8; 16]) {
-        self.inner.set_filesystem_uuid(uuid);
-    }
-}
-
-#[async_trait]
-impl Crypt for InsecureCrypt {
-    async fn create_key(
-        &self,
-        owner: u64,
-        purpose: KeyPurpose,
-    ) -> Result<(FxfsKey, UnwrappedKey), zx::Status> {
-        self.inner.create_key(owner, purpose).await.map_err(|e| {
-            error!("Failed to create key: {:?}", e);
-            e
-        })
-    }
-
-    async fn create_key_with_id(
-        &self,
-        owner: u64,
-        wrapping_key_id: WrappingKeyId,
-        object_type: ObjectType,
-    ) -> Result<(EncryptionKey, UnwrappedKey), zx::Status> {
-        self.inner.create_key_with_id(owner, wrapping_key_id, object_type).await.map_err(|e| {
-            error!("Failed to create key with id: {:?}", e);
-            e
-        })
-    }
-
-    async fn unwrap_key(
-        &self,
-        wrapped_key: &WrappedKey,
-        owner: u64,
-    ) -> Result<UnwrappedKey, zx::Status> {
-        self.inner.unwrap_key(wrapped_key, owner).await.map_err(|e| {
-            error!("Failed to unwrap key: {:?}", e);
-            e
-        })
-    }
+pub fn new_insecure_crypt() -> CryptBase {
+    let crypt = CryptBase::new();
+    crypt.add_wrapping_key(DATA_WRAPPING_KEY_ID, DATA_KEY).unwrap();
+    crypt.add_wrapping_key(METADATA_WRAPPING_KEY_ID, METADATA_KEY).unwrap();
+    crypt.set_active_key(KeyPurpose::Data, DATA_WRAPPING_KEY_ID).unwrap();
+    crypt.set_active_key(KeyPurpose::Metadata, METADATA_WRAPPING_KEY_ID).unwrap();
+    crypt
 }

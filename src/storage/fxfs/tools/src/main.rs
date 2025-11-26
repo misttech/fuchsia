@@ -10,7 +10,7 @@ use fxfs::filesystem::{FxFilesystem, FxFilesystemBuilder, mkfs_with_volume};
 use fxfs::fsck;
 use fxfs::object_store::NO_OWNER;
 use fxfs_crypto::Crypt;
-use fxfs_insecure_crypto::InsecureCrypt;
+use fxfs_insecure_crypto::new_insecure_crypt;
 use std::io::Read;
 use std::ops::Deref;
 use std::path::Path;
@@ -204,7 +204,7 @@ async fn main() -> Result<(), Error> {
     match args.subcommand {
         SubCommand::ImageEdit(cmd) => {
             // TODO(https://fxbug.dev/42177406): Add support for side-loaded encryption keys.
-            let crypt: Arc<dyn Crypt> = Arc::new(InsecureCrypt::new());
+            let crypt: Arc<dyn Crypt> = Arc::new(new_insecure_crypt());
             match cmd.subcommand {
                 ImageSubCommand::Rm(rmargs) => {
                     let device = DeviceHolder::new(FileBackedDevice::new(

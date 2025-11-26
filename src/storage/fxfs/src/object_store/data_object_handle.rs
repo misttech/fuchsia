@@ -1918,7 +1918,7 @@ mod tests {
     use futures::channel::oneshot::channel;
     use futures::stream::{FuturesUnordered, StreamExt};
     use fxfs_crypto::{Crypt, EncryptionKey, KeyPurpose};
-    use fxfs_insecure_crypto::InsecureCrypt;
+    use fxfs_insecure_crypto::new_insecure_crypt;
     use std::ops::Range;
     use std::sync::Arc;
     use std::time::Duration;
@@ -2002,12 +2002,12 @@ mod tests {
     }
 
     async fn test_filesystem_and_object() -> (OpenFxFilesystem, DataObjectHandle<ObjectStore>) {
-        test_filesystem_and_object_with_key(Some(&InsecureCrypt::new()), true).await
+        test_filesystem_and_object_with_key(Some(&new_insecure_crypt()), true).await
     }
 
     async fn test_filesystem_and_empty_object() -> (OpenFxFilesystem, DataObjectHandle<ObjectStore>)
     {
-        test_filesystem_and_object_with_key(Some(&InsecureCrypt::new()), false).await
+        test_filesystem_and_object_with_key(Some(&new_insecure_crypt()), false).await
     }
 
     #[fuchsia::test]

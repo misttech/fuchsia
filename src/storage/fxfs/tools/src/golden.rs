@@ -9,7 +9,7 @@ use fxfs::filesystem::{FxFilesystem, OpenFxFilesystem, SyncOptions, mkfs_with_vo
 use fxfs::object_store::{NO_OWNER, ObjectStore};
 use fxfs::serialized_types::{LATEST_VERSION, Version};
 use fxfs_crypto::{Crypt, WrappingKeyId};
-use fxfs_insecure_crypto::InsecureCrypt;
+use fxfs_insecure_crypto::new_insecure_crypt;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -117,8 +117,8 @@ async fn activity_in_volume(fs: &OpenFxFilesystem, vol: &Arc<ObjectStore>) -> Re
 pub async fn create_image() -> Result<(), Error> {
     let path = golden_image_dir()?.join(latest_image_filename());
 
-    let insecure_crypt = InsecureCrypt::new();
-    insecure_crypt.add_wrapping_key(WRAPPING_KEY_ID, [1; 32].into());
+    let insecure_crypt = new_insecure_crypt();
+    insecure_crypt.add_wrapping_key(WRAPPING_KEY_ID, [1; 32].into()).expect("Failed to add key");
     let crypt: Arc<dyn Crypt> = Arc::new(insecure_crypt);
     {
         let device = mkfs_with_volume(
@@ -212,8 +212,8 @@ async fn check_volume(
 
 /// Validates an image by looking for expected data and performing an fsck.
 async fn check_image(path: &Path) -> Result<(), Error> {
-    let insecure_crypt = InsecureCrypt::new();
-    insecure_crypt.add_wrapping_key(WRAPPING_KEY_ID, [1; 32].into());
+    let insecure_crypt = new_insecure_crypt();
+    insecure_crypt.add_wrapping_key(WRAPPING_KEY_ID, [1; 32].into()).expect("Failed to add key");
     let crypt: Arc<dyn Crypt> = Arc::new(insecure_crypt);
     let version = {
         let device = DeviceHolder::new(load_device(path)?);

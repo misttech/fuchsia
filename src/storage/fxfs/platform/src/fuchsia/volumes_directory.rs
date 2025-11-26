@@ -923,7 +923,7 @@ mod tests {
     use fxfs::object_store::transaction::{LockKey, Options};
     use fxfs::object_store::volume::root_volume;
     use fxfs_crypto::Crypt;
-    use fxfs_insecure_crypto::InsecureCrypt;
+    use fxfs_insecure_crypto::new_insecure_crypt;
     use refaults_vmo::PageRefaultCounter;
     use std::sync::atomic::Ordering;
     use std::sync::{Arc, Weak};
@@ -983,7 +983,7 @@ mod tests {
         .await
         .unwrap();
 
-        let crypt = Arc::new(InsecureCrypt::new()) as Arc<dyn Crypt>;
+        let crypt = Arc::new(new_insecure_crypt()) as Arc<dyn Crypt>;
         {
             let vol = volumes_directory
                 .create_and_mount_volume("encrypted", Some(crypt.clone()), false, None)
@@ -1032,7 +1032,7 @@ mod tests {
         .await
         .unwrap();
 
-        let crypt = Arc::new(InsecureCrypt::new()) as Arc<dyn Crypt>;
+        let crypt = Arc::new(new_insecure_crypt()) as Arc<dyn Crypt>;
         let vol = volumes_directory
             .create_and_mount_volume("encrypted", Some(crypt.clone()), false, None)
             .await
@@ -1080,7 +1080,7 @@ mod tests {
         .await
         .unwrap();
 
-        let crypt = Arc::new(InsecureCrypt::new()) as Arc<dyn Crypt>;
+        let crypt = Arc::new(new_insecure_crypt()) as Arc<dyn Crypt>;
         let volume_id = {
             let vol = volumes_directory
                 .create_and_mount_volume("encrypted", Some(crypt.clone()), false, None)
@@ -1240,7 +1240,7 @@ mod tests {
         .unwrap();
 
         // Add an encrypted volume...
-        let crypt = Arc::new(InsecureCrypt::new()) as Arc<dyn Crypt>;
+        let crypt = Arc::new(new_insecure_crypt()) as Arc<dyn Crypt>;
         {
             volumes_directory
                 .create_and_mount_volume("encrypted", Some(crypt.clone()), false, None)
@@ -1349,7 +1349,7 @@ mod tests {
 
         let device = DeviceHolder::new(FakeDevice::new(8192, 512));
         let filesystem = FxFilesystem::new_empty(device).await.unwrap();
-        let crypt = Arc::new(InsecureCrypt::new()) as Arc<dyn Crypt>;
+        let crypt = Arc::new(new_insecure_crypt()) as Arc<dyn Crypt>;
         let blob_resupplied_count =
             Arc::new(PageRefaultCounter::new().expect("Failed to create PageRefaultCounter"));
         let volumes_directory = VolumesDirectory::new(
@@ -1394,7 +1394,7 @@ mod tests {
         .await
         .unwrap();
 
-        let crypt = Arc::new(InsecureCrypt::new()) as Arc<dyn Crypt>;
+        let crypt = Arc::new(new_insecure_crypt()) as Arc<dyn Crypt>;
         let store_id = {
             let vol = volumes_directory
                 .create_and_mount_volume("encrypted", Some(crypt.clone()), false, None)
@@ -1514,7 +1514,7 @@ mod tests {
         .await
         .unwrap();
 
-        let crypt = Arc::new(InsecureCrypt::new()) as Arc<dyn Crypt>;
+        let crypt = Arc::new(new_insecure_crypt()) as Arc<dyn Crypt>;
         let store_id = {
             let vol = volumes_directory
                 .create_and_mount_volume("encrypted", Some(crypt.clone()), false, None)
@@ -1671,7 +1671,7 @@ mod tests {
         .await
         .unwrap();
 
-        let crypt = Arc::new(InsecureCrypt::new()) as Arc<dyn Crypt>;
+        let crypt = Arc::new(new_insecure_crypt()) as Arc<dyn Crypt>;
         let vol = volumes_directory
             .create_and_mount_volume("encrypted", Some(crypt.clone()), false, None)
             .await
@@ -2430,7 +2430,7 @@ mod tests {
             .await
             .unwrap();
             let name = "vol";
-            let crypt = Arc::new(InsecureCrypt::new());
+            let crypt = Arc::new(new_insecure_crypt());
             let volume = volumes_directory
                 .create_and_mount_volume(name, Some(crypt.clone()), false, None)
                 .await
@@ -2519,7 +2519,7 @@ mod tests {
             filesystem.as_ref(),
             &options,
             store_id,
-            Some(Arc::new(InsecureCrypt::new())),
+            Some(Arc::new(new_insecure_crypt())),
         )
         .await
         .expect("fsck_volume failed");

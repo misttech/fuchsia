@@ -2567,7 +2567,8 @@ mod tests {
     use fxfs_crypto::{
         Crypt, FXFS_KEY_SIZE, FXFS_WRAPPED_KEY_SIZE, FxfsKey, UnwrappedKey, WrappedKeyBytes,
     };
-    use fxfs_insecure_crypto::InsecureCrypt;
+    use fxfs_insecure_crypto::new_insecure_crypt;
+
     use std::sync::Arc;
     use std::time::Duration;
     use storage_device::DeviceHolder;
@@ -2737,7 +2738,7 @@ mod tests {
                     NewChildStoreOptions {
                         options: StoreOptions {
                             owner: NO_OWNER,
-                            crypt: Some(Arc::new(InsecureCrypt::new())),
+                            crypt: Some(Arc::new(new_insecure_crypt())),
                         },
                         ..Default::default()
                     },
@@ -2754,7 +2755,7 @@ mod tests {
 
         {
             let store = fs.object_manager().store(store_id).expect("store not found");
-            store.unlock(NO_OWNER, Arc::new(InsecureCrypt::new())).await.expect("unlock failed");
+            store.unlock(NO_OWNER, Arc::new(new_insecure_crypt())).await.expect("unlock failed");
         }
         fs.close().await.expect("Close failed");
     }
@@ -2772,7 +2773,7 @@ mod tests {
                     NewChildStoreOptions {
                         options: StoreOptions {
                             owner: NO_OWNER,
-                            crypt: Some(Arc::new(InsecureCrypt::new())),
+                            crypt: Some(Arc::new(new_insecure_crypt())),
                         },
                         ..Default::default()
                     },
@@ -2791,7 +2792,7 @@ mod tests {
 
         {
             let store = fs.object_manager().store(store_id).expect("store not found");
-            store.unlock(NO_OWNER, Arc::new(InsecureCrypt::new())).await.expect("unlock failed");
+            store.unlock(NO_OWNER, Arc::new(new_insecure_crypt())).await.expect("unlock failed");
             assert_eq!(
                 dir_id,
                 store.get_or_create_internal_directory_id().await.expect("Retrieving dir")
@@ -2951,7 +2952,7 @@ mod tests {
                 "test",
                 NewChildStoreOptions {
                     options: StoreOptions {
-                        crypt: Some(Arc::new(InsecureCrypt::new())),
+                        crypt: Some(Arc::new(new_insecure_crypt())),
                         ..StoreOptions::default()
                     },
                     ..NewChildStoreOptions::default()
@@ -3208,7 +3209,7 @@ mod tests {
         }
 
         let mut fs = test_filesystem().await;
-        let crypt = Arc::new(InsecureCrypt::new());
+        let crypt = Arc::new(new_insecure_crypt());
 
         {
             let root_volume = root_volume(fs.clone()).await.expect("root_volume failed");
@@ -3236,7 +3237,7 @@ mod tests {
     #[fuchsia::test(threads = 10)]
     async fn test_object_id_cipher_roll() {
         let fs = test_filesystem().await;
-        let crypt = Arc::new(InsecureCrypt::new());
+        let crypt = Arc::new(new_insecure_crypt());
 
         {
             let root_volume = root_volume(fs.clone()).await.expect("root_volume failed");
@@ -3373,7 +3374,7 @@ mod tests {
     #[fuchsia::test]
     async fn test_last_object_id_is_correct_after_unlock() {
         let fs = test_filesystem().await;
-        let crypt = Arc::new(InsecureCrypt::new());
+        let crypt = Arc::new(new_insecure_crypt());
 
         let root_volume = root_volume(fs.clone()).await.expect("root_volume failed");
         let store = root_volume
@@ -3424,7 +3425,7 @@ mod tests {
         const NUM_THREADS: usize = 20;
 
         let fs = test_filesystem().await;
-        let crypt = Arc::new(InsecureCrypt::new());
+        let crypt = Arc::new(new_insecure_crypt());
 
         let root_volume = root_volume(fs.clone()).await.expect("root_volume failed");
         let store = root_volume
@@ -3497,7 +3498,7 @@ mod tests {
     #[fuchsia::test(threads = 10)]
     async fn test_lock_store() {
         let fs = test_filesystem().await;
-        let crypt = Arc::new(InsecureCrypt::new());
+        let crypt = Arc::new(new_insecure_crypt());
 
         let root_volume = root_volume(fs.clone()).await.expect("root_volume failed");
         let store = root_volume
@@ -3537,7 +3538,7 @@ mod tests {
     #[fuchsia::test(threads = 10)]
     async fn test_unlock_read_only() {
         let fs = test_filesystem().await;
-        let crypt = Arc::new(InsecureCrypt::new());
+        let crypt = Arc::new(new_insecure_crypt());
 
         let root_volume = root_volume(fs.clone()).await.expect("root_volume failed");
         let store = root_volume
@@ -3580,7 +3581,7 @@ mod tests {
     #[fuchsia::test(threads = 10)]
     async fn test_key_rolled_when_unlocked() {
         let fs = test_filesystem().await;
-        let crypt = Arc::new(InsecureCrypt::new());
+        let crypt = Arc::new(new_insecure_crypt());
 
         let object_id;
         {
@@ -3696,7 +3697,7 @@ mod tests {
         let root_volume = root_volume(fs.clone()).await.expect("root_volume failed");
 
         let store = {
-            let crypt = Arc::new(InsecureCrypt::new());
+            let crypt = Arc::new(new_insecure_crypt());
             let store = root_volume
                 .new_volume(
                     "vol",
@@ -3751,7 +3752,7 @@ mod tests {
             store
         };
 
-        let crypt = Arc::new(InsecureCrypt::new());
+        let crypt = Arc::new(new_insecure_crypt());
         if read_only {
             store.unlock_read_only(crypt).await.expect("unlock failed");
         } else {
@@ -3823,7 +3824,7 @@ mod tests {
                     "vol1",
                     NewChildStoreOptions {
                         options: StoreOptions {
-                            crypt: Some(Arc::new(InsecureCrypt::new())),
+                            crypt: Some(Arc::new(new_insecure_crypt())),
                             ..StoreOptions::default()
                         },
                         ..Default::default()
@@ -3831,7 +3832,7 @@ mod tests {
                 )
                 .await
                 .expect("new_volume failed");
-            let crypt = Arc::new(InsecureCrypt::new());
+            let crypt = Arc::new(new_insecure_crypt());
             let store2 = root_volume
                 .new_volume(
                     "vol2",
@@ -3887,7 +3888,7 @@ mod tests {
                 .volume(
                     volume_name,
                     StoreOptions {
-                        crypt: Some(Arc::new(InsecureCrypt::new())),
+                        crypt: Some(Arc::new(new_insecure_crypt())),
                         ..StoreOptions::default()
                     },
                 )
@@ -3923,7 +3924,7 @@ mod tests {
                     NewChildStoreOptions {
                         options: StoreOptions {
                             owner: Arc::downgrade(&owner),
-                            crypt: Some(Arc::new(InsecureCrypt::new())),
+                            crypt: Some(Arc::new(new_insecure_crypt())),
                         },
                         ..Default::default()
                     },
@@ -3961,7 +3962,7 @@ mod tests {
             let fs_clone = fs.clone();
             let root_volume = root_volume(fs.clone()).await.expect("root_volume failed");
 
-            let crypt = Arc::new(InsecureCrypt::new());
+            let crypt = Arc::new(new_insecure_crypt());
             let crypt_clone = crypt.clone();
             join!(
                 async move {
@@ -3996,7 +3997,7 @@ mod tests {
             .volume(
                 "vol",
                 StoreOptions {
-                    crypt: Some(Arc::new(InsecureCrypt::new())),
+                    crypt: Some(Arc::new(new_insecure_crypt())),
                     ..StoreOptions::default()
                 },
             )

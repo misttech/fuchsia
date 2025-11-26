@@ -1165,8 +1165,8 @@ mod tests {
     use fxfs::lsm_tree::types::{ItemRef, LayerIterator};
     use fxfs::object_store::transaction::{LockKey, lock_keys};
     use fxfs::object_store::{ObjectKey, ObjectKeyData, ObjectValue, Timestamp};
+    use fxfs_crypt_common::CryptBase;
     use fxfs_crypto::{FSCRYPT_PADDING, WrappingKeyId};
-    use fxfs_insecure_crypto::InsecureCrypt;
     use std::future::poll_fn;
     use std::os::fd::AsRawFd;
     use std::sync::Arc;
@@ -1888,7 +1888,7 @@ mod tests {
     #[fuchsia::test]
     async fn test_set_large_extended_attribute_on_encrypted_directory() {
         let fixture = TestFixture::new().await;
-        let crypt: Arc<InsecureCrypt> = fixture.crypt().unwrap();
+        let crypt: Arc<CryptBase> = fixture.crypt().unwrap();
         let root = fixture.root();
         let open_dir = || {
             open_dir_checked(
@@ -1903,7 +1903,9 @@ mod tests {
         };
 
         let parent: Arc<fio::DirectoryProxy> = Arc::new(open_dir().await);
-        crypt.add_wrapping_key(WRAPPING_KEY_ID, [1; 32].into());
+        crypt
+            .add_wrapping_key(WRAPPING_KEY_ID, [1; 32].into())
+            .expect("Failed to add wrapping key");
         parent
             .update_attributes(&fio::MutableNodeAttributes {
                 wrapping_key_id: Some(WRAPPING_KEY_ID),
@@ -2016,7 +2018,7 @@ mod tests {
     #[fuchsia::test]
     async fn test_set_large_extended_attribute_on_encrypted_file() {
         let fixture = TestFixture::new().await;
-        let crypt: Arc<InsecureCrypt> = fixture.crypt().unwrap();
+        let crypt: Arc<CryptBase> = fixture.crypt().unwrap();
         let root = fixture.root();
         let open_dir = || {
             open_dir_checked(
@@ -2031,7 +2033,9 @@ mod tests {
         };
 
         let parent: Arc<fio::DirectoryProxy> = Arc::new(open_dir().await);
-        crypt.add_wrapping_key(WRAPPING_KEY_ID, [1; 32].into());
+        crypt
+            .add_wrapping_key(WRAPPING_KEY_ID, [1; 32].into())
+            .expect("Failed to add wrapping key");
         parent
             .update_attributes(&fio::MutableNodeAttributes {
                 wrapping_key_id: Some(WRAPPING_KEY_ID),
@@ -2071,7 +2075,7 @@ mod tests {
         close_dir_checked(Arc::try_unwrap(parent).unwrap()).await;
         let device = fixture.close().await;
         let new_fixture = TestFixture::new_with_device(device).await;
-        let crypt: Arc<InsecureCrypt> = new_fixture.crypt().unwrap();
+        let crypt: Arc<CryptBase> = new_fixture.crypt().unwrap();
         let root = new_fixture.root();
         let open_dir = || {
             open_dir_checked(
@@ -2128,7 +2132,9 @@ mod tests {
 
         close_file_checked(Arc::try_unwrap(encrypted_file).unwrap()).await;
 
-        crypt.add_wrapping_key(WRAPPING_KEY_ID, [1; 32].into());
+        crypt
+            .add_wrapping_key(WRAPPING_KEY_ID, [1; 32].into())
+            .expect("Failed to add wrapping key");
 
         let file = Arc::new(
             open_file_checked(
@@ -2180,7 +2186,7 @@ mod tests {
     #[fuchsia::test]
     async fn test_encrypt_directory_with_large_extended_attribute() {
         let fixture = TestFixture::new().await;
-        let crypt: Arc<InsecureCrypt> = fixture.crypt().unwrap();
+        let crypt: Arc<CryptBase> = fixture.crypt().unwrap();
         let root = fixture.root();
         let open_dir = || {
             open_dir_checked(
@@ -2208,7 +2214,9 @@ mod tests {
             .expect("Failed to make FIDL call")
             .expect("Failed to set xattr with create");
 
-        crypt.add_wrapping_key(WRAPPING_KEY_ID, [1; 32].into());
+        crypt
+            .add_wrapping_key(WRAPPING_KEY_ID, [1; 32].into())
+            .expect("Failed to add wrapping key");
         parent
             .update_attributes(&fio::MutableNodeAttributes {
                 wrapping_key_id: Some(WRAPPING_KEY_ID),
@@ -2309,7 +2317,7 @@ mod tests {
     #[fuchsia::test]
     async fn test_unlock_directory_during_readdir() {
         let fixture = TestFixture::new().await;
-        let crypt: Arc<InsecureCrypt> = fixture.crypt().unwrap();
+        let crypt: Arc<CryptBase> = fixture.crypt().unwrap();
         let root = fixture.root();
         let open_dir = || {
             open_dir_checked(
@@ -2324,7 +2332,9 @@ mod tests {
         };
 
         let parent: Arc<fio::DirectoryProxy> = Arc::new(open_dir().await);
-        crypt.add_wrapping_key(WRAPPING_KEY_ID, [1; 32].into());
+        crypt
+            .add_wrapping_key(WRAPPING_KEY_ID, [1; 32].into())
+            .expect("Failed to add wrapping key");
         parent
             .update_attributes(&fio::MutableNodeAttributes {
                 wrapping_key_id: Some(WRAPPING_KEY_ID),
@@ -2351,7 +2361,7 @@ mod tests {
         close_dir_checked(Arc::try_unwrap(parent).unwrap()).await;
         let device = fixture.close().await;
         let new_fixture = TestFixture::new_with_device(device).await;
-        let crypt: Arc<InsecureCrypt> = new_fixture.crypt().unwrap();
+        let crypt: Arc<CryptBase> = new_fixture.crypt().unwrap();
         let root = new_fixture.root();
         let open_dir = || {
             open_dir_checked(
@@ -2383,7 +2393,9 @@ mod tests {
                 assert!(entry.kind == DirentKind::Directory)
             }
         }
-        crypt.add_wrapping_key(WRAPPING_KEY_ID, [1; 32].into());
+        crypt
+            .add_wrapping_key(WRAPPING_KEY_ID, [1; 32].into())
+            .expect("Failed to add wrapping key");
         let unencrypted_entries = readdir(Arc::clone(&parent)).await;
         for entry in unencrypted_entries {
             if entry.name == ".".to_owned() {
@@ -2401,7 +2413,7 @@ mod tests {
     #[fuchsia::test]
     async fn test_readdir_locked_directory() {
         let fixture = TestFixture::new().await;
-        let crypt: Arc<InsecureCrypt> = fixture.crypt().unwrap();
+        let crypt: Arc<CryptBase> = fixture.crypt().unwrap();
         let root = fixture.root();
         let open_dir = || {
             open_dir_checked(
@@ -2416,7 +2428,9 @@ mod tests {
         };
 
         let parent: Arc<fio::DirectoryProxy> = Arc::new(open_dir().await);
-        crypt.add_wrapping_key(WRAPPING_KEY_ID, [1; 32].into());
+        crypt
+            .add_wrapping_key(WRAPPING_KEY_ID, [1; 32].into())
+            .expect("Failed to add wrapping key");
         parent
             .update_attributes(&fio::MutableNodeAttributes {
                 wrapping_key_id: Some(WRAPPING_KEY_ID),
@@ -2516,7 +2530,7 @@ mod tests {
     #[fuchsia::test]
     async fn test_link_into_locked_directory_fails() {
         let fixture = TestFixture::new().await;
-        let crypt: Arc<InsecureCrypt> = fixture.crypt().unwrap();
+        let crypt: Arc<CryptBase> = fixture.crypt().unwrap();
         let root = fixture.root();
         let open_dir_1 = || {
             open_dir_checked(
@@ -2545,7 +2559,9 @@ mod tests {
         };
         let parent_2: Arc<fio::DirectoryProxy> = Arc::new(open_dir_2().await);
 
-        crypt.add_wrapping_key(WRAPPING_KEY_ID, [1; 32].into());
+        crypt
+            .add_wrapping_key(WRAPPING_KEY_ID, [1; 32].into())
+            .expect("Failed to add wrapping key");
         parent_1
             .update_attributes(&fio::MutableNodeAttributes {
                 wrapping_key_id: Some(WRAPPING_KEY_ID),
@@ -2642,7 +2658,7 @@ mod tests {
     #[fuchsia::test]
     async fn test_link_encrypted_file_into_directory_encrypted_with_different_key_fails() {
         let fixture = TestFixture::new().await;
-        let crypt: Arc<InsecureCrypt> = fixture.crypt().unwrap();
+        let crypt: Arc<CryptBase> = fixture.crypt().unwrap();
         let root = fixture.root();
         let open_dir_1 = || {
             open_dir_checked(
@@ -2671,10 +2687,14 @@ mod tests {
         };
         let parent_2: Arc<fio::DirectoryProxy> = Arc::new(open_dir_2().await);
 
-        crypt.add_wrapping_key(WRAPPING_KEY_ID, [1; 32].into());
+        crypt
+            .add_wrapping_key(WRAPPING_KEY_ID, [1; 32].into())
+            .expect("Failed to add wrapping key");
 
         const WRAPPING_KEY_ID_2: WrappingKeyId = u128::to_le_bytes(3);
-        crypt.add_wrapping_key(WRAPPING_KEY_ID_2, [2; 32].into());
+        crypt
+            .add_wrapping_key(WRAPPING_KEY_ID_2, [2; 32].into())
+            .expect("Failed to add wrapping key");
 
         parent_1
             .update_attributes(&fio::MutableNodeAttributes {
@@ -2722,7 +2742,7 @@ mod tests {
     #[fuchsia::test]
     async fn test_link_unencrypted_file_into_encrypted_directory_fails() {
         let fixture = TestFixture::new().await;
-        let crypt: Arc<InsecureCrypt> = fixture.crypt().unwrap();
+        let crypt: Arc<CryptBase> = fixture.crypt().unwrap();
         let root = fixture.root();
         let open_dir_1 = || {
             open_dir_checked(
@@ -2751,7 +2771,9 @@ mod tests {
         };
         let parent_2: Arc<fio::DirectoryProxy> = Arc::new(open_dir_2().await);
 
-        crypt.add_wrapping_key(WRAPPING_KEY_ID, [1; 32].into());
+        crypt
+            .add_wrapping_key(WRAPPING_KEY_ID, [1; 32].into())
+            .expect("Failed to add wrapping key");
 
         parent_1
             .update_attributes(&fio::MutableNodeAttributes {
@@ -2791,7 +2813,7 @@ mod tests {
     #[fuchsia::test]
     async fn test_link_locked_directory_into_unencrypted_dir() {
         let fixture = TestFixture::new().await;
-        let crypt: Arc<InsecureCrypt> = fixture.crypt().unwrap();
+        let crypt: Arc<CryptBase> = fixture.crypt().unwrap();
         let root = fixture.root();
         let open_dir_1 = || {
             open_dir_checked(
@@ -2820,7 +2842,9 @@ mod tests {
         };
         let parent_2: Arc<fio::DirectoryProxy> = Arc::new(open_dir_2().await);
 
-        crypt.add_wrapping_key(WRAPPING_KEY_ID, [1; 32].into());
+        crypt
+            .add_wrapping_key(WRAPPING_KEY_ID, [1; 32].into())
+            .expect("Failed to add wrapping key");
         parent_1
             .update_attributes(&fio::MutableNodeAttributes {
                 wrapping_key_id: Some(WRAPPING_KEY_ID),
@@ -2942,7 +2966,7 @@ mod tests {
     #[fuchsia::test]
     async fn test_encrypted_filename_does_not_have_slashes() {
         let fixture = TestFixture::new().await;
-        let crypt: Arc<InsecureCrypt> = fixture.crypt().unwrap();
+        let crypt: Arc<CryptBase> = fixture.crypt().unwrap();
         let root = fixture.root();
         let open_dir = || {
             open_dir_checked(
@@ -2957,7 +2981,9 @@ mod tests {
         };
 
         let parent: Arc<fio::DirectoryProxy> = Arc::new(open_dir().await);
-        crypt.add_wrapping_key(WRAPPING_KEY_ID, [1; 32].into());
+        crypt
+            .add_wrapping_key(WRAPPING_KEY_ID, [1; 32].into())
+            .expect("Failed to add wrapping key");
         parent
             .update_attributes(&fio::MutableNodeAttributes {
                 wrapping_key_id: Some(WRAPPING_KEY_ID),
@@ -3025,7 +3051,7 @@ mod tests {
     #[fuchsia::test]
     async fn test_stat_locked_file() {
         let fixture = TestFixture::new().await;
-        let crypt: Arc<InsecureCrypt> = fixture.crypt().unwrap();
+        let crypt: Arc<CryptBase> = fixture.crypt().unwrap();
         let root = fixture.root();
         let open_dir = || {
             open_dir_checked(
@@ -3039,7 +3065,9 @@ mod tests {
             )
         };
         let parent = Arc::new(open_dir().await);
-        crypt.add_wrapping_key(WRAPPING_KEY_ID, [1; 32].into());
+        crypt
+            .add_wrapping_key(WRAPPING_KEY_ID, [1; 32].into())
+            .expect("Failed to add wrapping key");
         parent
             .update_attributes(&fio::MutableNodeAttributes {
                 wrapping_key_id: Some(WRAPPING_KEY_ID),
@@ -3116,7 +3144,7 @@ mod tests {
     #[fuchsia::test]
     async fn test_unlink_locked_directory() {
         let fixture = TestFixture::new().await;
-        let crypt: Arc<InsecureCrypt> = fixture.crypt().unwrap();
+        let crypt: Arc<CryptBase> = fixture.crypt().unwrap();
         let root = fixture.root();
         let open_dir = || {
             open_dir_checked(
@@ -3131,7 +3159,9 @@ mod tests {
         };
 
         let parent: Arc<fio::DirectoryProxy> = Arc::new(open_dir().await);
-        crypt.add_wrapping_key(WRAPPING_KEY_ID, [1; 32].into());
+        crypt
+            .add_wrapping_key(WRAPPING_KEY_ID, [1; 32].into())
+            .expect("Failed to add wrapping key");
         parent
             .update_attributes(&fio::MutableNodeAttributes {
                 wrapping_key_id: Some(WRAPPING_KEY_ID),
@@ -3213,7 +3243,7 @@ mod tests {
     #[fuchsia::test]
     async fn test_rename_within_locked_encrypted_directory() {
         let fixture = TestFixture::new().await;
-        let crypt: Arc<InsecureCrypt> = fixture.crypt().unwrap();
+        let crypt: Arc<CryptBase> = fixture.crypt().unwrap();
         let root = fixture.root();
         let open_dir = || {
             open_dir_checked(
@@ -3228,7 +3258,9 @@ mod tests {
         };
 
         let parent: Arc<fio::DirectoryProxy> = Arc::new(open_dir().await);
-        crypt.add_wrapping_key(WRAPPING_KEY_ID, [1; 32].into());
+        crypt
+            .add_wrapping_key(WRAPPING_KEY_ID, [1; 32].into())
+            .expect("Failed to add wrapping key");
         parent
             .update_attributes(&fio::MutableNodeAttributes {
                 wrapping_key_id: Some(WRAPPING_KEY_ID),
@@ -3250,7 +3282,7 @@ mod tests {
         close_dir_checked(Arc::try_unwrap(parent).unwrap()).await;
         let device = fixture.close().await;
         let new_fixture = TestFixture::new_with_device(device).await;
-        let crypt: Arc<InsecureCrypt> = new_fixture.crypt().unwrap();
+        let crypt: Arc<CryptBase> = new_fixture.crypt().unwrap();
         let root = new_fixture.root();
         let open_dir = || {
             open_dir_checked(
@@ -3296,7 +3328,9 @@ mod tests {
             .expect_err("rename should fail on a locked directory");
         let (status, dst_token) = parent.get_token().await.expect("FIDL call failed");
         zx::Status::ok(status).expect("get_token failed");
-        crypt.add_wrapping_key(WRAPPING_KEY_ID, [1; 32].into());
+        crypt
+            .add_wrapping_key(WRAPPING_KEY_ID, [1; 32].into())
+            .expect("Failed to add wrapping key");
         parent
             .rename("fee", zx::Event::from(dst_token.unwrap()), "new_fee")
             .await
@@ -3317,7 +3351,7 @@ mod tests {
     #[fuchsia::test]
     async fn test_link_symlink_into_encrypted_directory() {
         let fixture = TestFixture::new().await;
-        let crypt: Arc<InsecureCrypt> = fixture.crypt().unwrap();
+        let crypt: Arc<CryptBase> = fixture.crypt().unwrap();
         let root = fixture.root();
         let open_dir = || {
             open_dir_checked(
@@ -3331,7 +3365,9 @@ mod tests {
             )
         };
         let parent = Arc::new(open_dir().await);
-        crypt.add_wrapping_key(WRAPPING_KEY_ID, [1; 32].into());
+        crypt
+            .add_wrapping_key(WRAPPING_KEY_ID, [1; 32].into())
+            .expect("Failed to add wrapping key");
         parent
             .update_attributes(&fio::MutableNodeAttributes {
                 wrapping_key_id: Some(WRAPPING_KEY_ID),
@@ -3395,7 +3431,7 @@ mod tests {
     #[fuchsia::test]
     async fn test_link_symlink_into_locked_directory_fails() {
         let fixture = TestFixture::new().await;
-        let crypt: Arc<InsecureCrypt> = fixture.crypt().unwrap();
+        let crypt: Arc<CryptBase> = fixture.crypt().unwrap();
         let root = fixture.root();
         let open_dir = || {
             open_dir_checked(
@@ -3409,7 +3445,9 @@ mod tests {
             )
         };
         let parent = Arc::new(open_dir().await);
-        crypt.add_wrapping_key(WRAPPING_KEY_ID, [1; 32].into());
+        crypt
+            .add_wrapping_key(WRAPPING_KEY_ID, [1; 32].into())
+            .expect("Failed to add wrapping key");
         parent
             .update_attributes(&fio::MutableNodeAttributes {
                 wrapping_key_id: Some(WRAPPING_KEY_ID),
@@ -3484,7 +3522,7 @@ mod tests {
     #[fuchsia::test]
     async fn test_stat_locked_symlink() {
         let fixture = TestFixture::new().await;
-        let crypt: Arc<InsecureCrypt> = fixture.crypt().unwrap();
+        let crypt: Arc<CryptBase> = fixture.crypt().unwrap();
         let root = fixture.root();
         let open_dir = || {
             open_dir_checked(
@@ -3498,7 +3536,9 @@ mod tests {
             )
         };
         let parent = Arc::new(open_dir().await);
-        crypt.add_wrapping_key(WRAPPING_KEY_ID, [1; 32].into());
+        crypt
+            .add_wrapping_key(WRAPPING_KEY_ID, [1; 32].into())
+            .expect("Failed to add wrapping key");
         parent
             .update_attributes(&fio::MutableNodeAttributes {
                 wrapping_key_id: Some(WRAPPING_KEY_ID),
@@ -3587,7 +3627,7 @@ mod tests {
     #[fuchsia::test]
     async fn test_create_symlink_in_locked_directory() {
         let fixture = TestFixture::new().await;
-        let crypt: Arc<InsecureCrypt> = fixture.crypt().unwrap();
+        let crypt: Arc<CryptBase> = fixture.crypt().unwrap();
         let root = fixture.root();
         let open_dir = || {
             open_dir_checked(
@@ -3601,7 +3641,9 @@ mod tests {
             )
         };
         let parent = Arc::new(open_dir().await);
-        crypt.add_wrapping_key(WRAPPING_KEY_ID, [1; 32].into());
+        crypt
+            .add_wrapping_key(WRAPPING_KEY_ID, [1; 32].into())
+            .expect("Failed to add wrapping key");
         parent
             .update_attributes(&fio::MutableNodeAttributes {
                 wrapping_key_id: Some(WRAPPING_KEY_ID),

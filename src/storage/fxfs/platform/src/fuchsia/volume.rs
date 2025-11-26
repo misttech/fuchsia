@@ -985,8 +985,9 @@ mod tests {
     use fxfs::object_store::transaction::{LockKey, Options, lock_keys};
     use fxfs::object_store::volume::root_volume;
     use fxfs::object_store::{HandleOptions, ObjectDescriptor, ObjectStore, StoreOptions};
+    use fxfs_crypt_common::CryptBase;
     use fxfs_crypto::WrappingKeyId;
-    use fxfs_insecure_crypto::InsecureCrypt;
+    use fxfs_insecure_crypto::new_insecure_crypt;
     use refaults_vmo::PageRefaultCounter;
     use std::sync::atomic::Ordering;
     use std::sync::{Arc, Weak};
@@ -1850,7 +1851,7 @@ mod tests {
             let volume_and_root = volumes_directory
                 .create_and_mount_volume(
                     VOLUME_NAME,
-                    Some(Arc::new(InsecureCrypt::new())),
+                    Some(Arc::new(new_insecure_crypt())),
                     false,
                     None,
                 )
@@ -1966,7 +1967,7 @@ mod tests {
         let filesystem = FxFilesystem::open(device as DeviceHolder).await.unwrap();
         {
             fsck(filesystem.clone()).await.expect("Fsck");
-            fsck_volume(filesystem.as_ref(), volume_store_id, Some(Arc::new(InsecureCrypt::new())))
+            fsck_volume(filesystem.as_ref(), volume_store_id, Some(Arc::new(new_insecure_crypt())))
                 .await
                 .expect("Fsck volume");
             let blob_resupplied_count =
@@ -1980,7 +1981,7 @@ mod tests {
             .await
             .unwrap();
             let volume_and_root = volumes_directory
-                .mount_volume(VOLUME_NAME, Some(Arc::new(InsecureCrypt::new())), false)
+                .mount_volume(VOLUME_NAME, Some(Arc::new(new_insecure_crypt())), false)
                 .await
                 .expect("mount unencrypted volume failed");
 
@@ -2113,7 +2114,7 @@ mod tests {
         device.reopen(false);
         let filesystem = FxFilesystem::open(device as DeviceHolder).await.unwrap();
         fsck(filesystem.clone()).await.expect("Fsck");
-        fsck_volume(filesystem.as_ref(), volume_store_id, Some(Arc::new(InsecureCrypt::new())))
+        fsck_volume(filesystem.as_ref(), volume_store_id, Some(Arc::new(new_insecure_crypt())))
             .await
             .expect("Fsck volume");
         filesystem.close().await.expect("close filesystem failed");
@@ -2146,7 +2147,7 @@ mod tests {
             let volume_and_root = volumes_directory
                 .create_and_mount_volume(
                     VOLUME_NAME,
-                    Some(Arc::new(InsecureCrypt::new())),
+                    Some(Arc::new(new_insecure_crypt())),
                     false,
                     None,
                 )
@@ -2294,7 +2295,7 @@ mod tests {
         device.reopen(false);
         let filesystem = FxFilesystem::open(device as DeviceHolder).await.unwrap();
         fsck(filesystem.clone()).await.expect("Fsck");
-        fsck_volume(filesystem.as_ref(), volume_store_id, Some(Arc::new(InsecureCrypt::new())))
+        fsck_volume(filesystem.as_ref(), volume_store_id, Some(Arc::new(new_insecure_crypt())))
             .await
             .expect("Fsck volume");
         filesystem.close().await.expect("close filesystem failed");
@@ -2561,8 +2562,10 @@ mod tests {
                     Default::default(),
                 )
                 .await;
-                let crypt: Arc<InsecureCrypt> = fixture.crypt().unwrap();
-                crypt.add_wrapping_key(WRAPPING_KEY_ID, [1; 32].into());
+                let crypt: Arc<CryptBase> = fixture.crypt().unwrap();
+                crypt
+                    .add_wrapping_key(WRAPPING_KEY_ID, [1; 32].into())
+                    .expect("add_wrapping_key failed");
                 crypt_dir
                     .update_attributes(&fio::MutableNodeAttributes {
                         wrapping_key_id: Some(WRAPPING_KEY_ID),
@@ -2627,8 +2630,10 @@ mod tests {
                 .expect("Recording");
 
             {
-                let crypt: Arc<InsecureCrypt> = fixture.crypt().unwrap();
-                crypt.add_wrapping_key(WRAPPING_KEY_ID, [1; 32].into());
+                let crypt: Arc<CryptBase> = fixture.crypt().unwrap();
+                crypt
+                    .add_wrapping_key(WRAPPING_KEY_ID, [1; 32].into())
+                    .expect("add wrapping key failed");
                 let crypt_file = open_file_checked(
                     fixture.root(),
                     "crypt_dir/crypt_file",
@@ -2965,7 +2970,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_read_only_encrypted_volume() {
-        let crypt: Arc<InsecureCrypt> = Arc::new(InsecureCrypt::new());
+        let crypt: Arc<CryptBase> = Arc::new(new_insecure_crypt());
         // Make a new Fxfs filesystem with an encrypted volume named "vol".
         let fs = {
             let device = fxfs::filesystem::mkfs_with_volume(

@@ -507,7 +507,7 @@ mod tests {
         HandleOptions, LockKey, NO_OWNER, NewChildStoreOptions, ObjectStore, StoreOptions,
         layer_size_from_encrypted_mutations_size, tree,
     };
-    use fxfs_insecure_crypto::InsecureCrypt;
+    use fxfs_insecure_crypto::new_insecure_crypt;
     use std::sync::Arc;
     use storage_device::DeviceHolder;
     use storage_device::fake_device::FakeDevice;
@@ -522,7 +522,7 @@ mod tests {
                     "test",
                     NewChildStoreOptions {
                         options: StoreOptions {
-                            crypt: Some(Arc::new(InsecureCrypt::new())),
+                            crypt: Some(Arc::new(new_insecure_crypt())),
                             ..StoreOptions::default()
                         },
                         ..NewChildStoreOptions::default()
@@ -545,7 +545,7 @@ mod tests {
 
         let (first_filename, last_filename) = {
             let store = fs.object_manager().store(store_id).expect("store not found");
-            store.unlock(NO_OWNER, Arc::new(InsecureCrypt::new())).await.expect("unlock failed");
+            store.unlock(NO_OWNER, Arc::new(new_insecure_crypt())).await.expect("unlock failed");
 
             // Keep writing until we notice the key has rolled.
             let root_dir = Directory::open(&store, store.root_directory_object_id())
@@ -618,7 +618,7 @@ mod tests {
 
         {
             let store = fs.object_manager().store(store_id).expect("store not found");
-            store.unlock(NO_OWNER, Arc::new(InsecureCrypt::new())).await.expect("unlock failed");
+            store.unlock(NO_OWNER, Arc::new(new_insecure_crypt())).await.expect("unlock failed");
 
             // The key should get rolled when we unlock.
             assert_eq!(store.mutations_cipher.lock().as_ref().unwrap().offset(), 0);
@@ -654,7 +654,7 @@ mod tests {
         let device = DeviceHolder::new(FakeDevice::new(8192, 1024));
         let fs = FxFilesystem::new_empty(device).await.expect("new_empty failed");
         let root_volume = root_volume(fs.clone()).await.expect("root_volume failed");
-        let crypt = Arc::new(InsecureCrypt::new());
+        let crypt = Arc::new(new_insecure_crypt());
         let store = root_volume
             .new_volume(
                 "test",

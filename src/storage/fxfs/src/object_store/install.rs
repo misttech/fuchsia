@@ -414,7 +414,7 @@ mod tests {
     use crate::object_store::NewChildStoreOptions;
     use crate::object_store::directory::Directory;
     use fxfs_crypto::Crypt;
-    use fxfs_insecure_crypto::InsecureCrypt;
+    use fxfs_insecure_crypto::new_insecure_crypt;
     use storage_device::DeviceHolder;
     use storage_device::fake_device::FakeDevice;
 
@@ -792,7 +792,7 @@ mod tests {
         let fs =
             FxFilesystem::new_empty(DeviceHolder::new(FakeDevice::new(1024, 4096))).await.unwrap();
         {
-            let crypt = Arc::new(InsecureCrypt::new());
+            let crypt = Arc::new(new_insecure_crypt());
             let root = root_volume(fs.clone()).await.unwrap();
             // Write the image into an encrypted source volume.
             let image = create_test_filesystem(512, 4096, DST_NAME, &[]).await;
@@ -825,7 +825,7 @@ mod tests {
         let fs =
             FxFilesystem::new_empty(DeviceHolder::new(FakeDevice::new(1024, 4096))).await.unwrap();
         {
-            let crypt = Arc::new(InsecureCrypt::new());
+            let crypt = Arc::new(new_insecure_crypt());
             let root = root_volume(fs.clone()).await.unwrap();
             // Create an encrypted destination volume.
             let _dst_volume = root

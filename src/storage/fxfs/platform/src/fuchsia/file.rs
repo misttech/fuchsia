@@ -2543,7 +2543,7 @@ mod tests {
             fio::Options::default(),
         )
         .await;
-        crypt.add_wrapping_key(WRAPPING_KEY_ID, [1; 32].into());
+        crypt.add_wrapping_key(WRAPPING_KEY_ID, [1; 32].into()).unwrap();
         encrypted_directory
             .update_attributes(&fio::MutableNodeAttributes {
                 wrapping_key_id: Some(WRAPPING_KEY_ID),
@@ -2632,7 +2632,7 @@ mod tests {
             fio::Options::default(),
         )
         .await;
-        crypt.add_wrapping_key(WRAPPING_KEY_ID, [1; 32].into());
+        crypt.add_wrapping_key(WRAPPING_KEY_ID, [1; 32].into()).unwrap();
         encrypted_directory
             .update_attributes(&fio::MutableNodeAttributes {
                 wrapping_key_id: Some(WRAPPING_KEY_ID),
@@ -2644,7 +2644,7 @@ mod tests {
             .expect("update_attributes failed");
 
         // This locks the directory
-        crypt.remove_wrapping_key(&WRAPPING_KEY_ID);
+        crypt.forget_wrapping_key(&WRAPPING_KEY_ID).unwrap();
 
         // Open unnamed temporary file in a locked directory and should return (key) UNAVAILABLE.
         assert_eq!(

@@ -30,8 +30,9 @@ use assert_matches::assert_matches;
 use fidl_fuchsia_io as fio;
 use fuchsia_sync::Mutex;
 use futures::join;
+use fxfs_crypt_common::CryptBase;
 use fxfs_crypto::{Crypt, EncryptionKey, KeyPurpose, WrappingKeyId};
-use fxfs_insecure_crypto::InsecureCrypt;
+use fxfs_insecure_crypto::new_insecure_crypt;
 use mundane::hash::{Digest, Hasher, Sha256};
 use std::ops::Deref;
 use std::sync::Arc;
@@ -45,7 +46,7 @@ const WRAPPING_KEY_ID: WrappingKeyId = u128::to_le_bytes(2);
 struct FsckTest {
     filesystem: Option<OpenFxFilesystem>,
     errors: Mutex<Vec<FsckIssue>>,
-    crypt: Option<Arc<InsecureCrypt>>,
+    crypt: Option<Arc<CryptBase>>,
 }
 
 #[derive(Default)]
@@ -114,8 +115,8 @@ impl FsckTest {
     fn errors(&self) -> Vec<FsckIssue> {
         self.errors.lock().clone()
     }
-    fn get_crypt(&mut self) -> Arc<InsecureCrypt> {
-        self.crypt.get_or_insert_with(|| Arc::new(InsecureCrypt::new())).clone()
+    fn get_crypt(&mut self) -> Arc<CryptBase> {
+        self.crypt.get_or_insert_with(|| Arc::new(new_insecure_crypt())).clone()
     }
 }
 
@@ -2525,7 +2526,7 @@ async fn test_encrypted_symlink_has_missing_keys() {
             .await
             .expect("new_transaction failed");
 
-        crypt.add_wrapping_key(WRAPPING_KEY_ID, [1; 32].into());
+        crypt.add_wrapping_key(WRAPPING_KEY_ID, [1; 32].into()).expect("add_wrapping_key failed");
         handle
             .update_attributes(
                 transaction,
@@ -2625,7 +2626,7 @@ async fn test_encrypted_directory_has_unencrypted_child() {
             .await
             .expect("new_transaction failed");
 
-        crypt.add_wrapping_key(WRAPPING_KEY_ID, [1; 32].into());
+        crypt.add_wrapping_key(WRAPPING_KEY_ID, [1; 32].into()).expect("add_wrapping_key failed");
         handle
             .update_attributes(
                 transaction,
@@ -2845,7 +2846,7 @@ async fn test_parent_and_child_encrypted_with_different_wrapping_keys() {
             .await
             .expect("new_transaction failed");
 
-        crypt.add_wrapping_key(WRAPPING_KEY_ID, [1; 32].into());
+        crypt.add_wrapping_key(WRAPPING_KEY_ID, [1; 32].into()).expect("add_wrapping_key failed");
         handle
             .update_attributes(
                 transaction,
@@ -2973,7 +2974,7 @@ async fn test_encrypted_directory_no_wrapping_key() {
             .await
             .expect("new_transaction failed");
 
-        crypt.add_wrapping_key(WRAPPING_KEY_ID, [1; 32].into());
+        crypt.add_wrapping_key(WRAPPING_KEY_ID, [1; 32].into()).expect("add_wrapping_key failed");
         handle
             .update_attributes(
                 transaction,
@@ -3169,7 +3170,7 @@ async fn test_directory_missing_encryption_key_for_fscrypt() {
             .await
             .expect("new_transaction failed");
 
-        crypt.add_wrapping_key(WRAPPING_KEY_ID, [1; 32].into());
+        crypt.add_wrapping_key(WRAPPING_KEY_ID, [1; 32].into()).expect("add_wrapping_key failed");
         handle
             .set_wrapping_key(&mut transaction, WRAPPING_KEY_ID)
             .await

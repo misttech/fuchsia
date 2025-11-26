@@ -1795,8 +1795,9 @@ mod tests {
     use anyhow::Error;
     use assert_matches::assert_matches;
     use fidl_fuchsia_io as fio;
+    use fxfs_crypt_common::CryptBase;
     use fxfs_crypto::{Cipher, Crypt, WrappingKeyId};
-    use fxfs_insecure_crypto::InsecureCrypt;
+    use fxfs_insecure_crypto::new_insecure_crypt;
     use std::collections::{BTreeMap, HashSet};
     use std::future::poll_fn;
     use std::sync::Arc;
@@ -1817,8 +1818,10 @@ mod tests {
         let fs = FxFilesystem::new_empty(device).await.expect("new_empty failed");
         let symlink_object_id;
         {
-            let crypt = Arc::new(InsecureCrypt::new());
-            crypt.add_wrapping_key(WRAPPING_KEY_ID, [1; 32].into());
+            let crypt = Arc::new(new_insecure_crypt());
+            crypt
+                .add_wrapping_key(WRAPPING_KEY_ID, [1; 32].into())
+                .expect("add_wrapping_key failed");
             let root_volume = root_volume(fs.clone()).await.expect("root_volume failed");
             let store = root_volume
                 .new_volume(
@@ -1881,7 +1884,7 @@ mod tests {
             .volume(
                 "test",
                 StoreOptions {
-                    crypt: Some(Arc::new(InsecureCrypt::new())),
+                    crypt: Some(Arc::new(new_insecure_crypt())),
                     ..StoreOptions::default()
                 },
             )
@@ -2006,7 +2009,7 @@ mod tests {
         let device = DeviceHolder::new(FakeDevice::new(8192, 4096));
         let fs = FxFilesystem::new_empty(device).await.expect("new_empty failed");
         let root_volume = root_volume(fs.clone()).await.expect("root_volume failed");
-        let crypt: Arc<InsecureCrypt> = Arc::new(InsecureCrypt::new());
+        let crypt: Arc<CryptBase> = Arc::new(new_insecure_crypt());
         let store = root_volume
             .new_volume(
                 "test",
@@ -2052,7 +2055,7 @@ mod tests {
             .await
             .expect_err("wrapping key id 2 has not been added");
         transaction.commit().await.expect("commit failed");
-        crypt.add_wrapping_key(WRAPPING_KEY_ID, [1; 32].into());
+        crypt.add_wrapping_key(WRAPPING_KEY_ID, [1; 32].into()).expect("add_wrapping_key failed");
         let mut transaction = fs
             .clone()
             .new_transaction(
@@ -2073,7 +2076,7 @@ mod tests {
         let device = DeviceHolder::new(FakeDevice::new(8192, 4096));
         let fs = FxFilesystem::new_empty(device).await.expect("new_empty failed");
         let root_volume = root_volume(fs.clone()).await.expect("root_volume failed");
-        let crypt: Arc<InsecureCrypt> = Arc::new(InsecureCrypt::new());
+        let crypt: Arc<CryptBase> = Arc::new(new_insecure_crypt());
         let store = root_volume
             .new_volume(
                 "test",
@@ -2131,7 +2134,7 @@ mod tests {
         let device = DeviceHolder::new(FakeDevice::new(8192, 4096));
         let fs = FxFilesystem::new_empty(device).await.expect("new_empty failed");
         let root_volume = root_volume(fs.clone()).await.expect("root_volume failed");
-        let crypt: Arc<InsecureCrypt> = Arc::new(InsecureCrypt::new());
+        let crypt: Arc<CryptBase> = Arc::new(new_insecure_crypt());
         let store = root_volume
             .new_volume(
                 "test",
@@ -2164,7 +2167,7 @@ mod tests {
             .await
             .expect("create_child_dir failed");
         transaction.commit().await.expect("commit failed");
-        crypt.add_wrapping_key(WRAPPING_KEY_ID, [1; 32].into());
+        crypt.add_wrapping_key(WRAPPING_KEY_ID, [1; 32].into()).expect("add_wrapping_key failed");
         let transaction = fs
             .clone()
             .new_transaction(
@@ -2185,7 +2188,7 @@ mod tests {
             )
             .await
             .expect("update attributes failed");
-        crypt.remove_wrapping_key(&WRAPPING_KEY_ID);
+        crypt.forget_wrapping_key(&WRAPPING_KEY_ID).expect("forget wrapping key failed");
         let mut transaction = fs
             .clone()
             .new_transaction(
@@ -2210,7 +2213,7 @@ mod tests {
     async fn test_replace_child_with_object_in_locked_directory() {
         let device = DeviceHolder::new(FakeDevice::new(8192, 4096));
         let fs = FxFilesystem::new_empty(device).await.expect("new_empty failed");
-        let crypt = Arc::new(InsecureCrypt::new());
+        let crypt = Arc::new(new_insecure_crypt());
 
         let (parent_oid, src_oid, dst_oid) = {
             let root_volume = root_volume(fs.clone()).await.expect("root_volume failed");
@@ -2247,7 +2250,9 @@ mod tests {
                 .await
                 .expect("create_child_dir failed");
             transaction.commit().await.expect("commit failed");
-            crypt.add_wrapping_key(WRAPPING_KEY_ID, [1; 32].into());
+            crypt
+                .add_wrapping_key(WRAPPING_KEY_ID, [1; 32].into())
+                .expect("add_wrapping_key failed");
             let transaction = fs
                 .clone()
                 .new_transaction(
@@ -2285,7 +2290,7 @@ mod tests {
                 .await
                 .expect("create_child_dir failed");
             transaction.commit().await.expect("commit failed");
-            crypt.remove_wrapping_key(&WRAPPING_KEY_ID);
+            crypt.forget_wrapping_key(&WRAPPING_KEY_ID).expect("forget_wrapping_key failed");
             (directory.object_id(), src_child.object_id(), dst_child.object_id())
         };
         fs.close().await.expect("Close failed");
@@ -2355,7 +2360,7 @@ mod tests {
         let device = DeviceHolder::new(FakeDevice::new(8192, 4096));
         let fs = FxFilesystem::new_empty(device).await.expect("new_empty failed");
         let root_volume = root_volume(fs.clone()).await.expect("root_volume failed");
-        let crypt: Arc<InsecureCrypt> = Arc::new(InsecureCrypt::new());
+        let crypt: Arc<CryptBase> = Arc::new(new_insecure_crypt());
         let store = root_volume
             .new_volume(
                 "test",
@@ -3424,7 +3429,7 @@ mod tests {
     async fn write_to_directory_attribute_creates_keys() {
         let device = DeviceHolder::new(FakeDevice::new(16384, 512));
         let filesystem = FxFilesystem::new_empty(device).await.expect("new_empty failed");
-        let crypt = Arc::new(InsecureCrypt::new());
+        let crypt = Arc::new(new_insecure_crypt());
 
         {
             let root_volume = root_volume(filesystem.clone()).await.expect("root_volume failed");
@@ -3509,7 +3514,7 @@ mod tests {
     async fn directory_with_extended_attributes() {
         let device = DeviceHolder::new(FakeDevice::new(16384, 512));
         let filesystem = FxFilesystem::new_empty(device).await.expect("new_empty failed");
-        let crypt = Arc::new(InsecureCrypt::new());
+        let crypt = Arc::new(new_insecure_crypt());
 
         let root_volume = root_volume(filesystem.clone()).await.expect("root_volume failed");
         let store = root_volume
@@ -3571,7 +3576,7 @@ mod tests {
     async fn remove_directory_with_extended_attributes() {
         let device = DeviceHolder::new(FakeDevice::new(16384, 512));
         let filesystem = FxFilesystem::new_empty(device).await.expect("new_empty failed");
-        let crypt = Arc::new(InsecureCrypt::new());
+        let crypt = Arc::new(new_insecure_crypt());
 
         let root_volume = root_volume(filesystem.clone()).await.expect("root_volume failed");
         let store = root_volume
@@ -3663,7 +3668,7 @@ mod tests {
     async fn remove_symlink_with_extended_attributes() {
         let device = DeviceHolder::new(FakeDevice::new(16384, 512));
         let filesystem = FxFilesystem::new_empty(device).await.expect("new_empty failed");
-        let crypt = Arc::new(InsecureCrypt::new());
+        let crypt = Arc::new(new_insecure_crypt());
 
         let root_volume = root_volume(filesystem.clone()).await.expect("root_volume failed");
         let store = root_volume
@@ -4124,7 +4129,7 @@ mod tests {
         let proxy_filename: ProxyFilename;
         let object_id;
         {
-            let crypt: Arc<InsecureCrypt> = Arc::new(InsecureCrypt::new());
+            let crypt: Arc<CryptBase> = Arc::new(new_insecure_crypt());
             let root_volume = root_volume(fs.clone()).await.unwrap();
             let store = root_volume
                 .new_volume(
@@ -4141,7 +4146,9 @@ mod tests {
                 .unwrap();
 
             // Create a (very weak) key for our encrypted directory.
-            crypt.add_wrapping_key(WRAPPING_KEY_ID, [1; 32].into());
+            crypt
+                .add_wrapping_key(WRAPPING_KEY_ID, [1; 32].into())
+                .expect("add wrapping key failed");
 
             object_id = {
                 let mut transaction = fs
@@ -4220,7 +4227,7 @@ mod tests {
         device.reopen(false);
         let fs = FxFilesystem::open(device).await.expect("open failed");
         {
-            let crypt: Arc<InsecureCrypt> = Arc::new(InsecureCrypt::new());
+            let crypt: Arc<CryptBase> = Arc::new(new_insecure_crypt());
             let root_volume = root_volume(fs.clone()).await.expect("root_volume failed");
             let store = root_volume
                 .volume(
@@ -4299,7 +4306,7 @@ mod tests {
         let mut filenames = Vec::new();
         let object_id;
         {
-            let crypt: Arc<InsecureCrypt> = Arc::new(InsecureCrypt::new());
+            let crypt: Arc<CryptBase> = Arc::new(new_insecure_crypt());
             let root_volume = root_volume(fs.clone()).await.unwrap();
             let store = root_volume
                 .new_volume(
@@ -4316,7 +4323,9 @@ mod tests {
                 .unwrap();
 
             // Create a (very weak) key for our encrypted directory.
-            crypt.add_wrapping_key(WRAPPING_KEY_ID, [1; 32].into());
+            crypt
+                .add_wrapping_key(WRAPPING_KEY_ID, [1; 32].into())
+                .expect("add wrapping key failed");
 
             object_id = {
                 let mut transaction = fs
@@ -4394,7 +4403,7 @@ mod tests {
         device.reopen(false);
         let fs = FxFilesystem::open(device).await.expect("open failed");
         {
-            let crypt: Arc<InsecureCrypt> = Arc::new(InsecureCrypt::new());
+            let crypt: Arc<CryptBase> = Arc::new(new_insecure_crypt());
             let root_volume = root_volume(fs.clone()).await.expect("root_volume failed");
             let store = root_volume
                 .volume(
@@ -4434,7 +4443,7 @@ mod tests {
     async fn test_replace_directory_and_tombstone_on_remount() {
         let device = DeviceHolder::new(FakeDevice::new(8192, 4096));
         let fs = FxFilesystem::new_empty(device).await.expect("new_empty failed");
-        let crypt = Arc::new(InsecureCrypt::new());
+        let crypt = Arc::new(new_insecure_crypt());
         {
             let root_volume = root_volume(fs.clone()).await.expect("root_volume failed");
             let store = root_volume
@@ -4549,7 +4558,7 @@ mod tests {
         let device = DeviceHolder::new(FakeDevice::new(8192, 4096));
         let fs = FxFilesystem::new_empty(device).await.expect("new_empty failed");
         let root_volume = root_volume(fs.clone()).await.expect("root_volume failed");
-        let mut crypt = InsecureCrypt::new();
+        let mut crypt = new_insecure_crypt();
         crypt.use_fxfs_keys_for_fscrypt_dirs();
         let crypt = Arc::new(crypt);
         let store = root_volume
@@ -4569,7 +4578,7 @@ mod tests {
             Directory::open(&store, store.root_directory_object_id()).await.expect("open failed");
 
         // Create an fscrypt encrypted directory.
-        crypt.add_wrapping_key(WRAPPING_KEY_ID, [1; 32].into());
+        crypt.add_wrapping_key(WRAPPING_KEY_ID, [1; 32].into()).expect("add wrapping key failed");
         let mut transaction = fs
             .clone()
             .new_transaction(
@@ -4680,7 +4689,7 @@ mod tests {
         let device = DeviceHolder::new(FakeDevice::new(8192, 4096));
         let fs = FxFilesystem::new_empty(device).await.expect("new_empty failed");
         let root_volume = root_volume(fs.clone()).await.expect("root_volume failed");
-        let mut crypt = InsecureCrypt::new();
+        let mut crypt = new_insecure_crypt();
         crypt.use_fxfs_keys_for_fscrypt_dirs();
         let crypt = Arc::new(crypt);
         let store = root_volume
@@ -4700,7 +4709,7 @@ mod tests {
             Directory::open(&store, store.root_directory_object_id()).await.expect("open failed");
 
         // Create an fscrypt encrypted directory.
-        crypt.add_wrapping_key(WRAPPING_KEY_ID, [1; 32].into());
+        crypt.add_wrapping_key(WRAPPING_KEY_ID, [1; 32].into()).expect("add_wrapping_key failed");
         let mut transaction = fs
             .clone()
             .new_transaction(
@@ -4802,7 +4811,7 @@ mod tests {
         let object_id;
         let mut filenames = Vec::new();
         {
-            let crypt: Arc<InsecureCrypt> = Arc::new(InsecureCrypt::new());
+            let crypt: Arc<CryptBase> = Arc::new(new_insecure_crypt());
             let root_volume = root_volume(fs.clone()).await.unwrap();
             let store = root_volume
                 .new_volume(
@@ -4818,7 +4827,9 @@ mod tests {
                 .await
                 .unwrap();
 
-            crypt.add_wrapping_key(WRAPPING_KEY_ID, [1; 32].into());
+            crypt
+                .add_wrapping_key(WRAPPING_KEY_ID, [1; 32].into())
+                .expect("add_wrapping_key failed");
 
             object_id = {
                 let mut transaction = fs
@@ -4879,7 +4890,7 @@ mod tests {
         device.reopen(false);
         let fs = FxFilesystem::open(device).await.expect("open failed");
         {
-            let crypt: Arc<InsecureCrypt> = Arc::new(InsecureCrypt::new());
+            let crypt: Arc<CryptBase> = Arc::new(new_insecure_crypt());
             let root_volume = root_volume(fs.clone()).await.expect("root_volume failed");
             let store = root_volume
                 .volume(
@@ -4924,7 +4935,7 @@ mod tests {
         let object_id;
         let proxy_filename;
         {
-            let crypt: Arc<InsecureCrypt> = Arc::new(InsecureCrypt::new());
+            let crypt: Arc<CryptBase> = Arc::new(new_insecure_crypt());
             let root_volume = root_volume(fs.clone()).await.unwrap();
             let store = root_volume
                 .new_volume(
@@ -4940,7 +4951,9 @@ mod tests {
                 .await
                 .unwrap();
 
-            crypt.add_wrapping_key(WRAPPING_KEY_ID, [1; 32].into());
+            crypt
+                .add_wrapping_key(WRAPPING_KEY_ID, [1; 32].into())
+                .expect("add_wrapping_key failed");
 
             let mut transaction = fs
                 .clone()
@@ -4984,7 +4997,7 @@ mod tests {
         device.reopen(false);
         let fs = FxFilesystem::open(device).await.expect("open failed");
         {
-            let crypt: Arc<InsecureCrypt> = Arc::new(InsecureCrypt::new());
+            let crypt: Arc<CryptBase> = Arc::new(new_insecure_crypt());
             let root_volume = root_volume(fs.clone()).await.expect("root_volume failed");
             let store = root_volume
                 .volume(
@@ -5002,7 +5015,9 @@ mod tests {
                 .expect("lookup failed")
                 .expect("lookup is not None");
 
-            crypt.add_wrapping_key(WRAPPING_KEY_ID, [1; 32].into());
+            crypt
+                .add_wrapping_key(WRAPPING_KEY_ID, [1; 32].into())
+                .expect("add_wrapping_key failed");
 
             // This should fail because the directory is now unlocked and we shouldn't be able to
             // find the file using its encrypted name.
@@ -5022,8 +5037,10 @@ mod tests {
         let fs = FxFilesystem::new_empty(device).await.expect("new_empty failed");
         {
             let root_volume = root_volume(fs.clone()).await.expect("root_volume failed");
-            let crypt = Arc::new(InsecureCrypt::new());
-            crypt.add_wrapping_key(WRAPPING_KEY_ID, [1; 32].into());
+            let crypt = Arc::new(new_insecure_crypt());
+            crypt
+                .add_wrapping_key(WRAPPING_KEY_ID, [1; 32].into())
+                .expect("add_wrapping_key failed");
             let store = root_volume
                 .new_volume(
                     "test",

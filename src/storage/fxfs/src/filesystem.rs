@@ -1056,7 +1056,7 @@ mod tests {
     use fuchsia_sync::Mutex;
     use futures::future::join_all;
     use futures::stream::{FuturesUnordered, TryStreamExt};
-    use fxfs_insecure_crypto::InsecureCrypt;
+    use fxfs_insecure_crypto::new_insecure_crypt;
     use rustc_hash::FxHashMap as HashMap;
     use std::ops::Range;
     use std::sync::Arc;
@@ -1375,7 +1375,7 @@ mod tests {
                         "test",
                         NewChildStoreOptions {
                             options: StoreOptions {
-                                crypt: Some(Arc::new(InsecureCrypt::new())),
+                                crypt: Some(Arc::new(new_insecure_crypt())),
                                 ..StoreOptions::default()
                             },
                             ..Default::default()
@@ -1480,7 +1480,7 @@ mod tests {
             // If we replayed and the store exists (i.e. the transaction that created the store
             // made it out), start by running fsck on it.
             let object_id = if fs.object_manager().store(store_id).is_some() {
-                fsck_volume(&fs, store_id, Some(Arc::new(InsecureCrypt::new())))
+                fsck_volume(&fs, store_id, Some(Arc::new(new_insecure_crypt())))
                     .await
                     .expect("fsck_volume failed");
 
@@ -1493,7 +1493,7 @@ mod tests {
                     .volume(
                         "test",
                         StoreOptions {
-                            crypt: Some(Arc::new(InsecureCrypt::new())),
+                            crypt: Some(Arc::new(new_insecure_crypt())),
                             ..StoreOptions::default()
                         },
                     )
@@ -1569,7 +1569,7 @@ mod tests {
             // As mentioned above, make sure that the object we created before the clean unmount
             // exists.
             if object_id != INVALID_OBJECT_ID {
-                fsck_volume(&fs, store_id, Some(Arc::new(InsecureCrypt::new())))
+                fsck_volume(&fs, store_id, Some(Arc::new(new_insecure_crypt())))
                     .await
                     .expect("fsck_volume failed");
 
@@ -1579,7 +1579,7 @@ mod tests {
                     .volume(
                         "test",
                         StoreOptions {
-                            crypt: Some(Arc::new(InsecureCrypt::new())),
+                            crypt: Some(Arc::new(new_insecure_crypt())),
                             ..StoreOptions::default()
                         },
                     )
@@ -1644,7 +1644,7 @@ mod tests {
                     "test",
                     NewChildStoreOptions {
                         options: StoreOptions {
-                            crypt: Some(Arc::new(InsecureCrypt::new())),
+                            crypt: Some(Arc::new(new_insecure_crypt())),
                             ..StoreOptions::default()
                         },
                         ..NewChildStoreOptions::default()
@@ -1670,7 +1670,7 @@ mod tests {
             .volume(
                 "test",
                 StoreOptions {
-                    crypt: Some(Arc::new(InsecureCrypt::new())),
+                    crypt: Some(Arc::new(new_insecure_crypt())),
                     ..StoreOptions::default()
                 },
             )
@@ -1735,7 +1735,7 @@ mod tests {
                     "test",
                     NewChildStoreOptions {
                         options: StoreOptions {
-                            crypt: Some(Arc::new(InsecureCrypt::new())),
+                            crypt: Some(Arc::new(new_insecure_crypt())),
                             ..StoreOptions::default()
                         },
                         ..NewChildStoreOptions::default()
@@ -1761,7 +1761,7 @@ mod tests {
             .volume(
                 "test",
                 StoreOptions {
-                    crypt: Some(Arc::new(InsecureCrypt::new())),
+                    crypt: Some(Arc::new(new_insecure_crypt())),
                     ..StoreOptions::default()
                 },
             )
@@ -1806,7 +1806,7 @@ mod tests {
     #[test_case(false; "fail when original filesystem has barriers disabled")]
     #[fuchsia::test]
     async fn test_switching_barrier_mode_on_existing_filesystem(original_barrier_mode: bool) {
-        let crypt = Some(Arc::new(InsecureCrypt::new()) as Arc<dyn fxfs_crypto::Crypt>);
+        let crypt = Some(Arc::new(new_insecure_crypt()) as Arc<dyn fxfs_crypto::Crypt>);
         let fake_device = FakeDevice::new(8192, 4096);
         let device = DeviceHolder::new(fake_device);
         let fs: super::OpenFxFilesystem = FxFilesystemBuilder::new()

@@ -324,7 +324,7 @@ mod tests {
     use crate::object_store::transaction::{Options, lock_keys};
     use crate::object_store::{LockKey, NewChildStoreOptions, StoreOptions};
     use fxfs_crypto::Crypt;
-    use fxfs_insecure_crypto::InsecureCrypt;
+    use fxfs_insecure_crypto::new_insecure_crypt;
     use std::sync::Arc;
     use storage_device::DeviceHolder;
     use storage_device::fake_device::FakeDevice;
@@ -364,7 +364,7 @@ mod tests {
             .volume(
                 "vol",
                 StoreOptions {
-                    crypt: Some(Arc::new(InsecureCrypt::new())),
+                    crypt: Some(Arc::new(new_insecure_crypt())),
                     ..StoreOptions::default()
                 },
             )
@@ -378,7 +378,7 @@ mod tests {
     async fn test_add_volume() {
         let device = DeviceHolder::new(FakeDevice::new(16384, 512));
         let filesystem = FxFilesystem::new_empty(device).await.expect("new_empty failed");
-        let crypt = Arc::new(InsecureCrypt::new());
+        let crypt = Arc::new(new_insecure_crypt());
         {
             let root_volume = root_volume(filesystem.clone()).await.expect("root_volume failed");
             let store = root_volume
@@ -439,7 +439,7 @@ mod tests {
     async fn test_delete_volume() {
         let device = DeviceHolder::new(FakeDevice::new(16384, 512));
         let filesystem = FxFilesystem::new_empty(device).await.expect("new_empty failed");
-        let crypt = Arc::new(InsecureCrypt::new());
+        let crypt = Arc::new(new_insecure_crypt());
         let store_object_id;
         let parent_objects;
         // Add volume and a file (some data).

@@ -18,8 +18,9 @@ use fxfs::fsck::errors::FsckIssue;
 use fxfs::fsck::{FsckOptions, fsck_volume_with_options, fsck_with_options};
 use fxfs::object_store::volume::root_volume;
 use fxfs::object_store::{NewChildStoreOptions, StoreOptions};
+use fxfs_crypt_common::CryptBase;
 use fxfs_crypto::Crypt;
-use fxfs_insecure_crypto::InsecureCrypt;
+use fxfs_insecure_crypto::new_insecure_crypt;
 use refaults_vmo::PageRefaultCounter;
 use std::sync::{Arc, Weak};
 use storage_device::DeviceHolder;
@@ -38,7 +39,7 @@ struct State {
 
 pub struct TestFixture {
     state: Option<State>,
-    encrypted: Option<Arc<InsecureCrypt>>,
+    encrypted: Option<Arc<CryptBase>>,
 }
 
 pub struct TestFixtureOptions {
@@ -95,7 +96,7 @@ impl TestFixture {
     }
 
     pub async fn open(device: DeviceHolder, options: TestFixtureOptions) -> Self {
-        let crypt: Arc<InsecureCrypt> = Arc::new(InsecureCrypt::new());
+        let crypt: Arc<CryptBase> = Arc::new(new_insecure_crypt());
         let (mem_pressure_proxy, watcher_server) = create_proxy();
         let mem_pressure = MemoryPressureMonitor::try_from(watcher_server)
             .expect("Failed to create MemoryPressureMonitor");
@@ -292,7 +293,7 @@ impl TestFixture {
         &self.state.as_ref().unwrap().root
     }
 
-    pub fn crypt(&self) -> Option<Arc<InsecureCrypt>> {
+    pub fn crypt(&self) -> Option<Arc<CryptBase>> {
         self.encrypted.clone()
     }
 
