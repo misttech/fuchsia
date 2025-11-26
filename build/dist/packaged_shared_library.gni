@@ -80,9 +80,7 @@ template("packaged_shared_library") {
   if (defined(invoker.output_extension)) {
     _output_extension = invoker.output_extension
   } else {
-    if (current_os == "mac") {
-      _output_extension = "dylib"
-    } else if (current_os == "win") {
+    if (current_os == "win") {
       _output_extension = "dll"
     } else {
       _output_extension = "so"
