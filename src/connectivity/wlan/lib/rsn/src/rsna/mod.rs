@@ -6,13 +6,14 @@ use crate::integrity::{self, integrity_algorithm};
 use crate::key::exchange::Key;
 use crate::keywrap::{self, keywrap_algorithm};
 
-use crate::{rsn_ensure, Error, ProtectionInfo};
+use crate::{Error, ProtectionInfo, rsn_ensure};
 use anyhow::{anyhow, ensure};
 use fidl_fuchsia_wlan_mlme::SaeFrame;
 use wlan_common::ie::rsn::akm::Akm;
-use wlan_common::ie::rsn::cipher::{Cipher, CIPHER_BIP_CMAC_128, GROUP_CIPHER_SUITE, TKIP};
+use wlan_common::ie::rsn::cipher::{CIPHER_BIP_CMAC_128, Cipher, GROUP_CIPHER_SUITE, TKIP};
 use wlan_common::ie::rsn::rsne::{RsnCapabilities, Rsne};
 use wlan_common::ie::wpa::WpaIe;
+
 use zerocopy::SplitByteSlice;
 
 pub mod esssa;
@@ -262,13 +263,13 @@ impl<B: SplitByteSlice> Dot11VerifiedKeyFrame<B> {
                     frame.key_frame_fields.descriptor_type,
                     eapol::KeyDescriptor::IEEE802DOT11,
                 )
-                .into())
+                .into());
             }
             // Invalid value.
             _ => {
                 return Err(
                     Error::UnsupportedKeyDescriptor(frame.key_frame_fields.descriptor_type).into()
-                )
+                );
             }
         };
 
@@ -344,13 +345,13 @@ impl<B: SplitByteSlice> Dot11VerifiedKeyFrame<B> {
                 // Not all vendors follow the latter requirement, such as Apple with iOS.
                 // To improve interoperability, a value of 0 or the pairwise temporal key length is
                 // allowed for frames sent by the Supplicant.
-                Role::Supplicant if frame.key_frame_fields.key_len.to_native() != 0 => {
+                Role::Supplicant if frame.key_frame_fields.key_len.get() != 0 => {
                     let tk_len =
                         protection.pairwise.tk_bytes().ok_or(Error::UnsupportedCipherSuite)?;
                     rsn_ensure!(
-                        frame.key_frame_fields.key_len.to_native() == tk_len.into(),
+                        frame.key_frame_fields.key_len.get() == tk_len.into(),
                         Error::InvalidKeyLength(
-                            frame.key_frame_fields.key_len.to_native().into(),
+                            frame.key_frame_fields.key_len.get().into(),
                             tk_len.into()
                         )
                     );
@@ -360,9 +361,9 @@ impl<B: SplitByteSlice> Dot11VerifiedKeyFrame<B> {
                     let tk_len: usize =
                         protection.pairwise.tk_bytes().ok_or(Error::UnsupportedCipherSuite)?.into();
                     rsn_ensure!(
-                        usize::from(frame.key_frame_fields.key_len.to_native()) == tk_len,
+                        usize::from(frame.key_frame_fields.key_len.get()) == tk_len,
                         Error::InvalidKeyLength(
-                            frame.key_frame_fields.key_len.to_native().into(),
+                            frame.key_frame_fields.key_len.get().into(),
                             tk_len
                         )
                     );
@@ -381,9 +382,9 @@ impl<B: SplitByteSlice> Dot11VerifiedKeyFrame<B> {
                 // key replay counter.
                 Role::Supplicant => {
                     rsn_ensure!(
-                        frame.key_frame_fields.key_replay_counter.to_native() >= key_replay_counter,
+                        frame.key_frame_fields.key_replay_counter.get() >= key_replay_counter,
                         Error::InvalidKeyReplayCounter(
-                            frame.key_frame_fields.key_replay_counter.to_native(),
+                            frame.key_frame_fields.key_replay_counter.get(),
                             key_replay_counter
                         )
                     );
@@ -395,9 +396,9 @@ impl<B: SplitByteSlice> Dot11VerifiedKeyFrame<B> {
                 // is equal to the Key Replay Counter value received.
                 Role::Authenticator => {
                     rsn_ensure!(
-                        frame.key_frame_fields.key_replay_counter.to_native() > key_replay_counter,
+                        frame.key_frame_fields.key_replay_counter.get() > key_replay_counter,
                         Error::InvalidKeyReplayCounter(
-                            frame.key_frame_fields.key_replay_counter.to_native(),
+                            frame.key_frame_fields.key_replay_counter.get(),
                             key_replay_counter
                         )
                     );
@@ -542,6 +543,7 @@ mod tests {
     use wlan_common::ie::rsn::akm::{self, AKM_PSK};
     use wlan_common::ie::rsn::cipher::{self, CIPHER_CCMP_128, CIPHER_GCMP_256};
     use wlan_common::ie::rsn::fake_wpa2_s_rsne;
+    use zerocopy::byteorder::big_endian::U16;
 
     #[test]
     fn test_negotiated_protection_from_rsne() {
@@ -594,7 +596,7 @@ mod tests {
         // IEEE 802.11 compliant key length.
         let mut buf = vec![];
         let mut msg2 = msg2_base.copy_keyframe_mut(&mut buf);
-        msg2.key_frame_fields.key_len.set_from_native(0);
+        msg2.key_frame_fields.key_len = U16::new(0);
         env.finalize_key_frame(&mut msg2, Some(ptk.kck()));
         let result = Dot11VerifiedKeyFrame::from_frame(msg2, &Role::Authenticator, &protection, 12);
         assert!(result.is_ok(), "failed verifying message: {}", result.unwrap_err());
@@ -603,7 +605,7 @@ mod tests {
         // interoperability.
         let mut buf = vec![];
         let mut msg2 = msg2_base.copy_keyframe_mut(&mut buf);
-        msg2.key_frame_fields.key_len.set_from_native(16);
+        msg2.key_frame_fields.key_len = U16::new(16);
         env.finalize_key_frame(&mut msg2, Some(ptk.kck()));
         let result = Dot11VerifiedKeyFrame::from_frame(msg2, &Role::Authenticator, &protection, 12);
         assert!(result.is_ok(), "failed verifying message: {}", result.unwrap_err());
@@ -621,7 +623,7 @@ mod tests {
         let mut buf = vec![];
         let mut msg2 = msg2.copy_keyframe_mut(&mut buf);
 
-        msg2.key_frame_fields.key_len.set_from_native(29);
+        msg2.key_frame_fields.key_len = U16::new(29);
         env.finalize_key_frame(&mut msg2, Some(ptk.kck()));
 
         let protection = NegotiatedProtection::from_rsne(&fake_wpa2_s_rsne())

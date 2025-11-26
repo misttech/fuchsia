@@ -56,7 +56,7 @@ async fn verify_tx_and_rx(
                 event::on_transmit(event::extract(|frame: Buffered<DataFrame>| {
                     for mac::Msdu { dst_addr, src_addr, llc_frame } in frame.get() {
                         if dst_addr == *ETH_DST_MAC && src_addr == *CLIENT_MAC_ADDR {
-                            assert_eq!(llc_frame.hdr.protocol_id.to_native(), mac::ETHER_TYPE_IPV4);
+                            assert_eq!(llc_frame.hdr.protocol_id.get(), mac::ETHER_TYPE_IPV4);
                             sent_payload.clear();
                             sent_payload.extend_from_slice(llc_frame.body);
                             rx_wlan_data_frame(
@@ -78,7 +78,7 @@ async fn verify_tx_and_rx(
         assert_eq!(&sent_payload[..], &mock_payload[..]);
         assert_eq!(header.da, *CLIENT_MAC_ADDR);
         assert_eq!(header.sa, *ETH_DST_MAC);
-        assert_eq!(header.ether_type.to_native(), mac::ETHER_TYPE_IPV4);
+        assert_eq!(header.ether_type.get(), mac::ETHER_TYPE_IPV4);
         assert_eq!(&received_payload[..], &mock_payload[..]);
     }
 }

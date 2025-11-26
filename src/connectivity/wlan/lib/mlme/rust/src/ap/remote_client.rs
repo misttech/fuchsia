@@ -985,7 +985,7 @@ impl RemoteClient {
 
         for msdu in data_frame {
             let mac::Msdu { dst_addr, src_addr, llc_frame } = msdu;
-            match llc_frame.hdr.protocol_id.to_native() {
+            match llc_frame.hdr.protocol_id.get() {
                 // Handle EAPOL LLC frames.
                 mac::ETHER_TYPE_EAPOL => {
                     self.handle_eapol_llc_frame(ctx, dst_addr, src_addr, &llc_frame.body)?
@@ -1003,7 +1003,7 @@ impl RemoteClient {
                         ctx,
                         dst_addr,
                         src_addr,
-                        llc_frame.hdr.protocol_id.to_native(),
+                        llc_frame.hdr.protocol_id.get(),
                         &llc_frame.body,
                     )?,
                 },

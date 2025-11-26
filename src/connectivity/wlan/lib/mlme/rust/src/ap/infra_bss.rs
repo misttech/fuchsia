@@ -521,7 +521,7 @@ impl InfraBss {
                 hdr.sa,
                 self.rsne.is_some(),
                 false, // TODO(https://fxbug.dev/42113580): Support QoS.
-                hdr.ether_type.to_native(),
+                hdr.ether_type.get(),
                 body,
             )
             .map_err(|e| Rejection::Client(hdr.da, ClientRejection::WlanSendError(e)))?;
@@ -563,7 +563,7 @@ impl InfraBss {
             .get_mut(&hdr.da)
             .unwrap_or_else(|| maybe_client.get_or_insert_with(|| RemoteClient::new(hdr.da)));
         client
-            .handle_eth_frame(ctx, hdr.da, hdr.sa, hdr.ether_type.to_native(), body, async_id)
+            .handle_eth_frame(ctx, hdr.da, hdr.sa, hdr.ether_type.get(), body, async_id)
             .map_err(|e| Rejection::Client(client.addr, e))
     }
 
@@ -621,10 +621,10 @@ mod tests {
     use ieee80211::Bssid;
     use std::sync::{Arc, LazyLock};
     use test_case::test_case;
-    use wlan_common::big_endian::BigEndianU16;
     use wlan_common::mac::IntoBytesExt as _;
     use wlan_common::test_utils::fake_frames::fake_wpa2_rsne;
     use wlan_common::timer::{self, create_timer};
+    use zerocopy::byteorder::big_endian::U16 as BigEndianU16;
 
     static CLIENT_ADDR: LazyLock<MacAddr> = LazyLock::new(|| [4u8; 6].into());
     static BSSID: LazyLock<Bssid> = LazyLock::new(|| [2u8; 6].into());
@@ -1611,7 +1611,7 @@ mod tests {
             EthernetIIHdr {
                 da: *CLIENT_ADDR,
                 sa: *CLIENT_ADDR2,
-                ether_type: BigEndianU16::from_native(0x1234),
+                ether_type: BigEndianU16::new(0x1234),
             },
             &[1, 2, 3, 4, 5][..],
             0.into(),
@@ -1650,7 +1650,7 @@ mod tests {
                 EthernetIIHdr {
                     da: *CLIENT_ADDR,
                     sa: *CLIENT_ADDR2,
-                    ether_type: BigEndianU16::from_native(0x1234)
+                    ether_type: BigEndianU16::new(0x1234)
                 },
                 &[1, 2, 3, 4, 5][..],
                 0.into(),
@@ -1694,7 +1694,7 @@ mod tests {
                 EthernetIIHdr {
                     da: *CLIENT_ADDR,
                     sa: *CLIENT_ADDR2,
-                    ether_type: BigEndianU16::from_native(0x1234)
+                    ether_type: BigEndianU16::new(0x1234)
                 },
                 &[1, 2, 3, 4, 5][..],
                 0.into(),
@@ -1739,7 +1739,7 @@ mod tests {
             EthernetIIHdr {
                 da: *CLIENT_ADDR,
                 sa: *CLIENT_ADDR2,
-                ether_type: BigEndianU16::from_native(0x1234),
+                ether_type: BigEndianU16::new(0x1234),
             },
             &[1, 2, 3, 4, 5][..],
             0.into(),
@@ -1949,7 +1949,7 @@ mod tests {
             EthernetIIHdr {
                 da: client_addr,
                 sa: *REMOTE_ADDR,
-                ether_type: BigEndianU16::from_native(0x1234),
+                ether_type: BigEndianU16::new(0x1234),
             },
             &[1, 2, 3, 4, 5][..],
             0.into(),
@@ -2010,7 +2010,7 @@ mod tests {
             EthernetIIHdr {
                 da: *CLIENT_ADDR,
                 sa: *CLIENT_ADDR2,
-                ether_type: BigEndianU16::from_native(0x1234),
+                ether_type: BigEndianU16::new(0x1234),
             },
             &[1, 2, 3, 4, 5][..],
             0.into(),
@@ -2400,7 +2400,7 @@ mod tests {
             EthernetIIHdr {
                 da: *CLIENT_ADDR,
                 sa: *CLIENT_ADDR2,
-                ether_type: BigEndianU16::from_native(0x1234),
+                ether_type: BigEndianU16::new(0x1234),
             },
             &[1, 2, 3, 4, 5][..],
             0.into(),

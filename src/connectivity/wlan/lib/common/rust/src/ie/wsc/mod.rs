@@ -14,12 +14,12 @@ pub use id::*;
 pub use parse::*;
 pub use reader::*;
 
-use crate::big_endian::BigEndianU16;
+use zerocopy::byteorder::big_endian::U16;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, Unaligned};
 
 #[repr(C, packed)]
 #[derive(IntoBytes, KnownLayout, FromBytes, Immutable, Unaligned)]
 pub struct AttributeHeader {
     id: Id,
-    body_len: BigEndianU16,
+    body_len: U16,
 }

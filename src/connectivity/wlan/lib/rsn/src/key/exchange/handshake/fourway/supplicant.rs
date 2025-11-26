@@ -2,19 +2,19 @@
 // Use ofn this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::key::Tk;
 use crate::key::exchange::handshake::fourway::{self, Config, FourwayHandshakeFrame};
-use crate::key::exchange::{compute_mic_from_buf, Key};
+use crate::key::exchange::{Key, compute_mic_from_buf};
 use crate::key::gtk::Gtk;
 use crate::key::igtk::Igtk;
 use crate::key::ptk::Ptk;
-use crate::key::Tk;
 use crate::key_data::kde;
 use crate::nonce::Nonce;
 use crate::rsna::{
     Dot11VerifiedKeyFrame, IgtkSupport, NegotiatedProtection, ProtectionType, SecAssocUpdate,
     UnverifiedKeyData, UpdateSink,
 };
-use crate::{key_data, Error, ProtectionInfo};
+use crate::{Error, ProtectionInfo, key_data};
 use anyhow::{ensure, format_err};
 use eapol::KeyFrameBuf;
 use log::error;
@@ -30,7 +30,7 @@ fn handle_message_1<B: SplitByteSlice>(
     let frame = match msg1.get() {
         // Note: This is only true if PTK re-keying is not supported.
         Dot11VerifiedKeyFrame::WithUnverifiedMic(_) => {
-            return Err(format_err!("msg1 of 4-Way Handshake cannot carry a MIC"))
+            return Err(format_err!("msg1 of 4-Way Handshake cannot carry a MIC"));
         }
         Dot11VerifiedKeyFrame::WithoutMic(frame) => frame,
     };
@@ -68,7 +68,7 @@ fn create_message_2<B: SplitByteSlice>(
             msg1.key_frame_fields.descriptor_type,
             key_info,
             0,
-            msg1.key_frame_fields.key_replay_counter.to_native(),
+            msg1.key_frame_fields.key_replay_counter.get(),
             eapol::to_array(snonce),
             [0u8; 16], // IV
             0,         // RSC
@@ -111,14 +111,14 @@ fn handle_message_3<B: SplitByteSlice>(
                         _ => {
                             return Err(format_err!(
                                 "msg3 of 4-Way Handshake must carry encrypted key data"
-                            ))
+                            ));
                         }
                     }
                 }
             }
         }
         Dot11VerifiedKeyFrame::WithoutMic(_) => {
-            return Err(format_err!("msg3 of 4-Way Handshake must carry a MIC"))
+            return Err(format_err!("msg3 of 4-Way Handshake must carry a MIC"));
         }
     };
     let mut gtk: Option<key_data::kde::Gtk> = None;
@@ -159,7 +159,7 @@ fn handle_message_3<B: SplitByteSlice>(
     };
     match gtk {
         Some(gtk) => {
-            let rsc = frame.key_frame_fields.key_rsc.to_native();
+            let rsc = frame.key_frame_fields.key_rsc.get();
             Ok((
                 msg4,
                 Some(Gtk::from_bytes(
@@ -200,7 +200,7 @@ fn create_message_4<B: SplitByteSlice>(
             msg3.key_frame_fields.descriptor_type,
             key_info,
             0,
-            msg3.key_frame_fields.key_replay_counter.to_native(),
+            msg3.key_frame_fields.key_replay_counter.get(),
             [0u8; 32], // nonce
             [0u8; 16], // iv
             0,         // rsc

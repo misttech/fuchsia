@@ -2,10 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::big_endian::BigEndianU16;
 use crate::buffer_reader::BufferReader;
 use crate::mac::data::*;
 use crate::mac::{DataFrame, MacAddr};
+use zerocopy::byteorder::big_endian::U16;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, Ref, SplitByteSlice, Unaligned};
 
 // RFC 1042
@@ -22,7 +22,7 @@ pub struct LlcHdr {
     pub ssap: u8,
     pub control: u8,
     pub oui: [u8; 3],
-    pub protocol_id: BigEndianU16,
+    pub protocol_id: U16,
 }
 
 pub struct LlcFrame<B> {
@@ -38,11 +38,7 @@ impl<B> LlcFrame<B> {
         // An LLC frame is only valid if it contains enough bytes for the header and one or more
         // bytes for the body.
         let (hdr, body) = Ref::from_prefix(bytes).ok()?;
-        if body.is_empty() {
-            None
-        } else {
-            Some(Self { hdr, body })
-        }
+        if body.is_empty() { None } else { Some(Self { hdr, body }) }
     }
 
     pub fn into_body(self) -> B {
@@ -198,8 +194,8 @@ mod tests {
                 assert_eq!(7, llc_frame.hdr.ssap);
                 assert_eq!(7, llc_frame.hdr.control);
                 assert_eq!([8, 8, 8], llc_frame.hdr.oui);
-                assert_eq!([9, 10], llc_frame.hdr.protocol_id.0);
-                assert_eq!(0x090A, llc_frame.hdr.protocol_id.to_native());
+                assert_eq!([9, 10], llc_frame.hdr.protocol_id.to_bytes());
+                assert_eq!(0x090A, llc_frame.hdr.protocol_id.get());
                 assert_eq!(&[11, 11, 11], llc_frame.body);
             },
             "failed to parse data frame");

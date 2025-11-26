@@ -9,7 +9,6 @@ use crate::error::Error;
 use anyhow::format_err;
 use fdf::ArenaStaticBox;
 use ieee80211::{Bssid, MacAddr, MacAddrBytes, Ssid};
-use wlan_common::big_endian::BigEndianU16;
 use wlan_common::ie::rsn::rsne;
 use wlan_common::ie::{self};
 use wlan_common::mac::{self, Aid, AuthAlgorithmNumber, StatusCode};
@@ -17,6 +16,7 @@ use wlan_common::sequence::SequenceManager;
 use wlan_common::timer::{EventHandle, Timer};
 use wlan_common::{TimeUnit, data_writer, mgmt_writer, wmm};
 use wlan_frame_writer::{write_frame, write_frame_with_fixed_slice};
+use zerocopy::byteorder::big_endian::U16 as BigEndianU16;
 use {fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211, fidl_fuchsia_wlan_mlme as fidl_mlme};
 
 /// BeaconParams contains parameters that may be used to offload beaconing to the hardware.
@@ -501,7 +501,7 @@ impl<D: DeviceOps> Context<D> {
                 mac::EthernetIIHdr: &mac::EthernetIIHdr {
                     da: dst_addr,
                     sa: src_addr,
-                    ether_type: BigEndianU16::from_native(protocol_id),
+                    ether_type: BigEndianU16::new(protocol_id),
                 },
             },
             payload: body,

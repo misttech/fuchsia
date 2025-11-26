@@ -9,8 +9,8 @@ use log::warn;
 use thiserror::Error;
 use wlan_bitfield::bitfield;
 use wlan_common::append::{Append, BufferTooSmall};
-use wlan_common::big_endian::{BigEndianU16, BigEndianU64};
 use wlan_common::buffer_reader::BufferReader;
+use zerocopy::byteorder::big_endian::{U16, U64};
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, Ref, SplitByteSlice, Unaligned};
 
 #[derive(Debug, Error)]
@@ -65,9 +65,9 @@ impl<B: SplitByteSlice> KeyFrameRx<B> {
     pub fn parse(mic_len: usize, eapol_pdu_buf: B) -> Result<Self, Error> {
         let mut reader = BufferReader::new(eapol_pdu_buf);
         let eapol_fields = reader.read::<EapolFields>().ok_or(Error::FrameTruncated)?;
-        if eapol_fields.packet_body_len.to_native() > reader.bytes_remaining() as u16 {
+        if eapol_fields.packet_body_len.get() > reader.bytes_remaining() as u16 {
             return Err(Error::WrongPacketBodyLength(
-                eapol_fields.packet_body_len.to_native(),
+                eapol_fields.packet_body_len.get(),
                 reader.bytes_remaining() as u16,
             ));
         }
@@ -75,11 +75,9 @@ impl<B: SplitByteSlice> KeyFrameRx<B> {
             PacketType::KEY => {
                 let key_frame_fields = reader.read().ok_or(Error::FrameTruncated)?;
                 let key_mic = reader.read_bytes(mic_len).ok_or(Error::FrameTruncated)?;
-                let key_data_len =
-                    reader.read_unaligned::<BigEndianU16>().ok_or(Error::FrameTruncated)?;
-                let key_data = reader
-                    .read_bytes(key_data_len.get().to_native().into())
-                    .ok_or(Error::FrameTruncated)?;
+                let key_data_len = reader.read_unaligned::<U16>().ok_or(Error::FrameTruncated)?;
+                let key_data =
+                    reader.read_bytes(key_data_len.get().into()).ok_or(Error::FrameTruncated)?;
                 // Some APs add additional bytes to the 802.1X body. This is odd, but doesn't break anything.
                 match reader.peek_remaining().len() {
                     0 => (),
@@ -103,7 +101,7 @@ impl<B: SplitByteSlice> KeyFrameRx<B> {
     /// recalculating the frame MIC during a key exchange.
     pub fn write_into<A: Append>(&self, clear_mic: bool, buf: &mut A) -> Result<(), Error> {
         let required_size =
-            self.eapol_fields.packet_body_len.to_native() as usize + mem::size_of::<EapolFields>();
+            self.eapol_fields.packet_body_len.get() as usize + mem::size_of::<EapolFields>();
         if !buf.can_append(required_size) {
             return Err(Error::BufferTooShort);
         }
@@ -114,7 +112,7 @@ impl<B: SplitByteSlice> KeyFrameRx<B> {
         } else {
             buf.append_bytes(self.key_mic.as_bytes())?;
         }
-        buf.append_value(&BigEndianU16::from_native(self.key_data.len() as u16))?;
+        buf.append_value(&U16::new(self.key_data.len() as u16))?;
         buf.append_bytes(&self.key_data)?;
         Ok(())
     }
@@ -168,21 +166,20 @@ impl KeyFrameTxFinalizer {
         let packet_body_len =
             mem::size_of::<KeyFrameFields>() + mic_len + KEY_DATA_LEN_BYTES + key_data.len();
         let size = mem::size_of::<EapolFields>() + packet_body_len;
-        let packet_body_len = BigEndianU16::from_native(packet_body_len as u16);
+        let packet_body_len = U16::new(packet_body_len as u16);
         // The Vec implementation of Append will never fail to append, so none of the expects
         // here should ever trigger.
         let mut buf = Vec::with_capacity(size);
         buf.append_value(&EapolFields { version, packet_type: PacketType::KEY, packet_body_len })
             .expect("bad eapol allocation");
         buf.append_value(&key_frame_fields).expect("bad eapol allocation");
-        let mic_offset = if KeyInformation(key_frame_fields.key_info.to_native()).key_mic() {
+        let mic_offset = if KeyInformation(key_frame_fields.key_info.get()).key_mic() {
             Some(mem::size_of::<EapolFields>() + mem::size_of::<KeyFrameFields>())
         } else {
             None
         };
         buf.append_bytes_zeroed(mic_len as usize).expect("bad eapol allocation");
-        buf.append_value(&BigEndianU16::from_native(key_data.len() as u16))
-            .expect("bad eapol allocation");
+        buf.append_value(&U16::new(key_data.len() as u16)).expect("bad eapol allocation");
         buf.append_bytes(&key_data[..]).expect("bad eapol allocation");
         KeyFrameTxFinalizer { buf: buf.into(), mic_offset, mic_len }
     }
@@ -361,7 +358,7 @@ pub struct KeyInformation(pub u16);
 pub struct EapolFields {
     pub version: ProtocolVersion,
     pub packet_type: PacketType,
-    pub packet_body_len: BigEndianU16,
+    pub packet_body_len: U16,
 }
 
 // IEEE Std 802.11-2016, 12.7.2, Figure 12-32
@@ -369,12 +366,12 @@ pub struct EapolFields {
 #[repr(C, packed)]
 pub struct KeyFrameFields {
     pub descriptor_type: KeyDescriptor,
-    key_info: BigEndianU16,
-    pub key_len: BigEndianU16,
-    pub key_replay_counter: BigEndianU64,
+    key_info: U16,
+    pub key_len: U16,
+    pub key_replay_counter: U64,
     pub key_nonce: [u8; 32],
     pub key_iv: [u8; 16],
-    pub key_rsc: BigEndianU64,
+    pub key_rsc: U64,
     _reserved: [u8; 8],
 }
 
@@ -391,22 +388,22 @@ impl KeyFrameFields {
         let KeyInformation(key_info) = key_info;
         Self {
             descriptor_type,
-            key_info: BigEndianU16::from_native(key_info),
-            key_len: BigEndianU16::from_native(key_len),
-            key_replay_counter: BigEndianU64::from_native(key_replay_counter),
+            key_info: U16::new(key_info),
+            key_len: U16::new(key_len),
+            key_replay_counter: U64::new(key_replay_counter),
             key_nonce,
             key_iv,
-            key_rsc: BigEndianU64::from_native(key_rsc),
+            key_rsc: U64::new(key_rsc),
             _reserved: [0u8; 8],
         }
     }
 
     pub fn key_info(&self) -> KeyInformation {
-        KeyInformation(self.key_info.to_native())
+        KeyInformation(self.key_info.get())
     }
     pub fn set_key_info(&mut self, key_info: KeyInformation) {
         let KeyInformation(key_info) = key_info;
-        self.key_info = BigEndianU16::from_native(key_info);
+        self.key_info = U16::new(key_info);
     }
 }
 
@@ -428,7 +425,7 @@ mod tests {
     #[cfg(feature = "benchmarks")]
     mod benches {
         use super::*;
-        use test::{black_box, Bencher};
+        use test::{Bencher, black_box};
 
         #[bench]
         fn bench_key_frame_from_bytes(b: &mut Bencher) {
@@ -667,20 +664,20 @@ mod tests {
         let keyframe = result.expect("parsing keyframe failed");
         assert_eq!({ keyframe.eapol_fields.version }, ProtocolVersion::IEEE802DOT1X2001);
         assert_eq!({ keyframe.eapol_fields.packet_type }, PacketType::KEY);
-        assert_eq!(keyframe.eapol_fields.packet_body_len.to_native(), 98);
+        assert_eq!(keyframe.eapol_fields.packet_body_len.get(), 98);
         assert_eq!({ keyframe.key_frame_fields.descriptor_type }, KeyDescriptor::IEEE802DOT11);
         assert_eq!(keyframe.key_frame_fields.key_info(), KeyInformation(0x008a));
         assert_eq!(keyframe.key_frame_fields.key_info().key_descriptor_version(), 2);
         assert!(keyframe.key_frame_fields.key_info().key_ack());
-        assert_eq!(keyframe.key_frame_fields.key_len.to_native(), 16);
-        assert_eq!(keyframe.key_frame_fields.key_replay_counter.to_native(), 1);
+        assert_eq!(keyframe.key_frame_fields.key_len.get(), 16);
+        assert_eq!(keyframe.key_frame_fields.key_replay_counter.get(), 1);
         let nonce: Vec<u8> = vec![
             0x39, 0x5c, 0xc7, 0x6e, 0x1a, 0xe9, 0x9f, 0xa0, 0xb1, 0x22, 0x79, 0xfe, 0xc3, 0xb9,
             0xa9, 0x9e, 0x1d, 0x9a, 0x21, 0xb8, 0x47, 0x51, 0x38, 0x98, 0x25, 0xf8, 0xc7, 0xca,
             0x55, 0x86, 0xbc, 0xda,
         ];
         assert_eq!(&keyframe.key_frame_fields.key_nonce[..], &nonce[..]);
-        assert_eq!(keyframe.key_frame_fields.key_rsc.to_native(), 0);
+        assert_eq!(keyframe.key_frame_fields.key_rsc.get(), 0);
         let mic = [0; 16];
         assert_eq!(&keyframe.key_mic[..], mic);
         let data: Vec<u8> = vec![0x01, 0x02, 0x03];
@@ -754,7 +751,7 @@ mod tests {
             .serialize()
             .finalize_without_mic()
             .expect_err("should fail when finalizing keyframe without expected mic");
-        new_frame.key_frame_fields.key_info = BigEndianU16::from_native(0x008a);
+        new_frame.key_frame_fields.key_info = U16::new(0x008a);
         new_frame
             .serialize()
             .finalize_with_mic(&vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16][..])

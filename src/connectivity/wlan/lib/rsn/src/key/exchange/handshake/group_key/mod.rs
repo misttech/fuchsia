@@ -5,7 +5,7 @@
 use crate::key::exchange::handshake::group_key::supplicant::Supplicant;
 use crate::key::exchange::{self};
 use crate::rsna::{Dot11VerifiedKeyFrame, NegotiatedProtection, Role, UpdateSink};
-use crate::{rsn_ensure, Error};
+use crate::{Error, rsn_ensure};
 use bytes::Bytes;
 use zerocopy::SplitByteSlice;
 
@@ -102,7 +102,7 @@ impl<B: SplitByteSlice> GroupKeyHandshakeFrame<B> {
                     "IV must be zero in 2nd message of Group Key Handshake"
                 );
                 rsn_ensure!(
-                    raw_frame.key_frame_fields.key_rsc.to_native() == 0,
+                    raw_frame.key_frame_fields.key_rsc.get() == 0,
                     "RSC must be zero in 2nd message of Group Key Handshake"
                 );
             }
@@ -137,7 +137,7 @@ impl GroupKey {
             _ => {
                 return Err(Error::GenericError(
                     "Authenticator not yet support in Group-Key Handshake".to_string(),
-                ))
+                ));
             }
         };
 

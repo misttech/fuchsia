@@ -679,7 +679,7 @@ impl Associated {
         for msdu in data_frame {
             wtrace::duration_begin!(MSDU_TRACE_NAME);
 
-            match msdu.llc_frame.hdr.protocol_id.to_native() {
+            match msdu.llc_frame.hdr.protocol_id.get() {
                 // Forward EAPoL frames to SME independently of the controlled port's status.
                 mac::ETHER_TYPE_EAPOL => {
                     let mac::Msdu { dst_addr, src_addr, llc_frame } = msdu;
@@ -754,7 +754,7 @@ impl Associated {
             hdr.da,
             sta.sta.eapol_required(),
             self.0.qos.is_enabled(),
-            hdr.ether_type.to_native(),
+            hdr.ether_type.get(),
             &body,
             Some(async_id),
         )

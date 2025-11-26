@@ -2,13 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use fidl::endpoints::{create_proxy, Proxy};
+use fidl::endpoints::{Proxy, create_proxy};
 use fuchsia_component::client::connect_to_named_protocol_at_dir_root;
 use futures::{FutureExt as _, StreamExt as _, TryStreamExt as _};
 use std::pin::pin;
 use wlan_common::append::Append;
-use wlan_common::big_endian::BigEndianU16;
 use wlan_common::mac;
+use zerocopy::byteorder::big_endian::U16 as BigEndianU16;
 
 /// Returns a Netdevice client with the specified MAC address, or None if none is found.
 pub async fn create_client(
@@ -141,7 +141,7 @@ pub fn write_fake_frame(da: ieee80211::MacAddr, sa: ieee80211::MacAddr, payload:
     buf.append_value(&mac::EthernetIIHdr {
         da,
         sa,
-        ether_type: BigEndianU16::from_native(mac::ETHER_TYPE_IPV4),
+        ether_type: BigEndianU16::new(mac::ETHER_TYPE_IPV4),
     })
     .expect("error creating fake ethernet header");
     buf.append_bytes(payload).expect("buffer too small for ethernet payload");

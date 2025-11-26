@@ -14,7 +14,6 @@ use std::collections::HashMap;
 use std::collections::hash_map::Entry;
 use std::pin::pin;
 use std::sync::LazyLock;
-use wlan_common::big_endian::BigEndianU16;
 use wlan_common::bss::Protection;
 use wlan_common::channel::{Cbw, Channel};
 use wlan_common::mac;
@@ -25,6 +24,7 @@ use wlan_hw_sim::{
     default_wlantap_config_client, loop_until_iface_is_found, netdevice_helper, test_utils,
 };
 use zerocopy::IntoBytes;
+use zerocopy::byteorder::big_endian::U16 as BigEndianU16;
 use {fidl_fuchsia_wlan_policy as fidl_policy, fidl_fuchsia_wlan_tap as fidl_tap};
 // Remedy for https://fxbug.dev/42162128 (https://fxbug.dev/42108316)
 // Refer to |KMinstrelUpdateIntervalForHwSim| in //src/connectivity/wlan/drivers/wlan/device.cpp
@@ -225,7 +225,7 @@ async fn send_eth_beacons<'a>(
     let ethernet_header = mac::EthernetIIHdr {
         da: *ETH_DST_MAC,
         sa: *CLIENT_MAC_ADDR,
-        ether_type: BigEndianU16::from_native(mac::ETHER_TYPE_IPV4),
+        ether_type: BigEndianU16::new(mac::ETHER_TYPE_IPV4),
     };
     let buf = ethernet_header.as_bytes();
 

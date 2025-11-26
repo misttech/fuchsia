@@ -117,7 +117,7 @@ impl Supplicant {
             }
         };
 
-        let key_rsc = frame.key_frame_fields.key_rsc.to_native();
+        let key_rsc = frame.key_frame_fields.key_rsc.get();
         Ok((
             Gtk::from_bytes(
                 gtk.gtk,
@@ -152,7 +152,7 @@ impl Supplicant {
                 msg1.key_frame_fields.descriptor_type,
                 key_info,
                 0,
-                msg1.key_frame_fields.key_replay_counter.to_native(),
+                msg1.key_frame_fields.key_replay_counter.get(),
                 [0u8; 32], // nonce
                 [0u8; 16], // IV
                 0,         // RSC
@@ -178,9 +178,9 @@ mod tests {
     use crate::key_data::kde;
     use crate::rsna::{NegotiatedProtection, Role, test_util};
     use std::sync::LazyLock;
-    use wlan_common::big_endian::BigEndianU64;
     use wlan_common::ie::rsn::cipher::{CIPHER_BIP_CMAC_128, CIPHER_CCMP_128, Cipher, TKIP};
     use wlan_common::organization::Oui;
+    use zerocopy::byteorder::big_endian::U64 as BigEndianU64;
 
     static GTK: LazyLock<Box<[u8]>> = LazyLock::new(|| vec![3; 16].into_boxed_slice());
     static WPA1_GTK: LazyLock<Box<[u8]>> = LazyLock::new(|| vec![3; 32].into_boxed_slice());
@@ -229,7 +229,7 @@ mod tests {
         });
         let mut key_frame_fields: eapol::KeyFrameFields = Default::default();
         key_frame_fields.set_key_info(key_info);
-        key_frame_fields.key_rsc = BigEndianU64::from_native(GTK_RSC);
+        key_frame_fields.key_rsc = BigEndianU64::new(GTK_RSC);
         key_frame_fields.descriptor_type = eapol::KeyDescriptor::IEEE802DOT11;
         let key_frame = eapol::KeyFrameTx::new(
             eapol::ProtocolVersion::IEEE802DOT1X2004,
@@ -274,7 +274,7 @@ mod tests {
                 .with_key_mic(true)
                 .with_secure(true),
         );
-        key_frame_fields.key_rsc = BigEndianU64::from_native(GTK_RSC);
+        key_frame_fields.key_rsc = BigEndianU64::new(GTK_RSC);
         key_frame_fields.descriptor_type = eapol::KeyDescriptor::LEGACY_WPA1;
         let key_frame = eapol::KeyFrameTx::new(
             eapol::ProtocolVersion::IEEE802DOT1X2001,

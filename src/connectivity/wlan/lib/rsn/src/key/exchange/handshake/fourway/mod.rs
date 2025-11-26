@@ -11,7 +11,7 @@ use crate::key::igtk::{Igtk, IgtkProvider};
 use crate::key::ptk::Ptk;
 use crate::nonce::NonceReader;
 use crate::rsna::{Dot11VerifiedKeyFrame, NegotiatedProtection, Role, UpdateSink};
-use crate::{rsn_ensure, Error, ProtectionInfo};
+use crate::{Error, ProtectionInfo, rsn_ensure};
 use ieee80211::MacAddr;
 use std::ops::Deref;
 use std::sync::{Arc, Mutex};
@@ -245,7 +245,7 @@ impl Config {
                 match s_rsne.is_valid_subset_of(a_rsne) {
                     Ok(true) => {}
                     Ok(false) => {
-                        return Err(Error::RsneInvalidSubset(s_rsne.clone(), a_rsne.clone()))
+                        return Err(Error::RsneInvalidSubset(s_rsne.clone(), a_rsne.clone()));
                     }
                     Err(e) => return Err(e.into()),
                 };
@@ -446,7 +446,7 @@ fn validate_message_1<B: SplitByteSlice>(frame: &eapol::KeyFrameRx<B>) -> Result
     );
     // IEEE Std 802.11-2016, 12.7.2 g)
     rsn_ensure!(
-        frame.key_frame_fields.key_rsc.to_native() == 0,
+        frame.key_frame_fields.key_rsc.get() == 0,
         Error::InvalidRsc(MessageNumber::Message1.into())
     );
 
@@ -495,7 +495,7 @@ fn validate_message_2<B: SplitByteSlice>(frame: &eapol::KeyFrameRx<B>) -> Result
     );
     // IEEE Std 802.11-2016, 12.7.2 g)
     rsn_ensure!(
-        frame.key_frame_fields.key_rsc.to_native() == 0,
+        frame.key_frame_fields.key_rsc.get() == 0,
         Error::InvalidRsc(MessageNumber::Message2.into())
     );
 
@@ -590,7 +590,7 @@ fn validate_message_4<B: SplitByteSlice>(frame: &eapol::KeyFrameRx<B>) -> Result
     );
     // IEEE Std 802.11-2016, 12.7.2 g)
     rsn_ensure!(
-        frame.key_frame_fields.key_rsc.to_native() == 0,
+        frame.key_frame_fields.key_rsc.get() == 0,
         Error::InvalidRsc(MessageNumber::Message4.into())
     );
 
@@ -634,7 +634,7 @@ fn is_zero(slice: &[u8]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::rsna::{test_util, SecAssocUpdate};
+    use crate::rsna::{SecAssocUpdate, test_util};
     use crate::rsne::RsnCapabilities;
     use wlan_common::ie::rsn::cipher::{CIPHER_BIP_CMAC_128, CIPHER_BIP_CMAC_256};
     use wlan_common::ie::wpa::fake_wpa_ies::fake_deprecated_wpa1_vendor_ie;
@@ -826,7 +826,7 @@ mod tests {
         let mut other_gtk = s_gtk.bytes.clone();
         other_gtk[0] ^= 0xFF;
         let msg3 = test_util::get_wpa2_4whs_msg3(&s_ptk, &anonce[..], &other_gtk[..], |msg3| {
-            msg3.key_frame_fields.key_replay_counter.set_from_native(42);
+            msg3.key_frame_fields.key_replay_counter.set(42);
         });
         let mut update_sink = UpdateSink::default();
         env.send_msg3_to_supplicant_capture_updates(msg3.keyframe(), 13.into(), &mut update_sink);

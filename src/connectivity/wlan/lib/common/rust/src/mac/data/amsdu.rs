@@ -2,9 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::big_endian::BigEndianU16;
 use crate::buffer_reader::BufferReader;
-use crate::mac::{round_up, MacAddr};
+use crate::mac::{MacAddr, round_up};
+use zerocopy::byteorder::big_endian::U16;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, Ref, SplitByteSlice, Unaligned};
 
 // IEEE Std 802.11-2016, 9.3.2.2.2
@@ -14,7 +14,7 @@ pub struct AmsduSubframeHdr {
     // Note this is the same as the IEEE 802.3 frame format.
     pub da: MacAddr,
     pub sa: MacAddr,
-    pub msdu_len: BigEndianU16,
+    pub msdu_len: U16,
 }
 
 pub struct AmsduSubframe<B> {
@@ -29,7 +29,7 @@ pub struct AmsduSubframe<B> {
 impl<B: SplitByteSlice> AmsduSubframe<B> {
     pub fn parse(buffer_reader: &mut BufferReader<B>) -> Option<Self> {
         let hdr = buffer_reader.read::<AmsduSubframeHdr>()?;
-        let msdu_len = hdr.msdu_len.to_native() as usize;
+        let msdu_len = hdr.msdu_len.get() as usize;
         if buffer_reader.bytes_remaining() < msdu_len {
             None
         } else {

@@ -458,11 +458,11 @@ mod tests {
     use fuchsia_sync::Mutex;
     use ieee80211::MacAddrBytes;
     use std::sync::{Arc, LazyLock};
-    use wlan_common::big_endian::BigEndianU16;
     use wlan_common::test_utils::fake_frames::fake_wpa2_rsne;
     use wlan_common::timer;
     use wlan_frame_writer::write_frame_to_vec;
     use wlan_sme::responder::Responder;
+    use zerocopy::byteorder::big_endian::U16 as BigEndianU16;
     use {
         fidl_fuchsia_wlan_common as fidl_common, fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211,
         fidl_fuchsia_wlan_softmac as fidl_softmac,
@@ -483,7 +483,7 @@ mod tests {
                 mac::EthernetIIHdr: &mac::EthernetIIHdr {
                     da: dst_addr,
                     sa: src_addr,
-                    ether_type: BigEndianU16::from_native(protocol_id),
+                    ether_type: BigEndianU16::new(protocol_id),
                 },
             },
             payload: body,

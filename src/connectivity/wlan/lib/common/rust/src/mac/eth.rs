@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::big_endian::BigEndianU16;
 use crate::mac::MacAddr;
+use zerocopy::byteorder::big_endian::U16;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, Ref, SplitByteSlice, Unaligned};
 
 // RFC 704, Appendix B.2
@@ -20,7 +20,7 @@ pub const MAX_ETH_FRAME_LEN: usize = 2048;
 pub struct EthernetIIHdr {
     pub da: MacAddr,
     pub sa: MacAddr,
-    pub ether_type: BigEndianU16,
+    pub ether_type: U16,
 }
 
 pub struct EthernetFrame<B: SplitByteSlice> {
@@ -51,12 +51,12 @@ mod tests {
             .expect("cannot create ethernet header.");
         assert_eq!(hdr.da, MacAddr::from([1u8, 2, 3, 4, 5, 6]));
         assert_eq!(hdr.sa, MacAddr::from([7u8, 8, 9, 10, 11, 12]));
-        assert_eq!(hdr.ether_type.to_native(), 13 << 8 | 14);
-        assert_eq!(hdr.ether_type.0, [13u8, 14]);
+        assert_eq!(hdr.ether_type.get(), 13 << 8 | 14);
+        assert_eq!(hdr.ether_type.to_bytes(), [13u8, 14]);
         assert_eq!(body, [99, 99]);
 
-        hdr.ether_type.set_from_native(0x888e);
-        assert_eq!(hdr.ether_type.0, [0x88, 0x8e]);
+        hdr.ether_type.set(0x888e);
+        assert_eq!(hdr.ether_type.to_bytes(), [0x88, 0x8e]);
         #[rustfmt::skip]
         assert_eq!(
             &[1u8, 2, 3, 4, 5, 6,

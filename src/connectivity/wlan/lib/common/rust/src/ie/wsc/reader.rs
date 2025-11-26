@@ -20,7 +20,7 @@ impl<B: SplitByteSlice> Iterator for Reader<B> {
 
     fn next(&mut self) -> Option<Self::Item> {
         let header = self.0.peek::<AttributeHeader>()?;
-        let body_len = header.body_len.to_native() as usize;
+        let body_len = header.body_len.get() as usize;
         if self.0.bytes_remaining() < size_of::<AttributeHeader>() + body_len {
             None
         } else {

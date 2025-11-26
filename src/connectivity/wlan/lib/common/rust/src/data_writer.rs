@@ -2,9 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::big_endian::BigEndianU16;
 use crate::mac::{self, FixedDataHdrFields, FrameControl, SequenceControl};
 use ieee80211::{Bssid, MacAddr};
+use zerocopy::byteorder::big_endian::U16;
 
 pub fn data_hdr_client_to_ap(
     mut frame_ctrl: FrameControl,
@@ -30,7 +30,7 @@ pub fn make_snap_llc_hdr(protocol_id: u16) -> mac::LlcHdr {
         ssap: mac::LLC_SNAP_EXTENSION,
         control: mac::LLC_SNAP_UNNUMBERED_INFO,
         oui: mac::LLC_SNAP_OUI,
-        protocol_id: BigEndianU16::from_native(protocol_id),
+        protocol_id: U16::new(protocol_id),
     }
 }
 

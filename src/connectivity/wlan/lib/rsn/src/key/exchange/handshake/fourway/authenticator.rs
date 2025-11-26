@@ -2,21 +2,21 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::Error;
+use crate::key::Tk;
 use crate::key::exchange::handshake::fourway::{
     self, AuthenticatorKeyReplayCounter, Config, FourwayHandshakeFrame, SupplicantKeyReplayCounter,
 };
-use crate::key::exchange::{compute_mic_from_buf, Key};
+use crate::key::exchange::{Key, compute_mic_from_buf};
 use crate::key::gtk::Gtk;
 use crate::key::igtk::Igtk;
 use crate::key::ptk::Ptk;
-use crate::key::Tk;
 use crate::key_data::kde;
 use crate::nonce::Nonce;
 use crate::rsna::{
-    derive_key_descriptor_version, Dot11VerifiedKeyFrame, NegotiatedProtection, SecAssocUpdate,
-    UnverifiedKeyData, UpdateSink,
+    Dot11VerifiedKeyFrame, NegotiatedProtection, SecAssocUpdate, UnverifiedKeyData, UpdateSink,
+    derive_key_descriptor_version,
 };
-use crate::Error;
 use anyhow::{ensure, format_err};
 use log::{error, warn};
 use std::fmt;
@@ -122,7 +122,10 @@ impl State {
                                 State::AwaitingMsg4 { pmk, ptk, gtk, igtk, cfg, key_replay_counter }
                             }
                             Err(e) => {
-                                warn!("Unable to process second EAPOL handshake key frame from supplicant: {}", e);
+                                warn!(
+                                    "Unable to process second EAPOL handshake key frame from supplicant: {}",
+                                    e
+                                );
                                 State::AwaitingMsg2 { pmk, cfg, anonce, key_replay_counter }
                             }
                         }
@@ -307,7 +310,7 @@ fn create_message_1<B: SplitByteSlice>(
             return Err(format_err!(
                 "unknown cipher used for pairwise key: {:?}",
                 protection.pairwise
-            ))
+            ));
         }
         Some(tk_bits) => tk_bits / 8,
     };
@@ -358,20 +361,20 @@ pub fn handle_message_2<B: SplitByteSlice>(
         Dot11VerifiedKeyFrame::WithUnverifiedMic(unverified_mic) => {
             match unverified_mic.verify_mic(ptk.kck(), &protection)? {
                 UnverifiedKeyData::Encrypted(_) => {
-                    return Err(format_err!("msg2 of 4-Way Handshake must not be encrypted"))
+                    return Err(format_err!("msg2 of 4-Way Handshake must not be encrypted"));
                 }
                 UnverifiedKeyData::NotEncrypted(frame) => frame,
             }
         }
         Dot11VerifiedKeyFrame::WithoutMic(_) => {
-            return Err(format_err!("msg2 of 4-Way Handshake must carry a MIC"))
+            return Err(format_err!("msg2 of 4-Way Handshake must carry a MIC"));
         }
     };
     ensure!(
-        frame.key_frame_fields.key_replay_counter.to_native() == *key_replay_counter,
+        frame.key_frame_fields.key_replay_counter.get() == *key_replay_counter,
         "error, expected Supplicant response to message {:?} but was {:?} in msg #2",
         *key_replay_counter,
-        frame.key_frame_fields.key_replay_counter.to_native()
+        frame.key_frame_fields.key_replay_counter.get()
     );
 
     // TODO(hahnr): Key data must carry RSNE. Verify.
@@ -418,7 +421,7 @@ fn create_message_3(
             return Err(format_err!(
                 "unknown cipher used for pairwise key: {:?}",
                 protection.pairwise
-            ))
+            ));
         }
         Some(tk_bits) => tk_bits / 8,
     };
@@ -456,20 +459,20 @@ pub fn handle_message_4<B: SplitByteSlice>(
         Dot11VerifiedKeyFrame::WithUnverifiedMic(unverified_mic) => {
             match unverified_mic.verify_mic(kck, &protection)? {
                 UnverifiedKeyData::Encrypted(_) => {
-                    return Err(format_err!("msg4 of 4-Way Handshake must not be encrypted"))
+                    return Err(format_err!("msg4 of 4-Way Handshake must not be encrypted"));
                 }
                 UnverifiedKeyData::NotEncrypted(frame) => frame,
             }
         }
         Dot11VerifiedKeyFrame::WithoutMic(_) => {
-            return Err(format_err!("msg4 of 4-Way Handshake must carry a MIC"))
+            return Err(format_err!("msg4 of 4-Way Handshake must carry a MIC"));
         }
     };
     ensure!(
-        frame.key_frame_fields.key_replay_counter.to_native() == *key_replay_counter,
+        frame.key_frame_fields.key_replay_counter.get() == *key_replay_counter,
         "error, expected Supplicant response to message {:?} but was {:?} in msg #4",
         *key_replay_counter,
-        frame.key_frame_fields.key_replay_counter.to_native()
+        frame.key_frame_fields.key_replay_counter.get()
     );
 
     // Note: The message's integrity was already verified by low layers.
