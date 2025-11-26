@@ -177,23 +177,6 @@ _all_named_fuchsia_envs += [
   },
 ]
 
-mac_env = {
-  dimensions = {
-    os = "Mac"
-    cpu = current_cpu
-  }
-
-  # When running tests for a mac build, we only wish to run mac tests; we attach
-  # the "mac" tag in that case to filter out other tests.
-  tags = [ "mac" ]
-}
-_all_named_host_envs += [
-  {
-    name = "mac"
-    env = mac_env
-  },
-]
-
 kola_env = {
   dimensions = {
     device_type = device_types.kola
@@ -385,8 +368,6 @@ _all_named_fuchsia_envs += [
 
 if (current_os == "linux") {
   host_env = linux_env
-} else if (current_os == "mac") {
-  host_env = mac_env
 }
 
 # Allow selection of AEMU as the default EMU.
