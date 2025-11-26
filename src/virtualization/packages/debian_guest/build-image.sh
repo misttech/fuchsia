@@ -66,7 +66,7 @@ main() {
   check_dep zerofree
   check_dep qemu-img qemu-utils
   check_dep fstrim util-linux
-  check_dep qemu-aarch64-static qemu-user-static
+  check_dep qemu-user
 
   # Create a temporary working directory.
   local working_dir
