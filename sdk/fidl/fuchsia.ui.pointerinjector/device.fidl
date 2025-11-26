@@ -53,7 +53,7 @@ const MAX_INJECT uint32 = 128;
 /// channel is closed. If an event stream was in flight, the server dispatches a
 /// final CANCEL event following channel closure; this CANCEL event is then
 /// propagated according to dispatch policy.
-@discoverable
+@discoverable(server="platform")
 closed protocol Registry {
     /// Sets up a context for a |Device|, the target for the |Device|, and
     /// directs the |Device| at the target via a viewport, positioned in the
@@ -76,6 +76,7 @@ closed protocol Registry {
 /// A |Device| may *inject* pointer events into a target in the scene, but the
 /// *dispatch* of pointer events to UI clients within that target's view tree
 /// will depend on the dispatch policy and the scene topology.
+@discoverable(server="platform")
 closed protocol Device {
     /// Injects events into a target.
     ///
@@ -86,7 +87,16 @@ closed protocol Device {
     /// Flow control: The caller is allowed at most one in-flight |Inject| call
     /// at at time: subsequent |Inject| calls must wait until the acknowledgment
     /// returns. Non-compliance results in channel closure.
+    @available(deprecated=HEAD, note="Instead, use `InjectEvents`")
     strict Inject(DeviceInjectRequest) -> ();
+
+    /// Injects events into a target.
+    ///
+    /// Batching: The caller is expected to batch-inject all events that share the
+    /// same timestamp (e.g., multiple finger samples). There may be multiple such
+    /// batches per injection call.
+    @available(added=HEAD)
+    strict InjectEvents(DeviceInjectRequest);
 };
 
 @available(replaced=HEAD)

@@ -708,6 +708,9 @@ mod tests {
                             let _ = injector_sender.unbounded_send(events);
                             device_injector_responder.send().expect("failed to respond")
                         }
+                        Ok(pointerinjector::DeviceRequest::InjectEvents { .. }) => {
+                            panic!("InjectEvents not supported");
+                        }
                         Err(e) => panic!("FIDL error {}", e),
                     }
                 })
@@ -730,6 +733,9 @@ mod tests {
                 Some(Ok(pointerinjector::DeviceRequest::Inject { events, responder })) => {
                     assert_eq!(events, vec![expected_event]);
                     responder.send().expect("failed to respond");
+                }
+                Some(Ok(pointerinjector::DeviceRequest::InjectEvents { events, .. })) => {
+                    assert_eq!(events, vec![expected_event]);
                 }
                 Some(Err(e)) => panic!("FIDL error {}", e),
                 None => panic!("Expected another event."),
