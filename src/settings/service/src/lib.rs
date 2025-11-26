@@ -1039,6 +1039,7 @@ struct AgentResult {
     inspect_settings_values_agent: Option<agent::inspect::setting_values::AgentSetup>,
     inspect_external_apis_agent: Option<agent::inspect::external_apis::ExternalApiInspectAgent>,
     inspect_setting_proxy_agent: Option<agent::inspect::setting_proxy::SettingProxyInspectAgent>,
+    inspect_usages_agent: Option<agent::inspect::usage_counts::SettingTypeUsageInspectAgent>,
     agent_blueprints: Vec<AgentCreator>,
 }
 
@@ -1092,13 +1093,11 @@ fn create_agent_blueprints(
     let inspect_setting_proxy_agent = agent_types
         .contains(&AgentType::InspectSettingProxy)
         .then(|| agent::inspect::setting_proxy::SettingProxyInspectAgent::new(proxy_event_rx));
-    let inspect_usages_registrar = agent_types
+    let inspect_usages_agent = agent_types
         .contains(&AgentType::InspectSettingTypeUsage)
-        .then(|| agent::inspect::usage_counts::create_registrar(usage_event_rx));
+        .then(|| agent::inspect::usage_counts::SettingTypeUsageInspectAgent::new(usage_event_rx));
 
-    let agent_registrars = [inspect_usages_registrar];
-
-    let mut agent_blueprints = if agent_types.iter().all(|t| {
+    let agent_blueprints = if agent_types.iter().all(|t| {
         matches!(
             t,
             AgentType::Earcons
@@ -1115,7 +1114,6 @@ fn create_agent_blueprints(
         vec![]
     };
 
-    agent_blueprints.extend(agent_registrars.into_iter().filter_map(|r| r));
     AgentResult {
         earcons_agent,
         camera_watcher_agent,
@@ -1123,6 +1121,7 @@ fn create_agent_blueprints(
         inspect_settings_values_agent,
         inspect_external_apis_agent,
         inspect_setting_proxy_agent,
+        inspect_usages_agent,
         agent_blueprints,
     }
 }
@@ -1208,6 +1207,10 @@ async fn create_environment<'a>(
 
     if let Some(inspect_setting_proxy_agent) = agent_result.inspect_setting_proxy_agent {
         inspect_setting_proxy_agent.initialize();
+    }
+
+    if let Some(inspect_usages_agent) = agent_result.inspect_usages_agent {
+        inspect_usages_agent.initialize();
     }
 
     // Execute initialization agents sequentially
