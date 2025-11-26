@@ -79,7 +79,7 @@ pub async fn create_target_cache(context: &EnvironmentContext) -> anyhow::Result
         bail!("Could not get discovery cache file");
     };
     let infos =
-        crate::list::list_targets(context, TargetInfoQuery::First, true, true, false).await?;
+        crate::list::list_targets(context, TargetInfoQuery::First, true, true, true).await?;
     // The cache is used to quickly find targets matching a query. With that
     // in mind, we are storing more than we need to (since queries are based
     // only on the name/serial/addrs).  We could just store the subset of the
