@@ -75,10 +75,7 @@ closed protocol DeviceWatcher {
 };
 
 type DeviceMonitorError = flexible enum {
-    INVALID_PHY = 0;
-    INVALID_IFACE = 1;
-    NOT_SUPPORTED = 2;
-    INTERNAL = 3;
+    INTERNAL = 1;
 };
 
 type CriticalErrorReason = strict enum : uint8 {
@@ -166,19 +163,19 @@ closed protocol DeviceMonitor {
     strict SetTxPowerScenario(struct {
         phy_id uint16;
         scenario fuchsia.wlan.internal.TxPowerScenario;
-    }) -> () error DeviceMonitorError;
+    }) -> () error zx.Status;
 
     /// Clears any existing TxPowerScenario that has been applied and resets the PHY to use its default TxPowerScenario.
     strict ResetTxPowerScenario(struct {
         phy_id uint16;
-    }) -> () error DeviceMonitorError;
+    }) -> () error zx.Status;
 
     /// Queries the current TxPowerScenario setting for the specified PHY.
     strict GetTxPowerScenario(struct {
         phy_id uint16;
     }) -> (struct {
         scenario fuchsia.wlan.internal.TxPowerScenario;
-    }) error DeviceMonitorError;
+    }) error zx.Status;
 
     /// This will return the current power state of the wlan chip.
     strict GetPowerState(struct {

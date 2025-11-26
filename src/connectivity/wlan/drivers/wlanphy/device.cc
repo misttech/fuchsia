@@ -27,15 +27,6 @@
 
 namespace {
 
-fuchsia_wlan_device::wire::PhyError StatusToError(zx_status_t status) {
-  switch (status) {
-    case ZX_ERR_NOT_SUPPORTED:
-      return fuchsia_wlan_device::wire::PhyError::kNotSupported;
-    default:
-      return fuchsia_wlan_device::wire::PhyError::kInternal;
-  }
-}
-
 std::optional<fuchsia_wlan_phyimpl::wire::TxPowerScenario> ConvertPowerScenario(
     fuchsia_wlan_internal::wire::TxPowerScenario scenario) {
   switch (scenario) {
@@ -691,7 +682,7 @@ void Device::SetTxPowerScenario(SetTxPowerScenarioRequestView request,
   auto scenario = ConvertPowerScenario(request->scenario);
   if (!scenario.has_value()) {
     lerror("Invalid TX power scenario %u", request->scenario);
-    completer.ReplyError(fuchsia_wlan_device::wire::PhyError::kInternal);
+    completer.ReplyError(ZX_ERR_INVALID_ARGS);
     return;
   }
   builder.scenario(scenario.value());
@@ -704,13 +695,13 @@ void Device::SetTxPowerScenario(SetTxPowerScenarioRequestView request,
             if (!result.ok()) {
               lerror("SetTxPowerScenario failed with FIDL error %s",
                      result.FormatDescription().c_str());
-              completer.ReplyError(StatusToError(result.status()));
+              completer.ReplyError(result.status());
               return;
             }
             if (result->is_error()) {
               lerror("SetTxPowerScenario failed with error %s",
                      zx_status_get_string(result->error_value()));
-              completer.ReplyError(StatusToError(result->error_value()));
+              completer.ReplyError(result->error_value());
               return;
             }
             completer.ReplySuccess();
@@ -727,13 +718,13 @@ void Device::ResetTxPowerScenario(ResetTxPowerScenarioCompleter::Sync& completer
         if (!result.ok()) {
           lerror("ResetTxPowerScenario failed with a FIDL error %s",
                  result.FormatDescription().c_str());
-          completer.ReplyError(StatusToError(result.status()));
+          completer.ReplyError(result.status());
           return;
         }
         if (result->is_error()) {
           lerror("ResetTxPowerScenario failed with error %s",
                  zx_status_get_string(result->error_value()));
-          completer.ReplyError(StatusToError(result->error_value()));
+          completer.ReplyError(result->error_value());
           return;
         }
         completer.ReplySuccess();
@@ -750,19 +741,19 @@ void Device::GetTxPowerScenario(GetTxPowerScenarioCompleter::Sync& completer) {
         if (!result.ok()) {
           lerror("GetTxPowerScenario failed with a FIDL error %s",
                  result.FormatDescription().c_str());
-          completer.ReplyError(StatusToError(result.status()));
+          completer.ReplyError(result.status());
           return;
         }
         if (result->is_error()) {
           lerror("GetTxPowerScenario failed with error %s",
                  zx_status_get_string(result->error_value()));
-          completer.ReplyError(StatusToError(result->error_value()));
+          completer.ReplyError(result->error_value());
           return;
         }
         auto scenario = ConvertPowerScenario(result.value()->scenario);
         if (!scenario.has_value()) {
           lerror("GetTxPowerScenario encountered invalid scenario %u", result.value()->scenario);
-          completer.ReplyError(fuchsia_wlan_device::wire::PhyError::kInternal);
+          completer.ReplyError(ZX_ERR_INTERNAL);
           return;
         }
         completer.ReplySuccess(scenario.value());

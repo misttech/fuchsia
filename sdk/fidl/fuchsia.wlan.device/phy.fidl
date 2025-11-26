@@ -54,14 +54,6 @@ type CountryCode = struct {
     alpha2 array<byte, 2>;
 };
 
-
-type PhyError = strict enum : int32 {
-    /// An unspecified internal error occurred.
-    INTERNAL = 1;
-    // The requested method is not supported by the Phy implementation.
-    NOT_SUPPORTED = 2;
-};
-
 type CriticalErrorReason = strict enum : uint8 {
     /// Notifies the receiver that the wlan firmware running on the wlan PHY
     /// has crashed.  Upon receiving this event, the client can decide to forward it to
@@ -125,13 +117,13 @@ closed protocol Phy {
 
     strict SetTxPowerScenario(struct {
         scenario fuchsia.wlan.internal.TxPowerScenario;
-    }) -> () error PhyError;
+    }) -> () error zx.Status;
 
-    strict ResetTxPowerScenario() -> () error PhyError;
+    strict ResetTxPowerScenario() -> () error zx.Status;
 
     strict GetTxPowerScenario() -> (struct {
         scenario fuchsia.wlan.internal.TxPowerScenario;
-    }) error PhyError;
+    }) error zx.Status;
 
     /// This message indicating a critical error in the wlan PHY (hardware) is sent
     /// to the server of this protocol from the client.

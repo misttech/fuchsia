@@ -2536,7 +2536,7 @@ mod tests {
                 responder })
             ) => {
                 assert_eq!(phy_id, test_phy_id);
-                responder.send(Err(fidl_device_service::DeviceMonitorError::Internal)).expect("failed to send device monitor response")
+                responder.send(Err(zx::sys::ZX_ERR_NO_MEMORY)).expect("failed to send device monitor response")
             }
         );
 
@@ -2615,7 +2615,7 @@ mod tests {
             ) => {
                 assert_eq!(phy_id, test_phy_id);
                 assert_eq!(scenario, test_scenario);
-                responder.send(Err(fidl_device_service::DeviceMonitorError::Internal)).expect("failed to send device monitor response")
+                responder.send(Err(zx::sys::ZX_ERR_NO_MEMORY)).expect("failed to send device monitor response")
             }
         );
 

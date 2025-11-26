@@ -184,15 +184,16 @@ pub(crate) async fn handle_monitor_request(
             responder.send(result.map_err(|e| e.into_raw()))?;
         }
         DeviceMonitorRequest::SetTxPowerScenario { phy_id, scenario, responder } => {
-            let status = set_tx_power_scenario(phys, phy_id, &scenario).await;
-            responder.send(status)?
+            let result = set_tx_power_scenario(phys, phy_id, &scenario).await;
+            responder.send(result.map_err(|e| e.into_raw()))?;
         }
         DeviceMonitorRequest::ResetTxPowerScenario { phy_id, responder } => {
-            let status = reset_tx_power_scenario(phys, phy_id).await;
-            responder.send(status)?
+            let result = reset_tx_power_scenario(phys, phy_id).await;
+            responder.send(result.map_err(|e| e.into_raw()))?;
         }
         DeviceMonitorRequest::GetTxPowerScenario { phy_id, responder } => {
-            responder.send(get_tx_power_scenario(phys, phy_id).await)?
+            let result = get_tx_power_scenario(phys, phy_id).await;
+            responder.send(result.map_err(|e| e.into_raw()))?;
         }
     }
     Ok(())
@@ -443,37 +444,40 @@ async fn set_tx_power_scenario(
     phys: &PhyMap,
     phy_id: u16,
     scenario: &TxPowerScenario,
-) -> Result<(), fidl_svc::DeviceMonitorError> {
-    let phy = phys.get(&phy_id).ok_or(fidl_svc::DeviceMonitorError::InvalidPhy)?;
-    phy_result_to_device_monitor_result(
-        phy_id,
-        "SetTxPowerScenario",
-        phy.proxy.set_tx_power_scenario(*scenario).await,
-    )
+) -> Result<(), zx::Status> {
+    let phy = phys.get(&phy_id).ok_or(zx::Status::NOT_FOUND)?;
+
+    match phy.proxy.set_tx_power_scenario(*scenario).await {
+        Ok(result) => result.map_err(zx::Status::from_raw),
+        Err(e) => {
+            error!("Error sending 'set_tx_power_scenario' request to phy #{}: {}", phy_id, e);
+            Err(zx::Status::INTERNAL)
+        }
+    }
 }
 
-async fn reset_tx_power_scenario(
-    phys: &PhyMap,
-    phy_id: u16,
-) -> Result<(), fidl_svc::DeviceMonitorError> {
-    let phy = phys.get(&phy_id).ok_or(fidl_svc::DeviceMonitorError::InvalidPhy)?;
-    phy_result_to_device_monitor_result(
-        phy_id,
-        "ResetTxPowerScenario",
-        phy.proxy.reset_tx_power_scenario().await,
-    )
+async fn reset_tx_power_scenario(phys: &PhyMap, phy_id: u16) -> Result<(), zx::Status> {
+    let phy = phys.get(&phy_id).ok_or(zx::Status::NOT_FOUND)?;
+
+    match phy.proxy.reset_tx_power_scenario().await {
+        Ok(result) => result.map_err(zx::Status::from_raw),
+        Err(e) => {
+            error!("Error sending 'reset_tx_power_scenario' request to phy #{}: {}", phy_id, e);
+            Err(zx::Status::INTERNAL)
+        }
+    }
 }
 
-async fn get_tx_power_scenario(
-    phys: &PhyMap,
-    phy_id: u16,
-) -> Result<TxPowerScenario, fidl_svc::DeviceMonitorError> {
-    let phy = phys.get(&phy_id).ok_or(fidl_svc::DeviceMonitorError::InvalidPhy)?;
-    phy_result_to_device_monitor_result(
-        phy_id,
-        "GetTxPowerScenario",
-        phy.proxy.get_tx_power_scenario().await,
-    )
+async fn get_tx_power_scenario(phys: &PhyMap, phy_id: u16) -> Result<TxPowerScenario, zx::Status> {
+    let phy = phys.get(&phy_id).ok_or(zx::Status::NOT_FOUND)?;
+
+    match phy.proxy.get_tx_power_scenario().await {
+        Ok(result) => result.map_err(zx::Status::from_raw),
+        Err(e) => {
+            error!("Error sending 'get_tx_power_scenario' request to phy #{}: {}", phy_id, e);
+            Err(zx::Status::INTERNAL)
+        }
+    }
 }
 
 #[allow(clippy::too_many_arguments, reason = "mass allow for https://fxbug.dev/381896734")]
@@ -732,23 +736,6 @@ fn phy_result_to_status(
         Err(e) => {
             error!("{} request failed phy#{} : {}", context, phy_id, e);
             zx::Status::INTERNAL
-        }
-    }
-}
-
-fn phy_result_to_device_monitor_result<T>(
-    phy_id: u16,
-    context: &str,
-    result: Result<Result<T, fidl_dev::PhyError>, fidl::Error>,
-) -> Result<T, fidl_svc::DeviceMonitorError> {
-    match result {
-        Ok(result) => result.map_err(|e| match e {
-            fidl_dev::PhyError::NotSupported => fidl_svc::DeviceMonitorError::NotSupported,
-            fidl_dev::PhyError::Internal => fidl_svc::DeviceMonitorError::Internal,
-        }),
-        Err(e) => {
-            error!("{} request failed phy#{} : {}", context, phy_id, e);
-            Err(fidl_svc::DeviceMonitorError::Internal)
         }
     }
 }
@@ -2147,10 +2134,7 @@ mod tests {
         let mut req_fut = pin!(req_fut);
 
         // Verify that a NOT_FOUND error is returned.
-        assert_eq!(
-            exec.run_until_stalled(&mut req_fut),
-            Poll::Ready(Err(fidl_svc::DeviceMonitorError::InvalidPhy))
-        );
+        assert_eq!(exec.run_until_stalled(&mut req_fut), Poll::Ready(Err(zx::Status::NOT_FOUND)));
     }
 
     #[fuchsia::test]
@@ -2164,17 +2148,12 @@ mod tests {
 
         // Drop the phy stream so that the request fails.
         drop(phy_stream);
-
-        // Set the power state for a PHY ID that is not present.
         let req_fut =
             super::set_tx_power_scenario(&test_values.phys, phy_id, &TxPowerScenario::HeadCellOff);
         let mut req_fut = pin!(req_fut);
 
-        // Verify that a NOT_FOUND error is returned.
-        assert_eq!(
-            exec.run_until_stalled(&mut req_fut),
-            Poll::Ready(Err(fidl_svc::DeviceMonitorError::Internal))
-        );
+        // Verify that an INTERNAL error is returned.
+        assert_eq!(exec.run_until_stalled(&mut req_fut), Poll::Ready(Err(zx::Status::INTERNAL)));
     }
 
     #[fuchsia::test]
@@ -2198,7 +2177,7 @@ mod tests {
                 assert_eq!(scenario, test_scenario);
 
                 // Send back an error response
-                responder.send(Err(fidl_dev::PhyError::NotSupported))
+                responder.send(Err(zx::sys::ZX_ERR_NO_MEMORY))
                     .expect("failed to send the response to SetTxPowerScenario");
             }
         );
@@ -2206,7 +2185,7 @@ mod tests {
         // Verify that the error was propagated to the caller.
         assert_matches!(
             exec.run_until_stalled(&mut req_fut),
-            Poll::Ready(Err(fidl_svc::DeviceMonitorError::NotSupported))
+            Poll::Ready(Err(zx::Status::NO_MEMORY))
         );
     }
 
@@ -2275,7 +2254,7 @@ mod tests {
         // Verify that a not-found error is returned
         assert_matches!(
             exec.run_until_stalled(&mut set_fut),
-            Poll::Ready(Ok(Err(fidl_svc::DeviceMonitorError::InvalidPhy)))
+            Poll::Ready(Ok(Err(zx::sys::ZX_ERR_NOT_FOUND)))
         );
     }
 
@@ -2318,7 +2297,7 @@ mod tests {
         // Verify that an internal error is returned
         assert_matches!(
             exec.run_until_stalled(&mut set_fut),
-            Poll::Ready(Ok(Err(fidl_svc::DeviceMonitorError::Internal)))
+            Poll::Ready(Ok(Err(zx::sys::ZX_ERR_INTERNAL)))
         );
     }
 
@@ -2360,7 +2339,7 @@ mod tests {
             Poll::Ready(Some(Ok(fidl_dev::PhyRequest::SetTxPowerScenario { responder, scenario }))) => {
                 assert_eq!(test_scenario, scenario);
                 // Send back an error response
-                responder.send(Err(fidl_dev::PhyError::Internal))
+                responder.send(Err(zx::sys::ZX_ERR_NO_MEMORY))
                     .expect("failed to send the response to SetTxPowerScenario");
             }
         );
@@ -2371,7 +2350,7 @@ mod tests {
         // Verify that the response is returned to the caller.
         assert_matches!(
             exec.run_until_stalled(&mut set_fut),
-            Poll::Ready(Ok(Err(fidl_svc::DeviceMonitorError::Internal)))
+            Poll::Ready(Ok(Err(zx::sys::ZX_ERR_NO_MEMORY)))
         );
     }
 
@@ -2440,10 +2419,7 @@ mod tests {
         let mut req_fut = pin!(req_fut);
 
         // Verify that a NOT_FOUND error is returned.
-        assert_eq!(
-            exec.run_until_stalled(&mut req_fut),
-            Poll::Ready(Err(fidl_svc::DeviceMonitorError::InvalidPhy))
-        );
+        assert_eq!(exec.run_until_stalled(&mut req_fut), Poll::Ready(Err(zx::Status::NOT_FOUND)));
     }
 
     #[fuchsia::test]
@@ -2464,10 +2440,7 @@ mod tests {
         let mut req_fut = pin!(req_fut);
 
         // The future should complete immediately with an internal error.
-        assert_eq!(
-            exec.run_until_stalled(&mut req_fut),
-            Poll::Ready(Err(fidl_svc::DeviceMonitorError::Internal))
-        );
+        assert_eq!(exec.run_until_stalled(&mut req_fut), Poll::Ready(Err(zx::Status::INTERNAL)));
     }
 
     #[fuchsia::test]
@@ -2488,7 +2461,7 @@ mod tests {
         assert_matches!(exec.run_until_stalled(&mut phy_stream.next()),
             Poll::Ready(Some(Ok(fidl_dev::PhyRequest::GetTxPowerScenario { responder }))) => {
                 // Send back an error response
-                responder.send(Err(fidl_dev::PhyError::NotSupported))
+                responder.send(Err(zx::sys::ZX_ERR_NO_MEMORY))
                     .expect("failed to send the response to GetTxPowerScenario");
             }
         );
@@ -2496,7 +2469,7 @@ mod tests {
         // Verify that the error was propagated to the caller.
         assert_matches!(
             exec.run_until_stalled(&mut req_fut),
-            Poll::Ready(Err(fidl_svc::DeviceMonitorError::NotSupported))
+            Poll::Ready(Err(zx::Status::NO_MEMORY))
         );
     }
 
@@ -2564,7 +2537,7 @@ mod tests {
         // Verify that a not-found error is returned
         assert_matches!(
             exec.run_until_stalled(&mut reset_fut),
-            Poll::Ready(Ok(Err(fidl_svc::DeviceMonitorError::InvalidPhy)))
+            Poll::Ready(Ok(Err(zx::sys::ZX_ERR_NOT_FOUND)))
         );
     }
 
@@ -2606,7 +2579,7 @@ mod tests {
         // Verify that an internal error is returned
         assert_matches!(
             exec.run_until_stalled(&mut reset_fut),
-            Poll::Ready(Ok(Err(fidl_svc::DeviceMonitorError::Internal)))
+            Poll::Ready(Ok(Err(zx::sys::ZX_ERR_INTERNAL)))
         );
     }
 
@@ -2646,7 +2619,7 @@ mod tests {
         assert_matches!(exec.run_until_stalled(&mut phy_stream.next()),
             Poll::Ready(Some(Ok(fidl_dev::PhyRequest::GetTxPowerScenario { responder }))) => {
                 // Send back an error response
-                responder.send(Err(fidl_dev::PhyError::NotSupported))
+                responder.send(Err(zx::sys::ZX_ERR_NO_MEMORY))
                     .expect("failed to send the response to GetTxPowerScenario");
             }
         );
@@ -2657,7 +2630,7 @@ mod tests {
         // Verify that the response is returned to the caller.
         assert_matches!(
             exec.run_until_stalled(&mut reset_fut),
-            Poll::Ready(Ok(Err(fidl_svc::DeviceMonitorError::NotSupported)))
+            Poll::Ready(Ok(Err(zx::sys::ZX_ERR_NO_MEMORY)))
         );
     }
 
@@ -2726,10 +2699,7 @@ mod tests {
         let mut req_fut = pin!(req_fut);
 
         // Verify that a NOT_FOUND error is returned.
-        assert_eq!(
-            exec.run_until_stalled(&mut req_fut),
-            Poll::Ready(Err(fidl_svc::DeviceMonitorError::InvalidPhy))
-        );
+        assert_eq!(exec.run_until_stalled(&mut req_fut), Poll::Ready(Err(zx::Status::NOT_FOUND)));
     }
 
     #[fuchsia::test]
@@ -2749,10 +2719,7 @@ mod tests {
         let mut req_fut = pin!(req_fut);
 
         // Verify that there is an internal error
-        assert_eq!(
-            exec.run_until_stalled(&mut req_fut),
-            Poll::Ready(Err(fidl_svc::DeviceMonitorError::Internal))
-        );
+        assert_eq!(exec.run_until_stalled(&mut req_fut), Poll::Ready(Err(zx::Status::INTERNAL)));
     }
 
     #[fuchsia::test]
@@ -2773,7 +2740,7 @@ mod tests {
         assert_matches!(exec.run_until_stalled(&mut phy_stream.next()),
             Poll::Ready(Some(Ok(fidl_dev::PhyRequest::ResetTxPowerScenario { responder }))) => {
                 // Send back an error response
-                responder.send(Err(fidl_dev::PhyError::NotSupported))
+                responder.send(Err(zx::sys::ZX_ERR_NO_MEMORY))
                     .expect("failed to send the response to ResetTxPowerScenario");
             }
         );
@@ -2781,7 +2748,7 @@ mod tests {
         // Verify that the error was propagated to the caller.
         assert_matches!(
             exec.run_until_stalled(&mut req_fut),
-            Poll::Ready(Err(fidl_svc::DeviceMonitorError::NotSupported))
+            Poll::Ready(Err(zx::Status::NO_MEMORY))
         );
     }
 
@@ -2846,7 +2813,7 @@ mod tests {
         // Verify that a not-found error is returned
         assert_matches!(
             exec.run_until_stalled(&mut reset_fut),
-            Poll::Ready(Ok(Err(fidl_svc::DeviceMonitorError::InvalidPhy)))
+            Poll::Ready(Ok(Err(zx::sys::ZX_ERR_NOT_FOUND)))
         );
     }
 
@@ -2888,7 +2855,7 @@ mod tests {
         // Verify that an internal error is returned
         assert_matches!(
             exec.run_until_stalled(&mut reset_fut),
-            Poll::Ready(Ok(Err(fidl_svc::DeviceMonitorError::Internal)))
+            Poll::Ready(Ok(Err(zx::sys::ZX_ERR_INTERNAL)))
         );
     }
 
@@ -2928,7 +2895,7 @@ mod tests {
         assert_matches!(exec.run_until_stalled(&mut phy_stream.next()),
             Poll::Ready(Some(Ok(fidl_dev::PhyRequest::ResetTxPowerScenario { responder }))) => {
                 // Send back an error response
-                responder.send(Err(fidl_dev::PhyError::NotSupported))
+                responder.send(Err(zx::sys::ZX_ERR_NO_MEMORY))
                     .expect("failed to send the response to ResetTxPowerScenario");
             }
         );
@@ -2939,7 +2906,7 @@ mod tests {
         // Verify that the response is returned to the caller.
         assert_matches!(
             exec.run_until_stalled(&mut reset_fut),
-            Poll::Ready(Ok(Err(fidl_svc::DeviceMonitorError::NotSupported)))
+            Poll::Ready(Ok(Err(zx::sys::ZX_ERR_NO_MEMORY)))
         );
     }
 
@@ -3174,7 +3141,7 @@ mod tests {
         Poll::Ready(Some(Ok(fidl_dev::PhyRequest::CreateIface { req, responder }))) => {
             assert_eq!(fidl_wlan_common::WlanMacRole::Client, req.role);
             assert_eq!(req.init_sta_addr, sta_address);
-            responder.send(Err(zx::sys::ZX_ERR_NOT_SUPPORTED)).expect("failed to send iface_id");
+            responder.send(Err(zx::sys::ZX_ERR_NO_MEMORY)).expect("failed to send iface_id");
             req.mlme_channel.expect("no MLME channel")
         });
 
