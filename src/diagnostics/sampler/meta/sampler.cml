@@ -29,7 +29,7 @@
         },
         {
             protocol: [
-                "fuchsia.diagnostics.Sample",
+                "fuchsia.diagnostics.ArchiveAccessor",
                 "fuchsia.hardware.power.statecontrol.RebootMethodsWatcherRegister",
                 "fuchsia.metrics.MetricEventLoggerFactory",
             ],

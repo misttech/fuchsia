@@ -28,7 +28,7 @@ pub struct ProjectConfig {
 }
 
 /// Configuration for a single metric to map from an Inspect property to a Cobalt metric.
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
 pub struct MetricConfig {
     /// Selector identifying the metric to sample via the diagnostics platform.
     #[serde(
