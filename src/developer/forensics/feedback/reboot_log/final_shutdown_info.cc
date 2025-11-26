@@ -521,7 +521,7 @@ std::string FinalGracefulShutdownInfo::ToCrashSignature(
     case FinalGracefulShutdownReason::kRetrySystemUpdate:
       return "fuchsia-retry-system-update";
     case FinalGracefulShutdownReason::kHighTemperature:
-      return "fuchsia-reboot-high-temperature";
+      return "fuchsia-shutdown-high-temperature";
     case FinalGracefulShutdownReason::kSessionFailure:
       return "fuchsia-session-failure";
     case FinalGracefulShutdownReason::kSysmgrFailure:
@@ -531,15 +531,15 @@ std::string FinalGracefulShutdownInfo::ToCrashSignature(
     case FinalGracefulShutdownReason::kOutOfMemory:
       return "fuchsia-oom";
     case FinalGracefulShutdownReason::kAndroidUnexpectedReason:
-      return "fuchsia-reboot-android-unexpected-reason";
+      return "fuchsia-shutdown-android-unexpected-reason";
     case FinalGracefulShutdownReason::kAndroidRescueParty:
-      return "fuchsia-reboot-android-rescue-party";
+      return "fuchsia-shutdown-android-rescue-party";
     case FinalGracefulShutdownReason::kAndroidCriticalProcessFailure:
-      return "fuchsia-reboot-android-critical-process-failure";
+      return "fuchsia-shutdown-android-critical-process-failure";
     case FinalGracefulShutdownReason::kGenericGraceful:
-      return "fuchsia-undetermined-userspace-reboot";
+      return "fuchsia-shutdown-undetermined-userspace-reason";
     case FinalGracefulShutdownReason::kUnexpectedReasonGraceful:
-      return "fuchsia-unexpected-reason-userspace-reboot";
+      return "fuchsia-shutdown-unexpected-userspace-reason";
     case FinalGracefulShutdownReason::kUserRequest:
     case FinalGracefulShutdownReason::kSystemUpdate:
     case FinalGracefulShutdownReason::kFdr:
