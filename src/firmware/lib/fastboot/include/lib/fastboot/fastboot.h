@@ -128,9 +128,11 @@ class __EXPORT Fastboot : public FastbootBase {
   fidl::ClientEnd<fuchsia_io::Directory> svc_root_;
   fidl::ClientEnd<fuchsia_fshost::Recovery> fshost_recovery_;
   std::optional<BlobImageWriter> blob_writer_;
-  /// Determines if the userdata partition will also be wiped when flashing the "blob" partition.
-  /// This is toggled via the `update-super` command issued by `fastboot flashall`.
-  bool wipe_userdata_when_flashing_blob_ = false;
+  /// Determines if the userdata partition will also be overwritten when flashing the "blob"
+  /// partition (userdata is a volume within the super partition on Fuchsia devices).
+  /// This is toggled via the `update-super` command issued by `fastboot flashall` depending on
+  /// the presence or absence of the `-w` flag.
+  bool flash_blob_targets_super_ = false;
 };
 
 }  // namespace fastboot

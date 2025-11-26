@@ -441,7 +441,7 @@ zx::result<> Fastboot::Flash(const std::string& command, Transport* transport) {
       GetUnsparsedSize(download_vmo_mapper_.start(), download_vmo_mapper_.size());
   const bool is_sparse = unsparsed_size.has_value();
 
-  if (info.partition == "blob" && wipe_userdata_when_flashing_blob_) {
+  if (info.partition == "blob" && flash_blob_targets_super_) {
     // Fuchsia devices that use a super partition contain an inner blob and userdata volume. By
     // changing the image target to overwrite super instead, we effectively destroy the existing
     // userdata volume in a similar manner to fuchsia.fshost/Admin.ShredDataVolume.
@@ -453,6 +453,11 @@ zx::result<> Fastboot::Flash(const std::string& command, Transport* transport) {
       return SendResponse(ResponseType::kFail, "blob image must be in Android sparse format.",
                           transport, zx::error(ZX_ERR_NOT_SUPPORTED));
     }
+    // TODO(https://fxbug.dev/464027981): If we fail to flash the blob volume, the two most likely
+    // cases are that we either ran out of space, or the system container was never provisioned
+    // (i.e. the super partition was erased entirely). We should consider allowing some remedial
+    // action here rather than failing to flash the device (e.g. we can instead start flashing the
+    // image over the super partition entirely).
     return FlashBlob(transport, *unsparsed_size);
   }
 
@@ -571,9 +576,6 @@ zx::result<> Fastboot::Flash(const std::string& command, Transport* transport) {
   }
 
   if (info.partition == "super") {
-    // TODO(https://fxbug.dev/397515768): We don't yet handle the presence or absence of the -w
-    // flag which is used to indicate if we should wipe userdata or not. For now, this will always
-    // overwrite userdata regardless of this flag.
     auto response = data_sink->WriteSparseVolume(GetWireBufferFromDownload());
     if (response.status() != ZX_OK) {
       return SendResponse(ResponseType::kFail,
@@ -619,6 +621,11 @@ zx::result<> Fastboot::Erase(const std::string& command, Transport* transport) {
     return SendResponse(ResponseType::kFail, "Failed to invoke ShredDataVolume", transport,
                         zx::error(response.status()));
   }
+  // TODO(https://fxbug.dev/464027981): This command will always fail if we never provisioned the
+  // system container, or if we otherwise fail to shred the data volume. We may want to consider
+  // some remedial action in this case (e.g. formatting the entire system container). We may also
+  // want to change the behavior of subsequent `flash blob` commands to overwrite all of `super`
+  // after we get a request to erase userdata.
   if (response->is_error()) {
     return SendResponse(ResponseType::kFail, "Failed to shred data volume", transport,
                         zx::error(response->error_value()));
@@ -927,13 +934,13 @@ zx::result<> Fastboot::UpdateSuper(const std::string& command, Transport* transp
   if (args.size() == 3) {
     if (args[2] == "wipe") {
       FX_LOGST(INFO, kFastbootLogTag) << "Requests to flash blob volume will wipe userdata.";
-      wipe_userdata_when_flashing_blob_ = true;
+      flash_blob_targets_super_ = true;
     } else {
       return SendResponse(ResponseType::kFail, "Invalid option for update-super:super", transport);
     }
   } else {
     FX_LOGST(INFO, kFastbootLogTag) << "Requests to flash blob volume will leave userdata intact.";
-    wipe_userdata_when_flashing_blob_ = false;
+    flash_blob_targets_super_ = false;
   }
   return SendResponse(ResponseType::kOkay, "", transport);
 }
