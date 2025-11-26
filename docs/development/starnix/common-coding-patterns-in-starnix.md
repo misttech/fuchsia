@@ -19,6 +19,8 @@ The topics are:
 - [Creating errors in Starnix](#creating-errors-in-starnix)
 - [Preventing arithmetic overflow in Starnix](#preventing-arithmetic-overflow-in-starnix)
 - [Using FIDL proxies in Starnix](#using-fidl-proxies-in-starnix)
+- [Spawning threads in Starnix](#spawning-threads-in-starnix)
+- [Learning more](#learning-more)
 
 ## Testing Starnix using Linux binaries {:#testing-starnix-using-linux-binaries}
 
@@ -293,12 +295,39 @@ is the simplest solution. A synchronous proxy is also more performant, because
 it avoids context switching to another thread and back (using an asynchronous
 proxy would require a separate thread, for the asynchronous executor to use).
 
+## Spawning threads in Starnix {:#spawning-threads-in-starnix}
+
+**Avoid `std::thread::spawn`.**
+
+`std::thread::spawn` creates a thread that becomes part of the *calling
+process*. The lifetime of the thread will be less than or equal to that of the
+calling process.
+
+**What can go wrong?**
+
+Say you call `std::thread::spawn` in the context of a Linux
+process. That newly spawned thread is now tied to the lifetime of that Linux
+process. When the process terminates, so does the thread. If the thread happens
+to be holding a mutex (or similar resource) when the process is terminated then
+the mutex will never be released and no task in the container will ever be able
+to acquire that mutex.
+
+**What is the alternative?**
+
+[KernelThreads][kernel-threads]'s spawn methods are often the right choice.  These methods
+create threads that become part of the *main Starnix process* (sometimes
+referred to as the prototype process). The main Starnix process has no private
+address space and will outlive all Linux processes in the container.
+
+## Learning more {:#learning-more}
+
 To learn more about the execution model for Starnix, please see
-* [Making Linux syscalls in Fuchsia](/docs/concepts/starnix/making-linux-syscalls-in-fuchsia.md)
-* [RFC 0261: Fast and efficient user space kernel emulation](/docs/contribute/governance/rfcs/0261_fast_and_efficient_user_space_kernel_emulation.md)
+- [Making Linux syscalls in Fuchsia](/docs/concepts/starnix/making-linux-syscalls-in-fuchsia.md)
+- [RFC 0261: Fast and efficient user space kernel emulation](/docs/contribute/governance/rfcs/0261_fast_and_efficient_user_space_kernel_emulation.md)
 
 <!-- Reference links -->
 
 [starnix-concepts]: /docs/concepts/starnix/README.md
 [restricted-mode]: /docs/concepts/starnix/making-linux-syscalls-in-fuchsia.md#running-a-linux-program-in-restricted-mode
 [ipc-patterns-in-starnix]: ipc_patterns_in_starnix.md
+[kernel-threads]: https://fuchsia-docs.firebaseapp.com/rust/starnix_core/task/struct.KernelThreads.html
