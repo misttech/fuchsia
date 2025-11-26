@@ -351,6 +351,21 @@ class WlanCore(AsyncAdapter, wlan_core.WlanCore):
 
     @asyncmethod
     # pylint: disable-next=invalid-overridden-method
+    async def set_country(self, phy_id: int, code: CountryCode) -> None:
+        try:
+            await self._device_monitor_proxy.set_country(
+                req=f_wlan_device_service.SetCountryRequest(
+                    phy_id=phy_id,
+                    alpha2=[ord(c) for c in code],
+                )
+            )
+        except ZxStatus as status:
+            raise wlan_errors.HoneydewWlanError(
+                f"DeviceMonitor.SetCountry() error {status}"
+            ) from status
+
+    @asyncmethod
+    # pylint: disable-next=invalid-overridden-method
     async def get_iface_id_list(self) -> Sequence[int]:
         """Get list of wlan iface IDs on device.
 

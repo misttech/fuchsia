@@ -116,6 +116,18 @@ class WlanCore(affordance.Affordance):
         """
 
     @abc.abstractmethod
+    def set_country(self, phy_id: int, code: CountryCode) -> None:
+        """Sets the country code for phy `phy_id`.
+
+        Args:
+            phy_id: A phy id that is present on the device.
+            code: The country code to set.
+
+        Raises:
+            HoneydewWlanError: DeviceMonitor.SetCountry error
+        """
+
+    @abc.abstractmethod
     def get_phy_id_list(self) -> Sequence[int]:
         """Get list of phy ids on device.
 

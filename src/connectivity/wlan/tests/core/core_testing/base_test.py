@@ -13,15 +13,91 @@ logger = logging.getLogger(__name__)
 import fidl_fuchsia_wlan_common as fidl_common
 import fidl_fuchsia_wlan_device_service as fidl_svc
 import fidl_fuchsia_wlan_sme as fidl_sme
+import honeydew.affordances.connectivity.wlan.utils.types as hd_util_types
 from antlion import controllers
-from antlion.controllers import fuchsia_device
+from antlion.controllers import fuchsia_device as fuchsia_device_antlion
 from antlion.controllers.access_point import AccessPoint
 from fuchsia_controller_py import Channel, ZxStatus
 from fuchsia_controller_py.wrappers import AsyncAdapter, asyncmethod
+from fuchsia_wlan_base_test import FuchsiaWlanBaseTest
 from honeydew.typing.custom_types import FidlEndpoint
 from mobly import base_test, signals
 from mobly.asserts import abort_class_if, assert_equal, fail
 from mobly.records import TestResultRecord
+
+
+class ConnectionBaseTestClassSync(FuchsiaWlanBaseTest):
+    iface_id: int | None = None
+    access_point: AccessPoint
+
+    def setup_class(self) -> None:
+        super().setup_class()
+
+        abort_class_if(
+            len(self.fuchsia_devices) != 1,
+            "Requires exactly one Fuchsia device",
+        )
+        self.fuchsia_device = self.fuchsia_devices[0]
+
+        access_points = self.register_controller(
+            controllers.access_point, min_number=1
+        )
+        if access_points is None or len(access_points) == 0:
+            raise signals.TestAbortClass("Requires at least one access point")
+        self.access_point = access_points[0]
+        self.access_point.stop_all_aps()
+
+        # Get the phy
+        phy_id_list = self.fuchsia_device.wlan_core.get_phy_id_list()
+        assert_equal(
+            len(phy_id_list),
+            1,
+            "Expecting exactly one phy_id",
+        )
+        self.phy_id = phy_id_list[0]
+        logger.info(f"Using phy_id {self.phy_id}")
+
+        # Check we have no interfaces
+        ifaces = self.fuchsia_device.wlan_core.get_iface_id_list()
+        assert len(ifaces) == 0, "Every test suite should start with no ifaces."
+
+        # Set the country code to US, to allow for 2.4 and 5 GHz connections.
+        self.fuchsia_device.wlan_core.set_country(
+            self.phy_id, hd_util_types.CountryCode("US")
+        )
+
+        # Create an iface
+        self.iface_id = self.fuchsia_device.wlan_core.create_iface(
+            phy_id=self.phy_id,
+            role=fidl_common.WlanMacRole.CLIENT,
+            sta_addr=None,
+        )
+
+    def teardown_test(self) -> None:
+        # Maintain the invariant that every test starts with no access points.
+        self.access_point.download_ap_logs(self.log_path)
+        self.access_point.stop_all_aps()
+        self.fuchsia_device.wlan_core.disconnect()
+        super().teardown_test()
+
+    def teardown_class(self) -> None:
+        if self.iface_id is not None:
+            logger.info(f"Destroying iface_id {self.iface_id}")
+            self.fuchsia_device.wlan_core.destroy_iface(self.iface_id)
+        self.iface_id = None
+        super().teardown_class()
+
+    def on_fail(self, record: TestResultRecord) -> None:
+        """A function that is executed upon a test failure.
+
+        Args:
+        record: A copy of the test record for this test, containing all information of
+            the test execution including exception objects.
+        """
+        super().on_fail(record)
+
+        # Maintain the invariant that every test starts with no access points.
+        self.access_point.stop_all_aps()
 
 
 class ConnectionBaseTestClass(AsyncAdapter, base_test.BaseTestClass):
@@ -32,12 +108,14 @@ class ConnectionBaseTestClass(AsyncAdapter, base_test.BaseTestClass):
         super().setup_class()
         self.pdu_devices = None
 
-        fuchsia_devices = self.register_controller(fuchsia_device)
+        fuchsia_devices = self.register_controller(fuchsia_device_antlion)
 
         abort_class_if(
             len(fuchsia_devices) != 1, "Requires exactly one Fuchsia device"
         )
-        self.fuchsia_device: fuchsia_device.FuchsiaDevice = fuchsia_devices[0]
+        self.fuchsia_device: fuchsia_device_antlion.FuchsiaDevice = (
+            fuchsia_devices[0]
+        )
         abort_class_if(
             not hasattr(self.fuchsia_device, "honeydew_fd")
             or self.fuchsia_device.honeydew_fd is None,
