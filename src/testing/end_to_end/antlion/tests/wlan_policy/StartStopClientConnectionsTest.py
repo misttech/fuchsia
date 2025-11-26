@@ -104,7 +104,9 @@ class StartStopClientConnectionsTest(base_test.WifiBaseTest):
             try:
                 if time_left < 0:
                     raise TimeoutError()
-                result = fd.honeydew_fd.wlan_policy.get_update(time_left)
+                result = fd.honeydew_fd.wlan_policy.get_update(
+                    timeout=time_left
+                )
             except TimeoutError as e:
                 raise signals.TestFailure(
                     f'want "{expected}" within {timeout_sec}s, got {result}'
