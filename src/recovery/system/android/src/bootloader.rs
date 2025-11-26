@@ -42,6 +42,14 @@ pub struct BootloaderMessage {
     recovery: String,
 }
 
+impl BootloaderMessage {
+    /// Returns an iterator over all arguments specified in the bootloader message's recovery field.
+    /// Arguments are assumed to use a newline character (`\n`) as a delimiter.
+    pub fn recovery_args(&self) -> impl Iterator<Item = &str> {
+        self.recovery.split('\n')
+    }
+}
+
 impl From<BootloaderMessageRaw> for BootloaderMessage {
     fn from(raw: BootloaderMessageRaw) -> Self {
         Self {
@@ -68,7 +76,7 @@ impl TryFrom<BootloaderMessage> for BootloaderMessageRaw {
             return Err(anyhow!("status field exceeds storage size"));
         }
         if recovery.len() > raw.recovery.len() {
-            return Err(anyhow!("recovery field exceeds storage size"));
+            return Err(anyhow!("recovery arguments exceed storage size"));
         }
 
         raw.command[0..command.len()].copy_from_slice(command.as_bytes());

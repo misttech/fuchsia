@@ -50,6 +50,8 @@ struct RecoveryAppAssistant {
     sideload_request_receiver: Arc<Mutex<mpsc::Receiver<UpdaterRequest>>>,
     exposed_dir: Arc<vfs::directory::simple::Simple>,
     svc_dir: Arc<vfs::directory::simple::Simple>,
+    /// If true, will enqueue a message to start the FDR flow when view assistant is constructed.
+    wipe_data: bool,
 }
 
 impl RecoveryAppAssistant {
@@ -58,12 +60,14 @@ impl RecoveryAppAssistant {
         sideload_request_receiver: mpsc::Receiver<UpdaterRequest>,
         exposed_dir: Arc<vfs::directory::simple::Simple>,
         svc_dir: Arc<vfs::directory::simple::Simple>,
+        wipe_data: bool,
     ) -> Self {
         Self {
             display_rotation,
             sideload_request_receiver: Arc::new(Mutex::new(sideload_request_receiver)),
             exposed_dir,
             svc_dir,
+            wipe_data,
         }
     }
 }
@@ -83,6 +87,7 @@ impl AppAssistant for RecoveryAppAssistant {
             Arc::clone(&self.sideload_request_receiver),
             Arc::clone(&self.exposed_dir),
             Arc::clone(&self.svc_dir),
+            self.wipe_data,
         )?))
     }
 
@@ -117,7 +122,12 @@ impl RecoveryViewAssistant {
         sideload_request_receiver: Arc<Mutex<mpsc::Receiver<UpdaterRequest>>>,
         exposed_dir: Arc<vfs::directory::simple::Simple>,
         svc_dir: Arc<vfs::directory::simple::Simple>,
+        wipe_data: bool,
     ) -> Result<RecoveryViewAssistant, Error> {
+        let view_sender = ViewSender::new(app_sender, view_key);
+        if wipe_data {
+            view_sender.queue_message(RecoveryMessages::WipeData);
+        }
         let font_face = recovery_ui::font::get_default_font_face().clone();
         let logo_file = load_rive(LOGO_IMAGE_PATH).ok();
         let product = std::fs::read_to_string("/config/build-info/product").unwrap_or_default();
@@ -130,7 +140,7 @@ impl RecoveryViewAssistant {
         let menu = Menu::new(menu::MAIN_MENU);
 
         Ok(RecoveryViewAssistant {
-            view_sender: ViewSender::new(app_sender, view_key),
+            view_sender,
             font_face,
             logo_file,
             build_info,
@@ -190,7 +200,6 @@ impl RecoveryViewAssistant {
                 self.request_render();
             }
             menu::MenuItem::WipeDataConfirm => {
-                self.log("Wiping data...");
                 self.view_sender.queue_message(RecoveryMessages::WipeData);
             }
             menu_item => {
@@ -605,6 +614,7 @@ impl ViewAssistant for RecoveryViewAssistant {
                 .detach();
             }
             RecoveryMessages::WipeData => {
+                self.log("Wiping data...");
                 let view_sender = self.view_sender.clone();
                 fasync::Task::local(async move {
                     if let Err(e) = fdr::factory_data_reset().await {
@@ -641,20 +651,22 @@ async fn run_updater_service(
     Ok(())
 }
 
-async fn read_and_clear_bootloader_message() -> Result<(), Error> {
+/// Reads and clears the BCB in the /misc partition. Returns true if the --wipe_data flag was set.
+async fn process_bootloader_message() -> Result<bool, Error> {
     let store = bootloader::BootloaderMessageStore::new()
         .await
         .context("unable to initialize bootloader message store")?;
     // Read the message and log it.
-    match store.read().await {
-        Ok(message) => log::info!(message:?; "read bootloader message"),
-        Err(error) => log::error!(error:?; "unable to read bootloader message"),
-    };
+    let message = store.read().await.context("unable to read bootloader message");
+    if let Ok(ref message) = message {
+        log::info!(message:?; "read bootloader message");
+    }
     // Clear the message regardless of if we were able to process it or not. If we don't do this,
     // we will boot-loop back into the recovery image indefinitely.
     store.clear().await.context("unable to clear bootloader message")?;
     log::info!("cleared bootloader message in /misc");
-    Ok(())
+    // Check if we got any recovery-specific arguments and act on them.
+    return Ok(message?.recovery_args().any(|arg| arg == "--wipe_data"));
 }
 
 #[fuchsia::main]
@@ -676,9 +688,13 @@ fn main() -> Result<(), Error> {
 
     App::run(Box::new(move |_| {
         Box::pin(async move {
-            if let Err(error) = read_and_clear_bootloader_message().await {
-                log::error!(error:?; "error processing bootloader message");
-            }
+            let wipe_data = match process_bootloader_message().await {
+                Ok(wipe_data) => wipe_data,
+                Err(error) => {
+                    log::error!(error:?; "error processing bootloader message");
+                    false
+                }
+            };
 
             let (sideload_request_sender, sideload_request_receiver) = mpsc::channel(1);
 
@@ -711,6 +727,7 @@ fn main() -> Result<(), Error> {
                 sideload_request_receiver,
                 exposed_dir,
                 svc_dir,
+                wipe_data,
             ));
             Ok::<AppAssistantPtr, Error>(assistant)
         })
