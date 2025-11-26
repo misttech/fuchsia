@@ -8,12 +8,13 @@ pub use crate::resolve::{
     maybe_locally_resolve_target_spec, resolve_target_address,
 };
 use crate::{KnockError, TargetInfoQuery};
+use addr::TargetAddr;
 use anyhow::Result;
 use ffx_config::EnvironmentContext;
 use fuchsia_async::TimeoutExt;
 use futures::StreamExt;
-use std::collections::HashMap;
 use std::collections::hash_map::Entry;
+use std::collections::{HashMap, HashSet};
 use std::time::Duration;
 
 const DEFAULT_SSH_TIMEOUT_MS: u64 = 10000;
@@ -118,11 +119,14 @@ async fn handles_to_infos(
 fn merge_target_addrs(targets: Vec<TargetInfo>) -> Vec<TargetInfo> {
     let mut merged_map: HashMap<u64, TargetInfo> = HashMap::with_capacity(targets.len());
     let mut result = vec![];
-    for mut t in targets {
+    for t in targets {
         if let Some(boot_id) = t.boot_id {
             match merged_map.entry(boot_id) {
                 Entry::Occupied(mut entry) => {
-                    entry.get_mut().addresses.append(&mut t.addresses);
+                    let addresses = &mut entry.get_mut().addresses;
+                    let mut aset: HashSet<TargetAddr> = addresses.clone().into_iter().collect();
+                    aset.extend(t.addresses);
+                    *addresses = aset.into_iter().collect();
                 }
                 Entry::Vacant(entry) => {
                     entry.insert(t);
@@ -230,6 +234,18 @@ mod test {
             HashSet::<TargetAddr>::from_iter(target0.addresses.into_iter()),
             HashSet::from_iter(merged.into_iter())
         );
+    }
+
+    #[fuchsia::test]
+    fn test_merge_target_duplicate_addrs() {
+        let addr1: addr::TargetAddr = "[fe80::1]:1".parse().unwrap();
+        let t1 = make_target_info(addr1, Some(999));
+        let t2 = make_target_info(addr1, Some(999));
+        let targets = merge_target_addrs(vec![t1, t2]);
+        assert_eq!(targets.len(), 1);
+        let target0 = targets[0].clone();
+        assert_eq!(target0.addresses.len(), 1);
+        assert_eq!(target0.addresses[0], addr1);
     }
 
     #[fuchsia::test]
