@@ -9,7 +9,7 @@ rustc_cdylib("crust-shared") {
 
   sources = [ "src/lib.rs" ]
 
-  edition = "2021"
+  edition = "2024"
   public = [ "crust.h" ]
 }
 
@@ -19,6 +19,6 @@ rustc_cdylib("crust-loadable") {
   sources = [ "src/lib.rs" ]
 
   is_loadable_module = true
-  edition = "2021"
+  edition = "2024"
   public = [ "crust.h" ]
 }

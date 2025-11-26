@@ -7,7 +7,7 @@ import("//build/rust/rustc_binary.gni")
 
 rustc_binary("bin") {
   output_name = "client_bin"
-  edition = "2021"
+  edition = "2024"
   sources = [ "src/main.rs" ]
   deps = [
     ":config",

@@ -10,7 +10,7 @@ import("//build/rust/rustc_test.gni")
 
 rustc_test("test_bin") {
   name = "dynamic_create_child_test"
-  edition = "2021"
+  edition = "2024"
 
   deps = [
     "//examples/components/routing/fidl:echo_rust",
@@ -31,7 +31,7 @@ rustc_test("test_bin") {
 
 rustc_binary("bin") {
   name = "dynamic_create_child_child"
-  edition = "2021"
+  edition = "2024"
 
   deps = [
     "//examples/components/routing/fidl:echo_rust",

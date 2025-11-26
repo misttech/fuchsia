@@ -38,7 +38,7 @@ source_set("parent_cpp_code") {
 
 # [START example_rust_target]
 rustc_binary("parent_rust_code") {
-  edition = "2021"
+  edition = "2024"
   source_root = "parent-driver.rs"
   sources = [ "parent-driver.rs" ]
   deps = [ ":my_bindlib_target_rust" ]

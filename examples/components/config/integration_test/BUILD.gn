@@ -9,7 +9,7 @@ import("//build/rust/rustc_test.gni")
 
 rustc_test("rust_bin") {
   name = "config_integration_test_rust"
-  edition = "2021"
+  edition = "2024"
   source_root = "rust/lib.rs"
 
   deps = [

@@ -14,7 +14,7 @@ fuchsia_driver_package("pkg") {
 }
 
 rustc_test("realm-test") {
-  edition = "2021"
+  edition = "2024"
   output_name = "driver-rust-next-driver-realm-test"
   testonly = true
   source_root = "realm_test.rs"

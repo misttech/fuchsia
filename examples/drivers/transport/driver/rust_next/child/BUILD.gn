@@ -15,7 +15,7 @@ driver_bind_rules("bind") {
 }
 
 fuchsia_rust_driver("driver") {
-  edition = "2021"
+  edition = "2024"
   with_unit_tests = true
 
   output_name = "driver_transport_rust_next_child"

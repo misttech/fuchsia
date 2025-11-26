@@ -23,7 +23,7 @@ group("hermetic_tests") {
 rustc_binary("server_bin") {
   name = "inspect_server_rust"
 
-  edition = "2021"
+  edition = "2024"
   source_root = "src/echo_server.rs"
   with_unit_tests = true
 

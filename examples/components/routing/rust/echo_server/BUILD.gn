@@ -11,7 +11,7 @@ import("//build/rust/rustc_binary.gni")
 # [START executable]
 rustc_binary("bin") {
   output_name = "echo_server_rust"
-  edition = "2021"
+  edition = "2024"
 
   deps = [
     "//examples/components/routing/fidl:echo_rust",

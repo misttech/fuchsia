@@ -14,7 +14,7 @@ group("hermetic_tests") {
 
 # [START example]
 rustc_test("driver_test_realm_example_realm_builder_rust") {
-  edition = "2021"
+  edition = "2024"
   testonly = true
   source_root = "test.rs"
   sources = [ "test.rs" ]

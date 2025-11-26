@@ -16,7 +16,7 @@ group("tests") {
 }
 
 rustc_test("bin") {
-  edition = "2021"
+  edition = "2024"
   name = "tz_version_parrot_rust"
 
   # [START icudata_library]

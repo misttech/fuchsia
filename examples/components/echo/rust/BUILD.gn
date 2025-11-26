@@ -18,7 +18,7 @@ group("hermetic_tests") {
 # [START executable]
 rustc_binary("bin") {
   output_name = "echo_example_rust"
-  edition = "2021"
+  edition = "2024"
 
   # Generates a GN target for unit-tests with the label `bin_test`,
   # and a binary named `echo_bin_test`.

@@ -7,7 +7,7 @@ import("//build/rust/rustc_binary.gni")
 
 rustc_binary("bin") {
   name = "state_recorder_rust_example"
-  edition = "2021"
+  edition = "2024"
   deps = [
     "//sdk/lib/power/state_recorder/rust",
     "//src/lib/diagnostics/inspect/runtime/rust",

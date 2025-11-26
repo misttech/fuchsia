@@ -6,7 +6,7 @@ import("//build/components.gni")
 import("//build/rust/rustc_binary.gni")
 
 rustc_test("branch-bin") {
-  edition = "2021"
+  edition = "2024"
   output_name = "branch_bin_rust"
   deps = [
     "//examples/components/services/fidl:fuchsia.examples.services_rust",
@@ -24,7 +24,7 @@ rustc_test("branch-bin") {
 }
 
 rustc_binary("provider-bin") {
-  edition = "2021"
+  edition = "2024"
   output_name = "provider_bin_rust"
   deps = [
     "//examples/components/services/fidl:fuchsia.examples.services_rust",

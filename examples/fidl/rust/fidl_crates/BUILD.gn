@@ -9,7 +9,7 @@ import("//build/rust/rustc_binary.gni")
 
 # [START test]
 rustc_binary("fidl_crates_bin") {
-  edition = "2021"
+  edition = "2024"
   test_deps = [ "//examples/fidl/fuchsia.examples:fuchsia.examples_rust" ]
   with_unit_tests = true
 

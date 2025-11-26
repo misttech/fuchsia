@@ -7,7 +7,7 @@ import("//build/rust/rustc_test.gni")
 
 rustc_test("stdout_test") {
   name = "stdout_test"
-  edition = "2021"
+  edition = "2024"
   source_root = "src/stdout_test.rs"
 
   sources = [ "src/stdout_test.rs" ]

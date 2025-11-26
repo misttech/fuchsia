@@ -17,7 +17,7 @@ fuchsia_structured_config_rust_lib("config") {
 rustc_binary("bin") {
   output_name = "client_bin"
   output_dir = target_out_dir + "/rust"
-  edition = "2021"
+  edition = "2024"
   sources = [ "src/main.rs" ]
   source_root = "src/main.rs"
   deps = [

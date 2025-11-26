@@ -45,7 +45,7 @@ source_set("bindlib_usage_cpp") {
 
 # [START example_rust_target]
 rustc_binary("bindlib_usage_rust") {
-  edition = "2021"
+  edition = "2024"
   source_root = "bindlib_usage.rs"
   sources = [ "bindlib_usage.rs" ]
   deps = [ ":my_fidl_target_bindlib_rust" ]

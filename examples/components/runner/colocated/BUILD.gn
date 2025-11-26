@@ -19,7 +19,7 @@ group("colocated") {
 rustc_binary("bin") {
   name = "colocated_runner"
   with_unit_tests = true
-  edition = "2021"
+  edition = "2024"
 
   deps = [
     "//examples/components/runner/colocated/fidl:colocated_rust",

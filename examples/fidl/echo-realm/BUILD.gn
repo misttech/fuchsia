@@ -17,7 +17,7 @@ fuchsia_component("echo_realm") {
 # Integration testing components for FIDL examples
 rustc_test("bin") {
   name = "fidl_examples_integration"
-  edition = "2021"
+  edition = "2024"
 
   deps = [
     "//src/lib/fuchsia",

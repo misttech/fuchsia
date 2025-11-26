@@ -14,7 +14,7 @@ group("hermetic_tests") {
 
 rustc_test("bin") {
   name = "parent_realm"
-  edition = "2021"
+  edition = "2024"
 
   deps = [
     "//src/lib/fuchsia",

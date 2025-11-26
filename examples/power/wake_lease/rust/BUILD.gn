@@ -12,7 +12,7 @@ group("rust") {
 rustc_library("wake_lease_rust") {
   with_unit_tests = true  # Generates wake_lease_rust_test.
   name = "wake_lease"
-  edition = "2021"
+  edition = "2024"
   source_root = "src/wake_lease.rs"
   sources = [ "src/wake_lease.rs" ]
   deps = [
@@ -28,7 +28,7 @@ rustc_library("wake_lease_rust") {
 }
 
 rustc_test("wake_lease_rust_integration_test") {
-  edition = "2021"
+  edition = "2024"
   source_root = "src/wake_lease_integration_test.rs"
   sources = [ "src/wake_lease_integration_test.rs" ]
   deps = [

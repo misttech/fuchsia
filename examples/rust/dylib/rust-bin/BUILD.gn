@@ -13,7 +13,7 @@ group("hermetic_tests") {
 rustc_test("rust-bin") {
   name = "rust_shared_test_bin"
 
-  edition = "2021"
+  edition = "2024"
 
   sources = [ "src/lib.rs" ]
 

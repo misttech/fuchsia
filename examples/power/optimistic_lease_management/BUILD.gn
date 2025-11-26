@@ -44,7 +44,7 @@ fuchsia_component("server") {
 }
 
 rustc_binary("server_bin") {
-  edition = "2021"
+  edition = "2024"
   name = "olm_server"
   source_root = "src/server.rs"
   sources = [ "src/server.rs" ]
@@ -69,7 +69,7 @@ fuchsia_component("client") {
 }
 
 rustc_binary("client_bin") {
-  edition = "2021"
+  edition = "2024"
   name = "olm_client"
   source_root = "src/client.rs"
   sources = [ "src/client.rs" ]
@@ -87,7 +87,7 @@ rustc_binary("client_bin") {
 }
 
 rustc_library("lease_management") {
-  edition = "2021"
+  edition = "2024"
   deps = [
     ":fuchsia.example.power_rust",
     "//sdk/fidl/fuchsia.power.system:fuchsia.power.system_rust",
@@ -108,7 +108,7 @@ rustc_library("lease_management") {
 }
 
 rustc_test("test_bin") {
-  edition = "2021"
+  edition = "2024"
   source_root = "src/test.rs"
 
   output_name = "olm_test_bin"

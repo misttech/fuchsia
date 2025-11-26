@@ -6,7 +6,7 @@ import("//build/components.gni")
 import("//build/rust/rustc_binary.gni")
 
 rustc_binary("bin") {
-  edition = "2021"
+  edition = "2024"
   output_name = "config_from_parent_example_rust"
   sources = [ "src/main.rs" ]
   deps = [

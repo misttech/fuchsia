@@ -6,7 +6,7 @@ import("//build/rust/rustc_staticlib.gni")
 
 rustc_staticlib("crust") {
   name = "crust_rust"
-  edition = "2021"
+  edition = "2024"
   public = [ "crust.h" ]
 
   sources = [ "src/lib.rs" ]

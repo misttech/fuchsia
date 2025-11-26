@@ -15,7 +15,7 @@ group("hermetic_tests") {
 
 rustc_test("bin") {
   name = "dynamic_dictionary"
-  edition = "2021"
+  edition = "2024"
 
   deps = [
     "//examples/components/routing/fidl:echo_rust",
@@ -30,7 +30,7 @@ rustc_test("bin") {
 
 rustc_binary("provider_bin") {
   name = "dynamic_dictionary_provider"
-  edition = "2021"
+  edition = "2024"
 
   deps = [
     "//examples/components/routing/fidl:echo_rust",

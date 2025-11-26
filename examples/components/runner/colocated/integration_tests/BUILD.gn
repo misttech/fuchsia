@@ -9,7 +9,7 @@ import("//build/rust/rustc_test.gni")
 
 rustc_test("bin") {
   name = "colocated_runner_integration_test_bin"
-  edition = "2021"
+  edition = "2024"
 
   deps = [
     "//examples/components/runner/colocated/fidl:colocated_rust",

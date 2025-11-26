@@ -22,7 +22,7 @@ group("hermetic_tests") {
 rustc_binary("bin") {
   output_name = "calculator_next_client"
   with_unit_tests = true
-  edition = "2021"
+  edition = "2024"
   deps = [
     "//examples/fidl/calculator/fidl:calculator_rust_next",
     "//src/lib/fidl/rust_next/fidl_next",

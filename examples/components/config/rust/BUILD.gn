@@ -15,7 +15,7 @@ declare_args() {
 
 # [START binary]
 rustc_binary("bin") {
-  edition = "2021"
+  edition = "2024"
 
   # [START_EXCLUDE]
   output_name = "config_example_rust"

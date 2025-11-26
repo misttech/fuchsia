@@ -21,7 +21,7 @@ fuchsia_structured_config_rust_lib("power_config_client_config") {
 
 rustc_binary("power_config_client_bin") {
   name = "power_config_client"
-  edition = "2021"
+  edition = "2024"
   testonly = true
   source_root = "src/power_config_client.rs"
   sources = [ "src/power_config_client.rs" ]
@@ -51,7 +51,7 @@ fuchsia_package("power_config_client_package") {
 
 rustc_test("power_config_client_integration_test") {
   name = "power_config_client_integration_test"
-  edition = "2021"
+  edition = "2024"
   source_root = "src/power_config_client_integration_test.rs"
   sources = [ "src/power_config_client_integration_test.rs" ]
   deps = [

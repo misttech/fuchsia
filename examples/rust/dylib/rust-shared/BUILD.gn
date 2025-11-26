@@ -5,7 +5,7 @@
 import("//build/rust/rustc_dylib.gni")
 
 rustc_dylib("rust-shared") {
-  edition = "2018"
+  edition = "2024"
   sources = [ "src/lib.rs" ]
   deps = []
 }

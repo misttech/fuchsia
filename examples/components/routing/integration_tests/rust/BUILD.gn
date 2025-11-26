@@ -14,7 +14,7 @@ import("//build/rust/rustc_test.gni")
 # [START executable]
 rustc_test("bin") {
   name = "echo_integration_test_rust"
-  edition = "2021"
+  edition = "2024"
 
   deps = [
     "//examples/components/routing/fidl:echo_rust",
