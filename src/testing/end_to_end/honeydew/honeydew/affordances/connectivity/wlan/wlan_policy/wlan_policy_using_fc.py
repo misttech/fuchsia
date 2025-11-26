@@ -6,9 +6,11 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 import logging
 import pprint
 from dataclasses import dataclass
+from typing import Awaitable, Callable
 
 import fidl_fuchsia_wlan_policy as f_wlan_policy
 from fuchsia_controller_py import Channel, ZxStatus
@@ -413,6 +415,61 @@ class WlanPolicy(AsyncAdapter, wlan_policy.WlanPolicy):
             self._client_controller.updates.get(), timeout
         )
 
+    async def _wait_on_update(
+        self,
+        f: Callable[[ClientStateSummary], bool | Awaitable[bool]],
+        *,
+        timeout: float
+        | None = wlan_policy.WlanPolicy.DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
+    ) -> None:
+        client_state_summaries = []
+        if self._client_controller is None:
+            self.create_client_controller()
+            assert self._client_controller is not None
+
+        while True:
+            try:
+                client_state_summaries.append(
+                    await asyncio.wait_for(
+                        self._client_controller.updates.get(), timeout
+                    )
+                )
+                result = f(client_state_summaries[-1])
+                if inspect.isawaitable(result):
+                    result = await result
+                if result:
+                    return
+            except TimeoutError as e:
+                raise wlan_errors.HoneydewWlanError(
+                    f"Timeout out waiting for next update. Waited: {timeout}s."
+                    f"Updates received:\n\n"
+                    f"{pprint.pformat(client_state_summaries, indent=4)}"
+                ) from e
+
+    @asyncmethod
+    # pylint: disable-next=invalid-overridden-method
+    async def wait_until_update(
+        self,
+        expected_update: ClientStateSummary,
+        *,
+        timeout: float
+        | None = wlan_policy.WlanPolicy.DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
+    ) -> None:
+        """Wait until the expected update.
+
+        Raises:
+            HoneydewWlanError: If expected update does not arrive by end of timeout.
+        """
+
+        try:
+            await self._wait_on_update(
+                lambda update: update == expected_update, timeout=timeout
+            )
+        except TimeoutError as e:
+            raise wlan_errors.HoneydewWlanError(
+                f"Never received {expected_update}."
+            ) from e
+
     def remove_all_networks(
         self,
         *,
@@ -619,7 +676,21 @@ class WlanPolicy(AsyncAdapter, wlan_policy.WlanPolicy):
 
         return list(scan_results)
 
-    def set_new_update_listener(self) -> None:
+    @asyncmethod
+    # pylint: disable-next=invalid-overridden-method
+    async def set_new_update_listener(self) -> None:
+        """Sets the update listener stream of the facade to a new stream.
+
+        This causes updates to be reset. Intended to be used between tests so
+        that the behavior of updates in a test is independent from previous
+        tests.
+
+        Raises:
+            HoneydewWlanError: Error from WLAN stack.
+        """
+        await self._set_new_update_listener()
+
+    async def _set_new_update_listener(self) -> None:
         """Sets the update listener stream of the facade to a new stream.
 
         This causes updates to be reset. Intended to be used between tests so
@@ -647,9 +718,14 @@ class WlanPolicy(AsyncAdapter, wlan_policy.WlanPolicy):
         # API is designed to only allow a single caller to make ClientController
         # calls which would impact WLAN state. If we lose our handle to the
         # ClientController, some other component on the system could take it.
-        self.cancel_task(
-            self._client_controller.client_state_updates_server_task
-        )
+        if self._client_controller.client_state_updates_server_task.cancel():
+            try:
+                await self._client_controller.client_state_updates_server_task
+                raise RuntimeError(
+                    "Expected cancellation of task to raise CancelledError"
+                )
+            except asyncio.exceptions.CancelledError:
+                pass  # expected
 
         client_listener_proxy = f_wlan_policy.ClientListenerClient(
             self._fc_transport.connect_device_proxy(_CLIENT_LISTENER_PROXY)
@@ -770,34 +846,32 @@ class WlanPolicy(AsyncAdapter, wlan_policy.WlanPolicy):
                 f"ClientController.StopClientConnections() error {status}"
             ) from status
 
-    def wait_for_no_connections(
+    @asyncmethod
+    # pylint: disable-next=invalid-overridden-method
+    async def wait_for_no_connections(
         self,
         *,
         timeout: float
         | None = wlan_policy.WlanPolicy.DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
     ) -> None:
-        self.set_new_update_listener()
-        client_state_summaries = []
+        await self._set_new_update_listener()
+        CONNECTION_STATES = {
+            ConnectionState.CONNECTING,
+            ConnectionState.CONNECTED,
+        }
 
-        while True:
-            try:
-                client_state_summaries.append(self.get_update(timeout=timeout))
-            except TimeoutError as e:
-                raise wlan_errors.HoneydewWlanError(
-                    f"Networks still connected. Waited: {timeout}s.\n\n"
-                    f"Updates received:\n\n"
-                    f"{pprint.pformat(client_state_summaries, indent=4)}"
-                ) from e
-
-            CONNECTION_STATES = {
-                ConnectionState.CONNECTING,
-                ConnectionState.CONNECTED,
-            }
-            if not any(
-                n.connection_state in CONNECTION_STATES
-                for n in client_state_summaries[-1].networks
-            ):
-                return
+        try:
+            await self._wait_on_update(
+                lambda update: not any(
+                    n.connection_state in CONNECTION_STATES
+                    for n in update.networks
+                ),
+                timeout=timeout,
+            )
+        except TimeoutError as e:
+            raise wlan_errors.HoneydewWlanError(
+                f"Networks still connected."
+            ) from e
 
 
 class ClientStateUpdatesImpl(f_wlan_policy.ClientStateUpdatesServer):

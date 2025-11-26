@@ -99,6 +99,19 @@ class WlanPolicy(affordance.Affordance):
         """
 
     @abc.abstractmethod
+    def wait_until_update(
+        self,
+        expected_update: ClientStateSummary,
+        *,
+        timeout: float | None = DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
+    ) -> None:
+        """Wait until the expected update.
+
+        Raises:
+            HoneydewWlanError: If expected update does not arrive by end of timeout.
+        """
+
+    @abc.abstractmethod
     def remove_all_networks(
         self,
         *,
