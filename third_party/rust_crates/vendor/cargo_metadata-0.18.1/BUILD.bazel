@@ -74,7 +74,7 @@ rust_library(
     }),
     version = "0.18.1",
     deps = [
-        "//third_party/rust_crates/vendor/camino-1.1.9:camino",
+        "//third_party/rust_crates/vendor/camino-1.2.1:camino",
         "//third_party/rust_crates/vendor/cargo-platform-0.1.2:cargo_platform",
         "//third_party/rust_crates/vendor/semver-1.0.26:semver",
         "//third_party/rust_crates/vendor/serde-1.0.228:serde",

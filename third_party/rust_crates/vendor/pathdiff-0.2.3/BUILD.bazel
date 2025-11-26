@@ -77,6 +77,6 @@ rust_library(
     }),
     version = "0.2.3",
     deps = [
-        "//third_party/rust_crates/vendor/camino-1.1.9:camino",
+        "//third_party/rust_crates/vendor/camino-1.2.1:camino",
     ],
 )

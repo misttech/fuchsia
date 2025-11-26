@@ -168,7 +168,7 @@ group("bytes") {
 }
 
 group("camino") {
-  public_deps = [ ":camino-v1_1_9" ]
+  public_deps = [ ":camino-v1_2_1" ]
 }
 
 if (!(current_os == "fuchsia")) {
@@ -3536,48 +3536,45 @@ rustc_library("bytes-v1_10_1") {
   applicable_licenses = [ ":bytes-v1_10_1.license" ]
 }
 
-license("camino-v1_1_9.license") {
+license("camino-v1_2_1.license") {
   public_package_name = "camino"
   license_files = [
-    "//third_party/rust_crates/vendor/camino-1.1.9/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/camino-1.1.9/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/camino-1.2.1/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/camino-1.2.1/LICENSE-MIT",
   ]
 }
 
-rustc_library("camino-v1_1_9") {
+rustc_library("camino-v1_2_1") {
   crate_name = "camino"
-  source_root = "//third_party/rust_crates/vendor/camino-1.1.9/src/lib.rs"
-  output_name = "camino-9113c0dcb1561156"
-  edition = "2018"
+  source_root = "//third_party/rust_crates/vendor/camino-1.2.1/src/lib.rs"
+  output_name = "camino-14e2d7f36fe1ff4b"
+  edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
   deps += [ ":proptest-v1_7_0" ]
-  deps += [ ":serde-v1_0_228" ]
+  deps += [ ":serde_core-v1_0_228" ]
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=9113c0dcb1561156",
-    "-Cextra-filename=-9113c0dcb1561156",
-    "--cfg=feature=\"proptest\"",
+    "-Cmetadata=14e2d7f36fe1ff4b",
+    "-Cextra-filename=-14e2d7f36fe1ff4b",
     "--cfg=feature=\"proptest1\"",
-    "--cfg=feature=\"serde\"",
     "--cfg=feature=\"serde1\"",
     "--cfg=absolute_path",
     "--cfg=os_str_bytes",
-    "--cfg=path_buf_capacity",
     "--cfg=path_buf_deref_mut",
-    "--cfg=shrink_to",
     "--cfg=try_reserve_2",
+    "--cfg=os_string_pathbuf_leak",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":camino-v1_1_9.license" ]
+  applicable_licenses = [ ":camino-v1_2_1.license" ]
 }
 
 license("cargo_metadata-v0_18_1.license") {
@@ -3597,7 +3594,7 @@ rustc_library("cargo_metadata-v0_18_1") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":camino-v1_1_9" ]
+  deps += [ ":camino-v1_2_1" ]
   deps += [ ":cargo-platform-v0_1_2" ]
   deps += [ ":semver-v1_0_26" ]
   deps += [ ":serde-v1_0_228" ]
@@ -12055,7 +12052,7 @@ rustc_library("pathdiff-v0_2_3") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":camino-v1_1_9" ]
+  deps += [ ":camino-v1_2_1" ]
 
   rustenv = []
 
@@ -16427,6 +16424,7 @@ rustc_library("serde_core-v1_0_228") {
     "-Cmetadata=a9a7330be03982ef",
     "-Cextra-filename=-a9a7330be03982ef",
     "--cfg=feature=\"alloc\"",
+    "--cfg=feature=\"default\"",
     "--cfg=feature=\"result\"",
     "--cfg=feature=\"std\"",
   ]
