@@ -14,7 +14,6 @@ use fidl::endpoints::Proxy as _;
 use fuchsia_async::{self as fasync, TimeoutExt};
 use futures::channel::{mpsc, oneshot};
 use futures::{FutureExt as _, StreamExt as _};
-use ip_test_macro::ip_test;
 use linux_uapi::{
     NLM_F_DUMP, rt_class_t_RT_TABLE_COMPAT, rt_class_t_RT_TABLE_MAIN, rt_class_t_RT_TABLE_UNSPEC,
     rtnetlink_groups_RTNLGRP_IPV4_ROUTE, rtnetlink_groups_RTNLGRP_IPV6_ROUTE,
@@ -41,6 +40,7 @@ use netstack_testing_common::realms::{Netstack3, TestSandboxExt};
 use netstack_testing_common::{
     ASYNC_EVENT_NEGATIVE_CHECK_TIMEOUT, ASYNC_EVENT_POSITIVE_CHECK_TIMEOUT,
 };
+use netstack_testing_macros::netstack_test;
 use packet_formats::icmp::ndp as packet_formats_ndp;
 use test_case::test_matrix;
 
@@ -211,6 +211,7 @@ impl<'a> TestPeer<'a> {
     async fn create(
         sandbox: &'a netemul::TestSandbox,
         main_realm: &netemul::TestRealm<'a>,
+        peer_realm: netemul::TestRealm<'a>,
         name_suffix: &str,
         main_address: fnet::Subnet,
         peer_address: fnet::Subnet,
@@ -224,9 +225,6 @@ impl<'a> TestPeer<'a> {
             .await
             .expect("join network");
         main_interface.add_address(main_address).await.expect("add address to main");
-        let peer_realm = sandbox
-            .create_netstack_realm::<Netstack3, _>(format!("netstack{}", name_suffix))
-            .expect("create netstack realm");
         let peer_interface = peer_realm
             .join_network(&network, format!("peerep{}", name_suffix))
             .await
@@ -468,13 +466,11 @@ async fn start_test_netlink(
     start_test_netlink_with_interfaces_handler(realm, NoopInterfacesHandler).await
 }
 
-#[ip_test(I, test = false)]
-#[fuchsia::test]
-async fn rules_select_correct_table_for_marked_socket<I: Ip>() {
+#[netstack_test]
+#[variant(I, Ip)]
+async fn rules_select_correct_table_for_marked_socket<I: Ip>(name: &str) {
     let sandbox = netemul::TestSandbox::new().expect("create sandbox");
-    let main_realm = sandbox
-        .create_netstack_realm::<Netstack3, _>(format!("main-netstack"))
-        .expect("create realm");
+    let main_realm = sandbox.create_netstack_realm::<Netstack3, _>(name).expect("create realm");
 
     let (netlink, _join_handle) = start_test_netlink(&main_realm).await;
 
@@ -483,9 +479,13 @@ async fn rules_select_correct_table_for_marked_socket<I: Ip>() {
         let main_realm = &main_realm;
         async move {
             let name_suffix = format!("{test_subnet:?}");
+            let peer_realm = sandbox
+                .create_netstack_realm::<Netstack3, _>(format!("{name}-{test_subnet:?}"))
+                .expect("create peer realm");
             let peer = TestPeer::create(
                 sandbox,
                 main_realm,
+                peer_realm,
                 name_suffix.as_str(),
                 fnet::Subnet {
                     prefix_len: TEST_SUBNET_LENGTH,
@@ -688,15 +688,15 @@ async fn rules_select_correct_table_for_marked_socket<I: Ip>() {
     }
 }
 
-#[ip_test(I, test = false)]
-#[fuchsia::test]
+#[netstack_test]
+#[variant(I, Ip)]
 async fn successfully_installs_rule_referencing_main_table<
     I: Ip + FidlRuleIpExt + FidlRouteIpExt + FidlRouteAdminIpExt,
->() {
+>(
+    name: &str,
+) {
     let sandbox = netemul::TestSandbox::new().expect("create sandbox");
-    let main_realm = sandbox
-        .create_netstack_realm::<Netstack3, _>(format!("main-netstack"))
-        .expect("create realm");
+    let main_realm = sandbox.create_netstack_realm::<Netstack3, _>(name).expect("create realm");
 
     let (netlink, _join_handle) = start_test_netlink(&main_realm).await;
 
@@ -806,13 +806,11 @@ async fn await_disappearance_of_table(
     }
 }
 
-#[ip_test(I, test = false)]
-#[fuchsia::test]
-async fn route_table_kept_alive_by_rules<I: Ip + FidlRuleIpExt + FidlRouteIpExt>() {
+#[netstack_test]
+#[variant(I, Ip)]
+async fn route_table_kept_alive_by_rules<I: Ip + FidlRuleIpExt + FidlRouteIpExt>(name: &str) {
     let sandbox = netemul::TestSandbox::new().expect("create sandbox");
-    let main_realm = sandbox
-        .create_netstack_realm::<Netstack3, _>(format!("main-netstack"))
-        .expect("create realm");
+    let main_realm = sandbox.create_netstack_realm::<Netstack3, _>(name).expect("create realm");
 
     let (netlink, _join_handle) = start_test_netlink(&main_realm).await;
 
@@ -1023,22 +1021,21 @@ enum Order {
     RouteThenRule,
 }
 
-#[ip_test(I, test = false)]
+#[netstack_test]
+#[variant(I, Ip)]
 #[test_matrix(
     [Order::RuleThenRoute, Order::RouteThenRule],
     [Order::RuleThenRoute, Order::RouteThenRule]
 )]
-#[fuchsia::test]
 async fn route_table_is_cleaned_up_after_rules_and_routes_deleted<
     I: Ip + FidlRuleIpExt + FidlRouteIpExt,
 >(
+    name: &str,
     add_order: Order,
     remove_order: Order,
 ) {
     let sandbox = netemul::TestSandbox::new().expect("create sandbox");
-    let main_realm = sandbox
-        .create_netstack_realm::<Netstack3, _>(format!("main-netstack"))
-        .expect("create realm");
+    let main_realm = sandbox.create_netstack_realm::<Netstack3, _>(name).expect("create realm");
     let network = sandbox.create_network("network").await.expect("create network");
     let main_interface = main_realm.join_network(&network, "ep").await.expect("join network");
 
@@ -1566,11 +1563,11 @@ impl netlink::interfaces::InterfacesHandler for WaitForSpecificInterfaceHandler 
     fn handle_deleted_link(&mut self, _: &str) {}
 }
 
-#[ip_test(I, test = false)]
-#[fuchsia::test]
-async fn netlink_add_routes_in_local_table<I: FidlRouteIpExt + FidlRouteAdminIpExt>() {
+#[netstack_test]
+#[variant(I, Ip)]
+async fn netlink_add_routes_in_local_table<I: FidlRouteIpExt + FidlRouteAdminIpExt>(name: &str) {
     let sandbox = netemul::TestSandbox::new().expect("create sandbox");
-    let realm = sandbox.create_netstack_realm::<Netstack3, _>("netstack").expect("create realm");
+    let realm = sandbox.create_netstack_realm::<Netstack3, _>(name).expect("create realm");
 
     let name = "ep";
     let (interface_in_netlink_sender, interface_in_netlink_receiver) = oneshot::channel();
@@ -1688,12 +1685,11 @@ async fn netlink_add_routes_in_local_table<I: FidlRouteIpExt + FidlRouteAdminIpE
     assert_eq!(join_handle.abort().await, None);
 }
 
-#[ip_test(I, test = false)]
-#[fuchsia::test]
-async fn add_remove_routes<I: Ip + FidlRouteIpExt>() {
+#[netstack_test]
+#[variant(I, Ip)]
+async fn add_remove_routes<I: Ip + FidlRouteIpExt>(name: &str) {
     let sandbox = netemul::TestSandbox::new().expect("create sandbox");
-    let realm =
-        sandbox.create_netstack_realm::<Netstack3, _>("main-netstack").expect("create realm");
+    let realm = sandbox.create_netstack_realm::<Netstack3, _>(name).expect("create realm");
 
     let (netlink, _join_handle) = start_test_netlink(&realm).await;
 
