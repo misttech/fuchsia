@@ -17,7 +17,7 @@ use crate::vfs::fsverity::{
 };
 use crate::vfs::{
     ActiveNamespaceNode, DirentSink, EpollFileObject, EpollKey, FallocMode, FdTableId,
-    FileSystemHandle, FileWriteGuardMode, FsNodeHandle, NamespaceNode, RecordLockCommand,
+    FileSystemHandle, FileWriteGuardMode, FsNodeHandle, FsString, NamespaceNode, RecordLockCommand,
     RecordLockOwner,
 };
 use starnix_crypt::EncryptionKeyId;
@@ -413,6 +413,16 @@ pub trait FileOps: Send + Sync + AsAny + 'static {
     ) -> Result<(), Errno> {
         error!(EINVAL)
     }
+
+    /// Extra information that is included in the /proc/<pid>/fdfino/<fd> entry.
+    fn extra_fdinfo(
+        &self,
+        _locked: &mut Locked<FileOpsCore>,
+        _file: &FileHandle,
+        _current_task: &CurrentTask,
+    ) -> Option<FsString> {
+        None
+    }
 }
 
 /// Marker trait for implementation of FileOps that do not need to implement `close` and can
@@ -598,6 +608,15 @@ impl<T: FileOps + CloseFreeSafe, P: Deref<Target = T> + Send + Sync + 'static> F
         length: usize,
     ) -> Result<(), Errno> {
         self.deref().readahead(file, current_task, offset, length)
+    }
+
+    fn extra_fdinfo(
+        &self,
+        locked: &mut Locked<FileOpsCore>,
+        file: &FileHandle,
+        current_task: &CurrentTask,
+    ) -> Option<FsString> {
+        self.deref().extra_fdinfo(locked, file, current_task)
     }
 }
 
@@ -2166,6 +2185,15 @@ impl FileObject {
         }
         checked_add_offset_and_length(offset, length)?;
         self.ops().readahead(self, current_task, offset, length)
+    }
+
+    pub fn extra_fdinfo(
+        &self,
+        locked: &mut Locked<FileOpsCore>,
+        current_task: &CurrentTask,
+    ) -> Option<FsString> {
+        let file = self.weak_handle.upgrade()?;
+        self.ops().extra_fdinfo(locked, &file, current_task)
     }
 
     /// Register the fd number of an `EpollFileObject` that listens to events from this

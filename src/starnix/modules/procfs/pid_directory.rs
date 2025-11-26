@@ -598,9 +598,9 @@ impl FsNodeOps for FdInfoDirectory {
 
     fn lookup(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
+        locked: &mut Locked<FileOpsCore>,
         node: &FsNode,
-        _current_task: &CurrentTask,
+        current_task: &CurrentTask,
         name: &FsStr,
     ) -> Result<FsNodeHandle, Errno> {
         let task = Task::from_weak(&self.task)?;
@@ -608,7 +608,10 @@ impl FsNodeOps for FdInfoDirectory {
         let file = task.files.get_allowing_opath(fd).map_err(|_| errno!(ENOENT))?;
         let pos = *file.offset.lock();
         let flags = file.flags();
-        let data = format!("pos:\t{}flags:\t0{:o}\n", pos, flags.bits()).into_bytes();
+        let mut data = format!("pos:\t{}\nflags:\t0{:o}\n", pos, flags.bits()).into_bytes();
+        if let Some(extra_fdinfo) = file.extra_fdinfo(locked, current_task) {
+            data.extend_from_slice(extra_fdinfo.as_slice());
+        }
         Ok(node.fs().create_node_and_allocate_node_id(
             BytesFile::new_node(data),
             FsNodeInfo::new(mode!(IFREG, 0o444), task.real_fscred()),

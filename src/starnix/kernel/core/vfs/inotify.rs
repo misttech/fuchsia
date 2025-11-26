@@ -47,6 +47,7 @@ struct InotifyState {
 }
 
 // InotifyWatcher's attach to a FsNode.
+#[derive(Clone)]
 pub struct InotifyWatcher {
     pub watch_id: WdNumber,
 
@@ -305,6 +306,32 @@ impl FileOps for InotifyFileObject {
             dir_entry.node.ensure_watchers().remove_by_ref(&file.weak_handle);
         }
     }
+
+    fn extra_fdinfo(
+        &self,
+        _locked: &mut Locked<FileOpsCore>,
+        file: &FileHandle,
+        _current_task: &CurrentTask,
+    ) -> Option<FsString> {
+        let state = self.state.lock();
+        let mut info = String::new();
+        for dir_entry in state.watches.values() {
+            let ino = dir_entry.node.ino;
+            let sdev = dir_entry.node.fs().dev_id;
+            if let Some(watcher) = dir_entry.node.ensure_watchers().get(&WeakKey::from(file)) {
+                let wd = watcher.watch_id;
+                let mask = watcher.mask;
+                info.push_str(&format!(
+                    "inotify wd:{} ino:{:x} sdev:{:x} mask:{:x}\n",
+                    wd.raw(),
+                    ino,
+                    sdev.bits(),
+                    mask.bits()
+                ));
+            }
+        }
+        Some(info.into())
+    }
 }
 
 impl InotifyEventQueue {
@@ -429,6 +456,10 @@ impl InotifyWatchers {
         } else {
             Ok(None)
         }
+    }
+
+    fn get(&self, inotify: &FileHandleKey) -> Option<InotifyWatcher> {
+        self.watchers.lock().get(inotify).cloned()
     }
 
     fn remove(&self, inotify: &FileHandleKey) {
