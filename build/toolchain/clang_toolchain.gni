@@ -43,7 +43,7 @@ if (support_rust) {
 #     generates smaller binaries than the default. Does not affect
 #     shared libraries, or Rust executables.
 #     Type: string
-#     Default: "--strip-all" except on macOS where it is "-Sx"
+#     Default: "--strip-all"
 #
 #   prefix
 #     Optional: The path from which "cc", "cxx", "ar", "ld" and
@@ -356,25 +356,21 @@ template("clang_toolchain") {
 
     forward_variables_from(invoker, [ "use_strip" ])
     if (use_strip) {
-      if (invoker.toolchain_os == "mac") {
-        strip = "${prefix}/llvm-strip"
-      } else {
-        strip = "${prefix}/llvm-objcopy"
-        if (output_breakpad_syms && invoker.toolchain_os == "fuchsia") {
-          dump_syms = breakpad_dump_syms
+      strip = "${prefix}/llvm-objcopy"
+      if (output_breakpad_syms && invoker.toolchain_os == "fuchsia") {
+        dump_syms = breakpad_dump_syms
 
-          # The breakpad module name for executables and loadable modules.
-          breakpad_name = "<_>"
-        }
-        if (output_gsym && invoker.toolchain_os == "fuchsia") {
-          # TODO(https://fxbug.dev/42136235): enable for other targets.
-          gsymutil = "${prefix}/llvm-gsymutil"
-        }
+        # The breakpad module name for executables and loadable modules.
+        breakpad_name = "<_>"
       }
-
-      use_buildidtool =
-          invoker.toolchain_os == "linux" || invoker.toolchain_os == "fuchsia"
+      if (output_gsym && invoker.toolchain_os == "fuchsia") {
+        # TODO(https://fxbug.dev/42136235): enable for other targets.
+        gsymutil = "${prefix}/llvm-gsymutil"
+      }
     }
+
+    use_buildidtool =
+        invoker.toolchain_os == "linux" || invoker.toolchain_os == "fuchsia"
 
     # Override any tools as requested by the invoker
     if (defined(invoker.cc)) {
@@ -468,9 +464,7 @@ template("clang_toolchain") {
     }
 
     # Compute default dynamic library extension
-    if (invoker.toolchain_os == "mac") {
-      _dylib_extension = ".dylib"
-    } else if (invoker.toolchain_os == "win") {
+    if (invoker.toolchain_os == "win") {
       _dylib_extension = ".dll"
     } else if (invoker.toolchain_os == "fuchsia" ||
                invoker.toolchain_os == "linux") {
@@ -584,12 +578,10 @@ template("clang_toolchain") {
                                 _link_rbe_exec_strategy_flags + [ "-- " ])
           }
         }
-        if (invoker.toolchain_os == "mac") {
-          command_suffix += " && {{REMOTE_STRIP_PREFIX}}$strip {{STRIP_ARGS}} \"{{UNSTRIPPED_OUTFILE}}\" -o \"$outfile\""
-        } else {
-          # TODO(https://fxbug.dev/42137337): Strip .rustc section from packaged dylibs.
-          command_suffix += " && {{REMOTE_STRIP_PREFIX}}$strip {{STRIP_ARGS}} \"{{UNSTRIPPED_OUTFILE}}\" \"$outfile\""
-        }
+
+        # TODO(https://fxbug.dev/42137337): Strip .rustc section from packaged dylibs.
+        command_suffix += " && {{REMOTE_STRIP_PREFIX}}$strip {{STRIP_ARGS}} \"{{UNSTRIPPED_OUTFILE}}\" \"$outfile\""
+
         if (use_buildidtool) {
           buildid_stampfile = "${outfile}.build-id.stamp"
           outputs += [ buildid_stampfile ]
@@ -600,7 +592,7 @@ template("clang_toolchain") {
         }
       }
 
-      if (defined(breakpad_name) && host_os != "mac") {
+      if (defined(breakpad_name)) {
         assert(use_buildidtool)
         breakpad_outfile = "${outfile}.sym"
         outputs += [ breakpad_outfile ]
@@ -691,8 +683,6 @@ template("clang_toolchain") {
         if (invoker.toolchain_os == "fuchsia") {
           # On Fuchsia, lld is directly used to perform linking
           link_map_args = "-C link-args=--Map=\"{{UNSTRIPPED_OUTFILE}}.map\""
-        } else if (invoker.toolchain_os == "mac") {
-          # NOTE: MacOs does not support '--Map' in linker flags
         } else {
           # On host, clang seems to be used to perform linking
           link_map_args =
@@ -723,11 +713,7 @@ template("clang_toolchain") {
         }
 
         # Append command suffix and expand {{STRIP_ARGS}} and {{REMOTE_STRIP_PREFIX}}
-        if (invoker.toolchain_os == "mac") {
-          _strip_args = "-Sx"
-        } else {
-          _strip_args = "--strip-all --keep-section=.rustc"
-        }
+        _strip_args = "--strip-all --keep-section=.rustc"
         command += string_replace(_link_common.command_suffix,
                                   "{{STRIP_ARGS}}",
                                   _strip_args)
@@ -1089,58 +1075,52 @@ template("clang_toolchain") {
       _link_concurrent_jobs = concurrent_jobs.local
       rspfile = "$outfile.rsp"
 
-      if (invoker.toolchain_os == "mac") {
-        # TODO(https://fxbug.dev/42079107): enable depfile support in ld64.lld.
-        command += "$ld {{SOLINK_FLAGS}}{{ldflags}} -o \"$unstripped_outfile\" -Wl,-filelist,\"$rspfile\" {{solibs}} {{libs}} {{frameworks}}"
-        rspfile_content = "{{inputs_newline}}"
-      } else {
-        if (_link_rbe_enable) {
-          _linker_prefix_list = [
-            rebase_path(python_exe_src, root_build_dir),
-            "-S",
-            rebase_path(cxx_link_remote_wrapper, root_build_dir),
-          ]
-          if (link_rbe_check == "determinism") {
-            _linker_prefix_list += [
-              "--local",
-              "--check-determinism",
-            ]
-            not_needed([ "_link_rbe_exec_strategy_flags" ])
-          } else if (link_rbe_check == "consistency") {
-            _linker_prefix_list += [ "--compare" ]
-            not_needed([ "_link_rbe_exec_strategy_flags" ])
-          } else if (link_rbe_check == "none") {
-            _link_concurrent_jobs = concurrent_jobs.remote
-            _linker_prefix_list += _link_rbe_exec_strategy_flags
-          }
-          if (!link_rbe_download_unstripped_outputs) {
-            _linker_prefix_list += [
-              "--download_outputs=false",
-              "--output-is-executable",  # workaround for b/285030257
-            ]  # The remote link wrapper will download everything except the
-               # main output.
-          }
-          if (link_rbe_full_toolchain) {
-            _linker_prefix_list += [
-              "--inputs",
-              _toolchain_dir,
-            ]
-          }
+      if (_link_rbe_enable) {
+        _linker_prefix_list = [
+          rebase_path(python_exe_src, root_build_dir),
+          "-S",
+          rebase_path(cxx_link_remote_wrapper, root_build_dir),
+        ]
+        if (link_rbe_check == "determinism") {
           _linker_prefix_list += [
-            "--preserve_unchanged_output_mtime",
-            "--",
+            "--local",
+            "--check-determinism",
           ]
-          linker_prefix = string_join(" ", _linker_prefix_list)
-        } else {
-          linker_prefix = ""
+          not_needed([ "_link_rbe_exec_strategy_flags" ])
+        } else if (link_rbe_check == "consistency") {
+          _linker_prefix_list += [ "--compare" ]
+          not_needed([ "_link_rbe_exec_strategy_flags" ])
+        } else if (link_rbe_check == "none") {
+          _link_concurrent_jobs = concurrent_jobs.remote
+          _linker_prefix_list += _link_rbe_exec_strategy_flags
         }
-        depfile = _link_common.depfile
-        depsformat = "gcc"
-        command += "$linker_prefix $ld {{SOLINK_FLAGS}}{{ldflags}} -o \"$unstripped_outfile\" -Wl,--dependency-file=\"$depfile\" -Wl,--Map=\"$unstripped_outfile.map\""
-        command +=
-            " {{START_GROUP}}\"@$rspfile\" {{solibs}} {{END_GROUP}}{{libs}}"
-        rspfile_content = "{{inputs}}"
+        if (!link_rbe_download_unstripped_outputs) {
+          _linker_prefix_list += [
+            "--download_outputs=false",
+            "--output-is-executable",  # workaround for b/285030257
+          ]  # The remote link wrapper will download everything except the
+             # main output.
+        }
+        if (link_rbe_full_toolchain) {
+          _linker_prefix_list += [
+            "--inputs",
+            _toolchain_dir,
+          ]
+        }
+        _linker_prefix_list += [
+          "--preserve_unchanged_output_mtime",
+          "--",
+        ]
+        linker_prefix = string_join(" ", _linker_prefix_list)
+      } else {
+        linker_prefix = ""
       }
+      depfile = _link_common.depfile
+      depsformat = "gcc"
+      command += "$linker_prefix $ld {{SOLINK_FLAGS}}{{ldflags}} -o \"$unstripped_outfile\" -Wl,--dependency-file=\"$depfile\" -Wl,--Map=\"$unstripped_outfile.map\""
+      command +=
+          " {{START_GROUP}}\"@$rspfile\" {{solibs}} {{END_GROUP}}{{libs}}"
+      rspfile_content = "{{inputs}}"
 
       forward_variables_from(_link_concurrent_jobs, "*")
       restat = _restat_link
@@ -1173,16 +1153,9 @@ template("clang_toolchain") {
     # below directly. All template parameters will be expanded, except BREAKPAD_NAME.
     _cxx_link_solink = {
       forward_variables_from(_cxx_link_common, "*", [ "command_suffix" ])
-      if (invoker.toolchain_os == "mac") {
-        command = string_replace(
-                command,
-                "{{SOLINK_FLAGS}}",
-                "-shared -Wl,-install_name,@rpath/\"{{target_output_name}}{{output_extension}}\" ")
-      } else {
-        command = string_replace(command,
-                                 "{{SOLINK_FLAGS}}",
-                                 "-shared -Wl,-soname=\"$outname\" ")
-      }
+      command = string_replace(command,
+                               "{{SOLINK_FLAGS}}",
+                               "-shared -Wl,-soname=\"$outname\" ")
 
       # Never use --start-group and --end-group for libraries.
       command = string_replace(command, "{{START_GROUP}}", "")
@@ -1215,8 +1188,6 @@ template("clang_toolchain") {
       # Append command suffix and Expand STRIP_ARGS
       if (defined(invoker.strip_cxx_bin_args)) {
         _strip_args = invoker.strip_cxx_bin_args
-      } else if (invoker.toolchain_os == "mac") {
-        _strip_args = "-Sx"
       } else {
         _strip_args = "--strip-all"
       }
@@ -1229,14 +1200,8 @@ template("clang_toolchain") {
 
       # Use --start-group and --eng-group for binaries, except on Mac.
       # IMPORTANT: The trailing spaces in the replacement strings are critical!
-      if (invoker.toolchain_os != "mac") {
-        command =
-            string_replace(command, "{{START_GROUP}}", "-Wl,--start-group ")
-        command = string_replace(command, "{{END_GROUP}}", "-Wl,--end-group ")
-      } else {
-        command = string_replace(command, "{{START_GROUP}}", "")
-        command = string_replace(command, "{{END_GROUP}}", "")
-      }
+      command = string_replace(command, "{{START_GROUP}}", "-Wl,--start-group ")
+      command = string_replace(command, "{{END_GROUP}}", "-Wl,--end-group ")
 
       # Expand BREADKPAD_NAME
       if (defined(breakpad_name)) {

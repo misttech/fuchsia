@@ -146,9 +146,7 @@ template("zircon_toolchain") {
     tc_cpu = invoker.cpu
   }
   tc_target = "${tc_cpu}-"
-  if (invoker.os == "mac") {
-    tc_target += "apple-darwin"
-  } else if (invoker.os == "win") {
+  if (invoker.os == "win") {
     tc_target += "windows-msvc"
   } else if (invoker.os == "linux") {
     tc_target += "linux-gnu"
@@ -464,7 +462,7 @@ template("zircon_toolchain") {
   ar = "$dir_prefix${tc.tool_prefix}ar"
 
   # All other OS possibilities are ELF and so might have ELF build IDs.
-  is_elf = invoker.os != "mac" && invoker.os != "win"
+  is_elf = invoker.os != "win"
 
   # buildidtool supports ELF build IDs and PE-COFF PDB GUIDs.
   # TODO(mcgrathr): broken for aarch64 PE-COFF
@@ -545,12 +543,7 @@ template("zircon_toolchain") {
       }
 
       if (_strip == true) {
-        if (invoker.os == "mac") {
-          # Only the host native tool works on macOS.
-          strip_tool = "strip"
-        } else {
-          strip_tool = "$dir_prefix${tc.tool_prefix}strip"
-        }
+        strip_tool = "$dir_prefix${tc.tool_prefix}strip"
 
         strip_command += "$strip_tool -o \"$outfile\" \"$unstripped_outfile\""
       } else {
@@ -567,66 +560,61 @@ template("zircon_toolchain") {
     linker_prefix = ""
     _link_concurrent_jobs = concurrent_jobs.local
 
-    if (invoker.os == "mac") {
-      rspfile_content = "{{inputs_newline}}"
-      link_inputs = "-Wl,-filelist,$rspfile {{libs}} {{solibs}}"
+    rspfile_content = "{{inputs}}"
+    link_inputs = "'@$rspfile'"
+    if (invoker.os == "win") {
+      link_inputs += " {{libs}} {{solibs}}"
     } else {
-      rspfile_content = "{{inputs}}"
-      link_inputs = "'@$rspfile'"
-      if (invoker.os == "win") {
-        link_inputs += " {{libs}} {{solibs}}"
-      } else {
-        link_inputs = "-Wl,--start-group " + link_inputs +
-                      " {{libs}} -Wl,--end-group {{solibs}}"
-        depfile = "$outfile.d"
-        depsformat = "gcc"
-        switches += " -Wl,--dependency-file=$depfile"
-        mapfile = "${outfile}.map"
-        outputs += [ mapfile ]
-        switches += " -Wl,-Map,$mapfile"
-      }
+      link_inputs = "-Wl,--start-group " + link_inputs +
+                    " {{libs}} -Wl,--end-group {{solibs}}"
+      depfile = "$outfile.d"
+      depsformat = "gcc"
+      switches += " -Wl,--dependency-file=$depfile"
+      mapfile = "${outfile}.map"
+      outputs += [ mapfile ]
+      switches += " -Wl,-Map,$mapfile"
+    }
 
-      # remote linking option
-      if (_link_rbe_enable) {
-        _linker_prefix_list = [
-          rebase_path(python_exe_src, root_build_dir),
-          "-S",
-          rebase_path(cxx_link_remote_wrapper, root_build_dir),
-        ]
-        if (link_rbe_check == "determinism") {
-          _linker_prefix_list += [
-            "--local",
-            "--check-determinism",
-          ]
-          not_needed([ "_link_rbe_exec_strategy_flags" ])
-        } else if (link_rbe_check == "consistency") {
-          _linker_prefix_list += [ "--compare" ]
-          not_needed([ "_link_rbe_exec_strategy_flags" ])
-        } else if (link_rbe_check == "none") {
-          _linker_prefix_list += _link_rbe_exec_strategy_flags
-          _link_concurrent_jobs = concurrent_jobs.remote
-        }
-        if (!link_rbe_download_unstripped_outputs) {
-          _linker_prefix_list += [
-            "--download_outputs=false",
-            "--output-is-executable",  # workaround for b/285030257
-          ]
-          # The remote link wrapper will download everything except the main output.
-        }
-
-        if (link_rbe_full_toolchain && defined(_tool_root_dir)) {
-          _linker_prefix_list += [
-            "--inputs",
-            _tool_root_dir,
-          ]
-        }
-
+    # remote linking option
+    if (_link_rbe_enable) {
+      _linker_prefix_list = [
+        rebase_path(python_exe_src, root_build_dir),
+        "-S",
+        rebase_path(cxx_link_remote_wrapper, root_build_dir),
+      ]
+      if (link_rbe_check == "determinism") {
         _linker_prefix_list += [
-          "--preserve_unchanged_output_mtime",
-          "--",
+          "--local",
+          "--check-determinism",
         ]
-        linker_prefix = string_join(" ", _linker_prefix_list)
+        not_needed([ "_link_rbe_exec_strategy_flags" ])
+      } else if (link_rbe_check == "consistency") {
+        _linker_prefix_list += [ "--compare" ]
+        not_needed([ "_link_rbe_exec_strategy_flags" ])
+      } else if (link_rbe_check == "none") {
+        _linker_prefix_list += _link_rbe_exec_strategy_flags
+        _link_concurrent_jobs = concurrent_jobs.remote
       }
+      if (!link_rbe_download_unstripped_outputs) {
+        _linker_prefix_list += [
+          "--download_outputs=false",
+          "--output-is-executable",  # workaround for b/285030257
+        ]  # The remote link wrapper will download everything except the main
+           # output.
+      }
+
+      if (link_rbe_full_toolchain && defined(_tool_root_dir)) {
+        _linker_prefix_list += [
+          "--inputs",
+          _tool_root_dir,
+        ]
+      }
+
+      _linker_prefix_list += [
+        "--preserve_unchanged_output_mtime",
+        "--",
+      ]
+      linker_prefix = string_join(" ", _linker_prefix_list)
     }
     forward_variables_from(_link_concurrent_jobs, "*")
 
@@ -827,9 +815,7 @@ template("zircon_toolchain") {
         description = "LINK_SHLIB $outfile"
 
         output_prefix = "lib"
-        if (current_os == "mac") {
-          default_output_extension = ".dylib"
-        } else if (current_os == "win") {
+        if (current_os == "win") {
           default_output_extension = ".dll"
         } else {
           default_output_extension = ".so"
@@ -892,9 +878,7 @@ template("zircon_toolchain") {
 
         description = "LINK_MODULE $outfile"
 
-        if (current_os == "mac") {
-          default_output_extension = ".dylib"
-        } else if (current_os == "win") {
+        if (current_os == "win") {
           default_output_extension = ".dll"
         } else {
           default_output_extension = ".so"

@@ -7,10 +7,7 @@
 stamp_command = "touch {{output}}"
 stamp_description = "STAMP {{output}}"
 
-copy_command = rebase_path("//build/toolchain/copy_command.sh", root_build_dir)
-if (host_os == "mac") {
-  copy_command += " --python-exe=" + rebase_path(python_exe_src, root_build_dir)
-}
-
-copy_command += " {{source}} {{output}}"
+_rebased_copy_command =
+    rebase_path("//build/toolchain/copy_command.sh", root_build_dir)
+copy_command = "${_rebased_copy_command} {{source}} {{output}}"
 copy_description = "COPY {{source}} {{output}}"
