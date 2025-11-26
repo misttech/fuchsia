@@ -380,27 +380,12 @@ func (f *Fuzzer) Prepare(conn Connector) error {
 		}
 		dataPath = ""
 
-	} else if f.useFuzzCtl() {
+	} else {
 		if err := conn.Command("fuzz_ctl", "reset", f.url).Run(); err != nil {
 			return fmt.Errorf("error resetting fuzzer %q: %s", f.pkgUrl, err)
 		}
 		return nil
 
-	} else {
-		// TODO(https://fxbug.dev/42139817): We shouldn't rely on executing these commands
-		if err := conn.Command("pkgctl", "resolve", f.pkgUrl).Run(); err != nil {
-			return fmt.Errorf("error resolving fuzzer package %q: %s", f.pkgUrl, err)
-		}
-
-		// Kill any prior running instances of this fuzzer that may have gotten stuck
-		if err := conn.Command("killall", f.pkgUrl).Run(); err != nil {
-			// `killall` will return -1 if no matching task is found, but this is fine
-			if cmderr, ok := err.(*InstanceCmdError); !ok || cmderr.ReturnCode != 255 {
-				return fmt.Errorf("error killing any existing instances of %q: %s", f.pkgUrl, err)
-			}
-		}
-
-		dataPath = "tmp/*"
 	}
 
 	// Clear any persistent data in the fuzzer's namespace, resetting its state
