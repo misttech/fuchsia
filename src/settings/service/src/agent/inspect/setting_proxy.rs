@@ -10,26 +10,18 @@
 //!
 //! [SettingProxyInspectAgent]: inspect::SettingProxyInspectAgent
 
-use crate::agent::{AgentCreator, Context, CreationFunc, Payload};
-use crate::base::{SettingInfo, SettingType};
-use crate::handler::base::{Error, Payload as HandlerPayload, Request};
-use crate::message::base::{MessageEvent, MessengerType};
-use crate::message::receptor::Receptor;
-use crate::service::TryFromWithClient;
-use crate::{clock, service, trace};
-use futures::channel::mpsc::UnboundedReceiver;
-use settings_common::inspect::event::{Direction, ResponseType, UsageEvent};
-use settings_inspect_utils::joinable_inspect_vecdeque::JoinableInspectVecDeque;
-use settings_inspect_utils::managed_inspect_map::ManagedInspectMap;
-use settings_inspect_utils::managed_inspect_queue::ManagedInspectQueue;
-
+use crate::{clock, trace};
 use fuchsia_async as fasync;
 use fuchsia_inspect::{self as inspect, NumericProperty, component};
 use fuchsia_inspect_derive::{IValue, Inspect};
 use futures::StreamExt;
-use futures::stream::FuturesUnordered;
-use std::cell::RefCell;
-use std::rc::Rc;
+use futures::channel::mpsc::UnboundedReceiver;
+#[cfg(test)]
+use futures::channel::mpsc::UnboundedSender;
+use settings_common::inspect::event::{Direction, ResponseType, UsageEvent};
+use settings_inspect_utils::joinable_inspect_vecdeque::JoinableInspectVecDeque;
+use settings_inspect_utils::managed_inspect_map::ManagedInspectMap;
+use settings_inspect_utils::managed_inspect_queue::ManagedInspectQueue;
 
 /// The maximum number of pending requests to store in inspect per setting. There should generally
 /// be fairly few of these unless a setting is changing rapidly, so a slightly larger size allows us
@@ -48,18 +40,6 @@ const REQUEST_RESPONSE_NODE_NAME: &str = "requests_and_responses";
 /// Name of the top-level node under root used to store request counts.
 const RESPONSE_COUNTS_NODE_NAME: &str = "response_counts";
 
-pub(crate) fn create_registrar(rx: UnboundedReceiver<UsageEvent>) -> AgentCreator {
-    let rx = Rc::new(RefCell::new(rx));
-    AgentCreator {
-        debug_id: "SettingProxyInspectAgent",
-        create: CreationFunc::Dynamic(Rc::new(move |context| {
-            let rx = Rc::clone(&rx);
-            Box::pin(async move {
-                SettingProxyInspectAgent::create(context, rx).await;
-            })
-        })),
-    }
-}
 #[derive(Default, Inspect)]
 /// Information about response counts to be written to inspect.
 struct SettingTypeResponseCountInfo {
@@ -192,35 +172,31 @@ pub(crate) struct SettingProxyInspectAgent {
 
     /// Information for each setting on requests and responses.
     setting_request_response_info: ManagedInspectMap<SettingTypeRequestResponseInfo>,
+
+    usage_rx: Option<UnboundedReceiver<UsageEvent>>,
+
+    #[cfg(test)]
+    done_tx: Option<UnboundedSender<()>>,
 }
 
 impl SettingProxyInspectAgent {
-    pub(crate) async fn create(context: Context, rx: Rc<RefCell<UnboundedReceiver<UsageEvent>>>) {
+    pub fn new(rx: UnboundedReceiver<UsageEvent>) -> Self {
         Self::create_with_node(
-            context,
             rx,
             component::inspector().root().create_child(REQUEST_RESPONSE_NODE_NAME),
             component::inspector().root().create_child(RESPONSE_COUNTS_NODE_NAME),
+            #[cfg(test)]
+            None,
         )
-        .await;
     }
 
-    async fn create_with_node(
-        context: Context,
-        rx: Rc<RefCell<UnboundedReceiver<UsageEvent>>>,
+    fn create_with_node(
+        rx: UnboundedReceiver<UsageEvent>,
         request_response_inspect_node: inspect::Node,
         response_counts_node: inspect::Node,
-    ) {
-        let (_, message_rx) = context
-            .delegate
-            .create(MessengerType::Broker(Rc::new(move |message| {
-                // Only catch setting handler requests.
-                matches!(message.payload(), service::Payload::Setting(HandlerPayload::Request(_)))
-            })))
-            .await
-            .expect("should receive client");
-
-        let mut agent = SettingProxyInspectAgent {
+        #[cfg(test)] done_tx: Option<UnboundedSender<()>>,
+    ) -> Self {
+        SettingProxyInspectAgent {
             response_counts: ManagedInspectMap::<SettingTypeResponseCountInfo>::with_node(
                 response_counts_node,
             ),
@@ -228,70 +204,29 @@ impl SettingProxyInspectAgent {
                 ManagedInspectMap::<SettingTypeRequestResponseInfo>::with_node(
                     request_response_inspect_node,
                 ),
-        };
+            usage_rx: Some(rx),
+            #[cfg(test)]
+            done_tx,
+        }
+    }
 
-        fasync::Task::local({
-            async move {
-            let _ = &context;
+    pub fn initialize(mut self) {
+        fasync::Task::local(async move {
             let id = fuchsia_trace::Id::new();
             trace!(id, c"setting_proxy_inspect_agent");
-            let event = message_rx.fuse();
-            let agent_event = context.receptor.fuse();
-            let mut usage_event = rx.borrow_mut();
-            futures::pin_mut!(agent_event, event);
-
-            // Push reply_receptor to the FutureUnordered to avoid blocking codes when there are no
-            // responses replied back.
-            let mut unordered = FuturesUnordered::new();
-            loop {
-                futures::select! {
-                    message_event = event.select_next_some() => {
-                        trace!(
-                            id,
-                            c"message_event"
-                        );
-                        if let Some((setting_type, count, mut reply_receptor)) =
-                            agent.process_message_event(message_event) {
-                                unordered.push(async move {
-                                    let payload = reply_receptor.next_payload().await;
-                                    (setting_type, count, payload)
-                                });
-                        };
-                    },
-                    usage_event = usage_event.select_next_some() => {
-                        if let Direction::Request(_) = usage_event.direction {
-                            agent.process_usage_event(usage_event);
-                        } else {
-                            agent.process_usage_response_event(usage_event);
-                        }
-                    }
-                    reply = unordered.select_next_some() => {
-                        let (setting_type, count, payload) = reply;
-                        if let Ok((
-                            service::Payload::Setting(
-                                HandlerPayload::Response(response)),
-                            _,
-                        )) = payload
-                        {
-                            agent.record_response(setting_type, count, response);
-                        }
-                    },
-                    agent_message = agent_event.select_next_some() => {
-                        trace!(
-                            id,
-                            c"agent_event"
-                        );
-                        if let MessageEvent::Message(
-                                service::Payload::Agent(Payload::Invocation(_invocation)), client)
-                                = agent_message {
-                            // Since the agent runs at creation, there is no
-                            // need to handle state here.
-                            let _ = client.reply(Payload::Complete(Ok(())).into());
-                        }
-                    },
+            let mut usage_rx = self.usage_rx.take().unwrap();
+            while let Some(usage_event) = usage_rx.next().await {
+                if let Direction::Request(_) = usage_event.direction {
+                    self.process_usage_event(usage_event);
+                } else {
+                    self.process_usage_response_event(usage_event);
+                }
+                #[cfg(test)]
+                if let Some(done_tx) = &self.done_tx {
+                    let _ = done_tx.unbounded_send(());
                 }
             }
-        }})
+        })
         .detach();
     }
 
@@ -417,168 +352,6 @@ impl SettingProxyInspectAgent {
         }
     }
 
-    /// Identfies [`service::message::MessageEvent`] that contains a [`Request`]
-    /// for setting handlers and records the [`Request`].
-    fn process_message_event(
-        &mut self,
-        event: service::message::MessageEvent,
-    ) -> Option<(SettingType, u64, Receptor)> {
-        if let Ok((HandlerPayload::Request(request), mut client)) =
-            HandlerPayload::try_from_with_client(event)
-        {
-            if let service::message::Audience::Address(service::Address::Handler(setting_type)) =
-                client.get_audience()
-            {
-                // A Listen request will always send a Get request. We can always get the Get's
-                // response. However, Listen will return the Get's response only when it is
-                // considered updated. Therefore, we ignore Listen response.
-                if request != Request::Listen {
-                    let count = self.record_request(setting_type, request);
-                    return Some((setting_type, count, client.spawn_observer()));
-                }
-            }
-        }
-        None
-    }
-
-    /// Writes a pending request to inspect.
-    ///
-    /// Returns the request count of this request.
-    fn record_request(&mut self, setting_type: SettingType, request: Request) -> u64 {
-        let setting_type_str = format!("{setting_type:?}");
-        let timestamp = clock::inspect_format_now();
-
-        // Get or create the info for this setting type.
-        let request_response_info = self
-            .setting_request_response_info
-            .get_or_insert_with(setting_type_str, SettingTypeRequestResponseInfo::new);
-
-        let request_count = request_response_info.count;
-        request_response_info.count += 1;
-
-        let pending_request_info = PendingRequestInspectInfo {
-            request: format!("{request:?}").into(),
-            request_type: request.for_inspect().to_string(),
-            timestamp: timestamp.into(),
-            count: request_count,
-            inspect_node: inspect::Node::default(),
-        };
-
-        let count_key = format!("{request_count:020}");
-        request_response_info.pending_requests.push(&count_key, pending_request_info);
-
-        request_count
-    }
-
-    /// Writes a response to inspect, matching it up with an already recorded request + response
-    /// pair if possible.
-    fn record_response(
-        &mut self,
-        setting_type: SettingType,
-        count: u64,
-        response: Result<Option<SettingInfo>, Error>,
-    ) {
-        let setting_type_str = format!("{setting_type:?}");
-        let timestamp = clock::inspect_format_now();
-
-        // Update the response counter.
-        self.increment_response_count(
-            setting_type_str.clone(),
-            match &response {
-                Ok(Some(_)) => ResponseType::OkSome,
-                Ok(None) => ResponseType::OkNone,
-                Err(e) => ResponseType::from(e.clone()),
-            },
-        );
-
-        // Find the inspect data for this setting. This should always be present as it's created
-        // upon receiving a request, which should happen before the response is recorded.
-        let condensed_setting_type_info = self
-            .setting_request_response_info
-            .map_mut()
-            .get_mut(&setting_type_str)
-            .expect("Missing info for request");
-
-        let pending_requests = &mut condensed_setting_type_info.pending_requests;
-
-        // Find the position of the pending request with the same request count and remove it. This
-        // should generally be the first pending request in the queue if requests are being answered
-        // in order.
-        let position = match pending_requests.iter_mut().position(|info| info.count == count) {
-            Some(position) => position,
-            None => {
-                // We may be unable to find a matching request if requests are piling up faster than
-                // responses, as the number of pending requests is limited.
-                return;
-            }
-        };
-        let pending =
-            pending_requests.items_mut().remove(position).expect("Failed to find pending item");
-
-        // Find the info for this particular request type.
-        let request_type_info_map = condensed_setting_type_info
-            .requests_and_responses_by_type
-            .get_or_insert_with(pending.request_type, || {
-                ManagedInspectMap::<RequestResponsePairInfo>::default()
-            });
-
-        // Request and response pairs are keyed by the concatenation of the request and response,
-        // which uniquely identifies them within a setting.
-        let map_key = format!("{:?}{:?}", pending.request, response);
-
-        // Find this request + response pair in the map and remove it, if it's present. While the
-        // map key is the request + response concatenated, the key displayed in inspect is the
-        // newest request count for that pair. We remove the map entry if it exists so that we can
-        // re-insert to update the key displayed in inspect.
-        let removed_info = request_type_info_map.map_mut().remove(&map_key);
-
-        let response_str = format!("{response:?}");
-        let mut info = removed_info.unwrap_or_else(|| {
-            RequestResponsePairInfo::new(pending.request.into_inner(), response_str, pending.count)
-        });
-        {
-            // Update the request and response timestamps. We have borrow from the IValues with
-            // as_mut and drop the variables after this scope ends so that the IValues will know to
-            // update the values in inspect.
-            let mut_requests = &mut info.request_timestamps.as_mut().0;
-            let mut_responses = &mut info.response_timestamps.as_mut().0;
-
-            mut_requests.push_back(pending.timestamp.into_inner());
-            mut_responses.push_back(timestamp);
-
-            // If there are too many timestamps, remove earlier ones.
-            if mut_requests.len() > MAX_REQUEST_RESPONSE_TIMESTAMPS {
-                let _ = mut_requests.pop_front();
-            }
-            if mut_responses.len() > MAX_REQUEST_RESPONSE_TIMESTAMPS {
-                let _ = mut_responses.pop_front();
-            }
-        }
-
-        // Insert into the map, but display the key in inspect as the request count.
-        let count_key = format!("{:020}", pending.count);
-        let _ = request_type_info_map.insert_with_property_name(map_key, count_key, info);
-
-        // If there are too many entries, find and remove the oldest.
-        let num_request_response_pairs = request_type_info_map.map().len();
-        if num_request_response_pairs > MAX_REQUEST_RESPONSE_PAIRS {
-            // Find the item with the lowest request count, which means it was the oldest request
-            // received.
-            let mut lowest_count: u64 = u64::MAX;
-            let mut lowest_key: Option<String> = None;
-            for (key, inspect_info) in request_type_info_map.map() {
-                if inspect_info.request_count < lowest_count {
-                    lowest_count = inspect_info.request_count;
-                    lowest_key = Some(key.clone());
-                }
-            }
-
-            if let Some(key_to_remove) = lowest_key {
-                let _ = request_type_info_map.map_mut().remove(&key_to_remove);
-            }
-        }
-    }
-
     fn increment_response_count(&mut self, setting_type_str: String, response_type: ResponseType) {
         // Get the response count info for the setting type, creating a new info object
         // if it doesn't exist in the map yet.
@@ -598,70 +371,10 @@ impl SettingProxyInspectAgent {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::display::types::SetDisplayInfo;
-    use crate::intl::types::{IntlInfo, LocaleId, TemperatureUnit};
     use diagnostics_assertions::{TreeAssertion, assert_data_tree};
     use futures::channel::mpsc;
+    use settings_common::inspect::event::RequestType;
     use zx::MonotonicInstant;
-
-    /// The `RequestProcessor` handles sending a request through a MessageHub
-    /// From caller to recipient. This is useful when testing brokers in
-    /// between.
-    struct RequestProcessor {
-        delegate: service::message::Delegate,
-    }
-
-    impl RequestProcessor {
-        fn new(delegate: service::message::Delegate) -> Self {
-            RequestProcessor { delegate }
-        }
-
-        async fn send_request(
-            &self,
-            setting_type: SettingType,
-            setting_request: Request,
-            should_reply: bool,
-        ) {
-            let (messenger, _) =
-                self.delegate.create(MessengerType::Unbound).await.expect("should be created");
-
-            let (_, mut receptor) = self
-                .delegate
-                .create(MessengerType::Addressable(service::Address::Handler(setting_type)))
-                .await
-                .expect("should be created");
-
-            let mut reply_receptor = messenger.message(
-                HandlerPayload::Request(setting_request).into(),
-                service::message::Audience::Address(service::Address::Handler(setting_type)),
-            );
-
-            if let Some(message_event) = futures::StreamExt::next(&mut receptor).await {
-                if let Ok((_, reply_client)) = HandlerPayload::try_from_with_client(message_event) {
-                    if should_reply {
-                        let _ = reply_client.reply(HandlerPayload::Response(Ok(None)).into());
-                    }
-                }
-            }
-            let _ = reply_receptor.next_payload().await;
-        }
-
-        async fn send_and_receive(&self, setting_type: SettingType, setting_request: Request) {
-            self.send_request(setting_type, setting_request, true).await;
-        }
-    }
-
-    async fn create_context() -> Context {
-        Context::new(
-            service::MessageHub::create_hub()
-                .create(MessengerType::Unbound)
-                .await
-                .expect("should be present")
-                .1,
-            service::MessageHub::create_hub(),
-        )
-        .await
-    }
 
     // Verifies that request + response pairs with the same value and request type are grouped
     // together.
@@ -673,73 +386,88 @@ mod tests {
         let inspector = inspect::Inspector::default();
         let condense_node = inspector.root().create_child(REQUEST_RESPONSE_NODE_NAME);
         let response_counts_node = inspector.root().create_child(RESPONSE_COUNTS_NODE_NAME);
-        let context = create_context().await;
 
-        let request_processor = RequestProcessor::new(context.delegate.clone());
-
-        let (_tx, rx) = mpsc::unbounded();
-        SettingProxyInspectAgent::create_with_node(
-            context,
-            Rc::new(RefCell::new(rx)),
+        let (tx, rx) = mpsc::unbounded();
+        let (done_tx, mut done_rx) = mpsc::unbounded();
+        let agent = SettingProxyInspectAgent::create_with_node(
+            rx,
             condense_node,
             response_counts_node,
-        )
-        .await;
+            Some(done_tx),
+        );
+        agent.initialize();
 
         // Send a request to turn off auto brightness.
-        let turn_off_auto_brightness = Request::SetDisplayInfo(SetDisplayInfo {
-            auto_brightness: Some(false),
-            ..SetDisplayInfo::default()
+        let _ = tx.unbounded_send(UsageEvent {
+            setting: "Display",
+            request_type: RequestType::Set,
+            direction: Direction::Request(
+                "SetDisplayInfo{auto_brightness: Some(false)}".to_string(),
+            ),
+            id: 0,
         });
-        request_processor
-            .send_and_receive(SettingType::Display, turn_off_auto_brightness.clone())
-            .await;
+        let _ = done_rx.next().await;
+        let _ = tx.unbounded_send(UsageEvent {
+            setting: "Display",
+            request_type: RequestType::Set,
+            direction: Direction::Response("Ok(None)".to_string(), ResponseType::OkNone),
+            id: 0,
+        });
+        let _ = done_rx.next().await;
 
         // Increment clock and send a request to turn on auto brightness.
         clock::mock::set(MonotonicInstant::from_nanos(100));
-        request_processor
-            .send_and_receive(
-                SettingType::Display,
-                Request::SetDisplayInfo(SetDisplayInfo {
-                    auto_brightness: Some(true),
-                    ..SetDisplayInfo::default()
-                }),
-            )
-            .await;
+        let _ = tx.unbounded_send(UsageEvent {
+            setting: "Display",
+            request_type: RequestType::Set,
+            direction: Direction::Request(
+                "SetDisplayInfo{auto_brightness: Some(true)}".to_string(),
+            ),
+            id: 1,
+        });
+        let _ = done_rx.next().await;
+        let _ = tx.unbounded_send(UsageEvent {
+            setting: "Display",
+            request_type: RequestType::Set,
+            direction: Direction::Response("Ok(None)".to_string(), ResponseType::OkNone),
+            id: 1,
+        });
+        let _ = done_rx.next().await;
 
         // Increment clock and send the same request as the first one. The two should be grouped
         // together.
         clock::mock::set(MonotonicInstant::from_nanos(200));
-        request_processor.send_and_receive(SettingType::Display, turn_off_auto_brightness).await;
+        let _ = tx.unbounded_send(UsageEvent {
+            setting: "Display",
+            request_type: RequestType::Set,
+            direction: Direction::Request(
+                "SetDisplayInfo{auto_brightness: Some(false)}".to_string(),
+            ),
+            id: 2,
+        });
+        let _ = done_rx.next().await;
+        let _ = tx.unbounded_send(UsageEvent {
+            setting: "Display",
+            request_type: RequestType::Set,
+            direction: Direction::Response("Ok(None)".to_string(), ResponseType::OkNone),
+            id: 2,
+        });
+        let _ = done_rx.next().await;
 
         assert_data_tree!(inspector, root: contains {
             requests_and_responses: {
                 "Display": {
                     "pending_requests": {},
                     "requests_and_responses": {
-                        "SetDisplayInfo": {
+                        "Set": {
                             "00000000000000000001": {
-                                "request": "SetDisplayInfo(SetDisplayInfo { \
-                                    manual_brightness_value: None, \
-                                    auto_brightness_value: None, \
-                                    auto_brightness: Some(true), \
-                                    screen_enabled: None, \
-                                    low_light_mode: None, \
-                                    theme: None \
-                                })",
+                                "request": "SetDisplayInfo{auto_brightness: Some(true)}",
                                 "request_timestamps": "0.000000100",
                                 "response": "Ok(None)",
                                 "response_timestamps": "0.000000100"
                             },
                             "00000000000000000002": {
-                                "request": "SetDisplayInfo(SetDisplayInfo { \
-                                    manual_brightness_value: None, \
-                                    auto_brightness_value: None, \
-                                    auto_brightness: Some(false), \
-                                    screen_enabled: None, \
-                                    low_light_mode: None, \
-                                    theme: None \
-                                })",
+                                "request": "SetDisplayInfo{auto_brightness: Some(false)}",
                                 "request_timestamps": "0.000000000,0.000000200",
                                 "response": "Ok(None)",
                                 "response_timestamps": "0.000000000,0.000000200"
@@ -761,48 +489,86 @@ mod tests {
         let inspector = inspect::Inspector::default();
         let condense_node = inspector.root().create_child(REQUEST_RESPONSE_NODE_NAME);
         let response_counts_node = inspector.root().create_child(RESPONSE_COUNTS_NODE_NAME);
-        let context = create_context().await;
 
-        let request_processor = RequestProcessor::new(context.delegate.clone());
-
-        let (_tx, rx) = mpsc::unbounded();
-        SettingProxyInspectAgent::create_with_node(
-            context,
-            Rc::new(RefCell::new(rx)),
+        let (tx, rx) = mpsc::unbounded();
+        let (done_tx, mut done_rx) = mpsc::unbounded();
+        let agent = SettingProxyInspectAgent::create_with_node(
+            rx,
             condense_node,
             response_counts_node,
-        )
-        .await;
+            Some(done_tx),
+        );
+        agent.initialize();
 
         // Interlace different request types to make sure the counter is correct.
-        request_processor
-            .send_and_receive(
-                SettingType::Display,
-                Request::SetDisplayInfo(SetDisplayInfo {
-                    auto_brightness: Some(false),
-                    ..SetDisplayInfo::default()
-                }),
-            )
-            .await;
+        let _ = tx.unbounded_send(UsageEvent {
+            setting: "Display",
+            request_type: RequestType::Set,
+            direction: Direction::Request(
+                "SetDisplayInfo{auto_brightness: Some(false)}".to_string(),
+            ),
+            id: 0,
+        });
+        let _ = done_rx.next().await;
+        let _ = tx.unbounded_send(UsageEvent {
+            setting: "Display",
+            request_type: RequestType::Set,
+            direction: Direction::Response("Ok(None)".to_string(), ResponseType::OkNone),
+            id: 0,
+        });
+        let _ = done_rx.next().await;
 
         // Set to a different time so that a response can correctly link to its request.
         clock::mock::set(MonotonicInstant::from_nanos(100));
-        request_processor.send_and_receive(SettingType::Display, Request::Get).await;
+        let _ = tx.unbounded_send(UsageEvent {
+            setting: "Display",
+            request_type: RequestType::Get,
+            direction: Direction::Request("WatchDisplayInfo".to_string()),
+            id: 1,
+        });
+        let _ = done_rx.next().await;
+        let _ = tx.unbounded_send(UsageEvent {
+            setting: "Display",
+            request_type: RequestType::Get,
+            direction: Direction::Response("Ok(None)".to_string(), ResponseType::OkNone),
+            id: 1,
+        });
+        let _ = done_rx.next().await;
 
         // Set to a different time so that a response can correctly link to its request.
         clock::mock::set(MonotonicInstant::from_nanos(200));
-        request_processor
-            .send_and_receive(
-                SettingType::Display,
-                Request::SetDisplayInfo(SetDisplayInfo {
-                    auto_brightness: Some(true),
-                    ..SetDisplayInfo::default()
-                }),
-            )
-            .await;
+        let _ = tx.unbounded_send(UsageEvent {
+            setting: "Display",
+            request_type: RequestType::Set,
+            direction: Direction::Request(
+                "SetDisplayInfo{auto_brightness: Some(true)}".to_string(),
+            ),
+            id: 2,
+        });
+        let _ = done_rx.next().await;
+        let _ = tx.unbounded_send(UsageEvent {
+            setting: "Display",
+            request_type: RequestType::Set,
+            direction: Direction::Response("Ok(None)".to_string(), ResponseType::OkNone),
+            id: 2,
+        });
+        let _ = done_rx.next().await;
 
         clock::mock::set(MonotonicInstant::from_nanos(300));
-        request_processor.send_and_receive(SettingType::Display, Request::Get).await;
+        let _ = tx.unbounded_send(UsageEvent {
+            setting: "Display",
+            request_type: RequestType::Get,
+            direction: Direction::Request("WatchDisplayInfo".to_string()),
+            id: 3,
+        });
+        let _ = done_rx.next().await;
+        let _ = tx.unbounded_send(UsageEvent {
+            setting: "Display",
+            request_type: RequestType::Get,
+            direction: Direction::Response("Ok(None)".to_string(), ResponseType::OkNone),
+            id: 3,
+        });
+        let _ = done_rx.next().await;
 
         assert_data_tree!(inspector, root: contains {
             requests_and_responses: {
@@ -811,35 +577,21 @@ mod tests {
                     "requests_and_responses": {
                         "Get": {
                             "00000000000000000003": {
-                                "request": "Get",
+                                "request": "WatchDisplayInfo",
                                 "request_timestamps": "0.000000100,0.000000300",
                                 "response": "Ok(None)",
                                 "response_timestamps": "0.000000100,0.000000300"
                             }
                         },
-                        "SetDisplayInfo": {
+                        "Set": {
                             "00000000000000000000": {
-                                "request": "SetDisplayInfo(SetDisplayInfo { \
-                                    manual_brightness_value: None, \
-                                    auto_brightness_value: None, \
-                                    auto_brightness: Some(false), \
-                                    screen_enabled: None, \
-                                    low_light_mode: None, \
-                                    theme: None \
-                                })",
+                                "request": "SetDisplayInfo{auto_brightness: Some(false)}",
                                   "request_timestamps": "0.000000000",
                                   "response": "Ok(None)",
                                   "response_timestamps": "0.000000000"
                             },
                             "00000000000000000002": {
-                                "request": "SetDisplayInfo(SetDisplayInfo { \
-                                    manual_brightness_value: None, \
-                                    auto_brightness_value: None, \
-                                    auto_brightness: Some(true), \
-                                    screen_enabled: None, \
-                                    low_light_mode: None, \
-                                    theme: None \
-                                })",
+                                "request": "SetDisplayInfo{auto_brightness: Some(true)}",
                                 "request_timestamps": "0.000000200",
                                 "response": "Ok(None)",
                                 "response_timestamps": "0.000000200"
@@ -865,44 +617,34 @@ mod tests {
 
         let inspector = inspect::Inspector::default();
         let condense_node = inspector.root().create_child(REQUEST_RESPONSE_NODE_NAME);
-        let request_counts_node = inspector.root().create_child(RESPONSE_COUNTS_NODE_NAME);
-        let context = create_context().await;
+        let response_counts_node = inspector.root().create_child(RESPONSE_COUNTS_NODE_NAME);
 
-        let request_processor = RequestProcessor::new(context.delegate.clone());
-
-        let (_tx, rx) = mpsc::unbounded();
-        SettingProxyInspectAgent::create_with_node(
-            context,
-            Rc::new(RefCell::new(rx)),
+        let (tx, rx) = mpsc::unbounded();
+        let (done_tx, mut done_rx) = mpsc::unbounded();
+        let agent = SettingProxyInspectAgent::create_with_node(
+            rx,
             condense_node,
-            request_counts_node,
-        )
-        .await;
+            response_counts_node,
+            Some(done_tx),
+        );
+        agent.initialize();
 
-        request_processor
-            .send_request(
-                SettingType::Display,
-                Request::SetDisplayInfo(SetDisplayInfo {
-                    auto_brightness: Some(false),
-                    ..SetDisplayInfo::default()
-                }),
-                false,
-            )
-            .await;
+        let _ = tx.unbounded_send(UsageEvent {
+            setting: "Display",
+            request_type: RequestType::Set,
+            direction: Direction::Request(
+                "SetDisplayInfo{auto_brightness: Some(false)}".to_string(),
+            ),
+            id: 0,
+        });
+        let _ = done_rx.next().await;
 
         assert_data_tree!(inspector, root: contains {
             requests_and_responses: {
                 "Display": {
                     "pending_requests": {
                         "00000000000000000000": {
-                            "request": "SetDisplayInfo(SetDisplayInfo { \
-                                manual_brightness_value: None, \
-                                auto_brightness_value: None, \
-                                auto_brightness: Some(false), \
-                                screen_enabled: None, \
-                                low_light_mode: None, \
-                                theme: None \
-                            })",
+                            "request": "SetDisplayInfo{auto_brightness: Some(false)}",
                             "timestamp": "0.000000000",
                         }
                     },
@@ -919,46 +661,81 @@ mod tests {
 
         let inspector = inspect::Inspector::default();
         let condense_node = inspector.root().create_child(REQUEST_RESPONSE_NODE_NAME);
-        let request_counts_node = inspector.root().create_child(RESPONSE_COUNTS_NODE_NAME);
-        let context = create_context().await;
+        let response_counts_node = inspector.root().create_child(RESPONSE_COUNTS_NODE_NAME);
 
-        let request_processor = RequestProcessor::new(context.delegate.clone());
-
-        let (_tx, rx) = mpsc::unbounded();
-        SettingProxyInspectAgent::create_with_node(
-            context,
-            Rc::new(RefCell::new(rx)),
+        let (tx, rx) = mpsc::unbounded();
+        let (done_tx, mut done_rx) = mpsc::unbounded();
+        let agent = SettingProxyInspectAgent::create_with_node(
+            rx,
             condense_node,
-            request_counts_node,
-        )
-        .await;
-
-        request_processor
-            .send_and_receive(
-                SettingType::Display,
-                Request::SetDisplayInfo(SetDisplayInfo {
-                    auto_brightness: Some(false),
-                    ..SetDisplayInfo::default()
-                }),
-            )
-            .await;
+            response_counts_node,
+            Some(done_tx),
+        );
+        agent.initialize();
+        let _ = tx.unbounded_send(UsageEvent {
+            setting: "Display",
+            request_type: RequestType::Set,
+            direction: Direction::Request(
+                "SetDisplayInfo{auto_brightness:Some(false)}".to_string(),
+            ),
+            id: 0,
+        });
+        let _ = done_rx.next().await;
+        let _ = tx.unbounded_send(UsageEvent {
+            setting: "Display",
+            request_type: RequestType::Set,
+            direction: Direction::Response("Ok(None)".to_string(), ResponseType::OkNone),
+            id: 0,
+        });
+        let _ = done_rx.next().await;
 
         clock::mock::set(MonotonicInstant::from_nanos(100));
-        request_processor.send_and_receive(SettingType::Display, Request::Get).await;
+        let _ = tx.unbounded_send(UsageEvent {
+            setting: "Display",
+            request_type: RequestType::Get,
+            direction: Direction::Request("WatchDisplayInfo".to_string()),
+            id: 1,
+        });
+        let _ = done_rx.next().await;
+        let _ = tx.unbounded_send(UsageEvent {
+            setting: "Display",
+            request_type: RequestType::Get,
+            direction: Direction::Response("Ok(Some())".to_string(), ResponseType::OkNone),
+            id: 1,
+        });
+        let _ = done_rx.next().await;
 
         clock::mock::set(MonotonicInstant::from_nanos(200));
-        request_processor
-            .send_and_receive(
-                SettingType::Display,
-                Request::SetDisplayInfo(SetDisplayInfo {
-                    auto_brightness: None,
-                    ..SetDisplayInfo::default()
-                }),
-            )
-            .await;
+        let _ = tx.unbounded_send(UsageEvent {
+            setting: "Display",
+            request_type: RequestType::Set,
+            direction: Direction::Request("SetDisplayInfo{auto_brightness:None}".to_string()),
+            id: 2,
+        });
+        let _ = done_rx.next().await;
+        let _ = tx.unbounded_send(UsageEvent {
+            setting: "Display",
+            request_type: RequestType::Set,
+            direction: Direction::Response("Ok(None)".to_string(), ResponseType::OkNone),
+            id: 2,
+        });
+        let _ = done_rx.next().await;
 
         clock::mock::set(MonotonicInstant::from_nanos(300));
-        request_processor.send_and_receive(SettingType::Display, Request::Get).await;
+        let _ = tx.unbounded_send(UsageEvent {
+            setting: "Display",
+            request_type: RequestType::Get,
+            direction: Direction::Request("WatchDisplayInfo".to_string()),
+            id: 3,
+        });
+        let _ = done_rx.next().await;
+        let _ = tx.unbounded_send(UsageEvent {
+            setting: "Display",
+            request_type: RequestType::Get,
+            direction: Direction::Response("Ok(Some())".to_string(), ResponseType::OkNone),
+            id: 3,
+        });
+        let _ = done_rx.next().await;
 
         assert_data_tree!(inspector, root: contains {
             response_counts: {
@@ -980,42 +757,60 @@ mod tests {
         let inspector = inspect::Inspector::default();
         let condense_node = inspector.root().create_child(REQUEST_RESPONSE_NODE_NAME);
         let response_counts_node = inspector.root().create_child(RESPONSE_COUNTS_NODE_NAME);
-        let context = create_context().await;
-        let request_processor = RequestProcessor::new(context.delegate.clone());
 
-        let (_tx, rx) = mpsc::unbounded();
-        SettingProxyInspectAgent::create_with_node(
-            context,
-            Rc::new(RefCell::new(rx)),
+        let (tx, rx) = mpsc::unbounded();
+        let (done_tx, mut done_rx) = mpsc::unbounded();
+        let agent = SettingProxyInspectAgent::create_with_node(
+            rx,
             condense_node,
             response_counts_node,
-        )
-        .await;
+            Some(done_tx),
+        );
+        agent.initialize();
 
-        request_processor
-            .send_and_receive(
-                SettingType::Intl,
-                Request::SetIntlInfo(IntlInfo {
-                    locales: Some(vec![LocaleId { id: "en-US".to_string() }]),
-                    temperature_unit: Some(TemperatureUnit::Celsius),
-                    time_zone_id: Some("UTC".to_string()),
-                    hour_cycle: None,
-                }),
-            )
-            .await;
+        let _ = tx.unbounded_send(UsageEvent {
+            setting: "Intl",
+            request_type: RequestType::Set,
+            direction: Direction::Request(
+                "SetIntlInfo { \
+                    locales: Some([LocaleId { id: \"en-US\" }]), \
+                    temperature_unit: Some(Celsius), \
+                    time_zone_id: Some(\"UTC\"), \
+                    hour_cycle: None \
+                }"
+                .to_string(),
+            ),
+            id: 0,
+        });
+        let _ = done_rx.next().await;
+        let _ = tx.unbounded_send(UsageEvent {
+            setting: "Intl",
+            request_type: RequestType::Set,
+            direction: Direction::Response("Ok(None)".to_string(), ResponseType::OkNone),
+            id: 0,
+        });
+        let _ = done_rx.next().await;
 
         // Send one more than the max requests to make sure they get pushed off the end of the
         // queue. The requests must have different values to avoid getting grouped together.
         for i in 0..MAX_REQUEST_RESPONSE_PAIRS + 1 {
-            request_processor
-                .send_and_receive(
-                    SettingType::Display,
-                    Request::SetDisplayInfo(SetDisplayInfo {
-                        manual_brightness_value: Some((i as f32) / 100f32),
-                        ..SetDisplayInfo::default()
-                    }),
-                )
-                .await;
+            let _ = tx.unbounded_send(UsageEvent {
+                setting: "Display",
+                request_type: RequestType::Set,
+                direction: Direction::Request(format!(
+                    "SetDisplayInfo{{manual_brightness_value: Some({})}}",
+                    (i as f32) / 100f32
+                )),
+                id: i as u64,
+            });
+            let _ = done_rx.next().await;
+            let _ = tx.unbounded_send(UsageEvent {
+                setting: "Display",
+                request_type: RequestType::Set,
+                direction: Direction::Response("Ok(None)".to_string(), ResponseType::OkNone),
+                id: i as u64,
+            });
+            let _ = done_rx.next().await;
         }
 
         // Ensures we have INSPECT_REQUESTS_COUNT items and that the queue dropped the earliest one
@@ -1023,7 +818,7 @@ mod tests {
         fn display_subtree_assertion() -> TreeAssertion {
             let mut tree_assertion = TreeAssertion::new("Display", false);
             let mut request_response_assertion = TreeAssertion::new("requests_and_responses", true);
-            let mut request_assertion = TreeAssertion::new("SetDisplayInfo", true);
+            let mut request_assertion = TreeAssertion::new("Set", true);
 
             for i in 1..MAX_REQUEST_RESPONSE_PAIRS + 1 {
                 // We don't need to set clock here since we don't do exact match.
@@ -1041,14 +836,14 @@ mod tests {
                 "Intl": {
                     "pending_requests": {},
                     "requests_and_responses": {
-                        "SetIntlInfo": {
+                        "Set": {
                             "00000000000000000000": {
-                                "request": "SetIntlInfo(IntlInfo { \
+                                "request": "SetIntlInfo { \
                                     locales: Some([LocaleId { id: \"en-US\" }]), \
                                     temperature_unit: Some(Celsius), \
                                     time_zone_id: Some(\"UTC\"), \
                                     hour_cycle: None \
-                                })",
+                                }",
                                 "request_timestamps": "0.000000000",
                                 "response": "Ok(None)",
                                 "response_timestamps": "0.000000000"

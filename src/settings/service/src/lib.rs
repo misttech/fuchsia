@@ -1038,6 +1038,7 @@ struct AgentResult {
     media_buttons_agent: Option<agent::media_buttons::MediaButtonsAgent>,
     inspect_settings_values_agent: Option<agent::inspect::setting_values::AgentSetup>,
     inspect_external_apis_agent: Option<agent::inspect::external_apis::ExternalApiInspectAgent>,
+    inspect_setting_proxy_agent: Option<agent::inspect::setting_proxy::SettingProxyInspectAgent>,
     agent_blueprints: Vec<AgentCreator>,
 }
 
@@ -1088,14 +1089,14 @@ fn create_agent_blueprints(
     let inspect_external_apis_agent = agent_types
         .contains(&AgentType::InspectExternalApis)
         .then(|| agent::inspect::external_apis::ExternalApiInspectAgent::new(external_event_rx));
-    let inspect_setting_proxy_registrar = agent_types
+    let inspect_setting_proxy_agent = agent_types
         .contains(&AgentType::InspectSettingProxy)
-        .then(|| agent::inspect::setting_proxy::create_registrar(proxy_event_rx));
+        .then(|| agent::inspect::setting_proxy::SettingProxyInspectAgent::new(proxy_event_rx));
     let inspect_usages_registrar = agent_types
         .contains(&AgentType::InspectSettingTypeUsage)
         .then(|| agent::inspect::usage_counts::create_registrar(usage_event_rx));
 
-    let agent_registrars = [inspect_setting_proxy_registrar, inspect_usages_registrar];
+    let agent_registrars = [inspect_usages_registrar];
 
     let mut agent_blueprints = if agent_types.iter().all(|t| {
         matches!(
@@ -1121,6 +1122,7 @@ fn create_agent_blueprints(
         media_buttons_agent,
         inspect_settings_values_agent,
         inspect_external_apis_agent,
+        inspect_setting_proxy_agent,
         agent_blueprints,
     }
 }
@@ -1202,6 +1204,10 @@ async fn create_environment<'a>(
 
     if let Some(inspect_external_apis_agent) = agent_result.inspect_external_apis_agent {
         inspect_external_apis_agent.initialize();
+    }
+
+    if let Some(inspect_setting_proxy_agent) = agent_result.inspect_setting_proxy_agent {
+        inspect_setting_proxy_agent.initialize();
     }
 
     // Execute initialization agents sequentially
