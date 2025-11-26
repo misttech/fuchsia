@@ -5,27 +5,17 @@
 //! Safe bindings for the driver runtime dispatcher stable ABI
 
 use fdf_sys::*;
-use libasync_sys::*;
-use zx::sys::ZX_OK;
 
-use core::cell::{RefCell, UnsafeCell};
+use core::cell::RefCell;
 use core::ffi;
-use core::future::Future;
 use core::marker::PhantomData;
 use core::mem::ManuallyDrop;
-use core::ptr::{NonNull, addr_of_mut, null_mut};
-use core::task::Context;
-use std::sync::{Arc, Mutex, Weak};
+use core::ptr::{NonNull, null_mut};
 
 use zx::Status;
 
-use futures::future::{BoxFuture, FutureExt};
-use futures::task::{ArcWake, waker_ref};
-
-mod after_deadline;
-
-pub use after_deadline::*;
 pub use fdf_sys::fdf_dispatcher_t;
+pub use libasync::{AfterDeadline, AsyncDispatcher, AsyncDispatcherRef, OnDispatcher};
 
 /// A marker trait for a function type that can be used as a shutdown observer for [`Dispatcher`].
 pub trait ShutdownObserverFn: FnOnce(DispatcherRef<'_>) + Send + 'static {}
@@ -184,13 +174,6 @@ impl Dispatcher {
         &self.0
     }
 
-    /// Gets the async_dispatcher pointer for this driver dispatcher.
-    pub(crate) fn get_async_dispatcher(&self) -> NonNull<async_dispatcher_t> {
-        // SAFETY: the fdf dispatcher is valid by construction and can provide an async dispatcher.
-        NonNull::new(unsafe { fdf_dispatcher_get_async_dispatcher(self.0.as_ptr()) })
-            .expect("Unable to get async dispatcher from driver dispatcher")
-    }
-
     fn get_raw_flags(&self) -> u32 {
         // SAFETY: the inner fdf_dispatcher_t is valid by construction
         unsafe { fdf_dispatcher_get_options(self.0.as_ptr()) }
@@ -211,37 +194,6 @@ impl Dispatcher {
         // SAFETY: we don't do anything with the dispatcher pointer, and NULL is returned if this
         // isn't a dispatcher-managed thread.
         self.0.as_ptr() == unsafe { fdf_dispatcher_get_current_dispatcher() }
-    }
-
-    /// Schedules the callback [`p`] to be run on this dispatcher later.
-    pub fn post_task_sync(&self, p: impl TaskCallback) -> Result<(), Status> {
-        // SAFETY: the fdf dispatcher is valid by construction and can provide an async dispatcher.
-        let async_dispatcher = self.get_async_dispatcher();
-        #[expect(clippy::arc_with_non_send_sync)]
-        let task_arc = Arc::new(UnsafeCell::new(TaskFunc {
-            task: async_task { handler: Some(TaskFunc::call), ..Default::default() },
-            func: Box::new(p),
-        }));
-
-        let task_cell = Arc::into_raw(task_arc);
-        // SAFETY: we need a raw mut pointer to give to async_post_task. From
-        // when we call that function to when the task is cancelled or the
-        // callback is called, the driver runtime owns the contents of that
-        // object and we will not manipulate it. So even though the Arc only
-        // gives us a shared reference, it's fine to give the runtime a
-        // mutable pointer to it.
-        let res = unsafe {
-            let task_ptr = addr_of_mut!((*UnsafeCell::raw_get(task_cell)).task);
-            async_post_task(async_dispatcher.as_ptr(), task_ptr)
-        };
-        if res != ZX_OK {
-            // SAFETY: `TaskFunc::call` will never be called now so dispose of
-            // the long-lived reference we just created.
-            unsafe { Arc::decrement_strong_count(task_cell) }
-            Err(Status::from_raw(res))
-        } else {
-            Ok(())
-        }
     }
 
     /// Releases ownership over this dispatcher and returns a [`DispatcherRef`]
@@ -271,6 +223,15 @@ impl Dispatcher {
     }
 }
 
+impl AsyncDispatcher for Dispatcher {
+    fn as_async_dispatcher_ref(&self) -> AsyncDispatcherRef<'_> {
+        let async_dispatcher =
+            NonNull::new(unsafe { fdf_dispatcher_get_async_dispatcher(self.0.as_ptr()) })
+                .expect("No async dispatcher on driver dispatcher");
+        unsafe { AsyncDispatcherRef::from_raw(async_dispatcher) }
+    }
+}
+
 impl Drop for Dispatcher {
     fn drop(&mut self) {
         // SAFETY: we only ever provide an owned `Dispatcher` to one owner, so when
@@ -296,6 +257,26 @@ impl<'a> DispatcherRef<'a> {
         // SAFETY: Caller promises the handle is valid.
         Self(ManuallyDrop::new(unsafe { Dispatcher::from_raw(handle) }), PhantomData)
     }
+
+    /// Creates a dispatcher ref from an [`AsyncDispatcherRef`].
+    ///
+    /// # Panics
+    ///
+    /// Note that this will cause an assert if the [`AsyncDispatcherRef`] was not created from a
+    /// driver dispatcher in the first place.
+    pub fn from_async_dispatcher(dispatcher: AsyncDispatcherRef<'a>) -> Self {
+        let handle = NonNull::new(unsafe {
+            fdf_dispatcher_downcast_async_dispatcher(dispatcher.inner().as_ptr())
+        })
+        .unwrap();
+        unsafe { Self::from_raw(handle) }
+    }
+}
+
+impl<'a> AsyncDispatcher for DispatcherRef<'a> {
+    fn as_async_dispatcher_ref(&self) -> AsyncDispatcherRef<'_> {
+        self.0.as_async_dispatcher_ref()
+    }
 }
 
 impl<'a> Clone for DispatcherRef<'a> {
@@ -317,87 +298,9 @@ impl<'a> core::ops::DerefMut for DispatcherRef<'a> {
     }
 }
 
-/// A trait that can be used to access a lifetime-constrained dispatcher in a generic way.
-pub trait OnDispatcher: Clone + Send + Sync + Unpin {
-    /// Runs the function `f` with a lifetime-bound [`DispatcherRef`] for this object's dispatcher.
-    /// If the dispatcher is no longer valid, the callback will be given [`None`].
-    fn on_dispatcher<R>(&self, f: impl FnOnce(Option<DispatcherRef<'_>>) -> R) -> R;
-
-    /// Helper version of [`OnDispatcher::on_dispatcher`] that translates an invalidated dispatcher
-    /// handle into a [`Status::BAD_STATE`] error instead of giving the callback [`None`].
-    fn on_maybe_dispatcher<R, E: From<Status>>(
-        &self,
-        f: impl FnOnce(DispatcherRef<'_>) -> Result<R, E>,
-    ) -> Result<R, E> {
-        self.on_dispatcher(|dispatcher| {
-            let dispatcher = dispatcher.ok_or(Status::BAD_STATE)?;
-            f(dispatcher)
-        })
-    }
-
-    /// Spawn an asynchronous task on this dispatcher. If this returns [`Ok`] then the task
-    /// has successfully been scheduled and will run or be cancelled and dropped when the dispatcher
-    /// shuts down.
-    fn spawn_task(&self, future: impl Future<Output = ()> + Send + 'static) -> Result<(), Status>
-    where
-        Self: 'static,
-    {
-        let task =
-            Arc::new(Task { future: Mutex::new(Some(future.boxed())), dispatcher: self.clone() });
-        task.queue()
-    }
-
-    /// Returns a future that will fire when after the given deadline time.
-    ///
-    /// This can be used instead of the fuchsia-async timer primitives in situations where
-    /// there isn't a currently active fuchsia-async executor running on that dispatcher for some
-    /// reason (ie. the rust code does not own the dispatcher) or for cases where the small overhead
-    /// of fuchsia-async compatibility is too much.
-    fn after_deadline(&self, deadline: zx::MonotonicInstant) -> AfterDeadline<Self> {
-        AfterDeadline::new(self, deadline)
-    }
-
-    /// Returns the current time on the dispatcher's timeline
-    fn now(&self) -> Result<zx::MonotonicInstant, Status> {
-        self.on_maybe_dispatcher(|dispatcher| {
-            let async_dispatcher = dispatcher.get_async_dispatcher();
-            let now_nanos = unsafe { async_now(async_dispatcher.as_ptr()) };
-            Ok(zx::MonotonicInstant::from_nanos(now_nanos))
-        })
-    }
-}
-
-impl<D: OnDispatcher> OnDispatcher for &D {
-    fn on_dispatcher<R>(&self, f: impl FnOnce(Option<DispatcherRef<'_>>) -> R) -> R {
-        D::on_dispatcher(*self, f)
-    }
-}
-
-impl OnDispatcher for &Dispatcher {
-    fn on_dispatcher<R>(&self, f: impl FnOnce(Option<DispatcherRef<'_>>) -> R) -> R {
-        f(Some(self.as_dispatcher_ref()))
-    }
-}
-
 impl<'a> OnDispatcher for DispatcherRef<'a> {
-    fn on_dispatcher<R>(&self, f: impl FnOnce(Option<DispatcherRef<'_>>) -> R) -> R {
-        f(Some(self.as_dispatcher_ref()))
-    }
-}
-
-impl OnDispatcher for Arc<Dispatcher> {
-    fn on_dispatcher<R>(&self, f: impl FnOnce(Option<DispatcherRef<'_>>) -> R) -> R {
-        f(Some(self.as_dispatcher_ref()))
-    }
-}
-
-impl OnDispatcher for Weak<Dispatcher> {
-    fn on_dispatcher<R>(&self, f: impl FnOnce(Option<DispatcherRef<'_>>) -> R) -> R {
-        let dispatcher = Weak::upgrade(self);
-        match dispatcher {
-            Some(dispatcher) => f(Some(dispatcher.as_dispatcher_ref())),
-            None => f(None),
-        }
+    fn on_dispatcher<R>(&self, f: impl FnOnce(Option<AsyncDispatcherRef<'_>>) -> R) -> R {
+        f(Some(self.as_async_dispatcher_ref()))
     }
 }
 
@@ -407,7 +310,7 @@ impl OnDispatcher for Weak<Dispatcher> {
 pub struct CurrentDispatcher;
 
 impl OnDispatcher for CurrentDispatcher {
-    fn on_dispatcher<R>(&self, f: impl FnOnce(Option<DispatcherRef<'_>>) -> R) -> R {
+    fn on_dispatcher<R>(&self, f: impl FnOnce(Option<AsyncDispatcherRef<'_>>) -> R) -> R {
         let dispatcher = OVERRIDE_DISPATCHER
             .with(|global| *global.borrow())
             .or_else(|| {
@@ -420,84 +323,13 @@ impl OnDispatcher for CurrentDispatcher {
                 // the dispatcher, or another dispatcher that is bound to the same lifetime (through
                 // override_dispatcher), we can be sure that the dispatcher will not be shut
                 // down before that function completes.
-                DispatcherRef(
-                    ManuallyDrop::new(unsafe { Dispatcher::from_raw(dispatcher) }),
-                    Default::default(),
-                )
+                let async_dispatcher = NonNull::new(unsafe {
+                    fdf_dispatcher_get_async_dispatcher(dispatcher.as_ptr())
+                })
+                .expect("No async dispatcher on driver dispatcher");
+                unsafe { AsyncDispatcherRef::from_raw(async_dispatcher) }
             });
         f(dispatcher)
-    }
-}
-
-/// A marker trait for a callback that can be used with [`Dispatcher::post_task_sync`].
-pub trait TaskCallback: FnOnce(Status) + 'static + Send {}
-impl<T> TaskCallback for T where T: FnOnce(Status) + 'static + Send {}
-
-struct Task<D> {
-    future: Mutex<Option<BoxFuture<'static, ()>>>,
-    dispatcher: D,
-}
-
-impl<D: OnDispatcher + 'static> ArcWake for Task<D> {
-    fn wake_by_ref(arc_self: &Arc<Self>) {
-        match arc_self.queue() {
-            Err(e) if e == Status::BAD_STATE => {
-                // the dispatcher is shutting down so drop the future, if there
-                // is one, to cancel it.
-                let future_slot = arc_self.future.lock().unwrap().take();
-                core::mem::drop(future_slot);
-            }
-            res => res.expect("Unexpected error waking dispatcher task"),
-        }
-    }
-}
-
-impl<D: OnDispatcher + 'static> Task<D> {
-    /// Posts a task to progress the currently stored future. The task will
-    /// consume the future if the future is ready after the next poll.
-    /// Otherwise, the future is kept to be polled again after being woken.
-    fn queue(self: &Arc<Self>) -> Result<(), Status> {
-        let arc_self = self.clone();
-        self.dispatcher.on_maybe_dispatcher(move |dispatcher| {
-            dispatcher
-                .post_task_sync(move |status| {
-                    let mut future_slot = arc_self.future.lock().unwrap();
-                    // if we're cancelled, drop the future we're waiting on.
-                    if status != Status::from_raw(ZX_OK) {
-                        core::mem::drop(future_slot.take());
-                        return;
-                    }
-
-                    let Some(mut future) = future_slot.take() else {
-                        return;
-                    };
-                    let waker = waker_ref(&arc_self);
-                    let context = &mut Context::from_waker(&waker);
-                    if future.as_mut().poll(context).is_pending() {
-                        *future_slot = Some(future);
-                    }
-                })
-                .map(|_| ())
-        })
-    }
-}
-
-#[repr(C)]
-struct TaskFunc {
-    task: async_task,
-    func: Box<dyn TaskCallback>,
-}
-
-impl TaskFunc {
-    extern "C" fn call(_dispatcher: *mut async_dispatcher, task: *mut async_task, status: i32) {
-        // SAFETY: the async api promises that this function will only be called
-        // up to once, so we can reconstitute the `Arc` and let it get dropped.
-        let task = unsafe { Arc::from_raw(task as *const UnsafeCell<Self>) };
-        // SAFETY: if we can't get a mut ref from the arc, then the task is already
-        // being cancelled, so we don't want to call it.
-        if let Ok(task) = Arc::try_unwrap(task) {
-            (task.into_inner().func)(Status::from_raw(status));
-        }
     }
 }
 
@@ -568,10 +400,11 @@ impl ShutdownObserver {
 mod tests {
     use super::*;
 
-    use std::sync::{Once, mpsc};
+    use std::sync::{Arc, Once, Weak, mpsc};
 
     use futures::channel::mpsc as async_mpsc;
     use futures::{SinkExt, StreamExt};
+    use zx::sys::ZX_OK;
 
     use core::ffi::{c_char, c_void};
     use core::ptr::null_mut;

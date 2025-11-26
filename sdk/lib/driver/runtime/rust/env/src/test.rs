@@ -4,9 +4,9 @@
 
 //! Helpers for writing tests using drivers and dispatchers
 
-use std::sync::{mpsc, Arc};
+use std::sync::{Arc, mpsc};
 
-use fdf::{CurrentDispatcher, OnDispatcher};
+use fdf::{AsyncDispatcher, CurrentDispatcher, OnDispatcher};
 
 use super::*;
 

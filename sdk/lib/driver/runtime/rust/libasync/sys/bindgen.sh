@@ -10,7 +10,7 @@
 # Determine paths for this script and its directory, and set $FUCHSIA_DIR.
 readonly FULL_PATH="${BASH_SOURCE[0]}"
 readonly SCRIPT_DIR="$(cd "$(dirname "${FULL_PATH}")" >/dev/null 2>&1 && pwd)"
-source "${SCRIPT_DIR}/../../../../../../tools/devshell/lib/vars.sh"
+source "${SCRIPT_DIR}/../../../../../../../tools/devshell/lib/vars.sh"
 
 set -eu
 

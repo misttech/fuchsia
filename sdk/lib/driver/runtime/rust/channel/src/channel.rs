@@ -273,7 +273,7 @@ impl<T> Channel<T> {
     }
 
     /// Reads an object of type `T` and a handle set from the channel asynchronously
-    pub async fn read<D: OnDispatcher>(
+    pub async fn read<D: OnDispatcher + Unpin>(
         &mut self,
         dispatcher: D,
     ) -> Result<Option<Message<T>>, Status> {
@@ -302,7 +302,7 @@ impl Channel<[u8]> {
     }
 
     /// Reads a slice of type `T` and a handle set from the channel asynchronously
-    pub async fn read_bytes<D: OnDispatcher>(
+    pub async fn read_bytes<D: OnDispatcher + Unpin>(
         &mut self,
         dispatcher: D,
     ) -> Result<Option<Message<[u8]>>, Status> {
@@ -356,7 +356,7 @@ pub(crate) struct ReadMessageRawFut<D> {
     dispatcher: D,
 }
 
-impl<D: OnDispatcher> Future for ReadMessageRawFut<D> {
+impl<D: OnDispatcher + Unpin> Future for ReadMessageRawFut<D> {
     type Output = Result<Option<Message<[MaybeUninit<u8>]>>, Status>;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
@@ -373,7 +373,8 @@ mod tests {
     use std::sync::{Arc, mpsc};
 
     use fdf_core::dispatcher::{
-        CurrentDispatcher, Dispatcher, DispatcherBuilder, DispatcherRef, OnDispatcher,
+        AsyncDispatcher, CurrentDispatcher, Dispatcher, DispatcherBuilder, DispatcherRef,
+        OnDispatcher,
     };
     use fdf_core::handle::MixedHandleType;
     use fdf_env::test::spawn_in_driver;

@@ -10,7 +10,7 @@ use zx::Status;
 
 use crate::channel::{Channel, try_read_raw};
 use crate::message::Message;
-use fdf_core::dispatcher::OnDispatcher;
+use fdf_core::dispatcher::{DispatcherRef, OnDispatcher};
 use fdf_core::handle::DriverHandle;
 use fdf_sys::*;
 
@@ -168,6 +168,7 @@ impl ReadMessageState {
                     // `fdf_channel_wait_async`.
                     let op = Arc::into_raw(self.op.clone());
                     let res = dispatcher.on_maybe_dispatcher(|dispatcher| {
+                        let dispatcher = DispatcherRef::from_async_dispatcher(dispatcher);
                         // if we're not running on the same dispatcher as we're waiting from, we
                         // want to force async cancellation
                         let options = if !dispatcher.is_current_dispatcher() {
@@ -276,7 +277,7 @@ mod test {
     /// that the internal op arc has the right refcount at all steps. Returns a copy
     /// of the op arc at the end so it can be verified that the count goes down
     /// to zero correctly.
-    async fn read_and_drop<T: ?Sized + 'static, D: OnDispatcher>(
+    async fn read_and_drop<T: ?Sized + 'static, D: OnDispatcher + Unpin>(
         channel: &mut Channel<T>,
         dispatcher: D,
     ) -> Weak<ReadMessageStateOp> {

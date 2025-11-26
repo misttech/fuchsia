@@ -14,7 +14,7 @@ use zx::Status;
 use fdf::{Channel, Dispatcher, DispatcherBuilder, DispatcherRef};
 use fidl_fuchsia_driver_framework::DriverRequest;
 
-use fdf::{DriverHandle, Message, fdf_handle_t};
+use fdf::{AsyncDispatcher, DriverHandle, Message, fdf_handle_t};
 
 use crate::{Driver, DriverContext};
 use fdf_sys::fdf_dispatcher_get_current_dispatcher;

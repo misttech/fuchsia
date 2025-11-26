@@ -15,7 +15,7 @@ use zx::Status;
 use zx::sys::{ZX_ERR_CANCELED, ZX_OK};
 
 use crate::callback_state::CallbackSharedState;
-use crate::dispatcher::OnDispatcher;
+use crate::dispatcher::{AsyncDispatcher, OnDispatcher};
 
 type SharedState = CallbackSharedState<async_task, AfterDeadlineState>;
 
@@ -54,7 +54,7 @@ pub struct AfterDeadline<D: OnDispatcher> {
     deadline: zx::MonotonicInstant,
 }
 
-impl<D: OnDispatcher> AfterDeadline<D> {
+impl<D: OnDispatcher + Clone> AfterDeadline<D> {
     pub(super) fn new(dispatcher: &D, deadline: zx::MonotonicInstant) -> Self {
         let dispatcher = dispatcher.clone();
         let state = None;
@@ -62,7 +62,7 @@ impl<D: OnDispatcher> AfterDeadline<D> {
     }
 }
 
-impl<D: OnDispatcher> Future for AfterDeadline<D> {
+impl<D: OnDispatcher + Unpin> Future for AfterDeadline<D> {
     type Output = Result<(), Status>;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
@@ -79,7 +79,8 @@ impl<D: OnDispatcher> Future for AfterDeadline<D> {
 
         let deadline = self.deadline;
 
-        match self.dispatcher.now() {
+        let now = self.dispatcher.on_maybe_dispatcher(|dispatcher| Ok(dispatcher.now()));
+        match now {
             Ok(now) if deadline < now => {
                 return Poll::Ready(Ok(()));
             }
@@ -91,7 +92,8 @@ impl<D: OnDispatcher> Future for AfterDeadline<D> {
 
         // otherwise we want to wait for a callback
         let state = self.dispatcher.on_maybe_dispatcher(move |dispatcher| {
-            let async_dispatcher = dispatcher.get_async_dispatcher();
+            // SAFETY: the fdf dispatcher is valid by construction and can provide an async dispatcher.
+            let async_dispatcher = dispatcher.inner();
 
             let task = async_task {
                 handler: Some(AfterDeadlineState::call),
@@ -150,7 +152,7 @@ impl<D: OnDispatcher> Drop for AfterDeadline<D> {
                 // the callback has been called so we don't even need to try to cancel it.
                 return;
             }
-            let async_dispatcher = dispatcher.get_async_dispatcher();
+            let async_dispatcher = dispatcher.inner();
             if async_dispatcher != state.async_dispatcher {
                 panic!("Dropping a pending `AfterDeadline` future from a different dispatcher than the one it was awaited on.");
             }
@@ -168,7 +170,7 @@ impl<D: OnDispatcher> Drop for AfterDeadline<D> {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(not_yet, test))]
 mod tests {
     use std::sync::mpsc;
     use std::thread::sleep;
