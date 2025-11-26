@@ -245,6 +245,18 @@ pub enum KeyPurpose {
     Metadata,
 }
 
+impl TryFrom<fidl_fuchsia_fxfs::KeyPurpose> for KeyPurpose {
+    type Error = zx::Status;
+
+    fn try_from(purpose: fidl_fuchsia_fxfs::KeyPurpose) -> Result<Self, Self::Error> {
+        match purpose {
+            fidl_fuchsia_fxfs::KeyPurpose::Data => Ok(KeyPurpose::Data),
+            fidl_fuchsia_fxfs::KeyPurpose::Metadata => Ok(KeyPurpose::Metadata),
+            _ => Err(zx::Status::INVALID_ARGS),
+        }
+    }
+}
+
 /// The `Crypt` trait below provides a mechanism to unwrap a key or set of keys.
 /// The wrapping keys can be one of these types.
 pub enum WrappingKey {

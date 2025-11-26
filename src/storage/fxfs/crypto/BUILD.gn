@@ -43,6 +43,7 @@ rustc_library("crypto") {
     "//third_party/rust_crates:rand",
   ]
   visibility = [
+    "//src/storage/crypt/fxfs/*",
     "//src/storage/f2fs_reader/*",
     "//src/storage/fxfs/*",
     "//src/storage/lib/block_server/*",

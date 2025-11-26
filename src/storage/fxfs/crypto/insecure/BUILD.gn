@@ -12,14 +12,10 @@ rustc_library("insecure") {
   deps = [
     "//build/validate:non_production_tag",
     "//sdk/rust/zx-status",
-    "//src/lib/fuchsia-sync",
+    "//src/storage/crypt/fxfs/common:lib",
     "//src/storage/fxfs/crypto",
-    "//src/storage/lib/fscrypt",
-    "//third_party/rust_crates:aes-gcm-siv",
     "//third_party/rust_crates:async-trait",
     "//third_party/rust_crates:log",
-    "//third_party/rust_crates:rand",
-    "//third_party/rust_crates:rustc-hash",
   ]
 
   sources = [ "src/lib.rs" ]

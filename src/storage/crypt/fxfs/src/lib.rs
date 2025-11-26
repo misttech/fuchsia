@@ -2,114 +2,62 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use aes_gcm_siv::aead::Aead;
-use aes_gcm_siv::{Aes256GcmSiv, Key, KeyInit as _, Nonce};
 use anyhow::{Context, Error};
 use fidl_fuchsia_fxfs::{
     CryptCreateKeyResult, CryptCreateKeyWithIdResult, CryptManagementAddWrappingKeyResult,
     CryptManagementForgetWrappingKeyResult, CryptManagementRequest, CryptManagementRequestStream,
     CryptManagementSetActiveKeyResult, CryptRequest, CryptRequestStream, CryptUnwrapKeyResult,
-    FxfsKey, KeyPurpose, WrappedKey,
+    KeyPurpose, ObjectType as FxfsFidlObjectType, WrappedKey,
 };
 
-use fuchsia_sync::Mutex;
 use futures::stream::TryStreamExt;
-use std::collections::hash_map::{Entry, HashMap};
 
 pub mod log;
 use log::*;
+
+use fxfs_crypt_common::CryptBase;
+use fxfs_crypto::Crypt as _;
 
 pub enum Services {
     Crypt(CryptRequestStream),
     CryptManagement(CryptManagementRequestStream),
 }
 
-#[derive(Default)]
-struct CryptServiceInner {
-    ciphers: HashMap<u128, Aes256GcmSiv>,
-    active_data_key: Option<u128>,
-    active_metadata_key: Option<u128>,
-}
-
 pub struct CryptService {
-    inner: Mutex<CryptServiceInner>,
-}
-
-fn zero_extended_nonce(val: u64) -> Nonce {
-    let mut nonce = Nonce::default();
-    nonce.as_mut_slice()[..8].copy_from_slice(&val.to_le_bytes());
-    nonce
+    inner: CryptBase,
 }
 
 impl CryptService {
     pub fn new() -> Self {
-        Self { inner: Mutex::new(CryptServiceInner::default()) }
+        Self { inner: CryptBase::new() }
     }
 
-    fn create_key(&self, owner: u64, purpose: KeyPurpose) -> CryptCreateKeyResult {
-        let inner = self.inner.lock();
-        let wrapping_key_id = match purpose {
-            KeyPurpose::Data => inner.active_data_key.as_ref(),
-            KeyPurpose::Metadata => inner.active_metadata_key.as_ref(),
-            _ => return Err(zx::Status::INVALID_ARGS.into_raw()),
-        }
-        .ok_or_else(|| zx::Status::BAD_STATE.into_raw())?;
-        let cipher =
-            inner.ciphers.get(wrapping_key_id).ok_or_else(|| zx::Status::BAD_STATE.into_raw())?;
-        let nonce = zero_extended_nonce(owner);
-
-        let mut key = [0u8; 32];
-        zx::cprng_draw(&mut key);
-
-        let wrapped = cipher.encrypt(&nonce, &key[..]).map_err(|e| {
-            error!(error:? = e; "Failed to wrap key");
-            zx::Status::INTERNAL.into_raw()
-        })?;
-
-        Ok((wrapping_key_id.to_le_bytes(), wrapped.into(), key.into()))
+    async fn create_key(&self, owner: u64, purpose: KeyPurpose) -> CryptCreateKeyResult {
+        let purpose = purpose.try_into().map_err(zx::Status::into_raw)?;
+        let (fxfs_key, unwrapped_key) =
+            self.inner.create_key(owner, purpose).await.map_err(|e| e.into_raw())?;
+        Ok((fxfs_key.wrapping_key_id, (*fxfs_key.key).to_vec(), (*unwrapped_key).to_vec()))
     }
 
-    fn create_key_with_id(&self, owner: u64, wrapping_key_id: u128) -> CryptCreateKeyWithIdResult {
-        let inner = self.inner.lock();
-        let cipher =
-            inner.ciphers.get(&wrapping_key_id).ok_or_else(|| zx::Status::NOT_FOUND.into_raw())?;
-        let nonce = zero_extended_nonce(owner);
+    async fn create_key_with_id(
+        &self,
+        owner: u64,
+        wrapping_key_id: u128,
+        object_type: FxfsFidlObjectType,
+    ) -> CryptCreateKeyWithIdResult {
+        let (encryption_key, unwrapped_key) = self
+            .inner
+            .create_key_with_id(owner, wrapping_key_id.to_le_bytes(), object_type)
+            .await
+            .map_err(|e| e.into_raw())?;
 
-        let mut key = [0u8; 32];
-        zx::cprng_draw(&mut key);
-
-        let wrapped = cipher.encrypt(&nonce, &key[..]).map_err(|error| {
-            error!(error:?; "Failed to wrap key");
-            zx::Status::INTERNAL.into_raw()
-        })?;
-
-        Ok((
-            WrappedKey::Fxfs(FxfsKey {
-                wrapping_key_id: wrapping_key_id.to_le_bytes(),
-                wrapped_key: wrapped.try_into().expect("wrapped key wrong size"),
-            }),
-            key.into(),
-        ))
+        Ok((WrappedKey::from(encryption_key), (*unwrapped_key).to_vec()))
     }
 
-    fn unwrap_key(&self, owner: u64, wrapped_key: WrappedKey) -> CryptUnwrapKeyResult {
-        match wrapped_key {
-            WrappedKey::Fxfs(FxfsKey { wrapping_key_id, wrapped_key }) => {
-                let wrapping_key_id = u128::from_le_bytes(wrapping_key_id);
-                let inner = self.inner.lock();
-                let cipher = inner
-                    .ciphers
-                    .get(&wrapping_key_id)
-                    .ok_or_else(|| zx::Status::NOT_FOUND.into_raw())?;
-                let nonce = zero_extended_nonce(owner);
-
-                Ok(cipher
-                    .decrypt(&nonce, &wrapped_key[..])
-                    .map_err(|_| zx::Status::IO_DATA_INTEGRITY.into_raw())?)
-            }
-
-            _ => Err(zx::Status::NOT_SUPPORTED.into_raw()),
-        }
+    async fn unwrap_key(&self, owner: u64, wrapped_key: WrappedKey) -> CryptUnwrapKeyResult {
+        let unwrapped_key =
+            self.inner.unwrap_key(&wrapped_key, owner).await.map_err(|e| e.into_raw())?;
+        Ok((*unwrapped_key).to_vec())
     }
 
     pub fn add_wrapping_key(
@@ -117,14 +65,8 @@ impl CryptService {
         wrapping_key_id: u128,
         key: Vec<u8>,
     ) -> CryptManagementAddWrappingKeyResult {
-        let mut inner = self.inner.lock();
-        match inner.ciphers.entry(wrapping_key_id) {
-            Entry::Occupied(_) => Err(zx::Status::ALREADY_EXISTS.into_raw()),
-            Entry::Vacant(vacant) => {
-                vacant.insert(Aes256GcmSiv::new(Key::<Aes256GcmSiv>::from_slice(&key[..])));
-                Ok(())
-            }
-        }
+        let key: [u8; 32] = key.try_into().map_err(|_| zx::Status::INVALID_ARGS.into_raw())?;
+        self.inner.add_wrapping_key(wrapping_key_id.to_le_bytes(), key).map_err(|e| e.into_raw())
     }
 
     pub fn set_active_key(
@@ -132,32 +74,12 @@ impl CryptService {
         purpose: KeyPurpose,
         wrapping_key_id: u128,
     ) -> CryptManagementSetActiveKeyResult {
-        let mut inner = self.inner.lock();
-        if !inner.ciphers.contains_key(&wrapping_key_id) {
-            return Err(zx::Status::NOT_FOUND.into_raw());
-        }
-        match purpose {
-            KeyPurpose::Data => inner.active_data_key = Some(wrapping_key_id),
-            KeyPurpose::Metadata => inner.active_metadata_key = Some(wrapping_key_id),
-            _ => return Err(zx::Status::INVALID_ARGS.into_raw()),
-        }
-        Ok(())
+        let purpose = purpose.try_into().map_err(zx::Status::into_raw)?;
+        self.inner.set_active_key(purpose, wrapping_key_id.to_le_bytes()).map_err(|e| e.into_raw())
     }
 
     fn forget_wrapping_key(&self, wrapping_key_id: u128) -> CryptManagementForgetWrappingKeyResult {
-        let mut inner = self.inner.lock();
-        if let Some(id) = &inner.active_data_key {
-            if *id == wrapping_key_id {
-                return Err(zx::Status::INVALID_ARGS.into_raw());
-            }
-        }
-        if let Some(id) = &inner.active_metadata_key {
-            if *id == wrapping_key_id {
-                return Err(zx::Status::INVALID_ARGS.into_raw());
-            }
-        }
-        inner.ciphers.remove(&wrapping_key_id);
-        Ok(())
+        self.inner.forget_wrapping_key(&wrapping_key_id.to_le_bytes()).map_err(|e| e.into_raw())
     }
 
     pub async fn handle_request(&self, stream: Services) -> Result<(), Error> {
@@ -167,7 +89,7 @@ impl CryptService {
                     match request {
                         CryptRequest::CreateKey { owner, purpose, responder } => {
                             responder
-                                .send(match &self.create_key(owner, purpose) {
+                                .send(match &self.create_key(owner, purpose).await {
                                     Ok((id, wrapped, key)) => Ok((id, wrapped, key)),
                                     Err(e) => Err(*e),
                                 })
@@ -181,14 +103,22 @@ impl CryptService {
                                 });
                         }
                         CryptRequest::CreateKeyWithId {
-                            owner, wrapping_key_id, responder, ..
+                            owner,
+                            wrapping_key_id,
+                            object_type,
+                            responder,
+                            ..
                         } => {
                             responder
                                 .send(
-                                    match self.create_key_with_id(
-                                        owner,
-                                        u128::from_le_bytes(wrapping_key_id),
-                                    ) {
+                                    match self
+                                        .create_key_with_id(
+                                            owner,
+                                            u128::from_le_bytes(wrapping_key_id),
+                                            object_type,
+                                        )
+                                        .await
+                                    {
                                         Ok((ref wrapped, ref key)) => Ok((wrapped, key)),
                                         Err(e) => Err(e),
                                     },
@@ -206,7 +136,7 @@ impl CryptService {
                             let response;
                             responder
                                 .send({
-                                    response = self.unwrap_key(owner, wrapped_key);
+                                    response = self.unwrap_key(owner, wrapped_key).await;
                                     match &response {
                                         Ok(v) => Ok(&v[..]),
                                         Err(e) => Err(*e),
@@ -282,17 +212,17 @@ impl CryptService {
 #[cfg(test)]
 mod tests {
     use super::CryptService;
-    use fidl_fuchsia_fxfs::{FxfsKey, KeyPurpose, WrappedKey};
+    use fidl_fuchsia_fxfs::{FxfsKey, KeyPurpose, ObjectType, WrappedKey};
 
-    #[test]
-    fn wrap_unwrap_key() {
+    #[fuchsia::test]
+    async fn wrap_unwrap_key() {
         let service = CryptService::new();
         let key = vec![0xABu8; 32];
         service.add_wrapping_key(1, key.clone()).expect("add_key failed");
         service.set_active_key(KeyPurpose::Data, 1).expect("set_active_key failed");
 
         let (wrapping_key_id, wrapped_key, unwrapped_key) =
-            service.create_key(0, KeyPurpose::Data).expect("create_key failed");
+            service.create_key(0, KeyPurpose::Data).await.expect("create_key failed");
         let wrapping_key_id_int = u128::from_le_bytes(wrapping_key_id);
         assert_eq!(wrapping_key_id_int, 1);
         let unwrap_result = service
@@ -303,12 +233,13 @@ mod tests {
                     wrapped_key: wrapped_key.try_into().unwrap(),
                 }),
             )
+            .await
             .expect("unwrap_key failed");
         assert_eq!(unwrap_result, unwrapped_key);
 
         // Do it twice to make sure the service can use the same key repeatedly.
         let (wrapping_key_id, wrapped_key, unwrapped_key) =
-            service.create_key(1, KeyPurpose::Data).expect("create_key failed");
+            service.create_key(1, KeyPurpose::Data).await.expect("create_key failed");
         let wrapping_key_id_int = u128::from_le_bytes(wrapping_key_id);
         assert_eq!(wrapping_key_id_int, 1);
         let unwrap_result = service
@@ -319,53 +250,61 @@ mod tests {
                     wrapped_key: wrapped_key.try_into().unwrap(),
                 }),
             )
+            .await
             .expect("unwrap_key failed");
         assert_eq!(unwrap_result, unwrapped_key);
     }
 
-    #[test]
-    fn wrap_unwrap_key_with_arbitrary_wrapping_key() {
+    #[fuchsia::test]
+    async fn wrap_unwrap_key_with_arbitrary_wrapping_key() {
         let service = CryptService::new();
         let key = vec![0xABu8; 32];
         service.add_wrapping_key(2, key.clone()).expect("add_key failed");
 
-        let (wrapped_key, unwrapped_key) =
-            service.create_key_with_id(0, 2).expect("create_key_with_id failed");
-        let unwrap_result = service.unwrap_key(0, wrapped_key).expect("unwrap_key failed");
+        let (wrapped_key, unwrapped_key) = service
+            .create_key_with_id(0, 2, ObjectType::File)
+            .await
+            .expect("create_key_with_id failed");
+        let unwrap_result = service.unwrap_key(0, wrapped_key).await.expect("unwrap_key failed");
         assert_eq!(unwrap_result, unwrapped_key);
 
         // Do it twice to make sure the service can use the same key repeatedly.
-        let (wrapped_key, unwrapped_key) =
-            service.create_key_with_id(1, 2).expect("create_key_with_id failed");
-        let unwrap_result = service.unwrap_key(1, wrapped_key).expect("unwrap_key failed");
+        let (wrapped_key, unwrapped_key) = service
+            .create_key_with_id(1, 2, ObjectType::File)
+            .await
+            .expect("create_key_with_id failed");
+        let unwrap_result = service.unwrap_key(1, wrapped_key).await.expect("unwrap_key failed");
         assert_eq!(unwrap_result, unwrapped_key);
     }
 
-    #[test]
-    fn create_key_with_wrapping_key_that_does_not_exist() {
+    #[fuchsia::test]
+    async fn create_key_with_wrapping_key_that_does_not_exist() {
         let service = CryptService::new();
         service
-            .create_key_with_id(0, 2)
+            .create_key_with_id(0, 2, ObjectType::File)
+            .await
             .expect_err("create_key_with_id should fail if the wrapping key does not exist");
 
         let wrapping_key = vec![0xABu8; 32];
         service.add_wrapping_key(2, wrapping_key.clone()).expect("add_key failed");
 
-        let (wrapped_key, unwrapped_key) =
-            service.create_key_with_id(0, 2).expect("create_key_with_id failed");
-        let unwrap_result = service.unwrap_key(0, wrapped_key).expect("unwrap_key failed");
+        let (wrapped_key, unwrapped_key) = service
+            .create_key_with_id(0, 2, ObjectType::File)
+            .await
+            .expect("create_key_with_id failed");
+        let unwrap_result = service.unwrap_key(0, wrapped_key).await.expect("unwrap_key failed");
         assert_eq!(unwrap_result, unwrapped_key);
     }
 
-    #[test]
-    fn unwrap_key_wrong_key() {
+    #[fuchsia::test]
+    async fn unwrap_key_wrong_key() {
         let service = CryptService::new();
         let key = vec![0xABu8; 32];
         service.add_wrapping_key(0, key.clone()).expect("add_key failed");
         service.set_active_key(KeyPurpose::Data, 0).expect("set_active_key failed");
 
         let (wrapping_key_id, mut wrapped_key, _) =
-            service.create_key(0, KeyPurpose::Data).expect("create_key failed");
+            service.create_key(0, KeyPurpose::Data).await.expect("create_key failed");
         for byte in &mut wrapped_key {
             *byte ^= 0xff;
         }
@@ -377,18 +316,19 @@ mod tests {
                     wrapped_key: wrapped_key.try_into().unwrap(),
                 }),
             )
+            .await
             .expect_err("unwrap_key should fail");
     }
 
-    #[test]
-    fn unwrap_key_wrong_owner() {
+    #[fuchsia::test]
+    async fn unwrap_key_wrong_owner() {
         let service = CryptService::new();
         let key = vec![0xABu8; 32];
         service.add_wrapping_key(0, key.clone()).expect("add_key failed");
         service.set_active_key(KeyPurpose::Data, 0).expect("set_active_key failed");
 
         let (wrapping_key_id, wrapped_key, _) =
-            service.create_key(0, KeyPurpose::Data).expect("create_key failed");
+            service.create_key(0, KeyPurpose::Data).await.expect("create_key failed");
         service
             .unwrap_key(
                 1,
@@ -397,6 +337,7 @@ mod tests {
                     wrapped_key: wrapped_key.try_into().unwrap(),
                 }),
             )
+            .await
             .expect_err("unwrap_key should fail");
     }
 

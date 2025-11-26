@@ -2,19 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use aes_gcm_siv::aead::Aead;
-use aes_gcm_siv::{Aes256GcmSiv, Key, KeyInit as _, Nonce};
 use async_trait::async_trait;
-use fuchsia_sync::Mutex;
+use fxfs_crypt_common::CryptBase;
 use fxfs_crypto::{
-    Crypt, EncryptionKey, FscryptKeyIdentifierAndNonce, FxfsKey, KeyPurpose, ObjectType,
-    UnwrappedKey, WrappedKey, WrappedKeyBytes, WrappingKey, WrappingKeyId,
+    Crypt, EncryptionKey, FxfsKey, KeyPurpose, ObjectType, UnwrappedKey, WrappedKey, WrappingKey,
+    WrappingKeyId,
 };
 use log::error;
-use rand::rngs::StdRng;
-use rand::{RngCore, SeedableRng};
-use rustc_hash::FxHashMap as HashMap;
-use std::sync::atomic::{AtomicBool, Ordering};
 use zx_status as zx;
 
 pub const DATA_KEY: [u8; 32] = [
@@ -31,76 +25,47 @@ const METADATA_WRAPPING_KEY_ID: WrappingKeyId = u128::to_le_bytes(1);
 /// This struct provides the `Crypt` trait without any strong security.
 ///
 /// It is intended for use only in test code where actual security is inconsequential.
-#[derive(Default)]
 pub struct InsecureCrypt {
-    /// FxfsKey is wrapped using AES256GCM-SIV.
-    /// Unwrapping turns a 48-byte signed key into a 32-byte raw key.
-    /// This maps from an opaque wrapping_key_id to a specific cipher instance that can unwrap keys.
-    ciphers: Mutex<HashMap<WrappingKeyId, Cipher>>,
-
-    /// Legacy fscrypt uses the filesystem UUID to salt encryption keys in some variants.
-    /// We don't have direct access to the filesystem so we store the UUID here.
-    filesystem_uuid: [u8; 16],
-
-    active_data_key: Option<WrappingKeyId>,
-    active_metadata_key: Option<WrappingKeyId>,
-    shutdown: AtomicBool,
-    use_fxfs_keys_for_fscrypt_dirs: bool,
-}
-
-struct Cipher {
-    key: [u8; 32],
-    aes_gcm_siv: Aes256GcmSiv,
-}
-
-impl Cipher {
-    fn new(key: [u8; 32]) -> Self {
-        let aes_gcm_siv = Aes256GcmSiv::new(Key::<Aes256GcmSiv>::from_slice(&key));
-        Self { key, aes_gcm_siv }
-    }
+    inner: CryptBase,
 }
 
 impl InsecureCrypt {
     pub fn new() -> Self {
-        Self {
-            ciphers: Mutex::new(HashMap::from_iter([
-                (DATA_WRAPPING_KEY_ID, Cipher::new(DATA_KEY.clone())),
-                (METADATA_WRAPPING_KEY_ID, Cipher::new(METADATA_KEY.clone())),
-            ])),
-            filesystem_uuid: [0; 16],
-            active_data_key: Some(DATA_WRAPPING_KEY_ID),
-            active_metadata_key: Some(METADATA_WRAPPING_KEY_ID),
-            ..Default::default()
-        }
+        let inner = CryptBase::new();
+        inner.add_wrapping_key(DATA_WRAPPING_KEY_ID, DATA_KEY).unwrap();
+        inner.add_wrapping_key(METADATA_WRAPPING_KEY_ID, METADATA_KEY).unwrap();
+        inner.set_active_key(KeyPurpose::Data, DATA_WRAPPING_KEY_ID).unwrap();
+        inner.set_active_key(KeyPurpose::Metadata, METADATA_WRAPPING_KEY_ID).unwrap();
+        Self { inner }
     }
 
     pub fn use_fxfs_keys_for_fscrypt_dirs(&mut self) {
-        self.use_fxfs_keys_for_fscrypt_dirs = true;
+        self.inner.use_fxfs_keys_for_fscrypt_dirs();
     }
 
     /// Simulates a crypt instance prematurely terminating.  All requests will fail.
     pub fn shutdown(&self) {
-        self.shutdown.store(true, Ordering::Relaxed);
+        self.inner.shutdown();
     }
 
     pub fn add_wrapping_key(&self, id: WrappingKeyId, key: WrappingKey) {
         match key {
             WrappingKey::Aes256GcmSiv(key) => {
-                assert!(self.ciphers.lock().insert(id, Cipher::new(key)).is_none());
+                self.inner.add_wrapping_key(id, key).unwrap();
             }
             _ => unimplemented!(),
         }
     }
 
     pub fn remove_wrapping_key(&self, id: &WrappingKeyId) {
-        let _key = self.ciphers.lock().remove(id);
+        self.inner.forget_wrapping_key(id).unwrap();
     }
 
     /// Fscrypt in INO_LBLK32 and INO_LBLK64 modes mix the filesystem_uuid into key derivation
     /// functions. Crypt should be told the uuid ahead of time to support decryption of migrated
     /// data. (Note that we make an assumption that there is only one filesystem.)
     pub fn set_filesystem_uuid(&mut self, uuid: &[u8; 16]) {
-        self.filesystem_uuid = *uuid;
+        self.inner.set_filesystem_uuid(uuid);
     }
 }
 
@@ -111,32 +76,10 @@ impl Crypt for InsecureCrypt {
         owner: u64,
         purpose: KeyPurpose,
     ) -> Result<(FxfsKey, UnwrappedKey), zx::Status> {
-        if self.shutdown.load(Ordering::Relaxed) {
-            error!("Crypt was shut down");
-            return Err(zx::Status::INTERNAL);
-        }
-        let wrapping_key_id = match purpose {
-            KeyPurpose::Data => self.active_data_key.as_ref(),
-            KeyPurpose::Metadata => self.active_metadata_key.as_ref(),
-        }
-        .ok_or(zx::Status::INVALID_ARGS)?;
-        let ciphers = self.ciphers.lock();
-        let cipher = ciphers.get(wrapping_key_id).ok_or(zx::Status::UNAVAILABLE)?;
-        let mut nonce = Nonce::default();
-        nonce.as_mut_slice()[..8].copy_from_slice(&owner.to_le_bytes());
-
-        let mut key = [0u8; 32];
-        StdRng::from_os_rng().fill_bytes(&mut key);
-
-        let wrapped: Vec<u8> = cipher.aes_gcm_siv.encrypt(&nonce, &key[..]).map_err(|e| {
-            error!("Failed to wrap key: {:?}", e);
-            zx::Status::INTERNAL
-        })?;
-        let wrapped = WrappedKeyBytes::try_from(wrapped).map_err(|_| zx::Status::INTERNAL)?;
-        Ok((
-            FxfsKey { wrapping_key_id: *wrapping_key_id, key: wrapped },
-            UnwrappedKey::new(key.to_vec()),
-        ))
+        self.inner.create_key(owner, purpose).await.map_err(|e| {
+            error!("Failed to create key: {:?}", e);
+            e
+        })
     }
 
     async fn create_key_with_id(
@@ -145,44 +88,10 @@ impl Crypt for InsecureCrypt {
         wrapping_key_id: WrappingKeyId,
         object_type: ObjectType,
     ) -> Result<(EncryptionKey, UnwrappedKey), zx::Status> {
-        if self.shutdown.load(Ordering::Relaxed) {
-            error!("Crypt was shut down");
-            return Err(zx::Status::INTERNAL);
-        }
-
-        let ciphers = self.ciphers.lock();
-        let cipher = ciphers.get(&wrapping_key_id).ok_or(zx::Status::UNAVAILABLE)?;
-
-        match object_type {
-            ObjectType::Directory if !self.use_fxfs_keys_for_fscrypt_dirs => {
-                let mut nonce = [0; 16];
-                StdRng::from_os_rng().fill_bytes(&mut nonce);
-                let unwrapped_key = unwrap_fscrypt_dir_key(cipher, &nonce);
-                Ok((
-                    EncryptionKey::FscryptInoLblk32Dir { key_identifier: wrapping_key_id, nonce },
-                    unwrapped_key,
-                ))
-            }
-            _ => {
-                let mut nonce = Nonce::default();
-                nonce.as_mut_slice()[..8].copy_from_slice(&owner.to_le_bytes());
-
-                let mut key = [0u8; 32];
-                StdRng::from_os_rng().fill_bytes(&mut key);
-
-                let wrapped: Vec<u8> =
-                    cipher.aes_gcm_siv.encrypt(&nonce, &key[..]).map_err(|e| {
-                        error!("Failed to wrap key: {:?}", e);
-                        zx::Status::INTERNAL
-                    })?;
-                let wrapped =
-                    WrappedKeyBytes::try_from(wrapped).map_err(|_| zx::Status::BAD_STATE)?;
-                Ok((
-                    EncryptionKey::Fxfs(FxfsKey { wrapping_key_id, key: wrapped }),
-                    UnwrappedKey::new(key.to_vec()),
-                ))
-            }
-        }
+        self.inner.create_key_with_id(owner, wrapping_key_id, object_type).await.map_err(|e| {
+            error!("Failed to create key with id: {:?}", e);
+            e
+        })
     }
 
     async fn unwrap_key(
@@ -190,50 +99,9 @@ impl Crypt for InsecureCrypt {
         wrapped_key: &WrappedKey,
         owner: u64,
     ) -> Result<UnwrappedKey, zx::Status> {
-        if self.shutdown.load(Ordering::Relaxed) {
-            error!("Crypt was shut down");
-            return Err(zx::Status::INTERNAL);
-        }
-        let ciphers = self.ciphers.lock();
-        Ok(match wrapped_key {
-            WrappedKey::Fxfs(fxfs_key) => {
-                let cipher =
-                    ciphers.get(&fxfs_key.wrapping_key_id).ok_or(zx::Status::UNAVAILABLE)?;
-                let mut nonce = Nonce::default();
-                nonce.as_mut_slice()[..8].copy_from_slice(&owner.to_le_bytes());
-                UnwrappedKey::new(
-                    cipher
-                        .aes_gcm_siv
-                        .decrypt(&nonce, &fxfs_key.wrapped_key[..])
-                        .map_err(|e| {
-                            error!("unwrap keys failed: {:?}", e);
-                            zx::Status::INTERNAL
-                        })?
-                        .try_into()
-                        .map_err(|_| {
-                            error!("Unexpected wrapped key length");
-                            zx::Status::INTERNAL
-                        })?,
-                )
-            }
-            WrappedKey::FscryptInoLblk32Dir(FscryptKeyIdentifierAndNonce {
-                key_identifier,
-                nonce,
-            }) => {
-                let cipher = ciphers.get(key_identifier).ok_or(zx::Status::UNAVAILABLE)?;
-                unwrap_fscrypt_dir_key(cipher, nonce)
-            }
-            _ => {
-                error!("Unsupported wrapped key {wrapped_key:?}");
-                return Err(zx::Status::NOT_SUPPORTED);
-            }
+        self.inner.unwrap_key(wrapped_key, owner).await.map_err(|e| {
+            error!("Failed to unwrap key: {:?}", e);
+            e
         })
     }
-}
-
-fn unwrap_fscrypt_dir_key(cipher: &Cipher, nonce: &[u8]) -> UnwrappedKey {
-    let mut result = vec![0u8; 96];
-    let output: &mut [u8; 96] = (&mut result[..]).try_into().unwrap();
-    fscrypt::hkdf::hkdf(&cipher.key, nonce, output);
-    UnwrappedKey::new(result)
 }
