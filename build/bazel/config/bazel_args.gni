@@ -41,17 +41,17 @@ if (bazel_execution_logs) {
 # LINT.IfChange(comp_mode)
 _optimize_to_dbg = [ "debug" ]
 _optimize_to_fastbuild = [
-  "coverage",
-  "minimal",
-  "moderate",
   "none",
+  "minimal",
+  "coverage",
   "sanitizer",
+  "profile",
 ]
 _optimize_to_opt = [
-  "profile",
   "size",
   "size_lto",
   "size_thinlto",
+  "moderate",
   "speed",
 ]
 
