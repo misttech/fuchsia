@@ -190,8 +190,6 @@ void Filter::SetFilter(const debug_ipc::Filter& filter) {
   Sync();
 }
 
-bool Filter::ShouldDeferModuleLoading() const { return debug_ipc::FilterDefersModules(&filter_); }
-
 void Filter::Sync() { session()->system().SyncFilters(); }
 
 // static

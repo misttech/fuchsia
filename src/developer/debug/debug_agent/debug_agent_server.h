@@ -10,6 +10,7 @@
 #include "src/developer/debug/debug_agent/debug_agent_observer.h"
 #include "src/developer/debug/ipc/protocol.h"
 #include "src/developer/debug/shared/result.h"
+#include "src/developer/debug/shared/status.h"
 #include "src/lib/fxl/memory/weak_ptr.h"
 
 namespace debug_agent {
@@ -66,6 +67,7 @@ class DebugAgentServer : public fidl::Server<fuchsia_debugger::DebugAgent>,
   // If any of the FilterMatch identifiers does not correspond to one of our filters, take no
   // action. The number of successful attaches is returned.
   uint32_t AttachToFilterMatches(const std::vector<debug_ipc::FilterMatch>& filter_matches) const;
+  debug::Status AttachWithConfig(zx_koid_t koid, const debug_ipc::AttachConfig& config) const;
 
   using GetMatchingProcessesResult =
       debug::Result<std::vector<DebuggedProcess*>, fuchsia_debugger::FilterError>;

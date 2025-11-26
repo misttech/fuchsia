@@ -24,23 +24,18 @@ namespace {
 using debug::RegisterID;
 
 template <typename Type>
-bool SerializeDeserialize(const Type& in, Type* out) {
+bool SerializeDeserialize(const Type& in, Type* out, uint32_t version = kCurrentProtocolVersion)
+  requires IsDebugIpcMessageType<Type>
+{
   uint32_t in_transaction_id = 32;
-  std::vector<char> serialized = Serialize(in, in_transaction_id, kCurrentProtocolVersion);
+  std::vector<char> serialized = Serialize(in, in_transaction_id, version);
 
   uint32_t out_transaction_id = 0;
-  if (!Deserialize(std::move(serialized), out, &out_transaction_id, kCurrentProtocolVersion))
+  if (!Deserialize(std::move(serialized), out, &out_transaction_id, version))
     return false;
   EXPECT_EQ(in_transaction_id, out_transaction_id);
   return true;
 }
-
-#define FN(msg_type)                                                                          \
-  [[maybe_unused]] bool SerializeDeserialize(const msg_type& in, msg_type* out) {             \
-    return Deserialize(Serialize(in, kCurrentProtocolVersion), out, kCurrentProtocolVersion); \
-  }
-FOR_EACH_NOTIFICATION_TYPE(FN)
-#undef FN
 
 }  // namespace
 
@@ -1107,6 +1102,41 @@ TEST(Protocol, NotifyModules) {
   EXPECT_EQ(initial.timestamp, second.timestamp);
 }
 
+TEST(Protocol, NotifyProcessStartingWithVersion) {
+  NotifyProcessStarting initial;
+  initial.type = NotifyProcessStarting::Type::kLimbo;
+  initial.koid = 10;
+  initial.name = "some_process";
+  initial.timestamp = kTestTimestampDefault;
+  initial.components = {ComponentInfo{.moniker = "moniker", .url = "url"}};
+  initial.filter_ids = {Filter::Identifier(1, Filter::Originator::kUnknown),
+                        Filter::Identifier(2, Filter::Originator::kUnknown),
+                        Filter::Identifier(3, Filter::Originator::kUnknown)};
+
+  constexpr uint32_t kVersion = 75;
+
+  NotifyProcessStarting second;
+  ASSERT_TRUE(SerializeDeserialize(initial, &second, kVersion));
+
+  EXPECT_EQ(second.type, initial.type);
+  EXPECT_EQ(initial.koid, second.koid);
+  EXPECT_EQ(initial.name, second.name);
+  EXPECT_EQ(initial.timestamp, second.timestamp);
+
+  // Compatibility: IPC versions < 76 will serialize only one filter identifier in the notification
+  // message.
+  ASSERT_EQ(initial.filter_ids.size(), second.filter_ids.size());
+  ASSERT_EQ(initial.filter_ids.size(), 1u);
+  ASSERT_EQ(second.filter_ids.size(), 1u);
+  EXPECT_EQ(initial.filter_ids[0], second.filter_ids[0]);
+
+  ASSERT_FALSE(second.components.empty());
+  auto initial_component = initial.components[0];
+  auto component = second.components[0];
+  EXPECT_EQ(initial_component.moniker, component.moniker);
+  EXPECT_EQ(initial_component.url, component.url);
+}
+
 TEST(Protocol, NotifyProcessStarting) {
   NotifyProcessStarting initial;
   initial.type = NotifyProcessStarting::Type::kLimbo;
@@ -1114,7 +1144,9 @@ TEST(Protocol, NotifyProcessStarting) {
   initial.name = "some_process";
   initial.timestamp = kTestTimestampDefault;
   initial.components = {ComponentInfo{.moniker = "moniker", .url = "url"}};
-  initial.filter_id = Filter::Identifier(1, Filter::Originator::kUnknown);
+  initial.filter_ids = {Filter::Identifier(1, Filter::Originator::kUnknown),
+                        Filter::Identifier(2, Filter::Originator::kUnknown),
+                        Filter::Identifier(3, Filter::Originator::kUnknown)};
 
   NotifyProcessStarting second;
   ASSERT_TRUE(SerializeDeserialize(initial, &second));
@@ -1123,7 +1155,10 @@ TEST(Protocol, NotifyProcessStarting) {
   EXPECT_EQ(initial.koid, second.koid);
   EXPECT_EQ(initial.name, second.name);
   EXPECT_EQ(initial.timestamp, second.timestamp);
-  EXPECT_EQ(initial.filter_id, second.filter_id);
+  ASSERT_EQ(initial.filter_ids.size(), second.filter_ids.size());
+  for (size_t i = 0; i < initial.filter_ids.size(); i++) {
+    EXPECT_EQ(initial.filter_ids[i], second.filter_ids[i]);
+  }
   ASSERT_FALSE(second.components.empty());
   auto initial_component = initial.components[0];
   auto component = second.components[0];

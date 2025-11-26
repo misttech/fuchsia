@@ -133,6 +133,10 @@ class DebugAgent : public RemoteAPI, public Breakpoint::ProcessDelegate, public 
     return procs_;
   }
 
+  // Warning this returns pointers into our internal buffer of filters. If the internal buffer is
+  // mutated, these pointers will be invalidated.
+  std::vector<const debug_ipc::Filter*> GetIpcFilters() const;
+
  private:
   FRIEND_TEST(DebugAgentTests, Kill);
 
@@ -188,6 +192,8 @@ class DebugAgent : public RemoteAPI, public Breakpoint::ProcessDelegate, public 
   };
   RecursiveFilterMatchResult CheckForRecursiveFilterMatches(
       const Filter& filter, const std::vector<debug_ipc::ComponentInfo>& component_info);
+
+  std::vector<debug_ipc::FilterMatch> AccumulateFilterMatches(const ProcessHandle& handle);
 
   // Attempts to attach to the given process and sends a AttachReply message
   // to the client with the result.

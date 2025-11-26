@@ -35,7 +35,7 @@ namespace debug_ipc {
 // CURRENT_SUPPORTED_API_LEVEL is equal to the numbered API level currently represented by "NEXT".
 // If not, continue reading the comments below.
 
-constexpr uint32_t kCurrentProtocolVersion = 75;
+constexpr uint32_t kCurrentProtocolVersion = 76;
 
 // How to decide kMinimumProtocolVersion
 // -------------------------------------
@@ -684,18 +684,38 @@ struct NotifyProcessStarting {
   std::vector<ComponentInfo> components;
 
   // The client filter id that matched this process.
-  Filter::Identifier filter_id;
+  std::vector<Filter::Identifier> filter_ids;
 
   // The shared address space if this is either a prototype process (it was created with
   // zx_process_create(ZX_PROCESS_SHARED)) or if this is a shared process (it was created with
   // zx_process_create_shared()). Empty if there is no shared address space.
   std::optional<AddressRegion> shared_address_space = std::nullopt;
 
+  AttachConfig attach_config;
+
   void Serialize(Serializer& ser, uint32_t ver) {
-    ser | timestamp | type | koid | name | components | filter_id;
+    ser | timestamp | type | koid | name | components;
+
+    if (ver < 76) {
+      // Serialize just the first id for compatibility.
+      Filter::Identifier id;
+      if (!filter_ids.empty()) {
+        id = filter_ids[0];
+      }
+
+      ser | id;
+
+      // Deserialization means ensuring only this ID is in the list of matches.
+      filter_ids.clear();
+      filter_ids.push_back(id);
+    }
 
     if (ver >= 69) {
       ser | shared_address_space;
+    }
+
+    if (ver >= 76) {
+      ser | filter_ids | attach_config;
     }
   }
 };

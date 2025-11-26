@@ -558,6 +558,8 @@ struct AttachConfig {
       ser | priority;
     }
   }
+
+  static bool ShouldDeferModules(const AttachConfig& config);
 };
 
 const char* AttachPriorityToString(AttachConfig::Priority priority);

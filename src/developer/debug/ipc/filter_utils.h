@@ -17,8 +17,9 @@ namespace debug_ipc {
 bool FilterMatches(const Filter& filter, const std::string& process_name,
                    const std::vector<ComponentInfo>& components);
 
-// Returns true if the filter's configuration defers module loading.
-bool FilterDefersModules(const Filter* filter);
+// Returns the filter from the given |filters| that has |id|.
+const Filter* GetFilterForId(const std::vector<const Filter*>& filters,
+                             const Filter::Identifier& id);
 
 // Shared function for clients to generate unique values for their filters.
 uint32_t GenerateFilterIdValue();
@@ -29,7 +30,7 @@ uint32_t GenerateFilterIdValue();
 // appropriately. The returned map will not have duplicates.
 std::map<uint64_t, debug_ipc::AttachConfig> GetAttachConfigsForFilterMatches(
     const std::vector<debug_ipc::FilterMatch>& matches,
-    const std::vector<debug_ipc::Filter>& installed_filters);
+    const std::vector<const debug_ipc::Filter*>& installed_filters);
 
 }  // namespace debug_ipc
 

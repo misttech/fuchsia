@@ -65,7 +65,7 @@ TEST(FilterUtils, GetAttachConfigsForFilterMatches) {
           },
   };
 
-  std::vector<Filter> filters = {filter1, filter2, filter3, filter4};
+  std::vector<const Filter*> filters = {&filter1, &filter2, &filter3, &filter4};
 
   constexpr uint64_t kWeakPid1 = 1234;
   constexpr uint64_t kWeakPid2 = 1235;
@@ -132,7 +132,7 @@ TEST(FilterUtils, WeakOverridesNeverAttach) {
   constexpr uint64_t kWeakPid = 12345;
   constexpr uint64_t kNoAttachPid = 54321;
 
-  std::vector<Filter> filters = {filter1, filter2};
+  std::vector<const Filter*> filters = {&filter1, &filter2};
 
   // Make sure the NeverAttach filter match comes first.
   std::vector<FilterMatch> matches = {

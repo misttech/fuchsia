@@ -46,8 +46,6 @@ class Filter : public ClientObject {
   bool job_only() const { return filter_.config.job_only; }
   bool never_attach() const { return filter_.config.never_attach; }
 
-  bool ShouldDeferModuleLoading() const;
-
   // Accessing the underlying filter storage.
   void SetFilter(const debug_ipc::Filter& filter);
   const debug_ipc::Filter& filter() const { return filter_; }

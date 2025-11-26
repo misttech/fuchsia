@@ -797,6 +797,29 @@ TEST_F(DebugAgentTests, JobOnlyFilterDoesNotAttachToChildJobs) {
   // Attach to the root job of the component from the component starting event.
   harness.debug_agent()->OnComponentStarted(kComponentRootMoniker, "some/url", kJobKoid);
 
+  ASSERT_EQ(harness.stream_backend()->component_starts().size(), 1u);
+
+  auto component_start = harness.stream_backend()->component_starts()[0];
+  ASSERT_EQ(component_start.matching_filters.size(), 1u);
+
+  auto attach_configs = debug_ipc::GetAttachConfigsForFilterMatches(
+      component_start.matching_filters, harness.debug_agent()->GetIpcFilters());
+  ASSERT_EQ(attach_configs.size(), 1u);
+  ASSERT_TRUE(attach_configs.contains(kJobKoid));
+
+  const auto& attach_config = attach_configs.find(kJobKoid)->second;
+  EXPECT_EQ(attach_config.priority, debug_ipc::AttachConfig::Priority::kStrong);
+  EXPECT_EQ(attach_config.target, debug_ipc::TaskType::kJob);
+
+  debug_ipc::AttachRequest attach_request;
+  attach_request.koid = kJobKoid;
+  attach_request.config = attach_config;
+
+  debug_ipc::AttachReply attach_reply;
+  harness.debug_agent()->OnAttach(attach_request, &attach_reply);
+
+  ASSERT_TRUE(attach_reply.status.ok());
+
   // Send the notification that the child process of "job1" started. This one will always start
   // first, and will create the DebuggedProcess objects.
   harness.debug_agent()->OnProcessChanged(
@@ -859,8 +882,8 @@ TEST_F(DebugAgentTests, DoNotAttachToChildJobs) {
   EXPECT_EQ(reply.matched_processes_for_filter.size(), 1u);
   EXPECT_EQ(reply.matched_processes_for_filter[0].matched_pids.size(), 2u);
 
-  auto configs =
-      debug_ipc::GetAttachConfigsForFilterMatches(reply.matched_processes_for_filter, {filter});
+  auto configs = debug_ipc::GetAttachConfigsForFilterMatches(
+      reply.matched_processes_for_filter, harness.debug_agent()->GetIpcFilters());
 
   // We will attempt to attach to both.
   EXPECT_EQ(configs.size(), 2u);
@@ -984,8 +1007,13 @@ TEST_F(DebugAgentTests, RecursiveJobOnlyFilterDoesNotCannibalizeChildComponents)
       harness.debug_agent()->system_interface().GetProcess(kChildJobProcessKoid));
 
   EXPECT_EQ(harness.stream_backend()->process_starts().size(), 1u);
-  // The moniker prefix filter should be the matching filter.
-  EXPECT_EQ(harness.stream_backend()->process_starts()[0].filter_id, moniker_prefix_filter.id);
+  // Both of our filters should be reported as a match. The order is not guaranteed.
+  ASSERT_EQ(harness.stream_backend()->process_starts()[0].filter_ids.size(), 2u);
+  auto found = std::ranges::find(harness.stream_backend()->process_starts()[0].filter_ids,
+                                 moniker_prefix_filter.id);
+  EXPECT_NE(found, harness.stream_backend()->process_starts()[0].filter_ids.end());
+  found = std::ranges::find(harness.stream_backend()->process_starts()[0].filter_ids, filter.id);
+  EXPECT_NE(found, harness.stream_backend()->process_starts()[0].filter_ids.end());
 
   // And we should still not have any other filter created events.
   ASSERT_EQ(harness.stream_backend()->filters().size(), 1u);

@@ -205,25 +205,23 @@ void DebugAgentServer::AttachTo(AttachToRequest& request, AttachToCompleter::Syn
 }
 
 debug_ipc::UpdateFilterReply DebugAgentServer::SynchronizeDebugIpcFilters() {
-  debug_ipc::UpdateFilterRequest ipc_request;
-
-  debug_ipc::StatusReply status;
-  debug_agent_->OnStatus({}, &status);
-
   // OnUpdateFilter will clear all the filters before reinstalling the set that is present in the
   // IPC request, so we must be sure to copy all of the filters that were already there before
   // calling the method.
-  ipc_request.filters = status.filters;
+  std::vector<debug_ipc::Filter> update_filters;
+  update_filters.reserve(debug_agent_->GetIpcFilters().size());
+  std::ranges::transform(
+      debug_agent_->GetIpcFilters(), std::back_inserter(update_filters),
+      [](const debug_ipc::Filter* filter) -> debug_ipc::Filter { return *filter; });
 
-  // Add any of our filters that are not already present in |ipc_request|.
-  std::ranges::for_each(filters_, [&ipc_request](const auto& elem) {
-    if (std::ranges::none_of(
-            ipc_request.filters,
-            [filter = elem.second](const debug_ipc::Filter& f) { return filter.id == f.id; })) {
-      ipc_request.filters.push_back(elem.second);
+  // Add any of our filters that are not already present in |update_filters|.
+  std::ranges::for_each(filters_, [this, &update_filters](const auto& elem) {
+    if (!debug_ipc::GetFilterForId(debug_agent_->GetIpcFilters(), elem.second.id)) {
+      update_filters.push_back(elem.second);
     }
   });
 
+  debug_ipc::UpdateFilterRequest ipc_request{.filters = std::move(update_filters)};
   debug_ipc::UpdateFilterReply reply;
   debug_agent_->OnUpdateFilter(ipc_request, &reply);
 
@@ -253,27 +251,22 @@ uint32_t DebugAgentServer::AttachToFilterMatches(
   // does not have support for size types.
   uint32_t attaches = 0;
 
-  std::vector<debug_ipc::Filter> ipc_filters;
+  std::vector<const debug_ipc::Filter*> ipc_filters;
   ipc_filters.reserve(filters_.size());
   std::ranges::transform(filters_, std::back_inserter(ipc_filters),
-                         [](const auto& pair) -> debug_ipc::Filter { return pair.second; });
+                         [](const auto& pair) -> const debug_ipc::Filter* { return &pair.second; });
 
   auto pids_to_attach = debug_ipc::GetAttachConfigsForFilterMatches(filter_matches, ipc_filters);
 
   for (const auto& [koid, attach_config] : pids_to_attach) {
-    debug_ipc::AttachRequest request;
-    request.koid = koid;
-    request.config = attach_config;
-
-    debug_ipc::AttachReply reply;
-    debug_agent_->OnAttach(request, &reply);
+    auto status = AttachWithConfig(koid, attach_config);
 
     // We may get an error if we're already attached to this process, or in the case of job-only,
     // attached to an ancestor. DebugAgent already prints a trace log for this, and it's not a
     // problem for clients if we're already attached to what they care about, so this case is
     // ignored.
-    if (reply.status.has_error() && reply.status.type() != debug::Status::Type::kAlreadyExists) {
-      DEBUG_LOG(Agent) << " attach to koid " << koid << " failed: " << reply.status.message();
+    if (status.has_error() && status.type() != debug::Status::Type::kAlreadyExists) {
+      DEBUG_LOG(Agent) << " attach to koid " << koid << " failed: " << status.message();
     } else {
       // Normal case where we attached to something.
       attaches++;
@@ -281,6 +274,18 @@ uint32_t DebugAgentServer::AttachToFilterMatches(
   }
 
   return attaches;
+}
+
+debug::Status DebugAgentServer::AttachWithConfig(zx_koid_t koid,
+                                                 const debug_ipc::AttachConfig& config) const {
+  debug_ipc::AttachRequest request;
+  request.koid = koid;
+  request.config = config;
+
+  debug_ipc::AttachReply reply;
+  debug_agent_->OnAttach(request, &reply);
+
+  return reply.status;
 }
 
 void DebugAgentServer::OnNotification(const debug_ipc::NotifyProcessStarting& notify) {
@@ -294,7 +299,14 @@ void DebugAgentServer::OnNotification(const debug_ipc::NotifyProcessStarting& no
   // When we matched a job_only filter, we create a DebuggedProcess object for it internally, and
   // don't need an explicit attach.
   if (!debug_agent_->GetDebuggedProcess(notify.koid)) {
-    AttachToFilterMatches({{notify.filter_id, {notify.koid}}});
+    bool have_any_matching_filter = std::ranges::any_of(
+        notify.filter_ids,
+        [&](const auto& filter_id) -> bool { return filters_.contains(filter_id); });
+
+    // Only issue the attach if one of the matching filters was ours.
+    if (have_any_matching_filter) {
+      AttachWithConfig(notify.koid, notify.attach_config);
+    }
   }
 }
 

@@ -66,17 +66,6 @@ std::string LogResumeRequest(const debug_ipc::ResumeRequest& request) {
   return ss.str();
 }
 
-bool ShouldDeferSendingModules(const debug_ipc::AttachConfig& config) {
-  switch (config.priority) {
-    case debug_ipc::AttachConfig::Priority::kMinimal:
-    case debug_ipc::AttachConfig::Priority::kWeak:
-      return true;
-    case debug_ipc::AttachConfig::Priority::kStrong:
-      // Sending modules for a job never makes sense, for processes defer to the relevant options.
-      return config.target == debug_ipc::TaskType::kJob;
-  }
-}
-
 bool FilterDoesNotAppearIn(const Filter& needle, const std::vector<Filter>& haystack) {
   return std::ranges::none_of(haystack, [&needle](const auto& filter) {
     return debug::StringStartsWith(needle.filter().pattern, filter.filter().pattern);
@@ -759,6 +748,19 @@ DebugAgent::RecursiveFilterMatchResult DebugAgent::CheckForRecursiveFilterMatche
   return result;
 }
 
+std::vector<debug_ipc::FilterMatch> DebugAgent::AccumulateFilterMatches(
+    const ProcessHandle& handle) {
+  std::vector<debug_ipc::FilterMatch> matches;
+
+  std::ranges::for_each(filters_, [&](const Filter& filter) {
+    if (filter.MatchesProcess(handle, *system_interface_)) {
+      matches.emplace_back(filter.filter().id, std::vector<uint64_t>{handle.GetKoid()});
+    }
+  });
+
+  return matches;
+}
+
 debug::Status DebugAgent::AddDebuggedJob(DebuggedJobCreateInfo&& create_info, DebuggedJob** added) {
   *added = nullptr;
 
@@ -956,7 +958,7 @@ debug::Status DebugAgent::AttachToExistingProcess(zx_koid_t process_koid,
           return;
         if (DebuggedProcess* process = weak_this->GetDebuggedProcess(koid)) {
           process->PopulateCurrentThreads();
-          if (!ShouldDeferSendingModules(config))
+          if (!debug_ipc::AttachConfig::ShouldDeferModules(config))
             process->SuspendAndSendModules();
         }
       });
@@ -1051,19 +1053,21 @@ void DebugAgent::OnProcessChanged(ProcessChangedHow how,
   debug_ipc::NotifyProcessStarting::Type type = debug_ipc::NotifyProcessStarting::Type::kLast;
   StdioHandles stdio;  // Will be filled in only for components.
   std::string process_name_override;
-  const debug_ipc::Filter* matched_filter = nullptr;
+  std::vector<debug_ipc::FilterMatch> matched_filters;
+
+  // If we have any matching filters for this event, then we'll consolidate their configurations
+  // into an attach configuration which will determine what actions we take immediately and what
+  // actions we wait for the client to request.
+  //
+  // In cases we've launched something ourselves, we just use the default attach configuration.
+  debug_ipc::AttachConfig attach_config;
 
   if (how == ProcessChangedHow::kStarting &&
       system_interface_->GetComponentManager().OnProcessStart(*process_handle, &stdio,
                                                               &process_name_override)) {
     type = debug_ipc::NotifyProcessStarting::Type::kLaunch;
-  } else if (std::any_of(filters_.begin(), filters_.end(), [&](const Filter& filter) {
-               if (filter.MatchesProcess(*process_handle, *system_interface_)) {
-                 matched_filter = &filter.filter();
-                 return true;
-               }
-               return false;
-             })) {
+  } else if (auto matches = AccumulateFilterMatches(*process_handle); !matches.empty()) {
+    matched_filters = std::move(matches);
     type = debug_ipc::NotifyProcessStarting::Type::kAttach;
   } else {
 #ifdef __linux__
@@ -1075,12 +1079,21 @@ void DebugAgent::OnProcessChanged(ProcessChangedHow how,
 #endif
   }
 
-  debug_ipc::AttachConfig attach_config;
-
   // If we have a filter, then derive the attach configuration from that, otherwise use the default
   // values specified in AttachConfig.
-  if (matched_filter) {
-    attach_config = debug_ipc::FilterConfig::ToAttachConfig(matched_filter->config);
+  //
+  // A note on compatibility for NotifyProcessStarting:
+  //
+  // In IPC version 76, NotifyProcessStarting was updated to report ALL matching filters, rather
+  // than just one. This has influence on how the attach configuration is derived here. Followup
+  // changes will add the necessary machinery to actually take action on all of the filters, rather
+  // than just deferring to the first one that we find matches. To accommodate this transition, we
+  // still defer to using the first matching filter to derive the attach configuration.
+  if (matched_filters.size() > 0) {
+    const auto found = debug_ipc::GetFilterForId(GetIpcFilters(), matched_filters[0].id);
+    FX_DCHECK(found);
+
+    attach_config = debug_ipc::FilterConfig::ToAttachConfig(found->config);
   }
 
   bool job_only = attach_config.target == debug_ipc::TaskType::kJob;
@@ -1125,7 +1138,11 @@ void DebugAgent::OnProcessChanged(ProcessChangedHow how,
   notify.name = process_name_override.empty() ? process_handle->GetName() : process_name_override;
   notify.timestamp = GetNowTimestamp();
   notify.components = system_interface_->GetComponentManager().FindComponentInfo(*process_handle);
-  notify.filter_id = matched_filter ? matched_filter->id : debug_ipc::Filter::Identifier{};
+  notify.filter_ids.reserve(matched_filters.size());
+  std::ranges::transform(
+      matched_filters, std::back_inserter(notify.filter_ids),
+      [](const auto& match) -> debug_ipc::Filter::Identifier { return match.id; });
+  notify.attach_config = attach_config;
   notify.shared_address_space = process_handle->GetSharedAddressSpace();
 
   DebuggedProcessCreateInfo create_info(std::move(process_handle));
@@ -1156,7 +1173,7 @@ void DebugAgent::OnProcessChanged(ProcessChangedHow how,
   // breakpoints on things like _dl_start, which will resolve from the first modules being sent
   // now. The rest of the modules will be sent later on when the client requests them or we hit the
   // loader breakpoint.
-  if (!debug_ipc::FilterDefersModules(matched_filter)) {
+  if (!debug_ipc::AttachConfig::ShouldDeferModules(attach_config)) {
     new_process->SuspendAndSendModules();
   }
 }
@@ -1291,6 +1308,17 @@ std::vector<const Filter*> DebugAgent::GetMatchingFiltersForComponentInfo(
   }
 
   return matches;
+}
+
+std::vector<const debug_ipc::Filter*> DebugAgent::GetIpcFilters() const {
+  std::vector<const debug_ipc::Filter*> ipc_filters;
+  ipc_filters.reserve(filters_.size());
+
+  std::ranges::transform(
+      filters_, std::back_inserter(ipc_filters),
+      [](const auto& filter) -> const debug_ipc::Filter* { return &filter.filter(); });
+
+  return ipc_filters;
 }
 
 void DebugAgent::RemoveObserver(DebugAgentObserver* observer) {

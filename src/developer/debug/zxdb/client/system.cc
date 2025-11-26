@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <filesystem>
+#include <iterator>
 #include <set>
 
 #include "src/developer/debug/ipc/filter_utils.h"
@@ -755,10 +756,11 @@ void System::SyncFilters() {
 }
 
 void System::OnFilterMatches(const std::vector<debug_ipc::FilterMatch>& matches) {
-  std::vector<debug_ipc::Filter> ipc_filters(GetFilters().size());
-  for (const auto& filter : GetFilters()) {
-    ipc_filters.push_back(filter->filter());
-  }
+  std::vector<const debug_ipc::Filter*> ipc_filters;
+  ipc_filters.reserve(GetFilters().size());
+  std::ranges::transform(
+      GetFilters(), std::back_inserter(ipc_filters),
+      [](const Filter* filter) -> const debug_ipc::Filter* { return &filter->filter(); });
 
   // A collection of pids that we are going to attach to. The corresponding config will determine
   // the details of the attach. If a pid is matched by multiple filters, they must ALL be configured

@@ -738,10 +738,12 @@ void Session::DispatchNotifyProcessStarting(const debug_ipc::NotifyProcessStarti
   found_target->CreateProcess(start_type, notify.koid, notify.name, notify.timestamp,
                               notify.components, notify.shared_address_space);
 
-  auto matched_filter = system().GetFilterForId(notify.filter_id);
+  auto have_any_matching_filter = std::ranges::any_of(
+      notify.filter_ids, [&](const auto& filter_id) { return system().GetFilterForId(filter_id); });
 
   // If the notification is coming from a weak filter, defer fetching modules until later.
-  if (matched_filter && !matched_filter->ShouldDeferModuleLoading()) {
+  if (have_any_matching_filter &&
+      !debug_ipc::AttachConfig::ShouldDeferModules(notify.attach_config)) {
     found_target->process()->GetModules(true, [](const Err&, std::vector<debug_ipc::Module>) {});
   }
 }

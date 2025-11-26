@@ -27,12 +27,6 @@ bool MatchComponentUrl(std::string_view url, std::string_view pattern) {
   return url == pattern;
 }
 
-const Filter* GetFilterForId(const std::vector<Filter>& filters, const Filter::Identifier& id) {
-  const auto& filter =
-      std::ranges::find_if(filters, [id](const Filter& filter) { return id == filter.id; });
-  return filter != filters.end() ? &*filter : nullptr;
-}
-
 }  // namespace
 
 bool FilterMatches(const Filter& filter, const std::string& process_name,
@@ -63,10 +57,11 @@ bool FilterMatches(const Filter& filter, const std::string& process_name,
   });
 }
 
-bool FilterDefersModules(const Filter* filter) {
-  if (filter == nullptr)
-    return false;
-  return filter->config.weak || filter->config.job_only || filter->config.never_attach;
+const Filter* GetFilterForId(const std::vector<const Filter*>& filters,
+                             const Filter::Identifier& id) {
+  const auto& filter = std::ranges::find_if(
+      filters, [id](const Filter* filter) { return filter ? id == filter->id : false; });
+  return filter != filters.end() ? *filter : nullptr;
 }
 
 uint32_t GenerateFilterIdValue() {
@@ -79,7 +74,7 @@ uint32_t GenerateFilterIdValue() {
 }
 
 std::map<uint64_t, AttachConfig> GetAttachConfigsForFilterMatches(
-    const std::vector<FilterMatch>& matches, const std::vector<Filter>& installed_filters) {
+    const std::vector<FilterMatch>& matches, const std::vector<const Filter*>& installed_filters) {
   std::map<uint64_t, debug_ipc::AttachConfig> pids_to_attach;
 
   for (const auto& match : matches) {

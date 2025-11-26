@@ -183,6 +183,17 @@ bool IsWatchpointType(debug_ipc::BreakpointType type) {
   // clang-format on
 }
 
+bool AttachConfig::ShouldDeferModules(const AttachConfig& config) {
+  switch (config.priority) {
+    case debug_ipc::AttachConfig::Priority::kMinimal:
+    case debug_ipc::AttachConfig::Priority::kWeak:
+      return true;
+    case debug_ipc::AttachConfig::Priority::kStrong:
+      // Sending modules for a job never makes sense, for processes defer to the relevant options.
+      return config.target == debug_ipc::TaskType::kJob;
+  }
+}
+
 const char* AttachPriorityToString(AttachConfig::Priority priority) {
   switch (priority) {
     case AttachConfig::Priority::kStrong:
