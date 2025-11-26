@@ -218,3 +218,13 @@ class WlanPolicy(affordance.Affordance):
             HoneydewWlanError: Error from WLAN stack.
             RuntimeError: A client controller has not been created yet
         """
+
+    @abc.abstractmethod
+    def wait_for_no_connections(
+        self, *, timeout: float | None = DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT
+    ) -> None:
+        """Waits until the WLAN network state is disconnected
+
+        Raises:
+            HoneydewWlanError: Failure to observe no connection within timeout.
+        """

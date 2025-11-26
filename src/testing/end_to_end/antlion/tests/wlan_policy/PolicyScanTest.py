@@ -104,7 +104,7 @@ class PolicyScanTest(base_test.WifiBaseTest):
         super().setup_test()
         for fd in self.fuchsia_devices:
             fd.honeydew_fd.wlan_policy.remove_all_networks()
-            fd.wlan_policy_controller.wait_for_no_connections()
+            fd.honeydew_fd.wlan_policy.wait_for_no_connections()
 
     def teardown_test(self) -> None:
         self.download_logs()

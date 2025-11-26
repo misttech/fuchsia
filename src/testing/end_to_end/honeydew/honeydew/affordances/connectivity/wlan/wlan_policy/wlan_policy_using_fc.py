@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import pprint
 from dataclasses import dataclass
 
 import fidl_fuchsia_wlan_policy as f_wlan_policy
@@ -17,6 +18,7 @@ from honeydew import affordances_capable, errors
 from honeydew.affordances.connectivity.wlan.utils import errors as wlan_errors
 from honeydew.affordances.connectivity.wlan.utils.types import (
     ClientStateSummary,
+    ConnectionState,
     Credential,
     NetworkConfig,
     NetworkIdentifier,
@@ -767,6 +769,35 @@ class WlanPolicy(AsyncAdapter, wlan_policy.WlanPolicy):
             raise wlan_errors.HoneydewWlanError(
                 f"ClientController.StopClientConnections() error {status}"
             ) from status
+
+    def wait_for_no_connections(
+        self,
+        *,
+        timeout: float
+        | None = wlan_policy.WlanPolicy.DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
+    ) -> None:
+        self.set_new_update_listener()
+        client_state_summaries = []
+
+        while True:
+            try:
+                client_state_summaries.append(self.get_update(timeout=timeout))
+            except TimeoutError as e:
+                raise wlan_errors.HoneydewWlanError(
+                    f"Networks still connected. Waited: {timeout}s.\n\n"
+                    f"Updates received:\n\n"
+                    f"{pprint.pformat(client_state_summaries, indent=4)}"
+                ) from e
+
+            CONNECTION_STATES = {
+                ConnectionState.CONNECTING,
+                ConnectionState.CONNECTED,
+            }
+            if not any(
+                n.connection_state in CONNECTION_STATES
+                for n in client_state_summaries[-1].networks
+            ):
+                return
 
 
 class ClientStateUpdatesImpl(f_wlan_policy.ClientStateUpdatesServer):

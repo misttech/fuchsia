@@ -69,13 +69,13 @@ class StartStopClientConnectionsTest(base_test.WifiBaseTest):
     def setup_test(self) -> None:
         for fd in self.fuchsia_devices:
             fd.honeydew_fd.wlan_policy.remove_all_networks()
-            fd.wlan_policy_controller.wait_for_no_connections()
+            fd.honeydew_fd.wlan_policy.wait_for_no_connections()
 
     def teardown_class(self) -> None:
         self.download_logs()
         for fd in self.fuchsia_devices:
             fd.honeydew_fd.wlan_policy.remove_all_networks()
-            fd.wlan_policy_controller.wait_for_no_connections()
+            fd.honeydew_fd.wlan_policy.wait_for_no_connections()
         self.access_point.stop_all_aps()
         super().teardown_class()
 

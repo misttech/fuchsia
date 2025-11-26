@@ -450,7 +450,7 @@ class FuchsiaWlanDevice(SupportsWLAN):
                 self.device.honeydew_fd.wlan_core.disconnect()
             case AssociationMode.POLICY:
                 self.device.honeydew_fd.wlan_policy.remove_all_networks()
-                self.device.wlan_policy_controller.wait_for_no_connections()
+                self.device.honeydew_fd.wlan_policy.wait_for_no_connections()
 
     def ping(
         self,

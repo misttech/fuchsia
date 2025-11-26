@@ -58,7 +58,7 @@ class SavedNetworksTest(base_test.WifiBaseTest):
     def setup_test(self) -> None:
         for fd in self.fuchsia_devices:
             fd.honeydew_fd.wlan_policy.remove_all_networks()
-            fd.wlan_policy_controller.wait_for_no_connections()
+            fd.honeydew_fd.wlan_policy.wait_for_no_connections()
         self.access_points[0].stop_all_aps()
 
     def teardown_class(self) -> None:
@@ -340,7 +340,7 @@ class SavedNetworksTest(base_test.WifiBaseTest):
         )
 
         for fd in self.fuchsia_devices:
-            fd.wlan_policy_controller.wait_for_no_connections()
+            fd.honeydew_fd.wlan_policy.wait_for_no_connections()
             # Make sure client connections are enabled
             fd.honeydew_fd.wlan_policy.start_client_connections()
             fd.wlan_policy_controller.wait_for_client_state(
@@ -363,7 +363,7 @@ class SavedNetworksTest(base_test.WifiBaseTest):
                 test_network.credential_value,
             )
             try:
-                fd.wlan_policy_controller.wait_for_no_connections()
+                fd.honeydew_fd.wlan_policy.wait_for_no_connections()
             except WlanPolicyControllerError as e:
                 raise signals.TestFailure("Failed to remove network") from e
 
@@ -385,7 +385,7 @@ class SavedNetworksTest(base_test.WifiBaseTest):
         )
 
         for fd in self.fuchsia_devices:
-            fd.wlan_policy_controller.wait_for_no_connections()
+            fd.honeydew_fd.wlan_policy.wait_for_no_connections()
             # Make sure client connections are enabled
             fd.honeydew_fd.wlan_policy.start_client_connections()
             fd.wlan_policy_controller.wait_for_client_state(
@@ -422,7 +422,7 @@ class SavedNetworksTest(base_test.WifiBaseTest):
         )
 
         for fd in self.fuchsia_devices:
-            fd.wlan_policy_controller.wait_for_no_connections()
+            fd.honeydew_fd.wlan_policy.wait_for_no_connections()
             # Make sure client connections are enabled
             fd.honeydew_fd.wlan_policy.start_client_connections()
             fd.wlan_policy_controller.wait_for_client_state(

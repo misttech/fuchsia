@@ -287,50 +287,6 @@ class WlanPolicyController:
             )
             raise WlanPolicyControllerError from last_err
 
-    def wait_for_no_connections(
-        self, timeout_sec: int = DEFAULT_GET_UPDATE_TIMEOUT
-    ) -> None:
-        """Waits to see that there are no connections to the device.
-
-        Args:
-            timeout_sec: The time to wait to see no connections.
-
-        Raises:
-            WlanPolicyControllerError: If client update has no networks or if client
-                still has connections at end of timeout.
-        """
-        self.honeydew.wlan_policy.set_new_update_listener()
-
-        last_err: TimeoutError | None = None
-        end_time = time.time() + timeout_sec
-        while time.time() < end_time:
-            curr_connected_networks: list[NetworkState] = []
-            time_left = max(1, int(end_time - time.time()))
-            try:
-                client = self.honeydew.wlan_policy.get_update(timeout=time_left)
-            except TimeoutError as e:
-                # Retry to handle the cases in negative testing where we expect
-                # to receive an 'error'.
-                last_err = e
-                continue
-
-            # Iterate through networks checking to see if any are still connected.
-            for network in client.networks:
-                if network.connection_state in {
-                    ConnectionState.CONNECTING,
-                    ConnectionState.CONNECTED,
-                }:
-                    curr_connected_networks.append(network)
-
-            if len(curr_connected_networks) != 0:
-                # Continue getting updates.
-                continue
-            else:
-                return
-
-        self.log.error(f"Networks still connected. Waited: {timeout_sec}s")
-        raise WlanPolicyControllerError from last_err
-
     def remove_and_preserve_networks_and_client_state(
         self, timeout: int = DEFAULT_GET_UPDATE_TIMEOUT
     ) -> PreservedState:

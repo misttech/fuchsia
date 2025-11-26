@@ -70,7 +70,7 @@ class HiddenNetworksTest(base_test.WifiBaseTest):
     def setup_test(self) -> None:
         for fd in self.fuchsia_devices:
             fd.honeydew_fd.wlan_policy.remove_all_networks()
-            fd.wlan_policy_controller.wait_for_no_connections()
+            fd.honeydew_fd.wlan_policy.wait_for_no_connections()
 
     def teardown_class(self) -> None:
         self.access_point.stop_all_aps()
@@ -157,7 +157,7 @@ class HiddenNetworksTest(base_test.WifiBaseTest):
             it.
         """
         for fd in self.fuchsia_devices:
-            fd.wlan_policy_controller.wait_for_no_connections()
+            fd.honeydew_fd.wlan_policy.wait_for_no_connections()
             fd.honeydew_fd.wlan_policy.save_network(
                 self.hidden_ssid, SecurityType.WPA2, self.hidden_password
             )
