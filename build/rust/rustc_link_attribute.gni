@@ -57,9 +57,6 @@ template("rustc_link_attribute") {
       if (target_os == "win") {
         _lib_prefix = ""
         _lib_suffix = ".dll"
-      } else if (target_os == "mac") {
-        _lib_prefix = "lib"
-        _lib_suffix = ".dylib"
       } else {
         _lib_prefix = "lib"
         _lib_suffix = ".so"
