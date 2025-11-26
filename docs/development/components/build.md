@@ -195,6 +195,15 @@ declaration:
 }
 ```
 
+Equivalently, the `target_availablility` field on an offer can be set to inform
+manifest compilation that it's acceptable for that offer's target to be missing.
+When set to `unknown`, then the following will happen to the offer declaration:
+
+- If the `to` target exists: the `offer` is emitted following the previous
+  availability (and source availability rules).
+- If the `to` target does not exist: the `offer` is omitted entirely from the
+  compiled manifest.
+
 For more information on how `availability` works, see [Availability][doc-availability].
 
 ### Client library includes {#component-manifest-includes}

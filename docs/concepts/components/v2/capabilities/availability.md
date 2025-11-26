@@ -146,6 +146,13 @@ either a `required` or `optional void` `offer`, depending on whether a
 source. More information on this feature is in the
 [build docs][docs.inter-shard-deps].
 
+## target_availability: unknown
+
+[cml][docs.cml] has an additional feature which can be used to omit an `offer`,
+depending on whether a [cml shard][docs.includes] is included that has a child
+declaration for the target. More information on this feature is in the [build
+docs][docs.inter-shard-deps].
+
 ## Example
 
 The following example illustrates the concepts described in this doc.

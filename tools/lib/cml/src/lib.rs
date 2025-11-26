@@ -1235,6 +1235,14 @@ impl Default for SourceAvailability {
     }
 }
 
+/// A reference in an `offer to`.
+#[derive(Debug, Deserialize, PartialEq, Eq, Hash, Clone, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TargetAvailability {
+    Required,
+    Unknown,
+}
+
 /// A reference in an environment.
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Reference)]
 #[reference(expected = "\"#<environment-name>\"")]
@@ -4186,6 +4194,14 @@ pub struct Offer {
     ///     is not defined in this manifest after includes are processed.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source_availability: Option<SourceAvailability>,
+
+    /// Whether or not the target of this offer must exist. One of:
+    /// - `required` (default): the target (`to`) must be defined in this
+    ///   manifest.
+    /// - `unknown`: this offer is omitted if its target (`to`) is not defined
+    ///     in this manifest after includes are processed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target_availability: Option<TargetAvailability>,
 }
 
 #[derive(Deserialize, Debug, PartialEq, Clone, ReferenceDoc)]
@@ -5722,6 +5738,7 @@ impl Offer {
             scope: None,
             availability: None,
             source_availability: None,
+            target_availability: None,
         }
     }
 }
@@ -5958,6 +5975,7 @@ mod tests {
             scope: None,
             availability: None,
             source_availability: None,
+            target_availability: None,
         }
     }
 

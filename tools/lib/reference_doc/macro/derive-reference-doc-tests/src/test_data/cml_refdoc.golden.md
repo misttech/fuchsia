@@ -845,6 +845,11 @@ This supports the following additional fields:
     - `required` (default): the source (`from`) must be defined in this manifest.
     - `unknown`: the source of this offer will be rewritten to `void` if its source (`from`)
         is not defined in this manifest after includes are processed.
+- `target_availability`: (_optional `string`_) Whether or not the target of this offer must exist. One of:
+    - `required` (default): the target (`to`) must be defined in this
+      manifest.
+    - `unknown`: this offer is omitted if its target (`to`) is not defined
+        in this manifest after includes are processed.
 
 Example:
 

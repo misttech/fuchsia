@@ -11,7 +11,8 @@ use crate::{
     DictionaryRef, Document, Environment, EnvironmentExtends, EnvironmentRef, EventScope, Expose,
     ExposeFromRef, ExposeToRef, FromClause, Offer, OfferFromRef, OfferToRef, OneOrMany, Path,
     PathClause, Program, ResolverRegistration, RightsClause, RootDictionaryRef, RunnerRegistration,
-    SourceAvailability, Use, UseFromRef, offer_to_all_would_duplicate, validate,
+    SourceAvailability, TargetAvailability, Use, UseFromRef, offer_to_all_would_duplicate,
+    validate,
 };
 use cm_rust::NativeIntoFidl;
 use cm_types::{self as cm, BorrowedName, Name};
@@ -390,13 +391,16 @@ fn translate_use(
                             let mut output = vec![];
                             for value in &values {
                                 static EMPTY_SET: BTreeSet<&BorrowedName> = BTreeSet::new();
-                                output.push(translate_target_ref(
+                                if let Some(target) = translate_target_ref(
                                     options,
                                     value.into(),
                                     &all_children,
                                     &all_collections,
                                     &EMPTY_SET,
-                                )?);
+                                    Some(&TargetAvailability::Required),
+                                )? {
+                                    output.push(target);
+                                }
                             }
                             Some(output)
                         }
@@ -1047,13 +1051,16 @@ fn translate_offer(
                             let mut output = vec![];
                             for value in &values {
                                 static EMPTY_SET: BTreeSet<&BorrowedName> = BTreeSet::new();
-                                output.push(translate_target_ref(
+                                if let Some(target) = translate_target_ref(
                                     options,
                                     value.into(),
                                     &all_children,
                                     &all_collections,
                                     &EMPTY_SET,
-                                )?);
+                                    offer.target_availability.as_ref(),
+                                )? {
+                                    output.push(target);
+                                }
                             }
                             Some(output)
                         }
@@ -1667,19 +1674,28 @@ fn translate_target_ref(
     all_children: &BTreeSet<&BorrowedName>,
     all_collections: &BTreeSet<&BorrowedName>,
     all_capabilities: &BTreeSet<&BorrowedName>,
-) -> Result<fdecl::Ref, Error> {
+    target_availability: Option<&TargetAvailability>,
+) -> Result<Option<fdecl::Ref>, Error> {
     match reference {
         AnyRef::Named(name) if all_children.contains(name) => {
-            Ok(fdecl::Ref::Child(fdecl::ChildRef { name: name.to_string(), collection: None }))
+            Ok(Some(fdecl::Ref::Child(fdecl::ChildRef {
+                name: name.to_string(),
+                collection: None,
+            })))
         }
         AnyRef::Named(name) if all_collections.contains(name) => {
-            Ok(fdecl::Ref::Collection(fdecl::CollectionRef { name: name.to_string() }))
+            Ok(Some(fdecl::Ref::Collection(fdecl::CollectionRef { name: name.to_string() })))
         }
         AnyRef::Named(name) if all_capabilities.contains(name) => {
-            Ok(fdecl::Ref::Capability(fdecl::CapabilityRef { name: name.to_string() }))
+            Ok(Some(fdecl::Ref::Capability(fdecl::CapabilityRef { name: name.to_string() })))
         }
         AnyRef::OwnDictionary(name) if all_capabilities.contains(name) => {
-            return Ok(fdecl::Ref::Capability(fdecl::CapabilityRef { name: name.to_string() }));
+            Ok(Some(fdecl::Ref::Capability(fdecl::CapabilityRef { name: name.to_string() })))
+        }
+        AnyRef::Named(_) | AnyRef::OwnDictionary(_)
+            if target_availability == Some(&TargetAvailability::Unknown) =>
+        {
+            Ok(None)
         }
         AnyRef::Named(_) => Err(Error::internal(format!("dangling reference: \"{}\"", reference))),
         _ => Err(Error::internal(format!("invalid child reference: \"{}\"", reference))),
@@ -1715,20 +1731,22 @@ fn extract_offer_sources_and_targets<'a>(
                 } else {
                     target_name
                 };
-                let target = translate_target_ref(
+                if let Some(target) = translate_target_ref(
                     options,
                     to.into(),
                     all_children,
                     all_collections,
                     all_capability_names,
-                )?;
-                out.push((
-                    source.clone(),
-                    source_dictionary.clone(),
-                    *source_name,
-                    target.clone(),
-                    *target_name,
-                ))
+                    offer.target_availability.as_ref(),
+                )? {
+                    out.push((
+                        source.clone(),
+                        source_dictionary.clone(),
+                        *source_name,
+                        target.clone(),
+                        *target_name,
+                    ));
+                }
             }
         }
     }
@@ -3900,6 +3918,43 @@ mod tests {
                         startup: Some(fdecl::StartupMode::Lazy),
                         ..Default::default()
                     }
+                ]),
+                ..default_component_decl()
+            },
+        },
+
+        test_compile_offer_target_availability_unknown => {
+            input = json!({
+                "offer": [
+                    {
+                        "protocol": "fuchsia.logger.Log",
+                        "from": "#logger",
+                        "to": "#non-existent",
+                        "target_availability": "unknown",
+                    },
+                    {
+                        "protocol": "fuchsia.logger.Log",
+                        "from": "#logger",
+                        "to": "self/non-existent-dict",
+                        "target_availability": "unknown",
+                    },
+                ],
+                "children": [
+                    {
+                        "name": "logger",
+                        "url": "fuchsia-pkg://fuchsia.com/logger/stable#meta/logger.cm"
+                    },
+                ],
+            }),
+            output = fdecl::Component {
+                offers: Some(vec![]),
+                children: Some(vec![
+                    fdecl::Child {
+                        name: Some("logger".to_string()),
+                        url: Some("fuchsia-pkg://fuchsia.com/logger/stable#meta/logger.cm".to_string()),
+                        startup: Some(fdecl::StartupMode::Lazy),
+                        ..Default::default()
+                    },
                 ]),
                 ..default_component_decl()
             },

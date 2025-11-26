@@ -10,8 +10,8 @@ use crate::{
     Environment, EnvironmentExtends, Error, EventScope, Expose, ExposeFromRef, ExposeToRef,
     FromClause, Offer, OfferFromRef, OfferToRef, OneOrMany, Program, RegistrationRef, Rights,
     RootDictionaryRef, SourceAvailability, Spanned, SpannedCapability, SpannedCapabilityClause,
-    SpannedChild, SpannedDocument, SpannedExpose, SpannedOffer, SpannedUse, Use, UseFromRef,
-    offer_to_all_would_duplicate,
+    SpannedChild, SpannedDocument, SpannedExpose, SpannedOffer, SpannedUse, TargetAvailability,
+    Use, UseFromRef, offer_to_all_would_duplicate,
 };
 use cm_types::{BorrowedName, IterablePath, Name};
 use itertools::Either;
@@ -2014,7 +2014,9 @@ which is almost certainly a mistake: {}",
                     }
 
                     // Check that any referenced child actually exists.
-                    if self.all_children.contains_key(&to_target.as_ref())
+                    // Skip the check if target availability is unknown.
+                    if offer.target_availability == Some(TargetAvailability::Unknown)
+                        || self.all_children.contains_key(&to_target.as_ref())
                         || self.all_collections.contains(&to_target.as_ref())
                     {
                         // Allowed.
@@ -2101,18 +2103,24 @@ which is almost certainly a mistake: {}",
                         }
                     }
                     // Check that any referenced child actually exists.
-                    let Some(d) = self.all_dictionaries.get(&to_target.as_ref()) else {
-                        return Err(Error::validate(format!(
-                            "\"offer\" has dictionary target \"{to}\" but \"{to_target}\" \
-                                is not a dictionary capability defined by this component"
-                        )));
-                    };
-                    if d.path.is_some() {
-                        return Err(Error::validate(format!(
-                            "\"offer\" has dictionary target \"{to}\" but \"{to_target}\" \
-                            sets \"path\". Therefore, it is a dynamic dictionary that \
-                            does not allow offers into it."
-                        )));
+                    match self.all_dictionaries.get(&to_target.as_ref()) {
+                        Some(d) => {
+                            if d.path.is_some() {
+                                return Err(Error::validate(format!(
+                                    "\"offer\" has dictionary target \"{to}\" but \"{to_target}\" \
+                                    sets \"path\". Therefore, it is a dynamic dictionary that \
+                                    does not allow offers into it."
+                                )));
+                            }
+                        }
+                        None => {
+                            if offer.target_availability != Some(TargetAvailability::Unknown) {
+                                return Err(Error::validate(format!(
+                                    "\"offer\" has dictionary target \"{to}\" but \"{to_target}\" \
+                                    is not a dictionary capability defined by this component"
+                                )));
+                            }
+                        }
                     }
                     to_target
                 }
