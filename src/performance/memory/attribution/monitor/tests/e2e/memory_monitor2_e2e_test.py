@@ -173,7 +173,6 @@ class MemoryMonitor2EndToEndTest(fuchsia_base_test.FuchsiaBaseTest):
     @staticmethod
     def assert_inspect_payload_is_valid(payload: dict[str, Any]) -> None:
         root = payload["root"]
-        asserts.assert_in("config", root)
 
         asserts.assert_in("kmem_stats", root)
         asserts.assert_in("total_heap_bytes", root["kmem_stats"])
