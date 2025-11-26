@@ -31,10 +31,3 @@ impl Default for ConfigurationInterfaceFlags {
 }
 
 bitflags_serde_legacy::impl_traits!(ConfigurationInterfaceFlags);
-
-#[derive(Debug, PartialEq, Copy, Clone)]
-pub struct SetConfigurationInterfacesParams {
-    pub config_interfaces_flags: ConfigurationInterfaceFlags,
-    // Set true to reboot the device, otherwise, set it as false.
-    pub should_reboot: bool,
-}

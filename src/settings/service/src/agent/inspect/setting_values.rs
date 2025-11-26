@@ -145,7 +145,6 @@ impl SettingValuesInspectAgent {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::base::UnknownInfo;
     use diagnostics_assertions::assert_data_tree;
     use futures::channel::mpsc;
     use zx::MonotonicInstant;
@@ -181,8 +180,7 @@ mod tests {
             }
         });
 
-        tx.start_send(("Unknown", format!("{:?}", UnknownInfo(true))))
-            .expect("sending via channel");
+        tx.start_send(("Unknown", "UnknownInfo(true)".to_string())).expect("sending via channel");
         let () = done_rx.next().await.expect("should have processed event");
 
         // Inspect agent writes value to inspect.

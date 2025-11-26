@@ -12,7 +12,6 @@ use futures::lock::Mutex;
 use settings::audio::build_audio_default_settings;
 use settings::base::get_default_interfaces;
 use settings::display::build_display_default_settings;
-use settings::handler::setting_proxy_inspect_info::SettingProxyInspectInfo;
 use settings::input::build_input_default_settings;
 use settings::{
     AgentConfiguration, EnabledInterfacesConfiguration, EnvironmentBuilder, ServiceConfiguration,
@@ -42,7 +41,6 @@ fn main() -> Result<(), Error> {
     // Serve stats about inspect in a lazy node.
     component::serve_inspect_stats();
 
-    let setting_proxy_inspect_info = SettingProxyInspectInfo::new(inspector.root());
     let stash_inspect_logger = StashInspectLogger::new(inspector.root());
     let listener_inspect_logger = ListenerInspectLogger::new();
 
@@ -119,10 +117,7 @@ fn main() -> Result<(), Error> {
         .audio_configuration(audio_configuration)
         .input_configuration(input_configuration)
         .light_configuration(light_configuration)
-        .setting_proxy_inspect_info(
-            setting_proxy_inspect_info.node(),
-            Rc::new(listener_inspect_logger),
-        )
+        .listener_inspect_logger(Rc::new(listener_inspect_logger))
         .storage_dir(storage_dir)
         .store_proxy(store_proxy)
         .spawn(executor, fs)

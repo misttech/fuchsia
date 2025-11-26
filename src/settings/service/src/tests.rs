@@ -36,12 +36,10 @@ macro_rules! async_property_test {
 }
 
 mod accessibility_tests;
-mod agent_tests;
 mod audio_tests;
 mod camera_watcher_agent_tests;
 mod display_tests;
 mod environment_tests;
-mod event_tests;
 mod factory_reset_tests;
 pub(crate) mod fakes;
 pub(crate) mod helpers;
@@ -50,12 +48,7 @@ mod input_tests;
 mod intl_tests;
 mod keyboard_tests;
 mod media_buttons_agent_tests;
-mod message_tests;
-pub(crate) mod message_utils;
 mod privacy_tests;
-pub(crate) mod scaffold;
 mod service_configuration_tests;
-mod setting_handler_tests;
-mod setting_proxy_tests;
 mod stream_volume_tests;
 mod test_failure_utils;

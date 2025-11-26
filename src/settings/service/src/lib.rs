@@ -2,9 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::rc::Rc;
-use std::sync::atomic::AtomicU64;
 
 #[cfg(test)]
 use anyhow::format_err;
@@ -25,9 +24,7 @@ use fuchsia_component::client::connect_to_protocol;
 #[cfg(test)]
 use fuchsia_component::server::ProtocolConnector;
 use fuchsia_component::server::{ServiceFs, ServiceFsDir, ServiceObjLocal};
-use fuchsia_inspect::component;
 use futures::channel::mpsc::{self, UnboundedReceiver, UnboundedSender};
-use futures::lock::Mutex;
 use futures::{StreamExt, TryStreamExt};
 #[cfg(test)]
 use log as _;
@@ -37,45 +34,30 @@ use settings_common::inspect::event::{
     ExternalEventPublisher, SettingValuePublisher, UsageEvent, UsagePublisher,
 };
 use settings_common::inspect::listener_logger::ListenerInspectLogger;
-use settings_common::service_context::{
-    ExternalServiceEvent, GenerateService, ServiceContext as CommonServiceContext,
-};
+use settings_common::service_context::{ExternalServiceEvent, GenerateService, ServiceContext};
 use settings_light::light_controller::LightController;
 use settings_storage::device_storage::DeviceStorage;
 use settings_storage::fidl_storage::FidlStorage;
 use settings_storage::storage_factory::{FidlStorageFactory, StorageFactory};
-use zx::MonotonicDuration;
 use {fidl_fuchsia_update_verify as fupdate, fuchsia_async as fasync};
 
 pub use display::display_configuration::DisplayConfiguration;
-pub use handler::setting_proxy_inspect_info::SettingProxyInspectInfo;
 pub use input::input_device_configuration::InputConfiguration;
 use serde::Deserialize;
-pub use service::{Address, Payload};
 pub use settings_light::light_hardware_configuration::LightHardwareConfiguration;
 
 use crate::accessibility::accessibility_controller::AccessibilityController;
-use crate::agent::authority::Authority;
-use crate::agent::{AgentCreator, Lifespan};
 use crate::audio::Request as AudioRequest;
 use crate::audio::audio_controller::AudioController;
-use crate::base::{Dependency, Entity, SettingType};
+use crate::base::SettingType;
 use crate::display::display_controller::{DisplayController, ExternalBrightnessControl};
 use crate::do_not_disturb::do_not_disturb_controller::DoNotDisturbController;
-use crate::handler::base::GenerateHandler;
-use crate::handler::setting_handler_factory_impl::SettingHandlerFactoryImpl;
-use crate::handler::setting_proxy::SettingProxy;
 use crate::ingress::fidl;
-use crate::ingress::registration::Registrant;
 use crate::input::input_controller::InputController;
 use crate::intl::intl_controller::IntlController;
-use crate::job::manager::Manager;
-use crate::job::source::Seeder;
 use crate::keyboard::keyboard_controller::KeyboardController;
 use crate::night_mode::night_mode_controller::NightModeController;
 use crate::privacy::privacy_controller::PrivacyController;
-use crate::service::message::Delegate;
-use crate::service_context::ServiceContext;
 use crate::setup::setup_controller::SetupController;
 
 mod accessibility;
@@ -83,38 +65,20 @@ pub mod audio;
 mod clock;
 pub mod display;
 mod do_not_disturb;
-mod event;
 mod factory_reset;
 pub mod input;
 mod intl;
-#[allow(dead_code)]
-mod job;
 mod keyboard;
 mod night_mode;
 mod privacy;
-mod service;
 mod setup;
 mod storage_migrations;
 
 pub mod agent;
 pub mod base;
-pub mod handler;
 pub mod ingress;
-pub mod inspect;
-pub mod message;
 pub(crate) mod migration;
-pub mod service_context;
-pub mod storage;
 pub mod trace;
-
-/// This value represents the duration the proxy will wait after the last request
-/// before initiating the teardown of the controller. If a request is received
-/// before the timeout triggers, then the timeout will be canceled.
-// The value of 5 seconds was chosen arbitrarily to allow some time between manual
-// button presses that occurs for some settings.
-pub(crate) const DEFAULT_TEARDOWN_TIMEOUT: MonotonicDuration = MonotonicDuration::from_seconds(5);
-const DEFAULT_SETTING_PROXY_MAX_ATTEMPTS: u64 = 3;
-const DEFAULT_SETTING_PROXY_RESPONSE_TIMEOUT_MS: i64 = 10_000;
 
 /// A common trigger for exiting.
 pub type ExitSender = futures::channel::mpsc::UnboundedSender<()>;
@@ -190,20 +154,16 @@ impl ServiceConfiguration {
 #[cfg(test)]
 pub struct Environment {
     pub connector: Option<ProtocolConnector>,
-    pub delegate: Delegate,
-    pub entities: HashSet<Entity>,
-    pub job_seeder: Seeder,
+    pub settings: HashSet<SettingType>,
 }
 
 #[cfg(test)]
 impl Environment {
     pub fn new(
         connector: Option<ProtocolConnector>,
-        delegate: Delegate,
-        job_seeder: Seeder,
-        entities: HashSet<Entity>,
+        settings: HashSet<SettingType>,
     ) -> Environment {
-        Environment { connector, delegate, job_seeder, entities }
+        Environment { connector, settings }
     }
 }
 
@@ -224,16 +184,11 @@ fn init_storage_dir() -> DirectoryProxy {
 
 /// The [EnvironmentBuilder] aggregates the parameters surrounding an [environment](Environment) and
 /// ultimately spawns an environment based on them.
-pub struct EnvironmentBuilder<'a, T: StorageFactory<Storage = DeviceStorage>> {
+pub struct EnvironmentBuilder<T: StorageFactory<Storage = DeviceStorage>> {
     configuration: Option<ServiceConfiguration>,
-    agent_blueprints: Vec<AgentCreator>,
-    event_subscriber_blueprints: Vec<event::subscriber::BlueprintHandle>,
     storage_factory: Rc<T>,
     generate_service: Option<GenerateService>,
-    registrants: Vec<Registrant>,
     settings: Vec<SettingType>,
-    handlers: HashMap<SettingType, GenerateHandler>,
-    setting_proxy_inspect_info: Option<&'a fuchsia_inspect::Node>,
     active_listener_inspect_logger: Option<Rc<ListenerInspectLogger>>,
     storage_dir: Option<DirectoryProxy>,
     store_proxy: Option<StoreProxy>,
@@ -245,20 +200,15 @@ pub struct EnvironmentBuilder<'a, T: StorageFactory<Storage = DeviceStorage>> {
     media_buttons_event_txs: Vec<UnboundedSender<settings_media_buttons::Event>>,
 }
 
-impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilder<'a, T> {
+impl<T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilder<T> {
     /// Construct a new [EnvironmentBuilder] using `storage_factory` to construct the storage for
     /// the future [Environment].
     pub fn new(storage_factory: Rc<T>) -> Self {
         EnvironmentBuilder {
             configuration: None,
-            agent_blueprints: vec![],
-            event_subscriber_blueprints: vec![],
             storage_factory,
             generate_service: None,
-            handlers: HashMap::new(),
-            registrants: vec![],
             settings: vec![],
-            setting_proxy_inspect_info: None,
             active_listener_inspect_logger: None,
             storage_dir: None,
             store_proxy: None,
@@ -269,13 +219,6 @@ impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilde
             light_configuration: None,
             media_buttons_event_txs: vec![],
         }
-    }
-
-    /// Overrides the default [GenerateHandler] for a specific [SettingType].
-    pub fn handler(mut self, setting_type: SettingType, generate_handler: GenerateHandler) -> Self {
-        // Ignore the old handler result.
-        let _ = self.handlers.insert(setting_type, generate_handler);
-        self
     }
 
     /// A service generator to be used as an overlay on the ServiceContext.
@@ -337,13 +280,6 @@ impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilde
         self
     }
 
-    /// Appends the [Registrant]s to the list of registrants already configured.
-    pub fn registrants(mut self, mut registrants: Vec<Registrant>) -> Self {
-        self.registrants.append(&mut registrants);
-
-        self
-    }
-
     /// Setting types to participate.
     pub fn settings(mut self, settings: &[SettingType]) -> Self {
         self.settings.extend(settings);
@@ -364,26 +300,12 @@ impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilde
         self
     }
 
-    /// Appends the supplied [AgentRegistrar]s to the list of agent registrars.
-    pub fn agents(mut self, mut registrars: Vec<AgentCreator>) -> Self {
-        self.agent_blueprints.append(&mut registrars);
-        self
-    }
-
-    /// Event subscribers to participate
-    pub fn event_subscribers(mut self, subscribers: &[event::subscriber::BlueprintHandle]) -> Self {
-        self.event_subscriber_blueprints.append(&mut subscribers.to_vec());
-        self
-    }
-
     /// Sets the inspect node for setting proxy inspect information and any required
     /// inspect loggers.
-    pub fn setting_proxy_inspect_info(
+    pub fn listener_inspect_logger(
         mut self,
-        setting_proxy_inspect_info: &'a fuchsia_inspect::Node,
         active_listener_inspect_logger: Rc<ListenerInspectLogger>,
     ) -> Self {
-        self.setting_proxy_inspect_info = Some(setting_proxy_inspect_info);
         self.active_listener_inspect_logger = Some(active_listener_inspect_logger);
         self
     }
@@ -417,8 +339,7 @@ impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilde
         mut self,
         mut fs: ServiceFs<ServiceObjLocal<'_, ()>>,
         runtime: Runtime,
-    ) -> Result<(ServiceFs<ServiceObjLocal<'_, ()>>, Delegate, Seeder, HashSet<Entity>), Error>
-    {
+    ) -> Result<(ServiceFs<ServiceObjLocal<'_, ()>>, HashSet<SettingType>), Error> {
         let mut service_dir = match runtime {
             Runtime::Service => fs.dir("svc"),
             #[cfg(test)]
@@ -444,9 +365,6 @@ impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilde
             },
         );
 
-        // Define top level MessageHub for service communication.
-        let delegate = service::MessageHub::create_hub();
-
         let (agent_types, fidl_interfaces, flags) = match self.configuration {
             Some(configuration) => (
                 configuration.agent_types,
@@ -456,20 +374,8 @@ impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilde
             _ => (HashSet::new(), HashSet::new(), HashSet::new()),
         };
 
-        self.registrants.extend(fidl_interfaces.into_iter().map(|x| x.registrant()));
-
-        let mut settings = HashSet::new();
+        let mut settings: HashSet<_> = fidl_interfaces.into_iter().map(SettingType::from).collect();
         settings.extend(self.settings);
-
-        for registrant in &self.registrants {
-            for dependency in registrant.get_dependencies() {
-                match dependency {
-                    Dependency::Entity(Entity::Handler(setting_type)) => {
-                        let _ = settings.insert(*setting_type);
-                    }
-                }
-            }
-        }
 
         let fidl_storage_factory = if let Some(factory) = self.fidl_storage_factory {
             factory
@@ -509,19 +415,7 @@ impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilde
             Rc::new(FidlStorageFactory::new(migration_id.unwrap_or(0), storage_dir))
         };
 
-        let common_service_context = Rc::new(CommonServiceContext::new(self.generate_service));
-        let service_context = Rc::new(ServiceContext::new_from_common(
-            Rc::clone(&common_service_context),
-            Some(delegate.clone()),
-        ));
-
-        let context_id_counter = Rc::new(AtomicU64::new(1));
-
-        let mut handler_factory = SettingHandlerFactoryImpl::new(
-            settings.clone(),
-            Rc::clone(&service_context),
-            context_id_counter.clone(),
-        );
+        let service_context = Rc::new(ServiceContext::new(self.generate_service));
 
         let audio_info_loader = self.audio_configuration.map(AudioInfoLoader::new);
         Self::initialize_storage(
@@ -549,7 +443,7 @@ impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilde
             tasks,
         } = Self::register_controllers(
             &settings,
-            Rc::clone(&common_service_context),
+            Rc::clone(&service_context),
             fidl_storage_factory,
             self.storage_factory,
             &flags,
@@ -567,16 +461,9 @@ impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilde
 
         self.media_buttons_event_txs.extend(media_buttons_event_txs);
 
-        // Override the configuration handlers with any custom handlers specified
-        // in the environment.
-        for (setting_type, handler) in self.handlers {
-            handler_factory.register(setting_type, handler);
-        }
-
-        let agent_result = create_agent_blueprints(
+        let agent_result = create_agents(
             &settings,
             agent_types,
-            self.agent_blueprints,
             camera_watcher_event_txs,
             self.media_buttons_event_txs,
             setting_value_rx,
@@ -586,26 +473,9 @@ impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilde
             audio_request_tx,
         );
 
-        let job_manager_signature = Manager::spawn(&delegate).await;
-        let job_seeder = Seeder::new(&delegate, job_manager_signature).await;
+        run_agents(agent_result, service_context).await;
 
-        let entities = create_environment(
-            service_dir,
-            delegate.clone(),
-            job_seeder.clone(),
-            settings,
-            self.registrants,
-            agent_result,
-            self.event_subscriber_blueprints,
-            service_context,
-            Rc::new(Mutex::new(handler_factory)),
-            self.setting_proxy_inspect_info.unwrap_or_else(|| component::inspector().root()),
-            listener_logger,
-        )
-        .await
-        .context("Could not create environment")?;
-
-        Ok((fs, delegate, job_seeder, entities))
+        Ok((fs, settings))
     }
 
     /// Spawn an [Environment] on the supplied [fasync::LocalExecutor] so that it may process
@@ -627,14 +497,14 @@ impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilde
     /// Spawn a nested [Environment] so that it can be used for tests.
     #[cfg(test)]
     pub async fn spawn_nested(self, env_name: &'static str) -> Result<Environment, Error> {
-        let (mut fs, delegate, job_seeder, entities) = self
+        let (mut fs, entities) = self
             .prepare_env(ServiceFs::new_local(), Runtime::Nested(env_name))
             .await
             .context("Failed to prepare env")?;
         let connector = Some(fs.create_protocol_connector()?);
         fasync::Task::local(fs.collect()).detach();
 
-        Ok(Environment::new(connector, delegate, job_seeder, entities))
+        Ok(Environment::new(connector, entities))
     }
 
     /// Spawns a nested environment and returns the associated
@@ -661,7 +531,7 @@ struct RegistrationResult {
     tasks: Vec<fasync::Task<()>>,
 }
 
-impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilder<'a, T> {
+impl<T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilder<T> {
     async fn initialize_storage<F, D>(
         components: &HashSet<SettingType>,
         fidl_storage_factory: &F,
@@ -763,7 +633,7 @@ impl<'a, T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilde
 
     async fn register_controllers<F, D>(
         components: &HashSet<SettingType>,
-        service_context: Rc<CommonServiceContext>,
+        service_context: Rc<ServiceContext>,
         fidl_storage_factory: Rc<F>,
         device_storage_factory: Rc<D>,
         controller_flags: &HashSet<ControllerFlag>,
@@ -1040,13 +910,11 @@ struct AgentResult {
     inspect_external_apis_agent: Option<agent::inspect::external_apis::ExternalApiInspectAgent>,
     inspect_setting_proxy_agent: Option<agent::inspect::setting_proxy::SettingProxyInspectAgent>,
     inspect_usages_agent: Option<agent::inspect::usage_counts::SettingTypeUsageInspectAgent>,
-    agent_blueprints: Vec<AgentCreator>,
 }
 
-fn create_agent_blueprints(
+fn create_agents(
     settings: &HashSet<SettingType>,
     agent_types: HashSet<AgentType>,
-    agent_blueprints: Vec<AgentCreator>,
     camera_watcher_event_txs: Vec<UnboundedSender<bool>>,
     media_buttons_event_txs: Vec<UnboundedSender<settings_media_buttons::Event>>,
     setting_value_rx: UnboundedReceiver<(&'static str, String)>,
@@ -1097,23 +965,6 @@ fn create_agent_blueprints(
         .contains(&AgentType::InspectSettingTypeUsage)
         .then(|| agent::inspect::usage_counts::SettingTypeUsageInspectAgent::new(usage_event_rx));
 
-    let agent_blueprints = if agent_types.iter().all(|t| {
-        matches!(
-            t,
-            AgentType::Earcons
-                | AgentType::CameraWatcher
-                | AgentType::MediaButtons
-                | AgentType::InspectSettingValues
-                | AgentType::InspectExternalApis
-                | AgentType::InspectSettingProxy
-                | AgentType::InspectSettingTypeUsage
-        )
-    }) {
-        agent_blueprints
-    } else {
-        vec![]
-    };
-
     AgentResult {
         earcons_agent,
         camera_watcher_agent,
@@ -1122,76 +973,12 @@ fn create_agent_blueprints(
         inspect_external_apis_agent,
         inspect_setting_proxy_agent,
         inspect_usages_agent,
-        agent_blueprints,
     }
 }
 
-/// Brings up the settings service environment.
-///
-/// This method generates the necessary infrastructure to support the settings
-/// service (handlers, agents, etc.) and brings up the components necessary to
-/// support the components specified in the components HashSet.
-#[allow(clippy::too_many_arguments)]
-async fn create_environment<'a>(
-    mut service_dir: ServiceFsDir<'_, ServiceObjLocal<'a, ()>>,
-    delegate: service::message::Delegate,
-    job_seeder: Seeder,
-    components: HashSet<SettingType>,
-    registrants: Vec<Registrant>,
-    agent_result: AgentResult,
-    event_subscriber_blueprints: Vec<event::subscriber::BlueprintHandle>,
-    service_context: Rc<ServiceContext>,
-    handler_factory: Rc<Mutex<SettingHandlerFactoryImpl>>,
-    setting_proxies_node: &fuchsia_inspect::Node,
-    listener_logger: Rc<ListenerInspectLogger>,
-) -> Result<HashSet<Entity>, Error> {
-    for blueprint in event_subscriber_blueprints {
-        blueprint.create(delegate.clone()).await;
-    }
-
-    let mut entities = HashSet::new();
-
-    for setting_type in &components {
-        let _ = SettingProxy::create(
-            *setting_type,
-            handler_factory.clone(),
-            delegate.clone(),
-            DEFAULT_SETTING_PROXY_MAX_ATTEMPTS,
-            DEFAULT_TEARDOWN_TIMEOUT,
-            Some(MonotonicDuration::from_millis(DEFAULT_SETTING_PROXY_RESPONSE_TIMEOUT_MS)),
-            true,
-            setting_proxies_node.create_child(format!("{setting_type:?}")),
-            Rc::clone(&listener_logger),
-        )
-        .await?;
-
-        let _ = entities.insert(Entity::Handler(*setting_type));
-    }
-
-    let mut agent_authority = Authority::create(delegate.clone()).await?;
-
-    for registrant in registrants {
-        if registrant.get_dependencies().iter().all(|dependency| {
-            let dep_met = dependency.is_fulfilled(&entities);
-            if !dep_met {
-                log::error!(
-                    "Skipping {} registration due to missing dependency {:?}",
-                    registrant.get_interface(),
-                    dependency
-                );
-            }
-            dep_met
-        }) {
-            registrant.register(&job_seeder, &mut service_dir);
-        }
-    }
-
-    for blueprint in agent_result.agent_blueprints {
-        agent_authority.register(blueprint).await;
-    }
-
+async fn run_agents(agent_result: AgentResult, service_context: Rc<ServiceContext>) {
     if let Some(earcons_agent) = agent_result.earcons_agent {
-        earcons_agent.initialize(service_context.common_context()).await;
+        earcons_agent.initialize(Rc::clone(&service_context)).await;
     }
 
     if let Some(inspect_settings_values_agent) = agent_result.inspect_settings_values_agent {
@@ -1213,31 +1000,17 @@ async fn create_environment<'a>(
         inspect_usages_agent.initialize();
     }
 
-    // Execute initialization agents sequentially
-    agent_authority
-        .execute_lifespan(Lifespan::Initialization, true)
-        .await
-        .context("Agent initialization failed")?;
-
     if let Some(camera_watcher_agent) = agent_result.camera_watcher_agent {
-        if let Err(e) = camera_watcher_agent.spawn(&*service_context.common_context()).await {
+        if let Err(e) = camera_watcher_agent.spawn(&*service_context).await {
             log::error!("Failed to spawn camera watcher agent: {e:?}");
         }
     }
 
     if let Some(media_buttons_agent) = agent_result.media_buttons_agent {
-        if let Err(e) = media_buttons_agent.spawn(&*service_context.common_context()).await {
+        if let Err(e) = media_buttons_agent.spawn(&*service_context).await {
             log::error!("Failed to spawn camera watcher agent: {e:?}");
         }
     }
-
-    // Execute service agents concurrently
-    agent_authority
-        .execute_lifespan(Lifespan::Service, false)
-        .await
-        .context("Agent service start failed")?;
-
-    Ok(entities)
 }
 
 #[cfg(test)]
