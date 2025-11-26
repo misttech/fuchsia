@@ -216,6 +216,7 @@ impl OpenFxFilesystem {
         );
         self.journal().allocate_journal().await?;
         self.journal().set_image_builder_mode(None);
+        // Note that when we compact the journal we will write a new superblock.
         self.journal().compact().await?;
         Ok(())
     }

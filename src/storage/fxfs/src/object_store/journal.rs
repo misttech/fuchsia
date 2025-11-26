@@ -39,7 +39,7 @@ use crate::object_store::journal::bootstrap_handle::BootstrapObjectHandle;
 use crate::object_store::journal::checksum_list::ChecksumList;
 use crate::object_store::journal::reader::{JournalReader, ReadResult};
 use crate::object_store::journal::super_block::{
-    SuperBlockHeader, SuperBlockInstance, SuperBlockManager,
+    MIN_SUPER_BLOCK_SIZE, SuperBlockHeader, SuperBlockInstance, SuperBlockManager,
 };
 use crate::object_store::journal::writer::JournalWriter;
 use crate::object_store::object_manager::ObjectManager;
@@ -71,6 +71,7 @@ use std::ops::{Bound, Range};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, OnceLock};
 use std::task::{Poll, Waker};
+use storage_device::Device;
 
 // The journal file is written to in blocks of this size.
 pub const BLOCK_SIZE: u64 = 4096;
@@ -507,6 +508,14 @@ impl Journal {
         );
         self.inner.lock().super_block_header.guid.0 = uuid::Uuid::from_bytes(*uuid);
         Ok(())
+    }
+
+    pub(crate) async fn read_superblocks(
+        &self,
+        device: Arc<dyn Device>,
+        block_size: u64,
+    ) -> Result<(SuperBlockHeader, ObjectStore), Error> {
+        self.super_block_manager.load(device, block_size).await
     }
 
     /// Used during replay to validate a mutation.  This should return false if the mutation is not
@@ -1192,6 +1201,31 @@ impl Journal {
             ..self.inner.lock().writer.journal_file_checkpoint()
         };
 
+        let mut current_generation = 1;
+        if filesystem.options().image_builder_mode.is_some() {
+            // Note that in non-image_builder_mode we write both superblocks when we format
+            // (in FxFilesystemBuilder::open). In image_builder_mode we only write once at the end
+            // as part of finalize(), which is why we must make sure the generation we write is newer
+            // than any existing generation.
+            let block_size = filesystem.device().block_size();
+            if block_size as u64 == MIN_SUPER_BLOCK_SIZE {
+                match self.read_superblocks(filesystem.device(), block_size.into()).await {
+                    Ok((super_block, _)) => {
+                        log::info!(
+                            "Found existing superblock with generation {}. Bumping by 1.",
+                            super_block.generation
+                        );
+                        current_generation = super_block.generation.wrapping_add(1);
+                    }
+                    Err(_) => {
+                        // TODO(https://fxbug.dev/463757813): It's not unusual to fail to read
+                        // superblocks when we're formatting a new filesystem but we should probably
+                        // fail the format if we get an IO error.
+                    }
+                }
+            }
+        }
+
         let root_parent = ObjectStore::new_empty(
             None,
             INIT_ROOT_PARENT_STORE_OBJECT_ID,
@@ -1285,6 +1319,7 @@ impl Journal {
         transaction.commit().await?;
 
         self.inner.lock().super_block_header = SuperBlockHeader::new(
+            current_generation,
             root_parent.store_object_id(),
             root_parent.graveyard_directory_object_id(),
             root_store.store_object_id(),
@@ -1921,10 +1956,11 @@ impl Writer<'_> {
 
 #[cfg(test)]
 mod tests {
-    use crate::filesystem::{FxFilesystem, SyncOptions};
+    use crate::filesystem::{FxFilesystem, FxFilesystemBuilder, SyncOptions};
     use crate::fsck::fsck;
     use crate::object_handle::{ObjectHandle, ReadObjectHandle, WriteObjectHandle};
     use crate::object_store::directory::Directory;
+    use crate::object_store::journal::SuperBlockInstance;
     use crate::object_store::transaction::Options;
     use crate::object_store::volume::root_volume;
     use crate::object_store::{
@@ -2254,6 +2290,56 @@ mod tests {
 
         let fs = FxFilesystem::open(device).await.expect("open failed");
         fsck(fs.clone()).await.expect("fsck failed");
+        fs.close().await.expect("close failed");
+    }
+
+    #[fuchsia::test]
+    async fn test_use_existing_generation() {
+        let device = DeviceHolder::new(FakeDevice::new(8192, 4096));
+
+        // First format should be generation 1.
+        let fs = FxFilesystemBuilder::new()
+            .format(true)
+            .image_builder_mode(Some(SuperBlockInstance::A))
+            .open(device)
+            .await
+            .expect("open failed");
+        let generation0 = fs.super_block_header().generation;
+        assert_eq!(generation0, 1);
+        fs.close().await.expect("close failed");
+        let device = fs.take_device().await;
+        device.reopen(false);
+
+        // Format the device normally (again, generation 1).
+        let fs = FxFilesystem::new_empty(device).await.expect("new_empty failed");
+        let generation1 = fs.super_block_header().generation;
+        {
+            let root_volume = crate::object_store::volume::root_volume(fs.clone())
+                .await
+                .expect("root_volume failed");
+            root_volume
+                .new_volume("test", crate::object_store::NewChildStoreOptions::default())
+                .await
+                .expect("new_volume failed");
+        }
+        fs.close().await.expect("close failed");
+        let device = fs.take_device().await;
+        device.reopen(false);
+
+        // Format again with image_builder_mode.
+        let fs = FxFilesystemBuilder::new()
+            .format(true)
+            .image_builder_mode(Some(SuperBlockInstance::A))
+            .open(device)
+            .await
+            .expect("open failed");
+        let generation2 = fs.super_block_header().generation;
+        assert!(
+            generation2 > generation1,
+            "generation2 ({}) should be greater than generation1 ({})",
+            generation2,
+            generation1
+        );
         fs.close().await.expect("close failed");
     }
 }

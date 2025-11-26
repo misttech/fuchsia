@@ -73,7 +73,7 @@ const SUPER_BLOCK_B_OBJECT_ID: u64 = 2;
 pub const SUPER_BLOCK_CHUNK_SIZE: u64 = 65536;
 
 /// Each superblock is one block but may contain records that extend its own length.
-const MIN_SUPER_BLOCK_SIZE: u64 = 4096;
+pub(crate) const MIN_SUPER_BLOCK_SIZE: u64 = 4096;
 /// The first 2 * 512 KiB on the disk used to be reserved for two A/B super-blocks.
 const LEGACY_MIN_SUPER_BLOCK_SIZE: u64 = 524_288;
 
@@ -488,6 +488,7 @@ impl SuperBlockManager {
 impl SuperBlockHeader {
     /// Creates a new instance with random GUID.
     pub fn new(
+        generation: u64,
         root_parent_store_object_id: u64,
         root_parent_graveyard_directory_object_id: u64,
         root_store_object_id: u64,
@@ -498,7 +499,7 @@ impl SuperBlockHeader {
     ) -> Self {
         SuperBlockHeader {
             guid: UuidWrapper::new(),
-            generation: 1u64,
+            generation,
             root_parent_store_object_id,
             root_parent_graveyard_directory_object_id,
             root_store_object_id,
@@ -948,6 +949,7 @@ mod tests {
             let device = device_arc.clone();
             async move {
                 let mut super_block_header = SuperBlockHeader::new(
+                    1, // generation
                     3, // root_parent_store_object_id
                     4, // root_parent_graveyard_directory_object_id
                     5, // root_store_object_id
@@ -1092,6 +1094,7 @@ mod tests {
         let (fs, handle_a, _handle_b) = filesystem_and_super_block_handles().await;
         const JOURNAL_OBJECT_ID: u64 = 5;
         let mut super_block_header_a = SuperBlockHeader::new(
+            1,
             fs.object_manager().root_parent_store().store_object_id(),
             /* root_parent_graveyard_directory_object_id: */ 1000,
             fs.root_store().store_object_id(),
