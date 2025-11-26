@@ -2,16 +2,16 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::UpdateState;
 use crate::private::Sealed;
 use crate::storage_factory::{DefaultLoader, NoneT};
-use crate::UpdateState;
-use anyhow::{bail, format_err, Context, Error};
-use fidl::{persist, unpersist, Persistable, Status};
+use anyhow::{Context, Error, bail, format_err};
+use fidl::{Persistable, Status, persist, unpersist};
 use fidl_fuchsia_io::DirectoryProxy;
 use fuchsia_async::{MonotonicInstant, Task, Timer};
+use fuchsia_fs::Flags;
 use fuchsia_fs::file::ReadError;
 use fuchsia_fs::node::OpenError;
-use fuchsia_fs::Flags;
 
 use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender};
 use futures::future::OptionFuture;
@@ -362,8 +362,8 @@ impl FidlStorage {
             // TODO(https://fxbug.dev/42064613) Replace this with an error result.
             .unwrap_or_else(|| panic!("Invalid data keyed by {key}"));
         let mut cached_storage = typed_storage.cached_storage.lock().await;
-        if cached_storage.current_data.is_none() || !self.caching_enabled {
-            if let Some(file_proxy) = match fuchsia_fs::directory::open_file(
+        if (cached_storage.current_data.is_none() || !self.caching_enabled)
+            && let Some(file_proxy) = match fuchsia_fs::directory::open_file(
                 &self.storage_dir,
                 &cached_storage.file_path,
                 fuchsia_fs::PERM_READABLE,
@@ -374,16 +374,16 @@ impl FidlStorage {
                 Err(OpenError::OpenError(Status::NOT_FOUND)) => None,
                 // TODO(https://fxbug.dev/42064613) Replace this with an error result.
                 Err(e) => panic!("failed to open file for {key:?}: {e:?}"),
-            } {
-                let data = match fuchsia_fs::file::read(&file_proxy).await {
-                    Ok(data) => Some(data),
-                    Err(ReadError::ReadError(Status::NOT_FOUND)) => None,
-                    // TODO(https://fxbug.dev/42064613) Replace this with an error result.
-                    Err(e) => panic!("failed to get fidl data from disk for {key:?}: {e:?}"),
-                };
-
-                cached_storage.current_data = data;
             }
+        {
+            let data = match fuchsia_fs::file::read(&file_proxy).await {
+                Ok(data) => Some(data),
+                Err(ReadError::ReadError(Status::NOT_FOUND)) => None,
+                // TODO(https://fxbug.dev/42064613) Replace this with an error result.
+                Err(e) => panic!("failed to get fidl data from disk for {key:?}: {e:?}"),
+            };
+
+            cached_storage.current_data = data;
         }
 
         cached_storage

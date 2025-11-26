@@ -8,7 +8,7 @@ import("//build/rust/rustc_test.gni")
 
 rustc_test("bin") {
   name = "night_mode_integration_test"
-  edition = "2021"
+  edition = "2024"
   source_root = "src/night_mode_tests.rs"
   sources = [
     "src/common.rs",

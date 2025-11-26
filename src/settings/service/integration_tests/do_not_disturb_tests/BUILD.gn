@@ -8,7 +8,7 @@ import("//build/rust/rustc_test.gni")
 
 rustc_test("bin") {
   name = "do_not_disturb_integration_test"
-  edition = "2021"
+  edition = "2024"
   source_root = "lib.rs"
   sources = [ "lib.rs" ]
   deps = [

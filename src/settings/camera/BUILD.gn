@@ -16,7 +16,7 @@ group("camera") {
 rustc_library("settings_camera") {
   name = "settings_camera"
   with_unit_tests = true
-  edition = "2021"
+  edition = "2024"
 
   visibility = [
     ":*",

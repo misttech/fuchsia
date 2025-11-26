@@ -7,7 +7,7 @@ import("//build/rust/rustc_library.gni")
 
 rustc_library("utils") {
   testonly = true
-  edition = "2021"
+  edition = "2024"
   disable_rustdoc = true
 
   deps = [

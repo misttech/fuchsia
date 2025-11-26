@@ -16,7 +16,7 @@ group("media_buttons") {
 rustc_library("settings_media_buttons") {
   name = "settings_media_buttons"
   with_unit_tests = true
-  edition = "2021"
+  edition = "2024"
 
   visibility = [
     ":*",

@@ -21,7 +21,7 @@ fidl("test.storage") {
 rustc_library("settings_storage") {
   name = "settings_storage"
   with_unit_tests = true
-  edition = "2021"
+  edition = "2024"
 
   visibility = [
     ":*",

@@ -16,7 +16,7 @@ group("light") {
 rustc_library("settings_light") {
   name = "settings_light"
   with_unit_tests = true
-  edition = "2021"
+  edition = "2024"
 
   visibility = [
     ":*",

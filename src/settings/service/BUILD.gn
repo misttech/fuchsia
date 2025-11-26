@@ -24,7 +24,7 @@ group("service") {
 icu_rustc_library("lib") {
   name = "settings"
   with_unit_tests = true
-  edition = "2021"
+  edition = "2024"
 
   icu_deps = [
     "//src/lib/icu_data/rust/icu_data",
@@ -241,7 +241,7 @@ icu_rustc_binary("bin") {
   output_name = "setui_service"
   with_unit_tests = true
 
-  edition = "2021"
+  edition = "2024"
 
   icu_deps = [ ":lib" ]
 
@@ -306,7 +306,7 @@ icu_fuchsia_package("setui_service") {
 
 rustc_binary("setui-config-test") {
   testonly = true
-  edition = "2021"
+  edition = "2024"
   output_name = "setui_config_test"
   deps = [
     ":lib",

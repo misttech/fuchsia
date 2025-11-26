@@ -16,7 +16,7 @@ group("inspect_utils") {
 rustc_library("settings_inspect_utils") {
   name = "settings_inspect_utils"
   with_unit_tests = true
-  edition = "2021"
+  edition = "2024"
 
   visibility = [
     ":*",

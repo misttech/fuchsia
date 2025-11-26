@@ -8,7 +8,7 @@ import("//build/rust/rustc_test.gni")
 
 rustc_test("bin") {
   name = "hanging_get_integration_test"
-  edition = "2021"
+  edition = "2024"
   source_root = "src/hanging_get_tests.rs"
   sources = [
     "src/common.rs",

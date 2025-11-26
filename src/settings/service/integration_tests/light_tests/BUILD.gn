@@ -9,7 +9,7 @@ import("//build/rust/rustc_test.gni")
 rustc_library("light_realm") {
   testonly = true
   disable_rustdoc = true
-  edition = "2021"
+  edition = "2024"
   source_root = "src/light_realm.rs"
   sources = [ "src/light_realm.rs" ]
   deps = [
@@ -32,7 +32,7 @@ rustc_library("light_realm") {
 
 rustc_test("hardware_only_bin") {
   name = "light_hardware_only_integration_test"
-  edition = "2021"
+  edition = "2024"
   source_root = "src/light_hardware_only_tests.rs"
   sources = [ "src/light_hardware_only_tests.rs" ]
   deps = [
@@ -47,7 +47,7 @@ rustc_test("hardware_only_bin") {
 
 rustc_test("single_config_bin") {
   name = "light_single_config_integration_test"
-  edition = "2021"
+  edition = "2024"
   source_root = "src/light_single_config_tests.rs"
   sources = [ "src/light_single_config_tests.rs" ]
   deps = [
@@ -63,7 +63,7 @@ rustc_test("single_config_bin") {
 
 rustc_test("multi_config_bin") {
   name = "light_multi_config_integration_test"
-  edition = "2021"
+  edition = "2024"
   source_root = "src/light_multi_config_tests.rs"
   sources = [ "src/light_multi_config_tests.rs" ]
   deps = [

@@ -8,7 +8,7 @@ import("//build/rust/rustc_test.gni")
 
 rustc_library("common") {
   testonly = true
-  edition = "2021"
+  edition = "2024"
   source_root = "src/common.rs"
   disable_rustdoc = true
   sources = [
@@ -39,7 +39,7 @@ rustc_library("common") {
 
 rustc_test("bin") {
   name = "volume_change_earcons_integration_test"
-  edition = "2021"
+  edition = "2024"
   source_root = "src/volume_change_earcons_tests.rs"
   sources = [ "src/volume_change_earcons_tests.rs" ]
   deps = [
@@ -93,7 +93,7 @@ resource("tests_config") {
 # Tests with input device registry.
 rustc_test("bin_with_input") {
   name = "earcons_with_input_integration_test"
-  edition = "2021"
+  edition = "2024"
   source_root = "src/earcons_with_input_device_registry_tests.rs"
   sources = [ "src/earcons_with_input_device_registry_tests.rs" ]
   deps = [
@@ -139,7 +139,7 @@ resource("with_input_tests_config") {
 
 rustc_test("bluetooth_test_bin") {
   name = "bluetooth_earcons_integration_test"
-  edition = "2021"
+  edition = "2024"
   source_root = "src/bluetooth_earcons_tests.rs"
   sources = [ "src/bluetooth_earcons_tests.rs" ]
   deps = [

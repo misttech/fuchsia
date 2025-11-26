@@ -8,7 +8,7 @@ import("//build/rust/rustc_test.gni")
 
 rustc_library("common") {
   testonly = true
-  edition = "2021"
+  edition = "2024"
   source_root = "src/common.rs"
   sources = [ "src/common.rs" ]
 
@@ -30,7 +30,7 @@ rustc_library("common") {
 # These tests mock out the fuchsia.ui.brightness dependency.
 rustc_test("bin") {
   name = "display_integration_test"
-  edition = "2021"
+  edition = "2024"
   source_root = "src/display_tests.rs"
   sources = [ "src/display_tests.rs" ]
   deps = [
@@ -72,7 +72,7 @@ resource("tests_config") {
 # These tests do not depend on any external dependencies.
 rustc_test("internal_tests_bin") {
   name = "internal_display_integration_test"
-  edition = "2021"
+  edition = "2024"
   source_root = "src/internal_display_tests.rs"
   sources = [ "src/internal_display_tests.rs" ]
   deps = [
