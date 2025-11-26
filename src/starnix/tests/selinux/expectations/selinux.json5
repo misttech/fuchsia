@@ -35,7 +35,6 @@
                 "nlmsg", // TODO: https://fxbug.dev/448793080
                 "notify", // TODO: https://fxbug.dev/398696738
                 "overlay", // TODO: https://fxbug.dev/398696739
-                "perf_event", // TODO: https://fxbug.dev/398663320
                 "sem", // TODO: https://fxbug.dev/398696740
                 "shm", // TODO: https://fxbug.dev/398696741
                 "sysctl", // TODO: https://fxbug.dev/398696742
