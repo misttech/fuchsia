@@ -1657,7 +1657,8 @@ pub enum FileSystemLabelingScheme {
     /// with which to label `FsNode`s of files that do not have the "security.selinux" xattr.
     FsUse { fs_use_type: FsUseType, default_sid: SecurityId },
     /// This filesystem has one or more "genfscon" statements associated with it in the policy.
-    GenFsCon,
+    /// If `supports_seclabel` is true then nodes in the filesystem may be dynamically relabeled.
+    GenFsCon { supports_seclabel: bool },
 }
 
 /// SELinux security context-related filesystem mount options. These options are documented in the

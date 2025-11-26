@@ -631,28 +631,14 @@ pub(super) struct FileSystemState {
 
     // Set once the initial policy has been loaded, taking into account `mount_options`.
     label: OnceLock<FileSystemLabel>,
-
-    // TODO: https://fxbug.dev/362898792 - Derive this based on filesystem characteristics.
-    genfs_supports_relabel: bool,
 }
 
 impl FileSystemState {
-    fn new(mount_options: FileSystemMountOptions, ops: &dyn FileSystemOps) -> Self {
-        // TODO: https://fxbug.dev/362898792 - Replace this with a more graceful mechanism for
-        // deciding whether `genfscon` supports relabeling (as indicated by the "seclabel" tag
-        // reported by `mount`).
-        //
-        // For relabeling to make sense with `genfscon` labeling they must ensure to persist the
-        // `FsNode` security state. That is implicitly the case for filesystems which persist all
-        // `FsNode`s in-memory (independent of the `DirEntry` cache), e.g. those whose contents are
-        // managed as a `SimpleDirectory` structure.
-        let fs_name = ops.name().deref();
-        let genfs_supports_relabel = matches!(fs_name, b"sysfs" | b"tracefs" | b"pstore");
-
+    fn new(mount_options: FileSystemMountOptions, _ops: &dyn FileSystemOps) -> Self {
         let pending_entries = Mutex::new(IndexSet::new());
         let label = OnceLock::new();
 
-        Self { mount_options, pending_entries, label, genfs_supports_relabel }
+        Self { mount_options, pending_entries, label }
     }
 
     /// Returns the resolved `FileSystemLabel`, or `None` if no policy has yet been loaded.
@@ -668,7 +654,7 @@ impl FileSystemState {
         match label.scheme {
             FileSystemLabelingScheme::Mountpoint { .. } => false,
             FileSystemLabelingScheme::FsUse { .. } => true,
-            FileSystemLabelingScheme::GenFsCon { .. } => self.genfs_supports_relabel,
+            FileSystemLabelingScheme::GenFsCon { supports_seclabel } => supports_seclabel,
         }
     }
 
@@ -858,15 +844,11 @@ fn policycap_support(policy_cap: PolicyCap) -> PolicyCapSupport {
         PolicyCap::AlwaysCheckNetwork => {
             PolicyCapSupport::AlwaysOff(bug_ref!("https://fxbug.dev/452453565"))
         }
-        PolicyCap::CgroupSeclabel => {
-            PolicyCapSupport::AlwaysOn(bug_ref!("https://fxbug.dev/452453565"))
-        }
+        PolicyCap::CgroupSeclabel => PolicyCapSupport::Configurable,
         PolicyCap::ExtendedSocketClass => {
             PolicyCapSupport::AlwaysOff(bug_ref!("https://fxbug.dev/452453565"))
         }
-        PolicyCap::FunctionfsSeclabel => {
-            PolicyCapSupport::AlwaysOff(bug_ref!("https://fxbug.dev/452453565"))
-        }
+        PolicyCap::FunctionfsSeclabel => PolicyCapSupport::Configurable,
         PolicyCap::GenfsSeclabelSymlinks => PolicyCapSupport::Configurable,
         PolicyCap::GenfsSeclabelWildcard => {
             PolicyCapSupport::AlwaysOff(bug_ref!("https://fxbug.dev/452453565"))

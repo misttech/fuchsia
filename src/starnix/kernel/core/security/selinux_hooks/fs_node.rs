@@ -228,7 +228,7 @@ pub(in crate::security) fn fs_node_init_with_dentry(
                 }
             }
         }
-        FileSystemLabelingScheme::GenFsCon => {
+        FileSystemLabelingScheme::GenFsCon { .. } => {
             let fs_type = fs_node.fs().name();
             let fs_node_class = fs_node.security_state.lock().class;
             let sub_path = get_fs_relative_path(dir_entry);
@@ -461,7 +461,7 @@ pub(in crate::security) fn fs_node_init_on_create(
             (sid, xattr)
         }
         FileSystemLabelingScheme::Mountpoint { .. } => (sid, None),
-        FileSystemLabelingScheme::GenFsCon => {
+        FileSystemLabelingScheme::GenFsCon { .. } => {
             // Defer labeling to `fs_node_init_with_dentry()`, so that the path of the new
             // node can be taken into account.
             return Ok(None);
