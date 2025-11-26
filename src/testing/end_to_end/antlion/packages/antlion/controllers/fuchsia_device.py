@@ -195,7 +195,7 @@ class FuchsiaDevice:
         self.board_type = config.get(str, "board_type", None)
         self.build_number = config.get(str, "build_number", None)
         self.build_type = config.get(str, "build_type", None)
-        self.mdns_name = config.get(str, "mdns_name", None)
+        self.name = config.get(str, "name", None)
 
         self.hard_reboot_on_fail = config.get(
             bool, "hard_reboot_on_fail", False
@@ -253,9 +253,9 @@ class FuchsiaDevice:
                 else:
                     time.sleep(1)
             if mdns_ip and utils.is_valid_ipv6_address(mdns_ip):
-                # self.ip was actually an mdns name. Use it for self.mdns_name
+                # self.ip was actually an mdns name. Use it for self.name
                 # unless one was explicitly provided.
-                self.mdns_name = self.mdns_name or self.ip
+                self.name = self.name or self.ip
                 self.ip = mdns_ip
             else:
                 raise ValueError(f"Invalid IP: {self.ip}")
@@ -274,9 +274,9 @@ class FuchsiaDevice:
         self.package_server: PackageServer | None = None
 
         # Create honeydew fuchsia_device.
-        if not self.mdns_name:
+        if not self.name:
             raise FuchsiaConfigError(
-                'Must provide "mdns_name: <device mDNS name>" in the device config'
+                'Must provide "name: <device mDNS name>" in the device config'
             )
 
         ffx_config = FfxConfig()
@@ -292,7 +292,7 @@ class FuchsiaDevice:
 
         self.honeydew_fd = honeydew.create_device(
             device_info=DeviceInfo(
-                name=self.mdns_name,
+                name=self.name,
                 ip_port=IpPort(ip_address(self.ip), self.ssh_port),
                 serial_socket=None,
             ),
@@ -565,9 +565,9 @@ class FuchsiaDevice:
             # for rebooting the device. This tool is only available when
             # running in Fuchsia infrastructure.
             dmc: PowerSwitchUsingDmc | None = None
-            if self.mdns_name:
+            if self.name:
                 try:
-                    dmc = PowerSwitchUsingDmc(device_name=self.mdns_name)
+                    dmc = PowerSwitchUsingDmc(device_name=self.name)
                 except PowerSwitchDmcError:
                     self.log.info("dmc not found, falling back to using PDU")
 
@@ -800,13 +800,13 @@ class FuchsiaDevice:
 
     def take_bug_report(self) -> None:
         """Takes a bug report on the device and stores it in a file."""
-        self.log.info(f"Taking snapshot of {self.mdns_name}")
+        self.log.info(f"Taking snapshot of {self.name}")
 
         time_stamp = logger.sanitize_filename(
             logger.epoch_to_log_line_timestamp(utils.get_current_epoch_time())
         )
         out_dir = context.get_current_context().get_full_output_path()
-        out_path = os.path.join(out_dir, f"{self.mdns_name}_{time_stamp}.zip")
+        out_path = os.path.join(out_dir, f"{self.name}_{time_stamp}.zip")
 
         try:
             with open(out_path, "wb") as file:

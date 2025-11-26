@@ -204,8 +204,9 @@ impl InfraDriver {
                     }?;
 
                     fuchsia_devices.push(config::Fuchsia {
-                        mdns_name: nodename.clone(),
+                        name: nodename.clone(),
                         ip: ip.clone(),
+                        device_ip_port: format!("{}", ip), // If ssh_port is ever set, this needs to be updated
                         ssh_port: None,
                         take_bug_report_on_fail: true,
                         ssh_binary_path: ssh_binary.clone(),
@@ -216,6 +217,21 @@ impl InfraDriver {
                         ssh_priv_key: ssh_key.clone(),
                         pdu_device: pdu.clone(),
                         hard_reboot_on_fail: true,
+                        honeydew_config: config::HoneydewConfig {
+                            transports: config::HoneydewTransports {
+                                ffx: config::HoneydewFfx { path: ffx_binary.clone() },
+                            },
+                            affordances: config::HoneydewAffordances {
+                                wlan: config::HoneydewAffordanceSpec {
+                                    implementation: config::HONEYDEW_IMPL_FUCHSIA_CONTROLLER
+                                        .to_string(),
+                                },
+                                bluetooth: config::HoneydewAffordanceSpec {
+                                    implementation: config::HONEYDEW_IMPL_FUCHSIA_CONTROLLER
+                                        .to_string(),
+                                },
+                            },
+                        },
                     });
 
                     register_ip(ip)?;
@@ -544,14 +560,24 @@ mod test {
         - Name: {TESTBED_NAME}
           Controllers:
             FuchsiaDevice:
-            - mdns_name: {FUCHSIA_NAME}
+            - name: {FUCHSIA_NAME}
               ip: {FUCHSIA_ADDR}
+              device_ip_port: {FUCHSIA_ADDR}
               take_bug_report_on_fail: true
               ssh_binary_path: {ssh_path}
               ffx_binary_path: {ffx_path}
               ffx_subtools_search_path: {ffx_subtools_path}
               ssh_priv_key: {ssh_key_path}
               hard_reboot_on_fail: true
+              honeydew_config:
+                transports:
+                  ffx:
+                    path: {ffx_path}
+                affordances:
+                  wlan:
+                    implementation: fuchsia-controller
+                  bluetooth:
+                    implementation: fuchsia-controller
         MoblyParams:
           LogPath: {out_path}
         "#};
@@ -618,14 +644,24 @@ mod test {
         - Name: {TESTBED_NAME}
           Controllers:
             FuchsiaDevice:
-            - mdns_name: {FUCHSIA_NAME}
+            - name: {FUCHSIA_NAME}
               ip: {FUCHSIA_ADDR}
+              device_ip_port: {FUCHSIA_ADDR}
               take_bug_report_on_fail: true
               ssh_binary_path: {ssh_path}
               ffx_binary_path: {ffx_path}
               ffx_subtools_search_path: {ffx_subtools_path}
               ssh_priv_key: {ssh_key_path}
               hard_reboot_on_fail: true
+              honeydew_config:
+                transports:
+                  ffx:
+                    path: {ffx_path}
+                affordances:
+                  wlan:
+                    implementation: fuchsia-controller
+                  bluetooth:
+                    implementation: fuchsia-controller
           TestParams:
             sl4f_sanity_test_params:
               can_overwrite: true
@@ -722,8 +758,9 @@ mod test {
         - Name: {TESTBED_NAME}
           Controllers:
             FuchsiaDevice:
-            - mdns_name: {FUCHSIA_NAME}
+            - name: {FUCHSIA_NAME}
               ip: {FUCHSIA_ADDR}
+              device_ip_port: {FUCHSIA_ADDR}
               take_bug_report_on_fail: true
               ssh_binary_path: {ssh_path}
               ffx_binary_path: {ffx_path}
@@ -734,6 +771,15 @@ mod test {
                 host: {FUCHSIA_PDU_IP}
                 port: {FUCHSIA_PDU_PORT}
               hard_reboot_on_fail: true
+              honeydew_config:
+                transports:
+                  ffx:
+                    path: {ffx_path}
+                affordances:
+                  wlan:
+                    implementation: fuchsia-controller
+                  bluetooth:
+                    implementation: fuchsia-controller
             AccessPoint:
             - wan_interface: eth0
               ssh_config:

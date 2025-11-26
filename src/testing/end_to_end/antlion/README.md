@@ -102,7 +102,7 @@ you can generate your own Mobly config.
    - Name: antlion-runner
    Controllers:
       FuchsiaDevice:
-      - mdns_name: fuchsia-00e0-4c01-04df
+      - name: fuchsia-00e0-4c01-04df
         ip: ::1
         ssh_port: 8022
    MoblyParams:

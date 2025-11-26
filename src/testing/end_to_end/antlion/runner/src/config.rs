@@ -63,14 +63,19 @@ pub(crate) struct Controllers {
 }
 
 #[derive(Clone, Debug, Serialize)]
-/// A Fuchsia device for use with antlion as defined by [fuchsia_device.py].
+/// A Fuchsia device, which can be consumed by either the Antlion controller defined in the
+/// [antlion fuchsia_device.py] or the Honeydew controller defined in the
+/// [honeydew fuchsia_device.py].
 ///
-/// [fuchsia_device.py]: https://cs.opensource.google/fuchsia/fuchsia/+/main:src/testing/end_to_end/antlion/packages/antlion/controllers/fuchsia_device.py
+/// [antlion fuchsia_device.py]: https://cs.opensource.google/fuchsia/fuchsia/+/main:src/testing/end_to_end/antlion/packages/antlion/controllers/fuchsia_device.py
+/// [honeydew fuchsia_device.py]: https://cs.opensource.google/fuchsia/fuchsia/+/main:src/testing/end_to_end/honeydew/honeydew/fuchsia_device/fuchsia_device.py
 pub(crate) struct Fuchsia {
-    pub mdns_name: String,
+    pub name: String,
     pub ip: IpAddr,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ssh_port: Option<u16>,
+    /// Duplicate of ip / ssh_port, used for Honeydew
+    pub device_ip_port: String,
     pub take_bug_report_on_fail: bool,
     pub ssh_binary_path: PathBuf,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -82,7 +87,39 @@ pub(crate) struct Fuchsia {
     #[serde(rename = "PduDevice", skip_serializing_if = "Option::is_none")]
     pub pdu_device: Option<PduRef>,
     pub hard_reboot_on_fail: bool,
+    // Also include the config expected by Honeydew, so that these tests can run either with
+    // Antlion or directly with Honeydew.
+    pub honeydew_config: HoneydewConfig,
 }
+
+#[derive(Clone, Debug, Serialize)]
+pub(crate) struct HoneydewConfig {
+    pub transports: HoneydewTransports,
+    pub affordances: HoneydewAffordances,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub(crate) struct HoneydewTransports {
+    pub ffx: HoneydewFfx,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub(crate) struct HoneydewFfx {
+    pub path: PathBuf,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub(crate) struct HoneydewAffordances {
+    pub wlan: HoneydewAffordanceSpec,
+    pub bluetooth: HoneydewAffordanceSpec,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub(crate) struct HoneydewAffordanceSpec {
+    pub implementation: String,
+}
+
+pub const HONEYDEW_IMPL_FUCHSIA_CONTROLLER: &'static str = "fuchsia-controller";
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 /// Reference to a PDU device. Used to specify which port the attached device
