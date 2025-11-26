@@ -284,8 +284,7 @@
                 // (cycle in mutex deps).
                 "inotify08",
 
-                // TODO(https://fxbug.dev/373897750): These tests require cgroups to be unlinkable.
-                "cgroup_core03",
+                // TODO(https://fxbug.dev/403612570): This test requires CLONE_INTO_CGROUP.
                 "clone303",
 
                 // TODO(https://fxbug.dev/390870202): Re-enable once flake is resolved.
