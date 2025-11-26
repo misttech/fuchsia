@@ -16,8 +16,8 @@ use crate::sid_table::SidTable;
 use crate::sync::RwLock;
 use crate::{
     ClassPermission, FileSystemLabel, FileSystemLabelingScheme, FileSystemMountOptions,
-    FileSystemMountSids, FsNodeClass, InitialSid, KernelPermission, NullessByteStr, ObjectClass,
-    PolicyCap, SeLinuxStatus, SeLinuxStatusPublisher, SecurityId,
+    FileSystemMountSids, FsNodeClass, InitialSid, KernelClass, KernelPermission, NullessByteStr,
+    ObjectClass, PolicyCap, SeLinuxStatus, SeLinuxStatusPublisher, SecurityId,
 };
 
 use anyhow::Context as _;
@@ -413,7 +413,7 @@ impl SecurityServer {
         &self,
         fs_type: NullessByteStr<'_>,
         node_path: NullessByteStr<'_>,
-        class_id: Option<ClassId>,
+        class_id: Option<KernelClass>,
     ) -> Option<SecurityId> {
         let mut locked_state = self.backend.state.write();
         let active_policy = locked_state.expect_active_policy_mut();

@@ -352,7 +352,7 @@ impl Policy {
         &self,
         fs_type: sc::NullessByteStr<'_>,
         node_path: sc::NullessByteStr<'_>,
-        class_id: Option<ClassId>,
+        class_id: Option<sc::KernelClass>,
     ) -> Option<SecurityContext> {
         self.0.genfscon_label_for_fs_and_path(fs_type, node_path, class_id)
     }

@@ -8,10 +8,10 @@ use super::security_context::{SecurityContext, SecurityLevel};
 use super::symbols::{
     Class, ClassDefault, ClassDefaultRange, Classes, CommonSymbol, CommonSymbols, Permission,
 };
-use super::{ClassId, ParsedPolicy, RoleId, TypeId};
+use super::{ParsedPolicy, RoleId, TypeId};
 
 use crate::policy::arrays::ACCESS_VECTOR_RULE_TYPE_TYPE_TRANSITION;
-use crate::{ClassPermission as _, NullessByteStr};
+use crate::{ClassPermission as _, NullessByteStr, PolicyCap};
 use std::collections::HashMap;
 
 /// The [`SecurityContext`] and [`FsUseType`] derived from some `fs_use_*` line of the policy.
@@ -339,8 +339,21 @@ impl PolicyIndex {
         &self,
         fs_type: NullessByteStr<'_>,
         node_path: NullessByteStr<'_>,
-        class_id: Option<ClassId>,
+        class: Option<crate::KernelClass>,
     ) -> Option<SecurityContext> {
+        let node_path = if class == Some(crate::FileClass::Link.into())
+            && !self.parsed_policy.has_policycap(PolicyCap::GenfsSeclabelSymlinks)
+        {
+            // Symlinks receive the filesystem root label by default, rather than a label dependent on
+            // the `node_path`. Path based labels may be enabled with the "genfs_seclabel_symlinks"
+            // policy capability.
+            "/".into()
+        } else {
+            node_path
+        };
+
+        let class_id = class.and_then(|class| self.class(class.into())).map(|class| class.id());
+
         // All contexts listed in the policy for the file system type.
         let fs_contexts = self
             .parsed_policy

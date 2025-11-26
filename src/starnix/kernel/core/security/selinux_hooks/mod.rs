@@ -867,9 +867,7 @@ fn policycap_support(policy_cap: PolicyCap) -> PolicyCapSupport {
         PolicyCap::FunctionfsSeclabel => {
             PolicyCapSupport::AlwaysOff(bug_ref!("https://fxbug.dev/452453565"))
         }
-        PolicyCap::GenfsSeclabelSymlinks => {
-            PolicyCapSupport::AlwaysOff(bug_ref!("https://fxbug.dev/452453565"))
-        }
+        PolicyCap::GenfsSeclabelSymlinks => PolicyCapSupport::Configurable,
         PolicyCap::GenfsSeclabelWildcard => {
             PolicyCapSupport::AlwaysOff(bug_ref!("https://fxbug.dev/452453565"))
         }

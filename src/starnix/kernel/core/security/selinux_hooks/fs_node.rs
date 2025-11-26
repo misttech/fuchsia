@@ -21,8 +21,8 @@ use crate::vfs::{
 use selinux::policy::{AccessVector, AccessVectorComputer, FsUseType};
 use selinux::{
     CommonFilePermission, CommonFsNodePermission, DirPermission, FileClass, FileSystemLabel,
-    FileSystemLabelingScheme, FileSystemPermission, ForClass, FsNodeClass, InitialSid, KernelClass,
-    SecurityId, SecurityServer, SocketClass,
+    FileSystemLabelingScheme, FileSystemPermission, ForClass, FsNodeClass, InitialSid, SecurityId,
+    SecurityServer, SocketClass,
 };
 use starnix_logging::{CATEGORY_STARNIX_SECURITY, log_debug, log_warn, trace_duration, track_stub};
 use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked};
@@ -231,29 +231,12 @@ pub(in crate::security) fn fs_node_init_with_dentry(
         FileSystemLabelingScheme::GenFsCon => {
             let fs_type = fs_node.fs().name();
             let fs_node_class = fs_node.security_state.lock().class;
-
-            // This will give us the path of the node from the root node of the filesystem,
-            // excluding the path of the filesystem's mount point. For example, assuming that
-            // filesystem "proc" is mounted in "/proc" and if the actual full path to the
-            // fs_node is "/proc/bootconfig" then, get_fs_relative_path will return
-            // "/bootconfig". This matches the path definitions in the genfscon statements.
-            let sub_path = if fs_node_class == FileClass::Link.into() {
-                // Investigation for https://fxbug.dev/378863048 suggests that symlinks' paths are
-                // ignored, so that they use the filesystem's root label.
-                "/".into()
-            } else {
-                get_fs_relative_path(dir_entry)
-            };
-
-            let class_id = security_server
-                .class_id_by_name(KernelClass::from(fs_node_class).name())
-                .map_err(|_| errno!(EINVAL))?;
-
+            let sub_path = get_fs_relative_path(dir_entry);
             security_server
                 .genfscon_label_for_fs_and_path(
                     fs_type.into(),
                     sub_path.as_slice().into(),
-                    Some(class_id),
+                    Some(fs_node_class.into()),
                 )
                 .unwrap_or_else(|| InitialSid::Unlabeled.into())
         }
