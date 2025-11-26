@@ -1283,7 +1283,10 @@ impl fmt::Display for LogTextPresenter<'_> {
             }
         }
 
-        if let Some(msg) = self.msg() {
+        if let Some(mut msg) = self.msg() {
+            if let Some(nul) = msg.find("\0") {
+                msg = &msg[0..nul];
+            }
             write!(f, " {msg}")?;
         } else {
             write!(f, " <missing message>")?;
@@ -2244,6 +2247,29 @@ mod tests {
         assert_eq!(original_data, expected_data);
         // We skip deserializing the size_bytes
         assert_eq!(original_data.metadata.size_bytes, None);
+    }
+
+    #[fuchsia::test]
+    fn display_for_logs_with_null_terminator() {
+        let data = LogsDataBuilder::new(BuilderArgs {
+            timestamp: Timestamp::from_nanos(12345678000i64),
+            component_url: Some(FlyStr::from("fake-url")),
+            moniker: ExtendedMoniker::parse_str("moniker").unwrap(),
+            severity: Severity::Info,
+        })
+        .set_pid(123)
+        .set_tid(456)
+        .set_message("some message\0garbage".to_string())
+        .set_file("some_file.cc".to_string())
+        .set_line(420)
+        .add_tag("foo")
+        .add_tag("bar")
+        .build();
+
+        assert_eq!(
+            "[00012.345678][123][456][moniker][foo,bar] INFO: [some_file.cc(420)] some message",
+            format!("{data}")
+        )
     }
 
     #[fuchsia::test]
