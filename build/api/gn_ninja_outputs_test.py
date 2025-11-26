@@ -32,12 +32,11 @@ _NINJA_OUTPUTS = {
 
 class TestNinjaOutputsDatabase(unittest.TestCase):
     def setUp(self) -> None:
-        self._inputs_json_file = tempfile.NamedTemporaryFile(
-            mode="wt", suffix=".json"
-        )
-        self.inputs_json = Path(self._inputs_json_file.name)
-        json.dump(_NINJA_OUTPUTS, self._inputs_json_file)
-        self._inputs_json_file.flush()
+        self._td = tempfile.TemporaryDirectory()
+        self._root = Path(self._td.name)
+
+    def tearDown(self) -> None:
+        self._td.cleanup()
 
     def run_tests(self, db: gn_ninja_outputs.NinjaOutputsBase) -> None:
         self.assertEqual([], db.gn_label_to_paths("//:unknown"))
@@ -74,14 +73,19 @@ class TestNinjaOutputsDatabase(unittest.TestCase):
         self.assertListEqual(expected_paths, db.get_paths())
 
     def run_tests_for_class(
-        self, db_class: T.Type[gn_ninja_outputs.NinjaOutputsBase]
+        self,
+        db_class: T.Type[gn_ninja_outputs.NinjaOutputsBase],
+        outputs_json: T.Any = _NINJA_OUTPUTS,
     ) -> None:
         db = db_class()
-        db.load_from_json(self.inputs_json)
+        input_path = self._root / "test_outputs.json"
+        with input_path.open("wt") as f:
+            json.dump(outputs_json, f)
+
+        db.load_from_json(input_path)
         self.run_tests(db)
 
-        database_file = tempfile.NamedTemporaryFile(suffix=".database")
-        database_path = Path(database_file.name)
+        database_path = self._root / "test_database"
         db.save_to_file(database_path)
 
         db = db_class()
@@ -93,6 +97,28 @@ class TestNinjaOutputsDatabase(unittest.TestCase):
 
     def test_tabular_database(self) -> None:
         self.run_tests_for_class(gn_ninja_outputs.NinjaOutputsTabular)
+
+    def test_json_database_with_duplicate_outputs(self) -> None:
+        _NINJA_DUPLICATE_OUTPUTS = {
+            "//:foo": ["obj/foo.stamp"],
+            "//:bar": ["obj/bar.stamp", "obj/foo.stamp"],
+            "//:zoo": ["obj/zoo.outputs", "obj/zoo.stamp", "obj/foo.stamp"],
+            "//:qux": ["obj/qux.stamp", "obj/bar.stamp"],
+        }
+        with self.assertRaises(gn_ninja_outputs.DuplicateOutputsError) as cm:
+            self.run_tests_for_class(
+                gn_ninja_outputs.NinjaOutputsJSON,
+                outputs_json=_NINJA_DUPLICATE_OUTPUTS,
+            )
+
+        error = cm.exception
+        self.assertDictEqual(
+            error.duplicate_outputs,
+            {
+                "obj/bar.stamp": ["//:bar", "//:qux"],
+                "obj/foo.stamp": ["//:bar", "//:foo", "//:zoo"],
+            },
+        )
 
 
 if __name__ == "__main__":

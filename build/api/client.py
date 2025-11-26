@@ -821,46 +821,6 @@ class NinjaPathToGnLabelCommand(CommandBase):
 ###########################################################################################
 ###########################################################################################
 #####
-#####   COMMAND: ninja_target_to_gn_labels
-#####
-
-
-class NinjaTargetToGnLabelsCommand(CommandBase):
-    PARSER_KWARGS: dict[str, T.Any] = {
-        "name": "ninja_target_to_gn_labels",
-        "help": "Print the GN labels of a given Ninja target name.",
-        "description": "Due to a GN bug (https://gn.issues.chromium.org/448860851) certain Ninja target paths "
-        + "can map to several GN labels. This command is only used to find them easily and should "
-        + "not be used by the Fuchsia build.",
-    }
-
-    @staticmethod
-    def add_arguments(parser: argparse.ArgumentParser) -> None:
-        parser.add_argument("ninja_target", help="Ninja target name.")
-
-    @staticmethod
-    def run(args: argparse.Namespace) -> int:
-        outputs = OutputsDatabase()
-        if not outputs.load(args.build_dir):
-            return 1
-
-        ninja_target = args.ninja_target
-        if not outputs.is_valid_target_name(ninja_target):
-            print(
-                f"ERROR: Malformed Ninja target file name: {args.ninja_target}",
-                file=sys.stderr,
-            )
-            return 1
-
-        gn_labels = outputs.target_name_to_gn_labels(args.ninja_target)
-        if gn_labels:
-            print("\n".join(sorted(gn_labels)))
-        return 0
-
-
-###########################################################################################
-###########################################################################################
-#####
 #####   COMMAND: gn_label_to_ninja_paths
 #####
 
@@ -1136,7 +1096,6 @@ def main(main_args: T.Sequence[str]) -> int:
     commands.add_command(ExportLastBuildDebugSymbolsCommand())
     commands.add_command(LastNinjaArtifactsCommand())
     commands.add_command(NinjaPathToGnLabelCommand())
-    commands.add_command(NinjaTargetToGnLabelsCommand())
     commands.add_command(GnLabelToNinjaPathsCommand())
     commands.add_command(FxBuildArgsToLabelsCommand())
     commands.add_command(ShouldFileChangesTriggerBuildCommand())

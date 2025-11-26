@@ -470,37 +470,6 @@ class ClientTest(ClientTestBase):
             "ERROR: Unknown Ninja target path: obj/unknown/path\n",
         )
 
-    def test_ninja_target_to_gn_labels(self) -> None:
-        # Test each Ninja path basename individually. This works because
-        # the only two file paths with the same name are produced by the same GN
-        # label.
-        for label, paths in self._ninja_outputs.items():
-            for target_name in list({os.path.basename(p) for p in paths}):
-                self.assert_output(
-                    ["ninja_target_to_gn_labels", target_name], f"{label}\n"
-                )
-
-        # Test unknown Ninja target name
-        self.assert_output(["ninja_target_to_gn_labels", "unknown_target"], "")
-
-        # Test malformed Ninja target name
-        self.assert_error(
-            ["ninja_target_to_gn_labels", "some/path"],
-            "ERROR: Malformed Ninja target file name: some/path\n",
-        )
-
-        # Update the ninja_outputs.json file to include a second label
-        # that generates a target with the name "hammer", then check that
-        # the command returns a list with two labels.
-        self._ninja_outputs["//secondary:hammer_target"] = ["other/hammer"]
-        _write_json(self._build_dir / "ninja_outputs.json", self._ninja_outputs)
-
-        self.assert_output(
-            ["ninja_target_to_gn_labels", "hammer"],
-            "//secondary:hammer_target\n"
-            + "//tools:hammer(//build/toolchain:host_y64)\n",
-        )
-
     def test_gn_labels_to_ninja_paths(self) -> None:
         # Test each label individually.
         for label, paths in self._ninja_outputs.items():
