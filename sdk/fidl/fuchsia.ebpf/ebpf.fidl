@@ -6,6 +6,7 @@ library fuchsia.ebpf;
 
 using zx;
 
+// LINT.IfChange(map_types)
 /// Type of an eBPF maps.
 type MapType = strict enum {
     /// An array map. Equivalent to `BPF_MAP_TYPE_ARRAY`.
@@ -36,6 +37,7 @@ type MapType = strict enum {
     /// A socket storage map. Equivalent to `BPF_MAP_TYPE_SK_STORAGE`.
     SK_STORAGE = 9;
 };
+// LINT.ThenChange(//src/starnix/lib/ebpf_api/src/maps/mod.rs:fidl_map_types)
 
 /// Map flags.
 type MapFlags = flexible bits : uint32 {
@@ -78,9 +80,9 @@ type Map = resource table {
     /// VMO used to store the map data. The layout of the data stored in the
     /// VMO depends on the `schema` as defined in the `ebpf_api` create.
     // Must be synchronized with `SHARED_MAP_RIGHTS` in the `ebpf_api` crate.
-    // LINT.IfChange
+    // LINT.IfChange(map_rights)
     2: vmo zx.Handle:<VMO, zx.Rights.READ | zx.Rights.WRITE | zx.Rights.MAP | zx.Rights.SIGNAL | zx.Rights.WAIT>;
-    // LINT.ThenChange(//src/starnix/lib/ebpf_api/src/maps/mod.rs)
+    // LINT.ThenChange(//src/starnix/lib/ebpf_api/src/maps/mod.rs:map_rights)
 };
 
 /// Describes location of an instruction that accesses a struct field.

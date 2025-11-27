@@ -19,23 +19,24 @@ use ebpf::{BpfValue, EbpfBufferPtr, MapFlags, MapReference, MapSchema};
 use fidl_fuchsia_ebpf as febpf;
 use inspect_stubs::track_stub;
 use linux_uapi::{
-    BPF_EXIST, BPF_NOEXIST, bpf_map_type, bpf_map_type_BPF_MAP_TYPE_ARRAY,
-    bpf_map_type_BPF_MAP_TYPE_ARRAY_OF_MAPS, bpf_map_type_BPF_MAP_TYPE_BLOOM_FILTER,
-    bpf_map_type_BPF_MAP_TYPE_CGROUP_ARRAY, bpf_map_type_BPF_MAP_TYPE_CGROUP_STORAGE,
-    bpf_map_type_BPF_MAP_TYPE_CGRP_STORAGE, bpf_map_type_BPF_MAP_TYPE_CPUMAP,
-    bpf_map_type_BPF_MAP_TYPE_DEVMAP, bpf_map_type_BPF_MAP_TYPE_DEVMAP_HASH,
-    bpf_map_type_BPF_MAP_TYPE_HASH, bpf_map_type_BPF_MAP_TYPE_HASH_OF_MAPS,
-    bpf_map_type_BPF_MAP_TYPE_INODE_STORAGE, bpf_map_type_BPF_MAP_TYPE_LPM_TRIE,
-    bpf_map_type_BPF_MAP_TYPE_LRU_HASH, bpf_map_type_BPF_MAP_TYPE_LRU_PERCPU_HASH,
-    bpf_map_type_BPF_MAP_TYPE_PERCPU_ARRAY, bpf_map_type_BPF_MAP_TYPE_PERCPU_CGROUP_STORAGE,
-    bpf_map_type_BPF_MAP_TYPE_PERCPU_HASH, bpf_map_type_BPF_MAP_TYPE_PERF_EVENT_ARRAY,
-    bpf_map_type_BPF_MAP_TYPE_PROG_ARRAY, bpf_map_type_BPF_MAP_TYPE_QUEUE,
-    bpf_map_type_BPF_MAP_TYPE_REUSEPORT_SOCKARRAY, bpf_map_type_BPF_MAP_TYPE_RINGBUF,
-    bpf_map_type_BPF_MAP_TYPE_SK_STORAGE, bpf_map_type_BPF_MAP_TYPE_SOCKHASH,
-    bpf_map_type_BPF_MAP_TYPE_SOCKMAP, bpf_map_type_BPF_MAP_TYPE_STACK,
-    bpf_map_type_BPF_MAP_TYPE_STACK_TRACE, bpf_map_type_BPF_MAP_TYPE_STRUCT_OPS,
-    bpf_map_type_BPF_MAP_TYPE_TASK_STORAGE, bpf_map_type_BPF_MAP_TYPE_UNSPEC,
-    bpf_map_type_BPF_MAP_TYPE_USER_RINGBUF, bpf_map_type_BPF_MAP_TYPE_XSKMAP,
+    BPF_EXIST, BPF_NOEXIST, bpf_map_type, bpf_map_type_BPF_MAP_TYPE_ARENA,
+    bpf_map_type_BPF_MAP_TYPE_ARRAY, bpf_map_type_BPF_MAP_TYPE_ARRAY_OF_MAPS,
+    bpf_map_type_BPF_MAP_TYPE_BLOOM_FILTER, bpf_map_type_BPF_MAP_TYPE_CGROUP_ARRAY,
+    bpf_map_type_BPF_MAP_TYPE_CGROUP_STORAGE, bpf_map_type_BPF_MAP_TYPE_CGRP_STORAGE,
+    bpf_map_type_BPF_MAP_TYPE_CPUMAP, bpf_map_type_BPF_MAP_TYPE_DEVMAP,
+    bpf_map_type_BPF_MAP_TYPE_DEVMAP_HASH, bpf_map_type_BPF_MAP_TYPE_HASH,
+    bpf_map_type_BPF_MAP_TYPE_HASH_OF_MAPS, bpf_map_type_BPF_MAP_TYPE_INODE_STORAGE,
+    bpf_map_type_BPF_MAP_TYPE_LPM_TRIE, bpf_map_type_BPF_MAP_TYPE_LRU_HASH,
+    bpf_map_type_BPF_MAP_TYPE_LRU_PERCPU_HASH, bpf_map_type_BPF_MAP_TYPE_PERCPU_ARRAY,
+    bpf_map_type_BPF_MAP_TYPE_PERCPU_CGROUP_STORAGE, bpf_map_type_BPF_MAP_TYPE_PERCPU_HASH,
+    bpf_map_type_BPF_MAP_TYPE_PERF_EVENT_ARRAY, bpf_map_type_BPF_MAP_TYPE_PROG_ARRAY,
+    bpf_map_type_BPF_MAP_TYPE_QUEUE, bpf_map_type_BPF_MAP_TYPE_REUSEPORT_SOCKARRAY,
+    bpf_map_type_BPF_MAP_TYPE_RINGBUF, bpf_map_type_BPF_MAP_TYPE_SK_STORAGE,
+    bpf_map_type_BPF_MAP_TYPE_SOCKHASH, bpf_map_type_BPF_MAP_TYPE_SOCKMAP,
+    bpf_map_type_BPF_MAP_TYPE_STACK, bpf_map_type_BPF_MAP_TYPE_STACK_TRACE,
+    bpf_map_type_BPF_MAP_TYPE_STRUCT_OPS, bpf_map_type_BPF_MAP_TYPE_TASK_STORAGE,
+    bpf_map_type_BPF_MAP_TYPE_UNSPEC, bpf_map_type_BPF_MAP_TYPE_USER_RINGBUF,
+    bpf_map_type_BPF_MAP_TYPE_XSKMAP,
 };
 use std::fmt::Debug;
 use std::ops::Deref;
@@ -64,6 +65,9 @@ pub enum MapError {
 
     // Invalid VMO was passed for a shared map.
     InvalidVmo,
+
+    // Specified map type is not supported.
+    MapTypeNotSupported,
 
     // Specified map configuration is not supported.
     NotSupported,
@@ -196,13 +200,13 @@ pub type MapKey = smallvec::SmallVec<[u8; 16]>;
 // Access rights required for a map VMO handle. Should be consistent with the
 // rights specified in FIDL. READ, WRITE and MAP rights are required to access
 // the map contents. SIGNAL and WAIT rights are used for synchronization.
-// LINT.IfChange
+// LINT.IfChange(map_rights)
 const BASE_MAP_RIGHTS: zx::Rights = zx::Rights::READ
     .union(zx::Rights::WRITE)
     .union(zx::Rights::MAP)
     .union(zx::Rights::SIGNAL)
     .union(zx::Rights::WAIT);
-// LINT.ThenChange(//sdk/fidl/fuchsia.ebpf/ebpf.fidl)
+// LINT.ThenChange(//sdk/fidl/fuchsia.ebpf/ebpf.fidl:map_rights)
 
 // Rights for the VMO handle when sharing a map.
 const SHARED_MAP_RIGHTS: zx::Rights = BASE_MAP_RIGHTS.union(zx::Rights::TRANSFER);
@@ -341,7 +345,10 @@ fn create_map_impl(
     schema: &MapSchema,
     vmo: impl Into<VmoOrName>,
 ) -> Result<Pin<Box<dyn MapImpl>>, MapError> {
+    // The list of supported maps should be kept in sync with the enum values in
+    // `fuchsia.ebpf.MapType`.
     match schema.map_type {
+        // LINT.IfChange(supported_maps)
         bpf_map_type_BPF_MAP_TYPE_ARRAY => Ok(Box::pin(array::Array::new(schema, vmo)?)),
         bpf_map_type_BPF_MAP_TYPE_HASH => Ok(Box::pin(hashmap::HashMap::new(schema, vmo)?)),
         bpf_map_type_BPF_MAP_TYPE_RINGBUF => Ok(ring_buffer::RingBuffer::new(schema, vmo)?),
@@ -373,103 +380,108 @@ fn create_map_impl(
             track_stub!(TODO("https://fxbug.dev/323847465"), "BPF_MAP_TYPE_LRU_HASH");
             Ok(Box::pin(hashmap::HashMap::new(schema, vmo)?))
         }
+        // LINT.ThenChange(:fidl_map_types)
 
         // Unimplemented types
         bpf_map_type_BPF_MAP_TYPE_UNSPEC => {
             track_stub!(TODO("https://fxbug.dev/323847465"), "BPF_MAP_TYPE_UNSPEC");
-            Err(MapError::InvalidParam)
+            Err(MapError::MapTypeNotSupported)
         }
         bpf_map_type_BPF_MAP_TYPE_PROG_ARRAY => {
             track_stub!(TODO("https://fxbug.dev/323847465"), "BPF_MAP_TYPE_PROG_ARRAY");
-            Err(MapError::InvalidParam)
+            Err(MapError::MapTypeNotSupported)
         }
         bpf_map_type_BPF_MAP_TYPE_PERF_EVENT_ARRAY => {
             track_stub!(TODO("https://fxbug.dev/323847465"), "BPF_MAP_TYPE_PERF_EVENT_ARRAY");
-            Err(MapError::InvalidParam)
+            Err(MapError::MapTypeNotSupported)
         }
         bpf_map_type_BPF_MAP_TYPE_STACK_TRACE => {
             track_stub!(TODO("https://fxbug.dev/323847465"), "BPF_MAP_TYPE_STACK_TRACE");
-            Err(MapError::InvalidParam)
+            Err(MapError::MapTypeNotSupported)
         }
         bpf_map_type_BPF_MAP_TYPE_CGROUP_ARRAY => {
             track_stub!(TODO("https://fxbug.dev/323847465"), "BPF_MAP_TYPE_CGROUP_ARRAY");
-            Err(MapError::InvalidParam)
+            Err(MapError::MapTypeNotSupported)
         }
         bpf_map_type_BPF_MAP_TYPE_LRU_PERCPU_HASH => {
             track_stub!(TODO("https://fxbug.dev/323847465"), "BPF_MAP_TYPE_LRU_PERCPU_HASH");
-            Err(MapError::InvalidParam)
+            Err(MapError::MapTypeNotSupported)
         }
         bpf_map_type_BPF_MAP_TYPE_ARRAY_OF_MAPS => {
             track_stub!(TODO("https://fxbug.dev/323847465"), "BPF_MAP_TYPE_ARRAY_OF_MAPS");
-            Err(MapError::InvalidParam)
+            Err(MapError::MapTypeNotSupported)
         }
         bpf_map_type_BPF_MAP_TYPE_HASH_OF_MAPS => {
             track_stub!(TODO("https://fxbug.dev/323847465"), "BPF_MAP_TYPE_HASH_OF_MAPS");
-            Err(MapError::InvalidParam)
+            Err(MapError::MapTypeNotSupported)
         }
         bpf_map_type_BPF_MAP_TYPE_DEVMAP => {
             track_stub!(TODO("https://fxbug.dev/323847465"), "BPF_MAP_TYPE_DEVMAP");
-            Err(MapError::InvalidParam)
+            Err(MapError::MapTypeNotSupported)
         }
         bpf_map_type_BPF_MAP_TYPE_SOCKMAP => {
             track_stub!(TODO("https://fxbug.dev/323847465"), "BPF_MAP_TYPE_SOCKMAP");
-            Err(MapError::InvalidParam)
+            Err(MapError::MapTypeNotSupported)
         }
         bpf_map_type_BPF_MAP_TYPE_CPUMAP => {
             track_stub!(TODO("https://fxbug.dev/323847465"), "BPF_MAP_TYPE_CPUMAP");
-            Err(MapError::InvalidParam)
+            Err(MapError::MapTypeNotSupported)
         }
         bpf_map_type_BPF_MAP_TYPE_XSKMAP => {
             track_stub!(TODO("https://fxbug.dev/323847465"), "BPF_MAP_TYPE_XSKMAP");
-            Err(MapError::InvalidParam)
+            Err(MapError::MapTypeNotSupported)
         }
         bpf_map_type_BPF_MAP_TYPE_SOCKHASH => {
             track_stub!(TODO("https://fxbug.dev/323847465"), "BPF_MAP_TYPE_SOCKHASH");
-            Err(MapError::InvalidParam)
+            Err(MapError::MapTypeNotSupported)
         }
         bpf_map_type_BPF_MAP_TYPE_CGROUP_STORAGE => {
             track_stub!(TODO("https://fxbug.dev/323847465"), "BPF_MAP_TYPE_CGROUP_STORAGE");
-            Err(MapError::InvalidParam)
+            Err(MapError::MapTypeNotSupported)
         }
         bpf_map_type_BPF_MAP_TYPE_REUSEPORT_SOCKARRAY => {
             track_stub!(TODO("https://fxbug.dev/323847465"), "BPF_MAP_TYPE_REUSEPORT_SOCKARRAY");
-            Err(MapError::InvalidParam)
+            Err(MapError::MapTypeNotSupported)
         }
         bpf_map_type_BPF_MAP_TYPE_PERCPU_CGROUP_STORAGE => {
             track_stub!(TODO("https://fxbug.dev/323847465"), "BPF_MAP_TYPE_PERCPU_CGROUP_STORAGE");
-            Err(MapError::InvalidParam)
+            Err(MapError::MapTypeNotSupported)
         }
         bpf_map_type_BPF_MAP_TYPE_QUEUE => {
             track_stub!(TODO("https://fxbug.dev/323847465"), "BPF_MAP_TYPE_QUEUE");
-            Err(MapError::InvalidParam)
+            Err(MapError::MapTypeNotSupported)
         }
         bpf_map_type_BPF_MAP_TYPE_STACK => {
             track_stub!(TODO("https://fxbug.dev/323847465"), "BPF_MAP_TYPE_STACK");
-            Err(MapError::InvalidParam)
+            Err(MapError::MapTypeNotSupported)
         }
         bpf_map_type_BPF_MAP_TYPE_STRUCT_OPS => {
             track_stub!(TODO("https://fxbug.dev/323847465"), "BPF_MAP_TYPE_STRUCT_OPS");
-            Err(MapError::InvalidParam)
+            Err(MapError::MapTypeNotSupported)
         }
         bpf_map_type_BPF_MAP_TYPE_INODE_STORAGE => {
             track_stub!(TODO("https://fxbug.dev/323847465"), "BPF_MAP_TYPE_INODE_STORAGE");
-            Err(MapError::InvalidParam)
+            Err(MapError::MapTypeNotSupported)
         }
         bpf_map_type_BPF_MAP_TYPE_TASK_STORAGE => {
             track_stub!(TODO("https://fxbug.dev/323847465"), "BPF_MAP_TYPE_TASK_STORAGE");
-            Err(MapError::InvalidParam)
+            Err(MapError::MapTypeNotSupported)
         }
         bpf_map_type_BPF_MAP_TYPE_BLOOM_FILTER => {
             track_stub!(TODO("https://fxbug.dev/323847465"), "BPF_MAP_TYPE_BLOOM_FILTER");
-            Err(MapError::InvalidParam)
+            Err(MapError::MapTypeNotSupported)
         }
         bpf_map_type_BPF_MAP_TYPE_USER_RINGBUF => {
             track_stub!(TODO("https://fxbug.dev/323847465"), "BPF_MAP_TYPE_USER_RINGBUF");
-            Err(MapError::InvalidParam)
+            Err(MapError::MapTypeNotSupported)
         }
         bpf_map_type_BPF_MAP_TYPE_CGRP_STORAGE => {
             track_stub!(TODO("https://fxbug.dev/323847465"), "BPF_MAP_TYPE_CGRP_STORAGE");
-            Err(MapError::InvalidParam)
+            Err(MapError::MapTypeNotSupported)
+        }
+        bpf_map_type_BPF_MAP_TYPE_ARENA => {
+            track_stub!(TODO("https://fxbug.dev/323847465"), "BPF_MAP_TYPE_ARENA");
+            Err(MapError::MapTypeNotSupported)
         }
         _ => {
             track_stub!(
@@ -486,6 +498,7 @@ pub fn compute_map_storage_size(schema: &MapSchema) -> Result<usize, MapError> {
     schema.value_size.checked_mul(schema.max_entries).map(|v| v as usize).ok_or(MapError::NoMemory)
 }
 
+// LINT.IfChange(fidl_map_types)
 fn bpf_map_type_to_fidl_map_type(map_type: bpf_map_type) -> febpf::MapType {
     match map_type {
         bpf_map_type_BPF_MAP_TYPE_ARRAY => febpf::MapType::Array,
@@ -518,6 +531,7 @@ fn fidl_map_type_to_bpf_map_type(map_type: febpf::MapType) -> bpf_map_type {
         febpf::MapType::SkStorage => bpf_map_type_BPF_MAP_TYPE_SK_STORAGE,
     }
 }
+// LINT.ThenChange(:supported_maps, //sdk/fidl/fuchsia.ebpf/ebpf.fidl:map_types)
 
 #[cfg(test)]
 mod test {
@@ -700,5 +714,31 @@ mod test {
 
         // Expected to fail since there is no space left.
         map2.ringbuf_reserve(2000, 0).expect_err("ringbuf_reserve expected to fail");
+    }
+
+    // Verifies that all supported map types are shareable.
+    #[fuchsia::test]
+    fn test_all_maps_shareable() {
+        for map_type in 1..linux_uapi::bpf_map_type___MAX_BPF_MAP_TYPE {
+            let (key_size, value_size, max_entries, flags) = match map_type {
+                bpf_map_type_BPF_MAP_TYPE_RINGBUF => (0, 0, 4096, MapFlags::empty()),
+                bpf_map_type_BPF_MAP_TYPE_LPM_TRIE => (8, 4, 4096, MapFlags::NoPrealloc),
+                _ => (4, 4, 1, MapFlags::empty()),
+            };
+            let schema = MapSchema { map_type, key_size, value_size, max_entries, flags };
+
+            let map = match Map::new(schema, "test") {
+                Ok(map) => map,
+                Err(MapError::MapTypeNotSupported) => {
+                    continue;
+                }
+                Err(e) => {
+                    panic!("Failed to create map of type {:?}: {:?}", map_type, e);
+                }
+            };
+
+            let map_fidl = map.share().expect("Failed to share map");
+            let _: PinnedMap = Map::new_shared(map_fidl).expect("Failed to initialize shared map");
+        }
     }
 }

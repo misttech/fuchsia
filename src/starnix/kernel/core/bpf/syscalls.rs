@@ -138,7 +138,7 @@ fn map_error_to_errno(e: MapError) -> Errno {
         MapError::EntryExists => errno!(EEXIST),
         MapError::NoMemory => errno!(ENOMEM),
         MapError::SizeLimit => errno!(E2BIG),
-        MapError::NotSupported => errno!(ENOSYS),
+        MapError::MapTypeNotSupported | MapError::NotSupported => errno!(ENOSYS),
         MapError::InvalidVmo | MapError::Internal => errno!(EIO),
     }
 }
