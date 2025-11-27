@@ -99,18 +99,18 @@ pub(super) fn evaluate_constraint(
 }
 
 /// A node in the parse tree of a [`ConstraintExpr`].
-#[derive(Debug, Eq, PartialEq)]
-enum ConstraintNode {
+#[derive(Debug)]
+enum ConstraintNode<'a> {
     Branch(BooleanOperator),
-    Leaf(ContextExpression),
+    Leaf(ContextExpression<'a>),
 }
 
-impl ConstraintNode {
+impl<'a> ConstraintNode<'a> {
     fn try_from_constraint_term(
-        value: &ConstraintTerm,
+        value: &'a ConstraintTerm,
         source: &SecurityContext,
         target: &SecurityContext,
-    ) -> Result<ConstraintNode, ConstraintError> {
+    ) -> Result<ConstraintNode<'a>, ConstraintError> {
         if let Ok(op) = BooleanOperator::try_from_constraint_term(value) {
             Ok(ConstraintNode::Branch(op))
         } else {
@@ -167,58 +167,118 @@ pub(super) enum ContextOperand {
     TypeIds(HashSet<TypeId>),
 }
 
+#[derive(Clone, Debug)]
+pub(super) struct TypeIds<'a> {
+    underlying: &'a ExtensibleBitmap,
+}
+
+impl<'a> TypeIds<'a> {
+    fn contains(&self, id: &TypeId) -> bool {
+        self.underlying.is_set(id.0.get() - 1)
+    }
+}
+
+/// Like [`ContextOperand`] but lifetime-bound to a [`TypeIds`].
+#[derive(Clone, Debug)]
+enum Operand<'a> {
+    UserId(UserId),
+    RoleId(RoleId),
+    TypeId(TypeId),
+    Level(SecurityLevel),
+    UserIds(HashSet<UserId>),
+    RoleIds(HashSet<RoleId>),
+    TypeIds(TypeIds<'a>),
+}
+
+impl From<&Operand<'_>> for ContextOperand {
+    fn from(value: &Operand<'_>) -> Self {
+        match value {
+            Operand::UserId(user_id) => Self::UserId(user_id.clone()),
+            Operand::RoleId(role_id) => Self::RoleId(role_id.clone()),
+            Operand::TypeId(type_id) => Self::TypeId(type_id.clone()),
+            Operand::Level(security_level) => Self::Level(security_level.clone()),
+            Operand::UserIds(user_ids) => Self::UserIds(user_ids.clone()),
+            Operand::RoleIds(role_ids) => Self::RoleIds(role_ids.clone()),
+            Operand::TypeIds(type_ids) => Self::TypeIds(
+                type_ids
+                    .underlying
+                    .spans()
+                    .flat_map(|span| span.low..=span.high)
+                    .map(|i| TypeId(NonZeroU32::new(i + 1).unwrap()))
+                    .collect(),
+            ),
+        }
+    }
+}
+
 /// A leaf node in the parse tree of a [`ConstraintExpr`]. Represents
 /// a boolean expression in terms of source and target
 /// [`SecurityContext`]s.
-#[derive(Debug, Eq, PartialEq)]
-struct ContextExpression {
-    left: ContextOperand,
-    right: ContextOperand,
+#[derive(Debug)]
+struct ContextExpression<'a> {
+    left: Operand<'a>,
+    right: Operand<'a>,
     operator: ContextOperator,
 }
 
-impl ContextExpression {
+impl<'a> ContextExpression<'a> {
     fn evaluate(&self) -> Result<bool, ConstraintError> {
         match (&self.left, &self.right) {
-            (ContextOperand::UserId(_), ContextOperand::UserId(_))
-            | (ContextOperand::RoleId(_), ContextOperand::RoleId(_))
-            | (ContextOperand::TypeId(_), ContextOperand::TypeId(_)) => match self.operator {
-                ContextOperator::Equal => Ok(self.left == self.right),
-                ContextOperator::NotEqual => Ok(self.left != self.right),
+            (Operand::UserId(left_id), Operand::UserId(right_id)) => match self.operator {
+                ContextOperator::Equal => Ok(left_id == right_id),
+                ContextOperator::NotEqual => Ok(left_id != right_id),
                 _ => Err(ConstraintError::InvalidContextOperatorForOperands {
                     operator: self.operator.clone(),
-                    left: self.left.clone(),
-                    right: self.right.clone(),
+                    left: ContextOperand::from(&self.left),
+                    right: ContextOperand::from(&self.right),
                 }),
             },
-            (ContextOperand::UserId(id), ContextOperand::UserIds(ids)) => match self.operator {
+            (Operand::RoleId(left_id), Operand::RoleId(right_id)) => match self.operator {
+                ContextOperator::Equal => Ok(left_id == right_id),
+                ContextOperator::NotEqual => Ok(left_id != right_id),
+                _ => Err(ConstraintError::InvalidContextOperatorForOperands {
+                    operator: self.operator.clone(),
+                    left: ContextOperand::from(&self.left),
+                    right: ContextOperand::from(&self.right),
+                }),
+            },
+            (Operand::TypeId(left_id), Operand::TypeId(right_id)) => match self.operator {
+                ContextOperator::Equal => Ok(left_id == right_id),
+                ContextOperator::NotEqual => Ok(left_id != right_id),
+                _ => Err(ConstraintError::InvalidContextOperatorForOperands {
+                    operator: self.operator.clone(),
+                    left: ContextOperand::from(&self.left),
+                    right: ContextOperand::from(&self.right),
+                }),
+            },
+            (Operand::UserId(id), Operand::UserIds(ids)) => match self.operator {
                 ContextOperator::Equal => Ok(ids.contains(id)),
                 ContextOperator::NotEqual => Ok(!ids.contains(id)),
                 _ => Err(ConstraintError::InvalidContextOperatorForOperands {
                     operator: self.operator.clone(),
-                    left: self.left.clone(),
-                    right: self.right.clone(),
+                    left: ContextOperand::from(&self.left),
+                    right: ContextOperand::from(&self.right),
                 }),
             },
-            (ContextOperand::RoleId(id), ContextOperand::RoleIds(ids)) => match self.operator {
+            (Operand::RoleId(id), Operand::RoleIds(ids)) => match self.operator {
                 ContextOperator::Equal => Ok(ids.contains(id)),
                 ContextOperator::NotEqual => Ok(!ids.contains(id)),
                 _ => Err(ConstraintError::InvalidContextOperatorForOperands {
                     operator: self.operator.clone(),
-                    left: self.left.clone(),
-                    right: self.right.clone(),
+                    left: ContextOperand::from(&self.left),
+                    right: ContextOperand::from(&self.right),
                 }),
             },
-            (ContextOperand::TypeId(id), ContextOperand::TypeIds(ids)) => match self.operator {
+            (Operand::TypeId(id), Operand::TypeIds(ids)) => match self.operator {
                 ContextOperator::Equal => Ok(ids.contains(id)),
                 ContextOperator::NotEqual => Ok(!ids.contains(id)),
                 _ => Err(ConstraintError::InvalidContextOperatorForOperands {
                     operator: self.operator.clone(),
-                    left: self.left.clone(),
-                    right: self.right.clone(),
+                    left: ContextOperand::from(&self.left),
+                    right: ContextOperand::from(&self.right),
                 }),
             },
-            (ContextOperand::Level(left), ContextOperand::Level(right)) => match self.operator {
+            (Operand::Level(left), Operand::Level(right)) => match self.operator {
                 ContextOperator::Equal => Ok(left.compare(right) == Some(Ordering::Equal)),
                 ContextOperator::NotEqual => Ok(left.compare(right) != Some(Ordering::Equal)),
                 ContextOperator::Dominates => Ok(left.dominates(right)),
@@ -226,17 +286,17 @@ impl ContextExpression {
                 ContextOperator::Incomparable => Ok(left.compare(right).is_none()),
             },
             _ => Err(ConstraintError::InvalidContextOperands {
-                left: self.left.clone(),
-                right: self.right.clone(),
+                left: ContextOperand::from(&self.left),
+                right: ContextOperand::from(&self.right),
             }),
         }
     }
 
     fn try_from_constraint_term(
-        value: &ConstraintTerm,
+        value: &'a ConstraintTerm,
         source: &SecurityContext,
         target: &SecurityContext,
-    ) -> Result<ContextExpression, ConstraintError> {
+    ) -> Result<ContextExpression<'a>, ConstraintError> {
         let (left, right) = match value.constraint_term_type() {
             CONSTRAINT_TERM_TYPE_EXPR => {
                 ContextExpression::operands_from_expr(value.expr_operand_type(), source, target)
@@ -272,40 +332,40 @@ impl ContextExpression {
         operand_type: u32,
         source: &SecurityContext,
         target: &SecurityContext,
-    ) -> Result<(ContextOperand, ContextOperand), ConstraintError> {
+    ) -> Result<(Operand<'a>, Operand<'a>), ConstraintError> {
         match operand_type {
             CONSTRAINT_EXPR_OPERAND_TYPE_USER => {
-                Ok((ContextOperand::UserId(source.user()), ContextOperand::UserId(target.user())))
+                Ok((Operand::UserId(source.user()), Operand::UserId(target.user())))
             }
             CONSTRAINT_EXPR_OPERAND_TYPE_ROLE => {
-                Ok((ContextOperand::RoleId(source.role()), ContextOperand::RoleId(target.role())))
+                Ok((Operand::RoleId(source.role()), Operand::RoleId(target.role())))
             }
             CONSTRAINT_EXPR_OPERAND_TYPE_TYPE => {
-                Ok((ContextOperand::TypeId(source.type_()), ContextOperand::TypeId(target.type_())))
+                Ok((Operand::TypeId(source.type_()), Operand::TypeId(target.type_())))
             }
             CONSTRAINT_EXPR_OPERAND_TYPE_L1_L2 => Ok((
-                ContextOperand::Level(source.low_level().clone()),
-                ContextOperand::Level(target.low_level().clone()),
+                Operand::Level(source.low_level().clone()),
+                Operand::Level(target.low_level().clone()),
             )),
             CONSTRAINT_EXPR_OPERAND_TYPE_L1_H2 => Ok((
-                ContextOperand::Level(source.low_level().clone()),
-                ContextOperand::Level(target.effective_high_level().clone()),
+                Operand::Level(source.low_level().clone()),
+                Operand::Level(target.effective_high_level().clone()),
             )),
             CONSTRAINT_EXPR_OPERAND_TYPE_H1_L2 => Ok((
-                ContextOperand::Level(source.effective_high_level().clone()),
-                ContextOperand::Level(target.low_level().clone()),
+                Operand::Level(source.effective_high_level().clone()),
+                Operand::Level(target.low_level().clone()),
             )),
             CONSTRAINT_EXPR_OPERAND_TYPE_H1_H2 => Ok((
-                ContextOperand::Level(source.effective_high_level().clone()),
-                ContextOperand::Level(target.effective_high_level().clone()),
+                Operand::Level(source.effective_high_level().clone()),
+                Operand::Level(target.effective_high_level().clone()),
             )),
             CONSTRAINT_EXPR_OPERAND_TYPE_L1_H1 => Ok((
-                ContextOperand::Level(source.low_level().clone()),
-                ContextOperand::Level(source.effective_high_level().clone()),
+                Operand::Level(source.low_level().clone()),
+                Operand::Level(source.effective_high_level().clone()),
             )),
             CONSTRAINT_EXPR_OPERAND_TYPE_L2_H2 => Ok((
-                ContextOperand::Level(target.low_level().clone()),
-                ContextOperand::Level(target.effective_high_level().clone()),
+                Operand::Level(target.low_level().clone()),
+                Operand::Level(target.effective_high_level().clone()),
             )),
             _ => Err(ConstraintError::InvalidContextOperandType { type_: operand_type }),
         }
@@ -313,10 +373,10 @@ impl ContextExpression {
 
     fn operands_from_expr_with_names(
         operand_type: u32,
-        names: &ExtensibleBitmap,
+        names: &'a ExtensibleBitmap,
         source: &SecurityContext,
         target: &SecurityContext,
-    ) -> Result<(ContextOperand, ContextOperand), ConstraintError> {
+    ) -> Result<(Operand<'a>, Operand<'a>), ConstraintError> {
         let ids = names
             .spans()
             .flat_map(|span| span.low..=span.high)
@@ -325,16 +385,16 @@ impl ContextExpression {
         if operand_type & CONSTRAINT_EXPR_WITH_NAMES_OPERAND_TYPE_TARGET_MASK == 0 {
             match operand_type {
                 CONSTRAINT_EXPR_OPERAND_TYPE_USER => Ok((
-                    ContextOperand::UserId(source.user()),
-                    ContextOperand::UserIds(ids.map(|id| UserId(id)).collect()),
+                    Operand::UserId(source.user()),
+                    Operand::UserIds(ids.map(|id| UserId(id)).collect()),
                 )),
                 CONSTRAINT_EXPR_OPERAND_TYPE_ROLE => Ok((
-                    ContextOperand::RoleId(source.role()),
-                    ContextOperand::RoleIds(ids.map(|id| RoleId(id)).collect()),
+                    Operand::RoleId(source.role()),
+                    Operand::RoleIds(ids.map(|id| RoleId(id)).collect()),
                 )),
                 CONSTRAINT_EXPR_OPERAND_TYPE_TYPE => Ok((
-                    ContextOperand::TypeId(source.type_()),
-                    ContextOperand::TypeIds(ids.map(|id| TypeId(id)).collect()),
+                    Operand::TypeId(source.type_()),
+                    Operand::TypeIds(TypeIds { underlying: names }),
                 )),
                 _ => {
                     Err(ConstraintError::InvalidContextWithNamesOperandType { type_: operand_type })
@@ -343,16 +403,16 @@ impl ContextExpression {
         } else {
             match operand_type ^ CONSTRAINT_EXPR_WITH_NAMES_OPERAND_TYPE_TARGET_MASK {
                 CONSTRAINT_EXPR_OPERAND_TYPE_USER => Ok((
-                    ContextOperand::UserId(target.user()),
-                    ContextOperand::UserIds(ids.map(|id| UserId(id)).collect()),
+                    Operand::UserId(target.user()),
+                    Operand::UserIds(ids.map(|id| UserId(id)).collect()),
                 )),
                 CONSTRAINT_EXPR_OPERAND_TYPE_ROLE => Ok((
-                    ContextOperand::RoleId(target.role()),
-                    ContextOperand::RoleIds(ids.map(|id| RoleId(id)).collect()),
+                    Operand::RoleId(target.role()),
+                    Operand::RoleIds(ids.map(|id| RoleId(id)).collect()),
                 )),
                 CONSTRAINT_EXPR_OPERAND_TYPE_TYPE => Ok((
-                    ContextOperand::TypeId(target.type_()),
-                    ContextOperand::TypeIds(ids.map(|id| TypeId(id)).collect()),
+                    Operand::TypeId(target.type_()),
+                    Operand::TypeIds(TypeIds { underlying: names }),
                 )),
                 _ => {
                     Err(ConstraintError::InvalidContextWithNamesOperandType { type_: operand_type })
@@ -367,22 +427,54 @@ mod tests {
     use super::*;
     use crate::policy::{find_class_by_name, parse_policy_by_value};
 
-    fn normalize_context_expr(expr: ContextExpression) -> ContextExpression {
+    impl PartialEq for Operand<'_> {
+        fn eq(&self, other: &Self) -> bool {
+            ContextOperand::from(self) == ContextOperand::from(other)
+        }
+    }
+
+    impl Eq for Operand<'_> {}
+
+    impl PartialEq for ContextExpression<'_> {
+        fn eq(&self, other: &Self) -> bool {
+            self.operator == other.operator && self.left == other.left && self.right == other.right
+        }
+    }
+
+    impl Eq for ContextExpression<'_> {}
+
+    impl PartialEq for ConstraintNode<'_> {
+        fn eq(&self, other: &Self) -> bool {
+            match (self, other) {
+                (Self::Branch(self_operator), Self::Branch(other_operator)) => {
+                    self_operator == other_operator
+                }
+                (Self::Leaf(self_expression), Self::Leaf(other_expression)) => {
+                    self_expression == other_expression
+                }
+                _ => false,
+            }
+        }
+    }
+
+    impl Eq for ConstraintNode<'_> {}
+
+    fn normalize_context_expr<'a>(expr: ContextExpression<'a>) -> ContextExpression<'a> {
         let (left, right) = match expr.operator {
             ContextOperator::Dominates | ContextOperator::DominatedBy => (expr.left, expr.right),
             ContextOperator::Equal | ContextOperator::NotEqual | ContextOperator::Incomparable => {
                 match (&expr.left, &expr.right) {
-                    (ContextOperand::UserId(left), ContextOperand::UserId(right)) => (
-                        ContextOperand::UserId(std::cmp::min(*left, *right)),
-                        ContextOperand::UserId(std::cmp::max(*left, *right)),
+                    (Operand::UserId(left), Operand::UserId(right)) => (
+                        Operand::UserId(std::cmp::min(*left, *right)),
+                        Operand::UserId(std::cmp::max(*left, *right)),
                     ),
-                    (ContextOperand::TypeId(left), ContextOperand::TypeId(right)) => (
-                        ContextOperand::TypeId(std::cmp::min(*left, *right)),
-                        ContextOperand::TypeId(std::cmp::max(*left, *right)),
+                    (Operand::TypeId(left), Operand::TypeId(right)) => (
+                        Operand::TypeId(std::cmp::min(*left, *right)),
+                        Operand::TypeId(std::cmp::max(*left, *right)),
                     ),
-                    (ContextOperand::RoleId(left), ContextOperand::RoleId(right)) => (
-                        ContextOperand::RoleId(std::cmp::min(*left, *right)),
-                        ContextOperand::RoleId(std::cmp::max(*left, *right)),
+                    (Operand::RoleId(left), Operand::RoleId(right)) => (
+                        Operand::RoleId(std::cmp::min(*left, *right)),
+                        Operand::RoleId(std::cmp::max(*left, *right)),
                     ),
                     _ => (expr.left, expr.right),
                 }
@@ -391,7 +483,7 @@ mod tests {
         ContextExpression { operator: expr.operator, left, right }
     }
 
-    fn normalize(expr: Vec<ConstraintNode>) -> Vec<ConstraintNode> {
+    fn normalize<'a>(expr: Vec<ConstraintNode<'a>>) -> Vec<ConstraintNode<'a>> {
         expr.into_iter()
             .map(|node| match node {
                 ConstraintNode::Leaf(context_expr) => {
@@ -423,7 +515,7 @@ mod tests {
         let constraints = class.constraints();
         assert_eq!(constraints.len(), 1);
         let constraint = &constraints[0].constraint_expr();
-        let result: Result<Vec<ConstraintNode>, ConstraintError> = constraint
+        let result: Result<Vec<ConstraintNode<'_>>, ConstraintError> = constraint
             .constraint_terms()
             .iter()
             .map(|x| ConstraintNode::try_from_constraint_term(x, &source, &target))
@@ -432,8 +524,8 @@ mod tests {
         let expected = vec![
             // ( u2 == { user0 user1 } )
             ConstraintNode::Leaf(ContextExpression {
-                left: ContextOperand::UserId(UserId(NonZeroU32::new(2).unwrap())),
-                right: ContextOperand::UserIds(HashSet::from([
+                left: Operand::UserId(UserId(NonZeroU32::new(2).unwrap())),
+                right: Operand::UserIds(HashSet::from([
                     UserId(NonZeroU32::new(1).unwrap()),
                     UserId(NonZeroU32::new(2).unwrap()),
                 ])),
@@ -441,22 +533,22 @@ mod tests {
             }),
             // ( r1 == r2 )
             ConstraintNode::Leaf(ContextExpression {
-                left: ContextOperand::RoleId(RoleId(NonZeroU32::new(1).unwrap())),
-                right: ContextOperand::RoleId(RoleId(NonZeroU32::new(1).unwrap())),
+                left: Operand::RoleId(RoleId(NonZeroU32::new(1).unwrap())),
+                right: Operand::RoleId(RoleId(NonZeroU32::new(1).unwrap())),
                 operator: ContextOperator::Equal,
             }),
             // ( (u2 == { user0 user1 }) and (r1 == r2) )
             ConstraintNode::Branch(BooleanOperator::And),
             // (u1 == u2)
             ConstraintNode::Leaf(ContextExpression {
-                left: ContextOperand::UserId(UserId(NonZeroU32::new(1).unwrap())),
-                right: ContextOperand::UserId(UserId(NonZeroU32::new(2).unwrap())),
+                left: Operand::UserId(UserId(NonZeroU32::new(1).unwrap())),
+                right: Operand::UserId(UserId(NonZeroU32::new(2).unwrap())),
                 operator: ContextOperator::Equal,
             }),
             // (t1 == t2)
             ConstraintNode::Leaf(ContextExpression {
-                left: ContextOperand::TypeId(TypeId(NonZeroU32::new(1).unwrap())),
-                right: ContextOperand::TypeId(TypeId(NonZeroU32::new(2).unwrap())),
+                left: Operand::TypeId(TypeId(NonZeroU32::new(1).unwrap())),
+                right: Operand::TypeId(TypeId(NonZeroU32::new(2).unwrap())),
                 operator: ContextOperator::Equal,
             }),
             // not (t1 == t2)
