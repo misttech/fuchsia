@@ -127,9 +127,6 @@ declare_args() {
   # Support streaming ktrace data out of the kernel.
   experimental_ktrace_streaming_enabled = true
 
-  # Does nothing but is referenced by infra.
-  experimental_unified_scheduler_enabled = true
-
   # Force new scheduler wakeup accounting to be enabled, ignoring the boot
   # option value. This is used to force the feature on at the individual try bot
   # level, where gn arguments can be set but boot options cannot.
