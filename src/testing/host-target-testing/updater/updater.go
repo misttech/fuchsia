@@ -339,6 +339,9 @@ func (u *SystemUpdater) Update(
 		repoName,
 		util.AddSuffixToPackageName(srcUpdate.Path(), "system-updater"),
 	)
+	if err != nil {
+		return fmt.Errorf("error rehosting the update package: %w", err)
+	}
 
 	server, err := c.ServePackageRepository(ctx, dstUpdate.Repository(), repoName, true, nil)
 	if err != nil {
