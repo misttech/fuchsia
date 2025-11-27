@@ -8,7 +8,9 @@ use async_trait::async_trait;
 use cm_types::IterablePath;
 use moniker::ExtendedMoniker;
 use router_error::RouterError;
-use sandbox::{CapabilityBound, Dict, Request, Routable, Router, RouterResponse};
+use sandbox::{
+    CapabilityBound, Dict, Request, Routable, Router, RouterResponse, WeakInstanceToken,
+};
 use std::fmt::Debug;
 
 /// Implements the `lazy_get` function for [`Routable<Dict>`].
@@ -39,6 +41,7 @@ impl<R: Routable<Dict> + 'static, T: CapabilityBound> LazyGet<T> for R {
                 &self,
                 request: Option<Request>,
                 debug: bool,
+                target: WeakInstanceToken,
             ) -> Result<RouterResponse<T>, RouterError> {
                 let get_init_request = || -> Result<Option<Request>, RoutingError> {
                     let res = if self.path.iter_segments().count() > 1 {
@@ -53,11 +56,12 @@ impl<R: Routable<Dict> + 'static, T: CapabilityBound> LazyGet<T> for R {
                 // Here we're looking up the containing dictionary, so set `debug = false`, to
                 // obtain the actual Dict and not its debug info.
                 let init_request = (get_init_request)()?;
-                match self.router.route(init_request, false).await? {
+                match self.router.route(init_request, false, target.clone()).await? {
                     RouterResponse::<Dict>::Capability(dict) => {
                         let moniker: ExtendedMoniker = self.not_found_error.clone().into();
-                        let resp =
-                            dict.get_with_request(&moniker, &self.path, request, debug).await?;
+                        let resp = dict
+                            .get_with_request(&moniker, &self.path, request, debug, target.clone())
+                            .await?;
                         let resp =
                             resp.ok_or_else(|| RouterError::from(self.not_found_error.clone()))?;
                         let resp = resp.try_into().map_err(|debug_name: &'static str| {
@@ -79,7 +83,7 @@ impl<R: Routable<Dict> + 'static, T: CapabilityBound> LazyGet<T> for R {
                             // same arguments but with `debug=true` so that we return the debug
                             // info to the caller (which ought to be [`CapabilitySource::Void`]).
                             let init_request = (get_init_request)()?;
-                            match self.router.route(init_request, true).await? {
+                            match self.router.route(init_request, true, target).await? {
                                 RouterResponse::<Dict>::Debug(d) => {
                                     Ok(RouterResponse::<T>::Debug(d))
                                 }

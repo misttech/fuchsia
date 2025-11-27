@@ -5,14 +5,14 @@
 use crate::model::component::ComponentInstance;
 use crate::model::routing::RoutingFailureErrorReporter;
 use crate::model::testing::routing_test_helpers::*;
-use ::routing_test_helpers::rights::CommonRightsTest;
 use ::routing_test_helpers::RoutingTestModel;
+use ::routing_test_helpers::rights::CommonRightsTest;
 use cm_rust::*;
 use cm_rust_testing::*;
 use fidl_fuchsia_io as fio;
-use routing::error::RouteRequestErrorInfo;
 use routing::WithPorcelain;
-use sandbox::{DirConnector, Request, Router};
+use routing::error::RouteRequestErrorInfo;
+use sandbox::{DirConnector, Request, Router, WeakInstanceToken};
 
 #[fuchsia::test]
 async fn offer_increasing_rights() {
@@ -129,9 +129,11 @@ async fn framework_directory_incompatible_rights() {
         .add_framework_capability(
             "foo_data",
             WithPorcelain::<_, _, ComponentInstance>::with_porcelain_no_default(
-                Router::<DirConnector>::new(move |_request: Option<Request>, _debug: bool| {
-                    panic!("routing should have failed before we get here")
-                }),
+                Router::<DirConnector>::new(
+                    move |_request: Option<Request>, _debug: bool, _target: WeakInstanceToken| {
+                        panic!("routing should have failed before we get here")
+                    },
+                ),
                 CapabilityTypeName::Directory,
             )
             .availability(Availability::Required)

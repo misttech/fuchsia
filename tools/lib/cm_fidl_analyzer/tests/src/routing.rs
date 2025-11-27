@@ -617,7 +617,7 @@ impl RoutingTestModel for RoutingTestForAnalyzer {
             Capability::ConnectorRouter(r) => r,
             _ => panic!("unexpected capability type"),
         };
-        match (expected_res, router.route(None, true).await) {
+        match (expected_res, router.route(None, true, target.as_weak().into()).await) {
             (ExpectedResult::Ok, Ok(RouterResponse::Debug(_debug_data))) => {}
             (ExpectedResult::Err(status), Err(err)) => {
                 if status != err.as_zx_status() {

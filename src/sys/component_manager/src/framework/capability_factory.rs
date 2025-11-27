@@ -65,7 +65,10 @@ pub fn serve(
         let weak_scope = source_component.execution_scope.as_weak();
         let stream = take_handle_as_stream::<fruntime::CapabilityFactoryMarker>(channel);
         let moniker = source_component.moniker.clone();
-        CapabilityFactory { remote_capabilities, weak_scope, moniker }.handle_stream(stream).await
+        let token = weak_source_component.into();
+        CapabilityFactory { remote_capabilities, weak_scope, moniker, token }
+            .handle_stream(stream)
+            .await
     }
     .boxed()
 }
@@ -75,6 +78,7 @@ pub struct CapabilityFactory {
     pub remote_capabilities: Arc<Mutex<RemotedRuntimeCapabilities>>,
     pub weak_scope: WeakExecutionScope,
     pub moniker: Moniker,
+    pub token: WeakInstanceToken,
 }
 
 impl CapabilityFactory {
@@ -525,14 +529,16 @@ impl CapabilityFactory {
                         responder,
                         ..
                     } => {
-                        let maybe_route_request = match self.convert_route_request(request).await {
-                            Ok(maybe_request) => maybe_request,
-                            Err(e) => {
-                                let _ = responder.send(Err(e));
-                                continue;
-                            }
-                        };
-                        match router.route(maybe_route_request, false).await {
+                        let (maybe_request, maybe_target) =
+                            match self.convert_route_request(request).await {
+                                Ok(maybe_request) => maybe_request,
+                                Err(e) => {
+                                    let _ = responder.send(Err(e));
+                                    continue;
+                                }
+                            };
+                        let target = maybe_target.unwrap_or_else(|| self.token.clone());
+                        match router.route(maybe_request, false, target).await {
                             Ok(RouterResponse::Capability(connector)) => {
                                 self.weak_scope.spawn(
                                     self.clone().serve_connector(connector, connector_server_end),
@@ -582,14 +588,16 @@ impl CapabilityFactory {
                         responder,
                         ..
                     } => {
-                        let maybe_route_request = match self.convert_route_request(request).await {
-                            Ok(maybe_request) => maybe_request,
-                            Err(e) => {
-                                let _ = responder.send(Err(e));
-                                continue;
-                            }
-                        };
-                        match router.route(maybe_route_request, false).await {
+                        let (maybe_request, maybe_target) =
+                            match self.convert_route_request(request).await {
+                                Ok(maybe_request) => maybe_request,
+                                Err(e) => {
+                                    let _ = responder.send(Err(e));
+                                    continue;
+                                }
+                            };
+                        let target = maybe_target.unwrap_or_else(|| self.token.clone());
+                        match router.route(maybe_request, false, target).await {
                             Ok(RouterResponse::Capability(dir_connector)) => {
                                 self.weak_scope.spawn(
                                     self.clone().serve_dir_connector(
@@ -642,14 +650,16 @@ impl CapabilityFactory {
                         responder,
                         ..
                     } => {
-                        let maybe_route_request = match self.convert_route_request(request).await {
-                            Ok(maybe_request) => maybe_request,
-                            Err(e) => {
-                                let _ = responder.send(Err(e));
-                                continue;
-                            }
-                        };
-                        match router.route(maybe_route_request, false).await {
+                        let (maybe_request, maybe_target) =
+                            match self.convert_route_request(request).await {
+                                Ok(maybe_request) => maybe_request,
+                                Err(e) => {
+                                    let _ = responder.send(Err(e));
+                                    continue;
+                                }
+                            };
+                        let target = maybe_target.unwrap_or_else(|| self.token.clone());
+                        match router.route(maybe_request, false, target).await {
                             Ok(RouterResponse::Capability(dictionary)) => {
                                 self.weak_scope.spawn(
                                     self.clone()
@@ -695,14 +705,16 @@ impl CapabilityFactory {
                         ));
                     }
                     fruntime::DataRouterDeprecatedRequest::Route { request, responder, .. } => {
-                        let maybe_route_request = match self.convert_route_request(request).await {
-                            Ok(maybe_request) => maybe_request,
-                            Err(e) => {
-                                let _ = responder.send(Err(e));
-                                continue;
-                            }
-                        };
-                        match router.route(maybe_route_request, false).await {
+                        let (maybe_request, maybe_target) =
+                            match self.convert_route_request(request).await {
+                                Ok(maybe_request) => maybe_request,
+                                Err(e) => {
+                                    let _ = responder.send(Err(e));
+                                    continue;
+                                }
+                            };
+                        let target = maybe_target.unwrap_or_else(|| self.token.clone());
+                        match router.route(maybe_request, false, target).await {
                             Ok(RouterResponse::Capability(data)) => {
                                 let data = match data {
                                     Data::Bytes(bytes) => fruntime::Data::Bytes(bytes.to_vec()),
@@ -738,7 +750,7 @@ impl CapabilityFactory {
     async fn convert_route_request(
         &self,
         request: fruntime::RouteRequest,
-    ) -> Result<Option<Request>, fruntime::RouterError> {
+    ) -> Result<(Option<Request>, Option<WeakInstanceToken>), fruntime::RouterError> {
         match request {
             fruntime::RouteRequest { metadata: Some(metadata), target: Some(target), .. } => {
                 let metadata = Dict::from_remote(metadata, &self)
@@ -748,9 +760,9 @@ impl CapabilityFactory {
                     .retrieve_instance_token(&target)
                     .await
                     .ok_or(fruntime::RouterError::InvalidArgs)?;
-                Ok(Some(Request { metadata, target }))
+                Ok((Some(Request { metadata }), Some(target)))
             }
-            fruntime::RouteRequest { metadata: None, target: None, .. } => Ok(None),
+            fruntime::RouteRequest { metadata: None, target: None, .. } => Ok((None, None)),
             _ => Err(fruntime::RouterError::InvalidArgs),
         }
     }
@@ -992,19 +1004,19 @@ where
         &self,
         request: Option<Request>,
         debug: bool,
+        token: WeakInstanceToken,
     ) -> Result<RouterResponse<R>, RouterError> {
         if debug {
             return Err(RouterError::RemotedAt { moniker: self.factory.moniker.clone() }.into());
         }
 
-        let (metadata, target) = match request {
-            Some(Request { metadata, target }) => {
-                let target = self.factory.store_instance_token(target).await;
-                (Some(metadata.to_remote(&self.factory).await), Some(target))
-            }
-            None => (None, None),
+        let target = self.factory.store_instance_token(token).await;
+        let metadata = match request {
+            Some(Request { metadata }) => Some(metadata.to_remote(&self.factory).await),
+            None => None,
         };
-        let request = fruntime::RouteRequest { target, metadata, ..Default::default() };
+        let request =
+            fruntime::RouteRequest { target: Some(target), metadata, ..Default::default() };
         let result = R::route(&self.router_proxy, request).await;
         match result {
             Ok(Some(client_end)) => {
@@ -1034,6 +1046,7 @@ mod tests {
             remote_capabilities: remote_capabilities.clone(),
             weak_scope: scope.as_weak(),
             moniker: Moniker::root(),
+            token: WeakInstanceToken::new_invalid(),
         };
         let (proxy, stream) =
             fidl::endpoints::create_proxy_and_stream::<fruntime::CapabilityFactoryMarker>();
@@ -1100,6 +1113,14 @@ mod tests {
         // have to rely on a timer to wait for cleanup to happen.
         fuchsia_async::Timer::new(std::time::Duration::from_secs(1)).await;
         assert_eq!(0, capabilities.lock().len());
+    }
+
+    /// In some cases a WeakInstanceToken is left over at the end of the test.
+    async fn assert_one_remote_capabilities(capabilities: &Arc<Mutex<RemotedRuntimeCapabilities>>) {
+        // Cleanup happens asynchronously and there's no way for us to block on it from here, so we
+        // have to rely on a timer to wait for cleanup to happen.
+        fuchsia_async::Timer::new(std::time::Duration::from_secs(1)).await;
+        assert_eq!(1, capabilities.lock().len());
     }
 
     #[fuchsia::test]
@@ -1247,7 +1268,7 @@ mod tests {
         );
         drop(router_proxy);
         drop(connector_proxy);
-        assert_no_remote_capabilities(&remote_capabilities).await;
+        assert_one_remote_capabilities(&remote_capabilities).await;
     }
 
     #[fuchsia::test]
@@ -1288,7 +1309,7 @@ mod tests {
         );
         drop(router_proxy);
         drop(dir_connector_proxy);
-        assert_no_remote_capabilities(&remote_capabilities).await;
+        assert_one_remote_capabilities(&remote_capabilities).await;
     }
 
     #[fuchsia::test]
@@ -1327,7 +1348,7 @@ mod tests {
         );
         drop(router_proxy);
         drop(dictionary_proxy);
-        assert_no_remote_capabilities(&remote_capabilities).await;
+        assert_one_remote_capabilities(&remote_capabilities).await;
     }
 
     #[fuchsia::test]
@@ -1359,6 +1380,6 @@ mod tests {
             Some(CapabilityOrWaiter::Capability(Capability::DataRouter(_)))
         );
         drop(router_proxy);
-        assert_no_remote_capabilities(&remote_capabilities).await;
+        assert_one_remote_capabilities(&remote_capabilities).await;
     }
 }

@@ -11,7 +11,10 @@ use cm_rust::NativeIntoFidl;
 use cm_types::Path;
 use log::warn;
 use router_error::RouterError;
-use sandbox::{Connector, Data, Dict, DirConnector, Request, Routable, Router, RouterResponse};
+use sandbox::{
+    Connector, Data, Dict, DirConnector, Request, Routable, Router, RouterResponse,
+    WeakInstanceToken,
+};
 use std::sync::Arc;
 
 pub trait ProgramOutputGenerator<C: ComponentInstanceInterface + 'static> {
@@ -205,6 +208,7 @@ fn make_simple_dict_router<C: ComponentInstanceInterface + 'static>(
             &self,
             _request: Option<Request>,
             debug: bool,
+            _target: WeakInstanceToken,
         ) -> Result<RouterResponse<Dict>, RouterError> {
             if debug {
                 Ok(RouterResponse::Debug(

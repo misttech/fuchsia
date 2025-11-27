@@ -6,7 +6,7 @@ use fidl::endpoints::ClientEnd;
 use futures::channel::mpsc::{UnboundedSender, unbounded};
 use namespace::{Entry as NamespaceEntry, EntryError, Namespace, NamespaceError, Tree};
 use router_error::Explain;
-use sandbox::{Capability, Dict, RemotableCapability, RouterResponse};
+use sandbox::{Capability, Dict, RemotableCapability, RouterResponse, WeakInstanceToken};
 use thiserror::Error;
 use vfs::directory::entry::serve_directory;
 use vfs::execution_scope::ExecutionScope;
@@ -24,6 +24,9 @@ pub struct NamespaceBuilder {
     ///
     /// This can be used to terminate the vfs.
     namespace_scope: ExecutionScope,
+
+    /// The token for the component whose namespace this is. This is used for route attribution.
+    token: WeakInstanceToken,
 }
 
 #[derive(Error, Debug, Clone)]
@@ -50,8 +53,12 @@ pub enum BuildNamespaceError {
 }
 
 impl NamespaceBuilder {
-    pub fn new(namespace_scope: ExecutionScope, not_found: UnboundedSender<String>) -> Self {
-        return NamespaceBuilder { entries: Default::default(), not_found, namespace_scope };
+    pub fn new(
+        namespace_scope: ExecutionScope,
+        not_found: UnboundedSender<String>,
+        token: WeakInstanceToken,
+    ) -> Self {
+        return NamespaceBuilder { entries: Default::default(), not_found, namespace_scope, token };
     }
 
     /// Add a capability `cap` at `path`. As a result, the framework will create a
@@ -134,13 +141,14 @@ impl NamespaceBuilder {
                         fidl::endpoints::create_endpoints::<fio::DirectoryMarker>();
                     // We don't wait to sit around for the results of this task, so we drop the
                     // fuchsia_async::JoinHandle which causes the task to be detached.
+                    let token = self.token.clone();
                     let _ = self.namespace_scope.spawn(async move {
                         let res =
                             fasync::OnSignals::new(&server, fidl::Signals::OBJECT_READABLE).await;
                         if res.is_err() {
                             return;
                         }
-                        match c.route(None, false).await {
+                        match c.route(None, false, token.clone()).await {
                             Ok(RouterResponse::Capability(dir_connector)) => {
                                 // See the comment in the `DirConnector` branch for why rights are
                                 // `None`.
@@ -163,10 +171,12 @@ impl NamespaceBuilder {
                     client
                 }
                 Capability::Dictionary(dict) => {
-                    let entry =
-                        dict.try_into_directory_entry(self.namespace_scope.clone()).map_err(
-                            |err| BuildNamespaceError::Conversion { path: path.clone(), err },
-                        )?;
+                    let entry = dict
+                        .try_into_directory_entry(self.namespace_scope.clone(), self.token.clone())
+                        .map_err(|err| BuildNamespaceError::Conversion {
+                            path: path.clone(),
+                            err,
+                        })?;
                     if entry.entry_info().type_() != fio::DirentType::Directory {
                         return Err(BuildNamespaceError::Conversion {
                             path: path.clone(),
@@ -190,15 +200,16 @@ impl NamespaceBuilder {
                     // fuchsia_async::JoinHandle which causes the task to be detached.
                     let path = path.clone();
                     let scope = self.namespace_scope.clone();
+                    let token = self.token.clone();
                     let _ = self.namespace_scope.spawn(async move {
                         let res =
                             fasync::OnSignals::new(&server, fidl::Signals::OBJECT_READABLE).await;
                         if res.is_err() {
                             return;
                         }
-                        match router.route(None, false).await {
+                        match router.route(None, false, token.clone()).await {
                             Ok(RouterResponse::Capability(dictionary)) => {
-                                let entry = match dictionary.try_into_directory_entry(scope.clone()) {
+                                let entry = match dictionary.try_into_directory_entry(scope.clone(), token.clone()) {
                                     Ok(entry) => entry,
                                     Err(e) => {
                                         log::error!("failed to convert namespace dictionary at path {path} into dir entry: {e:?}");
@@ -302,7 +313,8 @@ mod tests {
 
     fn parents_valid(paths: Vec<&str>) -> Result<(), BuildNamespaceError> {
         let scope = ExecutionScope::new();
-        let mut shadow = NamespaceBuilder::new(scope, ignore_not_found());
+        let mut shadow =
+            NamespaceBuilder::new(scope, ignore_not_found(), WeakInstanceToken::new_invalid());
         for p in paths {
             shadow.add_object(connector_cap(), &path(p))?;
         }
@@ -319,12 +331,14 @@ mod tests {
         assert_matches!(parents_valid(vec!["/a", "/b", "/c"]), Ok(()));
 
         let scope = ExecutionScope::new();
-        let mut shadow = NamespaceBuilder::new(scope, ignore_not_found());
+        let mut shadow =
+            NamespaceBuilder::new(scope, ignore_not_found(), WeakInstanceToken::new_invalid());
         shadow.add_object(connector_cap(), &path("/svc/foo")).unwrap();
         assert_matches!(shadow.add_object(connector_cap(), &path("/svc/foo/bar")), Err(_));
 
         let scope = ExecutionScope::new();
-        let mut not_shadow = NamespaceBuilder::new(scope, ignore_not_found());
+        let mut not_shadow =
+            NamespaceBuilder::new(scope, ignore_not_found(), WeakInstanceToken::new_invalid());
         not_shadow.add_object(connector_cap(), &path("/svc/foo")).unwrap();
         assert_matches!(not_shadow.add_entry(directory_cap(), &ns_path("/svc2")), Ok(_));
     }
@@ -332,7 +346,8 @@ mod tests {
     #[fuchsia::test]
     async fn test_duplicate_object() {
         let scope = ExecutionScope::new();
-        let mut namespace = NamespaceBuilder::new(scope, ignore_not_found());
+        let mut namespace =
+            NamespaceBuilder::new(scope, ignore_not_found(), WeakInstanceToken::new_invalid());
         namespace.add_object(connector_cap(), &path("/svc/a")).expect("");
         // Adding again will fail.
         assert_matches!(
@@ -345,7 +360,8 @@ mod tests {
     #[fuchsia::test]
     async fn test_duplicate_entry() {
         let scope = ExecutionScope::new();
-        let mut namespace = NamespaceBuilder::new(scope, ignore_not_found());
+        let mut namespace =
+            NamespaceBuilder::new(scope, ignore_not_found(), WeakInstanceToken::new_invalid());
         namespace.add_entry(directory_cap(), &ns_path("/svc/a")).expect("");
         // Adding again will fail.
         assert_matches!(
@@ -358,7 +374,8 @@ mod tests {
     #[fuchsia::test]
     async fn test_duplicate_object_and_entry() {
         let scope = ExecutionScope::new();
-        let mut namespace = NamespaceBuilder::new(scope, ignore_not_found());
+        let mut namespace =
+            NamespaceBuilder::new(scope, ignore_not_found(), WeakInstanceToken::new_invalid());
         namespace.add_object(connector_cap(), &path("/svc/a")).expect("");
         assert_matches!(
             namespace.add_entry(directory_cap(), &ns_path("/svc/a")),
@@ -372,7 +389,8 @@ mod tests {
     #[fuchsia::test]
     async fn test_duplicate_entry_at_object_parent() {
         let scope = ExecutionScope::new();
-        let mut namespace = NamespaceBuilder::new(scope, ignore_not_found());
+        let mut namespace =
+            NamespaceBuilder::new(scope, ignore_not_found(), WeakInstanceToken::new_invalid());
         namespace.add_object(connector_cap(), &path("/foo/bar")).expect("");
         assert_matches!(
             namespace.add_entry(directory_cap(), &ns_path("/foo")),
@@ -387,7 +405,8 @@ mod tests {
     #[fuchsia::test]
     async fn test_duplicate_object_parent_at_entry() {
         let scope = ExecutionScope::new();
-        let mut namespace = NamespaceBuilder::new(scope, ignore_not_found());
+        let mut namespace =
+            NamespaceBuilder::new(scope, ignore_not_found(), WeakInstanceToken::new_invalid());
         namespace.add_entry(directory_cap(), &ns_path("/foo")).expect("");
         assert_matches!(
             namespace.add_object(connector_cap(), &path("/foo/bar")),
@@ -399,7 +418,8 @@ mod tests {
     #[fuchsia::test]
     async fn test_empty() {
         let scope = ExecutionScope::new();
-        let namespace = NamespaceBuilder::new(scope, ignore_not_found());
+        let namespace =
+            NamespaceBuilder::new(scope, ignore_not_found(), WeakInstanceToken::new_invalid());
         let ns = namespace.serve().unwrap();
         assert_eq!(ns.flatten().len(), 0);
     }
@@ -409,7 +429,8 @@ mod tests {
         let (sender, receiver) = multishot();
 
         let scope = ExecutionScope::new();
-        let mut namespace = NamespaceBuilder::new(scope, ignore_not_found());
+        let mut namespace =
+            NamespaceBuilder::new(scope, ignore_not_found(), WeakInstanceToken::new_invalid());
         namespace.add_object(sender.into(), &path("/svc/a")).unwrap();
         let ns = namespace.serve().unwrap();
 
@@ -439,7 +460,8 @@ mod tests {
     #[fuchsia::test]
     async fn test_two_connectors_in_same_namespace_entry() {
         let scope = ExecutionScope::new();
-        let mut namespace = NamespaceBuilder::new(scope, ignore_not_found());
+        let mut namespace =
+            NamespaceBuilder::new(scope, ignore_not_found(), WeakInstanceToken::new_invalid());
         namespace.add_object(connector_cap(), &path("/svc/a")).unwrap();
         namespace.add_object(connector_cap(), &path("/svc/b")).unwrap();
         let ns = namespace.serve().unwrap();
@@ -465,7 +487,8 @@ mod tests {
     #[fuchsia::test]
     async fn test_two_connectors_in_different_namespace_entries() {
         let scope = ExecutionScope::new();
-        let mut namespace = NamespaceBuilder::new(scope, ignore_not_found());
+        let mut namespace =
+            NamespaceBuilder::new(scope, ignore_not_found(), WeakInstanceToken::new_invalid());
         namespace.add_object(connector_cap(), &path("/svc1/a")).unwrap();
         namespace.add_object(connector_cap(), &path("/svc2/b")).unwrap();
         let ns = namespace.serve().unwrap();
@@ -501,7 +524,8 @@ mod tests {
     async fn test_not_found() {
         let (not_found_sender, mut not_found_receiver) = unbounded();
         let scope = ExecutionScope::new();
-        let mut namespace = NamespaceBuilder::new(scope, not_found_sender);
+        let mut namespace =
+            NamespaceBuilder::new(scope, not_found_sender, WeakInstanceToken::new_invalid());
         namespace.add_object(connector_cap(), &path("/svc/a")).unwrap();
         let ns = namespace.serve().unwrap();
 
@@ -530,7 +554,8 @@ mod tests {
     async fn test_not_directory() {
         let (not_found_sender, _) = unbounded();
         let scope = ExecutionScope::new();
-        let mut namespace = NamespaceBuilder::new(scope, not_found_sender);
+        let mut namespace =
+            NamespaceBuilder::new(scope, not_found_sender, WeakInstanceToken::new_invalid());
         let (_, sender) = sandbox::Connector::new();
         assert_matches!(
             namespace.add_entry(sender.into(), &ns_path("/a")),
@@ -585,7 +610,8 @@ mod tests {
         let dir = Directory::from(vfs::directory::serve(fs, rights).into_client_end().unwrap());
 
         let scope = ExecutionScope::new();
-        let mut namespace = NamespaceBuilder::new(scope, ignore_not_found());
+        let mut namespace =
+            NamespaceBuilder::new(scope, ignore_not_found(), WeakInstanceToken::new_invalid());
         namespace.add_entry(dir.into(), &ns_path("/dir")).unwrap();
         let mut ns = namespace.serve().unwrap();
         let dir_proxy = ns.remove(&"/dir".parse().unwrap()).unwrap();
@@ -644,7 +670,8 @@ mod tests {
         );
 
         let scope = ExecutionScope::new();
-        let mut namespace = NamespaceBuilder::new(scope, ignore_not_found());
+        let mut namespace =
+            NamespaceBuilder::new(scope, ignore_not_found(), WeakInstanceToken::new_invalid());
         namespace.add_entry(dir.into(), &ns_path("/dir")).unwrap();
         let mut ns = namespace.serve().unwrap();
         let dir_proxy = ns.remove(&"/dir".parse().unwrap()).unwrap();

@@ -25,6 +25,9 @@ use zx::JobCriticalOptions;
 use {fidl_fuchsia_component_internal as finternal, fuchsia_async as fasync};
 
 #[cfg(feature = "heapdump")]
+use ::routing::component_instance::ComponentInstanceInterface;
+
+#[cfg(feature = "heapdump")]
 use sandbox::Routable;
 
 #[cfg(feature = "tracing")]
@@ -116,13 +119,14 @@ fn connect_to_heapdump(builtin_environment: &BuiltinEnvironment) {
         let heapdump_router = model.top_instance().get_root_exposed_capability_router(
             cm_types::Name::new("fuchsia.memory.heapdump.process.Registry").unwrap(),
         );
-        let heapdump_connector = match heapdump_router.route(None, false).await {
-            Ok(sandbox::RouterResponse::Capability(connector)) => connector,
-            other_value => {
-                error!("Failed to connect to heapdump collector: {:?}", other_value);
-                return;
-            }
-        };
+        let heapdump_connector =
+            match heapdump_router.route(None, false, model.root().clone().as_weak().into()).await {
+                Ok(sandbox::RouterResponse::Capability(connector)) => connector,
+                other_value => {
+                    error!("Failed to connect to heapdump collector: {:?}", other_value);
+                    return;
+                }
+            };
         let (client_end, server_end) = zx::Channel::create();
         match heapdump_connector.send(sandbox::Message { channel: server_end }) {
             Ok(_) => heapdump::bind_with_channel(client_end),

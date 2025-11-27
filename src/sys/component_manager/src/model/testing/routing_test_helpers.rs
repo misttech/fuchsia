@@ -1515,7 +1515,11 @@ pub mod capability_util {
             Capability::ConnectorRouter(r) => r,
             _ => panic!("unexpected capability type"),
         };
-        let connector = match router.route(None, false).await.expect("failed to route") {
+        let connector = match router
+            .route(None, false, component.clone().as_weak().into())
+            .await
+            .expect("failed to route")
+        {
             RouterResponse::Capability(c) => c,
             _ => panic!("unexpected router response"),
         };

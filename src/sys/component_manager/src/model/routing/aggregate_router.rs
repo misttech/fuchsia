@@ -25,6 +25,7 @@ use routing::component_instance::ComponentInstanceInterface;
 use routing::error::{ComponentInstanceError, RoutingError};
 use sandbox::{
     Capability, Data, Dict, DirConnector, RemotableCapability, Request, Router, RouterResponse,
+    WeakInstanceToken,
 };
 use std::cmp::Ordering;
 use std::sync::Arc;
@@ -68,6 +69,7 @@ impl sandbox::Routable<DirConnector> for AggregateRouter {
         &self,
         request: Option<Request>,
         debug: bool,
+        _target: WeakInstanceToken,
     ) -> Result<RouterResponse<DirConnector>, RouterError> {
         let request = request.ok_or(RouterError::InvalidArgs)?;
 
@@ -204,7 +206,11 @@ impl AggregateRouter {
         });
         let mut routing_futures = FuturesUnordered::new();
         for router in source_dir_routers {
-            routing_futures.push(router.route(Some(request.try_clone()?), false));
+            routing_futures.push(router.route(
+                Some(request.try_clone()?),
+                false,
+                self.component.clone().into(),
+            ));
         }
         let aggregate_dictionary = Dict::new();
         while let Some(router_response) = routing_futures.next().await {
@@ -249,7 +255,9 @@ impl AggregateRouter {
             }
         }
         Ok(DirConnector::from_directory_entry(
-            aggregate_dictionary.try_into_directory_entry(self.scope.clone()).unwrap(),
+            aggregate_dictionary
+                .try_into_directory_entry(self.scope.clone(), self.component.clone().into())
+                .unwrap(),
             fio::PERM_READABLE,
         )
         .into())
@@ -398,7 +406,7 @@ impl AnonymizedAggregateCapabilityProvider for AnonymizedAggregateServiceProvide
                 }
             }
         };
-        match router.route(None, true).await? {
+        match router.route(None, true, self.component.clone().into()).await? {
             RouterResponse::Debug(data) => Ok((
                 router,
                 data.try_into().expect("failed to convert capability source data to struct"),

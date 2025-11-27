@@ -14,11 +14,13 @@ static RECEIVER_SCOPE: LazyLock<fasync::Scope> = LazyLock::new(|| fasync::Scope:
 pub fn serve(
     server_end: zx::Channel,
     _target: WeakComponentInstance,
-    _source: WeakComponentInstance,
+    source: WeakComponentInstance,
 ) -> BoxFuture<'static, Result<(), anyhow::Error>> {
     async move {
         let stream = take_handle_as_stream::<fsandbox::CapabilityStoreMarker>(server_end);
-        sandbox::serve_capability_store(stream, &*RECEIVER_SCOPE).await.map_err(Into::into)
+        sandbox::serve_capability_store(stream, &*RECEIVER_SCOPE, source.into())
+            .await
+            .map_err(Into::into)
     }
     .boxed()
 }

@@ -44,7 +44,8 @@ impl From<Handle> for handle::Handle {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::Capability;
+    use crate::fidl::IntoFsandboxCapability;
+    use crate::{Capability, WeakInstanceToken};
     use assert_matches::assert_matches;
     use fidl::handle::{AsHandleRef, HandleBased};
     use fidl_fuchsia_component_sandbox as fsandbox;
@@ -58,7 +59,8 @@ mod tests {
         let handle = Handle::from(event.into_handle());
 
         // Convert the OneShotHandle to FIDL and back.
-        let fidl_capability: fsandbox::Capability = handle.into();
+        let fidl_capability: fsandbox::Capability =
+            handle.into_fsandbox_capability(WeakInstanceToken::new_invalid());
         assert_matches!(&fidl_capability, fsandbox::Capability::Handle(_));
 
         let any: Capability = fidl_capability.try_into().unwrap();

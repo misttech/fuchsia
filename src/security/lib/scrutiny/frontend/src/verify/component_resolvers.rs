@@ -78,13 +78,10 @@ impl ComponentResolversVisitor {
             .resolvers()
             .get(&scheme_name)
         {
-            let request = Request {
-                target: instance.as_weak().into(),
-                metadata: resolver_metadata(cm_types::Availability::Required),
-            };
+            let request = Request { metadata: resolver_metadata(cm_types::Availability::Required) };
 
             let source: CapabilitySource = match resolver_router
-                .route(Some(request), true)
+                .route(Some(request), true, instance.as_weak().into())
                 .now_or_never()
                 .expect("now or never did not return a result")
             {

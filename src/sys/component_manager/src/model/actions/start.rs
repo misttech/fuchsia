@@ -31,7 +31,9 @@ use moniker::Moniker;
 use num_traits::cast::FromPrimitive;
 use router_error::RouterError;
 use routing::bedrock::request_metadata::runner_metadata;
-use sandbox::{Capability, Connector, Dict, Message, Request, Router, RouterResponse};
+use sandbox::{
+    Capability, Connector, Dict, Message, Request, Router, RouterResponse, WeakInstanceToken,
+};
 use serve_processargs::NamespaceBuilder;
 use std::sync::Arc;
 use {
@@ -93,6 +95,7 @@ struct StartContext {
 
 fn open_protocols_with_numbered_handle(
     resolved_instance_state: &ResolvedInstanceState,
+    target: WeakInstanceToken,
 ) -> Vec<fprocess::HandleInfo> {
     let decl = &resolved_instance_state.resolved_component.decl;
     let numbered_handle_dict = resolved_instance_state.sandbox.program_input.numbered_handles();
@@ -119,8 +122,9 @@ fn open_protocols_with_numbered_handle(
                     Some(Capability::ConnectorRouter(router)) => {
                         let scope = &resolved_instance_state.execution_scope;
                         let (client, server) = fidl::Channel::create();
+                        let target = target.clone();
                         scope.spawn(async move {
-                            let Ok(res) = router.route(None, false).await else {
+                            let Ok(res) = router.route(None, false, target).await else {
                                 // router will take care of logging error
                                 return;
                             };
@@ -191,7 +195,10 @@ async fn do_start(
                 err: Box::new(err),
             })?;
 
-        let mut numbered_handles = open_protocols_with_numbered_handle(&resolved_state);
+        let mut numbered_handles = open_protocols_with_numbered_handle(
+            &resolved_state,
+            component.clone().as_weak().into(),
+        );
         incoming.numbered_handles.append(&mut numbered_handles);
 
         let runner = resolved_state.sandbox.program_input.runner();
@@ -488,17 +495,15 @@ async fn open_runner(
     runner_name: Name,
 ) -> Result<Option<RemoteRunner>, StartActionError> {
     // Open up a channel to the runner.
-    let request = Request {
-        target: component.as_weak().into(),
-        metadata: runner_metadata(cm_rust::Availability::Required),
-    };
-    let runner_capability = runner_router.route(Some(request), false).await.map_err(|err| {
-        StartActionError::ResolveRunnerError {
+    let request = Request { metadata: runner_metadata(cm_rust::Availability::Required) };
+    let runner_capability = runner_router
+        .route(Some(request), false, component.as_weak().into())
+        .await
+        .map_err(|err| StartActionError::ResolveRunnerError {
             moniker: component.moniker.clone(),
             err: Box::new(err),
             runner: runner_name.clone(),
-        }
-    })?;
+        })?;
     match &runner_capability {
         // Built-in runners are hosted by a LaunchTaskOnReceive, which returns a Connector
         // capability for new routes.

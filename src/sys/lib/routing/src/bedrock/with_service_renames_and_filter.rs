@@ -10,7 +10,7 @@ use router_error::RouterError;
 use sandbox::RemotableCapability;
 use sandbox::{
     Capability, Connector, Data, Dict, DirConnector, DirEntry, Request, Routable, Router,
-    RouterResponse,
+    RouterResponse, WeakInstanceToken,
 };
 
 /// A router that will apply renames/filtering on any dictionaries routed through it.
@@ -28,8 +28,9 @@ impl Routable<DirConnector> for ServiceRenameRouter {
         &self,
         request: Option<Request>,
         debug: bool,
+        target: WeakInstanceToken,
     ) -> Result<RouterResponse<DirConnector>, RouterError> {
-        self.handle_dir_router(request, debug).await
+        self.handle_dir_router(request, debug, target).await
     }
 }
 
@@ -38,8 +39,9 @@ impl ServiceRenameRouter {
         &self,
         request: Option<Request>,
         debug: bool,
+        target: WeakInstanceToken,
     ) -> Result<RouterResponse<DirConnector>, RouterError> {
-        let result = self.router.route(request, debug).await;
+        let result = self.router.route(request, debug, target.clone()).await;
         match result {
             #[cfg(target_os = "fuchsia")]
             Ok(RouterResponse::Capability(source_services_directory)) => {
@@ -52,7 +54,10 @@ impl ServiceRenameRouter {
                         .expect("failed to insert into target services dict");
                 }
                 let dir_entry = target_services_dict
-                    .try_into_directory_entry(vfs::execution_scope::ExecutionScope::new())
+                    .try_into_directory_entry(
+                        vfs::execution_scope::ExecutionScope::new(),
+                        target.clone(),
+                    )
                     .unwrap();
                 let dir_connector =
                     DirConnector::from_directory_entry(dir_entry, fidl_fuchsia_io::PERM_READABLE);

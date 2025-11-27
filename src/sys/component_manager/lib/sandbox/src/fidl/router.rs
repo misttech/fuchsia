@@ -2,8 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::fidl::RemotableCapability;
-use crate::{Capability, CapabilityBound, Dict, Request, Router, RouterResponse};
+use crate::fidl::{IntoFsandboxCapability, RemotableCapability};
+use crate::{
+    Capability, CapabilityBound, Dict, Request, Router, RouterResponse, WeakInstanceToken,
+};
 use fidl::AsHandleRef;
 use router_error::{Explain, RouterError};
 use std::sync::Arc;
@@ -11,13 +13,18 @@ use vfs::directory::entry::{self, DirectoryEntry, DirectoryEntryAsync, EntryInfo
 use vfs::execution_scope::ExecutionScope;
 use {fidl_fuchsia_component_sandbox as fsandbox, fidl_fuchsia_io as fio, zx};
 
-impl From<Request> for fsandbox::RouteRequest {
-    fn from(request: Request) -> Self {
-        let (token, server) = zx::EventPair::create();
-        request.target.register(token.get_koid().unwrap(), server);
+impl Request {
+    pub fn into_fsandbox_request(self, token: WeakInstanceToken) -> fsandbox::RouteRequest {
+        let (token_event_pair, server) = zx::EventPair::create();
+        token.clone().register(token_event_pair.get_koid().unwrap(), server);
+        let fsandbox::Capability::Dictionary(dictionary_ref) =
+            self.metadata.into_fsandbox_capability(token)
+        else {
+            panic!("invalid type");
+        };
         fsandbox::RouteRequest {
-            requesting: Some(fsandbox::InstanceToken { token }),
-            metadata: Some(request.metadata.into()),
+            requesting: Some(fsandbox::InstanceToken { token: token_event_pair }),
+            metadata: Some(dictionary_ref),
             ..Default::default()
         }
     }
@@ -41,6 +48,7 @@ impl TryFrom<fsandbox::DictionaryRouterRouteResponse> for RouterResponse<Dict> {
 pub(crate) async fn route_from_fidl<T, R>(
     router: &Router<T>,
     payload: fsandbox::RouteRequest,
+    token: WeakInstanceToken,
 ) -> Result<R, fsandbox::RouterError>
 where
     T: CapabilityBound,
@@ -60,10 +68,10 @@ where
             else {
                 return Err(fsandbox::RouterError::InvalidArgs);
             };
-            let request = Request { target: component, metadata };
-            router.route(Some(request), false).await?
+            let request = Request { metadata };
+            router.route(Some(request), false, component).await?
         }
-        (None, None) => router.route(None, false).await?,
+        (None, None) => router.route(None, false, token).await?,
         _ => {
             return Err(fsandbox::RouterError::InvalidArgs);
         }
@@ -79,11 +87,13 @@ where
         self,
         entry_type: fio::DirentType,
         scope: ExecutionScope,
+        token: WeakInstanceToken,
     ) -> Arc<dyn DirectoryEntry> {
         struct RouterEntry<T: CapabilityBound> {
             router: Router<T>,
             entry_type: fio::DirentType,
             scope: ExecutionScope,
+            token: WeakInstanceToken,
         }
 
         impl<T: CapabilityBound + Clone> DirectoryEntry for RouterEntry<T>
@@ -121,7 +131,7 @@ where
                 };
 
                 // Request a capability from the `router`.
-                let result = match self.router.route(None, false).await {
+                let result = match self.router.route(None, false, self.token.clone()).await {
                     Ok(RouterResponse::<T>::Capability(c)) => Ok(Capability::from(c)),
                     Ok(RouterResponse::<T>::Unavailable) => {
                         return Err(zx::Status::NOT_FOUND);
@@ -134,7 +144,9 @@ where
                 };
                 let error = match result {
                     Ok(capability) => {
-                        match capability.try_into_directory_entry(self.scope.clone()) {
+                        match capability
+                            .try_into_directory_entry(self.scope.clone(), self.token.clone())
+                        {
                             Ok(open) => return open.open_entry(open_request),
                             Err(_) => RouterError::NotSupported,
                         }
@@ -145,6 +157,6 @@ where
             }
         }
 
-        Arc::new(RouterEntry { router: self, entry_type, scope })
+        Arc::new(RouterEntry { router: self, entry_type, scope, token })
     }
 }

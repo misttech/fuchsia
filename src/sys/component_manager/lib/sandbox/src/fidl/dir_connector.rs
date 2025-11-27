@@ -4,7 +4,7 @@
 
 use crate::dir_connector::DirConnectable;
 use crate::fidl::registry;
-use crate::{ConversionError, DirConnector, DirReceiver};
+use crate::{ConversionError, DirConnector, DirReceiver, WeakInstanceToken};
 use cm_types::{Name, RelativePath};
 use fidl::endpoints::{ClientEnd, ServerEnd};
 use futures::channel::mpsc;
@@ -121,6 +121,7 @@ impl crate::RemotableCapability for DirConnector {
     fn try_into_directory_entry(
         self,
         _scope: ExecutionScope,
+        _token: WeakInstanceToken,
     ) -> Result<Arc<dyn DirectoryEntry>, ConversionError> {
         Ok(Arc::new(self))
     }
@@ -132,8 +133,8 @@ impl From<DirConnector> for fsandbox::DirConnector {
     }
 }
 
-impl From<DirConnector> for fsandbox::Capability {
-    fn from(connector: DirConnector) -> Self {
-        fsandbox::Capability::DirConnector(connector.into())
+impl crate::fidl::IntoFsandboxCapability for DirConnector {
+    fn into_fsandbox_capability(self, _token: WeakInstanceToken) -> fsandbox::Capability {
+        fsandbox::Capability::DirConnector(self.into())
     }
 }

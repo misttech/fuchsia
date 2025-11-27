@@ -83,8 +83,9 @@ impl CapabilityProvider for DefaultComponentCapabilityProvider {
                 &self.name,
                 // Routers in `program_output_dict` do not check availability but we need a
                 // request to run hooks.
-                Some(Request { target: self.target.clone().into(), metadata }),
+                Some(Request { metadata }),
                 false,
+                self.target.clone().into(),
             )
             .await?
             .ok_or_else(|| RoutingError::BedrockNotPresentInDictionary {
@@ -109,7 +110,7 @@ impl CapabilityProvider for DefaultComponentCapabilityProvider {
             }
         };
         let entry = capability
-            .try_into_directory_entry(source.execution_scope.clone())
+            .try_into_directory_entry(source.execution_scope.clone(), self.target.clone().into())
             .map_err(OpenError::DoesNotSupportOpen)
             .map_err(RouterError::from)?;
         entry.open_entry(open_request).map_err(|err| CapabilityProviderError::VfsOpenError(err))

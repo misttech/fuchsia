@@ -24,9 +24,7 @@ use crate::bedrock::request_metadata::{
 use crate::capability_source::{
     CapabilitySource, ComponentCapability, ComponentSource, InternalCapability, VoidSource,
 };
-use crate::component_instance::{
-    ComponentInstanceInterface, ResolvedInstanceInterface, WeakComponentInstanceInterface,
-};
+use crate::component_instance::{ComponentInstanceInterface, ResolvedInstanceInterface};
 use crate::error::RoutingError;
 use crate::legacy_router::{
     CapabilityVisitor, ErrorNotFoundFromParent, ErrorNotFoundInChild, ExposeVisitor, NoopVisitor,
@@ -675,8 +673,8 @@ where
     T: CapabilityBound + Debug,
     Router<T>: TryFrom<Capability>,
 {
-    let request = Request { target: WeakComponentInstanceInterface::new(target).into(), metadata };
-    let data = match router.route(Some(request), true).await? {
+    let request = Request { metadata };
+    let data = match router.route(Some(request), true, target.as_weak().into()).await? {
         RouterResponse::<T>::Debug(d) => d,
         d => panic!("Debug route did not return a debug response: {d:?}"),
     };

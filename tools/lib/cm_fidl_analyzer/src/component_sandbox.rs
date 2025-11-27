@@ -33,7 +33,7 @@ use moniker::{ChildName, Moniker};
 use router_error::RouterError;
 use sandbox::{
     Capability, CapabilityBound, Connector, Data, Dict, DirConnector, Request, Routable, Router,
-    RouterResponse,
+    RouterResponse, WeakInstanceToken,
 };
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -48,7 +48,7 @@ where
 {
     let moniker = source.source_moniker();
     let data: Data = source.try_into().expect("failed to convert capability source to Data");
-    Router::<T>::new(move |_request: Option<Request>, debug: bool| {
+    Router::<T>::new(move |_request: Option<Request>, debug: bool, _target: WeakInstanceToken| {
         if !debug {
             future::ready(Err(RouterError::NotFound(Arc::new(
                 RoutingError::NonDebugRoutesUnsupported { moniker: moniker.clone() },
@@ -216,12 +216,11 @@ struct FrameworkRouter {
 impl Routable<Dict> for FrameworkRouter {
     async fn route(
         &self,
-        request: Option<Request>,
+        _request: Option<Request>,
         _debug: bool,
+        target: WeakInstanceToken,
     ) -> Result<RouterResponse<Dict>, RouterError> {
-        let request = request.ok_or(RouterError::InvalidArgs)?;
-        let target = request
-            .target
+        let target = target
             .inner
             .as_any()
             .downcast_ref::<WeakExtendedInstanceInterface<ComponentInstanceForAnalyzer>>()
@@ -377,14 +376,16 @@ impl program_output_dict::ProgramOutputGenerator<ComponentInstanceForAnalyzer>
             ));
         }
         let dynamic_dictionaries = self.dynamic_dictionaries.clone();
-        Router::<Dict>::new(move |_request: Option<Request>, _debug: bool| {
-            future::ready(Self::maybe_route_dynamic_dict(
-                &dynamic_dictionaries,
-                &component,
-                &capability,
-            ))
-            .boxed()
-        })
+        Router::<Dict>::new(
+            move |_request: Option<Request>, _debug: bool, _target: WeakInstanceToken| {
+                future::ready(Self::maybe_route_dynamic_dict(
+                    &dynamic_dictionaries,
+                    &component,
+                    &capability,
+                ))
+                .boxed()
+            },
+        )
     }
 
     fn new_outgoing_dir_connector_router(
@@ -458,6 +459,7 @@ pub(crate) fn static_children_component_output_dictionary_routers(
             &self,
             _request: Option<Request>,
             _debug: bool,
+            _target: WeakInstanceToken,
         ) -> Result<RouterResponse<Dict>, RouterError> {
             let component =
                 self.weak_component.upgrade().expect("part of component tree was dropped");
@@ -506,30 +508,32 @@ pub fn new_event_stream_multiplexing_router(
     _: &Arc<ComponentInstanceForAnalyzer>,
     sources: Vec<EventStreamSourceRouter>,
 ) -> Router<Connector> {
-    Router::new(move |_request: Option<sandbox::Request>, debug: bool| {
-        assert!(debug, "non-debug routing is unsupported");
-        let sources = sources.clone();
-        async move {
-            let mut routing_tasks = FuturesUnordered::new();
-            for EventStreamSourceRouter { router, .. } in sources.iter() {
-                routing_tasks.push(router.route(None, true));
-            }
-            let mut any_result = None;
-            while let Some(result) = routing_tasks.next().await {
-                match result {
-                    Ok(result) => any_result = Some(result),
-                    Err(e) => return Err(e),
+    Router::new(
+        move |_request: Option<sandbox::Request>, debug: bool, target: WeakInstanceToken| {
+            assert!(debug, "non-debug routing is unsupported");
+            let sources = sources.clone();
+            async move {
+                let mut routing_tasks = FuturesUnordered::new();
+                for EventStreamSourceRouter { router, .. } in sources.iter() {
+                    routing_tasks.push(router.route(None, true, target.clone()));
+                }
+                let mut any_result = None;
+                while let Some(result) = routing_tasks.next().await {
+                    match result {
+                        Ok(result) => any_result = Some(result),
+                        Err(e) => return Err(e),
+                    }
+                }
+                match any_result {
+                    Some(RouterResponse::Debug(data)) => Ok(RouterResponse::Debug(data)),
+                    Some(RouterResponse::Unavailable) => Ok(RouterResponse::Unavailable),
+                    Some(RouterResponse::Capability(_)) => {
+                        panic!("debug route returned capability, which is disallowed")
+                    }
+                    None => panic!("no result produced, is sources empty?"),
                 }
             }
-            match any_result {
-                Some(RouterResponse::Debug(data)) => Ok(RouterResponse::Debug(data)),
-                Some(RouterResponse::Unavailable) => Ok(RouterResponse::Unavailable),
-                Some(RouterResponse::Capability(_)) => {
-                    panic!("debug route returned capability, which is disallowed")
-                }
-                None => panic!("no result produced, is sources empty?"),
-            }
-        }
-        .boxed()
-    })
+            .boxed()
+        },
+    )
 }

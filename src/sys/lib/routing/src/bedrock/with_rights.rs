@@ -9,7 +9,7 @@ use crate::walk_state::WalkStateUnit;
 use async_trait::async_trait;
 use moniker::ExtendedMoniker;
 use router_error::RouterError;
-use sandbox::{CapabilityBound, Request, Routable, Router, RouterResponse};
+use sandbox::{CapabilityBound, Request, Routable, Router, RouterResponse, WeakInstanceToken};
 
 struct RightsRouter<T: CapabilityBound> {
     router: Router<T>,
@@ -23,6 +23,7 @@ impl<T: CapabilityBound> Routable<T> for RightsRouter<T> {
         &self,
         request: Option<Request>,
         debug: bool,
+        target: WeakInstanceToken,
     ) -> Result<RouterResponse<T>, router_error::RouterError> {
         let request = request.ok_or(RouterError::InvalidArgs)?;
         let RightsRouter { router, rights, moniker } = self;
@@ -55,7 +56,7 @@ impl<T: CapabilityBound> Routable<T> for RightsRouter<T> {
         // The rights of the request must be compatible with the
         // rights of this step of the route.
         match request_rights.validate_next(&router_rights) {
-            Ok(()) => router.route(Some(request), debug).await,
+            Ok(()) => router.route(Some(request), debug, target).await,
             Err(e) => Err(RoutingError::from(e).into()),
         }
     }
@@ -106,7 +107,7 @@ mod tests {
         metadata.set_metadata(InheritRights(false));
         metadata.set_metadata(Into::<Rights>::into(fio::R_STAR_DIR));
         let capability = proxy
-            .route(Some(Request { target: FakeComponentToken::new(), metadata }), false)
+            .route(Some(Request { metadata }), false, FakeComponentToken::new())
             .await
             .unwrap();
         let capability = match capability {
@@ -125,7 +126,7 @@ mod tests {
         metadata.set_metadata(InheritRights(false));
         metadata.set_metadata(Into::<Rights>::into(fio::RW_STAR_DIR));
         let error = proxy
-            .route(Some(Request { target: FakeComponentToken::new(), metadata }), false)
+            .route(Some(Request { metadata }), false, FakeComponentToken::new())
             .await
             .unwrap_err();
         assert_matches!(
@@ -151,7 +152,7 @@ mod tests {
         metadata.set_metadata(InheritRights(false));
         metadata.set_metadata(Into::<Rights>::into(fio::R_STAR_DIR));
         let error = intermediate
-            .route(Some(Request { target: FakeComponentToken::new(), metadata }), false)
+            .route(Some(Request { metadata }), false, FakeComponentToken::new())
             .await
             .unwrap_err();
         assert_matches!(

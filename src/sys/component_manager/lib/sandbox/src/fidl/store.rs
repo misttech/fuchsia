@@ -3,15 +3,15 @@
 // found in the LICENSE file.
 
 use crate::dict::Key;
-use crate::fidl::registry;
-use crate::{Capability, Connector, Dict, DirConnector, Message};
+use crate::fidl::{IntoFsandboxCapability, registry};
+use crate::{Capability, Connector, Dict, DirConnector, Message, WeakInstanceToken};
 use cm_types::RelativePath;
-use fidl::handle::Signals;
 use fidl::AsHandleRef;
+use fidl::handle::Signals;
 use futures::{FutureExt, TryStreamExt};
 use log::warn;
-use std::collections::hash_map::Entry;
 use std::collections::HashMap;
+use std::collections::hash_map::Entry;
 use std::sync::{self, Arc, Weak};
 use {fidl_fuchsia_component_sandbox as fsandbox, fuchsia_async as fasync};
 
@@ -27,6 +27,7 @@ pub async fn serve_capability_store(
     // We could simply detach() the Task instead, but fuchsia_async considers that holding the
     // handle is considered better practice.
     receiver_scope: &fasync::Scope,
+    token: WeakInstanceToken,
 ) -> Result<(), fidl::Error> {
     let outer_store: Arc<Store> = Arc::new(Store::new(Default::default()));
     while let Some(request) = stream.try_next().await? {
@@ -51,7 +52,7 @@ pub async fn serve_capability_store(
                 let result = (|| {
                     let cap =
                         store.remove(&id).ok_or(fsandbox::CapabilityStoreError::IdNotFound)?;
-                    Ok(cap.into())
+                    Ok(cap.into_fsandbox_capability(token.clone()))
                 })();
                 responder.send(result)?;
             }
@@ -475,7 +476,7 @@ mod tests {
     use super::*;
     use crate::Data;
     use assert_matches::assert_matches;
-    use fidl::{endpoints, HandleBased};
+    use fidl::{HandleBased, endpoints};
 
     #[fuchsia::test]
     async fn import_export() {
@@ -483,7 +484,7 @@ mod tests {
             endpoints::create_proxy_and_stream::<fsandbox::CapabilityStoreMarker>();
         let _server = fasync::Task::spawn(async move {
             let receiver_scope = fasync::Scope::new();
-            serve_capability_store(stream, &receiver_scope).await
+            serve_capability_store(stream, &receiver_scope, WeakInstanceToken::new_invalid()).await
         });
 
         let (ch, _) = fidl::Channel::create();
@@ -491,8 +492,16 @@ mod tests {
         let handle_koid = handle.get_koid().unwrap();
         let cap1 = Capability::Handle(handle.into());
         let cap2 = Capability::Data(Data::Int64(42));
-        store.import(1, cap1.into()).await.unwrap().unwrap();
-        store.import(2, cap2.into()).await.unwrap().unwrap();
+        store
+            .import(1, cap1.into_fsandbox_capability(WeakInstanceToken::new_invalid()))
+            .await
+            .unwrap()
+            .unwrap();
+        store
+            .import(2, cap2.into_fsandbox_capability(WeakInstanceToken::new_invalid()))
+            .await
+            .unwrap()
+            .unwrap();
 
         let cap1 = store.export(1).await.unwrap().unwrap();
         let cap2 = store.export(2).await.unwrap().unwrap();
@@ -512,13 +521,25 @@ mod tests {
             endpoints::create_proxy_and_stream::<fsandbox::CapabilityStoreMarker>();
         let _server = fasync::Task::spawn(async move {
             let receiver_scope = fasync::Scope::new();
-            serve_capability_store(stream, &receiver_scope).await
+            serve_capability_store(stream, &receiver_scope, WeakInstanceToken::new_invalid()).await
         });
 
         let cap1 = Capability::Data(Data::Int64(42));
-        store.import(1, cap1.try_clone().unwrap().into()).await.unwrap().unwrap();
+        store
+            .import(
+                1,
+                cap1.try_clone()
+                    .unwrap()
+                    .into_fsandbox_capability(WeakInstanceToken::new_invalid()),
+            )
+            .await
+            .unwrap()
+            .unwrap();
         assert_matches!(
-            store.import(1, cap1.into()).await.unwrap(),
+            store
+                .import(1, cap1.into_fsandbox_capability(WeakInstanceToken::new_invalid()))
+                .await
+                .unwrap(),
             Err(fsandbox::CapabilityStoreError::IdAlreadyExists)
         );
 
@@ -536,11 +557,20 @@ mod tests {
             endpoints::create_proxy_and_stream::<fsandbox::CapabilityStoreMarker>();
         let _server = fasync::Task::spawn(async move {
             let receiver_scope = fasync::Scope::new();
-            serve_capability_store(stream, &receiver_scope).await
+            serve_capability_store(stream, &receiver_scope, WeakInstanceToken::new_invalid()).await
         });
 
         let cap1 = Capability::Data(Data::Int64(42));
-        store.import(1, cap1.try_clone().unwrap().into()).await.unwrap().unwrap();
+        store
+            .import(
+                1,
+                cap1.try_clone()
+                    .unwrap()
+                    .into_fsandbox_capability(WeakInstanceToken::new_invalid()),
+            )
+            .await
+            .unwrap()
+            .unwrap();
 
         assert_matches!(
             store.export(2).await.unwrap(),
@@ -554,7 +584,7 @@ mod tests {
             endpoints::create_proxy_and_stream::<fsandbox::CapabilityStoreMarker>();
         let _server = fasync::Task::spawn(async move {
             let receiver_scope = fasync::Scope::new();
-            serve_capability_store(stream, &receiver_scope).await
+            serve_capability_store(stream, &receiver_scope, WeakInstanceToken::new_invalid()).await
         });
 
         let (ch, _) = fidl::Channel::create();
@@ -562,8 +592,16 @@ mod tests {
         let handle_koid = handle.get_koid().unwrap();
         let cap1 = Capability::Handle(handle.into());
         let cap2 = Capability::Data(Data::Int64(42));
-        store.import(1, cap1.into()).await.unwrap().unwrap();
-        store.import(2, cap2.into()).await.unwrap().unwrap();
+        store
+            .import(1, cap1.into_fsandbox_capability(WeakInstanceToken::new_invalid()))
+            .await
+            .unwrap()
+            .unwrap();
+        store
+            .import(2, cap2.into_fsandbox_capability(WeakInstanceToken::new_invalid()))
+            .await
+            .unwrap()
+            .unwrap();
 
         // Drop capability 2. It's no longer in the store.
         store.drop(2).await.unwrap().unwrap();
@@ -578,7 +616,11 @@ mod tests {
 
         // Id 2 can be reused.
         let cap2 = Capability::Data(Data::Int64(84));
-        store.import(2, cap2.into()).await.unwrap().unwrap();
+        store
+            .import(2, cap2.into_fsandbox_capability(WeakInstanceToken::new_invalid()))
+            .await
+            .unwrap()
+            .unwrap();
         assert_matches!(
             store.export(2).await.unwrap(),
             Ok(fsandbox::Capability::Data(fsandbox::Data::Int64(i))) if i == 84
@@ -591,11 +633,15 @@ mod tests {
             endpoints::create_proxy_and_stream::<fsandbox::CapabilityStoreMarker>();
         let _server = fasync::Task::spawn(async move {
             let receiver_scope = fasync::Scope::new();
-            serve_capability_store(stream, &receiver_scope).await
+            serve_capability_store(stream, &receiver_scope, WeakInstanceToken::new_invalid()).await
         });
 
         let cap1 = Capability::Data(Data::Int64(42));
-        store.import(1, cap1.into()).await.unwrap().unwrap();
+        store
+            .import(1, cap1.into_fsandbox_capability(WeakInstanceToken::new_invalid()))
+            .await
+            .unwrap()
+            .unwrap();
 
         assert_matches!(
             store.drop(2).await.unwrap(),
@@ -609,14 +655,18 @@ mod tests {
             endpoints::create_proxy_and_stream::<fsandbox::CapabilityStoreMarker>();
         let _server = fasync::Task::spawn(async move {
             let receiver_scope = fasync::Scope::new();
-            serve_capability_store(stream, &receiver_scope).await
+            serve_capability_store(stream, &receiver_scope, WeakInstanceToken::new_invalid()).await
         });
 
         let (event, _) = fidl::EventPair::create();
         let handle = event.into_handle();
         let handle_koid = handle.get_koid().unwrap();
         let cap1 = Capability::Handle(handle.into());
-        store.import(1, cap1.into()).await.unwrap().unwrap();
+        store
+            .import(1, cap1.into_fsandbox_capability(WeakInstanceToken::new_invalid()))
+            .await
+            .unwrap()
+            .unwrap();
         store.duplicate(1, 2).await.unwrap().unwrap();
         store.drop(1).await.unwrap().unwrap();
 
@@ -633,7 +683,7 @@ mod tests {
             endpoints::create_proxy_and_stream::<fsandbox::CapabilityStoreMarker>();
         let _server = fasync::Task::spawn(async move {
             let receiver_scope = fasync::Scope::new();
-            serve_capability_store(stream, &receiver_scope).await
+            serve_capability_store(stream, &receiver_scope, WeakInstanceToken::new_invalid()).await
         });
 
         assert_matches!(
@@ -643,8 +693,16 @@ mod tests {
 
         let cap1 = Capability::Data(Data::Int64(42));
         let cap2 = Capability::Data(Data::Int64(84));
-        store.import(1, cap1.into()).await.unwrap().unwrap();
-        store.import(2, cap2.into()).await.unwrap().unwrap();
+        store
+            .import(1, cap1.into_fsandbox_capability(WeakInstanceToken::new_invalid()))
+            .await
+            .unwrap()
+            .unwrap();
+        store
+            .import(2, cap2.into_fsandbox_capability(WeakInstanceToken::new_invalid()))
+            .await
+            .unwrap()
+            .unwrap();
         assert_matches!(
             store.duplicate(1, 2).await.unwrap(),
             Err(fsandbox::CapabilityStoreError::IdAlreadyExists)
@@ -654,7 +712,11 @@ mod tests {
         let (ch, _) = fidl::Channel::create();
         let handle = ch.into_handle();
         let cap1 = Capability::Handle(handle.into());
-        store.import(3, cap1.into()).await.unwrap().unwrap();
+        store
+            .import(3, cap1.into_fsandbox_capability(WeakInstanceToken::new_invalid()))
+            .await
+            .unwrap()
+            .unwrap();
         assert_matches!(
             store.duplicate(3, 4).await.unwrap(),
             Err(fsandbox::CapabilityStoreError::NotDuplicatable)

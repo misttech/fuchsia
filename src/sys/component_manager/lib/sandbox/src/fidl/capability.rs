@@ -3,30 +3,30 @@
 // found in the LICENSE file.
 
 use crate::fidl::registry::try_from_handle_in_registry;
-use crate::{Capability, ConversionError, RemotableCapability, RemoteError};
+use crate::{Capability, ConversionError, RemotableCapability, RemoteError, WeakInstanceToken};
 use fidl::AsHandleRef;
 use fidl_fuchsia_component_sandbox as fsandbox;
 use std::sync::Arc;
 use vfs::directory::entry::DirectoryEntry;
 use vfs::execution_scope::ExecutionScope;
 
-impl From<Capability> for fsandbox::Capability {
-    fn from(capability: Capability) -> Self {
-        match capability {
-            Capability::Connector(s) => s.into(),
-            Capability::DirConnector(s) => s.into(),
-            Capability::DirEntry(s) => s.into(),
-            Capability::DictionaryRouter(s) => s.into(),
-            Capability::ConnectorRouter(s) => s.into(),
-            Capability::DirEntryRouter(s) => s.into(),
-            Capability::DirConnectorRouter(s) => s.into(),
-            Capability::DataRouter(s) => s.into(),
-            Capability::Dictionary(s) => s.into(),
-            Capability::Data(s) => s.into(),
-            Capability::Unit(s) => s.into(),
-            Capability::Directory(s) => s.into(),
-            Capability::Handle(s) => s.into(),
-            Capability::Instance(s) => s.into(),
+impl crate::fidl::IntoFsandboxCapability for Capability {
+    fn into_fsandbox_capability(self, token: WeakInstanceToken) -> fsandbox::Capability {
+        match self {
+            Capability::Connector(s) => s.into_fsandbox_capability(token),
+            Capability::DirConnector(s) => s.into_fsandbox_capability(token),
+            Capability::DirEntry(s) => s.into_fsandbox_capability(token),
+            Capability::DictionaryRouter(s) => s.into_fsandbox_capability(token),
+            Capability::ConnectorRouter(s) => s.into_fsandbox_capability(token),
+            Capability::DirEntryRouter(s) => s.into_fsandbox_capability(token),
+            Capability::DirConnectorRouter(s) => s.into_fsandbox_capability(token),
+            Capability::DataRouter(s) => s.into_fsandbox_capability(token),
+            Capability::Dictionary(s) => s.into_fsandbox_capability(token),
+            Capability::Data(s) => s.into_fsandbox_capability(token),
+            Capability::Unit(s) => s.into_fsandbox_capability(token),
+            Capability::Directory(s) => s.into_fsandbox_capability(token),
+            Capability::Handle(s) => s.into_fsandbox_capability(token),
+            Capability::Instance(s) => s.into_fsandbox_capability(token),
         }
     }
 }
@@ -114,22 +114,23 @@ impl RemotableCapability for Capability {
     fn try_into_directory_entry(
         self,
         scope: ExecutionScope,
+        token: WeakInstanceToken,
     ) -> Result<Arc<dyn DirectoryEntry>, ConversionError> {
         match self {
-            Self::Connector(s) => s.try_into_directory_entry(scope),
-            Self::DirConnector(s) => s.try_into_directory_entry(scope),
-            Self::DirEntry(s) => s.try_into_directory_entry(scope),
-            Self::ConnectorRouter(s) => s.try_into_directory_entry(scope),
-            Self::DictionaryRouter(s) => s.try_into_directory_entry(scope),
-            Self::DirEntryRouter(s) => s.try_into_directory_entry(scope),
-            Self::DirConnectorRouter(s) => s.try_into_directory_entry(scope),
-            Self::DataRouter(s) => s.try_into_directory_entry(scope),
-            Self::Dictionary(s) => s.try_into_directory_entry(scope),
-            Self::Data(s) => s.try_into_directory_entry(scope),
-            Self::Unit(s) => s.try_into_directory_entry(scope),
-            Self::Directory(s) => s.try_into_directory_entry(scope),
-            Self::Handle(s) => s.try_into_directory_entry(scope),
-            Self::Instance(s) => s.try_into_directory_entry(scope),
+            Self::Connector(s) => s.try_into_directory_entry(scope, token),
+            Self::DirConnector(s) => s.try_into_directory_entry(scope, token),
+            Self::DirEntry(s) => s.try_into_directory_entry(scope, token),
+            Self::ConnectorRouter(s) => s.try_into_directory_entry(scope, token),
+            Self::DictionaryRouter(s) => s.try_into_directory_entry(scope, token),
+            Self::DirEntryRouter(s) => s.try_into_directory_entry(scope, token),
+            Self::DirConnectorRouter(s) => s.try_into_directory_entry(scope, token),
+            Self::DataRouter(s) => s.try_into_directory_entry(scope, token),
+            Self::Dictionary(s) => s.try_into_directory_entry(scope, token),
+            Self::Data(s) => s.try_into_directory_entry(scope, token),
+            Self::Unit(s) => s.try_into_directory_entry(scope, token),
+            Self::Directory(s) => s.try_into_directory_entry(scope, token),
+            Self::Handle(s) => s.try_into_directory_entry(scope, token),
+            Self::Instance(s) => s.try_into_directory_entry(scope, token),
         }
     }
 }

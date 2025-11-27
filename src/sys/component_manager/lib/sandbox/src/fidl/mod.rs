@@ -22,22 +22,29 @@ pub(crate) mod router;
 pub(crate) mod store;
 mod unit;
 
-use crate::ConversionError;
+use crate::{ConversionError, WeakInstanceToken};
 use fidl_fuchsia_component_sandbox as fsandbox;
 use std::sync::Arc;
 use vfs::directory::entry::DirectoryEntry;
 use vfs::execution_scope::ExecutionScope;
 
+pub trait IntoFsandboxCapability {
+    fn into_fsandbox_capability(self, _token: WeakInstanceToken) -> fsandbox::Capability
+    where
+        Self: Sized;
+}
+
 /// The trait which remotes Capabilities, either by turning them into
 /// FIDL or serving them in a VFS.
-pub trait RemotableCapability: Into<fsandbox::Capability> {
-    /// Attempt to convert `self` to a DirectoryEntry which can be served in a
-    /// VFS.
+pub trait RemotableCapability: IntoFsandboxCapability + Sized {
+    /// Attempt to convert `self` to a DirectoryEntry which can be served in a VFS. If routing
+    /// needs to be performed, `token` should be the `WeakInstanceToken` used for the route.
     ///
     /// The default implementation always returns an error.
     fn try_into_directory_entry(
         self,
         _scope: ExecutionScope,
+        _token: WeakInstanceToken,
     ) -> Result<Arc<dyn DirectoryEntry>, ConversionError> {
         Err(ConversionError::NotSupported)
     }

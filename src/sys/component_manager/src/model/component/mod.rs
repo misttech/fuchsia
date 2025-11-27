@@ -57,7 +57,7 @@ use router_error::{Explain, RouterError};
 use runner::component::StopInfo;
 use sandbox::{
     Capability, Connector, Data, Dict, DirConnector, Message, Request, Routable, Router,
-    RouterResponse,
+    RouterResponse, WeakInstanceToken,
 };
 use std::clone::Clone;
 use std::collections::{HashMap, HashSet};
@@ -1048,6 +1048,7 @@ impl ComponentInstance {
                 &self,
                 _request: Option<Request>,
                 _debug: bool,
+                _target: WeakInstanceToken,
             ) -> Result<RouterResponse<Dict>, RouterError> {
                 let component = self.component.upgrade().map_err(RoutingError::from)?;
                 Ok(RouterResponse::<Dict>::Capability(component.get_component_output_dict().await?))
@@ -1059,7 +1060,7 @@ impl ComponentInstance {
 
     /// Opens this instance's exposed directory if it has been resolved.
     pub async fn open_exposed(
-        &self,
+        self: &Arc<Self>,
         open_request: OpenRequest<'_>,
     ) -> Result<(), OpenExposedDirError> {
         let state = self.lock_state().await;
@@ -1069,7 +1070,10 @@ impl ComponentInstance {
             }
             InstanceState::Resolved(resolved_instance_state)
             | InstanceState::Started(resolved_instance_state, _) => {
-                resolved_instance_state.get_exposed_dir().await.open_entry(open_request)?;
+                resolved_instance_state
+                    .get_exposed_dir(self.as_weak().into())
+                    .await
+                    .open_entry(open_request)?;
                 Ok(())
             }
             InstanceState::Destroyed => Err(OpenExposedDirError::InstanceDestroyed),
@@ -1172,7 +1176,7 @@ impl ComponentInstance {
     }
 
     pub async fn log(
-        &self,
+        self: &Arc<Self>,
         level: log::Level,
         message: impl fmt::Display,
         key_values: &[&(dyn log::kv::Source + Send + Sync)],
@@ -1189,6 +1193,7 @@ impl ComponentInstance {
                 &self.moniker,
                 resolved_instance_state,
                 &builder.args(format_args!("{}", message)).build(),
+                self.as_weak().into(),
             );
         } else {
             log::logger().log(&builder.args(format_args!("{}", message)).build());
@@ -1383,11 +1388,9 @@ probably not intended: {}",
         };
         let resp = resolver_router
             .route(
-                Some(Request {
-                    target: self.as_weak().into(),
-                    metadata: resolver_metadata(cm_rust::Availability::Required),
-                }),
+                Some(Request { metadata: resolver_metadata(cm_rust::Availability::Required) }),
                 false,
+                self.clone().as_weak().into(),
             )
             .await
             .map_err(|err| ResolverError::routing_error(err))?;

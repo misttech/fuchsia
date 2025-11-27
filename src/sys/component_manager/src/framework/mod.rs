@@ -13,7 +13,7 @@ use futures::future::BoxFuture;
 use moniker::Moniker;
 use router_error::RouterError;
 use routing::capability_source::{CapabilitySource, FrameworkSource, InternalCapability};
-use sandbox::{Dict, Request, Routable, Router, RouterResponse};
+use sandbox::{Dict, Request, Routable, Router, RouterResponse, WeakInstanceToken};
 use std::sync::Arc;
 use {
     fidl_fuchsia_component as fcomponent, fidl_fuchsia_component_internal as finternal,
@@ -50,12 +50,11 @@ struct FrameworkRouter {
 impl Routable<Dict> for FrameworkRouter {
     async fn route(
         &self,
-        request: Option<Request>,
+        _request: Option<Request>,
         _debug: bool,
+        target: WeakInstanceToken,
     ) -> Result<RouterResponse<Dict>, RouterError> {
-        let request = request.ok_or(RouterError::InvalidArgs)?;
-        let target = request
-            .target
+        let target = target
             .inner
             .as_any()
             .downcast_ref::<WeakExtendedInstance>()

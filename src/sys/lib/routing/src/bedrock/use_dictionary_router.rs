@@ -11,7 +11,7 @@ use futures::stream::FuturesUnordered;
 use router_error::RouterError;
 use sandbox::{
     Capability, Dict, EntryUpdate, Request, Routable, Router, RouterResponse,
-    UpdateNotifierRetention,
+    UpdateNotifierRetention, WeakInstanceToken,
 };
 
 /// Given an original dictionary and a handful of additional dictionary routers, produces a router
@@ -94,6 +94,7 @@ impl Routable<Dict> for UseDictionaryRouter {
         &self,
         request: Option<Request>,
         debug: bool,
+        target: WeakInstanceToken,
     ) -> Result<RouterResponse<Dict>, RouterError> {
         if debug {
             return Ok(RouterResponse::Debug(
@@ -106,7 +107,7 @@ impl Routable<Dict> for UseDictionaryRouter {
         let mut futures_unordered = FuturesUnordered::new();
         for dictionary_router in self.dictionary_routers.iter() {
             let request = request.as_ref().and_then(|r| r.try_clone().ok());
-            futures_unordered.push(dictionary_router.route(request, false));
+            futures_unordered.push(dictionary_router.route(request, false, target.clone()));
         }
         let resulting_dictionary = self.original_dictionary.shallow_copy().unwrap();
         while let Some(route_result) = futures_unordered.next().await {
@@ -125,11 +126,11 @@ impl Routable<Dict> for UseDictionaryRouter {
                             {} because the dictionary already contains an item with the same name \
                             from source {}",
                             &self.moniker,
-                            try_get_router_source(&capability)
+                            try_get_router_source(&capability, target.clone())
                                 .await
                                 .unwrap_or_else(|| "<unknown>".to_string()),
                             &self.path,
-                            try_get_router_source(&preexisting_value)
+                            try_get_router_source(&preexisting_value, target.clone())
                                 .await
                                 .unwrap_or_else(|| "<unknown>".to_string()),
                         );
@@ -159,21 +160,24 @@ impl Routable<Dict> for UseDictionaryRouter {
     }
 }
 
-async fn try_get_router_source(capability: &Capability) -> Option<String> {
+async fn try_get_router_source(
+    capability: &Capability,
+    target: WeakInstanceToken,
+) -> Option<String> {
     let source: crate::capability_source::CapabilitySource = match capability {
-        Capability::DictionaryRouter(router) => match router.route(None, true).await {
+        Capability::DictionaryRouter(router) => match router.route(None, true, target).await {
             Ok(RouterResponse::Debug(data)) => data.try_into().ok()?,
             _ => return None,
         },
-        Capability::ConnectorRouter(router) => match router.route(None, true).await {
+        Capability::ConnectorRouter(router) => match router.route(None, true, target).await {
             Ok(RouterResponse::Debug(data)) => data.try_into().ok()?,
             _ => return None,
         },
-        Capability::DirConnectorRouter(router) => match router.route(None, true).await {
+        Capability::DirConnectorRouter(router) => match router.route(None, true, target).await {
             Ok(RouterResponse::Debug(data)) => data.try_into().ok()?,
             _ => return None,
         },
-        Capability::DataRouter(router) => match router.route(None, true).await {
+        Capability::DataRouter(router) => match router.route(None, true, target).await {
             Ok(RouterResponse::Debug(data)) => data.try_into().ok()?,
             _ => return None,
         },

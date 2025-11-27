@@ -47,14 +47,14 @@ impl fmt::Debug for DirEntry {
 #[cfg(test)]
 mod tests {
     use crate::fidl::RemotableCapability;
-    use crate::{Capability, Connector, Dict, DirEntry};
+    use crate::{Capability, Connector, Dict, DirEntry, WeakInstanceToken};
     use assert_matches::assert_matches;
     use fidl::endpoints::ClientEnd;
     use fidl::{AsHandleRef, Channel};
     use futures::StreamExt;
+    use vfs::ToObjectRequest as _;
     use vfs::directory::entry::OpenRequest;
     use vfs::execution_scope::ExecutionScope;
-    use vfs::ToObjectRequest as _;
     use zx::Status;
     use {fidl_fuchsia_io as fio, fuchsia_async as fasync};
 
@@ -64,7 +64,11 @@ mod tests {
     async fn test_connector_into_open() {
         let (receiver, sender) = Connector::new();
         let scope = ExecutionScope::new();
-        let dir_entry = DirEntry::new(sender.try_into_directory_entry(scope.clone()).unwrap());
+        let dir_entry = DirEntry::new(
+            sender
+                .try_into_directory_entry(scope.clone(), WeakInstanceToken::new_invalid())
+                .unwrap(),
+        );
         let (client_end, server_end) = Channel::create();
         FLAGS.to_object_request(server_end).handle(|request| {
             dir_entry.open_entry(OpenRequest::new(scope, FLAGS, vfs::Path::dot(), request))
@@ -82,7 +86,11 @@ mod tests {
 
         let (receiver, sender) = Connector::new();
         let scope = ExecutionScope::new();
-        let dir_entry = DirEntry::new(sender.try_into_directory_entry(scope.clone()).unwrap());
+        let dir_entry = DirEntry::new(
+            sender
+                .try_into_directory_entry(scope.clone(), WeakInstanceToken::new_invalid())
+                .unwrap(),
+        );
         let (client_end, server_end) = Channel::create();
         let path = vfs::Path::validate_and_split("foo").unwrap();
         FLAGS
@@ -110,7 +118,9 @@ mod tests {
             .expect("dict entry already exists");
 
         let scope = ExecutionScope::new();
-        let dir_entry = DirEntry::new(dict.try_into_directory_entry(scope.clone()).unwrap());
+        let dir_entry = DirEntry::new(
+            dict.try_into_directory_entry(scope.clone(), WeakInstanceToken::new_invalid()).unwrap(),
+        );
         let (client_end, server_end) = Channel::create();
         let path = vfs::Path::validate_and_split("echo").unwrap();
         FLAGS
@@ -134,7 +144,9 @@ mod tests {
             .expect("dict entry already exists");
 
         let scope = ExecutionScope::new();
-        let dir_entry = DirEntry::new(dict.try_into_directory_entry(scope.clone()).unwrap());
+        let dir_entry = DirEntry::new(
+            dict.try_into_directory_entry(scope.clone(), WeakInstanceToken::new_invalid()).unwrap(),
+        );
         let (client_end, server_end) = Channel::create();
         let path = vfs::Path::validate_and_split("echo/foo").unwrap();
         FLAGS

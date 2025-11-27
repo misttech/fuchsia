@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::fidl::router;
-use crate::{ConversionError, DirEntry, Router, RouterResponse};
+use crate::{ConversionError, DirEntry, Router, RouterResponse, WeakInstanceToken};
 use fidl::handle::AsHandleRef;
 use futures::TryStreamExt;
 use std::sync::Arc;
@@ -15,6 +15,7 @@ impl crate::RemotableCapability for Router<DirEntry> {
     fn try_into_directory_entry(
         self,
         scope: ExecutionScope,
+        token: WeakInstanceToken,
     ) -> Result<Arc<dyn DirectoryEntry>, ConversionError> {
         Ok(self.into_directory_entry(
             // TODO(https://fxbug.dev/340891837): This assumes the DirEntry type is Service.
@@ -22,16 +23,8 @@ impl crate::RemotableCapability for Router<DirEntry> {
             // advance. This problem should go away once we revamp or remove DirEntry.
             fio::DirentType::Service,
             scope,
+            token,
         ))
-    }
-}
-
-impl From<Router<DirEntry>> for fsandbox::Capability {
-    fn from(router: Router<DirEntry>) -> Self {
-        let (client_end, sender_stream) =
-            fidl::endpoints::create_request_stream::<fsandbox::DirEntryRouterMarker>();
-        router.serve_and_register(sender_stream, client_end.get_koid().unwrap());
-        fsandbox::Capability::DirEntryRouter(client_end)
     }
 }
 
@@ -51,15 +44,25 @@ impl TryFrom<RouterResponse<DirEntry>> for fsandbox::DirEntryRouterRouteResponse
     }
 }
 
+impl crate::fidl::IntoFsandboxCapability for Router<DirEntry> {
+    fn into_fsandbox_capability(self, token: WeakInstanceToken) -> fsandbox::Capability {
+        let (client_end, sender_stream) =
+            fidl::endpoints::create_request_stream::<fsandbox::DirEntryRouterMarker>();
+        self.serve_and_register(sender_stream, client_end.get_koid().unwrap(), token);
+        fsandbox::Capability::DirEntryRouter(client_end)
+    }
+}
+
 impl Router<DirEntry> {
     async fn serve_router(
         self,
         mut stream: fsandbox::DirEntryRouterRequestStream,
+        token: WeakInstanceToken,
     ) -> Result<(), fidl::Error> {
         while let Ok(Some(request)) = stream.try_next().await {
             match request {
                 fsandbox::DirEntryRouterRequest::Route { payload, responder } => {
-                    responder.send(router::route_from_fidl(&self, payload).await)?;
+                    responder.send(router::route_from_fidl(&self, payload, token.clone()).await)?;
                 }
                 fsandbox::DirEntryRouterRequest::_UnknownMethod { ordinal, .. } => {
                     log::warn!(
@@ -72,12 +75,17 @@ impl Router<DirEntry> {
     }
 
     /// Serves the `fuchsia.sandbox.Router` protocol and moves ourself into the registry.
-    pub fn serve_and_register(self, stream: fsandbox::DirEntryRouterRequestStream, koid: zx::Koid) {
+    pub fn serve_and_register(
+        self,
+        stream: fsandbox::DirEntryRouterRequestStream,
+        koid: zx::Koid,
+        token: WeakInstanceToken,
+    ) {
         let router = self.clone();
 
         // Move this capability into the registry.
         crate::fidl::registry::insert(self.into(), koid, async move {
-            router.serve_router(stream).await.expect("failed to serve Router");
+            router.serve_router(stream, token).await.expect("failed to serve Router");
         });
     }
 }

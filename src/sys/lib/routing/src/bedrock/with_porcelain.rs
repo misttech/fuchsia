@@ -13,7 +13,9 @@ use cm_rust::CapabilityTypeName;
 use cm_types::Availability;
 use moniker::ExtendedMoniker;
 use router_error::RouterError;
-use sandbox::{Capability, CapabilityBound, Dict, Request, Routable, Router, RouterResponse};
+use sandbox::{
+    Capability, CapabilityBound, Dict, Request, Routable, Router, RouterResponse, WeakInstanceToken,
+};
 use std::collections::HashMap;
 use std::sync::{Arc, LazyLock};
 use strum::IntoEnumIterator;
@@ -40,8 +42,9 @@ impl<T: CapabilityBound, R: ErrorReporter, C: ComponentInstanceInterface + 'stat
         &self,
         request: Option<Request>,
         debug: bool,
+        target: WeakInstanceToken,
     ) -> Result<RouterResponse<T>, RouterError> {
-        match self.do_route(request, debug, D).await {
+        match self.do_route(request, debug, D, target).await {
             Ok(res) => Ok(res),
             Err(err) => {
                 self.error_reporter
@@ -62,6 +65,7 @@ impl<T: CapabilityBound, R: ErrorReporter, C: ComponentInstanceInterface + 'stat
         request: Option<Request>,
         debug: bool,
         supply_default: bool,
+        target: WeakInstanceToken,
     ) -> Result<RouterResponse<T>, RouterError> {
         let PorcelainRouter {
             router,
@@ -71,7 +75,7 @@ impl<T: CapabilityBound, R: ErrorReporter, C: ComponentInstanceInterface + 'stat
             subdir,
             inherit_rights,
             event_stream_route_metadata,
-            target,
+            target: _,
             route_request: _,
             error_reporter: _,
         } = self;
@@ -93,7 +97,7 @@ impl<T: CapabilityBound, R: ErrorReporter, C: ComponentInstanceInterface + 'stat
             if let Some(esrm) = event_stream_route_metadata.as_ref() {
                 metadata.set_metadata(esrm.clone());
             }
-            Request { target: target.clone().into(), metadata }
+            Request { metadata }
         };
 
         let moniker: ExtendedMoniker = match &self.target {
@@ -123,7 +127,7 @@ impl<T: CapabilityBound, R: ErrorReporter, C: ComponentInstanceInterface + 'stat
 
         // Everything checks out, forward the request.
         request.metadata.set_metadata(updated_availability);
-        router.route(Some(request), debug).await
+        router.route(Some(request), debug, target).await
     }
 }
 
@@ -155,13 +159,10 @@ fn check_availability(
 ) -> Result<Availability, RouterError> {
     // The availability of the request must be compatible with the
     // availability of this step of the route.
-    let request_availability = request
-        .metadata
-        .get_metadata()
-        .ok_or(fsandbox::RouterError::InvalidArgs)
-        .inspect_err(|e| {
-            log::error!("request {:?} did not have availability metadata: {e:?}", request.target)
-        })?;
+    let request_availability =
+        request.metadata.get_metadata().ok_or(fsandbox::RouterError::InvalidArgs).inspect_err(
+            |e| log::error!("request {:?} did not have availability metadata: {e:?}", request),
+        )?;
     crate::availability::advance(&moniker, request_availability, availability)
         .map_err(|e| RoutingError::from(e).into())
 }
@@ -564,7 +565,7 @@ mod tests {
         metadata.set_metadata(Availability::Optional);
 
         let capability = proxy
-            .route(Some(Request { target: component.as_weak().into(), metadata }), false)
+            .route(Some(Request { metadata }), false, component.as_weak().into())
             .await
             .unwrap();
         let capability = match capability {
@@ -592,7 +593,7 @@ mod tests {
         metadata.set_metadata(Availability::Optional);
 
         let error = proxy
-            .route(Some(Request { target: component.as_weak().into(), metadata }), false)
+            .route(Some(Request { metadata }), false, component.as_weak().into())
             .await
             .unwrap_err();
         assert_matches!(
@@ -628,7 +629,7 @@ mod tests {
         metadata.set_metadata(Availability::Optional);
 
         let error = proxy
-            .route(Some(Request { target: component.as_weak().into(), metadata }), false)
+            .route(Some(Request { metadata }), false, component.as_weak().into())
             .await
             .unwrap_err();
         assert_matches!(
@@ -666,7 +667,7 @@ mod tests {
         metadata.set_metadata(Availability::Required);
 
         let error = proxy
-            .route(Some(Request { target: component.as_weak().into(), metadata }), false)
+            .route(Some(Request { metadata }), false, component.as_weak().into())
             .await
             .unwrap_err();
         assert_matches!(

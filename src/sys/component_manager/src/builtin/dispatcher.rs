@@ -14,7 +14,7 @@ use fuchsia_component::server;
 use futures::{FutureExt, StreamExt};
 use log::Log;
 use namespace::Namespace;
-use sandbox::{Dict, Router};
+use sandbox::{Dict, Router, WeakInstanceToken};
 use std::fmt::Debug;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -163,37 +163,46 @@ impl Dispatcher {
                         | Ok(CapabilityTypeName::Resolver)
                         | Ok(CapabilityTypeName::Runner)
                         | Ok(CapabilityTypeName::Protocol) => {
-                            Router::new(move |request, debug: bool| {
+                            Router::new(move |request, debug: bool, target| {
                                 assert!(!debug);
-                                self_clone.clone().route::<sandbox::Connector>(request).boxed()
+                                self_clone
+                                    .clone()
+                                    .route::<sandbox::Connector>(request, target)
+                                    .boxed()
                             })
                             .into()
                         }
                         Ok(CapabilityTypeName::Directory) | Ok(CapabilityTypeName::Storage) => {
-                            Router::new(move |request, debug: bool| {
+                            Router::new(move |request, debug: bool, target| {
                                 assert!(!debug);
-                                self_clone.clone().route::<sandbox::DirConnector>(request).boxed()
+                                self_clone
+                                    .clone()
+                                    .route::<sandbox::DirConnector>(request, target)
+                                    .boxed()
                             })
                             .into()
                         }
                         Ok(CapabilityTypeName::Service) => {
-                            Router::new(move |request, debug: bool| {
+                            Router::new(move |request, debug: bool, target| {
                                 assert!(!debug);
-                                self_clone.clone().route::<sandbox::DirConnector>(request).boxed()
+                                self_clone
+                                    .clone()
+                                    .route::<sandbox::DirConnector>(request, target)
+                                    .boxed()
                             })
                             .into()
                         }
                         Ok(CapabilityTypeName::Dictionary) => {
-                            Router::new(move |request, debug: bool| {
+                            Router::new(move |request, debug: bool, target| {
                                 assert!(!debug);
-                                self_clone.clone().route::<sandbox::Dict>(request).boxed()
+                                self_clone.clone().route::<sandbox::Dict>(request, target).boxed()
                             })
                             .into()
                         }
                         Ok(CapabilityTypeName::Config) => {
-                            Router::new(move |request, debug: bool| {
+                            Router::new(move |request, debug: bool, target| {
                                 assert!(!debug);
-                                self_clone.clone().route::<sandbox::Data>(request).boxed()
+                                self_clone.clone().route::<sandbox::Data>(request, target).boxed()
                             })
                             .into()
                         }
@@ -223,6 +232,7 @@ impl Dispatcher {
     async fn route<T>(
         self: Arc<Self>,
         request: Option<sandbox::Request>,
+        target: WeakInstanceToken,
     ) -> Result<sandbox::RouterResponse<T>, router_error::RouterError>
     where
         T: sandbox::CapabilityBound + Debug,
@@ -230,7 +240,7 @@ impl Dispatcher {
         <sandbox::Router<T> as std::convert::TryFrom<sandbox::Capability>>::Error: Debug,
     {
         match self.get_target_router().await {
-            Ok(router_to_dispatch_to) => router_to_dispatch_to.route(request, false).await,
+            Ok(router_to_dispatch_to) => router_to_dispatch_to.route(request, false, target).await,
             Err(err) => {
                 log::warn!("failed: {err:?}");
                 Err(router_error::RouterError::Internal)

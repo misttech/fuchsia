@@ -29,7 +29,7 @@ use futures::{FutureExt, TryStreamExt, future};
 use hooks::EventType;
 use log::warn;
 use router_error::RouterError;
-use sandbox::{Capability, Data, DirConnector, Router, RouterResponse};
+use sandbox::{Capability, Data, DirConnector, Router, RouterResponse, WeakInstanceToken};
 use std::sync::Arc;
 use vfs::directory::entry::OpenRequest;
 use vfs::{ExecutionScope, Path, ToObjectRequest, WeakExecutionScope};
@@ -111,7 +111,7 @@ impl RootInputBuilder {
             name.clone(),
             Some(self.policy_checker.clone()),
             Arc::new(move |server_end, _, _, _| {
-                task_to_launch(take_handle_as_stream::<P>(server_end)).boxed()
+                task_to_launch(crate::sandbox_util::take_handle_as_stream::<P>(server_end)).boxed()
             }),
         );
 
@@ -190,8 +190,8 @@ impl RootInputBuilder {
         let capability_source = CapabilitySource::Namespace(NamespaceSource {
             capability: ComponentCapability::Directory(directory.clone()),
         });
-        let router =
-            Router::<DirConnector>::new(move |request: Option<sandbox::Request>, debug| {
+        let router = Router::<DirConnector>::new(
+            move |request: Option<sandbox::Request>, debug, _target: WeakInstanceToken| {
                 if debug {
                     return futures::future::ready(Ok(RouterResponse::Debug(
                         capability_source
@@ -237,7 +237,8 @@ impl RootInputBuilder {
                     Ok(RouterResponse::Capability(dir_connector))
                 }
                 .boxed()
-            });
+            },
+        );
         let router = WithPorcelain::<_, _, ComponentInstance>::with_porcelain_no_default(
             router,
             CapabilityTypeName::Directory,
@@ -434,25 +435,29 @@ impl RootInputBuilder {
 
     pub fn add_event_stream_capabilities(&self) {
         for event_type in EventType::values() {
-            let router = Router::new(move |request: Option<sandbox::Request>, debug| {
-                async move {
-                    if debug {
-                        let name = Name::new(event_type.as_str()).unwrap();
-                        let capability_source = CapabilitySource::Builtin(BuiltinSource {
-                            capability: InternalCapability::EventStream(name),
-                        });
-                        return Ok(RouterResponse::Debug(capability_source.try_into().unwrap()));
+            let router = Router::new(
+                move |request: Option<sandbox::Request>, debug, _target: WeakInstanceToken| {
+                    async move {
+                        if debug {
+                            let name = Name::new(event_type.as_str()).unwrap();
+                            let capability_source = CapabilitySource::Builtin(BuiltinSource {
+                                capability: InternalCapability::EventStream(name),
+                            });
+                            return Ok(RouterResponse::Debug(
+                                capability_source.try_into().unwrap(),
+                            ));
+                        }
+                        let request = request.expect("missing request on event stream route");
+                        let request_metadata = request.metadata;
+                        let _ = request_metadata.insert(
+                            Name::new("event_stream_name").unwrap(),
+                            Capability::Data(Data::String(event_type.to_string().into())),
+                        );
+                        Ok(RouterResponse::Capability(request_metadata))
                     }
-                    let request = request.expect("missing request on event stream route");
-                    let request_metadata = request.metadata;
-                    let _ = request_metadata.insert(
-                        Name::new("event_stream_name").unwrap(),
-                        Capability::Data(Data::String(event_type.to_string().into())),
-                    );
-                    Ok(RouterResponse::Capability(request_metadata))
-                }
-                .boxed()
-            });
+                    .boxed()
+                },
+            );
             let name = Name::new(event_type.as_str()).unwrap();
             if let Err(e) = self.input.capabilities().insert_capability(&name, router.into()) {
                 warn!(

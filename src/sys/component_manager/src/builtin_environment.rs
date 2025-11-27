@@ -1275,9 +1275,12 @@ impl BuiltinEnvironment {
 
             let metadata =
                 event_stream_metadata(cm_rust::Availability::Required, Default::default());
-            let request = Request { metadata, target: self.model.root().clone().as_weak().into() };
+            let request = Request { metadata };
 
-            let connector = match use_router.route(Some(request), false).await {
+            let connector = match use_router
+                .route(Some(request), false, self.model.root().clone().as_weak().into())
+                .await
+            {
                 Ok(RouterResponse::Capability(connector)) => connector,
                 other_response => panic!(
                     "event stream routing from root should always succeed, instead we got {:?}",

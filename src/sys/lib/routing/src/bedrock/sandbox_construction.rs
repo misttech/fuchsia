@@ -32,7 +32,7 @@ use moniker::{ChildName, Moniker};
 use router_error::RouterError;
 use sandbox::{
     Capability, CapabilityBound, Connector, Data, Dict, DirConnector, Request, Routable, Router,
-    RouterResponse,
+    RouterResponse, WeakInstanceToken,
 };
 use std::collections::{BTreeMap, HashMap};
 use std::fmt::Debug;
@@ -195,6 +195,7 @@ impl Default for ComponentSandbox {
                 &self,
                 _request: Option<Request>,
                 _debug: bool,
+                _target: WeakInstanceToken,
             ) -> Result<RouterResponse<Dict>, RouterError> {
                 panic!("null router invoked");
             }
@@ -1694,9 +1695,11 @@ where
     Router<T>: TryFrom<Capability>,
     C: ComponentInstanceInterface + 'static,
 {
-    let request = Request { target: component.as_weak().into(), metadata: Dict::new() };
-    let dict: Result<RouterResponse<Dict>, RouterError> =
-        router.route(Some(request), false).now_or_never().expect("failed to now_or_never");
+    let request = Request { metadata: Dict::new() };
+    let dict: Result<RouterResponse<Dict>, RouterError> = router
+        .route(Some(request), false, component.as_weak().into())
+        .now_or_never()
+        .expect("failed to now_or_never");
     let dict = match dict {
         Ok(RouterResponse::Capability(dict)) => dict,
         // shouldn't happen, fallback
@@ -1881,6 +1884,7 @@ impl<T: CapabilityBound, C: ComponentInstanceInterface + 'static> Routable<T>
         &self,
         request: Option<Request>,
         debug: bool,
+        _target: WeakInstanceToken,
     ) -> Result<RouterResponse<T>, RouterError> {
         if debug {
             let data = CapabilitySource::Void(VoidSource {

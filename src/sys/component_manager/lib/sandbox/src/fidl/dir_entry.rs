@@ -4,7 +4,7 @@
 
 use crate::connector::Connectable;
 use crate::fidl::registry;
-use crate::{Connector, ConversionError, DirEntry, RemotableCapability};
+use crate::{Connector, ConversionError, DirEntry, RemotableCapability, WeakInstanceToken};
 use fidl::handle::Status;
 use std::sync::Arc;
 use vfs::ToObjectRequest;
@@ -16,6 +16,7 @@ impl RemotableCapability for DirEntry {
     fn try_into_directory_entry(
         self,
         _scope: ExecutionScope,
+        _token: WeakInstanceToken,
     ) -> Result<Arc<dyn DirectoryEntry>, ConversionError> {
         Ok(self.to_directory_entry())
     }
@@ -27,9 +28,9 @@ impl From<DirEntry> for fsandbox::DirEntry {
     }
 }
 
-impl From<DirEntry> for fsandbox::Capability {
-    fn from(value: DirEntry) -> Self {
-        fsandbox::Capability::DirEntry(value.into())
+impl crate::fidl::IntoFsandboxCapability for DirEntry {
+    fn into_fsandbox_capability(self, _token: WeakInstanceToken) -> fsandbox::Capability {
+        fsandbox::Capability::DirEntry(self.into())
     }
 }
 
@@ -92,6 +93,7 @@ impl From<Connector> for DirEntry {
 mod tests {
     use super::*;
     use crate::Capability;
+    use crate::fidl::IntoFsandboxCapability;
     use fidl::endpoints;
     use fidl_fuchsia_io as fio;
     use test_util::Counter;
@@ -132,7 +134,7 @@ mod tests {
 
         // Round-trip to fidl and back. The fidl representation is just a token, so we need to
         // convert it back to internal to do anything useful with it.
-        let cap = fsandbox::Capability::from(dir_entry);
+        let cap = dir_entry.into_fsandbox_capability(WeakInstanceToken::new_invalid());
         let cap = Capability::try_from(cap).unwrap();
         let Capability::DirEntry(dir_entry) = cap else {
             panic!();
@@ -143,7 +145,10 @@ mod tests {
         const FLAGS: fio::Flags = fio::PERM_READABLE;
         let (_client, server) = endpoints::create_endpoints::<fio::DirectoryMarker>();
         let mut object_request = FLAGS.to_object_request(server);
-        let dir_entry = dir_entry.clone().try_into_directory_entry(scope.clone()).unwrap();
+        let dir_entry = dir_entry
+            .clone()
+            .try_into_directory_entry(scope.clone(), WeakInstanceToken::new_invalid())
+            .unwrap();
         dir_entry
             .open_entry(OpenRequest::new(scope.clone(), FLAGS, Path::dot(), &mut object_request))
             .unwrap();

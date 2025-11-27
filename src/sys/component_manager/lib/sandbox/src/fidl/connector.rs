@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::fidl::registry;
-use crate::{Connector, ConversionError, Message, Receiver};
+use crate::{Connector, ConversionError, Message, Receiver, WeakInstanceToken};
 use fidl::endpoints::ClientEnd;
 use fidl::handle::Channel;
 use futures::channel::mpsc;
@@ -33,6 +33,7 @@ impl crate::RemotableCapability for Connector {
     fn try_into_directory_entry(
         self,
         _scope: ExecutionScope,
+        _token: WeakInstanceToken,
     ) -> Result<Arc<dyn DirectoryEntry>, ConversionError> {
         Ok(vfs::service::endpoint(move |_scope, server_end| {
             let _ = self.send_channel(server_end.into_zx_channel().into());
@@ -46,9 +47,9 @@ impl From<Connector> for fsandbox::Connector {
     }
 }
 
-impl From<Connector> for fsandbox::Capability {
-    fn from(connector: Connector) -> Self {
-        fsandbox::Capability::Connector(connector.into())
+impl crate::fidl::IntoFsandboxCapability for Connector {
+    fn into_fsandbox_capability(self, _token: WeakInstanceToken) -> fsandbox::Capability {
+        fsandbox::Capability::Connector(self.into())
     }
 }
 
@@ -59,9 +60,9 @@ mod tests {
     use fidl::endpoints::ClientEnd;
     use fidl_fuchsia_io as fio;
     use futures::StreamExt;
+    use vfs::ToObjectRequest;
     use vfs::directory::entry::OpenRequest;
     use vfs::execution_scope::ExecutionScope;
-    use vfs::ToObjectRequest;
 
     // TODO(340891837): This test only runs on host because of the reliance on Open
     #[fuchsia::test]

@@ -11,7 +11,7 @@ use futures::future::BoxFuture;
 use futures::prelude::*;
 use log::warn;
 use namespace::NamespaceError;
-use sandbox::Capability;
+use sandbox::{Capability, WeakInstanceToken};
 use serve_processargs::{BuildNamespaceError, NamespaceBuilder};
 use vfs::execution_scope::ExecutionScope;
 use {
@@ -27,7 +27,7 @@ pub fn serve(
     async move {
         let namespace_scope = source.upgrade()?.execution_scope.clone();
         let stream = take_handle_as_stream::<fcomponent::NamespaceMarker>(server_end);
-        serve_inner(namespace_scope, stream).await.map_err(Into::into)
+        serve_inner(namespace_scope, stream, source.into()).await.map_err(Into::into)
     }
     .boxed()
 }
@@ -35,16 +35,18 @@ pub fn serve(
 async fn serve_inner(
     namespace_scope: ExecutionScope,
     mut stream: fcomponent::NamespaceRequestStream,
+    target: WeakInstanceToken,
 ) -> Result<(), fidl::Error> {
     let (store, store_stream) =
         endpoints::create_proxy_and_stream::<fsandbox::CapabilityStoreMarker>();
+    let target_clone = target.clone();
     let _store_task = fasync::Task::spawn(async move {
         let receiver_scope = fasync::Scope::new();
-        let _ = sandbox::serve_capability_store(store_stream, &receiver_scope).await;
+        let _ = sandbox::serve_capability_store(store_stream, &receiver_scope, target_clone).await;
     });
     while let Some(request) = stream.try_next().await? {
         let method_name = request.method_name();
-        let result = handle_request(&namespace_scope, &store, request).await;
+        let result = handle_request(&namespace_scope, &store, request, target.clone()).await;
         match result {
             // If the error was PEER_CLOSED then we don't need to log it as a client can
             // disconnect while we are processing its request.
@@ -61,10 +63,11 @@ async fn handle_request(
     namespace_scope: &ExecutionScope,
     store: &fsandbox::CapabilityStoreProxy,
     request: fcomponent::NamespaceRequest,
+    target: WeakInstanceToken,
 ) -> Result<(), fidl::Error> {
     match request {
         fcomponent::NamespaceRequest::Create { entries, responder } => {
-            let res = create(namespace_scope, store, entries).await;
+            let res = create(namespace_scope, store, entries, target).await;
             responder.send(res)?;
         }
         fcomponent::NamespaceRequest::_UnknownMethod { ordinal, .. } => {
@@ -78,8 +81,10 @@ async fn create(
     namespace_scope: &ExecutionScope,
     store: &fsandbox::CapabilityStoreProxy,
     entries: Vec<fcomponent::NamespaceInputEntry>,
+    target: WeakInstanceToken,
 ) -> Result<Vec<fcomponent::NamespaceEntry>, fcomponent::NamespaceError> {
-    let mut namespace_builder = NamespaceBuilder::new(namespace_scope.clone(), ignore_not_found());
+    let mut namespace_builder =
+        NamespaceBuilder::new(namespace_scope.clone(), ignore_not_found(), target);
     for entry in entries {
         const ERR: fcomponent::NamespaceError = fcomponent::NamespaceError::DictionaryRead;
 
@@ -139,6 +144,7 @@ mod tests {
     use fidl::endpoints::{ProtocolMarker, Proxy, ServerEnd};
     use fuchsia_component::client;
     use futures::TryStreamExt;
+    use sandbox::fidl::IntoFsandboxCapability;
     use sandbox::{Connector, Dict};
     use std::sync::{Arc, Weak};
     use {
@@ -185,9 +191,10 @@ mod tests {
 
         let (store, stream) =
             endpoints::create_proxy_and_stream::<fsandbox::CapabilityStoreMarker>();
+        let root_token = root.as_weak().into();
         tasks.spawn(async move {
             let receiver_scope = fasync::Scope::new();
-            sandbox::serve_capability_store(stream, &receiver_scope).await.unwrap()
+            sandbox::serve_capability_store(stream, &receiver_scope, root_token).await.unwrap()
         });
 
         let mut namespace_pairs = vec![];
@@ -216,7 +223,14 @@ mod tests {
 
             let dict_id = next_id;
             next_id += 1;
-            store.import(dict_id, Capability::from(dict).into()).await.unwrap().unwrap();
+            store
+                .import(
+                    dict_id,
+                    Capability::from(dict).into_fsandbox_capability(root.as_weak().into()),
+                )
+                .await
+                .unwrap()
+                .unwrap();
             let (client_end, server_end) = fidl::Channel::create();
             store.dictionary_legacy_export(dict_id, server_end).await.unwrap().unwrap();
 
@@ -255,9 +269,10 @@ mod tests {
 
         let (store, stream) =
             endpoints::create_proxy_and_stream::<fsandbox::CapabilityStoreMarker>();
+        let root_token = root.as_weak().into();
         tasks.spawn(async move {
             let receiver_scope = fasync::Scope::new();
-            sandbox::serve_capability_store(stream, &receiver_scope).await.unwrap()
+            sandbox::serve_capability_store(stream, &receiver_scope, root_token).await.unwrap()
         });
 
         // Two entries with a shadowing path.
@@ -286,7 +301,14 @@ mod tests {
 
             let dict_id = next_id;
             next_id += 1;
-            store.import(dict_id, Capability::from(dict).into()).await.unwrap().unwrap();
+            store
+                .import(
+                    dict_id,
+                    Capability::from(dict).into_fsandbox_capability(root.as_weak().into()),
+                )
+                .await
+                .unwrap()
+                .unwrap();
             let (client_end, server_end) = fidl::Channel::create();
             store.dictionary_legacy_export(dict_id, server_end).await.unwrap().unwrap();
 

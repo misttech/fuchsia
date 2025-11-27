@@ -6,13 +6,13 @@ use crate::model::component::WeakComponentInstance;
 use ::routing::bedrock::sandbox_construction::{ComponentSandbox, ProgramInput};
 use ::routing::bedrock::structured_dict::ComponentInput;
 use ::routing::capability_source::CapabilitySource;
-use anyhow::{format_err, Error};
+use anyhow::{Error, format_err};
 use cm_types::Name;
 use fidl::endpoints::ServerEnd;
 use fidl_fuchsia_component_internal as finternal;
 use futures::future::BoxFuture;
 use futures::{FutureExt, StreamExt};
-use sandbox::{Dict, RouterResponse};
+use sandbox::{Dict, RouterResponse, WeakInstanceToken};
 
 pub fn serve(
     chan: zx::Channel,
@@ -43,7 +43,7 @@ pub fn serve(
                         .map_err(|e| format_err!("failed to resolve component: {:?}", e))?
                         .sandbox
                         .clone();
-                    if !is_builtin_runner(&program_input).await {
+                    if !is_builtin_runner(&program_input, source.clone().into()).await {
                         // This API is explerimental and making it widely available has security
                         // implications. To allow us to get a bit of mileage on it to determine the
                         // correct shape for it, we currently only allow connections to this
@@ -78,11 +78,12 @@ pub fn serve(
     .boxed()
 }
 
-async fn is_builtin_runner(program_input: &ProgramInput) -> bool {
+async fn is_builtin_runner(program_input: &ProgramInput, target: WeakInstanceToken) -> bool {
     let Some(runner_router) = program_input.runner() else {
         return false;
     };
-    let Ok(RouterResponse::Debug(source_data)) = runner_router.route(None, true).await else {
+    let Ok(RouterResponse::Debug(source_data)) = runner_router.route(None, true, target).await
+    else {
         return false;
     };
     let source: ::routing::capability_source::CapabilitySource =

@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::fidl::router;
-use crate::{ConversionError, DirConnector, Router, RouterResponse};
+use crate::{ConversionError, DirConnector, Router, RouterResponse, WeakInstanceToken};
 use fidl::handle::AsHandleRef;
 use futures::TryStreamExt;
 use std::sync::Arc;
@@ -15,17 +15,9 @@ impl crate::RemotableCapability for Router<DirConnector> {
     fn try_into_directory_entry(
         self,
         scope: ExecutionScope,
+        token: WeakInstanceToken,
     ) -> Result<Arc<dyn DirectoryEntry>, ConversionError> {
-        Ok(self.into_directory_entry(fio::DirentType::Directory, scope))
-    }
-}
-
-impl From<Router<DirConnector>> for fsandbox::Capability {
-    fn from(router: Router<DirConnector>) -> Self {
-        let (client_end, sender_stream) =
-            fidl::endpoints::create_request_stream::<fsandbox::DirConnectorRouterMarker>();
-        router.serve_and_register(sender_stream, client_end.get_koid().unwrap());
-        fsandbox::Capability::DirConnectorRouter(client_end)
+        Ok(self.into_directory_entry(fio::DirentType::Directory, scope, token))
     }
 }
 
@@ -45,15 +37,25 @@ impl TryFrom<RouterResponse<DirConnector>> for fsandbox::DirConnectorRouterRoute
     }
 }
 
+impl crate::fidl::IntoFsandboxCapability for Router<DirConnector> {
+    fn into_fsandbox_capability(self, token: WeakInstanceToken) -> fsandbox::Capability {
+        let (client_end, sender_stream) =
+            fidl::endpoints::create_request_stream::<fsandbox::DirConnectorRouterMarker>();
+        self.serve_and_register(sender_stream, client_end.get_koid().unwrap(), token);
+        fsandbox::Capability::DirConnectorRouter(client_end)
+    }
+}
+
 impl Router<DirConnector> {
     async fn serve_router(
         self,
         mut stream: fsandbox::DirConnectorRouterRequestStream,
+        token: WeakInstanceToken,
     ) -> Result<(), fidl::Error> {
         while let Ok(Some(request)) = stream.try_next().await {
             match request {
                 fsandbox::DirConnectorRouterRequest::Route { payload, responder } => {
-                    responder.send(router::route_from_fidl(&self, payload).await)?;
+                    responder.send(router::route_from_fidl(&self, payload, token.clone()).await)?;
                 }
                 fsandbox::DirConnectorRouterRequest::_UnknownMethod { ordinal, .. } => {
                     log::warn!(
@@ -71,12 +73,13 @@ impl Router<DirConnector> {
         self,
         stream: fsandbox::DirConnectorRouterRequestStream,
         koid: zx::Koid,
+        token: WeakInstanceToken,
     ) {
         let router = self.clone();
 
         // Move this capability into the registry.
         crate::fidl::registry::insert(self.into(), koid, async move {
-            router.serve_router(stream).await.expect("failed to serve Router");
+            router.serve_router(stream, token).await.expect("failed to serve Router");
         });
     }
 }

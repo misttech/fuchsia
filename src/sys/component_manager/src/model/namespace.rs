@@ -34,7 +34,8 @@ pub async fn create_namespace(
     scope: ExecutionScope,
 ) -> Result<NamespaceBuilder, CreateNamespaceError> {
     let not_found_sender = not_found_logging(component);
-    let mut namespace = NamespaceBuilder::new(scope.clone(), not_found_sender);
+    let mut namespace =
+        NamespaceBuilder::new(scope.clone(), not_found_sender, component.as_weak().into());
     if let Some(package) = package {
         let pkg_dir = fuchsia_fs::directory::clone(&package.package_dir).map_err(|e| {
             CreateNamespaceError::ClonePkgDirFailed { moniker: component.moniker.clone(), err: e }

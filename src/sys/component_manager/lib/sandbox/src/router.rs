@@ -13,9 +13,6 @@ use std::sync::Arc;
 /// [`Request`] contains metadata around how to obtain a capability.
 #[derive(Debug)]
 pub struct Request {
-    /// A reference to the requesting component.
-    pub target: WeakInstanceToken,
-
     /// Metadata associated with the request.
     pub metadata: Dict,
 }
@@ -37,7 +34,7 @@ impl Request {
             })
             .transpose()?;
         let metadata = self.metadata.shallow_copy().map_err(|()| RouterError::InvalidArgs)?;
-        Ok(Self { target: self.target.clone(), metadata })
+        Ok(Self { metadata })
     }
 }
 
@@ -52,6 +49,8 @@ where
         &self,
         request: Option<Request>,
         debug: bool,
+        // A reference to the requesting component.
+        target: WeakInstanceToken,
     ) -> Result<RouterResponse<T>, RouterError>;
 }
 
@@ -128,7 +127,11 @@ impl<T: CapabilityBound> fmt::Debug for Router<T> {
 /// that takes a request and returns such future.
 impl<T: CapabilityBound, F> Routable<T> for F
 where
-    F: Fn(Option<Request>, bool) -> BoxFuture<'static, Result<RouterResponse<T>, RouterError>>
+    F: Fn(
+            Option<Request>,
+            bool,
+            WeakInstanceToken,
+        ) -> BoxFuture<'static, Result<RouterResponse<T>, RouterError>>
         + Send
         + Sync
         + 'static,
@@ -138,12 +141,13 @@ where
         &'a self,
         request: Option<Request>,
         debug: bool,
+        target: WeakInstanceToken,
     ) -> BoxFuture<'b, Result<RouterResponse<T>, RouterError>>
     where
         'a: 'b,
         Self: 'b,
     {
-        self(request, debug)
+        self(request, debug, target)
     }
 }
 
@@ -153,8 +157,9 @@ impl<T: CapabilityBound> Routable<T> for Router<T> {
         &self,
         request: Option<Request>,
         debug: bool,
+        target: WeakInstanceToken,
     ) -> Result<RouterResponse<T>, RouterError> {
-        Router::route(self, request, debug).await
+        Router::route(self, request, debug, target).await
     }
 }
 
@@ -181,8 +186,9 @@ impl<T: CapabilityBound> Router<T> {
         &self,
         request: Option<Request>,
         debug: bool,
+        target: WeakInstanceToken,
     ) -> Result<RouterResponse<T>, RouterError> {
-        self.routable.route(request, debug).await
+        self.routable.route(request, debug, target).await
     }
 }
 
@@ -206,6 +212,7 @@ impl<T: Clone + CapabilityBound> Routable<T> for OkRouter<T> {
         &self,
         _request: Option<Request>,
         _debug: bool,
+        _target: WeakInstanceToken,
     ) -> Result<RouterResponse<T>, RouterError> {
         Ok(RouterResponse::Capability(self.v.clone()))
     }
@@ -222,6 +229,7 @@ impl<T: CapabilityBound> Routable<T> for DebugRouter {
         &self,
         _request: Option<Request>,
         _debug: bool,
+        _target: WeakInstanceToken,
     ) -> Result<RouterResponse<T>, RouterError> {
         Ok(RouterResponse::Debug(self.v.clone()))
     }
@@ -238,6 +246,7 @@ impl<T: CapabilityBound> Routable<T> for ErrRouter {
         &self,
         _request: Option<Request>,
         _debug: bool,
+        _target: WeakInstanceToken,
     ) -> Result<RouterResponse<T>, RouterError> {
         Err(self.v.clone())
     }

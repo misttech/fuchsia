@@ -3347,11 +3347,9 @@ async fn source_component_stopping_when_routing() {
         let cap = Router::<Connector>::try_from(cap).unwrap();
         let Ok(RouterResponse::Capability(conn)) = cap
             .route(
-                Some(sandbox::Request {
-                    target: root.as_weak().into(),
-                    metadata: protocol_metadata(Availability::Required),
-                }),
+                Some(sandbox::Request { metadata: protocol_metadata(Availability::Required) }),
                 false,
+                root.as_weak().into(),
             )
             .await
         else {
@@ -3413,11 +3411,9 @@ async fn source_component_stopped_after_routing_before_open() {
     let cap = Router::<Connector>::try_from(cap).unwrap();
     let Ok(RouterResponse::Capability(conn)) = cap
         .route(
-            Some(sandbox::Request {
-                target: root.as_weak().into(),
-                metadata: protocol_metadata(Availability::Required),
-            }),
+            Some(sandbox::Request { metadata: protocol_metadata(Availability::Required) }),
             false,
+            root.as_weak().into(),
         )
         .await
     else {
@@ -3484,11 +3480,9 @@ async fn source_component_shutdown_after_routing_before_open() {
     let cap = Router::<Connector>::try_from(cap).unwrap();
     let Ok(RouterResponse::Capability(conn)) = cap
         .route(
-            Some(sandbox::Request {
-                target: root.as_weak().into(),
-                metadata: protocol_metadata(Availability::Required),
-            }),
+            Some(sandbox::Request { metadata: protocol_metadata(Availability::Required) }),
             false,
+            root.as_weak().into(),
         )
         .await
     else {

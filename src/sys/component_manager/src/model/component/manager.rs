@@ -11,7 +11,7 @@ use fidl::endpoints::{self};
 use fuchsia_component::client;
 use log::warn;
 use routing::error::RoutingError;
-use sandbox::{Connector, Request, Routable};
+use sandbox::{Connector, Request, Routable, WeakInstanceToken};
 use std::sync::{Arc, Mutex};
 use vfs::directory::entry::OpenRequest;
 use vfs::path::Path;
@@ -95,6 +95,7 @@ impl ComponentManagerInstance {
                 &self,
                 request: Option<Request>,
                 debug: bool,
+                target: WeakInstanceToken,
             ) -> Result<RouterResponse<Connector>, RouterError> {
                 let component_output = self
                     .root
@@ -106,7 +107,7 @@ impl ComponentManagerInstance {
                     .clone();
                 match component_output.capabilities().get(&self.source_name) {
                     Ok(Some(sandbox::Capability::ConnectorRouter(router))) => {
-                        Ok(router.route(request, debug).await?)
+                        Ok(router.route(request, debug, target).await?)
                     }
                     _ => Err(RouterError::NotFound(Arc::new(
                         RoutingError::UseFromRootExposeNotFound {

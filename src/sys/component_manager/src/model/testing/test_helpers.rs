@@ -568,8 +568,8 @@ pub async fn new_event_stream(
     let use_router = EventStreamUseRouter::new(&root_component, source_routers);
 
     let metadata = event_stream_metadata(cm_rust::Availability::Required, Default::default());
-    let request = Request { metadata, target: root_component.as_weak().into() };
-    let result = use_router.route(Some(request), false).await;
+    let request = Request { metadata };
+    let result = use_router.route(Some(request), false, root_component.as_weak().into()).await;
     let connector = match result {
         Ok(RouterResponse::Capability(connector)) => connector,
         other_response => panic!("unexpected router response: {:?}", other_response),

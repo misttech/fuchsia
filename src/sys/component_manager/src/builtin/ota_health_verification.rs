@@ -3,10 +3,11 @@
 // found in the LICENSE file.
 
 use crate::model::component::manager::ComponentManagerInstance;
+use ::routing::component_instance::ComponentInstanceInterface;
 use ::routing::error::RoutingError;
 use anyhow::Context;
 use cm_types::Name;
-use fidl::endpoints::{create_proxy, DiscoverableProtocolMarker};
+use fidl::endpoints::{DiscoverableProtocolMarker, create_proxy};
 use fidl_fuchsia_update_verify as fupdate;
 use fuchsia_inspect::ArrayProperty;
 use futures::TryStreamExt;
@@ -147,17 +148,17 @@ async fn open_protocol(
                 expected: "ConnectorRouter".to_string(),
                 moniker: ExtendedMoniker::from(moniker.clone()),
             }
-            .into())
+            .into());
         }
     };
-    let connector = match router.route(None, false).await? {
+    let connector = match router.route(None, false, instance.clone().as_weak().into()).await? {
         RouterResponse::Capability(cap) => cap,
         RouterResponse::Unavailable => {
             return Err(RoutingError::RouteUnexpectedUnavailable {
                 type_name: cm_rust::CapabilityTypeName::Protocol,
                 moniker: ExtendedMoniker::from(moniker.clone()),
             }
-            .into())
+            .into());
         }
         RouterResponse::Debug(_) => {
             log::error!("received unexpected debug data when routing for OTA health checks");

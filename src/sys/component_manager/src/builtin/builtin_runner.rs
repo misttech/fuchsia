@@ -21,7 +21,7 @@ use namespace::{Namespace, NamespaceError};
 use routing::capability_source::{BuiltinSource, CapabilitySource};
 use routing::policy::ScopedPolicyChecker;
 use runner::component::{Controllable, Controller, StopInfo};
-use sandbox::{Capability, Dict, RemotableCapability};
+use sandbox::{Capability, Dict, RemotableCapability, WeakInstanceToken};
 use std::sync::Arc;
 use thiserror::Error;
 use vfs::directory::entry::{OpenRequest, serve_directory};
@@ -547,7 +547,16 @@ impl ElfRunnerProgram {
     /// Serves requests coming from `outgoing_dir` using `self.output`.
     fn serve_outgoing(&self, outgoing_dir: ServerEnd<fio::DirectoryMarker>) {
         let scope = self.scope.clone();
-        let dir_entry = self.output.clone().try_into_directory_entry(scope.clone()).unwrap();
+        // The WeakInstanceToken provided here is used as the target for any routes that are
+        // started by this dictionary when responding to open requests.
+        //
+        // At no point does anything try to turn the WeakInstanceToken passed in here into a
+        // WeakComponentInstance, so it's fine for us to use an invalid token.
+        let dir_entry = self
+            .output
+            .clone()
+            .try_into_directory_entry(scope.clone(), WeakInstanceToken::new_invalid())
+            .unwrap();
         let client_end = serve_directory(dir_entry, &scope, fio::PERM_READABLE).unwrap();
         let dir_proxy = client_end.into_proxy();
         fuchsia_fs::directory::clone_onto(&dir_proxy, outgoing_dir).unwrap();
@@ -1057,7 +1066,8 @@ mod tests {
         // This way we can monitor when that program is running.
         let (ch1, ch2) = zx::Channel::create();
         let (not_found, _) = channel::mpsc::unbounded();
-        let mut namespace = NamespaceBuilder::new(scope, not_found);
+        let mut namespace =
+            NamespaceBuilder::new(scope, not_found, WeakInstanceToken::new_invalid());
         namespace
             .add_entry(
                 Capability::Directory(Directory::new(pkg)),

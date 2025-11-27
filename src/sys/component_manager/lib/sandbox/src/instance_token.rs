@@ -25,3 +25,18 @@ impl From<WeakInstanceToken> for fsandbox::Capability {
         todo!("b/337284929: Decide on if InstanceToken should be in Capability");
     }
 }
+
+impl WeakInstanceToken {
+    /// Creates a new WeakInstanceToken that cannot be typecast into anything useful. Primarily
+    /// useful in tests.
+    pub fn new_invalid() -> Self {
+        #[derive(Debug)]
+        struct Nothing;
+        impl WeakInstanceTokenAny for Nothing {
+            fn as_any(&self) -> &dyn Any {
+                self
+            }
+        }
+        Self { inner: Arc::new(Nothing {}) }
+    }
+}

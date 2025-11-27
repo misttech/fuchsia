@@ -12,7 +12,7 @@ use fidl_fuchsia_logger as flogger;
 use log::Log;
 use moniker::Moniker;
 use routing::DictExt;
-use sandbox::{Capability, RouterResponse};
+use sandbox::{Capability, RouterResponse, WeakInstanceToken};
 use std::collections::LinkedList;
 use std::sync::{Arc, LazyLock, Mutex};
 
@@ -30,8 +30,9 @@ impl LoggerCache {
         moniker: &Moniker,
         resolved_instance_state: &ResolvedInstanceState,
         record: &log::Record,
+        target: WeakInstanceToken,
     ) {
-        if !Self::try_attributed_log(moniker, resolved_instance_state, record) {
+        if !Self::try_attributed_log(moniker, resolved_instance_state, record, target) {
             log::logger().log(record);
         }
     }
@@ -46,6 +47,7 @@ impl LoggerCache {
         moniker: &Moniker,
         resolved_instance_state: &ResolvedInstanceState,
         record: &log::Record,
+        target: WeakInstanceToken,
     ) -> bool {
         let mut cache = LOGGER_CACHE.lock().unwrap();
         if let Some(element) = cache.list.extract_if(|e| &e.0 == moniker).next() {
@@ -97,7 +99,7 @@ impl LoggerCache {
         let (logsink, server) = endpoints::create_endpoints::<flogger::LogSinkMarker>();
         let scope = &resolved_instance_state.execution_scope;
         scope.spawn(async move {
-            let Ok(res) = router.route(None, false).await else {
+            let Ok(res) = router.route(None, false, target).await else {
                 // router will take care of logging error
                 return;
             };
@@ -154,6 +156,7 @@ mod tests {
     use fidl_fuchsia_logger as flogger;
     use hooks::Hooks;
     use routing::bedrock::structured_dict::ComponentInput;
+    use routing::component_instance::ComponentInstanceInterface;
     use sandbox::{Capability, Connector, Receiver, Router};
     use std::str::FromStr;
     use std::sync::{Arc, Weak};
@@ -244,6 +247,7 @@ mod tests {
             &instance.moniker,
             &resolved_instance,
             &new_record(),
+            instance.as_weak().into(),
         ));
         assert!(rx.receive().await.is_some());
     }
@@ -255,6 +259,7 @@ mod tests {
             &instance.moniker,
             &resolved_instance,
             &new_record(),
+            instance.as_weak().into(),
         ));
     }
 
@@ -264,7 +269,12 @@ mod tests {
         let record = new_record();
 
         // First log, populates cache.
-        assert!(LoggerCache::try_attributed_log(&instance.moniker, &resolved_instance, &record));
+        assert!(LoggerCache::try_attributed_log(
+            &instance.moniker,
+            &resolved_instance,
+            &record,
+            instance.as_weak().into()
+        ));
         assert!(rx.receive().await.is_some());
         assert_eq!(LOGGER_CACHE.lock().unwrap().list.len(), 1);
 
@@ -273,7 +283,8 @@ mod tests {
         assert!(LoggerCache::try_attributed_log(
             &instance.moniker,
             &resolved_instance_fail,
-            &record
+            &record,
+            instance.as_weak().into(),
         ));
         assert_eq!(LOGGER_CACHE.lock().unwrap().list.len(), 1);
     }
@@ -289,7 +300,8 @@ mod tests {
             assert!(LoggerCache::try_attributed_log(
                 &instance.moniker,
                 &resolved_instance,
-                &record
+                &record,
+                instance.as_weak().into(),
             ));
             assert!(rx.receive().await.is_some());
             instances.push(instance);
@@ -298,7 +310,12 @@ mod tests {
 
         // Log one more time, should evict the first one.
         let (instance, resolved_instance, rx) = new_instance_with_valid_logsink("new-child").await;
-        assert!(LoggerCache::try_attributed_log(&instance.moniker, &resolved_instance, &record));
+        assert!(LoggerCache::try_attributed_log(
+            &instance.moniker,
+            &resolved_instance,
+            &record,
+            instance.as_weak().into()
+        ));
         assert!(rx.receive().await.is_some());
 
         let cache = LOGGER_CACHE.lock().unwrap();
@@ -315,7 +332,8 @@ mod tests {
         assert!(LoggerCache::try_attributed_log(
             &instance.moniker,
             &resolved_instance,
-            &new_record()
+            &new_record(),
+            instance.as_weak().into(),
         ));
         assert!(rx.receive().await.is_some());
         assert_eq!(LOGGER_CACHE.lock().unwrap().list.len(), 1);

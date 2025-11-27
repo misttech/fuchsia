@@ -512,7 +512,7 @@ impl AnonymizedAggregateServiceDir {
             self.parent.upgrade().map_err(|err| ModelError::ComponentInstanceError { err })?;
 
         let (proxy, server_end) = fidl::endpoints::create_proxy::<fio::DirectoryMarker>();
-        let result = router.route(None, false).await;
+        let result = router.route(None, false, self.parent.clone().into()).await;
         let dir_connector = match result? {
             RouterResponse::Capability(dir_connector) => dir_connector,
             RouterResponse::Unavailable => {
@@ -901,6 +901,7 @@ mod tests {
     use maplit::hashmap;
     use proptest::prelude::*;
     use rand::SeedableRng;
+    use sandbox::WeakInstanceToken;
     use std::collections::HashSet;
     use vfs::pseudo_directory;
 
@@ -946,7 +947,7 @@ mod tests {
             });
             let source_clone = source.clone();
             let weak_component = component_instance.clone();
-            let router = Router::new(move |_request, debug: bool| {
+            let router = Router::new(move |_request, debug: bool, _target: WeakInstanceToken| {
                 assert!(!debug);
                 let source = source_clone.clone();
                 let weak_component = weak_component.clone();

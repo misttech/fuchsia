@@ -11,7 +11,7 @@ use moniker::ExtendedMoniker;
 use router_error::RouterError;
 #[cfg(not(target_os = "fuchsia"))]
 use sandbox::Capability;
-use sandbox::{CapabilityBound, Request, Routable, Router, RouterResponse};
+use sandbox::{CapabilityBound, Request, Routable, Router, RouterResponse, WeakInstanceToken};
 
 /// If the metadata for a route contains a Data::Uint64 value under this key with a value greater
 /// than 0, then no policy checks will be performed. This behavior is limited to non-fuchsia
@@ -82,6 +82,7 @@ impl<C: ComponentInstanceInterface + 'static, T: CapabilityBound> Routable<T>
         &self,
         request: Option<Request>,
         debug: bool,
+        target_token: WeakInstanceToken,
     ) -> Result<RouterResponse<T>, RouterError> {
         let request = request.ok_or_else(|| RouterError::InvalidArgs)?;
         #[cfg(not(target_os = "fuchsia"))]
@@ -89,11 +90,10 @@ impl<C: ComponentInstanceInterface + 'static, T: CapabilityBound> Routable<T>
             request.metadata.get(&cm_types::Name::new(SKIP_POLICY_CHECKS).unwrap())
         {
             if num > 0 {
-                return self.router.route(Some(request), debug).await;
+                return self.router.route(Some(request), debug, target_token.clone()).await;
             }
         }
-        let target = request
-            .target
+        let target = target_token
             .inner
             .as_any()
             .downcast_ref::<WeakExtendedInstanceInterface<C>>()
@@ -105,7 +105,7 @@ impl<C: ComponentInstanceInterface + 'static, T: CapabilityBound> Routable<T>
             .into());
         };
         match self.policy_checker.can_route_capability(&self.capability_source, &moniker) {
-            Ok(()) => self.router.route(Some(request), debug).await,
+            Ok(()) => self.router.route(Some(request), debug, target_token).await,
             Err(policy_error) => Err(RoutingError::PolicyError(policy_error).into()),
         }
     }

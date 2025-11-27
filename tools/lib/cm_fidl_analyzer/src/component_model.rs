@@ -826,7 +826,7 @@ impl ComponentModelForAnalyzer {
                 Capability::Dictionary(dictionary) => dictionary,
                 Capability::DictionaryRouter(router) => {
                     let response = router
-                        .route(None, false)
+                        .route(None, false, target.as_weak().into())
                         .await
                         .expect("failed to route intermediate router");
                     let RouterResponse::Capability(dictionary) = response else {
@@ -845,31 +845,41 @@ impl ComponentModelForAnalyzer {
         }
         let data = match current_capability {
             Capability::ConnectorRouter(router) => {
-                let RouterResponse::Debug(data) = router.route(None, true).await? else {
+                let RouterResponse::Debug(data) =
+                    router.route(None, true, target.as_weak().into()).await?
+                else {
                     panic!("unexpected router response");
                 };
                 data
             }
             Capability::DictionaryRouter(router) => {
-                let RouterResponse::Debug(data) = router.route(None, true).await? else {
+                let RouterResponse::Debug(data) =
+                    router.route(None, true, target.as_weak().into()).await?
+                else {
                     panic!("unexpected router response");
                 };
                 data
             }
             Capability::DirEntryRouter(router) => {
-                let RouterResponse::Debug(data) = router.route(None, true).await? else {
+                let RouterResponse::Debug(data) =
+                    router.route(None, true, target.as_weak().into()).await?
+                else {
                     panic!("unexpected router response");
                 };
                 data
             }
             Capability::DirConnectorRouter(router) => {
-                let RouterResponse::Debug(data) = router.route(None, true).await? else {
+                let RouterResponse::Debug(data) =
+                    router.route(None, true, target.as_weak().into()).await?
+                else {
                     panic!("unexpected router response");
                 };
                 data
             }
             Capability::DataRouter(router) => {
-                let RouterResponse::Debug(data) = router.route(None, true).await? else {
+                let RouterResponse::Debug(data) =
+                    router.route(None, true, target.as_weak().into()).await?
+                else {
                     panic!("unexpected router response");
                 };
                 data
@@ -1151,26 +1161,24 @@ impl ComponentModelForAnalyzer {
                     };
                 }
             };
-        let request = Request {
-            target: target.as_weak().into(),
-            metadata: resolver_metadata(cm_rust::Availability::Required),
-        };
-        let source: CapabilitySource = match resolver_router.route(Some(request), true).await {
-            Ok(RouterResponse::Debug(data)) => data.try_into().unwrap(),
-            Ok(RouterResponse::Unavailable) => panic!("resolvers cannot be optional"),
-            Ok(RouterResponse::Capability(_)) => panic!("we did not request a capability"),
-            Err(err) => {
-                let err: RoutingError = err.try_into().unwrap();
-                return VerifyRouteResult {
-                    using_node: target.moniker().clone(),
-                    target_decl: TargetDecl::ResolverFromEnvironment(scheme.clone()),
-                    capability: None,
-                    error: Some(AnalyzerModelError::from(err)),
-                    route: vec![],
-                    source: None,
-                };
-            }
-        };
+        let request = Request { metadata: resolver_metadata(cm_rust::Availability::Required) };
+        let source: CapabilitySource =
+            match resolver_router.route(Some(request), true, target.as_weak().into()).await {
+                Ok(RouterResponse::Debug(data)) => data.try_into().unwrap(),
+                Ok(RouterResponse::Unavailable) => panic!("resolvers cannot be optional"),
+                Ok(RouterResponse::Capability(_)) => panic!("we did not request a capability"),
+                Err(err) => {
+                    let err: RoutingError = err.try_into().unwrap();
+                    return VerifyRouteResult {
+                        using_node: target.moniker().clone(),
+                        target_decl: TargetDecl::ResolverFromEnvironment(scheme.clone()),
+                        capability: None,
+                        error: Some(AnalyzerModelError::from(err)),
+                        route: vec![],
+                        source: None,
+                    };
+                }
+            };
         VerifyRouteResult {
             using_node: target.moniker().clone(),
             target_decl: TargetDecl::ResolverFromEnvironment(scheme.clone()),
@@ -1946,11 +1954,8 @@ mod tests {
         let Capability::ConnectorRouter(runner_router) = runner_router_capability else {
             panic!("unexpected capability for runner");
         };
-        let request = Request {
-            target: child_instance.as_weak().into(),
-            metadata: runner_metadata(cm_rust::Availability::Required),
-        };
-        let res = runner_router.route(Some(request), true).await;
+        let request = Request { metadata: runner_metadata(cm_rust::Availability::Required) };
+        let res = runner_router.route(Some(request), true, child_instance.as_weak().into()).await;
         let source: CapabilitySource = match res {
             Ok(RouterResponse::Debug(data)) => data.try_into().unwrap(),
             other_response => panic!("unexpected response: {other_response:?}"),
@@ -1965,11 +1970,8 @@ mod tests {
         let Capability::ConnectorRouter(resolver_router) = resolver_router_capability else {
             panic!("unexpected capability for resolver");
         };
-        let request = Request {
-            target: child_instance.as_weak().into(),
-            metadata: resolver_metadata(cm_rust::Availability::Required),
-        };
-        let res = resolver_router.route(Some(request), true).await;
+        let request = Request { metadata: resolver_metadata(cm_rust::Availability::Required) };
+        let res = resolver_router.route(Some(request), true, child_instance.as_weak().into()).await;
         let source: CapabilitySource = match res {
             Ok(RouterResponse::Debug(data)) => data.try_into().unwrap(),
             other_response => panic!("unexpected response: {other_response:?}"),
@@ -1981,11 +1983,8 @@ mod tests {
         let Capability::ConnectorRouter(runner_router) = runner_router_capability else {
             panic!("unexpected capability for runner");
         };
-        let request = Request {
-            target: child_instance.as_weak().into(),
-            metadata: runner_metadata(cm_rust::Availability::Required),
-        };
-        let res = runner_router.route(Some(request), true).await;
+        let request = Request { metadata: runner_metadata(cm_rust::Availability::Required) };
+        let res = runner_router.route(Some(request), true, child_instance.as_weak().into()).await;
         let source: CapabilitySource = match res {
             Ok(RouterResponse::Debug(data)) => data.try_into().unwrap(),
             other_response => panic!("unexpected response: {other_response:?}"),
@@ -1997,11 +1996,8 @@ mod tests {
         let Capability::ConnectorRouter(runner_router) = runner_router_capability else {
             panic!("unexpected capability for runner");
         };
-        let request = Request {
-            target: child_instance.as_weak().into(),
-            metadata: runner_metadata(cm_rust::Availability::Required),
-        };
-        let res = runner_router.route(Some(request), true).await;
+        let request = Request { metadata: runner_metadata(cm_rust::Availability::Required) };
+        let res = runner_router.route(Some(request), true, child_instance.as_weak().into()).await;
         let source: CapabilitySource = match res {
             Ok(RouterResponse::Debug(data)) => data.try_into().unwrap(),
             other_response => panic!("unexpected response: {other_response:?}"),
@@ -2014,11 +2010,8 @@ mod tests {
         let Capability::ConnectorRouter(resolver_router) = resolver_router_capability else {
             panic!("unexpected capability for resolver");
         };
-        let request = Request {
-            target: child_instance.as_weak().into(),
-            metadata: resolver_metadata(cm_rust::Availability::Required),
-        };
-        let res = resolver_router.route(Some(request), true).await;
+        let request = Request { metadata: resolver_metadata(cm_rust::Availability::Required) };
+        let res = resolver_router.route(Some(request), true, child_instance.as_weak().into()).await;
         let source: CapabilitySource = match res {
             Ok(RouterResponse::Debug(data)) => data.try_into().unwrap(),
             other_response => panic!("unexpected response: {other_response:?}"),

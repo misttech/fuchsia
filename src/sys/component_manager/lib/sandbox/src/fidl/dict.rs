@@ -4,7 +4,9 @@
 
 use crate::dict::{EntryUpdate, UpdateNotifierRetention};
 use crate::fidl::registry::{self, try_from_handle_in_registry};
-use crate::{Capability, ConversionError, Dict, RemotableCapability, RemoteError};
+use crate::{
+    Capability, ConversionError, Dict, RemotableCapability, RemoteError, WeakInstanceToken,
+};
 use fidl::AsHandleRef;
 use fidl_fuchsia_component_sandbox as fsandbox;
 use futures::FutureExt;
@@ -23,9 +25,9 @@ impl From<Dict> for fsandbox::DictionaryRef {
     }
 }
 
-impl From<Dict> for fsandbox::Capability {
-    fn from(dict: Dict) -> Self {
-        Self::Dictionary(dict.into())
+impl crate::fidl::IntoFsandboxCapability for Dict {
+    fn into_fsandbox_capability(self, _token: WeakInstanceToken) -> fsandbox::Capability {
+        fsandbox::Capability::Dictionary(self.into())
     }
 }
 
@@ -67,14 +69,15 @@ impl Dict {
     pub fn try_into_directory_entry_oneshot(
         self,
         scope: ExecutionScope,
+        token: WeakInstanceToken,
     ) -> Result<Arc<dyn DirectoryEntry>, ConversionError> {
         let directory = pfs::simple();
         for (key, value) in self.drain() {
             let dir_entry = match value {
                 Capability::Dictionary(value) => {
-                    value.try_into_directory_entry_oneshot(scope.clone())?
+                    value.try_into_directory_entry_oneshot(scope.clone(), token.clone())?
                 }
-                value => value.try_into_directory_entry(scope.clone())?,
+                value => value.try_into_directory_entry(scope.clone(), token.clone())?,
             };
             let key =
                 Name::try_from(key.to_string()).expect("cm_types::Name is always a valid vfs Name");
@@ -98,6 +101,7 @@ impl RemotableCapability for Dict {
     fn try_into_directory_entry(
         self,
         scope: ExecutionScope,
+        token: WeakInstanceToken,
     ) -> Result<Arc<dyn DirectoryEntry>, ConversionError> {
         let directory = pfs::simple();
         let weak_dir: Weak<pfs::Simple> = Arc::downgrade(&directory);
@@ -126,7 +130,9 @@ impl RemotableCapability for Dict {
                             return UpdateNotifierRetention::Retain;
                         }
                     };
-                    let dir_entry = match value.try_into_directory_entry(scope.clone()) {
+                    let dir_entry = match value
+                        .try_into_directory_entry(scope.clone(), token.clone())
+                    {
                         Ok(dir_entry) => dir_entry,
                         Err(err) => {
                             if let Some(error_sender) = error_sender.lock().unwrap().take() {
@@ -188,6 +194,7 @@ mod tests {
     use crate::dict::{
         BorrowedKey, HYBRID_SWITCH_INSERTION_LEN, HYBRID_SWITCH_REMOVAL_LEN, HybridMap, Key,
     };
+    use crate::fidl::IntoFsandboxCapability;
     use crate::{Data, Dict, DirEntry, Handle, Unit, serve_capability_store};
     use assert_matches::assert_matches;
     use fidl::endpoints::{Proxy, create_proxy, create_proxy_and_stream};
@@ -222,7 +229,7 @@ mod tests {
         let (store, stream) = create_proxy_and_stream::<fsandbox::CapabilityStoreMarker>();
         let _server = fasync::Task::spawn(async move {
             let receiver_scope = fasync::Scope::new();
-            serve_capability_store(stream, &receiver_scope).await
+            serve_capability_store(stream, &receiver_scope, WeakInstanceToken::new_invalid()).await
         });
         let id_gen = sandbox::CapabilityIdGenerator::new();
 
@@ -254,11 +261,17 @@ mod tests {
         let (store, stream) = create_proxy_and_stream::<fsandbox::CapabilityStoreMarker>();
         let _server = fasync::Task::spawn(async move {
             let receiver_scope = fasync::Scope::new();
-            serve_capability_store(stream, &receiver_scope).await
+            serve_capability_store(stream, &receiver_scope, WeakInstanceToken::new_invalid()).await
         });
 
         let cap = Capability::Data(Data::Int64(42));
-        assert_matches!(store.import(1, cap.into()).await.unwrap(), Ok(()));
+        assert_matches!(
+            store
+                .import(1, cap.into_fsandbox_capability(WeakInstanceToken::new_invalid()))
+                .await
+                .unwrap(),
+            Ok(())
+        );
         assert_matches!(
             store.dictionary_create(1).await.unwrap(),
             Err(fsandbox::CapabilityStoreError::IdAlreadyExists)
@@ -270,7 +283,7 @@ mod tests {
         let (store, stream) = create_proxy_and_stream::<fsandbox::CapabilityStoreMarker>();
         let _server = fasync::Task::spawn(async move {
             let receiver_scope = fasync::Scope::new();
-            serve_capability_store(stream, &receiver_scope).await
+            serve_capability_store(stream, &receiver_scope, WeakInstanceToken::new_invalid()).await
         });
 
         let dict_id = 1;
@@ -307,7 +320,7 @@ mod tests {
         let (store, stream) = create_proxy_and_stream::<fsandbox::CapabilityStoreMarker>();
         let _server = fasync::Task::spawn(async move {
             let receiver_scope = fasync::Scope::new();
-            serve_capability_store(stream, &receiver_scope).await
+            serve_capability_store(stream, &receiver_scope, WeakInstanceToken::new_invalid()).await
         });
 
         store.dictionary_create(10).await.unwrap().unwrap();
@@ -315,7 +328,11 @@ mod tests {
         store.dictionary_legacy_export(10, server).await.unwrap().unwrap();
 
         let cap1 = Capability::Data(Data::Int64(42));
-        store.import(1, cap1.into()).await.unwrap().unwrap();
+        store
+            .import(1, cap1.into_fsandbox_capability(WeakInstanceToken::new_invalid()))
+            .await
+            .unwrap()
+            .unwrap();
         assert_matches!(
             store.dictionary_legacy_import(1, dict_ch).await.unwrap(),
             Err(fsandbox::CapabilityStoreError::IdAlreadyExists)
@@ -333,7 +350,7 @@ mod tests {
         let (store, stream) = create_proxy_and_stream::<fsandbox::CapabilityStoreMarker>();
         let _server = fasync::Task::spawn(async move {
             let receiver_scope = fasync::Scope::new();
-            serve_capability_store(stream, &receiver_scope).await
+            serve_capability_store(stream, &receiver_scope, WeakInstanceToken::new_invalid()).await
         });
 
         let (_dict_ch, server) = fidl::Channel::create();
@@ -350,11 +367,12 @@ mod tests {
         let (store, stream) = create_proxy_and_stream::<fsandbox::CapabilityStoreMarker>();
         let _server = fasync::Task::spawn(async move {
             let receiver_scope = fasync::Scope::new();
-            serve_capability_store(stream, &receiver_scope).await
+            serve_capability_store(stream, &receiver_scope, WeakInstanceToken::new_invalid()).await
         });
 
         let dict = new_dict(test_type);
-        let dict_ref = Capability::Dictionary(dict.clone()).into();
+        let dict_ref = Capability::Dictionary(dict.clone())
+            .into_fsandbox_capability(WeakInstanceToken::new_invalid());
         let dict_id = 1;
         store.import(dict_id, dict_ref).await.unwrap().unwrap();
 
@@ -384,7 +402,7 @@ mod tests {
         let (store, stream) = create_proxy_and_stream::<fsandbox::CapabilityStoreMarker>();
         let _server = fasync::Task::spawn(async move {
             let receiver_scope = fasync::Scope::new();
-            serve_capability_store(stream, &receiver_scope).await
+            serve_capability_store(stream, &receiver_scope, WeakInstanceToken::new_invalid()).await
         });
 
         let unit = Unit::default().into();
@@ -442,7 +460,7 @@ mod tests {
         let (store, stream) = create_proxy_and_stream::<fsandbox::CapabilityStoreMarker>();
         let _server = fasync::Task::spawn(async move {
             let receiver_scope = fasync::Scope::new();
-            serve_capability_store(stream, &receiver_scope).await
+            serve_capability_store(stream, &receiver_scope, WeakInstanceToken::new_invalid()).await
         });
 
         let dict = new_dict(test_type);
@@ -451,7 +469,8 @@ mod tests {
         dict.insert(CAP_KEY.clone(), Capability::Unit(Unit::default())).unwrap();
         assert_eq!(adjusted_len(&dict, test_type), 1);
 
-        let dict_ref = Capability::Dictionary(dict.clone()).into();
+        let dict_ref = Capability::Dictionary(dict.clone())
+            .into_fsandbox_capability(WeakInstanceToken::new_invalid());
         let dict_id = 1;
         store.import(dict_id, dict_ref).await.unwrap().unwrap();
 
@@ -478,7 +497,7 @@ mod tests {
         let (store, stream) = create_proxy_and_stream::<fsandbox::CapabilityStoreMarker>();
         let _server = fasync::Task::spawn(async move {
             let receiver_scope = fasync::Scope::new();
-            serve_capability_store(stream, &receiver_scope).await
+            serve_capability_store(stream, &receiver_scope, WeakInstanceToken::new_invalid()).await
         });
 
         assert_matches!(
@@ -524,7 +543,7 @@ mod tests {
         let (store, stream) = create_proxy_and_stream::<fsandbox::CapabilityStoreMarker>();
         let _server = fasync::Task::spawn(async move {
             let receiver_scope = fasync::Scope::new();
-            serve_capability_store(stream, &receiver_scope).await
+            serve_capability_store(stream, &receiver_scope, WeakInstanceToken::new_invalid()).await
         });
 
         let dict = new_dict(test_type);
@@ -535,7 +554,8 @@ mod tests {
         let handle = Handle::from(ch.into_handle());
         dict.insert("h".parse().unwrap(), Capability::Handle(handle)).unwrap();
 
-        let dict_ref = Capability::Dictionary(dict.clone()).into();
+        let dict_ref = Capability::Dictionary(dict.clone())
+            .into_fsandbox_capability(WeakInstanceToken::new_invalid());
         let dict_id = 1;
         store.import(dict_id, dict_ref).await.unwrap().unwrap();
 
@@ -550,7 +570,7 @@ mod tests {
         let (store, stream) = create_proxy_and_stream::<fsandbox::CapabilityStoreMarker>();
         let _server = fasync::Task::spawn(async move {
             let receiver_scope = fasync::Scope::new();
-            serve_capability_store(stream, &receiver_scope).await
+            serve_capability_store(stream, &receiver_scope, WeakInstanceToken::new_invalid()).await
         });
 
         assert_matches!(
@@ -589,7 +609,11 @@ mod tests {
         // Can't duplicate a channel handle.
         let (ch, _) = fidl::Channel::create();
         let handle = Handle::from(ch.into_handle());
-        store.import(3, handle.into()).await.unwrap().unwrap();
+        store
+            .import(3, handle.into_fsandbox_capability(WeakInstanceToken::new_invalid()))
+            .await
+            .unwrap()
+            .unwrap();
         store
             .dictionary_insert(1, &fsandbox::DictionaryItem { key: "h".into(), value: 3 })
             .await
@@ -608,13 +632,20 @@ mod tests {
         let (store, stream) = create_proxy_and_stream::<fsandbox::CapabilityStoreMarker>();
         let _server = fasync::Task::spawn(async move {
             let receiver_scope = fasync::Scope::new();
-            serve_capability_store(stream, &receiver_scope).await
+            serve_capability_store(stream, &receiver_scope, WeakInstanceToken::new_invalid()).await
         });
 
         // Create a Dict with a Unit inside, and copy the Dict.
         let dict = new_dict(test_type);
         dict.insert("unit1".parse().unwrap(), Capability::Unit(Unit::default())).unwrap();
-        store.import(1, dict.clone().into()).await.unwrap().unwrap();
+        store
+            .import(
+                1,
+                dict.clone().into_fsandbox_capability(WeakInstanceToken::new_invalid()).into(),
+            )
+            .await
+            .unwrap()
+            .unwrap();
         store.dictionary_copy(1, 2).await.unwrap().unwrap();
 
         // Insert a Unit into the copy.
@@ -648,7 +679,7 @@ mod tests {
         let (store, stream) = create_proxy_and_stream::<fsandbox::CapabilityStoreMarker>();
         let _server = fasync::Task::spawn(async move {
             let receiver_scope = fasync::Scope::new();
-            serve_capability_store(stream, &receiver_scope).await
+            serve_capability_store(stream, &receiver_scope, WeakInstanceToken::new_invalid()).await
         });
 
         assert_matches!(
@@ -671,7 +702,11 @@ mod tests {
         // Can't duplicate a channel handle.
         let (ch, _) = fidl::Channel::create();
         let handle = Handle::from(ch.into_handle());
-        store.import(3, handle.into()).await.unwrap().unwrap();
+        store
+            .import(3, handle.into_fsandbox_capability(WeakInstanceToken::new_invalid()))
+            .await
+            .unwrap()
+            .unwrap();
         store
             .dictionary_insert(1, &fsandbox::DictionaryItem { key: "h".into(), value: 3 })
             .await
@@ -690,11 +725,15 @@ mod tests {
         let (store, stream) = create_proxy_and_stream::<fsandbox::CapabilityStoreMarker>();
         let _server = fasync::Task::spawn(async move {
             let receiver_scope = fasync::Scope::new();
-            serve_capability_store(stream, &receiver_scope).await
+            serve_capability_store(stream, &receiver_scope, WeakInstanceToken::new_invalid()).await
         });
 
         let dict = new_dict(test_type);
-        store.import(1, dict.clone().into()).await.unwrap().unwrap();
+        store
+            .import(1, dict.clone().into_fsandbox_capability(WeakInstanceToken::new_invalid()))
+            .await
+            .unwrap()
+            .unwrap();
         store.duplicate(1, 2).await.unwrap().unwrap();
 
         // Add a Unit into the duplicate.
@@ -724,9 +763,10 @@ mod tests {
         let (store, stream) = create_proxy_and_stream::<fsandbox::CapabilityStoreMarker>();
         let _server = fasync::Task::spawn(async move {
             let receiver_scope = fasync::Scope::new();
-            serve_capability_store(stream, &receiver_scope).await
+            serve_capability_store(stream, &receiver_scope, WeakInstanceToken::new_invalid()).await
         });
-        let dict_ref = Capability::Dictionary(dict).into();
+        let dict_ref =
+            Capability::Dictionary(dict).into_fsandbox_capability(WeakInstanceToken::new_invalid());
         let dict_id = id_gen.next();
         store.import(dict_id, dict_ref).await.unwrap().unwrap();
 
@@ -845,9 +885,10 @@ mod tests {
         let (store, stream) = create_proxy_and_stream::<fsandbox::CapabilityStoreMarker>();
         let _server = fasync::Task::spawn(async move {
             let receiver_scope = fasync::Scope::new();
-            serve_capability_store(stream, &receiver_scope).await
+            serve_capability_store(stream, &receiver_scope, WeakInstanceToken::new_invalid()).await
         });
-        let dict_ref = Capability::Dictionary(dict.clone()).into();
+        let dict_ref = Capability::Dictionary(dict.clone())
+            .into_fsandbox_capability(WeakInstanceToken::new_invalid());
         let dict_id = 1;
         store.import(dict_id, dict_ref).await.unwrap().unwrap();
 
@@ -967,9 +1008,10 @@ mod tests {
         let (store, stream) = create_proxy_and_stream::<fsandbox::CapabilityStoreMarker>();
         let _server = fasync::Task::spawn(async move {
             let receiver_scope = fasync::Scope::new();
-            serve_capability_store(stream, &receiver_scope).await
+            serve_capability_store(stream, &receiver_scope, WeakInstanceToken::new_invalid()).await
         });
-        let dict_ref = Capability::Dictionary(dict.clone()).into();
+        let dict_ref = Capability::Dictionary(dict.clone())
+            .into_fsandbox_capability(WeakInstanceToken::new_invalid());
         let dict_id = id_gen.next();
         store.import(dict_id, dict_ref).await.unwrap().unwrap();
 
@@ -1024,9 +1066,10 @@ mod tests {
         let (store, stream) = create_proxy_and_stream::<fsandbox::CapabilityStoreMarker>();
         let _server = fasync::Task::spawn(async move {
             let receiver_scope = fasync::Scope::new();
-            serve_capability_store(stream, &receiver_scope).await
+            serve_capability_store(stream, &receiver_scope, WeakInstanceToken::new_invalid()).await
         });
-        let dict_ref = Capability::Dictionary(dict.clone()).into();
+        let dict_ref = Capability::Dictionary(dict.clone())
+            .into_fsandbox_capability(WeakInstanceToken::new_invalid());
         let dict_id = 1;
         store.import(dict_id, dict_ref).await.unwrap().unwrap();
 
@@ -1063,7 +1106,7 @@ mod tests {
         let (store, stream) = create_proxy_and_stream::<fsandbox::CapabilityStoreMarker>();
         let _server = fasync::Task::spawn(async move {
             let receiver_scope = fasync::Scope::new();
-            serve_capability_store(stream, &receiver_scope).await
+            serve_capability_store(stream, &receiver_scope, WeakInstanceToken::new_invalid()).await
         });
 
         store.import(2, Unit::default().into()).await.unwrap().unwrap();
@@ -1104,7 +1147,7 @@ mod tests {
         let (store, stream) = create_proxy_and_stream::<fsandbox::CapabilityStoreMarker>();
         let _server = fasync::Task::spawn(async move {
             let receiver_scope = fasync::Scope::new();
-            serve_capability_store(stream, &receiver_scope).await
+            serve_capability_store(stream, &receiver_scope, WeakInstanceToken::new_invalid()).await
         });
 
         store.dictionary_create(1).await.unwrap().unwrap();
@@ -1172,7 +1215,7 @@ mod tests {
             .expect("dict entry already exists");
         let scope = ExecutionScope::new();
         assert_matches!(
-            dict.try_into_directory_entry(scope).err(),
+            dict.try_into_directory_entry(scope, WeakInstanceToken::new_invalid()).err(),
             Some(ConversionError::NotSupported)
         );
     }
@@ -1209,7 +1252,8 @@ mod tests {
         dict.insert(CAP_KEY.clone(), Capability::DirEntry(DirEntry::new(mock_dir.clone())))
             .expect("dict entry already exists");
         let scope = ExecutionScope::new();
-        let remote = dict.try_into_directory_entry(scope.clone()).unwrap();
+        let remote =
+            dict.try_into_directory_entry(scope.clone(), WeakInstanceToken::new_invalid()).unwrap();
 
         let dir_client_end = serve_directory(remote.clone(), &scope, fio::PERM_READABLE).unwrap();
 
@@ -1233,7 +1277,7 @@ mod tests {
 
         let scope = ExecutionScope::new();
         let remote = dict
-            .try_into_directory_entry(scope.clone())
+            .try_into_directory_entry(scope.clone(), WeakInstanceToken::new_invalid())
             .expect("convert dict into Open capability");
 
         let dir_client_end = serve_directory(remote.clone(), &scope, fio::PERM_READABLE).unwrap();
@@ -1263,11 +1307,12 @@ mod tests {
         let (store, stream) = create_proxy_and_stream::<fsandbox::CapabilityStoreMarker>();
         let _server = fasync::Task::spawn(async move {
             let receiver_scope = fasync::Scope::new();
-            serve_capability_store(stream, &receiver_scope).await
+            serve_capability_store(stream, &receiver_scope, WeakInstanceToken::new_invalid()).await
         });
 
         let dict = Dict::new();
-        let dict_ref = Capability::Dictionary(dict.clone()).into();
+        let dict_ref = Capability::Dictionary(dict.clone())
+            .into_fsandbox_capability(WeakInstanceToken::new_invalid());
         let dict_id = 1;
         store.import(dict_id, dict_ref).await.unwrap().unwrap();
 
@@ -1365,7 +1410,7 @@ mod tests {
         let (store, stream) = create_proxy_and_stream::<fsandbox::CapabilityStoreMarker>();
         let _server = fasync::Task::spawn(async move {
             let receiver_scope = fasync::Scope::new();
-            serve_capability_store(stream, &receiver_scope).await
+            serve_capability_store(stream, &receiver_scope, WeakInstanceToken::new_invalid()).await
         });
 
         #[derive(PartialEq)]
@@ -1404,7 +1449,8 @@ mod tests {
                 UpdateNotifierRetention::Drop_
             }
         }));
-        let dict_ref = Capability::Dictionary(dict.clone()).into();
+        let dict_ref = Capability::Dictionary(dict.clone())
+            .into_fsandbox_capability(WeakInstanceToken::new_invalid());
         let dict_id = 1;
         store.import(dict_id, dict_ref).await.unwrap().unwrap();
 
@@ -1514,7 +1560,10 @@ mod tests {
     async fn live_update_add_nodes() {
         let dict = Dict::new();
         let scope = ExecutionScope::new();
-        let remote = dict.clone().try_into_directory_entry(scope.clone()).unwrap();
+        let remote = dict
+            .clone()
+            .try_into_directory_entry(scope.clone(), WeakInstanceToken::new_invalid())
+            .unwrap();
         let dir_proxy =
             serve_directory(remote.clone(), &scope, fio::PERM_READABLE).unwrap().into_proxy();
         let mut watcher = fuchsia_fs::directory::Watcher::new(&dir_proxy)
@@ -1592,7 +1641,10 @@ mod tests {
             .expect("dict entry already exists");
 
         let scope = ExecutionScope::new();
-        let remote = dict.clone().try_into_directory_entry(scope.clone()).unwrap();
+        let remote = dict
+            .clone()
+            .try_into_directory_entry(scope.clone(), WeakInstanceToken::new_invalid())
+            .unwrap();
         let dir_proxy =
             serve_directory(remote.clone(), &scope, fio::PERM_READABLE).unwrap().into_proxy();
         let mut watcher = fuchsia_fs::directory::Watcher::new(&dir_proxy)
@@ -1681,7 +1733,10 @@ mod tests {
         dict.insert("c".parse().unwrap(), Capability::Dictionary(inner_dict.clone())).unwrap();
 
         let scope = ExecutionScope::new();
-        let remote = dict.clone().try_into_directory_entry_oneshot(scope.clone()).unwrap();
+        let remote = dict
+            .clone()
+            .try_into_directory_entry_oneshot(scope.clone(), WeakInstanceToken::new_invalid())
+            .unwrap();
         let dir_proxy =
             serve_directory(remote.clone(), &scope, fio::PERM_READABLE).unwrap().into_proxy();
 

@@ -388,31 +388,38 @@ impl RouteRequest {
 
         let mut dictionary_entries = None;
         let res = match router {
-            Capability::ConnectorRouter(router) => {
-                router.route(None, true).await.and_then(|resp| match resp {
+            Capability::ConnectorRouter(router) => router
+                .route(None, true, instance.clone().as_weak().into())
+                .await
+                .and_then(|resp| match resp {
                     RouterResponse::Debug(data) => Ok(data),
                     _ => {
                         warn!("[route_validator] Route did not return debug info");
                         Err(RouterError::Internal)
                     }
-                })
-            }
+                }),
             Capability::DictionaryRouter(router) => {
-                let res = router.route(None, true).await.and_then(|resp| match resp {
-                    RouterResponse::Debug(data) => Ok(data),
-                    _ => {
-                        warn!("[route_validator] Route did not return debug info");
-                        Err(RouterError::Internal)
-                    }
-                });
-                let dict = router.route(None, false).await.and_then(|resp| match resp {
-                    RouterResponse::Capability(dict) => Ok(Some(dict)),
-                    RouterResponse::Unavailable => Ok(None),
-                    RouterResponse::Debug(_) => {
-                        warn!("[route_validator] Route returned debug info unexpectedly");
-                        Err(RouterError::Internal)
-                    }
-                })?;
+                let res = router
+                    .route(None, true, instance.clone().as_weak().into())
+                    .await
+                    .and_then(|resp| match resp {
+                        RouterResponse::Debug(data) => Ok(data),
+                        _ => {
+                            warn!("[route_validator] Route did not return debug info");
+                            Err(RouterError::Internal)
+                        }
+                    });
+                let dict = router
+                    .route(None, false, instance.clone().as_weak().into())
+                    .await
+                    .and_then(|resp| match resp {
+                        RouterResponse::Capability(dict) => Ok(Some(dict)),
+                        RouterResponse::Unavailable => Ok(None),
+                        RouterResponse::Debug(_) => {
+                            warn!("[route_validator] Route returned debug info unexpectedly");
+                            Err(RouterError::Internal)
+                        }
+                    })?;
                 dictionary_entries = dict.map(|dict| {
                     dict.keys()
                         .map(|s| fsys::DictionaryEntry {
@@ -423,24 +430,26 @@ impl RouteRequest {
                 });
                 res
             }
-            Capability::DirConnectorRouter(router) => {
-                router.route(None, true).await.and_then(|resp| match resp {
+            Capability::DirConnectorRouter(router) => router
+                .route(None, true, instance.clone().as_weak().into())
+                .await
+                .and_then(|resp| match resp {
                     RouterResponse::Debug(data) => Ok(data),
                     _ => {
                         warn!("[route_validator] Route did not return debug info");
                         Err(RouterError::Internal)
                     }
-                })
-            }
-            Capability::DataRouter(router) => {
-                router.route(None, true).await.and_then(|resp| match resp {
+                }),
+            Capability::DataRouter(router) => router
+                .route(None, true, instance.clone().as_weak().into())
+                .await
+                .and_then(|resp| match resp {
                     RouterResponse::Debug(data) => Ok(data),
                     _ => {
                         warn!("[route_validator] Route did not return debug info");
                         Err(RouterError::Internal)
                     }
-                })
-            }
+                }),
             _ => {
                 warn!("[route_validator] Sandbox capability was not a Router type");
                 Err(RouterError::Internal)

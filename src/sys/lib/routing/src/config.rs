@@ -80,11 +80,9 @@ where
         }
         .into());
     };
-    let request = sandbox::Request {
-        target: component.as_weak().into(),
-        metadata: request_metadata::config_metadata(use_config.availability),
-    };
-    let data = match router.route(Some(request), false).await? {
+    let request =
+        sandbox::Request { metadata: request_metadata::config_metadata(use_config.availability) };
+    let data = match router.route(Some(request), false, component.as_weak().into()).await? {
         RouterResponse::<Data>::Capability(d) => d,
         RouterResponse::<Data>::Unavailable => return Ok(use_config.default.clone()),
         RouterResponse::<Data>::Debug(_) => {
@@ -111,7 +109,7 @@ where
                 expected: "fuchsia.component.decl.ConfigValue".into(),
                 moniker: component.moniker().clone().into(),
             }
-            .into())
+            .into());
         }
     };
 

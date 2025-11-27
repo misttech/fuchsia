@@ -526,9 +526,9 @@ impl ResolvedInstanceState {
             }
             let metadata =
                 event_stream_metadata(use_event_stream_decl.availability, route_metadata);
-            let request = Request { metadata, target: component.as_weak().into() };
+            let request = Request { metadata };
             let Ok(RouterResponse::Capability(dictionary)) =
-                offered_router.route(Some(request), false).await
+                offered_router.route(Some(request), false, component.as_weak().into()).await
             else {
                 continue;
             };
@@ -895,11 +895,11 @@ impl ResolvedInstanceState {
         }
     }
 
-    pub async fn get_exposed_dir(&self) -> Arc<dyn DirectoryEntry> {
+    pub async fn get_exposed_dir(&self, self_target: WeakInstanceToken) -> Arc<dyn DirectoryEntry> {
         let create_exposed_dir = async {
             let exposed_dict = self.get_exposed_dict().await.clone();
             exposed_dict
-                .try_into_directory_entry(self.execution_scope.clone())
+                .try_into_directory_entry(self.execution_scope.clone(), self_target)
                 .expect("converting exposed dict to open should always succeed")
         };
         self.exposed_dir.get_or_init(create_exposed_dir).await.clone()
@@ -1421,19 +1421,16 @@ struct CapabilityRequestedHook {
 impl Routable<Connector> for CapabilityRequestedHook {
     async fn route(
         &self,
-        request: Option<Request>,
+        _request: Option<Request>,
         debug: bool,
+        target: WeakInstanceToken,
     ) -> Result<RouterResponse<Connector>, RouterError> {
-        let request = request.ok_or_else(|| RouterError::InvalidArgs)?;
-
         fn cm_unexpected() -> RouterError {
             RoutingError::from(ComponentInstanceError::ComponentManagerInstanceUnexpected {}).into()
         }
 
         let ExtendedMoniker::ComponentInstance(target_moniker) =
-            <WeakInstanceToken as WeakInstanceTokenExt<ComponentInstance>>::moniker(
-                &request.target,
-            )
+            <WeakInstanceToken as WeakInstanceTokenExt<ComponentInstance>>::moniker(&target)
         else {
             return Err(cm_unexpected());
         };
@@ -1444,8 +1441,7 @@ impl Routable<Connector> for CapabilityRequestedHook {
             })
             .await?;
         let source = self.source.upgrade().map_err(RoutingError::from)?;
-        let ExtendedInstance::Component(target) =
-            request.target.upgrade().map_err(RoutingError::from)?
+        let ExtendedInstance::Component(target) = target.upgrade().map_err(RoutingError::from)?
         else {
             return Err(cm_unexpected());
         };
@@ -1487,6 +1483,7 @@ impl Routable<DirConnector> for DirConnectorOutgoingRouter {
         &self,
         request: Option<Request>,
         debug: bool,
+        _target: WeakInstanceToken,
     ) -> Result<RouterResponse<DirConnector>, RouterError> {
         let request = request.ok_or(RouterError::InvalidArgs)?;
         let subdir: SubDir =
@@ -1577,6 +1574,7 @@ impl Routable<Dict> for ProgramDictionaryRouter {
         &self,
         request: Option<Request>,
         debug: bool,
+        target: WeakInstanceToken,
     ) -> Result<RouterResponse<Dict>, RouterError> {
         if debug {
             let source = CapabilitySource::Component(ComponentSource {
@@ -1611,7 +1609,7 @@ impl Routable<Dict> for ProgramDictionaryRouter {
         });
 
         let resp = inner_router
-            .route(request.into())
+            .route(request.into_fsandbox_request(target))
             .await
             .map_err(|e| open_error(OpenOutgoingDirError::Fidl(e)))?
             .map_err(RouterError::from)?;
