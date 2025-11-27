@@ -1462,7 +1462,7 @@ class MultiVmoTestInstance : public TestInstance {
     // this vmo calling set-size, but should ensure a decent hit rate of random range operations.
     uint64_t vmo_size;
     if (vmo.get_size(&vmo_size) != ZX_OK) {
-      vmo_size = kMaxVmoPages * zx_system_get_page_size();
+      vmo_size = kMaxVmoSize;
     }
     while (!shutdown_ && op_count->fetch_add(1) < kMaxOps) {
       // Produce a random offset and size up front since many ops will need it.
@@ -1558,7 +1558,7 @@ class MultiVmoTestInstance : public TestInstance {
         }
         case 31 ... 40:  // vmo_set_size
           Printf("S");
-          vmo.set_size(uniform_rand(kMaxVmoPages * zx_system_get_page_size(), rng));
+          vmo.set_size(uniform_rand(kMaxVmoSize, rng));
           break;
         case 41 ... 50: {  // vmo_set_cache_policy
           Printf("P");
@@ -1743,7 +1743,7 @@ class MultiVmoTestInstance : public TestInstance {
             size_t vmo_size;
             vmo.get_size(&vmo_size);
             vmo.set_stream_size(uniform_rand(vmo_size, rng));
-            vmo.set_size(uniform_rand(kMaxVmoPages * zx_system_get_page_size(), rng));
+            vmo.set_size(uniform_rand(kMaxVmoSize, rng));
           }
           break;
         }
@@ -1838,6 +1838,9 @@ class MultiVmoTestInstance : public TestInstance {
   // cap our spending there. This allows us to spin up more threads and copy-on-write hierarchies
   // without worrying that they all commit and blow the memory limit.
   static constexpr uint64_t kMaxVmoPages = 128;
+
+  // Maximum VMO size in bytes.
+  const uint64_t kMaxVmoSize = kMaxVmoPages * zx_system_get_page_size();
 
   // While it might be possible for max_threads_ to be arbitrarily high and still not exhaust free
   // memory, cap the number so that we don't end up spinning an arbitrarily large number of threads
