@@ -5,11 +5,11 @@
 #include "src/storage/blobfs/test/integration/fdio_test.h"
 
 #include <fidl/fuchsia.fs/cpp/wire.h>
-#include <fidl/fuchsia.io/cpp/common_types.h>
 #include <fidl/fuchsia.io/cpp/wire.h>
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/async-loop/default.h>
 #include <lib/async/cpp/executor.h>
+#include <lib/component/incoming/cpp/directory.h>
 #include <lib/component/incoming/cpp/protocol.h>
 #include <lib/diagnostics/reader/cpp/archive_reader.h>
 #include <lib/diagnostics/reader/cpp/inspect.h>
@@ -32,10 +32,12 @@
 
 #include <gtest/gtest.h>
 
+#include "src/lib/testing/predicates/status.h"
 #include "src/storage/blobfs/common.h"
 #include "src/storage/blobfs/component_runner.h"
 #include "src/storage/blobfs/mkfs.h"
 #include "src/storage/blobfs/mount.h"
+#include "src/storage/blobfs/test/blob_utils.h"
 #include "src/storage/blobfs/test/unit/local_decompressor_creator.h"
 #include "src/storage/lib/block_client/cpp/fake_block_device.h"
 #include "src/storage/lib/fs_management/cpp/admin.h"
@@ -50,11 +52,9 @@ void FdioTest::SetUp() {
 
   auto device = std::make_unique<block_client::FakeBlockDevice>(kNumBlocks, kBlockSize);
   block_device_ = device.get();
-  ASSERT_EQ(FormatFilesystem(block_device_,
-                             FilesystemOptions{
-                                 .oldest_minor_version = GetOldestMinorVersion(),
-                             }),
-            ZX_OK);
+  ASSERT_OK(FormatFilesystem(block_device_, FilesystemOptions{
+                                                .oldest_minor_version = GetOldestMinorVersion(),
+                                            }));
 
   auto [outgoing_dir_client, outgoing_dir_server] =
       fidl::Endpoints<fuchsia_io::Directory>::Create();
@@ -66,38 +66,37 @@ void FdioTest::SetUp() {
 
   runner_ = std::make_unique<ComponentRunner>(
       *loop_, ComponentOptions{.pager_threads = mount_options_.paging_threads});
-  ASSERT_EQ(runner_->ServeRoot(std::move(outgoing_dir_server), {}, std::move(vmex_resource_))
-                .status_value(),
-            ZX_OK);
+  ASSERT_OK(runner_->ServeRoot(std::move(outgoing_dir_server), {}, std::move(vmex_resource_)));
 
-  ASSERT_EQ(runner_->Configure(std::move(device), mount_options_).status_value(), ZX_OK);
+  ASSERT_OK(runner_->Configure(std::move(device), mount_options_));
 
-  ASSERT_EQ(loop_->StartThread("blobfs test dispatcher"), ZX_OK);
+  ASSERT_OK(loop_->StartThread("blobfs test dispatcher"));
 
   auto root_client_or = fs_management::FsRootHandle(outgoing_dir_client);
-  ASSERT_EQ(root_client_or.status_value(), ZX_OK);
+  ASSERT_OK(root_client_or);
 
   // FDIO serving the root directory.
-  ASSERT_EQ(
-      fdio_fd_create(root_client_or->TakeChannel().release(), root_fd_.reset_and_get_address()),
-      ZX_OK);
+  ASSERT_OK(
+      fdio_fd_create(root_client_or->TakeChannel().release(), root_fd_.reset_and_get_address()));
   ASSERT_TRUE(root_fd_.is_valid());
-  ASSERT_EQ(fdio_fd_create(outgoing_dir_client.TakeChannel().release(),
-                           outgoing_dir_fd_.reset_and_get_address()),
-            ZX_OK);
+  ASSERT_OK(fdio_fd_create(outgoing_dir_client.TakeChannel().release(),
+                           outgoing_dir_fd_.reset_and_get_address()));
   ASSERT_TRUE(outgoing_dir_fd_.is_valid());
+
+  fdio_cpp::UnownedFdioCaller outgoing_dir(outgoing_dir_fd_);
+  auto svc_dir = component::OpenDirectoryAt(outgoing_dir.directory(), "svc");
+  ASSERT_OK(svc_dir);
+  blob_reader_ = std::make_unique<BlobReaderWrapper>(BlobReaderWrapper::Connect(*svc_dir));
+  blob_creator_ = std::make_unique<BlobCreatorWrapper>(BlobCreatorWrapper::Connect(*svc_dir));
 }
 
 void FdioTest::TearDown() {
   fdio_cpp::UnownedFdioCaller outgoing_dir(outgoing_dir_fd_);
-  auto [svc_client, svc_server] = fidl::Endpoints<fuchsia_io::Directory>::Create();
-  ASSERT_EQ(fidl::WireCall(outgoing_dir.directory())
-                ->Open("svc", fuchsia_io::kPermReadable, {}, svc_server.TakeChannel())
-                .status(),
-            ZX_OK);
-  auto admin_client = component::ConnectAt<fuchsia_fs::Admin>(svc_client);
-  ASSERT_EQ(admin_client.status_value(), ZX_OK);
-  ASSERT_EQ(fidl::WireCall(*admin_client)->Shutdown().status(), ZX_OK);
+  auto svc_client = component::OpenDirectoryAt(outgoing_dir.directory(), "svc");
+  ASSERT_OK(svc_client);
+  auto admin_client = component::ConnectAt<fuchsia_fs::Admin>(*svc_client);
+  ASSERT_OK(admin_client);
+  ASSERT_OK(fidl::WireCall(*admin_client)->Shutdown().status());
 }
 
 zx_handle_t FdioTest::outgoing_dir() {

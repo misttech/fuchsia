@@ -7,11 +7,24 @@
 #include <fidl/fuchsia.process.lifecycle/cpp/wire.h>
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/async-loop/default.h>
+#include <lib/async/cpp/task.h>
 #include <lib/component/incoming/cpp/protocol.h>
+#include <lib/fidl/cpp/wire/channel.h>
+#include <lib/fidl/cpp/wire/client.h>
 #include <lib/zx/resource.h>
+#include <zircon/assert.h>
+#include <zircon/errors.h>
+#include <zircon/types.h>
+
+#include <atomic>
+#include <cstdint>
+#include <memory>
+#include <utility>
 
 #include <gtest/gtest.h>
 
+#include "src/lib/testing/predicates/status.h"
+#include "src/storage/blobfs/common.h"
 #include "src/storage/blobfs/component_runner.h"
 #include "src/storage/blobfs/mkfs.h"
 #include "src/storage/blobfs/mount.h"
@@ -31,7 +44,7 @@ class BlobfsComponentRunnerTest : public testing::Test {
 
   void SetUp() override {
     device_ = std::make_unique<block_client::FakeBlockDevice>(kNumBlocks, kBlockSize);
-    ASSERT_EQ(FormatFilesystem(device_.get(), FilesystemOptions{}), ZX_OK);
+    ASSERT_OK(FormatFilesystem(device_.get(), FilesystemOptions{}));
 
     auto endpoints = fidl::Endpoints<fuchsia_io::Directory>::Create();
     root_ = std::move(endpoints.client);
@@ -44,7 +57,7 @@ class BlobfsComponentRunnerTest : public testing::Test {
     auto status =
         runner_->ServeRoot(std::move(server_end_),
                            fidl::ServerEnd<fuchsia_process_lifecycle::Lifecycle>(), zx::resource());
-    ASSERT_EQ(status.status_value(), ZX_OK);
+    ASSERT_OK(status.status_value());
   }
 
   fidl::ClientEnd<fuchsia_io::Directory> GetSvcDir() const {
@@ -79,20 +92,18 @@ TEST_F(BlobfsComponentRunnerTest, ServeAndConfigureStartsBlobfs) {
   ASSERT_NO_FATAL_FAILURE(StartServe());
 
   auto svc_dir = GetSvcDir();
-  auto client_end = component::ConnectAt<fuchsia_fs_startup::Startup>(svc_dir.borrow());
-  ASSERT_EQ(client_end.status_value(), ZX_OK);
+  ASSERT_OK(component::ConnectAt<fuchsia_fs_startup::Startup>(svc_dir.borrow()));
 
   MountOptions options;
-  auto status = runner_->Configure(std::move(device_), options);
-  ASSERT_EQ(status.status_value(), ZX_OK);
+  ASSERT_OK(runner_->Configure(std::move(device_), options));
 
   std::atomic<bool> callback_called = false;
   runner_->Shutdown([callback_called = &callback_called](zx_status_t status) {
-    EXPECT_EQ(status, ZX_OK);
+    EXPECT_OK(status);
     *callback_called = true;
   });
   // Shutdown quits the loop.
-  ASSERT_EQ(loop_.RunUntilIdle(), ZX_ERR_CANCELED);
+  ASSERT_STATUS(loop_.RunUntilIdle(), ZX_ERR_CANCELED);
   ASSERT_TRUE(callback_called);
 }
 
@@ -112,33 +123,32 @@ TEST_F(BlobfsComponentRunnerTest, RequestsBeforeStartupAreQueuedAndServicedAfter
   root_client->QueryFilesystem().ThenExactlyOnce(
       [query_complete =
            &query_complete](fidl::WireUnownedResult<fuchsia_io::Directory::QueryFilesystem>& info) {
-        EXPECT_EQ(info.status(), ZX_OK);
-        EXPECT_EQ(info->s, ZX_OK);
+        EXPECT_OK(info.status());
+        EXPECT_OK(info->s);
         *query_complete = true;
       });
-  ASSERT_EQ(loop_.RunUntilIdle(), ZX_OK);
+  ASSERT_OK(loop_.RunUntilIdle());
   ASSERT_FALSE(query_complete);
 
   ASSERT_NO_FATAL_FAILURE(StartServe());
-  ASSERT_EQ(loop_.RunUntilIdle(), ZX_OK);
+  ASSERT_OK(loop_.RunUntilIdle());
   ASSERT_FALSE(query_complete);
 
   auto svc_dir = GetSvcDir();
   auto client_end = component::ConnectAt<fuchsia_fs_startup::Startup>(svc_dir.borrow());
-  ASSERT_EQ(client_end.status_value(), ZX_OK);
+  ASSERT_OK(client_end);
 
   MountOptions options;
-  auto status = runner_->Configure(std::move(device_), options);
-  ASSERT_EQ(status.status_value(), ZX_OK);
-  ASSERT_EQ(loop_.RunUntilIdle(), ZX_OK);
+  ASSERT_OK(runner_->Configure(std::move(device_), options));
+  ASSERT_OK(loop_.RunUntilIdle());
   ASSERT_TRUE(query_complete);
 
   std::atomic<bool> callback_called = false;
   runner_->Shutdown([callback_called = &callback_called](zx_status_t status) {
-    EXPECT_EQ(status, ZX_OK);
+    EXPECT_OK(status);
     *callback_called = true;
   });
-  ASSERT_EQ(loop_.RunUntilIdle(), ZX_ERR_CANCELED);
+  ASSERT_STATUS(loop_.RunUntilIdle(), ZX_ERR_CANCELED);
   ASSERT_TRUE(callback_called);
 }
 
@@ -146,13 +156,11 @@ TEST_F(BlobfsComponentRunnerTest, DoubleShutdown) {
   ASSERT_NO_FATAL_FAILURE(StartServe());
 
   auto svc_dir = GetSvcDir();
-  auto client_end = component::ConnectAt<fuchsia_fs_startup::Startup>(svc_dir.borrow());
-  ASSERT_EQ(client_end.status_value(), ZX_OK);
+  ASSERT_OK(component::ConnectAt<fuchsia_fs_startup::Startup>(svc_dir.borrow()));
 
   MountOptions options;
-  auto status = runner_->Configure(std::move(device_), options);
-  ASSERT_EQ(status.status_value(), ZX_OK);
-  ASSERT_EQ(loop_.RunUntilIdle(), ZX_OK);
+  ASSERT_OK(runner_->Configure(std::move(device_), options));
+  ASSERT_OK(loop_.RunUntilIdle());
 
   // It would be more accurate to call Lifecycle::Stop() somehow, to reproduce this but that isn't
   // easily injected here. Calling fs_admin::Shutdown() doesn't have the same effect because it
@@ -160,20 +168,20 @@ TEST_F(BlobfsComponentRunnerTest, DoubleShutdown) {
   std::atomic<bool> callback_called = false;
   async::PostTask(loop_.dispatcher(), [this, callback_called = &callback_called]() {
     runner_->Shutdown([callback_called](zx_status_t status) {
-      EXPECT_EQ(status, ZX_OK);
+      EXPECT_OK(status);
       *callback_called = true;
     });
   });
   std::atomic<bool> callback2_called = false;
   async::PostTask(loop_.dispatcher(), [this, callback_called = &callback2_called]() {
     runner_->Shutdown([callback_called](zx_status_t status) {
-      EXPECT_EQ(status, ZX_OK);
+      EXPECT_OK(status);
       *callback_called = true;
     });
   });
 
   // Shutdown quits the loop, but not before it is able to run the
-  ASSERT_EQ(loop_.RunUntilIdle(), ZX_ERR_CANCELED);
+  ASSERT_STATUS(loop_.RunUntilIdle(), ZX_ERR_CANCELED);
   // Both callbacks were completed.
   ASSERT_TRUE(callback_called);
   ASSERT_TRUE(callback2_called);

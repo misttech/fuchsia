@@ -3,13 +3,23 @@
 // found in the LICENSE file.
 
 #include <fcntl.h>
+#include <fidl/fuchsia.hardware.block/cpp/markers.h>
 #include <lib/component/incoming/cpp/protocol.h>
+#include <lib/zx/result.h>
+#include <unistd.h>
+#include <zircon/types.h>
+
+#include <cerrno>
+#include <cstring>
+#include <string>
 
 #include <fbl/unique_fd.h>
 #include <gtest/gtest.h>
 
+#include "src/lib/testing/predicates/status.h"
 #include "src/storage/blobfs/format.h"
 #include "src/storage/blobfs/test/integration/blobfs_fixtures.h"
+#include "src/storage/fs_test/test_filesystem.h"
 #include "src/storage/lib/block_client/cpp/remote_block_device.h"
 
 namespace blobfs {
@@ -29,7 +39,7 @@ void ReadSuperblock(const std::string& device_path, Superblock& superblock) {
   ASSERT_TRUE(device.is_ok()) << device.status_string();
   zx_status_t status =
       block_client::SingleReadBytes(device.value(), &superblock, sizeof(superblock), 0);
-  ASSERT_EQ(status, ZX_OK) << zx_status_get_string(status);
+  ASSERT_OK(status);
 }
 
 TEST_P(SuperblockTest, CheckDirtyBitOnMount) {

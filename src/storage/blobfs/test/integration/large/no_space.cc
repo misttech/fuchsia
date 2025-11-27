@@ -2,20 +2,19 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <errno.h>
 #include <fcntl.h>
-#include <fidl/fuchsia.io/cpp/wire.h>
+#include <lib/zx/result.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <zircon/errors.h>
 
 #include <cstddef>
 #include <cstdio>
-#include <memory>
-#include <utility>
 
-#include <fbl/unique_fd.h>
 #include <gtest/gtest.h>
 
+#include "src/lib/testing/predicates/status.h"
+#include "src/storage/blobfs/format.h"
 #include "src/storage/blobfs/test/blob_utils.h"
 #include "src/storage/blobfs/test/integration/blobfs_fixtures.h"
 
@@ -25,34 +24,24 @@ namespace {
 using NoSpaceTest = ParameterizedBlobfsTest;
 
 TEST_P(NoSpaceTest, NoSpace) {
-  std::unique_ptr<BlobInfo> last_info = nullptr;
+  Digest last_digest;
 
   // Keep generating blobs until we run out of space.
   size_t count = 0;
   while (true) {
-    std::unique_ptr<BlobInfo> info = GenerateRandomBlob(fs().mount_path(), 1 << 17);
-
-    fbl::unique_fd fd(open(info->path, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR));
-    ASSERT_TRUE(fd) << "Failed to create blob";
-    int r = ftruncate(fd.get(), static_cast<off_t>(info->size_data));
-    ASSERT_EQ(r, 0);
-    r = StreamAll(write, fd.get(), info->data.get(), info->size_data);
-    if (r < 0) {
-      ASSERT_EQ(errno, ENOSPC) << "Blobfs expected to run out of space";
+    auto blob = TestBlobData::CreatePrefixed(1 << 17, count);
+    auto delivery_blob = TestDeliveryBlob::CreateUncompressed(blob);
+    zx::result<> result = blob_creator().CreateAndWriteBlob(delivery_blob);
+    if (result.is_error()) {
+      ASSERT_STATUS(result, ZX_ERR_NO_SPACE) << "Blobfs expected to run out of space";
       // We ran out of space, as expected. Can we allocate if we
       // unlink a previously allocated blob of the desired size?
-      fd.reset();
-      ASSERT_EQ(unlink(last_info->path), 0) << "Unlinking old blob";
-      fd.reset(open(info->path, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR));
-      ASSERT_TRUE(fd);
-      int r = ftruncate(fd.get(), static_cast<off_t>(info->size_data));
-      ASSERT_EQ(r, 0);
-      ASSERT_EQ(StreamAll(write, fd.get(), info->data.get(), info->size_data), 0)
-          << "Did not free enough space";
+      ASSERT_OK(Unlink(last_digest)) << "Unlinking old blob";
+      ASSERT_OK(blob_creator().CreateAndWriteBlob(delivery_blob)) << "Did not free enough space";
       // Yay! allocated successfully.
       break;
     }
-    last_info = std::move(info);
+    last_digest = delivery_blob.digest();
 
     if (++count % 50 == 0) {
       fprintf(stderr, "Allocated %lu blobs\n", count);

@@ -4,16 +4,13 @@
 
 #include <fidl/fuchsia.update.verify/cpp/wire.h>
 #include <lib/component/incoming/cpp/protocol.h>
-#include <lib/fdio/directory.h>
-#include <lib/fidl/cpp/wire/connect_service.h>
-#include <lib/zx/channel.h>
-#include <zircon/status.h>
-#include <zircon/types.h>
+#include <lib/fidl/cpp/wire/channel.h>
 
-#include <string>
+#include <utility>
 
 #include <gtest/gtest.h>
 
+#include "src/lib/testing/predicates/status.h"
 #include "src/storage/blobfs/test/integration/blobfs_fixtures.h"
 
 namespace blobfs {
@@ -25,7 +22,7 @@ class OtaHealthCheckServiceTest : public BlobfsTest {
  protected:
   fidl::WireSyncClient<fuv::ComponentOtaHealthCheck> ConnectToHealthCheckService() {
     auto client_end = component::ConnectAt<fuv::ComponentOtaHealthCheck>(fs().ServiceDirectory());
-    EXPECT_EQ(client_end.status_value(), ZX_OK);
+    EXPECT_OK(client_end.status_value());
     return fidl::WireSyncClient<fuv::ComponentOtaHealthCheck>(std::move(*client_end));
   }
 };
@@ -34,7 +31,7 @@ class OtaHealthCheckServiceTest : public BlobfsTest {
 // exercised by other unit tests.
 TEST_F(OtaHealthCheckServiceTest, EmptyFilesystemIsValid) {
   auto status = ConnectToHealthCheckService()->GetHealthStatus();
-  ASSERT_EQ(status.status(), ZX_OK) << status.error();
+  ASSERT_TRUE(status.ok()) << status.error();
 }
 
 }  // namespace

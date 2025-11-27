@@ -22,6 +22,7 @@
 #include "src/storage/blobfs/component_runner.h"
 #include "src/storage/blobfs/format.h"
 #include "src/storage/blobfs/mount.h"
+#include "src/storage/blobfs/test/blob_utils.h"
 #include "src/storage/blobfs/test/unit/local_decompressor_creator.h"
 #include "src/storage/lib/block_client/cpp/fake_block_device.h"
 
@@ -43,6 +44,8 @@ class FdioTest : public testing::Test {
   zx_handle_t outgoing_dir();
   int root_fd() const { return root_fd_.get(); }
   block_client::FakeBlockDevice* block_device() { return block_device_; }
+  const BlobCreatorWrapper& blob_creator() const { return *blob_creator_; }
+  const BlobReaderWrapper& blob_reader() const { return *blob_reader_; }
 
   void set_mount_options(MountOptions options) { mount_options_ = options; }
 
@@ -76,6 +79,8 @@ class FdioTest : public testing::Test {
   std::unique_ptr<LocalDecompressorCreator> decompressor_creator_;
 
   std::unique_ptr<async::Loop> loop_;  // Must be destroyed after the runner.
+  std::unique_ptr<BlobCreatorWrapper> blob_creator_;
+  std::unique_ptr<BlobReaderWrapper> blob_reader_;
 };
 
 }  // namespace blobfs

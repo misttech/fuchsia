@@ -101,8 +101,7 @@ class BlobfsMigrationTest : public BlobfsTestSetupWithThread, public testing::Te
     ZX_ASSERT(response.ok());
     ZX_ASSERT(response->is_ok());
     auto& vmo = response->value()->vmo;
-    uint64_t size;
-    ZX_ASSERT(vmo.get_size(&size) == ZX_OK);
+    uint64_t size = GetVmoSize(vmo);
     std::vector<uint8_t> data(size);
     // Read the entire blob to force blobfs to page in and verify the blob's contents.
     ZX_ASSERT(vmo.read(data.data(), 0, size) == ZX_OK);
@@ -188,7 +187,7 @@ TEST_F(BlobfsMigrationTest, MigrateFromV8Rev4ToV10Rev4) {
   auto blob = TestDeliveryBlob::CreateCompressed(9000);
   WriteBlob(blob);
 
-  VerifyBlob(DigestToFidlArray(blob.digest));
+  VerifyBlob(DigestToFidlArray(blob.digest()));
   EXPECT_EQ(GetInodeFormat(2), BlobLayoutFormat::kDeprecatedPaddedMerkleTreeAtStart);
 
   Remount(kMountReadOnly);
@@ -199,7 +198,7 @@ TEST_F(BlobfsMigrationTest, MigrateFromV8Rev4ToV10Rev4) {
   EXPECT_NE(blobfs()->Info().flags & kBlobWriteLegacyMerkle, 0u);
   VerifyBlob(kSmallBlobDigest);
   VerifyBlob(kLargeBlobDigest);
-  VerifyBlob(DigestToFidlArray(blob.digest));
+  VerifyBlob(DigestToFidlArray(blob.digest()));
   EXPECT_EQ(GetInodeFormat(2), BlobLayoutFormat::kDeprecatedPaddedMerkleTreeAtStart);
 }
 
@@ -219,7 +218,7 @@ TEST_F(BlobfsMigrationTest, MigrateFromV9Rev4ToV10Rev4) {
   auto blob = TestDeliveryBlob::CreateCompressed(9000);
   WriteBlob(blob);
 
-  VerifyBlob(DigestToFidlArray(blob.digest));
+  VerifyBlob(DigestToFidlArray(blob.digest()));
   EXPECT_EQ(GetInodeFormat(2), BlobLayoutFormat::kCompactMerkleTreeAtEnd);
 
   Remount(kMountReadOnly);
@@ -230,7 +229,7 @@ TEST_F(BlobfsMigrationTest, MigrateFromV9Rev4ToV10Rev4) {
   EXPECT_EQ(blobfs()->Info().flags & kBlobWriteLegacyMerkle, 0u);
   VerifyBlob(kSmallBlobDigest);
   VerifyBlob(kLargeBlobDigest);
-  VerifyBlob(DigestToFidlArray(blob.digest));
+  VerifyBlob(DigestToFidlArray(blob.digest()));
   EXPECT_EQ(GetInodeFormat(2), BlobLayoutFormat::kCompactMerkleTreeAtEnd);
 }
 
@@ -274,7 +273,7 @@ TEST_F(BlobfsMigrationTest, MixedBlobLayoutFormatsFromV8) {
   WriteBlob(blob);
 
   // Blobfs V10Rev4 supports blobs in both formats.
-  VerifyBlob(DigestToFidlArray(blob.digest));
+  VerifyBlob(DigestToFidlArray(blob.digest()));
   VerifyBlob(kSmallBlobDigest);
   VerifyBlob(kLargeBlobDigest);
   EXPECT_EQ(GetInodeFormat(0), BlobLayoutFormat::kDeprecatedPaddedMerkleTreeAtStart);
@@ -283,7 +282,7 @@ TEST_F(BlobfsMigrationTest, MixedBlobLayoutFormatsFromV8) {
 
   Remount(kMountWritable);
 
-  VerifyBlob(DigestToFidlArray(blob.digest));
+  VerifyBlob(DigestToFidlArray(blob.digest()));
   VerifyBlob(kSmallBlobDigest);
   VerifyBlob(kLargeBlobDigest);
   EXPECT_EQ(GetInodeFormat(0), BlobLayoutFormat::kDeprecatedPaddedMerkleTreeAtStart);
@@ -305,7 +304,7 @@ TEST_F(BlobfsMigrationTest, MixedBlobLayoutFormatsFromV9) {
   WriteBlob(blob);
 
   // Blobfs V10Rev4 supports blobs in both formats.
-  VerifyBlob(DigestToFidlArray(blob.digest));
+  VerifyBlob(DigestToFidlArray(blob.digest()));
   VerifyBlob(kSmallBlobDigest);
   VerifyBlob(kLargeBlobDigest);
   EXPECT_EQ(GetInodeFormat(0), BlobLayoutFormat::kCompactMerkleTreeAtEnd);
@@ -314,7 +313,7 @@ TEST_F(BlobfsMigrationTest, MixedBlobLayoutFormatsFromV9) {
 
   Remount(kMountWritable);
 
-  VerifyBlob(DigestToFidlArray(blob.digest));
+  VerifyBlob(DigestToFidlArray(blob.digest()));
   VerifyBlob(kSmallBlobDigest);
   VerifyBlob(kLargeBlobDigest);
   EXPECT_EQ(GetInodeFormat(0), BlobLayoutFormat::kCompactMerkleTreeAtEnd);

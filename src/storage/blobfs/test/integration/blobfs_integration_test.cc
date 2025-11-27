@@ -1377,7 +1377,7 @@ TEST(BlobfsComponentMetricsTest, BlobLayoutMetrics) {
     ASSERT_OK(creator_channel.status_value());
     creator = std::make_unique<BlobCreatorWrapper>(
         fidl::WireSyncClient<fuchsia_fxfs::BlobCreator>(std::move(*creator_channel)));
-    auto writer = creator->CreateExisting(blob.digest);
+    auto writer = creator->CreateExisting(blob.digest());
     EXPECT_OK(writer.status_value());
     EXPECT_OK(writer->WriteBlob(blob).status_value());
   }
@@ -1395,7 +1395,7 @@ TEST(BlobfsComponentMetricsTest, BlobLayoutMetrics) {
   ASSERT_EQ(compact_blobs, 1l);
 
   // Remove the blob.
-  ASSERT_EQ(unlinkat(fs.GetRootFd().get(), blob.digest.ToString().c_str(), 0), 0);
+  ASSERT_EQ(unlinkat(fs.GetRootFd().get(), blob.digest().ToString().c_str(), 0), 0);
 
   {
     std::optional<diagnostics::reader::InspectData> snapshot;

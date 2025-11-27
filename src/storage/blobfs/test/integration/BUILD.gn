@@ -32,6 +32,7 @@ static_library("blobfs_integration_fixtures") {
     "//sdk/lib/diagnostics/reader/cpp:archive_reader",
     "//sdk/lib/fdio",
     "//sdk/lib/sys/cpp",
+    "//src/lib/testing/predicates",
     "//src/storage/lib/fs_management",
     "//zircon/system/ulib/fdio-caller",
   ]
@@ -54,6 +55,7 @@ test("external_decompressor_integration") {
     ":blobfs_integration_fixtures",
     "//sdk/lib/fdio",
     "//src/lib/fxl/test:gtest_main",
+    "//src/lib/testing/predicates",
     "//src/storage/blobfs",
     "//src/storage/blobfs/test:test_utils",
     "//third_party/googletest:gtest",
@@ -72,10 +74,6 @@ fuchsia_unittest_component("external-decompressor") {
 
 test("blobfs_integration") {
   output_name = "blobfs_integration_test"
-
-  # We need some extra system flags that the _ALL_SOURCE define exposes.
-  configs += [ "//build/config:all_source" ]
-
   sources = [
     "blobfs_integration_test.cc",
     "delivery_blob_integration_test.cc",
@@ -113,10 +111,6 @@ storage_driver_test_realm_v2_component("blobfs-integration") {
 
 test("blobfs_mount") {
   output_name = "blobfs_mount_test"
-
-  # We need some extra system flags that the _ALL_SOURCE define exposes.
-  configs += [ "//build/config:all_source" ]
-
   sources = [ "mount_test.cc" ]
   deps = [
     ":blobfs_integration_fixtures",
@@ -126,9 +120,11 @@ test("blobfs_mount") {
     "//sdk/lib/async-loop:async-loop-default",
     "//sdk/lib/fdio",
     "//src/lib/fxl/test:gtest_main",
+    "//src/lib/testing/predicates",
     "//src/storage/blobfs",
     "//src/storage/lib/block_client/cpp:fake_device",
     "//src/storage/lib/fs_management",
+    "//third_party/googletest:gmock",
     "//zircon/system/ulib/fbl",
     "//zircon/system/ulib/zx",
   ]
@@ -150,7 +146,9 @@ test("blobfs_component_runner_test") {
     "//sdk/lib/component/incoming/cpp",
     "//sdk/lib/fdio",
     "//src/lib/fxl/test:gtest_main",
+    "//src/lib/testing/predicates",
     "//src/storage/blobfs",
+    "//src/storage/blobfs/test:test_utils",
     "//src/storage/lib/block_client/cpp:fake_device",
     "//zircon/system/ulib/id_allocator",
     "//zircon/system/ulib/zx",
@@ -167,10 +165,6 @@ fuchsia_unittest_component("blobfs-component-runner-test") {
 
 test("blobfs_sync") {
   output_name = "blobfs_sync_test"
-
-  # We need some extra system flags that the _ALL_SOURCE define exposes.
-  configs += [ "//build/config:all_source" ]
-
   sources = [ "sync_test.cc" ]
   deps = [
     ":blobfs_integration_fixtures",
@@ -178,6 +172,7 @@ test("blobfs_sync") {
     "//sdk/lib/async-loop:async-loop-cpp",
     "//sdk/lib/async-loop:async-loop-default",
     "//src/lib/fxl/test:gtest_main",
+    "//src/lib/testing/predicates",
     "//src/storage/blobfs",
     "//src/storage/lib/block_client/cpp:fake_device",
     "//src/storage/lib/fs_management",
@@ -190,15 +185,12 @@ storage_driver_test_realm_v2_component("blobfs-sync") {
 
 test("blobfs_superblock") {
   output_name = "blobfs_superblock_test"
-
-  # We need some extra system flags that the _ALL_SOURCE define exposes.
-  configs += [ "//build/config:all_source" ]
-
   sources = [ "superblock_test.cc" ]
   deps = [
     ":blobfs_integration_fixtures",
     "//sdk/lib/component/incoming/cpp",
     "//src/lib/fxl/test:gtest_main",
+    "//src/lib/testing/predicates",
     "//src/storage/blobfs",
     "//src/storage/lib/block_client/cpp",
     "//zircon/system/ulib/fbl",
@@ -211,10 +203,6 @@ storage_driver_test_realm_v2_component("blobfs-superblock") {
 
 test("ota_health_check_service") {
   output_name = "ota_health_check_service_test"
-
-  # We need some extra system flags that the _ALL_SOURCE define exposes.
-  configs += [ "//build/config:all_source" ]
-
   sources = [ "component_ota_health_check_test.cc" ]
   deps = [
     ":blobfs_integration_fixtures",
@@ -222,35 +210,13 @@ test("ota_health_check_service") {
     "//sdk/lib/component/incoming/cpp",
     "//sdk/lib/fdio",
     "//src/lib/fxl/test:gtest_main",
+    "//src/lib/testing/predicates",
     "//zircon/system/ulib/zx",
   ]
 }
 
 storage_driver_test_realm_v2_component("ota-health-check-service") {
   deps = [ ":ota_health_check_service" ]
-}
-
-test("executable_mount") {
-  testonly = true
-  sources = [ "executable_mount_test.cc" ]
-  deps = [
-    ":blobfs_integration_fixtures",
-    "//sdk/fidl/fuchsia.kernel:fuchsia.kernel_cpp",
-    "//sdk/lib/fdio",
-    "//src/lib/fxl/test:gtest_main",
-    "//src/storage/lib/fs_management",
-    "//zircon/system/ulib/fbl",
-    "//zircon/system/ulib/id_allocator",
-  ]
-}
-
-fuchsia_unittest_component("executable-mount") {
-  manifest = "meta/executable_mount_test.cml"
-  deps = [
-    ":executable_mount",
-    "//src/storage/blobfs:decompressor-sandbox",
-  ]
-  test_type = "system"
 }
 
 test("blob-creator-test-bin") {
@@ -289,6 +255,7 @@ template("blobfs_large_integration_test") {
       "//sdk/lib/async-loop:async-loop-default",
       "//sdk/lib/fdio",
       "//src/lib/fxl/test:gtest_main",
+      "//src/lib/testing/predicates",
       "//src/storage/blobfs",
       "//src/storage/blobfs/test:test_utils",
       "//src/storage/fs_test",
@@ -355,7 +322,6 @@ fuchsia_test_package("blobfs-integration-package") {
     ":blobfs-mount",
     ":blobfs-sync",
     ":blobfs-superblock",
-    ":executable-mount",
     ":external-decompressor",
     ":ota-health-check-service",
   ]

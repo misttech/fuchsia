@@ -5,9 +5,6 @@
 #include "src/storage/blobfs/blob_loader.h"
 
 #include <fidl/fuchsia.io/cpp/wire_types.h>
-#include <lib/fzl/owned-vmo-mapper.h>
-#include <lib/sync/completion.h>
-#include <lib/syslog/cpp/macros.h>
 #include <lib/zx/result.h>
 #include <lib/zx/vmo.h>
 #include <zircon/assert.h>
@@ -139,10 +136,7 @@ class BlobLoaderTest : public TestWithParam<TestParamType> {
     EXPECT_TRUE(vmo.is_valid());  // Always expect a valid blob on success.
 
     // Use vmo::read instead of direct read so that we can synchronously fail if the pager fails.
-    uint64_t size;
-    if (zx_status_t status = vmo.get_prop_content_size(&size); status != ZX_OK) {
-      return zx::error(status);
-    }
+    uint64_t size = GetVmoStreamSize(vmo);
     std::vector<uint8_t> blob_data(size);
     if (zx_status_t status = vmo.read(blob_data.data(), 0, size); status != ZX_OK) {
       return zx::error(status);
@@ -162,7 +156,7 @@ class BlobLoaderTest : public TestWithParam<TestParamType> {
   }
 
   // Used to access protected Blob/BlobVerifier members because this class is a friend.
-  std::span<const uint8_t> GetBlobMerkleData(const Blob* blob) const {
+  static std::span<const uint8_t> GetBlobMerkleData(const Blob* blob) {
     std::lock_guard lock(blob->mutex_);
     return blob->loader_info_.verifier->merkle_data();
   }

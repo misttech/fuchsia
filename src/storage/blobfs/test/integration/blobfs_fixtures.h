@@ -6,34 +6,51 @@
 #define SRC_STORAGE_BLOBFS_TEST_INTEGRATION_BLOBFS_FIXTURES_H_
 
 #include <fcntl.h>
-#include <fidl/fuchsia.io/cpp/fidl.h>
+#include <fidl/fuchsia.io/cpp/markers.h>
+#include <fidl/fuchsia.io/cpp/wire_types.h>
 #include <lib/fdio/fd.h>
+#include <lib/fidl/cpp/wire/channel.h>
 #include <lib/fidl/cpp/wire/status.h>
 #include <lib/zx/result.h>
 #include <zircon/errors.h>
 #include <zircon/types.h>
 
 #include <cstdint>
+#include <vector>
 
 #include <fbl/unique_fd.h>
 #include <gtest/gtest.h>
 
-#include "lib/fidl/cpp/wire/channel.h"
+#include "src/storage/blobfs/format.h"
+#include "src/storage/blobfs/test/blob_utils.h"
 #include "src/storage/fs_test/fs_test.h"
 #include "src/storage/fs_test/fs_test_fixture.h"
+#include "src/storage/lib/fs_management/cpp/options.h"
 
 namespace blobfs {
 
 class BaseBlobfsTest : public fs_test::BaseFilesystemTest {
  public:
-  using fs_test::BaseFilesystemTest::BaseFilesystemTest;
+  explicit BaseBlobfsTest(const fs_test::TestFilesystemOptions& options);
 
-  int root_fd() {
-    if (!root_fd_) {
-      root_fd_.reset(open(fs().mount_path().c_str(), O_DIRECTORY));
-    }
-    return root_fd_.get();
-  }
+  int root_fd() { return root_fd_.get(); }
+  const BlobCreatorWrapper& blob_creator() const { return blob_creator_; }
+  const BlobReaderWrapper& blob_reader() const { return blob_reader_; }
+
+  // Unlinks a blob.
+  zx::result<> Unlink(const Digest& digest);
+
+  // Lists all blobs.
+  std::vector<Digest> ListBlobs() const;
+
+  // Unmount, mount, and reconnect to blobfs.
+  zx::result<> Remount();
+  // Unmount, mount, and reconnect to blobfs.
+  zx::result<> Remount(const fs_management::MountOptions& mount_options);
+
+  // The root_fd, blob_creator, and blob_reader connects will be disconnected whe unmounting blobfs.
+  // This method reconnects those protocols.
+  zx::result<> Reconnect();
 
   zx::result<int> exec_root_fd() {
     if (!exec_root_fd_) {
@@ -58,6 +75,8 @@ class BaseBlobfsTest : public fs_test::BaseFilesystemTest {
  private:
   fbl::unique_fd root_fd_;
   fbl::unique_fd exec_root_fd_;
+  BlobCreatorWrapper blob_creator_;
+  BlobReaderWrapper blob_reader_;
 };
 
 // A test fixture for running tests with different blobfs settings.

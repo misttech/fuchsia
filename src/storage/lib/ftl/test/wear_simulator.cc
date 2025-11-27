@@ -6,7 +6,6 @@
 #include <fidl/fuchsia.fs.startup/cpp/wire.h>
 #include <fidl/fuchsia.fxfs/cpp/markers.h>
 #include <fidl/fuchsia.io/cpp/fidl.h>
-#include <gtest/gtest.h>
 #include <lib/component/incoming/cpp/directory.h>
 #include <lib/component/incoming/cpp/protocol.h>
 #include <lib/fdio/directory.h>
@@ -22,7 +21,6 @@
 #include <unistd.h>
 #include <zircon/errors.h>
 #include <zircon/types.h>
-#include <zstd/zstd.h>
 
 #include <algorithm>
 #include <cerrno>
@@ -39,6 +37,8 @@
 
 #include <fbl/array.h>
 #include <fbl/unique_fd.h>
+#include <gtest/gtest.h>
+#include <zstd/zstd.h>
 
 #include "src/lib/digest/digest.h"
 #include "src/lib/files/file.h"
@@ -426,10 +426,10 @@ void WearSimulator::FillBlobfs(size_t space) {
 
     // Don't compress the delivery blob, this way the blob will fill as much space as needed for the
     // test, but can be well compressed for image import/export.
-    auto delivery_blob =
-        blobfs::TestDeliveryBlob::CreateUncompressed(std::span<uint8_t>(blob.begin(), blob.end()));
+    blobfs::TestBlobData blob_data(std::move(blob));
+    auto delivery_blob = blobfs::TestDeliveryBlob::CreateUncompressed(blob_data);
     // Ensure that nothing got compressed.
-    ASSERT_GE(delivery_blob.delivery_blob.size(), blob.size());
+    ASSERT_GE(delivery_blob.data().size(), blob.size());
     ASSERT_TRUE(mount_->blob_creator.CreateAndWriteBlob(delivery_blob).is_ok());
     space -= layout->TotalBlockCount() * kPageSize;
   }

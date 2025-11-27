@@ -9,11 +9,10 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
-#include <memory>
 
-#include <fbl/unique_fd.h>
 #include <gtest/gtest.h>
 
+#include "src/lib/testing/predicates/status.h"
 #include "src/storage/blobfs/format.h"
 #include "src/storage/blobfs/test/blob_utils.h"
 #include "src/storage/blobfs/test/integration/blobfs_fixtures.h"
@@ -27,18 +26,14 @@ TEST_F(BlobfsTest, MaxReservation) {
   // Refer to https://fxbug.dev/42131476 for the bug that lead to this test.
   size_t count = 0;
   for (uint64_t i = 0; i < kBlobfsDefaultInodeCount; i++) {
-    std::unique_ptr<BlobInfo> info = GenerateRandomBlob(fs().mount_path(), 64);
+    auto blob = TestBlobData::CreatePrefixed(64, i);
+    auto delivery_blob = TestDeliveryBlob::CreateUncompressed(blob);
 
     // Write the blob
-    {
-      fbl::unique_fd fd(open(info->path, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR));
-      ASSERT_TRUE(fd) << "Failed to create blob";
-      ASSERT_EQ(ftruncate(fd.get(), info->size_data), 0);
-      ASSERT_EQ(StreamAll(write, fd.get(), info->data.get(), info->size_data), 0);
-    }
+    ASSERT_OK(blob_creator().CreateAndWriteBlob(delivery_blob));
 
     // Delete the blob
-    ASSERT_EQ(unlink(info->path), 0) << "Unlinking blob";
+    ASSERT_OK(Unlink(blob.digest())) << "Unlinking blob";
 
     if (++count % 1000 == 0) {
       fprintf(stderr, "Allocated and deleted %lu blobs\n", count);

@@ -223,13 +223,8 @@ TEST_P(BlobTest, ReadingBlobZerosTail) {
   zx::vmo vmo;
   EXPECT_EQ(file->GetVmo(fio::wire::VmoFlags::kRead, &vmo), ZX_OK);
 
-  uint64_t data_size;
-  EXPECT_EQ(vmo.get_prop_content_size(&data_size), ZX_OK);
-  EXPECT_EQ(data_size, 64ul);
-
-  size_t vmo_size;
-  EXPECT_EQ(vmo.get_size(&vmo_size), ZX_OK);
-  ASSERT_EQ(vmo_size, kPageSize);
+  ASSERT_EQ(GetVmoStreamSize(vmo), 64ul);
+  ASSERT_EQ(GetVmoSize(vmo), kPageSize);
 
   EXPECT_EQ(vmo.read(&data, kPageSize - 1, 1), ZX_OK);
   // The corrupted bit in the tail was zeroed when being read.
@@ -324,9 +319,7 @@ TEST_P(BlobTest, UnlinkBlocksUntilNoVmoChildren) {
     zx::vmo vmo;
     EXPECT_EQ(file->GetVmo(fio::wire::VmoFlags::kRead, &vmo), ZX_OK);
 
-    uint64_t data_size;
-    EXPECT_EQ(vmo.get_prop_content_size(&data_size), ZX_OK);
-    EXPECT_EQ(data_size, info->size_data);
+    EXPECT_EQ(GetVmoStreamSize(vmo), info->size_data);
 
     return vmo;
   }();
@@ -364,9 +357,7 @@ TEST_P(BlobTest, VmoChildDeletedTriggersPurging) {
     TestScopedVnodeOpen open(file);
     EXPECT_EQ(file->GetVmo(fio::wire::VmoFlags::kRead, &vmo), ZX_OK);
 
-    uint64_t data_size;
-    EXPECT_EQ(vmo.get_prop_content_size(&data_size), ZX_OK);
-    EXPECT_EQ(data_size, info->size_data);
+    EXPECT_EQ(GetVmoStreamSize(vmo), info->size_data);
 
     return vmo;
   }();
@@ -423,9 +414,7 @@ TEST_P(BlobTest, ReadErrorsTemporary) {
     TestScopedVnodeOpen open(file);
     EXPECT_EQ(file->GetVmo(fio::wire::VmoFlags::kRead, &vmo), ZX_OK);
 
-    uint64_t data_size;
-    EXPECT_EQ(vmo.get_prop_content_size(&data_size), ZX_OK);
-    EXPECT_EQ(data_size, info->size_data);
+    EXPECT_EQ(GetVmoStreamSize(vmo), info->size_data);
 
     return vmo;
   }();
@@ -703,9 +692,7 @@ TEST_P(BlobTest, GetVmoOnNullBlobIsSupported) {
 
   ASSERT_EQ(blob->Close(), ZX_OK);
 
-  uint64_t content_size = 123456;
-  ASSERT_EQ(vmo.get_prop_content_size(&content_size), ZX_OK);
-  ASSERT_EQ(content_size, 0ul);
+  ASSERT_EQ(GetVmoStreamSize(vmo), 0ul);
 }
 
 std::string GetTestParamName(

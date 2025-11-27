@@ -4,20 +4,42 @@
 
 #include "src/storage/blobfs/allocator/allocator.h"
 
+#include <fuchsia/hardware/block/driver/c/banjo.h>
+#include <lib/fzl/resizeable-vmo-mapper.h>
+#include <lib/zx/result.h>
+#include <lib/zx/time.h>
+#include <lib/zx/vmo.h>
+#include <stdlib.h>
 #include <zircon/errors.h>
+#include <zircon/types.h>
 
+#include <atomic>
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
 #include <memory>
+#include <thread>
+#include <utility>
 #include <vector>
 
+#include <fbl/algorithm.h>
+#include <fbl/ref_ptr.h>
 #include <gtest/gtest.h>
+#include <id_allocator/id_allocator.h>
 
+#include "src/devices/block/drivers/core/block-fifo.h"
+#include "src/storage/blobfs/allocator/extent_reserver.h"
+#include "src/storage/blobfs/allocator/node_reserver.h"
 #include "src/storage/blobfs/blobfs.h"
 #include "src/storage/blobfs/common.h"
+#include "src/storage/blobfs/format.h"
 #include "src/storage/blobfs/mkfs.h"
 #include "src/storage/blobfs/test/blob_utils.h"
 #include "src/storage/blobfs/test/blobfs_test_setup.h"
 #include "src/storage/blobfs/test/unit/utils.h"
 #include "src/storage/lib/block_client/cpp/fake_block_device.h"
+#include "src/storage/lib/vfs/cpp/vfs_types.h"
+#include "src/storage/lib/vfs/cpp/vnode.h"
 
 namespace blobfs {
 namespace {
@@ -430,9 +452,7 @@ TEST(AllocatorTest, ResetSize) {
 }
 
 void CompareData(const uint8_t* data, const zx::vmo& vmo, size_t bytes) {
-  uint64_t vmo_size;
-  ASSERT_EQ(vmo.get_size(&vmo_size), ZX_OK);
-  ASSERT_GE(vmo_size, bytes);
+  ASSERT_GE(GetVmoSize(vmo), bytes);
 
   auto vmo_buffer = std::make_unique<uint8_t[]>(bytes);
   ASSERT_EQ(vmo.read(vmo_buffer.get(), 0, bytes), ZX_OK);
@@ -477,19 +497,14 @@ TEST(AllocatorTest, ResetFromStorageTest) {
   transaction_manager.SetTransactionCallback(
       [&bitmap_data](const block_fifo_request_t& request, const zx::vmo& vmo) {
         if (request.command.opcode == BLOCK_OPCODE_READ) {
-          uint64_t vmo_size;
-          zx_status_t status = vmo.get_size(&vmo_size);
-          if (status != ZX_OK) {
-            return status;
-          }
-
-          if (vmo_size < kDeviceBlockSize) {
+          if (GetVmoSize(vmo) < kDeviceBlockSize) {
             return ZX_ERR_BUFFER_TOO_SMALL;
           }
 
           // |request| may specify a greater length, but for this test its enough to verify that
           // the first |kDeviceBlockSize| bytes were set.
-          status = vmo.write(bitmap_data, request.vmo_offset * kBlobfsBlockSize, kDeviceBlockSize);
+          zx_status_t status =
+              vmo.write(bitmap_data, request.vmo_offset * kBlobfsBlockSize, kDeviceBlockSize);
           if (status != ZX_OK) {
             return status;
           }

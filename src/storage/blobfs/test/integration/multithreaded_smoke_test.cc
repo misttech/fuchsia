@@ -3,12 +3,22 @@
 // found in the LICENSE file.
 
 #include <fcntl.h>
-#include <lib/fdio/io.h>
+#include <lib/zx/vmo.h>
 
+#include <algorithm>
+#include <cstddef>
+#include <cstdint>
+#include <cstdlib>
+#include <random>
+#include <thread>
+#include <utility>
 #include <vector>
 
 #include <gtest/gtest.h>
 
+#include "src/lib/testing/predicates/status.h"
+#include "src/storage/blobfs/compression_settings.h"
+#include "src/storage/blobfs/format.h"
 #include "src/storage/blobfs/mount.h"
 #include "src/storage/blobfs/test/blob_utils.h"
 #include "src/storage/blobfs/test/integration/fdio_test.h"
@@ -32,7 +42,7 @@ class BlobfsMultithreadedSmokeTest : public FdioTest, public testing::WithParamI
     set_mount_options(options);
   }
 
-  int NumThreads() const { return GetParam(); }
+  static int NumThreads() { return GetParam(); }
 };
 
 struct ReadLocation {
@@ -48,45 +58,32 @@ void PerformReads(const ReadLocation* locations, size_t num_reads, const zx::vmo
 }
 
 TEST_P(BlobfsMultithreadedSmokeTest, MultithreadedReads) {
-  srand(testing::UnitTest::GetInstance()->random_seed() + NumThreads());
-  std::vector<std::unique_ptr<BlobInfo>> file_info;
+  std::vector<Digest> blob_digests;
   // Add more files for more threads. We'll need it for scaling up the number of available pages to
   // fault in.
   for (int i = 0; i < NumThreads(); ++i) {
-    // A fairly sized blob that should get realistically compressed.
-    std::unique_ptr<BlobInfo> info = GenerateRealisticBlob(".", kFileSize);
-    fbl::unique_fd fd(openat(root_fd(), info->path, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR));
-    ASSERT_TRUE(fd.is_valid());
-    ASSERT_EQ(ftruncate(fd.get(), info->size_data), 0);
-    ASSERT_EQ(StreamAll(write, fd.get(), info->data.get(), info->size_data), 0)
-        << "Failed to write Data";
-    file_info.push_back(std::move(info));
+    auto blob = TestBlobData::CreateRealistic(kFileSize, i);
+    auto delivery_blob = TestDeliveryBlob::CreateCompressed(blob);
+    ASSERT_OK(blob_creator().CreateAndWriteBlob(delivery_blob));
+    blob_digests.push_back(blob.digest());
   }
 
   std::vector<zx::vmo> vmos;
-  for (const auto& info : file_info) {
-    fbl::unique_fd fd(openat(root_fd(), info->path, O_RDONLY));
-    ASSERT_TRUE(fd.is_valid());
-    zx_handle_t handle;
-    ASSERT_EQ(fdio_get_vmo_clone(fd.get(), &handle), ZX_OK);
-    vmos.emplace_back(handle);
+  for (const auto& digest : blob_digests) {
+    auto vmo = blob_reader().GetVmo(digest);
+    ASSERT_OK(vmo);
+    vmos.emplace_back(std::move(*vmo));
   }
 
   // Generate every page fault possible, then scramble them up.
   std::vector<ReadLocation> reads(static_cast<size_t>(NumThreads() * kReadsPerFile));
   for (size_t file_id = 0; file_id < vmos.size(); ++file_id) {
     for (size_t offset = 0; offset < kReadsPerFile; ++offset) {
-      reads[file_id * kReadsPerFile + offset] = {file_id, offset * kChunkSize};
+      reads[(file_id * kReadsPerFile) + offset] = {.file = file_id, .offset = offset * kChunkSize};
     }
   }
-  ReadLocation tmp = reads[0];
-  size_t location = 0;
-  for (int i = 0; i < NumThreads() * kReadsPerFile - 1; ++i) {
-    size_t next = rand() % reads.size();
-    reads[location] = reads[next];
-    tmp = reads[next];
-    location = next;
-  }
+  std::shuffle(reads.begin(), reads.end(),
+               std::mt19937(testing::UnitTest::GetInstance()->random_seed()));
 
   std::vector<std::thread> threads;
   for (size_t i = 0; static_cast<int>(i) < NumThreads(); i++) {
