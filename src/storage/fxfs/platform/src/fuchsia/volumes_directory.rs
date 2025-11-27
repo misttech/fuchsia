@@ -654,16 +654,16 @@ impl VolumesDirectory {
                 }
                 VolumeRequest::GetInfo { responder } => {
                     let result = self.handle_get_info(store_id).await.map(|guid| {
-                        fidl_fuchsia_fs_startup::VolumeGetInfoResponse {
+                        fidl_fuchsia_fs_startup::VolumeInfo {
                             guid: Some(guid),
                             ..Default::default()
                         }
                     });
-                    match &result {
-                        Ok(response) => responder.send(Ok(response))?,
+                    match result {
+                        Ok(response) => responder.send(Ok(&response))?,
                         Err(error) => {
                             error!(error:?, store_id; "Failed to get volume info");
-                            responder.send(Err(map_to_raw_status(anyhow!(error.to_string()))))?
+                            responder.send(Err(map_to_raw_status(error)))?
                         }
                     }
                 }
@@ -1333,7 +1333,7 @@ mod tests {
         })
         .detach();
 
-        let info: fidl_fuchsia_fs_startup::VolumeGetInfoResponse = volume_proxy
+        let info: fidl_fuchsia_fs_startup::VolumeInfo = volume_proxy
             .get_info()
             .await
             .expect("get_info failed")

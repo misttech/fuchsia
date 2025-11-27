@@ -185,7 +185,7 @@ closed protocol Volume {
     }) error zx.Status;
 
     /// Returns information about the volume.
-    strict GetInfo() -> (table {
+    strict GetInfo() -> (@generated_name("VolumeInfo") table {
         1: guid array<uint8, 16>;
     }) error zx.Status;
 };

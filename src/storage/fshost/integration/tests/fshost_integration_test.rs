@@ -420,10 +420,14 @@ async fn create_unmount_and_remount_starnix_volume() {
     let (exposed_dir_proxy, exposed_dir_server) =
         fidl::endpoints::create_proxy::<fio::DirectoryMarker>();
     volume_provider
-        .create(crypt.into_client_end().unwrap(), exposed_dir_server)
+        .mount(
+            crypt.into_client_end().unwrap(),
+            fidl_fuchsia_fshost::MountMode::AlwaysCreate,
+            exposed_dir_server,
+        )
         .await
         .expect("fidl transport error")
-        .expect("create failed");
+        .expect("mount failed");
 
     let starnix_volume_root_dir = fuchsia_fs::directory::open_directory(
         &exposed_dir_proxy,
@@ -463,7 +467,11 @@ async fn create_unmount_and_remount_starnix_volume() {
     let (exposed_dir_proxy, exposed_dir_server) =
         fidl::endpoints::create_proxy::<fio::DirectoryMarker>();
     volume_provider
-        .mount(crypt.into_client_end().unwrap(), exposed_dir_server)
+        .mount(
+            crypt.into_client_end().unwrap(),
+            fidl_fuchsia_fshost::MountMode::MaybeCreate,
+            exposed_dir_server,
+        )
         .await
         .expect("fidl transport error")
         .expect("mount failed");
@@ -504,10 +512,14 @@ async fn create_mount_and_remount_starnix_volume() {
     let (exposed_dir_proxy, exposed_dir_server) =
         fidl::endpoints::create_proxy::<fio::DirectoryMarker>();
     volume_provider
-        .create(crypt.into_client_end().unwrap(), exposed_dir_server)
+        .mount(
+            crypt.into_client_end().unwrap(),
+            fidl_fuchsia_fshost::MountMode::AlwaysCreate,
+            exposed_dir_server,
+        )
         .await
         .expect("fidl transport error")
-        .expect("create failed");
+        .expect("mount failed");
 
     let starnix_volume_root_dir = fuchsia_fs::directory::open_directory(
         &exposed_dir_proxy,
@@ -532,7 +544,11 @@ async fn create_mount_and_remount_starnix_volume() {
     let (exposed_dir_proxy, exposed_dir_server) =
         fidl::endpoints::create_proxy::<fio::DirectoryMarker>();
     volume_provider
-        .mount(crypt.into_client_end().unwrap(), exposed_dir_server)
+        .mount(
+            crypt.into_client_end().unwrap(),
+            fidl_fuchsia_fshost::MountMode::MaybeCreate,
+            exposed_dir_server,
+        )
         .await
         .expect("fidl transport error")
         .expect("mount failed");
@@ -573,10 +589,14 @@ async fn create_starnix_volume_wipes_previous_volume() {
     let (exposed_dir_proxy, exposed_dir_server) =
         fidl::endpoints::create_proxy::<fio::DirectoryMarker>();
     volume_provider
-        .create(crypt.into_client_end().unwrap(), exposed_dir_server)
+        .mount(
+            crypt.into_client_end().unwrap(),
+            fidl_fuchsia_fshost::MountMode::AlwaysCreate,
+            exposed_dir_server,
+        )
         .await
         .expect("fidl transport error")
-        .expect("create failed");
+        .expect("mount failed");
 
     let starnix_volume_root_dir = fuchsia_fs::directory::open_directory(
         &exposed_dir_proxy,
@@ -616,10 +636,14 @@ async fn create_starnix_volume_wipes_previous_volume() {
     let (exposed_dir_proxy, exposed_dir_server) =
         fidl::endpoints::create_proxy::<fio::DirectoryMarker>();
     volume_provider
-        .create(crypt.into_client_end().unwrap(), exposed_dir_server)
+        .mount(
+            crypt.into_client_end().unwrap(),
+            fidl_fuchsia_fshost::MountMode::AlwaysCreate,
+            exposed_dir_server,
+        )
         .await
         .expect("fidl transport error")
-        .expect("create failed");
+        .expect("mount failed");
 
     let starnix_volume_root_dir =
         fuchsia_fs::directory::open_directory(&exposed_dir_proxy, "root", fio::PERM_READABLE)
@@ -890,10 +914,14 @@ async fn shred_data_deletes_starnix_volume() {
     let (_exposed_dir_proxy, exposed_dir_server) =
         fidl::endpoints::create_proxy::<fio::DirectoryMarker>();
     volume_provider
-        .create(crypt.into_client_end().unwrap(), exposed_dir_server)
+        .mount(
+            crypt.into_client_end().unwrap(),
+            fidl_fuchsia_fshost::MountMode::AlwaysCreate,
+            exposed_dir_server,
+        )
         .await
         .expect("fidl transport error")
-        .expect("create failed");
+        .expect("mount failed");
 
     let admin: AdminProxy = fixture
         .realm
@@ -947,7 +975,11 @@ async fn vend_a_fresh_starnix_test_volume_on_each_mount() {
     let (exposed_dir_proxy, exposed_dir_server) =
         fidl::endpoints::create_proxy::<fio::DirectoryMarker>();
     volume_provider
-        .mount(crypt.into_client_end().unwrap(), exposed_dir_server)
+        .mount(
+            crypt.into_client_end().unwrap(),
+            fidl_fuchsia_fshost::MountMode::MaybeCreate,
+            exposed_dir_server,
+        )
         .await
         .expect("fidl transport error")
         .expect("mount failed");
@@ -989,7 +1021,11 @@ async fn vend_a_fresh_starnix_test_volume_on_each_mount() {
     let (exposed_dir_proxy, exposed_dir_server) =
         fidl::endpoints::create_proxy::<fio::DirectoryMarker>();
     volume_provider
-        .mount(crypt.into_client_end().unwrap(), exposed_dir_server)
+        .mount(
+            crypt.into_client_end().unwrap(),
+            fidl_fuchsia_fshost::MountMode::MaybeCreate,
+            exposed_dir_server,
+        )
         .await
         .expect("fidl transport error")
         .expect("mount failed");

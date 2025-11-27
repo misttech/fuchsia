@@ -1283,7 +1283,7 @@ impl Component {
                         let inner = fvm.inner.read().await;
                         inner.metadata.partitions.get(&partition_index).unwrap().guid
                     };
-                    let response = fidl_fuchsia_fs_startup::VolumeGetInfoResponse {
+                    let response = fidl_fuchsia_fs_startup::VolumeInfo {
                         guid: Some(guid),
                         ..Default::default()
                     };

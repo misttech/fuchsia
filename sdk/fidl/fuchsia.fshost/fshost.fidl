@@ -95,22 +95,26 @@ closed protocol Recovery {
     strict InstallBlobImage() -> () error zx.Status;
 };
 
+type MountMode = strict enum {
+    MAYBE_CREATE = 1;
+    ALWAYS_CREATE = 2;
+};
+
 /// Provides access to the volume which will be used by Starnix to store its data.
 @discoverable
 closed protocol StarnixVolumeProvider {
     /// Mounts the main starnix volume using `crypt`. `exposed_dir` will be connected to the
-    /// exposed directory of the mounted starnix volume. Silently creates the volume if it does
-    /// not already exist.
+    /// exposed directory of the mounted starnix volume.
+    ///
+    /// If `mode` is `MAYBE_CREATE`, the volume will be created if it does not exist.
+    /// If `mode` is `ALWAYS_CREATE`, the volume will be created, overwriting any existing volume.
+    ///
+    /// Returns the GUID of the mounted volume.
     strict Mount(resource struct {
         crypt client_end:fuchsia.fxfs.Crypt;
+        mode MountMode;
         exposed_dir server_end:fuchsia.io.Directory;
-    }) -> () error zx.Status;
-
-    /// Creates and mounts the main starnix volume using `crypt`. If the volume already exists,
-    /// unmount and delete the volume before creating the new one. `exposed_dir` will be connected
-    /// to the exposed directory of the mounted starnix volume.
-    strict Create(resource struct {
-        crypt client_end:fuchsia.fxfs.Crypt;
-        exposed_dir server_end:fuchsia.io.Directory;
-    }) -> () error zx.Status;
+    }) -> (struct {
+        guid array<uint8, 16>;
+    }) error zx.Status;
 };

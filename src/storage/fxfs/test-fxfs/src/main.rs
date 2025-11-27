@@ -55,7 +55,7 @@ async fn mount_user_volume(
     starnix_exposed_dir: ServerEnd<DirectoryMarker>,
     volumes_directory: &Arc<VolumesDirectory>,
     mounted_volume: &Mutex<Option<MountedVolume>>,
-) -> Result<(), Error> {
+) -> Result<[u8; 16], Error> {
     let remote_crypt = Arc::new(RemoteCrypt::new(crypt));
     let vol = match volumes_directory
         .mount_volume(USER_VOLUME_NAME, Some(remote_crypt.clone() as Arc<dyn Crypt>), false)
@@ -75,12 +75,13 @@ async fn mount_user_volume(
         Err(e) => return Err(e),
     };
 
+    let guid = vol.volume().store().guid();
     let (exposed_dir, server_end) = create_proxy::<fio::DirectoryMarker>();
     volumes_directory.serve_volume(&vol, server_end, false).context("failed to serve volume")?;
     exposed_dir.clone(starnix_exposed_dir.into_channel().into())?;
     update_mounted_volume(mounted_volume, exposed_dir, vol.volume().store().store_object_id())?;
 
-    Ok(())
+    Ok(guid)
 }
 
 fn update_mounted_volume(
@@ -127,7 +128,7 @@ async fn create_user_volume(
     starnix_exposed_dir: ServerEnd<DirectoryMarker>,
     volumes_directory: &Arc<VolumesDirectory>,
     mounted_volume: &Mutex<Option<MountedVolume>>,
-) -> Result<(), Error> {
+) -> Result<[u8; 16], Error> {
     let remote_crypt = Arc::new(RemoteCrypt::new(crypt));
     let vol = mounted_volume.lock().take();
     if let Some(vol) = vol {
@@ -157,12 +158,13 @@ async fn create_user_volume(
         Err(e) => return Err(e),
     };
 
+    let guid = vol.volume().store().guid();
     let (exposed_dir, server_end) = create_proxy::<fio::DirectoryMarker>();
     volumes_directory.serve_volume(&vol, server_end, false).context("failed to serve volume")?;
     exposed_dir.clone(starnix_exposed_dir.into_channel().into())?;
     update_mounted_volume(mounted_volume, exposed_dir, vol.volume().store().store_object_id())?;
 
-    Ok(())
+    Ok(guid)
 }
 
 async fn handle_starnix_volume_admin_requests(
@@ -210,44 +212,27 @@ async fn handle_starnix_volume_provider_requests(
 ) {
     while let Some(Ok(request)) = stream.next().await {
         match request {
-            StarnixVolumeProviderRequest::Mount { crypt, exposed_dir, responder } => {
-                log::info!("volume provider mount called");
-                let res = match mount_user_volume(
-                    crypt,
-                    exposed_dir,
-                    &volumes_directory,
-                    &mounted_volume,
-                )
-                .await
-                {
-                    Ok(()) => Ok(()),
-                    Err(e) => {
-                        log::error!("volume provider service: mount failed: {:?}", e);
+            StarnixVolumeProviderRequest::Mount { crypt, mode, exposed_dir, responder } => {
+                log::info!(mode:?; "volume provider mount");
+                let res = match mode {
+                    fidl_fuchsia_fshost::MountMode::MaybeCreate => {
+                        mount_user_volume(crypt, exposed_dir, &volumes_directory, &mounted_volume)
+                            .await
+                    }
+                    fidl_fuchsia_fshost::MountMode::AlwaysCreate => {
+                        create_user_volume(crypt, exposed_dir, &volumes_directory, &mounted_volume)
+                            .await
+                    }
+                };
+                let res = match res {
+                    Ok(guid) => Ok(guid),
+                    Err(error) => {
+                        log::error!(error:?; "volume provider service: mount failed");
                         Err(zx::Status::INTERNAL.into_raw())
                     }
                 };
-                responder.send(res).unwrap_or_else(|e| {
-                    log::error!("failed to send Mount response. error: {:?}", e);
-                });
-            }
-            StarnixVolumeProviderRequest::Create { crypt, exposed_dir, responder } => {
-                log::info!("volume provider create called");
-                let res = match create_user_volume(
-                    crypt,
-                    exposed_dir,
-                    &volumes_directory,
-                    &mounted_volume,
-                )
-                .await
-                {
-                    Ok(()) => Ok(()),
-                    Err(e) => {
-                        log::error!("volume provider service: create failed: {:?}", e);
-                        Err(zx::Status::INTERNAL.into_raw())
-                    }
-                };
-                responder.send(res).unwrap_or_else(|e| {
-                    log::error!("failed to send Create response. error: {:?}", e);
+                responder.send(res.as_ref().map_err(|e| *e)).unwrap_or_else(|error| {
+                    log::error!(error:?; "failed to send Mount response");
                 });
             }
         }

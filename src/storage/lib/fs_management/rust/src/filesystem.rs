@@ -662,6 +662,21 @@ impl ServingMultiVolumeFilesystem {
         ServingVolume::new(exposed_dir)
     }
 
+    /// Returns volume info for `volume`.
+    pub async fn get_volume_info(
+        &self,
+        volume: &str,
+    ) -> Result<fidl_fuchsia_fs_startup::VolumeInfo, Error> {
+        let path = format!("volumes/{}", volume);
+        connect_to_named_protocol_at_dir_root::<fidl_fuchsia_fs_startup::VolumeMarker>(
+            self.exposed_dir.as_ref().unwrap(),
+            &path,
+        )?
+        .get_info()
+        .await?
+        .map_err(|e| anyhow!(zx::Status::from_raw(e)))
+    }
+
     /// Sets the max byte limit for a volume. Fails if the volume is not mounted.
     pub async fn set_byte_limit(&self, volume: &str, byte_limit: u64) -> Result<(), Error> {
         if byte_limit == 0 {

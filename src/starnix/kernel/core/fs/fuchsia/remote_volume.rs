@@ -231,31 +231,22 @@ pub fn new_remote_vol(
         },
     );
 
-    if created_key_file {
-        volume_provider
-            .create(crypt_client_end, exposed_dir_server, zx::MonotonicInstant::INFINITE)
-            .map_err(|e| {
-                log_error!("FIDL transport error on StarnixVolumeProvider.Mount {:?}", e);
-                errno!(ENOENT)
-            })?
-            .map_err(|e| {
-                let err = from_status_like_fdio!(zx::Status::from_raw(e));
-                log_error!("StarnixVolumeProvider.Mount failed with {:?}", err);
-                err
-            })?;
+    let mode = if created_key_file {
+        fidl_fuchsia_fshost::MountMode::AlwaysCreate
     } else {
-        volume_provider
-            .mount(crypt_client_end, exposed_dir_server, zx::MonotonicInstant::INFINITE)
-            .map_err(|e| {
-                log_error!("FIDL transport error on StarnixVolumeProvider.Mount {:?}", e);
-                errno!(ENOENT)
-            })?
-            .map_err(|e| {
-                let err = from_status_like_fdio!(zx::Status::from_raw(e));
-                log_error!("StarnixVolumeProvider.Mount failed with {:?}", err);
-                err
-            })?;
-    }
+        fidl_fuchsia_fshost::MountMode::MaybeCreate
+    };
+    let _guid = volume_provider
+        .mount(crypt_client_end, mode, exposed_dir_server, zx::MonotonicInstant::INFINITE)
+        .map_err(|e| {
+            log_error!("FIDL transport error on StarnixVolumeProvider.Mount {:?}", e);
+            errno!(ENOENT)
+        })?
+        .map_err(|e| {
+            let err = from_status_like_fdio!(zx::Status::from_raw(e));
+            log_error!("StarnixVolumeProvider.Mount failed with {:?}", err);
+            err
+        })?;
 
     let exposed_dir_proxy = exposed_dir_client_end.into_sync_proxy();
 

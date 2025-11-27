@@ -133,7 +133,7 @@ async fn mount_main_starnix_volume(
     starnix_volume_name: String,
     crypt: ClientEnd<ffxfs::CryptMarker>,
     exposed_dir: ServerEnd<fio::DirectoryMarker>,
-) -> Result<(), Error> {
+) -> Result<[u8; 16], Error> {
     let mut env = environment.lock().await;
     if let Some(multi_vol_fs) = env.get_container() {
         let mounted_vol = if multi_vol_fs.has_volume(&starnix_volume_name).await? {
@@ -153,7 +153,12 @@ async fn mount_main_starnix_volume(
                 .await?
         };
         mounted_vol.exposed_dir().clone(exposed_dir.into_channel().into())?;
-        Ok(())
+        multi_vol_fs
+            .get_volume_info(&starnix_volume_name)
+            .await
+            .context("get_volume_info")?
+            .guid
+            .ok_or_else(|| anyhow!("No GUID returned"))
     } else {
         Err(anyhow!("Tried to mount starnix volume without container set"))
     }
@@ -164,7 +169,7 @@ async fn create_starnix_volume_impl(
     starnix_volume_name: &str,
     crypt: ClientEnd<ffxfs::CryptMarker>,
     exposed_dir: ServerEnd<fio::DirectoryMarker>,
-) -> Result<(), Error> {
+) -> Result<[u8; 16], Error> {
     let mut env = environment.lock().await;
     if let Some(multi_vol_fs) = env.get_container() {
         // If the starnix volume already exists, unmount if mounted and then remove.
@@ -179,7 +184,12 @@ async fn create_starnix_volume_impl(
             )
             .await?;
         mounted_vol.exposed_dir().clone(exposed_dir.into_channel().into())?;
-        Ok(())
+        multi_vol_fs
+            .get_volume_info(&starnix_volume_name)
+            .await
+            .context("get_volume_info")?
+            .guid
+            .ok_or_else(|| anyhow!("No GUID returned"))
     } else {
         Err(anyhow!("Tried to mount starnix volume without container set"))
     }
@@ -190,7 +200,7 @@ async fn mount_starnix_volume(
     config: &fshost_config::Config,
     crypt: ClientEnd<ffxfs::CryptMarker>,
     exposed_dir: ServerEnd<fio::DirectoryMarker>,
-) -> Result<(), Error> {
+) -> Result<[u8; 16], Error> {
     if config.starnix_volume_name.is_empty() {
         create_starnix_volume_impl(environment, STARNIX_TEST_VOLUME_NAME, crypt, exposed_dir).await
     } else {
@@ -209,7 +219,7 @@ async fn create_starnix_volume(
     config: &fshost_config::Config,
     crypt: ClientEnd<ffxfs::CryptMarker>,
     exposed_dir: ServerEnd<fio::DirectoryMarker>,
-) -> Result<(), Error> {
+) -> Result<[u8; 16], Error> {
     let volume_name = if config.starnix_volume_name.is_empty() {
         STARNIX_TEST_VOLUME_NAME
     } else {
@@ -557,37 +567,27 @@ pub fn fshost_volume_provider(
                 match request {
                     Ok(fshost::StarnixVolumeProviderRequest::Mount {
                         crypt,
+                        mode,
                         exposed_dir,
                         responder,
                     }) => {
-                        log::info!("volume provider mount called");
-                        let res =
-                            match mount_starnix_volume(&env, &config, crypt, exposed_dir).await {
-                                Ok(()) => Ok(()),
-                                Err(e) => {
-                                    log::error!("volume provider service: mount failed: {:?}", e);
-                                    Err(zx::Status::INTERNAL.into_raw())
-                                }
-                            };
-                        responder.send(res).unwrap_or_else(|error| {
-                            log::error!(error:?; "failed to send fidl response");
-                        });
-                    }
-                    Ok(fshost::StarnixVolumeProviderRequest::Create {
-                        crypt,
-                        exposed_dir,
-                        responder,
-                    }) => {
-                        log::info!("volume provider create called");
-                        let res =
-                            match create_starnix_volume(&env, &config, crypt, exposed_dir).await {
-                                Ok(()) => Ok(()),
-                                Err(e) => {
-                                    log::error!("volume provider service: create failed: {:?}", e);
-                                    Err(zx::Status::INTERNAL.into_raw())
-                                }
-                            };
-                        responder.send(res).unwrap_or_else(|error| {
+                        log::info!(mode:?; "volume provider mount");
+                        let res = match mode {
+                            fshost::MountMode::MaybeCreate => {
+                                mount_starnix_volume(&env, &config, crypt, exposed_dir).await
+                            }
+                            fshost::MountMode::AlwaysCreate => {
+                                create_starnix_volume(&env, &config, crypt, exposed_dir).await
+                            }
+                        };
+                        let res = match res {
+                            Ok(guid) => Ok(guid),
+                            Err(error) => {
+                                log::error!(error:?; "volume provider service: mount failed");
+                                Err(zx::Status::INTERNAL.into_raw())
+                            }
+                        };
+                        responder.send(res.as_ref().map_err(|e| *e)).unwrap_or_else(|error| {
                             log::error!(error:?; "failed to send fidl response");
                         });
                     }
