@@ -21,12 +21,13 @@ import workspace
 
 def prepare_workspace_instance(
     use_snapshot: bool,
+    use_local_mock_cartfs: bool,
 ) -> workspace.Workspace | None:
     """Prepares a workspace instance."""
     # Attempt to identify the current cog and associated cartfs workspace.
     try:
-        workspace_instance = workspace.Workspace.create()
-    except workspace.NotInCogWorkspaceError as e:
+        workspace_instance = workspace.Workspace.create(use_local_mock_cartfs)
+    except workspace.NotInCogWorkspaceError:
         logger.log_error("This script can only be run in cog workspaces.")
         logger.log_error(
             "Please refer to https://go/fuchsia-cog-user-guide for instructions on fuchsia development with cog."
@@ -88,6 +89,12 @@ def _parse_args() -> argparse.Namespace:
         help="Find a previous CartFS workspace snapshot to initialize this workspace.",
     )
     parser.add_argument(
+        "--local-mock-cartfs",
+        dest="use_local_mock_cartfs",
+        action="store_true",
+        help="Use a local mock cartfs directory located at ~/mock_cartfs.",
+    )
+    parser.add_argument(
         "-v",
         "--verbose",
         action="count",
@@ -110,7 +117,9 @@ def main() -> int | None:
 
     logger.init_logger(level=log_level, colors=True)
 
-    workspace_instance = prepare_workspace_instance(args.use_snapshot)
+    workspace_instance = prepare_workspace_instance(
+        args.use_snapshot, args.use_local_mock_cartfs
+    )
     if not workspace_instance:
         logger.log_warn("Could not create workspace instance.")
         return 1

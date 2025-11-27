@@ -389,9 +389,9 @@ class TestWorkspace(unittest.TestCase):
             )
 
             def mock_snapshot_workspace(
-                _workspace_to_snapshot_from: str,
-                _workspace_to_snapshot_to: str,
-                cartfs_mount_point: str,
+                _workspace_to_snapshot_from: Path,
+                _workspace_to_snapshot_to: Path,
+                cartfs_mount_point: Path,
             ) -> None:
                 os.mkdir(
                     os.path.join(cartfs_mount_point, suggested_directory_name)
@@ -466,9 +466,9 @@ class TestWorkspace(unittest.TestCase):
             ):
 
                 def mock_snapshot_workspace(
-                    _workspace_to_snapshot_from: str,
-                    _workspace_to_snapshot_to: str,
-                    _cartfs_mount_point: str,
+                    _workspace_to_snapshot_from: Path,
+                    _workspace_to_snapshot_to: Path,
+                    _cartfs_mount_point: Path,
                 ) -> None:
                     raise ValueError("test error")
 

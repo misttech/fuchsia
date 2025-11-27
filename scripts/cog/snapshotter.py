@@ -4,14 +4,15 @@
 
 import os
 import subprocess
+from pathlib import Path
 
 import logger
 
 
 def snapshot_workspace(
-    workspace_to_snapshot_from: str,
-    workspace_to_snapshot_to: str,
-    cartfs_mount_point: str,
+    workspace_to_snapshot_from: Path,
+    workspace_to_snapshot_to: Path,
+    cartfs_mount_point: Path,
 ) -> None:
     """Snapshots a workspace.
 
@@ -23,14 +24,15 @@ def snapshot_workspace(
         workspace_to_snapshot_to: The name of the new workspace to create.
         cartfs_mount_point: The path to the cartfs mount point.
     """
-    from_path = os.path.join(cartfs_mount_point, workspace_to_snapshot_from)
-    if not os.path.isdir(from_path):
+    mount_point = cartfs_mount_point
+    from_path = mount_point / workspace_to_snapshot_from
+    if not from_path.is_dir():
         raise ValueError(
             f"Source workspace directory {from_path} does not exist or is not a directory."
         )
 
-    to_path = os.path.join(cartfs_mount_point, workspace_to_snapshot_to)
-    if os.path.exists(to_path):
+    to_path = mount_point / workspace_to_snapshot_to
+    if to_path.exists():
         raise ValueError(
             f"Target workspace directory {to_path} already exists."
         )
@@ -53,7 +55,7 @@ def snapshot_workspace(
         # does not update the directory immediately and a subsequent write
         # will fail. If we create the directory first, we can avoid this issue
         # and still correctly snapshot the workspace.
-        os.makedirs(to_path, exist_ok=True)
+        to_path.mkdir(parents=True, exist_ok=True)
 
         logger.log_info(f"Copying from {from_path_rel} to {to_path_rel}")
         subprocess.run(

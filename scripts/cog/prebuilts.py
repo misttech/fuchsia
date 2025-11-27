@@ -3,11 +3,11 @@
 # found in the LICENSE file.
 
 import base64
-import os
 import shutil
 import subprocess
 import sys
 import urllib.request
+from pathlib import Path
 
 import logger
 
@@ -31,12 +31,12 @@ class Prebuilts:
         workspace_name: str,
         repo_name: str,
     ):
-        self.cartfs_directory = cartfs_directory
-        self.workspace_dir = workspace_dir
+        self.cartfs_directory = Path(cartfs_directory)
+        self.workspace_dir = Path(workspace_dir)
         self.workspace_name = workspace_name
         self.repo_name = repo_name
 
-    def create_symlink(self, target: str, link_name: str) -> None:
+    def create_symlink(self, target: Path, link_name: Path) -> None:
         """Creates a symlink from link_name to target.
 
         If a symlink already exists at link_name and points to target, this
@@ -45,17 +45,16 @@ class Prebuilts:
         If a file, directory, or a different symlink exists at link_name, it will
         be removed and replaced with the new symlink.
         """
-        if os.path.lexists(link_name):
-            if os.path.islink(link_name) and os.readlink(link_name) == target:
-                return
+        if link_name.is_symlink() and link_name.readlink() == target:
+            return
 
-            # If the path exists but is not the desired symlink, remove it.
-            if os.path.isdir(link_name) and not os.path.islink(link_name):
-                shutil.rmtree(link_name)
-            else:
-                os.remove(link_name)
+        # If the path exists but is not the desired symlink, remove it.
+        if link_name.is_dir() and not link_name.is_symlink():
+            shutil.rmtree(link_name)
+        else:
+            link_name.unlink(missing_ok=True)
 
-        os.symlink(target, link_name)
+        link_name.symlink_to(target)
 
     def _run_bootstrap_jiri_script(self) -> None:
         """Runs the bootstrap jiri script."""
@@ -98,9 +97,8 @@ class Prebuilts:
     def _create_jiri_snapshot(self) -> None:
         """Create snapshot."""
         logger.log_info("Create snapshot at .jiri_root/update_history/latest.")
-        os.makedirs(
-            os.path.join(self.cartfs_directory, ".jiri_root/update_history"),
-            exist_ok=True,
+        (self.cartfs_directory / ".jiri_root/update_history").mkdir(
+            parents=True, exist_ok=True
         )
         subprocess.run(
             [
@@ -114,9 +112,9 @@ class Prebuilts:
 
     def is_jiri_bootstrapped(self) -> bool:
         """Checks if jiri is bootstrapped."""
-        jiri_root = os.path.join(self.cartfs_directory, ".jiri_root")
-        jiri_manifest = os.path.join(self.cartfs_directory, ".jiri_manifest")
-        return os.path.isdir(jiri_root) and os.path.exists(jiri_manifest)
+        jiri_root = self.cartfs_directory / ".jiri_root"
+        jiri_manifest = self.cartfs_directory / ".jiri_manifest"
+        return jiri_root.is_dir() and jiri_manifest.exists()
 
     def bootstrap_jiri(self) -> None:
         """Bootstraps jiri if it is not already bootstrapped."""
@@ -166,8 +164,8 @@ class Prebuilts:
         # Copy manifests directory to CartFS.
         logger.log_info("Copy manifests directory to CartFS.")
         shutil.copytree(
-            os.path.join(self.workspace_dir, self.repo_name, "manifests"),
-            os.path.join(self.cartfs_directory, "manifests"),
+            self.workspace_dir / self.repo_name / "manifests",
+            self.cartfs_directory / "manifests",
             dirs_exist_ok=True,
         )
 
@@ -175,7 +173,7 @@ class Prebuilts:
         self._create_jiri_snapshot()
 
         # Create directories
-        os.makedirs(os.path.join(self.cartfs_directory, ".fx"), exist_ok=True)
+        (self.cartfs_directory / ".fx").mkdir(exist_ok=True)
 
         # Initialize git repository in the submodules
         submodules = [
@@ -186,21 +184,18 @@ class Prebuilts:
         ]
         for submodule in submodules:
             # This would create a .git/HEAD
-            if os.path.exists(
-                os.path.join(
-                    self.workspace_dir, self.repo_name, submodule, ".git"
-                )
-            ):
+            submodule_path = self.workspace_dir / self.repo_name / submodule
+            if (submodule_path / ".git").exists():
                 continue
             subprocess.run(
                 ["git", "init", "-b", "main"],
-                cwd=os.path.join(self.workspace_dir, self.repo_name, submodule),
+                cwd=submodule_path,
                 check=True,
             )
             # This would create a .git/index
             subprocess.run(
                 ["git", "reset"],
-                cwd=os.path.join(self.workspace_dir, self.repo_name, submodule),
+                cwd=submodule_path,
                 check=True,
             )
 
@@ -215,8 +210,8 @@ class Prebuilts:
             ".fx",
             "integration",
         ]:
-            repo_path = os.path.join(self.workspace_dir, self.repo_name, path)
-            cartfs_path = os.path.join(self.cartfs_directory, path)
+            repo_path = self.workspace_dir / self.repo_name / path
+            cartfs_path = self.cartfs_directory / path
             logger.log_info(
                 f"Creating symlink from {repo_path} to {cartfs_path}"
             )
@@ -228,60 +223,34 @@ class Prebuilts:
         # Link .jiri_root/bin/{fx, ffx, hermetic-env, fuchsia-vendored-python}
         # LINT.IfChange
         self.create_symlink(
-            os.path.join(self.workspace_dir, self.repo_name, "scripts", "fx"),
-            os.path.join(self.cartfs_directory, ".jiri_root/bin/fx"),
+            self.workspace_dir / self.repo_name / "scripts/fx",
+            self.cartfs_directory / ".jiri_root/bin/fx",
         )
         self.create_symlink(
-            os.path.join(
-                self.workspace_dir,
-                self.repo_name,
-                "src",
-                "developer",
-                "ffx",
-                "scripts",
-                "ffx",
-            ),
-            os.path.join(self.cartfs_directory, ".jiri_root/bin/ffx"),
+            self.workspace_dir
+            / self.repo_name
+            / "src/developer/ffx/scripts/ffx",
+            self.cartfs_directory / ".jiri_root/bin/ffx",
         )
         self.create_symlink(
-            os.path.join(
-                self.workspace_dir, self.repo_name, "scripts", "hermetic-env"
-            ),
-            os.path.join(self.cartfs_directory, ".jiri_root/bin/hermetic-env"),
+            self.workspace_dir / self.repo_name / "scripts/hermetic-env",
+            self.cartfs_directory / ".jiri_root/bin/hermetic-env",
         )
         self.create_symlink(
-            os.path.join(
-                self.workspace_dir,
-                self.repo_name,
-                "scripts",
-                "fuchsia-vendored-python",
-            ),
-            os.path.join(
-                self.cartfs_directory, ".jiri_root/bin/fuchsia-vendored-python"
-            ),
+            self.workspace_dir
+            / self.repo_name
+            / "scripts/fuchsia-vendored-python",
+            self.cartfs_directory / ".jiri_root/bin/fuchsia-vendored-python",
         )
         # LINT.ThenChange(//scripts/devshell/lib/add_symlink_to_bin.sh)
 
         # Symlink in cog workspace specific GN arg overrides.
-        os.makedirs(
-            os.path.join(self.workspace_dir, self.repo_name, "local"),
-            exist_ok=True,
-        )
+        (self.workspace_dir / self.repo_name / "local").mkdir(exist_ok=True)
         self.create_symlink(
-            os.path.join(
-                self.workspace_dir,
-                self.repo_name,
-                "scripts",
-                "cog",
-                "resources",
-                "args.gn",
-            ),
-            os.path.join(
-                self.workspace_dir,
-                self.repo_name,
-                "local",
-                "args.gn",
-            ),
+            self.workspace_dir
+            / self.repo_name
+            / "scripts/cog/resources/args.gn",
+            self.workspace_dir / self.repo_name / "local/args.gn",
         )
 
     def _patch_file(
@@ -289,16 +258,14 @@ class Prebuilts:
     ) -> None:
         """Patches the file in cartFS."""
         logger.log_info(f"Patching the {filepath} file.")
-        full_filepath = os.path.join(self.cartfs_directory, filepath)
-        if not os.path.exists(full_filepath):
+        full_filepath = self.cartfs_directory / filepath
+        if not full_filepath.exists():
             logger.log_info(
                 f"File {full_filepath} does not exist. Creating it now."
             )
-            parent_dir = os.path.dirname(full_filepath)
-            os.makedirs(parent_dir, exist_ok=True)
+            full_filepath.parent.mkdir(parents=True, exist_ok=True)
             try:
-                with open(full_filepath, "w") as f:
-                    f.write(content)
+                full_filepath.write_text(content)
             except Exception as e:
                 logger.log_error(
                     f"An error occurred while writing the file: {e}"
@@ -310,5 +277,5 @@ class Prebuilts:
         if symlink:
             self.create_symlink(
                 full_filepath,
-                os.path.join(self.workspace_dir, self.repo_name, filepath),
+                self.workspace_dir / self.repo_name / filepath,
             )
