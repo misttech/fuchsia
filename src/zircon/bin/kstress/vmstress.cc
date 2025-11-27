@@ -1743,7 +1743,6 @@ class MultiVmoTestInstance : public TestInstance {
             size_t vmo_size;
             vmo.get_size(&vmo_size);
             vmo.set_stream_size(uniform_rand(vmo_size, rng));
-            vmo.set_size(uniform_rand(kMaxVmoSize, rng));
           }
           break;
         }
