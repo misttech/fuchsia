@@ -813,11 +813,6 @@ mod tests {
                 assert_eq!(events[0].data, expected_event.data);
                 responder.send().expect("failed to respond");
             }
-            Some(Ok(pointerinjector::DeviceRequest::InjectEvents { events, .. })) => {
-                assert_eq!(events.len(), 1);
-                assert_eq!(events[0].timestamp, expected_event.timestamp);
-                assert_eq!(events[0].data, expected_event.data);
-            }
             Some(Err(e)) => panic!("FIDL error {}", e),
             None => panic!("Expected another event."),
         }

@@ -227,11 +227,6 @@ void Injector::Inject(std::vector<fuchsia::ui::pointerinjector::Event> events,
   callback();
 }
 
-void Injector::InjectEvents(std::vector<fuchsia::ui::pointerinjector::Event> events) {
-  TRACE_DURATION("input", "Injector::Inject");
-  // TODO: https://fxbug.dev/449207459 - Implement Injector::InjectEvents.
-}
-
 std::pair<zx_status_t, StreamId> Injector::ValidatePointerSample(
     const fuchsia::ui::pointerinjector::PointerSample& pointer_sample) {
   if (!HasRequiredFields(pointer_sample)) {
