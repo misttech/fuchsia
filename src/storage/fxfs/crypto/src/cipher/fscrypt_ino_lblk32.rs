@@ -15,6 +15,9 @@ use std::hash::Hasher;
 use zerocopy::IntoBytes;
 
 const BLOCK_SIZE: usize = 4096;
+const MAX_FILENAME_LEN: usize = 255;
+const MAX_SYMLINK_LEN: usize = 4093;
+const NAME_PADDING: usize = 16;
 
 #[derive(Debug)]
 pub(crate) struct FscryptInoLblk32DirCipher {
@@ -53,70 +56,19 @@ impl Cipher for FscryptInoLblk32DirCipher {
     }
 
     fn encrypt_filename(&self, object_id: u64, buffer: &mut Vec<u8>) -> Result<(), Error> {
-        ensure!(buffer.len() <= 255, "Filename too long");
-
-        let mut hasher = SipHasher::new_with_key(&self.ino_hash_key);
-        hasher.write(object_id.as_bytes());
-        let iv = [hasher.finish() as u32, 0, 0, 0];
-
-        buffer.resize(buffer.len().next_multiple_of(16), 0);
-
-        let mut cbc =
-            cbc::Encryptor::<aes::Aes256>::new((&self.cts_key).into(), iv.as_bytes().into());
-        let inout = InOutBuf::<'_, '_, u8>::from(&mut buffer[..]);
-        let (mut blocks, _): (InOutBuf<'_, '_, Block<aes::Aes256>>, _) = inout.into_chunks();
-        let mut chunks = blocks.get_out();
-        cbc.encrypt_blocks_mut(&mut chunks);
-        if chunks.len() >= 2 {
-            // We are encrypting with CTS.  In most cases, the padding will mean it's a multiple of
-            // 16 bytes, so all we need to do is swap the last two chunks.  There is one exception:
-            // when the filename is 241 bytes or longer, it is padded to 255 bytes.  In that case,
-            // all we have to do is trim the last byte after swapping the last two chunks.
-            chunks.swap(chunks.len() - 1, chunks.len() - 2);
-            buffer.truncate(255);
-        }
-        Ok(())
+        self.encrypt_filename_with_max_len(object_id, buffer, MAX_FILENAME_LEN)
     }
 
     fn decrypt_filename(&self, object_id: u64, buffer: &mut Vec<u8>) -> Result<(), Error> {
-        // For CTS, the only case we need to care about is when the encrypted filename is 255 bytes.
-        // In all other cases, the filename should be a multiple of 16 bytes.
-        if buffer.len() == 255 {
-            // Decrypt the second to last block.
-            let mut cipher = aes::Aes256::new(&self.cts_key.into());
-            let mut out = GenericArray::<u8, U16>::default();
-            cipher.decrypt_block_inout_mut(
-                (GenericArray::from_slice(&buffer[224..240]), &mut out).into(),
-            );
+        self.decrypt_filename_with_max_len(object_id, buffer, MAX_FILENAME_LEN)
+    }
 
-            // Push the extra byte we need.
-            buffer.push(out[15]);
-        } else {
-            ensure!(buffer.len() % 16 == 0, "Unexpected filename length");
-        }
+    fn encrypt_symlink(&self, object_id: u64, buffer: &mut Vec<u8>) -> Result<(), Error> {
+        self.encrypt_filename_with_max_len(object_id, buffer, MAX_SYMLINK_LEN)
+    }
 
-        let mut hasher = SipHasher::new_with_key(&self.ino_hash_key);
-        hasher.write(object_id.as_bytes());
-        let iv = [hasher.finish() as u32, 0, 0, 0];
-
-        let mut cbc =
-            cbc::Decryptor::<aes::Aes256>::new((&self.cts_key).into(), iv.as_bytes().into());
-        let inout = InOutBuf::<'_, '_, u8>::from(&mut buffer[..]);
-        let (mut blocks, _): (InOutBuf<'_, '_, Block<aes::Aes256>>, _) = inout.into_chunks();
-        let mut chunks = blocks.get_out();
-        if chunks.len() >= 2 {
-            chunks.swap(chunks.len() - 1, chunks.len() - 2);
-        }
-        cbc.decrypt_blocks_mut(&mut chunks);
-
-        // If we pushed an extra byte above, we need to shrink the buffer here.
-        buffer.truncate(255);
-
-        // Strip padding
-        while let Some(0) = buffer.last() {
-            buffer.pop();
-        }
-        Ok(())
+    fn decrypt_symlink(&self, object_id: u64, buffer: &mut Vec<u8>) -> Result<(), Error> {
+        self.decrypt_filename_with_max_len(object_id, buffer, MAX_SYMLINK_LEN)
     }
 
     fn hash_code(&self, _raw_filename: &[u8], _filename: &str) -> Option<u32> {
@@ -137,6 +89,90 @@ impl Cipher for FscryptInoLblk32DirCipher {
 
     fn crypt_ctx(&self, _ino: u64, _file_offset: u64) -> Option<(u32, u8)> {
         None
+    }
+}
+
+impl FscryptInoLblk32DirCipher {
+    fn encrypt_filename_with_max_len(
+        &self,
+        object_id: u64,
+        buffer: &mut Vec<u8>,
+        max_len: usize,
+    ) -> Result<(), Error> {
+        ensure!(buffer.len() <= max_len, "Filename too long");
+
+        let mut hasher = SipHasher::new_with_key(&self.ino_hash_key);
+        hasher.write(object_id.as_bytes());
+        let iv = [hasher.finish() as u32, 0, 0, 0];
+
+        buffer.resize(buffer.len().next_multiple_of(NAME_PADDING), 0);
+
+        let mut cbc =
+            cbc::Encryptor::<aes::Aes256>::new((&self.cts_key).into(), iv.as_bytes().into());
+        let inout = InOutBuf::<'_, '_, u8>::from(&mut buffer[..]);
+        let (mut blocks, _): (InOutBuf<'_, '_, Block<aes::Aes256>>, _) = inout.into_chunks();
+        let mut chunks = blocks.get_out();
+        cbc.encrypt_blocks_mut(&mut chunks);
+        if chunks.len() >= 2 {
+            // We are encrypting with CTS.  In most cases, the padding will mean it's a multiple of
+            // NAME_PADDING bytes, so all we need to do is swap the last two chunks.  There is one
+            // exception: when the filename ends up being longer than max_len after padding.  In
+            // that case, all we have to do is trim the end after swapping the last two chunks.
+            chunks.swap(chunks.len() - 1, chunks.len() - 2);
+            buffer.truncate(max_len);
+        }
+        Ok(())
+    }
+
+    fn decrypt_filename_with_max_len(
+        &self,
+        object_id: u64,
+        buffer: &mut Vec<u8>,
+        max_len: usize,
+    ) -> Result<(), Error> {
+        let alignment = buffer.len() % NAME_PADDING;
+        if alignment != 0 {
+            // For CTS, the only case we need to care about is when the encrypted filename is
+            // max_len bytes. In all other cases, the filename should be a multiple of NAME_PADDING
+            // bytes.
+            ensure!(buffer.len() == max_len, "Unexpected filename length");
+
+            // Decrypt the second to last block.
+            let mut cipher = aes::Aes256::new(&self.cts_key.into());
+            let mut out = GenericArray::<u8, U16>::default();
+            cipher.decrypt_block_inout_mut(
+                (
+                    GenericArray::from_slice(
+                        &buffer[max_len - alignment - NAME_PADDING..max_len - alignment],
+                    ),
+                    &mut out,
+                )
+                    .into(),
+            );
+
+            // Copy the extra bytes we need.
+            buffer.extend_from_slice(&out[alignment..]);
+        }
+
+        let mut hasher = SipHasher::new_with_key(&self.ino_hash_key);
+        hasher.write(object_id.as_bytes());
+        let iv = [hasher.finish() as u32, 0, 0, 0];
+
+        let mut cbc =
+            cbc::Decryptor::<aes::Aes256>::new((&self.cts_key).into(), iv.as_bytes().into());
+        let inout = InOutBuf::<'_, '_, u8>::from(&mut buffer[..]);
+        let (mut blocks, _): (InOutBuf<'_, '_, Block<aes::Aes256>>, _) = inout.into_chunks();
+        let mut chunks = blocks.get_out();
+        if chunks.len() >= 2 {
+            chunks.swap(chunks.len() - 1, chunks.len() - 2);
+        }
+        cbc.decrypt_blocks_mut(&mut chunks);
+
+        // Strip padding
+        while let Some(0) = buffer.last() {
+            buffer.pop();
+        }
+        Ok(())
     }
 }
 
@@ -192,6 +228,16 @@ impl Cipher for FscryptInoLblk32FileCipher {
     fn decrypt_filename(&self, _object_id: u64, _buffer: &mut Vec<u8>) -> Result<(), Error> {
         let e: Error = zx_status::Status::NOT_SUPPORTED.into();
         Err(e.context("decrypt_filename not supported for InoLblk32File"))
+    }
+
+    fn encrypt_symlink(&self, _object_id: u64, _buffer: &mut Vec<u8>) -> Result<(), Error> {
+        let e: Error = zx_status::Status::NOT_SUPPORTED.into();
+        Err(e.context("encrypt_symlink not supported for InoLblk32File"))
+    }
+
+    fn decrypt_symlink(&self, _object_id: u64, _buffer: &mut Vec<u8>) -> Result<(), Error> {
+        let e: Error = zx_status::Status::NOT_SUPPORTED.into();
+        Err(e.context("decrypt_symlink not supported for InoLblk32File"))
     }
 
     fn hash_code(&self, _raw_filename: &[u8], _filename: &str) -> Option<u32> {
@@ -422,6 +468,48 @@ mod tests {
             );
             cipher.decrypt_filename(fscrypt_test_data::CASEFOLD_DIR_INODE, &mut buffer).unwrap();
             assert_eq!(String::from_utf8(buffer).unwrap(), file.unencrypted_name);
+        }
+    }
+
+    #[test]
+    fn test_generated_casefold_symlinks() {
+        let unwrapped = UnwrappedKey(
+            fscrypt::to_directory_keys(
+                fscrypt_test_data::KEY,
+                fscrypt_test_data::UUID,
+                fscrypt_test_data::CASEFOLD_DIR_NONCE,
+            )
+            .to_unwrapped_key(),
+        );
+        let cipher_struct = FscryptInoLblk32DirCipher::new(&unwrapped);
+        let cipher: Arc<dyn Cipher> = Arc::new(cipher_struct);
+
+        for file in fscrypt_test_data::SYMLINKS {
+            // Verify symlink target encryption/decryption
+            // Symlink targets are encrypted using the same mechanism as filenames,
+            // using the symlink's own inode as the IV.
+            let mut target_buffer = file.target.as_bytes().to_vec();
+            cipher.encrypt_symlink(file.inode, &mut target_buffer).unwrap();
+
+            let expected_proxy: ProxyFilename =
+                file.encrypted_target_proxy_name.try_into().unwrap();
+            // Symlinks don't have a hash code, so we use 0.
+            let actual_proxy = ProxyFilename::new_with_hash_code(0, &target_buffer);
+
+            assert_eq!(
+                actual_proxy,
+                expected_proxy,
+                "Proxy name mismatch for symlink length {}",
+                file.target.len()
+            );
+
+            cipher.decrypt_symlink(file.inode, &mut target_buffer).unwrap();
+            assert_eq!(
+                String::from_utf8(target_buffer).unwrap(),
+                file.target,
+                "Decrypted target mismatch for symlink {}",
+                file.target
+            );
         }
     }
 }

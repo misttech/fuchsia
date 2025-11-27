@@ -63,6 +63,16 @@ pub trait Cipher: std::fmt::Debug + Send + Sync {
     /// Decrypts the filename contained in `buffer`.
     fn decrypt_filename(&self, object_id: u64, buffer: &mut Vec<u8>) -> Result<(), Error>;
 
+    /// Encrypts the symlink target contained in `buffer`.
+    fn encrypt_symlink(&self, object_id: u64, buffer: &mut Vec<u8>) -> Result<(), Error> {
+        self.encrypt_filename(object_id, buffer)
+    }
+
+    /// Decrypts the symlink target contained in `buffer`.
+    fn decrypt_symlink(&self, object_id: u64, buffer: &mut Vec<u8>) -> Result<(), Error> {
+        self.decrypt_filename(object_id, buffer)
+    }
+
     /// Returns a hash_code to use.
     /// Note in the case of encrypted filenames, takes the raw encrypted bytes.
     fn hash_code(&self, _raw_filename: &[u8], filename: &str) -> Option<u32>;

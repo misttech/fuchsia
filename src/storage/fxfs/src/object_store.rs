@@ -2142,7 +2142,7 @@ impl ObjectStore {
             })
             .await?;
         if let Some(key) = key.into_cipher() {
-            key.decrypt_filename(object_id, &mut link)?;
+            key.decrypt_symlink(object_id, &mut link)?;
             Ok(link)
         } else {
             // Locked symlinks are encoded using a hash_code of 0.

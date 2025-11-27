@@ -836,7 +836,7 @@ impl<S: HandleOwner> Directory<S> {
                 } else {
                     dir_key.hash_code(encrypted_name.as_bytes(), name)
                 };
-                cipher.encrypt_filename(symlink_id, &mut link)?;
+                cipher.encrypt_symlink(symlink_id, &mut link)?;
 
                 transaction.add(
                     self.store().store_object_id(),

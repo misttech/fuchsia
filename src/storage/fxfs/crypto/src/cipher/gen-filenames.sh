@@ -31,7 +31,9 @@ adb wait-for-device
 
 cleanup() {
   echo "Cleaning up..."
-  adb shell "umount ${MOUNT_POINT}" || true
+  if adb shell "mount | grep -q ' ${MOUNT_POINT} '"; then
+    adb shell "umount ${MOUNT_POINT}" || true
+  fi
   adb shell "rm -rf ${DEVICE_DIR}" || true
   rm -rf "${HOST_TMP_DIR}" || true
 }
@@ -81,18 +83,39 @@ for i in \$(seq 1 255); do
   name=\$(printf \"%0.sA\" \$(seq 1 \$i))
   touch \"\$name\"
 done
+
+# Symlinks with varying target lengths
+for len in 1 15 16 17 31 32 33 47 48 49 254 255 256 511 512 513 1023 1024 1025 2047 2048 2049; do
+  target=\$(printf "%0.sA" \$(seq 1 \$len))
+  ln -s "\$target" "symlink_\$len"
+done
+
+# Find max symlink length
+for len in \$(seq 4096 -1 2050); do
+  target=\$(printf "%0.sA" \$(seq 1 \$len))
+  if ln -s "\$target" "symlink_\$len" 2>/dev/null; then
+    echo "Max symlink length: \$len"
+    break
+  fi
+done
 "
 
 echo "Getting unencrypted filenames..."
 adb shell "ls -i1 ${MOUNT_POINT}/encrypted_dir" > "${HOST_TMP_DIR}/unencrypted.txt"
-adb shell "ls -i1 ${MOUNT_POINT}/casefold_encrypted_dir" > "${HOST_TMP_DIR}/casefold_unencrypted.txt"
+# For casefold, we want to capture symlink targets too.
+adb shell "cd ${MOUNT_POINT}/casefold_encrypted_dir && for f in *; do echo \$(stat -c '%i' \$f) \$f \$([ -L \$f ] && readlink \$f); done" > "${HOST_TMP_DIR}/casefold_unencrypted.txt"
 
 echo "Removing key..."
 adb shell "/data/local/tmp/fscryptctl remove_key ${KEY_ID} ${MOUNT_POINT}"
+adb shell "umount ${MOUNT_POINT}"
+adb shell "echo 3 > /proc/sys/vm/drop_caches"
+adb shell "mount -t f2fs -o loop ${DEVICE_DIR}/${IMAGE_NAME} ${MOUNT_POINT}"
 
 echo "Getting encrypted filenames..."
 adb shell "ls -i1 ${MOUNT_POINT}/encrypted_dir" > "${HOST_TMP_DIR}/encrypted.txt"
 adb shell "ls -i1 ${MOUNT_POINT}/casefold_encrypted_dir" > "${HOST_TMP_DIR}/casefold_encrypted.txt"
+# Capture encrypted symlink targets.
+adb shell "find ${MOUNT_POINT}/casefold_encrypted_dir -type l -exec sh -c 'echo -n \"\$(stat -c %i \$0) \"; readlink \$0; echo' {} \;" > "${HOST_TMP_DIR}/casefold_encrypted_targets.txt" || true
 
 echo "Processing file data..."
 readonly FILE_DATA="$(python3 -c '
@@ -127,13 +150,32 @@ def read_list(filename):
                 data[parts[0]] = parts[1]
     return data
 
-unencrypted = read_list(sys.argv[1])
-encrypted = read_list(sys.argv[2])
+unencrypted_files = {}
+unencrypted_symlinks = {}
+with open(sys.argv[1], "r") as f:
+    for line in f:
+        parts = line.strip().split()
+        if len(parts) >= 2:
+            inode = parts[0]
+            name = parts[1]
+            target = parts[2] if len(parts) > 2 else ""
+            if target:
+                unencrypted_symlinks[inode] = (name, target)
+            else:
+                unencrypted_files[inode] = (name, target)
 
-for inode, name in unencrypted.items():
+encrypted = read_list(sys.argv[2])
+encrypted_targets = read_list(sys.argv[3]) # inode -> encrypted target proxy name
+
+for inode, (name, target) in unencrypted_files.items():
     if inode in encrypted:
-        print(f"{inode},{name},{encrypted[inode]}")
-' "${HOST_TMP_DIR}/casefold_unencrypted.txt" "${HOST_TMP_DIR}/casefold_encrypted.txt")"
+        print(f"{inode},{name},{encrypted[inode]},{target},")
+
+print("---SYMLINKS---")
+for inode, (name, target) in unencrypted_symlinks.items():
+    if inode in encrypted and inode in encrypted_targets:
+        print(f"{inode},{name},{encrypted[inode]},{target},{encrypted_targets[inode]}")
+' "${HOST_TMP_DIR}/casefold_unencrypted.txt" "${HOST_TMP_DIR}/casefold_encrypted.txt" "${HOST_TMP_DIR}/casefold_encrypted_targets.txt")"
 
 echo "Dumping encryption key..."
 readonly KEY_BYTES="$(adb shell "cat ${DEVICE_DIR}/key.bin" | xxd -i)"
@@ -219,6 +261,12 @@ pub struct FileInfo {
     pub proxy_name: &'static str,
 }
 
+pub struct SymlinkInfo {
+    pub inode: u64,
+    pub target: &'static str,
+    pub encrypted_target_proxy_name: &'static str,
+}
+
 pub const FILES: &[FileInfo] = &[
 EOF
 
@@ -228,13 +276,19 @@ done
 
 echo "];" >> "${RUST_FILE}"
 
-cat >> "${RUST_FILE}" <<EOF
+echo "pub const CASEFOLD_FILES: &[FileInfo] = &[" >> "${RUST_FILE}"
 
-pub const CASEFOLD_FILES: &[FileInfo] = &[
-EOF
-
-echo "${CASEFOLD_FILE_DATA}" | while IFS=, read -r inode real_name proxy_name; do
+echo "${CASEFOLD_FILE_DATA}" | sed '/---SYMLINKS---/,$d' | while IFS=, read -r inode real_name proxy_name target encrypted_target; do
   echo "    FileInfo { unencrypted_name: \"${real_name}\", proxy_name: \"${proxy_name}\" }," >> "${RUST_FILE}"
+done
+
+echo "];" >> "${RUST_FILE}"
+
+echo "" >> "${RUST_FILE}"
+echo "pub const SYMLINKS: &[SymlinkInfo] = &[" >> "${RUST_FILE}"
+
+echo "${CASEFOLD_FILE_DATA}" | sed '1,/---SYMLINKS---/d' | while IFS=, read -r inode real_name proxy_name target encrypted_target; do
+  echo "    SymlinkInfo { inode: ${inode}, target: \"${target}\", encrypted_target_proxy_name: \"${encrypted_target}\" }," >> "${RUST_FILE}"
 done
 
 echo "];" >> "${RUST_FILE}"
