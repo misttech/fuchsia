@@ -1007,8 +1007,11 @@ pub async fn migrate_device(
         let num_blocks = device.block_count() - start_block;
 
         let ranged_device = Arc::new(
-            RangedDevice::new(device.clone(), start_block, num_blocks)
-                .context("RangedDevice::new")?,
+            RangedDevice::new(
+                device.clone(),
+                start_block * block_size..(start_block + num_blocks) * block_size,
+            )
+            .expect("create ranged device"),
         );
         let f2fs =
             F2fsReader::open_device(ranged_device).await.context("Failed to open f2fs image")?;

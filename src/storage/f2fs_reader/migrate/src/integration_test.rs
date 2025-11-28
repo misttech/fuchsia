@@ -6,11 +6,11 @@ use crate::*;
 use anyhow::Context;
 use block_client::RemoteBlockClient;
 use f2fs_reader::F2fsReader;
+use fidl::endpoints::Proxy;
 use fidl_fuchsia_fxfs::{CryptMarker, KeyPurpose};
 use fidl_fuchsia_hardware_block::BlockProxy;
-use fidl::endpoints::Proxy;
-use fidl_fuchsia_hardware_inlineencryption::{DeviceMarker, DeviceRequest, DeviceRequestStream};
 use fidl_fuchsia_hardware_block_volume::VolumeMarker;
+use fidl_fuchsia_hardware_inlineencryption::{DeviceMarker, DeviceRequest, DeviceRequestStream};
 use fuchsia_async::{LocalExecutor, LocalExecutorBuilder};
 use futures::stream::StreamExt;
 use fxfs::filesystem::{FxFilesystemBuilder, OpenFxFilesystem};
@@ -40,8 +40,8 @@ fn create_device_with_image_at_offset(path: &str, offset: u64) -> Arc<VmoBackedS
         offset + 1024 * 1024, // Start with at least 1MB past offset
         SuperBlockInstance::B.first_extent().end + FXFS_BLOCK_SIZE as u64,
     );
-    let vmo = zx::Vmo::create_with_opts(zx::VmoOptions::RESIZABLE, current_size).expect(
-        "failed to create vmo");
+    let vmo = zx::Vmo::create_with_opts(zx::VmoOptions::RESIZABLE, current_size)
+        .expect("failed to create vmo");
 
     let mut buffer = vec![0u8; 1024 * 1024]; // 1MB buffer
     let mut current_offset = offset;
@@ -68,10 +68,10 @@ fn create_device_with_image_at_offset(path: &str, offset: u64) -> Arc<VmoBackedS
     // Ensure the VMO is at least the size required for Fxfs superblocks.
     let min_size = SuperBlockInstance::B.first_extent().end + FXFS_BLOCK_SIZE as u64;
     if current_offset < min_size {
-         if current_size < min_size {
-             vmo.set_size(min_size).expect("failed to resize vmo");
-         }
-         // If we didn't write up to min_size, the rest is zeros (implicit), which is what we want.
+        if current_size < min_size {
+            vmo.set_size(min_size).expect("failed to resize vmo");
+        }
+        // If we didn't write up to min_size, the rest is zeros (implicit), which is what we want.
     } else {
         // We might have over-allocated during the loop. Shrink to fit the actual data end
         // if it's larger than min_size, or just leave it.
@@ -140,8 +140,11 @@ async fn test_fxfs_migration_at_offset(offset: u64) {
 
     let original_superblock = {
         let ranged_device = Arc::new(
-            RangedDevice::new(device.clone(), start_block, num_blocks)
-                .expect("create ranged device"),
+            RangedDevice::new(
+                device.clone(),
+                start_block * block_size..(start_block + num_blocks) * block_size,
+            )
+            .expect("create ranged device"),
         );
         let f2fs = F2fsReader::open_device(ranged_device).await.expect("f2fs open ok");
         (*f2fs.superblock()).clone()
@@ -313,8 +316,11 @@ async fn test_fxfs_read_lblk32_ino_file() {
         let start_block = offset / block_size;
         let num_blocks = device.block_count() - start_block;
         let ranged_device = Arc::new(
-            RangedDevice::new(device.clone(), start_block, num_blocks)
-                .expect("create ranged device"),
+            RangedDevice::new(
+                device.clone(),
+                start_block * block_size..(start_block + num_blocks) * block_size,
+            )
+            .expect("create ranged device"),
         );
         let mut f2fs = F2fsReader::open_device(ranged_device).await.expect("f2fs open ok");
         f2fs.add_key(&[0; 64]);
@@ -474,8 +480,11 @@ async fn test_fxfs_verify_encrypted_data() {
         let start_block = offset / block_size;
         let num_blocks = device.block_count() - start_block;
         let ranged_device = Arc::new(
-            RangedDevice::new(device.clone(), start_block, num_blocks)
-                .expect("create ranged device"),
+            RangedDevice::new(
+                device.clone(),
+                start_block * block_size..(start_block + num_blocks) * block_size,
+            )
+            .expect("create ranged device"),
         );
         let f2fs = F2fsReader::open_device(ranged_device).await.expect("f2fs open ok");
         (f2fs.superblock().uuid, (*f2fs.superblock()).clone())
@@ -592,7 +601,11 @@ async fn verify(
     let start_block = offset / block_size;
     let num_blocks = device.block_count() - start_block;
     let ranged_device = Arc::new(
-        RangedDevice::new(device.clone(), start_block, num_blocks).context("RangedDevice::new")?,
+        RangedDevice::new(
+            device.clone(),
+            start_block * block_size..(start_block + num_blocks) * block_size,
+        )
+        .context("RangedDevice::new")?,
     );
     let mut f2fs =
         F2fsReader::open_device(ranged_device).await.context("Failed to open f2fs image")?;

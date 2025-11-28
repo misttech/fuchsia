@@ -19,20 +19,18 @@ pub struct RangedDevice {
 }
 
 impl RangedDevice {
-    pub fn new(source: Arc<dyn Device>, start_block: u64, num_blocks: u64) -> Result<Self, Error> {
+    /// Creates a new RangedDevice covering the given byte range of the source device.
+    /// The range must be block-aligned.
+    pub fn new(source: Arc<dyn Device>, range: Range<u64>) -> Result<Self, Error> {
+        let block_size = source.block_size() as u64;
+        ensure!(range.start % block_size == 0, "range.start must be block aligned");
+        ensure!(range.end % block_size == 0, "range.end must be block aligned");
         ensure!(
-            start_block + num_blocks <= source.block_count(),
+            range.end <= source.block_count() * block_size,
             "failed to create RangedDevice (out of range)"
         );
-        ensure!(num_blocks > 0, "failed to create RangedDevice (no size)");
-        let start = start_block
-            .checked_mul(source.block_size() as u64)
-            .ok_or_else(|| anyhow!("arithmetic overflow calculating ranged start"))?;
-        let end = (start_block + num_blocks)
-            .checked_mul(source.block_size() as u64)
-            .ok_or_else(|| anyhow!("arithmetic overflow calculating ranged end"))?;
-
-        Ok(Self { source: source.clone(), range: (start..end) })
+        ensure!(range.end > range.start, "failed to create RangedDevice (no size)");
+        Ok(Self { source: source.clone(), range })
     }
 
     fn num_blocks(&self) -> u64 {
@@ -143,7 +141,8 @@ mod tests {
 
         // Create a RangedDevice starting from block offset one, for three blocks.
         let sub_device =
-            RangedDevice::new(device.clone(), 1, 3).expect("failed to create new RangedDevice");
+            RangedDevice::new(device.clone(), BLOCK_SIZE as u64..4 * BLOCK_SIZE as u64)
+                .expect("failed to create new RangedDevice");
 
         // Test reading from RangedDevice
         let mut ranged_device_buffer = sub_device.allocate_buffer(BLOCK_SIZE).await;
@@ -178,8 +177,11 @@ mod tests {
 
         // Create a RangedDevice starting from block offset one, for three blocks.
         let block_offset = 1;
-        let sub_device = RangedDevice::new(device.clone(), block_offset, 3)
-            .expect("failed to create new RangedDevice");
+        let sub_device = RangedDevice::new(
+            device.clone(),
+            block_offset * BLOCK_SIZE as u64..(block_offset + 3) * BLOCK_SIZE as u64,
+        )
+        .expect("failed to create new RangedDevice");
 
         let mut invalid_buffer = sub_device.allocate_buffer(4 * BLOCK_SIZE).await;
         invalid_buffer.as_mut_slice().copy_from_slice(&[3; 2048]);
