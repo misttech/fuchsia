@@ -862,9 +862,7 @@ fn policycap_support(policy_cap: PolicyCap) -> PolicyCapSupport {
         PolicyCap::NetifWildcard => {
             PolicyCapSupport::AlwaysOff(bug_ref!("https://fxbug.dev/452453565"))
         }
-        PolicyCap::NetlinkXperm => {
-            PolicyCapSupport::AlwaysOff(bug_ref!("https://fxbug.dev/452453565"))
-        }
+        PolicyCap::NetlinkXperm => PolicyCapSupport::Configurable,
         PolicyCap::NetworkPeerControls => PolicyCapSupport::NotImplemented,
         PolicyCap::NnpNosuidTransition => PolicyCapSupport::Configurable,
         PolicyCap::OpenPerms => PolicyCapSupport::AlwaysOn(bug_ref!("https://fxbug.dev/452453565")),

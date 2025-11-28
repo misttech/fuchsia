@@ -83,6 +83,7 @@ pub enum Auditable<'a> {
     Location(&'a std::panic::Location<'a>),
     Name(&'a FsStr),
     NamespaceNode(&'a NamespaceNode),
+    NlMsgtype(u16),
     None,
     SockOptArguments(u32, u32),
     Task(&'a Task),
@@ -297,6 +298,9 @@ impl Display for Auditable<'_> {
             }
             Auditable::IoctlCommand(ioctl) => {
                 write!(f, " ioctlcmd={:#x}", ioctl)
+            }
+            Auditable::NlMsgtype(message_type) => {
+                write!(f, " nl-msgtype={}", message_type)
             }
             Auditable::Location(location) => {
                 write!(f, " caller={:?}", location)
