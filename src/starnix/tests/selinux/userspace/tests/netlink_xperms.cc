@@ -58,16 +58,17 @@ INSTANTIATE_TEST_SUITE_P(
         ));
 
 TEST_P(NetlinkSocketXpermsTest, CheckNetlinkMsgXperms) {
-  const netlink_util::NetlinkSocketTestCase& test_case = GetParam();
-  ASSERT_EQ(WriteTaskAttr("current", "test_u:test_r:nlmsg_xperms_test_t:s0"), fit::ok());
+      const netlink_util::NetlinkSocketTestCase& test_case = GetParam();
 
-  int result = netlink_util::SendNetlinkMsg(test_case);
+  EXPECT_TRUE(RunSubprocessAs("test_u:test_r:nlmsg_xperms_test_t:s0", [test_case]() {
+    int result = netlink_util::SendNetlinkMsg(test_case);
 
-  if (test_case.expected_result.is_ok()) {
-    EXPECT_THAT(result, SyscallSucceeds());
-  } else {
-    EXPECT_THAT(result, SyscallFailsWithErrno(test_case.expected_result.error_value()));
-  }
+    if (test_case.expected_result.is_ok()) {
+      EXPECT_THAT(result, SyscallSucceeds());
+    } else {
+      EXPECT_THAT(result, SyscallFailsWithErrno(test_case.expected_result.error_value()));
+    }
+  }));
 }
 
 }  // namespace
