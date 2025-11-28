@@ -9,9 +9,7 @@ use super::{
     Auditable, FsNodeLabel, FsNodeSidAndClass, PermissionFlags, TaskAttrs, check_permission,
     current_task_state, fs_node_effective_sid_and_class, fs_node_ensure_class,
     fs_node_set_label_with_task, has_fs_node_permissions, permissions_from_flags, set_cached_sid,
-    todo_check_permission,
 };
-use crate::TODO_DENY;
 use crate::security::selinux_hooks::has_fs_node_permissions_dontaudit;
 use crate::security::{FsNodeSecurityXattr, check_task_capable};
 use crate::task::CurrentTask;
@@ -516,8 +514,7 @@ pub(in crate::security) fn fs_node_init_anon(
             .as_permission_check()
             .compute_new_fs_node_sid(task_sid, task_sid, fs_node_class, node_type.into())
             .expect("Compute label for anon_inode");
-        todo_check_permission(
-            TODO_DENY!("https://fxbug.dev/377683943", "Enforce anon_inode create check"),
+        check_permission(
             &security_server.as_permission_check(),
             current_task,
             task_sid,
