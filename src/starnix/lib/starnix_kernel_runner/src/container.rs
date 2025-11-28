@@ -631,8 +631,6 @@ async fn create_container(
         features.selinux.exceptions.clone(),
     );
 
-    // XXX(fmil): Should there also be a condition to allow this *only* for specific containers?
-    //
     // `config.enable_utc_time_adjustment` is set through config capability
     // `fuchsia.time.config.WritableUTCTime`.
     let time_adjustment_proxy = if features.enable_utc_time_adjustment {
