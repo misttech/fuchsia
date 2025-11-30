@@ -3,6 +3,9 @@
         // TODO(https://fxbug.dev/450257490) - Fix tests that do not use subprocesses.
         "SocketTest/ListenAllowed",
 
+        // TODO: https://fxbug.dev/463450800 - Test triggers access check via asynchronous work, which may not complete while the test is executing.
+        "NetlinkSocketTests/NetlinkSocketXpermsTest/CheckNetlinkMsgXperms/4",
+
         // These tests do not produce any useful audit logs.
         "NetlinkAuditTest/RegisterAuditDaemon",
         "NetlinkAuditTest/DeregisterInexistentAuditDaemon",
