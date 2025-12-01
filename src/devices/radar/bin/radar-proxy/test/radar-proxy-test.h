@@ -49,32 +49,35 @@ class FakeRadarDriver : public fidl::Server<fuchsia_hardware_radar::RadarBurstRe
   }
 
   void SendBurst() {
-    async::PostTask(dispatcher_, [&]() {
-      ASSERT_TRUE(reader_binding_);
+    EXPECT_TRUE(fdf::RunOnDispatcherSync(dispatcher_, [&]() {
+                  ASSERT_TRUE(reader_binding_);
 
-      for (auto& vmo : registered_vmos_) {
-        if (!vmo.locked) {
-          vmo.locked = true;
-          vmo.vmo.write(&kRealRadarBurstMarker, 0, sizeof(kRealRadarBurstMarker));
-          const auto burst = fuchsia_hardware_radar::RadarBurstReaderOnBurstRequest::WithBurst(
-              {{vmo.vmo_id, zx::clock::get_monotonic().get()}});
-          EXPECT_TRUE(fidl::SendEvent(*reader_binding_)->OnBurst(burst).is_ok());
-          return;
-        }
-      }
+                  for (auto& vmo : registered_vmos_) {
+                    if (!vmo.locked) {
+                      vmo.locked = true;
+                      vmo.vmo.write(&kRealRadarBurstMarker, 0, sizeof(kRealRadarBurstMarker));
+                      const auto burst =
+                          fuchsia_hardware_radar::RadarBurstReaderOnBurstRequest::WithBurst(
+                              {{vmo.vmo_id, zx::clock::get_monotonic().get()}});
+                      EXPECT_TRUE(fidl::SendEvent(*reader_binding_)->OnBurst(burst).is_ok());
+                      return;
+                    }
+                  }
 
-      const auto burst = fuchsia_hardware_radar::RadarBurstReaderOnBurstRequest::WithError(
-          fuchsia_hardware_radar::StatusCode::kOutOfVmos);
-      EXPECT_TRUE(fidl::SendEvent(*reader_binding_)->OnBurst(burst).is_ok());
-    });
+                  const auto burst =
+                      fuchsia_hardware_radar::RadarBurstReaderOnBurstRequest::WithError(
+                          fuchsia_hardware_radar::StatusCode::kOutOfVmos);
+                  EXPECT_TRUE(fidl::SendEvent(*reader_binding_)->OnBurst(burst).is_ok());
+                }).is_ok());
   }
 
   void SendError(fuchsia_hardware_radar::StatusCode status) {
-    async::PostTask(dispatcher_, [&, error = status]() {
-      ASSERT_TRUE(reader_binding_);
-      const auto burst = fuchsia_hardware_radar::RadarBurstReaderOnBurstRequest::WithError(error);
-      EXPECT_TRUE(fidl::SendEvent(*reader_binding_)->OnBurst(burst).is_ok());
-    });
+    EXPECT_TRUE(fdf::RunOnDispatcherSync(dispatcher_, [&, error = status]() {
+                  ASSERT_TRUE(reader_binding_);
+                  const auto burst =
+                      fuchsia_hardware_radar::RadarBurstReaderOnBurstRequest::WithError(error);
+                  EXPECT_TRUE(fidl::SendEvent(*reader_binding_)->OnBurst(burst).is_ok());
+                }).is_ok());
   }
 
   zx_status_t WaitForBurstsStopped() {
@@ -82,7 +85,9 @@ class FakeRadarDriver : public fidl::Server<fuchsia_hardware_radar::RadarBurstRe
   }
 
   void set_burst_size(uint32_t burst_size) {
-    async::PostTask(dispatcher_, [&, size = burst_size]() { burst_size_ = size; });
+    EXPECT_TRUE(fdf::RunOnDispatcherSync(dispatcher_, [&, size = burst_size]() {
+                  burst_size_ = size;
+                }).is_ok());
   }
 
  private:
@@ -161,40 +166,31 @@ class RadarProxyTest : public zxtest::Test, public RadarDeviceConnector {
       : proxy_loop_(&kAsyncLoopConfigNoAttachToCurrentThread),
         driver_loop_(&kAsyncLoopConfigNoAttachToCurrentThread),
         fake_driver_(driver_loop_.dispatcher()),
-        dut_(proxy_loop_.dispatcher(), this) {}
+        dut_(proxy_loop_.dispatcher(), this),
+        outgoing_(proxy_loop_.dispatcher()) {}
 
   void SetUp() override {
-    ASSERT_OK(proxy_loop_.StartThread("Radar proxy"));
     ASSERT_OK(driver_loop_.StartThread("Radar driver"));
 
     {
       auto endpoints = fidl::Endpoints<fuchsia_hardware_radar::RadarBurstReaderProvider>::Create();
 
-      dut_client_.Bind(std::move(endpoints.client));
-      EXPECT_TRUE(fdf::RunOnDispatcherSync(proxy_loop_.dispatcher(), [&]() {
-                    fidl::BindServer(proxy_loop_.dispatcher(), std::move(endpoints.server), &dut_);
-                  }).is_ok());
+      dut_client_.Bind(std::move(endpoints.client), proxy_loop_.dispatcher());
+      fidl::BindServer(proxy_loop_.dispatcher(), std::move(endpoints.server), &dut_);
     }
 
     {
       auto endpoints = fidl::Endpoints<fuchsia_io::Directory>::Create();
 
       outgoing_client_ = std::move(endpoints.client);
-      EXPECT_TRUE(fdf::RunOnDispatcherSync(proxy_loop_.dispatcher(), [&]() {
-                    outgoing_.emplace(proxy_loop_.dispatcher());
-                    EXPECT_TRUE(dut_.AddProtocols(&(*outgoing_)).is_ok());
-                    EXPECT_TRUE(outgoing_->Serve(std::move(endpoints.server)).is_ok());
-                  }).is_ok());
+      EXPECT_TRUE(dut_.AddProtocols(&outgoing_).is_ok());
+      EXPECT_TRUE(outgoing_.Serve(std::move(endpoints.server)).is_ok());
     }
   }
 
   void TearDown() override {
     // Make sure the proxy doesn't try to reconnect after the loop has been stopped.
     UnbindRadarDevice();
-
-    // Destroy the outgoing directory on the proxy thread.
-    EXPECT_TRUE(
-        fdf::RunOnDispatcherSync(proxy_loop_.dispatcher(), [&]() { outgoing_.reset(); }).is_ok());
 
     // dut_ must outlive the loop in order to prevent FIDL callbacks from keeping dangling
     // references to them.
@@ -225,38 +221,34 @@ class RadarProxyTest : public zxtest::Test, public RadarDeviceConnector {
   async::Loop driver_loop_;
 
  protected:
-  static fuchsia_hardware_radar::RadarBurstReaderGetBurstPropertiesResponse kInvalidProperties() {
-    return fuchsia_hardware_radar::RadarBurstReaderGetBurstPropertiesResponse(0, 0);
-  }
-
   // Closes the RadarBurstProvider connection between radar-proxy and the radar driver, and waits
   // for radar-proxy to process the epitaph. After this call, requests to radar-proxy should either
   // succeed or fail depending on the value of provider_connect_fail_.
   void UnbindProviderAndWaitForConnectionAttempt() {
     sync_completion_reset(&device_connected_);
     UnbindRadarDevice();
-    sync_completion_wait(&device_connected_, ZX_TIME_INFINITE);
+    do {
+      loop().RunUntilIdle();
+    } while (sync_completion_wait(&device_connected_, ZX_TIME_INFINITE_PAST) != ZX_OK);
   }
 
   // Same as above, but for RadarBurstReader.
   void UnbindReaderAndWaitForConnectionAttempt() {
     sync_completion_reset(&device_connected_);
     fake_driver_.UnbindReader();
-    sync_completion_wait(&device_connected_, ZX_TIME_INFINITE);
+    do {
+      loop().RunUntilIdle();
+    } while (sync_completion_wait(&device_connected_, ZX_TIME_INFINITE_PAST) != ZX_OK);
   }
 
   void UnbindRadarDevice() {
-    EXPECT_TRUE(fdf::RunOnDispatcherSync(proxy_loop_.dispatcher(), [&]() {
-                  provider_connect_fail_ = true;
-                }).is_ok());
+    provider_connect_fail_ = true;
     fake_driver_.UnbindProvider();
   }
 
   void AddRadarDevice() {
-    EXPECT_TRUE(fdf::RunOnDispatcherSync(proxy_loop_.dispatcher(), [&]() {
-                  provider_connect_fail_ = false;
-                  dut_.DeviceAdded(kInvalidDir, "000");
-                }).is_ok());
+    provider_connect_fail_ = false;
+    dut_.DeviceAdded(kInvalidDir, "000");
   }
 
   void BindInjector(fidl::ServerEnd<fuchsia_hardware_radar::RadarBurstInjector> server_end) {
@@ -268,7 +260,9 @@ class RadarProxyTest : public zxtest::Test, public RadarDeviceConnector {
   // Visible for testing.
   FakeRadarDriver fake_driver_;
 
-  fidl::SyncClient<fuchsia_hardware_radar::RadarBurstReaderProvider> dut_client_;
+  fidl::Client<fuchsia_hardware_radar::RadarBurstReaderProvider> dut_client_;
+
+  async::Loop& loop() { return proxy_loop_; }
 
  private:
   static constexpr fidl::UnownedClientEnd<fuchsia_io::Directory> kInvalidDir{FIDL_HANDLE_INVALID};
@@ -277,7 +271,7 @@ class RadarProxyTest : public zxtest::Test, public RadarDeviceConnector {
 
   bool provider_connect_fail_ = false;
   sync_completion_t device_connected_;
-  std::optional<component::OutgoingDirectory> outgoing_;
+  component::OutgoingDirectory outgoing_;
   fidl::ClientEnd<fuchsia_io::Directory> outgoing_client_;
 };
 

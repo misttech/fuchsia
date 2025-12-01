@@ -28,29 +28,37 @@ TEST_F(RadarReaderProxyTest, DISABLED_Connect) {
   zx::result endpoints = fidl::CreateEndpoints<fuchsia_hardware_radar::RadarBurstReader>();
   ASSERT_TRUE(endpoints.is_ok());
 
-  auto result = dut_client_->Connect(std::move(endpoints->server));
-  EXPECT_TRUE(result.is_ok());
+  dut_client_->Connect(std::move(endpoints->server)).Then([&](auto& result) {
+    EXPECT_TRUE(result.is_ok());
+  });
 
-  fidl::SyncClient radar_client(std::move(endpoints->client));
-  EXPECT_EQ(radar_client->GetBurstProperties().value_or(kInvalidProperties()).size(), 12345);
+  fidl::Client radar_client(std::move(endpoints->client), loop().dispatcher());
+  radar_client->GetBurstProperties().Then([&](auto& result) {
+    ASSERT_TRUE(result.is_ok());
+    EXPECT_EQ(result->size(), 12345);
+    loop().Quit();
+  });
+  loop().Run();
 }
 
 TEST_F(RadarReaderProxyTest, DISABLED_Reconnect) {
   AddRadarDevice();
 
-  async::Loop loop(&kAsyncLoopConfigNeverAttachToThread);
-
-  fidl::Client service_client(dut_client_.TakeClientEnd(), loop.dispatcher());
-
   zx::result endpoints = fidl::CreateEndpoints<fuchsia_hardware_radar::RadarBurstReader>();
   ASSERT_TRUE(endpoints.is_ok());
 
-  service_client->Connect(std::move(endpoints->server)).Then([&](auto& result) {
+  dut_client_->Connect(std::move(endpoints->server)).Then([&](auto& result) {
     EXPECT_TRUE(result.is_ok());
   });
 
-  fidl::SyncClient radar_client(std::move(endpoints->client));
-  EXPECT_EQ(radar_client->GetBurstProperties().value_or(kInvalidProperties()).size(), 12345);
+  fidl::Client radar_client(std::move(endpoints->client), loop().dispatcher());
+  radar_client->GetBurstProperties().Then([&](auto& result) {
+    ASSERT_TRUE(result.is_ok());
+    EXPECT_EQ(result->size(), 12345);
+    loop().Quit();
+  });
+  loop().Run();
+  loop().ResetQuit();
 
   // Close the Provider connection between the proxy and the radar driver. Everything should still
   // work as long as the Reader connection remains open.
@@ -60,29 +68,46 @@ TEST_F(RadarReaderProxyTest, DISABLED_Reconnect) {
   endpoints = fidl::CreateEndpoints<fuchsia_hardware_radar::RadarBurstReader>();
   ASSERT_TRUE(endpoints.is_ok());
 
-  service_client->Connect(std::move(endpoints->server)).Then([&](auto& result) {
+  dut_client_->Connect(std::move(endpoints->server)).Then([&](auto& result) {
     EXPECT_TRUE(result.is_ok());
   });
 
-  fidl::SyncClient new_radar_client(std::move(endpoints->client));
-  EXPECT_EQ(new_radar_client->GetBurstProperties().value_or(kInvalidProperties()).size(), 12345);
+  fidl::Client new_radar_client(std::move(endpoints->client), loop().dispatcher());
+  new_radar_client->GetBurstProperties().Then([&](auto& result) {
+    ASSERT_TRUE(result.is_ok());
+    EXPECT_EQ(result->size(), 12345);
+    loop().Quit();
+  });
+  loop().Run();
+  loop().ResetQuit();
 
   // Verify that the original connection still works.
-  EXPECT_EQ(radar_client->GetBurstProperties().value_or(kInvalidProperties()).size(), 12345);
+  radar_client->GetBurstProperties().Then([&](auto& result) {
+    ASSERT_TRUE(result.is_ok());
+    EXPECT_EQ(result->size(), 12345);
+    loop().Quit();
+  });
+  loop().Run();
+  loop().ResetQuit();
 
   UnbindReaderAndWaitForConnectionAttempt();
 
   // Client connections were closed, new requests should now fail.
-  EXPECT_FALSE(radar_client->GetBurstProperties().is_ok());
+  radar_client->GetBurstProperties().Then([&](auto& result) {
+    ASSERT_FALSE(result.is_ok());
+    loop().Quit();
+  });
+  loop().Run();
+  loop().ResetQuit();
 
   endpoints = fidl::CreateEndpoints<fuchsia_hardware_radar::RadarBurstReader>();
   ASSERT_TRUE(endpoints.is_ok());
 
-  new_radar_client = fidl::SyncClient(std::move(endpoints->client));
+  new_radar_client = fidl::Client(std::move(endpoints->client), loop().dispatcher());
 
   // Send a connect request while there is no radar driver. It should be completed (and the
   // connection usable) after a new radar driver is added.
-  service_client->Connect(std::move(endpoints->server)).Then([&](auto& result) {
+  dut_client_->Connect(std::move(endpoints->server)).Then([&](auto& result) {
     EXPECT_TRUE(result.is_ok());
   });
 
@@ -90,54 +115,58 @@ TEST_F(RadarReaderProxyTest, DISABLED_Reconnect) {
   AddRadarDevice();
 
   // Verify that the previous connect request suceeded.
-  EXPECT_EQ(new_radar_client->GetBurstProperties().value_or(kInvalidProperties()).size(), 12345);
+  new_radar_client->GetBurstProperties().Then([&](auto& result) {
+    ASSERT_TRUE(result.is_ok());
+    EXPECT_EQ(result->size(), 12345);
+    loop().Quit();
+  });
+  loop().Run();
+  loop().ResetQuit();
 
   // Subsequent connect requests should be immediately fulfilled.
   endpoints = fidl::CreateEndpoints<fuchsia_hardware_radar::RadarBurstReader>();
   ASSERT_TRUE(endpoints.is_ok());
 
-  service_client->Connect(std::move(endpoints->server)).Then([&](auto& result) {
+  dut_client_->Connect(std::move(endpoints->server)).Then([&](auto& result) {
     EXPECT_TRUE(result.is_ok());
-    loop.Quit();
   });
 
-  new_radar_client = fidl::SyncClient(std::move(endpoints->client));
-  EXPECT_EQ(new_radar_client->GetBurstProperties().value_or(kInvalidProperties()).size(), 12345);
-
-  // Ensure that all of our previous async requests got replies.
-  loop.Run();
+  new_radar_client = fidl::Client(std::move(endpoints->client), loop().dispatcher());
+  new_radar_client->GetBurstProperties().Then([&](auto& result) {
+    ASSERT_TRUE(result.is_ok());
+    EXPECT_EQ(result->size(), 12345);
+    loop().Quit();
+  });
+  loop().Run();
+  loop().ResetQuit();
 }
 
 TEST_F(RadarReaderProxyTest, DISABLED_DelayedConnect) {
-  async::Loop loop(&kAsyncLoopConfigNeverAttachToThread);
-
-  fidl::Client service_client(dut_client_.TakeClientEnd(), loop.dispatcher());
-
   zx::result endpoints = fidl::CreateEndpoints<fuchsia_hardware_radar::RadarBurstReader>();
   ASSERT_TRUE(endpoints.is_ok());
 
   // Attempt to connect before a radar device is available. Our request should be put in a queue and
   // completed when a device is added.
-  service_client->Connect(std::move(endpoints->server)).Then([&](auto& result) {
+  dut_client_->Connect(std::move(endpoints->server)).Then([&](auto& result) {
     EXPECT_TRUE(result.is_ok());
   });
 
-  fidl::Client radar_client(std::move(endpoints->client), loop.dispatcher());
+  fidl::Client radar_client(std::move(endpoints->client), loop().dispatcher());
 
   uint32_t burst_size = 0;
   radar_client->GetBurstProperties().Then([&](auto& result) {
     burst_size = result.is_ok() ? result->size() : 0;
-    loop.Quit();
+    loop().Quit();
   });
 
-  loop.RunUntilIdle();
+  loop().RunUntilIdle();
 
   // Signal to the proxy that a device was added. This should cause it to process any connect
   // requests that came in before this point.
   AddRadarDevice();
 
   // The loop will be stopped after the burst size call completes.
-  loop.Run();
+  loop().Run();
 
   EXPECT_EQ(burst_size, 12345);
 }
@@ -146,29 +175,27 @@ TEST_F(RadarReaderProxyTest, DISABLED_RegisterVmosError) {
   AddRadarDevice();
 
   struct : fidl::AsyncEventHandler<fuchsia_hardware_radar::RadarBurstReader> {
-    async::Loop loop{&kAsyncLoopConfigNeverAttachToThread};
-    fidl::Client<fuchsia_hardware_radar::RadarBurstReader> client;
-    void on_fidl_error(fidl::UnbindInfo info) override { loop.Quit(); }
-    void Bind(fidl::ClientEnd<fuchsia_hardware_radar::RadarBurstReader> client_end) {
-      client.Bind(std::move(client_end), loop.dispatcher(), this);
-    }
+    void on_fidl_error(fidl::UnbindInfo info) override { loop->Quit(); }
+    async::Loop* loop;
   } radar_client;
+  radar_client.loop = &loop();
 
   zx::result endpoints = fidl::CreateEndpoints<fuchsia_hardware_radar::RadarBurstReader>();
   ASSERT_TRUE(endpoints.is_ok());
 
-  {
-    auto result = dut_client_->Connect(std::move(endpoints->server));
+  dut_client_->Connect(std::move(endpoints->server)).Then([&](auto& result) {
     EXPECT_TRUE(result.is_ok());
-  }
+  });
 
-  radar_client.Bind(std::move(endpoints->client));
+  fidl::Client<fuchsia_hardware_radar::RadarBurstReader> client(std::move(endpoints->client),
+                                                                loop().dispatcher(), &radar_client);
 
   {
     std::vector<zx::vmo> vmos;
     EXPECT_OK(zx::vmo::create(12345, 0, &vmos.emplace_back()));
-    radar_client.client->RegisterVmos({std::vector<uint32_t>{1}, std::move(vmos)})
-        .Then([&](auto& result) { EXPECT_TRUE(result.is_ok()); });
+    client->RegisterVmos({std::vector<uint32_t>{1}, std::move(vmos)}).Then([&](auto& result) {
+      EXPECT_TRUE(result.is_ok());
+    });
   }
 
   {
@@ -176,57 +203,63 @@ TEST_F(RadarReaderProxyTest, DISABLED_RegisterVmosError) {
     EXPECT_OK(zx::vmo::create(12345, 0, &vmos.emplace_back()));
     // The call to radar-proxy should succeed, however the call from radar-proxy to the underlying
     // driver should fail. When that happens radar-proxy should send an epitaph to the client.
-    radar_client.client->RegisterVmos({std::vector<uint32_t>{2}, std::move(vmos)})
-        .Then([&](auto& result) { EXPECT_TRUE(result.is_ok()); });
+    client->RegisterVmos({std::vector<uint32_t>{2}, std::move(vmos)}).Then([&](auto& result) {
+      EXPECT_TRUE(result.is_ok());
+    });
   }
 
   // Run until on_fidl_error receives the epitaph and stops us.
-  radar_client.loop.Run();
+  loop().Run();
 }
 
 TEST_F(RadarReaderProxyTest, DISABLED_DeviceWithInvalidBurstSizeIsRejected) {
   AddRadarDevice();
 
-  async::Loop loop(&kAsyncLoopConfigNeverAttachToThread);
-
-  fidl::Client service_client(dut_client_.TakeClientEnd(), loop.dispatcher());
-
   zx::result endpoints = fidl::CreateEndpoints<fuchsia_hardware_radar::RadarBurstReader>();
   ASSERT_TRUE(endpoints.is_ok());
 
-  fidl::SyncClient radar_client(std::move(endpoints->client));
+  fidl::Client<fuchsia_hardware_radar::RadarBurstReader> radar_client(std::move(endpoints->client),
+                                                                      loop().dispatcher());
 
-  service_client->Connect(std::move(endpoints->server)).Then([&](auto& result) {
+  dut_client_->Connect(std::move(endpoints->server)).Then([&](auto& result) {
     EXPECT_TRUE(result.is_ok());
-    EXPECT_EQ(radar_client->GetBurstProperties().value_or(kInvalidProperties()).size(), 12345);
+    radar_client->GetBurstProperties().Then([&](auto& result) {
+      ASSERT_TRUE(result.is_ok());
+      EXPECT_EQ(result->size(), 12345);
 
-    UnbindRadarDevice();
-    UnbindReaderAndWaitForConnectionAttempt();
+      UnbindRadarDevice();
+      UnbindReaderAndWaitForConnectionAttempt();
 
-    zx::result endpoints = fidl::CreateEndpoints<fuchsia_hardware_radar::RadarBurstReader>();
-    ASSERT_TRUE(endpoints.is_ok());
+      zx::result endpoints = fidl::CreateEndpoints<fuchsia_hardware_radar::RadarBurstReader>();
+      ASSERT_TRUE(endpoints.is_ok());
 
-    radar_client = fidl::SyncClient(std::move(endpoints->client));
+      radar_client = fidl::Client(std::move(endpoints->client), loop().dispatcher());
 
-    // With no connected device this request should be put in the queue and completed later.
-    service_client->Connect(std::move(endpoints->server)).Then([&](auto& result) {
-      EXPECT_TRUE(result.is_ok());
-      EXPECT_EQ(radar_client->GetBurstProperties().value_or(kInvalidProperties()).size(), 12345);
-      loop.Quit();
+      // With no connected device this request should be put in the queue and completed later.
+      dut_client_->Connect(std::move(endpoints->server)).Then([&](auto& result) {
+        EXPECT_TRUE(result.is_ok());
+        radar_client->GetBurstProperties().Then(
+            [&](fidl::Result<fuchsia_hardware_radar::RadarBurstReader::GetBurstProperties>&
+                    result) {
+              ASSERT_TRUE(result.is_ok());
+              EXPECT_EQ(result->size(), 12345);
+              loop().Quit();
+            });
+      });
+
+      // The burst size reported by this device does not match the original value, so it should
+      // be ignored.
+      fake_driver_.set_burst_size(12346);
+      AddRadarDevice();
+
+      // This device matches the original, so it should be accepted and used to complete the
+      // connect request.
+      fake_driver_.set_burst_size(12345);
+      AddRadarDevice();
     });
-
-    // The burst size reported by this device does not match the original value, so it should be
-    // ignored.
-    fake_driver_.set_burst_size(12346);
-    AddRadarDevice();
-
-    // This device matches the original, so it should be accepted and used to complete the connect
-    // request.
-    fake_driver_.set_burst_size(12345);
-    AddRadarDevice();
   });
 
-  loop.Run();
+  loop().Run();
 }
 
 // A client wrapper that supports receiving OnBurst() events. If no burst callback is specified then
@@ -261,7 +294,7 @@ struct BurstReaderClient : fidl::AsyncEventHandler<fuchsia_hardware_radar::Radar
 
 class RadarReaderProxyOnBurstTest : public RadarReaderProxyTest {
  public:
-  RadarReaderProxyOnBurstTest() : loop_(&kAsyncLoopConfigNeverAttachToThread) {}
+  RadarReaderProxyOnBurstTest() {}
 
   void SetUp() override {
     RadarReaderProxyTest::SetUp();
@@ -275,9 +308,14 @@ class RadarReaderProxyOnBurstTest : public RadarReaderProxyTest {
       zx::result endpoints = fidl::CreateEndpoints<fuchsia_hardware_radar::RadarBurstReader>();
       ASSERT_TRUE(endpoints.is_ok());
 
-      EXPECT_TRUE(dut_client_->Connect(std::move(endpoints->server)).is_ok());
+      dut_client_->Connect(std::move(endpoints->server)).Then([&](auto& result) {
+        EXPECT_TRUE(result.is_ok());
+        loop().Quit();
+      });
+      loop().Run();
+      loop().ResetQuit();
 
-      radar_clients_.emplace_back(std::move(endpoints->client), loop_.dispatcher(),
+      radar_clients_.emplace_back(std::move(endpoints->client), loop().dispatcher(),
                                   // Make the last client not unlock VMOs to test error cases.
                                   i == 3 ? std::function<void(uint32_t)>{} : burst_callback);
 
@@ -295,7 +333,6 @@ class RadarReaderProxyOnBurstTest : public RadarReaderProxyTest {
 
  protected:
   std::vector<BurstReaderClient> radar_clients_;
-  async::Loop loop_;
 
  private:
   // Assume that there are always this many connected clients with bursts started. A counter will be
@@ -314,7 +351,7 @@ class RadarReaderProxyOnBurstTest : public RadarReaderProxyTest {
       client_lockstep_counter = 0;
       if (++burst_count == kReceiveBurstCount) {
         burst_count = 0;
-        loop_.Quit();
+        loop().Quit();
       } else {
         fake_driver_.SendBurst();
       }
@@ -327,13 +364,11 @@ TEST_F(RadarReaderProxyOnBurstTest, DISABLED_OnlyStartedClientsReceiveBursts) {
 
   EXPECT_TRUE(radar_clients_[0]->StartBursts().is_ok());
   EXPECT_TRUE(radar_clients_[1]->StartBursts().is_ok());
+  loop().RunUntilIdle();
 
-  // Use the GetBurstProperties() reply as a trigger to start sending bursts. At that point we know
-  // that radar-proxy has already processed our StartBursts() call, so any new bursts will be
-  // forwarded to clients.
-  radar_clients_[0]->GetBurstProperties().Then([&](auto& result) { fake_driver_.SendBurst(); });
+  fake_driver_.SendBurst();
 
-  loop_.Run();
+  loop().Run();
 
   EXPECT_EQ(radar_clients_[0].burst_count, 10);
   EXPECT_EQ(radar_clients_[1].burst_count, 10);
@@ -346,13 +381,12 @@ TEST_F(RadarReaderProxyOnBurstTest, DISABLED_DriverErrorsSentToStartedClients) {
 
   EXPECT_TRUE(radar_clients_[1]->StartBursts().is_ok());
   EXPECT_TRUE(radar_clients_[2]->StartBursts().is_ok());
+  loop().RunUntilIdle();
 
-  radar_clients_[0]->GetBurstProperties().Then([&](auto& result) {
-    fake_driver_.SendError(fuchsia_hardware_radar::StatusCode::kSensorError);
-    fake_driver_.SendBurst();
-  });
+  fake_driver_.SendError(fuchsia_hardware_radar::StatusCode::kSensorError);
+  fake_driver_.SendBurst();
 
-  loop_.Run();
+  loop().Run();
 
   EXPECT_EQ(radar_clients_[0].burst_count, 0);
   EXPECT_EQ(radar_clients_[1].burst_count, 10);
@@ -371,10 +405,11 @@ TEST_F(RadarReaderProxyOnBurstTest, DISABLED_OnlyOffendingClientReceivesOutOfVmo
   EXPECT_TRUE(radar_clients_[1]->StartBursts().is_ok());
   EXPECT_TRUE(radar_clients_[2]->StartBursts().is_ok());
   EXPECT_TRUE(radar_clients_[3]->StartBursts().is_ok());
+  loop().RunUntilIdle();
 
-  radar_clients_[0]->GetBurstProperties().Then([&](auto& result) { fake_driver_.SendBurst(); });
+  fake_driver_.SendBurst();
 
-  loop_.Run();
+  loop().Run();
 
   EXPECT_EQ(radar_clients_[1].burst_count, 10);
   EXPECT_EQ(radar_clients_[2].burst_count, 10);
@@ -391,12 +426,14 @@ TEST_F(RadarReaderProxyOnBurstTest, DISABLED_DisconnectedClientStopsReceivingBur
   EXPECT_TRUE(radar_clients_[0]->StartBursts().is_ok());
   EXPECT_TRUE(radar_clients_[1]->StartBursts().is_ok());
   EXPECT_TRUE(radar_clients_[2]->StartBursts().is_ok());
+  loop().RunUntilIdle();
 
   radar_clients_[1].client = fidl::Client<fuchsia_hardware_radar::RadarBurstReader>();
+  loop().RunUntilIdle();
 
-  radar_clients_[0]->GetBurstProperties().Then([&](auto& result) { fake_driver_.SendBurst(); });
+  fake_driver_.SendBurst();
 
-  loop_.Run();
+  loop().Run();
 
   EXPECT_EQ(radar_clients_[0].burst_count, 10);
   EXPECT_EQ(radar_clients_[1].burst_count, 0);
@@ -409,10 +446,12 @@ TEST_F(RadarReaderProxyOnBurstTest, DISABLED_BurstsStoppedAfterAllClientsDisconn
   EXPECT_TRUE(radar_clients_[0]->StartBursts().is_ok());
   EXPECT_TRUE(radar_clients_[1]->StartBursts().is_ok());
   EXPECT_TRUE(radar_clients_[2]->StartBursts().is_ok());
+  loop().RunUntilIdle();
 
-  radar_clients_[0]->GetBurstProperties().Then([&](auto& result) { fake_driver_.SendBurst(); });
+  fake_driver_.SendBurst();
 
   radar_clients_.clear();
+  loop().RunUntilIdle();
 
   EXPECT_OK(fake_driver_.WaitForBurstsStopped());
 }
@@ -422,11 +461,12 @@ TEST_F(RadarReaderProxyOnBurstTest, DISABLED_StoppedClientStopsReceivingBursts) 
 
   EXPECT_TRUE(radar_clients_[0]->StartBursts().is_ok());
   EXPECT_TRUE(radar_clients_[1]->StartBursts().is_ok());
+  loop().RunUntilIdle();
 
-  radar_clients_[0]->GetBurstProperties().Then([&](auto& result) { fake_driver_.SendBurst(); });
+  fake_driver_.SendBurst();
 
-  loop_.Run();
-  loop_.ResetQuit();
+  loop().Run();
+  loop().ResetQuit();
 
   EXPECT_EQ(radar_clients_[0].burst_count, 10);
   EXPECT_EQ(radar_clients_[1].burst_count, 10);
@@ -438,10 +478,11 @@ TEST_F(RadarReaderProxyOnBurstTest, DISABLED_StoppedClientStopsReceivingBursts) 
 
   radar_clients_[1]->StopBursts().Then([&](auto& result) { EXPECT_TRUE(result.is_ok()); });
   EXPECT_TRUE(radar_clients_[2]->StartBursts().is_ok());
+  loop().RunUntilIdle();
 
-  radar_clients_[0]->GetBurstProperties().Then([&](auto& result) { fake_driver_.SendBurst(); });
+  fake_driver_.SendBurst();
 
-  loop_.Run();
+  loop().Run();
 
   EXPECT_EQ(radar_clients_[0].burst_count, 10);
   EXPECT_EQ(radar_clients_[1].burst_count, 0);
@@ -450,20 +491,20 @@ TEST_F(RadarReaderProxyOnBurstTest, DISABLED_StoppedClientStopsReceivingBursts) 
 
 class RadarReaderProxyInjectionTest : public RadarReaderProxyTest {
  public:
-  RadarReaderProxyInjectionTest() : loop_(&kAsyncLoopConfigNeverAttachToThread) {}
-
   void SetUp() override {
-    fake_driver_.set_burst_size(16);
-
     RadarReaderProxyTest::SetUp();
+
+    fake_driver_.set_burst_size(16);
 
     AddRadarDevice();
 
     {
       auto endpoints = fidl::Endpoints<fuchsia_hardware_radar::RadarBurstReader>::Create();
-      reader_client_.emplace(std::move(endpoints.client), loop_.dispatcher(),
+      reader_client_.emplace(std::move(endpoints.client), loop().dispatcher(),
                              fit::bind_member<&RadarReaderProxyInjectionTest::OnBurst>(this));
-      EXPECT_TRUE(dut_client_->Connect(std::move(endpoints.server)).is_ok());
+      dut_client_->Connect(std::move(endpoints.server)).Then([&](auto& result) {
+        EXPECT_TRUE(result.is_ok());
+      });
     }
 
     {
@@ -482,7 +523,7 @@ class RadarReaderProxyInjectionTest : public RadarReaderProxyTest {
 
     {
       auto endpoints = fidl::Endpoints<fuchsia_hardware_radar::RadarBurstInjector>::Create();
-      injector_client_.emplace(std::move(endpoints.client), loop_.dispatcher(),
+      injector_client_.emplace(std::move(endpoints.client), loop().dispatcher(),
                                [&](uint32_t bursts_id) {
                                  received_vmo_ids_.push_back(bursts_id);
                                  if (on_bursts_delivered_) {
@@ -529,7 +570,6 @@ class RadarReaderProxyInjectionTest : public RadarReaderProxyTest {
     return {{std::move(vmo), count}};
   }
 
-  async::Loop loop_;
   std::optional<BurstReaderClient> reader_client_;
   std::optional<BurstInjectorClient> injector_client_;
   std::vector<uint8_t> received_burst_headers_;
@@ -569,7 +609,7 @@ TEST_F(RadarReaderProxyInjectionTest, DISABLED_InjectBursts) {
       });
     } else if (burst_count == 12) {
       // Stop the loop after 12 total bursts.
-      loop_.Quit();
+      loop().Quit();
     } else if (burst_count < 2 || burst_count > 10) {
       fake_driver_.SendBurst();
     }
@@ -584,13 +624,12 @@ TEST_F(RadarReaderProxyInjectionTest, DISABLED_InjectBursts) {
   });
   injector_client_.value()->EnqueueBursts(CreateInjectionVmo(3, 5)).Then([&](auto& result) {
     EXPECT_TRUE(result.is_ok());
-
-    // Send a burst to the client to trigger the the test.
-    reader_client_.value()->GetBurstProperties().Then(
-        [&](auto& result) { fake_driver_.SendBurst(); });
   });
+  loop().RunUntilIdle();
 
-  loop_.Run();
+  fake_driver_.SendBurst();
+
+  loop().Run();
 
   const std::vector<uint8_t> kExpectedBurstHeaders = {0xff, 0xff, 0x00, 0x01, 0x02, 0x03,
                                                       0x04, 0x05, 0x06, 0x07, 0xff, 0xff};
@@ -617,7 +656,7 @@ TEST_F(RadarReaderProxyInjectionTest, DISABLED_InjectionPausedWithNoEnqueuedVmos
         // StopBurstInjection() replies. We can ensure that all bursts have been handled by sending
         // another request with the reader client then stopping the loop when the response is
         // received.
-        reader_client_.value()->GetBurstProperties().Then([&](auto& result) { loop_.Quit(); });
+        reader_client_.value()->GetBurstProperties().Then([&](auto& result) { loop().Quit(); });
       });
     }
   };
@@ -633,7 +672,7 @@ TEST_F(RadarReaderProxyInjectionTest, DISABLED_InjectionPausedWithNoEnqueuedVmos
     });
   });
 
-  loop_.Run();
+  loop().Run();
 
   const std::vector<uint8_t> kExpectedBurstHeaders = {0, 1, 2, 3, 4};
   ASSERT_EQ(received_burst_headers_.size(), kExpectedBurstHeaders.size());
@@ -649,13 +688,16 @@ TEST_F(RadarReaderProxyInjectionTest, DISABLED_BurstsNotDeliveredToStopppedClien
   zx::result endpoints = fidl::CreateEndpoints<fuchsia_hardware_radar::RadarBurstReader>();
   ASSERT_TRUE(endpoints.is_ok());
 
-  EXPECT_TRUE(dut_client_->Connect(std::move(endpoints->server)).is_ok());
-
-  BurstReaderClient started_client(std::move(endpoints->client), loop_.dispatcher(), [&](uint32_t) {
-    if (started_client.burst_count == 3) {
-      loop_.Quit();
-    }
+  dut_client_->Connect(std::move(endpoints->server)).Then([&](auto& result) {
+    EXPECT_TRUE(result.is_ok());
   });
+
+  BurstReaderClient started_client(std::move(endpoints->client), loop().dispatcher(),
+                                   [&](uint32_t) {
+                                     if (started_client.burst_count == 3) {
+                                       loop().Quit();
+                                     }
+                                   });
 
   for (uint32_t i = 0; i < 3; i++) {
     std::vector<zx::vmo> vmos;
@@ -673,7 +715,7 @@ TEST_F(RadarReaderProxyInjectionTest, DISABLED_BurstsNotDeliveredToStopppedClien
         [&](auto& result) { EXPECT_TRUE(result.is_ok()); });
   });
 
-  loop_.Run();
+  loop().Run();
 
   // The original (stopped) client should receive zero bursts, while the started client should
   // receive three.
@@ -684,12 +726,12 @@ TEST_F(RadarReaderProxyInjectionTest, DISABLED_BurstsNotDeliveredToStopppedClien
 TEST_F(RadarReaderProxyInjectionTest, DISABLED_BurstsReceivedDuringInjectionAreIgnored) {
   on_burst_ = [&](size_t) {
     if (received_burst_headers_.size() == 5 && received_vmo_ids_.size() == 1) {
-      loop_.Quit();
+      loop().Quit();
     }
   };
   on_bursts_delivered_ = [&]() {
     if (received_burst_headers_.size() == 5 && received_vmo_ids_.size() == 1) {
-      loop_.Quit();
+      loop().Quit();
     }
   };
 
@@ -709,7 +751,7 @@ TEST_F(RadarReaderProxyInjectionTest, DISABLED_BurstsReceivedDuringInjectionAreI
     });
   });
 
-  loop_.Run();
+  loop().Run();
 
   const std::vector<uint8_t> kExpectedBursts = {0, 1, 2, 3, 4};
   ASSERT_EQ(received_burst_headers_.size(), kExpectedBursts.size());
@@ -738,10 +780,10 @@ TEST_F(RadarReaderProxyInjectionTest, DISABLED_CallsFailsWithBadState) {
     ASSERT_TRUE(result.error_value().is_domain_error());
     EXPECT_EQ(result.error_value().domain_error(), fuchsia_hardware_radar::StatusCode::kBadState);
 
-    loop_.Quit();
+    loop().Quit();
   });
 
-  loop_.Run();
+  loop().Run();
 }
 
 TEST_F(RadarReaderProxyInjectionTest, DISABLED_OnlyOneInjectorCanConnect) {
@@ -752,7 +794,7 @@ TEST_F(RadarReaderProxyInjectionTest, DISABLED_OnlyOneInjectorCanConnect) {
     }
     fit::callback<void(void)> fidl_error_callback;
   } client_disconnect_waiter;
-  client_disconnect_waiter.fidl_error_callback = [&]() { loop_.Quit(); };
+  client_disconnect_waiter.fidl_error_callback = [&]() { loop().Quit(); };
 
   zx::result endpoints = fidl::CreateEndpoints<fuchsia_hardware_radar::RadarBurstInjector>();
   ASSERT_TRUE(endpoints.is_ok());
@@ -760,33 +802,31 @@ TEST_F(RadarReaderProxyInjectionTest, DISABLED_OnlyOneInjectorCanConnect) {
   BindInjector(std::move(endpoints->server));
 
   fidl::Client<fuchsia_hardware_radar::RadarBurstInjector> client(
-      std::move(endpoints->client), loop_.dispatcher(), &client_disconnect_waiter);
+      std::move(endpoints->client), loop().dispatcher(), &client_disconnect_waiter);
 
-  loop_.Run();
+  loop().Run();
 }
 
 TEST_F(RadarReaderProxyTest, DISABLED_ConnectInjectorBeforeRadarDevice) {
-  async::Loop loop(&kAsyncLoopConfigNeverAttachToThread);
-
   zx::result endpoints = fidl::CreateEndpoints<fuchsia_hardware_radar::RadarBurstInjector>();
   ASSERT_TRUE(endpoints.is_ok());
 
   BindInjector(std::move(endpoints->server));
 
   fidl::Client<fuchsia_hardware_radar::RadarBurstInjector> client(std::move(endpoints->client),
-                                                                  loop.dispatcher());
+                                                                  loop().dispatcher());
 
   // Issue two requests before adding the radar device. They should be fulfilled after the proxy
   // connects.
   client->StartBurstInjection().Then([&](auto& result) { EXPECT_TRUE(result.is_ok()); });
   client->StopBurstInjection().Then([&](auto& result) {
     EXPECT_TRUE(result.is_ok());
-    loop.Quit();
+    loop().Quit();
   });
 
   AddRadarDevice();
 
-  loop.Run();
+  loop().Run();
 }
 
 }  // namespace
