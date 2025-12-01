@@ -207,10 +207,6 @@ impl ObjectStore {
                     store_info.mutations_cipher_offset = cipher.offset();
                 }
 
-                // This will capture object IDs that might be in transactions not yet committed.  In
-                // theory, we could do better than this but it's not worth the effort.
-                store_info.last_object_id = self.store.last_object_id.lock().id;
-
                 self.store_info.set(store_info).unwrap();
             }
         }
@@ -246,18 +242,6 @@ impl ObjectStore {
         // are removed from the graveyard.
         let mut transaction = filesystem.clone().new_transaction(lock_keys![], txn_options).await?;
 
-        let reservation_update: ReservationUpdate; // Must live longer than end_transaction.
-        let mut end_transaction = filesystem
-            .clone()
-            .new_transaction(
-                lock_keys![LockKey::object(
-                    self.parent_store.as_ref().unwrap().store_object_id(),
-                    self.store_info_handle_object_id().unwrap(),
-                )],
-                txn_options,
-            )
-            .await?;
-
         // Create and write a new layer, compacting existing layers.
         let parent_store = self.parent_store.as_ref().unwrap();
         let handle_options = HandleOptions { skip_journal_checks: true, ..Default::default() };
@@ -289,7 +273,6 @@ impl ObjectStore {
         let writer = DirectWriter::new(&new_object_tree_layer, txn_options).await;
         let new_object_tree_layer_object_id = new_object_tree_layer.object_id();
         parent_store.add_to_graveyard(&mut transaction, new_object_tree_layer_object_id);
-        parent_store.remove_from_graveyard(&mut end_transaction, new_object_tree_layer_object_id);
 
         transaction.commit().await?;
         let (layers_to_keep, old_layers) =
@@ -305,6 +288,20 @@ impl ObjectStore {
             }
         }
 
+        let reservation_update: ReservationUpdate; // Must live longer than end_transaction.
+        let mut end_transaction = filesystem
+            .clone()
+            .new_transaction(
+                lock_keys![LockKey::object(
+                    self.parent_store.as_ref().unwrap().store_object_id(),
+                    self.store_info_handle_object_id().unwrap(),
+                )],
+                txn_options,
+            )
+            .await?;
+
+        parent_store.remove_from_graveyard(&mut end_transaction, new_object_tree_layer_object_id);
+
         // Move the existing layers we're compacting to the graveyard at the end.
         for layer in &old_layers {
             if let Some(handle) = layer.handle() {
@@ -317,6 +314,18 @@ impl ObjectStore {
         if old_encrypted_mutations_object_id != INVALID_OBJECT_ID {
             parent_store.add_to_graveyard(&mut end_transaction, old_encrypted_mutations_object_id);
         }
+
+        // `last_object_id` and `object_id_key` are updated differently to other members of
+        // `StoreInfo`.  We must ensure that those fields match the current in-memory values.  See
+        // the lengthy comment in `get_next_object_id` for more information.  `end_transaction` has
+        // a lock on the same lock that `get_next_object_id` uses, so there's no danger of the key
+        // changing now.
+        new_store_info.object_id_key =
+            self.store_info.lock().as_ref().unwrap().object_id_key.clone();
+
+        // This will capture object IDs that might be in transactions not yet committed.  In
+        // theory, we could do better than this but it's not worth the effort.
+        new_store_info.last_object_id = self.last_object_id.lock().id;
 
         self.write_store_info(&mut end_transaction, &new_store_info).await?;
 

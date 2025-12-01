@@ -1606,7 +1606,7 @@ impl ObjectStore {
     }
 
     async fn load_store_info(&self) -> Result<StoreInfo, Error> {
-        load_store_info(self.parent_store.as_ref().unwrap(), self.store_object_id).await
+        load_store_info_from_handle(self.store_info_handle.get().unwrap()).await
     }
 
     async fn open_layers(
@@ -1913,13 +1913,12 @@ impl ObjectStore {
         }
 
         // Create a transaction (which has a lock) and then check again.
+        let parent_store = self.parent_store.as_ref().unwrap();
+
         let mut transaction = self
             .filesystem()
             .new_transaction(
-                lock_keys![LockKey::object(
-                    self.parent_store.as_ref().unwrap().store_object_id,
-                    self.store_object_id,
-                )],
+                lock_keys![LockKey::object(parent_store.store_object_id, self.store_object_id)],
                 Options {
                     // We must skip journal checks because this transaction might be needed to
                     // compact.
@@ -1949,28 +1948,40 @@ impl ObjectStore {
         let (object_id_wrapped, object_id_unwrapped) =
             self.crypt().unwrap().create_key(self.store_object_id, KeyPurpose::Metadata).await?;
 
-        // Update StoreInfo.
-        let buf = {
-            let serialized_info = {
-                let mut store_info = self.store_info.lock();
-                let store_info = store_info.as_mut().unwrap();
-                store_info.object_id_key = Some(object_id_wrapped);
-                let mut serialized_info = Vec::new();
-                store_info.serialize_with_version(&mut serialized_info)?;
-                serialized_info
-            };
-            let mut buf = self.device.allocate_buffer(serialized_info.len()).await;
-            buf.as_mut_slice().copy_from_slice(&serialized_info[..]);
-            buf
-        };
+        // Normally we would use a mutation to note the updated key, but that would complicate
+        // replay.  During replay, we need to keep track of the highest used object ID and this
+        // is done by watching mutations to see when we create objects, and then decrypting
+        // the object ID.  This relies on the unwrapped key being available, so as soon as
+        // we detect the key has changed, we would need to immediately unwrap the key via the
+        // crypt service.  Currently, this isn't easy to do during replay.  An option we could
+        // consider would be to include the unencrypted object ID when we create objects, which
+        // would avoid us having to decrypt the object ID during replay.
+        //
+        // For now and for historical reasons, the approach we take is to just write a new version
+        // of StoreInfo here.  We must take care that we only update the key and not any other
+        // information contained within StoreInfo because other information should only be updated
+        // when we flush.  We are holding the lock on the StoreInfo file, so this will prevent
+        // potential races with flushing.  To make sure we only change the key, we read StoreInfo
+        // from storage rather than using our in-memory copy.  This won't be performant, but rolling
+        // the object ID key will be extremely rare.
+        self.write_store_info(
+            &mut transaction,
+            &StoreInfo {
+                last_object_id: next_id_hi,
+                object_id_key: Some(object_id_wrapped.clone()),
+                ..self.load_store_info().await?
+            },
+        )
+        .await?;
 
-        self.store_info_handle
-            .get()
-            .unwrap()
-            .txn_write(&mut transaction, 0u64, buf.as_ref())
-            .await?;
         transaction
             .commit_with_callback(|_| {
+                {
+                    let mut guard = self.store_info.lock();
+                    let store_info = guard.as_mut().unwrap();
+                    store_info.last_object_id = next_id_hi;
+                    store_info.object_id_key = Some(object_id_wrapped);
+                }
                 let mut last_object_id = self.last_object_id.lock();
                 last_object_id.id = next_id_hi;
                 next_id_hi
@@ -2515,9 +2526,15 @@ pub async fn load_store_info(
     parent: &Arc<ObjectStore>,
     store_object_id: u64,
 ) -> Result<StoreInfo, Error> {
-    let handle =
-        ObjectStore::open_object(parent, store_object_id, HandleOptions::default(), None).await?;
+    load_store_info_from_handle(
+        &ObjectStore::open_object(parent, store_object_id, HandleOptions::default(), None).await?,
+    )
+    .await
+}
 
+async fn load_store_info_from_handle(
+    handle: &DataObjectHandle<impl HandleOwner>,
+) -> Result<StoreInfo, Error> {
     Ok(if handle.get_size() > 0 {
         let serialized_info = handle.contents(MAX_STORE_INFO_SERIALIZED_SIZE).await?;
         let mut cursor = std::io::Cursor::new(serialized_info);
@@ -2540,7 +2557,7 @@ mod tests {
     };
     use crate::errors::FxfsError;
     use crate::filesystem::{FxFilesystem, JournalingObject, OpenFxFilesystem, SyncOptions};
-    use crate::fsck::fsck;
+    use crate::fsck::{fsck, fsck_volume};
     use crate::lsm_tree::Query;
     use crate::lsm_tree::types::{ItemRef, LayerIterator};
     use crate::object_handle::{
@@ -2567,6 +2584,7 @@ mod tests {
     use std::time::Duration;
     use storage_device::DeviceHolder;
     use storage_device::fake_device::FakeDevice;
+    use test_case::test_case;
 
     const TEST_DEVICE_BLOCK_SIZE: u32 = 512;
 
@@ -3228,12 +3246,14 @@ mod tests {
         }
     }
 
+    #[test_case(true; "with a flush")]
+    #[test_case(false; "without a flush")]
     #[fuchsia::test(threads = 10)]
-    async fn test_object_id_cipher_roll() {
+    async fn test_object_id_cipher_roll(with_flush: bool) {
         let fs = test_filesystem().await;
         let crypt = Arc::new(new_insecure_crypt());
 
-        {
+        let expected_key = {
             let root_volume = root_volume(fs.clone()).await.expect("root_volume failed");
             let store = root_volume
                 .new_volume(
@@ -3249,7 +3269,27 @@ mod tests {
                 .await
                 .expect("new_volume failed");
 
-            let store_info = store.store_info().unwrap();
+            assert!(store.last_object_id.lock().cipher.is_some());
+
+            // Create some files so that our in-memory copy of StoreInfo has changes (the object
+            // count) pending a flush.
+            let root_dir_id = store.root_directory_object_id();
+            let root_dir =
+                Arc::new(Directory::open(&store, root_dir_id).await.expect("open failed"));
+            let mut transaction = fs
+                .clone()
+                .new_transaction(
+                    lock_keys![LockKey::object(store.store_object_id(), root_dir_id)],
+                    Options::default(),
+                )
+                .await
+                .expect("new_transaction failed");
+            for i in 0..10 {
+                root_dir.create_child_file(&mut transaction, &format!("file {i}")).await.unwrap();
+            }
+            transaction.commit().await.expect("commit failed");
+
+            let orig_key = store.store_info().unwrap().object_id_key;
 
             // Hack the last object ID to force a roll of the object ID cipher.
             {
@@ -3281,9 +3321,16 @@ mod tests {
             assert_eq!(object.object_id() & OBJECT_ID_HI_MASK, 1u64 << 32);
 
             // Check that the key has been changed.
-            assert_ne!(store.store_info().unwrap().object_id_key, store_info.object_id_key);
+            let key = store.store_info().unwrap().object_id_key;
+            assert_ne!(key, orig_key);
 
-            assert_eq!(store.last_object_id.lock().id, 1u64 << 32);
+            if with_flush {
+                fs.journal().compact().await.unwrap();
+            }
+
+            let last_object_id = store.last_object_id.lock();
+            assert_eq!(last_object_id.id, 1u64 << 32);
+            key
         };
 
         fs.close().await.expect("Close failed");
@@ -3296,7 +3343,95 @@ mod tests {
             .await
             .expect("volume failed");
 
+        assert_eq!(store.store_info().unwrap().object_id_key, expected_key);
         assert_eq!(store.last_object_id.lock().id, 1u64 << 32);
+
+        fsck(fs.clone()).await.expect("fsck failed");
+        fsck_volume(&fs, store.store_object_id(), None).await.expect("fsck_volume failed");
+    }
+
+    #[fuchsia::test(threads = 2)]
+    async fn test_race_object_id_cipher_roll_and_flush() {
+        let fs = test_filesystem().await;
+        let crypt = Arc::new(new_insecure_crypt());
+
+        let root_volume = root_volume(fs.clone()).await.expect("root_volume failed");
+        let store = root_volume
+            .new_volume(
+                "test",
+                NewChildStoreOptions {
+                    options: StoreOptions { crypt: Some(crypt.clone()), ..StoreOptions::default() },
+                    ..Default::default()
+                },
+            )
+            .await
+            .expect("new_volume failed");
+
+        assert!(store.last_object_id.lock().cipher.is_some());
+
+        // Create some files so that our in-memory copy of StoreInfo has changes (the object
+        // count) pending a flush.
+        let root_dir_id = store.root_directory_object_id();
+        let root_dir = Arc::new(Directory::open(&store, root_dir_id).await.expect("open failed"));
+
+        let _executor_tasks = testing::force_executor_threads_to_run(2).await;
+
+        for j in 0..100 {
+            let mut transaction = fs
+                .clone()
+                .new_transaction(
+                    lock_keys![LockKey::object(store.store_object_id(), root_dir_id)],
+                    Options::default(),
+                )
+                .await
+                .expect("new_transaction failed");
+            root_dir.create_child_file(&mut transaction, &format!("file {j}")).await.unwrap();
+            transaction.commit().await.expect("commit failed");
+
+            let task = {
+                let fs = fs.clone();
+                fasync::Task::spawn(async move {
+                    fs.journal().compact().await.unwrap();
+                })
+            };
+
+            // Hack the last object ID to force a roll of the object ID cipher.
+            {
+                let mut last_object_id = store.last_object_id.lock();
+                assert_eq!(last_object_id.id >> 32, j);
+                last_object_id.id |= 0xffffffff;
+            }
+
+            let mut transaction = fs
+                .clone()
+                .new_transaction(
+                    lock_keys![LockKey::object(
+                        store.store_object_id(),
+                        store.root_directory_object_id()
+                    )],
+                    Options::default(),
+                )
+                .await
+                .expect("new_transaction failed");
+            let root_directory = Directory::open(&store, store.root_directory_object_id())
+                .await
+                .expect("open failed");
+            root_directory
+                .create_child_file(&mut transaction, "test {j}")
+                .await
+                .expect("create_child_file failed");
+            transaction.commit().await.expect("commit failed");
+
+            task.await;
+
+            // Check that the key has been changed.
+            let new_store_info = store.load_store_info().await.unwrap();
+
+            assert_eq!(new_store_info.last_object_id >> 32, j + 1);
+            assert_eq!(new_store_info.object_id_key, store.store_info().unwrap().object_id_key);
+        }
+
+        fs.close().await.expect("Close failed");
     }
 
     #[fuchsia::test]
