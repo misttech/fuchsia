@@ -25,7 +25,9 @@ DeferredBufferForwarder::DeferredBufferForwarder(zx::socket destination)
     std::filesystem::remove(p);
   }
   std::chrono::time_point now = std::chrono::system_clock::now();
-  std::string fname = std::format("trace_{}.fxt", now.time_since_epoch().count());
+  // TODO(https://fxbug.dev/446873535): Go back to naming these files with a timestamp again.
+  // std::string fname = std::format("trace_{}.fxt", now.time_since_epoch().count());
+  std::string fname = std::format("trace.fxt", now.time_since_epoch().count());
   buffer_path_ = dir_path / fname;
   buffer_file_ = fopen(buffer_path_.c_str(), "a+");
 }
@@ -35,7 +37,9 @@ DeferredBufferForwarder::~DeferredBufferForwarder() {
   if (buffer_file_ != nullptr) {
     fclose(buffer_file_);
   }
-  std::filesystem::remove(buffer_path_);
+  // TODO(https://fxbug.dev/446873535): Go back to cleaning up trace files.
+  FX_LOGS(WARNING) << "Leaving file at " << buffer_path_ << " https://fxbug.dev/446873535";
+  // std::filesystem::remove(buffer_path_);
 }
 TransferStatus DeferredBufferForwarder::Flush() {
   if (flushed_) {

@@ -337,6 +337,10 @@ void TraceManager::InitializeTracing(fidl::InterfaceRequest<controller::Session>
   if (config.has_defer_transfer() && config.defer_transfer() && board_name != "astro") {
     forwarding = DataForwarding::kBuffered;
   }
+  // TODO(https://fxbug.dev/446873535): Force buffering on sorrel
+  if (board_name == "sorrel") {
+    forwarding = DataForwarding::kBuffered;
+  }
 
   std::shared_ptr<BufferForwarder> forwarder =
       forwarding == DataForwarding::kEager
