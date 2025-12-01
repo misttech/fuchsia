@@ -1138,10 +1138,8 @@ ktl::pair<zx_status_t, uint32_t> VmMapping::PageFault(vaddr_t va, const uint pf_
                                                       const size_t additional_pages,
                                                       VmObject* object,
                                                       MultiPageRequest* page_request) {
-  VM_KTRACE_DURATION(
-      2, "VmMapping::PageFault",
-      ("user_id", KTRACE_ANNOTATED_VALUE(AssertHeld(lock_ref()), object_->user_id())),
-      ("va", ktrace::Pointer{va}));
+  VM_KTRACE_DURATION(2, "VmMapping::PageFault", ("user_id", object->user_id()),
+                     ("va", ktrace::Pointer{va}));
   canary_.Assert();
 
   DEBUG_ASSERT(IsPageRounded(va));
