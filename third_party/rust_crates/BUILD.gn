@@ -3567,9 +3567,9 @@ rustc_library("camino-v1_2_1") {
     "--cfg=feature=\"serde1\"",
     "--cfg=absolute_path",
     "--cfg=os_str_bytes",
+    "--cfg=os_string_pathbuf_leak",
     "--cfg=path_buf_deref_mut",
     "--cfg=try_reserve_2",
-    "--cfg=os_string_pathbuf_leak",
   ]
 
   visibility = [ ":*" ]
