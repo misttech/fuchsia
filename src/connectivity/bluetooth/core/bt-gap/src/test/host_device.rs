@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{format_err, Error};
+use anyhow::{Error, format_err};
 use fidl::endpoints::RequestStream;
 use fidl_fuchsia_bluetooth_host::{
     BondingDelegateRequestStream, DiscoverySessionRequestStream, HostControlHandle, HostMarker,
@@ -14,7 +14,7 @@ use fuchsia_bluetooth::types::{Address, BondingData, HostId, HostInfo, Peer, Pee
 use fuchsia_sync::RwLock;
 use futures::future::Either;
 use futures::stream::StreamExt;
-use futures::{future, join, pin_mut, FutureExt};
+use futures::{FutureExt, future, join, pin_mut};
 use std::sync::Arc;
 use test_util::assert_gt;
 
@@ -47,6 +47,9 @@ impl HostListener for () {
 // Create a HostDevice with a fake channel, set local name and check it is updated
 #[fuchsia::test]
 async fn host_device_set_local_name() -> Result<(), Error> {
+    // TODO(https://fxbug.dev/463678722) remove once deadlocks addressed
+    fuchsia_sync::suppress_lock_cycle_panics();
+
     let (client, server) = fidl::endpoints::create_proxy_and_stream::<HostMarker>();
     let address = Address::Public([0, 0, 0, 0, 0, 0]);
     let host = HostDevice::mock(HostId(1), address, "/dev/class/bt-hci/test".to_string(), client);
@@ -79,6 +82,9 @@ async fn host_device_set_local_name() -> Result<(), Error> {
 // the discovery proxy is dropped.
 #[fuchsia::test]
 async fn test_discovery_session() -> Result<(), Error> {
+    // TODO(https://fxbug.dev/463678722) remove once deadlocks addressed
+    fuchsia_sync::suppress_lock_cycle_panics();
+
     let (client, server) = fidl::endpoints::create_proxy_and_stream::<HostMarker>();
 
     let address = Address::Public([0, 0, 0, 0, 0, 0]);
