@@ -210,10 +210,10 @@ impl DefineSubsystemConfiguration<(&BluetoothConfig, &PlatformMediaConfig)>
             builder.platform_bundle("bluetooth_affordances");
             builder.platform_bundle("bluetooth_pandora");
 
-            if !profiles.a2dp.enabled() {
-                if let Some(AudioConfig::FullStack(_)) = media_config.audio {
-                    builder.platform_bundle("bluetooth_a2dp_with_consumer");
-                }
+            if !profiles.a2dp.enabled()
+                && matches!(media_config.audio, Some(AudioConfig::FullStack(_)))
+            {
+                builder.platform_bundle("bluetooth_a2dp_with_consumer");
             }
         }
 

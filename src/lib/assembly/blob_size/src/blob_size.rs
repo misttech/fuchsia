@@ -121,8 +121,8 @@ mod tests {
                 )
                 .unwrap();
             }));
-        let gen = BlobSizeCalculator::new(tool_provider, BlobfsLayout::DeprecatedPadded);
-        let blob_entries = gen.calculate(&vec![&manifest_path]).unwrap();
+        let calc = BlobSizeCalculator::new(tool_provider, BlobfsLayout::DeprecatedPadded);
+        let blob_entries = calc.calculate(&vec![&manifest_path]).unwrap();
         assert_eq!(
             vec!(BlobSize {
                 merkle: Hash::from_str(

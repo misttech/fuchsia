@@ -60,8 +60,8 @@ pub struct TypedPathBuf<P: PathTypeMarker> {
     _marker: PhantomData<P>,
 }
 
-fn path_schema(gen: &mut schemars::gen::SchemaGenerator) -> schemars::schema::Schema {
-    let mut schema: schemars::schema::SchemaObject = <String>::json_schema(gen).into();
+fn path_schema(generator: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema::Schema {
+    let mut schema: schemars::schema::SchemaObject = <String>::json_schema(generator).into();
     schema.format = Some("Utf8PathBuf".to_owned());
     schema.into()
 }

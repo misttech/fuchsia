@@ -8,7 +8,7 @@ import("//build/rust/rustc_library.gni")
 assert(is_host, "Assembly libraries are host-only")
 
 rustc_library("components") {
-  edition = "2021"
+  edition = "2024"
   name = "assembly_components"
   version = "0.1.0"
   with_unit_tests = true

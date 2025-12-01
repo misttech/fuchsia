@@ -11,7 +11,7 @@ use camino::{Utf8Path, Utf8PathBuf};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::common::{path_schema, vec_path_schema, DriverDetails};
+use crate::common::{DriverDetails, path_schema, vec_path_schema};
 use assembly_release_info::ProductReleaseInfo;
 
 /// The Product-provided configuration details.
@@ -79,7 +79,6 @@ pub struct ProductSettings {
     /// Inputs for generating Starnix Container
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub starnix_containers: Vec<StarnixContainerConfig>,
-
 }
 
 /// Packages provided by the product, to add to the assembled images.
@@ -164,7 +163,7 @@ pub enum StarnixImageType {
 
 /// A Starnix image with its type and path.
 #[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq)]
-pub struct StarnixImage{
+pub struct StarnixImage {
     /// The type of the image.
     pub image_type: StarnixImageType,
     /// Path to the image file.
@@ -436,9 +435,9 @@ impl JsonSchema for TeeClientConfigData {
         "TeeClientConfigData".into()
     }
 
-    fn json_schema(gen: &mut schemars::gen::SchemaGenerator) -> schemars::schema::Schema {
+    fn json_schema(generator: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema::Schema {
         let mut schema: schemars::schema::SchemaObject =
-            <BTreeMap<String, String>>::json_schema(gen).into();
+            <BTreeMap<String, String>>::json_schema(generator).into();
         schema.format = Some("BTreeMap<String, Utf8PathBuf>".to_owned());
         schema.into()
     }

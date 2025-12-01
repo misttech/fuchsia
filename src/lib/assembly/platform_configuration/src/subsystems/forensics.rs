@@ -40,14 +40,13 @@ impl DefineSubsystemConfiguration<(&ForensicsConfig, &PlatformSessionConfig)>
             builder.platform_bundle("kernel_logs_in_reboot_info");
         }
 
-        if *context.build_type != BuildType::Eng {
-            if let Some(DeveloperOnlyOptions {
+        if *context.build_type != BuildType::Eng
+            && let Some(DeveloperOnlyOptions {
                 forensics_options: ForensicsOptions { build_type_override: Some(_), .. },
                 ..
             }) = context.developer_only_options
-            {
-                anyhow::bail!("Feedback build type overrides only supported in eng build-types");
-            }
+        {
+            anyhow::bail!("Feedback build type overrides only supported in eng build-types");
         }
 
         match context.build_type {

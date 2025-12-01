@@ -4,7 +4,7 @@
 
 use std::collections::{BTreeMap, HashMap};
 
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{Context, Result, anyhow, bail};
 use assembly_package_copy::PackageCopier;
 use camino::{Utf8Path, Utf8PathBuf};
 use depfile::Depfile;
@@ -328,8 +328,8 @@ where
     }
 }
 
-pub fn path_schema(gen: &mut schemars::gen::SchemaGenerator) -> schemars::schema::Schema {
-    let mut schema: schemars::schema::SchemaObject = <String>::json_schema(gen).into();
+pub fn path_schema(generator: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema::Schema {
+    let mut schema: schemars::schema::SchemaObject = <String>::json_schema(generator).into();
     schema.format = Some("Utf8PathBuf".to_owned());
     schema.into()
 }
@@ -402,9 +402,9 @@ fn copy_dir(from: &Path, to: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::copy_dir;
-    use crate::{assembly_container, AssemblyContainer, FileType, WalkPaths};
+    use crate::{AssemblyContainer, FileType, WalkPaths, assembly_container};
     use camino::Utf8PathBuf;
-    use fuchsia_hash::{Hash, HASH_SIZE};
+    use fuchsia_hash::{HASH_SIZE, Hash};
     use fuchsia_pkg::{BlobInfo, MetaPackage, PackageManifestBuilder, PackageName};
     use serde::{Deserialize, Serialize};
     use serde_json::json;
@@ -412,7 +412,7 @@ mod tests {
     use std::fs::File;
     use std::io::Read;
     use std::str::FromStr;
-    use tempfile::{tempdir, NamedTempFile};
+    use tempfile::{NamedTempFile, tempdir};
 
     #[derive(Debug, Deserialize, Serialize, WalkPaths, PartialEq, Eq)]
     #[assembly_container(nested_structs.json)]

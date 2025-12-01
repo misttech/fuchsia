@@ -483,7 +483,7 @@ impl<'a> ICUMapExt<'a> for ICUMap {
                 Some(requested_revision),
                 ICU_CONFIG_INFO.commit_id_for_revision(requested_revision),
             ),
-            Revision::CommitId(ref commit_id) => {
+            Revision::CommitId(commit_id) => {
                 (self.revision_for_commit_id(commit_id), Some(commit_id.as_ref()))
             }
         };

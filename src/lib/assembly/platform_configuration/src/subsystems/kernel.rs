@@ -81,10 +81,10 @@ impl DefineSubsystemConfiguration<PlatformKernelConfig> for KernelSubsystem {
             (SerialMode::Legacy, &BuildType::UserDebug | &BuildType::User) => {}
         }
 
-        if let Some(serial) = &context.board_config.kernel.serial {
-            if context.build_type == &BuildType::Eng {
-                builder.kernel_arg(KernelArg::Serial(serial.to_string()));
-            }
+        if let Some(serial) = &context.board_config.kernel.serial
+            && context.build_type == &BuildType::Eng
+        {
+            builder.kernel_arg(KernelArg::Serial(serial.to_string()));
         }
 
         if kernel_config.lru_memory_compression && !kernel_config.memory_compression {

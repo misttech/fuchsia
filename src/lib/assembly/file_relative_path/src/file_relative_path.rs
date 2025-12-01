@@ -47,7 +47,7 @@
 //! conversion of the structure from one form to another.
 //!
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use assembly_container::{FileType, WalkPaths, WalkPathsFn};
 use camino::{Utf8Path, Utf8PathBuf};
 use pathdiff::diff_utf8_paths;
@@ -124,8 +124,8 @@ impl WalkPaths for FileRelativePathBuf {
     }
 }
 
-fn path_schema(gen: &mut schemars::gen::SchemaGenerator) -> schemars::schema::Schema {
-    let mut schema: schemars::schema::SchemaObject = <String>::json_schema(gen).into();
+fn path_schema(generator: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema::Schema {
+    let mut schema: schemars::schema::SchemaObject = <String>::json_schema(generator).into();
     schema.format = Some("Utf8PathBuf".to_owned());
     schema.into()
 }

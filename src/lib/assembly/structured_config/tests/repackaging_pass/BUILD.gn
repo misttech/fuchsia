@@ -9,7 +9,7 @@ import("//build/rust/rustc_binary.gni")
 rustc_binary("empty_bin") {
   source_root = "empty_bin.rs"
   sources = [ "empty_bin.rs" ]
-  edition = "2018"
+  edition = "2024"
   visibility = [ ":*" ]
 }
 
@@ -77,7 +77,7 @@ if (is_host) {
   }
 
   rustc_test("structured_config_repackaging_test") {
-    edition = "2018"
+    edition = "2024"
     sources = [ "repackaging.rs" ]
     source_root = "repackaging.rs"
     deps = [

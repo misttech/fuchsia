@@ -18,7 +18,7 @@ generated_file("git_info_json") {
 }
 
 rustc_library("config_schema") {
-  edition = "2021"
+  edition = "2024"
   name = "assembly_config_schema"
   with_unit_tests = true
   _git_info = "${target_gen_dir}/icu_git_info.json"
