@@ -7,14 +7,14 @@
 mod inspect;
 mod service;
 
-use anyhow::{format_err, Error};
+use anyhow::{Error, format_err};
 use fidl_fuchsia_lowpan_driver::RegisterRequestStream;
 use fuchsia_component::server::ServiceFs;
 use fuchsia_inspect::Inspector;
 use futures::prelude::*;
 use futures::task::{FutureObj, Spawn, SpawnError};
-use lowpan_driver_common::lowpan_fidl::*;
 use lowpan_driver_common::ServeTo;
+use lowpan_driver_common::lowpan_fidl::*;
 use service::*;
 use std::default::Default;
 use std::sync::Arc;
@@ -59,6 +59,9 @@ impl Spawn for FuchsiaGlobalExecutor {
 
 #[fuchsia::main()]
 async fn main() -> Result<(), Error> {
+    // TODO(https://fxbug.dev/463678387) remove once deadlocks addressed
+    fuchsia_sync::suppress_lock_cycle_panics();
+
     info!("LoWPAN Service starting up");
 
     let service = LowpanService::with_spawner(FuchsiaGlobalExecutor);
