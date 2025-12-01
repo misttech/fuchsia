@@ -2494,4 +2494,89 @@ mod tests {
             )
             .await;
     }
+
+    ///    a
+    ///   /
+    ///  b
+    ///
+    /// a: Offers dictionary "test-dict" from "self" to "b" and another protocol.
+    /// b: Uses test-dict at /svc as well as some other protocol.
+    #[fuchsia::test]
+    async fn use_dictionary_at_svc() {
+        const DICT_NAME: &str = "test-dict";
+        const PROTOCOL_IN_DICT_NAME: &str = "fuchsia.foo.InDict";
+        const PROTOCOL_NOT_IN_DICT_NAME: &str = "fuchsia.foo.RegularUse";
+
+        let components = vec![
+            (
+                "a",
+                ComponentDeclBuilder::new()
+                    .child_default("b")
+                    .capability(CapabilityBuilder::dictionary().name(DICT_NAME))
+                    .capability(CapabilityBuilder::protocol().name(PROTOCOL_IN_DICT_NAME))
+                    .capability(CapabilityBuilder::protocol().name(PROTOCOL_NOT_IN_DICT_NAME))
+                    .offer(
+                        OfferBuilder::protocol()
+                            .name(PROTOCOL_IN_DICT_NAME)
+                            .source(OfferSource::Self_)
+                            .target_capability(DICT_NAME),
+                    )
+                    .offer(
+                        OfferBuilder::protocol()
+                            .name(PROTOCOL_NOT_IN_DICT_NAME)
+                            .source(OfferSource::Self_)
+                            .target_static_child("b"),
+                    )
+                    .offer(
+                        OfferBuilder::dictionary()
+                            .name(DICT_NAME)
+                            .source(OfferSource::Self_)
+                            .target_static_child("b"),
+                    )
+                    .build(),
+            ),
+            (
+                "b",
+                ComponentDeclBuilder::new()
+                    .use_(UseBuilder::protocol().name(PROTOCOL_NOT_IN_DICT_NAME).build())
+                    .use_(UseBuilder::dictionary().name(DICT_NAME).path("/svc").build())
+                    .build(),
+            ),
+        ];
+        let test = RoutingTestBuilderForAnalyzer::new("a", components.clone()).build().await;
+        test.check_use(
+            ["b"].try_into().unwrap(),
+            CheckUse::Protocol {
+                path: format!("/svc/{PROTOCOL_NOT_IN_DICT_NAME}").parse().unwrap(),
+                expected_res: ExpectedResult::Ok,
+            },
+        )
+        .await;
+        test.check_use(
+            ["b"].try_into().unwrap(),
+            CheckUse::Protocol {
+                path: format!("/svc/{PROTOCOL_IN_DICT_NAME}").parse().unwrap(),
+                expected_res: ExpectedResult::Ok,
+            },
+        )
+        .await;
+
+        let b_component =
+            test.look_up_instance(&["b"].try_into().unwrap()).await.expect("b instance");
+        let route_maps = test
+            .model
+            .check_routes_for_instance(
+                &b_component,
+                &HashSet::from_iter(
+                    vec![CapabilityTypeName::Dictionary, CapabilityTypeName::Protocol].into_iter(),
+                ),
+            )
+            .await;
+        let errors = route_maps
+            .into_iter()
+            .map(|(_, result)| result.into_iter().filter(|r| r.error.is_some()))
+            .flatten()
+            .collect::<Vec<_>>();
+        assert_eq!(errors, vec![]);
+    }
 }

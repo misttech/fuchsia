@@ -653,13 +653,13 @@ where
     T: CapabilityBound + Debug,
     Router<T>: TryFrom<Capability>,
 {
-    let router = dictionary
-        .get_capability(path)
-        .and_then(|c| Router::<T>::try_from(c).ok())
-        .ok_or_else(|| RoutingError::BedrockNotPresentInDictionary {
+    let router = dictionary.get_router_or_not_found(
+        path,
+        RoutingError::BedrockNotPresentInDictionary {
             moniker: target.moniker().clone().into(),
             name: path.iter_segments().join("/"),
-        })?;
+        },
+    );
     perform_route::<T, C>(router, metadata, target).await
 }
 
