@@ -2023,15 +2023,23 @@ bool Dispatcher::ThreadPool::ScanThreadsForStalls() {
     }
   }
   if (num_threads_ > 0 && num_threads_ < max_threads_ && stalled_threads >= num_threads_) {
-    LOGF(
-        WARNING,
-        "All threads on thread pool (role: %s) are stalled (%d/%d). Spawning a new thread, if possible (max threads: %d).",
-        scheduler_role_.c_str(), stalled_threads, num_threads_, max_threads_);
-    lock.release();
-    AddThread(/*for_dispatcher=*/false);
+    // if we weren't already stalled try to spawn a new thread.
+    if (!stalled_) {
+      LOGF(
+          WARNING,
+          "All threads on thread pool (role: '%s') are stalled (%d/%d). Spawning a new thread, if possible (max threads: %d).",
+          scheduler_role_.c_str(), stalled_threads, num_threads_,
+          std::min(num_dispatchers_, max_threads_));
+      stalled_ = true;
+      lock.release();
+      AddThread(/*for_dispatcher=*/false);
+    }
     return false;
+  } else {
+    // clear the stalled flag if it was set so we can warn if we become stuck again.
+    stalled_ = false;
+    return num_threads_ == threads_entered_.load();
   }
-  return num_threads_ == threads_entered_.load();
 }
 
 zx_status_t Dispatcher::ThreadPool::SetRoleProfile() {

@@ -271,6 +271,10 @@ class Dispatcher : public async_dispatcher_t,
     // A unique_ptr to each active thread's task entry time slot, used to tell when we've run
     // out of un-stalled threads and should spawn another.
     std::vector<std::atomic_int64_t*> thread_entry_time_slots_ __TA_GUARDED(&lock_);
+    // True if we've already attempted to spawn a new thread in response to the current thread
+    // stall. This prevents us from constantly warning when we're at max threads and there's a
+    // persistent stall.
+    bool stalled_ __TA_GUARDED(&lock_) = false;
 
     // Total number of threads which have entered a driver. When this number matches num_threads_,
     // we start polling.
