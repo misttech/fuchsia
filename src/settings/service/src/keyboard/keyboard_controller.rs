@@ -144,3 +144,42 @@ impl KeyboardController {
         self.store.get::<KeyboardInfo>().await
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::keyboard::types::Autorepeat;
+
+    use super::*;
+    use futures::channel::mpsc;
+    use settings_test_common::storage::InMemoryStorageFactory;
+
+    #[fuchsia::test(allow_stalls = false)]
+    async fn test_keyboard_storage() {
+        let changed_value = KeyboardInfo {
+            keymap: Some(KeymapId::UsDvorak),
+            autorepeat: Some(Autorepeat { delay: 2, period: 1 }),
+        };
+        let factory = Rc::new(InMemoryStorageFactory::new());
+        let (tx, _) = mpsc::unbounded();
+        let setting_value_publisher = SettingValuePublisher::new(tx);
+
+        factory.initialize::<KeyboardController>().await.expect("can initialize keyboard storage");
+
+        // Create and fetch a store from device storage so we can read stored value for testing.
+        let keyboard_controller =
+            KeyboardController::new(Rc::clone(&factory), setting_value_publisher).await;
+        let store = factory.get_store().await;
+
+        // Set a new value.
+        let result = keyboard_controller
+            .set(changed_value.clone())
+            .await
+            .expect("set successful")
+            .expect("keyboard info changed");
+        assert_eq!(result, changed_value);
+
+        // Verify the value we set is persisted in DeviceStorage.
+        let retrieved_struct = store.get::<KeyboardInfo>().await;
+        assert_eq!(changed_value, retrieved_struct);
+    }
+}

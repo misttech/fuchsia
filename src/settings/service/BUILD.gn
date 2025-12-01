@@ -179,7 +179,6 @@ icu_rustc_library("lib") {
     "src/tests/helpers.rs",
     "src/tests/input_test_environment.rs",
     "src/tests/input_tests.rs",
-    "src/tests/keyboard_tests.rs",
     "src/tests/media_buttons_agent_tests.rs",
     "src/tests/service_configuration_tests.rs",
     "src/tests/stream_volume_tests.rs",

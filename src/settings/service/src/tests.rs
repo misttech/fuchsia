@@ -10,7 +10,6 @@ pub(crate) mod fakes;
 pub(crate) mod helpers;
 mod input_test_environment;
 mod input_tests;
-mod keyboard_tests;
 mod media_buttons_agent_tests;
 mod service_configuration_tests;
 mod stream_volume_tests;
