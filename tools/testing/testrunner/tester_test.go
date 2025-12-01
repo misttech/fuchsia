@@ -229,6 +229,8 @@ func TestSubprocessTester(t *testing.T) {
 				"--env",
 				"ANDROID_TMP=/tmp",
 				"--env",
+				"FFX_CONFIGS=",
+				"--env",
 				fmt.Sprintf("FUCHSIA_TEST_OUTDIR=%s/host_x64/passing", tmpDir),
 				"--env",
 				"HOME=/tmp",

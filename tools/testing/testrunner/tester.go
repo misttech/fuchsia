@@ -26,6 +26,7 @@ import (
 
 	"go.fuchsia.dev/fuchsia/tools/botanist"
 	botanistconstants "go.fuchsia.dev/fuchsia/tools/botanist/constants"
+	"go.fuchsia.dev/fuchsia/tools/botanist/targets"
 	"go.fuchsia.dev/fuchsia/tools/build"
 	"go.fuchsia.dev/fuchsia/tools/debug/covargs"
 	"go.fuchsia.dev/fuchsia/tools/integration/testsharder"
@@ -126,6 +127,7 @@ type SubprocessTester struct {
 	localOutputDir string
 	sProps         *sandboxingProps
 	testRuns       map[string]string
+	target         targets.FuchsiaTarget
 }
 
 type sandboxingProps struct {
@@ -142,6 +144,7 @@ type SubprocessTesterOptions struct {
 	OutputDir  string
 	NsjailPath string
 	NsjailRoot string
+	Target     targets.FuchsiaTarget
 }
 
 // NewSubprocessTester returns a SubprocessTester that can execute tests
@@ -152,6 +155,7 @@ func NewSubprocessTester(opts SubprocessTesterOptions) (Tester, error) {
 		env:            opts.Env,
 		localOutputDir: opts.OutputDir,
 		testRuns:       make(map[string]string),
+		target:         opts.Target,
 	}
 	// If the caller provided a path to NsJail, then intialize sandboxing properties.
 	if opts.NsjailPath != "" {
@@ -219,28 +223,33 @@ func (t *SubprocessTester) Test(ctx context.Context, test testsharder.Test, stdo
 	testOutputSummaryPath := filepath.Join(testOutputSummaryDir, "test_output_summary_path.json")
 
 	ffxConfigs := []string{}
-	sshControlMasterPath := os.Getenv(botanistconstants.SSHControlMasterPathEnvKey)
-	// TODO(https://fxbug.dev/463446410) Remove the file check once we're able to persist
-	// the controlmaster across reboots.
-	if _, err := os.Stat(sshControlMasterPath); err != nil {
-		if !os.IsNotExist(err) {
-			logger.Errorf(ctx, "failed to stat %s: %s", sshControlMasterPath, err)
+	sshControlMasterPath := ""
+	if t.target != nil {
+		sshControlMasterPath = t.target.SSHControlMasterPath()
+		if _, err := os.Stat(sshControlMasterPath); err != nil {
+			logger.Debugf(ctx, "not using ssh controlmaster because socket not created yet: %s", err)
+			sshControlMasterPath = ""
 		}
-		sshControlMasterPath = ""
 	}
 	if sshControlMasterPath != "" {
 		ffxConfigs = append(ffxConfigs, fmt.Sprintf("ssh.controlmaster.path=%s", sshControlMasterPath), "ssh.controlmaster.mode=explicit")
 	}
 
-	r := newRunner(t.dir, append(
-		t.env,
-		fmt.Sprintf("%s=%s", constants.TestOutDirEnvKey, outDir),
+	envOverrides := map[string]string{
+		// Override FUCHSIA_TEST_OUTDIR with the outdir specific to this
+		// test.
+		constants.TestOutDirEnvKey: outDir,
 		// When host-side tests are instrumented for profiling, executing
 		// them will write a profile to the location under this environment variable.
-		fmt.Sprintf("%s=%s", llvmProfileEnvKey, filepath.Join(profileAbsDir, "%m"+llvmProfileExtension)),
-		fmt.Sprintf("%s=%s", constants.TestOutputSummaryPathEnvKey, testOutputSummaryPath),
-		fmt.Sprintf("%s=%s", constants.FFXConfigsEnvKey, strings.Join(ffxConfigs, ",")),
-	))
+		llvmProfileEnvKey:                     filepath.Join(profileAbsDir, "%m"+llvmProfileExtension),
+		constants.TestOutputSummaryPathEnvKey: testOutputSummaryPath,
+		constants.FFXConfigsEnvKey:            strings.Join(ffxConfigs, ","),
+	}
+	runnerEnv := t.env
+	for key, value := range envOverrides {
+		runnerEnv = append(runnerEnv, fmt.Sprintf("%s=%s", key, value))
+	}
+	r := newRunner(t.dir, runnerEnv)
 	if test.Timeout > 0 {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, test.Timeout)
@@ -384,14 +393,7 @@ func (t *SubprocessTester) Test(ctx context.Context, test testsharder.Test, stdo
 
 		// Construct the sandbox's environment by forwarding the current env
 		// but overriding the TempDirEnvVars with /tmp.
-		// Also override FUCHSIA_TEST_OUTDIR with the outdir specific to this
-		// test.
-		envOverrides := map[string]string{
-			"TMPDIR":                              "/tmp",
-			constants.TestOutDirEnvKey:            outDir,
-			llvmProfileEnvKey:                     filepath.Join(profileAbsDir, "%m"+llvmProfileExtension),
-			constants.TestOutputSummaryPathEnvKey: testOutputSummaryPath,
-		}
+		envOverrides["TMPDIR"] = "/tmp"
 		for _, key := range environment.TempDirEnvVars() {
 			envOverrides[key] = "/tmp"
 		}

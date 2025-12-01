@@ -21,6 +21,7 @@ import (
 	"github.com/google/go-cmp/cmp/cmpopts"
 
 	"go.fuchsia.dev/fuchsia/tools/botanist"
+	"go.fuchsia.dev/fuchsia/tools/botanist/targets"
 	"go.fuchsia.dev/fuchsia/tools/build"
 	"go.fuchsia.dev/fuchsia/tools/integration/testsharder"
 	"go.fuchsia.dev/fuchsia/tools/lib/clock"
@@ -935,7 +936,8 @@ func TestRunAndOutputTests(t *testing.T) {
 			}()
 			connectionErrorRetryBackoff = &retry.ZeroBackoff{}
 
-			err = runAndOutputTests(ctx, tc.tests, testerForTest, outputs, resultsDir, nil)
+			cleanup, err := runAndOutputTests(ctx, tc.tests, testerForTest, outputs, resultsDir, nil, nil, "")
+			cleanup()
 			if tc.wantErr != (err != nil) {
 				t.Errorf("want err: %t, got %s", tc.wantErr, err)
 			}
@@ -968,6 +970,20 @@ func mkdtemp(t *testing.T, pattern string) string {
 		t.Fatal(err)
 	}
 	return dir
+}
+
+type fuchsiaTarget struct {
+	targets.Emulator
+	sshControlMasterRunning bool
+}
+
+func (t *fuchsiaTarget) SSHControlMasterRunning() bool {
+	return t.sshControlMasterRunning
+}
+
+func (t *fuchsiaTarget) SetupSSHControlMaster(_ context.Context, _, _ string) (func(), error) {
+	t.sshControlMasterRunning = true
+	return func() {}, nil
 }
 
 func TestExecute(t *testing.T) {
@@ -1048,7 +1064,8 @@ func TestExecute(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer o.Close()
-			testrunnerOpts := Options{SnapshotFile: "snapshot.zip"}
+			target := &fuchsiaTarget{}
+			testrunnerOpts := Options{SnapshotFile: "snapshot.zip", FuchsiaTarget: target}
 			if c.useFFX {
 				if _, err := ffx.WriteRunResult(build.TestList{}, filepath.Join(o.OutDir, "early-boot-profiles")); err != nil {
 					t.Errorf("failed to write early-boot profiles: %s", err)
@@ -1063,6 +1080,12 @@ func TestExecute(t *testing.T) {
 			}
 			if err != nil {
 				t.Errorf("got error: %v", err)
+			}
+
+			if c.sshKeyFile != "" && !target.SSHControlMasterRunning() {
+				t.Errorf("ssh controlmaster not running when it should be")
+			} else if c.sshKeyFile == "" && target.SSHControlMasterRunning() {
+				t.Errorf("ssh controlmaster running when it shouldn't be")
 			}
 
 			funcCalls := strings.Join(fuchsiaTester.funcCalls, ",")

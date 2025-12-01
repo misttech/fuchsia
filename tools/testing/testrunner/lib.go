@@ -73,6 +73,9 @@ type Options struct {
 	// If given as `<path>=<version>`, the version should correspond to the version
 	// of the profiles produced by the tests that are run.")
 	LLVMProfdataPath string
+
+	// The Fuchsia target to run tests against.
+	FuchsiaTarget targets.FuchsiaTarget
 }
 
 // ScaleTestTimeout multiplies the timeout by a factor set by the TEST_TIMEOUT_SCALE_FACTOR
@@ -267,6 +270,7 @@ func execute(
 					OutputDir:  outputs.OutDir,
 					NsjailPath: opts.NsjailPath,
 					NsjailRoot: opts.NsjailRoot,
+					Target:     opts.FuchsiaTarget,
 				}
 				localTester, err = NewSubprocessTester(testerOpts)
 				if err != nil {
@@ -280,9 +284,11 @@ func execute(
 	}
 
 	var finalError error
-	if err := runAndOutputTests(ctx, tests, testerForTest, outputs, outDir, fuchsiaTester); err != nil {
+	cleanup, err := runAndOutputTests(ctx, tests, testerForTest, outputs, outDir, fuchsiaTester, opts.FuchsiaTarget, sshKeyFile)
+	if err != nil {
 		finalError = err
 	}
+	defer cleanup()
 
 	if fuchsiaTester != nil {
 		defer fuchsiaTester.Close()
@@ -317,6 +323,17 @@ func execute(
 			}
 		}
 		return nil
+	}
+
+	// If we lose the SSH connection after the last test, we should try to reconnect
+	// so that we can run the final steps.
+	if _, ok := fuchsiaTester.(*FFXTester); ok && sshKeyFile != "" && !opts.FuchsiaTarget.SSHControlMasterRunning() {
+		cleanup()
+		cleanup, err = restartSSHControlMaster(ctx, opts.FuchsiaTarget, fuchsiaTester, sshKeyFile)
+		if err != nil && finalError == nil {
+			finalError = err
+		}
+		defer cleanup()
 	}
 
 	if err := finalize(localTester, localSinks); err != nil && finalError == nil {
@@ -378,6 +395,23 @@ func loadTests(path string) ([]testsharder.Test, error) {
 	return tests, nil
 }
 
+func restartSSHControlMaster(ctx context.Context, target targets.FuchsiaTarget, fuchsiaTester Tester, sshKeyFile string) (func(), error) {
+	cleanup := func() {}
+	err := fuchsiaTester.Reconnect(ctx)
+	if err != nil {
+		return cleanup, fmt.Errorf("failed to reconnect to target: %w", err)
+	}
+	logger.Debugf(ctx, "restarting ssh controlmaster")
+	cleanup, err = target.SetupSSHControlMaster(ctx, sshKeyFile, os.Getenv(botanistconstants.DeviceAddrEnvKey))
+	if err != nil {
+		// If we fail to restart the ssh controlmaster, tests will have to create
+		// a new SSH connection, but they'll still be able to run, so just log
+		// the error instead of failing.
+		logger.Errorf(ctx, "failed to restart ssh controlmaster: %s", err)
+	}
+	return cleanup, nil
+}
+
 // testToRun represents an entry in a queue of tests to run.
 type testToRun struct {
 	testsharder.Test
@@ -396,7 +430,10 @@ func runAndOutputTests(
 	outputs *TestOutputs,
 	globalOutDir string,
 	fuchsiaTester Tester,
-) error {
+	target targets.FuchsiaTarget,
+	sshKeyFile string,
+) (func(), error) {
+	cleanup := func() {}
 	// Since only a single goroutine writes to and reads from the queue it would
 	// be more appropriate to use a true Queue data structure, but we'd need to
 	// implement that ourselves so it's easier to just use a channel. Make the
@@ -420,15 +457,22 @@ func runAndOutputTests(
 			if err := runHealthCheck(ctx, fuchsiaTester); err != nil {
 				// Device is in a bad state and cannot run any more tests,
 				// so fail and return early.
-				return fmt.Errorf("failed to run health check: %w", err)
+				return cleanup, fmt.Errorf("failed to run health check: %w", err)
 			}
 			shouldRunHealthCheck = false
+		}
+		if _, ok := fuchsiaTester.(*FFXTester); ok && sshKeyFile != "" && !target.SSHControlMasterRunning() {
+			cleanup()
+			var err error
+			if cleanup, err = restartSSHControlMaster(ctx, target, fuchsiaTester, sshKeyFile); err != nil {
+				return cleanup, err
+			}
 		}
 		test := <-testQueue
 
 		t, sinks, err := testerForTest(test.Test)
 		if err != nil {
-			return err
+			return cleanup, err
 		}
 
 		var result *runtests.TestDetails
@@ -452,11 +496,11 @@ func runAndOutputTests(
 			test.totalDuration += result.Duration()
 			return testErr
 		}); err != nil {
-			return err
+			return cleanup, err
 		}
 
 		if err := outputs.Record(ctx, *result); err != nil {
-			return err
+			return cleanup, err
 		}
 		testIndex++
 
@@ -471,7 +515,7 @@ func runAndOutputTests(
 		// recorded correctly.
 		*sinks = append(*sinks, result.DataSinks)
 	}
-	return nil
+	return cleanup, nil
 }
 
 type connectionError struct {

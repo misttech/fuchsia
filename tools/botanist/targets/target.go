@@ -29,6 +29,7 @@ import (
 	"go.fuchsia.dev/fuchsia/tools/lib/logger"
 	"go.fuchsia.dev/fuchsia/tools/lib/retry"
 	"go.fuchsia.dev/fuchsia/tools/lib/serial"
+	"go.fuchsia.dev/fuchsia/tools/lib/subprocess"
 	"go.fuchsia.dev/fuchsia/tools/lib/syslog"
 	"go.fuchsia.dev/fuchsia/tools/net/sshutil"
 	"golang.org/x/sync/errgroup"
@@ -100,12 +101,15 @@ type FuchsiaTarget interface {
 	// SSHClient returns an SSH client to the device (if the device has SSH running).
 	SSHClient() (*sshutil.Client, error)
 
-	// SSHControlMasterPath returns the path to the SSH control master socket used to
+	// SSHControlMasterPath returns the path to the SSH controlmaster socket used to
 	// communicate to the target.
 	SSHControlMasterPath() string
 
-	// SetSSHControlMasterPath sets the SSH control master path to the provided path.
-	SetSSHControlMasterPath(string)
+	// SetupSSHControlMaster starts the SSH controlmaster.
+	SetupSSHControlMaster(ctx context.Context, sshKey, addr string) (func(), error)
+
+	// SSHControlMasterRunning returns whether the SSH controlmaster is running.
+	SSHControlMasterRunning() bool
 
 	// SSHKey returns the private key corresponding an authorized SSH key of the target.
 	SSHKey() string
@@ -154,12 +158,13 @@ type genericFuchsiaTarget struct {
 	// This will be set by CaptureSyslog().
 	stopSyslog func()
 
-	nodename             string
-	serial               io.ReadWriteCloser
-	serialSocket         string
-	sshKeys              []string
-	connectionTimeout    time.Duration
-	sshControlMasterPath string
+	nodename                string
+	serial                  io.ReadWriteCloser
+	serialSocket            string
+	sshKeys                 []string
+	connectionTimeout       time.Duration
+	sshControlMasterPath    string
+	sshControlMasterRunning bool
 
 	ipv4         net.IP
 	ipv6         *net.IPAddr
@@ -393,12 +398,74 @@ func (t *genericFuchsiaTarget) SSHClient() (*sshutil.Client, error) {
 	return nil, fmt.Errorf("SSHClient() not implemented")
 }
 
-func (t *genericFuchsiaTarget) SetSSHControlMasterPath(socketPath string) {
-	t.sshControlMasterPath = socketPath
+func (t *genericFuchsiaTarget) SSHControlMasterPath() string {
+	if t.sshControlMasterRunning {
+		return t.sshControlMasterPath
+	}
+	return ""
 }
 
-func (t *genericFuchsiaTarget) SSHControlMasterPath() string {
-	return t.sshControlMasterPath
+func (t *genericFuchsiaTarget) SSHControlMasterRunning() bool {
+	return t.sshControlMasterRunning
+}
+
+func (t *genericFuchsiaTarget) SetupSSHControlMaster(ctx context.Context, sshKey, addr string) (func(), error) {
+	cleanup := func() {}
+	runner := subprocess.Runner{}
+	socketPath := CreateSocketPath("ssh")
+	absSocketPath, err := filepath.Abs(socketPath)
+	if err != nil {
+		return cleanup, err
+	}
+	t.sshControlMasterPath = absSocketPath
+	// ssh is added to $PATH in //tools/integration/testsharder/task_requests.go.
+	cmd := []string{
+		"ssh",
+		// Enable ControlMaster.
+		"-M",
+		// ControlMaster path.
+		"-S", t.sshControlMasterPath,
+		// Don't execute a remote command.
+		"-N",
+		// No config file.
+		"-F", "none",
+		"-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=20",
+		"-i", sshKey,
+		addr,
+	}
+	cmdProcess := runner.Command(cmd, subprocess.RunOptions{})
+	logger.Debugf(ctx, "starting: %v", cmd)
+	if err := cmdProcess.Start(); err != nil {
+		return cleanup, fmt.Errorf("failed to start ssh controlmaster: %w", err)
+	}
+	t.sshControlMasterRunning = true
+	// Use a new context so that the subprocess can only be terminated by
+	// a direct call to the cancel function.
+	cmCtx, cmCancel := context.WithCancel(context.Background())
+	cmdWait := make(chan error)
+	go func() {
+		// Using subprocess.WaitForCmd() instead of cmd.Wait() ensures that
+		// the function returns when the context is done.
+		err := subprocess.WaitForCmd(cmCtx, cmdProcess)
+		t.sshControlMasterRunning = false
+		if err != nil && !errors.Is(err, context.Canceled) {
+			logger.Errorf(ctx, "ssh controlmaster process finished with err: %s", err)
+		} else {
+			logger.Debugf(ctx, "ssh controlmaster process finished")
+		}
+		close(cmdWait)
+	}()
+	cleanup = func() {
+		cmCancel()
+		<-cmdWait
+		// Killing the process should cause the socket to be deleted as well,
+		// but try removing just in case.
+		if err := os.Remove(t.sshControlMasterPath); err != nil && !os.IsNotExist(err) {
+			logger.Errorf(ctx, "failed to remove ssh controlmaster socket: %s", err)
+		}
+
+	}
+	return cleanup, nil
 }
 
 // AddPackageRepository adds the given package repository to the target.
