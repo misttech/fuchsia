@@ -29,8 +29,8 @@ const char kDefaultSnapshotExclusionConfigPath[] = "/feedback-config/snapshot_ex
 
 constexpr char kInspectConfigKey[] = "config";
 
-constexpr char kPersistedLogsNumFilesKey[] = "persisted_logs_num_files";
-constexpr char kPersistedLogsTotalSizeKey[] = "persisted_logs_total_size_kib";
+constexpr uint64_t kPersistedLogsNumFiles = 8;
+constexpr StorageSize kPersistedLogsTotalSize = StorageSize::Kilobytes(512);
 constexpr char kSnapshotPersistenceMaxTmpSizeKey[] = "snapshot_persistence_max_tmp_size_mib";
 constexpr char kSnapshotPersistenceMaxCacheSizeKey[] = "snapshot_persistence_max_cache_size_mib";
 

@@ -91,30 +91,8 @@ class FeedbackConfigTest : public ConfigTest {
 
 using InspectConfigTest = UnitTestFixture;
 
-TEST_F(ProductConfigTest, MissingPersistedLogsNumFiles) {
-  const std::optional<ProductConfig> config = ParseConfig(R"({
-  "persisted_logs_total_size_kib": 1,
-  "snapshot_persistence_max_tmp_size_mib": 1,
-  "snapshot_persistence_max_cache_size_mib": 1
-})");
-
-  EXPECT_FALSE(config.has_value());
-}
-
-TEST_F(ProductConfigTest, MissingPersistedLogsTotalSizeKib) {
-  const std::optional<ProductConfig> config = ParseConfig(R"({
-  "persisted_logs_num_files": 1,
-  "snapshot_persistence_max_tmp_size_mib": 1,
-  "snapshot_persistence_max_cache_size_mib": 1
-})");
-
-  EXPECT_FALSE(config.has_value());
-}
-
 TEST_F(ProductConfigTest, MissingSnapshotPersistenceMaxTmpSizeMib) {
   const std::optional<ProductConfig> config = ParseConfig(R"({
-  "persisted_logs_num_files": 1,
-  "persisted_logs_total_size_kib": 1,
   "snapshot_persistence_max_cache_size_mib": 1
 })");
 
@@ -123,8 +101,6 @@ TEST_F(ProductConfigTest, MissingSnapshotPersistenceMaxTmpSizeMib) {
 
 TEST_F(ProductConfigTest, MissingSnapshotPersistenceMaxCacheSizeMib) {
   const std::optional<ProductConfig> config = ParseConfig(R"({
-  "persisted_logs_num_files": 1,
-  "persisted_logs_total_size_kib": 1,
   "snapshot_persistence_max_tmp_size_mib": 1
 })");
 
@@ -133,8 +109,6 @@ TEST_F(ProductConfigTest, MissingSnapshotPersistenceMaxCacheSizeMib) {
 
 TEST_F(ProductConfigTest, SpuriousField) {
   const std::optional<ProductConfig> config = ParseConfig(R"({
-  "persisted_logs_num_files": 1,
-  "persisted_logs_total_size_kib": 1,
   "snapshot_persistence_max_tmp_size_mib": 1,
   "snapshot_persistence_max_cache_size_mib": 1,
   "spurious": ""
@@ -143,113 +117,8 @@ TEST_F(ProductConfigTest, SpuriousField) {
   EXPECT_FALSE(config.has_value());
 }
 
-TEST_F(ProductConfigTest, PersistedLogsNumFilesPositive) {
-  const std::optional<ProductConfig> config = ParseConfig(R"({
-  "persisted_logs_num_files": 1,
-  "persisted_logs_total_size_kib": 1,
-  "snapshot_persistence_max_tmp_size_mib": 1,
-  "snapshot_persistence_max_cache_size_mib": 1
-})");
-
-  ASSERT_TRUE(config.has_value());
-  EXPECT_EQ(config->persisted_logs_num_files, 1u);
-}
-
-TEST_F(ProductConfigTest, PersistedLogsNumFilesZero) {
-  const std::optional<ProductConfig> config = ParseConfig(R"({
-  "persisted_logs_num_files": 0,
-  "persisted_logs_total_size_kib": 1,
-  "snapshot_persistence_max_tmp_size_mib": 1,
-  "snapshot_persistence_max_cache_size_mib": 1
-})");
-
-  EXPECT_FALSE(config.has_value());
-}
-
-TEST_F(ProductConfigTest, PersistedLogsNumFilesNegative) {
-  const std::optional<ProductConfig> config = ParseConfig(R"({
-  "persisted_logs_num_files": -1,
-  "persisted_logs_total_size_kib": 1,
-  "snapshot_persistence_max_tmp_size_mib": 1,
-  "snapshot_persistence_max_cache_size_mib": 1
-})");
-
-  EXPECT_FALSE(config.has_value());
-}
-
-TEST_F(ProductConfigTest, PersistedLogsNumFilesNotNumber) {
-  const std::optional<ProductConfig> config = ParseConfig(R"({
-  "persisted_logs_num_files": "",
-  "persisted_logs_total_size_kib": 1,
-  "snapshot_persistence_max_tmp_size_mib": 1,
-  "snapshot_persistence_max_cache_size_mib": 1
-})");
-
-  EXPECT_FALSE(config.has_value());
-}
-
-TEST_F(ProductConfigTest, PersistedLogsTotalSizeKibPositive) {
-  const std::optional<ProductConfig> config = ParseConfig(R"({
-  "persisted_logs_num_files": 1,
-  "persisted_logs_total_size_kib": 1,
-  "snapshot_persistence_max_tmp_size_mib": 1,
-  "snapshot_persistence_max_cache_size_mib": 1
-})");
-
-  ASSERT_TRUE(config.has_value());
-  EXPECT_EQ(config->persisted_logs_total_size, StorageSize::Kilobytes(1));
-}
-
-TEST_F(ProductConfigTest, PersistedLogsTotalSizeKibZero) {
-  const std::optional<ProductConfig> config = ParseConfig(R"({
-  "persisted_logs_num_files": 1,
-  "persisted_logs_total_size_kib": 0,,
-  "snapshot_persistence_max_tmp_size_mib": 1,
-  "snapshot_persistence_max_cache_size_mib": 1
-})");
-
-  EXPECT_FALSE(config.has_value());
-}
-
-TEST_F(ProductConfigTest, PersistedLogsTotalSizeKibNegative) {
-  const std::optional<ProductConfig> config = ParseConfig(R"({
-  "persisted_logs_num_files": 1,
-  "persisted_logs_total_size_kib": -1,
-  "snapshot_persistence_max_tmp_size_mib": 1,
-  "snapshot_persistence_max_cache_size_mib": 1
-})");
-
-  EXPECT_FALSE(config.has_value());
-}
-
-TEST_F(ProductConfigTest, PersistedLogsTotalSizeKibNotNumber) {
-  const std::optional<ProductConfig> config = ParseConfig(R"({
-  "persisted_logs_num_files": 1,
-  "persisted_logs_total_size_kib": "",
-  "snapshot_persistence_max_tmp_size_mib": 1,
-  "snapshot_persistence_max_cache_size_mib": 1
-})");
-
-  EXPECT_FALSE(config.has_value());
-}
-
-TEST_F(ProductConfigTest, PersistedLogsBothNegative) {
-  const std::optional<ProductConfig> config = ParseConfig(R"({
-  "persisted_logs_num_files": -1,
-  "persisted_logs_total_size_kib": -1,
-  "snapshot_persistence_max_tmp_size_mib": 1,
-  "snapshot_persistence_max_cache_size_mib": 1
-})");
-
-  EXPECT_TRUE(config.has_value());
-  EXPECT_FALSE(config->persisted_logs_num_files.has_value());
-  EXPECT_FALSE(config->persisted_logs_total_size.has_value());
-}
-
 TEST_F(ProductConfigTest, SnapshotPersistenceMaxTmpSizeMibPositive) {
   const std::optional<ProductConfig> config = ParseConfig(R"({
-  "persisted_logs_num_files": 1,
-  "persisted_logs_total_size_kib": 1,
   "snapshot_persistence_max_tmp_size_mib": 1,
   "snapshot_persistence_max_cache_size_mib": 1
 })");
@@ -260,8 +129,6 @@ TEST_F(ProductConfigTest, SnapshotPersistenceMaxTmpSizeMibPositive) {
 
 TEST_F(ProductConfigTest, SnapshotPersistenceMaxTmpSizeMibZero) {
   const std::optional<ProductConfig> config = ParseConfig(R"({
-  "persisted_logs_num_files": 1,
-  "persisted_logs_total_size_kib": 1,
   "snapshot_persistence_max_tmp_size_mib": 0,
   "snapshot_persistence_max_cache_size_mib": 1
 })");
@@ -272,8 +139,6 @@ TEST_F(ProductConfigTest, SnapshotPersistenceMaxTmpSizeMibZero) {
 
 TEST_F(ProductConfigTest, SnapshotPersistenceMaxTmpSizeMibNegative) {
   const std::optional<ProductConfig> config = ParseConfig(R"({
-  "persisted_logs_num_files": 1,
-  "persisted_logs_total_size_kib": 1,
   "snapshot_persistence_max_tmp_size_mib": -1,
   "snapshot_persistence_max_cache_size_mib": 1
 })");
@@ -284,8 +149,6 @@ TEST_F(ProductConfigTest, SnapshotPersistenceMaxTmpSizeMibNegative) {
 
 TEST_F(ProductConfigTest, SnapshotPersistenceMaxTmpSizeMibNotNumber) {
   const std::optional<ProductConfig> config = ParseConfig(R"({
-  "persisted_logs_num_files": 1,
-  "persisted_logs_total_size_kib": 1,
   "snapshot_persistence_max_tmp_size_mib": "",
   "snapshot_persistence_max_cache_size_mib": 1
 })");
@@ -295,8 +158,6 @@ TEST_F(ProductConfigTest, SnapshotPersistenceMaxTmpSizeMibNotNumber) {
 
 TEST_F(ProductConfigTest, SnapshotPersistenceMaxCacheSizeMibPositive) {
   const std::optional<ProductConfig> config = ParseConfig(R"({
-  "persisted_logs_num_files": 1,
-  "persisted_logs_total_size_kib": 1,
   "snapshot_persistence_max_tmp_size_mib": 1,
   "snapshot_persistence_max_cache_size_mib": 1
 })");
@@ -307,8 +168,6 @@ TEST_F(ProductConfigTest, SnapshotPersistenceMaxCacheSizeMibPositive) {
 
 TEST_F(ProductConfigTest, SnapshotPersistenceMaxCacheSizeMibZero) {
   const std::optional<ProductConfig> config = ParseConfig(R"({
-  "persisted_logs_num_files": 1,
-  "persisted_logs_total_size_kib": 1,
   "snapshot_persistence_max_tmp_size_mib": 1,
   "snapshot_persistence_max_cache_size_mib": 0
 })");
@@ -319,8 +178,6 @@ TEST_F(ProductConfigTest, SnapshotPersistenceMaxCacheSizeMibZero) {
 
 TEST_F(ProductConfigTest, SnapshotPersistenceMaxCacheSizeMibNegative) {
   const std::optional<ProductConfig> config = ParseConfig(R"({
-  "persisted_logs_num_files": 1,
-  "persisted_logs_total_size_kib": 1,
   "snapshot_persistence_max_tmp_size_mib": 1,
   "snapshot_persistence_max_cache_size_mib": -1
 })");
@@ -331,8 +188,6 @@ TEST_F(ProductConfigTest, SnapshotPersistenceMaxCacheSizeMibNegative) {
 
 TEST_F(ProductConfigTest, SnapshotPersistenceMaxCacheSizeMibNotNumber) {
   const std::optional<ProductConfig> config = ParseConfig(R"({
-  "persisted_logs_num_files": 1,
-  "persisted_logs_total_size_kib": 1,
   "snapshot_persistence_max_tmp_size_mib": 1,
   "snapshot_persistence_max_cache_size_mib": ""
 })");
@@ -342,8 +197,6 @@ TEST_F(ProductConfigTest, SnapshotPersistenceMaxCacheSizeMibNotNumber) {
 
 TEST_F(ProductConfigTest, UseOverrideConfig) {
   const std::string override_path = WriteConfig(R"({
-  "persisted_logs_num_files": 1,
-  "persisted_logs_total_size_kib": 1,
   "snapshot_persistence_max_tmp_size_mib": 1,
   "snapshot_persistence_max_cache_size_mib": 1
 })");
@@ -351,16 +204,14 @@ TEST_F(ProductConfigTest, UseOverrideConfig) {
   const std::optional<ProductConfig> config = GetProductConfig(override_path, "/bad/path");
 
   ASSERT_TRUE(config.has_value());
-  EXPECT_EQ(config->persisted_logs_num_files, 1u);
-  EXPECT_EQ(config->persisted_logs_total_size, StorageSize::Kilobytes(1));
+  EXPECT_EQ(config->persisted_logs_num_files, kPersistedLogsNumFiles);
+  EXPECT_EQ(config->persisted_logs_total_size, kPersistedLogsTotalSize);
   EXPECT_EQ(config->snapshot_persistence_max_tmp_size, StorageSize::Megabytes(1));
   EXPECT_EQ(config->snapshot_persistence_max_cache_size, StorageSize::Megabytes(1));
 }
 
 TEST_F(ProductConfigTest, UseDefaultConfig) {
   const std::string default_path = WriteConfig(R"({
-  "persisted_logs_num_files": 1,
-  "persisted_logs_total_size_kib": 1,
   "snapshot_persistence_max_tmp_size_mib": 1,
   "snapshot_persistence_max_cache_size_mib": 1
 })");
@@ -368,8 +219,8 @@ TEST_F(ProductConfigTest, UseDefaultConfig) {
   const std::optional<ProductConfig> config = GetProductConfig("/bad/path", default_path);
 
   ASSERT_TRUE(config.has_value());
-  EXPECT_EQ(config->persisted_logs_num_files, 1u);
-  EXPECT_EQ(config->persisted_logs_total_size, StorageSize::Kilobytes(1));
+  EXPECT_EQ(config->persisted_logs_num_files, kPersistedLogsNumFiles);
+  EXPECT_EQ(config->persisted_logs_total_size, kPersistedLogsTotalSize);
   EXPECT_EQ(config->snapshot_persistence_max_tmp_size, StorageSize::Megabytes(1));
   EXPECT_EQ(config->snapshot_persistence_max_cache_size, StorageSize::Megabytes(1));
 }
@@ -1096,23 +947,6 @@ TEST_F(InspectConfigTest, ExposeConfig_BuildTypeEnableAll) {
                              }));
 }
 
-TEST_F(InspectConfigTest, ExposeConfig_PersistedLogsNumFiles) {
-  ExposeConfig(InspectRoot(), {},
-               ProductConfig{
-                   .persisted_logs_num_files = 1,
-               });
-
-  EXPECT_THAT(InspectTree(), BuildConfigMatcher({StringIs(kPersistedLogsNumFilesKey, "1")}));
-}
-
-TEST_F(InspectConfigTest, ExposeConfig_PersistedLogsTotalSize) {
-  ExposeConfig(InspectRoot(), {},
-               ProductConfig{
-                   .persisted_logs_total_size = StorageSize::Kilobytes(1),
-               });
-  EXPECT_THAT(InspectTree(), BuildConfigMatcher({StringIs(kPersistedLogsTotalSizeKey, "1")}));
-}
-
 TEST_F(InspectConfigTest, ExposeConfig_SnapshotPersistenceMaxTmpSizeNone) {
   ExposeConfig(InspectRoot(), {},
                ProductConfig{
@@ -1163,8 +997,6 @@ TEST_F(InspectConfigTest, ExposeConfig_ProductEnableAll) {
                });
 
   EXPECT_THAT(InspectTree(), BuildConfigMatcher({
-                                 StringIs(kPersistedLogsNumFilesKey, "1"),
-                                 StringIs(kPersistedLogsTotalSizeKey, "1"),
                                  StringIs(kSnapshotPersistenceMaxTmpSizeKey, "1"),
                                  StringIs(kSnapshotPersistenceMaxCacheSizeKey, "1"),
                              }));
@@ -1192,8 +1024,6 @@ TEST_F(InspectConfigTest, ExposeConfig_EnableAll) {
                                  BoolIs(kEnableDataRedactionKey, true),
                                  BoolIs(kEnableHourlySnapshotsKey, true),
                                  BoolIs(kEnableLimitInspectDataKey, true),
-                                 StringIs(kPersistedLogsNumFilesKey, "1"),
-                                 StringIs(kPersistedLogsTotalSizeKey, "1"),
                                  StringIs(kSnapshotPersistenceMaxTmpSizeKey, "1"),
                                  StringIs(kSnapshotPersistenceMaxCacheSizeKey, "1"),
                              }));
