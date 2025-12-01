@@ -261,7 +261,8 @@ mesa_source_set("util") {
 
   if (current_os == "fuchsia") {
     deps += [
-      "//sdk/lib/syslog/structured_backend",
+      "//sdk/lib/magma_client",
+      "//sdk/lib/magma_client:magma_headers",
       "//sdk/lib/zxio",
       "//zircon/system/ulib/zx",
     ]
@@ -305,7 +306,7 @@ mesa_source_set("magma_util") {
 mesa_source_set("zircon_util") {
   public_deps = [
     ":util",
-    "$mesa_build_root/src/os:zircon_os",
+    "$mesa_build_root/src/os",
   ]
 
   public_configs = [ ":util_public_config" ]

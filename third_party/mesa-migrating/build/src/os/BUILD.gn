@@ -32,16 +32,11 @@ mesa_source_set("os") {
 
     defines = [ "USE_MAGMA=1" ]
 
-    # Don't depend on libmagma here, do that on executable targets only
-    deps = [ "//sdk/lib/magma_client:magma_headers" ]
-  }
-}
+    deps = [
+      "$mesa_build_root/src/util",
 
-mesa_source_set("zircon_os") {
-  if (current_os == "fuchsia") {
-    sources = [
-      "$src_dir/fuchsia.cpp",
-      "$src_dir/fuchsia.h",
+      # Don't depend on libmagma here, do that on executable targets only
+      "//sdk/lib/magma_client:magma_headers",
     ]
   }
 }

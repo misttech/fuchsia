@@ -173,7 +173,7 @@ mesa_source_set("fuchsia_buffer_collection_extension") {
 
     # See target-level comment for rationale of use of Magma in Lavapipe.
     "$mesa_build_root/include:vulkan",
-    "//src/graphics/lib/magma/src/libmagma:magma_sysmem",
+    "//sdk/lib/magma_client",
     "//src/graphics/magma/lib/magma/platform/zircon:logger_for_stderr",
   ]
 
