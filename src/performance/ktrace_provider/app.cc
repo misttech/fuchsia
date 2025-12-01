@@ -132,8 +132,8 @@ void ForwardBuffer(DrainContext drain_context) {
   // changes and use thread runtime for this measurement.
   const zx::duration profile_capacity = zx::usec(2300);
   if (read_out_duration > profile_capacity) {
-    FX_LOGS(WARNING) << "Read out exceeded expected worst case execution time: expected="
-                     << profile_capacity.get() << "ns actual=" << read_out_duration.get() << "ns";
+    FX_LOGS(DEBUG) << "Read out exceeded expected worst case execution time: expected="
+                   << profile_capacity.get() << "ns actual=" << read_out_duration.get() << "ns";
   }
 
   switch (trace_state()) {
