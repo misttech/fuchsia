@@ -448,6 +448,10 @@ VK_TEST_F(RectangleCompositorTest, OverlapTest) {
   EXPECT_EQ(histogram[kBlack], 512U * 512U - pixels_per_color);
 }
 
+class RectangleCompositorParameterizedOpacityTest
+    : public RectangleCompositorTest,
+      public ::testing::WithParamInterface<RectangleCompositor::Opacity> {};
+
 // This test makes sure that alpha-blending transparency works.
 // It renders a blue rectangle with 0.6 alpha on top of an
 // opaque red rectangle.
@@ -457,18 +461,23 @@ VK_TEST_F(RectangleCompositorTest, OverlapTest) {
 // alpha that is < 1.0.
 // TODO(43394): Add testing for multiple interleaved opaque and
 // transparent rectangles.
-VK_TEST_F(RectangleCompositorTest, TransparencyTest) {
+VK_TEST_P(RectangleCompositorParameterizedOpacityTest, TransparencyTest) {
   frame_setup();
   EXPECT_TRUE(ren_);
 
   std::vector<Rectangle2D> rectangles;
   std::vector<RectangleCompositor::ColorData> color_datas;
   std::vector<TexturePtr> textures;
+  const RectangleCompositor::Opacity opacity = GetParam();
 
-  vec4 colors[2] = {vec4{1, 0, 0, 1}, vec4(0, 0, 1, 0.6)};
+  vec4 top_color = vec4(0, 0, 1, 0.6);
+  if (opacity == RectangleCompositor::Opacity::Translucent) {
+    top_color = vec4(0, 0, 0.6, 0.6);
+  }
+  vec4 colors[2] = {vec4{1, 0, 0, 1}, top_color};
   for (uint32_t i = 0; i < 2; i++) {
     Rectangle2D rectangle(vec2(200, 200), vec2(100, 100));
-    RectangleCompositor::ColorData color_data(colors[i], RectangleCompositor::Opacity::Translucent);
+    RectangleCompositor::ColorData color_data(colors[i], opacity);
 
     rectangles.emplace_back(rectangle);
     color_datas.emplace_back(color_data);
@@ -499,6 +508,11 @@ VK_TEST_F(RectangleCompositorTest, TransparencyTest) {
   EXPECT_EQ(histogram[kBlack], 512U * 512U - pixels_per_color);
 }
 
+INSTANTIATE_TEST_SUITE_P(
+    RectangleCompositorOpacity, RectangleCompositorParameterizedOpacityTest,
+    ::testing::Values(RectangleCompositor::Opacity::Translucent,
+                      RectangleCompositor::Opacity::NonPremultipliedTranslucent));
+
 // Turn the transparency flag off and try rendering with transparency again. Now
 // even though the color has transparency, it should still render as opaque.
 VK_TEST_F(RectangleCompositorTest, TransparencyFlagOffTest) {
@@ -509,7 +523,7 @@ VK_TEST_F(RectangleCompositorTest, TransparencyFlagOffTest) {
   std::vector<RectangleCompositor::ColorData> color_datas;
   std::vector<TexturePtr> textures;
 
-  vec4 colors[2] = {vec4{1, 0, 0, 1}, vec4(0, 0, 1, 0.6)};
+  vec4 colors[2] = {vec4{1, 0, 0, 1}, vec4(0, 0, 0.6, 0.6)};
   for (uint32_t i = 0; i < 2; i++) {
     Rectangle2D rectangle(vec2(200, 200), vec2(100, 100));
     RectangleCompositor::ColorData color_data(colors[i], RectangleCompositor::Opacity::Opaque);
@@ -529,7 +543,7 @@ VK_TEST_F(RectangleCompositorTest, TransparencyFlagOffTest) {
                                            vk::ImageLayout::eColorAttachmentOptimal);
 
   const ColorHistogram<ColorBgra> histogram2(bytes.data(), kFramebufferWidth * kFramebufferHeight);
-  constexpr ColorBgra kBlue2(0, 0, 153, 153);  // Premultiplied alpha.
+  constexpr ColorBgra kBlue2(0, 0, 153, 153);
   constexpr ColorBgra kBlend(102, 0, 153, 255);
   constexpr ColorBgra kBlend2(102, 0, 152, 255);
 
@@ -537,7 +551,7 @@ VK_TEST_F(RectangleCompositorTest, TransparencyFlagOffTest) {
   EXPECT_EQ(2U, histogram2.size());
   EXPECT_EQ(histogram2[kRed], 0U);
   EXPECT_EQ(histogram2[kBlue2], pixels_per_color);
-  EXPECT_TRUE(histogram2[kBlend] == pixels_per_color || histogram2[kBlend2] == 0);
+  EXPECT_TRUE(histogram2[kBlend] == 0 && histogram2[kBlend2] == 0);
   EXPECT_EQ(histogram2[kBlack], 512U * 512U - pixels_per_color);
 }
 

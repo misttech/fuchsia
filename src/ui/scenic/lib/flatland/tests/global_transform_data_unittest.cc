@@ -944,9 +944,11 @@ TEST(GlobalImageDataTest, ImageMetadataColorTest) {
 
   // Explicitly make sure identifier is invalid id to simulate SolidFill rects.
   uber_struct->images[{1, 0}] = {.identifier = allocation::kInvalidImageId,
-                                 .multiply_color = color_a};
+                                 .multiply_color = color_a,
+                                 .blend_mode = BlendMode::kStraightAlpha()};
   uber_struct->images[{1, 1}] = {.identifier = allocation::kInvalidImageId,
-                                 .multiply_color = color_b};
+                                 .multiply_color = color_b,
+                                 .blend_mode = BlendMode::kStraightAlpha()};
   uber_structs[1] = std::move(uber_struct);
 
   // These are the color values we expect to get back from |ComputeGlobalImageData|.

@@ -2106,12 +2106,24 @@ VK_TEST_P(VulkanRendererParameterizedMultiplyColorTest, MultiplyColorTest) {
                                       .blend_mode = blend_mode};
 
   // Create the texture that will go on the transparent renderable.
+  std::array<float, 4> transparent_color;
+  switch (blend_mode.enum_value()) {
+    case BlendMode::Enum::kPremultipliedAlpha:
+      transparent_color = {0, 0.5, 0, 0.5};
+      break;
+    case BlendMode::Enum::kStraightAlpha:
+      transparent_color = {0, 1, 0, 0.5};
+      break;
+    default:
+      GTEST_FAIL() << "Unsupported blend mode";
+      break;
+  }
   ImageMetadata transparent_texture = {.collection_id = collection_id,
                                        .identifier = allocation::GenerateUniqueImageId(),
                                        .vmo_index = 0,
                                        .width = 1,
                                        .height = 1,
-                                       .multiply_color = {0, 1, 0, 0.5},
+                                       .multiply_color = transparent_color,
                                        .blend_mode = blend_mode};
 
   // Import all the images.
@@ -2154,27 +2166,10 @@ VK_TEST_P(VulkanRendererParameterizedMultiplyColorTest, MultiplyColorTest) {
                    constexpr uint32_t kLoOfs = -1;
                    // Offset for ARM Mali:
                    constexpr uint32_t kHiOfs = +1;
-                   glm::ivec4 kMultiLowVal;
-                   glm::ivec4 kMultiHighVal;
-                   glm::ivec4 kGreenLowVal;
-                   glm::ivec4 kGreenHighVal;
-                   switch (blend_mode.enum_value()) {
-                     case BlendMode::Enum::kPremultipliedAlpha:
-                       kMultiLowVal = glm::ivec4(127 + kLoOfs, 127 + kLoOfs, 0, 255);
-                       kMultiHighVal = glm::ivec4(127 + kHiOfs, 127 + kHiOfs, 0, 255);
-                       kGreenLowVal = glm::ivec4(0, 127 + kLoOfs, 0, 128);
-                       kGreenHighVal = glm::ivec4(0, 127 + kHiOfs, 0, 128);
-                       break;
-                     case BlendMode::Enum::kStraightAlpha:
-                       kMultiLowVal = glm::ivec4(127 + kLoOfs, 64 + kLoOfs, 0, 255);
-                       kMultiHighVal = glm::ivec4(127 + kHiOfs, 64 + kHiOfs, 0, 255);
-                       kGreenLowVal = glm::ivec4(0, 64 + kLoOfs, 0, 128);
-                       kGreenHighVal = glm::ivec4(0, 64 + kHiOfs, 0, 128);
-                       break;
-                     default:
-                       GTEST_FAIL() << "Unsupported blend mode";
-                       break;
-                   }
+                   auto kMultiLowVal = glm::ivec4(127 + kLoOfs, 127 + kLoOfs, 0, 255);
+                   auto kMultiHighVal = glm::ivec4(127 + kHiOfs, 127 + kHiOfs, 0, 255);
+                   auto kGreenLowVal = glm::ivec4(0, 127 + kLoOfs, 0, 128);
+                   auto kGreenHighVal = glm::ivec4(0, 127 + kHiOfs, 0, 128);
 
                    // Make sure the pixels are in the right order give that we rotated
                    // the rectangle.

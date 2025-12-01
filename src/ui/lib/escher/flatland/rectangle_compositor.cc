@@ -131,8 +131,6 @@ bool SetupColorConversionDualPass(RenderPassInfo* rp, vk::Rect2D render_area,
   return true;
 }
 
-vec4 GetPremultipliedRgba(vec4 rgba) { return vec4(vec3(rgba) * rgba.a, rgba.a); }
-
 // Draws a single rectangle at a particular depth value, z.
 void DrawSingle(CommandBuffer* cmd_buf, const ShaderProgramPtr& program,
                 const Rectangle2D& rectangle, const Texture* texture, const glm::vec4& color,
@@ -170,7 +168,7 @@ void DrawSingle(CommandBuffer* cmd_buf, const ShaderProgramPtr& program,
   // fragment shader. This is so that the data aligns with the push constant
   // range for the fragment shader only, otherwise it would overlap the ranges
   // for both the vertex and fragment shaders.
-  cmd_buf->PushConstants(GetPremultipliedRgba(color), /*offset*/ 80U);
+  cmd_buf->PushConstants(color, /*offset*/ 80U);
 
   // In Vulkan, YUV textures don't have a color space defined by the format. The OETF (Opto
   // Electrical Transfer Function) for BT.709 is closely approximated by using power of 2 for the

@@ -83,6 +83,19 @@ void ComputeGlobalImageData(GlobalIndexVector& output_indices, GlobalImageVector
     if (image_kv != uber_struct_kv->second->images.end()) {
       allocation::ImageMetadata image = image_kv->second;
       image.multiply_color[3] *= opacity_values[index];
+
+      // Flatland session produces ImageMetadatas whose `blend_mode` and
+      // `multiply_color` are mismatched: the `multiply_color` is always
+      // "straight alpha" regardless of the `blend_mode`.  Everywhere
+      // downstream of here (e.g. flatland::DisplayCompositor) expects
+      // the values to match; this is the code responsible for bringing
+      // them into alignment.
+      if (image.blend_mode == BlendMode::kPremultipliedAlpha() ||
+          image.blend_mode == BlendMode::kReplace()) {
+        image.multiply_color[0] *= image.multiply_color[3];
+        image.multiply_color[1] *= image.multiply_color[3];
+        image.multiply_color[2] *= image.multiply_color[3];
+      }
       output_images.push_back(image);
       output_indices.push_back(index);
     }

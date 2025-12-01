@@ -299,7 +299,7 @@ TEST_F(CpuRendererIntegrationTest, BlendsImages) {
   auto screenshot = TakeScreenshot(screenshotter_, display_width_, display_height_);
   auto histogram = screenshot.Histogram();
 
-  const utils::Pixel kExpectedBlend(/*blue=*/255, /*green=*/0, /*red=*/127, /*alpha=*/254);
+  const utils::Pixel kExpectedBlend(/*blue=*/127, /*green=*/0, /*red=*/127, /*alpha=*/254);
   EXPECT_EQ(display_width_ * display_height_, histogram[kExpectedBlend]);
 }
 

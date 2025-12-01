@@ -22,6 +22,17 @@
         "compact_name": "fx/fuchsia-intl-tests_ctf27#meta/test-root.cm"
     },
     {
+        "name": "fuchsia-pkg://fuchsia.com/cpu-renderer-integration-test-suite_ctf27#meta/cpu-renderer-integration-test.cm",
+        "cases": [
+            {
+                "name": "main",
+                "disabled": true,
+                "bug": "455921374"
+            }
+        ],
+        "compact_name": "fx/cpu-renderer-integration-test-suite_ctf27#meta/cpu-renderer-integration-test.cm"
+    },
+    {
         "name": "fuchsia-pkg://fuchsia.com/fuchsia-intl-tests_ctf28#meta/test-root.cm",
         "cases": [
             {
@@ -31,5 +42,16 @@
             }
         ],
         "compact_name": "fx/fuchsia-intl-tests_ctf28#meta/test-root.cm"
+    },
+    {
+        "name": "fuchsia-pkg://fuchsia.com/cpu-renderer-integration-test-suite_ctf28#meta/cpu-renderer-integration-test.cm",
+        "cases": [
+            {
+                "name": "main",
+                "disabled": true,
+                "bug": "455921374"
+            }
+        ],
+        "compact_name": "fx/cpu-renderer-integration-test-suite_ctf28#meta/cpu-renderer-integration-test.cm"
     }
 ]

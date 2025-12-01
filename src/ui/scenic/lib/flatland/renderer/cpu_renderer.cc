@@ -300,17 +300,17 @@ void CpuRenderer::Render(const allocation::ImageMetadata& render_target,
                                                    render_target_ptr[index]);
                           break;
                         case BlendMode::Enum::kStraightAlpha: {
-                          const float alphaF = pixel.alphaF() * image.multiply_color[kAlphaIndex];
                           const float backgroundF =
                               static_cast<float>(render_target_ptr[index]) / 255.f;
                           float outputF;  // set below
                           if (offset < kAlphaIndex) {
                             // RGB = A(src) * RGB(src) + (1-A(src)) * RGB(dst)
                             const float colorF = static_cast<float>(color[offset]) / 255.f;
-                            outputF = (alphaF * colorF) + ((1.f - alphaF) * backgroundF);
+                            outputF =
+                                (pixel.alphaF() * colorF) + ((1.f - pixel.alphaF()) * backgroundF);
                           } else {
                             // A = A(src) + (1 - A(src)) A(dst)
-                            outputF = alphaF + ((1 - alphaF) * backgroundF);
+                            outputF = pixel.alphaF() + ((1 - pixel.alphaF()) * backgroundF);
                           }
                           const uint8_t output =
                               static_cast<uint8_t>(clamp(outputF * 255.f, 0.f, 255.f));
