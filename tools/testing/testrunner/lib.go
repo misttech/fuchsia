@@ -211,7 +211,13 @@ func execute(
 			return err
 		}
 		if ffx != nil {
-			ffxTester, err := NewFFXTester(ctx, ffx, outputs.OutDir, opts.Experiments, opts.LLVMProfdataPath)
+			testerOpts := FFXTesterOptions{
+				Ffx:          ffx,
+				OutputDir:    outputs.OutDir,
+				Experiments:  opts.Experiments,
+				LLVMProfdata: opts.LLVMProfdataPath,
+			}
+			ffxTester, err := NewFFXTester(ctx, testerOpts)
 			if err != nil {
 				return fmt.Errorf("failed to initialize ffx tester: %w", err)
 			}
@@ -255,7 +261,14 @@ func execute(
 			}
 			if localTester == nil {
 				var err error
-				localTester, err = NewSubprocessTester(opts.LocalWD, localEnv, outputs.OutDir, opts.NsjailPath, opts.NsjailRoot)
+				testerOpts := SubprocessTesterOptions{
+					Dir:        opts.LocalWD,
+					Env:        localEnv,
+					OutputDir:  outputs.OutDir,
+					NsjailPath: opts.NsjailPath,
+					NsjailRoot: opts.NsjailRoot,
+				}
+				localTester, err = NewSubprocessTester(testerOpts)
 				if err != nil {
 					return nil, nil, err
 				}

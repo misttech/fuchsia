@@ -136,20 +136,28 @@ type sandboxingProps struct {
 	cwd           string
 }
 
+type SubprocessTesterOptions struct {
+	Dir        string
+	Env        []string
+	OutputDir  string
+	NsjailPath string
+	NsjailRoot string
+}
+
 // NewSubprocessTester returns a SubprocessTester that can execute tests
 // locally with a given working directory and environment.
-func NewSubprocessTester(dir string, env []string, localOutputDir, nsjailPath, nsjailRoot string) (Tester, error) {
+func NewSubprocessTester(opts SubprocessTesterOptions) (Tester, error) {
 	s := &SubprocessTester{
-		dir:            dir,
-		env:            env,
-		localOutputDir: localOutputDir,
+		dir:            opts.Dir,
+		env:            opts.Env,
+		localOutputDir: opts.OutputDir,
 		testRuns:       make(map[string]string),
 	}
 	// If the caller provided a path to NsJail, then intialize sandboxing properties.
-	if nsjailPath != "" {
+	if opts.NsjailPath != "" {
 		s.sProps = &sandboxingProps{
-			nsjailPath: nsjailPath,
-			nsjailRoot: nsjailRoot,
+			nsjailPath: opts.NsjailPath,
+			nsjailRoot: opts.NsjailRoot,
 			// TODO(rudymathu): Remove this once ssh/ssh-keygen usage is removed.
 			mountUserHome: true,
 		}
@@ -651,10 +659,17 @@ type ffxTestRun struct {
 	totalDuration time.Duration
 }
 
+type FFXTesterOptions struct {
+	Ffx          FFXInstance
+	OutputDir    string
+	Experiments  botanist.Experiments
+	LLVMProfdata string
+}
+
 // NewFFXTester returns an FFXTester.
-func NewFFXTester(ctx context.Context, ffx FFXInstance, localOutputDir string, experiments botanist.Experiments, llvmProfdata string) (*FFXTester, error) {
+func NewFFXTester(ctx context.Context, opts FFXTesterOptions) (*FFXTester, error) {
 	err := retry.Retry(ctx, retry.WithMaxAttempts(retry.NewConstantBackoff(time.Second), maxReconnectAttempts), func() error {
-		return ffx.TargetWait(ctx, "-t", "10")
+		return opts.Ffx.TargetWait(ctx, "-t", "10")
 	}, nil)
 	if err != nil {
 		return nil, err
@@ -662,9 +677,9 @@ func NewFFXTester(ctx context.Context, ffx FFXInstance, localOutputDir string, e
 	debuginfodServers := []string{}
 	debuginfodCache := ""
 	llvmVersion := ""
-	if llvmProfdata != "" {
-		llvmVersion, llvmProfdata = covargs.SplitVersion(llvmProfdata)
-		llvmProfdata, err = filepath.Abs(llvmProfdata)
+	if opts.LLVMProfdata != "" {
+		llvmVersion, opts.LLVMProfdata = covargs.SplitVersion(opts.LLVMProfdata)
+		opts.LLVMProfdata, err = filepath.Abs(opts.LLVMProfdata)
 		if err != nil {
 			return nil, err
 		}
@@ -672,14 +687,14 @@ func NewFFXTester(ctx context.Context, ffx FFXInstance, localOutputDir string, e
 		if debuginfodURLs != "" {
 			debuginfodServers = strings.Split(debuginfodURLs, " ")
 		}
-		debuginfodCache = filepath.Join(localOutputDir, "debuginfod-cache")
+		debuginfodCache = filepath.Join(opts.OutputDir, "debuginfod-cache")
 	}
 	return &FFXTester{
-		ffx:               ffx,
-		localOutputDir:    localOutputDir,
-		experiments:       experiments,
+		ffx:               opts.Ffx,
+		localOutputDir:    opts.OutputDir,
+		experiments:       opts.Experiments,
 		testRuns:          make(map[string]ffxTestRun),
-		llvmProfdata:      llvmProfdata,
+		llvmProfdata:      opts.LLVMProfdata,
 		llvmVersion:       llvmVersion,
 		sinksPerTest:      make(map[string]runtests.DataSinkMap),
 		debuginfodServers: debuginfodServers,

@@ -15,7 +15,6 @@ import (
 	"strings"
 	"testing"
 
-	"go.fuchsia.dev/fuchsia/tools/botanist"
 	"go.fuchsia.dev/fuchsia/tools/build"
 	"go.fuchsia.dev/fuchsia/tools/debug/covargs/api/llvm"
 	"go.fuchsia.dev/fuchsia/tools/emulator"
@@ -147,7 +146,7 @@ func GetCoverageDataFromTest(t *testing.T, outDir string, config *Config) []stri
 
 	// Create a new fuchsia tester that is responsible for executing the test.
 	t.Log("Starting FFX runner through ssh")
-	ffxRunner, err := testrunner.NewFFXTester(runnerCtx, ffxInstance, outDir, botanist.Experiments{}, config.Bin.LlvmProfdata)
+	ffxRunner, err := testrunner.NewFFXTester(runnerCtx, testrunner.FFXTesterOptions{Ffx: ffxInstance, OutputDir: outDir, LLVMProfdata: config.Bin.LlvmProfdata})
 	if err != nil {
 		t.Fatalf("Cannot create Ffx Tester. Reason: %s", err)
 	}

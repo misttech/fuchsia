@@ -446,7 +446,7 @@ func TestFFXTester(t *testing.T) {
 			ffx := &ffxutil.MockFFXInstance{TestOutcome: outcome, Output: c.output}
 			localOutputDir := t.TempDir()
 			experiments := botanist.GetExperiments(c.experiments)
-			tester, err := NewFFXTester(context.Background(), ffx, localOutputDir, experiments, "")
+			tester, err := NewFFXTester(context.Background(), FFXTesterOptions{Ffx: ffx, OutputDir: localOutputDir, Experiments: experiments})
 			if err != nil {
 				t.Fatalf("NewFFXTester got unexpected error: %s", err)
 			}
@@ -534,7 +534,7 @@ func TestFFXTester(t *testing.T) {
 	t.Run("profile merging failed", func(t *testing.T) {
 		ctx := context.Background()
 		localOutputDir := t.TempDir()
-		tester, err := NewFFXTester(ctx, &ffxutil.MockFFXInstance{}, localOutputDir, botanist.Experiments{}, "llvm-profdata")
+		tester, err := NewFFXTester(ctx, FFXTesterOptions{Ffx: &ffxutil.MockFFXInstance{}, OutputDir: localOutputDir, LLVMProfdata: "llvm-profdata"})
 		if err != nil {
 			t.Fatalf("NewFFXTester got unexpected error: %s", err)
 		}

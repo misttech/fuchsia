@@ -255,7 +255,7 @@ func getHostTester(t *testing.T, testOutDir string) testrunner.Tester {
 	if err != nil {
 		t.Fatalf("failed to get current working directory: %s", err)
 	}
-	tester, err := testrunner.NewSubprocessTester(wd, os.Environ(), testOutDir, "", "")
+	tester, err := testrunner.NewSubprocessTester(testrunner.SubprocessTesterOptions{Dir: wd, Env: os.Environ(), OutputDir: testOutDir})
 	if err != nil {
 		t.Fatalf("failed to initialize fuchsia tester: %s", err)
 	}
@@ -287,7 +287,7 @@ func getTargetTester(t *testing.T, testOutDir string) testrunner.Tester {
 	if err != nil {
 		t.Fatalf("failed to initialize ffx instance: %s", err)
 	}
-	tester, err := testrunner.NewFFXTester(ctx, ffx, testOutDir, nil, *llvmProfData)
+	tester, err := testrunner.NewFFXTester(ctx, testrunner.FFXTesterOptions{Ffx: ffx, OutputDir: testOutDir, LLVMProfdata: *llvmProfData})
 	if err != nil {
 		t.Fatalf("failed to initialize ffx tester: %s", err)
 	}
