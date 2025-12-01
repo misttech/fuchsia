@@ -68,6 +68,7 @@ use fxfs_macros::{Migrate, migrate_to_version};
 use scopeguard::ScopeGuard;
 use serde::{Deserialize, Serialize};
 use std::fmt;
+use std::num::NonZero;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, OnceLock, Weak};
 use storage_device::Device;
@@ -431,25 +432,24 @@ struct LastObjectId {
 }
 
 impl LastObjectId {
-    // Returns true if a cipher is needed to generate new object IDs.
-    fn should_create_cipher(&self) -> bool {
-        self.cipher.is_some() && self.id as u32 == u32::MAX
-    }
-
-    fn get_next_object_id(&mut self) -> u64 {
+    /// Returns the next object ID.  Returns None if a new cipher is required because all object IDs
+    /// that can be generated with the current cipher have been exhausted.
+    fn get_next_object_id(&mut self) -> Option<NonZero<u64>> {
         if let Some(cipher) = &self.cipher {
             let hi = self.id & OBJECT_ID_HI_MASK;
             loop {
+                if self.id as u32 == u32::MAX {
+                    return None;
+                }
                 self.id += 1;
-                assert_ne!(self.id as u32, 0); // This would indicate the ID wrapped.
                 let candidate = hi | cipher.encrypt(self.id as u32) as u64;
-                if candidate != INVALID_OBJECT_ID {
-                    break candidate;
+                if let Some(candidate) = NonZero::new(candidate) {
+                    return Some(candidate);
                 }
             }
         } else {
             self.id += 1;
-            self.id
+            NonZero::new(self.id)
         }
     }
 }
@@ -1899,12 +1899,7 @@ impl ObjectStore {
 
     // Returns INVALID_OBJECT_ID if the object ID cipher needs to be created or rolled.
     pub(super) fn maybe_get_next_object_id(&self) -> u64 {
-        let mut last_object_id = self.last_object_id.lock();
-        if last_object_id.should_create_cipher() {
-            INVALID_OBJECT_ID
-        } else {
-            last_object_id.get_next_object_id()
-        }
+        self.last_object_id.lock().get_next_object_id().map_or(INVALID_OBJECT_ID, |id| id.get())
     }
 
     /// Returns a new object ID that can be used.  This will create an object ID cipher if needed.
@@ -1938,9 +1933,9 @@ impl ObjectStore {
 
         let next_id_hi = {
             let mut last_object_id = self.last_object_id.lock();
-            if !last_object_id.should_create_cipher() {
+            if let Some(id) = last_object_id.get_next_object_id() {
                 // We lost a race.
-                return Ok(last_object_id.get_next_object_id());
+                return Ok(id.get());
             }
             // It shouldn't be possible for last_object_id to wrap within our lifetime, so if this
             // happens, it's most likely due to corruption.
@@ -1987,12 +1982,11 @@ impl ObjectStore {
     /// Query the next object ID that will be used. Intended for use when checking filesystem
     /// consistency. Prefer [`Self::get_next_object_id()`] for general use.
     pub(crate) fn query_next_object_id(&self) -> u64 {
-        let mut last_object_id = self.last_object_id.lock().clone();
-        if last_object_id.should_create_cipher() {
-            INVALID_OBJECT_ID
-        } else {
-            last_object_id.get_next_object_id()
-        }
+        self.last_object_id
+            .lock()
+            .clone()
+            .get_next_object_id()
+            .map_or(INVALID_OBJECT_ID, |id| id.get())
     }
 
     fn allocator(&self) -> Arc<Allocator> {
@@ -3367,8 +3361,16 @@ mod tests {
         let key = UnwrappedKey::new(vec![0; FXFS_KEY_SIZE]);
         // 1106634048 results in INVALID_OBJECT_ID with this key.
         let mut last_object_id = LastObjectId { id: 1106634047, cipher: Some(Ff1::new(&key)) };
-        assert_ne!(last_object_id.get_next_object_id(), INVALID_OBJECT_ID);
-        assert_ne!(last_object_id.get_next_object_id(), INVALID_OBJECT_ID);
+        assert!(last_object_id.get_next_object_id().is_some());
+        assert!(last_object_id.get_next_object_id().is_some());
+
+        // This key results in INVALID_OBJECT_ID when the id is 0xffffffff.
+        let key = UnwrappedKey::new(vec![
+            241, 159, 109, 228, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0,
+        ]);
+        let mut last_object_id = LastObjectId { id: 0xffff_fffe, cipher: Some(Ff1::new(&key)) };
+        assert_eq!(last_object_id.get_next_object_id(), None);
     }
 
     #[fuchsia::test]
