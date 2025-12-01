@@ -632,6 +632,16 @@ impl Default for DisplayInfoV5 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::display::build_display_default_settings;
+    use crate::tests::fakes::brightness_service::BrightnessService;
+    use fuchsia_async::{Task, TestExecutor};
+    use fuchsia_inspect::component;
+    use futures::channel::mpsc;
+    use futures::future;
+    use futures::lock::Mutex;
+    use settings_common::inspect::config_logger::InspectConfigLogger;
+    use settings_test_common::fakes::service::ServiceRegistry;
+    use settings_test_common::storage::InMemoryStorageFactory;
 
     #[fuchsia::test]
     fn test_display_migration_v1_to_v2() {
@@ -867,5 +877,185 @@ mod tests {
                 auto_brightness_value: DEFAULT_DISPLAY_INFO.auto_brightness_value,
             }
         );
+    }
+
+    const AUTO_BRIGHTNESS_LEVEL: f32 = 0.9;
+
+    fn default_settings() -> DefaultSetting<DisplayConfiguration, &'static str> {
+        let config_logger =
+            Rc::new(std::sync::Mutex::new(InspectConfigLogger::new(component::inspector().root())));
+        build_display_default_settings(config_logger)
+    }
+
+    // Makes sure that settings are restored from storage when service comes online.
+    #[fuchsia::test(allow_stalls = false)]
+    async fn test_display_restore_with_storage_controller() {
+        // Ensure auto-brightness value is restored correctly.
+        validate_restore_with_storage_controller(
+            0.7,
+            AUTO_BRIGHTNESS_LEVEL,
+            true,
+            true,
+            LowLightMode::Enable,
+            None,
+        )
+        .await;
+
+        // Ensure manual-brightness value is restored correctly.
+        validate_restore_with_storage_controller(
+            0.9,
+            AUTO_BRIGHTNESS_LEVEL,
+            false,
+            true,
+            LowLightMode::Disable,
+            None,
+        )
+        .await;
+    }
+
+    async fn validate_restore_with_storage_controller(
+        manual_brightness: f32,
+        auto_brightness_value: f32,
+        auto_brightness: bool,
+        screen_enabled: bool,
+        low_light_mode: LowLightMode,
+        theme: Option<Theme>,
+    ) {
+        let service_registry = ServiceRegistry::create();
+        let info = DisplayInfo {
+            manual_brightness_value: manual_brightness,
+            auto_brightness_value,
+            auto_brightness,
+            screen_enabled,
+            low_light_mode,
+            theme,
+        };
+        let storage_factory = InMemoryStorageFactory::with_initial_data(&info);
+        let (tx, _) = mpsc::unbounded();
+        let setting_value_publisher = SettingValuePublisher::new(tx);
+        let (tx, _) = mpsc::unbounded();
+        let external_publisher = ExternalEventPublisher::new(tx);
+
+        storage_factory
+            .initialize_with_loader::<DisplayController, _>(DisplayInfoLoader::new(
+                default_settings(),
+            ))
+            .await
+            .expect("initializing display storage");
+
+        let display_controller = DisplayController::<()>::new(
+            &ServiceContext::new(Some(Box::new(ServiceRegistry::serve(service_registry)))),
+            Rc::new(storage_factory),
+            setting_value_publisher,
+            external_publisher,
+        )
+        .await
+        .expect("constructing display controller");
+
+        let info = display_controller.restore().await.expect("restore completed");
+        let settings = fidl_fuchsia_settings::DisplaySettings::from(info);
+
+        if auto_brightness {
+            assert_eq!(settings.auto_brightness, Some(auto_brightness));
+            assert_eq!(settings.adjusted_auto_brightness, Some(auto_brightness_value));
+        } else {
+            assert_eq!(settings.brightness_value, Some(manual_brightness));
+        }
+    }
+
+    // Makes sure that settings are restored from storage when service comes online.
+    #[fuchsia::test]
+    fn test_display_restore_with_brightness_controller() {
+        let mut exec = TestExecutor::new();
+
+        // Ensure auto-brightness value is restored correctly.
+        validate_restore_with_brightness_controller(
+            &mut exec,
+            0.7,
+            AUTO_BRIGHTNESS_LEVEL,
+            true,
+            true,
+            LowLightMode::Enable,
+            None,
+        );
+
+        // Ensure manual-brightness value is restored correctly.
+        validate_restore_with_brightness_controller(
+            &mut exec,
+            0.9,
+            AUTO_BRIGHTNESS_LEVEL,
+            false,
+            true,
+            LowLightMode::Disable,
+            None,
+        );
+    }
+
+    // Float comparisons are checking that set values are the same when retrieved.
+    #[allow(clippy::float_cmp)]
+    fn validate_restore_with_brightness_controller(
+        exec: &mut TestExecutor,
+        manual_brightness: f32,
+        auto_brightness_value: f32,
+        auto_brightness: bool,
+        screen_enabled: bool,
+        low_light_mode: LowLightMode,
+        theme: Option<Theme>,
+    ) {
+        let brightness_service_handle = BrightnessService::create();
+        let brightness_service_handle_clone = brightness_service_handle.clone();
+
+        let _task = Task::local(async move {
+            let service_registry = ServiceRegistry::create();
+            service_registry
+                .lock()
+                .await
+                .register_service(Rc::new(Mutex::new(brightness_service_handle_clone)));
+            let info = DisplayInfo {
+                manual_brightness_value: manual_brightness,
+                auto_brightness_value,
+                auto_brightness,
+                screen_enabled,
+                low_light_mode,
+                theme,
+            };
+            let storage_factory = InMemoryStorageFactory::with_initial_data(&info);
+            let (tx, _) = mpsc::unbounded();
+            let setting_value_publisher = SettingValuePublisher::new(tx);
+            let (tx, _) = mpsc::unbounded();
+            let external_publisher = ExternalEventPublisher::new(tx);
+
+            storage_factory
+                .initialize_with_loader::<DisplayController, _>(DisplayInfoLoader::new(
+                    default_settings(),
+                ))
+                .await
+                .expect("initializing display storage");
+
+            let display_controller = DisplayController::<ExternalBrightnessControl>::new(
+                &ServiceContext::new(Some(Box::new(ServiceRegistry::serve(service_registry)))),
+                Rc::new(storage_factory),
+                setting_value_publisher,
+                external_publisher,
+            )
+            .await
+            .expect("constructing display controller");
+
+            let _ = display_controller.restore().await.expect("restore completed");
+        });
+
+        let _ = exec.run_until_stalled(&mut future::pending::<()>());
+
+        exec.run_singlethreaded(async {
+            if auto_brightness {
+                let service_auto_brightness =
+                    brightness_service_handle.get_auto_brightness().lock().await.unwrap();
+                assert_eq!(service_auto_brightness, auto_brightness);
+            } else {
+                let service_manual_brightness =
+                    brightness_service_handle.get_manual_brightness().lock().await.unwrap();
+                assert_eq!(service_manual_brightness, manual_brightness);
+            }
+        });
     }
 }
