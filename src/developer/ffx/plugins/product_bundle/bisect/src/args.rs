@@ -13,12 +13,15 @@ pub enum Strategy {
     /// Bisect the longest dimension in the search space.
     #[default]
     LongestDimension,
+    /// Bisect all dimensions in the search space simultaneously.
+    AllDimensions,
 }
 
 impl FromArgValue for Strategy {
     fn from_arg_value(value: &str) -> Result<Self, String> {
         match value {
             "longest_dimension" => Ok(Self::LongestDimension),
+            "all_dimensions" => Ok(Self::AllDimensions),
             _ => Err(format!("unknown strategy '{}'", value)),
         }
     }

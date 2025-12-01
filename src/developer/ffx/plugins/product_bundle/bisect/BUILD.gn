@@ -16,8 +16,10 @@ ffx_plugin("ffx_product_bundle_bisect") {
     "src/bisection_plan.rs",
     "src/lib.rs",
     "src/search_space.rs",
+    "src/strategies/all_dimensions.rs",
     "src/strategies/longest_dimension.rs",
     "src/strategies/mod.rs",
+    "src/strategies/util.rs",
     "src/versioned_artifact_set.rs",
   ]
 

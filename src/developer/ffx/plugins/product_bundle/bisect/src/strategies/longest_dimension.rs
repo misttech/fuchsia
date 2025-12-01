@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::search_space::{BisectionStatus, SearchSpace};
-use crate::strategies::SearchStrategy;
+use crate::strategies::{SearchStrategy, util};
 use serde::{Deserialize, Serialize};
 
 /// A bisection strategy that always chooses the midpoint of the longest remaining artifact series.
@@ -12,33 +12,7 @@ pub struct LongestDimensionStrategy;
 
 impl SearchStrategy for LongestDimensionStrategy {
     fn update(&self, space: &mut SearchSpace, test_passed: bool) {
-        let platform_len = space.platform.remaining_artifacts.len();
-        let product_len = space.product.remaining_artifacts.len();
-        let board_len = space.board.remaining_artifacts.len();
-
-        // Determine which artifact has the most versions remaining to search.
-        let longest_series = if platform_len >= product_len && platform_len >= board_len {
-            &mut space.platform
-        } else if product_len >= platform_len && product_len >= board_len {
-            &mut space.product
-        } else {
-            &mut space.board
-        };
-        let longest_view = longest_series.remaining_artifacts.clone();
-
-        // If the longest version list can't be split anymore, exit.
-        if longest_view.len() <= 1 {
-            return;
-        }
-
-        // Cut the length of the longest series in half, keeping the right half if the test passed
-        // and keeping the left half if the test failed.
-        let midpoint = longest_view.start + longest_view.len() / 2;
-        if test_passed {
-            longest_series.remaining_artifacts = (midpoint + 1)..longest_view.end;
-        } else {
-            longest_series.remaining_artifacts = longest_view.start..midpoint;
-        }
+        util::halve_longest_dimension(space, test_passed);
 
         // Now that we've reduced the size of the remaining search window, go through and update
         // the midpoint pointers to reflect that change.
@@ -55,98 +29,14 @@ impl SearchStrategy for LongestDimensionStrategy {
         space: &SearchSpace,
         results: &Vec<crate::bisection_plan::StepResult>,
     ) -> BisectionStatus {
-        if let Some((good, bad)) = self.find_culprit(space, results) {
-            let good_vas = &good.versioned_artifact_set;
-            let bad_vas = &bad.versioned_artifact_set;
-
-            let (good_artifact, bad_artifact) = if good_vas.platform != bad_vas.platform {
-                (good_vas.platform.clone(), bad_vas.platform.clone())
-            } else if good_vas.product != bad_vas.product {
-                (good_vas.product.clone(), bad_vas.product.clone())
-            } else {
-                (good_vas.board.clone(), bad_vas.board.clone())
-            };
-            return BisectionStatus::CulpritFound(Box::new(good_artifact), Box::new(bad_artifact));
-        }
-
-        if space.iter_all_artifacts().all(|s| s.remaining_artifacts.len() <= 1) {
-            return BisectionStatus::Exhausted;
-        }
-
-        BisectionStatus::Continue
+        util::should_continue(space, results)
     }
 
-    fn find_culprit<'a>(
-        &self,
-        space: &SearchSpace,
-        results: &'a Vec<crate::bisection_plan::StepResult>,
-    ) -> Option<(&'a crate::bisection_plan::StepResult, &'a crate::bisection_plan::StepResult)>
-    {
-        // First, iterate through all test results to find a passing one.
-        for good_candidate in results {
-            if !good_candidate.test_passed {
-                continue;
-            }
-
-            // Next, iterate through all results again to find a failing one.
-            for bad_candidate in results {
-                if bad_candidate.test_passed {
-                    continue;
-                }
-
-                // Now we have a good and a bad candidate.
-                let good_vas = &good_candidate.versioned_artifact_set;
-                let bad_vas = &bad_candidate.versioned_artifact_set;
-
-                // We count how many artifacts are different between the two sets.
-                let mut diff_count = 0;
-                if good_vas.platform != bad_vas.platform {
-                    diff_count += 1;
-                }
-                if good_vas.product != bad_vas.product {
-                    diff_count += 1;
-                }
-                if good_vas.board != bad_vas.board {
-                    diff_count += 1;
-                }
-
-                // A culprit can only be identified if exactly one artifact has changed.
-                // If more than one changed, we can't be sure which one caused the failure.
-                if diff_count != 1 {
-                    continue;
-                }
-
-                // Now, we determine which artifact was the one that changed
-                // and check if the versions are adjacent in the search space.
-                let (series, good_version, bad_version) = if good_vas.platform != bad_vas.platform {
-                    (&space.platform, &good_vas.platform, &bad_vas.platform)
-                } else if good_vas.product != bad_vas.product {
-                    (&space.product, &good_vas.product, &bad_vas.product)
-                } else {
-                    (&space.board, &good_vas.board, &bad_vas.board)
-                };
-
-                // To check for adjacency, we find the index of each version
-                // within the artifact's version list. The `position()` method
-                // performs a linear search.
-                let good_index = series.versions.iter().position(|v| v == good_version);
-                let bad_index = series.versions.iter().position(|v| v == bad_version);
-
-                // If both versions are found in the list...
-                if let (Some(good_idx), Some(bad_idx)) = (good_index, bad_index) {
-                    // ...we check if their indices are exactly 1 apart.
-                    if (good_idx as isize - bad_idx as isize).abs() == 1 {
-                        // If they are, we have found the culprit.
-                        return Some((good_candidate, bad_candidate));
-                    }
-                }
-            }
-        }
-
-        // If we loop through all pairs and don't find a culprit, return None.
-        None
-    }
-
+    /// Estimates the total number of steps required for the bisection.
+    ///
+    /// This strategy estimates the total steps as the sum of `ceil(log2(len))`
+    /// for each dimension's version list. This is because, in the worst case,
+    /// each dimension might need to be bisected individually.
     fn estimate_total_steps(&self, space: &SearchSpace) -> usize {
         space
             .iter_all_artifacts()
@@ -162,9 +52,7 @@ impl SearchStrategy for LongestDimensionStrategy {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::bisection_plan::StepResult;
     use crate::search_space::ArtifactVersionSeries;
-    use crate::versioned_artifact_set::VersionedArtifactSet;
     use assembly_artifact_cache::{ArtifactType, MOSIdentifier};
 
     // ##################################################################
@@ -216,32 +104,6 @@ mod tests {
                 product_versions,
             ),
             board: create_mock_artifact_series(ArtifactType::Board, "board", board_versions),
-        }
-    }
-
-    fn create_mock_vas(platform_v: &str, product_v: &str, board_v: &str) -> VersionedArtifactSet {
-        VersionedArtifactSet {
-            platform: MOSIdentifier {
-                artifact_type: ArtifactType::Platform,
-                name: "platform".to_string(),
-                version: platform_v.to_string(),
-                repository: "fuchsia".to_string(),
-                cipd: None,
-            },
-            product: MOSIdentifier {
-                artifact_type: ArtifactType::Product,
-                name: "product".to_string(),
-                version: product_v.to_string(),
-                repository: "fuchsia".to_string(),
-                cipd: None,
-            },
-            board: MOSIdentifier {
-                artifact_type: ArtifactType::Board,
-                name: "board".to_string(),
-                version: board_v.to_string(),
-                repository: "fuchsia".to_string(),
-                cipd: None,
-            },
         }
     }
 
@@ -392,202 +254,5 @@ mod tests {
         let initial_range_empty = space_empty.platform.remaining_artifacts.clone();
         strategy.update(&mut space_empty, false);
         assert_eq!(space_empty.platform.remaining_artifacts, initial_range_empty);
-    }
-
-    // ##################################################################
-    // # 3. Termination Conditions (`should_continue` method)
-    // ##################################################################
-
-    #[test]
-    /// Verifies that a culprit is correctly identified when a good and bad
-    /// result are for adjacent artifact versions.
-    fn test_should_continue_returns_culprit_found_on_adjacent_versions() {
-        let space = create_mock_search_space(vec!["1", "2", "3", "4"], vec!["a"], vec!["x"]);
-        let strategy = LongestDimensionStrategy;
-
-        let results = vec![
-            StepResult {
-                versioned_artifact_set: create_mock_vas("2", "a", "x"),
-                image_path: None,
-                test_passed: true,
-            },
-            StepResult {
-                versioned_artifact_set: create_mock_vas("3", "a", "x"),
-                image_path: None,
-                test_passed: false,
-            },
-        ];
-
-        let status = strategy.should_continue(&space, &results);
-        match status {
-            BisectionStatus::CulpritFound(good, bad) => {
-                assert_eq!(good.version, "2");
-                assert_eq!(bad.version, "3");
-            }
-            _ => panic!("Expected CulpritFound status"),
-        }
-    }
-
-    #[test]
-    /// Verifies that a culprit is NOT identified if the differing versions
-    /// are not adjacent in the search space.
-    fn test_should_continue_does_not_find_culprit_for_non_adjacent_versions() {
-        let space = create_mock_search_space(vec!["1", "2", "3", "4"], vec!["a"], vec!["x"]);
-        let strategy = LongestDimensionStrategy;
-
-        let results = vec![
-            StepResult {
-                versioned_artifact_set: create_mock_vas("2", "a", "x"),
-                image_path: None,
-                test_passed: true,
-            },
-            StepResult {
-                versioned_artifact_set: create_mock_vas("4", "a", "x"),
-                image_path: None,
-                test_passed: false,
-            },
-        ];
-
-        let status = strategy.should_continue(&space, &results);
-        assert!(matches!(status, BisectionStatus::Continue));
-    }
-
-    #[test]
-    /// Verifies that a culprit is NOT identified if the results differ by
-    /// more than one artifact.
-    fn test_should_continue_does_not_find_culprit_for_multiple_differences() {
-        let space = create_mock_search_space(vec!["1", "2", "3", "4"], vec!["a", "b"], vec!["x"]);
-        let strategy = LongestDimensionStrategy;
-
-        let results = vec![
-            StepResult {
-                versioned_artifact_set: create_mock_vas("2", "a", "x"),
-                image_path: None,
-                test_passed: true,
-            },
-            StepResult {
-                // Platform and Product are different
-                versioned_artifact_set: create_mock_vas("3", "b", "x"),
-                image_path: None,
-                test_passed: false,
-            },
-        ];
-
-        let status = strategy.should_continue(&space, &results);
-        assert!(matches!(status, BisectionStatus::Continue));
-    }
-
-    #[test]
-    /// Verifies that the status is `Exhausted` when all dimensions have been
-    /// narrowed down to one or zero possibilities.
-    fn test_should_continue_returns_exhausted_when_all_dimensions_are_len_one() {
-        let mut space = create_mock_search_space(vec!["3"], vec!["b"], vec!["y"]);
-        space.platform.remaining_artifacts = 0..1;
-        space.product.remaining_artifacts = 0..1;
-        space.board.remaining_artifacts = 0..1;
-        let strategy = LongestDimensionStrategy;
-
-        let status = strategy.should_continue(&space, &vec![]);
-        assert!(matches!(status, BisectionStatus::Exhausted));
-    }
-
-    #[test]
-    /// Verifies that the status is `Continue` when no other termination
-    /// condition has been met.
-    fn test_should_continue_returns_continue_by_default() {
-        let space = create_mock_search_space(vec!["1", "2", "3"], vec!["a", "b"], vec!["x"]);
-        let strategy = LongestDimensionStrategy;
-
-        let status = strategy.should_continue(&space, &vec![]);
-        assert!(matches!(status, BisectionStatus::Continue));
-    }
-
-    #[test]
-    fn test_find_culprit() {
-        let space = create_mock_search_space(
-            vec!["1", "2", "3", "4", "5"],
-            vec!["a", "b", "c"],
-            vec!["x", "y"],
-        );
-        let strategy = LongestDimensionStrategy {};
-        let mut good_vas = create_mock_vas("1", "a", "x");
-        good_vas.platform.version = "2".to_string();
-        let mut bad_vas = create_mock_vas("1", "a", "x");
-        bad_vas.platform.version = "3".to_string();
-
-        let results = vec![
-            StepResult {
-                versioned_artifact_set: good_vas.clone(),
-                image_path: None,
-                test_passed: true,
-            },
-            StepResult {
-                versioned_artifact_set: bad_vas.clone(),
-                image_path: None,
-                test_passed: false,
-            },
-        ];
-        let culprit = strategy.find_culprit(&space, &results);
-        assert!(culprit.is_some());
-
-        // Not adjacent
-        let mut bad_vas_not_adjacent = create_mock_vas("1", "a", "x");
-        bad_vas_not_adjacent.platform.version = "4".to_string();
-        let results_not_adjacent = vec![
-            StepResult {
-                versioned_artifact_set: good_vas.clone(),
-                image_path: None,
-                test_passed: true,
-            },
-            StepResult {
-                versioned_artifact_set: bad_vas_not_adjacent,
-                image_path: None,
-                test_passed: false,
-            },
-        ];
-        let culprit = strategy.find_culprit(&space, &results_not_adjacent);
-        assert!(culprit.is_none());
-
-        // Multiple diffs
-        let mut bad_vas_multi_diff = create_mock_vas("1", "a", "x");
-        bad_vas_multi_diff.platform.version = "3".to_string();
-        bad_vas_multi_diff.product.version = "b".to_string();
-        let results_multi_diff = vec![
-            StepResult { versioned_artifact_set: good_vas, image_path: None, test_passed: true },
-            StepResult {
-                versioned_artifact_set: bad_vas_multi_diff,
-                image_path: None,
-                test_passed: false,
-            },
-        ];
-        let culprit = strategy.find_culprit(&space, &results_multi_diff);
-        assert!(culprit.is_none());
-    }
-
-    // ##################################################################
-    // # 4. Estimation Logic (`estimate_total_steps` method)
-    // ##################################################################
-
-    #[test]
-    /// Verifies that the step estimation logic is correct. The estimate is the
-    /// sum of `ceil(log2(len))` for each dimension.
-    fn test_estimate_total_steps_calculates_correctly() {
-        // platform=8 (log2=3), product=5 (log2=2.32, ceil=3), board=1 (log2=0)
-        // Total = 3 + 3 + 0 = 6
-        let space = create_mock_search_space(
-            vec!["1", "2", "3", "4", "5", "6", "7", "8"],
-            vec!["a", "b", "c", "d", "e"],
-            vec!["x"],
-        );
-        let strategy = LongestDimensionStrategy;
-        assert_eq!(strategy.estimate_total_steps(&space), 6);
-
-        // platform=1, product=1, board=1 -> 0 steps
-        let space_single = create_mock_search_space(vec!["1"], vec!["a"], vec!["x"]);
-        assert_eq!(strategy.estimate_total_steps(&space_single), 0);
-
-        // platform=2, product=2, board=2 -> 1+1+1 = 3 steps
-        let space_two = create_mock_search_space(vec!["1", "2"], vec!["a", "b"], vec!["x", "y"]);
-        assert_eq!(strategy.estimate_total_steps(&space_two), 3);
     }
 }

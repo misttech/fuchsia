@@ -250,7 +250,6 @@ mod tests {
     use super::*;
     use crate::search_space::{ArtifactVersionSeries, BisectionStatus};
     use crate::strategies::Strategy;
-    use crate::strategies::longest_dimension::LongestDimensionStrategy;
     use assembly_artifact_cache::{ArtifactType, MOSIdentifier};
     use tempfile::tempdir;
 
@@ -312,7 +311,7 @@ mod tests {
             from_success: "1".to_string(),
             to_failure: "3".to_string(),
             home,
-            strategy: Strategy::LongestDimension(LongestDimensionStrategy {}),
+            strategy: Strategy::LongestDimension,
             search_space: create_mock_search_space(),
             results: vec![],
             status: BisectionStatus::Continue,

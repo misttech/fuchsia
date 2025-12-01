@@ -2,53 +2,54 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+//! This module contains different strategies for bisecting product bundles.
+
+pub(crate) mod all_dimensions;
+pub(crate) mod longest_dimension;
+mod util;
+
+use crate::bisection_plan::StepResult;
 use crate::search_space::{BisectionStatus, SearchSpace};
-use crate::strategies::longest_dimension::LongestDimensionStrategy;
-use ffx_product_bundle_bisect_args as args;
+use all_dimensions::AllDimensionsStrategy;
+use longest_dimension::LongestDimensionStrategy;
 use serde::{Deserialize, Serialize};
 
-pub mod longest_dimension;
-
-/// A trait for defining bisection search strategies.
+/// A trait for bisection search strategies.
 pub trait SearchStrategy {
-    /// Given the current search space and a test result, update the search ranges
-    /// to narrow down the possibilities.
+    /// Updates the search space based on the result of a test.
     fn update(&self, space: &mut SearchSpace, test_passed: bool);
 
-    /// Determines if the bisection should continue, and returns the current status.
-    fn should_continue(
-        &self,
-        space: &SearchSpace,
-        results: &Vec<crate::bisection_plan::StepResult>,
-    ) -> BisectionStatus;
-
-    /// A culprit is found when a known-good and known-bad build are adjacent
-    /// in the search space.
-    fn find_culprit<'a>(
-        &self,
-        space: &SearchSpace,
-        results: &'a Vec<crate::bisection_plan::StepResult>,
-    ) -> Option<(&'a crate::bisection_plan::StepResult, &'a crate::bisection_plan::StepResult)>;
+    /// Determines whether the bisection should continue, has found a culprit,
+    /// or has exhausted the search space.
+    fn should_continue(&self, space: &SearchSpace, results: &Vec<StepResult>) -> BisectionStatus;
 
     /// Estimates the total number of steps required for the bisection.
     fn estimate_total_steps(&self, space: &SearchSpace) -> usize;
 }
 
-#[derive(Serialize, Deserialize)]
+/// An enumeration of available bisection search strategies.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum Strategy {
-    LongestDimension(LongestDimensionStrategy),
+    /// Bisect the longest dimension first.
+    LongestDimension,
+    /// Bisect all dimensions simultaneously.
+    AllDimensions,
 }
 
 impl Strategy {
+    /// Returns a dynamically dispatchable trait object for the selected search strategy.
     pub fn as_dyn(&self) -> &dyn SearchStrategy {
         match self {
-            Strategy::LongestDimension(s) => s,
+            Strategy::LongestDimension => &LongestDimensionStrategy,
+            Strategy::AllDimensions => &AllDimensionsStrategy,
         }
     }
 }
 
-pub fn get_strategy(strategy_name: args::Strategy) -> Strategy {
-    match strategy_name {
-        args::Strategy::LongestDimension => Strategy::LongestDimension(LongestDimensionStrategy),
+/// Returns the appropriate `Strategy` enum variant based on the command-line arguments.
+pub fn get_strategy(strategy: ffx_product_bundle_bisect_args::Strategy) -> Strategy {
+    match strategy {
+        ffx_product_bundle_bisect_args::Strategy::LongestDimension => Strategy::LongestDimension,
+        ffx_product_bundle_bisect_args::Strategy::AllDimensions => Strategy::AllDimensions,
     }
 }

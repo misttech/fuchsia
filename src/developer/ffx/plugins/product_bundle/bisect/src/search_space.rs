@@ -92,6 +92,13 @@ impl SearchSpace {
             .chain(std::iter::once(&self.board))
     }
 
+    /// Returns the number of dimensions in the search space.
+    pub fn num_dimensions(&self) -> usize {
+        // 3: Platform, Product, Board.
+        // In the future, this will need to count the number of PIB and BIB dimensions.
+        3
+    }
+
     /// Get the set of artifacts at the current indices.
     pub fn get_current_versioned_artifact_set(&self) -> Result<VersionedArtifactSet> {
         Ok(VersionedArtifactSet {
