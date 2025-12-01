@@ -718,3 +718,8 @@
 	url = https://fuchsia.googlesource.com/third_party/android.googlesource.com/platform/system/liburingutils
 	name = third_party/android/platform/system/liburingutils
 	ignore = all
+[submodule "third_party/android/platform/system/tools/mkbootimg/src"]
+	path = third_party/android/platform/system/tools/mkbootimg/src
+	url = https://fuchsia.googlesource.com/third_party/android.googlesource.com/platform/system/tools/mkbootimg/
+	name = third_party/android.googlesource.com/platform/system/tools/mkbootimg
+	ignore = all
