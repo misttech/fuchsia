@@ -21,7 +21,6 @@ use crate::device::constants::{
     ZXCRYPT_DRIVER_PATH,
 };
 use crate::device::{BlockDevice, Device, RegisteredDevices};
-use crate::inspect::register_migration_status;
 use crate::watcher::{DirSource, Watcher};
 use anyhow::{Context, Error, anyhow, bail};
 use async_trait::async_trait;
@@ -347,7 +346,6 @@ pub struct FshostEnvironment {
     /// This lock can be taken and device.path() added to the vector to have them
     /// ignored the next time they appear to the Watcher/Matcher code.
     matcher_lock: Arc<Mutex<HashSet<String>>>,
-    inspector: finspect::Inspector,
     watcher: Watcher,
     registered_devices: Arc<RegisteredDevices>,
     other_filesystems: Vec<Filesystem>,
@@ -373,7 +371,6 @@ impl FshostEnvironment {
             fvm: None,
             launcher: Arc::new(FilesystemLauncher { config, corruption_events }),
             matcher_lock,
-            inspector,
             watcher,
             registered_devices,
             other_filesystems: Vec::new(),
@@ -1063,13 +1060,6 @@ impl Environment for FshostEnvironment {
         let res = self.try_migrate_data_internal(device, filesystem).await;
         if let Err(error) = &res {
             log::warn!(error:%; "migration failed");
-            if let Some(status) = error.downcast_ref::<zx::Status>().clone() {
-                register_migration_status(self.inspector.root(), *status);
-            } else {
-                register_migration_status(self.inspector.root(), zx::Status::INTERNAL);
-            }
-        } else {
-            register_migration_status(self.inspector.root(), zx::Status::OK);
         }
         res
     }

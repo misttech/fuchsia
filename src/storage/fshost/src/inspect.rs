@@ -8,20 +8,6 @@ use fuchsia_fs::directory::{DirentKind, open_directory, open_file, readdir};
 use futures::future::BoxFuture;
 use futures::{FutureExt, TryFutureExt};
 
-pub fn register_migration_status(root: &fuchsia_inspect::Node, status: zx::Status) {
-    match status {
-        zx::Status::OK => {
-            root.record_uint("migration_status:success", 1);
-        }
-        zx::Status::NO_SPACE => {
-            root.record_uint("migration_status:out_of_space", 1);
-        }
-        _ => {
-            root.record_uint("migration_status:other_error", 1);
-        }
-    }
-}
-
 pub fn register_stats(root: &fuchsia_inspect::Node, data_dir: DirectoryProxy, tree_stats: bool) {
     root.record_lazy_child("data_stats", move || {
         let data_dir = Clone::clone(&data_dir);
