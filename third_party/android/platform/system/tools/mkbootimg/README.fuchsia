@@ -1,0 +1,9 @@
+Name: mkbootimg
+URL: https://www.android.com/
+License: Apache 2.0
+License File: src/NOTICE
+Upstream Git: https://android.googlesource.com/platform/system/tools/mkbootimg/
+Security Critical: no
+Description:
+
+Android boot image tools and libraries

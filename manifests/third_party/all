@@ -54,6 +54,10 @@
              path="third_party/android/platform/system/tools/aidl"
              remote="https://fuchsia.googlesource.com/third_party/android/platform/system/tools/aidl"
              revision="0fc499027775cacf812f324c29e33d3d68c9f545"/>
+    <project name="third_party/android.googlesource.com/platform/system/tools/mkbootimg"
+             path="third_party/android/platform/system/tools/mkbootimg/src"
+             remote="https://fuchsia.googlesource.com/third_party/android.googlesource.com/platform/system/tools/mkbootimg/"
+             revision="35e68196c1794d54f97314d5c729c5acef7f4e96"/>
     <project name="third_party/android/platform/system/liburingutils"
              path="third_party/android/platform/system/liburingutils"
              remote="https://fuchsia.googlesource.com/third_party/android.googlesource.com/platform/system/liburingutils"
