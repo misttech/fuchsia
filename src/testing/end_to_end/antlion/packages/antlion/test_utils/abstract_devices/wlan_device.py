@@ -9,6 +9,7 @@ from __future__ import annotations
 import enum
 from typing import Protocol, runtime_checkable
 
+import fidl_fuchsia_wlan_common_security as f_security
 import fidl_fuchsia_wlan_policy as f_wlan_policy
 from antlion.controllers import iperf_client
 from antlion.controllers.android_device import AndroidDevice
@@ -406,8 +407,35 @@ class FuchsiaWlanDevice(SupportsWLAN):
                     )
                     return False
 
+                wpa_psk_protocols = {
+                    SecurityMode.WPA: f_security.Protocol.WPA1,
+                    SecurityMode.WPA2: f_security.Protocol.WPA2_PERSONAL,
+                    SecurityMode.WPA3: f_security.Protocol.WPA3_PERSONAL,
+                }
+                if target_security == SecurityMode.OPEN:
+                    protocol = f_security.Protocol.OPEN
+                    credentials = None
+                elif target_security in wpa_psk_protocols:
+                    if target_pwd is None:
+                        raise ValueError("Password is required for WPA2")
+                    protocol = wpa_psk_protocols[target_security]
+                    credentials = f_security.Credentials(
+                        wpa=f_security.WpaCredentials(
+                            passphrase=(list(target_pwd.encode("ascii")))
+                        )
+                    )
+                else:
+                    raise ValueError(
+                        f"Unhandled security mode {target_security}"
+                    )
+                authentication = f_security.Authentication(
+                    protocol=protocol, credentials=credentials
+                )
+
                 return self.device.honeydew_fd.wlan_core.connect(
-                    target_ssid, target_pwd, bss_descs_for_ssid[0]
+                    ssid=target_ssid,
+                    bss_desc=bss_descs_for_ssid[0],
+                    authentication=authentication,
                 )
             case AssociationMode.POLICY:
                 try:

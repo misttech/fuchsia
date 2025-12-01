@@ -350,20 +350,9 @@ class WlanCoreFCTests(unittest.TestCase):
 
                     self.wlan_core_obj.connect(
                         _TEST_SSID,
-                        None,
                         _TEST_BSS_DESC_1,
                         auth,
                     )
-
-    def test_connect_fails_no_authentication(self) -> None:
-        """Verify connect fails without authentication."""
-        with self.assertRaises(TypeError):
-            self.wlan_core_obj.connect(
-                _TEST_SSID,
-                None,
-                _TEST_BSS_DESC_1,
-                authentication=None,
-            )
 
     def test_connect_fails_sme_connect(self) -> None:
         """Verify connect fails when ClientSme.Connect() errors."""
@@ -380,7 +369,6 @@ class WlanCoreFCTests(unittest.TestCase):
             with self.assertRaises(HoneydewWlanError):
                 self.wlan_core_obj.connect(
                     _TEST_SSID,
-                    None,
                     _TEST_BSS_DESC_1,
                     f_wlan_common_security.Authentication(
                         f_wlan_common_security.Protocol.OPEN, None
@@ -401,7 +389,6 @@ class WlanCoreFCTests(unittest.TestCase):
                 with self.assertRaises(HoneydewWlanError):
                     self.wlan_core_obj.connect(
                         _TEST_SSID,
-                        None,
                         _TEST_BSS_DESC_1,
                         f_wlan_common_security.Authentication(
                             f_wlan_common_security.Protocol.OPEN, None
@@ -458,7 +445,6 @@ class WlanCoreFCTests(unittest.TestCase):
                     with self.assertRaises(HoneydewWlanError):
                         self.wlan_core_obj.connect(
                             _TEST_SSID,
-                            None,
                             _TEST_BSS_DESC_1,
                             f_wlan_common_security.Authentication(
                                 f_wlan_common_security.Protocol.OPEN, None
@@ -515,7 +501,6 @@ class WlanCoreFCTests(unittest.TestCase):
             with self.assertRaises(HoneydewWlanError):
                 self.wlan_core_obj.connect(
                     _TEST_SSID,
-                    None,
                     _TEST_BSS_DESC_1,
                     f_wlan_common_security.Authentication(
                         f_wlan_common_security.Protocol.OPEN, None
@@ -590,7 +575,6 @@ class WlanCoreFCTests(unittest.TestCase):
                     with self.assertRaises(HoneydewWlanError):
                         self.wlan_core_obj.connect(
                             _TEST_SSID,
-                            None,
                             _TEST_BSS_DESC_1,
                             f_wlan_common_security.Authentication(
                                 f_wlan_common_security.Protocol.OPEN, None

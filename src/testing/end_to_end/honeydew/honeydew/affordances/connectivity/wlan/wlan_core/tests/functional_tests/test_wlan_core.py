@@ -152,7 +152,6 @@ class WlanCoreTests(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             asserts.assert_true(
                 self.device.wlan_core.connect(
                     ssid=test_ssid,
-                    password=None,
                     bss_desc=bss_desc_for_ssid[0],
                     authentication=f_wlan_common_security.Authentication(
                         f_wlan_common_security.Protocol.OPEN, None

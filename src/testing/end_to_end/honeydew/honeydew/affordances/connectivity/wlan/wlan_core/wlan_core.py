@@ -26,18 +26,13 @@ class WlanCore(affordance.Affordance):
     def connect(
         self,
         ssid: str,
-        # TODO(http://b/356234331): Remove the password field once
-        # authentication is used everywhere.
-        password: str | None,
         bss_desc: f_wlan_common.BssDescription,
-        authentication: f_wlan_common_security.Authentication | None = None,
+        authentication: f_wlan_common_security.Authentication,
     ) -> bool:
         """Trigger connection to a network.
 
         Args:
             ssid: The network to connect to.
-            password: The password for the network. Deprecated; use
-                authentication instead.
             bss_desc: The basic service set for target network.
             authentication: Authentication to connect with.
 

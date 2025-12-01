@@ -85,7 +85,6 @@ class SARSettingTest(base_test.ConnectionBaseTestClassSync):
         # Connect to the AP
         self.fuchsia_device.wlan_core.connect(
             ssid=ssid,
-            password=None,
             bss_desc=bss_description,
             authentication=fidl_security.Authentication(
                 protocol=fidl_security.Protocol.OPEN,

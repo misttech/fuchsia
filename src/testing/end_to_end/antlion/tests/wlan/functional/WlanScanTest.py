@@ -163,7 +163,6 @@ class WlanScanTest(base_test.WifiBaseTest):
             asserts.assert_true(
                 fd.honeydew_fd.wlan_core.connect(
                     ssid,
-                    password,
                     target_bss[0],
                     authentication,
                 ),
