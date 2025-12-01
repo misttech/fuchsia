@@ -723,3 +723,8 @@
 	url = https://fuchsia.googlesource.com/third_party/android.googlesource.com/platform/system/tools/mkbootimg/
 	name = third_party/android.googlesource.com/platform/system/tools/mkbootimg
 	ignore = all
+[submodule "third_party/android/platform/system/libufdt/src"]
+	path = third_party/android/platform/system/libufdt/src
+	url = https://fuchsia.googlesource.com/third_party/android.googlesource.com/platform/system/libufdt
+	name = third_party/android.googlesource.com/platform/system/libufdt
+	ignore = all
