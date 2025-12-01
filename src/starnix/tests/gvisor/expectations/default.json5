@@ -827,7 +827,6 @@
 
                 // sysret_test
                 "SysretTest.BadRip",
-                "SysretTest.BadRsp",
 
                 // tcp_socket_test
                 "AllInetTests/SimpleTcpSocketTest.SetSocketAttachDetachFilter/*",
@@ -920,6 +919,9 @@
         {
             type: "skip",
             matchers: [
+                // Passes on arm64, fails on x64.
+                "SysretTest.BadRsp",
+
                 // These tests hang.
                 "Syscall32Bit.Sysenter",
                 "Syscall32Bit.Int80",

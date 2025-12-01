@@ -37,9 +37,9 @@ use starnix_uapi::{
     PTRACE_O_EXITKILL, PTRACE_O_TRACECLONE, PTRACE_O_TRACEEXEC, PTRACE_O_TRACEEXIT,
     PTRACE_O_TRACEFORK, PTRACE_O_TRACESYSGOOD, PTRACE_O_TRACEVFORK, PTRACE_O_TRACEVFORKDONE,
     PTRACE_PEEKDATA, PTRACE_PEEKTEXT, PTRACE_PEEKUSR, PTRACE_POKEDATA, PTRACE_POKETEXT,
-    PTRACE_POKEUSR, PTRACE_SETOPTIONS, PTRACE_SETSIGINFO, PTRACE_SETSIGMASK, PTRACE_SYSCALL,
-    PTRACE_SYSCALL_INFO_ENTRY, PTRACE_SYSCALL_INFO_EXIT, PTRACE_SYSCALL_INFO_NONE, SI_MAX_SIZE,
-    clone_args, errno, error, pid_t, ptrace_syscall_info, tid_t, uapi,
+    PTRACE_POKEUSR, PTRACE_SETOPTIONS, PTRACE_SETREGSET, PTRACE_SETSIGINFO, PTRACE_SETSIGMASK,
+    PTRACE_SYSCALL, PTRACE_SYSCALL_INFO_ENTRY, PTRACE_SYSCALL_INFO_EXIT, PTRACE_SYSCALL_INFO_NONE,
+    SI_MAX_SIZE, clone_args, errno, error, pid_t, ptrace_syscall_info, tid_t, uapi,
 };
 
 use std::collections::BTreeMap;
@@ -918,6 +918,24 @@ where
             }
             error!(ESRCH)
         }
+        PTRACE_SETREGSET => {
+            if let Some(ref mut captured) = state.captured_thread_state {
+                captured.dirty = true;
+                let uiv = IOVecPtr::new(current_task, data);
+                let iv = current_task.read_multi_arch_object(uiv)?;
+                let base = iv.iov_base.addr;
+                let len = iv.iov_len as usize;
+                ptrace_setregset(
+                    current_task,
+                    &mut captured.thread_state,
+                    ElfNoteType::try_from(addr.ptr() as usize)?,
+                    base,
+                    len,
+                )?;
+                return Ok(starnix_syscalls::SUCCESS);
+            }
+            error!(ESRCH)
+        }
         #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
         PTRACE_GETREGS => {
             if let Some(ref mut captured) = &mut state.captured_thread_state {
@@ -1302,6 +1320,36 @@ pub fn ptrace_getregset(
                 if let Some(val) = val {
                     current_task.write_multi_arch_object(reg_ptr, val as u64)?;
                 }
+                i += reg_ptr.size_of_object();
+                reg_ptr = reg_ptr.next()?;
+            }
+            Ok(())
+        }
+        _ => {
+            error!(EINVAL)
+        }
+    }
+}
+
+pub fn ptrace_setregset(
+    current_task: &CurrentTask,
+    thread_state: &mut ThreadState,
+    regset_type: ElfNoteType,
+    base: u64,
+    mut len: usize,
+) -> Result<(), Errno> {
+    match regset_type {
+        ElfNoteType::PrStatus => {
+            let user_regs_struct_len = UserRegsStructPtr::size_of_object_for(thread_state);
+            if len < user_regs_struct_len {
+                return error!(EINVAL);
+            }
+            len = user_regs_struct_len;
+            let mut i: usize = 0;
+            let mut reg_ptr = LongPtr::new(thread_state, base);
+            while i < len {
+                let val = current_task.read_multi_arch_object(reg_ptr)?;
+                thread_state.registers.apply_user_register(i, &mut |register| *register = val)?;
                 i += reg_ptr.size_of_object();
                 reg_ptr = reg_ptr.next()?;
             }
