@@ -6,6 +6,7 @@
 
 #include <lib/zx/fifo.h>
 
+#include <algorithm>
 #include <barrier>
 #include <iostream>
 #include <thread>
