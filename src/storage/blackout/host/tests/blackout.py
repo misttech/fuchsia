@@ -125,7 +125,6 @@ class BlackoutTest(test_case_revive.TestCaseRevive):
         self.blackout_proxy = blackout.ControllerClient(ch)
 
     @test_case_revive.tag_test(
-        tag_name="revive_test_case",
         test_method_execution_frequency=test_case_revive.TestMethodExecutionFrequency.POST_ONLY,
     )
     def _test_do_verification(self) -> None:
