@@ -232,26 +232,6 @@ zx_status_t DWMacDevice::Create(void* ctx, zx_device_t* device) {
   auto mac_device = std::make_unique<DWMacDevice>(device, std::move(pdev), std::move(bti.value()),
                                                   std::move(*client));
 
-  zx::result netdev_dispatcher = fdf::UnsynchronizedDispatcher::Create(
-      {}, "netdev", [device = mac_device.get()](fdf_dispatcher_t*) {
-        device->netdev_dispatcher_shutdown_.Signal();
-      });
-  if (netdev_dispatcher.is_error()) {
-    zxlogf(ERROR, "Failed to create netdevice dispatcher: %s", netdev_dispatcher.status_string());
-    return netdev_dispatcher.error_value();
-  }
-  mac_device->netdev_dispatcher_ = std::move(netdev_dispatcher.value());
-
-  zx::result outgoing_dispatcher = fdf::SynchronizedDispatcher::Create(
-      {}, "outgoing", [device = mac_device.get()](fdf_dispatcher_t*) {
-        device->outgoing_dispatcher_shutdown_.Signal();
-      });
-  if (outgoing_dispatcher.is_error()) {
-    zxlogf(ERROR, "Failed to create outgoing dispatcher: %s", outgoing_dispatcher.status_string());
-    return outgoing_dispatcher.error_value();
-  }
-  mac_device->outgoing_dispatcher_ = std::move(outgoing_dispatcher.value());
-
   zx_status_t status = mac_device->InitPdev();
   if (status != ZX_OK) {
     return status;
@@ -284,6 +264,7 @@ zx_status_t DWMacDevice::Create(void* ctx, zx_device_t* device) {
     loop_count--;
   } while (mac_device->mmio_->ReadMasked32(DMAMAC_SRST, DW_MAC_DMA_BUSMODE) && loop_count);
   if (!loop_count) {
+    zxlogf(ERROR, "Timed out while attempting to read bus mode");
     return ZX_ERR_TIMED_OUT;
   }
 
@@ -298,6 +279,30 @@ zx_status_t DWMacDevice::Create(void* ctx, zx_device_t* device) {
   }
 
   auto cleanup = fit::defer([&]() { mac_device->ShutDown(); });
+
+  // Don't create the dispatchers before the deferred cleanup task has been created. We want to
+  // ensure that they are properly shutdown on any failures after this. If they are created before
+  // the cleanup task the dispatcher objects might be destroyed before the dispatchers are shut
+  // down, which triggers an assert.
+  zx::result netdev_dispatcher = fdf::UnsynchronizedDispatcher::Create(
+      {}, "netdev", [device = mac_device.get()](fdf_dispatcher_t*) {
+        device->netdev_dispatcher_shutdown_.Signal();
+      });
+  if (netdev_dispatcher.is_error()) {
+    zxlogf(ERROR, "Failed to create netdevice dispatcher: %s", netdev_dispatcher.status_string());
+    return netdev_dispatcher.error_value();
+  }
+  mac_device->netdev_dispatcher_ = std::move(netdev_dispatcher.value());
+
+  zx::result outgoing_dispatcher = fdf::SynchronizedDispatcher::Create(
+      {}, "outgoing", [device = mac_device.get()](fdf_dispatcher_t*) {
+        device->outgoing_dispatcher_shutdown_.Signal();
+      });
+  if (outgoing_dispatcher.is_error()) {
+    zxlogf(ERROR, "Failed to create outgoing dispatcher: %s", outgoing_dispatcher.status_string());
+    return outgoing_dispatcher.error_value();
+  }
+  mac_device->outgoing_dispatcher_ = std::move(outgoing_dispatcher.value());
 
   status = mac_device->AllocateBuffers();
   if (status != ZX_OK) {
@@ -316,9 +321,20 @@ zx_status_t DWMacDevice::Create(void* ctx, zx_device_t* device) {
     return status;
   }
 
+  // mac_device intentionally leaked as it is now held by DevMgr. Make sure this happens immediately
+  // after DdkAdd. Otherwise we're holding on to a unique pointer to something we don't own. If
+  // subsequent calls fail we would then destroy it twice. Once from the unique pointer destructor
+  // and once from DdkRelease.
+  DWMacDevice* unowned_device = mac_device.release();
+  // NOTE: After this it's not safe to use mac_device, it is now a null pointer. Use unowned_device.
+
+  // At this point we must also cancel the cleanup handler. Now that the DDK owns the pointer it
+  // will call DdkUnbind if Create returns an error. DdkUnbind will then clean things up.
+  cleanup.cancel();
+
   fbl::AllocChecker ac;
   std::unique_ptr<EthMacFunction> mac_function(
-      new (&ac) EthMacFunction(mac_device->zxdev(), mac_device.get()));
+      new (&ac) EthMacFunction(unowned_device->zxdev(), unowned_device));
   if (!ac.check()) {
     return ZX_ERR_NO_MEMORY;
   }
@@ -329,19 +345,15 @@ zx_status_t DWMacDevice::Create(void* ctx, zx_device_t* device) {
     zxlogf(ERROR, "DdkAdd for Eth Mac Function failed %d", status);
     return status;
   }
-  mac_device->mac_function_ = mac_function.release();
+  unowned_device->mac_function_ = mac_function.release();
 
   // This will wait for hardware callbacks to be registered and then add the network device child
   // node along with the network device service in the outgoing directory. All access to the
   // outgoing directory needs to happen on the same dispatcher. Ensure this task runs on the
   // dispatcher designated for this purpose.
-  async::PostTask(mac_device->outgoing_dispatcher_.async_dispatcher(),
-                  [device = mac_device.get()] { device->WorkerThread(); });
+  async::PostTask(unowned_device->outgoing_dispatcher_.async_dispatcher(),
+                  [unowned_device] { unowned_device->WorkerThread(); });
 
-  cleanup.cancel();
-
-  // mac_device intentionally leaked as it is now held by DevMgr.
-  [[maybe_unused]] auto ptr = mac_device.release();
   return ZX_OK;
 }  // namespace eth
 
