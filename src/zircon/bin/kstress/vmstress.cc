@@ -1107,6 +1107,7 @@ class MultiVmoTestInstance : public TestInstance {
         options |= ZX_VMO_RESIZABLE;
         reliable_mappings = false;
       }
+      // TODO(https://fxbug.dev/416552833): Add pager-backed unbounded VMOs.
 
       if (uniform_rand(2, rng) == 0) {
         zx::pager pager;
@@ -1159,7 +1160,12 @@ class MultiVmoTestInstance : public TestInstance {
           // considered reliable.
           reliable_mappings = false;
         }
-        // TODO: Also mix in some UNBOUNDED VMOs.
+
+        // Unbounded VMOs are rare and use a lot of memory in the stress test.
+        if (!(options & ZX_VMO_RESIZABLE) && uniform_rand(32, rng) == 0) {
+          options |= ZX_VMO_UNBOUNDED;
+        }
+
         zx_status_t result = zx::vmo::create(vmo_size, options, &vmo);
         ZX_ASSERT(result == ZX_OK);
       }
@@ -1220,6 +1226,8 @@ class MultiVmoTestInstance : public TestInstance {
         size_t vmo_size;
         status = vmo.get_size(&vmo_size);
         ZX_ASSERT_MSG(status == ZX_OK, "Failed to get VMO size %s\n", zx_status_get_string(status));
+        // Trim VMO size to kMaxVmoSize, in case VMO is unbounded.
+        vmo_size = (vmo_size <= kMaxVmoSize) ? vmo_size : kMaxVmoSize;
         uint64_t start = 0, len = vmo_size;
 
         do {
@@ -1296,6 +1304,8 @@ class MultiVmoTestInstance : public TestInstance {
         uint64_t vmo_size;
         zx_status_t get_size_status = vmo.get_size(&vmo_size);
         ZX_ASSERT(get_size_status == ZX_OK);
+        // Trim VMO size to kMaxVmoSize, in case VMO is unbounded.
+        vmo_size = (vmo_size <= kMaxVmoSize) ? vmo_size : kMaxVmoSize;
         if (packet.page_request.offset >= vmo_size) {
           // Nothing to fulfill since the requested range has been seen to be entirely outside the
           // VMO after the request was created by the kernel.
@@ -1370,6 +1380,8 @@ class MultiVmoTestInstance : public TestInstance {
       size_t vmo_size;
       status = vmo.get_size(&vmo_size);
       ZX_ASSERT_MSG(status == ZX_OK, "Failed to get VMO size %s\n", zx_status_get_string(status));
+      // Trim VMO size to kMaxVmoSize, in case VMO is unbounded.
+      vmo_size = (vmo_size <= kMaxVmoSize) ? vmo_size : kMaxVmoSize;
       uint64_t start = 0, remaining_len = vmo_size;
 
       // Make a single pass over the entire VMO during each writeback attempt. The goal is to write
@@ -1464,6 +1476,8 @@ class MultiVmoTestInstance : public TestInstance {
     if (vmo.get_size(&vmo_size) != ZX_OK) {
       vmo_size = kMaxVmoSize;
     }
+    // Trim VMO size to kMaxVmoSize, in case VMO is unbounded.
+    vmo_size = (vmo_size <= kMaxVmoSize) ? vmo_size : kMaxVmoSize;
     while (!shutdown_ && op_count->fetch_add(1) < kMaxOps) {
       // Produce a random offset and size up front since many ops will need it.
       uint64_t op_off, op_size;
@@ -1742,6 +1756,8 @@ class MultiVmoTestInstance : public TestInstance {
           if (!is_contiguous_) {
             size_t vmo_size;
             vmo.get_size(&vmo_size);
+            // Trim VMO size to kMaxVmoSize, in case VMO is unbounded.
+            vmo_size = (vmo_size <= kMaxVmoSize) ? vmo_size : kMaxVmoSize;
             vmo.set_stream_size(uniform_rand(vmo_size, rng));
           }
           break;
