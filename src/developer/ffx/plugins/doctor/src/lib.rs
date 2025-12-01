@@ -40,7 +40,9 @@ use std::process::Command;
 use std::sync::Arc;
 use std::time::Duration;
 use termion::{color, style};
+use thiserror::Error;
 use timeout::timeout;
+use usb_driver_api;
 
 mod doctor_ledger;
 mod gcheck;
@@ -393,6 +395,7 @@ pub async fn doctor_cmd_impl<W: Write + Send + Sync + 'static>(
         Box::new(VisualLedgerView::new()),
         ledger_mode,
     );
+    let usb_driver_finder = CommandUsbDriverFinder {};
 
     doctor(
         &mut handler,
@@ -413,6 +416,7 @@ pub async fn doctor_cmd_impl<W: Write + Send + Sync + 'static>(
             output_dir,
             recorder: recorder.clone(),
         },
+        usb_driver_finder,
         gchecker,
         show_tool,
         true,
@@ -495,6 +499,7 @@ async fn doctor<W: Write>(
     target_spec: Result<Option<String>, String>,
     env_context: &EnvironmentContext,
     record_params: DoctorRecorderParameters,
+    usb_driver_finder: impl UsbDriverFinder,
     gchecker: impl gcheck::GChecker,
     show_tool: Option<ShowToolWrapper>,
     run_additional_diagnostics: bool,
@@ -514,6 +519,7 @@ async fn doctor<W: Write>(
         env_context,
         show_tool,
         run_additional_diagnostics,
+        usb_driver_finder,
         gchecker,
         ledger,
     )
@@ -1859,6 +1865,176 @@ fn print_summary_outcome<W: Write>(ledger: &mut DoctorLedger<W>, main_node: usiz
     Ok(())
 }
 
+#[derive(Error, Debug)]
+enum FindUsbDriverError {
+    #[error("ffx-usb-driver is not running.")]
+    DriverIsNotRunning,
+    #[error("Could not get information for ffx-usb-driver process PID{0}")]
+    UnableToFindSocket(u32),
+    #[error("ffx-usb-driver process found, but could not determine socket path.")]
+    UnableToDetermineSocket,
+    #[error("Io Error")]
+    IoError(#[from] std::io::Error),
+    #[error("Invalid PID")]
+    InvalidPid(#[from] std::num::ParseIntError),
+    #[error("`ss` command failed. stderr: {0}")]
+    SsCommandFailed(String),
+    #[error("Missing required command{}: {}", if .0.len() > 1 { "s"} else {""}, .0.join(","))]
+    CommandsMissing(Vec<String>),
+}
+
+#[derive(Debug)]
+struct UsbDriverStatus {
+    pid: u32,
+    socket_path: String,
+}
+
+#[mockall::automock]
+trait UsbDriverFinder {
+    async fn find(&self) -> Result<Vec<UsbDriverStatus>, FindUsbDriverError>;
+}
+
+struct CommandUsbDriverFinder {}
+
+impl CommandUsbDriverFinder {
+    fn command_exists_in_path<P>(exe_name: P) -> bool
+    where
+        P: AsRef<std::path::Path>,
+    {
+        use std::env;
+        env::var_os("PATH")
+            .and_then(|paths| {
+                env::split_paths(&paths)
+                    .filter_map(|dir| {
+                        let full_path = dir.join(&exe_name);
+                        if full_path.is_file() { Some(full_path) } else { None }
+                    })
+                    .next()
+            })
+            .is_some()
+    }
+}
+
+impl UsbDriverFinder for CommandUsbDriverFinder {
+    async fn find(&self) -> Result<Vec<UsbDriverStatus>, FindUsbDriverError> {
+        let pgrep = "pgrep";
+        let ss = "ss";
+        let mut non_nonexistent_commands = vec![];
+        if !Self::command_exists_in_path(pgrep) {
+            non_nonexistent_commands.push(pgrep.to_string());
+        }
+        if !Self::command_exists_in_path(ss) {
+            non_nonexistent_commands.push(ss.to_string());
+        }
+        if non_nonexistent_commands.len() > 0 {
+            return Err(FindUsbDriverError::CommandsMissing(non_nonexistent_commands));
+        }
+
+        log::trace!("Executing pgrep");
+        let pgrep_output = Command::new(pgrep).arg("-f").arg("ffx-usb-driver").output()?;
+
+        if !pgrep_output.status.success() || pgrep_output.stdout.is_empty() {
+            return Err(FindUsbDriverError::DriverIsNotRunning);
+        }
+
+        let pid_str = String::from_utf8_lossy(&pgrep_output.stdout);
+        let mut statuses = Vec::new();
+
+        let ss_output = Command::new(ss).arg("-lxp").output()?;
+        if !ss_output.status.success() {
+            let stderr = String::from_utf8_lossy(&ss_output.stderr);
+            return Err(FindUsbDriverError::SsCommandFailed(stderr.to_string()));
+        }
+        let ss_stdout = String::from_utf8_lossy(&ss_output.stdout);
+
+        for line in pid_str.lines() {
+            let pid: u32 = line.parse()?;
+
+            // The output of `ss -lxp` has the socket path in the 5th column (index 4)
+            // for listening unix sockets.
+            // e.g. u_str LISTEN 0 128 /tmp/ffx-usb-123.sock 12345 * 0 users:(("...",...))
+            let socket_path = ss_stdout
+                .lines()
+                .find(|ss_line| ss_line.contains(&format!("pid={}", pid)))
+                .and_then(|ss_line| ss_line.split_whitespace().nth(4));
+
+            if let Some(socket_path) = socket_path {
+                statuses.push(UsbDriverStatus { pid, socket_path: socket_path.to_string() });
+            } else {
+                // If we can't find the socket for one of the pids, we should probably
+                // return an error for that specific one.
+                return Err(FindUsbDriverError::UnableToFindSocket(pid));
+            }
+        }
+
+        if statuses.is_empty() {
+            return Err(FindUsbDriverError::UnableToDetermineSocket);
+        }
+
+        Ok(statuses)
+    }
+}
+
+async fn check_usb_driver<W: Write, D: UsbDriverFinder>(
+    finder: &D,
+    ledger: &mut DoctorLedger<W>,
+    env_context: &EnvironmentContext,
+) -> Result<()> {
+    let usb_driver_node = ledger.add_node("FFX USB Driver", LedgerMode::Automatic)?;
+
+    let usb_driver_statuses = match finder.find().await {
+        Ok(statuses) => statuses,
+        Err(e) => {
+            let node = ledger.add_node(&format!("{}", e), LedgerMode::Automatic)?;
+            ledger.set_outcome(node, LedgerOutcome::Failure)?;
+            ledger.close(usb_driver_node)?;
+            return Ok(());
+        }
+    };
+    let pid_socket_ledger_mode = if usb_driver_statuses.len() > 1 {
+        let warning_node =
+            ledger.add_node("Multiple ffx-usb-driver processes running.", LedgerMode::Automatic)?;
+        ledger.set_outcome(warning_node, LedgerOutcome::Warning)?;
+        LedgerMode::Automatic
+    } else {
+        LedgerMode::Verbose
+    };
+
+    let expected_socket_path: PathBuf =
+        match env_context.get(usb_driver_api::CONFIG_USB_SOCKET_PATH) {
+            Ok(val) => val,
+            Err(_) => usb_driver_api::default_usb_socket_path()?,
+        };
+
+    for usb_driver_status in usb_driver_statuses {
+        let UsbDriverStatus { pid, socket_path } = usb_driver_status;
+
+        let running_node = ledger.add_node("ffx-usb-driver is running.", LedgerMode::Automatic)?;
+        let pid_node = ledger.add_node(&format!("PID: {}", pid), pid_socket_ledger_mode)?;
+        ledger.set_outcome(pid_node, LedgerOutcome::Success)?;
+        let socket_node =
+            ledger.add_node(&format!("Socket: {}", socket_path), pid_socket_ledger_mode)?;
+        ledger.set_outcome(socket_node, LedgerOutcome::Success)?;
+
+        if expected_socket_path.as_path() != std::path::Path::new(&socket_path) {
+            let warning_node = ledger.add_node(
+                &format!(
+                    "ffx-usb-driver is listening on a different socket than what is configured: {}. Expected: {}",
+                    socket_path,
+                    expected_socket_path.display()
+                ),
+                LedgerMode::Automatic,
+            )?;
+            ledger.set_outcome(warning_node, LedgerOutcome::Warning)?;
+            ledger.close(warning_node)?;
+        }
+        ledger.close(running_node)?;
+    }
+
+    ledger.close(usb_driver_node)?;
+    Ok(())
+}
+
 async fn doctor_summary<W: Write>(
     step_handler: &mut impl DoctorStepHandler,
     direct_mode: bool,
@@ -1870,6 +2046,7 @@ async fn doctor_summary<W: Write>(
     env_context: &EnvironmentContext,
     show_tool: Option<ShowToolWrapper>,
     run_additional_diagnostics: bool,
+    usb_driver_finder: impl UsbDriverFinder,
     gchecker: impl gcheck::GChecker,
     ledger: &mut DoctorLedger<W>,
 ) -> Result<()> {
@@ -1896,6 +2073,8 @@ async fn doctor_summary<W: Write>(
         &target_spec,
     )
     .await?;
+
+    check_usb_driver(&usb_driver_finder, ledger, env_context).await?;
 
     run_google_network_checks(ledger, env_context, &gchecker).await?;
     if direct_mode {
@@ -1943,6 +2122,8 @@ mod test {
     use futures::channel::oneshot::{self, Receiver};
     use futures::future::Shared;
     use futures::{Future, FutureExt, TryFutureExt};
+    use mockall::predicate::*;
+    use pretty_assertions::{Comparison, assert_eq};
     use std::cell::Cell;
     use std::os::unix::fs::PermissionsExt;
     use std::{fmt, fs};
@@ -2093,11 +2274,13 @@ mod test {
         async fn assert_matches_steps(&self, expected_steps: Vec<TestStepEntry>) {
             let steps = self.steps.lock().await;
             if *steps != expected_steps {
-                println!("got: {:#?}\nexpected: {:#?}", steps, expected_steps);
+                let comparison = Comparison::new(&steps, &expected_steps);
+                println!("steps differ: {}", comparison);
 
                 for (step, expected) in steps.iter().zip(expected_steps) {
                     if *step != expected {
-                        println!("different step: got: {:?}, expected: {:?}", step, expected)
+                        let step_comparison = Comparison::new(&step, &expected);
+                        println!("different step: {}", step_comparison);
                     }
                 }
                 panic!("steps didn't match. differences are listed above.");
@@ -2700,11 +2883,35 @@ mod test {
         Ok(())
     }
 
+    async fn setup_driver_socket_file(test_env: &TestEnv) -> Result<()> {
+        let socket_file_dir = test_env.isolate_root.path().join("test_usb_driver_socket");
+        fs::create_dir_all(&socket_file_dir)?;
+        let socket_file = socket_file_dir.join("socket");
+        std::fs::File::create(&socket_file)?;
+        eprintln!("created file at: {}", socket_file.display());
+        test_env
+            .context
+            .query(usb_driver_api::CONFIG_USB_SOCKET_PATH)
+            .level(Some(ConfigLevel::User))
+            .build()
+            .set(&test_env.context, json!(socket_file))?;
+        Ok(())
+    }
+
+    fn default_mock_driver_finder() -> MockUsbDriverFinder {
+        let mut mock = MockUsbDriverFinder::new();
+        mock.expect_find().returning(|| {
+            Ok(vec![UsbDriverStatus { pid: 1, socket_path: "/tmp/fake/socket/path".to_string() }])
+        });
+        mock
+    }
+
     #[fuchsia::test]
     async fn test_single_try_no_daemon_running_no_targets_with_default_target() {
-        let test_env = ffx_config::test_init().expect("Setting up test environment");
+        let test_env = ffx_config::test_env().build().unwrap();
         setup_ssh_keys(&test_env).await.expect("setting up ssh test keys");
         setup_emu_dir(&test_env).expect("setting up emulator data");
+        setup_driver_socket_file(&test_env).await.expect("setting up fake driver socket file");
 
         let fake = FakeDaemonManager::new(
             vec![false],
@@ -2722,6 +2929,7 @@ mod test {
             LedgerViewMode::Verbose,
         );
 
+        let mock_driver_finder = default_mock_driver_finder();
         doctor(
             &mut handler,
             &mut ledger,
@@ -2735,6 +2943,7 @@ mod test {
             Ok(Some(NODENAME.to_string())),
             &test_env.context,
             record_params_no_record(),
+            mock_driver_finder,
             FakeGChecker,
             None,
             false,
@@ -2763,6 +2972,11 @@ mod test {
                    \n    [i] No Emulator instances\
                    \n[✗] Checking daemon\
                    \n    [✗] No running daemons found. Run `ffx doctor --restart-daemon`\
+                   \n[!] FFX USB Driver\
+                   \n    [!] ffx-usb-driver is running.\
+                   \n        [✓] PID: 1\
+                   \n        [✓] Socket: /tmp/fake/socket/path\
+                   \n        [!] ffx-usb-driver is listening on a different socket than what is configured: /tmp/fake/socket/path. Expected: {driver_socket_path}\
                    \n[✗] Google Network Checks\
                    \n    [✗] Google-corp tool missing, please run `fx add-internal-tools` and `fx build --host //vendor/google/tools/gdoctor`\
                    \n[✗] Doctor found issues in one or more categories.\n",
@@ -2771,13 +2985,15 @@ mod test {
                 env_file = test_env.env_file.path().display(),
                 user_file = test_env.user_file.path().display(),
                 global_file = test_env.global_file.path().display(),
+                driver_socket_path =
+                    test_env.isolate_root.path().join("test_usb_driver_socket/socket").display()
             )
         );
     }
 
     #[fuchsia::test]
-    async fn test_single_try_daemon_running_no_targets() {
-        let test_env = ffx_config::test_init().expect("Setting up test environment");
+    async fn test_usb_driver_not_running() {
+        let test_env = ffx_config::test_env().build().unwrap();
         setup_ssh_keys(&test_env).await.expect("setting up ssh test keys");
         setup_emu_dir(&test_env).expect("setting up emulator data");
 
@@ -2796,6 +3012,12 @@ mod test {
             LedgerViewMode::Verbose,
         );
 
+        let mut mock_driver_finder = MockUsbDriverFinder::new();
+        mock_driver_finder
+            .expect_find()
+            .times(1)
+            .returning(|| Err(FindUsbDriverError::DriverIsNotRunning));
+
         doctor(
             &mut handler,
             &mut ledger,
@@ -2809,245 +3031,7 @@ mod test {
             Ok(None),
             &test_env.context,
             record_params_no_record(),
-            FakeGChecker,
-            None,
-            false,
-        )
-        .await
-        .unwrap();
-
-        assert_eq!(
-            ledger.writer.get_data(),
-            format!(
-                "\
-                   \n[✓] FFX doctor\
-                   \n    [✓] Frontend version: {FRONTEND_VERSION}\
-                   \n    [✓] abi-revision: {ABI_REVISION_STR}\
-                   \n    [✓] api-level: {FAKE_API_LEVEL}\
-                   \n    [i] Path to ffx: {ffx_path}\
-                   \n[✓] FFX Environment Context\
-                   \n    [✓] Kind of Environment: Isolated environment with an isolated root of {isolated_root}\
-                   \n    [✓] Environment File Location: {env_file}\
-                   \n    [✓] No build directory discovered in the environment.\
-                   \n    [✓] Config Lock Files\
-                   \n        [✓] {user_file} locked by {user_file}.lock\
-                   \n        [✓] {global_file} locked by {global_file}.lock\
-                   \n    [✓] The public & private Fuchsia keys are consistent\
-                   \n[✓] FFX Emulator Instances\
-                   \n    [i] No Emulator instances\
-                   \n[✓] Checking daemon\
-                   \n    [✓] Daemon found: [1]\
-                   \n    [✓] Connecting to daemon\
-                   \n    [✓] Daemon version: {DAEMON_VERSION}\
-                   \n    [✓] path: {ffx_path}\
-                   \n    [✓] abi-revision: {ABI_REVISION_STR}\
-                   \n    [✓] api-level: {FAKE_API_LEVEL}\
-                   \n    [✓] Default target: (none)\
-                   \n[✗] Google Network Checks\
-                   \n    [✗] Google-corp tool missing, please run `fx add-internal-tools` and `fx build --host //vendor/google/tools/gdoctor`\
-                   \n[✗] Searching for targets\
-                   \n    [✗] No targets found!\
-                   \n[✗] Doctor found issues in one or more categories.\n",
-                ffx_path = ffx_path(),
-                isolated_root = test_env.isolate_root.path().display(),
-                env_file = test_env.env_file.path().display(),
-                user_file = test_env.user_file.path().display(),
-                global_file = test_env.global_file.path().display(),
-            )
-        );
-    }
-
-    #[fuchsia::test]
-    async fn test_single_try_daemon_running_connection_error() {
-        let test_env = ffx_config::test_init().expect("Setting up test environment");
-        setup_ssh_keys(&test_env).await.expect("setting up ssh test keys");
-        setup_emu_dir(&test_env).expect("setting up emulator data");
-
-        let fake = FakeDaemonManager::new(
-            vec![true],
-            vec![],
-            vec![],
-            vec![Err(anyhow!("Some error message"))],
-            vec![Ok(vec![1])],
-        );
-        let mut handler = FakeStepHandler::new();
-        let ledger_view = Box::new(FakeLedgerView::new_with_error_reason());
-        let mut ledger = DoctorLedger::<MockWriter>::new(
-            MockWriter::new(),
-            ledger_view,
-            LedgerViewMode::Verbose,
-        );
-
-        doctor(
-            &mut handler,
-            &mut ledger,
-            false,
-            &fake,
-            "",
-            1,
-            DEFAULT_RETRY_DELAY,
-            false,
-            frontend_version_info(true),
-            Ok(Some("".to_string())),
-            &test_env.context,
-            record_params_no_record(),
-            FakeGChecker,
-            None,
-            false,
-        )
-        .await
-        .unwrap();
-
-        assert_eq!(
-            ledger.writer.get_data(),
-            format!(
-                "\
-                   \n[✓] FFX doctor\
-                   \n    [✓] Frontend version: {FRONTEND_VERSION}\
-                   \n    [✓] abi-revision: {ABI_REVISION_STR}\
-                   \n    [✓] api-level: {FAKE_API_LEVEL}\
-                   \n    [i] Path to ffx: {ffx_path}\
-                   \n[✓] FFX Environment Context\
-                   \n    [✓] Kind of Environment: Isolated environment with an isolated root of {isolated_root}\
-                   \n    [✓] Environment File Location: {env_file}\
-                   \n    [✓] No build directory discovered in the environment.\
-                   \n    [✓] Config Lock Files\
-                   \n        [✓] {user_file} locked by {user_file}.lock\
-                   \n        [✓] {global_file} locked by {global_file}.lock\
-                   \n    [✓] The public & private Fuchsia keys are consistent\
-                   \n[✓] FFX Emulator Instances\
-                   \n    [i] No Emulator instances\
-                   \n[✗] Checking daemon\
-                   \n    [✓] Daemon found: [1]\
-                   \n    [✗] Error connecting to daemon: Some error message. Run `ffx doctor --restart-daemon`\
-                   \n[✗] Google Network Checks\
-                   \n    [✗] Google-corp tool missing, please run `fx add-internal-tools` and `fx build --host //vendor/google/tools/gdoctor`\
-                   \n[✗] Doctor found issues in one or more categories.\n",
-                ffx_path = ffx_path(),
-                isolated_root = test_env.isolate_root.path().display(),
-                env_file = test_env.env_file.path().display(),
-                user_file = test_env.user_file.path().display(),
-                global_file = test_env.global_file.path().display(),
-            )
-        );
-    }
-
-    #[fuchsia::test]
-    async fn test_single_try_daemon_running_no_targets_default_target_empty() {
-        let test_env = ffx_config::test_init().expect("Setting up test environment");
-        setup_ssh_keys(&test_env).await.expect("setting up ssh test keys");
-        setup_emu_dir(&test_env).expect("setting up emulator data");
-
-        let fake = FakeDaemonManager::new(
-            vec![true],
-            vec![],
-            vec![],
-            vec![Ok(setup_responsive_daemon_server())],
-            vec![Ok(vec![1])],
-        );
-        let mut handler = FakeStepHandler::new();
-        let ledger_view = Box::new(FakeLedgerView::new());
-        let mut ledger = DoctorLedger::<MockWriter>::new(
-            MockWriter::new(),
-            ledger_view,
-            LedgerViewMode::Verbose,
-        );
-
-        doctor(
-            &mut handler,
-            &mut ledger,
-            false,
-            &fake,
-            "",
-            1,
-            DEFAULT_RETRY_DELAY,
-            false,
-            frontend_version_info(true),
-            Ok(Some("".to_string())),
-            &test_env.context,
-            record_params_no_record(),
-            FakeGChecker,
-            None,
-            false,
-        )
-        .await
-        .unwrap();
-
-        assert_eq!(
-            ledger.writer.get_data(),
-            format!(
-                "\
-                   \n[✓] FFX doctor\
-                   \n    [✓] Frontend version: {FRONTEND_VERSION}\
-                   \n    [✓] abi-revision: {ABI_REVISION_STR}\
-                   \n    [✓] api-level: {FAKE_API_LEVEL}\
-                   \n    [i] Path to ffx: {ffx_path}\
-                   \n[✓] FFX Environment Context\
-                   \n    [✓] Kind of Environment: Isolated environment with an isolated root of {isolated_root}\
-                   \n    [✓] Environment File Location: {env_file}\
-                   \n    [✓] No build directory discovered in the environment.\
-                   \n    [✓] Config Lock Files\
-                   \n        [✓] {user_file} locked by {user_file}.lock\
-                   \n        [✓] {global_file} locked by {global_file}.lock\
-                   \n    [✓] The public & private Fuchsia keys are consistent\
-                   \n[✓] FFX Emulator Instances\
-                   \n    [i] No Emulator instances\
-                   \n[✓] Checking daemon\
-                   \n    [✓] Daemon found: [1]\
-                   \n    [✓] Connecting to daemon\
-                   \n    [✓] Daemon version: {DAEMON_VERSION}\
-                   \n    [✓] path: {ffx_path}\
-                   \n    [✓] abi-revision: {ABI_REVISION_STR}\
-                   \n    [✓] api-level: {FAKE_API_LEVEL}\
-                   \n    [✓] Default target: (none)\
-                   \n[✗] Google Network Checks\
-                   \n    [✗] Google-corp tool missing, please run `fx add-internal-tools` and `fx build --host //vendor/google/tools/gdoctor`\
-                   \n[✗] Searching for targets\
-                   \n    [✗] No targets found!\
-                   \n[✗] Doctor found issues in one or more categories.\n",
-                ffx_path = ffx_path(),
-                isolated_root = test_env.isolate_root.path().display(),
-                env_file = test_env.env_file.path().display(),
-                user_file = test_env.user_file.path().display(),
-                global_file = test_env.global_file.path().display(),
-            )
-        );
-    }
-
-    #[fuchsia::test]
-    async fn test_two_tries_daemon_running_list_fails() {
-        let test_env = ffx_config::test_init().expect("Setting up test environment");
-        setup_ssh_keys(&test_env).await.expect("setting up ssh test keys");
-        setup_emu_dir(&test_env).expect("setting up emulator data");
-
-        let fake = FakeDaemonManager::new(
-            vec![true, false],
-            vec![Ok(true), Ok(false)],
-            vec![Ok(())],
-            vec![Ok(setup_daemon_server_list_fails()), Ok(setup_daemon_server_list_fails())],
-            vec![Ok(vec![1])],
-        );
-        let mut handler = FakeStepHandler::new();
-        let ledger_view = Box::new(FakeLedgerView::new());
-        let mut ledger = DoctorLedger::<MockWriter>::new(
-            MockWriter::new(),
-            ledger_view,
-            LedgerViewMode::Verbose,
-        );
-
-        doctor(
-            &mut handler,
-            &mut ledger,
-            false,
-            &fake,
-            "",
-            2,
-            DEFAULT_RETRY_DELAY,
-            false,
-            frontend_version_info(true),
-            Ok(None),
-            &test_env.context,
-            record_params_no_record(),
+            mock_driver_finder,
             FakeGChecker,
             None,
             false,
@@ -3082,6 +3066,8 @@ mod test {
             \n    [✓] abi-revision: {ABI_REVISION_STR}\
             \n    [✓] api-level: {FAKE_API_LEVEL}\
             \n    [✓] Default target: (none)\
+            \n[✗] FFX USB Driver\
+            \n    [✗] ffx-usb-driver is not running.\
             \n[✗] Google Network Checks\
             \n    [✗] Google-corp tool missing, please run `fx add-internal-tools` and `fx build --host //vendor/google/tools/gdoctor`\
             \n[✗] Searching for targets\
@@ -3092,6 +3078,367 @@ mod test {
                 env_file = test_env.env_file.path().display(),
                 user_file = test_env.user_file.path().display(),
                 global_file = test_env.global_file.path().display(),
+            )
+        );
+    }
+
+    #[fuchsia::test]
+    async fn test_single_try_daemon_running_no_targets() {
+        let test_env = ffx_config::test_env().build().unwrap();
+        setup_ssh_keys(&test_env).await.expect("setting up ssh test keys");
+        setup_emu_dir(&test_env).expect("setting up emulator data");
+        setup_driver_socket_file(&test_env).await.expect("setting up fake driver socket file");
+
+        let fake = FakeDaemonManager::new(
+            vec![true],
+            vec![],
+            vec![],
+            vec![Ok(setup_responsive_daemon_server())],
+            vec![Ok(vec![1])],
+        );
+        let mut handler = FakeStepHandler::new();
+        let ledger_view = Box::new(FakeLedgerView::new());
+        let mut ledger = DoctorLedger::<MockWriter>::new(
+            MockWriter::new(),
+            ledger_view,
+            LedgerViewMode::Verbose,
+        );
+
+        let mock_driver_finder = default_mock_driver_finder();
+        doctor(
+            &mut handler,
+            &mut ledger,
+            false,
+            &fake,
+            "",
+            1,
+            DEFAULT_RETRY_DELAY,
+            false,
+            frontend_version_info(true),
+            Ok(None),
+            &test_env.context,
+            record_params_no_record(),
+            mock_driver_finder,
+            FakeGChecker,
+            None,
+            false,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            ledger.writer.get_data(),
+            format!(
+                "\
+                   \n[✓] FFX doctor\
+                   \n    [✓] Frontend version: {FRONTEND_VERSION}\
+                   \n    [✓] abi-revision: {ABI_REVISION_STR}\
+                   \n    [✓] api-level: {FAKE_API_LEVEL}\
+                   \n    [i] Path to ffx: {ffx_path}\
+                   \n[✓] FFX Environment Context\
+                   \n    [✓] Kind of Environment: Isolated environment with an isolated root of {isolated_root}\
+                   \n    [✓] Environment File Location: {env_file}\
+                   \n    [✓] No build directory discovered in the environment.\
+                   \n    [✓] Config Lock Files\
+                   \n        [✓] {user_file} locked by {user_file}.lock\
+                   \n        [✓] {global_file} locked by {global_file}.lock\
+                   \n    [✓] The public & private Fuchsia keys are consistent\
+                   \n[✓] FFX Emulator Instances\
+                   \n    [i] No Emulator instances\
+                   \n[✓] Checking daemon\
+                   \n    [✓] Daemon found: [1]\
+                   \n    [✓] Connecting to daemon\
+                   \n    [✓] Daemon version: {DAEMON_VERSION}\
+                   \n    [✓] path: {ffx_path}\
+                   \n    [✓] abi-revision: {ABI_REVISION_STR}\
+                   \n    [✓] api-level: {FAKE_API_LEVEL}\
+                   \n    [✓] Default target: (none)\
+                   \n[!] FFX USB Driver\
+                   \n    [!] ffx-usb-driver is running.\
+                   \n        [✓] PID: 1\
+                   \n        [✓] Socket: /tmp/fake/socket/path\
+                   \n        [!] ffx-usb-driver is listening on a different socket than what is configured: /tmp/fake/socket/path. Expected: {driver_socket_path}\
+                   \n[✗] Google Network Checks\
+                   \n    [✗] Google-corp tool missing, please run `fx add-internal-tools` and `fx build --host //vendor/google/tools/gdoctor`\
+                   \n[✗] Searching for targets\
+                   \n    [✗] No targets found!\
+                   \n[✗] Doctor found issues in one or more categories.\n",
+                ffx_path = ffx_path(),
+                isolated_root = test_env.isolate_root.path().display(),
+                env_file = test_env.env_file.path().display(),
+                user_file = test_env.user_file.path().display(),
+                global_file = test_env.global_file.path().display(),
+                driver_socket_path =
+                    test_env.isolate_root.path().join("test_usb_driver_socket/socket").display()
+            )
+        );
+    }
+
+    #[fuchsia::test]
+    async fn test_single_try_daemon_running_connection_error() {
+        let test_env = ffx_config::test_env().build().unwrap();
+        setup_ssh_keys(&test_env).await.expect("setting up ssh test keys");
+        setup_driver_socket_file(&test_env).await.expect("setting up fake driver socket file");
+        setup_emu_dir(&test_env).expect("setting up emulator data");
+
+        let fake = FakeDaemonManager::new(
+            vec![true],
+            vec![],
+            vec![],
+            vec![Err(anyhow!("Some error message"))],
+            vec![Ok(vec![1])],
+        );
+        let mut handler = FakeStepHandler::new();
+        let ledger_view = Box::new(FakeLedgerView::new_with_error_reason());
+        let mut ledger = DoctorLedger::<MockWriter>::new(
+            MockWriter::new(),
+            ledger_view,
+            LedgerViewMode::Verbose,
+        );
+
+        let mock_driver_finder = default_mock_driver_finder();
+        doctor(
+            &mut handler,
+            &mut ledger,
+            false,
+            &fake,
+            "",
+            1,
+            DEFAULT_RETRY_DELAY,
+            false,
+            frontend_version_info(true),
+            Ok(Some("".to_string())),
+            &test_env.context,
+            record_params_no_record(),
+            mock_driver_finder,
+            FakeGChecker,
+            None,
+            false,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            ledger.writer.get_data(),
+            format!(
+                "\
+                   \n[✓] FFX doctor\
+                   \n    [✓] Frontend version: {FRONTEND_VERSION}\
+                   \n    [✓] abi-revision: {ABI_REVISION_STR}\
+                   \n    [✓] api-level: {FAKE_API_LEVEL}\
+                   \n    [i] Path to ffx: {ffx_path}\
+                   \n[✓] FFX Environment Context\
+                   \n    [✓] Kind of Environment: Isolated environment with an isolated root of {isolated_root}\
+                   \n    [✓] Environment File Location: {env_file}\
+                   \n    [✓] No build directory discovered in the environment.\
+                   \n    [✓] Config Lock Files\
+                   \n        [✓] {user_file} locked by {user_file}.lock\
+                   \n        [✓] {global_file} locked by {global_file}.lock\
+                   \n    [✓] The public & private Fuchsia keys are consistent\
+                   \n[✓] FFX Emulator Instances\
+                   \n    [i] No Emulator instances\
+                   \n[✗] Checking daemon\
+                   \n    [✓] Daemon found: [1]\
+                   \n    [✗] Error connecting to daemon: Some error message. Run `ffx doctor --restart-daemon`\
+                   \n[!] FFX USB Driver\
+                   \n    [!] ffx-usb-driver is running.\
+                   \n        [✓] PID: 1\
+                   \n        [✓] Socket: /tmp/fake/socket/path\
+                   \n        [!] ffx-usb-driver is listening on a different socket than what is configured: /tmp/fake/socket/path. Expected: {driver_socket_path}\
+                   \n[✗] Google Network Checks\
+                   \n    [✗] Google-corp tool missing, please run `fx add-internal-tools` and `fx build --host //vendor/google/tools/gdoctor`\
+                   \n[✗] Doctor found issues in one or more categories.\n",
+                ffx_path = ffx_path(),
+                isolated_root = test_env.isolate_root.path().display(),
+                env_file = test_env.env_file.path().display(),
+                user_file = test_env.user_file.path().display(),
+                global_file = test_env.global_file.path().display(),
+                driver_socket_path =
+                    test_env.isolate_root.path().join("test_usb_driver_socket/socket").display()
+            )
+        );
+    }
+
+    #[fuchsia::test]
+    async fn test_single_try_daemon_running_no_targets_default_target_empty() {
+        let test_env = ffx_config::test_env().build().unwrap();
+        setup_ssh_keys(&test_env).await.expect("setting up ssh test keys");
+        setup_driver_socket_file(&test_env).await.expect("setting up fake driver socket file");
+        setup_emu_dir(&test_env).expect("setting up emulator data");
+
+        let fake = FakeDaemonManager::new(
+            vec![true],
+            vec![],
+            vec![],
+            vec![Ok(setup_responsive_daemon_server())],
+            vec![Ok(vec![1])],
+        );
+        let mut handler = FakeStepHandler::new();
+        let ledger_view = Box::new(FakeLedgerView::new());
+        let mut ledger = DoctorLedger::<MockWriter>::new(
+            MockWriter::new(),
+            ledger_view,
+            LedgerViewMode::Verbose,
+        );
+
+        let mock_driver_finder = default_mock_driver_finder();
+        doctor(
+            &mut handler,
+            &mut ledger,
+            false,
+            &fake,
+            "",
+            1,
+            DEFAULT_RETRY_DELAY,
+            false,
+            frontend_version_info(true),
+            Ok(Some("".to_string())),
+            &test_env.context,
+            record_params_no_record(),
+            mock_driver_finder,
+            FakeGChecker,
+            None,
+            false,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            ledger.writer.get_data(),
+            format!(
+                "\
+                   \n[✓] FFX doctor\
+                   \n    [✓] Frontend version: {FRONTEND_VERSION}\
+                   \n    [✓] abi-revision: {ABI_REVISION_STR}\
+                   \n    [✓] api-level: {FAKE_API_LEVEL}\
+                   \n    [i] Path to ffx: {ffx_path}\
+                   \n[✓] FFX Environment Context\
+                   \n    [✓] Kind of Environment: Isolated environment with an isolated root of {isolated_root}\
+                   \n    [✓] Environment File Location: {env_file}\
+                   \n    [✓] No build directory discovered in the environment.\
+                   \n    [✓] Config Lock Files\
+                   \n        [✓] {user_file} locked by {user_file}.lock\
+                   \n        [✓] {global_file} locked by {global_file}.lock\
+                   \n    [✓] The public & private Fuchsia keys are consistent\
+                   \n[✓] FFX Emulator Instances\
+                   \n    [i] No Emulator instances\
+                   \n[✓] Checking daemon\
+                   \n    [✓] Daemon found: [1]\
+                   \n    [✓] Connecting to daemon\
+                   \n    [✓] Daemon version: {DAEMON_VERSION}\
+                   \n    [✓] path: {ffx_path}\
+                   \n    [✓] abi-revision: {ABI_REVISION_STR}\
+                   \n    [✓] api-level: {FAKE_API_LEVEL}\
+                   \n    [✓] Default target: (none)\
+                   \n[!] FFX USB Driver\
+                   \n    [!] ffx-usb-driver is running.\
+                   \n        [✓] PID: 1\
+                   \n        [✓] Socket: /tmp/fake/socket/path\
+                   \n        [!] ffx-usb-driver is listening on a different socket than what is configured: /tmp/fake/socket/path. Expected: {driver_socket_path}\
+                   \n[✗] Google Network Checks\
+                   \n    [✗] Google-corp tool missing, please run `fx add-internal-tools` and `fx build --host //vendor/google/tools/gdoctor`\
+                   \n[✗] Searching for targets\
+                   \n    [✗] No targets found!\
+                   \n[✗] Doctor found issues in one or more categories.\n",
+                ffx_path = ffx_path(),
+                isolated_root = test_env.isolate_root.path().display(),
+                env_file = test_env.env_file.path().display(),
+                user_file = test_env.user_file.path().display(),
+                global_file = test_env.global_file.path().display(),
+                driver_socket_path =
+                    test_env.isolate_root.path().join("test_usb_driver_socket/socket").display()
+            )
+        );
+    }
+
+    #[fuchsia::test]
+    async fn test_two_tries_daemon_running_list_fails() {
+        let test_env = ffx_config::test_env().build().unwrap();
+        setup_ssh_keys(&test_env).await.expect("setting up ssh test keys");
+        setup_emu_dir(&test_env).expect("setting up emulator data");
+        setup_driver_socket_file(&test_env).await.expect("setting up fake driver socket file");
+
+        let fake = FakeDaemonManager::new(
+            vec![true, false],
+            vec![Ok(true), Ok(false)],
+            vec![Ok(())],
+            vec![Ok(setup_daemon_server_list_fails()), Ok(setup_daemon_server_list_fails())],
+            vec![Ok(vec![1])],
+        );
+        let mut handler = FakeStepHandler::new();
+        let ledger_view = Box::new(FakeLedgerView::new());
+        let mut ledger = DoctorLedger::<MockWriter>::new(
+            MockWriter::new(),
+            ledger_view,
+            LedgerViewMode::Verbose,
+        );
+
+        let mock_driver_finder = default_mock_driver_finder();
+        doctor(
+            &mut handler,
+            &mut ledger,
+            false,
+            &fake,
+            "",
+            2,
+            DEFAULT_RETRY_DELAY,
+            false,
+            frontend_version_info(true),
+            Ok(None),
+            &test_env.context,
+            record_params_no_record(),
+            mock_driver_finder,
+            FakeGChecker,
+            None,
+            false,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            ledger.writer.get_data(),
+            format!(
+                "\
+            \n[✓] FFX doctor\
+            \n    [✓] Frontend version: {FRONTEND_VERSION}\
+            \n    [✓] abi-revision: {ABI_REVISION_STR}\
+            \n    [✓] api-level: {FAKE_API_LEVEL}\
+            \n    [i] Path to ffx: {ffx_path}\
+            \n[✓] FFX Environment Context\
+            \n    [✓] Kind of Environment: Isolated environment with an isolated root of {isolated_root}\
+            \n    [✓] Environment File Location: {env_file}\
+            \n    [✓] No build directory discovered in the environment.\
+            \n    [✓] Config Lock Files\
+            \n        [✓] {user_file} locked by {user_file}.lock\
+            \n        [✓] {global_file} locked by {global_file}.lock\
+            \n    [✓] The public & private Fuchsia keys are consistent\
+            \n[✓] FFX Emulator Instances\
+            \n    [i] No Emulator instances\
+            \n[✓] Checking daemon\
+            \n    [✓] Daemon found: [1]\
+            \n    [✓] Connecting to daemon\
+            \n    [✓] Daemon version: {DAEMON_VERSION}\
+            \n    [✓] path: {ffx_path}\
+            \n    [✓] abi-revision: {ABI_REVISION_STR}\
+            \n    [✓] api-level: {FAKE_API_LEVEL}\
+            \n    [✓] Default target: (none)\
+            \n[!] FFX USB Driver\
+            \n    [!] ffx-usb-driver is running.\
+            \n        [✓] PID: 1\
+            \n        [✓] Socket: /tmp/fake/socket/path\
+            \n        [!] ffx-usb-driver is listening on a different socket than what is configured: /tmp/fake/socket/path. Expected: {driver_socket_path}\
+            \n[✗] Google Network Checks\
+            \n    [✗] Google-corp tool missing, please run `fx add-internal-tools` and `fx build --host //vendor/google/tools/gdoctor`\
+            \n[✗] Searching for targets\
+            \n    [✗] No targets found!\
+            \n[✗] Doctor found issues in one or more categories.\n",
+                ffx_path = ffx_path(),
+                isolated_root = test_env.isolate_root.path().display(),
+                env_file = test_env.env_file.path().display(),
+                user_file = test_env.user_file.path().display(),
+                global_file = test_env.global_file.path().display(),
+                driver_socket_path =
+                    test_env.isolate_root.path().join("test_usb_driver_socket/socket").display()
             )
         );
     }
@@ -3224,6 +3571,7 @@ mod test {
         let mut ledger =
             DoctorLedger::<MockWriter>::new(MockWriter::new(), ledger_view, modes.ledger_mode);
 
+        let mock_driver_finder = default_mock_driver_finder();
         doctor(
             &mut handler,
             &mut ledger,
@@ -3237,6 +3585,7 @@ mod test {
             Ok(None),
             &test_env.context,
             record_params_no_record(),
+            mock_driver_finder,
             FakeGChecker,
             None,
             false,
@@ -3250,10 +3599,10 @@ mod test {
 
     #[fuchsia::test]
     async fn test_finds_target_connects_to_rcs_with_ssh_error_verbose() {
-        let test_env = ffx_config::test_init().expect("Setting up test environment");
+        let test_env = ffx_config::test_env().build().unwrap();
         setup_ssh_keys(&test_env).await.expect("setting up ssh test keys");
         setup_emu_dir(&test_env).expect("setting up emulator data");
-
+        setup_driver_socket_file(&test_env).await.expect("setting up fake driver socket file");
         let ledger = test_finds_target_connects_to_rcs_setup(
             &test_env,
             RcsTestArgs::default().verbose().with_ssh_error("some ssh error"),
@@ -3286,6 +3635,11 @@ mod test {
             \n    [✓] abi-revision: {ABI_REVISION_STR}\
             \n    [✓] api-level: {FAKE_API_LEVEL}\
             \n    [✓] Default target: (none)\
+            \n[!] FFX USB Driver\
+            \n    [!] ffx-usb-driver is running.\
+            \n        [✓] PID: 1\
+            \n        [✓] Socket: /tmp/fake/socket/path\
+            \n        [!] ffx-usb-driver is listening on a different socket than what is configured: /tmp/fake/socket/path. Expected: {driver_socket_path}\
             \n[✗] Google Network Checks\
             \n    [✗] Google-corp tool missing, please run `fx add-internal-tools` and `fx build --host //vendor/google/tools/gdoctor`\
             \n[✓] Searching for targets\
@@ -3303,14 +3657,18 @@ mod test {
                 env_file = test_env.env_file.path().display(),
                 user_file = test_env.user_file.path().display(),
                 global_file = test_env.global_file.path().display(),
+                driver_socket_path =
+                    test_env.isolate_root.path().join("test_usb_driver_socket/socket").display()
             )
         );
     }
 
     #[fuchsia::test]
     async fn test_ssh_connection_refused_recommends_tunnel() {
-        let test_env = ffx_config::test_init().expect("Setting up test environment");
-
+        let test_env = ffx_config::test_env().build().unwrap();
+        setup_ssh_keys(&test_env).await.expect("setting up ssh test keys");
+        setup_emu_dir(&test_env).expect("setting up emulator data");
+        setup_driver_socket_file(&test_env).await.expect("setting up fake driver socket file");
         let ledger = test_finds_target_connects_to_rcs_setup(
             &test_env,
             RcsTestArgs::default().with_ssh_error("Connection refused").with_reason(),
@@ -3324,8 +3682,10 @@ mod test {
 
     #[fuchsia::test]
     async fn test_ssh_permission_denied_recommends_repave() {
-        let test_env = ffx_config::test_init().expect("Setting up test environment");
-
+        let test_env = ffx_config::test_env().build().unwrap();
+        setup_ssh_keys(&test_env).await.expect("setting up ssh test keys");
+        setup_emu_dir(&test_env).expect("setting up emulator data");
+        setup_driver_socket_file(&test_env).await.expect("setting up fake driver socket file");
         let ledger = test_finds_target_connects_to_rcs_setup(
             &test_env,
             RcsTestArgs::default()
@@ -3341,10 +3701,10 @@ mod test {
 
     #[fuchsia::test]
     async fn test_finds_target_connects_to_rcs_verbose() {
-        let test_env = ffx_config::test_init().expect("Setting up test environment");
+        let test_env = ffx_config::test_env().build().unwrap();
         setup_ssh_keys(&test_env).await.expect("setting up ssh test keys");
         setup_emu_dir(&test_env).expect("setting up emulator data");
-
+        setup_driver_socket_file(&test_env).await.expect("setting up fake driver socket file");
         let ledger =
             test_finds_target_connects_to_rcs_setup(&test_env, RcsTestArgs::default().verbose())
                 .await;
@@ -3375,6 +3735,11 @@ mod test {
             \n    [✓] abi-revision: {ABI_REVISION_STR}\
             \n    [✓] api-level: {FAKE_API_LEVEL}\
             \n    [✓] Default target: (none)\
+            \n[!] FFX USB Driver\
+            \n    [!] ffx-usb-driver is running.\
+            \n        [✓] PID: 1\
+            \n        [✓] Socket: /tmp/fake/socket/path\
+            \n        [!] ffx-usb-driver is listening on a different socket than what is configured: /tmp/fake/socket/path. Expected: {driver_socket_path}\
             \n[✗] Google Network Checks\
             \n    [✗] Google-corp tool missing, please run `fx add-internal-tools` and `fx build --host //vendor/google/tools/gdoctor`\
             \n[✓] Searching for targets\
@@ -3398,16 +3763,18 @@ mod test {
                 env_file = test_env.env_file.path().display(),
                 user_file = test_env.user_file.path().display(),
                 global_file = test_env.global_file.path().display(),
+                driver_socket_path =
+                    test_env.isolate_root.path().join("test_usb_driver_socket/socket").display()
             )
         );
     }
 
     #[fuchsia::test]
     async fn test_finds_target_connects_to_rcs_normal() {
-        let test_env = ffx_config::test_init().expect("Setting up test environment");
+        let test_env = ffx_config::test_env().build().unwrap();
         setup_ssh_keys(&test_env).await.expect("setting up ssh test keys");
         setup_emu_dir(&test_env).expect("setting up emulator data");
-
+        setup_driver_socket_file(&test_env).await.expect("setting up fake driver socket file");
         let ledger =
             test_finds_target_connects_to_rcs_setup(&test_env, RcsTestArgs::default()).await;
         assert_eq!(
@@ -3425,6 +3792,9 @@ mod test {
                 \n[✓] Checking daemon\
                 \n    [✓] Daemon found: [1]\
                 \n    [✓] Connecting to daemon\
+                \n[!] FFX USB Driver\
+                \n    [!] ffx-usb-driver is running.\
+                \n        [!] ffx-usb-driver is listening on a different socket than what is configured: /tmp/fake/socket/path. Expected: {driver_socket_path}\
                 \n[✗] Google Network Checks\
                 \n    [✗] Google-corp tool missing, please run `fx add-internal-tools` and `fx build --host //vendor/google/tools/gdoctor`\
                 \n[✓] Searching for targets\
@@ -3436,15 +3806,18 @@ mod test {
                 isolated_root = test_env.isolate_root.path().display(),
                 user_file = test_env.user_file.path().display(),
                 global_file = test_env.global_file.path().display(),
+                driver_socket_path =
+                    test_env.isolate_root.path().join("test_usb_driver_socket/socket").display()
             )
         );
     }
 
     #[fuchsia::test]
     async fn test_finds_target_with_filter() {
-        let test_env = ffx_config::test_init().expect("Setting up test environment");
+        let test_env = ffx_config::test_env().build().unwrap();
         setup_ssh_keys(&test_env).await.expect("setting up ssh test keys");
         setup_emu_dir(&test_env).expect("setting up emulator data");
+        setup_driver_socket_file(&test_env).await.expect("setting up fake driver socket file");
 
         let (tx, rx) = oneshot::channel::<()>();
 
@@ -3463,6 +3836,7 @@ mod test {
             LedgerViewMode::Verbose,
         );
 
+        let mock_driver_finder = default_mock_driver_finder();
         doctor(
             &mut handler,
             &mut ledger,
@@ -3476,6 +3850,7 @@ mod test {
             Ok(None),
             &test_env.context,
             record_params_no_record(),
+            mock_driver_finder,
             FakeGChecker,
             None,
             false,
@@ -3511,6 +3886,11 @@ mod test {
             \n    [✓] abi-revision: {ABI_REVISION_STR}\
             \n    [✓] api-level: {FAKE_API_LEVEL}\
             \n    [✓] Default target: (none)\
+            \n[!] FFX USB Driver\
+            \n    [!] ffx-usb-driver is running.\
+            \n        [✓] PID: 1\
+            \n        [✓] Socket: /tmp/fake/socket/path\
+            \n        [!] ffx-usb-driver is listening on a different socket than what is configured: /tmp/fake/socket/path. Expected: {driver_socket_path}\
             \n[✗] Google Network Checks\
             \n    [✗] Google-corp tool missing, please run `fx add-internal-tools` and `fx build --host //vendor/google/tools/gdoctor`\
             \n[✓] Searching for targets\
@@ -3528,15 +3908,18 @@ mod test {
                 env_file = test_env.env_file.path().display(),
                 user_file = test_env.user_file.path().display(),
                 global_file = test_env.global_file.path().display(),
+                driver_socket_path =
+                    test_env.isolate_root.path().join("test_usb_driver_socket/socket").display()
             )
         );
     }
 
     #[fuchsia::test]
     async fn test_invalid_filter_finds_no_targets() {
-        let test_env = ffx_config::test_init().expect("Setting up test environment");
+        let test_env = ffx_config::test_env().build().unwrap();
         setup_ssh_keys(&test_env).await.expect("setting up ssh test keys");
         setup_emu_dir(&test_env).expect("setting up emulator data");
+        setup_driver_socket_file(&test_env).await.expect("setting up fake driver socket file");
 
         let (tx, rx) = oneshot::channel::<()>();
 
@@ -3556,6 +3939,7 @@ mod test {
             LedgerViewMode::Verbose,
         );
 
+        let mock_driver_finder = default_mock_driver_finder();
         doctor(
             &mut handler,
             &mut ledger,
@@ -3569,6 +3953,7 @@ mod test {
             Ok(None),
             &test_env.context,
             record_params_no_record(),
+            mock_driver_finder,
             FakeGChecker,
             None,
             false,
@@ -3604,6 +3989,11 @@ mod test {
             \n    [✓] abi-revision: {ABI_REVISION_STR}\
             \n    [✓] api-level: {FAKE_API_LEVEL}\
             \n    [✓] Default target: (none)\
+            \n[!] FFX USB Driver\
+            \n    [!] ffx-usb-driver is running.\
+            \n        [✓] PID: 1\
+            \n        [✓] Socket: /tmp/fake/socket/path\
+            \n        [!] ffx-usb-driver is listening on a different socket than what is configured: /tmp/fake/socket/path. Expected: {driver_socket_path}\
             \n[✗] Google Network Checks\
             \n    [✗] Google-corp tool missing, please run `fx add-internal-tools` and `fx build --host //vendor/google/tools/gdoctor`\
             \n[✗] Searching for targets\
@@ -3614,6 +4004,8 @@ mod test {
                 env_file = test_env.env_file.path().display(),
                 user_file = test_env.user_file.path().display(),
                 global_file = test_env.global_file.path().display(),
+                driver_socket_path =
+                    test_env.isolate_root.path().join("test_usb_driver_socket/socket").display()
             )
         );
     }
@@ -3697,9 +4089,10 @@ mod test {
 
     #[fuchsia::test]
     async fn test_single_try_daemon_running_no_targets_record_enabled() {
-        let test_env = ffx_config::test_init().expect("Setting up test environment");
+        let test_env = ffx_config::test_env().build().unwrap();
         setup_ssh_keys(&test_env).await.expect("setting up ssh test keys");
         setup_emu_dir(&test_env).expect("setting up emulator data");
+        setup_driver_socket_file(&test_env).await.expect("setting up fake driver socket file");
 
         let fake = FakeDaemonManager::new(
             vec![true],
@@ -3720,6 +4113,7 @@ mod test {
             LedgerViewMode::Verbose,
         );
 
+        let mock_driver_finder = default_mock_driver_finder();
         doctor(
             &mut handler,
             &mut ledger,
@@ -3733,6 +4127,7 @@ mod test {
             Ok(None),
             &test_env.context,
             params,
+            mock_driver_finder,
             FakeGChecker,
             None,
             false,
@@ -3769,6 +4164,11 @@ mod test {
                     \n    [✓] abi-revision: {ABI_REVISION_STR}\
                     \n    [✓] api-level: {FAKE_API_LEVEL}\
                     \n    [✓] Default target: (none)\n\
+                    \n[!] FFX USB Driver\
+                    \n    [!] ffx-usb-driver is running.\
+                    \n        [✓] PID: 1\
+                    \n        [✓] Socket: /tmp/fake/socket/path\
+                    \n        [!] ffx-usb-driver is listening on a different socket than what is configured: /tmp/fake/socket/path. Expected: {driver_socket_path}\n\
                     \n[✗] Google Network Checks\
                     \n    [✗] Google-corp tool missing, please run `fx add-internal-tools` and `fx build --host //vendor/google/tools/gdoctor`\
                     \n\n[✗] Searching for targets\
@@ -3779,6 +4179,8 @@ mod test {
                     env_file=test_env.env_file.path().display(),
                     user_file=test_env.user_file.path().display(),
                     global_file=test_env.global_file.path().display(),
+                    driver_socket_path =
+                        test_env.isolate_root.path().join("test_usb_driver_socket/socket").display()
                 ))),
                 TestStepEntry::step(StepType::GeneratingRecord),
                 TestStepEntry::result(StepResult::Success),
@@ -3792,9 +4194,10 @@ mod test {
         fake_recorder: Arc<Mutex<FakeRecorder>>,
         params: DoctorRecorderParameters,
     ) {
-        let test_env = ffx_config::test_init().expect("Setting up test environment");
+        let test_env = ffx_config::test_env().build().unwrap();
         setup_ssh_keys(&test_env).await.expect("setting up ssh test keys");
         setup_emu_dir(&test_env).expect("setting up emulator data");
+        setup_driver_socket_file(&test_env).await.expect("setting up fake driver socket file");
 
         let fake = FakeDaemonManager::new(
             vec![true],
@@ -3812,6 +4215,7 @@ mod test {
             LedgerViewMode::Verbose,
         );
 
+        let mock_driver_finder = default_mock_driver_finder();
         assert!(
             doctor(
                 &mut handler,
@@ -3826,6 +4230,7 @@ mod test {
                 Ok(None),
                 &test_env.context,
                 params,
+                mock_driver_finder,
                 FakeGChecker,
                 None,
                 false,
@@ -3863,6 +4268,11 @@ mod test {
                     \n    [✓] abi-revision: {ABI_REVISION_STR}\
                     \n    [✓] api-level: {FAKE_API_LEVEL}\
                     \n    [✓] Default target: (none)\n\
+                    \n[!] FFX USB Driver\
+                    \n    [!] ffx-usb-driver is running.\
+                    \n        [✓] PID: 1\
+                    \n        [✓] Socket: /tmp/fake/socket/path\
+                    \n        [!] ffx-usb-driver is listening on a different socket than what is configured: /tmp/fake/socket/path. Expected: {driver_socket_path}\n\
                     \n[✗] Google Network Checks\
                     \n    [✗] Google-corp tool missing, please run `fx add-internal-tools` and `fx build --host //vendor/google/tools/gdoctor`\
                     \n\n[✗] Searching for targets\
@@ -3873,6 +4283,8 @@ mod test {
                     env_file=test_env.env_file.path().display(),
                     user_file=test_env.user_file.path().display(),
                     global_file=test_env.global_file.path().display(),
+                    driver_socket_path =
+                        test_env.isolate_root.path().join("test_usb_driver_socket/socket").display()
                 ))),
                 // Error will occur here.
             ])
@@ -3916,6 +4328,7 @@ mod test {
         let ledger_view = Box::new(FakeLedgerView::new());
         let mut ledger = DoctorLedger::<MockWriter>::new(MockWriter::new(), ledger_view, mode);
 
+        let mock_driver_finder = default_mock_driver_finder();
         doctor(
             &mut handler,
             &mut ledger,
@@ -3929,6 +4342,7 @@ mod test {
             Ok(None),
             &test_env.context,
             record_params_no_record(),
+            mock_driver_finder,
             FakeGChecker,
             None,
             false,
@@ -3942,9 +4356,10 @@ mod test {
 
     #[fuchsia::test]
     async fn test_finds_target_with_missing_nodename_verbose() {
-        let test_env = ffx_config::test_init().expect("Setting up test environment");
+        let test_env = ffx_config::test_env().build().unwrap();
         setup_ssh_keys(&test_env).await.expect("setting up ssh test keys");
         setup_emu_dir(&test_env).expect("setting up emulator data");
+        setup_driver_socket_file(&test_env).await.expect("setting up fake driver socket file");
 
         let ledger =
             test_finds_target_with_missing_nodename_setup(&test_env, LedgerViewMode::Verbose).await;
@@ -3975,6 +4390,11 @@ mod test {
                 \n    [✓] abi-revision: {ABI_REVISION_STR}\
                 \n    [✓] api-level: {FAKE_API_LEVEL}\
                 \n    [✓] Default target: (none)\
+                \n[!] FFX USB Driver\
+                \n    [!] ffx-usb-driver is running.\
+                \n        [✓] PID: 1\
+                \n        [✓] Socket: /tmp/fake/socket/path\
+                \n        [!] ffx-usb-driver is listening on a different socket than what is configured: /tmp/fake/socket/path. Expected: {driver_socket_path}\
                 \n[✗] Google Network Checks\
                 \n    [✗] Google-corp tool missing, please run `fx add-internal-tools` and `fx build --host //vendor/google/tools/gdoctor`\
                 \n[✓] Searching for targets\
@@ -3998,15 +4418,18 @@ mod test {
                 env_file = test_env.env_file.path().display(),
                 user_file = test_env.user_file.path().display(),
                 global_file = test_env.global_file.path().display(),
+                driver_socket_path =
+                    test_env.isolate_root.path().join("test_usb_driver_socket/socket").display()
             )
         );
     }
 
     #[fuchsia::test]
     async fn test_finds_target_with_missing_nodename_normal() {
-        let test_env = ffx_config::test_init().expect("Setting up test environment");
+        let test_env = ffx_config::test_env().build().unwrap();
         setup_ssh_keys(&test_env).await.expect("setting up ssh test keys");
         setup_emu_dir(&test_env).expect("setting up emulator data");
+        setup_driver_socket_file(&test_env).await.expect("setting up fake driver socket file");
 
         let ledger =
             test_finds_target_with_missing_nodename_setup(&test_env, LedgerViewMode::Normal).await;
@@ -4025,6 +4448,9 @@ mod test {
                 \n[✓] Checking daemon\
                 \n    [✓] Daemon found: [1]\
                 \n    [✓] Connecting to daemon\
+                \n[!] FFX USB Driver\
+                \n    [!] ffx-usb-driver is running.\
+                \n        [!] ffx-usb-driver is listening on a different socket than what is configured: /tmp/fake/socket/path. Expected: {driver_socket_path}\
                 \n[✗] Google Network Checks\
                 \n    [✗] Google-corp tool missing, please run `fx add-internal-tools` and `fx build --host //vendor/google/tools/gdoctor`\
                 \n[✓] Searching for targets\
@@ -4037,15 +4463,18 @@ mod test {
                 isolated_root = test_env.isolate_root.path().display(),
                 user_file = test_env.user_file.path().display(),
                 global_file = test_env.global_file.path().display(),
+                driver_socket_path =
+                    test_env.isolate_root.path().join("test_usb_driver_socket/socket").display()
             )
         );
     }
 
     #[fuchsia::test]
     async fn test_fastboot_target() {
-        let test_env = ffx_config::test_init().expect("Setting up test environment");
+        let test_env = ffx_config::test_env().build().unwrap();
         setup_ssh_keys(&test_env).await.expect("setting up ssh test keys");
         setup_emu_dir(&test_env).expect("setting up emulator data");
+        setup_driver_socket_file(&test_env).await.expect("setting up fake driver socket file");
 
         let fake = FakeDaemonManager::new(
             vec![true],
@@ -4062,6 +4491,7 @@ mod test {
             LedgerViewMode::Verbose,
         );
 
+        let mock_driver_finder = default_mock_driver_finder();
         doctor(
             &mut handler,
             &mut ledger,
@@ -4075,6 +4505,7 @@ mod test {
             Ok(None),
             &test_env.context,
             record_params_no_record(),
+            mock_driver_finder,
             FakeGChecker,
             None,
             false,
@@ -4109,6 +4540,11 @@ mod test {
             \n    [✓] abi-revision: {ABI_REVISION_STR}\
             \n    [✓] api-level: {FAKE_API_LEVEL}\
             \n    [✓] Default target: (none)\
+            \n[!] FFX USB Driver\
+            \n    [!] ffx-usb-driver is running.\
+            \n        [✓] PID: 1\
+            \n        [✓] Socket: /tmp/fake/socket/path\
+            \n        [!] ffx-usb-driver is listening on a different socket than what is configured: /tmp/fake/socket/path. Expected: {driver_socket_path}\
             \n[✗] Google Network Checks\
             \n    [✗] Google-corp tool missing, please run `fx add-internal-tools` and `fx build --host //vendor/google/tools/gdoctor`\
             \n[✓] Searching for targets\
@@ -4121,15 +4557,18 @@ mod test {
                 env_file = test_env.env_file.path().display(),
                 user_file = test_env.user_file.path().display(),
                 global_file = test_env.global_file.path().display(),
+                driver_socket_path =
+                    test_env.isolate_root.path().join("test_usb_driver_socket/socket").display()
             )
         );
     }
 
     #[fuchsia::test]
     async fn test_single_try_daemon_running_different_api_level() {
-        let test_env = ffx_config::test_init().expect("Setting up test environment");
+        let test_env = ffx_config::test_env().build().unwrap();
         setup_ssh_keys(&test_env).await.expect("setting up ssh test keys");
         setup_emu_dir(&test_env).expect("setting up emulator data");
+        setup_driver_socket_file(&test_env).await.expect("setting up fake driver socket file");
 
         let fake = FakeDaemonManager::new(
             vec![true],
@@ -4146,6 +4585,7 @@ mod test {
             LedgerViewMode::Verbose,
         );
 
+        let mock_driver_finder = default_mock_driver_finder();
         doctor(
             &mut handler,
             &mut ledger,
@@ -4159,6 +4599,7 @@ mod test {
             Ok(Some("".to_string())),
             &test_env.context,
             record_params_no_record(),
+            mock_driver_finder,
             FakeGChecker,
             None,
             false,
@@ -4194,6 +4635,11 @@ mod test {
                    \n    [✓] api-level: {FAKE_API_LEVEL}\
                    \n    [!] Daemon and frontend are at different API levels. Run `ffx doctor --restart-daemon`\
                    \n    [✓] Default target: (none)\
+                   \n[!] FFX USB Driver\
+                   \n    [!] ffx-usb-driver is running.\
+                   \n        [✓] PID: 1\
+                   \n        [✓] Socket: /tmp/fake/socket/path\
+                   \n        [!] ffx-usb-driver is listening on a different socket than what is configured: /tmp/fake/socket/path. Expected: {driver_socket_path}\
                    \n[✗] Google Network Checks\
                    \n    [✗] Google-corp tool missing, please run `fx add-internal-tools` and `fx build --host //vendor/google/tools/gdoctor`\
                    \n[✗] Searching for targets\
@@ -4204,13 +4650,15 @@ mod test {
                 env_file = test_env.env_file.path().display(),
                 user_file = test_env.user_file.path().display(),
                 global_file = test_env.global_file.path().display(),
+                driver_socket_path =
+                    test_env.isolate_root.path().join("test_usb_driver_socket/socket").display()
             )
         );
     }
 
     #[fuchsia::test]
     async fn test_missing_ssh_keys() {
-        let test_env = ffx_config::test_init().expect("Setting up test environment");
+        let test_env = ffx_config::test_env().build().unwrap();
         let pub_key = test_env.isolate_root.path().join("test_authorized_keys");
         let priv_key = test_env.isolate_root.path().join("test_ed25519_key");
         // Set the paths to use for the SSH keys
@@ -4229,6 +4677,7 @@ mod test {
             .set(&test_env.context, json!([&priv_key]))
             .unwrap();
 
+        setup_driver_socket_file(&test_env).await.expect("setting up fake driver socket file");
         // Do not generate the keys - so they are missing.
 
         let fake = FakeDaemonManager::new(
@@ -4246,6 +4695,7 @@ mod test {
             LedgerViewMode::Verbose,
         );
 
+        let mock_driver_finder = default_mock_driver_finder();
         doctor(
             &mut handler,
             &mut ledger,
@@ -4259,6 +4709,7 @@ mod test {
             Ok(None),
             &test_env.context,
             record_params_no_record(),
+            mock_driver_finder,
             FakeGChecker,
             None,
             false,
@@ -4293,6 +4744,11 @@ mod test {
             \n    [✓] abi-revision: {ABI_REVISION_STR}\
             \n    [✓] api-level: {FAKE_API_LEVEL}\
             \n    [✓] Default target: (none)\
+            \n[!] FFX USB Driver\
+            \n    [!] ffx-usb-driver is running.\
+            \n        [✓] PID: 1\
+            \n        [✓] Socket: /tmp/fake/socket/path\
+            \n        [!] ffx-usb-driver is listening on a different socket than what is configured: /tmp/fake/socket/path. Expected: {driver_socket_path}\
             \n[✗] Google Network Checks\
             \n    [✗] Google-corp tool missing, please run `fx add-internal-tools` and `fx build --host //vendor/google/tools/gdoctor`\
             \n[✓] Searching for targets\
@@ -4305,7 +4761,9 @@ mod test {
                 env_file = test_env.env_file.path().display(),
                 user_file = test_env.user_file.path().display(),
                 global_file = test_env.global_file.path().display(),
-                priv_key = priv_key.display()
+                priv_key = priv_key.display(),
+                driver_socket_path =
+                    test_env.isolate_root.path().join("test_usb_driver_socket/socket").display()
             )
         );
     }
@@ -4371,11 +4829,12 @@ mod test {
         fs::write(&metadata_path, metadata_content.to_string()).expect("Failed to write metadata");
 
         // Configure ffx to use our temporary search path
-        let testenv = ffx_config::test_env()
+        let test_env = ffx_config::test_env()
             .env_var(EnvironmentContext::FFX_BIN_ENV, "host-tools/ffx")
             .runtime_config("ffx.subtool-search-paths", json!([subtool_search_dir_path]))
             .build()
             .expect("Setting up test environment");
+        setup_driver_socket_file(&test_env).await.expect("setting up fake driver socket file");
 
         let fake_daemon = FakeDaemonManager::new(
             vec![true],
@@ -4391,6 +4850,7 @@ mod test {
             LedgerViewMode::Verbose,
         );
 
+        let mock_driver_finder = default_mock_driver_finder();
         doctor(
             &mut handler,
             &mut ledger,
@@ -4402,8 +4862,9 @@ mod test {
             false,
             frontend_version_info(true),
             Ok(None),
-            &testenv.context,
+            &test_env.context,
             record_params_no_record(),
+            mock_driver_finder,
             FakeGChecker,
             None,
             false,
@@ -4431,7 +4892,8 @@ mod test {
 
     #[fuchsia::test]
     async fn test_check_emulators() -> Result<()> {
-        let test_env = ffx_config::test_init().unwrap();
+        let test_env = ffx_config::test_env().build().unwrap();
+        setup_driver_socket_file(&test_env).await.expect("setting up fake driver socket file");
         let emu_dir = setup_emu_dir(&test_env)?;
         // No instances
         {
