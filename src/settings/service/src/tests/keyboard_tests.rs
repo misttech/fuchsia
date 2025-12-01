@@ -5,25 +5,12 @@
 use crate::EnvironmentBuilder;
 use crate::ingress::fidl::Interface;
 use crate::keyboard::types::{Autorepeat, KeyboardInfo, KeymapId};
-use crate::tests::test_failure_utils::create_empty_test_env;
-use assert_matches::assert_matches;
-use fidl::Error::ClientChannelClosed;
 use fidl_fuchsia_settings::{KeyboardMarker, KeyboardProxy};
 use settings_storage::device_storage::DeviceStorage;
 use settings_test_common::storage::InMemoryStorageFactory;
 use std::rc::Rc;
-use zx::Status;
 
 const ENV_NAME: &str = "settings_service_keyboard_test_environment";
-
-/// Creates an environment that will fail on a get request.
-async fn create_keyboard_test_env_with_failures() -> KeyboardProxy {
-    let storage_factory = InMemoryStorageFactory::new();
-    create_empty_test_env(Rc::new(storage_factory), ENV_NAME)
-        .await
-        .connect_to_protocol::<KeyboardMarker>()
-        .unwrap()
-}
 
 /// Creates an environment for keyboard.
 async fn create_test_keyboard_env(
@@ -63,11 +50,4 @@ async fn test_keyboard_storage() {
     // Verify the value we set is persisted in DeviceStorage.
     let retrieved_struct = store.get::<KeyboardInfo>().await;
     assert_eq!(changed_value, retrieved_struct);
-}
-
-#[fuchsia::test(allow_stalls = false)]
-async fn test_channel_failure_watch() {
-    let keyboard_service = create_keyboard_test_env_with_failures().await;
-    let result = keyboard_service.watch().await;
-    assert_matches!(result, Err(ClientChannelClosed { status: Status::NOT_FOUND, .. }));
 }

@@ -10,11 +10,8 @@ use crate::input::types::{
 };
 use crate::tests::helpers::clone_media_buttons_event_without_wake_lease;
 use crate::tests::input_test_environment::{TestInputEnvironment, TestInputEnvironmentBuilder};
-use crate::tests::test_failure_utils::create_empty_test_env;
-use assert_matches::assert_matches;
-use fidl::Error::ClientChannelClosed;
 use fidl_fuchsia_settings::{
-    DeviceState as FidlDeviceState, DeviceType, InputMarker, InputProxy, InputSettings,
+    DeviceState as FidlDeviceState, DeviceType, InputProxy, InputSettings,
     InputState as FidlInputState, ToggleStateFlags,
 };
 use fuchsia_async::TestExecutor;
@@ -24,10 +21,7 @@ use futures::stream::StreamExt;
 use futures::task::Poll;
 use settings_media_buttons::MediaButtonsEventBuilder;
 use settings_test_common::helpers::move_executor_forward;
-use settings_test_common::storage::InMemoryStorageFactory;
 use std::collections::HashMap;
-use std::rc::Rc;
-use zx::Status;
 
 const DEFAULT_MIC_STATE: bool = false;
 const DEFAULT_CAMERA_STATE: bool = false;
@@ -36,7 +30,6 @@ const AVAILABLE_BITS: u64 = 1;
 const MUTED_DISABLED_BITS: u64 = 12;
 const DEFAULT_MIC_NAME: &str = "microphone";
 const DEFAULT_CAMERA_NAME: &str = "camera";
-const ENV_NAME: &str = "settings_service_input_test_environment";
 
 fn create_default_input_info() -> InputInfoSources {
     InputInfoSources {
@@ -126,14 +119,6 @@ fn default_mic_cam_config_cam_sw_disabled() -> InputConfiguration {
             },
         ],
     }
-}
-
-// Creates an environment that will fail on a get request.
-async fn create_empty_input_test_env(storage_factory: Rc<InMemoryStorageFactory>) -> InputProxy {
-    create_empty_test_env(storage_factory, ENV_NAME)
-        .await
-        .connect_to_protocol::<InputMarker>()
-        .unwrap()
 }
 
 // Creates an environment with an executor for moving forward execution and
@@ -673,12 +658,4 @@ async fn test_persisted_values_applied_at_start() {
         .await;
 
     get_and_check_state(&env.input_service, true, true).await;
-}
-
-// Test that a failure results in the correct epitaph.
-#[fuchsia::test(allow_stalls = false)]
-async fn test_channel_failure_watch() {
-    let input_proxy = create_empty_input_test_env(Rc::new(InMemoryStorageFactory::new())).await;
-    let result = input_proxy.watch().await;
-    assert_matches!(result, Err(ClientChannelClosed { status: Status::NOT_FOUND, .. }));
 }

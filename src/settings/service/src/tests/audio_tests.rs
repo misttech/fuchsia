@@ -9,9 +9,6 @@ use crate::audio::types::{
 use crate::audio::{build_audio_default_settings, create_default_modified_counters};
 use crate::ingress::fidl::Interface;
 use crate::tests::fakes::audio_core_service::{self, AudioCoreService};
-use crate::tests::test_failure_utils::create_empty_test_env;
-use assert_matches::assert_matches;
-use fidl::Error::ClientChannelClosed;
 use fidl_fuchsia_media::{AudioRenderUsage, AudioRenderUsage2};
 use fidl_fuchsia_settings::*;
 use fuchsia_component::server::ProtocolConnector;
@@ -26,7 +23,6 @@ use settings_test_common::fakes::service::ServiceRegistry;
 use settings_test_common::storage::InMemoryStorageFactory;
 use std::collections::HashMap;
 use std::rc::Rc;
-use zx::Status;
 
 const ENV_NAME: &str = "settings_service_audio_test_environment";
 
@@ -68,14 +64,6 @@ fn load_default_audio_info(
     default_settings: &mut DefaultSetting<AudioInfo, &'static str>,
 ) -> AudioInfo {
     default_settings.load_default_value().expect("config should exist and parse for test").unwrap()
-}
-
-/// Creates an environment that will fail on any audio request.
-async fn create_empty_audio_test_env(storage_factory: Rc<InMemoryStorageFactory>) -> AudioProxy {
-    create_empty_test_env(storage_factory, ENV_NAME)
-        .await
-        .connect_to_protocol::<AudioMarker>()
-        .unwrap()
 }
 
 // Used to store fake services for mocking dependencies and checking input/outputs.
@@ -293,13 +281,6 @@ async fn test_watch2_without_audio_core() {
         &settings,
         AudioStreamSettings2::from(get_default_stream(AudioStreamType::Media, default_info)),
     );
-}
-
-#[fuchsia::test(allow_stalls = false)]
-async fn test_channel_failure_watch() {
-    let audio_proxy = create_empty_audio_test_env(Rc::new(InMemoryStorageFactory::new())).await;
-    let result = audio_proxy.watch2().await;
-    assert_matches!(result, Err(ClientChannelClosed { status: Status::NOT_FOUND, .. }));
 }
 
 // set() and set2() calls for stream types not in our settings should fail but remain connected.

@@ -6,4 +6,3 @@ pub(crate) mod audio_core_service;
 pub(crate) mod brightness_service;
 pub(crate) mod camera3_service;
 pub(crate) mod input_device_registry_service;
-pub(crate) mod recovery_policy_service;

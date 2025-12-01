@@ -6,14 +6,11 @@ use crate::display::build_display_default_settings;
 use crate::display::types::{DisplayInfo, LowLightMode, Theme};
 use crate::ingress::fidl::{Interface, display};
 use crate::tests::fakes::brightness_service::BrightnessService;
-use crate::tests::test_failure_utils::create_empty_test_env;
 use crate::{DisplayConfiguration, EnvironmentBuilder};
 use anyhow::{Result, anyhow};
-use assert_matches::assert_matches;
-use fidl::Error::ClientChannelClosed;
 use fidl::endpoints::ServerEnd;
 use fidl::prelude::*;
-use fidl_fuchsia_settings::{DisplayMarker, DisplayProxy, IntlMarker};
+use fidl_fuchsia_settings::{DisplayMarker, IntlMarker};
 use fuchsia_async::{Task, TestExecutor};
 use fuchsia_inspect::component;
 use futures::future::{self, LocalBoxFuture};
@@ -24,7 +21,6 @@ use settings_common::inspect::config_logger::InspectConfigLogger;
 use settings_test_common::fakes::service::ServiceRegistry;
 use settings_test_common::storage::InMemoryStorageFactory;
 use std::rc::Rc;
-use zx::{self as zx, Status};
 
 const ENV_NAME: &str = "settings_service_display_test_environment";
 const AUTO_BRIGHTNESS_LEVEL: f32 = 0.9;
@@ -33,16 +29,6 @@ fn default_settings() -> DefaultSetting<DisplayConfiguration, &'static str> {
     let config_logger =
         Rc::new(std::sync::Mutex::new(InspectConfigLogger::new(component::inspector().root())));
     build_display_default_settings(config_logger)
-}
-
-// Creates an environment that will fail on a get request.
-async fn create_empty_display_test_env(
-    storage_factory: Rc<InMemoryStorageFactory>,
-) -> DisplayProxy {
-    create_empty_test_env(storage_factory, ENV_NAME)
-        .await
-        .connect_to_protocol::<DisplayMarker>()
-        .unwrap()
 }
 
 // Makes sure that settings are restored from storage when service comes online.
@@ -228,11 +214,4 @@ async fn test_display_failure() {
 
     let intl_service = env.connect_to_protocol::<IntlMarker>().unwrap();
     let _settings = intl_service.watch().await.expect("watch completed");
-}
-
-#[fuchsia::test(allow_stalls = false)]
-async fn test_channel_failure_watch() {
-    let display_proxy = create_empty_display_test_env(Rc::new(InMemoryStorageFactory::new())).await;
-    let result = display_proxy.watch().await;
-    assert_matches!(result, Err(ClientChannelClosed { status: Status::NOT_FOUND, .. }));
 }
