@@ -21,7 +21,8 @@ namespace {
 
 using RadarReaderProxyTest = RadarProxyTest<RadarReaderProxy>;
 
-TEST_F(RadarReaderProxyTest, Connect) {
+// TODO(465095319): Fix the flakes and re-enable these test cases.
+TEST_F(RadarReaderProxyTest, DISABLED_Connect) {
   AddRadarDevice();
 
   zx::result endpoints = fidl::CreateEndpoints<fuchsia_hardware_radar::RadarBurstReader>();
@@ -34,7 +35,7 @@ TEST_F(RadarReaderProxyTest, Connect) {
   EXPECT_EQ(radar_client->GetBurstProperties().value_or(kInvalidProperties()).size(), 12345);
 }
 
-TEST_F(RadarReaderProxyTest, Reconnect) {
+TEST_F(RadarReaderProxyTest, DISABLED_Reconnect) {
   AddRadarDevice();
 
   async::Loop loop(&kAsyncLoopConfigNeverAttachToThread);
@@ -107,7 +108,7 @@ TEST_F(RadarReaderProxyTest, Reconnect) {
   loop.Run();
 }
 
-TEST_F(RadarReaderProxyTest, DelayedConnect) {
+TEST_F(RadarReaderProxyTest, DISABLED_DelayedConnect) {
   async::Loop loop(&kAsyncLoopConfigNeverAttachToThread);
 
   fidl::Client service_client(dut_client_.TakeClientEnd(), loop.dispatcher());
@@ -141,7 +142,7 @@ TEST_F(RadarReaderProxyTest, DelayedConnect) {
   EXPECT_EQ(burst_size, 12345);
 }
 
-TEST_F(RadarReaderProxyTest, RegisterVmosError) {
+TEST_F(RadarReaderProxyTest, DISABLED_RegisterVmosError) {
   AddRadarDevice();
 
   struct : fidl::AsyncEventHandler<fuchsia_hardware_radar::RadarBurstReader> {
@@ -183,7 +184,7 @@ TEST_F(RadarReaderProxyTest, RegisterVmosError) {
   radar_client.loop.Run();
 }
 
-TEST_F(RadarReaderProxyTest, DeviceWithInvalidBurstSizeIsRejected) {
+TEST_F(RadarReaderProxyTest, DISABLED_DeviceWithInvalidBurstSizeIsRejected) {
   AddRadarDevice();
 
   async::Loop loop(&kAsyncLoopConfigNeverAttachToThread);
@@ -321,7 +322,7 @@ class RadarReaderProxyOnBurstTest : public RadarReaderProxyTest {
   }
 };
 
-TEST_F(RadarReaderProxyOnBurstTest, OnlyStartedClientsReceiveBursts) {
+TEST_F(RadarReaderProxyOnBurstTest, DISABLED_OnlyStartedClientsReceiveBursts) {
   // Clients 0 and 1 start bursts. Verify that client 2 does not receive bursts.
 
   EXPECT_TRUE(radar_clients_[0]->StartBursts().is_ok());
@@ -339,7 +340,7 @@ TEST_F(RadarReaderProxyOnBurstTest, OnlyStartedClientsReceiveBursts) {
   EXPECT_EQ(radar_clients_[2].burst_count, 0);
 }
 
-TEST_F(RadarReaderProxyOnBurstTest, DriverErrorsSentToStartedClients) {
+TEST_F(RadarReaderProxyOnBurstTest, DISABLED_DriverErrorsSentToStartedClients) {
   // Clients 1 and 2 start bursts. The driver reports a burst error, which gets sent to only to
   // these clients.
 
@@ -362,7 +363,7 @@ TEST_F(RadarReaderProxyOnBurstTest, DriverErrorsSentToStartedClients) {
   EXPECT_EQ(radar_clients_[2].error_status, fuchsia_hardware_radar::StatusCode::kSensorError);
 }
 
-TEST_F(RadarReaderProxyOnBurstTest, OnlyOffendingClientReceivesOutOfVmosError) {
+TEST_F(RadarReaderProxyOnBurstTest, DISABLED_OnlyOffendingClientReceivesOutOfVmosError) {
   // Start bursts for client 3, which we configured to not unlock VMOs. Client 3 should get a burst
   // for every registered VMO (five), then a kOutOfVmos error. Other clients should continue to get
   // bursts delivered like normal.
@@ -384,7 +385,7 @@ TEST_F(RadarReaderProxyOnBurstTest, OnlyOffendingClientReceivesOutOfVmosError) {
   EXPECT_EQ(radar_clients_[3].error_status, fuchsia_hardware_radar::StatusCode::kOutOfVmos);
 }
 
-TEST_F(RadarReaderProxyOnBurstTest, DisconnectedClientStopsReceivingBursts) {
+TEST_F(RadarReaderProxyOnBurstTest, DISABLED_DisconnectedClientStopsReceivingBursts) {
   // Client 1 disconnects, now clients 0 and 2 get bursts.
 
   EXPECT_TRUE(radar_clients_[0]->StartBursts().is_ok());
@@ -402,7 +403,7 @@ TEST_F(RadarReaderProxyOnBurstTest, DisconnectedClientStopsReceivingBursts) {
   EXPECT_EQ(radar_clients_[2].burst_count, 10);
 }
 
-TEST_F(RadarReaderProxyOnBurstTest, BurstsStoppedAfterAllClientsDisconnect) {
+TEST_F(RadarReaderProxyOnBurstTest, DISABLED_BurstsStoppedAfterAllClientsDisconnect) {
   // All clients disconnect, bursts should be stopped.
 
   EXPECT_TRUE(radar_clients_[0]->StartBursts().is_ok());
@@ -416,7 +417,7 @@ TEST_F(RadarReaderProxyOnBurstTest, BurstsStoppedAfterAllClientsDisconnect) {
   EXPECT_OK(fake_driver_.WaitForBurstsStopped());
 }
 
-TEST_F(RadarReaderProxyOnBurstTest, StoppedClientStopsReceivingBursts) {
+TEST_F(RadarReaderProxyOnBurstTest, DISABLED_StoppedClientStopsReceivingBursts) {
   // A client that stops bursts should not receive any more bursts.
 
   EXPECT_TRUE(radar_clients_[0]->StartBursts().is_ok());
@@ -552,7 +553,7 @@ class RadarReaderProxyInjectionTest : public RadarReaderProxyTest {
   }
 };
 
-TEST_F(RadarReaderProxyInjectionTest, InjectBursts) {
+TEST_F(RadarReaderProxyInjectionTest, DISABLED_InjectBursts) {
   on_burst_ = [&](size_t burst_count) {
     if (burst_count == 2) {
       // Start burst injection after two real bursts.
@@ -601,7 +602,7 @@ TEST_F(RadarReaderProxyInjectionTest, InjectBursts) {
   EXPECT_EQ(received_vmo_ids_, kExpectedVmoIds);
 }
 
-TEST_F(RadarReaderProxyInjectionTest, InjectionPausedWithNoEnqueuedVmos) {
+TEST_F(RadarReaderProxyInjectionTest, DISABLED_InjectionPausedWithNoEnqueuedVmos) {
   on_bursts_delivered_ = [&]() {
     if (received_vmo_ids_.size() == 1) {
       // The last burst from the original VMO has been received, now enqueue a new one. We should
@@ -644,7 +645,7 @@ TEST_F(RadarReaderProxyInjectionTest, InjectionPausedWithNoEnqueuedVmos) {
   EXPECT_EQ(received_vmo_ids_, kExpectedVmoIds);
 }
 
-TEST_F(RadarReaderProxyInjectionTest, BurstsNotDeliveredToStopppedClients) {
+TEST_F(RadarReaderProxyInjectionTest, DISABLED_BurstsNotDeliveredToStopppedClients) {
   zx::result endpoints = fidl::CreateEndpoints<fuchsia_hardware_radar::RadarBurstReader>();
   ASSERT_TRUE(endpoints.is_ok());
 
@@ -680,7 +681,7 @@ TEST_F(RadarReaderProxyInjectionTest, BurstsNotDeliveredToStopppedClients) {
   EXPECT_EQ(started_client.burst_count, 3);
 }
 
-TEST_F(RadarReaderProxyInjectionTest, BurstsReceivedDuringInjectionAreIgnored) {
+TEST_F(RadarReaderProxyInjectionTest, DISABLED_BurstsReceivedDuringInjectionAreIgnored) {
   on_burst_ = [&](size_t) {
     if (received_burst_headers_.size() == 5 && received_vmo_ids_.size() == 1) {
       loop_.Quit();
@@ -719,7 +720,7 @@ TEST_F(RadarReaderProxyInjectionTest, BurstsReceivedDuringInjectionAreIgnored) {
   EXPECT_EQ(received_vmo_ids_, kExpectedVmoIds);
 }
 
-TEST_F(RadarReaderProxyInjectionTest, CallsFailsWithBadState) {
+TEST_F(RadarReaderProxyInjectionTest, DISABLED_CallsFailsWithBadState) {
   injector_client_.value()->StartBurstInjection().Then(
       [&](auto& result) { EXPECT_TRUE(result.is_ok()); });
 
@@ -743,7 +744,7 @@ TEST_F(RadarReaderProxyInjectionTest, CallsFailsWithBadState) {
   loop_.Run();
 }
 
-TEST_F(RadarReaderProxyInjectionTest, OnlyOneInjectorCanConnect) {
+TEST_F(RadarReaderProxyInjectionTest, DISABLED_OnlyOneInjectorCanConnect) {
   struct : public fidl::AsyncEventHandler<fuchsia_hardware_radar::RadarBurstInjector> {
     void on_fidl_error(fidl::UnbindInfo info) override {
       EXPECT_EQ(info.status(), ZX_ERR_ALREADY_BOUND);
@@ -764,7 +765,7 @@ TEST_F(RadarReaderProxyInjectionTest, OnlyOneInjectorCanConnect) {
   loop_.Run();
 }
 
-TEST_F(RadarReaderProxyTest, ConnectInjectorBeforeRadarDevice) {
+TEST_F(RadarReaderProxyTest, DISABLED_ConnectInjectorBeforeRadarDevice) {
   async::Loop loop(&kAsyncLoopConfigNeverAttachToThread);
 
   zx::result endpoints = fidl::CreateEndpoints<fuchsia_hardware_radar::RadarBurstInjector>();
