@@ -112,7 +112,7 @@ mod tests {
     fn test_find_executable_regions() {
         let executable_regions = find_executable_regions(&fuchsia_runtime::process_self()).unwrap();
 
-        let test_address = test_find_executable_regions as u64;
+        let test_address = test_find_executable_regions as *const () as u64;
         let region_count = executable_regions
             .iter()
             .filter(|region| {
