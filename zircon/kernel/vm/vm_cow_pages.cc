@@ -2687,46 +2687,6 @@ void VmCowPages::DecrementCowContentShareCount(VmPageOrMarkerRef content, uint64
   }
 }
 
-zx_status_t VmCowPages::CloneCowContentAsZeroLocked(uint64_t offset, ScopedPageFreedList& list,
-                                                    VmCowPages* content_owner,
-                                                    VmPageOrMarkerRef owner_content,
-                                                    uint64_t owner_offset) {
-  DEBUG_ASSERT(parent_);
-  // We only clone pages from hidden to visible nodes.
-  DEBUG_ASSERT(content_owner->is_hidden());
-  DEBUG_ASSERT(!is_hidden());
-  // We don't want to handle intervals here. They should only be present when this node is backed by
-  // a user pager, and such nodes don't have parents so cannot be the target of a forked page.
-  DEBUG_ASSERT(!is_source_preserving_page_content());
-
-  // Performing a cow zero of a parent content marker would require clearing a slot in |this| page
-  // list, which is a problem for our caller who might be iterating that same page list. As such
-  // this method may not be used if there might be parent content markers.
-  DEBUG_ASSERT(!node_has_parent_content_markers());
-
-  if (owner_content->IsMarker()) {
-    // Markers do not have ref counts so nothing else to do, this will already see this as zero.
-    return ZX_OK;
-  }
-  // Only other valid items should be pages or references.
-  DEBUG_ASSERT(owner_content->IsPageOrRef());
-
-  // Go ahead and insert the new zero marker into the target. We don't have anything to rollback
-  // if this fails so we can just bail immediately.
-  //
-  // We expect the caller to update any mappings as it can more efficiently do this in bulk.
-  zx::result<VmPageOrMarker> prev_content =
-      AddPageLocked(offset, VmPageOrMarker::Marker(), CanOverwriteSlot::EmptyOrParent, nullptr);
-  if (prev_content.is_error()) {
-    return prev_content.status_value();
-  }
-  DEBUG_ASSERT(prev_content->IsEmpty());
-  content_owner->DecrementCowContentShareCount(owner_content, owner_offset, list,
-                                               Pmm::Node().GetPageCompression());
-
-  return ZX_OK;
-}
-
 void VmCowPages::ReleaseOwnedPagesRangeLocked(uint64_t offset, uint64_t len,
                                               const LockedPtr& parent,
                                               ScopedPageFreedList& freed_list) {
@@ -4318,79 +4278,6 @@ ktl::pair<zx_status_t, uint64_t> VmCowPages::ZeroPagesNoDirectPageSourceLocked(
     return offset < parent_limit_ && offset + length <= parent_limit_;
   };
 
-  // This is a lambda as it only makes sense to talk about parent mutability when we have a parent
-  // for the offset being considered.
-  auto parent_immutable = [can_see_parent, this](uint64_t offset) TA_REQ(lock()) {
-    // TODO(johngro): remove this explicit unused-capture warning suppression
-    // when https://bugs.llvm.org/show_bug.cgi?id=35450 gets fixed.
-    (void)can_see_parent;  // used only in DEBUG_ASSERT
-    DEBUG_ASSERT(can_see_parent(offset));
-    return parent_->is_hidden();
-  };
-
-  // Finding the initial page content is expensive, but we only need to call it under certain
-  // circumstances scattered in the code below. The lambda get_initial_page_content() will lazily
-  // fetch and cache the details. This avoids us calling it when we don't need to, or calling it
-  // more than once.
-  struct InitialPageContent {
-    bool inited = false;
-    LockedPtr page_owner;
-    uint64_t owner_offset;
-    uint64_t cached_offset;
-    VmPageOrMarkerRef page_or_marker;
-  } initial_content_;
-  auto get_initial_page_content = [&initial_content_, can_see_parent, this](uint64_t offset)
-                                      TA_REQ(lock()) -> const InitialPageContent& {
-    // TODO(johngro): remove this explicit unused-capture warning suppression
-    // when https://bugs.llvm.org/show_bug.cgi?id=35450 gets fixed.
-    (void)can_see_parent;  // used only in DEBUG_ASSERT
-
-    // If there is no cached page content or if we're looking up a different offset from the cached
-    // one, perform the lookup.
-    if (!initial_content_.inited || offset != initial_content_.cached_offset) {
-      DEBUG_ASSERT(can_see_parent(offset));
-      PageLookup content;
-      initial_content_.page_owner.release();
-      FindInitialPageContentLocked(offset, &content);
-      initial_content_.page_owner = ktl::move(content.owner);
-      initial_content_.owner_offset = content.owner_offset;
-      initial_content_.page_or_marker = content.cursor.current();
-      // We only care about the parent having a 'true' vm_page for content. If the parent has a
-      // marker then it's as if the parent has no content since that's a zero page anyway, which is
-      // what we are trying to achieve.
-      initial_content_.inited = true;
-      initial_content_.cached_offset = offset;
-    }
-    DEBUG_ASSERT(offset == initial_content_.cached_offset);
-    return initial_content_;
-  };
-
-  // Helper lambda to determine if parent has content at the specified offset.
-  auto parent_has_content = [&](uint64_t offset) TA_REQ(lock()) {
-    if (node_has_parent_content_markers()) {
-      // Unless there is a parent content marker then we know the parent has no content for us.
-      const VmPageOrMarker* slot = page_list_.Lookup(offset);
-      if (!slot || !slot->IsParentContent()) {
-        return false;
-      }
-    }
-    const VmPageOrMarkerRef& page_or_marker = get_initial_page_content(offset).page_or_marker;
-    return page_or_marker && page_or_marker->IsPageOrRef();
-  };
-
-  // In the ideal case we can zero by making there be an Empty slot in our page list. This is true
-  // when we're not specifically avoiding decommit on zero and there is nothing pinned.
-  //
-  // Note that this lambda is only checking for pre-conditions in *this* VMO which allow us to
-  // represent zeros with an empty slot. We will combine this check with additional checks for
-  // contents visible through the parent, if applicable.
-  auto is_slot_directly_pinned = [this](const VmPageOrMarker* slot,
-                                        uint64_t offset) TA_REQ(lock()) {
-    // A page_source_ would complicate the logic below, so we only handle the anonymous case.
-    DEBUG_ASSERT(!page_source_);
-    return slot && slot->IsPage() && slot->Page()->object.pin_count > 0;
-  };
-
   // Insert a marker at the given |offset|. If there is parent content, it must not be from a hidden
   // owner. Returns `ZX_OK` on success.
   auto replace_with_marker = [&](uint64_t offset) TA_REQ(lock()) {
@@ -4414,6 +4301,44 @@ ktl::pair<zx_status_t, uint64_t> VmCowPages::ZeroPagesNoDirectPageSourceLocked(
     return ZX_OK;
   };
 
+  // Decrements the cow share count on the owner of the content at |offset|. If there is no
+  // content, or if the content isn't associated with a refcount (i.e. it's a marker), this
+  // function does nothing.
+  //
+  // This function must (and should only) be called if we are certain that the walk to find parent
+  // content made it past the current node. This is the case if the current node is in a
+  // pager-backed hierarchy and the slot in the current node is empty, or if we're in an anonymous
+  // hierarchy and the slot in the current node is a parent content marker.
+  auto decrement_potential_ancestor = [&](uint64_t offset) TA_REQ(lock()) {
+    __UNINITIALIZED zx::result<VmCowPages::LookupCursor> result =
+        GetLookupCursorLocked(VmCowRange(offset, kPageSize));
+    if (result.is_error()) {
+      return result.status_value();
+    }
+    VmCowPages::LookupCursor& cursor = *result;
+    AssertHeld(cursor.lock_ref());
+    cursor.EstablishCursor();
+
+    // Caller promises that |offset| references content in a parent or ancestor of the current
+    // node, so the following assertion is valid.
+    DEBUG_ASSERT(cursor.IsCursorValid() && !cursor.TargetIsOwner());
+    const bool has_ref_count = cursor.CursorIsPage() || cursor.CursorIsReference();
+    if (!has_ref_count) {
+      return ZX_OK;
+    }
+    // We know that cursor.owner_cursor_ is non-empty, since we either have a page or a reference.
+    // We know that cursor.owner_info_.owner exists, because we're not the owner.
+    DEBUG_ASSERT(cursor.owner_cursor_ && cursor.owner_info_.owner);
+    if (!cursor.owner_info_.owner->is_hidden()) {
+      return ZX_OK;
+    }
+    AssertHeld(cursor.owner_info_.owner->lock_ref());
+    cursor.owner_info_.owner->DecrementCowContentShareCount(
+        cursor.owner_cursor_, cursor.owner_info_.owner_offset, deferred.FreedList(this),
+        Pmm::Node().GetPageCompression());
+    return ZX_OK;
+  };
+
   uint64_t zeroed_len = 0;
   // Main page list traversal loop to remove any existing pages / markers, zero existing pages, and
   // also insert any new markers / zero pages in gaps as applicable. We use the VmPageList traversal
@@ -4426,56 +4351,13 @@ ktl::pair<zx_status_t, uint64_t> VmCowPages::ZeroPagesNoDirectPageSourceLocked(
         // We don't expect intervals in non pager-backed VMOs.
         DEBUG_ASSERT(!slot->IsInterval());
 
-        // First see if we can simply get done with an empty slot in the page list. This VMO should
-        // allow decommitting a page at this offset when zeroing. Additionally, one of the following
-        // conditions should hold w.r.t. to the parent:
-        //  * This offset does not relate to our parent, or we don't have a parent.
-        //  * This offset does relate to our parent, but our parent is immutable, currently
-        //  zero at this offset and there is no pager-backed root VMO.
-        if (!is_slot_directly_pinned(slot, offset) &&
-            (!can_see_parent(offset) || (parent_immutable(offset) && !parent_has_content(offset) &&
-                                         !is_root_source_user_pager_backed()))) {
-          if (slot->IsPage()) {
-            vm_page_t* page = slot->ReleasePage();
-            RemovePageLocked(page, deferred);
-          } else if (slot->IsReference()) {
-            FreeReference(slot->ReleaseReference());
-          } else {
-            // If this is a marker, simply make the slot empty.
-            *slot = VmPageOrMarker::Empty();
-          }
-          // We successfully zeroed this offset. Move on to the next offset.
-          zeroed_len += kPageSize;
-          return ZX_ERR_NEXT;
-        }
-        if (slot->IsParentContent()) {
-          // If the slot is a parent content marker then we can zero by clearing the slot, but to do
-          // so we must also remove our ref count of said content.
-          DEBUG_ASSERT(can_see_parent(offset) && parent_has_content(offset) &&
-                       !root_has_page_source());
-          const InitialPageContent& content = get_initial_page_content(offset);
-          content.page_owner.locked_or(this).DecrementCowContentShareCount(
-              content.page_or_marker, content.owner_offset, deferred.FreedList(this),
-              Pmm::Node().GetPageCompression());
-          *slot = VmPageOrMarker::Empty();
-          zeroed_len += kPageSize;
-          return ZX_ERR_NEXT;
-        }
-
-        // If there's already a marker then we can avoid any second guessing and leave the marker
-        // alone.
         if (slot->IsMarker()) {
+          // The slot is already zero.
           zeroed_len += kPageSize;
           return ZX_ERR_NEXT;
         }
 
-        // The only time we would reach here and *not* have a parent is if we could not decommit a
-        // page at this offset when zeroing.
-        DEBUG_ASSERT(is_slot_directly_pinned(slot, offset) || parent_);
-
-        if (is_slot_directly_pinned(slot, offset)) {
-          // Only pages are pinned.
-          DEBUG_ASSERT(slot && slot->IsPage());
+        if (slot->IsPage() && slot->Page()->object.pin_count > 0) {
           vm_page_t* page = slot->Page();
           // Loaned pages cannot be pinned.
           DEBUG_ASSERT(!page->is_loaned());
@@ -4484,13 +4366,44 @@ ktl::pair<zx_status_t, uint64_t> VmCowPages::ZeroPagesNoDirectPageSourceLocked(
           return ZX_ERR_NEXT;
         }
 
-        DEBUG_ASSERT(parent_ && !slot->IsParentContent());
+        if (slot->IsPageOrRef() && !is_root_source_user_pager_backed()) {
+          // We have a page or a reference in an anonymous hierarchy, so we can just remove the
+          // content.
+          DEBUG_ASSERT(node_has_parent_content_markers());
+          if (slot->IsPage()) {
+            vm_page_t* page = slot->ReleasePage();
+            RemovePageLocked(page, deferred);
+          } else if (slot->IsReference()) {
+            FreeReference(slot->ReleaseReference());
+          }
+          zeroed_len += kPageSize;
+          return ZX_ERR_NEXT;
+        }
 
-        zx_status_t status = replace_with_marker(offset);
+        if (slot->IsPageOrRef()) {
+          // We have a page in a pager-backed hierarchy, so markers are needed to indicate zero.
+          DEBUG_ASSERT(is_root_source_user_pager_backed() && !node_has_parent_content_markers());
+          zx_status_t status = replace_with_marker(offset);
+          if (status != ZX_OK) {
+            return status;
+          }
+          zeroed_len += kPageSize;
+          return ZX_ERR_NEXT;
+        }
+
+        // We handled all of the other node types, so this must be a parent content marker. These
+        // only appear in non- user pager hierarchies.
+        DEBUG_ASSERT(slot->IsParentContent() && !is_root_source_user_pager_backed() &&
+                     node_has_parent_content_markers());
+        // We will no longer be referencing potential content in the parent or ancestor node after
+        // we remove the parent content marker. We must decrement any share count we have on that
+        // content.
+        zx_status_t status = decrement_potential_ancestor(offset);
         if (status != ZX_OK) {
           return status;
         }
-
+        // An empty slot is safe to represent zero in non- user pager hierarchies.
+        *slot = VmPageOrMarker::Empty();
         zeroed_len += kPageSize;
         return ZX_ERR_NEXT;
       },
@@ -4501,6 +4414,11 @@ ktl::pair<zx_status_t, uint64_t> VmCowPages::ZeroPagesNoDirectPageSourceLocked(
           zeroed_len += (gap_end - gap_start);
           return ZX_ERR_NEXT;
         }
+
+        // Since the node doesn't have parent content markers, and the current node isn't hidden,
+        // we must be in a user pager hierarchy.
+        DEBUG_ASSERT(is_root_source_user_pager_backed());
+
         // If empty slots imply zeroes, and the gap does not see parent contents, we already have
         // zeroes.
         if (!can_see_parent(gap_start, gap_end - gap_start)) {
@@ -4515,34 +4433,18 @@ ktl::pair<zx_status_t, uint64_t> VmCowPages::ZeroPagesNoDirectPageSourceLocked(
         // perform.
         for (uint64_t offset = gap_start; offset < gap_end;
              offset += kPageSize, zeroed_len += kPageSize) {
-          // First see if we can simply get done with an empty slot in the page list. This VMO
-          // should allow decommitting a page at this offset when zeroing. Additionally, one of the
-          // following conditions should hold w.r.t. to the parent:
-          //  * This offset does not relate to our parent, or we don't have a parent.
-          //  * This offset does relate to our parent, but our parent is immutable, currently
-          //  zero at this offset and there is no pager-backed root VMO.
-          if (!can_see_parent(offset) || (parent_immutable(offset) && !parent_has_content(offset) &&
-                                          !is_root_source_user_pager_backed())) {
+          // First see if we can simply get done with an empty slot in the page list.
+          if (!can_see_parent(offset)) {
             continue;
           }
 
-          DEBUG_ASSERT(parent_);
-
-          // We are able to insert a marker, but if our page content is from a hidden owner we need
-          // to perform slightly more complex cow forking.
-          const InitialPageContent& content = get_initial_page_content(offset);
-          if (parent_has_content(offset) && content.page_owner.locked_or(this).is_hidden()) {
-            zx_status_t result = CloneCowContentAsZeroLocked(
-                offset, deferred.FreedList(this), &content.page_owner.locked_or(this),
-                content.page_or_marker, content.owner_offset);
-            if (result != ZX_OK) {
-              return result;
-            }
-            continue;
+          // Let's look up the owner of whatever content is remaining, and decrement their share
+          // count. We will no longer be referencing it after inserting a marker.
+          zx_status_t status = decrement_potential_ancestor(offset);
+          if (status != ZX_OK) {
+            return status;
           }
-
-          // We can use a marker, and cow forking is not needed.
-          zx_status_t status = replace_with_marker(offset);
+          status = replace_with_marker(offset);
           if (status != ZX_OK) {
             return status;
           }

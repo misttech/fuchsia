@@ -1303,31 +1303,6 @@ class VmCowPages final : public fbl::ContainableBaseClasses<
                                  AnonymousPageRequest* page_request, vm_page_t** out_page)
       TA_REQ(lock()) TA_REQ(page_owner->lock());
 
-  // Helper function that 'forks' the content into |offset| of the current node, which must be a
-  // visible node. This function is similar to |CloneCowPageLocked|, but instead handles the case
-  // where the forked content would be immediately overwritten with zeros after forking. It inserts
-  // a marker into |offset| of the current node rather than actually forking or migrating the
-  // content. If this function successfully inserts the marker, it returns ZX_OK.
-  //
-  // The source content that is being forked has already been calculated - it is |owner_content|,
-  // which must be a page, reference or an existing zero marker, and is currently in |page_owner|
-  // at offset |owner_offset|. |page_owner| must be a hidden node.
-  //
-  // This function is responsible for ensuring that COW clones never result in worse memory
-  // consumption than simply creating a new VMO and memcpying the content. If |owner_content| is not
-  // shared at all, then this function assumes it is only accessible to this node. In that cas
-  // |owner_content| is removed from |page_owner| and placed in the |list|. Forking the content in
-  // that case would just make |owner_content| inaccessible, leaving |owner_content| committed for
-  // no benefit.
-  //
-  // To handle memory allocation failure, this function allocates a slot in this node for the marker
-  // before modifying the source page or page list in |page_owner|. If that allocation fails, then
-  // these are not altered.
-  zx_status_t CloneCowContentAsZeroLocked(uint64_t offset, ScopedPageFreedList& list,
-                                          VmCowPages* content_owner,
-                                          VmPageOrMarkerRef owner_content, uint64_t owner_offset)
-      TA_REQ(lock()) TA_REQ(content_owner->lock());
-
   // Helper function for reducing the share count of content in a hidden node, and freeing it if it
   // is no longer referenced.
   //
