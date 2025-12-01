@@ -24,19 +24,18 @@ using CheckpointCallback =
     fit::function<void(uint32_t expect_cp_position, uint32_t expect_cp_ver, bool after_mkfs)>;
 using block_client::FakeBlockDevice;
 
-constexpr uint64_t kBlockCount = 4194304;  // 2GB for SIT Bitmap TC
+constexpr uint64_t kBlockCount = 2097152;  // 1GB for SIT Bitmap TC
 constexpr uint32_t kCheckpointPack0 = 0;
 constexpr uint32_t kCheckpointPack1 = 1;
 constexpr uint32_t kCheckpointPackCount = 2;
 constexpr uint32_t kMkfsCheckpointVersion = 1;
 constexpr uint32_t kFirstCheckpointVersion = 2;
-constexpr uint32_t kCheckpointLoopCnt = 10;
+constexpr uint32_t kCheckpointLoopCnt = 4;
 constexpr uint8_t kRootDirNatBit = 0x80;
-constexpr uint8_t kRootDirSitBit = 0x20;
 constexpr uint32_t kMapPerSitEntry = kSitVBlockMapSize << kShiftForBitSize;
 constexpr uint32_t kOrphanInodeBlockCnt = 10;
-constexpr uint8_t kMSB = 0x80;  // MSB(Most Significant Bit)
 constexpr uint32_t kRootInodeNid = 3;
+constexpr size_t kStartSegmentOfWarmData = 5;
 
 class CheckpointTest : public F2fsFakeDevTestFixture {
  public:
@@ -157,13 +156,11 @@ class CheckpointTest : public F2fsFakeDevTestFixture {
            offset == 0;
   }
 
-  std::unique_ptr<uint8_t[]> &GetPreBitmap() { return pre_bitmap_; }
   std::vector<fbl::RefPtr<VnodeF2fs>> &GetVnodes() { return vnodes_; }
   std::vector<uint32_t> &GetPrevValues() { return prev_values_; }
 
  private:
   uint32_t checkpoint_pack_ = kCheckpointPack0;
-  std::unique_ptr<uint8_t[]> pre_bitmap_;
   std::vector<fbl::RefPtr<VnodeF2fs>> vnodes_;
   std::vector<uint32_t> prev_values_;
 };
@@ -190,7 +187,7 @@ TEST_F(CheckpointTest, NatBitmap) {
                                                bool after_mkfs) {
     fbl::RefPtr<Page> cp_page;
 
-    // 1. Get last checkpoint
+    // 1. Get the latest checkpoint pack
     GetLastCheckpoint(expect_cp_position, after_mkfs, &cp_page);
     Checkpoint *cp = cp_page->GetAddress<Checkpoint>();
     ASSERT_EQ(cp->checkpoint_ver, expect_cp_ver);
@@ -199,44 +196,21 @@ TEST_F(CheckpointTest, NatBitmap) {
     uint8_t *version_bitmap = cp->sit_nat_version_bitmap + cp->sit_ver_bitmap_bytesize;
     ASSERT_NE(version_bitmap, nullptr);
 
-    auto &pre_bitmap = GetPreBitmap();
-    if (pre_bitmap == nullptr) {
-      pre_bitmap = std::make_unique<uint8_t[]>(cp->nat_ver_bitmap_bytesize);
-    }
-
-    // 3. Validate version bitmap
-    // Check root dir version bitmap
+    // 3. Check if every checkpoint write flips the bit for the root inode.
     ASSERT_EQ((static_cast<uint8_t *>(version_bitmap))[0] & kRootDirNatBit,
               cp->checkpoint_ver % 2 ? 0x00 : kRootDirNatBit);
-
-    // Check dir and file inode version bitmap
+    // 4. Check if the bit for the last written NAT block is set after checkpoint.
     if (!after_mkfs) {
-      if (cp->checkpoint_ver % 2) {
-        pre_bitmap[0] &= ~kRootDirNatBit;
-      } else {
-        pre_bitmap[0] |= kRootDirNatBit;
-      }
-
       auto cur_nat_block = cp->checkpoint_ver - kFirstCheckpointVersion;
-      uint8_t cur_nat_bit = kMSB >> (cur_nat_block % kBitsPerByte);
-      pre_bitmap[cur_nat_block / kBitsPerByte] |= cur_nat_bit;
-
-      ASSERT_EQ((static_cast<uint8_t *>(version_bitmap))[cur_nat_block / kBitsPerByte],
-                pre_bitmap[cur_nat_block / kBitsPerByte]);
-
-      ASSERT_EQ(memcmp(pre_bitmap.get(), version_bitmap, cp->nat_ver_bitmap_bytesize), 0);
+      ASSERT_TRUE((static_cast<uint8_t *>(version_bitmap))[cur_nat_block / kBitsPerByte] &
+                  1 << ToMsbFirst(cur_nat_block));
     }
 
-    memcpy(pre_bitmap.get(), version_bitmap, cp->nat_ver_bitmap_bytesize);
-
-    // 4. Creates inodes and triggers checkpoint
-    // It creates 455 inodes in the root dir to make one dirty NAT block, and
-    // it triggers checkpoint. It results in one bit triggered in NAT bitmap.
-    // Since the current F2FS impl. supports only sync IO, every file creation results in
-    // updating the root inode, and thus the first bit (root inode) in NAT bitmap is also triggered.
+    // 5. Creates as many inodes as a NAT block can hold in root dir.
     constexpr int kMkfsNidCount = 4;
     constexpr int kNidCountForMakeOneDirtyNATBlock = 455;
     constexpr int kDirCount = 5;
+    ASSERT_TRUE(kNatEntryPerBlock == kNidCountForMakeOneDirtyNATBlock);
 
     CreateDirs(kDirCount, cp->checkpoint_ver);
     int file_count = after_mkfs ? (kNidCountForMakeOneDirtyNATBlock - kMkfsNidCount - kDirCount)
@@ -255,49 +229,31 @@ TEST_F(CheckpointTest, SitBitmap) {
                                                bool after_mkfs) {
     fbl::RefPtr<Page> cp_page;
 
-    // 1. Get last checkpoint
+    // Get the latest checkpoint pack
     GetLastCheckpoint(expect_cp_position, after_mkfs, &cp_page);
     Checkpoint *cp = cp_page->GetAddress<Checkpoint>();
     ASSERT_EQ(cp->checkpoint_ver, expect_cp_ver);
 
-    // 2. Get SIT version bitmap
-    uint8_t *version_bitmap = cp->sit_nat_version_bitmap;
-    ASSERT_NE(version_bitmap, nullptr);
-
-    auto &pre_bitmap = GetPreBitmap();
-    if (pre_bitmap == nullptr) {
-      pre_bitmap = std::make_unique<uint8_t[]>(cp->sit_ver_bitmap_bytesize);
-    }
-
-    // 3. Validate version bitmap
-    // Check dir and file inode version bitmap
-    if (cp->checkpoint_ver == 2) {
-      pre_bitmap[2] |= kRootDirSitBit;
-    }
-
+    uint32_t expected = after_mkfs
+                            ? kStartSegmentOfWarmData
+                            : static_cast<uint32_t>(cp->checkpoint_ver - 1) * kSitEntryPerBlock +
+                                  kStartSegmentOfWarmData;
+    // Ensure that |expected| does not exceed underlying disk size.
+    ASSERT_TRUE(cp->sit_ver_bitmap_bytesize > expected / kBitsPerByte);
     if (!after_mkfs) {
-      auto cur_sit_block = cp->checkpoint_ver - kFirstCheckpointVersion;
-      uint8_t cur_sit_bit = kMSB >> (cur_sit_block % kBitsPerByte);
-      pre_bitmap[cur_sit_block / kBitsPerByte] |= cur_sit_bit;
-
-      ASSERT_EQ((static_cast<uint8_t *>(version_bitmap))[cur_sit_block / kBitsPerByte],
-                pre_bitmap[cur_sit_block / kBitsPerByte]);
-
-      ASSERT_EQ(memcmp(pre_bitmap.get(), version_bitmap, cp->sit_ver_bitmap_bytesize), 0);
+      uint32_t expected_cur_sit_block = expected / kSitEntryPerBlock;
+      uint8_t *version_bitmap = cp->sit_nat_version_bitmap;
+      ASSERT_NE(version_bitmap, nullptr);
+      ASSERT_TRUE(static_cast<uint8_t *>(version_bitmap)[expected_cur_sit_block / kBitsPerByte] &
+                  1 << ToMsbFirst(expected_cur_sit_block));
     }
-
-    memcpy(pre_bitmap.get(), version_bitmap, cp->sit_ver_bitmap_bytesize);
 
     for (uint32_t i = 0; i < kMapPerSitEntry * kSitEntryPerBlock; ++i) {
       block_t new_blkaddr;
-      if (after_mkfs && i < kMapPerSitEntry) {
-        continue;
+      if (i && i % kMapPerSitEntry == 0) {
+        ++expected;
       }
-
-      MapTester::DoWriteSit(
-          fs_.get(), CursegType::kCursegWarmData,
-          static_cast<uint32_t>((cp->checkpoint_ver - 1) * kSitEntryPerBlock + i / kMapPerSitEntry),
-          &new_blkaddr);
+      MapTester::DoWriteSit(fs_.get(), CursegType::kCursegWarmData, expected, &new_blkaddr);
     }
   };
 
@@ -1044,15 +1000,6 @@ TEST_F(CheckpointTest, FlushSitEntriesDiskFail) TA_NO_THREAD_SAFETY_ANALYSIS {
   DisableFsck();
 
   fs_->GetMetaVnode().Writeback(true, true);
-
-  block_t cp_start_blk_no = LeToCpu(fs_->GetSuperblockInfo().GetSuperblock().cp_blkaddr);
-
-  LockedPage cp_page;
-  ASSERT_EQ(fs_->GetMetaPage(cp_start_blk_no, &cp_page), ZX_OK);
-  Checkpoint *cp_block = cp_page->GetAddress<Checkpoint>();
-  uint64_t cp_version = cp_block->checkpoint_ver;
-  cp_page.reset();
-
   pgoff_t target_addr = fs_->GetSegmentManager().CurrentSitAddr(0) * kDefaultSectorsPerBlock;
 
   auto hook = [target_addr](const block_fifo_request_t &_req, const zx::vmo *_vmo) {
@@ -1065,14 +1012,8 @@ TEST_F(CheckpointTest, FlushSitEntriesDiskFail) TA_NO_THREAD_SAFETY_ANALYSIS {
   // Write sit entries for one block
   for (uint32_t i = 0; i < kMapPerSitEntry * kSitEntryPerBlock; ++i) {
     block_t new_blkaddr;
-    if (i < kMapPerSitEntry) {
-      continue;
-    }
-
-    MapTester::DoWriteSit(
-        fs_.get(), CursegType::kCursegWarmData,
-        static_cast<uint32_t>((cp_version - 1) * kSitEntryPerBlock + i / kMapPerSitEntry),
-        &new_blkaddr);
+    MapTester::DoWriteSit(fs_.get(), CursegType::kCursegWarmData,
+                          i / kMapPerSitEntry + kStartSegmentOfWarmData, &new_blkaddr);
   }
 
   // Check disk peer closed exception case in FlushSitEntries()

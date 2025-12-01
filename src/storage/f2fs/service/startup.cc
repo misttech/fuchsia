@@ -31,9 +31,7 @@ void StartupService::Start(StartRequestView request, StartCompleter::Sync& compl
 
     // TODO: parse option from request->options.
     MountOptions mount_options;
-    // Heap-based allocation is incompatible with fvm.
-    mount_options.SetValue(MountOption::kNoHeap, 1);
-    return configure_(*std::move(bc), MountOptions{});
+    return configure_(*std::move(bc), mount_options);
   }());
 }
 
@@ -45,8 +43,6 @@ void StartupService::Format(FormatRequestView request, FormatCompleter::Sync& co
     }
 
     f2fs::MkfsOptions mkfs_options;
-    // Heap-based allocation is incompatible with fvm.
-    mkfs_options.heap_based_allocation = false;
     // TODO: parse option from request->options.
     if (auto status = f2fs::Mkfs(mkfs_options, *std::move(bc)); status.is_error()) {
       FX_LOGS(ERROR) << "failed to format f2fs: " << status.status_string();

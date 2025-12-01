@@ -772,15 +772,13 @@ void SegmentManager::WriteSumPage(SummaryBlock *sum_blk, block_t blk_addr) {
 // This function should be returned with success, otherwise BUG
 // TODO: after LFS allocation available, raise out of space event of inspect tree when new segment
 // cannot be allocated.
-void SegmentManager::GetNewSegment(uint32_t *newseg, bool new_sec, AllocDirection dir) {
+void SegmentManager::GetNewSegment(uint32_t *newseg, bool new_sec) {
   uint32_t total_secs = superblock_info_.GetTotalSections();
   uint32_t segno, secno, zoneno;
   uint32_t total_zones = superblock_info_.GetTotalSections() / superblock_info_.GetSecsPerZone();
   uint32_t hint = *newseg / superblock_info_.GetSegsPerSec();
   uint32_t old_zoneno = GetZoneNoFromSegNo(*newseg);
-  uint32_t left_start = hint;
   bool find_another = true;
-  bool go_left = false;
   bool got_it = false;
 
   std::lock_guard segmap_lock(segmap_lock_);
@@ -798,30 +796,9 @@ void SegmentManager::GetNewSegment(uint32_t *newseg, bool new_sec, AllocDirectio
   while (!got_it) {
     size_t free_sec;
     if (free_info_->free_secmap.Scan(hint, total_secs, true, &free_sec)) {
-      if (dir == AllocDirection::kAllocRight) {
-        ZX_ASSERT(!free_info_->free_secmap.Scan(0, total_secs, true, &free_sec));
-      } else {
-        go_left = true;
-        left_start = hint - 1;
-        free_sec = total_secs;
-      }
+      ZX_ASSERT(!free_info_->free_secmap.Scan(0, total_secs, true, &free_sec));
     }
     secno = safemath::checked_cast<uint32_t>(free_sec);
-
-    if (go_left) {
-      while (free_info_->free_secmap.GetOne(left_start)) {
-        if (left_start > 0) {
-          --left_start;
-          continue;
-        }
-        size_t free_sec;
-        ZX_ASSERT(!free_info_->free_secmap.Scan(0, total_secs, true, &free_sec));
-        left_start = safemath::checked_cast<uint32_t>(free_sec);
-        break;
-      }
-      secno = left_start;
-    }
-
     hint = secno;
     segno = secno * superblock_info_.GetSegsPerSec();
     zoneno = secno / superblock_info_.GetSecsPerZone();
@@ -836,14 +813,7 @@ void SegmentManager::GetNewSegment(uint32_t *newseg, bool new_sec, AllocDirectio
     if (zoneno == old_zoneno) {
       break;
     }
-    if (dir == AllocDirection::kAllocLeft) {
-      if (!go_left && zoneno + 1 >= total_zones) {
-        break;
-      }
-      if (go_left && zoneno == 0) {
-        break;
-      }
-    }
+
     bool is_current_zone = false;
     for (size_t i = 0; i < kNrCursegType; ++i) {
       if (CURSEG_I(static_cast<CursegType>(i))->zone == zoneno) {
@@ -855,9 +825,7 @@ void SegmentManager::GetNewSegment(uint32_t *newseg, bool new_sec, AllocDirectio
       break;
     }
     // zone is in use, try another
-    if (go_left) {
-      hint = zoneno * superblock_info_.GetSecsPerZone() - 1;
-    } else if (zoneno + 1 >= total_zones) {
+    if (zoneno + 1 >= total_zones) {
       hint = 0;
     } else {
       hint = (zoneno + 1) * superblock_info_.GetSecsPerZone();
@@ -893,16 +861,8 @@ void SegmentManager::ResetCurseg(CursegType type, bool modified) {
 void SegmentManager::NewCurseg(CursegType type, bool new_sec) {
   CursegInfo *curseg = CURSEG_I(type);
   uint32_t segno = curseg->segno;
-  AllocDirection dir = AllocDirection::kAllocLeft;
-
   WriteSumPage(&curseg->sum_blk, GetSumBlock(curseg->segno));
-  if (type == CursegType::kCursegWarmData || type == CursegType::kCursegColdData)
-    dir = AllocDirection::kAllocRight;
-
-  if (superblock_info_.TestOpt(MountOption::kNoHeap))
-    dir = AllocDirection::kAllocRight;
-
-  GetNewSegment(&segno, new_sec, dir);
+  GetNewSegment(&segno, new_sec);
   curseg->next_segno = segno;
   ResetCurseg(type, 1);
   curseg->alloc_type = static_cast<uint8_t>(AllocMode::kLFS);

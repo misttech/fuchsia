@@ -45,9 +45,6 @@ zx_status_t MountOptions::SetValue(const MountOption option, const size_t value)
     FX_LOGS(WARNING) << " active_logs can be set only to 2, 4, or 6.";
     return ZX_ERR_INVALID_ARGS;
   };
-  if ((option == MountOption::kBgGcOff || option == MountOption::kNoHeap) && value) {
-    return ZX_ERR_INVALID_ARGS;
-  }
   opt_[static_cast<size_t>(option)] = value;
   return ZX_OK;
 }

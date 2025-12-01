@@ -154,38 +154,6 @@ TEST_F(SegmentManagerTest, InvalidateBlocksExceptionCase) {
   ASSERT_EQ(temp_written_valid_blocks, fs_->GetSegmentManager().GetSitInfo().written_valid_blocks);
 }
 
-TEST_F(SegmentManagerTest, GetNewSegmentHeap) {
-  SuperblockInfo &superblock_info = fs_->GetSuperblockInfo();
-
-  // Check GetNewSegment() on AllocDirection::kAllocLeft
-  superblock_info.ClearOpt(MountOption::kNoHeap);
-  uint32_t nwritten = kDefaultBlocksPerSegment * 3;
-
-  for (uint32_t i = 0; i < nwritten; ++i) {
-    NodeInfo ni, new_ni;
-    fs_->GetNodeManager().GetNodeInfo(superblock_info.GetRootIno(), ni);
-    ASSERT_NE(ni.blk_addr, kNullAddr);
-    ASSERT_NE(ni.blk_addr, kNewAddr);
-
-    {
-      LockedPage read_page;
-      fs_->GetNodeManager().GetNodePage(superblock_info.GetRootIno(), &read_page);
-      read_page.SetDirty();
-    }
-    fs_->GetNodeVnode().Writeback(true, true);
-
-    fs_->GetNodeManager().GetNodeInfo(superblock_info.GetRootIno(), new_ni);
-    ASSERT_NE(new_ni.blk_addr, kNullAddr);
-    ASSERT_NE(new_ni.blk_addr, kNewAddr);
-
-    if (new_ni.blk_addr % kDefaultBlocksPerSegment) {
-      ASSERT_GT(new_ni.blk_addr, ni.blk_addr);
-    } else {
-      ASSERT_LT(new_ni.blk_addr, ni.blk_addr);
-    }
-  }
-}
-
 TEST_F(SegmentManagerTest, GetVictimSelPolicy) TA_NO_THREAD_SAFETY_ANALYSIS {
   VictimSelPolicy policy = fs_->GetSegmentManager().GetVictimSelPolicy(
       GcType::kFgGc, CursegType::kCursegHotNode, AllocMode::kSSR);
@@ -583,66 +551,9 @@ TEST(SegmentManagerOptionTest, Section) TA_NO_THREAD_SAFETY_ANALYSIS {
   FileTester::Unmount(std::move(fs), &bc);
 }
 
-TEST(SegmentManagerOptionTest, GetNewSegmentHeap) TA_NO_THREAD_SAFETY_ANALYSIS {
+TEST(SegmentManagerOptionTest, GetNewSegment) TA_NO_THREAD_SAFETY_ANALYSIS {
   std::unique_ptr<BcacheMapper> bc;
   MkfsOptions mkfs_options{};
-  mkfs_options.heap_based_allocation = true;
-  mkfs_options.segs_per_sec = 1;
-  mkfs_options.secs_per_zone = 2;
-  FileTester::MkfsOnFakeDevWithOptions(
-      &bc, mkfs_options,
-      kDefaultSectorCount * mkfs_options.segs_per_sec * mkfs_options.secs_per_zone);
-
-  std::unique_ptr<F2fs> fs;
-  MountOptions mount_options{};
-  async::Loop loop(&kAsyncLoopConfigAttachToCurrentThread);
-  FileTester::MountWithOptions(loop.dispatcher(), mount_options, &bc, &fs);
-
-  // Clear kMountNoheap opt, Allocate a new segment for hot nodes
-  SuperblockInfo &superblock_info = fs->GetSuperblockInfo();
-  superblock_info.ClearOpt(MountOption::kNoHeap);
-  fs->GetSegmentManager().NewCurseg(CursegType::kCursegHotNode, false);
-
-  const uint32_t blocks_per_section = kDefaultBlocksPerSegment * mkfs_options.segs_per_sec;
-  uint32_t nwritten = blocks_per_section * mkfs_options.secs_per_zone * 2;
-
-  NodeInfo ni;
-  fs->GetNodeManager().GetNodeInfo(superblock_info.GetRootIno(), ni);
-
-  for (uint32_t i = 0; i < nwritten; ++i) {
-    NodeInfo ni, new_ni;
-    fs->GetNodeManager().GetNodeInfo(superblock_info.GetRootIno(), ni);
-    ASSERT_NE(ni.blk_addr, kNullAddr);
-    ASSERT_NE(ni.blk_addr, kNewAddr);
-
-    {
-      LockedPage root_node_page;
-      fs->GetNodeManager().GetNodePage(superblock_info.GetRootIno(), &root_node_page);
-      ASSERT_NE(root_node_page, nullptr);
-      root_node_page.SetDirty();
-    }
-
-    fs->GetNodeVnode().Writeback(true, true);
-
-    fs->GetNodeManager().GetNodeInfo(superblock_info.GetRootIno(), new_ni);
-    ASSERT_NE(new_ni.blk_addr, kNullAddr);
-    ASSERT_NE(new_ni.blk_addr, kNewAddr);
-
-    // The heap style allocation tries to find a free node section from the end of main area
-    if (new_ni.blk_addr % blocks_per_section) {
-      ASSERT_GT(new_ni.blk_addr, ni.blk_addr);
-    } else {
-      ASSERT_LT(new_ni.blk_addr, ni.blk_addr);
-    }
-  }
-
-  FileTester::Unmount(std::move(fs), &bc);
-}
-
-TEST(SegmentManagerOptionTest, GetNewSegmentNoHeap) TA_NO_THREAD_SAFETY_ANALYSIS {
-  std::unique_ptr<BcacheMapper> bc;
-  MkfsOptions mkfs_options{};
-  mkfs_options.heap_based_allocation = false;
   mkfs_options.segs_per_sec = 1;
   mkfs_options.secs_per_zone = 2;
   FileTester::MkfsOnFakeDevWithOptions(
@@ -654,9 +565,7 @@ TEST(SegmentManagerOptionTest, GetNewSegmentNoHeap) TA_NO_THREAD_SAFETY_ANALYSIS
   async::Loop loop(&kAsyncLoopConfigAttachToCurrentThread);
   FileTester::MountWithOptions(loop.dispatcher(), mount_options, &bc, &fs);
 
-  // Set kMountNoheap opt, Allocate a new segment for hot nodes
   SuperblockInfo &superblock_info = fs->GetSuperblockInfo();
-  superblock_info.SetOpt(MountOption::kNoHeap);
   fs->GetSegmentManager().NewCurseg(CursegType::kCursegHotNode, false);
 
   uint32_t nwritten =

@@ -96,37 +96,22 @@ void VerifyExtensionList(Superblock &sb, const std::string &extensions) {
   ASSERT_EQ(extension_iter, sb.extension_count);
 }
 
-void VerifyHeapBasedAllocation(Superblock &sb, Checkpoint &ckp, bool is_heap_based) {
+void VerifyInitialLocationOfSegments(Superblock &sb, Checkpoint &ckp) {
   uint32_t total_zones = LeToCpu(sb.segment_count_main) / sb.segs_per_sec / sb.secs_per_zone;
   ASSERT_GT(total_zones, static_cast<uint32_t>(6));
 
   uint32_t cur_seg[6];
-  if (is_heap_based) {
-    cur_seg[static_cast<int>(CursegType::kCursegHotNode)] =
-        (total_zones - 1) * sb.segs_per_sec * sb.secs_per_zone +
-        ((sb.secs_per_zone - 1) * sb.segs_per_sec);
-    cur_seg[static_cast<int>(CursegType::kCursegWarmNode)] =
-        cur_seg[static_cast<int>(CursegType::kCursegHotNode)] - sb.segs_per_sec * sb.secs_per_zone;
-    cur_seg[static_cast<int>(CursegType::kCursegColdNode)] =
-        cur_seg[static_cast<int>(CursegType::kCursegWarmNode)] - sb.segs_per_sec * sb.secs_per_zone;
-    cur_seg[static_cast<int>(CursegType::kCursegHotData)] =
-        cur_seg[static_cast<int>(CursegType::kCursegColdNode)] - sb.segs_per_sec * sb.secs_per_zone;
-    cur_seg[static_cast<int>(CursegType::kCursegColdData)] = 0;
-    cur_seg[static_cast<int>(CursegType::kCursegWarmData)] =
-        cur_seg[static_cast<int>(CursegType::kCursegColdData)] + sb.segs_per_sec * sb.secs_per_zone;
-  } else {
-    cur_seg[static_cast<int>(CursegType::kCursegHotNode)] = 0;
-    cur_seg[static_cast<int>(CursegType::kCursegWarmNode)] =
-        cur_seg[static_cast<int>(CursegType::kCursegHotNode)] + sb.segs_per_sec * sb.secs_per_zone;
-    cur_seg[static_cast<int>(CursegType::kCursegColdNode)] =
-        cur_seg[static_cast<int>(CursegType::kCursegWarmNode)] + sb.segs_per_sec * sb.secs_per_zone;
-    cur_seg[static_cast<int>(CursegType::kCursegHotData)] =
-        cur_seg[static_cast<int>(CursegType::kCursegColdNode)] + sb.segs_per_sec * sb.secs_per_zone;
-    cur_seg[static_cast<int>(CursegType::kCursegColdData)] =
-        cur_seg[static_cast<int>(CursegType::kCursegHotData)] + sb.segs_per_sec * sb.secs_per_zone;
-    cur_seg[static_cast<int>(CursegType::kCursegWarmData)] =
-        cur_seg[static_cast<int>(CursegType::kCursegColdData)] + sb.segs_per_sec * sb.secs_per_zone;
-  }
+  cur_seg[static_cast<int>(CursegType::kCursegHotNode)] = 0;
+  cur_seg[static_cast<int>(CursegType::kCursegWarmNode)] =
+      cur_seg[static_cast<int>(CursegType::kCursegHotNode)] + sb.segs_per_sec * sb.secs_per_zone;
+  cur_seg[static_cast<int>(CursegType::kCursegColdNode)] =
+      cur_seg[static_cast<int>(CursegType::kCursegWarmNode)] + sb.segs_per_sec * sb.secs_per_zone;
+  cur_seg[static_cast<int>(CursegType::kCursegHotData)] =
+      cur_seg[static_cast<int>(CursegType::kCursegColdNode)] + sb.segs_per_sec * sb.secs_per_zone;
+  cur_seg[static_cast<int>(CursegType::kCursegColdData)] =
+      cur_seg[static_cast<int>(CursegType::kCursegHotData)] + sb.segs_per_sec * sb.secs_per_zone;
+  cur_seg[static_cast<int>(CursegType::kCursegWarmData)] =
+      cur_seg[static_cast<int>(CursegType::kCursegColdData)] + sb.segs_per_sec * sb.secs_per_zone;
 
   ASSERT_EQ(ckp.cur_node_segno[0], cur_seg[static_cast<int>(CursegType::kCursegHotNode)]);
   ASSERT_EQ(ckp.cur_node_segno[1], cur_seg[static_cast<int>(CursegType::kCursegWarmNode)]);
@@ -263,49 +248,6 @@ TEST(FormatFilesystemTest, MkfsOptionsExtensions) {
   VerifyExtensionList(*sb_or.value(), extensions);
 }
 
-TEST(FormatFilesystemTest, MkfsOptionsHeapBasedAlloc) {
-  auto device = std::make_unique<FakeBlockDevice>(kDefaultSectorCount, kDefaultSectorSize);
-  std::unique_ptr<BcacheMapper> bc;
-  auto bc_or = CreateBcacheMapper(std::move(device), true);
-  ASSERT_TRUE(bc_or.is_ok());
-
-  // Check default
-  MkfsOptions options;
-  DoMkfs(std::move(*bc_or), options, true, &bc);
-  auto sb_or = ReadSuperblock(*bc);
-  Checkpoint ckp = {};
-  ReadCheckpoint(bc.get(), *sb_or.value(), &ckp);
-  VerifyHeapBasedAllocation(*sb_or.value(), ckp, default_option.heap_based_allocation);
-
-  // If arg set to 0, not using heap-based allocation
-  options.heap_based_allocation = false;
-  DoMkfs(std::move(bc), options, true, &bc);
-  sb_or = ReadSuperblock(*bc);
-  ReadCheckpoint(bc.get(), *sb_or.value(), &ckp);
-  VerifyHeapBasedAllocation(*sb_or.value(), ckp, false);
-
-  fit::function<void()> check_node_chain = [&]() {
-    auto warm_node_segment = ckp.cur_node_segno[1];
-    block_t block_addr = (safemath::CheckMul<block_t>(warm_node_segment, kDefaultBlocksPerSegment) +
-                          LeToCpu(sb_or->main_blkaddr))
-                             .ValueOrDie();
-    uint8_t read_buf[kBlockSize], buf[kBlockSize];
-    std::memset(buf, 0xFF, kBlockSize);
-    ASSERT_EQ(bc->Readblk(block_addr, read_buf), ZX_OK);
-    ASSERT_EQ(memcmp(read_buf, buf, kBlockSize), 0);
-  };
-
-  check_node_chain();
-
-  // If arg set to 1, using heap-based allocation
-  options.heap_based_allocation = true;
-  DoMkfs(std::move(bc), options, true, &bc);
-  sb_or = ReadSuperblock(*bc);
-  ReadCheckpoint(bc.get(), *sb_or.value(), &ckp);
-  VerifyHeapBasedAllocation(*sb_or.value(), ckp, true);
-  check_node_chain();
-}
-
 TEST(FormatFilesystemTest, MkfsOptionsOverprovision) {
   auto device = std::make_unique<FakeBlockDevice>(kDefaultSectorCount, kDefaultSectorSize);
   auto bc_or = CreateBcacheMapper(std::move(device), true);
@@ -340,44 +282,40 @@ TEST(FormatFilesystemTest, MkfsOptionsMixed) {
   const uint32_t segs_per_sec_list[] = {1, 2};
   const uint32_t secs_per_zone_list[] = {1, 2};
   const char *ext_list[] = {"foo", "foo,bar"};
-  const uint32_t heap_based_list[] = {0};
   const uint32_t overprovision_list[] = {7, 9};
 
   for (const char *label : label_list) {
     for (const uint32_t segs_per_sec : segs_per_sec_list) {
       for (const uint32_t secs_per_zone : secs_per_zone_list) {
         for (const char *extensions : ext_list) {
-          for (const uint32_t heap_based : heap_based_list) {
-            for (const uint32_t overprovision : overprovision_list) {
-              MkfsOptions options;
-              options.label = label;
-              options.segs_per_sec = segs_per_sec;
-              options.secs_per_zone = secs_per_zone;
-              options.overprovision_ratio = overprovision;
-              options.heap_based_allocation = (heap_based != 0);
+          for (const uint32_t overprovision : overprovision_list) {
+            MkfsOptions options;
+            options.label = label;
+            options.segs_per_sec = segs_per_sec;
+            options.secs_per_zone = secs_per_zone;
+            options.overprovision_ratio = overprovision;
 
-              std::string buff(extensions);
-              char *ue = strtok(buff.data(), ",");
-              while (ue != nullptr) {
-                options.extension_list.push_back(ue);
-                ue = strtok(nullptr, ",");
-              }
-
-              DoMkfs(std::move(bc), options, true, &bc);
-
-              std::unique_ptr<Superblock> sb;
-              ReadSuperblock(*bc, &sb);
-
-              Checkpoint ckp = {};
-              ReadCheckpoint(bc.get(), *sb, &ckp);
-
-              VerifyLabel(*sb, label);
-              VerifySegsPerSec(*sb, segs_per_sec);
-              VerifySecsPerZone(*sb, secs_per_zone);
-              VerifyExtensionList(*sb, extensions);
-              VerifyHeapBasedAllocation(*sb, ckp, (heap_based != 0));
-              VerifyOP(*sb, ckp, overprovision);
+            std::string buff(extensions);
+            char *ue = strtok(buff.data(), ",");
+            while (ue != nullptr) {
+              options.extension_list.push_back(ue);
+              ue = strtok(nullptr, ",");
             }
+
+            DoMkfs(std::move(bc), options, true, &bc);
+
+            std::unique_ptr<Superblock> sb;
+            ReadSuperblock(*bc, &sb);
+
+            Checkpoint ckp = {};
+            ReadCheckpoint(bc.get(), *sb, &ckp);
+
+            VerifyLabel(*sb, label);
+            VerifySegsPerSec(*sb, segs_per_sec);
+            VerifySecsPerZone(*sb, secs_per_zone);
+            VerifyExtensionList(*sb, extensions);
+            VerifyInitialLocationOfSegments(*sb, ckp);
+            VerifyOP(*sb, ckp, overprovision);
           }
         }
       }
@@ -566,11 +504,9 @@ TEST(FormatFilesystemTest, DeviceFailure) {
 
   constexpr uint32_t kSitDevOff = 1536;
   constexpr uint32_t kNatDevOff = 2560;
-  constexpr uint32_t kRootDirDevOff = 11776;
   constexpr uint32_t kChkpDevOff = 512;
   constexpr uint32_t kSuperblockDevOff = 0;
-  std::vector<uint32_t> bad_blocks = {kSitDevOff, kNatDevOff, kRootDirDevOff, kChkpDevOff,
-                                      kSuperblockDevOff};
+  std::vector<uint32_t> bad_blocks = {kSitDevOff, kNatDevOff, kChkpDevOff, kSuperblockDevOff};
 
   // Write Error
   for (auto bad_block_off : bad_blocks) {

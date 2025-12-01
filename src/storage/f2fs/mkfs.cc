@@ -43,7 +43,6 @@ void MkfsWorker::InitGlobalParameters() {
   params_.op_ratio = mkfs_options_.overprovision_ratio;
   params_.segs_per_sec = mkfs_options_.segs_per_sec;
   params_.secs_per_zone = mkfs_options_.secs_per_zone;
-  params_.heap = mkfs_options_.heap_based_allocation ? 1 : 0;
   if (mkfs_options_.label.length() != 0) {
     ZX_ASSERT(mkfs_options_.label.length() + 1 <= kVolumeLabelLength);
     memcpy(params_.vol_label, mkfs_options_.label.c_str(), mkfs_options_.label.length() + 1);
@@ -329,41 +328,22 @@ zx_status_t MkfsWorker::PrepareSuperblock() {
   super_block_.meta_ino = CpuToLe(2U);
   super_block_.root_ino = CpuToLe(3U);
 
-  if (params_.heap) {
-    params_.cur_seg[static_cast<int>(CursegType::kCursegHotNode)] =
-        (*total_zones - 1) * params_.segs_per_sec * params_.secs_per_zone +
-        ((params_.secs_per_zone - 1) * params_.segs_per_sec);
-    params_.cur_seg[static_cast<int>(CursegType::kCursegWarmNode)] =
-        params_.cur_seg[static_cast<int>(CursegType::kCursegHotNode)] -
-        params_.segs_per_sec * params_.secs_per_zone;
-    params_.cur_seg[static_cast<int>(CursegType::kCursegColdNode)] =
-        params_.cur_seg[static_cast<int>(CursegType::kCursegWarmNode)] -
-        params_.segs_per_sec * params_.secs_per_zone;
-    params_.cur_seg[static_cast<int>(CursegType::kCursegHotData)] =
-        params_.cur_seg[static_cast<int>(CursegType::kCursegColdNode)] -
-        params_.segs_per_sec * params_.secs_per_zone;
-    params_.cur_seg[static_cast<int>(CursegType::kCursegColdData)] = 0;
-    params_.cur_seg[static_cast<int>(CursegType::kCursegWarmData)] =
-        params_.cur_seg[static_cast<int>(CursegType::kCursegColdData)] +
-        params_.segs_per_sec * params_.secs_per_zone;
-  } else {
-    params_.cur_seg[static_cast<int>(CursegType::kCursegHotNode)] = 0;
-    params_.cur_seg[static_cast<int>(CursegType::kCursegWarmNode)] =
-        params_.cur_seg[static_cast<int>(CursegType::kCursegHotNode)] +
-        params_.segs_per_sec * params_.secs_per_zone;
-    params_.cur_seg[static_cast<int>(CursegType::kCursegColdNode)] =
-        params_.cur_seg[static_cast<int>(CursegType::kCursegWarmNode)] +
-        params_.segs_per_sec * params_.secs_per_zone;
-    params_.cur_seg[static_cast<int>(CursegType::kCursegHotData)] =
-        params_.cur_seg[static_cast<int>(CursegType::kCursegColdNode)] +
-        params_.segs_per_sec * params_.secs_per_zone;
-    params_.cur_seg[static_cast<int>(CursegType::kCursegColdData)] =
-        params_.cur_seg[static_cast<int>(CursegType::kCursegHotData)] +
-        params_.segs_per_sec * params_.secs_per_zone;
-    params_.cur_seg[static_cast<int>(CursegType::kCursegWarmData)] =
-        params_.cur_seg[static_cast<int>(CursegType::kCursegColdData)] +
-        params_.segs_per_sec * params_.secs_per_zone;
-  }
+  params_.cur_seg[static_cast<int>(CursegType::kCursegHotNode)] = 0;
+  params_.cur_seg[static_cast<int>(CursegType::kCursegWarmNode)] =
+      params_.cur_seg[static_cast<int>(CursegType::kCursegHotNode)] +
+      params_.segs_per_sec * params_.secs_per_zone;
+  params_.cur_seg[static_cast<int>(CursegType::kCursegColdNode)] =
+      params_.cur_seg[static_cast<int>(CursegType::kCursegWarmNode)] +
+      params_.segs_per_sec * params_.secs_per_zone;
+  params_.cur_seg[static_cast<int>(CursegType::kCursegHotData)] =
+      params_.cur_seg[static_cast<int>(CursegType::kCursegColdNode)] +
+      params_.segs_per_sec * params_.secs_per_zone;
+  params_.cur_seg[static_cast<int>(CursegType::kCursegColdData)] =
+      params_.cur_seg[static_cast<int>(CursegType::kCursegHotData)] +
+      params_.segs_per_sec * params_.secs_per_zone;
+  params_.cur_seg[static_cast<int>(CursegType::kCursegWarmData)] =
+      params_.cur_seg[static_cast<int>(CursegType::kCursegColdData)] +
+      params_.segs_per_sec * params_.secs_per_zone;
 
   ConfigureExtensionList();
 

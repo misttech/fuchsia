@@ -33,7 +33,6 @@ struct GlobalParameters {
   uint8_t vol_label[kVolumeLabelLength] = {
       0,
   };
-  int heap = 0;
   int32_t fd = 0;
   char* device_name = nullptr;
   std::vector<std::string> extension_list;
@@ -41,7 +40,6 @@ struct GlobalParameters {
 
 struct MkfsOptions {
   std::string label;
-  bool heap_based_allocation = true;
   uint32_t overprovision_ratio = 0;
   uint32_t segs_per_sec = 1;
   uint32_t secs_per_zone = 1;

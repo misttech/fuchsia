@@ -22,14 +22,6 @@ constexpr uint32_t kNullSecNo = std::numeric_limits<uint32_t>::max();
 constexpr uint32_t kUint32Max = std::numeric_limits<uint32_t>::max();
 constexpr uint32_t kMaxSearchLimit = 4096;
 
-// Indicate a block allocation direction:
-// kAllocRight means allocating new sections towards the end of volume.
-// kAllocLeft means the opposite direction.
-enum class AllocDirection {
-  kAllocRight = 0,
-  kAllocLeft,
-};
-
 // In the VictimSelPolicy->alloc_mode, there are two block allocation modes.
 // LFS writes data sequentially with cleaning operations.
 // SSR (Slack Space Recycle) reuses obsolete space without cleaning operations.
@@ -220,7 +212,7 @@ class SegmentManager {
   zx_status_t GetSummaryBlock(CursegType type, SummaryCallback callback);
 
   uint32_t CheckPrefreeSegments(int ofs_unit, CursegType type);
-  void GetNewSegment(uint32_t *newseg, bool new_sec, AllocDirection dir);
+  void GetNewSegment(uint32_t *newseg, bool new_sec);
   void ResetCurseg(CursegType type, bool modified) __TA_REQUIRES(sentry_lock_);
   void NewCurseg(CursegType type, bool new_sec) __TA_REQUIRES(sentry_lock_);
   void NextFreeBlkoff(CursegInfo *seg, block_t start);

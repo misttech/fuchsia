@@ -30,7 +30,6 @@ void MountTestVerifyOptions(F2fs *fs, MountOptions &options) {
         break;
       case MountOption::kDiscard:
       case MountOption::kBgGcOff:
-      case MountOption::kNoHeap:
       case MountOption::kDisableExtIdentify:
       case MountOption::kNoUserXAttr:
       case MountOption::kNoAcl:
@@ -220,6 +219,8 @@ TEST(MountTest, ActiveLogsOptions) {
     ASSERT_EQ(options.SetValue(MountOption::kActiveLogs, i), ZX_OK);
     MountTestMain(options, kMountActiveLogsTest, 0);
   }
+  MountOptions option{};
+  ASSERT_EQ(option.SetValue(MountOption::kActiveLogs, kMaxActiveLogs), ZX_ERR_INVALID_ARGS);
 }
 
 TEST(MountTest, EnableDiscardOptions) {
@@ -236,13 +237,6 @@ TEST(MountTest, EnableDiscardOptions) {
   ASSERT_TRUE(fs->GetSuperblockInfo().TestOpt(MountOption::kDiscard));
 
   FileTester::Unmount(std::move(fs), &bc);
-}
-
-TEST(MountTest, InvalidOptions) {
-  MountOptions options{};
-  ASSERT_EQ(options.SetValue(MountOption::kActiveLogs, kMaxActiveLogs), ZX_ERR_INVALID_ARGS);
-  ASSERT_EQ(options.SetValue(MountOption::kBgGcOff, 1), ZX_ERR_INVALID_ARGS);
-  ASSERT_EQ(options.SetValue(MountOption::kNoHeap, 1), ZX_ERR_INVALID_ARGS);
 }
 
 }  // namespace

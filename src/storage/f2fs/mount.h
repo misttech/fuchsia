@@ -14,7 +14,6 @@ enum class MountOption {
   kBgGcOff = 0,
   kDisableRollForward,
   kDiscard,
-  kNoHeap,
   kNoUserXAttr,
   kNoAcl,
   kDisableExtIdentify,
@@ -49,7 +48,6 @@ class MountOptions {
   // "background_gc_off", 1
   // "disable_roll_forward", 0
   // "discard", 1
-  // "no_heap", 1
   // "nouser_xattr", 1
   // "noacl", 1
   // "disable_ext_identify", 0
@@ -59,7 +57,7 @@ class MountOptions {
   // "readonly", 0
   // "read_extent_cache", 1
   // "active_logs", 6
-  std::array<size_t, kMaxOptionCount> opt_ = {1, 0, 1, 1, 1, 1, 0, 0, 1, 0, 0, 1, 6};
+  std::array<size_t, kMaxOptionCount> opt_ = {1, 0, 1, 1, 1, 0, 0, 1, 0, 0, 1, 6};
 };
 
 zx::result<> StartComponent(fidl::ServerEnd<fuchsia_io::Directory> root,
