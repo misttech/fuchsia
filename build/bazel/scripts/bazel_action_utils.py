@@ -13,6 +13,7 @@ from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(__file__))
 import build_utils
+import stdio_redirection
 
 
 @dataclasses.dataclass
@@ -354,3 +355,223 @@ def find_gn_bazel_action_infos_for(
         for gn_target, info in actions_map.label_items()
         if gn_target in gn_targets
     ]
+
+
+def find_prefix_in_input(
+    prefix: str | bytes, input: str | bytes
+) -> tuple[int, int]:
+    """Find the first occurrence of a given prefix in input.
+
+    Args:
+        prefix: A non-empty prefix string.
+        input: An input string.
+    Returns:
+        There are three possible cases that determine the result
+        of this function:
+
+        - Full match:
+
+          When the full prefix is found in the input, return (2, pos)
+          where |pos| is the prefix's index in the input sequence.
+
+        - Partial match:
+
+          When the full prefix is not found in the input, but the
+          input ends with a few characters from the prefix, return
+          (1, pos) where |pos| is the position of the first
+          potential prefix character.
+
+        - No match:
+
+          When the full prefix does not appear in the input, and
+          the last input characters cannot possibly match the first
+          characters of the prefix, return (0, len(input))
+
+    Examples:
+        ("foo", "-------") -> (0, 8)  no match
+        ("foo", "--foo--") -> (2, 2)  full match
+        ("foo", "-----fo") -> (1, 5)  partial match
+    """
+    assert type(input) == type(
+        prefix
+    ), f"prefix and input should be of the same time, got {type(prefix)} and {type(input)}"
+    prefix_len = len(prefix)
+    input_len = len(input)
+    assert prefix_len > 0, f"Empty prefix is not supported"
+    prefix_first_char = prefix[0]
+    from_pos = 0
+    while True:
+        pos = input.find(prefix_first_char, from_pos)
+        if pos < 0:
+            return (0, input_len)  # No match
+
+        n = 1
+        while True:
+            if n == prefix_len:
+                return (2, pos)  # Full match
+
+            if pos + n >= input_len:
+                return (1, pos)  # Partial match
+
+            if input[pos + n] != prefix[n]:
+                break
+
+            n += 1
+
+        from_pos = pos + n
+
+
+class BazelStderrDebugLineFilter(stdio_redirection.OutputSink):
+    """A OutputSink that can filter DEBUG lines from Bazel's stderr output.
+
+    There is no way to get the path of the output file using cquery, because
+    that command ignores aspect-generated providers.
+    See https://github.com/bazelbuild/bazel/issues/22528
+
+    A work-around is to use print() in the aspect's implementation rule, to
+    print the execroot-related path to stderr, then ensure the caller can process
+    the line to extract the file location.
+
+    All print() statements end up as a line that looks like:
+
+    DEBUG: <path>:<line>:<column>: <message>\r\n
+
+    Where the 'DEBUG: ' prefix may be colored by ANSI VT Code sequences when
+    stdout is a tty, in which case the output will be:
+
+    \x1b[33mDEBUG: \x1b[0m <path>:<line>:<column>: <message>\r\n
+
+    Moreover, when running in an interactive terminal, Bazel will prepend
+    cursor-controlling VT Code sequences, so the input line would look like:
+
+    \r\x1b[1A\x1b[K\x1b[1A\x1b[K\x1b[33mDEBUG: \x1b[0m <path>:<line>:<column>: <message>\r\n
+
+    It is crucial to conserve the prefix commands before the colored DEBUG prefix
+    to ensure that Bazel's progressive status updates are maintained properly, even
+    if the line if filtered out from the final output.
+
+    The point of this class is to detect such DEBUG lines, and pass them to
+    a user-provided filtering function, which may extract information from it,
+    and will return True to indicate that the line should be omitted from the
+    actual output visible to the end user.
+
+    An example usage would be the following:
+
+        # Assume that an aspect uses print("MY_DATA=<some_data>")
+
+        extracted_data = []
+
+        def my_data_line_filter(line: bytes) -> bool:
+            # Filter debug line. This always begin with a DEBUG prefix,
+            # potentially colored, but without any cursor-control VT
+            # sequences before that, and typically ends with \r\n.
+            data_prefix = 'MY_DATA='
+            pos = line.find(data_prefix)
+            if pos < 0:
+                return False   # keep this line
+            extracted_data.append(line[pos + len(data_prefix):].decode("utf-8").strip())
+            return True  # Skip this line
+
+        # Run Bazel command through a pipe or pty, while sending filtered output
+        # to the original stderr.
+
+        filter_sink = BazelStderrDebugLineFilter(
+            stdio_redirection.StderrOutputSink(),
+            my_data_line_filter
+        )
+
+        use_pty = os.isatty(sys.stderr.fileno())
+        with stdio_redirection.PipeOutputSink(filter_sink, use_pty) as stderr_sink:
+            subprocess.run([..bazel.command.args], check=True, stderr=stderr_sink.get_write_fd())
+
+        ... extracted_data will contain the extracted data here
+    """
+
+    # The line prefix used when running in an interactive terminal.
+    DEBUG_PREFIX_COLORED = b"\x1b[33mDEBUG: \x1b[0m"
+
+    # The line prefix when running in a non-interactive terminal.
+    DEBUG_PREFIX = b"DEBUG: "
+
+    def __init__(
+        self,
+        output: stdio_redirection.OutputSink,
+        debug_line_filter: T.Callable[[bytes], bool] = lambda x: False,
+    ) -> None:
+        """Create instance.
+
+        Args:
+            output: The final OutputSink that will receive filtered output.
+            debug_line_filter: A optional callable that receives a single DEBUG line,
+                potentially newline terminated, and return True to indicate that it should
+                be omitted from the output, or False to keep it. By default all lines
+                are kept.
+        """
+        self._output = output
+        self._debug_line_filter = debug_line_filter
+        # Buffered data that was not processed yet due to insufficient data.
+        self._buffer = b""
+        # This will be non-empty if the buffer starts with one recognized prefix.
+        self._prefix_start = b""
+
+    def write(self, data: bytes) -> bool:
+        while True:
+            if self._buffer:
+                data = self._buffer + data
+                self._buffer = b""
+
+            if not data:
+                return True
+
+            if self._prefix_start:
+                assert data.startswith(
+                    self._prefix_start
+                ), f"Unexpected data (expected initial {self._prefix_start}): {data}"
+                next_newline = data.find(10, len(self._prefix_start))
+                if next_newline < 0:
+                    # Not enough data yet, just store in buffer then wait.
+                    self._buffer = data
+                    return True
+
+                if not self._debug_line_filter(data[0 : next_newline + 1]):
+                    # Line is not filtered, send it directly then loop with the rest.
+                    if not self._output.write(data[0 : next_newline + 1]):
+                        return True
+
+                self._prefix_start = b""
+                data = data[next_newline + 1 :]
+                continue
+            else:
+                colored_match, colored_pos = find_prefix_in_input(
+                    self.DEBUG_PREFIX_COLORED, data
+                )
+                regular_match, regular_pos = find_prefix_in_input(
+                    self.DEBUG_PREFIX, data
+                )
+
+                pos = min(colored_pos, regular_pos)
+                if pos > 0:
+                    # There are characters before the first prefix, send them directly then loop.
+                    if not self._output.write(data[0:pos]):
+                        return False
+                    data = data[pos:]
+                    continue
+
+                if colored_match == 2:
+                    assert colored_pos == 0
+                    self._prefix_start = self.DEBUG_PREFIX_COLORED
+                    continue
+
+                if regular_match == 2:
+                    assert regular_pos == 0
+                    self._prefix_start = self.DEBUG_PREFIX
+                    continue
+
+                # Partial matches only, store data in buffer then exit.
+                self._buffer = data
+                return True
+
+    def close(self) -> None:
+        if self._buffer:
+            self._output.write(self._buffer)
+            self._buffer = b""

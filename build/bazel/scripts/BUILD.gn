@@ -30,7 +30,10 @@ python_build_time_tests("compute_content_hash_test") {
 
 python_build_time_tests("bazel_action_utils_test") {
   tests = [ "bazel_action_utils_test.py" ]
-  inputs = [ "bazel_action_utils.py" ]
+  inputs = [
+    "bazel_action_utils.py",
+    "stdio_redirection.py",
+  ]
 }
 
 python_build_time_tests("remote_services_utils_test") {
@@ -74,6 +77,11 @@ python_build_time_tests("bazel_rust_analyzer_utils_test") {
   ]
 }
 
+python_build_time_tests("stdio_redirection_test") {
+  tests = [ "stdio_redirection_test.py" ]
+  inputs = [ "stdio_redirection.py" ]
+}
+
 if (is_host) {
   python_host_test("minimal_workspace_test") {
     main_source = "minimal_workspace_test.py"
@@ -99,6 +107,7 @@ group("tests") {
     ":remote_services_utils_test",
     ":runfiles_utils_test($host_toolchain)",
     ":starlark_utils_test($host_toolchain)",
+    ":stdio_redirection_test($host_toolchain)",
     ":workspace_utils_test($host_toolchain)",
   ]
 
