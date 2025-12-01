@@ -133,6 +133,9 @@ pub struct CompiledComponentDefinition {
     #[file_relative_paths]
     #[walk_paths]
     pub shards: Vec<FileRelativePathBuf>,
+
+    /// List of CMC features to use during component compilation.
+    pub cmc_features: Vec<String>,
 }
 
 impl AssemblyInputBundle {

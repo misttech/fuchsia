@@ -278,6 +278,7 @@ impl ProductAssembly {
                 components: vec![CompiledComponentDefinition {
                     component_name: "core".to_string(),
                     shards: configuration.core_shards.iter().map(Into::into).collect(),
+                    cmc_features: vec![],
                 }],
                 contents: Default::default(),
                 includes: Default::default(),

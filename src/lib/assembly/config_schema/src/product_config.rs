@@ -356,10 +356,12 @@ mod tests {
                       {
                         component_name: "component1",
                         shards: ["path/to/component1.cml"],
+                        cmc_features: [],
                       },
                       {
                         component_name: "component2",
                         shards: ["path/to/component2.cml"],
+                        cmc_features: [],
                       },
                     ],
                     contents: [

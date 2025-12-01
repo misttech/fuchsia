@@ -14,7 +14,16 @@ use assembly_util::{DuplicateKeyError, InsertUniqueExt, MapEntry};
 use camino::{Utf8Path, Utf8PathBuf};
 use fuchsia_pkg::{PackageBuilder, RelativeTo};
 use serde::Serialize;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
+
+#[derive(Debug, Default, PartialEq, Serialize)]
+pub struct CompiledComponentProperties {
+    /// CML shards for the components to compile and add to the package.
+    /// First by component name, then by shard filename.
+    pub shards: BTreeMap<String, Utf8PathBuf>,
+    /// The CMC features required for compiling this component.
+    pub cmc_features: BTreeSet<String>,
+}
 
 #[derive(Debug, Default, PartialEq, Serialize)]
 pub struct CompiledPackageBuilder {
@@ -23,7 +32,7 @@ pub struct CompiledPackageBuilder {
 
     /// CML shards for the components to compile and add to the package.
     /// First by component name, then by shard filename.
-    pub components: BTreeMap<String, BTreeMap<String, Utf8PathBuf>>,
+    pub components: BTreeMap<String, CompiledComponentProperties>,
 
     /// Non-component files to add to the package.
     pub contents: Vec<FileEntry<String>>,
@@ -98,14 +107,16 @@ impl CompiledPackageBuilder {
             }
         }
 
-        for CompiledComponentDefinition { component_name, shards } in &entry.components {
-            let component_shards = self.components.entry(component_name.clone()).or_default();
+        for CompiledComponentDefinition { component_name, shards, cmc_features } in
+            &entry.components
+        {
+            let component_properties = self.components.entry(component_name.clone()).or_default();
 
             for shard_path in shards {
                 let filename = shard_path.as_utf8_pathbuf().file_name().ok_or_else(|| {
                     anyhow!("The component shard path does not have a filename: {}", shard_path)
                 })?;
-                component_shards
+                component_properties.shards
                 .try_insert_unique(MapEntry(
                     filename.to_string(),
                     shard_path.as_utf8_pathbuf().clone(),
@@ -120,6 +131,7 @@ impl CompiledPackageBuilder {
                         shard.new_value(),
                     )
                 })?;
+                component_properties.cmc_features.extend(cmc_features.iter().cloned());
             }
         }
 
@@ -128,6 +140,7 @@ impl CompiledPackageBuilder {
 
     fn build_component<T: AsRef<Utf8Path>>(
         shards: impl Iterator<Item = T>,
+        cmc_features: impl Iterator<Item: Into<String>>,
         cmc_tool: &dyn Tool,
         component_includes_dir: &Option<Utf8PathBuf>,
         component_name: &String,
@@ -137,6 +150,9 @@ impl CompiledPackageBuilder {
 
         for cml_shard in shards {
             component_builder.add_shard(cml_shard)?;
+        }
+        for feature in cmc_features {
+            component_builder.add_cmc_feature(feature);
         }
 
         component_builder.build(&outdir, component_includes_dir, cmc_tool)
@@ -156,9 +172,11 @@ impl CompiledPackageBuilder {
         let mut package_builder = PackageBuilder::new_platform_internal_package(&self.name);
         package_builder.repository("fuchsia.com");
 
-        for (component_name, shards) in &self.components {
+        for (component_name, properties) in &self.components {
+            let CompiledComponentProperties { shards, cmc_features } = properties;
             let component_manifest_path = Self::build_component(
                 shards.values(),
+                cmc_features.iter(),
                 cmc_tool,
                 &self.includes_dir,
                 component_name,
@@ -234,10 +252,12 @@ mod tests {
                         CompiledComponentDefinition {
                             component_name: "component1".into(),
                             shards: vec![outdir.join("cml1").into()],
+                            cmc_features: vec![],
                         },
                         CompiledComponentDefinition {
                             component_name: "component2".into(),
                             shards: vec![outdir.join("cml2").into()],
+                            cmc_features: vec![],
                         },
                     ],
                     contents: vec![FileEntry {
@@ -256,6 +276,7 @@ mod tests {
                     components: vec![CompiledComponentDefinition {
                         component_name: "component2".into(),
                         shards: vec![outdir.join("shard1").into()],
+                        cmc_features: vec![],
                     }],
                     contents: Default::default(),
                     includes: Default::default(),
@@ -270,13 +291,22 @@ mod tests {
             CompiledPackageBuilder {
                 name: FOR_TEST_PACKAGE_NAME.into(),
                 components: BTreeMap::from([
-                    ("component1".into(), BTreeMap::from([("cml1".into(), outdir.join("cml1")),])),
+                    (
+                        "component1".into(),
+                        CompiledComponentProperties {
+                            shards: BTreeMap::from([("cml1".into(), outdir.join("cml1"))]),
+                            cmc_features: BTreeSet::new(),
+                        }
+                    ),
                     (
                         "component2".into(),
-                        BTreeMap::from([
-                            ("cml2".into(), outdir.join("cml2")),
-                            ("shard1".into(), outdir.join("shard1"))
-                        ])
+                        CompiledComponentProperties {
+                            shards: BTreeMap::from([
+                                ("cml2".into(), outdir.join("cml2")),
+                                ("shard1".into(), outdir.join("shard1"))
+                            ]),
+                            cmc_features: BTreeSet::new(),
+                        }
                     )
                 ]),
                 contents: vec![FileEntry {
@@ -305,10 +335,12 @@ mod tests {
                         CompiledComponentDefinition {
                             component_name: "component1".into(),
                             shards: vec!["cml1".into()],
+                            cmc_features: vec![],
                         },
                         CompiledComponentDefinition {
                             component_name: "component2".into(),
                             shards: vec!["cml2".into()],
+                            cmc_features: vec![],
                         },
                     ],
                     contents: vec![FileEntry {
@@ -327,6 +359,7 @@ mod tests {
                     components: vec![CompiledComponentDefinition {
                         component_name: "component2".into(),
                         shards: vec!["shard1".into()],
+                        cmc_features: vec![],
                     }],
                     contents: Default::default(),
                     includes: Default::default(),

@@ -187,6 +187,7 @@ fn create_tee_manager(
     let components = vec![CompiledComponentDefinition {
         component_name: "tee_manager".into(),
         shards: vec![cml_path.into()],
+        cmc_features: vec![],
     }];
     let destination =
         CompiledPackageDestination::Blob(BlobfsCompiledPackageDestination::TeeManager);
@@ -371,6 +372,7 @@ fn create_tee_clients(
     let components = vec![CompiledComponentDefinition {
         component_name: "tee-clients".into(),
         shards: vec![cml_path.into()],
+        cmc_features: vec![],
     }];
 
     let destination =

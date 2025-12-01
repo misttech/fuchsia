@@ -249,7 +249,8 @@ raw_assembly_input_bundle_json = """{
           "component_name": "bar",
           "shards": [
             "baz.cml"
-          ]
+          ],
+          "cmc_features": []
         }
       ],
       "contents": [],
@@ -265,7 +266,8 @@ raw_assembly_input_bundle_json = """{
           "component_name": "bar",
           "shards": [
             "bar/meta.shard.cml"
-          ]
+          ],
+          "cmc_features": []
         }
       ],
       "contents": [],

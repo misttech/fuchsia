@@ -201,6 +201,7 @@ fn configure_bootfs_recovery(
     let components = vec![CompiledComponentDefinition {
         component_name: "bootstrap".into(),
         shards: vec![cml_path.into()],
+        cmc_features: vec![],
     }];
     let destination = CompiledPackageDestination::Boot(BootfsCompiledPackageDestination::Bootstrap);
     let def = CompiledPackageDefinition {

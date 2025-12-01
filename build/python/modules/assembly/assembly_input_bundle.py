@@ -105,6 +105,8 @@ class CompiledComponentDefinition:
     component_name: str = field()
     # Component shards to compile together
     shards: set[FilePath] = field(default_factory=set)
+    # The set of compilation features to use when compiling this component.
+    cmc_features: set[str] = field(default_factory=set)
 
 
 @dataclass
@@ -590,6 +592,7 @@ class AIBCreator:
                     CompiledComponentDefinition(
                         component_name=component_def.component_name,
                         shards=set(copied_shards),
+                        cmc_features=set(component_def.cmc_features),
                     )
                 )
                 deps.update(component_deps)

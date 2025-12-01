@@ -6,6 +6,7 @@ import("//build/bazel/bazel_inputs.gni")
 import("//build/components/fuchsia_package.gni")
 import("//build/group_with_inputs.gni")
 import("//build/python/python_action.gni")
+import("//tools/cmc/build/restricted_features.gni")
 
 # Creates an Assembly Input Bundle from sets of deps.
 #
@@ -190,6 +191,10 @@ import("//build/python/python_action.gni")
 #     shards [optional]
 #       [list of GN file paths] List of CML files to merge together when
 #       compiling the component.
+#
+#     cmc_features [optional]
+#       [list of string] List of CMC features to enable for component
+#       compilation.
 #
 #     component_includes [optional]
 #       [list of FileEntry] List of source/destination pairs related to a
@@ -824,6 +829,24 @@ template("assembly_input_bundle") {
               shards = rebase_path(entry.shards, root_build_dir)
             },
           ]
+          if (defined(entry.cmc_features) && entry.cmc_features != []) {
+            # This component is using potentially gated CMC features. Encode
+            # this in a group dependency that potentially requires addition to a
+            # visibility group.
+            _features_group_name = "${target_name}.compiled_package.${package.name}.${entry.component_name}.cmc_features"
+            _deps += [ ":${_features_group_name}" ]
+            group(_features_group_name) {
+              deps = []
+              foreach(feature, entry.cmc_features) {
+                if (filter_include(cmc_security_owned_restricted_features,
+                                   [ feature ]) != []) {
+                  deps += [ "//tools/cmc/build/restricted_features/security_owned:$feature" ]
+                } else {
+                  deps += [ "//tools/cmc/build/restricted_features:$feature" ]
+                }
+              }
+            }
+          }
         }
         _package.components = components
       }

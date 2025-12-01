@@ -4,6 +4,7 @@
 
 import("//tools/cmc/build/cmc.gni")
 import("//tools/cmc/build/expect_includes.gni")
+import("//tools/cmc/build/restricted_features.gni")
 
 # Compiles a cml file into a cm file.
 #
@@ -178,10 +179,12 @@ template("cm") {
 
     # Add a dependency on the feature's allowlist.
     foreach(feature, restricted_features) {
-      if (feature == "use_dictionaries") {
-        deps += [ "//tools/cmc/build/restricted_features/security_owned:use_dictionaries" ]
+      if (filter_include(cmc_security_owned_restricted_features, [ feature ]) !=
+          []) {
+        deps +=
+            [ "//tools/cmc/build/restricted_features/security_owned:$feature" ]
       } else {
-        deps += [ "//tools/cmc/build/restricted_features:" + feature ]
+        deps += [ "//tools/cmc/build/restricted_features:$feature" ]
       }
     }
 

@@ -2212,12 +2212,14 @@ mod tests {
                         shards: vec![FileRelativePathBuf::FileRelative(
                             "compiled_packages/for_test/component1/cml1".into(),
                         )],
+                        cmc_features: vec![],
                     },
                     CompiledComponentDefinition {
                         component_name: "component2".into(),
                         shards: vec![FileRelativePathBuf::FileRelative(
                             "compiled_packages/for_test/component2/cml2".into(),
                         )],
+                        cmc_features: vec![],
                     },
                 ],
                 contents: Default::default(),
@@ -2237,6 +2239,7 @@ mod tests {
                         shards: vec![FileRelativePathBuf::FileRelative(
                             "compiled_packages/for_test/component2/shard1".into(),
                         )],
+                        cmc_features: vec![],
                     }],
                     contents: Default::default(),
                     includes: Default::default(),
