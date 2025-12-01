@@ -8,6 +8,9 @@
 #include <fidl/fuchsia.hardware.network/cpp/wire.h>
 #include <fuchsia/hardware/ethernet/cpp/banjo.h>
 #include <fuchsia/hardware/network/driver/cpp/banjo.h>
+#include <lib/driver/compat/cpp/banjo_server.h>
+#include <lib/driver/compat/cpp/device_server.h>
+#include <lib/driver/component/cpp/driver_base.h>
 #include <zircon/system/public/zircon/compiler.h>
 
 #include <queue>
@@ -29,9 +32,8 @@ using Netbuf = eth::Operation<uint32_t>;
 using NetbufPool = eth::OperationPool<uint32_t>;
 
 class NetdeviceMigration;
-using DeviceType = ddk::Device<NetdeviceMigration>;
 class NetdeviceMigration
-    : public DeviceType,
+    : public fdf::DriverBase,
       public ddk::EthernetIfcProtocol<NetdeviceMigration>,
       public ddk::NetworkDeviceImplProtocol<NetdeviceMigration, ddk::base_protocol>,
       public ddk::NetworkPortProtocol<NetdeviceMigration>,
@@ -46,18 +48,13 @@ class NetdeviceMigration
       SUPPORTED_MAC_FILTER_MODE_MULTICAST_FILTER | SUPPORTED_MAC_FILTER_MODE_MULTICAST_PROMISCUOUS |
       SUPPORTED_MAC_FILTER_MODE_PROMISCUOUS;
   static constexpr uint32_t kMulticastFilterMax = MAX_MAC_FILTER;
-  static zx::result<std::unique_ptr<NetdeviceMigration>> Create(zx_device_t* dev);
-  virtual ~NetdeviceMigration() = default;
+  static constexpr const char kChildNodeName[] = "netdevice-migration-compat";
 
-  // Initializes the driver and binds it to the parent device `dev`. The DDK calls Bind through
-  // the zx_driver_ops_t published for this driver; consequently, a client of this driver will not
-  // need to directly call this function.
-  static zx_status_t Bind(void* ctx, zx_device_t* dev);
-  // Adds the driver to device manager.
-  zx_status_t DeviceAdd();
+  NetdeviceMigration(fdf::DriverStartArgs start_args,
+                     fdf::UnownedSynchronizedDispatcher driver_dispatcher);
 
-  // For DeviceType.
-  void DdkRelease();
+  // DriverBase implementation.
+  zx::result<> Start() override;
 
   // For EthernetIfcProtocol.
   void EthernetIfcStatus(uint32_t status) __TA_EXCLUDES(status_lock_);
@@ -94,64 +91,30 @@ class NetdeviceMigration
                       size_t multicast_macs_count);
 
  private:
-  NetdeviceMigration(zx_device_t* parent, ddk::EthernetImplProtocolClient ethernet,
-                     fuchsia_hardware_network::wire::PortClass port_class, uint32_t mtu,
-                     zx::bti eth_bti, vmo_store::Options opts, std::array<uint8_t, MAC_SIZE> mac,
-                     size_t netbuf_size, NetbufPool netbuf_pool)
-      : DeviceType(parent),
-        mac_addr_proto_({&mac_addr_protocol_ops_, this}),
-        ethernet_(ethernet),
-        ethernet_ifc_proto_({&ethernet_ifc_protocol_ops_, this}),
-        eth_bti_(std::move(eth_bti)),
-        info_({
-            .tx_depth = kFifoDepth,
-            .rx_depth = kFifoDepth,
-            .rx_threshold = kFifoDepth / 2,
-            // Ensures clients do not use scatter-gather.
-            .max_buffer_parts = 1,
-            // Per fuchsia.hardware.network.driver banjo API:
-            // "Devices that do not support scatter-gather DMA may set this to a value smaller than
-            // a page size to guarantee compatibility."
-            .max_buffer_length = kMaxBufferSize,
-            // NetdeviceMigration has no alignment requirements.
-            .buffer_alignment = 1,
-            // Ensures that an rx buffer will always be large enough to the ethernet MTU.
-            .min_rx_buffer_length = mtu,
-        }),
-        mtu_(mtu),
-        mac_(mac),
-        rx_types_{static_cast<uint8_t>(fuchsia_hardware_network::wire::FrameType::kEthernet)},
-        tx_types_{frame_type_support_t{
-            .type = static_cast<uint8_t>(fuchsia_hardware_network::wire::FrameType::kEthernet),
-            .features = fuchsia_hardware_network::wire::kFrameFeaturesRaw}},
-        port_info_(port_base_info_t{
-            .port_class = static_cast<uint16_t>(port_class),
-            .rx_types_list = rx_types_.data(),
-            .rx_types_count = rx_types_.size(),
-            .tx_types_list = tx_types_.data(),
-            .tx_types_count = tx_types_.size(),
-        }),
-        netbuf_size_(netbuf_size),
-        netbuf_pool_(std::move(netbuf_pool)),
-        vmo_store_(std::move(opts)) {}
   void SetMacParam(uint32_t param, int32_t value, const mac_address_t* data_buffer,
                    size_t data_size) const;
+
+  zx_status_t DeviceAdd();
+  void DeviceRemove();
+
+  compat::SyncInitializedDeviceServer compat_server_;
+  compat::BanjoServer net_device_server_{ZX_PROTOCOL_NETWORK_DEVICE_IMPL, this,
+                                         &network_device_impl_protocol_ops_};
+  fidl::ClientEnd<fuchsia_driver_framework::NodeController> netdev_child_;
 
   std::atomic<size_t> no_rx_space_ = 0;
 
   ddk::NetworkDeviceIfcProtocolClient netdevice_;
   mac_addr_protocol_t mac_addr_proto_;
-
-  const ddk::EthernetImplProtocolClient ethernet_;
   const ethernet_ifc_protocol_t ethernet_ifc_proto_;
-  const zx::bti eth_bti_;
-  const device_impl_info_t info_;
-  const uint32_t mtu_;
-  const std::array<uint8_t, MAC_SIZE> mac_;
-  const std::array<uint8_t, 1> rx_types_;
-  const std::array<frame_type_support_t, 1> tx_types_;
-  const port_base_info_t port_info_;
-  const size_t netbuf_size_;
+  ddk::EthernetImplProtocolClient ethernet_;
+
+  zx::bti eth_bti_;
+  device_impl_info_t info_;
+  uint32_t mtu_;
+  std::array<uint8_t, MAC_SIZE> mac_;
+  port_base_info_t port_info_;
+  size_t netbuf_size_;
 
   std::mutex status_lock_;
   fuchsia_hardware_network::wire::StatusFlags port_status_flags_ __TA_GUARDED(status_lock_);
@@ -169,7 +132,7 @@ class NetdeviceMigration
   bool rx_space_queued_ __TA_GUARDED(rx_lock_) = false;
 
   network::SharedLock vmo_lock_ __TA_ACQUIRED_BEFORE(tx_lock_) __TA_ACQUIRED_AFTER(rx_lock_);
-  NetdeviceMigrationVmoStore vmo_store_ __TA_GUARDED(vmo_lock_);
+  std::unique_ptr<NetdeviceMigrationVmoStore> vmo_store_ __TA_GUARDED(vmo_lock_);
 
   friend class NetdeviceMigrationTestHelper;
 };

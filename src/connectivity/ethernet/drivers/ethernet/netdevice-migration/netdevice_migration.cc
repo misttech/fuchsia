@@ -4,8 +4,8 @@
 
 #include "netdevice_migration.h"
 
-#include <lib/ddk/binding_driver.h>
-#include <lib/ddk/debug.h>
+#include <lib/driver/compat/cpp/compat.h>
+#include <lib/driver/component/cpp/driver_export.h>
 #include <lib/zircon-internal/align.h>
 #include <zircon/system/public/zircon/assert.h>
 
@@ -23,30 +23,32 @@ fuchsia_hardware_network::wire::StatusFlags ToStatusFlags(uint32_t ethernet_stat
   return flags;
 }
 
+constexpr uint8_t kRxTypes[] = {
+    static_cast<uint8_t>(fuchsia_hardware_network::wire::FrameType::kEthernet)};
+constexpr frame_type_support_t kTxTypes[] = {frame_type_support_t{
+    .type = static_cast<uint8_t>(fuchsia_hardware_network::wire::FrameType::kEthernet),
+    .features = fuchsia_hardware_network::wire::kFrameFeaturesRaw}};
+
 }  // namespace
 
 namespace netdevice_migration {
 
-zx_status_t NetdeviceMigration::Bind(void* ctx, zx_device_t* dev) {
-  zx::result netdevm_result = Create(dev);
-  if (netdevm_result.is_error()) {
-    return netdevm_result.error_value();
-  }
-  auto& netdevm = netdevm_result.value();
-  if (zx_status_t status = netdevm->DeviceAdd(); status != ZX_OK) {
-    zxlogf(ERROR, "failed to bind: %s", zx_status_get_string(status));
-    return status;
-  }
-  // On a successful call to Bind(), Devmgr takes ownership of the driver, which it releases by
-  // calling DdkRelease(). Consequently, we transfer our ownership to a local and let it drop.
-  [[maybe_unused]] auto temp_ref = netdevm.release();
-  return ZX_OK;
-}
+NetdeviceMigration::NetdeviceMigration(fdf::DriverStartArgs start_args,
+                                       fdf::UnownedSynchronizedDispatcher driver_dispatcher)
+    : fdf::DriverBase("netdevice-migration", std::move(start_args), std::move(driver_dispatcher)),
+      mac_addr_proto_({&mac_addr_protocol_ops_, this}),
+      ethernet_ifc_proto_({&ethernet_ifc_protocol_ops_, this}) {}
 
-zx::result<std::unique_ptr<NetdeviceMigration>> NetdeviceMigration::Create(zx_device_t* dev) {
-  ddk::EthernetImplProtocolClient ethernet(dev);
-  if (!ethernet.is_valid()) {
-    return zx::error(ZX_ERR_NOT_SUPPORTED);
+zx::result<> NetdeviceMigration::Start() {
+  zx::result ethernet = compat::ConnectBanjo<ddk::EthernetImplProtocolClient>(incoming());
+  if (ethernet.is_error()) {
+    FDF_LOG(ERROR, "Failed to connect to Ethernet Impl protocol: %s", ethernet.status_string());
+    return ethernet.take_error();
+  }
+  ethernet_ = ethernet.value();
+  if (!ethernet_.is_valid()) {
+    FDF_LOG(ERROR, "Received invalid ethernet impl client");
+    return zx::error(ZX_ERR_INTERNAL);
   }
 
   vmo_store::Options opts = {
@@ -57,15 +59,15 @@ zx::result<std::unique_ptr<NetdeviceMigration>> NetdeviceMigration::Create(zx_de
           },
   };
   ethernet_info_t eth_info;
-  if (zx_status_t status = ethernet.Query(0, &eth_info); status != ZX_OK) {
-    zxlogf(ERROR, "failed to query parent: %s", zx_status_get_string(status));
+  if (zx_status_t status = ethernet_.Query(0, &eth_info); status != ZX_OK) {
+    FDF_LOG(ERROR, "failed to query parent: %s", zx_status_get_string(status));
     return zx::error(status);
   }
   zx::bti eth_bti;
   if (eth_info.features & ETHERNET_FEATURE_DMA) {
-    ethernet.GetBti(&eth_bti);
+    ethernet_.GetBti(&eth_bti);
     if (!eth_bti.is_valid()) {
-      zxlogf(ERROR, "failed to get valid bti handle");
+      FDF_LOG(ERROR, "failed to get valid bti handle");
       return zx::error(ZX_ERR_BAD_HANDLE);
     }
     opts.pin = vmo_store::PinOptions{
@@ -88,43 +90,87 @@ zx::result<std::unique_ptr<NetdeviceMigration>> NetdeviceMigration::Create(zx_de
   std::array<uint8_t, sizeof(eth_info.mac)> mac;
   std::copy_n(eth_info.mac, sizeof(eth_info.mac), mac.begin());
   if (eth_info.netbuf_size < sizeof(ethernet_netbuf_t)) {
-    zxlogf(ERROR, "invalid buffer size %ld < min %zu", eth_info.netbuf_size,
-           sizeof(ethernet_netbuf_t));
+    FDF_LOG(ERROR, "invalid buffer size %ld < min %zu", eth_info.netbuf_size,
+            sizeof(ethernet_netbuf_t));
     return zx::error(ZX_ERR_NOT_SUPPORTED);
   }
-  eth_info.netbuf_size = ZX_ROUNDUP(eth_info.netbuf_size, 8);
-  NetbufPool netbuf_pool;
-  for (uint32_t i = 0; i < kFifoDepth; i++) {
-    std::optional netbuf = Netbuf::Alloc(eth_info.netbuf_size);
-    if (!netbuf.has_value()) {
-      return zx::error(ZX_ERR_NO_MEMORY);
-    }
-    netbuf_pool.push(std::move(netbuf.value()));
-  }
-  fbl::AllocChecker ac;
-  auto netdevm = std::unique_ptr<NetdeviceMigration>(
-      new (&ac) NetdeviceMigration(dev, ethernet, port_class, eth_info.mtu, std::move(eth_bti),
-                                   opts, mac, eth_info.netbuf_size, std::move(netbuf_pool)));
-  if (!ac.check()) {
-    return zx::error(ZX_ERR_NO_MEMORY);
-  }
   {
-    fbl::AutoLock vmo_lock(&netdevm->vmo_lock_);
-    if (zx_status_t status = netdevm->vmo_store_.Reserve(MAX_VMOS); status != ZX_OK) {
-      zxlogf(ERROR, "failed to initialize vmo store: %s", zx_status_get_string(status));
+    std::lock_guard tx_lock(tx_lock_);
+    eth_info.netbuf_size = ZX_ROUNDUP(eth_info.netbuf_size, 8);
+    for (uint32_t i = 0; i < kFifoDepth; i++) {
+      std::optional netbuf = Netbuf::Alloc(eth_info.netbuf_size);
+      if (!netbuf.has_value()) {
+        return zx::error(ZX_ERR_NO_MEMORY);
+      }
+      netbuf_pool_.push(std::move(netbuf.value()));
+    }
+  }
+  eth_bti_ = std::move(eth_bti);
+  info_ = {
+      .tx_depth = kFifoDepth,
+      .rx_depth = kFifoDepth,
+      .rx_threshold = kFifoDepth / 2,
+      // Ensures clients do not use scatter-gather.
+      .max_buffer_parts = 1,
+      // Per fuchsia.hardware.network.driver API:
+      // "Devices that do not support scatter-gather DMA may set this to a value smaller than
+      // a page size to guarantee compatibility."
+      .max_buffer_length = kMaxBufferSize,
+      // NetdeviceMigration has no alignment requirements.
+      .buffer_alignment = 1,
+      // Ensures that an rx buffer will always be large enough to the ethernet MTU.
+      .min_rx_buffer_length = eth_info.mtu,
+  };
+  mtu_ = eth_info.mtu;
+  mac_ = mac;
+  port_info_ = {
+      .port_class = static_cast<uint16_t>(port_class),
+      .rx_types_list = kRxTypes,
+      .rx_types_count = std::size(kRxTypes),
+      .tx_types_list = kTxTypes,
+      .tx_types_count = std::size(kTxTypes),
+  };
+  netbuf_size_ = eth_info.netbuf_size;
+
+  {
+    fbl::AutoLock vmo_lock(&vmo_lock_);
+    vmo_store_ = std::make_unique<NetdeviceMigrationVmoStore>(opts);
+    if (zx_status_t status = vmo_store_->Reserve(MAX_VMOS); status != ZX_OK) {
+      FDF_LOG(ERROR, "failed to initialize vmo store: %s", zx_status_get_string(status));
       return zx::error(status);
     }
   }
 
-  return zx::ok(std::move(netdevm));
+  if (zx_status_t status = DeviceAdd(); status != ZX_OK) {
+    FDF_LOG(ERROR, "Failed to add device: %s", zx_status_get_string(status));
+    return zx::error(status);
+  }
+
+  return zx::ok();
 }
 
 zx_status_t NetdeviceMigration::DeviceAdd() {
-  return DdkAdd(
-      ddk::DeviceAddArgs("netdevice-migration").set_proto_id(ZX_PROTOCOL_NETWORK_DEVICE_IMPL));
-}
+  compat::DeviceServer::BanjoConfig banjo_config;
+  banjo_config.callbacks[ZX_PROTOCOL_NETWORK_DEVICE_IMPL] = net_device_server_.callback();
 
-void NetdeviceMigration::DdkRelease() { delete this; }
+  if (zx::result result =
+          compat_server_.Initialize(incoming(), outgoing(), node_name(), kChildNodeName,
+                                    compat::ForwardMetadata::None(), std::move(banjo_config));
+      result.is_error()) {
+    FDF_LOG(ERROR, "Failed to initialize compat server: %s", result.status_string());
+    return result.status_value();
+  }
+
+  zx::result netdev_child =
+      AddChild("netdevice-migration-netdev", {{net_device_server_.property()}},
+               compat_server_.CreateOffers2());
+  if (netdev_child.is_error()) {
+    FDF_LOG(ERROR, "Failed to add net device child node: %s", netdev_child.status_string());
+    return netdev_child.status_value();
+  }
+  netdev_child_ = std::move(netdev_child.value());
+  return ZX_OK;
+}
 
 void NetdeviceMigration::EthernetIfcStatus(uint32_t status) __TA_EXCLUDES(status_lock_) {
   port_status_t port_status = {
@@ -151,14 +197,14 @@ void NetdeviceMigration::EthernetIfcRecv(const uint8_t* data_buffer, size_t data
     rx_spaces_.pop();
     // Bounds check the incoming frame to verify that the ethernet driver respects the MTU.
     if (data_size > space.region.length) {
-      DdkAsyncRemove();
+      DeviceRemove();
       return ZX_ERR_BUFFER_TOO_SMALL;
     }
     {
       network::SharedAutoLock vmo_lock(&vmo_lock_);
-      auto* vmo = vmo_store_.GetVmo(space.region.vmo);
+      auto* vmo = vmo_store_->GetVmo(space.region.vmo);
       if (vmo == nullptr) {
-        DdkAsyncRemove();
+        DeviceRemove();
         return ZX_ERR_INVALID_ARGS;
       }
       cpp20::span<uint8_t> vmo_view = vmo->data();
@@ -192,16 +238,16 @@ void NetdeviceMigration::EthernetIfcRecv(const uint8_t* data_buffer, size_t data
       // Use post-increment to ensure we log on the first dropped packet.
       const size_t v = no_rx_space_++;
       if (v % N == 0) {
-        zxlogf(ERROR, "received ethernet frames without queued rx buffers; %zu frames dropped",
-               v + 1);
+        FDF_LOG(ERROR, "received ethernet frames without queued rx buffers; %zu frames dropped",
+                v + 1);
       }
     } break;
     case ZX_ERR_BUFFER_TOO_SMALL:
-      zxlogf(ERROR, "received ethernet frames larger than rx buffer length of %lu",
-             space.region.length);
+      FDF_LOG(ERROR, "received ethernet frames larger than rx buffer length of %lu",
+              space.region.length);
       break;
     case ZX_ERR_INVALID_ARGS:
-      zxlogf(ERROR, "queued frames with unknown VMO IDs");
+      FDF_LOG(ERROR, "queued frames with unknown VMO IDs");
       break;
     default:
       ZX_PANIC("unexpected status %s", zx_status_get_string(status));
@@ -227,7 +273,7 @@ void NetdeviceMigration::NetworkDeviceImplInit(const network_device_ifc_protocol
         std::unique_ptr<Context> context(static_cast<Context*>(ctx));
         auto [callback, cookie] = *context;
         if (status != ZX_OK) {
-          zxlogf(ERROR, "failed to add port: %s", zx_status_get_string(status));
+          FDF_LOG(ERROR, "failed to add port: %s", zx_status_get_string(status));
           callback(cookie, status);
           return;
         }
@@ -242,7 +288,7 @@ void NetdeviceMigration::NetworkDeviceImplStart(network_device_impl_start_callba
     std::lock_guard rx_lock(rx_lock_);
     std::lock_guard tx_lock(tx_lock_);
     if (tx_started_ || rx_started_) {
-      zxlogf(WARNING, "device already started");
+      FDF_LOG(WARNING, "device already started");
       callback(cookie, ZX_ERR_ALREADY_BOUND);
       return;
     }
@@ -320,7 +366,7 @@ void NetdeviceMigration::NetworkDeviceImplQueueTx(const tx_buffer_t* buffers_lis
     std::lock_guard tx_lock(tx_lock_);
     cpp20::span buffers(buffers_list, buffers_count);
     if (!tx_started_) {
-      zxlogf(ERROR, "tx buffers queued before start call");
+      FDF_LOG(ERROR, "tx buffers queued before start call");
       tx_result_t results[buffers.size()];
       for (size_t i = 0; i < buffers.size(); ++i) {
         results[i] = {
@@ -333,22 +379,22 @@ void NetdeviceMigration::NetworkDeviceImplQueueTx(const tx_buffer_t* buffers_lis
     }
     for (const tx_buffer_t& buffer : buffers) {
       if (buffer.data_count > info_.max_buffer_parts) {
-        zxlogf(ERROR, "tx buffer queued with parts count %ld > max buffer parts %du",
-               buffer.data_count, info_.max_buffer_parts);
-        DdkAsyncRemove();
+        FDF_LOG(ERROR, "tx buffer queued with parts count %ld > max buffer parts %du",
+                buffer.data_count, info_.max_buffer_parts);
+        DeviceRemove();
         return;
       }
       if (buffer.data_list->length > info_.max_buffer_length) {
-        zxlogf(ERROR, "tx buffer queued with length %ld > max buffer length %du",
-               buffer.data_list->length, info_.max_buffer_length);
-        DdkAsyncRemove();
+        FDF_LOG(ERROR, "tx buffer queued with length %ld > max buffer length %du",
+                buffer.data_list->length, info_.max_buffer_length);
+        DeviceRemove();
         return;
       }
-      auto* vmo = vmo_store_.GetVmo(buffer.data_list->vmo);
+      auto* vmo = vmo_store_->GetVmo(buffer.data_list->vmo);
       if (vmo == nullptr) {
-        zxlogf(ERROR, "tx buffer %du queued with unknown vmo id %du", buffer.id,
-               buffer.data_list->vmo);
-        DdkAsyncRemove();
+        FDF_LOG(ERROR, "tx buffer %du queued with unknown vmo id %du", buffer.id,
+                buffer.data_list->vmo);
+        DeviceRemove();
         return;
       }
       zx_paddr_t phys_addr = 0;
@@ -358,7 +404,7 @@ void NetdeviceMigration::NetworkDeviceImplQueueTx(const tx_buffer_t* buffers_lis
         if (zx_status_t status = vmo->GetPinnedRegions(
                 buffer.data_list->offset, buffer.data_list->length, &region, 1, &regions_needed);
             status != ZX_OK) {
-          zxlogf(ERROR, "failed to get pinned regions of vmo: %s", zx_status_get_string(status));
+          FDF_LOG(ERROR, "failed to get pinned regions of vmo: %s", zx_status_get_string(status));
           tx_result_t result = {
               .id = buffer.id,
               .status = ZX_ERR_INTERNAL,
@@ -372,8 +418,8 @@ void NetdeviceMigration::NetworkDeviceImplQueueTx(const tx_buffer_t* buffers_lis
       vmo_view = vmo_view.subspan(buffer.data_list->offset, buffer.data_list->length);
       std::optional netbuf = netbuf_pool_.pop();
       if (!netbuf.has_value()) {
-        zxlogf(ERROR, "netbuf pool exhausted");
-        DdkAsyncRemove();
+        FDF_LOG(ERROR, "netbuf pool exhausted");
+        DeviceRemove();
         return;
       }
       *(netbuf->operation()) = {
@@ -439,14 +485,14 @@ void NetdeviceMigration::NetworkDeviceImplQueueRxSpace(const rx_space_buffer_t* 
         total_rx_buffers > info_.rx_depth) {
       // Client has violated API contract: "The total number of outstanding rx buffers given to a
       // device will never exceed the reported [`DeviceInfo.rx_depth`] value."
-      zxlogf(ERROR, "total received rx buffers %ld > rx_depth %d", total_rx_buffers,
-             info_.rx_depth);
-      DdkAsyncRemove();
+      FDF_LOG(ERROR, "total received rx buffers %ld > rx_depth %d", total_rx_buffers,
+              info_.rx_depth);
+      DeviceRemove();
       return;
     }
     cpp20::span buffers(buffers_list, buffers_count);
     if (!rx_started_) {
-      zxlogf(ERROR, "rx buffers queued before start call");
+      FDF_LOG(ERROR, "rx buffers queued before start call");
       for (const rx_space_buffer_t& space : buffers) {
         rx_buffer_part_t part = {
             .id = space.id,
@@ -465,9 +511,9 @@ void NetdeviceMigration::NetworkDeviceImplQueueRxSpace(const rx_space_buffer_t* 
     for (const rx_space_buffer_t& space : buffers) {
       if (space.region.length < info_.min_rx_buffer_length ||
           space.region.length > info_.max_buffer_length) {
-        zxlogf(ERROR, "rx buffer queued with length %ld, outside valid range [%du, %du]",
-               space.region.length, info_.min_rx_buffer_length, info_.max_buffer_length);
-        DdkAsyncRemove();
+        FDF_LOG(ERROR, "rx buffer queued with length %ld, outside valid range [%du, %du]",
+                space.region.length, info_.min_rx_buffer_length, info_.max_buffer_length);
+        DeviceRemove();
         return;
       }
       rx_spaces_.push(space);
@@ -479,7 +525,7 @@ void NetdeviceMigration::NetworkDeviceImplQueueRxSpace(const rx_space_buffer_t* 
     // that a subsequent Start() or Stop() call will not occur until after this one has returned via
     // the callback.
     if (zx_status_t status = ethernet_.Start(this, &ethernet_ifc_protocol_ops_); status != ZX_OK) {
-      zxlogf(WARNING, "failed to start device: %s", zx_status_get_string(status));
+      FDF_LOG(WARNING, "failed to start device: %s", zx_status_get_string(status));
     }
   }
 }
@@ -488,17 +534,17 @@ void NetdeviceMigration::NetworkDeviceImplPrepareVmo(
     uint8_t id, zx::vmo vmo, network_device_impl_prepare_vmo_callback callback, void* cookie)
     __TA_EXCLUDES(vmo_lock_) {
   fbl::AutoLock vmo_lock(&vmo_lock_);
-  zx_status_t status = vmo_store_.RegisterWithKey(id, std::move(vmo));
+  zx_status_t status = vmo_store_->RegisterWithKey(id, std::move(vmo));
   callback(cookie, status);
 }
 
 void NetdeviceMigration::NetworkDeviceImplReleaseVmo(uint8_t id) __TA_EXCLUDES(vmo_lock_) {
   fbl::AutoLock vmo_lock(&vmo_lock_);
-  if (zx::result<zx::vmo> status = vmo_store_.Unregister(id); status.status_value() != ZX_OK) {
+  if (zx::result<zx::vmo> status = vmo_store_->Unregister(id); status.status_value() != ZX_OK) {
     // A failure here may be the result of a failed call to register the vmo, in which case the
     // driver is queued for removal from device manager. Accordingly, we must not panic lest we
     // disrupt the orderly shutdown of the driver: a log statement is the best we can do.
-    zxlogf(ERROR, "failed to release vmo id = %d: %s", id, status.status_string());
+    FDF_LOG(ERROR, "failed to release vmo id = %d: %s", id, status.status_string());
   }
 }
 
@@ -522,7 +568,7 @@ void NetdeviceMigration::NetworkPortGetMac(mac_addr_protocol_t** out_mac_ifc) {
 }
 
 void NetdeviceMigration::NetworkPortRemoved() {
-  zxlogf(INFO, "removed event for port %d", kPortId);
+  FDF_LOG(INFO, "removed event for port %d", kPortId);
 }
 
 void NetdeviceMigration::MacAddrGetAddress(mac_address_t* out_mac) {
@@ -541,9 +587,9 @@ void NetdeviceMigration::MacAddrSetMode(mac_filter_mode_t mode,
                                         const mac_address_t* multicast_macs_list,
                                         size_t multicast_macs_count) {
   if (multicast_macs_count > kMulticastFilterMax) {
-    zxlogf(ERROR, "multicast macs count exceeds maximum: %zu > %du", multicast_macs_count,
-           kMulticastFilterMax);
-    DdkAsyncRemove();
+    FDF_LOG(ERROR, "multicast macs count exceeds maximum: %zu > %du", multicast_macs_count,
+            kMulticastFilterMax);
+    DeviceRemove();
     return;
   }
   switch (mode) {
@@ -561,8 +607,8 @@ void NetdeviceMigration::MacAddrSetMode(mac_filter_mode_t mode,
       SetMacParam(ETHERNET_SETPARAM_PROMISC, 1, nullptr, 0);
       break;
     default:
-      zxlogf(ERROR, "mac addr filtering mode set with unsupported mode %du", mode);
-      DdkAsyncRemove();
+      FDF_LOG(ERROR, "mac addr filtering mode set with unsupported mode %du", mode);
+      DeviceRemove();
       return;
   }
 }
@@ -583,24 +629,21 @@ void NetdeviceMigration::SetMacParam(uint32_t param, int32_t value,
     // this ends up generating quite a bit of noise in logs, log this case to
     // debug instead.
     case ZX_ERR_NOT_SUPPORTED:
-      zxlogf(DEBUG, "failed to set ethernet parameter %du to value %d: %s", param, value,
-             zx_status_get_string(status));
+      FDF_LOG(DEBUG, "failed to set ethernet parameter %du to value %d: %s", param, value,
+              zx_status_get_string(status));
       break;
     default:
-      zxlogf(WARNING, "failed to set ethernet parameter %du to value %d: %s", param, value,
-             zx_status_get_string(status));
+      FDF_LOG(WARNING, "failed to set ethernet parameter %du to value %d: %s", param, value,
+              zx_status_get_string(status));
       break;
   }
 }
 
-static zx_driver_ops_t netdevice_migration_driver_ops = []() -> zx_driver_ops_t {
-  return {
-      .version = DRIVER_OPS_VERSION,
-      .bind = NetdeviceMigration::Bind,
-  };
-}();
+void NetdeviceMigration::DeviceRemove() {
+  // Remove the driver by destroying the node channel.
+  node().TakeChannel().reset();
+}
 
 }  // namespace netdevice_migration
 
-ZIRCON_DRIVER(NetdeviceMigration, netdevice_migration::netdevice_migration_driver_ops, "zircon",
-              "0.1");
+FUCHSIA_DRIVER_EXPORT(netdevice_migration::NetdeviceMigration);

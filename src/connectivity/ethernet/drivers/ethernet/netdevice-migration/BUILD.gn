@@ -28,9 +28,10 @@ source_set("src") {
     "//sdk/banjo/fuchsia.hardware.ethernet:fuchsia.hardware.ethernet_banjo_cpp",
     "//sdk/fidl/fuchsia.hardware.network:fuchsia.hardware.network_cpp",
     "//sdk/fidl/fuchsia.hardware.network.driver:fuchsia.hardware.network.driver_banjo_cpp",
+    "//sdk/lib/driver/compat/cpp",
+    "//sdk/lib/driver/component/cpp",
     "//src/connectivity/network/drivers/network-device/device:shared_lock",
-    "//src/devices/lib/dev-operation",
-    "//src/lib/ddktl",
+    "//src/devices/lib/dev-operation:dev-operation-dfv2-compat-logging",
     "//src/lib/vmo_store",
     "//zircon/system/public",
     "//zircon/system/ulib/fbl",
@@ -42,13 +43,11 @@ source_set("src") {
 }
 
 fuchsia_cc_driver("netdevice-migration-driver") {
-  legacy = true
   output_name = "netdevice-migration"
   deps = [
     ":netdevice-migration-bind",
     ":src",
-    "//src/devices/lib/driver",
-    "//src/lib/ddk",
+    "//src/devices/lib/driver:driver_runtime",
   ]
 }
 
@@ -77,8 +76,8 @@ test("unit-tests") {
   deps = [
     ":netdevice-migration-bind",
     ":src",
+    "//sdk/lib/driver/testing/cpp",
     "//src/devices/testing/fake-bti",
-    "//src/devices/testing/mock-ddk",
     "//src/lib/fxl",
     "//src/lib/fxl/test:gtest_main",
     "//src/lib/testing/predicates",

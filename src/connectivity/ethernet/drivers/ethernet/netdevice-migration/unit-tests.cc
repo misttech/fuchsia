@@ -2,6 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <lib/driver/compat/cpp/banjo_client.h>
+#include <lib/driver/compat/cpp/device_server.h>
+#include <lib/driver/testing/cpp/driver_test.h>
 #include <lib/fake-bti/bti.h>
 
 #include <array>
@@ -11,7 +14,6 @@
 #include <gtest/gtest.h>
 
 #include "netdevice_migration.h"
-#include "src/devices/testing/mock-ddk/mock-device.h"
 #include "src/lib/fxl/strings/string_printf.h"
 #include "src/lib/testing/predicates/status.h"
 
@@ -53,7 +55,7 @@ class NetdeviceMigrationTestHelper {
   template <typename T, typename F>
   T WithVmoStore(F fn) __TA_EXCLUDES(netdev_.vmo_lock_) {
     fbl::AutoLock lock(&netdev_.vmo_lock_);
-    NetdeviceMigrationVmoStore& vmo_store = netdev_.vmo_store_;
+    NetdeviceMigrationVmoStore& vmo_store = *netdev_.vmo_store_;
     return fn(vmo_store);
   }
   template <typename T, typename F>
@@ -76,13 +78,8 @@ constexpr uint32_t kFifoDepth = netdevice_migration::NetdeviceMigration::kFifoDe
 // Include arbitrary bytes to exercise fuchsia.hardware.ethernet API contract.
 constexpr size_t kNetbufSz = sizeof(ethernet_netbuf_t) + 40;
 
-class MockNetworkDeviceIfc : public ddk::Device<MockNetworkDeviceIfc>,
-                             public ddk::NetworkDeviceIfcProtocol<MockNetworkDeviceIfc> {
+class MockNetworkDeviceIfc : public ddk::NetworkDeviceIfcProtocol<MockNetworkDeviceIfc> {
  public:
-  explicit MockNetworkDeviceIfc(MockDevice* parent)
-      : ddk::Device<MockNetworkDeviceIfc>(parent),
-        proto_({&network_device_ifc_protocol_ops_, this}) {}
-  void DdkRelease() {}
   network_device_ifc_protocol_t& proto() { return proto_; }
 
   MOCK_METHOD(void, NetworkDeviceIfcPortStatusChanged,
@@ -97,18 +94,11 @@ class MockNetworkDeviceIfc : public ddk::Device<MockNetworkDeviceIfc>,
   MOCK_METHOD(void, NetworkDeviceIfcDelegateRxLease, (const delegated_rx_lease_t* delegated));
 
  private:
-  network_device_ifc_protocol_t proto_;
+  network_device_ifc_protocol_t proto_{&network_device_ifc_protocol_ops_, this};
 };
 
-class MockEthernetImpl : public ddk::Device<MockEthernetImpl>,
-                         public ddk::EthernetImplProtocol<MockEthernetImpl> {
+class MockEthernetImpl : public ddk::EthernetImplProtocol<MockEthernetImpl> {
  public:
-  explicit MockEthernetImpl(MockDevice* parent)
-      : ddk::Device<MockEthernetImpl>(parent), proto_({&ethernet_impl_protocol_ops_, this}) {
-    parent->AddProtocol(ZX_PROTOCOL_ETHERNET_IMPL, proto_.ops, proto_.ctx);
-  }
-  void DdkRelease() {}
-
   MOCK_METHOD(zx_status_t, EthernetImplQuery, (uint32_t options, ethernet_info_t* out_info));
   MOCK_METHOD(void, EthernetImplStop, ());
   MOCK_METHOD(zx_status_t, EthernetImplStart, (const ethernet_ifc_protocol_t* ifc));
@@ -119,50 +109,122 @@ class MockEthernetImpl : public ddk::Device<MockEthernetImpl>,
               (uint32_t param, int32_t value, const uint8_t* data_buffer, size_t data_size));
   MOCK_METHOD(void, EthernetImplGetBti, (zx::bti * out_bti));
 
+  compat::DeviceServer::BanjoConfig GetBanjoConfig() {
+    compat::DeviceServer::BanjoConfig banjo_config;
+    banjo_config.callbacks[ZX_PROTOCOL_ETHERNET_IMPL] = banjo_server_.callback();
+    return banjo_config;
+  }
+
  private:
-  ethernet_impl_protocol_t proto_;
+  compat::BanjoServer banjo_server_{ZX_PROTOCOL_ETHERNET_IMPL, this, &ethernet_impl_protocol_ops_};
+};
+
+class NetdeviceMigrationTestEnvironment : public fdf_testing::Environment {
+ public:
+  zx::result<> Serve(fdf::OutgoingDirectory& to_driver_vfs) override {
+    device_server_.Initialize(component::kDefaultInstance, {}, mock_ethernet_.GetBanjoConfig());
+    if (zx_status_t status =
+            device_server_.Serve(fdf::Dispatcher::GetCurrent()->async_dispatcher(), &to_driver_vfs);
+        status != ZX_OK) {
+      return zx::error(status);
+    }
+    return zx::ok();
+  }
+
+  MockEthernetImpl& MockEthernet() { return mock_ethernet_; }
+
+ private:
+  compat::DeviceServer device_server_;
+  MockEthernetImpl mock_ethernet_;
+};
+
+class TestConfig final {
+ public:
+  using DriverType = netdevice_migration::NetdeviceMigration;
+  using EnvironmentType = NetdeviceMigrationTestEnvironment;
 };
 
 class NetdeviceMigrationTest : public ::testing::Test {
  protected:
-  NetdeviceMigrationTest()
-      : parent_(MockDevice::FakeRootParent()),
-        mock_network_device_ifc_(parent_.get()),
-        mock_ethernet_impl_(parent_.get()) {}
+  void TearDown() override { StopDriver(); }
 
-  void CreateDevice() {
-    zx::result device = netdevice_migration::NetdeviceMigration::Create(parent_.get());
-    ASSERT_OK(device.status_value());
-    device_ = std::move(device.value());
+  zx::result<> StartDriver() {
+    zx::result<> result = driver_test_.StartDriver();
+    if (result.is_ok()) {
+      driver_started_ = true;
+    }
+    return result;
   }
 
-  void CreateDeviceFails(zx_status_t expected) {
-    zx::result device = netdevice_migration::NetdeviceMigration::Create(parent_.get());
-    ASSERT_STATUS(device.status_value(), expected);
+  void StopDriver() {
+    if (driver_started_) {
+      ASSERT_TRUE(driver_test_.StopDriver().is_ok());
+      driver_started_ = false;
+    }
+  }
+
+  void AssertDriverIsRunning() {
+    // Provide a method with the explicit verification that the driver is running. This should
+    // hopefully prevent tests from accidentally using IsDriverRunning to test that the driver was
+    // removed. Doing so is not safe since it's an asynchronous process that might not be completed
+    // by the time the test performs the check.
+    ASSERT_TRUE(IsDriverRunning());
+  }
+
+  void WaitUntilDriverIsNotRunning() {
+    for (size_t i = 0; i < 20'000; ++i) {
+      if (!IsDriverRunning()) {
+        return;
+      }
+      zx_nanosleep(ZX_MSEC(1));
+    }
+    FAIL() << "Driver did not stop running within the timeout";
+  }
+
+  void ConnectToNetDevice() {
+    zx::result compat_client = driver_test_.Connect<fuchsia_driver_compat::Service::Device>(
+        netdevice_migration::NetdeviceMigration::kChildNodeName);
+    ASSERT_OK(compat_client);
+    fidl::WireSyncClient<fuchsia_driver_compat::Device> compat(std::move(compat_client.value()));
+
+    fidl::WireResult result = compat->GetBanjoProtocol(
+        ddk::NetworkDeviceImplProtocolClient::kProtocolId, compat::internal::GetKoid());
+    zx::result client = compat::internal::OnResult<ddk::NetworkDeviceImplProtocolClient>(result);
+    ASSERT_TRUE(client.is_ok());
+    netdevice_client_ = client.value();
+    ASSERT_TRUE(netdevice_client_.is_valid());
   }
 
   void SetUpWithFeatures(uint32_t features) {
-    EXPECT_CALL(mock_ethernet_impl_, EthernetImplQuery(0, testing::_))
-        .WillOnce([features](uint32_t options, ethernet_info_t* out_info) -> zx_status_t {
-          *out_info = {
-              .features = features,
-              .mtu = ETH_MTU_SIZE,
-              .mac = {0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF},
-              .netbuf_size = kNetbufSz,
-          };
-          return ZX_OK;
-        });
-    ASSERT_NO_FATAL_FAILURE(CreateDevice());
+    RunWithMockEthernet([&](MockEthernetImpl& mock_ethernet) {
+      EXPECT_CALL(mock_ethernet, EthernetImplQuery(0, testing::_))
+          .WillOnce([features](uint32_t options, ethernet_info_t* out_info) -> zx_status_t {
+            *out_info = {
+                .features = features,
+                .mtu = ETH_MTU_SIZE,
+                .mac = {0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF},
+                .netbuf_size = kNetbufSz,
+            };
+            return ZX_OK;
+          });
+    });
+    ASSERT_TRUE(StartDriver().is_ok());
+
+    ConnectToNetDevice();
+
     EXPECT_CALL(mock_network_device_ifc_,
                 NetworkDeviceIfcAddPort(netdevice_migration::NetdeviceMigration::kPortId,
                                         testing::_, testing::_, testing::_))
         .Times(1)
-        .WillOnce([](uint8_t id, const network_port_protocol_t* port,
-                     network_device_ifc_add_port_callback callback,
-                     void* cookie) { callback(cookie, ZX_OK); });
+        .WillOnce([this](uint8_t id, const network_port_protocol_t* port,
+                         network_device_ifc_add_port_callback callback, void* cookie) {
+          port_client_ = ddk::NetworkPortProtocolClient(port);
+          callback(cookie, ZX_OK);
+        });
+
     libsync::Completion initialized;
-    device_->NetworkDeviceImplInit(
-        &mock_network_device_ifc_.proto(),
+    netdevice_client_.Init(
+        mock_network_device_ifc_.proto().ctx, mock_network_device_ifc_.proto().ops,
         [](void* ctx, zx_status_t status) {
           libsync::Completion* completion = static_cast<libsync::Completion*>(ctx);
           EXPECT_OK(status);
@@ -172,9 +234,19 @@ class NetdeviceMigrationTest : public ::testing::Test {
     initialized.Wait();
   }
 
+  // Perform all the steps necessary to trigger a call to EthernetImpl::Start
+  void StartEthernet() {
+    ASSERT_TRUE(netdevice_client_.is_valid());
+    ASSERT_NO_FATAL_FAILURE(NetdevImplPrepareVmo(kVmoId));
+    ASSERT_NO_FATAL_FAILURE(NetdevImplStart(ZX_OK));
+    // Call QueueRxSpace to start Ethernet, the start is deferred until QueueRxSpace is called the
+    // first time. No need to pass any buffers.
+    ASSERT_NO_FATAL_FAILURE(QueueRxSpace(nullptr, 0));
+  }
+
   void NetdevImplStart(zx_status_t expected) {
     std::optional<zx_status_t> callback_status;
-    device_->NetworkDeviceImplStart(
+    netdevice_client_.Start(
         [](void* ctx, zx_status_t status) {
           *static_cast<std::optional<zx_status_t>*>(ctx) = status;
         },
@@ -191,7 +263,7 @@ class NetdeviceMigrationTest : public ::testing::Test {
 
   void NetdevImplPrepareVmo(uint8_t vmo_id, zx::vmo vmo) {
     bool called = false;
-    device_->NetworkDeviceImplPrepareVmo(
+    netdevice_client_.PrepareVmo(
         vmo_id, std::move(vmo),
         [](void* cookie, zx_status_t status) {
           *static_cast<bool*>(cookie) = true;
@@ -208,37 +280,42 @@ class NetdeviceMigrationTest : public ::testing::Test {
   void QueueTx(bool has_phys) {
     ASSERT_NO_FATAL_FAILURE(NetdevImplPrepareVmo(kVmoId));
     ASSERT_NO_FATAL_FAILURE(NetdevImplStart(ZX_OK));
-    netdevice_migration::NetdeviceMigrationTestHelper helper(Device());
-    const uint8_t* vmo_start = helper.WithVmoStore<uint8_t*>(
-        [](netdevice_migration::NetdeviceMigrationVmoStore& vmo_store) {
-          auto* vmo = vmo_store.GetVmo(kVmoId);
-          return vmo->data().data();
-        });
+    const uint8_t* vmo_start = nullptr;
+    RunWithHelper([&](netdevice_migration::NetdeviceMigrationTestHelper& helper) {
+      vmo_start = helper.WithVmoStore<uint8_t*>(
+          [](netdevice_migration::NetdeviceMigrationVmoStore& vmo_store) {
+            auto* vmo = vmo_store.GetVmo(kVmoId);
+            return vmo->data().data();
+          });
+    });
+
     constexpr uint32_t kBufId = 42;
     buffer_region_t region = {.vmo = kVmoId, .length = ETH_MTU_SIZE};
     tx_buffer_t buf = {.id = kBufId, .data_list = &region, .data_count = 1};
-    EXPECT_CALL(
-        MockEthernet(),
-        EthernetImplQueueTx(0,
-                            testing::Pointee(testing::FieldsAre(
-                                testing::A<const uint8_t*>(), region.length,
-                                testing::A<zx_paddr_t>(), static_cast<short>(0u), 0)),
-                            testing::An<ethernet_impl_queue_tx_callback>(), testing::A<void*>()))
-        .WillOnce([has_phys, vmo_start](uint32_t options, ethernet_netbuf_t* netbuf,
-                                        ethernet_impl_queue_tx_callback callback, void* cookie) {
-          ASSERT_EQ(netbuf->data_buffer, vmo_start);
-          ASSERT_EQ(netbuf->data_size, ETH_MTU_SIZE);
-          if (has_phys) {
-            ASSERT_NE(netbuf->phys, 0ul);
-          } else {
-            ASSERT_EQ(netbuf->phys, 0ul);
-          }
-          callback(cookie, ZX_OK, netbuf);
-        });
+    RunWithMockEthernet([&](MockEthernetImpl& mock_ethernet) {
+      EXPECT_CALL(
+          mock_ethernet,
+          EthernetImplQueueTx(0,
+                              testing::Pointee(testing::FieldsAre(
+                                  testing::A<const uint8_t*>(), region.length,
+                                  testing::A<zx_paddr_t>(), static_cast<short>(0u), 0)),
+                              testing::An<ethernet_impl_queue_tx_callback>(), testing::A<void*>()))
+          .WillOnce([has_phys, vmo_start](uint32_t options, ethernet_netbuf_t* netbuf,
+                                          ethernet_impl_queue_tx_callback callback, void* cookie) {
+            ASSERT_EQ(netbuf->data_buffer, vmo_start);
+            ASSERT_EQ(netbuf->data_size, ETH_MTU_SIZE);
+            if (has_phys) {
+              ASSERT_NE(netbuf->phys, 0ul);
+            } else {
+              ASSERT_EQ(netbuf->phys, 0ul);
+            }
+            callback(cookie, ZX_OK, netbuf);
+          });
+    });
     EXPECT_CALL(MockNetworkDevice(),
                 NetworkDeviceIfcCompleteTx(testing::Pointee(testing::FieldsAre(kBufId, ZX_OK)), 1))
         .Times(1);
-    Device().NetworkDeviceImplQueueTx(&buf, 1);
+    netdevice_client_.QueueTx(&buf, 1);
   }
 
   void QueueRxSpace(const rx_space_buffer_t* buffers, size_t buffers_count) {
@@ -246,25 +323,61 @@ class NetdeviceMigrationTest : public ::testing::Test {
       // The call to Ethernet.Start is deferred to the first call to QueueRxSpace to ensure there
       // are receive buffers available as soon as Start is called. After the first call it is not
       // expected to be called again.
-      EXPECT_CALL(mock_ethernet_impl_, EthernetImplStart(testing::_));
+      RunWithMockEthernet([&](MockEthernetImpl& mock_ethernet) {
+        EXPECT_CALL(mock_ethernet, EthernetImplStart)
+            .WillOnce(testing::Invoke([this](const ethernet_ifc_protocol_t* ifc) {
+              ethernet_ifc_client_ = ddk::EthernetIfcProtocolClient(ifc);
+              return ZX_OK;
+            }));
+      });
       queued_rx_space_ = true;
     }
-    Device().NetworkDeviceImplQueueRxSpace(buffers, buffers_count);
+    netdevice_client_.QueueRxSpace(buffers, buffers_count);
   }
 
-  MockDevice& Parent() { return *parent_; }
+  void RunWithDriver(fit::callback<void(netdevice_migration::NetdeviceMigration&)> callback) {
+    driver_test_.RunInDriverContext(std::move(callback));
+  }
+  void RunWithHelper(
+      fit::callback<void(netdevice_migration::NetdeviceMigrationTestHelper&)> callback) {
+    driver_test_.RunInDriverContext([&](netdevice_migration::NetdeviceMigration& driver) {
+      netdevice_migration::NetdeviceMigrationTestHelper helper(driver);
+      callback(helper);
+    });
+  }
+  void RunWithMockEthernet(fit::callback<void(MockEthernetImpl&)> callback) {
+    driver_test_.RunInEnvironmentTypeContext(
+        [&](NetdeviceMigrationTestEnvironment& env) { callback(env.MockEthernet()); });
+  }
+
+  ddk::NetworkDeviceImplProtocolClient& NetDeviceClient() { return netdevice_client_; }
+  ddk::NetworkPortProtocolClient& PortClient() { return port_client_; }
+  ddk::EthernetIfcProtocolClient& EthernetIfcClient() { return ethernet_ifc_client_; }
+
+  ddk::MacAddrProtocolClient CreateMacAddrClient() {
+    mac_addr_protocol_t* mac_ifc = nullptr;
+    PortClient().GetMac(&mac_ifc);
+    return ddk::MacAddrProtocolClient(mac_ifc);
+  }
+
   testing::StrictMock<MockNetworkDeviceIfc>& MockNetworkDevice() {
     return mock_network_device_ifc_;
   }
-  testing::StrictMock<MockEthernetImpl>& MockEthernet() { return mock_ethernet_impl_; }
-  netdevice_migration::NetdeviceMigration& Device() { return *device_; }
-  netdevice_migration::NetdeviceMigration* TakeDevice() { return device_.release(); }
 
  private:
-  const std::shared_ptr<MockDevice> parent_;
+  bool IsDriverRunning() {
+    bool is_running = false;
+    driver_test_.RunInNodeContext(
+        [&](fdf_testing::TestNode& node) { is_running = node.HasNode(); });
+    return is_running;
+  }
+
+  fdf_testing::BackgroundDriverTest<TestConfig> driver_test_;
   testing::StrictMock<MockNetworkDeviceIfc> mock_network_device_ifc_;
-  testing::StrictMock<MockEthernetImpl> mock_ethernet_impl_;
-  std::unique_ptr<netdevice_migration::NetdeviceMigration> device_;
+  ddk::NetworkDeviceImplProtocolClient netdevice_client_;
+  ddk::NetworkPortProtocolClient port_client_;
+  ddk::EthernetIfcProtocolClient ethernet_ifc_client_;
+  bool driver_started_ = false;
   bool queued_rx_space_ = false;
 };
 
@@ -276,11 +389,21 @@ class NetdeviceMigrationDefaultSetupTest : public NetdeviceMigrationTest {
 class NetdeviceMigrationEthernetDmaSetupTest : public NetdeviceMigrationTest {
  protected:
   void SetUp() override {
-    EXPECT_CALL(MockEthernet(), EthernetImplGetBti(testing::_))
-        .WillOnce([](zx::bti* out_bti) -> zx_status_t {
-          return fake_bti_create(out_bti->reset_and_get_address());
-        });
+    RunWithMockEthernet([&](MockEthernetImpl& mock_ethernet) {
+      EXPECT_CALL(mock_ethernet, EthernetImplGetBti(testing::_))
+          .WillOnce([](zx::bti* out_bti) -> zx_status_t {
+            return fake_bti_create(out_bti->reset_and_get_address());
+          });
+    });
     SetUpWithFeatures(ETHERNET_FEATURE_DMA);
+  }
+};
+
+class NetdeviceMigrationEthernetSetupTest : public NetdeviceMigrationDefaultSetupTest {
+ protected:
+  void SetUp() override {
+    NetdeviceMigrationDefaultSetupTest::SetUp();
+    StartEthernet();
   }
 };
 
@@ -324,9 +447,10 @@ class PortClassSetupTest : public NetdeviceMigrationTest,
 TEST_P(PortClassSetupTest, PortClassTest) {
   const PortClassTestCase test_case = GetParam();
   SetUpWithFeatures(test_case.features);
-  netdevice_migration::NetdeviceMigrationTestHelper helper(Device());
-  const port_base_info_t port_info = helper.PortInfo();
-  ASSERT_EQ(static_cast<uint16_t>(test_case.expected_port_class), port_info.port_class);
+  RunWithHelper([&](netdevice_migration::NetdeviceMigrationTestHelper& helper) {
+    const port_base_info_t port_info = helper.PortInfo();
+    ASSERT_EQ(static_cast<uint16_t>(test_case.expected_port_class), port_info.port_class);
+  });
 }
 
 INSTANTIATE_TEST_SUITE_P(NetdeviceMigration, PortClassSetupTest,
@@ -336,26 +460,18 @@ INSTANTIATE_TEST_SUITE_P(NetdeviceMigration, PortClassSetupTest,
                          });
 
 TEST_F(NetdeviceMigrationDefaultSetupTest, DeviceInfoPreconditions) {
-  netdevice_migration::NetdeviceMigrationTestHelper helper(Device());
-  const device_impl_info_t& info = helper.Info();
-  // buffer_alignment > max_buffer_length leads to either unnecessary wasting of contiguous memory,
-  // or for the configuration to be rejected altogether.
-  ASSERT_LE(info.buffer_alignment, info.max_buffer_length);
-}
-
-TEST_F(NetdeviceMigrationDefaultSetupTest, LifetimeTest) {
-  ASSERT_EQ(Parent().child_count(), 0u);
-  ASSERT_OK(TakeDevice()->DeviceAdd());
-  ASSERT_EQ(Parent().child_count(), 1u);
-  MockDevice* device = Parent().GetLatestChild();
-  ASSERT_NE(device, nullptr);
-  device->ReleaseOp();
+  RunWithHelper([&](netdevice_migration::NetdeviceMigrationTestHelper& helper) {
+    const device_impl_info_t& info = helper.Info();
+    // buffer_alignment > max_buffer_length leads to either unnecessary wasting of contiguous
+    // memory, or for the configuration to be rejected altogether.
+    ASSERT_LE(info.buffer_alignment, info.max_buffer_length);
+  });
 }
 
 TEST_F(NetdeviceMigrationDefaultSetupTest, NetworkDeviceImplInit) {
   libsync::Completion init_called;
-  Device().NetworkDeviceImplInit(
-      &MockNetworkDevice().proto(),
+  NetDeviceClient().Init(
+      MockNetworkDevice().proto().ctx, MockNetworkDevice().proto().ops,
       [](void* ctx, zx_status_t status) {
         libsync::Completion* init_called = static_cast<libsync::Completion*>(ctx);
         EXPECT_STATUS(status, ZX_ERR_ALREADY_BOUND);
@@ -386,26 +502,28 @@ TEST_F(NetdeviceMigrationDefaultSetupTest, NetworkDeviceImplStartStop) {
           .name = "stop",
       },
   };
-  netdevice_migration::NetdeviceMigrationTestHelper helper(Device());
   for (const auto& step : kTestSteps) {
     SCOPED_TRACE(step.name);
     if (step.start_status.has_value()) {
       ASSERT_NO_FATAL_FAILURE(NetdevImplStart(step.start_status.value()));
     } else {
       bool callback_called = false;
-      EXPECT_CALL(MockEthernet(), EthernetImplStop()).Times(1);
-      Device().NetworkDeviceImplStop([](void* ctx) { *static_cast<bool*>(ctx) = true; },
-                                     &callback_called);
+      RunWithMockEthernet([&](MockEthernetImpl& mock_ethernet) {
+        EXPECT_CALL(mock_ethernet, EthernetImplStop()).Times(1);
+      });
+      NetDeviceClient().Stop([](void* ctx) { *static_cast<bool*>(ctx) = true; }, &callback_called);
       EXPECT_TRUE(callback_called);
     }
-    EXPECT_EQ(helper.IsTxStarted(), step.device_started);
-    EXPECT_EQ(helper.IsRxStarted(), step.device_started);
+    RunWithHelper([&](netdevice_migration::NetdeviceMigrationTestHelper& helper) {
+      EXPECT_EQ(helper.IsTxStarted(), step.device_started);
+      EXPECT_EQ(helper.IsRxStarted(), step.device_started);
+    });
   }
 }
 
-TEST_F(NetdeviceMigrationDefaultSetupTest, EthernetIfcStatus) {
+TEST_F(NetdeviceMigrationEthernetSetupTest, EthernetIfcStatus) {
   port_status_t status;
-  Device().NetworkPortGetStatus(&status);
+  PortClient().GetStatus(&status);
   EXPECT_EQ(status.mtu, ETH_MTU_SIZE);
   EXPECT_EQ(status.flags, static_cast<uint32_t>(fuchsia_hardware_network::wire::StatusFlags()));
 
@@ -416,32 +534,45 @@ TEST_F(NetdeviceMigrationDefaultSetupTest, EthernetIfcStatus) {
                       static_cast<uint32_t>(fuchsia_hardware_network::wire::StatusFlags::kOnline),
                       ETH_MTU_SIZE))))
       .Times(1);
-  Device().EthernetIfcStatus(ETHERNET_STATUS_ONLINE);
-  Device().NetworkPortGetStatus(&status);
+  EthernetIfcClient().Status(ETHERNET_STATUS_ONLINE);
+  PortClient().GetStatus(&status);
   EXPECT_EQ(status.mtu, ETH_MTU_SIZE);
   EXPECT_EQ(status.flags,
             static_cast<uint32_t>(fuchsia_hardware_network::wire::StatusFlags::kOnline));
 }
 
 TEST_F(NetdeviceMigrationDefaultSetupTest, EthernetIfcStatusCalledFromEthernetImplStart) {
-  netdevice_migration::NetdeviceMigrationTestHelper helper(Device());
-  ethernet_ifc_protocol_t proto = helper.EthernetIfcProto();
-  EXPECT_CALL(MockEthernet(), EthernetImplStart(&proto))
-      .WillOnce([](const ethernet_ifc_protocol_t* proto) -> zx_status_t {
-        auto client = ddk::EthernetIfcProtocolClient(proto);
-        client.Status(ETHERNET_STATUS_ONLINE);
-        return ZX_OK;
-      });
+  libsync::Completion eth_started;
+  RunWithMockEthernet([&](MockEthernetImpl& mock_ethernet) {
+    EXPECT_CALL(mock_ethernet, EthernetImplStart)
+        .WillOnce([&](const ethernet_ifc_protocol_t* proto) -> zx_status_t {
+          auto client = ddk::EthernetIfcProtocolClient(proto);
+          client.Status(ETHERNET_STATUS_ONLINE);
+          eth_started.Signal();
+          return ZX_OK;
+        });
+  });
+  libsync::Completion port_status_changed;
   EXPECT_CALL(MockNetworkDevice(),
               NetworkDeviceIfcPortStatusChanged(
                   netdevice_migration::NetdeviceMigration::kPortId,
                   testing::Pointee(testing::FieldsAre(
                       static_cast<uint32_t>(fuchsia_hardware_network::wire::StatusFlags::kOnline),
                       ETH_MTU_SIZE))))
-      .Times(1);
-  ASSERT_OK(MockEthernet().EthernetImplStart(&proto));
+      .Times(1)
+      .WillOnce([&] { port_status_changed.Signal(); });
+
+  ASSERT_NO_FATAL_FAILURE(NetdevImplPrepareVmo(kVmoId));
+  ASSERT_NO_FATAL_FAILURE(NetdevImplStart(ZX_OK));
+  // Perform this sequence explicitly to start Ethernet. If we use the StartEthernet method it will
+  // set its own expectation on the mock ethernet which will override the one in this test.
+  ASSERT_NO_FATAL_FAILURE(NetDeviceClient().QueueRxSpace(nullptr, 0));
+
+  eth_started.Wait();
+  port_status_changed.Wait();
+
   port_status_t status;
-  Device().NetworkPortGetStatus(&status);
+  PortClient().GetStatus(&status);
   EXPECT_EQ(status.mtu, ETH_MTU_SIZE);
   EXPECT_EQ(status.flags,
             static_cast<uint32_t>(fuchsia_hardware_network::wire::StatusFlags::kOnline));
@@ -451,62 +582,73 @@ TEST_F(NetdeviceMigrationEthernetDmaSetupTest, NetworkDeviceImplPrepareReleaseVm
   constexpr uint8_t kVMOs = 3;
   std::array<fake_bti_pinned_vmo_info_t, kVMOs> pinned_vmos;
   size_t pinned;
-  netdevice_migration::NetdeviceMigrationTestHelper helper(Device());
-  ASSERT_OK(fake_bti_get_pinned_vmos(helper.Bti().get(), pinned_vmos.data(), pinned_vmos.size(),
-                                     &pinned));
+  RunWithHelper([&](netdevice_migration::NetdeviceMigrationTestHelper& helper) {
+    ASSERT_OK(fake_bti_get_pinned_vmos(helper.Bti().get(), pinned_vmos.data(), pinned_vmos.size(),
+                                       &pinned));
+  });
   ASSERT_EQ(pinned, 0u);
 
   for (uint8_t vmo_id = 1; vmo_id <= kVMOs; vmo_id++) {
     ASSERT_NO_FATAL_FAILURE(NetdevImplPrepareVmo(vmo_id));
-    ASSERT_OK(fake_bti_get_pinned_vmos(helper.Bti().get(), pinned_vmos.data(), pinned_vmos.size(),
-                                       &pinned));
-    ASSERT_EQ(pinned, vmo_id);
-    helper.WithVmoStore<void>([vmo_id](netdevice_migration::NetdeviceMigrationVmoStore& vmo_store) {
-      auto* stored = vmo_store.GetVmo(vmo_id);
-      ASSERT_NE(stored, nullptr);
-      auto data = stored->data();
-      ASSERT_EQ(data.size(), kVmoSize);
+    RunWithHelper([&](netdevice_migration::NetdeviceMigrationTestHelper& helper) {
+      ASSERT_OK(fake_bti_get_pinned_vmos(helper.Bti().get(), pinned_vmos.data(), pinned_vmos.size(),
+                                         &pinned));
+      ASSERT_EQ(pinned, vmo_id);
+      helper.WithVmoStore<void>(
+          [vmo_id](netdevice_migration::NetdeviceMigrationVmoStore& vmo_store) {
+            auto* stored = vmo_store.GetVmo(vmo_id);
+            ASSERT_NE(stored, nullptr);
+            auto data = stored->data();
+            ASSERT_EQ(data.size(), kVmoSize);
+          });
     });
   }
 
   for (uint8_t vmo_id = pinned_vmos.size(); vmo_id > 0;) {
-    Device().NetworkDeviceImplReleaseVmo(vmo_id--);
-    ASSERT_OK(fake_bti_get_pinned_vmos(helper.Bti().get(), pinned_vmos.data(), pinned_vmos.size(),
-                                       &pinned));
+    NetDeviceClient().ReleaseVmo(vmo_id--);
+    RunWithHelper([&](netdevice_migration::NetdeviceMigrationTestHelper& helper) {
+      ASSERT_OK(fake_bti_get_pinned_vmos(helper.Bti().get(), pinned_vmos.data(), pinned_vmos.size(),
+                                         &pinned));
+    });
     ASSERT_EQ(pinned, vmo_id);
   }
 }
 
 TEST_F(NetdeviceMigrationTest, NetworkDeviceDoesNotGetBtiIfEthDoesNotSupportDma) {
-  EXPECT_CALL(MockEthernet(), EthernetImplQuery(0, testing::_))
-      .WillOnce([](uint32_t options, ethernet_info_t* out_info) -> zx_status_t {
-        *out_info = {
-            .features = 0,
-            .netbuf_size = sizeof(ethernet_netbuf_t),
-        };
-        return ZX_OK;
-      });
-  EXPECT_CALL(MockEthernet(), EthernetImplGetBti(testing::_)).Times(0);
-  ASSERT_NO_FATAL_FAILURE(CreateDevice());
+  RunWithMockEthernet([&](MockEthernetImpl& mock_ethernet) {
+    EXPECT_CALL(mock_ethernet, EthernetImplQuery(0, testing::_))
+        .WillOnce([](uint32_t options, ethernet_info_t* out_info) -> zx_status_t {
+          *out_info = {
+              .features = 0,
+              .netbuf_size = sizeof(ethernet_netbuf_t),
+          };
+          return ZX_OK;
+        });
+    EXPECT_CALL(mock_ethernet, EthernetImplGetBti(testing::_)).Times(0);
+  });
+  ASSERT_TRUE(StartDriver().is_ok());
 }
 
 TEST_F(NetdeviceMigrationTest, InvalidNetbufSzRemovesDriver) {
-  EXPECT_CALL(MockEthernet(), EthernetImplQuery(0, testing::_))
-      .WillOnce([](uint32_t options, ethernet_info_t* out_info) -> zx_status_t {
-        *out_info = {
-            .netbuf_size = sizeof(ethernet_netbuf_t) / 2,
-        };
-        return ZX_OK;
-      });
-  ASSERT_NO_FATAL_FAILURE(CreateDeviceFails(ZX_ERR_NOT_SUPPORTED));
+  RunWithMockEthernet([&](MockEthernetImpl& mock_ethernet) {
+    EXPECT_CALL(mock_ethernet, EthernetImplQuery(0, testing::_))
+        .WillOnce([](uint32_t options, ethernet_info_t* out_info) -> zx_status_t {
+          *out_info = {
+              .netbuf_size = sizeof(ethernet_netbuf_t) / 2,
+          };
+          return ZX_OK;
+        });
+  });
+  EXPECT_EQ(StartDriver().status_value(), ZX_ERR_NOT_SUPPORTED);
 }
 
 TEST_F(NetdeviceMigrationDefaultSetupTest, ObservesNetbufSz) {
-  netdevice_migration::NetdeviceMigrationTestHelper helper(Device());
-  helper.WithNetbufPool<void>([](netdevice_migration::NetbufPool& netbuf_pool) {
-    std::optional netbuf = netbuf_pool.pop();
-    ASSERT_TRUE(netbuf.has_value());
-    ASSERT_GE(netbuf->size(), kNetbufSz);
+  RunWithHelper([&](netdevice_migration::NetdeviceMigrationTestHelper& helper) {
+    helper.WithNetbufPool<void>([](netdevice_migration::NetbufPool& netbuf_pool) {
+      std::optional netbuf = netbuf_pool.pop();
+      ASSERT_TRUE(netbuf.has_value());
+      ASSERT_GE(netbuf->size(), kNetbufSz);
+    });
   });
 }
 
@@ -541,16 +683,19 @@ TEST_F(NetdeviceMigrationDefaultSetupTest, NetworkDeviceImplQueueRxSpace) {
       .Times(std::size(spaces));
   QueueRxSpace(spaces, std::size(spaces));
   ASSERT_NO_FATAL_FAILURE(NetdevImplStart(ZX_OK));
-  netdevice_migration::NetdeviceMigrationTestHelper helper(Device());
-  helper.WithRxSpaces<void>([](auto& rx_spaces) { EXPECT_TRUE(rx_spaces.empty()); });
+  RunWithHelper([&](netdevice_migration::NetdeviceMigrationTestHelper& helper) {
+    helper.WithRxSpaces<void>([](auto& rx_spaces) { EXPECT_TRUE(rx_spaces.empty()); });
+  });
   QueueRxSpace(spaces, std::size(spaces));
-  helper.WithRxSpaces<void>([&spaces](auto& rx_spaces) {
-    ASSERT_EQ(rx_spaces.size(), std::size(spaces));
-    for (const rx_space_buffer_t& space : spaces) {
-      EXPECT_EQ(rx_spaces.front().region.offset, space.region.offset);
-      EXPECT_EQ(rx_spaces.front().region.length, space.region.length);
-      rx_spaces.pop();
-    }
+  RunWithHelper([&](netdevice_migration::NetdeviceMigrationTestHelper& helper) {
+    helper.WithRxSpaces<void>([&spaces](auto& rx_spaces) {
+      ASSERT_EQ(rx_spaces.size(), std::size(spaces));
+      for (const rx_space_buffer_t& space : spaces) {
+        EXPECT_EQ(rx_spaces.front().region.offset, space.region.offset);
+        EXPECT_EQ(rx_spaces.front().region.length, space.region.length);
+        rx_spaces.pop();
+      }
+    });
   });
 }
 
@@ -568,15 +713,11 @@ TEST_P(QueueRxSpaceFailedPreconditionTest, RemovesDriver) {
               },
       },
   };
+  AssertDriverIsRunning();
   ASSERT_NO_FATAL_FAILURE(NetdevImplStart(ZX_OK));
-  auto* device = TakeDevice();
-  ASSERT_OK(device->DeviceAdd());
-  ASSERT_EQ(Parent().child_count(), 1u);
   // CompleteRx will not be called so set no call expectations.
-  device->NetworkDeviceImplQueueRxSpace(spaces, std::size(spaces));
-  ASSERT_TRUE(Parent().GetLatestChild()->AsyncRemoveCalled());
-  ASSERT_OK(mock_ddk::ReleaseFlaggedDevices(&Parent()));
-  ASSERT_EQ(Parent().child_count(), 0u);
+  NetDeviceClient().QueueRxSpace(spaces, std::size(spaces));
+  WaitUntilDriverIsNotRunning();
 }
 
 INSTANTIATE_TEST_SUITE_P(
@@ -619,24 +760,23 @@ TEST_F(NetdeviceMigrationDefaultSetupTest, EthernetIfcRecv) {
                           testing::FieldsAre(kSpaceId, 0, static_cast<uint32_t>(std::size(rcvd)))),
                       std::size(spaces))),
                   std::size(spaces)));
-  Device().EthernetIfcRecv(rcvd, sizeof(rcvd), 0);
-  netdevice_migration::NetdeviceMigrationTestHelper helper(Device());
-  helper.WithVmoStore<void>([&rcvd](auto& vmo_store) {
-    auto* vmo = vmo_store.GetVmo(kVmoId);
-    cpp20::span<uint8_t> data = vmo->data();
-    data = data.subspan(0, std::size(rcvd));
-    for (size_t i = 0; i < std::size(rcvd); ++i) {
-      EXPECT_EQ(data[i], rcvd[i]);
-    }
+  EthernetIfcClient().Recv(rcvd, sizeof(rcvd), 0);
+  RunWithHelper([&](netdevice_migration::NetdeviceMigrationTestHelper& helper) {
+    helper.WithVmoStore<void>([&rcvd](auto& vmo_store) {
+      auto* vmo = vmo_store.GetVmo(kVmoId);
+      cpp20::span<uint8_t> data = vmo->data();
+      data = data.subspan(0, std::size(rcvd));
+      for (size_t i = 0; i < std::size(rcvd); ++i) {
+        EXPECT_EQ(data[i], rcvd[i]);
+      }
+    });
   });
 }
 
-TEST_F(NetdeviceMigrationDefaultSetupTest, EthernetIfcRecvNoBuffers) {
-  ASSERT_NO_FATAL_FAILURE(NetdevImplPrepareVmo(kVmoId));
-  ASSERT_NO_FATAL_FAILURE(NetdevImplStart(ZX_OK));
+TEST_F(NetdeviceMigrationEthernetSetupTest, EthernetIfcRecvNoBuffers) {
   constexpr uint8_t bytes[] = {0, 1, 2, 3, 4, 5, 6, 7};
   // CompleteRx will not be called so do not set mock expectation.
-  Device().EthernetIfcRecv(bytes, sizeof(bytes), 0);
+  EthernetIfcClient().Recv(bytes, sizeof(bytes), 0);
 }
 
 struct RecvFailedPreconditionInput {
@@ -667,14 +807,10 @@ TEST_P(RecvFailedPreconditionTest, RemovesDriver) {
   };
   QueueRxSpace(spaces, std::size(spaces));
   uint8_t bytes[input.buf_len];
-  auto* device = TakeDevice();
-  ASSERT_OK(device->DeviceAdd());
-  ASSERT_EQ(Parent().child_count(), 1u);
+  AssertDriverIsRunning();
   // CompleteRx will not be called so do not set mock expectation.
-  device->EthernetIfcRecv(bytes, input.buf_len, 0);
-  ASSERT_TRUE(Parent().GetLatestChild()->AsyncRemoveCalled());
-  ASSERT_OK(mock_ddk::ReleaseFlaggedDevices(&Parent()));
-  ASSERT_EQ(Parent().child_count(), 0u);
+  EthernetIfcClient().Recv(bytes, input.buf_len, 0);
+  WaitUntilDriverIsNotRunning();
 }
 
 INSTANTIATE_TEST_SUITE_P(
@@ -721,12 +857,14 @@ TEST_P(FillTxQueueTest, Succeeds) {
   zx::vmo vmo;
   ASSERT_OK(zx::vmo::create(kVmoSize, 0, &vmo));
   ASSERT_NO_FATAL_FAILURE(NetdevImplPrepareVmo(kVmoId, std::move(vmo)));
-  netdevice_migration::NetdeviceMigrationTestHelper helper(Device());
-  const uint8_t* vmo_start =
-      helper.WithVmoStore<uint8_t*>([](netdevice_migration::NetdeviceMigrationVmoStore& vmo_store) {
-        auto* vmo = vmo_store.GetVmo(kVmoId);
-        return vmo->data().data();
-      });
+  const uint8_t* vmo_start = nullptr;
+  RunWithHelper([&](netdevice_migration::NetdeviceMigrationTestHelper& helper) {
+    vmo_start = helper.WithVmoStore<uint8_t*>(
+        [](netdevice_migration::NetdeviceMigrationVmoStore& vmo_store) {
+          auto* vmo = vmo_store.GetVmo(kVmoId);
+          return vmo->data().data();
+        });
+  });
   ASSERT_NO_FATAL_FAILURE(NetdevImplStart(ZX_OK));
   for (uint32_t call = 0; call < input.tx_queue_calls; ++call) {
     tx_buffer_t buffers[input.buffer_count];
@@ -743,25 +881,27 @@ TEST_P(FillTxQueueTest, Succeeds) {
       void* cookie;
     };
     std::vector<CallbackRecord> callbacks;
-    EXPECT_CALL(
-        MockEthernet(),
-        EthernetImplQueueTx(0,
-                            testing::Pointee(testing::FieldsAre(
-                                testing::A<const uint8_t*>(), ETH_MTU_SIZE,
-                                testing::A<zx_paddr_t>(), static_cast<short>(0u), 0)),
-                            testing::An<ethernet_impl_queue_tx_callback>(), testing::A<void*>()))
-        .WillRepeatedly([vmo_start, ool, &callbacks](uint32_t options, ethernet_netbuf_t* netbuf,
-                                                     ethernet_impl_queue_tx_callback callback,
-                                                     void* cookie) {
-          EXPECT_EQ(netbuf->data_buffer, vmo_start);
-          EXPECT_EQ(netbuf->data_size, ETH_MTU_SIZE);
-          EXPECT_EQ(netbuf->phys, 0ul);
-          if (ool.enabled) {
-            callbacks.push_back({.netbuf = netbuf, .cb = callback, .cookie = cookie});
-          } else {
-            callback(cookie, ZX_OK, netbuf);
-          }
-        });
+    RunWithMockEthernet([&](MockEthernetImpl& mock_ethernet) {
+      EXPECT_CALL(
+          mock_ethernet,
+          EthernetImplQueueTx(0,
+                              testing::Pointee(testing::FieldsAre(
+                                  testing::A<const uint8_t*>(), ETH_MTU_SIZE,
+                                  testing::A<zx_paddr_t>(), static_cast<short>(0u), 0)),
+                              testing::An<ethernet_impl_queue_tx_callback>(), testing::A<void*>()))
+          .WillRepeatedly([vmo_start, ool, &callbacks](uint32_t options, ethernet_netbuf_t* netbuf,
+                                                       ethernet_impl_queue_tx_callback callback,
+                                                       void* cookie) {
+            EXPECT_EQ(netbuf->data_buffer, vmo_start);
+            EXPECT_EQ(netbuf->data_size, ETH_MTU_SIZE);
+            EXPECT_EQ(netbuf->phys, 0ul);
+            if (ool.enabled) {
+              callbacks.push_back({.netbuf = netbuf, .cb = callback, .cookie = cookie});
+            } else {
+              callback(cookie, ZX_OK, netbuf);
+            }
+          });
+    });
     for (uint32_t buf_id = 0; buf_id < input.buffer_count; ++buf_id) {
       EXPECT_CALL(MockNetworkDevice(),
                   NetworkDeviceIfcCompleteTx(
@@ -770,7 +910,7 @@ TEST_P(FillTxQueueTest, Succeeds) {
                       1))
           .Times(1);
     }
-    Device().NetworkDeviceImplQueueTx(buffers, input.buffer_count);
+    NetDeviceClient().QueueTx(buffers, input.buffer_count);
     if (ool.enabled) {
       for (CallbackRecord& callback : callbacks) {
         callback.cb(callback.cookie, ZX_OK, callback.netbuf);
@@ -814,7 +954,7 @@ TEST_F(NetdeviceMigrationDefaultSetupTest, NetworkDeviceImplQueueTxNotStarted) {
               NetworkDeviceIfcCompleteTx(
                   testing::Pointee(testing::FieldsAre(kBufId, ZX_ERR_UNAVAILABLE)), 1))
       .Times(1);
-  Device().NetworkDeviceImplQueueTx(&buf, 1);
+  NetDeviceClient().QueueTx(&buf, 1);
 }
 
 TEST_F(NetdeviceMigrationEthernetDmaSetupTest, NetworkDeviceImplQueueTxOutOfRangeOfVmo) {
@@ -827,7 +967,7 @@ TEST_F(NetdeviceMigrationEthernetDmaSetupTest, NetworkDeviceImplQueueTxOutOfRang
       MockNetworkDevice(),
       NetworkDeviceIfcCompleteTx(testing::Pointee(testing::FieldsAre(kBufId, ZX_ERR_INTERNAL)), 1))
       .Times(1);
-  Device().NetworkDeviceImplQueueTx(&buf, 1);
+  NetDeviceClient().QueueTx(&buf, 1);
 }
 
 struct QueueTxFailedPreconditionInput {
@@ -846,9 +986,7 @@ TEST_P(QueueTxFailedPreconditionTest, RemovesDriver) {
   QueueTxFailedPreconditionInput param = GetParam();
   ASSERT_NO_FATAL_FAILURE(NetdevImplPrepareVmo(kVmoId));
   ASSERT_NO_FATAL_FAILURE(NetdevImplStart(ZX_OK));
-  auto* device = TakeDevice();
-  ASSERT_OK(device->DeviceAdd());
-  ASSERT_EQ(Parent().child_count(), 1u);
+  AssertDriverIsRunning();
   std::vector<buffer_region_t> regions;
   for (size_t i = 0; i < param.parts; ++i) {
     regions.push_back({.vmo = param.vmo_id, .length = param.buf_len});
@@ -858,10 +996,8 @@ TEST_P(QueueTxFailedPreconditionTest, RemovesDriver) {
   for (size_t i = 0; i < param.bufs; ++i) {
     buffers.push_back({.id = kBufId, .data_list = regions.data(), .data_count = regions.size()});
   }
-  device->NetworkDeviceImplQueueTx(buffers.data(), buffers.size());
-  ASSERT_TRUE(Parent().GetLatestChild()->AsyncRemoveCalled());
-  ASSERT_OK(mock_ddk::ReleaseFlaggedDevices(&Parent()));
-  ASSERT_EQ(Parent().child_count(), 0u);
+  NetDeviceClient().QueueTx(buffers.data(), buffers.size());
+  WaitUntilDriverIsNotRunning();
 }
 
 INSTANTIATE_TEST_SUITE_P(
@@ -896,7 +1032,7 @@ INSTANTIATE_TEST_SUITE_P(
 
 TEST_F(NetdeviceMigrationDefaultSetupTest, MacAddrGetAddress) {
   mac_address_t out;
-  Device().MacAddrGetAddress(&out);
+  CreateMacAddrClient().GetAddress(&out);
   uint8_t expected[] = {0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF};
   for (size_t i = 0; i < MAC_SIZE; ++i) {
     EXPECT_EQ(out.octets[i], expected[i]);
@@ -905,7 +1041,7 @@ TEST_F(NetdeviceMigrationDefaultSetupTest, MacAddrGetAddress) {
 
 TEST_F(NetdeviceMigrationDefaultSetupTest, MacAddrGetFeatures) {
   features_t out;
-  Device().MacAddrGetFeatures(&out);
+  CreateMacAddrClient().GetFeatures(&out);
   EXPECT_EQ(out.multicast_filter_count,
             netdevice_migration::NetdeviceMigration::kMulticastFilterMax);
   EXPECT_EQ(out.supported_modes,
@@ -924,13 +1060,9 @@ class MacAddrSetModeFailedPreconditionTest
 
 TEST_P(MacAddrSetModeFailedPreconditionTest, RemovesDriver) {
   MacAddrSetModeFailedPreconditionInput param = GetParam();
-  auto* device = TakeDevice();
-  ASSERT_OK(device->DeviceAdd());
-  ASSERT_EQ(Parent().child_count(), 1u);
-  device->MacAddrSetMode(param.mode, nullptr, param.mcast_macs);
-  ASSERT_TRUE(Parent().GetLatestChild()->AsyncRemoveCalled());
-  ASSERT_OK(mock_ddk::ReleaseFlaggedDevices(&Parent()));
-  ASSERT_EQ(Parent().child_count(), 0u);
+  AssertDriverIsRunning();
+  CreateMacAddrClient().SetMode(param.mode, nullptr, param.mcast_macs);
+  WaitUntilDriverIsNotRunning();
 }
 
 INSTANTIATE_TEST_SUITE_P(
@@ -953,11 +1085,15 @@ INSTANTIATE_TEST_SUITE_P(
     });
 
 TEST_F(NetdeviceMigrationDefaultSetupTest, MacAddrSetMode) {
-  EXPECT_CALL(MockEthernet(),
-              EthernetImplSetParam(ETHERNET_SETPARAM_MULTICAST_PROMISC, 0, nullptr, 0))
-      .WillOnce([](uint32_t p, int32_t v, const uint8_t* data, size_t data_len) { return ZX_OK; });
-  EXPECT_CALL(MockEthernet(), EthernetImplSetParam(ETHERNET_SETPARAM_PROMISC, 0, nullptr, 0))
-      .WillOnce([](uint32_t p, int32_t v, const uint8_t* data, size_t data_len) { return ZX_OK; });
+  RunWithMockEthernet([&](MockEthernetImpl& mock_ethernet) {
+    EXPECT_CALL(mock_ethernet,
+                EthernetImplSetParam(ETHERNET_SETPARAM_MULTICAST_PROMISC, 0, nullptr, 0))
+        .WillOnce(
+            [](uint32_t p, int32_t v, const uint8_t* data, size_t data_len) { return ZX_OK; });
+    EXPECT_CALL(mock_ethernet, EthernetImplSetParam(ETHERNET_SETPARAM_PROMISC, 0, nullptr, 0))
+        .WillOnce(
+            [](uint32_t p, int32_t v, const uint8_t* data, size_t data_len) { return ZX_OK; });
+  });
   std::array<mac_address_t, netdevice_migration::NetdeviceMigration::kMulticastFilterMax>
       mac_filter;
   for (size_t i = 0; i < mac_filter.size(); ++i) {
@@ -974,43 +1110,57 @@ TEST_F(NetdeviceMigrationDefaultSetupTest, MacAddrSetMode) {
     }
     return true;
   };
-  EXPECT_CALL(
-      MockEthernet(),
-      EthernetImplSetParam(ETHERNET_SETPARAM_MULTICAST_FILTER,
-                           netdevice_migration::NetdeviceMigration::kMulticastFilterMax,
-                           testing::ResultOf(mcast_macs_match, true), mac_filter.size() * MAC_SIZE))
-      .WillOnce([](uint32_t p, int32_t v, const uint8_t* data, size_t data_len) { return ZX_OK; });
-  Device().MacAddrSetMode(MAC_FILTER_MODE_MULTICAST_FILTER, mac_filter.data(),
+  ddk::MacAddrProtocolClient mac_addr_client = CreateMacAddrClient();
+  RunWithMockEthernet([&](MockEthernetImpl& mock_ethernet) {
+    EXPECT_CALL(mock_ethernet,
+                EthernetImplSetParam(ETHERNET_SETPARAM_MULTICAST_FILTER,
+                                     netdevice_migration::NetdeviceMigration::kMulticastFilterMax,
+                                     testing::ResultOf(mcast_macs_match, true),
+                                     mac_filter.size() * MAC_SIZE))
+        .WillOnce(
+            [](uint32_t p, int32_t v, const uint8_t* data, size_t data_len) { return ZX_OK; });
+  });
+  mac_addr_client.SetMode(MAC_FILTER_MODE_MULTICAST_FILTER, mac_filter.data(),
                           netdevice_migration::NetdeviceMigration::kMulticastFilterMax);
 
-  EXPECT_CALL(MockEthernet(), EthernetImplSetParam(ETHERNET_SETPARAM_PROMISC, 0, nullptr, 0))
-      .WillOnce([](uint32_t p, int32_t v, const uint8_t* data, size_t data_len) { return ZX_OK; });
-  EXPECT_CALL(MockEthernet(),
-              EthernetImplSetParam(ETHERNET_SETPARAM_MULTICAST_PROMISC, 1, nullptr, 0))
-      .WillOnce([](uint32_t p, int32_t v, const uint8_t* data, size_t data_len) { return ZX_OK; });
-  Device().MacAddrSetMode(MAC_FILTER_MODE_MULTICAST_PROMISCUOUS, nullptr, 0u);
+  RunWithMockEthernet([&](MockEthernetImpl& mock_ethernet) {
+    EXPECT_CALL(mock_ethernet, EthernetImplSetParam(ETHERNET_SETPARAM_PROMISC, 0, nullptr, 0))
+        .WillOnce(
+            [](uint32_t p, int32_t v, const uint8_t* data, size_t data_len) { return ZX_OK; });
+    EXPECT_CALL(mock_ethernet,
+                EthernetImplSetParam(ETHERNET_SETPARAM_MULTICAST_PROMISC, 1, nullptr, 0))
+        .WillOnce(
+            [](uint32_t p, int32_t v, const uint8_t* data, size_t data_len) { return ZX_OK; });
+  });
+  mac_addr_client.SetMode(MAC_FILTER_MODE_MULTICAST_PROMISCUOUS, nullptr, 0u);
 
-  EXPECT_CALL(MockEthernet(), EthernetImplSetParam(ETHERNET_SETPARAM_PROMISC, 1, nullptr, 0))
-      .WillOnce([](uint32_t p, int32_t v, const uint8_t* data, size_t data_len) { return ZX_OK; });
-  Device().MacAddrSetMode(MAC_FILTER_MODE_PROMISCUOUS, nullptr, 0u);
+  RunWithMockEthernet([&](MockEthernetImpl& mock_ethernet) {
+    EXPECT_CALL(mock_ethernet, EthernetImplSetParam(ETHERNET_SETPARAM_PROMISC, 1, nullptr, 0))
+        .WillOnce(
+            [](uint32_t p, int32_t v, const uint8_t* data, size_t data_len) { return ZX_OK; });
+  });
+  mac_addr_client.SetMode(MAC_FILTER_MODE_PROMISCUOUS, nullptr, 0u);
 }
 
 TEST_F(NetdeviceMigrationDefaultSetupTest, GetMac) {
   mac_addr_protocol_t* mac;
-  Device().NetworkPortGetMac(&mac);
+  PortClient().GetMac(&mac);
   ASSERT_NE(mac, nullptr);
-  netdevice_migration::NetdeviceMigrationTestHelper helper(Device());
-  mac_address_t addr = {};
-  mac->ops->get_address(mac->ctx, &addr);
-  for (size_t i = 0; i < MAC_SIZE; ++i) {
-    EXPECT_EQ(addr.octets[i], helper.Mac()[i]);
-  }
+  RunWithHelper([&](netdevice_migration::NetdeviceMigrationTestHelper& helper) {
+    mac_address_t addr = {};
+    mac->ops->get_address(mac->ctx, &addr);
+    for (size_t i = 0; i < MAC_SIZE; ++i) {
+      EXPECT_EQ(addr.octets[i], helper.Mac()[i]);
+    }
+  });
 }
 
 TEST_F(NetdeviceMigrationDefaultSetupTest, NetworkDeviceImplProto) {
-  EXPECT_EQ(Device().ddk_proto_id_, ZX_PROTOCOL_NETWORK_DEVICE_IMPL);
-  netdevice_migration::NetdeviceMigrationTestHelper helper(Device());
-  EXPECT_EQ(Device().ddk_proto_ops_, &helper.NetworkDeviceImplProtoOps());
+  RunWithDriver([&](netdevice_migration::NetdeviceMigration& driver) {
+    EXPECT_EQ(driver.ddk_proto_id_, ZX_PROTOCOL_NETWORK_DEVICE_IMPL);
+    netdevice_migration::NetdeviceMigrationTestHelper helper(driver);
+    EXPECT_EQ(driver.ddk_proto_ops_, &helper.NetworkDeviceImplProtoOps());
+  });
 }
 
 TEST_F(NetdeviceMigrationDefaultSetupTest, ReturnsRxBuffersOnStop) {
@@ -1026,15 +1176,18 @@ TEST_F(NetdeviceMigrationDefaultSetupTest, ReturnsRxBuffersOnStop) {
       },
   };
   ASSERT_NO_FATAL_FAILURE(NetdevImplStart(ZX_OK));
-  netdevice_migration::NetdeviceMigrationTestHelper helper(Device());
-  helper.WithRxSpaces<void>([](auto& rx_spaces) { EXPECT_TRUE(rx_spaces.empty()); });
-  QueueRxSpace(spaces, std::size(spaces));
-  helper.WithRxSpaces<void>([&spaces, &kBufId](auto& rx_spaces) {
-    ASSERT_EQ(rx_spaces.size(), std::size(spaces));
-    EXPECT_EQ(rx_spaces.front().id, kBufId);
+  RunWithHelper([&](netdevice_migration::NetdeviceMigrationTestHelper& helper) {
+    helper.WithRxSpaces<void>([](auto& rx_spaces) { EXPECT_TRUE(rx_spaces.empty()); });
+    QueueRxSpace(spaces, std::size(spaces));
+    helper.WithRxSpaces<void>([&spaces, &kBufId](auto& rx_spaces) {
+      ASSERT_EQ(rx_spaces.size(), std::size(spaces));
+      EXPECT_EQ(rx_spaces.front().id, kBufId);
+    });
   });
   bool callback_called = false;
-  EXPECT_CALL(MockEthernet(), EthernetImplStop()).Times(1);
+  RunWithMockEthernet([&](MockEthernetImpl& mock_ethernet) {
+    EXPECT_CALL(mock_ethernet, EthernetImplStop()).Times(1);
+  });
   EXPECT_CALL(MockNetworkDevice(), NetworkDeviceIfcCompleteRx)
       .WillOnce([&kBufId](const rx_buffer_t* buffers, size_t count) {
         ASSERT_EQ(count, 1u);
@@ -1043,8 +1196,7 @@ TEST_F(NetdeviceMigrationDefaultSetupTest, ReturnsRxBuffersOnStop) {
         const rx_buffer_part_t& part = buffer.data_list[0];
         EXPECT_EQ(part.id, kBufId);
       });
-  Device().NetworkDeviceImplStop([](void* ctx) { *static_cast<bool*>(ctx) = true; },
-                                 &callback_called);
+  NetDeviceClient().Stop([](void* ctx) { *static_cast<bool*>(ctx) = true; }, &callback_called);
   EXPECT_TRUE(callback_called);
 }
 
@@ -1056,17 +1208,21 @@ TEST_F(NetdeviceMigrationDefaultSetupTest, ReturnsTxBuffersOnStop) {
   tx_buffer_t buf = {.id = kBufId, .data_list = &region, .data_count = 1};
 
   fit::callback<void()> complete_tx_callback;
-  EXPECT_CALL(MockEthernet(), EthernetImplQueueTx)
-      .WillOnce([&complete_tx_callback](uint32_t options, ethernet_netbuf_t* netbuf,
-                                        ethernet_impl_queue_tx_callback callback, void* cookie) {
-        complete_tx_callback = [callback, cookie, netbuf]() {
-          callback(cookie, ZX_ERR_CANCELED, netbuf);
-        };
-      });
-  Device().NetworkDeviceImplQueueTx(&buf, 1);
+  RunWithMockEthernet([&](MockEthernetImpl& mock_ethernet) {
+    EXPECT_CALL(mock_ethernet, EthernetImplQueueTx)
+        .WillOnce([&complete_tx_callback](uint32_t options, ethernet_netbuf_t* netbuf,
+                                          ethernet_impl_queue_tx_callback callback, void* cookie) {
+          complete_tx_callback = [callback, cookie, netbuf]() {
+            callback(cookie, ZX_ERR_CANCELED, netbuf);
+          };
+        });
+  });
+  NetDeviceClient().QueueTx(&buf, 1);
 
   bool callback_called = false;
-  EXPECT_CALL(MockEthernet(), EthernetImplStop()).Times(1);
+  RunWithMockEthernet([&](MockEthernetImpl& mock_ethernet) {
+    EXPECT_CALL(mock_ethernet, EthernetImplStop()).Times(1);
+  });
   EXPECT_CALL(MockNetworkDevice(), NetworkDeviceIfcCompleteTx)
       .WillOnce([&kBufId](const tx_result_t* buffers, size_t count) {
         ASSERT_EQ(count, 1u);
@@ -1074,8 +1230,7 @@ TEST_F(NetdeviceMigrationDefaultSetupTest, ReturnsTxBuffersOnStop) {
         EXPECT_EQ(result.id, kBufId);
         EXPECT_STATUS(result.status, ZX_ERR_CANCELED);
       });
-  Device().NetworkDeviceImplStop([](void* ctx) { *static_cast<bool*>(ctx) = true; },
-                                 &callback_called);
+  NetDeviceClient().Stop([](void* ctx) { *static_cast<bool*>(ctx) = true; }, &callback_called);
   EXPECT_TRUE(callback_called);
   if (complete_tx_callback) {
     complete_tx_callback();
