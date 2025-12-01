@@ -13,7 +13,7 @@ use regex::{Regex, RegexSetBuilder};
 use std::fs::File;
 use std::path::PathBuf;
 use storage_benchmarks::directory_benchmarks::{
-    DirectoryTreeStructure, GitStatus, OpenDeeplyNestedFile, OpenFile, StatPath,
+    CreateFile, DirectoryTreeStructure, GitStatus, OpenDeeplyNestedFile, OpenFile, StatPath,
     WalkDirectoryTreeCold, WalkDirectoryTreeWarm,
 };
 use storage_benchmarks::io_benchmarks::{
@@ -110,6 +110,7 @@ fn add_directory_benchmarks(benchmark_set: &mut BenchmarkSet) {
         benchmark_set,
         [
             StatPath::new(),
+            CreateFile::new(),
             OpenFile::new(),
             OpenDeeplyNestedFile::new(),
             WalkDirectoryTreeWarm::new(dts, 20),

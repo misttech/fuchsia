@@ -39,6 +39,9 @@ directories deep and then opening it from the root of the filesystem. When compa
 `OpenFile` benchmark, the `OpenDeeplyNestedFile` captures how long it takes the filesystem to
 internally traverse directories.
 
+### CreateFile Benchmarks
+The `CreateFile` benchmark measures how long it takes for a filesystem to create a file.
+
 ### StatPath Benchmark
 The `StatPath` benchmark measure how long it takes to call `stat` on a path to a file.
 

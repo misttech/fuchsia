@@ -1,4 +1,8 @@
 [no-summarize-metrics]
+fuchsia.storage: CreateFile/f2fs
+fuchsia.storage: CreateFile/fxfs
+fuchsia.storage: CreateFile/memfs
+fuchsia.storage: CreateFile/minfs
 fuchsia.storage: GitStatus/f2fs
 fuchsia.storage: GitStatus/fxfs
 fuchsia.storage: GitStatus/memfs

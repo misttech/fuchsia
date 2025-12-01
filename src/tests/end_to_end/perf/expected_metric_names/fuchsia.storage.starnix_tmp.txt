@@ -1,4 +1,5 @@
 [no-summarize-metrics]
+fuchsia.storage: CreateFile/starnix_tmp
 fuchsia.storage: GitStatus/starnix_tmp
 fuchsia.storage: OpenDeeplyNestedFile/starnix_tmp
 fuchsia.storage: OpenFile/starnix_tmp

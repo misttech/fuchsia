@@ -277,6 +277,47 @@ impl<T: Filesystem> Benchmark<T> for OpenFile {
     }
 }
 
+/// A benchmark that measures how long it takes to create a file.
+#[derive(Clone)]
+pub struct CreateFile {
+    file_count: u64,
+}
+
+impl CreateFile {
+    pub fn new() -> Self {
+        Self { file_count: 100 }
+    }
+}
+
+#[async_trait]
+impl<T: Filesystem> Benchmark<T> for CreateFile {
+    async fn run(&self, fs: &mut T) -> Vec<OperationDuration> {
+        storage_trace::duration!(c"benchmark", c"CreateFile");
+
+        let root = fs.benchmark_dir().to_path_buf();
+        let root_fd =
+            open_path(&path_buf_to_c_string(root), libc::O_DIRECTORY | libc::O_RDONLY).unwrap();
+
+        let mut durations = Vec::with_capacity(self.file_count as usize);
+        for i in 0..self.file_count {
+            let path = path_buf_to_c_string(file_name(i));
+            // Pull the file outside of the trace so it doesn't capture the close call.
+            let _file = {
+                storage_trace::duration!(c"benchmark", c"create", "file" => i);
+                let timer = OperationTimer::start();
+                let file = open_path_at(&root_fd, &path, libc::O_CREAT | libc::O_RDWR);
+                durations.push(timer.stop());
+                file
+            };
+        }
+        durations
+    }
+
+    fn name(&self) -> String {
+        "CreateFile".to_string()
+    }
+}
+
 /// A benchmark that measures how long it takes to open a file from a path that contains multiple
 /// directories. A distinct path and file is used for each iteration.
 #[derive(Clone)]
@@ -637,6 +678,16 @@ mod tests {
     async fn open_file_test() {
         let mut test_fs = Box::new(TestFilesystem::new());
         let benchmark = OpenFile { file_count: 5 };
+        let results = benchmark.run(test_fs.as_mut()).await;
+        assert_eq!(results.len(), 5);
+        assert_eq!(test_fs.clear_cache_count().await, 0);
+        test_fs.shutdown().await;
+    }
+
+    #[fuchsia::test]
+    async fn create_file_test() {
+        let mut test_fs = Box::new(TestFilesystem::new());
+        let benchmark = CreateFile { file_count: 5 };
         let results = benchmark.run(test_fs.as_mut()).await;
         assert_eq!(results.len(), 5);
         assert_eq!(test_fs.clear_cache_count().await, 0);

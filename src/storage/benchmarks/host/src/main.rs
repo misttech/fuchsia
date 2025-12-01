@@ -7,7 +7,7 @@ use std::fs::File;
 use std::path::PathBuf;
 use storage_benchmarks::block_device::PanickingBlockDeviceFactory;
 use storage_benchmarks::directory_benchmarks::{
-    DirectoryTreeStructure, GitStatus, OpenDeeplyNestedFile, OpenFile, StatPath,
+    CreateFile, DirectoryTreeStructure, GitStatus, OpenDeeplyNestedFile, OpenFile, StatPath,
     WalkDirectoryTreeWarm,
 };
 use storage_benchmarks::filesystem::MountedFilesystem;
@@ -60,6 +60,7 @@ fn build_benchmark_set(fs: MountedFilesystem) -> BenchmarkSet {
             WriteSequentialCold::new(OP_SIZE, OP_COUNT),
             WriteRandomCold::new(OP_SIZE, OP_COUNT),
             StatPath::new(),
+            CreateFile::new(),
             OpenFile::new(),
             OpenDeeplyNestedFile::new(),
             GitStatus::new(),
