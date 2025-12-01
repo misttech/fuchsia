@@ -9,6 +9,7 @@
 #include <string>
 
 #include "src/developer/forensics/feedback/annotations/types.h"
+#include "src/developer/forensics/feedback/config.h"
 #include "src/developer/forensics/feedback/reboot_log/reboot_log.h"
 #include "src/developer/forensics/utils/errors.h"
 
@@ -16,7 +17,8 @@ namespace forensics::feedback {
 
 // Gets annotations that are available immediately and synchronously when the component starts and
 // never change while it is running.
-Annotations GetStartupAnnotations(const RebootLog& reboot_log);
+Annotations GetStartupAnnotations(const RebootLog& reboot_log,
+                                  SpontaneousRebootReason spontaneous_reboot_reason);
 
 }  // namespace forensics::feedback
 

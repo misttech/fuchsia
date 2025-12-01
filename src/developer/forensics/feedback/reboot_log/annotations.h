@@ -5,13 +5,15 @@
 #ifndef SRC_DEVELOPER_FORENSICS_FEEDBACK_REBOOT_LOG_ANNOTATIONS_H_
 #define SRC_DEVELOPER_FORENSICS_FEEDBACK_REBOOT_LOG_ANNOTATIONS_H_
 
+#include "src/developer/forensics/feedback/config.h"
 #include "src/developer/forensics/feedback/reboot_log/reboot_log.h"
 #include "src/developer/forensics/utils/errors.h"
 
 namespace forensics::feedback {
 
 // Utilities for converting a RebootLog into annotations for snapshots.
-std::string LastRebootReasonAnnotation(const FinalShutdownInfo& final_shutdown_info);
+std::string LastRebootReasonAnnotation(const FinalShutdownInfo& final_shutdown_info,
+                                       SpontaneousRebootReason spontaneous_reboot_reason);
 ErrorOrString LastRebootUptimeAnnotation(const RebootLog& reboot_log);
 ErrorOrString LastRebootRuntimeAnnotation(const RebootLog& reboot_log);
 ErrorOrString LastRebootTotalSuspendedTimeAnnotation(const RebootLog& reboot_log);

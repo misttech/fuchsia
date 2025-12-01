@@ -120,7 +120,8 @@ int main() {
     delete_previous_boot_logs_time = zx::hour(24);
   }
 
-  const auto startup_annotations = GetStartupAnnotations(reboot_log);
+  const auto startup_annotations =
+      GetStartupAnnotations(reboot_log, feedback_config->spontaneous_reboot_reason);
   zx::channel lifecycle_channel(zx_take_startup_handle(PA_LIFECYCLE));
 
   // Create copy of dlog to prevent use-after-move.

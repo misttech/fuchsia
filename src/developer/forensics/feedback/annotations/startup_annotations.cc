@@ -94,7 +94,8 @@ std::string NumCPUs() { return std::to_string(zx_system_get_num_cpus()); }
 
 }  // namespace
 
-Annotations GetStartupAnnotations(const RebootLog& reboot_log) {
+Annotations GetStartupAnnotations(const RebootLog& reboot_log,
+                                  const SpontaneousRebootReason spontaneous_reboot_reason) {
   return {
       {kBuildBoardKey, ReadAnnotation(kBuildBoardPath)},
       {kBuildProductKey, ReadAnnotation(kBuildProductPath)},
@@ -113,7 +114,8 @@ Annotations GetStartupAnnotations(const RebootLog& reboot_log) {
       {kSystemBootIdCurrentKey, ReadAnnotation(kCurrentBootIdPath)},
       {kSystemBootIdPreviousKey, ReadAnnotation(kPreviousBootIdPath)},
       {kSystemLastRebootReasonKey,
-       ErrorOrString(LastRebootReasonAnnotation(reboot_log.GetFinalShutdownInfo()))},
+       ErrorOrString(LastRebootReasonAnnotation(reboot_log.GetFinalShutdownInfo(),
+                                                spontaneous_reboot_reason))},
       {kSystemLastRebootRuntimeKey, LastRebootRuntimeAnnotation(reboot_log)},
       {kSystemLastRebootTotalSuspendedTimeKey, LastRebootTotalSuspendedTimeAnnotation(reboot_log)},
       {kSystemLastRebootUptimeKey, LastRebootUptimeAnnotation(reboot_log)},

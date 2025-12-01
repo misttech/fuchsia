@@ -8,8 +8,23 @@
 #include "src/developer/forensics/utils/time.h"
 
 namespace forensics::feedback {
+namespace {
 
-std::string LastRebootReasonAnnotation(const FinalShutdownInfo& final_shutdown_info) {
+std::string GetSpontaneousRebootReason(const SpontaneousRebootReason spontaneous_reboot_reason) {
+  switch (spontaneous_reboot_reason) {
+    case SpontaneousRebootReason::kSpontaneous:
+      return "spontaneous";
+    case SpontaneousRebootReason::kBriefPowerLoss:
+      return "brief loss of power";
+    case SpontaneousRebootReason::kHardReset:
+      return "hard reset";
+  }
+}
+
+}  // namespace
+
+std::string LastRebootReasonAnnotation(const FinalShutdownInfo& final_shutdown_info,
+                                       const SpontaneousRebootReason spontaneous_reboot_reason) {
   using FuchsiaRebootReason = fuchsia::feedback::RebootReason;
 
   // Define a generic value to use in case conversion fails or the converted value fails to match a
@@ -29,7 +44,7 @@ std::string LastRebootReasonAnnotation(const FinalShutdownInfo& final_shutdown_i
     case FuchsiaRebootReason::COLD:
       return "cold";
     case FuchsiaRebootReason::BRIEF_POWER_LOSS:
-      return "brief loss of power";
+      return GetSpontaneousRebootReason(spontaneous_reboot_reason);
     case FuchsiaRebootReason::BROWNOUT:
       return "brownout";
     case FuchsiaRebootReason::KERNEL_PANIC:

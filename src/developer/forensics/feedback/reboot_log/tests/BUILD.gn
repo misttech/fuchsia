@@ -9,6 +9,19 @@ import("//build/testing/cc_test_executable.gni")
 ###############################################################################
 # EXECUTABLES
 ###############################################################################
+cc_test_executable("annotations_unittest_exe") {
+  testonly = true
+
+  sources = [ "annotations_unittest.cc" ]
+
+  deps = [
+    "//src/developer/forensics/feedback/reboot_log",
+    "//src/lib/fxl/test:gtest_main",
+    "//third_party/googletest:gmock",
+    "//third_party/googletest:gtest",
+  ]
+}
+
 cc_test_executable("final_shutdown_info_unittest_exe") {
   testonly = true
 
@@ -66,6 +79,10 @@ cc_test_executable("reboot_log_unittest_exe") {
 ###############################################################################
 # COMPONENTS
 ###############################################################################
+fuchsia_unittest_component("annotations_unittest") {
+  deps = [ ":annotations_unittest_exe" ]
+}
+
 fuchsia_unittest_component("final_shutdown_info_unittest") {
   deps = [
     ":final_shutdown_info_unittest_exe",
@@ -99,6 +116,7 @@ fuchsia_test_package("reboot-log-tests") {
     }
   }
   test_components = [
+    ":annotations_unittest",
     ":final_shutdown_info_unittest",
     ":graceful_shutdown_info_unittest",
     ":reboot_log_unittest",

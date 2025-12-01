@@ -53,7 +53,8 @@ TEST_F(StartupAnnotationsTest, Keys) {
                              /*dlog=*/std::nullopt,
                              /*last_boot_uptime=*/std::nullopt,
                              /*last_boot_runtime=*/std::nullopt, /*critical_process=*/std::nullopt);
-  const auto startup_annotations = GetStartupAnnotations(reboot_log);
+  const auto startup_annotations =
+      GetStartupAnnotations(reboot_log, SpontaneousRebootReason::kSpontaneous);
 
   EXPECT_THAT(startup_annotations, UnorderedElementsAreArray({
                                        Key(kBuildBoardKey),
@@ -112,7 +113,8 @@ TEST_F(StartupAnnotationsTest, Values_FilesPresent) {
                              /*last_boot_uptime=*/std::nullopt,
                              /*last_boot_runtime=*/std::nullopt,
                              /*critical_process=*/std::nullopt);
-  const auto startup_annotations = GetStartupAnnotations(reboot_log);
+  const auto startup_annotations =
+      GetStartupAnnotations(reboot_log, SpontaneousRebootReason::kSpontaneous);
 
   EXPECT_THAT(
       startup_annotations,
@@ -131,7 +133,8 @@ TEST_F(StartupAnnotationsTest, Values_FilesPresent) {
           Pair(kSystemBootIdCurrentKey, ErrorOrString("current-boot-id")),
           Pair(kSystemBootIdPreviousKey, ErrorOrString("previous-boot-id")),
           Pair(kSystemLastRebootReasonKey,
-               ErrorOrString(LastRebootReasonAnnotation(reboot_log.GetFinalShutdownInfo()))),
+               ErrorOrString(LastRebootReasonAnnotation(reboot_log.GetFinalShutdownInfo(),
+                                                        SpontaneousRebootReason::kSpontaneous))),
           Pair(kSystemLastRebootRuntimeKey, LastRebootRuntimeAnnotation(reboot_log)),
           Pair(kSystemLastRebootTotalSuspendedTimeKey,
                LastRebootTotalSuspendedTimeAnnotation(reboot_log)),
@@ -149,7 +152,8 @@ TEST_F(StartupAnnotationsTest, Values_FilesMissing) {
                              /*dlog=*/std::nullopt,
                              /*last_boot_uptime=*/std::nullopt,
                              /*last_boot_runtime=*/std::nullopt, /*critical_process=*/std::nullopt);
-  const auto startup_annotations = GetStartupAnnotations(reboot_log);
+  const auto startup_annotations =
+      GetStartupAnnotations(reboot_log, SpontaneousRebootReason::kSpontaneous);
 
   EXPECT_THAT(
       startup_annotations,
@@ -168,7 +172,8 @@ TEST_F(StartupAnnotationsTest, Values_FilesMissing) {
           Pair(kSystemBootIdCurrentKey, ErrorOrString(Error::kFileReadFailure)),
           Pair(kSystemBootIdPreviousKey, ErrorOrString(Error::kFileReadFailure)),
           Pair(kSystemLastRebootReasonKey,
-               ErrorOrString(LastRebootReasonAnnotation(reboot_log.GetFinalShutdownInfo()))),
+               ErrorOrString(LastRebootReasonAnnotation(reboot_log.GetFinalShutdownInfo(),
+                                                        SpontaneousRebootReason::kSpontaneous))),
           Pair(kSystemLastRebootRuntimeKey, LastRebootRuntimeAnnotation(reboot_log)),
           Pair(kSystemLastRebootTotalSuspendedTimeKey,
                LastRebootTotalSuspendedTimeAnnotation(reboot_log)),
@@ -194,7 +199,8 @@ TEST_F(StartupAnnotationsTest, BackstopTime_Invalid) {
                              /*dlog=*/std::nullopt,
                              /*last_boot_uptime=*/std::nullopt,
                              /*last_boot_runtime=*/std::nullopt, /*critical_process=*/std::nullopt);
-  const auto startup_annotations = GetStartupAnnotations(reboot_log);
+  const auto startup_annotations =
+      GetStartupAnnotations(reboot_log, SpontaneousRebootReason::kSpontaneous);
 
   EXPECT_THAT(startup_annotations,
               Contains(Pair(kBuildPlatformBackstopKey, ErrorOrString(Error::kBadValue))));
@@ -222,7 +228,8 @@ TEST_F(StartupAnnotationsTest, BuildProductVersionPreviousBootFallback) {
                              /*dlog=*/std::nullopt,
                              /*last_boot_uptime=*/std::nullopt,
                              /*last_boot_runtime=*/std::nullopt, /*critical_process=*/std::nullopt);
-  const auto startup_annotations = GetStartupAnnotations(reboot_log);
+  const auto startup_annotations =
+      GetStartupAnnotations(reboot_log, SpontaneousRebootReason::kSpontaneous);
 
   EXPECT_THAT(
       startup_annotations,
