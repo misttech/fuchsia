@@ -8,7 +8,6 @@
 //! listening to requests immediately after creation.
 //!
 
-use crate::trace;
 use fuchsia_async as fasync;
 use fuchsia_inspect::{self as inspect, component};
 use fuchsia_inspect_derive::Inspect;
@@ -18,6 +17,7 @@ use futures::channel::mpsc::UnboundedReceiver;
 use futures::channel::mpsc::UnboundedSender;
 use inspect::NumericProperty;
 use settings_common::inspect::event::{Direction, UsageEvent};
+use settings_common::trace;
 use settings_inspect_utils::managed_inspect_map::ManagedInspectMap;
 use std::collections::HashMap;
 

@@ -189,7 +189,6 @@ icu_rustc_library("lib") {
     "src/tests/service_configuration_tests.rs",
     "src/tests/stream_volume_tests.rs",
     "src/tests/test_failure_utils.rs",
-    "src/trace.rs",
   ]
 
   # TODO(https://fxbug.dev/42166874): Split this library up to be less monolithic.

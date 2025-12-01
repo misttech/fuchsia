@@ -2,13 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use std::rc::Rc;
-
 use crate::audio::types::{AudioError, AudioStream};
 use crate::audio::utils::round_volume_level;
 #[cfg(test)]
 use crate::clock;
-use crate::{trace, trace_guard};
 use fidl::endpoints::create_proxy;
 use fidl_fuchsia_media::Usage2;
 use fidl_fuchsia_media_audio::VolumeControlProxy;
@@ -16,11 +13,12 @@ use futures::TryStreamExt;
 #[cfg(test)]
 use futures::channel::mpsc::UnboundedSender;
 use futures::channel::oneshot::Sender;
-use settings_common::call;
 use settings_common::inspect::event::ExternalEventPublisher;
 #[cfg(test)]
 use settings_common::service_context::ExternalServiceEvent;
 use settings_common::service_context::ExternalServiceProxy;
+use settings_common::{call, trace, trace_guard};
+use std::rc::Rc;
 use {fuchsia_async as fasync, fuchsia_trace as ftrace};
 
 #[cfg(test)]

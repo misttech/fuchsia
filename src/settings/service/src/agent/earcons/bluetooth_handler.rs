@@ -9,7 +9,6 @@ use crate::agent::earcons::sound_ids::{
 use crate::agent::earcons::utils::{connect_to_sound_player, play_sound};
 use crate::audio::Request as AudioRequest;
 use crate::audio::types::{AudioSettingSource, AudioStreamType, SetAudioStream};
-use crate::trace;
 use anyhow::{Context, Error, format_err};
 use fidl::endpoints::create_request_stream;
 use fidl_fuchsia_media_sessions2::{
@@ -18,8 +17,8 @@ use fidl_fuchsia_media_sessions2::{
 use futures::channel::mpsc::UnboundedSender;
 use futures::channel::oneshot;
 use futures::stream::TryStreamExt;
-use settings_common::call;
 use settings_common::inspect::event::ExternalEventPublisher;
+use settings_common::{call, trace};
 use std::collections::HashSet;
 use {fuchsia_async as fasync, fuchsia_trace as ftrace};
 

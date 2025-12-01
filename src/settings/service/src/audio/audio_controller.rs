@@ -9,13 +9,13 @@ use crate::audio::types::{
     AUDIO_STREAM_TYPE_COUNT, AudioInfo, AudioStream, AudioStreamType, SetAudioStream,
 };
 use crate::audio::{ModifiedCounters, StreamVolumeControl, create_default_modified_counters};
-use crate::{trace, trace_guard};
 use futures::channel::mpsc::{self, UnboundedReceiver, UnboundedSender};
 
 use futures::StreamExt;
 use futures::channel::oneshot::Sender;
 use settings_common::inspect::event::{ExternalEventPublisher, SettingValuePublisher};
 use settings_common::service_context::ServiceContext;
+use settings_common::{trace, trace_guard};
 use settings_storage::device_storage::{DeviceStorage, DeviceStorageCompatible};
 use settings_storage::storage_factory::{DefaultLoader, StorageAccess, StorageFactory};
 use std::collections::HashMap;

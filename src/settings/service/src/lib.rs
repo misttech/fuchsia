@@ -78,7 +78,6 @@ pub mod agent;
 pub mod base;
 pub mod ingress;
 pub(crate) mod migration;
-pub mod trace;
 
 /// A common trigger for exiting.
 pub type ExitSender = futures::channel::mpsc::UnboundedSender<()>;

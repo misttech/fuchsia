@@ -10,7 +10,7 @@
 //!
 //! [SettingProxyInspectAgent]: inspect::SettingProxyInspectAgent
 
-use crate::{clock, trace};
+use crate::clock;
 use fuchsia_async as fasync;
 use fuchsia_inspect::{self as inspect, NumericProperty, component};
 use fuchsia_inspect_derive::{IValue, Inspect};
@@ -19,6 +19,7 @@ use futures::channel::mpsc::UnboundedReceiver;
 #[cfg(test)]
 use futures::channel::mpsc::UnboundedSender;
 use settings_common::inspect::event::{Direction, ResponseType, UsageEvent};
+use settings_common::trace;
 use settings_inspect_utils::joinable_inspect_vecdeque::JoinableInspectVecDeque;
 use settings_inspect_utils::managed_inspect_map::ManagedInspectMap;
 use settings_inspect_utils::managed_inspect_queue::ManagedInspectQueue;

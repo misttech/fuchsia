@@ -6,4 +6,5 @@ pub mod clock;
 pub mod config;
 pub mod inspect;
 pub mod service_context;
+pub mod trace;
 pub mod utils;

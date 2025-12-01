@@ -39,7 +39,6 @@
 //! }
 //! ```
 
-use crate::trace;
 use fuchsia_async as fasync;
 use fuchsia_inspect::{Node, component};
 use fuchsia_inspect_derive::{IValue, Inspect, WithInspect};
@@ -48,6 +47,7 @@ use futures::channel::mpsc::UnboundedReceiver;
 #[cfg(test)]
 use futures::channel::mpsc::UnboundedSender;
 use settings_common::service_context::ExternalServiceEvent;
+use settings_common::trace;
 use settings_inspect_utils::managed_inspect_map::ManagedInspectMap;
 use settings_inspect_utils::managed_inspect_queue::ManagedInspectQueue;
 

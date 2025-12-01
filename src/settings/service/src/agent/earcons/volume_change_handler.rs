@@ -10,13 +10,13 @@ use crate::audio::types::{
     SetAudioStream,
 };
 use crate::audio::{ModifiedCounters, Request as AudioRequest, create_default_modified_counters};
-use crate::trace;
 use anyhow::Error;
 use futures::StreamExt;
 use futures::channel::mpsc::{self, UnboundedSender};
 use futures::channel::oneshot;
 use futures::future::OptionFuture;
 use settings_common::inspect::event::ExternalEventPublisher;
+use settings_common::trace;
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 use {fuchsia_async as fasync, fuchsia_trace as ftrace};

@@ -2,13 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::trace;
 use anyhow::{Context, Error};
 use fuchsia_async as fasync;
 use futures::channel::mpsc::UnboundedSender;
 use settings_camera::connect_to_camera;
 use settings_common::inspect::event::ExternalEventPublisher;
 use settings_common::service_context::ServiceContext;
+use settings_common::trace;
 
 pub struct CameraWatcherAgent {
     /// Sends an event whenever camera muted state changes. The `bool`

@@ -5,7 +5,6 @@
 use super::audio_controller::{AudioController, Request};
 use super::types::{AudioError, AudioInfo};
 use crate::audio::types::{AudioSettingSource, AudioStream, AudioStreamType, SetAudioStream};
-use crate::{trace, trace_guard};
 use async_utils::hanging_get::server;
 use fidl_fuchsia_media::{AudioRenderUsage, AudioRenderUsage2};
 use fidl_fuchsia_settings::{
@@ -19,6 +18,7 @@ use futures::channel::oneshot;
 use settings_common::inspect::event::{
     RequestType, ResponseType, UsagePublisher, UsageResponsePublisher,
 };
+use settings_common::{trace, trace_guard};
 use {fuchsia_async as fasync, fuchsia_trace as ftrace};
 
 impl From<&AudioInfo> for AudioSettings {
