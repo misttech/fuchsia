@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 use crate::agent::camera_watcher::CameraWatcherAgent;
-use crate::tests::fakes::camera3_service::Camera3Service;
 use fuchsia_async::{MonotonicInstant, TestExecutor};
 use futures::StreamExt;
 use futures::channel::mpsc;
@@ -11,6 +10,7 @@ use futures::lock::Mutex;
 use settings_camera::CAMERA_WATCHER_TIMEOUT;
 use settings_common::inspect::event::ExternalEventPublisher;
 use settings_common::service_context::ServiceContext;
+use settings_test_common::fakes::camera3_service::Camera3Service;
 use settings_test_common::fakes::service::ServiceRegistry;
 use settings_test_common::helpers::move_executor_forward_and_get;
 use std::rc::Rc;

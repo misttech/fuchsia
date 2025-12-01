@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 use crate::agent::media_buttons;
-use crate::tests::fakes::input_device_registry_service::InputDeviceRegistryService;
 use fidl_fuchsia_ui_input::MediaButtonsEvent;
 use futures::StreamExt;
 use futures::channel::mpsc;
@@ -12,6 +11,7 @@ use media_buttons::MediaButtonsAgent;
 use settings_common::inspect::event::ExternalEventPublisher;
 use settings_common::service_context::ServiceContext;
 use settings_media_buttons::{Event, MediaButtons};
+use settings_test_common::fakes::input_device_registry_service::InputDeviceRegistryService;
 use settings_test_common::fakes::service::ServiceRegistry;
 use std::rc::Rc;
 

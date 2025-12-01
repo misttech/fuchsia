@@ -2,14 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use super::input_test_environment::{TestInputEnvironment, TestInputEnvironmentBuilder};
 use crate::input::input_device_configuration::{
     InputConfiguration, InputDeviceConfiguration, SourceState,
 };
 use crate::input::types::{
     DeviceState, DeviceStateSource, InputCategory, InputDeviceType, InputInfoSources, InputState,
 };
-use crate::tests::helpers::clone_media_buttons_event_without_wake_lease;
-use crate::tests::input_test_environment::{TestInputEnvironment, TestInputEnvironmentBuilder};
 use fidl_fuchsia_settings::{
     DeviceState as FidlDeviceState, DeviceType, InputProxy, InputSettings,
     InputState as FidlInputState, ToggleStateFlags,
@@ -20,7 +19,9 @@ use futures::pin_mut;
 use futures::stream::StreamExt;
 use futures::task::Poll;
 use settings_media_buttons::MediaButtonsEventBuilder;
-use settings_test_common::helpers::move_executor_forward;
+use settings_test_common::helpers::{
+    clone_media_buttons_event_without_wake_lease, move_executor_forward,
+};
 use std::collections::HashMap;
 
 const DEFAULT_MIC_STATE: bool = false;

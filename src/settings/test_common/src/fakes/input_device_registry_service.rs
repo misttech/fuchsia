@@ -2,28 +2,27 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::tests::helpers::clone_media_buttons_event_without_wake_lease;
+use crate::fakes::service::Service;
+use crate::helpers::clone_media_buttons_event_without_wake_lease;
 use anyhow::{Error, format_err};
 use fidl::endpoints::ServerEnd;
 use fidl::prelude::*;
+use fidl_fuchsia_ui_input::MediaButtonsEvent;
+use fidl_fuchsia_ui_policy::MediaButtonsListenerProxy;
 use fuchsia_async as fasync;
 use fuchsia_sync::RwLock;
 use futures::TryStreamExt;
 use std::rc::Rc;
 
-use fidl_fuchsia_ui_input::MediaButtonsEvent;
-use fidl_fuchsia_ui_policy::MediaButtonsListenerProxy;
-
-use settings_test_common::fakes::service::Service;
-
-pub(crate) struct InputDeviceRegistryService {
+pub struct InputDeviceRegistryService {
     listeners: Rc<RwLock<Vec<MediaButtonsListenerProxy>>>,
     last_sent_event: Rc<RwLock<Option<MediaButtonsEvent>>>,
     fail: bool,
 }
 
+#[allow(clippy::new_without_default)]
 impl InputDeviceRegistryService {
-    pub(crate) fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             listeners: Rc::new(RwLock::new(Vec::new())),
             last_sent_event: Rc::new(RwLock::new(None)),
@@ -31,12 +30,12 @@ impl InputDeviceRegistryService {
         }
     }
 
-    pub(crate) fn set_fail(&mut self, fail: bool) {
+    pub fn set_fail(&mut self, fail: bool) {
         self.fail = fail;
     }
 
     #[allow(clippy::await_holding_lock)]
-    pub(crate) async fn send_media_button_event(&self, event: MediaButtonsEvent) {
+    pub async fn send_media_button_event(&self, event: MediaButtonsEvent) {
         *self.last_sent_event.write() = Some(clone_media_buttons_event_without_wake_lease(&event));
         for listener in self.listeners.read().iter() {
             let _ = listener.on_event(clone_media_buttons_event_without_wake_lease(&event)).await;

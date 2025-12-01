@@ -82,7 +82,6 @@ icu_rustc_library("lib") {
   ]
 
   test_deps = [
-    "//sdk/fidl/fuchsia.camera3:fuchsia.camera3_rust",
     "//sdk/fidl/fuchsia.stash:fuchsia.stash_rust",
     "//src/lib/diagnostics/testing/diagnostics-assertions/rust:diagnostics-assertions",
     "//src/lib/fuchsia",
@@ -140,6 +139,8 @@ icu_rustc_library("lib") {
     "src/input/input_controller.rs",
     "src/input/input_device_configuration.rs",
     "src/input/input_fidl_handler.rs",
+    "src/input/input_test_environment.rs",
+    "src/input/input_tests.rs",
     "src/input/types.rs",
     "src/intl.rs",
     "src/intl/intl_controller.rs",
@@ -174,11 +175,6 @@ icu_rustc_library("lib") {
     "src/tests/fakes.rs",
     "src/tests/fakes/audio_core_service.rs",
     "src/tests/fakes/brightness_service.rs",
-    "src/tests/fakes/camera3_service.rs",
-    "src/tests/fakes/input_device_registry_service.rs",
-    "src/tests/helpers.rs",
-    "src/tests/input_test_environment.rs",
-    "src/tests/input_tests.rs",
     "src/tests/media_buttons_agent_tests.rs",
     "src/tests/service_configuration_tests.rs",
     "src/tests/stream_volume_tests.rs",

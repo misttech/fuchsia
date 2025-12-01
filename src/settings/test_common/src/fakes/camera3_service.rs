@@ -2,9 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use settings_camera::CAMERA_WATCHER_TIMEOUT;
-use settings_test_common::fakes::service::Service;
-
+use crate::fakes::service::Service;
 use anyhow::{Error, format_err};
 use fidl::endpoints::ServerEnd;
 use fidl::prelude::*;
@@ -13,11 +11,12 @@ use fidl_fuchsia_camera3::{
 };
 use fuchsia_async::{self as fasync, DurationExt};
 use futures::TryStreamExt;
+use settings_camera::CAMERA_WATCHER_TIMEOUT;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use zx::{self as zx, MonotonicDuration};
+use zx::MonotonicDuration;
 
-pub(crate) struct Camera3Service {
+pub struct Camera3Service {
     camera_sw_muted: Rc<AtomicBool>,
     // If true, sends the camera device response immediately. If false, sends
     // an empty device list. If None, delay_camera_device should be provided.
@@ -28,7 +27,7 @@ pub(crate) struct Camera3Service {
 }
 
 impl Camera3Service {
-    pub(crate) fn new(has_camera_device: bool) -> Self {
+    pub fn new(has_camera_device: bool) -> Self {
         Self {
             camera_sw_muted: Rc::new(AtomicBool::new(false)),
             has_camera_device: Rc::new(AtomicBool::new(has_camera_device)),
@@ -36,7 +35,7 @@ impl Camera3Service {
         }
     }
 
-    pub(crate) fn new_delayed_devices(delay_camera_device: bool) -> Self {
+    pub fn new_delayed_devices(delay_camera_device: bool) -> Self {
         Self {
             camera_sw_muted: Rc::new(AtomicBool::new(false)),
             has_camera_device: Rc::new(AtomicBool::new(false)),
@@ -44,11 +43,11 @@ impl Camera3Service {
         }
     }
 
-    pub(crate) fn camera_sw_muted(&self) -> bool {
+    pub fn camera_sw_muted(&self) -> bool {
         (*self.camera_sw_muted).load(Ordering::Relaxed)
     }
 
-    pub(crate) fn set_camera_sw_muted(&self, muted: bool) {
+    pub fn set_camera_sw_muted(&self, muted: bool) {
         let _ = (*self.camera_sw_muted).swap(muted, Ordering::Relaxed);
     }
 }

@@ -118,12 +118,12 @@ impl EventHandler {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tests::fakes::input_device_registry_service::InputDeviceRegistryService;
-    use crate::tests::helpers::clone_media_buttons_event_without_wake_lease;
     use futures::channel::mpsc;
     use futures::lock::Mutex;
     use settings_media_buttons::MediaButtonsEventBuilder;
+    use settings_test_common::fakes::input_device_registry_service::InputDeviceRegistryService;
     use settings_test_common::fakes::service::ServiceRegistry;
+    use settings_test_common::helpers::clone_media_buttons_event_without_wake_lease;
     use std::rc::Rc;
 
     // Tests that the agent cannot start without a media buttons service.

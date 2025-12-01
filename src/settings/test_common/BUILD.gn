@@ -24,14 +24,19 @@ rustc_library("settings_test_common") {
   ]
 
   deps = [
+    "//sdk/fidl/fuchsia.camera3:fuchsia.camera3_rust",
     "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
     "//sdk/fidl/fuchsia.mem:fuchsia.mem_rust",
     "//sdk/fidl/fuchsia.stash:fuchsia.stash_rust",
+    "//sdk/fidl/fuchsia.ui.input:fuchsia.ui.input_rust",
+    "//sdk/fidl/fuchsia.ui.policy:fuchsia.ui.policy_rust",
     "//sdk/rust/zx",
     "//src/lib/diagnostics/inspect/rust",
     "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-fs",
+    "//src/lib/fuchsia-sync",
+    "//src/settings/camera:settings_camera",
     "//src/settings/common:settings_common",
     "//src/settings/storage:settings_storage",
     "//third_party/rust_crates:anyhow",
@@ -47,6 +52,8 @@ rustc_library("settings_test_common") {
 
   sources = [
     "src/fakes.rs",
+    "src/fakes/camera3_service.rs",
+    "src/fakes/input_device_registry_service.rs",
     "src/fakes/service.rs",
     "src/helpers.rs",
     "src/lib.rs",

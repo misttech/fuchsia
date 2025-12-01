@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use fidl_fuchsia_ui_input::MediaButtonsEvent;
 use fuchsia_async::TestExecutor;
 use futures::task::Poll;
 use std::future::Future;
@@ -29,5 +30,20 @@ pub fn move_executor_forward_and_get<T>(
     match executor.run_until_stalled(&mut future) {
         Poll::Ready(res) => res,
         _ => panic!("{}", panic_msg),
+    }
+}
+
+pub fn clone_media_buttons_event_without_wake_lease(
+    event: &MediaButtonsEvent,
+) -> MediaButtonsEvent {
+    MediaButtonsEvent {
+        volume: event.volume,
+        mic_mute: event.mic_mute,
+        pause: event.pause,
+        camera_disable: event.camera_disable,
+        power: event.power,
+        function: event.function,
+        device_id: event.device_id,
+        ..Default::default()
     }
 }

@@ -70,6 +70,7 @@ where
         .await;
     Ok(SetupResult { input_fidl_handler, camera_watcher_event_tx, media_buttons_event_tx, task })
 }
+
 type ResultSender = oneshot::Sender<Result<Option<()>, InputError>>;
 
 fn event_request_logger<T>(
@@ -103,3 +104,8 @@ where
     .detach();
     inner_event_rx
 }
+
+#[cfg(test)]
+mod input_test_environment;
+#[cfg(test)]
+mod input_tests;

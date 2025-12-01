@@ -5,8 +5,6 @@
 use crate::input::build_input_default_settings;
 use crate::input::input_device_configuration::InputConfiguration;
 use crate::input::types::InputInfoSources;
-use crate::tests::fakes::camera3_service::Camera3Service;
-use crate::tests::fakes::input_device_registry_service::InputDeviceRegistryService;
 use fidl_fuchsia_settings::{InputMarker, InputProxy, InputRequestStream};
 use fuchsia_async as fasync;
 use fuchsia_component::server::ServiceFs;
@@ -22,6 +20,8 @@ use settings_common::inspect::event::{
 };
 use settings_common::inspect::listener_logger::ListenerInspectLogger;
 use settings_common::service_context::ServiceContext;
+use settings_test_common::fakes::camera3_service::Camera3Service;
+use settings_test_common::fakes::input_device_registry_service::InputDeviceRegistryService;
 use settings_test_common::fakes::service::ServiceRegistry;
 use settings_test_common::storage::InMemoryStorageFactory;
 use std::rc::Rc;
