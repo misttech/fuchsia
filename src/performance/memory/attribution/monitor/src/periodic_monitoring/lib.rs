@@ -28,7 +28,7 @@ pub async fn periodic_monitoring(
     bucket_definitions: &[BucketDefinition],
     inspect_root: Node,
 ) -> Result<()> {
-    let mut current; // Ensure the inspect property is kept as long as necessary.
+    let mut _current; // Ensure the inspect property is kept as long as necessary.
     let mut bucket_list_node = std::cell::OnceCell::new();
     let bucket_names = std::cell::OnceCell::new();
     let bucket_codes = cobalt::prepare_bucket_codes(bucket_definitions);
@@ -48,7 +48,7 @@ pub async fn periodic_monitoring(
             &kmem_stats_compression,
             bucket_definitions,
         )?;
-        current = update_inspect_summary(attribution_data, timestamp, &kmem_stats, &inspect_root);
+        _current = update_inspect_summary(attribution_data, timestamp, &kmem_stats, &inspect_root);
         cobalt::upload_metrics(timestamp, &kmem_stats, metric_event_logger, &digest, &bucket_codes)
             .await?;
         {
