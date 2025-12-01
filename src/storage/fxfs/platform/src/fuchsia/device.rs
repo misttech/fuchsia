@@ -471,7 +471,10 @@ mod tests {
     use block_client::{BlockClient, BlockIoFlag, BlockOpcode, RemoteBlockClient, VmoId};
     use block_protocol::{BlockFifoCommand, BlockFifoRequest, BlockFifoResponse};
     use fidl::endpoints::{ClientEnd, ServerEnd};
-    use fidl_fuchsia_fxfs::{FileBackedVolumeProviderMarker, FileBackedVolumeProviderProxy};
+    use fidl_fuchsia_fxfs::{
+        BlobCreatorMarker, BlobReaderMarker, FileBackedVolumeProviderMarker,
+        FileBackedVolumeProviderProxy,
+    };
     use fidl_fuchsia_hardware_block::{BlockMarker, SessionMarker};
     use fidl_fuchsia_hardware_block_volume::VolumeMarker;
     use fidl_fuchsia_io::{self as fio, DirectoryProxy};
@@ -789,35 +792,26 @@ mod tests {
         };
 
         {
+            let content = b"Hello world!";
+            let merkle_root_hash = fuchsia_merkle::root_from_slice(content);
+            let delivery_blob =
+                delivery_blob::Type1Blob::generate(content, delivery_blob::CompressionMode::Never);
             let mut blobfs = Filesystem::new(connector, Blobfs::default());
             blobfs.format().await.expect("format blobfs failed");
             blobfs.fsck().await.expect("fsck failed");
             // Mount blobfs
             let serving = blobfs.serve().await.expect("serve blobfs failed");
 
-            let content = String::from("Hello world!").into_bytes();
-            let merkle_root_hash = fuchsia_merkle::root_from_slice(&content).to_string();
-            {
-                let file = fuchsia_fs::directory::open_file(
-                    serving.root(),
-                    &merkle_root_hash,
-                    fio::Flags::FLAG_MAYBE_CREATE | fio::PERM_WRITABLE,
-                )
-                .await
-                .expect("open file failed");
-                let () = file
-                    .resize(content.len() as u64)
+            let creator = fuchsia_component_client::connect_to_protocol_at_dir_root::<
+                BlobCreatorMarker,
+            >(serving.exposed_dir())
+            .unwrap();
+            let writer = creator.create(&merkle_root_hash.into(), false).await.unwrap().unwrap();
+            let mut writer =
+                blob_writer::BlobWriter::create(writer.into_proxy(), delivery_blob.len() as u64)
                     .await
-                    .expect("resize failed")
-                    .map_err(zx::Status::from_raw)
-                    .expect("resize error");
-                let _: u64 = file
-                    .write(&content)
-                    .await
-                    .expect("write to file failed")
-                    .map_err(zx::Status::from_raw)
-                    .expect("write to file error");
-            }
+                    .unwrap();
+            writer.write(&delivery_blob).await.unwrap();
             // Check that blobfs can be successfully unmounted
             serving.shutdown().await.expect("shutdown blobfs failed");
 
@@ -828,16 +822,13 @@ mod tests {
                 Filesystem::new(connector, Blobfs { readonly: true, ..Default::default() });
             let serving = blobfs.serve().await.expect("serve blobfs failed");
             {
-                let file = fuchsia_fs::directory::open_file(
-                    serving.root(),
-                    &merkle_root_hash,
-                    fio::PERM_READABLE,
-                )
-                .await
-                .expect("open file failed");
-                let read_content =
-                    fuchsia_fs::file::read(&file).await.expect("read from file failed");
-                assert_eq!(content, read_content);
+                let reader = fuchsia_component_client::connect_to_protocol_at_dir_root::<
+                    BlobReaderMarker,
+                >(serving.exposed_dir())
+                .unwrap();
+                let vmo = reader.get_vmo(&merkle_root_hash.into()).await.unwrap().unwrap();
+                let read_content = vmo.read_to_vec::<u8>(0, content.len() as u64).unwrap();
+                assert_eq!(read_content, content);
             }
 
             serving.shutdown().await.expect("shutdown blobfs failed");
