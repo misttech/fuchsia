@@ -1,0 +1,9 @@
+Name: libufdt
+URL: https://www.android.com/
+License: Apache 2.0
+License File: src/NOTICE
+Upstream Git: https://android.googlesource.com/platform/system/libufdt/
+Security Critical: no
+Description:
+
+Android device tree tools and libraries

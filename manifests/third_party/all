@@ -46,6 +46,10 @@
              path="third_party/android/platform/frameworks/native"
              remote="https://fuchsia.googlesource.com/third_party/android.googlesource.com/platform/frameworks/native"
              revision="ab3ba72cc3f8ad87f31883e79b17f8c0c80caee2"/>
+    <project name="third_party/android.googlesource.com/platform/system/libufdt"
+             path="third_party/android/platform/system/libufdt/src"
+             remote="https://fuchsia.googlesource.com/third_party/android.googlesource.com/platform/system/libufdt"
+             revision="818b99f77d3b6fedd7e3f9d4378329f4991b9cc9"/>
     <project name="third_party/android.googlesource.com/platform/system/logging"
              path="third_party/android/platform/system/logging"
              remote="https://fuchsia.googlesource.com/third_party/android.googlesource.com/platform/system/logging"
