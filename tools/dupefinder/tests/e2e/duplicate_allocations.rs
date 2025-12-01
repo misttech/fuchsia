@@ -20,6 +20,6 @@ fn main() {
     std::thread::sleep(std::time::Duration::MAX);
 }
 
-extern "C" {
+unsafe extern "C" {
     fn heapdump_bind_with_fdio();
 }
