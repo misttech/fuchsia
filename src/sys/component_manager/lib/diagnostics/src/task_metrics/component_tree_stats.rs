@@ -8,7 +8,7 @@ use crate::task_metrics::measurement::{Measurement, MeasurementsQueue};
 use crate::task_metrics::runtime_stats_source::{
     ComponentStartedInfo, RuntimeStatsContainer, RuntimeStatsSource,
 };
-use crate::task_metrics::task_info::{create_cpu_histogram, TaskInfo};
+use crate::task_metrics::task_info::{TaskInfo, create_cpu_histogram};
 use async_trait::async_trait;
 use errors::ModelError;
 use fidl_fuchsia_component_runner::Task as DiagnosticsTask;
@@ -24,7 +24,7 @@ use moniker::{ExtendedMoniker, Moniker};
 use std::collections::{BTreeMap, VecDeque};
 use std::fmt::Debug;
 use std::sync::{Arc, Weak};
-use zx::{self as zx, sys as zx_sys, HandleBased};
+use zx::{self as zx, HandleBased, sys as zx_sys};
 
 macro_rules! maybe_return {
     ($e:expr) => {
@@ -393,13 +393,9 @@ impl<T: 'static + RuntimeStatsSource + Debug + Send + Sync> ComponentTreeStats<T
             .entry(moniker.clone())
             .or_insert_with(|| Arc::new(Mutex::new(ComponentStats::new())));
         let histogram = create_cpu_histogram(&this.histograms_node, &moniker);
-        let mut task_info =
-            maybe_return!(source.take_component_task().and_then(|task| TaskInfo::try_from(
-                task,
-                Some(histogram),
-                this.time_source.clone()
-            )
-            .ok()));
+        let mut task_info = maybe_return!(source.take_component_task().and_then(|task| {
+            TaskInfo::try_from(task, Some(histogram), this.time_source.clone()).ok()
+        }));
 
         let parent_koid = source
             .take_parent_task()
@@ -535,7 +531,7 @@ impl AggregatedStats {
 mod tests {
     use super::*;
     use crate::task_metrics::testing::{FakeDiagnosticsContainer, FakeRuntime, FakeTask};
-    use diagnostics_assertions::{assert_data_tree, AnyProperty};
+    use diagnostics_assertions::{AnyProperty, assert_data_tree};
     use diagnostics_hierarchy::DiagnosticsHierarchy;
     use fuchsia_inspect::DiagnosticsHierarchyGetter;
 
@@ -543,6 +539,9 @@ mod tests {
 
     #[fuchsia::test]
     async fn total_tracks_cpu_after_termination() {
+        // TODO(https://fxbug.dev462815022) remove once deadlocks addressed
+        fuchsia_sync::suppress_lock_cycle_panics();
+
         let inspector = inspect::Inspector::default();
         let clock = Arc::new(FakeTime::new());
         let stats = ComponentTreeStats::new_with_timesource(
@@ -706,6 +705,9 @@ mod tests {
 
     #[fuchsia::test]
     async fn components_are_deleted_when_all_tasks_are_gone() {
+        // TODO(https://fxbug.dev/462815022) remove once deadlocks addressed
+        fuchsia_sync::suppress_lock_cycle_panics();
+
         let inspector = inspect::Inspector::default();
         let clock = Arc::new(FakeTime::new());
         let stats = ComponentTreeStats::new_with_timesource(
@@ -1206,6 +1208,9 @@ mod tests {
 
     #[fuchsia::test]
     async fn child_tasks_garbage_collection() {
+        // TODO(https://fxbug.dev/462815022) remove once deadlocks addressed
+        fuchsia_sync::suppress_lock_cycle_panics();
+
         let inspector = inspect::Inspector::default();
         let clock = Arc::new(FakeTime::new());
         let stats = Arc::new(ComponentTreeStats::new_with_timesource(

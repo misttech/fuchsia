@@ -65,6 +65,9 @@ fn main() {
     let ldsvc = unsafe { zx::Handle::from_raw(dl_set_loader_service(zx::sys::ZX_HANDLE_INVALID)) };
     drop(ldsvc);
 
+    // TODO(https://fxbug.dev/462815022) remove once deadlocks addressed
+    fuchsia_sync::suppress_lock_cycle_panics();
+
     let args = startup::Arguments::from_args()
         .unwrap_or_else(|err| panic!("{}\n{}", err, startup::Arguments::usage()));
     let (runtime_config, bootfs_svc) = build_runtime_config(&args);

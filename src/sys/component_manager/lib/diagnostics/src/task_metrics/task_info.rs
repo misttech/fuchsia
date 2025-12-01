@@ -308,6 +308,9 @@ mod tests {
 
     #[fuchsia::test]
     async fn rotates_measurements_per_task() {
+        // TODO(https://fxbug.dev/462815022) remove once deadlocks addressed
+        fuchsia_sync::suppress_lock_cycle_panics();
+
         // Set up test
         let clock = Arc::new(FakeTime::new());
         let mut task: TaskInfo<FakeTask> =
