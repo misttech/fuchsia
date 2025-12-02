@@ -98,6 +98,9 @@ class FuchsiaBaseTest(base_test.BaseTestClass):
         """
         self._any_test_failed: bool = False
         self._process_metric_user_params()
+        # We define teardown_class artifacts path here so it can be used by
+        # child test classes in teardown_class before calling the super() teardown
+        self._teardown_class_artifacts: str = f"{self.log_path}/teardown_class"
 
         self.fuchsia_devices: list[
             fuchsia_device.FuchsiaDevice
@@ -198,8 +201,6 @@ class FuchsiaBaseTest(base_test.BaseTestClass):
               it under "<log_path>/teardown_class<_on_fail>" directory if `tracing_on`
               test param is set to "teardown_class" or "teardown_class_on_fail".
         """
-        self._teardown_class_artifacts: str = f"{self.log_path}/teardown_class"
-
         for device in self.fuchsia_devices:
             if (
                 device.tracing.is_active()
