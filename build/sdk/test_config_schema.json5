@@ -147,7 +147,7 @@
             description: "Realm in which to execute the test in the form <realm path>:<collection>",
             type: "string",
         },
-        test_case_filter: {
+        test_case_filters: {
             description: "Glob patterns specifying which test cases to execute. A case is selected \
 if it matches any of the specified patterns",
             type: "array",
