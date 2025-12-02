@@ -5,6 +5,5 @@
 mod camera_watcher_agent_tests;
 mod display_tests;
 mod environment_tests;
-pub(crate) mod fakes;
 mod media_buttons_agent_tests;
 mod service_configuration_tests;

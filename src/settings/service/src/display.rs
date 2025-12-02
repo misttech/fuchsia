@@ -7,6 +7,9 @@ pub mod display_controller;
 mod display_fidl_handler;
 pub mod types;
 
+#[cfg(test)]
+mod test_fakes;
+
 use self::display_controller::DisplayController;
 use self::display_fidl_handler::DisplayFidlHandler;
 use anyhow::{Context, Result};

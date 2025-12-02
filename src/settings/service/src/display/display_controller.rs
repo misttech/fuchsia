@@ -633,7 +633,7 @@ impl Default for DisplayInfoV5 {
 mod tests {
     use super::*;
     use crate::display::build_display_default_settings;
-    use crate::tests::fakes::brightness_service::BrightnessService;
+    use crate::display::test_fakes::brightness_service::BrightnessService;
     use fuchsia_async::{Task, TestExecutor};
     use fuchsia_inspect::component;
     use futures::channel::mpsc;
