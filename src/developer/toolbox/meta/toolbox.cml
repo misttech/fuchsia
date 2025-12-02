@@ -9,12 +9,9 @@
             path: "/svc",
         },
         {
-            protocol: [
-                "fuchsia.sys2.ConfigOverride.root",
-                "fuchsia.sys2.LifecycleController.root",
-                "fuchsia.sys2.RealmQuery.root",
-                "fuchsia.sys2.RouteValidator.root",
-            ],
+            dictionary: "toolbox-root",
+            from: "parent",
+            path: "/svc",
         },
     ],
 }

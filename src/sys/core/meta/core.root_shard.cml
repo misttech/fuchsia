@@ -402,12 +402,7 @@
             from: "#core",
             as: "toolbox-core",
             to: "#toolbox",
-        },
-        {
-            protocol: [ "fuchsia.dash.Launcher" ],
-            from: "#core",
-            to: "#toolbox",
-            availability: "optional",
+            target_availability: "unknown",
         },
         {
             protocol: [ "fuchsia.process.Resolver" ],

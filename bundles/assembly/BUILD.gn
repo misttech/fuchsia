@@ -434,6 +434,7 @@ assembly_input_bundle("embeddable_userdebug") {
     # shell
     "//zircon/third_party/uapp/dash:bootfs",
   ]
+  root_shards = [ "//src/developer/toolbox/meta/toolbox.root_shard.cml" ]
   compiled_packages = [
     {
       name = "toolbox"

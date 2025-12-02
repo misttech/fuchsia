@@ -17,10 +17,6 @@
             name: "config",
             url: "fuchsia-boot:///config#meta/config.cm",
         },
-        {
-            name: "toolbox",
-            url: "fuchsia-boot:///toolbox#meta/toolbox.cm",
-        },
     ],
     offer: [
         {
@@ -322,25 +318,29 @@
             protocol: "fuchsia.sys2.ConfigOverride",
             from: "framework",
             as: "fuchsia.sys2.ConfigOverride.root",
-            to: "#toolbox",
+            to: "self/toolbox-root",
+            target_availability: "unknown",
         },
         {
             protocol: "fuchsia.sys2.RealmQuery",
             from: "framework",
             as: "fuchsia.sys2.RealmQuery.root",
-            to: "#toolbox",
+            to: "self/toolbox-root",
+            target_availability: "unknown",
         },
         {
             protocol: "fuchsia.sys2.LifecycleController",
             from: "framework",
             as: "fuchsia.sys2.LifecycleController.root",
-            to: "#toolbox",
+            to: "self/toolbox-root",
+            target_availability: "unknown",
         },
         {
             protocol: "fuchsia.sys2.RouteValidator",
             from: "framework",
             as: "fuchsia.sys2.RouteValidator.root",
-            to: "#toolbox",
+            to: "self/toolbox-root",
+            target_availability: "unknown",
         },
         {
             runner: [
@@ -362,6 +362,7 @@
             from: "#bootstrap",
             as: "toolbox-bootstrap",
             to: "#toolbox",
+            target_availability: "unknown",
         },
     ],
     expose: [
