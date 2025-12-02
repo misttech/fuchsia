@@ -150,22 +150,16 @@ type Resource = flexible union {
     /// (currently a Job, Process or VMO).
     1: kernel_object zx.Koid;
 
-    /// Identifies a part of a process address space.
-    ///
-    /// This member can be removed if the Zircon kernel exposed KOIDs of
-    /// VMARs in memory mapping object information, in which case we
-    /// can report the VMAR using `kernel_object`.
-    ///
-    /// We should consider a generic KOID + range concept if there are
-    /// other use cases for describing ranges within a resource.
+    /// The entire memory of any VMO will be attributed if its mapping within the
+    /// specified process overlaps with the defined virtual address range.
     2: process_mapped struct {
-        /// The KOID of the process that this VMAR lives in.
+        /// Selects the root VMAR of the specified process.
         process zx.Koid;
 
-        /// Base address of the VMAR.
+        /// Lower bound of the address range.
         base uint64;
 
-        /// Length of the VMAR.
+        /// Length of the address range.
         len uint64;
     };
 };

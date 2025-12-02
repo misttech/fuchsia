@@ -6,6 +6,7 @@ use crate::attribution_client::AttributionState;
 use attribution_processing::{ResourcesVisitor, ZXName};
 use fuchsia_trace::duration;
 use index_table_builder::IndexTableBuilder;
+use log::warn;
 use std::collections::{HashMap, HashSet};
 use std::mem::MaybeUninit;
 use traces::CATEGORY_MEMORY_CAPTURE;
@@ -121,29 +122,32 @@ impl Cache {
     }
 }
 
+/// Interval of the virtual address space.
+#[derive(Clone, Copy, PartialEq, Debug)]
+struct Range {
+    /// Inclusive lower bound.
+    start: u64,
+    /// Exclusive upper bound.
+    end: u64,
+}
+
+impl Range {
+    fn is_overlapping(&self, other: &Self) -> bool {
+        self.start < other.end && other.start < self.end
+    }
+
+    fn merge(a: &Self, b: &Self) -> Self {
+        if b.start > a.end + 1 || a.start > b.end + 1 {
+            warn!("Not supported: Union of {:?} and {:?} is not continuous", a, b);
+        }
+        Self { start: a.start.min(b.start), end: a.end.max(b.end) }
+    }
+}
 /// Represents whether we should collect information about VMOs or memory maps of a process.
 #[derive(PartialEq, Debug)]
 struct CollectionRequest {
     collect_vmos: bool,
-    collect_maps: Option<CollectionRequestRange>,
-}
-
-/// Represents an address space range we need to collect information about.
-#[derive(Clone, Copy, PartialEq, Debug)]
-struct CollectionRequestRange {
-    /// Start of the range
-    range_start: u64,
-    /// End of the range
-    range_end: u64,
-}
-
-impl CollectionRequestRange {
-    fn merge(a: &Self, b: &Self) -> Self {
-        Self {
-            range_start: a.range_start.min(b.range_start),
-            range_end: a.range_end.max(b.range_end),
-        }
-    }
+    collect_maps: Option<Range>,
 }
 
 impl CollectionRequest {
@@ -151,11 +155,8 @@ impl CollectionRequest {
         Self { collect_vmos: true, collect_maps: None }
     }
 
-    fn collect_maps(range_start: u64, range_end: u64) -> Self {
-        Self {
-            collect_vmos: false,
-            collect_maps: Some(CollectionRequestRange { range_start, range_end }),
-        }
+    fn collect_maps(start: u64, end: u64) -> Self {
+        Self { collect_vmos: false, collect_maps: Some(Range { start, end }) }
     }
 
     fn merge(&mut self, other: &Self) {
@@ -164,7 +165,7 @@ impl CollectionRequest {
             (None, None) => None,
             (Some(a), None) => Some(a),
             (None, Some(b)) => Some(b),
-            (Some(a), Some(b)) => Some(CollectionRequestRange::merge(&a, &b)),
+            (Some(a), Some(b)) => Some(Range::merge(&a, &b)),
         };
     }
 }
@@ -514,7 +515,7 @@ impl KernelResourcesExplorer {
             None
         };
 
-        let process_maps = if let Some(CollectionRequestRange { range_start, range_end }) =
+        let process_maps = if let Some(selected_range) =
             collection.map(|c| c.collect_maps).flatten()
         {
             duration!(CATEGORY_MEMORY_CAPTURE, c"explore_process:maps");
@@ -531,12 +532,14 @@ impl KernelResourcesExplorer {
             let mut mappings = Vec::with_capacity(info_maps.len());
             for info_map in info_maps {
                 if let zx::MapDetails::Mapping(details) = info_map.details() {
-                    let address_base = info_map.base.try_into().unwrap();
-                    let address_end: u64 = (info_map.base + info_map.size).try_into().unwrap();
-                    if address_base < range_end && address_end >= range_start {
+                    let mapping_range = Range {
+                        start: info_map.base.try_into().unwrap(),
+                        end: (info_map.base + info_map.size).try_into().unwrap(),
+                    };
+                    if selected_range.is_overlapping(&mapping_range) {
                         mappings.push(fplugin::Mapping {
                             vmo: Some(details.vmo_koid.raw_koid()),
-                            address_base: Some(address_base),
+                            address_base: Some(mapping_range.start),
                             size: Some(info_map.size.try_into().unwrap()),
                             ..Default::default()
                         });
@@ -568,6 +571,51 @@ pub mod tests {
     use crate::common::LocalPrincipalIdentifier;
     use attribution_processing::GlobalPrincipalIdentifier;
     use fidl_fuchsia_memory_attribution as fattribution;
+
+    #[test]
+    fn range_is_overlapping() {
+        assert!(!Range { start: 10, end: 20 }.is_overlapping(&Range { start: 9, end: 10 }));
+        assert!(Range { start: 10, end: 20 }.is_overlapping(&Range { start: 10, end: 11 }));
+        assert!(Range { start: 10, end: 20 }.is_overlapping(&Range { start: 5, end: 15 }));
+        assert!(Range { start: 10, end: 20 }.is_overlapping(&Range { start: 19, end: 20 }));
+        assert!(!Range { start: 10, end: 20 }.is_overlapping(&Range { start: 20, end: 21 }));
+    }
+
+    #[test]
+    fn range_merge() {
+        assert_eq!(
+            Range { start: 1, end: 6 },
+            Range::merge(&Range { start: 1, end: 3 }, &Range { start: 5, end: 6 })
+        );
+        assert_eq!(
+            Range { start: 2, end: 6 },
+            Range::merge(&Range { start: 2, end: 4 }, &Range { start: 5, end: 6 })
+        );
+        assert_eq!(
+            Range { start: 3, end: 6 },
+            Range::merge(&Range { start: 3, end: 5 }, &Range { start: 5, end: 6 })
+        );
+        assert_eq!(
+            Range { start: 4, end: 6 },
+            Range::merge(&Range { start: 4, end: 6 }, &Range { start: 5, end: 6 })
+        );
+        assert_eq!(
+            Range { start: 5, end: 7 },
+            Range::merge(&Range { start: 5, end: 7 }, &Range { start: 5, end: 6 })
+        );
+        assert_eq!(
+            Range { start: 5, end: 8 },
+            Range::merge(&Range { start: 6, end: 8 }, &Range { start: 5, end: 6 })
+        );
+        assert_eq!(
+            Range { start: 5, end: 9 },
+            Range::merge(&Range { start: 7, end: 9 }, &Range { start: 5, end: 6 })
+        );
+        assert_eq!(
+            Range { start: 5, end: 10 },
+            Range::merge(&Range { start: 8, end: 10 }, &Range { start: 5, end: 6 })
+        );
+    }
 
     #[derive(Clone)]
     pub struct FakeJob {
@@ -909,7 +957,7 @@ pub mod tests {
             a3,
             CollectionRequest {
                 collect_vmos: true,
-                collect_maps: Some(CollectionRequestRange { range_start: 100, range_end: 200 })
+                collect_maps: Some(Range { start: 100, end: 200 })
             }
         );
     }
