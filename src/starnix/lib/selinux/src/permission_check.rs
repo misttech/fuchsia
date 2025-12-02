@@ -204,17 +204,16 @@ fn has_extended_permission<P: ClassPermission + Into<KernelPermission> + Clone +
     permission: P,
     xperm: u16,
 ) -> PermissionCheckResult {
-    let target_class = permission.class();
+    let target_class = ObjectClass::from(permission.class());
 
-    let permission_decision =
-        query.compute_access_decision(source_sid, target_sid, target_class.into());
+    let permission_decision = query.compute_access_decision(source_sid, target_sid, target_class);
 
     let [xperms_postfix, xperms_prefix] = xperm.to_le_bytes();
     let xperms_decision = query.compute_xperms_access_decision(
         xperms_kind,
         source_sid,
         target_sid,
-        target_class.into(),
+        target_class,
         xperms_prefix,
     );
 
