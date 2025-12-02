@@ -5,6 +5,7 @@
 #include "src/developer/debug/debug_agent/mock_process.h"
 
 #include "src/developer/debug/debug_agent/debugged_job.h"
+#include "src/developer/debug/debug_agent/debugged_process.h"
 #include "src/developer/debug/debug_agent/mock_thread.h"
 
 namespace debug_agent {
@@ -27,6 +28,10 @@ MockThread* MockProcess::AddThread(zx_koid_t thread_koid) {
   MockThread* thread_ptr = mock_thread.get();
   InjectThreadForTest(std::move(mock_thread));
   return thread_ptr;
+}
+
+void MockProcess::InjectException(std::unique_ptr<ExceptionHandle> exception) {
+  OnException(std::move(exception));
 }
 
 }  // namespace debug_agent

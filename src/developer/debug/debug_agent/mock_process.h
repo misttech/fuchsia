@@ -32,6 +32,9 @@ class MockProcess : public DebuggedProcess {
   }
 
   MockThread* AddThread(zx_koid_t koid);
+
+  // Injects an exception via the ProcessHandleObserver interface.
+  void InjectException(std::unique_ptr<ExceptionHandle> exception);
 };
 
 }  // namespace debug_agent

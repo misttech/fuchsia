@@ -571,10 +571,19 @@ void DebuggedProcess::OnException(std::unique_ptr<ExceptionHandle> exception) {
 
   DebuggedThread* thread = GetThread(thread_id);
   if (!thread) {
-    LOGS(Error) << "Exception on thread " << thread_id << " which we don't know about.";
-    return;
+    // The faulting thread should be suspended in the exception that we're currently holding, so we
+    // should be able to find it after synchronizing, but if we don't then we cannot continue.
+    PopulateCurrentThreads();
+
+    thread = GetThread(thread_id);
+    if (!thread) {
+      LOGS(Error) << "Exception on thread " << thread_id << " which we don't know about.";
+      return;
+    }
   }
 
+  // If we get here thread should always be valid.
+  FX_DCHECK(thread);
   thread->OnException(std::move(exception));
 }
 

@@ -200,14 +200,21 @@ class DebuggedProcess : public ProcessHandleObserver {
 
   bool from_limbo() const { return from_limbo_; }
 
- private:
+ protected:
   // ProcessHandleObserver implementation.
+  //
+  // These are protected so that they can be called from MockProcess. In normal operation these are
+  // called by the ProcessHandle implementation, but we don't want to have to construct fake
+  // instances of platform specific exception objects when we can just use our own abstractions
+  // here. This provides a simpler interface for testing the higher level objects without exposing
+  // the API outside of tests.
   void OnProcessTerminated() override;
   void OnThreadStarting(std::unique_ptr<ExceptionHandle> exception) override;
   void OnThreadExiting(std::unique_ptr<ExceptionHandle> exception) override;
   void OnException(std::unique_ptr<ExceptionHandle> exception) override;
   void OnProcessStarting(std::unique_ptr<ProcessHandle> new_process_handle) override;
 
+ private:
   void OnStdout(bool close);
   void OnStderr(bool close);
 

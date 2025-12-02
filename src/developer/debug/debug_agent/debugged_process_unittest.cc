@@ -12,6 +12,7 @@
 #include "src/developer/debug/debug_agent/mock_debug_agent_harness.h"
 #include "src/developer/debug/debug_agent/mock_process.h"
 #include "src/developer/debug/debug_agent/mock_thread.h"
+#include "src/developer/debug/debug_agent/mock_thread_handle.h"
 #include "src/developer/debug/debug_agent/software_breakpoint.h"
 #include "src/developer/debug/debug_agent/test_utils.h"
 #include "src/developer/debug/ipc/records.h"
@@ -307,6 +308,33 @@ TEST(DebuggedProcess, WeakAttachSkipsLoaderBreakpoint) {
 
   // Should not have sent modules.
   EXPECT_TRUE(harness.stream_backend()->modules().empty());
+}
+
+TEST(DebuggedProcess, ExceptionEnsuresThreadsAreSynced) {
+  MockDebugAgentHarness harness;
+  auto mock_process = harness.AddProcess(kProcessKoid);
+
+  // There should be no threads initially.
+  ASSERT_TRUE(mock_process->GetThreads().empty());
+
+  constexpr zx_koid_t kThreadKoid = 2;
+
+  // Inject a thread to the underlying process handle object, which will be the thread that receives
+  // the exception.
+  mock_process->mock_process_handle().set_threads({MockThreadHandle(kThreadKoid)});
+
+  // Dispatch the exception.
+  mock_process->InjectException(std::make_unique<MockExceptionHandle>(kProcessKoid, kThreadKoid));
+
+  // Now the DebuggedProcess should see it's child thread even though it didn't get a ThreadStarting
+  // notification.
+  ASSERT_EQ(mock_process->GetThreads().size(), 1u);
+  EXPECT_EQ(mock_process->GetThreads()[0]->koid(), kThreadKoid);
+
+  // We should also receive an exception notification.
+  ASSERT_EQ(harness.stream_backend()->exceptions().size(), 1u);
+  EXPECT_EQ(harness.stream_backend()->exceptions()[0].thread.id.process, kProcessKoid);
+  EXPECT_EQ(harness.stream_backend()->exceptions()[0].thread.id.thread, kThreadKoid);
 }
 
 }  // namespace
