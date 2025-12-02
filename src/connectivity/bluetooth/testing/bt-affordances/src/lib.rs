@@ -131,7 +131,7 @@ unsafe impl Sync for FfiPointer {}
 /// Stop serving Rust affordances.
 ///
 /// Returns ZX_STATUS_INTERNAL if Rust affordances exited with an error (check logs).
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn stop_rust_affordances() -> i32 {
     println!("Stopping Rust affordances");
     if let Err(err) = STATE.worker.join() {
@@ -148,7 +148,7 @@ pub extern "C" fn stop_rust_affordances() -> i32 {
 /// # Safety
 ///
 /// The caller must ensure that `addr_byte_buff` points to a valid buffer of 6 bytes.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn read_local_address(addr_byte_buff: *mut u8) -> i32 {
     if let Err(err) = block_on(STATE.worker.read_local_address(addr_byte_buff)) {
         eprintln!("read_local_address encountered error: {err}");
@@ -180,7 +180,7 @@ type GetKnownPeersCallback = extern "C" fn(context: *mut c_void, peer: *const Di
 /// # Safety
 ///
 /// The caller must ensure `context` and `cb` point to valid memory & a valid callback.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn get_known_peers(context: *mut c_void, cb: GetKnownPeersCallback) -> i32 {
     match block_on(STATE.worker.get_known_peers()) {
         Ok(discovered_peers) => {
@@ -209,9 +209,9 @@ pub extern "C" fn get_known_peers(context: *mut c_void, cb: GetKnownPeersCallbac
 ///
 /// The caller must ensure that `address` points to a valid C string encoding a BD_ADDR as a string
 /// of bytes in little-endian order.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn get_peer_id(address: *const core::ffi::c_char) -> u64 {
-    let address = CStr::from_ptr(address);
+    let address = unsafe { CStr::from_ptr(address) };
     match block_on(STATE.worker.get_peer_id(address)) {
         Ok(peer_id) => peer_id.value,
         Err(err) => {
@@ -224,7 +224,7 @@ pub unsafe extern "C" fn get_peer_id(address: *const core::ffi::c_char) -> u64 {
 /// Connect to peer with given identifier.
 ///
 /// Returns ZX_STATUS_INTERNAL on error (check logs).
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn connect_peer(peer_id: u64) -> i32 {
     let peer_id = PeerId { value: peer_id };
 
@@ -238,7 +238,7 @@ pub extern "C" fn connect_peer(peer_id: u64) -> i32 {
 /// Disconnect all logical links (BR/EDR & LE) to peer with given identifier.
 ///
 /// Returns ZX_STATUS_INTERNAL on error (check logs).
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn disconnect_peer(peer_id: u64) -> i32 {
     let peer_id = PeerId { value: peer_id };
 
@@ -256,7 +256,7 @@ pub extern "C" fn disconnect_peer(peer_id: u64) -> i32 {
 /// fuchsia.bluetooth.sys/PairingOptions for details.
 ///
 /// Returns ZX_STATUS_INTERNAL on error (check logs).
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn pair(peer_id: u64, le_security_level: u32, bondable: bool) -> i32 {
     let peer_id = PeerId { value: peer_id };
 
@@ -275,7 +275,7 @@ pub extern "C" fn pair(peer_id: u64, le_security_level: u32, bondable: bool) -> 
 /// Remove all bonding information and disconnect peer with given identifier, if found.
 ///
 /// Returns ZX_STATUS_INTERNAL on error (check logs).
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn forget_peer(peer_id: u64) -> i32 {
     let peer_id = PeerId { value: peer_id };
 
@@ -290,7 +290,7 @@ pub extern "C" fn forget_peer(peer_id: u64) -> i32 {
 /// result in the channel being closed after the new channel is opened.
 ///
 /// Returns ZX_STATUS_INTERNAL on error (check logs).
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn connect_l2cap_channel(peer_id: u64, psm: u16) -> i32 {
     let peer_id = PeerId { value: peer_id };
 
@@ -304,7 +304,7 @@ pub extern "C" fn connect_l2cap_channel(peer_id: u64, psm: u16) -> i32 {
 /// Start or stop general discovery procedure.
 ///
 /// Returns ZX_STATUS_INTERNAL on error (check logs).
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn set_discovery(discovery: bool) -> i32 {
     if let Err(err) = block_on(STATE.worker.set_discovery(discovery)) {
         eprintln!("set_discovery encountered error: {err:?}");
@@ -316,7 +316,7 @@ pub extern "C" fn set_discovery(discovery: bool) -> i32 {
 /// Start or revoke discoverability.
 ///
 /// Returns ZX_STATUS_INTERNAL on error (check logs).
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn set_discoverability(discoverable: bool) -> i32 {
     if let Err(err) = block_on(STATE.worker.set_discoverability(discoverable)) {
         eprintln!("set_discoverability encountered error: {err:?}");
@@ -328,7 +328,7 @@ pub extern "C" fn set_discoverability(discoverable: bool) -> i32 {
 /// Set connection policy.
 ///
 /// Returns ZX_STATUS_INTERNAL on error (check logs).
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn set_connectability(connectable: bool) -> i32 {
     if let Err(err) = block_on(STATE.worker.set_connectability(connectable)) {
         eprintln!("set_connectability encountered error: {err:?}");
@@ -367,7 +367,7 @@ unsafe impl Sync for LeScanCallbackWrapper {}
 /// # Safety
 ///
 /// The caller must ensure `context` and `cb` point to valid memory & a valid callback.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn start_le_scan(context: *mut c_void, cb: LeScanCallback) -> i32 {
     let ffi_ptr = FfiPointer(context);
     let cb_wrapper = LeScanCallbackWrapper(cb);
@@ -382,7 +382,7 @@ pub extern "C" fn start_le_scan(context: *mut c_void, cb: LeScanCallback) -> i32
 /// Stop an ongoing LE scan.
 ///
 /// Returns ZX_STATUS_BAD_STATE if no scan was ongoing.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn stop_le_scan() -> i32 {
     let Some(le_scan) = STATE.le_scan.lock().take() else {
         return zx::Status::BAD_STATE.into_raw();
@@ -405,7 +405,7 @@ pub extern "C" fn stop_le_scan() -> i32 {
 /// Connect to an LE peer with the given identifier.
 ///
 /// Returns ZX_STATUS_INTERNAL on error (check logs).
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn connect_le(peer_id: u64) -> i32 {
     let peer_id = PeerId { value: peer_id };
 
@@ -423,7 +423,7 @@ pub extern "C" fn connect_le(peer_id: u64) -> i32 {
 /// `address_type` is 1 for Public or 2 for Random. All other values are interpreted as unset, in
 /// which case the address type will be Public or Random depending on if privacy is enabled in the
 /// system. See fuchsia.bluetooth.le/AdvertisingParameters for details.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn advertise_peripheral(connectable: bool, address_type: u8, timeout: u64) -> u64 {
     match block_on(STATE.worker.advertise_peripheral(
         connectable,
@@ -530,7 +530,7 @@ fn permissions_from_raw(properties: u16, permissions: u16) -> AttributePermissio
 /// # Safety
 ///
 /// The caller must ensure that UUIDs are validly encoded as C strings.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn publish_service(
     handle: u64,
     uuid: *const core::ffi::c_char,
@@ -541,11 +541,11 @@ pub unsafe extern "C" fn publish_service(
 ) -> i32 {
     let parse_uuid =
         |uuid: *const core::ffi::c_char| -> Result<fidl_fuchsia_bluetooth::Uuid, anyhow::Error> {
-            fuchsia_bluetooth::types::Uuid::from_str(
-                CStr::from_ptr(uuid)
-                    .to_str()
-                    .map_err(|utf8_err| anyhow!("utf8 error: {utf8_err}"))?,
-            )
+            // Caller is responsible for providing a valid pointer to a C string. Encoding errors
+            // are logged safely.
+            fuchsia_bluetooth::types::Uuid::from_str(unsafe {
+                CStr::from_ptr(uuid).to_str().map_err(|utf8_err| anyhow!("utf8 error: {utf8_err}"))
+            }?)
             .map(|uuid| uuid.into())
             .map_err(|bt_error| anyhow!("{bt_error}"))
         };
