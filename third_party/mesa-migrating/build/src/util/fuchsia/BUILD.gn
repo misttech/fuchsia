@@ -19,18 +19,16 @@
 #FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
 #IN THE SOFTWARE.
 
-import("../../mesa.gni")
+import("../../../mesa.gni")
 
-src_dir = "$mesa_source_root/src/os"
+src_dir = "$mesa_source_root/src/util/fuchsia"
 
-mesa_source_set("os") {
+mesa_source_set("fuchsia") {
   if (current_os == "fuchsia") {
     sources = [
-      "$src_dir/fuchsia.cpp",
+      "$src_dir/fuchsia.c",
       "$src_dir/fuchsia.h",
     ]
-
-    defines = [ "USE_MAGMA=1" ]
 
     deps = [
       "$mesa_build_root/src/util",

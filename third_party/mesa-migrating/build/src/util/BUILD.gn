@@ -294,7 +294,7 @@ mesa_source_set("util") {
 mesa_source_set("magma_util") {
   public_deps = [
     ":util",
-    "$mesa_build_root/src/os",
+    "$mesa_build_root/src/util/fuchsia",
     "$mesa_build_root/src/util/magma",
   ]
 
@@ -306,7 +306,7 @@ mesa_source_set("magma_util") {
 mesa_source_set("zircon_util") {
   public_deps = [
     ":util",
-    "$mesa_build_root/src/os",
+    "$mesa_build_root/src/util/fuchsia",
   ]
 
   public_configs = [ ":util_public_config" ]
