@@ -36,13 +36,38 @@ int main(int argc, const char** argv) {
   }
 
   // Apply the scheduler role defined for kernel trace reading.
-  const zx_status_t thread_status =
-      fuchsia_scheduler::SetRoleForThisThread("fuchsia.ktrace.reader");
-  if (thread_status != ZX_OK) {
-    FX_PLOGS(WARNING, thread_status) << "Failed to apply profile to main thread";
+  std::vector<fuchsia_scheduler::RoleParameter> input_args;
+  const zx::result output_args =
+      fuchsia_scheduler::SetRoleForThisThread("fuchsia.ktrace.reader", input_args);
+
+  // Default to 2300us every 10ms -- a value somewhat arbitrarily chosen by looking at how long it
+  // takes to copy data during a trace with all kernel categories enabled.
+  zx::duration max_readout_time = zx::usec(2'300);
+  zx::duration poll_period = zx::msec(10);
+  if (output_args.is_ok()) {
+    for (const auto& [arg_name, arg_val] : *output_args) {
+      if (arg_name == "max_readout_time") {
+        if (std::holds_alternative<int64_t>(arg_val)) {
+          max_readout_time = zx::nsec(std::get<int64_t>(arg_val));
+        } else {
+          FX_LOGS(ERROR)
+              << "Failed to get profile capacity from in 'fuchsia.ktrace.reader'. Poll timings aren't synchronized.";
+        }
+      } else if (arg_name == "poll_period") {
+        if (std::holds_alternative<int64_t>(arg_val)) {
+          poll_period = zx::nsec(std::get<int64_t>(arg_val));
+        } else {
+          FX_LOGS(ERROR)
+              << "Failed to get profile capacity from in 'fuchsia.ktrace.reader'. Poll timings aren't synchronized.";
+        }
+      }
+    }
+  } else {
+    FX_PLOGS(WARNING, output_args.error_value()) << "Failed to apply profile to main thread";
   }
 
-  ktrace_provider::App app(std::move(tracing_result->resource()), command_line);
+  ktrace_provider::App app(std::move(tracing_result->resource()), command_line, poll_period,
+                           max_readout_time);
   loop.Run();
   return 0;
 }

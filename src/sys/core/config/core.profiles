@@ -35,7 +35,14 @@
     "fuchsia.memory-monitor.main": { "priority": 8},
 
     // Callers of zx_ktrace_read.
-    "fuchsia.ktrace.reader": { "capacity": "2300us", "deadline": "8ms", "period": "8ms" },
+    // The output parameters must stay in sync with the specified capacity/period so that
+    // ktrace_provider set its poll timing appropriately.
+    "fuchsia.ktrace.reader": {
+        "capacity": "2300us",
+        "deadline": "8ms",
+        "period": "8ms",
+        "output_parameters": { "max_readout_time": 2300000, "poll_period": 10000000 }
+    },
   },
   "memory": {
     "fuchsia.media.audio.core": { "priority": 24 },

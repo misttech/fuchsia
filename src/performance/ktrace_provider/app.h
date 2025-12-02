@@ -21,15 +21,16 @@ std::vector<trace::KnownCategory> GetKnownCategories();
 
 struct DrainContext {
   DrainContext(zx::time start, zx::resource tracing_resource, zx::duration poll_period,
-               size_t buffer_size)
+               zx::duration max_readout_time, size_t buffer_size)
       : start(start),
         tracing_resource(std::move(tracing_resource)),
         poll_period(poll_period),
+        max_readout_time(max_readout_time),
         buffer(std::make_unique_for_overwrite<uint64_t[]>(buffer_size / sizeof(uint64_t))),
         buffer_size(buffer_size) {}
 
   static zx::result<DrainContext> Create(const zx::resource& tracing_resource,
-                                         zx::duration poll_period) {
+                                         zx::duration poll_period, zx::duration max_readout_time) {
     zx::resource cloned_resource;
     if (zx_status_t status = tracing_resource.duplicate(ZX_RIGHT_SAME_RIGHTS, &cloned_resource);
         status != ZX_OK) {
@@ -45,12 +46,13 @@ struct DrainContext {
     }
 
     return zx::ok(DrainContext{zx::clock::get_monotonic(), std::move(cloned_resource), poll_period,
-                               buffer_size});
+                               max_readout_time, buffer_size});
   }
 
   zx::time start;
   zx::resource tracing_resource;
   zx::duration poll_period;
+  zx::duration max_readout_time;
 
   std::unique_ptr<uint64_t[]> buffer;
   size_t buffer_size;
@@ -58,7 +60,8 @@ struct DrainContext {
 
 class App {
  public:
-  App(zx::resource tracing_resource, const fxl::CommandLine& command_line);
+  App(zx::resource tracing_resource, const fxl::CommandLine& command_line, zx::duration poll_period,
+      zx::duration max_readout_time);
 
  private:
   zx::result<> UpdateState();
@@ -71,6 +74,8 @@ class App {
   LogImporter log_importer_;
   uint32_t current_group_mask_ = 0u;
   zx::resource tracing_resource_;
+  zx::duration poll_period_;
+  zx::duration max_readout_time_;
 
   App(const App&) = delete;
   App(App&&) = delete;

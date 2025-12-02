@@ -128,12 +128,10 @@ void ForwardBuffer(DrainContext drain_context) {
   const zx::time_monotonic end_time = zx::clock::get_monotonic();
   const zx::duration read_out_duration = end_time - start_time;
 
-  // TODO(eieio): Use a profile return value to keep this in sync with profile
-  // changes and use thread runtime for this measurement.
-  const zx::duration profile_capacity = zx::usec(2300);
-  if (read_out_duration > profile_capacity) {
+  if (read_out_duration > drain_context.max_readout_time) {
     FX_LOGS(DEBUG) << "Read out exceeded expected worst case execution time: expected="
-                   << profile_capacity.get() << "ns actual=" << read_out_duration.get() << "ns";
+                   << drain_context.max_readout_time.get()
+                   << "ns actual=" << read_out_duration.get() << "ns";
   }
 
   switch (trace_state()) {
@@ -174,8 +172,11 @@ std::vector<trace::KnownCategory> GetKnownCategories() {
   return known_categories;
 }
 
-App::App(zx::resource tracing_resource, const fxl::CommandLine& command_line)
-    : tracing_resource_(std::move(tracing_resource)) {
+App::App(zx::resource tracing_resource, const fxl::CommandLine& command_line,
+         zx::duration poll_period, zx::duration max_readout_time)
+    : tracing_resource_(std::move(tracing_resource)),
+      poll_period_(poll_period),
+      max_readout_time_(max_readout_time) {
   trace_observer_.Start(async_get_default_dispatcher(), [this] {
     if (zx::result res = UpdateState(); res.is_error()) {
       FX_PLOGS(ERROR, res.error_value()) << "Update state failed";
@@ -255,7 +256,7 @@ zx::result<> App::StartKTrace(uint32_t group_mask, trace_buffering_mode_t buffer
   }
 
   // We poll zx_ktrace_read for data while tracing.
-  auto drain_context = DrainContext::Create(tracing_resource_, zx::msec(10));
+  auto drain_context = DrainContext::Create(tracing_resource_, poll_period_, max_readout_time_);
   if (drain_context.is_error()) {
     FX_PLOGS(ERROR, drain_context.error_value()) << "Failed to start reading kernel buffer";
     return drain_context.take_error();
