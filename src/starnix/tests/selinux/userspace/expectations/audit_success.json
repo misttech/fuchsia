@@ -364,24 +364,6 @@
             ]
         },
         {
-            "name": "MemFdTest/MemFdNoTransition",
-            "audit_expectations": [
-                "avc:  denied  { getattr } for name=\"memfd:test\" dev=\"tmpfs\" ino=4 scontext=test_u:test_r:test_memfd_no_transition_t:s0 tcontext=test_u:object_r:tmpfs_t:s0 tclass=file permissive=1"
-            ]
-        },
-        {
-            "name": "MemFdTest/MemFdNoTransitionInheritsTmpFsDomain",
-            "audit_expectations": [
-                "avc:  denied  { getattr } for name=\"memfd:test\" dev=\"tmpfs\" ino=4 scontext=test_u:test_r:test_memfd_no_transition_t:s0 tcontext=test_u:object_r:tmpfs_t:s0 tclass=file permissive=1"
-            ]
-        },
-        {
-            "name": "MemFdTest/MemFdTransition",
-            "audit_expectations": [
-                "avc:  denied  { getattr } for name=\"memfd:test\" dev=\"tmpfs\" ino=3 scontext=test_u:test_r:test_memfd_transition_t:s0 tcontext=test_u:object_r:tmpfs_t:s0 tclass=file permissive=1"
-            ]
-        },
-        {
             "name": "MountTest/WithContextOption",
             "audit_expectations": [
                 "avc:  denied  { relabelto } for scontext=system_u:unconfined_r:unconfined_t:s0 tcontext=source_u:object_r:target_t:s0 tclass=filesystem permissive=1",

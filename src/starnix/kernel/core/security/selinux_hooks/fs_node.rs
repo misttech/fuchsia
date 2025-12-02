@@ -19,8 +19,8 @@ use crate::vfs::{
 use selinux::policy::{AccessVector, AccessVectorComputer, FsUseType};
 use selinux::{
     CommonFilePermission, CommonFsNodePermission, DirPermission, FileClass, FileSystemLabel,
-    FileSystemLabelingScheme, FileSystemPermission, ForClass, FsNodeClass, InitialSid, SecurityId,
-    SecurityServer, SocketClass,
+    FileSystemLabelingScheme, FileSystemPermission, ForClass, FsNodeClass, InitialSid, PolicyCap,
+    SecurityId, SecurityServer, SocketClass,
 };
 use starnix_logging::{CATEGORY_STARNIX_SECURITY, log_debug, log_warn, trace_duration, track_stub};
 use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked};
@@ -477,6 +477,16 @@ pub(in crate::security) fn fs_node_init_memfd(
     current_task: &CurrentTask,
     new_node: &FsNode,
 ) {
+    if !security_server.is_policycap_enabled(PolicyCap::MemfdClass) {
+        if current_task.kernel().features.selinux_test_suite {
+            return;
+        }
+        track_stub!(
+            TODO("https://fxbug.dev/458332374"),
+            "Applying memfd_class in spite of missing policycap"
+        );
+    }
+
     let fs_node_class = FileClass::MemFdFile.into();
     let sid = if current_task.kernel().security_state.state.as_ref().unwrap().has_policy() {
         let task_sid = current_task_state(current_task).lock().current_sid;
