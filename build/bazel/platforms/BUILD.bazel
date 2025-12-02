@@ -183,6 +183,16 @@ config_setting(
     ],
 )
 
+# Use this to match the host operating system, independent of its CPU.
+# This will match `target_compatible_with = HOST_OS_CONSTRAINTS` where
+# HOST_OS_CONSTRAINTS is defined by //build/bazel/platforms:constraints.bzl.
+config_setting(
+    name = "is_host_os",
+    constraint_values = [
+        build_config.host_platform_os_constraint,
+    ],
+)
+
 # A constraint dimension which indiciates whether Fuchsia artifacts
 # are generated using SDK rules or not. Platform binaries cannot use
 # SDK rules.
