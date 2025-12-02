@@ -9,7 +9,7 @@ use crate::types::*;
 use anyhow::{Context, Result};
 use argh::FromArgs;
 use camino::Utf8PathBuf;
-use cargo_metadata::{CargoOpt, DependencyKind, Package};
+use cargo_metadata::{CargoOpt, DependencyKind, Package, PackageName};
 use serde_derive::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs::File;
@@ -79,7 +79,6 @@ pub struct Opt {
     output_fuchsia_sdk_metadata: bool,
 }
 
-type PackageName = String;
 type TargetName = String;
 type Version = String;
 
@@ -311,7 +310,7 @@ pub fn generate_from_manifest<W: io::Write>(mut output: &mut W, opt: &Opt) -> Re
         .strip_prefix(&opt.project_root)
         .expect("--project-root must be a parent of --output");
     let mut emitted_metadata: Vec<CrateOutputMetadata> = Vec::new();
-    let mut top_level_metadata: HashSet<String> = HashSet::new();
+    let mut top_level_metadata = HashSet::new();
     let mut imported_files: HashSet<String> = HashSet::new();
 
     // generate cargo metadata
@@ -694,7 +693,7 @@ pub fn generate_from_manifest<W: io::Write>(mut output: &mut W, opt: &Opt) -> Re
 
         // Check to see if we need to review individual features for this crate
         let reviewed_features = reviewed_features_map.get(target);
-        if require_feature_reviews.contains(&target.name()) {
+        if require_feature_reviews.contains(target.name().as_str()) {
             match reviewed_features {
                 Some(Some(_)) => {}
                 _ => {
@@ -732,6 +731,7 @@ pub fn generate_from_manifest<W: io::Write>(mut output: &mut W, opt: &Opt) -> Re
                 .features
                 .iter()
                 .filter(|f| !reviewed_features_set.contains(f.as_str()))
+                .map(|feature| feature.to_string())
                 .collect::<Vec<_>>();
             if !unreviewed_features.is_empty() {
                 anyhow::bail!(

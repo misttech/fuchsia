@@ -403,14 +403,14 @@ alias(
 )
 
 alias(
-    name = "cargo_metadata-0.18.1",
-    actual = "//third_party/rust_crates/vendor/cargo_metadata-0.18.1:cargo_metadata",
+    name = "cargo_metadata-0.23.1",
+    actual = "//third_party/rust_crates/vendor/cargo_metadata-0.23.1:cargo_metadata",
     tags = ["manual"],
 )
 
 alias(
     name = "cargo_metadata",
-    actual = "//third_party/rust_crates/vendor/cargo_metadata-0.18.1:cargo_metadata",
+    actual = "//third_party/rust_crates/vendor/cargo_metadata-0.23.1:cargo_metadata",
     tags = ["manual"],
 )
 

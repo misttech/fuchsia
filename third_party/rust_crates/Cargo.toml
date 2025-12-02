@@ -317,7 +317,7 @@ zeroize = "1.8.1"
 # keep-sorted start
 askama = "0.14.0"
 async-fs = "1.6.0"
-cargo_metadata = "0.18.1"
+cargo_metadata = "0.23.1"
 crossterm = "0.19"
 fs_extra = "1.2.0"
 fuse3 = { version = "0.6.1", features = ["tokio-runtime", "unprivileged"] }

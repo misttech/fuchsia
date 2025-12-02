@@ -9,8 +9,8 @@ use cargo_metadata::{Edition, Package, PackageId};
 use semver::Version;
 use std::borrow::Cow;
 use std::cmp::Ordering;
-use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
+use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 
 pub struct GnTarget<'a> {
@@ -32,7 +32,7 @@ pub struct GnTarget<'a> {
     pub target_type: GnRustType,
     /// Rust features enabled on this target
     /// rustc: --cfg=feature=<string>
-    pub features: &'a [String],
+    pub features: &'a [Feature],
     /// Target depends on Cargo running a custom build-script
     pub has_build_script: bool,
     /// Target depends on Cargo running a custom build-script

@@ -4,7 +4,7 @@
 
 use crate::target::GnTarget;
 use crate::types::*;
-use anyhow::{anyhow, Context as _, Result};
+use anyhow::{Context as _, Result, anyhow};
 use cargo_metadata::{DependencyKind, Metadata, Package, PackageId};
 use std::collections::{HashMap, HashSet};
 use std::convert::TryFrom;
@@ -69,7 +69,9 @@ impl<'a> GnBuildGraph<'a> {
             for node_dep in node.deps.iter() {
                 let id = &node_dep.pkg;
                 if node_dep.dep_kinds.is_empty() {
-                    return Err(anyhow!("Must use rustc 1.41+ to use cargo-gnaw. Needs dependency kind information."));
+                    return Err(anyhow!(
+                        "Must use rustc 1.41+ to use cargo-gnaw. Needs dependency kind information."
+                    ));
                 }
                 for kinds in &node_dep.dep_kinds {
                     let kind = &kinds.kind;
@@ -95,7 +97,7 @@ impl<'a> GnBuildGraph<'a> {
                             return Err(anyhow!(
                                 "Don't know how to handle this kind of dependency edge: {:?}",
                                 err
-                            ))
+                            ));
                         }
                     }
                 }
@@ -103,7 +105,7 @@ impl<'a> GnBuildGraph<'a> {
 
             let has_build_script = package.targets.iter().any(|target| {
                 for kind in &target.kind {
-                    let gn_rust_type = GnRustType::try_from(kind.as_str())
+                    let gn_rust_type = GnRustType::try_from(kind)
                         .with_context(|| {
                             format!("Failed to resolve GN target type for: {:?}", target)
                         })
@@ -119,7 +121,7 @@ impl<'a> GnBuildGraph<'a> {
 
             for rust_target in package.targets.iter() {
                 for kind in &rust_target.kind {
-                    let target_type = GnRustType::try_from(kind.as_str())?;
+                    let target_type = GnRustType::try_from(kind)?;
                     match target_type {
                         GnRustType::Library | GnRustType::Rlib | GnRustType::ProcMacro => {
                             let gn_target = GnTarget::new(
@@ -144,10 +146,7 @@ impl<'a> GnBuildGraph<'a> {
                             let mut deps = dependencies.clone();
                             let maybe_library = package.targets.iter().find(|v| {
                                 v.kind.iter().any(|kind| {
-                                    matches!(
-                                        GnRustType::try_from(kind.as_str()),
-                                        Ok(GnRustType::Library)
-                                    )
+                                    matches!(GnRustType::try_from(kind), Ok(GnRustType::Library))
                                 })
                             });
                             if let Some(lib) = maybe_library {

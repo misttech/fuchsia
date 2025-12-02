@@ -3,11 +3,11 @@
 // found in the LICENSE file.
 
 use crate::gn::add_version_suffix;
-use anyhow::{anyhow, Error};
-use cargo_metadata::Package;
+use anyhow::{Error, anyhow};
+use cargo_metadata::{Package, TargetKind};
 use std::convert::TryFrom;
 
-pub type Feature = String;
+pub type Feature = cargo_metadata::FeatureName;
 pub type Platform = String;
 
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
@@ -25,23 +25,23 @@ pub enum GnRustType {
     BuildScript,
 }
 
-impl<'a> TryFrom<&'a str> for GnRustType {
+impl<'a> TryFrom<&'a TargetKind> for GnRustType {
     type Error = Error;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &TargetKind) -> Result<Self, Self::Error> {
         match value {
-            "bin" => Ok(GnRustType::Binary),
-            "lib" => Ok(GnRustType::Library),
-            "rlib" => Ok(GnRustType::Rlib),
-            "staticlib" => Ok(GnRustType::Staticlib),
-            "dylib" => Ok(GnRustType::Dylib),
-            "cdylib" => Ok(GnRustType::Cdylib),
-            "proc-macro" => Ok(GnRustType::ProcMacro),
-            "test" => Ok(GnRustType::Test),
-            "example" => Ok(GnRustType::Example),
-            "bench" => Ok(GnRustType::Bench),
-            "custom-build" => Ok(GnRustType::BuildScript),
-            value => Err(anyhow!("unknown crate type: {}", value)),
+            TargetKind::Bin => Ok(GnRustType::Binary),
+            TargetKind::Lib => Ok(GnRustType::Library),
+            TargetKind::RLib => Ok(GnRustType::Rlib),
+            TargetKind::StaticLib => Ok(GnRustType::Staticlib),
+            TargetKind::DyLib => Ok(GnRustType::Dylib),
+            TargetKind::CDyLib => Ok(GnRustType::Cdylib),
+            TargetKind::ProcMacro => Ok(GnRustType::ProcMacro),
+            TargetKind::Test => Ok(GnRustType::Test),
+            TargetKind::Example => Ok(GnRustType::Example),
+            TargetKind::Bench => Ok(GnRustType::Bench),
+            TargetKind::CustomBuild => Ok(GnRustType::BuildScript),
+            value => Err(anyhow!("unknown crate type: {value}")),
         }
     }
 }
@@ -59,7 +59,7 @@ impl GnData for Package {
     fn is_proc_macro(&self) -> bool {
         for target in &self.targets {
             for kind in &target.kind {
-                if kind == "proc-macro" {
+                if kind == &TargetKind::ProcMacro {
                     return true;
                 }
             }
