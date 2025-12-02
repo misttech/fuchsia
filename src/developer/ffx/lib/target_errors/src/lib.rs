@@ -43,8 +43,8 @@ pub enum FfxTargetError {
             OpenTargetError::FailedDiscovery => format!("Could not resolve specification {} due to discovery failure", target_string(.target)),
             OpenTargetError::QueryAmbiguous => {
                 match target_string(.target) {
-                    target if target == UNSPECIFIED_TARGET_NAME => format!("More than one device/emulator found. Use `ffx target list` to list known targets and specify one with the `-t` or `--target` flag."),
-                    target => format!("Target specification {} matched multiple targets. Use `ffx target list` to list known targets, and use a more specific target query.", target),
+                    target if target == UNSPECIFIED_TARGET_NAME => format!("More than one device/emulator found. Use `ffx target list` to list known targets and specify one with the `-t` or `--target` flag.\nCurrently found: \n\t{}", targets.join("\n\t")),
+                    target => format!("Target specification {} matched multiple targets. Use `ffx target list` to list known targets, and use a more specific target query.\nCurrently found: \n\t{}", target, targets.join("\n\t")),
                 }
             },
             OpenTargetError::TargetNotFound => {
@@ -54,7 +54,7 @@ pub enum FfxTargetError {
                 }
             }
         })]
-    OpenTargetError { err: OpenTargetError, target: Option<String> },
+    OpenTargetError { err: OpenTargetError, target: Option<String>, targets: Vec<String> },
 
     #[cfg(not(target_os = "fuchsia"))]
     #[error("{}", match .err {
@@ -256,7 +256,11 @@ mod tests {
         fn error_message(err: OpenTargetError, target: Option<&str>) -> String {
             format!(
                 "{}",
-                FfxTargetError::OpenTargetError { err, target: target.map(|s| s.to_owned()) }
+                FfxTargetError::OpenTargetError {
+                    err,
+                    target: target.map(|s| s.to_owned()),
+                    targets: vec![]
+                }
             )
         }
 

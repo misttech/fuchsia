@@ -212,7 +212,11 @@ pub fn open_target_with_fut<'a, 'b: 'a>(
             err: DaemonError::Timeout,
             target: target.clone().into(),
         })??
-        .map_err(|err| FfxTargetError::OpenTargetError { err, target: target.clone().into() })?;
+        .map_err(|err| FfxTargetError::OpenTargetError {
+            err,
+            target: target.clone().into(),
+            targets: vec![],
+        })?;
         Result::<()>::Ok(())
     };
     let fut = async move {

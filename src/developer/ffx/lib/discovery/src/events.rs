@@ -66,7 +66,7 @@ impl Display for TargetState {
                     serial.as_ref().map_or("", |s| s.as_str())
                 )
             }
-            TargetState::Fastboot(state) => format!("Fastboot({:?})", state),
+            TargetState::Fastboot(state) => format!("Fastboot({})", state),
             TargetState::Zedboot => "Zedboot".to_string(),
         };
         write!(f, "{}", res)

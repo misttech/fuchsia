@@ -15,7 +15,7 @@ use futures::future::LocalBoxFuture;
 use futures::{FutureExt, Stream, StreamExt, pin_mut};
 use netext::IsLocalAddr;
 use std::cmp::Ordering;
-use std::fmt::Debug;
+use std::fmt::{Debug, Display};
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
@@ -93,17 +93,22 @@ async fn locally_resolve_target_spec<T: TargetResolver>(
 pub(crate) fn expect_single_target<T>(
     query: &TargetInfoQuery,
     targets: Vec<T>,
-) -> Result<T, FfxTargetError> {
+) -> Result<T, FfxTargetError>
+where
+    T: Display,
+{
     match targets.len() {
         0 => Err(FfxTargetError::OpenTargetError {
             err: ffx::OpenTargetError::TargetNotFound,
             target: Some(query.into()),
+            targets: vec![],
         })
         .into(),
         1 => Ok(targets.into_iter().next().unwrap()),
         _ => Err(FfxTargetError::OpenTargetError {
             err: ffx::OpenTargetError::QueryAmbiguous,
             target: Some(query.into()),
+            targets: targets.iter().map(|f| format!("{}", f)).collect(),
         })
         .into(),
     }
@@ -117,7 +122,14 @@ pub async fn discover_single_default_target(ctx: &EnvironmentContext) -> Result<
     let query = TargetInfoQuery::from(query_s);
     // Note: this will use the target cache if it exists
     let handles = get_discovered_targets(query.clone(), true, true, ctx).await?;
-    expect_single_target(&query, handles).map_err(|e| e.into())
+    expect_single_target(&query, handles).map_err(|e| {
+        // Going straight from e => anyhow::Error causes the error Framework we
+        // use to return a Bug since it cannot be properly downcast to an
+        // FfxError properly. Manually cast to a FfxError here before wrapping
+        // it.
+        let wrapped: errors::FfxError = e.into();
+        wrapped.into()
+    })
 }
 
 /// A trait for resolving target queries into concrete target information.
@@ -205,6 +217,7 @@ pub trait TargetResolver: Default {
                         return Err(FfxTargetError::OpenTargetError {
                             err: ffx::OpenTargetError::FailedDiscovery,
                             target: Some(target_spec.into()),
+                            targets: vec![],
                         })
                     },
                 },
@@ -221,6 +234,7 @@ pub trait TargetResolver: Default {
                 FfxTargetError::OpenTargetError {
                     err: ffx::OpenTargetError::FailedDiscovery,
                     target: Some(target_spec.into()),
+                    targets: vec![],
                 }
             })?,
         };
@@ -232,6 +246,7 @@ pub trait TargetResolver: Default {
                     FfxTargetError::OpenTargetError {
                         err: ffx::OpenTargetError::FailedDiscovery,
                         target: Some(target_spec.into()),
+                        targets: vec![],
                     }
                 })
             })
@@ -620,6 +635,16 @@ pub struct Resolution {
     connection: Mutex<Option<Arc<Connection>>>,
     rcs_proxy: Mutex<Option<RemoteControlProxy>>,
     identify_host_response: Mutex<Option<IdentifyHostResponse>>,
+}
+
+impl Display for Resolution {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
+        write!(f, "Target: {:?}", self.target)?;
+        if let Some(discovered) = &self.discovered {
+            write!(f, " Discovered: {}", discovered)?;
+        }
+        Ok(())
+    }
 }
 
 impl Resolution {

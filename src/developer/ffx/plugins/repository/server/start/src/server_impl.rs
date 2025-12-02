@@ -151,6 +151,7 @@ pub async fn serve_impl_validate_args(
                     return Err(Into::<errors::FfxError>::into(FfxTargetError::OpenTargetError {
                         err: fidl_fuchsia_developer_ffx::OpenTargetError::TargetNotFound,
                         target: None,
+                        targets: vec![],
                     })
                     .into());
                 } else {
@@ -1006,6 +1007,7 @@ mod test {
                         FfxTargetError::OpenTargetError {
                             err: fidl_fuchsia_developer_ffx::OpenTargetError::TargetNotFound,
                             target: None,
+                            targets: vec![],
                         }
                         .into(),
                     )
@@ -1031,6 +1033,7 @@ mod test {
                         FfxTargetError::OpenTargetError {
                             err: fidl_fuchsia_developer_ffx::OpenTargetError::QueryAmbiguous,
                             target: None,
+                            targets: vec!["foo".to_string(), "bar".to_string()],
                         }
                         .into(),
                     )
@@ -1529,7 +1532,7 @@ mod test {
 
         let err = result.expect_err("Expected an error but did not get one");
 
-        let expected: String = "More than one device/emulator found. Use `ffx target list` to list known targets and specify one with the `-t` or `--target` flag.".into();
+        let expected: String = "More than one device/emulator found. Use `ffx target list` to list known targets and specify one with the `-t` or `--target` flag.\nCurrently found: \n\tfoo\n\tbar".into();
         assert_eq!(err.to_string(), expected);
     }
 
