@@ -18,9 +18,6 @@ pub const BLOCK_SIZE: usize = 8192;
 
 mod util;
 
-mod tree;
-pub use crate::tree::MerkleTree;
-
 mod merkle_root_builder;
 pub use crate::merkle_root_builder::{
     BufferedMerkleRootBuilder, LeafHashCollector, MerkleRootBuilder, NoopLeafHashCollector,
@@ -28,19 +25,6 @@ pub use crate::merkle_root_builder::{
 
 mod merkle_verifier;
 pub use crate::merkle_verifier::{MerkleVerifier, ReadSizedMerkleVerifier};
-
-/// Compute a merkle tree from a `&[u8]`.
-pub fn from_slice(slice: &[u8]) -> MerkleTree {
-    MerkleTree::from_root(root_from_slice(slice))
-}
-
-/// Compute a merkle tree from a `std::io::Read`.
-pub fn from_read<R>(reader: &mut R) -> Result<MerkleTree, io::Error>
-where
-    R: Read,
-{
-    Ok(MerkleTree::from_root(root_from_reader(reader)?))
-}
 
 /// Computes the merkle root of in-memory data.
 pub fn root_from_slice(slice: impl AsRef<[u8]>) -> Hash {
