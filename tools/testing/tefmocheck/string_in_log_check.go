@@ -952,5 +952,13 @@ func infraToolLogChecks() []FailureModeCheck {
 			Type:               swarmingOutputType,
 			SkipAllPassedTests: true,
 		},
+		// Emulators sometimes fail to start with this error message.
+		&stringInLogCheck{
+			// LINT.IfChange(tuntap_in_use)
+			String: "The Tun/Tap interface 'qemu' exists, but it's in use by another process",
+			// LINT.ThenChange(/src/developer/ffx/plugins/emulator/common/src/tuntap.rs:tuntap_in_use)
+			Type:           swarmingOutputType,
+			SkipPassedTask: true,
+		},
 	}
 }

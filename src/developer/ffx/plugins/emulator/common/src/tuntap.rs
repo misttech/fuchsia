@@ -147,7 +147,9 @@ fn tap_inner(tap: &QemuTunTap, check_for_ready: bool) -> Result<()> {
     // Also check for busy-ness.
     if tap.interface_is_in_use(&interface) {
         return_user_error!(
+            // LINT.IfChange(tuntap_in_use)
             "The Tun/Tap interface '{TAP_INTERFACE_NAME}' exists, but it's in use by another process."
+            // LINT.ThenChange(/tools/testing/tefmocheck/string_in_log_check.go:tuntap_in_use)
         )
     }
     Ok(())
