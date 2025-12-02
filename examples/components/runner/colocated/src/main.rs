@@ -182,6 +182,7 @@ fn start(
             program.get_vmo_koid(),
         ),
     );
+    drop(resources);
 
     let updates = vec![
         fattribution::AttributionUpdate::Add(fattribution::NewPrincipal {
