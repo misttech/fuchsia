@@ -170,6 +170,7 @@ assembly_input_bundle("component_manager_with_tracing_and_heapdump") {
 assembly_input_bundle("bootstrap") {
   bootfs_packages = [
     "//src/bringup/bin/device-name-provider:package",
+    "//src/bringup/bin/kernel-args-forwarder:package",
     "//src/bringup/bin/sysinfo:package",
     "//src/sysmem/server:pkg",
     "//src/zircon/bin/role_manager:package",
@@ -184,6 +185,7 @@ assembly_input_bundle("bootstrap") {
 
   bootstrap_shards = [
     "//src/bringup/bin/paver/meta/paver.bootstrap_shard.cml",
+    "//src/bringup/bin/kernel-args-forwarder/meta/kernel_args_forwarder.bootstrap_shard.cml",
     "//src/bringup/bin/sysinfo/meta/sysinfo.shard.cml",
     "//src/sysmem/server/meta/sysmem.bootstrap_shard.cml",
     "//src/bringup/bin/device-name-provider/meta/device-name-provider.bootstrap_shard.cml",
@@ -622,6 +624,7 @@ assembly_input_bundle("trusted_execution_environment") {
 #
 assembly_input_bundle("bootstrap_eng") {
   testonly = true
+
   bootfs_files_labels = [
     # tools
     "//src/devices/acpi/bin/acpidump:bootfs",

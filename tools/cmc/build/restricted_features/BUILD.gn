@@ -11,6 +11,7 @@ group("structured_config") {
 group("dynamic_dictionaries") {
   visibility = [
     "//examples/components/dictionaries/*",
+    "//src/bringup/bin/kernel-args-forwarder:*",
     "//src/diagnostics/archivist:*",
     "//src/diagnostics/archivist/tests/integration/realm_factory:*",
     "//src/diagnostics/persistence:*",

@@ -10,6 +10,7 @@ group("tests") {
     "console-launcher:tests",
     "critical-services:tests",
     "device-name-provider:tests",
+    "kernel-args-forwarder:tests",
     "netsvc:tests",
     "ptysvc:tests",
     "virtcon:tests",

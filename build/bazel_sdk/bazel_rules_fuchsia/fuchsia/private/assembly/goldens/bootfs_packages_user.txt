@@ -36,6 +36,7 @@ gpio
 hid
 hid-input-report
 i2c
+kernel-args-forwarder
 ?memfs
 ?minfs
 ?paver
