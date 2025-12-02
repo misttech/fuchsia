@@ -673,6 +673,7 @@ template("bazel_action") {
                "//build/bazel/scripts/bazel_compdb_utils.py",
                "//build/bazel/scripts/bazel_rust_analyzer_utils.py",
                "//build/bazel/scripts/build_utils.py",
+               "//build/bazel/scripts/stdio_redirection.py",
                "//build/bazel/scripts/thread_pool_helpers.py",
                "//build/bazel/scripts/workspace_utils.py",
                "//build/bazel/wrapper.bazel.sh",
