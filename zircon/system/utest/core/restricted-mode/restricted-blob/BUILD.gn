@@ -2,43 +2,9 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-loadable_module("restricted-blob") {
-  testonly = true
+import("//src/bringup/lib/restricted-machine/loadable.gni")
+
+restricted_loadable_module("restricted-blob") {
   sources = [ "$current_cpu.S" ]
-  configs += [ ":restricted-blob-config" ]
-  exclude_toolchain_tags = [ "instrumented" ]
   deps = [ "//zircon/kernel/lib/arch" ]
-
-  metadata = {
-    # Place the test module in the package with the CPU-specific name.  The
-    # test will use the fuchsia.ldsvc (userboot in the standalone case) to
-    # acquire each as a VMO, which will look for them in lib/ (within the
-    # package namespace for the component test, otherwise under /boot).
-    distribution_entries = [
-      {
-        destination = "lib/test/$target_name.$current_cpu.so"
-        source = rebase_path("$root_out_dir/$target_name.so", root_build_dir)
-        label = get_label_info(":$target_name", "label_with_toolchain")
-      },
-    ]
-  }
-}
-
-# Simplified version of //build/config/zircon:hermetic-code-blob
-# relying on :nolibc as a basis.
-config("restricted-blob-config") {
-  ldflags = []
-  configs = [
-    "//build/config/zircon:nolibc",
-    "//build/config/zircon:no-synthetic-sections",
-  ]
-  if (!is_gcc) {
-    ldflags += [
-      # lld defaults to PIE, while the GNU linkers do not.
-      "-Wl,--no-pie",
-
-      # libunwind will pull in libc dependencies.
-      "-unwindlib=none",
-    ]
-  }
 }
