@@ -11,10 +11,8 @@ use std::collections::HashMap;
 pub struct LocalPrincipalIdentifier(pub u64);
 
 impl LocalPrincipalIdentifier {
-    const SELF_PRINCIPAL_ID: u64 = 0;
-
     pub fn self_identifier() -> Self {
-        LocalPrincipalIdentifier(LocalPrincipalIdentifier::SELF_PRINCIPAL_ID)
+        LocalPrincipalIdentifier(fidl_fuchsia_memory_attribution::SELF)
     }
 
     #[cfg(test)]
