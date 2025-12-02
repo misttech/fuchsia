@@ -46,6 +46,13 @@ rustc_library("loop") {
     "//src/lib/fuchsia",
     "//src/lib/fuchsia-fs",
   ]
+
+  # LTO OOMs out on RBE default workers, so use bigger workers.
+  if (is_lto_variant || optimize == "size_lto" || optimize == "size_thinlto") {
+    _concurrent_jobs = concurrent_jobs.link_highmem
+    configs += _concurrent_jobs.configs
+    forward_variables_from(_concurrent_jobs.vars, "*")
+  }
 }
 
 resource("test_files") {

@@ -98,6 +98,13 @@ rustc_library("starnix_kernel_runner") {
   ]
 
   configs += [ "//src/starnix/build:kernel_library_config" ]
+
+  # LTO OOMs out on RBE default workers, so use bigger workers.
+  if (is_lto_variant || optimize == "size_lto" || optimize == "size_thinlto") {
+    _concurrent_jobs = concurrent_jobs.link_highmem
+    configs += _concurrent_jobs.configs
+    forward_variables_from(_concurrent_jobs.vars, "*")
+  }
 }
 
 fuchsia_unittest_package("starnix_kernel_runner-tests") {
