@@ -129,6 +129,9 @@ mod tests {
     /// Test that the ELF runner can tell us about the resources used by the component it runs.
     #[test]
     fn test_attribute_memory() {
+        // TODO(https://fxbug.dev/463680736) remove once deadlocks addressed
+        fuchsia_sync::suppress_lock_cycle_panics();
+
         let mut exec = fasync::TestExecutor::new();
         let (_runtime_dir, runtime_dir_server) =
             fidl::endpoints::create_proxy::<fio::DirectoryMarker>();
