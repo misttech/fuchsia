@@ -22,7 +22,8 @@ namespace pci {
 
 zx::result<zx::vmo> PciAllocation::CreateVmo() const {
   zx::vmo vmo;
-  zx_status_t status = zx::vmo::create_physical(resource(), base(), size(), &vmo);
+  const size_t rounded_size = fbl::round_up<size_t>(size(), zx_system_get_page_size());
+  zx_status_t status = zx::vmo::create_physical(resource(), base(), rounded_size, &vmo);
   if (status != ZX_OK) {
     return zx::error(status);
   }
