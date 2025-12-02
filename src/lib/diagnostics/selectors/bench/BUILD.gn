@@ -8,7 +8,7 @@ import("//build/testing/perf/test.gni")
 
 rustc_binary("bin") {
   output_name = "selectors_benchmarks"
-  edition = "2018"
+  edition = "2024"
 
   deps = [
     "//src/developer/fuchsia-criterion",

@@ -662,7 +662,7 @@ impl<K> PropertyAssertion<K> for Regex {
 
 impl<K> PropertyAssertion<K> for &Regex {
     fn run(&self, actual: &Property<K>) -> Result<(), Error> {
-        if let Property::String(_, ref v) = actual {
+        if let Property::String(_, v) = actual {
             if self.is_match(v) {
                 return Ok(());
             } else {

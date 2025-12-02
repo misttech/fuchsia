@@ -19,10 +19,10 @@ impl Property<'_> for BoolProperty {
     type Type = bool;
 
     fn set(&self, value: bool) {
-        if let Some(ref inner_ref) = self.inner.inner_ref() {
-            if let Ok(mut state) = inner_ref.state.try_lock() {
-                state.set_bool(inner_ref.block_index, value);
-            }
+        if let Some(ref inner_ref) = self.inner.inner_ref()
+            && let Ok(mut state) = inner_ref.state.try_lock()
+        {
+            state.set_bool(inner_ref.block_index, value);
         }
     }
 }

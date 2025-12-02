@@ -90,12 +90,12 @@ fn parse_archivist_args<'a>(
                         archivist_argument_count += 1;
                         continue;
                     }
-                } else if name == fdiagnostics::ROLLED_OUT_ARG_NAME {
-                    if let Value::UnsignedInt(count) = value {
-                        builder = builder.set_rolled_out(*count);
-                        archivist_argument_count += 1;
-                        continue;
-                    }
+                } else if name == fdiagnostics::ROLLED_OUT_ARG_NAME
+                    && let Value::UnsignedInt(count) = value
+                {
+                    builder = builder.set_rolled_out(*count);
+                    archivist_argument_count += 1;
+                    continue;
                 }
             }
             _ => break,
@@ -124,10 +124,10 @@ fn parse_logs_data<'a>(
         timestamp: input.timestamp,
     });
 
-    if let Some(rolled_out) = maybe_rolled_out {
-        if rolled_out > 0 {
-            builder = builder.set_rolled_out(rolled_out);
-        }
+    if let Some(rolled_out) = maybe_rolled_out
+        && rolled_out > 0
+    {
+        builder = builder.set_rolled_out(rolled_out);
     }
 
     if let Some(raw_severity) = raw_severity {

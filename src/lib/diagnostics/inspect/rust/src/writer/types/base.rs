@@ -160,10 +160,10 @@ impl<T: InnerType> Inner<T> {
         match self {
             Self::None => None,
             Self::Weak(weak_ref) => {
-                if let Some(inner_ref) = weak_ref.upgrade() {
-                    if inner_ref.data.is_valid() {
-                        return Some(inner_ref);
-                    }
+                if let Some(inner_ref) = weak_ref.upgrade()
+                    && inner_ref.data.is_valid()
+                {
+                    return Some(inner_ref);
                 }
                 None
             }

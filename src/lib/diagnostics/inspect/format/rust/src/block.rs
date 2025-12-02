@@ -16,7 +16,7 @@ use num_traits::FromPrimitive;
 use std::cmp::min;
 use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
-use std::sync::atomic::{fence, Ordering};
+use std::sync::atomic::{Ordering, fence};
 
 pub use diagnostics_hierarchy::ArrayFormat;
 
@@ -840,8 +840,8 @@ impl<T: Deref<Target = Q> + DerefMut<Target = Q>, Q: WriteBytes + ReadBytes> Blo
     }
 
     /// Thaw the HEADER, indicating a VMO is Live again.
-    pub fn thaw(&mut self, gen: u64) {
-        PayloadFields::set_value(self, gen)
+    pub fn thaw(&mut self, generation: u64) {
+        PayloadFields::set_value(self, generation)
     }
 
     /// Lock a HEADER block
@@ -1800,29 +1800,37 @@ mod tests {
             Container::read_and_write(constants::MAX_ORDER_SIZE).unwrap();
         // A block of size 7 (max) can hold 254 values: 2048B - 8B (header) - 8B (array metadata)
         // gives 2032, which means 254 values of 8 bytes each maximum.
-        assert!(Block::free(&mut container, BlockIndex::EMPTY, 7, BlockIndex::EMPTY)
-            .unwrap()
-            .become_reserved()
-            .become_array_value::<Int>(257, ArrayFormat::Default, 1.into(), 2.into())
-            .is_err());
-        assert!(Block::free(&mut container, BlockIndex::EMPTY, 7, BlockIndex::EMPTY)
-            .unwrap()
-            .become_reserved()
-            .become_array_value::<Int>(254, ArrayFormat::Default, 1.into(), 2.into())
-            .is_ok());
+        assert!(
+            Block::free(&mut container, BlockIndex::EMPTY, 7, BlockIndex::EMPTY)
+                .unwrap()
+                .become_reserved()
+                .become_array_value::<Int>(257, ArrayFormat::Default, 1.into(), 2.into())
+                .is_err()
+        );
+        assert!(
+            Block::free(&mut container, BlockIndex::EMPTY, 7, BlockIndex::EMPTY)
+                .unwrap()
+                .become_reserved()
+                .become_array_value::<Int>(254, ArrayFormat::Default, 1.into(), 2.into())
+                .is_ok()
+        );
 
         // A block of size 2 can hold 6 values: 64B - 8B (header) - 8B (array metadata)
         // gives 48, which means 6 values of 8 bytes each maximum.
-        assert!(Block::free(&mut container, BlockIndex::EMPTY, 2, BlockIndex::EMPTY)
-            .unwrap()
-            .become_reserved()
-            .become_array_value::<Int>(8, ArrayFormat::Default, 1.into(), 2.into())
-            .is_err());
-        assert!(Block::free(&mut container, BlockIndex::EMPTY, 2, BlockIndex::EMPTY)
-            .unwrap()
-            .become_reserved()
-            .become_array_value::<Int>(6, ArrayFormat::Default, 1.into(), 2.into())
-            .is_ok());
+        assert!(
+            Block::free(&mut container, BlockIndex::EMPTY, 2, BlockIndex::EMPTY)
+                .unwrap()
+                .become_reserved()
+                .become_array_value::<Int>(8, ArrayFormat::Default, 1.into(), 2.into())
+                .is_err()
+        );
+        assert!(
+            Block::free(&mut container, BlockIndex::EMPTY, 2, BlockIndex::EMPTY)
+                .unwrap()
+                .become_reserved()
+                .become_array_value::<Int>(6, ArrayFormat::Default, 1.into(), 2.into())
+                .is_ok()
+        );
     }
 
     #[fuchsia::test]

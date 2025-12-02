@@ -45,7 +45,7 @@ macro_rules! assert_update_is_atomic {
         // but some (eg Inspector) just have them as regular methods
         #[allow(unused_imports)]
         use $crate::writer::types::base::private::InspectTypeInternal;
-        let gen = $updateable_thing
+        let generation = $updateable_thing
             .state()
             .unwrap()
             .with_current_header(|header| header.generation_count());
@@ -56,13 +56,13 @@ macro_rules! assert_update_is_atomic {
             .unwrap()
             .with_current_header(|header| header.generation_count());
 
-        let num_gen_updates = (new_gen - gen) / 2;
+        let num_gen_updates = (new_gen - generation) / 2;
         if num_gen_updates != 1 {
             panic!(concat!("update function did not have exactly one transaction.",
                     "\nTransaction count: {}",
                     "\nOriginal generation count: {}",
                     "\nCurrent generation count: {}"),
-                    num_gen_updates, gen, new_gen);
+                    num_gen_updates, generation, new_gen);
         }
     }}
 }

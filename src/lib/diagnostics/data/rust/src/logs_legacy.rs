@@ -76,7 +76,7 @@ fn include_tag_prefix(tag: &str, tags: &HashSet<String>) -> bool {
 /// Filters by tags according to legacy LogMessage rules.
 /// Prefer filtering by moniker/selectors instead of using this function.
 pub fn filter_by_tags(log_message: &Data<Logs>, include_tags: &HashSet<String>) -> bool {
-    let reject_tags = if include_tags.is_empty() {
+    if include_tags.is_empty() {
         false
     } else if log_message.tags().map(|t| t.is_empty()).unwrap_or(true) {
         !include_tags.contains(log_message.component_name().as_ref())
@@ -88,8 +88,7 @@ pub fn filter_by_tags(log_message: &Data<Logs>, include_tags: &HashSet<String>) 
                     .any(|tag| include_tags.contains(tag) || include_tag_prefix(tag, include_tags))
             })
             .unwrap_or(false)
-    };
-    reject_tags
+    }
 }
 
 /// Convert this `Message` to a FIDL representation suitable for sending to `LogListenerSafe`.

@@ -1089,12 +1089,12 @@ where
     // Safe to unwrap since we validated above.
     let (node_path, property_selector, stack_entry) = match selector.tree_selector.as_ref().unwrap()
     {
-        TreeSelector::SubtreeSelector(ref subtree_selector) => (
+        TreeSelector::SubtreeSelector(subtree_selector) => (
             &subtree_selector.node_path,
             None,
             StackEntry { node: root_node, node_path_index: 0, explored_path: vec![] },
         ),
-        TreeSelector::PropertySelector(ref property_selector) => (
+        TreeSelector::PropertySelector(property_selector) => (
             &property_selector.node_path,
             Some(&property_selector.target_properties),
             StackEntry { node: root_node, node_path_index: 0, explored_path: vec![] },

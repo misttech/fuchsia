@@ -154,7 +154,7 @@ impl<T: Unit> Unit for Option<T> {
             }
 
             // Update existing inspect data, for performance
-            (Some(inner), Some(ref mut inner_inspect_data)) => {
+            (Some(inner), Some(inner_inspect_data)) => {
                 inner.inspect_update(inner_inspect_data);
             }
         }

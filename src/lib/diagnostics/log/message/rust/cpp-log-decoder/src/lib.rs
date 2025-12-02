@@ -25,7 +25,7 @@ pub unsafe extern "C" fn fuchsia_decode_log_message_to_json(
     msg: *const u8,
     size: usize,
 ) -> *mut c_char {
-    let managed_ptr = std::slice::from_raw_parts(msg, size);
+    let managed_ptr = unsafe { std::slice::from_raw_parts(msg, size) };
     let data = &message::from_structured(
         MonikerWithUrl { moniker: "test_moniker".try_into().unwrap(), url: "".into() },
         managed_ptr,
@@ -106,14 +106,16 @@ pub unsafe extern "C" fn fuchsia_decode_log_messages_to_struct(
     size: usize,
     expect_extended_attribution: bool,
 ) -> LogMessages<'static> {
-    fuchsia_decode_log_messages_to_struct_internal(msg, size, expect_extended_attribution)
-        .unwrap_or_else(|err| LogMessages {
-            messages: (&vec![]).into(),
-            state: std::ptr::null_mut(),
-            error_str: CString::new(err.to_string())
-                .map(|value| value.into_raw())
-                .unwrap_or(std::ptr::null_mut()),
-        })
+    unsafe {
+        fuchsia_decode_log_messages_to_struct_internal(msg, size, expect_extended_attribution)
+    }
+    .unwrap_or_else(|err| LogMessages {
+        messages: (&vec![]).into(),
+        state: std::ptr::null_mut(),
+        error_str: CString::new(err.to_string())
+            .map(|value| value.into_raw())
+            .unwrap_or(std::ptr::null_mut()),
+    })
 }
 
 /// # Safety
@@ -140,7 +142,7 @@ unsafe fn fuchsia_decode_log_messages_to_struct_internal(
     expect_extended_attribution: bool,
 ) -> Result<LogMessages<'static>, DecodeError> {
     let mut state = Box::new(ManagedState { allocator: Bump::new(), message_array: vec![] });
-    let buf = std::slice::from_raw_parts(msg, size);
+    let buf = unsafe { std::slice::from_raw_parts(msg, size) };
     let mut current_slice = buf.as_ref();
     loop {
         let (data, remaining) = if expect_extended_attribution {
@@ -150,7 +152,7 @@ unsafe fn fuchsia_decode_log_messages_to_struct_internal(
                 // This is ensured by the allocator living in the heap-allocated ManagedState
                 // struct which frees the LogMessages first when dropped, before allowing the bump
                 // allocator itself to be freed.
-                &*(&state.allocator as *const Bump),
+                unsafe { &*(&state.allocator as *const Bump) },
             )?
         } else {
             let (_, remaining_after_parse) =
@@ -163,7 +165,7 @@ unsafe fn fuchsia_decode_log_messages_to_struct_internal(
                 // This is ensured by the allocator living in the heap-allocated ManagedState
                 // struct which frees the LogMessages first when dropped, before allowing the bump
                 // allocator itself to be freed.
-                &*(&state.allocator as *const Bump),
+                unsafe { &*(&state.allocator as *const Bump) },
             )?;
             (data, remaining_after_parse)
         };
@@ -187,7 +189,7 @@ unsafe fn fuchsia_decode_log_messages_to_struct_internal(
 /// `fuchsia_decode_log_message_to_json`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn fuchsia_free_decoded_log_message(msg: *mut c_char) {
-    let str_to_free = CString::from_raw(msg);
+    let str_to_free = unsafe { CString::from_raw(msg) };
     let _freer = str_to_free;
 }
 

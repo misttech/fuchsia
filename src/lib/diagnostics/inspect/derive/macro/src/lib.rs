@@ -138,7 +138,7 @@ impl InspectField {
 /// Convenience method to convert a type to a type path. Errors if not a type path.
 fn to_type_path(ty: &syn::Type) -> Result<syn::TypePath, Error> {
     match ty {
-        syn::Type::Path(ref p) => Ok(p.clone()),
+        syn::Type::Path(p) => Ok(p.clone()),
         _ => Err(Error::new_spanned(ty, "cannot derive inspect for this type")),
     }
 }
@@ -248,9 +248,8 @@ fn parse_field_attr_args(attr: &syn::Attribute, args: &mut FieldAttrArgs) -> Res
             }
             FieldAttrArg::NameValue(name_value) => {
                 if name_value.path.is_ident("rename") {
-                    if let syn::Expr::Lit(syn::ExprLit {
-                        lit: syn::Lit::Str(ref lit_str), ..
-                    }) = name_value.value
+                    if let syn::Expr::Lit(syn::ExprLit { lit: syn::Lit::Str(lit_str), .. }) =
+                        &name_value.value
                     {
                         args.rename = Some(lit_str.clone());
                     } else {
@@ -308,9 +307,9 @@ pub fn derive_unit(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 fn derive_unit_inner(ast: DeriveInput) -> Result<TokenStream, Error> {
     let name = &ast.ident;
     check_container_attrs(&ast)?;
-    let fields = match ast.data {
+    let fields = match &ast.data {
         syn::Data::Struct(syn::DataStruct {
-            fields: syn::Fields::Named(syn::FieldsNamed { ref named, .. }),
+            fields: syn::Fields::Named(syn::FieldsNamed { named, .. }),
             ..
         }) => Ok(named),
         _ => Err(Error::new_spanned(&ast, "can only derive Unit on named structs")),
@@ -398,9 +397,9 @@ pub fn derive_inspect(input: proc_macro::TokenStream) -> proc_macro::TokenStream
 fn derive_inspect_inner(ast: DeriveInput) -> Result<TokenStream, Error> {
     let name = &ast.ident;
     check_container_attrs(&ast)?;
-    let fields = match ast.data {
+    let fields = match &ast.data {
         syn::Data::Struct(syn::DataStruct {
-            fields: syn::Fields::Named(syn::FieldsNamed { ref named, .. }),
+            fields: syn::Fields::Named(syn::FieldsNamed { named, .. }),
             ..
         }) => Ok(named),
         _ => Err(Error::new_spanned(&ast, "can only derive Inspect on named structs")),

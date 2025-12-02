@@ -278,7 +278,7 @@ where
     S: AsRef<str>,
 {
     let selector_segments = match &component_selector.moniker_segments {
-        Some(ref path_vec) => path_vec,
+        Some(path_vec) => path_vec,
         None => return Err(format_err!("Component selectors require moniker segments.")),
     };
 

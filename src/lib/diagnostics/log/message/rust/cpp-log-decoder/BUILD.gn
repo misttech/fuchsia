@@ -37,7 +37,7 @@ rustc_library("lib") {
   visibility = [ "//src/lib/diagnostics/fake-log-sink/rust:*" ]
   name = "log_decoder_c_bindings"
   with_unit_tests = true
-  edition = "2021"
+  edition = "2024"
   sources = _sources
   deps = _deps
 }
@@ -52,7 +52,7 @@ source_set("headers") {
 rustc_staticlib("staticlib") {
   name = "log_decoder_c_bindings"
   with_unit_tests = true
-  edition = "2021"
+  edition = "2024"
   sources = _sources
   public = [ "log_decoder.h" ]
   deps = _deps

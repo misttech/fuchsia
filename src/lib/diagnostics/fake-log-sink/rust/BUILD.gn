@@ -21,7 +21,7 @@ rustc_library("rust") {
   name = "fake-log-sink"
   with_unit_tests = true
   testonly = true
-  edition = "2021"
+  edition = "2024"
 
   sources = _sources
   deps = _deps

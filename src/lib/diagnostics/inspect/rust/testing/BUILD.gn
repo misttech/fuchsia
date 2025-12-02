@@ -6,7 +6,7 @@ import("//build/rust/rustc_library.gni")
 
 rustc_library("inspect_testing") {
   testonly = true
-  edition = "2021"
+  edition = "2024"
   sources = [
     "src/deprecated_fidl_server.rs",
     "src/lib.rs",

@@ -5,15 +5,15 @@
 //! A snapshot represents all the loaded blocks of the VMO in a way that we can reconstruct the
 //! implicit tree.
 
+use crate::Inspector;
+use crate::reader::LinkValue;
 use crate::reader::error::ReaderError;
 use crate::reader::readable_tree::SnapshotSource;
-use crate::reader::LinkValue;
-use crate::Inspector;
 use diagnostics_hierarchy::{ArrayContent, Property};
 use inspect_format::{
-    constants, utils, Array, Block, BlockAccessorExt, BlockContainer, BlockIndex, BlockType, Bool,
-    Buffer, Container, CopyBytes, Double, Extent, Header, Int, Link, Name, PropertyFormat,
-    ReadBytes, StringRef, Uint, Unknown, ValueBlockKind,
+    Array, Block, BlockAccessorExt, BlockContainer, BlockIndex, BlockType, Bool, Buffer, Container,
+    CopyBytes, Double, Extent, Header, Int, Link, Name, PropertyFormat, ReadBytes, StringRef, Uint,
+    Unknown, ValueBlockKind, constants, utils,
 };
 use std::cmp;
 
@@ -66,11 +66,11 @@ impl Snapshot {
         let Some(header_block) = header_bytes.maybe_block_at::<Header>(BlockIndex::HEADER) else {
             return Err(ReaderError::InvalidVmo);
         };
-        let gen = header_block.generation_count();
-        if gen == constants::VMO_FROZEN {
-            if let Ok(buffer) = BackingBuffer::try_from(source) {
-                return Ok(Snapshot { buffer });
-            }
+        let generation = header_block.generation_count();
+        if generation == constants::VMO_FROZEN
+            && let Ok(buffer) = BackingBuffer::try_from(source)
+        {
+            return Ok(Snapshot { buffer });
         }
 
         // Read the buffer
@@ -91,7 +91,9 @@ impl Snapshot {
         source.copy_bytes(&mut header_bytes);
         match header_generation_count(&header_bytes) {
             None => Err(ReaderError::InconsistentSnapshot),
-            Some(new_generation) if new_generation != gen => Err(ReaderError::InconsistentSnapshot),
+            Some(new_generation) if new_generation != generation => {
+                Err(ReaderError::InconsistentSnapshot)
+            }
             Some(_) => Ok(Snapshot { buffer: BackingBuffer::from(buffer) }),
         }
     }

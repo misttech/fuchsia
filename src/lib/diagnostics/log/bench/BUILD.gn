@@ -8,7 +8,7 @@ import("//build/testing/perf/test.gni")
 
 rustc_binary("encoding-bin") {
   name = "diagnostics_log_encoding_bench"
-  edition = "2018"
+  edition = "2024"
   with_unit_tests = true
 
   source_root = "src/encoding.rs"
@@ -33,7 +33,7 @@ rustc_binary("encoding-bin") {
 
 rustc_binary("core-bin") {
   name = "diagnostics_log_bench"
-  edition = "2018"
+  edition = "2024"
 
   source_root = "src/core.rs"
 
@@ -54,7 +54,7 @@ rustc_binary("core-bin") {
 
 rustc_binary("decoding-bin") {
   name = "diagnostics_log_decoding_bench"
-  edition = "2018"
+  edition = "2024"
   with_unit_tests = true
 
   source_root = "src/decoding.rs"

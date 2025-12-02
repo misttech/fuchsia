@@ -7,7 +7,7 @@ import("//build/rust/rustc_binary.gni")
 
 rustc_binary("snapshot-filter-bin") {
   name = "inspect_rust_snapshot_filter_benchmarks"
-  edition = "2021"
+  edition = "2024"
 
   source_root = "src/main.rs"
   with_unit_tests = true

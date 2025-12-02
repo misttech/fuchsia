@@ -749,11 +749,11 @@ impl<T: MutableBuffer + ?Sized> MutableBuffer for &mut T {
     }
 
     unsafe fn advance_cursor(&mut self, n: usize) {
-        (**self).advance_cursor(n);
+        unsafe { (**self).advance_cursor(n) };
     }
 
     unsafe fn put_slice_at(&mut self, to_put: &[u8], offset: usize) {
-        (**self).put_slice_at(to_put, offset);
+        unsafe { (**self).put_slice_at(to_put, offset) };
     }
 }
 
@@ -770,11 +770,11 @@ impl<T: MutableBuffer + ?Sized> MutableBuffer for Box<T> {
     }
 
     unsafe fn advance_cursor(&mut self, n: usize) {
-        (**self).advance_cursor(n);
+        unsafe { (**self).advance_cursor(n) };
     }
 
     unsafe fn put_slice_at(&mut self, to_put: &[u8], offset: usize) {
-        (**self).put_slice_at(to_put, offset);
+        unsafe { (**self).put_slice_at(to_put, offset) };
     }
 }
 

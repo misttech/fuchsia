@@ -3,8 +3,8 @@
 // found in the LICENSE file.
 
 use crate::{ArrayContent, DiagnosticsHierarchy, ExponentialHistogram, LinearHistogram, Property};
-use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
 use base64::engine::Engine as _;
+use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
 use serde::de::{self, MapAccess, SeqAccess, Visitor};
 use serde::{Deserialize, Deserializer};
 use std::collections::HashMap;
@@ -646,7 +646,7 @@ impl<T> schemars::JsonSchema for DiagnosticsHierarchy<T> {
         "DiagnosticsHierarchy".to_owned()
     }
 
-    fn json_schema(generator: &mut schemars::gen::SchemaGenerator) -> Schema {
+    fn json_schema(generator: &mut schemars::r#gen::SchemaGenerator) -> Schema {
         let property_schema = SchemaObject {
             metadata: Some(Box::new(Metadata {
                 description: Some(

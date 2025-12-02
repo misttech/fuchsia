@@ -42,7 +42,7 @@ impl CPPArray<u8> {
     /// characters.
     ///
     pub unsafe fn as_utf8_str(&self) -> &str {
-        std::str::from_utf8_unchecked(std::slice::from_raw_parts(self.ptr, self.len))
+        unsafe { std::str::from_utf8_unchecked(std::slice::from_raw_parts(self.ptr, self.len)) }
     }
 }
 
@@ -244,10 +244,10 @@ impl<'a> CPPLogMessageBuilder<'a> {
 
         if let Some(moniker) = &builder.moniker {
             let component_name = moniker.split("/").last();
-            if let Some(component_name) = component_name {
-                if !builder.tags.iter().any(|value| value.as_str() == component_name) {
-                    builder.tags.insert(0, bumpalo::format!(in &allocator, "{}", component_name));
-                }
+            if let Some(component_name) = component_name
+                && !builder.tags.iter().any(|value| value.as_str() == component_name)
+            {
+                builder.tags.insert(0, bumpalo::format!(in &allocator, "{}", component_name));
             }
         }
 

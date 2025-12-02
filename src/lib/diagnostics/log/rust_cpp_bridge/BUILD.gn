@@ -13,7 +13,7 @@ common_deps = [
 
 rustc_library("rust_cpp_bridge") {
   name = "logging_rust_cpp_bridge"
-  edition = "2021"
+  edition = "2024"
   sources = common_sources
   deps = common_deps
 }
@@ -24,7 +24,7 @@ source_set("cpp_syslog_wrapper") {
 }
 
 rustc_test("logging_rust_cpp_bridge_test") {
-  edition = "2021"
+  edition = "2024"
   sources = common_sources
   deps = common_deps + [
            ":cpp_syslog_test_wrapper",

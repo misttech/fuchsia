@@ -57,14 +57,14 @@ LIB_SOURCES = [
 
 rustc_library("rust") {
   name = "diagnostics_log"
-  edition = "2021"
+  edition = "2024"
   deps = LIB_DEPS
   sources = LIB_SOURCES
   configs += [ "//build/config/rust/lints:clippy_warn_all" ]
 }
 
 rustc_test("diagnostics_log_lib_test") {
-  edition = "2021"
+  edition = "2024"
 
   sources = LIB_SOURCES
   deps = LIB_DEPS
