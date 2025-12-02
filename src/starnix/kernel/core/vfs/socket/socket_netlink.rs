@@ -798,29 +798,14 @@ impl SocketOps for UEventNetlinkSocket {
 
 impl DeviceListener for Arc<Mutex<NetlinkSocketInner>> {
     fn on_device_event(&self, action: UEventAction, device: Device, context: UEventContext) {
-        let Some(metadata) = &device.metadata else {
-            return;
-        };
         let path = device.path_from_depth(0);
-        let subsystem = &device.class.name;
-        // TODO(https://fxbug.dev/42078277): Pass the synthetic UUID when available.
-        // Otherwise, default as "0".
         let message = format!(
             "{action}@/{path}\0\
                             ACTION={action}\0\
-                            DEVPATH=/{path}\0\
-                            DEVNAME={name}\0\
-                            SUBSYSTEM={subsystem}\0\
-                            SYNTH_UUID=0\0\
-                            MAJOR={major}\0\
-                            MINOR={minor}\0\
-                            SEQNUM={seqnum}\0",
-            path = path,
-            name = metadata.devname,
-            subsystem = subsystem,
-            major = metadata.device_type.major(),
-            minor = metadata.device_type.minor(),
+                            SEQNUM={seqnum}\0\
+                            {other_props}",
             seqnum = context.seqnum,
+            other_props = device.uevent_properties('\0'),
         );
         let ancillary_data = AncillaryData::Unix(UnixControlData::Credentials(Default::default()));
         let mut ancillary_data = vec![ancillary_data];

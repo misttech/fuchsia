@@ -137,6 +137,7 @@ template("syscall_test") {
   if (is_linux) {
     _test_deps += [
       "//sdk/lib/fit",
+      "//src/lib/files",
       "//src/lib/fxl",
       "//src/lib/fxl/test:gtest_main",
       "//src/starnix/tests/syscalls/cpp:test_utils",

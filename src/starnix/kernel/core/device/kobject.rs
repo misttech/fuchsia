@@ -95,6 +95,27 @@ impl Device {
         }
         builder.build_relative()
     }
+
+    pub fn uevent_properties(&self, separator: char) -> String {
+        let Some(metadata) = &self.metadata else {
+            return String::new();
+        };
+        // TODO(https://fxbug.dev/42078277): Pass the synthetic UUID when available.
+        // Otherwise, default as "0".
+        let path = self.path_from_depth(0);
+        format!(
+            "DEVPATH=/{path}{separator}\
+                            DEVNAME={name}{separator}\
+                            SUBSYSTEM={subsystem}{separator}\
+                            SYNTH_UUID=0{separator}\
+                            MAJOR={major}{separator}\
+                            MINOR={minor}{separator}",
+            name = metadata.devname,
+            subsystem = self.class.name,
+            major = metadata.device_type.major(),
+            minor = metadata.device_type.minor(),
+        )
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -163,16 +184,7 @@ impl FileOps for UEventFile {
         offset: usize,
         data: &mut dyn OutputBuffer,
     ) -> Result<usize, Errno> {
-        let content = if let Some(metadata) = &self.device.metadata {
-            format!(
-                "MAJOR={}\nMINOR={}\nDEVNAME={}\n",
-                metadata.device_type.major(),
-                metadata.device_type.minor(),
-                metadata.devname,
-            )
-        } else {
-            String::new()
-        };
+        let content = self.device.uevent_properties('\n');
         data.write(content.get(offset..).ok_or_else(|| errno!(EINVAL))?.as_bytes())
     }
 
