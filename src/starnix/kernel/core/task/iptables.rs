@@ -4,7 +4,7 @@
 
 use crate::security;
 use crate::task::CurrentTask;
-use crate::vfs::socket::iptables_utils::{self, string_to_ascii_buffer};
+use crate::vfs::socket::iptables_utils::{self, TableId, string_to_ascii_buffer};
 use crate::vfs::socket::{SockOptValue, SocketDomain, SocketHandle, SocketType};
 use fidl_fuchsia_net_filter as fnet_filter;
 use fidl_fuchsia_net_filter_ext::sync::Controller;
@@ -20,14 +20,15 @@ use starnix_uapi::iptables_flags::NfIpHooks;
 use starnix_uapi::{
     IP6T_SO_GET_ENTRIES, IP6T_SO_GET_INFO, IP6T_SO_GET_REVISION_MATCH, IP6T_SO_GET_REVISION_TARGET,
     IPT_SO_GET_ENTRIES, IPT_SO_GET_INFO, IPT_SO_GET_REVISION_MATCH, IPT_SO_GET_REVISION_TARGET,
-    IPT_SO_SET_ADD_COUNTERS, IPT_SO_SET_REPLACE, SOL_IP, SOL_IPV6, XT_TABLE_MAXNAMELEN, c_char,
-    errno, error, ip6t_entry, ip6t_get_entries, ip6t_getinfo, ipt_entry, ipt_get_entries,
-    ipt_getinfo, nf_inet_hooks_NF_INET_NUMHOOKS, xt_counters, xt_counters_info,
+    IPT_SO_SET_ADD_COUNTERS, IPT_SO_SET_REPLACE, SOL_IP, SOL_IPV6, errno, error, ip6t_entry,
+    ip6t_get_entries, ip6t_getinfo, ipt_entry, ipt_get_entries, ipt_getinfo,
+    nf_inet_hooks_NF_INET_NUMHOOKS, xt_counters, xt_counters_info,
     xt_entry_target__bindgen_ty_1__bindgen_ty_1 as xt_entry_target, xt_error_target,
     xt_get_revision, xt_standard_target,
 };
-use std::collections::HashMap;
+use static_assertions::const_assert_eq;
 use std::mem::size_of;
+use std::ops::{Index, IndexMut};
 use thiserror::Error;
 use zerocopy::{FromBytes, IntoBytes};
 
@@ -49,8 +50,6 @@ const FILTER_HOOKS: [u32; 5] = [0, 0, 1, 2, 0];
 const NAT_HOOKS: [u32; 5] = [0, 1, 0, 2, 3];
 const MANGLE_HOOKS: [u32; 5] = [0, 1, 2, 3, 4];
 const RAW_HOOKS: [u32; 5] = [0, 0, 0, 1, 0];
-
-type IpTablesName = [c_char; XT_TABLE_MAXNAMELEN as usize];
 
 /// Stores information about IP packet filter rules. Used to return information for
 /// IPT_SO_GET_INFO and IPT_SO_GET_ENTRIES.
@@ -159,9 +158,7 @@ impl IpTable {
         bytes
     }
 
-    fn default_ipv4_nat_table() -> (IpTablesName, Self) {
-        let table_name = string_to_ascii_buffer("nat").expect("convert \"nat\" to ASCII");
-
+    fn default_ipv4_nat_table() -> Self {
         let hook_entry = NAT_HOOKS.map(|n| n * u32::from(IPT_ENTRY_SIZE + STANDARD_TARGET_SIZE));
         let mut entries = Vec::new();
         entries.extend(Self::accept_policy_v4());
@@ -170,23 +167,18 @@ impl IpTable {
         entries.extend(Self::accept_policy_v4());
         entries.extend(Self::end_of_input_v4());
 
-        (
-            table_name,
-            Self {
-                valid_hooks: NfIpHooks::NAT.bits(),
-                hook_entry,
-                underflow: hook_entry,
-                num_entries: 5,
-                size: entries.len() as u32,
-                entries,
-                ..Default::default()
-            },
-        )
+        Self {
+            valid_hooks: NfIpHooks::NAT.bits(),
+            hook_entry,
+            underflow: hook_entry,
+            num_entries: 5,
+            size: entries.len() as u32,
+            entries,
+            ..Default::default()
+        }
     }
 
-    fn default_ipv6_nat_table() -> (IpTablesName, Self) {
-        let table_name = string_to_ascii_buffer("nat").expect("convert \"nat\" to ASCII");
-
+    fn default_ipv6_nat_table() -> Self {
         let hook_entry = NAT_HOOKS.map(|n| n * u32::from(IP6T_ENTRY_SIZE + STANDARD_TARGET_SIZE));
         let mut entries = Vec::new();
         entries.extend(Self::accept_policy_v6());
@@ -195,23 +187,18 @@ impl IpTable {
         entries.extend(Self::accept_policy_v6());
         entries.extend(Self::end_of_input_v6());
 
-        (
-            table_name,
-            Self {
-                valid_hooks: NfIpHooks::NAT.bits(),
-                hook_entry,
-                underflow: hook_entry,
-                num_entries: 5,
-                size: entries.len() as u32,
-                entries,
-                ..Default::default()
-            },
-        )
+        Self {
+            valid_hooks: NfIpHooks::NAT.bits(),
+            hook_entry,
+            underflow: hook_entry,
+            num_entries: 5,
+            size: entries.len() as u32,
+            entries,
+            ..Default::default()
+        }
     }
 
-    fn default_ipv4_filter_table() -> (IpTablesName, Self) {
-        let table_name = string_to_ascii_buffer("filter").expect("convert \"filter\" to ASCII");
-
+    fn default_ipv4_filter_table() -> Self {
         let hook_entry = FILTER_HOOKS.map(|n| n * u32::from(IPT_ENTRY_SIZE + STANDARD_TARGET_SIZE));
         let mut entries = Vec::new();
         entries.extend(Self::accept_policy_v4());
@@ -219,23 +206,18 @@ impl IpTable {
         entries.extend(Self::accept_policy_v4());
         entries.extend(Self::end_of_input_v4());
 
-        (
-            table_name,
-            Self {
-                valid_hooks: NfIpHooks::FILTER.bits(),
-                hook_entry,
-                underflow: hook_entry,
-                num_entries: 4,
-                size: entries.len() as u32,
-                entries,
-                ..Default::default()
-            },
-        )
+        Self {
+            valid_hooks: NfIpHooks::FILTER.bits(),
+            hook_entry,
+            underflow: hook_entry,
+            num_entries: 4,
+            size: entries.len() as u32,
+            entries,
+            ..Default::default()
+        }
     }
 
-    fn default_ipv6_filter_table() -> (IpTablesName, Self) {
-        let table_name = string_to_ascii_buffer("filter").expect("convert \"filter\" to ASCII");
-
+    fn default_ipv6_filter_table() -> Self {
         let hook_entry =
             FILTER_HOOKS.map(|n| n * u32::from(IP6T_ENTRY_SIZE + STANDARD_TARGET_SIZE));
         let mut entries = Vec::new();
@@ -244,23 +226,18 @@ impl IpTable {
         entries.extend(Self::accept_policy_v6());
         entries.extend(Self::end_of_input_v6());
 
-        (
-            table_name,
-            Self {
-                valid_hooks: NfIpHooks::FILTER.bits(),
-                hook_entry,
-                underflow: hook_entry,
-                num_entries: 4,
-                size: entries.len() as u32,
-                entries,
-                ..Default::default()
-            },
-        )
+        Self {
+            valid_hooks: NfIpHooks::FILTER.bits(),
+            hook_entry,
+            underflow: hook_entry,
+            num_entries: 4,
+            size: entries.len() as u32,
+            entries,
+            ..Default::default()
+        }
     }
 
-    fn default_ipv4_mangle_table() -> (IpTablesName, Self) {
-        let table_name = string_to_ascii_buffer("mangle").expect("convert \"mangle\" to ASCII");
-
+    fn default_ipv4_mangle_table() -> Self {
         let hook_entry = MANGLE_HOOKS.map(|n| n * u32::from(IPT_ENTRY_SIZE + STANDARD_TARGET_SIZE));
         let mut entries = Vec::new();
         entries.extend(Self::accept_policy_v4());
@@ -270,23 +247,18 @@ impl IpTable {
         entries.extend(Self::accept_policy_v4());
         entries.extend(Self::end_of_input_v4());
 
-        (
-            table_name,
-            Self {
-                valid_hooks: NfIpHooks::MANGLE.bits(),
-                hook_entry,
-                underflow: hook_entry,
-                num_entries: 6,
-                size: entries.len() as u32,
-                entries,
-                ..Default::default()
-            },
-        )
+        Self {
+            valid_hooks: NfIpHooks::MANGLE.bits(),
+            hook_entry,
+            underflow: hook_entry,
+            num_entries: 6,
+            size: entries.len() as u32,
+            entries,
+            ..Default::default()
+        }
     }
 
-    fn default_ipv6_mangle_table() -> (IpTablesName, Self) {
-        let table_name = string_to_ascii_buffer("mangle").expect("convert \"mangle\" to ASCII");
-
+    fn default_ipv6_mangle_table() -> Self {
         let hook_entry =
             MANGLE_HOOKS.map(|n| n * u32::from(IP6T_ENTRY_SIZE + STANDARD_TARGET_SIZE));
         let mut entries = Vec::new();
@@ -297,72 +269,96 @@ impl IpTable {
         entries.extend(Self::accept_policy_v6());
         entries.extend(Self::end_of_input_v6());
 
-        (
-            table_name,
-            Self {
-                valid_hooks: NfIpHooks::MANGLE.bits(),
-                hook_entry,
-                underflow: hook_entry,
-                num_entries: 6,
-                size: entries.len() as u32,
-                entries,
-                ..Default::default()
-            },
-        )
+        Self {
+            valid_hooks: NfIpHooks::MANGLE.bits(),
+            hook_entry,
+            underflow: hook_entry,
+            num_entries: 6,
+            size: entries.len() as u32,
+            entries,
+            ..Default::default()
+        }
     }
 
-    fn default_ipv4_raw_table() -> (IpTablesName, Self) {
-        let table_name = string_to_ascii_buffer("raw").expect("convert \"raw\" to ASCII");
-
+    fn default_ipv4_raw_table() -> Self {
         let hook_entry = RAW_HOOKS.map(|n| n * u32::from(IPT_ENTRY_SIZE + STANDARD_TARGET_SIZE));
         let mut entries = Vec::new();
         entries.extend(Self::accept_policy_v4());
         entries.extend(Self::accept_policy_v4());
         entries.extend(Self::end_of_input_v4());
 
-        (
-            table_name,
-            Self {
-                valid_hooks: NfIpHooks::RAW.bits(),
-                hook_entry,
-                underflow: hook_entry,
-                num_entries: 3,
-                size: entries.len() as u32,
-                entries,
-                ..Default::default()
-            },
-        )
+        Self {
+            valid_hooks: NfIpHooks::RAW.bits(),
+            hook_entry,
+            underflow: hook_entry,
+            num_entries: 3,
+            size: entries.len() as u32,
+            entries,
+            ..Default::default()
+        }
     }
 
-    fn default_ipv6_raw_table() -> (IpTablesName, Self) {
-        let table_name = string_to_ascii_buffer("raw").expect("convert \"raw\" to ASCII");
-
+    fn default_ipv6_raw_table() -> Self {
         let hook_entry = RAW_HOOKS.map(|n| n * u32::from(IP6T_ENTRY_SIZE + STANDARD_TARGET_SIZE));
         let mut entries = Vec::new();
         entries.extend(Self::accept_policy_v6());
         entries.extend(Self::accept_policy_v6());
         entries.extend(Self::end_of_input_v6());
 
-        (
-            table_name,
-            Self {
-                valid_hooks: NfIpHooks::RAW.bits(),
-                hook_entry,
-                underflow: hook_entry,
-                num_entries: 3,
-                size: entries.len() as u32,
-                entries,
-                ..Default::default()
-            },
-        )
+        Self {
+            valid_hooks: NfIpHooks::RAW.bits(),
+            hook_entry,
+            underflow: hook_entry,
+            num_entries: 3,
+            size: entries.len() as u32,
+            entries,
+            ..Default::default()
+        }
     }
 }
 
+type IpTablesArray = [IpTable; iptables_utils::NUM_TABLES];
+
+impl Index<TableId> for IpTablesArray {
+    type Output = IpTable;
+
+    fn index(&self, index: TableId) -> &Self::Output {
+        &self[index as usize]
+    }
+}
+
+impl IndexMut<TableId> for IpTablesArray {
+    fn index_mut(&mut self, index: TableId) -> &mut Self::Output {
+        &mut self[index as usize]
+    }
+}
+
+fn default_ipv4_tables() -> IpTablesArray {
+    const_assert_eq!(TableId::Filter as usize, 0);
+    const_assert_eq!(TableId::Mangle as usize, 1);
+    const_assert_eq!(TableId::Nat as usize, 2);
+    const_assert_eq!(TableId::Raw as usize, 3);
+    [
+        IpTable::default_ipv4_filter_table(),
+        IpTable::default_ipv4_mangle_table(),
+        IpTable::default_ipv4_nat_table(),
+        IpTable::default_ipv4_raw_table(),
+    ]
+}
+
+fn default_ipv6_tables() -> IpTablesArray {
+    [
+        IpTable::default_ipv6_filter_table(),
+        IpTable::default_ipv6_mangle_table(),
+        IpTable::default_ipv6_nat_table(),
+        IpTable::default_ipv6_raw_table(),
+    ]
+}
+
 /// Stores [`IpTable`]s associated with each protocol.
-#[derive(Default)]
 pub struct IpTables {
-    ipv4: HashMap<IpTablesName, IpTable>,
-    ipv6: HashMap<IpTablesName, IpTable>,
+    ipv4: IpTablesArray,
+    ipv6: IpTablesArray,
 
     /// Controller to configure net filtering state.
     ///
@@ -384,19 +380,9 @@ impl IpTables {
         // present on the system before `iptables` client is ran.
         // TODO(https://fxbug.dev/354766238): Propagated default rules to fuchsia.net.filter.
         Self {
-            ipv4: HashMap::from([
-                IpTable::default_ipv4_filter_table(),
-                IpTable::default_ipv4_mangle_table(),
-                IpTable::default_ipv4_nat_table(),
-                IpTable::default_ipv4_raw_table(),
-            ]),
-            ipv6: HashMap::from([
-                IpTable::default_ipv6_filter_table(),
-                IpTable::default_ipv6_mangle_table(),
-                IpTable::default_ipv6_nat_table(),
-                IpTable::default_ipv6_raw_table(),
-            ]),
-            controller: None,
+            ipv4: default_ipv4_tables(),
+            ipv6: default_ipv6_tables(),
+            controller: Default::default(),
         }
     }
 
@@ -466,33 +452,30 @@ impl IpTables {
                 if socket.domain == SocketDomain::Inet {
                     let (mut info, _) =
                         ipt_getinfo::read_from_prefix(&*optval).map_err(|_| errno!(EINVAL))?;
-                    let table = self.ipv4.get(&info.name);
-                    match table {
-                        Some(iptable) => {
-                            info.valid_hooks = iptable.valid_hooks;
-                            info.hook_entry = iptable.hook_entry;
-                            info.underflow = iptable.underflow;
-                            info.num_entries = iptable.num_entries;
-                            info.size = iptable.size;
-                            return Ok(info.as_bytes().to_vec());
-                        }
-                        None => Ok(optval),
-                    }
+                    let Ok(table_id) = TableId::try_from(&info.name) else {
+                        return error!(EINVAL);
+                    };
+                    let table = &self.ipv4[table_id];
+
+                    info.valid_hooks = table.valid_hooks;
+                    info.hook_entry = table.hook_entry;
+                    info.underflow = table.underflow;
+                    info.num_entries = table.num_entries;
+                    info.size = table.size;
+                    Ok(info.as_bytes().to_vec())
                 } else {
                     let (mut info, _) =
                         ip6t_getinfo::read_from_prefix(&*optval).map_err(|_| errno!(EINVAL))?;
-                    let table = self.ipv6.get(&info.name);
-                    match table {
-                        Some(iptable) => {
-                            info.valid_hooks = iptable.valid_hooks;
-                            info.hook_entry = iptable.hook_entry;
-                            info.underflow = iptable.underflow;
-                            info.num_entries = iptable.num_entries;
-                            info.size = iptable.size;
-                            return Ok(info.as_bytes().to_vec());
-                        }
-                        None => Ok(optval),
-                    }
+                    let Ok(table_id) = TableId::try_from(&info.name) else {
+                        return error!(EINVAL);
+                    };
+                    let table = &self.ipv6[table_id];
+                    info.valid_hooks = table.valid_hooks;
+                    info.hook_entry = table.hook_entry;
+                    info.underflow = table.underflow;
+                    info.num_entries = table.num_entries;
+                    info.size = table.size;
+                    Ok(info.as_bytes().to_vec())
                 }
             }
 
@@ -501,10 +484,10 @@ impl IpTables {
                 if socket.domain == SocketDomain::Inet {
                     let (get_entries, _) =
                         ipt_get_entries::read_from_prefix(&*optval).map_err(|_| errno!(EINVAL))?;
-                    let mut entry_bytes = match self.ipv4.get(&get_entries.name) {
-                        Some(iptable) => iptable.entries.clone(),
-                        None => vec![],
+                    let Ok(table_id) = TableId::try_from(&get_entries.name) else {
+                        return error!(EINVAL);
                     };
+                    let mut entry_bytes = self.ipv4[table_id].entries.clone();
 
                     if entry_bytes.len() > get_entries.size as usize {
                         log_warn!("Entries are longer than expected so truncating.");
@@ -516,10 +499,10 @@ impl IpTables {
                 } else {
                     let (get_entries, _) =
                         ip6t_get_entries::read_from_prefix(&*optval).map_err(|_| errno!(EINVAL))?;
-                    let mut entry_bytes = match self.ipv6.get(&get_entries.name) {
-                        Some(iptable) => iptable.entries.clone(),
-                        None => vec![],
+                    let Ok(table_id) = TableId::try_from(&get_entries.name) else {
+                        return error!(EINVAL);
                     };
+                    let mut entry_bytes = self.ipv6[table_id].entries.clone();
 
                     if entry_bytes.len() > get_entries.size as usize {
                         log_warn!("Entries are longer than expected so truncating.");
@@ -581,22 +564,24 @@ impl IpTables {
                 let (counters_info, _) =
                     xt_counters_info::read_from_prefix(&*bytes).map_err(|_| errno!(EINVAL))?;
 
-                if let Some(entry) = match socket.domain {
-                    SocketDomain::Inet => self.ipv4.get_mut(&counters_info.name),
-                    _ => self.ipv6.get_mut(&counters_info.name),
-                } {
-                    entry.num_counters = counters_info.num_counters;
-                    let mut counters = vec![];
-                    bytes = bytes.split_off(std::mem::size_of::<xt_counters_info>());
-                    for chunk in bytes.chunks(std::mem::size_of::<xt_counters>()) {
-                        counters.push(
-                            xt_counters::read_from_prefix(chunk).map_err(|_| errno!(EINVAL))?.0,
-                        );
-                    }
-                    entry.counters = counters;
-                    return Ok(());
+                let Ok(table_id) = TableId::try_from(&counters_info.name) else {
+                    return error!(EINVAL);
+                };
+
+                let entry: &mut IpTable = match socket.domain {
+                    SocketDomain::Inet => &mut self.ipv4[table_id],
+                    _ => &mut self.ipv6[table_id],
+                };
+
+                entry.num_counters = counters_info.num_counters;
+                let mut counters = vec![];
+                bytes = bytes.split_off(std::mem::size_of::<xt_counters_info>());
+                for chunk in bytes.chunks(std::mem::size_of::<xt_counters>()) {
+                    counters
+                        .push(xt_counters::read_from_prefix(chunk).map_err(|_| errno!(EINVAL))?.0);
                 }
-                error!(EINVAL)
+                entry.counters = counters;
+                Ok(())
             }
 
             _ => Ok(()),
@@ -610,8 +595,6 @@ impl IpTables {
         })?;
         let entries = table.parser.entries_bytes().to_vec();
         let replace_info = table.parser.replace_info.clone();
-        let name: IpTablesName =
-            string_to_ascii_buffer(&replace_info.name).map_err(|_| errno!(EINVAL))?;
         let iptable_entry = IpTable {
             num_entries: replace_info.num_entries as u32,
             size: replace_info.size as u32,
@@ -624,7 +607,7 @@ impl IpTables {
         };
 
         self.send_changes_to_net_filter(table.into_changes())?;
-        self.ipv4.insert(name, iptable_entry);
+        self.ipv4[replace_info.table_id] = iptable_entry;
 
         Ok(())
     }
@@ -636,8 +619,6 @@ impl IpTables {
         })?;
         let entries = table.parser.entries_bytes().to_vec();
         let replace_info = table.parser.replace_info.clone();
-        let name: IpTablesName =
-            string_to_ascii_buffer(&replace_info.name).map_err(|_| errno!(EINVAL))?;
         let iptable_entry = IpTable {
             num_entries: replace_info.num_entries as u32,
             size: replace_info.size as u32,
@@ -650,7 +631,7 @@ impl IpTables {
         };
 
         self.send_changes_to_net_filter(table.into_changes())?;
-        self.ipv6.insert(name, iptable_entry);
+        self.ipv6[replace_info.table_id] = iptable_entry;
 
         Ok(())
     }

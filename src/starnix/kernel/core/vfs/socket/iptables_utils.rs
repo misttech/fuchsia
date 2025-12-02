@@ -174,8 +174,8 @@ pub enum IpAddressConversionError {
 /// IPv4, and `ip6t_replace` for IPv6.
 #[derive(Clone, Debug)]
 pub struct ReplaceInfo {
-    /// Name of the table.
-    pub name: String,
+    /// The table to be replaced.
+    pub table_id: TableId,
 
     /// Number of entries defined on the table.
     pub num_entries: usize,
@@ -200,11 +200,10 @@ impl TryFrom<ipt_replace> for ReplaceInfo {
     type Error = IpTableParseError;
 
     fn try_from(replace: ipt_replace) -> Result<Self, Self::Error> {
-        let name = ascii_to_string(&replace.name).map_err(IpTableParseError::AsciiConversion)?;
         let valid_hooks = NfIpHooks::from_bits(replace.valid_hooks)
             .ok_or(IpTableParseError::InvalidHookBits { hooks: replace.valid_hooks })?;
         Ok(Self {
-            name,
+            table_id: TableId::try_from(&replace.name)?,
             num_entries: usize::try_from(replace.num_entries).expect("u32 fits in usize"),
             size: usize::try_from(replace.size).expect("u32 fits in usize"),
             valid_hooks,
@@ -219,11 +218,10 @@ impl TryFrom<ip6t_replace> for ReplaceInfo {
     type Error = IpTableParseError;
 
     fn try_from(replace: ip6t_replace) -> Result<Self, Self::Error> {
-        let name = ascii_to_string(&replace.name).map_err(IpTableParseError::AsciiConversion)?;
         let valid_hooks = NfIpHooks::from_bits(replace.valid_hooks)
             .ok_or(IpTableParseError::InvalidHookBits { hooks: replace.valid_hooks })?;
         Ok(Self {
-            name,
+            table_id: TableId::try_from(&replace.name)?,
             num_entries: usize::try_from(replace.num_entries).expect("u32 fits in usize"),
             size: usize::try_from(replace.size).expect("u32 fits in usize"),
             valid_hooks,
@@ -505,6 +503,52 @@ enum Ip {
     V6,
 }
 
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+pub enum TableId {
+    Filter,
+    Mangle,
+    Nat,
+    Raw,
+}
+pub const NUM_TABLES: usize = TableId::Raw as usize + 1;
+
+impl TryFrom<&[c_char; starnix_uapi::XT_TABLE_MAXNAMELEN as usize]> for TableId {
+    type Error = IpTableParseError;
+
+    fn try_from(
+        value: &[c_char; starnix_uapi::XT_TABLE_MAXNAMELEN as usize],
+    ) -> Result<Self, Self::Error> {
+        let name = ascii_to_string(value).map_err(IpTableParseError::AsciiConversion)?;
+        if name == TABLE_FILTER {
+            return Ok(TableId::Filter);
+        } else if name == TABLE_MANGLE {
+            return Ok(TableId::Mangle);
+        } else if name == TABLE_NAT {
+            return Ok(TableId::Nat);
+        } else if name == TABLE_RAW {
+            return Ok(TableId::Raw);
+        }
+        Err(IpTableParseError::UnrecognizedTableName { table_name: name })
+    }
+}
+
+impl TableId {
+    fn to_str(&self) -> &'static str {
+        match self {
+            TableId::Filter => TABLE_FILTER,
+            TableId::Mangle => TABLE_MANGLE,
+            TableId::Nat => TABLE_NAT,
+            TableId::Raw => TABLE_RAW,
+        }
+    }
+}
+
+impl From<TableId> for usize {
+    fn from(value: TableId) -> Self {
+        value as usize
+    }
+}
+
 /// A parser for both `ipt_replace` and `ip6t_replace`, and its subsequent entries.
 #[derive(Debug)]
 pub struct IptReplaceParser {
@@ -606,13 +650,19 @@ impl IptReplaceParser {
 
     pub fn get_namespace_id(&self) -> fnet_filter_ext::NamespaceId {
         match self.protocol {
-            Ip::V4 => fnet_filter_ext::NamespaceId(format!("ipv4-{}", self.replace_info.name)),
-            Ip::V6 => fnet_filter_ext::NamespaceId(format!("ipv6-{}", self.replace_info.name)),
+            Ip::V4 => fnet_filter_ext::NamespaceId(format!(
+                "ipv4-{}",
+                self.replace_info.table_id.to_str()
+            )),
+            Ip::V6 => fnet_filter_ext::NamespaceId(format!(
+                "ipv6-{}",
+                self.replace_info.table_id.to_str()
+            )),
         }
     }
 
-    pub fn table_name(&self) -> &str {
-        self.replace_info.name.as_str()
+    pub fn table_id(&self) -> TableId {
+        self.replace_info.table_id
     }
 
     pub fn get_namespace(&self) -> fnet_filter_ext::Namespace {
@@ -620,9 +670,11 @@ impl IptReplaceParser {
     }
 
     fn get_custom_routine_type(&self) -> fnet_filter_ext::RoutineType {
-        match self.table_name() {
-            TABLE_NAT => fnet_filter_ext::RoutineType::Nat(None),
-            _ => fnet_filter_ext::RoutineType::Ip(None),
+        match self.table_id() {
+            TableId::Nat => fnet_filter_ext::RoutineType::Nat(None),
+            TableId::Filter | TableId::Mangle | TableId::Raw => {
+                fnet_filter_ext::RoutineType::Ip(None)
+            }
         }
     }
 
@@ -1145,8 +1197,8 @@ struct InstalledRoutines {
 
 impl InstalledRoutines {
     fn new(parser: &IptReplaceParser) -> Result<Self, IpTableParseError> {
-        match parser.table_name() {
-            TABLE_NAT => {
+        match parser.table_id() {
+            TableId::Nat => {
                 if parser.replace_info.valid_hooks != NfIpHooks::NAT {
                     return Err(IpTableParseError::InvalidHooksForTable {
                         hooks: parser.replace_info.valid_hooks.bits(),
@@ -1155,7 +1207,7 @@ impl InstalledRoutines {
                 }
                 Self::new_nat(parser)
             }
-            TABLE_MANGLE => {
+            TableId::Mangle => {
                 if parser.replace_info.valid_hooks != NfIpHooks::MANGLE {
                     return Err(IpTableParseError::InvalidHooksForTable {
                         hooks: parser.replace_info.valid_hooks.bits(),
@@ -1164,7 +1216,7 @@ impl InstalledRoutines {
                 }
                 Self::new_ip(parser, nf_ip_hook_priorities_NF_IP_PRI_MANGLE)
             }
-            TABLE_FILTER => {
+            TableId::Filter => {
                 if parser.replace_info.valid_hooks != NfIpHooks::FILTER {
                     return Err(IpTableParseError::InvalidHooksForTable {
                         hooks: parser.replace_info.valid_hooks.bits(),
@@ -1173,7 +1225,7 @@ impl InstalledRoutines {
                 }
                 Self::new_ip(parser, nf_ip_hook_priorities_NF_IP_PRI_FILTER)
             }
-            TABLE_RAW => {
+            TableId::Raw => {
                 if parser.replace_info.valid_hooks != NfIpHooks::RAW {
                     return Err(IpTableParseError::InvalidHooksForTable {
                         hooks: parser.replace_info.valid_hooks.bits(),
@@ -1181,9 +1233,6 @@ impl InstalledRoutines {
                     });
                 }
                 Self::new_ip(parser, nf_ip_hook_priorities_NF_IP_PRI_RAW)
-            }
-            table_name => {
-                Err(IpTableParseError::UnrecognizedTableName { table_name: table_name.to_owned() })
             }
         }
     }
