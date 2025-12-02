@@ -5,7 +5,7 @@
 [package]
 name = "needs_feature"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 
 [dependencies]
 crate_with_features = { path = "../crate_with_features", features = ["feature1"] }

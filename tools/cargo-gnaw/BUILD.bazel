@@ -12,7 +12,7 @@ rustc_binary(
     name = "cargo-gnaw-bin",
     srcs = ["src/main.rs"],
     crate_name = "gnaw",
-    edition = "2021",
+    edition = "2024",
     target_compatible_with = HOST_CONSTRAINTS,
     deps = [
         ":cargo-gnaw-lib",
@@ -42,7 +42,7 @@ rustc_library(
         "templates/top_level_gn_rule.template",
     ],
     crate_name = "gnaw_lib",
-    edition = "2021",
+    edition = "2024",
     proc_macro_deps = [
         "//third_party/rust_crates/vendor:serde_derive",
     ],
@@ -81,7 +81,7 @@ rustc_test(
         "templates/top_level_binary_gn_rule.template",
         "templates/top_level_gn_rule.template",
     ],
-    edition = "2021",
+    edition = "2024",
     proc_macro_deps = [
         "//third_party/rust_crates/vendor:serde_derive",
     ],

@@ -19,7 +19,7 @@ rustc_library("cargo_features-v0_1_0") {
   crate_name = "cargo_features"
   source_root = "//cargo_features/src/lib.rs"
   output_name = "cargo_features-4775242031656858"
-  edition = "2021"
+  edition = "2024"
   disable_clippy = true
   enforce_source_listing = false
 
@@ -49,7 +49,7 @@ rustc_library("sub-crate-default-v0_1_0") {
   crate_name = "sub_crate_default"
   source_root = "//cargo_features/sub-crate-default/src/lib.rs"
   output_name = "sub_crate_default-907014e298fd4f87"
-  edition = "2021"
+  edition = "2024"
   disable_clippy = true
   enforce_source_listing = false
 
@@ -72,7 +72,7 @@ rustc_library("sub-crate-for-feature-v0_1_0") {
   crate_name = "sub_crate_for_feature"
   source_root = "//cargo_features/sub-crate-for-feature/src/lib.rs"
   output_name = "sub_crate_for_feature-aa2f3f9b02f291a9"
-  edition = "2021"
+  edition = "2024"
   disable_clippy = true
   enforce_source_listing = false
 
@@ -95,7 +95,7 @@ rustc_library("sub-crate-non-default-v0_1_0") {
   crate_name = "sub_crate_non_default"
   source_root = "//cargo_features/sub-crate-non-default/src/lib.rs"
   output_name = "sub_crate_non_default-d9f5c9139685fd00"
-  edition = "2021"
+  edition = "2024"
   disable_clippy = true
   enforce_source_listing = false
 
@@ -118,7 +118,7 @@ rustc_library("sub-crate-with-feature-v0_1_0") {
   crate_name = "sub_crate_with_feature"
   source_root = "//cargo_features/sub-crate-with-feature/src/lib.rs"
   output_name = "sub_crate_with_feature-2daa1749812a946a"
-  edition = "2021"
+  edition = "2024"
   disable_clippy = true
   enforce_source_listing = false
 

@@ -68,7 +68,7 @@ if (is_host) {
       "templates/top_level_gn_rule.template",
     ]
     crate_name = "gnaw_lib"
-    edition = "2021"
+    edition = "2024"
     proc_macro_deps = [ "//third_party/rust_crates:serde_derive" ]
     deps = [
       "//third_party/rust_crates:anyhow",
@@ -104,7 +104,7 @@ if (is_host) {
       "templates/top_level_binary_gn_rule.template",
       "templates/top_level_gn_rule.template",
     ]
-    edition = "2021"
+    edition = "2024"
     proc_macro_deps = [ "//third_party/rust_crates:serde_derive" ]
     deps = [
       "//third_party/rust_crates:anyhow",

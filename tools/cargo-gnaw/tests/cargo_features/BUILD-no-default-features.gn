@@ -19,7 +19,7 @@ rustc_library("cargo_features-v0_1_0") {
   crate_name = "cargo_features"
   source_root = "//cargo_features/src/lib.rs"
   output_name = "cargo_features-4775242031656858"
-  edition = "2021"
+  edition = "2024"
   disable_clippy = true
   enforce_source_listing = false
 
@@ -43,7 +43,7 @@ rustc_library("sub-crate-with-feature-v0_1_0") {
   crate_name = "sub_crate_with_feature"
   source_root = "//cargo_features/sub-crate-with-feature/src/lib.rs"
   output_name = "sub_crate_with_feature-2daa1749812a946a"
-  edition = "2021"
+  edition = "2024"
   disable_clippy = true
   enforce_source_listing = false
 

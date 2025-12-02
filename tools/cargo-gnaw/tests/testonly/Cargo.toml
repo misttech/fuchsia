@@ -5,7 +5,7 @@
 [package]
 name = "testonly_test"
 version = "0.1.0"
-edition = "2018"
+edition = "2024"
 
 [dependencies]
 example_lib = { version = "1.0", path = "example_lib" }

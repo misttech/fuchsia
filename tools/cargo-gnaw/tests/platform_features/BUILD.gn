@@ -25,7 +25,7 @@ rustc_library("a-v1_0_0") {
   crate_name = "a"
   source_root = "//platform_features/a/src/lib.rs"
   output_name = "a-537022e729cc9ca0"
-  edition = "2021"
+  edition = "2024"
   disable_clippy = true
   enforce_source_listing = false
 
@@ -54,7 +54,7 @@ rustc_library("b-v1_0_0") {
   crate_name = "b"
   source_root = "//platform_features/b/src/lib.rs"
   output_name = "b-72d4e469bdf48536"
-  edition = "2021"
+  edition = "2024"
   disable_clippy = true
   enforce_source_listing = false
 

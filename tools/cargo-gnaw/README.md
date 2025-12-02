@@ -35,7 +35,7 @@ root crate.
 name = "simple"
 version = "1.0.25"
 authors = ["Benjamin Brittain <bwb@google.com>"]
-edition = "2018"
+edition = "2024"
 
 [dependencies]
 ```

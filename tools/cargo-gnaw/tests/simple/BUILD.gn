@@ -19,7 +19,7 @@ rustc_library("simple-v1_0_25") {
   crate_name = "simple"
   source_root = "//simple/src/lib.rs"
   output_name = "simple-3b5ec47e038ac967"
-  edition = "2018"
+  edition = "2024"
   disable_clippy = true
   enforce_source_listing = false
 

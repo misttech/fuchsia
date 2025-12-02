@@ -19,7 +19,7 @@ rustc_library("multiple_crate_types-v1_0_25") {
   crate_name = "multiple_crate_types"
   source_root = "//multiple_crate_types/src/lib.rs"
   output_name = "multiple_crate_types-8be5e59704cbf5a4"
-  edition = "2018"
+  edition = "2024"
   disable_clippy = true
   enforce_source_listing = false
 
@@ -45,7 +45,7 @@ rustc_library("sub-crate-with-cdylib-v1_0_25") {
   crate_name = "sub_crate_with_cdylib"
   source_root = "//multiple_crate_types/sub-crate-with-cdylib/src/lib.rs"
   output_name = "sub_crate_with_cdylib-2c19a9098651391d"
-  edition = "2018"
+  edition = "2024"
   disable_clippy = true
   enforce_source_listing = false
 
@@ -70,7 +70,7 @@ rustc_library("sub-crate-with-dylib-v1_0_25") {
   crate_name = "sub_crate_with_dylib"
   source_root = "//multiple_crate_types/sub-crate-with-dylib/src/lib.rs"
   output_name = "sub_crate_with_dylib-cba782ed0389a004"
-  edition = "2018"
+  edition = "2024"
   disable_clippy = true
   enforce_source_listing = false
 
@@ -95,7 +95,7 @@ rustc_library("sub-crate-with-rlib-v1_0_25") {
   crate_name = "sub_crate_with_rlib"
   source_root = "//multiple_crate_types/sub-crate-with-rlib/src/lib.rs"
   output_name = "sub_crate_with_rlib-5a8ce889cce06275"
-  edition = "2018"
+  edition = "2024"
   disable_clippy = true
   enforce_source_listing = false
 

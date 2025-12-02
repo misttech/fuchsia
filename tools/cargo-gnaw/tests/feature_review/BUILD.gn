@@ -19,7 +19,7 @@ rustc_library("crate_with_features-v0_1_0") {
   crate_name = "crate_with_features"
   source_root = "//feature_review/crate_with_features/src/lib.rs"
   output_name = "crate_with_features-7091b4706c607e57"
-  edition = "2018"
+  edition = "2024"
   disable_clippy = true
   enforce_source_listing = false
 
@@ -43,7 +43,7 @@ rustc_library("feature_test-v0_1_0") {
   crate_name = "feature_test"
   source_root = "//feature_review/src/lib.rs"
   output_name = "feature_test-75712ce55243d0e0"
-  edition = "2018"
+  edition = "2024"
   disable_clippy = true
   enforce_source_listing = false
 
@@ -67,7 +67,7 @@ rustc_library("needs_feature-v0_1_0") {
   crate_name = "needs_feature"
   source_root = "//feature_review/needs_feature/src/lib.rs"
   output_name = "needs_feature-e99a212d2fc1fa1b"
-  edition = "2021"
+  edition = "2024"
   disable_clippy = true
   enforce_source_listing = false
 

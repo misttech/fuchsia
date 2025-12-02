@@ -57,8 +57,10 @@ fn main() {
     // that don't apply to them.
     //
     // These values need to be absolute so they work regardless of the current working directory.
-    std::env::set_var("LD_LIBRARY_PATH", Path::new(&paths.lib_path).canonicalize().unwrap());
-    std::env::set_var("DYLD_LIBRARY_PATH", Path::new(&paths.lib_path).canonicalize().unwrap());
+    unsafe {
+        std::env::set_var("LD_LIBRARY_PATH", Path::new(&paths.lib_path).canonicalize().unwrap());
+        std::env::set_var("DYLD_LIBRARY_PATH", Path::new(&paths.lib_path).canonicalize().unwrap());
+    }
 
     // Cargo internally invokes rustc; but we must tell it to use the one from
     // our sandbox, and this is configured using the env variable "RUSTC".
@@ -67,7 +69,9 @@ fn main() {
     //
     // See:
     // https://doc.rust-lang.org/cargo/reference/environment-variables.html
-    std::env::set_var("RUSTC", Path::new(&paths.rustc_binary_path).canonicalize().unwrap());
+    unsafe {
+        std::env::set_var("RUSTC", Path::new(&paths.rustc_binary_path).canonicalize().unwrap());
+    }
 
     #[derive(Debug, Default)]
     struct Options {

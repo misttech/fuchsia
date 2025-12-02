@@ -698,7 +698,7 @@ mod tests {
             &pkg_id,
             "test_target",
             "test_package",
-            Edition::E2018,
+            Edition::E2024,
             Utf8Path::from_path(project_root.as_path()).unwrap(),
             &version,
             GnRustType::Library,
@@ -756,7 +756,7 @@ mod tests {
             &pkg_id,
             "test_target",
             "test_package",
-            Edition::E2018,
+            Edition::E2024,
             Utf8Path::from_path(project_root.as_path()).unwrap(),
             &version,
             GnRustType::Library,
@@ -786,7 +786,7 @@ mod tests {
   crate_name = "test_target"
   source_root = "//simple_target"
   output_name = "test_target-c5bf97c44457465a"
-  edition = "2018"
+  edition = "2024"
   disable_clippy = true
   enforce_source_listing = false
   
@@ -821,7 +821,7 @@ mod tests {
             &pkg_id,
             "test_target",
             "test_package",
-            Edition::E2018,
+            Edition::E2024,
             Utf8Path::from_path(project_root.as_path()).unwrap(),
             &version,
             GnRustType::Binary,
@@ -853,7 +853,7 @@ mod tests {
   crate_name = "test_target"
   source_root = "//binary_target"
   output_name = "rainbow_binary"
-  edition = "2018"
+  edition = "2024"
   disable_clippy = true
   enforce_source_listing = false
   
@@ -888,7 +888,7 @@ mod tests {
             &pkg_id,
             "test_target",
             "test_package",
-            Edition::E2018,
+            Edition::E2024,
             Utf8Path::from_path(project_root.as_path()).unwrap(),
             &version,
             GnRustType::Binary,
@@ -919,7 +919,7 @@ mod tests {
   crate_name = "test_target"
   source_root = "//renamed_target"
   output_name = "rainbow_binary"
-  edition = "2018"
+  edition = "2024"
   disable_clippy = true
   enforce_source_listing = false
   

@@ -6,7 +6,7 @@
 name = "multiple_crate_types"
 version = "1.0.25"
 authors = ["Erick Tryzelaar <etryzelaar@google.com>"]
-edition = "2018"
+edition = "2024"
 
 [dependencies]
 sub-crate-with-cdylib = { version = "1.0.25", path = "sub-crate-with-cdylib" }

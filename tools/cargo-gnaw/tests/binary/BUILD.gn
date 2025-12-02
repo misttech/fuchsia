@@ -23,7 +23,7 @@ executable("package-with-bin-foo-binary-v0_1_0") {
   crate_name = "foo_binary"
   source_root = "//binary/src/main.rs"
   output_name = "foo-output"
-  edition = "2018"
+  edition = "2024"
   disable_clippy = true
   enforce_source_listing = false
   if (current_os == "fuchsia") {
@@ -53,7 +53,7 @@ rustc_library("package-with-bin-v0_1_0") {
   crate_name = "package_with_bin"
   source_root = "//binary/src/lib.rs"
   output_name = "package_with_bin-b6c5dfd7f886ecb4"
-  edition = "2018"
+  edition = "2024"
   disable_clippy = true
   enforce_source_listing = false
 

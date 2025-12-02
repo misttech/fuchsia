@@ -6,7 +6,7 @@
 name = "platform_features"
 version = "0.1.0"
 authors = ["David Koloski <dkoloski@google.com>"]
-edition = "2021"
+edition = "2024"
 
 [dependencies]
 a = { version = "1.0", path = "a" }
