@@ -16,7 +16,7 @@
             to: "#sampler",
         },
         {
-            protocol: [ "fuchsia.diagnostics.ArchiveAccessor" ],
+            protocol: [ "fuchsia.diagnostics.Sample" ],
             from: "parent/diagnostics-accessors",
             to: [ "#sampler" ],
         },

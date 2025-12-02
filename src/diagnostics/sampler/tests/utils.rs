@@ -33,6 +33,7 @@ impl PartialEq<Event> for MetricEvent {
     }
 }
 
+#[derive(Debug)]
 pub struct EventVerifier<'a> {
     project_id: u32,
     events_received: Vec<MetricEvent>,
@@ -69,7 +70,11 @@ impl<'a> EventVerifier<'a> {
     /// Validate, and make sure no extra events were received.
     pub async fn validate_with_count(&mut self, events: Vec<Event>, message: &str) {
         self.validate(events, message).await;
-        assert_eq!(self.events_received.len(), 0, "In {message}, extra events were received");
+        assert!(
+            self.events_received.is_empty(),
+            "In {message}, extra events were received: {:?}",
+            self.events_received
+        );
     }
 
     fn event_occurrences(events: &Vec<MetricEvent>, expected_event: &Event) -> usize {

@@ -5,13 +5,13 @@
 use diagnostics_assertions::{AnyProperty, assert_data_tree};
 use diagnostics_reader::ArchiveReader;
 use fidl_fuchsia_component::BinderMarker;
+use fidl_fuchsia_diagnostics as fdiagnostics;
 use fidl_fuchsia_metrics_test::MetricEventLoggerQuerierMarker;
 use fidl_fuchsia_mockrebootcontroller::MockRebootControllerMarker;
 use fidl_fuchsia_samplertestcontroller::SamplerTestControllerMarker;
 use fuchsia_component::client::{connect_to_protocol_at, connect_to_protocol_at_path};
 use realm_client::InstalledNamespace;
 use utils::{Event, EventVerifier};
-use {fidl_fuchsia_diagnostics as fdiagnostics, fuchsia_async as fasync};
 
 mod test_topology;
 mod utils;
@@ -54,6 +54,7 @@ async fn event_count_sampler_test() {
                 Event { id: 101, value: 1, codes: vec![0, 0] },
                 Event { id: 102, value: 10, codes: vec![0, 0] },
                 Event { id: 103, value: 20, codes: vec![0, 0] },
+                Event { id: 104, value: 1, codes: vec![0, 0] },
             ],
             "initial in event_count",
         )
@@ -145,6 +146,8 @@ async fn event_count_sampler_test() {
         )
         .await;
 
+    test_app_controller.increment_int(1).await.unwrap();
+
     // trigger_reboot calls the on_reboot callback that drives sampler shutdown. this
     // should await until sampler has finished its cleanup, which means we should have some events
     // present when we're done, and the sampler task should be finished.
@@ -153,10 +156,12 @@ async fn event_count_sampler_test() {
     project_5_events
         .validate_with_count(
             vec![
-                // The metric configured to run every 3000 seconds gets polled, and gets an undiffed
-                // report of its values.
+                // The metric configured to run every 3000 seconds gets polled
                 Event { id: 104, value: 2, codes: vec![0, 0] },
                 Event { id: 102, value: 10, codes: vec![0, 0] },
+                // 101 and 104 refer to the same datum, but are occurrences that
+                // have each been polled a different number of times
+                Event { id: 101, value: 1, codes: vec![0, 0] },
             ],
             "after reboot in event_count",
         )
@@ -197,6 +202,18 @@ async fn reboot_server_crashed_test() {
     // Crash the reboot server to verify that sampler continues to sample.
     reboot_controller.crash_reboot_channel().await.unwrap().unwrap();
 
+    project_5_events
+        .validate_with_count(
+            vec![
+                Event { id: 101, value: 0, codes: vec![0, 0] },
+                Event { id: 104, value: 0, codes: vec![0, 0] },
+                Event { id: 102, value: 10, codes: vec![0, 0] },
+                Event { id: 103, value: 20, codes: vec![0, 0] },
+            ],
+            "initial in crashed-test",
+        )
+        .await;
+
     test_app_controller.increment_int(1).await.unwrap();
 
     project_5_events
@@ -204,9 +221,8 @@ async fn reboot_server_crashed_test() {
             vec![
                 Event { id: 101, value: 1, codes: vec![0, 0] },
                 Event { id: 102, value: 10, codes: vec![0, 0] },
-                Event { id: 103, value: 20, codes: vec![0, 0] },
             ],
-            "initial in crashed",
+            "post increment, after crashing in crashed-test",
         )
         .await;
 
@@ -218,7 +234,7 @@ async fn reboot_server_crashed_test() {
     project_5_events
         .validate_with_count(
             vec![Event { id: 102, value: 10, codes: vec![0, 0] }],
-            "second in crashed",
+            "final in crashed-test",
         )
         .await;
 }
@@ -226,6 +242,13 @@ async fn reboot_server_crashed_test() {
 /// Runs the Sampler and a test component that can have its inspect properties
 /// manipulated by the test via fidl. Verifies that Sampler publishes its own
 /// status correctly in its own Inspect data.
+///
+/// It is technically possible for this to flake, because project metrics are
+/// written to Inspect as they are loaded from config files. This means that
+/// if there are more than one configs for a given project, the ArchiveReader
+/// access could happen in between config loads. However, in practice the
+/// Archivist access should be much slower than starting Sampler and loading
+/// configs.
 #[fuchsia::test]
 async fn sampler_inspect_test() {
     let ns = test_topology::create_realm().await.expect("initialized topology");
@@ -235,41 +258,39 @@ async fn sampler_inspect_test() {
     ))
     .unwrap();
 
-    let hierarchy = loop {
-        let accessor = connect_to_protocol_at::<fdiagnostics::ArchiveAccessorMarker>(&ns).unwrap();
-        // Observe verification shows up in inspect.
-        let mut data = ArchiveReader::inspect()
-            .with_archive(accessor)
-            .add_selector(format!("{}:root", test_topology::SAMPLER_NAME))
-            .snapshot()
-            .await
-            .expect("got inspect data");
+    let accessor = connect_to_protocol_at::<fdiagnostics::ArchiveAccessorMarker>(&ns).unwrap();
 
-        let hierarchy = data.pop().expect("one result").payload.expect("payload is not none");
-        if hierarchy.get_child("sampler_executor_stats").is_none() {
-            fasync::Timer::new(fasync::MonotonicInstant::after(
-                zx::MonotonicDuration::from_millis(100),
-            ))
-            .await;
-            continue;
-        }
-        break hierarchy;
-    };
+    // Observe verification shows up in inspect.
+    let hierarchy = ArchiveReader::inspect()
+        .with_archive(accessor)
+        // this selector is left in place to catch anything "extra" that is written
+        .add_selector(format!("{}:root", test_topology::SAMPLER_NAME))
+        .add_selector(format!(
+            "{}:root/sampler_executor_stats/project_5",
+            test_topology::SAMPLER_NAME
+        ))
+        .add_selector(format!(
+            "{}:root/sampler_executor_stats/project_13",
+            test_topology::SAMPLER_NAME
+        ))
+        .add_selector(format!("{}:root/fuchsia.inspect.Health", test_topology::SAMPLER_NAME))
+        .snapshot()
+        .await
+        .expect("got inspect data")
+        .pop()
+        .expect("retry until there is a payload")
+        .payload
+        .expect("there is data");
+
     assert_data_tree!(
         hierarchy,
         root: {
             sampler_executor_stats: {
-                healthily_exited_samplers: 0u64,
-                errorfully_exited_samplers: 0u64,
-                reboot_exited_samplers: 0u64,
-                total_project_samplers_configured: 5u64,
                 project_5: {
-                    project_sampler_count: 2u64,
                     metrics_configured: 4u64,
                     cobalt_logs_sent: AnyProperty,
                 },
                 project_13: {
-                    project_sampler_count: 3u64,
                     metrics_configured: 10u64,
                     cobalt_logs_sent: AnyProperty,
                 },

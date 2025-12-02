@@ -1,102 +1,219 @@
-// Copyright 2020 The Fuchsia Authors. All rights reserved.
+// Copyright 2025 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 use crate::config::SamplerConfig;
-use anyhow::{Context, Error};
+use crate::project::Project;
+use anyhow::Error as AnyhowError;
 use argh::FromArgs;
-use fuchsia_component::client::connect_to_protocol;
-use fuchsia_component::server::ServiceFs;
+use diagnostics_reader::drain_batch_iterator;
+use fidl::endpoints::{ControlHandle, RequestStream, create_endpoints};
+use fidl_fuchsia_diagnostics as fdiagnostics;
+use fidl_fuchsia_hardware_power_statecontrol::{
+    RebootMethodsWatcherRegisterMarker, RebootWatcherMarker, RebootWatcherRequest,
+};
+use fidl_fuchsia_metrics::MetricEventLoggerFactoryMarker;
+use fuchsia_component_client::connect_to_protocol;
+use fuchsia_inspect::component;
 use fuchsia_inspect::health::Reporter;
-use fuchsia_inspect::{self as inspect};
-use futures::{StreamExt, TryStreamExt};
+use futures::future::{Either, select};
+use futures::stream::{self, StreamExt};
+use inspect_runtime::publish;
+use itertools::Itertools;
 use log::{info, warn};
-use sampler_component_config::Config as ComponentConfig;
-use {fidl_fuchsia_hardware_power_statecontrol as reboot, fuchsia_async as fasync};
+use sampler_component_config::Config;
+use std::sync::Arc;
 
 mod config;
-mod diagnostics;
-mod executor;
-
-/// The name of the subcommand and the logs-tag.
-pub const PROGRAM_NAME: &str = "sampler";
+mod error;
+mod project;
 
 /// Arguments used to configure sampler.
 #[derive(Debug, Default, FromArgs, PartialEq)]
 #[argh(subcommand, name = "sampler")]
 pub struct Args {}
 
-pub async fn main() -> Result<(), Error> {
-    // Serve inspect.
-    let inspector = inspect::component::inspector();
-    let _inspect_server_task =
-        inspect_runtime::publish(inspector, inspect_runtime::PublishOptions::default());
+pub const PROGRAM_NAME: &str = "sampler";
 
-    let mut service_fs = ServiceFs::new();
-    service_fs.take_and_serve_directory_handle()?;
-    fasync::Task::spawn(async move {
-        service_fs.collect::<()>().await;
-    })
-    .detach();
+pub async fn main() -> Result<(), AnyhowError> {
+    info!("Sampler starting up");
+    component::health().set_starting_up();
 
-    // Starting service.
-    inspect::component::health().set_starting_up();
+    let _inspect = publish(component::inspector(), Default::default());
 
-    let sampler_config = SamplerConfig::new(ComponentConfig::take_from_startup_handle())?;
+    let execution_stats = component::inspector().root().create_child("sampler_executor_stats");
+    let config = SamplerConfig::new(Config::take_from_startup_handle(), &execution_stats)?;
 
-    // Create endpoint for the reboot watcher register.
-    let (reboot_watcher_client, reboot_watcher_request_stream) =
-        fidl::endpoints::create_request_stream::<reboot::RebootWatcherMarker>();
+    let sampler = connect_to_protocol::<fdiagnostics::SampleMarker>()?;
 
+    for chunk in &config
+        .sample_data()
+        .into_iter()
+        .chunks(fdiagnostics::MAX_SAMPLE_PARAMETERS_PER_SET as usize)
     {
-        // Let the transient connection fall out of scope once we've passed the client
-        // end to our callback server.
-        let reboot_watcher_register =
-            connect_to_protocol::<reboot::RebootMethodsWatcherRegisterMarker>()
-                .context("Connect to Reboot watcher register")?;
-
-        reboot_watcher_register
-            .register_watcher(reboot_watcher_client)
-            .await
-            .context("Providing the reboot register with callback channel.")?;
+        sampler.set(&fdiagnostics::SampleParameters {
+            data: Some(chunk.collect()),
+            ..Default::default()
+        })?;
     }
 
-    let sampler_executor = executor::SamplerExecutor::new(sampler_config).await?;
+    let (sample_sink_client, sample_sink_server) =
+        create_endpoints::<fdiagnostics::SampleSinkMarker>();
 
-    // Trigger the project samplers and returns a TaskCancellation struct used to trigger
-    // reboot shutdown of sampler.
-    let task_canceller = sampler_executor.execute();
+    if let Err(e) = sampler.commit(sample_sink_client).await? {
+        match e {
+            fdiagnostics::ConfigurationError::SamplePeriodTooSmall => {
+                return Err(anyhow::anyhow!(
+                    "Configured sample period was too small, indicating a config bug. Exiting."
+                ));
+            }
+            err => warn!(err:?; "Sampler encountered non-fatal error. Review Archivist's logs."),
+        }
+    }
 
-    inspect::component::health().set_ok();
-    reboot_watcher(reboot_watcher_request_stream, task_canceller).await;
+    let metric_logger_factory = connect_to_protocol::<MetricEventLoggerFactoryMarker>()?;
+
+    let mut projects = futures::stream::iter(config.project_configs)
+        .filter_map(|project_config| async {
+            let project_id = *project_config.project_id;
+            let customer_id = *project_config.customer_id;
+            let stats = config.stats.projects.get(&project_config.project_id);
+            match Project::new(&metric_logger_factory, project_config, stats).await {
+                Ok(project) => Some(project),
+                Err(e) => {
+                    warn!(
+                        e:?,
+                        project_id,
+                        customer_id;
+                        "Sampler failed to configure a project",
+                    );
+                    None
+                }
+            }
+        })
+        .collect::<Vec<_>>()
+        .await;
+
+    let (reboot_watcher_client, reboot_watcher_request_stream) =
+        fidl::endpoints::create_request_stream::<RebootWatcherMarker>();
+    let reboot_watcher_register = connect_to_protocol::<RebootMethodsWatcherRegisterMarker>()?;
+    reboot_watcher_register.register_watcher(reboot_watcher_client).await?;
+
+    let sink_stream = sample_sink_server.into_stream();
+    let sample_sink_control = sink_stream.control_handle();
+    let mut sink_stream = sink_stream.fuse();
+    let mut reboot_stream = Either::Left(reboot_watcher_request_stream);
+    let mut shutdown = false;
+
+    component::health().set_ok();
+
+    loop {
+        match select(reboot_stream.next(), sink_stream.next()).await {
+            Either::Left((reboot, _)) => match reboot {
+                Some(Ok(RebootWatcherRequest::OnReboot { responder, .. })) => {
+                    shutdown = true;
+                    sample_sink_control.send_on_now_or_never()?;
+                    responder.send()?;
+                }
+                Some(Err(err)) => {
+                    warn!(err:?; "Sampler encountered error on RebootWatcher, data may be missing");
+                }
+                None => {
+                    reboot_stream = Either::Right(stream::pending());
+                    continue;
+                }
+            },
+            Either::Right((event, _)) => {
+                let Some(Ok(event)) = event else {
+                    break;
+                };
+
+                handle_sample_sink_request(event, shutdown, &mut projects).await;
+
+                if shutdown {
+                    break;
+                }
+            }
+        }
+    }
+
     Ok(())
 }
 
-async fn reboot_watcher(
-    mut stream: reboot::RebootWatcherRequestStream,
-    task_canceller: executor::TaskCancellation,
+async fn handle_sample_sink_request(
+    event: fdiagnostics::SampleSinkRequest,
+    shutdown: bool,
+    projects: &mut [Project<'_>],
 ) {
-    if let Some(reboot::RebootWatcherRequest::OnReboot { options: _, responder }) =
-        stream.try_next().await.unwrap_or_else(|err| {
-            // If the channel closed for some reason, we can just let Sampler keep running
-            // until component manager kills it.
-            warn!("Reboot callback channel closed: {:?}", err);
-            None
-        })
-    {
-        task_canceller.perform_reboot_cleanup().await;
+    match event {
+        fdiagnostics::SampleSinkRequest::OnSampleReadied {
+            event:
+                fdiagnostics::SampleSinkResult::Ready(fdiagnostics::SampleReady {
+                    batch_iter: Some(batch_iter),
+                    seconds_since_start: Some(seconds_since_start),
+                    ..
+                }),
+            control_handle: _control_handle,
+        } => {
+            let data = drain_batch_iterator::<diagnostics_data::InspectData>(Arc::new(
+                batch_iter.into_proxy(),
+            ))
+            .filter_map(|v| async {
+                match v {
+                    Ok(v) => Some(v),
+                    Err(e) => {
+                        warn!(e:?; "Failed to read some Inspect data; skipping");
+                        None
+                    }
+                }
+            })
+            .collect::<Vec<_>>()
+            .await;
 
-        // acknowledge reboot notification to unblock before timeout.
-        responder
-            .send()
-            .unwrap_or_else(|err| warn!("Acking the reboot register failed: {:?}", err));
+            let seconds_since_start = if shutdown {
+                None
+            } else {
+                Some(zx::MonotonicDuration::from_seconds(seconds_since_start))
+            };
 
-        info!("Sampler has been halted due to reboot. Goodbye.");
-    } else {
-        // The reboot watcher channel somehow died. There's no reason to
-        // clean ourselves up early, might as well just run until the component
-        // manager tells us to stop or all tasks finish.
-        task_canceller.run_without_cancellation().await;
-        info!("All Sampler tasks have finished running. Goodbye.");
+            for project in projects {
+                if let Err(e) = project.log(&data, seconds_since_start).await {
+                    warn!(e:?; "Project failed to log");
+                }
+
+                // TODO: b/440153294 - Update SampleSink to allow removing selectors during
+                // runtime. These selectors are returned by Project::log. That will reduce
+                // the load on Archivist, but is not required for correctness of Sampler.
+            }
+        }
+        fdiagnostics::SampleSinkRequest::OnSampleReadied {
+            event:
+                fdiagnostics::SampleSinkResult::Ready(fdiagnostics::SampleReady {
+                    batch_iter,
+                    seconds_since_start,
+                    ..
+                }),
+            control_handle,
+        } => {
+            control_handle.shutdown();
+            warn!(
+                batch_iter:?, seconds_since_start:?;
+                "Sample server sent Ready but crucial fields were None"
+            );
+        }
+        fdiagnostics::SampleSinkRequest::OnSampleReadied {
+            event: fdiagnostics::SampleSinkResult::Error(e),
+            ..
+        } => {
+            warn!(e:?; "Sample server sent an error, data may be missing");
+        }
+        fdiagnostics::SampleSinkRequest::OnSampleReadied {
+            event: fdiagnostics::SampleSinkResult::__SourceBreaking { .. },
+            control_handle,
+        }
+        | fdiagnostics::SampleSinkRequest::_UnknownMethod { control_handle, .. } => {
+            control_handle.shutdown();
+            warn!("Sample server sent a source-breaking or unknown event")
+        }
     }
 }

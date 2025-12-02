@@ -1,0 +1,39 @@
+{
+    metrics: [
+        {
+            event_codes: [
+                0,
+            ],
+            metric_id: 3001,
+            metric_type: "Occurrence",
+            selector: [
+                "bootstrap/*-drivers\\:*:[name=fvm]root/fvm/partitions/blobfs:total_slices_reserved",
+                "bootstrap/fshost/fvm2:root/fvm/partitions/blobfs:total_slices_reserved",
+            ],
+        },
+        {
+            event_codes: [
+                1,
+            ],
+            metric_id: 3001,
+            metric_type: "Occurrence",
+            selector: [
+                "bootstrap/*-drivers\\:*:[name=fvm]root/fvm/partitions/minfs:total_slices_reserved",
+                "bootstrap/fshost/fvm2:root/fvm/partitions/minfs:total_slices_reserved",
+            ],
+        },
+        {
+            event_codes: [
+                1,
+            ],
+            metric_id: 61,
+            metric_type: "Occurrence",
+            selector: [
+                "bootstrap/*-drivers\\:*:[name=fvm]root/fvm/mount_time/version_combo",
+                "bootstrap/fshost/fvm2:root/fvm/mount_time/version_combo",
+            ],
+        },
+    ],
+    poll_rate_sec: 1800,
+    project_id: 3676913920,
+}
