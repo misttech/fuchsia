@@ -187,8 +187,6 @@ mod tests {
         let info = pmt.as_handle_ref().basic_info().unwrap();
         assert_eq!(info.object_type, ObjectType::PMT);
 
-        unsafe {
-            pmt.unpin().unwrap();
-        }
+        pmt.unpin().unwrap();
     }
 }
