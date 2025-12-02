@@ -8,3 +8,15 @@ restricted_loadable_module("restricted-blob") {
   sources = [ "$current_cpu.S" ]
   deps = [ "//zircon/kernel/lib/arch" ]
 }
+
+# The boundary module is blob of code which will be mapped at the boundary of
+# addressable memory.  For 64-bit targets, this is often impossible given other
+# constraints, but for 32-bit targets, the 64-bit "host" will map this blob at a
+# location which overlaps the boundary (0xffffffff).
+#
+# Once placed, different exception cases can be explored, such as invalid
+# instruction prefetch when the next instruction if outside of the addressable
+# memory.
+restricted_loadable_module("boundary") {
+  sources = [ "boundary.$current_cpu.S" ]
+}

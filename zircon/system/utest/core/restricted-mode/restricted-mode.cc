@@ -40,14 +40,23 @@ static constexpr size_t kEnvironmentMemorySize = 8 * 1024 * 1024;  // 8M
 
 class RestrictedMode : public restricted_machine::testing::SupportedMachinesTest {
  public:
+  static constexpr uint64_t kBoundaryTargetMapping = 0x00000000fffff000;
+
   static void SetUpTestSuite() {
     RM_NEEDS_NEXT_SKIP;
     static const std::vector<std::string_view> kSymbols{
         "syscall_bounce",    "syscall_bounce_post_syscall",
         "exception_bounce",  "exception_bounce_exception_address",
         "wait_then_syscall", "store_one",
+#ifdef __aarch64__
+        "bad_increment",
+#endif
     };
     SetUpTestSuiteHelper("restricted-blob", &kSymbols, kEnvironmentMemorySize);
+    auto arm_env = environment(restricted_machine::MachineType::kArm);
+    if (arm_env.is_ok()) {
+      ASSERT_OK(arm_env.value()->AddLoadableBlob("boundary", kBoundaryTargetMapping));
+    }
   }
 
   void SetUp() override { RM_NEEDS_NEXT_SKIP; }
@@ -719,3 +728,44 @@ TEST_P(RestrictedMode, KickJustBeforeSyscall) {
   ASSERT_EQ(ZX_RESTRICTED_REASON_KICK, r.value());
   kicker.join();
 }
+
+TEST_P(RestrictedMode, BadInstructionAbort) {
+  restricted_machine::Machine machine(environment());
+  ASSERT_TRUE(machine.Initialize());
+  zx::result<uint64_t> r = machine.Thunk(0xffffffffffffffe);
+  EXPECT_TRUE(r.is_ok());
+  EXPECT_EQ(ZX_RESTRICTED_REASON_EXCEPTION, r.value());
+  machine.LogState(ZX_RESTRICTED_REASON_EXCEPTION);
+}
+
+// The following testing are currently only targeting ARM/ARM64.
+#if defined(__aarch64__)
+TEST_P(RestrictedMode, BadIncrement) {
+  restricted_machine::Machine machine(environment());
+  ASSERT_TRUE(machine.Initialize());
+
+  auto addr = environment()->SymbolAddress("bad_increment");
+  ASSERT_OK(addr);
+  machine.registers()->set_pc(addr.value());
+  ASSERT_OK(machine.CommitState());
+  zx::result<uint64_t> r = machine.Enter();
+  EXPECT_TRUE(r.is_ok());
+  machine.LogState(ZX_RESTRICTED_REASON_EXCEPTION);
+}
+
+TEST_P(RestrictedMode, PrefetchInstructionAbort) {
+  if (machine() != restricted_machine::MachineType::kArm) {
+    ZXTEST_SKIP() << "kArm machine type only test";
+    return;
+  }
+  restricted_machine::Machine machine(environment());
+  ASSERT_TRUE(machine.Initialize());
+
+  // Jump to an executable allocation at the boundary.
+  zx::result<uint64_t> r = machine.Thunk(0xfffffffc, 1, 2, 3, 4);
+
+  EXPECT_TRUE(r.is_ok());
+  EXPECT_EQ(ZX_RESTRICTED_REASON_EXCEPTION, r.value());
+  machine.LogState(ZX_RESTRICTED_REASON_EXCEPTION);
+}
+#endif  // defined(__aarch64__)

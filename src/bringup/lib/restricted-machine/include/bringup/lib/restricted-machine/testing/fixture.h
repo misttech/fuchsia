@@ -79,9 +79,18 @@ class SupportedMachinesTest : public TestWithParam<restricted_machine::MachineTy
   }
 
   // Returns a RefPtr to the correct environment for the current test run.
-  fbl::RefPtr<::restricted_machine::Environment> environment() {
-    ZX_ASSERT(environments_.contains(machine()));
-    return environments_[machine()];
+  virtual fbl::RefPtr<::restricted_machine::Environment> environment() {
+    auto env = environment(machine());
+    ZX_ASSERT(env.is_ok());
+    return std::move(env.value());
+  }
+
+  static zx::result<fbl::RefPtr<::restricted_machine::Environment>> environment(
+      MachineType machine_type) {
+    if (!environments_.contains(machine_type)) {
+      return zx::error(ZX_ERR_NOT_FOUND);
+    }
+    return zx::ok(environments_[machine_type]);
   }
 
   // Creates a new Machine instance for use by the test against the current

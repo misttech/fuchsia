@@ -118,3 +118,15 @@
   svc     #0
   brk     #0x1
 .end_function
+
+.function bad_increment, export
+  ldr x0, =0xfffffffffffffff8
+  ldr x1, =0xaaaaaaaaaaaaaaa0
+  ldr x2, =0xbbbbbbbbbbbbbbb0
+
+  // Store a pair of registers with post-index addressing
+  // x0 is the base register, #16 is the offset
+  stp x1, x2, [x0], #16
+  svc     #0
+  brk     #0x1
+.end_function

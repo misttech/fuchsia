@@ -35,6 +35,8 @@ source_set("restricted-mode") {
   # Presently, only arm64 offers a 32-bit restricted mode.
   # https://fxbug.dev/382971270 enable lower mem allocations when under asan
   if (current_cpu == "arm64" && !is_asan) {
-    data_deps += [ "restricted-blob(//build/toolchain:linux_arm)" ]
+    data_deps +=
+        [ "restricted-blob:restricted-blob(//build/toolchain:linux_arm)" ]
+    data_deps += [ "restricted-blob:boundary(//build/toolchain:linux_arm)" ]
   }
 }

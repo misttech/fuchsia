@@ -74,3 +74,15 @@
   svc     #0
   bkpt    #0x1
 .end_function
+
+.function bad_increment, export
+  ldr r0, =0xfffffffc
+  ldr r1, =0xaaaaaaaa
+  ldr r2, =0xbbbbbbbb
+  ldr r3, =0xcccccccc
+
+  // Store multiple registers starting from address in R0
+  // "IA" means "Increment After" each word is stored
+  // "!" causes the base register R0 to be updated with the final address
+  stmia r0!, {r1, r2, r3}
+.end_function
