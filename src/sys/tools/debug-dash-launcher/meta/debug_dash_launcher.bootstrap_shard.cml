@@ -71,6 +71,7 @@
             protocol: "fuchsia.dash.Launcher",
             from: "#debug-dash-launcher",
             to: "self/toolbox",
+            target_availability: "unknown",
         },
     ],
 }

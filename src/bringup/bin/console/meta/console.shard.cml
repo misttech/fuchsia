@@ -421,6 +421,13 @@
             to: "#console-launcher",
             source_availability: "unknown",
         },
+        {
+            directory: "bin",
+            from: "#boot-shell-commands",
+            as: "boot-bin",
+            to: "self/toolbox-directories",
+            target_availability: "unknown",
+        },
     ],
     expose: [
         {

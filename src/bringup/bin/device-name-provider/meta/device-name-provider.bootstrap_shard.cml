@@ -43,6 +43,12 @@
             from: "#devfs-with-pkg",
             to: "#device_name_provider",
         },
+        {
+            protocol: "fuchsia.device.NameProvider",
+            from: "#device_name_provider",
+            to: "self/toolbox",
+            target_availability: "unknown",
+        },
     ],
     expose: [
         {

@@ -18,7 +18,6 @@
         },
     ],
     capabilities: [
-        { dictionary: "toolbox" },
         { dictionary: "diagnostics" },
     ],
     offer: [
@@ -104,21 +103,31 @@
             dependency: "weak",
         },
         {
-            protocol: "fuchsia.diagnostics.host.ArchiveAccessor",
+            protocol: [
+                "fuchsia.diagnostics.ArchiveAccessor",
+                "fuchsia.diagnostics.host.ArchiveAccessor",
+            ],
             from: "#archivist/diagnostics-accessors",
             to: "self/toolbox",
+            target_availability: "unknown",
         },
         {
             protocol: [ "fuchsia.diagnostics.LogSettings" ],
             from: "#archivist",
             to: "self/toolbox",
+            target_availability: "unknown",
+        },
+        {
+            protocol: [
+                "fuchsia.hardware.power.statecontrol.Admin",
+                "fuchsia.hardware.power.statecontrol.RebootMethodsWatcherRegister",
+            ],
+            from: "#shutdown_shim",
+            to: "self/toolbox",
+            target_availability: "unknown",
         },
     ],
     expose: [
-        {
-            dictionary: "toolbox",
-            from: "self",
-        },
         {
             protocol: "fuchsia.hardware.pty.Device",
             from: "#ptysvc",

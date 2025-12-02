@@ -87,6 +87,12 @@
             from: "#shutdown_shim",
             to: "#virtual_console",
         },
+        {
+            protocol: "fuchsia.virtualconsole.SessionManager",
+            from: "#virtual_console",
+            to: "self/toolbox",
+            target_availability: "unknown",
+        },
     ],
     expose: [],
 }

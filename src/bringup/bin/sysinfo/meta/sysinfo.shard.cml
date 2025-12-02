@@ -23,6 +23,7 @@
             protocol: "fuchsia.sysinfo.SysInfo",
             from: "#sysinfo",
             to: "self/toolbox",
+            target_availability: "unknown",
         },
     ],
     expose: [

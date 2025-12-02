@@ -37,6 +37,15 @@
             to: "#archivist",
             dependency: "weak",
         },
+        {
+            protocol: [
+                "fuchsia.kernel.Counter",
+                "fuchsia.kernel.DebugBroker",
+            ],
+            from: "#kernel_debug_broker",
+            to: "self/toolbox",
+            target_availability: "unknown",
+        },
     ],
     expose: [
         {

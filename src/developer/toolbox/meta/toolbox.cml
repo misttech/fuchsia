@@ -9,6 +9,11 @@
             path: "/svc",
         },
         {
+            dictionary: "toolbox-bootstrap-directories",
+            from: "parent",
+            path: "/directories",
+        },
+        {
             dictionary: "toolbox-root",
             from: "parent",
             path: "/svc",

@@ -19,5 +19,11 @@
             from: "self",
             to: "#ptysvc",
         },
+        {
+            protocol: "fuchsia.hardware.pty.Device",
+            from: "#ptysvc",
+            to: "self/toolbox",
+            target_availability: "unknown",
+        },
     ],
 }

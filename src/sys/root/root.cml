@@ -364,6 +364,13 @@
             to: "#toolbox",
             target_availability: "unknown",
         },
+        {
+            dictionary: "toolbox-directories",
+            from: "#bootstrap",
+            as: "toolbox-bootstrap-directories",
+            to: "#toolbox",
+            target_availability: "unknown",
+        },
     ],
     expose: [
         // For reboot_on_terminate

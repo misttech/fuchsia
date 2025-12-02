@@ -165,6 +165,7 @@
             service: [ "fuchsia.hardware.rtc.Service" ],
             from: "#base-drivers",
             to: "self/toolbox",
+            target_availability: "unknown",
         },
     ],
     expose: [

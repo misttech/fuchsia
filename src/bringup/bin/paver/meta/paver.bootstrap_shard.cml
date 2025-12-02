@@ -83,6 +83,12 @@
             from: "parent",
             to: "#paver",
         },
+        {
+            protocol: "fuchsia.paver.Paver",
+            from: "#paver",
+            to: "self/toolbox",
+            target_availability: "unknown",
+        },
     ],
     expose: [
         {
