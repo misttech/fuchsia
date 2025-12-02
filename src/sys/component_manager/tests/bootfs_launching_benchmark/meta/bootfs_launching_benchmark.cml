@@ -21,10 +21,6 @@
     ],
     use: [
         {
-            protocol: "fuchsia.component.sandbox.Factory",
-            from: "framework",
-        },
-        {
             protocol: "fuchsia.component.sandbox.CapabilityStore",
             from: "framework",
         },
