@@ -409,3 +409,324 @@ impl AudioController {
         let _ = self.restore_volume_state(id, false).await;
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::audio::build_audio_default_settings;
+    use crate::audio::test_fakes::audio_core_service::{self, AudioCoreService};
+    use crate::audio::types::AudioSettingSource;
+    use assert_matches::assert_matches;
+    use fidl_fuchsia_media::AudioRenderUsage2;
+    use fuchsia_inspect::component;
+    use futures::lock::Mutex;
+    use settings_common::config::default_settings::DefaultSetting;
+    use settings_common::inspect::config_logger::InspectConfigLogger;
+    use settings_test_common::fakes::service::ServiceRegistry;
+    use settings_test_common::storage::InMemoryStorageFactory;
+
+    const CHANGED_VOLUME_LEVEL: f32 = 0.7;
+    const CHANGED_VOLUME_MUTED: bool = true;
+
+    fn changed_media_audio_stream() -> SetAudioStream {
+        SetAudioStream {
+            stream_type: AudioStreamType::Media,
+            source: AudioSettingSource::User,
+            user_volume_level: Some(CHANGED_VOLUME_LEVEL),
+            user_volume_muted: Some(CHANGED_VOLUME_MUTED),
+        }
+    }
+
+    fn default_audio_info() -> DefaultSetting<AudioInfo, &'static str> {
+        let config_logger =
+            Rc::new(std::sync::Mutex::new(InspectConfigLogger::new(component::inspector().root())));
+        build_audio_default_settings(config_logger)
+    }
+
+    fn load_default_audio_info(
+        default_settings: &mut DefaultSetting<AudioInfo, &'static str>,
+    ) -> AudioInfo {
+        default_settings
+            .load_default_value()
+            .expect("config should exist and parse for test")
+            .unwrap()
+    }
+
+    // Used to store fake services for mocking dependencies and checking input/outputs.
+    // To add a new fake to these tests, add here, in create_services, and then use
+    // in your test.
+    struct FakeServices {
+        audio_core: Rc<Mutex<AudioCoreService>>,
+    }
+
+    fn get_default_stream(stream_type: AudioStreamType, info: AudioInfo) -> AudioStream {
+        info.streams.into_iter().find(|x| x.stream_type == stream_type).expect("contains stream")
+    }
+
+    fn verify_audio_info_stream(settings: &AudioInfo, stream: AudioStream) {
+        let _ = settings.streams.iter().find(|x| **x == stream).expect("contains stream");
+    }
+
+    // Returns a registry and audio related services it is populated with
+    async fn create_services(
+        default_settings: AudioInfo,
+    ) -> (Rc<Mutex<ServiceRegistry>>, FakeServices) {
+        let service_registry = ServiceRegistry::create();
+        let audio_core_service_handle = audio_core_service::Builder::new(default_settings).build();
+        service_registry.lock().await.register_service(audio_core_service_handle.clone());
+
+        (service_registry, FakeServices { audio_core: audio_core_service_handle })
+    }
+
+    async fn create_environment(
+        service_registry: Rc<Mutex<ServiceRegistry>>,
+        mut default_settings: DefaultSetting<AudioInfo, &'static str>,
+    ) -> (AudioController, Rc<DeviceStorage>) {
+        let storage_factory = Rc::new(InMemoryStorageFactory::with_initial_data(
+            &load_default_audio_info(&mut default_settings),
+        ));
+        let audio_controller = create_environment_from_storage(
+            service_registry,
+            Rc::clone(&storage_factory),
+            default_settings,
+        )
+        .await;
+        let store = storage_factory.get_device_storage().await;
+        (audio_controller, store)
+    }
+
+    async fn create_environment_from_storage(
+        service_registry: Rc<Mutex<ServiceRegistry>>,
+        storage_factory: Rc<InMemoryStorageFactory>,
+        default_settings: DefaultSetting<AudioInfo, &'static str>,
+    ) -> AudioController {
+        let audio_info_loader = AudioInfoLoader::new(default_settings);
+        storage_factory
+            .initialize_with_loader::<AudioController, _>(audio_info_loader.clone())
+            .await
+            .expect("initializing audio info storage");
+
+        let (tx, _) = mpsc::unbounded();
+        let setting_value_publisher = SettingValuePublisher::new(tx);
+        let (tx, _) = mpsc::unbounded();
+        let external_publisher = ExternalEventPublisher::new(tx);
+
+        let audio_controller = AudioController::new(
+            Rc::new(ServiceContext::new(Some(Box::new(ServiceRegistry::serve(service_registry))))),
+            audio_info_loader,
+            storage_factory,
+            setting_value_publisher,
+            external_publisher,
+        )
+        .await;
+        audio_controller
+    }
+
+    // Test that the audio settings are restored correctly.
+    #[fuchsia::test(allow_stalls = false)]
+    async fn test_volume_restore() {
+        let mut default_settings = default_audio_info();
+        let mut stored_info = load_default_audio_info(&mut default_settings);
+        let (service_registry, fake_services) = create_services(stored_info.clone()).await;
+        let expected_info = (0.9, false);
+        for stream in stored_info.streams.iter_mut() {
+            if stream.stream_type == AudioStreamType::Media {
+                stream.user_volume_level = expected_info.0;
+                stream.user_volume_muted = expected_info.1;
+            }
+        }
+
+        let (tx, rx) = mpsc::unbounded();
+        fake_services.audio_core.lock().await.set_event_tx(tx);
+
+        let storage_factory = Rc::new(InMemoryStorageFactory::with_initial_data(&stored_info));
+        let mut audio_controller =
+            create_environment_from_storage(service_registry, storage_factory, default_settings)
+                .await;
+        let _ = audio_controller.restore().await;
+
+        // Wait for audio core to receive all of the updates.
+        let _ = rx.skip(AUDIO_STREAM_TYPE_COUNT - 1).next().await;
+
+        let stored_info = fake_services
+            .audio_core
+            .lock()
+            .await
+            .get_level_and_mute(AudioRenderUsage2::Media)
+            .unwrap();
+        assert_eq!(stored_info, expected_info);
+    }
+
+    #[fuchsia::test(allow_stalls = false)]
+    async fn test_persisted_values_applied_at_start() {
+        let mut default_settings = default_audio_info();
+        let (service_registry, fake_services) =
+            create_services(load_default_audio_info(&mut default_settings)).await;
+
+        let test_audio_info = AudioInfo {
+            streams: [
+                AudioStream {
+                    stream_type: AudioStreamType::Background,
+                    source: AudioSettingSource::User,
+                    user_volume_level: 0.5,
+                    user_volume_muted: true,
+                },
+                AudioStream {
+                    stream_type: AudioStreamType::Media,
+                    source: AudioSettingSource::User,
+                    user_volume_level: 0.6,
+                    user_volume_muted: true,
+                },
+                AudioStream {
+                    stream_type: AudioStreamType::Interruption,
+                    source: AudioSettingSource::System,
+                    user_volume_level: 0.3,
+                    user_volume_muted: false,
+                },
+                AudioStream {
+                    stream_type: AudioStreamType::SystemAgent,
+                    source: AudioSettingSource::User,
+                    user_volume_level: 0.7,
+                    user_volume_muted: true,
+                },
+                AudioStream {
+                    stream_type: AudioStreamType::Communication,
+                    source: AudioSettingSource::User,
+                    user_volume_level: 0.8,
+                    user_volume_muted: false,
+                },
+                AudioStream {
+                    stream_type: AudioStreamType::Accessibility,
+                    source: AudioSettingSource::User,
+                    user_volume_level: 0.9,
+                    user_volume_muted: false,
+                },
+            ],
+            modified_counters: Some(create_default_modified_counters()),
+        };
+
+        let (tx, rx) = mpsc::unbounded();
+        fake_services.audio_core.lock().await.set_event_tx(tx);
+
+        let storage_factory = Rc::new(InMemoryStorageFactory::with_initial_data(&test_audio_info));
+        let mut audio_controller =
+            create_environment_from_storage(service_registry, storage_factory, default_settings)
+                .await;
+        let info = audio_controller.restore().await;
+
+        // Ensure the fake audio core has processed all requests before proceeding.
+        let _ = rx.skip(AUDIO_STREAM_TYPE_COUNT * 2 - 1).next().await;
+
+        // Check that stored values were returned by restore and applied to the audio core service.
+        for stream in test_audio_info.streams.iter() {
+            verify_audio_info_stream(&info, *stream);
+            assert_eq!(
+                (stream.user_volume_level, stream.user_volume_muted),
+                fake_services
+                    .audio_core
+                    .lock()
+                    .await
+                    .get_level_and_mute(AudioRenderUsage2::from(stream.stream_type))
+                    .unwrap()
+            );
+        }
+    }
+
+    // Ensure controller won't crash if audio core fails.
+    #[fuchsia::test(allow_stalls = false)]
+    async fn test_get_without_audio_core() {
+        let mut default_settings = default_audio_info();
+        let default_info = load_default_audio_info(&mut default_settings);
+        let service_registry = ServiceRegistry::create();
+
+        let (mut controller, _) = create_environment(service_registry, default_settings).await;
+        // At this point we should not crash.
+        let restore_info = controller.restore().await;
+        let get_info = controller.get_info().await;
+        assert_eq!(restore_info.streams, get_info.streams);
+        verify_audio_info_stream(
+            &get_info,
+            get_default_stream(AudioStreamType::Media, default_info),
+        );
+    }
+
+    #[fuchsia::test(allow_stalls = false)]
+    async fn test_invalid_stream_fails() {
+        let mut default_settings = default_audio_info();
+        // Create a service registry with a fake audio core service that suppresses client errors, since
+        // the invalid set call will cause the connection to close.
+        let service_registry = ServiceRegistry::create();
+        let audio_core_service_handle =
+            audio_core_service::Builder::new(load_default_audio_info(&mut default_settings))
+                .set_suppress_client_errors(true)
+                .build();
+        service_registry.lock().await.register_service(audio_core_service_handle.clone());
+
+        // The AudioInfo settings must have 6 streams, but include a duplicate of the Background stream
+        // type so that we can perform a set call with a Media stream that isn't in the AudioInfo.
+        let counters: HashMap<_, _> = [
+            (AudioStreamType::Background, 0),
+            (AudioStreamType::Interruption, 0),
+            (AudioStreamType::SystemAgent, 0),
+            (AudioStreamType::Communication, 0),
+            (AudioStreamType::Accessibility, 0),
+        ]
+        .into();
+
+        let test_audio_info = AudioInfo {
+            streams: [
+                AudioStream {
+                    stream_type: AudioStreamType::Background,
+                    source: AudioSettingSource::User,
+                    user_volume_level: 0.5,
+                    user_volume_muted: true,
+                },
+                AudioStream {
+                    stream_type: AudioStreamType::Background,
+                    source: AudioSettingSource::User,
+                    user_volume_level: 0.5,
+                    user_volume_muted: true,
+                },
+                AudioStream {
+                    stream_type: AudioStreamType::Interruption,
+                    source: AudioSettingSource::User,
+                    user_volume_level: 0.5,
+                    user_volume_muted: true,
+                },
+                AudioStream {
+                    stream_type: AudioStreamType::SystemAgent,
+                    source: AudioSettingSource::User,
+                    user_volume_level: 0.5,
+                    user_volume_muted: true,
+                },
+                AudioStream {
+                    stream_type: AudioStreamType::Communication,
+                    source: AudioSettingSource::User,
+                    user_volume_level: 0.5,
+                    user_volume_muted: true,
+                },
+                AudioStream {
+                    stream_type: AudioStreamType::Accessibility,
+                    source: AudioSettingSource::User,
+                    user_volume_level: 0.5,
+                    user_volume_muted: true,
+                },
+            ],
+            modified_counters: Some(counters),
+        };
+
+        // Start the environment with the hand-crafted data.
+        let storage_factory = Rc::new(InMemoryStorageFactory::with_initial_data(&test_audio_info));
+        let mut audio_controller =
+            create_environment_from_storage(service_registry, storage_factory, default_settings)
+                .await;
+        let _ = audio_controller.restore().await;
+
+        // Call set_volume to change the volume of the media stream, which isn't present and should fail.
+        let err = audio_controller
+            .set_volume(vec![changed_media_audio_stream()], fuchsia_trace::Id::new())
+            .await
+            .expect_err("set should fail");
+        assert_matches!(err, AudioError::InvalidArgument(..));
+    }
+}

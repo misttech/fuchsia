@@ -17,6 +17,9 @@ mod audio_default_settings;
 mod audio_fidl_handler;
 mod stream_volume_control;
 
+#[cfg(test)]
+mod test_fakes;
+
 /// Mod containing utility functions for audio-related functionality.
 pub(crate) mod utils;
 

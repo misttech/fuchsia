@@ -115,6 +115,7 @@ impl StreamVolumeControl {
         if (self.stored_stream.user_volume_level - new_stream_value.user_volume_level).abs()
             > f32::EPSILON
         {
+            log::info!("PAUL: Setting volume to {new_stream_value:?}");
             if let Err(e) = proxy.set_volume(new_stream_value.user_volume_level) {
                 self.stored_stream = new_stream_value;
                 return Err(AudioError::ExternalFailure(
@@ -244,12 +245,12 @@ impl StreamVolumeControl {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::audio::test_fakes::audio_core_service;
     use crate::audio::types::{AudioInfo, AudioStreamType};
     use crate::audio::{
         StreamVolumeControl, build_audio_default_settings, create_default_audio_stream,
     };
     use crate::clock;
-    use crate::tests::fakes::audio_core_service;
     use fuchsia_inspect::component;
     use futures::StreamExt;
     use futures::channel::mpsc;
