@@ -12,7 +12,19 @@
             ],
         },
         "test.core.b": { "priority": 25 },
-        "test.core.c:input1=foo,input2=bar": {
+        "test.core.input:name=ernie": {
+            "priority": 10,
+            "output_parameters": {
+                "name": "bert",
+            },
+        },
+        "test.core.input:name=oscar": {
+            "priority": 10,
+            "output_parameters": {
+                "name": "grouch",
+            },
+        },
+        "test.core.output": {
             "priority": 10,
             "output_parameters": {
                 "output1": 2,

@@ -8,12 +8,14 @@
 #include <zircon/availability.h>
 
 #include <shared_mutex>
+#include <variant>
 
 #include <sdk/lib/component/incoming/cpp/protocol.h>
 
 namespace {
 
 using fuchsia_scheduler::wire::Parameter;
+using fuchsia_scheduler::wire::ParameterValue;
 using fuchsia_scheduler::wire::RoleName;
 using fuchsia_scheduler::wire::RoleTarget;
 
@@ -68,8 +70,8 @@ void RoleClient::Disconnect() {
 // Stores a persistent connection to the RoleManager that reconnects on disconnect.
 static RoleClient role_client{};
 
-zx::result<fidl::VectorView<Parameter>> SetRoleCommon(RoleTarget target, std::string_view role,
-                                                      std::vector<Parameter> input_parameters) {
+zx::result<std::vector<fuchsia_scheduler::RoleParameter>> SetRoleCommon(
+    RoleTarget target, std::string_view role, const std::vector<Parameter>& input_parameters) {
 // TODO(https://fxbug.dev/323262398): Remove this check once the necessary API is in the SDK.
 #if FUCHSIA_API_LEVEL_LESS_THAN(HEAD)
   return zx::error(ZX_ERR_NOT_SUPPORTED);
@@ -98,16 +100,40 @@ zx::result<fidl::VectorView<Parameter>> SetRoleCommon(RoleTarget target, std::st
     return result.value().take_error();
   }
 
-  return zx::ok(result.value()->output_parameters());
+  std::vector<fuchsia_scheduler::RoleParameter> out_params;
+  if (!result->value()->has_output_parameters()) {
+    return zx::ok(out_params);
+  }
+  out_params.reserve(result->value()->output_parameters().size());
+
+  for (Parameter& param : result->value()->output_parameters()) {
+    std::variant<double, int64_t, std::string> value;
+    switch (param.value.Which()) {
+      case ParameterValue::Tag::kIntValue:
+        value = param.value.int_value();
+        break;
+      case ParameterValue::Tag::kFloatValue:
+        value = param.value.float_value();
+        break;
+      case ParameterValue::Tag::kStringValue:
+        value = std::string{param.value.string_value().get()};
+        break;
+      default:
+        continue;
+    }
+    out_params.emplace_back(std::string{param.key.get()}, std::move(value));
+  }
+
+  return zx::ok(out_params);
 }
 
 }  // anonymous namespace
 
 namespace fuchsia_scheduler {
 
-zx::result<fidl::VectorView<wire::Parameter>> SetRoleForVmarWithParams(
+zx::result<std::vector<RoleParameter>> SetRoleForVmarWithParams(
     zx::unowned_vmar borrowed_vmar, std::string_view role,
-    std::vector<wire::Parameter> input_parameters) {
+    const std::vector<wire::Parameter>& input_parameters) {
   zx::vmar vmar;
   zx_status_t status = borrowed_vmar->duplicate(ZX_RIGHT_SAME_RIGHTS, &vmar);
   if (status != ZX_OK) {
@@ -125,9 +151,9 @@ zx_status_t SetRoleForRootVmar(std::string_view role) {
   return SetRoleForVmar(zx::vmar::root_self(), role);
 }
 
-zx::result<fidl::VectorView<wire::Parameter>> SetRoleForThreadWithParams(
+zx::result<std::vector<RoleParameter>> SetRoleForThreadWithParams(
     zx::unowned_thread borrowed_thread, std::string_view role,
-    std::vector<wire::Parameter> input_parameters) {
+    const std::vector<wire::Parameter>& input_parameters) {
   zx::thread thread;
   zx_status_t status = borrowed_thread->duplicate(ZX_RIGHT_SAME_RIGHTS, &thread);
   if (status != ZX_OK) {
@@ -141,8 +167,50 @@ zx_status_t SetRoleForThread(zx::unowned_thread thread, std::string_view role) {
       .status_value();
 }
 
+zx::result<std::vector<RoleParameter>> SetRoleForThread(
+    zx::unowned_thread borrowed_thread, std::string_view role,
+    std::vector<RoleParameter>& input_parameters) {
+  zx::thread thread;
+  zx_status_t status = borrowed_thread->duplicate(ZX_RIGHT_SAME_RIGHTS, &thread);
+  if (status != ZX_OK) {
+    return zx::error(status);
+  }
+
+  // FIDL ObjectViews hold a pointer to the data they view. This is fine for ints and floats, which
+  // it can directly reference the basic types. These live as long as "input_parameters" do.
+  // However, strings have nested views (fidl::ObjectView<fidl::StringView>). Since the object keeps
+  // a pointer the the StringView, which in turn keeps a pointer to the string data, we need a way
+  // to ensure that the string data lives as long as the wire::Parameter does.
+  std::vector<fidl::StringView> string_views;
+  std::vector<wire::Parameter> fidl_params;
+  fidl_params.reserve(input_parameters.size());
+
+  auto to_fidl_param = [&string_views](auto&& arg) mutable -> wire::ParameterValue {
+    using T = std::decay_t<decltype(arg)>;
+    if constexpr (std::is_same_v<T, int64_t>) {
+      return wire::ParameterValue::WithIntValue(fidl::ObjectView<int64_t>::FromExternal(&arg));
+    } else if constexpr (std::is_same_v<T, double>) {
+      return wire::ParameterValue::WithFloatValue(fidl::ObjectView<double>::FromExternal(&arg));
+    } else if constexpr (std::is_same_v<T, std::string>) {
+      fidl::StringView& view = string_views.emplace_back(fidl::StringView::FromExternal(arg));
+      return wire::ParameterValue::WithStringValue(
+          fidl::ObjectView<fidl::StringView>::FromExternal(&view));
+    }
+  };
+  for (RoleParameter& param : input_parameters) {
+    wire::ParameterValue val = std::visit(to_fidl_param, param.value);
+    fidl_params.emplace_back(fidl::StringView::FromExternal(param.name), val);
+  }
+  return SetRoleCommon(wire::RoleTarget::WithThread(std::move(thread)), role, fidl_params);
+}
+
 zx_status_t SetRoleForThisThread(std::string_view role) {
   return SetRoleForThread(zx::thread::self()->borrow(), role);
+}
+
+zx::result<std::vector<RoleParameter>> SetRoleForThisThread(
+    std::string_view role, std::vector<RoleParameter>& input_parameters) {
+  return SetRoleForThread(zx::thread::self()->borrow(), role, input_parameters);
 }
 
 }  // namespace fuchsia_scheduler
