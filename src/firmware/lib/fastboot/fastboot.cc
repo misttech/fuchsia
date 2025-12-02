@@ -604,34 +604,7 @@ zx::result<> Fastboot::Erase(const std::string& command, Transport* transport) {
     FX_LOGST(ERROR, kFastbootLogTag) << "Ignoring request to erase partition: " << partition_label;
     return SendResponse(ResponseType::kFail, "Unknown partition", transport);
   }
-  auto svc_root = GetSvcRoot();
-  if (svc_root.is_error()) {
-    return zx::error(svc_root.status_value());
-  }
-  auto fshost_admin = component::ConnectAt<fuchsia_fshost::Admin>(*svc_root);
-  if (fshost_admin.is_error()) {
-    return zx::error(fshost_admin.status_value());
-  }
-  // Use the fuchsia.fshost/Admin.ShredDataVolume to ensure the userdata partition is shredded on
-  // the next boot. Note that this does not delete the volume immediately, but it will be deleted
-  // on the next boot when we fail to unlock the volume.
-  FX_LOGST(INFO, kFastbootLogTag) << "Shredding data volume.";
-  auto response = fidl::WireCall(*fshost_admin)->ShredDataVolume();
-  if (response.status() != ZX_OK) {
-    return SendResponse(ResponseType::kFail, "Failed to invoke ShredDataVolume", transport,
-                        zx::error(response.status()));
-  }
-  // TODO(https://fxbug.dev/464027981): This command will always fail if we never provisioned the
-  // system container, or if we otherwise fail to shred the data volume. We may want to consider
-  // some remedial action in this case (e.g. formatting the entire system container). We may also
-  // want to change the behavior of subsequent `flash blob` commands to overwrite all of `super`
-  // after we get a request to erase userdata.
-  if (response->is_error()) {
-    return SendResponse(ResponseType::kFail, "Failed to shred data volume", transport,
-                        zx::error(response->error_value()));
-  }
-
-  return SendResponse(ResponseType::kOkay, "", transport);
+  return WipeUserdata(transport);
 }
 
 zx::result<fidl::WireSyncClient<fuchsia_paver::BootManager>> Fastboot::FindBootManager() {
@@ -933,14 +906,9 @@ zx::result<> Fastboot::UpdateSuper(const std::string& command, Transport* transp
   }
   if (args.size() == 3) {
     if (args[2] == "wipe") {
-      FX_LOGST(INFO, kFastbootLogTag) << "Requests to flash blob volume will wipe userdata.";
-      flash_blob_targets_super_ = true;
-    } else {
-      return SendResponse(ResponseType::kFail, "Invalid option for update-super:super", transport);
+      return WipeUserdata(transport);
     }
-  } else {
-    FX_LOGST(INFO, kFastbootLogTag) << "Requests to flash blob volume will leave userdata intact.";
-    flash_blob_targets_super_ = false;
+    return SendResponse(ResponseType::kFail, "Invalid option for update-super:super", transport);
   }
   return SendResponse(ResponseType::kOkay, "", transport);
 }
@@ -1055,6 +1023,36 @@ zx::result<> Fastboot::FlashBlob(Transport* transport, uint64_t unsparsed_size) 
                         zx::error(sync_response->error_value()));
   }
 
+  return SendResponse(ResponseType::kOkay, "", transport);
+}
+
+zx::result<> Fastboot::WipeUserdata(Transport* transport) {
+  auto svc_root = GetSvcRoot();
+  if (svc_root.is_error()) {
+    return zx::error(svc_root.status_value());
+  }
+  auto fshost_admin = component::ConnectAt<fuchsia_fshost::Admin>(*svc_root);
+  if (fshost_admin.is_error()) {
+    return zx::error(fshost_admin.status_value());
+  }
+  FX_LOGST(INFO, kFastbootLogTag) << "Shredding data volume. Data will be permanently lost!";
+  auto response = fidl::WireCall(*fshost_admin)->ShredDataVolume();
+  if (response.status() != ZX_OK) {
+    return SendResponse(ResponseType::kFail, "Failed to invoke ShredDataVolume", transport,
+                        zx::error(response.status()));
+  }
+  // TODO(https://fxbug.dev/464027981): This command will always succeed on an unprovisioned device,
+  // but will fail if we detect a valid superblock but fail to mount the filesystem. As long as we
+  // rotate hardware keys, we can allow the command to succeed. In the meantime, we should consider
+  // re-formatting the system container as a remedial action here on any failures.
+  if (response->is_error()) {
+    return SendResponse(ResponseType::kFail, "Failed to shred data volume", transport,
+                        zx::error(response->error_value()));
+  }
+  // Since we successfully shredded the data volume, there's no need to preserve any data in the
+  // system container. This means we can allow subsequent requests to flash the blob volume to
+  // instead directly overwrite the super partition with the new system image.
+  flash_blob_targets_super_ = true;
   return SendResponse(ResponseType::kOkay, "", transport);
 }
 

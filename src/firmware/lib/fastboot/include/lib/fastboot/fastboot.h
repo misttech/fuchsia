@@ -74,6 +74,7 @@ class __EXPORT Fastboot : public FastbootBase {
   zx::result<fidl::WireSyncClient<fuchsia_paver::BootManager>> FindBootManager();
   zx::result<> HandleShutdown(Transport *transport,
                               fuchsia_hardware_power_statecontrol::ShutdownAction action);
+  zx::result<> WipeUserdata(Transport *transport);
   zx::result<> WriteFirmware(fuchsia_paver::wire::Configuration config,
                              std::string_view firmware_type, Transport *transport,
                              fidl::WireSyncClient<fuchsia_paver::DataSink> &data_sink);
@@ -128,10 +129,14 @@ class __EXPORT Fastboot : public FastbootBase {
   fidl::ClientEnd<fuchsia_io::Directory> svc_root_;
   fidl::ClientEnd<fuchsia_fshost::Recovery> fshost_recovery_;
   std::optional<BlobImageWriter> blob_writer_;
-  /// Determines if the userdata partition will also be overwritten when flashing the "blob"
-  /// partition (userdata is a volume within the super partition on Fuchsia devices).
-  /// This is toggled via the `update-super` command issued by `fastboot flashall` depending on
-  /// the presence or absence of the `-w` flag.
+  /// Used to control what the target of "flash blob" requests are.
+  ///
+  /// By default, flashing blob writes the new system image into a temporary volume, and completes
+  /// installation on the next successful boot. This ensures that no existing volumes in the system
+  /// container are modified until installation succeeds, and upon failure, no volumes are modified.
+  /// When doing a full-wipe flash, we set this to true since there is no need to preserve existing
+  /// volumes. This makes flashing slightly quicker, and allows us to more easily reason about the
+  /// state of the device.
   bool flash_blob_targets_super_ = false;
 };
 

@@ -41,6 +41,7 @@ class TestTransport : public Transport {
   // Get the packets written to the output.
   const Packets& GetOutPackets() { return out_packets_; }
   void ClearOutPackets() { out_packets_.clear(); }
+  Packets TakeOutPackets() { return std::exchange(out_packets_, {}); }
 
   // Implementation of the transport interfaces.
   zx::result<size_t> ReceivePacket(void* dst, size_t capacity) override;

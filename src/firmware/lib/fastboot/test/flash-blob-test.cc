@@ -25,6 +25,7 @@
 #include "src/storage/lib/vfs/cpp/pseudo_dir.h"
 #include "src/storage/lib/vfs/cpp/service.h"
 #include "src/storage/lib/vfs/cpp/vmo_file.h"
+#include "src/storage/testing/fake-paver.h"
 
 namespace fastboot {
 
@@ -63,13 +64,12 @@ class VmoFile final : public fs::VmoFile {
 };
 
 class FastbootFlashBlobTest : public FastbootDownloadTest {
- public:
   class MockFshostRecovery : public fidl::testing::WireTestBase<fuchsia_fshost::Recovery> {
+    friend class FastbootFlashBlobTest;
+
    public:
     explicit MockFshostRecovery(zx::vmo vmo, fs::ManagedVfs* vfs)
         : vfs_(vfs), image_file_{fbl::MakeRefCounted<VmoFile>(std::move(vmo))} {}
-
-    const zx::vmo& vmo() const { return image_file_->vmo(); }
 
     void GetBlobImageHandle(GetBlobImageHandleCompleter::Sync& completer) final {
       zx::eventpair ep0, ep1;
@@ -98,6 +98,24 @@ class FastbootFlashBlobTest : public FastbootDownloadTest {
     fbl::RefPtr<VmoFile> image_file_;
   };
 
+  class MockFshostAdmin : public fidl::testing::WireTestBase<fuchsia_fshost::Admin> {
+    friend class FastbootFlashBlobTest;
+
+   public:
+    void ShredDataVolume(ShredDataVolumeCompleter::Sync& completer) final {
+      data_volume_shredded_ = true;
+      completer.ReplySuccess();
+    }
+
+    void NotImplemented_(const std::string& name, fidl::CompleterBase& completer) final {
+      FAIL() << "Unexpected call to fuchsia.fshost/Admin: " << name;
+      completer.Close(ZX_ERR_NOT_SUPPORTED);
+    }
+
+   private:
+    std::atomic<bool> data_volume_shredded_ = false;
+  };
+
  protected:
   FastbootFlashBlobTest() = default;
 
@@ -105,12 +123,27 @@ class FastbootFlashBlobTest : public FastbootDownloadTest {
     zx::vmo vmo;
     ASSERT_EQ(zx::vmo::create(kMaxBlobImageSize, 0, &vmo), ZX_OK);
     recovery_server_ = std::make_unique<MockFshostRecovery>(std::move(vmo), &vfs_);
+    admin_server_ = std::make_unique<MockFshostAdmin>();
 
     auto svc_dir = fbl::MakeRefCounted<fs::PseudoDir>();
     svc_dir->AddEntry(
         fidl::DiscoverableProtocolName<fuchsia_fshost::Recovery>,
         fbl::MakeRefCounted<fs::Service>([this](fidl::ServerEnd<fuchsia_fshost::Recovery> request) {
           fidl::BindServer(loop_.dispatcher(), std::move(request), recovery_server_.get());
+          return ZX_OK;
+        }));
+
+    svc_dir->AddEntry(
+        fidl::DiscoverableProtocolName<fuchsia_fshost::Admin>,
+        fbl::MakeRefCounted<fs::Service>([this](fidl::ServerEnd<fuchsia_fshost::Admin> request) {
+          fidl::BindServer(loop_.dispatcher(), std::move(request), admin_server_.get());
+          return ZX_OK;
+        }));
+
+    svc_dir->AddEntry(
+        fidl::DiscoverableProtocolName<fuchsia_paver::Paver>,
+        fbl::MakeRefCounted<fs::Service>([this](fidl::ServerEnd<fuchsia_paver::Paver> request) {
+          paver_.Connect(loop_.dispatcher(), std::move(request));
           return ZX_OK;
         }));
 
@@ -129,12 +162,18 @@ class FastbootFlashBlobTest : public FastbootDownloadTest {
 
   fidl::ClientEnd<fio::Directory> TakeSvcClient() { return std::move(svc_client_); }
 
-  const zx::vmo& image_vmo() const { return recovery_server_->vmo(); }
+  const zx::vmo& image_vmo() const { return recovery_server_->image_file_->vmo(); }
+
+  bool data_volume_shredded() const { return admin_server_->data_volume_shredded_; }
+
+  paver_test::FakePaver& paver() { return paver_; }
 
  private:
   async::Loop loop_{&kAsyncLoopConfigNoAttachToCurrentThread};
   fs::ManagedVfs vfs_{loop_.dispatcher()};
   std::unique_ptr<MockFshostRecovery> recovery_server_;
+  std::unique_ptr<MockFshostAdmin> admin_server_;
+  paver_test::FakePaver paver_;
   fidl::ClientEnd<fio::Directory> svc_client_;
 };
 
@@ -211,7 +250,7 @@ TEST_F(FastbootFlashBlobTest, HandlesAllChunkTypes) {
   zx::result<> ret = fastboot.ProcessPacket(&transport);
   ASSERT_TRUE(ret.is_ok()) << ret.status_string();
   const std::vector<std::string> expected_packets = {"OKAY"};
-  ASSERT_THAT(transport.GetOutPackets(), testing::ContainerEq(expected_packets));
+  ASSERT_THAT(transport.TakeOutPackets(), testing::ContainerEq(expected_packets));
 
   // Ensure that the unsparsed data was written into the VMO.
   size_t offset = 0;
@@ -261,7 +300,7 @@ TEST_F(FastbootFlashBlobTest, ResparsedImage) {
     zx::result<> ret = fastboot.ProcessPacket(&transport);
     ASSERT_TRUE(ret.is_ok()) << ret.status_string();
     const std::vector<std::string> expected_packets = {"OKAY"};
-    ASSERT_THAT(transport.GetOutPackets(), testing::ContainerEq(expected_packets));
+    ASSERT_THAT(transport.TakeOutPackets(), testing::ContainerEq(expected_packets));
   }
 
   // Ensure that the unsparsed data from all sparse files is now inside the image file.
@@ -272,6 +311,104 @@ TEST_F(FastbootFlashBlobTest, ResparsedImage) {
     ASSERT_THAT(buffer, ::testing::Each(static_cast<uint8_t>(i)));
   }
 }
+
+/// Issuing update-super command without :wipe should not affect flash blob.
+TEST_F(FastbootFlashBlobTest, UpdateSuperDoesNotChangeBlobTarget) {
+  Fastboot fastboot(kMaxDownloadSize, TakeSvcClient());
+  std::string command = "update-super:super";
+  TestTransport transport;
+  transport.AddInPacket(command);
+  zx::result<> ret = fastboot.ProcessPacket(&transport);
+  ASSERT_TRUE(ret.is_ok()) << ret.status_string();
+  const std::vector<std::string> expected_packets = {"OKAY"};
+  ASSERT_THAT(transport.TakeOutPackets(), testing::ContainerEq(expected_packets));
+
+  const std::vector<uint8_t> image = SparseImageBuilder(kBlockSize).FillChunk(1, 0xFF).Build();
+  ASSERT_NO_FATAL_FAILURE(DownloadData(fastboot, image));
+
+  command = "flash:blob";
+  transport.AddInPacket(command);
+  ret = fastboot.ProcessPacket(&transport);
+  ASSERT_TRUE(ret.is_ok()) << ret.status_string();
+  ASSERT_THAT(transport.TakeOutPackets(), testing::ContainerEq(expected_packets));
+
+  // Ensure we wrote to the blob image file.
+  std::vector<uint8_t> buffer(kBlockSize);
+  ASSERT_EQ(image_vmo().read(buffer.data(), 0, kBlockSize), ZX_OK);
+  ASSERT_THAT(buffer, ::testing::Each(uint8_t{0xFF}));
+
+  // Data volume should not have been shredded.
+  ASSERT_FALSE(data_volume_shredded());
+}
+
+/// Issuing update-super command with :wipe should make flash blob target super instead.
+TEST_F(FastbootFlashBlobTest, UpdateSuperWipeChangesFlashBlobTarget) {
+  Fastboot fastboot(kMaxDownloadSize, TakeSvcClient());
+
+  std::string command = "update-super:super:wipe";
+  TestTransport transport;
+  transport.AddInPacket(command);
+  zx::result<> ret = fastboot.ProcessPacket(&transport);
+  ASSERT_TRUE(ret.is_ok()) << ret.status_string();
+  const std::vector<std::string> expected_packets = {"OKAY"};
+  ASSERT_THAT(transport.TakeOutPackets(), testing::ContainerEq(expected_packets));
+  ASSERT_TRUE(data_volume_shredded());
+
+  const std::vector<uint8_t> image = SparseImageBuilder(kBlockSize).FillChunk(1, 0xFF).Build();
+  ASSERT_NO_FATAL_FAILURE(DownloadData(fastboot, image));
+
+  command = "flash:blob";
+  paver().set_expected_payload_size(image.size());
+  transport.AddInPacket(command);
+  ret = fastboot.ProcessPacket(&transport);
+  ASSERT_TRUE(ret.is_ok()) << ret.status_string();
+  ASSERT_THAT(transport.TakeOutPackets(), testing::ContainerEq(expected_packets));
+
+  // Ensure the VMO wasn't written to.
+  std::vector<uint8_t> buffer(kBlockSize);
+  ASSERT_EQ(image_vmo().read(buffer.data(), 0, kBlockSize), ZX_OK);
+  ASSERT_THAT(buffer, ::testing::Each(uint8_t{0}));
+
+  // Ensure we wrote the payload to the "super" partition instead.
+  auto trace = paver().GetCommandTrace();
+  ASSERT_EQ(trace.size(), 1u);
+  ASSERT_EQ(trace.front(), paver_test::Command::kWriteSparseVolume);
+}
+
+/// Issuing erase userdata should make subsequent flash blob commands target super instead.
+TEST_F(FastbootFlashBlobTest, EraseUserdataChangesFlashBlobTarget) {
+  Fastboot fastboot(kMaxDownloadSize, TakeSvcClient());
+
+  std::string command = "erase:userdata";
+  TestTransport transport;
+  transport.AddInPacket(command);
+  zx::result<> ret = fastboot.ProcessPacket(&transport);
+  ASSERT_TRUE(ret.is_ok()) << ret.status_string();
+  const std::vector<std::string> expected_packets = {"OKAY"};
+  ASSERT_THAT(transport.TakeOutPackets(), testing::ContainerEq(expected_packets));
+  ASSERT_TRUE(data_volume_shredded());
+
+  const std::vector<uint8_t> image = SparseImageBuilder(kBlockSize).FillChunk(1, 0xFF).Build();
+  ASSERT_NO_FATAL_FAILURE(DownloadData(fastboot, image));
+
+  command = "flash:blob";
+  paver().set_expected_payload_size(image.size());
+  transport.AddInPacket(command);
+  ret = fastboot.ProcessPacket(&transport);
+  ASSERT_TRUE(ret.is_ok()) << ret.status_string();
+  ASSERT_THAT(transport.TakeOutPackets(), testing::ContainerEq(expected_packets));
+
+  // Ensure the VMO wasn't written to.
+  std::vector<uint8_t> buffer(kBlockSize);
+  ASSERT_EQ(image_vmo().read(buffer.data(), 0, kBlockSize), ZX_OK);
+  ASSERT_THAT(buffer, ::testing::Each(uint8_t{0}));
+
+  // Ensure we wrote the payload to the "super" partition instead.
+  auto trace = paver().GetCommandTrace();
+  ASSERT_EQ(trace.size(), 1u);
+  ASSERT_EQ(trace.front(), paver_test::Command::kWriteSparseVolume);
+}
+
 }  // namespace
 
 }  // namespace fastboot
