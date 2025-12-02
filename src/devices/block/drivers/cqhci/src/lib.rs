@@ -6,6 +6,8 @@ use fdf_component::{Driver, DriverContext, Node, driver_register};
 use log::info;
 use zx::Status;
 
+mod dma_buffer;
+
 struct CqhciDriver {
     _node: Node,
     scope: fuchsia_async::Scope,

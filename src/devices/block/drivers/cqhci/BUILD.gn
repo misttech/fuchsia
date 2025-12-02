@@ -9,14 +9,22 @@ fuchsia_rust_driver("driver") {
   with_unit_tests = true
   output_name = "cqhci"
   edition = "2024"
-  sources = [ "src/lib.rs" ]
+  sources = [
+    "src/dma_buffer.rs",
+    "src/lib.rs",
+  ]
   deps = [
     "//sdk/lib/driver/component/rust",
     "//sdk/rust/zx",
     "//src/lib/fuchsia-async",
     "//third_party/rust_crates:log",
+    "//third_party/rust_crates:zerocopy",
   ]
-  test_deps = [ "//src/lib/fuchsia" ]
+  test_deps = [
+    "//sdk/lib/driver/fake-bti/rust",
+    "//src/lib/fuchsia",
+    "//src/lib/fuchsia-runtime",
+  ]
 }
 
 fuchsia_unittest_package("cqhci-test") {
