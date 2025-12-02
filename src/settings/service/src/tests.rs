@@ -9,4 +9,3 @@ mod environment_tests;
 pub(crate) mod fakes;
 mod media_buttons_agent_tests;
 mod service_configuration_tests;
-mod stream_volume_tests;
