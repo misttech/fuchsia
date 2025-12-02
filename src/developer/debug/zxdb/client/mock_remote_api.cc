@@ -66,11 +66,18 @@ void MockRemoteAPI::RemoveBreakpoint(
 
 void MockRemoteAPI::ThreadStatus(const debug_ipc::ThreadStatusRequest& request,
                                  fit::callback<void(const Err&, debug_ipc::ThreadStatusReply)> cb) {
+  debug_ipc::ThreadStatusReply reply;
+  if (auto maybe_reply = thread_status_reply_) {
+    reply = *maybe_reply;
+  } else {
+    // We can't really fill anything in, but make sure we at least have the same process and thread
+    // ids as the request.
+    reply.record.id = request.id;
+  }
+
   // Returns the canned response.
   debug::MessageLoop::Current()->PostTask(
-      FROM_HERE, [cb = std::move(cb), response = thread_status_reply_]() mutable {
-        cb(Err(), std::move(response));
-      });
+      FROM_HERE, [cb = std::move(cb), reply]() mutable { cb(Err(), std::move(reply)); });
 }
 
 void MockRemoteAPI::Pause(const debug_ipc::PauseRequest& request,
@@ -85,6 +92,7 @@ void MockRemoteAPI::Resume(const debug_ipc::ResumeRequest& request,
                            fit::callback<void(const Err&, debug_ipc::ResumeReply)> cb) {
   // Always returns success.
   resume_count_++;
+  last_resume_ = request;
   debug::MessageLoop::Current()->PostTask(
       FROM_HERE, [cb = std::move(cb), resume_quits_loop = resume_quits_loop_]() mutable {
         cb(Err(), debug_ipc::ResumeReply());

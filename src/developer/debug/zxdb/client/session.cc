@@ -475,8 +475,8 @@ void Session::OpenMinidump(const std::string& path, fit::callback<void(const Err
     return;
   }
 
-  remote_api_ = std::make_unique<MinidumpRemoteAPI>(this);
-  auto minidump = reinterpret_cast<MinidumpRemoteAPI*>(remote_api_.get());
+  auto minidump_remote_api = std::make_unique<MinidumpRemoteAPI>(this);
+  auto minidump = reinterpret_cast<MinidumpRemoteAPI*>(minidump_remote_api.get());
   Err err = minidump->Open(path);
 
   if (err.has_error()) {
@@ -489,6 +489,7 @@ void Session::OpenMinidump(const std::string& path, fit::callback<void(const Err
   // This delay means that a failed "opendump" command from the user does not put the session in a
   // weird state where the user then has to issue "disconnect" before another "opendump" can be
   // completed.
+  remote_api_ = std::move(minidump_remote_api);
   is_minidump_ = true;
   minidump_path_ = path;
 

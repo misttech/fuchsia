@@ -106,6 +106,14 @@ void ThreadImpl::Continue(bool forward_exception) {
   request.ids.push_back({.process = process_->GetKoid(), .thread = koid_});
 
   if (controllers_.empty()) {
+    if (!forward_exception && current_stop_info_) {
+      if (current_stop_info_->exception_type != debug_ipc::ExceptionType::kNone &&
+          !debug_ipc::IsDebug(current_stop_info_->exception_type)) {
+        // Debug exceptions are excluded since we never want to forward those.
+        forward_exception = true;
+      }
+    }
+
     request.how = forward_exception ? debug_ipc::ResumeRequest::How::kForwardAndContinue
                                     : debug_ipc::ResumeRequest::How::kResolveAndContinue;
   } else {

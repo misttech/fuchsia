@@ -5,6 +5,8 @@
 #ifndef SRC_DEVELOPER_DEBUG_ZXDB_CLIENT_MOCK_REMOTE_API_H_
 #define SRC_DEVELOPER_DEBUG_ZXDB_CLIENT_MOCK_REMOTE_API_H_
 
+#include <optional>
+
 #include "src/developer/debug/ipc/protocol.h"
 #include "src/developer/debug/shared/mock_memory.h"
 #include "src/developer/debug/zxdb/client/remote_api.h"
@@ -26,11 +28,13 @@ class MockRemoteAPI : public RemoteAPI {
   // message is sent.
   void set_resume_quits_loop(bool quit) { resume_quits_loop_ = true; }
   int GetAndResetResumeCount();  // Zeroes out internal value.
+  const debug_ipc::ResumeRequest& last_resume() const { return last_resume_; }
 
   // Thread status.
   void set_thread_status_reply(const debug_ipc::ThreadStatusReply& reply) {
     thread_status_reply_ = reply;
   }
+  std::optional<debug_ipc::ThreadStatusReply> thread_status_reply() { return thread_status_reply_; }
 
   // Breakpoints.
   int breakpoint_add_count() const { return breakpoint_add_count_; }
@@ -101,7 +105,7 @@ class MockRemoteAPI : public RemoteAPI {
                fit::callback<void(const Err&, debug_ipc::ThreadsReply)> cb) override {}
 
  private:
-  debug_ipc::ThreadStatusReply thread_status_reply_;
+  std::optional<debug_ipc::ThreadStatusReply> thread_status_reply_ = std::nullopt;
   debug_ipc::PauseReply pause_reply_;
   debug_ipc::AddressSpaceReply address_space_reply_;
 
@@ -112,6 +116,7 @@ class MockRemoteAPI : public RemoteAPI {
   int breakpoint_add_count_ = 0;
   int breakpoint_remove_count_ = 0;
   debug_ipc::AddOrChangeBreakpointRequest last_breakpoint_add_;
+  debug_ipc::ResumeRequest last_resume_;
   debug_ipc::WriteRegistersRequest last_write_registers_;
   debug::MockMemory memory_;
 };

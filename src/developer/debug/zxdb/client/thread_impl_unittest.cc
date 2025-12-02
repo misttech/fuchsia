@@ -8,6 +8,8 @@
 
 #include "src/developer/debug/ipc/records.h"
 #include "src/developer/debug/shared/message_loop.h"
+#include "src/developer/debug/zxdb/client/breakpoint.h"
+#include "src/developer/debug/zxdb/client/breakpoint_settings.h"
 #include "src/developer/debug/zxdb/client/frame.h"
 #include "src/developer/debug/zxdb/client/mock_frame.h"
 #include "src/developer/debug/zxdb/client/remote_api_test.h"
@@ -295,6 +297,81 @@ TEST_F(ThreadImplTest, StopNoStack) {
 
   // The thread controllers should be gone.
   EXPECT_TRUE(thread_impl->controllers_.empty());
+}
+
+TEST_F(ThreadImplTest, ContinueOverException) {
+  constexpr uint64_t kProcessKoid = 1234;
+  InjectProcessWithModule(kProcessKoid, 0x100000);
+  constexpr uint64_t kThreadKoid = 5678;
+  Thread* thread = InjectThread(kProcessKoid, kThreadKoid);
+
+  // This is a first-chance exception, we should always stop, even test processes.
+  debug_ipc::NotifyException exception;
+  exception.type = debug_ipc::ExceptionType::kPageFault;
+  exception.exception.strategy = debug_ipc::ExceptionStrategy::kFirstChance;
+  exception.thread.id = {.process = kProcessKoid, .thread = kThreadKoid};
+  exception.thread.blocked_reason = debug_ipc::ThreadRecord::BlockedReason::kException;
+  exception.thread.state = debug_ipc::ThreadRecord::State::kBlocked;
+  InjectException(exception);
+
+  ASSERT_TRUE(thread->IsBlockedOnException());
+  ASSERT_EQ(thread->GetBlockedReason(), debug_ipc::ThreadRecord::BlockedReason::kException);
+  ASSERT_EQ(thread->GetState().value(), debug_ipc::ThreadRecord::State::kBlocked);
+
+  // This is just "continue" (without --forward) in the Console.
+  thread->Continue(false);
+
+  EXPECT_EQ(mock_remote_api()->last_resume().how,
+            debug_ipc::ResumeRequest::How::kForwardAndContinue);
+
+  // Now make it second-chance and re-fire (everything else is the same).
+  exception.exception.strategy = debug_ipc::ExceptionStrategy::kSecondChance;
+  InjectException(exception);
+
+  // We should be stopped again.
+  ASSERT_TRUE(thread->IsBlockedOnException());
+  ASSERT_EQ(thread->GetBlockedReason(), debug_ipc::ThreadRecord::BlockedReason::kException);
+  ASSERT_EQ(thread->GetState().value(), debug_ipc::ThreadRecord::State::kBlocked);
+  ASSERT_TRUE(thread->CurrentStopInfo());
+  EXPECT_EQ(thread->CurrentStopInfo()->exception_record.strategy,
+            debug_ipc::ExceptionStrategy::kSecondChance);
+
+  thread->Continue(false);
+
+  EXPECT_EQ(mock_remote_api()->last_resume().how,
+            debug_ipc::ResumeRequest::How::kForwardAndContinue);
+  ASSERT_FALSE(thread->IsBlockedOnException());
+
+  // Now use a breakpoint, which should always get marked as resolved.
+  constexpr uint64_t kAddress1 = 0x12345678;
+  constexpr uint64_t kStack1 = 0x7890;
+
+  // Create a breakpoint with a fake address.
+  auto bp = session().system().CreateNewBreakpoint();
+  BreakpointSettings settings;
+  settings.stop_mode = BreakpointSettings::StopMode::kAll;
+  settings.locations.emplace_back(kAddress1);
+  bp->SetSettings(settings);
+
+  // Now use a breakpoint, making sure to fill in |hit_breakpoints|.
+  exception.type = debug_ipc::ExceptionType::kSoftwareBreakpoint;
+  exception.exception.strategy = debug_ipc::ExceptionStrategy::kFirstChance;
+  exception.thread.frames.emplace_back(kAddress1, kStack1);
+  // To match the breakpoint above, the details of the breakpoint don't matter, just that it doesn't
+  // get filtered away by the Session.
+  exception.hit_breakpoints.push_back(
+      {.id = static_cast<uint32_t>(mock_remote_api()->last_breakpoint_id()), .hit_count = 1});
+  InjectException(exception);
+
+  // We should be stopped again.
+  ASSERT_TRUE(thread->IsBlockedOnException());
+  ASSERT_EQ(thread->GetBlockedReason(), debug_ipc::ThreadRecord::BlockedReason::kException);
+  ASSERT_EQ(thread->GetState().value(), debug_ipc::ThreadRecord::State::kBlocked);
+
+  thread->Continue(false);
+
+  EXPECT_EQ(mock_remote_api()->last_resume().how,
+            debug_ipc::ResumeRequest::How::kResolveAndContinue);
 }
 
 TEST_F(ThreadImplTest, JumpTo) {

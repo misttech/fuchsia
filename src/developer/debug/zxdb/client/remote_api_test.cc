@@ -7,6 +7,7 @@
 #include <inttypes.h>
 
 #include "src/developer/debug/ipc/protocol.h"
+#include "src/developer/debug/ipc/records.h"
 #include "src/developer/debug/zxdb/client/frame.h"
 #include "src/developer/debug/zxdb/client/mock_remote_api.h"
 #include "src/developer/debug/zxdb/client/process_impl.h"
@@ -124,6 +125,16 @@ Thread* RemoteAPITest::InjectThread(uint64_t process_koid, uint64_t thread_koid)
 }
 
 void RemoteAPITest::InjectException(const debug_ipc::NotifyException& exception) {
+  // Set up a default ThreadStatusReply with the given information if there isn't one already. It's
+  // likely that some part of the system will ask for a full stack if this one is not shortly after
+  // dispatching the exception to the session. We do _not_ claim that we have a full stack so that
+  // the caller may replace this reply with their own that does have a full stack later.
+  if (mock_remote_api_ && !mock_remote_api()->thread_status_reply()) {
+    debug_ipc::ThreadStatusReply thread_status_reply;
+    thread_status_reply.record = exception.thread;
+    mock_remote_api()->set_thread_status_reply(thread_status_reply);
+  }
+
   session_->DispatchNotifyException(exception);
 }
 
@@ -146,6 +157,16 @@ void RemoteAPITest::InjectExceptionWithStack(const debug_ipc::NotifyException& e
   // caller.
   thread->SetMetadata(modified.thread);
   thread->GetStack().SetFramesForTest(std::move(frames), has_all_frames);
+
+  // Set up a default ThreadStatusReply with the given information if there isn't one already. It's
+  // likely that some part of the system will ask for a full stack if this one is not shortly after
+  // dispatching the exception to the session. We do _not_ claim that we have a full stack so that
+  // the caller may replace this reply with their own that does have a full stack later.
+  if (mock_remote_api_ && !mock_remote_api()->thread_status_reply()) {
+    debug_ipc::ThreadStatusReply thread_status_reply;
+    thread_status_reply.record = modified.thread;
+    mock_remote_api()->set_thread_status_reply(thread_status_reply);
+  }
 
   // Normal exception dispatch path, but skipping the metadata (so the metadata set above will
   // stay).
