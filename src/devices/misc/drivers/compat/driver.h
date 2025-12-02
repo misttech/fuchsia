@@ -5,7 +5,6 @@
 #ifndef SRC_DEVICES_MISC_DRIVERS_COMPAT_DRIVER_H_
 #define SRC_DEVICES_MISC_DRIVERS_COMPAT_DRIVER_H_
 
-#include <fidl/fuchsia.boot/cpp/wire.h>
 #include <fidl/fuchsia.kernel/cpp/wire.h>
 #include <fidl/fuchsia.scheduler/cpp/markers.h>
 #include <lib/async/cpp/executor.h>
@@ -70,7 +69,6 @@ class Driver : public fdf::DriverBase {
   // is done.
   zx_status_t AddDevice(Device* parent, device_add_args_t* args, zx_device_t** out);
   zx::result<> SetProfileByRole(zx::unowned_thread thread, std::string_view role);
-  zx::result<std::string> GetVariable(const char* name);
 
   zx_status_t GetProtocol(uint32_t proto_id, void* out);
   zx_status_t GetFragmentProtocol(const char* fragment, uint32_t proto_id, void* out);
@@ -110,9 +108,6 @@ class Driver : public fdf::DriverBase {
   zx::result<> LoadDriver(std::string_view module_name, zx::vmo driver_vmo);
   // Starts the DFv1 driver.
   zx::result<> StartDriver();
-
-  // Attempts to trigger run_unit_tests driver hook if they are enabled.
-  zx::result<> TryRunUnitTests();
 
   fpromise::promise<void, zx_status_t> ConnectToParentDevices();
   fpromise::promise<void, zx_status_t> GetDeviceInfo();

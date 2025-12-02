@@ -31,7 +31,6 @@
 
 #include <fbl/unique_fd.h>
 #include <gtest/gtest.h>
-#include <mock-boot-arguments/server.h>
 
 #include "fidl/fuchsia.io/cpp/natural_types.h"
 #include "lib/driver/testing/cpp/driver_runtime.h"
@@ -459,10 +458,6 @@ class IncomingNamespace {
     async_dispatcher_t* dispatcher = async_get_default_dispatcher();
     role_manager_.emplace(std::move(expected_profile_role));
 
-    std::map<std::string, std::string> arguments;
-    arguments["driver.foo"] = "true";
-    boot_args_ = mock_boot_arguments::Server(std::move(arguments));
-
     // Setup and bind "/pkg" directory.
     v1_test_file_ = TestFile(ZX_OK, GetVmo(v1_driver_path));
     firmware_file_ = TestFile(ZX_OK, GetVmo("/pkg/lib/firmware/test"));
@@ -536,14 +531,6 @@ class IncomingNamespace {
         return result.take_error();
       }
 
-      result = outgoing.AddUnmanagedProtocol<fboot::Arguments>(
-          [this, dispatcher](fidl::ServerEnd<fboot::Arguments> server) {
-            fidl::BindServer(dispatcher, std::move(server), &boot_args_);
-          });
-      if (result.is_error()) {
-        return result.take_error();
-      }
-
       result = outgoing.AddUnmanagedProtocol<fuchsia_scheduler::RoleManager>(
           role_manager_->GetHandler());
       if (result.is_error()) {
@@ -601,7 +588,6 @@ class IncomingNamespace {
   TestInfoResource info_resource_;
   TestMsiResource msi_resource_;
   std::optional<TestRoleManager> role_manager_;
-  mock_boot_arguments::Server boot_args_;
   TestItems items_;
   TestFile v1_test_file_;
   TestFile firmware_file_;

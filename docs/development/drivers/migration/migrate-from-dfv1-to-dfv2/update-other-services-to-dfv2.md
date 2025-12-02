@@ -291,7 +291,6 @@ Do the following:
      use: [
          {
              protocol: [
-                 "fuchsia.boot.Arguments",
                  "fuchsia.boot.Items",
                  "fuchsia.driver.framework.CompositeNodeManager",
                  "fuchsia.system.state.SystemStateTransition",

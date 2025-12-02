@@ -4,6 +4,7 @@
 
 #include "src/devices/misc/drivers/compat/driver.h"
 
+#include <fidl/fuchsia.boot/cpp/wire.h>
 #include <fidl/fuchsia.driver.framework/cpp/wire.h>
 #include <fidl/fuchsia.scheduler/cpp/wire.h>
 #include <fidl/fuchsia.system.state/cpp/wire.h>
@@ -672,40 +673,6 @@ zx::result<> Driver::LoadDriver(std::string_view module_name, zx::vmo driver_vmo
   return zx::ok();
 }
 
-zx::result<> Driver::TryRunUnitTests() {
-  if (record_->ops->run_unit_tests == nullptr) {
-    return zx::ok();
-  }
-  auto getvar_bool = [this](const char* key, bool default_value) {
-    zx::result value = GetVariable(key);
-    if (value.is_error()) {
-      return default_value;
-    }
-    if (*value == "0" || *value == "false" || *value == "off") {
-      return false;
-    }
-    return true;
-  };
-
-  bool default_opt = getvar_bool("driver.tests.enable", false);
-  auto variable_name = std::string("driver.") + driver_name_ + ".tests.enable";
-  if (getvar_bool(variable_name.c_str(), default_opt)) {
-    zx::channel test_input, test_output;
-    zx_status_t status = zx::channel::create(0, &test_input, &test_output);
-    ZX_ASSERT_MSG(status == ZX_OK, "zx::channel::create failed with %s",
-                  zx_status_get_string(status));
-
-    bool tests_passed =
-        record_->ops->run_unit_tests(context_, device_.ZxDevice(), test_input.release());
-    if (!tests_passed) {
-      logger_->log(fdf::ERROR, "[  FAILED  ] {}", driver_path());
-      return zx::error(ZX_ERR_BAD_STATE);
-    }
-    logger_->log(fdf::INFO, "[  PASSED  ] {}", driver_path());
-  }
-  return zx::ok();
-}
-
 zx::result<> Driver::StartDriver() {
   std::string_view url_str = url().value();
   if (record_->ops->init != nullptr) {
@@ -716,11 +683,6 @@ zx::result<> Driver::StartDriver() {
                    zx::make_result(status));
       return zx::error(status);
     }
-  }
-
-  zx::result result = TryRunUnitTests();
-  if (result.is_error()) {
-    return result.take_error();
   }
 
   if (record_->ops->bind != nullptr) {
@@ -887,19 +849,6 @@ zx::result<> Driver::SetProfileByRole(zx::unowned_thread thread, std::string_vie
     return result.value().take_error();
   }
   return zx::ok();
-}
-
-zx::result<std::string> Driver::GetVariable(const char* name) {
-  auto boot_args = incoming()->Connect<fuchsia_boot::Arguments>();
-  if (boot_args.is_error()) {
-    return boot_args.take_error();
-  }
-
-  auto result = fidl::WireCall(*boot_args)->GetString(fidl::StringView::FromExternal(name));
-  if (!result.ok() || result->value.is_null() || result->value.empty()) {
-    return zx::error(ZX_ERR_NOT_FOUND);
-  }
-  return zx::ok(std::string(result->value.data(), result->value.size()));
 }
 
 zx_status_t Driver::GetProtocol(uint32_t proto_id, void* out) {
