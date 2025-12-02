@@ -12,6 +12,7 @@
 #include <lib/ui/scenic/cpp/view_identity.h>
 #include <zircon/status.h>
 
+#include <algorithm>
 #include <memory>
 #include <vector>
 
@@ -76,7 +77,7 @@ std::array<float, 2> TransformPointerCoords(std::array<float, 2> pointer, const 
 }  // namespace
 
 // TODO(https://fxbug.dev/447603809): DO NOT COPY THIS TEST.
-// All HLCCP tests, and should be migrated from ScenicCtfHlcppTest to ScenicCtfHlcppTest.
+// All HLCCP tests, and should be migrated from ScenicCtfHlcppTest to ScenicCtfTest.
 class FlatlandTouchIntegrationTest : public ScenicCtfHlcppTest {
  public:
   FlatlandTouchIntegrationTest()
@@ -215,7 +216,7 @@ class FlatlandTouchIntegrationTest : public ScenicCtfHlcppTest {
           responses.emplace_back();
         }
       }
-      std::move(events.begin(), events.end(), std::back_inserter(out_events));
+      std::ranges::move(events, std::back_inserter(out_events));
 
       touch_source->Watch(std::move(responses), [this, index](std::vector<TouchEvent> events) {
         watch_loops_.at(index)(std::move(events));
@@ -251,9 +252,14 @@ class FlatlandTouchIntegrationTest : public ScenicCtfHlcppTest {
       return;
 
     for (size_t i = 0; i < points.size(); ++i) {
-      auto phase =
-          i == 0 ? fupi_EventPhase::ADD
-                 : (i == points.size() - 1 ? fupi_EventPhase::REMOVE : fupi_EventPhase::CHANGE);
+      fupi_EventPhase phase;
+      if (i == 0) {
+        phase = fupi_EventPhase::ADD;
+      } else if (i == points.size() - 1) {
+        phase = fupi_EventPhase::REMOVE;
+      } else {
+        phase = fupi_EventPhase::CHANGE;
+      }
       Inject(points[i][0], points[i][1], phase);
     }
 
@@ -267,8 +273,14 @@ class FlatlandTouchIntegrationTest : public ScenicCtfHlcppTest {
         view_events[0].view_parameters().viewport_to_view_transform;
 
     for (size_t i = 0; i < points.size(); ++i) {
-      auto phase = i == 0 ? EventPhase::ADD
-                          : (i == points.size() - 1 ? EventPhase::REMOVE : EventPhase::CHANGE);
+      EventPhase phase;
+      if (i == 0) {
+        phase = EventPhase::ADD;
+      } else if (i == points.size() - 1) {
+        phase = EventPhase::REMOVE;
+      } else {
+        phase = EventPhase::CHANGE;
+      }
 
       EXPECT_EQ_POINTER(view_events[i].pointer_sample(), viewport_to_view_transform, phase,
                         points[i][0] + x_offset, points[i][1] + y_offset);
@@ -278,8 +290,9 @@ class FlatlandTouchIntegrationTest : public ScenicCtfHlcppTest {
   const TransformId kRootTransform{.value = 1};
   const ContentId kRootContentId{.value = 1};
 
-  fuchsia::math::SizeU FullscreenSize() {
-    return {static_cast<uint32_t>(display_width_), static_cast<uint32_t>(display_height_)};
+  fuchsia::math::SizeU FullscreenSize() const {
+    return {.width = static_cast<uint32_t>(display_width_),
+            .height = static_cast<uint32_t>(display_height_)};
   }
 
   bool injector_channel_closed_ = false;
@@ -650,15 +663,13 @@ TEST_F(FlatlandTouchIntegrationTest, InjectedInput_OnRotatedChild_ShouldHitEdges
 
   {
     // Clip the root session.
-    fuchsia::math::Rect rect = {0, 0, 10, 10};
-    root_session_->SetClipBoundary(kRootTransform,
-                                   std::make_unique<fuchsia::math::Rect>(std::move(rect)));
+    fuchsia::math::Rect rect = {.x = 0, .y = 0, .width = 10, .height = 10};
+    root_session_->SetClipBoundary(kRootTransform, std::make_unique<fuchsia::math::Rect>(rect));
   }
   {
     // Clip the child session.
-    fuchsia::math::Rect rect = {0, 0, 10, 10};
-    root_session_->SetClipBoundary(kTransformId,
-                                   std::make_unique<fuchsia::math::Rect>(std::move(rect)));
+    fuchsia::math::Rect rect = {.x = 0, .y = 0, .width = 10, .height = 10};
+    root_session_->SetClipBoundary(kTransformId, std::make_unique<fuchsia::math::Rect>(rect));
   }
 
   BlockingPresent(this, root_session_);
@@ -779,10 +790,10 @@ TEST_F(FlatlandTouchIntegrationTest, PartialScreenOverlappingViews) {
     auto parent_view_ref = fidl::Clone(identity.view_ref);
 
     TransformId kTransformId = {.value = 2};
-    ConnectChildView(
-        root_session_, std::move(parent_token),
-        {static_cast<uint32_t>(display_width_), static_cast<uint32_t>(display_height_)},
-        kTransformId, kRootContentId);
+    ConnectChildView(root_session_, std::move(parent_token),
+                     {.width = static_cast<uint32_t>(display_width_),
+                      .height = static_cast<uint32_t>(display_height_)},
+                     kTransformId, kRootContentId);
 
     parent_session->CreateView2(std::move(child_token), std::move(identity), std::move(protocols),
                                 parent_viewport_watcher.NewRequest());
@@ -858,17 +869,17 @@ TEST_F(FlatlandTouchIntegrationTest, PartialScreenOverlappingViews) {
 
   // A starts at 1/4 the width of the screen, and goes until the 3/4 mark.
   int32_t view_A_x = static_cast<int32_t>(display_width_) / 4;
-  int32_t view_A_width = half_width;
+  int32_t view_A_width = static_cast<int32_t>(half_width);
   int32_t view_A_y = static_cast<int32_t>(display_height_) / 4;
-  int32_t view_A_height = half_height;
+  int32_t view_A_height = static_cast<int32_t>(half_height);
 
   // B starts at 1/2 the width of the screen, and goes until the 4/4 mark.
   //
   // This implies that there is overlap between the 1/2 and 3/4 marks of the screen.
   int32_t view_B_x = static_cast<int32_t>(display_width_) / 2;
-  int32_t view_B_width = half_width;
+  int32_t view_B_width = static_cast<int32_t>(half_width);
   int32_t view_B_y = static_cast<int32_t>(display_height_) / 4;
-  int32_t view_B_height = half_height;
+  int32_t view_B_height = static_cast<int32_t>(half_height);
 
   // Define all useful coords for convenience later.
   float A_x_min = static_cast<float>(view_A_x);
@@ -888,8 +899,8 @@ TEST_F(FlatlandTouchIntegrationTest, PartialScreenOverlappingViews) {
   EXPECT_TRUE(A_x_min <= B_x_min && B_x_min <= A_x_max && A_x_max <= B_x_max);
   EXPECT_TRUE(A_y_min == B_y_min && A_y_max == B_y_max);
 
-  parent_session->SetTranslation(kTransformId_A, {view_A_x, view_A_y});
-  parent_session->SetTranslation(kTransformId_B, {view_B_x, view_B_y});
+  parent_session->SetTranslation(kTransformId_A, {.x = view_A_x, .y = view_A_y});
+  parent_session->SetTranslation(kTransformId_B, {.x = view_B_x, .y = view_B_y});
 
   // Commit all changes.
   BlockingPresent(this, parent_session);
@@ -1041,9 +1052,14 @@ TEST_F(FlatlandTouchIntegrationTest, PartialScreenOverlappingViews) {
   points.push_back({A_x_min, A_y_max});
 
   for (size_t i = 0; i < points.size(); ++i) {
-    auto phase = i == 0
-                     ? fupi_EventPhase::ADD
-                     : (i == points.size() - 1 ? fupi_EventPhase::REMOVE : fupi_EventPhase::CHANGE);
+    fupi_EventPhase phase;
+    if (i == 0) {
+      phase = fupi_EventPhase::ADD;
+    } else if (i == points.size() - 1) {
+      phase = fupi_EventPhase::REMOVE;
+    } else {
+      phase = fupi_EventPhase::CHANGE;
+    }
     Inject(points[i][0] * 2, points[i][1] * 2, phase);
   }
 
@@ -1053,16 +1069,20 @@ TEST_F(FlatlandTouchIntegrationTest, PartialScreenOverlappingViews) {
   });  // Succeeds or times out.
 
   // Offset |points| by A's top-left point.
-  for (size_t i = 0; i < points.size(); ++i) {
-    points[i][0] -= A_x_min;
-    points[i][1] -= A_y_min;
+  for (auto& point : points) {
+    point[0] -= A_x_min;
+    point[1] -= A_y_min;
   }
 
   const auto& viewport_to_view_transform =
       child_A_events[0].view_parameters().viewport_to_view_transform;
   for (size_t i = 0; i < points.size(); ++i) {
-    auto phase = i == 0 ? EventPhase::ADD
-                        : (i == points.size() - 1 ? EventPhase::REMOVE : EventPhase::CHANGE);
+    EventPhase phase = EventPhase::CHANGE;
+    if (i == 0) {
+      phase = EventPhase::ADD;
+    } else if (i == points.size() - 1) {
+      phase = EventPhase::REMOVE;
+    }
 
     EXPECT_EQ_POINTER(child_A_events[i].pointer_sample(), viewport_to_view_transform, phase,
                       points[i][0], points[i][1]);
@@ -1214,8 +1234,9 @@ TEST_F(FlatlandTouchIntegrationTest, SetHitRegion_CapturesTouch) {
     auto parent_view_ref = fidl::Clone(identity.view_ref);
 
     TransformId kTransformId = {.value = 2};
-    const fuchsia::math::SizeU kHalfWidthViewSize = {static_cast<uint32_t>(display_width_ / 2),
-                                                     static_cast<uint32_t>(display_height_)};
+    const fuchsia::math::SizeU kHalfWidthViewSize = {
+        .width = static_cast<uint32_t>(display_width_ / 2),
+        .height = static_cast<uint32_t>(display_height_)};
     ConnectChildView(parent_session, std::move(parent_token), kHalfWidthViewSize, kTransformId,
                      kRootContentId);
 
@@ -1369,8 +1390,9 @@ TEST_F(FlatlandTouchIntegrationTest, InfiniteHitRegion_CapturesTouch) {
     auto parent_view_ref = fidl::Clone(identity.view_ref);
 
     TransformId kTransformId = {.value = 2};
-    const fuchsia::math::SizeU kHalfWidthViewSize = {static_cast<uint32_t>(display_width_ / 2),
-                                                     static_cast<uint32_t>(display_height_)};
+    const fuchsia::math::SizeU kHalfWidthViewSize = {
+        .width = static_cast<uint32_t>(display_width_ / 2),
+        .height = static_cast<uint32_t>(display_height_)};
     ConnectChildView(parent_session, std::move(parent_token), kHalfWidthViewSize, kTransformId,
                      kRootContentId);
 
@@ -1559,10 +1581,10 @@ TEST_F(FlatlandTouchIntegrationTest, HitTested_ViewDisconnectedMidContest_Should
     auto parent_view_ref = fidl::Clone(identity.view_ref);
 
     TransformId kTransformId = {.value = 2};
-    ConnectChildView(
-        root_session_, std::move(parent_token),
-        {static_cast<uint32_t>(display_width_), static_cast<uint32_t>(display_height_)},
-        kTransformId, kRootContentId);
+    ConnectChildView(root_session_, std::move(parent_token),
+                     {.width = static_cast<uint32_t>(display_width_),
+                      .height = static_cast<uint32_t>(display_height_)},
+                     kTransformId, kRootContentId);
 
     parent_session->CreateView2(std::move(child_token), std::move(identity), std::move(protocols),
                                 parent_viewport_watcher.NewRequest());
@@ -1639,7 +1661,7 @@ TEST_F(FlatlandTouchIntegrationTest, HitTested_ViewDisconnectedMidContest_Should
   ASSERT_TRUE(child_events.back().has_interaction_result());
   EXPECT_EQ(child_events.back().interaction_result().status, TouchInteractionStatus::DENIED);
 
-  EXPECT_TRUE(std::any_of(parent_events.begin(), parent_events.end(), [](const TouchEvent& event) {
+  EXPECT_TRUE(std::ranges::any_of(parent_events, [](const TouchEvent& event) {
     return event.has_interaction_result() &&
            event.interaction_result().status == TouchInteractionStatus::GRANTED;
   }));
@@ -1737,7 +1759,7 @@ TEST_F(FlatlandTouchIntegrationTest, HitTested_ViewDisconnectedAfterWinning_Shou
   // Child should win the contest.
   RunLoopUntil([&child_events] { return child_events.size() == 3u; });  // Succeeds or times out.
   ASSERT_EQ(child_events.size(), 3u);
-  EXPECT_TRUE(std::any_of(child_events.begin(), child_events.end(), [](const TouchEvent& event) {
+  EXPECT_TRUE(std::ranges::any_of(child_events, [](const TouchEvent& event) {
     return event.has_interaction_result() &&
            event.interaction_result().status == TouchInteractionStatus::GRANTED;
   }));
@@ -1826,8 +1848,8 @@ TEST_F(FlatlandTouchIntegrationTest, MagnificationTest) {
   const float scale_x = 2.f, scale_y = 2.f;
   const int32_t translation_x = static_cast<int32_t>(display_width_) / 2,
                 translation_y = static_cast<int32_t>(display_height_) / 2;
-  parent_session->SetScale(child_transform, {scale_x, scale_y});
-  parent_session->SetTranslation(child_transform, {translation_x, translation_y});
+  parent_session->SetScale(child_transform, {.x = scale_x, .y = scale_y});
+  parent_session->SetTranslation(child_transform, {.x = translation_x, .y = translation_y});
   BlockingPresent(this, parent_session);
 
   // Listen for input events.

@@ -13,6 +13,8 @@
 #include <lib/ui/scenic/cpp/view_identity.h>
 #include <zircon/status.h>
 
+#include <utility>
+
 #include <zxtest/zxtest.h>
 
 #include "src/ui/scenic/tests/utils/blocking_present.h"
@@ -123,14 +125,14 @@ void ExpectEqualPointer(const fuchsia::ui::pointer::MousePointerSample& pointer_
   } else {
     ASSERT_TRUE(pointer_sample.has_pressed_buttons(), "Line: %d", line_number);
     ASSERT_EQ(pointer_sample.pressed_buttons().size(), expected_buttons.size());
-    for (uint8_t i = 0; i < pointer_sample.pressed_buttons().size(); i++) {
+    for (size_t i = 0; i < pointer_sample.pressed_buttons().size(); i++) {
       EXPECT_EQ(pointer_sample.pressed_buttons()[i], expected_buttons[i], "Line: %d", line_number);
     }
   }
 }
 
 // TODO(https://fxbug.dev/447603809): DO NOT COPY THIS TEST.
-// All HLCCP tests, and should be migrated from ScenicCtfHlcppTest to ScenicCtfHlcppTest.
+// All HLCCP tests, and should be migrated from ScenicCtfHlcppTest to ScenicCtfTest.
 class FlatlandMouseIntegrationTest : public ScenicCtfHlcppTest {
  public:
   FlatlandMouseIntegrationTest()
@@ -188,7 +190,7 @@ class FlatlandMouseIntegrationTest : public ScenicCtfHlcppTest {
     display_height_ = static_cast<float>(info->logical_size().height);
   }
 
-  void Inject(float x, float y, EventPhase phase, std::vector<uint8_t> pressed_buttons = {},
+  void Inject(float x, float y, EventPhase phase, const std::vector<uint8_t>& pressed_buttons = {},
               std::optional<int64_t> scroll_v = std::nullopt,
               std::optional<int64_t> scroll_h = std::nullopt,
               std::optional<double> scroll_v_physical_pixel = std::nullopt,
@@ -267,7 +269,7 @@ class FlatlandMouseIntegrationTest : public ScenicCtfHlcppTest {
       config.set_scroll_h_range(axis);
     }
 
-    config.set_buttons(buttons);
+    config.set_buttons(std::move(buttons));
     {
       {
         Context context;
@@ -322,7 +324,7 @@ class FlatlandMouseIntegrationTest : public ScenicCtfHlcppTest {
     fidl::InterfacePtr<ChildViewWatcher> child_view_watcher;
     auto [child_token, parent_token] = scenic::ViewCreationTokenPair::New();
     ViewportProperties properties;
-    properties.set_logical_size({kDefaultSize, kDefaultSize});
+    properties.set_logical_size({.width = kDefaultSize, .height = kDefaultSize});
 
     parent_instance->CreateTransform(viewport_transform_id);
     parent_instance->CreateViewport(parent_content_id, std::move(parent_token),
@@ -956,12 +958,14 @@ TEST_F(FlatlandMouseIntegrationTest, SimpleHitTest) {
   });
 
   auto child_view_ref = CreateAndAddChildView(
-      parent_instance, /*parent_transform=*/{.value = 2}, kRootTransform,
+      parent_instance, /*viewport_transform_id=*/{.value = 2}, kRootTransform,
       /*parent_content_id=*/{.value = 2}, child_instance, child_mouse_source.NewRequest());
 
   // Place hit regions, overriding any default ones if they exist.
-  parent_instance->SetHitRegions(kRootTransform, {{.region = {0, 0, 10, 10}}});
-  child_instance->SetHitRegions(kRootTransform, {{.region = {0, 0, 10, 10}}});
+  parent_instance->SetHitRegions(kRootTransform,
+                                 {{.region = {.x = 0, .y = 0, .width = 10, .height = 10}}});
+  child_instance->SetHitRegions(kRootTransform,
+                                {{.region = {.x = 0, .y = 0, .width = 10, .height = 10}}});
 
   BlockingPresent(this, child_instance);
   BlockingPresent(this, parent_instance);
@@ -1161,15 +1165,18 @@ TEST_F(FlatlandMouseIntegrationTest, PartialScreenViews) {
   // Change the context view's origin from (0,0) to (5,5).
   int x_translation = 5;
   int y_translation = 5;
-  parent_instance->SetTranslation(viewport_transform_id, {x_translation, y_translation});
-  fuchsia::math::Rect rect = {0, 0, 5, 5};
+  parent_instance->SetTranslation(viewport_transform_id, {.x = x_translation, .y = y_translation});
+  fuchsia::math::Rect rect = {.x = 0, .y = 0, .width = 5, .height = 5};
   parent_instance->SetClipBoundary(viewport_transform_id,
-                                   std::make_unique<fuchsia::math::Rect>(std::move(rect)));
+                                   std::make_unique<fuchsia::math::Rect>(rect));
 
   // Place hit regions, overriding any default ones if they exist.
-  parent_instance->SetHitRegions(kRootTransform, {{.region = {0, 0, 10, 10}}});
-  context_instance->SetHitRegions(kRootTransform, {{.region = {0, 0, 10, 10}}});
-  target_instance->SetHitRegions(kRootTransform, {{.region = {0, 0, 10, 10}}});
+  parent_instance->SetHitRegions(kRootTransform,
+                                 {{.region = {.x = 0, .y = 0, .width = 10, .height = 10}}});
+  context_instance->SetHitRegions(kRootTransform,
+                                  {{.region = {.x = 0, .y = 0, .width = 10, .height = 10}}});
+  target_instance->SetHitRegions(kRootTransform,
+                                 {{.region = {.x = 0, .y = 0, .width = 10, .height = 10}}});
 
   BlockingPresent(this, parent_instance);
   BlockingPresent(this, context_instance);
@@ -1419,14 +1426,14 @@ TEST_F(FlatlandMouseIntegrationTest, InjectedInput_ShouldBeCorrectlyViewportTran
   {
     const auto& viewport_to_view_transform =
         child_events[0].view_parameters().viewport_to_view_transform;
-    EXPECT_EQ_POINTER(child_events[0].pointer_sample(), viewport_to_view_transform, 0.f / 2.f + 1,
-                      0.f / 3.f + 2);
-    EXPECT_EQ_POINTER(child_events[1].pointer_sample(), viewport_to_view_transform, 5.f / 2.f + 1,
-                      0.f / 3.f + 2);
-    EXPECT_EQ_POINTER(child_events[2].pointer_sample(), viewport_to_view_transform, 5.f / 2.f + 1,
-                      5.f / 3.f + 2);
-    EXPECT_EQ_POINTER(child_events[3].pointer_sample(), viewport_to_view_transform, 0.f / 2.f + 1,
-                      5.f / 3.f + 2);
+    EXPECT_EQ_POINTER(child_events[0].pointer_sample(), viewport_to_view_transform, (0.f / 2.f) + 1,
+                      (0.f / 3.f) + 2);
+    EXPECT_EQ_POINTER(child_events[1].pointer_sample(), viewport_to_view_transform, (5.f / 2.f) + 1,
+                      (0.f / 3.f) + 2);
+    EXPECT_EQ_POINTER(child_events[2].pointer_sample(), viewport_to_view_transform, (5.f / 2.f) + 1,
+                      (5.f / 3.f) + 2);
+    EXPECT_EQ_POINTER(child_events[3].pointer_sample(), viewport_to_view_transform, (0.f / 2.f) + 1,
+                      (5.f / 3.f) + 2);
   }
 }
 
@@ -1469,7 +1476,7 @@ TEST_F(FlatlandMouseIntegrationTest, InjectedInput_OnRotatedChild_ShouldHitEdges
   // Apply rotation.
   TransformId transform = {.value = kRootTransform.value + 1};
   root_instance_->SetOrientation(transform, Orientation::CCW_270_DEGREES);
-  root_instance_->SetTranslation(transform, {5, 0});
+  root_instance_->SetTranslation(transform, {.x = 5, .y = 0});
   BlockingPresent(this, root_instance_);
 
   // Listen for input events.
@@ -1799,7 +1806,7 @@ TEST_F(FlatlandMouseIntegrationTest, AnonymousSubtree) {
     const ContentId parent_content_id{.value = 1};
     fidl::InterfacePtr<ChildViewWatcher> child_view_watcher;
     ViewportProperties properties;
-    properties.set_logical_size({kDefaultSize, kDefaultSize});
+    properties.set_logical_size({.width = kDefaultSize, .height = kDefaultSize});
     parent_instance->CreateTransform(viewport_transform_id);
     parent_instance->CreateViewport(parent_content_id, std::move(parent_token),
                                     std::move(properties), child_view_watcher.NewRequest());
@@ -1817,7 +1824,8 @@ TEST_F(FlatlandMouseIntegrationTest, AnonymousSubtree) {
   grandchild_mouse_source.set_error_handler([](zx_status_t status) {
     FAIL("Mouse source closed with status: %s", zx_status_get_string(status));
   });
-  CreateAndAddChildView(child_instance, /*parent_transform=*/{.value = 2}, kRootTransform,
+  CreateAndAddChildView(child_instance,
+                        /*viewport_transform_id=*/{.value = 2}, kRootTransform,
                         /*parent_content_id=*/{.value = 2}, grandchild_instance,
                         grandchild_mouse_source.NewRequest());
 
