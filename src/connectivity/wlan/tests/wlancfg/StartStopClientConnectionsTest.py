@@ -79,6 +79,7 @@ class StartStopClientConnectionsTest(
                 self.device.wlan_policy.create_client_controller()
                 self.device.wlan_policy.start_client_connections()
                 logger.info("Acquired control of the WLAN policy layer.")
+                break
             except Exception as e:
                 logger.warning(
                     "Attempt %d/%d to acquire WLAN policy failed: %s",
