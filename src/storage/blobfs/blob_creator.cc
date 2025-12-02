@@ -32,6 +32,7 @@
 #include "src/storage/blobfs/cache_node.h"
 #include "src/storage/blobfs/delivery_blob_private.h"
 #include "src/storage/blobfs/format.h"
+#include "src/storage/blobfs/mount.h"
 #include "src/storage/lib/vfs/cpp/service.h"
 
 namespace blobfs {
@@ -209,6 +210,11 @@ void BlobCreator::Create(fuchsia_fxfs::wire::BlobCreatorCreateRequest* request,
 
 zx::result<fidl::ClientEnd<fuchsia_fxfs::BlobWriter>> BlobCreator::CreateImpl(const Digest& digest,
                                                                               bool allow_existing) {
+  // Return an error early if blobfs is mounted readonly.
+  if (blobfs_.writability() != Writability::Writable) {
+    return zx::error(ZX_ERR_NOT_SUPPORTED);
+  }
+
   std::optional<fbl::RefPtr<Blob>> to_overwrite;
   fbl::RefPtr<CacheNode> found;
   if (zx_status_t status = blobfs_.GetCache().Lookup(digest, &found); status == ZX_OK) {
