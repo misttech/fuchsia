@@ -877,6 +877,12 @@ impl ClientSme {
         self.context.mlme_sink.send(MlmeRequest::GetSignalReport(responder));
         receiver
     }
+
+    pub fn set_mac_address(&mut self, mac_addr: [u8; 6]) -> oneshot::Receiver<Result<(), i32>> {
+        let (responder, receiver) = Responder::new();
+        self.context.mlme_sink.send(MlmeRequest::SetMacAddress(mac_addr, responder));
+        receiver
+    }
 }
 
 impl super::Station for ClientSme {

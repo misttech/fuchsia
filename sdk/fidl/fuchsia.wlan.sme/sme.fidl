@@ -304,6 +304,11 @@ closed protocol ClientSme {
     }) -> (resource struct {
         scan_results vector<ScanResult>;
     }) error ScanErrorCode;
+    // Sets the MAC address of the client interface. To reset the MAC address to the default/factory
+    // value, retrieve the `factory_addr` from the GenericSme `Query` method and pass it here.
+    strict SetMacAddress(struct {
+        mac_addr ieee80211.MacAddr;
+    }) -> () error zx.Status;
 };
 
 type ApConfig = struct {

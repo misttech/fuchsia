@@ -103,6 +103,9 @@ async fn handle_fidl_request(
             .await
             .unwrap_or_else(|e| error!("Error handling a test scan transaction: {:?}", e)))
         }
+        ClientSmeRequest::SetMacAddress { mac_addr, responder } => {
+            Ok(set_mac_address(sme, mac_addr, responder).await?)
+        }
     }
 }
 
@@ -277,6 +280,19 @@ async fn wmm_status(
     responder.send(wmm_status.as_ref().map_err(|e| *e))
 }
 
+async fn set_mac_address(
+    sme: &Mutex<Sme>,
+    mac_addr: [u8; 6],
+    responder: fidl_sme::ClientSmeSetMacAddressResponder,
+) -> Result<(), fidl::Error> {
+    let receiver = sme.lock().set_mac_address(mac_addr);
+    let resp = match receiver.await {
+        Ok(result) => result,
+        Err(_) => Err(zx::sys::ZX_ERR_CANCELED),
+    };
+    responder.send(resp)
+}
+
 fn convert_connect_result(result: &ConnectResult, is_reconnect: bool) -> fidl_sme::ConnectResult {
     let (code, is_credential_rejected) = match result {
         ConnectResult::Success => (fidl_ieee80211::StatusCode::Success, false),
@@ -332,8 +348,8 @@ mod tests {
     use fidl_fuchsia_wlan_sme::{self as fidl_sme};
     use futures::stream::StreamFuture;
     use futures::task::Poll;
-    use rand::prelude::ThreadRng;
     use rand::Rng;
+    use rand::prelude::ThreadRng;
     use std::pin::pin;
     use test_case::test_case;
     use wlan_common::random_bss_description;
