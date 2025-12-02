@@ -15,7 +15,14 @@ namespace fastboot {
 
 /// Returns the unsparsed size of `buffer` if this is an Android sparse image, otherwise returns
 /// std::nullopt. `buffer` must have the correct alignment.
-std::optional<uint64_t> GetUnsparsedSize(const void* buffer, uint64_t size);
+std::optional<uint64_t> GetUnsparsedSize(const void* buffer, size_t size);
+
+/// Returns the unsparsed size of `buffer` if this is an Android sparse image, otherwise returns
+/// std::nullopt. `buffer` must have the correct alignment.
+std::optional<uint64_t> GetUnsparsedSize(const fzl::OwnedVmoMapper& buffer);
+
+/// Returns true if `buffer` is in the Android sparse format, false otherwise.
+bool IsSparseFormat(const fzl::OwnedVmoMapper& buffer);
 
 /// Type of callback used to log errors when unsparsing fails.
 using UnsparseErrorLogger = int(const char*, ...);

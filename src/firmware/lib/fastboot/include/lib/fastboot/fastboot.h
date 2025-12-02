@@ -66,8 +66,9 @@ class __EXPORT Fastboot : public FastbootBase {
   zx::result<> UpdateSuper(const std::string &command, Transport *transport);
 
   zx::result<fidl::WireSyncClient<fuchsia_paver::Paver>> ConnectToPaver();
+  zx::result<fidl::WireSyncClient<fuchsia_paver::DataSink>> ConnectToDataSink(Transport *transport);
   zx::result<fidl::WireSyncClient<fuchsia_paver::DynamicDataSink>> ConnectToDynamicDataSink(
-      Transport *);
+      Transport *transport);
   zx::result<fidl::WireSyncClient<fuchsia_hardware_power_statecontrol::Admin>>
   ConnectToPowerStateControl();
   zx::result<fidl::UnownedClientEnd<fuchsia_fshost::Recovery>> ConnectToRecoveryService();
@@ -103,8 +104,23 @@ class __EXPORT Fastboot : public FastbootBase {
 
   friend class FastbootDownloadTest;
 
-  zx::result<> InitBlobImageWriter(Transport *transport, size_t unsparsed_size);
-  zx::result<> FlashBlob(Transport *transport, size_t unsparsed_size);
+  /// Specifies the target when flashing the "blob" partition.
+  enum class FlashBlobTarget : uint8_t {
+    /// The new system blob image will be written via the fuchsia.fshost/Recovery protocol.
+    /// No existing data on the device will be modified. The new system image will be installed
+    /// automatically the next the the system boots up. On installation failure, existing data
+    /// on the device will remain untouched.
+    kBlob,
+    /// The new system blob image will overwrite the entire super partition. This will cause the
+    /// existing filesystem on the device to be fully overwritten.
+    ///
+    /// *WARNING*: All data on the device will be lost when this is set!
+    kSuper,
+  };
+
+  zx::result<> PrepareFlashBlob(Transport *transport);
+  zx::result<> FlashBlob(Transport *Transport);
+  zx::result<> FlashSuper(Transport *transport);
 
   /// Holds the state persisted across chunks when flashing a new blob volume image.
   struct BlobImageWriter {
@@ -137,7 +153,7 @@ class __EXPORT Fastboot : public FastbootBase {
   /// When doing a full-wipe flash, we set this to true since there is no need to preserve existing
   /// volumes. This makes flashing slightly quicker, and allows us to more easily reason about the
   /// state of the device.
-  bool flash_blob_targets_super_ = false;
+  FlashBlobTarget flash_blob_target_ = FlashBlobTarget::kBlob;
 };
 
 }  // namespace fastboot

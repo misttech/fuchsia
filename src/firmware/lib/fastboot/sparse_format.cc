@@ -76,6 +76,14 @@ std::optional<uint64_t> GetUnsparsedSize(const void* buffer, uint64_t size) {
   return uint64_t{header->blk_sz} * uint64_t{header->total_blks};
 }
 
+std::optional<uint64_t> GetUnsparsedSize(const fzl::OwnedVmoMapper& buffer) {
+  return GetUnsparsedSize(buffer.start(), buffer.size());
+}
+
+bool IsSparseFormat(const fzl::OwnedVmoMapper& buffer) {
+  return GetUnsparsedSize(buffer).has_value();
+}
+
 zx::result<> Unsparse(fzl::OwnedVmoMapper& src, zx::vmo& dst, fzl::OwnedVmoMapper& fill_buffer,
                       UnsparseErrorLogger logger) {
   if (!logger) {

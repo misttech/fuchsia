@@ -437,50 +437,28 @@ zx::result<> Fastboot::Flash(const std::string& command, Transport* transport) {
     return SendResponse(ResponseType::kFail, "Not enough arguments", transport);
   }
   FlashPartitionInfo info = GetPartitionInfo(args[1]);
-  const std::optional<uint64_t> unsparsed_size =
-      GetUnsparsedSize(download_vmo_mapper_.start(), download_vmo_mapper_.size());
-  const bool is_sparse = unsparsed_size.has_value();
-
-  if (info.partition == "blob" && flash_blob_targets_super_) {
-    // Fuchsia devices that use a super partition contain an inner blob and userdata volume. By
-    // changing the image target to overwrite super instead, we effectively destroy the existing
-    // userdata volume in a similar manner to fuchsia.fshost/Admin.ShredDataVolume.
-    info.partition = "super";
-  }
 
   if (info.partition == "blob") {
-    if (!is_sparse) {
-      return SendResponse(ResponseType::kFail, "blob image must be in Android sparse format.",
-                          transport, zx::error(ZX_ERR_NOT_SUPPORTED));
-    }
     // TODO(https://fxbug.dev/464027981): If we fail to flash the blob volume, the two most likely
     // cases are that we either ran out of space, or the system container was never provisioned
     // (i.e. the super partition was erased entirely). We should consider allowing some remedial
     // action here rather than failing to flash the device (e.g. we can instead start flashing the
     // image over the super partition entirely).
-    return FlashBlob(transport, *unsparsed_size);
+    return FlashBlob(transport);
   }
 
   if (info.partition == "super") {
-    if (!is_sparse) {
-      return SendResponse(ResponseType::kFail, "super must be in Android sparse format.",
-                          transport);
-    }
-  } else if (is_sparse) {
+    return FlashSuper(transport);
+  }
+
+  if (IsSparseFormat(download_vmo_mapper_)) {
     return SendResponse(ResponseType::kFail, "Android sparse image is not supported.", transport);
   }
 
-  auto paver = ConnectToPaver();
-  if (paver.is_error()) {
-    return SendResponse(ResponseType::kFail, "Failed to connect to paver", transport,
-                        zx::error(paver.status_value()));
+  auto data_sink = ConnectToDataSink(transport);
+  if (data_sink.is_error()) {
+    return data_sink.take_error();
   }
-
-  // Connect to the data sink
-  auto [client, server] = fidl::Endpoints<fuchsia_paver::DataSink>::Create();
-  // TODO(https://fxbug.dev/42180237) Consider handling the error instead of ignoring it.
-  (void)paver->FindDataSink(std::move(server));
-  fidl::WireSyncClient data_sink{std::move(client)};
 
   if (info.partition == "bootloader") {
     // If abr suffix is not given, assume that firmware ABR is not supported and just provide a
@@ -488,24 +466,24 @@ zx::result<> Fastboot::Flash(const std::string& command, Transport* transport) {
     fuchsia_paver::wire::Configuration config =
         info.configuration ? *info.configuration : fuchsia_paver::wire::Configuration::kA;
     std::string_view firmware_type = args.size() == 3 ? args[2] : "";
-    return WriteFirmware(config, firmware_type, transport, data_sink);
+    return WriteFirmware(config, firmware_type, transport, *data_sink);
   }
 
   if (info.partition == "fuchsia-esp") {
     // x64 platform uses 'fuchsia-esp' for bootloader partition . We should eventually move to use
     // "bootloader"
     // For legacy `fuchsia-esp` we don't consider firmware ABR or type.
-    return WriteFirmware(fuchsia_paver::wire::Configuration::kA, "", transport, data_sink);
+    return WriteFirmware(fuchsia_paver::wire::Configuration::kA, "", transport, *data_sink);
   }
 
   if (info.partition == "zircon" && info.configuration) {
     return WriteAsset(*info.configuration, fuchsia_paver::wire::Asset::kKernel, transport,
-                      data_sink);
+                      *data_sink);
   }
 
   if (info.partition == "vbmeta" && info.configuration) {
     return WriteAsset(*info.configuration, fuchsia_paver::wire::Asset::kVerifiedBootMetadata,
-                      transport, data_sink);
+                      transport, *data_sink);
   }
 
   if (info.partition == "fvm") {
@@ -573,20 +551,6 @@ zx::result<> Fastboot::Flash(const std::string& command, Transport* transport) {
     }
 
     return OemInitPartitionTables(command, transport);
-  }
-
-  if (info.partition == "super") {
-    auto response = data_sink->WriteSparseVolume(GetWireBufferFromDownload());
-    if (response.status() != ZX_OK) {
-      return SendResponse(ResponseType::kFail,
-                          "Failed to invoke fuchsia.paver/DataSink.WriteSparseVolume", transport,
-                          zx::error(response.status()));
-    }
-    if (response->is_error()) {
-      return SendResponse(ResponseType::kFail, "Failed to flash super", transport,
-                          zx::error(response->error_value()));
-    }
-    return SendResponse(ResponseType::kOkay, "", transport);
   }
 
   return SendResponse(ResponseType::kFail, "Unsupported partition", transport);
@@ -765,6 +729,24 @@ zx::result<> Fastboot::OemAddStagedBootloaderFile(const std::string& command,
   return SendResponse(ResponseType::kOkay, "", transport);
 }
 
+zx::result<fidl::WireSyncClient<fuchsia_paver::DataSink>> Fastboot::ConnectToDataSink(
+    Transport* transport) {
+  auto paver = ConnectToPaver();
+  if (paver.is_error()) {
+    return SendResponse(ResponseType::kFail, "Failed to connect to paver", transport,
+                        zx::error(paver.status_value()))
+        .take_error();
+  }
+  auto [client, server] = fidl::Endpoints<fuchsia_paver::DataSink>::Create();
+  auto response = paver->FindDataSink(std::move(server));
+  if (!response.ok()) {
+    return SendResponse(ResponseType::kFail, "Failed to find data sink", transport,
+                        zx::error(response.status()))
+        .take_error();
+  }
+  return zx::ok(fidl::WireSyncClient{std::move(client)});
+}
+
 zx::result<fidl::WireSyncClient<fuchsia_paver::DynamicDataSink>> Fastboot::ConnectToDynamicDataSink(
     Transport* transport) {
   auto paver = ConnectToPaver();
@@ -913,11 +895,23 @@ zx::result<> Fastboot::UpdateSuper(const std::string& command, Transport* transp
   return SendResponse(ResponseType::kOkay, "", transport);
 }
 
-zx::result<> Fastboot::InitBlobImageWriter(Transport* transport, uint64_t unsparsed_size) {
-  // If we already have a valid image handle, ensure we have enough space for this chunk.
+zx::result<> Fastboot::PrepareFlashBlob(Transport* transport) {
+  // If we're going to write the payload to the sparse partition instead, do nothing.
+  if (flash_blob_target_ == FlashBlobTarget::kSuper) {
+    return zx::ok();
+  }
+  // Ensure this chunk is in the Android sparse format.
+  const std::optional<uint64_t> unsparsed_size = GetUnsparsedSize(download_vmo_mapper_);
+  if (!unsparsed_size.has_value()) {
+    return SendResponse(ResponseType::kFail, "blob image must be in Android sparse format.",
+                        transport, zx::error(ZX_ERR_NOT_SUPPORTED))
+        .take_error();
+  }
+  // If we already have a valid image handle from a previous chunk, ensure we have enough space for
+  // this one.
   if (blob_writer_) {
     if (unsparsed_size > blob_writer_->image_size) {
-      auto resize_response = fidl::WireCall(blob_writer_->image_file)->Resize(unsparsed_size);
+      auto resize_response = fidl::WireCall(blob_writer_->image_file)->Resize(*unsparsed_size);
       if (resize_response.status() != ZX_OK) {
         return SendResponse(ResponseType::kFail, "Transport error when resizing image file",
                             transport, zx::error(resize_response.status()));
@@ -926,7 +920,7 @@ zx::result<> Fastboot::InitBlobImageWriter(Transport* transport, uint64_t unspar
         return SendResponse(ResponseType::kFail, "Failed to resize image file", transport,
                             zx::error(resize_response->error_value()));
       }
-      blob_writer_->image_size = unsparsed_size;
+      blob_writer_->image_size = *unsparsed_size;
     }
     return zx::ok();
   }
@@ -944,7 +938,7 @@ zx::result<> Fastboot::InitBlobImageWriter(Transport* transport, uint64_t unspar
   fidl::ClientEnd<fuchsia_io::File> image_file = std::move((*response)->image_file);
   zx::eventpair mount_token = std::move((*response)->mount_token);
 
-  auto resize_response = fidl::WireCall(image_file)->Resize(unsparsed_size);
+  auto resize_response = fidl::WireCall(image_file)->Resize(*unsparsed_size);
   if (resize_response.status() != ZX_OK) {
     return SendResponse(ResponseType::kFail, "Transport error when resizing image file", transport,
                         zx::error(resize_response.status()));
@@ -986,17 +980,20 @@ zx::result<> Fastboot::InitBlobImageWriter(Transport* transport, uint64_t unspar
       .mount_token = std::move(mount_token),
       .file_vmo = std::move(file_vmo),
       .fill_buffer = std::move(fill_buffer),
-      .image_size = unsparsed_size,
+      .image_size = *unsparsed_size,
   };
   return zx::ok();
 }
 
-zx::result<> Fastboot::FlashBlob(Transport* transport, uint64_t unsparsed_size) {
-  auto result = InitBlobImageWriter(transport, unsparsed_size);
+zx::result<> Fastboot::FlashBlob(Transport* transport) {
+  auto result = PrepareFlashBlob(transport);
   if (result.is_error()) {
     return result.take_error();
   }
-  ZX_ASSERT(blob_writer_.has_value());
+  if (flash_blob_target_ == FlashBlobTarget::kSuper) {
+    return FlashSuper(transport);
+  }
+  ZX_ASSERT(blob_writer_.has_value());  // Should be initialized by PrepareFlashBlob.
 
   // Unsparse the download buffer directly into the file-backed VMO.
   auto unsparse_result = Unsparse(/*src=*/download_vmo_mapper_, /*dst=*/blob_writer_->file_vmo,
@@ -1005,7 +1002,6 @@ zx::result<> Fastboot::FlashBlob(Transport* transport, uint64_t unsparsed_size) 
     return SendResponse(ResponseType::kFail, "Failed to unsparse payload", transport,
                         unsparse_result.take_error());
   }
-
   // Ensure the data has been flushed to disk. This is expensive, but ensures that if the device
   // does not gracefully reboot after the flash command succeeds, it will still boot successfully.
   // If we don't do this, it's possible the data may not have been flushed and the system image will
@@ -1022,7 +1018,31 @@ zx::result<> Fastboot::FlashBlob(Transport* transport, uint64_t unsparsed_size) 
     return SendResponse(ResponseType::kFail, "Failed to sync image file to disk", transport,
                         zx::error(sync_response->error_value()));
   }
+  return SendResponse(ResponseType::kOkay, "", transport);
+}
 
+zx::result<> Fastboot::FlashSuper(Transport* transport) {
+  const std::optional<uint64_t> unsparsed_size = GetUnsparsedSize(download_vmo_mapper_);
+  if (!unsparsed_size.has_value()) {
+    return SendResponse(ResponseType::kFail, "super must be in Android sparse format.", transport,
+                        zx::error(ZX_ERR_NOT_SUPPORTED))
+        .take_error();
+  }
+  // Write the sparse chunk directly to the super partition via the paver.
+  auto data_sink = ConnectToDataSink(transport);
+  if (data_sink.is_error()) {
+    return data_sink.take_error();
+  }
+  auto response = data_sink->WriteSparseVolume(GetWireBufferFromDownload());
+  if (response.status() != ZX_OK) {
+    return SendResponse(ResponseType::kFail,
+                        "Failed to invoke fuchsia.paver/DataSink.WriteSparseVolume", transport,
+                        zx::error(response.status()));
+  }
+  if (response->is_error()) {
+    return SendResponse(ResponseType::kFail, "Failed to flash super", transport,
+                        zx::error(response->error_value()));
+  }
   return SendResponse(ResponseType::kOkay, "", transport);
 }
 
@@ -1052,7 +1072,7 @@ zx::result<> Fastboot::WipeUserdata(Transport* transport) {
   // Since we successfully shredded the data volume, there's no need to preserve any data in the
   // system container. This means we can allow subsequent requests to flash the blob volume to
   // instead directly overwrite the super partition with the new system image.
-  flash_blob_targets_super_ = true;
+  flash_blob_target_ = FlashBlobTarget::kSuper;
   return SendResponse(ResponseType::kOkay, "", transport);
 }
 
