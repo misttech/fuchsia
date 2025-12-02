@@ -17,7 +17,7 @@ use futures::StreamExt;
 use futures::channel::mpsc::UnboundedReceiver;
 use futures::channel::oneshot;
 use futures::executor::block_on;
-use std::ffi::{CStr, c_void};
+use std::ffi::{CStr, CString, c_void};
 use std::str::FromStr;
 use std::sync::LazyLock;
 use std::thread::JoinHandle;
@@ -592,5 +592,78 @@ pub unsafe extern "C" fn publish_service(
         return zx::Status::INTERNAL.into_raw();
     }
 
+    zx::Status::OK.into_raw()
+}
+
+// TODO(https://fxbug.dev/396500079): Support reporting more (or all) characteristics. 43 is enough
+// to pass PTS-bot GATT tests.
+pub const MAX_NUM_CHARACTERISTICS: usize = 43;
+
+/// `characteristic_handles` may start with nonzero entries encoding the handles of GATT
+/// characteristics discovered on the service. Up to 43 handles can be reported here.
+///
+/// `uuid` is the UUID in C string format including a null terminator.
+#[repr(C)]
+pub struct DiscoveredService {
+    pub handle: u64,
+    pub kind: u32,
+    pub uuid: [core::ffi::c_char; 37],
+    pub characteristic_handles: [u64; MAX_NUM_CHARACTERISTICS],
+}
+
+type DiscoverServicesCallback =
+    extern "C" fn(context: *mut c_void, service: *const DiscoveredService);
+
+/// Discover GATT services.
+///
+/// The callback `cb` is invoked on every service. The `context` provided to this function is
+/// included in each invocation of `cb`.
+///
+/// Returns ZX_STATUS_INTERNAL on error (check logs).
+///
+/// # Safety
+///
+/// The caller must ensure `context` and `cb` point to valid memory & a valid callback.
+#[unsafe(no_mangle)]
+pub extern "C" fn discover_services(context: *mut c_void, cb: DiscoverServicesCallback) -> i32 {
+    match block_on(STATE.worker.discover_services()) {
+        Ok(services) => {
+            for service in services {
+                let mut characteristic_handles = [0; MAX_NUM_CHARACTERISTICS];
+                if service.characteristics.as_ref().is_some() {
+                    let characteristics = service.characteristics.as_ref().unwrap();
+                    for i in 0..std::cmp::min(characteristics.len(), MAX_NUM_CHARACTERISTICS) {
+                        characteristic_handles[i] = characteristics[i].handle.unwrap().value;
+                    }
+                }
+
+                let uuid_cstr = CString::new(
+                    fuchsia_bluetooth::types::Uuid::to_string(&service.type_.unwrap().into())
+                        .to_ascii_uppercase(),
+                )
+                .unwrap();
+                let mut uuid_char_arr = [0; 37];
+                uuid_char_arr.copy_from_slice(uuid_cstr.as_bytes_with_nul());
+
+                let discovered_service = DiscoveredService {
+                    handle: service.handle.unwrap().value,
+                    kind: service.kind.unwrap().into_primitive(),
+                    uuid: uuid_char_arr
+                        .into_iter()
+                        .map(|c| c as i8)
+                        .collect::<Vec<i8>>()
+                        .try_into()
+                        .unwrap(),
+                    characteristic_handles: characteristic_handles,
+                };
+
+                cb(context, &discovered_service);
+            }
+        }
+        Err(err) => {
+            eprintln!("discover_services encountered error: {err}");
+            return zx::Status::INTERNAL.into_raw();
+        }
+    }
     zx::Status::OK.into_raw()
 }

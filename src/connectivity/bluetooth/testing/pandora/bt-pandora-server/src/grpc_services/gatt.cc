@@ -29,10 +29,28 @@ Status GattService::DiscoverServiceByUuid(::grpc::ServerContext* context,
   return Status(StatusCode::UNIMPLEMENTED, "");
 }
 
+namespace {
+void DiscoverServicesCb(void* context, const struct DiscoveredService* service) {
+  auto response = static_cast<pandora::DiscoverServicesResponse*>(context);
+  pandora::GattService* new_service = response->add_services();
+  new_service->set_handle(service->handle);
+  new_service->set_uuid(service->uuid, sizeof(service->uuid) - 1);
+  for (uint64_t characteristic_handle : service->characteristic_handles) {
+    if (characteristic_handle == 0) {
+      break;
+    }
+    new_service->add_characteristics()->set_handle(characteristic_handle);
+  }
+}
+}  // namespace
+
 Status GattService::DiscoverServices(::grpc::ServerContext* context,
                                      const ::pandora::DiscoverServicesRequest* request,
                                      ::pandora::DiscoverServicesResponse* response) {
-  return Status(StatusCode::UNIMPLEMENTED, "");
+  if (discover_services(response, DiscoverServicesCb) != ZX_OK) {
+    return Status(StatusCode::INTERNAL, "Error in Rust affordances (check logs)");
+  }
+  return {/*OK*/};
 }
 
 Status GattService::DiscoverServicesSdp(::grpc::ServerContext* context,

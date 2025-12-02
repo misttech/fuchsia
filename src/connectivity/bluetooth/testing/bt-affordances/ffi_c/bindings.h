@@ -11,6 +11,8 @@
 #include <new>
 #include <ostream>
 
+constexpr static const uintptr_t MAX_NUM_CHARACTERISTICS = 43;
+
 /// `address_type` is 1 for Public or 2 for Random, corresponding to the values of
 /// fuchsia.bluetooth/AddressType.
 struct DiscoveredPeer {
@@ -34,6 +36,19 @@ struct LePeer {
 
 /// `peer` is only valid for the duration of this callback.
 using LeScanCallback = void (*)(void *context, const LePeer *peer);
+
+/// `characteristic_handles` may start with nonzero entries encoding the handles of GATT
+/// characteristics discovered on the service. Up to 43 handles can be reported here.
+///
+/// `uuid` is the UUID in C string format including a null terminator.
+struct DiscoveredService {
+  uint64_t handle;
+  uint32_t kind;
+  char uuid[37];
+  uint64_t characteristic_handles[MAX_NUM_CHARACTERISTICS];
+};
+
+using DiscoverServicesCallback = void (*)(void *context, const DiscoveredService *service);
 
 extern "C" {
 
@@ -162,6 +177,18 @@ uint64_t advertise_peripheral(bool connectable, uint8_t address_type, uint64_t t
 int32_t publish_service(uint64_t handle, const char *uuid, uint64_t characteristic_handle,
                         const char *characteristic_uuid, uint16_t characteristic_properties,
                         uint16_t characteristic_permissions);
+
+/// Discover GATT services.
+///
+/// The callback `cb` is invoked on every service. The `context` provided to this function is
+/// included in each invocation of `cb`.
+///
+/// Returns ZX_STATUS_INTERNAL on error (check logs).
+///
+/// # Safety
+///
+/// The caller must ensure `context` and `cb` point to valid memory & a valid callback.
+int32_t discover_services(void *context, DiscoverServicesCallback cb);
 
 }  // extern "C"
 

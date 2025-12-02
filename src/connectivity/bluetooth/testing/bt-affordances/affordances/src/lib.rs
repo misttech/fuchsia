@@ -71,6 +71,7 @@ enum Request {
         Vec<Characteristic>,
         oneshot::Sender<Result<(), anyhow::Error>>,
     ),
+    DiscoverServices(oneshot::Sender<Result<Vec<ServiceInfo>, anyhow::Error>>),
     Stop,
 }
 
@@ -99,7 +100,6 @@ impl WorkThread {
         // TODO(https://fxbug.dev/396500079): Consider HashMap<PeerId, Peer> instead.
         let peer_cache: Arc<Mutex<Vec<Peer>>> = Arc::new(Mutex::new(Vec::new()));
         let mut _l2cap_channel: Channel;
-        let mut _central_connection: ConnectionProxy;
         let mut _peripheral_connection: ClientEnd<ConnectionMarker>;
 
         while let Some(request) = receiver.next().await {
@@ -199,15 +199,7 @@ impl WorkThread {
                     result_sender.send(proxies.stop_le_scan()).unwrap();
                 }
                 Request::ConnectLe(peer_id, result_sender) => {
-                    match proxies.connect_le(&peer_id).await {
-                        Ok(connection) => {
-                            _central_connection = connection;
-                            result_sender.send(Ok(())).unwrap();
-                        }
-                        Err(err) => {
-                            result_sender.send(Err(err)).unwrap();
-                        }
-                    }
+                    result_sender.send(proxies.connect_le(&peer_id).await).unwrap();
                 }
                 Request::AdvertisePeripheral(connectable, address_type, timeout, result_sender) => {
                     match proxies.advertise_peripheral(connectable, address_type, timeout).await {
@@ -241,6 +233,9 @@ impl WorkThread {
                             result_sender.send(Err(err)).unwrap();
                         }
                     }
+                }
+                Request::DiscoverServices(result_sender) => {
+                    result_sender.send(proxies.discover_services().await).unwrap();
                 }
                 Request::Stop => break,
             }
@@ -432,6 +427,13 @@ impl WorkThread {
         ))?;
         receiver.await?
     }
+
+    // Discover the GATT services of the currently connected LE peer.
+    pub async fn discover_services(&self) -> Result<Vec<ServiceInfo>, anyhow::Error> {
+        let (sender, receiver) = oneshot::channel::<Result<Vec<ServiceInfo>, anyhow::Error>>();
+        self.sender.clone().unbounded_send(Request::DiscoverServices(sender))?;
+        receiver.await?
+    }
 }
 
 struct Proxies {
@@ -446,6 +448,7 @@ struct Proxies {
     discoverability_session: Mutex<Option<ProcedureTokenProxy>>,
     suppress_connections_session: Mutex<Option<ProcedureTokenProxy>>,
     le_scan_task: Mutex<Option<Task<()>>>,
+    central_connection: Mutex<Option<ConnectionProxy>>,
 }
 
 impl Proxies {
@@ -465,6 +468,7 @@ impl Proxies {
         let discoverability_session: Mutex<Option<ProcedureTokenProxy>> = Mutex::new(None);
         let suppress_connections_session: Mutex<Option<ProcedureTokenProxy>> = Mutex::new(None);
         let le_scan_task: Mutex<Option<Task<()>>> = Mutex::new(None);
+        let central_connection: Mutex<Option<ConnectionProxy>> = Mutex::new(None);
 
         Ok(Proxies {
             access_proxy,
@@ -478,6 +482,7 @@ impl Proxies {
             discoverability_session,
             suppress_connections_session,
             le_scan_task,
+            central_connection,
         })
     }
 
@@ -840,10 +845,11 @@ impl Proxies {
         self.le_scan_task.lock().take().is_some()
     }
 
-    async fn connect_le(&mut self, peer_id: &PeerId) -> Result<ConnectionProxy, anyhow::Error> {
+    async fn connect_le(&mut self, peer_id: &PeerId) -> Result<(), anyhow::Error> {
         let (le_client, le_server) = fidl::endpoints::create_proxy::<ConnectionMarker>();
         self.central_proxy.connect(peer_id, &ConnectionOptions::default(), le_server)?;
-        Ok(le_client)
+        *self.central_connection.lock() = Some(le_client);
+        Ok(())
     }
 
     async fn advertise_peripheral(
@@ -908,5 +914,29 @@ impl Proxies {
         }
 
         Ok(service_stream)
+    }
+
+    async fn discover_services(&self) -> Result<Vec<ServiceInfo>, anyhow::Error> {
+        let connection = self
+            .central_connection
+            .lock()
+            .clone()
+            .ok_or_else(|| anyhow!("GATT connection not established"))?;
+        let (client_proxy, client_server_end) =
+            fidl::endpoints::create_proxy::<fidl_fuchsia_bluetooth_gatt2::ClientMarker>();
+        connection.request_gatt_client(client_server_end)?;
+
+        let (mut updated, _removed) = client_proxy.watch_services(&[]).await?;
+
+        for service in updated.iter_mut() {
+            let (service_proxy, service_server_end) = fidl::endpoints::create_proxy::<
+                fidl_fuchsia_bluetooth_gatt2::RemoteServiceMarker,
+            >();
+            client_proxy
+                .connect_to_service(&service.handle.as_ref().unwrap(), service_server_end)?;
+            service.characteristics = Some(service_proxy.discover_characteristics().await?);
+        }
+
+        Ok(updated)
     }
 }
