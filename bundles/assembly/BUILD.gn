@@ -434,7 +434,19 @@ assembly_input_bundle("embeddable_userdebug") {
     # shell
     "//zircon/third_party/uapp/dash:bootfs",
   ]
-  toolbox_shards = [ "//src/developer/toolbox/meta/toolbox.cml" ]
+  compiled_packages = [
+    {
+      name = "toolbox"
+      bootfs_package = true
+      components = [
+        {
+          component_name = "toolbox"
+          shards = [ "//src/developer/toolbox/meta/toolbox.cml" ]
+          cmc_features = [ "use_dictionaries" ]
+        },
+      ]
+    },
+  ]
 }
 
 # The most minimal AIB that is included in userdebug and eng assembled systems
@@ -1466,10 +1478,7 @@ assembly_input_bundle("core_realm_development_access") {
     "//src/developer/sshd-host/meta/sshd-host.core_shard.cml",
     "//src/developer/toolbox/meta/toolbox.core_shard.cml",
   ]
-  toolbox_shards = [
-    "//src/developer/remote-control/meta/remote-control.toolbox_shard.cml",
-    "//src/sys/tools/debug-dash-launcher/meta/debug_dash_launcher_from_core.toolbox_shard.cml",
-  ]
+  toolbox_shards = [ "//src/sys/core/meta/core.toolbox_shard.cml" ]
   shell_commands = [
     {
       package = "remote-control"
@@ -1522,7 +1531,6 @@ assembly_input_bundle("bootstrap_realm_development_access") {
     "//src/sys/process-resolver/meta/process_resolver.root_shard.cml",
     "//src/sys/tools/debug-dash-launcher/meta/debug_dash_launcher.root_shard.cml",
   ]
-  toolbox_shards = [ "//src/sys/tools/debug-dash-launcher/meta/debug_dash_launcher.toolbox_shard.cml" ]
 }
 
 assembly_input_bundle("bootstrap_realm_vsock_development_access") {
@@ -1541,7 +1549,6 @@ assembly_input_bundle("bootstrap_realm_vsock_development_access") {
     "//src/developer/remote-control/meta/remote-control.bootstrap_shard.cml",
     "//src/developer/vsock-sshd-host/meta/vsock-sshd-host.bootstrap_shard.cml",
   ]
-  toolbox_shards = [ "//src/developer/remote-control/meta/remote-control.vsock_toolbox_shard.cml" ]
 }
 
 assembly_input_bundle("mdns") {

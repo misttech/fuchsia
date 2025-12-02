@@ -4,5 +4,8 @@
 
 # The allowlist of components that can use a dictionary in CML.
 group("use_dictionaries") {
-  visibility = [ "//src/sys/component_manager/tests/*" ]
+  visibility = [
+    "//bundles/assembly:embeddable_userdebug.compiled_package.toolbox.toolbox.cmc_features",
+    "//src/sys/component_manager/tests/*",
+  ]
 }

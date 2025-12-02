@@ -363,11 +363,6 @@
             as: "toolbox-bootstrap",
             to: "#toolbox",
         },
-        {
-            service: [ "fuchsia.hardware.rtc.Service" ],
-            from: "#bootstrap",
-            to: "#toolbox",
-        },
     ],
     expose: [
         // For reboot_on_terminate

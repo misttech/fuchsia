@@ -161,6 +161,11 @@
             from: "parent",
             to: "#base-drivers",
         },
+        {
+            service: [ "fuchsia.hardware.rtc.Service" ],
+            from: "#base-drivers",
+            to: "self/toolbox",
+        },
     ],
     expose: [
         {

@@ -4,9 +4,14 @@
 {
     use: [
         {
-            protocol: [ "fuchsia.dash.Launcher" ],
+            dictionary: "toolbox-core",
             from: "parent",
-            availability: "optional",
+            path: "/svc",
+        },
+        {
+            dictionary: "toolbox-core-directories",
+            from: "parent",
+            path: "/directories",
         },
     ],
 }
