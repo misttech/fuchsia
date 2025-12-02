@@ -1033,7 +1033,8 @@ TEST(Serializer, ProfilerModuleRecord) {
 
   FakeWriter writer;
   EXPECT_EQ(ZX_OK, fxt::WriteProfilerModuleRecord(&writer, timestamp, thread_ref, module_id, name,
-                                                  strlen(name), build_id, sizeof(build_id)));
+                                                  static_cast<uint8_t>(strlen(name)), build_id,
+                                                  sizeof(build_id)));
 
   // 2 words for header and timestamp, 2 for name, 3 for build_id
   EXPECT_EQ(writer.bytes.size(), fxt::WordSize(7).SizeInBytes());

@@ -74,8 +74,8 @@ zx_status_t WriteProviderInfoMetadataRecord(Writer* writer, uint32_t provider_id
 template <typename Writer, internal::EnableIfWriter<Writer> = 0, RefType thread_type>
 zx_status_t WriteProfilerModuleRecord(Writer* writer, uint64_t timestamp,
                                       const ThreadRef<thread_type>& thread_ref, uint16_t module_id,
-                                      const char* name, size_t name_length, const uint8_t* build_id,
-                                      size_t build_id_length) {
+                                      const char* name, uint8_t name_length,
+                                      const uint8_t* build_id, size_t build_id_length) {
   const WordSize record_size = WordSize(2) /* header, timestamp */ +
                                WordSize::FromBytes(name_length) +
                                WordSize::FromBytes(build_id_length) + thread_ref.PayloadSize();
@@ -148,21 +148,26 @@ zx_status_t WriteProfilerBacktraceRecord(Writer* writer, uint64_t timestamp,
                                          const ThreadRef<thread_type>& thread_ref,
                                          const uint64_t* backtrace_data,
                                          size_t backtrace_data_length_bytes) {
+  const size_t backtrace_data_length = backtrace_data_length_bytes / sizeof(uint64_t);
+  const uint8_t truncated_backtrace_data_length =
+      static_cast<uint8_t>(std::min<size_t>(backtrace_data_length, 255));
+  const size_t truncated_backtrace_data_length_bytes =
+      static_cast<size_t>(truncated_backtrace_data_length) * sizeof(uint64_t);
   const WordSize record_size = WordSize(2) /* header, timestamp */ +
-                               WordSize::FromBytes(backtrace_data_length_bytes) +
+                               WordSize::FromBytes(truncated_backtrace_data_length_bytes) +
                                thread_ref.PayloadSize();
-  const uint64_t header = MakeHeader(RecordType::kProfiler, record_size) |
-                          ProfilerRecordFields::ProfilerRecordType::Make(
-                              ToUnderlyingType(ProfilerRecordType::kBacktrace)) |
-                          ProfilerRecordFields::ThreadRef::Make(thread_ref.HeaderEntry()) |
-                          ProfilerBacktraceRecordFields::BacktraceDataLength::Make(
-                              backtrace_data_length_bytes / sizeof(uint64_t));
+  const uint64_t header =
+      MakeHeader(RecordType::kProfiler, record_size) |
+      ProfilerRecordFields::ProfilerRecordType::Make(
+          ToUnderlyingType(ProfilerRecordType::kBacktrace)) |
+      ProfilerRecordFields::ThreadRef::Make(thread_ref.HeaderEntry()) |
+      ProfilerBacktraceRecordFields::BacktraceDataLength::Make(truncated_backtrace_data_length);
 
   zx::result<typename internal::WriterTraits<Writer>::Reservation> res = writer->Reserve(header);
   if (res.is_ok()) {
     res->WriteWord(timestamp);
     thread_ref.Write(*res);
-    res->WriteBytes(backtrace_data, backtrace_data_length_bytes);
+    res->WriteBytes(backtrace_data, truncated_backtrace_data_length_bytes);
     res->Commit();
   }
   return res.status_value();
