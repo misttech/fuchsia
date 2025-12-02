@@ -941,11 +941,17 @@ pub mod sync {
                 msg,
             )?;
 
+            // Heap allocate the buffer, because on the stack, all the pages would be written to by
+            // the compiler (see stack probing).
+            let mut bytes_out =
+                Vec::<MaybeUninit<u8>>::with_capacity(zx::sys::ZX_CHANNEL_MAX_MSG_BYTES as usize);
+            // SAFETY: Because the type is MaybeUninit, having it use uninitialized memory
+            // is safe.
+            unsafe { bytes_out.set_len(zx::sys::ZX_CHANNEL_MAX_MSG_BYTES as usize) };
+
             // Stack-allocate these buffers to avoid the heap and reuse any populated pages from
             // previous function calls. Use uninitialized memory so that the only writes to this
             // array will be by the kernel for whatever's actually used for the reply.
-            let bytes_out =
-                &mut [MaybeUninit::<u8>::uninit(); zx::sys::ZX_CHANNEL_MAX_MSG_BYTES as usize];
             let handles_out = &mut [const { MaybeUninit::<zx::HandleInfo>::uninit() };
                 zx::sys::ZX_CHANNEL_MAX_MSG_HANDLES as usize];
 
@@ -953,7 +959,13 @@ pub mod sync {
             // and reading.
             let (bytes_out, handles_out) = self
                 .channel
-                .call_etc_uninit(deadline, &write_bytes, &mut write_handles, bytes_out, handles_out)
+                .call_etc_uninit(
+                    deadline,
+                    &write_bytes,
+                    &mut write_handles,
+                    bytes_out.as_mut_slice(),
+                    handles_out,
+                )
                 .map_err(|e| self.wrap_error(Error::ClientCall, e))?;
 
             let (header, body_bytes) = decode_transaction_header(bytes_out)?;
