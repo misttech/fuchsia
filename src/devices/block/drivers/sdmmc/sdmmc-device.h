@@ -83,6 +83,13 @@ class SdmmcDevice {
   zx_status_t SdioSendOpCond(uint32_t ocr, uint32_t* rocr);
   zx_status_t SdioIoRwDirect(bool write, uint32_t fn_idx, uint32_t reg_addr, uint8_t write_byte,
                              uint8_t* read_byte);
+  // Read
+  zx::result<uint8_t> SdioIoRwDirect(uint32_t function, uint32_t address,
+                                     bool suppress_error_messages);
+  // Write
+  zx::result<uint8_t> SdioIoRwDirect(uint32_t function, uint32_t address, uint8_t byte,
+                                     bool read_after_write, bool suppress_error_messages);
+
   zx_status_t SdioIoRwExtended(uint32_t caps, bool write, uint8_t fn_idx, uint32_t reg_addr,
                                bool incr, uint32_t blk_count, uint32_t blk_size,
                                cpp20::span<const sdmmc_buffer_region_t> buffers);

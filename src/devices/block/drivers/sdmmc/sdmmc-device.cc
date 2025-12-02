@@ -561,6 +561,60 @@ zx_status_t SdmmcDevice::SdioIoRwDirect(bool write, uint32_t fn_idx, uint32_t re
   return ZX_OK;
 }
 
+zx::result<uint8_t> SdmmcDevice::SdioIoRwDirect(uint32_t function, uint32_t address,
+                                                bool suppress_error_messages) {
+  uint32_t cmd_arg = 0;
+  UpdateBits(&cmd_arg, SDIO_IO_RW_DIRECT_FN_IDX_MASK, SDIO_IO_RW_DIRECT_FN_IDX_LOC, function);
+  UpdateBits(&cmd_arg, SDIO_IO_RW_DIRECT_REG_ADDR_MASK, SDIO_IO_RW_DIRECT_REG_ADDR_LOC, address);
+  const sdmmc_req_t request = {
+      .cmd_idx = SDIO_IO_RW_DIRECT,
+      .cmd_flags = SDIO_IO_RW_DIRECT_FLAGS,
+      .arg = cmd_arg,
+      .suppress_error_messages = suppress_error_messages,
+  };
+
+  uint32_t response[4];
+  if (zx_status_t status = Request(request, response); status != ZX_OK) {
+    // Let the platform driver handle logging of this error.
+    FDF_LOGL(DEBUG, logger(), "SDIO_IO_RW_DIRECT failed: %s", zx_status_get_string(status));
+    return zx::error(status);
+  }
+
+  const auto read_byte = static_cast<uint8_t>(GetBits(
+      response[0], SDIO_IO_RW_DIRECT_RESP_READ_BYTE_MASK, SDIO_IO_RW_DIRECT_RESP_READ_BYTE_LOC));
+  return zx::ok(read_byte);
+}
+
+zx::result<uint8_t> SdmmcDevice::SdioIoRwDirect(uint32_t function, uint32_t address, uint8_t byte,
+                                                bool read_after_write,
+                                                bool suppress_error_messages) {
+  uint32_t cmd_arg = SDIO_IO_RW_DIRECT_RW_FLAG;
+  if (read_after_write) {
+    cmd_arg |= SDIO_IO_RW_DIRECT_RAW_FLAG;
+  }
+  UpdateBits(&cmd_arg, SDIO_IO_RW_DIRECT_FN_IDX_MASK, SDIO_IO_RW_DIRECT_FN_IDX_LOC, function);
+  UpdateBits(&cmd_arg, SDIO_IO_RW_DIRECT_REG_ADDR_MASK, SDIO_IO_RW_DIRECT_REG_ADDR_LOC, address);
+  UpdateBits(&cmd_arg, SDIO_IO_RW_DIRECT_WRITE_BYTE_MASK, SDIO_IO_RW_DIRECT_WRITE_BYTE_LOC, byte);
+  const bool abort = function == 0 && address == SDIO_CIA_CCCR_ASx_ABORT_SEL_CR_ADDR;
+  const sdmmc_req_t request = {
+      .cmd_idx = SDIO_IO_RW_DIRECT,
+      .cmd_flags = abort ? uint32_t{SDIO_IO_RW_DIRECT_ABORT_FLAGS} : SDIO_IO_RW_DIRECT_FLAGS,
+      .arg = cmd_arg,
+      .suppress_error_messages = abort || suppress_error_messages,
+  };
+
+  uint32_t response[4];
+  if (zx_status_t status = Request(request, response); status != ZX_OK) {
+    // Let the platform driver handle logging of this error.
+    FDF_LOGL(DEBUG, logger(), "SDIO_IO_RW_DIRECT failed: %s", zx_status_get_string(status));
+    return zx::error(status);
+  }
+
+  const auto read_byte = static_cast<uint8_t>(GetBits(
+      response[0], SDIO_IO_RW_DIRECT_RESP_READ_BYTE_MASK, SDIO_IO_RW_DIRECT_RESP_READ_BYTE_LOC));
+  return zx::ok(read_byte);
+}
+
 zx_status_t SdmmcDevice::SdioIoRwExtended(uint32_t caps, bool write, uint8_t fn_idx,
                                           uint32_t reg_addr, bool incr, uint32_t blk_count,
                                           uint32_t blk_size,

@@ -2,4 +2,4 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-sdio_in_soft_transition = False
+sdio_in_soft_transition = True

@@ -80,8 +80,10 @@ class SdioFunctionDevice : public ddk::SdioProtocol<SdioFunctionDevice>,
     void UpdateBlockSize(fuchsia_hardware_sdio::wire::DeviceUpdateBlockSizeRequest* request,
                          fdf::Arena& arena, UpdateBlockSizeCompleter::Sync& completer) override;
     void GetBlockSize(fdf::Arena& arena, GetBlockSizeCompleter::Sync& completer) override;
-    void DoRwByte(fuchsia_hardware_sdio::wire::DeviceDoRwByteRequest* request, fdf::Arena& arena,
-                  DoRwByteCompleter::Sync& completer) override;
+    void ReadByte(fuchsia_hardware_sdio::wire::DeviceReadByteRequest* request, fdf::Arena& arena,
+                  ReadByteCompleter::Sync& completer) override;
+    void WriteByte(fuchsia_hardware_sdio::wire::DeviceWriteByteRequest* request, fdf::Arena& arena,
+                   WriteByteCompleter::Sync& completer) override;
     void GetInBandIntr(fdf::Arena& arena, GetInBandIntrCompleter::Sync& completer) override;
     void AckInBandIntr(fdf::Arena& arena, AckInBandIntrCompleter::Sync& completer) override;
     void IoAbort(fdf::Arena& arena, IoAbortCompleter::Sync& completer) override;
@@ -117,7 +119,8 @@ class SdioFunctionDevice : public ddk::SdioProtocol<SdioFunctionDevice>,
     void UpdateBlockSize(UpdateBlockSizeRequestView request,
                          UpdateBlockSizeCompleter::Sync& completer) override;
     void GetBlockSize(GetBlockSizeCompleter::Sync& completer) override;
-    void DoRwByte(DoRwByteRequestView request, DoRwByteCompleter::Sync& completer) override;
+    void ReadByte(ReadByteRequestView request, ReadByteCompleter::Sync& completer) override;
+    void WriteByte(WriteByteRequestView request, WriteByteCompleter::Sync& completer) override;
     void GetInBandIntr(GetInBandIntrCompleter::Sync& completer) override;
     void AckInBandIntr(AckInBandIntrCompleter::Sync& completer) override;
     void IoAbort(IoAbortCompleter::Sync& completer) override;
@@ -167,9 +170,13 @@ class SdioFunctionDevice : public ddk::SdioProtocol<SdioFunctionDevice>,
   zx::result<fuchsia_hardware_sdio::wire::DeviceGetBlockSizeResponse*> GetBlockSize(
       fuchsia_hardware_sdio::wire::DeviceGetBlockSizeResponse* response);
 
-  zx::result<fuchsia_hardware_sdio::wire::DeviceDoRwByteResponse*> DoRwByte(
-      fuchsia_hardware_sdio::wire::DeviceDoRwByteRequest* request,
-      fuchsia_hardware_sdio::wire::DeviceDoRwByteResponse* response);
+  zx::result<fuchsia_hardware_sdio::wire::DeviceReadByteResponse*> ReadByte(
+      fuchsia_hardware_sdio::wire::DeviceReadByteRequest* request,
+      fuchsia_hardware_sdio::wire::DeviceReadByteResponse* response);
+
+  zx::result<fuchsia_hardware_sdio::wire::DeviceWriteByteResponse*> WriteByte(
+      fuchsia_hardware_sdio::wire::DeviceWriteByteRequest* request,
+      fuchsia_hardware_sdio::wire::DeviceWriteByteResponse* response);
 
   zx::result<fuchsia_hardware_sdio::wire::DeviceGetInBandIntrResponse*> GetInBandIntr(
       fuchsia_hardware_sdio::wire::DeviceGetInBandIntrResponse* response);

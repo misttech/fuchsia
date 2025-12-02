@@ -9,6 +9,7 @@
 #include <lib/async-loop/default.h>
 #include <lib/fdf/arena.h>
 
+#include <optional>
 #include <vector>
 
 #include <zxtest/zxtest.h>
@@ -70,13 +71,20 @@ class SdioTest : public zxtest::Test,
     completer.ReplySuccess();
   }
 
-  void DoRwByte(DoRwByteRequestView request, DoRwByteCompleter::Sync& completer) override {
-    if (request->write) {
-      byte_ = request->write_byte;
-    }
+  void ReadByte(ReadByteRequestView request, ReadByteCompleter::Sync& completer) override {
+    ASSERT_TRUE(byte_.has_value());
+    ASSERT_FALSE(address_.has_value());
+    address_ = request->address;
+    completer.ReplySuccess(byte_.value());
+    byte_.reset();
+  }
 
-    address_ = request->addr;
-    completer.ReplySuccess(request->write ? 0 : byte_);
+  void WriteByte(WriteByteRequestView request, WriteByteCompleter::Sync& completer) override {
+    ASSERT_FALSE(byte_.has_value());
+    ASSERT_FALSE(address_.has_value());
+    byte_ = request->byte;
+    address_ = request->address;
+    completer.ReplySuccess(request->byte);
   }
 
   void GetInBandIntr(GetInBandIntrCompleter::Sync& completer) override {
@@ -119,8 +127,8 @@ class SdioTest : public zxtest::Test,
 
  protected:
   void set_byte(uint8_t byte) { byte_ = byte; }
-  uint8_t get_byte() const { return byte_; }
-  uint32_t get_address() const { return address_; }
+  std::optional<uint8_t> get_byte() const { return byte_; }
+  std::optional<uint32_t> get_address() const { return address_; }
   const std::vector<wire::SdioRwTxn>& get_txns() { return txns_; }
   bool reset() const { return reset_; }
 
@@ -144,8 +152,8 @@ class SdioTest : public zxtest::Test,
   };
 
  private:
-  uint8_t byte_ = 0;
-  uint32_t address_ = 0;
+  std::optional<uint8_t> byte_;
+  std::optional<uint32_t> address_;
   std::vector<wire::SdioRwTxn> txns_;
   fdf::Arena arena_;
   bool reset_ = false;
@@ -166,6 +174,7 @@ TEST_F(SdioTest, Info) {
 }
 
 TEST_F(SdioTest, ReadByte) {
+  set_byte(0xab);
   const char* argv[] = {"read-byte", "0x01234"};
   EXPECT_EQ(0, sdio::RunSdioTool(SdioClient(std::move(client_)), 2, argv));
   EXPECT_EQ(get_address(), 0x01234);

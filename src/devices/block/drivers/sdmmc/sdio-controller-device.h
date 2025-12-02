@@ -69,6 +69,11 @@ class SdioControllerDevice : public fdf::WireServer<fuchsia_hardware_sdmmc::InBa
   zx_status_t SdioGetBlockSize(uint8_t fn_idx, uint16_t* out_cur_blk_size);
   zx_status_t SdioDoRwByte(bool write, uint8_t fn_idx, uint32_t addr, uint8_t write_byte,
                            uint8_t* out_read_byte) TA_EXCL(lock_);
+  zx::result<uint8_t> SdioReadByte(uint8_t function, uint32_t address, bool suppress_error_messages)
+      TA_EXCL(lock_);
+  zx::result<uint8_t> SdioWriteByte(uint8_t function, uint32_t address, uint8_t byte,
+                                    bool read_after_write, bool suppress_error_messages)
+      TA_EXCL(lock_);
   zx_status_t SdioGetInBandIntr(uint8_t fn_idx, zx::interrupt* out_irq);
   void SdioAckInBandIntr(uint8_t fn_idx);
   zx_status_t SdioIoAbort(uint8_t fn_idx) TA_EXCL(lock_);

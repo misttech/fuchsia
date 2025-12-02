@@ -1339,7 +1339,7 @@ TEST_F(SdioControllerDeviceTest, IoAbortSetsAbortFlag) {
     EXPECT_FALSE(req.cmd_flags & SDMMC_CMD_TYPE_ABORT);
     EXPECT_EQ(req.arg, uint32_t{0xb024'68ab});
   });
-  client->DoRwByte(true, 0x1234, 0xab).ThenExactlyOnce([](auto& result) {
+  client->WriteByte(0x1234, 0xab, false, false).ThenExactlyOnce([](auto& result) {
     ASSERT_TRUE(result.ok());
     EXPECT_TRUE(result->is_ok());
   });
@@ -2519,16 +2519,16 @@ TEST_F(SdioControllerDeviceTest, DoRwByteFailsWhenFunctionPoweredOff) {
   sdmmc_.Write(0x1234, std::vector<uint8_t>{0x55}, 2);
 
   // This read should fail with ZX_ERR_BAD_STATE as the function is powered off.
-  client1->DoRwByte(false, 0x1234, 0).ThenExactlyOnce([](auto& result) {
+  client1->ReadByte(0x1234, false).ThenExactlyOnce([](auto& result) {
     ASSERT_TRUE(result.ok());
     ASSERT_TRUE(result->is_error());
     EXPECT_EQ(result->error_value(), ZX_ERR_BAD_STATE);
   });
   // This one should succeed as function 2 is still powered on.
-  client2->DoRwByte(false, 0x1234, 0).ThenExactlyOnce([](auto& result) {
+  client2->ReadByte(0x1234, false).ThenExactlyOnce([](auto& result) {
     ASSERT_TRUE(result.ok());
     ASSERT_TRUE(result->is_ok());
-    EXPECT_EQ(result->value()->read_byte, 0x55);
+    EXPECT_EQ(result->value()->byte, 0x55);
   });
   driver_test().runtime().RunUntilIdle();
 
@@ -2539,10 +2539,10 @@ TEST_F(SdioControllerDeviceTest, DoRwByteFailsWhenFunctionPoweredOff) {
       });
   driver_test().runtime().RunUntilIdle();
 
-  client1->DoRwByte(false, 0x1234, 0).ThenExactlyOnce([&](auto& result) {
+  client1->ReadByte(0x1234, false).ThenExactlyOnce([&](auto& result) {
     ASSERT_TRUE(result.ok());
     ASSERT_TRUE(result->is_ok());
-    EXPECT_EQ(result->value()->read_byte, 0xaa);
+    EXPECT_EQ(result->value()->byte, 0xaa);
   });
   driver_test().runtime().RunUntilIdle();
 }

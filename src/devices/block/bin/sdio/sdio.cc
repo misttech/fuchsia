@@ -202,7 +202,7 @@ int Info(SdioClient client) {
 }
 
 int ReadByte(SdioClient client, uint32_t address, int argc, const char** argv) {
-  auto result = client->DoRwByte(false, address, 0);
+  auto result = client->ReadByte(address, false);
   if (!result.ok()) {
     fprintf(stderr, "FIDL call DoRwByte failed: %d\n", result.status());
     return 1;
@@ -212,7 +212,7 @@ int ReadByte(SdioClient client, uint32_t address, int argc, const char** argv) {
     return 1;
   }
 
-  printf("0x%02x\n", result.value()->read_byte);
+  printf("0x%02x\n", result.value()->byte);
   return 0;
 }
 
@@ -228,7 +228,7 @@ int WriteByte(SdioClient client, uint32_t address, int argc, const char** argv) 
     return 1;
   }
 
-  auto result = client->DoRwByte(true, address, write_value);
+  auto result = client->WriteByte(address, write_value, false, false);
   if (!result.ok()) {
     fprintf(stderr, "FIDL call DoRwByte failed: %d\n", result.status());
     return 1;

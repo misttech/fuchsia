@@ -562,6 +562,39 @@ zx_status_t SdioControllerDevice::SdioDoRwByte(bool write, uint8_t fn_idx, uint3
   return SdioDoRwByteLocked(write, fn_idx, addr, write_byte, out_read_byte);
 }
 
+zx::result<uint8_t> SdioControllerDevice::SdioReadByte(uint8_t function, uint32_t address,
+                                                       bool suppress_error_messages) {
+  std::lock_guard<std::mutex> lock(lock_);
+  if (!SdioFnIdxValid(function)) {
+    return zx::error(ZX_ERR_INVALID_ARGS);
+  }
+  if (!function_power_on_[function]) {
+    return zx::error(ZX_ERR_BAD_STATE);
+  }
+  if (shutdown_) {
+    return zx::error(ZX_ERR_CANCELED);
+  }
+
+  return sdmmc_->SdioIoRwDirect(function, address, suppress_error_messages);
+}
+
+zx::result<uint8_t> SdioControllerDevice::SdioWriteByte(uint8_t function, uint32_t address,
+                                                        uint8_t byte, bool read_after_write,
+                                                        bool suppress_error_messages) {
+  std::lock_guard<std::mutex> lock(lock_);
+  if (!SdioFnIdxValid(function)) {
+    return zx::error(ZX_ERR_INVALID_ARGS);
+  }
+  if (!function_power_on_[function]) {
+    return zx::error(ZX_ERR_BAD_STATE);
+  }
+  if (shutdown_) {
+    return zx::error(ZX_ERR_CANCELED);
+  }
+
+  return sdmmc_->SdioIoRwDirect(function, address, byte, read_after_write, suppress_error_messages);
+}
+
 zx_status_t SdioControllerDevice::SdioDoRwByteLocked(bool write, uint8_t fn_idx, uint32_t addr,
                                                      uint8_t write_byte, uint8_t* out_read_byte) {
   if (!SdioFnIdxValid(fn_idx)) {

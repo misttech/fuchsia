@@ -269,11 +269,18 @@ void SdioFunctionDevice::DriverTransportImpl::GetBlockSize(fdf::Arena& arena,
   completer.buffer(arena).Reply(parent_->GetBlockSize(&response));
 }
 
-void SdioFunctionDevice::DriverTransportImpl::DoRwByte(
-    fuchsia_hardware_sdio::wire::DeviceDoRwByteRequest* request, fdf::Arena& arena,
-    DoRwByteCompleter::Sync& completer) {
-  fuchsia_hardware_sdio::wire::DeviceDoRwByteResponse response{};
-  completer.buffer(arena).Reply(parent_->DoRwByte(request, &response));
+void SdioFunctionDevice::DriverTransportImpl::ReadByte(
+    fuchsia_hardware_sdio::wire::DeviceReadByteRequest* request, fdf::Arena& arena,
+    ReadByteCompleter::Sync& completer) {
+  fuchsia_hardware_sdio::wire::DeviceReadByteResponse response{};
+  completer.buffer(arena).Reply(parent_->ReadByte(request, &response));
+}
+
+void SdioFunctionDevice::DriverTransportImpl::WriteByte(
+    fuchsia_hardware_sdio::wire::DeviceWriteByteRequest* request, fdf::Arena& arena,
+    WriteByteCompleter::Sync& completer) {
+  fuchsia_hardware_sdio::wire::DeviceWriteByteResponse response{};
+  completer.buffer(arena).Reply(parent_->WriteByte(request, &response));
 }
 
 void SdioFunctionDevice::DriverTransportImpl::GetInBandIntr(
@@ -377,10 +384,16 @@ void SdioFunctionDevice::ZirconTransportImpl::GetBlockSize(GetBlockSizeCompleter
   completer.Reply(parent_->GetBlockSize(&response));
 }
 
-void SdioFunctionDevice::ZirconTransportImpl::DoRwByte(DoRwByteRequestView request,
-                                                       DoRwByteCompleter::Sync& completer) {
-  fuchsia_hardware_sdio::wire::DeviceDoRwByteResponse response{};
-  completer.Reply(parent_->DoRwByte(request, &response));
+void SdioFunctionDevice::ZirconTransportImpl::ReadByte(ReadByteRequestView request,
+                                                       ReadByteCompleter::Sync& completer) {
+  fuchsia_hardware_sdio::wire::DeviceReadByteResponse response{};
+  completer.Reply(parent_->ReadByte(request, &response));
+}
+
+void SdioFunctionDevice::ZirconTransportImpl::WriteByte(WriteByteRequestView request,
+                                                        WriteByteCompleter::Sync& completer) {
+  fuchsia_hardware_sdio::wire::DeviceWriteByteResponse response{};
+  completer.Reply(parent_->WriteByte(request, &response));
 }
 
 void SdioFunctionDevice::ZirconTransportImpl::GetInBandIntr(
@@ -501,12 +514,29 @@ SdioFunctionDevice::GetBlockSize(
                          response);
 }
 
-zx::result<fuchsia_hardware_sdio::wire::DeviceDoRwByteResponse*> SdioFunctionDevice::DoRwByte(
-    fuchsia_hardware_sdio::wire::DeviceDoRwByteRequest* request,
-    fuchsia_hardware_sdio::wire::DeviceDoRwByteResponse* response) {
-  return zx::make_result(sdio_parent_->SdioDoRwByte(request->write, function_, request->addr,
-                                                    request->write_byte, &response->read_byte),
-                         response);
+zx::result<fuchsia_hardware_sdio::wire::DeviceReadByteResponse*> SdioFunctionDevice::ReadByte(
+    fuchsia_hardware_sdio::wire::DeviceReadByteRequest* request,
+    fuchsia_hardware_sdio::wire::DeviceReadByteResponse* response) {
+  zx::result<uint8_t> byte =
+      sdio_parent_->SdioReadByte(function_, request->address, request->suppress_error_messages);
+  if (byte.is_error()) {
+    return byte.take_error();
+  }
+  response->byte = byte.value();
+  return zx::ok(response);
+}
+
+zx::result<fuchsia_hardware_sdio::wire::DeviceWriteByteResponse*> SdioFunctionDevice::WriteByte(
+    fuchsia_hardware_sdio::wire::DeviceWriteByteRequest* request,
+    fuchsia_hardware_sdio::wire::DeviceWriteByteResponse* response) {
+  zx::result<uint8_t> byte =
+      sdio_parent_->SdioWriteByte(function_, request->address, request->byte,
+                                  request->read_after_write, request->suppress_error_messages);
+  if (byte.is_error()) {
+    return byte.take_error();
+  }
+  response->byte = byte.value();
+  return zx::ok(response);
 }
 
 zx::result<fuchsia_hardware_sdio::wire::DeviceGetInBandIntrResponse*>
