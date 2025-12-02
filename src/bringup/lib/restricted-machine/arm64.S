@@ -19,32 +19,35 @@
   .epilogue.fp
 
   // Restore the callee saved regs
-  ldp x28, x27, [sp], #16
+  ldp x28, x27, [sp, #16*0]
   .cfi_adjust_cfa_offset -16
   .cfi_same_value x28
   .cfi_same_value x27
-  ldp x26, x25, [sp], #16
+  ldp x26, x25, [sp, #16*1]
   .cfi_adjust_cfa_offset -16
   .cfi_same_value x26
   .cfi_same_value x25
-  ldp x24, x23, [sp], #16
+  ldp x24, x23, [sp, #16*2]
   .cfi_adjust_cfa_offset -16
   .cfi_same_value x24
   .cfi_same_value x23
-  ldp x22, x21, [sp], #16
+  ldp x22, x21, [sp, #16*3]
   .cfi_adjust_cfa_offset -16
   .cfi_same_value x22
   .cfi_same_value x21
-  ldp x20, x19, [sp], #16
+  ldp x20, x19, [sp, #16*4]
   .cfi_adjust_cfa_offset -16
   .cfi_same_value x20
   .cfi_same_value x19
 
   // Restore the reason code pointer and shadow call stack pointer from the stack.
-  ldp x2, x18, [sp], #16
+  ldp x2, x18, [sp, #16*5]
   .cfi_adjust_cfa_offset -16
   .cfi_same_value x18
   .cfi_same_value x2
+
+  // Pop off all the now-restored state.
+  add sp, sp, #16*6
 
   // Return the reason code from this function by setting the reason code pointer.
   str  x1, [x2]
@@ -58,31 +61,34 @@
 .function restricted_enter_wrapper, global
   // Args 0 - 1 are already in place in X0 and X1.
 
+  // Make space on the stack for the 12 registers saved below.
+  sub sp, sp, #16*6
+
   // Save the reason code pointer and shadow call stack pointer on the stack.
-  stp x2, x18, [sp, #-16]!
+  stp x2, x18, [sp, #16*5]
   .cfi_adjust_cfa_offset 16
   .cfi_rel_offset x2, 0
   .cfi_rel_offset x18, 8
 
   // Save the callee saved regs since the return from restricted mode
   // will modify all registers.
-  stp x20, x19, [sp, #-16]!
+  stp x20, x19, [sp, #16*4]
   .cfi_adjust_cfa_offset 16
   .cfi_rel_offset x20, 0
   .cfi_rel_offset x19, 8
-  stp x22, x21, [sp, #-16]!
+  stp x22, x21, [sp, #16*3]
   .cfi_adjust_cfa_offset 16
   .cfi_rel_offset x22, 0
   .cfi_rel_offset x21, 8
-  stp x24, x23, [sp, #-16]!
+  stp x24, x23, [sp, #16*2]
   .cfi_adjust_cfa_offset 16
   .cfi_rel_offset x24, 0
   .cfi_rel_offset x23, 8
-  stp x26, x25, [sp, #-16]!
+  stp x26, x25, [sp, #16*1]
   .cfi_adjust_cfa_offset 16
   .cfi_rel_offset x26, 0
   .cfi_rel_offset x25, 8
-  stp x28, x27, [sp, #-16]!
+  stp x28, x27, [sp, #16*0]
   .cfi_adjust_cfa_offset 16
   .cfi_rel_offset x28, 0
   .cfi_rel_offset x27, 8
@@ -100,32 +106,36 @@
   .epilogue.fp
 
   // Restore the callee saved regs
-  ldp x28, x27, [sp], #16
+  ldp x28, x27, [sp, #16*0]
   .cfi_adjust_cfa_offset -16
   .cfi_same_value x28
   .cfi_same_value x27
-  ldp x26, x25, [sp], #16
+  ldp x26, x25, [sp, #16*1]
   .cfi_adjust_cfa_offset -16
   .cfi_same_value x26
   .cfi_same_value x25
-  ldp x24, x23, [sp], #16
+  ldp x24, x23, [sp, #16*2]
   .cfi_adjust_cfa_offset -16
   .cfi_same_value x24
   .cfi_same_value x23
-  ldp x22, x21, [sp], #16
+  ldp x22, x21, [sp, #16*3]
   .cfi_adjust_cfa_offset -16
   .cfi_same_value x22
   .cfi_same_value x21
-  ldp x20, x19, [sp], #16
+  ldp x20, x19, [sp, #16*4]
   .cfi_adjust_cfa_offset -16
   .cfi_same_value x20
   .cfi_same_value x19
 
   // Restore the reason code pointer and shadow call stack pointer from the stack.
-  ldp x2, x18, [sp], #16
+  ldp x2, x18, [sp, #16*5]
   .cfi_adjust_cfa_offset -16
   .cfi_same_value x18
   .cfi_same_value x2
+
+  // Pop all the callee saved registers off the stack.
+  add sp, sp, #16*6
+
   ret
 .end_function
 
