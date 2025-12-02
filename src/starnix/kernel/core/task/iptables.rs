@@ -67,106 +67,98 @@ struct IpTable {
 
 impl IpTable {
     fn accept_policy_v4() -> Vec<u8> {
-        let mut bytes = Vec::new();
-        bytes.extend_from_slice(
+        [
             ipt_entry {
                 target_offset: IPT_ENTRY_SIZE,
                 next_offset: IPT_ENTRY_SIZE + STANDARD_TARGET_SIZE,
                 ..Default::default()
             }
             .as_bytes(),
-        );
-        bytes.extend_from_slice(
             xt_entry_target { target_size: STANDARD_TARGET_SIZE, ..Default::default() }.as_bytes(),
-        );
-        bytes.extend_from_slice(
             iptables_utils::VerdictWithPadding {
                 verdict: iptables_utils::VERDICT_ACCEPT,
                 ..Default::default()
             }
             .as_bytes(),
-        );
-        bytes
+        ]
+        .concat()
     }
 
     fn accept_policy_v6() -> Vec<u8> {
-        let mut bytes = Vec::new();
-        bytes.extend_from_slice(
+        [
             ip6t_entry {
                 target_offset: IP6T_ENTRY_SIZE,
                 next_offset: IP6T_ENTRY_SIZE + STANDARD_TARGET_SIZE,
                 ..Default::default()
             }
             .as_bytes(),
-        );
-        bytes.extend_from_slice(
             xt_entry_target { target_size: STANDARD_TARGET_SIZE, ..Default::default() }.as_bytes(),
-        );
-        bytes.extend_from_slice(
             iptables_utils::VerdictWithPadding {
                 verdict: iptables_utils::VERDICT_ACCEPT,
                 ..Default::default()
             }
             .as_bytes(),
-        );
-        bytes
+        ]
+        .concat()
     }
 
     fn end_of_input_v4() -> Vec<u8> {
-        let target_name = string_to_ascii_buffer("ERROR").expect("convert \"ERROR\" to ASCII");
-        let errorname = string_to_ascii_buffer("ERROR").expect("convert \"ERROR\" to ASCII");
-
-        let mut bytes = Vec::new();
-        bytes.extend_from_slice(
+        [
             ipt_entry {
                 target_offset: IPT_ENTRY_SIZE,
                 next_offset: IPT_ENTRY_SIZE + ERROR_TARGET_SIZE,
                 ..Default::default()
             }
             .as_bytes(),
-        );
-        bytes.extend_from_slice(
-            xt_entry_target { target_size: ERROR_TARGET_SIZE, name: target_name, revision: 0 }
-                .as_bytes(),
-        );
-        bytes.extend_from_slice(
-            iptables_utils::ErrorNameWithPadding { errorname, ..Default::default() }.as_bytes(),
-        );
-        bytes
+            xt_entry_target {
+                target_size: ERROR_TARGET_SIZE,
+                name: string_to_ascii_buffer("ERROR").expect("convert \"ERROR\" to ASCII"),
+                revision: 0,
+            }
+            .as_bytes(),
+            iptables_utils::ErrorNameWithPadding {
+                errorname: string_to_ascii_buffer("ERROR").expect("convert \"ERROR\" to ASCII"),
+                ..Default::default()
+            }
+            .as_bytes(),
+        ]
+        .concat()
     }
 
     fn end_of_input_v6() -> Vec<u8> {
-        let target_name = string_to_ascii_buffer("ERROR").expect("convert \"ERROR\" to ASCII");
-        let errorname = string_to_ascii_buffer("ERROR").expect("convert \"ERROR\" to ASCII");
-
-        let mut bytes = Vec::new();
-        bytes.extend_from_slice(
+        [
             ip6t_entry {
                 target_offset: IP6T_ENTRY_SIZE,
                 next_offset: IP6T_ENTRY_SIZE + ERROR_TARGET_SIZE,
                 ..Default::default()
             }
             .as_bytes(),
-        );
-        bytes.extend_from_slice(
-            xt_entry_target { target_size: ERROR_TARGET_SIZE, name: target_name, revision: 0 }
-                .as_bytes(),
-        );
-        bytes.extend_from_slice(
-            iptables_utils::ErrorNameWithPadding { errorname, ..Default::default() }.as_bytes(),
-        );
-        bytes
+            xt_entry_target {
+                target_size: ERROR_TARGET_SIZE,
+                name: string_to_ascii_buffer("ERROR").expect("convert \"ERROR\" to ASCII"),
+                revision: 0,
+            }
+            .as_bytes(),
+            iptables_utils::ErrorNameWithPadding {
+                errorname: string_to_ascii_buffer("ERROR").expect("convert \"ERROR\" to ASCII"),
+                ..Default::default()
+            }
+            .as_bytes(),
+        ]
+        .concat()
     }
 
     fn default_ipv4_nat_table() -> Self {
         let hook_entry = NAT_HOOKS.map(|n| n * u32::from(IPT_ENTRY_SIZE + STANDARD_TARGET_SIZE));
-        let mut entries = Vec::new();
-        entries.extend(Self::accept_policy_v4());
-        entries.extend(Self::accept_policy_v4());
-        entries.extend(Self::accept_policy_v4());
-        entries.extend(Self::accept_policy_v4());
-        entries.extend(Self::end_of_input_v4());
-
+        let accept_policy = Self::accept_policy_v4();
+        let entries = [
+            accept_policy.as_slice(),
+            accept_policy.as_slice(),
+            accept_policy.as_slice(),
+            accept_policy.as_slice(),
+            Self::end_of_input_v4().as_slice(),
+        ]
+        .concat();
         Self {
             valid_hooks: NfIpHooks::NAT.bits(),
             hook_entry,
@@ -180,12 +172,15 @@ impl IpTable {
 
     fn default_ipv6_nat_table() -> Self {
         let hook_entry = NAT_HOOKS.map(|n| n * u32::from(IP6T_ENTRY_SIZE + STANDARD_TARGET_SIZE));
-        let mut entries = Vec::new();
-        entries.extend(Self::accept_policy_v6());
-        entries.extend(Self::accept_policy_v6());
-        entries.extend(Self::accept_policy_v6());
-        entries.extend(Self::accept_policy_v6());
-        entries.extend(Self::end_of_input_v6());
+        let accept_policy = Self::accept_policy_v6();
+        let entries = [
+            accept_policy.as_slice(),
+            accept_policy.as_slice(),
+            accept_policy.as_slice(),
+            accept_policy.as_slice(),
+            Self::end_of_input_v6().as_slice(),
+        ]
+        .concat();
 
         Self {
             valid_hooks: NfIpHooks::NAT.bits(),
@@ -200,11 +195,14 @@ impl IpTable {
 
     fn default_ipv4_filter_table() -> Self {
         let hook_entry = FILTER_HOOKS.map(|n| n * u32::from(IPT_ENTRY_SIZE + STANDARD_TARGET_SIZE));
-        let mut entries = Vec::new();
-        entries.extend(Self::accept_policy_v4());
-        entries.extend(Self::accept_policy_v4());
-        entries.extend(Self::accept_policy_v4());
-        entries.extend(Self::end_of_input_v4());
+        let accept_policy = Self::accept_policy_v4();
+        let entries = [
+            accept_policy.as_slice(),
+            accept_policy.as_slice(),
+            accept_policy.as_slice(),
+            Self::end_of_input_v4().as_slice(),
+        ]
+        .concat();
 
         Self {
             valid_hooks: NfIpHooks::FILTER.bits(),
@@ -220,11 +218,14 @@ impl IpTable {
     fn default_ipv6_filter_table() -> Self {
         let hook_entry =
             FILTER_HOOKS.map(|n| n * u32::from(IP6T_ENTRY_SIZE + STANDARD_TARGET_SIZE));
-        let mut entries = Vec::new();
-        entries.extend(Self::accept_policy_v6());
-        entries.extend(Self::accept_policy_v6());
-        entries.extend(Self::accept_policy_v6());
-        entries.extend(Self::end_of_input_v6());
+        let accept_policy = Self::accept_policy_v6();
+        let entries = [
+            accept_policy.as_slice(),
+            accept_policy.as_slice(),
+            accept_policy.as_slice(),
+            Self::end_of_input_v6().as_slice(),
+        ]
+        .concat();
 
         Self {
             valid_hooks: NfIpHooks::FILTER.bits(),
@@ -239,13 +240,16 @@ impl IpTable {
 
     fn default_ipv4_mangle_table() -> Self {
         let hook_entry = MANGLE_HOOKS.map(|n| n * u32::from(IPT_ENTRY_SIZE + STANDARD_TARGET_SIZE));
-        let mut entries = Vec::new();
-        entries.extend(Self::accept_policy_v4());
-        entries.extend(Self::accept_policy_v4());
-        entries.extend(Self::accept_policy_v4());
-        entries.extend(Self::accept_policy_v4());
-        entries.extend(Self::accept_policy_v4());
-        entries.extend(Self::end_of_input_v4());
+        let accept_policy = Self::accept_policy_v4();
+        let entries = [
+            accept_policy.as_slice(),
+            accept_policy.as_slice(),
+            accept_policy.as_slice(),
+            accept_policy.as_slice(),
+            accept_policy.as_slice(),
+            Self::end_of_input_v4().as_slice(),
+        ]
+        .concat();
 
         Self {
             valid_hooks: NfIpHooks::MANGLE.bits(),
@@ -261,13 +265,16 @@ impl IpTable {
     fn default_ipv6_mangle_table() -> Self {
         let hook_entry =
             MANGLE_HOOKS.map(|n| n * u32::from(IP6T_ENTRY_SIZE + STANDARD_TARGET_SIZE));
-        let mut entries = Vec::new();
-        entries.extend(Self::accept_policy_v6());
-        entries.extend(Self::accept_policy_v6());
-        entries.extend(Self::accept_policy_v6());
-        entries.extend(Self::accept_policy_v6());
-        entries.extend(Self::accept_policy_v6());
-        entries.extend(Self::end_of_input_v6());
+        let accept_policy = Self::accept_policy_v6();
+        let entries = [
+            accept_policy.as_slice(),
+            accept_policy.as_slice(),
+            accept_policy.as_slice(),
+            accept_policy.as_slice(),
+            accept_policy.as_slice(),
+            Self::end_of_input_v6().as_slice(),
+        ]
+        .concat();
 
         Self {
             valid_hooks: NfIpHooks::MANGLE.bits(),
@@ -282,10 +289,13 @@ impl IpTable {
 
     fn default_ipv4_raw_table() -> Self {
         let hook_entry = RAW_HOOKS.map(|n| n * u32::from(IPT_ENTRY_SIZE + STANDARD_TARGET_SIZE));
-        let mut entries = Vec::new();
-        entries.extend(Self::accept_policy_v4());
-        entries.extend(Self::accept_policy_v4());
-        entries.extend(Self::end_of_input_v4());
+        let accept_policy = Self::accept_policy_v4();
+        let entries = [
+            accept_policy.as_slice(),
+            accept_policy.as_slice(),
+            Self::end_of_input_v4().as_slice(),
+        ]
+        .concat();
 
         Self {
             valid_hooks: NfIpHooks::RAW.bits(),
@@ -300,10 +310,13 @@ impl IpTable {
 
     fn default_ipv6_raw_table() -> Self {
         let hook_entry = RAW_HOOKS.map(|n| n * u32::from(IP6T_ENTRY_SIZE + STANDARD_TARGET_SIZE));
-        let mut entries = Vec::new();
-        entries.extend(Self::accept_policy_v6());
-        entries.extend(Self::accept_policy_v6());
-        entries.extend(Self::end_of_input_v6());
+        let accept_policy = Self::accept_policy_v6();
+        let entries = [
+            accept_policy.as_slice(),
+            accept_policy.as_slice(),
+            Self::end_of_input_v6().as_slice(),
+        ]
+        .concat();
 
         Self {
             valid_hooks: NfIpHooks::RAW.bits(),
