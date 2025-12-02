@@ -129,6 +129,8 @@ function prepare_bazel_workspace {
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"/../lib/vars.sh || exit $?
 fx-config-read
 
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"/../lib/bazel_utils.sh || exit $?
+
 case "$(uname -s)" in
 Linux*) ;;
 Darwin*)
@@ -151,24 +153,6 @@ esac
 declare -x PATH=$PREBUILT_CMAKE_DIR/cmake/bin:$PATH
 export RUSTC=$PREBUILT_RUST_DIR/bin/rustc
 export CARGO=$PREBUILT_RUST_DIR/bin/cargo
-
-GNAW_TARGET="host-tools/gnaw"
-GNAW_BIN="${FUCHSIA_BUILD_DIR}/${GNAW_TARGET}"
-
-if [[ "$1" == "--no-build" ]]; then
-  if [ ! -f "$GNAW_BIN" ]; then
-    fx-error "--no-build was specified, but $GNAW_BIN does not exist."
-    fx-error "Rerun without --no-build to build cargo-gnaw."
-    exit 1
-  fi
-else
-  fx-run-ninja false ${PREBUILT_NINJA} -C ${FUCHSIA_BUILD_DIR} ${GNAW_TARGET} || (
-    fx-error "Failed to build cargo-gnaw."
-    fx-error "This can happen after cargo-gnaw exits early."
-    fx-error "To retry an old build of cargo-gnaw, specify --no-build."
-    exit 1
-  )
-fi
 
 export VENDOR_DIR=$FUCHSIA_DIR/third_party/rust_crates/vendor
 export TMP=$(mktemp -d)
@@ -230,7 +214,7 @@ $(propagate_license_files $TMP $VENDOR_DIR)
 # regenerate BUILD.gn
 (
   cd $FUCHSIA_DIR
-  $GNAW_BIN \
+  fx-run-bazel false "$(fx-get-bazel)" run --config=host '//tools/cargo-gnaw:cargo-gnaw-bin' -- \
     --manifest-path $FUCHSIA_DIR/third_party/rust_crates/Cargo.toml \
     --project-root $FUCHSIA_DIR \
     --cargo $CARGO \

@@ -7,6 +7,7 @@ load("//build/tools/bazel2gn/bazel_rules:defs.bzl", "rustc_binary", "rustc_libra
 
 package(default_visibility = ["//visibility:public"])
 
+# @bazel2gn:skip
 rustc_binary(
     name = "cargo-gnaw-bin",
     srcs = ["src/main.rs"],
