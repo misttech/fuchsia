@@ -557,6 +557,12 @@
             source_availability: "unknown",
         },
         {
+            protocol: [ "fuchsia.bluetooth.avrcp.PeerManager" ],
+            from: "#bt-avrcp",
+            to: "#session-manager",
+            source_availability: "unknown",
+        },
+        {
             protocol: "fuchsia.bluetooth.a2dp.AudioMode",
             from: "#bt-a2dp",
             to: "#session-manager",
