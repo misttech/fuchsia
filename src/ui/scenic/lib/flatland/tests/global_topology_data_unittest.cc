@@ -62,7 +62,7 @@ namespace flatland::test {
     EXPECT_EQ(all_handles, (data).live_handles);     \
   }
 
-view_tree::SubtreeSnapshot GenerateSnapshot(
+std::unique_ptr<view_tree::SubtreeSnapshot> GenerateSnapshot(
     const UberStruct::InstanceMap& uber_structs, const GlobalTopologyData::LinkTopologyMap& links,
     TransformHandle::InstanceId link_instance_id, TransformHandle root,
     const std::unordered_map<TransformHandle, TransformHandle>&
@@ -89,7 +89,7 @@ view_tree::SubtreeHitTester GenerateHitTester(
         link_child_to_parent_transform_map) {
   auto snapshot = GenerateSnapshot(uber_structs, links, link_instance_id, root,
                                    link_child_to_parent_transform_map);
-  return std::move(snapshot.hit_tester);
+  return std::move(snapshot->hit_tester);
 }
 
 TEST(GlobalTopologyDataTest, GlobalTopologyUnknownGraph) {
@@ -1317,7 +1317,7 @@ TEST(GlobalTopologyDataTest, PartialScreenViews_HaveCorrectTransforms) {
   int checksum = 0;
 
   // Iterate through snapshot and confirm |local_from_world_transform|s look good.
-  for (auto const& view_kv : snapshot.view_tree) {
+  for (auto const& view_kv : snapshot->view_tree) {
     auto koid = view_kv.first;
     glm::mat4 local_from_world_transform = view_kv.second.local_from_world_transform;
 
@@ -1392,7 +1392,7 @@ TEST(GlobalTopologyDataTest, PartialScreenViews_HaveCorrectTransforms) {
     }
   }
 
-  EXPECT_EQ(snapshot.view_tree.size(), 5u);
+  EXPECT_EQ(snapshot->view_tree.size(), 5u);
   EXPECT_EQ(checksum, 0b11111);
 }
 
@@ -1445,8 +1445,10 @@ TEST(GlobalTopologyDataTest, ViewTreeSnapshot) {
 
   // Since the global topology is only 2 instances, we should only see two views: the root and the
   // child, one a child of the other.
-  const auto [root, view_tree, unconnected_views, _, tree_boundaries] = GenerateSnapshot(
-      uber_structs, links, kLinkInstanceId, /*root*/ {1, 0}, link_child_to_parent_transform_map);
+
+  const auto snapshot = GenerateSnapshot(uber_structs, links, kLinkInstanceId, /*root*/ {1, 0},
+                                         link_child_to_parent_transform_map);
+  const auto& [root, view_tree, unconnected_views, _, tree_boundaries] = *snapshot;
   EXPECT_EQ(root, view_ref1_koid);
   EXPECT_EQ(view_tree.size(), 2u);
 
@@ -1506,9 +1508,11 @@ TEST(GlobalTopologyDataTest, ViewTreeSnapshot_UnconnectedLocalTopology) {
 
   // The generated snapshot should now have the root topology expressed in the ViewTree, while the
   // unconnected topology should be represented as an unconnected view.
-  const auto [root, view_tree, unconnected_views, _, tree_boundaries] =
+  const auto snapshot =
       GenerateSnapshot(uber_structs, /*links=*/{}, kLinkInstanceId, /*root=*/{1, 0},
                        /*link_child_to_parent_transform_map=*/{});
+  const auto& [root, view_tree, unconnected_views, _, tree_boundaries] = *snapshot;
+
   EXPECT_EQ(root, view_ref1_koid);
   EXPECT_EQ(view_tree.size(), 1u);
 
@@ -1601,12 +1605,12 @@ TEST(GlobalTopologyDataTest, ViewTreeSnapshot_AnonymousView) {
 
   // View 3 is anonymous, so it and its children should not appear in the ViewTree; instead marked
   // as unconnected.
-  EXPECT_EQ(snapshot.view_tree.size(), 2u);
-  EXPECT_TRUE(snapshot.view_tree.contains(view_ref_1_koid));
-  EXPECT_TRUE(snapshot.view_tree.contains(view_ref_2_koid));
-  EXPECT_EQ(snapshot.unconnected_views.size(), 2u);
-  EXPECT_TRUE(snapshot.unconnected_views.contains(view_ref_4_koid));
-  EXPECT_TRUE(snapshot.unconnected_views.contains(view_ref_5_koid));
+  EXPECT_EQ(snapshot->view_tree.size(), 2u);
+  EXPECT_TRUE(snapshot->view_tree.contains(view_ref_1_koid));
+  EXPECT_TRUE(snapshot->view_tree.contains(view_ref_2_koid));
+  EXPECT_EQ(snapshot->unconnected_views.size(), 2u);
+  EXPECT_TRUE(snapshot->unconnected_views.contains(view_ref_4_koid));
+  EXPECT_TRUE(snapshot->unconnected_views.contains(view_ref_5_koid));
 }
 
 /// The following 3 unit tests test edgecases where there is only a single child for

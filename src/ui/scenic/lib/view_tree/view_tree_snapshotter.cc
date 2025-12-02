@@ -132,14 +132,18 @@ void ViewTreeSnapshotter::UpdateSnapshot() const {
   std::multimap<zx_koid_t, zx_koid_t> tree_boundaries;
 
   // Merge subtrees.
-  for (auto& generate_subtrees : subtree_generators_) {
-    SubtreeSnapshot subtree;
+  for (auto& generator : subtree_generators_) {
+    std::unique_ptr<SubtreeSnapshot> subtree;
     {
       TRACE_DURATION("gfx", "ViewTreeSnapshotter::UpdateSnapshot [generate]");
-      subtree = generate_subtrees();
+      GeneratedSubtreeSnapshot generated_subtree = generator();
+      FX_CHECK(std::holds_alternative<std::unique_ptr<SubtreeSnapshot>>(generated_subtree))
+          << "Only full snapshots are currently supported";
+      subtree = std::move(std::get<std::unique_ptr<SubtreeSnapshot>>(generated_subtree));
+      FX_DCHECK(subtree);
     }
-    FX_DCHECK(ValidateSubtree(subtree));
-    auto& [root, view_tree, unconnected_views, hit_tester, subtree_boundaries] = subtree;
+    FX_DCHECK(ValidateSubtree(*subtree));
+    auto& [root, view_tree, unconnected_views, hit_tester, subtree_boundaries] = *subtree;
 
     TRACE_DURATION("gfx", "ViewTreeSnapshotter::UpdateSnapshot [merge]");
 

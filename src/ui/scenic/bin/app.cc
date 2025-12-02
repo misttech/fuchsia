@@ -661,9 +661,8 @@ void App::InitializeHeartbeat(display::Display& display) {
     subtrees_generator_callbacks.emplace_back([this] {
       if (auto display = flatland_manager_->GetPrimaryFlatlandDisplayForRendering()) {
         return flatland_engine_->GenerateViewTreeSnapshot(display->root_transform());
-      } else {
-        return view_tree::SubtreeSnapshot{};  // Empty snapshot.
       }
+      return view_tree::GeneratedSubtreeSnapshot(std::make_unique<view_tree::SubtreeSnapshot>());
     });
 
     // All subscriber callbacks get called with the new snapshot every time one is generated (once

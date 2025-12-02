@@ -207,7 +207,8 @@ void Engine::CleanUpFrame() {
   previous_scene_state_ = std::move(current_scene_state_);
 }
 
-view_tree::SubtreeSnapshot Engine::GenerateViewTreeSnapshot(const TransformHandle& root_transform) {
+view_tree::GeneratedSubtreeSnapshot Engine::GenerateViewTreeSnapshot(
+    const TransformHandle& root_transform) {
   TRACE_DURATION("gfx", "flatland::Engine::GenerateViewTreeSnapshot");
 
   FX_DCHECK(current_scene_state_);

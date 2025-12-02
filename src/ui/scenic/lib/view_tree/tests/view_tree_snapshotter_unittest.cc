@@ -56,8 +56,8 @@ std::vector<SubtreeSnapshotGenerator> BasicTree() {
 
   // A
   subtree_generators.emplace_back([] {
-    SubtreeSnapshot subtree;
-    auto& [root, view_tree, unconnected_views, hit_tester, tree_boundaries] = subtree;
+    auto subtree = std::make_unique<SubtreeSnapshot>();
+    auto& [root, view_tree, unconnected_views, hit_tester, tree_boundaries] = *subtree;
 
     root = kRoot1A;
     view_tree[kRoot1A] = NewViewNode(ZX_KOID_INVALID, {kNode2, kNode3});
@@ -72,8 +72,8 @@ std::vector<SubtreeSnapshotGenerator> BasicTree() {
 
   // B
   subtree_generators.emplace_back([] {
-    SubtreeSnapshot subtree;
-    auto& [root, view_tree, unconnected_views, hit_tester, tree_boundaries] = subtree;
+    auto subtree = std::make_unique<SubtreeSnapshot>();
+    auto& [root, view_tree, unconnected_views, hit_tester, tree_boundaries] = *subtree;
 
     root = kRoot4B;
     view_tree[kRoot4B] = NewViewNode(ZX_KOID_INVALID, {kNode5});
@@ -84,8 +84,8 @@ std::vector<SubtreeSnapshotGenerator> BasicTree() {
 
   // C
   subtree_generators.emplace_back([] {
-    SubtreeSnapshot subtree;
-    auto& [root, view_tree, unconnected_views, hit_tester, tree_boundaries] = subtree;
+    auto subtree = std::make_unique<SubtreeSnapshot>();
+    auto& [root, view_tree, unconnected_views, hit_tester, tree_boundaries] = *subtree;
 
     root = kRoot6C;
     view_tree[kRoot6C] = NewViewNode(ZX_KOID_INVALID, {kNode7});
@@ -205,13 +205,13 @@ TEST(ViewTreeSnapshotterTest, MultipleUpdateSessionsCalls) {
   std::vector<SubtreeSnapshotGenerator> subtrees;
   bool first_call = true;
   subtrees.emplace_back([&first_call] {
-    SubtreeSnapshot subtree;
+    auto subtree = std::make_unique<SubtreeSnapshot>();
     if (first_call) {
-      subtree.root = kRoot1A;
-      subtree.view_tree[kRoot1A] = NewViewNode(ZX_KOID_INVALID, {});
+      subtree->root = kRoot1A;
+      subtree->view_tree[kRoot1A] = NewViewNode(ZX_KOID_INVALID, {});
     } else {
-      subtree.root = kRoot4B;
-      subtree.view_tree[kRoot4B] = NewViewNode(ZX_KOID_INVALID, {});
+      subtree->root = kRoot4B;
+      subtree->view_tree[kRoot4B] = NewViewNode(ZX_KOID_INVALID, {});
     }
     first_call = false;
     return subtree;
@@ -243,9 +243,9 @@ TEST(ViewTreeSnapshotterTest, MultipleUpdateSessionsCalls) {
 TEST(ViewTreeSnapshotterTest, SubscriberCallbackLifetime) {
   std::vector<SubtreeSnapshotGenerator> subtrees;
   subtrees.emplace_back([] {
-    SubtreeSnapshot subtree;
-    subtree.root = kRoot1A;
-    subtree.view_tree[kRoot1A] = NewViewNode(ZX_KOID_INVALID, {});
+    auto subtree = std::make_unique<SubtreeSnapshot>();
+    subtree->root = kRoot1A;
+    subtree->view_tree[kRoot1A] = NewViewNode(ZX_KOID_INVALID, {});
     return subtree;
   });
 

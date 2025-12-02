@@ -13,7 +13,7 @@
 
 namespace view_tree {
 
-using SubtreeSnapshotGenerator = fit::function<SubtreeSnapshot()>;
+using SubtreeSnapshotGenerator = fit::function<GeneratedSubtreeSnapshot()>;
 
 // Class for building and handing out snapshots of a ViewTree out of subtrees.
 // All calls to ViewTreeSnapshotter must be made on the same thread.

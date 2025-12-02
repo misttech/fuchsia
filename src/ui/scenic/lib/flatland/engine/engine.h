@@ -64,7 +64,8 @@ class Engine {
   // Snapshots the current Flatland content tree rooted at |root_transform|. |root_transform| is set
   // from the root transform of the display returned from
   // |FlatlandManager::GetPrimaryFlatlandDisplayForRendering|.
-  view_tree::SubtreeSnapshot GenerateViewTreeSnapshot(const TransformHandle& root_transform);
+  view_tree::GeneratedSubtreeSnapshot GenerateViewTreeSnapshot(
+      const TransformHandle& root_transform);
 
   // Returns all renderables reachable from the display's root transform.
   Renderables GetRenderables(const FlatlandDisplay& display);

@@ -118,7 +118,7 @@ struct GlobalTopologyData {
                                         TransformHandle::InstanceId link_instance_id,
                                         TransformHandle root);
 
-  static view_tree::SubtreeSnapshot GenerateViewTreeSnapshot(
+  static std::unique_ptr<view_tree::SubtreeSnapshot> GenerateViewTreeSnapshot(
       const GlobalTopologyData& data, HitRegions hit_regions,
       std::vector<TransformClipRegion> global_clip_regions,
       const std::vector<glm::mat3>& global_matrix_vector,

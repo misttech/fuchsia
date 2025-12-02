@@ -16,6 +16,7 @@
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
+#include <variant>
 #include <vector>
 
 #include "src/ui/scenic/lib/types/view_ref.h"
@@ -157,6 +158,13 @@ struct SubtreeSnapshot {
   // Multimap so that one key can have multiple children.
   std::multimap<zx_koid_t, zx_koid_t> tree_boundaries;
 };
+
+// Input to ViewTreeSnapshotter.  Indicates that there is no difference since the last
+// SubtreeSnapshot was provided.
+struct SubtreeSnapshotNoDiff {};
+
+using GeneratedSubtreeSnapshot =
+    std::variant<std::unique_ptr<SubtreeSnapshot>, SubtreeSnapshotNoDiff>;
 
 std::ostream& operator<<(std::ostream& os, const ViewNode& node);
 std::ostream& operator<<(std::ostream& os, const Snapshot& snapshot);

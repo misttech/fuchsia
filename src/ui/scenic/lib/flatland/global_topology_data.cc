@@ -597,7 +597,7 @@ void GlobalTopologyData::ComputeGlobalTopologyData(GlobalTopologyData& output,
 #endif
 }
 
-view_tree::SubtreeSnapshot GlobalTopologyData::GenerateViewTreeSnapshot(
+std::unique_ptr<view_tree::SubtreeSnapshot> GlobalTopologyData::GenerateViewTreeSnapshot(
     const GlobalTopologyData& data, HitRegions hit_regions,
     std::vector<TransformClipRegion> global_clip_regions,
     const std::vector<glm::mat3>& global_matrix_vector,
@@ -607,11 +607,11 @@ view_tree::SubtreeSnapshot GlobalTopologyData::GenerateViewTreeSnapshot(
   const auto root_values = FindRoot(data.topology_vector, data.view_refs);
   if (!root_values.has_value()) {
     // No root -> Empty ViewTree.
-    return {};
+    return std::make_unique<view_tree::SubtreeSnapshot>();
   }
 
-  view_tree::SubtreeSnapshot output;
-  auto& [root, view_tree, unconnected_views, hit_tester, _] = output;
+  auto output = std::make_unique<view_tree::SubtreeSnapshot>();
+  auto& [root, view_tree, unconnected_views, hit_tester, _] = *output;
 
   const auto [root_index, root_koid] = root_values.value();
   root = root_koid;
