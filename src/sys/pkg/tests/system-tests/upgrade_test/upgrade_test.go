@@ -87,6 +87,11 @@ func doTest(ctx context.Context) error {
 	}
 	defer deviceClient.Close()
 
+	target, err := ffx.GetDisambiguatedTarget(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to locate a suitable target: %w", err)
+	}
+
 	// Now that we're connected to the device we can emit logs with the
 	// estimated device monotonic time.
 	l := logger.NewLogger(
@@ -158,12 +163,13 @@ func doTest(ctx context.Context) error {
 
 	currentBootSlot := <-ch
 
-	return testOTAs(ctx, deviceClient, ffx.IsolateDir(), otas, currentBootSlot)
+	return testOTAs(ctx, deviceClient, target.NodeName, ffx.IsolateDir(), otas, currentBootSlot)
 }
 
 func testOTAs(
 	ctx context.Context,
 	device *device.Client,
+	target string,
 	ffxIsolateDir ffx.IsolateDir,
 	otas []*otaData,
 	currentBootSlot *sl4f.Configuration,
@@ -185,6 +191,7 @@ func testOTAs(
 				if err := systemOTA(
 					ctx,
 					device,
+					target,
 					ffxIsolateDir,
 					srcOta,
 					dstOta,
@@ -267,6 +274,7 @@ func initializeDevice(
 func systemOTA(
 	ctx context.Context,
 	device *device.Client,
+	target string,
 	ffxIsolateDir ffx.IsolateDir,
 	srcOta *otaData,
 	dstOta *otaData,
@@ -300,6 +308,7 @@ func systemOTA(
 			ctx,
 			nextFfxTool,
 			device,
+			target,
 			dstOta,
 			currentBootSlot,
 			!c.buildExpectUnknownFirmware,
@@ -347,6 +356,7 @@ func otaToPackage(
 	ctx context.Context,
 	nextFfxTool *ffx.FFXTool,
 	device *device.Client,
+	target string,
 	ota *otaData,
 	currentBootSlot *sl4f.Configuration,
 	checkForUnknownFirmware bool,
@@ -361,7 +371,7 @@ func otaToPackage(
 		return err
 	}
 
-	if err := u.Update(ctx, nextFfxTool, device, ota.updatePackage); err != nil {
+	if err := u.Update(ctx, nextFfxTool, device, target, ota.updatePackage); err != nil {
 		return fmt.Errorf("failed to download OTA: %w", err)
 	}
 

@@ -6,12 +6,14 @@ package ffx
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -58,10 +60,26 @@ func (f *FFXTool) StopDaemon(ctx context.Context) error {
 	return err
 }
 
+// TargetAddress represents a single address for a target.
+// It corresponds to ffx's enum JsonTargetAddress.
+type TargetAddress struct {
+	Type    string `json:"type"`
+	IP      string `json:"ip,omitempty"`       // for Type == "Ip"
+	SSHPort uint16 `json:"ssh_port,omitempty"` // for Type == "Ip"
+	CID     uint32 `json:"cid,omitempty"`      // for Type == "VSock" or "Usb"
+}
+
+// Target represents a single Fuchsia device/emulator.
+// It corresponds to the Rust struct JsonTarget.
 type TargetEntry struct {
-	NodeName    string   `json:"nodename"`
-	Addresses   []string `json:"addresses"`
-	TargetState string   `json:"target_state"`
+	NodeName    string          `json:"nodename"`
+	RCSState    string          `json:"rcs_state"` // "Y" or "N"
+	Serial      string          `json:"serial"`
+	TargetType  string          `json:"target_type"`  // board/product, like "core.x64" or "Unknown"
+	TargetState string          `json:"target_state"` // e.g., "Product", "Fastboot", "Zedboot"
+	Addresses   []TargetAddress `json:"addresses"`
+	IsDefault   bool            `json:"is_default"`
+	IsManual    bool            `json:"is_manual"`
 }
 
 func (f *FFXTool) TargetList(ctx context.Context) ([]TargetEntry, error) {
@@ -90,6 +108,32 @@ func (f *FFXTool) TargetList(ctx context.Context) ([]TargetEntry, error) {
 	return entries, nil
 }
 
+// GetDisambiguatedTarget is like TargetList, but returns exactly one target, enforcing the
+// following rules:
+// 1. Return the target if only one is found.
+// 2. Return the default target if it is set.
+// 3. Return the first target in the list if multiple targets are found, sorted by target name.
+func (f *FFXTool) GetDisambiguatedTarget(ctx context.Context) (TargetEntry, error) {
+	targets, err := f.TargetList(ctx)
+	if err != nil {
+		return TargetEntry{}, err
+	}
+
+	if len(targets) == 1 {
+		return targets[0], nil
+	}
+
+	for _, v := range targets {
+		if v.IsDefault {
+			return v, nil
+		}
+	}
+
+	return slices.MinFunc(targets, func(a, b TargetEntry) int {
+		return cmp.Compare(a.NodeName, b.NodeName)
+	}), nil
+}
+
 func (f *FFXTool) TargetListForNode(ctx context.Context, nodeName string) ([]TargetEntry, error) {
 	entries, err := f.TargetList(ctx)
 	if err != nil {
@@ -116,7 +160,7 @@ func (f *FFXTool) WaitForTarget(ctx context.Context, address string) (TargetEntr
 
 		for _, target := range entries {
 			for _, addr := range target.Addresses {
-				if addr == address {
+				if addr.Type == "Ip" && addr.IP == address {
 					return target, nil
 				}
 			}
@@ -212,8 +256,10 @@ func (f *FFXTool) TargetGetSshTime(ctx context.Context, target string) (time.Dur
 	return monotonicTime, nil
 }
 
-func (f *FFXTool) TargetUpdateChannelSet(ctx context.Context, channel string) error {
+func (f *FFXTool) TargetUpdateChannelSet(ctx context.Context, target string, channel string) error {
 	args := []string{
+		"--target",
+		target,
 		"target",
 		"update",
 		"channel",
@@ -225,8 +271,10 @@ func (f *FFXTool) TargetUpdateChannelSet(ctx context.Context, channel string) er
 	return err
 }
 
-func (f *FFXTool) TargetUpdateCheckNowMonitor(ctx context.Context) ([]byte, error) {
+func (f *FFXTool) TargetUpdateCheckNowMonitor(ctx context.Context, target string) ([]byte, error) {
 	args := []string{
+		"--target",
+		target,
 		"target",
 		"update",
 		"check-now",
@@ -236,9 +284,11 @@ func (f *FFXTool) TargetUpdateCheckNowMonitor(ctx context.Context) ([]byte, erro
 	return f.runFFXCmd(ctx, args...)
 }
 
-func (f *FFXTool) TargetUpdateForceInstallNoReboot(ctx context.Context, url string) error {
+func (f *FFXTool) TargetUpdateForceInstallNoReboot(ctx context.Context, target string, url string) error {
 	args := []string{
 		"--direct",
+		"--target",
+		target,
 		"target",
 		"update",
 		"force-install",

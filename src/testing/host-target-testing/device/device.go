@@ -723,17 +723,19 @@ func (c *Client) Flash(
 func (c *Client) ForceInstall(
 	ctx context.Context,
 	ffx *ffx.FFXTool,
+	target string,
 	url string,
 ) error {
-	return ffx.TargetUpdateForceInstallNoReboot(ctx, url)
+	return ffx.TargetUpdateForceInstallNoReboot(ctx, target, url)
 }
 
 // Monitors the update for the connected client
 func (c *Client) MonitorUpdate(
 	ctx context.Context,
 	ffx *ffx.FFXTool,
+	target string,
 ) (string, error) {
-	s, err := ffx.TargetUpdateCheckNowMonitor(ctx)
+	s, err := ffx.TargetUpdateCheckNowMonitor(ctx, target)
 	return string(s), err
 }
 
@@ -741,9 +743,10 @@ func (c *Client) MonitorUpdate(
 func (c *Client) SetUpdateChannel(
 	ctx context.Context,
 	ffx *ffx.FFXTool,
+	target string,
 	channel string,
 ) error {
-	return ffx.TargetUpdateChannelSet(ctx, channel)
+	return ffx.TargetUpdateChannelSet(ctx, target, channel)
 }
 
 func (c *Client) Name() string {

@@ -200,7 +200,13 @@ func (r *FfxResolver) ResolveName(ctx context.Context) (string, error) {
 		return "", fmt.Errorf("no address found for nodename %v: %v", nodeName, target)
 	}
 
-	return target.Addresses[0], nil
+	for _, v := range target.Addresses {
+		if v.Type == "Ip" {
+			return v.IP, nil
+		}
+	}
+
+	return "", fmt.Errorf("no IP address found for nodename %v: %v", nodeName, target)
 }
 
 func (r *FfxResolver) ResolveSshAddress(ctx context.Context) (string, error) {

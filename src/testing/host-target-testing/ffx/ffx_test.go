@@ -49,8 +49,8 @@ func TestTargetListEmpty(t *testing.T) {
 
 func TestTargetList(t *testing.T) {
 	expected_entries := []TargetEntry{
-		{NodeName: "1", Addresses: []string{"127.0.0.1"}, TargetState: "Product"},
-		{NodeName: "2", Addresses: []string{"127.0.0.2"}, TargetState: "Product"},
+		{NodeName: "1", Addresses: []TargetAddress{{Type: "Ip", IP: "127.0.0.1"}}, TargetState: "Product"},
+		{NodeName: "2", Addresses: []TargetAddress{{Type: "Ip", IP: "127.0.0.2"}}, TargetState: "Product"},
 	}
 	data, err := json.Marshal(expected_entries)
 	if err != nil {

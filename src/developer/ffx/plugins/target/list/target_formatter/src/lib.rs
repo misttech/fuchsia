@@ -25,6 +25,7 @@ const UNKNOWN: &'static str = "<unknown>";
 const PADDING_SPACES: usize = 4;
 
 const DEFAULT_SSH_PORT: u16 = 22;
+
 pub fn port_str(ta: TargetAddr) -> String {
     match ta {
         TargetAddr::Net(mut addr) => {
@@ -380,6 +381,7 @@ impl From<TargetAddr> for JsonTargetAddress {
     }
 }
 
+// LINT.IfChange
 #[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Eq, JsonSchema)]
 pub struct JsonTarget {
     nodename: String,
@@ -391,6 +393,8 @@ pub struct JsonTarget {
     is_default: bool,
     is_manual: bool,
 }
+// LINT.ThenChange(//src/testing/host-target-testing/ffx/ffx.go)
+
 // Second field is printed last in this implementation, everything else is printed in order.
 make_structs_and_support_functions!(
     nodename,

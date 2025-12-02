@@ -53,9 +53,9 @@ type client interface {
 		createRewriteRule bool,
 		rewritePackages []string) (*packages.Server, error)
 	Run(ctx context.Context, command []string, stdout io.Writer, stderr io.Writer) error
-	SetUpdateChannel(ctx context.Context, ffxTool *ffx.FFXTool, channel string) error
-	MonitorUpdate(ctx context.Context, ffxTool *ffx.FFXTool) (string, error)
-	ForceInstall(ctx context.Context, ffxTool *ffx.FFXTool, url string) error
+	SetUpdateChannel(ctx context.Context, ffxTool *ffx.FFXTool, target string, channel string) error
+	MonitorUpdate(ctx context.Context, ffxTool *ffx.FFXTool, target string) (string, error)
+	ForceInstall(ctx context.Context, ffxTool *ffx.FFXTool, target string, url string) error
 }
 
 type Updater interface {
@@ -63,6 +63,7 @@ type Updater interface {
 		ctx context.Context,
 		ffxTool *ffx.FFXTool,
 		c client,
+		target string,
 		updatePackage *packages.UpdatePackage,
 	) error
 }
@@ -126,6 +127,7 @@ func (u *SystemUpdateChecker) Update(
 	ctx context.Context,
 	ffxTool *ffx.FFXTool,
 	c client,
+	target string,
 	srcUpdatePackage *packages.UpdatePackage,
 ) error {
 	// If we're using the default update package url, we can directly update
@@ -135,6 +137,7 @@ func (u *SystemUpdateChecker) Update(
 			ctx,
 			ffxTool,
 			c,
+			target,
 			srcUpdatePackage.Repository(),
 			true,
 			u.checkForUnkownFirmware,
@@ -182,6 +185,7 @@ func (u *SystemUpdateChecker) Update(
 		ctx,
 		ffxTool,
 		c,
+		target,
 		tempRepo,
 		true,
 		u.checkForUnkownFirmware,
@@ -192,6 +196,7 @@ func updateCheckNow(
 	ctx context.Context,
 	ffxTool *ffx.FFXTool,
 	c client,
+	target string,
 	repo *packages.Repository,
 	createRewriteRule bool,
 	checkForUnkownFirmware bool,
@@ -228,7 +233,7 @@ func updateCheckNow(
 
 		ch := c.DisconnectionListener()
 
-		if err := c.SetUpdateChannel(ctx, ffxTool, "trigger-ota"); err != nil {
+		if err := c.SetUpdateChannel(ctx, ffxTool, target, "trigger-ota"); err != nil {
 			logger.Warningf(ctx, "update channel set via ffx failed: %v. The device may be running an old version of system-update-checker or incompatible RCS.", err)
 			logger.Warningf(ctx, "retrying with /bin/update")
 			cmd := []string{
@@ -242,7 +247,7 @@ func updateCheckNow(
 			}
 		}
 
-		stdout, err := c.MonitorUpdate(ctx, ffxTool)
+		stdout, err := c.MonitorUpdate(ctx, ffxTool, target)
 		if err != nil {
 			logger.Warningf(ctx, "update monitoring via ffx failed: %v. Retrying via /bin/update.", err)
 			cmd := []string{
@@ -329,6 +334,7 @@ func (u *SystemUpdater) Update(
 	ctx context.Context,
 	ffxTool *ffx.FFXTool,
 	c client,
+	target string,
 	srcUpdate *packages.UpdatePackage,
 ) error {
 	startTime := time.Now()
@@ -352,7 +358,7 @@ func (u *SystemUpdater) Update(
 	updatePackageUrl := fmt.Sprintf("fuchsia-pkg://%s/%s", repoName, dstUpdate.Path())
 	logger.Infof(ctx, "Downloading OTA %q", updatePackageUrl)
 
-	if err := c.ForceInstall(ctx, ffxTool, fmt.Sprintf("%q", updatePackageUrl)); err != nil {
+	if err := c.ForceInstall(ctx, ffxTool, target, fmt.Sprintf("%q", updatePackageUrl)); err != nil {
 		logger.Errorf(ctx, "failed to run system updater via ffx: %w, retrying via /bin/update", err)
 		cmd := []string{
 			"/bin/update",
@@ -418,6 +424,7 @@ func (u *OmahaUpdater) Update(
 	ctx context.Context,
 	ffxTool *ffx.FFXTool,
 	c client,
+	target string,
 	srcUpdate *packages.UpdatePackage,
 ) error {
 	logger.Infof(ctx, "injecting omaha_url into %q", srcUpdate)
@@ -478,6 +485,7 @@ func (u *OmahaUpdater) Update(
 		ctx,
 		ffxTool,
 		c,
+		target,
 		dstUpdate.Repository(),
 		!u.workaroundOtaNoRewriteRules,
 		u.checkForUnkownFirmware,
