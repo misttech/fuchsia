@@ -3,47 +3,83 @@
 // found in the LICENSE file.
 
 use anyhow::Error;
+use async_lock::OnceCell;
 use fidl_fuchsia_feedback::{LastRebootInfoProviderMarker, RebootReason};
+use fidl_fuchsia_io as fio;
 use fuchsia_component::client::connect_to_protocol_sync;
+use fuchsia_fs::node::OpenError;
 use log::{debug, info};
+use zx_status::Status;
+
+/// Temp file for the Starnix lifecycle detection
+const STARTED_ONCE: &str = "component-started-once";
 
 /// Timeout for FIDL calls to LastRebootInfoProvider
 const LRIP_FIDL_TIMEOUT: zx::MonotonicDuration = zx::MonotonicDuration::INFINITE;
+static ANDROID_BOOTREASON: OnceCell<Result<String, Error>> = OnceCell::new();
 
 /// Get an Android-compatible boot reason suitable to add to the cmdline or bootconfig.
-pub fn get_android_bootreason() -> Result<&'static str, Error> {
+pub async fn get_android_bootreason(
+    dir: Option<fio::DirectoryProxy>,
+) -> &'static Result<String, Error> {
+    ANDROID_BOOTREASON.get_or_init(async || update_android_bootreason(dir).await).await
+}
+
+/// Update the Android bootreason.
+///
+/// Called only once when the Starnix kernel is initialized.
+/// If called more than once, it reports false Android crash cases to Pitot.
+async fn update_android_bootreason(dir: Option<fio::DirectoryProxy>) -> Result<String, Error> {
+    if let Some(dir) = dir {
+        match fuchsia_fs::directory::open_file(&dir, STARTED_ONCE, fio::Flags::FLAG_MUST_CREATE)
+            .await
+        {
+            Ok(_file) => (),
+            Err(OpenError::OpenError(Status::ALREADY_EXISTS)) => {
+                info!("Session restart observed, set android bootreason to kernel_panic.");
+                return Ok("kernel_panic".to_string());
+            }
+            Err(err) => {
+                info!(
+                    "Failed to generate the file with err {err:#?}. Continue with LastRebootInfo."
+                );
+            }
+        }
+    }
+
     info!("Converting LastRebootInfo to an android-friendly bootreason.");
     let reboot_info_proxy = connect_to_protocol_sync::<LastRebootInfoProviderMarker>()?;
     let deadline = zx::MonotonicInstant::after(LRIP_FIDL_TIMEOUT);
     let reboot_info = reboot_info_proxy.get(deadline)?;
 
-    match reboot_info.reason {
-        Some(RebootReason::Unknown) => return Ok("reboot,unknown"),
-        Some(RebootReason::Cold) => return Ok("reboot,cold"),
-        Some(RebootReason::BriefPowerLoss) => return Ok("reboot,hard_reset"),
-        Some(RebootReason::Brownout) => return Ok("reboot,undervoltage"),
-        Some(RebootReason::KernelPanic) => return Ok("kernel_panic"),
-        Some(RebootReason::SystemOutOfMemory) => return Ok("kernel_panic,oom"),
-        Some(RebootReason::HardwareWatchdogTimeout) => return Ok("watchdog"),
-        Some(RebootReason::SoftwareWatchdogTimeout) => return Ok("watchdog,sw"),
-        Some(RebootReason::RootJobTermination) => return Ok("kernel_panic"),
-        Some(RebootReason::UserRequest) => return Ok("reboot,userrequested"),
-        Some(RebootReason::DeveloperRequest) => return Ok("reboot,shell"),
-        Some(RebootReason::RetrySystemUpdate) => return Ok("reboot,ota"),
-        Some(RebootReason::HighTemperature) => return Ok("shutdown,thermal"),
-        Some(RebootReason::SessionFailure) => return Ok("kernel_panic"),
-        Some(RebootReason::SysmgrFailure) => return Ok("kernel_panic"),
-        Some(RebootReason::FactoryDataReset) => return Ok("reboot,factory_reset"),
-        Some(RebootReason::CriticalComponentFailure) => return Ok("kernel_panic"),
-        Some(RebootReason::ZbiSwap) => return Ok("reboot,normal"),
-        Some(RebootReason::SystemUpdate) => return Ok("reboot,ota"),
-        Some(RebootReason::NetstackMigration) => return Ok("reboot,normal"),
-        Some(RebootReason::AndroidUnexpectedReason) => return Ok("reboot,normal"),
-        Some(RebootReason::AndroidRescueParty) => return Ok("reboot,rescueparty"),
-        Some(RebootReason::AndroidCriticalProcessFailure) => return Ok("reboot,userspace_failed"),
-        Some(RebootReason::__SourceBreaking { .. }) => return Ok("reboot,normal"),
-        None => return Ok("reboot,unknown"),
-    }
+    let bootreason = match reboot_info.reason {
+        Some(RebootReason::Unknown) => "reboot,unknown",
+        Some(RebootReason::Cold) => "reboot,cold",
+        Some(RebootReason::BriefPowerLoss) => "reboot,hard_reset",
+        Some(RebootReason::Brownout) => "reboot,undervoltage",
+        Some(RebootReason::KernelPanic) => "kernel_panic",
+        Some(RebootReason::SystemOutOfMemory) => "kernel_panic,oom",
+        Some(RebootReason::HardwareWatchdogTimeout) => "watchdog",
+        Some(RebootReason::SoftwareWatchdogTimeout) => "watchdog,sw",
+        Some(RebootReason::RootJobTermination) => "kernel_panic",
+        Some(RebootReason::UserRequest) => "reboot,userrequested",
+        Some(RebootReason::DeveloperRequest) => "reboot,shell",
+        Some(RebootReason::RetrySystemUpdate) => "reboot,ota",
+        Some(RebootReason::HighTemperature) => "shutdown,thermal",
+        Some(RebootReason::SessionFailure) => "kernel_panic",
+        Some(RebootReason::SysmgrFailure) => "kernel_panic",
+        Some(RebootReason::FactoryDataReset) => "reboot,factory_reset",
+        Some(RebootReason::CriticalComponentFailure) => "kernel_panic",
+        Some(RebootReason::ZbiSwap) => "reboot,normal",
+        Some(RebootReason::SystemUpdate) => "reboot,ota",
+        Some(RebootReason::NetstackMigration) => "reboot,normal",
+        Some(RebootReason::AndroidUnexpectedReason) => "reboot,normal",
+        Some(RebootReason::AndroidRescueParty) => "reboot,rescueparty",
+        Some(RebootReason::AndroidCriticalProcessFailure) => "reboot,userspace_failed",
+        Some(RebootReason::__SourceBreaking { .. }) => "reboot,normal",
+        None => "reboot,unknown",
+    };
+    Ok(bootreason.to_string())
 }
 
 /// Get the last reboot reason code.
@@ -72,8 +108,8 @@ fn get_reboot_reason() -> Option<u16> {
 /// The ramoops won't be created after a normal reboot.
 pub fn get_console_ramoops() -> Option<Vec<u8>> {
     debug!("Getting console-ramoops contents");
-    match get_android_bootreason() {
-        Ok(reason) => match reason {
+    match ANDROID_BOOTREASON.wait_blocking() {
+        Ok(reason) => match reason.as_str() {
             "kernel_panic" | "watchdog" | "watchdog,sw" => {
                 Some(format!("Last Reboot Reason: {}\n", get_reboot_reason()?).as_bytes().to_vec())
                 // TODO: Log additional crash signature.

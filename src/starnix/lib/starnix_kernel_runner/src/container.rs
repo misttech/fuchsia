@@ -587,7 +587,16 @@ async fn create_container(
     }
     if features.android_bootreason {
         kernel_cmdline.extend(b" androidboot.bootreason=");
-        match get_android_bootreason() {
+
+        let tmp_channel = start_info.container_namespace.get_namespace_channel("/tmp_lifecycle");
+        let tmp_proxy = match tmp_channel {
+            Ok(channel) => {
+                Some(fio::DirectoryProxy::new(fidl::AsyncChannel::from_channel(channel)))
+            }
+            _ => None,
+        };
+
+        match get_android_bootreason(tmp_proxy).await {
             Ok(reason) => {
                 kernel_cmdline.extend(reason.bytes());
             }

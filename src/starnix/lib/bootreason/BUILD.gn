@@ -14,9 +14,13 @@ rustc_library("bootreason") {
   sources = [ "src/lib.rs" ]
   deps = [
     "//sdk/fidl/fuchsia.feedback:fuchsia.feedback_rust",
+    "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
     "//sdk/rust/zx",
+    "//sdk/rust/zx-status",
     "//src/lib/fuchsia-component",
+    "//src/lib/fuchsia-fs",
     "//third_party/rust_crates:anyhow",
+    "//third_party/rust_crates:async-lock",
     "//third_party/rust_crates:log",
   ]
 
