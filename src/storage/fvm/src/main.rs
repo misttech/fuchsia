@@ -1686,8 +1686,8 @@ impl Interface for PartitionInterface {
         self.fvm.device.detach_vmo(vmo);
     }
 
-    async fn get_info(&self) -> Result<Cow<'_, DeviceInfo>, zx::Status> {
-        Ok(Cow::Borrowed(&self.device_info))
+    fn get_info(&self) -> Cow<'_, DeviceInfo> {
+        Cow::Borrowed(&self.device_info)
     }
 
     async fn read(

@@ -4,7 +4,7 @@
 use crate::gpt::GptPartition;
 use anyhow::Error;
 use block_client::{ReadOptions, VmoId, WriteOptions};
-use block_server::OffsetMap;
+use block_server::{DeviceInfo, OffsetMap};
 use block_server::async_interface::{PassthroughSession, SessionManager};
 use fidl_fuchsia_hardware_block as fblock;
 
@@ -56,8 +56,8 @@ impl block_server::async_interface::Interface for PartitionBackend {
         Ok(())
     }
 
-    async fn get_info(&self) -> Result<Cow<'_, block_server::DeviceInfo>, zx::Status> {
-        Ok(Cow::Owned(self.partition.get_info()))
+    fn get_info(&self) -> Cow<'_, DeviceInfo> {
+        Cow::Owned(self.partition.get_info())
     }
 
     fn barrier(&self) -> Result<(), zx::Status> {

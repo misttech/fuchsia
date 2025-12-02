@@ -107,8 +107,8 @@ impl super::SessionManager for SessionManager {
         result
     }
 
-    async fn get_info(&self) -> Result<Cow<'_, super::DeviceInfo>, zx::Status> {
-        Ok(Cow::Borrowed(&self.info))
+    fn get_info(&self) -> Cow<'_, super::DeviceInfo> {
+        Cow::Borrowed(&self.info)
     }
 
     fn active_requests(&self) -> &ActiveRequests<Arc<Session>> {

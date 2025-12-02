@@ -35,15 +35,7 @@ struct MockInterface {
                 + Sync,
         >,
     >,
-    get_info_hook: Option<
-        Box<
-            dyn Fn() -> futures::future::BoxFuture<
-                    'static,
-                    Result<Cow<'static, crate::DeviceInfo>, zx::Status>,
-                > + Send
-                + Sync,
-        >,
-    >,
+    get_info_hook: Option<Box<dyn Fn() -> Cow<'static, crate::DeviceInfo> + Send + Sync>>,
 }
 
 impl Interface for MockInterface {
@@ -51,15 +43,15 @@ impl Interface for MockInterface {
         Ok(())
     }
 
-    async fn get_info(&self) -> Result<Cow<'_, crate::DeviceInfo>, zx::Status> {
+    fn get_info(&self) -> Cow<'_, crate::DeviceInfo> {
         if let Some(hook) = &self.get_info_hook {
-            hook().await
+            hook()
         } else {
-            Ok(Cow::Owned(crate::DeviceInfo::Block(crate::BlockInfo {
+            Cow::Owned(crate::DeviceInfo::Block(crate::BlockInfo {
                 block_count: 100,
                 device_flags: fblock::Flag::empty(),
                 max_transfer_blocks: NonZero::new(u32::MAX),
-            })))
+            }))
         }
     }
 
@@ -381,13 +373,11 @@ async fn test_fragmented_device_reads() {
     let mut fixture = TestFixture::new(
         MockInterface {
             get_info_hook: Some(Box::new(move || {
-                Box::pin(async move {
-                    Ok(Cow::Owned(crate::DeviceInfo::Block(crate::BlockInfo {
-                        block_count: 100,
-                        device_flags: fblock::Flag::empty(),
-                        max_transfer_blocks: NonZero::new(len1),
-                    })))
-                })
+                Cow::Owned(crate::DeviceInfo::Block(crate::BlockInfo {
+                    block_count: 100,
+                    device_flags: fblock::Flag::empty(),
+                    max_transfer_blocks: NonZero::new(len1),
+                }))
             })),
             read_hook: Some(Box::new(move |device_block_offset, block_count, vmo, vmo_offset| {
                 let compressed_data = compressed_data.clone();

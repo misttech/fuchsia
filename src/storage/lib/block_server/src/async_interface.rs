@@ -62,7 +62,7 @@ pub trait Interface: Send + Sync + Unpin + 'static {
     fn on_detach_vmo(&self, _vmo: &zx::Vmo) {}
 
     /// Called to get block/partition information.
-    fn get_info(&self) -> impl Future<Output = Result<Cow<'_, DeviceInfo>, zx::Status>> + Send;
+    fn get_info(&self) -> Cow<'_, DeviceInfo>;
 
     /// Called for a request to read bytes.
     fn read(
@@ -657,8 +657,8 @@ impl<I: Interface + ?Sized> super::SessionManager for SessionManager<I> {
         self.interface.clone().open_session(self, stream, offset_map, block_size).await
     }
 
-    async fn get_info(&self) -> Result<Cow<'_, DeviceInfo>, zx::Status> {
-        self.interface.get_info().await
+    fn get_info(&self) -> Cow<'_, DeviceInfo> {
+        self.interface.get_info()
     }
 
     async fn get_volume_info(

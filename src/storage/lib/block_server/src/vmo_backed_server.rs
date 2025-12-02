@@ -414,8 +414,8 @@ impl Data {
 }
 
 impl Interface for Data {
-    async fn get_info(&self) -> Result<Cow<'_, DeviceInfo>, zx::Status> {
-        Ok(Cow::Borrowed(&self.info))
+    fn get_info(&self) -> Cow<'_, DeviceInfo> {
+        Cow::Borrowed(&self.info)
     }
 
     async fn read(

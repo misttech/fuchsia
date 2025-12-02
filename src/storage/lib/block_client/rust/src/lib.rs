@@ -1335,8 +1335,8 @@ mod tests {
             flush_called: Arc<AtomicBool>,
         }
         impl block_server::async_interface::Interface for Interface {
-            async fn get_info(&self) -> Result<Cow<'_, DeviceInfo>, zx::Status> {
-                Ok(Cow::Owned(DeviceInfo::Partition(PartitionInfo {
+            fn get_info(&self) -> Cow<'_, DeviceInfo> {
+                Cow::Owned(DeviceInfo::Partition(PartitionInfo {
                     device_flags: fidl_fuchsia_hardware_block::Flag::empty(),
                     max_transfer_blocks: None,
                     block_range: Some(0..1000),
@@ -1344,7 +1344,7 @@ mod tests {
                     instance_guid: [0; 16],
                     name: "foo".to_string(),
                     flags: 0,
-                })))
+                }))
             }
 
             async fn read(
