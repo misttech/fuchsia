@@ -530,17 +530,23 @@ unsafe impl lock_api::RawRwLockDowngrade for RawSyncRwLock {
     }
 }
 
-pub type RwLock<T> = lock_api::RwLock<RawSyncRwLock, T>;
-pub type RwLockReadGuard<'a, T> = lock_api::RwLockReadGuard<'a, RawSyncRwLock, T>;
-pub type RwLockWriteGuard<'a, T> = lock_api::RwLockWriteGuard<'a, RawSyncRwLock, T>;
-pub type MappedRwLockReadGuard<'a, T> = lock_api::MappedRwLockReadGuard<'a, RawSyncRwLock, T>;
-pub type MappedRwLockWriteGuard<'a, T> = lock_api::MappedRwLockWriteGuard<'a, RawSyncRwLock, T>;
+#[cfg(detect_lock_cycles)]
+type RawRwLockImpl = tracing_mutex::lockapi::TracingWrapper<RawSyncRwLock>;
+#[cfg(not(detect_lock_cycles))]
+type RawRwLockImpl = RawSyncRwLock;
+
+pub type RwLock<T> = lock_api::RwLock<RawRwLockImpl, T>;
+pub type RwLockReadGuard<'a, T> = lock_api::RwLockReadGuard<'a, RawRwLockImpl, T>;
+pub type RwLockWriteGuard<'a, T> = lock_api::RwLockWriteGuard<'a, RawRwLockImpl, T>;
+pub type MappedRwLockReadGuard<'a, T> = lock_api::MappedRwLockReadGuard<'a, RawRwLockImpl, T>;
+pub type MappedRwLockWriteGuard<'a, T> = lock_api::MappedRwLockWriteGuard<'a, RawRwLockImpl, T>;
 
 #[cfg(test)]
 mod test {
     use super::*;
-    use std::sync::atomic::AtomicUsize;
+    use crate::RwLock;
     use std::sync::Arc;
+    use std::sync::atomic::AtomicUsize;
 
     #[test]
     fn test_write_and_read() {
@@ -557,7 +563,8 @@ mod test {
 
     #[test]
     fn test_try_during_read() {
-        let value = RwLock::<u32>::new(5);
+        // Bypass lock cycle detection to ensure try_write & try_read fail as expected.
+        let value = lock_api::RwLock::<RawSyncRwLock, u32>::new(5);
         let _read_guard = value.read();
         assert!(value.try_write().is_none());
         assert!(value.try_read().is_some());
@@ -565,7 +572,8 @@ mod test {
 
     #[test]
     fn test_try_during_write() {
-        let value = RwLock::<u32>::new(5);
+        // Bypass lock cycle detection to ensure try_write & try_read fail as expected.
+        let value = lock_api::RwLock::<RawSyncRwLock, u32>::new(5);
         let _write_guard = value.write();
         assert!(value.try_write().is_none());
         assert!(value.try_read().is_none());
@@ -573,14 +581,15 @@ mod test {
 
     #[test]
     fn test_downgrade() {
-        let value = RwLock::<u32>::new(5);
+        // Bypass lock cycle detection to ensure try_write & try_read fail as expected.
+        let value = lock_api::RwLock::<RawSyncRwLock, u32>::new(5);
         let mut guard = value.write();
         assert_eq!(*guard, 5);
         *guard = 6;
         assert_eq!(*guard, 6);
         assert!(value.try_write().is_none());
         assert!(value.try_read().is_none());
-        let guard1 = RwLockWriteGuard::downgrade(guard);
+        let guard1 = lock_api::RwLockWriteGuard::downgrade(guard);
         assert_eq!(*guard1, 6);
         assert!(value.try_write().is_none());
         let guard2 = value.read();

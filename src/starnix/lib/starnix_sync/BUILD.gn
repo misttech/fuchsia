@@ -24,7 +24,6 @@ rustc_library("starnix_sync") {
     "//third_party/rust_crates:lock_api",
     "//third_party/rust_crates:scopeguard",
     "//third_party/rust_crates:static_assertions",
-    "//third_party/rust_crates:tracing-mutex",
   ]
 
   test_deps = [
@@ -46,14 +45,6 @@ rustc_library("starnix_sync") {
   ]
 
   configs += [ "//src/starnix/build:kernel_library_config" ]
-
-  if (starnix_detect_lock_cycles) {
-    configs += [ ":detect_lock_cycles" ]
-  }
-}
-
-config("detect_lock_cycles") {
-  rustflags = [ "--cfg=detect_lock_cycles" ]
 }
 
 fuchsia_unittest_package("starnix_sync-tests") {

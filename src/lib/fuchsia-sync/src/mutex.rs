@@ -57,9 +57,14 @@ unsafe impl lock_api::RawMutex for RawSyncMutex {
     }
 }
 
-pub type Mutex<T> = lock_api::Mutex<RawSyncMutex, T>;
-pub type MutexGuard<'a, T> = lock_api::MutexGuard<'a, RawSyncMutex, T>;
-pub type MappedMutexGuard<'a, T> = lock_api::MappedMutexGuard<'a, RawSyncMutex, T>;
+#[cfg(detect_lock_cycles)]
+type RawMutexImpl = tracing_mutex::lockapi::TracingWrapper<RawSyncMutex>;
+#[cfg(not(detect_lock_cycles))]
+type RawMutexImpl = RawSyncMutex;
+
+pub type Mutex<T> = lock_api::Mutex<RawMutexImpl, T>;
+pub type MutexGuard<'a, T> = lock_api::MutexGuard<'a, RawMutexImpl, T>;
+pub type MappedMutexGuard<'a, T> = lock_api::MappedMutexGuard<'a, RawMutexImpl, T>;
 
 #[cfg(test)]
 mod test {
@@ -77,7 +82,9 @@ mod test {
 
     #[test]
     fn test_try_lock() {
-        let value = Mutex::<u32>::new(5);
+        // Testing that try_lock fails technically creates a "cycle". Bypass the lock cycle wrappers
+        // to test this.
+        let value = lock_api::Mutex::<RawSyncMutex, u32>::new(5);
         let _guard = value.lock();
         assert!(value.try_lock().is_none());
     }

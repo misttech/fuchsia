@@ -3,36 +3,14 @@
 // found in the LICENSE file.
 
 // Use these crates so that we don't need to make the dependencies conditional.
-use {fuchsia_sync as _, lock_api as _, tracing_mutex as _};
+use {fuchsia_sync as _, lock_api as _};
 
 use crate::{LockAfter, LockBefore, LockFor, Locked, RwLockFor, UninterruptibleLock};
 use core::marker::PhantomData;
 use lock_api::RawMutex;
 use std::{any, fmt};
 
-#[cfg(not(detect_lock_cycles))]
-pub mod internal {
-    pub type Mutex<T> = fuchsia_sync::Mutex<T>;
-    pub type MutexGuard<'a, T> = fuchsia_sync::MutexGuard<'a, T>;
-    pub type MappedMutexGuard<'a, T> = fuchsia_sync::MappedMutexGuard<'a, T>;
-    pub type RwLock<T> = fuchsia_sync::RwLock<T>;
-    pub type RwLockReadGuard<'a, T> = fuchsia_sync::RwLockReadGuard<'a, T>;
-    pub type RwLockWriteGuard<'a, T> = fuchsia_sync::RwLockWriteGuard<'a, T>;
-}
-
-#[cfg(detect_lock_cycles)]
-pub mod internal {
-    type RawTracingMutex = tracing_mutex::lockapi::TracingWrapper<fuchsia_sync::RawSyncMutex>;
-    pub type Mutex<T> = lock_api::Mutex<RawTracingMutex, T>;
-    pub type MutexGuard<'a, T> = lock_api::MutexGuard<'a, RawTracingMutex, T>;
-    pub type MappedMutexGuard<'a, T> = lock_api::MappedMutexGuard<'a, RawTracingMutex, T>;
-    type RawTracingRwLock = tracing_mutex::lockapi::TracingWrapper<fuchsia_sync::RawSyncRwLock>;
-    pub type RwLock<T> = lock_api::RwLock<RawTracingRwLock, T>;
-    pub type RwLockReadGuard<'a, T> = lock_api::RwLockReadGuard<'a, RawTracingRwLock, T>;
-    pub type RwLockWriteGuard<'a, T> = lock_api::RwLockWriteGuard<'a, RawTracingRwLock, T>;
-}
-
-pub use internal::{
+pub use fuchsia_sync::{
     MappedMutexGuard, Mutex, MutexGuard, RwLock, RwLockReadGuard, RwLockWriteGuard,
 };
 

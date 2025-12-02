@@ -31,3 +31,5 @@ toc:
   section:
   - title: "ACPI debugging"
     path: /docs/development/debugging/acpi.md
+  - title: "Lock dependency cycles"
+    path: /docs/development/debugging/lock_cycles.md

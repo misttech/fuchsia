@@ -4,6 +4,7 @@
 
 import("//build/components.gni")
 import("//build/rust/rustc_library.gni")
+import("//src/lib/fuchsia-sync/build/args.gni")
 
 rustc_library("fuchsia-sync") {
   name = "fuchsia_sync"
@@ -26,12 +27,21 @@ rustc_library("fuchsia-sync") {
     deps += [ "//third_party/rust_crates:parking_lot" ]
   }
 
+  if (fuchsia_sync_detect_lock_cycles && is_fuchsia) {
+    deps += [ "//third_party/rust_crates:tracing-mutex" ]
+    configs += [ ":detect_lock_cycles" ]
+  }
+
   sources = [
     "src/condvar.rs",
     "src/lib.rs",
     "src/mutex.rs",
     "src/rwlock.rs",
   ]
+}
+
+config("detect_lock_cycles") {
+  rustflags = [ "--cfg=detect_lock_cycles" ]
 }
 
 fuchsia_unittest_package("fuchsia-sync-tests") {

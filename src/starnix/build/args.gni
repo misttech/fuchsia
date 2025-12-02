@@ -13,11 +13,6 @@ declare_args() {
   # https://fuchsia-review.googlesource.com/c/fuchsia/+/929995.
   starnix_enable_trace_and_debug_logs_in_release = false
 
-  # Whether to use tracing-mutex to detect cycles in the lock acquisition graph.
-  # Only enable this on debug builds by default because it makes balanced/release too slow for
-  # real use.
-  starnix_detect_lock_cycles = compilation_mode == "debug"
-
   # Whether to default the RUST_BACKTRACE environment variable to 1 for the Starnix kernel. This is
   # useful for identifying the stacks that acquired a lock in a deadlock cycle.
   starnix_enable_rust_backtrace = false
