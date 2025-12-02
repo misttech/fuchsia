@@ -67,7 +67,7 @@ class StartStopClientConnectionsTest(
         setup_ap(
             self.access_point,
             "whirlwind",
-            hostapd_constants.AP_DEFAULT_CHANNEL_5G,
+            hostapd_constants.AP_DEFAULT_WW_COMPATIBLE_CHANNEL,
             self.ssid,
             security=security,
         )
