@@ -9,8 +9,38 @@ SCRIPTS_COG_BIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pw
 
 readonly PY_TOOL="${SCRIPTS_COG_BIN_DIR}/../../fuchsia-vendored-python"
 
+# This script acts as a wrapper around the system 'git' command.
+# However, the underlying Python script (git.py) may still need to invoke the
+# actual 'git' binary (e.g., for 'git citc' commands).
+#
+# We need to explicitly locate and pass the path to the real 'git' binary
+# because 'fuchsia-vendored-python' executes within a hermetic environment
+# that strips out most environment variables. This prevents us from simply
+# passing the location via an environment variable like FUCHSIA_REAL_GIT.
+function find_real_git() {
+    local cmd_name
+    cmd_name=$(basename "$0")
+    local current_script_path
+    current_script_path=$(realpath "$0")
+
+    for candidate in $(which -a "$cmd_name"); do
+        local candidate_resolved
+        candidate_resolved=$(realpath "$candidate")
+        if [ "$candidate_resolved" != "$current_script_path" ]; then
+            echo "$candidate"
+            return 0
+        fi
+    done
+    return 1
+}
+
 function main() {
-    "$PY_TOOL" "${SCRIPTS_COG_BIN_DIR}/git.py" "$@"
+    local real_git
+    if ! real_git=$(find_real_git); then
+        echo "Error: Could not find real git binary." >&2
+        exit 1
+    fi
+    "$PY_TOOL" "${SCRIPTS_COG_BIN_DIR}/git.py" --real-git "${real_git}" "$@"
 }
 
 main "$@"

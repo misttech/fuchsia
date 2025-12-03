@@ -4,8 +4,33 @@
 
 import abc
 import argparse
+import subprocess
 import sys
+from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Type
+
+
+def get_workspace_root() -> Optional[Path]:
+    cwd = Path.cwd()
+    workspace_root = None
+    for ancestor in [cwd] + list(cwd.parents):
+        if (ancestor / ".citc").is_dir():
+            workspace_root = ancestor
+            break
+    return workspace_root
+
+
+def get_workspace_id_and_snapshot_version(
+    workspace_root: Path,
+) -> Tuple[str, int]:
+    citc_dir = workspace_root / ".citc"
+    try:
+        workspace_id = (citc_dir / "workspace_id").read_text().strip()
+        snapshot_version = (citc_dir / "snapshot_version").read_text().strip()
+    except Exception as e:
+        print(f"fatal: could not read citc metadata: {e}", file=sys.stderr)
+        return "", 0
+    return workspace_id, int(snapshot_version)
 
 
 class GitSubCommand(abc.ABC):
@@ -54,6 +79,71 @@ def register_command(name: str):
     return decorator
 
 
+@register_command("rev-parse")
+class RevParseCommand(GitSubCommand):
+    def add_arguments(self, parser: argparse.ArgumentParser) -> None:
+        parser.add_argument("rev", help="The revision to parse")
+
+    def execute(
+        self, top_level_args: argparse.Namespace, args: argparse.Namespace
+    ) -> int:
+        # We only support HEAD for now
+        if args.rev != "HEAD":
+            print("cog workspaces only support 'HEAD' revisions at this time")
+            return 1
+
+        workspace_root = get_workspace_root()
+        if not workspace_root:
+            print("Not in a cog workspace")
+            return 1
+
+        workspace_id, snapshot_version = get_workspace_id_and_snapshot_version(
+            workspace_root
+        )
+        if not workspace_id or not snapshot_version:
+            print("Not in a cog workspace")
+            return 1
+
+        # Determine repo_root
+        repo_root = "fuchsia"
+        if top_level_args.C:
+            path = Path(top_level_args.C).expanduser()
+            if path.is_absolute():
+                rel_path = path.relative_to(workspace_root)
+                if rel_path != Path("."):
+                    repo_root = f"fuchsia/{rel_path}"
+            else:
+                repo_root = f"fuchsia/{path}"
+
+        request = f'request_base {{ workspace_id: "{workspace_id}" base_snapshot_version: {snapshot_version}}} repo_root: "{repo_root}"'
+
+        try:
+            cmd = [
+                top_level_args.real_git,
+                "citc",
+                "api.call",
+                "GetDrafts",
+                request,
+            ]
+            result = subprocess.run(cmd, capture_output=True, text=True)
+
+            if result.returncode != 0:
+                print(result.stderr, file=sys.stderr)
+                return result.returncode
+
+            for line in result.stdout.splitlines():
+                if "commit_hash:" in line:
+                    parts = line.split('"')
+                    if len(parts) >= 2:
+                        print(parts[1])
+                        return 0
+
+            return 1
+        except Exception as e:
+            print(f"fatal: {e}", file=sys.stderr)
+            return 1
+
+
 @register_command("status")
 class StatusCommand(GitSubCommand):
     def execute(
@@ -76,6 +166,12 @@ def _find_command_name_and_position(
 
 def _create_top_level_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="git", add_help=False)
+    parser.add_argument(
+        "--real-git",
+        type=str,
+        help="Path to the real git binary",
+        required=True,
+    )
     parser.add_argument(
         "-C",
         type=str,
