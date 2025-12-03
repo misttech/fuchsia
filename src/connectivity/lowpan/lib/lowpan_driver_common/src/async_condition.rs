@@ -2,13 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use futures::future::{ready, select, BoxFuture, Either, FusedFuture};
+use fuchsia_sync::Mutex;
+use futures::future::{BoxFuture, Either, FusedFuture, ready, select};
 use futures::prelude::*;
 use futures::task::{Context, Poll, Waker};
 use slab::Slab;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Mutex;
 
 /// An asynchronous condition that can block multiple tasks
 /// until triggered.
@@ -45,7 +45,7 @@ impl AsyncCondition {
     /// Awakes all pending `AsyncConditionWait` instances vended by the `wait()`
     /// command.
     pub fn trigger(&self) {
-        let inner = self.wakers.lock().unwrap();
+        let inner = self.wakers.lock();
         self.trigger_counter.fetch_add(1, Ordering::AcqRel);
         for (_, waker) in inner.iter() {
             waker.wake_by_ref();
@@ -77,7 +77,7 @@ impl<'a> Future for AsyncConditionWait<'a> {
             return Poll::Ready(());
         }
 
-        let mut wakers = self.condition.wakers.lock().unwrap();
+        let mut wakers = self.condition.wakers.lock();
 
         if let Some(slot) = self.key.and_then(|k| wakers.get_mut(k)) {
             // Update the waker already in the slab.
@@ -101,7 +101,7 @@ impl<'a> Drop for AsyncConditionWait<'a> {
     fn drop(&mut self) {
         // Remove any previous waker from the slab.
         if let Some(key) = self.key {
-            let mut wakers = self.condition.wakers.lock().unwrap();
+            let mut wakers = self.condition.wakers.lock();
             assert!(wakers.contains(key), "AsyncConditionWait contained invalid waker key");
             wakers.remove(key);
         }

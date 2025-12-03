@@ -107,11 +107,3 @@ impl<T: AsRef<ot::Instance>> TaskletsStreamExt for fuchsia_sync::Mutex<T> {
         guard.deref().as_ref().process_poll(cx)
     }
 }
-
-impl<T: AsRef<ot::Instance>> TaskletsStreamExt for std::sync::Mutex<T> {
-    fn tasklets_poll(&self, cx: &mut std::task::Context<'_>) -> std::task::Poll<Option<()>> {
-        use std::ops::Deref;
-        let guard = self.lock().expect("Lock is poisoned");
-        guard.deref().as_ref().process_poll(cx)
-    }
-}

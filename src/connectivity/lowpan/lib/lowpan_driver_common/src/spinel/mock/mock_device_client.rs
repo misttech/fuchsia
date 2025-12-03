@@ -7,9 +7,10 @@ use super::*;
 use fidl_fuchsia_lowpan_spinel::{
     DeviceCloseResult, DeviceEvent as SpinelDeviceEvent, DeviceOpenResult, DeviceProxyInterface,
 };
+use fuchsia_sync::Mutex;
 use futures::channel::mpsc;
-use futures::future::{ready, Ready};
-use std::sync::{Arc, Mutex};
+use futures::future::{Ready, ready};
+use std::sync::Arc;
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum DeviceRequest {
@@ -54,7 +55,6 @@ impl DeviceProxyInterface for MockDeviceProxy {
         let ret = self
             .sender
             .lock()
-            .unwrap()
             .start_send(DeviceRequest::Open)
             .map_err(|_| fidl_fuchsia_lowpan_spinel::Error::IoError);
         ready(Ok(ret))
@@ -65,7 +65,6 @@ impl DeviceProxyInterface for MockDeviceProxy {
         let ret = self
             .sender
             .lock()
-            .unwrap()
             .start_send(DeviceRequest::Close)
             .map_err(|_| fidl_fuchsia_lowpan_spinel::Error::IoError);
         ready(Ok(ret))
@@ -76,7 +75,6 @@ impl DeviceProxyInterface for MockDeviceProxy {
         let ret = self
             .sender
             .lock()
-            .unwrap()
             .start_send(DeviceRequest::GetMaxFrameSize)
             .map_err(|_| fidl::Error::ClientChannelClosed {
                 status: ZxStatus::PEER_CLOSED,
@@ -89,19 +87,18 @@ impl DeviceProxyInterface for MockDeviceProxy {
     }
 
     fn send_frame(&self, data: &[u8]) -> Result<(), fidl::Error> {
-        self.sender.lock().unwrap().start_send(DeviceRequest::SendFrame(data.to_vec())).map_err(
-            |_| fidl::Error::ClientChannelClosed {
+        self.sender.lock().start_send(DeviceRequest::SendFrame(data.to_vec())).map_err(|_| {
+            fidl::Error::ClientChannelClosed {
                 status: ZxStatus::PEER_CLOSED,
                 protocol_name: "mock",
                 epitaph: None,
-            },
-        )
+            }
+        })
     }
 
     fn ready_to_receive_frames(&self, number_of_frames: u32) -> Result<(), fidl::Error> {
         self.sender
             .lock()
-            .unwrap()
             .start_send(DeviceRequest::ReadyToReceiveFrames(number_of_frames))
             .map_err(|_| fidl::Error::ClientChannelClosed {
                 status: ZxStatus::PEER_CLOSED,

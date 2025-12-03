@@ -4,6 +4,7 @@
 
 use super::*;
 
+use fuchsia_sync::Mutex;
 use futures::prelude::*;
 use lowpan_driver_common::Driver as _;
 use lowpan_driver_common::lowpan_fidl::{
@@ -15,7 +16,7 @@ use lowpan_driver_common::spinel::*;
 use openthread::ot::Trel;
 use openthread_fuchsia::Platform;
 use std::str::FromStr;
-use std::sync::{Arc, LazyLock, Mutex};
+use std::sync::{Arc, LazyLock};
 
 static TEST_HARNESS_SINGLETON_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
 
@@ -44,8 +45,7 @@ where
 {
     // Since OpenThread is a singleton, we can't create more than once instance at a time.
     // This lock makes sure that we only run a single test at a time so we don't panic.
-    let _singleton_lock =
-        TEST_HARNESS_SINGLETON_LOCK.lock().expect("TEST_HARNESS_SINGLETON_LOCK is poisoned");
+    let _singleton_lock = TEST_HARNESS_SINGLETON_LOCK.lock();
 
     let (sink, stream, ncp_task) = new_fake_spinel_pair();
 
