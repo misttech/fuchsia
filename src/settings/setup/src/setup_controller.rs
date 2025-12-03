@@ -2,24 +2,22 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use super::setup_fidl_handler::InfoPublisher;
-use super::types::ConfigurationInterfaceFlags;
-use crate::base::SettingType;
-use crate::setup::types::SetupInfo;
+use crate::setup_fidl_handler::InfoPublisher;
+use crate::types::{ConfigurationInterfaceFlags, SetupInfo};
 use anyhow::Error;
 use fidl_fuchsia_hardware_power_statecontrol::{RebootOptions, RebootReason2};
 use fuchsia_async as fasync;
+use futures::StreamExt;
 use futures::channel::mpsc::UnboundedReceiver;
 use futures::channel::oneshot::Sender;
-use futures::StreamExt;
 use settings_common::call_async;
 use settings_common::inspect::event::{
     ExternalEventPublisher, ResponseType, SettingValuePublisher,
 };
 use settings_common::service_context::ServiceContext;
+use settings_storage::UpdateState;
 use settings_storage::device_storage::{DeviceStorage, DeviceStorageCompatible};
 use settings_storage::storage_factory::{NoneT, StorageAccess, StorageFactory};
-use settings_storage::UpdateState;
 use std::borrow::Cow;
 use std::rc::Rc;
 
@@ -54,7 +52,7 @@ async fn reboot(
         .await
         .map_err(|e| {
             SetupError::ExternalFailure(
-                "hardware_power_statecontrol_manager".into(),
+                "hardware_power_statecontrol_manager",
                 "connect".into(),
                 format!("{e:?}").into(),
             )
@@ -62,7 +60,7 @@ async fn reboot(
 
     let reboot_err = |e: String| {
         SetupError::ExternalFailure(
-            "hardware_power_statecontrol_manager".into(),
+            "hardware_power_statecontrol_manager",
             "reboot".into(),
             e.into(),
         )
@@ -81,12 +79,6 @@ async fn reboot(
 impl DeviceStorageCompatible for SetupInfo {
     type Loader = NoneT;
     const KEY: &'static str = "setup_info";
-}
-
-impl From<&SetupInfo> for SettingType {
-    fn from(_: &SetupInfo) -> SettingType {
-        SettingType::Setup
-    }
 }
 
 pub(crate) enum Request {

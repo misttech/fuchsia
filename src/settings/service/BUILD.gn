@@ -33,7 +33,6 @@ icu_rustc_library("lib") {
   ]
 
   deps = [
-    "//sdk/fidl/fuchsia.hardware.power.statecontrol:fuchsia.hardware.power.statecontrol_rust",
     "//sdk/fidl/fuchsia.input:fuchsia.input_rust",
     "//sdk/fidl/fuchsia.intl:fuchsia.intl_rust",
     "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
@@ -62,6 +61,7 @@ icu_rustc_library("lib") {
     "//src/settings/inspect_utils:settings_inspect_utils",
     "//src/settings/light:settings_light",
     "//src/settings/media_buttons:settings_media_buttons",
+    "//src/settings/setup:settings_setup",
     "//src/settings/storage:settings_storage",
     "//src/settings/storage_fidl:fuchsia.settings.storage_rust",
     "//src/sys/lib/bitflags-serde-legacy",
@@ -164,10 +164,6 @@ icu_rustc_library("lib") {
     "src/privacy/privacy_controller.rs",
     "src/privacy/privacy_fidl_handler.rs",
     "src/privacy/types.rs",
-    "src/setup.rs",
-    "src/setup/setup_controller.rs",
-    "src/setup/setup_fidl_handler.rs",
-    "src/setup/types.rs",
     "src/storage_migrations.rs",
     "src/storage_migrations/v1653667208_light_migration.rs",
     "src/storage_migrations/v1653667210_light_migration_teardown.rs",

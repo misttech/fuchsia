@@ -18,6 +18,7 @@ rustc_library("bitflags-serde-legacy") {
   visibility = [
     ":*",
     "//src/settings/service:*",
+    "//src/settings/setup:*",
     "//src/sys/lib/cm_rust:*",
   ]
 }

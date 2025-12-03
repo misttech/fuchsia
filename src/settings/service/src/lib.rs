@@ -45,6 +45,7 @@ pub use display::display_configuration::DisplayConfiguration;
 pub use input::input_device_configuration::InputConfiguration;
 use serde::Deserialize;
 pub use settings_light::light_hardware_configuration::LightHardwareConfiguration;
+use settings_setup::setup_controller::SetupController;
 
 use crate::accessibility::accessibility_controller::AccessibilityController;
 use crate::audio::Request as AudioRequest;
@@ -58,7 +59,6 @@ use crate::intl::intl_controller::IntlController;
 use crate::keyboard::keyboard_controller::KeyboardController;
 use crate::night_mode::night_mode_controller::NightModeController;
 use crate::privacy::privacy_controller::PrivacyController;
-use crate::setup::setup_controller::SetupController;
 
 mod accessibility;
 pub mod audio;
@@ -71,7 +71,6 @@ mod intl;
 mod keyboard;
 mod night_mode;
 mod privacy;
-mod setup;
 mod storage_migrations;
 
 pub mod agent;
@@ -876,14 +875,15 @@ impl<T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilder<T>
         }
 
         if components.contains(&SettingType::Setup) {
-            let setup::SetupResult { mut setup_fidl_handler, task } = setup::setup_setup_api(
-                service_context,
-                device_storage_factory,
-                SettingValuePublisher::new(setting_value_tx),
-                UsagePublisher::new(usage_event_tx, listener_logger),
-                external_publisher,
-            )
-            .await;
+            let settings_setup::SetupResult { mut setup_fidl_handler, task } =
+                settings_setup::setup_setup_api(
+                    service_context,
+                    device_storage_factory,
+                    SettingValuePublisher::new(setting_value_tx),
+                    UsagePublisher::new(usage_event_tx, listener_logger),
+                    external_publisher,
+                )
+                .await;
             tasks.push(task);
             let _ = service_dir.add_fidl_service(move |stream: SetupRequestStream| {
                 setup_fidl_handler.handle_stream(stream)

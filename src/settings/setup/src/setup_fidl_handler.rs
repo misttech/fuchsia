@@ -2,16 +2,16 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use super::setup_controller::{Request, SetupController, SetupError};
-use crate::setup::types::{ConfigurationInterfaceFlags, SetupInfo};
+use crate::setup_controller::{Request, SetupController, SetupError};
+use crate::types::{ConfigurationInterfaceFlags, SetupInfo};
 use async_utils::hanging_get::server;
 use fidl_fuchsia_settings::{
     Error as SettingsError, SetupRequest, SetupRequestStream, SetupSettings, SetupWatchResponder,
 };
 use fuchsia_async as fasync;
+use futures::StreamExt;
 use futures::channel::mpsc::{self, UnboundedReceiver, UnboundedSender};
 use futures::channel::oneshot;
-use futures::StreamExt;
 use settings_common::inspect::event::{
     RequestType, ResponseType, UsagePublisher, UsageResponsePublisher,
 };

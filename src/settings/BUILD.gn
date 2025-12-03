@@ -22,6 +22,7 @@ group("tests") {
     "light:tests",
     "media_buttons:tests",
     "service:tests",
+    "setup:tests",
     "storage:tests",
     "test_common:tests",
   ]
