@@ -81,7 +81,23 @@ pub fn new_netlink_socket(
         NetlinkFamily::Generic => Box::new(GenericNetlinkSocket::new(kernel)?),
         NetlinkFamily::SockDiag => Box::new(DiagnosticNetlinkSocket::default()),
         NetlinkFamily::Audit => Box::new(AuditNetlinkSocket::new(kernel)?),
-        _ => Box::new(BaseNetlinkSocket::new(family)),
+        NetlinkFamily::Unsupported
+        | NetlinkFamily::Usersock
+        | NetlinkFamily::Firewall
+        | NetlinkFamily::Nflog
+        | NetlinkFamily::Xfrm
+        | NetlinkFamily::Selinux
+        | NetlinkFamily::Iscsi
+        | NetlinkFamily::FibLookup
+        | NetlinkFamily::Connector
+        | NetlinkFamily::Netfilter
+        | NetlinkFamily::Ip6Fw
+        | NetlinkFamily::Dnrtmsg
+        | NetlinkFamily::Scsitransport
+        | NetlinkFamily::Ecryptfs
+        | NetlinkFamily::Rdma
+        | NetlinkFamily::Crypto
+        | NetlinkFamily::Smc => Box::new(StubbedNetlinkSocket::new(family)),
     };
     Ok(ops)
 }
@@ -401,13 +417,21 @@ impl NetlinkSocketInner {
     }
 }
 
-struct BaseNetlinkSocket {
+/// A fake Netlink socket that loops messages back to the client.
+///
+/// Used as a placeholder implementation for protocol families that lack a real
+/// implementation.
+struct StubbedNetlinkSocket {
     inner: Mutex<NetlinkSocketInner>,
 }
 
-impl BaseNetlinkSocket {
+impl StubbedNetlinkSocket {
     pub fn new(family: NetlinkFamily) -> Self {
-        BaseNetlinkSocket { inner: Mutex::new(NetlinkSocketInner::new(family)) }
+        track_stub!(
+            TODO("https://fxbug.dev/278565021"),
+            format!("Creating StubbedNetlinkSocket: {:?}", family).as_str()
+        );
+        StubbedNetlinkSocket { inner: Mutex::new(NetlinkSocketInner::new(family)) }
     }
 
     /// Locks and returns the inner state of the Socket.
@@ -416,7 +440,7 @@ impl BaseNetlinkSocket {
     }
 }
 
-impl SocketOps for BaseNetlinkSocket {
+impl SocketOps for StubbedNetlinkSocket {
     fn connect(
         &self,
         _locked: &mut Locked<FileOpsCore>,
@@ -507,7 +531,7 @@ impl SocketOps for BaseNetlinkSocket {
         };
 
         if destination.groups != 0 {
-            track_stub!(TODO("https://fxbug.dev/322874956"), "BaseNetlinkSockets multicasting");
+            track_stub!(TODO("https://fxbug.dev/322874956"), "StubbedNetlinkSockets multicasting");
             return Ok(data.drain());
         }
 
@@ -541,7 +565,7 @@ impl SocketOps for BaseNetlinkSocket {
         _socket: &Socket,
         _how: SocketShutdownFlags,
     ) -> Result<(), Errno> {
-        track_stub!(TODO("https://fxbug.dev/322875507"), "BaseNetlinkSocket::shutdown");
+        track_stub!(TODO("https://fxbug.dev/322875507"), "StubbedNetlinkSocket::shutdown");
         Ok(())
     }
 
@@ -739,7 +763,7 @@ impl SocketOps for UEventNetlinkSocket {
         _socket: &Socket,
         _how: SocketShutdownFlags,
     ) -> Result<(), Errno> {
-        track_stub!(TODO("https://fxbug.dev/322875507"), "BaseNetlinkSocket::shutdown");
+        track_stub!(TODO("https://fxbug.dev/322875507"), "UEventNetlinkSocket::shutdown");
         Ok(())
     }
 
@@ -1512,7 +1536,7 @@ impl SocketOps for GenericNetlinkSocket {
         _socket: &Socket,
         _how: SocketShutdownFlags,
     ) -> Result<(), Errno> {
-        track_stub!(TODO("https://fxbug.dev/322875507"), "BaseNetlinkSocket::shutdown");
+        track_stub!(TODO("https://fxbug.dev/322875507"), "GenericNetlinkSocket::shutdown");
         Ok(())
     }
 
