@@ -2,19 +2,18 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::privacy::types::PrivacyInfo;
+use crate::privacy_fidl_handler::Publisher;
+use crate::types::PrivacyInfo;
 use anyhow::Error;
 use fuchsia_async as fasync;
+use futures::StreamExt;
 use futures::channel::mpsc::UnboundedReceiver;
 use futures::channel::oneshot::Sender;
-use futures::StreamExt;
 use settings_common::inspect::event::{ResponseType, SettingValuePublisher};
+use settings_storage::UpdateState;
 use settings_storage::device_storage::{DeviceStorage, DeviceStorageCompatible};
 use settings_storage::storage_factory::{NoneT, StorageAccess, StorageFactory};
-use settings_storage::UpdateState;
 use std::rc::Rc;
-
-use super::privacy_fidl_handler::Publisher;
 
 impl DeviceStorageCompatible for PrivacyInfo {
     type Loader = NoneT;
