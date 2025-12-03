@@ -6,7 +6,7 @@
 #     fx update-rustc-third-party
 ###############################################################################
 
-load("@rules_rust//rust:defs.bzl", "rust_library")
+load("@rules_rust//rust:defs.bzl", "rust_proc_macro")
 load("@rules_license//rules:license.bzl", "license")
 load("@rules_license//rules:package_info.bzl", "package_info")
 
@@ -20,22 +20,23 @@ package(
 
 package_info(
     name = "package_info",
-    package_name = "ppv-lite86",
-    package_url = "https://github.com/cryptocorrosion/cryptocorrosion",
-    package_version = "0.2.21",
+    package_name = "zerocopy-derive",
+    package_url = "https://github.com/google/zerocopy",
+    package_version = "0.8.31",
 )
 
 license(
     name = "license",
     license_kinds = [
         "@rules_license//licenses/spdx:Apache-2.0",
+        "@rules_license//licenses/spdx:BSD-2-Clause",
         "@rules_license//licenses/spdx:MIT",
     ],
     license_text = "LICENSE-APACHE",
 )
 
-rust_library(
-    name = "ppv_lite86",
+rust_proc_macro(
+    name = "zerocopy_derive",
     srcs = glob(
         include = ["**/*.rs"],
         allow_empty = False,
@@ -52,10 +53,6 @@ rust_library(
             "WORKSPACE.bazel",
         ],
     ),
-    crate_features = [
-        "simd",
-        "std",
-    ],
     crate_root = "src/lib.rs",
     edition = "2021",
     rustc_flags = [
@@ -63,7 +60,7 @@ rust_library(
     ],
     tags = [
         "cargo-bazel",
-        "crate-name=ppv-lite86",
+        "crate-name=zerocopy-derive",
         "manual",
         "noclippy",
         "norustfmt",
@@ -76,8 +73,10 @@ rust_library(
         "@rules_rust//rust/platform:x86_64-unknown-linux-gnu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    version = "0.2.21",
+    version = "0.8.31",
     deps = [
-        "//third_party/rust_crates/vendor/zerocopy-0.8.31:zerocopy",
+        "//third_party/rust_crates/vendor/proc-macro2-1.0.97:proc_macro2",
+        "//third_party/rust_crates/vendor/quote-1.0.40:quote",
+        "//third_party/rust_crates/vendor/syn-2.0.108:syn",
     ],
 )

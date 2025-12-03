@@ -501,7 +501,7 @@ _NORMAL_DEPENDENCIES = {
             "walkdir": Label("//third_party/rust_crates/vendor/walkdir-2.5.0:walkdir"),
             "which": Label("//third_party/rust_crates/vendor/which-4.0.2:which"),
             "xml-rs": Label("//third_party/rust_crates/vendor/xml-rs-0.8.26:xml"),
-            "zerocopy": Label("//third_party/rust_crates/vendor/zerocopy-0.8.27:zerocopy"),
+            "zerocopy": Label("//third_party/rust_crates/vendor/zerocopy-0.8.31:zerocopy"),
             "zstd": Label("//third_party/rust_crates/vendor/zstd-0.11.2+zstd.1.5.2:zstd"),
         },
         "cfg(not(target_os = \"fuchsia\"))": {
