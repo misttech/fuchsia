@@ -9,7 +9,7 @@ import("//build/rust/rustc_binary.gni")
 rustc_test("bin") {
   name = "fake_system_activity_governor_test"
   testonly = true
-  edition = "2021"
+  edition = "2024"
   deps = [
     "//sdk/fidl/fuchsia.power.broker:fuchsia.power.broker_rust",
     "//sdk/fidl/fuchsia.power.system:fuchsia.power.system_rust",

@@ -18,7 +18,7 @@ group("tests") {
 }
 
 rustc_test("bin") {
-  edition = "2021"
+  edition = "2024"
   source_root = "src/main.rs"
   sources = [ "src/main.rs" ]
   name = "power_broker_client_test"

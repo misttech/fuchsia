@@ -11,7 +11,7 @@ group("tests") {
 }
 
 rustc_test("power_framework_test_realm_test_rust_bin") {
-  edition = "2021"
+  edition = "2024"
   testonly = true
   sources = [ "src/lib.rs" ]
   deps = [

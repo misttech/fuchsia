@@ -16,7 +16,7 @@ resource("domain-controller-integration-test-resources") {
 rustc_test("domain-controller-integration-test-bin") {
   name = "domain_controller_integration_test"
   testonly = true
-  edition = "2021"
+  edition = "2024"
   source_root = "src/domain_controller_test.rs"
   deps = [
     "//sdk/fidl/fuchsia.power.cpu:fuchsia.power.cpu_rust",

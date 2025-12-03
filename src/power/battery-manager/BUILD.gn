@@ -17,7 +17,7 @@ fuchsia_structured_config_rust_lib("battery-manager-config") {
 rustc_binary("bin") {
   output_name = "battery_manager"
   with_unit_tests = true
-  edition = "2021"
+  edition = "2024"
 
   deps = [
     ":battery-manager-config",

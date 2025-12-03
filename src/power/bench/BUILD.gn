@@ -11,7 +11,7 @@ if (is_fuchsia) {
     name = "power_framework_microbenchmarks"
     with_unit_tests = false
     testonly = true
-    edition = "2021"
+    edition = "2024"
     sources = [
       "src/daemon_work.rs",
       "src/main.rs",
@@ -48,7 +48,7 @@ if (is_fuchsia) {
 
 rustc_test("bin") {
   name = "integration"
-  edition = "2021"
+  edition = "2024"
 
   deps = [
     "//sdk/fidl/fuchsia.power.broker:fuchsia.power.broker_rust",

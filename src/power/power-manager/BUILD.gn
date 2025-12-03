@@ -98,7 +98,7 @@ power_manager_sources = [
 
 rustc_binary("bin") {
   name = "power_manager"
-  edition = "2021"
+  edition = "2024"
   with_unit_tests = true
   configs += [ "//build/config/rust:bootfs" ]
   deps = power_manager_deps
@@ -112,7 +112,7 @@ rustc_binary("bin") {
 rustc_binary("bin_with_fake_time") {
   testonly = true
   name = "power_manager_fake_time"
-  edition = "2021"
+  edition = "2024"
   with_unit_tests = true
   configs += [ "//build/config/rust:bootfs" ]
   deps = power_manager_deps

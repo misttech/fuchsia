@@ -40,7 +40,7 @@ group("fake_root") {
 }
 
 rustc_test("bin") {
-  edition = "2021"
+  edition = "2024"
   testonly = true
   output_name = "power_manager_driver_root_bin"
   source_root = "test.rs"

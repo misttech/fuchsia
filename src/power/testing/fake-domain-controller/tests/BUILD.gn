@@ -9,7 +9,7 @@ import("//build/rust/rustc_binary.gni")
 rustc_test("bin") {
   name = "fake_domain_controller_integration_test"
   testonly = true
-  edition = "2021"
+  edition = "2024"
   deps = [
     "//sdk/fidl/fuchsia.power.cpu:fuchsia.power.cpu_rust",
     "//src/lib/fidl/rust/fidl",

@@ -43,7 +43,7 @@ resource("thermal-sensor-manager-integration-test-resources") {
 rustc_test("integration-test") {
   name = "power_manager_integration_test"
   testonly = true
-  edition = "2021"
+  edition = "2024"
   deps = [
     "../../rkf45:lib",
     "../../testing/fuchsia.powermanager.driver.fidl:fuchsia.powermanager.driver.temperaturecontrol_rust",
@@ -77,7 +77,7 @@ rustc_test("integration-test") {
 rustc_test("thermal-sensor-manager-integration-test") {
   name = "thermal_sensor_manager_integration_test"
   testonly = true
-  edition = "2021"
+  edition = "2024"
   source_root = "src/thermal_sensor_manager_test.rs"
   deps = [
     "../../testing/fuchsia.powermanager.driver.fidl:fuchsia.powermanager.driver.temperaturecontrol_rust",

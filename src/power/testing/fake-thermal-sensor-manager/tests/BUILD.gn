@@ -9,7 +9,7 @@ import("//build/rust/rustc_binary.gni")
 rustc_test("bin") {
   name = "fake_thermal_sensor_manager_integration_test"
   testonly = true
-  edition = "2021"
+  edition = "2024"
   deps = [
     "//sdk/fidl/fuchsia.thermal:fuchsia.thermal_rust",
     "//sdk/rust/zx",

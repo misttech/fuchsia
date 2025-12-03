@@ -24,7 +24,7 @@ group("tests") {
 
 rustc_binary("bin") {
   output_name = "power-broker"
-  edition = "2021"
+  edition = "2024"
 
   # Generates a GN target for unit-tests with the label `bin_test`, and
   # a binary named `power_broker_bin_test`.

@@ -12,7 +12,7 @@ group("tests") {
 
 rustc_binary("fake_power_sensor_bin") {
   name = "fake-power-sensor"
-  edition = "2021"
+  edition = "2024"
 
   with_unit_tests = true
 

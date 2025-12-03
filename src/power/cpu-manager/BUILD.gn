@@ -75,7 +75,7 @@ source_set("fake_syscalls_for_integration") {
 
 rustc_binary("bin") {
   name = "cpu_manager"
-  edition = "2021"
+  edition = "2024"
   with_unit_tests = true
   configs += [ "//build/config/rust:bootfs" ]
   deps = cpu_manager_deps
@@ -92,7 +92,7 @@ rustc_binary("bin") {
 rustc_binary("bin_with_fake_time") {
   testonly = true
   name = "cpu_manager_fake_time"
-  edition = "2021"
+  edition = "2024"
   with_unit_tests = true
   configs += [ "//build/config/rust:bootfs" ]
   deps = cpu_manager_deps + [ ":fake_syscalls_for_integration" ]
