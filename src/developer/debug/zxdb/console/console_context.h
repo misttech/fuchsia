@@ -169,6 +169,7 @@ class ConsoleContext : public ProcessObserver,
   void WillLoadModuleSymbols(Process* process, int num_modules) override;
   void DidLoadAllModuleSymbols(Process* process) override;
   void OnSymbolLoadFailure(Process* process, const Err& err) override;
+  void WillAutomaticallyContinue(debug_ipc::ResumeRequest::How how, const StopInfo& info) override;
 
   // ThreadObserver implementation:
   void DidCreateThread(Thread* thread) override;

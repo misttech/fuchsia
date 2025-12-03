@@ -82,7 +82,10 @@ struct ClientSettings {
     static const char* kIntegerFormatDescription;
 
     static const char* kVectorFormat;  // Possible values are the kVectorRegisterFormatStr_*.
-    static const char* kVectorFormatDescription;  // Help for kBuildDirs.
+    static const char* kVectorFormatDescription;
+
+    static const char* kAutoContinueWhenStepping;
+    static const char* kAutoContinueWhenSteppingDescription;
 
     // Returns the possible options for kVectorFormat.
     static std::vector<std::string> GetVectorFormatOptions();

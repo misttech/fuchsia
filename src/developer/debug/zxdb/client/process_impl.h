@@ -21,6 +21,7 @@ namespace zxdb {
 
 class BacktraceCache;
 class ProcessSymbolDataProvider;
+struct StopInfo;
 class ThreadImpl;
 
 class ProcessImpl : public Process, public ProcessSymbols::Notifications {
@@ -89,6 +90,10 @@ class ProcessImpl : public Process, public ProcessSymbols::Notifications {
   void SetMemoryBlocks(uint64_t thread_koid, std::vector<debug_ipc::MemoryBlock> memory_blocks) {
     memory_blocks_[thread_koid] = std::move(memory_blocks);
   }
+
+  // Called by a thread instance when an exception occurs, before any automatic action has been
+  // decided.
+  debug_ipc::ResumeRequest::How OnException(const StopInfo& info);
 
   // unwinder::AsyncMemory::Delegate implementation.
   void FetchMemoryRanges(std::vector<std::pair<uint64_t, uint32_t>> ranges,

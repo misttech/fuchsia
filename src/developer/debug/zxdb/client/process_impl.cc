@@ -327,6 +327,48 @@ void ProcessImpl::OnThreadExiting(const debug_ipc::ThreadRecord& record) {
   threads_.erase(found);
 }
 
+debug_ipc::ResumeRequest::How ProcessImpl::OnException(const StopInfo& info) {
+  debug_ipc::ResumeRequest::How how = debug_ipc::ResumeRequest::How::kLast;
+
+  bool auto_continue_through_step =
+      target()->settings().GetBool(ClientSettings::Target::kAutoContinueWhenStepping);
+
+  switch (kind()) {
+    case Process::Kind::kTest: {
+      if (info.exception_record.strategy == debug_ipc::ExceptionStrategy::kSecondChance) {
+        // Automatically forward and continue second chance exceptions for tests.
+        how = debug_ipc::ResumeRequest::How::kForwardAndContinue;
+      }
+
+      if (debug_ipc::IsDebug(info.exception_type) && info.hit_breakpoints.empty()) {
+        if (auto_continue_through_step) {
+          // Automatically resolve and continue when we get a debug exception not associated with
+          // any of our breakpoints for tests.
+          how = debug_ipc::ResumeRequest::How::kResolveAndContinue;
+        } else {
+          // When |auto_continue_through_step| is false, then we should only apply the automatic
+          // continue if the exception is not a single step.
+          if (info.exception_type != debug_ipc::ExceptionType::kSingleStep) {
+            how = debug_ipc::ResumeRequest::How::kResolveAndContinue;
+          }
+        }
+      }
+      break;
+    }
+    default: {
+      break;
+    }
+  }
+
+  // Only send the notification if we decided to tell the thread that it should continue.
+  if (how != debug_ipc::ResumeRequest::How::kLast) {
+    for (auto& observer : session()->process_observers())
+      observer.WillAutomaticallyContinue(how, info);
+  }
+
+  return how;
+}
+
 void ProcessImpl::OnModules(std::vector<debug_ipc::Module> modules) {
   FixupEmptyModuleNames(modules);
   symbols_.SetModules(modules, false);

@@ -67,6 +67,8 @@ class ThreadImpl final : public Thread, public Stack::Delegate {
   // The breakpoints will include all breakpoints, including internal ones.
   void OnException(const StopInfo& info);
 
+  bool HasActiveThreadControllers() const { return !controllers_.empty(); }
+
  private:
   FRIEND_TEST(ThreadImplTest, StopNoStack);
 
@@ -94,8 +96,9 @@ class ThreadImpl final : public Thread, public Stack::Delegate {
 
   // Runs the next post-stop task and queues up a continuation of this function when it has
   // completed. This will have the effect of sequentially running all of the post-stop tasks and
-  // then dispatching the stop notification or continuing the program (as per |should_stop|).
-  void RunNextPostStopTaskOrNotify(const StopInfo& info, bool should_stop);
+  // then dispatching the stop notification or continuing the program (as per |should_stop|) and
+  // forwarding exceptions (as per |should_forward|).
+  void RunNextPostStopTaskOrNotify(const StopInfo& info, bool should_stop, bool should_forward);
 
   void ResolveConditionalBreakpoint(const std::string& cond, Breakpoint* bp,
                                     fit::callback<void(bool)> cb);

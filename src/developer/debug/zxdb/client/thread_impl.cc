@@ -416,25 +416,54 @@ void ThreadImpl::OnException(const StopInfo& info) {
   conditional_breakpoints_callback->Ready([weak_this = weak_factory_.GetWeakPtr(), should_stop,
                                            external_info](std::vector<bool> results) mutable {
     if (weak_this) {
-      // Non-debug exceptions (most likely a crash is happening) also mean the thread should
-      // always stop (check this after running the controllers for the same reason as the
-      // breakpoint check above).
-      if (external_info.exception_type != debug_ipc::ExceptionType::kNone &&
-          !debug_ipc::IsDebug(external_info.exception_type))
-        should_stop = true;
+      bool should_forward = false;
 
-      if (std::any_of(results.cbegin(), results.cend(), [](bool result) { return result; }))
-        should_stop = true;
+      // This is the case where there's some external exception from the remote thread. We want to
+      // ask our owning process what to do too in this case, which may call |Continue| with a
+      // different forwarding argument.
+      switch (weak_this->process()->OnException(external_info)) {
+        case debug_ipc::ResumeRequest::How::kForwardAndContinue: {
+          should_forward = true;
+          should_stop = false;
+          break;
+        }
+        case debug_ipc::ResumeRequest::How::kResolveAndContinue: {
+          should_forward = false;
+          should_stop = false;
+          break;
+        }
+        case debug_ipc::ResumeRequest::How::kLast: {
+          // The process has no opinion about how to continue, the following checks will determine
+          // if we actually stop or not.
+          //
+          // Non-debug exceptions (most likely a crash is happening) also mean the thread should
+          // always stop (check this after running the controllers for the same reason as the
+          // breakpoint check above).
+          if (external_info.exception_type != debug_ipc::ExceptionType::kNone &&
+              !debug_ipc::IsDebug(external_info.exception_type)) {
+            should_stop = true;
+          }
 
-      // If there are no conditional breakpoints installed here, and there are no running
-      // controllers, we should stop. This case catches things like __builtin_debugtrap() or
-      // "int 3" on x86_64 architectures.
-      if (!should_stop && results.empty() && weak_this->controllers_.empty())
-        should_stop = true;
+          if (std::any_of(results.cbegin(), results.cend(), [](bool result) { return result; }))
+            should_stop = true;
+
+          // If there are no conditional breakpoints installed here, and there are no running
+          // controllers, then we should stop. This case catches things like __builtin_debugtrap()
+          // or "int 3" on x86_64 architectures.
+          if (!should_stop && results.empty() && weak_this->controllers_.empty()) {
+            should_stop = true;
+          }
+          break;
+        }
+        default: {
+          FX_NOTREACHED();
+          break;
+        }
+      }
 
       // Execute the chain of post-stop tasks (may be asynchronous) and then dispatch the stop
       // notification or continue operation.
-      weak_this->RunNextPostStopTaskOrNotify(external_info, should_stop);
+      weak_this->RunNextPostStopTaskOrNotify(external_info, should_stop, should_forward);
     }
   });
 }
@@ -462,9 +491,9 @@ void ThreadImpl::ResolveConditionalBreakpoint(const std::string& cond, Breakpoin
       msg = val.err().msg();
     }
 
-    // If we get here, the conditional expression failed to evaluate somehow. Show a warning message
-    // if the expression resolution fails for some reason. Note: we still want to stop execution
-    // here so the user can fix whatever went wrong.
+    // If we get here, the conditional expression failed to evaluate somehow. Show a warning
+    // message if the expression resolution fails for some reason. Note: we still want to stop
+    // execution here so the user can fix whatever went wrong.
     Err err(
         "Hit conditional breakpoint, but expression evaluation failed:\n%s\nThis location "
         "could have been optimized out, or this variable might not exist in the current scope."
@@ -490,9 +519,9 @@ void ThreadImpl::SyncFramesForStack(const Stack::SyncFrameOptions& options,
   request.categories = {debug::RegisterCategory::kGeneral};
   request.id = {.process = GetProcess()->GetKoid(), .thread = GetKoid()};
 
-  // Request the registers that will make up the top-most stack frame. The unwinder needs these for
-  // all unwinding strategies so fetching them is a prerequisite. We'll try to use local debug_info
-  // before deferring to the live process for unwinding.
+  // Request the registers that will make up the top-most stack frame. The unwinder needs these
+  // for all unwinding strategies so fetching them is a prerequisite. We'll try to use local
+  // debug_info before deferring to the live process for unwinding.
   session()->remote_api()->ReadRegisters(
       request, [weak_this = weak_factory_.GetWeakPtr(), cb = std::move(callback)](
                    const Err& err, debug_ipc::ReadRegistersReply reply) mutable {
@@ -508,7 +537,8 @@ void ThreadImpl::SyncFramesForStack(const Stack::SyncFrameOptions& options,
 
         if (weak_this->GetProcess()->GetSymbolStatus() == Process::SymbolStatus::kInProgress) {
           // The unwinder requires debuginfo to be present to unwind on the host. If there is a
-          // download in progress we have to wait until the download is finished before continuing.
+          // download in progress we have to wait until the download is finished before
+          // continuing.
           return weak_this->session()->system().AddPostDownloadTask(
               [weak_this, regs = reply.registers, cb = std::move(cb)]() mutable {
                 if (!weak_this) {
@@ -582,15 +612,16 @@ void ThreadImpl::UnwindWithRegisters(unwinder::Registers regs, fit::callback<voi
       // automatically called after it's invoked once.
       //
       // TODO(https://fxbug.dev/454693056): Investigate the following:
-      // In a rare case that the process is killed while in the process of unwinding, this callback
-      // might not be invoked -- which we're not certain of, due to the handling of `!weak_this`
-      // below -- leading to a memory leak since `AsyncUnwinder::on_done_` and `AsyncUnwinder::this`
-      // will now hold cyclic references to each other.
-      // However, even if were was the case, this actually isn't such a huge deal since:
+      // In a rare case that the process is killed while in the process of unwinding, this
+      // callback might not be invoked -- which we're not certain of, due to the handling of
+      // `!weak_this` below -- leading to a memory leak since `AsyncUnwinder::on_done_` and
+      // `AsyncUnwinder::this` will now hold cyclic references to each other. However, even if
+      // were was the case, this actually isn't such a huge deal since:
       //  a. This scenario is extremely unlikely.
       //  b. Even if this were to happen, developers typically debug one process per zxdb session,
       //     causing zxdb to exit after the process dies.
-      //  c. Even if this were not the case, this memory leak would not cost a significant amount of
+      //  c. Even if this were not the case, this memory leak would not cost a significant amount
+      //  of
       //     memory on the developer's host machine.
       [weak_this = weak_factory_.GetWeakPtr(), cb = std::move(cb), unwinder = std::move(unwinder),
        unwinder_memory =
@@ -653,7 +684,7 @@ std::unique_ptr<Frame> ThreadImpl::MakeFrameForStack(const debug_ipc::StackFrame
 }
 
 Location ThreadImpl::GetSymbolizedLocationForAddress(uint64_t address) {
-  auto vect = GetProcess()->GetSymbols()->ResolveInputLocation(InputLocation(address));
+  auto vect = GetProcess()->GetSymbols()->ResolveInputLocation(InputLocation(address), {});
 
   // Symbolizing an address should always give exactly one result.
   FX_DCHECK(vect.size() == 1u);
@@ -675,7 +706,8 @@ void ThreadImpl::ClearState() {
   stack_.ClearFrames();
 }
 
-void ThreadImpl::RunNextPostStopTaskOrNotify(const StopInfo& info, bool should_stop) {
+void ThreadImpl::RunNextPostStopTaskOrNotify(const StopInfo& info, bool should_stop,
+                                             bool should_forward) {
   // It's possible that the user is typing "pause" or "continue" during any asynchronous tasks
   // so the thread state doesn't match what we thought it was. Even though we haven't sent the
   // notifications, things still could have happened.
@@ -713,16 +745,17 @@ void ThreadImpl::RunNextPostStopTaskOrNotify(const StopInfo& info, bool should_s
       // Controllers all say to continue.
       if (debug_stepping)
         printf(" → Sending continue request.\r\n");
-      Continue(false);
+      Continue(should_forward);
     }
   } else {
     // Run the next post-stop task.
     PostStopTask task = std::move(post_stop_tasks_.front());
     post_stop_tasks_.pop_front();
-    task(fit::defer_callback([weak_this = weak_factory_.GetWeakPtr(), info, should_stop]() mutable {
-      if (weak_this)
-        weak_this->RunNextPostStopTaskOrNotify(info, should_stop);
-    }));
+    task(fit::defer_callback(
+        [weak_this = weak_factory_.GetWeakPtr(), info, should_stop, should_forward]() mutable {
+          if (weak_this)
+            weak_this->RunNextPostStopTaskOrNotify(info, should_stop, should_forward);
+        }));
   }
 }
 

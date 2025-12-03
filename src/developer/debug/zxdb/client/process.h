@@ -56,6 +56,20 @@ class Process : public ClientObject, public unwinder::AsyncMemory::Delegate {
     kLaunch,
   };
 
+  // The kind of process being debugged. Most processes will be |kNormal| but certain things, like
+  // tests, want slightly different actions to be taken slightly differently. For example, different
+  // test frameworks have different ways of raising test failures to the debugger, which surface as
+  // different exception types, and vary across test frameworks, runtimes, and architectures.
+  // Despite these differences, we pretty much always want things like "continue" to behave the same
+  // across them all.
+  //
+  // It is up to the upper layers to determine when a particular process is non-standard and update
+  // the process objects accordingly.
+  enum class Kind {
+    kNormal,
+    kTest,
+  };
+
   Process(Session* session, StartType);
   ~Process() override;
 
@@ -211,6 +225,8 @@ class Process : public ClientObject, public unwinder::AsyncMemory::Delegate {
   virtual std::optional<debug_ipc::AddressRegion> GetSharedAddressSpace() const = 0;
 
   StartType start_type() const { return start_type_; }
+  Kind kind() const { return kind_; }
+  void set_kind(Kind kind) { kind_ = kind; }
 
   static constexpr size_t kMaxIOBufferSize = 1 * 1024 * 1024;  // In bytes.
   const containers::circular_deque<uint8_t>& get_stdout() const { return stdout_; }
@@ -223,6 +239,7 @@ class Process : public ClientObject, public unwinder::AsyncMemory::Delegate {
 
  private:
   StartType start_type_;
+  Kind kind_ = Kind::kNormal;
 
   fxl::WeakPtrFactory<Process> weak_factory_;
 

@@ -7,6 +7,9 @@
 
 #include <stdint.h>
 
+#include "src/developer/debug/ipc/protocol.h"
+#include "src/developer/debug/zxdb/client/stop_info.h"
+
 namespace zxdb {
 
 class Err;
@@ -49,6 +52,10 @@ class ProcessObserver {
 
   // Called when symbols for a loaded binary could not be loaded.
   virtual void OnSymbolLoadFailure(Process* process, const Err& err) {}
+
+  // Called when a process has decided that it will automatically continue a thread to automatically
+  // over the given exception in |info|.
+  virtual void WillAutomaticallyContinue(debug_ipc::ResumeRequest::How how, const StopInfo& info) {}
 };
 
 }  // namespace zxdb

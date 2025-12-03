@@ -6,19 +6,20 @@
 
 #include <gtest/gtest.h>
 
+#include "src/developer/debug/ipc/protocol.h"
 #include "src/developer/debug/ipc/records.h"
 #include "src/developer/debug/shared/message_loop.h"
 #include "src/developer/debug/zxdb/client/breakpoint.h"
 #include "src/developer/debug/zxdb/client/breakpoint_settings.h"
 #include "src/developer/debug/zxdb/client/frame.h"
 #include "src/developer/debug/zxdb/client/mock_frame.h"
+#include "src/developer/debug/zxdb/client/process.h"
 #include "src/developer/debug/zxdb/client/remote_api_test.h"
 #include "src/developer/debug/zxdb/client/session.h"
 #include "src/developer/debug/zxdb/client/step_thread_controller.h"
 #include "src/developer/debug/zxdb/client/test_thread_observer.h"
 #include "src/developer/debug/zxdb/client/thread_controller.h"
 #include "src/developer/debug/zxdb/common/err.h"
-#include "src/developer/debug/zxdb/symbols/input_location.h"
 
 namespace zxdb {
 
@@ -343,6 +344,75 @@ TEST_F(ThreadImplTest, ContinueOverException) {
   ASSERT_FALSE(thread->IsBlockedOnException());
 
   // Now use a breakpoint, which should always get marked as resolved.
+  constexpr uint64_t kAddress1 = 0x12345678;
+  constexpr uint64_t kStack1 = 0x7890;
+
+  // Create a breakpoint with a fake address.
+  auto bp = session().system().CreateNewBreakpoint();
+  BreakpointSettings settings;
+  settings.stop_mode = BreakpointSettings::StopMode::kAll;
+  settings.locations.emplace_back(kAddress1);
+  bp->SetSettings(settings);
+
+  // Now use a breakpoint, making sure to fill in |hit_breakpoints|.
+  exception.type = debug_ipc::ExceptionType::kSoftwareBreakpoint;
+  exception.exception.strategy = debug_ipc::ExceptionStrategy::kFirstChance;
+  exception.thread.frames.emplace_back(kAddress1, kStack1);
+  // To match the breakpoint above, the details of the breakpoint don't matter, just that it doesn't
+  // get filtered away by the Session.
+  exception.hit_breakpoints.push_back(
+      {.id = static_cast<uint32_t>(mock_remote_api()->last_breakpoint_id()), .hit_count = 1});
+  InjectException(exception);
+
+  // We should be stopped again.
+  ASSERT_TRUE(thread->IsBlockedOnException());
+  ASSERT_EQ(thread->GetBlockedReason(), debug_ipc::ThreadRecord::BlockedReason::kException);
+  ASSERT_EQ(thread->GetState().value(), debug_ipc::ThreadRecord::State::kBlocked);
+
+  thread->Continue(false);
+
+  EXPECT_EQ(mock_remote_api()->last_resume().how,
+            debug_ipc::ResumeRequest::How::kResolveAndContinue);
+}
+
+TEST_F(ThreadImplTest, ContinueWithTestProcess) {
+  constexpr uint64_t kProcessKoid = 1234;
+  Process* process = InjectProcessWithModule(kProcessKoid, 0x100000);
+  constexpr uint64_t kThreadKoid = 5678;
+  Thread* thread = InjectThread(kProcessKoid, kThreadKoid);
+
+  // The process is opinionated about how to "Continue". If we're in a non-debug exception we should
+  // forward it, instead of resolve it.
+  process->set_kind(Process::Kind::kTest);
+
+  // This is a first-chance exception, we should always stop, even test processes.
+  debug_ipc::NotifyException exception;
+  exception.type = debug_ipc::ExceptionType::kPageFault;
+  exception.exception.strategy = debug_ipc::ExceptionStrategy::kFirstChance;
+  exception.thread.id = {.process = kProcessKoid, .thread = kThreadKoid};
+  exception.thread.blocked_reason = debug_ipc::ThreadRecord::BlockedReason::kException;
+  exception.thread.state = debug_ipc::ThreadRecord::State::kBlocked;
+  InjectException(exception);
+
+  ASSERT_TRUE(thread->IsBlockedOnException());
+  ASSERT_EQ(thread->GetBlockedReason(), debug_ipc::ThreadRecord::BlockedReason::kException);
+  ASSERT_EQ(thread->GetState().value(), debug_ipc::ThreadRecord::State::kBlocked);
+
+  thread->Continue(false);
+
+  EXPECT_EQ(mock_remote_api()->last_resume().how,
+            debug_ipc::ResumeRequest::How::kForwardAndContinue);
+
+  // Now make it second-chance and re-fire (everything else is the same).
+  exception.exception.strategy = debug_ipc::ExceptionStrategy::kSecondChance;
+  InjectException(exception);
+
+  // Now we shouldn't be stopped again, because test processes automatically skip second-chance
+  // exceptions.
+  ASSERT_FALSE(thread->IsBlockedOnException());
+  ASSERT_EQ(thread->GetBlockedReason(), debug_ipc::ThreadRecord::BlockedReason::kNotBlocked);
+  // We won't have an updated state to query, so leave that check out.
+
   constexpr uint64_t kAddress1 = 0x12345678;
   constexpr uint64_t kStack1 = 0x7890;
 

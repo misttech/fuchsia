@@ -57,6 +57,26 @@ const char* ClientSettings::Target::kVectorFormatDescription =
     float       : Array of single-precision floating point.
     double      : Array of double-precision floating point.)";
 
+const char* ClientSettings::Target::kAutoContinueWhenStepping = "auto-continue-when-stepping";
+const char* ClientSettings::Target::kAutoContinueWhenSteppingDescription =
+    R"(  How to handle "Single Step" exceptions when automatically continuing.
+
+    When true (default), "Single Step" exceptions are included in the types of
+    exceptions that are automatically marked as resolved and continued over when
+    the process is detected to be a test. When false, "Single Step" exceptions
+    are excluded and will cause a stop.
+
+    Note: this does not necessarily mean that the process will reach the "Single
+    Step" exception.
+
+    Commands that can trigger "Single Step" exceptions are:
+
+      next   / n
+      step   / s
+      nexti  / ni
+      stepi  / si
+      finish / fi)";
+
 // static
 std::vector<std::string> ClientSettings::Target::GetVectorFormatOptions() {
   return std::vector<std::string>{
@@ -81,6 +101,9 @@ fxl::RefPtr<SettingSchema> CreateSchema() {
       // DW_AT_comp_dir to the right place and remove this hack.
       {"/b/s/w/ir/x/w/fuchsia-third_party-rust=" + files::GetDirectoryName(GetSelfPath()) +
        "/../../../prebuilt/third_party/rust/linux-x64/lib/rustlib/src/rust"});
+
+  schema->AddBool(ClientSettings::Target::kAutoContinueWhenStepping,
+                  ClientSettings::Target::kAutoContinueWhenSteppingDescription, true);
 
   schema->AddBool(ClientSettings::Thread::kDebugStepping,
                   ClientSettings::Thread::kDebugSteppingDescription, false);

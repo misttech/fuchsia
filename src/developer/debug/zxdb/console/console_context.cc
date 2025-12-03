@@ -778,6 +778,29 @@ void ConsoleContext::OnSymbolLoadFailure(Process* process, const Err& err) {
   Console::get()->Output(err);
 }
 
+void ConsoleContext::WillAutomaticallyContinue(debug_ipc::ResumeRequest::How how,
+                                               const StopInfo& info) {
+  OutputBuffer out;
+
+  bool is_second_chance =
+      info.exception_record.strategy == debug_ipc::ExceptionStrategy::kSecondChance;
+  out.Append(Syntax::kComment,
+             fxl::StringPrintf("Automatically continuing over%sexception: %s\n",
+                               is_second_chance ? " second-chance " : " ",
+                               debug_ipc::ExceptionTypeToString(info.exception_type)));
+
+  if (is_second_chance) {
+    out.Append(Syntax::kComment, "The program will likely be killed now.");
+  }
+
+  // It's okay to dispatch this unconditionally since most of the time this observer event will be
+  // triggered when they're using `fx test` to debug tests, which means we'll (typically) go
+  // straight back to embedded mode when they're done. This can be useful for zxdb developers when
+  // operating the debugger outside of these contexts but still targeting similar usecases (e.g.
+  // outside of embedded mode).
+  Console::get()->Output(out);
+}
+
 void ConsoleContext::OnThreadStopped(Thread* thread, const StopInfo& info) {
   // The stopped, process, thread, and frame should be active.
   Target* target = thread->GetProcess()->GetTarget();
@@ -817,6 +840,24 @@ void ConsoleContext::OnThreadStopped(Thread* thread, const StopInfo& info) {
       // stop output.
       should_hide_exception_info = true;
       SetActiveFrameForThread(thread->GetStack()[best_frame_index]);
+      auto embedded_mode_context = GetEmbeddedModeContextOrDefault(info.exception_type);
+
+      OutputBuffer out;
+      out.Append(Syntax::kHeading, "⚠️  " + embedded_mode_context + " in " +
+                                       thread->GetProcess()->GetName() +
+                                       ", type `frame` or `help` to get started.\n");
+
+      out.Append(Syntax::kComment,
+                 "Exception details hidden by default. Use `exception-info` to print detailed "
+                 "information about the stoppage.\n");
+
+      Console::get()->Output(out);
+
+      SetActiveFrameForThread(thread->GetStack()[best_frame_index]);
+
+      // We detected a test, update the process kind so it can take special actions later if
+      // it wants to.
+      thread->GetProcess()->set_kind(Process::Kind::kTest);
     }
   }
 

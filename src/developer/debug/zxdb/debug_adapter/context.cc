@@ -395,6 +395,11 @@ Err DebugAdapterContext::CheckStoppedThread(Thread* thread) {
 std::vector<PrettyStackManager::Match> DebugAdapterContext::GetElidedFrames(const Stack& stack) {
   std::vector<PrettyStackManager::Match> result(stack.size());
 
+  Process* process = nullptr;
+  if (stack[0]->GetThread()) {
+    process = stack[0]->GetThread()->GetProcess();
+  }
+
   // Elide against PrettyStackManager's default matchers first.
   for (const auto& frame : console()->context().pretty_stack_manager()->ProcessStack(stack)) {
     for (uint64_t i = 0; i < frame.frames.size(); i++) {
@@ -410,6 +415,12 @@ std::vector<PrettyStackManager::Match> DebugAdapterContext::GetElidedFrames(cons
     result.at(i) =
         PrettyStackManager::Match(test_impl_skipped_frames, "Test assertion implementation");
   }
+
+  if (test_impl_skipped_frames > 0) {
+    // We think this process is a test, mark it as such.
+    process->set_kind(Process::Kind::kTest);
+  }
+
   return result;
 }
 

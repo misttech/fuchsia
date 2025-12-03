@@ -243,6 +243,8 @@ fxl::RefPtr<SettingSchema> CreateSchema() {
   schema->AddString(
       ClientSettings::Target::kVectorFormat, ClientSettings::Target::kVectorFormatDescription,
       kVectorRegisterFormatStr_Double, ClientSettings::Target::GetVectorFormatOptions());
+  schema->AddBool(ClientSettings::Target::kAutoContinueWhenStepping,
+                  ClientSettings::Target::kAutoContinueWhenSteppingDescription, true);
 
   // Thread ones.
   schema->AddBool(ClientSettings::Thread::kDebugStepping,
