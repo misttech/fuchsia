@@ -1,0 +1,22 @@
+# Copyright 2025 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/tools/bazel2gn/bazel_rules:defs.bzl", "rustc_binary")
+load("@platforms//host:constraints.bzl", "HOST_CONSTRAINTS")
+
+package(default_visibility = ["//visibility:public"])
+
+rustc_binary(
+    name = "pretty_serial",
+    srcs = ["src/main.rs"],
+    crate_name = "pretty_serial",
+    edition = "2021",
+    target_compatible_with = HOST_CONSTRAINTS,
+    with_unit_tests = True,
+    deps = [
+        "//third_party/rust_crates/vendor:ansi_term",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:regex",
+    ],
+)
