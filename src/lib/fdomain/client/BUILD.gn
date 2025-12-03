@@ -43,6 +43,7 @@ rustc_library("client") {
     "src/fidl_next/wire_handle.rs",
     "src/fidl_next/wire_types.rs",
     "src/handle.rs",
+    "src/handle/unowned.rs",
     "src/lib.rs",
     "src/responder.rs",
     "src/socket.rs",

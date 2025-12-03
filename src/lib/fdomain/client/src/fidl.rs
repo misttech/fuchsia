@@ -533,6 +533,10 @@ impl<T: ProtocolMarker> HandleBased for ClientEnd<T> {
     fn from_handle_based<H: HandleBased>(h: H) -> Self {
         Self::from_handle(h.into_handle())
     }
+
+    fn invalidate(&mut self) {
+        self.inner.invalidate();
+    }
 }
 
 /// The `Server` end of a FIDL connection.
@@ -643,5 +647,9 @@ impl<T: ProtocolMarker> HandleBased for ServerEnd<T> {
 
     fn from_handle_based<H: HandleBased>(h: H) -> Self {
         Self::from_handle(h.into_handle())
+    }
+
+    fn invalidate(&mut self) {
+        self.inner.invalidate();
     }
 }

@@ -11,6 +11,8 @@ use std::pin::Pin;
 use std::sync::{Arc, Weak};
 use std::task::{Context, Poll};
 
+pub(crate) mod unowned;
+
 /// A handle of unspecified type within a remote FDomain.
 #[derive(Debug)]
 pub struct Handle {
@@ -199,9 +201,17 @@ pub trait HandleBased: AsHandleRef + From<Handle> + Into<Handle> {
     fn from_handle_based<H: HandleBased>(h: H) -> Self {
         Self::from_handle(h.into_handle())
     }
+
+    /// Drop ownership of this handle and make it invalid, without closing the handle.
+    fn invalidate(&mut self);
 }
 
-impl HandleBased for Handle {}
+impl HandleBased for Handle {
+    fn invalidate(&mut self) {
+        // Detach from the client so we don't close the handle when we drop self.
+        self.client = Weak::new();
+    }
+}
 
 /// Future which waits for a particular set of signals to be asserted for a
 /// given handle.
@@ -245,8 +255,7 @@ impl Handle {
     /// without sending a request to close the handlel.
     pub(crate) fn take_proto(mut self) -> proto::HandleId {
         let ret = self.proto();
-        // Detach from the client so we don't close the handle when we drop self.
-        self.client = Weak::new();
+        self.invalidate();
         ret
     }
 
@@ -324,7 +333,11 @@ macro_rules! handle_type {
             }
         }
 
-        impl $crate::HandleBased for $name {}
+        impl $crate::HandleBased for $name {
+            fn invalidate(&mut self) {
+                self.0.invalidate();
+            }
+        }
     };
     ($name:ident $objtype:ident peered) => {
         handle_type!($name $objtype);
