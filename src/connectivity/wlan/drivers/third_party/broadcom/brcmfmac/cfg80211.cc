@@ -4961,6 +4961,10 @@ void brcmf_if_query(net_device* ndev, fuchsia_wlan_fullmac::WlanFullmacImplQuery
   resp.sta_addr().emplace();
   memcpy(resp.sta_addr()->data(), ifp->mac_addr, ETH_ALEN);
 
+  // factory_addr, same as mac_addr
+  resp.factory_addr().emplace();
+  memcpy(resp.factory_addr()->data(), ifp->mac_addr, ETH_ALEN);
+
   // role
   if (wdev->iftype.IsUnknown()) {
     BRCMF_ERR("Invalid wdev->iftype obtained : %u", fidl::ToUnderlying(wdev->iftype));

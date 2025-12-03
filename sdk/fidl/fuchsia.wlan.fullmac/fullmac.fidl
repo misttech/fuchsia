@@ -373,7 +373,7 @@ closed protocol WlanFullmacImpl {
     /// Returns high-level information describing the state of the FullMAC driver.
     /// This is safe to call even before the call to WlanFullmacImpl::Start.
     strict Query() -> (table {
-        /// Station address. Required.
+        /// Current station address. Required.
         1: sta_addr ieee80211.MacAddr;
 
         /// MAC role. Required.
@@ -381,6 +381,9 @@ closed protocol WlanFullmacImpl {
 
         /// Supported bands. Required.
         3: band_caps vector<BandCapability>:fuchsia.wlan.common.MAX_BANDS;
+
+        /// Factory mac address. Required.
+        4: factory_addr ieee80211.MacAddr;
     }) error zx.Status;
 
     strict QuerySecuritySupport() -> (struct {
