@@ -550,6 +550,8 @@ func fuchsiaLogChecks() []FailureModeCheck {
 				{startString: "[===LSAN EXCEPT BLOCK START===]", endString: "[===LSAN EXCEPT BLOCK END===]"},
 				// Kernel out-of-memory test "OOMHard" may report false positive leaks.
 				{startString: "RUN   TestOOMHard", endString: "PASS: TestOOMHard"},
+				{startString: "RUNNING TEST: /boot/test/lsan-test", endString: "[runtests][PASSED] /boot/test/lsan-test"},
+				{startString: "RUNNING TEST: /boot/test/lsan-test", endString: "[runtests][FAILED] /boot/test/lsan-test"},
 			}},
 			&stringInLogCheck{String: "WARNING: ThreadSanitizer", Type: lt, AttributeToTest: true},
 			&stringInLogCheck{String: "SUMMARY: UndefinedBehaviorSanitizer", Type: lt, AttributeToTest: true, ExceptBlocks: []*logBlock{
