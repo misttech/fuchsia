@@ -1,6 +1,9 @@
 // Copyright 2024 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+
+#ifndef SRC_DEVICES_BUS_DRIVERS_PCI_TEST_UNIT_TEST_HELPERS_H_
+#define SRC_DEVICES_BUS_DRIVERS_PCI_TEST_UNIT_TEST_HELPERS_H_
 #include <lib/inspect/testing/cpp/inspect.h>
 #include <lib/zx/vmo.h>
 
@@ -31,3 +34,5 @@ class InspectHelper {
 };
 
 }  // namespace pci_testing
+
+#endif  // SRC_DEVICES_BUS_DRIVERS_PCI_TEST_UNIT_TEST_HELPERS_H_

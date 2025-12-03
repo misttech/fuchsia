@@ -21,7 +21,7 @@ class FakeDevice final : public pci::Device {
  public:
   FakeDevice(zx_device_t* parent, std::unique_ptr<pci::Config>&& config,
              pci::UpstreamNode* upstream, pci::BusDeviceInterface* bdi, bool is_bridge)
-      : pci::Device(parent, std::move(config), upstream, bdi, is_bridge){};
+      : pci::Device(parent, std::move(config), upstream, bdi, is_bridge) {};
   PCI_IMPLEMENT_REFCOUNTED;
 };
 
