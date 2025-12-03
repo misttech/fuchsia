@@ -7,7 +7,7 @@ use anyhow::Context;
 use block_client::RemoteBlockClient;
 use f2fs_reader::F2fsReader;
 use fidl::endpoints::Proxy;
-use fidl_fuchsia_fxfs::{CryptMarker, KeyPurpose};
+use fidl_fuchsia_fxfs::CryptMarker;
 use fidl_fuchsia_hardware_block::BlockProxy;
 use fidl_fuchsia_hardware_block_volume::VolumeMarker;
 use fidl_fuchsia_hardware_inlineencryption::{DeviceMarker, DeviceRequest, DeviceRequestStream};
@@ -19,7 +19,7 @@ use fxfs::object_store::journal::super_block::SuperBlockInstance;
 use fxfs::object_store::volume::root_volume as fxfs_root_volume;
 use fxfs::object_store::{Directory, HandleOptions, ObjectStore};
 use fxfs_platform::fuchsia::RemoteCrypt;
-use starnix_crypt::{CryptService, Lblk32KeyInfo, UserKey};
+use starnix_crypt::CryptService;
 use storage_device::block_device::BlockDevice;
 use storage_device::ranged_device::RangedDevice;
 
@@ -100,11 +100,9 @@ async fn handle_inline_crypto_requests(
                     log::error!("failed to send ProgramKey response. error: {:?}", e);
                 });
             }
-            DeviceRequest::DeriveRawSecret { wrapped_key: _, responder } => {
-                log::warn!("DeriveRawSecret not implemented");
-                responder.send(Err(zx::Status::NOT_SUPPORTED.into_raw())).unwrap_or_else(|e| {
-                    log::error!("failed to send DeriveRawSecret response. error: {:?}", e);
-                });
+            DeviceRequest::DeriveRawSecret { wrapped_key, responder } => {
+                // Send the key back unchanged.
+                responder.send(Ok(&wrapped_key)).unwrap();
             }
         }
     }
@@ -158,16 +156,13 @@ async fn test_fxfs_migration_at_offset(offset: u64) {
         })
     });
 
-    let crypt_service = Arc::new(CryptService::new());
-    setup_starnix_crypt_volume_keys(&crypt_service);
+    let crypt_service = Arc::new(CryptService::new(&[0; 32], &[1; 32], Some(client)));
 
     let (crypt_client_end, crypt_proxy) = fidl::endpoints::create_endpoints::<CryptMarker>();
 
     let crypt_service_clone = Arc::clone(&crypt_service);
     fuchsia_async::Task::spawn(async move {
-        if let Err(err) =
-            crypt_service_clone.handle_connection(crypt_proxy.into_stream(), Some(client)).await
-        {
+        if let Err(err) = crypt_service_clone.handle_connection(crypt_proxy.into_stream()).await {
             log::error!(err:?; "Crypt service failure");
         }
     })
@@ -220,37 +215,6 @@ async fn test_fxfs_migration_at_offset(offset: u64) {
         .expect("verify");
 
     fxfs.close().await.expect("close ok");
-}
-
-fn setup_starnix_crypt_volume_keys(crypt_service: &Arc<CryptService>) {
-    let mut raw_data_key = vec![0u8; 32];
-    zx::cprng_draw(&mut raw_data_key);
-    let (data_wrapping_key_id, data_cipher) =
-        crypt_service.derive_fxfs_wrapping_key_id_and_cipher(&raw_data_key);
-
-    let mut raw_metadata_key = vec![0u8; 32];
-    zx::cprng_draw(&mut raw_metadata_key);
-    let (metadata_wrapping_key_id, metadata_cipher) =
-        crypt_service.derive_fxfs_wrapping_key_id_and_cipher(&raw_metadata_key);
-
-    crypt_service
-        .add_wrapping_key(
-            metadata_wrapping_key_id.into(),
-            UserKey::FxfsKey { cipher: metadata_cipher },
-            0,
-        )
-        .expect("failed to add metadata volume key");
-
-    crypt_service
-        .add_wrapping_key(data_wrapping_key_id.into(), UserKey::FxfsKey { cipher: data_cipher }, 0)
-        .expect("failed to add data volume key");
-
-    crypt_service
-        .set_active_key(metadata_wrapping_key_id.into(), KeyPurpose::Metadata)
-        .expect("failed to set active metadata key");
-    crypt_service
-        .set_active_key(data_wrapping_key_id.into(), KeyPurpose::Data)
-        .expect("failed to set active data key");
 }
 
 // Migrates an f2fs device to fxfs and verifies directory tree matches.
@@ -342,34 +306,14 @@ async fn test_fxfs_read_lblk32_ino_file() {
         })
     });
 
-    let crypt_service = Arc::new(CryptService::new());
-    setup_starnix_crypt_volume_keys(&crypt_service);
-
-    let main_key: Vec<u8> = [0; 64].to_vec();
-    let (wrapping_key_id, derived_keys) =
-        crypt_service.derive_wrapping_key_id_and_lblk32_derived_keys(&main_key, false, &client);
-    crypt_service
-        .add_wrapping_key(
-            wrapping_key_id,
-            UserKey::InlineCryptoLblk32Key {
-                key_info: Lblk32KeyInfo {
-                    hardware_wrapped: false,
-                    slot: None,
-                    derived_keys,
-                    main_key,
-                },
-            },
-            0,
-        )
-        .expect("add wrapping key failed");
+    let crypt_service = Arc::new(CryptService::new(&[1; 32], &[2; 32], Some(client)));
+    crypt_service.add_wrapping_key(&[0; 64], 0).expect("add wrapping key failed");
 
     let (crypt_client_end, crypt_proxy) = fidl::endpoints::create_endpoints::<CryptMarker>();
 
     let crypt_service_clone = Arc::clone(&crypt_service);
     fuchsia_async::Task::spawn(async move {
-        if let Err(err) =
-            crypt_service_clone.handle_connection(crypt_proxy.into_stream(), Some(client)).await
-        {
+        if let Err(err) = crypt_service_clone.handle_connection(crypt_proxy.into_stream()).await {
             log::error!(err:?; "Crypt service failure");
         }
     })
@@ -500,34 +444,15 @@ async fn test_fxfs_verify_encrypted_data() {
         })
     });
 
-    let crypt_service = Arc::new(CryptService::new());
-    setup_starnix_crypt_volume_keys(&crypt_service);
+    let crypt_service = Arc::new(CryptService::new(&[1; 32], &[2; 32], Some(client)));
 
-    let main_key: Vec<u8> = [0; 64].to_vec();
-    let (wrapping_key_id, derived_keys) =
-        crypt_service.derive_wrapping_key_id_and_lblk32_derived_keys(&main_key, false, &client);
-    crypt_service
-        .add_wrapping_key(
-            wrapping_key_id,
-            UserKey::InlineCryptoLblk32Key {
-                key_info: Lblk32KeyInfo {
-                    hardware_wrapped: false,
-                    slot: None,
-                    derived_keys,
-                    main_key,
-                },
-            },
-            0,
-        )
-        .expect("add wrapping key failed");
+    crypt_service.add_wrapping_key(&[0; 64], 0).expect("add wrapping key failed");
 
     let (crypt_client_end, crypt_proxy) = fidl::endpoints::create_endpoints::<CryptMarker>();
 
     let crypt_service_clone = Arc::clone(&crypt_service);
     fuchsia_async::Task::spawn(async move {
-        if let Err(err) =
-            crypt_service_clone.handle_connection(crypt_proxy.into_stream(), Some(client)).await
-        {
+        if let Err(err) = crypt_service_clone.handle_connection(crypt_proxy.into_stream()).await {
             log::error!(err:?; "Crypt service failure");
         }
     })

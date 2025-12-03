@@ -619,14 +619,13 @@ impl FsNodeOps for RemoteNode {
             let node_info = node.fetch_and_refresh_info(locked, current_task)?;
             if node_info.mode.is_dir() {
                 if let Some(wrapping_key_id) = node_info.wrapping_key_id {
-                    // Locked encrypted directories cannot be opened with write access.
-                    if !current_task
-                        .kernel()
-                        .crypt_service
-                        .contains_key(EncryptionKeyId::from(wrapping_key_id))
-                        && flags.can_write()
-                    {
-                        return error!(ENOKEY);
+                    if flags.can_write() {
+                        // Locked encrypted directories cannot be opened with write access.
+                        let crypt_service =
+                            node.fs().crypt_service().ok_or_else(|| errno!(ENOKEY))?;
+                        if !crypt_service.contains_key(EncryptionKeyId::from(wrapping_key_id)) {
+                            return error!(ENOKEY);
+                        }
                     }
                 }
                 // For directories we need to deep-clone the connection because we rely on the seek

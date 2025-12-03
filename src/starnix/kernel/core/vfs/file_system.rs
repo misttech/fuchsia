@@ -13,6 +13,7 @@ use flyweights::FlyByteStr;
 use linked_hash_map::LinkedHashMap;
 use ref_cast::RefCast;
 use smallvec::SmallVec;
+use starnix_crypt::CryptService;
 use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Mutex};
 use starnix_uapi::arc_key::ArcKey;
 use starnix_uapi::as_any::AsAny;
@@ -454,6 +455,13 @@ impl FileSystem {
     pub fn manages_timestamps(&self) -> bool {
         self.ops.manages_timestamps()
     }
+
+    /// Returns the crypt service associated with this filesystem, if any. The crypt service
+    /// implements the fuchsia.fxfs.Crypt protocol and maintains an internal structure that maps
+    /// each encryption key id to the actual key.
+    pub fn crypt_service(&self) -> Option<Arc<CryptService>> {
+        self.ops.crypt_service()
+    }
 }
 
 /// The filesystem-implementation-specific data for FileSystem.
@@ -541,6 +549,11 @@ pub trait FileSystemOps: AsAny + Send + Sync + 'static {
     /// the timestamps from the filesystem by calling `fetch_and_refresh_info(..)` on the FsNode.
     fn manages_timestamps(&self) -> bool {
         false
+    }
+
+    /// Returns the crypt service associated with this filesystem, if any.
+    fn crypt_service(&self) -> Option<Arc<CryptService>> {
+        None
     }
 }
 

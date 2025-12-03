@@ -41,7 +41,6 @@ use futures::FutureExt;
 use netlink::interfaces::InterfacesHandler;
 use netlink::{NETLINK_LOG_TAG, Netlink};
 use once_cell::sync::OnceCell;
-use starnix_crypt::CryptService;
 use starnix_lifecycle::{AtomicU32Counter, AtomicU64Counter};
 use starnix_logging::{log_debug, log_error, log_info, log_warn};
 use starnix_sync::{
@@ -298,11 +297,6 @@ pub struct Kernel {
     /// Handler for crashing Linux processes.
     pub crash_reporter: CrashReporter,
 
-    /// Implements the fuchsia.fxfs.Crypt protocol. Maintains an internal structure that maps each
-    /// encryption key id to both the set of users that have added that key and the key-derived
-    /// cipher.
-    pub crypt_service: Arc<CryptService>,
-
     /// Vector of functions to be run when procfs is constructed. This is to allow
     /// modules to expose directories into /proc/device-tree.
     pub procfs_device_tree_setup: Vec<fn(&SimpleDirectoryMutator)>,
@@ -484,7 +478,6 @@ impl Kernel {
             hrtimer_manager,
             memory_attribution_manager: MemoryAttributionManager::new(kernel.clone()),
             crash_reporter,
-            crypt_service: Arc::new(CryptService::new()),
             procfs_device_tree_setup,
             shutting_down: AtomicBool::new(false),
             container_control_handle: Mutex::new(None),

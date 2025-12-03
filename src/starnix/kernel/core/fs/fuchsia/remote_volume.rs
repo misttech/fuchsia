@@ -10,12 +10,14 @@ use crate::vfs::{
 };
 use fidl::endpoints::{DiscoverableProtocolMarker, SynchronousProxy, create_sync_proxy};
 use fidl_fuchsia_fshost::StarnixVolumeProviderMarker;
-use fidl_fuchsia_fxfs::{CryptMarker, KeyPurpose};
+use fidl_fuchsia_fxfs::CryptMarker;
 use fidl_fuchsia_io as fio;
+use starnix_crypt::CryptService;
 use starnix_logging::{log_error, log_info};
 use starnix_sync::{FileOpsCore, Locked, Unlocked};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::{errno, from_status_like_fdio, statfs};
+use std::sync::Arc;
 use syncio::{Zxio, zxio_node_attr_has_t, zxio_node_attributes_t};
 
 const CRYPT_THREAD_ROLE: &str = "fuchsia.starnix.remotevol.crypt";
@@ -28,6 +30,7 @@ const KEY_FILE_PATH: &str = "key_file";
 pub struct RemoteVolume {
     remotefs: RemoteFs,
     exposed_dir_proxy: fio::DirectorySynchronousProxy,
+    crypt_service: Arc<CryptService>,
 }
 
 impl RemoteVolume {
@@ -93,6 +96,10 @@ impl FileSystemOps for RemoteVolume {
         if let Err(e) = proxy.shutdown(zx::MonotonicInstant::INFINITE) {
             log_error!(e:%; "StarnixVolumeProvider.Unmount failed at FIDL layer");
         }
+    }
+
+    fn crypt_service(&self) -> Option<Arc<CryptService>> {
+        Some(self.crypt_service.clone())
     }
 }
 
@@ -198,38 +205,23 @@ pub fn new_remote_vol(
     let (metadata_encryption_key, data_encryption_key, created_key_file) =
         get_or_create_volume_keys(&data, KEY_FILE_PATH)?;
 
-    let (metadata_wrapping_key_id, metadata_cipher) =
-        kernel.crypt_service.derive_fxfs_wrapping_key_id_and_cipher(&metadata_encryption_key);
-
-    let (data_wrapping_key_id, data_cipher) =
-        kernel.crypt_service.derive_fxfs_wrapping_key_id_and_cipher(&data_encryption_key);
+    let crypt_service =
+        Arc::new(CryptService::new(&metadata_encryption_key, &data_encryption_key, None));
 
     let (exposed_dir_client_end, exposed_dir_server) =
         fidl::endpoints::create_endpoints::<fio::DirectoryMarker>();
 
-    let crypt = kernel.crypt_service.clone();
-    crypt.add_wrapping_key(
-        metadata_wrapping_key_id,
-        starnix_crypt::UserKey::FxfsKey { cipher: metadata_cipher },
-        0,
-    )?;
-    crypt.add_wrapping_key(
-        data_wrapping_key_id,
-        starnix_crypt::UserKey::FxfsKey { cipher: data_cipher },
-        0,
-    )?;
-
-    crypt.set_active_key(metadata_wrapping_key_id, KeyPurpose::Metadata)?;
-    crypt.set_active_key(data_wrapping_key_id, KeyPurpose::Data)?;
-
-    kernel.kthreads.spawner().spawn_async_with_role(
-        CRYPT_THREAD_ROLE,
-        async move |_: LockedAndTask<'_>| {
-            if let Err(e) = crypt.handle_connection(crypt_proxy.into_stream(), None).await {
-                log_error!("Error while handling a Crypt request {e}");
-            }
-        },
-    );
+    {
+        let crypt_service = Arc::clone(&crypt_service);
+        kernel.kthreads.spawner().spawn_async_with_role(
+            CRYPT_THREAD_ROLE,
+            async move |_: LockedAndTask<'_>| {
+                if let Err(e) = crypt_service.handle_connection(crypt_proxy.into_stream()).await {
+                    log_error!("Error while handling a Crypt request {e}");
+                }
+            },
+        );
+    }
 
     let mode = if created_key_file {
         fidl_fuchsia_fshost::MountMode::AlwaysCreate
@@ -272,7 +264,7 @@ pub fn new_remote_vol(
         };
 
     let use_remote_ids = remotefs.use_remote_ids();
-    let remotevol = RemoteVolume { remotefs, exposed_dir_proxy };
+    let remotevol = RemoteVolume { remotefs, exposed_dir_proxy, crypt_service };
     let fs = FileSystem::new(
         locked,
         kernel,

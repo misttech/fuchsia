@@ -1274,14 +1274,11 @@ impl FsNode {
     /// Returns an error if this node is encrypted and locked. Does not require
     /// fetch_and_refresh_info because FS_IOC_SET_ENCRYPTION_POLICY updates info and once a node is
     /// encrypted, it remains encrypted forever.
-    pub fn fail_if_locked(&self, current_task: &CurrentTask) -> Result<(), Errno> {
+    pub fn fail_if_locked(&self, _current_task: &CurrentTask) -> Result<(), Errno> {
         let node_info = self.info();
         if let Some(wrapping_key_id) = node_info.wrapping_key_id {
-            if !current_task
-                .kernel()
-                .crypt_service
-                .contains_key(EncryptionKeyId::from(wrapping_key_id))
-            {
+            let crypt_service = self.fs().crypt_service().ok_or_else(|| errno!(ENOKEY))?;
+            if !crypt_service.contains_key(EncryptionKeyId::from(wrapping_key_id)) {
                 return error!(ENOKEY);
             }
         }

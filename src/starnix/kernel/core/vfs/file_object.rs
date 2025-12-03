@@ -60,7 +60,6 @@ use std::collections::HashMap;
 use std::fmt;
 use std::ops::Deref;
 use std::sync::{Arc, Weak};
-use zerocopy::IntoBytes;
 
 pub const MAX_LFS_FILESIZE: usize = 0x7fff_ffff_ffff_ffff;
 
@@ -1024,15 +1023,9 @@ pub fn default_ioctl(
             let key = current_task
                 .read_memory_to_vec(key_ref_addr, fscrypt_add_key_arg.raw_size as usize)?;
             let user_id = current_task.with_current_creds(|creds| creds.uid);
-            let (key_identifier, cipher) = current_task
-                .kernel()
-                .crypt_service
-                .derive_fxfs_wrapping_key_id_and_cipher(key.as_bytes());
-            current_task.kernel().crypt_service.add_wrapping_key(
-                key_identifier,
-                starnix_crypt::UserKey::FxfsKey { cipher },
-                user_id,
-            )?;
+
+            let crypt_service = file.node().fs().crypt_service().ok_or_else(|| errno!(ENOTSUP))?;
+            let key_identifier = crypt_service.add_wrapping_key(&key, user_id)?;
             fscrypt_add_key_arg.key_spec.u.identifier =
                 fscrypt_identifier { value: key_identifier, ..Default::default() };
             current_task.write_object(fscrypt_add_key_ref, &fscrypt_add_key_arg)?;
@@ -1072,10 +1065,9 @@ pub fn default_ioctl(
                     .map_err(|_| errno!(EACCES))?;
             }
 
-            if let Some(users) = current_task
-                .kernel()
-                .crypt_service
-                .get_users_for_key(EncryptionKeyId::from(policy.master_key_identifier))
+            let crypt_service = file.node().fs().crypt_service().ok_or_else(|| errno!(ENOTSUP))?;
+            if let Some(users) =
+                crypt_service.get_users_for_key(EncryptionKeyId::from(policy.master_key_identifier))
             {
                 if !users.contains(&user_id) {
                     return error!(ENOKEY);
@@ -1110,13 +1102,14 @@ pub fn default_ioctl(
                 track_stub!(TODO("https://fxbug.dev/375648306"), "fscrypt descriptor type");
                 return error!(ENOTSUP);
             }
+            let crypt_service = file.node().fs().crypt_service().ok_or_else(|| errno!(ENOTSUP))?;
             let user_id = current_task.with_current_creds(|creds| creds.uid);
             #[allow(
                 clippy::undocumented_unsafe_blocks,
                 reason = "Force documented unsafe blocks in Starnix"
             )]
             let identifier = unsafe { fscrypt_remove_key_arg.key_spec.u.identifier.value };
-            current_task.kernel().crypt_service.forget_wrapping_key(identifier, user_id)?;
+            crypt_service.forget_wrapping_key(identifier, user_id)?;
             Ok(SUCCESS)
         }
         _ => {
