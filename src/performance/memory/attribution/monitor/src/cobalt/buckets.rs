@@ -8,11 +8,13 @@ use attribution_processing::ResourceEnumerator;
 use attribution_processing::digest::{BucketDefinition, Digest};
 use cobalt_client::traits::{AsEventCode, AsEventCodes};
 use cobalt_registry::MemoryLeakMigratedMetricDimensionTimeSinceBoot as TimeSinceBoot;
+use fuchsia_trace::duration;
 use futures::stream::StreamExt;
 use futures::{TryFutureExt, try_join};
 use memory_metrics_registry::cobalt_registry;
 use std::collections::HashMap;
 use std::sync::Arc;
+use traces::CATEGORY_MEMORY_CAPTURE;
 use {fidl_fuchsia_kernel as fkernel, fidl_fuchsia_metrics as fmetrics};
 
 /// Sorted list mapping durations to the largest event that is lower.
@@ -208,6 +210,7 @@ async fn collect_metrics_once(
     bucket_definitions: &[BucketDefinition],
     bucket_name_to_code: &HashMap<String, u32>,
 ) -> Result<()> {
+    duration!(CATEGORY_MEMORY_CAPTURE, c"cobalt");
     let timestamp = zx::BootInstant::get();
     let (kmem_stats, kmem_stats_compression) = try_join!(
         kernel_stats_proxy.get_memory_stats().map_err(anyhow::Error::from),

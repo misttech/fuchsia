@@ -197,11 +197,13 @@ impl JsonConvertible for fplugin::ResourceReference {
                 process,
                 base,
                 len,
+                hint_skip_handle_table,
             }) => json!({
                 "process_mapped": {
                     "process": process,
                     "base": base,
                     "len": len,
+                    "hint_skip_handle_table": hint_skip_handle_table
                 }
             }),
             fplugin::ResourceReference::__SourceBreaking { unknown_ordinal: _ } => unimplemented!(),
@@ -219,6 +221,11 @@ impl JsonConvertible for fplugin::ResourceReference {
                 process: process_obj.get("process").unwrap().as_u64().unwrap(),
                 base: process_obj.get("base").unwrap().as_u64().unwrap(),
                 len: process_obj.get("len").unwrap().as_u64().unwrap(),
+                hint_skip_handle_table: process_obj
+                    .get("hint_skip_handle_table")
+                    .unwrap()
+                    .as_bool()
+                    .unwrap(),
             }));
         }
         None

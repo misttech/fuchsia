@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use fidl::endpoints::ControlHandle;
 use fidl::Error::ClientChannelClosed;
+use fidl::endpoints::ControlHandle;
 use fidl_fuchsia_memory_attribution as fattribution;
 use fuchsia_sync::Mutex;
 use log::error;

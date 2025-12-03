@@ -62,7 +62,11 @@ rustc_binary("bin") {
     "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia-async",
     "//src/performance/memory/attribution/server",
+    "//third_party/rust_crates:assert_matches",
     "//third_party/rust_crates:futures",
+    "//third_party/rust_crates:itertools",
+    "//third_party/rust_crates:maplit",
+    "//third_party/rust_crates:pretty_assertions",
   ]
 }
 
@@ -155,11 +159,13 @@ rustc_library("cobalt") {
   deps = [
     ":memory_metrics_registry",
     ":stalls",
+    ":traces",
     "//sdk/fidl/fuchsia.kernel:fuchsia.kernel_rust",
     "//sdk/fidl/fuchsia.metrics:fuchsia.metrics_rust",
     "//sdk/rust/zx",
     "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia-async",
+    "//src/lib/trace/rust:trace",
     "//src/performance/memory/attribution/processing",
     "//third_party/cobalt/src/lib/client/rust:cobalt-client",
     "//third_party/rust_crates:anyhow",
@@ -182,12 +188,14 @@ rustc_library("periodic_monitoring") {
   deps = [
     ":cobalt",
     ":stalls",
+    ":traces",
     "//sdk/fidl/fuchsia.kernel:fuchsia.kernel_rust",
     "//sdk/fidl/fuchsia.metrics:fuchsia.metrics_rust",
     "//sdk/rust/zx",
     "//src/lib/diagnostics/inspect/contrib/rust",
     "//src/lib/diagnostics/inspect/rust",
     "//src/lib/fuchsia-async",
+    "//src/lib/trace/rust:trace",
     "//src/performance/memory/attribution/processing",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:futures",

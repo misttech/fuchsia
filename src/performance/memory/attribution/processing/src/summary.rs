@@ -160,6 +160,7 @@ impl MemorySummary {
                     process: process_mapped,
                     base: _,
                     len: _,
+                    hint_skip_handle_table: _,
                 } = resource
                 {
                     if let Some(process_ref) = resources.get(&process_mapped) {

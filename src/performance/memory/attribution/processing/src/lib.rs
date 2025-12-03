@@ -7,14 +7,15 @@ use core::convert::Into;
 use fidl_fuchsia_memory_attribution_plugin as fplugin;
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
+use std::fmt::Debug;
 use summary::MemorySummary;
 
 mod name;
+pub use name::ZXName;
 
 pub mod digest;
 pub mod fkernel_serde;
 pub mod fplugin_serde;
-pub use name::ZXName;
 pub mod summary;
 
 /// Unique principal identifier across the whole system.
@@ -133,10 +134,10 @@ pub struct Principal {
 impl From<fplugin::Principal> for Principal {
     fn from(value: fplugin::Principal) -> Self {
         Principal {
-            identifier: value.identifier.unwrap().into(),
+            identifier: value.identifier.unwrap().try_into().unwrap(),
             description: value.description.map(Into::into),
             principal_type: value.principal_type.unwrap().into(),
-            parent: value.parent.map(Into::into),
+            parent: value.parent.map(|id| id.try_into().unwrap()),
         }
     }
 }
@@ -412,6 +413,10 @@ pub enum ResourceReference {
 
         /// Length of the VMAR.
         len: u64,
+
+        /// True, when enumerating the handle table on this process is superfluous.
+        /// This is a hint that can be ignored by the client without changing the result.
+        hint_skip_handle_table: bool,
     },
 }
 
@@ -422,8 +427,8 @@ impl From<fplugin::ResourceReference> for ResourceReference {
                 ResourceReference::KernelObject(ko)
             }
             fidl_fuchsia_memory_attribution_plugin::ResourceReference::ProcessMapped(
-                fplugin::ProcessMapped { process, base, len },
-            ) => ResourceReference::ProcessMapped { process, base, len },
+                fplugin::ProcessMapped { process, base, len, hint_skip_handle_table },
+            ) => ResourceReference::ProcessMapped { process, base, len, hint_skip_handle_table },
             _ => unimplemented!(),
         }
     }
@@ -435,9 +440,9 @@ impl Into<fplugin::ResourceReference> for ResourceReference {
             ResourceReference::KernelObject(ko) => {
                 fidl_fuchsia_memory_attribution_plugin::ResourceReference::KernelObject(ko)
             }
-            ResourceReference::ProcessMapped { process, base, len } => {
+            ResourceReference::ProcessMapped { process, base, len, hint_skip_handle_table } => {
                 fidl_fuchsia_memory_attribution_plugin::ResourceReference::ProcessMapped(
-                    fplugin::ProcessMapped { process, base, len },
+                    fplugin::ProcessMapped { process, base, len, hint_skip_handle_table },
                 )
             }
         }
@@ -583,7 +588,12 @@ pub fn attribute_vmos(attribution_data: AttributionData) -> ProcessedAttribution
                         claim_type: ClaimType::Direct,
                     });
                 }
-                ResourceReference::ProcessMapped { process, base, len } => {
+                ResourceReference::ProcessMapped {
+                    process,
+                    base,
+                    len,
+                    hint_skip_handle_table: _,
+                } => {
                     if !resources.contains_key(&process) {
                         continue;
                     }
@@ -824,6 +834,7 @@ mod tests {
                         process: 1005,
                         base: 1024,
                         len: 1024,
+                        hint_skip_handle_table: false,
                     }),
                 ]),
                 ..Default::default()

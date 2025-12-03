@@ -4,8 +4,8 @@
 
 use anyhow::{Context, Result};
 use attribution_data::AttributionDataProviderImpl;
-use attribution_processing::AttributionDataProvider;
 use attribution_processing::digest::BucketDefinition;
+use attribution_processing::{AttributionDataProvider, PrincipalDescription};
 use cobalt::{collect_stalls_forever, create_metric_event_logger};
 use fidl::endpoints::{ControlHandle, RequestStream};
 use fuchsia_component::client::{connect_to_protocol, connect_to_protocol_at_path};
@@ -93,7 +93,7 @@ async fn main() -> Result<()> {
         let introspector =
             connect_to_protocol_at_path::<fcomponent::IntrospectorMarker>(&INTROSPECTOR_PATH)
                 .context("Failed to connect to the memory attribution provider")?;
-        let root_job: Mutex<Box<dyn Job>> = Mutex::new(Box::new(
+        let root_job: Arc<Mutex<dyn Job>> = Arc::new(Mutex::new(
             connect_to_protocol::<fkernel::RootJobForInspectMarker>()
                 .context("error connecting to the root job")?
                 .get()
@@ -106,6 +106,12 @@ async fn main() -> Result<()> {
         );
         AttributionDataProviderImpl::new(attribution_client, root_job)
     };
+    let fast_attribution_data_provider = attribution_data_provider.clone().with_muted_principal(
+        Some(PrincipalDescription::Component(
+            "core/session-manager/session:session/elements:main/container".to_string(),
+        )),
+    );
+
     let bucket_definitions: Arc<[BucketDefinition]> = read_bucket_definitions().into();
     // Serves Fuchsia component inspection protocol
     // https://fuchsia.dev/fuchsia-src/development/diagnostics/inspect
@@ -119,7 +125,7 @@ async fn main() -> Result<()> {
     >()?)
     .await?;
     let mut periodic_collection = fuchsia_async::Task::local({
-        let attribution_data_provider = attribution_data_provider.clone();
+        let attribution_data_provider = fast_attribution_data_provider.clone();
         let stall_provider = stall_provider.clone();
         let kernel_stats = kernel_stats.clone();
         let metric_event_logger = metric_event_logger.clone();

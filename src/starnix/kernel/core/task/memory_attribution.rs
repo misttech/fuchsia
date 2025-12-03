@@ -1,10 +1,6 @@
 // Copyright 2024 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-use std::collections::{HashMap, HashSet};
-use std::iter;
-use std::sync::{Arc, Weak, mpsc};
-
 use attribution_server::{AttributionServer, AttributionServerHandle};
 use fidl::AsHandleRef;
 use fidl_fuchsia_memory_attribution as fattribution;
@@ -12,6 +8,9 @@ use starnix_logging::log_error;
 use starnix_sync::Mutex;
 use starnix_uapi::pid_t;
 use starnix_uapi::restricted_aspace::{RESTRICTED_ASPACE_BASE, RESTRICTED_ASPACE_SIZE};
+use std::collections::{HashMap, HashSet};
+use std::iter;
+use std::sync::{Arc, Weak, mpsc};
 use zx::HandleBased;
 
 use crate::task::{Kernel, ThreadGroup};
@@ -357,6 +356,7 @@ fn updated_principal(thread_group: &ThreadGroup) -> Option<fattribution::Attribu
                 process: process_koid.raw_koid(),
                 base: RESTRICTED_ASPACE_BASE as u64,
                 len: RESTRICTED_ASPACE_SIZE as u64,
+                hint_skip_handle_table: true,
             })],
         })),
         ..Default::default()

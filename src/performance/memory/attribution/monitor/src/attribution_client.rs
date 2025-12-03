@@ -82,20 +82,36 @@ pub struct PrincipalDefinition {
     pub principal_type: PrincipalType,
 }
 
-/// AttributionProvider holds the attribution state of a single Principal providing attribution
-/// claims.
-/// [LocalPrincipalIdentifier] should be unique within this [AttributionProvider].
+/// Holds principals and attributions emitted by a single Principal.
+/// [LocalPrincipalIdentifier] is unique within this [AttributionProvider].
 #[derive(Clone)]
 pub struct AttributionProvider {
-    /// Map from principal ids to principals defined
+    /// Principals defined by this provider, indexed by local identifier.
     pub definitions: HashMap<LocalPrincipalIdentifier, PrincipalDefinition>,
-    /// Map from the principal to its attributed resources.
+    /// Resource attributiona defined by this provider, indexed by recipient.
     pub resources: HashMap<LocalPrincipalIdentifier, Vec<fattribution::Resource>>,
 }
 
-/// AttributionStateManager stores the state of the published attribution claims.
+/// AttributionStateManager stores the state of the published attribution claims by recipient.
 #[derive(Default, Clone)]
 pub struct AttributionState(pub HashMap<GlobalPrincipalIdentifier, AttributionProvider>);
+
+impl AttributionState {
+    /// Returns the identifier of the first principal whose description matches `description`.
+    pub fn find_principal_by_description(
+        &self,
+        description: &PrincipalDescription,
+    ) -> Option<GlobalPrincipalIdentifier> {
+        for provider in self.0.values() {
+            for definition in provider.definitions.values() {
+                if definition.description.as_ref() == Some(description) {
+                    return Some(definition.id.clone());
+                }
+            }
+        }
+        None
+    }
+}
 
 /// AttributionStateManager manages the state of the published attribution claims as known by
 /// [AttributionClient].
@@ -421,7 +437,7 @@ mod tests {
     use fidl::endpoints::RequestStream;
     use fuchsia_async as fasync;
     use futures::TryStreamExt;
-
+    use maplit::hashmap;
     /// Tests a two-level attribution hierarchy.
     #[test]
     fn test_attribute_memory() {
@@ -566,6 +582,83 @@ mod tests {
         assert_eq!(
             provider.definitions.get(&LocalPrincipalIdentifier(2)).unwrap().description,
             None
+        );
+    }
+
+    #[test]
+    fn test_attribute_state() {
+        let mut state = AttributionState::default();
+        state.0.insert(
+            GlobalPrincipalIdentifier::new_for_test(10),
+            AttributionProvider {
+                definitions: hashmap! {
+                    LocalPrincipalIdentifier(11) => PrincipalDefinition {
+                        attributor: None,
+                        id: GlobalPrincipalIdentifier::new_for_test(11),
+                        description: None,
+                        principal_type: PrincipalType::Runnable
+                    },
+                    LocalPrincipalIdentifier(1) => PrincipalDefinition {
+                        attributor: None,
+                        id: GlobalPrincipalIdentifier::new_for_test(1),
+                        description: Some(PrincipalDescription::Component("test1".to_string())),
+                        principal_type: PrincipalType::Runnable
+                    },
+                    LocalPrincipalIdentifier(2) => PrincipalDefinition {
+                        attributor: None,
+                        id: GlobalPrincipalIdentifier::new_for_test(2),
+                        description: Some(PrincipalDescription::Part("test2".to_string())),
+                        principal_type: PrincipalType::Runnable
+                    }
+                },
+                resources: hashmap! {},
+            },
+        );
+        state.0.insert(
+            GlobalPrincipalIdentifier::new_for_test(20),
+            AttributionProvider {
+                definitions: hashmap! {
+                    LocalPrincipalIdentifier(22) => PrincipalDefinition {
+                        attributor: None,
+                        id: GlobalPrincipalIdentifier::new_for_test(22),
+                        description: None,
+                        principal_type: PrincipalType::Runnable
+                    },
+                    LocalPrincipalIdentifier(3) => PrincipalDefinition {
+                        attributor: None,
+                        id: GlobalPrincipalIdentifier::new_for_test(3),
+                        description: Some(PrincipalDescription::Component("test3".to_string())),
+                        principal_type: PrincipalType::Runnable
+                    },
+                    LocalPrincipalIdentifier(4) => PrincipalDefinition {
+                        attributor: None,
+                        id: GlobalPrincipalIdentifier::new_for_test(4),
+                        description: Some(PrincipalDescription::Part("test4".to_string())),
+                        principal_type: PrincipalType::Runnable
+                    }
+                },
+                resources: hashmap! {},
+            },
+        );
+        assert_eq!(
+            Some(GlobalPrincipalIdentifier::new_for_test(1)),
+            state.find_principal_by_description(&PrincipalDescription::Component(
+                "test1".to_string()
+            ))
+        );
+        assert_eq!(
+            Some(GlobalPrincipalIdentifier::new_for_test(2)),
+            state.find_principal_by_description(&PrincipalDescription::Part("test2".to_string()))
+        );
+        assert_eq!(
+            Some(GlobalPrincipalIdentifier::new_for_test(3)),
+            state.find_principal_by_description(&PrincipalDescription::Component(
+                "test3".to_string()
+            ))
+        );
+        assert_eq!(
+            Some(GlobalPrincipalIdentifier::new_for_test(4)),
+            state.find_principal_by_description(&PrincipalDescription::Part("test4".to_string()))
         );
     }
 }

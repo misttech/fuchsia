@@ -79,6 +79,19 @@ type ResourceReference = flexible union {
 
         /// Length of the VMAR.
         len uint64;
+
+        /// True if memory held via the handle-table may be ignored for this process.
+        ///
+        /// This should only be set if all memory accessible via the handle-table is
+        /// already attributed via some other reference (e.g. a memory-mapping or another
+        /// process' handle table).
+        ///
+        /// Clients may use the hint to skip querying the handle table, since all memory
+        /// it refers to is otherwise accounted for.
+        ///
+        /// This information is only used during the serve and is provided to the plugin
+        /// for debugging.
+        hint_skip_handle_table bool;
     };
 };
 

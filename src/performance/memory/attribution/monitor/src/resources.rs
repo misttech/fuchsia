@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::attribution_client::AttributionState;
-use attribution_processing::{ResourcesVisitor, ZXName};
+use attribution_processing::{PrincipalDescription, ResourcesVisitor, ZXName};
 use fuchsia_trace::duration;
 use index_table_builder::IndexTableBuilder;
 use log::warn;
@@ -15,7 +15,6 @@ use {
     fidl_fuchsia_memory_attribution as fattribution,
     fidl_fuchsia_memory_attribution_plugin as fplugin,
 };
-
 const ZX_INFO_CACHE_INITIAL_SIZE: usize = 64;
 const ZX_INFO_CACHE_GROWTH_FACTOR: usize = 2;
 
@@ -143,24 +142,35 @@ impl Range {
         Self { start: a.start.min(b.start), end: a.end.max(b.end) }
     }
 }
-/// Represents whether we should collect information about VMOs or memory maps of a process.
-#[derive(PartialEq, Debug)]
+
+/// Decides whether we should collect information about VMOs or memory maps of a process.
+#[derive(Clone, Debug, PartialEq)]
 struct CollectionRequest {
-    collect_vmos: bool,
+    /// When one or more principals declared that the process handle table collection is optional.
+    can_ignore_vmos: bool,
+    /// True when one or more principals attributed explicitly the process to a principal.
+    /// This has precedence on `can_ignore_vmos`.
+    must_collect_vmos: bool,
+    /// Set when one or more principals attributed explicitly a process mapping to a principal.
     collect_maps: Option<Range>,
 }
 
-impl CollectionRequest {
-    fn collect_vmos() -> Self {
-        Self { collect_vmos: true, collect_maps: None }
+impl Default for CollectionRequest {
+    fn default() -> Self {
+        // Unless specified all VMOs held by the process are collected,
+        // and the process root VMAR is *not* enumerated.
+        Self { can_ignore_vmos: false, must_collect_vmos: false, collect_maps: None }
     }
+}
 
-    fn collect_maps(start: u64, end: u64) -> Self {
-        Self { collect_vmos: false, collect_maps: Some(Range { start, end }) }
+impl CollectionRequest {
+    fn collect_vmos(&self) -> bool {
+        self.must_collect_vmos || !self.can_ignore_vmos
     }
 
     fn merge(&mut self, other: &Self) {
-        self.collect_vmos |= other.collect_vmos;
+        self.can_ignore_vmos |= other.can_ignore_vmos;
+        self.must_collect_vmos |= other.must_collect_vmos;
         self.collect_maps = match (self.collect_maps, other.collect_maps) {
             (None, None) => None,
             (Some(a), None) => Some(a),
@@ -169,7 +179,6 @@ impl CollectionRequest {
         };
     }
 }
-
 /// Interface for a Zircon job. This is useful to allow for dependency injection in tests.
 pub trait Job: Send {
     /// Returns the Koid of the job.
@@ -274,12 +283,14 @@ impl KernelResources {
     pub fn get_resources(
         root: &dyn Job,
         attribution_state: &AttributionState,
+        muted_principal: &Option<PrincipalDescription>,
     ) -> Result<KernelResources, zx::Status> {
         let mut kernel_resources_builder = KernelResourcesBuilder::default();
         KernelResourcesExplorer::default().explore_root_job(
             &mut kernel_resources_builder,
             root,
             attribution_state,
+            muted_principal,
         )?;
         Ok(kernel_resources_builder.build())
     }
@@ -358,37 +369,71 @@ impl KernelResourcesExplorer {
         visitor: &mut impl ResourcesVisitor,
         root: &dyn Job,
         attribution_state: &AttributionState,
+        muted_principal: &Option<PrincipalDescription>,
     ) -> Result<(), zx::Status> {
         duration!(CATEGORY_MEMORY_CAPTURE, c"get_resources");
-        // For each process for which we have attribution information, decide what information we
-        // need to collect.
-        let claimed_resources_iterator =
-            attribution_state.0.values().map(|p| p.resources.values().flatten()).flatten();
 
-        // Now that we have an iterator over all claimed resources, we process each claim to know
-        // what we need to collect.
-        let process_collection_requests: HashMap<zx::Koid, CollectionRequest> =
-            claimed_resources_iterator.fold(HashMap::new(), |mut hashmap, resource| {
-                let (koid, resource_collection) = match resource {
-                    fattribution::Resource::KernelObject(koid) => {
-                        (zx::Koid::from_raw(*koid), CollectionRequest::collect_vmos())
-                    }
-                    fattribution::Resource::ProcessMapped(pm) => {
-                        // Here, we assume that we would have learned about the VMOs elsewhere.
-                        (
+        // Turn the description into a global identifier.
+        let muted_principal = muted_principal
+            .as_ref()
+            .and_then(|description| attribution_state.find_principal_by_description(description));
+
+        // Decide what information has to be collected for each process. There are two
+        // sets of data:
+        // 1. VMOS from the process handle tables. This includes VMO held by a handle, or
+        //    via the root VMAR
+        // 2. VMOS from the process root VMAR. It is a subset of #1. Collecting this data
+        //    also makes it possible to attribute an address space range.
+        //
+        // #1 is collected by default.
+        //
+        // #2 is also collected when the VMAR is explicitly attributed. #1 *can* be
+        //    ignored when a provider suggests it. This is just a performance hint.
+        //    Enumerating the VMOs anyway does not change the final result.
+        //
+        // #1 is never ignored when the process is explicitly attributed to a principal.
+
+        let mut process_collection_requests: HashMap<zx::Koid, CollectionRequest> = HashMap::new();
+
+        for (global_principal_identifier, attribute_provier) in attribution_state.0.iter() {
+            // Process each claim to know what we need to collect.
+            for (_recipient, resources) in attribute_provier.resources.iter() {
+                for resource in resources {
+                    let (koid, resource_collection) = match resource {
+                        fattribution::Resource::KernelObject(attributed_koid) => (
+                            zx::Koid::from_raw(*attributed_koid),
+                            CollectionRequest { must_collect_vmos: true, ..Default::default() },
+                        ),
+                        fattribution::Resource::ProcessMapped(pm) => (
                             zx::Koid::from_raw(pm.process),
-                            CollectionRequest::collect_maps(pm.base, pm.base + pm.len),
-                        )
-                    }
-                    fattribution::Resource::__SourceBreaking { unknown_ordinal: _ } => todo!(),
-                };
-                hashmap
-                    .entry(koid)
-                    .and_modify(|e| e.merge(&resource_collection))
-                    .or_insert(resource_collection);
-                hashmap
-            });
-
+                            CollectionRequest {
+                                collect_maps: Some(Range { start: pm.base, end: pm.base + pm.len }),
+                                can_ignore_vmos: pm.hint_skip_handle_table,
+                                ..Default::default()
+                            },
+                        ),
+                        fattribution::Resource::__SourceBreaking { unknown_ordinal: _ } => todo!(),
+                    };
+                    let (koid, resource_collection) =
+                        if Some(global_principal_identifier) == muted_principal.as_ref() {
+                            (
+                                koid,
+                                CollectionRequest {
+                                    can_ignore_vmos: resource_collection.can_ignore_vmos,
+                                    must_collect_vmos: false,
+                                    collect_maps: None,
+                                },
+                            )
+                        } else {
+                            (koid, resource_collection)
+                        };
+                    process_collection_requests
+                        .entry(koid)
+                        .or_default()
+                        .merge(&resource_collection);
+                }
+            }
+        }
         self.explore_job(visitor, &root.get_koid()?, root, &process_collection_requests)?;
         Ok(())
     }
@@ -438,7 +483,7 @@ impl KernelResourcesExplorer {
                 visitor,
                 child_process_koid,
                 child_process.as_ref(),
-                process_collection_requests.get(child_process_koid),
+                &process_collection_requests.get(child_process_koid).cloned().unwrap_or_default(),
             ) {
                 // If the process disappeared while being explored, we get a BAD_STATE error. In
                 // that case, we want to go to the next job but not fail the entire collection.
@@ -465,23 +510,23 @@ impl KernelResourcesExplorer {
         visitor: &mut impl ResourcesVisitor,
         process_koid: &zx::Koid,
         process: &dyn Process,
-        collection: Option<&CollectionRequest>,
+        collection: &CollectionRequest,
     ) -> Result<(), zx::Status> {
         let process_name = process.get_name()?;
         let process_name_string = process_name.as_bstr().to_string();
         duration!(CATEGORY_MEMORY_CAPTURE, c"explore_process", "name" => &*process_name_string);
 
-        let vmo_koids = if collection.is_none() || collection.is_some_and(|c| c.collect_vmos) {
-            duration!(CATEGORY_MEMORY_CAPTURE, c"explore_process:vmos");
+        let vmo_koids = if collection.collect_vmos() {
+            duration!(CATEGORY_MEMORY_CAPTURE, c"vmos:explore_process");
             let (mut vmo_infos, available) = process.info_vmos(self.cache.vmos_cache(0))?;
 
             if vmo_infos.len() < available {
-                duration!(CATEGORY_MEMORY_CAPTURE, c"explore_process:vmos:grow",
+                duration!(CATEGORY_MEMORY_CAPTURE, c"grow:vmos:explore_process",
                     "initial_length" => vmo_infos.len(), "target_length" => available);
                 (vmo_infos, _) = process.info_vmos(self.cache.vmos_cache(available))?;
             }
 
-            duration!(CATEGORY_MEMORY_CAPTURE, c"explore_process:vmos:insert");
+            duration!(CATEGORY_MEMORY_CAPTURE, c"insert:vmos:explore_process");
             let mut vmo_koids = HashSet::with_capacity(vmo_infos.len());
             for vmo_info in vmo_infos {
                 if !vmo_koids.insert(vmo_info.koid.clone()) {
@@ -515,18 +560,15 @@ impl KernelResourcesExplorer {
             None
         };
 
-        let process_maps = if let Some(selected_range) =
-            collection.map(|c| c.collect_maps).flatten()
-        {
-            duration!(CATEGORY_MEMORY_CAPTURE, c"explore_process:maps");
+        let process_maps = if let Some(selected_range) = collection.collect_maps {
+            duration!(CATEGORY_MEMORY_CAPTURE, c"maps:explore_process");
             let (mut info_maps, available) = process.info_maps(self.cache.maps_cache(0))?;
-
             if info_maps.len() < available {
-                duration!(CATEGORY_MEMORY_CAPTURE, c"explore_process:maps:grow", "initial_length" => info_maps.len(), "target_length" => available);
+                duration!(CATEGORY_MEMORY_CAPTURE, c"grow:maps:explore_process", "initial_length" => info_maps.len(), "target_length" => available);
                 (info_maps, _) = process.info_maps(self.cache.maps_cache(available))?;
             }
 
-            duration!(CATEGORY_MEMORY_CAPTURE, c"explore_process:maps:insert");
+            duration!(CATEGORY_MEMORY_CAPTURE, c"insert:maps:explore_process");
             // This overestimates the capacity needed, but it is still better than resizing several
             // times.
             let mut mappings = Vec::with_capacity(info_maps.len());
@@ -905,14 +947,16 @@ pub mod tests {
                         process: 31,
                         base: 0x1000,
                         len: 2048,
+                        hint_skip_handle_table: false,
                     })],
                 )]
                 .into_iter()
                 .collect(),
             },
         );
-        let kernel_resoures = KernelResources::get_resources(root_job.as_ref(), &attribution_state)
-            .expect("Failed to gather resources");
+        let kernel_resoures =
+            KernelResources::get_resources(root_job.as_ref(), &attribution_state, &None)
+                .expect("Failed to gather resources");
 
         if let fplugin::ResourceType::Process(proc11) = kernel_resoures
             .resources
@@ -943,20 +987,48 @@ pub mod tests {
 
     #[test]
     fn test_collection_request_merges() {
-        let mut a1 = CollectionRequest::collect_maps(100, 200);
-        a1.merge(&CollectionRequest::collect_maps(300, 400));
-        assert_eq!(a1, CollectionRequest::collect_maps(100, 400));
+        let mut a1 = CollectionRequest {
+            collect_maps: Some(Range { start: 100, end: 200 }),
+            ..Default::default()
+        };
+        a1.merge(&CollectionRequest {
+            collect_maps: Some(Range { start: 300, end: 400 }),
+            ..Default::default()
+        });
+        assert_eq!(
+            a1,
+            CollectionRequest {
+                collect_maps: Some(Range { start: 100, end: 400 }),
+                ..Default::default()
+            }
+        );
 
-        let mut a2 = CollectionRequest::collect_maps(100, 200);
-        a2.merge(&CollectionRequest::collect_maps(50, 400));
-        assert_eq!(a2, CollectionRequest::collect_maps(50, 400));
+        let mut a2 = CollectionRequest {
+            collect_maps: Some(Range { start: 100, end: 200 }),
+            ..Default::default()
+        };
+        a2.merge(&CollectionRequest {
+            collect_maps: Some(Range { start: 50, end: 400 }),
+            ..Default::default()
+        });
+        assert_eq!(
+            a2,
+            CollectionRequest {
+                collect_maps: Some(Range { start: 50, end: 400 }),
+                ..Default::default()
+            }
+        );
 
-        let mut a3 = CollectionRequest::collect_maps(100, 200);
-        a3.merge(&CollectionRequest::collect_vmos());
+        let mut a3 = CollectionRequest {
+            collect_maps: Some(Range { start: 100, end: 200 }),
+            ..Default::default()
+        };
+        a3.merge(&CollectionRequest { must_collect_vmos: true, ..Default::default() });
         assert_eq!(
             a3,
             CollectionRequest {
-                collect_vmos: true,
+                can_ignore_vmos: false,
+                must_collect_vmos: true,
                 collect_maps: Some(Range { start: 100, end: 200 })
             }
         );

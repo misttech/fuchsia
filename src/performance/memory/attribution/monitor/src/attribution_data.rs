@@ -7,8 +7,8 @@ use crate::common::PrincipalIdMap;
 use crate::resources::{Job, KernelResources};
 use anyhow::Context;
 use attribution_processing::{
-    Attribution, AttributionData, AttributionDataProvider, Principal, ResourceEnumerator,
-    ResourceReference, ResourcesVisitor,
+    Attribution, AttributionData, AttributionDataProvider, Principal, PrincipalDescription,
+    ResourceEnumerator, ResourceReference, ResourcesVisitor,
 };
 use fuchsia_sync::Mutex;
 use fuchsia_trace::duration;
@@ -16,8 +16,9 @@ use std::sync::Arc;
 use traces::CATEGORY_MEMORY_CAPTURE;
 
 pub struct AttributionDataProviderImpl {
-    root_job: Mutex<Box<dyn Job>>,
+    root_job: Arc<Mutex<dyn Job>>,
     attribution_client: Arc<dyn AttributionClient>,
+    muted_principal: Option<PrincipalDescription>,
 }
 
 impl AttributionDataProviderImpl {
@@ -26,17 +27,32 @@ impl AttributionDataProviderImpl {
     /// usage of kernel objects.
     pub fn new(
         attribution_client: Arc<dyn AttributionClient>,
-        root_job: Mutex<Box<dyn Job>>,
+        root_job: Arc<Mutex<dyn Job>>,
     ) -> Arc<AttributionDataProviderImpl> {
-        Arc::new(AttributionDataProviderImpl { root_job, attribution_client })
+        Arc::new(AttributionDataProviderImpl {
+            root_job,
+            attribution_client,
+            muted_principal: None,
+        })
+    }
+    pub fn with_muted_principal(&self, muted_principal: Option<PrincipalDescription>) -> Arc<Self> {
+        Arc::new(AttributionDataProviderImpl {
+            root_job: self.root_job.clone(),
+            attribution_client: self.attribution_client.clone(),
+            muted_principal,
+        })
     }
 }
 
 impl AttributionDataProvider for AttributionDataProviderImpl {
     fn get_attribution_data(&self) -> Result<AttributionData, anyhow::Error> {
         let attribution_state = self.attribution_client.get_attributions();
-        let kernel_resources =
-            KernelResources::get_resources(self.root_job.lock().as_ref(), &attribution_state)?;
+
+        let kernel_resources = KernelResources::get_resources(
+            &*self.root_job.lock(),
+            &attribution_state,
+            &self.muted_principal,
+        )?;
 
         duration!(CATEGORY_MEMORY_CAPTURE, c"AttributionSnapshot::new");
         // Compute the capacity needed for |principals| and |attributions| to avoid
@@ -51,8 +67,8 @@ impl AttributionDataProvider for AttributionDataProviderImpl {
         let mut attributions = Vec::with_capacity(num_attributions);
 
         for (provider_identifier, attribution_provider) in attribution_state.0 {
-            // fuchsia.memory.attribution.Providers protocol identifiers locally unique for
-            // a given `Provider`. `local_to_global` maps those to global identifiers.
+            // fuchsia.memory.attribution.Providers protocol identifiers locally unique
+            // for a given `Provider`. `local_to_global` maps those to global identifiers.
             let mut local_to_global = PrincipalIdMap::default();
             for (local_id, definition) in attribution_provider.definitions {
                 local_to_global.insert(local_id, definition.id);
@@ -81,8 +97,14 @@ impl AttributionDataProvider for AttributionDataProviderImpl {
                                     process,
                                     base,
                                     len,
+                                    hint_skip_handle_table,
                                 },
-                            ) => ResourceReference::ProcessMapped { process, base, len },
+                            ) => ResourceReference::ProcessMapped {
+                                process,
+                                base,
+                                len,
+                                hint_skip_handle_table,
+                            },
                             fidl_fuchsia_memory_attribution::Resource::__SourceBreaking {
                                 unknown_ordinal: _,
                             } => unimplemented!("Unknown Resource type"),
@@ -105,7 +127,12 @@ impl ResourceEnumerator for AttributionDataProviderImpl {
     fn for_each_resource(&self, visitor: &mut impl ResourcesVisitor) -> Result<(), anyhow::Error> {
         let attribution_state = self.attribution_client.get_attributions();
         crate::resources::KernelResourcesExplorer::default()
-            .explore_root_job(visitor, self.root_job.lock().as_ref(), &attribution_state)
+            .explore_root_job(
+                visitor,
+                &*self.root_job.lock(),
+                &attribution_state,
+                &self.muted_principal,
+            )
             .context("Failed to explore root job")?;
         Ok(())
     }
@@ -114,16 +141,50 @@ impl ResourceEnumerator for AttributionDataProviderImpl {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::attribution_client::{AttributionProvider, PrincipalDefinition};
+    use crate::attribution_client::{AttributionProvider, AttributionState, PrincipalDefinition};
     use crate::common::LocalPrincipalIdentifier;
     use crate::resources::tests::{FakeJob, FakeProcess, simple_vmo_info};
+    use assert_matches::assert_matches;
+    use attribution_processing::summary::{MemorySummary, PrincipalSummary, VmoSummary};
     use attribution_processing::{
         GlobalPrincipalIdentifier, GlobalPrincipalIdentifierFactory, PrincipalDescription,
         PrincipalType, ZXName,
     };
-    use core::assert_eq;
-    use fidl_fuchsia_memory_attribution as fattribution;
+    use itertools::Itertools;
+    use maplit::hashmap;
+    use pretty_assertions::assert_eq;
     use std::collections::HashSet;
+    use {
+        fidl_fuchsia_memory_attribution as fattribution,
+        fidl_fuchsia_memory_attribution_plugin as fplugin,
+    };
+
+    /// Projection of object state into a standardized (canonical) form that can be 
+    /// compared with equality. This usually removes variability of the state 
+    /// representation, such as sequence orders or non-canonical field values.
+    trait Normalize<T> {
+        fn normalize(self) -> T;
+    }
+
+    impl Normalize<PrincipalSummary> for PrincipalSummary {
+        fn normalize(self) -> PrincipalSummary {
+            PrincipalSummary { processes: self.processes.into_iter().sorted().collect(), ..self }
+        }
+    }
+
+    impl Normalize<MemorySummary> for MemorySummary {
+        fn normalize(self) -> MemorySummary {
+            MemorySummary {
+                principals: self
+                    .principals
+                    .into_iter()
+                    .map(|principal| principal.normalize())
+                    .sorted_by_key(|principal| principal.id)
+                    .collect(),
+                ..self
+            }
+        }
+    }
 
     #[test]
     fn test_get_capture() {
@@ -131,24 +192,24 @@ mod tests {
 
         #[derive(Default)]
         struct FakeAttributionClient {
-            state: crate::attribution_client::AttributionState,
+            state: AttributionState,
         }
 
         impl FakeAttributionClient {
             fn add_provider_vmo(
                 &mut self,
-                parent_id: GlobalPrincipalIdentifier,
+                attributor_id: GlobalPrincipalIdentifier,
                 principal_id: GlobalPrincipalIdentifier,
                 name: &str,
                 resource_koid: u64,
             ) {
                 self.state.0.insert(
-                    parent_id.clone(),
+                    attributor_id.clone(),
                     AttributionProvider {
                         definitions: [(
                             LocalPrincipalIdentifier(1),
                             PrincipalDefinition {
-                                attributor: Some(parent_id),
+                                attributor: Some(attributor_id),
                                 id: principal_id,
                                 description: Some(PrincipalDescription::Component(name.to_owned())),
                                 principal_type: PrincipalType::Runnable,
@@ -166,7 +227,7 @@ mod tests {
 
             fn add_provider_part_map(
                 &mut self,
-                parent_id: GlobalPrincipalIdentifier,
+                attributor_id: GlobalPrincipalIdentifier,
                 principal_id: GlobalPrincipalIdentifier,
                 name: &str,
                 process_koid: u64,
@@ -174,12 +235,12 @@ mod tests {
                 len: u64,
             ) {
                 self.state.0.insert(
-                    parent_id.clone(),
+                    attributor_id.clone(),
                     AttributionProvider {
                         definitions: [(
                             LocalPrincipalIdentifier(1),
                             PrincipalDefinition {
-                                attributor: Some(parent_id),
+                                attributor: Some(attributor_id),
                                 id: principal_id,
                                 description: Some(PrincipalDescription::Part(name.to_owned())),
                                 principal_type: PrincipalType::Part,
@@ -192,6 +253,7 @@ mod tests {
                                 process: process_koid,
                                 base,
                                 len,
+                                hint_skip_handle_table: true,
                             })]
                             .into(),
                         )]
@@ -232,7 +294,7 @@ mod tests {
 
         let capture_provider = AttributionDataProviderImpl::new(
             Arc::new(fake_attribution_client),
-            Mutex::new(Box::new(FakeJob::new(
+            Arc::new(Mutex::new(FakeJob::new(
                 1,
                 "job1",
                 [FakeJob::new(
@@ -271,9 +333,11 @@ mod tests {
                 [].into(),
             ))),
         );
-        let capture = capture_provider.get_attribution_data().unwrap();
+
+        // Exercise the code.
+        let attribution_data = capture_provider.get_attribution_data().unwrap();
         assert_eq!(
-            HashSet::from_iter(capture.principals_vec.into_iter()),
+            HashSet::from_iter(attribution_data.principals_vec.clone().into_iter()),
             HashSet::from([
                 Principal {
                     identifier: GlobalPrincipalIdentifier::new_for_test(2),
@@ -291,7 +355,7 @@ mod tests {
         );
 
         assert_eq!(
-            capture.resource_names.into_iter().collect::<HashSet<ZXName>>(),
+            attribution_data.resource_names.clone().into_iter().collect::<HashSet<ZXName>>(),
             HashSet::from([
                 ZXName::from_string_lossy("job1"),
                 ZXName::from_string_lossy("job2"),
@@ -300,6 +364,172 @@ mod tests {
                 ZXName::from_string_lossy("process5"),
                 ZXName::from_string_lossy("vmo6")
             ])
+        );
+
+        // Verify that the process(koid:5) has some mapping collected.
+        assert_matches!(
+            attribution_data.resources_vec.iter().find(|r| r.koid == 5),
+            Some(attribution_processing::Resource {
+                resource_type: fplugin::ResourceType::Process(fplugin::Process {
+                    mappings: Some(_),
+                    vmos: None,
+                    ..
+                }),
+                ..
+            })
+        );
+
+        assert_eq!(
+            attribution_processing::attribute_vmos(attribution_data).summary().normalize(),
+            attribution_processing::summary::MemorySummary {
+                principals: vec![
+                    PrincipalSummary {
+                        id: 2,
+                        name: "component1".to_string(),
+                        principal_type: "R".to_string(),
+                        committed_private: 0,
+                        committed_scaled: 1024.0,
+                        committed_total: 1024,
+                        populated_private: 0,
+                        populated_scaled: 2048.0,
+                        populated_total: 2048,
+                        attributor: None,
+                        processes: vec!["process3 (3)".to_string(), "process5 (5)".to_string(),],
+                        vmos: hashmap! {
+                            ZXName::from_string_lossy("vmo4") => VmoSummary {
+                                count: 1,
+                                committed_private: 0,
+                                committed_scaled: 1024.0,
+                                committed_total: 1024,
+                                populated_private: 0,
+                                populated_scaled: 2048.0,
+                                populated_total: 2048,
+                            },
+                        },
+                    },
+                    PrincipalSummary {
+                        id: 3,
+                        name: "part2".to_string(),
+                        principal_type: "P".to_string(),
+                        committed_private: 0,
+                        committed_scaled: 1024.0,
+                        committed_total: 1024,
+                        populated_private: 0,
+                        populated_scaled: 2048.0,
+                        populated_total: 2048,
+                        attributor: Some("component1".to_string(),),
+                        processes: vec!["process5 (5)".to_string(),],
+                        vmos: hashmap! {  ZXName::from_string_lossy("vmo6") => VmoSummary {
+                            count: 1,
+                            committed_private: 0,
+                            committed_scaled: 1024.0,
+                            committed_total: 1024,
+                            populated_private: 0,
+                            populated_scaled: 2048.0,
+                            populated_total: 2048,
+                        },},
+                    },
+                ],
+                unclaimed: 0
+            }
+            .normalize()
+        );
+
+        // Exercise provider muting.
+        let attribution_data = capture_provider
+            .with_muted_principal(Some(PrincipalDescription::Component("component1".to_owned())))
+            .get_attribution_data()
+            .unwrap();
+
+        // Because process(koid:5) mapping attribution was declared by "component1", and
+        // "component1" is muted. The mapping attribution should be ignored, and the
+        // mapping collection should not be done.
+        //
+        // Verify that the process koid:5:
+        // - has no mapping collected because the mapping attribution is muted, which is
+        //   equivalent to no attribution.
+        // - has not VMO collected because (i) hint_skip_handle_table is not affected by
+        //   "muting", and (ii) the VMO are not explicitly attributed.
+        assert_matches!(
+            attribution_data.resources_vec.iter().find(|r| r.koid == 5),
+            Some(attribution_processing::Resource {
+                resource_type: fplugin::ResourceType::Process(fplugin::Process {
+                    mappings: None,
+                    vmos: None,
+                    ..
+                }),
+                ..
+            })
+        );
+        // Verify that the process koid:3 has VMO collected which is the default behavior.
+        assert_matches!(
+            attribution_data.resources_vec.iter().find(|r| r.koid == 3),
+            Some(attribution_processing::Resource {
+                resource_type: fplugin::ResourceType::Process(fplugin::Process {
+                    mappings: None,
+                    vmos: Some(_),
+                    ..
+                }),
+                ..
+            })
+        );
+
+        assert_eq!(
+            attribution_processing::attribute_vmos(attribution_data).summary(),
+            attribution_processing::summary::MemorySummary {
+                principals: vec![
+                    PrincipalSummary {
+                        id: 2,
+                        name: "component1".to_string(),
+                        principal_type: "R".to_string(),
+                        committed_private: 0,
+                        committed_scaled: 2048.0,
+                        committed_total: 2048,
+                        populated_private: 0,
+                        populated_scaled: 4096.0,
+                        populated_total: 4096,
+                        attributor: None,
+                        processes: vec!["process3 (3)".to_string(), "process5 (5)".to_string(),],
+                        vmos: hashmap! {
+                            ZXName::from_string_lossy("vmo4") => VmoSummary {
+                                count: 1,
+                                committed_private: 0,
+                                committed_scaled: 1024.0,
+                                committed_total: 1024,
+                                populated_private: 0,
+                                populated_scaled: 2048.0,
+                                populated_total: 2048,
+                            },
+                            // `vmo6` attributed to `part2` went back to `component1`
+                            // as a result of muting `component1`.
+                            ZXName::from_string_lossy("vmo6") => VmoSummary {
+                                count: 1,
+                                committed_private: 0,
+                                committed_scaled: 1024.0,
+                                committed_total: 1024,
+                                populated_private: 0,
+                                populated_scaled: 2048.0,
+                                populated_total: 2048,
+                            },
+                        },
+                    },
+                    PrincipalSummary {
+                        id: 3,
+                        name: "part2".to_string(),
+                        principal_type: "P".to_string(),
+                        committed_private: 0,
+                        committed_scaled: 0.0,
+                        committed_total: 0,
+                        populated_private: 0,
+                        populated_scaled: 0.0,
+                        populated_total: 0,
+                        attributor: Some("component1".to_string(),),
+                        processes: vec!["process5 (5)".to_string(),],
+                        vmos: hashmap! {},
+                    },
+                ],
+                unclaimed: 0
+            }
         );
     }
 }

@@ -39,6 +39,10 @@ impl Principal {
     pub fn new(identifier: PrincipalIdentifier, name: String) -> Principal {
         Principal { identifier, name, resources: vec![], children: vec![] }
     }
+
+    pub fn child_by_name(&self, name: &str) -> Option<&Principal> {
+        self.children.iter().find(|c| c.name == name)
+    }
 }
 
 /// Obtain which resources are used for various activities by an attribution provider.

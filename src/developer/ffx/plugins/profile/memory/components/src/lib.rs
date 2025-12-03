@@ -344,6 +344,7 @@ mod tests {
                             process: 1005,
                             base: 1024,
                             len: 1024,
+                            hint_skip_handle_table: false,
                         }),
                     ]),
                     ..Default::default()

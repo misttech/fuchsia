@@ -9,9 +9,11 @@ use fpressure::WatcherRequest;
 use fuchsia_async::{MonotonicDuration, MonotonicInstant, WakeupTime};
 use fuchsia_inspect::{ArrayProperty, Node, StringArrayProperty};
 use fuchsia_inspect_contrib::nodes::BoundedListNode;
+use fuchsia_trace::duration;
 use futures::{StreamExt, TryFutureExt, TryStreamExt, select, try_join};
 use humansize::{BINARY, FormatSizeOptions, format_size};
 use stalls::StallProvider;
+use traces::CATEGORY_MEMORY_CAPTURE;
 use {fidl_fuchsia_kernel as fkernel, fidl_fuchsia_memorypressure as fpressure};
 
 async fn collect_metrics(

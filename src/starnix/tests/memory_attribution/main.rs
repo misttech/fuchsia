@@ -40,15 +40,17 @@ async fn mmap_anonymous() {
     let mut tree: attribution_testing::Principal;
     loop {
         tree = attribution.next().await.unwrap();
-        if tree.children.len() == 1 {
+        if tree.children.len() != 0 {
             break;
         }
     }
+
     // Starnix runner should report a single container, backed by a job.
-    assert_eq!(tree.children.len(), 1);
-    assert_eq!(tree.children[0].name, "debian_container");
-    assert_eq!(tree.children[0].children.len(), 0);
-    assert_eq!(tree.children[0].resources.len(), 1);
+    assert_eq!(tree.children.len(), 2);
+    let debian_container = tree.child_by_name("debian_container").unwrap();
+    assert_eq!(debian_container.children.len(), 0);
+    assert_eq!(debian_container.resources.len(), 1);
+    let _starnix_kernel = tree.child_by_name("starnix_kernel").unwrap();
 
     // Use the container to start the Starnix program.
     let factory = ScopedInstanceFactory::new(PROGRAM_COLLECTION).with_realm_proxy(realm_proxy);
@@ -66,7 +68,7 @@ async fn mmap_anonymous() {
     let program_name = Regex::new(r"(.*): mmap_anonymous_then_sleep").unwrap();
     loop {
         tree = attribution.next().await.unwrap();
-        let container = &tree.children[0];
+        let container = &tree.child_by_name("debian_container").unwrap();
         if container
             .children
             .iter()
@@ -75,7 +77,7 @@ async fn mmap_anonymous() {
             break;
         }
     }
-    let mut container = tree.children[0].clone();
+    let mut container = tree.child_by_name("debian_container").unwrap().clone();
     assert_eq!(container.children.len(), 3);
     let init = container
         .children
@@ -126,8 +128,10 @@ async fn mmap_anonymous() {
     drop(program);
     loop {
         tree = attribution.next().await.unwrap();
-        if tree.children.len() == 1 && tree.children[0].children.len() == 2 {
-            break;
+        if let Some(debian_container) = tree.child_by_name("debian_container") {
+            if debian_container.children.len() == 2 {
+                break;
+            }
         }
     }
 
@@ -157,15 +161,17 @@ async fn leader_killed() {
     let mut tree: attribution_testing::Principal;
     loop {
         tree = attribution.next().await.unwrap();
-        if tree.children.len() == 1 {
+        if tree.children.len() != 0 {
             break;
         }
     }
-    // Starnix runner should report a single container, backed by a job.
-    assert_eq!(tree.children.len(), 1);
-    assert_eq!(tree.children[0].name, "debian_container");
-    assert_eq!(tree.children[0].children.len(), 0);
-    assert_eq!(tree.children[0].resources.len(), 1);
+    // Starnix runner reports two principals: (i) the container, backed by a job, (ii) the
+    // starnix_kernel.
+    assert_eq!(tree.children.len(), 2);
+    let debian_container = tree.child_by_name("debian_container").unwrap();
+    assert_eq!(debian_container.children.len(), 0);
+    assert_eq!(debian_container.resources.len(), 1);
+    let _starnix_kernel = tree.child_by_name("starnix_kernel").unwrap();
 
     // Use the container to start the Starnix program.
     let factory = ScopedInstanceFactory::new(PROGRAM_COLLECTION).with_realm_proxy(realm_proxy);
@@ -183,7 +189,7 @@ async fn leader_killed() {
     let program_name = Regex::new(r"(.*): thread_group_leader_killed").unwrap();
     loop {
         tree = attribution.next().await.unwrap();
-        let container = &tree.children[0];
+        let container = &tree.child_by_name("debian_container").unwrap();
         if container
             .children
             .iter()
@@ -192,7 +198,7 @@ async fn leader_killed() {
             break;
         }
     }
-    let mut container = tree.children[0].clone();
+    let mut container = tree.child_by_name("debian_container").unwrap().clone();
     assert_eq!(container.children.len(), 3);
     container.children.remove(container.children.iter().position(|c| c.name == "1: init").unwrap());
     container
@@ -223,15 +229,18 @@ async fn process_name_change() {
     let mut tree: attribution_testing::Principal;
     loop {
         tree = attribution.next().await.unwrap();
-        if tree.children.len() == 1 {
+        if tree.children.len() != 0 {
             break;
         }
     }
-    // Starnix runner should report a single container, backed by a job.
-    assert_eq!(tree.children.len(), 1);
-    assert_eq!(tree.children[0].name, "debian_container");
-    assert_eq!(tree.children[0].children.len(), 0);
-    assert_eq!(tree.children[0].resources.len(), 1);
+
+    // Starnix runner reports two principals: (i) the container, backed by a job, (ii) the
+    // starnix_kernel.
+    assert_eq!(tree.children.len(), 2);
+    let debian_container = tree.child_by_name("debian_container").unwrap();
+    assert_eq!(debian_container.children.len(), 0);
+    assert_eq!(debian_container.resources.len(), 1);
+    let _starnix_kernel = tree.child_by_name("starnix_kernel").unwrap();
 
     let (stdin_recv, stdin_send) = zx::Socket::create_stream();
 
@@ -274,7 +283,7 @@ async fn process_name_change() {
     let program_name = Regex::new(r"(.*): new_name").unwrap();
     loop {
         tree = attribution.next().await.unwrap();
-        let container = &tree.children[0];
+        let container = &tree.child_by_name("debian_container").unwrap();
         if container
             .children
             .iter()
@@ -289,8 +298,10 @@ async fn process_name_change() {
 
     loop {
         tree = attribution.next().await.unwrap();
-        if tree.children.len() == 1 && tree.children[0].children.len() == 2 {
-            break;
+        if let Some(debian_container) = tree.child_by_name("debian_container") {
+            if debian_container.children.len() == 2 {
+                break;
+            }
         }
     }
 
@@ -366,7 +377,7 @@ async fn init_attribution_test() -> AttributionTest {
         {
             Ok(provider) => break provider,
             Err(OpenError::InstanceNotResolved) => continue,
-            Err(e) => panic!("Error opening the starnix kernel memory provider: {:?}", e),
+            Err(e) => panic!("Error opening the starnix kernel memory provider: {:#?}", e),
         }
     };
 

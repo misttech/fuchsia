@@ -117,8 +117,34 @@ fn attribution_info_for_kernel(
     fuchsia_async::Task::spawn(serve_memory_attribution_provider_container(server_end, kernel))
         .detach();
 
+    let starnix_kernel_id = Some(1);
+    let starnix_kernel_principal = fattribution::NewPrincipal {
+        identifier: starnix_kernel_id,
+        description: Some(fattribution::Description::Part("starnix_kernel".to_string())),
+        principal_type: Some(fattribution::PrincipalType::Part),
+        // This part is created for accounting. It holds the resource used for starnix
+        // kernel operation. It neither has sub-principals, nor publishes attribution,
+        // hence it does not need to be tied to a provider server end.
+        detailed_attribution: None,
+        ..Default::default()
+    };
+
+    let starnix_kernel_attribution = fattribution::UpdatedPrincipal {
+        identifier: starnix_kernel_id, // Recipient.
+        resources: Some(fattribution::Resources::Data(fattribution::Data {
+            resources: vec![fattribution::Resource::ProcessMapped(fattribution::ProcessMapped {
+                process: fuchsia_runtime::process_self().get_koid().unwrap().raw_koid(),
+                base: 0, // Attribute all the range.
+                len: u64::max_value(),
+                hint_skip_handle_table: false,
+            })],
+        })),
+        ..Default::default()
+    };
+
+    let container_id = Some(2);
     let new_principal = fattribution::NewPrincipal {
-        identifier: Some(component_instance.get_koid().unwrap().raw_koid()),
+        identifier: container_id,
         description: Some(fattribution::Description::Component(
             component_instance.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
         )),
@@ -127,7 +153,7 @@ fn attribution_info_for_kernel(
         ..Default::default()
     };
     let attribution = fattribution::UpdatedPrincipal {
-        identifier: Some(component_instance.get_koid().unwrap().raw_koid()),
+        identifier: container_id,
         resources: Some(fattribution::Resources::Data(fattribution::Data {
             resources: vec![fattribution::Resource::KernelObject(
                 fuchsia_runtime::job_default().get_koid().unwrap().raw_koid(),
@@ -135,9 +161,12 @@ fn attribution_info_for_kernel(
         })),
         ..Default::default()
     };
+
     vec![
         fattribution::AttributionUpdate::Add(new_principal),
+        fattribution::AttributionUpdate::Add(starnix_kernel_principal),
         fattribution::AttributionUpdate::Update(attribution),
+        fattribution::AttributionUpdate::Update(starnix_kernel_attribution),
     ]
 }
 

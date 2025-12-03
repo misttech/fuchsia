@@ -8,9 +8,11 @@ use attribution_processing::{AttributionData, AttributionDataProvider, attribute
 use fuchsia_async::WakeupTime;
 use fuchsia_inspect::{ArrayProperty, Node, StringProperty};
 use fuchsia_inspect_contrib::nodes::BoundedListNode;
+use fuchsia_trace::duration;
 use futures::{TryFutureExt, try_join};
 use humansize::{BINARY, FormatSizeOptions, format_size};
 use stalls::StallProvider;
+use traces::CATEGORY_MEMORY_CAPTURE;
 
 use {fidl_fuchsia_kernel as fkernel, fidl_fuchsia_metrics as fmetrics};
 
@@ -33,45 +35,55 @@ pub async fn periodic_monitoring(
     let bucket_names = std::cell::OnceCell::new();
     let bucket_codes = cobalt::prepare_bucket_codes(bucket_definitions);
     loop {
-        let timestamp = zx::BootInstant::get();
-        // Retrieve (concurrently) the data necessary to perform the aggregation.
-        let (kmem_stats, kmem_stats_compression) = try_join!(
-            kernel_stats_proxy.get_memory_stats().map_err(anyhow::Error::from),
-            kernel_stats_proxy.get_memory_stats_compression().map_err(anyhow::Error::from)
-        )
-        .with_context(|| "Failed to get kernel memory stats")?;
-        // This is the very expensive operation.
-        let attribution_data = attribution_data_service.get_attribution_data()?;
-        let digest = Digest::compute(
-            &attribution_data,
-            &kmem_stats,
-            &kmem_stats_compression,
-            bucket_definitions,
-        )?;
-        _current = update_inspect_summary(attribution_data, timestamp, &kmem_stats, &inspect_root);
-        cobalt::upload_metrics(timestamp, &kmem_stats, metric_event_logger, &digest, &bucket_codes)
-            .await?;
         {
-            // Initialize the inspect property containing the buckets names, if necessary.
-            let _ = bucket_names.get_or_init(|| {
-                // Create inspect node to store buckets related information.
-                let bucket_names =
-                    inspect_root.create_string_array("buckets", digest.buckets.len());
-                for (i, attribution_processing::digest::Bucket { name, .. }) in
-                    digest.buckets.iter().enumerate()
-                {
-                    bucket_names.set(i, name);
-                }
-                bucket_names
-            });
+            duration!(CATEGORY_MEMORY_CAPTURE, c"periodic_monitoring");
+            let timestamp = zx::BootInstant::get();
+            // Retrieve (concurrently) the data necessary to perform the aggregation.
+            let (kmem_stats, kmem_stats_compression) = try_join!(
+                kernel_stats_proxy.get_memory_stats().map_err(anyhow::Error::from),
+                kernel_stats_proxy.get_memory_stats_compression().map_err(anyhow::Error::from)
+            )
+            .with_context(|| "Failed to get kernel memory stats")?;
+            // This is the very expensive operation.
+            let attribution_data = attribution_data_service.get_attribution_data()?;
+            let digest = Digest::compute(
+                &attribution_data,
+                &kmem_stats,
+                &kmem_stats_compression,
+                bucket_definitions,
+            )?;
+            _current =
+                update_inspect_summary(attribution_data, timestamp, &kmem_stats, &inspect_root);
+            cobalt::upload_metrics(
+                timestamp,
+                &kmem_stats,
+                metric_event_logger,
+                &digest,
+                &bucket_codes,
+            )
+            .await?;
+            {
+                // Initialize the inspect property containing the buckets names, if necessary.
+                let _ = bucket_names.get_or_init(|| {
+                    // Create inspect node to store buckets related information.
+                    let bucket_names =
+                        inspect_root.create_string_array("buckets", digest.buckets.len());
+                    for (i, attribution_processing::digest::Bucket { name, .. }) in
+                        digest.buckets.iter().enumerate()
+                    {
+                        bucket_names.set(i, name);
+                    }
+                    bucket_names
+                });
+            }
+            update_inspect_history(
+                timestamp,
+                &digest,
+                stall_provider,
+                &mut bucket_list_node,
+                &inspect_root,
+            )?;
         }
-        update_inspect_history(
-            timestamp,
-            &digest,
-            stall_provider,
-            &mut bucket_list_node,
-            &inspect_root,
-        )?;
         zx::MonotonicDuration::from_minutes(5).into_timer().await;
     }
 }
