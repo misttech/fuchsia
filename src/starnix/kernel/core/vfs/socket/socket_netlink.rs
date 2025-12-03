@@ -844,8 +844,37 @@ impl<M: Clone + NetlinkSerializable + Send> Sender<M> for NetlinkToClientSender<
         let mut buf: VecInputBuffer = buf.into();
         // Write the message into the inner socket buffer.
         let NetlinkToClientSender { _message_type: _, inner } = self;
-        let _bytes_written: usize = inner
-            .lock()
+        let mut guard = inner.lock();
+
+        // To avoid dropping messages when the receive buffer is
+        // full, grow the buffer on behalf of the client.
+        // This is a stop gap measure to avoid dropping messages
+        // when netlink produces a large response to a
+        // NLM_F_DUMP request.
+        //
+        // TODO(https://fxbug.dev/459883760): The memory
+        // implications of this may be problematic. It should be
+        // replaced with a proper mechanism to handle a backlog
+        // of NLM_F_DUMP responses.
+        let available = guard.receive_buffer.available_capacity();
+        let required = buf.available();
+        if available < required {
+            let delta = required - available;
+            let current_capacity = guard.receive_buffer.capacity();
+            let new_capacity = (current_capacity + delta).min(SOCKET_MAX_SIZE);
+            match guard.receive_buffer.set_capacity(new_capacity) {
+                Ok(()) => {}
+                Err(e) => {
+                    log_error!(
+                        tag = NETLINK_LOG_TAG;
+                        "Failed to increase receive buffer size: {:?}",
+                        e
+                    );
+                }
+            }
+        }
+
+        let _bytes_written: usize = guard
             .write_to_queue(
                 &mut buf,
                 Some(NetlinkAddress {
@@ -861,7 +890,7 @@ impl<M: Clone + NetlinkSerializable + Send> Sender<M> for NetlinkToClientSender<
                 &mut Vec::new(),
             )
             .unwrap_or_else(|e| {
-                log_warn!(
+                log_error!(
                     tag = NETLINK_LOG_TAG;
                     "Failed to write message into buffer for socket. Errno: {:?}",
                     e
@@ -1920,8 +1949,8 @@ mod tests {
 
     // Successfully send the message and observe it's stored in the queue.
     #[test_case(true; "sufficient_capacity")]
-    // Attempting to send when the queue is full should succeed without changing
-    // the contents of the queue.
+    // Attempting to send when the queue is full should succeed by increasing
+    // the size of the queue.
     #[test_case(false; "insufficient_capacity")]
     fn test_netlink_to_client_sender(sufficient_capacity: bool) {
         const MODERN_GROUP: u32 = 5;
@@ -1930,34 +1959,30 @@ mod tests {
             RouteNetlinkMessage::NewRoute(RouteMessage::default()).into();
         message.finalize();
 
-        let (queue_size, expected_message) = if sufficient_capacity {
-            (SOCKET_DEFAULT_SIZE, Some(message.clone()))
+        let (initial_queue_size, final_queue_size) = if sufficient_capacity {
+            (SOCKET_DEFAULT_SIZE, SOCKET_DEFAULT_SIZE)
         } else {
-            (0, None)
+            (0, message.buffer_len())
         };
 
         let socket_inner = Arc::new(Mutex::new(NetlinkSocketInner {
-            receive_buffer: MessageQueue::new(queue_size),
+            receive_buffer: MessageQueue::new(initial_queue_size),
             ..NetlinkSocketInner::new(NetlinkFamily::Route)
         }));
 
         let mut sender = NetlinkToClientSender::<RouteNetlinkMessage>::new(socket_inner.clone());
-        sender.send(message, Some(ModernGroup(MODERN_GROUP)));
-        let message = socket_inner.lock().read_message();
-
-        let data = message.map(|Message { data, address, ancillary_data: _ }| {
-            assert_eq!(
-                address,
-                Some(SocketAddress::Netlink(NetlinkAddress { pid: 0, groups: 1 << MODERN_GROUP }))
-            );
-            data
-        });
+        sender.send(message.clone(), Some(ModernGroup(MODERN_GROUP)));
+        let Message { data, address, ancillary_data: _ } =
+            socket_inner.lock().read_message().expect("should read message");
 
         assert_eq!(
-            data.map(|data| NetlinkMessage::<RouteNetlinkMessage>::deserialize(&data)
-                .expect("message should deserialize into RtnlMessage")),
-            expected_message
-        )
+            address,
+            Some(SocketAddress::Netlink(NetlinkAddress { pid: 0, groups: 1 << MODERN_GROUP }))
+        );
+        let actual_message = NetlinkMessage::<RouteNetlinkMessage>::deserialize(&data)
+            .expect("message should deserialize into RtnlMessage");
+        assert_eq!(actual_message, message);
+        assert_eq!(socket_inner.lock().receive_buffer.capacity(), final_queue_size);
     }
 
     fn getsockopt_u32(socket: &NetlinkSocketInner, level: u32, optname: u32) -> u32 {
