@@ -17,7 +17,7 @@ use futures::channel::mpsc;
 use futures::future::FusedFuture as _;
 use futures::lock::Mutex;
 use futures::{FutureExt as _, StreamExt as _, TryStreamExt as _};
-use itertools::Itertools as _;
+use itertools::Itertools;
 use log::{debug, error, info, warn};
 use thiserror::Error;
 
@@ -257,12 +257,10 @@ impl UpdateDispatcherInner {
 
     fn disconnect_client(&mut self, watcher: Watcher) {
         let Self { resources: _, clients } = self;
-        let (i, _): (usize, &WatcherSink) = clients
-            .iter()
-            .enumerate()
-            .filter(|(_i, client)| client.is_connected_to(&watcher))
-            .exactly_one()
-            .expect("watcher should be connected to exactly one sink");
+        let (i, _): (usize, &WatcherSink) = Itertools::exactly_one(
+            clients.iter().enumerate().filter(|(_i, client)| client.is_connected_to(&watcher)),
+        )
+        .expect("watcher should be connected to exactly one sink");
         let _: WatcherSink = clients.swap_remove(i);
     }
 }

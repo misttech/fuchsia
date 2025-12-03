@@ -16,7 +16,7 @@ use fidl_fuchsia_net_routes as fnet_routes;
 use futures::channel::mpsc;
 use futures::future::FusedFuture as _;
 use futures::{FutureExt, StreamExt as _, TryStreamExt as _};
-use itertools::Itertools as _;
+use itertools::Itertools;
 use log::{debug, warn};
 use netstack3_core::sync::Mutex;
 use thiserror::Error;
@@ -213,12 +213,10 @@ impl<E: WatcherEvent, WI: WatcherInterest<E>> UpdateDispatcherInner<E, WI> {
     /// Disconnects the given watcher from this `UpdateDispatcher`.
     fn disconnect_client(&mut self, watcher: Watcher<E>) {
         let UpdateDispatcherInner { installed: _, clients } = self;
-        let (idx, _): (usize, &WatcherSink<E, WI>) = clients
-            .iter()
-            .enumerate()
-            .filter(|(_idx, client)| client.is_connected_to(&watcher))
-            .exactly_one()
-            .expect("expected exactly one sink");
+        let (idx, _): (usize, &WatcherSink<E, WI>) = Itertools::exactly_one(
+            clients.iter().enumerate().filter(|(_idx, client)| client.is_connected_to(&watcher)),
+        )
+        .expect("expected exactly one sink");
         let _: WatcherSink<E, WI> = clients.swap_remove(idx);
     }
 }

@@ -18,7 +18,7 @@ use fidl_fuchsia_net_routes_ext::{self as fnet_routes_ext, FidlRouteIpExt, Route
 use fuchsia_async::TimeoutExt as _;
 use futures::StreamExt;
 use futures::future::FutureExt as _;
-use itertools::Itertools as _;
+use itertools::Itertools;
 use net_declare::{
     fidl_ip_v4, fidl_ip_v4_with_prefix, fidl_ip_v6, fidl_ip_v6_with_prefix, fidl_subnet,
 };
@@ -898,11 +898,9 @@ async fn root_route_apis_can_remove_loopback_route<
     .await
     .expect("should succeed");
 
-    let loopback_route = routes
-        .iter()
-        .filter(|route| is_loopback_route(*route))
-        .exactly_one()
-        .expect("should have exactly one loopback route");
+    let loopback_route =
+        Itertools::exactly_one(routes.iter().filter(|route| is_loopback_route(*route)))
+            .expect("should have exactly one loopback route");
 
     // Remove the loopback route.
     match system_route_protocol {
@@ -2011,19 +2009,16 @@ async fn del_forwarding_entry_matches_device<N: Netstack>(name: &str) {
         .await
         .expect("collect routes should succeed");
 
-    let ll_route_action = routes
-        .iter()
-        .filter_map(
-            |fnet_routes_ext::InstalledRoute {
-                 route: fnet_routes_ext::Route { destination, action, properties: _ },
-                 effective_properties: _,
-                 table_id: _,
-             }| {
-                (*destination == net_declare::net_subnet_v6!("fe80::/64")).then_some(*action)
-            },
-        )
-        .exactly_one()
-        .expect("there should only be one LL addr");
+    let ll_route_action = Itertools::exactly_one(routes.iter().filter_map(
+        |fnet_routes_ext::InstalledRoute {
+             route: fnet_routes_ext::Route { destination, action, properties: _ },
+             effective_properties: _,
+             table_id: _,
+         }| {
+            (*destination == net_declare::net_subnet_v6!("fe80::/64")).then_some(*action)
+        },
+    ))
+    .expect("there should only be one LL addr");
 
     // The ll route for if_1 should be removed but the one for if_2 should still exist.
     assert_eq!(

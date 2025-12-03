@@ -160,25 +160,29 @@ mod tests {
         let (table, resolver) = mm.build();
 
         // Verifies that the table was written properly.
-        let mapping1_data = table.iter().filter(|e| e.id == mapping1_id).exactly_one().unwrap();
+        let mapping1_data =
+            Itertools::exactly_one(table.iter().filter(|e| e.id == mapping1_id)).unwrap();
         assert_eq!(mapping1_data.memory_start, 100);
         assert_eq!(mapping1_data.memory_limit, 200);
         assert_eq!(mapping1_data.file_offset, 0);
         assert_eq!(mapping1_data.filename, FAKE_FILENAME_1);
         assert_eq!(mapping1_data.build_id, FAKE_BUILD_ID_1);
-        let mapping2_data = table.iter().filter(|e| e.id == mapping2_id).exactly_one().unwrap();
+        let mapping2_data =
+            Itertools::exactly_one(table.iter().filter(|e| e.id == mapping2_id)).unwrap();
         assert_eq!(mapping2_data.memory_start, 1000);
         assert_eq!(mapping2_data.memory_limit, 1500);
         assert_eq!(mapping2_data.file_offset, 0);
         assert_eq!(mapping2_data.filename, FAKE_FILENAME_2);
         assert_eq!(mapping2_data.build_id, FAKE_BUILD_ID_2);
-        let mapping3_data = table.iter().filter(|e| e.id == mapping3_id).exactly_one().unwrap();
+        let mapping3_data =
+            Itertools::exactly_one(table.iter().filter(|e| e.id == mapping3_id)).unwrap();
         assert_eq!(mapping3_data.memory_start, 1500);
         assert_eq!(mapping3_data.memory_limit, 2000);
         assert_eq!(mapping3_data.file_offset, 500);
         assert_eq!(mapping3_data.filename, FAKE_FILENAME_2);
         assert_eq!(mapping3_data.build_id, FAKE_BUILD_ID_2);
-        let mapping4_data = table.iter().filter(|e| e.id == mapping4_id).exactly_one().unwrap();
+        let mapping4_data =
+            Itertools::exactly_one(table.iter().filter(|e| e.id == mapping4_id)).unwrap();
         assert_eq!(mapping4_data.memory_start, 800);
         assert_eq!(mapping4_data.memory_limit, 1000);
         assert_eq!(mapping4_data.file_offset, 200);

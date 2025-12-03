@@ -6,7 +6,7 @@ use std::hash::{DefaultHasher, Hash as _, Hasher as _};
 
 use fidl::endpoints::ControlHandle as _;
 use futures::{StreamExt as _, TryStreamExt as _};
-use itertools::Itertools as _;
+use itertools::Itertools;
 use regex::Regex;
 
 #[derive(serde::Deserialize, Debug, Clone)]
@@ -207,20 +207,20 @@ fn is_in_shard(
             let caps = regex
                 .captures(name)
                 .unwrap_or_else(|| panic!("shard_part_regex {regex:?} does not match {name:?}"));
-            let matching_capture = caps
-                .iter()
-                // the first capture is just the whole regex, not anything in parens
-                .skip(1)
-                .flatten()
-                .exactly_one()
-                .unwrap_or_else(|e| {
-                    panic!(
-                        "shard_part_regex {} \
+            let matching_capture = Itertools::exactly_one(
+                caps.iter()
+                    // the first capture is just the whole regex, not anything in parens
+                    .skip(1)
+                    .flatten(),
+            )
+            .unwrap_or_else(|e| {
+                panic!(
+                    "shard_part_regex {} \
                          does not have exactly one matching capture in {name:?}: {:?}",
-                        regex.as_str(),
-                        e.collect::<Vec<_>>()
-                    )
-                });
+                    regex.as_str(),
+                    e.collect::<Vec<_>>()
+                )
+            });
             matching_capture.as_str().hash(&mut hasher);
         }
         None => {
@@ -234,7 +234,7 @@ fn is_in_shard(
 mod tests {
     use regex::Regex;
 
-    use crate::{is_in_shard, SerdeRegex, ShardConfig};
+    use crate::{SerdeRegex, ShardConfig, is_in_shard};
 
     #[test]
     fn shards_reasonably_evenly() {
