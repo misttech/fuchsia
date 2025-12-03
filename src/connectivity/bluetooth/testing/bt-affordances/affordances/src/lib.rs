@@ -44,6 +44,7 @@ enum Request {
     Pair(PeerId, PairingOptions, oneshot::Sender<Result<(), anyhow::Error>>),
     Forget(PeerId, oneshot::Sender<Result<(), anyhow::Error>>),
     ConnectL2cap(PeerId, u16, oneshot::Sender<Result<(), anyhow::Error>>),
+    DisconnectL2cap(oneshot::Sender<Result<(), anyhow::Error>>),
     SetDiscovery(bool, oneshot::Sender<Result<(), anyhow::Error>>),
     SetDiscoverability(bool, oneshot::Sender<Result<(), anyhow::Error>>),
     SetConnectability(bool, oneshot::Sender<Result<(), anyhow::Error>>),
@@ -104,7 +105,7 @@ impl WorkThread {
         let mut host_cache: Vec<HostInfo> = Vec::new();
         // TODO(https://fxbug.dev/396500079): Consider HashMap<PeerId, Peer> instead.
         let peer_cache: Arc<Mutex<Vec<Peer>>> = Arc::new(Mutex::new(Vec::new()));
-        let mut _l2cap_channel: Channel;
+        let mut _l2cap_channel: Option<Channel> = None;
         let mut _peripheral_connection: ClientEnd<ConnectionMarker>;
 
         while let Some(request) = receiver.next().await {
@@ -180,13 +181,19 @@ impl WorkThread {
                 Request::ConnectL2cap(peer_id, psm, result_sender) => {
                     match proxies.connect_l2cap(&peer_id, psm).await {
                         Ok(channel) => {
-                            _l2cap_channel = channel;
+                            _l2cap_channel = Some(channel);
                             result_sender.send(Ok(())).unwrap();
                         }
                         Err(err) => {
                             result_sender.send(Err(err)).unwrap();
                         }
                     }
+                }
+                Request::DisconnectL2cap(result_sender) => {
+                    if let Some(_channel) = _l2cap_channel.take() {
+                        println!("L2CAP channel disconnected");
+                    }
+                    result_sender.send(Ok(())).unwrap();
                 }
                 Request::SetDiscovery(discovery, result_sender) => {
                     result_sender.send(proxies.set_discovery(discovery).await).unwrap();
@@ -342,6 +349,13 @@ impl WorkThread {
     ) -> Result<(), anyhow::Error> {
         let (sender, receiver) = oneshot::channel::<Result<(), anyhow::Error>>();
         self.sender.clone().unbounded_send(Request::ConnectL2cap(peer_id, psm, sender))?;
+        receiver.await?
+    }
+
+    // Disconnect an L2CAP channel if one exists.
+    pub async fn disconnect_l2cap(&self) -> Result<(), anyhow::Error> {
+        let (sender, receiver) = oneshot::channel::<Result<(), anyhow::Error>>();
+        self.sender.clone().unbounded_send(Request::DisconnectL2cap(sender))?;
         receiver.await?
     }
 

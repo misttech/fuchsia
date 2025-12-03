@@ -33,7 +33,11 @@ grpc::Status L2capService::Connect(::grpc::ServerContext* context,
 ::grpc::Status L2capService::Disconnect(::grpc::ServerContext* context,
                                         const ::pandora::l2cap::DisconnectRequest* request,
                                         ::pandora::l2cap::DisconnectResponse* response) {
-  return Status(StatusCode::UNIMPLEMENTED, "");
+  if (disconnect_l2cap() != ZX_OK) {
+    return Status(StatusCode::INTERNAL, "Error in Rust affordances (check logs)");
+  }
+  response->mutable_success();
+  return Status::OK;
 }
 
 ::grpc::Status L2capService::WaitDisconnection(

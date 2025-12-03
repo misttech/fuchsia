@@ -125,6 +125,11 @@ int32_t forget_peer(uint64_t peer_id);
 /// Returns ZX_STATUS_INTERNAL on error (check logs).
 int32_t connect_l2cap_channel(uint64_t peer_id, uint16_t psm);
 
+/// Disconnect an L2CAP channel if one exists.
+///
+/// Returns ZX_STATUS_INTERNAL on error (check logs).
+int32_t disconnect_l2cap();
+
 /// Start or stop general discovery procedure.
 ///
 /// Returns ZX_STATUS_INTERNAL on error (check logs).
