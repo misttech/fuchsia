@@ -667,3 +667,43 @@ pub extern "C" fn discover_services(context: *mut c_void, cb: DiscoverServicesCa
     }
     zx::Status::OK.into_raw()
 }
+
+#[repr(C)]
+pub struct ReadCharacteristicResult {
+    pub handle: u64,
+    pub value: [u8; 512],
+    pub value_len: usize,
+    pub maybe_truncated: bool,
+}
+
+/// Read the value of a GATT characteristic on the remote peer identified with the given handles.
+///
+/// Returns ZX_STATUS_INTERNAL on error (check logs).
+///
+/// # Safety
+///
+/// The caller must ensure that `result` points to a valid `ReadCharacteristicResult` struct.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn read_characteristic(
+    service_handle: u64,
+    characteristic_handle: u64,
+    result: *mut ReadCharacteristicResult,
+) -> i32 {
+    let service_handle = ServiceHandle { value: service_handle };
+    let characteristic_handle = Handle { value: characteristic_handle };
+
+    match block_on(STATE.worker.read_characteristic(service_handle, characteristic_handle)) {
+        Ok(read_value) => unsafe {
+            (*result).handle = read_value.handle.unwrap().value;
+            let value = read_value.value.unwrap();
+            (*result).value_len = value.len();
+            (&mut (*result).value)[..value.len()].copy_from_slice(&value);
+            (*result).maybe_truncated = read_value.maybe_truncated.unwrap();
+        },
+        Err(err) => {
+            eprintln!("read_characteristic encountered error: {err}");
+            return zx::Status::INTERNAL.into_raw();
+        }
+    }
+    zx::Status::OK.into_raw()
+}

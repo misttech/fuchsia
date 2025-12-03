@@ -50,6 +50,13 @@ struct DiscoveredService {
 
 using DiscoverServicesCallback = void (*)(void *context, const DiscoveredService *service);
 
+struct ReadCharacteristicResult {
+  uint64_t handle;
+  uint8_t value[512];
+  uintptr_t value_len;
+  bool maybe_truncated;
+};
+
 extern "C" {
 
 /// Stop serving Rust affordances.
@@ -189,6 +196,16 @@ int32_t publish_service(uint64_t handle, const char *uuid, uint64_t characterist
 ///
 /// The caller must ensure `context` and `cb` point to valid memory & a valid callback.
 int32_t discover_services(void *context, DiscoverServicesCallback cb);
+
+/// Read the value of a GATT characteristic on the remote peer identified with the given handles.
+///
+/// Returns ZX_STATUS_INTERNAL on error (check logs).
+///
+/// # Safety
+///
+/// The caller must ensure that `result` points to a valid `ReadCharacteristicResult` struct.
+int32_t read_characteristic(uint64_t service_handle, uint64_t characteristic_handle,
+                            ReadCharacteristicResult *result);
 
 }  // extern "C"
 

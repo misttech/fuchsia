@@ -72,6 +72,11 @@ enum Request {
         oneshot::Sender<Result<(), anyhow::Error>>,
     ),
     DiscoverServices(oneshot::Sender<Result<Vec<ServiceInfo>, anyhow::Error>>),
+    ReadCharacteristic(
+        ServiceHandle,
+        fidl_fuchsia_bluetooth_gatt2::Handle,
+        oneshot::Sender<Result<fidl_fuchsia_bluetooth_gatt2::ReadValue, anyhow::Error>>,
+    ),
     Stop,
 }
 
@@ -236,6 +241,19 @@ impl WorkThread {
                 }
                 Request::DiscoverServices(result_sender) => {
                     result_sender.send(proxies.discover_services().await).unwrap();
+                }
+                Request::ReadCharacteristic(
+                    service_handle,
+                    characteristic_handle,
+                    result_sender,
+                ) => {
+                    result_sender
+                        .send(
+                            proxies
+                                .read_characteristic(service_handle, characteristic_handle)
+                                .await,
+                        )
+                        .unwrap();
                 }
                 Request::Stop => break,
             }
@@ -434,6 +452,22 @@ impl WorkThread {
         self.sender.clone().unbounded_send(Request::DiscoverServices(sender))?;
         receiver.await?
     }
+
+    // Perform a short read of the GATT characteristic identified with the given handles.
+    pub async fn read_characteristic(
+        &self,
+        service_handle: ServiceHandle,
+        characteristic_handle: fidl_fuchsia_bluetooth_gatt2::Handle,
+    ) -> Result<fidl_fuchsia_bluetooth_gatt2::ReadValue, anyhow::Error> {
+        let (sender, receiver) =
+            oneshot::channel::<Result<fidl_fuchsia_bluetooth_gatt2::ReadValue, anyhow::Error>>();
+        self.sender.clone().unbounded_send(Request::ReadCharacteristic(
+            service_handle,
+            characteristic_handle,
+            sender,
+        ))?;
+        receiver.await?
+    }
 }
 
 struct Proxies {
@@ -449,6 +483,7 @@ struct Proxies {
     suppress_connections_session: Mutex<Option<ProcedureTokenProxy>>,
     le_scan_task: Mutex<Option<Task<()>>>,
     central_connection: Mutex<Option<ConnectionProxy>>,
+    gatt_client: Option<fidl_fuchsia_bluetooth_gatt2::ClientProxy>,
 }
 
 impl Proxies {
@@ -469,6 +504,7 @@ impl Proxies {
         let suppress_connections_session: Mutex<Option<ProcedureTokenProxy>> = Mutex::new(None);
         let le_scan_task: Mutex<Option<Task<()>>> = Mutex::new(None);
         let central_connection: Mutex<Option<ConnectionProxy>> = Mutex::new(None);
+        let gatt_client: Option<fidl_fuchsia_bluetooth_gatt2::ClientProxy> = None;
 
         Ok(Proxies {
             access_proxy,
@@ -483,6 +519,7 @@ impl Proxies {
             suppress_connections_session,
             le_scan_task,
             central_connection,
+            gatt_client,
         })
     }
 
@@ -848,7 +885,11 @@ impl Proxies {
     async fn connect_le(&mut self, peer_id: &PeerId) -> Result<(), anyhow::Error> {
         let (le_client, le_server) = fidl::endpoints::create_proxy::<ConnectionMarker>();
         self.central_proxy.connect(peer_id, &ConnectionOptions::default(), le_server)?;
+        let (client_proxy, client_server_end) =
+            fidl::endpoints::create_proxy::<fidl_fuchsia_bluetooth_gatt2::ClientMarker>();
+        le_client.request_gatt_client(client_server_end)?;
         *self.central_connection.lock() = Some(le_client);
+        self.gatt_client = Some(client_proxy);
         Ok(())
     }
 
@@ -916,27 +957,63 @@ impl Proxies {
         Ok(service_stream)
     }
 
-    async fn discover_services(&self) -> Result<Vec<ServiceInfo>, anyhow::Error> {
+    async fn discover_services(&mut self) -> Result<Vec<ServiceInfo>, anyhow::Error> {
+        // To ensure we receive a full snapshot of the peer's services, re-init the gatt client.
+        let _ = self.gatt_client.take();
         let connection = self
             .central_connection
             .lock()
             .clone()
             .ok_or_else(|| anyhow!("GATT connection not established"))?;
-        let (client_proxy, client_server_end) =
+        let (gatt_client, gatt_client_server_end) =
             fidl::endpoints::create_proxy::<fidl_fuchsia_bluetooth_gatt2::ClientMarker>();
-        connection.request_gatt_client(client_server_end)?;
-
-        let (mut updated, _removed) = client_proxy.watch_services(&[]).await?;
+        connection.request_gatt_client(gatt_client_server_end)?;
+        let (mut updated, _removed) = gatt_client.watch_services(&[]).await?;
+        self.gatt_client = Some(gatt_client);
 
         for service in updated.iter_mut() {
             let (service_proxy, service_server_end) = fidl::endpoints::create_proxy::<
                 fidl_fuchsia_bluetooth_gatt2::RemoteServiceMarker,
             >();
-            client_proxy
+            self.gatt_client
+                .clone()
+                .unwrap()
                 .connect_to_service(&service.handle.as_ref().unwrap(), service_server_end)?;
             service.characteristics = Some(service_proxy.discover_characteristics().await?);
         }
 
         Ok(updated)
+    }
+
+    async fn read_characteristic(
+        &self,
+        service_handle: ServiceHandle,
+        characteristic_handle: fidl_fuchsia_bluetooth_gatt2::Handle,
+    ) -> Result<fidl_fuchsia_bluetooth_gatt2::ReadValue, anyhow::Error> {
+        if self.gatt_client.is_none() {
+            return Err(anyhow!("GATT client is not connected"));
+        }
+
+        let (service_proxy, service_server_end) =
+            fidl::endpoints::create_proxy::<fidl_fuchsia_bluetooth_gatt2::RemoteServiceMarker>();
+
+        self.gatt_client
+            .clone()
+            .unwrap()
+            .connect_to_service(&service_handle, service_server_end)?;
+
+        let value = service_proxy
+            .read_characteristic(
+                &characteristic_handle,
+                &fidl_fuchsia_bluetooth_gatt2::ReadOptions::ShortRead(
+                    fidl_fuchsia_bluetooth_gatt2::ShortReadOptions {},
+                ),
+            )
+            .await?
+            .map_err(|e| {
+                anyhow!("fuchsia.bluetooth.gatt2.RemoteService/ReadCharacteristic error: {:?}", e)
+            })?;
+
+        Ok(value)
     }
 }

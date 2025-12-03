@@ -71,6 +71,21 @@ Status GattService::ReadCharacteristicFromHandle(
   return Status(StatusCode::UNIMPLEMENTED, "");
 }
 
+Status GattService::ReadCharacteristic(
+    ::grpc::ServerContext* context, const ::pandora::ReadCharacteristicWithServiceRequest* request,
+    ::pandora::ReadCharacteristicResponse* response) {
+  struct ReadCharacteristicResult result;
+  if (read_characteristic(request->service_handle(), request->characteristic_handle(), &result) !=
+      ZX_OK) {
+    return Status(StatusCode::INTERNAL, "Error in Rust affordances (check logs)");
+  }
+
+  response->mutable_value()->set_handle(result.handle);
+  response->mutable_value()->set_value(result.value, result.value_len);
+
+  return {/*OK*/};
+}
+
 Status GattService::ReadCharacteristicsFromUuid(
     ::grpc::ServerContext* context, const ::pandora::ReadCharacteristicsFromUuidRequest* request,
     ::pandora::ReadCharacteristicsFromUuidResponse* response) {

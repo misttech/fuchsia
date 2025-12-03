@@ -39,6 +39,14 @@ class GattService : public pandora::GATT::Service {
       ::grpc::ServerContext* context, const ::pandora::ReadCharacteristicRequest* request,
       ::pandora::ReadCharacteristicResponse* response) override;
 
+  // TODO(https://fxbug.dev/450959787): Upstream this RPC. The above `ReadCharacteristicFromHandle`
+  // request does not include the GATT service handle, which is needed to dispatch a read req on
+  // the right RemoteService when using the Sapphire gatt2 API. We have locally added this new RPC
+  // which supplies both handles and used it in mmi2grpc in tandem with `DiscoverServices`.
+  ::grpc::Status ReadCharacteristic(::grpc::ServerContext* context,
+                                    const ::pandora::ReadCharacteristicWithServiceRequest* request,
+                                    ::pandora::ReadCharacteristicResponse* response) override;
+
   ::grpc::Status ReadCharacteristicsFromUuid(
       ::grpc::ServerContext* context, const ::pandora::ReadCharacteristicsFromUuidRequest* request,
       ::pandora::ReadCharacteristicsFromUuidResponse* response) override;
