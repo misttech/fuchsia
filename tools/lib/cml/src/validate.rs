@@ -4,14 +4,21 @@
 
 use crate::error::Location;
 use crate::features::{Feature, FeatureSet};
+use crate::types::capability::{Capability, CapabilityFromRef, SpannedCapability};
+use crate::types::capability_id::CapabilityId;
+use crate::types::child::{Child, SpannedChild};
+use crate::types::collection::Collection;
+use crate::types::document::{Document, SpannedDocument};
+use crate::types::environment::{Environment, EnvironmentExtends, RegistrationRef};
+use crate::types::expose::{Expose, ExposeFromRef, ExposeToRef, SpannedExpose};
+use crate::types::offer::{Offer, OfferFromRef, OfferToRef, SpannedOffer, TargetAvailability};
+use crate::types::right::Rights;
+use crate::types::r#use::{SpannedUse, Use, UseFromRef};
 use crate::{
-    AnyRef, Availability, Capability, CapabilityClause, CapabilityFromRef, CapabilityId, Child,
-    Collection, ConfigKey, ConfigType, ConfigValueType, DependencyType, DictionaryRef, Document,
-    Environment, EnvironmentExtends, Error, EventScope, Expose, ExposeFromRef, ExposeToRef,
-    FromClause, Offer, OfferFromRef, OfferToRef, OneOrMany, Program, RegistrationRef, Rights,
-    RootDictionaryRef, SourceAvailability, Spanned, SpannedCapability, SpannedCapabilityClause,
-    SpannedChild, SpannedDocument, SpannedExpose, SpannedOffer, SpannedUse, TargetAvailability,
-    Use, UseFromRef, offer_to_all_would_duplicate,
+    AnyRef, Availability, CapabilityClause, ConfigKey, ConfigType, ConfigValueType, DependencyType,
+    DictionaryRef, Error, EventScope, FromClause, OneOrMany, Program, RootDictionaryRef,
+    SourceAvailability, Spanned, SpannedCapabilityClause, byte_index_to_location,
+    offer_to_all_would_duplicate,
 };
 use cm_types::{BorrowedName, IterablePath, Name};
 use itertools::Either;
@@ -110,30 +117,6 @@ pub(crate) fn validate_cml_with_span(
 ) -> Result<(), Error> {
     let mut ctx = ValidationContextWithSpan::new(documents, features, capability_requirements);
     ctx.validate()
-}
-
-pub(crate) fn byte_index_to_location(source: Option<&String>, index: usize) -> Option<Location> {
-    if let Some(source) = source {
-        let mut line = 1usize;
-        let mut column = 1usize;
-
-        for (i, ch) in source.char_indices() {
-            if i == index {
-                break;
-            }
-
-            if ch == '\n' {
-                line += 1;
-                column = 1;
-            } else {
-                column += 1;
-            }
-        }
-
-        return Some(Location { line, column });
-    }
-
-    None
 }
 
 fn offer_can_have_dependency_no_span(offer: &Offer) -> bool {

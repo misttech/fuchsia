@@ -7,6 +7,9 @@ use assembly_config_schema::assembly_input_bundle::ShellCommands;
 use assembly_constants::{BootfsPackageDestination, PackageDestination};
 use assembly_package_utils::PackageInternalPathBuf;
 use camino::{Utf8Path, Utf8PathBuf};
+use cml::types::document::Document;
+use cml::types::expose::{Expose, ExposeFromRef};
+use cml::types::right::{Right, Rights};
 use fidl::persist;
 use fuchsia_pkg::{PackageBuilder, RelativeTo};
 use std::collections::BTreeSet;
@@ -139,16 +142,16 @@ impl ShellCommandsBuilder {
         let mut exposes = vec![];
         let subdir = cml::RelativePath::new("bin").unwrap();
         let name = cml::Name::new("bin").unwrap();
-        let rights = cml::Rights(vec![cml::Right::ReadExecuteAlias]);
-        exposes.push(cml::Expose {
+        let rights = Rights(vec![Right::ReadExecuteAlias]);
+        exposes.push(Expose {
             // unwrap is safe, because try_new cannot fail with "pkg".
             directory: Some(cml::OneOrMany::One(cml::Name::new("pkg").unwrap())),
             r#as: Some(name),
             subdir: Some(subdir),
             rights: Some(rights),
-            ..cml::Expose::new_from(cml::OneOrMany::One(cml::ExposeFromRef::Framework))
+            ..Expose::new_from(cml::OneOrMany::One(ExposeFromRef::Framework))
         });
-        let cml = cml::Document { expose: Some(exposes), ..Default::default() };
+        let cml = Document { expose: Some(exposes), ..Default::default() };
         let out_data = cml::compile(&cml, cml::CompileOptions::default())
             .context("compiling shell command routes")?;
         let cm_name = "shell-commands.cm";

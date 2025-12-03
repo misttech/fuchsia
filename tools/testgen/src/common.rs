@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 use anyhow::{Error, Result};
+use cml::types::document::Document;
 use handlebars::Handlebars;
 use log::info;
 use std::path::{Path, PathBuf};
@@ -54,7 +55,7 @@ pub(crate) struct TemplateFile {
 }
 
 /// Returns the value of the template variable `component_exposed_protocols`.
-pub(crate) fn var_component_exposed_protocols(component: &cml::Document) -> Vec<String> {
+pub(crate) fn var_component_exposed_protocols(component: &Document) -> Vec<String> {
     list_exposed_protocol_names(component)
 }
 
@@ -151,8 +152,8 @@ pub(crate) fn file_write<P: AsRef<Path>>(path: P, contents: &str) -> Result<(), 
     Ok(())
 }
 
-/// Parses a .cml file as a [`cml::Document`].
-pub(crate) fn load_cml_file<P: AsRef<Path>>(path: P) -> Result<cml::Document> {
+/// Parses a .cml file as a [`cml::types::document::Document`].
+pub(crate) fn load_cml_file<P: AsRef<Path>>(path: P) -> Result<Document> {
     let path = path.as_ref();
     let contents = std::fs::read_to_string(path)?;
     let document = cml::parse_one_document(&contents, path)?;
@@ -160,7 +161,7 @@ pub(crate) fn load_cml_file<P: AsRef<Path>>(path: P) -> Result<cml::Document> {
 }
 
 /// Returns a vector of the protocol capability names exposed by `component`.
-pub(crate) fn list_exposed_protocol_names(component: &cml::Document) -> Vec<String> {
+pub(crate) fn list_exposed_protocol_names(component: &Document) -> Vec<String> {
     match &component.expose {
         None => return vec![],
         Some(exposes) => {

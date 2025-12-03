@@ -4,8 +4,10 @@
 
 //! `cmc` is the Component Manifest Compiler.
 
-use anyhow::{ensure, Error};
-use cml::{error, features, Document, OfferToAllCapability};
+use anyhow::{Error, ensure};
+use cml::types::document::Document;
+use cml::types::program::Program;
+use cml::{OfferToAllCapability, error, features};
 use reference_doc::MarkdownReferenceDocGenerator;
 use std::path::{Path, PathBuf};
 use std::{fs, io};

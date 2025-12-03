@@ -45,6 +45,18 @@ rustc_library("cml") {
     "src/lib.rs",
     "src/one_or_many.rs",
     "src/translate.rs",
+    "src/types/capability.rs",
+    "src/types/capability_id.rs",
+    "src/types/child.rs",
+    "src/types/collection.rs",
+    "src/types/document.rs",
+    "src/types/environment.rs",
+    "src/types/expose.rs",
+    "src/types/mod.rs",
+    "src/types/offer.rs",
+    "src/types/program.rs",
+    "src/types/right.rs",
+    "src/types/use.rs",
     "src/validate.rs",
   ]
 }

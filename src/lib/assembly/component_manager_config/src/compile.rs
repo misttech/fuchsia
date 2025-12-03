@@ -6,6 +6,8 @@ use argh::FromArgs;
 use cm_types::{Url, symmetrical_enums};
 use cml::error::{Error, Location};
 use cml::translate::CompileOptions;
+use cml::types::capability::Capability;
+use cml::types::capability_id::CapabilityId;
 use fidl::persist;
 use itertools::Itertools;
 use serde::Deserialize;
@@ -114,8 +116,8 @@ struct Config {
     trace_provider: Option<TraceProvider>,
     list_children_batch_size: Option<u32>,
     security_policy: Option<SecurityPolicy>,
-    namespace_capabilities: Option<Vec<cml::Capability>>,
-    builtin_capabilities: Option<Vec<cml::Capability>>,
+    namespace_capabilities: Option<Vec<Capability>>,
+    builtin_capabilities: Option<Vec<Capability>>,
     use_builtin_process_launcher: Option<bool>,
     maintain_utc_clock: Option<bool>,
     num_threads: Option<u8>,
@@ -614,7 +616,7 @@ impl Config {
     }
 
     fn validate_namespace_capability(
-        capability: &cml::Capability,
+        capability: &Capability,
         used_ids: &mut HashSet<String>,
     ) -> Result<(), Error> {
         if capability.directory.is_some() && capability.path.is_none() {
@@ -636,7 +638,7 @@ impl Config {
         }
 
         // Disallow multiple capability ids of the same name.
-        let capability_ids = cml::CapabilityId::from_capability(capability)?;
+        let capability_ids = CapabilityId::from_capability(capability)?;
         for capability_id in capability_ids {
             if !used_ids.insert(capability_id.to_string()) {
                 return Err(Error::validate(format!(
@@ -650,7 +652,7 @@ impl Config {
     }
 
     fn validate_builtin_capability(
-        capability: &cml::Capability,
+        capability: &Capability,
         used_ids: &mut HashSet<String>,
     ) -> Result<(), Error> {
         if capability.storage.is_some() {
@@ -666,7 +668,7 @@ impl Config {
         }
 
         // Disallow multiple capability ids of the same name.
-        let capability_ids = cml::CapabilityId::from_capability(capability)?;
+        let capability_ids = CapabilityId::from_capability(capability)?;
         for capability_id in capability_ids {
             if !used_ids.insert(capability_id.to_string()) {
                 return Err(Error::validate(format!(

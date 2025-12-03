@@ -5,6 +5,9 @@
 use anyhow::{Context, Result};
 use assembly_util::NamedMap;
 use camino::{Utf8Path, Utf8PathBuf};
+use cml::types::capability::Capability;
+use cml::types::document::Document;
+use cml::types::expose::{Expose, ExposeFromRef};
 use fidl::persist;
 use fuchsia_pkg::{PackageBuilder, PackageManifest, RelativeTo};
 use serde::Serialize;
@@ -60,11 +63,11 @@ impl Config {
         self.value.clone()
     }
 
-    fn as_capability(&self, name: cml::Name) -> Option<cml::Capability> {
+    fn as_capability(&self, name: cml::Name) -> Option<Capability> {
         if self.value == Value::Null {
             return None;
         }
-        Some(cml::Capability {
+        Some(Capability {
             config: Some(name),
             config_type: Some((&self.type_).into()),
             config_max_size: self.get_max_size(),
@@ -75,17 +78,17 @@ impl Config {
         })
     }
 
-    fn as_expose(&self, name: cml::Name) -> cml::Expose {
+    fn as_expose(&self, name: cml::Name) -> Expose {
         if self.value == Value::Null {
-            return cml::Expose {
+            return Expose {
                 config: Some(cml::OneOrMany::One(name)),
                 availability: Some(cml::Availability::Optional),
-                ..cml::Expose::new_from(cml::OneOrMany::One(cml::ExposeFromRef::Void))
+                ..Expose::new_from(cml::OneOrMany::One(ExposeFromRef::Void))
             };
         }
-        cml::Expose {
+        Expose {
             config: Some(cml::OneOrMany::One(name)),
-            ..cml::Expose::new_from(cml::OneOrMany::One(cml::ExposeFromRef::Self_))
+            ..Expose::new_from(cml::OneOrMany::One(ExposeFromRef::Self_))
         }
     }
 
@@ -121,22 +124,21 @@ pub fn build_config_capability_package(
     builder.manifest_blobs_relative_to(RelativeTo::File);
 
     // Build the CML.
-    let (cml_capabilities, exposes): (Vec<Option<cml::Capability>>, Vec<cml::Expose>) =
-        capabilities
-            .into_iter()
-            .map(|c| {
-                let (name, config) = c;
-                let cml_name = cml::Name::new(name.as_str())
-                    .with_context(|| format! {"Invalid configuration name: {}", name})?;
-                Ok((config.as_capability(cml_name.clone()), config.as_expose(cml_name)))
-            })
-            .collect::<Result<std::vec::Vec<_>>>()?
-            .into_iter()
-            .unzip();
+    let (cml_capabilities, exposes): (Vec<Option<Capability>>, Vec<Expose>) = capabilities
+        .into_iter()
+        .map(|c| {
+            let (name, config) = c;
+            let cml_name = cml::Name::new(name.as_str())
+                .with_context(|| format! {"Invalid configuration name: {}", name})?;
+            Ok((config.as_capability(cml_name.clone()), config.as_expose(cml_name)))
+        })
+        .collect::<Result<std::vec::Vec<_>>>()?
+        .into_iter()
+        .unzip();
     let cml_capabilities = cml_capabilities.into_iter().flatten().collect();
 
     // Create the CM file.
-    let cml = cml::Document {
+    let cml = Document {
         expose: Some(exposes),
         capabilities: Some(cml_capabilities),
         ..Default::default()

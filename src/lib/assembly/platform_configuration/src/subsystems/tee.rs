@@ -15,6 +15,12 @@ use assembly_config_schema::product_settings::{
     GlobalPlatformTee, GlobalPlatformTeeClient, ProprietaryTee, Tee,
 };
 use assembly_constants::{BlobfsCompiledPackageDestination, CompiledPackageDestination, FileEntry};
+use cml::types::capability::Capability;
+use cml::types::child::Child;
+use cml::types::document::Document;
+use cml::types::expose::{Expose, ExposeFromRef};
+use cml::types::offer::{Offer, OfferFromRef, OfferToRef};
+use cml::types::right::{Right, Rights};
 use fuchsia_url::AbsoluteComponentUrl;
 use std::io::Write as _;
 
@@ -162,19 +168,19 @@ fn create_tee_manager(
 
     let capabilities = protocols
         .iter()
-        .map(|protocol| cml::Capability { protocol: protocol.clone(), ..Default::default() })
+        .map(|protocol| Capability { protocol: protocol.clone(), ..Default::default() })
         .collect();
 
     let expose = protocols
         .iter()
-        .map(|protocol| cml::Expose {
+        .map(|protocol| Expose {
             protocol: protocol.clone(),
-            ..cml::Expose::new_from(cml::ExposeFromRef::Self_.into())
+            ..Expose::new_from(ExposeFromRef::Self_.into())
         })
         .collect();
 
     // Serialize the component.
-    let cml = cml::Document {
+    let cml = Document {
         capabilities: Some(capabilities),
         expose: Some(expose),
         include: Some(vec!["tee_manager.base.cml".into()]),
@@ -216,26 +222,26 @@ fn create_tee_clients(
 ) -> Result<(), anyhow::Error> {
     let gendir = context.get_gendir()?;
 
-    let capabilities = vec![cml::Capability {
+    let capabilities = vec![Capability {
         dictionary: Some(create_name("tee-client-capabilities")?),
         ..Default::default()
     }];
-    let expose = vec![cml::Expose {
+    let expose = vec![Expose {
         dictionary: Some(create_name("tee-client-capabilities")?.into()),
-        ..cml::Expose::new_from(cml::ExposeFromRef::Self_.into())
+        ..Expose::new_from(ExposeFromRef::Self_.into())
     }];
 
     let mut children = vec![];
 
     let mut offer = vec![
-        cml::Offer {
+        Offer {
             dictionary: Some(create_name("diagnostics")?.into()),
-            ..cml::Offer::empty(cml::OfferFromRef::Parent.into(), cml::OfferToRef::All.into())
+            ..Offer::empty(OfferFromRef::Parent.into(), OfferToRef::All.into())
         },
-        cml::Offer {
+        Offer {
             protocol: Some(create_name("fuchsia.tracing.provider.Registry")?.into()),
             availability: Some(cml::Availability::SameAsTarget),
-            ..cml::Offer::empty(cml::OfferFromRef::Parent.into(), cml::OfferToRef::All.into())
+            ..Offer::empty(OfferFromRef::Parent.into(), OfferToRef::All.into())
         },
     ];
 
@@ -251,7 +257,7 @@ fn create_tee_clients(
                 .next()
                 .ok_or_else(|| anyhow!("no component name: {}", component_url.resource()))?,
         )?;
-        children.push(cml::Child {
+        children.push(Child {
             name: component_name.clone(),
             url: cm_types::Url::new(component_url.to_string())?,
             startup: cml::StartupMode::Lazy,
@@ -262,12 +268,12 @@ fn create_tee_clients(
         for capability in &tee_client.capabilities {
             // Expose the capabilities up from the component URL to the
             // dictionary we provide to the parent
-            offer.push(cml::Offer {
+            offer.push(Offer {
                 protocol: Some(create_name(capability)?.into()),
                 availability: Some(cml::Availability::SameAsTarget),
-                ..cml::Offer::empty(
-                    cml::OfferFromRef::Named(component_name.clone()).into(),
-                    cml::OfferToRef::OwnDictionary(create_name("tee-client-capabilities")?).into(),
+                ..Offer::empty(
+                    OfferFromRef::Named(component_name.clone()).into(),
+                    OfferToRef::OwnDictionary(create_name("tee-client-capabilities")?).into(),
                 )
             });
         }
@@ -275,27 +281,27 @@ fn create_tee_clients(
         for guid in &tee_client.guids {
             // Expose the guids from tee_manager to the component in question
             let guid_protocol_name = create_name(&format!("fuchsia.tee.Application.{guid}"))?;
-            offer.push(cml::Offer {
+            offer.push(Offer {
                 protocol: Some(guid_protocol_name.into()),
-                ..cml::Offer::empty(
-                    cml::OfferFromRef::Parent.into(),
-                    cml::OfferToRef::Named(component_name.clone()).into(),
+                ..Offer::empty(
+                    OfferFromRef::Parent.into(),
+                    OfferToRef::Named(component_name.clone()).into(),
                 )
             });
         }
 
         for protocol in &tee_client.additional_required_protocols {
             let protocol_name = create_name(protocol)?;
-            offer.push(cml::Offer {
+            offer.push(Offer {
                 protocol: Some(protocol_name.into()),
 
                 // Most of these additional capabilities will come from
                 // tee_manager or factory_store_providers, and not all
                 // boards contain those components.
                 source_availability: Some(cml::SourceAvailability::Unknown),
-                ..cml::Offer::empty(
-                    cml::OfferFromRef::Parent.into(),
-                    cml::OfferToRef::Named(component_name.clone()).into(),
+                ..Offer::empty(
+                    OfferFromRef::Parent.into(),
+                    OfferToRef::Named(component_name.clone()).into(),
                 )
             });
         }
@@ -314,49 +320,49 @@ fn create_tee_clients(
             // Route the config-data subdir named with the package-name to this component
             let directory_name = create_name("config-data")?;
             let subdir_name: cml::RelativePath = cm_types::RelativePath::new(package_name)?;
-            offer.push(cml::Offer {
+            offer.push(Offer {
                 directory: Some(directory_name.into()),
                 subdir: Some(subdir_name),
-                ..cml::Offer::empty(
-                    cml::OfferFromRef::Parent.into(),
-                    cml::OfferToRef::Named(component_name.clone()).into(),
+                ..Offer::empty(
+                    OfferFromRef::Parent.into(),
+                    OfferToRef::Named(component_name.clone()).into(),
                 )
             })
         }
 
         if tee_client.additional_required_features.persistent_storage {
-            offer.push(cml::Offer {
+            offer.push(Offer {
                 storage: Some(create_name("data")?.into()),
-                ..cml::Offer::empty(
-                    cml::OfferFromRef::Parent.into(),
-                    cml::OfferToRef::Named(component_name.clone()).into(),
+                ..Offer::empty(
+                    OfferFromRef::Parent.into(),
+                    OfferToRef::Named(component_name.clone()).into(),
                 )
             })
         }
 
         if tee_client.additional_required_features.tmp_storage {
-            offer.push(cml::Offer {
+            offer.push(Offer {
                 storage: Some(create_name("tmp")?.into()),
-                ..cml::Offer::empty(
-                    cml::OfferFromRef::Parent.into(),
-                    cml::OfferToRef::Named(component_name.clone()).into(),
+                ..Offer::empty(
+                    OfferFromRef::Parent.into(),
+                    OfferToRef::Named(component_name.clone()).into(),
                 )
             })
         }
 
         if tee_client.additional_required_features.securemem {
-            offer.push(cml::Offer {
+            offer.push(Offer {
                 directory: Some(create_name("dev-securemem")?.into()),
-                rights: Some(cml::Rights(vec![cml::Right::ReadAlias])),
-                ..cml::Offer::empty(
-                    cml::OfferFromRef::Parent.into(),
-                    cml::OfferToRef::Named(component_name.clone()).into(),
+                rights: Some(Rights(vec![Right::ReadAlias])),
+                ..Offer::empty(
+                    OfferFromRef::Parent.into(),
+                    OfferToRef::Named(component_name.clone()).into(),
                 )
             })
         }
     }
 
-    let cml = cml::Document {
+    let cml = Document {
         capabilities: Some(capabilities),
         expose: Some(expose),
         children: Some(children),

@@ -4,15 +4,22 @@
 
 use crate::error::Error;
 use crate::features::{Feature, FeatureSet};
+use crate::types::child::Child;
+use crate::types::collection::Collection;
+use crate::types::document::Document;
+use crate::types::environment::{
+    DebugRegistration, Environment, EnvironmentExtends, EnvironmentRef, RunnerRegistration,
+};
+use crate::types::expose::{Expose, ExposeFromRef, ExposeToRef};
+use crate::types::offer::{Offer, OfferFromRef, OfferToRef, TargetAvailability};
+use crate::types::right::RightsClause;
+use crate::types::r#use::{Use, UseFromRef};
 use crate::validate::CapabilityRequirements;
 use crate::{
-    AnyRef, AsClause, Availability, Capability, CapabilityClause, Child, Collection, ConfigKey,
-    ConfigNestedValueType, ConfigRuntimeSource, ConfigType, ConfigValueType, DebugRegistration,
-    DictionaryRef, Document, Environment, EnvironmentExtends, EnvironmentRef, EventScope, Expose,
-    ExposeFromRef, ExposeToRef, FromClause, Offer, OfferFromRef, OfferToRef, OneOrMany, Path,
-    PathClause, Program, ResolverRegistration, RightsClause, RootDictionaryRef, RunnerRegistration,
-    SourceAvailability, TargetAvailability, Use, UseFromRef, offer_to_all_would_duplicate,
-    validate,
+    AnyRef, AsClause, Availability, Capability, CapabilityClause, ConfigKey, ConfigNestedValueType,
+    ConfigRuntimeSource, ConfigType, ConfigValueType, DictionaryRef, EventScope, FromClause,
+    OneOrMany, Path, PathClause, Program, ResolverRegistration, RootDictionaryRef,
+    SourceAvailability, offer_to_all_would_duplicate, validate,
 };
 use cm_rust::NativeIntoFidl;
 use cm_types::{self as cm, BorrowedName, Name};
@@ -2184,10 +2191,8 @@ mod tests {
     use crate::features::Feature;
     use crate::translate::test_util::must_parse_cml;
     use crate::{
-        AnyRef, AsClause, Capability, CapabilityClause, Child, Collection, DebugRegistration,
-        Document, Environment, EnvironmentExtends, EnvironmentRef, Expose, ExposeFromRef,
-        ExposeToRef, FromClause, Offer, OfferFromRef, OneOrMany, Path, PathClause, Program,
-        ResolverRegistration, RightsClause, RunnerRegistration, Use, UseFromRef, create_offer,
+        AsClause, CapabilityClause, Document, FromClause, OneOrMany, Path, PathClause, Program,
+        create_offer,
     };
     use assert_matches::assert_matches;
     use cm_fidl_validator::error::{AvailabilityList, DeclField, Error as CmFidlError, ErrorList};

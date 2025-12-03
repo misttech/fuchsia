@@ -4,6 +4,7 @@
 
 use crate::error::Error;
 use crate::util;
+use cml::types::document::Document;
 use std::fs;
 use std::path::PathBuf;
 
@@ -11,7 +12,7 @@ use std::path::PathBuf;
 // this tool is only used at compile time, so optimizing a few hundred bytes isn't a priority.
 #[allow(clippy::large_enum_variant)]
 enum ComponentManifest {
-    Cml(cml::Document),
+    Cml(Document),
     Cm(cm_rust::ComponentDecl),
 }
 

@@ -4,7 +4,7 @@
 
 use crate::error::Error;
 use crate::features::FeatureSet;
-use crate::{include, util};
+use crate::{Program, include, util};
 use fidl::persist;
 use std::io::Write;
 use std::path::PathBuf;
@@ -51,9 +51,9 @@ pub(crate) fn compile(
         if let Some(program) = document.program.as_mut() {
             program.runner = Some(cm_types::Name::new(force_runner)?);
         } else {
-            document.program = Some(cml::Program {
+            document.program = Some(Program {
                 runner: Some(cm_types::Name::new(force_runner)?),
-                ..cml::Program::default()
+                ..Program::default()
             });
         }
     }

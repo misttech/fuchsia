@@ -7,6 +7,8 @@ use assembly_constants::FileEntry;
 use assembly_platform_configuration::{DomainConfig, FileOrContents};
 use camino::{Utf8Path, Utf8PathBuf};
 use cml::RelativePath;
+use cml::types::document::Document;
+use cml::types::expose::{Expose, ExposeFromRef};
 use fidl::persist;
 use fuchsia_pkg::{PackageBuilder, PackageManifest, RelativeTo};
 use std::io::Write;
@@ -47,12 +49,12 @@ impl DomainConfigPackage {
                 .with_context(|| format!("Calculating relative path for {directory}"))?;
             let name = cml::Name::new(&directory)
                 .with_context(|| format!("Calculating name for {directory}"))?;
-            exposes.push(cml::Expose {
+            exposes.push(Expose {
                 // unwrap is safe, because try_new cannot fail with "pkg".
                 directory: Some(cml::OneOrMany::One(cml::Name::new("pkg").unwrap())),
                 r#as: Some(name),
                 subdir: Some(subdir),
-                ..cml::Expose::new_from(cml::OneOrMany::One(cml::ExposeFromRef::Framework))
+                ..Expose::new_from(cml::OneOrMany::One(ExposeFromRef::Framework))
             });
 
             if directory_config.entries.is_empty() {
@@ -94,7 +96,7 @@ impl DomainConfigPackage {
         }
 
         if self.config.expose_directories {
-            let cml = cml::Document { expose: Some(exposes), ..Default::default() };
+            let cml = Document { expose: Some(exposes), ..Default::default() };
             let out_data = cml::compile(&cml, cml::CompileOptions::default())
                 .with_context(|| format!("compiling domain config routes"))?;
             let cm_name = format!("{}.cm", &self.config.name);

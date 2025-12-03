@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::Document;
 use crate::error::Error;
 use cm_rust::ComponentDecl;
 use fidl::unpersist;
@@ -72,7 +73,7 @@ pub(crate) fn write_depfile(
 }
 
 /// Read .cml file and parse into a cml::Document.
-pub(crate) fn read_cml(file: &Path) -> Result<cml::Document, Error> {
+pub(crate) fn read_cml(file: &Path) -> Result<Document, Error> {
     let buffer = read_file_to_string(file)?;
     cml::parse_one_document(&buffer, file)
 }
@@ -81,7 +82,7 @@ pub(crate) fn read_cml(file: &Path) -> Result<cml::Document, Error> {
 /// collect .cml files to merge using "GN metadata", which can only output its merged
 /// representation as a JSON array. In the case of component GN rules, this is an
 /// array of many .cml JSON objects.
-pub(crate) fn read_cml_tolerate_gn_metadata(file: &Path) -> Result<Vec<cml::Document>, Error> {
+pub(crate) fn read_cml_tolerate_gn_metadata(file: &Path) -> Result<Vec<Document>, Error> {
     let buffer = read_file_to_string(file)?;
     cml::parse_many_documents(&buffer, file)
 }
