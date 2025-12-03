@@ -11,7 +11,7 @@ use self::stream::StreamWriter;
 use crate::labels::{NodeId, TransferKey};
 use crate::peer::FramedStreamWriter;
 use crate::router::Router;
-use anyhow::{format_err, Error};
+use anyhow::{Error, format_err};
 use fidl_fuchsia_overnet_protocol::{
     SignalUpdate, StreamId, StreamRef, TransferInitiator, TransferWaiter,
 };
@@ -116,7 +116,7 @@ impl StreamRefSender {
 }
 
 mod proxy_count {
-    use std::sync::Mutex;
+    use fuchsia_sync::Mutex;
 
     pub struct ProxyCount {
         count: usize,
@@ -157,13 +157,13 @@ pub(crate) struct Proxy<Hdl: Proxyable + 'static> {
 
 impl<Hdl: 'static + Proxyable> Drop for Proxy<Hdl> {
     fn drop(&mut self) {
-        proxy_count::PROXY_COUNT.lock().unwrap().decrement();
+        proxy_count::PROXY_COUNT.lock().decrement();
     }
 }
 
 impl<Hdl: 'static + Proxyable> Proxy<Hdl> {
     fn new(hdl: Hdl, router: Weak<Router>) -> Arc<Self> {
-        proxy_count::PROXY_COUNT.lock().unwrap().increment();
+        proxy_count::PROXY_COUNT.lock().increment();
         Arc::new(Self { hdl: Some(ProxyableHandle::new(hdl, router)) })
     }
 

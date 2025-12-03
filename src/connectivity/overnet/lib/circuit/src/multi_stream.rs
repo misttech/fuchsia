@@ -3,16 +3,17 @@
 // found in the LICENSE file.
 
 use crate::error::{Error, Result};
-use crate::{stream, Node, Quality};
+use crate::{Node, Quality, stream};
 
-use futures::channel::mpsc::{channel, Receiver, Sender, UnboundedSender};
+use fuchsia_sync::Mutex as SyncMutex;
+use futures::StreamExt;
+use futures::channel::mpsc::{Receiver, Sender, UnboundedSender, channel};
 use futures::channel::oneshot;
 use futures::future::Either;
 use futures::prelude::*;
-use futures::StreamExt;
 use std::collections::HashMap;
 use std::pin::pin;
-use std::sync::{Arc, Mutex as SyncMutex};
+use std::sync::Arc;
 
 /// Status of an individual stream.
 enum StreamStatus {
@@ -77,7 +78,7 @@ pub async fn multi_stream(
         let read_result_stream = futures::stream::unfold((), |_| async {
             let got = reader
                 .read(6, |buf| {
-                    let mut streams = streams.lock().unwrap();
+                    let mut streams = streams.lock();
                     let (size, new_stream) =
                         handle_one_chunk(&mut *streams, is_server, buf, &remote_name)?;
 
@@ -183,19 +184,19 @@ pub async fn multi_stream(
                     if new_readers_sender.clone().send((id, reader)).await.is_err() {
                         break;
                     }
-                    streams.lock().unwrap().insert(id, StreamStatus::Open(writer));
+                    streams.lock().insert(id, StreamStatus::Open(writer));
                 }
             }
         }
 
         if matches!(ret, Err(Error::ConnectionClosed(None))) {
-            let writer = writer.lock().unwrap();
+            let writer = writer.lock();
             if writer.is_closed() {
                 ret = Err(Error::ConnectionClosed(writer.closed_reason()))
             }
         }
 
-        let mut streams = streams.lock().unwrap();
+        let mut streams = streams.lock();
 
         for (_, stream) in streams.drain() {
             if let StreamStatus::Open(writer) = stream {
@@ -347,7 +348,7 @@ async fn write_as_chunks(
                         .try_into()
                         .expect("We just truncated the length so it would fit!");
 
-                    if let e @ Err(_) = writer.lock().unwrap().write(6 + buf.len(), |out_buf| {
+                    if let e @ Err(_) = writer.lock().write(6 + buf.len(), |out_buf| {
                         out_buf[..4].copy_from_slice(&id.to_le_bytes());
                         let out_buf = &mut out_buf[4..];
                         out_buf[..2].copy_from_slice(&len.to_le_bytes());
@@ -371,7 +372,7 @@ async fn write_as_chunks(
                 let length = length_u16 as usize;
 
                 // If the stream was closed, send a frame indicating such.
-                let write_result = writer.lock().unwrap().write(8 + length, |out_buf| {
+                let write_result = writer.lock().write(8 + length, |out_buf| {
                     out_buf[..4].copy_from_slice(&id.to_le_bytes());
                     let out_buf = &mut out_buf[4..];
                     out_buf[..2].copy_from_slice(&0u16.to_le_bytes());

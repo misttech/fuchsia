@@ -5,9 +5,10 @@
 use crate::error::{Error, Result};
 use crate::protocol;
 
+use fuchsia_sync::Mutex as SyncMutex;
 use std::collections::VecDeque;
-use std::sync::{Arc, Mutex as SyncMutex};
-use std::task::{ready, Context, Poll, Waker};
+use std::sync::Arc;
+use std::task::{Context, Poll, Waker, ready};
 
 /// We shrink our internal buffers until they are no more than this much larger
 /// than the actual data we are accumulating.
@@ -76,7 +77,7 @@ pub struct Reader(Arc<SyncMutex<State>>);
 impl Reader {
     /// Debug
     pub fn inspect_shutdown(&self) -> String {
-        let lock = self.0.lock().unwrap();
+        let lock = self.0.lock();
         if lock.closed.is_closed() {
             lock.closed.reason().unwrap_or_else(|| "No epitaph".to_owned())
         } else {
@@ -138,9 +139,11 @@ impl Reader {
     where
         F: FnMut(&mut Context<'_>, &[u8]) -> Poll<Result<(U, usize)>>,
     {
-        let mut state = self.0.lock().unwrap();
+        let mut state = self.0.lock();
 
-        if let Status::Closed(reason) = &state.closed && *size == 0 {
+        if let Status::Closed(reason) = &state.closed
+            && *size == 0
+        {
             return Poll::Ready(Err(Error::ConnectionClosed(reason.clone())));
         }
 
@@ -212,7 +215,7 @@ impl Reader {
         message: &P,
     ) -> Result<()> {
         let size = message.byte_size();
-        let mut state = self.0.lock().unwrap();
+        let mut state = self.0.lock();
         let readable = state.readable;
         state.deque.resize(readable + size, 0);
         state.deque.rotate_right(size);
@@ -243,20 +246,20 @@ impl Reader {
     /// Whether this stream is closed. Returns false so long as there is unread
     /// data in the buffer, even if the writer has hung up.
     pub fn is_closed(&self) -> bool {
-        let state = self.0.lock().unwrap();
+        let state = self.0.lock();
         state.closed.is_closed() && state.readable == 0
     }
 
     /// Get the reason this reader is closed. If the reader is not closed, or if
     /// no reason was given, return `None`.
     pub fn closed_reason(&self) -> Option<String> {
-        let state = self.0.lock().unwrap();
+        let state = self.0.lock();
         state.closed.reason()
     }
 
     /// Close this stream, giving a reason for the closure.
     pub fn close(self, reason: String) {
-        let mut state = self.0.lock().unwrap();
+        let mut state = self.0.lock();
         match &state.closed {
             Status::Closed(Some(_)) => (),
             _ => state.closed = Status::Closed(Some(reason)),
@@ -272,7 +275,7 @@ impl std::fmt::Debug for Reader {
 
 impl Drop for Reader {
     fn drop(&mut self) {
-        let mut state = self.0.lock().unwrap();
+        let mut state = self.0.lock();
         state.closed.close();
     }
 }
@@ -296,7 +299,7 @@ impl Writer {
     where
         F: FnOnce(&mut [u8]) -> Result<usize>,
     {
-        let mut state = self.0.lock().unwrap();
+        let mut state = self.0.lock();
 
         if let Status::Closed(reason) = &state.closed {
             return Err(Error::ConnectionClosed(reason.clone()));
@@ -353,20 +356,20 @@ impl Writer {
 
     /// Close this stream, giving a reason for the closure.
     pub fn close(self, reason: String) {
-        self.0.lock().unwrap().closed = Status::Closed(Some(reason))
+        self.0.lock().closed = Status::Closed(Some(reason))
     }
 
     /// Whether this stream is closed. Returns false so long as there is unread
     /// data in the buffer, even if the writer has hung up.
     pub fn is_closed(&self) -> bool {
-        let state = self.0.lock().unwrap();
+        let state = self.0.lock();
         state.closed.is_closed() && state.readable == 0
     }
 
     /// Get the reason this writer is closed. If the writer is not closed, or if
     /// no reason was given, return `None`.
     pub fn closed_reason(&self) -> Option<String> {
-        let state = self.0.lock().unwrap();
+        let state = self.0.lock();
         state.closed.reason()
     }
 }
@@ -379,7 +382,7 @@ impl std::fmt::Debug for Writer {
 
 impl Drop for Writer {
     fn drop(&mut self) {
-        let mut state = self.0.lock().unwrap();
+        let mut state = self.0.lock();
         state.closed.close();
 
         if let Some((waker, _)) = state.notify_readable.take() {
@@ -406,9 +409,9 @@ pub fn stream() -> (Reader, Writer) {
 
 #[cfg(test)]
 mod test {
+    use futures::FutureExt;
     use futures::channel::oneshot;
     use futures::task::noop_waker;
-    use futures::FutureExt;
     use std::future::Future;
     use std::pin::pin;
     use std::task::{Context, Poll};

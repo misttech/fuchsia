@@ -3,15 +3,16 @@
 // found in the LICENSE file.
 
 use fuchsia_async::Timer;
+use fuchsia_sync::Mutex;
 use futures::channel::mpsc::Sender;
 use futures::channel::oneshot;
-use futures::future::{poll_fn, Either};
+use futures::future::{Either, poll_fn};
 use futures::stream::StreamExt as _;
 use futures::{FutureExt, SinkExt as _};
 use std::collections::HashMap;
 use std::future::Future;
 use std::pin::pin;
-use std::sync::{Arc, Mutex, Weak};
+use std::sync::{Arc, Weak};
 use std::task::Poll;
 use std::time::Duration;
 
@@ -241,7 +242,7 @@ impl Node {
     pub fn route_via(&self, to: &str, via: &str) {
         let to = EncodableString::try_from(to.to_owned()).unwrap();
         let via = EncodableString::try_from(via.to_owned()).unwrap();
-        let mut peers = self.peers.lock().unwrap();
+        let mut peers = self.peers.lock();
         let new_list = peers.peers.get(&via).unwrap().clone();
         peers.peers.insert(to, new_list);
     }
@@ -326,7 +327,6 @@ impl Node {
             if has_router {
                 peers
                     .lock()
-                    .unwrap()
                     .add_control_channel(control_writer, quality)
                     .expect("We just created this channel!");
             } else {
@@ -361,7 +361,7 @@ impl Node {
             };
 
             {
-                let mut peers = peers.lock().unwrap();
+                let mut peers = peers.lock();
                 let peers = peers.peers();
                 for peer_list in peers.values_mut() {
                     peer_list.retain(|x| !x.0.same_receiver(&new_stream_sender));
@@ -406,7 +406,7 @@ impl Node {
                         let quality = path_quality.combine(quality);
                         let peer_string = peer.to_string();
                         let should_send = {
-                            let mut peers = peers.lock().unwrap();
+                            let mut peers = peers.lock();
                             let peers = peers.peers();
                             let peer_list = peers.entry(peer).or_insert_with(Vec::new);
                             let should_send = peer_list.is_empty();
@@ -420,7 +420,7 @@ impl Node {
                         }
                     }
                     NodeState::Offline(peer) => {
-                        let mut peers = peers.lock().unwrap();
+                        let mut peers = peers.lock();
                         let peers = peers.peers();
                         let peer_list = peers.get_mut(&peer);
 
@@ -492,7 +492,7 @@ impl Node {
                         } else {
                             let src = reader.read_protocol_message::<EncodableString>().await?;
                             let send_new_peer = {
-                                let mut peers = peers.lock().unwrap();
+                                let mut peers = peers.lock();
                                 let peer_list =
                                     peers.peers.entry(src.clone()).or_insert_with(Vec::new);
                                 if !peer_list.iter().any(|x| x.0.same_receiver(&new_stream_sender))
@@ -566,7 +566,7 @@ async fn connect_to_peer(
             }
         }
 
-        let mut peers = peers.lock().unwrap();
+        let mut peers = peers.lock();
 
         // For each peer we have a list of channels to which we can send our
         // reader and writer, each representing a connection which will become
@@ -623,22 +623,14 @@ async fn connect_to_peer(
 
         // The peer sender is where we register our waker. If we don't have one
         // we didn't register a waker and should return now.
-        if peer_sender.is_none() {
-            Poll::Ready(())
-        } else {
-            Poll::Pending
-        }
+        if peer_sender.is_none() { Poll::Ready(()) } else { Poll::Pending }
     })
     .await;
 
     // Our iteration above should have taken channels and sent them along to the
     // connection that will handle them. If they're still here we didn't find a
     // channel.
-    if peer_channels.is_none() {
-        Ok(())
-    } else {
-        Err(Error::NoSuchPeer(node_id.to_string()))
-    }
+    if peer_channels.is_none() { Ok(()) } else { Err(Error::NoSuchPeer(node_id.to_string())) }
 }
 
 /// Given an old and a new condensed routing table, create a serialized list of
@@ -682,7 +674,7 @@ async fn router(peers: Weak<Mutex<PeerMap>>, interval: Duration) {
             } else {
                 return;
             };
-            let mut peers = peers.lock().unwrap();
+            let mut peers = peers.lock();
 
             if peers.generation <= generation {
                 let (sender, receiver) = oneshot::channel();

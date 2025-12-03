@@ -15,10 +15,11 @@ use super::super::{
 };
 use crate::labels::{NodeId, TransferKey};
 use crate::peer::{FramedStreamReader, FramedStreamWriter};
-use anyhow::{bail, format_err, Context as _, Error};
+use anyhow::{Context as _, Error, bail, format_err};
+use fuchsia_sync::Mutex;
 use futures::future::Either;
 use futures::prelude::*;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use zx_status;
 
 // We run two tasks to proxy a handle - one to handle handle->stream, the other to handle
@@ -107,7 +108,7 @@ static PROXY_DROP_EVENT: Mutex<Option<Box<dyn Fn(&Result<(), Error>) + 'static +
 /// Sets a global callback to call every time a proxy is dropped. It's given a
 /// reference to the error and can be used to send metrics events.
 pub fn set_proxy_drop_event_handler(handler: impl Fn(&Result<(), Error>) + 'static + Send) {
-    *PROXY_DROP_EVENT.lock().unwrap() = Some(Box::new(handler));
+    *PROXY_DROP_EVENT.lock() = Some(Box::new(handler));
 }
 
 // Spawn a proxy (two tasks, one for each direction of proxying).
@@ -162,7 +163,7 @@ pub(crate) async fn run_main_loop<Hdl: 'static + for<'a> ProxyableRW<'a>>(
     .map_ok(drop)
     .await;
 
-    if let Some(cb) = &*PROXY_DROP_EVENT.lock().unwrap() {
+    if let Some(cb) = &*PROXY_DROP_EVENT.lock() {
         cb(&res)
     }
     if let Err(e) = res {
@@ -315,7 +316,7 @@ async fn stream_to_handle<Hdl: 'static + for<'a> ProxyableRW<'a>>(
             Frame::BeginTransfer(new_destination_node, transfer_key) => {
                 return finish_proxy_loop
                     .and_then_follow(initiate_transfer, new_destination_node, transfer_key, stream)
-                    .context("finish_proxy_loop")
+                    .context("finish_proxy_loop");
             }
             Frame::EndTransfer => bail!("Received EndTransfer on a regular stream"),
             Frame::AckTransfer => bail!("Received AckTransfer before sending a BeginTransfer"),
