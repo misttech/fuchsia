@@ -1971,8 +1971,9 @@ void DispatcherCoordinator::DestroyThreadPool(Dispatcher::ThreadPool* thread_poo
 
 void Dispatcher::ThreadPool::ThreadWakeupPrologue() {
   zx_instant_mono_t entry_time = zx_clock_get_monotonic();
-  std::atomic_int64_t* task_entry_slot = thread_context::GetTaskEntryTimeSlot();
-  if (unlikely(*task_entry_slot == -1)) {
+  std::pair<zx_koid_t, std::atomic_int64_t*> task_entry_slot =
+      thread_context::GetTaskEntryTimeSlot();
+  if (unlikely(*task_entry_slot.second == -1)) {
     // Store the pointer to our thread's entry time slot in the thread pool's list so that it can be
     // checked for stalled threads by the environment.
     //
@@ -1983,7 +1984,7 @@ void Dispatcher::ThreadPool::ThreadWakeupPrologue() {
     fbl::AutoLock guard(&lock_);
     thread_entry_time_slots_.push_back(task_entry_slot);
   }
-  task_entry_slot->store(entry_time);
+  task_entry_slot.second->store(entry_time);
   if (++threads_entered_ == num_threads()) {
     driver_runtime::GetDispatcherCoordinator().TriggerStallScanner();
   }
@@ -2002,7 +2003,7 @@ void Dispatcher::ThreadPool::ThreadWakeupPrologue() {
 }
 
 void Dispatcher::ThreadPool::ThreadWakeupEpilogue() {
-  thread_context::GetTaskEntryTimeSlot()->store(0);
+  thread_context::GetTaskEntryTimeSlot().second->store(0);
   --threads_entered_;
 }
 
@@ -2013,11 +2014,11 @@ bool Dispatcher::ThreadPool::ScanThreadsForStalls() {
   zx::time stale_time = current_time - zx::msec(kStaleTimeMs);
   uint32_t stalled_threads = 0;
   for (auto& slot : thread_entry_time_slots_) {
-    zx::time timestamp(slot->load());
+    zx::time timestamp(slot.second->load());
     if (timestamp != zx::time(0) && timestamp < stalled_time) {
       if (timestamp > stale_time) {
-        LOGF(WARNING, "Found a thread that has been stalled for %ld ms",
-             (current_time - timestamp).to_msecs());
+        LOGF(INFO, "Found a thread (id: %u, role: '%s') that has been stalled for %ld ms",
+             slot.first, scheduler_role_.c_str(), (current_time - timestamp).to_msecs());
       }
       stalled_threads++;
     }

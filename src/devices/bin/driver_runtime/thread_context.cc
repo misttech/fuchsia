@@ -164,6 +164,8 @@ zx::result<const void*> GetDriverOnTid(zx_koid_t tid) {
   return zx::error(ZX_ERR_NOT_FOUND);
 }
 
-std::atomic_int64_t* GetTaskEntryTimeSlot() { return &g_task_entry_time; }
+std::pair<zx_koid_t, std::atomic_int64_t*> GetTaskEntryTimeSlot() {
+  return std::make_pair(g_thread_koid, &g_task_entry_time);
+}
 
 }  // namespace thread_context

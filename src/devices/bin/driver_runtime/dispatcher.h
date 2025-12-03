@@ -270,7 +270,8 @@ class Dispatcher : public async_dispatcher_t,
     uint32_t max_threads_ __TA_GUARDED(&lock_) = 10;
     // A unique_ptr to each active thread's task entry time slot, used to tell when we've run
     // out of un-stalled threads and should spawn another.
-    std::vector<std::atomic_int64_t*> thread_entry_time_slots_ __TA_GUARDED(&lock_);
+    std::vector<std::pair<zx_koid_t, std::atomic_int64_t*>> thread_entry_time_slots_
+        __TA_GUARDED(&lock_);
     // True if we've already attempted to spawn a new thread in response to the current thread
     // stall. This prevents us from constantly warning when we're at max threads and there's a
     // persistent stall.

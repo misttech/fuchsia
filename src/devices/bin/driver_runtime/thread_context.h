@@ -58,8 +58,12 @@ void SetRoleProfileStatus(zx_status_t status);
 
 zx::result<const void*> GetDriverOnTid(zx_koid_t tid);
 
-// Gets the storage for the current thread's task entry time slot.
-std::atomic_int64_t* GetTaskEntryTimeSlot();
+// Gets the thread koid and the storage for the current thread's task
+// entry time slot, which will be:
+// -1  if no entry time has been recorded yet.
+// 0   if the task has since exited its callback.
+// N>0 a timestamp when this thread was last entered.
+std::pair<zx_koid_t, std::atomic_int64_t*> GetTaskEntryTimeSlot();
 
 }  // namespace thread_context
 
