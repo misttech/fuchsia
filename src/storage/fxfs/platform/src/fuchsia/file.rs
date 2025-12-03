@@ -33,7 +33,7 @@ use vfs::execution_scope::ExecutionScope;
 use vfs::file::{File, FileOptions, GetVmo, StreamIoConnection, SyncMode};
 use vfs::name::Name;
 use vfs::{ObjectRequestRef, ProtocolsExt, attributes};
-use zx::{self as zx, HandleBased, Status};
+use zx::{self as zx, AsHandleRef, HandleBased, Status};
 
 /// In many operating systems, it is possible to delete a file with open handles. In this case the
 /// file will continue to use space on disk but will not openable and the storage it uses will be
@@ -129,6 +129,7 @@ impl FxFile {
                     zx::VmoOptions::UNBOUNDED | zx::VmoOptions::TRAP_DIRTY,
                 )
                 .unwrap();
+            vmo.set_name(&zx::Name::new("fxfs-file").unwrap()).unwrap();
             Self {
                 handle: PagedObjectHandle::new(handle, vmo),
                 state: AtomicU64::new(0),
