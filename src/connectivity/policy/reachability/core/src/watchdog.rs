@@ -465,9 +465,10 @@ mod tests {
     use crate::route_table::Route;
     use assert_matches::assert_matches;
     use fidl_fuchsia_net as fnet;
+    use fuchsia_sync::Mutex;
     use futures::FutureExt as _;
     use net_declare::{fidl_ip, fidl_subnet};
-    use std::sync::{Arc, Mutex};
+    use std::sync::Arc;
 
     use crate::neighbor_cache::NeighborState;
     use crate::route_table::RouteTable;
@@ -908,7 +909,7 @@ mod tests {
         fn insert_interface_diagnostics(&self, interface: InterfaceId) {
             let counters = DeviceCounters { rx_frames: 0, tx_frames: 0 };
             assert_matches!(
-                self.inner.lock().unwrap().insert(
+                self.inner.lock().insert(
                     interface,
                     MockCounterState {
                         counters_result: Some(Ok(counters)),
@@ -932,13 +933,13 @@ mod tests {
 
             // Remove the initial counters to force tests that use this function
             // to explicitly set any counter values they may wish to use.
-            self.inner.lock().unwrap().get_mut(&interface).unwrap().counters_result = None;
+            self.inner.lock().get_mut(&interface).unwrap().counters_result = None;
 
             state
         }
 
         fn set_counters_return_timeout(&self, interface: InterfaceId) {
-            self.inner.lock().unwrap().get_mut(&interface).unwrap().counters_result =
+            self.inner.lock().get_mut(&interface).unwrap().counters_result =
                 Some(Err(Error::Timeout));
         }
 
@@ -947,7 +948,7 @@ mod tests {
             interface: InterfaceId,
             DeviceCounters { rx_frames: rx, tx_frames: tx }: DeviceCounters,
         ) {
-            let mut state = self.inner.lock().unwrap();
+            let mut state = self.inner.lock();
             let MockCounterState { counters_result, debug_requested: _ } =
                 state.get_mut(&interface).unwrap();
             *counters_result = Some(Ok(match counters_result {
@@ -959,7 +960,7 @@ mod tests {
         }
 
         fn take_interface_debug_requested(&self, interface: InterfaceId) -> bool {
-            let mut state = self.inner.lock().unwrap();
+            let mut state = self.inner.lock();
             if let Some(MockCounterState { counters_result: _, debug_requested }) =
                 state.get_mut(&interface)
             {
@@ -984,7 +985,7 @@ mod tests {
     impl DeviceDiagnosticsProvider for MockDiagnostics {
         async fn get_counters(&self) -> Result<DeviceCounters, Error> {
             let Self { inner, interface } = self;
-            let state = inner.lock().unwrap();
+            let state = inner.lock();
             state.get(interface).ok_or_else(|| Error::Fidl(fidl::Error::Invalid)).and_then(
                 |MockCounterState { counters_result, debug_requested: _ }| {
                     counters_result.clone().expect("called get_counters on uninitialized mock")
@@ -994,7 +995,7 @@ mod tests {
 
         async fn log_debug_info(&self) -> Result<(), Error> {
             let Self { inner, interface } = self;
-            let mut state = inner.lock().unwrap();
+            let mut state = inner.lock();
             let MockCounterState { counters_result: _, debug_requested } =
                 state.get_mut(interface).unwrap();
             *debug_requested = true;

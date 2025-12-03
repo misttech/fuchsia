@@ -9,7 +9,7 @@ use fidl::endpoints::ControlHandle;
 use fidl_fuchsia_net_filter_ext::{CommitError, Matchers, PushChangesError, RuleId};
 use fnet_masquerade::Error;
 use futures::stream::LocalBoxStream;
-use futures::{future, StreamExt as _, TryStreamExt as _};
+use futures::{StreamExt as _, TryStreamExt as _, future};
 use log::{error, warn};
 use net_declare::fidl_subnet;
 use {
@@ -455,15 +455,16 @@ impl RespondAndMaybeShutdown for MasqueradeState {
 
 #[cfg(test)]
 pub mod test {
+    use fuchsia_sync::Mutex;
     use std::collections::HashSet;
-    use std::sync::{Arc, Mutex};
+    use std::sync::Arc;
 
     use assert_matches::assert_matches;
     use fidl_fuchsia_net_filter::{ControlRequest, NamespaceControllerRequest};
     use fidl_fuchsia_net_filter_deprecated::FilterRequest;
     use fidl_fuchsia_net_filter_ext::{Action, Change, Resource, ResourceId};
-    use futures::future::FusedFuture;
     use futures::FutureExt;
+    use futures::future::FusedFuture;
     use test_case::test_case;
 
     use super::*;
@@ -609,7 +610,6 @@ pub mod test {
             match self {
                 Self::Deprecated(state) => state
                     .lock()
-                    .expect("poisoned lock")
                     .nat_rules
                     .iter()
                     .map(|fnet_filter_deprecated::Nat { src_subnet, outgoing_nic, proto: _ }| {
@@ -621,7 +621,6 @@ pub mod test {
                     .collect(),
                 Self::Current(state) => state
                     .lock()
-                    .expect("poisoned lock")
                     .resources
                     .values()
                     .filter_map(|resource| match resource {
@@ -664,9 +663,7 @@ pub mod test {
         // Returns true if the provided interface is active.
         fn is_interface_active(&self, interface_id: u64) -> bool {
             match self {
-                Self::Deprecated(state) => {
-                    state.lock().expect("poisoned_lock").active_interfaces.contains(&interface_id)
-                }
+                Self::Deprecated(state) => state.lock().active_interfaces.contains(&interface_id),
                 Self::Current(_) => self
                     .list_configurations()
                     .iter()
@@ -688,10 +685,7 @@ pub mod test {
                     let server_fut = server
                         .into_stream()
                         .fold(state, |state, req| {
-                            state
-                                .lock()
-                                .expect("lock poisoned")
-                                .handle_request(req.expect("failed to receive request"));
+                            state.lock().handle_request(req.expect("failed to receive request"));
                             futures::future::ready(state)
                         })
                         .map(|_state| ())
@@ -734,10 +728,7 @@ pub mod test {
 
                     let server_fut = server_request_stream
                         .fold(state, |state, req| {
-                            state
-                                .lock()
-                                .expect("lock poisoned")
-                                .handle_request(req.expect("failed to receive request"));
+                            state.lock().handle_request(req.expect("failed to receive request"));
                             futures::future::ready(state)
                         })
                         .map(|_state| ())

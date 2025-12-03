@@ -84,11 +84,12 @@ mod test {
     use super::*;
     use assert_matches::assert_matches;
     use fuchsia_async as fasync;
+    use fuchsia_sync::Mutex;
     use futures::prelude::*;
     use futures::task::Poll;
     use net_declare::fidl_ip;
     use std::pin::pin;
-    use std::sync::{Arc, Mutex};
+    use std::sync::Arc;
 
     const DNS_DOMAIN: &str = "www.gstatic.com";
 
@@ -101,14 +102,14 @@ mod test {
         let digger = Digger(move || {
             let (proxy, server) =
                 fidl::endpoints::create_proxy_and_stream::<fnet_name::LookupMarker>();
-            *stream_ref.lock().unwrap() = Some(server);
+            *stream_ref.lock() = Some(server);
             Ok(proxy)
         });
         let dns_lookup_fut = digger.dig("", DNS_DOMAIN);
         let mut dns_lookup_fut = pin!(dns_lookup_fut);
         assert_matches!(exec.run_until_stalled(&mut dns_lookup_fut), Poll::Pending);
 
-        let mut locked = server_stream.lock().unwrap();
+        let mut locked = server_stream.lock();
         let mut server_end_fut = locked.as_mut().unwrap().try_next();
         let _ = assert_matches!(exec.run_until_stalled(&mut server_end_fut),
             Poll::Ready(Ok(Some(fnet_name::LookupRequest::LookupIp { responder, hostname, .. }))) => {
@@ -136,14 +137,14 @@ mod test {
         let digger = Digger(move || {
             let (proxy, server) =
                 fidl::endpoints::create_proxy_and_stream::<fnet_name::LookupMarker>();
-            *stream_ref.lock().unwrap() = Some(server);
+            *stream_ref.lock() = Some(server);
             Ok(proxy)
         });
         let dns_lookup_fut = digger.dig("", DNS_DOMAIN);
         let mut dns_lookup_fut = pin!(dns_lookup_fut);
         assert_matches!(exec.run_until_stalled(&mut dns_lookup_fut), Poll::Pending);
 
-        let mut locked = server_stream.lock().unwrap();
+        let mut locked = server_stream.lock();
         let mut server_end_fut = locked.as_mut().unwrap().try_next();
         let _ = assert_matches!(exec.run_until_stalled(&mut server_end_fut),
             Poll::Ready(Ok(Some(fnet_name::LookupRequest::LookupIp { responder, .. }))) => {
@@ -167,14 +168,14 @@ mod test {
         let digger = Digger(move || {
             let (proxy, server) =
                 fidl::endpoints::create_proxy_and_stream::<fnet_name::LookupMarker>();
-            *stream_ref.lock().unwrap() = Some(server);
+            *stream_ref.lock() = Some(server);
             Ok(proxy)
         });
         let dns_lookup_fut = digger.dig("", DNS_DOMAIN);
         let mut dns_lookup_fut = pin!(dns_lookup_fut);
         assert_matches!(exec.run_until_stalled(&mut dns_lookup_fut), Poll::Pending);
 
-        let mut locked = server_stream.lock().unwrap();
+        let mut locked = server_stream.lock();
         let mut server_end_fut = locked.as_mut().unwrap().try_next();
         assert_matches!(exec.run_until_stalled(&mut server_end_fut), Poll::Ready { .. });
 

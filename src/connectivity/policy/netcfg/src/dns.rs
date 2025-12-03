@@ -448,12 +448,11 @@ mod tests {
             .add_local_child(
                 "dns_server_watcher",
                 {
-                    let rx = std::sync::Mutex::new(Some(rx));
+                    let rx = fuchsia_sync::Mutex::new(Some(rx));
                     move |handles: LocalComponentHandles| {
                         Box::pin(run_dns_server_watcher(
                             handles,
                             rx.lock()
-                                .expect("lock poison")
                                 .take()
                                 .expect("Only one instance of run_dns_server_watcher should exist"),
                         ))
