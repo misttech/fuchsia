@@ -255,7 +255,9 @@ class ArmTcrEl1 : public SysRegBase<ArmTcrEl1> {
   // Copy all the fields that have direct equivalents in TCR_EL2.
   inline ArmTcrEl1& CopyEl2(const ArmTcrEl2& tcr_el2);
 
-  // Bits [63:60] reserved.
+  DEF_RSVDZ_FIELD(63, 62);
+  DEF_BIT(61, mtx1);
+  DEF_BIT(60, mtx0);
   DEF_BIT(59, ds);
   DEF_BIT(58, tcma1);
   DEF_BIT(57, tcma0);
@@ -280,7 +282,7 @@ class ArmTcrEl1 : public SysRegBase<ArmTcrEl1> {
   DEF_BIT(38, tbi1);  // TTBR1 Top Byte Ignored
   DEF_BIT(37, tbi0);  // TTBR0 Top Byte Ignored
   DEF_BIT(36, as);    // ASID size: 0 = 8-bit, 1 = 16-bit
-  // Bit 35 reserved.
+  DEF_RSVDZ_BIT(35);
   DEF_ENUM_FIELD(ArmPhysicalAddressSize, 34, 32, ips);      // Intermediate physical address size.
   DEF_ENUM_FIELD(ArmTcrTg1Value, 31, 30, tg1);              // TTBR1 granule size
   DEF_ENUM_FIELD(ArmShareabilityAttribute, 29, 28, sh1);    // TTBR1 cache sharability
@@ -294,7 +296,7 @@ class ArmTcrEl1 : public SysRegBase<ArmTcrEl1> {
   DEF_ENUM_FIELD(ArmCacheabilityAttribute, 11, 10, orgn0);  // TTBR0 outer cacheability
   DEF_ENUM_FIELD(ArmCacheabilityAttribute, 9, 8, irgn0);    // TTBR0 inner cacheability
   DEF_BIT(7, epd0);                                         // TTBR0 table walks disabled
-  // Bit 6 reserved.
+  DEF_RSVDZ_BIT(6);
   DEF_FIELD(5, 0, t0sz);  // TTBR0 size offset
 };
 
@@ -312,7 +314,8 @@ struct ArmTranslationControlRegisterEl2Base
     set_res1_bit23(1);
   }
 
-  // Bits [63:33] reserved.
+  DEF_RSVDZ_FIELD(63, 62);
+  DEF_BIT(33, mtx);
   DEF_BIT(32, ds);
   DEF_BIT(31, res1_bit32);  // RES1: should be preserved or written as 1.
   // Bits [30:29] differ between TCR_EL2 and VTCR_EL2.  See below.
@@ -368,6 +371,7 @@ ARCH_ARM64_SYSREG(ArmTcrEl2, "tcr_el2");
 
 // Copy values that have direct equivalents in TCR_EL2.
 inline ArmTcrEl1& ArmTcrEl1::CopyEl2(const ArmTcrEl2& tcr_el2) {
+  set_mtx0(tcr_el2.mtx());
   set_ds(tcr_el2.ds());
   set_tcma0(tcr_el2.tcma());
   set_tbid0(tcr_el2.tbid());
@@ -388,6 +392,18 @@ inline ArmTcrEl1& ArmTcrEl1::CopyEl2(const ArmTcrEl2& tcr_el2) {
 // [arm/v8]: VTCR_EL2, Virtualization Translation Control Register
 struct ArmVtcrEl2 : public SysRegDerived<ArmVtcrEl2, ArmTranslationControlRegisterEl2Base> {
   // Most fields are the same as in TCR_EL2, but these few differ.
+  DEF_RSVDZ_FIELD(63, 46);
+  DEF_BIT(45, hdbss);
+  DEF_BIT(44, haft);
+  DEF_RSVDZ_FIELD(43, 42);
+  DEF_BIT(41, tl0);
+  DEF_BIT(40, gcsh);
+  DEF_RSVDZ_BIT(39);
+  DEF_BIT(38, d128);
+  DEF_BIT(37, s2poe);
+  DEF_BIT(36, s2pie);
+  DEF_BIT(35, tl1);
+  DEF_BIT(34, assured_only);
   DEF_BIT(33, sl2);
   DEF_BIT(30, nsa);
   DEF_BIT(29, nsw);
@@ -402,13 +418,19 @@ ARCH_ARM64_SYSREG(ArmVtcrEl2, "vtcr_el2");
 // [arm/v9]: D23.2.172 TCR2_EL1, Translation Control Register (EL1)
 class ArmTcr2El1 : public SysRegBase<ArmTcr2El1> {
  public:
-  // Bits [63:16] reserved.
+  DEF_RSVDZ_FIELD(63, 22);
+  DEF_BIT(21, fngna1);  // Force non-global for unassured using TTBR1. (FEAT_THE)
+  DEF_BIT(20, fngna0);  // Force non-global for unassured using TTBR0. (FEAT_THE)
+  DEF_RSVDZ_BIT(19);
+  DEF_BIT(18, fng1);    // Force non-global translations for TTBR1. (FEAT_ASID2)
+  DEF_BIT(17, fng0);    // Force non-global translations for TTBR0. (FEAT_ASID2)
+  DEF_BIT(16, a2);      // Enable use of two ASIDs. (FEAT_ASID2
   DEF_BIT(15, disch1);  // Disable contiguous bit for start table for TTBR1. (FEAT_D128)
   DEF_BIT(14, disch0);  // Disable contiguous bit for start table for TTBR0. (FEAT_D128)
-  // Bits [13:12] reserved.
+  DEF_RSVDZ_FIELD(13, 12);
   DEF_BIT(11, haft);   // Hardware managed access flag for table descriptors. (FEAT_HAFT)
   DEF_BIT(10, pttwi);  // Permit translation table walk incoherence. (FEAT_THE)
-  // Bits [9:4] reserved.
+  DEF_RSVDZ_FIELD(9, 6);
   DEF_BIT(5, d128);   // Enable 128 bit translation tables. (FEAT_D128)
   DEF_BIT(4, aie);    // Enable attribute indexing extension. (FEAT_AIE)
   DEF_BIT(3, poe);    // Enable permission overlays for privileged accesses. (FEAT_S1POE)
@@ -614,7 +636,7 @@ struct ArmExceptionSyndromeRegister
   // Some values are only possible in ESR_EL2 and/or ESR_EL3.
   enum class ExceptionClass : uint32_t {
     kUnknown = 0b000000,
-    kWf = 0b000001,
+    kWf = 0b000001,          // WF
     kMcr = 0b000011,         // MCR or MRC
     kMcrr = 0b000100,        // MCRR or MRRC
     kMcrCoproc = 0b000101,   // MCR or MRC (coproc=0b1110)
@@ -622,18 +644,21 @@ struct ArmExceptionSyndromeRegister
     kFp = 0b000111,          // SVE or SIMD
     kLd64b = 0b001010,       // LD64B, ST64B, ST64BV, or ST64BVO
     kMcrrCoproc = 0b001100,  // MRRC (coproc==0b1110)
-    kBti = 0b001101,
+    kBti = 0b001101,         // Branch target exception
     kIllegalExecution = 0b001110,
     kSvc32 = 0b010001,
     kHvc32 = 0b010010,  // EL2, EL3
     kSmc32 = 0b010011,  // EL2, EL3
+    kTrappedSysreg128 = 0b010100,
     kSvc64 = 0b010101,
     kHvc64 = 0b010110,  // EL2, EL3
     kSmc64 = 0b010111,  // EL2, EL3
     kMsr = 0b011000,    // MSR, MRS, or System Instruction
     kSve = 0b011001,
     kEret = 0b011010,  // EL2, EL3
+    kTstart = 0b011011,
     kPac = 0b011100,
+    kSme = 0b011101,
     kImplementationDefined = 0b011111,  // EL3
     kInstructionAbortLowerEl = 0b100000,
     kInstructionAbortSameEl = 0b100001,
@@ -644,6 +669,7 @@ struct ArmExceptionSyndromeRegister
     kMops = 0b100111,
     kFpe32 = 0b101000,
     kFpe64 = 0b101100,
+    kGcs = 0b101101,
     kSerror = 0b101111,
     kBreakpointLowerEl = 0b110000,
     kBreakpointSameEl = 0b110001,
@@ -654,6 +680,7 @@ struct ArmExceptionSyndromeRegister
     kBkpt = 0b111000,         // AArch32 BKPT #<n>
     kVectorCatch = 0b111010,  // EL2, EL3
     kBrk = 0b111100,          // AArch64 BRK #<n>
+    kProfiling = 0b111101,
 
     // Unused values in this range reserved for future synchronous exceptions.
     kFirstReservedSynchronous = 0b000000,
@@ -665,9 +692,9 @@ struct ArmExceptionSyndromeRegister
     kLastReservedMaybeAsynchronous = 0b111111,
   };
 
-  DEF_RSVDZ_FIELD(63, 37);
+  DEF_RSVDZ_FIELD(63, 56);
 
-  DEF_FIELD(36, 32, iss2);
+  DEF_FIELD(55, 32, iss2);
   DEF_ENUM_FIELD(ExceptionClass, 31, 26, ec);
   DEF_BIT(25, il);
   DEF_FIELD(24, 0, iss);
@@ -816,7 +843,11 @@ ARCH_ARM64_SYSREG(ArmHcrEl2, "hcr_el2");
 // [arm/sysreg]/hcrx_el2: Extended Hypervisor Configuration register (EL2)
 struct ArmExtendedHypervisorConfigurationRegister
     : public SysRegDerivedBase<ArmExtendedHypervisorConfigurationRegister, uint64_t> {
-  DEF_RSVDZ_FIELD(63, 23);  // Safe "pass-through" value for no-op EL2.
+  DEF_RSVDZ_FIELD(63, 27);  // Safe "pass-through" value for no-op EL2.
+  DEF_BIT(26, srmasken);    // if FEAT_SRMASK
+  DEF_RSVDZ_BIT(25);
+  DEF_BIT(24, pacmen);      // if FEAT_PAuth_LR
+  DEF_BIT(23, enfpm);       // if FEAT_FPMR
   DEF_BIT(22, gcsen);       // if FEAT_GCS
   DEF_BIT(21, enidcp128);   // if FEAT_SYSREG128
   DEF_BIT(20, ensderr);     // if FEAT_ADERR
