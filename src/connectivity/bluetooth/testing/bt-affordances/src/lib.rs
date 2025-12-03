@@ -719,3 +719,18 @@ pub unsafe extern "C" fn read_characteristic(
     }
     zx::Status::OK.into_raw()
 }
+
+/// Advertise a BR/EDR service on the given `psm` until the first connection. Return the PeerId of
+/// that connection. If no connection is established before `timeout` seconds elapse, return an
+/// arbitrary valid PeerId (1). In case of error, return 0.
+#[unsafe(no_mangle)]
+pub extern "C" fn advertise_service(psm: u16, timeout: u64) -> u64 {
+    match block_on(STATE.worker.advertise_service(psm, std::time::Duration::from_secs(timeout))) {
+        Ok(Some(peer_id)) => peer_id.value,
+        Ok(None) => 1,
+        Err(err) => {
+            eprintln!("advertise_service encountered error: {err:?}");
+            0
+        }
+    }
+}

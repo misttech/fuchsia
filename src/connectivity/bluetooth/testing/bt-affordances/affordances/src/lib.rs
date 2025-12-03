@@ -5,9 +5,11 @@
 use anyhow::anyhow;
 use async_utils::hanging_get::client::HangingGetStream;
 use fidl::endpoints::ClientEnd;
-use fidl_fuchsia_bluetooth::{AddressType, PeerId, Uuid};
+use fidl_fuchsia_bluetooth::{AddressType, ChannelMode, ChannelParameters, PeerId, Uuid};
 use fidl_fuchsia_bluetooth_bredr::{
-    ConnectParameters, L2capParameters, ProfileMarker, ProfileProxy,
+    ConnectParameters, ConnectionReceiverMarker, ConnectionReceiverRequest,
+    ConnectionReceiverRequestStream, DataElement, L2capParameters, ProfileMarker, ProfileProxy,
+    ProtocolDescriptor, ProtocolIdentifier, ServiceDefinition,
 };
 use fidl_fuchsia_bluetooth_gatt2::{
     Characteristic, LocalServiceMarker, LocalServiceRequestStream, Server_Marker, Server_Proxy,
@@ -24,7 +26,7 @@ use fidl_fuchsia_bluetooth_sys::{
     HostWatcherProxy, PairingOptions, Peer, ProcedureTokenProxy,
 };
 use fuchsia_async::{LocalExecutor, Task, TimeoutExt, Timer};
-use fuchsia_bluetooth::types::Channel;
+use fuchsia_bluetooth::types::{Channel, Uuid as BtUuid};
 use fuchsia_component::client::connect_to_protocol;
 use fuchsia_sync::Mutex;
 use futures::channel::{mpsc, oneshot};
@@ -78,6 +80,11 @@ enum Request {
         fidl_fuchsia_bluetooth_gatt2::Handle,
         oneshot::Sender<Result<fidl_fuchsia_bluetooth_gatt2::ReadValue, anyhow::Error>>,
     ),
+    AdvertiseService(
+        u16,
+        std::time::Duration,
+        oneshot::Sender<Result<Option<PeerId>, anyhow::Error>>,
+    ),
     Stop,
 }
 
@@ -105,7 +112,8 @@ impl WorkThread {
         let mut host_cache: Vec<HostInfo> = Vec::new();
         // TODO(https://fxbug.dev/396500079): Consider HashMap<PeerId, Peer> instead.
         let peer_cache: Arc<Mutex<Vec<Peer>>> = Arc::new(Mutex::new(Vec::new()));
-        let mut _l2cap_channel: Option<Channel> = None;
+        // TODO(https://fxbug.dev/452075770): Support multiple L2CAP channels.
+        let mut l2cap_channel: Option<Channel> = None;
         let mut _peripheral_connection: ClientEnd<ConnectionMarker>;
 
         while let Some(request) = receiver.next().await {
@@ -181,7 +189,7 @@ impl WorkThread {
                 Request::ConnectL2cap(peer_id, psm, result_sender) => {
                     match proxies.connect_l2cap(&peer_id, psm).await {
                         Ok(channel) => {
-                            _l2cap_channel = Some(channel);
+                            l2cap_channel = Some(channel);
                             result_sender.send(Ok(())).unwrap();
                         }
                         Err(err) => {
@@ -190,7 +198,7 @@ impl WorkThread {
                     }
                 }
                 Request::DisconnectL2cap(result_sender) => {
-                    if let Some(_channel) = _l2cap_channel.take() {
+                    if let Some(_channel) = l2cap_channel.take() {
                         println!("L2CAP channel disconnected");
                     }
                     result_sender.send(Ok(())).unwrap();
@@ -262,6 +270,25 @@ impl WorkThread {
                         )
                         .unwrap();
                 }
+                Request::AdvertiseService(psm, timeout, result_sender) => {
+                    match proxies.advertise_service(psm).await {
+                        Ok(connection_receiver_stream) => {
+                            result_sender
+                                .send(
+                                    Self::serve_connection_receiver(
+                                        connection_receiver_stream,
+                                        &mut l2cap_channel,
+                                        timeout,
+                                    )
+                                    .await,
+                                )
+                                .unwrap();
+                        }
+                        Err(err) => {
+                            result_sender.send(Err(err)).unwrap();
+                        }
+                    }
+                }
                 Request::Stop => break,
             }
         }
@@ -277,6 +304,32 @@ impl WorkThread {
             return Err(anyhow!("Work thread exited with error: {err}"));
         }
         Ok(())
+    }
+
+    // Overwrite `l2cap_channel` if an incoming connection is established before `timeout`.
+    async fn serve_connection_receiver(
+        mut connection_receiver_stream: ConnectionReceiverRequestStream,
+        l2cap_channel: &mut Option<Channel>,
+        timeout: std::time::Duration,
+    ) -> Result<Option<PeerId>, anyhow::Error> {
+        match connection_receiver_stream.next().on_timeout(timeout, || None).await {
+            Some(Ok(ConnectionReceiverRequest::Connected {
+                peer_id,
+                channel,
+                protocol: _,
+                control_handle: _,
+            })) => {
+                *l2cap_channel = Some(channel.try_into().unwrap());
+                Ok(Some(peer_id))
+            }
+            None => Ok(None),
+            Some(Err(err)) => {
+                Err(anyhow!("fuchsia.bluetooth.bredr.ConnectionReceiver reported error: {err}"))
+            }
+            Some(Ok(_)) => Err(anyhow!(
+                "fuchsia.bluetooth.bredr.ConnectionReceiver received unexpected request"
+            )),
+        }
     }
 
     // Write address of active host into `addr_byte_buff`.
@@ -480,6 +533,18 @@ impl WorkThread {
             characteristic_handle,
             sender,
         ))?;
+        receiver.await?
+    }
+
+    // Advertise a BR/EDR service on the given `psm` until the first connection. Return the PeerId
+    // of that connection. If no connection is established before `timeout` elapses, return None.
+    pub async fn advertise_service(
+        &self,
+        psm: u16,
+        timeout: std::time::Duration,
+    ) -> Result<Option<PeerId>, anyhow::Error> {
+        let (sender, receiver) = oneshot::channel::<Result<Option<PeerId>, anyhow::Error>>();
+        self.sender.clone().unbounded_send(Request::AdvertiseService(psm, timeout, sender))?;
         receiver.await?
     }
 }
@@ -1029,5 +1094,39 @@ impl Proxies {
             })?;
 
         Ok(value)
+    }
+
+    async fn advertise_service(
+        &self,
+        psm: u16,
+    ) -> Result<ConnectionReceiverRequestStream, anyhow::Error> {
+        let (connect_client, connect_server) =
+            fidl::endpoints::create_request_stream::<ConnectionReceiverMarker>();
+
+        let service_def = ServiceDefinition {
+            service_class_uuids: Some(vec![BtUuid::new16(0x1401).into()]), // Non-reserved ID
+            protocol_descriptor_list: Some(vec![ProtocolDescriptor {
+                protocol: Some(ProtocolIdentifier::L2Cap),
+                params: Some(vec![DataElement::Uint16(psm)]),
+                ..Default::default()
+            }]),
+            ..Default::default()
+        };
+
+        let _ = self
+            .profile_proxy
+            .advertise(fidl_fuchsia_bluetooth_bredr::ProfileAdvertiseRequest {
+                services: Some(vec![service_def]),
+                receiver: Some(connect_client),
+                parameters: Some(ChannelParameters {
+                    channel_mode: Some(ChannelMode::EnhancedRetransmission),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            })
+            .await?
+            .map_err(|e| anyhow!("fuchsia.bluetooth.bredr.Profile/Advertise error: {:?}", e))?;
+
+        Ok(connect_server)
     }
 }

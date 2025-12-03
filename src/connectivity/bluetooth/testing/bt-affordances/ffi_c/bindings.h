@@ -212,6 +212,11 @@ int32_t discover_services(void *context, DiscoverServicesCallback cb);
 int32_t read_characteristic(uint64_t service_handle, uint64_t characteristic_handle,
                             ReadCharacteristicResult *result);
 
+/// Advertise a BR/EDR service on the given `psm` until the first connection. Return the PeerId of
+/// that connection. If no connection is established before `timeout` seconds elapse, return an
+/// arbitrary valid PeerId (1). In case of error, return 0.
+uint64_t advertise_service(uint16_t psm, uint64_t timeout);
+
 }  // extern "C"
 
 #endif  // SRC_CONNECTIVITY_BLUETOOTH_TESTING_BT_AFFORDANCES_FFI_C_BINDINGS_H_

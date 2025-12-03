@@ -27,7 +27,17 @@ grpc::Status L2capService::Connect(::grpc::ServerContext* context,
 ::grpc::Status L2capService::WaitConnection(::grpc::ServerContext* context,
                                             const ::pandora::l2cap::WaitConnectionRequest* request,
                                             ::pandora::l2cap::WaitConnectionResponse* response) {
-  return Status(StatusCode::UNIMPLEMENTED, "");
+  // PSM must match `TSPX_psm` IXIT value to pass PTS tests.
+  uint64_t maybe_peer_id = advertise_service(/*psm=*/29, /*timeout=*/3 /*seconds*/);
+  if (!maybe_peer_id) {
+    return Status(StatusCode::INTERNAL, "Error in Rust affordances (check logs)");
+  }
+  if (maybe_peer_id == 1) {
+    FX_LOGS(WARNING)
+        << "It is likely that no connection was established on the advertised PSM before timeout.";
+  }
+  response->mutable_channel()->mutable_cookie()->set_value(std::to_string(maybe_peer_id));
+  return {/*OK*/};
 }
 
 ::grpc::Status L2capService::Disconnect(::grpc::ServerContext* context,
