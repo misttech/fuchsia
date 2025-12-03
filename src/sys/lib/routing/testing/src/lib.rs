@@ -288,6 +288,7 @@ macro_rules! instantiate_common_routing_tests {
             $builder_impl,
             test_use_from_parent,
             test_use_dictionary_from_parent,
+            test_use_dictionary_allowed_by_capability_policy,
             test_use_from_child,
             test_use_from_self,
             test_use_from_grandchild,
@@ -512,6 +513,69 @@ impl<T: RoutingTestModelBuilder> CommonRoutingTest<T> {
                 CheckUse::Directory {
                     path: "/my_dictionary".parse().unwrap(),
                     file: PathBuf::from("bar_data/example_file"),
+                    expected_res: ExpectedResult::Ok,
+                },
+            )
+            .await;
+    }
+
+    ///   a
+    ///    \
+    ///     b
+    /// a: offers protocols to dictionary and offers dictionary to b.
+    /// b: uses protocol from dictionary, with policy allowing it.
+    pub async fn test_use_dictionary_allowed_by_capability_policy(&self) {
+        const DICT_NAME: &str = "dict";
+        const PROTO_NAME: &str = "hippo";
+        let components = vec![
+            (
+                "a",
+                ComponentDeclBuilder::new()
+                    .dictionary_default(DICT_NAME)
+                    .protocol_default(PROTO_NAME)
+                    .offer(
+                        OfferBuilder::protocol()
+                            .name(PROTO_NAME)
+                            .source(OfferSource::Self_)
+                            .target_capability(DICT_NAME),
+                    )
+                    .offer(
+                        OfferBuilder::dictionary()
+                            .name(DICT_NAME)
+                            .source(OfferSource::Self_)
+                            .target_static_child("b"),
+                    )
+                    .child_default("b")
+                    .build(),
+            ),
+            (
+                "b",
+                ComponentDeclBuilder::new()
+                    .use_(UseBuilder::dictionary().name(DICT_NAME).path("/svc"))
+                    .build(),
+            ),
+        ];
+
+        let mut allowlist = HashSet::new();
+        allowlist.insert(AllowlistEntryBuilder::new().exact("b").build());
+
+        let mut builder = T::new("a", components);
+        builder.add_capability_policy(
+            CapabilityAllowlistKey {
+                source_moniker: ExtendedMoniker::ComponentInstance(Moniker::root()),
+                source_name: PROTO_NAME.parse().unwrap(),
+                source: CapabilityAllowlistSource::Self_,
+                capability: CapabilityTypeName::Protocol,
+            },
+            allowlist,
+        );
+        let model = builder.build().await;
+
+        model
+            .check_use(
+                ["b"].try_into().unwrap(),
+                CheckUse::Protocol {
+                    path: format!("/svc/{PROTO_NAME}").parse().unwrap(),
                     expected_res: ExpectedResult::Ok,
                 },
             )
