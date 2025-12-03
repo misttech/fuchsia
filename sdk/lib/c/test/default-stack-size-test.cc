@@ -33,7 +33,7 @@ TEST(StackSizeTests, MainThreadStackSize) {
 class PthreadLockGuard {
  public:
   explicit PthreadLockGuard(pthread_mutex_t* mtx) : mtx_(mtx) {
-    ASSERT_EQ(pthread_mutex_lock(mtx_), 0);
+    EXPECT_EQ(pthread_mutex_lock(mtx_), 0);
   }
   ~PthreadLockGuard() { Reset(); }
 

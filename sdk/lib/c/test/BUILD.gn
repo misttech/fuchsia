@@ -61,7 +61,7 @@ source_set("safe-zero-construction") {
   testonly = true
 
   public = [ "safe-zero-construction.h" ]
-  public_deps = [ "//zircon/system/ulib/zxtest" ]
+  public_deps = [ "//zircon/system/ulib/zxtest:zxtest-streams" ]
 }
 
 # noop-test is a basic test that verifies that C library initialization
@@ -123,7 +123,7 @@ foreach(case, default_stack_size_cases) {
     deps = [
       "//sdk/lib/fdio",
       "//zircon/system/ulib/zircon-internal",
-      "//zircon/system/ulib/zxtest",
+      "//zircon/system/ulib/zxtest:zxtest-streams",
     ]
     if (defined(case.size)) {
       defines = [ "STACK_TEST_EXPECTED_SIZE=${case.size}" ]
@@ -221,7 +221,7 @@ test("posix-clocks-test") {
     "//sdk/lib/fdio",
     "//zircon/system/ulib/fbl",
     "//zircon/system/ulib/zx",
-    "//zircon/system/ulib/zxtest",
+    "//zircon/system/ulib/zxtest:zxtest-streams",
   ]
 }
 
@@ -238,7 +238,7 @@ test("pthread-detach-idempotent-test") {
     "//sdk/lib/fdio",
     "//zircon/system/ulib/sync",
     "//zircon/system/ulib/zx",
-    "//zircon/system/ulib/zxtest",
+    "//zircon/system/ulib/zxtest:zxtest-streams",
   ]
 }
 
@@ -256,7 +256,7 @@ test("atexit-test") {
   sources = [ "atexit.cc" ]
   deps = [
     "//sdk/lib/fdio",
-    "//zircon/system/ulib/zxtest",
+    "//zircon/system/ulib/zxtest:zxtest-streams",
   ]
 }
 
@@ -274,7 +274,7 @@ test("gwp-asan-test") {
     "//sdk/lib/fit",
     "//zircon/system/ulib/elf-search",
     "//zircon/system/ulib/zx",
-    "//zircon/system/ulib/zxtest",
+    "//zircon/system/ulib/zxtest:zxtest-streams",
   ]
   data_deps = [ ":gwp-asan-test-use-after-free" ]
 }
@@ -285,7 +285,7 @@ if (current_cpu == "arm64") {
     sources = [ "ldso-xom-test.c" ]
     deps = [
       ":xom-test-lib",
-      "//zircon/system/ulib/zxtest",
+      "//zircon/system/ulib/zxtest:zxtest-streams",
     ]
     configs += [ ":execute-only" ]
   }
@@ -308,7 +308,7 @@ zbi_test_executable("libc-unittests-standalone") {
   deps = [
     "..:unittests",
     "//src/zircon/testing/standalone-test",
-    "//zircon/system/ulib/zxtest",
+    "//zircon/system/ulib/zxtest:zxtest-streams",
   ]
 }
 

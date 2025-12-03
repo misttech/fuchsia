@@ -20,7 +20,7 @@ test("sanitizer-utils-test") {
     "//sdk/lib/async-loop:async-loop-default",
     "//sdk/lib/fdio",
     "//zircon/system/ulib/ldmsg",
-    "//zircon/system/ulib/zxtest",
+    "//zircon/system/ulib/zxtest:zxtest-streams",
   ]
   data_deps = [
     ":sanitizer-exit-hook-test-helper",
@@ -85,7 +85,7 @@ source_set("memory-snapshot-test") {
   deps = [
     ":sanitizer-memory-snapshot-test-needed-dso",
     "//zircon/system/ulib/zx",
-    "//zircon/system/ulib/zxtest",
+    "//zircon/system/ulib/zxtest:zxtest-streams",
     "//zircon/third_party/ulib/musl:musl_internal",
   ]
   data_deps = [ ":sanitizer-memory-snapshot-test-dlopen-dso" ]
@@ -127,7 +127,7 @@ test("hwasan-ctor-order-test") {
     ":ctor-order-test-no-deps-dso",
     ":ctor-order-test-no-interposing-dso",
   ]
-  deps = [ "//zircon/system/ulib/zxtest" ]
+  deps = [ "//zircon/system/ulib/zxtest:zxtest-streams" ]
 }
 
 shared_library("ctor-order-test-no-deps-dso") {
@@ -172,7 +172,7 @@ test("sanitizer-allocator-test") {
   sources = [ "sanitizer-allocator-test.cc" ]
   deps = [
     "//sdk/lib/tbi",
-    "//zircon/system/ulib/zxtest",
+    "//zircon/system/ulib/zxtest:zxtest-streams",
   ]
 }
 
@@ -207,7 +207,7 @@ if (lsan_configs != false) {
     sources = [ "lsan-test.cc" ]
     deps = [
       "//zircon/system/ulib/explicit-memory",
-      "//zircon/system/ulib/zxtest",
+      "//zircon/system/ulib/zxtest:zxtest-streams",
     ]
 
     data_deps = [ ":lsan-thread-race-test" ]

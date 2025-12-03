@@ -80,7 +80,12 @@ enum class Operation {
 // repeatedly waits to either detach or exit.
 class Thread {
  public:
-  explicit Thread(Gate<Operation>* gate) : gate_(gate) {
+  explicit Thread(Gate<Operation>* gate) : gate_(gate) { Init(); }
+
+  void WaitForThreadExited() { sync_completion_wait(&thread_exited_, ZX_TIME_INFINITE); }
+
+ private:
+  void Init() {
     pthread_attr_t attrs;
     int ret = pthread_attr_init(&attrs);
     ASSERT_EQ(ret, 0);
@@ -95,9 +100,6 @@ class Thread {
     ASSERT_EQ(ret, 0);
   }
 
-  void WaitForThreadExited() { sync_completion_wait(&thread_exited_, ZX_TIME_INFINITE); }
-
- private:
   static void* Handler(void* self) {
     auto thread = static_cast<Thread*>(self);
     thread->Run();
