@@ -111,11 +111,12 @@ func doTest(ctx context.Context) error {
 		return fmt.Errorf("initialization failed: %w", err)
 	}
 
-	return testRecovery(ctx, deviceClient, ffx.IsolateDir(), build)
+	return testRecovery(ctx, ffx, deviceClient, ffx.IsolateDir(), build)
 }
 
 func testRecovery(
 	ctx context.Context,
+	ffxTool *ffx.FFXTool,
 	device *device.Client,
 	ffxIsolateDir ffx.IsolateDir,
 	build artifacts.Build,
@@ -127,7 +128,7 @@ func testRecovery(
 		// setting a timeout on the context, and running the actual test in a
 		// closure.
 		if err := util.RunWithTimeout(ctx, c.cycleTimeout, func() error {
-			return doTestRecovery(ctx, device, ffxIsolateDir, build)
+			return doTestRecovery(ctx, ffxTool, device, ffxIsolateDir, build)
 		}); err != nil {
 			return fmt.Errorf("Recovery Cycle %d failed: %w", i, err)
 		}
@@ -138,6 +139,7 @@ func testRecovery(
 
 func doTestRecovery(
 	ctx context.Context,
+	ffxTool *ffx.FFXTool,
 	device *device.Client,
 	ffxIsolateDir ffx.IsolateDir,
 	build artifacts.Build,
@@ -165,13 +167,14 @@ func doTestRecovery(
 		return fmt.Errorf("error extracting expected system image: %w", err)
 	}
 
-	expectedConfig, err := check.DetermineCurrentABRConfig(ctx, device, repo)
+	expectedConfig, err := check.DetermineCurrentABRConfig(ctx, ffxTool, device, repo)
 	if err != nil {
 		return fmt.Errorf("error determining target config: %w", err)
 	}
 
 	if err := check.ValidateDevice(
 		ctx,
+		ffxTool,
 		device,
 		expectedSystemImage,
 		expectedConfig,
@@ -254,7 +257,7 @@ func initializeDevice(
 	}
 
 	// Check if we support ABR. If so, we always boot into A after a pave.
-	expectedConfig, err := check.DetermineCurrentABRConfig(ctx, device, repo)
+	expectedConfig, err := check.DetermineCurrentABRConfig(ctx, ffx, device, repo)
 	if err != nil {
 		return err
 	}
@@ -266,6 +269,7 @@ func initializeDevice(
 
 	if err := check.ValidateDevice(
 		ctx,
+		ffx,
 		device,
 		expectedSystemImage,
 		expectedConfig,

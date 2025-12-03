@@ -394,3 +394,16 @@ func (f *FFXTool) DecompressBlobs(ctx context.Context, delivery_blobs []string, 
 	_, err := f.runFFXCmd(ctx, args...)
 	return err
 }
+
+func (f *FFXTool) RegisterPackageRepository(ctx context.Context, repo_url string) error {
+	args := []string{
+		"target",
+		"repository",
+		"register",
+		"--json-uri",
+		repo_url,
+	}
+
+	_, err := f.runFFXCmd(ctx, args...)
+	return err
+}

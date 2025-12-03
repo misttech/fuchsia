@@ -9,6 +9,7 @@ import (
 	"fmt"
 
 	"go.fuchsia.dev/fuchsia/src/testing/host-target-testing/device"
+	"go.fuchsia.dev/fuchsia/src/testing/host-target-testing/ffx"
 	"go.fuchsia.dev/fuchsia/src/testing/host-target-testing/packages"
 	"go.fuchsia.dev/fuchsia/src/testing/host-target-testing/sl4f"
 	"go.fuchsia.dev/fuchsia/tools/lib/logger"
@@ -56,10 +57,11 @@ func determineActiveABRConfig(
 
 func DetermineCurrentABRConfig(
 	ctx context.Context,
+	ffxTool *ffx.FFXTool,
 	device *device.Client,
 	repo *packages.Repository,
 ) (*sl4f.Configuration, error) {
-	rpcClient, err := device.StartRpcSession(ctx, repo)
+	rpcClient, err := device.StartRpcSession(ctx, ffxTool, repo)
 	if err != nil {
 		return nil, fmt.Errorf("unable to connect to sl4f: %w", err)
 	}
@@ -91,11 +93,12 @@ func determineCurrentABRConfig(
 
 func checkABRConfig(
 	ctx context.Context,
+	ffxTool *ffx.FFXTool,
 	device *device.Client,
 	repo *packages.Repository,
 	expectedConfig *sl4f.Configuration,
 ) error {
-	rpcClient, err := device.StartRpcSession(ctx, repo)
+	rpcClient, err := device.StartRpcSession(ctx, ffxTool, repo)
 	if err != nil {
 		return fmt.Errorf("unable to connect to sl4f: %w", err)
 	}
@@ -127,6 +130,7 @@ func checkABRConfig(
 
 func ValidateDevice(
 	ctx context.Context,
+	ffxTool *ffx.FFXTool,
 	device *device.Client,
 	expectedSystemImage *packages.SystemImagePackage,
 	expectedConfig *sl4f.Configuration,
@@ -151,7 +155,7 @@ func ValidateDevice(
 	}
 
 	if checkABR {
-		if err := checkABRConfig(ctx, device, expectedSystemImage.Repository(), expectedConfig); err != nil {
+		if err := checkABRConfig(ctx, ffxTool, device, expectedSystemImage.Repository(), expectedConfig); err != nil {
 			return fmt.Errorf("failed to validate device: %w", err)
 		}
 	}

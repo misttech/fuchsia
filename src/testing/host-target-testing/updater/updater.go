@@ -48,6 +48,7 @@ type client interface {
 	DisconnectionListener() <-chan struct{}
 	ServePackageRepository(
 		ctx context.Context,
+		ffxTool *ffx.FFXTool,
 		repo *packages.Repository,
 		name string,
 		createRewriteRule bool,
@@ -225,7 +226,7 @@ func updateCheckNow(
 
 		// We pass createRewriteRule=true for versions of system-update-checker prior to
 		// fxrev.dev/504000. Newer versions need to have `update channel set` called below.
-		server, err := c.ServePackageRepository(ctx, repo, "trigger-ota", createRewriteRule, nil)
+		server, err := c.ServePackageRepository(ctx, ffxTool, repo, "trigger-ota", createRewriteRule, nil)
 		if err != nil {
 			return fmt.Errorf("error setting up server: %w", err)
 		}
@@ -349,7 +350,7 @@ func (u *SystemUpdater) Update(
 		return fmt.Errorf("error rehosting the update package: %w", err)
 	}
 
-	server, err := c.ServePackageRepository(ctx, dstUpdate.Repository(), repoName, true, nil)
+	server, err := c.ServePackageRepository(ctx, ffxTool, dstUpdate.Repository(), repoName, true, nil)
 	if err != nil {
 		return fmt.Errorf("error setting up server: %w", err)
 	}

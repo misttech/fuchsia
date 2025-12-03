@@ -215,7 +215,7 @@ func testOTAs(
 func initializeDevice(
 	ctx context.Context,
 	device *device.Client,
-	ffx *ffx.FFXTool,
+	ffxTool *ffx.FFXTool,
 	ota *otaData,
 ) (*sl4f.Configuration, error) {
 	logger.Infof(ctx, "Initializing device")
@@ -242,11 +242,11 @@ func initializeDevice(
 		}
 
 		if c.useFlash {
-			if err := flash.FlashDevice(ctx, device, ffx, ota.build, sshPrivateKey.PublicKey()); err != nil {
+			if err := flash.FlashDevice(ctx, device, ffxTool, ota.build, sshPrivateKey.PublicKey()); err != nil {
 				return nil, fmt.Errorf("failed to flash device during initialization: %w", err)
 			}
 		} else {
-			if err := pave.PaveDevice(ctx, device, ffx, ota.build, sshPrivateKey.PublicKey()); err != nil {
+			if err := pave.PaveDevice(ctx, device, ffxTool, ota.build, sshPrivateKey.PublicKey()); err != nil {
 				return nil, fmt.Errorf("failed to pave device during initialization: %w", err)
 			}
 		}
@@ -258,6 +258,7 @@ func initializeDevice(
 
 	if err := check.ValidateDevice(
 		ctx,
+		ffxTool,
 		device,
 		systemImage,
 		currentBootSlot,
@@ -390,6 +391,7 @@ func otaToPackage(
 
 	if err := check.ValidateDevice(
 		ctx,
+		nextFfxTool,
 		device,
 		systemImage,
 		currentBootSlot,

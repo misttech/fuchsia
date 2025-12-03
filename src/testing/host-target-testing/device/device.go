@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/url"
 	"os"
 	"strings"
 	"sync/atomic"
@@ -515,10 +516,11 @@ func (c *Client) RemoteFileExists(ctx context.Context, path string) (bool, error
 	return true, nil
 }
 
-// RegisterPackageRepository adds the repository as a repository inside the device.
+// RegisterPackageRepository adds the repository as a repository via ffx.
 // If rewritePackages is not nil, the rewrite rule will only affect the passed packages.
 func (c *Client) RegisterPackageRepository(
 	ctx context.Context,
+	ffxTool *ffx.FFXTool,
 	repo *packages.Server,
 	repoName string,
 	createRewriteRule bool,
@@ -526,10 +528,26 @@ func (c *Client) RegisterPackageRepository(
 ) error {
 	logger.Infof(ctx, "registering package repository: %s", repo.Dir)
 
+	// From ffx's viewpoint, this repo is served on localhost, not via the qemu link local
+	// scope in the json config file for the target. Hence, we need to rewrite the URL
+	// to let ffx fetch the config from [::1].
+	url, err := url.Parse(repo.URL)
+	if err != nil {
+		return err
+	}
+	ffx_repo_url := fmt.Sprintf("http://[::1]:%v%v", url.Port(), url.Path)
+
 	if createRewriteRule {
-		cmd := []string{"pkgctl", "repo", "add", "url", "-n", repoName, repo.URL}
-		if err := c.Run(ctx, cmd, os.Stdout, os.Stderr); err != nil {
-			return err
+		if err := ffxTool.RegisterPackageRepository(ctx, ffx_repo_url); err != nil {
+			logger.Errorf(ctx,
+				"%v %w\n%v",
+				"unable to register package repository via ffx:",
+				err,
+				"registering via ffx might be unsupported on the target, falling back to pkgctl.")
+			cmd := []string{"pkgctl", "repo", "add", "url", "-n", repoName, repo.URL}
+			if err := c.Run(ctx, cmd, os.Stdout, os.Stderr); err != nil {
+				return err
+			}
 		}
 		logger.Infof(ctx, "establishing rewriting rule for: %s", repo.URL)
 		ruleTemplate := `'{"version":"1","content":[
@@ -556,16 +574,26 @@ func (c *Client) RegisterPackageRepository(
 			}
 			ruleTemplate += `]}'`
 		}
-		cmd = []string{"pkgctl", "rule", "replace", "json", fmt.Sprintf(ruleTemplate, repoName)}
+		cmd := []string{"pkgctl", "rule", "replace", "json", fmt.Sprintf(ruleTemplate, repoName)}
 		return c.Run(ctx, cmd, os.Stdout, os.Stderr)
 	} else {
-		cmd := []string{"pkgctl", "repo", "add", "url", repo.URL}
-		return c.Run(ctx, cmd, os.Stdout, os.Stderr)
+		if err := ffxTool.RegisterPackageRepository(ctx, ffx_repo_url); err != nil {
+			logger.Errorf(ctx,
+				"%v %w\n%v",
+				"unable to register package repository via ffx:",
+				err,
+				"registering via ffx might be unsupported on the target, falling back to pkgctl.")
+			cmd := []string{"pkgctl", "repo", "add", "url", repo.URL}
+			return c.Run(ctx, cmd, os.Stdout, os.Stderr)
+		} else {
+			return nil
+		}
 	}
 }
 
 func (c *Client) ServePackageRepository(
 	ctx context.Context,
+	ffxTool *ffx.FFXTool,
 	repo *packages.Repository,
 	repoName string,
 	createRewriteRule bool,
@@ -588,7 +616,7 @@ func (c *Client) ServePackageRepository(
 		return nil, err
 	}
 
-	if err := c.RegisterPackageRepository(ctx, server, repoName, createRewriteRule, rewritePackages); err != nil {
+	if err := c.RegisterPackageRepository(ctx, ffxTool, server, repoName, createRewriteRule, rewritePackages); err != nil {
 		server.Shutdown(ctx)
 		return nil, err
 	}
@@ -596,13 +624,13 @@ func (c *Client) ServePackageRepository(
 	return server, nil
 }
 
-func (c *Client) StartRpcSession(ctx context.Context, repo *packages.Repository) (*sl4f.Client, error) {
+func (c *Client) StartRpcSession(ctx context.Context, ffxTool *ffx.FFXTool, repo *packages.Repository) (*sl4f.Client, error) {
 	logger.Infof(ctx, "connecting to sl4f")
 	startTime := time.Now()
 
 	// Configure the target to use this repository as "fuchsia-pkg://host_target_testing_sl4f".
 	repoName := "host-target-testing-sl4f"
-	repoServer, err := c.ServePackageRepository(ctx, repo, repoName, true, []string{"sl4f", "start_sl4f"})
+	repoServer, err := c.ServePackageRepository(ctx, ffxTool, repo, repoName, true, []string{"sl4f", "start_sl4f"})
 	if err != nil {
 		return nil, fmt.Errorf("error serving repo to device: %w", err)
 	}

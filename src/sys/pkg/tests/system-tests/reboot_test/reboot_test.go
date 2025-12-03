@@ -72,13 +72,13 @@ func doTest(ctx context.Context) error {
 	}
 	defer archiveCleanup()
 
-	ffx, ffxCleanup, err := c.ffxConfig.NewFfxTool(ctx)
+	ffxTool, ffxCleanup, err := c.ffxConfig.NewFfxTool(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to create ffx: %w", err)
 	}
 	defer ffxCleanup()
 
-	deviceClient, err := c.deviceConfig.NewDeviceClient(ctx, ffx)
+	deviceClient, err := c.deviceConfig.NewDeviceClient(ctx, ffxTool)
 	if err != nil {
 		return fmt.Errorf("failed to create ota test client: %w", err)
 	}
@@ -103,13 +103,13 @@ func doTest(ctx context.Context) error {
 	}
 
 	if err := util.RunWithTimeout(ctx, c.paveTimeout, func() error {
-		err := initializeDevice(ctx, deviceClient, ffx, build)
+		err := initializeDevice(ctx, deviceClient, ffxTool, build)
 		return err
 	}); err != nil {
 		return fmt.Errorf("initialization failed: %w", err)
 	}
 
-	return testReboot(ctx, deviceClient, ffx, build)
+	return testReboot(ctx, deviceClient, ffxTool, build)
 }
 
 func testReboot(
@@ -167,7 +167,7 @@ func doTestReboot(
 
 	var expectedConfig *sl4f.Configuration
 	if c.checkABR {
-		config, err := check.DetermineCurrentABRConfig(ctx, device, repo)
+		config, err := check.DetermineCurrentABRConfig(ctx, ffxTool, device, repo)
 		if err != nil {
 			return fmt.Errorf("error determining target config: %w", err)
 		}
@@ -176,6 +176,7 @@ func doTestReboot(
 
 	if err := check.ValidateDevice(
 		ctx,
+		ffxTool,
 		device,
 		expectedSystemImage,
 		expectedConfig,
@@ -190,6 +191,7 @@ func doTestReboot(
 
 	if err := check.ValidateDevice(
 		ctx,
+		ffxTool,
 		device,
 		expectedSystemImage,
 		expectedConfig,
@@ -223,12 +225,12 @@ func sleepAfterReboot(ctx context.Context, device *device.Client) error {
 func initializeDevice(
 	ctx context.Context,
 	device *device.Client,
-	ffx *ffx.FFXTool,
+	ffxTool *ffx.FFXTool,
 	build artifacts.Build,
 ) error {
 	logger.Infof(ctx, "Initializing device")
 
-	repo, err := build.GetPackageRepository(ctx, artifacts.LazilyFetchBlobs, ffx.IsolateDir())
+	repo, err := build.GetPackageRepository(ctx, artifacts.LazilyFetchBlobs, ffxTool.IsolateDir())
 	if err != nil {
 		return err
 	}
@@ -258,11 +260,11 @@ func initializeDevice(
 		}
 
 		if c.useFlash {
-			if err := flash.FlashDevice(ctx, device, ffx, build, sshPrivateKey.PublicKey()); err != nil {
+			if err := flash.FlashDevice(ctx, device, ffxTool, build, sshPrivateKey.PublicKey()); err != nil {
 				return fmt.Errorf("failed to flash device during initialization: %w", err)
 			}
 		} else {
-			if err := pave.PaveDevice(ctx, device, ffx, build, sshPrivateKey.PublicKey()); err != nil {
+			if err := pave.PaveDevice(ctx, device, ffxTool, build, sshPrivateKey.PublicKey()); err != nil {
 				return fmt.Errorf("failed to pave device during initialization: %w", err)
 			}
 		}
@@ -271,7 +273,7 @@ func initializeDevice(
 	var expectedConfig *sl4f.Configuration
 	if c.checkABR {
 		// Check if we support ABR. If so, we always boot into A after a pave.
-		expectedConfig, err = check.DetermineCurrentABRConfig(ctx, device, repo)
+		expectedConfig, err = check.DetermineCurrentABRConfig(ctx, ffxTool, device, repo)
 		if err != nil {
 			return err
 		}
@@ -284,6 +286,7 @@ func initializeDevice(
 
 	if err := check.ValidateDevice(
 		ctx,
+		ffxTool,
 		device,
 		expectedSystemImage,
 		expectedConfig,
