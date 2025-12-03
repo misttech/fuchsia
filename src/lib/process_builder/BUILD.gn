@@ -79,52 +79,26 @@ rustc_binary("test_util") {
   sources = [ "test-utils/test_util.rs" ]
 }
 
-# The test doesn't get normal C library setup before its code runs, so it
-# needs to use the basic machine ABI.
-user_basic_redirect("static_pie_test.basic") {
+cc_test_executable("static_pie_test_util") {
+  visibility = [ ":*" ]
   testonly = true
-  public_deps = [ ":static_pie_test_util" ]
-}
 
-if (toolchain_environment == "user.basic") {
-  cc_test_executable("static_pie_test_util") {
-    visibility = [ ":*" ]
+  sources = [ "test-utils/static_pie_test_util.cc" ]
 
-    sources = [ "test-utils/static_pie_test_util.cc" ]
+  configs -= [ "//build/config/fuchsia:fdio_config" ]
+  configs += [ "//build/config:standalone" ]
+  ldflags = [ "-Wl,-z,stack-size=0x40000" ]
+  deps = [ "//sdk/lib/c:static" ]
 
-    # Avoid libc references from assert() in libc++ header code.
-    defines = [ "NDEBUG=1" ]
-
-    ldflags = [
-      # A standalone binary should indicate its stack requirements.
-      "-Wl,-z,stack-size=0x20000",
-    ]
-
-    # TODO(https://fxbug.dev/42136089): delete the below and fix compiler warnings
-    configs += [ "//build/config:Wno-conversion" ]
-    deps = [
-      "//sdk/lib/c/string:minimal-str",
-      "//src/lib/elfldltl/test:static-pie",
-      "//src/zircon/lib/zircon",
-      "//zircon/system/ulib/zircon-internal",
-    ]
-
-    include_dirs = [ "//src/lib/elfldltl/test" ]
-
-    exclude_toolchain_tags = [ "instrumented" ]
-
-    # TODO(https://fxbug.dev/126542): __ehdr_start bug in ld.bfd aarch64-elf
-    if (current_cpu == "arm64") {
-      exclude_toolchain_tags += [ "gcc" ]
-    }
-  }
+  # The static libc.a doesn't handle the setup needed for things like ASan.
+  exclude_toolchain_tags = [ "uses-shadow" ]
 }
 
 fuchsia_unittest_package("process-builder-tests") {
   manifest = "meta/process_builder_tests.cml"
   deps = [
     ":process_builder_test",
-    ":static_pie_test.basic",
+    ":static_pie_test_util",
     ":test_util",
     "//src/sys/testing/elftest",
   ]
