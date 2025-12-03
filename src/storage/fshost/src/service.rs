@@ -31,6 +31,7 @@ use futures::channel::mpsc;
 use futures::lock::Mutex;
 use futures::{StreamExt as _, TryFutureExt as _, TryStreamExt as _};
 use std::sync::Arc;
+use thiserror::Error;
 use vfs::service;
 use zx::{self as zx, MonotonicDuration};
 use {
@@ -763,19 +764,24 @@ pub fn fshost_recovery(
                     }
                     Ok(fshost::RecoveryRequest::GetBlobImageHandle { responder }) => {
                         log::info!("getting image handle for new system blob volume");
-                        let res = match get_blob_image_handle(&system_partition_lock, &env, &config)
+                        let res = get_blob_image_handle(&system_partition_lock, &env, &config)
                             .await
-                        {
-                            Ok(token) => Ok(token),
-                            Err(error) => {
-                                log::error!(error:?; "failed to get blob image handle");
-                                Err(if let Ok(status) = error.downcast::<zx::Status>() {
-                                    status
-                                } else {
-                                    zx::Status::INTERNAL
-                                })
-                            }
-                        };
+                            .map_err(|error| {
+                                // If we suspect the filesystem is corrupted (e.g. if we failed to
+                                // mount the system container, or we failed to create a new volume),
+                                // report ZX_ERR_IO_DATA_INTEGRITY so remedial action can be taken.
+                                if error.is::<FilesystemCorrupt>() {
+                                    log::error!(
+                                        error:?;
+                                        "Filesystem may be corrupt and requires a full re-flash."
+                                    );
+                                    return zx::Status::IO_DATA_INTEGRITY;
+                                }
+                                // For all other errors, make sure we log the error context before
+                                // returning a generic ZX_ERR_INTERNAL code.
+                                log::error!(error:?; "get_blob_image_handle failed");
+                                zx::Status::INTERNAL
+                            });
                         responder.send(res.map_err(zx::Status::into_raw)).unwrap_or_else(|error| {
                             log::error!(error:?; "failed to send fidl response");
                         });
@@ -949,6 +955,10 @@ async fn get_system_container_for_recovery(
     Ok((block_connector, topological_path))
 }
 
+#[derive(Debug, Error)]
+#[error(transparent)]
+struct FilesystemCorrupt(#[from] anyhow::Error);
+
 /// Obtains a handle to a file which can be used to write a new system blob image, and a token that
 /// will unmount the system container when dropped. The volume will be installed automatically on
 /// the next system boot, or by calling [`install_blob_image`].
@@ -956,15 +966,34 @@ async fn get_blob_image_handle(
     system_partition_lock: &Arc<Mutex<()>>,
     environment: &Arc<Mutex<dyn Environment>>,
     config: &fshost_config::Config,
-) -> Result<(ClientEnd<fio::FileMarker>, zx::EventPair), Error> {
+) -> Result<fshost::RecoveryGetBlobImageHandleResponse, Error> {
     ensure!(config.ramdisk_image, "get_blob_image_handle called in a non-Recovery build");
     ensure!(config.fxfs_blob, "get_blob_image_handle requires a fxblob-based product");
 
     let guard = system_partition_lock.clone().lock_owned().await;
-    let (device, _) = get_system_container_for_recovery(environment).await?;
+    let (device, _) = get_system_container_for_recovery(environment)
+        .await
+        .context("could not find system container")?;
+
+    // Ensure the system container was already formatted with fxfs before mounting.
+    const EXPECTED_FORMAT: DiskFormat = DiskFormat::Fxfs;
+    let format =
+        detect_disk_format(&device.connect_block().context("connect_block failed")?.into_proxy())
+            .await;
+    if format != EXPECTED_FORMAT {
+        log::warn!(
+            "wrong system container format (expected = {EXPECTED_FORMAT:?}, detected = {format:?})"
+        );
+        return Ok(fshost::RecoveryGetBlobImageHandleResponse::Unformatted(fshost::Unformatted {}));
+    }
 
     let fxfs = filesystem::Filesystem::from_boxed_config(device, Box::new(Fxfs::default()));
-    let serving_fxfs = fxfs.serve_multi_volume().await.context("serving fxfs")?;
+    // TODO(https://fxbug.dev/458436824): The error mapping below is not strictly correct since we
+    // could fail to mount the system container if the on-disk version happens to be newer than the
+    // one in the recovery image. We should detect this case so we can suggest to the user that they
+    // flash a newer image.
+    let serving_fxfs =
+        fxfs.serve_multi_volume().await.context("serving fxfs").map_err(FilesystemCorrupt)?;
 
     let pending = if serving_fxfs
         .has_volume(BLOB_IMAGE_VOLUME_LABEL)
@@ -974,12 +1003,14 @@ async fn get_blob_image_handle(
         serving_fxfs
             .open_volume(BLOB_IMAGE_VOLUME_LABEL, Default::default())
             .await
-            .context("mounting existing blob image volume")?
+            .context("mounting existing blob image volume")
+            .map_err(FilesystemCorrupt)?
     } else {
         serving_fxfs
             .create_volume(BLOB_IMAGE_VOLUME_LABEL, Default::default(), Default::default())
             .await
-            .context("creating blob image volume")?
+            .context("creating blob image volume")
+            .map_err(FilesystemCorrupt)?
     };
 
     let image_file = fuchsia_fs::directory::open_file(
@@ -992,7 +1023,8 @@ async fn get_blob_image_handle(
             | fio::Flags::FILE_TRUNCATE,
     )
     .await
-    .context("opening image file")?
+    .context("opening/creating image file")
+    .map_err(FilesystemCorrupt)?
     .into_client_end()
     .map_err(|_| anyhow!("failed to get client end for image handle"))?;
 
@@ -1020,7 +1052,9 @@ async fn get_blob_image_handle(
     })
     .detach();
 
-    Ok((image_file, mount_token))
+    Ok(fshost::RecoveryGetBlobImageHandleResponse::MountedSystemContainer(
+        fshost::MountedSystemContainer { image_file, mount_token },
+    ))
 }
 
 /// Triggers installation of the system blob volume previously written by [`get_blob_image_handle`].

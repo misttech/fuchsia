@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <fidl/fuchsia.fshost/cpp/wire.h>
-#include <fidl/fuchsia.fshost/cpp/wire_test_base.h>
+#include <fidl/fuchsia.fshost/cpp/fidl.h>
+#include <fidl/fuchsia.fshost/cpp/test_base.h>
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/async-loop/default.h>
 #include <lib/fastboot/fastboot.h>
@@ -64,7 +64,7 @@ class VmoFile final : public fs::VmoFile {
 };
 
 class FastbootFlashBlobTest : public FastbootDownloadTest {
-  class MockFshostRecovery : public fidl::testing::WireTestBase<fuchsia_fshost::Recovery> {
+  class MockFshostRecovery : public fidl::testing::TestBase<fuchsia_fshost::Recovery> {
     friend class FastbootFlashBlobTest;
 
    public:
@@ -72,20 +72,25 @@ class FastbootFlashBlobTest : public FastbootDownloadTest {
         : vfs_(vfs), image_file_{fbl::MakeRefCounted<VmoFile>(std::move(vmo))} {}
 
     void GetBlobImageHandle(GetBlobImageHandleCompleter::Sync& completer) final {
+      const zx_status_t error_override = error_;
+      if (error_override != ZX_OK) {
+        completer.Reply(zx::error(error_override));
+        return;
+      }
+      if (is_unformatted_) {
+        completer.Reply(
+            zx::ok(fuchsia_fshost::RecoveryGetBlobImageHandleResponse::WithUnformatted({})));
+        return;
+      }
       zx::eventpair ep0, ep1;
-      zx_status_t status = zx::eventpair::create(0, &ep0, &ep1);
-      if (status != ZX_OK) {
-        completer.ReplyError(status);
-        return;
-      }
+      ZX_ASSERT(zx::eventpair::create(0, &ep0, &ep1) == ZX_OK);
       auto [client, server] = fidl::Endpoints<fio::File>::Create();
-      status =
-          vfs_->Serve(image_file_, server.TakeChannel(), fio::kPermReadable | fio::kPermWritable);
-      if (status != ZX_OK) {
-        completer.ReplyError(status);
-        return;
-      }
-      completer.ReplySuccess(std::move(client), std::move(ep1));
+      ZX_ASSERT(vfs_->Serve(image_file_, server.TakeChannel(),
+                            fio::kPermReadable | fio::kPermWritable) == ZX_OK);
+      fuchsia_fshost::MountedSystemContainer container{std::move(client), std::move(ep1)};
+      completer.Reply(
+          zx::ok(fuchsia_fshost::RecoveryGetBlobImageHandleResponse::WithMountedSystemContainer(
+              std::move(container))));
     }
 
     void NotImplemented_(const std::string& name, fidl::CompleterBase& completer) final {
@@ -96,15 +101,17 @@ class FastbootFlashBlobTest : public FastbootDownloadTest {
    private:
     fs::ManagedVfs* vfs_;
     fbl::RefPtr<VmoFile> image_file_;
+    std::atomic<zx_status_t> error_ = ZX_OK;
+    std::atomic<bool> is_unformatted_ = false;
   };
 
-  class MockFshostAdmin : public fidl::testing::WireTestBase<fuchsia_fshost::Admin> {
+  class MockFshostAdmin : public fidl::testing::TestBase<fuchsia_fshost::Admin> {
     friend class FastbootFlashBlobTest;
 
    public:
     void ShredDataVolume(ShredDataVolumeCompleter::Sync& completer) final {
       data_volume_shredded_ = true;
-      completer.ReplySuccess();
+      completer.Reply(zx::ok());
     }
 
     void NotImplemented_(const std::string& name, fidl::CompleterBase& completer) final {
@@ -167,6 +174,10 @@ class FastbootFlashBlobTest : public FastbootDownloadTest {
   bool data_volume_shredded() const { return admin_server_->data_volume_shredded_; }
 
   paver_test::FakePaver& paver() { return paver_; }
+
+  void set_get_blob_image_error(const zx_status_t status) { recovery_server_->error_ = status; }
+
+  void set_get_blob_image_unformatted() { recovery_server_->is_unformatted_ = true; }
 
  private:
   async::Loop loop_{&kAsyncLoopConfigNoAttachToCurrentThread};
@@ -407,6 +418,53 @@ TEST_F(FastbootFlashBlobTest, EraseUserdataChangesFlashBlobTarget) {
   auto trace = paver().GetCommandTrace();
   ASSERT_EQ(trace.size(), 1u);
   ASSERT_EQ(trace.front(), paver_test::Command::kWriteSparseVolume);
+}
+
+/// If the system container is unformatted, flashing blob should instead overwrite super.
+TEST_F(FastbootFlashBlobTest, UnformattedDiskFormatChangesFlashBlobTarget) {
+  set_get_blob_image_unformatted();
+  Fastboot fastboot(kMaxDownloadSize, TakeSvcClient());
+
+  const std::vector<uint8_t> image = SparseImageBuilder(kBlockSize).FillChunk(1, 0xFF).Build();
+  ASSERT_NO_FATAL_FAILURE(DownloadData(fastboot, image));
+
+  std::string command = "flash:blob";
+  TestTransport transport;
+  paver().set_expected_payload_size(image.size());
+  transport.AddInPacket(command);
+  zx::result ret = fastboot.ProcessPacket(&transport);
+  ASSERT_TRUE(ret.is_ok()) << ret.status_string();
+  const std::vector<std::string> expected_packets = {"OKAY"};
+  ASSERT_THAT(transport.TakeOutPackets(), testing::ContainerEq(expected_packets));
+
+  // Ensure the VMO wasn't written to.
+  std::vector<uint8_t> buffer(kBlockSize);
+  ASSERT_EQ(image_vmo().read(buffer.data(), 0, kBlockSize), ZX_OK);
+  ASSERT_THAT(buffer, ::testing::Each(uint8_t{0}));
+
+  // Ensure we wrote the payload to the "super" partition instead.
+  auto trace = paver().GetCommandTrace();
+  ASSERT_EQ(trace.size(), 1u);
+  ASSERT_EQ(trace.front(), paver_test::Command::kWriteSparseVolume);
+}
+
+/// If the system container is corrupt, flashing blob should fail with an error.
+TEST_F(FastbootFlashBlobTest, FlashBlobFailsWithCorruptFilesystem) {
+  set_get_blob_image_error(ZX_ERR_IO_DATA_INTEGRITY);
+  Fastboot fastboot(kMaxDownloadSize, TakeSvcClient());
+
+  const std::vector<uint8_t> image = SparseImageBuilder(kBlockSize).FillChunk(1, 0xFF).Build();
+  ASSERT_NO_FATAL_FAILURE(DownloadData(fastboot, image));
+
+  std::string command = "flash:blob";
+  TestTransport transport;
+  paver().set_expected_payload_size(image.size());
+  transport.AddInPacket(command);
+  zx::result ret = fastboot.ProcessPacket(&transport);
+  ASSERT_TRUE(ret.is_error()) << "flash:blob should fail if filesystem is corrupt";
+  ASSERT_EQ(ret.status_value(), ZX_ERR_IO_DATA_INTEGRITY) << ret.status_string();
+  ASSERT_EQ(transport.GetOutPackets().size(), 1ULL);
+  ASSERT_EQ(transport.GetOutPackets()[0].compare(0, 4, "FAIL"), 0);
 }
 
 }  // namespace

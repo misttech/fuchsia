@@ -34,6 +34,27 @@ const NUM_BLOCKS: u64 = 512;
 const DEVICE_SIZE: u64 = BLOCK_SIZE as u64 * NUM_BLOCKS;
 const TRANSFER_BUFFER_SIZE: usize = 131_072;
 
+/// Extension trait to help access the result of fuchsia.fshost/Recovery.GetBlobImageHandle when the
+/// system container is expected to have been mounted successfully.
+trait RecoveryGetBlobImageHandleResponseExt {
+    fn as_mounted_system_container(self) -> (fio::FileProxy, zx::EventPair);
+}
+
+impl RecoveryGetBlobImageHandleResponseExt for ffshost::RecoveryGetBlobImageHandleResponse {
+    fn as_mounted_system_container(self) -> (fio::FileProxy, zx::EventPair) {
+        let system_container = match self {
+            ffshost::RecoveryGetBlobImageHandleResponse::MountedSystemContainer(container) => {
+                container
+            }
+            ffshost::RecoveryGetBlobImageHandleResponse::Unformatted(_) => {
+                panic!("System container is unformatted!")
+            }
+        };
+        let ffshost::MountedSystemContainer { image_file, mount_token } = system_container;
+        (image_file.into_proxy(), mount_token)
+    }
+}
+
 /// Initializes a disk to have an fxfs partition with a blob and data volume. The blob volume will
 /// contain an initial blob.
 async fn build_fxblob() -> Disk {
@@ -405,9 +426,8 @@ async fn write_and_install_blob_image() {
         .get_blob_image_handle()
         .await
         .unwrap()
-        .map_err(zx::Status::from_raw)
-        .expect("WriteVolume failed");
-    let image_file = image_file.into_proxy();
+        .expect("get_blob_image_handle returned error")
+        .as_mounted_system_container();
     copy_image_to_file(&image, &image_file).await;
 
     // Drop the mount token and try to install the image.
@@ -439,9 +459,8 @@ async fn write_and_install_blob_image_can_reattempt() {
             .get_blob_image_handle()
             .await
             .unwrap()
-            .map_err(zx::Status::from_raw)
-            .expect("WriteVolume failed");
-        let image_file = image_file.into_proxy();
+            .expect("get_blob_image_handle returned error")
+            .as_mounted_system_container();
         copy_image_to_file(&image, &image_file).await;
         // Truncate the file so the image is invalid.
         image_file.resize(8192).await.expect("transport error").expect("resize failed");
@@ -462,9 +481,8 @@ async fn write_and_install_blob_image_can_reattempt() {
             .get_blob_image_handle()
             .await
             .unwrap()
-            .map_err(zx::Status::from_raw)
-            .expect("WriteVolume failed");
-        let image_file = image_file.into_proxy();
+            .expect("get_blob_image_handle returned error")
+            .as_mounted_system_container();
         copy_image_to_file(&image, &image_file).await;
     }
 
@@ -493,9 +511,8 @@ async fn new_blob_volume_is_installed_on_normal_boot() {
         .get_blob_image_handle()
         .await
         .unwrap()
-        .map_err(zx::Status::from_raw)
-        .expect("WriteVolume failed");
-    let image_file = image_file.into_proxy();
+        .expect("get_blob_image_handle returned error")
+        .as_mounted_system_container();
     copy_image_to_file(&image, &image_file).await;
     // Ensure that when we tear down the fixture, the installation volume is still present. When
     // we re-mount the filesystem for verification, the new blob volume should be installed
@@ -523,9 +540,8 @@ async fn new_blob_volume_is_cleaned_up_on_install_failure() {
             .get_blob_image_handle()
             .await
             .unwrap()
-            .map_err(zx::Status::from_raw)
-            .expect("WriteVolume failed");
-        let image_file = image_file.into_proxy();
+            .expect("get_blob_image_handle returned error")
+            .as_mounted_system_container();
         copy_image_to_file(&image, &image_file).await;
         // Truncate the file so the image is invalid.
         image_file.resize(8192).await.expect("transport error").expect("resize failed");
@@ -546,4 +562,23 @@ async fn new_blob_volume_is_cleaned_up_on_install_failure() {
     let system_container = fixture.tear_down().await.unwrap();
     let volumes = list_all_fxfs_volumes(&system_container).await;
     assert_eq!(volumes, expected_fxblob_volumes());
+}
+
+/// Verifies that fuchsia.fshost/Recovery.GetBlobImageHandle will detect incorrect disk formats.
+/// This allows callers to take remedial action if they suspect the system was never provisioned.
+#[fuchsia::test]
+async fn get_blob_image_handle_formats_unformatted_disk() {
+    let mut builder = new_builder();
+    builder.with_disk().with_gpt();
+    let system_container = builder.build().await.tear_down().await.unwrap();
+    let fixture = start_recovery_fixture(system_container).await;
+    let recovery: ffshost::RecoveryProxy =
+        fixture.realm.root.connect_to_protocol_at_exposed_dir().unwrap();
+    let response = recovery
+        .get_blob_image_handle()
+        .await
+        .unwrap()
+        .expect("get_blob_image_handle should succeed with unprovisioned disk");
+    assert!(matches!(response, ffshost::RecoveryGetBlobImageHandleResponse::Unformatted(_)));
+    fixture.tear_down().await.unwrap();
 }

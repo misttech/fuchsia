@@ -439,11 +439,6 @@ zx::result<> Fastboot::Flash(const std::string& command, Transport* transport) {
   FlashPartitionInfo info = GetPartitionInfo(args[1]);
 
   if (info.partition == "blob") {
-    // TODO(https://fxbug.dev/464027981): If we fail to flash the blob volume, the two most likely
-    // cases are that we either ran out of space, or the system container was never provisioned
-    // (i.e. the super partition was erased entirely). We should consider allowing some remedial
-    // action here rather than failing to flash the device (e.g. we can instead start flashing the
-    // image over the super partition entirely).
     return FlashBlob(transport);
   }
 
@@ -914,11 +909,13 @@ zx::result<> Fastboot::PrepareFlashBlob(Transport* transport) {
       auto resize_response = fidl::WireCall(blob_writer_->image_file)->Resize(*unsparsed_size);
       if (resize_response.status() != ZX_OK) {
         return SendResponse(ResponseType::kFail, "Transport error when resizing image file",
-                            transport, zx::error(resize_response.status()));
+                            transport, zx::error(resize_response.status()))
+            .take_error();
       }
       if (resize_response->is_error()) {
         return SendResponse(ResponseType::kFail, "Failed to resize image file", transport,
-                            zx::error(resize_response->error_value()));
+                            zx::error(resize_response->error_value()))
+            .take_error();
       }
       blob_writer_->image_size = *unsparsed_size;
     }
@@ -929,23 +926,53 @@ zx::result<> Fastboot::PrepareFlashBlob(Transport* transport) {
   auto response = fidl::WireCall(*recovery)->GetBlobImageHandle();
   if (response.status() != ZX_OK) {
     return SendResponse(ResponseType::kFail, "Recovery.GetBlobImageHandle transport error",
-                        transport, zx::error(response.status()));
+                        transport, zx::error(response.status()))
+        .take_error();
   }
   if (response->is_error()) {
+    // If we suspect the system container is corrupt or otherwise cannot be mounted, suggest a
+    // possible remedial action.
+    // TODO(https://fxbug.dev/458436824): Add a separate error to distinguish between suspected
+    // corruption and incorrect on-disk version.
+    if (response->error_value() == ZX_ERR_IO_DATA_INTEGRITY) {
+      return SendResponse(ResponseType::kFail,
+                          "Filesystem cannot be mounted (may be corrupt or incorrect version)."
+                          " Device may require full-wipe flash or a newer system image.",
+                          transport, zx::error(ZX_ERR_IO_DATA_INTEGRITY))
+          .take_error();
+    }
     return SendResponse(ResponseType::kFail, "Recovery.GetBlobImageHandle failed", transport,
-                        zx::error(response->error_value()));
+                        response->take_error())
+        .take_error();
   }
-  fidl::ClientEnd<fuchsia_io::File> image_file = std::move((*response)->image_file);
-  zx::eventpair mount_token = std::move((*response)->mount_token);
+
+  fidl::ClientEnd<fuchsia_io::File> image_file;
+  zx::eventpair mount_token;
+
+  switch ((*response)->Which()) {
+    case fuchsia_fshost::wire::RecoveryGetBlobImageHandleResponse::Tag::kUnformatted:
+      // The system container is unformatted or has the wrong format, let's overwrite the super
+      // partition instead.
+      FX_LOGST(WARNING, kFastbootLogTag)
+          << "Filesystem has wrong format, overwriting `super` instead.";
+      flash_blob_target_ = FlashBlobTarget::kSuper;
+      return zx::ok();
+    case fuchsia_fshost::wire::RecoveryGetBlobImageHandleResponse::Tag::kMountedSystemContainer:
+      image_file = std::move((*response)->mounted_system_container().image_file);
+      mount_token = std::move((*response)->mounted_system_container().mount_token);
+      break;
+  }
 
   auto resize_response = fidl::WireCall(image_file)->Resize(*unsparsed_size);
   if (resize_response.status() != ZX_OK) {
     return SendResponse(ResponseType::kFail, "Transport error when resizing image file", transport,
-                        zx::error(resize_response.status()));
+                        zx::error(resize_response.status()))
+        .take_error();
   }
   if (resize_response->is_error()) {
     return SendResponse(ResponseType::kFail, "Failed to resize image file", transport,
-                        zx::error(resize_response->error_value()));
+                        zx::error(resize_response->error_value()))
+        .take_error();
   }
 
   zx::vmo file_vmo;
@@ -957,11 +984,13 @@ zx::result<> Fastboot::PrepareFlashBlob(Transport* transport) {
     if (backing_memory.status() != ZX_OK) {
       return SendResponse(ResponseType::kFail,
                           "Transport error getting backing memory for image file", transport,
-                          zx::error(backing_memory.status()));
+                          zx::error(backing_memory.status()))
+          .take_error();
     }
     if (backing_memory->is_error()) {
       return SendResponse(ResponseType::kFail, "Failed to get backing VMO for image file",
-                          transport, zx::error(backing_memory->error_value()));
+                          transport, zx::error(backing_memory->error_value()))
+          .take_error();
     }
     file_vmo = std::move(backing_memory->value()->vmo);
   }
@@ -972,7 +1001,8 @@ zx::result<> Fastboot::PrepareFlashBlob(Transport* transport) {
                                    "sparse-fill-buff", ZX_VM_PERM_READ | ZX_VM_PERM_WRITE);
       status != ZX_OK) {
     return SendResponse(ResponseType::kFail, "Failed to create and map fill buffer", transport,
-                        zx::error(status));
+                        zx::error(status))
+        .take_error();
   }
 
   blob_writer_ = BlobImageWriter{

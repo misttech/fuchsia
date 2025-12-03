@@ -82,9 +82,33 @@ closed protocol Recovery {
     /// *NOTE*: This method will delete any existing image data cached on disk. Callers are
     /// responsible for keeping the returned `image_file` and `mount_token` alive until the system
     /// image has been fully written and flushed to disk.
-    strict GetBlobImageHandle() -> (resource struct {
-        image_file client_end:<fuchsia.io.File>;
-        mount_token zx.Handle:EVENTPAIR;
+    ///
+    /// # Errors
+    ///
+    /// * `ZX_ERR_IO_DATA_INTEGRITY`: An existing filesystem was found on the device, but it could
+    ///   not be mounted. This indicates that the filesystem is possibly corrupt, or has a newer
+    ///   on-disk version than the recovery image. To avoid unintended data loss, the user should
+    ///   explicitly initiate any remedial action, such as wiping the device or using a newer image.
+    /// * `ZX_ERR_INTERNAL`: An internal error occured; see fshost logs for more context.
+    ///
+    // TODO(https://fxbug.dev/458436824): We should add a separate error case for separating wrong
+    // on-disk version from genuine corruption.
+    strict GetBlobImageHandle() -> (strict resource union {
+        /// System container is unformatted and should be reprovisioned. This occurs when we do not
+        /// detect the filesystem type as what is expected for this device (e.g. we cannot find the
+        /// superblock), which suggests this device was never formatted.
+        1: unformatted struct {};
+        /// System container is mounted and ready for writing a new system image.
+        2: mounted_system_container resource struct {
+            /// Handle to a file where the new system image should be written to. Callers are
+            /// responsible for ensuring all data written to the file has been flushed to disk
+            /// before `mount_token` is dropped.
+            image_file client_end:<fuchsia.io.File>;
+            /// Token used to maintain exclusive access to the system container. `image_file` is
+            /// only valid as long as this handle is kept alive. Must be dropped to install the new
+            /// blob volume via `fuchsia.fshost/Recovery.InstallBlobImage`.
+            mount_token zx.Handle:EVENTPAIR;
+        };
     }) error zx.Status;
 
     /// Installs the blob volume previously written via `GetBlobImageHandle`, replacing the
