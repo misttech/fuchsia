@@ -136,14 +136,6 @@ wlan_nelson_ap_env = {
   }
 }
 
-wlan_vim3_ap_env = {
-  dimensions = {
-    access_points = "1"
-    device_type = device_types.vim3
-    pool = "fuchsia.tests.connectivity"
-  }
-}
-
 wlan_sorrel_ap_env = {
   dimensions = {
     access_points = "1"
@@ -330,14 +322,6 @@ _all_named_fuchsia_envs += [
   },
 ]
 
-wlan_vim3_env = {
-  dimensions = {
-    device_type = device_types.vim3
-    pool = "fuchsia.tests.connectivity"
-  }
-  tags = [ "antlion" ]
-}
-
 gce_env = {
   dimensions = {
     device_type = device_types.gce
@@ -444,7 +428,6 @@ lacewing_wlan_ap_envs = [
   wlan_astro_ap_env,
   wlan_sherlock_ap_env,
   wlan_nelson_ap_env,
-  wlan_vim3_ap_env,
 ]
 
 # Set of Display environments for few Antlion tests.
@@ -453,7 +436,6 @@ wlan_with_display_envs = [
   wlan_sherlock_env,
   wlan_nelson_env,
   wlan_nuc11_env,
-  wlan_vim3_env,
 ]
 
 basic_envs = []
