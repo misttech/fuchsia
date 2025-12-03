@@ -14,10 +14,11 @@ use fidl_examples_keyvaluestore_additerator::{
     StoreRequestStream, WriteError,
 };
 use fuchsia_async as fasync;
+use fuchsia_sync::Mutex;
 use std::collections::BTreeMap;
 use std::collections::btree_map::Entry;
 use std::ops::Bound::*;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 // [END diff_1]
 
 static KEY_VALIDATION_REGEX: LazyLock<Regex> = LazyLock::new(|| {
@@ -64,7 +65,7 @@ fn iterate(
 ) -> Result<(), IterateConnectionError> {
     // Validate that the starting key, if supplied, actually exists.
     if let Some(start_key) = starting_at.clone() {
-        if !store.lock().unwrap().contains_key(&start_key) {
+        if !store.lock().contains_key(&start_key) {
             return Err(IterateConnectionError::UnknownStartAt);
         }
     }
@@ -94,7 +95,7 @@ fn iterate(
                             // An iterator, beginning at `lower_bound` and tracking the pagination's
                             // progress through iteration as each page is pulled by a client-sent
                             // `Get()` request.
-                            let held_store = store.lock().unwrap();
+                            let held_store = store.lock();
                             let mut entries = held_store.range((lower_bound.clone(), Unbounded));
                             let mut current_page = vec![];
                             for _ in 0..PAGE_SIZE {
@@ -167,7 +168,7 @@ async fn run_server(stream: StoreRequestStream) -> Result<(), Error> {
                     // the reply.
                     responder
                         // [START diff_5]
-                        .send(write_item(&mut store.clone().lock().unwrap(), attempt))
+                        .send(write_item(&mut store.clone().lock(), attempt))
                         // [END diff_5]
                         .context("error sending reply")?;
                     println!("WriteItem response sent");

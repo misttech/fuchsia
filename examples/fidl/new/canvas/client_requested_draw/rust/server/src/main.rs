@@ -9,10 +9,10 @@ use fidl_examples_canvas_clientrequesteddraw::{
 };
 use fuchsia_async::{MonotonicInstant, Timer};
 use fuchsia_component::server::ServiceFs;
-
+use fuchsia_sync::Mutex;
 use futures::future::join;
 use futures::prelude::*;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 // A struct that stores the two things we care about for this example: the bounding box the lines
 // that have been added thus far, and bit to track whether or not there have been changes since the
@@ -85,7 +85,7 @@ async fn run_server(stream: InstanceRequestStream) -> Result<(), Error> {
             // Our server sends one update per second, but only if the client has declared that it
             // is ready to receive one.
             Timer::new(MonotonicInstant::after(zx::MonotonicDuration::from_seconds(1))).await;
-            let mut state = state_ref.lock().unwrap();
+            let mut state = state_ref.lock();
             if !state.changed || !state.ready {
                 continue;
             }
@@ -121,14 +121,14 @@ async fn run_server(stream: InstanceRequestStream) -> Result<(), Error> {
                 // [START diff_6]
                 InstanceRequest::AddLines { lines, .. } => {
                     println!("AddLines request received");
-                    add_lines(&mut state_ref.lock().unwrap(), lines);
+                    add_lines(&mut state_ref.lock(), lines);
                 }
                 InstanceRequest::Ready { responder, .. } => {
                     println!("Ready request received");
                     // The client must only call `Ready() -> ();` after receiving an `-> OnDrawn();`
                     // event; if two "consecutive" `Ready() -> ();` calls are received, this
                     // interaction has entered an invalid state, and should be aborted immediately.
-                    let mut state = state_ref.lock().unwrap();
+                    let mut state = state_ref.lock();
                     if state.ready == true {
                         return Err(anyhow!("Invalid back-to-back `Ready` requests received"));
                     }

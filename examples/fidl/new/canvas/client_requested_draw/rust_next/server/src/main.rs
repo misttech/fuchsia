@@ -9,8 +9,9 @@ use fidl_next_examples_canvas_clientrequesteddraw::{
 };
 use fuchsia_async::{MonotonicInstant, Scope, Timer};
 use fuchsia_component::server::ServiceFs;
+use fuchsia_sync::Mutex;
 use futures::StreamExt;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use zx;
 
 // A struct that stores the two things we care about for this example: the bounding box the lines
@@ -37,7 +38,7 @@ impl InstanceServerHandler for CanvasServer {
         let lines = &request.payload().lines;
         println!("AddLines request received");
 
-        let mut state = self.state.lock().unwrap();
+        let mut state = self.state.lock();
 
         // Update the bounding box to account for the new lines we've just "added" to the canvas.
         let bounds = &mut state.bounding_box;
@@ -69,7 +70,7 @@ impl InstanceServerHandler for CanvasServer {
         // event; if two "consecutive" `Ready() -> ();` calls are received, this
         // interaction has entered an invalid state, and should be aborted immediately.
         {
-            let mut state = self.state.lock().unwrap();
+            let mut state = self.state.lock();
             if state.ready {
                 // Invalid back-to-back Ready requests.
                 println!("Invalid back-to-back `Ready` requests received");
@@ -91,7 +92,7 @@ async fn run_updater(state: Arc<Mutex<CanvasState>>, sender: Server<Instance>) {
         Timer::new(MonotonicInstant::after(zx::Duration::from_seconds(1))).await;
 
         let bounds = {
-            let mut state = state.lock().unwrap();
+            let mut state = state.lock();
             if !state.changed || !state.ready {
                 continue;
             }

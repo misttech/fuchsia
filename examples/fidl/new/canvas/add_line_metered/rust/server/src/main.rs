@@ -10,9 +10,10 @@ use fidl_examples_canvas_addlinemetered::{
 use fuchsia_async::{MonotonicInstant, Timer};
 use fuchsia_component::server::ServiceFs;
 
+use fuchsia_sync::Mutex;
 use futures::future::join;
 use futures::prelude::*;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 // A struct that stores the two things we care about for this example: the bounding box the lines
 // that have been added thus far, and bit to track whether or not there have been changes since the
@@ -73,7 +74,7 @@ async fn run_server(stream: InstanceRequestStream) -> Result<(), Error> {
         loop {
             // Our server sends one update per second.
             Timer::new(MonotonicInstant::after(zx::MonotonicDuration::from_seconds(1))).await;
-            let mut state = state_ref.lock().unwrap();
+            let mut state = state_ref.lock();
             if !state.changed {
                 continue;
             }
@@ -105,7 +106,7 @@ async fn run_server(stream: InstanceRequestStream) -> Result<(), Error> {
                 // [START diff_1]
                 InstanceRequest::AddLine { line, responder } => {
                     println!("AddLine request received: {:?}", line);
-                    state_ref.lock().unwrap().add_line(line);
+                    state_ref.lock().add_line(line);
 
                     // Because this is now a two-way method, we must use the generated `responder`
                     // to send an in this case empty reply back to the client. This is the mechanic

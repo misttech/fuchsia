@@ -10,8 +10,9 @@ use fidl_next_examples_canvas_baseline::{
 use fuchsia_async::{MonotonicInstant, Scope, Timer};
 
 use fuchsia_component::server::ServiceFs;
+use fuchsia_sync::Mutex;
 use futures::StreamExt;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use zx;
 
 // A struct that stores the two things we care about for this example: the bounding box the lines
@@ -35,7 +36,7 @@ impl InstanceServerHandler for CanvasServer {
 
         println!("AddLine request received: {:?}", line);
 
-        let mut state = self.state.lock().unwrap();
+        let mut state = self.state.lock();
 
         // Update the bounding box to account for the new lines we've just "added" to the canvas.
         let bounds = &mut state.bounding_box;
@@ -65,13 +66,13 @@ async fn run_updater(state: Arc<Mutex<CanvasState>>, sender: Server<Instance>) {
         // Our server sends one update per second.
         Timer::new(MonotonicInstant::after(zx::Duration::from_seconds(1))).await;
         let (changed, bounds) = {
-            let mut state = state.lock().unwrap();
-            if !state.changed {
-                (false, state.bounding_box.clone())
+            let mut state_ref = state.lock();
+            if !state_ref.changed {
+                (false, state_ref.bounding_box.clone())
             } else {
                 // Reset the change tracker.
-                state.changed = false;
-                (true, state.bounding_box.clone())
+                state_ref.changed = false;
+                (true, state_ref.bounding_box.clone())
             }
         };
 
