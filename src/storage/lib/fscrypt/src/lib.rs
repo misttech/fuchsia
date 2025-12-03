@@ -15,10 +15,6 @@ const SUPPORTED_POLICY_FLAGS: u8 = POLICY_FLAGS_PAD_16 | POLICY_FLAGS_INO_LBLK_3
 pub const ENCRYPTION_MODE_AES_256_XTS: u8 = 1;
 pub const ENCRYPTION_MODE_AES_256_CTS: u8 = 4;
 
-// TODO(https://fxbug.dev/452741473): Remove hardcoding, pass in as argument to users.
-pub const TEST_F2FS_IMAGE_FILESYSTEM_UUID: [u8; 16] =
-    [75, 146, 230, 48, 132, 165, 68, 97, 141, 247, 22, 242, 153, 171, 153, 38];
-
 /// An encryption context is written as an xattr to the directory root of each FBE hierarchy.
 /// For f2fs, this is stored with index 9 and name "c".
 #[repr(C, packed)]
@@ -81,15 +77,21 @@ impl DirectoryKeys {
 /// Returns fscrypt directory keys (for the ino-lblk32 algorithm).  These are all the keys
 /// required to encrypt file names using fscrypt.
 pub fn to_directory_keys(main_key: &[u8], uuid: &[u8], nonce: &[u8]) -> DirectoryKeys {
-    let mut info = Vec::with_capacity(17);
-    info.push(ENCRYPTION_MODE_AES_256_CTS);
-    info.extend_from_slice(uuid);
-
+    let mut hdkf_info = [0; 17];
+    hdkf_info[0] = ENCRYPTION_MODE_AES_256_CTS;
+    hdkf_info[1..17].copy_from_slice(&uuid);
     DirectoryKeys {
-        cts_key: hkdf::fscrypt_hkdf(main_key, &info, hkdf::HKDF_CONTEXT_IV_INO_LBLK_32_KEY),
+        cts_key: hkdf::fscrypt_hkdf(main_key, &hdkf_info, hkdf::HKDF_CONTEXT_IV_INO_LBLK_32_KEY),
         ino_hash_key: hkdf::fscrypt_hkdf(main_key, &[], hkdf::HKDF_CONTEXT_INODE_HASH_KEY),
         dir_hash_key: hkdf::fscrypt_hkdf(main_key, &nonce, hkdf::HKDF_CONTEXT_DIRHASH_KEY),
     }
+}
+
+pub fn to_xts_key(main_key: &[u8], uuid: [u8; 16]) -> [u8; 64] {
+    let mut hdkf_info = [0; 17];
+    hdkf_info[0] = ENCRYPTION_MODE_AES_256_XTS;
+    hdkf_info[1..17].copy_from_slice(&uuid);
+    hkdf::fscrypt_hkdf(&main_key, &hdkf_info, hkdf::HKDF_CONTEXT_IV_INO_LBLK_32_KEY)
 }
 
 #[cfg(test)]

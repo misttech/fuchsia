@@ -824,10 +824,7 @@ impl Zxio {
 
     /// Updates self with a new token resolver. Can be called only when there are no weak references
     /// to self.
-    pub fn with_token_resolver(
-        self,
-        resolver: Arc<dyn ZxioTokenResolver>,
-    ) -> Self {
+    pub fn with_token_resolver(self, resolver: Arc<dyn ZxioTokenResolver>) -> Self {
         // SAFETY: The resolver will be called with zxio_t passed as a pointer, which is valid for
         // the lifetime of self.
         let status = unsafe { zxio::zxio_set_token_resolver(self.as_ptr(), Some(resolve_token)) };
@@ -1930,7 +1927,7 @@ fn directory_open(
     directory.open(path, flags, &Default::default(), server_end).map_err(|_| zx::Status::IO)?;
     let node = fio::NodeSynchronousProxy::new(client_end);
 
-    match node.wait_for_event(deadline).map_err(|_| zx::Status::IO)? {
+    match node.wait_for_event(deadline).map_err(map_fidl_error)? {
         fio::NodeEvent::OnOpen_ { .. } => {
             panic!("Should never happen when sending FLAG_SEND_REPRESENTATION")
         }
@@ -1972,7 +1969,7 @@ pub fn directory_open_vmo(
 
     let vmo = file
         .get_backing_memory(vmo_flags, deadline)
-        .map_err(|_: fidl::Error| zx::Status::IO)?
+        .map_err(map_fidl_error)?
         .map_err(zx::Status::from_raw)?;
     Ok(vmo)
 }
@@ -1996,7 +1993,7 @@ pub fn directory_read_file(
     loop {
         let mut data = file
             .read(fio::MAX_TRANSFER_SIZE, deadline)
-            .map_err(|_: fidl::Error| zx::Status::IO)?
+            .map_err(map_fidl_error)?
             .map_err(zx::Status::from_raw)?;
         let finished = (data.len() as u64) < fio::MAX_TRANSFER_SIZE;
         result.append(&mut data);
@@ -2072,6 +2069,13 @@ pub fn directory_open_directory_async(
     let flags = flags | fio::Flags::PROTOCOL_DIRECTORY;
     let proxy = directory_open_async(directory, path, flags)?;
     Ok(proxy)
+}
+
+fn map_fidl_error(error: fidl::Error) -> zx::Status {
+    match error {
+        fidl::Error::ClientChannelClosed { status, .. } => status,
+        _ => zx::Status::IO,
+    }
 }
 
 #[cfg(test)]

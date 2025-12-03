@@ -175,6 +175,26 @@ impl From<EncryptionKey> for WrappedKey {
     }
 }
 
+impl TryFrom<WrappedKey> for EncryptionKey {
+    type Error = zx::Status;
+
+    fn try_from(value: WrappedKey) -> Result<Self, Self::Error> {
+        Ok(match value {
+            WrappedKey::Fxfs(fidl_fuchsia_fxfs::FxfsKey { wrapping_key_id, wrapped_key }) => {
+                EncryptionKey::Fxfs(FxfsKey { wrapping_key_id, key: WrappedKeyBytes(wrapped_key) })
+            }
+            WrappedKey::FscryptInoLblk32File(FscryptKeyIdentifier { key_identifier }) => {
+                EncryptionKey::FscryptInoLblk32File { key_identifier }
+            }
+            WrappedKey::FscryptInoLblk32Dir(FscryptKeyIdentifierAndNonce {
+                key_identifier,
+                nonce,
+            }) => EncryptionKey::FscryptInoLblk32Dir { key_identifier, nonce },
+            _ => return Err(zx::Status::NOT_SUPPORTED),
+        })
+    }
+}
+
 /// An Fxfs encryption key wrapped in AES-256-GCM-SIV and the associated wrapping key ID.
 /// This can be provided to Crypt::unwrap_key to obtain the unwrapped key.
 #[derive(Clone, Default, Debug, Serialize, Deserialize, TypeFingerprint, PartialEq)]

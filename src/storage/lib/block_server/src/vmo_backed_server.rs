@@ -7,8 +7,6 @@ use block_server::async_interface::{Interface, SessionManager};
 use block_server::{BlockInfo, BlockServer, DeviceInfo, ReadOptions, WriteOptions};
 use fidl::endpoints::{ClientEnd, FromClient, RequestStream, ServerEnd, create_endpoints};
 use fs_management::filesystem::BlockConnector;
-use fscrypt::TEST_F2FS_IMAGE_FILESYSTEM_UUID;
-use fscrypt::hkdf::{self, fscrypt_hkdf};
 use fuchsia_sync::Mutex;
 use fxfs_crypto::{FscryptSoftwareInoLblk32FileCipher, UnwrappedKey};
 use rand::Rng as _;
@@ -195,15 +193,10 @@ impl VmoBackedServer {
     /// Implements software-fallback for fuchsia_hardware_inlineencryption.ProgramKey. There is no
     /// limit on keyslots with the software fallback. As such, there is no mapping between keyslots
     /// and FIDL connections or key eviction.
-    pub fn program_key(&self, main_key: [u8; 64]) -> u8 {
-        let mut fscrypt_info = self.fscrypt_info.lock();
-        let mut hdkf_info = [0; 17];
-        hdkf_info[1..17].copy_from_slice(&TEST_F2FS_IMAGE_FILESYSTEM_UUID);
-        hdkf_info[0] = fscrypt::ENCRYPTION_MODE_AES_256_XTS;
-        let xts_key =
-            fscrypt_hkdf::<64>(&main_key, &hdkf_info, hkdf::HKDF_CONTEXT_IV_INO_LBLK_32_KEY);
+    pub fn program_key(&self, xts_key: &[u8; 64]) -> u8 {
         let unwrapped_key = UnwrappedKey::new(xts_key.to_vec());
         let cipher = FscryptSoftwareInoLblk32FileCipher::new(&unwrapped_key);
+        let mut fscrypt_info = self.fscrypt_info.lock();
         let slot = fscrypt_info.next_key_slot;
         fscrypt_info.fscrypt_keys.insert(slot, cipher);
         fscrypt_info.next_key_slot += 1;

@@ -22,9 +22,7 @@ use syncio::{Zxio, zxio_node_attr_has_t, zxio_node_attributes_t};
 
 const CRYPT_THREAD_ROLE: &str = "fuchsia.starnix.remotevol.crypt";
 // `KEY_FILE_PATH` determines where the volume-wide keys for the Starnix volume will live in the
-// container's data storage capability. The `KEY_FILE_SIZE` is the size of the key file, which
-// contains the metadata key in the first half of the file and the data key in the second half.
-const KEY_FILE_SIZE: usize = 64;
+// container's data storage capability.
 const KEY_FILE_PATH: &str = "key_file";
 
 pub struct RemoteVolume {
@@ -103,80 +101,158 @@ impl FileSystemOps for RemoteVolume {
     }
 }
 
-fn get_or_create_volume_keys(
-    data: &fio::DirectorySynchronousProxy,
-    key_path: &str,
-) -> Result<(Vec<u8>, Vec<u8>, bool), Errno> {
-    match syncio::directory_read_file(data, key_path, zx::MonotonicInstant::INFINITE) {
-        Ok(key) => {
-            let mut metadata_key = key;
-            let data_key = metadata_key.split_off(KEY_FILE_SIZE / 2);
-            Ok((metadata_key, data_key, false))
+// Key file
+// ========
+//
+// Version 1:
+//
+//   +------- 32 -------+------- 32 -------+
+//   |   metadata key   |     data key     |
+//   +------------------+------------------+
+//
+// Version 2:
+//
+//   +-2-+------- 32 -------+------- 32 -------+
+//   | V |   metadata key   |     data key     |
+//   +---+------------------+------------------+
+//
+// Version 2 includes a 16 bit version which indicates the version of the key file.  The key
+// identifiers used for version 2 key files will use the lblk32 algorithm for derivation which
+// differs from version 1, which uses a, deprecated, Fuchsia specific derivation.
+
+struct VolumeKeys {
+    metadata: [u8; 32],
+    data: [u8; 32],
+    use_lblk32_identifiers: bool,
+}
+
+impl VolumeKeys {
+    // `KEYS_SIZE` is the size of the two keys (the metadata key, and the data key) stored in the
+    // key file.
+    const KEYS_SIZE: usize = 64;
+
+    // Version 1 does not include a version.
+    const V1_FILE_SIZE: usize = Self::KEYS_SIZE;
+
+    // Includes 2 bytes for the version.
+    const FILE_SIZE: usize = 2 + Self::KEYS_SIZE;
+
+    const LATEST_VERSION: u16 = 2;
+
+    /// Returns (keys, did_create).
+    fn get_or_create(
+        data: &fio::DirectorySynchronousProxy,
+        key_path: &str,
+    ) -> Result<(Self, bool), Errno> {
+        if let Some(keys) = Self::get(data, key_path)? {
+            Ok((keys, false))
+        } else {
+            log_info!("Creating key file at {key_path}");
+            Ok((Self::create(data, key_path)?, true))
         }
-        Err(_) => {
-            log_info!("No key file exists. Creating one.");
-            let mut raw_key = vec![0u8; KEY_FILE_SIZE];
-            zx::cprng_draw(&mut raw_key);
-            let tmp_file = syncio::directory_create_tmp_file(
-                data,
-                fio::PERM_READABLE,
+    }
+
+    /// Returns None rather than an error if the key file does not exist or is corrupt,
+    /// but returns all other errors (e.g. if the connection to `data` is closed).
+    fn get(data: &fio::DirectorySynchronousProxy, key_path: &str) -> Result<Option<Self>, Errno> {
+        match syncio::directory_read_file(data, key_path, zx::MonotonicInstant::INFINITE) {
+            Ok(bytes) => {
+                if bytes.len() == Self::FILE_SIZE {
+                    // Version 2
+                    if u16::from_le_bytes(bytes[0..2].try_into().unwrap()) != Self::LATEST_VERSION {
+                        return Ok(None);
+                    }
+                    Ok(Some(Self {
+                        metadata: bytes[2..34].try_into().unwrap(),
+                        data: bytes[34..66].try_into().unwrap(),
+                        use_lblk32_identifiers: true,
+                    }))
+                } else if bytes.len() == Self::V1_FILE_SIZE {
+                    // Version 1
+                    Ok(Some(Self {
+                        metadata: bytes[..32].try_into().unwrap(),
+                        data: bytes[32..].try_into().unwrap(),
+                        use_lblk32_identifiers: false,
+                    }))
+                } else {
+                    Ok(None)
+                }
+            }
+            Err(zx::Status::NOT_FOUND) => Ok(None),
+            Err(status) => {
+                log_error!("Failed to read key file: {status:?}");
+                Err(from_status_like_fdio!(status))
+            }
+        }
+    }
+
+    /// Creates a new key file at the latest version, with new random metadata and data keys.
+    fn create(data: &fio::DirectorySynchronousProxy, key_path: &str) -> Result<Self, Errno> {
+        let mut bytes = [0; Self::FILE_SIZE];
+        bytes[..2].copy_from_slice(&Self::LATEST_VERSION.to_le_bytes());
+        zx::cprng_draw(&mut bytes[2..]);
+        let tmp_file = syncio::directory_create_tmp_file(
+            data,
+            fio::PERM_READABLE,
+            zx::MonotonicInstant::INFINITE,
+        )
+        .map_err(|e| {
+            let err = from_status_like_fdio!(e);
+            log_error!("Failed to create tmp file with error: {:?}", err);
+            err
+        })?;
+        tmp_file
+            .write(&bytes, zx::MonotonicInstant::INFINITE)
+            .map_err(|e| {
+                log_error!("FIDL transport error on File.Write {:?}", e);
+                errno!(ENOENT)
+            })?
+            .map_err(|e| {
+                let err = from_status_like_fdio!(zx::Status::from_raw(e));
+                log_error!("File.Write failed with {:?}", err);
+                err
+            })?;
+        tmp_file
+            .sync(zx::MonotonicInstant::INFINITE)
+            .map_err(|e| {
+                log_error!("FIDL transport error on File.Sync {:?}", e);
+                errno!(ENOENT)
+            })?
+            .map_err(|e| {
+                let err = from_status_like_fdio!(zx::Status::from_raw(e));
+                log_error!("File.Sync failed with {:?}", err);
+                err
+            })?;
+        let (status, token) = data.get_token(zx::MonotonicInstant::INFINITE).map_err(|e| {
+            log_error!("transport error on get_token for the data directory, error: {:?}", e);
+            errno!(ENOENT)
+        })?;
+        zx::Status::ok(status).map_err(|e| {
+            let err = from_status_like_fdio!(e);
+            log_error!("Failed to get_token for the data directory, error: {:?}", err);
+            err
+        })?;
+
+        tmp_file
+            .link_into(
+                zx::Event::from(token.ok_or_else(|| errno!(ENOENT))?),
+                key_path,
                 zx::MonotonicInstant::INFINITE,
             )
             .map_err(|e| {
-                let err = from_status_like_fdio!(e);
-                log_error!("Failed to create tmp file with error: {:?}", err);
+                log_error!("FIDL transport error on File.LinkInto {:?}", e);
+                errno!(EIO)
+            })?
+            .map_err(|e| {
+                let err = from_status_like_fdio!(zx::Status::from_raw(e));
+                log_error!("File.LinkInto failed with {:?}", err);
                 err
             })?;
-            tmp_file
-                .write(&raw_key, zx::MonotonicInstant::INFINITE)
-                .map_err(|e| {
-                    log_error!("FIDL transport error on File.Write {:?}", e);
-                    errno!(ENOENT)
-                })?
-                .map_err(|e| {
-                    let err = from_status_like_fdio!(zx::Status::from_raw(e));
-                    log_error!("File.Write failed with {:?}", err);
-                    err
-                })?;
-            tmp_file
-                .sync(zx::MonotonicInstant::INFINITE)
-                .map_err(|e| {
-                    log_error!("FIDL transport error on File.Sync {:?}", e);
-                    errno!(ENOENT)
-                })?
-                .map_err(|e| {
-                    let err = from_status_like_fdio!(zx::Status::from_raw(e));
-                    log_error!("File.Sync failed with {:?}", err);
-                    err
-                })?;
-            let (status, token) = data.get_token(zx::MonotonicInstant::INFINITE).map_err(|e| {
-                log_error!("transport error on get_token for the data directory, error: {:?}", e);
-                errno!(ENOENT)
-            })?;
-            zx::Status::ok(status).map_err(|e| {
-                let err = from_status_like_fdio!(e);
-                log_error!("Failed to get_token for the data directory, error: {:?}", err);
-                err
-            })?;
-
-            tmp_file
-                .link_into(
-                    zx::Event::from(token.ok_or_else(|| errno!(ENOENT))?),
-                    key_path,
-                    zx::MonotonicInstant::INFINITE,
-                )
-                .map_err(|e| {
-                    log_error!("FIDL transport error on File.LinkInto {:?}", e);
-                    errno!(EIO)
-                })?
-                .map_err(|e| {
-                    let err = from_status_like_fdio!(zx::Status::from_raw(e));
-                    log_error!("File.LinkInto failed with {:?}", err);
-                    err
-                })?;
-            let data_key = raw_key.split_off(KEY_FILE_SIZE / 2);
-            Ok((raw_key, data_key, true))
-        }
+        Ok(Self {
+            metadata: bytes[2..34].try_into().unwrap(),
+            data: bytes[34..].try_into().unwrap(),
+            use_lblk32_identifiers: true,
+        })
     }
 }
 
@@ -202,11 +278,10 @@ pub fn new_remote_vol(
         }
     };
 
-    let (metadata_encryption_key, data_encryption_key, created_key_file) =
-        get_or_create_volume_keys(&data, KEY_FILE_PATH)?;
+    let (keys, created_key_file) = VolumeKeys::get_or_create(&data, KEY_FILE_PATH)?;
 
     let crypt_service =
-        Arc::new(CryptService::new(&metadata_encryption_key, &data_encryption_key, None));
+        Arc::new(CryptService::new(&keys.metadata, &keys.data, keys.use_lblk32_identifiers, None));
 
     let (exposed_dir_client_end, exposed_dir_server) =
         fidl::endpoints::create_endpoints::<fio::DirectoryMarker>();
@@ -228,17 +303,19 @@ pub fn new_remote_vol(
     } else {
         fidl_fuchsia_fshost::MountMode::MaybeCreate
     };
-    let _guid = volume_provider
+    let guid = volume_provider
         .mount(crypt_client_end, mode, exposed_dir_server, zx::MonotonicInstant::INFINITE)
         .map_err(|e| {
             log_error!("FIDL transport error on StarnixVolumeProvider.Mount {:?}", e);
             errno!(ENOENT)
         })?
         .map_err(|e| {
-            let err = from_status_like_fdio!(zx::Status::from_raw(e));
-            log_error!("StarnixVolumeProvider.Mount failed with {:?}", err);
-            err
+            let error = from_status_like_fdio!(zx::Status::from_raw(e));
+            log_error!(error:?; "StarnixVolumeProvider.Mount failed");
+            error
         })?;
+
+    crypt_service.set_uuid(guid);
 
     let exposed_dir_proxy = exposed_dir_client_end.into_sync_proxy();
 

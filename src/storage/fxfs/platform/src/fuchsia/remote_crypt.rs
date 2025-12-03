@@ -52,7 +52,7 @@ impl Crypt for RemoteCrypt {
                 wrapping_key_id,
                 key: WrappedKeyBytes::try_from(key).map_err(map_to_status)?,
             },
-            UnwrappedKey::new(unwrapped_key.try_into().map_err(|_| zx::Status::INTERNAL)?),
+            UnwrappedKey::new(unwrapped_key),
         ))
     }
 
@@ -68,18 +68,7 @@ impl Crypt for RemoteCrypt {
             .await
             .map_err(|e| map_to_status(e.into()))?
             .map_err(|e| zx::Status::from_raw(e))?;
-        match key {
-            WrappedKey::Fxfs(fidl_fuchsia_fxfs::FxfsKey { wrapping_key_id, wrapped_key }) => Ok((
-                EncryptionKey::Fxfs(FxfsKey {
-                    wrapping_key_id,
-                    key: WrappedKeyBytes::try_from(wrapped_key)
-                        .map_err(|_| zx::Status::BAD_STATE)?,
-                }),
-                UnwrappedKey::new(unwrapped_key.try_into().map_err(|_| zx::Status::INTERNAL)?),
-            )),
-            // TODO(https://fxbug.dev/436902004): Add support for the lblk32 wrapped key type.
-            _ => Err(zx::Status::NOT_SUPPORTED),
-        }
+        Ok((key.try_into()?, UnwrappedKey::new(unwrapped_key)))
     }
 
     async fn unwrap_key(
@@ -93,6 +82,6 @@ impl Crypt for RemoteCrypt {
             .await
             .map_err(|e| map_to_status(e.into()))?
             .map_err(|e| zx::Status::from_raw(e))?;
-        Ok(UnwrappedKey::new(unwrapped.try_into().unwrap()))
+        Ok(UnwrappedKey::new(unwrapped))
     }
 }

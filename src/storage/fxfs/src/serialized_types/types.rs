@@ -43,7 +43,7 @@ use std::collections::BTreeMap;
 ///
 /// IMPORTANT: When changing this (major or minor), update the list of possible versions at
 /// https://cs.opensource.google/fuchsia/fuchsia/+/main:third_party/cobalt_config/fuchsia/local_storage/versions.txt.
-pub const LATEST_VERSION: Version = Version { major: 50, minor: 0 };
+pub const LATEST_VERSION: Version = Version { major: 51, minor: 0 };
 
 /// The earliest supported version of the on-disk filesystem format.
 ///
