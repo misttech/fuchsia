@@ -9,13 +9,14 @@
 /// Methods for creating and interacting with virtualized guests in netemul tests.
 pub mod guest;
 
+use fuchsia_sync::Mutex;
 use std::borrow::Cow;
 use std::collections::HashSet;
 use std::num::NonZeroU64;
 use std::ops::DerefMut as _;
 use std::path::Path;
 use std::pin::pin;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use fidl::endpoints::{ProtocolMarker, Proxy as _};
 use fidl_fuchsia_net_dhcp_ext::{self as fnet_dhcp_ext, ClientProviderExt};
@@ -300,8 +301,7 @@ struct TestRealmInner<'a> {
 
 impl Drop for TestRealmInner<'_> {
     fn drop(&mut self) {
-        let ShutdownOnDropConfig { enabled, ignore_monikers } =
-            self.shutdown_on_drop.get_mut().unwrap();
+        let ShutdownOnDropConfig { enabled, ignore_monikers } = self.shutdown_on_drop.get_mut();
         if !*enabled {
             return;
         }
@@ -394,7 +394,7 @@ impl<'a> TestRealm<'a> {
     /// termination codes are observed.
     pub fn set_checked_shutdown_on_drop(&self, shutdown_on_drop: bool) {
         let Self(inner) = self;
-        inner.shutdown_on_drop.lock().unwrap().enabled = shutdown_on_drop;
+        inner.shutdown_on_drop.lock().enabled = shutdown_on_drop;
     }
 
     /// Adds `monikers` to a list of monikers whose exit status is _ignored_
@@ -410,7 +410,6 @@ impl<'a> TestRealm<'a> {
         inner
             .shutdown_on_drop
             .lock()
-            .unwrap()
             .ignore_monikers
             .extend(monikers.into_iter().map(|m| m.into()));
     }

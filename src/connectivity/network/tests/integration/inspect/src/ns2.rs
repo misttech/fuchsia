@@ -45,7 +45,7 @@ use test_case::test_case;
 /// matching.
 #[derive(Clone)]
 struct AddressMatcher {
-    set: std::sync::Arc<std::sync::Mutex<std::collections::HashSet<String>>>,
+    set: std::sync::Arc<fuchsia_sync::Mutex<std::collections::HashSet<String>>>,
 }
 
 impl AddressMatcher {
@@ -78,7 +78,7 @@ impl AddressMatcher {
             )
             .collect::<std::collections::HashSet<_>>();
 
-        Self { set: Arc::new(std::sync::Mutex::new(set)) }
+        Self { set: Arc::new(fuchsia_sync::Mutex::new(set)) }
     }
 
     /// Checks that the internal set has been entirely consumed.
@@ -86,7 +86,7 @@ impl AddressMatcher {
     /// Empties the internal set on return. Subsequent calls to check will
     /// always succeed.
     fn check(&self) -> Result<()> {
-        let mut set = self.set.lock().unwrap();
+        let mut set = self.set.lock();
         if set.is_empty() {
             *set = std::collections::HashSet::default();
             Ok(())
@@ -110,7 +110,7 @@ impl PropertyAssertion for AddressMatcher {
         let actual = actual.string().ok_or_else(|| {
             anyhow::anyhow!("invalid property {:#?} for AddressMatcher, want String", actual)
         })?;
-        if self.set.lock().unwrap().remove(actual) {
+        if self.set.lock().remove(actual) {
             Ok(())
         } else {
             Err(anyhow::anyhow!("{} not in expected address set", actual))

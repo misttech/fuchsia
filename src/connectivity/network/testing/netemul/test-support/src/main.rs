@@ -7,10 +7,11 @@ use fidl::endpoints::RequestStream as _;
 use fidl_fuchsia_netemul_test::{CounterRequest, CounterRequestStream};
 use fuchsia_component::client;
 use fuchsia_component::server::{ServiceFs, ServiceFsDir};
+use fuchsia_sync::Mutex;
 use futures::prelude::*;
 use log::{error, info};
 use std::pin::pin;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 struct CounterData {
     value: u32,
@@ -27,7 +28,7 @@ async fn handle_counter(
         .try_for_each(|request| async {
             match request {
                 CounterRequest::Increment { responder } => {
-                    let mut d = data.lock().unwrap();
+                    let mut d = data.lock();
                     d.value += 1;
                     info!("incrementing counter to {}", d.value);
                     let () = responder
@@ -77,7 +78,7 @@ async fn handle_counter(
                     }
                 }
                 CounterRequest::SetAbortOnShutdown { abort, responder } => {
-                    data.lock().unwrap().abort_on_shutdown = abort;
+                    data.lock().abort_on_shutdown = abort;
                     responder.send().unwrap_or_else(|e| error!("error sending response: {:?}", e));
                 }
             }
@@ -170,10 +171,7 @@ async fn main() -> Result<(), Error> {
         let data_clone = data.clone();
         let () = inspector.root().record_lazy_child("counter", move || {
             let srv = fuchsia_inspect::Inspector::default();
-            let () = srv.root().record_uint(
-                "count",
-                data.lock().expect("failed to acquire lock on `CounterData`").value.into(),
-            );
+            let () = srv.root().record_uint("count", data.lock().value.into());
             futures::future::ok(srv).boxed()
         });
         data_clone
@@ -195,7 +193,7 @@ async fn main() -> Result<(), Error> {
         () = stop_fut => {}
     }
 
-    if data.lock().unwrap().abort_on_shutdown {
+    if data.lock().abort_on_shutdown {
         std::process::abort();
     }
 
