@@ -5751,8 +5751,6 @@ zx_status_t VmCowPages::SupplyPagesLocked(VmCowRange range, VmPageSpliceList* pa
                                           MultiPageRequest* page_request) {
   canary_.Assert();
 
-  uint64_t supplied_len = 0;
-
   DEBUG_ASSERT(range.is_page_aligned());
   ASSERT(options != SupplyOptions::PagerSupply || page_source_);
 
@@ -5773,203 +5771,190 @@ zx_status_t VmCowPages::SupplyPagesLocked(VmCowRange range, VmPageSpliceList* pa
     return ZX_ERR_BAD_STATE;
   }
 
-  const uint64_t start = range.offset;
-  const uint64_t end = range.end();
-
   const CanOverwriteSlot overwrite_policy = options == SupplyOptions::TransferData
                                                 ? CanOverwriteSlot::PageOrRef
                                                 : CanOverwriteSlot::Empty;
 
-  VmCompression* compression = Pmm::Node().GetPageCompression();
-
-  // If this node is utilizing parent content markers then we can perform a very efficient supply
-  // as we can freely clear existing content and leave gaps to indicate zero content.
-  // TODO(https://fxbug.dev/434536251): Deduplicate this into a more general solution for all kinds
-  // supply pages.
-  if (node_has_parent_content_markers()) {
-    DEBUG_ASSERT(!page_source_);
-    DEBUG_ASSERT(options == SupplyOptions::TransferData);
-    DEBUG_ASSERT(overwrite_policy == CanOverwriteSlot::PageOrRef);
-
-    RangeChangeUpdateLocked(range, RangeChangeOp::Unmap, &deferred);
-
-    // For any content in the splice list we want to insert into our page list, overwriting (i.e.
-    // freeing) any existing content. Any gaps in the splice list imply zeroes which, given this
-    // node users parent content markers, can be represented by ensuring the corresponding range in
-    // this VMO is empty.
-    zx_status_t status = pages->RemovePagesAndIterateGaps(
-        [&](VmPageOrMarker slot, uint64_t src_offset) {
-          AssertHeld(lock_ref());
-          DEBUG_ASSERT(!slot.IsInterval());
-          const uint64_t dst_offset = start + src_offset;
-          zx::result<VmPageOrMarker> result =
-              AddPageLocked(dst_offset, ktl::move(slot), overwrite_policy, nullptr);
-          if (result.is_error()) {
-            supplied_len = src_offset;
-            return result.error_value();
-          }
-          if (result->IsPage()) {
-            vm_page_t* page = result->ReleasePage();
-            Pmm::Node().GetPageQueues()->Remove(page);
-            list_add_tail(deferred.FreedList(this).List(), &page->queue_node);
-          } else if (result->IsReference()) {
-            compression->Free(result->ReleaseReference());
-          } else if (result->IsParentContent()) {
-            // In the case of parent content need to find the original owner and release our share
-            // count to the content.
-            PageLookup lookup_info;
-            FindInitialPageContentLocked(dst_offset, &lookup_info);
-            DEBUG_ASSERT(lookup_info.cursor.current() && !lookup_info.cursor.current()->IsEmpty());
-            DEBUG_ASSERT(lookup_info.owner);
-            if (lookup_info.cursor.current()->IsPageOrRef()) {
-              lookup_info.owner.locked().DecrementCowContentShareCount(
-                  lookup_info.cursor.current(), lookup_info.owner_offset, deferred.FreedList(this),
-                  compression);
-            }
-          }
-          return ZX_ERR_NEXT;
-        },
-        [&](uint64_t gap_start, uint64_t gap_end) {
-          const uint64_t gap_dst_start = gap_start + start;
-          const uint64_t gap_dst_end = gap_end + start;
-          AssertHeld(lock_ref());
-          ReleaseOwnedPagesRangeLocked(gap_dst_start, gap_dst_end - gap_dst_start, LockedPtr(),
-                                       deferred.FreedList(this));
-          return ZX_ERR_NEXT;
-        });
-    if (status == ZX_OK) {
-      supplied_len = range.len;
-    }
-    return status;
-  }
-
-  DEBUG_ASSERT(!node_has_parent_content_markers());
+  const uint64_t start = range.offset;
+  const uint64_t end = range.end();
 
   // [new_pages_start, new_pages_start + new_pages_len) tracks the current run of
   // consecutive new pages added to this vmo.
-  uint64_t offset = range.offset;
-  uint64_t new_pages_start = offset;
+  uint64_t new_pages_start = start;
   uint64_t new_pages_len = 0;
-  zx_status_t status = ZX_OK;
+  uint64_t supplied_pages_len = 0;
+
   [[maybe_unused]] uint64_t initial_list_position = pages->Position();
-  while (!pages->IsProcessed()) {
-    VmPageOrMarker src_page = pages->Pop();
-    // Pages should have been converted to references pre-processing.
-    DEBUG_ASSERT(!src_page.IsReference() || !page_source_);
 
-    // The pager API does not allow the source VMO of supply pages to have a page source, so we can
-    // assume that any empty pages are zeroes and insert explicit markers here. We need to insert
-    // explicit markers to actually resolve the pager fault.
-    if (src_page.IsEmpty()) {
-      src_page = VmPageOrMarker::Marker();
-    }
+  VmCompression* compression = Pmm::Node().GetPageCompression();
 
-    // A newly supplied page starts off as Clean.
-    if (src_page.IsPage() && is_source_preserving_page_content()) {
-      UpdateDirtyStateLocked(src_page.Page(), offset, DirtyState::Clean,
-                             /*is_pending_add=*/true);
-    }
+  auto handle_add_page_result = [this, &deferred, &compression](VmPageOrMarker* old_page,
+                                                                const uint64_t offset) {
+    AssertHeld(lock_ref());
 
-    VmPageOrMarker old_page;
-    // Defer individual range updates so we can do them in blocks.
-
-    auto page_transaction = BeginAddPageLocked(offset, overwrite_policy);
-    if (page_transaction.is_error()) {
-      // Unable to insert anything at this slot, cleanup any existing src_page and handle a
-      // completed run.
-      if (src_page.IsPage()) {
-        vm_page_t* page = src_page.ReleasePage();
-        DEBUG_ASSERT(!list_in_list(&page->queue_node));
-        list_add_tail(deferred.FreedList(this).List(), &page->queue_node);
-      } else if (src_page.IsReference()) {
-        FreeReference(src_page.ReleaseReference());
-      }
-
-      if (likely(page_transaction.status_value() == ZX_ERR_ALREADY_EXISTS)) {
-        // We hit the end of a run of absent pages, so notify the page source
-        // of any new pages that were added and reset the tracking variables.
-        if (new_pages_len) {
-          RangeChangeUpdateLocked(VmCowRange(new_pages_start, new_pages_len), RangeChangeOp::Unmap,
-                                  &deferred);
-          if (page_source_) {
-            page_source_->OnPagesSupplied(new_pages_start, new_pages_len);
-          }
-        }
-        new_pages_start = offset + kPageSize;
-        new_pages_len = 0;
-        offset += kPageSize;
-        continue;
-      } else {
-        // Only cause for this should be an out of memory from the kernel heap when attempting to
-        // allocate a page list node.
-        status = page_transaction.status_value();
-        ASSERT(status == ZX_ERR_NO_MEMORY);
-        break;
-      }
-    }
-    if (options == SupplyOptions::PhysicalPageProvider) {
-      // When being called from the physical page provider, we need to call InitializeVmPage(),
-      // which AddNewPageLocked() will do.
-      // We only want to populate offsets that have true absence of content, so do not overwrite
-      // anything in the page list.
-      DEBUG_ASSERT(src_page.IsPage());
-      old_page = CompleteAddNewPageLocked(*page_transaction, src_page.Page(),
-                                          /*zero=*/false, nullptr);
-      // The page was successfully added, but we still have a copy in the src_page, so we need to
-      // release it, however need to store the result in a temporary as we are required to use the
-      // result of ReleasePage.
-      [[maybe_unused]] vm_page_t* unused = src_page.ReleasePage();
-    } else {
-      // When not being called from the physical page provider, we don't need InitializeVmPage(),
-      // so we use AddPageLocked().
-      // We only want to populate offsets that have true absence of content, so do not overwrite
-      // anything in the page list.
-      old_page = CompleteAddPageLocked(*page_transaction, ktl::move(src_page), nullptr);
-    }
-
-    // If the overwrite policy was |Empty|, the old page should be empty.
-    DEBUG_ASSERT(overwrite_policy != CanOverwriteSlot::Empty || old_page.IsEmpty());
-    // Clean up the old_page if necessary. The action taken is different depending on the state of
-    // old_page:
-    // 1. Page: If old_page is backed by an actual page, remove it from the page queues and free
-    //          the page.
-    // 2. Reference: If old_page is a reference, free the reference.
-    // 3. Interval: We should not be overwriting data in a pager-backed VMO, so assert that
-    //              old_page is not an interval.
-    // 4. Marker: There are no resources to free here, so do nothing.
-    if (old_page.IsPage()) {
-      vm_page_t* released_page = old_page.ReleasePage();
-      // We do not overwrite content in pager backed VMOs, the only place where loaned pages can be,
-      // so any old page must never have been loaned.
-      DEBUG_ASSERT(!released_page->is_loaned());
-      pmm_page_queues()->Remove(released_page);
-      DEBUG_ASSERT(!list_in_list(&released_page->queue_node));
-      list_add_tail(deferred.FreedList(this).List(), &released_page->queue_node);
-    } else if (old_page.IsReference()) {
-      FreeReference(old_page.ReleaseReference());
-    } else if (old_page.IsEmpty() && parent_) {
-      // If we've supplied a page into a slot that previously saw a page in a hidden ancestor,
-      // release our share count.
+    if (old_page->IsPage()) {
+      vm_page_t* page = old_page->ReleasePage();
+      Pmm::Node().GetPageQueues()->Remove(page);
+      list_add_tail(deferred.FreedList(this).List(), &page->queue_node);
+    } else if (old_page->IsReference()) {
+      compression->Free(old_page->ReleaseReference());
+    } else if (old_page->IsParentContent()) {
+      // If we freed a parent_content_marker, the share count on the initial content should be
+      // decremented as we can no longer see it.
+      DEBUG_ASSERT(node_has_parent_content_markers());
       PageLookup lookup_info;
       FindInitialPageContentLocked(offset, &lookup_info);
-      if (lookup_info.cursor.current() && lookup_info.owner->is_hidden() &&
-          lookup_info.cursor.current()->IsPageOrRef()) {
+      DEBUG_ASSERT(lookup_info.cursor.current() && !lookup_info.cursor.current()->IsEmpty());
+      DEBUG_ASSERT(lookup_info.owner);
+      if (lookup_info.cursor.current()->IsPageOrRef()) {
         lookup_info.owner.locked().DecrementCowContentShareCount(
             lookup_info.cursor.current(), lookup_info.owner_offset, deferred.FreedList(this),
             compression);
       }
-    } else {
-      DEBUG_ASSERT(!old_page.IsInterval());
-      DEBUG_ASSERT(!old_page.IsParentContent());
+    } else if (!node_has_parent_content_markers() && old_page->IsEmpty() &&
+               is_parent_hidden_locked()) {
+      // If we have supplied a page into an empty slot, check if there is a page in our ancestor
+      // chain that we will no longer see. If we find one, decrement the share count.
+      PageLookup lookup_info;
+      FindInitialPageContentLocked(offset, &lookup_info);
+      if (lookup_info.cursor.current() && lookup_info.cursor.current()->IsPageOrRef() &&
+          lookup_info.owner->is_hidden()) {
+        lookup_info.owner.locked().DecrementCowContentShareCount(
+            lookup_info.cursor.current(), lookup_info.owner_offset, deferred.FreedList(this),
+            compression);
+      }
     }
-    new_pages_len += kPageSize;
-    DEBUG_ASSERT(new_pages_start + new_pages_len <= end);
+  };
 
-    offset += kPageSize;
-  }
-  // Unless there was an error and we exited the loop early, then there should have been the correct
-  // number of pages in the splice list.
-  DEBUG_ASSERT(offset == end || status != ZX_OK);
+  auto handle_add_page_error = [&](zx_status_t status, const uint64_t offset) {
+    if (node_has_parent_content_markers()) {
+      return status;
+    }
+
+    if (likely(status == ZX_ERR_ALREADY_EXISTS)) {
+      // We hit the end of a run of absent pages, so notify the page source
+      // of any new pages that were added and reset the tracking variables.
+      if (new_pages_len) {
+        AssertHeld(lock_ref());
+        RangeChangeUpdateLocked(VmCowRange(new_pages_start, new_pages_len), RangeChangeOp::Unmap,
+                                &deferred);
+        if (page_source_) {
+          page_source_->OnPagesSupplied(new_pages_start, new_pages_len);
+        }
+      }
+      new_pages_start = offset + kPageSize;
+      new_pages_len = 0;
+      supplied_pages_len += kPageSize;
+      return ZX_ERR_NEXT;
+    } else {
+      // Only cause for this should be an out of memory from the kernel heap when
+      // attempting to allocate a page list node.
+      ASSERT(status == ZX_ERR_NO_MEMORY);
+      return status;
+    }
+  };
+
+  // Iterate content in the splice list that we want to insert into our page list. In the case of a
+  // pager-backed VMO existing content is left unchanged, content in the VmSpliceList is freed and
+  // markers are inserted on gaps in the splice list. For nodes using parent content markers
+  // (anonymous memory), existing content is overwritten (freed).
+  zx_status_t status = pages->RemovePagesAndIterateGaps(
+      [&](VmPageOrMarker slot, uint64_t src_offset) {
+        AssertHeld(lock_ref());
+
+        DEBUG_ASSERT(!slot.IsInterval());
+        DEBUG_ASSERT(!slot.IsEmpty());
+
+        // References should have been removed if there is a page source.
+        DEBUG_ASSERT(!slot.IsReference() || !page_source_);
+
+        const uint64_t dst_offset = start + src_offset;
+
+        // A newly supplied page starts off as Clean.
+        if (slot.IsPage() && is_source_preserving_page_content()) {
+          UpdateDirtyStateLocked(slot.Page(), dst_offset, DirtyState::Clean,
+                                 /*is_pending_add=*/true);
+        }
+
+        // When being called from a pager-backed VMO, we only want to populate offsets that have
+        // true absence of content, so do not overwrite anything in the page list.
+        DEBUG_ASSERT(overwrite_policy == CanOverwriteSlot::Empty || !page_source_);
+
+        if (options == SupplyOptions::PhysicalPageProvider) {
+          // When being called from PhysicalPageProvider, we need to call InitializeVmPage so we
+          // call AddNewPage.
+          VmPageOrMarker old_page;
+          DEBUG_ASSERT(slot.IsPage());
+          status = AddNewPageLocked(dst_offset, slot.Page(), overwrite_policy, &old_page,
+                                    /*zero=*/false, nullptr);
+          if (status != ZX_OK) {
+            return handle_add_page_error(status, dst_offset);
+          }
+          // Can't free pages from PhysicalPageProvider.
+          DEBUG_ASSERT(old_page.IsEmpty() && overwrite_policy == CanOverwriteSlot::Empty);
+          [[maybe_unused]] vm_page_t* unused = slot.ReleasePage();
+
+        } else {
+          // Not being called from PhysicalPageProvider, so we don't need initialize a vm_page.
+          zx::result<VmPageOrMarker> result =
+              AddPageLocked(dst_offset, ktl::move(slot), overwrite_policy, nullptr);
+          if (result.is_error()) {
+            return handle_add_page_error(result.error_value(), dst_offset);
+          }
+          // If the content overwrite policy was None, the old page should be empty.
+          DEBUG_ASSERT(overwrite_policy != CanOverwriteSlot::Empty || result->IsEmpty());
+          handle_add_page_result(&result.value(), dst_offset);
+        }
+
+        new_pages_len += kPageSize;
+        DEBUG_ASSERT(new_pages_start + new_pages_len <= end);
+        supplied_pages_len += kPageSize;
+        return ZX_ERR_NEXT;
+      },
+      [&](uint64_t gap_start, uint64_t gap_end) {
+        const uint64_t gap_dst_start = gap_start + start;
+        const uint64_t gap_dst_end = gap_end + start;
+        AssertHeld(lock_ref());
+
+        if (node_has_parent_content_markers()) {
+          // Any gaps in the splice list imply zeroes which, given this
+          // node users parent content markers, can be represented by ensuring the corresponding
+          // range in this VMO is empty. It's ok to simply release pages as from here, there is no
+          // way to fail to supply to this range and leak parent content.
+          ReleaseOwnedPagesRangeLocked(gap_dst_start, gap_dst_end - gap_dst_start, LockedPtr(),
+                                       deferred.FreedList(this));
+          supplied_pages_len += gap_dst_end - gap_dst_start;
+          new_pages_len += gap_dst_end - gap_dst_start;
+
+        } else {
+          // The pager API does not allow the source VMO of supply pages to have a page source, so
+          // we can assume that any empty pages are zeroes and insert explicit markers here. We
+          // need to insert explicit markers to actually resolve the pager fault.
+          // TODO(sagebarreda): consider clean dirty intervals if there are large runs of markers.
+          for (auto zero_offset = gap_dst_start; zero_offset < gap_dst_end;
+               zero_offset += kPageSize) {
+            zx::result<VmPageOrMarker> result = AddPageLocked(
+                zero_offset, ktl::move(VmPageOrMarker::Marker()), overwrite_policy, nullptr);
+            if (result.is_error()) {
+              zx_status_t add_status = handle_add_page_error(result.status_value(), zero_offset);
+              if (add_status != ZX_ERR_NEXT) {
+                return add_status;
+              }
+            } else {
+              handle_add_page_result(&result.value(), zero_offset);
+              new_pages_len += kPageSize;
+              supplied_pages_len += kPageSize;
+            }
+          }
+        }
+
+        return ZX_ERR_NEXT;
+      });
+
+  // Unless there was an error and we exited the loop early, then there should have been the
+  // correct number of pages in the splice list.
+  DEBUG_ASSERT((start + supplied_pages_len) == end || status != ZX_OK);
+
   if (new_pages_len) {
     RangeChangeUpdateLocked(VmCowRange(new_pages_start, new_pages_len), RangeChangeOp::Unmap,
                             &deferred);
@@ -5984,10 +5969,10 @@ zx_status_t VmCowPages::SupplyPagesLocked(VmCowRange range, VmPageSpliceList* pa
   // Shouldn't have had to wait on a page request.
   DEBUG_ASSERT(status != ZX_ERR_SHOULD_WAIT);
 
-  supplied_len = offset - start;
   // In the case of ZX_OK we should have supplied exactly as many pages as we
   // processed. In any other case the value is undefined.
-  DEBUG_ASSERT(((pages->Position() - initial_list_position) == supplied_len) || (status != ZX_OK));
+  DEBUG_ASSERT(((pages->Position() - initial_list_position) == supplied_pages_len) ||
+               (status != ZX_OK));
   return status;
 }
 
