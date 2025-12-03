@@ -22,6 +22,7 @@ rustc_library("settings_common") {
     ":*",
     "//src/settings/camera:*",
     "//src/settings/light:*",
+    "//src/settings/night_mode:*",
     "//src/settings/privacy:*",
     "//src/settings/service:*",
     "//src/settings/setup:*",

@@ -36,6 +36,7 @@ use settings_common::inspect::event::{
 use settings_common::inspect::listener_logger::ListenerInspectLogger;
 use settings_common::service_context::{ExternalServiceEvent, GenerateService, ServiceContext};
 use settings_light::light_controller::LightController;
+use settings_night_mode::night_mode_controller::NightModeController;
 use settings_privacy::privacy_controller::PrivacyController;
 use settings_setup::setup_controller::SetupController;
 use settings_storage::device_storage::DeviceStorage;
@@ -58,7 +59,6 @@ use crate::ingress::fidl;
 use crate::input::input_controller::InputController;
 use crate::intl::intl_controller::IntlController;
 use crate::keyboard::keyboard_controller::KeyboardController;
-use crate::night_mode::night_mode_controller::NightModeController;
 
 mod accessibility;
 pub mod audio;
@@ -69,7 +69,6 @@ mod factory_reset;
 pub mod input;
 mod intl;
 mod keyboard;
-mod night_mode;
 mod storage_migrations;
 
 pub mod agent;
@@ -846,8 +845,8 @@ impl<T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilder<T>
         }
 
         if components.contains(&SettingType::NightMode) {
-            let night_mode::SetupResult { mut night_mode_fidl_handler, task } =
-                night_mode::setup_night_mode_api(
+            let settings_night_mode::SetupResult { mut night_mode_fidl_handler, task } =
+                settings_night_mode::setup_night_mode_api(
                     Rc::clone(&device_storage_factory),
                     SettingValuePublisher::new(setting_value_tx.clone()),
                     UsagePublisher::new(usage_event_tx.clone(), Rc::clone(&listener_logger)),

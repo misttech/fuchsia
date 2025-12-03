@@ -21,6 +21,7 @@ group("tests") {
     "inspect_utils:tests",
     "light:tests",
     "media_buttons:tests",
+    "night_mode:tests",
     "privacy:tests",
     "service:tests",
     "setup:tests",

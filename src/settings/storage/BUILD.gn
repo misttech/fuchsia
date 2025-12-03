@@ -26,6 +26,7 @@ rustc_library("settings_storage") {
   visibility = [
     ":*",
     "//src/settings/light:*",
+    "//src/settings/night_mode:*",
     "//src/settings/privacy:*",
     "//src/settings/service:*",
     "//src/settings/setup:*",
