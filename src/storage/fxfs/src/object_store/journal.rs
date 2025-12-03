@@ -39,7 +39,7 @@ use crate::object_store::journal::bootstrap_handle::BootstrapObjectHandle;
 use crate::object_store::journal::checksum_list::ChecksumList;
 use crate::object_store::journal::reader::{JournalReader, ReadResult};
 use crate::object_store::journal::super_block::{
-    MIN_SUPER_BLOCK_SIZE, SuperBlockHeader, SuperBlockInstance, SuperBlockManager,
+    SuperBlockHeader, SuperBlockInstance, SuperBlockManager,
 };
 use crate::object_store::journal::writer::JournalWriter;
 use crate::object_store::object_manager::ObjectManager;
@@ -1205,23 +1205,24 @@ impl Journal {
         if filesystem.options().image_builder_mode.is_some() {
             // Note that in non-image_builder_mode we write both superblocks when we format
             // (in FxFilesystemBuilder::open). In image_builder_mode we only write once at the end
-            // as part of finalize(), which is why we must make sure the generation we write is newer
-            // than any existing generation.
-            let block_size = filesystem.device().block_size();
-            if block_size as u64 == MIN_SUPER_BLOCK_SIZE {
-                match self.read_superblocks(filesystem.device(), block_size.into()).await {
-                    Ok((super_block, _)) => {
-                        log::info!(
-                            "Found existing superblock with generation {}. Bumping by 1.",
-                            super_block.generation
-                        );
-                        current_generation = super_block.generation.wrapping_add(1);
-                    }
-                    Err(_) => {
-                        // TODO(https://fxbug.dev/463757813): It's not unusual to fail to read
-                        // superblocks when we're formatting a new filesystem but we should probably
-                        // fail the format if we get an IO error.
-                    }
+            // as part of finalize(), which is why we must make sure the generation we write is
+            // newer than any existing generation.
+
+            // Note: This should is the *filesystem* block size, not the device block size which
+            // is currently always 4096 (https://fxbug.dev/42063349)
+            let block_size = filesystem.block_size();
+            match self.read_superblocks(filesystem.device(), block_size).await {
+                Ok((super_block, _)) => {
+                    log::info!(
+                        "Found existing superblock with generation {}. Bumping by 1.",
+                        super_block.generation
+                    );
+                    current_generation = super_block.generation.wrapping_add(1);
+                }
+                Err(_) => {
+                    // TODO(https://fxbug.dev/463757813): It's not unusual to fail to read
+                    // superblocks when we're formatting a new filesystem but we should probably
+                    // fail the format if we get an IO error.
                 }
             }
         }
@@ -2337,6 +2338,35 @@ mod tests {
         assert!(
             generation2 > generation1,
             "generation2 ({}) should be greater than generation1 ({})",
+            generation2,
+            generation1
+        );
+        fs.close().await.expect("close failed");
+    }
+
+    #[fuchsia::test]
+    async fn test_image_builder_mode_generation_bump_512_byte_block() {
+        let device = DeviceHolder::new(FakeDevice::new(16384, 512));
+
+        // Format initial filesystem (generation 1)
+        let fs = FxFilesystem::new_empty(device).await.expect("new_empty failed");
+        let generation1 = fs.super_block_header().generation;
+        fs.close().await.expect("close failed");
+        let device = fs.take_device().await;
+        device.reopen(false);
+
+        // Format again with image_builder_mode (should bump generation)
+        let fs = FxFilesystemBuilder::new()
+            .format(true)
+            .image_builder_mode(Some(SuperBlockInstance::A))
+            .open(device)
+            .await
+            .expect("open failed");
+
+        let generation2 = fs.super_block_header().generation;
+        assert!(
+            generation2 > generation1,
+            "Expected generation bump, got {} vs {}",
             generation2,
             generation1
         );
