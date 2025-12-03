@@ -62,8 +62,9 @@ template("hermetic_static_library") {
     outputs = [ "$target_out_dir/${output_target}_temp.o" ]
 
     # The build seems to write the output to a temp file, which the action tracer complains about.
-    # TODO(https://fxbug.dev/42176361): Fix the action tracer and remove this.
-    hermetic_deps = false
+    # So tell the action tracer to expect (and ignore) it
+    hermetic_action_ignored_prefixes =
+        [ "$target_out_dir/${output_target}_temp.o.tmp" ]
 
     args = [
       # Relocatable link.
