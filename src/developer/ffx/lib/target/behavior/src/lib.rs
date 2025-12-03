@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 use crate::injection::Injection;
+use analytics::add_custom_event;
 use ffx_command_error::{Result, bug};
 use ffx_config::{EnvironmentContext, TryFromEnvContext};
 use ffx_core::Injector;
@@ -97,11 +98,26 @@ impl FhoTargetEnvironmentOuter {
         }
     }
 
+    async fn emit_connection_analytics_event(ty: &str) {
+        let _ = add_custom_event(
+            Some("ffx_connection_mode"),
+            Some(ty),
+            None,
+            std::collections::BTreeMap::new(),
+        )
+        .await;
+    }
+
     /// Explicitly create direct connection behavior.
     pub async fn init_direct_connection_behavior(
         &self,
         context: &EnvironmentContext,
     ) -> Result<Arc<ConnectionBehavior>> {
+        // Currently analytics are disabled in strict mode, but if we change
+        // that behavior, we don't want the "direct"/"daemon" analytics to
+        // suddenly get polluted.
+        let event = if context.is_strict() { "strict" } else { "direct" };
+        Self::emit_connection_analytics_event(event).await;
         self.inner.init_direct_connection_behavior(context).await
     }
 
@@ -117,6 +133,7 @@ impl FhoTargetEnvironmentOuter {
                 "Daemon connections are not supported in strict mode"
             )));
         }
+        Self::emit_connection_analytics_event("daemon").await;
         self.inner.init_daemon_connection_behavior(context).await
     }
 
