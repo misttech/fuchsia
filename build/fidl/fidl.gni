@@ -111,6 +111,10 @@ import("//build/testing/host_test_data.gni")
 #
 #   enable_rust_drivers (optional flag, default to false)
 #     Set to true to enable experimental rust driver transport support
+#     outside the 'next' bindings. Rust driver transport bindings are
+#     always enabled for the rust_next bindings (see `enable_rust_next`)
+#     if `contains_drivers` is set, as that's the supported mechanism
+#     for using driver transport from rust.
 #
 #   enable_bindlib (optional flag, default to true)
 #     Set to false to disable bindlib bindings for this library
@@ -532,7 +536,7 @@ template("fidl") {
           deps += [ ":${invoker.target_name}_rust" ]
         }
         fidl_gen_dir += "/rust_next"
-        if (!is_host && enable_rust_drivers) {
+        if (!is_host) {
           forward_variables_from(invoker, [ "contains_drivers" ])
         }
       }
@@ -560,7 +564,7 @@ template("fidl") {
           assert(enable_rust)
           deps += [ ":${invoker.target_name}_rust" ]
         }
-        if (!is_host && enable_rust_drivers) {
+        if (!is_host) {
           forward_variables_from(invoker, [ "contains_drivers" ])
         }
       }

@@ -42,6 +42,7 @@ fidl("fuchsia.examples.gizmo") {
   public_deps = [ "//zircon/vdso/zx" ]
   contains_drivers = true
   enable_rust_next = true
+  rust_next_emit_compat = false
 }
 
 fuchsia_unittest_package("fdf_rust_fidl_tests") {
