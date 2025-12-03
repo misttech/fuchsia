@@ -4,11 +4,11 @@
 
 mod wire;
 
+use fuchsia_sync::{Mutex, MutexGuard};
 use std::marker::PhantomData;
 use std::num::NonZero;
 use std::pin::Pin;
 use std::ptr::NonNull;
-use std::sync::{Mutex, MutexGuard};
 use std::task::{Context, Poll};
 
 use fidl_next::Chunk;
@@ -349,7 +349,7 @@ impl<D> Shared<D> {
     }
 
     fn get_locked(&self) -> MutexGuard<'_, DriverChannel<D>> {
-        self.channel.lock().unwrap()
+        self.channel.lock()
     }
 }
 

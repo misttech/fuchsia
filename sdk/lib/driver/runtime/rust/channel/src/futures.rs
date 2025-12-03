@@ -16,7 +16,8 @@ use fdf_sys::*;
 
 use core::mem::MaybeUninit;
 use core::task::{Context, Poll};
-use std::sync::{Arc, Mutex};
+use fuchsia_sync::Mutex;
+use std::sync::Arc;
 
 pub use fdf_sys::fdf_handle_t;
 
@@ -77,7 +78,7 @@ impl ReadMessageStateOp {
         // for this handler to reconstitute it.
         let op: Arc<Self> = unsafe { Arc::from_raw(read_op.cast()) };
 
-        let mut state = op.state.lock().unwrap();
+        let mut state = op.state.lock();
         if state.channel_dropped {
             // SAFETY: since the channel dropped we are the only outstanding owner of the
             // channel object.
@@ -95,7 +96,7 @@ impl ReadMessageStateOp {
     /// Called by the channel on drop to indicate that the channel has been dropped and
     /// find out whether it needs to defer dropping the handle until the callback is called.
     pub fn set_channel_dropped(&self) -> bool {
-        let mut state = self.state.lock().unwrap();
+        let mut state = self.state.lock();
         if state.waker.is_some() {
             state.channel_dropped = true;
             false
@@ -156,7 +157,7 @@ impl ReadMessageState {
         cx: &mut Context<'_>,
         dispatcher: D,
     ) -> Poll<Result<Option<Message<[MaybeUninit<u8>]>>, Status>> {
-        let mut state = self.op.state.lock().unwrap();
+        let mut state = self.op.state.lock();
 
         match try_read_raw(&self.channel) {
             Ok(res) => Poll::Ready(Ok(res)),
@@ -224,7 +225,7 @@ impl ReadMessageState {
 
 impl Drop for ReadMessageState {
     fn drop(&mut self) {
-        let mut state = self.op.state.lock().unwrap();
+        let mut state = self.op.state.lock();
         if state.waker.is_none() {
             // if there's no waker either the callback has already fired or we never waited on this
             // future in the first place, so just leave it be.

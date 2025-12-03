@@ -16,6 +16,7 @@ rustc_library("libasync") {
     "//sdk/lib/async",
     "//sdk/lib/driver/runtime/rust/libasync/sys",
     "//sdk/rust/zx",
+    "//src/lib/fuchsia-sync",
     "//third_party/rust_crates:futures",
   ]
 

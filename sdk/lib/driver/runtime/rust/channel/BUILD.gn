@@ -19,6 +19,7 @@ rustc_library("channel") {
     "//sdk/lib/driver/runtime/rust/fdf_sys",
     "//sdk/rust/zx",
     "//src/devices/lib/driver:driver_runtime",
+    "//src/lib/fuchsia-sync",
   ]
 
   test_deps = [

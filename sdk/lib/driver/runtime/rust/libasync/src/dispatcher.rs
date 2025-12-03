@@ -12,7 +12,8 @@ use core::future::Future;
 use core::marker::PhantomData;
 use core::ptr::NonNull;
 use core::task::Context;
-use std::sync::{Arc, Mutex, Weak};
+use fuchsia_sync::Mutex;
+use std::sync::{Arc, Weak};
 
 use zx::Status;
 
@@ -186,7 +187,7 @@ impl<D: OnDispatcher + 'static> ArcWake for Task<D> {
             Err(e) if e == Status::BAD_STATE => {
                 // the dispatcher is shutting down so drop the future, if there
                 // is one, to cancel it.
-                let future_slot = arc_self.future.lock().unwrap().take();
+                let future_slot = arc_self.future.lock().take();
                 core::mem::drop(future_slot);
             }
             res => res.expect("Unexpected error waking dispatcher task"),
@@ -203,7 +204,7 @@ impl<D: OnDispatcher + 'static> Task<D> {
         self.dispatcher.on_maybe_dispatcher(move |dispatcher| {
             dispatcher
                 .post_task_sync(move |status| {
-                    let mut future_slot = arc_self.future.lock().unwrap();
+                    let mut future_slot = arc_self.future.lock();
                     // if we're cancelled, drop the future we're waiting on.
                     if status != Status::from_raw(ZX_OK) {
                         core::mem::drop(future_slot.take());
