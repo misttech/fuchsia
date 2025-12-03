@@ -4,11 +4,13 @@
 
 #include "src/connectivity/ethernet/drivers/gvnic/gvnic.h"
 
+#include <lib/async/cpp/task.h>
 #include <lib/ddk/binding_driver.h>
+#include <lib/fit/defer.h>
 
 #include "src/connectivity/ethernet/drivers/gvnic/abi.h"
 
-#define DIV_ROUND_UP(a, b) (((a) + (b)-1) / (b))
+#define DIV_ROUND_UP(a, b) (((a) + (b) - 1) / (b))
 #define ROUND_UP(a, b) (DIV_ROUND_UP(a, b) * b)
 
 #define SET_LOCAL_REG_AND_WRITE_TO_MMIO(f, v)                                       \
@@ -132,12 +134,76 @@ zx_status_t Gvnic::Bind() {
     zxlogf(ERROR, "Couldn't start rx thread: %s", zx_status_get_string(status));
     return status;
   }
-  status = DdkAdd(ddk::DeviceAddArgs("gvnic").set_inspect_vmo(inspect_.DuplicateVmo()));
+  status = AddDevice();
   if (status != ZX_OK) {
-    zxlogf(ERROR, "Couldn't add inspect vmo: %s", zx_status_get_string(status));
+    zxlogf(ERROR, "Couldn't add device: %s", zx_status_get_string(status));
     return status;
   }
   is_bound.Set(true);
+
+  return ZX_OK;
+}
+
+zx_status_t Gvnic::AddDevice() {
+  zx::result dispatcher =
+      fdf::UnsynchronizedDispatcher::Create({}, "netdev-dispatcher", [this](fdf_dispatcher_t*) {
+        netdevice_dispatcher_.close();
+        netdevice_dispatcher_shutdown_.Signal();
+      });
+  if (dispatcher.is_error()) {
+    zxlogf(ERROR, "Failed to create netdevice dispatcher: %s", dispatcher.status_string());
+    return dispatcher.status_value();
+  }
+  netdevice_dispatcher_ = std::move(dispatcher.value());
+
+  // If this method fails at some point we must shut down the dispatcher.
+  auto cleanup = fit::defer([this] {
+    if (netdevice_dispatcher_.get()) {
+      netdevice_dispatcher_.ShutdownAsync();
+      netdevice_dispatcher_shutdown_.Wait();
+    }
+  });
+
+  auto protocol = [this](fdf::ServerEnd<netdev::NetworkDeviceImpl> server_end) mutable {
+    fdf::BindServer(netdevice_dispatcher_.get(), std::move(server_end), this);
+  };
+
+  // Register the callback to handler.
+  netdev::Service::InstanceHandler handler({.network_device_impl = std::move(protocol)});
+
+  if (!outgoing_dir_.has_value()) {
+    outgoing_dir_.emplace(fdf::OutgoingDirectory::Create(fdf::Dispatcher::GetCurrent()->get()));
+  }
+
+  auto status = outgoing_dir_->AddService<netdev::Service>(std::move(handler));
+  if (status.is_error()) {
+    zxlogf(ERROR, "Failed to add service to outgoing directory: %s\n", status.status_string());
+    return status.error_value();
+  }
+
+  auto [client, server] = fidl::Endpoints<fuchsia_io::Directory>::Create();
+
+  auto result = outgoing_dir_->Serve(std::move(server));
+  if (result.is_error()) {
+    zxlogf(ERROR, "Failed to serve outgoing directory: %s\n", result.status_string());
+    return result.error_value();
+  }
+
+  std::array offers{netdev::Service::Name};
+
+  ddk::DeviceAddArgs args = ddk::DeviceAddArgs("gvnic")
+                                .set_inspect_vmo(inspect_.DuplicateVmo())
+                                .set_fidl_service_offers(offers)
+                                .set_outgoing_dir(client.TakeChannel())
+                                .set_proto_id(ZX_PROTOCOL_NETWORK_DEVICE_IMPL);
+
+  if (zx_status_t status = DdkAdd(args); status != ZX_OK) {
+    zxlogf(ERROR, "Couldn't add device: %s", zx_status_get_string(status));
+    return status;
+  }
+
+  // Now that the device has been successfully added the cleanup isn't needed anymore.
+  cleanup.cancel();
 
   return ZX_OK;
 }
@@ -606,11 +672,29 @@ GvnicQueueResources* Gvnic::GetQueueResourcesVirtAddr(uint32_t index) {
 }
 
 zx_status_t Gvnic::StartRXThread() {
-  if (thrd_create_with_name(
-          &rx_thread_, [](void* arg) -> int { return static_cast<Gvnic*>(arg)->RXThread(); }, this,
-          "gvnic-rx-thread") != thrd_success) {
-    zxlogf(ERROR, "Could not create rx thread");
-    return ZX_ERR_INTERNAL;
+  if (rx_dispatcher_.get()) {
+    zxlogf(ERROR, "RX dispatcher already exists");
+    return ZX_ERR_ALREADY_BOUND;
+  }
+  zx::result dispatcher = fdf::SynchronizedDispatcher::Create(
+      fdf::SynchronizedDispatcher::Options::kAllowSyncCalls, "gvnic-rx-dispatcher",
+      [this](fdf_dispatcher_t*) { rx_dispatcher_shutdown_.Signal(); });
+  if (dispatcher.is_error()) {
+    zxlogf(ERROR, "Failed to create RX dispatcher: %s", dispatcher.status_string());
+    return dispatcher.status_value();
+  }
+  rx_dispatcher_ = std::move(dispatcher.value());
+
+  // By using a synchronized dispatcher that allows sync calls this will behave as a separate thread
+  // that will run RXThread forever. The combination of a synchronized dispatcher and allow sync
+  // calls ensures that the posted task never gets inlined. It is guaranteed to run on its own
+  // thread. It's important to have a dispatcher here instead of a thread for performance reasons.
+  // It allows FIDL calls made from RXThread to be inlined, without a dispatcher that can't happen.
+  if (zx_status_t status =
+          async::PostTask(rx_dispatcher_.async_dispatcher(), [this]() { RXThread(); });
+      status != ZX_OK) {
+    zxlogf(ERROR, "Could not post rx thread task: %s", zx_status_get_string(status));
+    return status;
   }
 
   return ZX_OK;
@@ -631,7 +715,8 @@ uint32_t Gvnic::ReadCounter(uint32_t index) {
 
 // TODO(https://fxbug.dev/42059141): Find a clever way to get zerocopy rx to work, and then delete
 // this method.
-void Gvnic::WritePacketToBufferSpace(const rx_space_buffer_t& buffer, uint8_t* data, uint32_t len) {
+void Gvnic::WritePacketToBufferSpace(const netdev::wire::RxSpaceBuffer& buffer, uint8_t* data,
+                                     uint32_t len) {
   network::SharedAutoLock lock(&vmo_lock_);
   vmo_map_.at(buffer.region.vmo).write(data, buffer.region.offset, len);
 }
@@ -655,8 +740,8 @@ int Gvnic::RXThread() {
   const uint32_t counter_idx = rx_queue_resources_->counter_index;
   WriteDoorbell(doorbell_idx, ring_doorbell);
 
-  std::vector<rx_buffer_t> completed_rx(rx_ring_len_);
-  std::vector<rx_buffer_part_t> completed_rx_parts(rx_ring_len_);
+  std::vector<netdev::wire::RxBuffer> completed_rx(rx_ring_len_);
+  std::vector<netdev::wire::RxBufferPart> completed_rx_parts(rx_ring_len_);
 
   auto volatile const irq_doorbell_idxs =
       reinterpret_cast<BigEndian<uint32_t>*>(irq_doorbell_idx_page_->virt());
@@ -681,7 +766,7 @@ int Gvnic::RXThread() {
         zxlogf(WARNING, "No buffer space. Dropping packet.");
         continue;
       }
-      const rx_space_buffer_t& buffer = rx_space_buffer_queue_.Front();
+      const netdev::wire::RxSpaceBuffer& buffer = rx_space_buffer_queue_.Front();
       if (len > buffer.region.length) {
         zxlogf(WARNING,
                "Recieved packet (%u bytes) will not fit in the buffer space (%lu bytes). "
@@ -694,11 +779,10 @@ int Gvnic::RXThread() {
           .meta =
               {
                   .port = kNetworkPortId,
-                  .frame_type =
-                      static_cast<uint8_t>(fuchsia_hardware_network::wire::FrameType::kEthernet),
+                  .frame_type = fuchsia_hardware_network::wire::FrameType::kEthernet,
               },
-          .data_list = &completed_rx_parts[packets_written],
-          .data_count = 1,
+          .data = fidl::VectorView<netdev::wire::RxBufferPart>::FromExternal(
+              &completed_rx_parts[packets_written], 1),
       };
       // TODO(https://fxbug.dev/42059141): Find a clever way to get zerocopy rx to work, instead of
       // calling this.
@@ -711,8 +795,17 @@ int Gvnic::RXThread() {
       WriteDoorbell(doorbell_idx, ring_doorbell);
     }
     if (packets_written) {
+      fdf::Arena arena(0u);
       network::SharedAutoLock lock(&ifc_lock_);
-      ifc_.CompleteRx(completed_rx.data(), packets_written);
+      if (fidl::OneWayStatus status =
+              ifc_.buffer(arena)->CompleteRx(fidl::VectorView<netdev::wire::RxBuffer>::FromExternal(
+                  completed_rx.data(), packets_written));
+          !status.ok()) {
+        zxlogf(ERROR, "Failed to complete %u RX buffers: %s", packets_written,
+               status.FormatDescription().c_str());
+        DdkAsyncRemove();
+        break;
+      }
     }
   }
   return 0;
@@ -720,40 +813,70 @@ int Gvnic::RXThread() {
 
 void Gvnic::DdkInit(ddk::InitTxn txn) { txn.Reply(ZX_OK); }
 
+void Gvnic::DdkUnbind(ddk::UnbindTxn txn) {
+  Shutdown();
+  txn.Reply();
+}
+
+void Gvnic::DdkSuspend(ddk::SuspendTxn txn) {
+  Shutdown();
+  txn.Reply(ZX_OK, txn.requested_state());
+}
+
+void Gvnic::Shutdown() {
+  if (rx_dispatcher_.get()) {
+    rx_dispatcher_.ShutdownAsync();
+    rx_dispatcher_shutdown_.Wait();
+    rx_dispatcher_.reset();
+  }
+  if (netdevice_dispatcher_.get()) {
+    netdevice_dispatcher_.ShutdownAsync();
+    netdevice_dispatcher_shutdown_.Wait();
+    netdevice_dispatcher_.reset();
+  }
+}
+
 void Gvnic::DdkRelease() { delete this; }
 
 // ------- NetworkDeviceImpl -------
 // The quotes in the comments in this section come from the documentation of these fields in
 // sdk/fidl/fuchsia.hardware.network.driver/network-device.fidl
 
-void Gvnic::NetworkDeviceImplInit(const network_device_ifc_protocol_t* iface,
-                                  network_device_impl_init_callback callback, void* cookie) {
+void Gvnic::Init(netdev::wire::NetworkDeviceImplInitRequest* request, fdf::Arena& arena,
+                 InitCompleter::Sync& completer) {
   // "`Init` is only called once during the lifetime of the device..."
   static bool called = false;
   ZX_ASSERT_MSG(!called, "NetworkDeviceImplInit already called.");
   called = true;
 
-  using Context = std::tuple<network_device_impl_init_callback, void*>;
-  auto context = std::make_unique<Context>(callback, cookie);
-
   fbl::AutoLock lock(&ifc_lock_);
-  ifc_ = ddk::NetworkDeviceIfcProtocolClient(iface);
-  ifc_.AddPort(
-      kNetworkPortId, this, &network_port_protocol_ops_,
-      [](void* ctx, zx_status_t status) {
-        std::unique_ptr<Context> context(static_cast<Context*>(ctx));
-        auto [callback, cookie] = *context;
-        if (status != ZX_OK) {
-          zxlogf(ERROR, "Failed to add port: %s", zx_status_get_string(status));
+  ifc_.Bind(std::move(request->iface), netdevice_dispatcher_.get());
+
+  auto [client, server] = fdf::Endpoints<fuchsia_hardware_network_driver::NetworkPort>::Create();
+  fdf::BindServer(netdevice_dispatcher_.get(), std::move(server), this);
+
+  ifc_.buffer(arena)
+      ->AddPort(kNetworkPortId, std::move(client))
+      .Then([completer = completer.ToAsync()](
+                fdf::WireUnownedResult<netdev::NetworkDeviceIfc::AddPort>& result) mutable {
+        fdf::Arena arena(0u);
+        if (!result.ok()) {
+          zxlogf(ERROR, "Failed to add port: %s", result.FormatDescription().c_str());
+          completer.buffer(arena).Reply(result.status());
+          return;
         }
-        callback(cookie, status);
-      },
-      context.release());
+        if (result->status != ZX_OK) {
+          zxlogf(ERROR, "Failed to add port: %s", zx_status_get_string(result->status));
+          completer.buffer(arena).Reply(result->status);
+          return;
+        }
+        completer.buffer(arena).Reply(ZX_OK);
+      });
 }
 
-void Gvnic::NetworkDeviceImplStart(network_device_impl_start_callback callback, void* cookie) {
+void Gvnic::Start(fdf::Arena& arena, StartCompleter::Sync& completer) {
   if (network_device_impl_started_) {
-    callback(cookie, ZX_ERR_ALREADY_BOUND);
+    completer.buffer(arena).Reply(ZX_ERR_ALREADY_BOUND);
     return;
   }
   {
@@ -765,13 +888,13 @@ void Gvnic::NetworkDeviceImplStart(network_device_impl_start_callback callback, 
     tx_buffer_id_queue_.Init(tx_ring_len_);
   }
   network_device_impl_started_ = true;
-  callback(cookie, ZX_OK);
+  completer.buffer(arena).Reply(ZX_OK);
 }
 
 void Gvnic::AbortPendingTX() {
   std::lock_guard tx_lock(tx_queue_lock_);
   const uint32_t tx_total_count = tx_buffer_id_queue_.Count();
-  tx_result_t completed_tx[tx_total_count];
+  netdev::wire::TxResult completed_tx[tx_total_count];
   for (uint32_t i = 0; i < tx_total_count; i++) {
     completed_tx[i] = {
         .id = tx_buffer_id_queue_.Front(),
@@ -780,8 +903,17 @@ void Gvnic::AbortPendingTX() {
     tx_buffer_id_queue_.Dequeue();
   }
   if (tx_total_count) {
+    fdf::Arena arena(0u);
     network::SharedAutoLock lock(&ifc_lock_);
-    ifc_.CompleteTx(completed_tx, tx_total_count);
+    if (fidl::OneWayStatus status = ifc_.buffer(arena)->CompleteTx(
+            fidl::VectorView<netdev::wire::TxResult>::FromExternal(completed_tx, tx_total_count));
+        !status.ok()) {
+      zxlogf(ERROR, "Failed to co complete %u TX buffers: %s", tx_total_count,
+             status.FormatDescription().c_str());
+      // This is a critical error, recover by unbinding to allow the driver to reload if possible.
+      DdkAsyncRemove();
+      return;
+    }
   }
   tx_buffer_id_queue_.Init(0);  // Release the queue.
 }
@@ -789,68 +921,83 @@ void Gvnic::AbortPendingTX() {
 void Gvnic::AbortPendingRX() {
   std::lock_guard rx_lock(rx_queue_lock_);
   const uint32_t rx_total_count = rx_space_buffer_queue_.Count();
-  std::vector<rx_buffer_t> completed_rx(rx_total_count);
-  std::vector<rx_buffer_part_t> completed_rx_parts(rx_total_count);
+  std::vector<netdev::wire::RxBuffer> completed_rx(rx_total_count);
+  std::vector<netdev::wire::RxBufferPart> completed_rx_parts(rx_total_count);
   for (uint32_t i = 0; i < rx_total_count; i++) {
     completed_rx_parts[i] = {.id = rx_space_buffer_queue_.Front().id};
     completed_rx[i] = {
-        .meta = {.frame_type =
-                     static_cast<uint8_t>(fuchsia_hardware_network::FrameType::kEthernet)},
-        .data_list = &completed_rx_parts[i],
-        .data_count = 1,
+        .meta = {.frame_type = fuchsia_hardware_network::FrameType::kEthernet},
+        .data =
+            fidl::VectorView<netdev::wire::RxBufferPart>::FromExternal(&completed_rx_parts[i], 1),
     };
     rx_space_buffer_queue_.Dequeue();
   }
   if (rx_total_count) {
+    fdf::Arena arena(0u);
     network::SharedAutoLock lock(&ifc_lock_);
-    ifc_.CompleteRx(completed_rx.data(), rx_total_count);
+    if (fidl::OneWayStatus status =
+            ifc_.buffer(arena)->CompleteRx(fidl::VectorView<netdev::wire::RxBuffer>::FromExternal(
+                completed_rx.data(), rx_total_count));
+        !status.ok()) {
+      zxlogf(ERROR, "Failed to complete %u rx buffers: %s", rx_total_count,
+             status.FormatDescription().c_str());
+      // This is a critical error, recover by unbinding to allow the driver to reload if possible.
+      DdkAsyncRemove();
+      return;
+    }
   }
   rx_space_buffer_queue_.Init(0);  // Release the queue.
 }
 
-void Gvnic::NetworkDeviceImplStop(network_device_impl_stop_callback callback, void* cookie) {
+void Gvnic::Stop(fdf::Arena& arena, StopCompleter::Sync& completer) {
   ZX_ASSERT_MSG(network_device_impl_started_, "NetworkDeviceImpl not Started.");
   network_device_impl_started_ = false;
 
   AbortPendingTX();
   AbortPendingRX();
-  callback(cookie);
+  completer.buffer(arena).Reply();
 }
 
-void Gvnic::NetworkDeviceImplGetInfo(device_impl_info_t* out_info) {
-  memset(out_info, 0, sizeof(*out_info));  // Ensure unset fields are zero.
-  out_info->tx_depth = tx_ring_len_;
-  out_info->rx_depth = rx_ring_len_;
-  // "The typical choice of value is `rx_depth / 2`."
-  out_info->rx_threshold = out_info->rx_depth / 2;
-  // "Devices that can't perform scatter-gather operations must set `max_buffer_parts` to 1."
-  out_info->max_buffer_parts = 1;
-  // "Devices that do not support scatter-gather DMA may set this to a value smaller than a page
-  // size to guarantee compatibility."
-  out_info->max_buffer_length = rounded_mtu_;
-  // Don't care because we are not using these buggers for dma, but "Must be greater than zero".
-  out_info->buffer_alignment = 1;
-  out_info->min_rx_buffer_length = rounded_mtu_;
+void Gvnic::GetInfo(fdf::Arena& arena,
+                    fdf::WireServer<netdev::NetworkDeviceImpl>::GetInfoCompleter::Sync& completer) {
+  netdev::wire::DeviceImplInfo info =
+      netdev::wire::DeviceImplInfo::Builder(arena)
+          .tx_depth(tx_ring_len_)
+          .rx_depth(rx_ring_len_)
+          // "The typical choice of value is `rx_depth / 2`."
+          .rx_threshold(rx_ring_len_ / 2)
+          // "Devices that can't perform scatter-gather operations must set `max_buffer_parts`
+          // to 1."
+          .max_buffer_parts(1)
+          // "Devices that do not support scatter-gather DMA may set this to a value smaller than a
+          // page size to guarantee compatibility."
+          .max_buffer_length(rounded_mtu_)
+          // Don't care because we are not using these buggers for dma, but "Must be greater than
+          // zero".
+          .buffer_alignment(1)
+          .min_rx_buffer_length(rounded_mtu_)
+          .Build();
+  completer.buffer(arena).Reply(info);
 }
 
 // TODO(https://fxbug.dev/42059141): Find a clever way to get zerocopy tx to work, and then delete
 // this method.
-void Gvnic::WriteBufferToCard(const tx_buffer_t& buffer, uint8_t* data) {
-  ZX_ASSERT_MSG(buffer.data_count == 1, "Data count (%lu), should be 1.", buffer.data_count);
+void Gvnic::WriteBufferToCard(const netdev::wire::TxBuffer& buffer, uint8_t* data) {
+  ZX_ASSERT_MSG(buffer.data.size() == 1, "Data count (%lu), should be 1.", buffer.data.size());
   ZX_ASSERT_MSG(buffer.head_length == 0, "Head length (%u) should be 0.", buffer.head_length);
   ZX_ASSERT_MSG(buffer.tail_length == 0, "Tail length (%u) should be 0.", buffer.tail_length);
   network::SharedAutoLock lock(&vmo_lock_);
-  const auto len = static_cast<uint32_t>(buffer.data_list[0].length);
-  ZX_ASSERT_MSG(len == buffer.data_list[0].length, "Length did not fit in uint32_t");
-  vmo_map_.at(buffer.data_list[0].vmo).read(data, buffer.data_list[0].offset, len);
+  const auto len = static_cast<uint32_t>(buffer.data[0].length);
+  ZX_ASSERT_MSG(len == buffer.data[0].length, "Length did not fit in uint32_t");
+  vmo_map_.at(buffer.data[0].vmo).read(data, buffer.data[0].offset, len);
 }
 
-void Gvnic::SendTXBuffers(const tx_buffer_t* buf_list, size_t buf_count) {
+void Gvnic::SendTXBuffers(const netdev::wire::TxBuffer* buf_list, size_t buf_count) {
   auto ring_base = reinterpret_cast<GvnicTxPktDesc*>(tx_ring_->virt());
   auto pagelist_base = reinterpret_cast<uint8_t*>(tx_page_list_->pages()->virt());
   for (uint32_t i = 0; i < buf_count; i++) {
-    ZX_ASSERT_MSG(buf_list[i].data_count == 1, "Data count (%lu), should be 1.",
-                  buf_list[i].data_count);
+    ZX_ASSERT_MSG(buf_list[i].data.size() == 1, "Data count (%lu), should be 1.",
+                  buf_list[i].data.size());
     ZX_ASSERT_MSG(buf_list[i].head_length == 0, "Head length (%u) should be 0.",
                   buf_list[i].head_length);
     ZX_ASSERT_MSG(buf_list[i].tail_length == 0, "Tail length (%u) should be 0.",
@@ -860,7 +1007,7 @@ void Gvnic::SendTXBuffers(const tx_buffer_t* buf_list, size_t buf_count) {
     // calling this.
     WriteBufferToCard(buf_list[i], pagelist_base + offset);
 
-    const auto full_len = buf_list[i].data_list[0].length;
+    const auto full_len = buf_list[i].data[0].length;
     const uint16_t len = static_cast<uint16_t>(full_len);
     ZX_ASSERT_MSG(len == full_len, "len did not fit in uint16_t");
 
@@ -879,11 +1026,11 @@ void Gvnic::SendTXBuffers(const tx_buffer_t* buf_list, size_t buf_count) {
   WriteDoorbell(tx_queue_resources_->db_index, tx_doorbell_);
 }
 
-void Gvnic::EnqueueTXBuffers(const tx_buffer_t* buf_list, size_t buf_count) {
+void Gvnic::EnqueueTXBuffers(const netdev::wire::TxBuffer* buf_list, size_t buf_count) {
   std::lock_guard lock(tx_queue_lock_);
   for (uint32_t i = 0; i < buf_count; i++) {
-    ZX_ASSERT_MSG(buf_list[i].data_count == 1, "Buffer %u has count %lu (max is 1)", i,
-                  buf_list[i].data_count);
+    ZX_ASSERT_MSG(buf_list[i].data.size() == 1, "Buffer %u has count %lu (max is 1)", i,
+                  buf_list[i].data.size());
     tx_buffer_id_queue_.Enqueue(buf_list[i].id);
   }
 }
@@ -899,6 +1046,7 @@ void Gvnic::FlushTXBuffers() {
     return;
   }
 
+  fdf::Arena arena(0u);
   do {
     const uint32_t counter = ReadCounter(tx_queue_resources_->counter_index);
     const uint32_t count = counter - tx_counter_;
@@ -908,7 +1056,7 @@ void Gvnic::FlushTXBuffers() {
     }
     tx_counter_ = counter;
 
-    std::vector<tx_result_t> completed_tx(count);
+    std::vector<netdev::wire::TxResult> completed_tx(count);
     for (uint32_t i = 0; i < count; i++) {
       std::lock_guard tx_lock(tx_queue_lock_);
       completed_tx[i] = {
@@ -918,103 +1066,120 @@ void Gvnic::FlushTXBuffers() {
       tx_buffer_id_queue_.Dequeue();
     }
     network::SharedAutoLock lock(&ifc_lock_);
-    ifc_.CompleteTx(completed_tx.data(), count);
+    if (fidl::OneWayStatus status = ifc_.buffer(arena)->CompleteTx(
+            fidl::VectorView<netdev::wire::TxResult>::FromExternal(completed_tx.data(), count));
+        !status.ok()) {
+      zxlogf(ERROR, "Failed to complete %u tx buffers: %s", count,
+             status.FormatDescription().c_str());
+      // This is a critical error, recover by unbinding to allow the driver to reload if possible.
+      DdkAsyncRemove();
+      return;
+    }
     // Don't give up until at least one buffer is available. Yeah, this is pretty ugly, but in
     // practice, this is never actually needed. The card returns completed tx buffers WAY faster
     // than they are sent.
   } while (unlikely(initial_queue_count >= tx_ring_len_ && get_queue_count() >= tx_ring_len_));
 }
 
-void Gvnic::NetworkDeviceImplQueueTx(const tx_buffer_t* buf_list, size_t buf_count) {
-  SendTXBuffers(buf_list, buf_count);
-  EnqueueTXBuffers(buf_list, buf_count);
+void Gvnic::QueueTx(netdev::wire::NetworkDeviceImplQueueTxRequest* request, fdf::Arena& arena,
+                    QueueTxCompleter::Sync& completer) {
+  SendTXBuffers(request->buffers.data(), request->buffers.size());
+  EnqueueTXBuffers(request->buffers.data(), request->buffers.size());
   FlushTXBuffers();
 }
 
-void Gvnic::NetworkDeviceImplQueueRxSpace(const rx_space_buffer_t* buf_list, size_t buf_count) {
+void Gvnic::QueueRxSpace(netdev::wire::NetworkDeviceImplQueueRxSpaceRequest* request,
+                         fdf::Arena& arena, QueueRxSpaceCompleter::Sync& completer) {
   std::lock_guard rx_lock(rx_queue_lock_);
-  for (uint32_t i = 0; i < buf_count; i++) {
-    rx_space_buffer_queue_.Enqueue(buf_list[i]);
+  for (const auto& buffer : request->buffers) {
+    rx_space_buffer_queue_.Enqueue(buffer);
   }
 }
 
-void Gvnic::NetworkDeviceImplPrepareVmo(uint8_t vmo_id, zx::vmo vmo,
-                                        network_device_impl_prepare_vmo_callback callback,
-                                        void* cookie) {
+void Gvnic::PrepareVmo(netdev::wire::NetworkDeviceImplPrepareVmoRequest* request, fdf::Arena& arena,
+                       PrepareVmoCompleter::Sync& completer) {
   zx_status_t status = ZX_OK;
   {
     fbl::AutoLock lock(&vmo_lock_);
-    if (!vmo_map_.insert({vmo_id, std::move(vmo)}).second) {
+    if (!vmo_map_.insert({request->id, std::move(request->vmo)}).second) {
       status = ZX_ERR_INTERNAL;
     }
   }
-  callback(cookie, status);
+  completer.buffer(arena).Reply(status);
 }
 
-void Gvnic::NetworkDeviceImplReleaseVmo(uint8_t vmo_id) {
+void Gvnic::ReleaseVmo(netdev::wire::NetworkDeviceImplReleaseVmoRequest* request, fdf::Arena& arena,
+                       ReleaseVmoCompleter::Sync& completer) {
   fbl::AutoLock lock(&vmo_lock_);
-  const auto num_erased = vmo_map_.erase(vmo_id);
+  const auto num_erased = vmo_map_.erase(request->id);
   ZX_ASSERT_MSG(num_erased == 1, "Expected to erase one vmo, instead erased %lu.", num_erased);
 }
 
 // ------- NetworkPort -------
 
-void Gvnic::NetworkPortGetInfo(port_base_info_t* out_info) {
-  memset(out_info, 0, sizeof(*out_info));  // Ensure unset fields are zero.
+void Gvnic::GetInfo(fdf::Arena& arena,
+                    fdf::WireServer<netdev::NetworkPort>::GetInfoCompleter::Sync& completer) {
+  static constexpr fuchsia_hardware_network::wire::FrameType kRxTypes[] = {
+      fuchsia_hardware_network::wire::FrameType::kEthernet};
+  static constexpr fuchsia_hardware_network::wire::FrameTypeSupport kTxTypes[] = {
+      {.type = fuchsia_hardware_network::wire::FrameType::kEthernet,
+       .features = fuchsia_hardware_network::wire::kFrameFeaturesRaw}};
 
-  constexpr uint8_t eth =
-      static_cast<uint8_t>(fuchsia_hardware_network::wire::FrameType::kEthernet);
-  // It expects pointers to a list. These "lists" are only one element long. These are static so
-  // that they continue to exist after this function returns.
-  static const uint8_t rx_type = eth;
-  static const frame_type_support_t tx_type = {
-      .type = eth,
-      .features = fuchsia_hardware_network::wire::kFrameFeaturesRaw,
-  };
-
-  out_info->port_class = eth;
-  out_info->rx_types_list = &rx_type;
-  out_info->rx_types_count = 1;
-  out_info->tx_types_list = &tx_type;
-  out_info->tx_types_count = 1;
+  fuchsia_hardware_network::wire::PortBaseInfo info =
+      fuchsia_hardware_network::wire::PortBaseInfo::Builder(arena)
+          .port_class(fuchsia_hardware_network::wire::PortClass::kEthernet)
+          .rx_types(kRxTypes)
+          .tx_types(kTxTypes)
+          .Build();
+  completer.buffer(arena).Reply(info);
 }
 
-void Gvnic::NetworkPortGetStatus(port_status_t* out_status) {
-  memset(out_status, 0, sizeof(*out_status));  // Ensure unset fields are zero.
-  out_status->mtu = dev_descr_.mtu;
-  out_status->flags = static_cast<uint32_t>(fuchsia_hardware_network::wire::StatusFlags::kOnline);
+void Gvnic::GetStatus(fdf::Arena& arena, GetStatusCompleter::Sync& completer) {
+  fuchsia_hardware_network::wire::PortStatus status =
+      fuchsia_hardware_network::wire::PortStatus::Builder(arena)
+          .mtu(dev_descr_.mtu)
+          .flags(fuchsia_hardware_network::wire::StatusFlags::kOnline)
+          .Build();
+  completer.buffer(arena).Reply(status);
 }
 
-void Gvnic::NetworkPortSetActive(bool active) {
+void Gvnic::SetActive(fuchsia_hardware_network_driver::wire::NetworkPortSetActiveRequest* request,
+                      fdf::Arena& arena, SetActiveCompleter::Sync& completer) {
   // Nohing to do.
 }
 
-void Gvnic::NetworkPortGetMac(mac_addr_protocol_t** out_mac_ifc) {
-  if (out_mac_ifc) {
-    *out_mac_ifc = &mac_addr_proto_;
-  }
+void Gvnic::GetMac(fdf::Arena& arena, GetMacCompleter::Sync& completer) {
+  auto [client, server] = fdf::Endpoints<fuchsia_hardware_network_driver::MacAddr>::Create();
+  fdf::BindServer(netdevice_dispatcher_.get(), std::move(server), this);
+  completer.buffer(arena).Reply(std::move(client));
 }
 
-void Gvnic::NetworkPortRemoved() {
+void Gvnic::Removed(fdf::Arena& arena, RemovedCompleter::Sync& completer) {
   // The port is never removed, there's no extra cleanup needed here.
 }
 
-void Gvnic::MacAddrGetAddress(mac_address_t* out_mac) {
-  memcpy(out_mac->octets, dev_descr_.mac, ETH_ALEN);
+void Gvnic::GetAddress(fdf::Arena& arena, GetAddressCompleter::Sync& completer) {
+  fuchsia_net::wire::MacAddress mac;
+  memcpy(mac.octets.data(), dev_descr_.mac, ETH_ALEN);
+  completer.buffer(arena).Reply(mac);
 }
 
-void Gvnic::MacAddrGetFeatures(features_t* out_features) {
-  memset(out_features, 0, sizeof(*out_features));
-
-  // "Implementations must set 0 if multicast filtering is not supported."
-  // out_features->multicast_filter_count = 0;
-  out_features->supported_modes = SUPPORTED_MAC_FILTER_MODE_PROMISCUOUS;
+void Gvnic::GetFeatures(fdf::Arena& arena, GetFeaturesCompleter::Sync& completer) {
+  netdev::wire::Features features =
+      netdev::wire::Features::Builder(arena)
+          .supported_modes(netdev::wire::SupportedMacFilterMode::kPromiscuous)
+          // "Implementations must set 0 if multicast filtering is not supported."
+          .multicast_filter_count(0)
+          .Build();
+  completer.buffer(arena).Reply(features);
 }
 
-void Gvnic::MacAddrSetMode(mac_filter_mode_t mode, const mac_address_t* multicast_macs_list,
-                           size_t multicast_macs_count) {
-  ZX_ASSERT_MSG(mode == MAC_FILTER_MODE_PROMISCUOUS, "unsupported mode %d", mode);
-  ZX_ASSERT_MSG(multicast_macs_count == 0, "unsupported multicast count %zu", multicast_macs_count);
+void Gvnic::SetMode(fuchsia_hardware_network_driver::wire::MacAddrSetModeRequest* request,
+                    fdf::Arena& arena, SetModeCompleter::Sync& completer) {
+  ZX_ASSERT_MSG(request->mode == fuchsia_hardware_network::wire::MacFilterMode::kPromiscuous,
+                "unsupported mode %u", static_cast<uint32_t>(request->mode));
+  ZX_ASSERT_MSG(request->multicast_macs.size() == 0, "unsupported multicast count %zu",
+                request->multicast_macs.size());
 }
 
 static zx_driver_ops_t gvnic_driver_ops = []() -> zx_driver_ops_t {

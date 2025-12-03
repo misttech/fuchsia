@@ -44,6 +44,7 @@ source_set("virtio_netdevice_lib") {
   public_deps = [
     "//sdk/fidl/fuchsia.hardware.network:fuchsia.hardware.network_cpp",
     "//sdk/fidl/fuchsia.hardware.network.driver:fuchsia.hardware.network.driver_banjo_cpp",
+    "//sdk/lib/fit",
     "//src/connectivity/network/drivers/network-device/device:shared_lock",
     "//src/devices/bus/lib/virtio:virtio-dfv1",
     "//src/devices/lib/dev-operation",

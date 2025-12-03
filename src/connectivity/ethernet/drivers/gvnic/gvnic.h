@@ -5,24 +5,21 @@
 #ifndef SRC_CONNECTIVITY_ETHERNET_DRIVERS_GVNIC_GVNIC_H_
 #define SRC_CONNECTIVITY_ETHERNET_DRIVERS_GVNIC_GVNIC_H_
 
-#ifndef _ALL_SOURCE  // Enables thrd_create_with_name in <threads.h>.
-#define _ALL_SOURCE
-#endif
-
-#include <fidl/fuchsia.hardware.network/cpp/common_types.h>
-#include <fidl/fuchsia.hardware.network/cpp/wire.h>
-#include <fuchsia/hardware/network/driver/cpp/banjo.h>
+#include <fidl/fuchsia.hardware.network.driver/cpp/driver/wire.h>
+#include <fidl/fuchsia.hardware.network/cpp/driver/wire.h>
 #include <lib/ddk/debug.h>
 #include <lib/device-protocol/pci.h>
 #include <lib/dma-buffer/buffer.h>
+#include <lib/driver/outgoing/cpp/outgoing_directory.h>
 #include <lib/inspect/cpp/inspect.h>
+#include <lib/sync/cpp/completion.h>
 #include <stdint.h>
-#include <threads.h>
 #include <zircon/compiler.h>
 #include <zircon/status.h>
 
 #include <memory>
-#include <shared_mutex>
+#include <mutex>
+#include <optional>
 #include <unordered_map>
 
 #include <ddktl/device.h>
@@ -40,16 +37,17 @@
 
 namespace gvnic {
 
+namespace netdev = fuchsia_hardware_network_driver;
+
 class Gvnic;
-using DeviceType = ddk::Device<Gvnic, ddk::Initializable>;
+using DeviceType = ddk::Device<Gvnic, ddk::Initializable, ddk::Unbindable, ddk::Suspendable>;
 class Gvnic : public DeviceType,
               // Mixin for Network device banjo protocol:
-              public ddk::NetworkDeviceImplProtocol<Gvnic, ddk::base_protocol>,
-              public ddk::NetworkPortProtocol<Gvnic>,
-              public ddk::MacAddrProtocol<Gvnic> {
+              public fdf::WireServer<netdev::NetworkDeviceImpl>,
+              public fdf::WireServer<netdev::NetworkPort>,
+              public fdf::WireServer<netdev::MacAddr> {
  public:
-  explicit Gvnic(zx_device_t* parent)
-      : DeviceType(parent), mac_addr_proto_({&mac_addr_protocol_ops_, this}) {}
+  explicit Gvnic(zx_device_t* parent) : DeviceType(parent) {}
   virtual ~Gvnic() = default;
 
   static __WARN_UNUSED_RESULT zx_status_t Bind(void* ctx, zx_device_t* dev);
@@ -57,32 +55,41 @@ class Gvnic : public DeviceType,
 
   // ::ddk::Device implementation.
   void DdkInit(ddk::InitTxn txn);
+  void DdkUnbind(ddk::UnbindTxn txn);
+  void DdkSuspend(ddk::SuspendTxn txn);
   void DdkRelease();
 
   // NetworkDeviceImpl protocol:
-  void NetworkDeviceImplInit(const network_device_ifc_protocol_t* iface,
-                             network_device_impl_init_callback callback, void* cookie);
-  void NetworkDeviceImplStart(network_device_impl_start_callback callback, void* cookie);
-  void NetworkDeviceImplStop(network_device_impl_stop_callback callback, void* cookie);
-  void NetworkDeviceImplGetInfo(device_impl_info_t* out_info);
-  void NetworkDeviceImplQueueTx(const tx_buffer_t* buf_list, size_t buf_count);
-  void NetworkDeviceImplQueueRxSpace(const rx_space_buffer_t* buf_list, size_t buf_count);
-  void NetworkDeviceImplPrepareVmo(uint8_t vmo_id, zx::vmo vmo,
-                                   network_device_impl_prepare_vmo_callback callback, void* cookie);
-  void NetworkDeviceImplReleaseVmo(uint8_t vmo_id);
+  void Init(netdev::wire::NetworkDeviceImplInitRequest* request, fdf::Arena& arena,
+            InitCompleter::Sync& completer) override;
+  void Start(fdf::Arena& arena, StartCompleter::Sync& completer) override;
+  void Stop(fdf::Arena& arena, StopCompleter::Sync& completer) override;
+  void GetInfo(
+      fdf::Arena& arena,
+      fdf::WireServer<netdev::NetworkDeviceImpl>::GetInfoCompleter::Sync& completer) override;
+  void QueueTx(netdev::wire::NetworkDeviceImplQueueTxRequest* request, fdf::Arena& arena,
+               QueueTxCompleter::Sync& completer) override;
+  void QueueRxSpace(netdev::wire::NetworkDeviceImplQueueRxSpaceRequest* request, fdf::Arena& arena,
+                    QueueRxSpaceCompleter::Sync& completer) override;
+  void PrepareVmo(netdev::wire::NetworkDeviceImplPrepareVmoRequest* request, fdf::Arena& arena,
+                  PrepareVmoCompleter::Sync& completer) override;
+  void ReleaseVmo(netdev::wire::NetworkDeviceImplReleaseVmoRequest* request, fdf::Arena& arena,
+                  ReleaseVmoCompleter::Sync& completer) override;
 
   // NetworkPort protocol:
-  void NetworkPortGetInfo(port_base_info_t* out_info);
-  void NetworkPortGetStatus(port_status_t* out_status);
-  void NetworkPortSetActive(bool active);
-  void NetworkPortGetMac(mac_addr_protocol_t** out_mac_ifc);
-  void NetworkPortRemoved();
+  void GetInfo(fdf::Arena& arena,
+               fdf::WireServer<netdev::NetworkPort>::GetInfoCompleter::Sync& completer) override;
+  void GetStatus(fdf::Arena& arena, GetStatusCompleter::Sync& completer) override;
+  void SetActive(fuchsia_hardware_network_driver::wire::NetworkPortSetActiveRequest* request,
+                 fdf::Arena& arena, SetActiveCompleter::Sync& completer) override;
+  void GetMac(fdf::Arena& arena, GetMacCompleter::Sync& completer) override;
+  void Removed(fdf::Arena& arena, RemovedCompleter::Sync& completer) override;
 
   // MacAddr protocol:
-  void MacAddrGetAddress(mac_address_t* out_mac);
-  void MacAddrGetFeatures(features_t* out_features);
-  void MacAddrSetMode(mac_filter_mode_t mode, const mac_address_t* multicast_macs_list,
-                      size_t multicast_macs_count);
+  void GetAddress(fdf::Arena& arena, GetAddressCompleter::Sync& completer) override;
+  void GetFeatures(fdf::Arena& arena, GetFeaturesCompleter::Sync& completer) override;
+  void SetMode(fuchsia_hardware_network_driver::wire::MacAddrSetModeRequest* request,
+               fdf::Arena& arena, SetModeCompleter::Sync& completer) override;
 
   // For inspect test.
   zx::vmo inspect_vmo() { return inspect_.DuplicateVmo(); }
@@ -101,11 +108,14 @@ class Gvnic : public DeviceType,
   __WARN_UNUSED_RESULT zx_status_t RegisterPageList(std::unique_ptr<PageList>& page_list);
   __WARN_UNUSED_RESULT zx_status_t CreateTXQueue();
   __WARN_UNUSED_RESULT zx_status_t CreateRXQueue();
+  __WARN_UNUSED_RESULT zx_status_t AddDevice();
+
+  void Shutdown();
 
   void AbortPendingTX();
   void AbortPendingRX();
-  void SendTXBuffers(const tx_buffer_t* buf_list, size_t buf_count);
-  void EnqueueTXBuffers(const tx_buffer_t* buf_list, size_t buf_count);
+  void SendTXBuffers(const netdev::wire::TxBuffer* buf_list, size_t buf_count);
+  void EnqueueTXBuffers(const netdev::wire::TxBuffer* buf_list, size_t buf_count);
   void FlushTXBuffers();
 
   GvnicAdminqEntry* NextAdminQEntry();
@@ -125,8 +135,9 @@ class Gvnic : public DeviceType,
 
   // TODO(https://fxbug.dev/42059141): Find a clever way to get zerocopy rx and tx working, and then
   // delete both of these methods.
-  void WritePacketToBufferSpace(const rx_space_buffer_t& buffer, uint8_t* data, uint32_t len);
-  void WriteBufferToCard(const tx_buffer_t& buffer, uint8_t* data);
+  void WritePacketToBufferSpace(const netdev::wire::RxSpaceBuffer& buffer, uint8_t* data,
+                                uint32_t len);
+  void WriteBufferToCard(const netdev::wire::TxBuffer& buffer, uint8_t* data);
 
   ddk::Pci pci_;
   std::unique_ptr<dma_buffer::BufferFactory> buffer_factory_;
@@ -186,7 +197,8 @@ class Gvnic : public DeviceType,
   uint16_t rounded_mtu_;
   uint16_t rx_ring_len_;
 
-  thrd_t rx_thread_ = {};
+  fdf::SynchronizedDispatcher rx_dispatcher_;
+  libsync::Completion rx_dispatcher_shutdown_;
 
   uint16_t tx_ring_len_;
   uint16_t tx_ring_index_;
@@ -194,15 +206,18 @@ class Gvnic : public DeviceType,
   bool network_device_impl_started_ = false;
 
   network::SharedLock ifc_lock_;
-  ddk::NetworkDeviceIfcProtocolClient ifc_ __TA_GUARDED(ifc_lock_);
-  mac_addr_protocol_t mac_addr_proto_;
+  fdf::WireSharedClient<netdev::NetworkDeviceIfc> ifc_ __TA_GUARDED(ifc_lock_);
+  fdf::UnsynchronizedDispatcher netdevice_dispatcher_;
+  libsync::Completion netdevice_dispatcher_shutdown_;
+  std::optional<fdf::OutgoingDirectory> outgoing_dir_;
 
-  // TODO(https://fxbug.dev/42059141): Consider replacing with VmoStore when zerocopy is implemented.
+  // TODO(https://fxbug.dev/42059141): Consider replacing with VmoStore when zerocopy is
+  // implemented.
   network::SharedLock vmo_lock_;
   std::unordered_map<uint32_t, zx::vmo> vmo_map_ __TA_GUARDED(vmo_lock_);
 
   std::mutex rx_queue_lock_;
-  CircularQueue<rx_space_buffer_t> rx_space_buffer_queue_ __TA_GUARDED(rx_queue_lock_);
+  CircularQueue<netdev::wire::RxSpaceBuffer> rx_space_buffer_queue_ __TA_GUARDED(rx_queue_lock_);
 
   std::mutex tx_queue_lock_;
   CircularQueue<uint32_t> tx_buffer_id_queue_ __TA_GUARDED(tx_queue_lock_);
