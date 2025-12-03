@@ -20,7 +20,7 @@ impl<'a> GnBuildGraph<'a> {
         GnBuildGraph { metadata, targets: HashSet::new() }
     }
 
-    pub fn targets(&'a self) -> impl Iterator<Item = &'a GnTarget<'_>> {
+    pub fn targets(&'a self) -> impl Iterator<Item = &'a GnTarget<'a>> {
         self.targets.iter()
     }
 
