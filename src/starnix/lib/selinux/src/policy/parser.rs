@@ -35,19 +35,6 @@ impl PolicyCursor {
         Some((output, self))
     }
 
-    /// Returns a `Vec<T>` of `count` items as the parsed output of the next bytes in the underlying
-    /// [`Cursor`] data.
-    pub fn parse_slice<PS: Clone + Debug + FromBytes + Immutable + PartialEq + Unaligned>(
-        mut self,
-        count: usize,
-    ) -> Option<(Vec<PS>, Self)> {
-        let (slice, _) = <[PS]>::ref_from_prefix_with_elems(self.remaining_slice(), count).ok()?;
-        let size = std::mem::size_of_val(&slice);
-        let slice = slice.to_owned();
-        self.seek_forward(size).ok()?;
-        Some((slice, self))
-    }
-
     pub fn offset(&self) -> PolicyOffset {
         self.offset
     }
@@ -57,7 +44,7 @@ impl PolicyCursor {
     }
 
     /// Seeks forward by `num_bytes`, returning a `std::io::Error` if seeking fails.
-    pub fn seek_forward(&mut self, num_bytes: usize) -> Result<(), std::io::Error> {
+    fn seek_forward(&mut self, num_bytes: usize) -> Result<(), std::io::Error> {
         if num_bytes > self.len() {
             return Err(std::io::Error::from(std::io::ErrorKind::UnexpectedEof));
         }
@@ -91,44 +78,47 @@ mod tests {
         d: u8,
     }
 
-    // Ensure that "return parser + parsed output" pattern works on `PolicyCursor`.
-    fn do_by_value<
-        T: Clone + Debug + FromBytes + KnownLayout + Immutable + PartialEq + Unaligned,
-    >(
-        data: Vec<u8>,
-    ) -> (T, PolicyCursor) {
-        let parser = PolicyCursor::new(Arc::new(data));
-        parser.parse::<T>().expect("some numbers")
-    }
-    fn do_slice_by_value<T: Clone + Debug + FromBytes + Immutable + PartialEq + Unaligned>(
-        data: Vec<u8>,
-        count: usize,
-    ) -> (Vec<T>, PolicyCursor) {
-        let parser = PolicyCursor::new(Arc::new(data));
-        parser.parse_slice::<T>(count).expect("some numbers")
-    }
-
     #[test]
-    fn by_value_cursor_vec_u8() {
+    fn entire_vector() {
         let bytes: Vec<u8> = (0..8).collect();
-        let (some_numbers, parser) = do_by_value::<SomeNumbers>(bytes);
+        let data = Arc::new(bytes);
+
+        let tail = PolicyCursor::new(data);
+        let (some_numbers, tail) = tail.parse::<SomeNumbers>().expect("some numbers");
+
         assert_eq!(0, some_numbers.a);
+        assert_eq!((1 << 0) + (2 << 8) + (3 << 16) + (4 << 24), some_numbers.b.get());
+        assert_eq!((5 << 0) + (6 << 8), some_numbers.c.get());
         assert_eq!(7, some_numbers.d);
-        assert_eq!(8, parser.offset);
-        assert_eq!(8, parser.data.len());
+        assert_eq!(8, tail.offset());
+        assert_eq!(0, tail.len());
+        assert_eq!(8, tail.data().len());
     }
 
     #[test]
-    fn by_value_slice_u8_parse_slice() {
-        let bytes: Vec<u8> = (0..24).collect();
-        let (some_numbers, parser) = do_slice_by_value::<SomeNumbers>(bytes, 3);
-        assert_eq!(3, some_numbers.len());
-        assert_eq!(0, some_numbers[0].a);
-        assert_eq!(7, some_numbers[0].d);
-        assert_eq!(8, some_numbers[1].a);
-        assert_eq!(15, some_numbers[1].d);
-        assert_eq!(16, some_numbers[2].a);
-        assert_eq!(23, some_numbers[2].d);
-        assert_eq!(24, parser.data.len());
+    fn range_within_vector() {
+        let bytes: Vec<u8> = (0..40).collect();
+        let data = Arc::new(bytes);
+
+        let tail = PolicyCursor::new_at(data, 8);
+        let (first_some_numbers, tail) = tail.parse::<SomeNumbers>().expect("some numbers");
+        let (second_some_numbers, tail) = tail.parse::<SomeNumbers>().expect("some numbers");
+        let (third_some_numbers, tail) = tail.parse::<SomeNumbers>().expect("some numbers");
+
+        assert_eq!(8, first_some_numbers.a);
+        assert_eq!((9 << 0) + (10 << 8) + (11 << 16) + (12 << 24), first_some_numbers.b.get());
+        assert_eq!((13 << 0) + (14 << 8), first_some_numbers.c.get());
+        assert_eq!(15, first_some_numbers.d);
+        assert_eq!(16, second_some_numbers.a);
+        assert_eq!((17 << 0) + (18 << 8) + (19 << 16) + (20 << 24), second_some_numbers.b.get());
+        assert_eq!((21 << 0) + (22 << 8), second_some_numbers.c.get());
+        assert_eq!(23, second_some_numbers.d);
+        assert_eq!(24, third_some_numbers.a);
+        assert_eq!((25 << 0) + (26 << 8) + (27 << 16) + (28 << 24), third_some_numbers.b.get());
+        assert_eq!((29 << 0) + (30 << 8), third_some_numbers.c.get());
+        assert_eq!(31, third_some_numbers.d);
+        assert_eq!(32, tail.offset());
+        assert_eq!(8, tail.len());
+        assert_eq!(40, tail.data().len());
     }
 }
