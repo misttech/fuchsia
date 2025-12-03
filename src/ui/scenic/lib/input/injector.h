@@ -82,6 +82,7 @@ class Injector : public fuchsia::ui::pointerinjector::Device {
   // |fuchsia::ui::pointerinjector::Device|
   void Inject(std::vector<fuchsia::ui::pointerinjector::Event> events,
               InjectCallback callback) override;
+  void InjectEvents(std::vector<fuchsia::ui::pointerinjector::Event> events) override;
 
  protected:
   // Forwards the event to device-specific handler in InputSystem (and eventually the client).

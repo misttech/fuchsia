@@ -32,6 +32,10 @@ void MockInjectorRegistry::Inject(std::vector<fuchsia::ui::pointerinjector::Even
   pending_callbacks_.emplace_back(std::move(callback));
 }
 
+void MockInjectorRegistry::InjectEvents(std::vector<fuchsia::ui::pointerinjector::Event> events) {
+  num_events_received_ += events.size();
+}
+
 void MockInjectorRegistry::FirePendingCallbacks() {
   for (auto& callback : pending_callbacks_) {
     callback();

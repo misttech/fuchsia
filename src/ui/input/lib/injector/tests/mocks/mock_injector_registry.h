@@ -26,6 +26,7 @@ class MockInjectorRegistry : public fuchsia::ui::pointerinjector::Registry,
   // |fuchsia::ui::pointerinjector::Device|
   void Inject(std::vector<fuchsia::ui::pointerinjector::Event> events,
               InjectCallback callback) override;
+  void InjectEvents(std::vector<fuchsia::ui::pointerinjector::Event> events) override;
 
   void FirePendingCallbacks();
 
