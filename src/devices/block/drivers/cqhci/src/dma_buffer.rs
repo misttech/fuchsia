@@ -30,9 +30,11 @@ impl<'a, T> WriteOnlySlice<'a, T> {
 pub trait DmaBuffer {
     /// Unpins the DmaBuffer, rendering it unusable for DMA.
     ///
+    /// # Safety
+    ///
     /// This MUST be called before dropping the DmaBuffer to avoid leaks, and MUST be called after
     /// the DmaBuffer will no longer be accessed by hardware to avoid stray DMA writes.
-    fn unpin(&mut self) -> Result<(), zx::Status>;
+    unsafe fn unpin(&mut self) -> Result<(), zx::Status>;
 
     /// Returns the size in bytes of the DmaBuffer.
     fn size(&self) -> usize;
@@ -94,9 +96,9 @@ impl DiscontiguousDmaBuffer {
 }
 
 impl DmaBuffer for DiscontiguousDmaBuffer {
-    fn unpin(&mut self) -> Result<(), zx::Status> {
+    unsafe fn unpin(&mut self) -> Result<(), zx::Status> {
         if let Some(pmt) = self.pmt.take() {
-            let res = pmt.unpin().into();
+            let res = unsafe { pmt.unpin() }.into();
             self.phys_addresses = vec![];
             res
         } else {
@@ -186,8 +188,8 @@ impl ContiguousDmaBuffer {
 }
 
 impl DmaBuffer for ContiguousDmaBuffer {
-    fn unpin(&mut self) -> Result<(), zx::Status> {
-        self.0.unpin()
+    unsafe fn unpin(&mut self) -> Result<(), zx::Status> {
+        unsafe { self.0.unpin() }
     }
 
     fn size(&self) -> usize {
@@ -244,7 +246,9 @@ mod tests {
         assert_eq!(data[0], U32::from(0x77883344));
         assert_eq!(data[1], U32::from(0xAABB5566));
 
-        dma.unpin().expect("unpin failed");
+        unsafe {
+            dma.unpin().expect("unpin failed");
+        }
     }
 
     #[test]
@@ -265,6 +269,8 @@ mod tests {
         assert_eq!(dma.phys_address_for(0x2fff), 0xb000);
         assert_eq!(dma.size(), 0x3000);
 
-        dma.unpin().expect("unpin failed");
+        unsafe {
+            dma.unpin().expect("unpin failed");
+        }
     }
 }

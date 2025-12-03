@@ -4,7 +4,7 @@
 
 //! Type-safe bindings for Zircon pmt objects.
 
-use crate::{ok, sys, AsHandleRef, Handle, HandleBased, HandleRef, Status};
+use crate::{AsHandleRef, Handle, HandleBased, HandleRef, Status, ok, sys};
 use std::mem;
 
 /// An object representing a Zircon Pinned Memory Token.
@@ -17,10 +17,20 @@ pub struct Pmt(Handle);
 impl_handle_based!(Pmt);
 
 impl Pmt {
-    // Unpins a Pinned Memory Token.
-    // Wraps the
-    // [`zx_pmt_unpin`](https://fuchsia.dev/fuchsia-src/reference/syscalls/pmt_unpin) system call to unpin a pmt.
-    pub fn unpin(self) -> Result<(), Status> {
+    /// Unpins a Pinned Memory Token.
+    /// Wraps the
+    /// [`zx_pmt_unpin`](https://fuchsia.dev/fuchsia-src/reference/syscalls/pmt_unpin) system call
+    /// to unpin a pmt.
+    ///
+    /// This function is marked `unsafe` because calling it at the wrong time (i.e., while hardware
+    /// is still accessing the pinned memory) can lead to memory corruption.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure hardware is no longer accessing the memory that has been pinned or
+    /// else risk arbitrary memory corruption. It is strongly recommended you do not call this in
+    /// a drop method.
+    pub unsafe fn unpin(self) -> Result<(), Status> {
         let status = unsafe { sys::zx_pmt_unpin(self.raw_handle()) };
 
         // According to the syscall documentation, after calling `zx_pmt_unpin`,
@@ -41,7 +51,7 @@ mod tests {
     #[test]
     fn pmt_unpin_invalid_handle() {
         let pmt = Pmt::from(Handle::invalid());
-        let status = pmt.unpin();
+        let status = unsafe { pmt.unpin() };
         assert_eq!(status, Err(Status::BAD_HANDLE));
     }
 
@@ -50,7 +60,7 @@ mod tests {
         let vmo = Vmo::create(0).unwrap();
         let pmt = unsafe { Pmt::from(Handle::from_raw(vmo.into_raw())) };
 
-        let status = pmt.unpin();
+        let status = unsafe { pmt.unpin() };
         assert_eq!(status, Err(Status::WRONG_TYPE));
     }
 }
