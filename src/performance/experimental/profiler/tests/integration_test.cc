@@ -32,6 +32,8 @@
 
 #include <gtest/gtest.h>
 #include <src/lib/fsl/socket/strings.h>
+#include <trace-reader/reader.h>
+#include <trace-reader/records.h>
 
 namespace fprofiler = fuchsia_cpu_profiler;
 
@@ -51,31 +53,32 @@ std::pair<std::set<zx_koid_t>, std::set<zx_koid_t>> GetOutputKoids(zx::socket so
     return std::make_pair(std::set<zx_koid_t>(), std::set<zx_koid_t>());
   }
 
-  std::stringstream ss;
-  ss << contents;
   std::set<zx_koid_t> pids;
   std::set<zx_koid_t> tids;
-  // The socket data looks like:
-  // <pid>\n
-  // <tid>\n
-  // {{{bt1}}}\n
-  // {{{bt2}}}\n
-  // ...
-  // <pid>\n
-  // <tid>\n
-  // {{{bt1}}}\n
-  // {{{bt2}}}\n
-  // ...
-  for (std::string pid_string; std::getline(ss, pid_string);) {
-    if (pid_string.empty() || !isdigit(pid_string[0])) {
-      continue;
+
+  auto record_consumer = [&](trace::Record record) {
+    if (record.type() == trace::RecordType::kProfiler) {
+      const auto& profiler_record = record.GetProfiler();
+      if (profiler_record.type() == trace::ProfilerRecordType::kBacktrace) {
+        const auto& pt = profiler_record.backtrace().process_thread;
+        if (pt.process_koid() != 0) {
+          pids.insert(pt.process_koid());
+        }
+        if (pt.thread_koid() != 0) {
+          tids.insert(pt.thread_koid());
+        }
+      }
     }
-    std::string tid_string;
-    std::getline(ss, tid_string);
-    pids.insert(strtoll(pid_string.data(), nullptr, 0));
-    tids.insert(strtoll(tid_string.data(), nullptr, 0));
-  }
-  return std::make_pair(std::move(pids), std::move(tids));
+  };
+
+  trace::TraceReader reader(record_consumer, [](std::string_view) {});
+
+  const uint64_t* words = reinterpret_cast<const uint64_t*>(contents.data());
+  size_t num_words = contents.size() / sizeof(uint64_t);
+  trace::Chunk chunk(words, num_words);
+  reader.ReadRecords(chunk);
+
+  return {std::move(pids), std::move(tids)};
 }
 
 // Sample the callstack via frame pointer at 100hz.

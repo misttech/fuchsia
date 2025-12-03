@@ -37,6 +37,7 @@ source_set("lib") {
     "//src/lib/symbolizer-markup",
     "//src/lib/unwinder",
     "//src/lib/zxdump",
+    "//src/performance/lib/fxt",
     "//zircon/system/ulib/elf-search",
     "//zircon/system/ulib/task-utils",
     "//zircon/system/ulib/trace",

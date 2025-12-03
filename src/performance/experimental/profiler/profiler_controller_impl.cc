@@ -9,6 +9,7 @@
 #include <fidl/fuchsia.sys2/cpp/fidl.h>
 #include <lib/component/incoming/cpp/protocol.h>
 #include <lib/fit/result.h>
+#include <lib/fxt/serializer.h>
 #include <lib/syslog/cpp/macros.h>
 #include <lib/trace/event.h>
 #include <lib/zx/handle.h>
@@ -33,6 +34,7 @@
 #include <src/lib/unwinder/module.h>
 
 #include "component.h"
+#include "fxt_writer.h"
 #include "kernel_sampler.h"
 #include "sampler.h"
 #include "symbolization_context.h"
@@ -154,7 +156,7 @@ void profiler::ProfilerControllerImpl::Configure(ConfigureRequest& request,
     completer.Reply(fit::error(fuchsia_cpu_profiler::SessionConfigureError::kBadSocket));
     return;
   }
-  socket_ = std::move(*request.output());
+  writer_ = std::make_unique<FxtWriter>(std::move(*request.output()));
 
   if (!request.config() || !request.config()->target()) {
     FX_LOGS(ERROR) << "No Target Specified and System Wide profiling isn't yet implemented!";
@@ -499,26 +501,45 @@ void profiler::ProfilerControllerImpl::Stop(StopCompleter::Sync& completer) {
   completer.Reply(std::move(stats));
 
   FX_LOGS(DEBUG) << "Sending samples.";
+  fxt::WriteMagicNumberRecord(writer_.get());
+  fxt::WriteInitializationRecord(writer_.get(), zx::ticks::per_second().get());
+
   for (const auto& [pid, samples] : sampler_->GetSamples()) {
-    if (!fsl::BlockingCopyFromString(profiler::symbolizer_markup::kReset, socket_)) {
-      FX_LOGS(ERROR) << "Failed to write symbolizer markup to socket";
-      return;
+    if (samples.empty()) {
+      continue;
     }
-    auto process_modules = modules->process_contexts[pid];
-    uint32_t module_id = 0;
-    for (const auto& [build_id, mod] : process_modules) {
-      if (!fsl::BlockingCopyFromString(
-              profiler::symbolizer_markup::FormatModule(module_id++, build_id, mod), socket_)) {
-        FX_LOGS(ERROR) << "Failed to write modules to socket";
-        return;
+    uint16_t next_module_id = 0;
+    // We'll use the timestamp from the first sample of this process for these records.
+    zx::ticks process_timestamp = samples[0].timestamp;
+
+    if (modules->process_contexts.contains(pid)) {
+      auto process_modules = modules->process_contexts[pid];
+      for (const auto& [build_id, mod] : process_modules) {
+        uint16_t module_id = next_module_id++;
+        const uint8_t name_size =
+            static_cast<uint8_t>(std::min<size_t>(mod.module_name.size(), 255));
+        const std::string truncated_name = mod.module_name.substr(0, name_size);
+        fxt::WriteProfilerModuleRecord(
+            writer_.get(), process_timestamp.get(),
+            fxt::ThreadRef<fxt::RefType::kInline>(fxt::Koid(pid), fxt::Koid(0)), module_id,
+            truncated_name.c_str(), name_size, reinterpret_cast<const uint8_t*>(build_id.data()),
+            build_id.size());
+
+        for (const auto& segment : mod.loads) {
+          fxt::WriteProfilerMmapRecord(
+              writer_.get(), process_timestamp.get(),
+              fxt::ThreadRef<fxt::RefType::kInline>(fxt::Koid(pid), fxt::Koid(0)), module_id,
+              mod.vaddr + segment.p_vaddr, segment.p_memsz, segment.p_vaddr,
+              static_cast<uint8_t>(segment.p_flags));
+        }
       }
     }
+
     for (const Sample& sample : samples) {
-      if (!fsl::BlockingCopyFromString(profiler::symbolizer_markup::FormatSample(sample),
-                                       socket_)) {
-        FX_LOGS(ERROR) << "Failed to write samples to socket";
-        return;
-      }
+      fxt::WriteProfilerBacktraceRecord(
+          writer_.get(), sample.timestamp.get(),
+          fxt::ThreadRef<fxt::RefType::kInline>(fxt::Koid(pid), fxt::Koid(sample.tid)),
+          sample.stack.data(), sample.stack.size() * sizeof(uint64_t));
     }
   }
 
@@ -534,7 +555,7 @@ void profiler::ProfilerControllerImpl::Reset(ResetCompleter::Sync& completer) {
 void profiler::ProfilerControllerImpl::Reset() {
   TRACE_DURATION("cpu_profiler", __PRETTY_FUNCTION__);
   sampler_.reset();
-  socket_.reset();
+  writer_.reset();
   searcher_ = elf_search::Searcher();
   targets_.Clear();
   state_ = ProfilingState::Unconfigured;
