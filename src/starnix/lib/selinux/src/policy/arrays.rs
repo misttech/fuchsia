@@ -252,7 +252,7 @@ impl Validate for AccessVectorRules {
 
 #[derive(Debug, PartialEq)]
 pub(super) struct AccessVectorRule {
-    pub metadata: AccessVectorRuleMetadata,
+    metadata: AccessVectorRuleMetadata,
     permission_data: PermissionData,
 }
 
