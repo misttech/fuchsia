@@ -63,6 +63,12 @@ pub const SMALL_SUPERBLOCK_VERSION: Version = Version { major: 44, minor: 0 };
 /// first extent. Prior to this, the first extent was assumed based on hard-coded location.
 pub const FIRST_EXTENT_IN_SUPERBLOCK_VERSION: Version = Version { major: 45, minor: 0 };
 
+/// This trait prevents types from showing up in `versioned_types` multiple times. `versioned_types`
+/// implements this trait for every type passed to it. If a type is listed multiple times then this
+/// trait will be implemented for the type multiple times which will fail to compile.
+#[allow(dead_code)]
+trait UniqueVersionForType {}
+
 macro_rules! versioned_types {
     ( $( $name:ident { $latest:literal.. => $latest_type:ty $(, $major:literal.. => $type:ty )* $(,)? } )+ ) => {
         $(
@@ -72,6 +78,9 @@ macro_rules! versioned_types {
                 $latest.. => $latest_type,
                 $( $major.. => $type ),*
             }
+
+            impl UniqueVersionForType for $latest_type {}
+            $( impl UniqueVersionForType for $type {} )*
         )+
 
         pub fn get_type_fingerprints(version: Version) -> BTreeMap<String, String> {
