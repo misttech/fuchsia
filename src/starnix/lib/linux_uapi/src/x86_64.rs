@@ -333,11 +333,11 @@ impl<T> __IncompleteArrayField<T> {
     }
     #[inline]
     pub unsafe fn as_slice(&self, len: usize) -> &[T] {
-        ::std::slice::from_raw_parts(self.as_ptr(), len)
+        unsafe { ::std::slice::from_raw_parts(self.as_ptr(), len) }
     }
     #[inline]
     pub unsafe fn as_mut_slice(&mut self, len: usize) -> &mut [T] {
-        ::std::slice::from_raw_parts_mut(self.as_mut_ptr(), len)
+        unsafe { ::std::slice::from_raw_parts_mut(self.as_mut_ptr(), len) }
     }
 }
 impl<T> ::std::fmt::Debug for __IncompleteArrayField<T> {
@@ -355,11 +355,11 @@ impl<T> __BindgenUnionField<T> {
     }
     #[inline]
     pub unsafe fn as_ref(&self) -> &T {
-        ::std::mem::transmute(self)
+        unsafe { ::std::mem::transmute(self) }
     }
     #[inline]
     pub unsafe fn as_mut(&mut self) -> &mut T {
-        ::std::mem::transmute(self)
+        unsafe { ::std::mem::transmute(self) }
     }
 }
 impl<T> ::std::default::Default for __BindgenUnionField<T> {
@@ -22727,7 +22727,7 @@ pub struct fuse_supp_groups {
     pub groups: __IncompleteArrayField<u32>,
 }
 #[repr(C)]
-#[derive(Debug, Copy, Clone, IntoBytes, FromBytes, KnownLayout, Immutable)]
+#[derive(Debug)]
 pub struct fuse_mount {
     _unused: [u8; 0],
 }

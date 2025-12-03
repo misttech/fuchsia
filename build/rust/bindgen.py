@@ -102,6 +102,8 @@ class Bindgen:
         self.no_default_types = []
         # Use types from Rust core instead of std.
         self.use_core = False
+        # Whether to wrap unsafe operations in unsafe blocks.
+        self.wrap_unsafe_ops = True
         # Additional flags to pass directly to bindgen.
         self.additional_bindgen_flags = []
         # Clang: Enable standard #include directories for the C++ standard library
@@ -150,6 +152,9 @@ class Bindgen:
 
         if not self.size_t_is_usize:
             args.append("--no-size_t-is-usize")
+
+        if self.wrap_unsafe_ops:
+            args.append("--wrap-unsafe-ops")
 
         args += ["--allowlist-function=" + x for x in self.function_allowlist]
         args += ["--allowlist-var=" + x for x in self.var_allowlist]
