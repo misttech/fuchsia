@@ -55,8 +55,15 @@ impl EncodedStream {
         let pcm_input_format = DomainFormat::Audio(AudioFormat::Uncompressed(
             AudioUncompressedFormat::Pcm(input_format),
         ));
-        let processor = StreamProcessor::create_encoder(pcm_input_format.clone(), encoder_settings.clone()).inspect_err(|e| {
-            log::warn!("Couldn't make StreamProcessor for {pcm_input_format:?} {encoder_settings:?}: {e:?}"); })?;
+        let processor = StreamProcessor::create_encoder(
+            pcm_input_format.clone(),
+            encoder_settings.clone(),
+        )
+        .inspect_err(|e| {
+            log::warn!(
+                "Couldn't make StreamProcessor for {pcm_input_format:?} {encoder_settings:?}: {e:?}"
+            );
+        })?;
         let mut encoder = Box::new(processor);
         let encoded_stream = encoder.take_output_stream()?.boxed();
 
@@ -213,8 +220,9 @@ impl SilenceStream {
 mod tests {
 
     use super::*;
+    use fuchsia_sync::Mutex;
     use futures::io;
-    use std::sync::{Arc, Mutex};
+    use std::sync::Arc;
 
     /// A stream that just returns a looping string of numbers.
     #[derive(Clone)]
@@ -233,7 +241,7 @@ mod tests {
 
     impl CountingStream {
         fn set_bytes_ready(&self, bytes: usize) {
-            self.0.lock().unwrap().ready_bytes = bytes;
+            self.0.lock().ready_bytes = bytes;
         }
     }
 
@@ -242,7 +250,7 @@ mod tests {
 
         fn poll_next(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
             let s = Pin::into_inner(self);
-            let mut locked = s.0.lock().unwrap();
+            let mut locked = s.0.lock();
             if locked.ready_bytes == 0 {
                 return Poll::Pending;
             }
@@ -279,19 +287,19 @@ mod tests {
 
     impl PassthroughEncoder {
         fn stall_input(&self, stall: bool) {
-            self.0.lock().unwrap().stalled = stall;
+            self.0.lock().stalled = stall;
         }
 
         fn push_input(&self, input: Vec<u8>) {
-            self.0.lock().unwrap().buffered.push_front(input);
+            self.0.lock().buffered.push_front(input);
         }
 
         fn get_output(&self) -> Option<Vec<u8>> {
-            self.0.lock().unwrap().buffered.pop_back()
+            self.0.lock().buffered.pop_back()
         }
 
         fn is_stalled(&self) -> bool {
-            self.0.lock().unwrap().stalled
+            self.0.lock().stalled
         }
     }
 

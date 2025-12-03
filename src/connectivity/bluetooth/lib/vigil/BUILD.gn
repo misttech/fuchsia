@@ -12,6 +12,7 @@ rustc_library("vigil") {
   deps = [
     "//src/lib/diagnostics/inspect/derive",
     "//src/lib/diagnostics/inspect/rust",
+    "//src/lib/fuchsia-sync",
     "//third_party/rust_crates:futures",
   ]
 

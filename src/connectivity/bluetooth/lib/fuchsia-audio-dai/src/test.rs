@@ -6,14 +6,15 @@ use anyhow::format_err;
 use derivative::Derivative;
 use fidl_fuchsia_hardware_audio::*;
 use fuchsia_async as fasync;
+use fuchsia_sync::Mutex;
 use futures::{Future, StreamExt};
 use log::warn;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use vfs::directory::entry_container::Directory;
 use vfs::{pseudo_directory, service};
 
-use crate::driver::{ensure_dai_format_is_supported, ensure_pcm_format_is_supported};
 use crate::DigitalAudioInterface;
+use crate::driver::{ensure_dai_format_is_supported, ensure_pcm_format_is_supported};
 
 /// The status of the current device.  Retrievable via `TestHandle::status`.
 #[derive(Derivative, Clone, Debug)]
@@ -57,11 +58,11 @@ impl TestHandle {
     }
 
     pub fn status(&self) -> TestStatus {
-        self.0.lock().unwrap().clone()
+        self.0.lock().clone()
     }
 
     pub fn is_started(&self) -> bool {
-        let lock = self.0.lock().unwrap();
+        let lock = self.0.lock();
         match *lock {
             TestStatus::Started { .. } => true,
             _ => false,
@@ -69,16 +70,16 @@ impl TestHandle {
     }
 
     fn set_configured(&self, dai_format: DaiFormat, pcm_format: PcmFormat) {
-        let mut lock = self.0.lock().unwrap();
+        let mut lock = self.0.lock();
         *lock = TestStatus::Configured { dai_format, pcm_format };
     }
 
     fn start(&self) -> Result<(), ()> {
-        self.0.lock().unwrap().start()
+        self.0.lock().start()
     }
 
     fn stop(&self) {
-        self.0.lock().unwrap().stop()
+        self.0.lock().stop()
     }
 }
 

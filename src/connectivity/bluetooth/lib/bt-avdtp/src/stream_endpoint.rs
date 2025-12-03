@@ -5,13 +5,13 @@
 use fidl_fuchsia_bluetooth_bredr::AudioOffloadExtProxy;
 use fuchsia_async::{DurationExt, Task, TimeoutExt};
 use fuchsia_bluetooth::types::{A2dpDirection, Channel};
-use fuchsia_sync::Mutex;
+use fuchsia_sync::{Mutex, RwLock};
 use futures::stream::{FusedStream, Stream};
 use futures::{FutureExt, io};
 use log::warn;
 use std::fmt;
 use std::pin::Pin;
-use std::sync::{Arc, RwLock, Weak};
+use std::sync::{Arc, Weak};
 use std::task::{Context, Poll};
 use zx::{MonotonicDuration, Status};
 
@@ -266,8 +266,8 @@ impl StreamEndpoint {
             (true, EndpointType::Sink) => A2dpDirection::Sink,
         };
         let fut = match self.transport.as_ref().unwrap().try_read() {
-            Err(_) => return,
-            Ok(channel) => channel.set_audio_priority(priority).map(|_| ()),
+            None => return,
+            Some(channel) => channel.set_audio_priority(priority).map(|_| ()),
         };
         // TODO(https://fxbug.dev/331621666): We should avoid detaching this.
         Task::spawn(fut).detach();
@@ -279,8 +279,8 @@ impl StreamEndpoint {
             return;
         }
         let fut = match self.transport.as_ref().unwrap().try_write() {
-            Err(_) => return,
-            Ok(channel) => channel.set_flush_timeout(Some(timeout)).map(|_| ()),
+            None => return,
+            Some(channel) => channel.set_flush_timeout(Some(timeout)).map(|_| ()),
         };
         // TODO(https://fxbug.dev/331621666): We should avoid detaching this.
         Task::spawn(fut).detach();
@@ -306,7 +306,7 @@ impl StreamEndpoint {
             let peer = peer.clone();
             let state = self.state.clone();
             async move {
-                let Ok(transport) = transport.try_read() else {
+                let Some(transport) = transport.try_read() else {
                     warn!("unable to lock transport channel, dropping and assuming closed");
                     *state.lock() = StreamState::Idle;
                     return;
@@ -439,7 +439,7 @@ impl StreamEndpoint {
 
     /// Get an AudioOffloadExtProxy if it exists in the transport channel
     pub fn audio_offload(&self) -> Option<AudioOffloadExtProxy> {
-        self.transport.as_ref().and_then(|c| c.read().unwrap().audio_offload())
+        self.transport.as_ref().and_then(|c| c.read().audio_offload())
     }
 }
 
@@ -465,8 +465,8 @@ impl MediaStream {
 
     pub fn max_tx_size(&self) -> Result<usize, io::Error> {
         match self.try_upgrade()?.try_read() {
-            Err(_e) => return Err(io::Error::new(io::ErrorKind::WouldBlock, "couldn't lock")),
-            Ok(lock) => Ok(lock.max_tx_size()),
+            None => return Err(io::Error::new(io::ErrorKind::WouldBlock, "couldn't lock")),
+            Some(lock) => Ok(lock.max_tx_size()),
         }
     }
 }
@@ -486,7 +486,7 @@ impl Stream for MediaStream {
             self.terminated = true;
             return Poll::Ready(None);
         };
-        let Ok(lock) = arc_chan.try_write() else {
+        let Some(lock) = arc_chan.try_write() else {
             self.terminated = true;
             return Poll::Ready(None);
         };
@@ -520,13 +520,13 @@ impl io::AsyncWrite for MediaStream {
             Ok(c) => c,
         };
         let lock = match arc_chan.try_write() {
-            Err(_) => {
+            None => {
                 return Poll::Ready(Err(io::Error::new(
                     io::ErrorKind::WouldBlock,
                     "couldn't lock",
                 )));
             }
-            Ok(lock) => lock,
+            Some(lock) => lock,
         };
         let mut pin_chan = Pin::new(lock);
         pin_chan.as_mut().poll_write(cx, buf)
@@ -538,13 +538,13 @@ impl io::AsyncWrite for MediaStream {
             Ok(c) => c,
         };
         let lock = match arc_chan.try_write() {
-            Err(_) => {
+            None => {
                 return Poll::Ready(Err(io::Error::new(
                     io::ErrorKind::WouldBlock,
                     "couldn't lock",
                 )));
             }
-            Ok(lock) => lock,
+            Some(lock) => lock,
         };
         let mut pin_chan = Pin::new(lock);
         pin_chan.as_mut().poll_flush(cx)
@@ -556,13 +556,13 @@ impl io::AsyncWrite for MediaStream {
             Ok(c) => c,
         };
         let lock = match arc_chan.try_write() {
-            Err(_) => {
+            None => {
                 return Poll::Ready(Err(io::Error::new(
                     io::ErrorKind::WouldBlock,
                     "couldn't lock",
                 )));
             }
-            Ok(lock) => lock,
+            Some(lock) => lock,
         };
         let mut pin_chan = Pin::new(lock);
         pin_chan.as_mut().poll_close(cx)

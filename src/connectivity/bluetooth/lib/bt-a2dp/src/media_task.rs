@@ -8,8 +8,8 @@ use fidl_fuchsia_bluetooth_bredr::AudioOffloadExtProxy;
 use fuchsia_bluetooth::types::PeerId;
 use fuchsia_inspect::Node;
 use fuchsia_inspect_derive::AttachError;
-use futures::future::{BoxFuture, Shared};
 use futures::FutureExt;
+use futures::future::{BoxFuture, Shared};
 use std::time::Duration;
 use thiserror::Error;
 
@@ -133,11 +133,12 @@ pub trait MediaTask: Send {
 pub mod tests {
     use super::*;
 
+    use fuchsia_sync::Mutex;
     use futures::channel::{mpsc, oneshot};
     use futures::stream::StreamExt;
     use futures::{Future, TryFutureExt};
     use std::fmt;
-    use std::sync::{Arc, Mutex};
+    use std::sync::Arc;
 
     #[derive(Clone)]
     pub struct TestMediaTask {
@@ -193,14 +194,14 @@ pub mod tests {
         /// Return true if the background media task is running.
         pub fn is_started(&self) -> bool {
             // The stream being held represents the task running.
-            self.stream.lock().expect("stream lock").is_some()
+            self.stream.lock().is_some()
         }
 
         /// End the streaming task without an external stop().
         /// Sends an optional result from the task.
         pub fn end_prematurely(&self, task_result: Option<Result<(), MediaTaskError>>) {
-            let _removed_stream = self.stream.lock().expect("mutex").take();
-            let mut lock = self.sender.lock().expect("sender lock");
+            let _removed_stream = self.stream.lock().take();
+            let mut lock = self.sender.lock();
             let sender = lock.take();
             if let (Some(result), Some(sender)) = (task_result, sender) {
                 sender.send(result).expect("send ok");
@@ -214,9 +215,9 @@ pub mod tests {
         }
 
         fn stop(&mut self) -> Result<(), MediaTaskError> {
-            let _ = self.stream.lock().expect("stream lock").take();
+            let _ = self.stream.lock().take();
             {
-                let mut lock = self.sender.lock().expect("sender lock");
+                let mut lock = self.sender.lock();
                 if let Some(sender) = lock.take() {
                     let _ = sender.send(Ok(()));
                     return Ok(());
@@ -328,7 +329,7 @@ pub mod tests {
         /// configure(), it will be available from `next_task`.
         pub fn builder(&self) -> Box<dyn MediaTaskBuilder> {
             Box::new(TestMediaTaskBuilderBuilder {
-                sender: self.sender.lock().expect("locking").clone(),
+                sender: self.sender.lock().clone(),
                 reconfigurable: self.reconfigurable,
                 supports_set_delay: self.supports_set_delay,
                 configs: self.configs.clone(),

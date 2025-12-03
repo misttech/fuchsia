@@ -3,12 +3,13 @@
 // found in the LICENSE file.
 
 use fidl::endpoints::{ClientEnd, Proxy};
+use fuchsia_sync::Mutex;
 use futures::stream::{FusedStream, Stream};
 use futures::{Future, TryFutureExt, io};
 use log::warn;
 use std::fmt;
 use std::pin::Pin;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::task::{Context, Poll};
 use {
     fidl_fuchsia_bluetooth as fidl_bt, fidl_fuchsia_bluetooth_bredr as bredr,
@@ -153,7 +154,7 @@ impl Channel {
     }
 
     pub fn flush_timeout(&self) -> Option<zx::MonotonicDuration> {
-        self.flush_timeout.lock().unwrap().clone()
+        self.flush_timeout.lock().clone()
     }
 
     /// Returns a future which will set the audio priority of the channel.
@@ -185,7 +186,7 @@ impl Channel {
         duration: Option<zx::MonotonicDuration>,
     ) -> impl Future<Output = Result<Option<zx::MonotonicDuration>, Error>> + use<> {
         let flush_timeout = self.flush_timeout.clone();
-        let current = self.flush_timeout.lock().unwrap().clone();
+        let current = self.flush_timeout.lock().clone();
         let proxy = self.l2cap_parameters_ext.clone();
         async move {
             match (current, duration) {
@@ -203,7 +204,7 @@ impl Channel {
             };
             let new_params = proxy.request_parameters(&parameters).await?;
             let new_timeout = new_params.flush_timeout.map(zx::MonotonicDuration::from_nanos);
-            *(flush_timeout.lock().unwrap()) = new_timeout.clone();
+            *(flush_timeout.lock()) = new_timeout.clone();
             Ok(new_timeout)
         }
     }
@@ -318,8 +319,7 @@ impl TryFrom<Channel> for bredr::Channel {
             .map_err(|_: bredr::AudioOffloadExtProxy| {
                 Error::profile("audio offload proxy in use")
             })?;
-        let flush_timeout =
-            channel.flush_timeout.lock().unwrap().map(zx::MonotonicDuration::into_nanos);
+        let flush_timeout = channel.flush_timeout.lock().map(zx::MonotonicDuration::into_nanos);
         Ok(bredr::Channel {
             socket: Some(socket),
             channel_mode: Some(channel.mode.into()),

@@ -24,9 +24,10 @@ use fuchsia_component_test::{
     ScopedInstance,
 };
 use fuchsia_driver_test::{DriverTestRealmBuilder, DriverTestRealmInstance};
+use fuchsia_sync::Mutex;
 use futures::channel::mpsc;
 use futures::{SinkExt, StreamExt};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use {fidl_fuchsia_driver_test as fdt, fidl_fuchsia_io as fio};
 
 mod constants {
@@ -280,6 +281,6 @@ impl HostRealm {
     }
 
     pub fn receiver(&self) -> Receiver<ClientEnd<HostMarker>> {
-        self.receiver.lock().expect("REASON").take().unwrap()
+        self.receiver.lock().take().unwrap()
     }
 }

@@ -403,9 +403,9 @@ mod tests {
         use bt_avdtp::MediaCodecType;
         use fuchsia_bluetooth::types::Channel;
         use fuchsia_inspect as inspect;
-        use fuchsia_sync::Mutex;
+        use fuchsia_sync::{Mutex, RwLock};
         use futures::StreamExt;
-        use std::sync::{Arc, RwLock};
+        use std::sync::Arc;
         use test_util::assert_gt;
 
         #[fuchsia::test]

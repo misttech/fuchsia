@@ -2,9 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use fuchsia_sync::Mutex;
 use std::fmt::{self, Debug};
 use std::ops::Deref;
-use std::sync::Mutex;
 
 use crate::DropWatch;
 
@@ -32,7 +32,7 @@ impl<T> Vigil<T> {
 
 impl<T: ?Sized> DropWatch<T> for Vigil<T> {
     fn watch(this: &Self, drop_fn: impl FnOnce(&T) + 'static) {
-        this.inner().observers.lock().unwrap().push(Box::new(drop_fn));
+        this.inner().observers.lock().push(Box::new(drop_fn));
     }
 }
 
@@ -44,7 +44,7 @@ struct VigilInner<T: ?Sized> {
 
 impl<T: ?Sized> Drop for Vigil<T> {
     fn drop(&mut self) {
-        for rite in self.inner().observers.lock().unwrap().drain(..) {
+        for rite in self.inner().observers.lock().drain(..) {
             (rite)(&**self);
         }
     }
@@ -90,20 +90,19 @@ mod tests {
 
         Vigil::watch(&v, {
             let ghosts = ghosts.clone();
-            move |thing| ghosts.lock().unwrap().push(thing.clone())
+            move |thing| ghosts.lock().push(thing.clone())
         });
 
         Vigil::watch(&v, {
             let ghosts = ghosts.clone();
-            move |thing| ghosts.lock().unwrap().push(thing.clone())
+            move |thing| ghosts.lock().push(thing.clone())
         });
 
         drop(v);
 
         // Dropping the vigil should have dropped all the Rc clones.
         let unwrapped = Rc::try_unwrap(ghosts).unwrap();
-
-        let ghosts_result = unwrapped.into_inner().unwrap();
+        let ghosts_result = unwrapped.into_inner();
 
         assert_eq!("👻👻", ghosts_result);
     }

@@ -387,9 +387,9 @@ mod tests {
         AudioSbcSupport,
     };
     use fidl_fuchsia_hardware_audio::{CodecProperties, PlugDetectCapabilities};
-    use fuchsia_sync::Mutex;
+    use fuchsia_sync::{Mutex, RwLock};
     use futures::StreamExt;
-    use std::sync::{Arc, RwLock};
+    use std::sync::Arc;
 
     #[fuchsia::test]
     async fn fails_without_offload() {

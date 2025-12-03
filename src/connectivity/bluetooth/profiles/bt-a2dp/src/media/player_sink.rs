@@ -418,12 +418,12 @@ mod tests {
     use fidl_fuchsia_media_sessions2::{PublisherMarker, PublisherRequest};
     use fuchsia_bluetooth::types::Channel;
     use fuchsia_inspect_derive::WithInspect;
-    use fuchsia_sync::Mutex;
+    use fuchsia_sync::{Mutex, RwLock};
     use futures::channel::mpsc;
     use futures::io::AsyncWriteExt;
     use futures::task::Poll;
     use std::pin::pin;
-    use std::sync::{Arc, RwLock};
+    use std::sync::Arc;
     use {fidl_fuchsia_metrics as cobalt, fuchsia_inspect as inspect};
 
     fn fake_cobalt_sender() -> (bt_metrics::MetricsLogger, cobalt::MetricEventLoggerRequestStream) {
