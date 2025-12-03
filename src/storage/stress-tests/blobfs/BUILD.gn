@@ -17,6 +17,9 @@ rustc_test("stressor-bin") {
     "//src/lib/diagnostics/log/rust",
     "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-component",
+    "//src/storage/fxfs/fidl/fuchsia.fxfs:fuchsia.fxfs_rust",
+    "//src/storage/lib/blob_writer:blob-writer",
+    "//src/storage/lib/delivery_blob",
     "//src/storage/lib/fs_management/rust:fs_management",
     "//src/storage/stress-tests/utils",
     "//src/sys/lib/stress-test",
@@ -26,6 +29,7 @@ rustc_test("stressor-bin") {
     "//third_party/rust_crates:futures",
     "//third_party/rust_crates:log",
     "//third_party/rust_crates:rand",
+    "//third_party/rust_crates:thiserror",
   ]
 
   sources = [

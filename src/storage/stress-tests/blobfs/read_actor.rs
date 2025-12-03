@@ -3,7 +3,8 @@
 // found in the LICENSE file.
 
 use async_trait::async_trait;
-use fidl_fuchsia_io as fio;
+use fidl_fuchsia_fxfs::BlobReaderProxy;
+use fuchsia_merkle::Hash;
 use log::{debug, info};
 use rand::Rng;
 use rand::rngs::SmallRng;
@@ -19,11 +20,13 @@ pub struct ReadActor {
 
     // Blobfs root directory
     pub root_dir: Directory,
+
+    pub reader: BlobReaderProxy,
 }
 
 impl ReadActor {
-    pub fn new(rng: SmallRng, root_dir: Directory) -> Self {
-        Self { rng, root_dir }
+    pub fn new(rng: SmallRng, root_dir: Directory, reader: BlobReaderProxy) -> Self {
+        Self { rng, root_dir, reader }
     }
 
     // Read a random amount of data at a random offset from a random blob
@@ -36,12 +39,18 @@ impl ReadActor {
             return Ok(());
         }
 
-        // Choose a random blob and open a handle to it
+        // Choose a random blob and get a handle to it.
         let blob = blob_list.choose(&mut self.rng).unwrap();
-        let file = self.root_dir.open_file(blob, fio::PERM_READABLE).await?;
+        let merkle: Hash = blob.parse().map_err(|_| Status::IO)?;
+        let vmo = self
+            .reader
+            .get_vmo(&merkle.into())
+            .await
+            .expect("Failed to make FIDL call")
+            .map_err(Status::from_raw)?;
 
         debug!("Reading from {}", blob);
-        let data_size_bytes = file.uncompressed_size().await?;
+        let data_size_bytes = vmo.get_stream_size().expect("Failed to get VMO stream size");
 
         if data_size_bytes == 0 {
             // Nothing to read, blob is empty!
@@ -57,11 +66,8 @@ impl ReadActor {
         assert!(end_pos >= offset);
         let length = end_pos - offset;
 
-        // Read the data from the handle and verify it
-        file.seek(fio::SeekOrigin::Start, offset).await?;
-        let actual_data_bytes = file.read_num_bytes(length).await?;
-        assert_eq!(actual_data_bytes.len(), length as usize);
-
+        // Read the data from the handle and verify it.
+        vmo.read_to_vec::<u8>(offset, length)?;
         debug!("Read {} bytes from {}", length, blob);
         Ok(())
     }

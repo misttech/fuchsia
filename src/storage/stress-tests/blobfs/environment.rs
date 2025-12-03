@@ -8,6 +8,7 @@ use crate::instance_actor::InstanceActor;
 use crate::read_actor::ReadActor;
 use crate::{Args, BLOBFS_MOUNT_PATH};
 use async_trait::async_trait;
+use fidl_fuchsia_fxfs::{BlobCreatorMarker, BlobCreatorProxy, BlobReaderMarker, BlobReaderProxy};
 use fidl_fuchsia_io as fio;
 use fs_management::Blobfs;
 use futures::lock::Mutex;
@@ -49,6 +50,16 @@ pub fn open_blobfs_root() -> Directory {
     Directory::from_namespace(BLOBFS_MOUNT_PATH, fio::PERM_WRITABLE | fio::PERM_READABLE).unwrap()
 }
 
+pub fn connect_to_blob_reader(exposed_dir: &fio::DirectoryProxy) -> BlobReaderProxy {
+    fuchsia_component::client::connect_to_protocol_at_dir_root::<BlobReaderMarker>(exposed_dir)
+        .unwrap()
+}
+
+pub fn connect_to_blob_creator(exposed_dir: &fio::DirectoryProxy) -> BlobCreatorProxy {
+    fuchsia_component::client::connect_to_protocol_at_dir_root::<BlobCreatorMarker>(exposed_dir)
+        .unwrap()
+}
+
 impl BlobfsEnvironment {
     pub async fn new(args: Args) -> Self {
         // Create the VMO that the ramdisk is backed by
@@ -85,6 +96,8 @@ impl BlobfsEnvironment {
         let mut blobfs = blobfs.serve().await.unwrap();
         blobfs.bind_to_path(BLOBFS_MOUNT_PATH).unwrap();
 
+        let exposed_dir = Clone::clone(blobfs.exposed_dir());
+
         // Create the instance actor
         let instance_actor = Arc::new(Mutex::new(InstanceActor::new(fvm, blobfs)));
 
@@ -96,8 +109,7 @@ impl BlobfsEnvironment {
             let uncompressed_size = UncompressedSize::Exact(EIGHT_KIB);
             let compressibility = Compressibility::Uncompressible;
             let factory = FileFactory::new(rng, uncompressed_size, compressibility);
-            let root_dir = open_blobfs_root();
-            Arc::new(Mutex::new(BlobActor::new(factory, root_dir)))
+            Arc::new(Mutex::new(BlobActor::new(factory, connect_to_blob_creator(&exposed_dir))))
         };
 
         let medium_blob_actor = {
@@ -105,23 +117,25 @@ impl BlobfsEnvironment {
             let uncompressed_size = UncompressedSize::InRange(ONE_MIB, FOUR_MIB);
             let compressibility = Compressibility::Compressible;
             let factory = FileFactory::new(rng, uncompressed_size, compressibility);
-            let root_dir = open_blobfs_root();
-            Arc::new(Mutex::new(BlobActor::new(factory, root_dir)))
+            Arc::new(Mutex::new(BlobActor::new(factory, connect_to_blob_creator(&exposed_dir))))
         };
         let large_blob_actor = {
             let rng = SmallRng::from_seed(rng.random());
             let uncompressed_size = UncompressedSize::Exact(2 * disk_size);
             let compressibility = Compressibility::Compressible;
             let factory = FileFactory::new(rng, uncompressed_size, compressibility);
-            let root_dir = open_blobfs_root();
-            Arc::new(Mutex::new(BlobActor::new(factory, root_dir)))
+            Arc::new(Mutex::new(BlobActor::new(factory, connect_to_blob_creator(&exposed_dir))))
         };
 
         // Create the read actor
         let read_actor = {
             let rng = SmallRng::from_seed(rng.random());
             let root_dir = open_blobfs_root();
-            Arc::new(Mutex::new(ReadActor::new(rng, root_dir)))
+            Arc::new(Mutex::new(ReadActor::new(
+                rng,
+                root_dir,
+                connect_to_blob_reader(&exposed_dir),
+            )))
         };
 
         // Create the deletion actor
@@ -190,7 +204,7 @@ impl Environment for BlobfsEnvironment {
     }
 
     async fn reset(&mut self) {
-        {
+        let exposed_dir = {
             let mut actor = self.instance_actor.lock().await;
 
             // The environment is only reset when the instance is killed.
@@ -222,29 +236,32 @@ impl Environment for BlobfsEnvironment {
             let mut blobfs = blobfs.serve().await.unwrap();
             blobfs.bind_to_path(BLOBFS_MOUNT_PATH).unwrap();
 
+            let exposed_dir = Clone::clone(blobfs.exposed_dir());
             // Replace the fvm and blobfs instances
             actor.instance = Some((blobfs, fvm));
-        }
+            exposed_dir
+        };
 
         // Replace the root directory with a new one
         {
             let mut actor = self.small_blob_actor.lock().await;
-            actor.root_dir = open_blobfs_root();
+            actor.creator = connect_to_blob_creator(&exposed_dir);
         }
 
         {
             let mut actor = self.medium_blob_actor.lock().await;
-            actor.root_dir = open_blobfs_root();
+            actor.creator = connect_to_blob_creator(&exposed_dir);
         }
 
         {
             let mut actor = self.large_blob_actor.lock().await;
-            actor.root_dir = open_blobfs_root();
+            actor.creator = connect_to_blob_creator(&exposed_dir);
         }
 
         {
             let mut actor = self.read_actor.lock().await;
             actor.root_dir = open_blobfs_root();
+            actor.reader = connect_to_blob_reader(&exposed_dir);
         }
 
         {
