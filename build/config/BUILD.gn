@@ -492,7 +492,10 @@ config("optimize_size") {
 
   rustflags = [ "-Copt-level=s" ]
 
-  configs = [ ":linker_string_merging" ]
+  configs = [
+    ":linker_string_merging",
+    ":bp-compression-sort",
+  ]
 }
 
 config("optimize_size_thinlto") {
@@ -1681,4 +1684,17 @@ config("standalone") {
     # Make sure the unwinder isn't implicitly brought in for any reason.
     ldflags += [ "-unwindlib=none" ]
   }
+}
+
+# Enable LLD's balanced partitioning for ordering function sections.
+config("bp-compression-sort") {
+  ldflags = [ "-Wl,--bp-compression-sort=function" ]
+
+  rust_linkarg = "-Clink-arg="
+  if (!is_fuchsia) {
+    # On non-Fuchsia platforms, rustc calls clang, which calls lld.
+    rust_linkarg += "-Wl,"
+  }
+
+  rustflags = [ "${rust_linkarg}--bp-compression-sort=function" ]
 }
