@@ -203,11 +203,24 @@ impl<T: RecordableEnum + 'static> EnumStateRecorder<T> {
         });
 
         let history = if options.lazy_record {
-            let history_data =
+            let buffer =
                 Arc::new(Mutex::new(TimestampRingBuffer::<T>::with_capacity(options.capacity)));
-            let history_data_cloned = history_data.clone();
+            let buffer_cloned = buffer.clone();
+            node.record_lazy_child("reset_info", move || {
+                let history = buffer_cloned.clone();
+                async move {
+                    let inspector = Inspector::default();
+                    let node = inspector.root();
+                    let (count, last_reset_ns) = history.lock().get_reset_info();
+                    node.record_int("count", count as i64);
+                    node.record_int("last_reset_ns", last_reset_ns);
+                    Ok(inspector)
+                }
+                .boxed()
+            });
+            let buffer_cloned = buffer.clone();
             node.record_lazy_child("history", move || {
-                let history = history_data_cloned.clone();
+                let history = buffer_cloned.clone();
                 async move {
                     let inspector = Inspector::default();
                     let node = inspector.root();
@@ -221,8 +234,12 @@ impl<T: RecordableEnum + 'static> EnumStateRecorder<T> {
                 }
                 .boxed()
             });
-            RecorderHistory::Lazy(history_data)
+            RecorderHistory::Lazy(buffer)
         } else {
+            node.record_child("reset_info", |node| {
+                node.record_int("count", 0);
+                node.record_int("last_reset_ns", zx::BootInstant::get().into_nanos());
+            });
             RecorderHistory::Eager(BoundedListNode::new(
                 node.create_child("history"),
                 options.capacity,
@@ -494,6 +511,10 @@ struct TimestampRingBuffer<T: Copy> {
     offset_ms: Vec<i32>,
     /// Data to be stored in the buffer.
     data: Vec<T>,
+    /// Number of times the buffer has been reset (due to max delta exceeded).
+    reset_count: u32,
+    /// Timestamp of the last buffer reset
+    last_reset_ms: i64,
 }
 
 const NANOSECONDS_PER_MILLISECOND: i64 = 1_000_000;
@@ -515,6 +536,8 @@ impl<T: Copy> TimestampRingBuffer<T> {
             next_index: 0,
             offset_ms: Vec::with_capacity(capacity),
             data: Vec::with_capacity(capacity),
+            reset_count: 0,
+            last_reset_ms: now_ms,
         }
     }
 
@@ -530,6 +553,8 @@ impl<T: Copy> TimestampRingBuffer<T> {
                 self.data.clear();
                 self.start_timestamp_ms = timestamp_ms;
                 self.next_index = 0;
+                self.reset_count += 1;
+                self.last_reset_ms = self.start_timestamp_ms;
                 0
             }
         };
@@ -546,6 +571,11 @@ impl<T: Copy> TimestampRingBuffer<T> {
         }
         self.last_timestamp_ms = timestamp_ms;
         self.next_index = (self.next_index + 1) % self.offset_ms.capacity();
+    }
+
+    /// Returns the reset count, and the timestamp of the last reset in nanoseconds.
+    fn get_reset_info(&self) -> (u32, i64) {
+        (self.reset_count, ms_to_ns(self.last_reset_ms))
     }
 
     /// Returns an Iterator of (timestamp in nanoseconds, T), starting
@@ -637,11 +667,24 @@ impl<T: RecordableNumericType> NumericStateRecorder<T> {
         });
 
         let history = if options.lazy_record {
-            let history_data =
+            let buffer =
                 Arc::new(Mutex::new(TimestampRingBuffer::<T>::with_capacity(options.capacity)));
-            let history_data_cloned = history_data.clone();
+            let buffer_cloned = buffer.clone();
+            node.record_lazy_child("reset_info", move || {
+                let history = buffer_cloned.clone();
+                async move {
+                    let inspector = Inspector::default();
+                    let node = inspector.root();
+                    let (count, last_reset_ns) = history.lock().get_reset_info();
+                    node.record_int("count", count as i64);
+                    node.record_int("last_reset_ns", last_reset_ns);
+                    Ok(inspector)
+                }
+                .boxed()
+            });
+            let buffer_cloned = buffer.clone();
             node.record_lazy_child("history", move || {
-                let history = history_data_cloned.clone();
+                let history = buffer_cloned.clone();
                 async move {
                     let inspector = Inspector::default();
                     let node = inspector.root();
@@ -655,8 +698,12 @@ impl<T: RecordableNumericType> NumericStateRecorder<T> {
                 }
                 .boxed()
             });
-            RecorderHistory::Lazy(history_data)
+            RecorderHistory::Lazy(buffer)
         } else {
+            node.record_child("reset_info", |node| {
+                node.record_int("count", 0);
+                node.record_int("last_reset_ns", zx::BootInstant::get().into_nanos());
+            });
             RecorderHistory::Eager(BoundedListNode::new(
                 node.create_child("history"),
                 options.capacity,
@@ -742,11 +789,13 @@ mod tests {
         buffer.insert(t3.0, t3.1);
 
         assert_eq!(vec![t1, t2, t3], buffer.iter().collect::<Vec<_>>());
+        assert_eq!((0, ms_to_ns(start_ms)), buffer.get_reset_info());
 
         // Buffer is already at capacity, so this should overwrite the first element.
         let t4 = (ms_to_ns(start_ms + 4000), 4);
         buffer.insert(t4.0, t4.1);
         assert_eq!(vec![t2, t3, t4], buffer.iter().collect::<Vec<_>>());
+        assert_eq!((0, ms_to_ns(start_ms)), buffer.get_reset_info());
     }
 
     #[fuchsia::test]
@@ -762,12 +811,14 @@ mod tests {
         buffer.insert(t2.0, t2.1);
 
         assert_eq!(vec![t1, t2], buffer.iter().collect::<Vec<_>>());
+        assert_eq!((0, ms_to_ns(start_ms)), buffer.get_reset_info());
 
         // This should exceed the maximum allowable timestamp offset,
         // causing the buffer to reset.
         let t3 = (t2.0 + ms_to_ns(MAX_OFFSET_MS + 1), 3);
         buffer.insert(t3.0, t3.1);
         assert_eq!(vec![t3], buffer.iter().collect::<Vec<_>>());
+        assert_eq!((1, t3.0), buffer.get_reset_info());
     }
 
     #[test_case(false; "eager")]
@@ -816,6 +867,10 @@ mod tests {
                             "@time": AnyIntProperty,
                             "value": "ON",
                         },
+                    },
+                    reset_info: {
+                        count: 0,
+                        last_reset_ns: AnyIntProperty,
                     }
                 }
             }
@@ -878,6 +933,10 @@ mod tests {
                             "@time": AnyIntProperty,
                             "value": "ON",
                         },
+                    },
+                    reset_info: {
+                        count: 0,
+                        last_reset_ns: AnyIntProperty,
                     }
                 },
                switch_1: {
@@ -898,6 +957,10 @@ mod tests {
                             "@time": AnyIntProperty,
                             "value": "DISABLED",
                         },
+                    },
+                    reset_info: {
+                        count: 0,
+                        last_reset_ns: AnyIntProperty,
                     }
                 }
             }
@@ -970,6 +1033,10 @@ mod tests {
                             "@time": AnyIntProperty,
                             "value": "HIGH",
                         },
+                    },
+                    reset_info: {
+                        count: 0,
+                        last_reset_ns: AnyIntProperty,
                     }
                 }
             }
@@ -1041,6 +1108,10 @@ mod tests {
                             "@time": AnyIntProperty,
                             "value": "ON",
                         },
+                    },
+                    reset_info: {
+                        count: 0,
+                        last_reset_ns: AnyIntProperty,
                     }
                 }
             }
@@ -1091,6 +1162,10 @@ mod tests {
                             "@time": AnyIntProperty,
                             "value": 0u64,
                         },
+                    },
+                    reset_info: {
+                        count: 0,
+                        last_reset_ns: AnyIntProperty,
                     }
                 }
             }
@@ -1145,6 +1220,10 @@ mod tests {
                             "@time": AnyIntProperty,
                             "value": 0i64,
                         },
+                    },
+                    reset_info: {
+                        count: 0,
+                        last_reset_ns: AnyIntProperty,
                     }
                 }
             }
@@ -1199,6 +1278,10 @@ mod tests {
                             "@time": AnyIntProperty,
                             "value": 0.0,
                         },
+                    },
+                    reset_info: {
+                        count: 0,
+                        last_reset_ns: AnyIntProperty,
                     }
                 }
             }
