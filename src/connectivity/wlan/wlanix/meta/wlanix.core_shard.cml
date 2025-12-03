@@ -48,5 +48,11 @@
             to: "#wlanix",
             availability: "same_as_target",
         },
+        {
+            protocol: "fuchsia.wlan.wlanix.Wlanix",
+            from: "#wlanix",
+            to: "self/toolbox",
+            target_availability: "unknown",
+        },
     ],
 }

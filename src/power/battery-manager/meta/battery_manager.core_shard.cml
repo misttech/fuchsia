@@ -36,5 +36,14 @@
             from: "parent",
             to: [ "#battery_manager" ],
         },
+        {
+            protocol: [
+                "fuchsia.power.battery.BatteryManager",
+                "fuchsia.power.battery.test.BatterySimulator",
+            ],
+            from: "#battery_manager",
+            to: "self/toolbox",
+            target_availability: "unknown",
+        },
     ],
 }

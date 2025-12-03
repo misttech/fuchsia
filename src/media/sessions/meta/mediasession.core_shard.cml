@@ -27,5 +27,15 @@
             from: "#mediasession",
             to: "#mediasession-examples",
         },
+        {
+            protocol: [
+                "fuchsia.media.sessions2.ActiveSession",
+                "fuchsia.media.sessions2.Discovery",
+                "fuchsia.media.sessions2.Publisher",
+            ],
+            from: "#mediasession",
+            to: "self/toolbox",
+            target_availability: "unknown",
+        },
     ],
 }

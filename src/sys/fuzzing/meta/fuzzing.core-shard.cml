@@ -38,5 +38,11 @@
             from: "#fuzz-registry",
             to: "#fuzz-manager",
         },
+        {
+            protocol: "fuchsia.fuzzer.Manager",
+            from: "#fuzz-manager",
+            to: "self/toolbox",
+            target_availability: "unknown",
+        },
     ],
 }

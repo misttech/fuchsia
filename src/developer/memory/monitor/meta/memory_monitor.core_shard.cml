@@ -63,5 +63,11 @@
             to: "#memory_monitor",
             availability: "same_as_target",
         },
+        {
+            protocol: "fuchsia.memory.inspection.Collector",
+            from: "#memory_monitor",
+            to: "self/toolbox",
+            target_availability: "unknown",
+        },
     ],
 }

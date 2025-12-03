@@ -64,6 +64,7 @@
                 source_name: "fuchsia.kernel.CpuResource",
                 capability: "protocol",
                 target_monikers: [
+                    "/toolbox",
                     "/core/sshd-host/shell:**",
                     "/core/testing/vfs-compliance-tests:**",
                 ],
@@ -74,6 +75,7 @@
                 source_name: "fuchsia.kernel.DebugResource",
                 capability: "protocol",
                 target_monikers: [
+                    "/toolbox",
                     "/core/sshd-host/shell:**",
                     "/core/testing/vfs-compliance-tests:**",
                 ],
@@ -94,6 +96,7 @@
                 source_name: "fuchsia.kernel.HypervisorResource",
                 capability: "protocol",
                 target_monikers: [
+                    "/toolbox",
                     "/core/sshd-host/shell:**",
                     "/core/testing/vfs-compliance-tests:**",
                 ],
@@ -105,6 +108,7 @@
                 capability: "protocol",
                 target_monikers: [
                     "/bootstrap/base-drivers:**",
+                    "/toolbox",
                     "/core/sshd-host/shell:**",
                     "/core/testing/vfs-compliance-tests:**",
                 ],
@@ -115,6 +119,7 @@
                 source_name: "fuchsia.kernel.IoportResource",
                 capability: "protocol",
                 target_monikers: [
+                    "/toolbox",
                     "/core/sshd-host/shell:**",
                 ],
             },
@@ -124,6 +129,7 @@
                 source_name: "fuchsia.kernel.IrqResource",
                 capability: "protocol",
                 target_monikers: [
+                    "/toolbox",
                     "/core/sshd-host/shell:**",
                     "/core/testing/vfs-compliance-tests:**",
                 ],
@@ -144,6 +150,7 @@
                 source_name: "fuchsia.kernel.MmioResource",
                 capability: "protocol",
                 target_monikers: [
+                    "/toolbox",
                     "/core/sshd-host/shell:**",
                     "/core/testing/vfs-compliance-tests:**",
                 ],
@@ -154,6 +161,7 @@
                 source_name: "fuchsia.kernel.ProfileResource",
                 capability: "protocol",
                 target_monikers: [
+                    "/toolbox",
                     "/core/sshd-host/shell:**",
                     "/core/testing/system-tests:**",
                     "/bootstrap/role_manager",
@@ -166,6 +174,7 @@
                 source_name: "fuchsia.kernel.PowerResource",
                 capability: "protocol",
                 target_monikers: [
+                    "/toolbox",
                     "/core/sshd-host/shell:**",
                     "/core/testing/vfs-compliance-tests:**",
                 ],
@@ -179,6 +188,7 @@
                     "/bootstrap/vsock-sshd-host/shell:**",
                     "/core/process_explorer",
                     "/core/debugger/agents:**",
+                    "/toolbox",
                     "/core/sshd-host/shell:**",
                     "/core/testing/vfs-compliance-tests:**",
                     "/core/testing/starnix-tests:**",
@@ -190,6 +200,7 @@
                 source_name: "fuchsia.kernel.RootJobForInspect",
                 capability: "protocol",
                 target_monikers: [
+                    "/toolbox",
                     "/core/sshd-host/shell:**",
                     "/core/testing/vfs-compliance-tests:**",
                 ],
@@ -200,6 +211,7 @@
                 source_name: "fuchsia.kernel.SmcResource",
                 capability: "protocol",
                 target_monikers: [
+                    "/toolbox",
                     "/core/sshd-host/shell:**",
                 ],
             },
@@ -209,6 +221,7 @@
                 source_name: "fuchsia.kernel.TracingResource",
                 capability: "protocol",
                 target_monikers: [
+                    "/toolbox",
                     "/core/sshd-host/shell:**",
                     "/core/trace_manager/ktrace_provider",
                 ],
@@ -229,6 +242,7 @@
                 source_name: "fuchsia.kernel.VmexResource",
                 capability: "protocol",
                 target_monikers: [
+                    "/toolbox",
                     "/core/sshd-host/shell:**",
                     "/core/testing/vfs-compliance-tests:**",
                     "/core/testing/component-framework-tests:**",
@@ -273,6 +287,7 @@
                 source_name: "bin",
                 capability: "directory",
                 target_monikers: [
+                    "/toolbox",
                     "/core/sshd-host/shell:**",
                 ],
             },
@@ -282,6 +297,7 @@
                 source_name: "blob",
                 capability: "directory",
                 target_monikers: [
+                    "/toolbox",
                     "/core/sshd-host/shell:**",
                 ],
             },
@@ -294,6 +310,7 @@
                     "/core/remote-control",
                     "/bootstrap/base_resolver",
                     "/core/sshd-host",
+                    "/toolbox",
                     "/core/sshd-host/shell:**",
 
                     // TODO(https://fxbug.dev/42181129): Remove once fixed.
@@ -306,6 +323,7 @@
                 source_name: "tmp",
                 capability: "directory",
                 target_monikers: [
+                    "/toolbox",
                     "/core/sshd-host/shell:**",
 
                     // TODO(https://fxbug.dev/42181123): Remove once https://fxbug.dev/42167600 is fixed.
@@ -318,6 +336,7 @@
                 source_name: "build-info",
                 capability: "directory",
                 target_monikers: [
+                    "/toolbox",
                     "/core/sshd-host/shell:**",
                 ],
             },
@@ -334,6 +353,7 @@
                     "/bootstrap/netsvc",
                     "/core/debug-dash-launcher",
                     "/core/process_resolver",
+                    "/toolbox",
                     "/core/sshd-host/shell:**",
                     "/core/system-update-checker",
                     "/core/test_manager",
@@ -375,6 +395,7 @@
                 source_name: "fuchsia.factory.lowpan.FactoryLookup",
                 capability: "protocol",
                 target_monikers: [
+                    "/toolbox",
                     "/core/sshd-host/shell:**",
                 ],
             },
@@ -385,6 +406,7 @@
                 capability: "protocol",
                 target_monikers: [
                     "/core/sl4f",
+                    "/toolbox",
                     "/core/sshd-host/shell:**",
                 ],
             },
@@ -394,6 +416,7 @@
                 source_name: "fuchsia.lowpan.device.DeviceRouterExtraConnector",
                 capability: "protocol",
                 target_monikers: [
+                    "/toolbox",
                     "/core/sshd-host/shell:**",
                 ],
             },

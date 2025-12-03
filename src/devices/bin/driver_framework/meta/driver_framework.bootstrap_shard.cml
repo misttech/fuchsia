@@ -177,6 +177,25 @@
             subdir: "config/driver_index",
         },
         {
+            directory: "dev-topological",
+            from: "#devfs-with-pkg",
+            as: "dev",
+            to: "self/toolbox-directories",
+            target_availability: "unknown",
+        },
+        {
+            protocol: "fuchsia.driver.development.Manager",
+            from: "#driver_manager",
+            to: "self/toolbox",
+            target_availability: "unknown",
+        },
+        {
+            protocol: "fuchsia.driver.registrar.DriverRegistrar",
+            from: "#driver_index",
+            to: "self/toolbox",
+            target_availability: "unknown",
+        },
+        {
             protocol: [
                 "fuchsia.boot.Items",
                 "fuchsia.boot.WriteOnlyLog",
@@ -429,6 +448,19 @@
             ],
             from: "#boot-drivers",
             to: "self/driver-services-for-session",
+        },
+        {
+            service: [
+                "fuchsia.hardware.cpu.ctrl.Service",
+                "fuchsia.hardware.nfc.Service",
+                "fuchsia.hardware.rtc.Service",
+                "fuchsia.hardware.spmi.DebugService",
+                "fuchsia.hardware.suspend.SuspendService",
+                "fuchsia.hardware.usb.peripheral.Service",
+            ],
+            from: "#boot-drivers",
+            to: "self/toolbox",
+            target_availability: "unknown",
         },
     ],
     expose: [

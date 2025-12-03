@@ -118,5 +118,11 @@
             from: "#lowpan-ot-driver",
             to: "#lowpan-monitor",
         },
+        {
+            protocol: "fuchsia.lowpan.bootstrap.Thread",
+            from: "#lowpan-ot-driver",
+            to: "self/toolbox",
+            target_availability: "unknown",
+        },
     ],
 }

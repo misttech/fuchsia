@@ -81,6 +81,18 @@
             to: "#power_manager",
             availability: "optional",
         },
+        {
+            protocol: [
+                "fuchsia.power.clientlevel.Connector",
+                "fuchsia.power.profile.Watcher",
+                "fuchsia.power.systemmode.ClientConfigurator",
+                "fuchsia.power.systemmode.Requester",
+                "fuchsia.thermal.ClientStateConnector",
+            ],
+            from: "#power_manager",
+            to: "self/toolbox",
+            target_availability: "unknown",
+        },
     ],
     expose: [
         {

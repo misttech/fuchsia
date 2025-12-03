@@ -18,5 +18,10 @@
             from: "parent",
             path: "/svc",
         },
+        {
+            dictionary: "toolbox-root-directories",
+            from: "parent",
+            path: "/directories",
+        },
     ],
 }

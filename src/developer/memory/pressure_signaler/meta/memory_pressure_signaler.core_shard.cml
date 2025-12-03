@@ -35,6 +35,15 @@
             to: "#memory_pressure_signaler",
             subdir: "memory_pressure_signaler",
         },
+        {
+            protocol: [
+                "fuchsia.memory.debug.MemoryPressure",
+                "fuchsia.memorypressure.Provider",
+            ],
+            from: "#memory_pressure_signaler",
+            to: "self/toolbox",
+            target_availability: "unknown",
+        },
     ],
     expose: [
         {

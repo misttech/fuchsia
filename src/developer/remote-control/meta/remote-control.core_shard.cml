@@ -88,5 +88,14 @@
             from: "parent",
             to: "#remote-control",
         },
+        {
+            protocol: [
+                "fuchsia.developer.remotecontrol.connector.Connector",
+                "fuchsia.developer.remotecontrol.RemoteControl",
+            ],
+            from: "#remote-control",
+            to: "self/toolbox",
+            target_availability: "unknown",
+        },
     ],
 }

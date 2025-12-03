@@ -17,5 +17,11 @@
             to: "#system-activity-governor-controller",
             availability: "optional",
         },
+        {
+            protocol: [ "fuchsia.power.topology.test.SystemActivityControl" ],
+            from: "#system-activity-governor-controller",
+            to: "self/toolbox",
+            target_availability: "unknown",
+        },
     ],
 }

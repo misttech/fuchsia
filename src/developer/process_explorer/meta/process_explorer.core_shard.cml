@@ -15,5 +15,11 @@
             from: "parent",
             to: "#process_explorer",
         },
+        {
+            protocol: "fuchsia.process.explorer.Query",
+            from: "#process_explorer",
+            to: "self/toolbox",
+            target_availability: "unknown",
+        },
     ],
 }

@@ -26,5 +26,11 @@
             from: "parent",
             to: [ "#bt-snoop" ],
         },
+        {
+            protocol: "fuchsia.bluetooth.snoop.Snoop",
+            from: "#bt-snoop",
+            to: "self/toolbox",
+            target_availability: "unknown",
+        },
     ],
 }

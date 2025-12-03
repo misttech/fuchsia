@@ -68,5 +68,15 @@
             to: "#bt-a2dp",
             source_availability: "unknown",
         },
+        {
+            protocol: [
+                "fuchsia.bluetooth.a2dp.AudioMode",
+                "fuchsia.bluetooth.avdtp.test.PeerManager",
+                "fuchsia.bluetooth.internal.a2dp.Controller",
+            ],
+            from: "#bt-a2dp",
+            to: "self/toolbox",
+            target_availability: "unknown",
+        },
     ],
 }

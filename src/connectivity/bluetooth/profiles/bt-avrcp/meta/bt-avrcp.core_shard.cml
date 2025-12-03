@@ -20,5 +20,14 @@
             from: "#cobalt",
             to: [ "#bt-avrcp" ],
         },
+        {
+            protocol: [
+                "fuchsia.bluetooth.avrcp.PeerManager",
+                "fuchsia.bluetooth.avrcp.test.PeerManagerExt",
+            ],
+            from: "#bt-avrcp",
+            to: "self/toolbox",
+            target_availability: "unknown",
+        },
     ],
 }

@@ -120,6 +120,30 @@
             to: "#fshost",
             availability: "optional",
         },
+        {
+            protocol: "fuchsia.fxfs.BlobReader",
+            from: "#fshost",
+            to: "self/toolbox",
+            target_availability: "unknown",
+        },
+        {
+            directory: [
+                "blob",
+                "data",
+                "tmp",
+            ],
+            from: "#fshost",
+            to: "self/toolbox-directories",
+            target_availability: "unknown",
+        },
+        {
+            directory: [ "debug_block" ],
+            from: "#fshost",
+            as: "block",
+            to: "self/toolbox-directories",
+            availability: "optional",
+            target_availability: "unknown",
+        },
     ],
     expose: [
         {

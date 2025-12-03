@@ -10,10 +10,16 @@
     ],
     capabilities: [
         { dictionary: "toolbox-root" },
+        { dictionary: "toolbox-root-directories" },
     ],
     offer: [
         {
             dictionary: "toolbox-root",
+            from: "self",
+            to: "#toolbox",
+        },
+        {
+            dictionary: "toolbox-root-directories",
             from: "self",
             to: "#toolbox",
         },

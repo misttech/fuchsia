@@ -29,6 +29,7 @@
                 source_name: "fuchsia.kernel.CpuResource",
                 capability: "protocol",
                 target_monikers: [
+                    "/toolbox",
                     "/core/sshd-host/shell:**",
                     "/core/testing/system-tests:**",
                     "/core/test_manager/system-tests:**",
@@ -40,6 +41,7 @@
                 source_name: "fuchsia.kernel.DebugResource",
                 capability: "protocol",
                 target_monikers: [
+                    "/toolbox",
                     "/core/sshd-host/shell:**",
                     "/core/testing/system-tests:**",
                     "/core/test_manager/system-tests:**",
@@ -65,6 +67,7 @@
                     "/core/debian-guest-manager/vmm",
                     "/core/termina-guest-manager/vmm",
                     "/core/testing/system-tests:**",
+                    "/toolbox",
                     "/core/sshd-host/shell:**",
                     "/core/test_manager/system-tests:**",
                     "/core/testing/starnix_test_runners/starnix_test_runner/interactive-debian-guest/guest-manager/vmm",
@@ -79,6 +82,7 @@
                     "/bootstrap/boot-drivers:**",
                     "/bootstrap/base-drivers:**",
                     "/bootstrap/full-drivers:**",
+                    "/toolbox",
                     "/core/sshd-host/shell:**",
                     "/core/testing/system-tests:**",
                     "/core/test_manager/system-tests:**",
@@ -91,6 +95,7 @@
                 capability: "protocol",
                 target_monikers: [
                     "/bootstrap/boot-drivers:dev",
+                    "/toolbox",
                     "/core/sshd-host/shell:**",
                     "/core/testing/system-tests:**",
                     "/core/test_manager/system-tests:**",
@@ -103,6 +108,7 @@
                 capability: "protocol",
                 target_monikers: [
                     "/bootstrap/boot-drivers:dev",
+                    "/toolbox",
                     "/core/sshd-host/shell:**",
                     "/core/testing/system-tests:**",
                     "/core/test_manager/system-tests:**",
@@ -115,6 +121,7 @@
                 capability: "protocol",
                 target_monikers: [
                     "/bootstrap/boot-drivers:dev",
+                    "/toolbox",
                     "/core/sshd-host/shell:**",
                     "/core/testing/system-tests:**",
                     "/core/test_manager/system-tests:**",
@@ -129,6 +136,7 @@
                     "/core/process_explorer",
                     "/core/profiler",
                     "/core/debugger/agents:**",
+                    "/toolbox",
                     "/core/sshd-host/shell:**",
                     "/core/testing/system-tests:**",
                     "/core/test_manager/system-tests:**",
@@ -140,6 +148,7 @@
                 source_name: "fuchsia.kernel.RootJobForInspect",
                 capability: "protocol",
                 target_monikers: [
+                    "/toolbox",
                     "/core/sshd-host/shell:**",
                     "/core/testing/system-tests:**",
                     "/core/test_manager/system-tests:**",
@@ -162,6 +171,7 @@
                 capability: "protocol",
                 target_monikers: [
                     "/bootstrap/boot-drivers:dev",
+                    "/toolbox",
                     "/core/sshd-host/shell:**",
                     "/core/test_manager/system-tests:**",
                     "/core/zircon-guest-manager/vmm",
@@ -177,6 +187,7 @@
                 capability: "protocol",
                 target_monikers: [
                     "/bootstrap/boot-drivers:dev",
+                    "/toolbox",
                     "/core/sshd-host/shell:**",
                     "/core/testing/system-tests:**",
                     "/core/test_manager/system-tests:**",
@@ -188,6 +199,7 @@
                 source_name: "fuchsia.kernel.PowerResource",
                 capability: "protocol",
                 target_monikers: [
+                    "/toolbox",
                     "/core/sshd-host/shell:**",
                     "/core/testing/system-tests:**",
                     "/core/test_manager/system-tests:**",
@@ -210,6 +222,7 @@
                 capability: "protocol",
                 target_monikers: [
                     "/bootstrap/boot-drivers:dev",
+                    "/toolbox",
                     "/core/sshd-host/shell:**",
                     "/core/testing/system-tests:**",
                     "/core/test_manager/system-tests:**",
@@ -221,6 +234,7 @@
                 source_name: "fuchsia.kernel.TracingResource",
                 capability: "protocol",
                 target_monikers: [
+                    "/toolbox",
                     "/core/sshd-host/shell:**",
                     "/core/testing/system-tests:**",
                     "/core/test_manager/system-tests:**",
@@ -232,6 +246,7 @@
                 source_name: "fuchsia.kernel.VmexResource",
                 capability: "protocol",
                 target_monikers: [
+                    "/toolbox",
                     "/core/sshd-host/shell:**",
                     "/core/testing/starnix-tests:**",
                     "/core/testing/system-tests:**",
@@ -277,6 +292,7 @@
                 source_name: "blob",
                 capability: "directory",
                 target_monikers: [
+                    "/toolbox",
                     "/core/sshd-host/shell:**",
                 ],
             },
@@ -297,6 +313,7 @@
                 target_monikers: [
                     "/core/remote-control",
                     "/core/sshd-host",
+                    "/toolbox",
                     "/core/sshd-host/shell:**",
 
                     // TODO(https://fxbug.dev/42181129): Remove once fixed.
@@ -311,6 +328,7 @@
                 target_monikers: [
                     "/bootstrap/netsvc",
                     "/core",
+                    "/toolbox",
                     "/core/sshd-host/shell:**",
 
                     // TODO(https://fxbug.dev/42181123): Remove once https://fxbug.dev/42167600 is fixed.
@@ -329,6 +347,7 @@
                     "/bootstrap/console-launcher",
                     "/bootstrap/full_resolver",
                     "/bootstrap/netsvc",
+                    "/toolbox",
                     "/core/sshd-host/shell:**",
 
                     // debug-dash-launcher is used in engineering builds to launch
@@ -346,6 +365,7 @@
                 source_name: "fuchsia.process.Resolver",
                 capability: "protocol",
                 target_monikers: [
+                    "/toolbox",
                     "/core/sshd-host/shell:**",
 
                     // This protocol is available in the serial console
@@ -412,6 +432,7 @@
                 capability: "protocol",
                 target_monikers: [
                     "/core/pkg-resolver",
+                    "/toolbox",
                     "/core/sshd-host/shell:**",
                     "/core/system-update/system-updater",
                 ],
@@ -437,6 +458,7 @@
                 capability: "directory",
                 target_monikers: [
                     "/bootstrap/console-launcher",
+                    "/toolbox",
                     "/core/sshd-host/shell:**",
                 ],
             },
@@ -448,6 +470,7 @@
                 target_monikers: [
                     "/core/build-info",
                     "/core/feedback",
+                    "/toolbox",
                     "/core/sshd-host/shell:**",
                     "/core/system-update/omaha-client-service",
                     "/core/system-update/system-update-checker",
@@ -471,6 +494,7 @@
                 capability: "directory",
                 target_monikers: [
                     "/bootstrap/console-launcher",
+                    "/toolbox",
                     "/core/sshd-host/shell:**",
                 ],
             },
@@ -494,6 +518,7 @@
                     "/bootstrap",
                     "/bootstrap/console-launcher",
                     "/bootstrap/driver_manager",
+                    "/toolbox",
                     "/core/sshd-host/shell:**",
                     "/core/system-update/omaha-client-service",
                     "/core/system-update/system-update-checker",
@@ -520,6 +545,7 @@
                 source_name: "fuchsia.factory.lowpan.FactoryLookup",
                 capability: "protocol",
                 target_monikers: [
+                    "/toolbox",
                     "/core/sshd-host/shell:**",
                 ],
             },
@@ -529,6 +555,7 @@
                 source_name: "fuchsia.lowpan.device.DeviceExtraConnector",
                 capability: "protocol",
                 target_monikers: [
+                    "/toolbox",
                     "/core/sshd-host/shell:**",
 
                     // TODO(https://fxbug.dev/42059298): Create explicit security policies for
@@ -542,6 +569,7 @@
                 source_name: "fuchsia.lowpan.device.DeviceRouterExtraConnector",
                 capability: "protocol",
                 target_monikers: [
+                    "/toolbox",
                     "/core/sshd-host/shell:**",
                 ],
             },
@@ -589,6 +617,7 @@
                     "/core/pre-migration-service",
                     "/core/reverse-migration",
                     "/core/sl4f",
+                    "/toolbox",
                     "/core/sshd-host/shell:**",
                     "/core/termina-guest-manager",
                     "/core/test_manager/google-tests:**",

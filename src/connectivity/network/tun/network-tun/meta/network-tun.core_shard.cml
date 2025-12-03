@@ -16,4 +16,12 @@
             environment: "#core-env",
         },
     ],
+    offer: [
+        {
+            protocol: "fuchsia.net.tun.Control",
+            from: "#network-tun",
+            to: "self/toolbox",
+            target_availability: "unknown",
+        },
+    ],
 }

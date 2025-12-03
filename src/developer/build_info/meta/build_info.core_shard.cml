@@ -21,5 +21,11 @@
             from: "#build-info",
             to: "#cobalt",
         },
+        {
+            protocol: "fuchsia.buildinfo.Provider",
+            from: "#build-info",
+            to: "self/toolbox",
+            target_availability: "unknown",
+        },
     ],
 }

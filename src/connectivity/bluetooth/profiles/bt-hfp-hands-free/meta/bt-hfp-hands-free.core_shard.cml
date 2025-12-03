@@ -58,5 +58,11 @@
             to: [ "#bt-hfp-hands-free" ],
             source_availability: "unknown",
         },
+        {
+            protocol: "fuchsia.bluetooth.hfp.HandsFree",
+            from: "#bt-hfp-hands-free",
+            to: "self/toolbox",
+            target_availability: "unknown",
+        },
     ],
 }

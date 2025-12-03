@@ -79,5 +79,15 @@
             from: "parent",
             to: "#audio_ffx_daemon",
         },
+        {
+            protocol: [
+                "fuchsia.audio.ffxdaemon.DeviceControl",
+                "fuchsia.audio.ffxdaemon.Player",
+                "fuchsia.audio.ffxdaemon.Recorder",
+            ],
+            from: "#audio_ffx_daemon",
+            to: "self/toolbox",
+            target_availability: "unknown",
+        },
     ],
 }

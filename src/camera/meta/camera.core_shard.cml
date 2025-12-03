@@ -34,5 +34,11 @@
             from: "parent",
             to: "#camera_device_watcher",
         },
+        {
+            protocol: "fuchsia.camera3.DeviceWatcher",
+            from: "#camera_device_watcher",
+            to: "self/toolbox",
+            target_availability: "unknown",
+        },
     ],
 }

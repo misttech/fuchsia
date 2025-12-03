@@ -69,5 +69,14 @@
             to: [ "#bt-hfp-audio-gateway" ],
             source_availability: "unknown",
         },
+        {
+            protocol: [
+                "fuchsia.bluetooth.hfp.Hfp",
+                "fuchsia.bluetooth.hfp.test.HfpTest",
+            ],
+            from: "#bt-hfp-audio-gateway",
+            to: "self/toolbox",
+            target_availability: "unknown",
+        },
     ],
 }

@@ -27,6 +27,12 @@
             from: "self",
             to: "#role_manager",
         },
+        {
+            protocol: "fuchsia.scheduler.RoleManager",
+            from: "#role_manager",
+            to: "self/toolbox",
+            target_availability: "unknown",
+        },
     ],
     expose: [
         {

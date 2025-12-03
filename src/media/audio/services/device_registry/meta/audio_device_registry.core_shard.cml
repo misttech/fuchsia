@@ -40,5 +40,15 @@
             from: "parent",
             to: "#audio_device_registry",
         },
+        {
+            protocol: [
+                "fuchsia.audio.device.ControlCreator",
+                "fuchsia.audio.device.Provider",
+                "fuchsia.audio.device.Registry",
+            ],
+            from: "#audio_device_registry",
+            to: "self/toolbox",
+            target_availability: "unknown",
+        },
     ],
 }

@@ -24,5 +24,11 @@
             from: "parent",
             to: "#radar-proxy",
         },
+        {
+            protocol: "fuchsia.hardware.radar.RadarBurstReaderProvider",
+            from: "#radar-proxy",
+            to: "self/toolbox",
+            target_availability: "unknown",
+        },
     ],
 }

@@ -21,5 +21,11 @@
             from: "parent",
             to: [ "#bt-map-mce" ],
         },
+        {
+            protocol: [ "fuchsia.bluetooth.map.MessagingClient" ],
+            from: "#bt-map-mce",
+            to: "self/toolbox",
+            target_availability: "unknown",
+        },
     ],
 }

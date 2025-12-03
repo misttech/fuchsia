@@ -68,5 +68,19 @@
             to: "#audio_core",
             availability: "optional",
         },
+        {
+            protocol: [
+                "fuchsia.media.ActivityReporter",
+                "fuchsia.media.Audio",
+                "fuchsia.media.AudioCore",
+                "fuchsia.media.AudioDeviceEnumerator",
+                "fuchsia.media.UsageGainReporter",
+                "fuchsia.media.UsageReporter",
+                "fuchsia.ultrasound.Factory",
+            ],
+            from: "#audio_core",
+            to: "self/toolbox",
+            target_availability: "unknown",
+        },
     ],
 }

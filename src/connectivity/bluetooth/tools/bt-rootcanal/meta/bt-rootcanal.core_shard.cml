@@ -20,5 +20,11 @@
             from: "#network",
             to: "#bt-rootcanal",
         },
+        {
+            protocol: "fuchsia.bluetooth.pandora.RootcanalClientController",
+            from: "#bt-rootcanal",
+            to: "self/toolbox",
+            target_availability: "unknown",
+        },
     ],
 }

@@ -69,5 +69,11 @@
             from: "parent",
             to: "#codec_factory",
         },
+        {
+            protocol: "fuchsia.mediacodec.CodecFactory",
+            from: "#codec_factory",
+            to: "self/toolbox",
+            target_availability: "unknown",
+        },
     ],
 }

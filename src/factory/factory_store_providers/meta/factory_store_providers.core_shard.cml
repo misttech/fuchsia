@@ -28,5 +28,18 @@
             from: "parent",
             to: "#factory_store_providers",
         },
+        {
+            protocol: [
+                "fuchsia.factory.AlphaFactoryStoreProvider",
+                "fuchsia.factory.CastCredentialsFactoryStoreProvider",
+                "fuchsia.factory.MiscFactoryStoreProvider",
+                "fuchsia.factory.PlayReadyFactoryStoreProvider",
+                "fuchsia.factory.WeaveFactoryStoreProvider",
+                "fuchsia.factory.WidevineFactoryStoreProvider",
+            ],
+            from: "#factory_store_providers",
+            to: "self/toolbox",
+            target_availability: "unknown",
+        },
     ],
 }

@@ -84,5 +84,11 @@
             from: "#memory_pressure_signaler",
             to: "#debian-guest-manager",
         },
+        {
+            protocol: "fuchsia.virtualization.DebianGuestManager",
+            from: "#debian-guest-manager",
+            to: "self/toolbox",
+            target_availability: "unknown",
+        },
     ],
 }

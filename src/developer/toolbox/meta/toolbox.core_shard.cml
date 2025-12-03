@@ -4,90 +4,15 @@
 {
     capabilities: [
         { dictionary: "toolbox" },
-    ],
-    offer: [
-        {
-            protocol: [
-                "fuchsia.process.explorer.ProcessExplorer",
-                "fuchsia.process.explorer.Query",
-            ],
-            from: "#process_explorer",
-            to: "self/toolbox",
-            availability: "optional",
-            source_availability: "unknown",
-        },
-        {
-            protocol: [ "fuchsia.buildinfo.Provider" ],
-            from: "#build-info",
-            to: "self/toolbox",
-            availability: "optional",
-            source_availability: "unknown",
-        },
-        {
-            protocol: "fuchsia.feedback.DataProvider",
-            from: "#feedback",
-            to: "self/toolbox",
-        },
-        {
-            protocol: "fuchsia.bluetooth.affordances.PeerController",
-            from: "#bt-affordances-server",
-            to: "self/toolbox",
-            availability: "optional",
-            source_availability: "unknown",
-        },
-        {
-            protocol: "fuchsia.bluetooth.affordances.HostController",
-            from: "#bt-affordances-server",
-            to: "self/toolbox",
-            availability: "optional",
-            source_availability: "unknown",
-        },
-        {
-            protocol: "fuchsia.bluetooth.pandora.GrpcServerController",
-            from: "#bt-pandora-server",
-            to: "self/toolbox",
-            availability: "optional",
-            source_availability: "unknown",
-        },
-        {
-            protocol: "fuchsia.bluetooth.pandora.RootcanalClientController",
-            from: "#bt-rootcanal",
-            to: "self/toolbox",
-            availability: "optional",
-            source_availability: "unknown",
-        },
-        {
-            protocol: "fuchsia.developer.remotecontrol.RemoteControl",
-            from: "#remote-control",
-            to: "self/toolbox",
-            availability: "optional",
-            source_availability: "unknown",
-        },
-        {
-            protocol: "fuchsia.posix.socket.Provider",
-            from: "#network",
-            to: "self/toolbox",
-            availability: "optional",
-            source_availability: "unknown",
-        },
-        {
-            protocol: "fuchsia.bluetooth.sys.Access",
-            from: "#bluetooth-core",
-            to: "self/toolbox",
-            availability: "optional",
-            source_availability: "unknown",
-        },
-        {
-            protocol: "fuchsia.pkg.resolution.PackageResolver",
-            from: "#pkg-resolver",
-            to: "self/toolbox",
-            availability: "optional",
-            source_availability: "unknown",
-        },
+        { dictionary: "toolbox-directories" },
     ],
     expose: [
         {
             dictionary: "toolbox",
+            from: "self",
+        },
+        {
+            dictionary: "toolbox-directories",
             from: "self",
         },
     ],

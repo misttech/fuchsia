@@ -38,5 +38,11 @@
             to: "#bt-pandora-server",
             source_availability: "unknown",
         },
+        {
+            protocol: "fuchsia.bluetooth.pandora.GrpcServerController",
+            from: "#bt-pandora-server",
+            to: "self/toolbox",
+            target_availability: "unknown",
+        },
     ],
 }

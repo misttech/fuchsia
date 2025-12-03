@@ -20,6 +20,12 @@
             as: "fuchsia.pkg.PackageResolver-pkg",
             to: "#process_resolver",
         },
+        {
+            protocol: "fuchsia.process.Resolver",
+            from: "#process_resolver",
+            to: "self/toolbox",
+            target_availability: "unknown",
+        },
     ],
     expose: [
         {

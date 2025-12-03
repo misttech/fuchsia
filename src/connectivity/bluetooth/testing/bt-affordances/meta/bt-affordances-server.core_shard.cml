@@ -22,5 +22,14 @@
             to: "#bt-affordances-server",
             source_availability: "unknown",
         },
+        {
+            protocol: [
+                "fuchsia.bluetooth.affordances.HostController",
+                "fuchsia.bluetooth.affordances.PeerController",
+            ],
+            from: "#bt-affordances-server",
+            to: "self/toolbox",
+            target_availability: "unknown",
+        },
     ],
 }

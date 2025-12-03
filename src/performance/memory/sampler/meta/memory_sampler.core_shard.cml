@@ -18,5 +18,11 @@
             from: "#feedback",
             to: "#memory_sampler",
         },
+        {
+            protocol: "fuchsia.memory.sampler.Sampler",
+            from: "#memory_sampler",
+            to: "self/toolbox",
+            target_availability: "unknown",
+        },
     ],
 }

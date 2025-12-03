@@ -78,6 +78,32 @@
             rights: [ "rx*" ],
             subdir: "blob",
         },
+        {
+            directory: "bin",
+            from: "#pkg-shell-commands",
+            to: "self/toolbox-directories",
+            target_availability: "unknown",
+        },
+        {
+            directory: [
+                "build-info",
+                "pkgfs",
+                "root-ssl-certificates",
+                "system",
+            ],
+            from: "#pkg-cache",
+            to: "self/toolbox-directories",
+            target_availability: "unknown",
+        },
+        {
+            protocol: [
+                "fuchsia.pkg.PackageCache",
+                "fuchsia.space.Manager",
+            ],
+            from: "#pkg-cache",
+            to: "self/toolbox",
+            target_availability: "unknown",
+        },
     ],
     expose: [
         {

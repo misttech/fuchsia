@@ -819,5 +819,14 @@
             availability: "optional",
             source_availability: "unknown",
         },
+        {
+            protocol: [
+                "fuchsia.element.GraphicalPresenter",
+                "fuchsia.session.Launcher",
+            ],
+            from: "#session-manager",
+            to: "self/toolbox",
+            target_availability: "unknown",
+        },
     ],
 }

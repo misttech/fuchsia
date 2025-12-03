@@ -59,5 +59,11 @@
             from: "parent",
             to: "#system-update",
         },
+        {
+            protocol: "fuchsia.update.CommitStatusProvider",
+            from: "#system-update",
+            to: "self/toolbox",
+            target_availability: "unknown",
+        },
     ],
 }

@@ -76,5 +76,15 @@
             from: "#network-tun",
             to: "#weavestack",
         },
+        {
+            protocol: [
+                "fuchsia.weave.Bootstrap",
+                "fuchsia.weave.Stack",
+                "fuchsia.weave.StackProvider",
+            ],
+            from: "#weavestack",
+            to: "self/toolbox",
+            target_availability: "unknown",
+        },
     ],
 }

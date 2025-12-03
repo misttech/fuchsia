@@ -13,6 +13,15 @@
     offer: [
         {
             protocol: [
+                "fuchsia.sysmem.Allocator",
+                "fuchsia.sysmem2.Allocator",
+            ],
+            from: "#sysmem",
+            to: "self/toolbox",
+            target_availability: "unknown",
+        },
+        {
+            protocol: [
                 "fuchsia.feedback.ComponentDataRegister",
                 "fuchsia.kernel.InfoResource",
                 "fuchsia.kernel.IommuResource",

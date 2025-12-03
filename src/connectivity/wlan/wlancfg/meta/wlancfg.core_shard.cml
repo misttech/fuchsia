@@ -58,5 +58,18 @@
             to: "#wlancfg",
             source_availability: "unknown",
         },
+        {
+            protocol: [
+                "fuchsia.wlan.policy.AccessPointListener",
+                "fuchsia.wlan.policy.AccessPointProvider",
+                "fuchsia.wlan.policy.ClientListener",
+                "fuchsia.wlan.policy.ClientProvider",
+                "fuchsia.wlan.product.deprecatedclient.DeprecatedClient",
+                "fuchsia.wlan.product.deprecatedconfiguration.DeprecatedConfigurator",
+            ],
+            from: "#wlancfg",
+            to: "self/toolbox",
+            target_availability: "unknown",
+        },
     ],
 }

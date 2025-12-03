@@ -101,5 +101,14 @@
             from: "#memory_pressure_signaler",
             to: "#termina-guest-manager",
         },
+        {
+            protocol: [
+                "fuchsia.virtualization.LinuxManager",
+                "fuchsia.virtualization.TerminaGuestManager",
+            ],
+            from: "#termina-guest-manager",
+            to: "self/toolbox",
+            target_availability: "unknown",
+        },
     ],
 }

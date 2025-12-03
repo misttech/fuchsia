@@ -15,5 +15,11 @@
             from: "#audio_core",
             to: "#soundplayer",
         },
+        {
+            protocol: "fuchsia.media.sounds.Player",
+            from: "#soundplayer",
+            to: "self/toolbox",
+            target_availability: "unknown",
+        },
     ],
 }

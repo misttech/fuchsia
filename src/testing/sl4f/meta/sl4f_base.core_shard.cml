@@ -279,5 +279,11 @@
             from: "parent",
             to: "#audio_recording",
         },
+        {
+            protocol: "sl4f.Binder",
+            from: "#sl4f",
+            to: "self/toolbox",
+            target_availability: "unknown",
+        },
     ],
 }

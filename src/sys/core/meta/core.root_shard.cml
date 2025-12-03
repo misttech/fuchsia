@@ -405,6 +405,13 @@
             target_availability: "unknown",
         },
         {
+            dictionary: "toolbox-directories",
+            from: "#core",
+            as: "toolbox-core-directories",
+            to: "#toolbox",
+            target_availability: "unknown",
+        },
+        {
             protocol: [ "fuchsia.process.Resolver" ],
             from: "#core",
             to: "#bootstrap",

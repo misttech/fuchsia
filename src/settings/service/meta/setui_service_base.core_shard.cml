@@ -99,6 +99,25 @@
             to: "#setui_service",
             source_availability: "unknown",
         },
+        {
+            protocol: [
+                "fuchsia.settings.Accessibility",
+                "fuchsia.settings.Audio",
+                "fuchsia.settings.Display",
+                "fuchsia.settings.DoNotDisturb",
+                "fuchsia.settings.FactoryReset",
+                "fuchsia.settings.Input",
+                "fuchsia.settings.Intl",
+                "fuchsia.settings.Keyboard",
+                "fuchsia.settings.Light",
+                "fuchsia.settings.NightMode",
+                "fuchsia.settings.Privacy",
+                "fuchsia.settings.Setup",
+            ],
+            from: "#setui_service",
+            to: "self/toolbox",
+            target_availability: "unknown",
+        },
     ],
     expose: [
         {

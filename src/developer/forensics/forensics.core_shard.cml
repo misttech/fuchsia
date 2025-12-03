@@ -149,6 +149,27 @@
             from: "self",
             to: "#feedback",
         },
+        {
+            protocol: [
+                "fuchsia.feedback.ComponentDataRegister",
+                "fuchsia.feedback.CrashReporter",
+                "fuchsia.feedback.CrashReportingProductRegister",
+                "fuchsia.feedback.DataProvider",
+                "fuchsia.feedback.LastRebootInfoProvider",
+            ],
+            from: "#feedback",
+            to: "self/toolbox",
+            target_availability: "unknown",
+        },
+        {
+            protocol: [
+                "fuchsia.exception.Handler",
+                "fuchsia.exception.ProcessLimbo",
+            ],
+            from: "#exceptions",
+            to: "self/toolbox",
+            target_availability: "unknown",
+        },
     ],
     expose: [
         {

@@ -21,6 +21,15 @@
             from: "parent",
             to: "#ui",
         },
+        {
+            protocol: [
+                "fuchsia.lightsensor.Sensor",
+                "fuchsia.session.scene.Manager",
+            ],
+            from: "#ui",
+            to: "self/toolbox",
+            target_availability: "unknown",
+        },
 
         // Routes from optional shards.
         // All of these routes should be marked `source_availability: "unknown"`
