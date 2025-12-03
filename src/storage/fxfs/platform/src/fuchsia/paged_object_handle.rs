@@ -205,6 +205,13 @@ impl Inner {
         }
     }
 
+    /// Return the reservation to the allocator, and return the number of currently dirty pages.
+    fn forget_dirty_pages(&mut self, allocator: Arc<Allocator>, store_object_id: u64) -> u64 {
+        allocator.release_reservation(Some(store_object_id), self.reservation());
+        self.spare = 0;
+        std::mem::take(&mut self.dirty_page_count)
+    }
+
     fn end_flush(&mut self) {
         self.dirty_mtime.end_flush();
         self.dirty_crtime.end_flush();
@@ -701,7 +708,10 @@ impl PagedObjectHandle {
             .await?
         }
 
-        if !last_chance {
+        if last_chance {
+            // They can't be flushed now, so they never will be. We'll drop them.
+            self.owner().report_pager_clean(pages_not_flushed * zx::system_get_page_size() as u64);
+        } else {
             let mut inner = self.inner.lock();
             inner.put_back(pages_not_flushed, &reservation);
         }
@@ -973,15 +983,30 @@ impl PagedObjectHandle {
         }
         self.handle.allocate(range).await
     }
+
+    /// Gives up the tracked dirty bytes back to the volume and the reservation to the allocator.
+    /// This is done if the file is about to be closed and also deleted, no point in flushing.
+    pub fn forget_dirty_pages(&self) {
+        self.owner().report_pager_clean(
+            self.inner.lock().forget_dirty_pages(self.allocator(), self.store().store_object_id())
+                * zx::system_get_page_size() as u64,
+        );
+    }
 }
 
 impl Drop for PagedObjectHandle {
     fn drop(&mut self) {
-        let inner = self.inner.lock();
-        let reservation = inner.reservation();
-        if reservation > 0 {
-            self.allocator().release_reservation(Some(self.store().store_object_id()), reservation);
-        }
+        let mut inner = self.inner.lock();
+        // If we're dropping the vmo, all the dirty pages should be flushed, or they should be
+        // knowingly discarded using `forget_dirty_pages()`.
+        // TODO(https://fxbug.dev/452935329): Turn this into a real assert once we gain some
+        // confidence.
+        debug_assert!(inner.dirty_page_count == 0, "Dropping VMO with dirty bytes");
+        // Return what's left.
+        self.owner().report_pager_clean(
+            inner.forget_dirty_pages(self.allocator(), self.store().store_object_id())
+                * zx::system_get_page_size() as u64,
+        );
     }
 }
 
@@ -2488,8 +2513,6 @@ mod tests {
         })
         .await;
 
-        // https://fxbug.dev/318434279 - the dirty pages beyond the end of the file cause shutdown
-        // to stall forever, waiting for an infinitely looping flush attempt.
         fixture.close().await;
     }
 

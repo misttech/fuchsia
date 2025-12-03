@@ -369,6 +369,7 @@ impl FxNode for FxFile {
                             // to it. This file will be tombstoned. Actual purging is queued to be
                             // done asynchronously. We don't need to do any flushing in this case -
                             // if the file is going to be deleted anyway, there is no point.
+                            self.handle.forget_dirty_pages();
                             self.handle.owner().clone().spawn(async move {
                                 let store = self.handle.store();
                                 store.filesystem().graveyard().queue_tombstone_object(
