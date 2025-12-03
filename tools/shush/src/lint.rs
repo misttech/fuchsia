@@ -52,7 +52,7 @@ pub fn get_categories() -> HashMap<String, HashSet<String>> {
     let stdout = String::from_utf8_lossy(&output.stdout);
     let mut lines = stdout.lines().map(str::trim);
     let parse_categories = |line: &str| {
-        if let [category, lints] = line.splitn(2, ' ').collect::<Vec<_>>()[..] {
+        if let Some((category, lints)) = line.split_once(' ') {
             (category.to_owned(), lints.split(',').map(|s| s.trim().replace('-', "_")).collect())
         } else {
             panic!("Malformed lint category output")
