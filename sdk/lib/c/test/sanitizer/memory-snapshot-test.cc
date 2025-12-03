@@ -16,6 +16,8 @@
 
 #include <array>
 #include <condition_variable>
+#include <span>
+#include <sstream>
 #include <thread>
 #include <vector>
 
@@ -72,25 +74,42 @@ constexpr uintptr_t kDeadThreadReturnPattern = 0xdeadbeef3e34a100UL;
 
 class DlopenAuto {
  public:
-  DlopenAuto() : handle_(dlopen("libsanitizer-memory-snapshot-test-dlopen-dso.so", RTLD_LOCAL)) {}
-  ~DlopenAuto() { dlclose(handle_); }
+  DlopenAuto() : handle_(dlopen("libsanitizer-memory-snapshot-test-dlopen-dso.so", RTLD_LOCAL)) {
+    EXPECT_TRUE(handle_) << dlerror();
+  }
+
+  ~DlopenAuto() {
+    if (handle_) {
+      dlclose(handle_);
+    }
+  }
 
   bool Ok() const { return handle_; }
 
   const void* operator()(const char* name) {
-    return reinterpret_cast<const void* (*)()>(reinterpret_cast<uintptr_t>(dlsym(handle_, name)))();
+    EXPECT_TRUE(handle_);
+    if (!handle_) {
+      return nullptr;
+    }
+    void* ptr = dlsym(handle_, name);
+    EXPECT_TRUE(ptr) << "dlsym failed to find " << name << dlerror();
+    if (!ptr) {
+      return nullptr;
+    }
+    auto* fnptr = reinterpret_cast<const void* (*)()>(reinterpret_cast<uintptr_t>(ptr));
+    const void* value = fnptr();
+    EXPECT_TRUE(value) << name << "() -> nullptr";
+    return value;
   }
 
  private:
   void* handle_;
 };
 
-struct MemoryChunk {
-  void* mem;
-  size_t len;
-};
-
+using MemoryChunk = std::span<std::byte>;
 using MemoryChunks = std::vector<MemoryChunk>;
+
+MemoryChunk AsChunk(void* mem, size_t size) { return {reinterpret_cast<std::byte*>(mem), size}; }
 
 // A new pthread that immediately dies and returns Cookie().
 // It's joined for cleanup on destruction.
@@ -141,7 +160,8 @@ struct SnapshotResult {
   std::array<bool, kThreadCount> saw_thread_special_registers{};
 };
 
-bool ChunksCover(const MemoryChunks& chunks, const void* ptr) {
+template <bool Expected = true>
+void ExpectChunksCover(const MemoryChunks& chunks, const void* ptr) {
   auto addr = reinterpret_cast<uintptr_t>(ptr);
   // When hwasan is enabled, `ptr` can be tagged if it points to a static local variable. However,
   // globals received here from __sanitizer_memory_snapshot will not be tagged since we currently
@@ -149,13 +169,20 @@ bool ChunksCover(const MemoryChunks& chunks, const void* ptr) {
   // will be within expected memory chunks, but the tag is added to the C ptr afterwards due to how
   // hwasan instruments local variables.
   addr &= ADDR_MASK;
+  std::stringstream desc;
+  desc << "{";
   for (const auto& chunk : chunks) {
-    const auto start = reinterpret_cast<uintptr_t>(chunk.mem);
-    if (addr >= start && (addr - start < chunk.len)) {
-      return true;
+    const auto start = reinterpret_cast<uintptr_t>(chunk.data());
+    if (addr >= start && (addr - start < chunk.size_bytes())) {
+      ASSERT_TRUE(Expected) << ptr << " in chunk [" << chunk.data() << ", "
+                            << chunk.data() + chunk.size() << ")";
+      return;
     }
+    desc << " [" << static_cast<const void*>(chunk.data()) << ", "
+         << static_cast<const void*>(chunk.data() + chunk.size()) << ")";
   }
-  return false;
+  desc << " }";
+  ASSERT_FALSE(Expected) << ptr << " not in these chunks: " << desc.str();
 }
 
 void SnapshotDoneCallback(zx_status_t status, void* arg) {
@@ -172,17 +199,17 @@ void SnapshotDoneCallback(zx_status_t status, void* arg) {
 
 void GlobalsCallback(void* mem, size_t len, void* arg) {
   auto result = static_cast<SnapshotResult*>(arg);
-  result->globals.push_back({mem, len});
+  result->globals.push_back(AsChunk(mem, len));
 }
 
 void StacksCallback(void* mem, size_t len, void* arg) {
   auto result = static_cast<SnapshotResult*>(arg);
-  result->stacks.push_back({mem, len});
+  result->stacks.push_back(AsChunk(mem, len));
 }
 
 void TlsCallback(void* mem, size_t len, void* arg) {
   auto result = static_cast<SnapshotResult*>(arg);
-  result->tls.push_back({mem, len});
+  result->tls.push_back(AsChunk(mem, len));
 
   // Currently, the TLS callback receives two kinds of buffers: (1) an actual TLS
   // segment which may or may not be 8-byte aligned and (2) libc internals (start_arg,
@@ -294,20 +321,22 @@ TEST(SanitizerUtilsTest, MemorySnapshotGlobalsOnly) {
   static int local_bss;
   static const int local_rodata = 17;
   static int* const local_relro = &local_data;
-  EXPECT_TRUE(ChunksCover(result.globals, &local_data));
-  EXPECT_TRUE(ChunksCover(result.globals, &local_bss));
-  EXPECT_FALSE(ChunksCover(result.globals, &local_rodata));
-  EXPECT_FALSE(ChunksCover(result.globals, &local_relro));
+  ASSERT_NO_FATAL_FAILURE(ExpectChunksCover(result.globals, &local_data));
+  ASSERT_NO_FATAL_FAILURE(ExpectChunksCover(result.globals, &local_bss));
+  ASSERT_NO_FATAL_FAILURE(ExpectChunksCover<false>(result.globals, &local_rodata));
+  ASSERT_NO_FATAL_FAILURE(ExpectChunksCover<false>(result.globals, &local_relro));
 
-  EXPECT_TRUE(ChunksCover(result.globals, NeededDsoDataPointer()));
-  EXPECT_TRUE(ChunksCover(result.globals, NeededDsoBssPointer()));
-  EXPECT_FALSE(ChunksCover(result.globals, NeededDsoRodataPointer()));
-  EXPECT_FALSE(ChunksCover(result.globals, NeededDsoRelroPointer()));
+  ASSERT_NO_FATAL_FAILURE(ExpectChunksCover(result.globals, NeededDsoDataPointer()));
+  ASSERT_NO_FATAL_FAILURE(ExpectChunksCover(result.globals, NeededDsoBssPointer()));
+  ASSERT_NO_FATAL_FAILURE(ExpectChunksCover<false>(result.globals, NeededDsoRodataPointer()));
+  ASSERT_NO_FATAL_FAILURE(ExpectChunksCover<false>(result.globals, NeededDsoRelroPointer()));
 
-  EXPECT_TRUE(ChunksCover(result.globals, loaded("DlopenDsoDataPointer")));
-  EXPECT_TRUE(ChunksCover(result.globals, loaded("DlopenDsoBssPointer")));
-  EXPECT_FALSE(ChunksCover(result.globals, loaded("DlopenDsoRodataPointer")));
-  EXPECT_FALSE(ChunksCover(result.globals, loaded("DlopenDsoRelroPointer")));
+  ASSERT_NO_FATAL_FAILURE(ExpectChunksCover(result.globals, loaded("DlopenDsoDataPointer")));
+  ASSERT_NO_FATAL_FAILURE(ExpectChunksCover(result.globals, loaded("DlopenDsoBssPointer")));
+  ASSERT_NO_FATAL_FAILURE(
+      ExpectChunksCover<false>(result.globals, loaded("DlopenDsoRodataPointer")));
+  ASSERT_NO_FATAL_FAILURE(
+      ExpectChunksCover<false>(result.globals, loaded("DlopenDsoRelroPointer")));
 }
 
 thread_local int gTdata = 42;
@@ -476,44 +505,46 @@ TEST(SanitizerUtilsTest, MemorySnapshotFull) {
   static int local_bss;
   static const int local_rodata = 17;
   static int* const local_relro = &local_data;
-  EXPECT_TRUE(ChunksCover(result.globals, &local_data));
-  EXPECT_TRUE(ChunksCover(result.globals, &local_bss));
-  EXPECT_FALSE(ChunksCover(result.globals, &local_rodata));
-  EXPECT_FALSE(ChunksCover(result.globals, &local_relro));
+  ASSERT_NO_FATAL_FAILURE(ExpectChunksCover(result.globals, &local_data));
+  ASSERT_NO_FATAL_FAILURE(ExpectChunksCover(result.globals, &local_bss));
+  ASSERT_NO_FATAL_FAILURE(ExpectChunksCover<false>(result.globals, &local_rodata));
+  ASSERT_NO_FATAL_FAILURE(ExpectChunksCover<false>(result.globals, &local_relro));
 
-  EXPECT_TRUE(ChunksCover(result.globals, NeededDsoDataPointer()));
-  EXPECT_TRUE(ChunksCover(result.globals, NeededDsoBssPointer()));
-  EXPECT_FALSE(ChunksCover(result.globals, NeededDsoRodataPointer()));
-  EXPECT_FALSE(ChunksCover(result.globals, NeededDsoRelroPointer()));
+  ASSERT_NO_FATAL_FAILURE(ExpectChunksCover(result.globals, NeededDsoDataPointer()));
+  ASSERT_NO_FATAL_FAILURE(ExpectChunksCover(result.globals, NeededDsoBssPointer()));
+  ASSERT_NO_FATAL_FAILURE(ExpectChunksCover<false>(result.globals, NeededDsoRodataPointer()));
+  ASSERT_NO_FATAL_FAILURE(ExpectChunksCover<false>(result.globals, NeededDsoRelroPointer()));
 
-  EXPECT_TRUE(ChunksCover(result.globals, loaded("DlopenDsoDataPointer")));
-  EXPECT_TRUE(ChunksCover(result.globals, loaded("DlopenDsoBssPointer")));
-  EXPECT_FALSE(ChunksCover(result.globals, loaded("DlopenDsoRodataPointer")));
-  EXPECT_FALSE(ChunksCover(result.globals, loaded("DlopenDsoRelroPointer")));
+  ASSERT_NO_FATAL_FAILURE(ExpectChunksCover(result.globals, loaded("DlopenDsoDataPointer")));
+  ASSERT_NO_FATAL_FAILURE(ExpectChunksCover(result.globals, loaded("DlopenDsoBssPointer")));
+  ASSERT_NO_FATAL_FAILURE(
+      ExpectChunksCover<false>(result.globals, loaded("DlopenDsoRodataPointer")));
+  ASSERT_NO_FATAL_FAILURE(
+      ExpectChunksCover<false>(result.globals, loaded("DlopenDsoRelroPointer")));
 
   int stack_local = 42;
-  EXPECT_TRUE(ChunksCover(result.stacks, __builtin_frame_address(0)));
-  EXPECT_TRUE(ChunksCover(result.stacks, &stack_local));
+  ASSERT_NO_FATAL_FAILURE(ExpectChunksCover(result.stacks, __builtin_frame_address(0)));
+  ASSERT_NO_FATAL_FAILURE(ExpectChunksCover(result.stacks, &stack_local));
 
   for (auto& t : threads) {
-    EXPECT_TRUE(ChunksCover(result.stacks, t.safe_stack));
-    EXPECT_TRUE(ChunksCover(result.stacks, t.unsafe_stack));
+    ASSERT_NO_FATAL_FAILURE(ExpectChunksCover(result.stacks, t.safe_stack));
+    ASSERT_NO_FATAL_FAILURE(ExpectChunksCover(result.stacks, t.unsafe_stack));
   }
 
-  EXPECT_TRUE(ChunksCover(result.tls, &gTdata));
-  EXPECT_TRUE(ChunksCover(result.tls, &gTbss));
-  EXPECT_TRUE(ChunksCover(result.tls, NeededDsoThreadLocalDataPointer()));
-  EXPECT_TRUE(ChunksCover(result.tls, NeededDsoThreadLocalBssPointer()));
-  EXPECT_TRUE(ChunksCover(result.tls, loaded("DlopenDsoThreadLocalDataPointer")));
-  EXPECT_TRUE(ChunksCover(result.tls, loaded("DlopenDsoThreadLocalBssPointer")));
+  ASSERT_NO_FATAL_FAILURE(ExpectChunksCover(result.tls, &gTdata));
+  ASSERT_NO_FATAL_FAILURE(ExpectChunksCover(result.tls, &gTbss));
+  ASSERT_NO_FATAL_FAILURE(ExpectChunksCover(result.tls, NeededDsoThreadLocalDataPointer()));
+  ASSERT_NO_FATAL_FAILURE(ExpectChunksCover(result.tls, NeededDsoThreadLocalBssPointer()));
+  ASSERT_NO_FATAL_FAILURE(ExpectChunksCover(result.tls, loaded("DlopenDsoThreadLocalDataPointer")));
+  ASSERT_NO_FATAL_FAILURE(ExpectChunksCover(result.tls, loaded("DlopenDsoThreadLocalBssPointer")));
 
   for (auto& t : threads) {
-    EXPECT_TRUE(ChunksCover(result.tls, t.tdata));
-    EXPECT_TRUE(ChunksCover(result.tls, t.tbss));
-    EXPECT_TRUE(ChunksCover(result.tls, t.needed_dso_tdata));
-    EXPECT_TRUE(ChunksCover(result.tls, t.needed_dso_tbss));
-    EXPECT_TRUE(ChunksCover(result.tls, t.dlopen_dso_tdata));
-    EXPECT_TRUE(ChunksCover(result.tls, t.dlopen_dso_tbss));
+    ASSERT_NO_FATAL_FAILURE(ExpectChunksCover(result.tls, t.tdata));
+    ASSERT_NO_FATAL_FAILURE(ExpectChunksCover(result.tls, t.tbss));
+    ASSERT_NO_FATAL_FAILURE(ExpectChunksCover(result.tls, t.needed_dso_tdata));
+    ASSERT_NO_FATAL_FAILURE(ExpectChunksCover(result.tls, t.needed_dso_tbss));
+    ASSERT_NO_FATAL_FAILURE(ExpectChunksCover(result.tls, t.dlopen_dso_tdata));
+    ASSERT_NO_FATAL_FAILURE(ExpectChunksCover(result.tls, t.dlopen_dso_tbss));
   }
 
   EXPECT_TRUE(result.saw_main_tss);
