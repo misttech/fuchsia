@@ -7,43 +7,28 @@
 
 #include <lib/inspect/cpp/bounded_list_node.h>
 #include <lib/inspect/cpp/inspect.h>
+#include <lib/power/state_recorder/cpp/common.h>
+#include <lib/power/state_recorder/cpp/concepts.h>
+#include <lib/power/state_recorder/cpp/enum_state_recorder_internal.h>
 #include <lib/trace-engine/context.h>
 #include <lib/trace-engine/types.h>
 #include <lib/trace/event.h>
 #include <lib/zx/clock.h>
-#include <lib/zx/process.h>
 #include <lib/zx/result.h>
 #include <zircon/compiler.h>
 
 #include <map>
+#include <memory>
+#include <optional>
 #include <string>
 #include <type_traits>
-#include <unordered_map>
-
-#include "lib/power/state_recorder/cpp/manager.h"
 
 namespace power_observability {
 
-// Using an anonymous namespace here results in an unneeded-internal-declaration warning.
-namespace internal {
-
-zx_koid_t GetPid() {
-  static const zx_koid_t pid = []() {
-    zx_info_handle_basic_t info;
-    zx_status_t status =
-        zx::process::self()->get_info(ZX_INFO_HANDLE_BASIC, &info, sizeof(info), nullptr, nullptr);
-    ZX_ASSERT_MSG(status == ZX_OK, "Failed to retrieve PID");
-    return info.koid;
-  }();
-  return pid;
-}
-
-}  // namespace internal
-
 // Metadata for an enum state.
 template <typename T>
+  requires IsRecordableEnumType<T>
 struct EnumStateMetadata {
-  static_assert(std::is_enum_v<T>, "T must be an enum type.");
   // Name of the state.
   // - Inspect: This name will be used for this state's Inspect node, recorded in
   //   a node named "power_observability_state_recorders" within the component inspector's root.
@@ -61,19 +46,21 @@ struct EnumStateMetadata {
 
 // Records state changes to Inspect and trace.
 template <typename T>
+  requires IsRecordableEnumType<T>
 class EnumStateRecorder final {
  public:
-  static_assert(std::is_enum_v<T>, "T must be an enum type.");
-
   // Creates a new StateRecorder.
   //
   // Errors:
   //   - ZX_ERR_ALREADY_EXISTS: `metadata.name` is already in use by a StateRecorder exporting
   //     to the provided inspector.
-  static zx::result<EnumStateRecorder<T>> Create(EnumStateMetadata<T> metadata, size_t capacity,
+  static zx::result<EnumStateRecorder<T>> Create(EnumStateMetadata<T> metadata,
+                                                 RecorderOptions options,
                                                  StateRecorderManager& manager);
 
-  void Record(T state_enum);
+  // Records `value`, timestamped either at `event_timestamp` if provided, or at the current time of
+  // the boot clock if not.
+  void Record(T value, std::optional<zx::time_boot> event_timestamp = std::nullopt);
 
   EnumStateRecorder(const EnumStateRecorder&) = delete;
   EnumStateRecorder& operator=(const EnumStateRecorder&) = delete;
@@ -81,7 +68,7 @@ class EnumStateRecorder final {
   EnumStateRecorder& operator=(EnumStateRecorder&& other) noexcept {
     name_ = std::move(other.name_);
     trace_category_literal_ = other.trace_category_literal_;
-    state_names_ = std::move(other.state_names_);
+    name_lookup_ = other.name_lookup_;
     root_node_ = std::move(other.root_node_);
     history_ = std::move(other.history_);
     trace_id_ = other.trace_id_;
@@ -98,7 +85,7 @@ class EnumStateRecorder final {
   EnumStateRecorder(EnumStateRecorder&& other) noexcept
       : name_(std::move(other.name_)),
         trace_category_literal_(other.trace_category_literal_),
-        state_names_(std::move(other.state_names_)),
+        name_lookup_(other.name_lookup_),
         root_node_(std::move(other.root_node_)),
         history_(std::move(other.history_)),
         trace_id_(other.trace_id_),
@@ -116,54 +103,59 @@ class EnumStateRecorder final {
   }
 
  protected:
-  EnumStateRecorder(EnumStateMetadata<T> metadata, size_t capacity, StateRecorderManager& manager,
-                    inspect::Node root_node)
+  EnumStateRecorder(EnumStateMetadata<T> metadata, RecorderOptions options,
+                    StateRecorderManager& manager, inspect::Node root_node)
       : name_(metadata.name),
         trace_category_literal_(metadata.trace_category_literal),
+        name_lookup_(std::make_shared<internal::StateNameLookup<T>>(metadata.states)),
         root_node_(std::move(root_node)),
-        history_(root_node_.CreateChild("history"), capacity),
+        history_(options.lazy_record ? History(internal::EnumLazyInspectRecorder<T>::Create(
+                                           name_lookup_, options.capacity, root_node_))
+                                     : History(inspect::BoundedListNode(
+                                           root_node_.CreateChild("history"), options.capacity))),
         trace_id_(TRACE_NONCE()),
         trace_name_(std::make_unique<std::string>(
             std::format("{} {} {}", name_, internal::GetPid(), trace_id_))),
         trace_name_ref_(trace_make_inline_string_ref(trace_name_->c_str(), trace_name_->length())),
         manager_(&manager) {
+    // In the eager case, record nominal reset info for symmetry with the lazy case.
+    if (!options.lazy_record) {
+      root_node_.RecordChild("reset_info", [](inspect::Node& node) {
+        node.RecordUint("count", 0);
+        node.RecordInt("last_reset_ns", zx::clock::get_boot().get());
+      });
+    }
+
     root_node_.RecordChild("metadata", [&](inspect::Node& metadata_node) {
       metadata_node.RecordString("name", metadata.name);
       metadata_node.RecordString("type", "enum");
       metadata_node.RecordChild("states", [&](inspect::Node& states_node) {
         for (const auto& [state_enum, state_name] : metadata.states) {
-          states_node.RecordUint(state_name, static_cast<std::underlying_type_t<T>>(state_enum));
+          if constexpr (WidensToUint64<std::underlying_type_t<T>>) {
+            states_node.RecordUint(state_name, static_cast<std::underlying_type_t<T>>(state_enum));
+          } else if constexpr (WidensToInt64<std::underlying_type_t<T>>) {
+            states_node.RecordInt(state_name, static_cast<std::underlying_type_t<T>>(state_enum));
+          } else {
+            static_assert(!IsRecordableEnumType<T>, "Unsupported type");
+          }
         }
       });
     });
-
-    for (const auto& [state_enum, state_name] : metadata.states) {
-      state_names_.emplace(state_enum, state_name);
-    }
   }
 
  private:
-  // Stores a state name as both a std::string (for Inspect) and trace_string_ref_t (for trace);
-  struct StateName {
-    // Use a unique_ptr to guarantee address stability, so the ref in `trace_name` remains valid on
-    // move.
-    std::unique_ptr<std::string> inspect_name;
-    trace_string_ref_t trace_name;
-
-    explicit StateName(std::string name)
-        : inspect_name(std::make_unique<std::string>(name)),
-          trace_name(trace_make_inline_string_ref(inspect_name->c_str(), inspect_name->length())) {}
-  };
-
-  const StateName* GetStateName(T state_enum) const;
+  const internal::StateName* GetStateName(T state_enum) const;
 
   std::string name_;
   const char* trace_category_literal_;
 
-  std::unordered_map<T, StateName> state_names_;
+  std::shared_ptr<internal::StateNameLookup<T>> name_lookup_;
 
   inspect::Node root_node_;
-  inspect::BoundedListNode history_;
+
+  using History =
+      std::variant<inspect::BoundedListNode, std::unique_ptr<internal::EnumLazyInspectRecorder<T>>>;
+  History history_;
 
   trace_async_id_t trace_id_;
 
@@ -175,39 +167,37 @@ class EnumStateRecorder final {
   std::unique_ptr<std::string> trace_name_;
   trace_string_ref_t trace_name_ref_;
 
-  std::optional<const StateName*> current_state_name_;
+  std::optional<const internal::StateName*> current_state_name_;
 
   // Store a reference to the manager so we can unregister our name on destruction.
   StateRecorderManager* manager_;
+
   bool moved_from_ = false;
 };
 
 template <typename T>
+  requires IsRecordableEnumType<T>
 zx::result<EnumStateRecorder<T>> EnumStateRecorder<T>::Create(EnumStateMetadata<T> metadata,
-                                                              size_t capacity,
+                                                              RecorderOptions options,
                                                               StateRecorderManager& manager) {
   auto result = manager.RegisterName(metadata.name);
   if (!result.is_ok()) {
     return result.take_error();
   }
 
-  return zx::ok(EnumStateRecorder<T>(metadata, capacity, manager, std::move(result.value())));
+  return zx::ok(EnumStateRecorder<T>(metadata, options, manager, std::move(result.value())));
 }
 
 template <typename T>
-const typename EnumStateRecorder<T>::StateName* EnumStateRecorder<T>::GetStateName(
-    T state_enum) const {
-  static const StateName UNKNOWN_STATE_NAME = StateName("<Unknown>");
-
-  auto it = state_names_.find(state_enum);
-  if (it != state_names_.end()) {
-    return &it->second;
+  requires IsRecordableEnumType<T>
+void EnumStateRecorder<T>::Record(T state_enum, std::optional<zx::time_boot> event_timestamp) {
+  zx::time_boot current_timestamp;
+  if (event_timestamp) {
+    current_timestamp = *event_timestamp;
+  } else {
+    current_timestamp = zx::clock::get_boot();
   }
-  return &UNKNOWN_STATE_NAME;
-}
 
-template <typename T>
-void EnumStateRecorder<T>::Record(T state_enum) {
   // Since our event names are not literals, we're using the trace function API rather than the
   // more common macro API.
   static trace_site_t trace_site_state;
@@ -225,7 +215,7 @@ void EnumStateRecorder<T>::Record(T state_enum) {
     }
   }
 
-  current_state_name_ = GetStateName(state_enum);
+  current_state_name_ = name_lookup_->GetStateName(state_enum);
 
   if (unlikely(trace_context)) {
     // The instant is emitted before the duration event to establish the name of the track.
@@ -239,11 +229,15 @@ void EnumStateRecorder<T>::Record(T state_enum) {
     trace_release_context(trace_context);
   }
 
-  auto timestamp = zx::clock::get_boot().get();
-  history_.CreateEntry([&](inspect::Node& node) {
-    node.RecordInt("@time", timestamp);
-    node.RecordString("value", *current_state_name_.value()->inspect_name);
-  });
+  if (auto* history = std::get_if<inspect::BoundedListNode>(&history_)) {
+    history->CreateEntry([&](inspect::Node& node) {
+      node.RecordInt("@time", current_timestamp.get());
+      node.RecordString("value", *current_state_name_.value()->inspect_name);
+    });
+  } else if (auto* history =
+                 std::get_if<std::unique_ptr<internal::EnumLazyInspectRecorder<T>>>(&history_)) {
+    (*history)->AddEntry(state_enum, internal::to_msecs(current_timestamp));
+  }
 }
 
 }  // namespace power_observability

@@ -19,6 +19,10 @@
 
 namespace power_observability::internal {
 
+inline int64_t to_msecs(zx::time_boot timestamp) {
+  return zx::duration(timestamp.to_timespec()).to_msecs();
+}
+
 // The logical data points stored in a TimestampedBuffer.
 template <typename ValueType>
 struct DataPoint {
@@ -77,9 +81,6 @@ struct ResetInfo {
   int64_t last_reset_ns;
 };
 
-template <typename T>
-concept IsRecordableValueType = IsRecordableNumericType<T> || IsRecordableEnumType<T>;
-
 // Manages circular buffers for timestamp deltas and associated data.
 template <typename ValueType>
   requires IsRecordableValueType<ValueType>
@@ -92,7 +93,9 @@ class TimestampedBuffer {
                          ValueBuffer<ValueType>>;
 
   explicit TimestampedBuffer(size_t size)
-      : delta_ms_buffer_(size), data_buffer_(BufferType(size)), buffer_size_(size) {}
+      : delta_ms_buffer_(size), data_buffer_(BufferType(size)), buffer_size_(size) {
+    reset_info_.last_reset_ns = zx::msec(to_msecs(zx::clock::get_boot())).get();
+  }
 
   // Delete move and copy constructors until we have a good reason to use them.
   TimestampedBuffer(TimestampedBuffer&& other) = delete;
@@ -174,6 +177,65 @@ class TimestampedBuffer {
   size_t count_ = 0;
   ResetInfo reset_info_ = {.count = 0, .last_reset_ns = 0};
   bool initialized_ = false;
+};
+
+// Records data in an underlying TimestampedBuffer to a lazy node.
+template <typename T>
+  requires IsRecordableValueType<T>
+class LazyInspectRecorderBase {
+ public:
+  // This class cannot be safely moved because the lazy node callback references `this`.
+  LazyInspectRecorderBase(LazyInspectRecorderBase&& other) = delete;
+  LazyInspectRecorderBase& operator=(LazyInspectRecorderBase&& other) = delete;
+
+  LazyInspectRecorderBase(const LazyInspectRecorderBase& other) = delete;
+  LazyInspectRecorderBase& operator=(const LazyInspectRecorderBase& other) = delete;
+
+  virtual ~LazyInspectRecorderBase() {}
+
+  void AddEntry(T data, int64_t timestamp_ms) { buffer_.AddEntry(data, timestamp_ms); }
+
+ protected:
+  // Specifies how to record a value of type T to an Inspect node.1
+  virtual void RecordToNode(inspect::Node& node, T value) const = 0;
+
+  LazyInspectRecorderBase(size_t capacity, inspect::Node& parent_node)
+      : buffer_(capacity),
+        history_node_(parent_node.CreateLazyNode(
+            "history", fit::bind_member<&LazyInspectRecorderBase<T>::TimeSeriesToInspect>(this))),
+        reset_info_node_(parent_node.CreateLazyNode(
+            "reset_info",
+            fit::bind_member<&LazyInspectRecorderBase<T>::ResetInfoToInspect>(this))) {}
+
+ private:
+  fpromise::promise<inspect::Inspector> ResetInfoToInspect() const {
+    inspect::Inspector inspector;
+    auto& root = inspector.GetRoot();
+    auto& reset_info = buffer_.GetResetInfo();
+    root.RecordUint("count", reset_info.count);
+    root.RecordInt("last_reset_ns", reset_info.last_reset_ns);
+    return fpromise::make_ok_promise(std::move(inspector));
+  }
+
+  fpromise::promise<inspect::Inspector> TimeSeriesToInspect() const {
+    inspect::Inspector inspector;
+    auto& root = inspector.GetRoot();
+    size_t i = 0;
+
+    buffer_.ForEachDataPoint([&](const DataPoint<T>& data_point) {
+      root.RecordChild(std::format("{}", i++), [&](inspect::Node& node) {
+        node.RecordInt("@time", data_point.timestamp_ns);
+        T value = data_point.value;
+        RecordToNode(node, value);
+      });
+    });
+
+    return fpromise::make_ok_promise(std::move(inspector));
+  }
+
+  TimestampedBuffer<T> buffer_;
+  inspect::LazyNode history_node_;
+  inspect::LazyNode reset_info_node_;
 };
 
 }  // namespace power_observability::internal

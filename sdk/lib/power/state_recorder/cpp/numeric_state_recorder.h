@@ -8,20 +8,22 @@
 #include <lib/inspect/component/cpp/component.h>
 #include <lib/inspect/cpp/bounded_list_node.h>
 #include <lib/inspect/cpp/inspect.h>
+#include <lib/power/state_recorder/cpp/common.h>
 #include <lib/power/state_recorder/cpp/concepts.h>
-#include <lib/power/state_recorder/cpp/manager.h>
+#include <lib/power/state_recorder/cpp/numeric_state_recorder_internal.h>
 #include <lib/trace-engine/context.h>
 #include <lib/trace-engine/types.h>
 #include <lib/trace/event.h>
 #include <lib/zx/clock.h>
-#include <lib/zx/process.h>
 #include <lib/zx/result.h>
 #include <zircon/compiler.h>
 
 #include <algorithm>
+#include <memory>
 #include <optional>
 #include <string>
 #include <type_traits>
+#include <variant>
 
 namespace power_observability {
 
@@ -101,9 +103,12 @@ template <typename T>
 class NumericStateRecorder final {
  public:
   static zx::result<NumericStateRecorder<T>> Create(NumericStateMetadata<T> metadata,
-                                                    size_t capacity, StateRecorderManager& manager);
+                                                    RecorderOptions options,
+                                                    StateRecorderManager& manager);
 
-  void Record(T value);
+  // Records `value`, timestamped either at `event_timestamp` if provided, or at the current time of
+  // the boot clock if not.
+  void Record(T value, std::optional<zx::time_boot> event_timestamp = std::nullopt);
 
   NumericStateRecorder(const NumericStateRecorder&) = delete;
   NumericStateRecorder& operator=(const NumericStateRecorder&) = delete;
@@ -140,15 +145,26 @@ class NumericStateRecorder final {
   }
 
  private:
-  NumericStateRecorder(NumericStateMetadata<T> metadata, size_t capacity,
+  NumericStateRecorder(NumericStateMetadata<T> metadata, RecorderOptions options,
                        StateRecorderManager& manager, inspect::Node root_node)
       : name_(std::make_unique<std::string>(metadata.name)),
         trace_category_literal_(metadata.trace_category_literal),
         root_node_(std::move(root_node)),
-        history_(root_node_.CreateChild("history"), capacity),
+        history_(options.lazy_record ? History(internal::NumericLazyInspectRecorder<T>::Create(
+                                           options.capacity, root_node_))
+                                     : History(inspect::BoundedListNode(
+                                           root_node_.CreateChild("history"), options.capacity))),
         trace_id_(TRACE_NONCE()),
         trace_name_ref_(trace_make_inline_string_ref(name_->c_str(), name_->length())),
         manager_(&manager) {
+    // In the eager case, record nominal reset info for symmetry with the lazy case.
+    if (!options.lazy_record) {
+      root_node_.RecordChild("reset_info", [](inspect::Node& node) {
+        node.RecordUint("count", 0);
+        node.RecordInt("last_reset_ns", zx::clock::get_boot().get());
+      });
+    }
+
     root_node_.RecordChild("metadata", [&](inspect::Node& metadata_node) {
       metadata_node.RecordString("name", *name_);
       metadata_node.RecordString("type", "numeric");
@@ -175,7 +191,11 @@ class NumericStateRecorder final {
   std::unique_ptr<std::string> name_;  // Use unique_ptr for address stability with trace_name_ref_
   const char* trace_category_literal_;
   inspect::Node root_node_;
-  inspect::BoundedListNode history_;
+
+  using History = std::variant<inspect::BoundedListNode,
+                               std::unique_ptr<internal::NumericLazyInspectRecorder<T>>>;
+  History history_;
+
   trace_async_id_t trace_id_;
   trace_string_ref_t trace_name_ref_;
   StateRecorderManager* manager_;
@@ -185,30 +205,44 @@ class NumericStateRecorder final {
 template <typename T>
   requires IsRecordableNumericType<T>
 zx::result<NumericStateRecorder<T>> NumericStateRecorder<T>::Create(
-    NumericStateMetadata<T> metadata, size_t capacity, StateRecorderManager& manager) {
+    NumericStateMetadata<T> metadata, RecorderOptions options, StateRecorderManager& manager) {
   auto result = manager.RegisterName(metadata.name);
   if (!result.is_ok()) {
     return result.take_error();
   }
-  return zx::ok(NumericStateRecorder<T>(metadata, capacity, manager, std::move(result.value())));
+  return zx::ok(NumericStateRecorder<T>(metadata, options, manager, std::move(result.value())));
 }
 
 template <typename T>
   requires IsRecordableNumericType<T>
-void NumericStateRecorder<T>::Record(T value) {
-  auto timestamp = zx::clock::get_boot().get();
-  history_.CreateEntry([&](inspect::Node& node) {
-    node.RecordInt("@time", timestamp);
-    if constexpr (WidensToUint64<T>) {
-      node.RecordUint("value", static_cast<uint64_t>(value));
-    } else if constexpr (WidensToInt64<T>) {
-      node.RecordInt("value", static_cast<int64_t>(value));
-    } else if constexpr (WidensToDouble<T>) {
-      node.RecordDouble("value", static_cast<double>(value));
-    } else {
-      static_assert(!IsRecordableNumericType<T>, "Unsupported type");
-    }
-  });
+void NumericStateRecorder<T>::Record(T value, std::optional<zx::time_boot> event_timestamp) {
+  zx::time_boot current_timestamp;
+  if (event_timestamp) {
+    current_timestamp = *event_timestamp;
+  } else {
+    current_timestamp = zx::clock::get_boot();
+  }
+
+  std::visit(
+      [&](auto& history) {
+        if constexpr (std::is_same_v<std::decay_t<decltype(history)>, inspect::BoundedListNode>) {
+          history.CreateEntry([&](inspect::Node& node) {
+            node.RecordInt("@time", current_timestamp.get());
+            if constexpr (WidensToUint64<T>) {
+              node.RecordUint("value", static_cast<uint64_t>(value));
+            } else if constexpr (WidensToInt64<T>) {
+              node.RecordInt("value", static_cast<int64_t>(value));
+            } else if constexpr (WidensToDouble<T>) {
+              node.RecordDouble("value", static_cast<double>(value));
+            } else {
+              static_assert(!IsRecordableNumericType<T>, "Unsupported type");
+            }
+          });
+        } else {
+          history->AddEntry(value, internal::to_msecs(current_timestamp));
+        }
+      },
+      history_);
 
   static trace_site_t trace_site_state;
   trace_string_ref_t category_ref;

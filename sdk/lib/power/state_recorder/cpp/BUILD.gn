@@ -12,12 +12,14 @@ sdk_source_set("cpp") {
   include_base = "//sdk"
 
   sources = [
+    "common.h",
     "concepts.h",
     "enum_state_recorder.h",
+    "enum_state_recorder_internal.h",
     "inspect_buffer.h",
-    "manager.h",
     "numeric_state_recorder.cc",
     "numeric_state_recorder.h",
+    "numeric_state_recorder_internal.h",
   ]
 
   public_deps = [

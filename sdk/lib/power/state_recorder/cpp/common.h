@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef LIB_POWER_STATE_RECORDER_CPP_MANAGER_H_
-#define LIB_POWER_STATE_RECORDER_CPP_MANAGER_H_
+#ifndef LIB_POWER_STATE_RECORDER_CPP_COMMON_H_
+#define LIB_POWER_STATE_RECORDER_CPP_COMMON_H_
 
 #include <lib/inspect/component/cpp/component.h>
 #include <lib/zx/result.h>
@@ -15,6 +15,20 @@
 #include <vector>
 
 namespace power_observability {
+
+// Options that specify how data is recorded.
+struct RecorderOptions {
+  // The number of entries a recorder will retain before overwriting older entries.
+  size_t capacity;
+
+  // Whether to record Inspect data in a lazy node.
+  //
+  // If true, timestamp resolution will be limited to milliseconds to optimize memory usage to 4
+  // bytes per timestamp instead of 8 bytes). If necessary, we could support toggling this
+  // optimization (retaining nanosecond-resolution timestamps at the expense of more memory) in the
+  // future.
+  bool lazy_record;
+};
 
 // Manages state associated with all StateRecorder instances linked to a particular inspector.
 //
@@ -48,4 +62,4 @@ class StateRecorderManager final {
 
 }  // namespace power_observability
 
-#endif  // LIB_POWER_STATE_RECORDER_CPP_MANAGER_H_
+#endif  // LIB_POWER_STATE_RECORDER_CPP_COMMON_H_

@@ -50,13 +50,15 @@ class ExampleComponent {
     loop_.Run(zx::deadline_after(zx::sec(1)));
 
     {
+      // This recorder is not lazy while the other one is, as a way of demonstrating both
+      // possibilities in this example.
       auto result = EnumStateRecorder<ChargingState>::Create(
           {
               .name = "charging_state",
               .states = kChargingStates,
               .trace_category_literal = "power_example",
           },
-          10, manager_);
+          {.capacity = 10, .lazy_record = false}, manager_);
       ZX_ASSERT_MSG(result.is_ok(), "Failed with status %s", result.status_string());
       charging_state_recorder_ = std::move(result.value());
     }
@@ -68,7 +70,7 @@ class ExampleComponent {
               .units = Units::Percent(),
               .trace_category_literal = "power_example",
           },
-          30, manager_);
+          {.capacity = 30, .lazy_record = true}, manager_);
       ZX_ASSERT_MSG(result.is_ok(), "Failed with status %s", result.status_string());
       battery_level_recorder_ = std::move(result.value());
     }
