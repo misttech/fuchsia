@@ -183,6 +183,7 @@ fi
 # Start repository server in foreground, wait until it
 # voluntarily exits
 # TODO(b/360931702): Allow listening IP address to be set.
+# LINT.IfChange
 server_flags=( repository server start "${server_mode}"  --address "${address}:${port}" )
 server_flags+=( --repository "${source_name}" --repo-path "${repo_dir}" )
 server_flags+=( --trusted-root "${repo_dir}/repository/9.root.json" )
@@ -195,6 +196,7 @@ fi
 if is_feature_enabled "incremental" || is_feature_enabled "incremental_new"; then
   server_flags+=(  --auto-publish "${FUCHSIA_BUILD_DIR}/all_package_manifests.list" )
 fi
+# LINT.ThenChange(//scripts/lib/package_server/lib.py:get_command)
 fx-command-run ffx "${ffx_flags[@]}" "${server_flags[@]}"
 
 exit 0
