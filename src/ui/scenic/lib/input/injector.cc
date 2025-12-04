@@ -161,6 +161,11 @@ Injector::Injector(inspect::Node inspect_node, InjectorSettings settings, Viewpo
 
 void Injector::Inject(std::vector<fuchsia::ui::pointerinjector::Event> events,
                       InjectCallback callback) {
+  InjectEvents(std::move(events));
+  callback();
+}
+
+void Injector::InjectEvents(std::vector<fuchsia::ui::pointerinjector::Event> events) {
   TRACE_DURATION("input", "Injector::Inject");
   if (!is_descendant_and_connected_(settings_.target_koid, settings_.context_koid)) {
     FX_LOGS(ERROR) << "Inject() called with Context (koid: " << settings_.context_koid
@@ -223,13 +228,6 @@ void Injector::Inject(std::vector<fuchsia::ui::pointerinjector::Event> events,
       FX_LOGS(WARNING) << "Unknown fuchsia::ui::pointerinjector::Data received";
     }
   }
-
-  callback();
-}
-
-void Injector::InjectEvents(std::vector<fuchsia::ui::pointerinjector::Event> events) {
-  TRACE_DURATION("input", "Injector::Inject");
-  // TODO: https://fxbug.dev/449207459 - Implement Injector::InjectEvents.
 }
 
 std::pair<zx_status_t, StreamId> Injector::ValidatePointerSample(

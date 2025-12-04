@@ -27,8 +27,7 @@ impl InputActor {
 impl Actor for InputActor {
     async fn perform(&mut self) -> Result<(), ActorError> {
         let event = self.state.next_event();
-        let fut = self.injector.inject(vec![event]);
-        fut.await.expect("Injection failed");
+        let _ = self.injector.inject_events(vec![event]);
         Ok(())
     }
 }

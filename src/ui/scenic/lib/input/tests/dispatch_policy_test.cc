@@ -134,29 +134,6 @@ class DispatchPolicyTest : public gtest::TestLoopFixture {
     return snapshot;
   }
 
-  void Inject(fuchsia::ui::pointerinjector::EventPhase phase) {
-    FX_CHECK(injector_);
-    std::vector<fuchsia::ui::pointerinjector::Event> events;
-    {
-      fuchsia::ui::pointerinjector::Event event;
-      event.set_timestamp(0);
-      fuchsia::ui::pointerinjector::PointerSample pointer_sample;
-      pointer_sample.set_pointer_id(1);
-      pointer_sample.set_phase(phase);
-      pointer_sample.set_position_in_viewport({kDisplayWidth / 2.f, kDisplayHeight / 2.f});
-      fuchsia::ui::pointerinjector::Data data;
-      data.set_pointer_sample(std::move(pointer_sample));
-      event.set_data(std::move(data));
-      events.emplace_back(std::move(event));
-    }
-
-    bool inject_callback_fired = false;
-    injector_->Inject(std::move(events),
-                      [&inject_callback_fired] { inject_callback_fired = true; });
-    RunLoopUntilIdle();
-    ASSERT_TRUE(inject_callback_fired);
-  }
-
   fuchsia::ui::views::ViewRef RootViewRef() { return fidl::Clone(root_vrp_.view_ref); }
   fuchsia::ui::views::ViewRef Client1ViewRef() { return fidl::Clone(client1_vrp_.view_ref); }
   fuchsia::ui::views::ViewRef Client2ViewRef() { return fidl::Clone(client2_vrp_.view_ref); }
@@ -190,7 +167,42 @@ class DispatchPolicyTest : public gtest::TestLoopFixture {
   scenic::ViewRefPair client4_vrp_;
 };
 
-TEST_F(DispatchPolicyTest, ExclusiveMode_ShouldDeliverTo_OnlyTarget) {
+class DispatchPolicyTestP : public DispatchPolicyTest, public testing::WithParamInterface<bool> {
+ public:
+  bool use_inject_events() const { return GetParam(); }
+
+  void Inject(fuchsia::ui::pointerinjector::EventPhase phase) {
+    FX_CHECK(injector_);
+    std::vector<fuchsia::ui::pointerinjector::Event> events;
+    {
+      fuchsia::ui::pointerinjector::Event event;
+      event.set_timestamp(0);
+      fuchsia::ui::pointerinjector::PointerSample pointer_sample;
+      pointer_sample.set_pointer_id(1);
+      pointer_sample.set_phase(phase);
+      pointer_sample.set_position_in_viewport({kDisplayWidth / 2.f, kDisplayHeight / 2.f});
+      fuchsia::ui::pointerinjector::Data data;
+      data.set_pointer_sample(std::move(pointer_sample));
+      event.set_data(std::move(data));
+      events.emplace_back(std::move(event));
+    }
+
+    if (use_inject_events()) {
+      injector_->InjectEvents(std::move(events));
+      RunLoopUntilIdle();
+    } else {
+      bool inject_callback_fired = false;
+      injector_->Inject(std::move(events),
+                        [&inject_callback_fired] { inject_callback_fired = true; });
+      RunLoopUntilIdle();
+      ASSERT_TRUE(inject_callback_fired);
+    }
+  }
+};
+
+INSTANTIATE_TEST_SUITE_P(DispatchPolicyTest, DispatchPolicyTestP, testing::Bool());
+
+TEST_P(DispatchPolicyTestP, ExclusiveMode_ShouldDeliverTo_OnlyTarget) {
   input_system_.OnNewViewTreeSnapshot(NewSnapshot(/*hits*/ {Client4Koid()}));
 
   {  // Scene is set up. Inject with Client2 as exclusive target.
@@ -226,7 +238,7 @@ TEST_F(DispatchPolicyTest, ExclusiveMode_ShouldDeliverTo_OnlyTarget) {
   }
 }
 
-TEST_F(DispatchPolicyTest, TopHitMode_OnLeafTarget_ShouldDeliverTo_OnlyTarget) {
+TEST_P(DispatchPolicyTestP, TopHitMode_OnLeafTarget_ShouldDeliverTo_OnlyTarget) {
   input_system_.OnNewViewTreeSnapshot(NewSnapshot(/*hits*/ {Client3Koid()}));
 
   {  // Inject with Client3 as target. Top hit is Client3.
@@ -262,7 +274,7 @@ TEST_F(DispatchPolicyTest, TopHitMode_OnLeafTarget_ShouldDeliverTo_OnlyTarget) {
   }
 }
 
-TEST_F(DispatchPolicyTest,
+TEST_P(DispatchPolicyTestP,
        TopHitMode_OnMidTreeTarget_ShouldDeliverTo_TopHitAndAncestorsUpToTarget) {
   input_system_.OnNewViewTreeSnapshot(NewSnapshot(/*hits*/ {Client4Koid()}));
 

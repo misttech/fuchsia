@@ -8,11 +8,11 @@
 #include <lib/inspect/cpp/reader.h>
 #include <lib/syslog/cpp/macros.h>
 
+#include <tuple>
+
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
-#include "src/lib/fxl/strings/join_strings.h"
-#include "src/lib/testing/loop_fixture/real_loop_fixture.h"
 #include "src/lib/testing/loop_fixture/test_loop_fixture.h"
 #include "src/ui/scenic/lib/input/touch_injector.h"
 #include "src/ui/scenic/lib/utils/math.h"
@@ -69,7 +69,23 @@ InjectionEvent InjectionEventTemplate() {
 
 }  // namespace
 
-TEST(InjectorTest, InjectedEvents_ShouldTriggerTheInjectLambda) {
+class InjectorTestP : public gtest::TestLoopFixture, public testing::WithParamInterface<bool> {
+ public:
+  bool use_inject_events() const { return GetParam(); }
+
+  void Inject(DevicePtr& injector, std::vector<InjectionEvent> events,
+              std::function<void()> callback) {
+    if (use_inject_events()) {
+      injector->InjectEvents(std::move(events));
+    } else {
+      injector->Inject(std::move(events), std::move(callback));
+    }
+  }
+};
+
+INSTANTIATE_TEST_SUITE_P(InjectorTest, InjectorTestP, testing::Bool());
+
+TEST_P(InjectorTestP, InjectedEvents_ShouldTriggerTheInjectLambda) {
   async::TestLoop test_loop;
 
   // Set up an isolated Injector.
@@ -93,10 +109,12 @@ TEST(InjectorTest, InjectedEvents_ShouldTriggerTheInjectLambda) {
     event.mutable_data()->pointer_sample().set_phase(Phase::ADD);
     std::vector<InjectionEvent> events;
     events.emplace_back(std::move(event));
-    injector->Inject({std::move(events)},
-                     [&injection_callback_fired] { injection_callback_fired = true; });
+    Inject(injector, {std::move(events)},
+           [&injection_callback_fired] { injection_callback_fired = true; });
     test_loop.RunUntilIdle();
-    EXPECT_TRUE(injection_callback_fired);
+    if (!use_inject_events()) {
+      EXPECT_TRUE(injection_callback_fired);
+    }
   }
 
   EXPECT_EQ(num_injections, 1u);
@@ -107,10 +125,12 @@ TEST(InjectorTest, InjectedEvents_ShouldTriggerTheInjectLambda) {
     InjectionEvent event = InjectionEventTemplate();
     event.mutable_data()->pointer_sample().set_phase(Phase::CHANGE);
     events.emplace_back(std::move(event));
-    injector->Inject({std::move(events)},
-                     [&injection_callback_fired] { injection_callback_fired = true; });
+    Inject(injector, {std::move(events)},
+           [&injection_callback_fired] { injection_callback_fired = true; });
     test_loop.RunUntilIdle();
-    EXPECT_TRUE(injection_callback_fired);
+    if (!use_inject_events()) {
+      EXPECT_TRUE(injection_callback_fired);
+    }
 
     EXPECT_EQ(num_injections, 2u);
   }
@@ -121,17 +141,19 @@ TEST(InjectorTest, InjectedEvents_ShouldTriggerTheInjectLambda) {
     InjectionEvent event = InjectionEventTemplate();
     event.mutable_data()->pointer_sample().set_phase(Phase::REMOVE);
     events.emplace_back(std::move(event));
-    injector->Inject({std::move(events)},
-                     [&injection_callback_fired] { injection_callback_fired = true; });
+    Inject(injector, {std::move(events)},
+           [&injection_callback_fired] { injection_callback_fired = true; });
     test_loop.RunUntilIdle();
-    EXPECT_TRUE(injection_callback_fired);
+    if (!use_inject_events()) {
+      EXPECT_TRUE(injection_callback_fired);
+    }
   }
 
   EXPECT_EQ(num_injections, 3u);
   EXPECT_FALSE(error_callback_fired);
 }
 
-TEST(InjectorTest, InjectionWithNoEvent_ShouldCloseChannel) {
+TEST_P(InjectorTestP, InjectionWithNoEvent_ShouldCloseChannel) {
   // Test loop to be able to control dispatch without having to create an entire test class
   // subclassing TestLoopFixture.
   async::TestLoop test_loop;
@@ -152,14 +174,14 @@ TEST(InjectorTest, InjectionWithNoEvent_ShouldCloseChannel) {
 
   bool injection_callback_fired = false;
   // Inject nothing.
-  injector->Inject({}, [&injection_callback_fired] { injection_callback_fired = true; });
+  Inject(injector, {}, [&injection_callback_fired] { injection_callback_fired = true; });
   test_loop.RunUntilIdle();
 
   EXPECT_FALSE(injection_callback_fired);
   EXPECT_TRUE(error_callback_fired);
 }
 
-TEST(InjectorTest, ClientClosingChannel_ShouldTriggerCancelEvents_ForEachOngoingStream) {
+TEST_P(InjectorTestP, ClientClosingChannel_ShouldTriggerCancelEvents_ForEachOngoingStream) {
   // Test loop to be able to control dispatch without having to create an entire test class
   // subclassing TestLoopFixture.
   async::TestLoop test_loop;
@@ -189,7 +211,7 @@ TEST(InjectorTest, ClientClosingChannel_ShouldTriggerCancelEvents_ForEachOngoing
     event.mutable_data()->pointer_sample().set_phase(Phase::ADD);
     std::vector<InjectionEvent> events;
     events.emplace_back(std::move(event));
-    injector->Inject({std::move(events)}, [] {});
+    Inject(injector, {std::move(events)}, [] {});
   }
   {
     InjectionEvent event = InjectionEventTemplate();
@@ -197,7 +219,7 @@ TEST(InjectorTest, ClientClosingChannel_ShouldTriggerCancelEvents_ForEachOngoing
     event.mutable_data()->pointer_sample().set_phase(Phase::ADD);
     std::vector<InjectionEvent> events;
     events.emplace_back(std::move(event));
-    injector->Inject({std::move(events)}, [] {});
+    Inject(injector, {std::move(events)}, [] {});
   }
   {
     InjectionEvent event = InjectionEventTemplate();
@@ -205,7 +227,7 @@ TEST(InjectorTest, ClientClosingChannel_ShouldTriggerCancelEvents_ForEachOngoing
     event.mutable_data()->pointer_sample().set_phase(Phase::ADD);
     std::vector<InjectionEvent> events;
     events.emplace_back(std::move(event));
-    injector->Inject({std::move(events)}, [] {});
+    Inject(injector, {std::move(events)}, [] {});
   }
   {
     InjectionEvent event = InjectionEventTemplate();
@@ -213,7 +235,7 @@ TEST(InjectorTest, ClientClosingChannel_ShouldTriggerCancelEvents_ForEachOngoing
     event.mutable_data()->pointer_sample().set_phase(Phase::REMOVE);
     std::vector<InjectionEvent> events;
     events.emplace_back(std::move(event));
-    injector->Inject({std::move(events)}, [] {});
+    Inject(injector, {std::move(events)}, [] {});
   }
 
   // Close the client side channel.
@@ -225,7 +247,7 @@ TEST(InjectorTest, ClientClosingChannel_ShouldTriggerCancelEvents_ForEachOngoing
   EXPECT_THAT(cancelled_streams, testing::UnorderedElementsAre(2, 3));
 }
 
-TEST(InjectorTest, ServerClosingChannel_ShouldTriggerCancelEvents_ForEachOngoingStream) {
+TEST_P(InjectorTestP, ServerClosingChannel_ShouldTriggerCancelEvents_ForEachOngoingStream) {
   // Test loop to be able to control dispatch without having to create an entire test class
   // subclassing TestLoopFixture.
   async::TestLoop test_loop;
@@ -275,14 +297,14 @@ TEST(InjectorTest, ServerClosingChannel_ShouldTriggerCancelEvents_ForEachOngoing
       event.mutable_data()->pointer_sample().set_phase(Phase::REMOVE);
       events.emplace_back(std::move(event));
     }
-    injector->Inject({std::move(events)}, [] {});
+    Inject(injector, {std::move(events)}, [] {});
   }
 
   // Inject an event with missing fields to cause the channel to close.
   {
     std::vector<InjectionEvent> events;
     events.emplace_back();
-    injector->Inject(std::move(events), [] {});
+    Inject(injector, std::move(events), [] {});
   }
   test_loop.RunUntilIdle();
 
@@ -291,7 +313,7 @@ TEST(InjectorTest, ServerClosingChannel_ShouldTriggerCancelEvents_ForEachOngoing
   EXPECT_THAT(cancelled_streams, testing::UnorderedElementsAre(2, 3));
 }
 
-TEST(InjectorTest, InjectionOfEmptyEvent_ShouldCloseChannel) {
+TEST_P(InjectorTestP, InjectionOfEmptyEvent_ShouldCloseChannel) {
   // Test loop to be able to control dispatch without having to create an entire test class
   // subclassing TestLoopFixture.
   async::TestLoop test_loop;
@@ -315,8 +337,8 @@ TEST(InjectorTest, InjectionOfEmptyEvent_ShouldCloseChannel) {
   InjectionEvent event;
   std::vector<InjectionEvent> events;
   events.emplace_back(std::move(event));
-  injector->Inject({std::move(events)},
-                   [&injection_callback_fired] { injection_callback_fired = true; });
+  Inject(injector, {std::move(events)},
+         [&injection_callback_fired] { injection_callback_fired = true; });
   test_loop.RunUntilIdle();
 
   EXPECT_FALSE(injection_lambda_fired);
@@ -324,7 +346,7 @@ TEST(InjectorTest, InjectionOfEmptyEvent_ShouldCloseChannel) {
   EXPECT_TRUE(error_callback_fired);
 }
 
-TEST(InjectorTest, ClientClosingChannel_ShouldTriggerOnChannelClosedLambda) {
+TEST_P(InjectorTestP, ClientClosingChannel_ShouldTriggerOnChannelClosedLambda) {
   // Test loop to be able to control dispatch without having to create an entire test class
   // subclassing TestLoopFixture.
   async::TestLoop test_loop;
@@ -352,7 +374,7 @@ TEST(InjectorTest, ClientClosingChannel_ShouldTriggerOnChannelClosedLambda) {
   EXPECT_TRUE(on_channel_closed_callback_fired);
 }
 
-TEST(InjectorTest, ServerClosingChannel_ShouldTriggerOnChannelClosedLambda) {
+TEST_P(InjectorTestP, ServerClosingChannel_ShouldTriggerOnChannelClosedLambda) {
   // Test loop to be able to control dispatch without having to create an entire test class
   // subclassing TestLoopFixture.
   async::TestLoop test_loop;
@@ -376,7 +398,7 @@ TEST(InjectorTest, ServerClosingChannel_ShouldTriggerOnChannelClosedLambda) {
   {
     std::vector<InjectionEvent> events;
     events.emplace_back();
-    injector->Inject(std::move(events), [] {});
+    Inject(injector, std::move(events), [] {});
   }
   test_loop.RunUntilIdle();
 
@@ -385,7 +407,7 @@ TEST(InjectorTest, ServerClosingChannel_ShouldTriggerOnChannelClosedLambda) {
 }
 
 // Test for lazy connectivity detection.
-TEST(InjectorTest, InjectionWithBadConnectivity_ShouldCloseChannel) {
+TEST_P(InjectorTestP, InjectionWithBadConnectivity_ShouldCloseChannel) {
   // Test loop to be able to control dispatch without having to create an entire test class
   // subclassing TestLoopFixture.
   async::TestLoop test_loop;
@@ -419,7 +441,7 @@ TEST(InjectorTest, InjectionWithBadConnectivity_ShouldCloseChannel) {
     event.mutable_data()->pointer_sample().set_pointer_id(1);
     std::vector<InjectionEvent> events;
     events.emplace_back(std::move(event));
-    injector->Inject({std::move(events)}, [] {});
+    Inject(injector, {std::move(events)}, [] {});
     test_loop.RunUntilIdle();
   }
 
@@ -434,8 +456,8 @@ TEST(InjectorTest, InjectionWithBadConnectivity_ShouldCloseChannel) {
     event.mutable_data()->pointer_sample().set_phase(Phase::CHANGE);
     std::vector<InjectionEvent> events;
     events.emplace_back(std::move(event));
-    injector->Inject({std::move(events)},
-                     [&injection_callback_fired] { injection_callback_fired = true; });
+    Inject(injector, {std::move(events)},
+           [&injection_callback_fired] { injection_callback_fired = true; });
     test_loop.RunUntilIdle();
     EXPECT_FALSE(injection_callback_fired);
   }
@@ -448,17 +470,30 @@ TEST(InjectorTest, InjectionWithBadConnectivity_ShouldCloseChannel) {
 }
 
 // Class for testing parameterized injection of invalid events.
-// Takes an int that determines which field gets deleted (parameter must be copyable).
+// Takes an int that determines which field gets deleted and a bool for Inject/InjectEvents.
 class InjectorInvalidEventsTest : public gtest::TestLoopFixture,
-                                  public testing::WithParamInterface<int> {};
+                                  public testing::WithParamInterface<std::tuple<int, bool>> {
+ public:
+  int GetMissingField() const { return std::get<0>(GetParam()); }
+  bool use_inject_events() const { return std::get<1>(GetParam()); }
+
+  void Inject(DevicePtr& injector, std::vector<InjectionEvent> events,
+              std::function<void()> callback) {
+    if (use_inject_events()) {
+      injector->InjectEvents(std::move(events));
+    } else {
+      injector->Inject(std::move(events), std::move(callback));
+    }
+  }
+};
 
 INSTANTIATE_TEST_SUITE_P(InjectEventWithMissingField_ShouldCloseChannel, InjectorInvalidEventsTest,
-                         testing::Range(0, 3));
+                         testing::Combine(testing::Range(0, 3), testing::Bool()));
 
 TEST_P(InjectorInvalidEventsTest, InjectEventWithMissingField_ShouldCloseChannel) {
   // Create event with a missing field based on GetParam().
   InjectionEvent event = InjectionEventTemplate();
-  switch (GetParam()) {
+  switch (GetMissingField()) {
     case 0:
       event.mutable_data()->pointer_sample().clear_pointer_id();
       break;
@@ -491,8 +526,8 @@ TEST_P(InjectorInvalidEventsTest, InjectEventWithMissingField_ShouldCloseChannel
   bool injection_callback_fired = false;
   std::vector<InjectionEvent> events;
   events.emplace_back(std::move(event));
-  injector->Inject({std::move(events)},
-                   [&injection_callback_fired] { injection_callback_fired = true; });
+  Inject(injector, {std::move(events)},
+         [&injection_callback_fired] { injection_callback_fired = true; });
   RunLoopUntilIdle();
 
   EXPECT_FALSE(injection_callback_fired);
@@ -501,10 +536,25 @@ TEST_P(InjectorInvalidEventsTest, InjectEventWithMissingField_ShouldCloseChannel
 }
 
 // Class for testing different event streams.
-// Each invocation gets a vector of pairs of pointer ids and Phases, representing pointer streams.
+// Each invocation gets a vector of pairs of pointer ids and Phases, representing pointer streams,
+// and a bool for Inject/InjectEvents.
 class InjectorGoodEventStreamTest
     : public gtest::TestLoopFixture,
-      public testing::WithParamInterface<std::vector<std::pair</*pointer_id*/ uint32_t, Phase>>> {};
+      public testing::WithParamInterface<
+          std::tuple<std::vector<std::pair</*pointer_id*/ uint32_t, Phase>>, bool>> {
+ public:
+  std::vector<std::pair<uint32_t, Phase>> GetEventStream() const { return std::get<0>(GetParam()); }
+  bool use_inject_events() const { return std::get<1>(GetParam()); }
+
+  void Inject(DevicePtr& injector, std::vector<InjectionEvent> events,
+              std::function<void()> callback) {
+    if (use_inject_events()) {
+      injector->InjectEvents(std::move(events));
+    } else {
+      injector->Inject(std::move(events), std::move(callback));
+    }
+  }
+};
 
 static std::vector<std::vector<std::pair<uint32_t, Phase>>> GoodStreamTestData() {
   // clang-format off
@@ -522,10 +572,14 @@ static std::vector<std::vector<std::pair<uint32_t, Phase>>> GoodStreamTestData()
 }
 
 INSTANTIATE_TEST_SUITE_P(InjectionWithGoodEventStream_ShouldHaveNoProblems_CombinedEvents,
-                         InjectorGoodEventStreamTest, testing::ValuesIn(GoodStreamTestData()));
+                         InjectorGoodEventStreamTest,
+                         testing::Combine(testing::ValuesIn(GoodStreamTestData()),
+                                          testing::Bool()));
 
 INSTANTIATE_TEST_SUITE_P(InjectionWithGoodEventStream_ShouldHaveNoProblems_SeparateEvents,
-                         InjectorGoodEventStreamTest, testing::ValuesIn(GoodStreamTestData()));
+                         InjectorGoodEventStreamTest,
+                         testing::Combine(testing::ValuesIn(GoodStreamTestData()),
+                                          testing::Bool()));
 
 // Inject a valid event stream in a single Inject() call.
 TEST_P(InjectorGoodEventStreamTest,
@@ -545,7 +599,7 @@ TEST_P(InjectorGoodEventStreamTest,
       /*on_channel_closed=*/[] {});
 
   std::vector<InjectionEvent> events;
-  for (auto [pointer_id, phase] : GetParam()) {
+  for (auto [pointer_id, phase] : GetEventStream()) {
     InjectionEvent event = InjectionEventTemplate();
     event.mutable_data()->pointer_sample().set_pointer_id(pointer_id);
     event.mutable_data()->pointer_sample().set_phase(phase);
@@ -553,11 +607,13 @@ TEST_P(InjectorGoodEventStreamTest,
   }
 
   bool injection_callback_fired = false;
-  injector->Inject({std::move(events)},
-                   [&injection_callback_fired] { injection_callback_fired = true; });
+  Inject(injector, {std::move(events)},
+         [&injection_callback_fired] { injection_callback_fired = true; });
   RunLoopUntilIdle();
 
-  EXPECT_TRUE(injection_callback_fired);
+  if (!use_inject_events()) {
+    EXPECT_TRUE(injection_callback_fired);
+  }
   EXPECT_FALSE(error_callback_fired);
 }
 
@@ -578,27 +634,44 @@ TEST_P(InjectorGoodEventStreamTest,
       [](auto...) {},
       /*on_channel_closed=*/[] {});
 
-  for (auto [pointer_id, phase] : GetParam()) {
+  for (auto [pointer_id, phase] : GetEventStream()) {
     bool injection_callback_fired = false;
     InjectionEvent event = InjectionEventTemplate();
     event.mutable_data()->pointer_sample().set_pointer_id(pointer_id);
     event.mutable_data()->pointer_sample().set_phase(phase);
     std::vector<InjectionEvent> events;
     events.emplace_back(std::move(event));
-    injector->Inject({std::move(events)},
-                     [&injection_callback_fired] { injection_callback_fired = true; });
+    Inject(injector, {std::move(events)},
+           [&injection_callback_fired] { injection_callback_fired = true; });
     RunLoopUntilIdle();
 
-    EXPECT_TRUE(injection_callback_fired);
+    if (!use_inject_events()) {
+      EXPECT_TRUE(injection_callback_fired);
+    }
     ASSERT_FALSE(error_callback_fired);
   }
 }
 
 // Bad event streams.
-// Each invocation gets a vector of pairs of pointer ids and Phases, representing pointer streams.
+// Each invocation gets a vector of pairs of pointer ids and Phases, representing pointer streams,
+// and a bool for Inject/InjectEvents.
 class InjectorBadEventStreamTest
     : public gtest::TestLoopFixture,
-      public testing::WithParamInterface<std::vector<std::pair</*pointer_id*/ uint32_t, Phase>>> {};
+      public testing::WithParamInterface<
+          std::tuple<std::vector<std::pair</*pointer_id*/ uint32_t, Phase>>, bool>> {
+ public:
+  std::vector<std::pair<uint32_t, Phase>> GetEventStream() const { return std::get<0>(GetParam()); }
+  bool use_inject_events() const { return std::get<1>(GetParam()); }
+
+  void Inject(DevicePtr& injector, std::vector<InjectionEvent> events,
+              std::function<void()> callback) {
+    if (use_inject_events()) {
+      injector->InjectEvents(std::move(events));
+    } else {
+      injector->Inject(std::move(events), std::move(callback));
+    }
+  }
+};
 
 static std::vector<std::vector<std::pair<uint32_t, Phase>>> BadStreamTestData() {
   // clang-format off
@@ -618,10 +691,12 @@ static std::vector<std::vector<std::pair<uint32_t, Phase>>> BadStreamTestData() 
 }
 
 INSTANTIATE_TEST_SUITE_P(InjectionWithBadEventStream_ShouldCloseChannel_CombinedEvents,
-                         InjectorBadEventStreamTest, testing::ValuesIn(BadStreamTestData()));
+                         InjectorBadEventStreamTest,
+                         testing::Combine(testing::ValuesIn(BadStreamTestData()), testing::Bool()));
 
 INSTANTIATE_TEST_SUITE_P(InjectionWithBadEventStream_ShouldCloseChannel_SeparateEvents,
-                         InjectorBadEventStreamTest, testing::ValuesIn(BadStreamTestData()));
+                         InjectorBadEventStreamTest,
+                         testing::Combine(testing::ValuesIn(BadStreamTestData()), testing::Bool()));
 
 // Inject an invalid event stream in a single Inject() call.
 TEST_P(InjectorBadEventStreamTest, InjectionWithBadEventStream_ShouldCloseChannel_CombinedEvents) {
@@ -645,13 +720,13 @@ TEST_P(InjectorBadEventStreamTest, InjectionWithBadEventStream_ShouldCloseChanne
 
   // Run event stream.
   std::vector<InjectionEvent> events;
-  for (auto [pointer_id, phase] : GetParam()) {
+  for (auto [pointer_id, phase] : GetEventStream()) {
     InjectionEvent event = InjectionEventTemplate();
     event.mutable_data()->pointer_sample().set_pointer_id(pointer_id);
     event.mutable_data()->pointer_sample().set_phase(phase);
     events.emplace_back(std::move(event));
   }
-  injector->Inject({std::move(events)}, [] {});
+  Inject(injector, {std::move(events)}, [] {});
   RunLoopUntilIdle();
 
   EXPECT_TRUE(error_callback_fired);
@@ -677,13 +752,13 @@ TEST_P(InjectorBadEventStreamTest, InjectionWithBadEventStream_ShouldCloseChanne
       /*on_channel_closed=*/[] {});
 
   // Run event stream.
-  for (auto [pointer_id, phase] : GetParam()) {
+  for (auto [pointer_id, phase] : GetEventStream()) {
     InjectionEvent event = InjectionEventTemplate();
     event.mutable_data()->pointer_sample().set_pointer_id(pointer_id);
     event.mutable_data()->pointer_sample().set_phase(phase);
     std::vector<InjectionEvent> events;
     events.emplace_back(std::move(event));
-    injector->Inject({std::move(events)}, [] {});
+    Inject(injector, {std::move(events)}, [] {});
     RunLoopUntilIdle();
   }
 
@@ -691,7 +766,7 @@ TEST_P(InjectorBadEventStreamTest, InjectionWithBadEventStream_ShouldCloseChanne
   EXPECT_EQ(error, ZX_ERR_BAD_STATE);
 }
 
-TEST(InjectorTest, InjectedViewport_ShouldNotTriggerInjectLambda) {
+TEST_P(InjectorTestP, InjectedViewport_ShouldNotTriggerInjectLambda) {
   async::TestLoop test_loop;
 
   // Set up an isolated Injector.
@@ -722,10 +797,12 @@ TEST(InjectorTest, InjectedViewport_ShouldNotTriggerInjectLambda) {
 
     std::vector<InjectionEvent> events;
     events.emplace_back(std::move(event));
-    injector->Inject({std::move(events)},
-                     [&injection_callback_fired] { injection_callback_fired = true; });
+    Inject(injector, {std::move(events)},
+           [&injection_callback_fired] { injection_callback_fired = true; });
     test_loop.RunUntilIdle();
-    EXPECT_TRUE(injection_callback_fired);
+    if (!use_inject_events()) {
+      EXPECT_TRUE(injection_callback_fired);
+    }
   }
 
   test_loop.RunUntilIdle();
@@ -739,7 +816,20 @@ TEST(InjectorTest, InjectedViewport_ShouldNotTriggerInjectLambda) {
 using ViewportPair = std::pair<std::optional<std::array<std::array<float, 2>, 2>>,
                                std::optional<std::array<float, 9>>>;
 class InjectorBadViewportTest : public gtest::TestLoopFixture,
-                                public testing::WithParamInterface<ViewportPair> {};
+                                public testing::WithParamInterface<std::tuple<ViewportPair, bool>> {
+ public:
+  ViewportPair GetViewportPair() const { return std::get<0>(GetParam()); }
+  bool use_inject_events() const { return std::get<1>(GetParam()); }
+
+  void Inject(DevicePtr& injector, std::vector<InjectionEvent> events,
+              std::function<void()> callback) {
+    if (use_inject_events()) {
+      injector->InjectEvents(std::move(events));
+    } else {
+      injector->Inject(std::move(events), std::move(callback));
+    }
+  }
+};
 
 static std::vector<ViewportPair> BadViewportTestData() {
   std::vector<ViewportPair> bad_viewports;
@@ -828,7 +918,8 @@ static std::vector<ViewportPair> BadViewportTestData() {
 }
 
 INSTANTIATE_TEST_SUITE_P(InjectBadViewport_ShouldCloseChannel, InjectorBadViewportTest,
-                         testing::ValuesIn(BadViewportTestData()));
+                         testing::Combine(testing::ValuesIn(BadViewportTestData()),
+                                          testing::Bool()));
 
 TEST_P(InjectorBadViewportTest, InjectBadViewport_ShouldCloseChannel) {
   DevicePtr injector;
@@ -846,7 +937,7 @@ TEST_P(InjectorBadViewportTest, InjectBadViewport_ShouldCloseChannel) {
   {
     event.set_timestamp(1);
     fuchsia::ui::pointerinjector::Data data;
-    ViewportPair params = GetParam();
+    ViewportPair params = GetViewportPair();
     fuchsia::ui::pointerinjector::Viewport viewport;
     if (params.first)
       viewport.set_extents(params.first.value());
@@ -859,15 +950,28 @@ TEST_P(InjectorBadViewportTest, InjectBadViewport_ShouldCloseChannel) {
   std::vector<InjectionEvent> events;
   events.emplace_back(std::move(event));
   bool injection_callback_fired = false;
-  injector->Inject({std::move(events)},
-                   [&injection_callback_fired] { injection_callback_fired = true; });
+  Inject(injector, {std::move(events)},
+         [&injection_callback_fired] { injection_callback_fired = true; });
 
   RunLoopUntilIdle();
   EXPECT_FALSE(injection_callback_fired);
   EXPECT_TRUE(error_callback_fired);
 }
 
-class InjectorInspectionTest : public gtest::TestLoopFixture {
+class InjectorInspectionTest : public gtest::TestLoopFixture,
+                               public testing::WithParamInterface<bool> {
+ public:
+  bool use_inject_events() const { return GetParam(); }
+
+  void Inject(DevicePtr& injector, std::vector<InjectionEvent> events,
+              std::function<void()> callback) {
+    if (use_inject_events()) {
+      injector->InjectEvents(std::move(events));
+    } else {
+      injector->Inject(std::move(events), std::move(callback));
+    }
+  }
+
  protected:
   void SetUp() override {
     injector_impl_.emplace(
@@ -936,7 +1040,9 @@ class InjectorInspectionTest : public gtest::TestLoopFixture {
   std::optional<scenic_impl::input::TouchInjector> injector_impl_;
 };
 
-TEST_F(InjectorInspectionTest, HistogramsTrackInjections) {
+INSTANTIATE_TEST_SUITE_P(InjectorInspectionTest, InjectorInspectionTest, testing::Bool());
+
+TEST_P(InjectorInspectionTest, HistogramsTrackInjections) {
   bool error_callback_fired = false;
   injector_.set_error_handler(
       [&error_callback_fired](zx_status_t) { error_callback_fired = true; });
@@ -947,10 +1053,12 @@ TEST_F(InjectorInspectionTest, HistogramsTrackInjections) {
     event.mutable_data()->pointer_sample().set_phase(Phase::ADD);
     std::vector<InjectionEvent> events;
     events.emplace_back(std::move(event));
-    injector_->Inject({std::move(events)},
-                      [&injection_callback_fired] { injection_callback_fired = true; });
+    Inject(injector_, {std::move(events)},
+           [&injection_callback_fired] { injection_callback_fired = true; });
     RunLoopUntilIdle();
-    EXPECT_TRUE(injection_callback_fired);
+    if (!use_inject_events()) {
+      EXPECT_TRUE(injection_callback_fired);
+    }
 
     EXPECT_EQ(num_injections_, 1u);
     EXPECT_FALSE(error_callback_fired);
@@ -962,10 +1070,12 @@ TEST_F(InjectorInspectionTest, HistogramsTrackInjections) {
     InjectionEvent event = InjectionEventTemplate();
     event.mutable_data()->pointer_sample().set_phase(Phase::CHANGE);
     events.emplace_back(std::move(event));
-    injector_->Inject({std::move(events)},
-                      [&injection_callback_fired] { injection_callback_fired = true; });
+    Inject(injector_, {std::move(events)},
+           [&injection_callback_fired] { injection_callback_fired = true; });
     RunLoopUntilIdle();
-    EXPECT_TRUE(injection_callback_fired);
+    if (!use_inject_events()) {
+      EXPECT_TRUE(injection_callback_fired);
+    }
 
     EXPECT_EQ(num_injections_, 2u);
     EXPECT_FALSE(error_callback_fired);
@@ -977,10 +1087,12 @@ TEST_F(InjectorInspectionTest, HistogramsTrackInjections) {
     InjectionEvent event = InjectionEventTemplate();
     event.mutable_data()->pointer_sample().set_phase(Phase::REMOVE);
     events.emplace_back(std::move(event));
-    injector_->Inject({std::move(events)},
-                      [&injection_callback_fired] { injection_callback_fired = true; });
+    Inject(injector_, {std::move(events)},
+           [&injection_callback_fired] { injection_callback_fired = true; });
     RunLoopUntilIdle();
-    EXPECT_TRUE(injection_callback_fired);
+    if (!use_inject_events()) {
+      EXPECT_TRUE(injection_callback_fired);
+    }
 
     EXPECT_EQ(num_injections_, 3u);
     EXPECT_FALSE(error_callback_fired);
@@ -1001,10 +1113,12 @@ TEST_F(InjectorInspectionTest, HistogramsTrackInjections) {
 
     std::vector<InjectionEvent> events;
     events.emplace_back(std::move(event));
-    injector_->Inject({std::move(events)},
-                      [&injection_callback_fired] { injection_callback_fired = true; });
+    Inject(injector_, {std::move(events)},
+           [&injection_callback_fired] { injection_callback_fired = true; });
     RunLoopUntilIdle();
-    EXPECT_TRUE(injection_callback_fired);
+    if (!use_inject_events()) {
+      EXPECT_TRUE(injection_callback_fired);
+    }
 
     // Still 3 injections; the callback is not invoked for viewport changes.
     EXPECT_EQ(num_injections_, 3u);
@@ -1032,7 +1146,7 @@ TEST_F(InjectorInspectionTest, HistogramsTrackInjections) {
   }
 }
 
-TEST_F(InjectorInspectionTest, InspectHistory) {
+TEST_P(InjectorInspectionTest, InspectHistory) {
   const uint64_t kMaxNum = scenic_impl::input::InjectorInspector::kNumMinutesOfHistory;
   ASSERT_TRUE(kMaxNum > 2) << "This test assumes a minimum length of history";
 
@@ -1051,7 +1165,7 @@ TEST_F(InjectorInspectionTest, InspectHistory) {
     event.mutable_data()->pointer_sample().set_phase(Phase::ADD);
     std::vector<InjectionEvent> events;
     events.emplace_back(std::move(event));
-    injector_->Inject({std::move(events)}, [] {});
+    Inject(injector_, {std::move(events)}, [] {});
     RunLoopUntilIdle();
   }
 
@@ -1063,7 +1177,7 @@ TEST_F(InjectorInspectionTest, InspectHistory) {
     InjectionEvent event = InjectionEventTemplate();
     event.mutable_data()->pointer_sample().set_phase(Phase::CHANGE);
     events.emplace_back(std::move(event));
-    injector_->Inject({std::move(events)}, [] {});
+    Inject(injector_, {std::move(events)}, [] {});
     RunLoopUntilIdle();
   }
 
@@ -1075,7 +1189,7 @@ TEST_F(InjectorInspectionTest, InspectHistory) {
     InjectionEvent event = InjectionEventTemplate();
     event.mutable_data()->pointer_sample().set_phase(Phase::CHANGE);
     events.emplace_back(std::move(event));
-    injector_->Inject({std::move(events)}, [] {});
+    Inject(injector_, {std::move(events)}, [] {});
     RunLoopUntilIdle();
   }
 
@@ -1096,7 +1210,7 @@ TEST_F(InjectorInspectionTest, InspectHistory) {
 
     std::vector<InjectionEvent> events;
     events.emplace_back(std::move(event));
-    injector_->Inject({std::move(events)}, [] {});
+    Inject(injector_, {std::move(events)}, [] {});
     RunLoopUntilIdle();
   }
 
@@ -1110,7 +1224,7 @@ TEST_F(InjectorInspectionTest, InspectHistory) {
     InjectionEvent event = InjectionEventTemplate();
     event.mutable_data()->pointer_sample().set_phase(Phase::CHANGE);
     events.emplace_back(std::move(event));
-    injector_->Inject({std::move(events)}, [] {});
+    Inject(injector_, {std::move(events)}, [] {});
     RunLoopUntilIdle();
   }
 
@@ -1139,7 +1253,7 @@ TEST_F(InjectorInspectionTest, InspectHistory) {
       event.mutable_data()->pointer_sample().set_phase(Phase::CHANGE);
       events.emplace_back(std::move(event));
     }
-    injector_->Inject({std::move(events)}, [] {});
+    Inject(injector_, {std::move(events)}, [] {});
     RunLoopUntilIdle();
   }
 

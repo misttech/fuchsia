@@ -343,7 +343,7 @@ impl MouseInjectorHandler {
             None,
             None,
         )];
-        device_proxy.inject(events_to_send).await.context("Failed to ADD new MouseDevice.")?;
+        device_proxy.inject_events(events_to_send).context("Failed to ADD new MouseDevice.")?;
 
         Ok(())
     }
@@ -452,7 +452,7 @@ impl MouseInjectorHandler {
 
             fuchsia_trace::flow_begin!(c"input", c"dispatch_event_to_scenic", tracing_id.into());
 
-            let _ = injector.inject(events_to_send).await;
+            let _ = injector.inject_events(events_to_send);
 
             Ok(())
         } else {
@@ -558,7 +558,7 @@ impl MouseInjectorHandler {
                             trace_flow_id: Some(fuchsia_trace::Id::random().into()),
                             ..Default::default()
                         }];
-                        injector.inject(events).await.expect("Failed to inject updated viewport.");
+                        injector.inject_events(events).expect("Failed to inject updated viewport.");
                     }
                 }
                 Some(Err(e)) => {
@@ -701,15 +701,11 @@ mod tests {
             .for_each(|request| {
                 futures::future::ready({
                     match request {
-                        Ok(pointerinjector::DeviceRequest::Inject {
-                            events,
-                            responder: device_injector_responder,
-                        }) => {
-                            let _ = injector_sender.unbounded_send(events);
-                            device_injector_responder.send().expect("failed to respond")
+                        Ok(pointerinjector::DeviceRequest::Inject { .. }) => {
+                            panic!("DeviceRequest::Inject is deprecated.");
                         }
-                        Ok(pointerinjector::DeviceRequest::InjectEvents { .. }) => {
-                            panic!("InjectEvents not supported");
+                        Ok(pointerinjector::DeviceRequest::InjectEvents { events, .. }) => {
+                            let _ = injector_sender.unbounded_send(events);
                         }
                         Err(e) => panic!("FIDL error {}", e),
                     }
@@ -730,9 +726,8 @@ mod tests {
             injector_stream_receiver.await.expect("Failed to get DeviceRequestStream.");
         for expected_event in expected_events {
             match injector_stream.next().await {
-                Some(Ok(pointerinjector::DeviceRequest::Inject { events, responder })) => {
-                    assert_eq!(events, vec![expected_event]);
-                    responder.send().expect("failed to respond");
+                Some(Ok(pointerinjector::DeviceRequest::Inject { .. })) => {
+                    panic!("DeviceRequest::Inject is deprecated.");
                 }
                 Some(Ok(pointerinjector::DeviceRequest::InjectEvents { events, .. })) => {
                     assert_eq!(events, vec![expected_event]);
@@ -811,14 +806,16 @@ mod tests {
             // Check that the injector received an updated viewport
             exec.run_singlethreaded(async {
                 match injector_device_request_stream.next().await {
-                    Some(Ok(pointerinjector::DeviceRequest::Inject { events, responder })) => {
+                    Some(Ok(pointerinjector::DeviceRequest::Inject { .. })) => {
+                        panic!("DeviceRequest::Inject is deprecated.");
+                    }
+                    Some(Ok(pointerinjector::DeviceRequest::InjectEvents { events, .. })) => {
                         assert_eq!(events.len(), 1);
                         assert!(events[0].data.is_some());
                         assert_eq!(
                             events[0].data,
                             Some(pointerinjector::Data::Viewport(create_viewport(0.0, 100.0)))
                         );
-                        responder.send().expect("injector stream failed to respond.");
                     }
                     other => panic!("Received unexpected value: {:?}", other),
                 }
@@ -846,14 +843,16 @@ mod tests {
         // Check that the injector received an updated viewport
         exec.run_singlethreaded(async {
             match injector_device_request_stream.next().await {
-                Some(Ok(pointerinjector::DeviceRequest::Inject { events, responder })) => {
+                Some(Ok(pointerinjector::DeviceRequest::Inject { .. })) => {
+                    panic!("DeviceRequest::Inject is deprecated.");
+                }
+                Some(Ok(pointerinjector::DeviceRequest::InjectEvents { events, .. })) => {
                     assert_eq!(events.len(), 1);
                     assert!(events[0].data.is_some());
                     assert_eq!(
                         events[0].data,
                         Some(pointerinjector::Data::Viewport(create_viewport(100.0, 200.0)))
                     );
-                    responder.send().expect("injector stream failed to respond.");
                 }
                 other => panic!("Received unexpected value: {:?}", other),
             }

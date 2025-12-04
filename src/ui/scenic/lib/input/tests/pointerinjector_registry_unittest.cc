@@ -12,7 +12,6 @@
 
 #include "src/lib/testing/loop_fixture/test_loop_fixture.h"
 #include "src/ui/scenic/lib/utils/helpers.h"
-#include "src/ui/scenic/lib/utils/math.h"
 
 using fuchsia::ui::pointerinjector::DeviceType;
 using fuchsia::ui::pointerinjector::DispatchPolicy;
@@ -121,6 +120,25 @@ class PointerinjectorRegistryTest : public gtest::TestLoopFixture {
 
   scenic_impl::input::PointerinjectorRegistry registry_;
 };
+
+class PointerinjectorRegistryTestP : public PointerinjectorRegistryTest,
+                                     public testing::WithParamInterface<bool> {
+ public:
+  bool use_inject_events() const { return GetParam(); }
+
+  void Inject(fuchsia::ui::pointerinjector::DevicePtr& injector,
+              std::vector<fuchsia::ui::pointerinjector::Event> events,
+              std::function<void()> callback) {
+    if (use_inject_events()) {
+      injector->InjectEvents(std::move(events));
+    } else {
+      injector->Inject(std::move(events), std::move(callback));
+    }
+  }
+};
+
+INSTANTIATE_TEST_SUITE_P(PointerinjectorRegistryTest, PointerinjectorRegistryTestP,
+                         testing::Bool());
 
 TEST_F(PointerinjectorRegistryTest, RegisterAttemptWithCorrectArguments_ShouldSucceed) {
   const auto [parent, child] = SetupSceneWithParentAndChildViews();
@@ -523,7 +541,7 @@ TEST_F(PointerinjectorRegistryTest, MultipleRegistrations_ShouldSucceed) {
   }
 }
 
-TEST_F(PointerinjectorRegistryTest,
+TEST_P(PointerinjectorRegistryTestP,
        TouchDeviceAndExclusivePolicy_ShouldTriggerExclusiveTouchInjectFunc) {
   bool exclusive_touch_used = false;
   bool hit_tested_touch_used = false;
@@ -555,7 +573,7 @@ TEST_F(PointerinjectorRegistryTest,
   EXPECT_TRUE(register_callback_fired);
   EXPECT_FALSE(error_callback_fired);
 
-  injector->Inject(EventsTemplate(), [] {});
+  Inject(injector, EventsTemplate(), [] {});
   RunLoopUntilIdle();
   EXPECT_TRUE(exclusive_touch_used);
   EXPECT_FALSE(hit_tested_touch_used);
@@ -563,7 +581,7 @@ TEST_F(PointerinjectorRegistryTest,
   EXPECT_FALSE(hit_tested_mouse_used);
 }
 
-TEST_F(PointerinjectorRegistryTest,
+TEST_P(PointerinjectorRegistryTestP,
        TouchDeviceAndHitTestPolicy_ShouldTriggerHitTestedTouchInjectFunc) {
   bool exclusive_touch_used = false;
   bool hit_tested_touch_used = false;
@@ -595,7 +613,7 @@ TEST_F(PointerinjectorRegistryTest,
   EXPECT_TRUE(register_callback_fired);
   EXPECT_FALSE(error_callback_fired);
 
-  injector->Inject(EventsTemplate(), [] {});
+  Inject(injector, EventsTemplate(), [] {});
   RunLoopUntilIdle();
   EXPECT_FALSE(exclusive_touch_used);
   EXPECT_TRUE(hit_tested_touch_used);
@@ -630,7 +648,7 @@ TEST_F(PointerinjectorRegistryTest, MouseDevice_CanRegisterMouseWithoutButtons) 
   EXPECT_FALSE(error_callback_fired);
 }
 
-TEST_F(PointerinjectorRegistryTest,
+TEST_P(PointerinjectorRegistryTestP,
        MouseDeviceAndExclusivePolicy_ShouldTriggerExclusiveMouseInjectFunc) {
   bool exclusive_touch_used = false;
   bool hit_tested_touch_used = false;
@@ -663,7 +681,7 @@ TEST_F(PointerinjectorRegistryTest,
   EXPECT_TRUE(register_callback_fired);
   EXPECT_FALSE(error_callback_fired);
 
-  injector->Inject(EventsTemplate(), [] {});
+  Inject(injector, EventsTemplate(), [] {});
   RunLoopUntilIdle();
   EXPECT_FALSE(exclusive_touch_used);
   EXPECT_FALSE(hit_tested_touch_used);
@@ -671,7 +689,7 @@ TEST_F(PointerinjectorRegistryTest,
   EXPECT_FALSE(hit_tested_mouse_used);
 }
 
-TEST_F(PointerinjectorRegistryTest,
+TEST_P(PointerinjectorRegistryTestP,
        MouseDeviceAndHitTestPolicy_ShouldTriggerHitTestedMouseInjectFunc) {
   bool exclusive_touch_used = false;
   bool hit_tested_touch_used = false;
@@ -704,7 +722,7 @@ TEST_F(PointerinjectorRegistryTest,
   EXPECT_TRUE(register_callback_fired);
   EXPECT_FALSE(error_callback_fired);
 
-  injector->Inject(EventsTemplate(), [] {});
+  Inject(injector, EventsTemplate(), [] {});
   RunLoopUntilIdle();
   EXPECT_FALSE(exclusive_touch_used);
   EXPECT_FALSE(hit_tested_touch_used);
@@ -712,7 +730,7 @@ TEST_F(PointerinjectorRegistryTest,
   EXPECT_TRUE(hit_tested_mouse_used);
 }
 
-TEST_F(PointerinjectorRegistryTest,
+TEST_P(PointerinjectorRegistryTestP,
        MouseInjectorChannelDying_ShouldTriggerCancelMouseStreamCallback) {
   uint32_t cancel_mouse_stream_count = 0;
   scenic_impl::input::PointerinjectorRegistry registry(
@@ -744,11 +762,11 @@ TEST_F(PointerinjectorRegistryTest,
     EXPECT_EQ(cancel_mouse_stream_count, 0u);
 
     // Begin two streams.
-    injector->Inject(EventsTemplate(), [] {});
+    Inject(injector, EventsTemplate(), [] {});
     {
       auto events = EventsTemplate();
       events.back().mutable_data()->pointer_sample().set_pointer_id(2);
-      injector->Inject(std::move(events), [] {});
+      Inject(injector, std::move(events), [] {});
     }
     RunLoopUntilIdle();
     EXPECT_EQ(cancel_mouse_stream_count, 0u);
@@ -759,7 +777,7 @@ TEST_F(PointerinjectorRegistryTest,
   EXPECT_EQ(cancel_mouse_stream_count, 2u);
 }
 
-TEST_F(PointerinjectorRegistryTest,
+TEST_P(PointerinjectorRegistryTestP,
        MouseInjector_CancelEvent_ShouldTriggerCancelMouseStreamCallback) {
   uint32_t cancel_mouse_stream_count = false;
   scenic_impl::input::PointerinjectorRegistry registry(
@@ -790,7 +808,7 @@ TEST_F(PointerinjectorRegistryTest,
   EXPECT_EQ(cancel_mouse_stream_count, 0u);
 
   // Begin a stream.
-  injector->Inject(EventsTemplate(), [] {});
+  Inject(injector, EventsTemplate(), [] {});
   RunLoopUntilIdle();
   EXPECT_EQ(cancel_mouse_stream_count, 0u);
 
@@ -798,13 +816,13 @@ TEST_F(PointerinjectorRegistryTest,
     auto events = EventsTemplate();
     events.back().mutable_data()->pointer_sample().set_phase(
         fuchsia::ui::pointerinjector::EventPhase::CANCEL);
-    injector->Inject(std::move(events), [] {});
+    Inject(injector, std::move(events), [] {});
     RunLoopUntilIdle();
     EXPECT_EQ(cancel_mouse_stream_count, 1u);
   }
 
   // Begin another stream.
-  injector->Inject(EventsTemplate(), [] {});
+  Inject(injector, EventsTemplate(), [] {});
   RunLoopUntilIdle();
   EXPECT_EQ(cancel_mouse_stream_count, 1u);
 
@@ -812,7 +830,7 @@ TEST_F(PointerinjectorRegistryTest,
     auto events = EventsTemplate();
     events.back().mutable_data()->pointer_sample().set_phase(
         fuchsia::ui::pointerinjector::EventPhase::REMOVE);
-    injector->Inject(std::move(events), [] {});
+    Inject(injector, std::move(events), [] {});
     RunLoopUntilIdle();
     EXPECT_EQ(cancel_mouse_stream_count, 2u);
   }
