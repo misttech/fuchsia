@@ -275,7 +275,8 @@ pub async fn yield_now() {
 mod tests {
     use super::super::executor::{LocalExecutor, SendExecutorBuilder};
     use super::*;
-    use std::sync::{Arc, Mutex};
+    use fuchsia_sync::Mutex;
+    use std::sync::Arc;
 
     /// This struct holds a thread-safe mutable boolean and
     /// sets its value to true when dropped.
@@ -294,7 +295,7 @@ mod tests {
 
     impl Drop for SetsBoolTrueOnDrop {
         fn drop(&mut self) {
-            let mut lock = self.value.lock().unwrap();
+            let mut lock = self.value.lock();
             *lock = true;
         }
     }
@@ -320,14 +321,14 @@ mod tests {
             // Move the switch into a different thread.
             // Once we return from this await, that switch should have been dropped.
             unblock(move || {
-                let lock = sets_bool_true_on_drop.value.lock().unwrap();
+                let lock = sets_bool_true_on_drop.value.lock();
                 assert!(!*lock);
             })
             .await;
 
             // Switch moved into the future should have been dropped at this point.
             // The value of the boolean should now be true.
-            let lock = value.lock().unwrap();
+            let lock = value.lock();
             assert!(*lock);
         });
     }

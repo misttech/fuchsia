@@ -9,8 +9,8 @@ use fuchsia_sync::{Condvar, Mutex};
 use crate::runtime::instrument::TaskInstrument;
 use futures::FutureExt;
 use std::future::Future;
-use std::sync::atomic::Ordering;
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 use std::time::Duration;
 use std::{fmt, thread};
 
@@ -228,9 +228,10 @@ mod tests {
     use super::SendExecutorBuilder;
     use crate::{Task, Timer};
 
+    use fuchsia_sync::{Condvar, Mutex};
     use futures::channel::oneshot;
+    use std::sync::Arc;
     use std::sync::atomic::{AtomicU64, Ordering};
-    use std::sync::{Arc, Condvar, Mutex};
 
     #[test]
     fn test_stalled_triggers_wake_up() {
@@ -248,15 +249,15 @@ mod tests {
                 tx.send(()).unwrap();
                 // Now block the thread waiting for the result.
                 let (lock, cvar) = &*pair;
-                let mut done = lock.lock().unwrap();
+                let mut done = lock.lock();
                 while !*done {
-                    done = cvar.wait(done).unwrap();
+                    cvar.wait(&mut done);
                 }
             });
 
             rx.await.unwrap();
             let (lock, cvar) = &*pair2;
-            *lock.lock().unwrap() = true;
+            *lock.lock() = true;
             cvar.notify_one();
         });
     }

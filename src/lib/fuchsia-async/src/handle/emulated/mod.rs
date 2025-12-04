@@ -9,6 +9,7 @@ pub mod socket;
 
 use crate::invoke_for_handle_types;
 use bitflags::bitflags;
+use fuchsia_sync::Mutex;
 use futures::ready;
 use futures::task::noop_waker_ref;
 #[cfg(debug_assertions)]
@@ -19,7 +20,7 @@ use std::marker::PhantomData;
 use std::mem::MaybeUninit;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
-use std::sync::{Arc, LazyLock, Mutex};
+use std::sync::{Arc, LazyLock};
 use std::task::{Context, Poll, Waker};
 use zx_status::Status;
 
@@ -66,12 +67,8 @@ impl<'a> HandleRef<'a> {
     /// Duplicate this handle. The new handle will have the given `rights`, which must be a subset
     /// of the rights the existing handle has.
     pub fn duplicate(&self, mut rights: Rights) -> Result<Handle, Status> {
-        let mut new_entry = HANDLE_TABLE
-            .lock()
-            .unwrap()
-            .get(&self.raw_handle())
-            .cloned()
-            .ok_or(Status::BAD_HANDLE)?;
+        let mut new_entry =
+            HANDLE_TABLE.lock().get(&self.raw_handle()).cloned().ok_or(Status::BAD_HANDLE)?;
         if rights == Rights::SAME_RIGHTS {
             rights = new_entry.rights;
         }
@@ -85,8 +82,8 @@ impl<'a> HandleRef<'a> {
         new_entry.rights = rights;
         let new_handle = alloc_handle();
         let side = new_entry.side;
-        new_entry.object.lock().unwrap().increment_open_count(side);
-        let _ = HANDLE_TABLE.lock().unwrap().insert(new_handle, new_entry);
+        new_entry.object.lock().increment_open_count(side);
+        let _ = HANDLE_TABLE.lock().insert(new_handle, new_entry);
         Ok(Handle(new_handle))
     }
 
@@ -242,7 +239,7 @@ pub trait EmulatedHandleRef: AsHandleRef {
         if self.is_invalid() {
             HandleRef(INVALID_HANDLE, std::marker::PhantomData)
         } else {
-            let table = HANDLE_TABLE.lock().unwrap();
+            let table = HANDLE_TABLE.lock();
             if let Some((target, side)) =
                 table.get(&self.raw_handle()).map(|x| (Arc::clone(&x.object), x.side))
             {
@@ -272,7 +269,7 @@ pub trait EmulatedHandleRef: AsHandleRef {
         if self.is_invalid() {
             false
         } else {
-            !HANDLE_TABLE.lock().unwrap().contains_key(&self.raw_handle())
+            !HANDLE_TABLE.lock().contains_key(&self.raw_handle())
         }
     }
 }
@@ -394,7 +391,7 @@ impl Handle {
             return Err(zx_status::Status::BAD_HANDLE);
         }
 
-        let mut table = HANDLE_TABLE.lock().unwrap();
+        let mut table = HANDLE_TABLE.lock();
         let std::collections::hash_map::Entry::Occupied(entry) = table.entry(self.raw_handle())
         else {
             return Err(zx_status::Status::BAD_HANDLE);
@@ -452,7 +449,7 @@ impl Channel {
         let rights = Rights::CHANNEL_DEFAULT;
         let (left, right, obj) = new_handle_pair(HdlType::Channel, rights);
 
-        let mut obj = obj.lock().unwrap();
+        let mut obj = obj.lock();
         let KObjectEntry::Channel(obj) = &mut *obj else {
             unreachable!("Channel we just allocated wasn't present or wasn't a channel");
         };
@@ -472,20 +469,19 @@ impl Channel {
     /// Returns true if the channel is closed (i.e. other side was dropped).
     pub fn is_closed(&self) -> bool {
         assert!(!self.is_invalid());
-        let Some(object) = HANDLE_TABLE.lock().unwrap().get(&self.0).map(|x| Arc::clone(&x.object))
-        else {
+        let Some(object) = HANDLE_TABLE.lock().get(&self.0).map(|x| Arc::clone(&x.object)) else {
             return true;
         };
 
-        let object = object.lock().unwrap();
+        let object = object.lock();
         !object.is_open()
     }
 
     /// If [`is_closed`] returns true, this may return a string explaining why the handle was closed.
     pub fn closed_reason(&self) -> Option<String> {
         assert!(!self.is_invalid());
-        let object = HANDLE_TABLE.lock().unwrap().get(&self.0).map(|x| Arc::clone(&x.object))?;
-        let object = object.lock().unwrap();
+        let object = HANDLE_TABLE.lock().get(&self.0).map(|x| Arc::clone(&x.object))?;
+        let object = object.lock();
 
         let KObjectEntry::Channel(c) = &*object else {
             return None;
@@ -500,12 +496,11 @@ impl Channel {
             return;
         }
 
-        let Some(object) = HANDLE_TABLE.lock().unwrap().get(&self.0).map(|x| Arc::clone(&x.object))
-        else {
+        let Some(object) = HANDLE_TABLE.lock().get(&self.0).map(|x| Arc::clone(&x.object)) else {
             return;
         };
 
-        let mut object = object.lock().unwrap();
+        let mut object = object.lock();
 
         let KObjectEntry::Channel(c) = &mut *object else {
             return;
@@ -792,7 +787,7 @@ impl Socket {
         let rights = Rights::SOCKET_DEFAULT;
         let (left, right, obj) = new_handle_pair(HdlType::StreamSocket, rights);
 
-        let mut obj = obj.lock().unwrap();
+        let mut obj = obj.lock();
         let KObjectEntry::StreamSocket(obj) = &mut *obj else {
             unreachable!("Channel we just allocated wasn't present or wasn't a channel");
         };
@@ -813,7 +808,7 @@ impl Socket {
         let rights = Rights::SOCKET_DEFAULT;
         let (left, right, obj) = new_handle_pair(HdlType::DatagramSocket, rights);
 
-        let mut obj = obj.lock().unwrap();
+        let mut obj = obj.lock();
         let KObjectEntry::DatagramSocket(obj) = &mut *obj else {
             unreachable!("Channel we just allocated wasn't present or wasn't a channel");
         };
@@ -1964,7 +1959,7 @@ fn new_handle_pair(hdl_type: HdlType, rights: Rights) -> (u32, u32, Arc<Mutex<KO
 
     let left_handle = alloc_handle();
     let right_handle = alloc_handle();
-    let mut handle_table = HANDLE_TABLE.lock().unwrap();
+    let mut handle_table = HANDLE_TABLE.lock();
     let _ = handle_table.insert(left_handle, left);
     let _ = handle_table.insert(right_handle, right);
 
@@ -1995,18 +1990,14 @@ fn new_handle(hdl_type: HdlType, rights: Rights) -> (u32, Arc<Mutex<KObjectEntry
     let left = HandleTableEntry { object: Arc::clone(&kobject_entry), rights, side: Side::Left };
 
     let left_handle = alloc_handle();
-    let mut handle_table = HANDLE_TABLE.lock().unwrap();
+    let mut handle_table = HANDLE_TABLE.lock();
     let _ = handle_table.insert(left_handle, left);
 
     (left_handle, kobject_entry)
 }
 
 fn alloc_handle() -> u32 {
-    FREE_HANDLES
-        .lock()
-        .unwrap()
-        .pop_front()
-        .unwrap_or_else(|| NEXT_HANDLE.fetch_add(1, Ordering::Relaxed))
+    FREE_HANDLES.lock().pop_front().unwrap_or_else(|| NEXT_HANDLE.fetch_add(1, Ordering::Relaxed))
 }
 
 enum HdlRef<'a> {
@@ -2038,12 +2029,12 @@ fn with_handle<R>(handle: u32, f: impl FnOnce(HdlRef<'_>, Side) -> R) -> R {
     #[cfg(debug_assertions)]
     IN_WITH_HANDLE.with(|iwh| assert!(!iwh.replace(true)));
     let (side, object) = {
-        let handle_table = HANDLE_TABLE.lock().unwrap();
+        let handle_table = HANDLE_TABLE.lock();
         let entry = handle_table.get(&handle).expect("Tried to use dangling handle");
         (entry.side, Arc::clone(&entry.object))
     };
 
-    let mut object = object.lock().unwrap();
+    let mut object = object.lock();
     let r = match &mut *object {
         KObjectEntry::Channel(o) => f(HdlRef::Channel(&mut *o), side),
         KObjectEntry::StreamSocket(o) => f(HdlRef::StreamSocket(&mut *o), side),
@@ -2074,9 +2065,9 @@ pub async fn shut_down_handles() {
     SHUTTING_DOWN.store(true, Ordering::Release);
 
     poll_fn(|ctx| {
-        let handle_table = HANDLE_TABLE.lock().unwrap();
+        let handle_table = HANDLE_TABLE.lock();
         for v in handle_table.values() {
-            let mut object = v.object.lock().unwrap();
+            let mut object = v.object.lock();
             match &mut *object {
                 KObjectEntry::Channel(o) => ready!(o.poll_drained(ctx)),
                 KObjectEntry::StreamSocket(o) => ready!(o.poll_drained(ctx)),
@@ -2089,9 +2080,9 @@ pub async fn shut_down_handles() {
     })
     .await;
 
-    let handle_table = HANDLE_TABLE.lock().unwrap();
+    let handle_table = HANDLE_TABLE.lock();
     for v in handle_table.values() {
-        let mut object = v.object.lock().unwrap();
+        let mut object = v.object.lock();
         object.do_close(Side::Left);
         object.do_close(Side::Right);
     }
@@ -2103,11 +2094,11 @@ fn check_write_shutdown() -> Result<(), zx_status::Status> {
 
 fn get_hdl_type(handle: u32) -> Option<HdlType> {
     let object = {
-        let table = HANDLE_TABLE.lock().unwrap();
+        let table = HANDLE_TABLE.lock();
         Arc::clone(&table.get(&handle)?.object)
     };
 
-    let object = object.lock().unwrap();
+    let object = object.lock();
     match &*object {
         KObjectEntry::Channel(_) => Some(HdlType::Channel),
         KObjectEntry::StreamSocket(_) => Some(HdlType::StreamSocket),
@@ -2118,7 +2109,7 @@ fn get_hdl_type(handle: u32) -> Option<HdlType> {
 }
 
 fn get_hdl_rights(handle: u32) -> Option<Rights> {
-    let table = HANDLE_TABLE.lock().unwrap();
+    let table = HANDLE_TABLE.lock();
     table.get(&handle).map(|x| x.rights)
 }
 
@@ -2127,12 +2118,12 @@ fn hdl_close(hdl: u32) {
     if hdl == INVALID_HANDLE {
         return;
     }
-    let Some(entry) = HANDLE_TABLE.lock().unwrap().remove(&hdl) else {
+    let Some(entry) = HANDLE_TABLE.lock().remove(&hdl) else {
         return;
     };
 
-    entry.object.lock().unwrap().do_close(entry.side);
-    FREE_HANDLES.lock().unwrap().push_back(hdl);
+    entry.object.lock().do_close(entry.side);
+    FREE_HANDLES.lock().push_back(hdl);
 }
 
 #[cfg(test)]

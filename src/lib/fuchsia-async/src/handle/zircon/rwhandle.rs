@@ -2,11 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::runtime::{EHandle, PacketReceiver, ReceiverRegistration};
 use crate::OnSignalsRef;
+use crate::runtime::{EHandle, PacketReceiver, ReceiverRegistration};
+use fuchsia_sync::Mutex;
 use std::marker::PhantomData;
-use std::sync::Mutex;
-use std::task::{ready, Context, Poll, Waker};
+use std::task::{Context, Poll, Waker, ready};
 use zx::{self as zx, AsHandleRef};
 
 const OBJECT_PEER_CLOSED: zx::Signals = zx::Signals::OBJECT_PEER_CLOSED;
@@ -131,7 +131,7 @@ impl<S: RWHandleSpec> PacketReceiver for RWPacketReceiver<S> {
         let mut read_task = None;
         let mut write_task = None;
         {
-            let mut inner = self.inner.lock().unwrap();
+            let mut inner = self.inner.lock();
             let old = inner.signals;
             inner.signals |= new;
 
@@ -244,7 +244,7 @@ where
 
     /// Returns true if the object received the `OBJECT_PEER_CLOSED` signal.
     pub fn is_closed(&self) -> bool {
-        let signals = self.receiver().inner.lock().unwrap().signals;
+        let signals = self.receiver().inner.lock().signals;
         if signals.contains(OBJECT_PEER_CLOSED) {
             return true;
         }
@@ -284,7 +284,7 @@ where
     }
 
     fn need_signal(&self, cx: &mut Context<'_>, signal: Signal) -> Poll<Result<(), zx::Status>> {
-        let mut inner = self.receiver.inner.lock().unwrap();
+        let mut inner = self.receiver.inner.lock();
         let old = inner.signals;
         if old.contains(OBJECT_PEER_CLOSED) {
             // We don't want to return an error here because even though the peer has closed, the
@@ -327,7 +327,7 @@ where
         } | OBJECT_PEER_CLOSED;
 
         loop {
-            let signals = self.receiver().inner.lock().unwrap().signals;
+            let signals = self.receiver().inner.lock().signals;
             let asserted = signals.intersection(mask);
             if !asserted.is_empty() {
                 return Poll::Ready(Ok(asserted));

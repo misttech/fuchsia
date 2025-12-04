@@ -18,12 +18,13 @@
 //!     }
 //! ```
 
+use fuchsia_sync::{Mutex, MutexGuard};
 use std::future::poll_fn;
 use std::marker::PhantomPinned;
 use std::ops::{Deref, DerefMut};
-use std::pin::{pin, Pin};
+use std::pin::{Pin, pin};
 use std::ptr::NonNull;
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::Arc;
 use std::task::{Poll, Waker};
 
 /// An async condition which combines a mutex and a condition variable.
@@ -41,19 +42,19 @@ impl<T> Condition<T> {
 
     /// Returns the number of wakers waiting on the condition.
     pub fn waker_count(&self) -> usize {
-        self.0.lock().unwrap().count
+        self.0.lock().count
     }
 
     /// Same as `Mutex::lock`.
     pub fn lock(&self) -> ConditionGuard<'_, T> {
-        ConditionGuard(self.0.lock().unwrap())
+        ConditionGuard(self.0.lock())
     }
 
     /// Returns when `poll` resolves.
     pub async fn when<R>(&self, poll: impl Fn(&mut T) -> Poll<R>) -> R {
         let mut entry = pin!(self.waker_entry());
         poll_fn(|cx| {
-            let mut guard = self.0.lock().unwrap();
+            let mut guard = self.0.lock();
             // SAFETY: We uphold the pin guarantee.
             let entry = unsafe { entry.as_mut().get_unchecked_mut() };
             let result = poll(&mut guard.data);
@@ -137,7 +138,7 @@ pub struct WakerEntry<T> {
 
 impl<T> Drop for WakerEntry<T> {
     fn drop(&mut self) {
-        self.node.remove(&mut *self.list.lock().unwrap());
+        self.node.remove(&mut *self.list.lock());
     }
 }
 
@@ -201,22 +202,22 @@ pub struct Drainer<'a, 'b, T>(&'a mut ConditionGuard<'b, T>);
 impl<T> Iterator for Drainer<'_, '_, T> {
     type Item = Waker;
     fn next(&mut self) -> Option<Self::Item> {
-        if let Some(mut head) = self.0 .0.head {
+        if let Some(mut head) = self.0.0.head {
             // SAFETY: Safe because we have exclusive access to `Inner` and `head is set correctly.
-            unsafe { head.as_mut().remove(&mut self.0 .0) }
+            unsafe { head.as_mut().remove(&mut self.0.0) }
         } else {
             None
         }
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
-        (self.0 .0.count, Some(self.0 .0.count))
+        (self.0.0.count, Some(self.0.0.count))
     }
 }
 
 impl<T> ExactSizeIterator for Drainer<'_, '_, T> {
     fn len(&self) -> usize {
-        self.0 .0.count
+        self.0.0.count
     }
 }
 
@@ -224,9 +225,9 @@ impl<T> ExactSizeIterator for Drainer<'_, '_, T> {
 mod tests {
     use super::Condition;
     use crate::TestExecutor;
+    use futures::StreamExt;
     use futures::stream::FuturesUnordered;
     use futures::task::noop_waker;
-    use futures::StreamExt;
     use std::pin::pin;
     use std::sync::atomic::{AtomicU64, Ordering};
     use std::task::Poll;

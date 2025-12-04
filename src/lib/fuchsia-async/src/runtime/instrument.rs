@@ -56,9 +56,10 @@ pub trait TaskInstrument: Send + Sync + 'static {
 mod tests {
     use super::*;
     use crate::{Scope, ScopeHandle, SendExecutorBuilder, yield_now};
+    use fuchsia_sync::Mutex;
     use std::any::Any;
+    use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};
-    use std::sync::{Arc, Mutex};
 
     // Instrumentation to track scope associations
     struct TrackedTask {
@@ -83,7 +84,7 @@ mod tests {
         }
 
         fn get_scopes(&self) -> Vec<Arc<TrackedScope>> {
-            self.scopes.lock().unwrap().clone()
+            self.scopes.lock().clone()
         }
     }
 
@@ -134,7 +135,7 @@ mod tests {
             });
 
             // Add task to scope
-            let mut tasks = parent.tasks.lock().unwrap();
+            let mut tasks = parent.tasks.lock();
             tasks.push(task.clone());
 
             handle.add_hooks(TrackedHooks { task });
@@ -156,11 +157,11 @@ mod tests {
                     .instrument_data()
                     .and_then(|data| data.downcast_ref::<Arc<TrackedScope>>())
                 {
-                    parent_scope.scopes.lock().unwrap().push(tracked_scope.clone());
+                    parent_scope.scopes.lock().push(tracked_scope.clone());
                 }
             }
 
-            self.scopes.lock().unwrap().push(tracked_scope.clone());
+            self.scopes.lock().push(tracked_scope.clone());
 
             Box::new(tracked_scope)
         }
@@ -207,41 +208,41 @@ mod tests {
         // children under that one.
         let root_scope = &scopes[0];
         assert_eq!(root_scope.name, "root".to_string());
-        assert_eq!(root_scope.tasks.lock().unwrap().len(), 1);
-        assert_eq!(root_scope.scopes.lock().unwrap().len(), 1);
+        assert_eq!(root_scope.tasks.lock().len(), 1);
+        assert_eq!(root_scope.scopes.lock().len(), 1);
 
-        let test_root_scope = &root_scope.scopes.lock().unwrap()[0];
+        let test_root_scope = &root_scope.scopes.lock()[0];
         assert_eq!(test_root_scope.name, "test_root".to_string());
-        assert_eq!(test_root_scope.tasks.lock().unwrap().len(), 1);
-        assert_eq!(test_root_scope.scopes.lock().unwrap().len(), 1);
+        assert_eq!(test_root_scope.tasks.lock().len(), 1);
+        assert_eq!(test_root_scope.scopes.lock().len(), 1);
 
-        let level2_scope = &test_root_scope.scopes.lock().unwrap()[0];
+        let level2_scope = &test_root_scope.scopes.lock()[0];
         assert_eq!(level2_scope.name, "level2".to_string());
-        assert_eq!(level2_scope.tasks.lock().unwrap().len(), 2);
-        assert_eq!(level2_scope.scopes.lock().unwrap().len(), 1);
+        assert_eq!(level2_scope.tasks.lock().len(), 2);
+        assert_eq!(level2_scope.scopes.lock().len(), 1);
 
-        let level3_scope = &level2_scope.scopes.lock().unwrap()[0];
+        let level3_scope = &level2_scope.scopes.lock()[0];
         assert_eq!(level3_scope.name, "level3".to_string());
-        assert_eq!(level3_scope.tasks.lock().unwrap().len(), 2);
-        assert_eq!(level3_scope.scopes.lock().unwrap().len(), 0);
+        assert_eq!(level3_scope.tasks.lock().len(), 2);
+        assert_eq!(level3_scope.scopes.lock().len(), 0);
 
         // Assert poll counts
-        let root_tasks = root_scope.tasks.lock().unwrap();
+        let root_tasks = root_scope.tasks.lock();
         // We can't assert the number of polls for the root task,
         // as that is nondeterministic on a multithreaded executor.
         assert_eq!(root_tasks[0].completed.load(Ordering::Relaxed), 1);
 
-        let test_root_tasks = test_root_scope.tasks.lock().unwrap();
+        let test_root_tasks = test_root_scope.tasks.lock();
         assert_eq!(test_root_tasks[0].poll_count.load(Ordering::Relaxed), 1);
         assert_eq!(test_root_tasks[0].completed.load(Ordering::Relaxed), 1);
 
-        let level2_tasks = level2_scope.tasks.lock().unwrap();
+        let level2_tasks = level2_scope.tasks.lock();
         assert_eq!(level2_tasks[0].poll_count.load(Ordering::Relaxed), 2);
         assert_eq!(level2_tasks[0].completed.load(Ordering::Relaxed), 1);
         assert_eq!(level2_tasks[1].poll_count.load(Ordering::Relaxed), 1);
         assert_eq!(level2_tasks[1].completed.load(Ordering::Relaxed), 1);
 
-        let level3_tasks = level3_scope.tasks.lock().unwrap();
+        let level3_tasks = level3_scope.tasks.lock();
         assert_eq!(level3_tasks[0].poll_count.load(Ordering::Relaxed), 1);
         assert_eq!(level3_tasks[0].completed.load(Ordering::Relaxed), 1);
         assert_eq!(level3_tasks[1].poll_count.load(Ordering::Relaxed), 1);
