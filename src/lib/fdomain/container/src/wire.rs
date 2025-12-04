@@ -160,6 +160,12 @@ impl FDomainCodec {
                 >(header, rest)?;
                 self.fdomain.read_socket_streaming_stop(tx_id, request);
             }
+            ordinals::GET_KOID => {
+                let request =
+                    fidl_message::decode_message::<proto::FDomainGetKoidRequest>(header, rest)?;
+                let result = self.fdomain.get_koid(request);
+                self.send_response(tx_id, header.ordinal, result)?;
+            }
             unknown if header.dynamic_flags().contains(fidl_message::DynamicFlags::FLEXIBLE) => {
                 if header.tx_id != 0 {
                     let header = fidl_message::TransactionHeader::new(

@@ -1248,6 +1248,18 @@ impl FDomain {
         self.using_handle(request.handle, |h| h.handle.signal_peer(clear, set))
     }
 
+    pub fn get_koid(
+        &mut self,
+        request: proto::FDomainGetKoidRequest,
+    ) -> Result<proto::FDomainGetKoidResponse> {
+        self.using_handle(request.handle, |h| {
+            h.handle
+                .get_koid()
+                .map(|k| proto::FDomainGetKoidResponse { koid: k.raw_koid() })
+                .map_err(|e| proto::Error::TargetError(e.into_raw()))
+        })
+    }
+
     pub fn read_channel_streaming_start(
         &mut self,
         tid: NonZeroU32,

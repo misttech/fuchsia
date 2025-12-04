@@ -106,6 +106,18 @@ impl HandleRef<'_> {
             Responder::Signal,
         )
     }
+
+    pub fn get_koid(&self) -> impl Future<Output = Result<u64, Error>> {
+        let handle = self.proto();
+        let client = self.client();
+        client
+            .transaction(
+                ordinals::GET_KOID,
+                proto::FDomainGetKoidRequest { handle },
+                Responder::GetKoid,
+            )
+            .map(move |res| res.map(|r| r.koid))
+    }
 }
 
 /// Trait for turning handle-based types into [`HandleRef`], and for handle

@@ -395,6 +395,16 @@
     },
     {
         "kind": "protocol/member",
+        "name": "fuchsia.fdomain/FDomain.GetKoid",
+        "strictness": "flexible",
+        "ordinal": "4863247104760611523",
+        "direction": "two_way",
+        "request": "fuchsia.fdomain/FDomainGetKoidRequest",
+        "response": "fuchsia.fdomain/FDomain_GetKoid_Response",
+        "error": "fuchsia.fdomain/Error"
+    },
+    {
+        "kind": "protocol/member",
         "name": "fuchsia.fdomain/FDomain.GetNamespace",
         "strictness": "flexible",
         "ordinal": "8427052173335191838",
@@ -589,6 +599,16 @@
     },
     {
         "kind": "struct/member",
+        "name": "fuchsia.fdomain/FDomainGetKoidRequest.handle",
+        "ordinal": "1",
+        "type": "fuchsia.fdomain/HandleId"
+    },
+    {
+        "kind": "struct",
+        "name": "fuchsia.fdomain/FDomainGetKoidRequest"
+    },
+    {
+        "kind": "struct/member",
         "name": "fuchsia.fdomain/FDomainGetNamespaceRequest.new_handle",
         "ordinal": "1",
         "type": "fuchsia.fdomain/NewHandleId"
@@ -678,6 +698,16 @@
     {
         "kind": "struct",
         "name": "fuchsia.fdomain/FDomainWaitForSignalsRequest"
+    },
+    {
+        "kind": "struct/member",
+        "name": "fuchsia.fdomain/FDomain_GetKoid_Response.koid",
+        "ordinal": "1",
+        "type": "uint64"
+    },
+    {
+        "kind": "struct",
+        "name": "fuchsia.fdomain/FDomain_GetKoid_Response"
     },
     {
         "kind": "struct/member",

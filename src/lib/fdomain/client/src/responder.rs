@@ -27,6 +27,7 @@ pub(crate) enum Responder {
     Signal(Sender<Result<(), Error>>),
     SignalPeer(Sender<Result<(), Error>>),
     WaitForSignals(Sender<Result<proto::FDomainWaitForSignalsResponse, Error>>),
+    GetKoid(Sender<Result<proto::FDomainGetKoidResponse, Error>>),
 
     // Read channel/socket is a little different. We just need the handle ID as we're
     // going to ask the client to handle the transaction for us.
@@ -138,6 +139,9 @@ impl Responder {
             Responder::SignalPeer(sender) => {
                 Responder::dispatch_handle("signal_peer", ordinals::SIGNAL_PEER, sender, result)
             }
+            Responder::GetKoid(sender) => {
+                Responder::dispatch_handle("get_koid", ordinals::GET_KOID, sender, result)
+            }
             Responder::_ReadChannelStreamingStart(sender) => Responder::dispatch_handle(
                 "read_channel_streaming_start",
                 ordinals::READ_CHANNEL_STREAMING_START,
@@ -199,23 +203,18 @@ impl Responder {
                 if header.ordinal != ordinal {
                     return Err(fidl::Error::InvalidResponseTxid);
                 }
-                let (res, ret) = match fidl_message::decode_response_flexible_result::<R, S>(
-                    header, body,
-                ) {
-                    Ok(fidl_message::MaybeUnknown::Known(x)) => {
-                        (x.map_err(Into::into), Ok(()))
-                    },
-                    Ok(fidl_message::MaybeUnknown::Unknown) => {
-                        (Err(Error::Protocol(fidl::Error::UnsupportedMethod {
+                let (res, ret) =
+                    match fidl_message::decode_response_flexible_result::<R, S>(header, body) {
+                        Ok(fidl_message::MaybeUnknown::Known(x)) => (x.map_err(Into::into), Ok(())),
+                        Ok(fidl_message::MaybeUnknown::Unknown) => {
+                            (Err(Error::Protocol(fidl::Error::UnsupportedMethod {
                             method_name,
                             protocol_name:
                             <proto::FDomainMarker as fidl::endpoints::ProtocolMarker>::DEBUG_NAME
                         })), Ok(()))
-                    }
-                    Err(e) => {
-                        (Err(Error::Protocol(e.clone())), Err(e))
-                    }
-                };
+                        }
+                        Err(e) => (Err(Error::Protocol(e.clone())), Err(e)),
+                    };
                 send_fn(res);
                 ret
             }

@@ -179,4 +179,12 @@ open protocol FDomain {
     }) -> (struct {
         signals zx.Signals;
     }) error Error;
+
+    // Return the kernel object ID (koid) of the handle.
+    @available(added=NEXT)
+    flexible GetKoid(struct {
+        handle HandleId;
+    }) -> (struct {
+        koid zx.Koid;
+    }) error Error;
 };
