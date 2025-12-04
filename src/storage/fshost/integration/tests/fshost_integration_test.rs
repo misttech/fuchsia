@@ -27,6 +27,8 @@ use {fidl_fuchsia_io as fio, fuchsia_async as fasync};
 #[cfg(feature = "fxblob")]
 use {
     blob_writer::BlobWriter,
+    diagnostics_assertions::assert_data_tree,
+    diagnostics_reader::ArchiveReader,
     fidl::endpoints::Proxy,
     fidl_fuchsia_fshost::StarnixVolumeProviderProxy,
     fidl_fuchsia_fxfs::{BlobCreatorProxy, BlobReaderProxy},
@@ -429,6 +431,28 @@ async fn create_unmount_and_remount_starnix_volume() {
         .expect("fidl transport error")
         .expect("mount failed");
 
+    async fn check_inspect(child_name: &str) {
+        let inspector = ArchiveReader::inspect()
+            .add_selector(format!("realm_builder\\:{}/test-fshost/fxfs:root", child_name,))
+            .snapshot()
+            .await
+            .expect("inspect snapshot failed")
+            .into_iter()
+            .next()
+            .and_then(|result| result.payload)
+            .expect("expected one inspect hierarchy");
+
+        assert_data_tree!(inspector, root: contains {
+            stores: contains {
+                STARNIX_VOLUME_NAME.to_string() => contains {
+                    low_32_bit_object_ids: true,
+                }
+            }
+        });
+    }
+
+    check_inspect(fixture.realm.root.child_name()).await;
+
     let starnix_volume_root_dir = fuchsia_fs::directory::open_directory(
         &exposed_dir_proxy,
         "root",
@@ -486,6 +510,8 @@ async fn create_unmount_and_remount_starnix_volume() {
             .await
             .expect("Failed to create file in starnix volume");
     assert_eq!(&fuchsia_fs::file::read(&starnix_volume_file).await.unwrap()[..], b"file contents!");
+
+    check_inspect(fixture.realm.root.child_name()).await;
 
     fixture.tear_down().await;
 }

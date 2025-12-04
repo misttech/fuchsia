@@ -203,6 +203,9 @@ type CreateOptions = resource table {
     /// Type GUID for the volume.  If unspecified, an implementation default is chosen.  Some
     /// implementations might not support arbitrary volume types.
     3: type_guid array<uint8, 16>;
+
+    /// If true, inode IDs will be restricted to 32 bits.
+    4: restrict_inode_ids_to_32_bit bool;
 };
 
 /// fuchsia.fs.startup.Volumes is used for creating and deleting volumes, and getting some general

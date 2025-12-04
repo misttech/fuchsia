@@ -276,6 +276,8 @@ template("fshost_integration_test_package") {
     if (data_filesystem_variant == "fxblob") {
       deps += [
         "//sdk/fidl/fuchsia.fs:fuchsia.fs_rust",
+        "//src/lib/diagnostics/reader/rust",
+        "//src/lib/diagnostics/testing/diagnostics-assertions/rust:diagnostics-assertions",
         "//src/storage/crypt/policy",
         "//src/storage/fxfs/fidl/fuchsia.fxfs:fuchsia.fxfs_rust",
         "//src/storage/lib/blob_writer:blob-writer",

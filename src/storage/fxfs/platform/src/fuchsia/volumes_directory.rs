@@ -86,6 +86,11 @@ struct MountedVolume {
     locked: bool,
 }
 
+pub(crate) enum Mode {
+    Mount,
+    Create { guid: Option<[u8; 16]>, low_32_bit_object_ids: bool },
+}
+
 impl MountedVolumesGuard<'_> {
     /// Creates or mounts a volume. If |crypt| is set, the volume will be created or mounted as
     /// encrypted. The volume is mounted according to |as_blob|.
@@ -93,26 +98,31 @@ impl MountedVolumesGuard<'_> {
         &mut self,
         name: &str,
         crypt: Option<Arc<dyn Crypt>>,
-        create: bool,
+        mode: Mode,
         as_blob: bool,
-        guid: Option<[u8; 16]>,
     ) -> Result<FxVolumeAndRoot, Error> {
         let owner = Arc::downgrade(&self.volumes_directory) as Weak<dyn StoreOwner>;
-        let store = if create {
-            self.volumes_directory
+        let store = match mode {
+            Mode::Create { guid, low_32_bit_object_ids } => self
+                .volumes_directory
                 .root_volume
                 .new_volume(
                     name,
                     NewChildStoreOptions {
                         options: StoreOptions { owner, crypt },
                         guid,
+                        low_32_bit_object_ids,
                         ..Default::default()
                     },
                 )
                 .await
-                .context("failed to create new volume")?
-        } else {
-            self.volumes_directory.root_volume.volume(name, StoreOptions { owner, crypt }).await?
+                .context("failed to create new volume")?,
+            Mode::Mount => {
+                self.volumes_directory
+                    .root_volume
+                    .volume(name, StoreOptions { owner, crypt })
+                    .await?
+            }
         };
         ensure!(
             !self.mounted_volumes.contains_key(&store.store_object_id()),
@@ -138,7 +148,7 @@ impl MountedVolumesGuard<'_> {
             }
         }
 
-        if create {
+        if let Mode::Create { .. } = mode {
             let store_object_id = volume.volume().store().store_object_id();
             self.volumes_directory.add_directory_entry(name, store_object_id);
         }
@@ -488,7 +498,15 @@ impl VolumesDirectory {
         as_blob: bool,
         guid: Option<[u8; 16]>,
     ) -> Result<FxVolumeAndRoot, Error> {
-        self.lock().await.create_or_mount_volume(name, crypt, true, as_blob, guid).await
+        self.lock()
+            .await
+            .create_or_mount_volume(
+                name,
+                crypt,
+                Mode::Create { guid, low_32_bit_object_ids: false },
+                as_blob,
+            )
+            .await
     }
 
     /// Mounts an existing volume. `crypt` will be used to unlock the volume if provided.
@@ -500,7 +518,7 @@ impl VolumesDirectory {
         crypt: Option<Arc<dyn Crypt>>,
         as_blob: bool,
     ) -> Result<FxVolumeAndRoot, Error> {
-        self.lock().await.create_or_mount_volume(name, crypt, false, as_blob, None).await
+        self.lock().await.create_or_mount_volume(name, crypt, Mode::Mount, as_blob).await
     }
 
     /// Removes a volume. The volume must exist but encrypted volume keys are not required.
@@ -614,7 +632,15 @@ impl VolumesDirectory {
             mount_options.crypt.map(|crypt| Arc::new(RemoteCrypt::new(crypt)) as Arc<dyn Crypt>);
         let as_blob = mount_options.as_blob.unwrap_or(false);
         let guid = create_options.guid;
-        let volume = guard.create_or_mount_volume(&name, crypt, true, as_blob, guid).await?;
+        let low_32_bit_object_ids = create_options.restrict_inode_ids_to_32_bit.unwrap_or(false);
+        let volume = guard
+            .create_or_mount_volume(
+                name,
+                crypt,
+                Mode::Create { guid, low_32_bit_object_ids },
+                as_blob,
+            )
+            .await?;
         self.serve_volume(&volume, outgoing_directory_server_end, as_blob)
             .context("failed to serve volume")?;
         guard.auto_unmount(volume.volume().store().store_object_id());
@@ -792,7 +818,7 @@ impl VolumesDirectory {
         let as_blob = options.as_blob.unwrap_or(false);
         let mut guard = self.lock().await;
         let volume = guard
-            .create_or_mount_volume(name, crypt, false, as_blob, None)
+            .create_or_mount_volume(name, crypt, Mode::Mount, as_blob)
             .await
             .context("failed to mount volume")?;
         self.serve_volume(&volume, outgoing_directory_server_end, as_blob)
@@ -906,7 +932,7 @@ impl StoreOwner for VolumesDirectory {
 mod tests {
     use crate::fuchsia::memory_pressure::MemoryPressureLevel;
     use crate::fuchsia::testing::{self, TestFixture, open_dir_checked, open_file_checked};
-    use crate::fuchsia::volumes_directory::VolumesDirectory;
+    use crate::fuchsia::volumes_directory::{Mode, VolumesDirectory};
     use crate::testing::TestFixtureOptions;
     use fidl::endpoints::{DiscoverableProtocolMarker, create_proxy, create_request_stream};
     use fidl_fuchsia_fs::AdminMarker;
@@ -919,6 +945,7 @@ mod tests {
     use fxfs::filesystem::FxFilesystem;
     use fxfs::fsck::{FsckOptions, fsck, fsck_volume_with_options, fsck_with_options};
     use fxfs::lock_keys;
+    use fxfs::object_handle::ObjectHandle;
     use fxfs::object_store::allocator::Allocator;
     use fxfs::object_store::transaction::{LockKey, Options};
     use fxfs::object_store::volume::root_volume;
@@ -1627,7 +1654,12 @@ mod tests {
                 fasync::Timer::new(Duration::from_millis(wait_time)).await;
                 let mut guard = volumes_directory.lock().await;
                 match guard
-                    .create_or_mount_volume("encrypted", Some(crypt.clone()), true, false, None)
+                    .create_or_mount_volume(
+                        "encrypted",
+                        Some(crypt.clone()),
+                        Mode::Create { guid: None, low_32_bit_object_ids: false },
+                        false,
+                    )
                     .await
                 {
                     Ok(vol) => {
@@ -2639,5 +2671,116 @@ mod tests {
         file.close().await.unwrap().unwrap();
 
         fixture.close().await;
+    }
+
+    #[fuchsia::test]
+    async fn test_create_with_low_32_bit_ids() {
+        let device = DeviceHolder::new(FakeDevice::new(8192, 512));
+        let filesystem = FxFilesystem::new_empty(device).await.unwrap();
+        let blob_resupplied_count =
+            Arc::new(PageRefaultCounter::new().expect("Failed to create PageRefaultCounter"));
+
+        {
+            let volumes_directory = VolumesDirectory::new(
+                root_volume(filesystem.clone()).await.unwrap(),
+                Weak::new(),
+                None,
+                blob_resupplied_count,
+            )
+            .await
+            .unwrap();
+
+            let mut guard = volumes_directory.lock().await;
+
+            let vol = guard
+                .create_or_mount_volume(
+                    "low_32",
+                    None,
+                    Mode::Create { guid: None, low_32_bit_object_ids: true },
+                    false,
+                )
+                .await
+                .expect("create volume failed");
+
+            let root_dir = vol.volume().store().root_directory_object_id();
+            let root_dir = fxfs::object_store::Directory::open(vol.volume().store(), root_dir)
+                .await
+                .expect("open failed");
+
+            let mut transaction = filesystem
+                .clone()
+                .new_transaction(
+                    lock_keys![LockKey::object(
+                        vol.volume().store().store_object_id(),
+                        root_dir.object_id()
+                    )],
+                    Options::default(),
+                )
+                .await
+                .expect("new_transaction failed");
+
+            let object = root_dir
+                .create_child_file(&mut transaction, "test")
+                .await
+                .expect("create_child_file failed");
+
+            // We can't check LastObjectIdInfo as it is private, but we can verify behavior.
+            assert!(object.object_id() < 1 << 32);
+            transaction.commit().await.expect("commit failed");
+        };
+
+        filesystem.close().await.expect("close filesystem failed");
+
+        // Reopen and verify persistence
+        let device = filesystem.take_device().await;
+        device.reopen(false);
+        let filesystem = FxFilesystem::open(device).await.unwrap();
+        let blob_resupplied_count =
+            Arc::new(PageRefaultCounter::new().expect("Failed to create PageRefaultCounter"));
+        let volumes_directory = VolumesDirectory::new(
+            root_volume(filesystem.clone()).await.unwrap(),
+            Weak::new(),
+            None,
+            blob_resupplied_count,
+        )
+        .await
+        .unwrap();
+
+        // Mount the volume again, and check that new files are still created with expected IDs.
+        {
+            let mut guard = volumes_directory.lock().await;
+
+            let vol = guard
+                .create_or_mount_volume("low_32", None, Mode::Mount, false)
+                .await
+                .expect("mount volume failed");
+
+            let root_dir = vol.volume().store().root_directory_object_id();
+            let root_dir = fxfs::object_store::Directory::open(vol.volume().store(), root_dir)
+                .await
+                .expect("open failed");
+
+            let mut transaction = filesystem
+                .clone()
+                .new_transaction(
+                    lock_keys![LockKey::object(
+                        vol.volume().store().store_object_id(),
+                        root_dir.object_id()
+                    )],
+                    Options::default(),
+                )
+                .await
+                .expect("new_transaction failed");
+
+            let object = root_dir
+                .create_child_file(&mut transaction, "test2")
+                .await
+                .expect("create_child_file failed");
+
+            assert!(object.object_id() < 1 << 32);
+            transaction.commit().await.expect("commit failed");
+        }
+
+        filesystem.close().await.expect("close filesystem failed");
     }
 }

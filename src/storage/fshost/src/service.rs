@@ -180,7 +180,7 @@ async fn create_starnix_volume_impl(
         let mounted_vol = multi_vol_fs
             .create_volume(
                 starnix_volume_name,
-                CreateOptions::default(),
+                CreateOptions { restrict_inode_ids_to_32_bit: Some(true), ..Default::default() },
                 MountOptions { crypt: Some(crypt), ..MountOptions::default() },
             )
             .await?;

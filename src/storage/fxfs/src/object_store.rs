@@ -970,7 +970,14 @@ impl ObjectStore {
         root.record_uint("device_write_ops", self.device_write_ops.load(Ordering::Relaxed));
         root.record_uint("logical_read_ops", self.logical_read_ops.load(Ordering::Relaxed));
         root.record_uint("logical_write_ops", self.logical_write_ops.load(Ordering::Relaxed));
-        root.record_uint("object_id_hi", self.last_object_id.lock().id() >> 32);
+        {
+            let last_object_id = self.last_object_id.lock();
+            root.record_uint("object_id_hi", last_object_id.id() >> 32);
+            root.record_bool(
+                "low_32_bit_object_ids",
+                matches!(&*last_object_id, LastObjectId::Low32Bit { .. }),
+            );
+        }
 
         let this = self.clone();
         root.record_child("lsm_tree", move |node| this.tree().record_inspect_data(node));
