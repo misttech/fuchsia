@@ -30,7 +30,9 @@ use packet::Buf;
 use packet_formats::ethernet::EtherType;
 use zx::{self as zx, HandleBased as _};
 
-use crate::bindings::bpf::{SocketFilterProgram, SocketFilterResult};
+use crate::bindings::bpf::{
+    SocketFilterProgram, SocketFilterResult, SocketFilterSkBuff, SocketInfo as BpfSocketInfo,
+};
 use crate::bindings::devices::BindingId;
 use crate::bindings::errno::ErrnoError;
 use crate::bindings::socket::queue::{BodyLen, MessageQueue, NoSpace};
@@ -42,6 +44,7 @@ use crate::bindings::util::{
     TryIntoCoreWithContext as _, TryIntoFidlWithContext,
 };
 use crate::bindings::{BindingsCtx, Ctx};
+use netstack3_core::routes::Marks;
 
 /// State held in the bindings context for a single socket.
 #[derive(Debug)]
@@ -59,20 +62,36 @@ impl DeviceSocketTypes for BindingsCtx {
 impl DeviceSocketBindingsContext<DeviceId<Self>> for BindingsCtx {
     fn receive_frame(
         &self,
-        state: &SocketState,
+        socket_id: &SocketId<Self>,
         device: &DeviceId<Self>,
         frame: Frame<&[u8]>,
         raw: &[u8],
     ) -> Result<(), ReceiveFrameError> {
-        let SocketState { queue, kind, bpf_filter } = state;
+        let SocketState { queue, kind, bpf_filter } = socket_id.socket_state();
 
         // Run BPF filter if any. The filter may request the packet
         // to be truncated or dropped.
         let truncated_size = match bpf_filter.read().as_ref() {
-            Some(program) => match program.run(*kind, frame, raw) {
-                SocketFilterResult::Reject => return Ok(()),
-                SocketFilterResult::Accept(size) => size,
-            },
+            Some(program) => {
+                let (packet_size, default_offset) = match kind {
+                    fppacket::Kind::Network => (frame.into_body().len(), frame.body_offset()),
+                    fppacket::Kind::Link => (raw.len(), 0),
+                };
+                let socket_info = BpfSocketInfo::new(socket_id.socket_cookie(), &Marks::default());
+                let packet = SocketFilterSkBuff::new(
+                    frame.protocol(),
+                    packet_size,
+                    device.bindings_id().id.get().try_into().unwrap_or(0),
+                    raw,
+                    frame.body_offset(),
+                    default_offset,
+                );
+                let result = program.run(socket_info, packet);
+                match result {
+                    SocketFilterResult::Reject => return Ok(()),
+                    SocketFilterResult::Accept(size) => size,
+                }
+            }
             None => usize::MAX,
         };
 
@@ -186,7 +205,7 @@ impl MessageData {
 
 impl MessageDataInfo {
     fn new_ethernet(frame: &EthernetFrame<&[u8]>) -> Self {
-        let EthernetFrame { src_mac, dst_mac: _, ethertype, body: _ } = *frame;
+        let EthernetFrame { src_mac, dst_mac: _, ethertype, body_offset: _, body: _ } = *frame;
         Self::Ethernet { src_mac, protocol: ethertype.map_or(0, Into::into) }
     }
 

@@ -48,7 +48,9 @@ use netstack3_device::ethernet::{
 use netstack3_device::loopback::{LoopbackCreationProperties, LoopbackDevice, LoopbackDeviceId};
 use netstack3_device::pure_ip::{PureIpDeviceId, PureIpWeakDeviceId};
 use netstack3_device::queue::{ReceiveQueueBindingsContext, TransmitQueueBindingsContext};
-use netstack3_device::socket::{DeviceSocketBindingsContext, DeviceSocketTypes, ReceiveFrameError};
+use netstack3_device::socket::{
+    DeviceSocketBindingsContext, DeviceSocketTypes, ReceiveFrameError, SocketId,
+};
 use netstack3_device::testutil::IPV6_MIN_IMPLIED_MAX_FRAME_SIZE;
 use netstack3_device::{
     self as device, DeviceId, DeviceLayerEventDispatcher, DeviceLayerStateTypes, DeviceLayerTypes,
@@ -1362,11 +1364,12 @@ impl RawIpSocketsBindingsTypes for FakeBindingsCtx {
 impl DeviceSocketBindingsContext<DeviceId<Self>> for FakeBindingsCtx {
     fn receive_frame(
         &self,
-        state: &Self::SocketState<WeakDeviceId<Self>>,
+        socket_id: &SocketId<Self>,
         device: &DeviceId<Self>,
         _frame: device::socket::Frame<&[u8]>,
         raw_frame: &[u8],
     ) -> Result<(), ReceiveFrameError> {
+        let state = socket_id.socket_state();
         state.lock().push((device.downgrade(), raw_frame.into()));
         Ok(())
     }

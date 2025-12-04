@@ -74,33 +74,25 @@ impl<BC: BindingsContext, L: LockBefore<crate::lock_ordering::AllDeviceSockets>>
 impl<BC: BindingsContext, L: LockBefore<crate::lock_ordering::DeviceSocketState>>
     SocketStateAccessor<BC> for CoreCtx<'_, BC, L>
 {
-    fn with_socket_state<
-        F: FnOnce(&BC::SocketState<Self::WeakDeviceId>, &Target<Self::WeakDeviceId>) -> R,
-        R,
-    >(
+    fn with_socket_state<F: FnOnce(&Target<Self::WeakDeviceId>) -> R, R>(
         &mut self,
         id: &DeviceSocketId<Self::WeakDeviceId, BC>,
         cb: F,
     ) -> R {
-        let external_state = id.socket_state();
         let mut locked = self.adopt(id);
         let guard = locked.lock_with::<crate::lock_ordering::DeviceSocketState, _>(|c| c.right());
-        cb(external_state, &*guard)
+        cb(&*guard)
     }
 
-    fn with_socket_state_mut<
-        F: FnOnce(&BC::SocketState<Self::WeakDeviceId>, &mut Target<Self::WeakDeviceId>) -> R,
-        R,
-    >(
+    fn with_socket_state_mut<F: FnOnce(&mut Target<Self::WeakDeviceId>) -> R, R>(
         &mut self,
         id: &DeviceSocketId<Self::WeakDeviceId, BC>,
         cb: F,
     ) -> R {
-        let external_state = id.socket_state();
         let mut locked = self.adopt(id);
         let mut guard =
             locked.lock_with::<crate::lock_ordering::DeviceSocketState, _>(|c| c.right());
-        cb(external_state, &mut *guard)
+        cb(&mut *guard)
     }
 }
 

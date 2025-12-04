@@ -72,13 +72,15 @@ pub enum ReceiveFrameError {
 }
 
 /// The execution context for device sockets provided by bindings.
-pub trait DeviceSocketBindingsContext<DeviceId: StrongDeviceIdentifier>: DeviceSocketTypes {
+pub trait DeviceSocketBindingsContext<DeviceId: StrongDeviceIdentifier>:
+    DeviceSocketTypes + Sized
+{
     /// Called for each received frame that matches the provided socket.
     ///
     /// `frame` and `raw_frame` are parsed and raw views into the same data.
     fn receive_frame(
         &self,
-        socket: &Self::SocketState<DeviceId::Weak>,
+        socket_id: &DeviceSocketId<DeviceId::Weak, Self>,
         device: &DeviceId,
         frame: Frame<&[u8]>,
         raw_frame: &[u8],
@@ -283,20 +285,14 @@ pub trait DeviceSocketContext<BT: DeviceSocketTypes>: DeviceIdContext<AnyDevice>
 /// Core context for accessing the state of an individual socket.
 pub trait SocketStateAccessor<BT: DeviceSocketTypes>: DeviceIdContext<AnyDevice> {
     /// Provides read-only access to the state of a socket.
-    fn with_socket_state<
-        F: FnOnce(&BT::SocketState<Self::WeakDeviceId>, &Target<Self::WeakDeviceId>) -> R,
-        R,
-    >(
+    fn with_socket_state<F: FnOnce(&Target<Self::WeakDeviceId>) -> R, R>(
         &mut self,
         socket: &DeviceSocketId<Self::WeakDeviceId, BT>,
         cb: F,
     ) -> R;
 
     /// Provides mutable access to the state of a socket.
-    fn with_socket_state_mut<
-        F: FnOnce(&BT::SocketState<Self::WeakDeviceId>, &mut Target<Self::WeakDeviceId>) -> R,
-        R,
-    >(
+    fn with_socket_state_mut<F: FnOnce(&mut Target<Self::WeakDeviceId>) -> R, R>(
         &mut self,
         socket: &DeviceSocketId<Self::WeakDeviceId, BT>,
         cb: F,
@@ -349,27 +345,24 @@ fn update_device_and_protocol<CC: DeviceSocketContext<BT>, BT: DeviceSocketTypes
         // atomic from the perspective of frame delivery. Otherwise there
         // would be a brief period during which arriving frames wouldn't be
         // delivered to the socket from either device.
-        let old_device = core_ctx.with_socket_state_mut(
-            socket,
-            |_: &BT::SocketState<CC::WeakDeviceId>, Target { protocol, device }| {
-                match protocol_update {
-                    MaybeUpdate::NewValue(p) => *protocol = Some(p),
-                    MaybeUpdate::NoChange => (),
-                };
-                let old_device = match &device {
-                    TargetDevice::SpecificDevice(device) => device.upgrade(),
-                    TargetDevice::AnyDevice => {
-                        assert!(any_device_sockets.remove(socket));
-                        None
-                    }
-                };
-                *device = match &new_device {
-                    TargetDevice::AnyDevice => TargetDevice::AnyDevice,
-                    TargetDevice::SpecificDevice(d) => TargetDevice::SpecificDevice(d.downgrade()),
-                };
-                old_device
-            },
-        );
+        let old_device = core_ctx.with_socket_state_mut(socket, |Target { protocol, device }| {
+            match protocol_update {
+                MaybeUpdate::NewValue(p) => *protocol = Some(p),
+                MaybeUpdate::NoChange => (),
+            };
+            let old_device = match &device {
+                TargetDevice::SpecificDevice(device) => device.upgrade(),
+                TargetDevice::AnyDevice => {
+                    assert!(any_device_sockets.remove(socket));
+                    None
+                }
+            };
+            *device = match &new_device {
+                TargetDevice::AnyDevice => TargetDevice::AnyDevice,
+                TargetDevice::SpecificDevice(d) => TargetDevice::SpecificDevice(d.downgrade()),
+            };
+            old_device
+        });
 
         // This modification occurs without holding the socket's individual
         // lock. That's safe because all modifications to the socket's
@@ -492,8 +485,9 @@ where
         &mut self,
         id: &ApiSocketId<C>,
     ) -> SocketInfo<<C::CoreContext as DeviceIdContext<AnyDevice>>::WeakDeviceId> {
-        self.core_ctx().with_socket_state(id, |_external_state, Target { device, protocol }| {
-            SocketInfo { device: device.clone(), protocol: *protocol }
+        self.core_ctx().with_socket_state(id, |Target { device, protocol }| SocketInfo {
+            device: device.clone(),
+            protocol: *protocol,
         })
     }
 
@@ -509,7 +503,7 @@ where
     > {
         let core_ctx = self.core_ctx();
         core_ctx.with_any_device_sockets_mut(|AnyDeviceSockets(any_device_sockets), core_ctx| {
-            let old_device = core_ctx.with_socket_state_mut(&id, |_external_state, target| {
+            let old_device = core_ctx.with_socket_state_mut(&id, |target| {
                 let Target { device, protocol: _ } = target;
                 match &device {
                     TargetDevice::SpecificDevice(device) => device.upgrade(),
@@ -590,18 +584,13 @@ where
         self.core_ctx().with_all_device_sockets(|AllSockets(sockets), core_ctx| {
             sockets.keys().for_each(|socket| {
                 inspector.record_debug_child(socket, |node| {
-                    core_ctx.with_socket_state(
-                        socket,
-                        |_external_state, Target { protocol, device }| {
-                            node.record_debug("Protocol", protocol);
-                            match device {
-                                TargetDevice::AnyDevice => node.record_str("Device", "Any"),
-                                TargetDevice::SpecificDevice(d) => {
-                                    N::record_device(node, "Device", d)
-                                }
-                            }
-                        },
-                    );
+                    core_ctx.with_socket_state(socket, |Target { protocol, device }| {
+                        node.record_debug("Protocol", protocol);
+                        match device {
+                            TargetDevice::AnyDevice => node.record_str("Device", "Any"),
+                            TargetDevice::SpecificDevice(d) => N::record_device(node, "Device", d),
+                        }
+                    });
                     node.record_child("Counters", |node| {
                         node.delegate_inspectable(socket.counters())
                     })
@@ -732,6 +721,8 @@ pub struct EthernetFrame<B> {
     pub dst_mac: Mac,
     /// The EtherType of the frame, or `None` if there was none.
     pub ethertype: Option<EtherType>,
+    /// The offset of the body within the frame.
+    pub body_offset: usize,
     /// The body of the frame.
     pub body: B,
 }
@@ -779,6 +770,7 @@ impl<'a> From<packet_formats::ethernet::EthernetFrame<&'a [u8]>> for EthernetFra
             src_mac: frame.src_mac(),
             dst_mac: frame.dst_mac(),
             ethertype: frame.ethertype(),
+            body_offset: frame.parse_metadata().header_len(),
             body: frame.into_body(),
         }
     }
@@ -814,6 +806,15 @@ impl<B> Frame<B> {
             Self::Received(ReceivedFrame::Ip(frame)) | Self::Sent(SentFrame::Ip(frame)) => {
                 frame.body
             }
+        }
+    }
+
+    /// Returns the offset of the body within the frame.
+    pub fn body_offset(&self) -> usize {
+        match self {
+            Self::Received(ReceivedFrame::Ethernet { destination: _, frame })
+            | Self::Sent(SentFrame::Ethernet(frame)) => frame.body_offset,
+            Self::Received(ReceivedFrame::Ip(_)) | Self::Sent(SentFrame::Ip(_)) => 0,
         }
     }
 }
@@ -855,9 +856,8 @@ where
             //   A) deliver to socket X in D's table (!)
             core_ctx.with_device_sockets(&device, |DeviceSockets(device_sockets), core_ctx| {
                 for socket in any_device_sockets.iter().chain(device_sockets) {
-                    let delivered = core_ctx.with_socket_state(
-                        socket,
-                        |external_state, Target { protocol, device: _ }| {
+                    let delivered =
+                        core_ctx.with_socket_state(socket, |Target { protocol, device: _ }| {
                             let should_deliver = match protocol {
                                 None => false,
                                 Some(p) => match p {
@@ -872,15 +872,9 @@ where
                                 },
                             };
                             should_deliver.then(|| {
-                                bindings_ctx.receive_frame(
-                                    external_state,
-                                    &device,
-                                    frame,
-                                    whole_frame,
-                                )
+                                bindings_ctx.receive_frame(socket, &device, frame, whole_frame)
                             })
-                        },
-                    );
+                        });
                     match delivered {
                         None => {}
                         Some(result) => {
@@ -1029,8 +1023,8 @@ mod testutil {
 
     impl EthernetFrame<&[u8]> {
         fn cloned(self) -> EthernetFrame<Vec<u8>> {
-            let Self { src_mac, dst_mac, ethertype, body } = self;
-            EthernetFrame { src_mac, dst_mac, ethertype, body: Vec::from(body) }
+            let Self { src_mac, dst_mac, ethertype, body_offset, body } = self;
+            EthernetFrame { src_mac, dst_mac, ethertype, body_offset, body: Vec::from(body) }
         }
     }
 
@@ -1046,12 +1040,12 @@ mod testutil {
     {
         fn receive_frame(
             &self,
-            state: &ExternalSocketState<D::Weak>,
+            state: &DeviceSocketId<D::Weak, Self>,
             device: &D,
             frame: Frame<&[u8]>,
             raw_frame: &[u8],
         ) -> Result<(), ReceiveFrameError> {
-            let ExternalSocketState(queue) = state;
+            let ExternalSocketState(queue) = state.socket_state();
             let mut lock_guard = queue.lock();
             let RxQueue { frames, max_size } = lock_guard.deref_mut();
             if frames.len() < *max_size {
@@ -1241,10 +1235,7 @@ mod tests {
             + DeviceIdContext<AnyDevice, DeviceId = DeviceId, WeakDeviceId = DeviceId::Weak>,
     > SocketStateAccessor<FakeBindingsCtx> for As
     {
-        fn with_socket_state<
-            F: FnOnce(&ExternalSocketState<Self::WeakDeviceId>, &Target<Self::WeakDeviceId>) -> R,
-            R,
-        >(
+        fn with_socket_state<F: FnOnce(&Target<Self::WeakDeviceId>) -> R, R>(
             &mut self,
             socket: &DeviceSocketId<Self::WeakDeviceId, FakeBindingsCtx>,
             cb: F,
@@ -1252,13 +1243,10 @@ mod tests {
             let DeviceSocketId(rc) = socket;
             // NB: Circumvent lock ordering for tests.
             let target = rc.target.lock();
-            cb(&rc.external_state, &target)
+            cb(&target)
         }
 
-        fn with_socket_state_mut<
-            F: FnOnce(&ExternalSocketState<Self::WeakDeviceId>, &mut Target<Self::WeakDeviceId>) -> R,
-            R,
-        >(
+        fn with_socket_state_mut<F: FnOnce(&mut Target<Self::WeakDeviceId>) -> R, R>(
             &mut self,
             socket: &DeviceSocketId<Self::WeakDeviceId, FakeBindingsCtx>,
             cb: F,
@@ -1266,7 +1254,7 @@ mod tests {
             let DeviceSocketId(rc) = socket;
             // NB: Circumvent lock ordering for tests.
             let mut target = rc.target.lock();
-            cb(&rc.external_state, &mut target)
+            cb(&mut target)
         }
     }
 
@@ -1630,6 +1618,7 @@ mod tests {
             6, 7, 8, 9, 10, 11, 0, 1, 2, 3, 4, 5, 0x08, 0xAB, b's', b'o', b'm', b'e', b' ', b'p',
             b'i', b'g',
         ];
+        const BUFFER_OFFSET: usize = Self::BUFFER.len() - Self::BODY.len();
 
         /// Creates an EthernetFrame with the values specified above.
         fn frame() -> packet_formats::ethernet::EthernetFrame<&'static [u8]> {
@@ -1907,6 +1896,7 @@ mod tests {
                             src_mac: TestData::SRC_MAC,
                             dst_mac: TestData::DST_MAC,
                             ethertype: Some(TestData::PROTO.get().into()),
+                            body_offset: TestData::BUFFER_OFFSET,
                             body: Vec::from(TestData::BODY),
                         }
                     }),

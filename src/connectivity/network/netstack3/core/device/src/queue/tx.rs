@@ -378,6 +378,7 @@ mod tests {
             src_mac: SRC_MAC,
             dst_mac: DEST_MAC,
             ethertype: None,
+            body_offset: 0,
             body,
         })
     }

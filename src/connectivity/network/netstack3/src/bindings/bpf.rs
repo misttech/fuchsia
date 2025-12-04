@@ -9,15 +9,15 @@ use ebpf::{
     VerifiedEbpfProgram,
 };
 use ebpf_api::{
-    __sk_buff, CGROUP_SKB_ARGS, CGROUP_SKB_SK_BUF_TYPE, CgroupSkbProgramContext, Map, MapError,
-    MapValueRef, PacketWithLoadBytes, PinnedMap, SKF_AD_OFF, SKF_AD_PROTOCOL, SKF_LL_OFF,
-    SKF_NET_OFF, SOCKET_FILTER_CBPF_CONFIG, SOCKET_FILTER_SK_BUF_TYPE, SocketUidContext, uid_t,
+    __sk_buff, CGROUP_SKB_ARGS, CGROUP_SKB_SK_BUF_TYPE, Map, MapError, MapValueRef,
+    PacketWithLoadBytes, PinnedMap, SKF_AD_OFF, SKF_AD_PROTOCOL, SKF_LL_OFF, SKF_NET_OFF,
+    SOCKET_FILTER_CBPF_CONFIG, SOCKET_FILTER_SK_BUF_TYPE, SocketUidContext, uid_t,
 };
+use fidl_fuchsia_ebpf as febpf;
 use fidl_table_validation::ValidFidlTable;
 use log::{error, warn};
 use net_types::ip::IpVersion;
 use netstack3_core::device::{DeviceId, StrongDeviceIdentifier};
-use netstack3_core::device_socket::Frame;
 use netstack3_core::filter::{
     FilterIpExt, IpPacket, SocketEgressFilterResult, SocketIngressFilterResult, SocketOpsFilter,
 };
@@ -32,7 +32,6 @@ use std::mem::offset_of;
 use std::sync::{Arc, Weak};
 use zerocopy::FromBytes;
 use zx::AsHandleRef;
-use {fidl_fuchsia_ebpf as febpf, fidl_fuchsia_posix_socket_packet as fppacket};
 
 // Transmutes `Vec<u64>` to `Vec<EbpfInstruction>`.
 fn code_from_vec(code: Vec<u64>) -> Vec<EbpfInstruction> {
@@ -43,36 +42,142 @@ fn code_from_vec(code: Vec<u64>) -> Vec<EbpfInstruction> {
     }
 }
 
-// Packet buffer representation used for BPF filters.
+/// `__sk_buff` representation passed to eBPF programs.
+///
+/// `C` is used to define the type of the argument, see `SkBuffContext`. It is
+/// needed because different `__sk_buff` fields are available depending on the
+/// program type.
 #[repr(C)]
-struct IpPacketForBpf<'a> {
-    // This field must be first. eBPF programs will access it directly.
+pub struct SkBuff<'a, C> {
     sk_buff: __sk_buff,
 
-    kind: fppacket::Kind,
-    frame: Frame<&'a [u8]>,
-    raw: &'a [u8],
+    data_ptr: *const u8,
+    data_end_ptr: *const u8,
+
+    data: &'a [u8],
+
+    // Offset of the network-layer header in the `data`.
+    ip_offset: usize,
+
+    // Default offset for packet load instructions.
+    default_offset: usize,
+
+    // Marker is `fn(C) -> C` to ensure that `SkBuff` is invariant over `C` and that
+    // `Send` and `Sync` do not depend on `C`.
+    _marker: std::marker::PhantomData<fn(C) -> C>,
 }
 
-impl Packet for &'_ IpPacketForBpf<'_> {
+impl<'a, C> SkBuff<'a, C> {
+    pub fn new(
+        ethertype: Option<u16>,
+        packet_len: usize,
+        ifindex: u32,
+        data: &'a [u8],
+        ip_offset: usize,
+        default_offset: usize,
+    ) -> Self {
+        // Offsets should be within the data buffer. They may be set to `data.len()`
+        // if the packet is empty or it is not serialized.
+        assert!(ip_offset <= data.len());
+        assert!(default_offset <= data.len());
+
+        SkBuff {
+            sk_buff: __sk_buff {
+                len: packet_len.try_into().unwrap_or(0),
+                protocol: ethertype.unwrap_or(0).to_be().into(),
+                ifindex,
+                ..__sk_buff::default()
+            },
+            data_ptr: data.as_ptr(),
+            // SAFETY: `data_end_ptr` points at the end of the data buffer, but it's never
+            // dereferenced directly.
+            data_end_ptr: unsafe { data.as_ptr().add(data.len()) },
+            data,
+            ip_offset,
+            default_offset,
+            _marker: std::marker::PhantomData,
+        }
+    }
+
+    fn from_ip_packet<I: FilterIpExt, P: IpPacket<I> + PartialSerializer>(
+        packet: &P,
+        ifindex: u32,
+        data_buffer: &'a mut [u8],
+    ) -> Self {
+        // TODO(https://fxbug.dev/424212358): Implement lazy packet serialization.
+        let serialize_result = packet
+            .partial_serialize(PacketConstraints::UNCONSTRAINED, data_buffer)
+            .expect("Packet serialization failed");
+        let packet_len = serialize_result.total_size;
+        let packet_data = &data_buffer[..serialize_result.bytes_written];
+
+        SkBuff {
+            sk_buff: __sk_buff {
+                len: packet_len.try_into().unwrap_or(0),
+                protocol: u16::from(I::ETHER_TYPE).to_be().into(),
+                ifindex,
+                ..__sk_buff::default()
+            },
+            data_ptr: packet_data.as_ptr(),
+            // SAFETY: `data_end_ptr` points at the end of the data buffer, but it's never
+            // dereferenced directly.
+            data_end_ptr: unsafe { packet_data.as_ptr().add(packet_data.len()) },
+            data: packet_data,
+            ip_offset: 0,
+            default_offset: 0,
+            _marker: std::marker::PhantomData,
+        }
+    }
+}
+
+impl<'a, C> PacketWithLoadBytes for &'a SkBuff<'a, C> {
+    fn load_bytes_relative(
+        &self,
+        base: ebpf_api::LoadBytesBase,
+        offset: usize,
+        buf: &mut [u8],
+    ) -> i64 {
+        let base_offset = match base {
+            ebpf_api::LoadBytesBase::MacHeader => {
+                if self.ip_offset == 0 {
+                    warn!("eBPF program tried to access Ethernet header when it's not available");
+                    return -1;
+                }
+                0
+            }
+            ebpf_api::LoadBytesBase::NetworkHeader => self.ip_offset,
+        };
+
+        let Some(offset) = base_offset.checked_add(offset) else {
+            return -1;
+        };
+
+        let Some(end) = offset.checked_add(buf.len()) else {
+            return -1;
+        };
+
+        let Some(data) = self.data.get(offset..end) else {
+            return -1;
+        };
+
+        buf.copy_from_slice(data);
+        0
+    }
+}
+
+impl<C> Packet for &'_ SkBuff<'_, C> {
     fn load<'a>(&self, offset: i32, width: DataWidth) -> Option<BpfValue> {
         // cBPF Socket Filters use non-negative offset to access packet content.
-        // Negative offsets are handler as follows as follows:
+        // Negative offsets are handled as follows:
         //   SKF_AD_OFF (-0x1000) - Auxiliary info that may be outside of the packet.
         //      Currently only SKF_AD_PROTOCOL is implemented.
         //   SKF_NET_OFF (-0x100000) - Packet content relative to the IP header.
         //   SKF_LL_OFF (-0x200000) - Packet content relative to the link-level header.
         let (offset, slice) = if offset >= 0 {
-            (
-                offset,
-                match self.kind {
-                    fppacket::Kind::Network => self.frame.into_body(),
-                    fppacket::Kind::Link => self.raw,
-                },
-            )
+            (offset, &self.data[self.default_offset..])
         } else if offset >= SKF_AD_OFF {
             if offset == SKF_AD_OFF + SKF_AD_PROTOCOL {
-                return Some(self.frame.protocol().unwrap_or(0).into());
+                return Some(u16::from_be(self.sk_buff.protocol as u16).into());
             } else {
                 log::info!(
                     "cBPF program tried to access unimplemented SKF_AD_OFF offset: {}",
@@ -82,10 +187,14 @@ impl Packet for &'_ IpPacketForBpf<'_> {
             }
         } else if offset >= SKF_NET_OFF {
             // Access network level packet.
-            (offset - SKF_NET_OFF, self.frame.into_body())
+            (offset - SKF_NET_OFF, &self.data[self.ip_offset..])
         } else if offset >= SKF_LL_OFF {
+            if self.ip_offset == 0 {
+                warn!("cBPF program tried to access link-level header when it's not available");
+                return None;
+            }
             // Access link-level packet.
-            (offset - SKF_LL_OFF, self.raw)
+            (offset - SKF_LL_OFF, self.data)
         } else {
             return None;
         };
@@ -115,30 +224,106 @@ impl Packet for &'_ IpPacketForBpf<'_> {
     }
 }
 
-impl ProgramArgument for &'_ IpPacketForBpf<'_> {
+trait SkBuffContext {
+    fn get_sk_buff_type() -> &'static Type;
+}
+
+impl<C: SkBuffContext> ProgramArgument for &'_ SkBuff<'_, C> {
     fn get_type() -> &'static Type {
-        &*SOCKET_FILTER_SK_BUF_TYPE
+        C::get_sk_buff_type()
+    }
+
+    fn field_mappings() -> &'static [FieldMapping] {
+        // Field layout is the same for all flavors.
+        static FIELD_MAPPINGS: [FieldMapping; 2] = [
+            FieldMapping {
+                source_offset: offset_of!(__sk_buff, data),
+                target_offset: offset_of!(SkBuff<'_, ()>, data_ptr),
+            },
+            FieldMapping {
+                source_offset: offset_of!(__sk_buff, data_end),
+                target_offset: offset_of!(SkBuff<'_, ()>, data_end_ptr),
+            },
+        ];
+        &FIELD_MAPPINGS
     }
 }
 
-struct SocketFilterContext {}
+pub struct SocketInfo {
+    socket_cookie: u64,
+    socket_uid: Option<uid_t>,
+}
 
-impl BpfProgramContext for SocketFilterContext {
-    type RunContext<'a> = ();
-    type Packet<'a> = &'a IpPacketForBpf<'a>;
+impl SocketInfo {
+    pub fn new(socket_cookie: SocketCookie, marks: &Marks) -> Self {
+        let Mark(socket_uid) = marks.get(MarkDomain::Mark2).clone();
+        Self { socket_cookie: socket_cookie.export_value(), socket_uid }
+    }
+}
+
+pub struct SocketRunContext<'a> {
+    socket_info: SocketInfo,
+    map_refs: Vec<MapValueRef<'a>>,
+}
+
+impl SocketRunContext<'_> {
+    fn new(socket_info: SocketInfo) -> Self {
+        Self { socket_info, map_refs: Vec::new() }
+    }
+}
+
+impl<'a, 'b, C> ebpf_api::SocketCookieContext<&'a SkBuff<'a, C>> for SocketRunContext<'b> {
+    fn get_socket_cookie(&self, _sk_buf: &'a SkBuff<'a, C>) -> u64 {
+        self.socket_info.socket_cookie
+    }
+}
+
+impl<'a, 'b, C> SocketUidContext<&'a SkBuff<'a, C>> for SocketRunContext<'b> {
+    fn get_socket_uid(&self, _sk_buf: &'a SkBuff<'a, C>) -> Option<uid_t> {
+        self.socket_info.socket_uid
+    }
+}
+
+impl<'a> ebpf_api::MapsContext<'a> for SocketRunContext<'a> {
+    fn on_map_access(&mut self, _map: &Map) {
+        // Starnix uses `on_map_access` to block suspension while executing
+        // eBPF programs that access eBPF maps. This is not a concern here
+        // since netstack doesn't get suspended.
+    }
+
+    fn add_value_ref(&mut self, map_ref: MapValueRef<'a>) {
+        self.map_refs.push(map_ref)
+    }
+}
+
+/// An eBPF programs of type `BPF_PROG_TYPE_SOCKET_FILTER`. These programs can
+/// be attached to socket or used as matchers in filters.
+#[derive(Debug)]
+pub(crate) struct SocketFilterProgram {
+    program: EbpfProgram<SocketFilterProgram>,
+}
+
+impl BpfProgramContext for SocketFilterProgram {
+    type RunContext<'a> = SocketRunContext<'a>;
+    type Packet<'a> = &'a SocketFilterSkBuff<'a>;
     type Map = PinnedMap;
     const CBPF_CONFIG: &'static CbpfConfig = &SOCKET_FILTER_CBPF_CONFIG;
 }
 
-ebpf::empty_static_helper_set!(SocketFilterContext);
+ebpf_api::ebpf_program_context_type!(SocketFilterProgram, ebpf_api::SocketFilterProgramContext);
 
-#[derive(Debug)]
-pub(crate) struct SocketFilterProgram {
-    program: EbpfProgram<SocketFilterContext>,
+pub type SocketFilterSkBuff<'a> = SkBuff<'a, SocketFilterProgram>;
+
+impl SkBuffContext for SocketFilterProgram {
+    fn get_sk_buff_type() -> &'static Type {
+        &SOCKET_FILTER_SK_BUF_TYPE
+    }
 }
 
 pub(crate) enum SocketFilterResult {
-    // If the packet is accepted it may need to trimmed to the specified size.
+    // If the packet is accepted it should be trimmed to the specified size
+    // when the filter is attached to a socket. The value is ignored when
+    // the filter is used as a filter matcher.
     Accept(usize),
     Reject,
 }
@@ -151,11 +336,11 @@ impl SocketFilterProgram {
         // verification.
         let program = VerifiedEbpfProgram::from_verified_code(
             code_from_vec(code),
-            SocketFilterContext::get_arg_types(),
+            SocketFilterProgram::get_arg_types(),
             vec![],
             vec![],
         );
-        let program = ebpf::link_program::<SocketFilterContext>(&program, vec![])
+        let program = ebpf::link_program::<SocketFilterProgram>(&program, vec![])
             .expect("Failed to link SocketFilter program");
 
         Self { program }
@@ -163,23 +348,11 @@ impl SocketFilterProgram {
 
     pub(crate) fn run(
         &self,
-        kind: fppacket::Kind,
-        frame: Frame<&[u8]>,
-        raw: &[u8],
+        socket_info: SocketInfo,
+        mut skb: SocketFilterSkBuff<'_>,
     ) -> SocketFilterResult {
-        let packet_size = match kind {
-            fppacket::Kind::Network => frame.into_body().len(),
-            fppacket::Kind::Link => raw.len(),
-        };
-
-        let mut packet = IpPacketForBpf {
-            sk_buff: __sk_buff { len: packet_size.try_into().unwrap(), ..Default::default() },
-            kind,
-            frame,
-            raw,
-        };
-
-        let result = self.program.run(&mut (), &mut packet);
+        let mut context = SocketRunContext::new(socket_info);
+        let result = self.program.run(&mut context, &mut skb);
         match result {
             0 => SocketFilterResult::Reject,
             n => SocketFilterResult::Accept(n.try_into().unwrap()),
@@ -187,111 +360,34 @@ impl SocketFilterProgram {
     }
 }
 
-/// `__sk_buff` representation passed to programs of type
-/// `BPF_PROG_TYPE_CGROUP_SKB` (attached to `BPF_CGROUP_INET_EGRESS`
-/// and `BPF_CGROUP_INET_INGRESS`).
-#[repr(C)]
-struct IpPacketForCgroupSkb<'a> {
-    sk_buff: __sk_buff,
-
-    data_ptr: *const u8,
-    data_end_ptr: *const u8,
-
-    marks: &'a Marks,
-    socket_cookie: u64,
-    data: &'a [u8],
+/// An eBPF programs of type `BPF_PROG_TYPE_CGROUP_SKB`, attachment type ether
+/// `CGROUP_EGRESS` or `CGROUP_INGRESS`.
+#[derive(Debug)]
+pub(crate) struct CgroupSkbProgram {
+    program: EbpfProgram<CgroupSkbProgram>,
 }
 
-impl ProgramArgument for &'_ IpPacketForCgroupSkb<'_> {
-    fn get_type() -> &'static Type {
-        &*CGROUP_SKB_SK_BUF_TYPE
-    }
+type CgroupSkBuff<'a> = SkBuff<'a, CgroupSkbProgram>;
 
-    fn field_mappings() -> &'static [FieldMapping] {
-        static FIELD_MAPPINGS: [FieldMapping; 2] = [
-            FieldMapping {
-                source_offset: offset_of!(__sk_buff, data),
-                target_offset: offset_of!(IpPacketForCgroupSkb<'_>, data_ptr),
-            },
-            FieldMapping {
-                source_offset: offset_of!(__sk_buff, data_end),
-                target_offset: offset_of!(IpPacketForCgroupSkb<'_>, data_end_ptr),
-            },
-        ];
-        &FIELD_MAPPINGS
+impl SkBuffContext for CgroupSkbProgram {
+    fn get_sk_buff_type() -> &'static Type {
+        &CGROUP_SKB_SK_BUF_TYPE
     }
 }
 
-/// Context for programs of type `BPF_PROG_TYPE_CGROUP_SKB` (attached to
-/// `BPF_CGROUP_INET_EGRESS` and `BPF_CGROUP_INET_INGRESS`).
-struct CgroupSkbContext {}
-
-impl EbpfProgramContext for CgroupSkbContext {
-    type RunContext<'a> = CgroupSkbRunContext<'a>;
+impl EbpfProgramContext for CgroupSkbProgram {
+    type RunContext<'a> = SocketRunContext<'a>;
     type Packet<'a> = ();
     type Map = CachedMapRef;
 
-    type Arg1<'a> = &'a IpPacketForCgroupSkb<'a>;
+    type Arg1<'a> = &'a CgroupSkBuff<'a>;
     type Arg2<'a> = ();
     type Arg3<'a> = ();
     type Arg4<'a> = ();
     type Arg5<'a> = ();
 }
 
-ebpf_api::ebpf_program_context_type!(CgroupSkbContext, CgroupSkbProgramContext);
-
-#[derive(Default)]
-struct CgroupSkbRunContext<'a> {
-    map_refs: Vec<MapValueRef<'a>>,
-}
-
-impl<'a, 'b> ebpf_api::SocketCookieContext<&'a IpPacketForCgroupSkb<'a>>
-    for CgroupSkbRunContext<'b>
-{
-    fn get_socket_cookie(&self, sk_buf: &'a IpPacketForCgroupSkb<'a>) -> u64 {
-        sk_buf.socket_cookie
-    }
-}
-
-impl<'a, 'b> SocketUidContext<&'a IpPacketForCgroupSkb<'a>> for CgroupSkbRunContext<'b> {
-    fn get_socket_uid(&self, sk_buf: &'a IpPacketForCgroupSkb<'a>) -> Option<uid_t> {
-        let Mark(mark_value) = sk_buf.marks.get(MarkDomain::Mark2);
-        *mark_value
-    }
-}
-
-impl<'a> PacketWithLoadBytes for &'a IpPacketForCgroupSkb<'a> {
-    fn load_bytes_relative(
-        &self,
-        base: ebpf_api::LoadBytesBase,
-        offset: usize,
-        buf: &mut [u8],
-    ) -> i64 {
-        if base != ebpf_api::LoadBytesBase::NetworkHeader {
-            warn!("bpf_skb_load_bytes_relative(BPF_HDR_START_MAC) not supported");
-            return -1;
-        }
-
-        let Some(data) = self.data.get(offset..(offset + buf.len())) else {
-            return -1;
-        };
-
-        buf.copy_from_slice(data);
-        0
-    }
-}
-
-impl<'a> ebpf_api::MapsContext<'a> for CgroupSkbRunContext<'a> {
-    fn on_map_access(&mut self, _map: &Map) {
-        // Starnix uses `on_map_access` to block suspension while executing
-        // eBPF programs that access eBPF maps. This is not a concern here
-        // since netstack doesn't get suspended.
-    }
-
-    fn add_value_ref(&mut self, map_ref: MapValueRef<'a>) {
-        self.map_refs.push(map_ref)
-    }
-}
+ebpf_api::ebpf_program_context_type!(CgroupSkbProgram, ebpf_api::CgroupSkbProgramContext);
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub(crate) enum EbpfError {
@@ -346,13 +442,6 @@ fn parse_verified_program_fidl(
     Ok((program, maps))
 }
 
-/// An eBPF programs of type `BPF_PROG_TYPE_CGROUP_SKB`, attachment type ether
-/// `CGROUP_EGRESS` or `CGROUP_INGRESS`.
-#[derive(Debug)]
-pub(crate) struct CgroupSkbProgram {
-    program: EbpfProgram<CgroupSkbContext>,
-}
-
 impl CgroupSkbProgram {
     // Both `CGROUP_EGRESS` and `CGROUP_INGRESS` returns result where the first bit indicates if
     // the packet should be passed or dropped.
@@ -386,39 +475,15 @@ impl CgroupSkbProgram {
         Ok(Self { program })
     }
 
-    fn run(
-        &self,
-        ether_type: EtherType,
-        packet_len: usize,
-        packet_data: &[u8],
-        ifindex: u32,
-        socket_cookie: SocketCookie,
-        marks: &Marks,
-    ) -> u64 {
-        let mut skb = IpPacketForCgroupSkb {
-            sk_buff: __sk_buff {
-                len: packet_len.try_into().unwrap_or(0),
-                protocol: u16::from(ether_type).to_be().into(),
-                ifindex,
-                ..__sk_buff::default()
-            },
-            data_ptr: packet_data.as_ptr(),
-            // SAFETY: `data_end_ptr` points at the end of the data buffer, but it's never
-            // dereferenced directly.
-            data_end_ptr: unsafe { packet_data.as_ptr().add(packet_data.len()) },
-            marks,
-            socket_cookie: socket_cookie.export_value(),
-            data: packet_data,
-        };
-
+    fn run(&self, socket_info: SocketInfo, mut sk_buff: CgroupSkBuff<'_>) -> u64 {
         trace_duration!(
             c"ebpf::cgroup_skb::run",
-            "len" => packet_len,
-            "protocol" => skb.sk_buff.protocol
+            "len" => sk_buff.sk_buff.len,
+            "protocol" => sk_buff.sk_buff.protocol
         );
 
-        let mut run_context = CgroupSkbRunContext::default();
-        self.program.run_with_1_argument(&mut run_context, &mut skb)
+        let mut run_context = SocketRunContext::new(socket_info);
+        self.program.run_with_1_argument(&mut run_context, &mut sk_buff)
     }
 }
 
@@ -443,7 +508,7 @@ impl Drop for CachedMapRefInner {
 
 /// A reference to a map stored in `EbpfMapCache`. The referenced map is
 /// deleted from the cache when the last reference to that map is dropped.
-struct CachedMapRef {
+pub struct CachedMapRef {
     inner: Arc<CachedMapRefInner>,
 }
 
@@ -580,7 +645,7 @@ impl EbpfManager {
     }
 }
 
-trait DeviceIfIndex {
+pub(crate) trait DeviceIfIndex {
     fn get_ifindex(&self) -> u32;
 }
 
@@ -608,20 +673,13 @@ impl<D: StrongDeviceIdentifier + DeviceIfIndex> SocketOpsFilter<D> for &EbpfMana
             return SocketEgressFilterResult::Pass { congestion: false };
         };
 
-        let ifindex = device.get_ifindex();
-
         trace_duration!(c"ebpf::egress");
 
-        // TODO(https://fxbug.dev/424212358): Implement lazy packet serialization.
-        let mut data = [0u8; SERIALIZED_HEAD_SIZE];
-        let serialize_result = packet
-            .partial_serialize(PacketConstraints::UNCONSTRAINED, &mut data)
-            .expect("Packet serialization failed");
-        let packet_len = serialize_result.total_size;
-        let packet_data = &data[..serialize_result.bytes_written];
+        let socket_info = SocketInfo::new(socket_cookie, marks);
+        let mut data_buffer = [0u8; SERIALIZED_HEAD_SIZE];
+        let sk_buff = SkBuff::from_ip_packet(packet, device.get_ifindex(), &mut data_buffer);
 
-        let result =
-            prog.run(I::ETHER_TYPE, packet_len, packet_data, ifindex, socket_cookie, marks);
+        let result = prog.run(socket_info, sk_buff);
         if result > CgroupSkbProgram::EGRESS_MAX_RESULT {
             // TODO(https://fxbug.dev/413490751): Change this to panic once
             // result validation is implemented in the verifier.
@@ -650,20 +708,22 @@ impl<D: StrongDeviceIdentifier + DeviceIfIndex> SocketOpsFilter<D> for &EbpfMana
             return SocketIngressFilterResult::Accept;
         };
 
-        let ifindex = device.get_ifindex();
-
         trace_duration!(c"ebpf::ingress");
 
-        let ether_type = EtherType::from_ip_version(ip_version);
-        let packet_len = packet.len();
+        let socket_info = SocketInfo::new(socket_cookie, marks);
+        let ethertype = EtherType::from_ip_version(ip_version);
 
         // TODO(https://fxbug.dev/424212358): Implement lazy packet serialization.
         let mut data = [0u8; SERIALIZED_HEAD_SIZE];
+        let packet_len = packet.len();
         let bytes = std::cmp::min(packet_len, data.len());
         packet.slice(0..bytes).copy_into_slice(&mut data[0..bytes]);
 
-        let result =
-            prog.run(ether_type, packet_len, &data[0..bytes], ifindex, socket_cookie, marks);
+        let skb =
+            SkBuff::new(Some(ethertype.into()), packet_len, device.get_ifindex(), &data, 0, 0);
+
+        let result = prog.run(socket_info, skb);
+
         if result > CgroupSkbProgram::INGRESS_MAX_RESULT {
             // TODO(https://fxbug.dev/413490751): Change this to panic once
             // result validation is implemented in the verifier.
@@ -684,16 +744,13 @@ mod tests {
     use super::*;
     use ebpf::{MapFlags, Packet};
     use ebpf_api::{AttachType, ProgramType, SKF_AD_MAX};
+    use fidl_fuchsia_posix_socket_packet as fppacket;
     use ip_test_macro::ip_test;
     use net_types::Witness;
-    use netstack3_core::device_socket::SentFrame;
     use netstack3_core::ip::Mark;
     use netstack3_core::sync::ResourceTokenValue;
     use netstack3_core::testutil::{self, FakeDeviceId, TestIpExt};
-    use packet::{
-        InnerPacketBuilder, PacketBuilder, PacketConstraints, ParsablePacket, Serializer,
-    };
-    use packet_formats::ethernet::EthernetFrameLengthCheck;
+    use packet::{InnerPacketBuilder, PacketBuilder, PacketConstraints, Serializer};
     use packet_formats::ip::{IpPacketBuilder, IpProto};
     use packet_formats::udp::UdpPacketBuilder;
     use std::num::NonZeroU16;
@@ -709,28 +766,32 @@ mod tests {
             0x08, 0xAB, // EtherType
             0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x3A, 0x4B, // Packet body
         ];
-        const BODY_POSITION: i32 = 14;
+        const BODY_POSITION: usize = 14;
 
-        /// Creates an EthernetFrame with the values specified above.
-        fn frame() -> Frame<&'static [u8]> {
-            let mut buffer_view = Self::BUFFER;
-            Frame::Sent(SentFrame::Ethernet(
-                packet_formats::ethernet::EthernetFrame::parse(
-                    &mut buffer_view,
-                    EthernetFrameLengthCheck::NoCheck,
-                )
-                .unwrap()
-                .into(),
-            ))
+        /// Creates an SkBuff with the values specified above.
+        fn packet(kind: fppacket::Kind) -> SocketFilterSkBuff<'static> {
+            let default_offset = match kind {
+                fppacket::Kind::Link => 0,
+                fppacket::Kind::Network => Self::BODY_POSITION,
+            };
+
+            SkBuff::new(
+                Some(Self::PROTO),
+                Self::BUFFER.len(),
+                2,
+                Self::BUFFER,
+                Self::BODY_POSITION,
+                default_offset,
+            )
         }
     }
 
-    fn packet_load(packet: &IpPacketForBpf<'_>, offset: i32, width: DataWidth) -> Option<u64> {
+    fn packet_load(packet: &SocketFilterSkBuff<'_>, offset: i32, width: DataWidth) -> Option<u64> {
         packet.load(offset, width).map(|v| v.as_u64())
     }
 
     // Test loading Ethernet header at the specified base offset.
-    fn test_ll_header_load(packet: &IpPacketForBpf<'_>, base: i32) {
+    fn test_ll_header_load(packet: &SocketFilterSkBuff<'_>, base: i32) {
         assert_eq!(packet_load(packet, base, DataWidth::U8), Some(0x06));
         assert_eq!(packet_load(packet, base, DataWidth::U16), Some(0x0607));
         assert_eq!(packet_load(packet, base, DataWidth::U32), Some(0x06070809));
@@ -744,7 +805,7 @@ mod tests {
     }
 
     // Test loading packet body at the specified base offset.
-    fn test_packet_body_load(packet: &IpPacketForBpf<'_>, base: i32) {
+    fn test_packet_body_load(packet: &SocketFilterSkBuff<'_>, base: i32) {
         assert_eq!(packet_load(packet, base, DataWidth::U64), Some(0x212223242526273A));
         assert_eq!(packet_load(packet, base, DataWidth::U8), Some(0x21));
         assert_eq!(packet_load(packet, base, DataWidth::U16), Some(0x2122));
@@ -764,12 +825,7 @@ mod tests {
 
     #[test]
     fn network_level_packet() {
-        let packet = IpPacketForBpf {
-            sk_buff: Default::default(),
-            kind: fppacket::Kind::Network,
-            frame: TestData::frame(),
-            raw: TestData::BUFFER,
-        };
+        let packet = TestData::packet(fppacket::Kind::Network);
 
         test_packet_body_load(&packet, 0);
 
@@ -781,26 +837,15 @@ mod tests {
 
     #[test]
     fn link_level_packet() {
-        let packet = IpPacketForBpf {
-            sk_buff: Default::default(),
-            kind: fppacket::Kind::Link,
-            frame: TestData::frame(),
-            raw: TestData::BUFFER,
-        };
+        let packet = TestData::packet(fppacket::Kind::Link);
 
         test_ll_header_load(&packet, 0);
-        test_packet_body_load(&packet, TestData::BODY_POSITION);
+        test_packet_body_load(&packet, TestData::BODY_POSITION.try_into().unwrap());
     }
 
     #[test]
     fn negative_offsets() {
-        let packet = IpPacketForBpf {
-            sk_buff: Default::default(),
-            kind: fppacket::Kind::Link,
-            frame: TestData::frame(),
-            raw: TestData::BUFFER,
-        };
-
+        let packet = TestData::packet(fppacket::Kind::Link);
         // Loads from SKF_AD_OFF + SKF_AD_PROTOCOL load EtherType, ignoring data width.
         assert_eq!(
             packet_load(&packet, SKF_AD_OFF + SKF_AD_PROTOCOL, DataWidth::U8),
@@ -821,7 +866,10 @@ mod tests {
 
         // SKF_LL_OFF can be used to load the packet starting from the LL header.
         test_ll_header_load(&packet, SKF_LL_OFF);
-        test_packet_body_load(&packet, SKF_LL_OFF + TestData::BODY_POSITION);
+        test_packet_body_load(
+            &packet,
+            SKF_LL_OFF + i32::try_from(TestData::BODY_POSITION).unwrap(),
+        );
 
         // Loads with `offset = SKF_NET_OFF+n` load the packet starting from the
         // packet body (Network-level header).
