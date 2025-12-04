@@ -71,17 +71,15 @@ class SARSettingTest(base_test.ConnectionBaseTestClassSync):
         ).unwrap()
 
         # Find the matching bss_description
-        bss_descriptions = self.fuchsia_device.wlan_core.scan_for_bss_info()
-        bss_description = None
-        for ssid, descriptions in bss_descriptions.items():
-            if ssid == ssid:
-                bss_description = descriptions[0]
-                break
-        if bss_description is None:
-            logger.warning("Scanned these SSIDs: %s", bss_descriptions.keys())
+        scan_results = self.fuchsia_device.wlan_core.scan_for_bss_info()
+        try:
+            bss_description = scan_results[ssid][0]
+        except KeyError:
+            logger.warning("Scanned these SSIDs: %s", scan_results.keys())
             raise signals.TestFailure(
                 "Could not find BSS description for SSID: %s" % ssid
             )
+
         # Connect to the AP
         self.fuchsia_device.wlan_core.connect(
             ssid=ssid,
