@@ -7,7 +7,7 @@ use crate::escrow_support::{apply_state, handle_stall, resume_state};
 use crate::indexer::*;
 use crate::load_driver::*;
 use crate::resolved_driver::ResolvedDriver;
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use driver_index_config::Config;
 use fidl_fuchsia_driver_index::{
     DevelopmentManagerRequest, DevelopmentManagerRequestStream, DriverIndexRequest,
@@ -15,10 +15,11 @@ use fidl_fuchsia_driver_index::{
 };
 use fuchsia_component::client;
 use fuchsia_component::server::ServiceFs;
+use fuchsia_sync::Mutex;
 use futures::prelude::*;
 use std::collections::HashSet;
 use std::rc::Rc;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use zx::Status;
 use {
     fidl_fuchsia_component_resolution as fresolution, fidl_fuchsia_component_sandbox as fsandbox,
@@ -49,11 +50,7 @@ enum IncomingRequest {
 }
 
 fn ignore_peer_closed(err: fidl::Error) -> Result<(), fidl::Error> {
-    if err.is_closed() {
-        Ok(())
-    } else {
-        Err(err)
-    }
+    if err.is_closed() { Ok(()) } else { Err(err) }
 }
 
 fn log_error(err: anyhow::Error) -> anyhow::Error {
@@ -106,7 +103,7 @@ async fn run_driver_info_iterator_server(
             match request {
                 fdd::DriverInfoIteratorRequest::GetNext { responder } => {
                     let result = {
-                        let mut driver_info = driver_info_clone.lock().unwrap();
+                        let mut driver_info = driver_info_clone.lock();
                         let len = driver_info.len();
                         driver_info.split_off(len - std::cmp::min(100, len))
                     };
@@ -134,7 +131,7 @@ async fn run_composite_node_specs_iterator_server(
             match request {
                 fdd::CompositeNodeSpecIteratorRequest::GetNext { responder } => {
                     let result = {
-                        let mut specs = specs_clone.lock().unwrap();
+                        let mut specs = specs_clone.lock();
                         let len = specs.len();
                         specs.split_off(len - std::cmp::min(10, len))
                     };
@@ -1631,13 +1628,14 @@ mod tests {
         };
 
         // Expect package qualifiers are set for all packaged drivers.
-        assert!(drivers.iter().all(|driver| driver
-            .component_url
-            .as_str()
-            .starts_with("fuchsia-boot:///driver-index-unittests")));
-        assert!(drivers
-            .iter()
-            .all(|driver| driver.package_type == resolved_driver::DriverPackageType::Boot));
+        assert!(drivers.iter().all(|driver| {
+            driver.component_url.as_str().starts_with("fuchsia-boot:///driver-index-unittests")
+        }));
+        assert!(
+            drivers
+                .iter()
+                .all(|driver| driver.package_type == resolved_driver::DriverPackageType::Boot)
+        );
         assert!(drivers.iter().all(|driver| driver.package_hash.is_some()));
     }
 
@@ -1757,10 +1755,12 @@ mod tests {
                 panic!("Resolver task finished: {:?}", result);
             },
         };
-        assert!(drivers
-            .iter()
-            .find(|driver| driver.component_url == disabled_driver_component_url)
-            .is_none());
+        assert!(
+            drivers
+                .iter()
+                .find(|driver| driver.component_url == disabled_driver_component_url)
+                .is_none()
+        );
     }
 
     #[fuchsia::test]
@@ -1801,10 +1801,12 @@ mod tests {
         let base_repo = index.base_repo.borrow();
         match *base_repo {
             BaseRepo::Resolved(ref drivers) => {
-                assert!(drivers
-                    .iter()
-                    .find(|driver| driver.component_url == disabled_driver_component_url)
-                    .is_none());
+                assert!(
+                    drivers
+                        .iter()
+                        .find(|driver| driver.component_url == disabled_driver_component_url)
+                        .is_none()
+                );
             }
             _ => {
                 panic!("Base repo was not resolved");

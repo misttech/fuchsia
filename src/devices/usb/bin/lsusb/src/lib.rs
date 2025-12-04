@@ -7,11 +7,11 @@ mod descriptors;
 
 use crate::args::{Args, UsbDevice};
 use crate::descriptors::*;
-use anyhow::{format_err, Context, Result};
+use anyhow::{Context, Result, format_err};
 use fuchsia_async::TimeoutExt;
-use futures::future::{BoxFuture, FutureExt};
+use fuchsia_sync::Mutex;
 use futures::TryStreamExt;
-use std::sync::Mutex;
+use futures::future::{BoxFuture, FutureExt};
 use {fidl_fuchsia_io as fio, zx_status as zx};
 
 // This isn't actually unused, but rustc can't seem to tell otherwise.
@@ -298,7 +298,7 @@ struct DeviceNode {
 
 impl DeviceNode {
     fn get_depth(&self, devices: &[DeviceNode]) -> Result<usize> {
-        if let Some(depth) = self.depth.lock().unwrap().clone() {
+        if let Some(depth) = self.depth.lock().clone() {
             return Ok(depth);
         }
         if self.hub_id == 0 {
@@ -341,12 +341,12 @@ async fn list_tree(usb_device_dir: &fio::DirectoryProxy, args: &Args) -> Result<
 
     for device in devices.iter() {
         let depth = device.get_depth(&devices)?;
-        *device.depth.lock().unwrap() = Some(depth);
+        *device.depth.lock() = Some(depth);
     }
 
     let max_depth = devices
         .iter()
-        .filter_map(|device| device.depth.lock().unwrap().clone())
+        .filter_map(|device| device.depth.lock().clone())
         .fold(0, std::cmp::max::<usize>);
 
     print!("ID   ");
@@ -367,7 +367,7 @@ fn do_list_tree<'a>(
     async move {
         for device in devices.iter() {
             if device.hub_id == hub_id {
-                let depth = device.depth.lock().unwrap().unwrap().clone();
+                let depth = device.depth.lock().unwrap().clone();
                 match list_device(&device.device, &device.filename, depth, max_depth, args).await {
                     Ok(()) => {}
                     Err(e) => eprintln!("Error: {:?}", e),
@@ -411,7 +411,7 @@ async fn get_string_descriptor(
                         Ok(String::from("UNKNOWN"))
                     }
                 },
-            )?
+            )?;
         }
     };
 }

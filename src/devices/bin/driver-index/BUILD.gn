@@ -65,6 +65,7 @@ rustc_binary("bin") {
     "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-component",
     "//src/lib/fuchsia-runtime",
+    "//src/lib/fuchsia-sync",
     "//src/lib/sandbox",
     "//src/sys/lib/cm_rust",
     "//src/sys/lib/cm_types",

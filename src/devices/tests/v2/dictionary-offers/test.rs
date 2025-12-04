@@ -10,10 +10,11 @@ use fuchsia_component_test::{
     Capability, ChildOptions, LocalComponentHandles, RealmBuilder, Ref, Route,
 };
 use fuchsia_driver_test::{DriverTestRealmBuilder, DriverTestRealmInstance};
+use fuchsia_sync::Mutex;
 use futures::TryStreamExt;
 use futures::channel::mpsc;
 use futures::stream::StreamExt;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use {
     fidl_fuchsia_component as fcomponent, fidl_fuchsia_component_decl as fdecl,
@@ -29,7 +30,7 @@ async fn data_plane_serve(
         stream.try_next().await.expect("Stream failed")
     {
         responder.send().unwrap();
-        sender.lock().unwrap().try_send(()).expect("Sender failed")
+        sender.lock().try_send(()).expect("Sender failed")
     }
 }
 
