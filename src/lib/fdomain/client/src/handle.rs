@@ -318,7 +318,7 @@ impl Handle {
         let client = self.client();
         let handle = self.take_proto();
         {
-            let mut client = client.0.lock().unwrap();
+            let mut client = client.0.lock();
             let _ = client.channel_read_states.remove(&handle);
             let _ = client.socket_read_states.remove(&handle);
         }
@@ -342,7 +342,7 @@ impl Handle {
 impl Drop for Handle {
     fn drop(&mut self) {
         if let Some(client) = self.client.upgrade() {
-            let mut client = client.0.lock().unwrap();
+            let mut client = client.0.lock();
             if client.waiting_to_close.is_empty() {
                 client.waiting_to_close_waker.wake_by_ref();
             }

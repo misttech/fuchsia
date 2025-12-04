@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 use fidl_message::TransactionHeader;
+use fuchsia_sync::Mutex;
 use futures::FutureExt;
 use futures::channel::oneshot::Sender as OneshotSender;
 use futures::stream::Stream as StreamTrait;
@@ -11,7 +12,7 @@ use std::convert::Infallible;
 use std::future::Future;
 use std::num::NonZeroU32;
 use std::pin::Pin;
-use std::sync::{Arc, LazyLock, Mutex};
+use std::sync::{Arc, LazyLock};
 use std::task::{Context, Poll, Waker, ready};
 use {fidl_fuchsia_fdomain as proto, fuchsia_async as _};
 
@@ -633,7 +634,7 @@ impl Client {
                 return Poll::Ready(());
             };
 
-            client.0.lock().unwrap().poll_transport(ctx);
+            client.0.lock().poll_transport(ctx);
             Poll::Pending
         });
 
@@ -799,7 +800,7 @@ impl Client {
     where
         F: Fn(OneshotSender<Result<R, Error>>) -> Responder,
     {
-        let mut inner = self.0.lock().unwrap();
+        let mut inner = self.0.lock();
 
         let (sender, receiver) = futures::channel::oneshot::channel();
         inner.request(ordinal, request, f(sender));
@@ -808,7 +809,7 @@ impl Client {
 
     /// Start getting streaming events for socket reads.
     pub(crate) fn start_socket_streaming(&self, id: proto::HandleId) -> Result<(), Error> {
-        let mut inner = self.0.lock().unwrap();
+        let mut inner = self.0.lock();
         if let Some(e) = inner.transport.error() {
             return Err(e.into());
         }
@@ -835,7 +836,7 @@ impl Client {
     /// because it's exclusively called in destructors where we have nothing to
     /// do with them.
     pub(crate) fn stop_socket_streaming(&self, id: proto::HandleId) {
-        let mut inner = self.0.lock().unwrap();
+        let mut inner = self.0.lock();
         if let Some(state) = inner.socket_read_states.get_mut(&id) {
             if state.is_streaming {
                 state.is_streaming = false;
@@ -851,7 +852,7 @@ impl Client {
 
     /// Start getting streaming events for socket reads.
     pub(crate) fn start_channel_streaming(&self, id: proto::HandleId) -> Result<(), Error> {
-        let mut inner = self.0.lock().unwrap();
+        let mut inner = self.0.lock();
         if let Some(e) = inner.transport.error() {
             return Err(e.into());
         }
@@ -878,7 +879,7 @@ impl Client {
     /// because it's exclusively called in destructors where we have nothing to
     /// do with them.
     pub(crate) fn stop_channel_streaming(&self, id: proto::HandleId) {
-        let mut inner = self.0.lock().unwrap();
+        let mut inner = self.0.lock();
         if let Some(state) = inner.channel_read_states.get_mut(&id) {
             if state.is_streaming {
                 state.is_streaming = false;
@@ -899,7 +900,7 @@ impl Client {
         ctx: &mut Context<'_>,
         out: &mut [u8],
     ) -> Poll<Result<usize, Error>> {
-        let mut inner = self.0.lock().unwrap();
+        let mut inner = self.0.lock();
         if let Some(error) = inner.transport.error() {
             return Poll::Ready(Err(error.into()));
         }
@@ -952,7 +953,7 @@ impl Client {
         ctx: &mut Context<'_>,
         for_stream: bool,
     ) -> Poll<Option<Result<proto::ChannelMessage, Error>>> {
-        let mut inner = self.0.lock().unwrap();
+        let mut inner = self.0.lock();
         if let Some(error) = inner.transport.error() {
             return Poll::Ready(Some(Err(error.into())));
         }
@@ -985,7 +986,7 @@ impl Client {
 
     /// Check whether this channel is streaming
     pub(crate) fn channel_is_streaming(&self, id: proto::HandleId) -> bool {
-        let inner = self.0.lock().unwrap();
+        let inner = self.0.lock();
         let Some(state) = inner.channel_read_states.get(&id) else {
             return false;
         };
@@ -995,7 +996,7 @@ impl Client {
     /// Check that all the given handles are safe to transfer through a channel
     /// e.g. that there's no chance of in-flight reads getting dropped.
     pub(crate) fn clear_handles_for_transfer(&self, handles: &proto::Handles) {
-        let inner = self.0.lock().unwrap();
+        let inner = self.0.lock();
         match handles {
             proto::Handles::Handles(handles) => {
                 for handle in handles {

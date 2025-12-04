@@ -228,7 +228,7 @@ impl Transport for Channel {
             let handles =
                 proto::Handles::Handles(handles.into_iter().map(|x| x.take_proto()).collect());
             let (sender, receiver) = oneshot::channel();
-            let mut client = client.0.lock().unwrap();
+            let mut client = client.0.lock();
             client.request(
                 crate::ordinals::WRITE_CHANNEL,
                 proto::ChannelWriteChannelRequest { handle, data, handles },

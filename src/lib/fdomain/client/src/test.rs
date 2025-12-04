@@ -9,10 +9,11 @@ use crate::{
 use fdomain_container::FDomain;
 use fdomain_container::wire::FDomainCodec;
 use fidl_fuchsia_fdomain::Error as FDomainError;
+use fuchsia_sync::Mutex;
 use futures::stream::Stream;
 use futures::{FutureExt, StreamExt};
 use std::pin::Pin;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::task::{Context, Poll};
 
 #[derive(Clone, Debug)]
@@ -56,7 +57,7 @@ impl Stream for TestFDomain {
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         {
-            let mut faults = self.1.lock().unwrap();
+            let mut faults = self.1.lock();
             match &mut *faults {
                 FaultInjectorState::Error(e) => {
                     return Poll::Ready(Some(Err(std::io::Error::other(e.clone()))));
@@ -83,11 +84,11 @@ struct FaultInjector(Arc<Mutex<FaultInjectorState>>);
 
 impl FaultInjector {
     fn inject(&self, e: TestError) {
-        *self.0.lock().unwrap() = FaultInjectorState::Error(e)
+        *self.0.lock() = FaultInjectorState::Error(e)
     }
 
     fn send_garbage(&self, g: impl AsRef<[u8]>) {
-        let mut f = self.0.lock().unwrap();
+        let mut f = self.0.lock();
         let FaultInjectorState::SendBadMessages(queue) = &mut *f else {
             panic!("Injected failure then still tried to send garbage!");
         };

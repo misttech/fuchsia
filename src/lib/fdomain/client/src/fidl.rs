@@ -8,10 +8,11 @@ use crate::{
 };
 use fidl::epitaph::ChannelEpitaphExt;
 use fidl_fuchsia_fdomain as proto;
+use fuchsia_sync::Mutex;
 use futures::{Stream, StreamExt, TryStream};
 use std::cell::RefCell;
 use std::marker::PhantomData;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::task::Poll;
 
 pub trait FDomainFlexibleIntoResult<T> {
@@ -64,7 +65,7 @@ impl FDomainProxyChannel {
         bytes: &mut Vec<u8>,
         handles: &mut Vec<HandleInfo>,
     ) -> Poll<Result<(), Option<crate::Error>>> {
-        let Some(got) = std::task::ready!(self.0.lock().unwrap().poll_next_unpin(ctx)) else {
+        let Some(got) = std::task::ready!(self.0.lock().poll_next_unpin(ctx)) else {
             return Poll::Ready(Err(Some(Error::StreamingAborted)));
         };
 
@@ -90,7 +91,7 @@ impl ::fidl::encoding::ProxyChannelBox<FDomainResourceDialect> for FDomainProxyC
         ctx: &mut std::task::Context<'_>,
         buf: &mut MessageBuf,
     ) -> Poll<Result<(), Option<Error>>> {
-        let Some(got) = std::task::ready!(self.0.lock().unwrap().poll_next_unpin(ctx)) else {
+        let Some(got) = std::task::ready!(self.0.lock().poll_next_unpin(ctx)) else {
             return Poll::Ready(Err(Some(Error::StreamingAborted)));
         };
 
@@ -121,11 +122,11 @@ impl ::fidl::encoding::ProxyChannelBox<FDomainResourceDialect> for FDomainProxyC
     }
 
     fn is_closed(&self) -> bool {
-        self.0.lock().unwrap().is_closed()
+        self.0.lock().is_closed()
     }
 
     fn unbox(self) -> Channel {
-        self.0.into_inner().unwrap().rejoin(self.1)
+        self.0.into_inner().rejoin(self.1)
     }
 
     fn as_channel(&self) -> &Channel {

@@ -2,10 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use fuchsia_sync::RwLock;
 use std::cell::UnsafeCell;
 use std::fmt;
 use std::mem::MaybeUninit;
-use std::sync::RwLock;
 use std::sync::atomic::{AtomicPtr, Ordering};
 
 use super::codec::{HandleDecoder, HandleEncoder};
@@ -42,7 +42,7 @@ impl From<Handle> for WireHandle {
         let ptr = client.into_raw() as *mut Client;
 
         loop {
-            let table = HANDLE_CLIENT_ASSOC.read().unwrap();
+            let table = HANDLE_CLIENT_ASSOC.read();
 
             for (got_id, entry) in table.iter().enumerate() {
                 let got_id: u32 = got_id.try_into().expect("Handle table overflowed u32");
@@ -66,7 +66,7 @@ impl From<Handle> for WireHandle {
             }
 
             std::mem::drop(table);
-            let mut table = HANDLE_CLIENT_ASSOC.write().unwrap();
+            let mut table = HANDLE_CLIENT_ASSOC.write();
             let new_len = std::cmp::max(table.len() * 2, HANDLE_CLIENT_ASSOC_START_SIZE);
 
             let new = std::iter::repeat_with(|| HandleAssoc {
@@ -136,7 +136,7 @@ impl WireHandle {
                 return Handle::invalid();
             };
             let (id, ptr) = {
-                let table = HANDLE_CLIENT_ASSOC.read().unwrap();
+                let table = HANDLE_CLIENT_ASSOC.read();
                 let entry = &table[pos];
                 // We have to read the hid first as when we swap out the client
                 // that is when we mark the slot free.
