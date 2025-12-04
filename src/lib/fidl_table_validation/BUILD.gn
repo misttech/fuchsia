@@ -5,7 +5,7 @@
 import("//build/rust/rustc_library.gni")
 
 rustc_library("fidl_table_validation") {
-  edition = "2021"
+  edition = "2024"
   deps = [
     "fidl_table_validation_derive",
     "//third_party/rust_crates:anyhow",

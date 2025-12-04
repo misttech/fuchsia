@@ -19,7 +19,7 @@ gidl("generate_conformance_test") {
 
 rustc_test("fidl_rust_conformance_tests_bin") {
   output_name = "fidl_rust_conformance_tests"
-  edition = "2018"
+  edition = "2024"
   source_root = conformance_test_source
   deps = [
     "//sdk/rust/zx-status",

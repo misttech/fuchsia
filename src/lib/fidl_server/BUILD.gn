@@ -6,7 +6,7 @@ import("//build/components.gni")
 import("//build/rust/rustc_library.gni")
 
 rustc_library("fidl_server") {
-  edition = "2021"
+  edition = "2024"
   sources = [
     "src/lib.rs",
     "src/server.rs",
@@ -22,7 +22,7 @@ rustc_library("fidl_server") {
 }
 
 rustc_test("fidl_server_tests") {
-  edition = "2021"
+  edition = "2024"
   source_root = "tests/src/test.rs"
   sources = [ source_root ]
   deps = [

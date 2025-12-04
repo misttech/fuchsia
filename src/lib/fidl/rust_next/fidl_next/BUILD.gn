@@ -8,7 +8,7 @@ import("//build/rust/rustc_library.gni")
 import("//build/rust/rustc_test.gni")
 
 rustc_library("fidl_next") {
-  edition = "2021"
+  edition = "2024"
   sources = [ "src/lib.rs" ]
   deps = [
     "//src/lib/fidl/rust_next/fidl_next_bind",

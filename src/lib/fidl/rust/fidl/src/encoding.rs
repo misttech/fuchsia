@@ -670,7 +670,7 @@ unsafe fn resize_vec_no_zeroing<T>(buf: &mut Vec<T>, new_len: usize) {
     //   The if-statement above guarantees this.
     // - The elements at `old_len..new_len` must be initialized:
     //   They are purposely left uninitialized, making this function unsafe.
-    buf.set_len(new_len);
+    unsafe { buf.set_len(new_len) };
 }
 
 /// Helper type for checking encoding/decoding recursion depth.
@@ -856,8 +856,8 @@ impl<'a, D: ResourceDialect> Encoder<'a, D> {
         // Safety: The caller ensures `offset` is valid for writing
         // sizeof(T) bytes. Transmuting to a same-or-wider
         // integer or float pointer is safe because we use `write_unaligned`.
-        let ptr = self.buf.get_unchecked_mut(offset) as *mut u8;
-        (ptr as *mut T).write_unaligned(num);
+        let ptr = unsafe { self.buf.get_unchecked_mut(offset) } as *mut u8;
+        unsafe { (ptr as *mut T).write_unaligned(num) };
     }
 
     /// Writes the given handle to the handles list.
@@ -882,12 +882,12 @@ impl<'a, D: ResourceDialect> Encoder<'a, D> {
         let padded_len = round_up_to_align(len, 8);
         debug_assert!(padded_len >= 8);
         let new_len = self.buf.len() + padded_len;
-        resize_vec_no_zeroing(self.buf, new_len);
+        unsafe { resize_vec_no_zeroing(self.buf, new_len) };
         // Zero the last 8 bytes in the block to ensure padding bytes are zero.
         // It's more efficient to always write 8 bytes regardless of how much
         // padding is needed because we will overwrite non-padding afterwards.
-        let padding_ptr = self.buf.get_unchecked_mut(new_len - 8) as *mut u8;
-        (padding_ptr as *mut u64).write_unaligned(0);
+        let padding_ptr = unsafe { self.buf.get_unchecked_mut(new_len - 8) } as *mut u8;
+        unsafe { (padding_ptr as *mut u64).write_unaligned(0) };
         new_offset
     }
 
@@ -906,7 +906,7 @@ impl<'a, D: ResourceDialect> Encoder<'a, D> {
         // Safety:
         // - The caller ensures `offset` is valid for writing `len` bytes.
         // - All u8 pointers are properly aligned.
-        ptr::write_bytes(self.buf.as_mut_ptr().add(offset), 0, len);
+        unsafe { ptr::write_bytes(self.buf.as_mut_ptr().add(offset), 0, len) };
     }
 }
 
@@ -940,7 +940,7 @@ unsafe impl<T: Timeline + Copy + 'static, D: ResourceDialect> Encode<Instant<T>,
         _depth: Depth,
     ) -> Result<()> {
         encoder.debug_check_bounds::<Self>(offset);
-        encoder.write_num(self.into_nanos(), offset);
+        unsafe { encoder.write_num(self.into_nanos(), offset) };
         Ok(())
     }
 }
@@ -954,7 +954,7 @@ unsafe impl<T: Timeline + 'static, D: ResourceDialect> Encode<Ticks<T>, D> for T
         _depth: Depth,
     ) -> Result<()> {
         encoder.debug_check_bounds::<Self>(offset);
-        encoder.write_num(self.into_raw(), offset);
+        unsafe { encoder.write_num(self.into_raw(), offset) };
         Ok(())
     }
 }
@@ -1132,8 +1132,9 @@ impl<'a, D: ResourceDialect> Decoder<'a, D> {
         // - The caller ensures `len > 0`, therefore `aligned_len >= 8`.
         // - After `self.next_out_of_line += aligned_len`, we know `self.next_out_of_line >= aligned_len >= 8`.
         // - Therefore `self.next_out_of_line - 8 >= 0` is a valid *const u64.
-        let last_u64_ptr = self.buf.get_unchecked(self.next_out_of_line - 8) as *const u8;
-        let last_u64 = (last_u64_ptr as *const u64).read_unaligned();
+        let last_u64_ptr =
+            unsafe { self.buf.get_unchecked(self.next_out_of_line - 8) } as *const u8;
+        let last_u64 = unsafe { (last_u64_ptr as *const u64).read_unaligned() };
         let padding = aligned_len - len;
         // padding == 0 => mask == 0x0000000000000000
         // padding == 1 => mask == 0xff00000000000000
@@ -1453,7 +1454,7 @@ unsafe impl<D: ResourceDialect> Encode<EmptyStruct, D> for () {
         _depth: Depth,
     ) -> Result<()> {
         encoder.debug_check_bounds::<EmptyStruct>(offset);
-        encoder.write_num(0u8, offset);
+        unsafe { encoder.write_num(0u8, offset) };
         Ok(())
     }
 }
@@ -1535,7 +1536,7 @@ mod numeric {
                     _depth: Depth,
                 ) -> Result<()> {
                     encoder.debug_check_bounds::<$numeric_ty>(offset);
-                    encoder.write_num::<$numeric_ty>(self, offset);
+                    unsafe { encoder.write_num::<$numeric_ty>(self, offset) };
                     Ok(())
                 }
             }
@@ -1620,7 +1621,7 @@ unsafe impl<D: ResourceDialect> Encode<bool, D> for bool {
         encoder.debug_check_bounds::<bool>(offset);
         // From https://doc.rust-lang.org/std/primitive.bool.html: "If you
         // cast a bool into an integer, true will be 1 and false will be 0."
-        encoder.write_num(self as u8, offset);
+        unsafe { encoder.write_num(self as u8, offset) };
         Ok(())
     }
 }
@@ -1708,7 +1709,7 @@ where
         depth: Depth,
     ) -> Result<()> {
         encoder.debug_check_bounds::<Array<T, N>>(offset);
-        encode_array_value::<T, D>(self, encoder, offset, depth)
+        unsafe { encode_array_value::<T, D>(self, encoder, offset, depth) }
     }
 }
 
@@ -1725,7 +1726,7 @@ where
         depth: Depth,
     ) -> Result<()> {
         encoder.debug_check_bounds::<Array<T, N>>(offset);
-        encode_array_resource::<T, D>(self, encoder, offset, depth)
+        unsafe { encode_array_resource::<T, D>(self, encoder, offset, depth) }
     }
 }
 
@@ -1753,7 +1754,7 @@ where
         depth: Depth,
     ) -> Result<()> {
         decoder.debug_check_bounds::<Array<T, N>>(offset);
-        decode_array::<T, D>(self, decoder, offset, depth)
+        unsafe { decode_array::<T, D>(self, decoder, offset, depth) }
     }
 }
 
@@ -1788,7 +1789,7 @@ where
         for i in 0..len {
             // Safety: `i` is in bounds since `len` is defined as `slice.len()`.
             let item = unsafe { slice.get_unchecked(i) };
-            T::borrow(item).encode(encoder, offset + i * stride, depth)?;
+            unsafe { T::borrow(item).encode(encoder, offset + i * stride, depth)? };
         }
     }
     Ok(())
@@ -1825,7 +1826,7 @@ where
         for i in 0..len {
             // Safety: `i` is in bounds since `len` is defined as `slice.len()`.
             let item = unsafe { slice.get_unchecked_mut(i) };
-            T::take_or_borrow(item).encode(encoder, offset + i * stride, depth)?;
+            unsafe { T::take_or_borrow(item).encode(encoder, offset + i * stride, depth)? };
         }
     }
     Ok(())
@@ -1862,7 +1863,7 @@ where
         for i in 0..len {
             // Safety: `i` is in bounds since `len` is defined as `slice.len()`.
             let item = unsafe { slice.get_unchecked_mut(i) };
-            item.decode(decoder, offset + i * stride, depth)?;
+            unsafe { item.decode(decoder, offset + i * stride, depth)? };
         }
     }
     Ok(())
@@ -1924,7 +1925,7 @@ where
         depth: Depth,
     ) -> Result<()> {
         encoder.debug_check_bounds::<Vector<T, N>>(offset);
-        encode_vector_value::<T, D>(self, N, check_vector_length, encoder, offset, depth)
+        unsafe { encode_vector_value::<T, D>(self, N, check_vector_length, encoder, offset, depth) }
     }
 }
 
@@ -1941,7 +1942,7 @@ where
         depth: Depth,
     ) -> Result<()> {
         encoder.debug_check_bounds::<Vector<T, N>>(offset);
-        encode_vector_resource::<T, D>(self, N, encoder, offset, depth)
+        unsafe { encode_vector_resource::<T, D>(self, N, encoder, offset, depth) }
     }
 }
 
@@ -1962,7 +1963,7 @@ where
         depth: Depth,
     ) -> Result<()> {
         decoder.debug_check_bounds::<Vector<T, N>>(offset);
-        decode_vector::<T, D>(self, N, decoder, offset, depth)
+        unsafe { decode_vector::<T, D>(self, N, decoder, offset, depth) }
     }
 }
 
@@ -1978,8 +1979,8 @@ unsafe fn encode_vector_value<T: ValueTypeMarker, D: ResourceDialect>(
 where
     for<'a> T::Borrowed<'a>: Encode<T, D>,
 {
-    encoder.write_num(slice.len() as u64, offset);
-    encoder.write_num(fidl_constants::ALLOC_PRESENT_U64, offset + 8);
+    unsafe { encoder.write_num(slice.len() as u64, offset) };
+    unsafe { encoder.write_num(fidl_constants::ALLOC_PRESENT_U64, offset + 8) };
     // Calling encoder.out_of_line_offset(0) is not allowed.
     if slice.is_empty() {
         return Ok(());
@@ -1987,8 +1988,8 @@ where
     check_length(slice.len(), max_length)?;
     depth.increment()?;
     let bytes_len = slice.len() * T::inline_size(encoder.context);
-    let offset = encoder.out_of_line_offset(bytes_len);
-    encode_array_value::<T, D>(slice, encoder, offset, depth)
+    let offset = unsafe { encoder.out_of_line_offset(bytes_len) };
+    unsafe { encode_array_value::<T, D>(slice, encoder, offset, depth) }
 }
 
 #[inline]
@@ -2002,8 +2003,8 @@ unsafe fn encode_vector_resource<T: ResourceTypeMarker + TypeMarker, D: Resource
 where
     for<'a> T::Borrowed<'a>: Encode<T, D>,
 {
-    encoder.write_num(slice.len() as u64, offset);
-    encoder.write_num(ALLOC_PRESENT_U64, offset + 8);
+    unsafe { encoder.write_num(slice.len() as u64, offset) };
+    unsafe { encoder.write_num(ALLOC_PRESENT_U64, offset + 8) };
     // Calling encoder.out_of_line_offset(0) is not allowed.
     if slice.is_empty() {
         return Ok(());
@@ -2011,8 +2012,8 @@ where
     check_vector_length(slice.len(), max_length)?;
     depth.increment()?;
     let bytes_len = slice.len() * T::inline_size(encoder.context);
-    let offset = encoder.out_of_line_offset(bytes_len);
-    encode_array_resource::<T, D>(slice, encoder, offset, depth)
+    let offset = unsafe { encoder.out_of_line_offset(bytes_len) };
+    unsafe { encode_array_resource::<T, D>(slice, encoder, offset, depth) }
 }
 
 #[inline]
@@ -2036,7 +2037,7 @@ where
     check_vector_length(len, max_length)?;
     depth.increment()?;
     let bytes_len = len * T::inline_size(decoder.context);
-    let offset = decoder.out_of_line_offset(bytes_len)?;
+    let offset = unsafe { decoder.out_of_line_offset(bytes_len)? };
     if T::decode_is_copy() {
         // Safety: The uninitialized elements are immediately written by
         // `decode_array`, which always succeeds in the simple copy case.
@@ -2047,7 +2048,7 @@ where
         vec.resize_with(len, T::Owned::new_empty);
     }
     // Safety: `vec` has `len` elements based on the above code.
-    decode_array::<T, D>(vec, decoder, offset, depth)?;
+    unsafe { decode_array::<T, D>(vec, decoder, offset, depth)? };
     Ok(())
 }
 
@@ -2131,14 +2132,16 @@ unsafe impl<const N: usize, D: ResourceDialect> Encode<BoundedString<N>, D> for 
         depth: Depth,
     ) -> Result<()> {
         encoder.debug_check_bounds::<BoundedString<N>>(offset);
-        encode_vector_value::<u8, D>(
-            self.as_bytes(),
-            N,
-            check_string_length,
-            encoder,
-            offset,
-            depth,
-        )
+        unsafe {
+            encode_vector_value::<u8, D>(
+                self.as_bytes(),
+                N,
+                check_string_length,
+                encoder,
+                offset,
+                depth,
+            )
+        }
     }
 }
 
@@ -2253,13 +2256,15 @@ unsafe impl<T: 'static + EncodableAsHandle, const OBJECT_TYPE: u32, const RIGHTS
         _depth: Depth,
     ) -> Result<()> {
         encoder.debug_check_bounds::<HandleType<T, OBJECT_TYPE, RIGHTS>>(offset);
-        encode_handle(
-            self.into(),
-            crate::ObjectType::from_raw(OBJECT_TYPE),
-            crate::Rights::from_bits_retain(RIGHTS),
-            encoder,
-            offset,
-        )
+        unsafe {
+            encode_handle(
+                self.into(),
+                crate::ObjectType::from_raw(OBJECT_TYPE),
+                crate::Rights::from_bits_retain(RIGHTS),
+                encoder,
+                offset,
+            )
+        }
     }
 }
 
@@ -2279,12 +2284,14 @@ impl<T: 'static + EncodableAsHandle, const OBJECT_TYPE: u32, const RIGHTS: u32>
         _depth: Depth,
     ) -> Result<()> {
         decoder.debug_check_bounds::<HandleType<T, OBJECT_TYPE, RIGHTS>>(offset);
-        *self = decode_handle(
-            crate::ObjectType::from_raw(OBJECT_TYPE),
-            crate::Rights::from_bits_retain(RIGHTS),
-            decoder,
-            offset,
-        )?
+        *self = unsafe {
+            decode_handle(
+                crate::ObjectType::from_raw(OBJECT_TYPE),
+                crate::Rights::from_bits_retain(RIGHTS),
+                decoder,
+                offset,
+            )?
+        }
         .into();
         Ok(())
     }
@@ -2301,7 +2308,7 @@ unsafe fn encode_handle<D: ResourceDialect>(
     if handle.is_invalid() {
         return Err(Error::NotNullable);
     }
-    encoder.write_num(ALLOC_PRESENT_U32, offset);
+    unsafe { encoder.write_num(ALLOC_PRESENT_U32, offset) };
     encoder.handles.push(<D::ProxyChannel as ProxyChannelFor<D>>::HandleDisposition::from_handle(
         handle,
         object_type,
@@ -2442,7 +2449,7 @@ unsafe impl<T: TypeMarker, E: Encode<T, D>, D: ResourceDialect> Encode<Optional<
         depth: Depth,
     ) -> Result<()> {
         encoder.debug_check_bounds::<Optional<T>>(offset);
-        encode_naturally_optional::<T, E, D>(self, encoder, offset, depth)
+        unsafe { encode_naturally_optional::<T, E, D>(self, encoder, offset, depth) }
     }
 }
 
@@ -2457,7 +2464,7 @@ unsafe impl<T: TypeMarker, E: Encode<T, D>, D: ResourceDialect> Encode<OptionalU
         depth: Depth,
     ) -> Result<()> {
         encoder.debug_check_bounds::<OptionalUnion<T>>(offset);
-        encode_naturally_optional::<T, E, D>(self, encoder, offset, depth)
+        unsafe { encode_naturally_optional::<T, E, D>(self, encoder, offset, depth) }
     }
 }
 
@@ -2473,11 +2480,11 @@ unsafe impl<T: TypeMarker, E: Encode<T, D>, D: ResourceDialect> Encode<Boxed<T>,
         match self {
             Some(val) => {
                 depth.increment()?;
-                encoder.write_num(ALLOC_PRESENT_U64, offset);
-                let offset = encoder.out_of_line_offset(T::inline_size(encoder.context));
-                val.encode(encoder, offset, depth)?;
+                unsafe { encoder.write_num(ALLOC_PRESENT_U64, offset) };
+                let offset = unsafe { encoder.out_of_line_offset(T::inline_size(encoder.context)) };
+                unsafe { val.encode(encoder, offset, depth)? };
             }
-            None => encoder.write_num(ALLOC_ABSENT_U64, offset),
+            None => unsafe { encoder.write_num(ALLOC_ABSENT_U64, offset) },
         }
         Ok(())
     }
@@ -2502,7 +2509,7 @@ where
         decoder.debug_check_bounds::<Optional<T>>(offset);
         let inline_size = T::inline_size(decoder.context);
         if check_for_presence(decoder, offset, inline_size) {
-            self.get_or_insert(T::Owned::new_empty()).decode(decoder, offset, depth)
+            unsafe { self.get_or_insert(T::Owned::new_empty()).decode(decoder, offset, depth) }
         } else {
             *self = None;
             decoder.check_padding(offset, inline_size)?;
@@ -2530,13 +2537,15 @@ where
         decoder.debug_check_bounds::<OptionalUnion<T>>(offset);
         let inline_size = T::inline_size(decoder.context);
         if check_for_presence(decoder, offset, inline_size) {
-            decode!(
-                T,
-                self.get_or_insert_with(|| Box::new(T::Owned::new_empty())),
-                decoder,
-                offset,
-                depth
-            )
+            unsafe {
+                decode!(
+                    T,
+                    self.get_or_insert_with(|| Box::new(T::Owned::new_empty())),
+                    decoder,
+                    offset,
+                    depth
+                )
+            }
         } else {
             *self = None;
             decoder.check_padding(offset, inline_size)?;
@@ -2565,14 +2574,17 @@ where
         match decoder.read_num::<u64>(offset) {
             ALLOC_PRESENT_U64 => {
                 depth.increment()?;
-                let offset = decoder.out_of_line_offset(T::inline_size(decoder.context))?;
-                decode!(
-                    T,
-                    self.get_or_insert_with(|| Box::new(T::Owned::new_empty())),
-                    decoder,
-                    offset,
-                    depth
-                )?;
+                let offset =
+                    unsafe { decoder.out_of_line_offset(T::inline_size(decoder.context))? };
+                unsafe {
+                    decode!(
+                        T,
+                        self.get_or_insert_with(|| Box::new(T::Owned::new_empty())),
+                        decoder,
+                        offset,
+                        depth
+                    )?
+                };
                 Ok(())
             }
             ALLOC_ABSENT_U64 => {
@@ -2594,8 +2606,8 @@ unsafe fn encode_naturally_optional<T: TypeMarker, E: Encode<T, D>, D: ResourceD
     depth: Depth,
 ) -> Result<()> {
     match value {
-        Some(val) => val.encode(encoder, offset, depth)?,
-        None => encoder.padding(offset, T::inline_size(encoder.context)),
+        Some(val) => unsafe { val.encode(encoder, offset, depth)? },
+        None => unsafe { encoder.padding(offset, T::inline_size(encoder.context)) },
     }
     Ok(())
 }
@@ -2632,18 +2644,18 @@ pub unsafe fn encode_in_envelope<T: TypeMarker, D: ResourceDialect>(
     let inline_size = T::inline_size(encoder.context);
     if inline_size <= 4 {
         // Zero out the 4 byte inlined region and set the flag at the same time.
-        encoder.write_num(1u64 << 48, offset);
-        val.encode(encoder, offset, depth)?;
+        unsafe { encoder.write_num(1u64 << 48, offset) };
+        unsafe { val.encode(encoder, offset, depth)? };
         let handles_written = (encoder.handles.len() - handles_before) as u16;
-        encoder.write_num(handles_written, offset + 4);
+        unsafe { encoder.write_num(handles_written, offset + 4) };
     } else {
-        let out_of_line_offset = encoder.out_of_line_offset(inline_size);
-        val.encode(encoder, out_of_line_offset, depth)?;
+        let out_of_line_offset = unsafe { encoder.out_of_line_offset(inline_size) };
+        unsafe { val.encode(encoder, out_of_line_offset, depth)? };
         let bytes_written = (encoder.buf.len() - bytes_before) as u32;
         let handles_written = (encoder.handles.len() - handles_before) as u32;
         debug_assert_eq!(bytes_written % 8, 0);
-        encoder.write_num(bytes_written, offset);
-        encoder.write_num(handles_written, offset + 4);
+        unsafe { encoder.write_num(bytes_written, offset) };
+        unsafe { encoder.write_num(handles_written, offset + 4) };
     }
     Ok(())
 }
@@ -2657,8 +2669,8 @@ pub unsafe fn encode_in_envelope_optional<T: TypeMarker, D: ResourceDialect>(
     depth: Depth,
 ) -> Result<()> {
     match val {
-        None => encoder.write_num(0u64, offset),
-        Some(val) => encode_in_envelope(val, encoder, offset, depth)?,
+        None => unsafe { encoder.write_num(0u64, offset) },
+        Some(val) => unsafe { encode_in_envelope(val, encoder, offset, depth)? },
     }
     Ok(())
 }
@@ -2691,12 +2703,14 @@ pub unsafe fn decode_unknown_envelope<D: ResourceDialect>(
     offset: usize,
     mut depth: Depth,
 ) -> Result<()> {
-    if let Some((inlined, num_bytes, num_handles)) = decode_envelope_header(decoder, offset)? {
+    if let Some((inlined, num_bytes, num_handles)) =
+        unsafe { decode_envelope_header(decoder, offset)? }
+    {
         if !inlined {
             depth.increment()?;
             // Calling decoder.out_of_line_offset(0) is not allowed.
             if num_bytes != 0 {
-                let _ = decoder.out_of_line_offset(num_bytes as usize)?;
+                let _ = unsafe { decoder.out_of_line_offset(num_bytes as usize)? };
             }
         }
         if num_handles != 0 {
@@ -2721,7 +2735,7 @@ pub unsafe fn decode_union_inline_portion<D: ResourceDialect>(
     offset: usize,
 ) -> Result<(u64, bool, u32, u32)> {
     let ordinal = decoder.read_num::<u64>(offset);
-    match decode_envelope_header(decoder, offset + 8)? {
+    match unsafe { decode_envelope_header(decoder, offset + 8)? } {
         Some((inlined, num_bytes, num_handles)) => Ok((ordinal, inlined, num_bytes, num_handles)),
         None => Err(Error::NotNullable),
     }
@@ -2820,7 +2834,7 @@ unsafe impl<D: ResourceDialect> Encode<Self, D> for FrameworkErr {
         _depth: Depth,
     ) -> Result<()> {
         encoder.debug_check_bounds::<Self>(offset);
-        encoder.write_num(self.into_primitive(), offset);
+        unsafe { encoder.write_num(self.into_primitive(), offset) };
         Ok(())
     }
 }
@@ -2922,8 +2936,8 @@ macro_rules! impl_result_union {
                 match self {
                     $(
                         $($member_ctor)*(val) => {
-                            encoder.write_num::<u64>($member_ordinal, offset);
-                            encode_in_envelope::<$member_ty, D>(val, encoder, offset + 8, depth)
+                            unsafe { encoder.write_num::<u64>($member_ordinal, offset) };
+                            unsafe { encode_in_envelope::<$member_ty, D>(val, encoder, offset + 8, depth) }
                         }
                     )*
                 }
@@ -2946,7 +2960,7 @@ macro_rules! impl_result_union {
                 decoder.debug_check_bounds::<$ty>(offset);
                 let next_out_of_line = decoder.next_out_of_line();
                 let handles_before = decoder.remaining_handles();
-                let (ordinal, inlined, num_bytes, num_handles) = decode_union_inline_portion(decoder, offset)?;
+                let (ordinal, inlined, num_bytes, num_handles) = unsafe { decode_union_inline_portion(decoder, offset)? };
                 let member_inline_size = match ordinal {
                     $(
                         $member_ordinal => <$member_ty as TypeMarker>::inline_size(decoder.context),
@@ -2962,7 +2976,7 @@ macro_rules! impl_result_union {
                     inner_offset = offset + 8;
                 } else {
                     depth.increment()?;
-                    inner_offset = decoder.out_of_line_offset(member_inline_size)?;
+                    inner_offset = unsafe { decoder.out_of_line_offset(member_inline_size)? };
                 }
                 match ordinal {
                     $(
@@ -2975,8 +2989,8 @@ macro_rules! impl_result_union {
                                 *self = $($member_ctor)*(new_empty!($member_ty, D));
                             }
                             #[allow(irrefutable_let_patterns)]
-                            if let $($member_ctor)*(ref mut val) = self {
-                                decode!($member_ty, D, val, decoder, inner_offset, depth)?;
+                            if let $($member_ctor)*(val) = self {
+                                unsafe { decode!($member_ty, D, val, decoder, inner_offset, depth)? };
                             } else {
                                 unreachable!()
                             }
@@ -3072,7 +3086,7 @@ unsafe impl<D: ResourceDialect> Encode<EpitaphBody, D> for &EpitaphBody {
         _depth: Depth,
     ) -> Result<()> {
         encoder.debug_check_bounds::<EpitaphBody>(offset);
-        encoder.write_num::<i32>(self.error.into_raw(), offset);
+        unsafe { encoder.write_num::<i32>(self.error.into_raw(), offset) };
         Ok(())
     }
 }
@@ -3131,7 +3145,7 @@ unsafe impl<D: ResourceDialect> Encode<ObjectType, D> for ObjectType {
         _depth: Depth,
     ) -> Result<()> {
         encoder.debug_check_bounds::<Self>(offset);
-        encoder.write_num(self.into_raw(), offset);
+        unsafe { encoder.write_num(self.into_raw(), offset) };
         Ok(())
     }
 }
@@ -3189,7 +3203,7 @@ unsafe impl<D: ResourceDialect> Encode<Rights, D> for Rights {
         if self.bits() & Self::all().bits() != self.bits() {
             return Err(Error::InvalidBitsValue);
         }
-        encoder.write_num(self.bits(), offset);
+        unsafe { encoder.write_num(self.bits(), offset) };
         Ok(())
     }
 }
@@ -3262,8 +3276,10 @@ where
         depth: Depth,
     ) -> Result<()> {
         encoder.debug_check_bounds::<GenericMessageType<H, T>>(offset);
-        H::borrow(&self.header).encode(encoder, offset, depth)?;
-        self.body.encode(encoder, offset + H::inline_size(encoder.context), depth)
+        unsafe {
+            H::borrow(&self.header).encode(encoder, offset, depth)?;
+            self.body.encode(encoder, offset + H::inline_size(encoder.context), depth)
+        }
     }
 }
 

@@ -17,7 +17,7 @@ fidl("test.external") {
 
 rustc_test("fidl_rust_external_tests_bin") {
   output_name = "fidl_rust_external_tests"
-  edition = "2021"
+  edition = "2024"
   deps = [
     ":test.external_rust",
     "//src/lib/fidl/rust/fidl",

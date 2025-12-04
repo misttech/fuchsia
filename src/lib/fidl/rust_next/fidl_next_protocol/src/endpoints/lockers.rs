@@ -129,10 +129,10 @@ impl<T> Lockers<T> {
     /// Wakes up all of the `Pending` lockers.
     pub fn wake_all(&mut self) {
         for locker in self.lockers.iter_mut() {
-            if let Locker::Pending { read_waker, .. } = locker {
-                if let Some(waker) = read_waker.take() {
-                    waker.wake();
-                }
+            if let Locker::Pending { read_waker, .. } = locker
+                && let Some(waker) = read_waker.take()
+            {
+                waker.wake();
             }
         }
     }

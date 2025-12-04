@@ -21,7 +21,7 @@ gidl("generate_conformance_test") {
 
 rustc_test("fidl_codec_rust_conformance_tests_bin") {
   output_name = "fidl_codec_rust_conformance_tests"
-  edition = "2018"
+  edition = "2024"
   source_root = conformance_test_source
   deps = [
     ":fidl_codec",
@@ -55,7 +55,7 @@ fuchsia_unittest_package("fidl_codec_rust_conformance_tests") {
 template("fidl_codec_lib") {
   rustc_library(target_name) {
     with_unit_tests = true
-    edition = "2021"
+    edition = "2024"
 
     sources = [
       "src/decode.rs",

@@ -12,7 +12,7 @@ fidl("test.tablevalidation") {
 }
 
 rustc_test("fidl_table_validation_tests_bin") {
-  edition = "2021"
+  edition = "2024"
   deps = [
     ":test.tablevalidation_rust",
     "//src/lib/fidl_table_validation",

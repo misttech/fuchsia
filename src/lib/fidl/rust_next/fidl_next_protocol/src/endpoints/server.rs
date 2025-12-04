@@ -171,14 +171,14 @@ impl<T: Transport> ServerDispatcher<T> {
 
         // If we closed locally, we may have an epitaph to send before
         // terminating the connection.
-        if matches!(error, ProtocolError::Stopped) {
-            if let Some(epitaph) = self.inner.epitaph() {
-                // Note that we don't care whether sending the epitaph succeeds
-                // or fails; it's best-effort.
+        if matches!(error, ProtocolError::Stopped)
+            && let Some(epitaph) = self.inner.epitaph()
+        {
+            // Note that we don't care whether sending the epitaph succeeds
+            // or fails; it's best-effort.
 
-                // SAFETY: The connection has not been terminated.
-                let _ = unsafe { self.inner.connection.send_epitaph(epitaph).await };
-            }
+            // SAFETY: The connection has not been terminated.
+            let _ = unsafe { self.inner.connection.send_epitaph(epitaph).await };
         }
 
         // SAFETY: The connection has not been terminated.

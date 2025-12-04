@@ -742,10 +742,10 @@ impl<D: ResourceDialect> ClientInner<D> {
             };
 
             // Skip waking if the message was for the caller.
-            if want_txid != Some(txid) {
-                if let Some(waker) = waker {
-                    waker.wake();
-                }
+            if want_txid != Some(txid)
+                && let Some(waker) = waker
+            {
+                waker.wake();
             }
 
             Ok(ControlFlow::Continue(()))
@@ -843,20 +843,20 @@ static WAKER_VTABLE: RawWakerVTable =
     RawWakerVTable::new(clone_waker, wake, wake_by_ref, drop_waker);
 
 unsafe fn clone_waker(data: *const ()) -> RawWaker {
-    Arc::increment_strong_count(data as *const ClientWaker);
+    unsafe { Arc::increment_strong_count(data as *const ClientWaker) };
     RawWaker::new(data, &WAKER_VTABLE)
 }
 
 unsafe fn wake(data: *const ()) {
-    Arc::from_raw(data as *const ClientWaker).0();
+    unsafe { Arc::from_raw(data as *const ClientWaker) }.0();
 }
 
 unsafe fn wake_by_ref(data: *const ()) {
-    mem::ManuallyDrop::new(Arc::from_raw(data as *const ClientWaker)).0();
+    mem::ManuallyDrop::new(unsafe { Arc::from_raw(data as *const ClientWaker) }).0();
 }
 
 unsafe fn drop_waker(data: *const ()) {
-    Arc::from_raw(data as *const ClientWaker);
+    unsafe { Arc::from_raw(data as *const ClientWaker) };
 }
 
 #[cfg(target_os = "fuchsia")]

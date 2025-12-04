@@ -5,7 +5,7 @@
 import("//build/rust/rustc_library.gni")
 
 rustc_library("gidl_util") {
-  edition = "2021"
+  edition = "2024"
   deps = [
     "//sdk/rust/zx-status",
     "//sdk/rust/zx-types",
