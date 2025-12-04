@@ -52,6 +52,9 @@ if (!is_host) {
 
       # For `fx disable_ctf_tests`
       "//scripts/disable_ctf_tests:install",
+
+      # For `fx debug`.
+      "//scripts/debug:install",
     ]
   }
 }
