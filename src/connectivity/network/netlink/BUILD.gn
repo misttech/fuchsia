@@ -25,6 +25,7 @@ rustc_library("netlink") {
     "//src/connectivity/network/lib/oneshot-sync",
     "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia-component",
+    "//src/lib/fuchsia-sync",
     "//src/lib/network/fidl_fuchsia_net_ext",
     "//src/lib/network/fidl_fuchsia_net_interfaces_ext",
     "//src/lib/network/fidl_fuchsia_net_matchers_ext",

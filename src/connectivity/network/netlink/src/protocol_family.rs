@@ -1446,11 +1446,12 @@ pub(crate) mod testutil {
 mod test {
     use super::*;
 
+    use fuchsia_sync::Mutex;
     use std::collections::VecDeque;
     use std::net::IpAddr;
     use std::num::{NonZeroU32, NonZeroU64};
     use std::pin::pin;
-    use std::sync::{Arc, Mutex};
+    use std::sync::Arc;
 
     use fidl_fuchsia_net_routes_ext as fnet_routes_ext;
 
@@ -3092,7 +3093,7 @@ mod test {
         ) -> Result<(), Errno> {
             let Self { requests_and_responses } = self;
             let FakeRuleRequestResponse { expected_request_args, expected_ip_version, response } =
-                requests_and_responses.lock().unwrap().pop_front().expect(
+                requests_and_responses.lock().pop_front().expect(
                     "FakeRuleRequest handler should have a fake request/response pre-configured",
                 );
             let RuleRequest { args, _ip_version_marker, sequence_number: _, client: _ } =

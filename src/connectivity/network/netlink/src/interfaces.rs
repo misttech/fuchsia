@@ -1539,8 +1539,9 @@ fn interface_properties_to_address_messages(
 pub(crate) mod testutil {
     use super::*;
 
+    use fuchsia_sync::Mutex;
     use std::convert::Infallible as Never;
-    use std::sync::{Arc, Mutex};
+    use std::sync::Arc;
 
     use futures::TryStreamExt as _;
     use futures::channel::mpsc;
@@ -1613,7 +1614,7 @@ pub(crate) mod testutil {
     impl FakeInterfacesHandlerSink {
         pub(crate) fn take_handled(&mut self) -> Vec<HandledLink> {
             let Self(rc) = self;
-            core::mem::take(&mut *rc.lock().unwrap())
+            core::mem::take(&mut *rc.lock())
         }
     }
 
@@ -1629,16 +1630,12 @@ pub(crate) mod testutil {
     impl InterfacesHandler for FakeInterfacesHandler {
         fn handle_new_link(&mut self, name: &str, _interface_id: NonZeroU64) {
             let Self(rc) = self;
-            rc.lock()
-                .unwrap()
-                .push(HandledLink { name: name.to_string(), kind: HandledLinkKind::New })
+            rc.lock().push(HandledLink { name: name.to_string(), kind: HandledLinkKind::New })
         }
 
         fn handle_deleted_link(&mut self, name: &str) {
             let Self(rc) = self;
-            rc.lock()
-                .unwrap()
-                .push(HandledLink { name: name.to_string(), kind: HandledLinkKind::Del })
+            rc.lock().push(HandledLink { name: name.to_string(), kind: HandledLinkKind::Del })
         }
     }
 

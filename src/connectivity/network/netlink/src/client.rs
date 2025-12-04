@@ -4,13 +4,14 @@
 
 //! A module for managing individual clients (aka sockets) of Netlink.
 
+use fuchsia_sync::Mutex;
 use std::collections::{HashMap, HashSet};
 use std::fmt::{Debug, Display, Formatter};
 use std::hash::Hash;
 use std::num::NonZeroU32;
 use std::ops::DerefMut as _;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
 
 use assert_matches::assert_matches;
 use derivative::Derivative;
@@ -42,7 +43,7 @@ struct InnerClient<F: ProtocolFamily> {
 
 impl<F: ProtocolFamily> Drop for InnerClient<F> {
     fn drop(&mut self) {
-        let mut group_memberships_lock_guard = self.group_memberships.lock().unwrap();
+        let mut group_memberships_lock_guard = self.group_memberships.lock();
         let memberships = std::mem::replace(
             &mut group_memberships_lock_guard.deref_mut().memberships,
             MulticastGroupMemberships::new(),
@@ -88,7 +89,7 @@ impl<F: ProtocolFamily> MulticastGroupState<F> {
 impl<F: ProtocolFamily> Display for InnerClient<F> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let InnerClient { id: ClientId(id), group_memberships: _, port_number } = self;
-        write!(f, "Client[{}/{:?}, {}]", id, *port_number.lock().unwrap(), F::NAME)
+        write!(f, "Client[{}/{:?}, {}]", id, *port_number.lock(), F::NAME)
     }
 }
 
@@ -119,7 +120,7 @@ impl<F: ProtocolFamily, S: Sender<F::InnerMessage>> Display for InternalClient<F
 impl<F: ProtocolFamily, S: Sender<F::InnerMessage>> InternalClient<F, S> {
     /// Returns true if this client is a member of the provided group.
     pub(crate) fn member_of_group(&self, group: ModernGroup) -> bool {
-        self.inner.group_memberships.lock().unwrap().memberships.member_of_group(group)
+        self.inner.group_memberships.lock().memberships.member_of_group(group)
     }
 
     /// Sends the given unicast message to the external half of this client.
@@ -133,7 +134,7 @@ impl<F: ProtocolFamily, S: Sender<F::InnerMessage>> InternalClient<F, S> {
     }
 
     fn send(&mut self, mut message: NetlinkMessage<F::InnerMessage>, group: Option<ModernGroup>) {
-        if let Some(port_number) = *self.inner.port_number.lock().unwrap() {
+        if let Some(port_number) = *self.inner.port_number.lock() {
             message.header.port_number = port_number.into();
         }
         self.sender.send(message, group)
@@ -250,7 +251,7 @@ impl<F: ProtocolFamily> Display for ExternalClient<F> {
 
 impl<F: ProtocolFamily> ExternalClient<F> {
     pub(crate) fn set_port_number(&self, v: NonZeroU32) {
-        *self.inner.port_number.lock().unwrap() = Some(v);
+        *self.inner.port_number.lock() = Some(v);
     }
 
     /// Adds the given multicast group membership.
@@ -258,7 +259,7 @@ impl<F: ProtocolFamily> ExternalClient<F> {
         &self,
         group: ModernGroup,
     ) -> Result<AsyncWorkCompletionWaiter, InvalidModernGroupError> {
-        let mut group_memberships_lock_guard = self.inner.group_memberships.lock().unwrap();
+        let mut group_memberships_lock_guard = self.inner.group_memberships.lock();
         let newly_added =
             group_memberships_lock_guard.memberships.add_membership(group).inspect_err(|err| {
                 log_warn!("{self} failed to join invalid multicast group {group:?}: {err:?}")
@@ -284,7 +285,7 @@ impl<F: ProtocolFamily> ExternalClient<F> {
 
     /// Deletes the given multicast group membership.
     pub(crate) fn del_membership(&self, group: ModernGroup) -> Result<(), InvalidModernGroupError> {
-        let mut group_memberships_lock_guard = self.inner.group_memberships.lock().unwrap();
+        let mut group_memberships_lock_guard = self.inner.group_memberships.lock();
         let was_present =
             group_memberships_lock_guard.memberships.del_membership(group).inspect_err(|e| {
                 log_warn!("{self} failed to leave invalid multicast group {group:?}: {e:?}");
@@ -309,7 +310,7 @@ impl<F: ProtocolFamily> ExternalClient<F> {
         &self,
         legacy_memberships: LegacyGroups,
     ) -> Result<AsyncWorkCompletionWaiter, InvalidLegacyGroupsError> {
-        let mut group_memberships_lock_guard = self.inner.group_memberships.lock().unwrap();
+        let mut group_memberships_lock_guard = self.inner.group_memberships.lock();
         let mutations = group_memberships_lock_guard
             .memberships
             .set_legacy_memberships(legacy_memberships)
@@ -401,7 +402,7 @@ impl<F: ProtocolFamily, S: Sender<F::InnerMessage>> ClientTable<F, S> {
     /// [`ClientId`].
     pub(crate) fn add_client(&self, client: InternalClient<F, S>) {
         let id = client.get_id();
-        let prev_entry = self.clients.lock().unwrap().insert(id.clone(), client);
+        let prev_entry = self.clients.lock().insert(id.clone(), client);
         assert_matches!(prev_entry, None, "{id:?} unexpectedly already existed in the table");
     }
 
@@ -413,7 +414,7 @@ impl<F: ProtocolFamily, S: Sender<F::InnerMessage>> ClientTable<F, S> {
     /// [`ClientId`].
     pub(crate) fn remove_client(&self, client: InternalClient<F, S>) {
         let id = client.get_id();
-        let prev_entry = self.clients.lock().unwrap().remove(&id);
+        let prev_entry = self.clients.lock().remove(&id);
         assert_matches!(prev_entry, Some(_), "{id:?} unexpectedly did not exist in the table");
     }
 
@@ -423,15 +424,14 @@ impl<F: ProtocolFamily, S: Sender<F::InnerMessage>> ClientTable<F, S> {
         message: NetlinkMessage<F::InnerMessage>,
         group: ModernGroup,
     ) {
-        let count =
-            self.clients.lock().unwrap().iter_mut().fold(0, |count, (_client_id, client)| {
-                if client.member_of_group(group) {
-                    client.send_multicast(message.clone(), group);
-                    count + 1
-                } else {
-                    count
-                }
-            });
+        let count = self.clients.lock().iter_mut().fold(0, |count, (_client_id, client)| {
+            if client.member_of_group(group) {
+                client.send_multicast(message.clone(), group);
+                count + 1
+            } else {
+                count
+            }
+        });
         log_debug!(
             "Notified {} {} clients of message for group {:?}: {:?}",
             count,
@@ -503,7 +503,7 @@ mod tests {
     impl<F: ProtocolFamily, S: Sender<F::InnerMessage>> ClientTable<F, S> {
         /// Test helper to return the IDs of clients in this [`ClientTable`].
         pub(crate) fn client_ids(&self) -> Vec<ClientId> {
-            let mut ids = self.clients.lock().unwrap().keys().cloned().collect::<Vec<_>>();
+            let mut ids = self.clients.lock().keys().cloned().collect::<Vec<_>>();
             ids.sort();
             ids
         }
