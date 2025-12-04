@@ -5,12 +5,6 @@
 import("//build/host.gni")
 import("//build/rust/rustc_binary.gni")
 
-install_host_tools("install") {
-  deps = [ ":pretty_serial($host_toolchain)" ]
-
-  outputs = [ "pretty_serial" ]
-}
-
 group("tests") {
   testonly = true
 

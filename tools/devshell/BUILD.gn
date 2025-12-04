@@ -36,7 +36,7 @@ if (!is_host) {
       "//tools/fidl/fidlc:fidl-lint",
 
       # For `fx pretty_serial`.
-      "//tools/pretty_serial:install($host_toolchain)",
+      "//build/bazel/host:bazel_root_host_tools.pretty_serial.host_tool",
 
       # For 'fx create'.
       "//tools/create",

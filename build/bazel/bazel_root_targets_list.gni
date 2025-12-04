@@ -63,6 +63,10 @@ declare_args() {
                                         bazel_label =
                                             "//tools/cargo-gnaw:cargo-gnaw-bin"
                                       },
+                                      {
+                                        bazel_label = "//tools/pretty_serial"
+                                        install_host_tool = true
+                                      },
                                     ]
 
   # A similar list to extend the list above for custom build configuration

@@ -6,6 +6,7 @@ group("tools") {
   testonly = true
 
   public_deps = [
+    "//build/bazel/host:bazel_root_host_tools.pretty_serial.host_tool($host_toolchain)",
     "//tools/auto_owners($host_toolchain)",
     "//tools/bindc:host($host_toolchain)",
     "//tools/bootserver_old:host($host_toolchain)",
@@ -34,7 +35,6 @@ group("tools") {
     "//tools/pbtool($host_toolchain)",
     "//tools/pkgstats:install($host_toolchain)",
     "//tools/power_config($host_toolchain)",
-    "//tools/pretty_serial:install($host_toolchain)",
     "//tools/rfc:install($host_toolchain)",
     "//tools/rust_extract:install($host_toolchain)",
     "//tools/sdk-tools:tools($host_toolchain)",
