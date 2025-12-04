@@ -10,6 +10,7 @@ _CLIPPY_WARN_DEFAULT = {
     # Allow everything by default, except for the ones explicitly configured.
     # LINT.IfChange(clippy_warn_default)
     "all": "allow",
+    "clear_with_drain": "warn",
     "confusing_method_to_numeric_cast": "warn",
     "correctness": "warn",
     "expect_fun_call": "warn",
