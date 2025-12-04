@@ -19,12 +19,6 @@
 
 #pragma once
 
-{{ "" }}
-{{- /* Include library headers from dependencies. */}}
-{{ range .Dependencies -}}
-#include <{{ . | Filename "Markers" }}>
-{{ end -}}
-
 {{- /* When the library name only has one component, it is always special.
 Those libraries should not define business logic types or protocols, and we
 do not support them in the bindings. */}}

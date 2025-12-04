@@ -10,7 +10,6 @@
 
 #if __FIDL_SUPPORT_HANDLES
 
-#include <fidl/test.middle/cpp/wire_messaging.h>
 #include <lib/fidl/cpp/wire/client.h>
 #include <lib/fidl/cpp/wire/connect_service.h>
 #include <lib/fidl/cpp/wire/server.h>
@@ -18,6 +17,7 @@
 #include <lib/fidl/cpp/wire/sync_call.h>
 #include <lib/fidl/cpp/wire/unknown_interaction_handler.h>
 #include <lib/fidl/cpp/wire/wire_messaging.h>
+
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wshadow"
 
