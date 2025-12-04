@@ -49,7 +49,6 @@
             matchers: [
                 // TODO: https://fxbug.dev/319480589 - Starnix does not support dynamic kernel module loading.
                 "module_load",
-                "ioctl", // TODO: https://fxbug.dev/398663318
             ],
         },
     ],
