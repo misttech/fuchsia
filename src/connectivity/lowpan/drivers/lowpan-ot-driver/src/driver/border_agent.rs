@@ -360,8 +360,13 @@ pub(crate) async fn manage_epskc_service_publisher(
 }
 
 // Functional equivalent to ot-br-posix's BorderAgent::GetServiceInstanceNameWithExtAddr.
-fn get_service_instance_name_with_ext_addr(vendor: &str, product: &str, ext_addr: &[u8]) -> String {
-    format!("{} {} #{:0X}{:0X}", vendor, product, ext_addr[6], ext_addr[7])
+// Following the Thread specification and simplifying service identification the DNS-SD
+// service instance name used by the Border Agent (e.g., for meshcop and meshcop-e) is
+// generated using the pattern: "vendor name + product name + #XYZW + service type", the
+// "XYZW" represents the last two bytes of the extended address, in uppercase hexadecimal.
+// TODO(b/463536188): add "vendor name" once the bug is fixed.
+fn get_service_instance_name_with_ext_addr(product: &str, ext_addr: &[u8]) -> String {
+    format!("{} #{}", product, hex::encode(&ext_addr[6..]).to_uppercase())
 }
 
 fn get_alternate_service_instance_name(base_instance_name: &str) -> String {
@@ -373,16 +378,12 @@ impl<OT: ot::InstanceInterface, NI, BI> OtDriver<OT, NI, BI> {
     pub async fn update_border_agent_service(&self) {
         let vendor = self.product_metadata.vendor();
         let product = self.product_metadata.product();
-
-        // Add the last two bytes (in hex) of the extended address to the device name
-        // to make the name more stable.
         let service_instance_name = {
             let driver_state = self.driver_state.lock();
             let ot_instance = &driver_state.ot_instance;
-            format!(
-                "{} ({})",
-                product,
-                hex::encode(&ot_instance.get_extended_address().as_slice()[6..])
+            get_service_instance_name_with_ext_addr(
+                &product,
+                &ot_instance.get_extended_address().as_slice(),
             )
         };
 
@@ -477,10 +478,9 @@ impl<OT: ot::InstanceInterface, NI, BI> OtDriver<OT, NI, BI> {
                 // latest information.
 
                 // Derive the service name.
-                let vendor = self.product_metadata.vendor();
                 let product = self.product_metadata.product();
                 let service_instance =
-                    get_service_instance_name_with_ext_addr(&vendor, &product, ext_addr.as_slice());
+                    get_service_instance_name_with_ext_addr(&product, ext_addr.as_slice());
 
                 if let Err(e) = epskc_publisher
                     .try_send(PublishServiceRequest::Start { port, service_instance })
