@@ -49,6 +49,14 @@ impl Socket {
         })
     }
 
+    /// Polls on reading this socket. Not to be confused with `AsyncRead::poll_read` which has a
+    /// different method of error reporting. That will handle errors, whereas this will return them
+    /// directly.
+    pub fn poll_socket(&self, ctx: &mut Context<'_>, out: &mut [u8]) -> Poll<Result<usize, Error>> {
+        let client = self.0.client();
+        client.poll_socket(self.0.proto(), ctx, out)
+    }
+
     /// Write all of the given data to the socket.
     pub fn write_all(&self, bytes: &[u8]) -> impl Future<Output = Result<(), Error>> {
         let data = bytes.to_vec();
@@ -131,13 +139,10 @@ impl Drop for SocketReadStream {
 
 /// Wrapper for [`Client::poll_socket`] that adapts the return value semantics
 /// to what Unix prescribes, and what `futures::io` thus prescribes.
-fn async_read_poll_socket(
-    client: Arc<crate::Client>,
-    proto: proto::HandleId,
-    cx: &mut Context<'_>,
-    buf: &mut [u8],
+fn convert_poll_res_to_async_read(
+    poll_res: Poll<Result<usize, Error>>,
 ) -> Poll<std::io::Result<usize>> {
-    let res = ready!(client.poll_socket(proto, cx, buf)).or_else(|e| match e {
+    let res = ready!(poll_res).or_else(|e| match e {
         Error::FDomain(proto::Error::TargetError(e))
             if e == zx_status::Status::PEER_CLOSED.into_raw() =>
         {
@@ -154,8 +159,7 @@ impl futures::AsyncRead for Socket {
         cx: &mut Context<'_>,
         buf: &mut [u8],
     ) -> Poll<std::io::Result<usize>> {
-        let client = self.0.client();
-        async_read_poll_socket(client, self.0.proto(), cx, buf)
+        convert_poll_res_to_async_read(self.poll_socket(cx, buf))
     }
 }
 
@@ -165,8 +169,7 @@ impl futures::AsyncRead for &Socket {
         cx: &mut Context<'_>,
         buf: &mut [u8],
     ) -> Poll<std::io::Result<usize>> {
-        let client = self.0.client();
-        async_read_poll_socket(client, self.0.proto(), cx, buf)
+        convert_poll_res_to_async_read(self.poll_socket(cx, buf))
     }
 }
 
