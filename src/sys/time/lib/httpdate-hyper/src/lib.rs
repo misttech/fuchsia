@@ -2,10 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use fuchsia_sync::Mutex;
 use rustls::Certificate;
 use rustls::client::{ServerCertVerified, ServerCertVerifier};
 use std::cell::RefCell;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::SystemTime;
 use thiserror::Error;
 use {fuchsia_hyper, hyper};
@@ -111,7 +112,7 @@ impl RecordingVerifier {
         time: webpki::Time,
         trust_anchors: &'static [webpki::TrustAnchor<'static>],
     ) -> Result<(), HttpsDateError> {
-        let presented_certs = self.presented_certs.lock().unwrap();
+        let presented_certs = self.presented_certs.lock();
         let presented_certs = presented_certs.borrow();
         if presented_certs.len() == 0 {
             return Err(HttpsDateError::new(HttpsDateErrorType::NoCertificatesPresented));
@@ -154,7 +155,7 @@ impl ServerCertVerifier for RecordingVerifier {
         let mut presented_certs = Vec::with_capacity(1 + intermediates.len());
         presented_certs.push(end_entity.clone());
         presented_certs.extend(intermediates.iter().cloned());
-        *self.presented_certs.lock().unwrap().borrow_mut() = presented_certs;
+        *self.presented_certs.lock().borrow_mut() = presented_certs;
         Ok(ServerCertVerified::assertion())
     }
 }

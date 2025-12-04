@@ -18,6 +18,7 @@ rustc_library("httpdate-hyper") {
 
   deps = [
     "//src/lib/fuchsia-hyper",
+    "//src/lib/fuchsia-sync",
     "//src/lib/webpki-roots-fuchsia",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:chrono",

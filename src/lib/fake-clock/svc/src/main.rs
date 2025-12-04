@@ -14,11 +14,12 @@ use futures::stream::{StreamExt, TryStreamExt};
 use log::{debug, error, trace, warn};
 use zx::{self as zx, AsHandleRef, Peered};
 
+use fuchsia_sync::Mutex;
 use std::collections::{BinaryHeap, HashMap, HashSet, hash_map};
 use std::ops;
 use std::rc::Rc;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
 
 const DEFAULT_INCREMENTS_MS: i64 = 10;
 
@@ -344,7 +345,7 @@ impl<T: FakeClockObserver> FakeClock<T> {
         fasync::Task::local(async move {
             if let Ok(_) = fasync::OnSignals::new(&*event, zx::Signals::EVENTPAIR_PEER_CLOSED).await
             {
-                let mut mc = arc_self.lock().unwrap();
+                let mut mc = arc_self.lock();
                 mc.cancel_event(koid);
                 mc.registered_events.remove(&koid).expect("Registered event disappeared");
                 mc.observer.event_removed(koid);
@@ -604,7 +605,7 @@ fn start_free_running<T: FakeClockObserver>(
         "start free running mock clock: real_increment={:?} increment={:?}",
         real_increment, increment
     );
-    let fr = &mut mock_clock.lock().unwrap().free_running;
+    let fr = &mut mock_clock.lock().free_running;
     assert!(
         fr.is_none(),
         "start_free_running called again without an intervening stop_free_running"
@@ -623,14 +624,14 @@ fn start_free_running<T: FakeClockObserver>(
             // See: b/369671675 for details.
             fasync::Timer::new(real_increment).await;
             debug!("tick: id={}", id);
-            mock_clock_clone.lock().unwrap().increment(&increment);
+            mock_clock_clone.lock().increment(&increment);
         }
     });
     *fr = Some(TaskWithId { _task: task, id });
 }
 
 fn stop_free_running<T: FakeClockObserver>(mock_clock: &FakeClockHandle<T>) {
-    mock_clock.lock().unwrap().stop_free_running();
+    mock_clock.lock().stop_free_running();
 }
 
 fn check_valid_increment(increment: &Increment) -> bool {
@@ -648,7 +649,7 @@ async fn handle_control_events<T: FakeClockObserver>(
         match req {
             FakeClockControlRequest::Advance { increment, responder } => {
                 if check_valid_increment(&increment) {
-                    let mut mc = mock_clock.lock().unwrap();
+                    let mut mc = mock_clock.lock();
                     if mc.is_free_running() {
                         responder.send(Err(zx::Status::ACCESS_DENIED.into_raw()))
                     } else {
@@ -661,7 +662,7 @@ async fn handle_control_events<T: FakeClockObserver>(
             }
             FakeClockControlRequest::IncrementMonoToBootOffsetBy { increment, responder } => {
                 if increment > 0 {
-                    let mut mc = mock_clock.lock().unwrap();
+                    let mut mc = mock_clock.lock();
                     if mc.is_free_running() {
                         responder.send(Err(zx::Status::ACCESS_DENIED.into_raw()))
                     } else {
@@ -697,7 +698,7 @@ async fn handle_control_events<T: FakeClockObserver>(
                 responder,
             } => {
                 debug!("stop point of type {:?} registered", event_type);
-                let mut mc = mock_clock.lock().unwrap();
+                let mut mc = mock_clock.lock();
                 if mc.is_free_running() {
                     responder.send(Err(zx::Status::ACCESS_DENIED.into_raw()))
                 } else {
@@ -709,7 +710,7 @@ async fn handle_control_events<T: FakeClockObserver>(
             }
             FakeClockControlRequest::IgnoreNamedDeadline { deadline_id, responder } => {
                 debug!("Ignoring named deadline with id {:?}", deadline_id);
-                let mut mc = mock_clock.lock().unwrap();
+                let mut mc = mock_clock.lock();
                 mc.add_ignored_deadline(deadline_id);
                 responder.send()
             }
@@ -725,7 +726,7 @@ async fn handle_events<T: FakeClockObserver>(
     rs.try_for_each(|req| async {
         match req {
             FakeClockRequest::RegisterEventInMonotonic { time, event, control_handle: _ } => {
-                mock_clock.lock().unwrap().install_event_in_mono(
+                mock_clock.lock().install_event_in_mono(
                     Arc::clone(&mock_clock),
                     time,
                     event.into(),
@@ -733,7 +734,7 @@ async fn handle_events<T: FakeClockObserver>(
                 Ok(())
             }
             FakeClockRequest::RegisterEventInBoot { time, event, control_handle: _ } => {
-                mock_clock.lock().unwrap().install_event_in_boot(
+                mock_clock.lock().install_event_in_boot(
                     Arc::clone(&mock_clock),
                     time,
                     event.into(),
@@ -741,11 +742,11 @@ async fn handle_events<T: FakeClockObserver>(
                 Ok(())
             }
             FakeClockRequest::Get { responder } => {
-                let clock = mock_clock.lock().unwrap();
+                let clock = mock_clock.lock();
                 responder.send(clock.boot_clock.time, clock.mono_clock.time)
             }
             FakeClockRequest::RescheduleEventInMonotonic { event, time, responder } => {
-                let mut mc = mock_clock.lock().unwrap();
+                let mut mc = mock_clock.lock();
                 let result = event
                     .get_koid()
                     .and_then(|k| mc.reschedule_event_in_mono(time, k).map_err(zx::Status::from));
@@ -755,7 +756,7 @@ async fn handle_events<T: FakeClockObserver>(
                 }))
             }
             FakeClockRequest::RescheduleEventInBoot { event, time, responder } => {
-                let mut mc = mock_clock.lock().unwrap();
+                let mut mc = mock_clock.lock();
                 let result = event
                     .get_koid()
                     .and_then(|k| mc.reschedule_event_in_boot(time, k).map_err(zx::Status::from));
@@ -766,7 +767,7 @@ async fn handle_events<T: FakeClockObserver>(
             }
             FakeClockRequest::CancelEvent { event, responder } => {
                 if let Ok(k) = event.get_koid() {
-                    mock_clock.lock().unwrap().cancel_event(k);
+                    mock_clock.lock().cancel_event(k);
                 }
                 responder.send()
             }
@@ -776,21 +777,20 @@ async fn handle_events<T: FakeClockObserver>(
                     StopPoint { deadline_id: id.clone(), event_type: DeadlineEventType::Set };
                 if FakeClock::<T>::check_stop_point(
                     &stop_point,
-                    &mut mock_clock.lock().unwrap().registered_stop_points,
+                    &mut mock_clock.lock().registered_stop_points,
                 ) {
                     stop_free_running(&mock_clock);
                 }
 
-                let deadline = if mock_clock.lock().unwrap().ignored_deadline_ids.contains(&id) {
+                let deadline = if mock_clock.lock().ignored_deadline_ids.contains(&id) {
                     zx::MonotonicInstant::INFINITE
                 } else {
-                    mock_clock.lock().unwrap().mono_clock.time
-                        + zx::MonotonicDuration::from_nanos(duration)
+                    mock_clock.lock().mono_clock.time + zx::MonotonicDuration::from_nanos(duration)
                 };
 
                 let expiration_point =
                     PendingDeadlineExpireEvent { deadline_id: id, deadline: deadline };
-                mock_clock.lock().unwrap().add_named_deadline(expiration_point);
+                mock_clock.lock().add_named_deadline(expiration_point);
 
                 responder.send(deadline)
             }
@@ -800,21 +800,20 @@ async fn handle_events<T: FakeClockObserver>(
                     StopPoint { deadline_id: id.clone(), event_type: DeadlineEventType::Set };
                 if FakeClock::<T>::check_stop_point(
                     &stop_point,
-                    &mut mock_clock.lock().unwrap().registered_stop_points,
+                    &mut mock_clock.lock().registered_stop_points,
                 ) {
                     stop_free_running(&mock_clock);
                 }
 
-                let deadline = if mock_clock.lock().unwrap().ignored_deadline_ids.contains(&id) {
+                let deadline = if mock_clock.lock().ignored_deadline_ids.contains(&id) {
                     zx::BootInstant::INFINITE
                 } else {
-                    mock_clock.lock().unwrap().boot_clock.time
-                        + zx::BootDuration::from_nanos(duration)
+                    mock_clock.lock().boot_clock.time + zx::BootDuration::from_nanos(duration)
                 };
 
                 let expiration_point =
                     PendingDeadlineExpireEvent { deadline_id: id, deadline: deadline };
-                mock_clock.lock().unwrap().add_named_boot_deadline(expiration_point);
+                mock_clock.lock().add_named_boot_deadline(expiration_point);
 
                 responder.send(deadline)
             }
@@ -934,7 +933,7 @@ mod tests {
     #[fuchsia::test]
     async fn test_event_signaling() {
         let clock_handle = Arc::new(Mutex::new(FakeClock::<()>::new()));
-        let mut mock_clock = clock_handle.lock().unwrap();
+        let mut mock_clock = clock_handle.lock();
         let (e1, cli1) = zx::EventPair::create();
         let time = mock_clock.mono_clock.time;
         mock_clock.install_event_in_mono(
@@ -968,7 +967,7 @@ mod tests {
     async fn test_free_running() {
         let clock_handle = Arc::new(Mutex::new(FakeClock::<()>::new()));
         let event = {
-            let mut mock_clock = clock_handle.lock().unwrap();
+            let mut mock_clock = clock_handle.lock();
             let (event, client) = zx::EventPair::create();
             let sched = mock_clock.mono_clock.time + zx::MonotonicDuration::from_millis(10);
             mock_clock.install_event_in_mono(Arc::clone(&clock_handle), sched, event);
@@ -986,10 +985,10 @@ mod tests {
         stop_free_running(&clock_handle);
 
         // after free running has ended, timer must not be updating anymore:
-        let bef = clock_handle.lock().unwrap().mono_clock.time;
+        let bef = clock_handle.lock().mono_clock.time;
         fasync::Timer::new(zx::MonotonicInstant::after(zx::MonotonicDuration::from_millis(30)))
             .await;
-        assert_eq!(clock_handle.lock().unwrap().mono_clock.time, bef);
+        assert_eq!(clock_handle.lock().mono_clock.time, bef);
     }
 
     struct RemovalObserver {
@@ -1012,13 +1011,13 @@ mod tests {
     async fn test_observes_handle_closed() {
         let clock_handle = Arc::new(Mutex::new(FakeClock::<RemovalObserver>::new()));
         let event = {
-            let mut mock_clock = clock_handle.lock().unwrap();
+            let mut mock_clock = clock_handle.lock();
             let (event, client) = zx::EventPair::create();
             let sched = mock_clock.mono_clock.time + zx::MonotonicDuration::from_millis(10);
             mock_clock.install_event_in_mono(Arc::clone(&clock_handle), sched, event);
             client
         };
-        let mut recv = clock_handle.lock().unwrap().observer.receiver.take().unwrap();
+        let mut recv = clock_handle.lock().observer.receiver.take().unwrap();
         // store the koid
         let koid = event.get_koid().unwrap();
         // dispose of the client side
@@ -1030,7 +1029,7 @@ mod tests {
     async fn test_reschedule() {
         const TEN_MILLIS: zx::MonotonicDuration = zx::MonotonicDuration::from_millis(10);
         let clock_handle = Arc::new(Mutex::new(FakeClock::<RemovalObserver>::new()));
-        let mut mock_clock = clock_handle.lock().unwrap();
+        let mut mock_clock = clock_handle.lock();
         let (event, client) = zx::EventPair::create();
         let sched = mock_clock.mono_clock.time + TEN_MILLIS;
         mock_clock.install_event_in_mono(Arc::clone(&clock_handle), sched, event);
@@ -1068,7 +1067,6 @@ mod tests {
         let (client_event, server_event) = zx::EventPair::create();
         let () = clock_handle
             .lock()
-            .unwrap()
             .set_stop_point(
                 StopPoint { deadline_id: DEADLINE_ID.into(), event_type: DeadlineEventType::Set },
                 server_event,
@@ -1084,22 +1082,21 @@ mod tests {
         // Checking for the stop point should signal the event pair.
         assert!(FakeClock::<RemovalObserver>::check_stop_point(
             &StopPoint { deadline_id: DEADLINE_ID.into(), event_type: DeadlineEventType::Set },
-            &mut clock_handle.lock().unwrap().registered_stop_points
+            &mut clock_handle.lock().registered_stop_points
         ));
         assert!(check_signaled(&client_event));
         let () = stop_free_running(&clock_handle);
 
         // A deadline set to expire in the future stops time when the deadline is reached.
         let future_deadline_timeout =
-            clock_handle.lock().unwrap().mono_clock.time + zx::MonotonicDuration::from_millis(10);
-        let () = clock_handle.lock().unwrap().add_named_deadline(PendingDeadlineExpireEvent {
+            clock_handle.lock().mono_clock.time + zx::MonotonicDuration::from_millis(10);
+        let () = clock_handle.lock().add_named_deadline(PendingDeadlineExpireEvent {
             deadline_id: DEADLINE_ID.into(),
             deadline: future_deadline_timeout,
         });
         let (client_event, server_event) = zx::EventPair::create();
         let () = clock_handle
             .lock()
-            .unwrap()
             .set_stop_point(
                 StopPoint {
                     deadline_id: DEADLINE_ID.into(),
@@ -1120,14 +1117,14 @@ mod tests {
                 & !zx::Signals::EVENTPAIR_PEER_CLOSED,
             zx::Signals::EVENTPAIR_SIGNALED
         );
-        assert!(!clock_handle.lock().unwrap().is_free_running());
-        assert_eq!(clock_handle.lock().unwrap().mono_clock.time, future_deadline_timeout);
+        assert!(!clock_handle.lock().is_free_running());
+        assert_eq!(clock_handle.lock().mono_clock.time, future_deadline_timeout);
     }
 
     #[fuchsia::test]
     async fn test_ignored_stop_points() {
         let clock_handle = Arc::new(Mutex::new(FakeClock::<RemovalObserver>::new()));
-        warn!("checkpoint 1: {:?}", clock_handle.lock().unwrap().mono_clock.time);
+        warn!("checkpoint 1: {:?}", clock_handle.lock().mono_clock.time);
         let () = start_free_running(
             &clock_handle,
             zx::MonotonicDuration::from_millis(DEFAULT_INCREMENTS_MS),
@@ -1138,22 +1135,21 @@ mod tests {
         // Checking for an unregistered stop point should not stop time.
         assert!(!FakeClock::<RemovalObserver>::check_stop_point(
             &StopPoint { deadline_id: DEADLINE_ID.into(), event_type: DeadlineEventType::Set },
-            &mut clock_handle.lock().unwrap().registered_stop_points
+            &mut clock_handle.lock().registered_stop_points
         ));
-        assert!(clock_handle.lock().unwrap().is_free_running());
-        warn!("checkpoint 2: {:?}", clock_handle.lock().unwrap().mono_clock.time);
+        assert!(clock_handle.lock().is_free_running());
+        warn!("checkpoint 2: {:?}", clock_handle.lock().mono_clock.time);
 
         // Time is not stopped if the other end of a registered event pair is dropped.
         let (client_event, server_event) = zx::EventPair::create();
         let () = clock_handle
             .lock()
-            .unwrap()
             .set_stop_point(
                 StopPoint { deadline_id: DEADLINE_ID.into(), event_type: DeadlineEventType::Set },
                 server_event,
             )
             .expect("set stop point failed");
-        warn!("checkpoint 3: {:?}", clock_handle.lock().unwrap().mono_clock.time);
+        warn!("checkpoint 3: {:?}", clock_handle.lock().mono_clock.time);
 
         stop_free_running(&clock_handle);
         let () = start_free_running(
@@ -1166,31 +1162,30 @@ mod tests {
         drop(client_event);
         assert!(!FakeClock::<RemovalObserver>::check_stop_point(
             &StopPoint { deadline_id: DEADLINE_ID.into(), event_type: DeadlineEventType::Set },
-            &mut clock_handle.lock().unwrap().registered_stop_points
+            &mut clock_handle.lock().registered_stop_points
         ));
-        warn!("checkpoint 3: {:?}", clock_handle.lock().unwrap().mono_clock.time);
-        assert!(clock_handle.lock().unwrap().is_free_running());
+        warn!("checkpoint 3: {:?}", clock_handle.lock().mono_clock.time);
+        assert!(clock_handle.lock().is_free_running());
         let () = stop_free_running(&clock_handle);
 
-        warn!("checkpoint 4: {:?}", clock_handle.lock().unwrap().mono_clock.time);
+        warn!("checkpoint 4: {:?}", clock_handle.lock().mono_clock.time);
         // If we set two EXPIRED points and drop the handle of the earlier one, time should stop
         // on the later stop point.
         let future_deadline_timeout_1 =
-            clock_handle.lock().unwrap().mono_clock.time + zx::MonotonicDuration::from_millis(10);
+            clock_handle.lock().mono_clock.time + zx::MonotonicDuration::from_millis(10);
         let future_deadline_timeout_2 =
-            clock_handle.lock().unwrap().mono_clock.time + zx::MonotonicDuration::from_millis(20);
-        let () = clock_handle.lock().unwrap().add_named_deadline(PendingDeadlineExpireEvent {
+            clock_handle.lock().mono_clock.time + zx::MonotonicDuration::from_millis(20);
+        let () = clock_handle.lock().add_named_deadline(PendingDeadlineExpireEvent {
             deadline_id: DEADLINE_ID.into(),
             deadline: future_deadline_timeout_1,
         });
-        let () = clock_handle.lock().unwrap().add_named_deadline(PendingDeadlineExpireEvent {
+        let () = clock_handle.lock().add_named_deadline(PendingDeadlineExpireEvent {
             deadline_id: DEADLINE_ID_2.into(),
             deadline: future_deadline_timeout_2,
         });
         let (client_event_1, server_event_1) = zx::EventPair::create();
         let () = clock_handle
             .lock()
-            .unwrap()
             .set_stop_point(
                 StopPoint {
                     deadline_id: DEADLINE_ID.into(),
@@ -1202,7 +1197,6 @@ mod tests {
         let (client_event_2, server_event_2) = zx::EventPair::create();
         let () = clock_handle
             .lock()
-            .unwrap()
             .set_stop_point(
                 StopPoint {
                     deadline_id: DEADLINE_ID_2.into(),
@@ -1213,8 +1207,8 @@ mod tests {
             .expect("set stop point failed");
         drop(client_event_1);
 
-        warn!("checkpoint 5: {:?}", clock_handle.lock().unwrap().mono_clock.time);
-        let start_time = clock_handle.lock().unwrap().mono_clock.time;
+        warn!("checkpoint 5: {:?}", clock_handle.lock().mono_clock.time);
+        let start_time = clock_handle.lock().mono_clock.time;
         warn!("about to start free running from: {:?}", start_time);
 
         let () = start_free_running(
@@ -1231,9 +1225,9 @@ mod tests {
             zx::Signals::EVENTPAIR_SIGNALED
         );
         warn!("after_signal");
-        assert!(!clock_handle.lock().unwrap().is_free_running());
+        assert!(!clock_handle.lock().is_free_running());
         assert_eq!(
-            clock_handle.lock().unwrap().mono_clock.time,
+            clock_handle.lock().mono_clock.time,
             future_deadline_timeout_2,
             "left: actual; right: expected"
         );
@@ -1357,9 +1351,9 @@ mod tests {
             futures::future::try_join(server, client).await.expect("client should finish first");
 
         // Confirm there is a deadline in the list and that the deadline is infinite.
-        assert_eq!(clock_handle.lock().unwrap().mono_clock.pending_deadlines.len(), 1);
+        assert_eq!(clock_handle.lock().mono_clock.pending_deadlines.len(), 1);
         assert_eq!(
-            clock_handle.lock().unwrap().mono_clock.pending_deadlines.pop().unwrap(),
+            clock_handle.lock().mono_clock.pending_deadlines.pop().unwrap(),
             PendingDeadlineExpireEvent {
                 deadline_id: DEADLINE_ID.into(),
                 deadline: zx::MonotonicInstant::INFINITE,
