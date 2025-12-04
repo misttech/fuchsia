@@ -68,6 +68,7 @@ pub enum SystemRecovery {
 }
 
 /// Details of bootfs recovery if it is selected
+// Avoid using Default trait since product_component_url is required.
 #[derive(Debug, Deserialize, Serialize, PartialEq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub struct BootfsRecoveryConfig {
@@ -75,6 +76,61 @@ pub struct BootfsRecoveryConfig {
     pub product_component_url: String,
 
     /// Don't start on startup
+    #[serde(default)] // Default to false.
     #[serde(skip_serializing_if = "crate::common::is_default")]
     pub disable_eager_startup: bool,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn test_recovery_config_defaults() {
+        let original = RecoveryConfig::default();
+        let serialized = serde_json::to_value(&original).expect("serialization failed");
+        let deserialized: RecoveryConfig =
+            serde_json::from_value(serialized).expect("deserialization failed");
+        assert_eq!(original, deserialized);
+    }
+
+    #[test]
+    fn test_recovery_config_with_bootfs() {
+        let config = RecoveryConfig {
+            system_recovery: Some(SystemRecovery::Bootfs(BootfsRecoveryConfig {
+                product_component_url: "url".into(),
+                disable_eager_startup: true,
+            })),
+            ..Default::default()
+        };
+        let serialized = serde_json::to_value(&config).expect("serialization failed");
+        let deserialized: RecoveryConfig =
+            serde_json::from_value(serialized).expect("deserialization failed");
+        assert_eq!(config, deserialized);
+    }
+
+    #[test]
+    fn test_bootfs_recovery_config_defaults() {
+        // BootfsRecoveryConfig doesn't implement Default, but we can test that
+        // the fields with defaults are handled correctly when missing from JSON.
+        let product_component_url = "fuchsia-pkg://fuchsia.com/recovery#meta/recovery.cm";
+        let json = json!({
+            "product_component_url": product_component_url
+        });
+        let config: BootfsRecoveryConfig =
+            serde_json::from_value(json).expect("deserialization failed");
+
+        assert_eq!(config.product_component_url, product_component_url);
+        assert!(!config.disable_eager_startup); // Default is false.
+    }
+
+    #[test]
+    fn test_recovery_config_check_for_managed_mode() {
+        let config = RecoveryConfig { check_for_managed_mode: true, ..Default::default() };
+        let serialized = serde_json::to_value(&config).expect("serialization failed");
+        let deserialized: RecoveryConfig =
+            serde_json::from_value(serialized).expect("deserialization failed");
+        assert_eq!(config, deserialized);
+    }
 }
