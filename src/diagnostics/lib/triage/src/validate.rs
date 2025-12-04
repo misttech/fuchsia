@@ -62,19 +62,19 @@ pub fn validate(parse_result: &ParseResult) -> Result<(), Error> {
                     fetcher.set_annotations(&annotations_fetcher);
                 }
             }
-            let now = if trial.now.is_none() {
-                None
-            } else {
-                match MetricState::evaluate_math(trial.now.as_ref().unwrap()) {
+            let now = if let Some(now) = &trial.now {
+                match MetricState::evaluate_math(now) {
                     MetricValue::Int(time) => Some(time),
                     oops => bail!(
                         "Trial {} in {}: 'now: {}' was not integer, it was {:?}",
                         trial_name,
                         namespace,
-                        trial.now.as_ref().unwrap(),
+                        now,
                         oops
                     ),
                 }
+            } else {
+                None
             };
             if let Some(action_names) = &trial.yes {
                 for action_name in action_names.iter() {
