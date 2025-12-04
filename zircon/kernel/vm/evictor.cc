@@ -84,7 +84,10 @@ struct ReclaimFailureStats {
 
   uint64_t prev_page_evictions = 0;
   const vm_page_t* prev_evicted_page = nullptr;
-  char prev_eviction_result[16] = {0};
+  // VmCowReclaimResult doesn't have a default constructor. Initialize to an arbitrary value; this
+  // will be overwritten anyway by the actual result of eviction when one happens.
+  VmCowReclaimResult prev_eviction_result = fit::ok(
+      VmCowReclaimSuccess{.type = VmCowReclaimSuccess::Type::EvictNonLoaned, .num_pages = 0});
   bool printed_same_page_oops = false;
 
   struct FailureReasons {
@@ -148,36 +151,35 @@ struct ReclaimFailureStats {
 
   void CheckForSamePage(ktl::pair<VmCowReclaimResult, const vm_page_t*> reclaimed) {
     const vm_page_t* evicted_page = reclaimed.second;
-    if (likely(evicted_page != prev_evicted_page)) {
+    // Wait until the very end to update prev_evicted_page and prev_eviction_result, because we will
+    // use the old values to perform the check.
+    auto update_prev = fit::defer([&] {
       prev_evicted_page = evicted_page;
-#if LK_DEBUGLEVEL > 1
-      memset(prev_eviction_result, 0, sizeof(prev_eviction_result));
-      snprintf(prev_eviction_result, sizeof(prev_eviction_result), "%s",
-               ToResultString(reclaimed.first));
-#endif
+      prev_eviction_result = reclaimed.first;
+    });
+
+    if (likely(evicted_page != prev_evicted_page)) {
       return;
     }
+
     // Evicting the same page twice in a row indicates a potential bug in reclamation, unless we're
     // in the IncorrectPage failure case, since that indicates a race in page ownership, and we
     // can't expect the VmCowPages to have moved a page it does not own out of the way. Every other
-    // failure case should have moved the page out of the way (by calling MarkAccessed).
-    if (reclaimed.first.is_error() &&
-        reclaimed.first.error_value() == VmCowReclaimFailure::IncorrectPage) {
+    // failure case should have moved the page out of the way (by calling MarkAccessed), so we
+    // should not see the same page in the next eviction attempt.
+    if (prev_eviction_result.is_error() &&
+        prev_eviction_result.error_value() == VmCowReclaimFailure::IncorrectPage) {
       return;
     }
+
     prev_page_evictions++;
     // Print the OOPS only once per eviction attempt to prevent log spam.
     if (!printed_same_page_oops) {
       printed_same_page_oops = true;
       // TODO(https://fxbug.dev/434361683): Temporarily downgrade to printf. This should be an OOPS.
       printf("WARNING: Evictor reclaiming the same page again %p [prev %s cur %s]\n", evicted_page,
-             prev_eviction_result, ToResultString(reclaimed.first));
+             ToResultString(prev_eviction_result), ToResultString(reclaimed.first));
     }
-#if LK_DEBUGLEVEL > 1
-    memset(prev_eviction_result, 0, sizeof(prev_eviction_result));
-    snprintf(prev_eviction_result, sizeof(prev_eviction_result), "%s",
-             ToResultString(reclaimed.first));
-#endif
   }
 };
 
