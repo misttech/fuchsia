@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::helpers::*;
+use crate::helpers;
 use anyhow::Error;
 use fidl::endpoints::create_proxy;
 use std::collections::HashMap;
@@ -18,7 +18,7 @@ pub async fn run_selinux_cases(
     component_runner: &frunner::ComponentRunnerProxy,
 ) -> Result<(), Error> {
     let mut test_commands = HashMap::<String, String>::new();
-    read_tests_list(&mut start_info).await?.drain(..).for_each(|t| {
+    helpers::read_tests_list(&mut start_info).await?.drain(..).for_each(|t| {
         test_commands.insert(t.name, t.command);
     });
 
@@ -31,7 +31,7 @@ pub async fn run_selinux_cases(
         let (case_listener_proxy, case_listener) = create_proxy::<ftest::CaseListenerMarker>();
         run_listener_proxy.on_test_case_started(&test, std_handles, case_listener)?;
 
-        let result = read_selinux_test_result(component_controller.take_event_stream()).await;
+        let result = helpers::read_result(component_controller.take_event_stream()).await;
         case_listener_proxy.finished(&result)?;
     }
 
@@ -64,26 +64,14 @@ fn start_selinux(
         }
     }
 
-    let (numbered_handles, std_handles) = create_numbered_handles();
+    let (numbered_handles, std_handles) = helpers::create_numbered_handles();
     let start_info = frunner::ComponentStartInfo {
         program: Some(fidl_fuchsia_data::Dictionary {
             entries: Some(program_entries),
             ..Default::default()
         }),
         numbered_handles: Some(numbered_handles),
-        ..clone_start_info(base_start_info)?
+        ..helpers::clone_start_info(base_start_info)?
     };
-
-    Ok((start_test_component(start_info, component_runner)?, std_handles))
-}
-
-async fn read_selinux_test_result(
-    event_stream: frunner::ComponentControllerEventStream,
-) -> ftest::Result_ {
-    match read_component_epitaph(event_stream).await {
-        zx::Status::OK => {
-            ftest::Result_ { status: Some(ftest::Status::Passed), ..Default::default() }
-        }
-        _ => ftest::Result_ { status: Some(ftest::Status::Failed), ..Default::default() },
-    }
+    Ok((helpers::start_test_component(start_info, component_runner)?, std_handles))
 }
