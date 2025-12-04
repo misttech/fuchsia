@@ -8,12 +8,11 @@ use crate::vfs::socket::iptables_utils::{self, TableId, string_to_ascii_buffer};
 use crate::vfs::socket::{SockOptValue, SocketDomain, SocketHandle, SocketType};
 use fidl_fuchsia_net_filter as fnet_filter;
 use fidl_fuchsia_net_filter_ext::sync::Controller;
-use fidl_fuchsia_net_filter_ext::{
-    Change, CommitError, ControllerCreationError, ControllerId, PushChangesError,
-};
+use fidl_fuchsia_net_filter_ext::{Change, CommitError, ControllerId, PushChangesError};
 use fuchsia_component::client::connect_to_protocol_sync;
 use itertools::Itertools;
-use starnix_logging::{log_warn, track_stub};
+use starnix_logging::{log_error, log_warn, track_stub};
+use starnix_sync::{KernelIpTables, Locked, OrderedRwLock, Unlocked};
 use starnix_uapi::auth::CAP_NET_ADMIN;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::iptables_flags::NfIpHooks;
@@ -29,7 +28,6 @@ use starnix_uapi::{
 use static_assertions::const_assert_eq;
 use std::mem::size_of;
 use std::ops::{Index, IndexMut};
-use thiserror::Error;
 use zerocopy::{FromBytes, IntoBytes};
 
 const NAMESPACE_ID_PREFIX: &str = "starnix";
@@ -368,23 +366,106 @@ fn default_ipv6_tables() -> IpTablesArray {
     ]
 }
 
-/// Stores [`IpTable`]s associated with each protocol.
-pub struct IpTables {
+#[derive(Default)]
+struct LazyController {
+    controller: Option<Controller>,
+}
+
+impl LazyController {
+    fn get(&mut self) -> Result<&mut Controller, Errno> {
+        if self.controller.is_none() {
+            let control_proxy =
+                connect_to_protocol_sync::<fnet_filter::ControlMarker>().map_err(|e| {
+                    log_error!("failed to connect to fuchsia.net.filter.Control: {e}");
+                    errno!(EIO)
+                })?;
+            self.controller = Some(
+                Controller::new(
+                    &control_proxy,
+                    &ControllerId(NAMESPACE_ID_PREFIX.to_string()),
+                    zx::MonotonicInstant::INFINITE,
+                )
+                .map_err(|e| {
+                    log_error!("failed to create filter controller: {e}");
+                    errno!(EIO)
+                })?,
+            );
+        }
+        Ok(self.controller.as_mut().expect("just ensured this is Some"))
+    }
+}
+
+struct IpTablesState {
     ipv4: IpTablesArray,
     ipv6: IpTablesArray,
 
     /// Controller to configure net filtering state.
     ///
     /// Initialized lazily with `get_controller`.
-    controller: Option<Controller>,
+    controller: LazyController,
 }
 
-#[derive(Debug, Error)]
-enum GetControllerError {
-    #[error("failed to connect to protocol: {0}")]
-    ConnectToProtocol(anyhow::Error),
-    #[error("failed to create controller: {0}")]
-    ControllerCreation(ControllerCreationError),
+impl IpTablesState {
+    fn send_changes_to_net_filter(
+        &mut self,
+        changes: impl Iterator<Item = Change>,
+    ) -> Result<(), Errno> {
+        let controller = self.controller.get()?;
+        for chunk in &changes.chunks(fnet_filter::MAX_BATCH_SIZE as usize) {
+            match controller.push_changes(chunk.collect(), zx::MonotonicInstant::INFINITE) {
+                Ok(()) => {}
+                Err(
+                    e @ (PushChangesError::CallMethod(_)
+                    | PushChangesError::TooManyChanges
+                    | PushChangesError::FidlConversion(_)),
+                ) => {
+                    log_warn!(
+                        "IpTables: failed to call \
+                        fuchsia.net.filter.NamespaceController/PushChanges: {e}"
+                    );
+                    return error!(ECOMM);
+                }
+                Err(e @ PushChangesError::ErrorOnChange(_)) => {
+                    log_warn!(
+                        "IpTables: fuchsia.net.filter.NamespaceController/PushChanges \
+                        returned error: {e}"
+                    );
+                    return error!(EINVAL);
+                }
+            }
+        }
+
+        match controller.commit_idempotent(zx::MonotonicInstant::INFINITE) {
+            Ok(()) => Ok(()),
+            Err(e @ (CommitError::CallMethod(_) | CommitError::FidlConversion(_))) => {
+                log_warn!(
+                    "IpTables: failed to call \
+                    fuchsia.net.filter.NamespaceController/Commit: {e}"
+                );
+                error!(ECOMM)
+            }
+            Err(
+                e @ (CommitError::RuleWithInvalidMatcher(_)
+                | CommitError::RuleWithInvalidAction(_)
+                | CommitError::TransparentProxyWithInvalidMatcher(_)
+                | CommitError::CyclicalRoutineGraph(_)
+                | CommitError::RedirectWithInvalidMatcher(_)
+                | CommitError::MasqueradeWithInvalidMatcher(_)
+                | CommitError::ErrorOnChange(_)),
+            ) => {
+                log_warn!(
+                    "IpTables: fuchsia.net.filter.NamespaceController/Commit \
+                    returned error: {e}"
+                );
+                error!(EINVAL)
+            }
+        }
+    }
+}
+
+/// Stores [`IpTable`]s associated with each protocol.
+pub struct IpTables {
+    state: OrderedRwLock<IpTablesState, KernelIpTables>,
 }
 
 impl IpTables {
@@ -393,26 +474,12 @@ impl IpTables {
         // present on the system before `iptables` client is ran.
         // TODO(https://fxbug.dev/354766238): Propagated default rules to fuchsia.net.filter.
         Self {
-            ipv4: default_ipv4_tables(),
-            ipv6: default_ipv6_tables(),
-            controller: Default::default(),
+            state: OrderedRwLock::new(IpTablesState {
+                ipv4: default_ipv4_tables(),
+                ipv6: default_ipv6_tables(),
+                controller: LazyController::default(),
+            }),
         }
-    }
-
-    fn get_controller(&mut self) -> Result<&mut Controller, GetControllerError> {
-        if self.controller.is_none() {
-            let control_proxy = connect_to_protocol_sync::<fnet_filter::ControlMarker>()
-                .map_err(GetControllerError::ConnectToProtocol)?;
-            self.controller = Some(
-                Controller::new(
-                    &control_proxy,
-                    &ControllerId(NAMESPACE_ID_PREFIX.to_string()),
-                    zx::MonotonicInstant::INFINITE,
-                )
-                .map_err(GetControllerError::ControllerCreation)?,
-            );
-        }
-        Ok(self.controller.as_mut().expect("just ensured this is Some"))
     }
 
     /// Returns `true` if the sockopt can be handled by [`IpTables`].
@@ -445,6 +512,7 @@ impl IpTables {
 
     pub fn getsockopt(
         &self,
+        locked: &mut Locked<Unlocked>,
         current_task: &CurrentTask,
         socket: &SocketHandle,
         optname: u32,
@@ -468,8 +536,8 @@ impl IpTables {
                     let Ok(table_id) = TableId::try_from(&info.name) else {
                         return error!(EINVAL);
                     };
-                    let table = &self.ipv4[table_id];
-
+                    let state = self.state.read(locked);
+                    let table = &state.ipv4[table_id];
                     info.valid_hooks = table.valid_hooks;
                     info.hook_entry = table.hook_entry;
                     info.underflow = table.underflow;
@@ -482,7 +550,8 @@ impl IpTables {
                     let Ok(table_id) = TableId::try_from(&info.name) else {
                         return error!(EINVAL);
                     };
-                    let table = &self.ipv6[table_id];
+                    let state = self.state.read(locked);
+                    let table = &state.ipv6[table_id];
                     info.valid_hooks = table.valid_hooks;
                     info.hook_entry = table.hook_entry;
                     info.underflow = table.underflow;
@@ -500,7 +569,7 @@ impl IpTables {
                     let Ok(table_id) = TableId::try_from(&get_entries.name) else {
                         return error!(EINVAL);
                     };
-                    let mut entry_bytes = self.ipv4[table_id].entries.clone();
+                    let mut entry_bytes = self.state.read(locked).ipv4[table_id].entries.clone();
 
                     if entry_bytes.len() > get_entries.size as usize {
                         log_warn!("Entries are longer than expected so truncating.");
@@ -515,7 +584,7 @@ impl IpTables {
                     let Ok(table_id) = TableId::try_from(&get_entries.name) else {
                         return error!(EINVAL);
                     };
-                    let mut entry_bytes = self.ipv6[table_id].entries.clone();
+                    let mut entry_bytes = self.state.read(locked).ipv6[table_id].entries.clone();
 
                     if entry_bytes.len() > get_entries.size as usize {
                         log_warn!("Entries are longer than expected so truncating.");
@@ -552,7 +621,8 @@ impl IpTables {
     }
 
     pub fn setsockopt(
-        &mut self,
+        &self,
+        locked: &mut Locked<Unlocked>,
         current_task: &CurrentTask,
         socket: &SocketHandle,
         optname: u32,
@@ -566,9 +636,9 @@ impl IpTables {
             IPT_SO_SET_REPLACE => {
                 // TODO(https://fxbug.dev/407842082): The following logic needs to be fixed.
                 if socket.domain == SocketDomain::Inet {
-                    self.replace_ipv4_table(bytes)
+                    self.replace_ipv4_table(locked, bytes)
                 } else {
-                    self.replace_ipv6_table(bytes)
+                    self.replace_ipv6_table(locked, bytes)
                 }
             }
 
@@ -581,9 +651,10 @@ impl IpTables {
                     return error!(EINVAL);
                 };
 
+                let mut state = self.state.write(locked);
                 let entry: &mut IpTable = match socket.domain {
-                    SocketDomain::Inet => &mut self.ipv4[table_id],
-                    _ => &mut self.ipv6[table_id],
+                    SocketDomain::Inet => &mut state.ipv4[table_id],
+                    _ => &mut state.ipv6[table_id],
                 };
 
                 entry.num_counters = counters_info.num_counters;
@@ -601,7 +672,11 @@ impl IpTables {
         }
     }
 
-    fn replace_ipv4_table(&mut self, bytes: Vec<u8>) -> Result<(), Errno> {
+    fn replace_ipv4_table(
+        &self,
+        locked: &mut Locked<Unlocked>,
+        bytes: Vec<u8>,
+    ) -> Result<(), Errno> {
         let table = iptables_utils::IpTable::from_ipt_replace(bytes).map_err(|e| {
             log_warn!("Iptables: encountered error while parsing rules: {e}");
             errno!(EINVAL)
@@ -619,13 +694,18 @@ impl IpTables {
             counters: vec![],
         };
 
-        self.send_changes_to_net_filter(table.into_changes())?;
-        self.ipv4[replace_info.table_id] = iptable_entry;
+        let mut state = self.state.write(locked);
+        state.send_changes_to_net_filter(table.into_changes())?;
+        state.ipv4[replace_info.table_id] = iptable_entry;
 
         Ok(())
     }
 
-    fn replace_ipv6_table(&mut self, bytes: Vec<u8>) -> Result<(), Errno> {
+    fn replace_ipv6_table(
+        &self,
+        locked: &mut Locked<Unlocked>,
+        bytes: Vec<u8>,
+    ) -> Result<(), Errno> {
         let table = iptables_utils::IpTable::from_ip6t_replace(bytes).map_err(|e| {
             log_warn!("Iptables: encountered error while parsing rules: {e}");
             errno!(EINVAL)
@@ -643,74 +723,10 @@ impl IpTables {
             counters: vec![],
         };
 
-        self.send_changes_to_net_filter(table.into_changes())?;
-        self.ipv6[replace_info.table_id] = iptable_entry;
+        let mut state = self.state.write(locked);
+        state.send_changes_to_net_filter(table.into_changes())?;
+        state.ipv6[replace_info.table_id] = iptable_entry;
 
-        Ok(())
-    }
-
-    fn send_changes_to_net_filter(
-        &mut self,
-        changes: impl Iterator<Item = Change>,
-    ) -> Result<(), Errno> {
-        match self.get_controller() {
-            Err(e) => {
-                log_warn!(
-                    "IpTables: could not connect to fuchsia.net.filter.NamespaceController: {e}"
-                );
-            }
-            Ok(controller) => {
-                for chunk in &changes.chunks(fnet_filter::MAX_BATCH_SIZE as usize) {
-                    match controller.push_changes(chunk.collect(), zx::MonotonicInstant::INFINITE) {
-                        Ok(()) => {}
-                        Err(
-                            e @ (PushChangesError::CallMethod(_)
-                            | PushChangesError::TooManyChanges
-                            | PushChangesError::FidlConversion(_)),
-                        ) => {
-                            log_warn!(
-                                "IpTables: failed to call \
-                                fuchsia.net.filter.NamespaceController/PushChanges: {e}"
-                            );
-                            return error!(ECOMM);
-                        }
-                        Err(e @ PushChangesError::ErrorOnChange(_)) => {
-                            log_warn!(
-                                "IpTables: fuchsia.net.filter.NamespaceController/PushChanges \
-                                returned error: {e}"
-                            );
-                            return error!(EINVAL);
-                        }
-                    }
-                }
-
-                match controller.commit_idempotent(zx::MonotonicInstant::INFINITE) {
-                    Ok(()) => {}
-                    Err(e @ (CommitError::CallMethod(_) | CommitError::FidlConversion(_))) => {
-                        log_warn!(
-                            "IpTables: failed to call \
-                            fuchsia.net.filter.NamespaceController/Commit: {e}"
-                        );
-                        return error!(ECOMM);
-                    }
-                    Err(
-                        e @ (CommitError::RuleWithInvalidMatcher(_)
-                        | CommitError::RuleWithInvalidAction(_)
-                        | CommitError::TransparentProxyWithInvalidMatcher(_)
-                        | CommitError::CyclicalRoutineGraph(_)
-                        | CommitError::RedirectWithInvalidMatcher(_)
-                        | CommitError::MasqueradeWithInvalidMatcher(_)
-                        | CommitError::ErrorOnChange(_)),
-                    ) => {
-                        log_warn!(
-                            "IpTables: fuchsia.net.filter.NamespaceController/Commit \
-                            returned error: {e}"
-                        );
-                        return error!(EINVAL);
-                    }
-                }
-            }
-        };
         Ok(())
     }
 }

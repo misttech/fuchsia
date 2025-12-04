@@ -44,8 +44,7 @@ use once_cell::sync::OnceCell;
 use starnix_lifecycle::{AtomicU32Counter, AtomicU64Counter};
 use starnix_logging::{log_debug, log_error, log_info, log_warn};
 use starnix_sync::{
-    FileOpsCore, KernelIpTables, KernelSwapFiles, LockEqualOrBefore, Locked, Mutex, OrderedMutex,
-    OrderedRwLock, RwLock,
+    FileOpsCore, KernelSwapFiles, LockEqualOrBefore, Locked, Mutex, OrderedMutex, RwLock,
 };
 use starnix_types::ownership::{TempRef, WeakRef};
 use starnix_uapi::device_type::DeviceType;
@@ -204,7 +203,7 @@ pub struct Kernel {
     pub remote_block_device_registry: Arc<RemoteBlockDeviceRegistry>,
 
     /// The iptables used for filtering network packets.
-    pub iptables: OrderedRwLock<IpTables, KernelIpTables>,
+    iptables: OnceLock<IpTables>,
 
     /// The futexes shared across processes.
     pub shared_futexes: Arc<FutexTable<SharedFutexKey>>,
@@ -422,8 +421,6 @@ impl Kernel {
         );
         let hrtimer_manager = HrTimerManager::new(&inspect_node);
 
-        let iptables = OrderedRwLock::new(IpTables::new());
-
         let cpu_feature_flags =
             zx::system_get_feature_flags::<CpuFeatureFlags>().unwrap_or_else(|e| {
                 log_debug!("CPU feature flags are only supported on ARM64: {}, reporting 0", e);
@@ -448,7 +445,7 @@ impl Kernel {
             device_registry: Default::default(),
             container_namespace,
             remote_block_device_registry: Default::default(),
-            iptables,
+            iptables: OnceLock::new(),
             shared_futexes: Arc::<FutexTable<SharedFutexKey>>::default(),
             root_uts_ns: Arc::new(RwLock::new(UtsNamespace::default())),
             vdso: Vdso::new(),
@@ -736,6 +733,10 @@ impl Kernel {
             });
             network_netlink
         })
+    }
+
+    pub fn iptables(&self) -> &IpTables {
+        self.iptables.get_or_init(|| IpTables::new())
     }
 
     /// Returns a Proxy to the service used by the container at `filename`.
