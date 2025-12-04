@@ -560,60 +560,60 @@ impl Emitable for RouteNetlinkMessage {
     fn buffer_len(&self) -> usize {
         use self::RouteNetlinkMessage::*;
         match self {
-            | NewLink(ref msg)
-            | DelLink(ref msg)
-            | GetLink(ref msg)
-            | SetLink(ref msg)
-            | NewLinkProp(ref msg)
-            | DelLinkProp(ref msg)
+            | NewLink(msg)
+            | DelLink(msg)
+            | GetLink(msg)
+            | SetLink(msg)
+            | NewLinkProp(msg)
+            | DelLinkProp(msg)
             =>  msg.buffer_len(),
 
-            | NewAddress(ref msg)
-            | DelAddress(ref msg)
-            | GetAddress(ref msg)
+            | NewAddress(msg)
+            | DelAddress(msg)
+            | GetAddress(msg)
             => msg.buffer_len(),
 
-            | NewNeighbour(ref msg)
-            | GetNeighbour(ref msg)
-            | DelNeighbour(ref msg)
+            | NewNeighbour(msg)
+            | GetNeighbour(msg)
+            | DelNeighbour(msg)
             => msg.buffer_len(),
 
-            | NewNeighbourTable(ref msg)
-            | GetNeighbourTable(ref msg)
-            | SetNeighbourTable(ref msg)
+            | NewNeighbourTable(msg)
+            | GetNeighbourTable(msg)
+            | SetNeighbourTable(msg)
             => msg.buffer_len(),
 
-            | NewNeighbourDiscoveryUserOption(ref msg) => msg.buffer_len(),
+            | NewNeighbourDiscoveryUserOption(msg) => msg.buffer_len(),
 
-            | NewRoute(ref msg)
-            | DelRoute(ref msg)
-            | GetRoute(ref msg)
+            | NewRoute(msg)
+            | DelRoute(msg)
+            | GetRoute(msg)
             => msg.buffer_len(),
 
-            NewPrefix(ref msg) => msg.buffer_len(),
+            NewPrefix(msg) => msg.buffer_len(),
 
-            | NewQueueDiscipline(ref msg)
-            | DelQueueDiscipline(ref msg)
-            | GetQueueDiscipline(ref msg)
-            | NewTrafficClass(ref msg)
-            | DelTrafficClass(ref msg)
-            | GetTrafficClass(ref msg)
-            | NewTrafficFilter(ref msg)
-            | DelTrafficFilter(ref msg)
-            | GetTrafficFilter(ref msg)
-            | NewTrafficChain(ref msg)
-            | DelTrafficChain(ref msg)
-            | GetTrafficChain(ref msg)
+            | NewQueueDiscipline(msg)
+            | DelQueueDiscipline(msg)
+            | GetQueueDiscipline(msg)
+            | NewTrafficClass(msg)
+            | DelTrafficClass(msg)
+            | GetTrafficClass(msg)
+            | NewTrafficFilter(msg)
+            | DelTrafficFilter(msg)
+            | GetTrafficFilter(msg)
+            | NewTrafficChain(msg)
+            | DelTrafficChain(msg)
+            | GetTrafficChain(msg)
             => msg.buffer_len(),
 
-            | NewNsId(ref msg)
-            | DelNsId(ref msg)
-            | GetNsId(ref msg)
+            | NewNsId(msg)
+            | DelNsId(msg)
+            | GetNsId(msg)
             => msg.buffer_len(),
 
-            | NewRule(ref msg)
-            | DelRule(ref msg)
-            | GetRule(ref msg)
+            | NewRule(msg)
+            | DelRule(msg)
+            | GetRule(msg)
             => msg.buffer_len()
         }
     }
@@ -622,60 +622,60 @@ impl Emitable for RouteNetlinkMessage {
     fn emit(&self, buffer: &mut [u8]) {
         use self::RouteNetlinkMessage::*;
         match self {
-            | NewLink(ref msg)
-            | DelLink(ref msg)
-            | GetLink(ref msg)
-            | SetLink(ref msg)
-            | NewLinkProp(ref msg)
-            | DelLinkProp(ref msg)
+            | NewLink(msg)
+            | DelLink(msg)
+            | GetLink(msg)
+            | SetLink(msg)
+            | NewLinkProp(msg)
+            | DelLinkProp(msg)
             => msg.emit(buffer),
 
-            | NewAddress(ref msg)
-            | DelAddress(ref msg)
-            | GetAddress(ref msg)
+            | NewAddress(msg)
+            | DelAddress(msg)
+            | GetAddress(msg)
             => msg.emit(buffer),
 
-            | GetNeighbour(ref msg)
-            | NewNeighbour(ref msg)
-            | DelNeighbour(ref msg)
+            | GetNeighbour(msg)
+            | NewNeighbour(msg)
+            | DelNeighbour(msg)
             => msg.emit(buffer),
 
-            | GetNeighbourTable(ref msg)
-            | NewNeighbourTable(ref msg)
-            | SetNeighbourTable(ref msg)
+            | GetNeighbourTable(msg)
+            | NewNeighbourTable(msg)
+            | SetNeighbourTable(msg)
             => msg.emit(buffer),
 
-            | NewNeighbourDiscoveryUserOption(ref msg) => msg.emit(buffer),
+            | NewNeighbourDiscoveryUserOption(msg) => msg.emit(buffer),
 
-            | NewRoute(ref msg)
-            | DelRoute(ref msg)
-            | GetRoute(ref msg)
+            | NewRoute(msg)
+            | DelRoute(msg)
+            | GetRoute(msg)
             => msg.emit(buffer),
 
-            | NewPrefix(ref msg) => msg.emit(buffer),
+            | NewPrefix(msg) => msg.emit(buffer),
 
-            | NewQueueDiscipline(ref msg)
-            | DelQueueDiscipline(ref msg)
-            | GetQueueDiscipline(ref msg)
-            | NewTrafficClass(ref msg)
-            | DelTrafficClass(ref msg)
-            | GetTrafficClass(ref msg)
-            | NewTrafficFilter(ref msg)
-            | DelTrafficFilter(ref msg)
-            | GetTrafficFilter(ref msg)
-            | NewTrafficChain(ref msg)
-            | DelTrafficChain(ref msg)
-            | GetTrafficChain(ref msg)
+            | NewQueueDiscipline(msg)
+            | DelQueueDiscipline(msg)
+            | GetQueueDiscipline(msg)
+            | NewTrafficClass(msg)
+            | DelTrafficClass(msg)
+            | GetTrafficClass(msg)
+            | NewTrafficFilter(msg)
+            | DelTrafficFilter(msg)
+            | GetTrafficFilter(msg)
+            | NewTrafficChain(msg)
+            | DelTrafficChain(msg)
+            | GetTrafficChain(msg)
             => msg.emit(buffer),
 
-            | NewNsId(ref msg)
-            | DelNsId(ref msg)
-            | GetNsId(ref msg)
+            | NewNsId(msg)
+            | DelNsId(msg)
+            | GetNsId(msg)
             => msg.emit(buffer),
 
-            | NewRule(ref msg)
-            | DelRule(ref msg)
-            | GetRule(ref msg)
+            | NewRule(msg)
+            | DelRule(msg)
+            | GetRule(msg)
             => msg.emit(buffer)
         }
     }

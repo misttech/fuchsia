@@ -39,7 +39,7 @@ fuchsia_package_with_single_component("hello_starnix") {
 
 rustc_binary("hello_starnix_integration_test_bin") {
   testonly = true
-  edition = "2021"
+  edition = "2024"
   source_root = "test.rs"
   sources = [ source_root ]
   deps = [

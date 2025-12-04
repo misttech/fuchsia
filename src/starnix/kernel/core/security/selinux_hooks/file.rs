@@ -93,14 +93,14 @@ pub(in crate::security) fn file_receive(
             current_task.into(),
         )?;
         match *bpf_handle {
-            BpfHandle::Map(ref map) => check_bpf_map_access(
+            BpfHandle::Map(map) => check_bpf_map_access(
                 security_server,
                 current_task,
                 receiving_sid,
                 map,
                 permission_flags,
             )?,
-            BpfHandle::Program(ref prog) => {
+            BpfHandle::Program(prog) => {
                 check_bpf_prog_access(security_server, current_task, receiving_sid, prog)?
             }
             _ => {}
@@ -312,7 +312,7 @@ pub(in crate::security) fn mmap_file(
         // The `map` permission shouldn't be checked for BPF handles.
         if let Some(bpf_handle) = file.downcast_file::<BpfHandle>() {
             match *bpf_handle {
-                BpfHandle::Map(ref map) => check_bpf_map_access(
+                BpfHandle::Map(map) => check_bpf_map_access(
                     security_server,
                     current_task,
                     current_sid,

@@ -318,7 +318,7 @@ impl Mount {
     /// The NamespaceNode on which this Mount is mounted.
     fn mountpoint(&self) -> Option<NamespaceNode> {
         let state = self.state.read();
-        let (ref mount, ref entry) = state.mountpoint.as_ref()?;
+        let (mount, entry) = state.mountpoint.as_ref()?;
         Some(NamespaceNode::new(mount.upgrade()?, entry.clone()))
     }
 
@@ -510,7 +510,7 @@ impl Mount {
 impl MountState {
     /// Return this mount's current peer group.
     fn peer_group(&self) -> Option<&Arc<PeerGroup>> {
-        let (ref group, _) = self.peer_group_.as_ref()?;
+        let (group, _) = self.peer_group_.as_ref()?;
         Some(group)
     }
 

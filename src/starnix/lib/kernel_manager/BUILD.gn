@@ -13,7 +13,7 @@ group("tests") {
 }
 
 rustc_library("kernel_manager") {
-  edition = "2021"
+  edition = "2024"
   sources = [
     "src/kernels.rs",
     "src/lib.rs",

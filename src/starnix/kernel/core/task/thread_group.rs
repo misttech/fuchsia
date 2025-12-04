@@ -814,7 +814,7 @@ impl ThreadGroup {
             if let Some(ref parent) = parent {
                 let parent = parent.upgrade();
                 let mut tracer_pid = None;
-                if let Some(ref ptrace) = &task.read().ptrace {
+                if let Some(ptrace) = &task.read().ptrace {
                     tracer_pid = Some(ptrace.get_pid());
                 }
 

@@ -295,7 +295,8 @@ impl RingBuffer {
     /// on a map that has not been dropped, otherwise the behaviour is UB.
     pub unsafe fn submit(addr: u64, flags: RingBufferWakeupPolicy) {
         let addr = addr as usize;
-        let (ringbuf_storage, header) = Self::get_ringbug_and_header_by_addr(addr);
+        #[allow(clippy::undocumented_unsafe_blocks, reason = "2024 edition migration")]
+        let (ringbuf_storage, header) = unsafe { Self::get_ringbug_and_header_by_addr(addr) };
         ringbuf_storage.commit(header, flags, false);
     }
 
@@ -307,7 +308,8 @@ impl RingBuffer {
     /// on a map that has not been dropped, otherwise the behaviour is UB.
     pub unsafe fn discard(addr: u64, flags: RingBufferWakeupPolicy) {
         let addr = addr as usize;
-        let (ringbuf_storage, header) = Self::get_ringbug_and_header_by_addr(addr);
+        #[allow(clippy::undocumented_unsafe_blocks, reason = "2024 edition migration")]
+        let (ringbuf_storage, header) = unsafe { Self::get_ringbug_and_header_by_addr(addr) };
         ringbuf_storage.commit(header, flags, true);
     }
 
@@ -322,12 +324,16 @@ impl RingBuffer {
     ) -> (&'static RingBuffer, &'static RingBufferRecordHeader) {
         let page_size = *MapBuffer::PAGE_SIZE;
         // addr is the data section. First access the header.
-        let header = &*((addr - std::mem::size_of::<RingBufferRecordHeader>())
-            as *const RingBufferRecordHeader);
+        #[allow(clippy::undocumented_unsafe_blocks, reason = "2024 edition migration")]
+        let header = unsafe {
+            &*((addr - std::mem::size_of::<RingBufferRecordHeader>())
+                as *const RingBufferRecordHeader)
+        };
         let addr_page = addr / page_size;
         let mapping_start_page = addr_page - header.page_count as usize - 1;
         let mapping_start_address = mapping_start_page * page_size;
-        let ringbuf_impl = &*(mapping_start_address as *const &RingBuffer);
+        #[allow(clippy::undocumented_unsafe_blocks, reason = "2024 edition migration")]
+        let ringbuf_impl = unsafe { &*(mapping_start_address as *const &RingBuffer) };
         (ringbuf_impl, header)
     }
 }

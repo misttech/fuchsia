@@ -29,7 +29,7 @@ impl ProcessEntry {
 
     fn thread_group(&self) -> Option<&WeakRef<ThreadGroup>> {
         match self {
-            Self::ThreadGroup(ref group) => Some(group),
+            Self::ThreadGroup(group) => Some(group),
             _ => None,
         }
     }

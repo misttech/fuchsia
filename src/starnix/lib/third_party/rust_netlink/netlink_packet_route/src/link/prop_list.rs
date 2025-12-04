@@ -20,7 +20,7 @@ impl Nla for Prop {
     fn value_len(&self) -> usize {
         use self::Prop::*;
         match self {
-            AltIfName(ref string) => string.as_bytes().len() + 1,
+            AltIfName(string) => string.as_bytes().len() + 1,
             Other(nla) => nla.value_len()
         }
     }
@@ -29,7 +29,7 @@ impl Nla for Prop {
     fn emit_value(&self, buffer: &mut [u8]) {
         use self::Prop::*;
         match self {
-            AltIfName(ref string) => {
+            AltIfName(string) => {
                 buffer[..string.len()].copy_from_slice(string.as_bytes());
                 buffer[string.len()] = 0;
             },

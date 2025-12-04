@@ -6,7 +6,7 @@ import("//build/rust/rustc_library.gni")
 
 rustc_library("seq_lock") {
   name = "seq_lock"
-  edition = "2021"
+  edition = "2024"
   version = "0.1.0"
   sources = [ "src/lib.rs" ]
   configs += [ "//src/starnix/build:kernel_library_config" ]

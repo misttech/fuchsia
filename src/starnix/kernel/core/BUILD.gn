@@ -13,7 +13,7 @@ group("tests") {
   deps = [ ":starnix_core_tests" ]
 }
 
-_starnix_core_edition = "2021"
+_starnix_core_edition = "2024"
 _starnix_core_sources = [
   # go/keep-sorted start
   "arch/${current_cpu}/execution.rs",

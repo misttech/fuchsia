@@ -594,12 +594,16 @@ unsafe extern "C" fn service_connector<S: ServiceConnector>(
     provider_handle: *mut zx_handle_t,
 ) -> zx_status_t {
     let status: zx::Status = (|| {
-        let service_name = CStr::from_ptr(service_name)
+        #[allow(clippy::undocumented_unsafe_blocks, reason = "2024 edition migration")]
+        let service_name = unsafe { CStr::from_ptr(service_name) }
             .to_str()
             .map_err(|std::str::Utf8Error { .. }| zx::Status::INVALID_ARGS)?;
 
         S::connect(service_name).map(|channel| {
-            *provider_handle = channel.raw_handle();
+            #[allow(clippy::undocumented_unsafe_blocks, reason = "2024 edition migration")]
+            unsafe {
+                *provider_handle = channel.raw_handle()
+            };
         })
     })()
     .into();
@@ -618,9 +622,14 @@ unsafe extern "C" fn storage_allocator(
 ) -> zx_status_t {
     let zxio_ptr_ptr = out_context as *mut *mut zxio_storage_t;
     let status: zx::Status = (|| {
-        if let Some(zxio_ptr) = zxio_ptr_ptr.as_mut() {
-            if let Some(zxio) = zxio_ptr.as_mut() {
-                *out_storage = zxio;
+        #[allow(clippy::undocumented_unsafe_blocks, reason = "2024 edition migration")]
+        if let Some(zxio_ptr) = unsafe { zxio_ptr_ptr.as_mut() } {
+            #[allow(clippy::undocumented_unsafe_blocks, reason = "2024 edition migration")]
+            if let Some(zxio) = unsafe { zxio_ptr.as_mut() } {
+                #[allow(clippy::undocumented_unsafe_blocks, reason = "2024 edition migration")]
+                unsafe {
+                    *out_storage = zxio
+                };
                 return Ok(());
             }
         }
@@ -726,7 +735,8 @@ unsafe extern "C" fn resolve_token(
     io: *mut zxio::zxio_t,
     token_type: zxio::zxio_token_type_t,
 ) -> zx_handle_t {
-    let io = &mut *(io as *mut ZxioStorage);
+    #[allow(clippy::undocumented_unsafe_blocks, reason = "2024 edition migration")]
+    let io = unsafe { &mut *(io as *mut ZxioStorage) };
     let Some(resolver) = io.token_resolver.as_ref() else {
         return zx::sys::ZX_HANDLE_INVALID;
     };
@@ -988,13 +998,16 @@ impl Zxio {
     pub unsafe fn readv(&self, data: &[zxio::zx_iovec]) -> Result<usize, zx::Status> {
         let flags = zxio::zxio_flags_t::default();
         let mut actual = 0usize;
-        let status = zxio::zxio_readv(
-            self.as_ptr(),
-            data.as_ptr() as *const zxio::zx_iovec,
-            data.len(),
-            flags,
-            &mut actual,
-        );
+        #[allow(clippy::undocumented_unsafe_blocks, reason = "2024 edition migration")]
+        let status = unsafe {
+            zxio::zxio_readv(
+                self.as_ptr(),
+                data.as_ptr() as *const zxio::zx_iovec,
+                data.len(),
+                flags,
+                &mut actual,
+            )
+        };
         zx::ok(status)?;
         Ok(actual)
     }
@@ -1064,14 +1077,17 @@ impl Zxio {
     ) -> Result<usize, zx::Status> {
         let flags = zxio::zxio_flags_t::default();
         let mut actual = 0usize;
-        let status = zxio::zxio_readv_at(
-            self.as_ptr(),
-            offset,
-            data.as_ptr() as *const zxio::zx_iovec,
-            data.len(),
-            flags,
-            &mut actual,
-        );
+        #[allow(clippy::undocumented_unsafe_blocks, reason = "2024 edition migration")]
+        let status = unsafe {
+            zxio::zxio_readv_at(
+                self.as_ptr(),
+                offset,
+                data.as_ptr() as *const zxio::zx_iovec,
+                data.len(),
+                flags,
+                &mut actual,
+            )
+        };
         zx::ok(status)?;
         Ok(actual)
     }
@@ -1111,13 +1127,16 @@ impl Zxio {
     pub unsafe fn writev(&self, data: &[zxio::zx_iovec]) -> Result<usize, zx::Status> {
         let flags = zxio::zxio_flags_t::default();
         let mut actual = 0;
-        let status = zxio::zxio_writev(
-            self.as_ptr(),
-            data.as_ptr() as *const zxio::zx_iovec,
-            data.len(),
-            flags,
-            &mut actual,
-        );
+        #[allow(clippy::undocumented_unsafe_blocks, reason = "2024 edition migration")]
+        let status = unsafe {
+            zxio::zxio_writev(
+                self.as_ptr(),
+                data.as_ptr() as *const zxio::zx_iovec,
+                data.len(),
+                flags,
+                &mut actual,
+            )
+        };
         zx::ok(status)?;
         Ok(actual)
     }
@@ -1162,14 +1181,17 @@ impl Zxio {
     ) -> Result<usize, zx::Status> {
         let flags = zxio::zxio_flags_t::default();
         let mut actual = 0;
-        let status = zxio::zxio_writev_at(
-            self.as_ptr(),
-            offset,
-            data.as_ptr() as *const zxio::zx_iovec,
-            data.len(),
-            flags,
-            &mut actual,
-        );
+        #[allow(clippy::undocumented_unsafe_blocks, reason = "2024 edition migration")]
+        let status = unsafe {
+            zxio::zxio_writev_at(
+                self.as_ptr(),
+                offset,
+                data.as_ptr() as *const zxio::zx_iovec,
+                data.len(),
+                flags,
+                &mut actual,
+            )
+        };
         zx::ok(status)?;
         Ok(actual)
     }
@@ -1725,8 +1747,10 @@ impl Zxio {
 
     pub fn xattr_list(&self) -> Result<Vec<Vec<u8>>, zx::Status> {
         unsafe extern "C" fn callback(context: *mut c_void, name: *const u8, name_len: usize) {
-            let out_names = &mut *(context as *mut Vec<Vec<u8>>);
-            let name_slice = std::slice::from_raw_parts(name, name_len);
+            #[allow(clippy::undocumented_unsafe_blocks, reason = "2024 edition migration")]
+            let out_names = unsafe { &mut *(context as *mut Vec<Vec<u8>>) };
+            #[allow(clippy::undocumented_unsafe_blocks, reason = "2024 edition migration")]
+            let name_slice = unsafe { std::slice::from_raw_parts(name, name_len) };
             out_names.push(name_slice.to_vec());
         }
         let mut out_names = Vec::new();
@@ -1750,15 +1774,19 @@ impl Zxio {
             context: *mut c_void,
             data: zxio::zxio_xattr_data_t,
         ) -> zx_status_t {
-            let out_value = &mut *(context as *mut Vec<u8>);
+            #[allow(clippy::undocumented_unsafe_blocks, reason = "2024 edition migration")]
+            let out_value = unsafe { &mut *(context as *mut Vec<u8>) };
             if data.data.is_null() {
-                let value_vmo = zx::Unowned::<'_, zx::Vmo>::from_raw_handle(data.vmo);
+                #[allow(clippy::undocumented_unsafe_blocks, reason = "2024 edition migration")]
+                let value_vmo = unsafe { zx::Unowned::<'_, zx::Vmo>::from_raw_handle(data.vmo) };
                 match value_vmo.read_to_vec(0, data.len as u64) {
                     Ok(vec) => *out_value = vec,
                     Err(status) => return status.into_raw(),
                 }
             } else {
-                let value_slice = std::slice::from_raw_parts(data.data as *mut u8, data.len);
+                #[allow(clippy::undocumented_unsafe_blocks, reason = "2024 edition migration")]
+                let value_slice =
+                    unsafe { std::slice::from_raw_parts(data.data as *mut u8, data.len) };
                 out_value.extend_from_slice(value_slice);
             }
             zx::Status::OK.into_raw()

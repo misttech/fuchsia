@@ -13,7 +13,7 @@ group("tests") {
 
 rustc_library("loop") {
   name = "starnix-modules-loop"
-  edition = "2021"
+  edition = "2024"
   version = "0.1.0"
   source_root = "lib.rs"
   with_unit_tests = true

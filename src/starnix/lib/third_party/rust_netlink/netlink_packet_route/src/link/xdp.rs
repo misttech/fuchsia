@@ -56,15 +56,15 @@ impl Nla for LinkXdp {
 
     fn emit_value(&self, buffer: &mut [u8]) {
         match self {
-            Self::Fd(ref value) => NativeEndian::write_i32(buffer, *value),
-            Self::Attached(ref value) => buffer[0] = value.as_u8(),
-            Self::Flags(ref value) => NativeEndian::write_u32(buffer, *value),
-            Self::ProgId(ref value) => NativeEndian::write_u32(buffer, *value),
-            Self::DrvProgId(ref value) => NativeEndian::write_u32(buffer, *value),
-            Self::SkbProgId(ref value) => NativeEndian::write_u32(buffer, *value),
-            Self::HwProgId(ref value) => NativeEndian::write_u32(buffer, *value),
-            Self::ExpectedFd(ref value) => NativeEndian::write_u32(buffer, *value),
-            Self::Other(ref nla) => nla.emit_value(buffer),
+            Self::Fd(value) => NativeEndian::write_i32(buffer, *value),
+            Self::Attached(value) => buffer[0] = value.as_u8(),
+            Self::Flags(value) => NativeEndian::write_u32(buffer, *value),
+            Self::ProgId(value) => NativeEndian::write_u32(buffer, *value),
+            Self::DrvProgId(value) => NativeEndian::write_u32(buffer, *value),
+            Self::SkbProgId(value) => NativeEndian::write_u32(buffer, *value),
+            Self::HwProgId(value) => NativeEndian::write_u32(buffer, *value),
+            Self::ExpectedFd(value) => NativeEndian::write_u32(buffer, *value),
+            Self::Other(nla) => nla.emit_value(buffer),
         }
     }
 

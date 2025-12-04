@@ -2568,13 +2568,13 @@ impl ObjectReferenceCount {
 
     /// Increments the reference count of the object.
     fn inc_deferred(&mut self) {
-        let (Self::NoRef(ref mut x) | Self::WaitingAck(ref mut x) | Self::HasRef(ref mut x)) = self;
+        let (Self::NoRef(x) | Self::WaitingAck(x) | Self::HasRef(x)) = self;
         *x += 1;
     }
 
     /// Decrements the reference count of the object.
     fn dec_deferred(&mut self) {
-        let (Self::NoRef(ref mut x) | Self::WaitingAck(ref mut x) | Self::HasRef(ref mut x)) = self;
+        let (Self::NoRef(x) | Self::WaitingAck(x) | Self::HasRef(x)) = self;
         if *x == 0 {
             panic!("dec called with no reference");
         } else {

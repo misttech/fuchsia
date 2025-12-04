@@ -15,7 +15,7 @@ group("runner") {
 
 rustc_binary("starnix_runner_bin") {
   name = "starnix_runner"
-  edition = "2021"
+  edition = "2024"
   with_unit_tests = true
 
   source_root = "main.rs"

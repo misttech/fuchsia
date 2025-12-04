@@ -139,10 +139,14 @@ pub unsafe fn zxio_maybe_faultable_copy_impl(
     ret_dest: bool,
 ) -> bool {
     if let Some(usercopy) = usercopy() {
-        let ret = usercopy.raw_hermetic_copy(dest, src, count, ret_dest);
+        #[allow(clippy::undocumented_unsafe_blocks, reason = "2024 edition migration")]
+        let ret = unsafe { usercopy.raw_hermetic_copy(dest, src, count, ret_dest) };
         ret == count
     } else {
-        zxio_default_maybe_faultable_copy(dest, src, count, ret_dest)
+        #[allow(clippy::undocumented_unsafe_blocks, reason = "2024 edition migration")]
+        unsafe {
+            zxio_default_maybe_faultable_copy(dest, src, count, ret_dest)
+        }
     }
 }
 

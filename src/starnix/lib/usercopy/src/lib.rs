@@ -228,8 +228,10 @@ unsafe fn assume_initialized_until(
     let (init_bytes, uninit_bytes) = buf.split_at_mut(initialized_until);
     debug_assert_eq!(init_bytes.len(), initialized_until);
 
-    let init_bytes =
-        std::slice::from_raw_parts_mut(init_bytes.as_mut_ptr() as *mut u8, init_bytes.len());
+    #[allow(clippy::undocumented_unsafe_blocks, reason = "2024 edition migration")]
+    let init_bytes = unsafe {
+        std::slice::from_raw_parts_mut(init_bytes.as_mut_ptr() as *mut u8, init_bytes.len())
+    };
 
     (init_bytes, uninit_bytes)
 }
@@ -429,7 +431,10 @@ impl Usercopy {
         count: usize,
         ret_dest: bool,
     ) -> usize {
-        do_hermetic_copy(hermetic_copy, dest as usize, source as usize, count, ret_dest)
+        #[allow(clippy::undocumented_unsafe_blocks, reason = "2024 edition migration")]
+        unsafe {
+            do_hermetic_copy(hermetic_copy, dest as usize, source as usize, count, ret_dest)
+        }
     }
 
     /// Zeros `count` bytes to starting at `dest_addr`.

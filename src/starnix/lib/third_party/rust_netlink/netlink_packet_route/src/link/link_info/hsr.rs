@@ -49,7 +49,7 @@ impl Nla for InfoHsr {
             MulticastSpec(value) | Version(value) => buffer[0] = *value,
             SeqNr(value) => NativeEndian::write_u16(buffer, *value),
             Protocol(value) => buffer[0] = (*value).into(),
-            SupervisionAddr(ref value) => buffer.copy_from_slice(&value[..]),
+            SupervisionAddr(value) => buffer.copy_from_slice(&value[..]),
             Other(nla) => nla.emit_value(buffer),
         }
     }

@@ -17,7 +17,7 @@ group("tests") {
 rustc_test("integration_test") {
   testonly = true
   name = "test_runner"
-  edition = "2021"
+  edition = "2024"
 
   deps = [
     "//sdk/fidl/fuchsia.hardware.power.statecontrol:fuchsia.hardware.power.statecontrol_rust",

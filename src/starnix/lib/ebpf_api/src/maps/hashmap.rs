@@ -369,7 +369,10 @@ mod internal {
         /// to this entry are acquired/released. Unused entry should be
         /// returned to the free list.
         unsafe fn ref_count(&self) -> &AtomicU32 {
-            &self.buf.get_ptr::<DataEntryHeader>(0).unwrap().deref().ref_count
+            #[allow(clippy::undocumented_unsafe_blocks, reason = "2024 edition migration")]
+            unsafe {
+                &self.buf.get_ptr::<DataEntryHeader>(0).unwrap().deref().ref_count
+            }
         }
 
         fn get_ref_count(&self) -> u32 {
@@ -384,7 +387,10 @@ mod internal {
         /// Caller must ensure linked list consistency, i.e. the entry is in
         /// only one list, there are no cycles, etc.
         unsafe fn set_next(&mut self, next: EntryIndex) {
-            self.buf.get_ptr::<DataEntryHeader>(0).unwrap().deref_mut().next = next
+            #[allow(clippy::undocumented_unsafe_blocks, reason = "2024 edition migration")]
+            unsafe {
+                self.buf.get_ptr::<DataEntryHeader>(0).unwrap().deref_mut().next = next
+            }
         }
 
         pub fn key(&self) -> &[u8] {
@@ -403,10 +409,13 @@ mod internal {
         /// The key can be updated only when the entry is being inserted to a
         /// bucket.
         unsafe fn key_mut(&mut self) -> &mut [u8] {
-            std::slice::from_raw_parts_mut(
-                self.buf.raw_ptr().byte_offset(DATA_ENTRY_HEADER_SIZE as isize),
-                self.key_size as usize,
-            )
+            #[allow(clippy::undocumented_unsafe_blocks, reason = "2024 edition migration")]
+            unsafe {
+                std::slice::from_raw_parts_mut(
+                    self.buf.raw_ptr().byte_offset(DATA_ENTRY_HEADER_SIZE as isize),
+                    self.key_size as usize,
+                )
+            }
         }
 
         /// Returns the buffer pointing at the element value.

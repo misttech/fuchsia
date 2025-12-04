@@ -8,7 +8,7 @@ import("//build/rust/rustc_library.gni")
 
 if (is_host) {
   rustc_library("tar_img_extract") {
-    edition = "2021"
+    edition = "2024"
     sources = [
       "src/docker_archive.rs",
       "src/layered_image.rs",
@@ -29,7 +29,7 @@ if (is_host) {
   }
 
   rustc_binary("tar_to_pkg_bin") {
-    edition = "2021"
+    edition = "2024"
     sources = [ "src/main.rs" ]
     deps = [
       ":tar_img_extract",

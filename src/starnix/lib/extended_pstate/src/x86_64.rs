@@ -169,11 +169,12 @@ impl State {
     #[inline(always)]
     // Safety: See comment in lib.rs.
     pub(crate) unsafe fn restore(&self) {
+        #[allow(clippy::undocumented_unsafe_blocks, reason = "2024 edition migration")]
         match self.strategy {
-            Strategy::XSave | Strategy::XSaveOpt => {
+            Strategy::XSave | Strategy::XSaveOpt => unsafe {
                 std::arch::x86_64::_xrstor(self.buffer.addr(), SUPPORTED_XSAVE_FEATURES)
-            }
-            Strategy::FXSave => std::arch::x86_64::_fxrstor(self.buffer.addr()),
+            },
+            Strategy::FXSave => unsafe { std::arch::x86_64::_fxrstor(self.buffer.addr()) },
         }
     }
 

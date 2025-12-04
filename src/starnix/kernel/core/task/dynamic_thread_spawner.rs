@@ -62,7 +62,10 @@ impl DynamicThreadSpawner {
     /// This method will use an idle thread in the pool if one is available, otherwise it will
     /// start a new thread. When this method returns, it is guaranteed that a thread is
     /// responsible to start running the closure.
-    pub fn spawn_and_get_result<R, F>(&self, f: F) -> impl Future<Output = Result<R, Errno>>
+    pub fn spawn_and_get_result<R, F>(
+        &self,
+        f: F,
+    ) -> impl Future<Output = Result<R, Errno>> + use<R, F>
     where
         R: Send + 'static,
         F: FnOnce(&mut Locked<Unlocked>, &CurrentTask) -> R + Send + 'static,

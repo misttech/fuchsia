@@ -11,7 +11,7 @@ fuchsia_package_with_single_component("hvdcp_opti") {
 
 rustc_library("hvdcp_opti_module") {
   name = "starnix-modules-hvdcp-opti"
-  edition = "2021"
+  edition = "2024"
   version = "0.1.0"
   source_root = "lib.rs"
 

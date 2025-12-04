@@ -599,7 +599,7 @@ impl SocketOps for UnixSocket {
             (None, Some(_), SocketType::Stream) => return error!(EOPNOTSUPP),
             (None, Some(_), SocketType::SeqPacket) => return error!(ENOTCONN),
             (Some(_), Some(_), _) => return error!(EISCONN),
-            (_, Some(SocketAddress::Unix(ref name)), _) => {
+            (_, Some(SocketAddress::Unix(name)), _) => {
                 resolve_unix_socket_address(locked, current_task, name.as_ref())?
             }
             (_, Some(_), _) => return error!(EINVAL),

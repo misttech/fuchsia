@@ -41,7 +41,10 @@ impl ExtendedPstateState {
     where
         F: FnOnce() -> R,
     {
-        self.restore();
+        #[allow(clippy::undocumented_unsafe_blocks, reason = "2024 edition migration")]
+        unsafe {
+            self.restore();
+        }
         let r = f();
         self.save();
         r
@@ -66,7 +69,10 @@ impl ExtendedPstateState {
     /// point status and control register state including callee-saved registers. This should be
     /// used in conjunction with save() to switch to an alternate extended processor state.
     unsafe fn restore(&self) {
-        self.state.restore()
+        #[allow(clippy::undocumented_unsafe_blocks, reason = "2024 edition migration")]
+        unsafe {
+            self.state.restore()
+        }
     }
 
     pub fn reset(&mut self) {
@@ -125,13 +131,19 @@ impl ExtendedPstateState {
 #[unsafe(no_mangle)]
 unsafe extern "C" fn restore_extended_pstate(state_addr: usize) {
     let state = state_addr as *mut ExtendedPstateState;
-    (&*state).restore()
+    #[allow(clippy::undocumented_unsafe_blocks, reason = "2024 edition migration")]
+    unsafe {
+        (&*state).restore()
+    }
 }
 
 #[unsafe(no_mangle)]
 unsafe extern "C" fn save_extended_pstate(state_addr: usize) {
     let state = state_addr as *mut ExtendedPstateState;
-    (&mut *state).save()
+    #[allow(clippy::undocumented_unsafe_blocks, reason = "2024 edition migration")]
+    unsafe {
+        (&mut *state).save()
+    }
 }
 
 #[cfg(test)]

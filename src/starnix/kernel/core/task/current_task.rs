@@ -515,7 +515,7 @@ impl CurrentTask {
         } else if task_state.is_ptrace_listening() {
             // A PTRACE_LISTEN is a state where we can get signals and notify a
             // ptracer, but otherwise remain blocked.
-            if let Some(ref mut ptrace) = &mut task_state.ptrace {
+            if let Some(ptrace) = &mut task_state.ptrace {
                 ptrace.set_last_signal(Some(SignalInfo::default(SIGTRAP)));
                 ptrace.set_last_event(Some(PtraceEventData::new_from_event(PtraceEvent::Stop, 0)));
             }
@@ -1935,7 +1935,7 @@ impl CurrentTask {
         clone_args: &clone_args,
     ) -> (PtraceOptions, Option<PtraceCoreState>) {
         let state = self.write();
-        if let Some(ref ptrace) = &state.ptrace {
+        if let Some(ptrace) = &state.ptrace {
             ptrace.get_core_state_for_clone(clone_args)
         } else {
             (PtraceOptions::empty(), None)
@@ -1958,7 +1958,7 @@ impl CurrentTask {
         if !trace_kind.is_empty() {
             {
                 let mut state = self.write();
-                if let Some(ref mut ptrace) = &mut state.ptrace {
+                if let Some(ptrace) = &mut state.ptrace {
                     if !ptrace.has_option(trace_kind) {
                         // If this would be a TRACEEXEC, but TRACEEXEC is not
                         // turned on, then send a SIGTRAP.

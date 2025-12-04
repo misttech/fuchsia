@@ -392,28 +392,28 @@ impl CallbackState {
 
     fn rewrite_pids(&mut self, protobuf_blob: &Vec<u8>) -> anyhow::Result<Vec<u8>> {
         let mut proto = decode_trace(protobuf_blob.as_slice())?;
-        for ref mut p in &mut proto.packet {
+        for p in &mut proto.packet {
             if let Some(ref mut data) = p.data {
                 match data {
-                    trace_packet::Data::FrameTimelineEvent(ref mut frame_timeline_event) => {
-                        if let Some(ref mut evt) = &mut frame_timeline_event.event {
+                    trace_packet::Data::FrameTimelineEvent(frame_timeline_event) => {
+                        if let Some(evt) = &mut frame_timeline_event.event {
                             // Update the linux pid to the Fuchsia pid. Each event has its own
                             // match arm since the variant data is of a different type for each event.
                             match evt {
                                 Event::ExpectedDisplayFrameStart(ExpectedDisplayFrameStart {
-                                    ref mut pid,
+                                    pid,
                                     ..
                                 })
                                 | Event::ActualDisplayFrameStart(ActualDisplayFrameStart {
-                                    ref mut pid,
+                                    pid,
                                     ..
                                 })
                                 | Event::ExpectedSurfaceFrameStart(ExpectedSurfaceFrameStart {
-                                    ref mut pid,
+                                    pid,
                                     ..
                                 })
                                 | Event::ActualSurfaceFrameStart(ActualSurfaceFrameStart {
-                                    ref mut pid,
+                                    pid,
                                     ..
                                 }) => {
                                     pid.as_mut().map(|pid| {
@@ -424,14 +424,14 @@ impl CallbackState {
                             }
                         }
                     }
-                    trace_packet::Data::FtraceEvents(ref mut ftrace_bundle) => {
-                        for ref mut evt in &mut ftrace_bundle.event {
+                    trace_packet::Data::FtraceEvents(ftrace_bundle) => {
+                        for evt in &mut ftrace_bundle.event {
                             if let Some(ref mut pid) = evt.pid {
                                 *pid = self.map_thread_to_koid_val(*pid as i32) as u32;
                             }
                             if let Some(ref mut event_data) = evt.event {
                                 match event_data {
-                                    Print(ref mut print) => {
+                                    Print(print) => {
                                         if let Some(ref mut data) = print.buf {
                                             *data = self.map_print_event(data)
                                         }

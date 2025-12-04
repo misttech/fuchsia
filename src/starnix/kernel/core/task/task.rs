@@ -680,7 +680,7 @@ impl TaskMutableState<Base = Task> {
                 self.copy_state_from(current_task);
             }
         }
-        if let Some(ref mut ptrace) = &mut self.ptrace {
+        if let Some(ptrace) = &mut self.ptrace {
             ptrace.set_last_signal(siginfo);
             ptrace.set_last_event(event);
         }
@@ -1081,7 +1081,7 @@ impl Task {
         let exit_signal = self.thread_group().read().exit_signal.clone();
         let mut state = self.write();
         state.set_stopped(StopState::ForceAwake, None, None, None);
-        if let Some(ref mut ptrace) = &mut state.ptrace {
+        if let Some(ptrace) = &mut state.ptrace {
             // Add a zombie that the ptracer will notice.
             ptrace.last_signal_waitable = true;
             let tracer_pid = ptrace.get_pid();

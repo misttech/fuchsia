@@ -54,7 +54,7 @@ static_library("usercopy_assembly_routines") {
 }
 
 rustc_library("usercopy") {
-  edition = "2021"
+  edition = "2024"
   sources = [ "src/lib.rs" ]
   deps = [
     "//sdk/rust/zx",

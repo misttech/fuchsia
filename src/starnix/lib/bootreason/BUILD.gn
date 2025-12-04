@@ -10,7 +10,7 @@ import("//src/starnix/build/starnix_linux_executable.gni")
 import("//src/starnix/kernel/starnix.gni")
 
 rustc_library("bootreason") {
-  edition = "2021"
+  edition = "2024"
   sources = [ "src/lib.rs" ]
   deps = [
     "//sdk/fidl/fuchsia.feedback:fuchsia.feedback_rust",
@@ -35,7 +35,7 @@ group("tests") {
 
 rustc_test("bootreason_test") {
   testonly = true
-  edition = "2021"
+  edition = "2024"
   source_root = "tests/lib.rs"
   sources = [ "tests/lib.rs" ]
   deps = [

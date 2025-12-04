@@ -6,7 +6,7 @@ import("//build/components.gni")
 import("//src/starnix/build/starnix_linux_rustc_binary.gni")
 
 starnix_linux_rustc_binary("bin") {
-  edition = "2021"
+  edition = "2024"
   output_name = "hello_debian_rust"
   source_root = "hello_debian.rs"
   sources = [ source_root ]

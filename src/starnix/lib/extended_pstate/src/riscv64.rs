@@ -22,7 +22,7 @@ pub struct RiscvVectorCsrs {
 
 // Helpers for V extension, see `riscv64_vector.S`. We cannot use inline asm for these yet because
 // support for V extension in Rust is not stable yet.
-extern "C" {
+unsafe extern "C" {
     fn get_riscv64_vlenb() -> usize;
 
     #[allow(improper_ctypes)]
@@ -103,47 +103,50 @@ impl State {
     #[inline(always)]
     // Safety: See comment in lib.rs.
     pub(crate) unsafe fn restore(&self) {
-        asm!(
-            "fld  f0,  0 * 8({regs})",
-            "fld  f1,  1 * 8({regs})",
-            "fld  f2,  2 * 8({regs})",
-            "fld  f3,  3 * 8({regs})",
-            "fld  f4,  4 * 8({regs})",
-            "fld  f5,  5 * 8({regs})",
-            "fld  f6,  6 * 8({regs})",
-            "fld  f7,  7 * 8({regs})",
-            "fld  f8,  8 * 8({regs})",
-            "fld  f9,  9 * 8({regs})",
-            "fld f10, 10 * 8({regs})",
-            "fld f11, 11 * 8({regs})",
-            "fld f12, 12 * 8({regs})",
-            "fld f13, 13 * 8({regs})",
-            "fld f14, 14 * 8({regs})",
-            "fld f15, 15 * 8({regs})",
-            "fld f16, 16 * 8({regs})",
-            "fld f17, 17 * 8({regs})",
-            "fld f18, 18 * 8({regs})",
-            "fld f19, 19 * 8({regs})",
-            "fld f20, 20 * 8({regs})",
-            "fld f21, 21 * 8({regs})",
-            "fld f22, 22 * 8({regs})",
-            "fld f23, 23 * 8({regs})",
-            "fld f24, 24 * 8({regs})",
-            "fld f25, 25 * 8({regs})",
-            "fld f26, 26 * 8({regs})",
-            "fld f27, 27 * 8({regs})",
-            "fld f28, 28 * 8({regs})",
-            "fld f29, 29 * 8({regs})",
-            "fld f30, 30 * 8({regs})",
-            "fld f31, 31 * 8({regs})",
-            regs = in(reg) &self.fp_registers,
-        );
-        asm!(
-            "fscsr {fcsr}",
-            fcsr = in(reg) self.fcsr,
-        );
+        #[allow(clippy::undocumented_unsafe_blocks, reason = "2024 edition migration")]
+        unsafe {
+            asm!(
+                "fld  f0,  0 * 8({regs})",
+                "fld  f1,  1 * 8({regs})",
+                "fld  f2,  2 * 8({regs})",
+                "fld  f3,  3 * 8({regs})",
+                "fld  f4,  4 * 8({regs})",
+                "fld  f5,  5 * 8({regs})",
+                "fld  f6,  6 * 8({regs})",
+                "fld  f7,  7 * 8({regs})",
+                "fld  f8,  8 * 8({regs})",
+                "fld  f9,  9 * 8({regs})",
+                "fld f10, 10 * 8({regs})",
+                "fld f11, 11 * 8({regs})",
+                "fld f12, 12 * 8({regs})",
+                "fld f13, 13 * 8({regs})",
+                "fld f14, 14 * 8({regs})",
+                "fld f15, 15 * 8({regs})",
+                "fld f16, 16 * 8({regs})",
+                "fld f17, 17 * 8({regs})",
+                "fld f18, 18 * 8({regs})",
+                "fld f19, 19 * 8({regs})",
+                "fld f20, 20 * 8({regs})",
+                "fld f21, 21 * 8({regs})",
+                "fld f22, 22 * 8({regs})",
+                "fld f23, 23 * 8({regs})",
+                "fld f24, 24 * 8({regs})",
+                "fld f25, 25 * 8({regs})",
+                "fld f26, 26 * 8({regs})",
+                "fld f27, 27 * 8({regs})",
+                "fld f28, 28 * 8({regs})",
+                "fld f29, 29 * 8({regs})",
+                "fld f30, 30 * 8({regs})",
+                "fld f31, 31 * 8({regs})",
+                regs = in(reg) &self.fp_registers,
+            );
+            asm!(
+                "fscsr {fcsr}",
+                fcsr = in(reg) self.fcsr,
+            );
 
-        restore_riscv64_v_registers(self.v_registers.as_ptr(), &self.vcsrs);
+            restore_riscv64_v_registers(self.v_registers.as_ptr(), &self.vcsrs);
+        }
     }
 
     pub fn reset(&mut self) {

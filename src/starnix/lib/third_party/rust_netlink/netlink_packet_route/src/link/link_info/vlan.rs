@@ -42,7 +42,7 @@ impl Nla for InfoVlan {
 
     fn emit_value(&self, buffer: &mut [u8]) {
         match self {
-            Self::EgressQos(ref mappings) | Self::IngressQos(ref mappings) => {
+            Self::EgressQos(mappings) | Self::IngressQos(mappings) => {
                 mappings.as_slice().emit(buffer)
             }
             Self::Id(value) => NativeEndian::write_u16(buffer, *value),

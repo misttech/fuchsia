@@ -11,7 +11,7 @@ group("tests") {
 }
 
 rustc_library("expando") {
-  edition = "2021"
+  edition = "2024"
   sources = [ "src/lib.rs" ]
   deps = [ "//src/starnix/lib/starnix_sync" ]
 

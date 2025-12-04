@@ -6,7 +6,7 @@ import("//build/rust/rustc_library.gni")
 import("//src/starnix/build/args.gni")
 
 rustc_library("linux_uapi") {
-  edition = "2021"
+  edition = "2024"
 
   sources = [
     "src/lib.rs",

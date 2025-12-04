@@ -8,7 +8,7 @@ import("//build/rust/rustc_library.gni")
 
 if (is_host) {
   rustc_binary("gen_docker_container") {
-    edition = "2021"
+    edition = "2024"
     sources = [ "src/main.rs" ]
     deps = [
       "//src/starnix/tools/tar_to_pkg:tar_img_extract",

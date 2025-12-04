@@ -18,7 +18,7 @@ group("tests") {
 
 rustc_test("bin") {
   testonly = true
-  edition = "2021"
+  edition = "2024"
   output_name = "starnix_fp_stack_glue_test"
   sources = [ "src/lib.rs" ]
   deps = [

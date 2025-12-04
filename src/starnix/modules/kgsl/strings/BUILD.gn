@@ -10,7 +10,7 @@ group("strings") {
 
 rustc_library("kgsl_strings") {
   visibility = [ ":*" ]
-  edition = "2021"
+  edition = "2024"
   version = "0.1.0"
   source_root = "$target_gen_dir/lib.rs"
 

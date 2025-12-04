@@ -14,7 +14,7 @@ group("tests") {
 
 rustc_binary("bin") {
   testonly = true
-  edition = "2021"
+  edition = "2024"
   output_name = "boot_notifier_test"
   sources = [ "src/main.rs" ]
   deps = [

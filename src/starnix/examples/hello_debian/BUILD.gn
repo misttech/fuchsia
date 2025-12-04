@@ -31,7 +31,7 @@ group("tests") {
 # This binary is used in the integration tests for both C++ and Rust examples.
 rustc_binary("hello_debian_verifier") {
   testonly = true
-  edition = "2021"
+  edition = "2024"
   source_root = "hello_debian_verifier.rs"
   sources = [ source_root ]
   deps = [

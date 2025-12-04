@@ -43,7 +43,7 @@ fuchsia_component("stat_encrypted_file") {
 }
 
 rustc_test("remotevol_stat_locked_file_integration_test_bin") {
-  edition = "2021"
+  edition = "2024"
   source_root = "src/stat_locked_file_test.rs"
   sources = [ source_root ]
   deps = [

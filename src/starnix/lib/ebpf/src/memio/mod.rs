@@ -51,13 +51,19 @@ impl<'a, T> EbpfPtr<'a, T> {
     /// Caller must ensure that the value cannot be updated by other threads
     /// while the returned reference is live.
     pub unsafe fn deref(&self) -> &'a T {
-        &*self.ptr
+        #[allow(clippy::undocumented_unsafe_blocks, reason = "2024 edition migration")]
+        unsafe {
+            &*self.ptr
+        }
     }
 
     /// # Safety
     /// Caller must ensure that the value is not being used by other threads.
     pub unsafe fn deref_mut(&self) -> &'a mut T {
-        &mut *self.ptr
+        #[allow(clippy::undocumented_unsafe_blocks, reason = "2024 edition migration")]
+        unsafe {
+            &mut *self.ptr
+        }
     }
 }
 
@@ -156,7 +162,10 @@ impl<'a> EbpfBufferPtr<'a> {
     // SAFETY: caller must ensure that the value at the specified offset fits
     // the buffer.
     unsafe fn get_ptr_internal<T>(&self, offset: usize) -> EbpfPtr<'a, T> {
-        EbpfPtr::new(self.ptr.byte_offset(offset as isize) as *mut T)
+        #[allow(clippy::undocumented_unsafe_blocks, reason = "2024 edition migration")]
+        unsafe {
+            EbpfPtr::new(self.ptr.byte_offset(offset as isize) as *mut T)
+        }
     }
 
     /// Returns a pointer to a value of type `T` at the specified `offset`.

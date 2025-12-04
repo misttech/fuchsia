@@ -28,7 +28,7 @@ test_deps = [
 rustc_library("remotevol_fuchsia_test_util") {
   testonly = true
   name = "remotevol_fuchsia_test_util"
-  edition = "2021"
+  edition = "2024"
   source_root = "lib/fuchsia.rs"
   sources = [ source_root ]
   deps = [
@@ -46,7 +46,7 @@ rustc_library("remotevol_fuchsia_test_util") {
 rustc_library("remotevol_linux_test_util") {
   testonly = true
   name = "remotevol_linux_test_util"
-  edition = "2021"
+  edition = "2024"
   source_root = "lib/linux.rs"
   sources = [ source_root ]
   deps = [
@@ -57,7 +57,7 @@ rustc_library("remotevol_linux_test_util") {
 }
 
 rustc_test("remotevol_shutdown_integration_test_bin") {
-  edition = "2021"
+  edition = "2024"
   source_root = "src/shutdown.rs"
   sources = [ source_root ]
   deps = test_deps
@@ -71,7 +71,7 @@ rustc_test("remotevol_shutdown_integration_test_bin") {
 }
 
 rustc_test("remotevol_key_file_integration_test_bin") {
-  edition = "2021"
+  edition = "2024"
   source_root = "src/key_file.rs"
   sources = [ source_root ]
   deps = test_deps

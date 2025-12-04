@@ -766,7 +766,12 @@ impl OutputBuffer for VecOutputBuffer {
 
         self.capacity -= length;
         let current_len = self.buffer.len();
-        self.buffer.set_len(current_len + length);
+        // SAFETY: We checked that length <= self.available(), and we updated self.capacity.
+        // self.available() is self.capacity - self.buffer.len().
+        // So length <= self.capacity - self.buffer.len()
+        // self.buffer.len() + length <= self.capacity.
+        // The buffer has at least self.capacity capacity (see VecOutputBuffer::new).
+        unsafe { self.buffer.set_len(current_len + length) };
         Ok(())
     }
 }

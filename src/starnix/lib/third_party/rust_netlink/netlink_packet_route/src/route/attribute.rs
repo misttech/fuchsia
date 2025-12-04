@@ -176,7 +176,7 @@ impl Nla for RouteAttribute {
             Self::MulticastExpires(_) => RTA_EXPIRES,
             Self::Uid(_) => RTA_UID,
             Self::TtlPropagate(_) => RTA_TTL_PROPAGATE,
-            Self::Other(ref attr) => attr.kind(),
+            Self::Other(attr) => attr.kind(),
         }
     }
 }

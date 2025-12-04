@@ -30,7 +30,7 @@ impl Nla for TcStats2 {
             Self::Basic(v) => v.buffer_len(),
             Self::Queue(v) => v.buffer_len(),
             Self::BasicHw(v) => v.buffer_len(),
-            Self::Other(ref nla) => nla.value_len(),
+            Self::Other(nla) => nla.value_len(),
         }
     }
 
@@ -40,7 +40,7 @@ impl Nla for TcStats2 {
             Self::Basic(v) => v.emit(buffer),
             Self::Queue(v) => v.emit(buffer),
             Self::BasicHw(v) => v.emit(buffer),
-            Self::Other(ref nla) => nla.emit_value(buffer),
+            Self::Other(nla) => nla.emit_value(buffer),
         }
     }
 
@@ -50,7 +50,7 @@ impl Nla for TcStats2 {
             Self::Basic(_) => TCA_STATS_BASIC,
             Self::Queue(_) => TCA_STATS_QUEUE,
             Self::BasicHw(_) => TCA_STATS_BASIC_HW,
-            Self::Other(ref nla) => nla.kind(),
+            Self::Other(nla) => nla.kind(),
         }
     }
 }

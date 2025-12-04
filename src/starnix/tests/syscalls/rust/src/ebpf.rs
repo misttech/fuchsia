@@ -32,12 +32,15 @@ mod tests {
     }
 
     unsafe fn bpf(command: linux_uapi::bpf_cmd, attr: &bpf_attr) -> Result<i32, std::io::Error> {
-        let result = libc::syscall(
-            linux_uapi::__NR_bpf.into(),
-            command,
-            attr as *const bpf_attr,
-            std::mem::size_of_val(attr),
-        );
+        #[allow(clippy::undocumented_unsafe_blocks, reason = "2024 edition migration")]
+        let result = unsafe {
+            libc::syscall(
+                linux_uapi::__NR_bpf.into(),
+                command,
+                attr as *const bpf_attr,
+                std::mem::size_of_val(attr),
+            )
+        };
         (result >= 0)
             .then_some(result as i32)
             .ok_or_else(|| std::io::Error::from_raw_os_error(-result as i32))

@@ -17,7 +17,7 @@ group("correct_pid") {
 
 rustc_binary("starnix_pid_test_bin") {
   testonly = true
-  edition = "2021"
+  edition = "2024"
   sources = [ "src/main.rs" ]
   deps = [
     "//sdk/fidl/fuchsia.component:fuchsia.component_rust",

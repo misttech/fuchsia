@@ -1650,10 +1650,8 @@ impl Entry {
                     flg_cmp: _,
                 }) => {
                     // TCP match extension is only valid if protocol is specified as TCP.
-                    let Some(fnet_matchers_ext::TransportProtocol::Tcp {
-                        ref mut src_port,
-                        ref mut dst_port,
-                    }) = fnet_filter_matchers.transport_protocol.as_mut()
+                    let Some(fnet_matchers_ext::TransportProtocol::Tcp { src_port, dst_port }) =
+                        fnet_filter_matchers.transport_protocol.as_mut()
                     else {
                         return Err(IpTableParseError::MatchExtensionDoesNotMatchProtocol);
                     };
@@ -1683,10 +1681,8 @@ impl Entry {
                 }
                 Matcher::Udp(xt_udp { spts, dpts, invflags, __bindgen_padding_0 }) => {
                     // UDP match extension is only valid if protocol is specified as UDP.
-                    let Some(fnet_matchers_ext::TransportProtocol::Udp {
-                        ref mut src_port,
-                        ref mut dst_port,
-                    }) = fnet_filter_matchers.transport_protocol.as_mut()
+                    let Some(fnet_matchers_ext::TransportProtocol::Udp { src_port, dst_port }) =
+                        fnet_filter_matchers.transport_protocol.as_mut()
                     else {
                         return Err(IpTableParseError::MatchExtensionDoesNotMatchProtocol);
                     };

@@ -42,10 +42,10 @@ impl Emitable for SockDiagMessage {
         use SockDiagMessage::*;
 
         match self {
-            InetRequest(ref msg) => msg.buffer_len(),
-            InetResponse(ref msg) => msg.buffer_len(),
-            UnixRequest(ref msg) => msg.buffer_len(),
-            UnixResponse(ref msg) => msg.buffer_len(),
+            InetRequest(msg) => msg.buffer_len(),
+            InetResponse(msg) => msg.buffer_len(),
+            UnixRequest(msg) => msg.buffer_len(),
+            UnixResponse(msg) => msg.buffer_len(),
         }
     }
 
@@ -53,10 +53,10 @@ impl Emitable for SockDiagMessage {
         use SockDiagMessage::*;
 
         match self {
-            InetRequest(ref msg) => msg.emit(buffer),
-            InetResponse(ref msg) => msg.emit(buffer),
-            UnixRequest(ref msg) => msg.emit(buffer),
-            UnixResponse(ref msg) => msg.emit(buffer),
+            InetRequest(msg) => msg.emit(buffer),
+            InetResponse(msg) => msg.emit(buffer),
+            UnixRequest(msg) => msg.emit(buffer),
+            UnixResponse(msg) => msg.emit(buffer),
         }
     }
 }

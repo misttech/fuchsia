@@ -66,7 +66,10 @@ impl VmsplicePayloadSegment {
     ///
     /// Callers must guarantee that the buffer is valid to write to.
     unsafe fn raw_read(&self, buffer: *mut u8, buffer_length: usize) -> Result<(), zx::Status> {
-        self.memory.read_raw(buffer, buffer_length, self.memory_offset)
+        #[allow(clippy::undocumented_unsafe_blocks, reason = "2024 edition migration")]
+        unsafe {
+            self.memory.read_raw(buffer, buffer_length, self.memory_offset)
+        }
     }
 }
 

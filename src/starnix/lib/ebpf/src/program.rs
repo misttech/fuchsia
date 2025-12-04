@@ -88,7 +88,10 @@ where
     &'a mut T: ProgramArgument,
 {
     unsafe fn from_bpf_value(_context: &mut C, v: BpfValue) -> Self {
-        &mut *v.as_ptr::<T>()
+        #[allow(clippy::undocumented_unsafe_blocks, reason = "2024 edition migration")]
+        unsafe {
+            &mut *v.as_ptr::<T>()
+        }
     }
 }
 
@@ -97,7 +100,10 @@ where
     &'a T: ProgramArgument,
 {
     unsafe fn from_bpf_value(_context: &mut C, v: BpfValue) -> Self {
-        &*v.as_ptr::<T>()
+        #[allow(clippy::undocumented_unsafe_blocks, reason = "2024 edition migration")]
+        unsafe {
+            &*v.as_ptr::<T>()
+        }
     }
 }
 

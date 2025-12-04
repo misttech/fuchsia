@@ -692,10 +692,10 @@ where
         return error!(ESRCH);
     }
 
-    if let Some(ref mut ptrace) = &mut state.ptrace {
+    if let Some(ptrace) = &mut state.ptrace {
         if data != 0 {
             new_state = PtraceStatus::Continuing;
-            if let Some(ref mut last_signal) = &mut ptrace.last_signal {
+            if let Some(last_signal) = &mut ptrace.last_signal {
                 if let Some(si) = siginfo {
                     let new_signal = si.signal;
                     last_signal.signal = new_signal;
@@ -730,7 +730,7 @@ where
 
 fn ptrace_interrupt(tracee: &Task) -> Result<(), Errno> {
     let mut state = tracee.write();
-    if let Some(ref mut ptrace) = &mut state.ptrace {
+    if let Some(ptrace) = &mut state.ptrace {
         if !ptrace.is_seized() {
             return error!(EIO);
         }
@@ -759,7 +759,7 @@ fn ptrace_interrupt(tracee: &Task) -> Result<(), Errno> {
 
 fn ptrace_listen(tracee: &Task) -> Result<(), Errno> {
     let mut state = tracee.write();
-    if let Some(ref mut ptrace) = &mut state.ptrace {
+    if let Some(ptrace) = &mut state.ptrace {
         if !ptrace.is_seized()
             || (ptrace.last_signal_waitable
                 && ptrace
@@ -857,7 +857,7 @@ where
 
     match request {
         PTRACE_PEEKDATA | PTRACE_PEEKTEXT => {
-            let Some(ref mut captured) = &mut state.captured_thread_state else {
+            let Some(captured) = &mut state.captured_thread_state else {
                 return error!(ESRCH);
             };
 
@@ -871,7 +871,7 @@ where
             Ok(starnix_syscalls::SUCCESS)
         }
         PTRACE_POKEDATA | PTRACE_POKETEXT => {
-            let Some(ref mut captured) = &mut state.captured_thread_state else {
+            let Some(captured) = &mut state.captured_thread_state else {
                 return error!(ESRCH);
             };
 
@@ -886,7 +886,7 @@ where
             Ok(starnix_syscalls::SUCCESS)
         }
         PTRACE_PEEKUSR => {
-            let Some(ref mut captured) = &mut state.captured_thread_state else {
+            let Some(captured) = &mut state.captured_thread_state else {
                 return error!(ESRCH);
             };
 
@@ -938,7 +938,7 @@ where
         }
         #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
         PTRACE_GETREGS => {
-            if let Some(ref mut captured) = &mut state.captured_thread_state {
+            if let Some(captured) = &mut state.captured_thread_state {
                 let mut len = usize::MAX;
                 ptrace_getregset(
                     current_task,
@@ -1012,7 +1012,7 @@ where
                 force: false,
                 source: SignalSource::capture(),
             };
-            if let Some(ref mut ptrace) = &mut state.ptrace {
+            if let Some(ptrace) = &mut state.ptrace {
                 ptrace.last_signal = Some(siginfo);
             }
             Ok(starnix_syscalls::SUCCESS)
@@ -1054,7 +1054,7 @@ where
                 track_stub!(TODO("https://fxbug.dev/322874463"), "ptrace(PTRACE_SETOPTIONS)", mask);
                 return error!(ENOSYS);
             }
-            if let Some(ref mut ptrace) = &mut state.ptrace {
+            if let Some(ptrace) = &mut state.ptrace {
                 ptrace.set_options_from_bits(mask)?;
             }
             Ok(starnix_syscalls::SUCCESS)
@@ -1095,7 +1095,7 @@ fn do_attach(
                 && process_state.base.load_stopped() == StopState::GroupStopped
                 && task_ref.load_stopped() == StopState::GroupStopped
             {
-                if let Some(ref mut ptrace) = &mut state.ptrace {
+                if let Some(ptrace) = &mut state.ptrace {
                     ptrace.last_signal_waitable = true;
                 }
             }
@@ -1147,13 +1147,13 @@ where
         )?;
     }
     let mut state = tracee_task.write();
-    if let Some(ref mut ptrace) = &mut state.ptrace {
+    if let Some(ptrace) = &mut state.ptrace {
         ptrace.core_state.tracer_waiters = Arc::clone(&ptrace_state.tracer_waiters);
     }
 
     // The newly started tracee starts with a signal that depends on the attach type.
     let signal = if ptrace_state.attach_type == PtraceAttachType::Seize {
-        if let Some(ref mut ptrace) = &mut state.ptrace {
+        if let Some(ptrace) = &mut state.ptrace {
             ptrace.set_last_event(Some(PtraceEventData::new_from_event(PtraceEvent::Stop, 0)));
         }
         SignalInfo::default(SIGTRAP)
@@ -1254,7 +1254,7 @@ where
         // When seizing, |data| should be used as the options bitmask.
         if let Some(task_ref) = weak_task.upgrade() {
             let mut state = task_ref.write();
-            if let Some(ref mut ptrace) = &mut state.ptrace {
+            if let Some(ptrace) = &mut state.ptrace {
                 ptrace.set_options_from_bits(data.ptr() as u32)?;
             }
         }
@@ -1439,7 +1439,7 @@ pub fn ptrace_syscall_exit(
             }
 
             state.set_stopped(StopState::SyscallExitStopping, Some(sig), None, None);
-            if let Some(ref mut ptrace) = &mut state.ptrace {
+            if let Some(ptrace) = &mut state.ptrace {
                 ptrace.last_syscall_was_error = is_error;
             }
             true

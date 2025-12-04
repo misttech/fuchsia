@@ -1364,7 +1364,10 @@ impl RemoteDirectoryObject {
     /// The caller must uphold the lifetime requirements, which will be the case if this is only
     /// used for the contained iterator (`iterator` is dropped before `zxio`).
     unsafe fn zxio(&self) -> &'static Zxio {
-        &*(&self.zxio as *const Zxio)
+        #[allow(clippy::undocumented_unsafe_blocks, reason = "2024 edition migration")]
+        unsafe {
+            &*(&self.zxio as *const Zxio)
+        }
     }
 }
 

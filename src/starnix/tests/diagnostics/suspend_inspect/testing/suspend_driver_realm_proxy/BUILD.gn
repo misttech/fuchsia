@@ -12,7 +12,7 @@ group("suspend_driver_realm_proxy") {
 
 rustc_binary("bin") {
   testonly = true
-  edition = "2021"
+  edition = "2024"
   output_name = "suspend_driver_realm_proxy"
   sources = [ "src/main.rs" ]
   source_root = "src/main.rs"

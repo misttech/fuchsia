@@ -112,7 +112,7 @@ impl Nla for InfoBondPort {
             LinkFailureCount(_) |
             Prio(_)
                 => 4,
-            PermHwaddr(ref bytes)
+            PermHwaddr(bytes)
             => bytes.len(),
             MiiStatus(_) => 1,
             BondPortState(_) => 1,
@@ -125,11 +125,11 @@ impl Nla for InfoBondPort {
     fn emit_value(&self, buffer: &mut [u8]) {
         use self::InfoBondPort::*;
         match self {
-            QueueId(ref value)
+            QueueId(value)
              => NativeEndian::write_u16(buffer, *value),
-            PermHwaddr(ref bytes)
+            PermHwaddr(bytes)
              => buffer.copy_from_slice(bytes.as_slice()),
-            Prio(ref value)
+            Prio(value)
              => NativeEndian::write_i32(buffer, *value),
             LinkFailureCount(value)
              => NativeEndian::write_u32(buffer, *value),

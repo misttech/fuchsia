@@ -309,8 +309,8 @@ impl Nla for InfoBond {
             | Self::LpInterval(_)
             | Self::PacketsPerPort(_)
             | Self::PeerNotifDelay(_) => 4,
-            Self::ArpIpTarget(ref addrs) => BondIpAddrNlaList::from(addrs).as_slice().buffer_len(),
-            Self::NsIp6Target(ref addrs) => BondIpAddrNlaList::from(addrs).as_slice().buffer_len(),
+            Self::ArpIpTarget(addrs) => BondIpAddrNlaList::from(addrs).as_slice().buffer_len(),
+            Self::NsIp6Target(addrs) => BondIpAddrNlaList::from(addrs).as_slice().buffer_len(),
             Self::AdActorSystem(_) => 6,
             Self::AdInfo(infos) => infos.as_slice().buffer_len(),
             Self::Other(v) => v.value_len(),

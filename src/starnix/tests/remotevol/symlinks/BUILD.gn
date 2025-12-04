@@ -43,7 +43,7 @@ fuchsia_component("read_encrypted_symlink") {
 }
 
 rustc_test("remotevol_locked_symlink_integration_test_bin") {
-  edition = "2021"
+  edition = "2024"
   source_root = "src/locked_symlink_test.rs"
   sources = [ source_root ]
   deps = [

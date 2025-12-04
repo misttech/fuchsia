@@ -13,7 +13,7 @@ declare_args() {
 
 rustc_library("kgsl") {
   name = "starnix-modules-kgsl"
-  edition = "2021"
+  edition = "2024"
   version = "0.1.0"
   source_root = "lib.rs"
 

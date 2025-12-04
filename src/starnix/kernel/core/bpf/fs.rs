@@ -55,13 +55,13 @@ pub enum BpfHandle {
 impl BpfHandle {
     pub fn as_map(&self) -> Result<&BpfMapHandle, Errno> {
         match self {
-            Self::Map(ref map) => Ok(map),
+            Self::Map(map) => Ok(map),
             _ => error!(EINVAL),
         }
     }
     pub fn as_program(&self) -> Result<&ProgramHandle, Errno> {
         match self {
-            Self::Program(ref program) => Ok(program),
+            Self::Program(program) => Ok(program),
             _ => error!(EINVAL),
         }
     }
@@ -69,7 +69,7 @@ impl BpfHandle {
     // Returns VMO and schema if this handle references a map.
     fn get_map_vmo(&self) -> Result<(&Arc<zx::Vmo>, MapSchema), Errno> {
         match self {
-            Self::Map(ref map) => Ok((map.vmo(), map.schema)),
+            Self::Map(map) => Ok((map.vmo(), map.schema)),
             _ => error!(ENODEV),
         }
     }

@@ -559,7 +559,7 @@ impl FutexNotifiable {
                     false
                 }
             }
-            Self::External(ref mut sender) => {
+            Self::External(sender) => {
                 if let Some(sender) = sender.take() {
                     sender.send(()).is_ok()
                 } else {

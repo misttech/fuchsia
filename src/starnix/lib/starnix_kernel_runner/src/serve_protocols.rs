@@ -428,7 +428,7 @@ pub fn serve_memory_attribution_provider_elfkernel(
 pub fn serve_memory_attribution_provider_container(
     mut request_stream: fattribution::ProviderRequestStream,
     kernel: &Kernel,
-) -> impl Future<Output = ()> {
+) -> impl Future<Output = ()> + use<> {
     let observer = kernel.new_memory_attribution_observer(request_stream.control_handle());
     async move {
         while let Some(event) = request_stream

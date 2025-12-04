@@ -203,7 +203,8 @@ impl MemoryObject {
         offset: u64,
     ) -> Result<(), zx::Status> {
         match self {
-            Self::Vmo(vmo) => vmo.read_raw(buffer, buffer_length, offset),
+            #[allow(clippy::undocumented_unsafe_blocks, reason = "2024 edition migration")]
+            Self::Vmo(vmo) => unsafe { vmo.read_raw(buffer, buffer_length, offset) },
             Self::RingBuf(_) => Err(zx::Status::NOT_SUPPORTED),
             // See the note in `read_to_array` above.
             Self::MemoryMappedClock { .. } => Err(zx::Status::NOT_SUPPORTED),

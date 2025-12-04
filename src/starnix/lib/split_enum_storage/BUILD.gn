@@ -8,13 +8,13 @@ import("//build/rust/rustc_macro.gni")
 import("//build/rust/rustc_test.gni")
 
 rustc_library("split_enum_storage") {
-  edition = "2021"
+  edition = "2024"
   sources = [ "src/lib.rs" ]
   deps = [ ":split_enum_storage_macro" ]
 }
 
 rustc_macro("split_enum_storage_macro") {
-  edition = "2021"
+  edition = "2024"
   source_root = "src/macro.rs"
   sources = [ source_root ]
   deps = [
@@ -25,7 +25,7 @@ rustc_macro("split_enum_storage_macro") {
 }
 
 rustc_test("split_enum_storage_test") {
-  edition = "2021"
+  edition = "2024"
   source_root = "src/test.rs"
   sources = [ source_root ]
   deps = [
