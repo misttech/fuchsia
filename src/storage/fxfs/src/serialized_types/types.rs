@@ -29,7 +29,7 @@ use crate::object_store::transaction::{
 };
 use crate::object_store::{
     EncryptedMutations, EncryptedMutationsV40, EncryptedMutationsV49, StoreInfo, StoreInfoV40,
-    StoreInfoV49,
+    StoreInfoV49, StoreInfoV52,
 };
 use crate::serialized_types::{Version, Versioned, VersionedLatest, versioned_type};
 use std::collections::BTreeMap;
@@ -43,7 +43,7 @@ use std::collections::BTreeMap;
 ///
 /// IMPORTANT: When changing this (major or minor), update the list of possible versions at
 /// https://cs.opensource.google/fuchsia/fuchsia/+/main:third_party/cobalt_config/fuchsia/local_storage/versions.txt.
-pub const LATEST_VERSION: Version = Version { major: 51, minor: 0 };
+pub const LATEST_VERSION: Version = Version { major: 52, minor: 0 };
 
 /// The earliest supported version of the on-disk filesystem format.
 ///
@@ -165,6 +165,7 @@ versioned_types! {
         39.. => PersistentLayerInfoV39,
     }
     StoreInfo {
+        52.. => StoreInfoV52,
         49.. => StoreInfoV49,
         40.. => StoreInfoV40,
     }

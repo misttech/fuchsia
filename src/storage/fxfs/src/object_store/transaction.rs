@@ -474,6 +474,11 @@ pub enum LockKey {
         store_object_id: u64,
         object_id: u64,
     },
+
+    /// A lock used when getting or creating the internal directory.
+    InternalDirectory {
+        store_object_id: u64,
+    },
 }
 
 impl LockKey {

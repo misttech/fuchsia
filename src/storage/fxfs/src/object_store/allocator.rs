@@ -105,7 +105,9 @@ use crate::object_store::object_manager::ReservationUpdate;
 use crate::object_store::transaction::{
     AllocatorMutation, AssocObj, LockKey, Mutation, Options, Transaction, WriteGuard, lock_keys,
 };
-use crate::object_store::{DataObjectHandle, DirectWriter, HandleOptions, ObjectStore, tree};
+use crate::object_store::{
+    DataObjectHandle, DirectWriter, HandleOptions, ObjectStore, ReservedId, tree,
+};
 use crate::range::RangeExt;
 use crate::round::{round_div, round_down, round_up};
 use crate::serialized_types::{
@@ -125,7 +127,7 @@ use std::borrow::Borrow;
 use std::collections::{BTreeMap, HashSet, VecDeque};
 use std::hash::Hash;
 use std::marker::PhantomData;
-use std::num::Saturating;
+use std::num::{NonZero, Saturating};
 use std::ops::Range;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Weak};
@@ -834,7 +836,7 @@ impl Allocator {
         ObjectStore::create_object_with_id(
             &root_store,
             transaction,
-            self.object_id(),
+            ReservedId::new(&root_store, NonZero::new(self.object_id()).unwrap()),
             HandleOptions::default(),
             None,
         )?;

@@ -24,8 +24,8 @@ use crate::object_store::tree::reservation_amount_from_layer_size;
 use crate::object_store::volume::{RootVolume, root_volume};
 use crate::object_store::{
     DataObjectHandle, DirectWriter, Directory, FileExtent, HandleOptions, HandleOwner,
-    INVALID_OBJECT_ID, ObjectHandle, ObjectStore, ReadObjectHandle as _, StoreInfo, StoreOptions,
-    merge,
+    LastObjectId, LastObjectIdInfo, ObjectHandle, ObjectStore, ReadObjectHandle as _, ReservedId,
+    StoreInfo, StoreOptions, merge,
 };
 use crate::range::RangeExt;
 use crate::virtual_device::ReadOnlyDevice;
@@ -140,11 +140,15 @@ impl ObjectStore {
 
         // Step 1: Create a new object that owns the portions of the backing file that we want to
         // discard once the volume has been installed.
-        let metadata_object_id = inner_volume.maybe_get_next_object_id();
-        assert!(metadata_object_id != INVALID_OBJECT_ID);
+        let metadata_object_reserved_id = inner_volume.maybe_get_next_object_id().unwrap();
         let mut inner_layer_set = inner_volume.tree().layer_set();
-        let layer_with_metadata =
-            create_metadata_ownership_layer(&inner_layer_set, metadata_object_id, &extents).await?;
+        let metadata_object_id = metadata_object_reserved_id.get();
+        let layer_with_metadata = create_metadata_ownership_layer(
+            &inner_layer_set,
+            metadata_object_reserved_id,
+            &extents,
+        )
+        .await?;
         // Add the file to the graveyard so it's cleaned up if we crash.
         layer_with_metadata.insert(Item {
             key: ObjectKey::graveyard_entry(
@@ -240,7 +244,7 @@ impl ObjectStore {
         let old_store_info = inner_volume.store_info().unwrap();
         let new_store_info = StoreInfo {
             layers: vec![new_layer_object_id],
-            last_object_id: metadata_object_id,
+            last_object_id: LastObjectIdInfo::Unencrypted { id: metadata_object_id },
             object_count: old_store_info.object_count + 1, // Update for the metadata file we added
             ..old_store_info
         };
@@ -259,7 +263,10 @@ impl ObjectStore {
         activate_volume_txn
             .commit_with_callback(|_| {
                 *self.store_info.lock().as_mut().unwrap() = new_store_info;
-                self.last_object_id.lock().id = metadata_object_id;
+                match &mut *self.last_object_id.lock() {
+                    LastObjectId::Unencrypted { id } => *id = metadata_object_id,
+                    _ => unreachable!(),
+                }
                 self.tree.set_layers(new_layers);
             })
             .await?;
@@ -298,7 +305,7 @@ impl ObjectStore {
 /// after the new volume has been installed (e.g. the object records have been remapped).
 async fn create_metadata_ownership_layer(
     inner_layer_set: &LayerSet<ObjectKey, ObjectValue>,
-    object_id: u64,
+    object_id: ReservedId<'_>,
     extents: &[FileExtent],
 ) -> Result<Arc<SkipListLayer<ObjectKey, ObjectValue>>, Error> {
     if extents.is_empty() {
@@ -313,7 +320,7 @@ async fn create_metadata_ownership_layer(
     // offset should be equal to the size of the backing file.
     let mut size = extents.last().unwrap().logical_range().end;
     layer.insert(Item {
-        key: ObjectKey::extent(object_id, 0, 0..size),
+        key: ObjectKey::extent(object_id.get(), 0, 0..size),
         value: ObjectValue::Extent(ExtentValue::Some {
             device_offset: 0, // Will be remapped below
             mode: ExtentMode::Raw,
@@ -341,7 +348,11 @@ async fn create_metadata_ownership_layer(
                 };
                 let len = range.length()?;
                 let item = Item {
-                    key: ObjectKey::extent(object_id, 0, *device_offset..*device_offset + len),
+                    key: ObjectKey::extent(
+                        object_id.get(),
+                        0,
+                        *device_offset..*device_offset + len,
+                    ),
                     value: ObjectValue::Extent(ExtentValue::None),
                     sequence: 0,
                 };
@@ -357,6 +368,9 @@ async fn create_metadata_ownership_layer(
     }
 
     // Add the extra object records we need for it to be a valid file.
+
+    // The transaction takes ownership of the ID.
+    let object_id = object_id.release();
     layer.insert(Item {
         key: ObjectKey::object(object_id),
         value: ObjectValue::Object {

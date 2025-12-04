@@ -51,7 +51,7 @@ use crate::object_store::transaction::{
 };
 use crate::object_store::{
     AssocObj, DataObjectHandle, HandleOptions, HandleOwner, INVALID_OBJECT_ID, Item, ItemRef,
-    NewChildStoreOptions, ObjectStore,
+    NewChildStoreOptions, ObjectStore, ReservedId,
 };
 use crate::range::RangeExt;
 use crate::round::{round_div, round_down};
@@ -67,6 +67,7 @@ use serde::{Deserialize, Serialize};
 use static_assertions::const_assert;
 use std::clone::Clone;
 use std::collections::HashSet;
+use std::num::NonZero;
 use std::ops::{Bound, Range};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, OnceLock};
@@ -1266,7 +1267,7 @@ impl Journal {
         super_block_a_handle = ObjectStore::create_object_with_id(
             &root_store,
             &mut transaction,
-            SuperBlockInstance::A.object_id(),
+            ReservedId::new(&root_store, NonZero::new(SuperBlockInstance::A.object_id()).unwrap()),
             HandleOptions::default(),
             None,
         )
@@ -1279,7 +1280,7 @@ impl Journal {
         super_block_b_handle = ObjectStore::create_object_with_id(
             &root_store,
             &mut transaction,
-            SuperBlockInstance::B.object_id(),
+            ReservedId::new(&root_store, NonZero::new(SuperBlockInstance::B.object_id()).unwrap()),
             HandleOptions::default(),
             None,
         )
@@ -1314,8 +1315,9 @@ impl Journal {
         root_store.create(&mut transaction).await?;
 
         // The root parent graveyard.
-        root_parent
-            .set_graveyard_directory_object_id(Graveyard::create(&mut transaction, &root_parent));
+        root_parent.set_graveyard_directory_object_id(
+            Graveyard::create(&mut transaction, &root_parent).await?,
+        );
 
         transaction.commit().await?;
 

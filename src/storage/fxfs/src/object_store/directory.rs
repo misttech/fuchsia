@@ -197,6 +197,9 @@ impl<S: HandleOwner> Directory<S> {
         let store = owner.as_ref().as_ref();
         let object_id = store.get_next_object_id(transaction.txn_guard()).await?;
         let now = Timestamp::now();
+
+        // The transaction takes ownership of the ID.
+        let object_id = object_id.release();
         transaction.add(
             store.store_object_id(),
             Mutation::insert_object(
@@ -807,7 +810,8 @@ impl<S: HandleOwner> Directory<S> {
         // https://pubs.opengroup.org/onlinepubs/9699919799/basedefs/limits.h.html.
         // See _POSIX_SYMLINK_MAX.
         ensure!(link.len() <= 256, FxfsError::BadPath);
-        let symlink_id = self.store().get_next_object_id(transaction.txn_guard()).await?;
+        let reserved_symlink_id = self.store().get_next_object_id(transaction.txn_guard()).await?;
+        let symlink_id = reserved_symlink_id.get();
         let wrapping_key_id = self.wrapping_key_id.lock().clone();
         let mut link = link.to_vec();
 
@@ -841,7 +845,7 @@ impl<S: HandleOwner> Directory<S> {
                 transaction.add(
                     self.store().store_object_id(),
                     Mutation::insert_object(
-                        ObjectKey::object(symlink_id),
+                        ObjectKey::object(reserved_symlink_id.release()),
                         ObjectValue::encrypted_symlink(link, Timestamp::now(), Timestamp::now(), 0),
                     ),
                 );
@@ -866,7 +870,7 @@ impl<S: HandleOwner> Directory<S> {
             transaction.add(
                 self.store().store_object_id(),
                 Mutation::insert_object(
-                    ObjectKey::object(symlink_id),
+                    ObjectKey::object(reserved_symlink_id.release()),
                     ObjectValue::symlink(link, Timestamp::now(), Timestamp::now(), 0),
                 ),
             );
@@ -4153,13 +4157,7 @@ mod tests {
             object_id = {
                 let mut transaction = fs
                     .clone()
-                    .new_transaction(
-                        lock_keys![LockKey::object(
-                            fs.root_store().store_object_id(),
-                            store.store_object_id()
-                        ),],
-                        Options::default(),
-                    )
+                    .new_transaction(lock_keys![], Options::default())
                     .await
                     .expect("new_transaction failed");
                 let dir = Directory::create(&mut transaction, &store, Some(WRAPPING_KEY_ID))
@@ -4330,13 +4328,7 @@ mod tests {
             object_id = {
                 let mut transaction = fs
                     .clone()
-                    .new_transaction(
-                        lock_keys![LockKey::object(
-                            fs.root_store().store_object_id(),
-                            store.store_object_id()
-                        ),],
-                        Options::default(),
-                    )
+                    .new_transaction(lock_keys![], Options::default())
                     .await
                     .expect("new_transaction failed");
                 let dir = Directory::create(&mut transaction, &store, Some(WRAPPING_KEY_ID))
@@ -4834,13 +4826,7 @@ mod tests {
             object_id = {
                 let mut transaction = fs
                     .clone()
-                    .new_transaction(
-                        lock_keys![LockKey::object(
-                            fs.root_store().store_object_id(),
-                            store.store_object_id()
-                        ),],
-                        Options::default(),
-                    )
+                    .new_transaction(lock_keys![], Options::default())
                     .await
                     .expect("new_transaction failed");
                 let dir = Directory::create(&mut transaction, &store, Some(WRAPPING_KEY_ID))
@@ -4957,13 +4943,7 @@ mod tests {
 
             let mut transaction = fs
                 .clone()
-                .new_transaction(
-                    lock_keys![LockKey::object(
-                        fs.root_store().store_object_id(),
-                        store.store_object_id()
-                    ),],
-                    Options::default(),
-                )
+                .new_transaction(lock_keys![], Options::default())
                 .await
                 .expect("new_transaction failed");
             let dir = Directory::create(&mut transaction, &store, Some(WRAPPING_KEY_ID))

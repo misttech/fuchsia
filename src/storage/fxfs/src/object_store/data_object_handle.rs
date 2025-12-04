@@ -1963,7 +1963,8 @@ mod tests {
 
         object = if let Some(crypt) = crypt {
             let object_id = store.get_next_object_id(transaction.txn_guard()).await.unwrap();
-            let (key, unwrapped_key) = crypt.create_key(object_id, KeyPurpose::Data).await.unwrap();
+            let (key, unwrapped_key) =
+                crypt.create_key(object_id.get(), KeyPurpose::Data).await.unwrap();
             ObjectStore::create_object_with_key(
                 &store,
                 &mut transaction,

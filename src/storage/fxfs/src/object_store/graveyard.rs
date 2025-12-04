@@ -7,7 +7,6 @@ use crate::log::*;
 use crate::lsm_tree::Query;
 use crate::lsm_tree::merge::{Merger, MergerIterator};
 use crate::lsm_tree::types::{ItemRef, LayerIterator};
-use crate::object_handle::INVALID_OBJECT_ID;
 use crate::object_store::ObjectStore;
 use crate::object_store::object_manager::ObjectManager;
 use crate::object_store::object_record::{
@@ -65,16 +64,17 @@ impl Graveyard {
     }
 
     /// Creates a graveyard object in `store`.  Returns the object ID for the graveyard object.
-    pub fn create(transaction: &mut Transaction<'_>, store: &ObjectStore) -> u64 {
-        let object_id = store.maybe_get_next_object_id();
-        // This is OK because we only ever create a graveyard as we are creating a new store so
-        // maybe_get_next_object_id will never fail here due to a lack of an object ID cipher.
-        assert_ne!(object_id, INVALID_OBJECT_ID);
+    pub async fn create(
+        transaction: &mut Transaction<'_>,
+        store: &ObjectStore,
+    ) -> Result<u64, Error> {
+        let reserved_object_id = store.get_next_object_id(transaction.txn_guard()).await?;
+        let object_id = reserved_object_id.get();
         let now = Timestamp::now();
         transaction.add(
             store.store_object_id,
             Mutation::insert_object(
-                ObjectKey::object(object_id),
+                ObjectKey::object(reserved_object_id.release()),
                 ObjectValue::Object {
                     kind: ObjectKind::Graveyard,
                     attributes: ObjectAttributes {
@@ -86,7 +86,7 @@ impl Graveyard {
                 },
             ),
         );
-        object_id
+        Ok(object_id)
     }
 
     /// Starts an asynchronous task to reap the graveyard for all entries older than

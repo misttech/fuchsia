@@ -14,8 +14,8 @@ use crate::object_store::object_manager::{ObjectManager, ReservationUpdate};
 use crate::object_store::object_record::{ObjectKey, ObjectValue};
 use crate::object_store::transaction::{AssociatedObject, LockKey, Mutation, lock_keys};
 use crate::object_store::{
-    AssocObj, DirectWriter, EncryptedMutations, HandleOptions, LockState,
-    MAX_ENCRYPTED_MUTATIONS_SIZE, ObjectStore, Options, StoreInfo,
+    AssocObj, DirectWriter, EncryptedMutations, HandleOptions, LastObjectId, LastObjectIdInfo,
+    LockState, MAX_ENCRYPTED_MUTATIONS_SIZE, ObjectStore, Options, StoreInfo,
     layer_size_from_encrypted_mutations_size, tree,
 };
 use crate::serialized_types::{LATEST_VERSION, Version, VersionedLatest};
@@ -247,17 +247,18 @@ impl ObjectStore {
         let handle_options = HandleOptions { skip_journal_checks: true, ..Default::default() };
         let new_object_tree_layer = if let Some(crypt) = self.crypt().as_deref() {
             let object_id = parent_store.get_next_object_id(transaction.txn_guard()).await?;
-            let (key, unwrapped_key) = match crypt.create_key(object_id, KeyPurpose::Data).await {
-                Ok((key, unwrapped_key)) => (key, unwrapped_key),
-                Err(status) => {
-                    log::warn!(
-                        status:?;
-                        "Failed to create keys while flushing store {}",
-                        self.store_object_id(),
-                    );
-                    return Ok(FlushResult::CryptError(status.into()));
-                }
-            };
+            let (key, unwrapped_key) =
+                match crypt.create_key(object_id.get(), KeyPurpose::Data).await {
+                    Ok((key, unwrapped_key)) => (key, unwrapped_key),
+                    Err(status) => {
+                        log::warn!(
+                            status:?;
+                            "Failed to create keys while flushing store {}",
+                            self.store_object_id(),
+                        );
+                        return Ok(FlushResult::CryptError(status.into()));
+                    }
+                };
             ObjectStore::create_object_with_key(
                 parent_store,
                 &mut transaction,
@@ -315,17 +316,40 @@ impl ObjectStore {
             parent_store.add_to_graveyard(&mut end_transaction, old_encrypted_mutations_object_id);
         }
 
-        // `last_object_id` and `object_id_key` are updated differently to other members of
-        // `StoreInfo`.  We must ensure that those fields match the current in-memory values.  See
-        // the lengthy comment in `get_next_object_id` for more information.  `end_transaction` has
-        // a lock on the same lock that `get_next_object_id` uses, so there's no danger of the key
-        // changing now.
-        new_store_info.object_id_key =
-            self.store_info.lock().as_ref().unwrap().object_id_key.clone();
-
-        // This will capture object IDs that might be in transactions not yet committed.  In
+        // `last_object_id` is updated differently to other members of `StoreInfo`.  We must ensure
+        // that those fields match the current in-memory values.  See the lengthy comment in
+        // `get_next_object_id` for more information.  `end_transaction` has a lock on the same lock
+        // that `get_next_object_id` uses, so there's no danger of the key changing now.
+        //
+        // This might capture object IDs that might be in transactions not yet committed.  In
         // theory, we could do better than this but it's not worth the effort.
-        new_store_info.last_object_id = self.last_object_id.lock().id;
+        match &mut new_store_info.last_object_id {
+            LastObjectIdInfo::Unencrypted { id } => {
+                let LastObjectId::Unencrypted { id: in_memory_value } =
+                    &*self.last_object_id.lock()
+                else {
+                    unreachable!()
+                };
+                *id = *in_memory_value;
+            }
+            LastObjectIdInfo::Encrypted { id, key } => {
+                let LastObjectId::Encrypted { id: in_memory_value, .. } =
+                    &*self.last_object_id.lock()
+                else {
+                    unreachable!()
+                };
+                *id = *in_memory_value;
+                let guard = self.store_info.lock();
+                let current_store_info = guard.as_ref().unwrap();
+                let LastObjectIdInfo::Encrypted { key: in_memory_value, .. } =
+                    &current_store_info.last_object_id
+                else {
+                    unreachable!()
+                };
+                *key = in_memory_value.clone();
+            }
+            LastObjectIdInfo::Low32Bit => {}
+        }
 
         self.write_store_info(&mut end_transaction, &new_store_info).await?;
 
