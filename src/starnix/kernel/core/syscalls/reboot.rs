@@ -83,7 +83,12 @@ pub fn sys_reboot(
 
         LINUX_REBOOT_CMD_HALT | LINUX_REBOOT_CMD_POWER_OFF => {
             log_info!("Powering off");
-            match proxy.poweroff(zx::MonotonicInstant::INFINITE) {
+            let options = fpower::ShutdownOptions {
+                action: Some(fpower::ShutdownAction::Poweroff),
+                ..Default::default()
+            };
+
+            match proxy.shutdown(&options, zx::MonotonicInstant::INFINITE) {
                 Ok(_) => {
                     // System is rebooting... wait until runtime ends.
                     zx::MonotonicInstant::INFINITE.sleep();
@@ -103,7 +108,11 @@ pub fn sys_reboot(
 
             let reboot_result = if reboot_args.contains(&&b"bootloader"[..]) {
                 log_info!("Rebooting to bootloader");
-                proxy.reboot_to_bootloader(zx::MonotonicInstant::INFINITE)
+                let options = fpower::ShutdownOptions {
+                    action: Some(fpower::ShutdownAction::RebootToBootloader),
+                    ..Default::default()
+                };
+                proxy.shutdown(&options, zx::MonotonicInstant::INFINITE)
             } else if reboot_args.contains(&&b"recovery"[..]) {
                 // Read the bootloader message from the misc partition to determine whether the
                 // device is rebooting to perform an FDR.
@@ -141,12 +150,16 @@ pub fn sys_reboot(
                     }
                 }
                 log_info!("Rebooting to recovery...");
-                proxy.reboot_to_recovery(zx::MonotonicInstant::INFINITE)
+                let options = fpower::ShutdownOptions {
+                    action: Some(fpower::ShutdownAction::RebootToRecovery),
+                    ..Default::default()
+                };
+                proxy.shutdown(&options, zx::MonotonicInstant::INFINITE)
             } else {
                 // TODO(https://391585107): Loop through all the arguments and
-                // generate a list of reboot reasons.
+                // generate a list of shutdown reasons.
 
-                let reboot_reason =
+                let shutdown_reason =
                     if let Some(arg) = reboot_args.iter().find(|arg| arg.ends_with(b"-failed")) {
                         let process_name =
                             String::from_utf8_lossy(arg.strip_suffix(b"-failed").unwrap());
@@ -154,34 +167,35 @@ pub fn sys_reboot(
                         // extract the critical process responsible for the reboot.
                         // Please notify //src/developer/forensics/OWNERS upon changing.
                         log_info!("Android critical process '{}' failed, rebooting", process_name);
-                        fpower::RebootReason2::AndroidCriticalProcessFailure
+                        fpower::ShutdownReason::AndroidCriticalProcessFailure
                     } else if reboot_args.contains(&&b"ota_update"[..])
                         || reboot_args.contains(&&b"System update during setup"[..])
                     {
-                        fpower::RebootReason2::SystemUpdate
+                        fpower::ShutdownReason::SystemUpdate
                     } else if reboot_args.contains(&&b"shell"[..]) {
-                        fpower::RebootReason2::DeveloperRequest
+                        fpower::ShutdownReason::DeveloperRequest
                     } else if reboot_args.contains(&&b"RescueParty"[..])
                         || reboot_args.contains(&&b"rescueparty"[..])
                     {
-                        fpower::RebootReason2::AndroidRescueParty
+                        fpower::ShutdownReason::AndroidRescueParty
                     } else if reboot_args == [b""] // args empty? splitting "" returns [""], not []
                     || reboot_args.contains(&&b"userrequested"[..])
                     {
-                        fpower::RebootReason2::UserRequest
+                        fpower::ShutdownReason::UserRequest
                     } else {
                         log_warn!("Unknown reboot args: {arg_bytes:?}");
                         track_stub!(
                             TODO("https://fxbug.dev/322874610"),
                             "unknown reboot args, see logs for strings"
                         );
-                        fpower::RebootReason2::AndroidUnexpectedReason
+                        fpower::ShutdownReason::AndroidUnexpectedReason
                     };
 
-                log_info!("Rebooting... reason: {:?}", reboot_reason);
-                proxy.perform_reboot(
-                    &fpower::RebootOptions {
-                        reasons: Some(vec![reboot_reason]),
+                log_info!("Rebooting... reason: {:?}", shutdown_reason);
+                proxy.shutdown(
+                    &fpower::ShutdownOptions {
+                        action: Some(fpower::ShutdownAction::Reboot),
+                        reasons: Some(vec![shutdown_reason]),
                         ..Default::default()
                     },
                     zx::MonotonicInstant::INFINITE,

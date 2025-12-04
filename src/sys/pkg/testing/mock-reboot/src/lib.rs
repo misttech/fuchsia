@@ -5,10 +5,42 @@
 use anyhow::Error;
 use fidl_fuchsia_hardware_power_statecontrol::{
     AdminPerformRebootResult, AdminProxy, AdminRequest, AdminRequestStream, RebootOptions,
+    RebootReason2, ShutdownOptions, ShutdownReason,
 };
 use fuchsia_async as fasync;
 use futures::{TryFutureExt, TryStreamExt};
 use std::sync::Arc;
+
+// TODO(https://fxbug.dev/465530639): remove once clients are migrated from PerformReboot to
+// Shutdown.
+fn shutdown_reason_to_reboot_reason(reason: ShutdownReason) -> Option<RebootReason2> {
+    match reason {
+        ShutdownReason::UserRequest => Some(RebootReason2::UserRequest),
+        ShutdownReason::DeveloperRequest => Some(RebootReason2::DeveloperRequest),
+        ShutdownReason::SystemUpdate => Some(RebootReason2::SystemUpdate),
+        ShutdownReason::RetrySystemUpdate => Some(RebootReason2::RetrySystemUpdate),
+        ShutdownReason::HighTemperature => Some(RebootReason2::HighTemperature),
+        ShutdownReason::FactoryDataReset => Some(RebootReason2::FactoryDataReset),
+        ShutdownReason::SessionFailure => Some(RebootReason2::SessionFailure),
+        ShutdownReason::CriticalComponentFailure => Some(RebootReason2::CriticalComponentFailure),
+        ShutdownReason::ZbiSwap => Some(RebootReason2::ZbiSwap),
+        ShutdownReason::OutOfMemory => Some(RebootReason2::OutOfMemory),
+        ShutdownReason::NetstackMigration => Some(RebootReason2::NetstackMigration),
+        ShutdownReason::AndroidUnexpectedReason => Some(RebootReason2::AndroidUnexpectedReason),
+        ShutdownReason::AndroidRescueParty => Some(RebootReason2::AndroidRescueParty),
+        ShutdownReason::AndroidCriticalProcessFailure => {
+            Some(RebootReason2::AndroidCriticalProcessFailure)
+        }
+        _ => None,
+    }
+}
+
+fn shutdown_options_to_reboot_options(options: ShutdownOptions) -> RebootOptions {
+    let reasons = options
+        .reasons
+        .map(|reasons| reasons.into_iter().filter_map(shutdown_reason_to_reboot_reason).collect());
+    RebootOptions { reasons, ..Default::default() }
+}
 
 pub struct MockRebootService {
     call_hook: Box<dyn Fn(RebootOptions) -> AdminPerformRebootResult + Send + Sync>,
@@ -34,6 +66,10 @@ impl MockRebootService {
             match event {
                 AdminRequest::PerformReboot { options, responder } => {
                     let result = (self.call_hook)(options);
+                    responder.send(result)?;
+                }
+                AdminRequest::Shutdown { options, responder } => {
+                    let result = (self.call_hook)(shutdown_options_to_reboot_options(options));
                     responder.send(result)?;
                 }
                 _ => {
