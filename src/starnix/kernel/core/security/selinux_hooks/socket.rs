@@ -131,7 +131,7 @@ fn compute_socket_security_class(
             NetlinkFamily::Ecryptfs
             | NetlinkFamily::Smc
             | NetlinkFamily::Usersock
-            | NetlinkFamily::Unsupported => SocketClass::Netlink,
+            | NetlinkFamily::Invalid => SocketClass::Netlink,
         },
         SocketDomain::Packet => SocketClass::Packet,
         SocketDomain::Qipcrtr => SocketClass::Qipcrtr,

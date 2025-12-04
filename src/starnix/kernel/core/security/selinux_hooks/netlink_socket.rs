@@ -40,7 +40,7 @@ fn nlmsg_permission_for_netlink_family(netlink_family: NetlinkFamily) -> Option<
         NetlinkFamily::Xfrm => Some(NetlinkXfrmSocketPermission::Nlmsg.into()),
 
         // Other Netlink families don't have the "nlmsg" permission.
-        NetlinkFamily::Unsupported
+        NetlinkFamily::Invalid
         | NetlinkFamily::Selinux
         | NetlinkFamily::Nflog
         | NetlinkFamily::Usersock
@@ -114,7 +114,7 @@ fn legacy_permission_for_family_and_message_type(
 
         // Other Netlink families don't have message permissions besides the common socket
         // permissions.
-        NetlinkFamily::Unsupported
+        NetlinkFamily::Invalid
         | NetlinkFamily::Selinux
         | NetlinkFamily::Nflog
         | NetlinkFamily::Usersock

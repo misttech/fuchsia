@@ -81,8 +81,7 @@ pub fn new_netlink_socket(
         NetlinkFamily::Generic => Box::new(GenericNetlinkSocket::new(kernel)?),
         NetlinkFamily::SockDiag => Box::new(DiagnosticNetlinkSocket::default()),
         NetlinkFamily::Audit => Box::new(AuditNetlinkSocket::new(kernel)?),
-        NetlinkFamily::Unsupported
-        | NetlinkFamily::Usersock
+        NetlinkFamily::Usersock
         | NetlinkFamily::Firewall
         | NetlinkFamily::Nflog
         | NetlinkFamily::Xfrm
@@ -98,6 +97,7 @@ pub fn new_netlink_socket(
         | NetlinkFamily::Rdma
         | NetlinkFamily::Crypto
         | NetlinkFamily::Smc => Box::new(StubbedNetlinkSocket::new(family)),
+        NetlinkFamily::Invalid => return error!(EINVAL),
     };
     Ok(ops)
 }
@@ -129,7 +129,7 @@ impl NetlinkAddress {
 
 #[derive(Debug, Hash, Eq, PartialEq, Clone)]
 pub enum NetlinkFamily {
-    Unsupported,
+    Invalid,
     Route,
     Usersock,
     Firewall,
@@ -177,7 +177,7 @@ impl NetlinkFamily {
             NETLINK_RDMA => NetlinkFamily::Rdma,
             NETLINK_CRYPTO => NetlinkFamily::Crypto,
             NETLINK_SMC => NetlinkFamily::Smc,
-            _ => NetlinkFamily::Unsupported,
+            _ => NetlinkFamily::Invalid,
         }
     }
 
