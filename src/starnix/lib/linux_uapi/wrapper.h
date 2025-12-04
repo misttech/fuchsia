@@ -57,9 +57,12 @@
 #include <linux/mqueue.h>
 #include <linux/netfilter/nf_nat.h>
 #include <linux/netfilter/xt_TPROXY.h>
+#include <linux/netfilter/xt_bpf.h>
 #include <linux/netfilter/xt_mark.h>
 #include <linux/netfilter_ipv4/ip_tables.h>
+#include <linux/netfilter_ipv4/ipt_REJECT.h>
 #include <linux/netfilter_ipv6/ip6_tables.h>
+#include <linux/netfilter_ipv6/ip6t_REJECT.h>
 #include <linux/netlink.h>
 #include <linux/oom.h>
 #include <linux/perf_event.h>

@@ -41,7 +41,7 @@
     <project name="third_party/android.googlesource.com/platform/bionic"
              path="third_party/android/platform/bionic"
              remote="https://fuchsia.googlesource.com/third_party/android.googlesource.com/platform/bionic"
-             revision="660dc2f95b4f5a962c8d711a4ddee37b9b18760e"/>
+             revision="488ae90e484d2d893c36a8397582d97b7e95e9b5"/>
     <project name="third_party/android.googlesource.com/platform/frameworks/native"
              path="third_party/android/platform/frameworks/native"
              remote="https://fuchsia.googlesource.com/third_party/android.googlesource.com/platform/frameworks/native"

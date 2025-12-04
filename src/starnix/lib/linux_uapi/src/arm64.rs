@@ -4111,6 +4111,7 @@ pub const NF_NAT_RANGE_PROTO_OFFSET: u32 = 32;
 pub const NF_NAT_RANGE_NETMAP: u32 = 64;
 pub const NF_NAT_RANGE_PROTO_RANDOM_ALL: u32 = 20;
 pub const NF_NAT_RANGE_MASK: u32 = 127;
+pub const XT_BPF_MAX_NUM_INSTR: u32 = 64;
 pub const MB_LEN_MAX: u32 = 1;
 pub const CHAR_MIN: u32 = 0;
 pub const NF_IP_PRE_ROUTING: u32 = 0;
@@ -12331,6 +12332,66 @@ impl Default for xt_tproxy_target_info_v1 {
     }
 }
 #[repr(C)]
+#[derive(Clone, Copy, Debug, FromBytes, Immutable, IntoBytes, KnownLayout)]
+pub struct bpf_prog {
+    _unused: [u8; 0],
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone, IntoBytes, FromBytes, KnownLayout, Immutable)]
+pub struct xt_bpf_info {
+    pub bpf_program_num_elem: __u16,
+    pub __bindgen_padding_0: [u8; 2usize],
+    pub bpf_program: [sock_filter; 64usize],
+    pub __bindgen_padding_1: [u8; 4usize],
+    pub filter: uref<bpf_prog>,
+}
+impl Default for xt_bpf_info {
+    fn default() -> Self {
+        let mut s = ::std::mem::MaybeUninit::<Self>::uninit();
+        unsafe {
+            ::std::ptr::write_bytes(s.as_mut_ptr(), 0, 1);
+            s.assume_init()
+        }
+    }
+}
+pub const xt_bpf_modes_XT_BPF_MODE_BYTECODE: xt_bpf_modes = 0;
+pub const xt_bpf_modes_XT_BPF_MODE_FD_PINNED: xt_bpf_modes = 1;
+pub const xt_bpf_modes_XT_BPF_MODE_FD_ELF: xt_bpf_modes = 2;
+pub type xt_bpf_modes = crate::types::c_uint;
+#[repr(C)]
+#[derive(Clone, Copy, FromBytes, Immutable, KnownLayout)]
+pub struct xt_bpf_info_v1 {
+    pub mode: __u16,
+    pub bpf_program_num_elem: __u16,
+    pub fd: __s32,
+    pub __bindgen_anon_1: xt_bpf_info_v1__bindgen_ty_1,
+    pub filter: uref<bpf_prog>,
+}
+#[repr(C)]
+#[derive(Clone, Copy, FromBytes, Immutable, KnownLayout)]
+pub union xt_bpf_info_v1__bindgen_ty_1 {
+    pub bpf_program: [sock_filter; 64usize],
+    pub path: [crate::types::c_char; 512usize],
+}
+impl Default for xt_bpf_info_v1__bindgen_ty_1 {
+    fn default() -> Self {
+        let mut s = ::std::mem::MaybeUninit::<Self>::uninit();
+        unsafe {
+            ::std::ptr::write_bytes(s.as_mut_ptr(), 0, 1);
+            s.assume_init()
+        }
+    }
+}
+impl Default for xt_bpf_info_v1 {
+    fn default() -> Self {
+        let mut s = ::std::mem::MaybeUninit::<Self>::uninit();
+        unsafe {
+            ::std::ptr::write_bytes(s.as_mut_ptr(), 0, 1);
+            s.assume_init()
+        }
+    }
+}
+#[repr(C)]
 #[derive(Debug, Default, Copy, Clone, IntoBytes, FromBytes, KnownLayout, Immutable)]
 pub struct xt_mark_tginfo2 {
     pub mark: __u32,
@@ -12616,6 +12677,30 @@ pub struct ipt_get_entries {
     pub __bindgen_padding_0: [u8; 4usize],
     pub entrytable: __IncompleteArrayField<ipt_entry>,
 }
+pub const ipt_reject_with_IPT_ICMP_NET_UNREACHABLE: ipt_reject_with = 0;
+pub const ipt_reject_with_IPT_ICMP_HOST_UNREACHABLE: ipt_reject_with = 1;
+pub const ipt_reject_with_IPT_ICMP_PROT_UNREACHABLE: ipt_reject_with = 2;
+pub const ipt_reject_with_IPT_ICMP_PORT_UNREACHABLE: ipt_reject_with = 3;
+pub const ipt_reject_with_IPT_ICMP_ECHOREPLY: ipt_reject_with = 4;
+pub const ipt_reject_with_IPT_ICMP_NET_PROHIBITED: ipt_reject_with = 5;
+pub const ipt_reject_with_IPT_ICMP_HOST_PROHIBITED: ipt_reject_with = 6;
+pub const ipt_reject_with_IPT_TCP_RESET: ipt_reject_with = 7;
+pub const ipt_reject_with_IPT_ICMP_ADMIN_PROHIBITED: ipt_reject_with = 8;
+pub type ipt_reject_with = crate::types::c_uint;
+#[repr(C)]
+#[derive(Clone, Copy, Debug, FromBytes, Immutable, IntoBytes, KnownLayout)]
+pub struct ipt_reject_info {
+    pub with: ipt_reject_with,
+}
+impl Default for ipt_reject_info {
+    fn default() -> Self {
+        let mut s = ::std::mem::MaybeUninit::<Self>::uninit();
+        unsafe {
+            ::std::ptr::write_bytes(s.as_mut_ptr(), 0, 1);
+            s.assume_init()
+        }
+    }
+}
 pub const nf_ip6_hook_priorities_NF_IP6_PRI_FIRST: nf_ip6_hook_priorities = -2147483648;
 pub const nf_ip6_hook_priorities_NF_IP6_PRI_RAW_BEFORE_DEFRAG: nf_ip6_hook_priorities = -450;
 pub const nf_ip6_hook_priorities_NF_IP6_PRI_CONNTRACK_DEFRAG: nf_ip6_hook_priorities = -400;
@@ -12761,6 +12846,21 @@ impl Default for ip6t_get_entries {
             s.assume_init()
         }
     }
+}
+pub const ip6t_reject_with_IP6T_ICMP6_NO_ROUTE: ip6t_reject_with = 0;
+pub const ip6t_reject_with_IP6T_ICMP6_ADM_PROHIBITED: ip6t_reject_with = 1;
+pub const ip6t_reject_with_IP6T_ICMP6_NOT_NEIGHBOUR: ip6t_reject_with = 2;
+pub const ip6t_reject_with_IP6T_ICMP6_ADDR_UNREACH: ip6t_reject_with = 3;
+pub const ip6t_reject_with_IP6T_ICMP6_PORT_UNREACH: ip6t_reject_with = 4;
+pub const ip6t_reject_with_IP6T_ICMP6_ECHOREPLY: ip6t_reject_with = 5;
+pub const ip6t_reject_with_IP6T_TCP_RESET: ip6t_reject_with = 6;
+pub const ip6t_reject_with_IP6T_ICMP6_POLICY_FAIL: ip6t_reject_with = 7;
+pub const ip6t_reject_with_IP6T_ICMP6_REJECT_ROUTE: ip6t_reject_with = 8;
+pub type ip6t_reject_with = crate::types::c_uint;
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, FromBytes, Immutable, IntoBytes, KnownLayout)]
+pub struct ip6t_reject_info {
+    pub with: __u32,
 }
 pub const perf_type_id_PERF_TYPE_HARDWARE: perf_type_id = 0;
 pub const perf_type_id_PERF_TYPE_SOFTWARE: perf_type_id = 1;
@@ -20623,7 +20723,7 @@ impl Default for sk_reuseport_md {
     }
 }
 #[repr(C)]
-#[derive(Debug, Default, Copy, Clone, IntoBytes, FromBytes, KnownLayout, Immutable)]
+#[derive(Clone, Copy, Debug, Default, FromBytes, Immutable, IntoBytes, KnownLayout)]
 pub struct bpf_prog_info {
     pub type_: __u32,
     pub id: __u32,
@@ -24098,12 +24198,15 @@ pub struct xt_target {
 //    //third_party/android/platform/bionic/libc/kernel/uapi/linux/netfilter/nf_nat.h |
 //    //third_party/android/platform/bionic/libc/kernel/uapi/linux/netfilter/x_tables.h |
 //    //third_party/android/platform/bionic/libc/kernel/uapi/linux/netfilter/xt_TPROXY.h |
+//    //third_party/android/platform/bionic/libc/kernel/uapi/linux/netfilter/xt_bpf.h |
 //    //third_party/android/platform/bionic/libc/kernel/uapi/linux/netfilter/xt_mark.h |
 //    //third_party/android/platform/bionic/libc/kernel/uapi/linux/netfilter/xt_tcpudp.h |
 //    //third_party/android/platform/bionic/libc/kernel/uapi/linux/netfilter_ipv4.h |
 //    //third_party/android/platform/bionic/libc/kernel/uapi/linux/netfilter_ipv4/ip_tables.h |
+//    //third_party/android/platform/bionic/libc/kernel/uapi/linux/netfilter_ipv4/ipt_REJECT.h |
 //    //third_party/android/platform/bionic/libc/kernel/uapi/linux/netfilter_ipv6.h |
 //    //third_party/android/platform/bionic/libc/kernel/uapi/linux/netfilter_ipv6/ip6_tables.h |
+//    //third_party/android/platform/bionic/libc/kernel/uapi/linux/netfilter_ipv6/ip6t_REJECT.h |
 //    //third_party/android/platform/bionic/libc/kernel/uapi/linux/netlink.h |
 //    //third_party/android/platform/bionic/libc/kernel/uapi/linux/oom.h |
 //    //third_party/android/platform/bionic/libc/kernel/uapi/linux/openat2.h |
