@@ -267,7 +267,8 @@ zx_status_t ContiguousPooledMemoryAllocator::Init(uint32_t alignment_log2) {
   if (alignment_log2 < system_page_alignment) {
     alignment_log2 = safe_cast<uint32_t>(system_page_alignment);
   }
-  zx_status_t status = zx::vmo::create_contiguous(parent_device_->bti(), size_, alignment_log2,
+  const uint64_t vmo_size = fbl::round_up<uint64_t>(size_, zx_system_get_page_size());
+  zx_status_t status = zx::vmo::create_contiguous(parent_device_->bti(), vmo_size, alignment_log2,
                                                   &local_contiguous_vmo);
   if (status != ZX_OK) {
     LOG(ERROR, "Could not allocate contiguous memory, status %d heap_name_: %s", status,
@@ -279,7 +280,8 @@ zx_status_t ContiguousPooledMemoryAllocator::Init(uint32_t alignment_log2) {
 }
 
 zx_status_t ContiguousPooledMemoryAllocator::InitPhysical(zx_paddr_t paddr) {
-  zx::result<zx::vmo> physical_vmo_result = parent_device_->CreatePhysicalVmo(paddr, size_);
+  const uint64_t vmo_size = fbl::round_up<uint64_t>(size_, zx_system_get_page_size());
+  zx::result<zx::vmo> physical_vmo_result = parent_device_->CreatePhysicalVmo(paddr, vmo_size);
   if (!physical_vmo_result.is_ok()) {
     LOG(ERROR, "Failed to create physical VMO: %s heap_name_: %s",
         physical_vmo_result.status_string(), heap_name_);
