@@ -12,8 +12,9 @@ use fuchsia_async as fasync;
 use fuchsia_component::server::ServiceFs;
 use fuchsia_inspect::component;
 use fuchsia_inspect::health::Reporter;
+use fuchsia_sync::Mutex;
 use futures::prelude::*;
-use std::sync::{Arc, LazyLock, Mutex};
+use std::sync::{Arc, LazyLock};
 
 enum IncomingRequest {
     Product(ProductRequestStream),
@@ -89,7 +90,7 @@ async fn handle_product(mut stream: ProductRequestStream) -> Result<()> {
     while let Some(Ok(req)) = stream.next().await {
         match req {
             ProductRequest::GetInfo { responder } => {
-                let locked = RETURN_VALUES.lock().unwrap();
+                let locked = RETURN_VALUES.lock();
                 if locked.is_none() {
                     bail!("Return values have not been set in mock.");
                 }
@@ -104,7 +105,7 @@ async fn handle_board(mut stream: BoardRequestStream) -> Result<()> {
     while let Some(Ok(req)) = stream.next().await {
         match req {
             BoardRequest::GetInfo { responder } => {
-                let locked = RETURN_VALUES.lock().unwrap();
+                let locked = RETURN_VALUES.lock();
                 if locked.is_none() {
                     bail!("Return values have not been set in mock.");
                 }
@@ -119,7 +120,7 @@ async fn handle_device(mut stream: DeviceRequestStream) -> Result<()> {
     while let Some(Ok(req)) = stream.next().await {
         match req {
             DeviceRequest::GetInfo { responder } => {
-                let locked = RETURN_VALUES.lock().unwrap();
+                let locked = RETURN_VALUES.lock();
                 if locked.is_none() {
                     bail!("Return values have not been set in mock.");
                 }
@@ -134,7 +135,7 @@ async fn handle_setter(mut stream: SetterRequestStream) {
     while let Some(Ok(req)) = stream.next().await {
         match req {
             SetterRequest::SetResponses { device, product, board, responder } => {
-                let mut locked = RETURN_VALUES.lock().unwrap();
+                let mut locked = RETURN_VALUES.lock();
                 *locked = Some(ReturnValues { board, product, device });
                 responder.send().ok();
             }

@@ -23,6 +23,7 @@ rustc_binary("hwinfo_bin") {
     "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-component",
     "//src/lib/fuchsia-fs",
+    "//src/lib/fuchsia-sync",
     "//src/sys/lib/fuchsia-zbi",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:chrono",

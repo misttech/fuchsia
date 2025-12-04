@@ -11,12 +11,13 @@ use fidl_fuchsia_factory::MiscFactoryStoreProviderMarker;
 use fidl_fuchsia_hwinfo::{BoardRequestStream, DeviceRequestStream, ProductRequestStream};
 use fuchsia_component::client::connect_to_protocol;
 use fuchsia_component::server::ServiceFs;
+use fuchsia_sync::RwLock;
 use futures::prelude::*;
 use hwinfo_server::{
-    spawn_board_info_server, spawn_device_info_server, spawn_product_info_server, BoardInfoServer,
-    DeviceInfoServer, ProductInfoServer,
+    BoardInfoServer, DeviceInfoServer, ProductInfoServer, spawn_board_info_server,
+    spawn_device_info_server, spawn_product_info_server,
 };
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 
 enum IncomingServices {
     ProductInfo(ProductRequestStream),
