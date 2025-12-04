@@ -101,11 +101,12 @@ _IGNORED_FILE_SUFFIXES = (
 
 # A set of labels that should be ignored from depfiles.
 _IGNORED_LABELS = {
-    # This file does not exist. It is returned by the cquery due to an
+    # These files do not exist. They are returned by the cquery due to an
     # unfortunate sequence of events.
     #
     # See details in https://fxbug.dev/434864899.
     "//third_party/rust_crates/vendor/ansi_term-0.12.1:LICENSE",
+    "//third_party/rust_crates/vendor/remove_dir_all-0.5.3:LICENSE",
     # Internal targets for building Go SDK from rules_go.
     "@@rules_go++go_sdk+io_bazel_rules_nogo//:BUILD.bazel",
     "@@rules_go++go_sdk+io_bazel_rules_nogo//:scope.bzl",

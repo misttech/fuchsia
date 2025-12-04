@@ -57,6 +57,12 @@ declare_args() {
                                           },
                                         ]
                                       },
+                                      {
+                                        # TODO(http://fxbug.dev/465858680): Remove cargo-gnaw from
+                                        # this list and build it continuously through other means.
+                                        bazel_label =
+                                            "//tools/cargo-gnaw:cargo-gnaw-bin"
+                                      },
                                     ]
 
   # A similar list to extend the list above for custom build configuration
