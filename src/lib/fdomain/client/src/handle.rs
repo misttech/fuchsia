@@ -22,6 +22,19 @@ pub struct Handle {
 }
 
 impl Handle {
+    /// Returns the ID of the Handle. This should be unique to the handle for its lifetime.
+    pub fn id(&self) -> u32 {
+        self.id
+    }
+
+    /// Checks if there is an active client for this handle.
+    ///
+    /// Only really useful if you are doing something when this function returning `false`,
+    /// and you want to fail fast with a specific error.
+    pub fn has_client(&self) -> bool {
+        self.client.upgrade().is_some()
+    }
+
     /// Get the FDomain client this handle belongs to.
     pub(crate) fn client(&self) -> Arc<Client> {
         self.client.upgrade().unwrap_or_else(|| Arc::clone(&*crate::DEAD_CLIENT))
