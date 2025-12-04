@@ -661,12 +661,11 @@ impl PolicyCapFile {
 
 impl BytesFileOps for PolicyCapFile {
     fn read(&self, _current_task: &CurrentTask) -> Result<Cow<'_, [u8]>, Errno> {
-        Ok(self
-            .security_server
-            .is_policycap_enabled(self.policy_cap)
-            .then_some(b"1")
-            .unwrap_or(b"0")
-            .into())
+        if self.security_server.is_policycap_enabled(self.policy_cap) {
+            Ok(b"1".into())
+        } else {
+            Ok(b"0".into())
+        }
     }
 }
 

@@ -10,7 +10,7 @@ use super::{
 use crate::task::CurrentTask;
 use crate::vfs::FileHandle;
 use selinux::{InitialSid, PolicyCap, SecurityPermission, SecurityServer};
-use starnix_logging::log_warn;
+use starnix_logging::{log_info, log_warn};
 use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked};
 use starnix_uapi::errors::Errno;
 use std::sync::atomic::Ordering;
@@ -53,16 +53,23 @@ pub(in crate::security) fn selinuxfs_policy_loaded<L>(
     // Compare the policy capabilities against this kernel's support level, and emit warnings for
     // each mismatch.
     for capability in PolicyCap::all_values() {
-        let in_policy = security_server.is_policycap_enabled(*capability);
+        let is_enabled = security_server.is_policycap_enabled(*capability);
+        log_info!("SELinux:  policy capability {}={}", capability.name(), is_enabled as u8);
         match policycap_support(*capability) {
             PolicyCapSupport::AlwaysOn(bug) => {
-                if !in_policy {
-                    log_warn!("policycap {} cannot be disabled bug={bug}", capability.name());
+                if !is_enabled {
+                    log_warn!(
+                        "SELinux:  policy capability {} cannot be disabled bug={bug}",
+                        capability.name()
+                    );
                 }
             }
             PolicyCapSupport::AlwaysOff(bug) => {
-                if in_policy {
-                    log_warn!("policycap {} is not supported bug={bug}", capability.name());
+                if is_enabled {
+                    log_warn!(
+                        "SELinux:  policy capability {} is not supported bug={bug}",
+                        capability.name()
+                    );
                 }
             }
             PolicyCapSupport::Configurable | PolicyCapSupport::NotImplemented => (),

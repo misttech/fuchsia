@@ -838,7 +838,6 @@ pub enum PolicyCapSupport {
 
 /// Returns a `PolicyCapSupport` indicating the state of support, and the `BugRef` to report if
 /// emitting a partial support warning.
-#[track_caller]
 fn policycap_support(policy_cap: PolicyCap) -> PolicyCapSupport {
     match policy_cap {
         PolicyCap::AlwaysCheckNetwork => {
