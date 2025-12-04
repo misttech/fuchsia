@@ -6,10 +6,10 @@ use addr::{TargetAddr, TargetIpAddr};
 use anyhow::{Result, anyhow, bail};
 use discovery::query::TargetInfoQuery;
 use discovery::{Discovery, DiscoveryBuilder, DiscoverySources, TargetEvent, TargetHandle};
+use fdomain_fuchsia_developer_remotecontrol::{IdentifyHostResponse, RemoteControlProxy};
 use ffx_command_error::{NonFatalError, user_error};
 use ffx_config::{EnvironmentContext, TryFromEnvContext, keys};
 use fidl_fuchsia_developer_ffx::{self as ffx};
-use fidl_fuchsia_developer_remotecontrol::{IdentifyHostResponse, RemoteControlProxy};
 use fuchsia_async::TimeoutExt;
 use futures::future::LocalBoxFuture;
 use futures::{FutureExt, Stream, StreamExt, pin_mut};
@@ -762,14 +762,14 @@ impl Resolution {
         if let Ok(guard) = self.connection.try_lock() { guard.as_ref().cloned() } else { None }
     }
 
-    pub async fn get_rcs_proxy(&self, context: &EnvironmentContext) -> Result<RemoteControlProxy> {
+    async fn get_rcs_proxy(&self, context: &EnvironmentContext) -> Result<RemoteControlProxy> {
         // Hold a lock to make sure only one RCS proxy is being initialized at a time.
         // Note that this is a tokio Mutex, not a std Mutex, so it's safe to hold across
         // await points.
         let mut rcs_proxy_guard = self.rcs_proxy.lock().await;
         if rcs_proxy_guard.is_none() {
             let conn = self.get_connection(context).await?;
-            *rcs_proxy_guard = Some(conn.rcs_proxy().await?);
+            *rcs_proxy_guard = Some(conn.rcs_proxy_fdomain().await?);
         }
         // Unwrap safety: either the guard was already Some(), or we just initialized it with Some()
         Ok(rcs_proxy_guard.as_ref().unwrap().clone())
