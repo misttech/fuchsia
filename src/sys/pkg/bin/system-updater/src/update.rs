@@ -296,7 +296,6 @@ impl Updater for RealUpdater {
             reboot_controller,
             self.structured_config.concurrent_package_resolves.into(),
             self.structured_config.concurrent_blob_fetches.into(),
-            self.structured_config.allow_packageless_update,
             manifest_public_keys,
             cancel_receiver,
         )
@@ -321,7 +320,6 @@ async fn update(
     reboot_controller: RebootController,
     concurrent_package_resolves: usize,
     concurrent_blob_fetches: usize,
-    allow_packageless_update: bool,
     manifest_public_keys: Vec<ring::signature::UnparsedPublicKey<Vec<u8>>>,
     mut cancel_receiver: oneshot::Receiver<()>,
 ) -> (String, impl FusedStream<Item = fupdate_installer_ext::State>) {
@@ -361,7 +359,7 @@ async fn update(
 
         let attempt_res = {
             let attempt_fut = match config.update_url.scheme() {
-                "http" | "https" if allow_packageless_update => PackagelessAttempt {
+                "http" | "https" => PackagelessAttempt {
                     config: &config,
                     env: &env,
                     concurrent_blob_fetches,

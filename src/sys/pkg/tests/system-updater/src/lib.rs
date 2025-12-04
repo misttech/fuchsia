@@ -582,10 +582,6 @@ impl TestEnvBuilder {
         }
 
         builder.init_mutable_config_from_package(&system_updater).await.unwrap();
-        builder
-            .set_config_value(&system_updater, "allow_packageless_update", true.into())
-            .await
-            .unwrap();
 
         builder
             .add_capability(cm_rust::CapabilityDecl::Config(cm_rust::ConfigurationDecl {

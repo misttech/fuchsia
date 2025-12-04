@@ -135,7 +135,6 @@ fuchsia_structured_config_rust_lib("config_lib") {
 structured_config_values = {
   concurrent_package_resolves = 5
   concurrent_blob_fetches = 5
-  allow_packageless_update = false
   manifest_public_keys = []
 }
 
