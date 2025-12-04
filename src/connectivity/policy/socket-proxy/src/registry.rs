@@ -299,6 +299,7 @@ impl RegisteredNetworks {
 
     /// Empties the registered networks.
     pub(crate) fn clear(&mut self) {
+        self.default_network_id = None;
         self.networks.clear();
     }
 
