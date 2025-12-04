@@ -82,7 +82,7 @@ constinit decltype(mutable_ld_abi) mutable_ld_abi = {
     .loaded_modules_count{2},
 };
 
-StartupRelocate::StartupRelocate(const void* vdso_base) {
+StartupRelocate StartupRelocate::Create(const void* vdso_base) {
   // Do the bootstrap relocation so system calls can be made.
   auto bootstrap_diag = elfldltl::TrapDiagnostics();
   std::optional<Elf::Phdr> relro_phdr, tls_phdr;
@@ -106,10 +106,11 @@ StartupRelocate::StartupRelocate(const void* vdso_base) {
 
   // After the bootstrap protocol acquires the VMAR handle, the RELRO data can
   // be protected.  First, this function modifies some of that RELRO data.
+  StartupRelocate reloc;
   if (relro_phdr) [[likely]] {
-    std::tie(start_, size_) =  // ProtectRelro will use these.
+    std::tie(reloc.start_, reloc.size_) =  // ProtectRelro will use these.
         elfldltl::RelroBounds(*relro_phdr, bootstrap.page_size());
-    start_ += gSelfModule.link_map.addr;  // Apply the load bias.
+    reloc.start_ += gSelfModule.link_map.addr;  // Apply the load bias.
   }
 
   if (!stack_size) [[unlikely]] {
@@ -143,6 +144,8 @@ StartupRelocate::StartupRelocate(const void* vdso_base) {
   // bootstrap protocol acquires the VMAR handle and calls ProtectRelro,
   // below.  All the stores to RELRO data must be ordered before that.
   std::atomic_signal_fence(std::memory_order_release);
+
+  return reloc;
 }
 
 // The (only) VMAR handle will be closed on return, so the region can never be

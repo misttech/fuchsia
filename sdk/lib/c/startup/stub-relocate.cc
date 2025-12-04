@@ -14,7 +14,7 @@ namespace LIBC_NAMESPACE_DECL {
 
 // The members have initializers in the declarations just for cleanliness.
 // With LTO, setting them here can be optimized away because they're unused.
-StartupRelocate::StartupRelocate(const void* vdso_base) {}
+StartupRelocate StartupRelocate::Create(const void* vdso_base) { return {}; }
 
 void StartupRelocate::ProtectRelro(zx::vmar loaded_vmar) const&& {
   // Consuming them here silences -Wunused-private-field and should still let

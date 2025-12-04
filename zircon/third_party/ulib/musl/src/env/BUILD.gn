@@ -19,20 +19,3 @@ source_set("env") {
   # TODO(https://fxbug.dev/42136089): delete the below and fix compiler warnings
   configs += [ "//build/config:Wno-conversion" ]
 }
-
-source_set("start-main") {
-  sources = [ "__libc_start_main.c" ]
-
-  deps = [
-    "//sdk/lib/c/startup:startup-random-impl",
-    "//sdk/lib/c/startup/musl-processargs",
-    "//zircon/third_party/ulib/musl:musl_internal",
-  ]
-
-  # Make sure this code is compiled with frame pointers so the outermost few
-  # frames seen in user backtraces are always coherent and consistent between
-  # frame-pointer and shadow-call-stack backtraces.
-  configs += [ "//build/config:default_frame_pointers" ]
-  configs -= [ "//build/config:default_frame_pointers" ]
-  configs += [ "//build/config:frame_pointers" ]
-}

@@ -21,11 +21,18 @@ namespace LIBC_NAMESPACE_DECL {
 // apply RELRO protections.  In the shared C library, the both are no-ops.
 class [[nodiscard]] StartupRelocate {
  public:
-  explicit StartupRelocate(const void* vdso_base) LIBC_ASM_LINKAGE_DECLARE(StartupRelocate);
+  StartupRelocate(const StartupRelocate&) = delete;
+  StartupRelocate(StartupRelocate&&) = default;
 
-  void ProtectRelro(zx::vmar loaded_vmar) const&& LIBC_ASM_LINKAGE_DECLARE(StartupProtectRelro);
+  static StartupRelocate Create(const void* vdso_base)
+      LIBC_ASM_LINKAGE_DECLARE(StartupRelocateCreate);
+
+  void ProtectRelro(zx::vmar loaded_vmar) const&& LIBC_ASM_LINKAGE_DECLARE(
+      StartupRelocateProtectRelro);
 
  private:
+  StartupRelocate() = default;
+
   uintptr_t start_ = 0;
   size_t size_ = 0;
 };

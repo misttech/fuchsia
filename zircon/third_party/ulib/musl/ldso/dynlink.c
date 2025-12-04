@@ -40,7 +40,6 @@
 #include "libc.h"
 #include "relr.h"
 #include "stdio_impl.h"
-#include "threads/zxr-thread.h"
 #include "threads_impl.h"
 #include "zircon_impl.h"
 
@@ -177,7 +176,7 @@ static struct dso ldso, vdso;
 static struct dso *head, *tail, *fini_head;
 static struct dso* detached_head;
 static unsigned long long gencnt;
-int runtime __asm__("_dynlink_runtime") __ALWAYS_EMIT __attribute__((__visibility__("hidden")));
+int _dynlink_runtime;
 static int ldso_fail;
 static jmp_buf* rtld_fail;
 static pthread_rwlock_t lock;
@@ -188,6 +187,9 @@ static size_t tls_offset = INITIAL_TLS_OFFSET;
 static size_t static_tls_cnt;
 static pthread_mutex_t init_fini_lock = {
     ._m_attr = PTHREAD_MUTEX_MAKE_ATTR(PTHREAD_MUTEX_RECURSIVE, PTHREAD_PRIO_NONE)};
+
+static struct tls_layout tls_layout;
+static size_t stack_size;
 
 static bool log_libs = false;
 static atomic_uintptr_t unlogged_tail;
@@ -208,6 +210,16 @@ static bool trace_maps = false;
 void _dlfcn_lock(void) { pthread_rwlock_rdlock(&lock); }
 void _dlfcn_unlock(void) { pthread_rwlock_unlock(&lock); }
 static void _dl_wrlock(void) { pthread_rwlock_wrlock(&lock); }
+
+NO_ASAN LIBC_NO_SAFESTACK size_t _dl_stack_size(void) { return stack_size; }
+NO_ASAN LIBC_NO_SAFESTACK struct tls_layout _dl_tls_layout(void) { return tls_layout; }
+
+// This is called after most libc setup (with full Fuchsia Compiler ABI), but
+// before static constructors, including sanitizer runtime initializers.
+NO_ASAN void _dl_finish_startup(void) {
+  _dynlink_runtime = 1;
+  _dl_iterate_loaded_libs();
+}
 
 NO_ASAN LIBC_NO_SAFESTACK static int dl_strcmp(const char* l, const char* r) {
   for (; *l == *r && *l; l++, r++)
@@ -562,7 +574,7 @@ LIBC_NO_SAFESTACK NO_ASAN static void do_relocs(struct dso* dso, zx_handle_t vma
                                                 : find_sym(ctx, name, type == REL_PLT);
       if (!def.sym && (sym->st_shndx != SHN_UNDEF || sym->st_info >> 4 != STB_WEAK)) {
         error("Error relocating %s: %s: symbol not found", dso->l_map.l_name, name);
-        if (runtime)
+        if (_dynlink_runtime)
           longjmp(*rtld_fail, 1);
         continue;
       }
@@ -654,7 +666,7 @@ LIBC_NO_SAFESTACK NO_ASAN static void do_relocs(struct dso* dso, zx_handle_t vma
         if (!def.dso) {
           *reloc_addr = (uintptr_t)(addend == 0 ? _ld_tlsdesc_runtime_undefined_weak
                                                 : _ld_tlsdesc_runtime_undefined_weak_addend);
-        } else if (runtime && def.dso->tls_id >= static_tls_cnt) {
+        } else if (_dynlink_runtime && def.dso->tls_id >= static_tls_cnt) {
           size_t* new = dl_alloc(2 * sizeof(size_t), vmar);
           if (!new) {
             error("Error relocating %s: cannot allocate TLSDESC for %s", dso->l_map.l_name, name);
@@ -675,7 +687,7 @@ LIBC_NO_SAFESTACK NO_ASAN static void do_relocs(struct dso* dso, zx_handle_t vma
         break;
       default:
         error("Error relocating %s: unsupported relocation type %d", dso->l_map.l_name, type);
-        if (runtime)
+        if (_dynlink_runtime)
           longjmp(*rtld_fail, 1);
         continue;
     }
@@ -1137,8 +1149,10 @@ LIBC_NO_SAFESTACK NO_ASAN static zx_status_t map_library(zx_handle_t vmo, zx_han
 
   dso->l_map.l_addr = (uintptr_t)base;
   dso->l_map.l_ld = laddr(dso, dyn);
-  if (dso->tls.size)
+  if (dso->tls.size) {
     dso->tls.image = laddr(dso, tls_image);
+    assert(((uintptr_t)dso->tls.image & (dso->tls.align - 1)) == 0);
+  }
 
   if (first_note != NULL) {
     for (const Phdr* seg = first_note; seg <= last_note; ++seg) {
@@ -1383,9 +1397,10 @@ LIBC_NO_SAFESTACK static zx_status_t load_library_vmo(zx_handle_t vmo, zx_handle
    * the newly-loaded DSO. */
   size_t namelen = strlen(name);
   alloc_size = (sizeof *p + ndeps * sizeof(p->deps[0]) + namelen + 1);
-  if (runtime && temp_dso.tls.image) {
+  if (_dynlink_runtime && temp_dso.tls.image) {
     size_t per_th = temp_dso.tls.size + temp_dso.tls.align + sizeof(void*) * (tls_cnt + 3);
     n_th = atomic_load(&libc.thread_count);
+    assert(n_th > 0);
     if (n_th > SSIZE_MAX / per_th)
       alloc_size = SIZE_MAX;
     else
@@ -1403,7 +1418,7 @@ LIBC_NO_SAFESTACK static zx_status_t load_library_vmo(zx_handle_t vmo, zx_handle
   memcpy(p->l_map.l_name, name, namelen);
   p->l_map.l_name[namelen] = '\0';
   assign_module_id(p);
-  if (runtime)
+  if (_dynlink_runtime)
     do_tls_layout(p, p->l_map.l_name + namelen + 1, n_th);
 
   dso_set_next(tail, p);
@@ -1444,7 +1459,7 @@ LIBC_NO_SAFESTACK static void load_deps(struct dso* p, zx_handle_t vmar) {
   for (; p; p = dso_next(p)) {
     struct dso** deps = NULL;
     // The two preallocated DSOs don't get space allocated for ->deps.
-    if (runtime && p->deps == NULL && p != &ldso && p != &vdso)
+    if (_dynlink_runtime && p->deps == NULL && p != &ldso && p != &vdso)
       deps = p->deps = p->buf;
     for (size_t i = 0; p->l_map.l_ld[i].d_tag; i++) {
       if (p->l_map.l_ld[i].d_tag != DT_NEEDED)
@@ -1455,7 +1470,7 @@ LIBC_NO_SAFESTACK static void load_deps(struct dso* p, zx_handle_t vmar) {
       if (status != ZX_OK) {
         error("Error loading shared library %s: %s (needed by %s)", name,
               _zx_status_get_string(status), p->l_map.l_name);
-        if (runtime)
+        if (_dynlink_runtime)
           longjmp(*rtld_fail, 1);
       } else if (deps != NULL) {
         *deps++ = dep;
@@ -1498,7 +1513,7 @@ LIBC_NO_SAFESTACK NO_ASAN static void reloc_all(struct dso* p, zx_handle_t vmar)
             " %p+%#zx failed: %s",
             p->l_map.l_name, laddr(p, relro_start), relro_end - relro_start,
             _zx_status_get_string(status));
-        if (runtime)
+        if (_dynlink_runtime)
           longjmp(*rtld_fail, 1);
       }
     }
@@ -1654,7 +1669,11 @@ __attribute__((__visibility__("hidden"))) void* __tls_get_new(size_t offset, siz
 
   /* Get new DTV space from new DSO if needed */
   if (modid > (size_t)self->head.dtv[0]) {
-    void** newdtv = p->new_dtv + (modid + 1) * atomic_fetch_add(&p->new_dtv_idx, 1);
+    if (p->tls.size) {
+      assert(p->new_tls > (unsigned char*)p->new_dtv);
+    }
+    const int new_dtv_idx = atomic_fetch_add(&p->new_dtv_idx, 1);
+    void** newdtv = p->new_dtv + (modid + 1) * new_dtv_idx;
     memcpy(newdtv, self->head.dtv, ((size_t)self->head.dtv[0] + 1) * sizeof(void*));
     newdtv[0] = (void*)modid;
     self->head.dtv = newdtv;
@@ -1665,8 +1684,10 @@ __attribute__((__visibility__("hidden"))) void* __tls_get_new(size_t offset, siz
   for (p = head;; p = dso_next(p)) {
     if (!p->tls_id || self->head.dtv[p->tls_id])
       continue;
-    mem = p->new_tls + (p->tls.size + p->tls.align) * atomic_fetch_add(&p->new_tls_idx, 1);
+    const int new_tls_idx = atomic_fetch_add(&p->new_tls_idx, 1);
+    mem = p->new_tls + (p->tls.size + p->tls.align) * new_tls_idx;
     mem += ((uintptr_t)p->tls.image - (uintptr_t)mem) & (p->tls.align - 1);
+    assert(((uintptr_t)mem & (p->tls.align - 1)) == 0);
     self->head.dtv[p->tls_id] = mem;
     memcpy(mem, p->tls.image, p->tls.len);
     if (p->tls_id == modid)
@@ -1675,33 +1696,10 @@ __attribute__((__visibility__("hidden"))) void* __tls_get_new(size_t offset, siz
   return mem + (ptrdiff_t)offset + (ptrdiff_t)DTP_OFFSET;
 }
 
-LIBC_NO_SAFESTACK thrd_info_t __init_main_thread(zx_handle_t thread_self) {
-  pthread_attr_t attr = DEFAULT_PTHREAD_ATTR;
-
-  char thread_self_name[ZX_MAX_NAME_LEN];
-  if (_zx_object_get_property(thread_self, ZX_PROP_NAME, thread_self_name,
-                              sizeof(thread_self_name)) != ZX_OK)
-    strcpy(thread_self_name, "(initial-thread)");
-  thrd_t td = __allocate_thread(attr._a_guardsize, attr._a_stacksize, thread_self_name, NULL);
-  if (td == NULL) {
-    debugmsg("No memory for %zu bytes thread-local storage.\n", libc.tls_size);
-    _exit(127);
-  }
-
-  zx_status_t status = zxr_thread_adopt(thread_self, &td->zxr_thread);
-  if (status != ZX_OK)
-    CRASH_WITH_UNIQUE_BACKTRACE();
-
-  zxr_tp_set(thread_self, pthread_to_tp(td));
-
-  thrd_info_t info = {td, &runtime};
-  return info;
-}
-
 LIBC_NO_SAFESTACK static void update_tls_size(void) {
   libc.tls_cnt = tls_cnt;
-  libc.tls_align = tls_align;
-  libc.tls_size =
+  tls_layout.align = tls_align;
+  tls_layout.size =
       ZX_ALIGN((1 + tls_cnt) * sizeof(void*) + tls_offset + sizeof(struct pthread) + tls_align * 2,
                tls_align);
   // TODO(mcgrathr): The TLS block is always allocated in whole pages.
@@ -1981,12 +1979,12 @@ LIBC_NO_SAFESTACK static void* dls3(zx_handle_t exec_vmo, zx_handle_t vmar, cons
   app.l_map.l_name = (char*)"";
 
   // Check for a PT_GNU_STACK header requesting a main thread stack size.
-  libc.stack_size = ZIRCON_DEFAULT_STACK_SIZE;
+  stack_size = ZIRCON_DEFAULT_STACK_SIZE;
   for (size_t i = 0; i < app.phnum; i++) {
     if (app.phdr[i].p_type == PT_GNU_STACK) {
       size_t size = app.phdr[i].p_memsz;
       if (size > 0)
-        libc.stack_size = size;
+        stack_size = size;
       break;
     }
   }
@@ -2796,7 +2794,7 @@ LIBC_NO_SAFESTACK static void debugmsg(const char* fmt, ...) {
 LIBC_NO_SAFESTACK static void error(const char* fmt, ...) {
   va_list ap;
   va_start(ap, fmt);
-  if (!runtime) {
+  if (!_dynlink_runtime) {
     errormsg_vprintf(fmt, ap);
     ldso_fail = 1;
     va_end(ap);

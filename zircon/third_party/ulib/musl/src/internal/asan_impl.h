@@ -9,6 +9,8 @@
 
 #include "libc.h"
 
+__BEGIN_CDECLS
+
 // NOTE: userboot includes memcpy, memmove, and memset source files
 // directly, so it needs to be able to handle their #include's of this
 // header.
@@ -68,3 +70,5 @@ LIBC_NO_SAFESTACK static inline void __asan_early_init(void) {}
 LIBC_NO_SAFESTACK static inline void __hwasan_init(void) {}
 
 #endif  // __has_feature(address_sanitizer)
+
+__END_CDECLS

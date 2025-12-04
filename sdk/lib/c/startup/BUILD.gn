@@ -21,8 +21,8 @@ libc_test("unittests") {
 # These are referenced by StartCompilerAbi in one basic_abi libc_source_set()
 # and defined in a different basic_abi libc_source_set() for modularity.
 startup_relocate_symbols = [
-  "${libc_namespace}_StartupRelocate",
-  "${libc_namespace}_StartupProtectRelro",
+  "${libc_namespace}_StartupRelocateCreate",
+  "${libc_namespace}_StartupRelocateProtectRelro",
 ]
 
 libc_source_set("shared-only") {
@@ -369,6 +369,20 @@ libc_source_set("processargs-preinit") {
   deps = [
     "..:weak",
     "../ld:log.headers",
+    "//zircon/third_party/ulib/musl:musl_internal",
+  ]
+}
+
+libc_source_set("musl-glue") {
+  visibility = [ ":*" ]
+
+  basic_abi = true
+  global_symbols = [ "${libc_namespace}_InitialStackSize" ]
+  undefined_symbols = [ "_dl_stack_size" ]
+
+  sources = [ "musl-stack-size.cc" ]
+  deps = [
+    ":headers",
     "//zircon/third_party/ulib/musl:musl_internal",
   ]
 }

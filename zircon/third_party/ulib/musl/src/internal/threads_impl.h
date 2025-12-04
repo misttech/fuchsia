@@ -333,21 +333,15 @@ void __thread_tsd_run_dtors(void) ATTR_LIBC_VISIBILITY;
 
 #define DEFAULT_PTHREAD_ATTR                      \
   ((pthread_attr_t){                              \
-      ._a_stacksize = libc.stack_size,            \
+      ._a_stacksize = _dl_stack_size(),           \
       ._a_guardsize = _zx_system_get_page_size(), \
   })
 
 thrd_t __allocate_thread(size_t guard_size, size_t stack_size, const char* thread_name,
                          char default_name[ZX_MAX_NAME_LEN])
     __attribute__((nonnull(3))) ATTR_LIBC_VISIBILITY;
-
-typedef struct {
-  pthread_t thread;  // The main thread pointer.
-  int* runtime;      // Pointer to the `runtime` switch indicating the
-                     // new stack is setup and we can use dlerror machinery.
-} thrd_info_t;
-
-thrd_info_t __init_main_thread(zx_handle_t thread_self) ATTR_LIBC_VISIBILITY;
+struct pthread* _dl_copy_tls(unsigned char* mem, size_t alloc)
+    __attribute__((nonnull(1))) ATTR_LIBC_VISIBILITY;
 
 int __clock_gettime(clockid_t, struct timespec*) ATTR_LIBC_VISIBILITY;
 

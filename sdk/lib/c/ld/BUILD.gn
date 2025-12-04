@@ -183,9 +183,13 @@ libc_source_set("ld-writable-segments") {
 # musl integrated dynamic linker code.
 libc_source_set("musl-glue") {
   # These things are called only after the full compiler ABI is available.
-  sources = [ "_dl_phdr_report_globals.cc" ]
+  sources = [
+    "_dl_phdr_report_globals.cc",
+    "musl-ctors.cc",
+  ]
   deps = [
     ":writable-segments",
+    "../startup:headers",
     "//zircon/third_party/ulib/musl:musl_internal",
   ]
 
@@ -230,8 +234,8 @@ libc_source_set("musl-glue.basic") {
     # target above and it directly uses the passive ABI via ":log".
     "__sanitizer_log_write.cc",
   ]
+  libc_deps = [ ":log-panic" ]
   deps = [
-    ":log-panic",
     ":log.headers",
     "../stdlib:hermetic",
     "../string:hermetic",

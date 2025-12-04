@@ -30,11 +30,14 @@ struct tls_module {
   size_t len, size, align, offset;
 };
 
+struct tls_layout {
+  size_t size, align;
+};
+
 struct __libc {
   atomic_int thread_count;
   struct tls_module* tls_head;
-  size_t tls_size, tls_align, tls_cnt;
-  size_t stack_size;
+  size_t tls_cnt;
   struct __locale_struct global_locale;
 };
 
@@ -66,6 +69,9 @@ void __libc_exit_fini(void) ATTR_LIBC_VISIBILITY;
 void __dl_thread_cleanup(void) ATTR_LIBC_VISIBILITY;
 
 void __tls_run_dtors(void) ATTR_LIBC_VISIBILITY;
+
+struct tls_layout _dl_tls_layout(void) ATTR_LIBC_VISIBILITY;
+size_t _dl_stack_size(void) ATTR_LIBC_VISIBILITY;
 
 // Registers the handles that zx_take_startup_handle() will return.
 //

@@ -14,6 +14,7 @@
 
 #include "../threads/thread-list.h"
 #include "../threads/zxr-thread.h"
+#include "asan_impl.h"
 #include "src/stdlib/exit.h"
 #include "threads_impl.h"
 #include "zircon_impl.h"
@@ -42,15 +43,38 @@ void ForwardSvc(zx::channel deferred) {
 }
 
 // Let the sanitizer runtime initialize itself before constructors.
-void SanitizerStartup(int argc, char** argv, char** envp) {
+void SanitizerStartup(const zx_startup_arguments_t& args) {
+  StartupSanitizerModuleLoaded();
+
   const iovec& stack = __pthread_self()->safe_stack;
-  __sanitizer_startup_hook(argc, argv, envp, stack.iov_base, stack.iov_len);
+  __sanitizer_startup_hook(args.argc, args.argv, args.envp, stack.iov_base, stack.iov_len);
 }
 
 void BeforeCtors(zx::channel deferred, zx_startup_arguments_t args) {
+#if __has_feature(hwaddress_sanitizer)
+  // This code itself is instrumented and access to any normal global variable
+  // will compare the variable's tag bits to the shadow--which hasn't been set
+  // up yet.  So the hwasan runtime must be initialized before even this code
+  // does any such access.  The runtime's own initialization code will call
+  // back into libc, but not for anything where the pre-ctor initialization not
+  // yet completed here will matter.  Eventually StartupCtors() will indirectly
+  // call __hwasan_init() again (which just harmlessly returns quickly since
+  // it's already been called here).  But that would be too late.
+  //
+  // The hwasan runtime expects to have already received the callbacks to
+  // __sanitizer_module_loaded and __sanitizer_startup_hook before its
+  // constructor runs.  We know that __hwasan_init() doesn't interact with
+  // other libc facilities that depend on the rest of libc initialization.
+  // However, in the general case, the __sanitizer_* callbacks should only
+  // be made after libc is fully initialized and entirely safe to use.
+  SanitizerStartup(args);
+  __hwasan_init();
+#endif
+
   __environ = args.envp;
 
   InitThreadList();
+  atomic_store(&libc.thread_count, 1);
 
   ForwardSvc(std::move(deferred));
 
@@ -59,8 +83,9 @@ void BeforeCtors(zx::channel deferred, zx_startup_arguments_t args) {
   // haven't run yet.
   __libc_init_gwp_asan();
 
-  StartupSanitizerModuleLoaded();
-  SanitizerStartup(args.argc, args.argv, __environ);
+#if !__has_feature(hwaddress_sanitizer)
+  SanitizerStartup(args);
+#endif
 }
 
 // This does all the work of the final __libc_start_main before calling main.
@@ -96,7 +121,7 @@ void SetStartHandles(zx::process process_self, zx::vmar allocation_vmar, zx::thr
   // stored here.  So this is the bare minimum that must be done before more
   // normal operation, even taking locks, is possible.
   pthread* self = __pthread_self();
-  zx_status_t status = zxr_thread_adopt(thread_self.release(), &self->zxr_thread);
+  [[maybe_unused]] zx_status_t status = zxr_thread_adopt(thread_self.release(), &self->zxr_thread);
   assert(status == ZX_OK);
 
   // Initialize the rest of the struct pthread now, since it's simple.

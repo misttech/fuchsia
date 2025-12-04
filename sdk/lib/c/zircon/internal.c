@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "libc.h"
 #include "zircon_impl.h"
 
 #undef _zx_process_self
@@ -18,7 +19,9 @@ zx_handle_t __zircon_namespace_svc;
 __EXPORT zx_handle_t _zx_process_self(void) { return __zircon_process_self; }
 __EXPORT __typeof(zx_process_self) zx_process_self __attribute__((weak, alias("_zx_process_self")));
 
-__EXPORT zx_handle_t _zx_vmar_root_self(void) { return __zircon_vmar_root_self; }
+// This is used by the hwasan runtime itself and reenters it recursively if
+// it's instrumented.
+NO_ASAN __EXPORT zx_handle_t _zx_vmar_root_self(void) { return __zircon_vmar_root_self; }
 __EXPORT __typeof(zx_vmar_root_self) zx_vmar_root_self
     __attribute__((weak, alias("_zx_vmar_root_self")));
 

@@ -89,6 +89,10 @@ void _dl_phdr_report_globals(sanitizer_memory_snapshot_callback_t* callback, voi
 
 void _dl_iterate_loaded_libs(void) ATTR_LIBC_VISIBILITY;
 
+void _dl_finish_startup(void) ATTR_LIBC_VISIBILITY;
+
+extern int _dynlink_runtime ATTR_LIBC_VISIBILITY;
+
 __END_CDECLS
 
 #endif  // ZIRCON_THIRD_PARTY_ULIB_MUSL_SRC_INTERNAL_DYNLINK_H_

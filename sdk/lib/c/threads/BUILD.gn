@@ -102,9 +102,37 @@ source_set("thread-list.headers") {
 libc_source_set("musl-glue") {
   sources = []
   libc_deps = [
+    ":musl-tls",
     ":thread-list",
     ":thread-list.musl-glue",
   ]
+}
+
+# This implements the ThreadStorage methods for ELF TLS via the musl
+# integrated dynamic linker code.
+libc_source_set("musl-tls") {
+  visibility = [ ":*" ]
+
+  # TODO(https://fxbug.dev/342469121): When this goes away, all the
+  # asm-linkage shenanigans can be removed from thread-storage.h.
+  basic_abi = true
+  global_symbols = [
+    "${libc_namespace}_GetTlsLayout",
+    "${libc_namespace}_InitializeTls",
+  ]
+  undefined_symbols = [
+    "${libc_namespace}_gLog",
+    "__libc",
+    "_dl_tls_layout",
+    "_dl_copy_tls",
+  ]
+
+  sources = [ "musl-tls.cc" ]
+  deps = [
+    "../ld:log-panic",
+    "//zircon/third_party/ulib/musl:musl_internal",
+  ]
+  libc_deps = [ ":thread-storage" ]
 }
 
 libc_source_set("thread-list.musl-glue") {

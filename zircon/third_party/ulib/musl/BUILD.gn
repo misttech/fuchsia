@@ -75,7 +75,6 @@ if (toolchain_variant.base == "//sdk/lib/c:user.libc_$target_cpu") {
     deps = [
       ":common-impl",
       "ldso",
-      "src/env:start-main",
       "src/thread:tls_get_addr",
     ]
   }
@@ -123,11 +122,6 @@ if (toolchain_variant.base == "//sdk/lib/c:user.libc_$target_cpu") {
       "src/unistd",
       "third_party/tre",
     ]
-  }
-
-  group("new-impl") {
-    visibility = [ "//sdk/lib/c:*" ]
-    deps = [ ":common-impl" ]
   }
 }
 

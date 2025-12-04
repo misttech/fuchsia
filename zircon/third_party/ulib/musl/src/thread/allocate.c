@@ -40,11 +40,14 @@ LIBC_NO_SAFESTACK static ptrdiff_t offset_for_module(const struct tls_module* mo
 #endif
 }
 
-LIBC_NO_SAFESTACK static thrd_t copy_tls(unsigned char* mem, size_t alloc) {
+LIBC_NO_SAFESTACK ATTR_LIBC_VISIBILITY struct pthread* _dl_copy_tls(unsigned char* mem,
+                                                                    size_t alloc) {
   thrd_t td;
   struct tls_module* p;
   size_t i;
   void** dtv;
+
+  const struct tls_layout layout = _dl_tls_layout();
 
 #ifdef TLS_ABOVE_TP
   // *-----------------------------------------------------------------------*
@@ -56,7 +59,7 @@ LIBC_NO_SAFESTACK static thrd_t copy_tls(unsigned char* mem, size_t alloc) {
   // Note: The TCB is actually the last member of pthread.
   // See: "Addenda to, and Errata in, the ABI for the ARM Architecture"
 
-  dtv = (void**)(mem + libc.tls_size) - (libc.tls_cnt + 1);
+  dtv = (void**)(mem + layout.size) - (libc.tls_cnt + 1);
   // We need to make sure that the thread pointer is maximally aligned so
   // that tp + dtv[N] is aligned to align_N no matter what N is. So we need
   // 'mem' to be such that if mem == td then td->head is maximially aligned.
@@ -64,7 +67,7 @@ LIBC_NO_SAFESTACK static thrd_t copy_tls(unsigned char* mem, size_t alloc) {
   // it then subtract out the offset of ->head to ensure that &td->head is
   // aligned.
   uintptr_t tp = (uintptr_t)mem + PTHREAD_TP_OFFSET;
-  tp = (tp + libc.tls_align - 1) & -libc.tls_align;
+  tp = (tp + layout.align - 1) & -layout.align;
   td = (thrd_t)(tp - PTHREAD_TP_OFFSET);
   // Now mem should be the new thread pointer.
   mem = (unsigned char*)tp;
@@ -79,7 +82,7 @@ LIBC_NO_SAFESTACK static thrd_t copy_tls(unsigned char* mem, size_t alloc) {
   dtv = (void**)mem;
 
   mem += alloc - sizeof(struct pthread);
-  mem -= (uintptr_t)mem & (libc.tls_align - 1);
+  mem -= (uintptr_t)mem & (layout.align - 1);
   td = (thrd_t)mem;
 #endif
 
@@ -210,7 +213,7 @@ __asan_weak_ref("memcpy")
   const size_t guard_size = requested_guard_size == 0 ? 0 : round_up_to_page(requested_guard_size);
   const size_t stack_size = round_up_to_page(requested_stack_size);
 
-  const size_t tls_size = libc.tls_size;
+  const size_t tls_size = _dl_tls_layout().size;
   const size_t tcb_size = round_up_to_page(tls_size);
 
   const size_t vmo_size = tcb_size + stack_size * (2 + HAVE_SHADOW_CALL_STACK);
@@ -232,7 +235,7 @@ __asan_weak_ref("memcpy")
     return NULL;
   }
 
-  thrd_t td = copy_tls(tcb.iov_base, tcb.iov_len);
+  thrd_t td = _dl_copy_tls(tcb.iov_base, tcb.iov_len);
 
   // At this point all our access to global TLS state is done, so we
   // can allow dlopen again.

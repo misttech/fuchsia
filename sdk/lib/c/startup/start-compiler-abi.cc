@@ -43,7 +43,7 @@ auto GetStartupHandles(zx::handle bootstrap) {
 // the new machine stack pointer.  When the trampoline switches to that, the
 // Fuchsia Compiler ABI is ready.
 StartupTrampoline StartCompilerAbi(zx_handle_t bootstrap, const void* vdso_base) {
-  const StartupRelocate reloc(vdso_base);
+  const StartupRelocate reloc = StartupRelocate::Create(vdso_base);
 
   // This takes ownership of the bootstrap handle.
   // Take ownership of all the handles it returned.
