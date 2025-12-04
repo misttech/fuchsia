@@ -9,7 +9,7 @@ import("//build/rust/rustc_library.gni")
 if (is_host) {
   rustc_binary("bin") {
     name = "dupefinder"
-    edition = "2021"
+    edition = "2024"
     sources = [ "src/main.rs" ]
     deps = [
       ":lib",
@@ -25,7 +25,7 @@ if (is_host) {
 
   rustc_library("lib") {
     name = "dupefinder"
-    edition = "2021"
+    edition = "2024"
     sources = [ "src/lib.rs" ]
     deps = [
       "//src/performance/memory/pprof:pprof_proto",

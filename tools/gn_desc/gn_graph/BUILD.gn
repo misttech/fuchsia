@@ -8,7 +8,7 @@ assert(is_host, "gn_desc is only supported on the host")
 
 # A crate for a graph of GN targets
 rustc_library("gn_graph") {
-  edition = "2021"
+  edition = "2024"
 
   # This needs to be compiled with optimizations enabled to be at all
   # performant when deserializing the 100s of MBs of `gn desc` json output.
@@ -26,7 +26,7 @@ rustc_library("gn_graph") {
 
 # And its unit-tests
 rustc_test("gn_graph_tests") {
-  edition = "2021"
+  edition = "2024"
   source_root = "src/lib.rs"
   deps = [
     "//third_party/rust_crates:petgraph",

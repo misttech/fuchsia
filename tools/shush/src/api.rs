@@ -143,14 +143,14 @@ impl UpdateIssue {
         if let Some(owner) = &self.owner {
             writeln!(&mut result, "ASSIGNEE={}", owner).unwrap();
         }
-        if let Some(cc_users) = &self.cc_users {
-            if !cc_users.is_empty() {
-                write!(&mut result, "CC+={}", cc_users.iter().next().unwrap()).unwrap();
-                for cc_user in cc_users.iter().skip(1) {
-                    write!(&mut result, ",{}", cc_user).unwrap();
-                }
-                writeln!(&mut result).unwrap();
+        if let Some(cc_users) = &self.cc_users
+            && !cc_users.is_empty()
+        {
+            write!(&mut result, "CC+={}", cc_users.iter().next().unwrap()).unwrap();
+            for cc_user in cc_users.iter().skip(1) {
+                write!(&mut result, ",{}", cc_user).unwrap();
             }
+            writeln!(&mut result).unwrap();
         }
         if let Some(component) = &self.component {
             writeln!(&mut result, "COMPONENT={}", component).unwrap();

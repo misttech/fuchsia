@@ -10,7 +10,7 @@ rustc_library("example_tester") {
     "//tools/fidl/example-tester/*",
   ]
   testonly = true
-  edition = "2021"
+  edition = "2024"
   name = "example_tester"
   source_root = "src/lib.rs"
   sources = [ "src/lib.rs" ]

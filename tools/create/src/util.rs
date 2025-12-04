@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{anyhow, Context};
+use anyhow::{Context, anyhow};
 use std::ffi::OsStr;
 use std::path::PathBuf;
 use std::{env, fs, io};
@@ -54,7 +54,9 @@ mod tests {
         let _link = unix::fs::symlink(&subdir_path, &link_path);
 
         // Set FUCHSIA_DIR to a symlink.
-        env::set_var("FUCHSIA_DIR", link_path);
+        unsafe {
+            env::set_var("FUCHSIA_DIR", link_path);
+        }
 
         let fuchsia_root = get_fuchsia_root();
         assert!(fuchsia_root.is_ok(), "{:?}", fuchsia_root);

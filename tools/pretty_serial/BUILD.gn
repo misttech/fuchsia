@@ -52,7 +52,7 @@ if (is_host) {
   rustc_binary("pretty_serial") {
     sources = [ "src/main.rs" ]
     output_name = "pretty_serial"
-    edition = "2021"
+    edition = "2024"
     with_unit_tests = true
     deps = [
       "//third_party/rust_crates:ansi_term",

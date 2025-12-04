@@ -108,7 +108,7 @@ template("measure_tape") {
                                "testonly",
                                "visibility",
                              ])
-      edition = "2018"
+      edition = "2024"
       deps = [
         "//sdk/rust/zx-types",
         "//src/lib/fidl/rust/fidl",

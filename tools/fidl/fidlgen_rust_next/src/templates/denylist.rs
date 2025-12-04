@@ -37,12 +37,11 @@ impl Denylist {
                 path = format!("{path}{name}");
                 let comp_id = CompoundIdent::from_str(&path);
                 if let Some(parent_decl) = library.get_local_decl(comp_id) {
-                    if let Some(protocol) = (parent_decl as &dyn Any).downcast_ref::<Protocol>() {
-                        if let Some(method) =
+                    if let Some(protocol) = (parent_decl as &dyn Any).downcast_ref::<Protocol>()
+                        && let Some(method) =
                             protocol.methods.iter().find(|m| m.name.non_canonical() == next)
-                        {
-                            result = result.max(Self::for_attributes(&method.attributes, bindings));
-                        }
+                    {
+                        result = result.max(Self::for_attributes(&method.attributes, bindings));
                     }
 
                     result = result.max(Self::for_decl(parent_decl, bindings));

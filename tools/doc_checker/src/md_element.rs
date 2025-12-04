@@ -5,7 +5,7 @@
 //! md_parser defines the traits and structs used to parse markdown files into elements that can be
 //! checked.
 
-use crate::{parser, DocLine};
+use crate::{DocLine, parser};
 pub use pulldown_cmark::{BrokenLinkCallback, CowStr, LinkType, Options, Parser, Tag};
 use std::collections::HashMap;
 use std::fmt::Debug;
@@ -68,19 +68,19 @@ impl<'a> Element<'a> {
 
     fn doc_line_mut(&mut self) -> &mut DocLine {
         match self {
-            Element::Block(_, _, ref mut doc_line) => doc_line,
-            Element::Code(_, ref mut doc_line) => doc_line,
-            Element::CodeBlock(_, _, ref mut doc_line) => doc_line,
-            Element::FootnoteReference(_, ref mut doc_line) => doc_line,
-            Element::HardBreak(ref mut doc_line) => doc_line,
-            Element::Html(_, ref mut doc_line) => doc_line,
-            Element::Image(_, _, _, _, ref mut doc_line) => doc_line,
-            Element::Link(_, _, _, _, ref mut doc_line) => doc_line,
-            Element::List(_, _, ref mut doc_line) => doc_line,
-            Element::Rule(ref mut doc_line) => doc_line,
-            Element::SoftBreak(ref mut doc_line) => doc_line,
-            Element::TaskListMarker(_, ref mut doc_line) => doc_line,
-            Element::Text(_, ref mut doc_line) => doc_line,
+            Element::Block(_, _, doc_line) => doc_line,
+            Element::Code(_, doc_line) => doc_line,
+            Element::CodeBlock(_, _, doc_line) => doc_line,
+            Element::FootnoteReference(_, doc_line) => doc_line,
+            Element::HardBreak(doc_line) => doc_line,
+            Element::Html(_, doc_line) => doc_line,
+            Element::Image(_, _, _, _, doc_line) => doc_line,
+            Element::Link(_, _, _, _, doc_line) => doc_line,
+            Element::List(_, _, doc_line) => doc_line,
+            Element::Rule(doc_line) => doc_line,
+            Element::SoftBreak(doc_line) => doc_line,
+            Element::TaskListMarker(_, doc_line) => doc_line,
+            Element::Text(_, doc_line) => doc_line,
         }
     }
 
@@ -123,21 +123,13 @@ impl<'a> Element<'a> {
             Element::Block(_, elements, _) => {
                 let links: Vec<&Element<'a>> =
                     elements.iter().filter_map(|e| e.get_links()).flatten().collect();
-                if !links.is_empty() {
-                    Some(links)
-                } else {
-                    None
-                }
+                if !links.is_empty() { Some(links) } else { None }
             }
             Element::Code(_, _) => None,
             Element::CodeBlock(_, elements, _) => {
                 let links: Vec<&Element<'a>> =
                     elements.iter().filter_map(|e| e.get_links()).flatten().collect();
-                if !links.is_empty() {
-                    Some(links)
-                } else {
-                    None
-                }
+                if !links.is_empty() { Some(links) } else { None }
             }
             Element::FootnoteReference(_, _) => None,
             Element::HardBreak(_) => None,
@@ -152,11 +144,7 @@ impl<'a> Element<'a> {
             Element::List(_, elements, _) => {
                 let links: Vec<&Element<'a>> =
                     elements.iter().filter_map(|e| e.get_links()).flatten().collect();
-                if !links.is_empty() {
-                    Some(links)
-                } else {
-                    None
-                }
+                if !links.is_empty() { Some(links) } else { None }
             }
             Element::Rule(_) => None,
             Element::SoftBreak(_) => None,
@@ -167,15 +155,15 @@ impl<'a> Element<'a> {
 
     fn get_elements_mut(&mut self) -> Option<&mut Vec<Element<'a>>> {
         match self {
-            Element::Block(_, ref mut elements, _) => Some(elements),
+            Element::Block(_, elements, _) => Some(elements),
             Element::Code(_, _) => None,
-            Element::CodeBlock(_, ref mut elements, _) => Some(elements),
+            Element::CodeBlock(_, elements, _) => Some(elements),
             Element::FootnoteReference(_, _) => None,
             Element::HardBreak(_) => None,
             Element::Html(_, _) => None,
-            Element::Image(_, _, _, ref mut elements, _) => Some(elements),
-            Element::Link(_, _, _, ref mut elements, _) => Some(elements),
-            Element::List(_, ref mut elements, _) => Some(elements),
+            Element::Image(_, _, _, elements, _) => Some(elements),
+            Element::Link(_, _, _, elements, _) => Some(elements),
+            Element::List(_, elements, _) => Some(elements),
             Element::Rule(_) => None,
             Element::SoftBreak(_) => None,
             Element::TaskListMarker(_, _) => None,
@@ -308,13 +296,8 @@ mod test {
     #[test]
     fn test_get_links() -> Result<()> {
         let test_data: Vec<(PathBuf, &str, Option<Vec<Element<'static>>>)> = vec![
-        (
-                PathBuf::from("/docs/README.md"),
-                "This has no links",
-            None
-        ),
-        (
-
+            (PathBuf::from("/docs/README.md"), "This has no links", None),
+            (
                 PathBuf::from("/docs/README.md"),
                 r#"codeblock has no links
 
@@ -322,42 +305,55 @@ mod test {
 This is an example [link](https://somewhere.com)
 ```
 "#,
-            None
-        ),
-        (
-
+                None,
+            ),
+            (
                 PathBuf::from("/docs/README.md"),
                 "This is a line to [something-one-line](/docs/something.md)",
-            Some(vec![
-                Link(Inline, Borrowed("/docs/something.md"), Borrowed(""),
-                 vec![Text(Borrowed("something-one-line"), DocLine { line_num: 1, file_name: "/docs/README.md".into() })],
-                 DocLine { line_num: 1, file_name: "/docs/README.md".into() })
-            ])
-        ),
-        (
+                Some(vec![Link(
+                    Inline,
+                    Borrowed("/docs/something.md"),
+                    Borrowed(""),
+                    vec![Text(
+                        Borrowed("something-one-line"),
+                        DocLine { line_num: 1, file_name: "/docs/README.md".into() },
+                    )],
+                    DocLine { line_num: 1, file_name: "/docs/README.md".into() },
+                )]),
+            ),
+            (
                 PathBuf::from("/docs/README.md"),
                 "This is a multiline\n\nparagraph. This is a line to [something-two-line](/docs/something.md)",
-            Some(vec![
-                Link(Inline, Borrowed("/docs/something.md"), Borrowed(""),
-                 vec![Text(Borrowed("something-two-line"), DocLine { line_num: 4,file_name: "/docs/README.md".into() })],
-                 DocLine { line_num: 4, file_name: "/docs/README.md".into() })
-            ])
-        ),
-        (
+                Some(vec![Link(
+                    Inline,
+                    Borrowed("/docs/something.md"),
+                    Borrowed(""),
+                    vec![Text(
+                        Borrowed("something-two-line"),
+                        DocLine { line_num: 4, file_name: "/docs/README.md".into() },
+                    )],
+                    DocLine { line_num: 4, file_name: "/docs/README.md".into() },
+                )]),
+            ),
+            (
                 PathBuf::from("/docs/README.md"),
                 r#"list item
 * one item
 * one with [something](/docs/in-list-item.md)
 
                 "#,
-            Some(vec![
-                Link(Inline, Borrowed("/docs/in-list-item.md"), Borrowed(""),
-                vec![Text(Borrowed("something"), DocLine { line_num: 5, file_name: "/docs/README.md".into() })],
-                DocLine { line_num: 5, file_name: "/docs/README.md".into() })
-            ])
-        ),
-        (
-
+                Some(vec![Link(
+                    Inline,
+                    Borrowed("/docs/in-list-item.md"),
+                    Borrowed(""),
+                    vec![Text(
+                        Borrowed("something"),
+                        DocLine { line_num: 5, file_name: "/docs/README.md".into() },
+                    )],
+                    DocLine { line_num: 5, file_name: "/docs/README.md".into() },
+                )]),
+            ),
+            (
                 PathBuf::from("/docs/README.md"),
                 r#"list item
 * one item
@@ -365,12 +361,17 @@ This is an example [link](https://somewhere.com)
     In a paragraph one with [something](/docs/in-list-item-pp.md)
 * item two
                 "#,
-            Some(vec![
-                Link(Inline, Borrowed("/docs/in-list-item-pp.md"), Borrowed(""),
-                vec![Text(Borrowed("something"), DocLine { line_num: 6, file_name: "/docs/README.md".into() })],
-                DocLine { line_num: 6, file_name: "/docs/README.md".into() })
-            ])
-        ),
+                Some(vec![Link(
+                    Inline,
+                    Borrowed("/docs/in-list-item-pp.md"),
+                    Borrowed(""),
+                    vec![Text(
+                        Borrowed("something"),
+                        DocLine { line_num: 6, file_name: "/docs/README.md".into() },
+                    )],
+                    DocLine { line_num: 6, file_name: "/docs/README.md".into() },
+                )]),
+            ),
         ];
 
         for (file, input, expected_links) in test_data {

@@ -32,7 +32,7 @@ if (is_host) {
   rustc_library("ir_importer") {
     testonly = true
 
-    edition = "2018"
+    edition = "2024"
 
     name = "ir_importer"
 
@@ -47,7 +47,7 @@ if (is_host) {
 
   rustc_binary("bin") {
     name = "bindc"
-    edition = "2021"
+    edition = "2024"
 
     with_unit_tests = true
     test_environments = [ host_env ]

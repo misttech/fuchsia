@@ -231,7 +231,7 @@ fn main() -> Result<()> {
                     f.suggestions,
                     lint_args.dryrun,
                 ),
-                LintAction::Allow(ref allow_args) => {
+                LintAction::Allow(allow_args) => {
                     let followup = if let Some(reason) = &allow_args.reason {
                         anyhow::ensure!(
                             allow_args.codesearch_ref.is_none(),

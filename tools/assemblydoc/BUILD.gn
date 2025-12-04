@@ -9,7 +9,7 @@ assert(is_host, "assemblydoc is only available on the host toolchain")
 
 rustc_binary("assemblydoc_bin") {
   name = "assemblydoc"
-  edition = "2021"
+  edition = "2024"
   sources = [ "src/main.rs" ]
   deps = [
     "//src/lib/assembly/config_schema",

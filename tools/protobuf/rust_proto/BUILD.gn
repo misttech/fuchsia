@@ -8,7 +8,7 @@ import("//build/rust/rustc_binary.gni")
 # with the GN build system.
 if (is_host) {
   rustc_binary("prost_build_standalone") {
-    edition = "2021"
+    edition = "2024"
     deps = [
       "//third_party/rust_crates:anyhow",
       "//third_party/rust_crates:argh",

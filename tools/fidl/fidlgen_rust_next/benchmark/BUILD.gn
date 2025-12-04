@@ -17,7 +17,7 @@ fidl("fidl") {
 
 rustc_binary("bin") {
   name = "rust_next_benchmark"
-  edition = "2021"
+  edition = "2024"
 
   deps = [
     ":fidl_rust",

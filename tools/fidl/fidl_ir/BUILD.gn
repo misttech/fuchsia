@@ -66,7 +66,7 @@ if (is_host) {
       "src/union.rs",
     ]
     crate_name = "fidl_ir"
-    edition = "2021"
+    edition = "2024"
     with_unit_tests = true
     deps = [
       "//third_party/rust_crates:bitflags",

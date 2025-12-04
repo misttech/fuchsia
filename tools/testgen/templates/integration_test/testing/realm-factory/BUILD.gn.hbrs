@@ -7,7 +7,7 @@ import("//build/rust/rustc_binary.gni")
 
 rustc_binary("bin") {
   testonly = true
-  edition = "2021"
+  edition = "2024"
   name = "{{ realm_factory_binary_name }}"
   sources = [ "src/main.rs" ]
   deps = [

@@ -180,28 +180,28 @@ fn has_resources(library: &Library, ident: &CompoundIdent) -> bool {
         true
     } else if let Some(protocol) = (decl as &dyn Any).downcast_ref::<Protocol>() {
         for method in &protocol.methods {
-            if let Some(ty) = &method.maybe_request_payload {
-                if type_has_resources(library, ty) {
-                    return true;
-                }
+            if let Some(ty) = &method.maybe_request_payload
+                && type_has_resources(library, ty)
+            {
+                return true;
             }
 
-            if let Some(ty) = &method.maybe_response_payload {
-                if type_has_resources(library, ty) {
-                    return true;
-                }
+            if let Some(ty) = &method.maybe_response_payload
+                && type_has_resources(library, ty)
+            {
+                return true;
             }
 
-            if let Some(ty) = &method.maybe_response_err_type {
-                if type_has_resources(library, ty) {
-                    return true;
-                }
+            if let Some(ty) = &method.maybe_response_err_type
+                && type_has_resources(library, ty)
+            {
+                return true;
             }
 
-            if let Some(ty) = &method.maybe_response_success_type {
-                if type_has_resources(library, ty) {
-                    return true;
-                }
+            if let Some(ty) = &method.maybe_response_success_type
+                && type_has_resources(library, ty)
+            {
+                return true;
             }
         }
 

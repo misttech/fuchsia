@@ -8,7 +8,7 @@ assert(is_host, "gn_desc is only supported on the host")
 
 # The JSON parsing for GN's desc output
 rustc_library("gn_json") {
-  edition = "2021"
+  edition = "2024"
 
   # This needs to be compiled with optimizations enabled to be at all
   # performant when deserializing the 100s of MBs of `gn desc` json output.
@@ -31,7 +31,7 @@ rustc_library("gn_json") {
 
 # And its unit tests
 rustc_test("gn_json_tests") {
-  edition = "2021"
+  edition = "2024"
   deps = [
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:pretty_assertions",

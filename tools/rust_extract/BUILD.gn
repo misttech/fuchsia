@@ -16,13 +16,13 @@ if (is_host) {
   _sources = [ "src/main.rs" ]
 
   rustc_binary("rust_extract") {
-    edition = "2021"
+    edition = "2024"
     deps = _deps
     sources = _sources
   }
 
   rustc_test("rust_extract_tests") {
-    edition = "2021"
+    edition = "2024"
     deps = _deps
     sources = _sources
     source_root = "src/main.rs"

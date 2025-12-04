@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use argh::FromArgs;
 use std::collections::HashSet;
 use std::fs::File;
@@ -42,7 +42,9 @@ fn main() -> Result<()> {
     }
 
     // The protoc location is read by the library from an environment variable
-    std::env::set_var("PROTOC", options.protoc);
+    unsafe {
+        std::env::set_var("PROTOC", options.protoc);
+    }
 
     // Add the parent directories of the provided protos to the list of include dirs.
     // Config::compile_protos requires that the .proto files passed in must be found in one of the

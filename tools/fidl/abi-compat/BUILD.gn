@@ -58,7 +58,7 @@ if (is_host) {
   ]
   rustc_binary("abi_compat_bin") {
     name = "abi_compat"
-    edition = "2021"
+    edition = "2024"
     deps = abi_compat_deps
     sources = abi_compat_sources
   }
@@ -69,7 +69,7 @@ if (is_host) {
   }
 
   rustc_test("abi_compat_test") {
-    edition = "2021"
+    edition = "2024"
     deps = abi_compat_deps + [ "//third_party/rust_crates:tempfile" ]
     sources = abi_compat_sources + [
                 "src/compare/protocol_tests.rs",

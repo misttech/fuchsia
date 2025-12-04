@@ -51,10 +51,10 @@ pub fn get_owners(path: &Path, root: &Path) -> Vec<Owners> {
             break;
         }
         let ownersfile = current.join("OWNERS");
-        if ownersfile.exists() {
-            if let Ok(owners) = Owners::from_file(&ownersfile) {
-                all_owners.push(owners);
-            }
+        if ownersfile.exists()
+            && let Ok(owners) = Owners::from_file(&ownersfile)
+        {
+            all_owners.push(owners);
         }
         prev = current;
     }

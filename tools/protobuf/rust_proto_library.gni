@@ -35,7 +35,7 @@ import("//build/rust/rustc_library.gni")
 #    }
 #
 #    rustc_binary("bin") {
-#      edition = "2021"
+#      edition = "2024"
 #      output_name = "example"
 #      deps = [
 #        ":vm_guest_proto",
@@ -130,7 +130,7 @@ template("rust_proto_library") {
   }
 
   rustc_library(target_name) {
-    edition = "2021"
+    edition = "2024"
     deps = [ ":gen_${target_name}" ] + crate_deps
     source_root = "${target_crate_root}/lib.rs"
     sources = get_target_outputs(":gen_${target_name}")

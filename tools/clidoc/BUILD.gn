@@ -27,7 +27,7 @@ if (is_host) {
   ]
 
   rustc_binary("clidoc_bin") {
-    edition = "2021"
+    edition = "2024"
     name = "clidoc"
     source_root = crate_source_root
     sources = crate_sources
@@ -35,7 +35,7 @@ if (is_host) {
   }
 
   rustc_test("clidoc_bin_test") {
-    edition = "2021"
+    edition = "2024"
     source_root = crate_source_root
     sources = crate_sources
     deps = crate_deps + [ "//third_party/rust_crates:tempfile" ]

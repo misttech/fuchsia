@@ -70,7 +70,9 @@ fn main() {
     let new_path =
         env::join_paths(iter::once(rust_bin_dir.clone()).chain(env::split_paths(&existing_path)))
             .unwrap();
-    env::set_var("PATH", new_path);
+    unsafe {
+        env::set_var("PATH", new_path);
+    }
 
     let test_project_root = test_base_dir.join("uses_local_registry");
     // remove potentially stale lockfile in case of hash collisions during development

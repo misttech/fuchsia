@@ -19,7 +19,7 @@ if (is_host) {
 
   rustc_binary("gn_json_integration_test_executable") {
     testonly = true
-    edition = "2021"
+    edition = "2024"
     deps = [
       "../gn_json",
       "//third_party/rust_crates:anyhow",

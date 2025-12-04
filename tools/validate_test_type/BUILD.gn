@@ -6,7 +6,7 @@ import("//build/host.gni")
 import("//build/rust/rustc_binary.gni")
 
 rustc_binary("validate_test_type") {
-  edition = "2021"
+  edition = "2024"
   name = "validate_test_type"
   with_unit_tests = true
 

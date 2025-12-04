@@ -34,7 +34,7 @@ if (is_host) {
   ]
 
   rustc_binary("shush") {
-    edition = "2021"
+    edition = "2024"
     deps = _deps
     sources = _sources
     configs += [ "//build/config/rust/lints:clippy_warn_all" ]
@@ -46,7 +46,7 @@ if (is_host) {
   }
 
   rustc_test("shush_test") {
-    edition = "2021"
+    edition = "2024"
     deps = _deps
     sources = _sources
     source_root = "src/main.rs"

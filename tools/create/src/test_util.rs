@@ -41,9 +41,13 @@ impl<'a> Drop for LockedEnv<'a> {
         env::set_current_dir(&self.current_dir_snapshot)
             .expect("previous current_dir value should always be valid");
         if let Some(fuchsia_dir_snapshot) = &self.fuchsia_dir_snapshot {
-            env::set_var(FUCHSIA_DIR_KEY, fuchsia_dir_snapshot);
+            unsafe {
+                env::set_var(FUCHSIA_DIR_KEY, fuchsia_dir_snapshot);
+            }
         } else {
-            env::remove_var(FUCHSIA_DIR_KEY);
+            unsafe {
+                env::remove_var(FUCHSIA_DIR_KEY);
+            }
         }
     }
 }
@@ -65,6 +69,8 @@ pub fn lock_test_environment<'a>() -> LockedEnv<'a> {
     let fuchsia_dir_snapshot = env::var_os(FUCHSIA_DIR_KEY);
     let temp_dir = tempdir().expect("failed to create temp dir");
     env::set_current_dir(temp_dir.path()).expect("failed to set new current_dir");
-    env::set_var(FUCHSIA_DIR_KEY, temp_dir.path());
+    unsafe {
+        env::set_var(FUCHSIA_DIR_KEY, temp_dir.path());
+    }
     LockedEnv { _guard: guard, temp_dir, fuchsia_dir_snapshot, current_dir_snapshot }
 }

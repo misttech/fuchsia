@@ -29,7 +29,7 @@ gidl("rust_empty_gidl") {
 
 rustc_test("rust_empty_gidl_test_bin") {
   output_name = "rust_empty_gidl_tests"
-  edition = "2018"
+  edition = "2024"
   source_root = rust_empty_gidl_test_source
   deps = [
     "//sdk/rust/zx-status",

@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{anyhow, bail, Result};
+use anyhow::{Result, anyhow, bail};
 use schemars::schema::{InstanceType, RootSchema, Schema, SchemaObject, SingleOrVec};
 use serde::Serialize;
 use serde_json::Value;
@@ -271,13 +271,13 @@ fn instance_type_to_string(instance_type: &InstanceType) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        single_or_vec_to_string, AllData, DataType, DataTypeInner, EnumDataType, StructDataType,
-        StructFieldData, StructFieldType,
+        AllData, DataType, DataTypeInner, EnumDataType, StructDataType, StructFieldData,
+        StructFieldType, single_or_vec_to_string,
     };
     use pretty_assertions::assert_eq;
-    use schemars::gen::SchemaSettings;
-    use schemars::schema::{InstanceType, SingleOrVec};
     use schemars::JsonSchema;
+    use schemars::r#gen::SchemaSettings;
+    use schemars::schema::{InstanceType, SingleOrVec};
     use serde::Serialize;
     use std::collections::{BTreeMap, BTreeSet};
 

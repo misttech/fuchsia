@@ -8,7 +8,7 @@
 
 use crate::common::*;
 use crate::flags;
-use anyhow::{bail, Error};
+use anyhow::{Error, bail};
 use argh::FromArgs;
 use chrono::Datelike;
 use log::info;
@@ -54,7 +54,10 @@ impl IntegrationTestCmd {
     pub async fn run(&self, flags: &flags::Flags) -> Result<(), Error> {
         let test_root = self.test_root.clone();
         if test_root.exists() {
-            bail!("{} already exists. Please choose a directory location that does not already exist.", test_root.display());
+            bail!(
+                "{} already exists. Please choose a directory location that does not already exist.",
+                test_root.display()
+            );
         }
 
         let component_manifest = self.component_manifest.clone();
@@ -86,7 +89,7 @@ impl IntegrationTestCmd {
 
         // rustfmt mangles this. long lines are easier to read.
         #[rustfmt::skip]
-        let gen = CodeGenerator::new()
+        let generator = CodeGenerator::new()
             .with_template_vars(TemplateVars{
                 year: year,
                 component_name: component_name.clone(),
@@ -108,6 +111,6 @@ impl IntegrationTestCmd {
             .with_template(hbrs_template_file!("integration_test", "testing/realm-factory/BUILD.gn"))
             .with_template(hbrs_template_file!("integration_test", "testing/realm-factory/meta/default.cml"))
             .with_template(hbrs_template_file!("integration_test", "testing/realm-factory/src/main.rs"));
-        gen.generate(test_root)
+        generator.generate(test_root)
     }
 }

@@ -16,7 +16,7 @@ rustc_binary(
         "src/util.rs",
     ],
     crate_name = "create",
-    edition = "2021",
+    edition = "2024",
     target_compatible_with = HOST_CONSTRAINTS,
     test_deps = [
         "//third_party/rust_crates/vendor:assert_matches",

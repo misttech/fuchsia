@@ -335,7 +335,7 @@ gidl("generate_measure_tape_test") {
 
 rustc_test("fidl_rust_measure_tape_tests_bin") {
   output_name = "fidl_rust_measure_tape_tests"
-  edition = "2018"
+  edition = "2024"
   source_root = measure_tape_test_source
   deps = [
     ":measure_tape_for_conformance",

@@ -21,7 +21,7 @@ if (is_host) {
 
   rustc_binary("testgen") {
     name = "testgen"
-    edition = "2021"
+    edition = "2024"
     source_root = "src/main.rs"
     sources = [
       "src/cmd_integration_test.rs",

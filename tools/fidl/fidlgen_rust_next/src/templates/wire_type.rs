@@ -113,10 +113,10 @@ impl fmt::Display for WireTypeTemplate<'_> {
 
                         write!(f, "{wire_id}")?;
 
-                        if let Some(shape) = self.library().get_type_shape(identifier) {
-                            if !shape.is_static() {
-                                write!(f, "<{}>", self.lifetime)?;
-                            }
+                        if let Some(shape) = self.library().get_type_shape(identifier)
+                            && !shape.is_static()
+                        {
+                            write!(f, "<{}>", self.lifetime)?;
                         }
 
                         if *nullable {

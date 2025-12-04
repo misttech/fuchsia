@@ -11,7 +11,7 @@ if (is_host) {
   cargo_manifest_dir = rebase_path(".", root_build_dir)
 
   rustc_binary("fidlgen_rust_next") {
-    edition = "2021"
+    edition = "2024"
     sources = [
       "src/config.rs",
       "src/ident_ext.rs",

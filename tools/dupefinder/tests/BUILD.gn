@@ -55,7 +55,7 @@ golden_files("dupefinder_html_goldens") {
 
 rustc_binary("render_html_for_goldens") {
   testonly = true
-  edition = "2021"
+  edition = "2024"
   source_root = "render_html_for_goldens.rs"
   sources = [ source_root ]
   deps = [

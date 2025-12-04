@@ -12,7 +12,7 @@ if (is_host) {
   rustc_binary("test-pilot") {
     name = "test-pilot"
     with_unit_tests = true
-    edition = "2021"
+    edition = "2024"
 
     deps = [
       "//src/lib/fuchsia",

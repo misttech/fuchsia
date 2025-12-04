@@ -7,7 +7,7 @@ import("//build/rust/rustc_binary.gni")
 rustc_binary("bin") {
   output_name = "proxy_bin"
   output_dir = target_out_dir + "/rust"
-  edition = "2021"
+  edition = "2024"
   sources = [ "src/main.rs" ]
   source_root = "src/main.rs"
   deps = [

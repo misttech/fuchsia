@@ -25,7 +25,7 @@ if (is_host) {
 
   relative_root_out_dir = rebase_path(root_out_dir, root_build_dir)
   rustc_binary("auto_owners_bin") {
-    edition = "2021"
+    edition = "2024"
     output_name = "auto_owners"
     with_unit_tests = false
     deps = crate_deps
@@ -34,7 +34,7 @@ if (is_host) {
   }
 
   rustc_test("auto_owners_test") {
-    edition = "2021"
+    edition = "2024"
     source_root = "src/main.rs"
     sources = [ "src/main.rs" ]
 

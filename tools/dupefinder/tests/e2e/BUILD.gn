@@ -28,7 +28,7 @@ if (is_host) {
 
   ffx_e2e_test("verify_dupefinder_e2e") {
     testonly = true
-    edition = "2021"
+    edition = "2024"
     source_root = "lib.rs"
     sources = [ source_root ]
     deps = [
@@ -54,7 +54,7 @@ if (is_host) {
 if (is_fuchsia) {
   rustc_binary("duplicate_allocations_bin") {
     testonly = true
-    edition = "2021"
+    edition = "2024"
     source_root = "duplicate_allocations.rs"
     sources = [ source_root ]
     deps = [ "//src/performance/memory/heapdump/instrumentation" ]

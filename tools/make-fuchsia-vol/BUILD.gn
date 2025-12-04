@@ -10,7 +10,7 @@ if (is_host) {
   rustc_library("lib") {
     name = "make_fuchsia_vol"
     with_unit_tests = true
-    edition = "2021"
+    edition = "2024"
 
     deps = [
       "//src/lib/assembly/assembled_system",
@@ -48,7 +48,7 @@ if (is_host) {
   }
 
   rustc_binary("make-fuchsia-vol") {
-    edition = "2021"
+    edition = "2024"
     sources = [ "src/main.rs" ]
     data_deps = [
       "//src/storage/bin/fvm",

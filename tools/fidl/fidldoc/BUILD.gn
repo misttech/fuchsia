@@ -56,7 +56,7 @@ if (is_host) {
 
   rustc_binary("fidldoc_bin") {
     name = "fidldoc"
-    edition = "2021"
+    edition = "2024"
     source_root = common_source_root
     deps = common_deps
     sources = common_sources
@@ -69,7 +69,7 @@ if (is_host) {
   }
 
   rustc_test("fidldoc_bin_test") {
-    edition = "2021"
+    edition = "2024"
     source_root = common_source_root
     deps = common_deps + [ "//third_party/rust_crates:tempfile" ]
     sources = common_sources

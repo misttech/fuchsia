@@ -8,7 +8,7 @@ mod util;
 #[cfg(test)]
 mod test_util;
 
-use anyhow::{anyhow, bail, Context};
+use anyhow::{Context, anyhow, bail};
 use argh::FromArgs;
 use chrono::{Datelike, Utc};
 use handlebars::Handlebars;
@@ -77,9 +77,13 @@ fn main() -> Result<(), anyhow::Error> {
         if let Some(parent_build) = parent_build {
             println!(
                 "{}note:{} Don't forget to include the {}{}:tests{} GN target in the parent {}tests{} target ({}).",
-                color::Fg(color::Yellow), color::Fg(color::Reset),
-                style::Bold, project_name, style::Reset,
-                style::Bold, style::Reset,
+                color::Fg(color::Yellow),
+                color::Fg(color::Reset),
+                style::Bold,
+                project_name,
+                style::Reset,
+                style::Bold,
+                style::Reset,
                 parent_build.display()
             );
         }
@@ -443,7 +447,7 @@ impl TemplateTree {
         content: String,
     ) -> Result<(), anyhow::Error> {
         let subtree = match self {
-            Self::Dir(ref mut subtree) => subtree,
+            Self::Dir(subtree) => subtree,
             Self::File { .. } => bail!("cannot insert subtree into file"),
         };
 

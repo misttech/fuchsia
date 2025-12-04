@@ -15,7 +15,7 @@
 //! 3. Run the various tests.
 //!
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use argh::FromArgs;
 use camino::Utf8PathBuf;
 use gn_json::target::{AllTargets, ConfigValues, Public, TargetDescription};
@@ -46,7 +46,7 @@ fn main() -> Result<()> {
     };
 
     // Run GN on the test project.
-    gn.gen().context("Running GN 'gen' on the test project")?;
+    gn.r#gen().context("Running GN 'gen' on the test project")?;
     let raw_desc_json = gn.desc().context("Running GN 'desc' on the test project")?;
 
     // Write the GN desc output to a temporary file.
@@ -159,7 +159,7 @@ struct GN {
 }
 
 impl GN {
-    fn gen(&self) -> Result<String> {
+    fn r#gen(&self) -> Result<String> {
         self.run_cmd("gen", vec![self.outdir.as_str()])
     }
 

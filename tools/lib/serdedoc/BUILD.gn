@@ -10,7 +10,7 @@ assert(is_host, "serdedoc is only available on the host toolchain")
 rustc_library("serdedoc") {
   name = "serdedoc"
   with_unit_tests = true
-  edition = "2021"
+  edition = "2024"
   sources = [
     "src/data.rs",
     "src/lib.rs",

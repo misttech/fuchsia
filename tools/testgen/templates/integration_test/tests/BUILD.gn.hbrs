@@ -14,7 +14,7 @@ group("tests") {
 
 rustc_test("bin") {
   testonly = true
-  edition = "2021"
+  edition = "2024"
   source_root = "src/main.rs"
   sources = [ source_root ]
   name = "{{ test_binary_name }}"

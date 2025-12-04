@@ -19,7 +19,7 @@ group("tests") {
 # Builds doc_checker, a Rust based binary.
 if (is_host) {
   rustc_binary("doc_checker_bin") {
-    edition = "2021"
+    edition = "2024"
     output_name = "doc-checker"
     with_unit_tests = true
     testonly = true
