@@ -2,9 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use fuchsia_sync::Mutex;
 use std::future::Future;
 use std::pin::pin;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::task::{Poll, Waker};
 
 /// Maintains whether a connection is paused. A paused connection should not
@@ -29,7 +30,7 @@ impl PauseState {
         let mut f = pin!(f);
         futures::future::poll_fn(move |ctx| {
             {
-                let mut this = self.0.lock().unwrap();
+                let mut this = self.0.lock();
 
                 if this.wakers.iter().all(|x| !x.will_wake(ctx.waker())) {
                     this.wakers.push(ctx.waker().clone());
@@ -47,7 +48,7 @@ impl PauseState {
 
     /// Set the paused state.
     pub fn set_paused(&self, paused: bool) {
-        let mut this = self.0.lock().unwrap();
+        let mut this = self.0.lock();
 
         this.paused = paused;
         this.wakers.drain(..).for_each(Waker::wake);

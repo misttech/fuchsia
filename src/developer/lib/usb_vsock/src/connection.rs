@@ -51,7 +51,7 @@ impl PausePacket {
 /// A connection that has been established with the other end and now just needs
 /// a socket to start transmitting.
 pub struct ReadyConnect<B, S> {
-    connections: Arc<std::sync::Mutex<HashMap<Address, VsockConnection<S>>>>,
+    connections: Arc<fuchsia_sync::Mutex<HashMap<Address, VsockConnection<S>>>>,
     packet_filler: Arc<UsbPacketFiller<B>>,
     address: Address,
 }
@@ -61,7 +61,7 @@ impl<B: PacketBuffer, S: AsyncRead + AsyncWrite + Send + 'static> ReadyConnect<B
     pub async fn finish_connect(self, socket: S) {
         let (read_socket, write_socket) = socket.split();
         let writer = {
-            let conns = self.connections.lock().unwrap();
+            let conns = self.connections.lock();
             let Some(conn) = conns.get(&self.address) else {
                 warn!("Connection state was missing after connection success!");
                 return;
@@ -108,7 +108,7 @@ pub struct Connection<B, S> {
     control_socket_writer: Option<Mutex<WriteHalf<S>>>,
     packet_filler: Arc<UsbPacketFiller<B>>,
     protocol_version: ProtocolVersion,
-    connections: Arc<std::sync::Mutex<HashMap<Address, VsockConnection<S>>>>,
+    connections: Arc<fuchsia_sync::Mutex<HashMap<Address, VsockConnection<S>>>>,
     incoming_requests_tx: mpsc::Sender<ConnectionRequest>,
     task_scope: Scope,
 }
@@ -194,7 +194,7 @@ impl<B: PacketBuffer, S: AsyncRead + AsyncWrite + Send + 'static> Connection<B, 
         address: Address,
         state: VsockConnectionState<S>,
     ) -> Result<(), Error> {
-        let mut connections = self.connections.lock().unwrap();
+        let mut connections = self.connections.lock();
         if !connections.contains_key(&address) {
             connections.insert(address.clone(), VsockConnection { _address: address, state });
             Ok(())
@@ -287,7 +287,7 @@ impl<B: PacketBuffer, S: AsyncRead + AsyncWrite + Send + 'static> Connection<B, 
     ) -> Result<(ReadyConnect<B, S>, ConnectionState), Error> {
         let address = request.address;
         let notify_closed_rx;
-        if let Some(conn) = self.connections.lock().unwrap().get_mut(&address) {
+        if let Some(conn) = self.connections.lock().get_mut(&address) {
             let VsockConnectionState::ConnectingIncoming = &conn.state else {
                 return Err(Error::other(format!(
                     "Attempted to accept connection that was not waiting at {address:?}"
@@ -328,7 +328,7 @@ impl<B: PacketBuffer, S: AsyncRead + AsyncWrite + Send + 'static> Connection<B, 
     /// Rejects a pending connection request from the other side.
     pub async fn reject(&self, request: ConnectionRequest) -> Result<(), Error> {
         let address = request.address;
-        match self.connections.lock().unwrap().entry(address.clone()) {
+        match self.connections.lock().entry(address.clone()) {
             Entry::Occupied(entry) => {
                 let VsockConnectionState::ConnectingIncoming = &entry.get().state else {
                     return Err(Error::other(format!(
@@ -364,7 +364,7 @@ impl<B: PacketBuffer, S: AsyncRead + AsyncWrite + Send + 'static> Connection<B, 
             Ok(())
         } else {
             let payload_socket;
-            if let Some(conn) = self.connections.lock().unwrap().get_mut(&address) {
+            if let Some(conn) = self.connections.lock().get_mut(&address) {
                 let VsockConnectionState::Connected { writer, .. } = &conn.state else {
                     warn!(
                         "Received data packet for connection in unexpected state for {address:?}"
@@ -467,7 +467,7 @@ impl<B: PacketBuffer, S: AsyncRead + AsyncWrite + Send + 'static> Connection<B, 
     }
 
     async fn handle_accept_packet(&self, address: Address) -> Result<(), Error> {
-        if let Some(conn) = self.connections.lock().unwrap().get_mut(&address) {
+        if let Some(conn) = self.connections.lock().get_mut(&address) {
             let state = std::mem::replace(&mut conn.state, VsockConnectionState::Invalid);
             let VsockConnectionState::ConnectingOutgoing(connected_tx) = state else {
                 warn!("Received accept packet for connection in unexpected state for {address:?}");
@@ -497,7 +497,7 @@ impl<B: PacketBuffer, S: AsyncRead + AsyncWrite + Send + 'static> Connection<B, 
 
     async fn handle_connect_packet(&self, address: Address) -> Result<(), Error> {
         trace!("received connect packet for {address:?}");
-        match self.connections.lock().unwrap().entry(address.clone()) {
+        match self.connections.lock().entry(address.clone()) {
             Entry::Vacant(entry) => {
                 debug!("valid connect request for {address:?}");
                 entry.insert(VsockConnection {
@@ -527,7 +527,7 @@ impl<B: PacketBuffer, S: AsyncRead + AsyncWrite + Send + 'static> Connection<B, 
     async fn handle_finish_packet(&self, address: Address) -> Result<(), Error> {
         trace!("received finish packet for {address:?}");
         let mut notify;
-        if let Some(conn) = self.connections.lock().unwrap().remove(&address) {
+        if let Some(conn) = self.connections.lock().remove(&address) {
             let VsockConnectionState::Connected { notify_closed, .. } = conn.state else {
                 warn!(
                     "Received finish (close) packet for {address:?} \
@@ -558,7 +558,7 @@ impl<B: PacketBuffer, S: AsyncRead + AsyncWrite + Send + 'static> Connection<B, 
     async fn handle_reset_packet(&self, address: Address) -> Result<(), Error> {
         trace!("received reset packet for {address:?}");
         let mut notify = None;
-        if let Some(conn) = self.connections.lock().unwrap().remove(&address) {
+        if let Some(conn) = self.connections.lock().remove(&address) {
             if let VsockConnectionState::Connected { notify_closed, .. } = conn.state {
                 notify = Some(notify_closed);
             } else {
@@ -599,7 +599,7 @@ impl<B: PacketBuffer, S: AsyncRead + AsyncWrite + Send + 'static> Connection<B, 
             }
         };
 
-        if let Some(conn) = self.connections.lock().unwrap().get(&address) {
+        if let Some(conn) = self.connections.lock().get(&address) {
             if let VsockConnectionState::Connected { pause_state, .. } = &conn.state {
                 pause_state.set_paused(pause);
             } else {
@@ -647,11 +647,11 @@ impl<B: PacketBuffer, S: AsyncRead + AsyncWrite + Send + 'static> Connection<B, 
 
 async fn reset<B: PacketBuffer, S: AsyncRead + AsyncWrite + Send + 'static>(
     address: &Address,
-    connections: &std::sync::Mutex<HashMap<Address, VsockConnection<S>>>,
+    connections: &fuchsia_sync::Mutex<HashMap<Address, VsockConnection<S>>>,
     packet_filler: &UsbPacketFiller<B>,
 ) -> Result<(), Error> {
     let mut notify = None;
-    if let Some(conn) = connections.lock().unwrap().remove(&address) {
+    if let Some(conn) = connections.lock().remove(&address) {
         if let VsockConnectionState::Connected { notify_closed, .. } = conn.state {
             notify = Some(notify_closed);
         }

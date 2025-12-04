@@ -2,12 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use fuchsia_sync::{Mutex, MutexGuard};
 use std::cmp::min;
 use std::future::Future;
 use std::iter::FusedIterator;
 use std::ops::DerefMut;
 use std::pin::Pin;
-use std::sync::{Mutex, MutexGuard};
 use std::task::{Context, Poll, Waker};
 
 use futures::task::AtomicWaker;
@@ -436,7 +436,7 @@ impl<'a, B: Unpin> Future for FillUsbPacket<'a, B> {
                 return Poll::Ready(builder);
             }
 
-            let mut current_out_packet = self.0.current_out_packet.lock().unwrap();
+            let mut current_out_packet = self.0.current_out_packet.lock();
             assert!(current_out_packet.is_none(), "Can't fill more than one packet at a time");
             current_out_packet.replace(builder);
 
@@ -447,13 +447,13 @@ impl<'a, B: Unpin> Future for FillUsbPacket<'a, B> {
 
             // wake all pending vsock packet writes so that we can fill the buffer as quickly as
             // possible.
-            let mut wakers = self.0.out_packet_wakers.lock().unwrap();
+            let mut wakers = self.0.out_packet_wakers.lock();
             for waker in wakers.drain(..) {
                 waker.wake();
             }
             Poll::Pending
         } else {
-            let mut current_out_packet = self.0.current_out_packet.lock().unwrap();
+            let mut current_out_packet = self.0.current_out_packet.lock();
             let Some(builder) = current_out_packet.take() else {
                 panic!("Packet builder was somehow removed from connection prematurely");
             };
@@ -480,15 +480,15 @@ impl<'a, B: DerefMut<Target = [u8]> + Unpin> Future for WaitForFillable<'a, B> {
     type Output = MutexGuard<'a, Option<UsbPacketBuilder<B>>>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let current_out_packet = self.filler.current_out_packet.lock().unwrap();
+        let current_out_packet = self.filler.current_out_packet.lock();
         let Some(builder) = &*current_out_packet else {
-            self.filler.out_packet_wakers.lock().unwrap().push(cx.waker().clone());
+            self.filler.out_packet_wakers.lock().push(cx.waker().clone());
             return Poll::Pending;
         };
         if builder.available() >= self.min_packet_size {
             Poll::Ready(current_out_packet)
         } else {
-            self.filler.out_packet_wakers.lock().unwrap().push(cx.waker().clone());
+            self.filler.out_packet_wakers.lock().push(cx.waker().clone());
             Poll::Pending
         }
     }
