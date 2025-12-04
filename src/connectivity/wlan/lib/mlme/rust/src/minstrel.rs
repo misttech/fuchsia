@@ -696,7 +696,8 @@ fn erp_idx_stats(tx_vector_idx: TxVecIdx, rate: SupportedRate) -> TxStats {
 mod tests {
     use super::*;
     use fidl_fuchsia_wlan_common as fidl_common;
-    use std::sync::{Arc, LazyLock, Mutex};
+    use fuchsia_sync::Mutex;
+    use std::sync::{Arc, LazyLock};
     use wlan_common::ie::{ChanWidthSet, HtCapabilityInfo};
     use wlan_common::mac::FrameType;
     use wlan_common::tx_vector::HT_START_IDX;
@@ -707,11 +708,11 @@ mod tests {
 
     impl TimerManager for MockTimerManager {
         fn schedule(&mut self, from_now: Duration) {
-            let mut scheduled = self.scheduled.lock().unwrap();
+            let mut scheduled = self.scheduled.lock();
             scheduled.replace(from_now);
         }
         fn cancel(&mut self) {
-            let mut scheduled = self.scheduled.lock().unwrap();
+            let mut scheduled = self.scheduled.lock();
             scheduled.take();
         }
     }
@@ -807,9 +808,9 @@ mod tests {
     #[test]
     fn add_peer() {
         let (mut minstrel, timer) = mock_minstrel();
-        assert!(timer.lock().unwrap().is_none()); // No timer is scheduled.
+        assert!(timer.lock().is_none()); // No timer is scheduled.
         minstrel.add_peer(&ht_assoc_cfg()).expect("Failed to add peer.");
-        assert!(timer.lock().unwrap().is_some()); // A timer is scheduled.
+        assert!(timer.lock().is_some()); // A timer is scheduled.
 
         let peers = minstrel.get_fidl_peers();
         assert_eq!(peers.addrs.len(), 1);
@@ -834,10 +835,10 @@ mod tests {
         let (mut minstrel, timer) = mock_minstrel();
         minstrel.add_peer(&ht_assoc_cfg()).expect("Failed to add peer.");
         assert_eq!(minstrel.get_fidl_peers().addrs.len(), 1);
-        assert!(timer.lock().unwrap().is_some()); // A timer is scheduled.
+        assert!(timer.lock().is_some()); // A timer is scheduled.
 
         minstrel.remove_peer(&TEST_MAC_ADDR);
-        assert!(timer.lock().unwrap().is_none()); // No more peers -- timer cancelled.
+        assert!(timer.lock().is_none()); // No more peers -- timer cancelled.
 
         assert!(minstrel.get_fidl_peers().addrs.is_empty());
         assert_eq!(minstrel.get_fidl_peer_stats(&TEST_MAC_ADDR), Err(zx::Status::NOT_FOUND));
@@ -851,11 +852,11 @@ mod tests {
         peer2.bssid = Some([11, 12, 13, 14, 15, 16]);
         minstrel.add_peer(&peer2).expect("Failed to add peer.");
         assert_eq!(minstrel.get_fidl_peers().addrs.len(), 2);
-        assert!(timer.lock().unwrap().is_some()); // A timer is scheduled.
+        assert!(timer.lock().is_some()); // A timer is scheduled.
 
         minstrel.remove_peer(&TEST_MAC_ADDR);
         assert_eq!(minstrel.get_fidl_peers().addrs.len(), 1);
-        assert!(timer.lock().unwrap().is_some()); // A timer is still scheduled.
+        assert!(timer.lock().is_some()); // A timer is still scheduled.
 
         assert_eq!(minstrel.get_fidl_peer_stats(&TEST_MAC_ADDR), Err(zx::Status::NOT_FOUND));
         assert!(minstrel.get_fidl_peer_stats(&peer2.bssid.unwrap().into()).is_ok());

@@ -12,9 +12,10 @@ use crate::key::ptk::Ptk;
 use crate::nonce::NonceReader;
 use crate::rsna::{Dot11VerifiedKeyFrame, NegotiatedProtection, Role, UpdateSink};
 use crate::{Error, ProtectionInfo, rsn_ensure};
+use fuchsia_sync::Mutex;
 use ieee80211::MacAddr;
 use std::ops::Deref;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use wlan_common::ie::rsn::cipher::Cipher;
 use wlan_common::ie::rsn::rsne::Rsne;
 use wlan_common::ie::rsn::suite_filter::DEFAULT_GROUP_MGMT_CIPHER;
@@ -279,7 +280,7 @@ impl Config {
                 Some(group_mgmt_cipher) => match igtk_provider.as_ref() {
                     None => return Err(Error::MissingIgtkProvider),
                     Some(igtk_provider) => {
-                        let igtk_provider_cipher = igtk_provider.lock().unwrap().cipher();
+                        let igtk_provider_cipher = igtk_provider.lock().cipher();
                         rsn_ensure!(
                             group_mgmt_cipher == igtk_provider_cipher,
                             Error::WrongIgtkProviderCipher(group_mgmt_cipher, igtk_provider_cipher),

@@ -260,8 +260,9 @@ impl DeviceOps for FullmacDevice {
 pub mod test_utils {
     use super::*;
     use fidl_fuchsia_wlan_sme as fidl_sme;
+    use fuchsia_sync::Mutex;
     use futures::channel::mpsc;
-    use std::sync::{Arc, Mutex};
+    use std::sync::Arc;
     use wlan_common::sink::UnboundedSink;
 
     #[derive(Debug)]
@@ -378,7 +379,7 @@ pub mod test_utils {
             &mut self,
             fullmac_ifc_client_end: ClientEnd<fidl_fullmac::WlanFullmacImplIfcMarker>,
         ) -> Result<fidl::Channel, zx::Status> {
-            let mut mocks = self.mocks.lock().unwrap();
+            let mut mocks = self.mocks.lock();
 
             mocks.fullmac_ifc_client_end = Some(fullmac_ifc_client_end);
             match mocks.start_fn_status_mock {
@@ -390,16 +391,11 @@ pub mod test_utils {
         }
 
         fn query_device_info(&self) -> anyhow::Result<fidl_fullmac::WlanFullmacImplQueryResponse> {
-            self.mocks.lock().unwrap().query_device_info_mock.clone().ok_or_else(|| format_err!(""))
+            self.mocks.lock().query_device_info_mock.clone().ok_or_else(|| format_err!(""))
         }
 
         fn query_security_support(&self) -> anyhow::Result<fidl_common::SecuritySupport> {
-            self.mocks
-                .lock()
-                .unwrap()
-                .query_security_support_mock
-                .clone()
-                .ok_or_else(|| format_err!(""))
+            self.mocks.lock().query_security_support_mock.clone().ok_or_else(|| format_err!(""))
         }
 
         fn query_spectrum_management_support(
@@ -407,7 +403,6 @@ pub mod test_utils {
         ) -> anyhow::Result<fidl_common::SpectrumManagementSupport> {
             self.mocks
                 .lock()
-                .unwrap()
                 .query_spectrum_management_support_mock
                 .clone()
                 .ok_or_else(|| format_err!(""))
@@ -417,12 +412,7 @@ pub mod test_utils {
             &self,
         ) -> anyhow::Result<Result<fidl_stats::TelemetrySupport, i32>> {
             self.driver_call_sender.send(DriverCall::QueryTelemetrySupport);
-            self.mocks
-                .lock()
-                .unwrap()
-                .query_telemetry_support_mock
-                .clone()
-                .ok_or_else(|| format_err!(""))
+            self.mocks.lock().query_telemetry_support_mock.clone().ok_or_else(|| format_err!(""))
         }
 
         // Cannot mark fn unsafe because it has to match fn signature in FullDeviceInterface
@@ -491,7 +481,7 @@ pub mod test_utils {
         ) -> anyhow::Result<fidl_fullmac::WlanFullmacSetKeysResp> {
             let num_keys = req.keylist.as_ref().unwrap().len();
             self.driver_call_sender.send(DriverCall::SetKeys { req });
-            match &self.mocks.lock().unwrap().set_keys_resp_mock {
+            match &self.mocks.lock().set_keys_resp_mock {
                 Some(resp) => Ok(resp.clone()),
                 None => {
                     Ok(fidl_fullmac::WlanFullmacSetKeysResp { statuslist: vec![0i32; num_keys] })
@@ -504,7 +494,7 @@ pub mod test_utils {
         }
         fn get_iface_stats(&self) -> anyhow::Result<fidl_mlme::GetIfaceStatsResponse> {
             self.driver_call_sender.send(DriverCall::GetIfaceStats);
-            Ok(self.mocks.lock().unwrap().get_iface_stats_mock.clone().unwrap_or(
+            Ok(self.mocks.lock().get_iface_stats_mock.clone().unwrap_or(
                 fidl_mlme::GetIfaceStatsResponse::ErrorStatus(zx::sys::ZX_ERR_NOT_SUPPORTED),
             ))
         }
@@ -512,7 +502,7 @@ pub mod test_utils {
             &self,
         ) -> anyhow::Result<fidl_mlme::GetIfaceHistogramStatsResponse> {
             self.driver_call_sender.send(DriverCall::GetIfaceHistogramStats);
-            Ok(self.mocks.lock().unwrap().get_iface_histogram_stats_mock.clone().unwrap_or(
+            Ok(self.mocks.lock().get_iface_histogram_stats_mock.clone().unwrap_or(
                 fidl_mlme::GetIfaceHistogramStatsResponse::ErrorStatus(
                     zx::sys::ZX_ERR_NOT_SUPPORTED,
                 ),
@@ -520,7 +510,7 @@ pub mod test_utils {
         }
         fn get_signal_report(&self) -> anyhow::Result<Result<fidl_stats::SignalReport, i32>> {
             self.driver_call_sender.send(DriverCall::GetSignalReport);
-            self.mocks.lock().unwrap().get_signal_report_mock.clone().ok_or_else(|| format_err!(""))
+            self.mocks.lock().get_signal_report_mock.clone().ok_or_else(|| format_err!(""))
         }
         fn sae_handshake_resp(
             &self,

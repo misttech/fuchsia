@@ -4,11 +4,11 @@
 
 pub mod psk;
 
+use crate::Error;
 use crate::key::exchange::Key;
 use crate::rsna::{
     AuthRejectedReason, AuthStatus, Dot11VerifiedKeyFrame, SecAssocUpdate, UpdateSink,
 };
-use crate::Error;
 use fidl_fuchsia_wlan_mlme::SaeFrame;
 use ieee80211::{MacAddr, MacAddrBytes, Ssid};
 use log::warn;
@@ -262,7 +262,8 @@ fn process_sae_updates(
 mod test {
     use super::*;
     use assert_matches::assert_matches;
-    use std::sync::{Arc, Mutex};
+    use fuchsia_sync::Mutex;
+    use std::sync::Arc;
 
     #[test]
     fn psk_rejects_sae() {
@@ -294,7 +295,7 @@ mod test {
     // This sends dummy frames as though it is the SAE initiator.
     impl sae::SaeHandshake for DummySae {
         fn initiate_sae(&mut self, sink: &mut sae::SaeUpdateSink) {
-            self.0.lock().unwrap().initiated = true;
+            self.0.lock().initiated = true;
             sink.push(sae::SaeUpdate::SendFrame(sae::AuthFrameTx {
                 seq: 1,
                 status_code: fidl_fuchsia_wlan_ieee80211::StatusCode::Success,
@@ -306,16 +307,16 @@ mod test {
             _sink: &mut sae::SaeUpdateSink,
             _commit_msg: &sae::CommitMsg<'_>,
         ) {
-            assert!(self.0.lock().unwrap().initiated);
-            self.0.lock().unwrap().handled_commits += 1;
+            assert!(self.0.lock().initiated);
+            self.0.lock().handled_commits += 1;
         }
         fn handle_confirm(
             &mut self,
             sink: &mut sae::SaeUpdateSink,
             _confirm_msg: &sae::ConfirmMsg<'_>,
         ) {
-            assert!(self.0.lock().unwrap().initiated);
-            self.0.lock().unwrap().handled_confirms += 1;
+            assert!(self.0.lock().initiated);
+            self.0.lock().handled_confirms += 1;
             sink.push(sae::SaeUpdate::SendFrame(sae::AuthFrameTx {
                 seq: 2,
                 status_code: fidl_fuchsia_wlan_ieee80211::StatusCode::Success,
@@ -331,7 +332,7 @@ mod test {
             panic!("The SAE initiator should never receive an anti-clogging token.");
         }
         fn handle_timeout(&mut self, _sink: &mut sae::SaeUpdateSink, _timeout: sae::Timeout) {
-            self.0.lock().unwrap().handled_timeouts += 1;
+            self.0.lock().handled_timeouts += 1;
         }
     }
 
@@ -364,7 +365,7 @@ mod test {
         let mut sink = UpdateSink::default();
 
         auth.on_sae_handshake_ind(&mut sink).expect("SAE handshake should accept SAE ind");
-        assert!(sae_counter.lock().unwrap().initiated);
+        assert!(sae_counter.lock().initiated);
         assert_matches!(sink.pop(), Some(SecAssocUpdate::TxSaeFrame(_)));
 
         let commit_frame = SaeFrame {
@@ -374,7 +375,7 @@ mod test {
             sae_fields: COMMIT.to_vec(),
         };
         auth.on_sae_frame_rx(&mut sink, commit_frame).expect("SAE handshake should accept commit");
-        assert_eq!(sae_counter.lock().unwrap().handled_commits, 1);
+        assert_eq!(sae_counter.lock().handled_commits, 1);
         assert!(sink.is_empty());
 
         let confirm_frame = SaeFrame {
@@ -385,7 +386,7 @@ mod test {
         };
         auth.on_sae_frame_rx(&mut sink, confirm_frame)
             .expect("SAE handshake should accept confirm");
-        assert_eq!(sae_counter.lock().unwrap().handled_confirms, 1);
+        assert_eq!(sae_counter.lock().handled_confirms, 1);
         assert_eq!(sink.len(), 3);
         assert_matches!(sink.remove(0), SecAssocUpdate::TxSaeFrame(_));
         assert_matches!(sink.remove(0), SecAssocUpdate::Key(_));
@@ -418,10 +419,10 @@ mod test {
             Some(SecAssocUpdate::ScheduleSaeTimeout(id)) => id
         );
         sae.on_sae_timeout(&mut sink, event_id).expect("SAE handshake should accept timeout");
-        assert_eq!(sae_counter.lock().unwrap().handled_timeouts, 1);
+        assert_eq!(sae_counter.lock().handled_timeouts, 1);
         // Don't handle the same timeout twice.
         sae.on_sae_timeout(&mut sink, event_id).expect("SAE handshake should accept timeout");
-        assert_eq!(sae_counter.lock().unwrap().handled_timeouts, 1); // No timeout handled.
+        assert_eq!(sae_counter.lock().handled_timeouts, 1); // No timeout handled.
 
         // Don't handle a cancelled timeout.
         if let Method::Sae(data) = &mut sae {
@@ -438,7 +439,7 @@ mod test {
                 Some(SecAssocUpdate::ScheduleSaeTimeout(id)) => id
         );
         sae.on_sae_timeout(&mut sink, event_id).expect("SAE handshake should accept timeout");
-        assert_eq!(sae_counter.lock().unwrap().handled_timeouts, 1); // No timeout handled.
+        assert_eq!(sae_counter.lock().handled_timeouts, 1); // No timeout handled.
     }
 
     #[test]

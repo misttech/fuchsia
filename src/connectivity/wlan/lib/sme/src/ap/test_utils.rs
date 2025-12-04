@@ -3,7 +3,8 @@
 // found in the LICENSE file.
 
 use fidl_fuchsia_wlan_mlme::EapolResultCode;
-use std::sync::{Arc, Mutex};
+use fuchsia_sync::Mutex;
+use std::sync::Arc;
 use wlan_common::ie::rsn::rsne::{RsnCapabilities, Rsne};
 use wlan_rsn::rsna::UpdateSink;
 use wlan_rsn::{Error, NegotiatedProtection};
@@ -23,12 +24,12 @@ impl Authenticator for MockAuthenticator {
     }
 
     fn reset(&mut self) {
-        self.initiate.lock().unwrap().clear();
-        self.on_eapol_frame.lock().unwrap().clear();
+        self.initiate.lock().clear();
+        self.on_eapol_frame.lock().clear();
     }
 
     fn initiate(&mut self, update_sink: &mut UpdateSink) -> Result<(), Error> {
-        update_sink.extend(self.initiate.lock().unwrap().drain(..));
+        update_sink.extend(self.initiate.lock().drain(..));
         Ok(())
     }
 
@@ -37,7 +38,7 @@ impl Authenticator for MockAuthenticator {
         update_sink: &mut UpdateSink,
         _frame: eapol::Frame<&[u8]>,
     ) -> Result<(), Error> {
-        update_sink.extend(self.on_eapol_frame.lock().unwrap().drain(..));
+        update_sink.extend(self.on_eapol_frame.lock().drain(..));
         Ok(())
     }
 

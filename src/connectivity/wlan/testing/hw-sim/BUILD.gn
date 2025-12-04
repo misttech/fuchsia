@@ -39,6 +39,7 @@ rustc_library("wlan-hw-sim") {
     "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-component",
     "//src/lib/fuchsia-fs",
+    "//src/lib/fuchsia-sync",
     "//src/testing/realm_client/rust",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:futures",

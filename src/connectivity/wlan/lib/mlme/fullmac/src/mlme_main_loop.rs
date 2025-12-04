@@ -366,7 +366,8 @@ mod handle_mlme_request_tests {
     use super::*;
     use crate::device::test_utils::{DriverCall, FakeFullmacDevice, FakeFullmacDeviceMocks};
     use assert_matches::assert_matches;
-    use std::sync::{Arc, Mutex};
+    use fuchsia_sync::Mutex;
+    use std::sync::Arc;
     use test_case::test_case;
     use wlan_common::sink::UnboundedSink;
     use {fidl_fuchsia_wlan_fullmac as fidl_fullmac, fidl_fuchsia_wlan_stats as fidl_stats};
@@ -714,7 +715,7 @@ mod handle_mlme_request_tests {
     fn test_set_keys_request_partial_failure() {
         let mut h = TestHelper::set_up();
         const NUM_KEYS: usize = 3;
-        h.fake_device.lock().unwrap().set_keys_resp_mock =
+        h.fake_device.lock().set_keys_resp_mock =
             Some(fidl_fullmac::WlanFullmacSetKeysResp { statuslist: [0i32, 1, 0].to_vec() });
         let mut keylist = vec![];
         let key = fidl_mlme::SetKeyDescriptor {
@@ -779,7 +780,7 @@ mod handle_mlme_request_tests {
     #[test]
     fn test_set_keys_request_when_resp_has_different_num_keys() {
         let mut h = TestHelper::set_up();
-        h.fake_device.lock().unwrap().set_keys_resp_mock =
+        h.fake_device.lock().set_keys_resp_mock =
             Some(fidl_fullmac::WlanFullmacSetKeysResp { statuslist: [0i32; 2].to_vec() });
         let fidl_req = wlan_sme::MlmeRequest::SetKeys(fidl_mlme::SetKeysRequest {
             keylist: vec![fidl_mlme::SetKeyDescriptor {
@@ -857,7 +858,7 @@ mod handle_mlme_request_tests {
             }]),
             ..Default::default()
         });
-        h.fake_device.lock().unwrap().query_telemetry_support_mock.replace(mocked_support.clone());
+        h.fake_device.lock().query_telemetry_support_mock.replace(mocked_support.clone());
         let (support_responder, mut support_receiver) = wlan_sme::responder::Responder::new();
         let fidl_req = wlan_sme::MlmeRequest::QueryTelemetrySupport(support_responder);
 
@@ -885,7 +886,6 @@ mod handle_mlme_request_tests {
         };
         h.fake_device
             .lock()
-            .unwrap()
             .get_iface_stats_mock
             .replace(fidl_mlme::GetIfaceStatsResponse::Stats(mocked_stats));
         let (stats_responder, mut stats_receiver) = wlan_sme::responder::Responder::new();
@@ -959,7 +959,6 @@ mod handle_mlme_request_tests {
 
         h.fake_device
             .lock()
-            .unwrap()
             .get_iface_histogram_stats_mock
             .replace(fidl_mlme::GetIfaceHistogramStatsResponse::Stats(mocked_stats.clone()));
         let (stats_responder, mut stats_receiver) = wlan_sme::responder::Responder::new();
@@ -1082,11 +1081,12 @@ mod handle_driver_event_tests {
     use super::*;
     use crate::device::test_utils::{DriverCall, FakeFullmacDevice, FakeFullmacDeviceMocks};
     use assert_matches::assert_matches;
+    use fuchsia_sync::Mutex;
     use futures::Future;
     use futures::channel::mpsc;
     use futures::task::Poll;
     use std::pin::Pin;
-    use std::sync::{Arc, Mutex};
+    use std::sync::Arc;
     use test_case::test_case;
     use wlan_common::fake_fidl_bss_description;
     use wlan_common::sink::UnboundedSink;
@@ -1289,8 +1289,7 @@ mod handle_driver_event_tests {
     fn test_deauth_conf(mac_role: fidl_common::WlanMacRole) {
         let (mut h, mut test_fut) =
             TestHelper::set_up_with_link_state(fidl_mlme::ControlledPortState::Open);
-        h.fake_device.lock().unwrap().query_device_info_mock.as_mut().unwrap().role =
-            Some(mac_role);
+        h.fake_device.lock().query_device_info_mock.as_mut().unwrap().role = Some(mac_role);
         assert_matches!(h.exec.run_until_stalled(&mut test_fut), Poll::Pending);
 
         let deauth_conf = fidl_fullmac::WlanFullmacImplIfcDeauthConfRequest {
@@ -1326,8 +1325,7 @@ mod handle_driver_event_tests {
     fn test_deauth_ind(mac_role: fidl_common::WlanMacRole) {
         let (mut h, mut test_fut) =
             TestHelper::set_up_with_link_state(fidl_mlme::ControlledPortState::Open);
-        h.fake_device.lock().unwrap().query_device_info_mock.as_mut().unwrap().role =
-            Some(mac_role);
+        h.fake_device.lock().query_device_info_mock.as_mut().unwrap().role = Some(mac_role);
         assert_matches!(h.exec.run_until_stalled(&mut test_fut), Poll::Pending);
 
         let deauth_ind = fidl_fullmac::WlanFullmacImplIfcDeauthIndRequest {
@@ -1405,8 +1403,7 @@ mod handle_driver_event_tests {
     fn test_disassoc_conf(mac_role: fidl_common::WlanMacRole) {
         let (mut h, mut test_fut) =
             TestHelper::set_up_with_link_state(fidl_mlme::ControlledPortState::Open);
-        h.fake_device.lock().unwrap().query_device_info_mock.as_mut().unwrap().role =
-            Some(mac_role);
+        h.fake_device.lock().query_device_info_mock.as_mut().unwrap().role = Some(mac_role);
         assert_matches!(h.exec.run_until_stalled(&mut test_fut), Poll::Pending);
 
         let disassoc_conf = fidl_fullmac::WlanFullmacImplIfcDisassocConfRequest {
@@ -1441,8 +1438,7 @@ mod handle_driver_event_tests {
     fn test_disassoc_ind(mac_role: fidl_common::WlanMacRole) {
         let (mut h, mut test_fut) =
             TestHelper::set_up_with_link_state(fidl_mlme::ControlledPortState::Open);
-        h.fake_device.lock().unwrap().query_device_info_mock.as_mut().unwrap().role =
-            Some(mac_role);
+        h.fake_device.lock().query_device_info_mock.as_mut().unwrap().role = Some(mac_role);
         assert_matches!(h.exec.run_until_stalled(&mut test_fut), Poll::Pending);
 
         let disassoc_ind = fidl_fullmac::WlanFullmacImplIfcDisassocIndRequest {

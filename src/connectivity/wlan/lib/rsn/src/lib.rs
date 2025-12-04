@@ -19,14 +19,15 @@ mod prf;
 pub mod rsna;
 
 use crate::aes::AesError;
-use crate::key::exchange::handshake::{fourway, group_key, HandshakeMessageNumber};
+use crate::key::exchange::handshake::{HandshakeMessageNumber, fourway, group_key};
 use crate::key::exchange::{self};
 use crate::rsna::esssa::EssSa;
 use crate::rsna::{Role, UpdateSink};
 use fidl_fuchsia_wlan_mlme::{EapolResultCode, SaeFrame};
+use fuchsia_sync::Mutex;
 use ieee80211::{MacAddr, Ssid};
 use log::warn;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use wlan_common::ie::rsn::cipher::Cipher;
 use wlan_common::ie::rsn::rsne::{self, Rsne};
 use wlan_common::ie::wpa::WpaIe;
@@ -584,7 +585,7 @@ impl From<rsne::Error> for Error {
 #[cfg(test)]
 mod tests {
     use crate::key::exchange::Key;
-    use crate::rsna::{test_util, SecAssocStatus, SecAssocUpdate};
+    use crate::rsna::{SecAssocStatus, SecAssocUpdate, test_util};
     use assert_matches::assert_matches;
 
     #[test]

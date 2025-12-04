@@ -5,10 +5,11 @@
 use crate::client::rsn::Supplicant;
 use crate::client::{EstablishRsnaFailureReason, ServingApInfo};
 use assert_matches::assert_matches;
+use fuchsia_sync::Mutex;
 use futures::channel::mpsc;
 use ieee80211::{Bssid, MacAddrBytes, Ssid};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, LazyLock, Mutex};
+use std::sync::{Arc, LazyLock};
 use wlan_common::bss::Protection;
 use wlan_common::channel;
 use wlan_common::ie::fake_ies::{fake_ht_cap_bytes, fake_vht_cap_bytes};
@@ -212,7 +213,6 @@ fn populate_update_sink(
 ) -> Result<(), Error> {
     results
         .lock()
-        .unwrap()
         .as_mut()
         .map(|updates| {
             update_sink.append(updates);
@@ -222,7 +222,7 @@ fn populate_update_sink(
 
 impl Supplicant for MockSupplicant {
     fn start(&mut self, update_sink: &mut UpdateSink) -> Result<(), Error> {
-        match &*self.start_failure.lock().unwrap() {
+        match &*self.start_failure.lock() {
             Some(error) => Err(format_rsn_err!("{:?}", error)),
             None => {
                 self.started.store(true, Ordering::SeqCst);
@@ -240,7 +240,7 @@ impl Supplicant for MockSupplicant {
         update_sink: &mut UpdateSink,
         _frame: eapol::Frame<&[u8]>,
     ) -> Result<(), Error> {
-        if let Some(cb) = self.on_eapol_frame_cb.lock().unwrap().as_mut() {
+        if let Some(cb) = self.on_eapol_frame_cb.lock().as_mut() {
             cb();
         }
         populate_update_sink(update_sink, &self.on_eapol_frame)
@@ -263,11 +263,11 @@ impl Supplicant for MockSupplicant {
     }
 
     fn on_rsna_response_timeout(&self) -> EstablishRsnaFailureReason {
-        self.on_rsna_response_timeout.lock().unwrap().take().expect("No establish RSNA reason")
+        self.on_rsna_response_timeout.lock().take().expect("No establish RSNA reason")
     }
 
     fn on_rsna_completion_timeout(&self) -> EstablishRsnaFailureReason {
-        self.on_rsna_completion_timeout.lock().unwrap().take().expect("No establish RSNA reason")
+        self.on_rsna_completion_timeout.lock().take().expect("No establish RSNA reason")
     }
 
     fn on_pmk_available(
@@ -326,11 +326,11 @@ pub struct MockSupplicantController {
 
 impl MockSupplicantController {
     pub fn set_start_failure(&self, error: anyhow::Error) {
-        *self.start_failure.lock().unwrap() = Some(error);
+        *self.start_failure.lock() = Some(error);
     }
 
     pub fn set_start_updates(&self, updates: UpdateSink) {
-        *self.mock_start.lock().unwrap() = Ok(updates);
+        *self.mock_start.lock() = Ok(updates);
     }
 
     pub fn is_supplicant_started(&self) -> bool {
@@ -338,49 +338,49 @@ impl MockSupplicantController {
     }
 
     pub fn set_on_eapol_frame_updates(&self, updates: UpdateSink) {
-        *self.mock_on_eapol_frame.lock().unwrap() = Ok(updates);
+        *self.mock_on_eapol_frame.lock() = Ok(updates);
     }
 
     pub fn set_on_rsna_retransmission_timeout_updates(&self, updates: UpdateSink) {
-        *self.mock_on_rsna_retransmission_timeout.lock().unwrap() = Ok(updates);
+        *self.mock_on_rsna_retransmission_timeout.lock() = Ok(updates);
     }
 
     pub fn set_on_rsna_retransmission_timeout_failure(&self, error: anyhow::Error) {
-        *self.mock_on_rsna_retransmission_timeout.lock().unwrap() = Err(error);
+        *self.mock_on_rsna_retransmission_timeout.lock() = Err(error);
     }
 
     pub fn set_on_rsna_response_timeout(&self, error: EstablishRsnaFailureReason) {
-        *self.mock_on_rsna_response_timeout.lock().unwrap() = Some(error);
+        *self.mock_on_rsna_response_timeout.lock() = Some(error);
     }
 
     pub fn set_on_rsna_completion_timeout(&self, error: EstablishRsnaFailureReason) {
-        *self.mock_on_rsna_completion_timeout.lock().unwrap() = Some(error);
+        *self.mock_on_rsna_completion_timeout.lock() = Some(error);
     }
 
     pub fn set_on_sae_handshake_ind_updates(&self, updates: UpdateSink) {
-        *self.mock_on_sae_handshake_ind.lock().unwrap() = Ok(updates);
+        *self.mock_on_sae_handshake_ind.lock() = Ok(updates);
     }
 
     pub fn set_on_sae_frame_rx_updates(&self, updates: UpdateSink) {
-        *self.mock_on_sae_frame_rx.lock().unwrap() = Ok(updates);
+        *self.mock_on_sae_frame_rx.lock() = Ok(updates);
     }
 
     pub fn set_on_sae_timeout_updates(&self, updates: UpdateSink) {
-        *self.mock_on_sae_timeout.lock().unwrap() = Ok(updates);
+        *self.mock_on_sae_timeout.lock() = Ok(updates);
     }
 
     pub fn set_on_sae_timeout_failure(&self, error: anyhow::Error) {
-        *self.mock_on_sae_timeout.lock().unwrap() = Err(error);
+        *self.mock_on_sae_timeout.lock() = Err(error);
     }
 
     pub fn set_on_eapol_frame_callback<F>(&self, cb: F)
     where
         F: Fn() + Send + 'static,
     {
-        *self.on_eapol_frame_cb.lock().unwrap() = Some(Box::new(cb));
+        *self.on_eapol_frame_cb.lock() = Some(Box::new(cb));
     }
 
     pub fn set_on_eapol_frame_failure(&self, error: anyhow::Error) {
-        *self.mock_on_eapol_frame.lock().unwrap() = Err(error);
+        *self.mock_on_eapol_frame.lock() = Err(error);
     }
 }

@@ -25,9 +25,9 @@ use crate::device::DeviceOps;
 use crate::mlme_main_loop::create_mlme_main_loop;
 use anyhow::bail;
 use fuchsia_inspect::Inspector;
+use futures::StreamExt;
 use futures::channel::{mpsc, oneshot};
 use futures::future::BoxFuture;
-use futures::StreamExt;
 use log::{error, info, warn};
 use wlan_common::sink::UnboundedSink;
 use wlan_ffi_transport::completers::Completer;
@@ -368,10 +368,11 @@ mod tests {
     use crate::device::test_utils::{DriverCall, FakeFullmacDevice, FakeFullmacDeviceMocks};
     use assert_matches::assert_matches;
     use fuchsia_async as fasync;
-    use futures::task::Poll;
+    use fuchsia_sync::Mutex;
     use futures::Future;
+    use futures::task::Poll;
     use std::pin::Pin;
-    use std::sync::{Arc, Mutex};
+    use std::sync::Arc;
 
     #[test]
     fn test_happy_path() {
@@ -419,7 +420,7 @@ mod tests {
     #[test]
     fn test_mlme_startup_fails_due_to_device_start() {
         let (mut h, mut test_fut) = TestHelper::set_up();
-        h.fake_device.lock().unwrap().start_fn_status_mock = Some(zx::sys::ZX_ERR_BAD_STATE);
+        h.fake_device.lock().start_fn_status_mock = Some(zx::sys::ZX_ERR_BAD_STATE);
         assert_matches!(
             h.exec.run_until_stalled(&mut test_fut),
             Poll::Ready(Err(zx::Status::INTERNAL))
@@ -448,7 +449,7 @@ mod tests {
     #[test]
     fn test_mlme_startup_fails_due_to_query_device_info_error() {
         let (mut h, mut test_fut) = TestHelper::set_up();
-        h.fake_device.lock().unwrap().query_device_info_mock = None;
+        h.fake_device.lock().query_device_info_mock = None;
         assert_matches!(
             h.exec.run_until_stalled(&mut test_fut),
             Poll::Ready(Err(zx::Status::INTERNAL))
@@ -462,7 +463,7 @@ mod tests {
     #[test]
     fn test_mlme_startup_fails_due_to_query_security_support_error() {
         let (mut h, mut test_fut) = TestHelper::set_up();
-        h.fake_device.lock().unwrap().query_security_support_mock = None;
+        h.fake_device.lock().query_security_support_mock = None;
         assert_matches!(
             h.exec.run_until_stalled(&mut test_fut),
             Poll::Ready(Err(zx::Status::INTERNAL))
@@ -476,7 +477,7 @@ mod tests {
     #[test]
     fn test_mlme_startup_fails_due_to_query_spectrum_management_support_error() {
         let (mut h, mut test_fut) = TestHelper::set_up();
-        h.fake_device.lock().unwrap().query_spectrum_management_support_mock = None;
+        h.fake_device.lock().query_spectrum_management_support_mock = None;
         assert_matches!(
             h.exec.run_until_stalled(&mut test_fut),
             Poll::Ready(Err(zx::Status::INTERNAL))
@@ -490,7 +491,7 @@ mod tests {
     #[test]
     fn test_mlme_startup_fails_due_to_failure_to_convert_query_device_info() {
         let (mut h, mut test_fut) = TestHelper::set_up();
-        h.fake_device.lock().unwrap().query_device_info_mock.as_mut().unwrap().role = None;
+        h.fake_device.lock().query_device_info_mock.as_mut().unwrap().role = None;
         assert_matches!(
             h.exec.run_until_stalled(&mut test_fut),
             Poll::Ready(Err(zx::Status::INTERNAL))
@@ -520,7 +521,7 @@ mod tests {
         assert_matches!(h.exec.run_until_stalled(&mut test_fut), Poll::Pending);
         assert_matches!(h.startup_receiver.try_recv(), Ok(Some(Ok(()))));
 
-        std::mem::drop(h.fake_device.lock().unwrap().fullmac_ifc_client_end.take());
+        std::mem::drop(h.fake_device.lock().fullmac_ifc_client_end.take());
         assert_matches!(
             h.exec.run_until_stalled(&mut test_fut),
             Poll::Ready(Err(zx::Status::INTERNAL))

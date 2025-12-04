@@ -2,13 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use fuchsia_sync::RwLock;
 use futures::future::{Future, FutureExt, LocalFutureObj};
 use futures::ready;
 use futures::task::{Context, Poll};
 use std::convert::Infallible;
 use std::fmt::Debug;
 use std::pin::Pin;
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 
 #[derive(Debug)]
 pub struct ExitReason(pub Result<(), anyhow::Error>);
@@ -59,10 +60,7 @@ pub struct StateMachineStatusPublisher<S>(Arc<RwLock<S>>);
 
 impl<S: Clone + Debug> StateMachineStatusPublisher<S> {
     pub fn publish_status(&self, status: S) {
-        match self.0.write() {
-            Ok(mut writer) => *writer = status,
-            Err(e) => log::warn!("Failed to write current status {:?}: {}", status, e),
-        }
+        *self.0.write() = status;
     }
 }
 
@@ -71,15 +69,12 @@ pub struct StateMachineStatusReader<S>(Arc<RwLock<S>>);
 
 impl<S: Clone + Debug> StateMachineStatusReader<S> {
     pub fn read_status(&self) -> Result<S, anyhow::Error> {
-        match self.0.read() {
-            Ok(reader) => Ok(reader.clone()),
-            Err(e) => Err(anyhow::format_err!("Failed to read current status: {}", e)),
-        }
+        Ok(self.0.read().clone())
     }
 }
 
-pub fn status_publisher_and_reader<S: Clone + Default>(
-) -> (StateMachineStatusPublisher<S>, StateMachineStatusReader<S>) {
+pub fn status_publisher_and_reader<S: Clone + Default>()
+-> (StateMachineStatusPublisher<S>, StateMachineStatusReader<S>) {
     let status = Arc::new(RwLock::new(S::default()));
     (StateMachineStatusPublisher(status.clone()), StateMachineStatusReader(status))
 }

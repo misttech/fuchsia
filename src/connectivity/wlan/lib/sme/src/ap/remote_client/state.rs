@@ -8,9 +8,10 @@ use crate::ap::remote_client::RemoteClient;
 use crate::ap::{Context, RsnCfg, aid};
 use anyhow::{ensure, format_err};
 
+use fuchsia_sync::Mutex;
 use ieee80211::MacAddr;
 use log::error;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use wlan_common::ie::SupportedRate;
 use wlan_common::ie::rsn::rsne;
 use wlan_common::mac::{Aid, CapabilityInfo};

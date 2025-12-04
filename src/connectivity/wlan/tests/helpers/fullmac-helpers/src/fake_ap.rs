@@ -5,13 +5,14 @@
 use crate::recorded_request_stream::RecordedRequestStream;
 use assert_matches::assert_matches;
 use fidl_fuchsia_wlan_mlme::EapolResultCode;
+use fuchsia_sync::Mutex;
 use ieee80211::MacAddr;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use wlan_common::bss;
 use wlan_common::ie::rsn::cipher::{CIPHER_BIP_CMAC_128, CIPHER_CCMP_128};
 use wlan_common::ie::rsn::rsne;
-use wlan_rsn::rsna::{SecAssocUpdate, UpdateSink};
 use wlan_rsn::Authenticator;
+use wlan_rsn::rsna::{SecAssocUpdate, UpdateSink};
 use zerocopy::IntoBytes;
 use {
     fidl_fuchsia_wlan_common_security as fidl_wlan_security,

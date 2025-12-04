@@ -319,7 +319,7 @@ pub fn create_authenticator(
             };
             wlan_rsn::Authenticator::new_wpa2psk_ccmp128(
                 nonce_rdr,
-                std::sync::Arc::new(std::sync::Mutex::new(gtk_provider)),
+                std::sync::Arc::new(fuchsia_sync::Mutex::new(gtk_provider)),
                 psk,
                 *CLIENT_MAC_ADDR,
                 supplicant_protection_info,
@@ -335,8 +335,8 @@ pub fn create_authenticator(
                 wlan_rsn::ProtectionInfo::Rsne(rsne::Rsne::wpa3_rsne());
             wlan_rsn::Authenticator::new_wpa3(
                 nonce_rdr,
-                std::sync::Arc::new(std::sync::Mutex::new(gtk_provider)),
-                std::sync::Arc::new(std::sync::Mutex::new(igtk_provider)),
+                std::sync::Arc::new(fuchsia_sync::Mutex::new(gtk_provider)),
+                std::sync::Arc::new(fuchsia_sync::Mutex::new(igtk_provider)),
                 ssid.clone(),
                 password_or_psk.as_bytes().to_vec(),
                 *CLIENT_MAC_ADDR,

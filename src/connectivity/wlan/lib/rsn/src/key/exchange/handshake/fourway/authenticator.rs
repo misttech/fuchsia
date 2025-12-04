@@ -231,7 +231,6 @@ fn process_message_2<B: SplitByteSlice>(
         // TODO(https://fxbug.dev/42104575): Replace with Error::MissingGtkProvider
         .ok_or_else(|| format_err!("GtkProvider is missing"))?
         .lock()
-        .unwrap()
         .get_gtk()
         .clone();
     let igtk = match fourway::get_group_mgmt_cipher(&cfg.s_protection, &cfg.a_protection)
@@ -243,8 +242,7 @@ fn process_message_2<B: SplitByteSlice>(
                 .as_ref()
                 // TODO(https://fxbug.dev/42104575): Replace with Error::MissingIgtkProvider
                 .ok_or_else(|| format_err!("IgtkProvider is missing"))?
-                .lock()
-                .unwrap();
+                .lock();
             let igtk_provider_cipher = igtk_provider.cipher();
             if group_mgmt_cipher != igtk_provider_cipher {
                 // TODO(https://fxbug.dev/42104575): Replace with Error::WrongIgtkProviderCipher
