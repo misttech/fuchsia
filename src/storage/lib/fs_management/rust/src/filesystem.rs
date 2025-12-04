@@ -766,6 +766,8 @@ impl Drop for ServingMultiVolumeFilesystem {
 mod tests {
     use super::*;
     use crate::{BlobCompression, BlobEvictionPolicy, Blobfs, F2fs, Fxfs, Minfs};
+    use delivery_blob::{CompressionMode, Type1Blob};
+    use fidl_fuchsia_fxfs::{BlobCreatorMarker, BlobReaderMarker};
     use ramdevice_client::RamdiskClient;
     use std::io::{Read as _, Write as _};
 
@@ -824,29 +826,21 @@ mod tests {
             serving.query().await.expect("failed to query filesystem info after first serving");
 
         // pre-generated merkle test fixture data
-        let merkle = "be901a14ec42ee0a8ee220eb119294cdd40d26d573139ee3d51e4430e7d08c28";
-        let content = String::from("test content").into_bytes();
+        let content = b"test content";
+        let merkle = fuchsia_merkle::root_from_slice(content);
+        let delivery_blob = Type1Blob::generate(content, CompressionMode::Never);
 
         {
-            let test_file = fuchsia_fs::directory::open_file(
-                serving.root(),
-                merkle,
-                fio::Flags::FLAG_MAYBE_CREATE | fio::PERM_WRITABLE,
-            )
-            .await
-            .expect("failed to create test file");
-            let () = test_file
-                .resize(content.len() as u64)
-                .await
-                .expect("failed to send resize FIDL")
-                .map_err(Status::from_raw)
-                .expect("failed to resize file");
-            let _: u64 = test_file
-                .write(&content)
-                .await
-                .expect("failed to write to test file")
-                .map_err(Status::from_raw)
-                .expect("write error");
+            let creator = fuchsia_component_client::connect_to_protocol_at_dir_root::<
+                BlobCreatorMarker,
+            >(serving.exposed_dir())
+            .unwrap();
+            let writer = creator.create(&merkle.into(), false).await.unwrap().unwrap();
+            let mut writer =
+                blob_writer::BlobWriter::create(writer.into_proxy(), delivery_blob.len() as u64)
+                    .await
+                    .unwrap();
+            writer.write(&delivery_blob).await.unwrap();
         }
 
         // check against the snapshot FilesystemInfo
@@ -860,13 +854,13 @@ mod tests {
         let blobfs = new_fs(&ramdisk, Blobfs::default()).await;
         let serving = blobfs.serve().await.expect("failed to serve blobfs the second time");
         {
-            let test_file =
-                fuchsia_fs::directory::open_file(serving.root(), merkle, fio::PERM_READABLE)
-                    .await
-                    .expect("failed to open test file");
-            let read_content =
-                fuchsia_fs::file::read(&test_file).await.expect("failed to read from test file");
-            assert_eq!(content, read_content);
+            let reader = fuchsia_component_client::connect_to_protocol_at_dir_root::<
+                BlobReaderMarker,
+            >(serving.exposed_dir())
+            .unwrap();
+            let vmo = reader.get_vmo(&merkle.into()).await.unwrap().unwrap();
+            let read_content = vmo.read_to_vec::<u8>(0, content.len() as u64).unwrap();
+            assert_eq!(read_content, content);
         }
 
         // once more check against the snapshot FilesystemInfo
@@ -884,32 +878,36 @@ mod tests {
     #[fuchsia::test]
     async fn blobfs_bind_to_path() {
         let block_size = 512;
-        let merkle = "be901a14ec42ee0a8ee220eb119294cdd40d26d573139ee3d51e4430e7d08c28";
         let test_content = b"test content";
+        let merkle = fuchsia_merkle::root_from_slice(test_content);
+        let delivery_blob = Type1Blob::generate(test_content, CompressionMode::Never);
         let ramdisk = ramdisk(block_size).await;
         let mut blobfs = new_fs(&ramdisk, Blobfs::default()).await;
 
         blobfs.format().await.expect("failed to format blobfs");
         let mut serving = blobfs.serve().await.expect("failed to serve blobfs");
         serving.bind_to_path("/test-blobfs-path").expect("bind_to_path failed");
-        let test_path = format!("/test-blobfs-path/{}", merkle);
 
         {
-            let mut file = std::fs::File::create(&test_path).expect("failed to create test file");
-            file.set_len(test_content.len() as u64).expect("failed to set size");
-            file.write_all(test_content).expect("write bytes");
+            let creator = fuchsia_component_client::connect_to_protocol_at_dir_root::<
+                BlobCreatorMarker,
+            >(serving.exposed_dir())
+            .unwrap();
+            let writer = creator.create(&merkle.into(), false).await.unwrap().unwrap();
+            let mut writer =
+                blob_writer::BlobWriter::create(writer.into_proxy(), delivery_blob.len() as u64)
+                    .await
+                    .unwrap();
+            writer.write(&delivery_blob).await.unwrap();
         }
 
-        {
-            let mut file = std::fs::File::open(&test_path).expect("failed to open test file");
-            let mut buf = Vec::new();
-            file.read_to_end(&mut buf).expect("failed to read test file");
-            assert_eq!(buf, test_content);
-        }
+        let entries = std::fs::read_dir("/test-blobfs-path")
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().into_string().unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(entries, &[merkle.to_string()]);
 
         serving.shutdown().await.expect("failed to shutdown blobfs");
-
-        std::fs::File::open(&test_path).expect_err("test file was not unbound");
     }
 
     #[fuchsia::test]

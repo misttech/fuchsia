@@ -38,9 +38,13 @@ rustc_library("fs_management") {
     "//src/lib/fuchsia",
     "//src/lib/fuchsia-fs",
     "//src/storage/fs_test:crypt_service",
+    "//src/storage/fxfs/fidl/fuchsia.fxfs:fuchsia.fxfs_rust",
+    "//src/storage/lib/blob_writer:blob-writer",
     "//src/storage/lib/block_server",
     "//src/storage/lib/block_server:vmo_backed_block_server",
+    "//src/storage/lib/delivery_blob",
     "//src/storage/lib/ramdevice_client",
+    "//src/sys/pkg/lib/fuchsia-merkle",
     "//third_party/rust_crates:futures",
   ]
   sources = [
