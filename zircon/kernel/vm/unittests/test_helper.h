@@ -55,8 +55,6 @@ class StubPageProvider : public PageProvider {
   PageSourceProperties properties() const override {
     return PageSourceProperties{
         .is_user_pager = true,
-        .is_preserving_page_content = true,
-        .is_providing_specific_physical_pages = false,
         .supports_request_type = {true, trap_dirty_, false},
     };
   }

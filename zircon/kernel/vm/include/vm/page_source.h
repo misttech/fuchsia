@@ -105,24 +105,15 @@ inline const char* PageRequestTypeToString(page_request_type type) {
 struct PageSourceProperties {
   // We use PageSource for both user pager and contiguous page reclaim.  This is how we tell whether
   // the PageSource is really a user pager when reporting to user mode that a given VMO is/isn't
-  // user pager backed.  This property should not be used for other purposes since we can use more
-  // specific properties for any behavior differences.
+  // user pager backed.
+  //
+  // If this is true, the VmCowPages may include both immutable page content and page content that
+  // was potentially modified and written back previously.
+  //
+  // If this is false, the PageSource (and PageProvider) must be used to allocate all pages.
+  // Pre-allocating generic pages from the pmm won't work. These pages must be specifically returned
+  // via PageSource::FreePages instead of pmm_free.
   const bool is_user_pager;
-
-  // Currently, this is always equal to is_user_pager, but per the comment on is_user_pager, we
-  // prefer to use more specific behavior properties rather than lean on is_user_pager.
-  //
-  // True iff providing page content.  This can be immutable page content, or it can be page content
-  // that was potentially modified and written back previously.
-  //
-  // If this is false, the provider will ensure (possibly with VmCowPages help) that pages are
-  // zeroed by the time they are added to the VmCowPages.
-  const bool is_preserving_page_content;
-
-  // Iff true, the PageSource (and PageProvider) must be used to allocate all pages.  Pre-allocating
-  // generic pages from the pmm won't work. These pages must be specifically returned via
-  // PageSource::FreePages instead of pmm_free.
-  const bool is_providing_specific_physical_pages;
 
   // For every entry, if true the PageSource supports the given |page_request_type|.
   const bool supports_request_type[page_request_type::COUNT];

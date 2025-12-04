@@ -47,8 +47,6 @@ PhysicalPageProvider::~PhysicalPageProvider() {
 PageSourceProperties PhysicalPageProvider::properties() const {
   return PageSourceProperties{
       .is_user_pager = false,
-      .is_preserving_page_content = false,
-      .is_providing_specific_physical_pages = true,
       .supports_request_type = {true, false, false},
   };
 }

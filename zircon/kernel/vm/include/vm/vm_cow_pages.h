@@ -247,9 +247,7 @@ class VmCowPages final : public fbl::ContainableBaseClasses<
 
   bool is_discardable() const { return !!discardable_tracker_; }
 
-  bool can_evict() const {
-    return page_source_ && page_source_->properties().is_preserving_page_content;
-  }
+  bool can_evict() const { return page_source_ && page_source_->properties().is_user_pager; }
 
   bool can_root_source_evict() const {
     bool result = is_root_source_preserving_page_content();
@@ -280,7 +278,7 @@ class VmCowPages final : public fbl::ContainableBaseClasses<
       return false;
     }
 
-    bool source_is_suitable = page_source_->properties().is_preserving_page_content;
+    bool source_is_suitable = page_source_->properties().is_user_pager;
 
     // Avoid borrowing and trapping dirty transitions overlapping for now; nothing really stops
     // these from being compatible AFAICT - we're just avoiding overlap of these two things until
@@ -314,7 +312,7 @@ class VmCowPages final : public fbl::ContainableBaseClasses<
   bool is_dirty_tracked() const {
     // Pager-backed VMOs require dirty tracking either if they are directly backed by the pager,
     // i.e. the root VMO.
-    return page_source_ && page_source_->properties().is_preserving_page_content;
+    return page_source_ && page_source_->properties().is_user_pager;
   }
 
   // If true this node, and all nodes in this hierarchy, are using parent content markers to
@@ -972,12 +970,10 @@ class VmCowPages final : public fbl::ContainableBaseClasses<
   }
 
   bool direct_source_supplies_zero_pages() const {
-    return page_source_ && !page_source_->properties().is_preserving_page_content;
+    return page_source_ && !page_source_->properties().is_user_pager;
   }
 
-  bool can_decommit() const {
-    return !page_source_ || !page_source_->properties().is_preserving_page_content;
-  }
+  bool can_decommit() const { return !page_source_ || !page_source_->properties().is_user_pager; }
 
   // Returns whether or not performing a bidirectional clone would result in a valid tree structure.
   // This does not perform checks on whether there are pinned pages, or if a bidirectional clone
@@ -1024,11 +1020,11 @@ class VmCowPages final : public fbl::ContainableBaseClasses<
   }
 
   bool is_source_preserving_page_content() const {
-    return page_source_ && page_source_->properties().is_preserving_page_content;
+    return page_source_ && page_source_->properties().is_user_pager;
   }
 
   bool is_source_supplying_specific_physical_pages() const {
-    return page_source_ && page_source_->properties().is_providing_specific_physical_pages;
+    return page_source_ && !page_source_->properties().is_user_pager;
   }
 
   // See |ForEveryOwnedHierarchyPageInRange|. Each entry given to `T` is constant and may not be
