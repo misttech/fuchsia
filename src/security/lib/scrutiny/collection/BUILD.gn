@@ -9,7 +9,7 @@ if (is_host) {
   rustc_library("collection") {
     name = "scrutiny_collection"
     with_unit_tests = true
-    edition = "2021"
+    edition = "2024"
     deps = [
       "//src/lib/assembly/product_bundle",
       "//src/lib/fuchsia-url",

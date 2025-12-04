@@ -36,7 +36,7 @@ common_deps = [
 # this is almost always the interface you will want to interact with.
 rustc_library("tpm-agent") {
   version = "1.0.0"
-  edition = "2021"
+  edition = "2024"
   with_unit_tests = true
   deps = common_deps
   non_rust_deps = [
@@ -51,7 +51,7 @@ rustc_library("tpm-agent") {
 # is not for general purpose use.
 rustc_library("tpm-device") {
   version = "1.0.0"
-  edition = "2021"
+  edition = "2024"
   with_unit_tests = true
   deps = common_deps
   non_rust_deps = [

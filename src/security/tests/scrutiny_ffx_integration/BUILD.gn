@@ -166,7 +166,7 @@ if (is_host) {
 
     rustc_test("scrutiny_ffx_integration_test") {
       source_root = "src/lib.rs"
-      edition = "2021"
+      edition = "2024"
       deps = [
         ":copy_host_tools",
         ":testdata",

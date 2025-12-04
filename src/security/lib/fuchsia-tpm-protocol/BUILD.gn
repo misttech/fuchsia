@@ -10,7 +10,7 @@ import("//build/rust/rustc_library.gni")
 # and the tpm_agent both of which support TCG TPM 2.0 commands.
 rustc_library("fuchsia-tpm-protocol") {
   version = "1.0.0"
-  edition = "2021"
+  edition = "2024"
   with_unit_tests = true
   deps = [
     "//sdk/fidl/fuchsia.tpm:fuchsia.tpm_rust",

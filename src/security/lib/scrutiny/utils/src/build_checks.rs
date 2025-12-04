@@ -5,7 +5,7 @@
 use crate::artifact::ArtifactReader;
 use crate::io::ReadSeek;
 use crate::key_value::parse_key_value;
-use crate::package::{extract_system_image_hash_string, read_content_blob, ReadContentBlobError};
+use crate::package::{ReadContentBlobError, extract_system_image_hash_string, read_content_blob};
 use anyhow::{Error, Result};
 use difference::{Changeset, Difference};
 use fuchsia_archive::Utf8Reader as FarReader;
@@ -14,7 +14,7 @@ use std::collections::{HashMap, HashSet};
 use std::fmt::Display;
 use std::fs::read_to_string;
 use std::path::Path;
-use std::str::{from_utf8, FromStr};
+use std::str::{FromStr, from_utf8};
 use thiserror::Error;
 
 #[derive(Clone, Debug, Deserialize, Serialize, Error)]
@@ -22,85 +22,129 @@ use thiserror::Error;
 pub enum ValidationError {
     #[error("Invalid validation policy configuration: {error}")]
     InvalidPolicyConfiguration { error: String },
-    #[error("Validation failure: additional_boot_args MUST contain {expected_key}={expected_value}, but is missing key {expected_key}")]
+    #[error(
+        "Validation failure: additional_boot_args MUST contain {expected_key}={expected_value}, but is missing key {expected_key}"
+    )]
     AdditionalBootArgsMustContainsKeyMissing { expected_key: String, expected_value: String },
-    #[error("Validation failure: additional_boot_args MUST contain {expected_key}={expected_value}, but the value does not match. Expected: {expected_value}, Actual: {found_value}")]
+    #[error(
+        "Validation failure: additional_boot_args MUST contain {expected_key}={expected_value}, but the value does not match. Expected: {expected_value}, Actual: {found_value}"
+    )]
     AdditionalBootArgsMustContainsValueIncorrect {
         expected_key: String,
         expected_value: String,
         found_value: String,
     },
-    #[error("Validation failure: additional_boot_args MUST NOT contain {expected_key}={expected_value}, but does.")]
+    #[error(
+        "Validation failure: additional_boot_args MUST NOT contain {expected_key}={expected_value}, but does."
+    )]
     AdditionalBootArgsMustNotContainsHasKeyValue { expected_key: String, expected_value: String },
     #[error("Validation error: Static package {package_name} not found.")]
     MissingStaticPackage { package_name: String },
     #[error("Validation error: Failed to read package {package_name}: {error}")]
     FailedToReadPackage { package_name: String, error: String },
-    #[error("Validation error: A package check was not able to run. Package: {package_name}, error: {error}")]
+    #[error(
+        "Validation error: A package check was not able to run. Package: {package_name}, error: {error}"
+    )]
     FailedToPerformPackageCheck { package_name: String, error: String },
-    #[error("Validation error: A file check was not able to run. Package: {package_name}, file: {file_path}, error: {error}")]
+    #[error(
+        "Validation error: A file check was not able to run. Package: {package_name}, file: {file_path}, error: {error}"
+    )]
     FailedToPerformFileCheck { package_name: String, file_path: String, error: String },
-    #[error("Validation error: A file check was not able to run because the file was missing. Possible paths: {file_paths} ")]
+    #[error(
+        "Validation error: A file check was not able to run because the file was missing. Possible paths: {file_paths} "
+    )]
     FailedToFindFile { file_paths: String },
-    #[error("Validation error: A file check was not able to run because multiple possible files are present. Possible paths: {possible_paths:?}, files found: {files_found:?} ")]
+    #[error(
+        "Validation error: A file check was not able to run because multiple possible files are present. Possible paths: {possible_paths:?}, files found: {files_found:?} "
+    )]
     UnexpectedNumberOfFilesPresent { possible_paths: Vec<String>, files_found: Vec<String> },
-    #[error("Validation failure: A file that MUST be absent was found to be present. Package: {package_name}, file: {file_path}")]
+    #[error(
+        "Validation failure: A file that MUST be absent was found to be present. Package: {package_name}, file: {file_path}"
+    )]
     UnexpectedFilePresence { package_name: String, file_path: String },
-    #[error("Validation failure: A file that MUST be absent or empty was found to be present with contents. Package: {package_name}, file: {file_path}")]
+    #[error(
+        "Validation failure: A file that MUST be absent or empty was found to be present with contents. Package: {package_name}, file: {file_path}"
+    )]
     UnexpectedFilePresenceOrHasContents { package_name: String, file_path: String },
-    #[error("Validation error: Content bytes could not be converted to a string. Content source: {content_source}, error: {error}")]
+    #[error(
+        "Validation error: Content bytes could not be converted to a string. Content source: {content_source}, error: {error}"
+    )]
     FailedToParseContentsToString { content_source: String, error: String },
-    #[error("Validation error: Content could not be parsed as a key-value map. Content source: {content_source}, error: {error}")]
+    #[error(
+        "Validation error: Content could not be parsed as a key-value map. Content source: {content_source}, error: {error}"
+    )]
     FailedToParseContentsAsKeyValueMap { content_source: String, error: String },
-    #[error("Validation error: Content could not be parsed as valid JSON. Content source: {content_source}, error: {error}")]
+    #[error(
+        "Validation error: Content could not be parsed as valid JSON. Content source: {content_source}, error: {error}"
+    )]
     FailedToParseContentsAsJson { content_source: String, error: String },
-    #[error("Validation error: Cannot handle JSON key-value pair where value is an array or object. Found value: {found}, Content source: {content_source}")]
+    #[error(
+        "Validation error: Cannot handle JSON key-value pair where value is an array or object. Found value: {found}, Content source: {content_source}"
+    )]
     UnableToHandleJsonContent { found: String, content_source: String },
-    #[error("Validation error: The value type found in a JSON key-value check does not match the policy type. Found value: {found}, Found type: {found_type}, Policy value: {policy}, Content source: {content_source}")]
+    #[error(
+        "Validation error: The value type found in a JSON key-value check does not match the policy type. Found value: {found}, Found type: {found_type}, Policy value: {policy}, Content source: {content_source}"
+    )]
     ContentAndPolicyJsonTypeMismatch {
         found: String,
         found_type: String,
         policy: String,
         content_source: String,
     },
-    #[error("Validation failure: Content MUST contain JSON key-value \"{expected_key}\":{expected_value} but does not.\nContent source: {content_source}")]
+    #[error(
+        "Validation failure: Content MUST contain JSON key-value \"{expected_key}\":{expected_value} but does not.\nContent source: {content_source}"
+    )]
     ContentMustContainsJsonKeyValueMissingOrIncorrect {
         expected_key: String,
         expected_value: String,
         content_source: String,
     },
-    #[error("Validation failure: Content MUST contain {expected_key}={expected_value}, but is missing key {expected_key}. Content source: {content_source}")]
+    #[error(
+        "Validation failure: Content MUST contain {expected_key}={expected_value}, but is missing key {expected_key}. Content source: {content_source}"
+    )]
     ContentMustContainsKeyValueKeyMissing {
         expected_key: String,
         expected_value: String,
         content_source: String,
     },
-    #[error("Validation failure: Content MUST contain {expected_key}={expected_value}, but the value does not match. Expected: {expected_value}, Actual: {found_value}, Content source: {content_source}")]
+    #[error(
+        "Validation failure: Content MUST contain {expected_key}={expected_value}, but the value does not match. Expected: {expected_value}, Actual: {found_value}, Content source: {content_source}"
+    )]
     ContentMustContainsKeyValueValueIncorrect {
         expected_key: String,
         expected_value: String,
         found_value: String,
         content_source: String,
     },
-    #[error("Validation failure: Content MUST NOT contain JSON key-value \"{expected_key}\":{expected_value}, but does. Content source: {content_source}")]
+    #[error(
+        "Validation failure: Content MUST NOT contain JSON key-value \"{expected_key}\":{expected_value}, but does. Content source: {content_source}"
+    )]
     ContentMustNotContainsJsonHasKeyValue {
         expected_key: String,
         expected_value: String,
         content_source: String,
     },
-    #[error("Validation failure: Content MUST NOT contain {expected_key}={expected_value}, but does. Content source: {content_source}")]
+    #[error(
+        "Validation failure: Content MUST NOT contain {expected_key}={expected_value}, but does. Content source: {content_source}"
+    )]
     ContentMustNotContainsHasKeyValue {
         expected_key: String,
         expected_value: String,
         content_source: String,
     },
-    #[error("Validation failure: Content MUST contain {value}, but does not. Content source: {content_source}")]
+    #[error(
+        "Validation failure: Content MUST contain {value}, but does not. Content source: {content_source}"
+    )]
     ContentMustContainValueMissing { value: String, content_source: String },
-    #[error("Validation failure: Content MUST NOT contain {value}, but does. Content source: {content_source}")]
+    #[error(
+        "Validation failure: Content MUST NOT contain {value}, but does. Content source: {content_source}"
+    )]
     ContentMustNotContainValuePresent { value: String, content_source: String },
     #[error("Validation error: Could not open golden file at {golden_path}, error: {error}")]
     FailedToOpenGoldenFile { golden_path: String, error: String },
-    #[error("Validation failure: Golden file mismatch. The golden file contents from {golden_path} do not match content from {content_source}. \nDiffs:\n{diffs}")]
+    #[error(
+        "Validation failure: Golden file mismatch. The golden file contents from {golden_path} do not match content from {content_source}. \nDiffs:\n{diffs}"
+    )]
     ContentGoldenFileMismatch { golden_path: String, content_source: String, diffs: String },
 }
 
@@ -514,7 +558,7 @@ fn resolve_package_file(
     // First, find the file and read its contents if it is present.
     // File absence is represented by `file_contents_bytes` = `None`.
     match source {
-        FileSource::PackageMetaContents(ref path) => {
+        FileSource::PackageMetaContents(path) => {
             // Read `meta/contents` to find merkle, then read the corresponding blob's bytes.
             match read_content_blob(package_far_reader, blobs_artifact_reader, &path) {
                 Ok(bytes) => {
@@ -530,7 +574,7 @@ fn resolve_package_file(
                 }
             }
         }
-        FileSource::PackageFar(ref possible_paths) => {
+        FileSource::PackageFar(possible_paths) => {
             // Find the file within possible paths that is present in the package.
             let files_in_package = package_far_reader
                 .list()

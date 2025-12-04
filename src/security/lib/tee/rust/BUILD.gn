@@ -9,7 +9,7 @@ group("rust") {
 }
 
 rustc_library("tee") {
-  edition = "2021"
+  edition = "2024"
   deps = [ "//third_party/rust_crates:log" ]
   non_rust_deps = [ "//src/security/lib/tee/tee-client-api" ]
   sources = [

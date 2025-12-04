@@ -6,7 +6,7 @@ import("//build/rust/rustc_library.gni")
 
 rustc_library("rust") {
   name = "kms_stateless"
-  edition = "2021"
+  edition = "2024"
 
   sources = [
     "src/legacy_hardware_derive_keys.rs",
