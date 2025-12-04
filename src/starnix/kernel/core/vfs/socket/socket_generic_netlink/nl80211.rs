@@ -45,14 +45,14 @@ fn fidl_message_to_netlink(
     message: fidl_wlanix::Nl80211Message,
 ) -> Result<NetlinkMessage<GenericMessage>, Error> {
     // TODO(https://fxbug.dev/42079282): Deduplicate these calls with similar calls used by rtnetlink.
-    let payload = match message.message_type {
-        Some(fidl_wlanix::Nl80211MessageType::Message) => {
+    let payload = match message {
+        fidl_wlanix::Nl80211Message::Message(m) => {
             NetlinkPayload::InnerMessage(GenericMessage::Other {
                 family: header.message_type,
-                payload: message.payload.unwrap_or(vec![]),
+                payload: m.payload,
             })
         }
-        Some(fidl_wlanix::Nl80211MessageType::Ack) => {
+        fidl_wlanix::Nl80211Message::Ack(_) => {
             let mut buffer = [0; NETLINK_HEADER_LEN];
             header.emit(&mut buffer[..NETLINK_HEADER_LEN]);
             let mut ack = ErrorMessage::default();
@@ -62,18 +62,17 @@ fn fidl_message_to_netlink(
             ack.header = buffer.to_vec();
             NetlinkPayload::Error(ack)
         }
-        Some(fidl_wlanix::Nl80211MessageType::Done) => {
+        fidl_wlanix::Nl80211Message::Done(_) => {
             let done = DoneMessage::default();
             NetlinkPayload::Done(done)
         }
-        Some(fidl_wlanix::Nl80211MessageType::Error) => {
+        fidl_wlanix::Nl80211Message::Error(e) => {
             let mut buffer = [0; NETLINK_HEADER_LEN];
             header.emit(&mut buffer[..NETLINK_HEADER_LEN]);
             let mut error = ErrorMessage::default();
-            let error_code = match message.error_code {
-                Some(0) => bail!("Dropping nl80211 error message with error code 0"),
-                None => bail!("Dropping nl80211 error message with no error code"),
-                Some(code) => zx::Status::from_raw(code),
+            let error_code = match e.error_code {
+                0 => bail!("Dropping nl80211 error message with error code 0"),
+                code => zx::Status::from_raw(code),
             };
             error.code = std::num::NonZeroI32::new(
                 errors::from_status_like_fdio!(error_code).code.error_code() as i32,
@@ -184,11 +183,7 @@ impl<S: Sender<GenericMessage>> GenericNetlinkFamily<S> for Nl80211Family {
             netlink_header,
             payload
         );
-        let message = fidl_wlanix::Nl80211Message {
-            message_type: Some(fidl_wlanix::Nl80211MessageType::Message),
-            payload: Some(payload),
-            ..Default::default()
-        };
+        let message = fidl_wlanix::Nl80211Message::Message(fidl_wlanix::Message { payload });
         let vmo = match self.nl80211_proxy.message_v2(&message).await {
             Ok(Ok(value)) => value,
             Ok(Err(errno)) => {
@@ -239,11 +234,9 @@ mod tests {
         let mut header = NetlinkHeader::default();
         header.message_type = 123;
         header.sequence_number = 10;
-        let fidl_message = fidl_wlanix::Nl80211Message {
-            message_type: Some(fidl_wlanix::Nl80211MessageType::Message),
-            payload: Some(vec![1, 2, 3, 4, 5, 6, 7, 8]),
-            ..Default::default()
-        };
+        let fidl_message = fidl_wlanix::Nl80211Message::Message(fidl_wlanix::Message {
+            payload: vec![1, 2, 3, 4, 5, 6, 7, 8],
+        });
 
         let netlink_message = fidl_message_to_netlink(header, fidl_message)
             .expect("Netlink message conversion failed");
@@ -264,11 +257,7 @@ mod tests {
         let mut header = NetlinkHeader::default();
         header.message_type = 123;
         header.sequence_number = 10;
-        let fidl_message = fidl_wlanix::Nl80211Message {
-            message_type: Some(fidl_wlanix::Nl80211MessageType::Ack),
-            payload: Some(vec![1, 2, 3, 4, 5, 6, 7, 8]),
-            ..Default::default()
-        };
+        let fidl_message = fidl_wlanix::Nl80211Message::Ack(fidl_wlanix::Ack);
 
         let netlink_message = fidl_message_to_netlink(header, fidl_message)
             .expect("Netlink message conversion failed");
@@ -282,12 +271,9 @@ mod tests {
         let mut header = NetlinkHeader::default();
         header.message_type = 123;
         header.sequence_number = 10;
-        let fidl_message = fidl_wlanix::Nl80211Message {
-            message_type: Some(fidl_wlanix::Nl80211MessageType::Error),
-            payload: Some(vec![1, 2, 3, 4, 5, 6, 7, 8]),
-            error_code: Some(zx::sys::ZX_ERR_SHOULD_WAIT),
-            ..Default::default()
-        };
+        let fidl_message = fidl_wlanix::Nl80211Message::Error(fidl_wlanix::Error {
+            error_code: zx::sys::ZX_ERR_SHOULD_WAIT,
+        });
 
         let netlink_message = fidl_message_to_netlink(header, fidl_message)
             .expect("Netlink message conversion failed");
@@ -328,11 +314,9 @@ mod tests {
             multicast_req.multicast.expect("No client endpoint").into_proxy();
         assert_matches!(exec.run_until_stalled(&mut next_mcast_recv), Poll::Pending);
 
-        let message = fidl_wlanix::Nl80211Message {
-            message_type: Some(fidl_wlanix::Nl80211MessageType::Message),
-            payload: Some(vec![1, 2, 3, 4, 5, 6, 7, 8]),
-            ..Default::default()
-        };
+        let message = fidl_wlanix::Nl80211Message::Message(fidl_wlanix::Message {
+            payload: vec![1, 2, 3, 4, 5, 6, 7, 8],
+        });
         client_proxy
             .message(fidl_wlanix::Nl80211MulticastMessageRequest {
                 message: Some(message),

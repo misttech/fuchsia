@@ -1357,36 +1357,19 @@ fn build_nl80211_message(cmd: Nl80211Cmd, attrs: Vec<Nl80211Attr>) -> fidl_wlani
     let resp = GenlMessage::from_payload(Nl80211 { cmd, attrs });
     let mut buffer = vec![0u8; resp.buffer_len()];
     resp.serialize(&mut buffer);
-    fidl_wlanix::Nl80211Message {
-        message_type: Some(fidl_wlanix::Nl80211MessageType::Message),
-        payload: Some(buffer),
-        ..Default::default()
-    }
+    fidl_wlanix::Nl80211Message::Message(fidl_wlanix::Message { payload: buffer })
 }
 
 fn build_nl80211_ack() -> fidl_wlanix::Nl80211Message {
-    fidl_wlanix::Nl80211Message {
-        message_type: Some(fidl_wlanix::Nl80211MessageType::Ack),
-        payload: None,
-        ..Default::default()
-    }
+    fidl_wlanix::Nl80211Message::Ack(fidl_wlanix::Ack)
 }
 
 fn build_nl80211_err(error_code: zx::Status) -> fidl_wlanix::Nl80211Message {
-    fidl_wlanix::Nl80211Message {
-        message_type: Some(fidl_wlanix::Nl80211MessageType::Error),
-        payload: None,
-        error_code: Some(error_code.into_raw()),
-        ..Default::default()
-    }
+    fidl_wlanix::Nl80211Message::Error(fidl_wlanix::Error { error_code: error_code.into_raw() })
 }
 
 fn build_nl80211_done() -> fidl_wlanix::Nl80211Message {
-    fidl_wlanix::Nl80211Message {
-        message_type: Some(fidl_wlanix::Nl80211MessageType::Done),
-        payload: None,
-        ..Default::default()
-    }
+    fidl_wlanix::Nl80211Message::Done(fidl_wlanix::Done)
 }
 
 fn get_supported_frequencies() -> Vec<Vec<Nl80211FrequencyAttr>> {
@@ -1448,11 +1431,7 @@ async fn handle_nl80211_message<I: IfaceManager>(
     telemetry_sender: TelemetrySender,
 ) -> Result<(), Error> {
     let payload = match netlink_message {
-        fidl_wlanix::Nl80211Message {
-            message_type: Some(fidl_wlanix::Nl80211MessageType::Message),
-            payload: Some(p),
-            ..
-        } => p,
+        fidl_wlanix::Nl80211Message::Message(m) => m.payload,
         _ => return Ok(()),
     };
     let deserialized = GenlMessage::<Nl80211>::deserialize(&NetlinkHeader::default(), &payload[..]);
@@ -2354,12 +2333,9 @@ mod tests {
     // attributes are currently write only in our NL80211 implementation. If a
     // write-only attribute is included, this function will panic.
     fn expect_nl80211_message(message: &fidl_wlanix::Nl80211Message) -> GenlMessage<Nl80211> {
-        assert_eq!(message.message_type, Some(fidl_wlanix::Nl80211MessageType::Message));
-        GenlMessage::deserialize(
-            &NetlinkHeader::default(),
-            &message.payload.as_ref().expect("Message should always have a payload")[..],
-        )
-        .expect("Failed to deserialize genetlink message")
+        let message = assert_matches!(message, fidl_wlanix::Nl80211Message::Message(m) => m);
+        GenlMessage::deserialize(&NetlinkHeader::default(), &message.payload)
+            .expect("Failed to deserialize genetlink message")
     }
 
     #[fuchsia::test]
@@ -4083,11 +4059,8 @@ mod tests {
         let genl_message = GenlMessage::from_payload(TestNl80211 { cmd: 255, attrs: vec![] });
         let mut buffer = vec![0u8; genl_message.buffer_len()];
         genl_message.serialize(&mut buffer);
-        let invalid_message = fidl_wlanix::Nl80211Message {
-            message_type: Some(fidl_wlanix::Nl80211MessageType::Message),
-            payload: Some(buffer),
-            ..Default::default()
-        };
+        let invalid_message =
+            fidl_wlanix::Nl80211Message::Message(fidl_wlanix::Message { payload: buffer });
 
         let query_resp_fut = test_values.nl80211_proxy.message_v2(&invalid_message);
         let mut query_resp_fut = pin!(query_resp_fut);
@@ -4122,7 +4095,7 @@ mod tests {
                 .attrs
                 .contains(&Nl80211Attr::Mac(ifaces::test_utils::FAKE_IFACE_RESPONSE.sta_addr))
         );
-        assert_eq!(responses[1].message_type, Some(fidl_wlanix::Nl80211MessageType::Done));
+        assert_matches!(responses[1], fidl_wlanix::Nl80211Message::Done(_));
     }
 
     #[fuchsia::test]
@@ -4142,7 +4115,7 @@ mod tests {
             exec.run_until_stalled(&mut get_station_fut),
             Poll::Ready(Ok(Ok(r))) => r));
         assert_eq!(responses.len(), 1);
-        assert_eq!(responses[0].message_type, Some(fidl_wlanix::Nl80211MessageType::Message));
+        assert_matches!(responses[0], fidl_wlanix::Nl80211Message::Message(_));
     }
 
     #[fuchsia::test]
@@ -4175,7 +4148,7 @@ mod tests {
             exec.run_until_stalled(&mut trigger_scan_fut),
             Poll::Ready(Ok(Ok(r))) => r));
         assert_eq!(responses.len(), 1);
-        assert_eq!(responses[0].message_type, Some(fidl_wlanix::Nl80211MessageType::Ack));
+        assert_matches!(responses[0], fidl_wlanix::Nl80211Message::Ack(_));
 
         assert_matches!(
             test_values.telemetry_receiver.try_next(),
@@ -4232,7 +4205,7 @@ mod tests {
                 exec.run_until_stalled(&mut get_station_fut),
                 Poll::Ready(Ok(Ok(r))) => r));
             assert_eq!(responses.len(), 1);
-            assert_eq!(responses[0].message_type, Some(fidl_wlanix::Nl80211MessageType::Message));
+            assert_matches!(responses[0], fidl_wlanix::Nl80211Message::Message(_));
         }
 
         // Now the scan can wrap up.
@@ -4243,7 +4216,7 @@ mod tests {
             exec.run_until_stalled(&mut trigger_scan_fut),
             Poll::Ready(Ok(Ok(r))) => r));
         assert_eq!(responses.len(), 1);
-        assert_eq!(responses[0].message_type, Some(fidl_wlanix::Nl80211MessageType::Ack));
+        assert_matches!(responses[0], fidl_wlanix::Nl80211Message::Ack(_));
 
         assert_matches!(
             test_values.telemetry_receiver.try_next(),
@@ -4383,8 +4356,8 @@ mod tests {
             exec.run_until_stalled(&mut get_scan_fut),
             Poll::Ready(Ok(Ok(r))) => r));
         assert_eq!(responses.len(), 2);
-        assert_eq!(responses[0].message_type, Some(fidl_wlanix::Nl80211MessageType::Message));
-        assert_eq!(responses[1].message_type, Some(fidl_wlanix::Nl80211MessageType::Done));
+        assert_matches!(responses[0], fidl_wlanix::Nl80211Message::Message(_));
+        assert_matches!(responses[1], fidl_wlanix::Nl80211Message::Done(_));
     }
 
     #[fuchsia::test]

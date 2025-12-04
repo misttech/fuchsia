@@ -70,15 +70,16 @@ class ConnectToApTest(AsyncAdapter, base_test.ConnectionBaseTestClass):
 
         logger.info("Querying for IfaceIndex...")
         get_interface_message = fidl_wlanix.Nl80211Message(
-            message_type=fidl_wlanix.Nl80211MessageType.MESSAGE,
-            # fmt: off
-            payload=[
-                # Generic Netlink Header
-                0x05,  # Command: GetInterface
-                0x01,  # Version
-                0x00, 0x00 # Reserved
-            ],
-            # fmt: on
+            message=fidl_wlanix.Message(
+                # fmt: off
+                payload=[
+                    # Generic Netlink Header
+                    0x05,  # Command: GetInterface
+                    0x01,  # Version
+                    0x00, 0x00 # Reserved
+                ],
+                # fmt: on
+            )
         )
         response_list = (
             (await self.nl80211_proxy.message(message=get_interface_message))
@@ -98,18 +99,19 @@ class ConnectToApTest(AsyncAdapter, base_test.ConnectionBaseTestClass):
             )
 
             trigger_scan_message = fidl_wlanix.Nl80211Message(
-                message_type=fidl_wlanix.Nl80211MessageType.MESSAGE,
-                # fmt: off
-                payload=[
-                    # Generic Netlink Header
-                    0x21,  # Command: TriggerScan
-                    0x01,  # Version
-                    0x00, 0x00,  # Reserved
-                    0x08, 0x00,  # Length
-                    0x03, 0x00,  # Type: IfaceIndex (little-endian)
-                    *list(struct.pack("<I", iface_index)),
-                ],
-                # fmt: on
+                message=fidl_wlanix.Message(
+                    # fmt: off
+                    payload=[
+                        # Generic Netlink Header
+                        0x21,  # Command: TriggerScan
+                        0x01,  # Version
+                        0x00, 0x00,  # Reserved
+                        0x08, 0x00,  # Length
+                        0x03, 0x00,  # Type: IfaceIndex (little-endian)
+                        *list(struct.pack("<I", iface_index)),
+                    ],
+                    # fmt: on
+                )
             )
             response_list = (
                 (await self.nl80211_proxy.message(message=trigger_scan_message))
@@ -121,11 +123,7 @@ class ConnectToApTest(AsyncAdapter, base_test.ConnectionBaseTestClass):
                 1,
                 "Response from TriggerScan should contain a single ACK message.",
             )
-            assert_equal(
-                response_list[0].message_type,
-                3,
-                "Response should have been an ACK.",
-            )
+            assert response_list[0].ack, "Response should have been an ACK."
 
             # Wait for a multicast message to indicate the scan has completed.
             try:
@@ -134,10 +132,13 @@ class ConnectToApTest(AsyncAdapter, base_test.ConnectionBaseTestClass):
                 )
                 logger.info("Recieved nl80211 scan result signal")
                 assert (
-                    scan_message.payload is not None
+                    scan_message.message
+                ), "Received a non-message nl80211 message"
+                assert (
+                    scan_message.message.payload is not None
                 ), "Received scan result indication without payload"
                 assert_equal(
-                    scan_message.payload[0],
+                    scan_message.message.payload[0],
                     34,  # Command: NewScanResults
                     "Received unexpected scan result",
                 )
@@ -296,54 +297,44 @@ async def read_iface_index_or_fail(
 ) -> int:
     last_response_index = len(response_list) - 1
     for response_index, response in enumerate(response_list):
-        if response.message_type == fidl_wlanix.Nl80211MessageType.DONE:
+        if response.done:
             assert_equal(
                 response_index,
                 last_response_index,
                 "Nl80211 DONE message before end of response",
             )
             break
-
-        if response.message_type in [
-            fidl_wlanix.Nl80211MessageType.ERROR,
-            fidl_wlanix.Nl80211MessageType.OVERRUN,
-        ]:
+        elif response.error:
             fail(
                 "Received an error Nl80211 message type: %s",
-                response.message_type,
+                response.error,
             )
-
-        if response.message_type in [
-            fidl_wlanix.Nl80211MessageType.NO_OP,
-            fidl_wlanix.Nl80211MessageType.ACK,
-        ]:
+        elif not response.message:
             fail(
                 "Received an unexpected Nl80211 message: %s",
-                response.message_type,
+                response,
             )
 
-        assert_equal(
-            response.message_type,
-            fidl_wlanix.Nl80211MessageType.MESSAGE,
-            "After filtering all other message types, a type other than MESSAGE was received.",
-        )
-        assert response.payload is not None, "MESSAGE must contain a payload"
+        assert response.message
+        assert (
+            response.message.payload is not None
+        ), "MESSAGE must contain a payload"
 
         formatted_response_payload = [
-            format(b, "#04x") for b in response.payload
+            format(b, "#04x") for b in response.message.payload
         ]
         assert_equal(
-            response.payload[0],
+            response.message.payload[0],
             7,
             f"Payload is not a NewInterface message: {formatted_response_payload}",
         )
         assert_equal(
-            response.payload[6],
+            response.message.payload[6],
             3,
             f"First attribute is not an IfaceIndex: {formatted_response_payload}",
         )
 
-        return struct.unpack("<I", bytes(response.payload[8:12]))[0]
+        return struct.unpack("<I", bytes(response.message.payload[8:12]))[0]
 
     raise RuntimeError(
         f"Did not find an iface index in the response list: {response_list}"
