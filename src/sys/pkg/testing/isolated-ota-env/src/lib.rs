@@ -188,89 +188,92 @@ impl<R> TestEnvBuilder<R> {
 
     /// Turn this |TestEnvBuilder| into a |TestEnv|
     pub async fn build(mut self) -> Result<TestEnv<R>, Error> {
-        let (repo_config, served_repo, ssl_certs, expected_blobfs_contents, merkle) = if self
-            .repo_config
-            .is_none()
-        {
-            // If no repo config was specified, host a repo containing the provided packages,
-            // and an update package containing given images + all packages in the repo.
-            let mut update =
-                fuchsia_pkg_testing::UpdatePackageBuilder::new(TEST_REPO_URL.parse().unwrap())
-                    .packages(
-                        self.packages
-                            .iter()
-                            .map(|p| {
-                                fuchsia_url::PinnedAbsolutePackageUrl::new(
-                                    TEST_REPO_URL.parse().unwrap(),
-                                    p.name().clone(),
-                                    None,
-                                    *p.hash(),
-                                )
-                            })
-                            .collect::<Vec<_>>(),
+        let (repo_config, served_repo, ssl_certs, expected_blobfs_contents, merkle) =
+            if let Some(repo_config) = self.repo_config {
+                // Use the provided repo config. Assume that this means we'll actually want to use
+                // real SSL certificates, and that we don't need to host our own repository.
+                (
+                    repo_config,
+                    None,
+                    fuchsia_fs::directory::open_in_namespace(
+                        GLOBAL_SSL_CERTS_PATH,
+                        fio::PERM_READABLE,
                     )
-                    .firmware_images(self.firmware_images);
-            if let Some((zbi, vbmeta)) = self.fuchsia_image {
-                update = update.fuchsia_image(zbi, vbmeta);
-            }
-            if let Some((zbi, vbmeta)) = self.recovery_image {
-                update = update.recovery_image(zbi, vbmeta);
-            }
-            let (update, images) = update.build().await;
-
-            // Do not include the images package, system-updater triggers GC after resolving it.
-            let expected_blobfs_contents = self
-                .packages
-                .iter()
-                .chain([update.as_package()])
-                .flat_map(|p| p.list_blobs())
-                .collect();
-
-            let repo = Arc::new(
-                self.packages
-                    .iter()
-                    .chain([update.as_package(), &images])
-                    .fold(
-                        RepositoryBuilder::from_template_dir(EMPTY_REPO_PATH)
-                            .add_package(update.as_package()),
-                        |repo, package| repo.add_package(package),
+                    .unwrap(),
+                    BTreeSet::new(),
+                    Hash::from_str(
+                        "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
                     )
-                    .build()
-                    .await
-                    .expect("build repo"),
-            );
-
-            let served_repo = Arc::clone(&repo).server().start().expect("serve repo");
-            let config = RepositoryConfigs::Version1(vec![
-                served_repo.make_repo_config(TEST_REPO_URL.parse().expect("make repo config")),
-            ]);
-
-            let update_merkle = *update.as_package().hash();
-            // Add the update package to the list of packages, so that TestResult::check_packages
-            // will expect to see the update package's blobs in blobfs.
-            let mut packages = vec![update.into_package()];
-            packages.append(&mut self.packages);
-            (
-                config,
-                Some(served_repo),
-                fuchsia_fs::directory::open_in_namespace(TEST_CERTS_PATH, fio::PERM_READABLE)
-                    .unwrap(),
-                expected_blobfs_contents,
-                update_merkle,
-            )
-        } else {
-            // Use the provided repo config. Assume that this means we'll actually want to use
-            // real SSL certificates, and that we don't need to host our own repository.
-            (
-                self.repo_config.unwrap(),
-                None,
-                fuchsia_fs::directory::open_in_namespace(GLOBAL_SSL_CERTS_PATH, fio::PERM_READABLE)
-                    .unwrap(),
-                BTreeSet::new(),
-                Hash::from_str("deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef")
                     .expect("make merkle"),
-            )
-        };
+                )
+            } else {
+                // If no repo config was specified, host a repo containing the provided packages,
+                // and an update package containing given images + all packages in the repo.
+                let mut update =
+                    fuchsia_pkg_testing::UpdatePackageBuilder::new(TEST_REPO_URL.parse().unwrap())
+                        .packages(
+                            self.packages
+                                .iter()
+                                .map(|p| {
+                                    fuchsia_url::PinnedAbsolutePackageUrl::new(
+                                        TEST_REPO_URL.parse().unwrap(),
+                                        p.name().clone(),
+                                        None,
+                                        *p.hash(),
+                                    )
+                                })
+                                .collect::<Vec<_>>(),
+                        )
+                        .firmware_images(self.firmware_images);
+                if let Some((zbi, vbmeta)) = self.fuchsia_image {
+                    update = update.fuchsia_image(zbi, vbmeta);
+                }
+                if let Some((zbi, vbmeta)) = self.recovery_image {
+                    update = update.recovery_image(zbi, vbmeta);
+                }
+                let (update, images) = update.build().await;
+
+                // Do not include the images package, system-updater triggers GC after resolving it.
+                let expected_blobfs_contents = self
+                    .packages
+                    .iter()
+                    .chain([update.as_package()])
+                    .flat_map(|p| p.list_blobs())
+                    .collect();
+
+                let repo = Arc::new(
+                    self.packages
+                        .iter()
+                        .chain([update.as_package(), &images])
+                        .fold(
+                            RepositoryBuilder::from_template_dir(EMPTY_REPO_PATH)
+                                .add_package(update.as_package()),
+                            |repo, package| repo.add_package(package),
+                        )
+                        .build()
+                        .await
+                        .expect("build repo"),
+                );
+
+                let served_repo = Arc::clone(&repo).server().start().expect("serve repo");
+                let config = RepositoryConfigs::Version1(vec![
+                    served_repo.make_repo_config(TEST_REPO_URL.parse().expect("make repo config")),
+                ]);
+
+                let update_merkle = *update.as_package().hash();
+                // Add the update package to the list of packages, so that TestResult::check_packages
+                // will expect to see the update package's blobs in blobfs.
+                let mut packages = vec![update.into_package()];
+                packages.append(&mut self.packages);
+                (
+                    config,
+                    Some(served_repo),
+                    fuchsia_fs::directory::open_in_namespace(TEST_CERTS_PATH, fio::PERM_READABLE)
+                        .unwrap(),
+                    expected_blobfs_contents,
+                    update_merkle,
+                )
+            };
 
         let dir = tempfile::tempdir()?;
         let mut path = dir.path().to_owned();
