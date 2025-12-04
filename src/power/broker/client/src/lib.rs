@@ -493,13 +493,11 @@ mod tests {
             let add_element_request = topology_stream.next().await.unwrap()?;
             let mut element_control;
             let lessor;
-            let element_runner;
             match add_element_request {
                 fbroker::TopologyRequest::AddElement { payload, responder } => {
                     element_control =
                         payload.element_control.expect("element_control not set").into_stream();
                     lessor = payload.lessor_channel.expect("lessor_channel not set");
-                    element_runner = payload.element_runner;
                     responder.send(Ok(()))?
                 }
                 request => {
