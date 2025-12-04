@@ -57,23 +57,21 @@ class MockSpmi : public fidl::testing::TestBase<fuchsia_hardware_spmi::Device> {
   }
 
   zx::eventpair ExpectWatchControllerWriteCommands(uint8_t address, uint16_t data) {
-    if (expected_watches_.empty() ||
-        std::holds_alternative<std::vector<fuchsia_hardware_spmi::Register8>>(
-            expected_watches_.front())) {
-      expected_watches_.emplace_back(
-          std::vector<fuchsia_hardware_spmi::Register8>{{address, data}});
+    if (std::holds_alternative<std::deque<fuchsia_hardware_spmi::Register8>>(
+            expected_watches_[address])) {
+      std::get<std::deque<fuchsia_hardware_spmi::Register8>>(expected_watches_[address])
+          .emplace_back(fuchsia_hardware_spmi::Register8{address, data});
       return SyncWatchControllerWriteCommands();
     }
 
-    auto& request = std::get<WatchControllerRequest>(expected_watches_.front());
-    EXPECT_EQ(request.address, address);
+    auto& request = std::get<WatchControllerRequest>(expected_watches_[address]);
     zx::eventpair e0, e1;
     EXPECT_EQ(zx::eventpair::create(0, &e0, &e1), ZX_OK);
     request.completer.Reply(
         zx::ok(fuchsia_hardware_spmi::DeviceWatchControllerWriteCommandsResponse{
-            std::vector<fuchsia_hardware_spmi::Register8>{{address, data}},
+            std::vector{fuchsia_hardware_spmi::Register8{address, data}},
             request.wake_lease_requested ? std::move(e0) : zx::eventpair{}}));
-    expected_watches_.pop_front();
+    expected_watches_[address] = std::deque<fuchsia_hardware_spmi::Register8>{};
     return SyncWatchControllerWriteCommands();
   }
 
@@ -167,24 +165,31 @@ class MockSpmi : public fidl::testing::TestBase<fuchsia_hardware_spmi::Device> {
       sync_watch_.pop();
     }
 
-    if (expected_watches_.empty() ||
-        std::holds_alternative<WatchControllerRequest>(expected_watches_.front())) {
-      expected_watches_.emplace_back(
-          WatchControllerRequest{.address = request.address(),
-                                 .completer = completer.ToAsync(),
-                                 .wake_lease_requested = request.setup_wake_lease().is_valid()});
+    if (std::holds_alternative<WatchControllerRequest>(expected_watches_[request.address()])) {
+      ZX_ASSERT(false);
       return;
     }
 
-    auto& data = std::get<std::vector<fuchsia_hardware_spmi::Register8>>(expected_watches_.front());
-    EXPECT_EQ(data.size(), 1);
-    EXPECT_EQ(data[0].address(), request.address());
+    if (std::get<std::deque<fuchsia_hardware_spmi::Register8>>(expected_watches_[request.address()])
+            .empty()) {
+      expected_watches_[request.address()] =
+          WatchControllerRequest{.completer = completer.ToAsync(),
+                                 .wake_lease_requested = request.setup_wake_lease().is_valid()};
+      return;
+    }
+
+    auto& data =
+        std::get<std::deque<fuchsia_hardware_spmi::Register8>>(expected_watches_[request.address()])
+            .front();
+    EXPECT_EQ(data.address(), request.address());
 
     zx::eventpair e0, e1;
     EXPECT_EQ(zx::eventpair::create(0, &e0, &e1), ZX_OK);
     completer.Reply(zx::ok(fuchsia_hardware_spmi::DeviceWatchControllerWriteCommandsResponse{
-        std::move(data), request.setup_wake_lease().is_valid() ? std::move(e0) : zx::eventpair{}}));
-    expected_watches_.pop_front();
+        std::vector{std::move(data)},
+        request.setup_wake_lease().is_valid() ? std::move(e0) : zx::eventpair{}}));
+    std::get<std::deque<fuchsia_hardware_spmi::Register8>>(expected_watches_[request.address()])
+        .pop_front();
   }
 
   void CancelWatchControllerWriteCommands(
@@ -192,25 +197,17 @@ class MockSpmi : public fidl::testing::TestBase<fuchsia_hardware_spmi::Device> {
       CancelWatchControllerWriteCommandsCompleter::Sync& completer) override {
     EXPECT_EQ(request.size(), 1);
 
-    if (expected_watches_.empty() ||
-        std::holds_alternative<std::vector<fuchsia_hardware_spmi::Register8>>(
-            expected_watches_.front())) {
-      ZX_ASSERT(false);
+    if (std::holds_alternative<std::deque<fuchsia_hardware_spmi::Register8>>(
+            expected_watches_[request.address()])) {
+      ZX_ASSERT(std::get<std::deque<fuchsia_hardware_spmi::Register8>>(
+                    expected_watches_[request.address()])
+                    .empty());
       return;
     }
 
-    auto it = std::find_if(
-        expected_watches_.begin(), expected_watches_.end(),
-        [&request](std::variant<WatchControllerRequest,
-                                std::vector<fuchsia_hardware_spmi::Register8>>& watch) {
-          return std::get<WatchControllerRequest>(watch).address == request.address();
-        });
-    if (it == expected_watches_.end()) {
-      ZX_ASSERT(false);
-      return;
-    }
-    std::get<WatchControllerRequest>(*it).completer.Reply(zx::error(ZX_ERR_CANCELED));
-    expected_watches_.erase(it);
+    std::get<WatchControllerRequest>(expected_watches_[request.address()])
+        .completer.Reply(zx::error(ZX_ERR_CANCELED));
+    expected_watches_[request.address()] = std::deque<fuchsia_hardware_spmi::Register8>{};
 
     completer.Reply(zx::ok());
   }
@@ -226,11 +223,11 @@ class MockSpmi : public fidl::testing::TestBase<fuchsia_hardware_spmi::Device> {
 
   std::queue<SpmiExpectation> expectations_;
   struct WatchControllerRequest {
-    uint8_t address;
     WatchControllerWriteCommandsCompleter::Async completer;
     bool wake_lease_requested;
   };
-  std::deque<std::variant<WatchControllerRequest, std::vector<fuchsia_hardware_spmi::Register8>>>
+  std::map<uint8_t,
+           std::variant<std::deque<fuchsia_hardware_spmi::Register8>, WatchControllerRequest>>
       expected_watches_;
   std::queue<zx::eventpair> sync_watch_;
 };
