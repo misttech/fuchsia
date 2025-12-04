@@ -392,7 +392,29 @@ void DebuggedThread::InternalResumeException() {
 
   SetSingleStepForRunMode();
 
-  if (run_mode_ == debug_ipc::ResumeRequest::How::kForwardAndContinue) {
+  // When we're stopped on an exception that doesn't correspond to one of our breakpoints or us
+  // single stepping, we forward the exception instead of handling it. This is very important to
+  // expectations about "continuing" while stopped on a crash for example. Here's a pretty common
+  // situation:
+  //  1. User sets a breakpoint on a function call somewhere.
+  //  2. User steps over function
+  //  3. Something in the function caused a crash.
+  //  4. User types "next" or "step over" in VSCode (possibly many times).
+  //  5. The same crashing exception is raised over and over again because we cannot single step
+  //     over it, the program never continues or proceeds to the system crash handler.
+  //
+  // What we want to happen, however, is more like this:
+  //  1..4 same as above
+  //  5. Crashing exception is reported again if left unhandled as a second chance exception.
+  //  6. User types "next" or clicks "step over" again.
+  //  7. Exception is released, process actually crashes and is lost to the debugger.
+  //
+  // This is closer to the experience in GDB, but with second-chance exceptions which is more
+  // Windows-like. It is up to the client to properly display the second-chance notification to the
+  // user so they can take some action if they want before the process actually crashes.
+  if (run_mode_ == debug_ipc::ResumeRequest::How::kForwardAndContinue ||
+      (debug_ipc::ResumeRequest::MakesStep(run_mode_) &&
+       !debug_ipc::IsDebug(exception_handle_->GetType(thread_handle())))) {
     DEBUG_LOG(Thread) << ThreadPreamble(this) << "Resuming from exception (second chance).";
     if (auto status = exception_handle_->SetStrategy(debug_ipc::ExceptionStrategy::kSecondChance);
         status.has_error()) {
