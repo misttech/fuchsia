@@ -4,8 +4,9 @@
 use crate::config::ConfigMapValue;
 use fidl_fuchsia_boot::{FactoryItemsRequest, FactoryItemsRequestStream};
 use fuchsia_async as fasync;
+use fuchsia_sync::RwLock;
 use futures::prelude::*;
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 
 type ConfigMap = Arc<RwLock<ConfigMapValue>>;
 
@@ -34,7 +35,7 @@ impl FakeFactoryItemsServer {
     async fn handle_request(&self, req: FactoryItemsRequest) -> Result<(), fidl::Error> {
         let FactoryItemsRequest::Get { extra, responder } = req;
 
-        let (payload, length) = match self.factory_items.read().unwrap().get(&extra) {
+        let (payload, length) = match self.factory_items.read().get(&extra) {
             Some(item) => {
                 let size = item.0.get_size().unwrap();
 
