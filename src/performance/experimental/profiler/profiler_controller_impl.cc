@@ -37,6 +37,7 @@
 #include "fxt_writer.h"
 #include "kernel_sampler.h"
 #include "sampler.h"
+#include "stack_sampler.h"
 #include "symbolization_context.h"
 #include "symbolizer_markup.h"
 #include "targets.h"
@@ -392,15 +393,41 @@ void profiler::ProfilerControllerImpl::Start(StartRequest& request,
     completer.Reply(fit::error(fuchsia_cpu_profiler::SessionStartError::kBadState));
     return;
   }
-  if constexpr (kSamplerKernelSupport) {
-    sampler_ = fxl::MakeRefCounted<KernelSampler>(dispatcher_, std::move(targets_),
-                                                  std::move(sample_specs_));
+  if (sample_specs_.empty()) {
+    FX_LOGS(ERROR) << "No sampling configuration found.";
+    completer.Close(ZX_ERR_INVALID_ARGS);
+    return;
+  }
+
+  const auto& config = sample_specs_[0];
+  if (!config.sample().has_value() || !config.sample()->callgraph().has_value() ||
+      !config.sample()->callgraph()->strategy().has_value()) {
+    FX_LOGS(ERROR) << "Missing callgraph strategy in configuration";
+    completer.Close(ZX_ERR_INVALID_ARGS);
+    return;
+  }
+
+  auto strategy = config.sample()->callgraph()->strategy().value();
+
+  if (strategy == fuchsia_cpu_profiler::CallgraphStrategy::kDwarf) {
+    sampler_ = fxl::MakeRefCounted<StackSampler>(dispatcher_, std::move(targets_),
+                                                 std::move(sample_specs_));
+  } else if (strategy == fuchsia_cpu_profiler::CallgraphStrategy::kFramePointer) {
+    if constexpr (kSamplerKernelSupport) {
+      sampler_ = fxl::MakeRefCounted<KernelSampler>(dispatcher_, std::move(targets_),
+                                                    std::move(sample_specs_));
+    } else {
+      FX_LOGS(WARNING)
+          << "Kernel assisted sampling is not enabled. Falling back to zx_process_read_memory based sampling.\n"
+          << "Set the build arg \"experimental_thread_sampler_enabled = true\" to enable kernel assisted sampling";
+      sampler_ =
+          fxl::MakeRefCounted<Sampler>(dispatcher_, std::move(targets_), std::move(sample_specs_));
+    }
   } else {
-    FX_LOGS(WARNING)
-        << "Kernel assisted sampling is not enabled. Falling back to zx_process_read_memory based sampling.\n"
-        << "Set the build arg \"experimental_thread_sampler_enabled = true\" to enable kernel assisted sampling";
-    sampler_ =
-        fxl::MakeRefCounted<Sampler>(dispatcher_, std::move(targets_), std::move(sample_specs_));
+    FX_LOGS(ERROR) << "Unsupported callgraph strategy: "
+                   << static_cast<int>(fidl::ToUnderlying(strategy));
+    completer.Close(ZX_ERR_INVALID_ARGS);
+    return;
   }
   sample_specs_.clear();
   targets_.Clear();
