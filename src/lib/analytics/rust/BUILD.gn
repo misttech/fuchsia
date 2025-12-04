@@ -30,6 +30,7 @@ if (is_host) {
 
     test_deps = [
       "//src/lib/fuchsia-async",
+      "//src/lib/fuchsia-sync",
       "//third_party/rust_crates:tempfile",
       "//third_party/rust_crates:url",
     ]

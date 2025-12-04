@@ -2,8 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use fuchsia_sync::Mutex;
 use hyper::{Body, Request, Response, Result};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 #[derive(Clone)]
 pub struct HttpsClient {
@@ -16,12 +17,12 @@ impl HttpsClient {
     }
 
     pub async fn request(&self, req: Request<Body>) -> Result<Response<Body>> {
-        self.last_request.lock().expect("locking failed").replace(req);
+        self.last_request.lock().replace(req);
         Ok(Response::builder().status(200).body(Body::empty()).unwrap())
     }
 
     pub fn take_last_request(&self) -> Option<Request<Body>> {
-        self.last_request.lock().expect("locking failed").take()
+        self.last_request.lock().take()
     }
 }
 
