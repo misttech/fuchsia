@@ -474,10 +474,10 @@ TEST(VmoTransferDataTestCase, InvalidInputs) {
 
   zx::iommu iommu;
   zx::bti bti;
-  zx_iommu_desc_dummy_t desc;
+  zx_iommu_desc_stub_t desc;
   auto final_bti_check = vmo_test::CreateDeferredBtiCheck(bti);
 
-  ASSERT_OK(zx::iommu::create(iommu_resource, ZX_IOMMU_TYPE_DUMMY, &desc, sizeof(desc), &iommu));
+  ASSERT_OK(zx::iommu::create(iommu_resource, ZX_IOMMU_TYPE_STUB, &desc, sizeof(desc), &iommu));
   bti = vmo_test::CreateNamedBti(iommu, 0, 0xdeadbeef, "VmoTestCase::TransferData");
 
   zx::vmo contig_vmo;

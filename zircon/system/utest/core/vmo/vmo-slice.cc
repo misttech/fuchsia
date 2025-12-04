@@ -230,8 +230,8 @@ TEST(VmoSliceTestCase, ChildSliceOfContiguousParentIsContiguous) {
   zx::bti bti;
   auto final_bti_check = vmo_test::CreateDeferredBtiCheck(bti);
 
-  zx_iommu_desc_dummy_t desc;
-  EXPECT_OK(zx::iommu::create(iommu_resource, ZX_IOMMU_TYPE_DUMMY, &desc, sizeof(desc), &iommu));
+  zx_iommu_desc_stub_t desc;
+  EXPECT_OK(zx::iommu::create(iommu_resource, ZX_IOMMU_TYPE_STUB, &desc, sizeof(desc), &iommu));
   bti = vmo_test::CreateNamedBti(iommu, 0, 0xdeadbeef, "ChildSliceOfContiguousParentIsContiguous");
   EXPECT_OK(zx::vmo::create_contiguous(bti, size, 0, &parent_contig_vmo));
 
@@ -268,8 +268,8 @@ TEST(VmoSliceTestCase, ParentContiguousVmoStaysPinnedWithoutHandle) {
   zx::bti bti;
   auto final_bti_check = vmo_test::CreateDeferredBtiCheck(bti);
 
-  zx_iommu_desc_dummy_t desc;
-  EXPECT_OK(zx::iommu::create(iommu_resource, ZX_IOMMU_TYPE_DUMMY, &desc, sizeof(desc), &iommu));
+  zx_iommu_desc_stub_t desc;
+  EXPECT_OK(zx::iommu::create(iommu_resource, ZX_IOMMU_TYPE_STUB, &desc, sizeof(desc), &iommu));
   bti =
       vmo_test::CreateNamedBti(iommu, 0, 0xdeadbeef, "ParentContiguousVmoStaysPinnedWithoutHandle");
   EXPECT_OK(zx::vmo::create_contiguous(bti, size, 0, &parent_contig_vmo));
@@ -437,10 +437,10 @@ TEST(VmoSliceTestCase, RoundUpSizePhysical) {
 
   zx::iommu iommu;
   zx::bti bti;
-  zx_iommu_desc_dummy_t desc;
+  zx_iommu_desc_stub_t desc;
   auto final_bti_check = vmo_test::CreateDeferredBtiCheck(bti);
 
-  EXPECT_OK(zx::iommu::create(iommu_resource, ZX_IOMMU_TYPE_DUMMY, &desc, sizeof(desc), &iommu));
+  EXPECT_OK(zx::iommu::create(iommu_resource, ZX_IOMMU_TYPE_STUB, &desc, sizeof(desc), &iommu));
   bti = vmo_test::CreateNamedBti(iommu, 0, 0xdeadbeef, "RoundUpSizePhysical");
   EXPECT_OK(zx::vmo::create_contiguous(bti, size, 0, &parent_contig_vmo));
 
@@ -497,10 +497,10 @@ TEST(VmoSliceTestCase, Pin) {
 
   zx::iommu iommu;
   zx::bti bti;
-  zx_iommu_desc_dummy_t desc;
+  zx_iommu_desc_stub_t desc;
   auto final_bti_check = vmo_test::CreateDeferredBtiCheck(bti);
 
-  EXPECT_OK(zx::iommu::create(iommu_resource, ZX_IOMMU_TYPE_DUMMY, &desc, sizeof(desc), &iommu));
+  EXPECT_OK(zx::iommu::create(iommu_resource, ZX_IOMMU_TYPE_STUB, &desc, sizeof(desc), &iommu));
   bti = vmo_test::CreateNamedBti(iommu, 0, 0xdeadbeef, "VmoSliceTestCase::Pin");
 
   // Pin the slice, this should block decommits in the parent.

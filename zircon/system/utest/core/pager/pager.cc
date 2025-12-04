@@ -1815,8 +1815,8 @@ TEST(Pager, InvalidPagerSupplyPages) {
           maybe_standalone::GetSystemResourceWithBase(system_resource, ZX_RSRC_SYSTEM_IOMMU_BASE);
       ASSERT_OK(result.status_value());
       zx::resource iommu_resource = std::move(result.value());
-      zx_iommu_desc_dummy_t desc;
-      ASSERT_EQ(zx_iommu_create(iommu_resource.get(), ZX_IOMMU_TYPE_DUMMY, &desc, sizeof(desc),
+      zx_iommu_desc_stub_t desc;
+      ASSERT_EQ(zx_iommu_create(iommu_resource.get(), ZX_IOMMU_TYPE_STUB, &desc, sizeof(desc),
                                 iommu.reset_and_get_address()),
                 ZX_OK);
       ASSERT_EQ(zx::bti::create(iommu, 0, 0xdeadbeef, &bti), ZX_OK);
@@ -1937,8 +1937,8 @@ TEST(Pager, PinnedSupplyPages) {
   zx::iommu iommu;
   zx::bti bti;
   zx::pmt pmt;
-  zx_iommu_desc_dummy_t desc;
-  ASSERT_OK(zx_iommu_create(iommu_resource.get(), ZX_IOMMU_TYPE_DUMMY, &desc, sizeof(desc),
+  zx_iommu_desc_stub_t desc;
+  ASSERT_OK(zx_iommu_create(iommu_resource.get(), ZX_IOMMU_TYPE_STUB, &desc, sizeof(desc),
                             iommu.reset_and_get_address()));
   ASSERT_OK(zx::bti::create(iommu, 0, 0xdeadbeef, &bti));
   zx_paddr_t addr;
@@ -2545,8 +2545,8 @@ TEST(Pager, ResizeBlockedPin) {
   zx::iommu iommu;
   zx::bti bti;
   zx::pmt pmt;
-  zx_iommu_desc_dummy_t desc;
-  ASSERT_EQ(zx_iommu_create(iommu_resource.get(), ZX_IOMMU_TYPE_DUMMY, &desc, sizeof(desc),
+  zx_iommu_desc_stub_t desc;
+  ASSERT_EQ(zx_iommu_create(iommu_resource.get(), ZX_IOMMU_TYPE_STUB, &desc, sizeof(desc),
                             iommu.reset_and_get_address()),
             ZX_OK);
   ASSERT_EQ(zx::bti::create(iommu, 0, 0xdeadbeef, &bti), ZX_OK);
@@ -4277,10 +4277,10 @@ TEST(Pager, PinPagerVmoWithLoanedPages) {
 
   zx::iommu iommu;
   zx::bti bti;
-  zx_iommu_desc_dummy_t desc;
+  zx_iommu_desc_stub_t desc;
   auto final_bti_check = vmo_test::CreateDeferredBtiCheck(bti);
 
-  EXPECT_OK(zx::iommu::create(iommu_resource, ZX_IOMMU_TYPE_DUMMY, &desc, sizeof(desc), &iommu));
+  EXPECT_OK(zx::iommu::create(iommu_resource, ZX_IOMMU_TYPE_STUB, &desc, sizeof(desc), &iommu));
   bti = vmo_test::CreateNamedBti(iommu, 0, 0xdeadbeef, "VmoTestCase::CompressedContiguous");
 
   zx_info_bti_t bti_info;

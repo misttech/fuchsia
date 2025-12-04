@@ -4722,8 +4722,8 @@ TEST_WITH_AND_WITHOUT_TRAP_DIRTY(OpZeroPinned, ZX_VMO_RESIZABLE) {
   zx::iommu iommu;
   zx::bti bti;
   zx::pmt pmt;
-  zx_iommu_desc_dummy_t desc;
-  ASSERT_OK(zx_iommu_create(iommu_resource.get(), ZX_IOMMU_TYPE_DUMMY, &desc, sizeof(desc),
+  zx_iommu_desc_stub_t desc;
+  ASSERT_OK(zx_iommu_create(iommu_resource.get(), ZX_IOMMU_TYPE_STUB, &desc, sizeof(desc),
                             iommu.reset_and_get_address()));
   ASSERT_OK(zx::bti::create(iommu, 0, 0xdeadbeef, &bti));
   zx_paddr_t addr;
@@ -5629,8 +5629,8 @@ TEST_WITH_AND_WITHOUT_TRAP_DIRTY(NotModifiedOnFailedResize, ZX_VMO_RESIZABLE) {
   zx::iommu iommu;
   zx::bti bti;
   zx::pmt pmt;
-  zx_iommu_desc_dummy_t desc;
-  ASSERT_OK(zx_iommu_create(iommu_resource.get(), ZX_IOMMU_TYPE_DUMMY, &desc, sizeof(desc),
+  zx_iommu_desc_stub_t desc;
+  ASSERT_OK(zx_iommu_create(iommu_resource.get(), ZX_IOMMU_TYPE_STUB, &desc, sizeof(desc),
                             iommu.reset_and_get_address()));
   ASSERT_OK(zx::bti::create(iommu, 0, 0xdeadbeef, &bti));
   zx_paddr_t addr;
@@ -5901,8 +5901,8 @@ TEST_WITH_AND_WITHOUT_TRAP_DIRTY(PinForRead, 0) {
   zx::iommu iommu;
   zx::bti bti;
   zx::pmt pmt;
-  zx_iommu_desc_dummy_t desc;
-  ASSERT_OK(zx_iommu_create(iommu_resource.get(), ZX_IOMMU_TYPE_DUMMY, &desc, sizeof(desc),
+  zx_iommu_desc_stub_t desc;
+  ASSERT_OK(zx_iommu_create(iommu_resource.get(), ZX_IOMMU_TYPE_STUB, &desc, sizeof(desc),
                             iommu.reset_and_get_address()));
   ASSERT_OK(zx::bti::create(iommu, 0, 0xdeadbeef, &bti));
   zx_paddr_t addr;
@@ -5961,8 +5961,8 @@ TEST_WITH_AND_WITHOUT_TRAP_DIRTY(PinForWrite, 0) {
   TestThread t([&pmt, &iommu_resource, vmo]() -> bool {
     zx::iommu iommu;
     zx::bti bti;
-    zx_iommu_desc_dummy_t desc;
-    if (zx_iommu_create(iommu_resource.get(), ZX_IOMMU_TYPE_DUMMY, &desc, sizeof(desc),
+    zx_iommu_desc_stub_t desc;
+    if (zx_iommu_create(iommu_resource.get(), ZX_IOMMU_TYPE_STUB, &desc, sizeof(desc),
                         iommu.reset_and_get_address()) != ZX_OK) {
       return false;
     }
@@ -6040,8 +6040,8 @@ TEST_WITH_AND_WITHOUT_TRAP_DIRTY(PinnedWriteback, 0) {
   TestThread t([&pmt, &iommu_resource, vmo]() -> bool {
     zx::iommu iommu;
     zx::bti bti;
-    zx_iommu_desc_dummy_t desc;
-    if (zx_iommu_create(iommu_resource.get(), ZX_IOMMU_TYPE_DUMMY, &desc, sizeof(desc),
+    zx_iommu_desc_stub_t desc;
+    if (zx_iommu_create(iommu_resource.get(), ZX_IOMMU_TYPE_STUB, &desc, sizeof(desc),
                         iommu.reset_and_get_address()) != ZX_OK) {
       return false;
     }
@@ -6167,8 +6167,8 @@ TEST_WITH_AND_WITHOUT_TRAP_DIRTY(ReadPinAwaitingClean, 0) {
   zx::pmt pmt;
   zx::iommu iommu;
   zx::bti bti;
-  zx_iommu_desc_dummy_t desc;
-  ASSERT_OK(zx_iommu_create(iommu_resource.get(), ZX_IOMMU_TYPE_DUMMY, &desc, sizeof(desc),
+  zx_iommu_desc_stub_t desc;
+  ASSERT_OK(zx_iommu_create(iommu_resource.get(), ZX_IOMMU_TYPE_STUB, &desc, sizeof(desc),
                             iommu.reset_and_get_address()));
   ASSERT_OK(zx::bti::create(iommu, 0, 0xdeadbeef, &bti));
   zx_paddr_t addr;
@@ -6255,8 +6255,8 @@ TEST_WITH_AND_WITHOUT_TRAP_DIRTY(WritePinAwaitingClean, 0) {
   TestThread t2([&pmt, &iommu_resource, vmo]() -> bool {
     zx::iommu iommu;
     zx::bti bti;
-    zx_iommu_desc_dummy_t desc;
-    if (zx_iommu_create(iommu_resource.get(), ZX_IOMMU_TYPE_DUMMY, &desc, sizeof(desc),
+    zx_iommu_desc_stub_t desc;
+    if (zx_iommu_create(iommu_resource.get(), ZX_IOMMU_TYPE_STUB, &desc, sizeof(desc),
                         iommu.reset_and_get_address()) != ZX_OK) {
       return false;
     }
@@ -6375,8 +6375,8 @@ TEST(PagerWriteback, DelayedPinAwaitingClean) {
   TestThread t([&pmt, &iommu_resource, vmo]() -> bool {
     zx::iommu iommu;
     zx::bti bti;
-    zx_iommu_desc_dummy_t desc;
-    if (zx_iommu_create(iommu_resource.get(), ZX_IOMMU_TYPE_DUMMY, &desc, sizeof(desc),
+    zx_iommu_desc_stub_t desc;
+    if (zx_iommu_create(iommu_resource.get(), ZX_IOMMU_TYPE_STUB, &desc, sizeof(desc),
                         iommu.reset_and_get_address()) != ZX_OK) {
       return false;
     }
@@ -6487,8 +6487,8 @@ TEST(PagerWriteback, FailedPinAwaitingClean) {
   TestThread t([&pmt, &iommu_resource, vmo]() -> bool {
     zx::iommu iommu;
     zx::bti bti;
-    zx_iommu_desc_dummy_t desc;
-    if (zx_iommu_create(iommu_resource.get(), ZX_IOMMU_TYPE_DUMMY, &desc, sizeof(desc),
+    zx_iommu_desc_stub_t desc;
+    if (zx_iommu_create(iommu_resource.get(), ZX_IOMMU_TYPE_STUB, &desc, sizeof(desc),
                         iommu.reset_and_get_address()) != ZX_OK) {
       return false;
     }
@@ -6566,8 +6566,8 @@ TEST(PagerWriteback, DirtyAfterPin) {
   TestThread t([&pmt, &iommu_resource, vmo]() -> bool {
     zx::iommu iommu;
     zx::bti bti;
-    zx_iommu_desc_dummy_t desc;
-    if (zx_iommu_create(iommu_resource.get(), ZX_IOMMU_TYPE_DUMMY, &desc, sizeof(desc),
+    zx_iommu_desc_stub_t desc;
+    if (zx_iommu_create(iommu_resource.get(), ZX_IOMMU_TYPE_STUB, &desc, sizeof(desc),
                         iommu.reset_and_get_address()) != ZX_OK) {
       return false;
     }
@@ -6676,8 +6676,8 @@ TEST(PagerWriteback, PinAfterDirty) {
   zx::pmt pmt;
   zx::iommu iommu;
   zx::bti bti;
-  zx_iommu_desc_dummy_t desc;
-  ASSERT_OK(zx_iommu_create(iommu_resource.get(), ZX_IOMMU_TYPE_DUMMY, &desc, sizeof(desc),
+  zx_iommu_desc_stub_t desc;
+  ASSERT_OK(zx_iommu_create(iommu_resource.get(), ZX_IOMMU_TYPE_STUB, &desc, sizeof(desc),
                             iommu.reset_and_get_address()));
   ASSERT_OK(zx::bti::create(iommu, 0, 0xdeadbeef, &bti));
   zx_paddr_t addr;
@@ -6744,8 +6744,8 @@ TEST_WITH_AND_WITHOUT_TRAP_DIRTY(PinForWriteUnpopulated, 0) {
   TestThread t([&pmt, &iommu_resource, vmo]() -> bool {
     zx::iommu iommu;
     zx::bti bti;
-    zx_iommu_desc_dummy_t desc;
-    if (zx_iommu_create(iommu_resource.get(), ZX_IOMMU_TYPE_DUMMY, &desc, sizeof(desc),
+    zx_iommu_desc_stub_t desc;
+    if (zx_iommu_create(iommu_resource.get(), ZX_IOMMU_TYPE_STUB, &desc, sizeof(desc),
                         iommu.reset_and_get_address()) != ZX_OK) {
       return false;
     }
@@ -6834,8 +6834,8 @@ TEST(PagerWriteback, NotModifiedFailedPinWrite) {
   TestThread t([&pmt, &iommu_resource, vmo]() -> bool {
     zx::iommu iommu;
     zx::bti bti;
-    zx_iommu_desc_dummy_t desc;
-    if (zx_iommu_create(iommu_resource.get(), ZX_IOMMU_TYPE_DUMMY, &desc, sizeof(desc),
+    zx_iommu_desc_stub_t desc;
+    if (zx_iommu_create(iommu_resource.get(), ZX_IOMMU_TYPE_STUB, &desc, sizeof(desc),
                         iommu.reset_and_get_address()) != ZX_OK) {
       return false;
     }
@@ -6909,8 +6909,8 @@ TEST(PagerWriteback, NotModifiedPartialFailedPinWrite) {
   TestThread t([&pmt, &iommu_resource, vmo]() -> bool {
     zx::iommu iommu;
     zx::bti bti;
-    zx_iommu_desc_dummy_t desc;
-    if (zx_iommu_create(iommu_resource.get(), ZX_IOMMU_TYPE_DUMMY, &desc, sizeof(desc),
+    zx_iommu_desc_stub_t desc;
+    if (zx_iommu_create(iommu_resource.get(), ZX_IOMMU_TYPE_STUB, &desc, sizeof(desc),
                         iommu.reset_and_get_address()) != ZX_OK) {
       return false;
     }
@@ -6992,8 +6992,8 @@ TEST_WITH_AND_WITHOUT_TRAP_DIRTY(SlicePinWrite, 0) {
   TestThread t([&pmt, &iommu_resource, &slice]() -> bool {
     zx::iommu iommu;
     zx::bti bti;
-    zx_iommu_desc_dummy_t desc;
-    if (zx_iommu_create(iommu_resource.get(), ZX_IOMMU_TYPE_DUMMY, &desc, sizeof(desc),
+    zx_iommu_desc_stub_t desc;
+    if (zx_iommu_create(iommu_resource.get(), ZX_IOMMU_TYPE_STUB, &desc, sizeof(desc),
                         iommu.reset_and_get_address()) != ZX_OK) {
       return false;
     }

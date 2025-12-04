@@ -22,7 +22,7 @@ TEST(Bti, Create) {
   zx::bti bti;
   zx::pmt pmt;
 
-  zx_iommu_desc_dummy_t desc;
+  zx_iommu_desc_stub_t desc;
 
   zx::unowned_resource system_resource = standalone::GetSystemResource();
   zx::result<zx::resource> result =
@@ -30,7 +30,7 @@ TEST(Bti, Create) {
   ASSERT_OK(result.status_value());
   zx::resource iommu_resource = std::move(result.value());
 
-  ASSERT_EQ(zx_iommu_create(iommu_resource.get(), ZX_IOMMU_TYPE_DUMMY, &desc, sizeof(desc),
+  ASSERT_EQ(zx_iommu_create(iommu_resource.get(), ZX_IOMMU_TYPE_STUB, &desc, sizeof(desc),
                             iommu.reset_and_get_address()),
             ZX_OK);
   ASSERT_EQ(zx::bti::create(iommu, 0, 0xdeadbeef, &bti), ZX_OK);
@@ -40,14 +40,14 @@ TEST(Bti, NameSupport) {
   zx::iommu iommu;
   zx::bti bti;
 
-  zx_iommu_desc_dummy_t desc;
+  zx_iommu_desc_stub_t desc;
   zx::unowned_resource system_resource = standalone::GetSystemResource();
   zx::result<zx::resource> result =
       standalone::GetSystemResourceWithBase(system_resource, ZX_RSRC_SYSTEM_IOMMU_BASE);
   ASSERT_OK(result.status_value());
   zx::resource iommu_resource = std::move(result.value());
 
-  ASSERT_EQ(zx_iommu_create(iommu_resource.get(), ZX_IOMMU_TYPE_DUMMY, &desc, sizeof(desc),
+  ASSERT_EQ(zx_iommu_create(iommu_resource.get(), ZX_IOMMU_TYPE_STUB, &desc, sizeof(desc),
                             iommu.reset_and_get_address()),
             ZX_OK);
   ASSERT_EQ(zx::bti::create(iommu, 0, 0xdeadbeef, &bti), ZX_OK);
@@ -88,14 +88,14 @@ enum class VmoType : bool { Contiguous, NonContiguous };
 void bti_pin_test_helper(VmoType vmo_type) {
   zx::iommu iommu;
   zx::bti bti;
-  zx_iommu_desc_dummy_t desc;
+  zx_iommu_desc_stub_t desc;
   zx::unowned_resource system_resource = standalone::GetSystemResource();
   zx::result<zx::resource> result =
       standalone::GetSystemResourceWithBase(system_resource, ZX_RSRC_SYSTEM_IOMMU_BASE);
   ASSERT_OK(result.status_value());
   zx::resource iommu_resource = std::move(result.value());
 
-  ASSERT_EQ(zx_iommu_create(iommu_resource.get(), ZX_IOMMU_TYPE_DUMMY, &desc, sizeof(desc),
+  ASSERT_EQ(zx_iommu_create(iommu_resource.get(), ZX_IOMMU_TYPE_STUB, &desc, sizeof(desc),
                             iommu.reset_and_get_address()),
             ZX_OK);
   ASSERT_EQ(zx::bti::create(iommu, 0, 0xdeadbeef, &bti), ZX_OK);
@@ -129,14 +129,14 @@ TEST(Bti, PinContiguous) { bti_pin_test_helper(VmoType::Contiguous); }
 TEST(Bti, PinContigFlag) {
   zx::iommu iommu;
   zx::bti bti;
-  zx_iommu_desc_dummy_t desc;
+  zx_iommu_desc_stub_t desc;
   zx::unowned_resource system_resource = standalone::GetSystemResource();
   zx::result<zx::resource> result =
       standalone::GetSystemResourceWithBase(system_resource, ZX_RSRC_SYSTEM_IOMMU_BASE);
   ASSERT_OK(result.status_value());
   zx::resource iommu_resource = std::move(result.value());
 
-  ASSERT_EQ(zx_iommu_create(iommu_resource.get(), ZX_IOMMU_TYPE_DUMMY, &desc, sizeof(desc),
+  ASSERT_EQ(zx_iommu_create(iommu_resource.get(), ZX_IOMMU_TYPE_STUB, &desc, sizeof(desc),
                             iommu.reset_and_get_address()),
             ZX_OK);
   ASSERT_EQ(zx::bti::create(iommu, 0, 0xdeadbeef, &bti), ZX_OK);
@@ -158,7 +158,7 @@ TEST(Bti, Resize) {
   zx::iommu iommu;
   zx::bti bti;
   zx::pmt pmt;
-  zx_iommu_desc_dummy_t desc;
+  zx_iommu_desc_stub_t desc;
 
   zx::unowned_resource system_resource = standalone::GetSystemResource();
   zx::result<zx::resource> result =
@@ -166,7 +166,7 @@ TEST(Bti, Resize) {
   ASSERT_OK(result.status_value());
   zx::resource iommu_resource = std::move(result.value());
 
-  ASSERT_EQ(zx_iommu_create(iommu_resource.get(), ZX_IOMMU_TYPE_DUMMY, &desc, sizeof(desc),
+  ASSERT_EQ(zx_iommu_create(iommu_resource.get(), ZX_IOMMU_TYPE_STUB, &desc, sizeof(desc),
                             iommu.reset_and_get_address()),
             ZX_OK);
   ASSERT_EQ(zx::bti::create(iommu, 0, 0xdeadbeef, &bti), ZX_OK);
@@ -186,7 +186,7 @@ TEST(Bti, Clone) {
   zx::iommu iommu;
   zx::bti bti;
   zx::pmt pmt;
-  zx_iommu_desc_dummy_t desc;
+  zx_iommu_desc_stub_t desc;
 
   zx::unowned_resource system_resource = standalone::GetSystemResource();
   zx::result<zx::resource> result =
@@ -194,7 +194,7 @@ TEST(Bti, Clone) {
   ASSERT_OK(result.status_value());
   zx::resource iommu_resource = std::move(result.value());
 
-  ASSERT_EQ(zx_iommu_create(iommu_resource.get(), ZX_IOMMU_TYPE_DUMMY, &desc, sizeof(desc),
+  ASSERT_EQ(zx_iommu_create(iommu_resource.get(), ZX_IOMMU_TYPE_STUB, &desc, sizeof(desc),
                             iommu.reset_and_get_address()),
             ZX_OK);
   ASSERT_EQ(zx::bti::create(iommu, 0, 0xdeadbeef, &bti), ZX_OK);
@@ -221,7 +221,7 @@ TEST(Bti, GetInfoTest) {
   zx::iommu iommu;
   zx::bti bti;
   zx::pmt pmt;
-  zx_iommu_desc_dummy_t desc;
+  zx_iommu_desc_stub_t desc;
 
   zx::unowned_resource system_resource = standalone::GetSystemResource();
   zx::result<zx::resource> result =
@@ -229,7 +229,7 @@ TEST(Bti, GetInfoTest) {
   ASSERT_OK(result.status_value());
   zx::resource iommu_resource = std::move(result.value());
 
-  ASSERT_EQ(zx_iommu_create(iommu_resource.get(), ZX_IOMMU_TYPE_DUMMY, &desc, sizeof(desc),
+  ASSERT_EQ(zx_iommu_create(iommu_resource.get(), ZX_IOMMU_TYPE_STUB, &desc, sizeof(desc),
                             iommu.reset_and_get_address()),
             ZX_OK);
   ASSERT_EQ(zx::bti::create(iommu, 0, 0xdeadbeef, &bti), ZX_OK);
@@ -268,7 +268,7 @@ TEST(Bti, GetInfoTest) {
 TEST(Bti, NoDelayedUnpin) {
   zx::iommu iommu;
   zx::bti bti;
-  zx_iommu_desc_dummy_t desc;
+  zx_iommu_desc_stub_t desc;
 
   zx::unowned_resource system_resource = standalone::GetSystemResource();
   zx::result<zx::resource> result =
@@ -276,7 +276,7 @@ TEST(Bti, NoDelayedUnpin) {
   ASSERT_OK(result.status_value());
   zx::resource iommu_resource = std::move(result.value());
 
-  ASSERT_EQ(zx_iommu_create(iommu_resource.get(), ZX_IOMMU_TYPE_DUMMY, &desc, sizeof(desc),
+  ASSERT_EQ(zx_iommu_create(iommu_resource.get(), ZX_IOMMU_TYPE_STUB, &desc, sizeof(desc),
                             iommu.reset_and_get_address()),
             ZX_OK);
   ASSERT_EQ(zx::bti::create(iommu, 0, 0xdeadbeef, &bti), ZX_OK);
@@ -352,7 +352,7 @@ TEST(Bti, NoDelayedUnpin) {
 TEST(Bti, DecommitRace) {
   zx::iommu iommu;
   zx::bti bti;
-  zx_iommu_desc_dummy_t desc;
+  zx_iommu_desc_stub_t desc;
 
   zx::unowned_resource system_resource = standalone::GetSystemResource();
   zx::result<zx::resource> result =
@@ -360,7 +360,7 @@ TEST(Bti, DecommitRace) {
   ASSERT_OK(result.status_value());
   zx::resource iommu_resource = std::move(result.value());
 
-  ASSERT_EQ(zx_iommu_create(iommu_resource.get(), ZX_IOMMU_TYPE_DUMMY, &desc, sizeof(desc),
+  ASSERT_EQ(zx_iommu_create(iommu_resource.get(), ZX_IOMMU_TYPE_STUB, &desc, sizeof(desc),
                             iommu.reset_and_get_address()),
             ZX_OK);
   ASSERT_EQ(zx::bti::create(iommu, 0, 0xdeadbeef, &bti), ZX_OK);
@@ -413,14 +413,14 @@ TEST(Bti, DecommitRace) {
 TEST(Bti, PinTooManyAddresses) {
   zx::iommu iommu;
   zx::bti bti;
-  zx_iommu_desc_dummy_t desc;
+  zx_iommu_desc_stub_t desc;
   zx::unowned_resource system_resource = standalone::GetSystemResource();
   zx::result<zx::resource> result =
       standalone::GetSystemResourceWithBase(system_resource, ZX_RSRC_SYSTEM_IOMMU_BASE);
   ASSERT_OK(result.status_value());
   zx::resource iommu_resource = std::move(result.value());
 
-  ASSERT_EQ(zx_iommu_create(iommu_resource.get(), ZX_IOMMU_TYPE_DUMMY, &desc, sizeof(desc),
+  ASSERT_EQ(zx_iommu_create(iommu_resource.get(), ZX_IOMMU_TYPE_STUB, &desc, sizeof(desc),
                             iommu.reset_and_get_address()),
             ZX_OK);
   ASSERT_EQ(zx::bti::create(iommu, 0, 0xdeadbeef, &bti), ZX_OK);
@@ -444,7 +444,7 @@ TEST(Bti, PinTooManyAddresses) {
 TEST(Bti, QuarantineDisallowsPin) {
   zx::iommu iommu;
   zx::bti bti;
-  zx_iommu_desc_dummy_t desc;
+  zx_iommu_desc_stub_t desc;
 
   zx::unowned_resource system_resource = standalone::GetSystemResource();
   zx::result<zx::resource> result =
@@ -453,7 +453,7 @@ TEST(Bti, QuarantineDisallowsPin) {
   zx::resource iommu_resource = std::move(result.value());
 
 
-  ASSERT_EQ(zx_iommu_create(iommu_resource.get(), ZX_IOMMU_TYPE_DUMMY, &desc, sizeof(desc),
+  ASSERT_EQ(zx_iommu_create(iommu_resource.get(), ZX_IOMMU_TYPE_STUB, &desc, sizeof(desc),
                             iommu.reset_and_get_address()),
             ZX_OK);
   ASSERT_EQ(zx::bti::create(iommu, 0, 0xdeadbeef, &bti), ZX_OK);

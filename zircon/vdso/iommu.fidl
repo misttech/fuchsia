@@ -33,15 +33,15 @@ closed protocol Iommu {
     /// Upon success, a handle for the new IOMMU is returned.  This handle will have rights
     /// `ZX_RIGHT_DUPLICATE` and `ZX_RIGHT_TRANSFER`.
     ///
-    /// ### *type* = `ZX_IOMMU_TYPE_DUMMY`
+    /// ### *type* = `ZX_IOMMU_TYPE_STUB`
     ///
     /// This type represents a no-op IOMMU.  It provides no hardware-level protections
     /// against unauthorized access to memory.  It does allow pinning of physical memory
     /// pages, to prevent the reuse of a page until the driver using the page says it is
     /// done with it.
     ///
-    /// *desc* must be a valid pointer to a value of type `zx_iommu_desc_dummy_t`.
-    /// *desc_size* must be `sizeof(zx_iommu_desc_dummy_t)`.
+    /// *desc* must be a valid pointer to a value of type `zx_iommu_desc_stub_t`.
+    /// *desc_size* must be `sizeof(zx_iommu_desc_stub_t)`.
     ///
     /// ## Rights
     ///

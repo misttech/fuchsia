@@ -1432,7 +1432,7 @@ TEST(StreamTestCase, NoStreamFromContiguousOrPhysicalVmo) {
 
   zx::iommu iommu;
   zx::bti bti;
-  zx_iommu_desc_dummy_t desc;
+  zx_iommu_desc_stub_t desc;
   auto final_bti_check = fit::defer([&bti]() {
     if (bti.is_valid()) {
       zx_info_bti_t info;
@@ -1442,7 +1442,7 @@ TEST(StreamTestCase, NoStreamFromContiguousOrPhysicalVmo) {
     }
   });
 
-  ASSERT_OK(zx::iommu::create(iommu_resource, ZX_IOMMU_TYPE_DUMMY, &desc, sizeof(desc), &iommu));
+  ASSERT_OK(zx::iommu::create(iommu_resource, ZX_IOMMU_TYPE_STUB, &desc, sizeof(desc), &iommu));
   EXPECT_OK(zx::bti::create(iommu, 0, 0xdead1eaf, &bti));
 
   size_t vmo_size = zx_system_get_page_size();

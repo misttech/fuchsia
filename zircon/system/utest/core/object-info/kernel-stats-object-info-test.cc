@@ -86,14 +86,14 @@ TEST_F(KernelStatsGetInfoTest, KmemStats) {
   zx::iommu iommu;
   zx::bti bti;
   zx::pmt pmt;
-  zx_iommu_desc_dummy_t desc;
+  zx_iommu_desc_stub_t desc;
 
   zx::result<zx::resource> result =
       maybe_standalone::GetSystemResourceWithBase(system_resource_, ZX_RSRC_SYSTEM_IOMMU_BASE);
   ASSERT_OK(result.status_value());
   zx::resource iommu_resource = std::move(result.value());
 
-  ASSERT_OK(zx_iommu_create(iommu_resource.get(), ZX_IOMMU_TYPE_DUMMY, &desc, sizeof(desc),
+  ASSERT_OK(zx_iommu_create(iommu_resource.get(), ZX_IOMMU_TYPE_STUB, &desc, sizeof(desc),
                             iommu.reset_and_get_address()));
   ASSERT_OK(zx::bti::create(iommu, 0, 0xdeadbeef, &bti));
   zx_paddr_t addr;
@@ -212,14 +212,14 @@ TEST_F(KernelStatsGetInfoTest, KmemStatsExtended) {
   zx::iommu iommu;
   zx::bti bti;
   zx::pmt pmt;
-  zx_iommu_desc_dummy_t desc;
+  zx_iommu_desc_stub_t desc;
 
   zx::result<zx::resource> result =
       maybe_standalone::GetSystemResourceWithBase(system_resource_, ZX_RSRC_SYSTEM_IOMMU_BASE);
   ASSERT_OK(result.status_value());
   zx::resource iommu_resource = std::move(result.value());
 
-  ASSERT_OK(zx_iommu_create(iommu_resource.get(), ZX_IOMMU_TYPE_DUMMY, &desc, sizeof(desc),
+  ASSERT_OK(zx_iommu_create(iommu_resource.get(), ZX_IOMMU_TYPE_STUB, &desc, sizeof(desc),
                             iommu.reset_and_get_address()));
   ASSERT_OK(zx::bti::create(iommu, 0, 0xdeadbeef, &bti));
   zx_paddr_t addr;

@@ -875,8 +875,8 @@ TEST(VmoTestCase, Info) {
   zx::bti bti;
   auto final_bti_check = vmo_test::CreateDeferredBtiCheck(bti);
 
-  zx_iommu_desc_dummy_t desc;
-  EXPECT_EQ(zx_iommu_create(iommu_resource.get(), ZX_IOMMU_TYPE_DUMMY, &desc, sizeof(desc),
+  zx_iommu_desc_stub_t desc;
+  EXPECT_EQ(zx_iommu_create(iommu_resource.get(), ZX_IOMMU_TYPE_STUB, &desc, sizeof(desc),
                             iommu.reset_and_get_address()),
             ZX_OK);
   bti = vmo_test::CreateNamedBti(iommu, 0, 0xdeadbeef, "VmoTestCase::Info");
@@ -1153,10 +1153,10 @@ TEST(VmoTestCase, SetStreamSizePinnedPages) {
 
   zx::iommu iommu;
   zx::bti bti;
-  zx_iommu_desc_dummy_t desc;
+  zx_iommu_desc_stub_t desc;
   auto final_bti_check = vmo_test::CreateDeferredBtiCheck(bti);
 
-  EXPECT_OK(zx::iommu::create(iommu_resource, ZX_IOMMU_TYPE_DUMMY, &desc, sizeof(desc), &iommu));
+  EXPECT_OK(zx::iommu::create(iommu_resource, ZX_IOMMU_TYPE_STUB, &desc, sizeof(desc), &iommu));
   bti = vmo_test::CreateNamedBti(iommu, 0, 0xdeadbeef, "VmoTestCase::UncachedContiguous");
 
   // 4 page VMO (& stream).
@@ -1296,10 +1296,10 @@ TEST(VmoTestCase, FaultBeyondStreamSizeNoPhysOrContig) {
 
   zx::iommu iommu;
   zx::bti bti;
-  zx_iommu_desc_dummy_t desc;
+  zx_iommu_desc_stub_t desc;
   auto final_bti_check = vmo_test::CreateDeferredBtiCheck(bti);
 
-  EXPECT_OK(zx::iommu::create(iommu_resource, ZX_IOMMU_TYPE_DUMMY, &desc, sizeof(desc), &iommu));
+  EXPECT_OK(zx::iommu::create(iommu_resource, ZX_IOMMU_TYPE_STUB, &desc, sizeof(desc), &iommu));
   bti = vmo_test::CreateNamedBti(iommu, 0, 0xdeadbeef, "VmoTestCase::UncachedContiguous");
 
   zx::vmo contig_vmo;
@@ -2154,10 +2154,10 @@ TEST(VmoTestCase, CompressedContiguous) {
 
   zx::iommu iommu;
   zx::bti bti;
-  zx_iommu_desc_dummy_t desc;
+  zx_iommu_desc_stub_t desc;
   auto final_bti_check = vmo_test::CreateDeferredBtiCheck(bti);
 
-  EXPECT_OK(zx::iommu::create(iommu_resource, ZX_IOMMU_TYPE_DUMMY, &desc, sizeof(desc), &iommu));
+  EXPECT_OK(zx::iommu::create(iommu_resource, ZX_IOMMU_TYPE_STUB, &desc, sizeof(desc), &iommu));
   bti = vmo_test::CreateNamedBti(iommu, 0, 0xdeadbeef, "VmoTestCase::CompressedContiguous");
 
   zx_info_bti_t bti_info;
@@ -2202,10 +2202,10 @@ TEST(VmoTestCase, UncachedContiguous) {
 
   zx::iommu iommu;
   zx::bti bti;
-  zx_iommu_desc_dummy_t desc;
+  zx_iommu_desc_stub_t desc;
   auto final_bti_check = vmo_test::CreateDeferredBtiCheck(bti);
 
-  EXPECT_OK(zx::iommu::create(iommu_resource, ZX_IOMMU_TYPE_DUMMY, &desc, sizeof(desc), &iommu));
+  EXPECT_OK(zx::iommu::create(iommu_resource, ZX_IOMMU_TYPE_STUB, &desc, sizeof(desc), &iommu));
   bti = vmo_test::CreateNamedBti(iommu, 0, 0xdeadbeef, "VmoTestCase::UncachedContiguous");
 
   const uint64_t kSize = zx_system_get_page_size() * 4;
@@ -2257,10 +2257,10 @@ TEST(VmoTestCase, PinTests) {
 
   zx::iommu iommu;
   zx::bti bti;
-  zx_iommu_desc_dummy_t desc;
+  zx_iommu_desc_stub_t desc;
   auto final_bti_check = vmo_test::CreateDeferredBtiCheck(bti);
 
-  EXPECT_OK(zx::iommu::create(iommu_resource, ZX_IOMMU_TYPE_DUMMY, &desc, sizeof(desc), &iommu));
+  EXPECT_OK(zx::iommu::create(iommu_resource, ZX_IOMMU_TYPE_STUB, &desc, sizeof(desc), &iommu));
   bti = vmo_test::CreateNamedBti(iommu, 0, 0xdeadbeef, "VmoTestCase::PinTests");
 
   enum class VmoFlavor { Normal, Contig, Physical };
@@ -3032,10 +3032,10 @@ TEST(VmoTestCase, UnmapLoanedcontiguousWhileFaulting) {
 
   zx::iommu iommu;
   zx::bti bti;
-  zx_iommu_desc_dummy_t desc;
+  zx_iommu_desc_stub_t desc;
   auto final_bti_check = vmo_test::CreateDeferredBtiCheck(bti);
 
-  ASSERT_OK(zx::iommu::create(iommu_resource, ZX_IOMMU_TYPE_DUMMY, &desc, sizeof(desc), &iommu));
+  ASSERT_OK(zx::iommu::create(iommu_resource, ZX_IOMMU_TYPE_STUB, &desc, sizeof(desc), &iommu));
   bti = vmo_test::CreateNamedBti(iommu, 0, 0xdeadbeef,
                                  "VmoTestCase::UnmapLoanedcontiguousWhileFaulting");
 

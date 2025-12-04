@@ -115,8 +115,8 @@ TEST(VmoZeroTestCase, Contiguous) {
   zx::bti bti;
   auto final_bti_check = vmo_test::CreateDeferredBtiCheck(bti);
 
-  zx_iommu_desc_dummy_t desc;
-  EXPECT_OK(zx::iommu::create(iommu_resource, ZX_IOMMU_TYPE_DUMMY, &desc, sizeof(desc), &iommu));
+  zx_iommu_desc_stub_t desc;
+  EXPECT_OK(zx::iommu::create(iommu_resource, ZX_IOMMU_TYPE_STUB, &desc, sizeof(desc), &iommu));
   bti = vmo_test::CreateNamedBti(iommu, 0, 0xdeadbeef, "VmoZero Contiguous");
 
   zx::vmo vmo;

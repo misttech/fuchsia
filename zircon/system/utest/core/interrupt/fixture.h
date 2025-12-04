@@ -24,7 +24,7 @@ class ResourceFixture : public zxtest::Test {
 
     zx::unowned_resource system_resource = standalone::GetSystemResource();
 
-    zx_iommu_desc_dummy_t desc = {};
+    zx_iommu_desc_stub_t desc = {};
 
     zx::result<zx::resource> get_iommu_resource =
         standalone::GetSystemResourceWithBase(system_resource, ZX_RSRC_SYSTEM_IOMMU_BASE);
@@ -37,7 +37,7 @@ class ResourceFixture : public zxtest::Test {
     msi_resource_ = std::move(get_msi_resource.value());
 
     ASSERT_OK(
-        zx::iommu::create(iommu_resource_, ZX_IOMMU_TYPE_DUMMY, &desc, sizeof(desc), &iommu_));
+        zx::iommu::create(iommu_resource_, ZX_IOMMU_TYPE_STUB, &desc, sizeof(desc), &iommu_));
     ASSERT_OK(zx::bti::create(iommu_, 0, 0xdeadbeef, &bti_));
   }
 

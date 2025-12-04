@@ -1075,7 +1075,7 @@ class VmoCloneResizeTests : public VmoClone2TestCase {
     auto final_bti_check = vmo_test::CreateDeferredBtiCheck(bti);
 
     if (contiguous) {
-      zx_iommu_desc_dummy_t desc;
+      zx_iommu_desc_stub_t desc;
 
       zx::result<zx::resource> result =
           maybe_standalone::GetSystemResourceWithBase(system_resource, ZX_RSRC_SYSTEM_IOMMU_BASE);
@@ -1083,7 +1083,7 @@ class VmoCloneResizeTests : public VmoClone2TestCase {
       zx::resource iommu_resource = std::move(result.value());
 
       ASSERT_OK(
-          zx::iommu::create(iommu_resource, ZX_IOMMU_TYPE_DUMMY, &desc, sizeof(desc), &iommu));
+          zx::iommu::create(iommu_resource, ZX_IOMMU_TYPE_STUB, &desc, sizeof(desc), &iommu));
       ASSERT_NO_FAILURES(bti =
                              vmo_test::CreateNamedBti(iommu, 0, 0xdeadbeef, "VmoCloneResizeTests"));
       ASSERT_OK(zx::vmo::create_contiguous(bti, 4 * zx_system_get_page_size(), 0, &vmo));
@@ -1706,7 +1706,7 @@ TEST_F(VmoClone2TestCase, ForbidContiguousVmo) {
 
   zx::iommu iommu;
   zx::bti bti;
-  zx_iommu_desc_dummy_t desc;
+  zx_iommu_desc_stub_t desc;
   auto final_bti_check = vmo_test::CreateDeferredBtiCheck(bti);
 
   zx::result<zx::resource> result =
@@ -1714,7 +1714,7 @@ TEST_F(VmoClone2TestCase, ForbidContiguousVmo) {
   ASSERT_OK(result.status_value());
   zx::resource iommu_resource = std::move(result.value());
 
-  ASSERT_OK(zx::iommu::create(iommu_resource, ZX_IOMMU_TYPE_DUMMY, &desc, sizeof(desc), &iommu));
+  ASSERT_OK(zx::iommu::create(iommu_resource, ZX_IOMMU_TYPE_STUB, &desc, sizeof(desc), &iommu));
   ASSERT_NO_FAILURES(bti = vmo_test::CreateNamedBti(iommu, 0, 0xdeadbeef, "ForbidContiguousVmo"));
 
   zx::vmo vmo;
@@ -1737,7 +1737,7 @@ TEST_F(VmoClone2TestCase, PinBeforeCreateFailure) {
 
   zx::iommu iommu;
   zx::bti bti;
-  zx_iommu_desc_dummy_t desc;
+  zx_iommu_desc_stub_t desc;
   auto final_bti_check = vmo_test::CreateDeferredBtiCheck(bti);
 
   zx::result<zx::resource> result =
@@ -1745,7 +1745,7 @@ TEST_F(VmoClone2TestCase, PinBeforeCreateFailure) {
   ASSERT_OK(result.status_value());
   zx::resource iommu_resource = std::move(result.value());
 
-  ASSERT_OK(zx::iommu::create(iommu_resource, ZX_IOMMU_TYPE_DUMMY, &desc, sizeof(desc), &iommu));
+  ASSERT_OK(zx::iommu::create(iommu_resource, ZX_IOMMU_TYPE_STUB, &desc, sizeof(desc), &iommu));
   ASSERT_NO_FAILURES(bti =
                          vmo_test::CreateNamedBti(iommu, 0, 0xdeadbeef, "PinBeforeCreateFailure"));
 
@@ -1774,16 +1774,16 @@ TEST_F(VmoClone2TestCase, PinClonePages) {
     return;
   }
 
-  // Create the dummy IOMMU and fake BTI we will need for this test.
+  // Create the stub IOMMU and fake BTI we will need for this test.
   zx::iommu iommu;
   zx::bti bti;
-  zx_iommu_desc_dummy_t desc;
+  zx_iommu_desc_stub_t desc;
 
   zx::result<zx::resource> result =
       maybe_standalone::GetSystemResourceWithBase(system_resource, ZX_RSRC_SYSTEM_IOMMU_BASE);
   ASSERT_OK(result.status_value());
   zx::resource iommu_resource = std::move(result.value());
-  ASSERT_OK(zx::iommu::create(iommu_resource, ZX_IOMMU_TYPE_DUMMY, &desc, sizeof(desc), &iommu));
+  ASSERT_OK(zx::iommu::create(iommu_resource, ZX_IOMMU_TYPE_STUB, &desc, sizeof(desc), &iommu));
   ASSERT_NO_FAILURES(bti = vmo_test::CreateNamedBti(iommu, 0, 0xdeadbeef, "PinClonePages"));
   auto final_bti_check = vmo_test::CreateDeferredBtiCheck(bti);
 
