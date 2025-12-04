@@ -637,42 +637,81 @@ zx_status_t sys_system_set_performance_info(zx_handle_t resource, uint32_t topic
     return validate_status;
   }
 
-  if (topic != ZX_CPU_PERF_SCALE) {
-    return ZX_ERR_INVALID_ARGS;
-  }
-
   const size_t num_cpus = percpu::processor_count();
   if (count == 0 || count > num_cpus) {
     return ZX_ERR_OUT_OF_RANGE;
   }
 
-  fbl::AllocChecker checker;
-  auto performance_info = ktl::make_unique<zx_cpu_performance_info_t[]>(&checker, count);
-  if (!checker.check()) {
-    return ZX_ERR_NO_MEMORY;
-  }
+  switch (topic) {
+    case ZX_CPU_PERF_SCALE: {
+      fbl::AllocChecker checker;
+      auto performance_info = ktl::make_unique<zx_cpu_performance_info_t[]>(&checker, count);
+      if (!checker.check()) {
+        return ZX_ERR_NO_MEMORY;
+      }
 
-  auto new_info = info_void.reinterpret<const zx_cpu_performance_info_t>();
-  if (new_info.copy_array_from_user(performance_info.get(), count) != ZX_OK) {
-    return ZX_ERR_INVALID_ARGS;
-  }
+      auto new_info = info_void.reinterpret<const zx_cpu_performance_info_t>();
+      if (new_info.copy_array_from_user(performance_info.get(), count) != ZX_OK) {
+        return ZX_ERR_INVALID_ARGS;
+      }
 
-  cpu_num_t last_cpu = INVALID_CPU;
-  for (auto& info : ktl::span{performance_info.get(), count}) {
-    const cpu_num_t cpu = info.logical_cpu_number;
-    if (last_cpu != INVALID_CPU && cpu <= last_cpu) {
-      return ZX_ERR_INVALID_ARGS;
+      cpu_num_t last_cpu = INVALID_CPU;
+      for (auto& info : ktl::span{performance_info.get(), count}) {
+        const cpu_num_t cpu = info.logical_cpu_number;
+        if (last_cpu != INVALID_CPU && cpu <= last_cpu) {
+          return ZX_ERR_INVALID_ARGS;
+        }
+        last_cpu = cpu;
+
+        const auto [integral, fractional] = info.performance_scale;
+        if (cpu >= num_cpus || (integral == 0 && fractional == 0)) {
+          return ZX_ERR_OUT_OF_RANGE;
+        }
+      }
+
+      Scheduler::UpdateProcessingRates(performance_info.get(), count);
+      return ZX_OK;
     }
-    last_cpu = cpu;
 
-    const auto [integral, fractional] = info.performance_scale;
-    if (cpu >= num_cpus || (integral == 0 && fractional == 0)) {
-      return ZX_ERR_OUT_OF_RANGE;
+    case ZX_CPU_PERF_LIMIT: {
+      fbl::AllocChecker checker;
+      auto limit_info = ktl::make_unique<zx_cpu_perf_limit_t[]>(&checker, count);
+      if (!checker.check()) {
+        return ZX_ERR_NO_MEMORY;
+      }
+
+      auto new_info = info_void.reinterpret<const zx_cpu_perf_limit_t>();
+      if (new_info.copy_array_from_user(limit_info.get(), count) != ZX_OK) {
+        return ZX_ERR_INVALID_ARGS;
+      }
+
+      cpu_num_t last_cpu = INVALID_CPU;
+      for (auto& entry : ktl::span{limit_info.get(), count}) {
+        const cpu_num_t cpu = entry.logical_cpu_number;
+        if (last_cpu != INVALID_CPU && cpu <= last_cpu) {
+          return ZX_ERR_INVALID_ARGS;
+        }
+
+        last_cpu = cpu;
+        if (cpu >= num_cpus) {
+          return ZX_ERR_OUT_OF_RANGE;
+        }
+
+        // TODO(eieio): Add support for the other limit types.
+        if (entry.limit_type != ZX_CPU_PERF_LIMIT_TYPE_RATE) {
+          return ZX_ERR_NOT_SUPPORTED;
+        }
+      }
+
+      Scheduler::UpdateProcessingLimits(limit_info.get(), count);
+      return ZX_OK;
     }
+
+    default:
+      break;
   }
 
-  Scheduler::UpdateProcessingRates(performance_info.get(), count);
-  return ZX_OK;
+  return ZX_ERR_INVALID_ARGS;
 }
 
 zx_status_t sys_system_get_performance_info(zx_handle_t resource, uint32_t topic, size_t info_count,

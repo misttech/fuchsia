@@ -1832,13 +1832,13 @@ void Scheduler::RescheduleCommon(Thread* const current_thread, EndTraceCallback 
           QUEUE, "clear/prune",
           ("utilization_to_remove", Round<uint64_t>(utilization_to_remove * 1000)));
 
+      UpdateTotalDeadlineUtilization(-utilization_to_remove);
+
       // Evaluate reducing the processing rate when the required utilization
       // decreases below the lower bound of the current power level. All of the
       // processors in the same domain must be re-evaluated to determine whether
       // an actual rate change should occur.
-      const SchedUtilization total_utilization =
-          UpdateTotalDeadlineUtilization(-utilization_to_remove);
-      if (total_utilization <= power_level_control_.preceding_processing_rate()) {
+      if (power_level_control_.processing_rate_should_decrease()) {
         power_level_control_.ReevaluateCurrentPowerLevel();
       }
     }
@@ -2441,14 +2441,14 @@ void Scheduler::Insert(SchedTime now, Thread* thread, Placement placement) {
           power_level_control_.is_enabled() ? bandwidth_reservation_cache_.Remove(thread->tid())
                                             : SchedUtilization{0};
 
-      const SchedUtilization total_utilization =
-          UpdateTotalDeadlineUtilization(ep.deadline().utilization - utilization_to_remove);
+      UpdateTotalDeadlineUtilization(ep.deadline().utilization - utilization_to_remove);
 
       // Increase the processing rate when the required utilization increases
-      // beyond the current rate.
+      // beyond the current rate, accounting for current limits.
       if (power_level_control_.is_enabled() &&
-          total_utilization > power_level_control_.processing_rate()) {
-        power_level_control_.PendPowerLevelRequestForRate(total_utilization);
+          power_level_control_.processing_rate_should_increase()) {
+        power_level_control_.PendPowerLevelRequestForRate(
+            power_level_control_.clamped_normalized_utilization());
       }
     }
     runnable_task_count_++;
@@ -3093,6 +3093,55 @@ void Scheduler::GetDefaultPerformanceScales(zx_cpu_performance_info_t* info, siz
   }
 }
 
+void Scheduler::UpdateProcessingLimits(zx_cpu_perf_limit_t* limits, size_t count) {
+  DEBUG_ASSERT(count <= percpu::processor_count());
+  InterruptDisableGuard interrupts_disabled;
+
+  // Set the limits for each CPU in the given limits array, keeping track of one
+  // CPU per domain to evaluate the domain's active power level.
+  cpu_mask_t cpus_for_handled_domains = 0;
+  cpu_mask_t cpus_to_evaluate_updates = 0;
+  for (auto& entry : ktl::span{limits, count}) {
+    switch (entry.limit_type) {
+      case ZX_CPU_PERF_LIMIT_TYPE_RATE: {
+        Scheduler* scheduler = Scheduler::Get(entry.logical_cpu_number);
+        Guard<MonitoredSpinLock, NoIrqSave> guard{&scheduler->queue_lock_, SOURCE_TAG};
+
+        const SchedProcessingRate min = power_management::PowerLevel::ToProcessingRate(entry.min);
+        const SchedProcessingRate max = power_management::PowerLevel::ToProcessingRate(entry.max);
+        scheduler->power_level_control_.UserSetProcessingRateLimits(min, max);
+
+        // A rate change only needs to be evaluated for one active CPU in each domain.
+        const cpu_mask_t cpu_mask = cpu_num_to_mask(entry.logical_cpu_number);
+        const bool is_domain_handled = cpus_for_handled_domains & cpu_mask;
+        if (scheduler->IsSchedulerActiveLocked() && scheduler->power_level_control_.is_enabled() &&
+            !is_domain_handled) {
+          cpus_to_evaluate_updates |= cpu_mask;
+
+          // TODO(eieio): Rationalize energy model CPU set with kernel CPU mask.
+          const cpu_mask_t domain_cpu_mask =
+              static_cast<cpu_mask_t>(scheduler->power_level_control_.domain()->cpus().mask[0]);
+          cpus_for_handled_domains |= domain_cpu_mask;
+        }
+      } break;
+
+      default:
+        break;
+    }
+  }
+
+  // Reevaluate the power level for each updated domain.
+  cpu_mask_t cpu_mask = cpus_to_evaluate_updates;
+  for (cpu_num_t cpu = remove_cpu_from_mask(cpu_mask); cpu != INVALID_CPU;
+       cpu = remove_cpu_from_mask(cpu_mask)) {
+    Scheduler* scheduler = Scheduler::Get(cpu);
+    Guard<MonitoredSpinLock, NoIrqSave> guard{&scheduler->queue_lock_, SOURCE_TAG};
+    scheduler->power_level_control_.ReevaluateCurrentPowerLevel();
+  }
+
+  RescheduleMask(cpus_to_evaluate_updates);
+}
+
 cpu_mask_t Scheduler::SetCpuAffinity(Thread& thread, cpu_mask_t affinity,
                                      AffinityType affinity_type) {
   DEBUG_ASSERT_MSG(
@@ -3285,6 +3334,20 @@ bool Scheduler::RequestPowerLevelForTesting(uint8_t power_level) {
   return need_reschedule;
 }
 
+bool Scheduler::PowerLevelControl::UserSetProcessingRateLimits(SchedProcessingRate min,
+                                                               SchedProcessingRate max) {
+  processing_rate_limit_min_ = ktl::clamp(min, SchedProcessingRate{0}, SchedProcessingRate{1});
+  processing_rate_limit_max_ = ktl::clamp(max, SchedProcessingRate{0}, SchedProcessingRate{1});
+
+  if (processing_rate_should_change()) {
+    AssertHeld(scheduler().queue_lock());
+    scheduler().exported_clamped_deadline_utilization_ = clamped_normalized_utilization();
+    return true;
+  }
+
+  return false;
+}
+
 bool Scheduler::PowerLevelControl::PendPowerLevelRequest(uint8_t power_level) {
   ktrace::Scope trace = LOCAL_KTRACE_BEGIN_SCOPE(QUEUE, "sched_req_power_level", ("cpu", cpu()),
                                                  ("power_level", power_level));
@@ -3306,25 +3369,27 @@ bool Scheduler::PowerLevelControl::PendPowerLevelRequestForRate(
 }
 
 void Scheduler::PowerLevelControl::ReevaluateCurrentPowerLevel() {
-  SchedUtilization max_utilization{0};
+  SchedUtilization max_clamped_demand{0};
+
   percpu::ForEach([&](cpu_num_t cpu_num, percpu* percpu) {
     const size_t bit_num = cpu_num % ZX_CPU_SET_BITS_PER_WORD;
     const size_t index = cpu_num / ZX_CPU_SET_BITS_PER_WORD;
     DEBUG_ASSERT(index < ZX_CPU_SET_MAX_CPUS / ZX_CPU_SET_BITS_PER_WORD);
 
     if (domain() && domain()->cpus().mask[index] & uint64_t{1} << bit_num) {
-      max_utilization =
-          ktl::max(max_utilization, percpu->scheduler.exported_deadline_utilization());
+      max_clamped_demand =
+          ktl::max(max_clamped_demand, percpu->scheduler.exported_clamped_deadline_utilization());
     }
   });
 
-  LOCAL_KTRACE_INSTANT(QUEUE, "ReevaluateCurrentPowerLevel",
-                       ("max_utilization", Round<int32_t>(1000 * max_utilization)),
-                       ("processing_rate", Round<int32_t>(1000 * processing_rate())));
+  LOCAL_KTRACE_INSTANT(
+      QUEUE, "ReevaluateCurrentPowerLevel",
+      ("max_clamped_utilization", Round<int32_t>(1000 * max_clamped_demand)),
+      ("preceding_processing_rate", Round<int32_t>(1000 * preceding_processing_rate())),
+      ("processing_rate", Round<int32_t>(1000 * processing_rate())));
 
-  SchedProcessingRate max_required_processing_rate{max_utilization};
-  if (max_required_processing_rate < processing_rate()) {
-    PendPowerLevelRequestForRate(max_required_processing_rate);
+  if (max_clamped_demand <= preceding_processing_rate() || max_clamped_demand > processing_rate()) {
+    PendPowerLevelRequestForRate(max_clamped_demand);
   }
 }
 

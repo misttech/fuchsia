@@ -20,6 +20,7 @@
 #include <lib/concurrent/copy.h>
 #include <lib/console.h>
 #include <lib/kconcurrent/chainlock_transaction.h>
+#include <lib/power-management/kernel-registry.h>
 #include <lib/zircon-internal/macros.h>
 #include <platform.h>
 #include <stdio.h>
@@ -34,6 +35,7 @@
 #include <kernel/percpu.h>
 #include <kernel/scheduler.h>
 #include <kernel/thread.h>
+#include <ktl/bit.h>
 #include <vm/vm.h>
 
 static int cmd_thread(int argc, const cmd_args* argv, uint32_t flags) {
@@ -362,10 +364,27 @@ static int cmd_rppm(int argc, const cmd_args* argv, uint32_t flags) {
     printf("%s set-level <cpu id> <power level>\n", argv[0].str);
     printf("%s req-level <cpu id> <power level>\n", argv[0].str);
     printf("%s get-level <cpu id>\n", argv[0].str);
+    printf("%s set-limit <cpu mask> <min rate> <max rate>\n", argv[0].str);
     return -1;
   }
 
   if (!strcmp(argv[1].str, "dump")) {
+    // Dump the configuration of each registered power domain.
+    power_management::KernelPowerDomainRegistry::Visit(
+        [](const fbl::RefPtr<power_management::PowerDomain>& domain) {
+          printf("Power domain %u:\n", domain->id());
+          for (size_t index = 0; const auto& power_level : domain->model().levels()) {
+            printf("  %3zu. rate=%-8s power=%10" PRIu64 " nw cost=%10" PRIu64
+                   " nw/rate control=%s\n",
+                   index++, Format(power_level.processing_rate(), ffl::String::Dec, 6).c_str(),
+                   power_level.power_coefficient_nw(), power_level.power_cost_nw_per_rate(),
+                   ToString(power_level.control()));
+          }
+        });
+
+    printf("\n");
+
+    // Dump info about each CPU and its related power state.
     percpu::ForEach([](cpu_num_t cpu, percpu* percpu) {
       Scheduler& scheduler = percpu->scheduler;
 
@@ -377,47 +396,64 @@ static int cmd_rppm(int argc, const cmd_args* argv, uint32_t flags) {
           scheduler.GetMaxIdlePowerCoefficientNwForTesting();
 
       printf("CPU %u:\n", cpu);
-
-      if (domain) {
-        printf("  Power domain %u:\n", domain->id());
-        for (size_t index = 0; const auto& power_level : domain->model().levels()) {
-          printf("    %3zu. rate=%-8s power=%10" PRIu64 " nw cost=%10" PRIu64
-                 " nw/rate control=%s\n",
-                 index++, Format(power_level.processing_rate(), ffl::String::Dec, 6).c_str(),
-                 power_level.power_coefficient_nw(), power_level.power_cost_nw_per_rate(),
-                 ToString(power_level.control()));
-        }
-      } else {
-        printf("  No power domain set.\n");
-      }
-
-      if (current_power_level.has_value()) {
-        printf("  Current power level %u.\n", *current_power_level);
-      } else {
-        printf("  Current power level not set.\n");
-      }
-
-      if (active_power_coefficient_nw.has_value()) {
-        printf("  Active power coefficient %" PRIu64 " nw\n", *active_power_coefficient_nw);
-      } else {
-        printf("  Active power coefficient not set.\n");
-      }
-
-      if (max_idle_power_coefficient_nw.has_value()) {
-        printf("  Max idle power coefficient %" PRIu64 " nw\n", *max_idle_power_coefficient_nw);
-      } else {
-        printf("  Max idle power coefficient not set.\n");
-      }
+      printf("  Power domain %d:\n", domain ? static_cast<int>(domain->id()) : -1);
+      printf("  Current power level %d.\n", static_cast<int8_t>(current_power_level.value_or(-1)));
+      printf("  Active power coefficient %" PRIu64 " nw\n",
+             active_power_coefficient_nw.value_or(0));
+      printf("  Max idle power coefficient %" PRIu64 " nw\n",
+             max_idle_power_coefficient_nw.value_or(0));
     });
+
     return 0;
   }
 
   if (const bool is_set_level = !strcmp(argv[1].str, "set-level"),
       is_req_level = !strcmp(argv[1].str, "req-level"),
-      is_get_level = !strcmp(argv[1].str, "get-level");
-      is_set_level || is_req_level || is_get_level) {
-    if (((is_set_level || is_req_level) && argc < 4) || (is_get_level && argc < 3)) {
+      is_get_level = !strcmp(argv[1].str, "get-level"),
+      is_set_limit = !strcmp(argv[1].str, "set-limit");
+      is_set_level || is_req_level || is_get_level || is_set_limit) {
+    if (((is_set_level || is_req_level) && argc < 4) || (is_get_level && argc < 3) ||
+        (is_set_limit && argc < 5)) {
       goto notenoughargs;
+    }
+
+    if (is_set_limit) {
+      const uint64_t max_cpu_mask = (1u << percpu::processor_count()) - 1;
+      if (argv[2].u > max_cpu_mask) {
+        printf("Invalid cpu mask %" PRIx64 ". Valid values are in the range [0, %" PRIx64 "].\n",
+               argv[2].u, max_cpu_mask);
+        goto badvalue;
+      }
+      cpu_mask_t cpu_mask = static_cast<cpu_mask_t>(argv[2].u);
+      const size_t cpu_count = ktl::popcount(cpu_mask);
+
+      const uint64_t min = argv[3].u;
+      const uint64_t max = argv[4].u;
+
+      fbl::AllocChecker checker;
+      fbl::Array<zx_cpu_perf_limit_t> limits =
+          fbl::MakeArray<zx_cpu_perf_limit_t>(&checker, cpu_count);
+      if (!checker.check()) {
+        printf("Failed to allocate zx_cpu_perf_limit_t[%zu]!\n", cpu_count);
+        return ZX_ERR_NO_MEMORY;
+      }
+
+      for (size_t i = 0; i < cpu_count; i++) {
+        const cpu_num_t cpu = remove_cpu_from_mask(cpu_mask);
+        DEBUG_ASSERT(cpu != INVALID_CPU);
+
+        printf("Setting CPU%u rate limits: min=%" PRIu64 " max=%" PRIu64 "\n", cpu, min, max);
+        limits[i] = {
+            .logical_cpu_number = cpu,
+            .limit_type = ZX_CPU_PERF_LIMIT_TYPE_RATE,
+            .min = min,
+            .max = max,
+        };
+      }
+      DEBUG_ASSERT(cpu_mask == 0);
+
+      Scheduler::UpdateProcessingLimits(limits.data(), limits.size());
+      return 0;
     }
 
     if (argv[2].u >= percpu::processor_count()) {

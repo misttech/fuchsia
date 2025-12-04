@@ -55,13 +55,14 @@ inline void Scheduler::UpdateTotalExpectedRuntime(SchedDuration delta_ns) {
 // Updates the total deadline utilization estimator with the given delta.
 //
 // Returns the current deadline utilization of the processor after the update.
-inline SchedUtilization Scheduler::UpdateTotalDeadlineUtilization(SchedUtilization delta) {
+inline void Scheduler::UpdateTotalDeadlineUtilization(SchedUtilization delta) {
   // Avoid unnecessary trace counter and atomic variable updates.
   if (delta != 0) {
     const SchedUtilization utilization = power_level_control_.UpdateNormalizedUtilization(delta);
     DEBUG_ASSERT_MSG(utilization >= 0, "utilization=%s delta=%s", Format(utilization).c_str(),
                      Format(delta).c_str());
     exported_deadline_utilization_ = utilization;
+    exported_clamped_deadline_utilization_ = power_level_control_.ClampDemand(utilization);
 
     auto latched_timestamp = KTrace::LatchedTimestamp();
     KTRACE_CPU_COUNTER_TIMESTAMP("kernel:power", "Constant BW Demand", latched_timestamp(),
@@ -74,11 +75,7 @@ inline SchedUtilization Scheduler::UpdateTotalDeadlineUtilization(SchedUtilizati
                                      domain_id.value(),
                                      ("Domain", ffl::Round<uint64_t>(domain_utilization * 1000)));
     }
-
-    return utilization;
   }
-
-  return power_level_control_.normalized_utilization();
 }
 
 inline bool Scheduler::UpdateProcessingRate(zx_instant_boot_ticks_t boot_ticks) {

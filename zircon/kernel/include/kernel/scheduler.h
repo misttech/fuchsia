@@ -176,6 +176,13 @@ class Scheduler {
     return exported_deadline_utilization_.load();
   }
 
+  // Returns the lock-free value of the estimated deadline utilization for the
+  // CPU, clamped to the current rate limits, for the CPU this scheduler is
+  // associated with.
+  SchedUtilization exported_clamped_deadline_utilization() const {
+    return exported_clamped_deadline_utilization_.load();
+  }
+
   // Returns the lock-free value of the processing rate for the CPU this
   // scheduler is associated with.
   SchedProcessingRate exported_processing_rate() const { return exported_processing_rate_.load(); }
@@ -338,6 +345,12 @@ class Scheduler {
   //
   // Requires |count| <= num CPUs.
   static void GetDefaultPerformanceScales(zx_cpu_performance_info_t* info, size_t count)
+      TA_EXCL(queue_lock_);
+
+  // Updates the performance limits of the requested CPUs.
+  //
+  // Requires |count| <= num CPUs.
+  static void UpdateProcessingLimits(zx_cpu_perf_limit_t* limits, size_t count)
       TA_EXCL(queue_lock_);
 
   // Get the mask of valid CPUs that thread may run on. If a new mask
@@ -938,9 +951,8 @@ class Scheduler {
   inline void UpdateTotalExpectedRuntime(SchedDuration delta_ns) TA_REQ(queue_lock_);
 
   // Updates to total deadline utilization estimator and exports the atomic
-  // shadow variable for cross-CPU readers. Returns the new total deadline utilization.
-  inline SchedUtilization UpdateTotalDeadlineUtilization(SchedUtilization delta_ns)
-      TA_REQ(queue_lock_);
+  // shadow variable for cross-CPU readers.
+  inline void UpdateTotalDeadlineUtilization(SchedUtilization delta_ns) TA_REQ(queue_lock_);
 
   // Updates the processing rate and exports the atomic shadow variable for
   // cross-CPU readers.
@@ -1301,6 +1313,7 @@ class Scheduler {
   // cache performance.
   RelaxedAtomic<SchedDuration> exported_queue_time_ns_{SchedNs(0)};
   RelaxedAtomic<SchedUtilization> exported_deadline_utilization_{SchedUtilization{0}};
+  RelaxedAtomic<SchedUtilization> exported_clamped_deadline_utilization_{SchedUtilization{0}};
   RelaxedAtomic<SchedProcessingRate> exported_processing_rate_{SchedProcessingRate{1}};
   RelaxedAtomic<SchedProcessingRate> exported_max_processing_rate_{SchedProcessingRate{1}};
 
@@ -1384,6 +1397,26 @@ class Scheduler {
       }
     }
 
+    // Sets the processing rate limits for the processor. Returns true if the
+    // current active power level needs to be updated in response to the new
+    // limits.
+    //
+    // The specified min is allowed to be greater than the max for future
+    // latency vs. power tradeoff management, which will be documented when
+    // implemented. Until that time, the max takes precedence in the case where
+    // min > max.
+    bool UserSetProcessingRateLimits(SchedProcessingRate min, SchedProcessingRate max);
+
+    // Returns the given demand clamped to the current rate limits.
+    //
+    // Note that the minimum limit can be greater than the maximum limit, in
+    // which case the maximum limit takes precedence to correctly support using
+    // the maximum for thermal mitigation.
+    SchedUtilization ClampDemand(SchedUtilization demand) const {
+      return ktl::clamp(demand, ktl::min(processing_rate_limit_min_, processing_rate_limit_max_),
+                        processing_rate_limit_max_);
+    }
+
     // Sets the initial processing rate from topology data during early boot.
     void TopologySetDefaultProcessingRate(SchedProcessingRate processing_rate) {
       DEBUG_ASSERT(processing_rate > 0);
@@ -1412,9 +1445,9 @@ class Scheduler {
       return processing_rate_;
     }
 
-    // Updates the normalized utilization for this processor and the total normalized utilization
-    // for the domain it belongs to with the given delta. Returns the updated utilization for this
-    // processor.
+    // Updates the normalized utilization for this processor and the total
+    // normalized utilization for the domain it belongs to with the given delta.
+    // Returns the updated utilization for this processor.
     SchedUtilization UpdateNormalizedUtilization(SchedUtilization delta) {
       return power_state_.UpdateUtilization(delta);
     }
@@ -1478,9 +1511,15 @@ class Scheduler {
       return power_state_.max_idle_power_coefficient_nw();
     }
 
-    // Returns the normalized utilization of this processor.
+    // Returns the normalized utilization (constant width demand) of this processor.
     SchedUtilization normalized_utilization() const {
       return power_state_.normalized_utilization();
+    }
+
+    // Returns the normalized utilization (constant bandwidth demand) of this
+    // processor, clamped to the current performance limits.
+    SchedUtilization clamped_normalized_utilization() const {
+      return ClampDemand(normalized_utilization());
     }
 
     // Returns the total normalized utilization of the domain this processor belongs to.
@@ -1510,6 +1549,27 @@ class Scheduler {
       return power_state_.preceding_active_processing_rate();
     }
 
+    // Returns true if the clamped demand is outside the processing rate range
+    // of the current active power level.
+    bool processing_rate_should_change() const {
+      const SchedUtilization clamped_demand = clamped_normalized_utilization();
+      return clamped_demand <= preceding_processing_rate() || clamped_demand > processing_rate();
+    }
+
+    // Returns true if the clamped demand is above the processing rate of the
+    // current active power level.
+    bool processing_rate_should_increase() const {
+      const SchedUtilization clamped_demand = clamped_normalized_utilization();
+      return clamped_demand > processing_rate();
+    }
+
+    // Returns true if the clamped demand is at or below the processing rate of
+    // the preceding active power level.
+    bool processing_rate_should_decrease() const {
+      const SchedUtilization clamped_demand = clamped_normalized_utilization();
+      return clamped_demand <= preceding_processing_rate();
+    }
+
     // Returns true if there is a pending update to the processing rate that has not yet been
     // processed by the scheduler. Checked by RescheduleCommon after accounting has been updated for
     // the runtime segment covering the previous processing rate.
@@ -1529,6 +1589,13 @@ class Scheduler {
     SchedProcessingRate updated_processing_rate_{1};
     SchedProcessingRate default_processing_rate_{1};
     SchedProcessingRate max_processing_rate_{1};
+
+    // The min and max effective processing rate for this processor. These
+    // values influence both the actual processing rate of the power domain the
+    // processor belongs to and the effective processing of this specific
+    // processor.
+    SchedProcessingRate processing_rate_limit_min_{0};
+    SchedProcessingRate processing_rate_limit_max_{1};
 
     uint64_t active_power_coefficient_nw_{0};
 

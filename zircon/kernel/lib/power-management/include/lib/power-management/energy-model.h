@@ -49,14 +49,17 @@ class PowerLevel {
     kActive,
   };
 
+  // TODO(eieio): Normalize relative to the max processing rate of all power levels.
+  static constexpr ProcessingRate ToProcessingRate(uint64_t processing_rate) {
+    return ffl::FromRatio<uint64_t>(processing_rate, 1000);
+  }
+
   constexpr PowerLevel() = default;
   explicit PowerLevel(uint8_t level_index, const zx_processor_power_level_t& level)
       : options_(level.options),
         control_(static_cast<ControlInterface>(level.control_interface)),
         control_argument_(level.control_argument),
-        processing_rate_(ffl::FromRatio<uint64_t>(
-            level.processing_rate, 1000)),  // TODO(eieio): Normalize relative to the max processing
-                                            // rate of all power levels.
+        processing_rate_(ToProcessingRate(level.processing_rate)),
         power_coefficient_nw_(level.power_coefficient_nw),
         power_cost_nw_per_rate_(level.processing_rate > 0
                                     ? level.power_coefficient_nw * 1000 / level.processing_rate
