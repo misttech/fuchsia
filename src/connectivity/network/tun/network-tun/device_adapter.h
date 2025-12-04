@@ -5,7 +5,7 @@
 #ifndef SRC_CONNECTIVITY_NETWORK_TUN_NETWORK_TUN_DEVICE_ADAPTER_H_
 #define SRC_CONNECTIVITY_NETWORK_TUN_NETWORK_TUN_DEVICE_ADAPTER_H_
 
-#include <fidl/fuchsia.hardware.network/cpp/wire.h>
+#include <fidl/fuchsia.hardware.network.driver/cpp/driver/wire.h>
 
 #include <array>
 #include <queue>
@@ -16,6 +16,7 @@
 #include "config.h"
 #include "port_adapter.h"
 #include "src/connectivity/network/drivers/network-device/device/public/network_device.h"
+#include "state.h"
 
 namespace network {
 namespace tun {
@@ -30,6 +31,9 @@ class DeviceAdapterParent {
  public:
   virtual ~DeviceAdapterParent() = default;
 
+  /// Requests that the device adapter be destroyed, it encountered an
+  /// unrecoverable error.
+  virtual void RequestErrorUnbind() = 0;
   // Gets the DeviceAdapter's configuration.
   virtual const BaseDeviceConfig& config() const = 0;
   // Called when transmit buffers become available.
@@ -48,18 +52,19 @@ class DeviceAdapterParent {
 // buffer is a buffer that contains data that is expected to be sent over a link, and an "Rx" buffer
 // is free space that can be used to write data received over a link and push it back to
 // applications.
-class DeviceAdapter : public ddk::NetworkDeviceImplProtocol<DeviceAdapter> {
+class DeviceAdapter : public fdf::WireServer<fuchsia_hardware_network_driver::NetworkDeviceImpl> {
  public:
   // Creates a new `DeviceAdapter` with  `parent`, that will serve its requests through
   // `dispatcher`.
   static zx::result<std::unique_ptr<DeviceAdapter>> Create(
-      const DeviceInterfaceDispatchers& dispatchers, const ShimDispatchers& shim_dispatchers,
-      DeviceAdapterParent* parent);
+      const DeviceInterfaceDispatchers& dispatchers, DeviceAdapterParent* parent);
 
   // Binds `req` to this adapter's `NetworkDeviceInterface`.
-  zx_status_t Bind(fidl::ServerEnd<netdev::Device> req);
+  zx_status_t Bind(fidl::ServerEnd<fuchsia_hardware_network::Device> req);
   // Binds `req` to the port with `port_id` in this adapter's `NetworkDeviceInterface`.
-  zx_status_t BindPort(uint8_t port_id, fidl::ServerEnd<netdev::Port> req);
+  zx_status_t BindPort(uint8_t port_id, fidl::ServerEnd<fuchsia_hardware_network::Port> req);
+  // Binds a new driver connection and returns the client end.
+  fdf::ClientEnd<fuchsia_hardware_network_driver::NetworkDeviceImpl> BindDriver();
 
   // Tears down this adapter and calls `callback` when teardown is finished.
   // Tearing down causes all client channels to be closed.
@@ -71,16 +76,22 @@ class DeviceAdapter : public ddk::NetworkDeviceImplProtocol<DeviceAdapter> {
   void TeardownSync();
 
   // NetworkDeviceImpl protocol:
-  void NetworkDeviceImplInit(const network_device_ifc_protocol_t* iface,
-                             network_device_impl_init_callback callback, void* cookie);
-  void NetworkDeviceImplStart(network_device_impl_start_callback callback, void* cookie);
-  void NetworkDeviceImplStop(network_device_impl_stop_callback callback, void* cookie);
-  void NetworkDeviceImplGetInfo(device_impl_info_t* out_info);
-  void NetworkDeviceImplQueueTx(const tx_buffer_t* buf_list, size_t buf_count);
-  void NetworkDeviceImplQueueRxSpace(const rx_space_buffer_t* buf_list, size_t buf_count);
-  void NetworkDeviceImplPrepareVmo(uint8_t vmo_id, zx::vmo vmo,
-                                   network_device_impl_prepare_vmo_callback callback, void* cookie);
-  void NetworkDeviceImplReleaseVmo(uint8_t vmo_id);
+  void Init(fuchsia_hardware_network_driver::wire::NetworkDeviceImplInitRequest* request,
+            fdf::Arena& arena, InitCompleter::Sync& completer) override;
+  void Start(fdf::Arena& arena, StartCompleter::Sync& completer) override;
+  void Stop(fdf::Arena& arena, StopCompleter::Sync& completer) override;
+  void GetInfo(fdf::Arena& arena, GetInfoCompleter::Sync& completer) override;
+  void QueueTx(fuchsia_hardware_network_driver::wire::NetworkDeviceImplQueueTxRequest* request,
+               fdf::Arena& arena, QueueTxCompleter::Sync& completer) override;
+  void QueueRxSpace(
+      fuchsia_hardware_network_driver::wire::NetworkDeviceImplQueueRxSpaceRequest* request,
+      fdf::Arena& arena, QueueRxSpaceCompleter::Sync& completer) override;
+  void PrepareVmo(
+      fuchsia_hardware_network_driver::wire::NetworkDeviceImplPrepareVmoRequest* request,
+      fdf::Arena& arena, PrepareVmoCompleter::Sync& completer) override;
+  void ReleaseVmo(
+      fuchsia_hardware_network_driver::wire::NetworkDeviceImplReleaseVmoRequest* request,
+      fdf::Arena& arena, ReleaseVmoCompleter::Sync& completer) override;
 
   // Attempts to get a pending transmit buffer containing data expected to reach the network from
   // the pool of pending buffers.
@@ -117,17 +128,20 @@ class DeviceAdapter : public ddk::NetworkDeviceImplProtocol<DeviceAdapter> {
   void CopyTo(DeviceAdapter* other, bool return_failed_buffers);
 
   // Handles status change notifications from port with `port_id`.
-  void OnPortStatusChanged(uint8_t port_id, const port_status_t& new_status);
+  void OnPortStatusChanged(uint8_t port_id, const PortStatus& new_status);
   // Adds |port| to the device.
   zx_status_t AddPort(PortAdapter& port);
   // Removes port with |port_id|.
   void RemovePort(uint8_t port_id);
   // Delegates |lease| up the receive path.
-  zx_status_t DelegateRxLease(fuchsia_hardware_network::wire::DelegatedRxLease& lease);
+  zx_status_t DelegateRxLease(fuchsia_hardware_network::wire::DelegatedRxLease lease);
+
+  const fdf::UnownedUnsynchronizedDispatcher& netdevice_dispatcher() const { return dispatcher_; }
 
  private:
   static constexpr uint16_t kFifoDepth = fuchsia_net_tun::wire::kFifoDepth;
-  explicit DeviceAdapter(DeviceAdapterParent* parent);
+  explicit DeviceAdapter(DeviceAdapterParent* parent,
+                         const DeviceInterfaceDispatchers& dispatchers);
 
   // Enqueues a single fulfilled rx frame.
   void EnqueueRx(uint8_t port_id, fuchsia_hardware_network::wire::FrameType frame_type,
@@ -159,15 +173,19 @@ class DeviceAdapter : public ddk::NetworkDeviceImplProtocol<DeviceAdapter> {
   VmoStore vmos_;
   std::queue<TxBuffer> tx_buffers_ __TA_GUARDED(tx_lock_);
   bool tx_available_ __TA_GUARDED(tx_lock_) = false;
-  std::queue<rx_space_buffer_t> rx_buffers_ __TA_GUARDED(rx_lock_);
+  std::queue<fuchsia_hardware_network_driver::wire::RxSpaceBuffer> rx_buffers_
+      __TA_GUARDED(rx_lock_);
   bool rx_available_ __TA_GUARDED(rx_lock_) = false;
-  std::vector<rx_buffer_t> return_rx_list_ __TA_GUARDED(rx_lock_);
-  std::array<rx_buffer_part_t, kFifoDepth> return_rx_parts_ __TA_GUARDED(rx_lock_);
+  std::vector<fuchsia_hardware_network_driver::wire::RxBuffer> return_rx_list_
+      __TA_GUARDED(rx_lock_);
+  std::array<fuchsia_hardware_network_driver::wire::RxBufferPart, kFifoDepth> return_rx_parts_
+      __TA_GUARDED(rx_lock_);
   size_t return_rx_parts_count_ __TA_GUARDED(rx_lock_) = 0;
-  std::vector<tx_result_t> return_tx_list_ __TA_GUARDED(tx_lock_);
-  ddk::NetworkDeviceIfcProtocolClient device_iface_;
-  const device_impl_info_t device_info_;
-  std::array<std::atomic_bool, MAX_PORTS> port_online_status_;
+  std::vector<fuchsia_hardware_network_driver::wire::TxResult> return_tx_list_
+      __TA_GUARDED(tx_lock_);
+  fdf::WireSharedClient<fuchsia_hardware_network_driver::NetworkDeviceIfc> device_iface_;
+  std::array<std::atomic_bool, fuchsia_hardware_network::wire::kMaxPorts> port_online_status_;
+  fdf::UnownedUnsynchronizedDispatcher dispatcher_;
 };
 }  // namespace tun
 }  // namespace network

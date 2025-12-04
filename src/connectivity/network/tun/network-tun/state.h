@@ -27,6 +27,19 @@ class InternalState {
   bool has_session;
 };
 
+class PortStatus {
+ public:
+  bool online;
+  uint32_t mtu;
+
+  void AddToBuilder(
+      fidl::WireTableBuilder<::fuchsia_hardware_network::wire::PortStatus>& builder) const {
+    builder.mtu(mtu);
+    builder.flags(online ? fuchsia_hardware_network::wire::StatusFlags::kOnline
+                         : fuchsia_hardware_network::wire::StatusFlags());
+  }
+};
+
 }  // namespace tun
 }  // namespace network
 

@@ -53,8 +53,8 @@ TunDevice::TunDevice(fdf::Dispatcher* dispatcher, fit::callback<void(TunDevice*)
       dispatcher_(dispatcher) {}
 
 zx::result<std::unique_ptr<TunDevice>> TunDevice::Create(
-    const DeviceInterfaceDispatchers& dispatchers, const ShimDispatchers& shim_dispatchers,
-    fit::callback<void(TunDevice*)> teardown, DeviceConfig&& config) {
+    const DeviceInterfaceDispatchers& dispatchers, fit::callback<void(TunDevice*)> teardown,
+    DeviceConfig&& config) {
   fbl::AllocChecker ac;
   std::unique_ptr<TunDevice> tun(new (&ac)
                                      TunDevice(nullptr, std::move(teardown), std::move(config)));
@@ -68,7 +68,7 @@ zx::result<std::unique_ptr<TunDevice>> TunDevice::Create(
     return zx::error(status);
   }
 
-  zx::result device = DeviceAdapter::Create(dispatchers, shim_dispatchers, tun.get());
+  zx::result device = DeviceAdapter::Create(dispatchers, tun.get());
   if (device.is_error()) {
     FX_PLOGST(ERROR, "tun", device.status_value()) << "TunDevice::Init device init failed";
     return device.take_error();
@@ -164,10 +164,11 @@ void TunDevice::RunReadFrame() {
       zx_status_t status = buff.Read(data);
       if (status != ZX_OK) {
         FX_PLOGST(ERROR, "tun", status) << "Failed to read from tx buffer";
-        // The error reported here is relayed back to clients as an errored tx frame. There's a
-        // contract about specific meanings of errors returned in a tx frame through the netdevice
-        // banjo API and it might not match the semantics of the buffer API that generated this
-        // error. To avoid the possible impedance mismatch, return a fixed error.
+        // The error reported here is relayed back to clients as an errored tx
+        // frame. There's a contract about specific meanings of errors returned
+        // in a tx frame through the netdevice API and it might not match the
+        // semantics of the buffer API that generated this error. To avoid the
+        // possible impedance mismatch, return a fixed error.
         return ZX_ERR_INTERNAL;
       }
       if (data.empty()) {
@@ -365,18 +366,28 @@ void TunDevice::OnRxAvail(DeviceAdapter* device) {
   async::PostTask(loop_.dispatcher(), [this]() { RunWriteFrame(); });
 }
 
+void TunDevice::RequestErrorUnbind() {
+  if (binding_.has_value()) {
+    binding_->Unbind();
+  }
+}
+
 zx::result<std::unique_ptr<TunDevice::Port>> TunDevice::Port::Create(
     TunDevice* parent, const DevicePortConfig& config) {
   std::unique_ptr<Port> port(new Port(parent));
   std::unique_ptr<MacAdapter> mac;
   if (config.mac.has_value()) {
-    zx::result status = MacAdapter::Create(port.get(), config.mac.value(), false);
+    zx::result status = MacAdapter::Create(
+        port.get(), fdf::UnownedUnsynchronizedDispatcher(parent->device_->netdevice_dispatcher()),
+        config.mac.value(), false);
     if (status.is_error()) {
       return status.take_error();
     }
     mac = std::move(*status);
   }
-  port->adapter_ = std::make_unique<PortAdapter>(port.get(), config, std::move(mac));
+  port->adapter_ = std::make_unique<PortAdapter>(
+      port.get(), config, std::move(mac),
+      fdf::UnownedUnsynchronizedDispatcher(parent->device_->netdevice_dispatcher()));
   zx_status_t status = parent->device_->AddPort(port->adapter());
   if (status != ZX_OK) {
     FX_PLOGST(ERROR, "tun", status) << "Failed to add port";
@@ -400,7 +411,7 @@ TunDevice::Port::~Port() {
 
 void TunDevice::Port::OnHasSessionsChanged(PortAdapter& port) { PostRunStateChange(); }
 
-void TunDevice::Port::OnPortStatusChanged(PortAdapter& port, const port_status_t& new_status) {
+void TunDevice::Port::OnPortStatusChanged(PortAdapter& port, const PortStatus& new_status) {
   parent_->device_->OnPortStatusChanged(port.id(), new_status);
 }
 

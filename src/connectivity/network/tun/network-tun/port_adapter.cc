@@ -4,79 +4,86 @@
 
 #include "port_adapter.h"
 
+#include <utility>
+
 #include <fbl/auto_lock.h>
 
 namespace network {
 namespace tun {
 
-void PortAdapter::NetworkPortGetInfo(port_base_info_t* out_info) { *out_info = port_info_; }
-void PortAdapter::NetworkPortGetStatus(port_status_t* out_status) {
-  fbl::AutoLock lock(&state_lock_);
-  *out_status = {
-      .flags =
-          online_ ? static_cast<uint32_t>(fuchsia_hardware_network::wire::StatusFlags::kOnline) : 0,
-      .mtu = mtu_,
-  };
+void PortAdapter::GetInfo(fdf::Arena& arena, GetInfoCompleter::Sync& completer) {
+  fuchsia_hardware_network::wire::PortBaseInfo info =
+      fuchsia_hardware_network::wire::PortBaseInfo::Builder(arena)
+          .port_class(config_.port_class)
+          .rx_types(config_.rx_types)
+          .tx_types(config_.tx_types)
+          .Build();
+  completer.buffer(arena).Reply(info);
 }
-void PortAdapter::NetworkPortSetActive(bool active) {
+
+void PortAdapter::GetStatus(fdf::Arena& arena, GetStatusCompleter::Sync& completer) {
   fbl::AutoLock lock(&state_lock_);
+  auto wire = fuchsia_hardware_network::wire::PortStatus::Builder(arena);
+  port_status_.AddToBuilder(wire);
+  completer.buffer(arena).Reply(wire.Build());
+}
+
+void PortAdapter::SetActive(
+    fuchsia_hardware_network_driver::wire::NetworkPortSetActiveRequest* request, fdf::Arena& arena,
+    SetActiveCompleter::Sync& completer_) {
+  fbl::AutoLock lock(&state_lock_);
+  bool active = request->active;
   if (active != has_sessions_) {
     has_sessions_ = active;
     lock.release();
     parent_->OnHasSessionsChanged(*this);
   }
 }
-void PortAdapter::NetworkPortGetMac(mac_addr_protocol_t** out_mac_ifc) {
-  if (mac_ && out_mac_ifc) {
-    *out_mac_ifc = mac_->proto();
-  } else if (out_mac_ifc) {
-    *out_mac_ifc = {};
+
+void PortAdapter::GetMac(fdf::Arena& arena, GetMacCompleter::Sync& completer) {
+  if (!mac_) {
+    completer.buffer(arena).Reply(
+        fdf::ClientEnd<fuchsia_hardware_network_driver::MacAddr>(fdf::Channel()));
+    return;
   }
+  completer.buffer(arena).Reply(mac_->BindDriver());
 }
-void PortAdapter::NetworkPortRemoved() { parent_->OnPortDestroyed(*this); }
+
+void PortAdapter::Removed(fdf::Arena& arena, RemovedCompleter::Sync& completer) {
+  parent_->OnPortDestroyed(*this);
+}
+
+fdf::ClientEnd<fuchsia_hardware_network_driver::NetworkPort> PortAdapter::BindDriver() {
+  auto [client, server] = fdf::Endpoints<fuchsia_hardware_network_driver::NetworkPort>::Create();
+  fdf::BindServer(dispatcher_->get(), std::move(server), this);
+  return std::move(client);
+}
 
 PortAdapter::PortAdapter(PortAdapterParent* parent, const BasePortConfig& config,
-                         std::unique_ptr<MacAdapter> mac)
+                         std::unique_ptr<MacAdapter> mac,
+                         fdf::UnownedUnsynchronizedDispatcher dispatcher)
     : parent_(parent),
-      port_id_(config.port_id),
-      mtu_(config.mtu),
+      dispatcher_(std::move(dispatcher)),
       mac_(std::move(mac)),
-      port_info_(port_base_info_t{
-          .port_class = static_cast<uint16_t>(config.port_class),
-          .rx_types_list = rx_types_.data(),
-          .rx_types_count = config.rx_types.size(),
-          .tx_types_list = tx_types_.data(),
-          .tx_types_count = config.tx_types.size(),
-      }) {
-  // Initialize rx_types_ and tx_types_ lists from config.
-  for (size_t i = 0; i < config.rx_types.size(); i++) {
-    rx_types_[i] = static_cast<uint8_t>(config.rx_types[i]);
-  }
-  for (size_t i = 0; i < config.tx_types.size(); i++) {
-    tx_types_[i].features = config.tx_types[i].features;
-    tx_types_[i].type = static_cast<uint8_t>(config.tx_types[i].type);
-    tx_types_[i].supported_flags = static_cast<uint32_t>(config.tx_types[i].supported_flags);
-  }
-}
+      config_(config),
+      port_status_({
+          .online = false,
+          .mtu = config.mtu,
+      }) {}
 
 bool PortAdapter::SetOnline(bool online) {
   fbl::AutoLock lock(&state_lock_);
-  if (online == online_) {
+  if (online == port_status_.online) {
     return false;
   }
-  online_ = online;
-  port_status_t new_status = {
-      .flags =
-          online_ ? static_cast<uint32_t>(fuchsia_hardware_network::wire::StatusFlags::kOnline) : 0,
-      .mtu = mtu_,
-  };
-  parent_->OnPortStatusChanged(*this, new_status);
+  port_status_.online = online;
+  parent_->OnPortStatusChanged(*this, port_status_);
   return true;
 }
 
 bool PortAdapter::online() {
   fbl::AutoLock lock(&state_lock_);
-  return online_;
+  return port_status_.online;
 }
 
 bool PortAdapter::has_sessions() {

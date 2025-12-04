@@ -53,7 +53,6 @@ class TunCtl : public fidl::WireServer<fuchsia_net_tun::Control> {
   void TryFireShutdownCallback();
   async_dispatcher_t* fidl_dispatcher_ = nullptr;
   std::unique_ptr<network::OwnedDeviceInterfaceDispatchers> dispatchers_;
-  std::unique_ptr<network::OwnedShimDispatchers> shim_dispatchers_;
   fit::callback<void()> shutdown_callback_;
   fbl::DoublyLinkedList<std::unique_ptr<TunDevice>> devices_;
   fbl::DoublyLinkedList<std::unique_ptr<TunPair>> device_pairs_;

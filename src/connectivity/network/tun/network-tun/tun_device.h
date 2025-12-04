@@ -40,8 +40,8 @@ class TunDevice : public fbl::DoublyLinkedListable<std::unique_ptr<TunDevice>>,
   // Creates a new `TunDevice` with `config`.
   // `teardown` is called when all the bound client channels are closed.
   static zx::result<std::unique_ptr<TunDevice>> Create(
-      const DeviceInterfaceDispatchers& dispatchers, const ShimDispatchers& shim_dispatchers,
-      fit::callback<void(TunDevice*)> teardown, DeviceConfig&& config);
+      const DeviceInterfaceDispatchers& dispatchers, fit::callback<void(TunDevice*)> teardown,
+      DeviceConfig&& config);
   ~TunDevice() override;
 
   // fuchsia.net.tun.Device implementation:
@@ -57,6 +57,7 @@ class TunDevice : public fbl::DoublyLinkedListable<std::unique_ptr<TunDevice>>,
   const BaseDeviceConfig& config() const override { return config_; }
   void OnTxAvail(DeviceAdapter* device) override;
   void OnRxAvail(DeviceAdapter* device) override;
+  void RequestErrorUnbind() override;
 
   // Binds `req` to this device.
   // Requests are served over this device's owned loop.
@@ -81,7 +82,7 @@ class TunDevice : public fbl::DoublyLinkedListable<std::unique_ptr<TunDevice>>,
 
     // PortAdapterParent implementation:
     void OnHasSessionsChanged(PortAdapter& port) override;
-    void OnPortStatusChanged(PortAdapter& port, const port_status_t& new_status) override;
+    void OnPortStatusChanged(PortAdapter& port, const PortStatus& new_status) override;
     void OnPortDestroyed(PortAdapter& port) override;
 
     // FIDL port implementation:
@@ -135,7 +136,7 @@ class TunDevice : public fbl::DoublyLinkedListable<std::unique_ptr<TunDevice>>,
   std::optional<fidl::ServerBindingRef<fuchsia_net_tun::Device>> binding_;
   std::unique_ptr<DeviceAdapter> device_;
 
-  std::array<std::unique_ptr<Port>, MAX_PORTS> ports_;
+  std::array<std::unique_ptr<Port>, fuchsia_hardware_network::wire::kMaxPorts> ports_;
 
   // Helper struct to store pending write requests.
   struct PendingWriteRequest {

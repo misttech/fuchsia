@@ -25,14 +25,6 @@ zx::result<std::unique_ptr<TunCtl>> TunCtl::Create(async_dispatcher_t* fidl_disp
   }
   tun_ctl->dispatchers_ = std::move(dispatchers.value());
 
-  zx::result shim_dispatchers = network::OwnedShimDispatchers::Create();
-  if (shim_dispatchers.is_error()) {
-    FX_PLOGST(ERROR, "tun", shim_dispatchers.status_value())
-        << "failed to create owned shim dispatchers";
-    return shim_dispatchers.take_error();
-  }
-  tun_ctl->shim_dispatchers_ = std::move(shim_dispatchers.value());
-
   return zx::ok(std::move(tun_ctl));
 }
 
@@ -40,14 +32,11 @@ TunCtl::~TunCtl() {
   if (dispatchers_) {
     dispatchers_->ShutdownSync();
   }
-  if (shim_dispatchers_) {
-    shim_dispatchers_->ShutdownSync();
-  }
 }
 
 void TunCtl::CreateDevice(CreateDeviceRequestView request, CreateDeviceCompleter::Sync& completer) {
   zx::result tun_device = TunDevice::Create(
-      dispatchers_->Unowned(), shim_dispatchers_->Unowned(),
+      dispatchers_->Unowned(),
       [this](TunDevice* dev) {
         // If this is posted on fdf_dispatcher then there's a lockup because we're
         // then creating a double lock in DevicePort.
@@ -71,7 +60,7 @@ void TunCtl::CreateDevice(CreateDeviceRequestView request, CreateDeviceCompleter
 
 void TunCtl::CreatePair(CreatePairRequestView request, CreatePairCompleter::Sync& completer) {
   zx::result tun_pair = TunPair::Create(
-      dispatchers_->Unowned(), shim_dispatchers_->Unowned(), fidl_dispatcher_,
+      dispatchers_->Unowned(), fidl_dispatcher_,
       [this](TunPair* pair) {
         async::PostTask(fidl_dispatcher_, [this, pair]() {
           device_pairs_.erase(*pair);

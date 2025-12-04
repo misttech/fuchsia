@@ -6,87 +6,65 @@
 
 #include <lib/sync/completion.h>
 
+#include <algorithm>
+
+#include <fbl/alloc_checker.h>
 #include <fbl/auto_lock.h>
 
 namespace network {
 namespace tun {
 
-zx::result<std::unique_ptr<MacAdapter>> MacAdapter::Create(MacAdapterParent* parent,
-                                                           fuchsia_net::wire::MacAddress mac,
-                                                           bool promisc_only) {
+zx::result<std::unique_ptr<MacAdapter>> MacAdapter::Create(
+    MacAdapterParent* parent, fdf::UnownedUnsynchronizedDispatcher dispatcher,
+    fuchsia_net::wire::MacAddress mac, bool promisc_only) {
   fbl::AllocChecker ac;
-  std::unique_ptr<MacAdapter> adapter(new (&ac) MacAdapter(parent, mac, promisc_only));
+  std::unique_ptr<MacAdapter> adapter(
+      new (&ac) MacAdapter(parent, std::move(dispatcher), mac, promisc_only));
   if (!ac.check()) {
     return zx::error(ZX_ERR_NO_MEMORY);
   }
 
-  mac_addr_protocol_t* proto = adapter->proto();
-  zx::result device = MacAddrDeviceInterface::Create(ddk::MacAddrProtocolClient(proto));
-  if (device.is_error()) {
-    return device.take_error();
-  }
-  adapter->device_ = std::move(device.value());
   return zx::ok(std::move(adapter));
 }
 
-zx_status_t MacAdapter::Bind(async_dispatcher_t* dispatcher,
-                             fidl::ServerEnd<netdev::MacAddressing> req) {
-  return device_->Bind(dispatcher, std::move(req));
+void MacAdapter::GetAddress(fdf::Arena& arena, GetAddressCompleter::Sync& completer) {
+  completer.buffer(arena).Reply(mac_);
 }
 
-void MacAdapter::Teardown(fit::callback<void()> callback) {
-  device_->Teardown(std::move(callback));
-}
-
-void MacAdapter::TeardownSync() {
-  sync_completion_t completion;
-  Teardown([&completion]() { sync_completion_signal(&completion); });
-  sync_completion_wait_deadline(&completion, ZX_TIME_INFINITE);
-}
-
-void MacAdapter::MacAddrGetAddress(mac_address_t* out_mac) {
-  std::copy(mac_.octets.begin(), mac_.octets.end(), out_mac->octets);
-}
-
-void MacAdapter::MacAddrGetFeatures(features_t* out_features) {
+void MacAdapter::GetFeatures(fdf::Arena& arena, GetFeaturesCompleter::Sync& completer) {
+  auto builder = fuchsia_hardware_network_driver::wire::Features::Builder(arena);
   if (promisc_only_) {
-    out_features->multicast_filter_count = 0;
-    out_features->supported_modes = SUPPORTED_MAC_FILTER_MODE_MULTICAST_PROMISCUOUS;
+    builder.multicast_filter_count(0);
+    builder.supported_modes(
+        fuchsia_hardware_network_driver::wire::SupportedMacFilterMode::kPromiscuous);
   } else {
-    out_features->multicast_filter_count = fuchsia_net_tun::wire::kMaxMulticastFilters;
-    out_features->supported_modes = SUPPORTED_MAC_FILTER_MODE_PROMISCUOUS |
-                                    SUPPORTED_MAC_FILTER_MODE_MULTICAST_FILTER |
-                                    SUPPORTED_MAC_FILTER_MODE_MULTICAST_PROMISCUOUS;
+    builder.multicast_filter_count(fuchsia_net_tun::wire::kMaxMulticastFilters);
+    builder.supported_modes(
+        fuchsia_hardware_network_driver::wire::SupportedMacFilterMode::kMulticastPromiscuous |
+        fuchsia_hardware_network_driver::wire::SupportedMacFilterMode::kMulticastFilter |
+        fuchsia_hardware_network_driver::wire::SupportedMacFilterMode::kPromiscuous);
   }
+  completer.buffer(arena).Reply(builder.Build());
 }
 
-void MacAdapter::MacAddrSetMode(mac_filter_mode_t mode, const mac_address_t* multicast_macs_list,
-                                size_t multicast_macs_count) {
-  fbl::AutoLock lock(&state_lock_);
-  fuchsia_hardware_network::wire::MacFilterMode filter_mode;
-  switch (mode) {
-    case MAC_FILTER_MODE_PROMISCUOUS:
-      filter_mode = fuchsia_hardware_network::wire::MacFilterMode::kPromiscuous;
-      break;
-    case MAC_FILTER_MODE_MULTICAST_PROMISCUOUS:
-      filter_mode = fuchsia_hardware_network::wire::MacFilterMode::kMulticastPromiscuous;
-      break;
-    case MAC_FILTER_MODE_MULTICAST_FILTER:
-      filter_mode = fuchsia_hardware_network::wire::MacFilterMode::kMulticastFilter;
-      break;
-    default:
-      ZX_ASSERT_MSG(false, "Unexpected filter mode %d", mode);
+void MacAdapter::SetMode(fuchsia_hardware_network_driver::wire::MacAddrSetModeRequest* request,
+                         fdf::Arena& arena, SetModeCompleter::Sync& completer) {
+  {
+    fbl::AutoLock lock(&state_lock_);
+    fuchsia_hardware_network::wire::MacFilterMode filter_mode = request->mode;
+    mac_state_.mode = filter_mode;
+    mac_state_.multicast_filters.clear();
+    mac_state_.multicast_filters.reserve(request->multicast_macs.size());
+    std::ranges::copy(request->multicast_macs, std::back_inserter(mac_state_.multicast_filters));
+    parent_->OnMacStateChanged(this);
   }
+  completer.buffer(arena).Reply();
+}
 
-  mac_state_.mode = filter_mode;
-  mac_state_.multicast_filters.clear();
-  mac_state_.multicast_filters.reserve(multicast_macs_count);
-  while (multicast_macs_count--) {
-    auto& n = mac_state_.multicast_filters.emplace_back();
-    std::copy_n(multicast_macs_list->octets, n.octets.size(), n.octets.begin());
-    multicast_macs_list++;
-  }
-  parent_->OnMacStateChanged(this);
+fdf::ClientEnd<fuchsia_hardware_network_driver::MacAddr> MacAdapter::BindDriver() {
+  auto [client, server] = fdf::Endpoints<fuchsia_hardware_network_driver::MacAddr>::Create();
+  fdf::BindServer(dispatcher_->get(), std::move(server), this);
+  return std::move(client);
 }
 
 MacState MacAdapter::GetMacState() {

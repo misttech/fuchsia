@@ -18,7 +18,6 @@ TunPair::TunPair(async_dispatcher_t* dispatcher, fit::callback<void(TunPair*)> t
     : teardown_callback_(std::move(teardown)), config_(std::move(config)) {}
 
 zx::result<std::unique_ptr<TunPair>> TunPair::Create(const DeviceInterfaceDispatchers& dispatchers,
-                                                     const ShimDispatchers& shim_dispatchers,
                                                      async_dispatcher_t* fidl_dispatcher,
                                                      fit::callback<void(TunPair*)> teardown,
                                                      DevicePairConfig&& config) {
@@ -29,14 +28,14 @@ zx::result<std::unique_ptr<TunPair>> TunPair::Create(const DeviceInterfaceDispat
     return zx::error(ZX_ERR_NO_MEMORY);
   }
 
-  zx::result left = DeviceAdapter::Create(dispatchers, shim_dispatchers, tun.get());
+  zx::result left = DeviceAdapter::Create(dispatchers, tun.get());
   if (left.is_error()) {
     FX_PLOGST(ERROR, "tun", left.status_value()) << "TunDevice::Init device init left failed";
     return left.take_error();
   }
   tun->left_ = std::move(left.value());
 
-  zx::result right = DeviceAdapter::Create(dispatchers, shim_dispatchers, tun.get());
+  zx::result right = DeviceAdapter::Create(dispatchers, tun.get());
   if (right.is_error()) {
     FX_PLOGST(ERROR, "tun", right.status_value()) << "TunDevice::Init device init right failed";
     return right.take_error();
@@ -213,19 +212,31 @@ void TunPair::OnRxAvail(DeviceAdapter* device) {
   source->CopyTo(device, fallible);
 }
 
+void TunPair::RequestErrorUnbind() {
+  if (binding_.has_value()) {
+    binding_->Unbind();
+  }
+}
+
 zx::result<std::unique_ptr<TunPair::Port>> TunPair::Port::Create(
     TunPair* parent, bool left, const BasePortConfig& config,
     std::optional<fuchsia_net::wire::MacAddress> mac) {
   std::unique_ptr<Port> port(new Port(parent, left));
   std::unique_ptr<MacAdapter> mac_adapter;
+
+  const fdf::UnownedUnsynchronizedDispatcher& dispatcher =
+      left ? parent->left_->netdevice_dispatcher() : parent->right_->netdevice_dispatcher();
+
   if (mac.has_value()) {
-    zx::result status = MacAdapter::Create(port.get(), std::move(*mac), true);
+    zx::result status = MacAdapter::Create(
+        port.get(), fdf::UnownedUnsynchronizedDispatcher(dispatcher), std::move(*mac), true);
     if (status.is_error()) {
       return status.take_error();
     }
     mac_adapter = std::move(*status);
   }
-  port->adapter_ = std::make_unique<PortAdapter>(port.get(), config, std::move(mac_adapter));
+  port->adapter_ = std::make_unique<PortAdapter>(port.get(), config, std::move(mac_adapter),
+                                                 fdf::UnownedUnsynchronizedDispatcher(dispatcher));
   return zx::ok(std::move(port));
 }
 
@@ -250,7 +261,7 @@ void TunPair::Port::OnMacStateChanged(MacAdapter* adapter) {
   // Do nothing, TunPair doesn't care about mac state.
 }
 
-void TunPair::Port::OnPortStatusChanged(PortAdapter& port, const port_status_t& new_status) {
+void TunPair::Port::OnPortStatusChanged(PortAdapter& port, const PortStatus& new_status) {
   TunPair& parent = *parent_;
   DeviceAdapter& device = [l = left_, &parent]() -> DeviceAdapter& {
     if (l) {

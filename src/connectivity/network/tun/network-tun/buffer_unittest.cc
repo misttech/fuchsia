@@ -32,9 +32,11 @@ class BufferTest : public ::testing::Test {
     }
   }
 
-  void MintVmo(const buffer_region_t& region) { MintVmo(region.offset, region.length); }
+  void MintVmo(const fuchsia_hardware_network_driver::wire::BufferRegion& region) {
+    MintVmo(region.offset, region.length);
+  }
 
-  std::vector<uint8_t> ReadVmo(const buffer_region_t& region) {
+  std::vector<uint8_t> ReadVmo(const fuchsia_hardware_network_driver::wire::BufferRegion& region) {
     std::vector<uint8_t> ret;
     ret.reserve(region.length);
     EXPECT_EQ(region.vmo, kVmoId);
@@ -47,22 +49,21 @@ class BufferTest : public ::testing::Test {
 };
 
 TEST_F(BufferTest, TestBufferBuildTx) {
-  buffer_region_t regions[] = {
+  fuchsia_hardware_network_driver::wire::BufferRegion regions[] = {
       {.vmo = kVmoId, .offset = 10, .length = 5},
       {.vmo = kVmoId, .offset = 100, .length = 3},
   };
-  for (const buffer_region_t& region : regions) {
+  for (const fuchsia_hardware_network_driver::wire::BufferRegion& region : regions) {
     MintVmo(region);
   }
-  tx_buffer_t tx = {
+  fuchsia_hardware_network_driver::wire::TxBuffer tx = {
       .id = 1,
-      .data_list = regions,
-      .data_count = std::size(regions),
+      .data = fidl::VectorView<fuchsia_hardware_network_driver::wire::BufferRegion>::FromExternal(
+          regions),
       .meta =
           {
               .flags = static_cast<uint32_t>(fuchsia_hardware_network::wire::TxFlags::kTxAccel0),
-              .frame_type =
-                  static_cast<uint8_t>(fuchsia_hardware_network::wire::FrameType::kEthernet),
+              .frame_type = fuchsia_hardware_network::wire::FrameType::kEthernet,
           },
   };
   TxBuffer b = vmos_.MakeTxBuffer(tx, true);
@@ -78,7 +79,7 @@ TEST_F(BufferTest, TestBufferBuildTx) {
 }
 
 TEST_F(BufferTest, TestBufferBuildRx) {
-  const rx_space_buffer_t space_1 = {
+  const fuchsia_hardware_network_driver::wire::RxSpaceBuffer space_1 = {
       .id = 1,
       .region =
           {
@@ -87,7 +88,7 @@ TEST_F(BufferTest, TestBufferBuildRx) {
               .length = 5,
           },
   };
-  const rx_space_buffer_t space_2 = {
+  const fuchsia_hardware_network_driver::wire::RxSpaceBuffer space_2 = {
       .id = 2,
       .region =
           {
@@ -105,30 +106,30 @@ TEST_F(BufferTest, TestBufferBuildRx) {
 }
 
 TEST_F(BufferTest, CopyBuffer) {
-  buffer_region_t tx_parts[3] = {
+  fuchsia_hardware_network_driver::wire::BufferRegion tx_parts[3] = {
       {.vmo = kVmoId, .offset = 0, .length = 5},
       {.vmo = kVmoId, .offset = 10, .length = 3},
       {.vmo = kVmoId, .offset = 20, .length = 2},
   };
-  for (const buffer_region_t& region : tx_parts) {
+  for (const fuchsia_hardware_network_driver::wire::BufferRegion& region : tx_parts) {
     MintVmo(region);
   }
-  tx_buffer_t tx = {
+  fuchsia_hardware_network_driver::wire::TxBuffer tx = {
       .id = 1,
-      .data_list = tx_parts,
-      .data_count = std::size(tx_parts),
+      .data = fidl::VectorView<fuchsia_hardware_network_driver::wire::BufferRegion>::FromExternal(
+          tx_parts),
   };
 
   TxBuffer b_tx = vmos_.MakeTxBuffer(tx, false);
 
-  rx_space_buffer_t rx_space[3] = {
+  fuchsia_hardware_network_driver::wire::RxSpaceBuffer rx_space[3] = {
       {.id = 2, .region = {.vmo = kVmoId, .offset = 100, .length = 3}},
       {.id = 3, .region = {.vmo = kVmoId, .offset = 110, .length = 5}},
       {.id = 4, .region = {.vmo = kVmoId, .offset = 120, .length = 100}},
   };
 
   RxBuffer b_rx = vmos_.MakeEmptyRxBuffer();
-  for (const rx_space_buffer_t& space : rx_space) {
+  for (const fuchsia_hardware_network_driver::wire::RxSpaceBuffer& space : rx_space) {
     b_rx.PushRxSpace(space);
   }
 
@@ -138,7 +139,7 @@ TEST_F(BufferTest, CopyBuffer) {
 
   EXPECT_EQ(ReadVmo(rx_space[0].region), std::vector<uint8_t>({0x00, 0x01, 0x02}));
   EXPECT_EQ(ReadVmo(rx_space[1].region), std::vector<uint8_t>({0x03, 0x04, 0x00, 0x01, 0x02}));
-  EXPECT_EQ(ReadVmo(buffer_region_t{
+  EXPECT_EQ(ReadVmo(fuchsia_hardware_network_driver::wire::BufferRegion{
                 .vmo = kVmoId,
                 .offset = rx_space[2].region.offset,
                 .length = 2,
@@ -149,7 +150,7 @@ TEST_F(BufferTest, CopyBuffer) {
 TEST_F(BufferTest, WriteFailure) {
   {
     // Write more than buffer's length is invalid.
-    RxBuffer b = vmos_.MakeRxSpaceBuffer(rx_space_buffer_t{
+    RxBuffer b = vmos_.MakeRxSpaceBuffer(fuchsia_hardware_network_driver::wire::RxSpaceBuffer{
         .id = 1,
         .region =
             {
@@ -162,7 +163,7 @@ TEST_F(BufferTest, WriteFailure) {
   }
   {
     // A buffer that doesn't fit its VMO is invalid.
-    RxBuffer b = vmos_.MakeRxSpaceBuffer(rx_space_buffer_t{
+    RxBuffer b = vmos_.MakeRxSpaceBuffer(fuchsia_hardware_network_driver::wire::RxSpaceBuffer{
         .id = 1,
         .region =
             {
@@ -175,7 +176,7 @@ TEST_F(BufferTest, WriteFailure) {
   }
   {
     // A buffer with an invalid vmo_id is invalid.
-    RxBuffer b = vmos_.MakeRxSpaceBuffer(rx_space_buffer_t{
+    RxBuffer b = vmos_.MakeRxSpaceBuffer(fuchsia_hardware_network_driver::wire::RxSpaceBuffer{
         .id = 1,
         .region =
             {
@@ -192,24 +193,27 @@ TEST_F(BufferTest, ReadFailure) {
   std::vector<uint8_t> data;
   {
     // A buffer that doesn't fit its VMO is invalid.
-    buffer_region_t part = {.vmo = kVmoId, .offset = kVmoSize, .length = 10};
+    fuchsia_hardware_network_driver::wire::BufferRegion part = {
+        .vmo = kVmoId, .offset = kVmoSize, .length = 10};
     TxBuffer b = vmos_.MakeTxBuffer(
-        tx_buffer_t{
+        fuchsia_hardware_network_driver::wire::TxBuffer{
             .id = 1,
-            .data_list = &part,
-            .data_count = 1,
+            .data =
+                fidl::VectorView<fuchsia_hardware_network_driver::wire::BufferRegion>::FromExternal(
+                    &part, 1),
         },
         false);
     ASSERT_EQ(b.Read(data), ZX_ERR_OUT_OF_RANGE);
   }
   {
     // A buffer with an invalid vmo_id is invalid.
-    buffer_region_t part = {.vmo = kVmoId + 1, .length = 10};
+    fuchsia_hardware_network_driver::wire::BufferRegion part = {.vmo = kVmoId + 1, .length = 10};
     TxBuffer b = vmos_.MakeTxBuffer(
-        tx_buffer_t{
+        fuchsia_hardware_network_driver::wire::TxBuffer{
             .id = 1,
-            .data_list = &part,
-            .data_count = 1,
+            .data =
+                fidl::VectorView<fuchsia_hardware_network_driver::wire::BufferRegion>::FromExternal(
+                    &part, 1),
         },
         false);
     ASSERT_EQ(b.Read(data), ZX_ERR_NOT_FOUND);

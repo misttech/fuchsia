@@ -5,8 +5,8 @@
 #ifndef SRC_CONNECTIVITY_NETWORK_TUN_NETWORK_TUN_BUFFER_H_
 #define SRC_CONNECTIVITY_NETWORK_TUN_NETWORK_TUN_BUFFER_H_
 
+#include <fidl/fuchsia.hardware.network.driver/cpp/driver/wire.h>
 #include <fidl/fuchsia.net.tun/cpp/wire.h>
-#include <fuchsia/hardware/network/driver/cpp/banjo.h>
 #include <lib/stdcompat/span.h>
 
 #include <array>
@@ -21,8 +21,8 @@ class RxBuffer;
 
 // A data structure that stores keyed VMOs and allocates buffers.
 //
-// `VmoStore` stores up to `MAX_VMOS` VMOs keyed by an identifier bound to the range [0,
-// `MAX_VMOS`). `VmoStore` can be used to allocate buffers backed by the VMOs it contains.
+// `VmoStore` stores up to `kMaxVmos` VMOs keyed by an identifier bound to the range [0,
+// `kMaxVmos`). `VmoStore` can be used to allocate buffers backed by the VMOs it contains.
 //
 // This class is used to fulfill the VMO registration mechanism used by
 // `fuchsia.hardware.network.driver`.
@@ -89,8 +89,8 @@ class VmoStore {
   static zx_status_t Copy(VmoStore& src_store, uint8_t src_id, size_t src_offset,
                           VmoStore& dst_store, uint8_t dst_id, size_t dst_offset, size_t len);
 
-  TxBuffer MakeTxBuffer(const tx_buffer_t& tx, bool get_meta);
-  RxBuffer MakeRxSpaceBuffer(const rx_space_buffer_t& space);
+  TxBuffer MakeTxBuffer(const fuchsia_hardware_network_driver::wire::TxBuffer& tx, bool get_meta);
+  RxBuffer MakeRxSpaceBuffer(const fuchsia_hardware_network_driver::wire::RxSpaceBuffer& space);
   RxBuffer MakeEmptyRxBuffer();
 
  private:
@@ -129,7 +129,7 @@ class Buffer {
  protected:
   struct BufferPart {
     uint32_t buffer_id;
-    buffer_region_t region;
+    fuchsia_hardware_network_driver::wire::BufferRegion region;
   };
 
   void PushPart(const BufferPart& part);
@@ -141,7 +141,7 @@ class Buffer {
  private:
   // Pointer to parent VMO store, not owned.
   VmoStore* const vmo_store_;
-  std::array<BufferPart, MAX_BUFFER_PARTS> parts_;
+  std::array<BufferPart, fuchsia_hardware_network_driver::wire::kMaxBufferParts> parts_;
   size_t parts_count_ = 0;
   uint64_t total_length_ = 0;
 };
@@ -158,7 +158,8 @@ class TxBuffer : public Buffer {
 
  protected:
   friend VmoStore;
-  TxBuffer(const tx_buffer_t& tx, bool get_meta, VmoStore* vmo_store);
+  TxBuffer(const fuchsia_hardware_network_driver::wire::TxBuffer& tx, bool get_meta,
+           VmoStore* vmo_store);
 
  private:
   const uint8_t port_id_;
@@ -169,13 +170,13 @@ class TxBuffer : public Buffer {
 class RxBuffer : public Buffer {
  public:
   // Adds more rx buffer space to this buffer.
-  void PushRxSpace(const rx_space_buffer_t& space);
+  void PushRxSpace(const fuchsia_hardware_network_driver::wire::RxSpaceBuffer& space);
 
   // Calls the provided closure function once for each buffer space in this RxBuffer.
   template <typename F>
   void WithSpace(F fn) {
     for (BufferPart& part : parts()) {
-      fn(rx_space_buffer_t{
+      fn(fuchsia_hardware_network_driver::wire::RxSpaceBuffer{
           .id = part.buffer_id,
           .region = part.region,
       });
@@ -191,7 +192,7 @@ class RxBuffer : public Buffer {
       // Length is expected to be less than max uint32 because of max MTU, but guard it here with a
       // debug assertion so the cast is still clearly safe.
       ZX_DEBUG_ASSERT(length <= std::numeric_limits<uint32_t>::max());
-      fn(rx_buffer_part_t{
+      fn(fuchsia_hardware_network_driver::wire::RxBufferPart{
           .id = part.buffer_id,
           .length = static_cast<uint32_t>(length),
       });

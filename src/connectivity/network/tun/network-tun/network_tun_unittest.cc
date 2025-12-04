@@ -813,7 +813,7 @@ TEST_F(TunTest, Status) {
 
   zx::result maybe_port_id = GetPortId(port_client_end);
   ASSERT_OK(maybe_port_id.status_value());
-  const netdev::wire::PortId port_id = maybe_port_id.value();
+  const fuchsia_hardware_network::wire::PortId port_id = maybe_port_id.value();
 
   fidl::WireSyncClient tun{std::move(device_client_end)};
   fidl::WireSyncClient tun_port{std::move(port_client_end)};
@@ -1591,8 +1591,12 @@ TEST_F(TunTest, ReportsInternalTxErrors) {
 
   // Release all VMOs to make copying the buffer fail later.
   DeviceAdapter& adapter = first_adapter();
-  for (uint8_t i = 0; i < MAX_VMOS; i++) {
-    adapter.NetworkDeviceImplReleaseVmo(i);
+  for (uint8_t i = 0; i < fuchsia_hardware_network_driver::wire::kMaxVmos; i++) {
+    fdf::WireSyncClient<fuchsia_hardware_network_driver::NetworkDeviceImpl> cli(
+        adapter.BindDriver());
+    fdf::Arena arena(0u);
+    fdf::WireUnownedResult result = cli.buffer(arena)->ReleaseVmo(i);
+    ASSERT_OK(result.status());
   }
 
   ASSERT_OK(client.SendTx({0x00}, true));

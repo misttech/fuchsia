@@ -20,8 +20,8 @@ zx::result<cpp20::span<uint8_t>> VmoStore::GetMappedVmo(uint8_t id) {
 
 zx_status_t VmoStore::RegisterVmo(uint8_t id, zx::vmo vmo) {
   // Lazily reserve storage space.
-  // Reserve will be a no-op if we already have `MAX_VMOS` capacity.
-  zx_status_t status = store_.Reserve(MAX_VMOS);
+  // Reserve will be a no-op if we already have `kMaxVmos` capacity.
+  zx_status_t status = store_.Reserve(fuchsia_hardware_network_driver::wire::kMaxVmos);
   if (status != ZX_OK) {
     return status;
   }
@@ -50,11 +50,13 @@ zx_status_t VmoStore::Copy(VmoStore& src_store, uint8_t src_id, size_t src_offse
   return ZX_OK;
 }
 
-TxBuffer VmoStore::MakeTxBuffer(const tx_buffer_t& tx, bool get_meta) {
+TxBuffer VmoStore::MakeTxBuffer(const fuchsia_hardware_network_driver::wire::TxBuffer& tx,
+                                bool get_meta) {
   return TxBuffer(tx, get_meta, this);
 }
 
-RxBuffer VmoStore::MakeRxSpaceBuffer(const rx_space_buffer_t& space) {
+RxBuffer VmoStore::MakeRxSpaceBuffer(
+    const fuchsia_hardware_network_driver::wire::RxSpaceBuffer& space) {
   RxBuffer b(this);
   b.PushRxSpace(space);
   return b;
@@ -149,13 +151,12 @@ zx::result<size_t> Buffer::CopyFrom(Buffer& other) {
   return zx::ok(copied);
 }
 
-TxBuffer::TxBuffer(const tx_buffer_t& tx, bool get_meta, VmoStore* vmo_store)
-    : Buffer(vmo_store),
-      port_id_(tx.meta.port),
-      frame_type_(static_cast<fuchsia_hardware_network::wire::FrameType>(tx.meta.frame_type)) {
-  // Enforce the banjo contract.
-  ZX_ASSERT(tx.data_count <= MAX_BUFFER_PARTS);
-  for (const buffer_region_t& region : cpp20::span(tx.data_list, tx.data_count)) {
+TxBuffer::TxBuffer(const fuchsia_hardware_network_driver::wire::TxBuffer& tx, bool get_meta,
+                   VmoStore* vmo_store)
+    : Buffer(vmo_store), port_id_(tx.meta.port), frame_type_(tx.meta.frame_type) {
+  // Enforce the API contract.
+  ZX_ASSERT(tx.data.size() <= fuchsia_hardware_network_driver::wire::kMaxBufferParts);
+  for (const fuchsia_hardware_network_driver::wire::BufferRegion& region : tx.data) {
     PushPart(BufferPart{
         .buffer_id = tx.id,
         .region = region,
@@ -169,7 +170,7 @@ TxBuffer::TxBuffer(const tx_buffer_t& tx, bool get_meta, VmoStore* vmo_store)
   }
 }
 
-void RxBuffer::PushRxSpace(const rx_space_buffer_t& space) {
+void RxBuffer::PushRxSpace(const fuchsia_hardware_network_driver::wire::RxSpaceBuffer& space) {
   PushPart(BufferPart{
       .buffer_id = space.id,
       .region = space.region,

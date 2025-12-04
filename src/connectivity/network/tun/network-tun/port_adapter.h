@@ -4,12 +4,13 @@
 #ifndef SRC_CONNECTIVITY_NETWORK_TUN_NETWORK_TUN_PORT_ADAPTER_H_
 #define SRC_CONNECTIVITY_NETWORK_TUN_NETWORK_TUN_PORT_ADAPTER_H_
 
-#include <fuchsia/hardware/network/driver/cpp/banjo.h>
+#include <fidl/fuchsia.hardware.network.driver/cpp/driver/wire.h>
 
 #include <fbl/mutex.h>
 
 #include "config.h"
 #include "mac_adapter.h"
+#include "state.h"
 
 namespace network {
 namespace tun {
@@ -29,7 +30,7 @@ class PortAdapterParent : public MacAdapterParent {
   // Called when the port's status changes.
   //
   // `new_status` must be reported to the device containing the port.
-  virtual void OnPortStatusChanged(PortAdapter& port, const port_status_t& new_status) = 0;
+  virtual void OnPortStatusChanged(PortAdapter& port, const PortStatus& new_status) = 0;
   // Called when the port is destroyed and completely removed from the device.
   virtual void OnPortDestroyed(PortAdapter& port) = 0;
 };
@@ -38,18 +39,22 @@ class PortAdapterParent : public MacAdapterParent {
 //
 // `PortAdapter` is used to provide the business logic of virtual `NetworkPort` implementations
 // both for `tun.Device` and `tun.DevicePair` device classes.
-class PortAdapter : public ddk::NetworkPortProtocol<PortAdapter> {
+class PortAdapter : public fdf::WireServer<fuchsia_hardware_network_driver::NetworkPort> {
  public:
   PortAdapter(PortAdapterParent* parent, const BasePortConfig& config,
-              std::unique_ptr<MacAdapter> mac);
+              std::unique_ptr<MacAdapter> mac, fdf::UnownedUnsynchronizedDispatcher dispatcher);
   PortAdapter(PortAdapter&&) = delete;
 
   // NetworkPort protocol:
-  void NetworkPortGetInfo(port_base_info_t* out_info);
-  void NetworkPortGetStatus(port_status_t* out_status);
-  void NetworkPortSetActive(bool active);
-  void NetworkPortGetMac(mac_addr_protocol_t** out_mac_ifc);
-  void NetworkPortRemoved();
+  void GetInfo(fdf::Arena& arena, GetInfoCompleter::Sync& completer) override;
+  void GetStatus(fdf::Arena& arena, GetStatusCompleter::Sync& completer) override;
+  void SetActive(fuchsia_hardware_network_driver::wire::NetworkPortSetActiveRequest* request,
+                 fdf::Arena& arena, SetActiveCompleter::Sync& completer) override;
+  void GetMac(fdf::Arena& arena, GetMacCompleter::Sync& completer) override;
+  void Removed(fdf::Arena& arena, RemovedCompleter::Sync& completer) override;
+
+  // Provides a channel to communicate with adapter.
+  fdf::ClientEnd<fuchsia_hardware_network_driver::NetworkPort> BindDriver();
 
   // Sets this port's emulated `online` status.
   //
@@ -57,24 +62,26 @@ class PortAdapter : public ddk::NetworkPortProtocol<PortAdapter> {
   bool SetOnline(bool online);
   bool online();
   bool has_sessions();
-  uint32_t mtu() const { return mtu_; }
+  uint32_t mtu() const { return config_.mtu; }
   const std::unique_ptr<MacAdapter>& mac() const { return mac_; }
-  uint8_t id() const { return port_id_; }
-  network_port_protocol_t proto() { return {.ops = &network_port_protocol_ops_, .ctx = this}; }
+  uint8_t id() const { return config_.port_id; }
 
  private:
-  std::array<uint8_t, fuchsia_hardware_network::wire::kMaxFrameTypes> rx_types_;
-  std::array<frame_type_support_t, fuchsia_hardware_network::wire::kMaxFrameTypes> tx_types_;
+  std::array<fuchsia_hardware_network::wire::FrameType,
+             fuchsia_hardware_network::wire::kMaxFrameTypes>
+      rx_types_;
+  std::array<fuchsia_hardware_network::wire::FrameTypeSupport,
+             fuchsia_hardware_network::wire::kMaxFrameTypes>
+      tx_types_;
   // Pointer to parent, not owned.
   PortAdapterParent* const parent_;
-  const uint8_t port_id_;
-  const uint32_t mtu_;
+  fdf::UnownedUnsynchronizedDispatcher dispatcher_;
   const std::unique_ptr<MacAdapter> mac_;
-  const port_base_info_t port_info_;
+  const BasePortConfig config_;
 
   fbl::Mutex state_lock_;
   bool has_sessions_ __TA_GUARDED(state_lock_) = false;
-  bool online_ __TA_GUARDED(state_lock_) = false;
+  PortStatus port_status_ __TA_GUARDED(state_lock_);
 };
 
 }  // namespace tun

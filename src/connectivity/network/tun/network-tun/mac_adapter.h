@@ -5,13 +5,12 @@
 #ifndef SRC_CONNECTIVITY_NETWORK_TUN_NETWORK_TUN_MAC_ADAPTER_H_
 #define SRC_CONNECTIVITY_NETWORK_TUN_NETWORK_TUN_MAC_ADAPTER_H_
 
+#include <fidl/fuchsia.hardware.network.driver/cpp/driver/wire.h>
 #include <fidl/fuchsia.net.tun/cpp/wire.h>
 #include <fidl/fuchsia.net/cpp/wire.h>
-#include <fuchsia/hardware/network/driver/cpp/banjo.h>
 
 #include <fbl/mutex.h>
 
-#include "src/connectivity/network/drivers/network-device/mac/public/network_mac.h"
 #include "state.h"
 
 namespace network {
@@ -36,51 +35,39 @@ class MacAdapterParent {
 //
 // `MacAdapter` is used to provide the business logic of virtual MacAddr implementations both for
 // `tun.Device` and `tun.DevicePair` device classes.
-class MacAdapter : public ddk::MacAddrProtocol<MacAdapter>, public MacAddrDeviceInterface {
+class MacAdapter : public fdf::WireServer<fuchsia_hardware_network_driver::MacAddr> {
  public:
   // Creates a new `MacAdapter` with `parent`.
   // `mac` is the device's own MAC address, reported to the MacAddrDeviceInterface.
   // if `promisc_only` is true, the only filtering mode reported to the interface will be
   // `MODE_PROMISCUOUS`.
   // On success, the adapter is stored in `out`.
-  static zx::result<std::unique_ptr<MacAdapter>> Create(MacAdapterParent* parent,
-                                                        fuchsia_net::wire::MacAddress mac,
-                                                        bool promisc_only);
-  // Binds the request channel to the MacAddrDeviceInterface. Requests will be served over the
-  // provided `dispatcher`.
-  zx_status_t Bind(async_dispatcher_t* dispatcher,
-                   fidl::ServerEnd<netdev::MacAddressing> req) override;
-  // Tears down this adapter and calls `callback` when teardown is finished.
-  // Tearing down causes all client channels to be closed.
-  // There are no guarantees over which thread `callback` is called.
-  // It is invalid to attempt to tear down an adapter that is already tearing down or is already
-  // torn down.
-  void Teardown(fit::callback<void()> callback) override;
-  // Same as `Teardown`, but blocks until teardown is complete.
-  void TeardownSync();
+  static zx::result<std::unique_ptr<MacAdapter>> Create(
+      MacAdapterParent* parent, fdf::UnownedUnsynchronizedDispatcher dispatcher,
+      fuchsia_net::wire::MacAddress mac, bool promisc_only);
 
   const fuchsia_net::wire::MacAddress& mac() { return mac_; }
 
   // MacAddr protocol:
-  void MacAddrGetAddress(mac_address_t* out_mac);
-  void MacAddrGetFeatures(features_t* out_features);
-  void MacAddrSetMode(mac_filter_mode_t mode, const mac_address_t* multicast_macs_list,
-                      size_t multicast_macs_count);
+  void GetAddress(fdf::Arena& arena, GetAddressCompleter::Sync& completer) override;
+  void GetFeatures(fdf::Arena& arena, GetFeaturesCompleter::Sync& completer) override;
+  void SetMode(fuchsia_hardware_network_driver::wire::MacAddrSetModeRequest* request,
+               fdf::Arena& arena, SetModeCompleter::Sync& completer) override;
 
   MacState GetMacState();
-  mac_addr_protocol_t* proto() { return &mac_addr_proto_; }
+  fdf::ClientEnd<fuchsia_hardware_network_driver::MacAddr> BindDriver();
 
  private:
-  MacAdapter(MacAdapterParent* parent, fuchsia_net::wire::MacAddress mac, bool promisc_only)
-      : mac_addr_proto_({&mac_addr_protocol_ops_, this}),
-        parent_(parent),
+  MacAdapter(MacAdapterParent* parent, fdf::UnownedUnsynchronizedDispatcher dispatcher,
+             fuchsia_net::wire::MacAddress mac, bool promisc_only)
+      : parent_(parent),
+        dispatcher_(std::move(dispatcher)),
         mac_(mac),
         promisc_only_(promisc_only) {}
 
   fbl::Mutex state_lock_;
-  std::unique_ptr<MacAddrDeviceInterface> device_;
-  mac_addr_protocol_t mac_addr_proto_;
   MacAdapterParent* const parent_;  // pointer to parent, not owned.
+  fdf::UnownedUnsynchronizedDispatcher dispatcher_;
   fuchsia_net::wire::MacAddress mac_;
   const bool promisc_only_;
   MacState mac_state_ __TA_GUARDED(state_lock_);

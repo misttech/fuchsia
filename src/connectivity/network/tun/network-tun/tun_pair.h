@@ -27,7 +27,6 @@ class TunPair : public fbl::DoublyLinkedListable<std::unique_ptr<TunPair>>,
   // Creates a new `TunPair` with `config`.
   // `teardown` is called when all the bound client channels are closed.
   static zx::result<std::unique_ptr<TunPair>> Create(const DeviceInterfaceDispatchers& dispatchers,
-                                                     const ShimDispatchers& shim_dispatchers,
                                                      async_dispatcher_t* fidl_dispatcher,
                                                      fit::callback<void(TunPair*)> teardown,
                                                      DevicePairConfig&& config);
@@ -37,6 +36,7 @@ class TunPair : public fbl::DoublyLinkedListable<std::unique_ptr<TunPair>>,
   const BaseDeviceConfig& config() const override { return config_; }
   void OnTxAvail(DeviceAdapter* device) override;
   void OnRxAvail(DeviceAdapter* device) override;
+  void RequestErrorUnbind() override;
 
   // Binds `req` to this device.
   // Requests are served over this device's owned loop.
@@ -64,7 +64,7 @@ class TunPair : public fbl::DoublyLinkedListable<std::unique_ptr<TunPair>>,
 
     // PortAdapterParent implementation:
     void OnHasSessionsChanged(PortAdapter& port) override;
-    void OnPortStatusChanged(PortAdapter& port, const port_status_t& new_status) override;
+    void OnPortStatusChanged(PortAdapter& port, const PortStatus& new_status) override;
     void OnPortDestroyed(PortAdapter& port) override;
 
     PortAdapter& adapter() { return *adapter_; }
@@ -88,7 +88,7 @@ class TunPair : public fbl::DoublyLinkedListable<std::unique_ptr<TunPair>>,
   const DevicePairConfig config_;
 
   fbl::Mutex power_lock_;
-  std::array<Ports, MAX_PORTS> ports_ __TA_GUARDED(power_lock_);
+  std::array<Ports, fuchsia_hardware_network::wire::kMaxPorts> ports_ __TA_GUARDED(power_lock_);
 
   async::Loop loop_{&kAsyncLoopConfigNoAttachToCurrentThread};
   std::optional<thrd_t> loop_thread_;
