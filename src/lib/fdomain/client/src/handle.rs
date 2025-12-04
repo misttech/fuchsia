@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use self::unowned::Unowned;
 use crate::responder::Responder;
 use crate::{Client, Error, ordinals};
 use fidl_fuchsia_fdomain as proto;
@@ -29,6 +30,23 @@ impl Handle {
     /// Get an invalid handle.
     pub fn invalid() -> Self {
         Handle { id: 0, client: Weak::new() }
+    }
+
+    /// Convert this into an unowned handle (one that is borrowed and will not close when dropped).
+    ///
+    /// An example:
+    ///
+    /// ```
+    /// let handle: &Handle = /* ... */;
+    /// let socket = handle.as_unowned::<fdomain_client::Socket>();
+    /// let mut buf: [u8; 4096] = [0; 4096];
+    /// socket.read(&mut buf[..]).await?;
+    /// ```
+    ///
+    /// This is only really useful for contexts in which the handles are going to be stored and
+    /// retrieved from a data structure and potentially used as arbitrary handle-based data types.
+    pub fn as_unowned<H: HandleBased>(&self) -> Unowned<H> {
+        Unowned::from_handle(self)
     }
 }
 
