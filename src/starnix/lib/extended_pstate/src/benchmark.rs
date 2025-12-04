@@ -44,6 +44,7 @@ fn main() {
         if *PREFERRED_STRATEGY <= strategy {
             bench.with_function(&format!("SaveAndRestore/{:?}", strategy), move |b| {
                 let mut state = ExtendedPstateState::with_strategy(strategy);
+                #[allow(clippy::undocumented_unsafe_blocks)]
                 b.iter(|| unsafe {
                     state.run_with_saved_state(|| {});
                 });
