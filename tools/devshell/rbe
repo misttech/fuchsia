@@ -111,15 +111,12 @@ function ensure_gcloud() {
     if is_googler
     then
       _cmd=(sudo apt install -y google-cloud-cli)
-      echo "Install gcloud with the following command?: ${_cmd[*]}"
-      select yn in "y" "n" "Y" "N"
-      do
-        case "$yn" in
-          [yY] ) "${_cmd[@]}" && gcloud="$(which gcloud)" ; return "$?" ;;
-          [nN] ) echo "Follow the instructions at go/gcloud-cli#getting-started"
-            ;;
-        esac
-      done
+      echo "Install gcloud with the following command?: ${_cmd[*]} [y/N]"
+      read -r yn
+      case "$yn" in
+        [yY] ) "${_cmd[@]}" && gcloud="$(which gcloud)" ; return "$?" ;;
+        * ) echo "Follow the instructions at go/gcloud-cli#getting-started" ;;
+      esac
     else
       echo "Follow the instructions at https://cloud.google.com/sdk/docs/install"
     fi
