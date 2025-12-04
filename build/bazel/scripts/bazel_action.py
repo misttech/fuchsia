@@ -106,6 +106,7 @@ _IGNORED_LABELS = {
     #
     # See details in https://fxbug.dev/434864899.
     "//third_party/rust_crates/vendor/ansi_term-0.12.1:LICENSE",
+    "//third_party/rust_crates/vendor/nu-ansi-term-0.46.0:LICENSE",
     "//third_party/rust_crates/vendor/remove_dir_all-0.5.3:LICENSE",
     # Internal targets for building Go SDK from rules_go.
     "@@rules_go++go_sdk+io_bazel_rules_nogo//:BUILD.bazel",
