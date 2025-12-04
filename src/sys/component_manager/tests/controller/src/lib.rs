@@ -3,8 +3,9 @@
 // found in the LICENSE file.
 
 use assert_matches::assert_matches;
-use cm_rust::{push_box, ComponentDecl, FidlIntoNative};
-use fidl::endpoints::{create_proxy, create_request_stream, ProtocolMarker, Proxy, ServerEnd};
+use cm_rust::{ComponentDecl, FidlIntoNative, push_box};
+use fidl::endpoints::{ProtocolMarker, Proxy, ServerEnd, create_proxy, create_request_stream};
+use fuchsia_component::client::connect_to_protocol_at_dir_root;
 use fuchsia_component_test::{
     Capability, ChildOptions, LocalComponentHandles, RealmBuilder, RealmInstance, Ref, Route,
 };
@@ -652,4 +653,19 @@ async fn get_exposed_dictionary() {
     let echo_cap = store.export(dest_id).await.unwrap().unwrap();
 
     assert_matches!(echo_cap, fsandbox::Capability::ConnectorRouter(_));
+}
+
+#[fuchsia::test]
+async fn open_exposed_dir() {
+    let (controller_proxy, _child_ref, _instance) =
+        spawn_child_with_url("#meta/echo_server.cm").await;
+    let (exposed_dir_proxy, server_end) = create_proxy::<fio::DirectoryMarker>();
+    controller_proxy.open_exposed_dir(server_end).await.unwrap().unwrap();
+    let echo_proxy =
+        connect_to_protocol_at_dir_root::<fecho::EchoMarker>(&exposed_dir_proxy).unwrap();
+
+    assert_eq!(
+        "Hello, World!".to_string(),
+        echo_proxy.echo_string(Some("Hello, World!")).await.unwrap().unwrap()
+    );
 }

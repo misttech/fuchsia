@@ -57,6 +57,16 @@
     },
     {
         "kind": "protocol/member",
+        "name": "fuchsia.component/Controller.OpenExposedDir",
+        "strictness": "strict",
+        "ordinal": "2683208291886099860",
+        "direction": "two_way",
+        "request": "fuchsia.component/ControllerOpenExposedDirRequest",
+        "response": "fuchsia.component/Controller_OpenExposedDir_Response",
+        "error": "fuchsia.component/Error"
+    },
+    {
+        "kind": "protocol/member",
         "name": "fuchsia.component/Controller.Start",
         "strictness": "flexible",
         "ordinal": "7532130149195770565",
@@ -70,6 +80,17 @@
         "name": "fuchsia.component/Controller",
         "openness": "open",
         "transport": "channel"
+    },
+    {
+        "kind": "struct/member",
+        "name": "fuchsia.component/ControllerOpenExposedDirRequest.exposed_dir",
+        "ordinal": "1",
+        "type": "server_end:fuchsia.io/Directory"
+    },
+    {
+        "kind": "struct",
+        "name": "fuchsia.component/ControllerOpenExposedDirRequest",
+        "resourceness": "resource"
     },
     {
         "kind": "struct/member",

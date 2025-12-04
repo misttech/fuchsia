@@ -30,6 +30,24 @@ closed(removed=18) open(added=18) protocol Controller {
         is_started bool;
     }) error Error;
 
+    /// Opens the exposed directory of the controlled component, through which
+    /// capabilities the component exposed via `ComponentDecl.exposes` are
+    /// available, on success.
+    ///
+    /// Binding to the exposed directory requires that the component be
+    /// resolved, but it will not be started until/unless some capability is
+    /// requested that requires it to be.
+    ///
+    /// If this component is destroyed, any outstanding connections to
+    /// `exposed_dir` will be closed.
+    ///
+    /// Errors:
+    /// - `INSTANCE_CANNOT_RESOLVE`: This component failed to resolve.
+    @available(added=NEXT)
+    strict OpenExposedDir(resource struct {
+        exposed_dir server_end:fuchsia.io.Directory;
+    }) -> () error Error;
+
     /// Returns the dictionary containing the component's exposed capabilities.
     @available(added=HEAD)
     flexible GetExposedDictionary() -> (resource struct {

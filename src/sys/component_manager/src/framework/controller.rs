@@ -7,11 +7,15 @@ use crate::model::component::{
     ExtendedInstance, IncomingCapabilities, StartReason, WeakComponentInstance,
 };
 use ::runner::component::StopInfo;
+use cm_types::FLAGS_MAX_POSSIBLE_RIGHTS;
+use errors::OpenExposedDirError;
 use fidl::endpoints::{ProtocolMarker, RequestStream};
 use fuchsia_trace::{self as trace, duration, instant};
 use futures::prelude::*;
 use log::{error, warn};
-use {fidl_fuchsia_component as fcomponent, fuchsia_async as fasync};
+use vfs::directory::entry::OpenRequest;
+use vfs::{Path, ToObjectRequest};
+use {fidl_fuchsia_component as fcomponent, fidl_fuchsia_io as fio, fuchsia_async as fasync};
 
 pub async fn run_controller(
     weak_component_instance: WeakComponentInstance,
@@ -30,11 +34,14 @@ pub async fn serve_controller(
         match request {
             fcomponent::ControllerRequest::Start { args, execution_controller, responder } => {
                 duration!(c"component_manager", c"Controller.Start");
+                let Ok(component) = weak_component_instance.upgrade() else {
+                    // If the component doesn't exist anymore, then the execution scope we're
+                    // scheduled in is being torn down and our task will end momentarily. To not
+                    // race with that, let's preemptively wrap things up here and close the
+                    // channel.
+                    return Ok(());
+                };
                 let res: Result<(), fcomponent::Error> = async {
-                    let component = weak_component_instance.upgrade();
-                    let Ok(component) = component else {
-                        return Err(fcomponent::Error::InstanceNotFound);
-                    };
                     if component.is_started().await {
                         return Err(fcomponent::Error::InstanceAlreadyStarted);
                     }
@@ -72,19 +79,61 @@ pub async fn serve_controller(
                     "result" => result.as_str());
             }
             fcomponent::ControllerRequest::IsStarted { responder } => {
-                let component = weak_component_instance.upgrade();
-                if component.is_err() {
-                    responder.send(Err(fcomponent::Error::InstanceNotFound))?;
-                    continue;
-                }
-                let component = component.unwrap();
+                let Ok(component) = weak_component_instance.upgrade() else {
+                    // If the component doesn't exist anymore, then the execution scope we're
+                    // scheduled in is being torn down and our task will end momentarily. To not
+                    // race with that, let's preemptively wrap things up here and close the
+                    // channel.
+                    return Ok(());
+                };
                 responder.send(Ok(component.is_started().await))?;
             }
+            fcomponent::ControllerRequest::OpenExposedDir { exposed_dir, responder } => {
+                let Ok(component) = weak_component_instance.upgrade() else {
+                    // If the component doesn't exist anymore, then the execution scope we're
+                    // scheduled in is being torn down and our task will end momentarily. To not
+                    // race with that, let's preemptively wrap things up here and close the
+                    // channel.
+                    return Ok(());
+                };
+                let response = async {
+                    // Resolve child in order to instantiate exposed_dir.
+                    component.resolve().await.map_err(|e| {
+                        warn!("resolve failed for component {}: {}", component.moniker, e);
+                        fcomponent::Error::InstanceCannotResolve
+                    })?;
+                    // We request the maximum possible rights from the parent directory connection.
+                    let flags = FLAGS_MAX_POSSIBLE_RIGHTS | fio::Flags::PROTOCOL_DIRECTORY;
+                    let mut object_request = flags.to_object_request(exposed_dir);
+                    component
+                        .open_exposed(OpenRequest::new(
+                            component.execution_scope.clone(),
+                            flags,
+                            Path::dot(),
+                            &mut object_request,
+                        ))
+                        .await
+                        .map_err(|error| match error {
+                            OpenExposedDirError::InstanceDestroyed
+                            | OpenExposedDirError::InstanceNotResolved => {
+                                fcomponent::Error::InstanceDied
+                            }
+                            OpenExposedDirError::Open(_) => fcomponent::Error::Internal,
+                        })?;
+                    Ok(())
+                }
+                .await;
+                responder.send(response)?;
+            }
             fcomponent::ControllerRequest::GetExposedDictionary { responder } => {
+                let Ok(component) = weak_component_instance.upgrade() else {
+                    // If the component doesn't exist anymore, then the execution scope we're
+                    // scheduled in is being torn down and our task will end momentarily. To not
+                    // race with that, let's preemptively wrap things up here and close the
+                    // channel.
+                    return Ok(());
+                };
                 let res = async {
-                    let component = weak_component_instance
-                        .upgrade()
-                        .map_err(|_| fcomponent::Error::InstanceNotFound)?;
                     let resolved = component
                         .lock_resolved_state()
                         .await

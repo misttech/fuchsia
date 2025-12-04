@@ -3,8 +3,8 @@
 // found in the LICENSE file.
 
 use crate::{power, startup};
-use anyhow::{anyhow, Context as _, Error};
-use fidl::endpoints::{create_proxy, ClientEnd, ServerEnd};
+use anyhow::{Context as _, Error, anyhow};
+use fidl::endpoints::{ClientEnd, ServerEnd, create_proxy};
 use fuchsia_component::server::{ServiceFs, ServiceObjLocal};
 use fuchsia_inspect_contrib::nodes::BoundedListNode;
 use futures::{StreamExt, TryFutureExt, TryStreamExt};
@@ -549,9 +549,9 @@ impl SessionManager {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::SessionManager;
-    use anyhow::{anyhow, Error};
-    use diagnostics_assertions::{assert_data_tree, AnyProperty};
-    use fidl::endpoints::{create_proxy_and_stream, ServerEnd};
+    use anyhow::{Error, anyhow};
+    use diagnostics_assertions::{AnyProperty, assert_data_tree};
+    use fidl::endpoints::{ServerEnd, create_proxy_and_stream};
     use fidl_test_util::spawn_stream_handler;
     use futures::channel::mpsc;
     use futures::prelude::*;
@@ -620,6 +620,9 @@ mod tests {
             fcomponent::ControllerRequest::GetExposedDictionary { .. } => {
                 unimplemented!()
             }
+            fcomponent::ControllerRequest::OpenExposedDir { .. } => {
+                unimplemented!()
+            }
             fcomponent::ControllerRequest::Destroy { .. } => {
                 unimplemented!()
             }
@@ -671,13 +674,15 @@ mod tests {
         let session_manager = SessionManager::new_default(realm, &inspector);
         let launcher = serve_launcher(session_manager);
 
-        assert!(launcher
-            .launch(&fsession::LaunchConfiguration {
-                session_url: Some(session_url.to_string()),
-                ..Default::default()
-            })
-            .await
-            .is_ok());
+        assert!(
+            launcher
+                .launch(&fsession::LaunchConfiguration {
+                    session_url: Some(session_url.to_string()),
+                    ..Default::default()
+                })
+                .await
+                .is_ok()
+        );
         assert_data_tree!(inspector, root: {
             session_started_at: {
                 "0": {
@@ -715,14 +720,16 @@ mod tests {
         let launcher = serve_launcher(session_manager.clone());
         let restarter = serve_restarter(session_manager);
 
-        assert!(launcher
-            .launch(&fsession::LaunchConfiguration {
-                session_url: Some(session_url.to_string()),
-                ..Default::default()
-            })
-            .await
-            .expect("could not call Launch")
-            .is_ok());
+        assert!(
+            launcher
+                .launch(&fsession::LaunchConfiguration {
+                    session_url: Some(session_url.to_string()),
+                    ..Default::default()
+                })
+                .await
+                .expect("could not call Launch")
+                .is_ok()
+        );
 
         assert!(restarter.restart().await.expect("could not call Restart").is_ok());
 
@@ -786,13 +793,15 @@ mod tests {
         let session_manager = SessionManager::new_default(realm, &inspector);
         let lifecycle = serve_lifecycle(session_manager);
 
-        assert!(lifecycle
-            .start(&fsession::LifecycleStartRequest {
-                session_url: Some(session_url.to_string()),
-                ..Default::default()
-            })
-            .await
-            .is_ok());
+        assert!(
+            lifecycle
+                .start(&fsession::LifecycleStartRequest {
+                    session_url: Some(session_url.to_string()),
+                    ..Default::default()
+                })
+                .await
+                .is_ok()
+        );
         assert_data_tree!(inspector, root: {
             session_started_at: {
                 "0": {
@@ -830,10 +839,12 @@ mod tests {
             SessionManager::new(realm, &inspector, Some(default_session_url.to_owned()), false);
         let lifecycle = serve_lifecycle(session_manager);
 
-        assert!(lifecycle
-            .start(&fsession::LifecycleStartRequest { session_url: None, ..Default::default() })
-            .await
-            .is_ok());
+        assert!(
+            lifecycle
+                .start(&fsession::LifecycleStartRequest { session_url: None, ..Default::default() })
+                .await
+                .is_ok()
+        );
         assert_data_tree!(inspector, root: {
             session_started_at: {
                 "0": {
@@ -873,13 +884,15 @@ mod tests {
         let session_manager = SessionManager::new_default(realm, &inspector);
         let lifecycle = serve_lifecycle(session_manager);
 
-        assert!(lifecycle
-            .start(&fsession::LifecycleStartRequest {
-                session_url: Some(session_url.to_string()),
-                ..Default::default()
-            })
-            .await
-            .is_ok());
+        assert!(
+            lifecycle
+                .start(&fsession::LifecycleStartRequest {
+                    session_url: Some(session_url.to_string()),
+                    ..Default::default()
+                })
+                .await
+                .is_ok()
+        );
         // Start attempts to destroy any existing session first.
         assert_eq!(NUM_DESTROY_CHILD_CALLS.get(), 1);
         assert_data_tree!(inspector, root: {
@@ -921,14 +934,16 @@ mod tests {
         let session_manager = SessionManager::new_default(realm, &inspector);
         let lifecycle = serve_lifecycle(session_manager.clone());
 
-        assert!(lifecycle
-            .start(&fsession::LifecycleStartRequest {
-                session_url: Some(session_url.to_string()),
-                ..Default::default()
-            })
-            .await
-            .expect("could not call Launch")
-            .is_ok());
+        assert!(
+            lifecycle
+                .start(&fsession::LifecycleStartRequest {
+                    session_url: Some(session_url.to_string()),
+                    ..Default::default()
+                })
+                .await
+                .expect("could not call Launch")
+                .is_ok()
+        );
 
         assert!(lifecycle.restart().await.expect("could not call Restart").is_ok());
 

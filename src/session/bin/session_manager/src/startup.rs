@@ -4,7 +4,7 @@
 
 use crate::cobalt;
 use anyhow::anyhow;
-use fidl::endpoints::{create_proxy, ServerEnd};
+use fidl::endpoints::{ServerEnd, create_proxy};
 use log::info;
 use thiserror::Error;
 use {
@@ -287,7 +287,7 @@ async fn set_session(
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
-    use super::{set_session, stop_session, SESSION_CHILD_COLLECTION, SESSION_NAME};
+    use super::{SESSION_CHILD_COLLECTION, SESSION_NAME, set_session, stop_session};
     use anyhow::Error;
     use fidl::endpoints::create_endpoints;
     use fidl_test_util::spawn_stream_handler;
@@ -332,6 +332,9 @@ mod tests {
                             }
                             fcomponent::ControllerRequest::IsStarted { .. } => unimplemented!(),
                             fcomponent::ControllerRequest::GetExposedDictionary { .. } => {
+                                unimplemented!()
+                            }
+                            fcomponent::ControllerRequest::OpenExposedDir { .. } => {
                                 unimplemented!()
                             }
                             fcomponent::ControllerRequest::Destroy { .. } => {
@@ -384,6 +387,9 @@ mod tests {
                             }
                             fcomponent::ControllerRequest::IsStarted { .. } => unimplemented!(),
                             fcomponent::ControllerRequest::GetExposedDictionary { .. } => {
+                                unimplemented!()
+                            }
+                            fcomponent::ControllerRequest::OpenExposedDir { .. } => {
                                 unimplemented!()
                             }
                             fcomponent::ControllerRequest::Destroy { .. } => {

@@ -45,13 +45,12 @@ closed protocol Realm {
         controller server_end:Controller;
     }) -> () error Error;
 
-    /// Opens the exposed directory of a child component instance. When this
-    /// function successfully returns, `exposed_dir` is bound to a directory
-    /// that contains the capabilities which the child exposed to its realm
-    /// via `ComponentDecl.exposes` (specified via "expose" declarations in
-    /// the component's manifest). The child component will not start as a
-    /// result of this call. Instead, starting will occur iff the parent binds
-    /// to one of the capabilities contained within `exposed_dir`.
+    /// Opens the exposed directory of a child component. When this function
+    /// successfully returns, `exposed_dir` is bound to a directory that
+    /// contains the capabilities which the child exposed to its realm via
+    /// `ComponentDecl.exposes` (specified via "expose" declarations in the
+    /// component's manifest). The child component will not start as a result of
+    /// this call.
     ///
     /// `exposed_dir` is open as long as `child` exists.
     ///
