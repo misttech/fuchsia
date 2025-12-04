@@ -45,8 +45,7 @@ enum class VmCowPagesOptions : uint32_t {
   // Externally-usable flags:
   kNone = 0u,
   kUserPagerBackedRoot = (1u << 0),
-  kPreservingPageContentRoot = (1u << 1),
-  kPageSourceRoot = (1u << 2),
+  kPageSourceRoot = (1u << 1),
 
   // With this clear, zeroing a page tries to decommit the page.  With this set, zeroing never
   // decommits the page.  Currently this is only set for contiguous VMOs.
@@ -57,10 +56,10 @@ enum class VmCowPagesOptions : uint32_t {
   // pages aren't pinned, but that mitigation should be sufficient (even assuming such a client) to
   // allow implicit decommit when zeroing or when zero scanning, as long as no clients are doing DMA
   // to/from contiguous while not pinned.
-  kCannotDecommitZeroPages = (1u << 3),
+  kCannotDecommitZeroPages = (1u << 2),
 
   // Internal-only flags:
-  kHidden = (1u << 4),
+  kHidden = (1u << 3),
 
   kInternalOnlyMask = kHidden,
 };
@@ -235,12 +234,11 @@ class VmCowPages final : public fbl::ContainableBaseClasses<
   // the child.
   VmCowPagesOptions inheritable_options() const {
     return VmCowPagesOptions::kNone | (options_ & (VmCowPagesOptions::kUserPagerBackedRoot |
-                                                   VmCowPagesOptions::kPreservingPageContentRoot |
                                                    VmCowPagesOptions::kPageSourceRoot));
   }
 
   bool is_root_source_preserving_page_content() const {
-    return !!(options_ & VmCowPagesOptions::kPreservingPageContentRoot);
+    return !!(options_ & VmCowPagesOptions::kUserPagerBackedRoot);
   }
 
   bool is_parent_hidden_locked() const TA_REQ(lock()) { return parent_ && parent_->is_hidden(); }
