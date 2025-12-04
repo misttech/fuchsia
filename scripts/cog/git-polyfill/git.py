@@ -33,6 +33,35 @@ def get_workspace_id_and_snapshot_version(
     return workspace_id, int(snapshot_version)
 
 
+def get_relative_git_dir(
+    top_level_args: argparse.Namespace, workspace_root: Path
+) -> Optional[Path]:
+    if top_level_args.git_dir and top_level_args.C:
+        raise ValueError("--git_dir and -C cannot be used together")
+
+    path = None
+    if top_level_args.git_dir:
+        git_dir = Path(top_level_args.git_dir).expanduser()
+        if git_dir.name != ".git":
+            raise ValueError("git_dir must end in .git")
+
+        # remove the .git suffix
+        path = git_dir.parent
+
+    if top_level_args.C:
+        path = Path(top_level_args.C).expanduser()
+
+    if path and path.is_absolute():
+        path = path.relative_to(workspace_root)
+
+    # If the path is equal to the workspace root we want to return None which is the same as the
+    # user not specifying a git_dir or -C
+    if path == Path("."):
+        return None
+
+    return path
+
+
 class GitSubCommand(abc.ABC):
     """Abstract base class for git subcommands."""
 
@@ -106,14 +135,9 @@ class RevParseCommand(GitSubCommand):
 
         # Determine repo_root
         repo_root = "fuchsia"
-        if top_level_args.C:
-            path = Path(top_level_args.C).expanduser()
-            if path.is_absolute():
-                rel_path = path.relative_to(workspace_root)
-                if rel_path != Path("."):
-                    repo_root = f"fuchsia/{rel_path}"
-            else:
-                repo_root = f"fuchsia/{path}"
+        relative_git_dir = get_relative_git_dir(top_level_args, workspace_root)
+        if relative_git_dir:
+            repo_root = f"fuchsia/{relative_git_dir}"
 
         request = f'request_base {{ workspace_id: "{workspace_id}" base_snapshot_version: {snapshot_version}}} repo_root: "{repo_root}"'
 
@@ -182,6 +206,12 @@ def _create_top_level_parser() -> argparse.ArgumentParser:
         "--no-optional-locks",
         action="store_true",
         help="Do not perform optional operations that require locks",
+    )
+    parser.add_argument(
+        "--git-dir",
+        type=str,
+        metavar="path",
+        help="Use <path> as the path to the .git directory",
     )
     parser.add_argument(
         "--version", action="version", version="git version 2.x (fuchsia-cog)"
