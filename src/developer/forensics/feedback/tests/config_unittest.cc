@@ -204,8 +204,6 @@ TEST_F(ProductConfigTest, UseOverrideConfig) {
   const std::optional<ProductConfig> config = GetProductConfig(override_path, "/bad/path");
 
   ASSERT_TRUE(config.has_value());
-  EXPECT_EQ(config->persisted_logs_num_files, kPersistedLogsNumFiles);
-  EXPECT_EQ(config->persisted_logs_total_size, kPersistedLogsTotalSize);
   EXPECT_EQ(config->snapshot_persistence_max_tmp_size, StorageSize::Megabytes(1));
   EXPECT_EQ(config->snapshot_persistence_max_cache_size, StorageSize::Megabytes(1));
 }
@@ -219,8 +217,6 @@ TEST_F(ProductConfigTest, UseDefaultConfig) {
   const std::optional<ProductConfig> config = GetProductConfig("/bad/path", default_path);
 
   ASSERT_TRUE(config.has_value());
-  EXPECT_EQ(config->persisted_logs_num_files, kPersistedLogsNumFiles);
-  EXPECT_EQ(config->persisted_logs_total_size, kPersistedLogsTotalSize);
   EXPECT_EQ(config->snapshot_persistence_max_tmp_size, StorageSize::Megabytes(1));
   EXPECT_EQ(config->snapshot_persistence_max_cache_size, StorageSize::Megabytes(1));
 }
@@ -990,8 +986,6 @@ TEST_F(InspectConfigTest, ExposeConfig_SnapshotPersistenceMaxCacheSizePositive) 
 TEST_F(InspectConfigTest, ExposeConfig_ProductEnableAll) {
   ExposeConfig(InspectRoot(), {},
                ProductConfig{
-                   .persisted_logs_num_files = 1,
-                   .persisted_logs_total_size = StorageSize::Kilobytes(1),
                    .snapshot_persistence_max_tmp_size = StorageSize::Megabytes(1),
                    .snapshot_persistence_max_cache_size = StorageSize::Megabytes(1),
                });
@@ -1012,8 +1006,6 @@ TEST_F(InspectConfigTest, ExposeConfig_EnableAll) {
                    .enable_limit_inspect_data = true,
                },
                ProductConfig{
-                   .persisted_logs_num_files = 1,
-                   .persisted_logs_total_size = StorageSize::Kilobytes(1),
                    .snapshot_persistence_max_tmp_size = StorageSize::Megabytes(1),
                    .snapshot_persistence_max_cache_size = StorageSize::Megabytes(1),
                });

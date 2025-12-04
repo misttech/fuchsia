@@ -35,7 +35,6 @@ class FeedbackData {
     SnapshotExclusionConfig snapshot_exclusion_config;
     bool is_first_instance;
     bool limit_inspect_data;
-    bool run_log_persistence;
     std::optional<zx::duration> delete_previous_boot_logs_time;
   };
 

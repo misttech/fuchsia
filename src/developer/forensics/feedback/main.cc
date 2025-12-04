@@ -69,23 +69,11 @@ int main() {
   std::unique_ptr<cobalt::Logger> cobalt = std::make_unique<cobalt::Logger>(
       component.Dispatcher(), component.Services(), component.Clock());
 
-  const bool run_log_persistence = product_config->persisted_logs_num_files.has_value() &&
-                                   product_config->persisted_logs_total_size.has_value();
-
   if (component.IsFirstInstance()) {
     MoveFile(/*from=*/kLegacyCurrentGracefulRebootReasonFile,
              /*to=*/kLegacyPreviousGracefulRebootReasonFile);
     MoveFile(/*from=*/kCurrentGracefulShutdownInfoFile, /*to=*/kPreviousGracefulShutdownInfoFile);
-    if (run_log_persistence) {
-      CreatePreviousLogsFile(cobalt.get(), *product_config->persisted_logs_total_size);
-    } else {
-      // This is mostly done to preserve the previous boot logs when the device is migrating from
-      // "log persistence turned on" to "log persistence turned off" and then clean up the
-      // directory. It's a no-op if the directory doesn't exist in the first place.
-      // It does mean we need to give it a hint as to how large the total size now that the config
-      // no longer contains a number for it though.
-      CreatePreviousLogsFile(cobalt.get(), StorageSize::Kilobytes(512));
-    }
+    CreatePreviousLogsFile(cobalt.get(), kPersistedLogsTotalSize);
     MoveAndRecordBootId(uuid::Generate());
     if (std::string build_version; files::ReadFileToString(kBuildVersionPath, &build_version)) {
       MoveAndRecordBuildVersion(build_version, kPreviousBuildVersionPath, kCurrentBuildVersionPath);
@@ -154,7 +142,6 @@ int main() {
               .snapshot_exclusion_config = *snapshot_exclusion_config,
               .is_first_instance = component.IsFirstInstance(),
               .limit_inspect_data = build_type_config->enable_limit_inspect_data,
-              .run_log_persistence = run_log_persistence,
               .delete_previous_boot_logs_time = delete_previous_boot_logs_time,
           }});
 

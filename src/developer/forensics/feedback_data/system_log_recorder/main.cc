@@ -55,12 +55,6 @@ int main() {
     return EXIT_FAILURE;
   }
 
-  if (!product_config->persisted_logs_num_files.has_value() ||
-      !product_config->persisted_logs_total_size.has_value()) {
-    FX_LOGS(FATAL) << "Missing required persisted_logs fields in product config";
-    return EXIT_FAILURE;
-  }
-
   async::Loop write_loop(&kAsyncLoopConfigNoAttachToCurrentThread);
   trace::TraceProviderWithFdio trace_provider(main_loop.dispatcher(), "system_log_recorder");
 
@@ -77,8 +71,8 @@ int main() {
           .period = kWritePeriod,
           .max_write_size = kMaxWriteSize,
           .logs_dir = feedback::kCurrentLogsDir,
-          .max_num_files = *product_config->persisted_logs_num_files,
-          .total_log_size = *product_config->persisted_logs_total_size,
+          .max_num_files = feedback::kPersistedLogsNumFiles,
+          .total_log_size = feedback::kPersistedLogsTotalSize,
       },
       // Don't set up Inspect because all messages in the previous boot log
       // are in the current boot log and counted in Inspect.

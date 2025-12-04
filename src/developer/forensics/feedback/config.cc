@@ -98,8 +98,6 @@ constexpr char kProductConfigSchema[] = R"({
 
 std::optional<ProductConfig> ParseProductConfig(const rapidjson::Document& json) {
   ProductConfig config;
-  config.persisted_logs_num_files = kPersistedLogsNumFiles;
-  config.persisted_logs_total_size = kPersistedLogsTotalSize;
 
   if (const int64_t max_tmp_size_mib = json[kSnapshotPersistenceMaxTmpSizeKey].GetInt64();
       max_tmp_size_mib > 0) {
