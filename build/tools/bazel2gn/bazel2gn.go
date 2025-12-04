@@ -117,6 +117,14 @@ func assignStmtToGN(stmt *syntax.AssignStmt) ([]string, error) {
 
 	ret := []string{fmt.Sprintf("%s %s %s", lhs[0], opToGN(stmt.Op), rhs[0])}
 	ret = append(ret, rhs[1:]...)
+	ret = append(ret, []string{
+		"",
+		`# To avoid "Assignment had no effect" from GN.`,
+		`# It's possible this variable is only used in if conditions (e.g. is_host).`,
+		fmt.Sprintf(`not_needed([ "%s" ])`, lhs[0]),
+		"",
+	}...)
+
 	return ret, nil
 }
 

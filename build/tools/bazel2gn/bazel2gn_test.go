@@ -339,30 +339,85 @@ go_binary(
 }
 
 func TestFileLevelConstants(t *testing.T) {
-	bazel := `zbi_sources = [
-	"board.fidl",
-	"cpu.fidl",
+	for _, tc := range []struct {
+		name   string
+		bazel  string
+		wantGN string
+	}{
+		{
+			name: "simple",
+			bazel: `zbi_sources = [
+		"board.fidl",
+		"cpu.fidl",
 ]
 
 fidl_library(
     name = "zbi",
     srcs = zbi_sources,
 )
-`
-	wantGN := `zbi_sources = [
+`,
+			wantGN: `zbi_sources = [
 	"board.fidl",
 	"cpu.fidl",
 ]
+
+# To avoid "Assignment had no effect" from GN.
+# It's possible this variable is only used in if conditions (e.g. is_host).
+not_needed([ "zbi_sources" ])
+
 fidl("zbi") {
 	sources = zbi_sources
-}`
-	f := toSyntaxFile(t, bazel)
-	gotGN, err := bazelToGN(f)
-	if err != nil {
-		t.Fatalf("Unexpected failure converting Bazel build targets: %v", err)
+}`,
+		},
+		{
+			name: "is_host guards",
+			bazel: `load("@platforms//host:constraints.bzl", "HOST_CONSTRAINTS")
+
+_COMMON_SOURCES = [
+	"foo.go",
+	"bar.go",
+]
+
+go_library(
+	name = "lib1",
+	srcs = _COMMON_SOURCES,
+	target_compatible_with = HOST_CONSTRAINTS,
+)
+
+go_library(
+	name = "lib2",
+	srcs = _COMMON_SOURCES,
+	target_compatible_with = HOST_CONSTRAINTS,
+)`,
+			wantGN: `_COMMON_SOURCES = [
+	"foo.go",
+	"bar.go",
+]
+
+# To avoid "Assignment had no effect" from GN.
+# It's possible this variable is only used in if conditions (e.g. is_host).
+not_needed([ "_COMMON_SOURCES" ])
+
+if (is_host) {
+	go_library("lib1") {
+		sources = _COMMON_SOURCES
 	}
-	if diff := cmp.Diff(gotGN, wantGN); diff != "" {
-		t.Errorf("Diff found after GN conversion (-got +want):\n%s\nBazel source:\n%s", diff, bazel)
+}
+if (is_host) {
+	go_library("lib2") {
+		sources = _COMMON_SOURCES
+	}
+}`,
+		},
+	} {
+		f := toSyntaxFile(t, tc.bazel)
+		gotGN, err := bazelToGN(f)
+		if err != nil {
+			t.Fatalf("Unexpected failure converting Bazel build targets: %v", err)
+		}
+		if diff := cmp.Diff(gotGN, tc.wantGN); diff != "" {
+			t.Errorf("Diff found after GN conversion (-got +want):\n%s\nBazel source:\n%s", diff, tc.bazel)
+		}
 	}
 }
 
