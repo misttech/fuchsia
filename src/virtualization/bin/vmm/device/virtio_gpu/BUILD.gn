@@ -47,7 +47,7 @@ _common_deps = [
 ]
 
 rustc_binary("virtio_gpu_bin") {
-  edition = "2021"
+  edition = "2024"
 
   source_root = _common_source_root
 
@@ -60,7 +60,7 @@ rustc_binary("virtio_gpu_bin") {
 }
 
 rustc_test("virtio_gpu_bin_test") {
-  edition = "2021"
+  edition = "2024"
 
   source_root = _common_source_root
 

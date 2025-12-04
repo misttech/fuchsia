@@ -15,7 +15,7 @@ group("tests") {
 }
 
 rustc_binary("bin") {
-  edition = "2021"
+  edition = "2024"
   output_name = "guest"
   deps = [
     "//sdk/fidl/fuchsia.device:fuchsia.device_rust",

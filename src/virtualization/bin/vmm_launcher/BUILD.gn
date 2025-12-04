@@ -21,7 +21,7 @@ fuchsia_structured_config_rust_lib("vmm_launcher_config") {
 }
 
 rustc_binary("vmm_launcher_bin") {
-  edition = "2021"
+  edition = "2024"
   name = "vmm_launcher"
 
   sources = [
@@ -46,7 +46,7 @@ rustc_binary("vmm_launcher_bin") {
 }
 
 rustc_test("vmm_launcher_test_bin") {
-  edition = "2021"
+  edition = "2024"
   source_root = "tests/integration.rs"
   sources = [ "tests/integration.rs" ]
   deps = [

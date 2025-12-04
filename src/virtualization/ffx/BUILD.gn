@@ -7,7 +7,7 @@ import("//src/developer/ffx/build/ffx_tool.gni")
 
 ffx_plugin("ffx_guest") {
   version = "0.1.0"
-  edition = "2021"
+  edition = "2024"
 
   plugin_deps = [
     "attach:ffx_guest_attach",
@@ -24,7 +24,7 @@ ffx_plugin("ffx_guest") {
 }
 
 ffx_tool("ffx_guest_tool") {
-  edition = "2021"
+  edition = "2024"
   output_name = "ffx-guest"
   deps = [
     ":ffx_guest_suite",

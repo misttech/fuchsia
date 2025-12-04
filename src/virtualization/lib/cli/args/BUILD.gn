@@ -9,7 +9,7 @@ group("args") {
 }
 
 rustc_library("guest_cli_args") {
-  edition = "2021"
+  edition = "2024"
   deps = [
     "//third_party/rust_crates:argh",
     "//third_party/rust_crates:serde",

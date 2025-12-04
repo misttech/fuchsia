@@ -8,7 +8,7 @@ import("//build/rust/rustc_library.gni")
 # Eventually this logic will move into fdio/zxio and the standard BSD socket
 # APIs with AF_VSOCK will be used instead of this library.
 rustc_library("vsock_sys") {
-  edition = "2021"
+  edition = "2024"
   sources = [ "src/lib.rs" ]
   deps = [ "//src/paravirtualization/lib/vsock" ]
 }

@@ -33,7 +33,7 @@
 // incoming Callbacks to signaling registered events.
 
 use crate::{addr, port};
-use anyhow::{format_err, Context as _};
+use anyhow::{Context as _, format_err};
 use fidl::endpoints;
 use fidl::endpoints::{ControlHandle, RequestStream};
 use fidl_fuchsia_hardware_vsock::{
@@ -47,7 +47,7 @@ use fidl_fuchsia_vsock::{
 };
 use fuchsia_async as fasync;
 use futures::channel::{mpsc, oneshot};
-use futures::{future, select, Future, FutureExt, Stream, StreamExt, TryFutureExt, TryStreamExt};
+use futures::{Future, FutureExt, Stream, StreamExt, TryFutureExt, TryStreamExt, future, select};
 use std::cell::{Ref, RefCell, RefMut};
 use std::collections::{HashMap, VecDeque};
 use std::convert::Infallible;
@@ -704,7 +704,7 @@ impl State {
         &mut self,
         addr: &addr::Vsock,
         data: zx::Socket,
-    ) -> impl Future<Output = Result<(), Error>> {
+    ) -> impl Future<Output = Result<(), Error>> + use<> {
         let result = self
             .device(addr.remote_cid)
             .ok_or(Error::ConnectionRefused)
@@ -715,7 +715,7 @@ impl State {
         &mut self,
         addr: &addr::Vsock,
         data: zx::Socket,
-    ) -> impl Future<Output = Result<(), Error>> {
+    ) -> impl Future<Output = Result<(), Error>> + use<> {
         let result =
             self.device(addr.remote_cid).ok_or(Error::ConnectionRefused).and_then(|device| {
                 Ok(device.send_response(&addr.clone(), data).map(map_driver_result))
@@ -725,7 +725,7 @@ impl State {
     fn send_rst(
         &mut self,
         addr: &addr::Vsock,
-    ) -> impl Future<Output = Result<(), Error>> + 'static {
+    ) -> impl Future<Output = Result<(), Error>> + 'static + use<> {
         let result = self
             .device(addr.remote_cid)
             .ok_or(Error::ConnectionRefused)
@@ -735,7 +735,7 @@ impl State {
     fn send_shutdown(
         &mut self,
         addr: &addr::Vsock,
-    ) -> impl Future<Output = Result<(), Error>> + 'static {
+    ) -> impl Future<Output = Result<(), Error>> + 'static + use<> {
         let result = self
             .device(addr.remote_cid)
             .ok_or(Error::ConnectionRefused)
