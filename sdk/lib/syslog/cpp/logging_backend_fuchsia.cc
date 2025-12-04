@@ -337,7 +337,7 @@ internal::LogState::LogState(const fuchsia_logging::LogSettings& settings)
 #else
 
 zx::result<> FlushToGlobalLogger(LogBuffer& buffer) {
-  std::span<const uint8_t> data = buffer.EndRecord();
+  cpp20::span<const uint8_t> data = buffer.EndRecord();
   return zx::make_result(internal::FuchsiaLogWrite(
       internal::FuchsiaLogGetGlobalLogger(GetDefaultSettings), data.data(), data.size()));
 }
