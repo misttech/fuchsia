@@ -23,5 +23,8 @@ pw_emboss_build_dir_to_root = "../.."
 # RBE isn't supported currently because the `//out` directory is a symlink pointing outside of `//`,
 # and GN resolves that symlink to make `root_build_dir` an absolute path not contained within `//`.
 rbe_mode = "off"
+
+# Disables the depfile verifier since it's not supported in cog workspaces.
+verify_depfile = false
 #
 # ==================================================================================================
