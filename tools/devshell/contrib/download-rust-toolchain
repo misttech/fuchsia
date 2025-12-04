@@ -40,13 +40,12 @@ fi
 
 set -e
 
-CAS_TOOL="$(git rev-parse --show-toplevel)/prebuilt/tools/cas/cas"
 DOWNLOAD_DIR="$(git rev-parse --show-toplevel)/local/rust"
 
 # Check for jq
 if ! command -v jq &> /dev/null
 then
-    echo "jq could not be found, please install it."
+    echo "jq could not be found, please install it." >&2
     exit 1
 fi
 
@@ -54,7 +53,26 @@ BB_TOOL="$(git rev-parse --show-toplevel)/prebuilt/tools/buildbucket/bb"
 
 # Check for bb
 if [ ! -x "${BB_TOOL}" ]; then
-    echo "bb tool not found or not executable at ${BB_TOOL}"
+    echo "bb tool not found or not executable at ${BB_TOOL}" >&2
+    exit 1
+fi
+
+# Check if logged in with bb
+if ! "${BB_TOOL}" auth-info >/dev/null 2>&1; then
+    echo "Login required, run \`${BB_TOOL} auth-login\`" >&2
+    exit 1
+fi
+
+# Check for cas
+CAS_TOOL="$(git rev-parse --show-toplevel)/prebuilt/tools/cas/cas"
+if [ ! -x "${CAS_TOOL}" ]; then
+    echo "cas tool not found or not executable at ${CAS_TOOL}" >&2
+    exit 1
+fi
+
+# Check if logged in with cas
+if ! "${CAS_TOOL}" whoami >/dev/null 2>&1; then
+    echo "Login required, run \`${CAS_TOOL} login\`" >&2
     exit 1
 fi
 
@@ -62,14 +80,14 @@ echo "Fetching latest green build for ${BUILDER}..."
 BUILD_INFO=$("${BB_TOOL}" ls ${BUILDER} -status SUCCESS -n 1 -json)
 
 if [ -z "${BUILD_INFO}" ] || [ "${BUILD_INFO}" == "[]" ]; then
-    echo "Error: No successful builds found for ${BUILDER}."
+    echo "Error: No successful builds found for ${BUILDER}." >&2
     exit 1
 fi
 
 BUILD_ID=$(echo "${BUILD_INFO}" | jq -s -r '.[0].id')
 
 if [ -z "${BUILD_ID}" ] || [ "${BUILD_ID}" == "null" ]; then
-    echo "Could not find latest green build ID."
+    echo "Could not find latest green build ID." >&2
     exit 1
 fi
 
@@ -79,8 +97,8 @@ BUILD_DETAILS=$("${BB_TOOL}" get ${BUILD_ID} -json -p)
 CAS_DIGEST=$(echo "${BUILD_DETAILS}" | jq -r '.output.properties.isolated')
 
 if [ -z "${CAS_DIGEST}" ] || [ "${CAS_DIGEST}" == "null" ]; then
-    echo "Could not find output.properties.isolated in build details for build ${BUILD_ID}."
-    echo "Build Details: ${BUILD_DETAILS}" # Debug output
+    echo "Could not find output.properties.isolated in build details for build ${BUILD_ID}." >&2
+    echo "Build Details: ${BUILD_DETAILS}" >&2 # Debug output
     exit 1
 fi
 
