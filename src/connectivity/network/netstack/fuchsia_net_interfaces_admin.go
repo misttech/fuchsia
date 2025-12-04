@@ -1115,6 +1115,16 @@ func (ifs *ifState) addAdminConnection(request admin.ControlWithCtxInterfaceRequ
 
 			nicInfo, ok := impl.ns.stack.NICInfo()[impl.nicid]
 			if !ok {
+				ifs.mu.Lock()
+				removed := ifs.mu.removed
+				ifs.mu.Unlock()
+				if removed {
+					// This can happen if the interface was removed because the
+					// device port was closed. In that case, we don't have an
+					// entry in the NICInfo map.
+					_ = syslog.DebugTf(controlName, "interface %d already removed", impl.nicid)
+					return nil
+				}
 				panic(fmt.Sprintf("failed to find interface %d", impl.nicid))
 			}
 			// We can safely remove the interface now because we're certain that
