@@ -17,7 +17,6 @@ group("connectivity_no_e2e") {
     "location",
     "lowpan",
     "overnet",
-    "ppp",
     "weave",
     "wlan",
   ]
@@ -37,7 +36,6 @@ group("tests_no_e2e") {
     "nfc:tests",
     "overnet:tests_no_e2e",
     "policy:tests",
-    "ppp:tests",
     "telephony:tests",
     "weave:tests",
     "wlan:tests",

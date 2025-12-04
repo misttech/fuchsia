@@ -9,7 +9,6 @@ group("drivers") {
     "//src/connectivity/ethernet:drivers",
     "//src/connectivity/network:drivers",
     "//src/connectivity/openthread:drivers",
-    "//src/connectivity/ppp:drivers",
     "//src/connectivity/telephony:drivers",
     "//src/connectivity/wlan:drivers",
   ]

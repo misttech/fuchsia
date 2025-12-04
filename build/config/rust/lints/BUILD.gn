@@ -161,7 +161,6 @@ config("allow_unused_results") {
     "//src/connectivity/openthread/*",
     "//src/connectivity/overnet/*",
     "//src/connectivity/policy/reachability/*",
-    "//src/connectivity/ppp/*",
     "//src/connectivity/telephony/*",
     "//src/connectivity/weave/*",
     "//src/connectivity/wlan/*",

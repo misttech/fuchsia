@@ -47,18 +47,6 @@ enum NetsvcPacketType {
     TftpPacket,
 }
 
-/// Packet formats whose parsers are provided by the [`ppp_packet`] crate.
-#[derive(Arbitrary)]
-enum PppPacketType {
-    ConfigurationPacket,
-    ControlProtocolPacket,
-    CodeRejectPacket,
-    PppPacket,
-    EchoDiscardPacket,
-    ProtocolRejectPacket,
-    TerminationPacket,
-}
-
 /// Packet formats whose parsers are provided by the [`packet_formats`] crate.
 #[derive(Arbitrary)]
 enum PacketFormatsPacketType {
@@ -120,7 +108,6 @@ fn fuzz_parse_packet(input: &[u8]) {
         DhcpPacket(DhcpPacketType),
         MdnsPacket(MdnsPacketType),
         NetsvcPacket(NetsvcPacketType),
-        PppPacket(PppPacketType),
     }
 
     let parse_as = match unstructured.arbitrary() {
@@ -192,35 +179,5 @@ fn fuzz_parse_packet(input: &[u8]) {
                 TftpPacket::parse_and_ignore(&mut input, ());
             }
         },
-        SupportedPacketType::PppPacket(ppp_type) => {
-            use ppp_packet::{
-                CodeRejectPacket, ConfigurationPacket, ControlProtocolPacket, EchoDiscardPacket,
-                PppPacket, ProtocolRejectPacket, TerminationPacket,
-            };
-
-            match ppp_type {
-                PppPacketType::ConfigurationPacket => {
-                    ConfigurationPacket::parse_and_ignore(&mut input, ());
-                }
-                PppPacketType::CodeRejectPacket => {
-                    CodeRejectPacket::parse_and_ignore(&mut input, ());
-                }
-                PppPacketType::ControlProtocolPacket => {
-                    ControlProtocolPacket::parse_and_ignore(&mut input, ());
-                }
-                PppPacketType::EchoDiscardPacket => {
-                    EchoDiscardPacket::parse_and_ignore(&mut input, ());
-                }
-                PppPacketType::PppPacket => {
-                    PppPacket::parse_and_ignore(&mut input, ());
-                }
-                PppPacketType::ProtocolRejectPacket => {
-                    ProtocolRejectPacket::parse_and_ignore(&mut input, ());
-                }
-                PppPacketType::TerminationPacket => {
-                    TerminationPacket::parse_and_ignore(&mut input, ());
-                }
-            }
-        }
     }
 }
