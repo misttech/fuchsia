@@ -10,8 +10,8 @@
 
 #include <memory>
 
-#include "buffer-tracker.h"
-#include "task-metrics.h"
+#include "src/media/audio/drivers/lib/inspect/buffer-tracker.h"
+#include "src/media/audio/drivers/lib/inspect/task-metrics.h"
 
 namespace audio {
 
@@ -43,6 +43,48 @@ static constexpr std::string_view kSetActiveChannelsCalls = "SetActiveChannels_c
 static constexpr std::string_view kChannelBitmask = "channel_bitmask";
 
 static constexpr std::string_view kDAIs = "DAIs";
+
+static constexpr std::string_view kDiagnosticsSummary = "diagnostics_summary";
+static constexpr std::string_view kDiagnostics = "diagnostics";
+// TODO(b/458465136): Eliminate unnecessary indirection (task_records/metrics)
+static constexpr std::string_view kTaskRecords = "task_records";
+static constexpr std::string_view kStartupTaskRecords = "startup_task_records";
+static constexpr std::string_view kFinalTaskRecords = "final_task_records";
+static constexpr std::string_view kMin = "min";
+static constexpr std::string_view kMax = "max";
+static constexpr std::string_view kSum = "sum";
+static constexpr std::string_view kAvg = "avg";
+
+static constexpr std::string_view kWallTimeUsec = "wall_time_us";
+static constexpr std::string_view kCpuTimeUsec = "cpu_time_us";
+static constexpr std::string_view kQueueTimeUsec = "queue_time_us";
+static constexpr std::string_view kPageFaultTimeUsec = "page_fault_time_us";
+static constexpr std::string_view kKernelLockContentionTimeUsec = "kernel_lock_contention_time_us";
+static constexpr std::string_view kStartToStartIntervalUsec = "start_to_start_us";
+static constexpr std::string_view kEndToEndIntervalUsec = "end_to_end_us";
+static constexpr std::string_view kSchedulingDelayUsec = "scheduling_delay_us";
+
+static constexpr std::string_view kCountOutstandingBuffersAvg = "count_outstanding_buffers_avg";
+static constexpr std::string_view kCountBuffersProcessed = "count_buffers_processed";
+static constexpr std::string_view kProcessingTimeAvgUsec = "processing_time_avg_us";
+static constexpr std::string_view kProcessingTimeMaxUsec = "processing_time_max_us";
+static constexpr std::string_view kProcessingTimeCumulativeUsec = "processing_time_cumulative_us";
+
+static constexpr std::string_view kEmptyBufferCumulativeDurationUsec =
+    "empty_buffer_cumulative_duration_us";
+static constexpr std::string_view kEmptyBufferEpisodeCount = "empty_buffer_episode_count";
+static constexpr std::string_view kEmptyBufferDurationMaxUsec = "empty_buffer_max_duration_us";
+static constexpr std::string_view kFullBufferCumulativeDurationUsec =
+    "full_buffer_cumulative_duration_us";
+static constexpr std::string_view kFullBufferEpisodeCount = "full_buffer_episode_count";
+static constexpr std::string_view kFullBufferMaxDurationUsec = "full_buffer_max_duration_us";
+
+static constexpr std::string_view kWorstUnderrunFrames = "worst_underrun_frames";
+static constexpr std::string_view kWorstOverrunFrames = "worst_overrun_frames";
+static constexpr std::string_view kCountTasks = "count_tasks";
+static constexpr std::string_view kCountUnderruns = "count_underruns";
+static constexpr std::string_view kCountOverruns = "count_overruns";
+static constexpr std::string_view kCountDroppedTransfers = "count_dropped_transfers";
 
 // Represents a single power transition.
 class PowerTransition {
@@ -124,7 +166,7 @@ class TaskRecords {
 
 class AggregateRecords {
  public:
-  AggregateRecords(inspect::Node& node);
+  AggregateRecords(inspect::Node& node, std::string_view name);
 
   void RecordTaskMetrics(const Subtask::Metrics& metrics,
                          std::optional<zx::duration> start_to_start = std::nullopt,
@@ -144,7 +186,7 @@ class AggregateRecords {
 
   void RecordDroppedTransfer() { dropped_transfer_count_.Add(1); }
 
-  void SetupBufferTracker(inspect::Node& node, const std::string& name,
+  void SetupBufferTracker(const std::string& name,
                           std::optional<uint32_t> max_buffer_count = std::nullopt,
                           std::optional<zx::duration> per_buffer_duration = std::nullopt);
   void RecordBufferSubmission();
@@ -153,6 +195,8 @@ class AggregateRecords {
   void SetTaskScheduleInterval(zx::duration interval);
 
  private:
+  inspect::Node diagnostics_;
+  inspect::Node task_records_;
   TaskRecords min_task_records_;
   TaskRecords max_task_records_;
   TaskRecords sum_task_records_;
@@ -200,7 +244,7 @@ class RunningInterval {
                          std::optional<zx::duration> start_to_start,
                          std::optional<zx::duration> end_to_end);
 
-  AggregateRecords& aggregate_records() { return aggregate_records_; }
+  AggregateRecords& diagnostics() { return aggregate_records_; }
   inspect::Node& node() { return node_; }
 
  private:

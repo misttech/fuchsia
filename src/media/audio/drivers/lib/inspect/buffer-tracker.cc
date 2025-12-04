@@ -5,6 +5,8 @@
 
 #include <lib/driver/logging/cpp/logger.h>
 
+#include "src/media/audio/drivers/lib/inspect/recorder.h"
+
 namespace audio {
 
 BufferTracker::BufferTracker(inspect::Node node, std::optional<uint32_t> max_buffer_count,
@@ -14,45 +16,45 @@ BufferTracker::BufferTracker(inspect::Node node, std::optional<uint32_t> max_buf
       per_buffer_duration_(per_buffer_duration),
       max_buffer_count_(max_buffer_count) {
   avg_processing_time_us_ = node_.CreateLazyValues(
-      "avg_processing_time_us", [this]() -> fpromise::promise<inspect::Inspector> {
+      kProcessingTimeAvgUsec, [this]() -> fpromise::promise<inspect::Inspector> {
         std::lock_guard<std::mutex> lock(mutex_);
         inspect::Inspector inspector;
-        inspector.GetRoot().CreateUint("avg_processing_time_us",
+        inspector.GetRoot().CreateUint(kProcessingTimeAvgUsec,
                                        total_buffers_processed_ == 0
                                            ? 0
                                            : total_processing_time_us_ / total_buffers_processed_,
                                        &inspector);
         return fpromise::make_ok_promise(inspector);
       });
-  max_processing_time_us_ = node_.CreateUint("max_processing_time_us", 0);
-  total_empty_buffer_duration_us_ = node_.CreateUint("total_empty_buffer_duration_us", 0);
-  empty_buffer_episode_count_ = node_.CreateUint("empty_buffer_episode_count", 0);
-  max_empty_buffer_duration_us_ = node_.CreateUint("max_empty_buffer_duration_us", 0);
+  max_processing_time_us_ = node_.CreateUint(kProcessingTimeMaxUsec, 0);
+  total_empty_buffer_duration_us_ = node_.CreateUint(kEmptyBufferCumulativeDurationUsec, 0);
+  empty_buffer_episode_count_ = node_.CreateUint(kEmptyBufferEpisodeCount, 0);
+  max_empty_buffer_duration_us_ = node_.CreateUint(kEmptyBufferDurationMaxUsec, 0);
   avg_outstanding_buffer_count_ = node_.CreateLazyValues(
-      "avg_outstanding_buffer_count", [this]() -> fpromise::promise<inspect::Inspector> {
+      kCountOutstandingBuffersAvg, [this]() -> fpromise::promise<inspect::Inspector> {
         std::lock_guard<std::mutex> lock(mutex_);
         inspect::Inspector inspector;
         inspector.GetRoot().CreateUint(
-            "avg_outstanding_buffer_count",
+            kCountOutstandingBuffersAvg,
             total_buffers_processed_ == 0
                 ? 0
                 : cumulative_outstanding_buffer_count_ / total_buffers_processed_,
             &inspector);
         return fpromise::make_ok_promise(inspector);
       });
-  total_buffers_processed_count_ = node_.CreateUint("total_buffers_processed_count", 0);
+  total_buffers_processed_count_ = node_.CreateUint(kCountBuffersProcessed, 0);
   if (max_buffer_count.has_value()) {
-    total_full_buffer_duration_us_ = node_.CreateUint("total_full_buffer_duration_us", 0);
-    full_buffer_episode_count_ = node_.CreateUint("full_buffer_episode_count", 0);
-    max_full_buffer_duration_us_ = node_.CreateUint("max_full_buffer_duration_us", 0);
+    total_full_buffer_duration_us_ = node_.CreateUint(kFullBufferCumulativeDurationUsec, 0);
+    full_buffer_episode_count_ = node_.CreateUint(kFullBufferEpisodeCount, 0);
+    max_full_buffer_duration_us_ = node_.CreateUint(kFullBufferMaxDurationUsec, 0);
   }
   if (per_buffer_duration_.has_value()) {
     total_buffers_processed_duration_us_ = node_.CreateLazyValues(
-        "total_buffers_processed_duration_us", [this]() -> fpromise::promise<inspect::Inspector> {
+        kProcessingTimeCumulativeUsec, [this]() -> fpromise::promise<inspect::Inspector> {
           std::lock_guard<std::mutex> lock(mutex_);
           inspect::Inspector inspector;
           inspector.GetRoot().CreateUint(
-              "total_buffers_processed_duration_us",
+              kProcessingTimeCumulativeUsec,
               total_buffers_processed_ * per_buffer_duration_->to_usecs(), &inspector);
           return fpromise::make_ok_promise(inspector);
         });

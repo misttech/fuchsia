@@ -145,12 +145,12 @@ TEST_F(RecorderTest, StartAndStop) {
 
   auto hierarchy = GetHierarchy();
   std::vector<std::string> running_interval_path = {std::string(kRingBuffers), "test_ring_buffer",
-                                                  "instance_0", "running_intervals", "0"};
+                                                    "instance_0", std::string(kRunningIntervals),
+                                                    "0"};
   auto running_interval_hierarchy = hierarchy.GetByPath(running_interval_path);
   ASSERT_TRUE(running_interval_hierarchy);
-  EXPECT_THAT(
-      *running_interval_hierarchy,
-      NodeMatches(PropertyList(IsSupersetOf({IntIs(std::string(kStartedAtUs), 100)}))));
+  EXPECT_THAT(*running_interval_hierarchy,
+              NodeMatches(PropertyList(IsSupersetOf({IntIs(std::string(kStartedAtUs), 100)}))));
 
   zx::time stopped_at = zx::time(zx::usec(200).get());
   rb_recorder->RecordStopTime(stopped_at);
@@ -158,10 +158,9 @@ TEST_F(RecorderTest, StartAndStop) {
   running_interval_hierarchy = hierarchy.GetByPath(running_interval_path);
   ASSERT_TRUE(running_interval_hierarchy);
   EXPECT_THAT(*running_interval_hierarchy,
-              NodeMatches(PropertyList(IsSupersetOf(
-                  {IntIs(std::string(kStartedAtUs), 100),
-                   IntIs(std::string(kStoppedAtUs), 200),
-                   IntIs(std::string(kAudioDuration), 100)}))));
+              NodeMatches(PropertyList(IsSupersetOf({IntIs(std::string(kStartedAtUs), 100),
+                                                     IntIs(std::string(kStoppedAtUs), 200),
+                                                     IntIs(std::string(kAudioDuration), 100)}))));
 }
 
 TEST_F(RecorderTest, ActiveChannels) {
@@ -219,27 +218,32 @@ TEST_F(RecorderTest, BufferTracker) {
   auto expected_buffer_tracker = AllOf(
       NameMatches(std::string("test_buffer_tracker")),
       PropertyList(IsSupersetOf(std::vector<::testing::Matcher<const ::inspect::PropertyValue&>>{
-          UintIs(std::string("avg_processing_time_us"), testing::Ge(2000)),
-          UintIs(std::string("max_processing_time_us"), testing::Ge(3000)),
-          UintIs(std::string("total_empty_buffer_duration_us"), testing::Ge(200 * 1000)),
-          UintIs(std::string("empty_buffer_episode_count"), 1),
-          UintIs(std::string("max_empty_buffer_duration_us"), testing::Ge(200 * 1000)),
-          UintIs(std::string("total_full_buffer_duration_us"), 0),
-          UintIs(std::string("full_buffer_episode_count"), 0),
-          UintIs(std::string("max_full_buffer_duration_us"), 0),
-          UintIs(std::string("avg_outstanding_buffer_count"), 1),
-          UintIs(std::string("total_buffers_processed_duration_us"), 2 * 10 * 1000)})));
+          UintIs(std::string(kProcessingTimeAvgUsec), testing::Ge(2000)),
+          UintIs(std::string(kProcessingTimeMaxUsec), testing::Ge(3000)),
+          UintIs(std::string(kEmptyBufferCumulativeDurationUsec), testing::Ge(200 * 1000)),
+          UintIs(std::string(kEmptyBufferEpisodeCount), 1),
+          UintIs(std::string(kEmptyBufferDurationMaxUsec), testing::Ge(200 * 1000)),
+          UintIs(std::string(kFullBufferCumulativeDurationUsec), 0),
+          UintIs(std::string(kFullBufferEpisodeCount), 0),
+          UintIs(std::string(kFullBufferMaxDurationUsec), 0),
+          UintIs(std::string(kCountOutstandingBuffersAvg), 1),
+          UintIs(std::string(kProcessingTimeCumulativeUsec), 2 * 10 * 1000)})));
 
   auto hierarchy = GetHierarchy();
   std::vector<std::string> rb_buffer_tracker_path = {std::string(kRingBuffers), "test_ring_buffer",
+                                                     std::string(kDiagnosticsSummary),
                                                      "test_buffer_tracker"};
   const auto rb_buffer_tracker_hierarchy = hierarchy.GetByPath(rb_buffer_tracker_path);
   ASSERT_TRUE(rb_buffer_tracker_hierarchy);
   EXPECT_THAT(*rb_buffer_tracker_hierarchy, NodeMatches(expected_buffer_tracker));
 
-  std::vector<std::string> running_instance_buffer_tracker_path = {
-      std::string(kRingBuffers), "test_ring_buffer", "instance_0", "running_intervals", "0",
-      "test_buffer_tracker"};
+  std::vector<std::string> running_instance_buffer_tracker_path = {std::string(kRingBuffers),
+                                                                   "test_ring_buffer",
+                                                                   "instance_0",
+                                                                   std::string(kRunningIntervals),
+                                                                   "0",
+                                                                   std::string(kDiagnostics),
+                                                                   "test_buffer_tracker"};
   const auto running_instance_buffer_tracker_hierarchy =
       hierarchy.GetByPath(running_instance_buffer_tracker_path);
   ASSERT_TRUE(running_instance_buffer_tracker_hierarchy);
@@ -262,26 +266,33 @@ TEST_F(RecorderTest, AvgTaskMetrics) {
   rb_recorder->RecordStopTime(zx::time(200));
 
   auto expected_avg_metrics =
-      AllOf(NameMatches(std::string("avg_metrics")),
+      AllOf(NameMatches(std::string(kAvg)),
             PropertyList(UnorderedElementsAre(
-                IntIs(std::string("wall_time_us"), testing::Ge(1000)),
-                IntIs(std::string("cpu_time_us"), testing::Ge(0)),
-                IntIs(std::string("queue_time_us"), testing::Ge(0)),
-                IntIs(std::string("page_fault_time_us"), testing::Ge(0)),
-                IntIs(std::string("kernel_lock_contention_time_us"), testing::Ge(0)),
-                IntIs(std::string("start_to_start_us"), testing::Ge(1000)),
-                IntIs(std::string("end_to_end_us"), testing::Ge(1000)))));
+                IntIs(std::string(kWallTimeUsec), testing::Ge(1000)),
+                IntIs(std::string(kCpuTimeUsec), testing::Ge(0)),
+                IntIs(std::string(kQueueTimeUsec), testing::Ge(0)),
+                IntIs(std::string(kPageFaultTimeUsec), testing::Ge(0)),
+                IntIs(std::string(kKernelLockContentionTimeUsec), testing::Ge(0)),
+                IntIs(std::string(kStartToStartIntervalUsec), testing::Ge(1000)),
+                IntIs(std::string(kEndToEndIntervalUsec), testing::Ge(1000)))));
 
   auto hierarchy = GetHierarchy();
-  std::vector<std::string> rb_avg_metrics_path = {std::string(kRingBuffers), "test_ring_buffer",
-                                                  "avg_task_records", "avg_metrics"};
+  std::vector<std::string> rb_avg_metrics_path = {
+      std::string(kRingBuffers), "test_ring_buffer", std::string(kDiagnosticsSummary),
+      std::string(kTaskRecords), std::string(kAvg),  std::string(kAvg)};
   const auto rb_avg_metrics_hierarchy = hierarchy.GetByPath(rb_avg_metrics_path);
   ASSERT_TRUE(rb_avg_metrics_hierarchy);
   EXPECT_THAT(*rb_avg_metrics_hierarchy, NodeMatches(expected_avg_metrics));
 
-  std::vector<std::string> running_instance_avg_metrics_path = {
-      std::string(kRingBuffers), "test_ring_buffer", "instance_0", "running_intervals", "0",
-      "avg_task_records",        "avg_metrics"};
+  std::vector<std::string> running_instance_avg_metrics_path = {std::string(kRingBuffers),
+                                                                "test_ring_buffer",
+                                                                "instance_0",
+                                                                std::string(kRunningIntervals),
+                                                                "0",
+                                                                std::string(kDiagnostics),
+                                                                std::string(kTaskRecords),
+                                                                std::string(kAvg),
+                                                                std::string(kAvg)};
   const auto running_instance_avg_metrics_hierarchy =
       hierarchy.GetByPath(running_instance_avg_metrics_path);
   ASSERT_TRUE(running_instance_avg_metrics_hierarchy);
@@ -307,19 +318,26 @@ TEST_F(RecorderTest, SchedulingDelayMetrics) {
   rb_recorder->RecordStopTime(zx::time(200));
 
   auto expected_min_metrics =
-      AllOf(NameMatches(std::string("min_metrics")),
+      AllOf(NameMatches(std::string(kMin)),
             PropertyList(Contains(IntIs(std::string("scheduling_delay_us"), testing::Ge(500)))));
 
   auto hierarchy = GetHierarchy();
-  std::vector<std::string> rb_min_metrics_path = {std::string(kRingBuffers), "test_ring_buffer",
-                                                  "min_task_records", "min_metrics"};
+  std::vector<std::string> rb_min_metrics_path = {
+      std::string(kRingBuffers), "test_ring_buffer", std::string(kDiagnosticsSummary),
+      std::string(kTaskRecords), std::string(kMin),  std::string(kMin)};
   const auto rb_min_metrics_hierarchy = hierarchy.GetByPath(rb_min_metrics_path);
   ASSERT_TRUE(rb_min_metrics_hierarchy);
   EXPECT_THAT(*rb_min_metrics_hierarchy, NodeMatches(expected_min_metrics));
 
-  std::vector<std::string> running_instance_min_metrics_path = {
-      std::string(kRingBuffers), "test_ring_buffer", "instance_0", "running_intervals", "0",
-      "min_task_records",        "min_metrics"};
+  std::vector<std::string> running_instance_min_metrics_path = {std::string(kRingBuffers),
+                                                                "test_ring_buffer",
+                                                                "instance_0",
+                                                                std::string(kRunningIntervals),
+                                                                "0",
+                                                                std::string(kDiagnostics),
+                                                                std::string(kTaskRecords),
+                                                                std::string(kMin),
+                                                                std::string(kMin)};
   const auto running_instance_min_metrics_hierarchy =
       hierarchy.GetByPath(running_instance_min_metrics_path);
   ASSERT_TRUE(running_instance_min_metrics_hierarchy);

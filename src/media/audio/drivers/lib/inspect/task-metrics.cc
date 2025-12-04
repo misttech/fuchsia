@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "task-metrics.h"
+#include "src/media/audio/drivers/lib/inspect/task-metrics.h"
 
 namespace audio {
 
