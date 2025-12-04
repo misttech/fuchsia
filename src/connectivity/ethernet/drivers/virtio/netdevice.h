@@ -7,7 +7,9 @@
 
 #include <fidl/fuchsia.hardware.network/cpp/wire.h>
 #include <fuchsia/hardware/network/driver/cpp/banjo.h>
-#include <lib/ddk/io-buffer.h>
+#include <lib/driver/compat/cpp/banjo_server.h>
+#include <lib/driver/compat/cpp/device_server.h>
+#include <lib/driver/component/cpp/driver_base.h>
 #include <lib/virtio/device.h>
 #include <lib/virtio/ring.h>
 #include <lib/zircon-internal/thread_annotations.h>
@@ -19,9 +21,7 @@
 
 #include <memory>
 #include <mutex>
-#include <shared_mutex>
 
-#include <ddktl/device.h>
 #include <fbl/macros.h>
 #include <virtio/net.h>
 
@@ -32,14 +32,11 @@ namespace virtio {
 
 using VmoStore = vmo_store::VmoStore<vmo_store::SlabStorage<uint32_t>>;
 
-class NetworkDevice;
+class VirtioNetDriver;
 
-using DeviceType = ddk::Device<NetworkDevice>;
 class NetworkDevice : public Device,
-                      // Mixins for protocol device:
-                      public DeviceType,
                       // Mixin for Network device banjo protocol:
-                      public ddk::NetworkDeviceImplProtocol<NetworkDevice, ddk::base_protocol>,
+                      public ddk::NetworkDeviceImplProtocol<NetworkDevice>,
                       public ddk::NetworkPortProtocol<NetworkDevice>,
                       public ddk::MacAddrProtocol<NetworkDevice> {
  public:
@@ -61,11 +58,13 @@ class NetworkDevice : public Device,
   static constexpr uint16_t kRxId = 0u;
   static constexpr uint16_t kTxId = 1u;
 
-  NetworkDevice(zx_device_t* device, zx::bti, std::unique_ptr<Backend> backend);
+  static constexpr char kChildNodeName[] = "virtio-net-compat";
+
+  NetworkDevice(VirtioNetDriver* driver, zx::bti bti_handle, std::unique_ptr<Backend> backend);
   virtual ~NetworkDevice();
 
   zx_status_t Init() override __TA_EXCLUDES(state_lock_);
-  void DdkRelease() __TA_EXCLUDES(state_lock_);
+  void Shutdown() __TA_EXCLUDES(state_lock_);
 
   // VirtIO callbacks
   void IrqRingUpdate() override __TA_EXCLUDES(state_lock_);
@@ -101,6 +100,8 @@ class NetworkDevice : public Device,
 
  private:
   friend class NetworkDeviceTests;
+  zx_status_t AddDevice();
+
   zx_status_t AckFeatures(bool* is_status_supported, bool* is_multiqueue_supported,
                           uint16_t* virtio_hdr_len);
 
@@ -109,6 +110,14 @@ class NetworkDevice : public Device,
   // Implementation of IrqRingUpdate; returns true if it should be called again.
   bool IrqRingUpdateInternal() __TA_EXCLUDES(state_lock_);
   port_status_t ReadStatus() const;
+
+  VirtioNetDriver* driver_ = nullptr;
+
+  compat::SyncInitializedDeviceServer compat_server_;
+  compat::BanjoServer net_device_server_{ZX_PROTOCOL_NETWORK_DEVICE_IMPL, this,
+                                         &network_device_impl_protocol_ops_};
+  fidl::ClientEnd<fuchsia_driver_framework::NodeController> netdev_child_;
+  bool irq_thread_started_ = false;
 
   // Mutexes to control concurrent access
   network::SharedLock state_lock_;

@@ -2,8 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "netdevice.h"
+#include "src/connectivity/ethernet/drivers/virtio/netdevice.h"
 
+#include <lib/driver/compat/cpp/banjo_client.h>
+#include <lib/driver/compat/cpp/device_server.h>
+#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/testing/cpp/driver_test.h>
+#include <lib/driver/testing/cpp/minimal_compat_environment.h>
 #include <lib/fake-bti/bti.h>
 #include <lib/virtio/backends/fake.h>
 
@@ -13,7 +18,8 @@
 
 #include <zxtest/zxtest.h>
 
-#include "src/devices/testing/mock-ddk/mock-device.h"
+#include "src/connectivity/ethernet/drivers/virtio/virtio_net_driver.h"
+#include "src/devices/pci/testing/pci_protocol_fake.h"
 #include "src/lib/fxl/strings/string_printf.h"
 
 namespace virtio {
@@ -120,6 +126,55 @@ class FakeBackendForNetdeviceTest : public FakeBackend {
   uint64_t feature_bits_ = 0;
 };
 
+// The test driver exists to override the creation of the NetworkDevice object. It needs to be
+// created with the fake backend, something that can't be injected since it's instantiated with a
+// specific type in the driver class. Since the driver class is extremely simplistic, it really only
+// exists to create the NetworkDevice (which does all the work), we assume that covering only
+// NetworkDevice gives us enough confidence.
+class TestVirtioNetDriver : public VirtioNetDriver {
+ public:
+  TestVirtioNetDriver(fdf::DriverStartArgs start_args,
+                      fdf::UnownedSynchronizedDispatcher dispatcher)
+      : VirtioNetDriver(std::move(start_args), std::move(dispatcher)) {}
+
+  // Allow tests to configure the backend before the driver starts. If these values are set they
+  // will be applied to the backend at creation.
+  static void SetWithStatusFeature(bool supported) { with_status_features_ = supported; }
+  static void SetSupportFeatureV1(bool v1) { support_feature_v1_ = v1; }
+
+  FakeBackendForNetdeviceTest* backend() { return backend_; }
+
+ private:
+  zx::result<std::unique_ptr<NetworkDevice>> CreateNetworkDevice() override {
+    auto backend = std::make_unique<FakeBackendForNetdeviceTest>();
+    if (with_status_features_.has_value()) {
+      backend->SetWithStatusFeature(with_status_features_.value());
+    }
+    if (support_feature_v1_.has_value()) {
+      backend->SetSupportFeatureV1(support_feature_v1_.value());
+    }
+    backend_ = backend.get();
+    zx::bti bti(ZX_HANDLE_INVALID);
+    if (zx_status_t status = fake_bti_create(bti.reset_and_get_address()); status != ZX_OK) {
+      return zx::error(status);
+    }
+    return zx::ok(std::make_unique<NetworkDevice>(this, std::move(bti), std::move(backend)));
+  }
+
+  FakeBackendForNetdeviceTest* backend_ = nullptr;
+
+  static std::optional<bool> with_status_features_;
+  static std::optional<bool> support_feature_v1_;
+};
+std::optional<bool> TestVirtioNetDriver::with_status_features_;
+std::optional<bool> TestVirtioNetDriver::support_feature_v1_;
+
+class TestConfig final {
+ public:
+  using DriverType = TestVirtioNetDriver;
+  using EnvironmentType = fdf_testing::MinimalCompatEnvironment;
+};
+
 class NetworkDeviceTests : public zxtest::Test,
                            public ddk::NetworkDeviceIfcProtocol<NetworkDeviceTests> {
  public:
@@ -130,27 +185,14 @@ class NetworkDeviceTests : public zxtest::Test,
   };
   static constexpr size_t kVmoFrameCount = 256;
 
-  NetworkDeviceTests() {
-    // NB: Basic infallible set up is done in the constructor so subclasses can
-    // override set up behavior more easily.
-    auto backend = std::make_unique<FakeBackendForNetdeviceTest>();
-    backend_ = backend.get();
-    zx::bti bti(ZX_HANDLE_INVALID);
-    fake_bti_create(bti.reset_and_get_address());
-    fake_parent_ = MockDevice::FakeRootParent();
-    device_ =
-        std::make_unique<NetworkDevice>(fake_parent_.get(), std::move(bti), std::move(backend));
-  }
-
   void SetUp() override {
-    ASSERT_OK(device_->Init());
-    const network_device_ifc_protocol_t protocol = {
-        .ops = &network_device_ifc_protocol_ops_,
-        .ctx = this,
-    };
+    ASSERT_OK(driver_test_.StartDriver().status_value());
+
+    ConnectToNetDevice();
+
     libsync::Completion initialized;
-    device_->NetworkDeviceImplInit(
-        &protocol,
+    netdevice_client_.Init(
+        this, &network_device_ifc_protocol_ops_,
         [](void* ctx, zx_status_t status) {
           EXPECT_OK(status);
           static_cast<libsync::Completion*>(ctx)->Signal();
@@ -164,11 +206,20 @@ class NetworkDeviceTests : public zxtest::Test,
     ASSERT_TRUE(mac_.is_valid());
   }
 
-  void TearDown() override {
-    device_->DdkAsyncRemove();
-    ASSERT_OK(mock_ddk::ReleaseFlaggedDevices(fake_parent_.get()));
-    // Release must have released the memory for us.
-    [[maybe_unused]] NetworkDevice* ptr = device_.release();
+  void TearDown() override { ASSERT_OK(driver_test_.StopDriver().status_value()); }
+
+  void ConnectToNetDevice() {
+    zx::result compat_client =
+        driver_test_.Connect<fuchsia_driver_compat::Service::Device>(NetworkDevice::kChildNodeName);
+    ASSERT_OK(compat_client);
+    fidl::WireSyncClient<fuchsia_driver_compat::Device> compat(std::move(compat_client.value()));
+
+    fidl::WireResult result = compat->GetBanjoProtocol(
+        ddk::NetworkDeviceImplProtocolClient::kProtocolId, compat::internal::GetKoid());
+    zx::result client = compat::internal::OnResult<ddk::NetworkDeviceImplProtocolClient>(result);
+    ASSERT_TRUE(client.is_ok());
+    netdevice_client_ = client.value();
+    ASSERT_TRUE(netdevice_client_.is_valid());
   }
 
   void PrepareVmo() {
@@ -177,7 +228,7 @@ class NetworkDeviceTests : public zxtest::Test,
     zx::vmo device_vmo;
     ASSERT_OK(vmo_.duplicate(ZX_RIGHT_SAME_RIGHTS, &device_vmo));
     std::optional<zx_status_t> prepare_result;
-    device().NetworkDeviceImplPrepareVmo(
+    netdevice_client_.PrepareVmo(
         kVmoId, std::move(device_vmo),
         [](void* cookie, zx_status_t status) {
           *reinterpret_cast<std::optional<zx_status_t>*>(cookie) = status;
@@ -189,7 +240,7 @@ class NetworkDeviceTests : public zxtest::Test,
 
   void StartDevice() {
     std::optional<zx_status_t> start_result;
-    device().NetworkDeviceImplStart(
+    netdevice_client_.Start(
         [](void* cookie, zx_status_t status) {
           *reinterpret_cast<std::optional<zx_status_t>*>(cookie) = status;
         },
@@ -241,14 +292,34 @@ class NetworkDeviceTests : public zxtest::Test,
   std::optional<tx_result_t> PopTx() { return PopHelper(complete_tx_queue_); }
   std::optional<port_status_t> PopStatus() { return PopHelper(port_status_queue_); }
 
-  NetworkDevice& device() { return *device_; }
+  // NetworkDevice& device() { return *device_; }
+  void WithDevice(fit::callback<void(NetworkDevice&)> callback) {
+    driver_test_.RunInDriverContext([&](VirtioNetDriver& driver) {
+      ASSERT_NE(driver.GetNetworkDevice(), nullptr);
+      callback(*driver.GetNetworkDevice());
+    });
+  }
+  ddk::NetworkDeviceImplProtocolClient& netdev() { return netdevice_client_; }
   ddk::NetworkPortProtocolClient& port() { return port_; }
   ddk::MacAddrProtocolClient& mac() { return mac_; }
-  FakeBackendForNetdeviceTest& backend() { return *backend_; }
+  FakeBackendForNetdeviceTest& backend() {
+    FakeBackendForNetdeviceTest* ptr = nullptr;
+    driver_test_.RunInDriverContext([&](TestVirtioNetDriver& driver) { ptr = driver.backend(); });
+    return *ptr;
+  }
   zx::vmo& vmo() { return vmo_; }
-  // Unsafe access into vrings.
-  vring& tx_vring() __TA_NO_THREAD_SAFETY_ANALYSIS { return device().tx_.vring_unsafe(); }
-  vring& rx_vring() __TA_NO_THREAD_SAFETY_ANALYSIS { return device().rx_.vring_unsafe(); }
+  void WithTxRing(fit::callback<void(NetworkDevice&, vring&)> callback) {
+    WithDevice([&](NetworkDevice& device) {
+      std::scoped_lock lock(device.tx_lock_);
+      callback(device, device.tx_.vring_unsafe());
+    });
+  }
+  void WithRxRing(fit::callback<void(NetworkDevice&, vring&)> callback) {
+    WithDevice([&](NetworkDevice& device) {
+      std::scoped_lock lock(device.rx_lock_);
+      callback(device, device.rx_.vring_unsafe());
+    });
+  }
 
  private:
   template <typename T>
@@ -261,21 +332,22 @@ class NetworkDeviceTests : public zxtest::Test,
     return ret;
   }
 
+  fdf_testing::BackgroundDriverTest<TestConfig> driver_test_;
+
   zx::vmo vmo_;
-  std::shared_ptr<MockDevice> fake_parent_;
-  std::unique_ptr<NetworkDevice> device_;
-  FakeBackendForNetdeviceTest* backend_;
   ddk::NetworkPortProtocolClient port_;
   ddk::MacAddrProtocolClient mac_;
   std::queue<port_status_t> port_status_queue_;
   std::queue<CompleteRx> complete_rx_queue_;
   std::queue<tx_result_t> complete_tx_queue_;
+
+  ddk::NetworkDeviceImplProtocolClient netdevice_client_;
 };
 
 class VirtioVersionTests : public NetworkDeviceTests, public zxtest::WithParamInterface<bool> {
  public:
   void SetUp() override {
-    backend().SetSupportFeatureV1(IsV1Virtio());
+    TestVirtioNetDriver::SetSupportFeatureV1(IsV1Virtio());
     NetworkDeviceTests::SetUp();
   }
 
@@ -314,7 +386,7 @@ TEST_F(NetworkDeviceTests, StartReportsOfflineOnLinkDown) {
 class StatusNotSupportedTests : public NetworkDeviceTests {
  public:
   void SetUp() override {
-    backend().SetWithStatusFeature(false);
+    TestVirtioNetDriver::SetWithStatusFeature(false);
     NetworkDeviceTests::SetUp();
   }
 };
@@ -328,8 +400,8 @@ TEST_F(StatusNotSupportedTests, StartReportsOnlineWhenStatusNotSupported) {
             static_cast<uint32_t>(fuchsia_hardware_network::wire::StatusFlags::kOnline));
 
   libsync::Completion stop_called;
-  device().NetworkDeviceImplStop(
-      [](void* cookie) { reinterpret_cast<libsync::Completion*>(cookie)->Signal(); }, &stop_called);
+  netdev().Stop([](void* cookie) { reinterpret_cast<libsync::Completion*>(cookie)->Signal(); },
+                &stop_called);
   stop_called.Wait();
 
   // When the status feature is not supported, the device should NOT report an
@@ -378,30 +450,34 @@ TEST_F(NetworkDeviceTests, Stop) {
       {.id = 1, .region = kDummyRegion},
       {.id = 2, .region = kDummyRegion},
   };
+  const uint16_t header_len = [&] {
+    uint16_t len = 0;
+    WithDevice([&](NetworkDevice& device) { len = device.virtio_header_len(); });
+    return len;
+  }();
   const tx_buffer_t tx_buffers[] = {
       {
           .id = 1,
           .data_list = &kDummyRegion,
           .data_count = 1,
           .meta = kFrameMetadata,
-          .head_length = device().virtio_header_len(),
+          .head_length = header_len,
       },
       {
           .id = 2,
           .data_list = &kDummyRegion,
           .data_count = 1,
           .meta = kFrameMetadata,
-          .head_length = device().virtio_header_len(),
+          .head_length = header_len,
       },
   };
 
   // Queue some rx and tx buffers so we observe them being returned on stop.
-  device().NetworkDeviceImplQueueRxSpace(rx_spaces, std::size(rx_spaces));
-  device().NetworkDeviceImplQueueTx(tx_buffers, std::size(tx_buffers));
+  netdev().QueueRxSpace(rx_spaces, std::size(rx_spaces));
+  netdev().QueueTx(tx_buffers, std::size(tx_buffers));
   {
     bool callback_called = false;
-    device().NetworkDeviceImplStop([](void* cookie) { *reinterpret_cast<bool*>(cookie) = true; },
-                                   &callback_called);
+    netdev().Stop([](void* cookie) { *reinterpret_cast<bool*>(cookie) = true; }, &callback_called);
     EXPECT_TRUE(callback_called);
   }
 
@@ -454,45 +530,49 @@ TEST_F(NetworkDeviceTests, StopDuringIrqUpdate) {
       .length = NetworkDevice::kFrameSize,
   };
 
-  for (uint32_t i = 0; i < tx_buffers.size(); ++i) {
-    tx_buffers[i] = {.id = i,
-                     .data_list = &kPlaceholderRegion,
-                     .data_count = 1,
-                     .meta = kFrameMetadata,
-                     .head_length = device().virtio_header_len()};
-  }
+  WithDevice([&](NetworkDevice& device) {
+    for (uint32_t i = 0; i < tx_buffers.size(); ++i) {
+      tx_buffers[i] = {.id = i,
+                       .data_list = &kPlaceholderRegion,
+                       .data_count = 1,
+                       .meta = kFrameMetadata,
+                       .head_length = device.virtio_header_len()};
+    }
+  });
 
   for (uint32_t i = 0; i < rx_spaces.size(); ++i) {
     rx_spaces[i] = {.id = i, .region = kPlaceholderRegion};
   }
 
   // Queue some rx and tx buffers so we observe them being returned on stop.
-  device().NetworkDeviceImplQueueRxSpace(rx_spaces.data(), rx_spaces.size());
-  device().NetworkDeviceImplQueueTx(tx_buffers.data(), tx_buffers.size());
+  netdev().QueueRxSpace(rx_spaces.data(), rx_spaces.size());
+  netdev().QueueTx(tx_buffers.data(), tx_buffers.size());
 
   // Populate TX descriptors in the ring to indicate that everything was transmitted so that
   // IrqRingUpdate has something to do.
-  vring& tx_ring = tx_vring();
-  for (const auto& tx_buffer : tx_buffers) {
-    tx_ring.used[tx_ring.used->idx++] = {.idx = static_cast<uint16_t>(tx_buffer.id)};
-  }
+  WithTxRing([&](NetworkDevice&, vring& tx_ring) {
+    for (const auto& tx_buffer : tx_buffers) {
+      tx_ring.used[tx_ring.used->idx++] = {.idx = static_cast<uint16_t>(tx_buffer.id)};
+    }
+  });
 
   // Also Populate RX descriptors in the ring to indicate that everything was received.
-  vring& rx_ring = rx_vring();
-  for (const auto& rx_space : rx_spaces) {
-    rx_ring.used[rx_ring.used->idx++] = {.idx = static_cast<uint16_t>(rx_space.id)};
-  }
+  WithRxRing([&](NetworkDevice&, vring& rx_ring) {
+    for (const auto& rx_space : rx_spaces) {
+      rx_ring.used[rx_ring.used->idx++] = {.idx = static_cast<uint16_t>(rx_space.id)};
+    }
+  });
 
   // Now call Stop first to return all buffers.
   libsync::Completion stop_called;
-  device().NetworkDeviceImplStop(
-      [](void* cookie) { reinterpret_cast<libsync::Completion*>(cookie)->Signal(); }, &stop_called);
+  netdev().Stop([](void* cookie) { reinterpret_cast<libsync::Completion*>(cookie)->Signal(); },
+                &stop_called);
   stop_called.Wait();
 
   // Then behave as if an IRQ ring update was pending but blocked on one of the locks in Stop and is
   // now allowed to continue running. If the TX or RX ring is not correctly cleared in Stop this
   // will trigger an assertion and crash.
-  device().IrqRingUpdate();
+  WithDevice([&](NetworkDevice& device) { device.IrqRingUpdate(); });
 }
 
 TEST_F(NetworkDeviceTests, UpdateStatus) {
@@ -515,7 +595,7 @@ TEST_F(NetworkDeviceTests, UpdateStatus) {
   for (const auto& test : kTests) {
     SCOPED_TRACE(test.name);
     test.set_state();
-    device().IrqConfigChange();
+    WithDevice([&](NetworkDevice& device) { device.IrqConfigChange(); });
     std::optional status = PopStatus();
     ASSERT_TRUE(status.has_value());
     const port_status_t& observed = status.value();
@@ -547,36 +627,39 @@ TEST_P(VirtioVersionTests, Rx) {
               },
       },
   };
-  device().NetworkDeviceImplQueueRxSpace(rx_space, std::size(rx_space));
+  netdev().QueueRxSpace(rx_space, std::size(rx_space));
   EXPECT_TRUE(backend().IsQueueKicked(NetworkDevice::kRxId));
 
-  // Check build descriptors and write into registers as the device does.
-  vring& vring = rx_vring();
-  size_t avail_ring_offset = std::size(rx_space);
   constexpr uint32_t kReceivedLenMultiplier = 10;
-  for (const auto& space : rx_space) {
-    uint16_t desc_idx = vring.avail->ring[vring.avail->idx - avail_ring_offset--];
-    vring_desc& desc = vring.desc[desc_idx];
-    EXPECT_EQ(desc.flags, VRING_DESC_F_WRITE);
-    EXPECT_EQ(desc.len, space.region.length);
-    EXPECT_EQ(desc.addr, FAKE_BTI_PHYS_ADDR + space.region.offset);
-    EXPECT_EQ(desc.next, 0);
 
-    vring.used->ring[vring.used->idx++] = {
-        .id = desc_idx,
-        .len = device().virtio_header_len() + space.id * kReceivedLenMultiplier,
-    };
-  }
+  // Check build descriptors and write into registers as the device does.
+  WithRxRing([&](NetworkDevice& device, vring& vring) {
+    size_t avail_ring_offset = std::size(rx_space);
+    for (const auto& space : rx_space) {
+      uint16_t desc_idx = vring.avail->ring[vring.avail->idx - avail_ring_offset--];
+      vring_desc& desc = vring.desc[desc_idx];
+      EXPECT_EQ(desc.flags, VRING_DESC_F_WRITE);
+      EXPECT_EQ(desc.len, space.region.length);
+      EXPECT_EQ(desc.addr, FAKE_BTI_PHYS_ADDR + space.region.offset);
+      EXPECT_EQ(desc.next, 0);
+
+      vring.used->ring[vring.used->idx++] = {
+          .id = desc_idx,
+          .len = device.virtio_header_len() + space.id * kReceivedLenMultiplier,
+      };
+    }
+  });
 
   // Call irq handler and verify all buffer are returned.
-  device().IrqRingUpdate();
+  WithDevice([&](NetworkDevice& device) { device.IrqRingUpdate(); });
   for (const auto& expect : rx_space) {
     SCOPED_TRACE(fxl::StringPrintf("expect id %d", expect.id));
     std::optional rx = PopRx();
     ASSERT_TRUE(rx.has_value());
     const CompleteRx& result = rx.value();
     EXPECT_EQ(result.part.id, expect.id);
-    EXPECT_EQ(result.part.offset, device().virtio_header_len());
+    WithDevice(
+        [&](NetworkDevice& device) { EXPECT_EQ(result.part.offset, device.virtio_header_len()); });
     EXPECT_EQ(result.part.length, expect.id * kReceivedLenMultiplier);
     EXPECT_EQ(result.meta.frame_type,
               static_cast<uint8_t>(fuchsia_hardware_network::wire::FrameType::kEthernet));
@@ -588,7 +671,11 @@ TEST_P(VirtioVersionTests, Rx) {
 TEST_P(VirtioVersionTests, Tx) {
   ASSERT_NO_FATAL_FAILURE(StartDevice());
   ASSERT_NO_FATAL_FAILURE(PrepareVmo());
-  const uint16_t header_len = device().virtio_header_len();
+  const uint16_t header_len = [&] {
+    uint16_t len = 0;
+    WithDevice([&](NetworkDevice& device) { len = device.virtio_header_len(); });
+    return len;
+  }();
   const buffer_region_t buffer_regions[] = {
       {
           .vmo = kVmoId,
@@ -626,14 +713,16 @@ TEST_P(VirtioVersionTests, Tx) {
       ASSERT_OK(vmo().write(header.data(), region.offset, header.size()));
     }
   }
-  device().NetworkDeviceImplQueueTx(tx_buffers, std::size(tx_buffers));
+  netdev().QueueTx(tx_buffers, std::size(tx_buffers));
   EXPECT_TRUE(backend().IsQueueKicked(NetworkDevice::kTxId));
 
   for (const auto& region : buffer_regions) {
     SCOPED_TRACE(fxl::StringPrintf("region at %zu", region.offset));
     virtio_net_hdr_t header;
-    ASSERT_OK(vmo().read(reinterpret_cast<uint8_t*>(&header), region.offset,
-                         device().virtio_header_len()));
+    WithDevice([&](NetworkDevice& device) {
+      ASSERT_OK(vmo().read(reinterpret_cast<uint8_t*>(&header), region.offset,
+                           device.virtio_header_len()));
+    });
     EXPECT_EQ(header.base.flags, 0);
     EXPECT_EQ(header.base.gso_type, 0);
     EXPECT_EQ(header.base.hdr_len, 0);
@@ -657,28 +746,32 @@ TEST_P(VirtioVersionTests, Tx) {
     // The byte immediately after the header is payload, and thus should not
     // have been touched.
     uint8_t next;
-    ASSERT_OK(vmo().read(&next, region.offset + device().virtio_header_len(), 1));
+    WithDevice([&](NetworkDevice& device) {
+      ASSERT_OK(vmo().read(&next, region.offset + device.virtio_header_len(), 1));
+    });
     EXPECT_EQ(next, kInitValue);
   }
 
   // Check build descriptors and write into registers as the device does.
-  vring& vring = tx_vring();
-  size_t avail_offset = vring.avail->idx - std::size(tx_buffers);
-  for (const auto& tx_buffer : tx_buffers) {
-    uint16_t desc_idx = vring.avail->ring[avail_offset++];
-    vring_desc& desc = vring.desc[desc_idx];
-    const buffer_region_t& region = tx_buffer.data_list[0];
-    EXPECT_EQ(desc.flags, 0);
-    EXPECT_EQ(desc.len, region.length);
-    EXPECT_EQ(desc.addr, FAKE_BTI_PHYS_ADDR + region.offset);
-    EXPECT_EQ(desc.next, 0);
+  size_t avail_offset = 0;
+  WithTxRing([&](NetworkDevice&, vring& vring) {
+    avail_offset = vring.avail->idx - std::size(tx_buffers);
+    for (const auto& tx_buffer : tx_buffers) {
+      uint16_t desc_idx = vring.avail->ring[avail_offset++];
+      vring_desc& desc = vring.desc[desc_idx];
+      const buffer_region_t& region = tx_buffer.data_list[0];
+      EXPECT_EQ(desc.flags, 0);
+      EXPECT_EQ(desc.len, region.length);
+      EXPECT_EQ(desc.addr, FAKE_BTI_PHYS_ADDR + region.offset);
+      EXPECT_EQ(desc.next, 0);
 
-    vring.used->ring[vring.used->idx++] = {
-        .id = desc_idx,
-    };
-  }
+      vring.used->ring[vring.used->idx++] = {
+          .id = desc_idx,
+      };
+    }
+  });
   // Call irq handler and verify all buffers are returned.
-  device().IrqRingUpdate();
+  WithDevice([&](NetworkDevice& device) { device.IrqRingUpdate(); });
   for (const auto& expect : tx_buffers) {
     SCOPED_TRACE(fxl::StringPrintf("expect id %d", expect.id));
     std::optional tx = PopTx();
@@ -689,26 +782,27 @@ TEST_P(VirtioVersionTests, Tx) {
   }
 
   // Submit the buffers again, but this time report them used in the opposite order.
-  device().NetworkDeviceImplQueueTx(tx_buffers, std::size(tx_buffers));
+  netdev().QueueTx(tx_buffers, std::size(tx_buffers));
 
-  vring.used->idx += std::size(tx_buffers);
-  uint16_t idx = vring.used->idx;
-  for (const auto& tx_buffer : tx_buffers) {
-    uint16_t desc_idx = vring.avail->ring[avail_offset++];
-    vring_desc& desc = vring.desc[desc_idx];
-    const buffer_region_t& region = tx_buffer.data_list[0];
-    EXPECT_EQ(desc.flags, 0);
-    EXPECT_EQ(desc.len, region.length);
-    EXPECT_EQ(desc.addr, FAKE_BTI_PHYS_ADDR + region.offset);
-    EXPECT_EQ(desc.next, 0);
+  WithTxRing([&](NetworkDevice&, vring& vring) {
+    vring.used->idx += std::size(tx_buffers);
+    uint16_t idx = vring.used->idx;
+    for (const auto& tx_buffer : tx_buffers) {
+      uint16_t desc_idx = vring.avail->ring[avail_offset++];
+      vring_desc& desc = vring.desc[desc_idx];
+      const buffer_region_t& region = tx_buffer.data_list[0];
+      EXPECT_EQ(desc.flags, 0);
+      EXPECT_EQ(desc.len, region.length);
+      EXPECT_EQ(desc.addr, FAKE_BTI_PHYS_ADDR + region.offset);
+      EXPECT_EQ(desc.next, 0);
 
-    vring.used->ring[--idx] = {
-        .id = desc_idx,
-    };
-  }
-
+      vring.used->ring[--idx] = {
+          .id = desc_idx,
+      };
+    }
+  });
   // Call irq handler and verify all buffers are returned.
-  device().IrqRingUpdate();
+  WithDevice([&](NetworkDevice& device) { device.IrqRingUpdate(); });
   std::unordered_set<uint32_t> ids;
   for (;;) {
     if (std::optional tx = PopTx(); tx) {
@@ -734,3 +828,5 @@ INSTANTIATE_TEST_SUITE_P(NetworkDeviceTests, VirtioVersionTests, zxtest::Values(
                          });
 
 }  // namespace virtio
+
+FUCHSIA_DRIVER_EXPORT(virtio::TestVirtioNetDriver);

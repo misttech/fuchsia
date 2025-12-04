@@ -4,7 +4,6 @@
 
 #include "netdevice.h"
 
-#include <lib/ddk/debug.h>
 #include <lib/fit/defer.h>
 #include <lib/virtio/ring.h>
 #include <lib/zircon-internal/align.h>
@@ -25,7 +24,7 @@
 #include <virtio/net.h>
 #include <virtio/virtio.h>
 
-#include "src/devices/bus/lib/virtio/trace.h"
+#include "src/connectivity/ethernet/drivers/virtio/virtio_net_driver.h"
 
 // Enables/disables debugging info
 #define LOCAL_TRACE 0
@@ -56,10 +55,10 @@ uint16_t MaxVirtqueuePairs(const virtio_net_config& config, bool is_mq_supported
 
 }  // namespace
 
-NetworkDevice::NetworkDevice(zx_device_t* bus_device, zx::bti bti_handle,
+NetworkDevice::NetworkDevice(VirtioNetDriver* driver, zx::bti bti_handle,
                              std::unique_ptr<Backend> backend)
     : virtio::Device(std::move(bti_handle), std::move(backend)),
-      DeviceType(bus_device),
+      driver_(driver),
       rx_(this),
       tx_(this),
       vmo_store_({
@@ -93,7 +92,7 @@ zx_status_t NetworkDevice::Init() {
   if (zx_status_t status =
           AckFeatures(&is_status_supported_, &is_multiqueue_supported_, &virtio_hdr_len_);
       status != ZX_OK) {
-    zxlogf(ERROR, "failed to ack features: %s", zx_status_get_string(status));
+    FDF_LOG(ERROR, "failed to ack features: %s", zx_status_get_string(status));
     return status;
   }
 
@@ -102,22 +101,22 @@ zx_status_t NetworkDevice::Init() {
   CopyDeviceConfig(&config, sizeof(config));
 
   // We've checked that the config.mac field is valid (VIRTIO_NET_F_MAC) in AckFeatures().
-  zxlogf(DEBUG, "mac: %02x:%02x:%02x:%02x:%02x:%02x", config.mac[0], config.mac[1], config.mac[2],
-         config.mac[3], config.mac[4], config.mac[5]);
-  zxlogf(DEBUG, "link active: %u", IsLinkActive(config, is_status_supported_));
-  zxlogf(DEBUG, "max virtqueue pairs: %u", MaxVirtqueuePairs(config, is_multiqueue_supported_));
+  FDF_LOG(DEBUG, "mac: %02x:%02x:%02x:%02x:%02x:%02x", config.mac[0], config.mac[1], config.mac[2],
+          config.mac[3], config.mac[4], config.mac[5]);
+  FDF_LOG(DEBUG, "link active: %u", IsLinkActive(config, is_status_supported_));
+  FDF_LOG(DEBUG, "max virtqueue pairs: %u", MaxVirtqueuePairs(config, is_multiqueue_supported_));
 
   static_assert(sizeof(config.mac) == sizeof(mac_.octets));
   std::copy(std::begin(config.mac), std::end(config.mac), mac_.octets.begin());
 
   if (zx_status_t status = vmo_store_.Reserve(MAX_VMOS); status != ZX_OK) {
-    zxlogf(ERROR, "failed to initialize vmo store: %s", zx_status_get_string(status));
+    FDF_LOG(ERROR, "failed to initialize vmo store: %s", zx_status_get_string(status));
     return status;
   }
 
   // Initialize the zx_device and publish us.
-  if (zx_status_t status = DdkAdd("virtio-net"); status != ZX_OK) {
-    zxlogf(ERROR, "failed to add device: %s", zx_status_get_string(status));
+  if (zx_status_t status = AddDevice(); status != ZX_OK) {
+    FDF_LOG(ERROR, "failed to add device: %s", zx_status_get_string(status));
     return status;
   }
 
@@ -126,7 +125,30 @@ zx_status_t NetworkDevice::Init() {
 
   // Start the interrupt thread.
   StartIrqThread();
+  irq_thread_started_ = true;
 
+  return ZX_OK;
+}
+
+zx_status_t NetworkDevice::AddDevice() {
+  compat::DeviceServer::BanjoConfig banjo_config;
+  banjo_config.callbacks[ZX_PROTOCOL_NETWORK_DEVICE_IMPL] = net_device_server_.callback();
+
+  if (zx::result result = compat_server_.Initialize(
+          driver_->incoming(), driver_->outgoing(), driver_->node_name(), kChildNodeName,
+          compat::ForwardMetadata::None(), std::move(banjo_config));
+      result.is_error()) {
+    FDF_LOG(ERROR, "Failed to initialize compat server: %s", result.status_string());
+    return result.status_value();
+  }
+
+  zx::result netdev_child = driver_->AddChild(
+      "virtio-net-netdev", {{net_device_server_.property()}}, compat_server_.CreateOffers2());
+  if (netdev_child.is_error()) {
+    FDF_LOG(ERROR, "Failed to add net device child node: %s", netdev_child.status_string());
+    return netdev_child.status_value();
+  }
+  netdev_child_ = std::move(netdev_child.value());
   return ZX_OK;
 }
 
@@ -135,7 +157,7 @@ zx_status_t NetworkDevice::AckFeatures(bool* is_status_supported, bool* is_multi
   const uint64_t supported_features = DeviceFeaturesSupported();
 
   if (!(supported_features & VIRTIO_NET_F_MAC)) {
-    zxlogf(ERROR, "device does not have a given MAC address.");
+    FDF_LOG(ERROR, "device does not have a given MAC address.");
     return ZX_ERR_NOT_SUPPORTED;
   }
   uint64_t enable_features = VIRTIO_NET_F_MAC;
@@ -172,13 +194,17 @@ zx_status_t NetworkDevice::AckFeatures(bool* is_status_supported, bool* is_multi
   return ZX_OK;
 }
 
-void NetworkDevice::DdkRelease() {
+void NetworkDevice::Shutdown() {
   {
     fbl::AutoLock lock(&state_lock_);
     ifc_.clear();
   }
-  virtio::Device::Release();
-  delete this;
+  if (irq_thread_started_) {
+    // The Release call assumes that it's safe to join the IRQ thread which is only true if it was
+    // created and started.
+    virtio::Device::Release();
+    irq_thread_started_ = false;
+  }
 }
 
 void NetworkDevice::IrqRingUpdate() {
@@ -244,8 +270,8 @@ bool NetworkDevice::IrqRingUpdateInternal() {
       ZX_ASSERT_MSG(used_elem->len >= virtio_hdr_len_,
                     "got buffer (%u) smaller than virtio header (%u)", used_elem->len,
                     virtio_hdr_len_);
-      zxlogf(TRACE, "Receiving %d bytes (hdrlen = %u):", len, virtio_hdr_len_);
-      if (zxlog_level_enabled(TRACE)) {
+      FDF_LOG(TRACE, "Receiving %d bytes (hdrlen = %u):", len, virtio_hdr_len_);
+      if (driver_->logger().GetSeverity() <= FUCHSIA_LOG_TRACE) {
         virtio_dump_desc(&desc);
       }
       *rx_part_it++ = {
@@ -309,7 +335,7 @@ void NetworkDevice::NetworkDeviceImplInit(const network_device_ifc_protocol_t* i
         std::unique_ptr<Context> context(static_cast<Context*>(ctx));
         auto [callback, cookie] = *context;
         if (status != ZX_OK) {
-          zxlogf(ERROR, "failed to add port: %s", zx_status_get_string(status));
+          FDF_LOG(ERROR, "failed to add port: %s", zx_status_get_string(status));
         }
         callback(cookie, status);
       },
@@ -328,7 +354,7 @@ void NetworkDevice::NetworkDeviceImplStart(network_device_impl_start_callback ca
     if (zx_status_t status =
             AckFeatures(&is_status_supported, &is_multiqueue_supported, &header_length);
         status != ZX_OK) {
-      zxlogf(ERROR, "failed to ack features: %s", zx_status_get_string(status));
+      FDF_LOG(ERROR, "failed to ack features: %s", zx_status_get_string(status));
       return status;
     }
     ZX_ASSERT_MSG(is_status_supported == is_status_supported_,
@@ -342,7 +368,7 @@ void NetworkDevice::NetworkDeviceImplStart(network_device_impl_start_callback ca
                   header_length);
 
     if (zx_status_t status = DeviceStatusFeaturesOk(); status != ZX_OK) {
-      zxlogf(ERROR, "%s: Feature negotiation failed (%s)", tag(), zx_status_get_string(status));
+      FDF_LOG(ERROR, "%s: Feature negotiation failed (%s)", tag(), zx_status_get_string(status));
       return status;
     }
 
@@ -352,13 +378,13 @@ void NetworkDevice::NetworkDeviceImplStart(network_device_impl_start_callback ca
       std::lock_guard tx_lock(tx_lock_);
       Ring rx_queue(this);
       if (zx_status_t status = rx_queue.Init(kRxId, rx_depth_); status != ZX_OK) {
-        zxlogf(ERROR, "failed to allocate rx virtqueue: %s", zx_status_get_string(status));
+        FDF_LOG(ERROR, "failed to allocate rx virtqueue: %s", zx_status_get_string(status));
         return status;
       }
       rx_ = std::move(rx_queue);
       Ring tx_queue(this);
       if (zx_status_t status = tx_queue.Init(kTxId, tx_depth_); status != ZX_OK) {
-        zxlogf(ERROR, "failed to allocate tx virtqueue: %s", zx_status_get_string(status));
+        FDF_LOG(ERROR, "failed to allocate tx virtqueue: %s", zx_status_get_string(status));
         return status;
       }
       tx_ = std::move(tx_queue);
@@ -546,10 +572,10 @@ void NetworkDevice::NetworkDeviceImplQueueTx(const tx_buffer_t* buf_list, size_t
     tx_in_flight_buffer_ids_[id] = buffer.id;
     tx_in_flight_active_[id] = true;
     // Submit the descriptor and notify the back-end.
-    if (zxlog_level_enabled(TRACE)) {
+    if (driver_->logger().GetSeverity() <= FUCHSIA_LOG_TRACE) {
       virtio_dump_desc(desc);
     }
-    zxlogf(TRACE, "Sending %zu bytes (hdrlen = %u):", data.length, virtio_hdr_len_);
+    FDF_LOG(TRACE, "Sending %zu bytes (hdrlen = %u):", data.length, virtio_hdr_len_);
     tx_.SubmitChain(id);
   }
   if (!tx_.NoNotify()) {
@@ -589,10 +615,10 @@ void NetworkDevice::NetworkDeviceImplQueueRxSpace(const rx_space_buffer_t* buf_l
         .ring_id = id,
     });
     // Submit the descriptor and notify the back-end.
-    if (zxlog_level_enabled(TRACE)) {
+    if (driver_->logger().GetSeverity() <= FUCHSIA_LOG_TRACE) {
       virtio_dump_desc(desc);
     }
-    zxlogf(TRACE, "Queueing rx space with %zu bytes:", data.length);
+    FDF_LOG(TRACE, "Queueing rx space with %zu bytes:", data.length);
     rx_.SubmitChain(id);
   }
   if (!rx_.NoNotify()) {
@@ -613,7 +639,7 @@ void NetworkDevice::NetworkDeviceImplPrepareVmo(uint8_t vmo_id, zx::vmo vmo,
 void NetworkDevice::NetworkDeviceImplReleaseVmo(uint8_t vmo_id) {
   fbl::AutoLock vmo_lock(&state_lock_);
   if (zx::result<zx::vmo> status = vmo_store_.Unregister(vmo_id); status.status_value() != ZX_OK) {
-    zxlogf(ERROR, "failed to release vmo id = %d: %s", vmo_id, status.status_string());
+    FDF_LOG(ERROR, "failed to release vmo id = %d: %s", vmo_id, status.status_string());
   }
 }
 
