@@ -25,7 +25,6 @@
                 "glblub", // TODO: https://fxbug.dev/398699134
                 "inet_socket/tcp", // TODO: https://fxbug.dev/398663317
                 "inet_socket/udp", // TODO: https://fxbug.dev/398663317
-                "ioctl", // TODO: https://fxbug.dev/398663318
                 "key_socket", // TODO: https://fxbug.dev/398696734
                 "keys", // TODO: https://fxbug.dev/398699136
                 "mac_admin", // TODO: https://fxbug.dev/398698176
@@ -50,6 +49,7 @@
             matchers: [
                 // TODO: https://fxbug.dev/319480589 - Starnix does not support dynamic kernel module loading.
                 "module_load",
+                "ioctl", // TODO: https://fxbug.dev/398663318
             ],
         },
     ],
