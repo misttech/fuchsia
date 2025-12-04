@@ -3,18 +3,25 @@
 # found in the LICENSE file.
 
 import("//build/components/fuchsia_unittest_package.gni")
+import("//src/bringup/lib/restricted-machine/loadable.gni")
 
 executable("fasttime-unittests") {
   testonly = true
   sources = [ "fasttime_test.cc" ]
   deps = [
     "//sdk/lib/fdio",
+    "//src/bringup/lib/restricted-machine",
     "//src/lib/fxl/test:gtest_main",
     "//zircon/kernel/lib/fasttime:headers",
     "//zircon/system/ulib/fbl",
     "//zircon/system/ulib/fzl",
     "//zircon/system/ulib/zx",
   ]
+  data_deps = [ "loadable(//build/toolchain:linux_$current_cpu)" ]
+  if (additional_restricted_cpu != "") {
+    data_deps +=
+        [ "loadable(//build/toolchain:linux_$additional_restricted_cpu)" ]
+  }
 }
 
 fuchsia_unittest_package("fasttime-tests") {
