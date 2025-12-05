@@ -12,22 +12,23 @@ rustc_library("fuchsia-sync") {
   version = "0.1.0"
   with_unit_tests = true
 
-  deps = []
+  deps = [ "//third_party/rust_crates:lock_api" ]
   non_rust_deps = []
   test_deps = []
 
   if (is_fuchsia) {
-    deps += [
-      "//sdk/rust/zx",
-      "//third_party/rust_crates:lock_api",
-    ]
-    test_deps += [ "//third_party/rust_crates:crossbeam" ]
+    deps += [ "//sdk/rust/zx" ]
     non_rust_deps += [ "//zircon/system/ulib/sync" ]
   } else {
-    deps += [ "//third_party/rust_crates:parking_lot" ]
+    deps += [
+      "//third_party/rust_crates:parking_lot",
+      "//third_party/rust_crates:parking_lot_core",
+    ]
   }
 
-  if (fuchsia_sync_detect_lock_cycles && is_fuchsia) {
+  test_deps += [ "//third_party/rust_crates:crossbeam" ]
+
+  if (fuchsia_sync_detect_lock_cycles) {
     deps += [ "//third_party/rust_crates:tracing-mutex" ]
     configs += [ ":detect_lock_cycles" ]
   }
@@ -50,5 +51,8 @@ fuchsia_unittest_package("fuchsia-sync-tests") {
 
 group("tests") {
   testonly = true
-  deps = [ ":fuchsia-sync-tests" ]
+  deps = [
+    ":fuchsia-sync-tests",
+    ":fuchsia-sync_test($host_toolchain)",
+  ]
 }

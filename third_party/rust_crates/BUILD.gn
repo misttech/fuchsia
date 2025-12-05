@@ -684,6 +684,12 @@ if (!(current_os == "fuchsia")) {
   }
 }
 
+if (!(current_os == "fuchsia")) {
+  group("parking_lot_core") {
+    public_deps = [ ":parking_lot_core-v0_9_11" ]
+  }
+}
+
 group("paste") {
   public_deps = [ ":paste-v1_0_15($host_toolchain)" ]
 }

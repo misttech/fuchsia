@@ -530,17 +530,6 @@ unsafe impl lock_api::RawRwLockDowngrade for RawSyncRwLock {
     }
 }
 
-#[cfg(detect_lock_cycles)]
-type RawRwLockImpl = tracing_mutex::lockapi::TracingWrapper<RawSyncRwLock>;
-#[cfg(not(detect_lock_cycles))]
-type RawRwLockImpl = RawSyncRwLock;
-
-pub type RwLock<T> = lock_api::RwLock<RawRwLockImpl, T>;
-pub type RwLockReadGuard<'a, T> = lock_api::RwLockReadGuard<'a, RawRwLockImpl, T>;
-pub type RwLockWriteGuard<'a, T> = lock_api::RwLockWriteGuard<'a, RawRwLockImpl, T>;
-pub type MappedRwLockReadGuard<'a, T> = lock_api::MappedRwLockReadGuard<'a, RawRwLockImpl, T>;
-pub type MappedRwLockWriteGuard<'a, T> = lock_api::MappedRwLockWriteGuard<'a, RawRwLockImpl, T>;
-
 #[cfg(test)]
 mod test {
     use super::*;

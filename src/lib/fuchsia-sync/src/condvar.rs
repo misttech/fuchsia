@@ -3,27 +3,35 @@
 // found in the LICENSE file.
 
 use crate::MutexGuard;
-
 use std::sync::atomic::Ordering;
 use std::time::Duration;
+
+#[cfg(not(target_os = "fuchsia"))]
+use parking_lot_core::{
+    DEFAULT_PARK_TOKEN, DEFAULT_UNPARK_TOKEN, ParkResult, park, unpark_all, unpark_one,
+};
+#[cfg(not(target_os = "fuchsia"))]
+use std::sync::atomic::AtomicU32;
+#[cfg(not(target_os = "fuchsia"))]
+use std::time::Instant;
 
 /// A [condition variable][wikipedia] that integrates with [`fuchsia_sync::Mutex`].
 ///
 /// [wikipedia]: https://en.wikipedia.org/wiki/Monitor_(synchronization)#Condition_variables
 pub struct Condvar {
     /// Incremented by 1 on each notification.
-    inner: zx::Futex,
+    inner: Futex,
 }
 
 impl Condvar {
     pub const fn new() -> Self {
-        Self { inner: zx::Futex::new(0) }
+        Self { inner: Futex::new(0) }
     }
 
     pub fn notify_one(&self) {
         // Relaxed because the futex operation synchronizes.
         self.inner.fetch_add(1, Ordering::Relaxed);
-        self.inner.wake_single_owner();
+        self.inner.wake_one();
     }
 
     pub fn notify_all(&self) {
@@ -33,10 +41,7 @@ impl Condvar {
     }
 
     pub fn wait<T: ?Sized>(&self, guard: &mut MutexGuard<'_, T>) {
-        assert!(
-            !self.wait_inner(guard, zx::MonotonicInstant::INFINITE).timed_out,
-            "an infinite wait should not timeout"
-        );
+        assert!(!self.wait_inner(guard, None).timed_out, "an infinite wait should not timeout");
     }
 
     pub fn wait_while<'a, T: ?Sized, F>(&self, guard: &mut MutexGuard<'a, T>, mut condition: F)
@@ -53,7 +58,7 @@ impl Condvar {
         guard: &mut MutexGuard<'_, T>,
         timeout: Duration,
     ) -> WaitTimeoutResult {
-        self.wait_inner(guard, zx::MonotonicInstant::after(timeout.into()))
+        self.wait_inner(guard, Some(timeout))
     }
 
     pub fn wait_while_for<'a, T: ?Sized, F>(
@@ -77,19 +82,11 @@ impl Condvar {
     fn wait_inner<T: ?Sized>(
         &self,
         guard: &mut MutexGuard<'_, T>,
-        deadline: zx::MonotonicInstant,
+        timeout: Option<Duration>,
     ) -> WaitTimeoutResult {
         // Relaxed because the futex and mutex operations synchronize.
         let current = self.inner.load(Ordering::Relaxed);
-        MutexGuard::unlocked(guard, || {
-            match self.inner.wait(current, None, deadline) {
-                // The count only goes up. If `current` isn't the current value, a notification
-                // was received in between reading `current` and waiting.
-                Ok(()) | Err(zx::Status::BAD_STATE) => WaitTimeoutResult { timed_out: false },
-                Err(zx::Status::TIMED_OUT) => WaitTimeoutResult { timed_out: true },
-                Err(e) => panic!("unexpected wait error {e:?}"),
-            }
-        })
+        MutexGuard::unlocked(guard, || self.inner.wait(current, timeout))
     }
 }
 
@@ -101,6 +98,108 @@ pub struct WaitTimeoutResult {
 impl WaitTimeoutResult {
     pub fn timed_out(&self) -> bool {
         self.timed_out
+    }
+}
+
+#[cfg(target_os = "fuchsia")]
+struct Futex(zx::Futex);
+
+#[cfg(target_os = "fuchsia")]
+impl Futex {
+    const fn new(value: u32) -> Self {
+        Self(zx::Futex::new(value as i32))
+    }
+
+    /// Returns the current value of the futex.
+    fn load(&self, order: Ordering) -> u32 {
+        self.0.load(order) as u32
+    }
+
+    fn fetch_add(&self, value: u32, order: Ordering) -> u32 {
+        self.0.fetch_add(value as i32, order) as u32
+    }
+
+    fn wake_one(&self) {
+        self.0.wake_single_owner();
+    }
+
+    fn wake_all(&self) {
+        self.0.wake_all();
+    }
+
+    fn wait(&self, current: u32, timeout: Option<Duration>) -> WaitTimeoutResult {
+        let deadline = timeout
+            .map(|t| zx::MonotonicInstant::after(t.into()))
+            .unwrap_or(zx::MonotonicInstant::INFINITE);
+        match self.0.wait(current as i32, None, deadline) {
+            // The count only goes up. If `current` isn't the current value, a notification
+            // was received in between reading `current` and waiting.
+            Ok(()) | Err(zx::Status::BAD_STATE) => WaitTimeoutResult { timed_out: false },
+            Err(zx::Status::TIMED_OUT) => WaitTimeoutResult { timed_out: true },
+            Err(e) => panic!("unexpected wait error {e:?}"),
+        }
+    }
+}
+
+#[cfg(not(target_os = "fuchsia"))]
+struct Futex(AtomicU32);
+
+#[cfg(not(target_os = "fuchsia"))]
+impl Futex {
+    const fn new(value: u32) -> Self {
+        Self(AtomicU32::new(value))
+    }
+
+    fn load(&self, order: Ordering) -> u32 {
+        self.0.load(order)
+    }
+
+    fn fetch_add(&self, value: u32, order: Ordering) -> u32 {
+        self.0.fetch_add(value, order)
+    }
+
+    fn wake_one(&self) {
+        // SAFETY: the address of `inner` is controlled by us.
+        unsafe {
+            unpark_one(self.0.as_ptr() as usize, |_| DEFAULT_UNPARK_TOKEN);
+        }
+    }
+
+    fn wake_all(&self) {
+        // SAFETY: the address of `inner` is controlled by us.
+        unsafe {
+            unpark_all(self.0.as_ptr() as usize, DEFAULT_UNPARK_TOKEN);
+        }
+    }
+
+    fn wait(&self, current: u32, timeout: Option<Duration>) -> WaitTimeoutResult {
+        let key = self.0.as_ptr() as usize;
+        let deadline = timeout.map(|t| Instant::now() + t);
+
+        // SAFETY: the address of `inner` is controlled by us.
+        let park_result = unsafe {
+            park(
+                key,
+                || self.0.load(Ordering::Relaxed) == current,
+                || {},
+                |_, _| {},
+                DEFAULT_PARK_TOKEN,
+                deadline,
+            )
+        };
+
+        match park_result {
+            ParkResult::Unparked(token) => {
+                assert_eq!(token, DEFAULT_UNPARK_TOKEN);
+                WaitTimeoutResult { timed_out: false }
+            }
+            ParkResult::Invalid => {
+                // The validation function failed, meaning the state changed before we could park.
+                // This counts as a notification.
+                WaitTimeoutResult { timed_out: false }
+            }
+            ParkResult::TimedOut => WaitTimeoutResult { timed_out: true },
+        }
     }
 }
 

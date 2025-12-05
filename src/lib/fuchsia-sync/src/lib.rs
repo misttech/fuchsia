@@ -4,26 +4,43 @@
 
 //! Fuchsia-native synchronization primitives.
 
-#[cfg(target_os = "fuchsia")]
 mod condvar;
+pub use condvar::*;
+
 #[cfg(target_os = "fuchsia")]
 mod mutex;
 #[cfg(target_os = "fuchsia")]
 mod rwlock;
 
 #[cfg(target_os = "fuchsia")]
-pub use condvar::*;
-#[cfg(target_os = "fuchsia")]
-pub use mutex::*;
-#[cfg(target_os = "fuchsia")]
-pub use rwlock::*;
+use mutex::RawSyncMutex as RawMutex;
+#[cfg(not(target_os = "fuchsia"))]
+use parking_lot::RawMutex;
 
 #[cfg(not(target_os = "fuchsia"))]
-pub use parking_lot::{
-    Condvar, MappedMutexGuard, MappedRwLockReadGuard, MappedRwLockWriteGuard, Mutex, MutexGuard,
-    RawMutex as RawSyncMutex, RawRwLock as RawSyncRwLock, RwLock, RwLockReadGuard,
-    RwLockWriteGuard,
-};
+use parking_lot::RawRwLock;
+#[cfg(target_os = "fuchsia")]
+use rwlock::RawSyncRwLock as RawRwLock;
+
+#[cfg(not(detect_lock_cycles))]
+type RawMutexImpl = RawMutex;
+#[cfg(detect_lock_cycles)]
+type RawMutexImpl = tracing_mutex::lockapi::TracingWrapper<RawMutex>;
+
+#[cfg(not(detect_lock_cycles))]
+type RawRwLockImpl = RawRwLock;
+#[cfg(detect_lock_cycles)]
+type RawRwLockImpl = tracing_mutex::lockapi::TracingWrapper<RawRwLock>;
+
+pub type Mutex<T> = lock_api::Mutex<RawMutexImpl, T>;
+pub type MutexGuard<'a, T> = lock_api::MutexGuard<'a, RawMutexImpl, T>;
+pub type MappedMutexGuard<'a, T> = lock_api::MappedMutexGuard<'a, RawMutexImpl, T>;
+
+pub type RwLock<T> = lock_api::RwLock<RawRwLockImpl, T>;
+pub type RwLockReadGuard<'a, T> = lock_api::RwLockReadGuard<'a, RawRwLockImpl, T>;
+pub type RwLockWriteGuard<'a, T> = lock_api::RwLockWriteGuard<'a, RawRwLockImpl, T>;
+pub type MappedRwLockReadGuard<'a, T> = lock_api::MappedRwLockReadGuard<'a, RawRwLockImpl, T>;
+pub type MappedRwLockWriteGuard<'a, T> = lock_api::MappedRwLockWriteGuard<'a, RawRwLockImpl, T>;
 
 /// Prevent potential deadlocks from panicking when lock cycle detection is enabled. This will
 /// cause them to print instead of exiting the process.

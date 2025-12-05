@@ -57,18 +57,10 @@ unsafe impl lock_api::RawMutex for RawSyncMutex {
     }
 }
 
-#[cfg(detect_lock_cycles)]
-type RawMutexImpl = tracing_mutex::lockapi::TracingWrapper<RawSyncMutex>;
-#[cfg(not(detect_lock_cycles))]
-type RawMutexImpl = RawSyncMutex;
-
-pub type Mutex<T> = lock_api::Mutex<RawMutexImpl, T>;
-pub type MutexGuard<'a, T> = lock_api::MutexGuard<'a, RawMutexImpl, T>;
-pub type MappedMutexGuard<'a, T> = lock_api::MappedMutexGuard<'a, RawMutexImpl, T>;
-
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::Mutex;
 
     #[test]
     fn test_lock_and_unlock() {
