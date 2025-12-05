@@ -32,6 +32,7 @@ class BazelBuildActionInfo(object):
     gn_targets_licenses_spdx: str
     debug_symbols_manifest: str
     bazel_command_file: str = ""
+    bazel_explain_file: str = ""
     bazel_compdb_file: str = ""
     bazel_rust_project_json: str = ""
     path_mapping: str = ""

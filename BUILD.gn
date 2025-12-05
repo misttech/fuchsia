@@ -2209,6 +2209,11 @@ build_api_module("nuc11_fastboot_images_location") {
 #         This is only used for debugging.
 #     - Type: string
 #
+#   bazel_explain_file
+#     - Optional: Path to a file containing the explain output of the Bazel build command.
+#         This is only used for debugging.
+#     - Type: string
+#
 #   bazel_compdb_file
 #     - Optional: Path to a file including JSON compilation database for the
 #         Bazel targets built by this bazel_action().

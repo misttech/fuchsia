@@ -1301,6 +1301,11 @@ def main() -> int:
         help="If specified, write timings of each step in this script to file.",
     )
     parser.add_argument(
+        "--explain-file",
+        type=Path,
+        help="If specified, write explain output from Bazel to file.",
+    )
+    parser.add_argument(
         "--debug-symbols-manifest",
         help="If specified, write debug symbols manifest to file.",
     )
@@ -1546,7 +1551,12 @@ def main() -> int:
     command_profile_filename = (
         f"{args.gn_target_label[2:].replace(':', '/')}.command.profile.gz"
     )
-    cmd_args += ["--profile", f"{build_dir}/obj/{command_profile_filename}"]
+    cmd_args += [
+        "--profile",
+        f"{build_dir}/obj/{command_profile_filename}",
+        "--explain",
+        build_dir / args.explain_file,
+    ]
 
     if args.command_file:
         write_file_if_changed(

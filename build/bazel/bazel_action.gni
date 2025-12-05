@@ -639,6 +639,17 @@ template("bazel_action") {
   _bazel_command_file = "${target_out_dir}/${target_name}.bazel_command.sh"
   _rebased_bazel_command_file = rebase_path(_bazel_command_file, root_build_dir)
 
+  # A file that will receive the explain output from the bazel_action.py script.
+  #
+  # The output is from dependency checker in Bazel build's execution phase to
+  # explain, for each build step, either why it is being executed, or that it is
+  # up-to-date.
+  #
+  # NOTE: This file will only include explain output from the `build` command,
+  # not other commands like `query`.
+  _bazel_explain_file = "${target_out_dir}/${target_name}.bazel_explain.txt"
+  _rebased_bazel_explain_file = rebase_path(_bazel_explain_file, root_build_dir)
+
   _timings_file = "${target_out_dir}/${target_name}.bazel_action_timings.json"
   _rebased_timings_file = rebase_path(_timings_file, root_build_dir)
 
@@ -688,6 +699,7 @@ template("bazel_action") {
     outputs = [
       _path_mapping,
       _bazel_command_file,
+      _bazel_explain_file,
       _debug_symbols_manifest,
       _rust_project_json,
       _timings_file,
@@ -736,6 +748,8 @@ template("bazel_action") {
              _rebased_bazel_command_file,
              "--timings-file",
              _rebased_timings_file,
+             "--explain-file",
+             _rebased_bazel_explain_file,
              "--path-mapping",
              _rebased_path_mapping,
              "--debug-symbols-manifest",
@@ -954,6 +968,7 @@ template("bazel_action") {
                 rebase_path(_all_licenses_spdx_file, root_build_dir)
             debug_symbols_manifest = _rebased_debug_symbols_manifest
             bazel_command_file = _rebased_bazel_command_file
+            bazel_explain_file = _rebased_bazel_explain_file
             path_mapping = _rebased_path_mapping
             timings_file = _rebased_timings_file
             build_events_log_json = _rebased_bazel_build_events_log_json
