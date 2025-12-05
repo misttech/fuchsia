@@ -4,10 +4,11 @@
 
 #![cfg(test)]
 
+use fuchsia_sync::{Mutex, MutexGuard};
 use std::env;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
-use std::sync::{LazyLock, Mutex, MutexGuard};
+use std::sync::LazyLock;
 use tempfile::{TempDir, tempdir};
 
 static ENV_MUTEX: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
@@ -58,13 +59,7 @@ impl<'a> Drop for LockedEnv<'a> {
 /// Using this environment prevents multiple tests from modifying environment
 /// variables and interfering with each other.
 pub fn lock_test_environment<'a>() -> LockedEnv<'a> {
-    let guard = match ENV_MUTEX.lock() {
-        Ok(guard) => guard,
-        // If a test failed, it will have panicked while holding
-        // this lock. We don't care, we just want to ensure serial
-        // execution.
-        Err(poisoned) => poisoned.into_inner(),
-    };
+    let guard = ENV_MUTEX.lock();
     let current_dir_snapshot = env::current_dir().expect("failed to get current_dir");
     let fuchsia_dir_snapshot = env::var_os(FUCHSIA_DIR_KEY);
     let temp_dir = tempdir().expect("failed to create temp dir");

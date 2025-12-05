@@ -19,6 +19,7 @@ rustc_binary(
     edition = "2024",
     target_compatible_with = HOST_CONSTRAINTS,
     test_deps = [
+        "//src/lib/fuchsia-sync",
         "//third_party/rust_crates/vendor:assert_matches",
         "//third_party/rust_crates/vendor:tempfile",
     ],

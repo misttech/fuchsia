@@ -68,6 +68,7 @@ if (is_host) {
     output_name = "create"
     edition = "2024"
     test_deps = [
+      "//src/lib/fuchsia-sync",
       "//third_party/rust_crates:assert_matches",
       "//third_party/rust_crates:tempfile",
     ]
