@@ -29,14 +29,22 @@ use std::{env, fmt, str};
 use tokio::net::TcpStream as AsyncTcpStream;
 
 fn auth_keys_filter_map(source: SshKeySource, line: &str) -> Option<SshKey> {
+    // Note: only ed25519 should be extracted. If this changes, just append to here.
+    const SSH_KEY_TYPES: [&'static str; 1] = ["ssh-ed25519"];
     let not_comments = !line.is_empty() && !line.starts_with('#');
     let parts: Vec<&str> = line.split_whitespace().collect();
     let sufficient_parts = parts.len() >= 2;
 
     if not_comments && sufficient_parts {
-        let key_type = parts[0].to_string();
-        let key = parts[1].to_string();
-        let comment = if parts.len() > 2 { Some(parts[2..].join(" ")) } else { None };
+        let key_type_idx = parts.iter().position(|p| SSH_KEY_TYPES.iter().any(|t| t == p))?;
+        let key_type = parts.get(key_type_idx)?.to_string();
+        // There should always be a key after this idx.
+        let key = parts.get(key_type_idx + 1)?.to_string();
+        let comment = if parts.len() > key_type_idx + 1 {
+            Some(parts[(key_type_idx + 2)..].join(" "))
+        } else {
+            None
+        };
         let mut sources = HashSet::new();
         sources.insert(source);
         Some(SshKey { key_type, key, comment, sources })
@@ -1459,7 +1467,7 @@ mod test {
             sources: HashSet::from([SshKeySource::File(PathBuf::from("/dir2"))]),
         };
         let key3 = SshKey {
-            key_type: "ssh-rsa".to_string(),
+            key_type: "ssh-ed25519".to_string(),
             key: "key2_data".to_string(),
             comment: None,
             sources: HashSet::from([SshKeySource::File(PathBuf::from("/dir3"))]),
@@ -1483,7 +1491,7 @@ mod test {
             ]),
         };
         let expected_key2 = SshKey {
-            key_type: "ssh-rsa".to_string(),
+            key_type: "ssh-ed25519".to_string(),
             key: "key2_data".to_string(),
             comment: None,
             sources: HashSet::from([SshKeySource::File(PathBuf::from("/dir3"))]),
@@ -1507,7 +1515,7 @@ mod test {
             sources: HashSet::from([SshKeySource::File(PathBuf::from("/dir1"))]),
         };
         let key2 = SshKey {
-            key_type: "ssh-rsa".to_string(),
+            key_type: "ssh-ed25519".to_string(),
             key: "key2_data".to_string(),
             comment: None,
             sources: HashSet::from([SshKeySource::File(PathBuf::from("/dir2"))]),
@@ -1546,7 +1554,7 @@ mod test {
             ]),
         };
         let expected_key2 = SshKey {
-            key_type: "ssh-rsa".to_string(),
+            key_type: "ssh-ed25519".to_string(),
             key: "key2_data".to_string(),
             comment: None,
             sources: HashSet::from([SshKeySource::File(PathBuf::from("/dir2"))]),
@@ -1611,7 +1619,7 @@ mod test {
     #[fuchsia::test]
     async fn test_query_device_authorized_keys_success() {
         const FAKE_KEYS: &str = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAID/PA/k3f5aSU/22c9LPn/4A3f/g/2Yj/2c/8A3/g/2Y test1@fuchsia\n\
-                                 ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQD... test2@fuchsia";
+                                 ssh-ed25519 AAAAB3NzaC1yc2EAAAADAQABAAABAQD... test2@fuchsia";
         let server_addr = start_test_server(FAKE_KEYS);
 
         let keys = query_device_authorized_keys(server_addr, server_addr.port()).await.unwrap();
@@ -1624,7 +1632,7 @@ mod test {
             sources: HashSet::new(),
         };
         let key2 = SshKey {
-            key_type: "ssh-rsa".to_string(),
+            key_type: "ssh-ed25519".to_string(),
             key: "AAAAB3NzaC1yc2EAAAADAQABAAABAQD...".to_string(),
             comment: Some("test2@fuchsia".to_string()),
             sources: HashSet::new(),
