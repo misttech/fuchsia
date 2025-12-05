@@ -7,10 +7,10 @@ use crate::enums::{
     ClockCorrectionStrategy, ClockUpdateReason, InitialClockState, StartClockSource, Track,
 };
 use crate::{MonitorTrack, PrimaryTrack};
-use anyhow::{format_err, Context as _, Error};
+use anyhow::{Context as _, Error, format_err};
 use cobalt_client::traits::AsEventCodes;
-use fidl_contrib::protocol_connector::{ConnectedProtocol, ProtocolSender};
 use fidl_contrib::ProtocolConnector;
+use fidl_contrib::protocol_connector::{ConnectedProtocol, ProtocolSender};
 use fidl_fuchsia_metrics::{
     MetricEvent, MetricEventLoggerFactoryMarker, MetricEventLoggerProxy, ProjectSpec,
 };
@@ -19,22 +19,23 @@ use fuchsia_cobalt_builders::MetricEventExt;
 use fuchsia_component::client::connect_to_protocol;
 use fuchsia_runtime::{UtcClock, UtcDuration};
 use fuchsia_sync::Mutex;
-use futures::{future, FutureExt as _};
+use futures::{FutureExt as _, future};
 use std::sync::Arc;
 use time_metrics_registry::{
+    PROJECT_ID, REAL_TIME_CLOCK_EVENTS_MIGRATED_METRIC_ID,
     RealTimeClockEventsMigratedMetricDimensionEventType as RtcEvent,
-    TimeMetricDimensionDirection as Direction, TimeMetricDimensionExperiment as Experiment,
-    TimeMetricDimensionIteration as Iteration, TimeMetricDimensionRole as CobaltRole,
-    TimeMetricDimensionTrack as CobaltTrack,
-    TimekeeperLifecycleEventsMigratedMetricDimensionEventType as LifecycleEvent,
-    TimekeeperTimeSourceEventsMigratedMetricDimensionEventType as TimeSourceEvent,
-    TimekeeperTrackEventsMigratedMetricDimensionEventType as TrackEvent, PROJECT_ID,
-    REAL_TIME_CLOCK_EVENTS_MIGRATED_METRIC_ID, TIMEKEEPER_CLOCK_CORRECTION_MIGRATED_METRIC_ID,
+    TIMEKEEPER_CLOCK_CORRECTION_MIGRATED_METRIC_ID,
     TIMEKEEPER_FREQUENCY_ABS_ESTIMATE_MIGRATED_METRIC_ID,
     TIMEKEEPER_LIFECYCLE_EVENTS_MIGRATED_METRIC_ID,
     TIMEKEEPER_MONITOR_DIFFERENCE_MIGRATED_METRIC_ID,
     TIMEKEEPER_SQRT_COVARIANCE_MIGRATED_METRIC_ID,
     TIMEKEEPER_TIME_SOURCE_EVENTS_MIGRATED_METRIC_ID, TIMEKEEPER_TRACK_EVENTS_MIGRATED_METRIC_ID,
+    TimeMetricDimensionDirection as Direction, TimeMetricDimensionExperiment as Experiment,
+    TimeMetricDimensionIteration as Iteration, TimeMetricDimensionRole as CobaltRole,
+    TimeMetricDimensionTrack as CobaltTrack,
+    TimekeeperLifecycleEventsMigratedMetricDimensionEventType as LifecycleEvent,
+    TimekeeperTimeSourceEventsMigratedMetricDimensionEventType as TimeSourceEvent,
+    TimekeeperTrackEventsMigratedMetricDimensionEventType as TrackEvent,
 };
 use time_util::time_at_monotonic;
 
