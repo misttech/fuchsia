@@ -12,10 +12,10 @@ use crate::string::{StringRecord, StringRef};
 use crate::thread::{ProcessKoid, ProcessRef, ThreadKoid, ThreadRecord, ThreadRef};
 use crate::{ParseError, ParsedWithOriginalBytes, RawTraceRecord, TraceRecord};
 use flyweights::FlyStr;
+use fuchsia_sync::Mutex;
 use futures::{AsyncRead, AsyncReadExt, SinkExt, Stream};
 use std::collections::BTreeMap;
 use std::num::{NonZeroU8, NonZeroU16};
-use std::sync::Mutex;
 
 pub fn parse_full_session<'a>(
     buf: &'a [u8],
@@ -244,11 +244,11 @@ impl ResolveCtx {
     }
 
     pub fn add_warning(&self, warning: ParseWarning) {
-        self.warnings.lock().expect("adding warning").push(warning);
+        self.warnings.lock().push(warning);
     }
 
     pub fn take_warnings(&self) -> Vec<ParseWarning> {
-        let mut guard = self.warnings.lock().expect("taking warnings");
+        let mut guard = self.warnings.lock();
         std::mem::replace(&mut *guard, Vec::new())
     }
 
