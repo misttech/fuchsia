@@ -565,6 +565,7 @@ if (support_rust) {
       ]
       deps = crate_deps
       configs -= [ "//build/config/rust/lints:allow_unused_results" ]
+      configs += [ "//build/config/rust/lints:allow_missing_unsafe_on_extern" ]
       disable_clippy = true
     }
   }

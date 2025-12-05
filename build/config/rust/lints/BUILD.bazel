@@ -18,10 +18,8 @@ _CLIPPY_WARN_DEFAULT = {
     "large_enum_variant": "warn",
     "large_futures": "warn",
     "missing_safety_doc": "warn",
-    "missing_unsafe_on_extern": "warn",
     "or_fun_call": "warn",
     "unnecessary_mut_passed": "warn",
-    "unsafe_attr_outside_unsafe": "warn",
     # LINT.ThenChange(//build/config/rust/lints/BUILD.gn:clippy_warn_default)
 }
 
@@ -43,6 +41,11 @@ _RUSTC_LINT_CONFIGS = {
     # LINT.IfChange(rustc_allow_default)
     "unknown_lints": "allow",
     # LINT.ThenChange(//build/config/rust/lints/BUILD.gn:rustc_allow_default)
+
+    # LINT.IfChange(rustc_warn_default)
+    "unsafe_attr_outside_unsafe": "warn",
+    "missing_unsafe_on_extern": "warn",
+    # LINT.ThenChange(//build/config/rust/lints/BUILD.gn:rustc_warn_default)
 
     # LINT.IfChange(rustc_deny_default)
     "deref-nullptr": "deny",

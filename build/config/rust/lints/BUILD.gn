@@ -19,8 +19,6 @@ config("clippy_warn_default") {
     "-Wclippy::missing_safety_doc",
     "-Wclippy::or_fun_call",
     "-Wclippy::unnecessary_mut_passed",
-    "-Wmissing_unsafe_on_extern",
-    "-Wunsafe_attr_outside_unsafe",
 
     # go/keep-sorted end
     # LINT.ThenChange(//build/config/rust/lints/BUILD.bazel:clippy_warn_default)
@@ -82,6 +80,51 @@ config("allow_default") {
   # LINT.IfChange(rustc_allow_default)
   rustflags = [ "-Aunknown-lints" ]
   # LINT.ThenChange(//build/config/rust/lints/BUILD.bazel:rustc_allow_default)
+}
+
+config("warn_default") {
+  # LINT.IfChange(rustc_warn_default)
+  rustflags = [
+    "-Wmissing_unsafe_on_extern",
+    "-Wunsafe_attr_outside_unsafe",
+  ]
+  # LINT.ThenChange(//build/config/rust/lints/BUILD.bazel:rustc_warn_default)
+}
+
+#  ________  _________  ________  ________
+# |\   ____\|\___   ___\\   __  \|\   __  \
+# \ \  \___|\|___ \  \_\ \  \|\  \ \  \|\  \
+#  \ \_____  \   \ \  \ \ \  \\\  \ \   ____\
+#   \|____|\  \   \ \  \ \ \  \\\  \ \  \___|
+#     ____\_\  \   \ \__\ \ \_______\ \__\
+#    |\_________\   \|__|  \|_______|\|__|
+#    \|_________|
+#
+# Avoid adding new entries to this list unless you are certain it is absolutely
+# necessary.
+config("allow_unsafe_attr_outside_unsafe") {
+  rustflags = [ "-Aunsafe_attr_outside_unsafe" ]
+  visibility = [ "//vendor/*" ]
+}
+
+#  ________  _________  ________  ________
+# |\   ____\|\___   ___\\   __  \|\   __  \
+# \ \  \___|\|___ \  \_\ \  \|\  \ \  \|\  \
+#  \ \_____  \   \ \  \ \ \  \\\  \ \   ____\
+#   \|____|\  \   \ \  \ \ \  \\\  \ \  \___|
+#     ____\_\  \   \ \__\ \ \_______\ \__\
+#    |\_________\   \|__|  \|_______|\|__|
+#    \|_________|
+#
+# Avoid adding new entries to this list unless you are certain it is absolutely
+# necessary.
+#
+config("allow_missing_unsafe_on_extern") {
+  rustflags = [ "-Amissing_unsafe_on_extern" ]
+  visibility = [
+    "//sdk/fidl/zbi/*",
+    "//zircon/*",
+  ]
 }
 
 config("deny_default") {
