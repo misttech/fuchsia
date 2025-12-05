@@ -1308,6 +1308,20 @@ pub trait BufferView<B: SplitByteSlice>: Sized + AsRef<[u8]> {
         Some(Ref::from_bytes(bytes).unwrap())
     }
 
+    /// Takes an owned copy of an object from the front of the buffer's body.
+    ///
+    /// `take_owned_obj_front` is like `take_obj_front`, but returns an owned
+    /// `T` rather than a `Ref<B, T>`. This may be more performant in situations
+    /// where `T` is smaller than `Ref<B, T>`.
+    fn take_owned_obj_front<T>(&mut self) -> Option<T>
+    where
+        T: FromBytes,
+    {
+        let bytes = self.take_front(mem::size_of::<T>())?;
+        // `read_from_bytes` only returns None if there aren't enough bytes.
+        Some(T::read_from_bytes(bytes.as_ref()).unwrap())
+    }
+
     /// Takes a slice of objects from the front of the buffer's body.
     ///
     /// `take_slice_front` consumes `n * size_of::<T>()` bytes from the front of
@@ -1358,6 +1372,20 @@ pub trait BufferView<B: SplitByteSlice>: Sized + AsRef<[u8]> {
         let bytes = self.take_back(mem::size_of::<T>())?;
         // unaligned_from_bytes only returns None if there aren't enough bytes
         Some(Ref::from_bytes(bytes).unwrap())
+    }
+
+    /// Takes an owned copy of an object from the back of the buffer's body.
+    ///
+    /// `take_owned_obj_back` is like `take_obj_back`, but returns an owned
+    /// `T` rather than a `Ref<B, T>`. This may be more performant in situations
+    /// where `T` is smaller than `Ref<B, T>`.
+    fn take_owned_obj_back<T>(&mut self) -> Option<T>
+    where
+        T: FromBytes,
+    {
+        let bytes = self.take_back(mem::size_of::<T>())?;
+        // `read_from_bytes` only returns None if there aren't enough bytes.
+        Some(T::read_from_bytes(bytes.as_ref()).unwrap())
     }
 
     /// Takes a slice of objects from the back of the buffer's body.
@@ -2223,14 +2251,20 @@ mod tests {
         assert_eq!(view.peek_obj_front::<[u8; 2]>().unwrap(), &[1, 2]);
         assert_eq!(view.take_obj_front::<[u8; 2]>().unwrap().as_ref(), [1, 2]);
         assert_eq!(view.len(), 6);
+        assert_eq!(view.peek_obj_front::<u8>().unwrap(), &3);
+        assert_eq!(view.take_owned_obj_front::<u8>().unwrap(), 3);
+        assert_eq!(view.len(), 5);
         assert_eq!(view.peek_obj_back::<[u8; 2]>().unwrap(), &[7, 8]);
         assert_eq!(view.take_obj_back::<[u8; 2]>().unwrap().as_ref(), [7, 8]);
-        assert_eq!(view.len(), 4);
-        assert!(view.take_front(5).is_none());
-        assert_eq!(view.len(), 4);
-        assert!(view.take_back(5).is_none());
-        assert_eq!(view.len(), 4);
-        assert_eq!(view.into_rest().as_ref(), &[3, 4, 5, 6][..]);
+        assert_eq!(view.len(), 3);
+        assert_eq!(view.peek_obj_back::<u8>().unwrap(), &6);
+        assert_eq!(view.take_owned_obj_back::<u8>().unwrap(), 6);
+        assert_eq!(view.len(), 2);
+        assert!(view.take_front(3).is_none());
+        assert_eq!(view.len(), 2);
+        assert!(view.take_back(3).is_none());
+        assert_eq!(view.len(), 2);
+        assert_eq!(view.into_rest().as_ref(), &[4, 5][..]);
     }
 
     // Test a BufferViewMut implementation. Call with a mutable view into a buffer
@@ -2269,10 +2303,10 @@ mod tests {
     // Post-verification to test a BufferView implementation. Call after
     // test_buffer_view.
     fn test_buffer_view_post<B: Buffer>(buffer: &B, preserves_cap: bool) {
-        assert_eq!(buffer.as_ref(), &[3, 4, 5, 6][..]);
+        assert_eq!(buffer.as_ref(), &[4, 5][..]);
         if preserves_cap {
-            assert_eq!(buffer.prefix_len(), 3);
-            assert_eq!(buffer.suffix_len(), 3);
+            assert_eq!(buffer.prefix_len(), 4);
+            assert_eq!(buffer.suffix_len(), 4);
         }
     }
 
