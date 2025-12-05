@@ -144,23 +144,16 @@ pub struct EffectiveMss {
 }
 
 impl EffectiveMss {
-    /// Per RFC 7323 Section 3.2, the TCP Timestamp option has a length of
-    /// 10 bytes:
-    ///   +-------+-------+---------------------+---------------------+
-    ///   |Kind=8 |  10   |   TS Value (TSval)  |TS Echo Reply (TSecr)|
-    ///   +-------+-------+---------------------+---------------------+
-    ///      1       1              4                     4
-    ///
-    /// However, once aligned, it will occupy 12 bytes.
-    const ALIGNED_TIMESTAMP_OPTION_LENGTH: u16 = 12;
-
     /// Constructs an [`EffectiveMss`] from an [`Mss`]
     pub const fn from_mss(mss: Mss, size_limits: MssSizeLimiters) -> Self {
         let MssSizeLimiters { timestamp_enabled } = size_limits;
         // NB: When adding additional fixed size options in the future, authors
         // should take care to account for the alignment only once.
-        let fixed_tcp_options_size =
-            if timestamp_enabled { Self::ALIGNED_TIMESTAMP_OPTION_LENGTH } else { 0 };
+        let fixed_tcp_options_size = if timestamp_enabled {
+            packet_formats::tcp::options::ALIGNED_TIMESTAMP_OPTION_LENGTH as u16
+        } else {
+            0
+        };
         EffectiveMss { mss, fixed_tcp_options_size }
     }
 
@@ -174,8 +167,7 @@ impl EffectiveMss {
         let Self { mss, fixed_tcp_options_size: _ } = self;
         // NB: Safe to unwrap here because TCP options have a fixed maximum
         // size < u16::MAX.
-        let tcp_options_len =
-            u16::try_from(packet_formats::tcp::aligned_options_length(options.builder())).unwrap();
+        let tcp_options_len = u16::try_from(options.builder().bytes_len()).unwrap();
         // NB: Safe to unwrap here because MSS has a minimum value large enough
         // to fit all TCP options.
         NonZeroU16::new(mss.get() - tcp_options_len).unwrap()
@@ -575,7 +567,10 @@ mod test {
         let mss =
             EffectiveMss::from_mss(Mss::new(SIZE).unwrap(), MssSizeLimiters { timestamp_enabled });
         if timestamp_enabled {
-            assert_eq!(mss.get(), SIZE - EffectiveMss::ALIGNED_TIMESTAMP_OPTION_LENGTH)
+            assert_eq!(
+                mss.get(),
+                SIZE - packet_formats::tcp::options::ALIGNED_TIMESTAMP_OPTION_LENGTH as u16
+            )
         } else {
             assert_eq!(mss.get(), SIZE);
         }
@@ -610,8 +605,7 @@ mod test {
         let timestamp_enabled = options.timestamp.is_some();
         let mss =
             EffectiveMss::from_mss(Mss::new(SIZE).unwrap(), MssSizeLimiters { timestamp_enabled });
-        let options_len =
-            u16::try_from(packet_formats::tcp::aligned_options_length(options.builder())).unwrap();
+        let options_len = u16::try_from(options.builder().bytes_len()).unwrap();
         assert_eq!(mss.payload_size(&options).get(), SIZE - options_len);
     }
 }

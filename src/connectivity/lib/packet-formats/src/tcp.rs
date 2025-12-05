@@ -773,28 +773,15 @@ impl<A: IpAddress, O> TcpSegmentBuilderWithOptions<A, O> {
     }
 }
 
-/// Calculates the total aligned length of a collection of options in a TCP
-/// header.
-pub fn aligned_options_length<'a>(options: TcpOptionsBuilder<'a>) -> usize {
-    crate::utils::round_to_next_multiple_of_four(options.bytes_len())
-}
-
-impl<A: IpAddress, O: InnerPacketBuilder> TcpSegmentBuilderWithOptions<A, O> {
-    fn aligned_options_len(&self) -> usize {
-        // Round up to the next 4-byte boundary.
-        crate::utils::round_to_next_multiple_of_four(self.options.bytes_len())
-    }
-}
-
 impl<A: IpAddress, O: InnerPacketBuilder> PacketBuilder for TcpSegmentBuilderWithOptions<A, O> {
     fn constraints(&self) -> PacketConstraints {
-        let header_len = HDR_PREFIX_LEN + self.aligned_options_len();
+        let header_len = HDR_PREFIX_LEN + self.options.bytes_len();
         assert_eq!(header_len % 4, 0);
         PacketConstraints::new(header_len, 0, 0, (1 << 16) - 1 - header_len)
     }
 
     fn serialize(&self, target: &mut SerializeTarget<'_>, body: FragmentedBytesMut<'_, '_>) {
-        let opt_len = self.aligned_options_len();
+        let opt_len = self.options.bytes_len();
         // `take_back_zero` consumes the extent of the receiving slice, but that
         // behavior is undesirable here: `prefix_builder.serialize` also needs
         // to write into the header. To avoid changing the extent of
@@ -813,7 +800,7 @@ impl<A: IpAddress, O: InnerPacketBuilder> PartialPacketBuilder
     fn partial_serialize(&self, body_len: usize, mut buffer: &mut [u8]) {
         self.prefix_builder.partial_serialize(body_len, &mut buffer[..HDR_PREFIX_LEN]);
 
-        let opt_len = self.aligned_options_len();
+        let opt_len = self.options.bytes_len();
         let options = (&mut buffer).take_back_zero(opt_len).expect("too few bytes for TCP options");
         self.options.serialize(options)
     }
@@ -1024,19 +1011,48 @@ pub mod options {
     use super::*;
 
     const OPTION_KIND_EOL: u8 = 0;
-    const OPTION_KIND_NOP: u8 = 1;
+    pub(super) const OPTION_KIND_NOP: u8 = 1;
     const OPTION_KIND_MSS: u8 = 2;
     const OPTION_KIND_WINDOW_SCALE: u8 = 3;
     const OPTION_KIND_SACK_PERMITTED: u8 = 4;
     const OPTION_KIND_SACK: u8 = 5;
-    const OPTION_KIND_TIMESTAMP: u8 = 8;
+    pub(super) const OPTION_KIND_TIMESTAMP: u8 = 8;
 
     // The size of each TCP Option, including the "kind" and "length" fields.
     // Not all options have a fixed size (e.g. SACK blocks).
     const OPTION_LEN_MSS: usize = 4;
     const OPTION_LEN_WINDOW_SCALE: usize = 3;
     const OPTION_LEN_SACK_PERMITTED: usize = 2;
-    const OPTION_LEN_TIMESTAMP: usize = 10;
+    pub(super) const OPTION_LEN_TIMESTAMP: usize = 10;
+
+    /// Per RFC 7323 Section 3.2, the TCP Timestamp option has a length of
+    /// 10 bytes:
+    ///   +-------+-------+---------------------+---------------------+
+    ///   |Kind=8 |  10   |   TS Value (TSval)  |TS Echo Reply (TSecr)|
+    ///   +-------+-------+---------------------+---------------------+
+    ///      1       1              4                     4
+    ///
+    /// However, once aligned, it will occupy 12 bytes.
+    pub const ALIGNED_TIMESTAMP_OPTION_LENGTH: usize =
+        crate::utils::round_to_next_multiple_of_four(OPTION_LEN_TIMESTAMP);
+
+    /// Per RFC 7323, Appendix A:
+    ///   The following layout is recommended for sending options on
+    ///   non-<SYN> segments to achieve maximum feasible alignment of 32-bit
+    ///   and 64-bit machines.
+    ///
+    ///       +--------+--------+--------+--------+
+    ///       |   NOP  |  NOP   |  TSopt |   10   |
+    ///       +--------+--------+--------+--------+
+    ///       |          TSval timestamp          |
+    ///       +--------+--------+--------+--------+
+    ///       |          TSecr timestamp          |
+    ///       +--------+--------+--------+--------+
+    ///
+    /// In the implementation below, we follow this recommendation for segments
+    /// whose only option is the timestamp option.
+    const TIMESTAMP_HOTPATH_PREFIX: [u8; 4] =
+        [OPTION_KIND_NOP, OPTION_KIND_NOP, OPTION_KIND_TIMESTAMP, OPTION_LEN_TIMESTAMP as u8];
 
     /// An implementation of TCP Options, as defined of RFC 9293 section 3.1
     ///
@@ -1141,12 +1157,7 @@ pub mod options {
         /// Each Option is composed of a 1 byte "kind" field, followed by a
         /// 1 byte "len" field, followed by variable length "data" field.
         pub(super) fn try_from_raw(raw: TcpOptionsRaw<B>) -> Result<Self, ParseError> {
-            let TcpOptionsRaw { bytes: original } = raw;
-
-            // NB: Clone the byte slice (not the underlying data) so that we can
-            // retain a reference to the start, while also creating references
-            // to options in the middle.
-            let mut bytes = SplitByteSliceBufView::new(original.clone());
+            let TcpOptionsRaw { bytes } = raw;
 
             // A mutable result to be filled in as we walk the options list.
             //
@@ -1159,13 +1170,24 @@ pub mod options {
             // instead follow prior art and mimic Linux's behavior. See
             // https://github.com/torvalds/linux/blob/ecfea98b7d0d56c5bf2df3fc02c5501afa5cef6f/net/ipv4/tcp_input.c#L4284
             let mut result = TcpOptionsRef {
-                bytes: original,
+                bytes,
                 mss: None,
                 window_scale: None,
                 sack_permitted: false,
                 sack_blocks: None,
                 timestamp: None,
             };
+
+            // HOT PATH: No Options.
+            if result.bytes.deref().len() == 0 {
+                return Ok(result);
+            }
+
+            // NB: Clone the byte slice (not the underlying data) so that we can
+            // retain a reference to the start, while also creating references
+            // to options in the middle.
+            let mut bytes = SplitByteSliceBufView::new(result.bytes.clone());
+
             let TcpOptionsRef {
                 bytes: _,
                 mss,
@@ -1174,6 +1196,14 @@ pub mod options {
                 sack_blocks,
                 timestamp,
             } = &mut result;
+
+            // HOT PATH: Only Timestamp Option.
+            if bytes.len() == ALIGNED_TIMESTAMP_OPTION_LENGTH
+                && bytes.peek_obj_front::<[u8; 4]>() == Some(&TIMESTAMP_HOTPATH_PREFIX)
+            {
+                *timestamp = bytes.take_owned_obj_back::<TimestampOption>();
+                return Ok(result);
+            }
 
             while let Some(kind) = bytes.take_owned_obj_front::<u8>() {
                 if kind == OPTION_KIND_EOL {
@@ -1315,7 +1345,8 @@ pub mod options {
                 sum += OPTION_LEN_TIMESTAMP;
             }
 
-            sum
+            // TCP Options must be aligned to a 4-byte boundary.
+            crate::utils::round_to_next_multiple_of_four(sum)
         }
 
         fn serialize(&self, mut buffer: &mut [u8]) {
@@ -1349,12 +1380,33 @@ pub mod options {
                     .expect("buffer too short");
             }
             if let Some(ts) = timestamp {
-                buffer
-                    .write_obj_front(&OptionKindAndLen {
-                        kind: OPTION_KIND_TIMESTAMP,
-                        len: OPTION_LEN_TIMESTAMP as u8,
-                    })
-                    .expect("buffer too short");
+                // If there's sufficient space available (e.g. the buffer
+                // contains padding), prefer to write the timestamp option in
+                // an aligned representation. This has negligible improvements
+                // to serialization performance, but can enable substantial
+                // improvements to the receiver's parsing performance.
+                //
+                // If the buffer size is `ALIGNED_TIMESTAMP_OPTION_LENGTH` (12)
+                // we'll be "stealing" 2 bytes. The tricky thing is knowing
+                // whether those bytes are actually padding and safe to steal,
+                // or if they were intended to be used by another option.
+                // SACK Permitted is the only TCP Option with a length <= 2.
+                // Since we've already attempted to serialize Sack Permitted
+                // above, we can be certain these 2 bytes are padding. None of
+                // the yet to be serialized options would be able to make use of
+                // the space.
+                if (*buffer).len() == ALIGNED_TIMESTAMP_OPTION_LENGTH {
+                    buffer
+                        .write_obj_front::<[u8; 4]>(&TIMESTAMP_HOTPATH_PREFIX)
+                        .expect("buffer too short");
+                } else {
+                    buffer
+                        .write_obj_front(&OptionKindAndLen {
+                            kind: OPTION_KIND_TIMESTAMP,
+                            len: OPTION_LEN_TIMESTAMP as u8,
+                        })
+                        .expect("buffer too short");
+                }
                 buffer.write_obj_front(ts).expect("buffer too short");
             }
             if let Some(ws) = window_scale {
@@ -1514,7 +1566,10 @@ mod tests {
     use crate::ethernet::{EthernetFrame, EthernetFrameLengthCheck};
     use crate::ipv4::{Ipv4Header, Ipv4Packet};
     use crate::ipv6::{Ipv6Header, Ipv6Packet};
-    use crate::tcp::options::{TcpOptions, TcpSackBlock, TimestampOption};
+    use crate::tcp::options::{
+        ALIGNED_TIMESTAMP_OPTION_LENGTH, OPTION_KIND_NOP, OPTION_KIND_TIMESTAMP,
+        OPTION_LEN_TIMESTAMP, TcpOptions, TcpSackBlock, TimestampOption,
+    };
     use crate::testutil::*;
 
     const TEST_SRC_IPV4: Ipv4Addr = Ipv4Addr::new([1, 2, 3, 4]);
@@ -1920,5 +1975,32 @@ mod tests {
         assert_eq!(segment.options().sack_permitted(), sack_permitted);
         assert_eq!(segment.options().sack_blocks(), sack_blocks);
         assert_eq!(segment.options().timestamp(), timestamp.as_ref());
+    }
+
+    #[test]
+    fn test_serialize_aligned_timestamp_option() {
+        let builder = TcpSegmentBuilderWithOptions::new(
+            new_builder(TEST_SRC_IPV4, TEST_DST_IPV4),
+            TcpOptionsBuilder { timestamp: Some(TIMESTAMP), ..Default::default() },
+        )
+        .unwrap();
+
+        // Serialize the segment.
+        let buf = builder
+            .wrap_body((&[0, 1, 2, 3, 3, 4, 5, 7, 8, 9]).into_serializer())
+            .serialize_vec_outer()
+            .unwrap();
+
+        // Verify the options were serialized as [NOP, NOP, TIMESTAMP].
+        let expected_options: Vec<_> =
+            [OPTION_KIND_NOP, OPTION_KIND_NOP, OPTION_KIND_TIMESTAMP, OPTION_LEN_TIMESTAMP as u8]
+                .iter()
+                .chain(TIMESTAMP.as_bytes())
+                .copied()
+                .collect();
+        assert_eq!(
+            &buf.as_ref()[HDR_PREFIX_LEN..HDR_PREFIX_LEN + ALIGNED_TIMESTAMP_OPTION_LENGTH],
+            &expected_options[..]
+        )
     }
 }
