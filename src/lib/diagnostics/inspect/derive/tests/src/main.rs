@@ -72,7 +72,7 @@ struct GenericUnit<'a, T> {
 #[derive(Default)]
 struct PowerYak {
     name: IValue<String>,
-    age: sync::Arc<sync::Mutex<IDebug<u8>>>,
+    age: sync::Arc<fuchsia_sync::Mutex<IDebug<u8>>>,
     size: rc::Rc<lock::Mutex<IValue<String>>>,
     ty: cell::RefCell<IDebug<Horse>>,
     counter: Box<UintProperty>,
@@ -84,7 +84,7 @@ struct PowerYak {
 
 impl PowerYak {
     pub fn bday(&self) {
-        let mut age = self.age.lock().expect("Could not lock mutex");
+        let mut age = self.age.lock();
         *age.as_mut() += 1;
     }
 }
@@ -109,7 +109,7 @@ impl Inspect for &mut PowerYak {
 // This is important so that 3p crates such as `Derivative` can auto-derive `Display`.
 impl fmt::Display for PowerYak {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "name: {}, age: {}", self.name, self.age.lock().expect("lock poisoned"))
+        write!(f, "name: {}, age: {}", self.name, self.age.lock())
     }
 }
 
@@ -545,7 +545,7 @@ async fn iowned_composite() -> Result<(), AttachError> {
         last_words: "",
     }});
     yak.name.iset("Lil Sebastian".to_string());
-    yak.age.lock().expect("could not lock mutex").iset(23);
+    yak.age.lock().iset(23);
     yak.size.lock().await.iset("small".to_string());
     yak.ty.borrow_mut().iset(Horse::Icelandic);
     yak.counter.add(1337);

@@ -16,6 +16,7 @@ group("tests") {
 
 LIB_DEPS = [
   "//src/lib/diagnostics/log/types",
+  "//src/lib/fuchsia-sync",
   "//third_party/rust_crates:thiserror",
   "//third_party/rust_crates:log",
 ]

@@ -6,9 +6,10 @@ use fidl_fuchsia_samplertestcontroller::*;
 use fuchsia_async as fasync;
 use fuchsia_component::server::ServiceFs;
 use fuchsia_inspect::component;
+use fuchsia_sync::Mutex;
 use futures::{FutureExt, StreamExt, TryStreamExt};
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 const OBSERVED_ID: &str = "1111222233334444111111111111111111111111111111111111111111111111";
 const IGNORED_ID: &str = "2222222233334444111111111111111111111111111111111111111111112222";
@@ -60,7 +61,7 @@ fn add_lazy_sampled_node(
     parent.create_lazy_child("samples", move || {
         let state = state.clone();
         async move {
-            let mut unwrapped = state.lock().unwrap();
+            let mut unwrapped = state.lock();
 
             if let Some(responder) = unwrapped.sample_count_callback_opt.take() {
                 responder.send(Ok(())).unwrap();
@@ -87,22 +88,22 @@ fn serve_sampler_test_controller(mut stream: SamplerTestControllerRequestStream)
         while let Some(req) = stream.try_next().await.unwrap() {
             match req {
                 SamplerTestControllerRequest::IncrementInt { property_id, responder } => {
-                    let mut unwrapped = state.lock().unwrap();
+                    let mut unwrapped = state.lock();
                     unwrapped.integer_property_map.get_mut(&property_id).unwrap().1 += 1;
                     responder.send().unwrap();
                 }
                 SamplerTestControllerRequest::SetOptional { value, responder } => {
-                    let mut unwrapped = state.lock().unwrap();
+                    let mut unwrapped = state.lock();
                     unwrapped.optional_integer = Some(value);
                     responder.send().unwrap();
                 }
                 SamplerTestControllerRequest::RemoveOptional { responder } => {
-                    let mut unwrapped = state.lock().unwrap();
+                    let mut unwrapped = state.lock();
                     unwrapped.optional_integer = None;
                     responder.send().unwrap();
                 }
                 SamplerTestControllerRequest::WaitForSample { responder } => {
-                    let mut unwrapped = state.lock().unwrap();
+                    let mut unwrapped = state.lock();
 
                     if unwrapped.sample_count_callback_opt.is_some() {
                         responder.send(Err(SamplingError::MultipleSampleCallbacksError)).unwrap();

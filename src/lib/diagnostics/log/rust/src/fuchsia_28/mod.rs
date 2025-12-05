@@ -7,9 +7,10 @@ use fidl::endpoints::ClientEnd;
 use fidl_fuchsia_logger::LogSinkMarker;
 use fuchsia_async as fasync;
 use fuchsia_component_client::connect::connect_to_protocol;
+use fuchsia_sync::Mutex;
 use std::collections::HashSet;
 use std::fmt::Debug;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use thiserror::Error;
 
 #[cfg(fuchsia_api_level_less_than = "27")]
@@ -335,7 +336,7 @@ impl Publisher {
 
     /// Takes the task listening for interest changes if one exists.
     fn take_interest_listening_task(&mut self) -> Option<fasync::Task<()>> {
-        self.inner.interest_listening_task.lock().unwrap().take()
+        self.inner.interest_listening_task.lock().take()
     }
 
     /// Sets the global logger to this publisher. This function may only be called once in the

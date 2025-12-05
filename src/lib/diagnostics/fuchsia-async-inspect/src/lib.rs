@@ -5,10 +5,11 @@
 use fuchsia_async::ScopeHandle;
 use fuchsia_async::instrument::{AtomicFutureHandle, Hooks, TaskInstrument};
 use fuchsia_inspect::{self as inspect, Node, NumericProperty, Property};
+use fuchsia_sync::Mutex;
 use std::any::Any;
 use std::collections::HashSet;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
 
 fn get_unique_name(names: &mut HashSet<String>, base_name: String) -> String {
     if names.insert(base_name.clone()) {
@@ -48,7 +49,7 @@ struct InspectHooks {
 
 impl Drop for InspectHooks {
     fn drop(&mut self) {
-        self.parent_names.lock().unwrap().remove(&self.name);
+        self.parent_names.lock().remove(&self.name);
     }
 }
 
@@ -81,7 +82,7 @@ struct ScopeInspect {
 
 impl Drop for ScopeInspect {
     fn drop(&mut self) {
-        self.parent_names.lock().unwrap().remove(&self.name);
+        self.parent_names.lock().remove(&self.name);
     }
 }
 
@@ -121,7 +122,7 @@ impl TaskInstrument for InspectTaskInstrument {
             .map(|scope| (&scope.node, Arc::clone(&scope.child_names)))
             .unwrap_or_else(|| (&self.root, Arc::clone(&self.child_names)));
         let name = {
-            let mut names = parent_names.lock().unwrap();
+            let mut names = parent_names.lock();
             get_unique_name(&mut names, base_name)
         };
         let node = parent_node.create_child(&name);
@@ -150,7 +151,7 @@ impl TaskInstrument for InspectTaskInstrument {
             .map(|scope| (&scope.node, Arc::clone(&scope.child_names)))
             .unwrap_or_else(|| (&self.root, Arc::clone(&self.child_names)));
         let name = {
-            let mut names = parent_names.lock().unwrap();
+            let mut names = parent_names.lock();
             get_unique_name(&mut names, scope_name.to_string())
         };
         let node = parent_node.create_child(&name);

@@ -3,10 +3,11 @@
 
 use crate::{PublishOptions, Severity};
 use fidl_fuchsia_diagnostics_types as fdiagnostics;
+use fuchsia_sync::Mutex;
 use std::collections::HashSet;
 use std::io::Write;
 use std::marker::PhantomData;
-use std::sync::{Mutex, Once};
+use std::sync::Once;
 use std::time::SystemTime;
 use thiserror::Error;
 
@@ -97,7 +98,7 @@ impl<W: Write + Send + 'static> log::Log for HostLogger<W> {
 
     fn log(&self, record: &log::Record<'_>) {
         if self.enabled(record.metadata()) {
-            let mut writer = self.writable.lock().unwrap();
+            let mut writer = self.writable.lock();
             let _ =
                 write!(writer, "{}", chrono::DateTime::<chrono::Local>::from(SystemTime::now()));
             let _ = write!(writer, " {} ", record.metadata().level());
@@ -119,7 +120,7 @@ impl<W: Write + Send + 'static> log::Log for HostLogger<W> {
     }
 
     fn flush(&self) {
-        let _ = self.writable.lock().unwrap().flush();
+        let _ = self.writable.lock().flush();
     }
 }
 
@@ -175,20 +176,21 @@ struct FormatOpts {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use fuchsia_sync::Mutex;
     use log::{error, info, warn};
     use regex::Regex;
     use std::io;
-    use std::sync::{Arc, LazyLock, Mutex};
+    use std::sync::{Arc, LazyLock};
 
     struct MockWriter(Arc<Mutex<Vec<u8>>>);
 
     impl io::Write for MockWriter {
         fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-            self.0.lock().unwrap().write(buf)
+            self.0.lock().write(buf)
         }
 
         fn flush(&mut self) -> io::Result<()> {
-            self.0.lock().unwrap().flush()
+            self.0.lock().flush()
         }
     }
 
@@ -206,23 +208,23 @@ mod tests {
 
     impl TestLogger {
         fn replace(&self, logger: HostLogger<MockWriter>) {
-            LOGGER.inner.lock().unwrap().replace(logger);
+            LOGGER.inner.lock().replace(logger);
         }
     }
 
     impl log::Log for TestLogger {
         fn enabled(&self, metadata: &log::Metadata<'_>) -> bool {
-            let guard = self.inner.lock().unwrap();
+            let guard = self.inner.lock();
             guard.as_ref().unwrap().enabled(metadata)
         }
 
         fn log(&self, record: &log::Record<'_>) {
-            let guard = self.inner.lock().unwrap();
+            let guard = self.inner.lock();
             guard.as_ref().unwrap().log(record);
         }
 
         fn flush(&self) {
-            let guard = self.inner.lock().unwrap();
+            let guard = self.inner.lock();
             guard.as_ref().unwrap().flush();
         }
     }
@@ -233,7 +235,7 @@ mod tests {
         let buf = buffer.clone();
         LOGGER.replace(create_logger(&PublishOptions::default(), MockWriter(buf.clone())));
         info!(key = 2; "this is a test");
-        let buf = buffer.lock().unwrap();
+        let buf = buffer.lock();
         let re = Regex::new(".+INFO this is a test key=2\n$").unwrap();
         let result = std::str::from_utf8(buf.as_slice()).unwrap();
         assert!(re.is_match(result), "got: {:?}", result);
@@ -248,7 +250,7 @@ mod tests {
             MockWriter(buf.clone()),
         ));
         info!(key = 2; "this is a test");
-        let buf = buffer.lock().unwrap();
+        let buf = buffer.lock();
         let re = Regex::new(".+ INFO \\[hello, fuchsia\\] this is a test key=2\n$").unwrap();
         let result = std::str::from_utf8(buf.as_slice()).unwrap();
         assert!(re.is_match(result), "got: {:?}", result);
@@ -263,7 +265,7 @@ mod tests {
             MockWriter(buf.clone()),
         ));
         warn!(key = 2; "this is a test");
-        let buf = buffer.lock().unwrap();
+        let buf = buffer.lock();
         let re =
             Regex::new(".+WARN diagnostics_log_lib_test::portable::tests: this is a test key=2\n$")
                 .unwrap();
@@ -281,7 +283,7 @@ mod tests {
         ));
 
         error!(key = 2; "this is a test");
-        let buf = buffer.lock().unwrap();
+        let buf = buffer.lock();
         let re = Regex::new(concat!(
             ".+ERROR \\[hello, fuchsia\\] diagnostics_log_lib_test::portable::tests: ",
             "this is a test key=2\n$"

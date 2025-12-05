@@ -6,7 +6,8 @@
 mod target {
     use fuchsia_inspect_contrib::inspect_log;
     use fuchsia_inspect_contrib::nodes::BoundedListNode;
-    use std::sync::{LazyLock, Mutex};
+    use fuchsia_sync::Mutex;
+    use std::sync::LazyLock;
 
     struct LogHolder {
         list: Mutex<Option<BoundedListNode>>,
@@ -22,7 +23,7 @@ mod target {
 
     /// Provides a `BoundedListNode` to store logged warnings and errors in.
     pub fn set_log_list_node(node: BoundedListNode) {
-        *LOGGER.list.lock().unwrap() = Some(node);
+        *LOGGER.list.lock() = Some(node);
     }
 
     /// Logs a "warn" message to a list of messages in Inspect.
@@ -38,7 +39,7 @@ mod target {
     }
 
     fn log_problem(level: &str, message: &str, namespace: &str, name: &str, error: &str) {
-        let Some(ref mut list) = *LOGGER.list.lock().unwrap() else {
+        let Some(ref mut list) = *LOGGER.list.lock() else {
             return;
         };
         inspect_log!(

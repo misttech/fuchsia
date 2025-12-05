@@ -135,10 +135,11 @@ mod tests {
     use diagnostics_log_types::Severity;
     use fidl::endpoints::create_request_stream;
     use fidl_fuchsia_logger::{LogSinkMarker, LogSinkRequest};
+    use fuchsia_sync::Mutex;
     use futures::AsyncReadExt;
     use futures::stream::StreamExt;
     use log::{debug, error, info, trace, warn};
-    use std::sync::{Arc, Mutex};
+    use std::sync::Arc;
     use std::time::Duration;
     use test_util::assert_gt;
     use zx::Status;
@@ -484,7 +485,7 @@ mod tests {
             "blarg this is a message"
         );
 
-        let guard = last_record.lock().unwrap();
+        let guard = last_record.lock();
         let encoder = guard.as_ref().unwrap();
         let (record, _) = parse_record(encoder.inner().get_ref()).expect("wrote valid record");
         assert_gt!(record.timestamp, before_timestamp);
@@ -542,7 +543,7 @@ mod tests {
                     dropped: 0,
                 })
                 .expect("wrote event");
-            let mut last_record = self.last_record.lock().unwrap();
+            let mut last_record = self.last_record.lock();
             last_record.replace(encoder);
         }
 

@@ -9,11 +9,12 @@ use fidl_fuchsia_logger::{
 };
 use fuchsia_async as fasync;
 use fuchsia_component_client::connect::connect_to_protocol;
+use fuchsia_sync::Mutex;
 use futures::stream::StreamExt;
 use std::borrow::Borrow;
 use std::collections::HashSet;
 use std::fmt::Debug;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use thiserror::Error;
 
 #[cfg(fuchsia_api_level_less_than = "27")]
@@ -449,33 +450,32 @@ impl BufferedPublisher {
         // which will prevent the publisher from being dropped and ensure that buffered log messages
         // are sent.
         let this_clone = this.clone();
-        *this_clone.interest_listening_task.lock().unwrap() =
-            Some(fasync::Task::spawn(async move {
-                let proxy = client.into_proxy();
+        *this_clone.interest_listening_task.lock() = Some(fasync::Task::spawn(async move {
+            let proxy = client.into_proxy();
 
-                let Some(Ok(LogSinkEvent::OnInit {
-                    payload: LogSinkOnInitRequest { buffer: Some(buffer), interest, .. },
-                })) = proxy.take_event_stream().next().await
-                else {
-                    // There's not a lot we can do here: we haven't received the event we expected
-                    // and there's no way we can log the issue.
-                    return;
-                };
+            let Some(Ok(LogSinkEvent::OnInit {
+                payload: LogSinkOnInitRequest { buffer: Some(buffer), interest, .. },
+            })) = proxy.take_event_stream().next().await
+            else {
+                // There's not a lot we can do here: we haven't received the event we expected
+                // and there's no way we can log the issue.
+                return;
+            };
 
-                // Ignore the interest sent in the OnInit request if `listen_for_interest_updates`
-                // is false; it is assumed that the caller wants the interest specified in the
-                // options to stick.
-                this.filter.update_interest(
-                    (if opts.listen_for_interest_updates { interest } else { None })
-                        .unwrap_or_default(),
-                );
+            // Ignore the interest sent in the OnInit request if `listen_for_interest_updates`
+            // is false; it is assumed that the caller wants the interest specified in the
+            // options to stick.
+            this.filter.update_interest(
+                (if opts.listen_for_interest_updates { interest } else { None })
+                    .unwrap_or_default(),
+            );
 
-                this.sink.set_buffer(buffer);
+            this.sink.set_buffer(buffer);
 
-                if opts.listen_for_interest_updates {
-                    this.filter.listen_for_interest_updates(proxy).await;
-                }
-            }));
+            if opts.listen_for_interest_updates {
+                this.filter.listen_for_interest_updates(proxy).await;
+            }
+        }));
 
         Ok(this_clone)
     }

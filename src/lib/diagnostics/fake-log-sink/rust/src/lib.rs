@@ -9,10 +9,11 @@ use fidl_fuchsia_logger::{
     LogSinkMarker, LogSinkOnInitRequest, LogSinkRequest, LogSinkWaitForInterestChangeResponder,
 };
 use fuchsia_async::{self as fasync, EHandle};
+use fuchsia_sync::{Condvar, Mutex};
 use futures::StreamExt;
 use futures::future::{AbortHandle, Abortable};
 use ring_buffer::RingBuffer;
-use std::sync::{Arc, Condvar, Mutex};
+use std::sync::Arc;
 
 /// FakeLogSink serves LogSink connections and forward any messages logged to it.
 pub struct FakeLogSink {
@@ -66,20 +67,16 @@ impl FakeLogSink {
                 let _ = fasync::LocalExecutor::default().run_singlethreaded(Abortable::new(
                     async move {
                         let reader = RingBuffer::create(ring_buffer::MAX_MESSAGE_SIZE);
-                        *eh_and_rb.0.lock().unwrap() = Some((EHandle::local(), reader));
+                        *eh_and_rb.0.lock() = Some((EHandle::local(), reader));
                         eh_and_rb.1.notify_all();
                         let () = std::future::pending().await;
                     },
                     abort_registration,
                 ));
             });
-            let (ehandle, reader) = ehandle_and_ring_buffer
-                .1
-                .wait_while(ehandle_and_ring_buffer.0.lock().unwrap(), |rb| rb.is_none())
-                .unwrap()
-                .take()
-                .unwrap();
-            (ehandle, reader)
+            let mut ehandle_buffer_guard = ehandle_and_ring_buffer.0.lock();
+            ehandle_and_ring_buffer.1.wait_while(&mut ehandle_buffer_guard, |rb| rb.is_none());
+            ehandle_buffer_guard.take().unwrap()
         } else {
             let reader = RingBuffer::create(ring_buffer::MAX_MESSAGE_SIZE);
             fasync::Task::spawn(async {
@@ -120,7 +117,7 @@ impl FakeLogSink {
         self.ehandle.spawn_detached(async move {
             let mut requests = server_end.into_stream();
             {
-                let mut min_severity = min_severity.lock().unwrap();
+                let mut min_severity = min_severity.lock();
                 requests
                     .control_handle()
                     .send_on_init(LogSinkOnInitRequest {
@@ -138,7 +135,7 @@ impl FakeLogSink {
             while let Some(Ok(request)) = requests.next().await {
                 match request {
                     LogSinkRequest::WaitForInterestChange { responder } => {
-                        let mut min_severity = min_severity.lock().unwrap();
+                        let mut min_severity = min_severity.lock();
                         match &mut min_severity.updates {
                             MinSeverityUpdates::None => {
                                 min_severity.updates =
@@ -162,7 +159,7 @@ impl FakeLogSink {
 
     /// Sets the minimum severity and notifies all listeners.
     pub fn set_min_severity(&self, severity: Severity) {
-        let mut min_severity = self.min_severity.lock().unwrap();
+        let mut min_severity = self.min_severity.lock();
         if severity == min_severity.severity {
             return;
         }

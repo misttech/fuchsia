@@ -27,7 +27,10 @@ lib_deps = [
 ]
 
 if (is_fuchsia) {
-  lib_deps += [ "//src/lib/diagnostics/inspect/contrib/rust" ]
+  lib_deps += [
+    "//src/lib/diagnostics/inspect/contrib/rust",
+    "//src/lib/fuchsia-sync",
+  ]
 }
 
 library_sources = [

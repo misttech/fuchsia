@@ -5,7 +5,7 @@ use crate::OnInterestChanged;
 use diagnostics_log_encoding::encode::TestRecord;
 use diagnostics_log_types::Severity;
 use fidl_fuchsia_logger::LogSinkProxy;
-use std::sync::Mutex;
+use fuchsia_sync::Mutex;
 
 #[cfg(fuchsia_api_level_less_than = "27")]
 use fidl_fuchsia_diagnostics as fdiagnostics;
@@ -34,7 +34,7 @@ impl InterestFilter {
     where
         T: OnInterestChanged + Send + Sync + 'static,
     {
-        let mut listener_guard = self.listener.lock().unwrap();
+        let mut listener_guard = self.listener.lock();
         *listener_guard = Some(Box::new(listener));
     }
 
@@ -49,7 +49,7 @@ impl InterestFilter {
     pub fn update_interest(&self, interest: fdiagnostics::Interest) {
         let new_min_severity = interest.min_severity.map_or(self.default_severity, Severity::from);
         log::set_max_level(new_min_severity.into());
-        let callback_guard = self.listener.lock().unwrap();
+        let callback_guard = self.listener.lock();
         if let Some(callback) = &*callback_guard {
             callback.on_changed(new_min_severity);
         }
@@ -82,7 +82,7 @@ mod tests {
         }
 
         fn log(&self, record: &log::Record<'_>) {
-            let mut count = self.severity_counts.lock().unwrap();
+            let mut count = self.severity_counts.lock();
             let to_increment = match record.level() {
                 log::Level::Trace => &mut count.trace,
                 log::Level::Debug => &mut count.debug,
@@ -127,21 +127,21 @@ mod tests {
 
         error!("oops");
         expected.error += 1;
-        assert_eq!(&*observed.lock().unwrap(), &expected);
+        assert_eq!(&*observed.lock(), &expected);
 
         warn!("maybe");
         expected.warn += 1;
-        assert_eq!(&*observed.lock().unwrap(), &expected);
+        assert_eq!(&*observed.lock(), &expected);
 
         info!("ok");
         expected.info += 1;
-        assert_eq!(&*observed.lock().unwrap(), &expected);
+        assert_eq!(&*observed.lock(), &expected);
 
         debug!("hint");
-        assert_eq!(&*observed.lock().unwrap(), &expected, "should not increment counters");
+        assert_eq!(&*observed.lock(), &expected, "should not increment counters");
 
         trace!("spew");
-        assert_eq!(&*observed.lock().unwrap(), &expected, "should not increment counters");
+        assert_eq!(&*observed.lock(), &expected, "should not increment counters");
     }
 
     async fn send_interest_change(stream: &mut LogSinkRequestStream, severity: Option<Severity>) {
@@ -186,21 +186,21 @@ mod tests {
         let mut expected = SeverityCount::default();
         error!("oops");
         expected.error += 1;
-        assert_eq!(&*observed.lock().unwrap(), &expected);
+        assert_eq!(&*observed.lock(), &expected);
 
         warn!("maybe");
         expected.warn += 1;
-        assert_eq!(&*observed.lock().unwrap(), &expected);
+        assert_eq!(&*observed.lock(), &expected);
 
         info!("ok");
         expected.info += 1;
-        assert_eq!(&*observed.lock().unwrap(), &expected);
+        assert_eq!(&*observed.lock(), &expected);
 
         debug!("hint");
-        assert_eq!(&*observed.lock().unwrap(), &expected, "should not increment counters");
+        assert_eq!(&*observed.lock(), &expected, "should not increment counters");
 
         trace!("spew");
-        assert_eq!(&*observed.lock().unwrap(), &expected, "should not increment counters");
+        assert_eq!(&*observed.lock(), &expected, "should not increment counters");
 
         // After resetting to default, filtering is at warn level.
         send_interest_change(&mut requests, None).await;
@@ -208,20 +208,20 @@ mod tests {
 
         error!("oops");
         expected.error += 1;
-        assert_eq!(&*observed.lock().unwrap(), &expected);
+        assert_eq!(&*observed.lock(), &expected);
 
         warn!("maybe");
         expected.warn += 1;
-        assert_eq!(&*observed.lock().unwrap(), &expected);
+        assert_eq!(&*observed.lock(), &expected);
 
         info!("ok");
-        assert_eq!(&*observed.lock().unwrap(), &expected, "should not increment counters");
+        assert_eq!(&*observed.lock(), &expected, "should not increment counters");
 
         debug!("hint");
-        assert_eq!(&*observed.lock().unwrap(), &expected, "should not increment counters");
+        assert_eq!(&*observed.lock(), &expected, "should not increment counters");
 
         trace!("spew");
-        assert_eq!(&*observed.lock().unwrap(), &expected, "should not increment counters");
+        assert_eq!(&*observed.lock(), &expected, "should not increment counters");
     }
 
     #[fuchsia::test(logging = false)]

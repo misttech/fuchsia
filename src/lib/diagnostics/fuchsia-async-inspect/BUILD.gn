@@ -12,6 +12,7 @@ rustc_library("fuchsia-async-inspect") {
     "//sdk/rust/zx",
     "//src/lib/diagnostics/inspect/rust",
     "//src/lib/fuchsia-async",
+    "//src/lib/fuchsia-sync",
   ]
   test_deps = [
     "//src/lib/diagnostics/testing/diagnostics-assertions/rust:diagnostics-assertions",

@@ -7,12 +7,13 @@ use diagnostics_log_encoding::encode::{
 use diagnostics_log_encoding::{Header, Metatag};
 use fidl_fuchsia_logger::MAX_DATAGRAM_LEN_BYTES;
 use fuchsia_runtime as rt;
+use fuchsia_sync::RwLock;
 use std::cell::UnsafeCell;
 use std::collections::HashSet;
 use std::io::Cursor;
 use std::mem::MaybeUninit;
+use std::sync::OnceLock;
 use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
-use std::sync::{OnceLock, RwLock};
 use zx::{self as zx, AsHandleRef};
 
 // This is the amount of data that can be buffered by the BufferedPublisher before messages are
@@ -155,7 +156,7 @@ impl BufferedSink {
         // without blocking other loggers.  In the second phase, we forward the queue whilst
         // blocking other loggers, which should hopefully be for a small amount of time.
         let queue = {
-            let mut buffer = self.buffer.write().unwrap();
+            let mut buffer = self.buffer.write();
             if let Some(Buffer { queue, .. }) = &mut *buffer {
                 Some(std::mem::replace(queue, Queue::new()))
             } else {
@@ -169,7 +170,7 @@ impl BufferedSink {
         }
 
         // This time, hold the lock until we've finished.
-        let mut buffer = self.buffer.write().unwrap();
+        let mut buffer = self.buffer.write();
         if let Some(Buffer { queue, .. }) = &mut *buffer {
             self.forward_queue(queue, &io_buffer, &mut dropped);
         }
@@ -209,7 +210,7 @@ impl Sink for BufferedSink {
                 return iob.write(Default::default(), 0, packet);
             }
 
-            let buffer = self.buffer.read().unwrap();
+            let buffer = self.buffer.read();
             let Some(Buffer { queue, .. }) = &*buffer else {
                 // We lost a race, loop and write with the IOBuffer.
                 continue;
@@ -286,10 +287,11 @@ mod tests {
     use diagnostics_log_encoding::parse::parse_record;
     use diagnostics_log_encoding::{Argument, Record};
     use diagnostics_log_types::Severity;
+    use fuchsia_sync::Mutex;
     use futures::FutureExt;
     use log::{debug, error, info, trace, warn};
     use ring_buffer::{self, RING_BUFFER_MESSAGE_HEADER_SIZE, RingBuffer};
-    use std::sync::{Arc, Mutex};
+    use std::sync::Arc;
     use std::time::Duration;
     use test_util::assert_gt;
 
@@ -604,7 +606,7 @@ mod tests {
             "blarg this is a message"
         );
 
-        let guard = last_record.lock().unwrap();
+        let guard = last_record.lock();
         let encoder = guard.as_ref().unwrap();
         let (record, _) = parse_record(encoder.inner().get_ref()).expect("wrote valid record");
         assert_gt!(record.timestamp, before_timestamp);
@@ -662,7 +664,7 @@ mod tests {
                     dropped: 0,
                 })
                 .expect("wrote event");
-            let mut last_record = self.last_record.lock().unwrap();
+            let mut last_record = self.last_record.lock();
             last_record.replace(encoder);
         }
 

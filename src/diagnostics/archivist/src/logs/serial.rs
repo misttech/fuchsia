@@ -361,9 +361,9 @@ mod tests {
     use fidl::endpoints::create_proxy;
     use fidl_fuchsia_logger::LogSinkMarker;
     use fuchsia_async::TimeoutExt;
+    use fuchsia_sync::Mutex;
     use futures::FutureExt;
     use moniker::ExtendedMoniker;
-    use std::sync::Mutex;
     use std::time::Duration;
     use zx::BootInstant;
 
@@ -415,13 +415,13 @@ mod tests {
 
     impl FakeSink {
         fn with_buffer<R>(&self, f: impl FnOnce(&Vec<u8>) -> R) -> R {
-            f(&self.0.lock().unwrap())
+            f(&self.0.lock())
         }
     }
 
     impl Write for FakeSink {
         fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-            self.0.lock().unwrap().write(buf)
+            self.0.lock().write(buf)
         }
 
         fn flush(&mut self) -> io::Result<()> {

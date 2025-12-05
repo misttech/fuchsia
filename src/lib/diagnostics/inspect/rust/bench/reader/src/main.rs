@@ -7,8 +7,9 @@ use fuchsia_criterion::criterion;
 use fuchsia_inspect::hierarchy::DiagnosticsHierarchyGetter;
 use fuchsia_inspect::reader::snapshot::{Snapshot, SnapshotTree};
 use fuchsia_inspect::{Inspector, InspectorConfig, NumericProperty};
+use fuchsia_sync::Mutex;
 use futures::FutureExt;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 const HIERARCHY_GENERATOR_SEED: u64 = 0;
 
@@ -33,7 +34,7 @@ fn start_inspector_update_thread(inspector: Inspector, changes_per_second: usize
             let sleep_time =
                 std::time::Duration::from_nanos(1_000_000_000u64 / changes_per_second as u64);
             std::thread::sleep(sleep_time);
-            if let InspectorState::Done = *state.lock().unwrap() {
+            if let InspectorState::Done = *state.lock() {
                 break;
             }
             val.add(1);
@@ -42,7 +43,7 @@ fn start_inspector_update_thread(inspector: Inspector, changes_per_second: usize
 
     move || {
         {
-            *ret_state.lock().unwrap() = InspectorState::Done;
+            *ret_state.lock() = InspectorState::Done;
         }
         thread.join().expect("join thread");
     }
