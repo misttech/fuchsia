@@ -258,7 +258,7 @@ zx_status_t DWMacDevice::Create(void* ctx, zx_device_t* device) {
 
   // Reset the dma peripheral.
   mac_device->mmio_->SetBits32(DMAMAC_SRST, DW_MAC_DMA_BUSMODE);
-  uint32_t loop_count = 10;
+  uint32_t loop_count = 100;
   do {
     zx_nanosleep(zx_deadline_after(ZX_MSEC(10)));
     loop_count--;
