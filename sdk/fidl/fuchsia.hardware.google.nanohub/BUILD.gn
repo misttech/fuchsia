@@ -5,6 +5,8 @@
 import("//build/fidl/fidl.gni")
 
 fidl("fuchsia.hardware.google.nanohub") {
+  sdk_area = "Drivers"
+  sdk_category = "partner"
   sources = [
     "datachannel.fidl",
     "lifecycle.fidl",
@@ -12,5 +14,6 @@ fidl("fuchsia.hardware.google.nanohub") {
     "nanohubdisplay.fidl",
     "overview.fidl",
   ]
+  stable = false
   public_deps = [ "//zircon/vdso/zx" ]
 }

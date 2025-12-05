@@ -226,6 +226,7 @@ fidl_library://fidl/fuchsia.hardware.clock
 fidl_library://fidl/fuchsia.hardware.clockimpl
 fidl_library://fidl/fuchsia.hardware.cpu.ctrl (unstable)
 fidl_library://fidl/fuchsia.hardware.gnss (unstable)
+fidl_library://fidl/fuchsia.hardware.google.nanohub (unstable)
 fidl_library://fidl/fuchsia.hardware.gpio
 fidl_library://fidl/fuchsia.hardware.haptics (unstable)
 fidl_library://fidl/fuchsia.hardware.hrtimer (unstable)
