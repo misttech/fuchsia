@@ -1032,6 +1032,10 @@ fit::result<Dispatcher::NonInlinedReason> Dispatcher::ShouldInline(
 
 void Dispatcher::QueueRegisteredCallback(driver_runtime::CallbackRequest* request,
                                          zx_status_t callback_reason, bool was_deferred) {
+  // TODO(https://fxbug.dev/466388740): Take a reference so `name_` will not go out of scope
+  // before the trace duration scope, even if all references to the dispatcher have already
+  // gone out of scope.
+  auto this_ref = fbl::RefPtr(this);
   TRACE_DURATION("driver_runtime", "Dispatcher::QueueRegisteredCallback", "dispatcher_name",
                  name_.c_str(), "callback_reason", zx_status_get_string(callback_reason),
                  "was_deferred", TA_BOOL(was_deferred));
