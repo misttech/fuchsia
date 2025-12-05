@@ -39,14 +39,26 @@ class ExampleTestCaseRevive(test_case_revive.TestCaseRevive):
         global dut
         dut = self.fuchsia_devices[0]
 
-    @test_case_revive.tag_test(tag_name="revive_test_case")
-    def test_firmware_version(self) -> None:
-        """This test will be run both as a normal test and also as a revived.
+    @test_case_revive.opt_out()
+    def test_that_does_not_revive(self) -> None:
+        """This test case will not be run if built with `params.test_case_revive = true`"""
+        _LOGGER.info(
+            "This should run in normal Mobly but not run in 'revived' mode"
+        )
 
-        For the revived test case, sequence will be:
+    @test_case_revive.tag_test()
+    def test_firmware_version(self) -> None:
+        """This test can be run as a normal or revived test.
+
+        If built without `params.test_case_revive = true` it will run normally once.
+
+        If built with `params.test_case_revive = true` it will be run twice in this sequence:
             1. Run this test case method
             2. Perform `fuchsia_device_operation` operation
             3. Re-run this test case method
+
+        To prevent running a test case in revive mode even if built with the revive flag,
+        annotate it with `@test_case_revive.opt_out()`.
         """
         for fuchsia_device in self.fuchsia_devices:
             _LOGGER.info(
@@ -56,7 +68,6 @@ class ExampleTestCaseRevive(test_case_revive.TestCaseRevive):
             )
 
     @test_case_revive.tag_test(
-        tag_name="revive_test_case",
         test_method_execution_frequency=test_case_revive.TestMethodExecutionFrequency.POST_ONLY,
         pre_test_execution_fn=_to_run_before_test,
         pre_test_execution_fn_kwargs={"foo": 1},
@@ -73,6 +84,10 @@ class ExampleTestCaseRevive(test_case_revive.TestCaseRevive):
             2. Perform `fuchsia_device_operation` operation
             3. Run this test case method
             4. Run _to_run_after_test method
+
+        Since the function name starts with "_test" and not "test" Mobly will not
+        recognize it as a test case. But if built with `params.test_case_revive = true`
+        the revive mechanism will use it as a test case.
         """
         for fuchsia_device in self.fuchsia_devices:
             _LOGGER.info(
