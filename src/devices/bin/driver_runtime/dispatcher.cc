@@ -319,12 +319,11 @@ Dispatcher::Dispatcher(uint32_t options, std::string_view name, bool unsynchroni
 bool g_dynamic_thread_spawning = false;
 
 // static
-zx_status_t Dispatcher::CreateWithAdder(uint32_t options, std::string_view name,
-                                        std::string_view scheduler_role, const void* owner,
-                                        ThreadPool* thread_pool,
-                                        async_dispatcher_t* parent_dispatcher, ThreadAdder adder,
-                                        fdf_dispatcher_shutdown_observer_t* observer,
-                                        Dispatcher** out_dispatcher) {
+zx_status_t Dispatcher::Create(uint32_t options, std::string_view name,
+                               std::string_view scheduler_role, const void* owner,
+                               ThreadPool* thread_pool, async_dispatcher_t* parent_dispatcher,
+                               fdf_dispatcher_shutdown_observer_t* observer,
+                               Dispatcher** out_dispatcher) {
   ZX_DEBUG_ASSERT(out_dispatcher);
 
   bool unsynchronized = options & FDF_DISPATCHER_OPTION_UNSYNCHRONIZED;
@@ -334,13 +333,6 @@ zx_status_t Dispatcher::CreateWithAdder(uint32_t options, std::string_view name,
   }
   if (!owner) {
     return ZX_ERR_INVALID_ARGS;
-  }
-
-  if (allow_sync_calls && !g_dynamic_thread_spawning) {
-    zx_status_t status = adder();
-    if (status != ZX_OK) {
-      return status;
-    }
   }
 
   auto dispatcher =
@@ -413,21 +405,17 @@ zx_status_t Dispatcher::Create(uint32_t options, std::string_view name,
     }
     thread_pool = *result;
   }
-  return CreateWithAdder(
-      options, name, scheduler_role, thread_context::GetCurrentDriver(), thread_pool,
-      thread_pool->loop()->dispatcher(), [thread_pool]() { return thread_pool->AddThread(); },
-      observer, out_dispatcher);
+  return Create(options, name, scheduler_role, thread_context::GetCurrentDriver(), thread_pool,
+                thread_pool->loop()->dispatcher(), observer, out_dispatcher);
 }
 
 zx_status_t Dispatcher::CreateUnmanagedDispatcher(
     uint32_t options, std::string_view name, fdf_dispatcher_shutdown_observer_t* shutdown_observer,
     Dispatcher** out_dispatcher) {
   auto unmanaged_thread_pool = GetDispatcherCoordinator().GetOrCreateUnmanagedThreadPool();
-  return CreateWithAdder(
-      options, name, ThreadPool::kNoSchedulerRole, thread_context::GetCurrentDriver(),
-      unmanaged_thread_pool, unmanaged_thread_pool->loop()->dispatcher(),
-      [unmanaged_thread_pool]() { return unmanaged_thread_pool->AddThread(); }, shutdown_observer,
-      out_dispatcher);
+  return Create(options, name, ThreadPool::kNoSchedulerRole, thread_context::GetCurrentDriver(),
+                unmanaged_thread_pool, unmanaged_thread_pool->loop()->dispatcher(),
+                shutdown_observer, out_dispatcher);
 }
 
 // static
@@ -659,7 +647,7 @@ zx_status_t Dispatcher::Seal(uint32_t option) {
 
   // Tell our thread pool to remove a thread as we no longer have allow_sync_calls_, which caused
   // an extra thread to be added when this dispatcher was initially created.
-  return thread_pool()->RemoveThread();
+  return thread_pool()->OnDispatcherSealed();
 }
 
 // async_dispatcher_t implementation
@@ -1737,8 +1725,7 @@ zx_status_t DispatcherCoordinator::AddDispatcher(fbl::RefPtr<Dispatcher> dispatc
     }
   }
   driver_state->AddDispatcher(dispatcher);
-  dispatcher->thread_pool()->OnDispatcherAdded();
-  return ZX_OK;
+  return dispatcher->thread_pool()->OnDispatcherAdded(*dispatcher);
 }
 
 // static
@@ -1751,7 +1738,7 @@ uint32_t DispatcherCoordinator::GetThreadLimit(std::string_view scheduler_role) 
     }
     thread_pool = *result;
   }
-  return thread_pool->max_threads();
+  return thread_pool->thread_limit();
 }
 
 // static
@@ -1765,7 +1752,7 @@ zx_status_t DispatcherCoordinator::SetThreadLimit(std::string_view scheduler_rol
     }
     thread_pool = *result;
   }
-  return thread_pool->set_max_threads(max_threads);
+  return thread_pool->set_thread_limit(max_threads);
 }
 
 zx_duration_mono_t DispatcherCoordinator::ScanThreadsForStalls() {
@@ -1903,6 +1890,7 @@ zx_status_t DispatcherCoordinator::Start(uint32_t options) {
   if (thread_pool->num_threads() != 0) {
     return ZX_ERR_BAD_STATE;
   }
+  // pre-start the first dispatcher thread
   return thread_pool->AddThread();
 }
 
@@ -2023,17 +2011,15 @@ bool Dispatcher::ThreadPool::ScanThreadsForStalls() {
       stalled_threads++;
     }
   }
-  if (num_threads_ > 0 && num_threads_ < max_threads_ && stalled_threads >= num_threads_) {
+  if (num_threads_ > 0 && num_threads_ < MaxThreadsLocked() && stalled_threads >= num_threads_) {
     // if we weren't already stalled try to spawn a new thread.
     if (!stalled_) {
       LOGF(
           WARNING,
           "All threads on thread pool (role: '%s') are stalled (%d/%d). Spawning a new thread, if possible (max threads: %d).",
-          scheduler_role_.c_str(), stalled_threads, num_threads_,
-          std::min(num_dispatchers_, max_threads_));
+          scheduler_role_.c_str(), stalled_threads, num_threads_, MaxThreadsLocked());
       stalled_ = true;
-      lock.release();
-      AddThread(/*for_dispatcher=*/false);
+      AddThreadLocked();
     }
     return false;
   } else {
@@ -2077,36 +2063,22 @@ zx_status_t Dispatcher::ThreadPool::SetRoleProfile() {
   return ZX_ERR_NOT_SUPPORTED;
 }
 
-zx_status_t Dispatcher::ThreadPool::AddThread(bool for_dispatcher) {
+zx_status_t Dispatcher::ThreadPool::AddThread() {
   if (is_unmanaged_) {
     // No-op for the unmanaged thread-pool.
     return ZX_OK;
   }
 
   fbl::AutoLock lock(&lock_);
-  dispatcher_threads_needed_++;
+  return AddThreadLocked();
+}
 
-  // This avoids starting an additional thread when there is only 1 dispatcher and
-  // we have already started an initial thread for the thread pool.
-  // Note this check is before we have incremented |num_dispatchers_| for the current dispatcher.
-  // TODO(https://fxbug.dev/42076454): we should be able to remove the scheduler role check.
-  uint32_t current_num_dispatchers = num_dispatchers_ + (for_dispatcher ? 1 : 0);
-  if ((scheduler_role_ != kNoSchedulerRole) && (num_threads_ >= current_num_dispatchers))
-      [[likely]] {
-    LOGF(
-        DEBUG,
-        "Not spawning thread on thread pool (role: %s) because it would add more threads (%d) than dispatchers (%d)",
-        scheduler_role_.c_str(), num_threads_, current_num_dispatchers);
+zx_status_t Dispatcher::ThreadPool::AddThreadLocked() {
+  if (is_unmanaged_) {
+    // No-op for the unmanaged thread-pool.
     return ZX_OK;
   }
 
-  if (num_threads_ >= dispatcher_threads_needed_ || num_threads_ == max_threads_) {
-    LOGF(
-        DEBUG,
-        "Not spawning thread on thread pool (role: %s) because we already have more threads (%d) than needed (%d) or it would exceed the maximum (%d)",
-        scheduler_role_.c_str(), num_threads_, dispatcher_threads_needed_, max_threads_);
-    return ZX_OK;
-  }
   auto name = "fdf-dispatcher-thread-" + std::to_string(num_threads_);
   if (scheduler_role() != kNoSchedulerRole) {
     name += ":";
@@ -2119,31 +2091,46 @@ zx_status_t Dispatcher::ThreadPool::AddThread(bool for_dispatcher) {
   return status;
 }
 
-zx_status_t Dispatcher::ThreadPool::RemoveThread() {
-  if (is_unmanaged_) {
-    // No-op for the unmanaged thread-pool.
-    return ZX_OK;
-  }
-
+zx_status_t Dispatcher::ThreadPool::OnDispatcherSealed() {
   fbl::AutoLock lock(&lock_);
-  if (dispatcher_threads_needed_ > 0) {
-    dispatcher_threads_needed_--;
-  }
+  ZX_ASSERT(allow_sync_call_dispatchers_ > 0);
+  allow_sync_call_dispatchers_--;
   return ZX_OK;
 }
 
-void Dispatcher::ThreadPool::OnDispatcherAdded() {
+zx_status_t Dispatcher::ThreadPool::OnDispatcherAdded(Dispatcher& dispatcher) {
   fbl::AutoLock lock(&lock_);
   num_dispatchers_++;
+
+  if (!dispatcher.allow_sync_calls()) {
+    // only start a new thread if the dispatcher allows sync calls
+    return ZX_OK;
+  }
+  allow_sync_call_dispatchers_++;
+
+  if (g_dynamic_thread_spawning) {
+    // only start a new thread if we're not dynamically managing threads
+    return ZX_OK;
+  }
+
+  // This avoids starting an additional thread when there is only 1 dispatcher and
+  // we have already started an initial thread for the thread pool.
+  if (num_threads_ >= MaxThreadsLocked()) [[likely]] {
+    LOGF(
+        DEBUG,
+        "Not spawning thread on thread pool (role: %s) because it would add more threads (%d) than dispatchers (%d) or max threads (%d)",
+        scheduler_role_.c_str(), num_threads_, num_dispatchers_, MaxThreadsLocked());
+    return ZX_OK;
+  }
+  return AddThreadLocked();
 }
 
 void Dispatcher::ThreadPool::OnDispatcherRemoved(Dispatcher& dispatcher) {
   fbl::AutoLock lock(&lock_);
 
-  // We need to check the process shared dispatcher matches as tests inject their own.
-  if (!is_unmanaged_ && dispatcher_threads_needed_ > 0 && dispatcher.allow_sync_calls() &&
-      dispatcher.process_shared_dispatcher() == loop()->dispatcher()) {
-    dispatcher_threads_needed_--;
+  if (dispatcher.allow_sync_calls()) {
+    ZX_ASSERT(allow_sync_call_dispatchers_ > 0);
+    allow_sync_call_dispatchers_--;
   }
 
   ZX_ASSERT(num_dispatchers_ > 0);
@@ -2153,15 +2140,9 @@ void Dispatcher::ThreadPool::OnDispatcherRemoved(Dispatcher& dispatcher) {
 void Dispatcher::ThreadPool::Reset() {
   {
     fbl::AutoLock lock(&lock_);
-    // We increment |dispatcher_threads_needed_| whenever a new thread is started,
-    // which can be when starting an allow_sync_calls dispatcher
-    // (without dynamic thread spawning) or when a thread is suspected to be stalled.
-    // However, we only decrement it when removing a dispatcher,
-    // so it doesn't always match.
-    if (dispatcher_threads_needed_ > 1) {
-      LOGF(WARNING, "Resetting thread pool with dispatcher_threads_needed=%d",
-           dispatcher_threads_needed_);
-    }
+    ZX_ASSERT_MSG(allow_sync_call_dispatchers_ == 0,
+                  "Resetting thread pool with sync dispatchers still active: %d",
+                  allow_sync_call_dispatchers_);
   }
 
   loop_.Quit();
@@ -2171,9 +2152,9 @@ void Dispatcher::ThreadPool::Reset() {
 
   {
     fbl::AutoLock al(&lock_);
-    max_threads_ = 10;
+    thread_limit_ = 10;
     num_threads_ = 0;
-    dispatcher_threads_needed_ = 0;
+    allow_sync_call_dispatchers_ = 0;
     num_dispatchers_ = 0;
   }
 }

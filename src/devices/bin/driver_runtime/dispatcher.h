@@ -19,6 +19,7 @@
 #include <zircon/compiler.h>
 #include <zircon/types.h>
 
+#include <algorithm>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -46,8 +47,6 @@ class Dispatcher : public async_dispatcher_t,
   class AsyncWait;
 
  public:
-  using ThreadAdder = fit::callback<zx_status_t()>;
-
   enum class DispatcherState {
     // The dispatcher is running and accepting new requests.
     kRunning,
@@ -121,17 +120,17 @@ class Dispatcher : public async_dispatcher_t,
     // Required to instantiate fbl::DefaultKeyedObjectTraits.
     std::string GetKey() const { return scheduler_role_; }
 
-    // Increments the number of required threads, and starts a new thread if
-    // there are not enough threads running.
-    zx_status_t AddThread(bool for_dispatcher = true);
+    // Starts a new thread on the thread pool unconditionally.
+    zx_status_t AddThread();
 
     // Decrements the number of required threads. Currently this doesn't spin down the extra thread
     // but for now that is ok since more often than not it can be used by another dispatcher on the
     // thread-pool. If it is not used, there will simply be one more thread than needed.
     // TODO(https://fxbug.dev/326266527): Use a timer to spin down un-necessary thread.
-    zx_status_t RemoveThread();
+    zx_status_t OnDispatcherSealed();
 
-    void OnDispatcherAdded();
+    // Updates the number of threads needed in the thread pool. Starts a new thread if needed.
+    zx_status_t OnDispatcherAdded(Dispatcher& dispatcher);
     // Updates the number of threads needed in the thread pool.
     void OnDispatcherRemoved(Dispatcher& dispatcher);
     // Requests the profile provider set the role profile.
@@ -159,17 +158,17 @@ class Dispatcher : public async_dispatcher_t,
       return num_threads_;
     }
 
-    uint32_t max_threads() const {
+    uint32_t thread_limit() const {
       fbl::AutoLock al(&lock_);
-      return max_threads_;
+      return thread_limit_;
     }
 
-    zx_status_t set_max_threads(uint32_t max_threads) {
+    zx_status_t set_thread_limit(uint32_t max_threads) {
       fbl::AutoLock al(&lock_);
       if (max_threads < num_threads_) {
         return ZX_ERR_OUT_OF_RANGE;
       }
-      max_threads_ = max_threads;
+      thread_limit_ = max_threads;
       return ZX_OK;
     }
 
@@ -255,19 +254,35 @@ class Dispatcher : public async_dispatcher_t,
     // Function that runs for every thread wakeup after any handler is called.
     void ThreadWakeupEpilogue();
 
+    // The actual current limit on the number of threads we'll spawn, based on the number and
+    // types of dispatchers as well as the user-settable limit.
+    // The heuristic is basically, whichever is the lowest of:
+    // - up to one thread for every dispatcher that allows sync calls, plus one thread for
+    // all other dispatchers (which should never block).
+    // - one thread for every dispatcher.
+    // - the user-settable |thread_limit_|.
+    uint32_t MaxThreadsLocked() const __TA_REQUIRES(&lock_) {
+      return std::min({allow_sync_call_dispatchers_ + 1, num_dispatchers_, thread_limit_});
+    }
+
+    // Starts a new thread on the thread pool unconditionally. The caller should check if
+    // we're not at maximum with |MaxThreadsLocked|.
+    zx_status_t AddThreadLocked() __TA_REQUIRES(&lock_);
+
     std::string scheduler_role_;
 
     mutable fbl::Mutex lock_;
-    // Tracks the number of dispatchers which have sync calls allowed. We will only spawn additional
-    // threads if this number exceeds |number_threads_|.
-    uint32_t dispatcher_threads_needed_ __TA_GUARDED(&lock_) = 0;
+    // Tracks the number of dispatchers which have sync calls allowed. We want to only spawn enough
+    // threads needed so that every sync call dispatcher can have a thread to itself, at most.
+    // See |MaxThreadsLocked| for more info.
+    uint32_t allow_sync_call_dispatchers_ __TA_GUARDED(&lock_) = 0;
     // Tracks the number of threads we've spawned via |loop_|.
     uint32_t num_threads_ __TA_GUARDED(&lock_) = 0;
     // Total number of threads we will spawn.
     // TODO(https://fxbug.dev/42085539): We are clamping number_threads_ to 10 to avoid spawning too
     // many threads. Technically this can result in a deadlock scenario in a very complex driver
     // host. We need better support for dynamically starting threads as necessary.
-    uint32_t max_threads_ __TA_GUARDED(&lock_) = 10;
+    uint32_t thread_limit_ __TA_GUARDED(&lock_) = 10;
     // A unique_ptr to each active thread's task entry time slot, used to tell when we've run
     // out of un-stalled threads and should spawn another.
     std::vector<std::pair<zx_koid_t, std::atomic_int64_t*>> thread_entry_time_slots_
@@ -366,18 +381,6 @@ class Dispatcher : public async_dispatcher_t,
              const void* owner, ThreadPool* thread_pool,
              async_dispatcher_t* process_shared_dispatcher,
              fdf_dispatcher_shutdown_observer_t* observer);
-
-  // Creates a dispatcher which is backed by |dispatcher|.
-  // |adder| should add additional threads to back the dispatcher when invoked.
-  //
-  // Returns ownership of the dispatcher in |out_dispatcher|. The caller should call
-  // |Destroy| once they are done using the dispatcher. Once |Destroy| is called,
-  // the dispatcher will be deleted once all callbacks canclled or completed by the dispatcher.
-  static zx_status_t CreateWithAdder(uint32_t options, std::string_view name,
-                                     std::string_view scheduler_role, const void* owner,
-                                     ThreadPool* thread_pool, async_dispatcher_t* dispatcher,
-                                     ThreadAdder adder, fdf_dispatcher_shutdown_observer_t*,
-                                     Dispatcher** out_dispatcher);
 
   // fdf_dispatcher_t implementation
   // Returns ownership of the dispatcher in |out_dispatcher|. The caller should call
@@ -719,6 +722,16 @@ class Dispatcher : public async_dispatcher_t,
     zx::time current_deadline_ = zx::time::infinite();
     Dispatcher* dispatcher_;
   };
+
+  // Creates a dispatcher which is backed by |dispatcher|.
+  //
+  // Returns ownership of the dispatcher in |out_dispatcher|. The caller should call
+  // |Destroy| once they are done using the dispatcher. Once |Destroy| is called,
+  // the dispatcher will be deleted once all callbacks cancelled or completed by the dispatcher.
+  static zx_status_t Create(uint32_t options, std::string_view name,
+                            std::string_view scheduler_role, const void* owner,
+                            ThreadPool* thread_pool, async_dispatcher_t* dispatcher,
+                            fdf_dispatcher_shutdown_observer_t*, Dispatcher** out_dispatcher);
 
   zx::time GetNextTimeoutLocked() const __TA_REQUIRES(&callback_lock_);
   void ResetTimerLocked() __TA_REQUIRES(&callback_lock_);

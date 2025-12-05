@@ -27,6 +27,15 @@ __EXPORT int main(int argc, char** argv) {
   if (dispatcher.is_error()) {
     return dispatcher.status_value();
   }
+  // create an extra dispatcher so we're guaranteed to have an extra thread for async shutdown
+  // callbacks to be called on.
+  auto extra_dispatcher = fdf_env::DispatcherBuilder::CreateSynchronizedWithOwner(
+      driver, fdf::SynchronizedDispatcher::Options::kAllowSyncCalls, "driver-runtime-test-extra",
+      [](fdf_dispatcher_t*) {});
+  if (extra_dispatcher.is_error()) {
+    return extra_dispatcher.status_value();
+  }
+  extra_dispatcher->release();
 
   zx_status_t status;
   libsync::Completion completion;

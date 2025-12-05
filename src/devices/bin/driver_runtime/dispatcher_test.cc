@@ -3250,6 +3250,7 @@ TEST_F(DispatcherTest, ExtraThreadIsReused) {
     thread_context::PushDriver(driver);
     auto pop_driver = fit::defer([]() { thread_context::PopDriver(); });
 
+    // a thread is created at startup that will be used for the first dispatcher
     ASSERT_EQ(driver_runtime::GetDispatcherCoordinator().default_thread_pool()->num_threads(), 1);
 
     // Create first dispatcher
@@ -3257,7 +3258,7 @@ TEST_F(DispatcherTest, ExtraThreadIsReused) {
     DispatcherShutdownObserver observer;
     ASSERT_OK(fdf_dispatcher::Create(FDF_DISPATCHER_OPTION_ALLOW_SYNC_CALLS, __func__, "",
                                      observer.fdf_observer(), &dispatcher));
-    ASSERT_EQ(driver_runtime::GetDispatcherCoordinator().default_thread_pool()->num_threads(), 2);
+    ASSERT_EQ(driver_runtime::GetDispatcherCoordinator().default_thread_pool()->num_threads(), 1);
 
     dispatcher->ShutdownAsync();
     ASSERT_OK(observer.WaitUntilShutdown());
@@ -3267,16 +3268,16 @@ TEST_F(DispatcherTest, ExtraThreadIsReused) {
     DispatcherShutdownObserver observer2;
     ASSERT_OK(fdf_dispatcher::Create(FDF_DISPATCHER_OPTION_ALLOW_SYNC_CALLS, __func__, "",
                                      observer2.fdf_observer(), &dispatcher));
-    // Note that we are still at 2 threads.
-    ASSERT_EQ(driver_runtime::GetDispatcherCoordinator().default_thread_pool()->num_threads(), 2);
+    // Note that we are still at 1 thread.
+    ASSERT_EQ(driver_runtime::GetDispatcherCoordinator().default_thread_pool()->num_threads(), 1);
 
     dispatcher->ShutdownAsync();
     ASSERT_OK(observer2.WaitUntilShutdown());
     dispatcher->Destroy();
 
-    // Ideally we would be back down 1 thread at this point, but that is challenging. A future
+    // Ideally we would let the initial thread go at this point, but that is challenging. A future
     // change may remedy this.
-    ASSERT_EQ(driver_runtime::GetDispatcherCoordinator().default_thread_pool()->num_threads(), 2);
+    ASSERT_EQ(driver_runtime::GetDispatcherCoordinator().default_thread_pool()->num_threads(), 1);
   }
 
   driver_runtime::GetDispatcherCoordinator().Reset();
@@ -3299,7 +3300,7 @@ TEST_F(DispatcherTest, MaximumTenThreads) {
       ASSERT_OK(fdf_dispatcher::Create(FDF_DISPATCHER_OPTION_ALLOW_SYNC_CALLS, __func__, "",
                                        observers[i].fdf_observer(), &dispatchers[i]));
       ASSERT_EQ(driver_runtime::GetDispatcherCoordinator().default_thread_pool()->num_threads(),
-                std::min(i + 2, 10u));
+                std::min(i + 1, 10u));
     }
 
     ASSERT_EQ(driver_runtime::GetDispatcherCoordinator().default_thread_pool()->num_threads(), 10);
@@ -3313,18 +3314,18 @@ TEST_F(DispatcherTest, MaximumTenThreads) {
 }
 
 TEST_F(DispatcherTest, GetDefaultThreadPoolSize) {
-  ASSERT_EQ(driver_runtime::GetDispatcherCoordinator().default_thread_pool()->max_threads(), 10);
+  ASSERT_EQ(driver_runtime::GetDispatcherCoordinator().default_thread_pool()->thread_limit(), 10);
 }
 
 TEST_F(DispatcherTest, SetDefaultThreadPoolSize) {
-  ASSERT_OK(driver_runtime::GetDispatcherCoordinator().default_thread_pool()->set_max_threads(3));
-  ASSERT_EQ(driver_runtime::GetDispatcherCoordinator().default_thread_pool()->max_threads(), 3);
+  ASSERT_OK(driver_runtime::GetDispatcherCoordinator().default_thread_pool()->set_thread_limit(3));
+  ASSERT_EQ(driver_runtime::GetDispatcherCoordinator().default_thread_pool()->thread_limit(), 3);
 }
 
 TEST_F(DispatcherTest, ThreadPoolSizeNeverGrowsPastMax) {
   static constexpr uint32_t kMaxThreads = 3;
   auto* thread_pool = driver_runtime::GetDispatcherCoordinator().default_thread_pool();
-  ASSERT_EQ(thread_pool->set_max_threads(kMaxThreads), ZX_OK);
+  ASSERT_EQ(thread_pool->set_thread_limit(kMaxThreads), ZX_OK);
 
   const void* driver = CreateFakeDriver();
   fdf_dispatcher_t* dispatcher;
@@ -3332,7 +3333,7 @@ TEST_F(DispatcherTest, ThreadPoolSizeNeverGrowsPastMax) {
   for (uint32_t i = thread_pool->num_threads(); i < kMaxThreads; i++) {
     ASSERT_NO_FATAL_FAILURE(CreateDispatcher(FDF_DISPATCHER_OPTION_ALLOW_SYNC_CALLS, __func__, "",
                                              driver, &dispatcher));
-    EXPECT_EQ(thread_pool->num_threads(), i + 1);
+    EXPECT_EQ(thread_pool->num_threads(), i);
   }
 
   // Creating one more doesn't scale us past the max.
@@ -3341,10 +3342,10 @@ TEST_F(DispatcherTest, ThreadPoolSizeNeverGrowsPastMax) {
   EXPECT_EQ(thread_pool->num_threads(), kMaxThreads);
 
   // Trying to change it to be lower than current number of threads errors out.
-  ASSERT_STATUS(thread_pool->set_max_threads(thread_pool->num_threads() - 1), ZX_ERR_OUT_OF_RANGE);
+  ASSERT_STATUS(thread_pool->set_thread_limit(thread_pool->num_threads() - 1), ZX_ERR_OUT_OF_RANGE);
 
   // Changing the max one more doesn't scale us past the max.
-  ASSERT_OK(thread_pool->set_max_threads(kMaxThreads + 1));
+  ASSERT_OK(thread_pool->set_thread_limit(kMaxThreads + 1));
   ASSERT_NO_FATAL_FAILURE(
       CreateDispatcher(FDF_DISPATCHER_OPTION_ALLOW_SYNC_CALLS, __func__, "", driver, &dispatcher));
   EXPECT_EQ(thread_pool->num_threads(), kMaxThreads + 1);
