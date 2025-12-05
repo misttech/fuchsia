@@ -72,6 +72,34 @@ impl Default for BorderAgent {
     }
 }
 
+#[derive(Debug)]
+pub struct Epskc {
+    pub update_sender: fuchsia_sync::Mutex<Option<futures::channel::mpsc::UnboundedSender<()>>>,
+    pub update_receiver: fuchsia_sync::Mutex<Option<futures::channel::mpsc::UnboundedReceiver<()>>>,
+}
+
+impl Epskc {
+    pub fn new() -> Self {
+        Epskc {
+            update_sender: fuchsia_sync::Mutex::new(None),
+            update_receiver: fuchsia_sync::Mutex::new(None),
+        }
+    }
+
+    /// Trigger a ePSKc mode state update from here.
+    pub fn trigger_service_update(&self) {
+        if let Some(ref sender) = *self.update_sender.lock() {
+            let _ = sender.unbounded_send(());
+        }
+    }
+}
+
+impl Default for Epskc {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 fn parse_openthread_txt_data(txt_data: &[u8]) -> Vec<(String, Vec<u8>)> {
     let mut result = Vec::new();
     let mut offset = 0;
@@ -450,7 +478,7 @@ impl<OT: ot::InstanceInterface, NI, BI> OtDriver<OT, NI, BI> {
         }
     }
 
-    pub fn handle_epskc_state_changed(&self) {
+    pub async fn handle_epskc_state_changed(&self) {
         // Get all of the state information from OT that requires locking on OtDriver fields.
         // The current ePSKc state determines what action will be taken if any.  If the service has
         // been started, the extended address is used in deriving the service instance name and the

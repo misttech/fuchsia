@@ -25,6 +25,8 @@ pub struct DriverState<OT> {
     pub dhcp_v6_pd: dhcpv6pd::DhcpV6Pd,
 
     pub border_agent: border_agent::BorderAgent,
+
+    pub epskc: border_agent::Epskc,
 }
 
 impl<OT: AsRef<ot::Instance>> AsRef<ot::Instance> for DriverState<OT> {
@@ -54,6 +56,12 @@ impl<OT> AsRef<dhcpv6pd::DhcpV6Pd> for DriverState<OT> {
 impl<OT> AsRef<border_agent::BorderAgent> for DriverState<OT> {
     fn as_ref(&self) -> &border_agent::BorderAgent {
         &self.border_agent
+    }
+}
+
+impl<OT> AsRef<border_agent::Epskc> for DriverState<OT> {
+    fn as_ref(&self) -> &border_agent::Epskc {
+        &self.epskc
     }
 }
 
@@ -217,6 +225,23 @@ impl<OT: AsRef<ot::Instance>> DriverState<OT> {
             let _ = sender.unbounded_send(());
         }));
     }
+
+    pub fn setup_border_agent_ephemeral_key_callback(&mut self)
+    where
+        OT: ot::InstanceInterface,
+    {
+        let (sender, receiver) = futures::channel::mpsc::unbounded();
+
+        *self.epskc.update_sender.lock() = Some(sender.clone());
+        *self.epskc.update_receiver.lock() = Some(receiver);
+
+        self.ot_instance.border_agent_set_ephemeral_key_callback(Some(move || {
+            trace!("ePSKc mode state changed, triggering update");
+            // NOTE: DRIVER STATE IS LOCKED WHEN THIS IS CALLED!
+            // Send notification through channel (non-blocking, no reentrancy issues)
+            let _ = sender.unbounded_send(());
+        }));
+    }
 }
 
 impl<OT> DriverState<OT> {
@@ -231,6 +256,7 @@ impl<OT> DriverState<OT> {
             nat64: nat64::Nat64::new(),
             dhcp_v6_pd: dhcpv6pd::DhcpV6Pd::default(),
             border_agent: border_agent::BorderAgent::new(),
+            epskc: border_agent::Epskc::new(),
         }
     }
 }

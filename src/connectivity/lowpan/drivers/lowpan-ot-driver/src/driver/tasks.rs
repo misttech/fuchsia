@@ -319,6 +319,34 @@ where
 
         let epskc_service = border_agent::manage_epskc_service_publisher(epskc_receiver, publisher);
 
+        // Stream for handling ePSKc state changes.
+        let epskc_state_change_stream = futures::stream::unfold((), move |_| {
+            let receiver_opt = self.driver_state.lock().epskc.update_receiver.lock().take();
+            if let Some(mut receiver) = receiver_opt {
+                async move {
+                    match receiver.next().await {
+                        Some(_) => {
+                            // Put the receiver back for the next iteration
+                            *self.driver_state.lock().epskc.update_receiver.lock() = Some(receiver);
+
+                            // Process the ePSKc state update
+                            self.handle_epskc_state_changed().await;
+                            debug!("ePSKc state updated successfully");
+
+                            Some((Result::<_, Error>::Ok(()), ()))
+                        }
+                        None => {
+                            // Channel closed, don't put receiver back
+                            None
+                        }
+                    }
+                }
+                .boxed()
+            } else {
+                futures::future::ready(None).boxed()
+            }
+        });
+
         init_future.into_stream().chain(futures::stream::select_all([
             advertising_proxy_mdns_result_stream.boxed(),
             tasklets_stream.boxed(),
@@ -334,6 +362,7 @@ where
             scan_watchdog.into_stream().boxed(),
             openthread_cli_inbound_loop.into_stream().boxed(),
             epskc_service.into_stream().boxed(),
+            epskc_state_change_stream.into_stream().boxed(),
         ]))
     }
 
@@ -365,9 +394,7 @@ where
             },
         ));
 
-        driver_state.ot_instance.border_agent_set_ephemeral_key_callback(Some(move || {
-            self.handle_epskc_state_changed()
-        }));
+        driver_state.setup_border_agent_ephemeral_key_callback();
 
         driver_state.setup_border_agent_callback();
 
