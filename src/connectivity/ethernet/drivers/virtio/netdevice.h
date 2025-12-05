@@ -5,11 +5,11 @@
 #ifndef SRC_CONNECTIVITY_ETHERNET_DRIVERS_VIRTIO_NETDEVICE_H_
 #define SRC_CONNECTIVITY_ETHERNET_DRIVERS_VIRTIO_NETDEVICE_H_
 
-#include <fidl/fuchsia.hardware.network/cpp/wire.h>
-#include <fuchsia/hardware/network/driver/cpp/banjo.h>
-#include <lib/driver/compat/cpp/banjo_server.h>
+#include <fidl/fuchsia.hardware.network.driver/cpp/driver/wire.h>
+#include <fidl/fuchsia.hardware.network/cpp/fidl.h>
 #include <lib/driver/compat/cpp/device_server.h>
 #include <lib/driver/component/cpp/driver_base.h>
+#include <lib/sync/cpp/completion.h>
 #include <lib/virtio/device.h>
 #include <lib/virtio/ring.h>
 #include <lib/zircon-internal/thread_annotations.h>
@@ -30,15 +30,16 @@
 
 namespace virtio {
 
+namespace netdev = fuchsia_hardware_network_driver;
+
 using VmoStore = vmo_store::VmoStore<vmo_store::SlabStorage<uint32_t>>;
 
 class VirtioNetDriver;
 
 class NetworkDevice : public Device,
-                      // Mixin for Network device banjo protocol:
-                      public ddk::NetworkDeviceImplProtocol<NetworkDevice>,
-                      public ddk::NetworkPortProtocol<NetworkDevice>,
-                      public ddk::MacAddrProtocol<NetworkDevice> {
+                      public fdf::WireServer<netdev::NetworkDeviceImpl>,
+                      public fdf::WireServer<netdev::NetworkPort>,
+                      public fdf::WireServer<netdev::MacAddr> {
  public:
   // Specifies how many packets can fit in each of the receive and transmit
   // backlogs.
@@ -71,28 +72,39 @@ class NetworkDevice : public Device,
   void IrqConfigChange() override __TA_EXCLUDES(state_lock_);
 
   // NetworkDeviceImpl protocol:
-  void NetworkDeviceImplInit(const network_device_ifc_protocol_t* iface,
-                             network_device_impl_init_callback callback, void* cookie);
-  void NetworkDeviceImplStart(network_device_impl_start_callback callback, void* cookie);
-  void NetworkDeviceImplStop(network_device_impl_stop_callback callback, void* cookie);
-  void NetworkDeviceImplGetInfo(device_impl_info_t* out_info);
-  void NetworkDeviceImplQueueTx(const tx_buffer_t* buf_list, size_t buf_count);
-  void NetworkDeviceImplQueueRxSpace(const rx_space_buffer_t* buf_list, size_t buf_count);
-  void NetworkDeviceImplPrepareVmo(uint8_t vmo_id, zx::vmo vmo,
-                                   network_device_impl_prepare_vmo_callback callback, void* cookie);
-  void NetworkDeviceImplReleaseVmo(uint8_t vmo_id);
+  void Init(fuchsia_hardware_network_driver::wire::NetworkDeviceImplInitRequest* request,
+            fdf::Arena& arena, InitCompleter::Sync& completer) override;
+  void Start(fdf::Arena& arena, StartCompleter::Sync& completer) override;
+  void Stop(fdf::Arena& arena, StopCompleter::Sync& completer) override;
+  void GetInfo(
+      fdf::Arena& arena,
+      fdf::WireServer<netdev::NetworkDeviceImpl>::GetInfoCompleter::Sync& completer) override;
+  void QueueTx(fuchsia_hardware_network_driver::wire::NetworkDeviceImplQueueTxRequest* request,
+               fdf::Arena& arena, QueueTxCompleter::Sync& completer) override;
+  void QueueRxSpace(
+      fuchsia_hardware_network_driver::wire::NetworkDeviceImplQueueRxSpaceRequest* request,
+      fdf::Arena& arena, QueueRxSpaceCompleter::Sync& completer) override;
+  void PrepareVmo(
+      fuchsia_hardware_network_driver::wire::NetworkDeviceImplPrepareVmoRequest* request,
+      fdf::Arena& arena, PrepareVmoCompleter::Sync& completer) override;
+  void ReleaseVmo(
+      fuchsia_hardware_network_driver::wire::NetworkDeviceImplReleaseVmoRequest* request,
+      fdf::Arena& arena, ReleaseVmoCompleter::Sync& completer) override;
 
   // NetworkPort protocol:
-  void NetworkPortGetInfo(port_base_info_t* out_info);
-  void NetworkPortGetStatus(port_status_t* out_status);
-  void NetworkPortSetActive(bool active);
-  void NetworkPortGetMac(mac_addr_protocol_t** out_mac_ifc);
-  void NetworkPortRemoved() { /* do nothing, we never remove our port */ }
+  void GetInfo(fdf::Arena& arena,
+               fdf::WireServer<netdev::NetworkPort>::GetInfoCompleter::Sync& completer) override;
+  void GetStatus(fdf::Arena& arena, GetStatusCompleter::Sync& completer) override;
+  void SetActive(fuchsia_hardware_network_driver::wire::NetworkPortSetActiveRequest* request,
+                 fdf::Arena& arena, SetActiveCompleter::Sync& completer) override;
+  void GetMac(fdf::Arena& arena, GetMacCompleter::Sync& completer) override;
+  void Removed(fdf::Arena& arena, RemovedCompleter::Sync& completer) override;
+
   // MacAddr protocol:
-  void MacAddrGetAddress(mac_address_t* out_mac);
-  void MacAddrGetFeatures(features_t* out_features);
-  void MacAddrSetMode(mac_filter_mode_t mode, const mac_address_t* multicast_macs_list,
-                      size_t multicast_macs_count);
+  void GetAddress(fdf::Arena& arena, GetAddressCompleter::Sync& completer) override;
+  void GetFeatures(fdf::Arena& arena, GetFeaturesCompleter::Sync& completer) override;
+  void SetMode(fuchsia_hardware_network_driver::wire::MacAddrSetModeRequest* request,
+               fdf::Arena& arena, SetModeCompleter::Sync& completer) override;
 
   const char* tag() const override { return "virtio-net"; }
 
@@ -101,6 +113,7 @@ class NetworkDevice : public Device,
  private:
   friend class NetworkDeviceTests;
   zx_status_t AddDevice();
+  void RemoveDevice();
 
   zx_status_t AckFeatures(bool* is_status_supported, bool* is_multiqueue_supported,
                           uint16_t* virtio_hdr_len);
@@ -109,14 +122,14 @@ class NetworkDevice : public Device,
 
   // Implementation of IrqRingUpdate; returns true if it should be called again.
   bool IrqRingUpdateInternal() __TA_EXCLUDES(state_lock_);
-  port_status_t ReadStatus() const;
+  fuchsia_hardware_network::PortStatus ReadStatus() const;
 
   VirtioNetDriver* driver_ = nullptr;
 
   compat::SyncInitializedDeviceServer compat_server_;
-  compat::BanjoServer net_device_server_{ZX_PROTOCOL_NETWORK_DEVICE_IMPL, this,
-                                         &network_device_impl_protocol_ops_};
   fidl::ClientEnd<fuchsia_driver_framework::NodeController> netdev_child_;
+  fdf::UnsynchronizedDispatcher netdevice_dispatcher_;
+  libsync::Completion netdevice_dispatcher_shutdown_;
   bool irq_thread_started_ = false;
 
   // Mutexes to control concurrent access
@@ -176,9 +189,8 @@ class NetworkDevice : public Device,
   fuchsia_net::wire::MacAddress mac_;
   uint16_t virtio_hdr_len_;
 
-  ddk::NetworkDeviceIfcProtocolClient ifc_ __TA_GUARDED(state_lock_);
+  fdf::WireSharedClient<netdev::NetworkDeviceIfc> ifc_ __TA_GUARDED(state_lock_);
   VmoStore vmo_store_ __TA_GUARDED(state_lock_);
-  mac_addr_protocol_t mac_addr_proto_;
 };
 
 }  // namespace virtio

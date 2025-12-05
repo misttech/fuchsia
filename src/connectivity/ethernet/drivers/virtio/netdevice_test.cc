@@ -14,13 +14,14 @@
 
 #include <atomic>
 #include <queue>
-#include <unordered_set>
 
-#include <zxtest/zxtest.h>
+#include <gmock/gmock.h>
+#include <gtest/gtest.h>
 
 #include "src/connectivity/ethernet/drivers/virtio/virtio_net_driver.h"
 #include "src/devices/pci/testing/pci_protocol_fake.h"
 #include "src/lib/fxl/strings/string_printf.h"
+#include "src/lib/testing/predicates/status.h"
 
 namespace virtio {
 
@@ -32,6 +33,11 @@ class FakeBackendForNetdeviceTest : public FakeBackend {
   FakeBackendForNetdeviceTest()
       : FakeBackend({{NetworkDevice::kRxId, NetworkDevice::kMaxDepth},
                      {NetworkDevice::kTxId, NetworkDevice::kMaxDepth}}) {
+    // Provide a reasonable default behavior for tests that don't care to mock this call.
+    ON_CALL(*this, RingKick).WillByDefault([this](uint16_t index) {
+      // Call base class implementation to ensure proper bookkeeping of kicks.
+      FakeBackend::RingKick(index);
+    });
     for (size_t i = 0; i < sizeof(virtio_net_config_t); i++) {
       AddClassRegister(static_cast<uint16_t>(i), static_cast<uint8_t>(0));
     }
@@ -102,12 +108,14 @@ class FakeBackendForNetdeviceTest : public FakeBackend {
         tx_ring_started_ = true;
         break;
       default:
-        ADD_FAILURE("unexpected ring index %d", index);
+        ADD_FAILURE() << "unexpected ring index " << index;
         return ZX_ERR_INTERNAL;
     }
     EXPECT_EQ(count, NetworkDevice::kMaxDepth);
     return ZX_OK;
   }
+
+  MOCK_METHOD(void, RingKick, (uint16_t ring_index), (override));
 
   bool rx_ring_started() const { return rx_ring_started_; }
   bool tx_ring_started() const { return tx_ring_started_; }
@@ -175,13 +183,12 @@ class TestConfig final {
   using EnvironmentType = fdf_testing::MinimalCompatEnvironment;
 };
 
-class NetworkDeviceTests : public zxtest::Test,
-                           public ddk::NetworkDeviceIfcProtocol<NetworkDeviceTests> {
+class NetworkDeviceTests : public testing::Test, public fdf::WireServer<netdev::NetworkDeviceIfc> {
  public:
   static constexpr uint8_t kVmoId = 1;
-  static constexpr buffer_metadata_t kFrameMetadata = {
+  static constexpr netdev::wire::BufferMetadata kFrameMetadata = {
       .port = NetworkDevice::kPortId,
-      .frame_type = static_cast<uint8_t>(fuchsia_hardware_network::wire::FrameType::kEthernet),
+      .frame_type = fuchsia_hardware_network::wire::FrameType::kEthernet,
   };
   static constexpr size_t kVmoFrameCount = 256;
 
@@ -190,36 +197,31 @@ class NetworkDeviceTests : public zxtest::Test,
 
     ConnectToNetDevice();
 
-    libsync::Completion initialized;
-    netdevice_client_.Init(
-        this, &network_device_ifc_protocol_ops_,
-        [](void* ctx, zx_status_t status) {
-          EXPECT_OK(status);
-          static_cast<libsync::Completion*>(ctx)->Signal();
-        },
-        &initialized);
-    initialized.Wait();
+    fdf::Arena arena(0u);
+    fdf::WireUnownedResult result = netdevice_client_.buffer(arena)->Init(ServeNetDevIfc());
+    ASSERT_OK(result.status());
+    ASSERT_OK(result->s);
     ASSERT_TRUE(port_.is_valid());
-    mac_addr_protocol_t* mac_proto = nullptr;
-    port_.GetMac(&mac_proto);
-    mac_ = ddk::MacAddrProtocolClient(mac_proto);
+
+    fdf::WireUnownedResult mac = port_.buffer(arena)->GetMac();
+    ZX_ASSERT_MSG(mac.ok(), "Failed to get mac: %s", mac.FormatDescription().c_str());
+    mac_.Bind(std::move(mac->mac_ifc));
     ASSERT_TRUE(mac_.is_valid());
   }
 
   void TearDown() override { ASSERT_OK(driver_test_.StopDriver().status_value()); }
 
   void ConnectToNetDevice() {
-    zx::result compat_client =
-        driver_test_.Connect<fuchsia_driver_compat::Service::Device>(NetworkDevice::kChildNodeName);
-    ASSERT_OK(compat_client);
-    fidl::WireSyncClient<fuchsia_driver_compat::Device> compat(std::move(compat_client.value()));
-
-    fidl::WireResult result = compat->GetBanjoProtocol(
-        ddk::NetworkDeviceImplProtocolClient::kProtocolId, compat::internal::GetKoid());
-    zx::result client = compat::internal::OnResult<ddk::NetworkDeviceImplProtocolClient>(result);
-    ASSERT_TRUE(client.is_ok());
-    netdevice_client_ = client.value();
+    zx::result client = driver_test_.Connect<netdev::Service::NetworkDeviceImpl>();
+    ASSERT_OK(client.status_value());
+    netdevice_client_.Bind(std::move(client.value()));
     ASSERT_TRUE(netdevice_client_.is_valid());
+  }
+
+  fdf::ClientEnd<netdev::NetworkDeviceIfc> ServeNetDevIfc() {
+    auto [client, server] = fdf::Endpoints<netdev::NetworkDeviceIfc>::Create();
+    fdf::BindServer(netdevice_dispatcher_->get(), std::move(server), this);
+    return std::move(client);
   }
 
   void PrepareVmo() {
@@ -227,81 +229,58 @@ class NetworkDeviceTests : public zxtest::Test,
     ASSERT_OK(zx::vmo::create(NetworkDevice::kFrameSize * kVmoFrameCount, 0, &vmo_));
     zx::vmo device_vmo;
     ASSERT_OK(vmo_.duplicate(ZX_RIGHT_SAME_RIGHTS, &device_vmo));
-    std::optional<zx_status_t> prepare_result;
-    netdevice_client_.PrepareVmo(
-        kVmoId, std::move(device_vmo),
-        [](void* cookie, zx_status_t status) {
-          *reinterpret_cast<std::optional<zx_status_t>*>(cookie) = status;
-        },
-        &prepare_result);
-    ASSERT_TRUE(prepare_result.has_value());
-    ASSERT_OK(prepare_result.value());
+    fdf::Arena arena(0u);
+    fdf::WireUnownedResult result =
+        netdevice_client_.buffer(arena)->PrepareVmo(kVmoId, std::move(device_vmo));
+    ASSERT_OK(result.status());
+    ASSERT_OK(result->s);
   }
 
   void StartDevice() {
-    std::optional<zx_status_t> start_result;
-    netdevice_client_.Start(
-        [](void* cookie, zx_status_t status) {
-          *reinterpret_cast<std::optional<zx_status_t>*>(cookie) = status;
-        },
-        &start_result);
-    ASSERT_TRUE(start_result.has_value());
-    ASSERT_OK(start_result.value());
+    fdf::Arena arena(0u);
+    fdf::WireUnownedResult result = netdevice_client_.buffer(arena)->Start();
+    ASSERT_OK(result.status());
+    ASSERT_OK(result->s);
   }
 
   // NetworkDevice interface implementation.
-  void NetworkDeviceIfcPortStatusChanged(uint8_t port_id, const port_status_t* new_status) {
-    EXPECT_EQ(port_id, NetworkDevice::kPortId);
-    port_status_queue_.push(*new_status);
-  }
-  void NetworkDeviceIfcAddPort(uint8_t port_id, const network_port_protocol_t* port,
-                               network_device_ifc_add_port_callback callback, void* cookie) {
-    EXPECT_EQ(port_id, NetworkDevice::kPortId);
+  MOCK_METHOD(void, PortStatusChanged,
+              (netdev::wire::NetworkDeviceIfcPortStatusChangedRequest * request, fdf::Arena& arena,
+               PortStatusChangedCompleter::Sync& completer),
+              (override));
+  void AddPort(netdev::wire::NetworkDeviceIfcAddPortRequest* request, fdf::Arena& arena,
+               AddPortCompleter::Sync& completer) override {
+    EXPECT_EQ(request->id, NetworkDevice::kPortId);
     EXPECT_FALSE(port_.is_valid());
-    port_ = ddk::NetworkPortProtocolClient(port);
-    callback(cookie, ZX_OK);
+    port_.Bind(std::move(request->port));
+    completer.buffer(arena).Reply(ZX_OK);
   }
-  void NetworkDeviceIfcRemovePort(uint8_t port_id) { ADD_FAILURE("Port should never be removed"); }
-  void NetworkDeviceIfcCompleteRx(const rx_buffer_t* rx_list, size_t rx_count) {
-    for (auto rx : cpp20::span(rx_list, rx_count)) {
-      ASSERT_EQ(rx.data_count, 1);
-      complete_rx_queue_.push(CompleteRx{
-          .meta = rx.meta,
-          .part = rx.data_list[0],
-      });
-    }
+  void RemovePort(netdev::wire::NetworkDeviceIfcRemovePortRequest* request, fdf::Arena& arena,
+                  RemovePortCompleter::Sync& completer) override {
+    ADD_FAILURE() << "Port should never be removed";
   }
-  void NetworkDeviceIfcCompleteTx(const tx_result_t* tx_list, size_t tx_count) {
-    for (auto tx : cpp20::span(tx_list, tx_count)) {
-      complete_tx_queue_.push(tx);
-    }
-  }
-  void NetworkDeviceIfcSnoop(const rx_buffer_t* rx_list, size_t rx_count) {
-    ADD_FAILURE("Snoop should never be called, only auto snoop expected");
-  }
-  void NetworkDeviceIfcDelegateRxLease(const delegated_rx_lease_t* delegated) {
-    ADD_FAILURE("DelegateRxLease should never be called");
+  MOCK_METHOD(void, CompleteRx,
+              (netdev::wire::NetworkDeviceIfcCompleteRxRequest * request, fdf::Arena& arena,
+               CompleteRxCompleter::Sync& completer),
+              (override));
+  MOCK_METHOD(void, CompleteTx,
+              (netdev::wire::NetworkDeviceIfcCompleteTxRequest * request, fdf::Arena& arena,
+               CompleteTxCompleter::Sync& completer),
+              (override));
+  void DelegateRxLease(netdev::wire::NetworkDeviceIfcDelegateRxLeaseRequest* request,
+                       fdf::Arena& arena, DelegateRxLeaseCompleter::Sync& completer) override {
+    ADD_FAILURE() << "DelegateRxLease should never be called";
   }
 
-  struct CompleteRx {
-    buffer_metadata_t meta;
-    rx_buffer_part part;
-  };
-
-  std::optional<CompleteRx> PopRx() { return PopHelper(complete_rx_queue_); }
-  std::optional<tx_result_t> PopTx() { return PopHelper(complete_tx_queue_); }
-  std::optional<port_status_t> PopStatus() { return PopHelper(port_status_queue_); }
-
-  // NetworkDevice& device() { return *device_; }
   void WithDevice(fit::callback<void(NetworkDevice&)> callback) {
     driver_test_.RunInDriverContext([&](VirtioNetDriver& driver) {
       ASSERT_NE(driver.GetNetworkDevice(), nullptr);
       callback(*driver.GetNetworkDevice());
     });
   }
-  ddk::NetworkDeviceImplProtocolClient& netdev() { return netdevice_client_; }
-  ddk::NetworkPortProtocolClient& port() { return port_; }
-  ddk::MacAddrProtocolClient& mac() { return mac_; }
+  fdf::WireSyncClient<netdev::NetworkDeviceImpl>& netdev() { return netdevice_client_; }
+  fdf::WireSyncClient<netdev::NetworkPort>& port() { return port_; }
+  fdf::WireSyncClient<netdev::MacAddr>& mac() { return mac_; }
   FakeBackendForNetdeviceTest& backend() {
     FakeBackendForNetdeviceTest* ptr = nullptr;
     driver_test_.RunInDriverContext([&](TestVirtioNetDriver& driver) { ptr = driver.backend(); });
@@ -333,18 +312,17 @@ class NetworkDeviceTests : public zxtest::Test,
   }
 
   fdf_testing::BackgroundDriverTest<TestConfig> driver_test_;
+  fdf::UnownedSynchronizedDispatcher netdevice_dispatcher_ =
+      driver_test_.runtime().StartBackgroundDispatcher();
 
   zx::vmo vmo_;
-  ddk::NetworkPortProtocolClient port_;
-  ddk::MacAddrProtocolClient mac_;
-  std::queue<port_status_t> port_status_queue_;
-  std::queue<CompleteRx> complete_rx_queue_;
-  std::queue<tx_result_t> complete_tx_queue_;
+  fdf::WireSyncClient<netdev::NetworkPort> port_;
+  fdf::WireSyncClient<netdev::MacAddr> mac_;
 
-  ddk::NetworkDeviceImplProtocolClient netdevice_client_;
+  fdf::WireSyncClient<netdev::NetworkDeviceImpl> netdevice_client_;
 };
 
-class VirtioVersionTests : public NetworkDeviceTests, public zxtest::WithParamInterface<bool> {
+class VirtioVersionTests : public NetworkDeviceTests, public testing::WithParamInterface<bool> {
  public:
   void SetUp() override {
     TestVirtioNetDriver::SetSupportFeatureV1(IsV1Virtio());
@@ -355,32 +333,52 @@ class VirtioVersionTests : public NetworkDeviceTests, public zxtest::WithParamIn
 };
 
 TEST_F(NetworkDeviceTests, PortGetStatus) {
-  port_status_t status;
-  port().GetStatus(&status);
-  EXPECT_EQ(status.mtu, NetworkDevice::kMtu);
-  EXPECT_EQ(status.flags,
-            static_cast<uint32_t>(fuchsia_hardware_network::wire::StatusFlags::kOnline));
+  fdf::Arena arena(0u);
+
+  fdf::WireUnownedResult result = port().buffer(arena)->GetStatus();
+  ASSERT_OK(result.status());
+  fuchsia_hardware_network::wire::PortStatus status = result->status;
+  EXPECT_EQ(status.mtu(), NetworkDevice::kMtu);
+  EXPECT_EQ(status.flags(), fuchsia_hardware_network::wire::StatusFlags::kOnline);
+
   backend().SetLinkDown();
-  port().GetStatus(&status);
-  EXPECT_EQ(status.mtu, NetworkDevice::kMtu);
-  EXPECT_EQ(status.flags, static_cast<uint32_t>(fuchsia_hardware_network::wire::StatusFlags()));
+
+  result = port().buffer(arena)->GetStatus();
+  ASSERT_OK(result.status());
+  status = result->status;
+  EXPECT_EQ(status.mtu(), NetworkDevice::kMtu);
+  EXPECT_EQ(status.flags(), fuchsia_hardware_network::wire::StatusFlags());
 }
 
 TEST_F(NetworkDeviceTests, StartReportsOnlineOnLinkUp) {
   // Link is up by default.
+  libsync::Completion port_status_changed;
+  EXPECT_CALL(*this, PortStatusChanged)
+      .WillOnce([&](netdev::wire::NetworkDeviceIfcPortStatusChangedRequest* request,
+                    fdf::Arena& arena, PortStatusChangedCompleter::Sync& completer) {
+        EXPECT_EQ(request->id, NetworkDevice::kPortId);
+        EXPECT_EQ(request->new_status.flags(),
+                  fuchsia_hardware_network::wire::StatusFlags::kOnline);
+        port_status_changed.Signal();
+      });
+
   ASSERT_NO_FATAL_FAILURE(StartDevice());
-  std::optional<port_status_t> status = PopStatus();
-  ASSERT_TRUE(status.has_value());
-  EXPECT_EQ(status->flags,
-            static_cast<uint32_t>(fuchsia_hardware_network::wire::StatusFlags::kOnline));
+  port_status_changed.Wait();
 }
 
 TEST_F(NetworkDeviceTests, StartReportsOfflineOnLinkDown) {
+  libsync::Completion port_status_changed;
+  EXPECT_CALL(*this, PortStatusChanged)
+      .WillOnce([&](netdev::wire::NetworkDeviceIfcPortStatusChangedRequest* request,
+                    fdf::Arena& arena, PortStatusChangedCompleter::Sync& completer) {
+        EXPECT_EQ(request->id, NetworkDevice::kPortId);
+        EXPECT_EQ(request->new_status.flags(), fuchsia_hardware_network::wire::StatusFlags{});
+        port_status_changed.Signal();
+      });
+
   backend().SetLinkDown();
   ASSERT_NO_FATAL_FAILURE(StartDevice());
-  std::optional<port_status_t> status = PopStatus();
-  ASSERT_TRUE(status.has_value());
-  EXPECT_EQ(status->flags, static_cast<uint32_t>(fuchsia_hardware_network::wire::StatusFlags()));
+  port_status_changed.Wait();
 }
 
 class StatusNotSupportedTests : public NetworkDeviceTests {
@@ -392,27 +390,35 @@ class StatusNotSupportedTests : public NetworkDeviceTests {
 };
 
 TEST_F(StatusNotSupportedTests, StartReportsOnlineWhenStatusNotSupported) {
+  libsync::Completion port_status_changed;
+  EXPECT_CALL(*this, PortStatusChanged)
+      .WillOnce([&](netdev::wire::NetworkDeviceIfcPortStatusChangedRequest* request,
+                    fdf::Arena& arena, PortStatusChangedCompleter::Sync& completer) {
+        EXPECT_EQ(request->id, NetworkDevice::kPortId);
+        EXPECT_EQ(request->new_status.flags(),
+                  fuchsia_hardware_network::wire::StatusFlags::kOnline);
+        port_status_changed.Signal();
+      });
+
   backend().SetLinkDown();
   ASSERT_NO_FATAL_FAILURE(StartDevice());
-  std::optional<port_status_t> status = PopStatus();
-  ASSERT_TRUE(status.has_value());
-  EXPECT_EQ(status->flags,
-            static_cast<uint32_t>(fuchsia_hardware_network::wire::StatusFlags::kOnline));
+  port_status_changed.Wait();
 
-  libsync::Completion stop_called;
-  netdev().Stop([](void* cookie) { reinterpret_cast<libsync::Completion*>(cookie)->Signal(); },
-                &stop_called);
-  stop_called.Wait();
+  fdf::Arena arena(0u);
+  fdf::WireUnownedResult result = netdev().buffer(arena)->Stop();
+  ASSERT_OK(result.status());
 
   // When the status feature is not supported, the device should NOT report an
   // offline status.
-  ASSERT_FALSE(PopStatus().has_value());
+  EXPECT_CALL(*this, PortStatusChanged).Times(0);
 }
 
 TEST_F(NetworkDeviceTests, MacGetAddr) {
-  mac_address_t addr;
-  mac().GetAddress(&addr);
-  EXPECT_BYTES_EQ(addr.octets, FakeBackendForNetdeviceTest::kMac, MAC_SIZE);
+  fdf::Arena arena(0u);
+  fdf::WireUnownedResult result = mac().buffer(arena)->GetAddress();
+  ASSERT_OK(result.status());
+
+  EXPECT_THAT(result->mac.octets, testing::ElementsAreArray(FakeBackendForNetdeviceTest::kMac));
 }
 
 TEST_P(VirtioVersionTests, Start) {
@@ -433,98 +439,117 @@ TEST_P(VirtioVersionTests, Start) {
 }
 
 TEST_F(NetworkDeviceTests, Stop) {
+  libsync::Completion port_status_changed;
+  EXPECT_CALL(*this, PortStatusChanged)
+      .WillOnce([&](netdev::wire::NetworkDeviceIfcPortStatusChangedRequest* request,
+                    fdf::Arena& arena, PortStatusChangedCompleter::Sync& completer) {
+        EXPECT_EQ(request->id, NetworkDevice::kPortId);
+        EXPECT_EQ(request->new_status.flags(),
+                  fuchsia_hardware_network::wire::StatusFlags::kOnline);
+        port_status_changed.Signal();
+      });
+
   ASSERT_NO_FATAL_FAILURE(StartDevice());
   // After starting the device, a status update is sent.
-  std::optional<port_status_t> status = PopStatus();
-  ASSERT_TRUE(status.has_value());
-  EXPECT_EQ(status->flags,
-            static_cast<uint32_t>(fuchsia_hardware_network::wire::StatusFlags::kOnline));
+  port_status_changed.Wait();
+
   ASSERT_NO_FATAL_FAILURE(PrepareVmo());
 
-  constexpr buffer_region_t kDummyRegion = {
+  netdev::wire::BufferRegion region = {
       .vmo = kVmoId,
       .offset = 0,
       .length = NetworkDevice::kFrameSize,
   };
-  const rx_space_buffer_t rx_spaces[] = {
-      {.id = 1, .region = kDummyRegion},
-      {.id = 2, .region = kDummyRegion},
+  netdev::wire::RxSpaceBuffer rx_spaces[] = {
+      {.id = 1, .region = region},
+      {.id = 2, .region = region},
   };
   const uint16_t header_len = [&] {
     uint16_t len = 0;
     WithDevice([&](NetworkDevice& device) { len = device.virtio_header_len(); });
     return len;
   }();
-  const tx_buffer_t tx_buffers[] = {
+  netdev::wire::TxBuffer tx_buffers[] = {
       {
           .id = 1,
-          .data_list = &kDummyRegion,
-          .data_count = 1,
+          .data = fidl::VectorView<netdev::wire::BufferRegion>::FromExternal(&region, 1),
           .meta = kFrameMetadata,
           .head_length = header_len,
       },
       {
           .id = 2,
-          .data_list = &kDummyRegion,
-          .data_count = 1,
+          .data = fidl::VectorView<netdev::wire::BufferRegion>::FromExternal(&region, 1),
           .meta = kFrameMetadata,
           .head_length = header_len,
       },
   };
 
+  fdf::Arena arena(0u);
   // Queue some rx and tx buffers so we observe them being returned on stop.
-  netdev().QueueRxSpace(rx_spaces, std::size(rx_spaces));
-  netdev().QueueTx(tx_buffers, std::size(tx_buffers));
-  {
-    bool callback_called = false;
-    netdev().Stop([](void* cookie) { *reinterpret_cast<bool*>(cookie) = true; }, &callback_called);
-    EXPECT_TRUE(callback_called);
-  }
+  ASSERT_OK(
+      netdev()
+          .buffer(arena)
+          ->QueueRxSpace(fidl::VectorView<netdev::wire::RxSpaceBuffer>::FromExternal(rx_spaces))
+          .status());
+  ASSERT_OK(netdev()
+                .buffer(arena)
+                ->QueueTx(fidl::VectorView<netdev::wire::TxBuffer>::FromExternal(tx_buffers))
+                .status());
+
+  port_status_changed.Reset();
+  EXPECT_CALL(*this, PortStatusChanged)
+      .WillOnce([&](netdev::wire::NetworkDeviceIfcPortStatusChangedRequest* request,
+                    fdf::Arena& arena, PortStatusChangedCompleter::Sync& completer) {
+        EXPECT_EQ(request->id, NetworkDevice::kPortId);
+        EXPECT_EQ(request->new_status.flags(), fuchsia_hardware_network::wire::StatusFlags{});
+        port_status_changed.Signal();
+      });
+
+  libsync::Completion completed_rx;
+  EXPECT_CALL(*this, CompleteRx)
+      .WillOnce([&](netdev::wire::NetworkDeviceIfcCompleteRxRequest* request, fdf::Arena& arena,
+                    CompleteRxCompleter::Sync& completer) {
+        EXPECT_EQ(request->rx.size(), std::size(rx_spaces));
+        for (size_t i = 0; i < std::size(rx_spaces); ++i) {
+          SCOPED_TRACE(fxl::StringPrintf("rx space %d", rx_spaces[i].id));
+          EXPECT_EQ(request->rx[i].data.size(), 1u);
+          EXPECT_EQ(request->rx[i].data[0].id, rx_spaces[i].id);
+          EXPECT_EQ(request->rx[i].data[0].offset, 0u);
+          EXPECT_EQ(request->rx[i].data[0].length, 0u);
+        }
+        completed_rx.Signal();
+      });
+
+  libsync::Completion completed_tx;
+  EXPECT_CALL(*this, CompleteTx)
+      .WillOnce([&](netdev::wire::NetworkDeviceIfcCompleteTxRequest* request, fdf::Arena& arena,
+                    CompleteTxCompleter::Sync& completer) {
+        EXPECT_EQ(request->tx.size(), std::size(tx_buffers));
+        for (size_t i = 0; i < std::size(tx_buffers); ++i) {
+          EXPECT_STATUS(request->tx[i].status, ZX_ERR_BAD_STATE);
+          // Buffers are completed in reverse order.
+          EXPECT_EQ(request->tx[i].id, tx_buffers[std::size(tx_buffers) - 1 - i].id);
+        }
+        completed_tx.Signal();
+      });
+  ASSERT_OK(netdev().buffer(arena)->Stop().status());
 
   // After stopping, the device should report offline status.
-  status = PopStatus();
-  ASSERT_TRUE(status.has_value());
-  EXPECT_EQ(status->flags, static_cast<uint32_t>(fuchsia_hardware_network::wire::StatusFlags()));
+  port_status_changed.Wait();
+  completed_rx.Wait();
+  completed_tx.Wait();
 
   EXPECT_EQ(backend().DeviceState(), FakeBackend::State::DEVICE_RESET);
-
-  for (const auto& space : rx_spaces) {
-    SCOPED_TRACE(fxl::StringPrintf("rx space %d", space.id));
-    std::optional rx = PopRx();
-    ASSERT_TRUE(rx.has_value());
-    const CompleteRx& complete = rx.value();
-    EXPECT_EQ(complete.part.id, space.id);
-    EXPECT_EQ(complete.part.offset, 0);
-    EXPECT_EQ(complete.part.length, 0);
-  }
-  {
-    std::optional final = PopRx();
-    ASSERT_FALSE(final.has_value(), "extra complete buffer with id %d", final.value().part.id);
-  }
-  std::unordered_set<uint32_t> ids;
-  for (;;) {
-    if (std::optional tx = PopTx(); tx) {
-      EXPECT_STATUS(tx->status, ZX_ERR_BAD_STATE);
-      EXPECT_TRUE(ids.insert(tx->id).second);
-    } else {
-      break;
-    }
-  }
-  EXPECT_EQ(std::size(tx_buffers), ids.size());
-  for (const auto& tx_sent : tx_buffers) {
-    SCOPED_TRACE(fxl::StringPrintf("tx sent %d", tx_sent.id));
-    EXPECT_TRUE(ids.find(tx_sent.id) != ids.end());
-  }
 }
 
 TEST_F(NetworkDeviceTests, StopDuringIrqUpdate) {
   ASSERT_NO_FATAL_FAILURE(StartDevice());
   ASSERT_NO_FATAL_FAILURE(PrepareVmo());
 
-  std::array<tx_buffer_t, NetworkDevice::kMaxDepth> tx_buffers;
-  std::array<rx_space_buffer_t, NetworkDevice::kMaxDepth> rx_spaces;
+  std::array<netdev::wire::TxBuffer, NetworkDevice::kMaxDepth> tx_buffers;
+  std::array<netdev::wire::RxSpaceBuffer, NetworkDevice::kMaxDepth> rx_spaces;
 
-  constexpr buffer_region_t kPlaceholderRegion = {
+  netdev::wire::BufferRegion placeholder_region = {
       .vmo = kVmoId,
       .offset = 0,
       .length = NetworkDevice::kFrameSize,
@@ -533,21 +558,29 @@ TEST_F(NetworkDeviceTests, StopDuringIrqUpdate) {
   WithDevice([&](NetworkDevice& device) {
     for (uint32_t i = 0; i < tx_buffers.size(); ++i) {
       tx_buffers[i] = {.id = i,
-                       .data_list = &kPlaceholderRegion,
-                       .data_count = 1,
+                       .data = fidl::VectorView<netdev::wire::BufferRegion>::FromExternal(
+                           &placeholder_region, 1),
                        .meta = kFrameMetadata,
                        .head_length = device.virtio_header_len()};
     }
   });
 
   for (uint32_t i = 0; i < rx_spaces.size(); ++i) {
-    rx_spaces[i] = {.id = i, .region = kPlaceholderRegion};
+    rx_spaces[i] = {.id = i, .region = placeholder_region};
   }
 
-  // Queue some rx and tx buffers so we observe them being returned on stop.
-  netdev().QueueRxSpace(rx_spaces.data(), rx_spaces.size());
-  netdev().QueueTx(tx_buffers.data(), tx_buffers.size());
+  fdf::Arena arena(0u);
 
+  // Queue some rx and tx buffers so we observe them being returned on stop.
+  ASSERT_OK(
+      netdev()
+          .buffer(arena)
+          ->QueueRxSpace(fidl::VectorView<netdev::wire::RxSpaceBuffer>::FromExternal(rx_spaces))
+          .status());
+  ASSERT_OK(netdev()
+                .buffer(arena)
+                ->QueueTx(fidl::VectorView<netdev::wire::TxBuffer>::FromExternal(tx_buffers))
+                .status());
   // Populate TX descriptors in the ring to indicate that everything was transmitted so that
   // IrqRingUpdate has something to do.
   WithTxRing([&](NetworkDevice&, vring& tx_ring) {
@@ -564,10 +597,7 @@ TEST_F(NetworkDeviceTests, StopDuringIrqUpdate) {
   });
 
   // Now call Stop first to return all buffers.
-  libsync::Completion stop_called;
-  netdev().Stop([](void* cookie) { reinterpret_cast<libsync::Completion*>(cookie)->Signal(); },
-                &stop_called);
-  stop_called.Wait();
+  ASSERT_OK(netdev().buffer(arena)->Stop().status());
 
   // Then behave as if an IRQ ring update was pending but blocked on one of the locks in Stop and is
   // now allowed to continue running. If the TX or RX ring is not correctly cleared in Stop this
@@ -595,19 +625,25 @@ TEST_F(NetworkDeviceTests, UpdateStatus) {
   for (const auto& test : kTests) {
     SCOPED_TRACE(test.name);
     test.set_state();
+    libsync::Completion port_status_changed;
+    EXPECT_CALL(*this, PortStatusChanged)
+        .WillOnce([&](netdev::wire::NetworkDeviceIfcPortStatusChangedRequest* request,
+                      fdf::Arena& arena, PortStatusChangedCompleter::Sync& completer) {
+          EXPECT_EQ(request->id, NetworkDevice::kPortId);
+          EXPECT_EQ(request->new_status.mtu(), NetworkDevice::kMtu);
+          EXPECT_EQ(request->new_status.flags(), test.expect);
+          port_status_changed.Signal();
+        });
+
     WithDevice([&](NetworkDevice& device) { device.IrqConfigChange(); });
-    std::optional status = PopStatus();
-    ASSERT_TRUE(status.has_value());
-    const port_status_t& observed = status.value();
-    EXPECT_EQ(observed.mtu, NetworkDevice::kMtu);
-    EXPECT_EQ(observed.flags, static_cast<uint32_t>(test.expect));
+    port_status_changed.Wait();
   }
 }
 
 TEST_P(VirtioVersionTests, Rx) {
   ASSERT_NO_FATAL_FAILURE(StartDevice());
   ASSERT_NO_FATAL_FAILURE(PrepareVmo());
-  const rx_space_buffer_t rx_space[] = {
+  netdev::wire::RxSpaceBuffer rx_space[] = {
       {
           .id = 1,
           .region =
@@ -627,7 +663,23 @@ TEST_P(VirtioVersionTests, Rx) {
               },
       },
   };
-  netdev().QueueRxSpace(rx_space, std::size(rx_space));
+
+  // Each call to QueueRxSpace should kick the RX ring once.
+  libsync::Completion ring_kicked;
+  EXPECT_CALL(backend(), RingKick(NetworkDevice::kRxId)).WillOnce([&](uint16_t index) {
+    // Call base class implementation to ensure proper bookkeeping of kicks.
+    backend().FakeBackend::RingKick(index);
+    ring_kicked.Signal();
+  });
+
+  fdf::Arena arena(0u);
+  ASSERT_OK(
+      netdev()
+          .buffer(arena)
+          ->QueueRxSpace(fidl::VectorView<netdev::wire::RxSpaceBuffer>::FromExternal(rx_space))
+          .status());
+
+  ring_kicked.Wait();
   EXPECT_TRUE(backend().IsQueueKicked(NetworkDevice::kRxId));
 
   constexpr uint32_t kReceivedLenMultiplier = 10;
@@ -650,22 +702,34 @@ TEST_P(VirtioVersionTests, Rx) {
     }
   });
 
+  // It's not safe to use WithDevice inside the NetworkDeviceIfc mock call. It will most likely be
+  // inlined from the IrqRingUpdate call below which already happens in WithDevice. Recursively
+  // calling it will cause a deadlock. Capture the virtio header length here instead.
+  uint16_t virtio_header_len = 0;
+  WithDevice([&](NetworkDevice& device) { virtio_header_len = device.virtio_header_len(); });
+
+  libsync::Completion completed_rx;
+  EXPECT_CALL(*this, CompleteRx)
+      .WillOnce([&](netdev::wire::NetworkDeviceIfcCompleteRxRequest* request, fdf::Arena& arena,
+                    CompleteRxCompleter::Sync& completer) {
+        EXPECT_EQ(request->rx.size(), std::size(rx_space));
+        for (size_t i = 0; i < std::size(rx_space); ++i) {
+          SCOPED_TRACE(fxl::StringPrintf("rx space %d", rx_space[i].id));
+          EXPECT_EQ(request->rx[i].data.size(), 1u);
+          EXPECT_EQ(request->rx[i].data[0].id, rx_space[i].id);
+          EXPECT_EQ(request->rx[i].data[0].offset, virtio_header_len);
+          EXPECT_EQ(request->rx[i].data[0].length, rx_space[i].id * kReceivedLenMultiplier);
+          EXPECT_EQ(request->rx[i].meta.frame_type,
+                    fuchsia_hardware_network::wire::FrameType::kEthernet);
+          EXPECT_EQ(request->rx[i].meta.flags, 0u);
+          EXPECT_EQ(request->rx[i].meta.port, NetworkDevice::kPortId);
+        }
+        completed_rx.Signal();
+      });
+
   // Call irq handler and verify all buffer are returned.
   WithDevice([&](NetworkDevice& device) { device.IrqRingUpdate(); });
-  for (const auto& expect : rx_space) {
-    SCOPED_TRACE(fxl::StringPrintf("expect id %d", expect.id));
-    std::optional rx = PopRx();
-    ASSERT_TRUE(rx.has_value());
-    const CompleteRx& result = rx.value();
-    EXPECT_EQ(result.part.id, expect.id);
-    WithDevice(
-        [&](NetworkDevice& device) { EXPECT_EQ(result.part.offset, device.virtio_header_len()); });
-    EXPECT_EQ(result.part.length, expect.id * kReceivedLenMultiplier);
-    EXPECT_EQ(result.meta.frame_type,
-              static_cast<uint8_t>(fuchsia_hardware_network::wire::FrameType::kEthernet));
-    EXPECT_EQ(result.meta.flags, 0);
-    EXPECT_EQ(result.meta.port, NetworkDevice::kPortId);
-  }
+  completed_rx.Wait();
 }
 
 TEST_P(VirtioVersionTests, Tx) {
@@ -676,7 +740,7 @@ TEST_P(VirtioVersionTests, Tx) {
     WithDevice([&](NetworkDevice& device) { len = device.virtio_header_len(); });
     return len;
   }();
-  const buffer_region_t buffer_regions[] = {
+  netdev::wire::BufferRegion buffer_regions[] = {
       {
           .vmo = kVmoId,
           .offset = 0,
@@ -688,18 +752,16 @@ TEST_P(VirtioVersionTests, Tx) {
           .length = static_cast<uint64_t>(header_len + 88),
       },
   };
-  const tx_buffer_t tx_buffers[] = {
+  netdev::wire::TxBuffer tx_buffers[] = {
       {
           .id = 1,
-          .data_list = &buffer_regions[0],
-          .data_count = 1,
+          .data = fidl::VectorView<netdev::wire::BufferRegion>::FromExternal(&buffer_regions[0], 1),
           .meta = kFrameMetadata,
           .head_length = header_len,
       },
       {
           .id = 2,
-          .data_list = &buffer_regions[1],
-          .data_count = 1,
+          .data = fidl::VectorView<netdev::wire::BufferRegion>::FromExternal(&buffer_regions[1], 1),
           .meta = kFrameMetadata,
           .head_length = header_len,
       },
@@ -713,7 +775,21 @@ TEST_P(VirtioVersionTests, Tx) {
       ASSERT_OK(vmo().write(header.data(), region.offset, header.size()));
     }
   }
-  netdev().QueueTx(tx_buffers, std::size(tx_buffers));
+
+  // Each call to QueueTx should kick the TX ring once.
+  libsync::Completion ring_kicked;
+  EXPECT_CALL(backend(), RingKick(NetworkDevice::kTxId)).WillOnce([&](uint16_t index) {
+    // Call base class implementation to ensure proper bookkeeping of kicks.
+    backend().FakeBackend::RingKick(index);
+    ring_kicked.Signal();
+  });
+
+  fdf::Arena arena(0u);
+  ASSERT_OK(netdev()
+                .buffer(arena)
+                ->QueueTx(fidl::VectorView<netdev::wire::TxBuffer>::FromExternal(tx_buffers))
+                .status());
+  ring_kicked.Wait();
   EXPECT_TRUE(backend().IsQueueKicked(NetworkDevice::kTxId));
 
   for (const auto& region : buffer_regions) {
@@ -759,7 +835,8 @@ TEST_P(VirtioVersionTests, Tx) {
     for (const auto& tx_buffer : tx_buffers) {
       uint16_t desc_idx = vring.avail->ring[avail_offset++];
       vring_desc& desc = vring.desc[desc_idx];
-      const buffer_region_t& region = tx_buffer.data_list[0];
+      ASSERT_EQ(tx_buffer.data.size(), 1u);
+      const netdev::wire::BufferRegion& region = tx_buffer.data[0];
       EXPECT_EQ(desc.flags, 0);
       EXPECT_EQ(desc.len, region.length);
       EXPECT_EQ(desc.addr, FAKE_BTI_PHYS_ADDR + region.offset);
@@ -770,19 +847,37 @@ TEST_P(VirtioVersionTests, Tx) {
       };
     }
   });
+
+  libsync::Completion completed_tx;
+  EXPECT_CALL(*this, CompleteTx)
+      .WillOnce([&](netdev::wire::NetworkDeviceIfcCompleteTxRequest* request, fdf::Arena& arena,
+                    CompleteTxCompleter::Sync& completer) {
+        EXPECT_EQ(request->tx.size(), std::size(tx_buffers));
+        for (size_t i = 0; i < std::size(tx_buffers); ++i) {
+          EXPECT_OK(request->tx[i].status);
+          EXPECT_EQ(request->tx[i].id, tx_buffers[i].id);
+        }
+        completed_tx.Signal();
+      });
+
   // Call irq handler and verify all buffers are returned.
   WithDevice([&](NetworkDevice& device) { device.IrqRingUpdate(); });
-  for (const auto& expect : tx_buffers) {
-    SCOPED_TRACE(fxl::StringPrintf("expect id %d", expect.id));
-    std::optional tx = PopTx();
-    ASSERT_TRUE(tx.has_value());
-    const tx_result_t& result = tx.value();
-    EXPECT_EQ(result.id, expect.id);
-    EXPECT_OK(result.status);
-  }
+  completed_tx.Wait();
+
+  ring_kicked.Reset();
+  EXPECT_CALL(backend(), RingKick(NetworkDevice::kTxId)).WillOnce([&](uint16_t index) {
+    // Call base class implementation to ensure proper bookkeeping of kicks.
+    backend().FakeBackend::RingKick(index);
+    ring_kicked.Signal();
+  });
 
   // Submit the buffers again, but this time report them used in the opposite order.
-  netdev().QueueTx(tx_buffers, std::size(tx_buffers));
+  ASSERT_OK(netdev()
+                .buffer(arena)
+                ->QueueTx(fidl::VectorView<netdev::wire::TxBuffer>::FromExternal(tx_buffers))
+                .status());
+
+  ring_kicked.Wait();
 
   WithTxRing([&](NetworkDevice&, vring& vring) {
     vring.used->idx += std::size(tx_buffers);
@@ -790,7 +885,8 @@ TEST_P(VirtioVersionTests, Tx) {
     for (const auto& tx_buffer : tx_buffers) {
       uint16_t desc_idx = vring.avail->ring[avail_offset++];
       vring_desc& desc = vring.desc[desc_idx];
-      const buffer_region_t& region = tx_buffer.data_list[0];
+      ASSERT_EQ(tx_buffer.data.size(), 1u);
+      const netdev::wire::BufferRegion& region = tx_buffer.data[0];
       EXPECT_EQ(desc.flags, 0);
       EXPECT_EQ(desc.len, region.length);
       EXPECT_EQ(desc.addr, FAKE_BTI_PHYS_ADDR + region.offset);
@@ -801,26 +897,27 @@ TEST_P(VirtioVersionTests, Tx) {
       };
     }
   });
+
+  completed_tx.Reset();
+  EXPECT_CALL(*this, CompleteTx)
+      .WillOnce([&](netdev::wire::NetworkDeviceIfcCompleteTxRequest* request, fdf::Arena& arena,
+                    CompleteTxCompleter::Sync& completer) {
+        EXPECT_EQ(request->tx.size(), std::size(tx_buffers));
+        for (size_t i = 0; i < std::size(tx_buffers); ++i) {
+          EXPECT_OK(request->tx[i].status);
+          // Expect that buffers are returned in the opposite order to match behavior above.
+          EXPECT_EQ(request->tx[i].id, tx_buffers[std::size(tx_buffers) - 1 - i].id);
+        }
+        completed_tx.Signal();
+      });
+
   // Call irq handler and verify all buffers are returned.
   WithDevice([&](NetworkDevice& device) { device.IrqRingUpdate(); });
-  std::unordered_set<uint32_t> ids;
-  for (;;) {
-    if (std::optional tx = PopTx(); tx) {
-      EXPECT_OK(tx->status);
-      EXPECT_TRUE(ids.insert(tx->id).second);
-    } else {
-      break;
-    }
-  }
-  EXPECT_EQ(std::size(tx_buffers), ids.size());
-  for (const auto& tx_sent : tx_buffers) {
-    SCOPED_TRACE(fxl::StringPrintf("tx sent %d", tx_sent.id));
-    EXPECT_TRUE(ids.find(tx_sent.id) != ids.end());
-  }
+  completed_tx.Wait();
 }
 
-INSTANTIATE_TEST_SUITE_P(NetworkDeviceTests, VirtioVersionTests, zxtest::Values(true, false),
-                         [](const zxtest::TestParamInfo<VirtioVersionTests::ParamType>& info) {
+INSTANTIATE_TEST_SUITE_P(NetworkDeviceTests, VirtioVersionTests, testing::Values(true, false),
+                         [](const testing::TestParamInfo<VirtioVersionTests::ParamType>& info) {
                            if (info.param) {
                              return "V1Feature";
                            }

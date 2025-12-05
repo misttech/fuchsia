@@ -32,7 +32,10 @@ test("virtio-netdevice-test") {
     "//src/devices/pci/testing:pci-protocol-fake",
     "//src/devices/testing/fake-bti",
     "//src/lib/fxl",
-    "//zircon/system/ulib/zxtest",
+    "//src/lib/fxl/test:gtest_main",
+    "//src/lib/testing/predicates",
+    "//third_party/googletest:gmock",
+    "//third_party/googletest:gtest",
   ]
 }
 
@@ -48,13 +51,14 @@ source_set("virtio_netdevice_lib") {
   ]
   public_deps = [
     "//sdk/fidl/fuchsia.hardware.network:fuchsia.hardware.network_cpp",
-    "//sdk/fidl/fuchsia.hardware.network.driver:fuchsia.hardware.network.driver_banjo_cpp",
+    "//sdk/fidl/fuchsia.hardware.network.driver:fuchsia.hardware.network.driver_cpp",
     "//sdk/lib/driver/compat/cpp",
     "//sdk/lib/driver/component/cpp",
     "//src/connectivity/network/drivers/network-device/device:shared_lock",
     "//src/devices/bus/lib/virtio",
     "//src/devices/lib/dev-operation:dev-operation-dfv2-compat-logging",
     "//src/lib/vmo_store",
+    "//zircon/system/ulib/sync:sync-cpp",
   ]
 }
 

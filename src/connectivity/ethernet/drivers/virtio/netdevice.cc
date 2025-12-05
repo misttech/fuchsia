@@ -4,6 +4,8 @@
 
 #include "netdevice.h"
 
+#include <fidl/fuchsia.hardware.network/cpp/wire.h>
+#include <lib/driver/component/cpp/node_add_args.h>
 #include <lib/fit/defer.h>
 #include <lib/virtio/ring.h>
 #include <lib/zircon-internal/align.h>
@@ -73,12 +75,20 @@ NetworkDevice::NetworkDevice(VirtioNetDriver* driver, zx::bti bti_handle,
                   .bti_pin_options = ZX_BTI_PERM_READ | ZX_BTI_PERM_WRITE,
                   .index = true,
               },
-      }),
-      mac_addr_proto_({&mac_addr_protocol_ops_, this}) {}
+      }) {}
 
 NetworkDevice::~NetworkDevice() {}
 
 zx_status_t NetworkDevice::Init() {
+  zx::result netdev_dispatcher = fdf::UnsynchronizedDispatcher::Create(
+      {}, "netdev-dispatcher",
+      [this](fdf_dispatcher_t*) { netdevice_dispatcher_shutdown_.Signal(); });
+  if (netdev_dispatcher.is_error()) {
+    FDF_LOG(ERROR, "Failed to create netdevice dispatcher: %s", netdev_dispatcher.status_string());
+    return netdev_dispatcher.status_value();
+  }
+  netdevice_dispatcher_ = std::move(netdev_dispatcher.value());
+
   fbl::AutoLock lock(&state_lock_);
 
   // Reset the device.
@@ -109,7 +119,7 @@ zx_status_t NetworkDevice::Init() {
   static_assert(sizeof(config.mac) == sizeof(mac_.octets));
   std::copy(std::begin(config.mac), std::end(config.mac), mac_.octets.begin());
 
-  if (zx_status_t status = vmo_store_.Reserve(MAX_VMOS); status != ZX_OK) {
+  if (zx_status_t status = vmo_store_.Reserve(netdev::wire::kMaxVmos); status != ZX_OK) {
     FDF_LOG(ERROR, "failed to initialize vmo store: %s", zx_status_get_string(status));
     return status;
   }
@@ -131,25 +141,44 @@ zx_status_t NetworkDevice::Init() {
 }
 
 zx_status_t NetworkDevice::AddDevice() {
-  compat::DeviceServer::BanjoConfig banjo_config;
-  banjo_config.callbacks[ZX_PROTOCOL_NETWORK_DEVICE_IMPL] = net_device_server_.callback();
-
-  if (zx::result result = compat_server_.Initialize(
-          driver_->incoming(), driver_->outgoing(), driver_->node_name(), kChildNodeName,
-          compat::ForwardMetadata::None(), std::move(banjo_config));
+  if (zx::result result = compat_server_.Initialize(driver_->incoming(), driver_->outgoing(),
+                                                    driver_->node_name(), kChildNodeName);
       result.is_error()) {
     FDF_LOG(ERROR, "Failed to initialize compat server: %s", result.status_string());
     return result.status_value();
   }
 
-  zx::result netdev_child = driver_->AddChild(
-      "virtio-net-netdev", {{net_device_server_.property()}}, compat_server_.CreateOffers2());
+  // This callback is invoked when this service is being connected.
+  auto protocol = [this](fdf::ServerEnd<netdev::NetworkDeviceImpl> server_end) mutable {
+    fdf::BindServer(netdevice_dispatcher_.get(), std::move(server_end), this);
+  };
+
+  // Register the callback to handler.
+  netdev::Service::InstanceHandler handler({.network_device_impl = std::move(protocol)});
+
+  auto status = driver_->outgoing()->AddService<netdev::Service>(std::move(handler));
+  if (status.is_error()) {
+    FDF_LOG(ERROR, "Failed to add service to outgoing directory: %s\n", status.status_string());
+    return status.error_value();
+  }
+
+  fdf::Arena arena(0u);
+  std::vector offers = compat_server_.CreateOffers2();
+  offers.push_back(fdf::MakeOffer2<netdev::Service>());
+
+  std::array<fuchsia_driver_framework::NodeProperty2, 0> properties{};
+  zx::result netdev_child = driver_->AddChild("virtio-net-netdev", properties, offers);
   if (netdev_child.is_error()) {
     FDF_LOG(ERROR, "Failed to add net device child node: %s", netdev_child.status_string());
     return netdev_child.status_value();
   }
   netdev_child_ = std::move(netdev_child.value());
   return ZX_OK;
+}
+
+void NetworkDevice::RemoveDevice() {
+  // Remove the driver by destroying the node channel.
+  driver_->node().TakeChannel().reset();
 }
 
 zx_status_t NetworkDevice::AckFeatures(bool* is_status_supported, bool* is_multiqueue_supported,
@@ -195,9 +224,15 @@ zx_status_t NetworkDevice::AckFeatures(bool* is_status_supported, bool* is_multi
 }
 
 void NetworkDevice::Shutdown() {
+  if (netdevice_dispatcher_.get()) {
+    netdevice_dispatcher_.ShutdownAsync();
+    netdevice_dispatcher_shutdown_.Wait();
+    netdevice_dispatcher_.reset();
+  }
   {
     fbl::AutoLock lock(&state_lock_);
-    ifc_.clear();
+    // Destroy the existing client by assigning a default constructed object to it.
+    ifc_ = {};
   }
   if (irq_thread_started_) {
     // The Release call assumes that it's safe to join the IRQ thread which is only true if it was
@@ -224,7 +259,9 @@ bool NetworkDevice::IrqRingUpdateInternal() {
 
   bool more_work = false;
 
-  std::array<tx_result_t, kMaxDepth> tx_results;
+  fdf::Arena arena(0u);
+
+  std::array<netdev::wire::TxResult, kMaxDepth> tx_results;
   auto tx_it = tx_results.begin();
   {
     std::lock_guard lock(tx_lock_);
@@ -242,11 +279,18 @@ bool NetworkDevice::IrqRingUpdateInternal() {
     more_work |= tx_.ClearNoInterruptCheckHasWork();
   }
   if (size_t count = std::distance(tx_results.begin(), tx_it); count != 0) {
-    ifc_.CompleteTx(tx_results.data(), count);
+    if (fidl::OneWayStatus status = ifc_.buffer(arena)->CompleteTx(
+            fidl::VectorView<netdev::wire::TxResult>::FromExternal(tx_results.data(), count));
+        !status.ok()) {
+      FDF_LOG(ERROR, "Failed to complete %zu TX buffers: %s", count,
+              status.FormatDescription().c_str());
+      RemoveDevice();
+      return false;
+    }
   }
 
-  std::array<rx_buffer_t, kMaxDepth> rx_buffers;
-  std::array<rx_buffer_part_t, kMaxDepth> rx_buffers_parts;
+  std::array<netdev::wire::RxBuffer, kMaxDepth> rx_buffers;
+  std::array<netdev::wire::RxBufferPart, kMaxDepth> rx_buffers_parts;
   auto rx_part_it = rx_buffers_parts.begin();
   auto rx_it = rx_buffers.begin();
   {
@@ -279,22 +323,27 @@ bool NetworkDevice::IrqRingUpdateInternal() {
           .offset = virtio_hdr_len_,
           .length = len,
       };
-      *rx_it++ = rx_buffer_t{
+      *rx_it++ = netdev::wire::RxBuffer{
           .meta =
               {
                   .port = kPortId,
-                  .frame_type =
-                      static_cast<uint8_t>(fuchsia_hardware_network::wire::FrameType::kEthernet),
+                  .frame_type = fuchsia_hardware_network::wire::FrameType::kEthernet,
               },
-          .data_list = &*parts_list,
-          .data_count = 1,
+          .data = fidl::VectorView<netdev::wire::RxBufferPart>::FromExternal(&*parts_list, 1),
       };
       rx_.FreeDesc(id);
     });
     more_work |= rx_.ClearNoInterruptCheckHasWork();
   }
   if (size_t count = std::distance(rx_buffers.begin(), rx_it); count != 0) {
-    ifc_.CompleteRx(rx_buffers.data(), count);
+    if (fidl::OneWayStatus status = ifc_.buffer(arena)->CompleteRx(
+            fidl::VectorView<netdev::wire::RxBuffer>::FromExternal(rx_buffers.data(), count));
+        !status.ok()) {
+      FDF_LOG(ERROR, "Failed to complete %zu TX buffers: %s", count,
+              status.FormatDescription().c_str());
+      RemoveDevice();
+      return false;
+    }
   }
 
   return more_work;
@@ -306,45 +355,56 @@ void NetworkDevice::IrqConfigChange() {
     return;
   }
 
-  const port_status_t status = ReadStatus();
-  ifc_.PortStatusChanged(kPortId, &status);
+  const fuchsia_hardware_network::PortStatus port_status = ReadStatus();
+  fdf::Arena arena(0u);
+  if (fidl::OneWayStatus status =
+          ifc_.buffer(arena)->PortStatusChanged(kPortId, fidl::ToWire(arena, port_status));
+      !status.ok()) {
+    FDF_LOG(ERROR, "Failed to send port status changed: %s", status.FormatDescription().c_str());
+    RemoveDevice();
+  }
 }
 
-port_status_t NetworkDevice::ReadStatus() const {
+fuchsia_hardware_network::PortStatus NetworkDevice::ReadStatus() const {
   virtio_net_config config;
   CopyDeviceConfig(&config, sizeof(config));
-  return {
-      .flags = IsLinkActive(config, is_status_supported_)
-                   ? static_cast<uint32_t>(fuchsia_hardware_network::wire::StatusFlags::kOnline)
-                   : 0,
-      .mtu = kMtu,
-  };
+  return fuchsia_hardware_network::PortStatus{}
+      .flags(IsLinkActive(config, is_status_supported_)
+                 ? fuchsia_hardware_network::wire::StatusFlags::kOnline
+                 : fuchsia_hardware_network::wire::StatusFlags{})
+      .mtu(kMtu);
 }
 
-void NetworkDevice::NetworkDeviceImplInit(const network_device_ifc_protocol_t* iface,
-                                          network_device_impl_init_callback callback,
-                                          void* cookie) {
+void NetworkDevice::Init(
+    fuchsia_hardware_network_driver::wire::NetworkDeviceImplInitRequest* request, fdf::Arena& arena,
+    InitCompleter::Sync& completer) {
   fbl::AutoLock lock(&state_lock_);
-  ifc_ = ddk::NetworkDeviceIfcProtocolClient(iface);
-  using Context = std::tuple<network_device_impl_init_callback, void*>;
-  std::unique_ptr context = std::make_unique<Context>(callback, cookie);
+  ifc_.Bind(std::move(request->iface), netdevice_dispatcher_.get());
 
-  ifc_.AddPort(
-      kPortId, this, &network_port_protocol_ops_,
-      [](void* ctx, zx_status_t status) {
-        std::unique_ptr<Context> context(static_cast<Context*>(ctx));
-        auto [callback, cookie] = *context;
-        if (status != ZX_OK) {
-          FDF_LOG(ERROR, "failed to add port: %s", zx_status_get_string(status));
+  auto [client, server] = fdf::Endpoints<fuchsia_hardware_network_driver::NetworkPort>::Create();
+  fdf::BindServer(netdevice_dispatcher_.get(), std::move(server), this);
+
+  ifc_.buffer(arena)
+      ->AddPort(kPortId, std::move(client))
+      .Then([completer = completer.ToAsync()](
+                fdf::WireUnownedResult<netdev::NetworkDeviceIfc::AddPort>& result) mutable {
+        fdf::Arena arena(0u);
+        if (!result.ok()) {
+          FDF_LOG(ERROR, "failed to add port: %s", result.FormatDescription().c_str());
+          completer.buffer(arena).Reply(result.status());
+          return;
         }
-        callback(cookie, status);
-      },
-      context.release());
+        if (result->status != ZX_OK) {
+          FDF_LOG(ERROR, "failed to add port: %s", zx_status_get_string(result->status));
+          completer.buffer(arena).Reply(result->status);
+          return;
+        }
+        completer.buffer(arena).Reply(ZX_OK);
+      });
 }
 
-void NetworkDevice::NetworkDeviceImplStart(network_device_impl_start_callback callback,
-                                           void* cookie) {
-  zx_status_t status = [this]() {
+void NetworkDevice::Start(fdf::Arena& arena, StartCompleter::Sync& completer) {
+  zx_status_t status = [&]() {
     // Always reset the device and reconfigure so we know where we are.
     DeviceReset();
     WaitForDeviceReset();
@@ -396,17 +456,24 @@ void NetworkDevice::NetworkDeviceImplStart(network_device_impl_start_callback ca
     {
       fbl::AutoLock lock(&state_lock_);
       if (ifc_.is_valid()) {
-        const port_status_t status = ReadStatus();
-        ifc_.PortStatusChanged(kPortId, &status);
+        const fuchsia_hardware_network::PortStatus port_status = ReadStatus();
+        if (fidl::OneWayStatus status =
+                ifc_.buffer(arena)->PortStatusChanged(kPortId, fidl::ToWire(arena, port_status));
+            !status.ok()) {
+          FDF_LOG(ERROR, "Failed to send port status changed: %s",
+                  status.FormatDescription().c_str());
+          completer.Close(status.status());
+          RemoveDevice();
+          return status.status();
+        }
       }
     }
     return ZX_OK;
   }();
-  callback(cookie, status);
+  completer.buffer(arena).Reply(status);
 }
 
-void NetworkDevice::NetworkDeviceImplStop(network_device_impl_stop_callback callback,
-                                          void* cookie) {
+void NetworkDevice::Stop(fdf::Arena& arena, StopCompleter::Sync& completer) {
   DeviceReset();
   WaitForDeviceReset();
   // Once the device is reset, report that the link is offline since we're not
@@ -417,10 +484,17 @@ void NetworkDevice::NetworkDeviceImplStop(network_device_impl_stop_callback call
       return;
     }
 
-    port_status_t status = ReadStatus();
-    status.flags &=
-        ~static_cast<status_flags_t>(fuchsia_hardware_network::wire::StatusFlags::kOnline);
-    ifc_.PortStatusChanged(kPortId, &status);
+    fuchsia_hardware_network::PortStatus port_status = ReadStatus();
+    port_status.flags().value() &= ~fuchsia_hardware_network::wire::StatusFlags::kOnline;
+
+    if (fidl::OneWayStatus status =
+            ifc_.buffer(arena)->PortStatusChanged(kPortId, fidl::ToWire(arena, port_status));
+        !status.ok()) {
+      FDF_LOG(ERROR, "Failed to send port status changed: %s", status.FormatDescription().c_str());
+      completer.Close(status.status());
+      RemoveDevice();
+      return;
+    }
   }
 
   // Return all pending buffers.
@@ -428,7 +502,7 @@ void NetworkDevice::NetworkDeviceImplStop(network_device_impl_stop_callback call
     network::SharedAutoLock state_lock(&state_lock_);
     // Pending tx buffers.
     {
-      std::array<tx_result_t, kMaxDepth> tx_return;
+      std::array<netdev::wire::TxResult, kMaxDepth> tx_return;
       auto iter = tx_return.begin();
       {
         std::lock_guard lock(tx_lock_);
@@ -450,13 +524,22 @@ void NetworkDevice::NetworkDeviceImplStop(network_device_impl_stop_callback call
         }
       }
       if (iter != tx_return.begin()) {
-        ifc_.CompleteTx(tx_return.data(), std::distance(tx_return.begin(), iter));
+        const size_t count = std::distance(tx_return.begin(), iter);
+        if (fidl::OneWayStatus status = ifc_.buffer(arena)->CompleteTx(
+                fidl::VectorView<netdev::wire::TxResult>::FromExternal(tx_return.data(), count));
+            !status.ok()) {
+          FDF_LOG(ERROR, "Failed to complete %zu TX buffers: %s", count,
+                  status.FormatDescription().c_str());
+          completer.Close(status.status());
+          RemoveDevice();
+          return;
+        }
       }
     }
     // Pending rx buffers.
     {
-      std::array<rx_buffer_t, kMaxDepth> rx_return;
-      std::array<rx_buffer_part_t, kMaxDepth> rx_return_parts;
+      std::array<netdev::wire::RxBuffer, kMaxDepth> rx_return;
+      std::array<netdev::wire::RxBufferPart, kMaxDepth> rx_return_parts;
       auto iter = rx_return.begin();
       auto parts_iter = rx_return_parts.begin();
       {
@@ -471,47 +554,59 @@ void NetworkDevice::NetworkDeviceImplStop(network_device_impl_stop_callback call
         while (!rx_in_flight_.Empty()) {
           Descriptor d = rx_in_flight_.Pop();
           *iter++ = {
-              .meta = {.frame_type =
-                           static_cast<uint8_t>(fuchsia_hardware_network::FrameType::kEthernet)},
-              .data_list = &*parts_iter,
-              .data_count = 1,
+              .meta = {.frame_type = fuchsia_hardware_network::FrameType::kEthernet},
+              .data = fidl::VectorView<netdev::wire::RxBufferPart>::FromExternal(&*parts_iter, 1),
           };
           *parts_iter++ = {.id = d.buffer_id};
         }
       }
       if (iter != rx_return.begin()) {
-        ifc_.CompleteRx(rx_return.data(), std::distance(rx_return.begin(), iter));
+        const size_t count = std::distance(rx_return.begin(), iter);
+        if (fidl::OneWayStatus status = ifc_.buffer(arena)->CompleteRx(
+                fidl::VectorView<netdev::wire::RxBuffer>::FromExternal(rx_return.data(), count));
+            !status.ok()) {
+          FDF_LOG(ERROR, "Failed to complete %zu RX buffers: %s", count,
+                  status.FormatDescription().c_str());
+          completer.Close(status.status());
+          RemoveDevice();
+          return;
+        }
       }
     }
   }
 
-  callback(cookie);
+  completer.buffer(arena).Reply();
 }
 
-void NetworkDevice::NetworkDeviceImplGetInfo(device_impl_info_t* out_info) {
-  *out_info = {
-      .tx_depth = tx_depth_,
-      .rx_depth = rx_depth_,
-      .rx_threshold = static_cast<uint16_t>(rx_depth_ / 2),
-      .max_buffer_parts = 1,
-      .max_buffer_length = kFrameSize,
-      .buffer_alignment = kBufferAlignment,
-      .min_rx_buffer_length = kFrameSize,
-      // Minimum Ethernet frame size on the wire according to IEEE 802.3, minus
-      // the frame check sequence.
-      .min_tx_buffer_length = 60,
-      .tx_head_length = virtio_hdr_len_,
-  };
+void NetworkDevice::GetInfo(
+    fdf::Arena& arena,
+    fdf::WireServer<netdev::NetworkDeviceImpl>::GetInfoCompleter::Sync& completer) {
+  netdev::wire::DeviceImplInfo info = netdev::wire::DeviceImplInfo::Builder(arena)
+                                          .tx_depth(tx_depth_)
+                                          .rx_depth(rx_depth_)
+                                          .rx_threshold(static_cast<uint16_t>(rx_depth_ / 2))
+                                          .max_buffer_parts(1)
+                                          .max_buffer_length(kFrameSize)
+                                          .buffer_alignment(kBufferAlignment)
+                                          .min_rx_buffer_length(kFrameSize)
+                                          // Minimum Ethernet frame size on the wire according to
+                                          // IEEE 802.3, minus the frame check sequence.
+                                          .min_tx_buffer_length(60)
+                                          .tx_head_length(virtio_hdr_len_)
+                                          .Build();
+  completer.buffer(arena).Reply(info);
 }
 
-void NetworkDevice::NetworkDeviceImplQueueTx(const tx_buffer_t* buf_list, size_t buf_count) {
+void NetworkDevice::QueueTx(
+    fuchsia_hardware_network_driver::wire::NetworkDeviceImplQueueTxRequest* request,
+    fdf::Arena& arena, QueueTxCompleter::Sync& completer) {
   network::SharedAutoLock lock(&state_lock_);
   std::lock_guard tx_lock(tx_lock_);
-  for (const auto& buffer : cpp20::span(buf_list, buf_count)) {
-    ZX_DEBUG_ASSERT_MSG(buffer.data_count == 1, "received unsupported scatter gather buffer %zu",
-                        buffer.data_count);
+  for (const auto& buffer : request->buffers) {
+    ZX_DEBUG_ASSERT_MSG(buffer.data.size() == 1, "received unsupported scatter gather buffer %zu",
+                        buffer.data.size());
 
-    const buffer_region_t& data = buffer.data_list[0];
+    const netdev::wire::BufferRegion& data = buffer.data[0];
 
     // Grab a free descriptor.
     uint16_t id;
@@ -583,12 +678,13 @@ void NetworkDevice::NetworkDeviceImplQueueTx(const tx_buffer_t* buf_list, size_t
   }
 }
 
-void NetworkDevice::NetworkDeviceImplQueueRxSpace(const rx_space_buffer_t* buf_list,
-                                                  size_t buf_count) {
+void NetworkDevice::QueueRxSpace(
+    fuchsia_hardware_network_driver::wire::NetworkDeviceImplQueueRxSpaceRequest* request,
+    fdf::Arena& arena, QueueRxSpaceCompleter::Sync& completer) {
   network::SharedAutoLock lock(&state_lock_);
   std::lock_guard rx_lock(rx_lock_);
-  for (const auto& buffer : cpp20::span(buf_list, buf_count)) {
-    const buffer_region_t& data = buffer.region;
+  for (const auto& buffer : request->buffers) {
+    const netdev::wire::BufferRegion& data = buffer.region;
 
     // Grab a free descriptor.
     uint16_t id;
@@ -626,64 +722,86 @@ void NetworkDevice::NetworkDeviceImplQueueRxSpace(const rx_space_buffer_t* buf_l
   }
 }
 
-void NetworkDevice::NetworkDeviceImplPrepareVmo(uint8_t vmo_id, zx::vmo vmo,
-                                                network_device_impl_prepare_vmo_callback callback,
-                                                void* cookie) {
-  zx_status_t status = [this, &vmo_id, &vmo]() {
+void NetworkDevice::PrepareVmo(
+    fuchsia_hardware_network_driver::wire::NetworkDeviceImplPrepareVmoRequest* request,
+    fdf::Arena& arena, PrepareVmoCompleter::Sync& completer) {
+  zx_status_t status = [&]() {
     fbl::AutoLock vmo_lock(&state_lock_);
-    return vmo_store_.RegisterWithKey(vmo_id, std::move(vmo));
+    return vmo_store_.RegisterWithKey(request->id, std::move(request->vmo));
   }();
-  callback(cookie, status);
+  completer.buffer(arena).Reply(status);
 }
 
-void NetworkDevice::NetworkDeviceImplReleaseVmo(uint8_t vmo_id) {
+void NetworkDevice::ReleaseVmo(
+    fuchsia_hardware_network_driver::wire::NetworkDeviceImplReleaseVmoRequest* request,
+    fdf::Arena& arena, ReleaseVmoCompleter::Sync& completer) {
   fbl::AutoLock vmo_lock(&state_lock_);
-  if (zx::result<zx::vmo> status = vmo_store_.Unregister(vmo_id); status.status_value() != ZX_OK) {
-    FDF_LOG(ERROR, "failed to release vmo id = %d: %s", vmo_id, status.status_string());
+  if (zx::result<zx::vmo> status = vmo_store_.Unregister(request->id);
+      status.status_value() != ZX_OK) {
+    FDF_LOG(ERROR, "failed to release vmo id = %d: %s", request->id, status.status_string());
   }
+  completer.buffer(arena).Reply();
 }
 
-void NetworkDevice::NetworkPortGetInfo(port_base_info_t* out_info) {
-  static constexpr uint8_t kRxTypesList[] = {
-      static_cast<uint8_t>(fuchsia_hardware_network::wire::FrameType::kEthernet)};
-  static constexpr frame_type_support_t kTxTypesList[] = {{
-      .type = static_cast<uint8_t>(fuchsia_hardware_network::wire::FrameType::kEthernet),
+void NetworkDevice::GetInfo(
+    fdf::Arena& arena, fdf::WireServer<netdev::NetworkPort>::GetInfoCompleter::Sync& completer) {
+  constexpr fuchsia_hardware_network::wire::FrameType kRxTypesList[] = {
+      fuchsia_hardware_network::wire::FrameType::kEthernet};
+  constexpr fuchsia_hardware_network::wire::FrameTypeSupport kTxTypesList[] = {{
+      .type = fuchsia_hardware_network::wire::FrameType::kEthernet,
       .features = fuchsia_hardware_network::wire::kFrameFeaturesRaw,
   }};
-  *out_info = {
-      .port_class = static_cast<uint16_t>(fuchsia_hardware_network::wire::PortClass::kEthernet),
-      .rx_types_list = kRxTypesList,
-      .rx_types_count = std::size(kRxTypesList),
-      .tx_types_list = kTxTypesList,
-      .tx_types_count = std::size(kTxTypesList),
-  };
+
+  fuchsia_hardware_network::wire::PortBaseInfo info =
+      fuchsia_hardware_network::wire::PortBaseInfo::Builder(arena)
+          .port_class(fuchsia_hardware_network::wire::PortClass::kEthernet)
+          .rx_types(kRxTypesList)
+          .tx_types(kTxTypesList)
+          .Build();
+  completer.buffer(arena).Reply(info);
 }
 
-void NetworkDevice::NetworkPortGetStatus(port_status_t* out_status) { *out_status = ReadStatus(); }
-
-void NetworkDevice::NetworkPortSetActive(bool active) {}
-void NetworkDevice::NetworkPortGetMac(mac_addr_protocol_t** out_mac_ifc) {
-  if (out_mac_ifc) {
-    *out_mac_ifc = &mac_addr_proto_;
-  }
+void NetworkDevice::GetStatus(fdf::Arena& arena, GetStatusCompleter::Sync& completer) {
+  completer.buffer(arena).Reply(fidl::ToWire(arena, ReadStatus()));
 }
 
-void NetworkDevice::MacAddrGetAddress(mac_address_t* out_mac) {
-  std::copy(mac_.octets.begin(), mac_.octets.end(), out_mac->octets);
+void NetworkDevice::SetActive(
+    fuchsia_hardware_network_driver::wire::NetworkPortSetActiveRequest* request, fdf::Arena& arena,
+    SetActiveCompleter::Sync& completer) {}
+
+void NetworkDevice::GetMac(fdf::Arena& arena, GetMacCompleter::Sync& completer) {
+  auto [client, server] = fdf::Endpoints<fuchsia_hardware_network_driver::MacAddr>::Create();
+  fdf::BindServer(netdevice_dispatcher_.get(), std::move(server), this);
+  completer.buffer(arena).Reply(std::move(client));
 }
 
-void NetworkDevice::MacAddrGetFeatures(features_t* out_features) {
-  *out_features = {
-      .multicast_filter_count = 0,
-      .supported_modes = SUPPORTED_MAC_FILTER_MODE_PROMISCUOUS,
-  };
+void NetworkDevice::Removed(fdf::Arena& arena, RemovedCompleter::Sync& completer) {
+  // Do nothing.
 }
 
-void NetworkDevice::MacAddrSetMode(mac_filter_mode_t mode, const mac_address_t* multicast_macs_list,
-                                   size_t multicast_macs_count) {
+void NetworkDevice::GetAddress(fdf::Arena& arena, GetAddressCompleter::Sync& completer) {
+  fuchsia_net::wire::MacAddress mac;
+  std::copy(mac_.octets.begin(), mac_.octets.end(), mac.octets.data());
+  completer.buffer(arena).Reply(mac);
+}
+
+void NetworkDevice::GetFeatures(fdf::Arena& arena, GetFeaturesCompleter::Sync& completer) {
+  netdev::wire::Features features =
+      netdev::wire::Features::Builder(arena)
+          .multicast_filter_count(0)
+          .supported_modes(netdev::wire::SupportedMacFilterMode::kPromiscuous)
+          .Build();
+  completer.buffer(arena).Reply(features);
+}
+
+void NetworkDevice::SetMode(fuchsia_hardware_network_driver::wire::MacAddrSetModeRequest* request,
+                            fdf::Arena& arena, SetModeCompleter::Sync& completer) {
   /* We only support promiscuous mode, nothing to do */
-  ZX_ASSERT_MSG(mode == MAC_FILTER_MODE_PROMISCUOUS, "unsupported mode %d", mode);
-  ZX_ASSERT_MSG(multicast_macs_count == 0, "unsupported multicast count %zu", multicast_macs_count);
+  ZX_ASSERT_MSG(request->mode == fuchsia_hardware_network::wire::MacFilterMode::kPromiscuous,
+                "unsupported mode %u", static_cast<uint32_t>(request->mode));
+  ZX_ASSERT_MSG(request->multicast_macs.size() == 0, "unsupported multicast count %zu",
+                request->multicast_macs.size());
+  completer.buffer(arena).Reply();
 }
 
 }  // namespace virtio
