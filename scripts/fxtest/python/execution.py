@@ -389,6 +389,7 @@ class TestExecution:
             symbolizer_args = exec_env.fx_cmd_line("ffx", "debug", "symbolize")
         command = self.command_line()
         env = self.environment() or {}
+        cwd = env.pop("CWD", self._exec_env.fuchsia_dir)
 
         outdir = self._outdir
         maybe_temp_dir: tempfile.TemporaryDirectory[str] | None = None
@@ -432,6 +433,7 @@ class TestExecution:
             env=env,
             timeout=timeout,
             abort_signal=abort_signal,
+            cwd=cwd,
         )
 
         if maybe_temp_dir is not None:
@@ -502,6 +504,7 @@ class TestExecution:
                             parent=parent,
                             print_verbatim=True,
                             input_bytes=error_log.encode(),
+                            cwd=self._exec_env.fuchsia_dir,
                         )
                         if not gemini_output or gemini_output.return_code != 0:
                             recorder.emit_warning_message(
@@ -612,6 +615,7 @@ async def get_device_environment_from_exec_env(
     ssh_output = await run_command(
         *exec_env.fx_cmd_line("ffx", "target", "list", "--format", "addresses"),
         recorder=recorder,
+        cwd=exec_env.fuchsia_dir,
     )
     if not ssh_output or ssh_output.return_code != 0:
         raise DeviceConfigError("Failed to get the ssh address of the target")
@@ -625,6 +629,7 @@ async def get_device_environment_from_exec_env(
     target_output = await run_command(
         *exec_env.fx_cmd_line("ffx", "target", "default", "get"),
         recorder=recorder,
+        cwd=exec_env.fuchsia_dir,
     )
     if not target_output or target_output.return_code != 0:
         raise DeviceConfigError("Failed to get the target name")
@@ -642,6 +647,7 @@ async def get_device_environment_from_exec_env(
             "ssh.priv",
         ),
         recorder=recorder,
+        cwd=exec_env.fuchsia_dir,
     )
     if not ssh_key_output or ssh_key_output.return_code != 0:
         msg = "No return information"
@@ -669,6 +675,7 @@ async def run_command(
     abort_signal: asyncio.Event | None = None,
     quiet_mode: bool = False,
     input_bytes: bytes | None = None,
+    cwd: str | None = None,
 ) -> command.CommandOutput | None:
     """Utility method to run a test command asynchronously.
 
@@ -704,11 +711,14 @@ async def run_command(
             name, list(args), env, parent=parent, quiet_mode=quiet_mode
         )
     try:
+        effective_env = env.copy() if env else {}
+        if cwd:
+            effective_env["CWD"] = cwd
         started = await command.AsyncCommand.create(
             name,
             *args,
             symbolizer_args=symbolizer_args,
-            env=env,
+            env=effective_env if effective_env else None,
             timeout=timeout,
             input_bytes=input_bytes,
         )

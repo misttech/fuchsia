@@ -692,6 +692,7 @@ class AsyncMain:
                 *exec_env.fx_cmd_line("ota", "--no-build"),
                 recorder=recorder,
                 print_verbatim=True,
+                cwd=exec_env.fuchsia_dir,
             )
             if ota_result is None or ota_result.return_code != 0:
                 recorder.emit_warning_message(
@@ -848,6 +849,7 @@ class AsyncMain:
                     "--ignore-device-test-errors",
                 ),
                 recorder=recorder,
+                cwd=exec_env.fuchsia_dir,
             )
             if result is None or result.return_code != 0:
                 suffix = ""
@@ -975,6 +977,7 @@ class AsyncMain:
                         for arg_pair in arg_threshold_pairs
                     ],
                     "Find suggestions",
+                    exec_env,
                     recorder=recorder,
                     maximum_parallel=10,
                 )
@@ -1226,7 +1229,7 @@ class AsyncMain:
                 recorder=recorder,
                 parent=build_id,
                 print_verbatim=True,
-                env={"CWD": exec_env.out_dir},
+                cwd=exec_env.fuchsia_dir,
             )
             if not output:
                 raise self._PublishException("Failure publishing packages.")
@@ -1346,6 +1349,7 @@ class AsyncMain:
                         *exec_env.fx_cmd_line("ota"),
                         recorder=recorder,
                         print_verbatim=True,
+                        cwd=exec_env.fuchsia_dir,
                     )
                     if not output or output.return_code != 0:
                         recorder.emit_warning_message("OTA failed")
@@ -1759,6 +1763,7 @@ class AsyncMain:
                 if (cmd_line := e.enumerate_cases_command_line()) is not None
             ],
             group_name="Enumerate test cases",
+            exec_env=exec_env,
             recorder=recorder,
             maximum_parallel=8,
         )
@@ -1808,6 +1813,7 @@ class AsyncMain:
                     recorder=recorder,
                     abort_signal=cancel_event,
                     quiet_mode=True,
+                    cwd=exec_env.fuchsia_dir,
                 )
             ),
             cancel_event,
@@ -1835,6 +1841,7 @@ async def has_package_server_connected_to_device(
         ),
         recorder=recorder,
         parent=parent,
+        cwd=exec_env.fuchsia_dir,
     )
     return output is not None and output.return_code == 0
 
@@ -1858,6 +1865,7 @@ async def run_build_with_suspended_output(
         exec_env.fx_cmd_line("build", *build_command_line),
         stdout=stdout,
         stderr=stderr,
+        cwd=exec_env.fuchsia_dir,
     )
     return return_code
 
@@ -1865,6 +1873,7 @@ async def run_build_with_suspended_output(
 async def run_commands_in_parallel(
     commands: list[list[str]],
     group_name: str,
+    exec_env: environment.ExecutionEnvironment,
     recorder: event.EventRecorder | None = None,
     maximum_parallel: int | None = None,
 ) -> list[command.CommandOutput | None]:
@@ -1887,7 +1896,10 @@ async def run_commands_in_parallel(
 
             async def set_index(i: int) -> None:
                 output[i] = await execution.run_command(
-                    *commands[i], recorder=recorder, parent=parent
+                    *commands[i],
+                    recorder=recorder,
+                    parent=parent,
+                    cwd=exec_env.fuchsia_dir,
                 )
 
             in_progress.add(asyncio.create_task(set_index(index)))
