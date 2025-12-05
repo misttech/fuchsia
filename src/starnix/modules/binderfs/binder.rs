@@ -888,7 +888,11 @@ impl BinderProcess {
     /// Enqueues `command` for the process and wakes up any thread that is waiting for commands.
     pub fn enqueue_command(&self, command: Command) {
         log_trace!("BinderProcess id={} enqueuing command {:?}", self.identifier, command);
-        if let Some(mut thread) = self.state.lock().thread_pool.get_available_thread() {
+        // Handle oneway transactions explicitly. They should always target the process queue to
+        // avoid accidentally handling them during an ongoing transaction.
+        if matches!(command, Command::OnewayTransaction(_)) {
+            self.command_queue.lock().push_back(command);
+        } else if let Some(mut thread) = self.state.lock().thread_pool.get_available_thread() {
             thread.enqueue_command(command);
         } else {
             self.command_queue.lock().push_back(command);
