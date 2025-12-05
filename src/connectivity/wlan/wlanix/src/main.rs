@@ -45,7 +45,10 @@ use nl80211::{Nl80211, Nl80211Attr, Nl80211BandAttr, Nl80211Cmd, Nl80211Frequenc
 // the same iface name, even when an iface is recreated.
 const IFACE_NAME: &str = "wlan";
 
-async fn handle_wifi_sta_iface_request(req: fidl_wlanix::WifiStaIfaceRequest) -> Result<(), Error> {
+async fn handle_wifi_sta_iface_request<I: IfaceManager>(
+    req: fidl_wlanix::WifiStaIfaceRequest,
+    iface_manager: Arc<I>,
+) -> Result<(), Error> {
     match req {
         fidl_wlanix::WifiStaIfaceRequest::GetName { responder } => {
             info!("fidl_wlanix::WifiStaIfaceRequest::GetName");
@@ -71,6 +74,24 @@ async fn handle_wifi_sta_iface_request(req: fidl_wlanix::WifiStaIfaceRequest) ->
             };
             responder.send(res).context("send SetScanOnlyMode response")?;
         }
+        fidl_wlanix::WifiStaIfaceRequest::SetMacAddress { mac_addr, responder } => {
+            let (iface, _iface_id) = get_iface_and_log(
+                "fidl_wlanix::WifiStaIfaceRequest::SetMacAddress",
+                iface_manager,
+                IFACE_NAME,
+            )
+            .await?;
+            let result = iface
+                .set_mac_address(mac_addr)
+                .await
+                .map_err(|status| status.into_raw())
+                .inspect_err(|raw_status| {
+                    if let Err(e) = zx::Status::ok(*raw_status) {
+                        error!("Failed to set mac address: {:?}", e);
+                    }
+                });
+            responder.send(result).context("send SetMacAddress response")?;
+        }
         fidl_wlanix::WifiStaIfaceRequest::_UnknownMethod { ordinal, .. } => {
             warn!("Unknown WifiStaIfaceRequest ordinal: {}", ordinal);
         }
@@ -78,11 +99,16 @@ async fn handle_wifi_sta_iface_request(req: fidl_wlanix::WifiStaIfaceRequest) ->
     Ok(())
 }
 
-async fn serve_wifi_sta_iface(iface_id: u16, reqs: fidl_wlanix::WifiStaIfaceRequestStream) {
+async fn serve_wifi_sta_iface<I: IfaceManager>(
+    iface_id: u16,
+    iface_manager: Arc<I>,
+    reqs: fidl_wlanix::WifiStaIfaceRequestStream,
+) {
     reqs.for_each_concurrent(None, |req| async {
         match req {
             Ok(req) => {
-                if let Err(e) = handle_wifi_sta_iface_request(req).await {
+                if let Err(e) = handle_wifi_sta_iface_request(req, Arc::clone(&iface_manager)).await
+                {
                     warn!("Failed to handle WifiStaIfaceRequest for iface {}: {}", iface_id, e);
                 }
             }
@@ -114,7 +140,7 @@ async fn handle_wifi_chip_request<I: IfaceManager>(
                         .await?;
                     telemetry_sender.send(TelemetryEvent::ClientIfaceCreated { iface_id });
                     responder.send(Ok(())).context("send CreateStaIface response")?;
-                    serve_wifi_sta_iface(iface_id, reqs).await;
+                    serve_wifi_sta_iface(iface_id, Arc::clone(&iface_manager), reqs).await;
                 }
                 None => {
                     responder
@@ -149,7 +175,7 @@ async fn handle_wifi_chip_request<I: IfaceManager>(
                             .context("send GetStaIface response")?;
                     } else {
                         responder.send(Ok(())).context("send GetStaIface response")?;
-                        serve_wifi_sta_iface(ifaces[0], reqs).await;
+                        serve_wifi_sta_iface(ifaces[0], Arc::clone(&iface_manager), reqs).await;
                     }
                 }
                 None => {
@@ -5086,5 +5112,26 @@ mod tests {
                 assert_eq!(payload.status, Some(zx::sys::ZX_ERR_INTERNAL));
             }
         );
+    }
+
+    #[fuchsia::test]
+    fn test_wifi_sta_iface_set_mac_address() {
+        let (mut test_helper, mut test_fut) = setup_wifi_test();
+        let mac: [u8; 6] = [1, 2, 3, 4, 5, 6];
+
+        let set_mac_fut = test_helper.wifi_sta_iface_proxy.set_mac_address(&mac);
+        let mut set_mac_fut = pin!(set_mac_fut);
+        assert_matches!(test_helper.exec.run_until_stalled(&mut set_mac_fut), Poll::Pending);
+        assert_matches!(test_helper.exec.run_until_stalled(&mut test_fut), Poll::Pending);
+        let response = assert_matches!(
+            test_helper.exec.run_until_stalled(&mut set_mac_fut),
+            Poll::Ready(Ok(response)) => response
+        );
+        assert_matches!(response, Ok(()));
+
+        let iface_calls = test_helper.iface_manager.get_iface_call_history();
+        assert_matches!(&iface_calls.lock()[0], ClientIfaceCall::SetMacAddress(addr) => {
+            assert_eq!(*addr, mac);
+        });
     }
 }

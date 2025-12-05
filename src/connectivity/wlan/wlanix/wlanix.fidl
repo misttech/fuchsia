@@ -156,6 +156,12 @@ open protocol WifiStaIface {
     flexible SetScanOnlyMode(resource table {
         1: enable bool;
     }) -> () error zx.Status;
+    /// Sets the MAC address of the client interface. To reset the MAC address to the default/factory
+    /// value, use the `GetFactoryMacAddress` method to retrieve the factory address and pass it to
+    /// this method.
+    flexible SetMacAddress(resource struct {
+        mac_addr fuchsia.wlan.ieee80211.MacAddr;
+    }) -> () error zx.Status;
 };
 
 open protocol Supplicant {

@@ -248,6 +248,12 @@ void FakeWlanix::SetScanOnlyMode(
   completer.Reply(fit::ok());
 }
 
+void FakeWlanix::SetMacAddress(fuchsia_wlan_wlanix::wire::WifiStaIfaceSetMacAddressRequest* requet,
+                               SetMacAddressCompleter::Sync& completer) {
+  AppendCommand(Command{.tag = CommandTag::kWifiStaIfaceSetMacAddress});
+  completer.Reply(fit::ok());
+}
+
 void FakeWlanix::handle_unknown_method(
     fidl::UnknownMethodMetadata<fuchsia_wlan_wlanix::WifiStaIface> metadata,
     fidl::UnknownMethodCompleter::Sync& completer) {

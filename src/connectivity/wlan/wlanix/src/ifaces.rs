@@ -11,7 +11,7 @@ use fuchsia_sync::Mutex;
 use futures::channel::oneshot;
 use futures::lock::Mutex as MutexAsync;
 use futures::{FutureExt, TryFutureExt, TryStreamExt, select};
-use ieee80211::Bssid;
+use ieee80211::{Bssid, MacAddr};
 use log::{error, info, warn};
 use std::collections::HashMap;
 use std::convert::TryFrom;
@@ -342,6 +342,7 @@ pub(crate) trait ClientIface: Sync + Send {
     async fn set_power_save_mode(&self, enabled: bool) -> Result<(), Error>;
     async fn set_suspend_mode(&self, enabled: bool) -> Result<(), Error>;
     async fn set_country(&self, code: [u8; 2]) -> Result<(), Error>;
+    async fn set_mac_address(&self, mac_addr: [u8; 6]) -> Result<(), zx::Status>;
 }
 
 #[derive(Debug, Clone)]
@@ -741,6 +742,18 @@ impl ClientIface for SmeClientIface {
             Err(e) => Err(e.into()),
         }
     }
+
+    async fn set_mac_address(&self, mac_addr: [u8; 6]) -> Result<(), zx::Status> {
+        info!("SmeClientIface.set_mac_address called with mac_addr: {}", MacAddr::from(mac_addr));
+        self.sme_proxy
+            .set_mac_address(&mac_addr)
+            .await
+            .map_err(|e| {
+                error!("FIDL error calling set_mac_address: {:?}", e);
+                zx::Status::INTERNAL
+            })?
+            .map_err(zx::Status::from_raw)
+    }
 }
 
 /// Wait until stream returns an OnConnectResult event or None. Ignore other event types.
@@ -838,6 +851,7 @@ pub mod test_utils {
         SetPowerSaveMode(bool),
         SetSuspendMode(bool),
         SetCountry([u8; 2]),
+        SetMacAddress([u8; 6]),
     }
 
     pub struct TestClientIface {
@@ -959,6 +973,11 @@ pub mod test_utils {
 
         async fn set_country(&self, code: [u8; 2]) -> Result<(), Error> {
             self.calls.lock().push(ClientIfaceCall::SetCountry(code));
+            Ok(())
+        }
+
+        async fn set_mac_address(&self, mac_addr: [u8; 6]) -> Result<(), zx::Status> {
+            self.calls.lock().push(ClientIfaceCall::SetMacAddress(mac_addr));
             Ok(())
         }
     }
@@ -1635,6 +1654,25 @@ mod tests {
         );
         responder.send(0).expect("Failed to send result");
         assert_matches!(exec.run_until_stalled(&mut set_country_fut), Poll::Ready(Ok(())));
+    }
+
+    #[test]
+    fn test_set_mac_address_on_iface() {
+        let (mut exec, _monitor_stream, mut sme_stream, _telemetry_receiver, _manager, iface) =
+            setup_test_manager_with_iface();
+        let test_mac_addr = [0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC];
+        let mut set_mac_fut = iface.set_mac_address(test_mac_addr);
+
+        assert_matches!(exec.run_until_stalled(&mut set_mac_fut), Poll::Pending);
+
+        let (mac_addr, responder) = assert_matches!(
+            exec.run_until_stalled(&mut sme_stream.next()),
+            Poll::Ready(Some(Ok(fidl_sme::ClientSmeRequest::SetMacAddress { mac_addr, responder }))) => (mac_addr, responder)
+        );
+        assert_eq!(mac_addr, test_mac_addr);
+        responder.send(Ok(())).expect("Failed to send SetMacAddress response");
+
+        assert_matches!(exec.run_until_stalled(&mut set_mac_fut), Poll::Ready(Ok(())));
     }
 
     #[test]
