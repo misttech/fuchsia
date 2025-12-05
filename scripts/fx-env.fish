@@ -22,7 +22,8 @@
 set -x FUCHSIA_DIR (readlink -f (dirname (dirname (status -f))))
 
 # export PATH to include .jiri_root/bin
-set jiri_root_bin "$FUCHSIA_DIR/.jiri_root/bin" if not contains $jiri_root_bin $PATH
+set jiri_root_bin "$FUCHSIA_DIR/.jiri_root/bin"
+if not contains $jiri_root_bin $PATH
   set -x PATH $PATH $jiri_root_bin
 end
 
