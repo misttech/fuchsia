@@ -16,6 +16,12 @@ extern PyTypeObject* ZxStatusType;
 // Creates the ZxStatus error type. Must only be run once.
 extern PyTypeObject* ZxStatusType_Create();
 
+// The (singleton) type of the FcStatus error type. Must be initialized using FcStatusType_Create().
+extern PyTypeObject* FcStatusType;
+
+// Creates the FcStatus error type. Must only be run once.
+extern PyTypeObject* FcStatusType_Create();
+
 }  // namespace error
 
 #endif  // SRC_DEVELOPER_FFX_LIB_FUCHSIA_CONTROLLER_CPP_FUCHSIA_CONTROLLER_INTERNAL_ERROR_H_

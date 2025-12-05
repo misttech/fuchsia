@@ -7,8 +7,11 @@
 #include <structmember.h>  // PyMemberDef.
 
 #include <sstream>
+#include <string>
 
 #include <fuchsia_controller_abi/utils.h>
+
+#include "fuchsia_controller.h"
 
 namespace error {
 
@@ -18,7 +21,7 @@ namespace {
 
 // TODO(https://fxbug.dev/42077810): This has been copied from zircon code, as vdso doesn't build
 // this for host.
-const char *zx_status_get_string(zx_status_t status) {
+std::string zx_status_get_string(zx_status_t status) {
   switch (status) {
     case ZX_OK:
       return "ZX_OK";
@@ -113,9 +116,210 @@ const char *zx_status_get_string(zx_status_t status) {
     case ZX_ERR_CONNECTION_ABORTED:
       return "ZX_ERR_CONNECTION_ABORTED";
     default:
-      return "(UNKNOWN)";
+      // In the event that this has bottomed out, add some debug info with the
+      // raw error code.
+      std::ostringstream ss;
+      ss << "(UNKNOWN: " << status << ")";
+      return ss.str();
   }
 }
+
+std::string fc_status_get_string(fc_status_t status) {
+  switch (status) {
+    case FC_OK:
+      return "FC_OK";
+    case FC_ERR_INVALID_ARGS:
+      return "FC_ERR_INVALID_ARGS";
+    case FC_ERR_NOT_SUPPORTED:
+      return "FC_ERR_NOT_SUPPORTED";
+    case FC_ERR_NOT_FOUND:
+      return "FC_ERR_NOT_FOUND";
+    case FC_ERR_BUFFER_TOO_SMALL:
+      return "FC_ERR_BUFFER_TOO_SMALL";
+    case FC_ERR_SHOULD_WAIT:
+      return "FC_ERR_SHOULD_WAIT";
+    case FC_ERR_INTERNAL:
+      return "FC_ERR_INTERNAL";
+    case FC_ERR_SOCKET_WRITE:
+      return "FC_ERR_SOCKET_WRITE";
+    case FC_ERR_CHANNEL_WRITE:
+      return "FC_ERR_CHANNEL_WRITE";
+    case FC_ERR_FDOMAIN:
+      return "FC_ERR_FDOMAIN";
+    case FC_ERR_PROTOCOL:
+      return "FC_ERR_PROTOCOL";
+    case FC_ERR_PROTOCOL_OBJECT_TYPE_INCOMPATIBLE:
+      return "FC_ERR_PROTOCOL_OBJECT_TYPE_INCOMPATIBLE";
+    case FC_ERR_PROTOCOL_RIGHTS_INCOMPATIBLE:
+      return "FC_ERR_PROTOCOL_RIGHTS_INCOMPATIBLE";
+    case FC_ERR_PROTOCOL_STREAM_EVENT_INCOMPATIBLE:
+      return "FC_ERR_PROTOCOL_STREAM_EVENT_INCOMPATIBLE";
+    case FC_ERR_TRANSPORT:
+      return "FC_ERR_TRANSPORT";
+    case FC_ERR_CONNECTION_MISMATCH:
+      return "FC_ERR_CONNECTION_MISMATCH";
+    case FC_ERR_STREAMING_ABORTED:
+      return "FC_ERR_STREAMING_ABORTED";
+    default:
+      // In the event that this has bottomed out, add some debug info.
+      std::ostringstream ss;
+      ss << "(UNKNOWN: " << status
+         << ". As ZxStatus this is: " << zx_status_get_string(static_cast<zx_status_t>(status))
+         << ")";
+      return ss.str();
+  }
+}
+
+// This was copied and macro'd from fuchsia_controller.h
+PyObject *FcStatus_make_constants() {
+  PyObject *dict = PyDict_New();
+  if (dict == nullptr) {
+    return nullptr;
+  }
+  if (PyDict_SetItemString(dict, "FC_OK", PyLong_FromLong(FC_OK)) < 0) {
+    return nullptr;
+  }
+  PyDict_SetItemString(dict, "FC_OK", PyLong_FromLong(FC_OK));
+  PyDict_SetItemString(dict, "FC_ERR_INVALID_ARGS", PyLong_FromLong(FC_ERR_INVALID_ARGS));
+  PyDict_SetItemString(dict, "FC_ERR_NOT_SUPPORTED", PyLong_FromLong(FC_ERR_NOT_SUPPORTED));
+  PyDict_SetItemString(dict, "FC_ERR_NOT_FOUND", PyLong_FromLong(FC_ERR_NOT_FOUND));
+  PyDict_SetItemString(dict, "FC_ERR_BUFFER_TOO_SMALL", PyLong_FromLong(FC_ERR_BUFFER_TOO_SMALL));
+  PyDict_SetItemString(dict, "FC_ERR_SHOULD_WAIT", PyLong_FromLong(FC_ERR_SHOULD_WAIT));
+  PyDict_SetItemString(dict, "FC_ERR_INTERNAL", PyLong_FromLong(FC_ERR_INTERNAL));
+  PyDict_SetItemString(dict, "FC_ERR_SOCKET_WRITE", PyLong_FromLong(FC_ERR_SOCKET_WRITE));
+  PyDict_SetItemString(dict, "FC_ERR_CHANNEL_WRITE", PyLong_FromLong(FC_ERR_CHANNEL_WRITE));
+  PyDict_SetItemString(dict, "FC_ERR_FDOMAIN", PyLong_FromLong(FC_ERR_FDOMAIN));
+  PyDict_SetItemString(dict, "FC_ERR_PROTOCOL", PyLong_FromLong(FC_ERR_PROTOCOL));
+  PyDict_SetItemString(dict, "FC_ERR_PROTOCOL_OBJECT_TYPE_INCOMPATIBLE",
+                       PyLong_FromLong(FC_ERR_PROTOCOL_OBJECT_TYPE_INCOMPATIBLE));
+  PyDict_SetItemString(dict, "FC_ERR_PROTOCOL_RIGHTS_INCOMPATIBLE",
+                       PyLong_FromLong(FC_ERR_PROTOCOL_RIGHTS_INCOMPATIBLE));
+  PyDict_SetItemString(dict, "FC_ERR_PROTOCOL_STREAM_EVENT_INCOMPATIBLE",
+                       PyLong_FromLong(FC_ERR_PROTOCOL_STREAM_EVENT_INCOMPATIBLE));
+  PyDict_SetItemString(dict, "FC_ERR_TRANSPORT", PyLong_FromLong(FC_ERR_TRANSPORT));
+  PyDict_SetItemString(dict, "FC_ERR_CONNECTION_MISMATCH",
+                       PyLong_FromLong(FC_ERR_CONNECTION_MISMATCH));
+  PyDict_SetItemString(dict, "FC_ERR_STREAMING_ABORTED", PyLong_FromLong(FC_ERR_STREAMING_ABORTED));
+  return dict;
+}
+
+std::string FcStatus_reprstr_helper(PyObject *self) {
+  if (!PyObject_HasAttrString(self, "args")) {
+    return "unknown: object has no args";
+  }
+  auto args = PyObject_GetAttrString(self, "args");
+  if (PyTuple_Size(args) < 1) {
+    Py_DECREF(args);
+    return "unknown: no args set";
+  }
+  Py_DECREF(args);
+  std::stringstream ss;
+  PyObject *i = PyTuple_GetItem(args, 0);
+  if (!PyLong_Check(i)) {
+    return "unknown: non-int error code in arg[0]";
+  }
+  ss << fc_status_get_string(static_cast<fc_status_t>(PyLong_AsLong(i)));
+  PyObject *str = PyTuple_GetItem(args, 1);
+  // In the event that there are some types being created manually, e.g. there
+  // are no string args, return the string we have so far.
+  if (str == nullptr) {
+    PyErr_Clear();
+    return ss.str();
+  }
+  if (PyUnicode_Check(str)) {
+    const char *val = PyUnicode_AsUTF8AndSize(str, nullptr);
+    if (val != nullptr) {
+      auto view = std::string_view(val);
+      ss << ": " << view;
+    }
+  }
+  return ss.str();
+}
+
+PyObject *FcStatus_repr(PyObject *self, PyTypeObject *defining_class, PyObject *const *args,
+                        Py_ssize_t nargs, PyObject *kwnames) {
+  return PyUnicode_FromString(FcStatus_reprstr_helper(self).c_str());
+}
+
+PyObject *FcStatus_str(PyObject *self) {
+  std::stringstream ss;
+  ss << "FC status: " << FcStatus_reprstr_helper(self);
+  return PyUnicode_FromString(ss.str().c_str());
+}
+
+PyMethodDef FcStatus_repr_def = {
+    "__repr__",
+    reinterpret_cast<PyCFunction>(FcStatus_repr),
+    METH_METHOD | METH_FASTCALL | METH_KEYWORDS,
+    nullptr,
+};
+
+PyMethodDef FcStatus_str_def = {
+    "__str__",
+    reinterpret_cast<PyCFunction>(FcStatus_str),
+    METH_METHOD | METH_FASTCALL | METH_KEYWORDS,
+    nullptr,
+};
+
+PyObject *ZxStatus_raw(PyObject *self) {
+  auto args = fc::abi::utils::Object(PyObject_GetAttrString(self, "args"));
+  if (args == nullptr) {
+    return nullptr;
+  }
+  if (PyTuple_Size(args.get()) < 1) {
+    PyErr_Format(PyExc_RuntimeError, "class does not have any arguments set. This is a BUG.");
+    return nullptr;
+  }
+  PyObject *i = PyTuple_GetItem(args.get(), 0);
+  if (!PyLong_Check(i)) {
+    PyErr_Format(PyExc_RuntimeError, "class does not have an integer argument set. This is a BUG");
+    return nullptr;
+  }
+  // This is a BORROWED reference. Need to increment it so it doesn't get garbage collected by
+  // accident.
+  Py_INCREF(i);
+  return i;
+}
+
+PyObject *FcStatus_desc(PyObject *self) {
+  auto args = fc::abi::utils::Object(PyObject_GetAttrString(self, "args"));
+  if (args == nullptr) {
+    return nullptr;
+  }
+  // Want to make sure there's at least SOMETHING set.
+  if (PyTuple_Size(args.get()) < 1) {
+    PyErr_Format(PyExc_RuntimeError, "class does not have any arguments set. This is a BUG.");
+    return nullptr;
+  }
+  // If we only have a code, we have no description, so just return None.
+  if (PyTuple_Size(args.get()) < 2) {
+    Py_RETURN_NONE;
+  }
+  PyObject *i = PyTuple_GetItem(args.get(), 1);
+  if (!PyUnicode_Check(i)) {
+    PyErr_Format(PyExc_RuntimeError,
+                 "class does not have a string argument set for the description. This is a BUG");
+    return nullptr;
+  }
+  // This is a BORROWED reference, so we need to increment it to prevent accidental garbage
+  // collection.
+  Py_INCREF(i);
+  return i;
+}
+
+PyMethodDef FcStatus_desc_def = {
+    "desc",
+    reinterpret_cast<PyCFunction>(FcStatus_desc),
+    METH_METHOD | METH_FASTCALL | METH_KEYWORDS,
+    nullptr,
+};
+
+PyMethodDef FcStatus_code_def = {
+    "code",
+    reinterpret_cast<PyCFunction>(ZxStatus_raw),
+    METH_METHOD | METH_FASTCALL | METH_KEYWORDS,
+    nullptr,
+};
 
 std::string ZxStatus_reprstr_helper(PyObject *self) {
   if (!PyObject_HasAttrString(self, "args")) {
@@ -145,26 +349,6 @@ PyObject *ZxStatus_str(PyObject *self) {
   std::stringstream ss;
   ss << "FIDL status: " << ZxStatus_reprstr_helper(self);
   return PyUnicode_FromString(ss.str().c_str());
-}
-
-PyObject *ZxStatus_raw(PyObject *self) {
-  auto args = fc::abi::utils::Object(PyObject_GetAttrString(self, "args"));
-  if (args == nullptr) {
-    return nullptr;
-  }
-  if (PyTuple_Size(args.get()) < 1) {
-    PyErr_Format(PyExc_RuntimeError, "class does not have any arguments set. This is a BUG.");
-    return nullptr;
-  }
-  PyObject *i = PyTuple_GetItem(args.get(), 0);
-  if (!PyLong_Check(i)) {
-    PyErr_Format(PyExc_RuntimeError, "class does not have an integer argument set. This is a BUG");
-    return nullptr;
-  }
-  // This is a BORROWED reference. Need to increment it so it doesn't get garbage collected by
-  // accident.
-  Py_INCREF(i);
-  return i;
 }
 
 PyMethodDef ZxStatus_repr_def = {
@@ -251,6 +435,7 @@ PyObject *ZxStatus_make_constants() {
 
 }  // namespace
 
+PyTypeObject *FcStatusType = nullptr;
 PyTypeObject *ZxStatusType = nullptr;
 
 // This is necessary as Python exception extensions in C are weird. Python exceptions can't be
@@ -288,6 +473,44 @@ PyTypeObject *ZxStatusType_Create() {
   }
   Py_IncRef(reinterpret_cast<PyObject *>(res));
   ZxStatusType = res;
+  return res;
+}
+
+PyTypeObject *FcStatusType_Create() {
+  assert(FcStatusType == nullptr);
+  auto constants = FcStatus_make_constants();
+  if (constants == nullptr) {
+    return nullptr;
+  }
+  auto res = reinterpret_cast<PyTypeObject *>(
+      PyErr_NewException("fuchsia_controller_internal.FcStatus", PyExc_Exception, constants));
+  if (res == nullptr) {
+    return nullptr;
+  }
+  auto repr = PyDescr_NewMethod(res, &FcStatus_repr_def);
+  if (repr == nullptr) {
+    return nullptr;
+  }
+  if (PyObject_SetAttrString(reinterpret_cast<PyObject *>(res), "__repr__", repr) < 0) {
+    return nullptr;
+  }
+  auto desc = PyDescr_NewMethod(res, &FcStatus_desc_def);
+  if (PyObject_SetAttrString(reinterpret_cast<PyObject *>(res), "desc", desc) < 0) {
+    return nullptr;
+  }
+  auto code = PyDescr_NewMethod(res, &FcStatus_code_def);
+  if (PyObject_SetAttrString(reinterpret_cast<PyObject *>(res), "code", code) < 0) {
+    return nullptr;
+  }
+  auto str = PyDescr_NewMethod(res, &FcStatus_str_def);
+  if (str == nullptr) {
+    return nullptr;
+  }
+  if (PyObject_SetAttrString(reinterpret_cast<PyObject *>(res), "__str__", str) < 0) {
+    return nullptr;
+  }
+  Py_IncRef(reinterpret_cast<PyObject *>(res));
+  FcStatusType = res;
   return res;
 }
 

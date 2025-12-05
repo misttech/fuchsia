@@ -1085,6 +1085,14 @@ PyMODINIT_FUNC PyInit_libfuchsia_controller_internal() {
   if (m == nullptr) {
     return nullptr;
   }
+  auto fc_status_type = error::FcStatusType_Create();
+  if (fc_status_type == nullptr) {
+    return nullptr;
+  }
+  if (PyModule_AddObject(m.get(), "FcStatus", reinterpret_cast<PyObject *>(fc_status_type)) < 0) {
+    Py_DECREF(fc_status_type);
+    return nullptr;
+  }
   auto zx_status_type = error::ZxStatusType_Create();
   if (zx_status_type == nullptr) {
     return nullptr;

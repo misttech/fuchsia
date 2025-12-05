@@ -3,9 +3,9 @@
 # found in the LICENSE file.
 
 import fuchsia_controller_internal
-from fuchsia_controller_internal import ZxStatus
+from fuchsia_controller_internal import FcStatus, ZxStatus
 
-__all__ = ["ZxStatus"]
+__all__ = ["FcStatus", "ZxStatus"]
 
 from abc import ABC, abstractmethod
 from typing import Self

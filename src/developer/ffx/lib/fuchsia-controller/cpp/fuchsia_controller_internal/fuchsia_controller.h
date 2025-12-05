@@ -20,6 +20,31 @@ typedef struct _ffx_config_t {
   const char* value;
 } ffx_config_t;
 
+// Similar to zx_status_t but for fuchsia-controller specifically.
+typedef int32_t fc_status_t;
+
+// Non-fdomain definitions. These are all zx_status_t analogues (though the
+// numbers are different).
+#define FC_OK (0)
+#define FC_ERR_INVALID_ARGS (-44444)
+#define FC_ERR_NOT_SUPPORTED (-55555)
+#define FC_ERR_NOT_FOUND (-66666)
+#define FC_ERR_BUFFER_TOO_SMALL (-77777)
+#define FC_ERR_SHOULD_WAIT (-88888)
+#define FC_ERR_INTERNAL (-99999)
+
+// FDomain top-level error definitions.
+#define FC_ERR_SOCKET_WRITE (-1)
+#define FC_ERR_CHANNEL_WRITE (-2)
+#define FC_ERR_FDOMAIN (-3)
+#define FC_ERR_PROTOCOL (-4)
+#define FC_ERR_PROTOCOL_OBJECT_TYPE_INCOMPATIBLE (-5)
+#define FC_ERR_PROTOCOL_RIGHTS_INCOMPATIBLE (-6)
+#define FC_ERR_PROTOCOL_STREAM_EVENT_INCOMPATIBLE (-7)
+#define FC_ERR_TRANSPORT (-8)
+#define FC_ERR_CONNECTION_MISMATCH (-9)
+#define FC_ERR_STREAMING_ABORTED (-10)
+
 extern void create_ffx_lib_context(ffx_lib_context_t** ctx, char* error_scratch, uint64_t size);
 
 extern zx_status_t create_ffx_env_context(ffx_env_context_t** env_ctx, ffx_lib_context_t* lib_ctx,

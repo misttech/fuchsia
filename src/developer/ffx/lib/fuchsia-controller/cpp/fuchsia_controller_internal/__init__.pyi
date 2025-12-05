@@ -5,6 +5,31 @@
 # This stub file is used for both mypy typechecking at compile time, as well as IDE assistance
 # via pyright/pylance.
 
+class FcStatus(Exception):
+  FC_OK: int
+  FC_ERR_INVALID_ARGS: int
+  FC_ERR_NOT_SUPPORTED: int
+  FC_ERR_NOT_FOUND: int
+  FC_ERR_BUFFER_TOO_SMALL: int
+  FC_ERR_SHOULD_WAIT: int
+  FC_ERR_INTERNAL: int
+  FC_ERR_SOCKET_WRITE: int
+  FC_ERR_CHANNEL_WRITE: int
+  FC_ERR_FDOMAIN: int
+  FC_ERR_PROTOCOL: int
+  FC_ERR_PROTOCOL_OBJECT_TYPE_INCOMPATIBLE: int
+  FC_ERR_PROTOCOL_RIGHTS_INCOMPATIBLE: int
+  FC_ERR_PROTOCOL_STREAM_EVENT_INCOMPATIBLE: int
+  FC_ERR_TRANSPORT: int
+  FC_ERR_CONNECTION_MISMATCH: int
+  FC_ERR_STREAMING_ABORTED: int
+
+  def code(self) -> int: ...
+  def desc(self) -> str | None: ...
+  def __repr__(self) -> str: ...
+  def __str__(self) -> str: ...
+
+
 # TODO(https://fxbug.dev/346628306): It might be less code to define ZxStatus in Python
 # instead of exposing it via a C extension. The value of each zx_status_t is
 # stable, as they are copied other places, such as in rust-lang.
