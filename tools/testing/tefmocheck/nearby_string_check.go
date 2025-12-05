@@ -189,14 +189,16 @@ func (c *NearbyStringCheck) FailureReason() string {
 }
 
 func NearbyStringsChecks() []FailureModeCheck {
-	return []FailureModeCheck{
-		// For https://fxbug.dev/433753567
-		&NearbyStringCheck{
-			String1:            "WARN: Command failure occurred: ZX_ERR_IO_REFUSED: command failure",
-			String2:            "Format: Log Type - Time(microsec) - Message - Optional Info",
-			MaxDistanceLines:   20,
-			Type:               serialLogType,
-			SkipAllPassedTests: true,
-		},
-	}
+	// An example check here might look like:
+	//
+	// []FailureModeCheck{
+	// 	&NearbyStringCheck{
+	// 		// Neither log is concerning on its own, but appearing near each other indicates that
+	// 		// a USB error was closely followed by a device reset, which is unexpected in tests.
+	// 		String1:		"ZX_ERR_IO_REFUSED: Resetting usb!",
+	// 		String2:		"Format: Log Type - Time(microsec) - Message - Optional Info",
+	//		MaxDistanceLines:	20,
+	// 	},
+	// }
+	return nil
 }
