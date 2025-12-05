@@ -166,7 +166,7 @@ impl core::ops::Mul<NonZeroU32> for NonZeroDuration {
 
 /// Rounds `x` up to the next multiple of 4 unless `x` is already a multiple of
 /// 4.
-pub(crate) fn round_to_next_multiple_of_four(x: usize) -> usize {
+pub(crate) const fn round_to_next_multiple_of_four(x: usize) -> usize {
     (x + 3) & !3
 }
 

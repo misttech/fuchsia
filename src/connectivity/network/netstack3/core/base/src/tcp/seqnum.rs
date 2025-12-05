@@ -287,12 +287,12 @@ impl WindowScale {
     /// Creates a new `WindowScale`.
     ///
     /// Returns `None` if the input exceeds the maximum possible value.
-    pub fn new(ws: u8) -> Option<Self> {
-        (ws <= Self::MAX.get()).then_some(WindowScale(ws))
+    pub const fn new(ws: u8) -> Option<Self> {
+        if ws <= Self::MAX.get() { Some(WindowScale(ws)) } else { None }
     }
 
     /// Returns the inner value.
-    pub fn get(&self) -> u8 {
+    pub const fn get(&self) -> u8 {
         let Self(ws) = self;
         *ws
     }

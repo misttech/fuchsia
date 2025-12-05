@@ -116,7 +116,7 @@ pub mod tls_client_hello_v4 {
     use super::*;
 
     use crate::ip::DscpAndEcn;
-    use crate::tcp::options::TcpOption;
+    use crate::tcp::options::{TcpOptionsBuilder, TimestampOption};
 
     pub const ETHERNET_FRAME: TestPacket<EthernetFrameMetadata> = TestPacket {
         bytes: &[
@@ -286,7 +286,13 @@ pub mod tls_client_hello_v4 {
             syn: false,
             fin: false,
             window_size: 4106,
-            options: &[TcpOption::Timestamp { ts_val: 644_726_309, ts_echo_reply: 2_960_127_454 }],
+            options: TcpOptionsBuilder {
+                timestamp: Some(TimestampOption::new(644_726_309, 2_960_127_454)),
+                mss: None,
+                window_scale: None,
+                sack_permitted: false,
+                sack_blocks: None,
+            },
         },
         body_range: 32..557,
     };
@@ -372,7 +378,7 @@ pub mod syn_v6 {
     use super::*;
 
     use crate::ip::DscpAndEcn;
-    use crate::tcp::options::TcpOption;
+    use crate::tcp::options::{TcpOptionsBuilder, TimestampOption};
 
     pub const ETHERNET_FRAME: TestPacket<EthernetFrameMetadata> = TestPacket {
         bytes: &[
@@ -434,12 +440,13 @@ pub mod syn_v6 {
             rst: false,
             fin: false,
             syn: true,
-            options: &[
-                TcpOption::Mss(1440),
-                TcpOption::SackPermitted,
-                TcpOption::Timestamp { ts_val: 3_880_784_215, ts_echo_reply: 0 },
-                TcpOption::WindowScale(7),
-            ],
+            options: TcpOptionsBuilder {
+                mss: Some(1440),
+                sack_permitted: true,
+                timestamp: Some(TimestampOption::new(3_880_784_215, 0)),
+                window_scale: Some(7),
+                sack_blocks: None,
+            },
         },
         body_range: 40..40,
     };

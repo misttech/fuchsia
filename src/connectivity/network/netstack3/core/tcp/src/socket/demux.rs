@@ -1227,7 +1227,7 @@ where
         Some(Control::FIN) => builder.fin(true),
         Some(Control::RST) => builder.rst(true),
     }
-    TcpSegmentBuilderWithOptions::new(builder, options.iter())
+    TcpSegmentBuilderWithOptions::new(builder, options.builder())
         .unwrap_or_else(|TcpOptionsTooLongError| {
             panic!("Too many TCP options");
         })
@@ -1264,8 +1264,11 @@ where
 #[cfg(test)]
 mod test {
     use ip_test_macro::ip_test;
-    use netstack3_base::{HandshakeOptions, SegmentOptions, UnscaledWindowSize};
+    use netstack3_base::{
+        HandshakeOptions, Options, ResetOptions, SackBlocks, SegmentOptions, UnscaledWindowSize,
+    };
     use packet::{ParseBuffer as _, Serializer as _};
+    use packet_formats::tcp::options::TcpOptions as _;
     use test_case::test_case;
 
     use super::*;
@@ -1331,11 +1334,30 @@ mod test {
             UnscaledWindowSize::from(parsed_segment.window_size()),
             UnscaledWindowSize::from(u16::MAX)
         );
-        let options = header.options;
-        assert_eq!(options.iter().count(), parsed_segment.iter_options().count());
-        for (orig, parsed) in options.iter().zip(parsed_segment.iter_options()) {
-            assert_eq!(orig, parsed);
-        }
+
+        let (mss, window_scale, sack_permitted, sack_blocks, timestamp) = match header.options {
+            Options::Handshake(HandshakeOptions {
+                mss,
+                window_scale,
+                sack_permitted,
+                timestamp,
+            }) => (mss, window_scale, sack_permitted, SackBlocks::EMPTY, timestamp),
+            Options::Segment(SegmentOptions { timestamp, sack_blocks }) => {
+                (None, None, false, sack_blocks, timestamp)
+            }
+            Options::Reset(ResetOptions { timestamp }) => {
+                (None, None, false, SackBlocks::EMPTY, timestamp)
+            }
+        };
+        assert_eq!(mss.map(|mss| mss.get()), parsed_segment.options().mss());
+        assert_eq!(window_scale.map(|ws| ws.get()), parsed_segment.options().window_scale());
+        assert_eq!(sack_permitted, parsed_segment.options().sack_permitted());
+        assert_eq!(sack_blocks.as_slice(), parsed_segment.options().sack_blocks());
+        assert_eq!(
+            timestamp.as_ref().map(Into::into).as_ref(),
+            parsed_segment.options().timestamp()
+        );
+
         assert_eq!(parsed_segment.into_body(), expected_body);
     }
 }

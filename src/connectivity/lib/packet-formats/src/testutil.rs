@@ -25,7 +25,7 @@ use crate::ip::{DscpAndEcn, IpExt, Ipv4Proto};
 use crate::ipv4::{Ipv4FragmentType, Ipv4Header, Ipv4Packet};
 use crate::ipv6::{Ipv6Header, Ipv6Packet};
 use crate::tcp::TcpSegment;
-use crate::tcp::options::TcpOption;
+use crate::tcp::options::{TcpOptions, TcpOptionsBuilder};
 use crate::udp::UdpPacket;
 
 #[cfg(test)]
@@ -77,7 +77,7 @@ pub struct TcpSegmentMetadata {
     pub syn: bool,
     pub fin: bool,
     pub window_size: u16,
-    pub options: &'static [TcpOption<'static>],
+    pub options: TcpOptionsBuilder<'static>,
 }
 
 /// Metadata of a UDP packet.
@@ -160,7 +160,15 @@ pub fn verify_tcp_segment(segment: &TcpSegment<&[u8]>, expected: TestPacket<TcpS
     assert_eq!(segment.syn(), expected.metadata.syn);
     assert_eq!(segment.fin(), expected.metadata.fin);
     assert_eq!(segment.window_size(), expected.metadata.window_size);
-    assert_eq!(segment.iter_options().collect::<Vec<_>>().as_slice(), expected.metadata.options);
+
+    let TcpOptionsBuilder { mss, window_scale, sack_permitted, sack_blocks, timestamp } =
+        expected.metadata.options;
+    assert_eq!(segment.options().mss(), mss);
+    assert_eq!(segment.options().window_scale(), window_scale);
+    assert_eq!(segment.options().sack_permitted(), sack_permitted);
+    assert_eq!(segment.options().sack_blocks(), sack_blocks);
+    assert_eq!(segment.options().timestamp(), timestamp.as_ref());
+
     assert_eq!(segment.body(), &expected.bytes[expected.body_range]);
 }
 

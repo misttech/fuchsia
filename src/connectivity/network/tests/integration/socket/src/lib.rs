@@ -61,7 +61,7 @@ use packet_formats::igmp::messages::IgmpPacket;
 use packet_formats::ip::{IpPacketBuilder as _, IpProto, Ipv4Proto, Ipv6Proto};
 use packet_formats::ipv4::{Ipv4Header as _, Ipv4Packet, Ipv4PacketBuilder};
 use packet_formats::ipv6::{Ipv6Header, Ipv6Packet, Ipv6PacketBuilder};
-use packet_formats::tcp::options::TcpOption;
+use packet_formats::tcp::options::TcpOptionsBuilder;
 use packet_formats::tcp::{
     TcpParseArgs, TcpSegment, TcpSegmentBuilder, TcpSegmentBuilderWithOptions,
 };
@@ -4186,7 +4186,11 @@ async fn tcp_update_mss_from_pmtu<N: Netstack, I: TestPmtuIpExt>(name: &str, pri
             .wrap_in(
                 // Advertise an initial MSS that is large enough to fit the sender's payload in
                 // a single segment.
-                TcpSegmentBuilderWithOptions::new(syn_ack, [TcpOption::Mss(1500)]).unwrap(),
+                TcpSegmentBuilderWithOptions::new(
+                    syn_ack,
+                    TcpOptionsBuilder { mss: Some(1500), ..Default::default() },
+                )
+                .unwrap(),
             )
             .wrap_in(I::PacketBuilder::new(ip.dst_ip(), ip.src_ip(), u8::MAX, IpProto::Tcp.into()))
             .wrap_in(ethernet_builder.clone())

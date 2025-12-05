@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use core::borrow::Borrow;
 use core::convert::Infallible as Never;
 use core::fmt::Debug;
 use core::num::NonZeroU16;
@@ -11,7 +10,6 @@ use net_types::ip::{
     GenericOverIp, Ip, IpAddress, IpInvariant, IpVersionMarker, Ipv4, Ipv4Addr, Ipv6, Ipv6Addr,
 };
 use netstack3_base::{Options, PayloadLen, SegmentHeader};
-use packet::records::options::OptionSequenceBuilder;
 use packet::{
     Buf, Buffer, BufferMut, BufferProvider, BufferViewMut, DynSerializer, DynamicSerializer,
     EitherSerializer, EmptyBuf, GrowBufferMut, InnerSerializer, LayoutBufferAlloc, Nested,
@@ -38,7 +36,7 @@ use packet_formats::igmp::{self, IgmpPacketBuilder};
 use packet_formats::ip::{IpExt, IpPacketBuilder, IpProto, Ipv4Proto, Ipv6Proto};
 use packet_formats::ipv4::{Ipv4Header, Ipv4Packet, Ipv4PacketRaw};
 use packet_formats::ipv6::{Ipv6Header, Ipv6Packet, Ipv6PacketRaw};
-use packet_formats::tcp::options::TcpOption;
+use packet_formats::tcp::options::TcpOptionsBuilder;
 use packet_formats::tcp::{TcpSegmentBuilderWithOptions, TcpSegmentRaw};
 use packet_formats::udp::{UdpPacketBuilder, UdpPacketRaw};
 use zerocopy::{SplitByteSlice, SplitByteSliceMut};
@@ -1655,11 +1653,8 @@ impl<A: IpAddress, I: FilterIpExt, Inner> MaybeIcmpErrorMut<I>
     }
 }
 
-impl<'a, A: IpAddress, Inner: PayloadLen, I> MaybeTransportPacket
-    for Nested<Inner, TcpSegmentBuilderWithOptions<A, OptionSequenceBuilder<TcpOption<'a>, I>>>
-where
-    I: Iterator + Clone,
-    I::Item: Borrow<TcpOption<'a>>,
+impl<'a, A: IpAddress, Inner: PayloadLen> MaybeTransportPacket
+    for Nested<Inner, TcpSegmentBuilderWithOptions<A, TcpOptionsBuilder<'a>>>
 {
     fn transport_packet_data(&self) -> Option<TransportPacketData> {
         Some(TransportPacketData::Tcp {
@@ -2437,7 +2432,7 @@ fn parse_tcp_header<B: ParseBuffer, I: IpExt>(
     let packet = body.parse::<TcpSegmentRaw<_>>().ok()?;
 
     let (builder, options, body) = packet.into_builder_options(src_ip, dst_ip)?;
-    let options = Options::try_from_iter(&builder, options.iter()).ok()?;
+    let options = Options::try_from_options(&builder, &options).ok()?;
 
     let segment = SegmentHeader::from_builder_options(&builder, options).ok()?;
 

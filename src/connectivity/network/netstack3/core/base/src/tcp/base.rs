@@ -175,7 +175,7 @@ impl EffectiveMss {
         // NB: Safe to unwrap here because TCP options have a fixed maximum
         // size < u16::MAX.
         let tcp_options_len =
-            u16::try_from(packet_formats::tcp::aligned_options_length(options.iter())).unwrap();
+            u16::try_from(packet_formats::tcp::aligned_options_length(options.builder())).unwrap();
         // NB: Safe to unwrap here because MSS has a minimum value large enough
         // to fit all TCP options.
         NonZeroU16::new(mss.get() - tcp_options_len).unwrap()
@@ -611,7 +611,7 @@ mod test {
         let mss =
             EffectiveMss::from_mss(Mss::new(SIZE).unwrap(), MssSizeLimiters { timestamp_enabled });
         let options_len =
-            u16::try_from(packet_formats::tcp::aligned_options_length(options.iter())).unwrap();
+            u16::try_from(packet_formats::tcp::aligned_options_length(options.builder())).unwrap();
         assert_eq!(mss.payload_size(&options).get(), SIZE - options_len);
     }
 }

@@ -10,8 +10,6 @@ use core::ops::Add;
 use core::time::Duration;
 use derivative::Derivative;
 
-use packet_formats::tcp::options::TcpOption;
-
 /// A timestamp to be used in the TCP Timestamp Option.
 ///
 /// Per RFC 7323 Section 5.2:
@@ -153,10 +151,19 @@ impl From<TimestampOption> for RxTimestampOption {
     }
 }
 
-impl<'a> Into<TcpOption<'a>> for TimestampOption {
-    fn into(self) -> TcpOption<'a> {
-        let TimestampOption { ts_val, ts_echo_reply } = self;
-        TcpOption::Timestamp { ts_val: ts_val.get(), ts_echo_reply: ts_echo_reply.get() }
+impl From<&packet_formats::tcp::options::TimestampOption> for TimestampOption {
+    fn from(timestamp: &packet_formats::tcp::options::TimestampOption) -> TimestampOption {
+        Self {
+            ts_val: Timestamp::new(timestamp.ts_val()),
+            ts_echo_reply: Timestamp::new(timestamp.ts_echo_reply()),
+        }
+    }
+}
+
+impl From<&TimestampOption> for packet_formats::tcp::options::TimestampOption {
+    fn from(timestamp: &TimestampOption) -> packet_formats::tcp::options::TimestampOption {
+        let TimestampOption { ts_val, ts_echo_reply } = timestamp;
+        packet_formats::tcp::options::TimestampOption::new(ts_val.get(), ts_echo_reply.get())
     }
 }
 

@@ -12,7 +12,7 @@ use packet::{
 };
 use packet_formats::ethernet::{EthernetFrame, EthernetFrameLengthCheck};
 use packet_formats::ip::{IpPacket, IpProto};
-use packet_formats::tcp::options::TcpOption;
+use packet_formats::tcp::options::{TcpOptions as _, TcpOptionsBuilder, TimestampOption};
 use packet_formats::tcp::{
     TcpParseArgs, TcpSegment, TcpSegmentBuilder, TcpSegmentBuilderWithOptions,
 };
@@ -28,7 +28,7 @@ const WINDOW_SIZE: u16 = 65000;
 
 const TSVAL: u32 = 0xA0A0A0A0;
 const TSECHO: u32 = 0xB0B0B0B0;
-const TIMESTAMP: TcpOption<'static> = TcpOption::Timestamp { ts_val: TSVAL, ts_echo_reply: TSECHO };
+const TIMESTAMP: TimestampOption = TimestampOption::new(TSVAL, TSECHO);
 
 fn make_tcp_segment<I: IpExt, B: ReusableBuffer, A: BufferAlloc<B, Error: Debug>>(
     alloc: A,
@@ -46,11 +46,12 @@ fn make_tcp_segment<I: IpExt, B: ReusableBuffer, A: BufferAlloc<B, Error: Debug>
         WINDOW_SIZE,
     );
     if *tcp_options {
+        let options = TcpOptionsBuilder { timestamp: Some(TIMESTAMP), ..Default::default() };
         I::make_packet(
             alloc,
             ip,
             IpProto::Tcp,
-            TcpSegmentBuilderWithOptions::new(seg, [TIMESTAMP])
+            TcpSegmentBuilderWithOptions::new(seg, options)
                 .unwrap()
                 .wrap_body(payload.into_serializer()),
         )
@@ -88,7 +89,7 @@ struct ExtractedTcpInfo<I: IpExt> {
     seq_num: u32,
     ack_num: Option<u32>,
     window_size: u16,
-    timestamp: Option<(u32, u32)>,
+    timestamp: Option<TimestampOption>,
     payload_size: usize,
 }
 
@@ -105,7 +106,7 @@ impl<I: IpExt> ExtractedTcpInfo<I> {
             seq_num: SEQ_NUM,
             ack_num: Some(ACK_NUM),
             window_size: WINDOW_SIZE,
-            timestamp: tcp_options.then_some((TSVAL, TSECHO)),
+            timestamp: tcp_options.then_some(TIMESTAMP),
             payload_size: *payload_size,
         }
     }
@@ -136,10 +137,7 @@ fn bench_parse<I: IpExt, B: Bencher>(bencher: &mut B, options: &TcpBenchmarkConf
             seq_num: packet.seq_num(),
             ack_num: packet.ack_num(),
             window_size: packet.window_size(),
-            timestamp: packet.iter_options().find_map(|o| match o {
-                TcpOption::Timestamp { ts_val, ts_echo_reply } => Some((ts_val, ts_echo_reply)),
-                _ => None,
-            }),
+            timestamp: packet.options().timestamp().copied(),
             payload_size: packet.body().len(),
         };
 
