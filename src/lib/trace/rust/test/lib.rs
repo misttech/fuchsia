@@ -2,9 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use fuchsia_sync::{Condvar, Mutex};
 use fuchsia_trace::TraceFutureExt;
 use std::future::{Future, poll_fn};
-use std::sync::{Barrier, Condvar, Mutex};
+use std::sync::Barrier;
 use std::task::Poll;
 use {fuchsia_async as fasync, fuchsia_trace as trace, fuchsia_trace_observer as trace_observer};
 
@@ -183,13 +184,13 @@ static TRACE_STATE: Mutex<fuchsia_trace::TraceState> =
     Mutex::new(fuchsia_trace::TraceState::Stopped);
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_check_trace_state() -> u32 {
-    *TRACE_STATE.lock().unwrap() as u32
+    *TRACE_STATE.lock() as u32
 }
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_wait_trace_state_is(expected: u32) {
-    let mut state = TRACE_STATE.lock().unwrap();
+    let mut state = TRACE_STATE.lock();
     while *state as u32 != expected {
-        state = STATE_CV.wait(state).unwrap();
+        STATE_CV.wait(&mut state);
     }
 }
 
@@ -202,7 +203,7 @@ pub extern "C" fn rs_setup_trace_observer() {
             let observer = trace_observer::TraceObserver::new();
             BARRIER.wait();
             while let Ok(new_state) = observer.on_state_changed().await {
-                let mut state = TRACE_STATE.lock().unwrap();
+                let mut state = TRACE_STATE.lock();
                 *state = new_state;
                 STATE_CV.notify_all();
             }

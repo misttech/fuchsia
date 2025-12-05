@@ -33,6 +33,7 @@ rustc_staticlib("rust-cpp-test-lib") {
     ":trace",
     ":trace-observer",
     "//src/lib/fuchsia-async",
+    "//src/lib/fuchsia-sync",
   ]
 
   public = [ "test/lib.h" ]
