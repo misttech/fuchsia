@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use fuchsia_sync::Mutex;
 use lru_cache::LruCache;
-use std::sync::Mutex;
 use storage_device::Device;
 use storage_device::buffer::Buffer;
 
@@ -24,7 +24,7 @@ impl BlockCache {
         device: &'a dyn Device,
     ) -> Option<Buffer<'a>> {
         let mut block = device.allocate_buffer(self.block_size).await;
-        let mut cache = self.cache.lock().unwrap();
+        let mut cache = self.cache.lock();
         if let Some(data) = cache.get_mut(&block_addr) {
             block.as_mut_slice().copy_from_slice(&*data);
             Some(block)
@@ -38,7 +38,7 @@ impl BlockCache {
             // Don't cache blocks of the wrong size.
             return;
         }
-        let mut cache = self.cache.lock().unwrap();
+        let mut cache = self.cache.lock();
         cache.insert(block_addr, data);
     }
 }
