@@ -7,7 +7,7 @@ use crate::testing::get_driver_from_token;
 use crate::testing::harness::TestHarness;
 use crate::testing::node::NodeHandle;
 use crate::{Driver, Incoming};
-use fdf::{DispatcherBuilder, DispatcherRef, OnDispatcher};
+use fdf::{AutoReleaseDispatcher, DispatcherBuilder, OnDispatcher, WeakDispatcher};
 use fdf_env::Environment;
 use fdf_fidl::DriverChannel;
 use fidl_next::{Client as NextClient, ClientDispatcher, ClientEnd as NextClientEnd};
@@ -21,7 +21,7 @@ use zx::Status;
 pub struct DriverUnderTest<'a, D> {
     driver_outgoing: Incoming,
     driver: Option<fdf_env::Driver<u32>>,
-    dispatcher: DispatcherRef<'static>,
+    dispatcher: AutoReleaseDispatcher,
     registration: DriverRegistration,
     token: usize,
     client: NextClient<NextDriver, DriverChannel>,
@@ -86,13 +86,14 @@ impl<'a, D: Driver> DriverUnderTest<'a, D> {
             });
 
         let registration = make_driver_registration::<D>();
-        let dispatcher = driver.new_dispatcher(dispatcher_builder).unwrap();
+        let dispatcher =
+            AutoReleaseDispatcher::from(driver.new_dispatcher(dispatcher_builder).unwrap());
         let (server_chan, client_chan) = fdf::Channel::<[fidl_next::Chunk]>::create();
         let channel_handle = server_chan.into_driver_handle().into_raw().get();
         let (token_sender, token_receiver) = oneshot::channel();
         let (client_exit_tx, client_exit_rx) = mpsc::channel();
         let initialize_fn = registration.v1.initialize.unwrap();
-        dispatcher
+        WeakDispatcher::from(&dispatcher)
             .spawn_task(async move {
                 // SAFETY: We know it's safe to call initialize from the initial dispatcher and we
                 // know channel_handle is non-zero.
@@ -106,7 +107,7 @@ impl<'a, D: Driver> DriverUnderTest<'a, D> {
             NextClientEnd::from_untyped(DriverChannel::new(client_chan));
         let client_dispatcher = ClientDispatcher::new(client_end);
         let client = client_dispatcher.client();
-        dispatcher
+        WeakDispatcher::from(&dispatcher)
             .spawn_task(async move {
                 // We have to manually run the client indefinitely until it returns a PEER_CLOSED.
                 // At that point the driver has closed its server which signifies it has
@@ -161,8 +162,8 @@ impl<'a, D: Driver> DriverUnderTest<'a, D> {
     }
 
     /// Gets the driver's initial dispatcher.
-    pub fn dispatcher(&self) -> DispatcherRef<'_> {
-        self.dispatcher.clone()
+    pub fn dispatcher(&self) -> WeakDispatcher {
+        WeakDispatcher::from(&self.dispatcher)
     }
 
     /// Gets the TestNode that the driver-under-test is bound to.

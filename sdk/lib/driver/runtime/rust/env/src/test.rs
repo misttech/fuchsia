@@ -73,7 +73,7 @@ fn run_in_driver_raw<T: Send + 'static>(
         // just because this is testing code.
         assert!(!env_clone.dispatcher_has_queued_tasks(dispatcher.as_dispatcher_ref()));
     });
-    let dispatcher = driver.new_dispatcher(dispatcher).unwrap();
+    let dispatcher = driver.new_dispatcher(dispatcher).unwrap().release();
 
     let (finished_tx, finished_rx) = mpsc::channel();
     dispatcher

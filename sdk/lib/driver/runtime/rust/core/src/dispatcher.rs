@@ -11,6 +11,7 @@ use core::ffi;
 use core::marker::PhantomData;
 use core::mem::ManuallyDrop;
 use core::ptr::{NonNull, null_mut};
+use std::sync::{Arc, Weak};
 
 use zx::Status;
 
@@ -237,6 +238,76 @@ impl Drop for Dispatcher {
         // SAFETY: we only ever provide an owned `Dispatcher` to one owner, so when
         // that one is dropped we can invoke the shutdown of the dispatcher
         unsafe { fdf_dispatcher_shutdown_async(self.0.as_mut()) }
+    }
+}
+
+/// An owned reference to a driver runtime dispatcher that auto-releases when dropped. This gives
+/// you the best of both worlds of having an `Arc<Dispatcher>` and a `DispatcherRef<'static>`
+/// created by [`Dispatcher::release`]:
+///
+/// - You can vend [`Weak`]-like pointers to it that will not cause memory access errors if used
+///   after the dispatcher has shut down, like an [`Arc`].
+/// - You can tie its terminal lifetime to that of the driver itself.
+///
+/// This is particularly useful in tests.
+#[derive(Debug)]
+pub struct AutoReleaseDispatcher(*const Dispatcher, Weak<Dispatcher>);
+
+// SAFETY: The inner dispatcher pointer is really a raw representation of an `Arc<Dispatcher` that
+// is not accessed or used except to create [`Arc`] and [`Weak`] references to.
+unsafe impl Send for AutoReleaseDispatcher {}
+unsafe impl Sync for AutoReleaseDispatcher {}
+
+impl From<Dispatcher> for AutoReleaseDispatcher {
+    fn from(value: Dispatcher) -> Self {
+        let dispatcher = Arc::new(value);
+        let weak = Arc::downgrade(&dispatcher);
+        Self(Arc::into_raw(dispatcher), weak)
+    }
+}
+
+impl Drop for AutoReleaseDispatcher {
+    fn drop(&mut self) {
+        // SAFETY: This is the pointer that was created in the constructor and this is the only place
+        // we reconstitute a full [`Arc`] from it.
+        let dispatcher = unsafe { Arc::from_raw(self.0) };
+        Arc::try_unwrap(dispatcher)
+            .expect("Outstanding strong reference to `AutoReleaseDispatcher` at drop time")
+            .release();
+    }
+}
+
+/// An unowned but reference counted reference to a dispatcher. This would usually come from
+/// an [`AutoReleaseDispatcher`] or from an existing [`Arc`] or [`Weak`] reference to a dispatcher.
+///
+/// The advantage to using this instead of using [`Weak`] directly is that it controls the lifetime
+/// of any given strong reference to the dispatcher, since the only way to access that strong
+/// reference is through [`OnDispatcher::on_dispatcher`]. This makes it much easier to be sure
+/// that you aren't leaving any dangling strong references to the dispatcher object around.
+#[derive(Clone, Debug)]
+pub struct WeakDispatcher(Weak<Dispatcher>);
+
+impl From<&Arc<Dispatcher>> for WeakDispatcher {
+    fn from(value: &Arc<Dispatcher>) -> Self {
+        Self(Arc::downgrade(value))
+    }
+}
+
+impl From<Weak<Dispatcher>> for WeakDispatcher {
+    fn from(value: Weak<Dispatcher>) -> Self {
+        Self(value)
+    }
+}
+
+impl From<&AutoReleaseDispatcher> for WeakDispatcher {
+    fn from(value: &AutoReleaseDispatcher) -> Self {
+        Self(value.1.clone())
+    }
+}
+
+impl OnDispatcher for WeakDispatcher {
+    fn on_dispatcher<R>(&self, f: impl FnOnce(Option<AsyncDispatcherRef<'_>>) -> R) -> R {
+        self.0.on_dispatcher(f)
     }
 }
 

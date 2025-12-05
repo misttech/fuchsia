@@ -236,7 +236,8 @@ impl Driver {
             .to_string();
         let allowed_scheduler_roles =
             get_program_strvec(program, "allowed_scheduler_roles")?.cloned();
-        let memory_priority_role = get_program_string(program, "memory_priority_role").unwrap_or("");
+        let memory_priority_role =
+            get_program_string(program, "memory_priority_role").unwrap_or("");
 
         // Read binary from incoming namespace into vmo.
         let incoming = start_args.incoming.take().ok_or(Status::INVALID_ARGS)?;
@@ -325,7 +326,7 @@ impl Driver {
             DispatcherOpts::AllowSyncCalls => dispatcher.allow_thread_blocking(),
             DispatcherOpts::Default => dispatcher,
         };
-        let dispatcher = driver_runtime_handle.new_dispatcher(dispatcher)?;
+        let dispatcher = driver_runtime_handle.new_dispatcher(dispatcher)?.release();
         driver.inner.lock().dispatcher = Some(dispatcher);
         driver.inner.lock().runtime_handle = Some(driver_runtime_handle);
 
@@ -400,7 +401,7 @@ impl Driver {
             DispatcherOpts::AllowSyncCalls => dispatcher.allow_thread_blocking(),
             DispatcherOpts::Default => dispatcher,
         };
-        let dispatcher = driver_runtime_handle.new_dispatcher(dispatcher)?;
+        let dispatcher = driver_runtime_handle.new_dispatcher(dispatcher)?.release();
         driver.inner.lock().dispatcher = Some(dispatcher);
         driver.inner.lock().runtime_handle = Some(driver_runtime_handle);
 

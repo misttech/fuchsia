@@ -23,7 +23,6 @@ pub mod test;
 /// thread managed by the driver runtime. The dispatcher returned is owned by the caller,
 /// and will initiate asynchronous shutdown when the object is dropped unless
 /// [`Dispatcher::release`] is called on it to convert it into an unowned [`DispatcherRef`].
-///
 fn create_with_driver<'a>(
     dispatcher: DispatcherBuilder,
     driver: DriverRefTypeErased<'a>,
@@ -55,21 +54,6 @@ fn create_with_driver<'a>(
     // SAFETY: `out_dispatcher` is valid by construction if `fdf_dispatcher_create` returns
     // ZX_OK.
     Ok(unsafe { Dispatcher::from_raw(NonNull::new_unchecked(out_dispatcher)) })
-}
-
-/// As with [`create_with_driver`], this creates a new dispatcher as configured by this object, but
-/// instead of returning an owned reference it immediately releases the reference to be
-/// managed by the driver runtime.
-///
-/// # Safety
-///
-/// |owner| must outlive the dispatcher. You can use the shutdown_observer to find out when it is
-/// safe to drop it.
-fn create_with_driver_released<'a>(
-    dispatcher: DispatcherBuilder,
-    driver: DriverRefTypeErased<'a>,
-) -> Result<DispatcherRef<'static>, Status> {
-    create_with_driver(dispatcher, driver).map(Dispatcher::release)
 }
 
 /// A marker trait for a function that can be used as a driver shutdown observer with
@@ -167,14 +151,15 @@ pub struct UnownedDriver {
 unsafe impl<T: Send> Send for Driver<T> {}
 
 impl<T: 'static> Driver<T> {
-    /// Returns a builder capable of creating a new dispatcher. Note that this dispatcher cannot
-    /// outlive the driver and is only capable of being stopped by shutting down the driver. It is
-    /// meant to be created to serve as the initial or default dispatcher for a driver.
-    pub fn new_dispatcher(
-        &self,
-        dispatcher: DispatcherBuilder,
-    ) -> Result<DispatcherRef<'static>, Status> {
-        create_with_driver_released(dispatcher, self.as_ref_type_erased())
+    /// Constructs a dispatcher from the given builder on this driver. Note that this dispatcher
+    /// cannot outlive the driver and is only capable of being stopped by shutting down the driver.
+    /// It is meant to be created to serve as the initial or default dispatcher for a driver.
+    ///
+    /// The caller should make sure that the dispatcher is released so the driver runtime will
+    /// manage shutting it down, but that may be done differently in test contexts so it does not
+    /// force it.
+    pub fn new_dispatcher(&self, dispatcher: DispatcherBuilder) -> Result<Dispatcher, Status> {
+        create_with_driver(dispatcher, self.as_ref_type_erased())
     }
 
     /// Run a closure in the context of a driver.

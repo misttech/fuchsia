@@ -69,7 +69,7 @@ fn get_i2cimpl_device(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use fdf::{DispatcherRef, OnDispatcher};
+    use fdf::{OnDispatcher, WeakDispatcher};
     use fdf_component::ServiceOffer;
     use fdf_component::testing::harness::TestHarness;
     use fidl_next::ServerDispatcher;
@@ -114,7 +114,7 @@ mod tests {
     }
 
     struct Service {
-        dispatcher: DispatcherRef<'static>,
+        dispatcher: WeakDispatcher,
         bitrate: Arc<Mutex<u32>>,
     }
 
