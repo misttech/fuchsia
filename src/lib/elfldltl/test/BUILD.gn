@@ -190,7 +190,7 @@ if (is_fuchsia) {
       ldflags = [
         # A standalone binary should indicate its stack requirements.
         # They should be minimal for this test.
-        "-Wl,-z,stack-size=0x1000",
+        "-Wl,-z,stack-size=0x10000",
       ]
 
       deps = [
