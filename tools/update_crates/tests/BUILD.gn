@@ -40,6 +40,7 @@ if (is_host) {
     sources = [ "with_local_registry.rs" ]
 
     deps = [
+      "//src/lib/fuchsia-sync",
       "//third_party/rust_crates:argh",
       "//third_party/rust_crates:hex",
       "//third_party/rust_crates:serde",

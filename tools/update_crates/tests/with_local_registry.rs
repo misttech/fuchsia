@@ -16,6 +16,7 @@
 //! The `update_crates` tool can also be configured at `./uses_local_registry/outdated.toml`.
 
 use argh::FromArgs;
+use fuchsia_sync::Mutex;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
@@ -24,7 +25,6 @@ use std::fs::File;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::Mutex;
 use std::{env, iter};
 use tempfile::TempDir;
 use walkdir::WalkDir;
@@ -122,12 +122,12 @@ fn setup_test_directory(test_source_dir: PathBuf) -> PathBuf {
 
     let temp_test_dir = TempDir::new().unwrap();
     let output_path = temp_test_dir.path().to_owned();
-    *TEST_DIR.lock().unwrap() = Some(temp_test_dir);
+    *TEST_DIR.lock() = Some(temp_test_dir);
 
     // install a panic hook that will leave the directory in place, printing the path
     let prev_panic_hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
-        if let Some(temp_test_dir) = TEST_DIR.lock().unwrap().take() {
+        if let Some(temp_test_dir) = TEST_DIR.lock().take() {
             let temp_path = temp_test_dir.into_path(); // avoids the cleanup dtor
             eprintln!("left test directory persisted at {}", temp_path.display());
         }
