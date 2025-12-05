@@ -10,7 +10,7 @@ import("//src/ui/lib/escher/build_args.gni")
 
 rustc_test("scenic-stressor-flatland-bin") {
   name = "scenic_stressor_flatland"
-  edition = "2021"
+  edition = "2024"
   testonly = true
   source_root = "src/flatland_main.rs"
 

@@ -431,7 +431,7 @@ where
                 self.feature_updates.lock().await.push(feature_event);
             };
             match &mut *active_setting_state {
-                ActiveSettingState::Uninitialized(ref mut adjustment_settings) => {
+                ActiveSettingState::Uninitialized(adjustment_settings) => {
                     let active_setting = ActiveSetting::new(std::mem::take(adjustment_settings), 0);
                     if let Err(e) =
                         active_setting.update_device(&device_proxy, track_feature_update).await
@@ -452,7 +452,7 @@ where
                         return Err(SaturatedError::Saturated);
                     }
                 }
-                ActiveSettingState::Initialized(ref mut active_setting) => {
+                ActiveSettingState::Initialized(active_setting) => {
                     let initial_setting = active_setting.active_setting();
                     let pulled_up = active_setting
                         .adjust(reading, device_proxy, track_feature_update)

@@ -16,7 +16,7 @@ group("input-device-constants") {
 rustc_library("lib") {
   name = "input_device_constants"
   with_unit_tests = true
-  edition = "2021"
+  edition = "2024"
   deps = [
     "//third_party/rust_crates:log",
     "//third_party/rust_crates:schemars",

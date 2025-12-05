@@ -19,7 +19,7 @@ group("tests") {
 rustc_library("lib") {
   name = "terminal_lib"
   with_unit_tests = true
-  edition = "2021"
+  edition = "2024"
 
   deps = [
     "//sdk/fidl/fuchsia.hardware.pty:fuchsia.hardware.pty_rust",
@@ -87,7 +87,7 @@ if (terminal_fallback_font_paths != []) {
 
 rustc_binary("bin") {
   name = "terminal"
-  edition = "2021"
+  edition = "2024"
   source_root = "src/bin/terminal.rs"
   with_unit_tests = true
 

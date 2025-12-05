@@ -11,7 +11,7 @@ import("//build/icu/icu_rustc_binary.gni")
 icu_rustc_binary("scene_manager_bin") {
   output_name = "scene_manager"
   with_unit_tests = true
-  edition = "2021"
+  edition = "2024"
 
   icu_deps = [
     "//src/lib/icu_data/rust/icu_data",

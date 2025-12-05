@@ -222,7 +222,7 @@ impl Backlight {
                     Ok(())
                 }
             }
-            PowerState::DisplayOnBacklightPoweringUp(_task, ref mut pending_changes) => {
+            PowerState::DisplayOnBacklightPoweringUp(_task, pending_changes) => {
                 if backlight_on {
                     let (pending_change, receiver) =
                         Self::make_pending_change(regulated_value, backlight_on);

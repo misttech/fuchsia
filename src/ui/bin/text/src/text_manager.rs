@@ -90,8 +90,8 @@ impl TextManager {
     pub(crate) async fn inject_input(&mut self, event: KeyEvent) -> Result<(), Error> {
         let state = self.state.lock().await;
         let ime = {
-            let active_ime_weak = match state.active_ime {
-                Some(ref v) => v,
+            let active_ime_weak = match &state.active_ime {
+                Some(v) => v,
                 None => return Ok(()), // no currently active IME
             };
             match LegacyIme::upgrade(active_ime_weak) {

@@ -9,7 +9,7 @@ import("//build/rust/rustc_library.gni")
 icu_rustc_library("scene_management") {
   name = "scene_management"
   with_unit_tests = true
-  edition = "2021"
+  edition = "2024"
 
   icu_deps = [ "//src/ui/lib/input_pipeline" ]
   deps = [
@@ -47,7 +47,7 @@ icu_rustc_library("scene_management") {
 }
 
 rustc_library("scene_management_mocks") {
-  edition = "2021"
+  edition = "2024"
   testonly = true
   deps = [
     ":scene_management",

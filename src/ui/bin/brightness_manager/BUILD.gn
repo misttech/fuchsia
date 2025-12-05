@@ -8,7 +8,7 @@ import("//build/rust/rustc_library.gni")
 
 rustc_library("lib") {
   with_unit_tests = true
-  edition = "2021"
+  edition = "2024"
   sources = [
     "src/backlight.rs",
     "src/lib.rs",
@@ -50,7 +50,7 @@ rustc_binary("bin") {
   name = "brightness_manager"
   version = "0.1.0"
   with_unit_tests = true
-  edition = "2021"
+  edition = "2024"
 
   deps = [
     ":brightness_manager_config",
@@ -84,7 +84,7 @@ rustc_binary("bin") {
 rustc_binary("auto-brightness_bin") {
   name = "auto_brightness"
   source_root = "src/auto-brightness.rs"
-  edition = "2021"
+  edition = "2024"
   with_unit_tests = true
   sources = [
     "src/auto-brightness.rs",
@@ -122,7 +122,7 @@ rustc_library("test-helpers") {
   testonly = true
   name = "test_helpers"
   with_unit_tests = true
-  edition = "2021"
+  edition = "2024"
 
   visibility = [ ":*" ]
 

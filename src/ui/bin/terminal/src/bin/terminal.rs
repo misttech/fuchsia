@@ -26,7 +26,9 @@ pub fn make_app_assistant(cmd: Vec<CString>) -> AssistantCreatorFunc {
 #[fuchsia::main]
 fn main() -> Result<(), Error> {
     trace_provider_create_with_fdio();
-    env::set_var("RUST_BACKTRACE", "full");
+    unsafe {
+        env::set_var("RUST_BACKTRACE", "full");
+    }
 
     // If there are any arguments (besides the first which is the executable path) then they
     // represent the argv of the spawn command.

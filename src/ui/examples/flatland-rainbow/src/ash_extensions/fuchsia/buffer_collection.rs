@@ -5,7 +5,7 @@
 use {
     // TODO(https://fxbug.dev/42055924): when this is upstreamed into ash, this should say `crate::*` instead
     // of `ash::*`.
-    ash::{prelude::*, vk, Device, Instance, RawPtr},
+    ash::{Device, Instance, RawPtr, prelude::*, vk},
     std::mem,
 };
 
@@ -30,13 +30,15 @@ impl BufferCollection {
         create_info: &vk::BufferCollectionCreateInfoFUCHSIA,
         allocation_callbacks: Option<&vk::AllocationCallbacks>,
     ) -> VkResult<vk::BufferCollectionFUCHSIA> {
-        let mut buffer_collection = mem::zeroed();
-        (self.fp.create_buffer_collection_fuchsia)(
-            self.handle,
-            create_info,
-            allocation_callbacks.as_raw_ptr(),
-            &mut buffer_collection,
-        )
+        let mut buffer_collection = unsafe { mem::zeroed() };
+        unsafe {
+            (self.fp.create_buffer_collection_fuchsia)(
+                self.handle,
+                create_info,
+                allocation_callbacks.as_raw_ptr(),
+                &mut buffer_collection,
+            )
+        }
         .result_with_success(buffer_collection)
     }
 
@@ -46,11 +48,13 @@ impl BufferCollection {
         collection: vk::BufferCollectionFUCHSIA,
         info: &vk::ImageConstraintsInfoFUCHSIA,
     ) -> VkResult<()> {
-        (self.fp.set_buffer_collection_image_constraints_fuchsia)(
-            self.handle,
-            collection,
-            info as *const vk::ImageConstraintsInfoFUCHSIA,
-        )
+        unsafe {
+            (self.fp.set_buffer_collection_image_constraints_fuchsia)(
+                self.handle,
+                collection,
+                info as *const vk::ImageConstraintsInfoFUCHSIA,
+            )
+        }
         .result_with_success(())
     }
 
@@ -63,11 +67,13 @@ impl BufferCollection {
         collection: vk::BufferCollectionFUCHSIA,
         info: &vk::BufferConstraintsInfoFUCHSIA,
     ) -> VkResult<()> {
-        (self.fp.set_buffer_collection_buffer_constraints_fuchsia)(
-            self.handle,
-            collection,
-            info as *const vk::BufferConstraintsInfoFUCHSIA,
-        )
+        unsafe {
+            (self.fp.set_buffer_collection_buffer_constraints_fuchsia)(
+                self.handle,
+                collection,
+                info as *const vk::BufferConstraintsInfoFUCHSIA,
+            )
+        }
         .result_with_success(())
     }
 
@@ -78,11 +84,13 @@ impl BufferCollection {
         collection: vk::BufferCollectionFUCHSIA,
         allocation_callbacks: Option<&vk::AllocationCallbacks>,
     ) {
-        (self.fp.destroy_buffer_collection_fuchsia)(
-            self.handle,
-            collection,
-            allocation_callbacks.as_raw_ptr(),
-        );
+        unsafe {
+            (self.fp.destroy_buffer_collection_fuchsia)(
+                self.handle,
+                collection,
+                allocation_callbacks.as_raw_ptr(),
+            );
+        }
     }
 
     /// <https://registry.khronos.org/vulkan/specs/1.3-extensions/man/html/vkGetBufferCollectionPropertiesFUCHSIA.html>
@@ -91,7 +99,9 @@ impl BufferCollection {
         collection: vk::BufferCollectionFUCHSIA,
     ) -> VkResult<vk::BufferCollectionPropertiesFUCHSIA> {
         let mut props = vk::BufferCollectionPropertiesFUCHSIA::default();
-        (self.fp.get_buffer_collection_properties_fuchsia)(self.handle, collection, &mut props)
-            .result_with_success(props)
+        unsafe {
+            (self.fp.get_buffer_collection_properties_fuchsia)(self.handle, collection, &mut props)
+        }
+        .result_with_success(props)
     }
 }

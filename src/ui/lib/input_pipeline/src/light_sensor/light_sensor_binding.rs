@@ -7,7 +7,7 @@ use crate::input_device::{
     self, Handled, InputDeviceBinding, InputDeviceDescriptor, InputDeviceStatus, InputEvent,
 };
 use crate::metrics;
-use anyhow::{format_err, Error};
+use anyhow::{Error, format_err};
 use async_trait::async_trait;
 use fidl_fuchsia_input_report::{InputDeviceProxy, InputReport, SensorDescriptor, SensorType};
 use fuchsia_inspect::health::Reporter;
@@ -275,7 +275,7 @@ impl LightSensorBinding {
     ) -> (Option<InputReport>, Option<UnboundedReceiver<InputEvent>>) {
         inspect_status.count_received_report(&report);
         let light_sensor_descriptor =
-            if let input_device::InputDeviceDescriptor::LightSensor(ref light_sensor_descriptor) =
+            if let input_device::InputDeviceDescriptor::LightSensor(light_sensor_descriptor) =
                 device_descriptor
             {
                 light_sensor_descriptor

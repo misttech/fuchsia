@@ -1149,9 +1149,9 @@ fn get_position_divisor_to_mm(
     if divisors.iter().any(|&divisor| divisor != first_divisor) {
         return Err(format_err!(
             divisors
-                .iter()
+                .into_iter()
                 .enumerate()
-                .filter(|(_i, &divisor)| divisor != first_divisor)
+                .filter(|(_i, divisor)| *divisor != first_divisor)
                 .map(|(i, divisor)| format!(
                     "contact {} has a different divisor than the first contact ({:?} != {:?})",
                     i, divisor, first_divisor,

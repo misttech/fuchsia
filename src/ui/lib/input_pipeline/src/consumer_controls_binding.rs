@@ -69,7 +69,7 @@ impl ConsumerControlsEvent {
     pub fn record_inspect(&self, node: &fuchsia_inspect::Node) {
         let pressed_buttons_node =
             node.create_string_array("pressed_buttons", self.pressed_buttons.len());
-        self.pressed_buttons.iter().enumerate().for_each(|(i, &ref button)| {
+        self.pressed_buttons.iter().enumerate().for_each(|(i, button)| {
             let button_name: String = match button {
                 ConsumerControlButton::VolumeUp => "volume_up".into(),
                 ConsumerControlButton::VolumeDown => "volume_down".into(),

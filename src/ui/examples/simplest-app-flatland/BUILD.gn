@@ -9,7 +9,7 @@ rustc_binary("bin") {
   output_name = "simplest-app-flatland"
   with_unit_tests = true
   version = "0.1.0"
-  edition = "2021"
+  edition = "2024"
   source_root = "src/main.rs"
   sources = [
     "src/internal_message.rs",
