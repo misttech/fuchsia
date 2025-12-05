@@ -10,7 +10,6 @@ use crate::task::{CurrentTask, Kernel, TargetTime};
 use crate::vfs::timer::{TimelineChangeObserver, TimerOps};
 use anyhow::{Context, Result};
 use fuchsia_inspect::ArrayProperty;
-use fuchsia_inspect_contrib::nodes::BoundedListNode;
 use futures::channel::mpsc::{self, UnboundedReceiver, UnboundedSender};
 use futures::{FutureExt, SinkExt, StreamExt, select};
 use scopeguard::defer;
@@ -18,13 +17,13 @@ use starnix_logging::{log_debug, log_error, log_info, log_warn};
 use starnix_sync::{Mutex, MutexGuard};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::{errno, from_status_like_fdio};
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, OnceLock, Weak};
 use zx::{self as zx, AsHandleRef, HandleBased, HandleRef};
 use {fidl_fuchsia_time_alarms as fta, fuchsia_async as fasync, fuchsia_trace as ftrace};
 
 /// Max value for inspect event history.
-const INSPECT_GRAPH_EVENT_BUFFER_SIZE: usize = 128;
+const INSPECT_EVENT_BUFFER_SIZE: usize = 128;
 
 fn to_errno_with_log<T: std::fmt::Debug>(v: T) -> Errno {
     log_error!("hr_timer_manager internal error: {v:?}");
@@ -220,6 +219,19 @@ impl std::fmt::Display for InspectHrTimerEvent {
 }
 
 #[derive(Debug)]
+struct InspectEvent {
+    event_type: InspectHrTimerEvent,
+    created_at: zx::BootInstant,
+    deadline: Option<TargetTime>,
+}
+
+impl InspectEvent {
+    fn new(event_type: InspectHrTimerEvent, deadline: Option<TargetTime>) -> Self {
+        Self { event_type, created_at: zx::BootInstant::get(), deadline }
+    }
+}
+
+#[derive(Debug)]
 struct TimerState {
     /// The task that waits for the timer to expire.
     task: fasync::Task<()>,
@@ -242,7 +254,7 @@ struct HrTimerManagerState {
     message_counter: Option<OwnedMessageCounterHandle>,
 
     /// For recording timer events.
-    inspect_node: BoundedListNode,
+    events: VecDeque<InspectEvent>,
 
     /// The last timestamp at which the hrtimer loop was started.
     last_loop_started_timestamp: zx::BootInstant,
@@ -256,16 +268,13 @@ struct HrTimerManagerState {
 }
 
 impl HrTimerManagerState {
-    fn new(parent_node: &fuchsia_inspect::Node) -> Self {
+    fn new(_parent_node: &fuchsia_inspect::Node) -> Self {
         Self {
             pending_timers: HashMap::new(),
             // Initialized later in the State's lifecycle because it only becomes
             // available after making a connection to the wake proxy.
             message_counter: None,
-            inspect_node: BoundedListNode::new(
-                parent_node.create_child("events"),
-                INSPECT_GRAPH_EVENT_BUFFER_SIZE,
-            ),
+            events: VecDeque::with_capacity(INSPECT_EVENT_BUFFER_SIZE),
             last_loop_started_timestamp: zx::BootInstant::INFINITE_PAST,
             last_loop_completed_timestamp: zx::BootInstant::INFINITE_PAST,
             debug_start_stage_counter: 0,
@@ -281,6 +290,20 @@ impl HrTimerManagerState {
         let counter_ref =
             self.message_counter.as_ref().expect("message_counter is None, but should not be.");
         counter_ref.share(new_pending_message)
+    }
+
+    fn record_events(&self, node: &fuchsia_inspect::Node) {
+        let events_node = node.create_child("events");
+        for (i, event) in self.events.iter().enumerate() {
+            let child = events_node.create_child(i.to_string());
+            child.record_string("type", event.event_type.to_string());
+            child.record_int("created_at", event.created_at.into_nanos());
+            if let Some(deadline) = event.deadline {
+                child.record_int("deadline", deadline.estimate_boot().unwrap().into_nanos());
+            }
+            events_node.record(child);
+        }
+        node.record(events_node);
     }
 }
 
@@ -476,6 +499,11 @@ impl HrTimerManager {
                 inspector
                     .root()
                     .record_uint("debug_start_stage_counter", debug_start_stage_counter);
+
+                {
+                    let guard = manager_ref.lock();
+                    guard.record_events(inspector.root());
+                }
 
                 Ok(inspector)
             }
@@ -953,13 +981,10 @@ impl HrTimerManager {
         event_type: InspectHrTimerEvent,
         deadline: Option<TargetTime>,
     ) {
-        guard.inspect_node.add_entry(move |node| {
-            node.record_string("type", event_type.to_string());
-            node.record_int("created_at", zx::BootInstant::get().into_nanos());
-            if let Some(deadline) = deadline {
-                node.record_int("deadline", deadline.estimate_boot().unwrap().into_nanos());
-            }
-        });
+        if guard.events.len() >= INSPECT_EVENT_BUFFER_SIZE {
+            guard.events.pop_front();
+        }
+        guard.events.push_back(InspectEvent::new(event_type, deadline));
     }
 
     /// Add a new timer.
@@ -1176,10 +1201,7 @@ mod tests {
     impl HrTimerManagerState {
         fn new_for_test() -> Self {
             Self {
-                inspect_node: BoundedListNode::new(
-                    fuchsia_inspect::component::inspector().root().create_child("events"),
-                    INSPECT_GRAPH_EVENT_BUFFER_SIZE,
-                ),
+                events: VecDeque::with_capacity(INSPECT_EVENT_BUFFER_SIZE),
                 pending_timers: Default::default(),
                 message_counter: None,
                 last_loop_started_timestamp: zx::BootInstant::INFINITE_PAST,

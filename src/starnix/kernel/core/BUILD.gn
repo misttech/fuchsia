@@ -263,7 +263,6 @@ _starnix_core_deps = [
   "//src/connectivity/wlan/wlanix:fuchsia.wlan.wlanix_rust",
   "//src/lib/debug/rust",
   "//src/lib/diagnostics/data/rust",
-  "//src/lib/diagnostics/inspect/contrib/rust",
   "//src/lib/diagnostics/inspect/rust",
   "//src/lib/diagnostics/log/message/rust",
   "//src/lib/fdio/rust:fdio",
