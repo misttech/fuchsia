@@ -14,10 +14,10 @@ use futures::channel::oneshot::{self, Canceled};
 use futures::future::FusedFuture;
 use futures::{FutureExt, Stream, StreamExt};
 use pin_project::pin_project;
-use vfs::directory::immutable::connection::ImmutableConnection;
-use vfs::directory::immutable::Simple;
-use vfs::execution_scope::{ActiveGuard, ExecutionScope};
 use vfs::ToObjectRequest;
+use vfs::directory::immutable::Simple;
+use vfs::directory::immutable::connection::ImmutableConnection;
+use vfs::execution_scope::{ActiveGuard, ExecutionScope};
 use zx::MonotonicDuration;
 use {fidl_fuchsia_io as fio, fuchsia_async as fasync};
 
@@ -241,10 +241,10 @@ mod tests {
     };
     use fuchsia_component_client::connect_to_protocol_at_dir_svc;
     use fuchsia_component_directory::open_directory_async;
+    use fuchsia_sync::Mutex;
     use futures::future::BoxFuture;
-    use futures::{pin_mut, select, TryStreamExt};
+    use futures::{TryStreamExt, pin_mut, select};
     use std::sync::atomic::{AtomicBool, Ordering};
-    use std::sync::Mutex;
     use test_util::Counter;
     use zx::AsHandleRef;
 
@@ -286,7 +286,7 @@ mod tests {
                         }
                     }
                     Item::Stalled(channel) => {
-                        *server_end.lock().unwrap() = Some(channel);
+                        *server_end.lock() = Some(channel);
                         stalled.store(true, Ordering::SeqCst);
                     }
                 }
@@ -296,7 +296,7 @@ mod tests {
 
         #[track_caller]
         fn assert_fs_gave_back_server_end(self, client_end: ClientEnd<fio::DirectoryMarker>) {
-            let reclaimed_server_end: zx::Channel = self.server_end.lock().unwrap().take().unwrap();
+            let reclaimed_server_end: zx::Channel = self.server_end.lock().take().unwrap();
             assert_eq!(
                 client_end.get_koid().unwrap(),
                 reclaimed_server_end.basic_info().unwrap().related_koid
@@ -390,7 +390,7 @@ mod tests {
 
         assert_eq!(mock_server.call_count.get(), 0);
         assert!(!mock_server.stalled.load(Ordering::SeqCst));
-        assert!(mock_server.server_end.lock().unwrap().is_none());
+        assert!(mock_server.server_end.lock().is_none());
     }
 
     #[fuchsia::test(allow_stalls = false)]
@@ -556,7 +556,7 @@ mod tests {
                     .for_each_concurrent(None, move |item| mock_server_clone.handle(item))
                     .await;
 
-                let stalled_server_end = mock_server.server_end.lock().unwrap().take();
+                let stalled_server_end = mock_server.server_end.lock().take();
                 let Some(stalled_server_end) = stalled_server_end else {
                     // Client closed.
                     return loop_count;
