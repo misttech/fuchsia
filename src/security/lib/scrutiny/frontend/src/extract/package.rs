@@ -16,27 +16,24 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 fn create_dir_all<P: AsRef<Path> + ?Sized>(path: &P) -> Result<()> {
-    fs::create_dir_all(path).map_err(|err| {
-        anyhow!("Failed to create directory {}: {}", path.as_ref().display(), err.to_string())
-    })
+    fs::create_dir_all(path)
+        .map_err(|err| anyhow!("Failed to create directory {}: {}", path.as_ref().display(), err))
 }
 
 fn create_file<P>(path: &P) -> Result<fs::File>
 where
     P: AsRef<Path>,
 {
-    File::create(path).map_err(|err| {
-        anyhow!("Failed to create file at {}: {}", path.as_ref().display(), err.to_string())
-    })
+    File::create(path)
+        .map_err(|err| anyhow!("Failed to create file at {}: {}", path.as_ref().display(), err))
 }
 
 fn write_file<P>(path: &P, file: &mut fs::File, buf: &mut [u8]) -> Result<()>
 where
     P: AsRef<Path>,
 {
-    file.write_all(buf).map_err(|err| {
-        anyhow!("Failed to write file at {}: {}", path.as_ref().display(), err.to_string())
-    })
+    file.write_all(buf)
+        .map_err(|err| anyhow!("Failed to write file at {}: {}", path.as_ref().display(), err))
 }
 
 pub struct PackageExtractController {}

@@ -162,7 +162,7 @@ async fn create_config_dict(
     let dict_store =
         fuchsia_component::client::connect_to_protocol::<fsandbox::CapabilityStoreMarker>()?;
     let dict_id = 1;
-    dict_store.dictionary_create(dict_id).await?.map_err(|e| anyhow!("{:#?}", e))?;
+    dict_store.dictionary_create(dict_id).await?.map_err(|e| anyhow!("{e:#?}"))?;
     let mut config_id = 2;
     for config in config_capabilities {
         let Some(value) = config.value else { continue };
@@ -174,15 +174,15 @@ async fn create_config_dict(
                 fsandbox::Capability::Data(fsandbox::Data::Bytes(fidl::persist(&value)?)),
             )
             .await?
-            .map_err(|e| anyhow!("{:#?}", e))?;
+            .map_err(|e| anyhow!("{e:#?}"))?;
 
         dict_store
             .dictionary_insert(dict_id, &fsandbox::DictionaryItem { key, value: config_id })
             .await?
-            .map_err(|e| anyhow!("{:#?}", e))?;
+            .map_err(|e| anyhow!("{e:#?}"))?;
         config_id += 1;
     }
-    let dict = dict_store.export(dict_id).await?.map_err(|e| anyhow!("{:#?}", e))?;
+    let dict = dict_store.export(dict_id).await?.map_err(|e| anyhow!("{e:#?}"))?;
     let fsandbox::Capability::Dictionary(dict) = dict else {
         return Err(anyhow!("Bad bedrock capability type"));
     };

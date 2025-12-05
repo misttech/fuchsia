@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::{escape_text, md_path, HEADER};
-use anyhow::{bail, Context, Result};
+use crate::{HEADER, escape_text, md_path};
+use anyhow::{Context, Result, bail};
 use ffx_command::{CliArgsInfo, ErrorCodeInfo, FlagInfo, SubCommandInfo};
 use log::debug;
 use serde::{Deserialize, Serialize};
@@ -53,11 +53,7 @@ pub(crate) fn write_formatted_output_for_ffx(
         .expect("get output");
 
     if !output.status.success() {
-        bail!(
-            "{cmd_path:?} failed {}: {}",
-            output.status.to_string(),
-            String::from_utf8(output.stderr)?
-        );
+        bail!("{cmd_path:?} failed {}: {}", output.status, String::from_utf8(output.stderr)?);
     } else if !output.stderr.is_empty() {
         log::info!("stderr for ffx is {}", String::from_utf8(output.stderr.clone())?);
     }

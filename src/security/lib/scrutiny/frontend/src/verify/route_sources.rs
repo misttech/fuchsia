@@ -516,12 +516,10 @@ pub struct RouteSourcesController {}
 
 impl RouteSourcesController {
     pub fn get_results(model: Arc<DataModel>, input: String) -> Result<VerifyRouteSourcesResults> {
-        let config_data = read_to_string(&input).map_err(|err| {
-            anyhow!("Failed to parse config from file: {}: {}", &input, err.to_string())
-        })?;
-        let config: RouteSourcesConfig = serde_json5::from_str(&config_data).map_err(|err| {
-            anyhow!("Failed to parse config from file: {}: {}", &input, err.to_string())
-        })?;
+        let config_data = read_to_string(&input)
+            .map_err(|err| anyhow!("Failed to parse config from file: {}: {}", &input, err))?;
+        let config: RouteSourcesConfig = serde_json5::from_str(&config_data)
+            .map_err(|err| anyhow!("Failed to parse config from file: {}: {}", &input, err))?;
         let component_model_result = model.get::<V2ComponentModel>()?;
         let component_model = &component_model_result.component_model;
         let components = &model.get::<Components>()?.entries;

@@ -3,11 +3,11 @@
 // found in the LICENSE file.
 
 use crate::platform::PlatformServices;
-use anyhow::{anyhow, Error};
+use anyhow::{Error, anyhow};
 use fidl_fuchsia_virtualization::{GuestManagerProxy, GuestStatus};
 use guest_cli_args as arguments;
 use prettytable::format::consts::FORMAT_CLEAN;
-use prettytable::{cell, row, Table};
+use prettytable::{Table, cell, row};
 use std::fmt;
 
 fn guest_status_to_string(status: GuestStatus) -> &'static str {
@@ -135,7 +135,7 @@ async fn get_detailed_information(
 ) -> Result<GuestDetails, Error> {
     let guest_info = manager.get_info().await;
     if let Err(_) = guest_info {
-        return Err(anyhow!("Failed to query guest information: {}", guest_type.to_string()));
+        return Err(anyhow!("Failed to query guest information: {}", guest_type));
     }
     let guest_info = guest_info.unwrap();
     let guest_status = guest_info.guest_status.expect("guest status should always be set");

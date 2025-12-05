@@ -1012,7 +1012,7 @@ mod tests {
                 ..Default::default()
             })
             .await?
-            .map_err(|err| anyhow!("failed to start: {:?}", err))?;
+            .map_err(|err| anyhow!("failed to start: {err:?}"))?;
 
         // The exposed dir should have received the Open request.
         assert_eq!(path_receiver.next().await.unwrap(), svc_path);
@@ -1067,7 +1067,7 @@ mod tests {
                 ..Default::default()
             })
             .await?
-            .map_err(|err| anyhow!("failed to start: {:?}", err))?;
+            .map_err(|err| anyhow!("failed to start: {err:?}"))?;
 
         // Open an arbitrary node in the session's exposed dir.
         // The actual protocol does not matter because it's not being served.

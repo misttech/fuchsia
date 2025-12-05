@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{format_err, Context, Error};
+use anyhow::{Context, Error, format_err};
 use fidl_fuchsia_metrics::{MetricEventLoggerFactoryMarker, MetricEventLoggerProxy, ProjectSpec};
 use fuchsia_async as fasync;
 use fuchsia_component::client::connect_to_protocol;
@@ -65,7 +65,7 @@ pub async fn log_session_launch_time(
         )
         .await
         .context("Could not log session launch time.")?
-        .map_err(|e| format_err!("Logging session launch time returned an error: {:?}", e))?;
+        .map_err(|e| format_err!("Logging session launch time returned an error: {e:?}"))?;
 
     Ok(())
 }

@@ -255,10 +255,7 @@ impl WritablePackageList for PackageSetMap {
         let (u, h) = url.into_unpinned_and_hash();
         let map = self.packages.entry(package_set_type).or_insert_with(BTreeMap::new);
         if map.contains_key(&u) {
-            return Err(anyhow!(
-                "Duplicate insert is not supported. Offending package URL: {}",
-                u.to_string()
-            ));
+            return Err(anyhow!("Duplicate insert is not supported. Offending package URL: {}", u));
         }
         map.insert(u, PackageProperties { hash: h });
         Ok(())

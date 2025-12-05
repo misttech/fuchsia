@@ -143,7 +143,7 @@ impl ArtifactReader for FileArtifactReader {
             // Read-in and decompress delivery blobs
             DeliveryBlobType::Type1 => {
                 let raw_blob_contents = fs::read(&absolute_path_string).map_err(|err| {
-                    anyhow!("Artifact read failed ({}): {}", &absolute_path_string, err.to_string())
+                    anyhow!("Artifact read failed ({}): {}", &absolute_path_string, err)
                 })?;
                 let decompressed_contents = delivery_blob::decompress(&raw_blob_contents)?;
                 Box::new(std::io::Cursor::new(decompressed_contents))
@@ -166,9 +166,8 @@ impl ArtifactReader for FileArtifactReader {
         self.deps.insert(dep_path_string);
 
         // First read in the blob
-        let raw_blob_contents = fs::read(&absolute_path_string).map_err(|err| {
-            anyhow!("Artifact read failed ({}): {}", &absolute_path_string, err.to_string())
-        })?;
+        let raw_blob_contents = fs::read(&absolute_path_string)
+            .map_err(|err| anyhow!("Artifact read failed ({}): {}", &absolute_path_string, err))?;
 
         Ok(match self.delivery_blob_type {
             // Decompress delivery blobs
@@ -203,11 +202,7 @@ fn absolute_from_absolute_or_artifact_relative<P1: AsRef<Path>, P2: AsRef<Path>>
     };
     let absolute_path_buf = artifact_path_ref.join(&artifact_relative_path_buf);
     let absolute_path_buf = absolute_path_buf.canonicalize().map_err(|err| {
-        anyhow!(
-            "Failed to canonicalize computed path: {:?}: {}",
-            absolute_path_buf,
-            err.to_string()
-        )
+        anyhow!("Failed to canonicalize computed path: {:?}: {}", absolute_path_buf, err)
     })?;
 
     if absolute_path_buf.is_relative() {

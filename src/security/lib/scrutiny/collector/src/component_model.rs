@@ -152,7 +152,7 @@ impl V2ComponentModelDataCollector {
                     .context("Unable to decode runtime config")?,
             )
             .context("Unable to parse runtime config")?),
-            None => Err(anyhow!("file {} not found in bootfs", config_path.to_string())),
+            None => Err(anyhow!("file {} not found in bootfs", config_path)),
         }
     }
 
@@ -258,19 +258,13 @@ impl V2ComponentModelDataCollector {
                     "V2ComponentModelDataCollector: Built v2 component model"
                 );
                 let core_deps_collection: Arc<CoreDataDeps> = model.get().map_err(|err| {
-                    anyhow!(
-                        "Failed to read core data deps for v2 component model data: {}",
-                        err.to_string()
-                    )
+                    anyhow!("Failed to read core data deps for v2 component model data: {}", err)
                 })?;
                 let deps = core_deps_collection.deps.clone();
                 model
                     .set(V2ComponentModel::new(deps, component_model, build_result.errors))
                     .map_err(|err| {
-                        anyhow!(
-                            "Failed to store v2 component model in data model: {}",
-                            err.to_string()
-                        )
+                        anyhow!("Failed to store v2 component model in data model: {}", err)
                     })?;
                 Ok(())
             }

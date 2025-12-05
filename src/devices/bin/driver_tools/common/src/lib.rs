@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{anyhow, format_err, Context, Result};
+use anyhow::{Context, Result, anyhow, format_err};
 use {fidl_fuchsia_driver_development as fdd, fidl_fuchsia_driver_framework as fdf};
 
 #[derive(Debug)]
@@ -166,7 +166,7 @@ pub async fn get_driver_by_device(
         )
         .await?;
         if fuzzy_device_list.len() == 0 {
-            return Err(anyhow!("No devices matched the query: {}", device_topo_path.to_string()));
+            return Err(anyhow!("No devices matched the query: {}", device_topo_path));
         } else if fuzzy_device_list.len() > 1 {
             let mut builder = "Found multiple matches. Did you mean one of these?\n\n".to_string();
             for item in fuzzy_device_list {
