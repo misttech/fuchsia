@@ -36,6 +36,8 @@ impl TraceRunner {
         trace_timeout: Duration,
         trace_file_max_bytes: usize,
     ) -> Result<Self, anyhow::Error> {
+        let (tracing_started_sender, tracing_started_receiver) =
+            futures::channel::oneshot::channel();
         let (terminate_tracing_sender, terminate_tracing_receiver) =
             futures::channel::oneshot::channel::<String>();
 
@@ -71,6 +73,7 @@ impl TraceRunner {
                     let (controller, controller_server) = fidl::endpoints::create_proxy::<
                         fidl_fuchsia_tracing_controller::SessionMarker,
                     >();
+
                     launcher
                         .initialize_tracing(
                             controller_server,
@@ -95,6 +98,10 @@ impl TraceRunner {
                         .map_err(|e| format_err!("Failed to start tracing: {e:?}"))?;
 
                     info!("Trace started.");
+                    let _ = tracing_started_sender
+                        .send(())
+                        .map_err(|_| format_err!("Failed to send tracing started"))?;
+
                     Ok::<_, anyhow::Error>((controller, tracing_stream))
                 })?;
 
@@ -109,6 +116,10 @@ impl TraceRunner {
                 ))
             }
         });
+
+        tracing_started_receiver
+            .await
+            .map_err(|_| format_err!("Background thread exited before tracing started"))?;
 
         let tracer = TraceRunner {
             id: trace_writer.thread().id(),
