@@ -55,7 +55,7 @@ rustc_library(
             "src/runtime/portable/scope.rs",
         ],
     }),
-    edition = "2021",
+    edition = "2024",
     proc_macro_deps = [
         "//src/lib/fuchsia-async-macro",
     ],

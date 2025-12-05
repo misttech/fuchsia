@@ -7,7 +7,7 @@
 
 use crate::condition::{Condition, ConditionGuard};
 use std::collections::HashMap;
-use std::future::{poll_fn, Future};
+use std::future::{Future, poll_fn};
 use std::mem::ManuallyDrop;
 use std::ops::Deref;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -191,7 +191,7 @@ impl ScopeHandle {
     fn mk_task_fut<T: 'static, F: Future<Output = T> + 'static>(
         &self,
         future: F,
-    ) -> (u64, impl Future<Output = T>) {
+    ) -> (u64, impl Future<Output = T> + use<T, F>) {
         static TASK_ID: AtomicU64 = AtomicU64::new(0);
 
         let task_id = TASK_ID.fetch_add(1, Ordering::Relaxed);

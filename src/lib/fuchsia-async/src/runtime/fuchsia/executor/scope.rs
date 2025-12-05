@@ -1116,10 +1116,10 @@ mod state {
             if count == 0 {
                 return;
             }
-            if self.guards == 0 {
-                if let Some(parent) = self.parent.as_ref() {
-                    parent.acquire_cancel_guard();
-                }
+            if self.guards == 0
+                && let Some(parent) = self.parent.as_ref()
+            {
+                parent.acquire_cancel_guard();
             }
             self.guards += count;
         }
@@ -1301,13 +1301,13 @@ impl ScopeHandle {
         let mut state = self.lock();
         if let Some(task) = state.results.detach(task_id) {
             drop(state);
-            return task.take_result();
+            return unsafe { task.take_result() };
         }
         state.all_tasks().get(&task_id).and_then(|task| {
             if task.abort() {
                 self.inner.executor.ready_tasks.push(task.clone());
             }
-            task.take_result()
+            unsafe { task.take_result() }
         })
     }
 
@@ -1341,7 +1341,7 @@ impl ScopeHandle {
         cx: &mut Context<'_>,
     ) -> Poll<R> {
         let task = ready!(self.lock().results.poll_join_result(task_id, cx));
-        match task.take_result() {
+        match unsafe { task.take_result() } {
             Some(result) => Poll::Ready(result),
             None => {
                 // The task has been aborted so all we can do is forever return pending.
@@ -1357,7 +1357,7 @@ impl ScopeHandle {
         cx: &mut Context<'_>,
     ) -> Poll<Option<R>> {
         let task = self.lock().results.poll_join_result(task_id, cx);
-        task.map(|task| task.take_result())
+        task.map(|task| unsafe { task.take_result() })
     }
 
     pub(super) fn insert_task(&self, task: TaskHandle, for_stream: bool) -> bool {
@@ -1379,7 +1379,7 @@ impl ScopeHandle {
         let mut state = ScopeWaker::from(self.lock());
         let task = state.take_task(task_id);
         if let Some(task) = task {
-            task.drop_future_unchecked();
+            unsafe { task.drop_future_unchecked() };
         }
     }
 
@@ -1678,7 +1678,7 @@ mod tests {
             }
         }
 
-        fn as_future(self: &Arc<Self>) -> impl Future<Output = ()> {
+        fn as_future(self: &Arc<Self>) -> impl Future<Output = ()> + use<> {
             let this = Arc::clone(self);
             #[allow(clippy::redundant_async_block)] // Allow returning `&*this` out of this fn.
             async move {

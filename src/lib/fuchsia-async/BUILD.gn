@@ -32,7 +32,7 @@ fuchsia_unittest_package("fuchsia-async-tests") {
 
 if (is_host) {
   rustc_binary("fuchsia-async-shutdown-test-bin") {
-    edition = "2021"
+    edition = "2024"
     with_unit_tests = false
     deps = [
       ":fuchsia-async",
@@ -140,7 +140,7 @@ rustc_library("fuchsia-async") {
       "src/runtime/portable/scope.rs",
     ]
   }
-  edition = "2021"
+  edition = "2024"
   proc_macro_deps = [ "//src/lib/fuchsia-async-macro" ]
   test_deps = []
   test_deps += [

@@ -126,7 +126,7 @@ impl Meta {
         // It's possible for this to race with another thread so we only drop the result if we are
         // successful in setting the RESULT_TAKEN bit.
         if self.state.fetch_or(RESULT_TAKEN, ordering) & RESULT_TAKEN == 0 {
-            (self.vtable.drop_result)(self.into());
+            unsafe { (self.vtable.drop_result)(self.into()) };
         }
     }
 }
@@ -186,29 +186,29 @@ impl<F: Future> AtomicFuture<F> {
     };
 
     unsafe fn drop(meta: NonNull<Meta>) {
-        drop(Box::from_raw(meta.cast::<Self>().as_mut()));
+        drop(unsafe { Box::from_raw(meta.cast::<Self>().as_mut()) });
     }
 
     unsafe fn poll(meta: NonNull<Meta>, cx: &mut Context<'_>) -> Poll<()> {
-        let future = &mut meta.cast::<Self>().as_mut().future;
-        let result = ready!(Pin::new_unchecked(&mut *future.future).poll(cx));
+        let future = &mut unsafe { meta.cast::<Self>().as_mut() }.future;
+        let result = ready!(unsafe { Pin::new_unchecked(&mut *future.future) }.poll(cx));
         // This might panic which will leave ourselves in a bad state. We deal with this by
         // aborting (see below).
-        ManuallyDrop::drop(&mut future.future);
+        unsafe { ManuallyDrop::drop(&mut future.future) };
         future.result = ManuallyDrop::new(result);
         Poll::Ready(())
     }
 
     unsafe fn drop_future(meta: NonNull<Meta>) {
-        ManuallyDrop::drop(&mut meta.cast::<Self>().as_mut().future.future);
+        unsafe { ManuallyDrop::drop(&mut meta.cast::<Self>().as_mut().future.future) };
     }
 
     unsafe fn get_result(meta: NonNull<Meta>) -> *const () {
-        &*meta.cast::<Self>().as_mut().future.result as *const F::Output as *const ()
+        unsafe { &*meta.cast::<Self>().as_mut().future.result as *const F::Output as *const () }
     }
 
     unsafe fn drop_result(meta: NonNull<Meta>) {
-        ManuallyDrop::drop(&mut meta.cast::<Self>().as_mut().future.result);
+        unsafe { ManuallyDrop::drop(&mut meta.cast::<Self>().as_mut().future.result) };
     }
 }
 
@@ -297,16 +297,18 @@ impl<'a> AtomicFutureHandle<'a> {
         F::Output: 'a,
     {
         Self(
-            NonNull::new_unchecked(Box::into_raw(Box::new(AtomicFuture {
-                meta: Meta {
-                    vtable: &AtomicFuture::<F>::VTABLE,
-                    // The future is inactive and we start with a single reference.
-                    state: AtomicUsize::new(1 | INACTIVE),
-                    scope,
-                    id,
-                },
-                future: FutureOrResult { future: ManuallyDrop::new(future) },
-            })))
+            unsafe {
+                NonNull::new_unchecked(Box::into_raw(Box::new(AtomicFuture {
+                    meta: Meta {
+                        vtable: &AtomicFuture::<F>::VTABLE,
+                        // The future is inactive and we start with a single reference.
+                        state: AtomicUsize::new(1 | INACTIVE),
+                        scope,
+                        id,
+                    },
+                    future: FutureOrResult { future: ManuallyDrop::new(future) },
+                })))
+            }
             .cast::<Meta>(),
             PhantomData,
         )
@@ -455,7 +457,7 @@ impl<'a> AtomicFutureHandle<'a> {
         if old & WITH_ACTIVE_GUARD != 0 {
             meta.scope().release_cancel_guard();
         }
-        (meta.vtable.drop_future)(meta.into());
+        unsafe { (meta.vtable.drop_future)(meta.into()) };
     }
 
     /// Drops the future if it is not currently being polled. Returns success if the future was
@@ -536,7 +538,7 @@ impl<'a> AtomicFutureHandle<'a> {
         if meta.state.load(Relaxed) & (DONE | RESULT_TAKEN) == DONE
             && meta.state.fetch_or(RESULT_TAKEN, Acquire) & RESULT_TAKEN == 0
         {
-            Some(((meta.vtable.get_result)(meta.into()) as *const R).read())
+            Some(unsafe { ((meta.vtable.get_result)(meta.into()) as *const R).read() })
         } else {
             None
         }

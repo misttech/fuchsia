@@ -39,35 +39,47 @@ impl<H: Hooks> HooksWrapper<H> {
     // Returns a mutable reference to the wrapper. This will be safe from the functions below
     // because they are all called when we have exclusive access.
     unsafe fn wrapper<'a>(meta: NonNull<Meta>) -> &'a mut Self {
-        let meta = meta.as_ref();
-        meta.scope().executor().hooks_map.0.lock().get(&meta.id).unwrap().cast::<Self>().as_mut()
-    }
-
-    unsafe fn drop(mut meta: NonNull<Meta>) {
-        let meta_ref = meta.as_mut();
-        // Remove the hooks entry from the map.
-        let hooks = Box::from_raw(
-            meta_ref
+        unsafe {
+            meta.as_ref()
                 .scope()
                 .executor()
                 .hooks_map
                 .0
                 .lock()
-                .remove(&meta_ref.id)
+                .get(&meta.as_ref().id)
                 .unwrap()
                 .cast::<Self>()
-                .as_mut(),
-        );
+                .as_mut()
+        }
+    }
+
+    unsafe fn drop(mut meta: NonNull<Meta>) {
+        let meta_ref = unsafe { meta.as_mut() };
+        // Remove the hooks entry from the map.
+        let hooks = unsafe {
+            Box::from_raw(
+                meta_ref
+                    .scope()
+                    .executor()
+                    .hooks_map
+                    .0
+                    .lock()
+                    .remove(&meta_ref.id)
+                    .unwrap()
+                    .cast::<Self>()
+                    .as_mut(),
+            )
+        };
         // Restore the vtable because the drop implementation can call `drop_future` or
         // `drop_result`, but we've removed the hooks from the map now.
         meta_ref.vtable = hooks.orig_vtable;
-        (hooks.orig_vtable.drop)(meta);
+        unsafe { (hooks.orig_vtable.drop)(meta) };
     }
 
     unsafe fn poll(meta: NonNull<Meta>, cx: &mut Context<'_>) -> Poll<()> {
-        let wrapper = Self::wrapper(meta);
+        let wrapper = unsafe { Self::wrapper(meta) };
         wrapper.hooks.task_poll_start();
-        let result = (wrapper.orig_vtable.poll)(meta, cx);
+        let result = unsafe { (wrapper.orig_vtable.poll)(meta, cx) };
         wrapper.hooks.task_poll_end();
         if result.is_ready() {
             wrapper.hooks.task_completed();
@@ -76,15 +88,15 @@ impl<H: Hooks> HooksWrapper<H> {
     }
 
     unsafe fn drop_future(meta: NonNull<Meta>) {
-        (Self::wrapper(meta).orig_vtable.drop_future)(meta);
+        unsafe { (Self::wrapper(meta).orig_vtable.drop_future)(meta) };
     }
 
     unsafe fn get_result(meta: NonNull<Meta>) -> *const () {
-        (Self::wrapper(meta).orig_vtable.get_result)(meta)
+        unsafe { (Self::wrapper(meta).orig_vtable.get_result)(meta) }
     }
 
     unsafe fn drop_result(meta: NonNull<Meta>) {
-        (Self::wrapper(meta).orig_vtable.drop_result)(meta);
+        unsafe { (Self::wrapper(meta).orig_vtable.drop_result)(meta) };
     }
 }
 
@@ -97,15 +109,17 @@ impl AtomicFutureHandle<'_> {
             let mut hooks_map = meta.scope().executor().hooks_map.0.lock();
             // SAFETY: Safe because `Box::into_raw` is guaranteed to give is a non-null pointer. We
             // can use `Box::into_non_null` when it's stabilised.
-            assert!(hooks_map
-                .insert(meta.id, unsafe {
-                    NonNull::new_unchecked(Box::into_raw(Box::new(HooksWrapper {
-                        orig_vtable: meta.vtable,
-                        hooks,
-                    })))
-                    .cast::<()>()
-                })
-                .is_none());
+            assert!(
+                hooks_map
+                    .insert(meta.id, unsafe {
+                        NonNull::new_unchecked(Box::into_raw(Box::new(HooksWrapper {
+                            orig_vtable: meta.vtable,
+                            hooks,
+                        })))
+                        .cast::<()>()
+                    })
+                    .is_none()
+            );
         }
         // Inject our vtable.
         meta.vtable = &HooksWrapper::<H>::VTABLE;
@@ -116,9 +130,9 @@ impl AtomicFutureHandle<'_> {
 mod tests {
     use super::Hooks;
     use crate::runtime::fuchsia::executor::scope::Spawnable;
-    use crate::{yield_now, SpawnableFuture, TestExecutor};
-    use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+    use crate::{SpawnableFuture, TestExecutor, yield_now};
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
     #[test]
     fn test_hooks() {

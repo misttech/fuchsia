@@ -601,13 +601,12 @@ impl Channel {
                         .into_iter()
                         .enumerate()
                         .for_each(|(i, hdl)| handles[i] = MaybeUninit::new(hdl));
-                    if read_side.is_empty() {
-                        if let Err(e) = obj
+                    if read_side.is_empty()
+                        && let Err(e) = obj
                             .signal(side, Signals::OBJECT_READABLE, Signals::NONE)
                             .status_for_self()
-                        {
-                            return Poll::Ready(Ok((Err(e), msg_bytes_len, msg_handles_len)));
-                        }
+                    {
+                        return Poll::Ready(Ok((Err(e), msg_bytes_len, msg_handles_len)));
                     }
                     Poll::Ready(Ok((Ok(()), msg_bytes_len, msg_handles_len)))
                 }
@@ -1844,10 +1843,11 @@ impl<Q> HdlData for KObject<Q> {
         signals.remove(clear_mask);
         signals.insert(set_mask);
         self.wakers.side_mut(side).wake(*signals);
-        if !was_drained && self.is_drained() {
-            if let Some(waker) = self.drain_waker.take() {
-                waker.wake()
-            }
+        if !was_drained
+            && self.is_drained()
+            && let Some(waker) = self.drain_waker.take()
+        {
+            waker.wake()
         }
         Ok(())
     }

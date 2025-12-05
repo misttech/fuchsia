@@ -95,7 +95,7 @@ impl LocalExecutor {
         ///
         /// See the comment below.
         unsafe fn remove_lifetime(obj: AtomicFutureHandle<'_>) -> TaskHandle {
-            std::mem::transmute(obj)
+            unsafe { std::mem::transmute(obj) }
         }
 
         let scope = &self.ehandle.root_scope;
@@ -360,11 +360,11 @@ impl TestExecutor {
         let ehandle = EHandle::local();
         loop {
             let _: Poll<_> = Self::poll_until_stalled(future::pending::<()>()).await;
-            if let Some(next_timer) = Self::next_timer() {
-                if next_timer <= time {
-                    ehandle.inner().set_fake_time(next_timer);
-                    continue;
-                }
+            if let Some(next_timer) = Self::next_timer()
+                && next_timer <= time
+            {
+                ehandle.inner().set_fake_time(next_timer);
+                continue;
             }
             ehandle.inner().set_fake_time(time);
             break;

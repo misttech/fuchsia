@@ -267,21 +267,21 @@ impl StateRef {
     //
     // `Timers::inner` must be locked.
     unsafe fn nanos(&self) -> i64 {
-        *(*self.0).nanos.get()
+        unsafe { *(*self.0).nanos.get() }
     }
 
     // # Safety
     //
     // `Timers::inner` must be locked.
     unsafe fn nanos_mut(&mut self) -> &mut i64 {
-        &mut *(*self.0).nanos.get()
+        unsafe { &mut *(*self.0).nanos.get() }
     }
 
     // # Safety
     //
     // `Timers::inner` must be locked.
     unsafe fn set_index(&mut self, index: HeapIndex) -> HeapIndex {
-        std::mem::replace(&mut *(*self.0).index.get(), index)
+        std::mem::replace(unsafe { &mut *(*self.0).index.get() }, index)
     }
 }
 

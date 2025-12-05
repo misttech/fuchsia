@@ -68,10 +68,10 @@ impl TaskGroup {
 mod tests {
     use super::*;
     use crate::{SendExecutorBuilder, Task};
-    use futures::channel::mpsc;
     use futures::StreamExt;
-    use std::sync::atomic::{AtomicU64, Ordering};
+    use futures::channel::mpsc;
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicU64, Ordering};
 
     // Notifies a channel when dropped, signifying completion of some operation.
     #[derive(Clone)]
@@ -99,7 +99,7 @@ mod tests {
             Self { tx, rx }
         }
 
-        fn add_one(&self) -> impl Drop {
+        fn add_one(&self) -> impl Drop + use<> {
             DoneSignaler { done: self.tx.clone() }
         }
 

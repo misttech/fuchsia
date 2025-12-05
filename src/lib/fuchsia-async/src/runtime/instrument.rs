@@ -152,13 +152,12 @@ mod tests {
                 scopes: Default::default(),
             });
             // Extract parent scope
-            if let Some(parent_handle) = parent_scope {
-                if let Some(parent_scope) = parent_handle
+            if let Some(parent_handle) = parent_scope
+                && let Some(parent_scope) = parent_handle
                     .instrument_data()
                     .and_then(|data| data.downcast_ref::<Arc<TrackedScope>>())
-                {
-                    parent_scope.scopes.lock().push(tracked_scope.clone());
-                }
+            {
+                parent_scope.scopes.lock().push(tracked_scope.clone());
             }
 
             self.scopes.lock().push(tracked_scope.clone());

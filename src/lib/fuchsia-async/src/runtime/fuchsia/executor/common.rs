@@ -571,7 +571,7 @@ impl Executor {
     ///
     /// The caller must guarantee that the executor isn't running.
     pub(super) unsafe fn drop_main_task(&self, root_scope: &ScopeHandle) {
-        root_scope.drop_task_unchecked(MAIN_TASK_ID);
+        unsafe { root_scope.drop_task_unchecked(MAIN_TASK_ID) };
     }
 
     fn try_poll(&self, task: TaskHandle) -> bool {

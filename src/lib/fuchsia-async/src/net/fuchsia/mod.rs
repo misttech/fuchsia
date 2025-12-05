@@ -142,7 +142,7 @@ where
     /// The raw file descriptor returned from `inner.as_raw_fd()` must not be
     /// closed until the returned `EventedFd` is dropped.
     pub unsafe fn new(inner: T) -> io::Result<Self> {
-        let fdio = syscall::fdio_unsafe_fd_to_io(inner.as_raw_fd());
+        let fdio = unsafe { syscall::fdio_unsafe_fd_to_io(inner.as_raw_fd()) };
         let signal_receiver = EHandle::local().register_receiver(EventedFdPacketReceiver {
             fdio,
             // Optimistically assume that the fd is readable and writable.
@@ -267,11 +267,11 @@ impl<T: AsRawFd + Read> AsyncRead for EventedFd<T> {
     ) -> Poll<Result<usize, io::Error>> {
         ready!(EventedFd::poll_readable(&*self, cx))?;
         let res = (*self).as_mut().read(buf);
-        if let Err(e) = &res {
-            if e.kind() == io::ErrorKind::WouldBlock {
-                self.need_read(cx);
-                return Poll::Pending;
-            }
+        if let Err(e) = &res
+            && e.kind() == io::ErrorKind::WouldBlock
+        {
+            self.need_read(cx);
+            return Poll::Pending;
         }
         Poll::Ready(res)
     }
@@ -287,11 +287,11 @@ impl<T: AsRawFd + Write> AsyncWrite for EventedFd<T> {
     ) -> Poll<Result<usize, io::Error>> {
         ready!(EventedFd::poll_writable(&*self, cx))?;
         let res = (*self).as_mut().write(buf);
-        if let Err(e) = &res {
-            if e.kind() == io::ErrorKind::WouldBlock {
-                self.need_write(cx);
-                return Poll::Pending;
-            }
+        if let Err(e) = &res
+            && e.kind() == io::ErrorKind::WouldBlock
+        {
+            self.need_write(cx);
+            return Poll::Pending;
         }
         Poll::Ready(res)
     }
@@ -319,11 +319,11 @@ where
     ) -> Poll<Result<usize, io::Error>> {
         ready!(EventedFd::poll_readable(*self, cx))?;
         let res = (*self).as_ref().read(buf);
-        if let Err(e) = &res {
-            if e.kind() == io::ErrorKind::WouldBlock {
-                self.need_read(cx);
-                return Poll::Pending;
-            }
+        if let Err(e) = &res
+            && e.kind() == io::ErrorKind::WouldBlock
+        {
+            self.need_read(cx);
+            return Poll::Pending;
         }
         Poll::Ready(res)
     }
@@ -341,11 +341,11 @@ where
     ) -> Poll<Result<usize, io::Error>> {
         ready!(EventedFd::poll_writable(*self, cx))?;
         let res = (*self).as_ref().write(buf);
-        if let Err(e) = &res {
-            if e.kind() == io::ErrorKind::WouldBlock {
-                self.need_write(cx);
-                return Poll::Pending;
-            }
+        if let Err(e) = &res
+            && e.kind() == io::ErrorKind::WouldBlock
+        {
+            self.need_write(cx);
+            return Poll::Pending;
         }
         Poll::Ready(res)
     }

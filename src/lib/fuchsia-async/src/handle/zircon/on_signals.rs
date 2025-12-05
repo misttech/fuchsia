@@ -134,13 +134,13 @@ impl<'a, H: AsHandleRef + 'a> OnSignalsFuture<'a, H> {
 
     fn unregister(self: Pin<&mut Self>) {
         let mut this = self.project();
-        if let Some((ehandle, key)) = this.registration.as_mut().unregister() {
-            if this.registration.receiver().maybe_signals.load(Ordering::SeqCst) == 0 {
-                // Ignore the error from zx_port_cancel, because it might just be a race condition.
-                // If the packet is handled between the above maybe_signals check and the port
-                // cancel, it will fail with ZX_ERR_NOT_FOUND, and we can't do anything about it.
-                let _ = ehandle.port().cancel(key);
-            }
+        if let Some((ehandle, key)) = this.registration.as_mut().unregister()
+            && this.registration.receiver().maybe_signals.load(Ordering::SeqCst) == 0
+        {
+            // Ignore the error from zx_port_cancel, because it might just be a race condition.
+            // If the packet is handled between the above maybe_signals check and the port
+            // cancel, it will fail with ZX_ERR_NOT_FOUND, and we can't do anything about it.
+            let _ = ehandle.port().cancel(key);
         }
     }
 }
@@ -267,8 +267,8 @@ mod test {
     use super::*;
     use crate::TestExecutor;
     use assert_matches::assert_matches;
-    use futures::future::{pending, FutureExt};
-    use futures::task::{waker, ArcWake};
+    use futures::future::{FutureExt, pending};
+    use futures::task::{ArcWake, waker};
     use std::pin::pin;
     use std::sync::Arc;
 
