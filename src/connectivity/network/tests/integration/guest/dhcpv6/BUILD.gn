@@ -24,7 +24,6 @@ rustc_test("dhcpv6") {
     "//src/connectivity/network/tests/integration/common:netstack_testing_common",
     "//src/connectivity/network/tests/integration/guest:dhcp_setup",
     "//src/connectivity/network/tests/integration/macros:netstack_testing_macros",
-    "//src/lib/diagnostics/log/rust",
     "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia",
     "//third_party/rust_crates:assert_matches",

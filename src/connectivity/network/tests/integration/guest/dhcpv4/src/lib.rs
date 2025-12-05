@@ -13,8 +13,6 @@ use netstack_testing_macros::netstack_test;
 
 #[netstack_test]
 async fn acquires_address(name: &str) {
-    diagnostics_log::initialize(diagnostics_log::PublishOptions::default())
-        .expect("initialize logging");
     let sandbox = netemul::TestSandbox::new().expect("failed to create sandbox");
     let (network, realm, iface, _): (_, _, _, netemul::TestFakeEndpoint<'_>) =
         setup_network::<Netstack2>(&sandbox, name, None).await.expect("failed to setup test");
