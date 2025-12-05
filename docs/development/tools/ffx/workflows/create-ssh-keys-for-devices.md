@@ -13,11 +13,6 @@ loaded with these public SSH keys, the `ffx` commands (running from the host
 machine where a matching private SSH key is stored) can establish an SSH
 connection to the device.
 
-Commands that initialize the Fuchsia device, such as `ffx target flash` and `ffx
-emu start` will generate ssh keys if they are not found. The location for the
-ssh key files is configured using `ffx config set ssh.pub` and `ffx config set
-ssh.priv`.
-
 By default, Fuchsia-specific SSH keys are stored in the `$HOME/.ssh` directory
 of the host machine, as shown below:
 
@@ -25,11 +20,6 @@ of the host machine, as shown below:
 $HOME/.ssh/fuchsia_ed25519
 $HOME/.ssh/fuchsia_authorized_keys
 ```
-
-You can check the configuration and consistency of the ssh keys by running `ffx
-config check-ssh-keys` which will also generate the keys if they are missing, or
-update the public key file to include the public key matching the private key if
-missing.
 
 Note: These keys are not password protected. Don't use these keys for
 non-development devices.
@@ -47,6 +37,22 @@ file gets uploaded from the host machine to the Fuchsia device.
 If you have multiple development machines, it's recommended that the Fuchsia SSH
 keys are synchronized across your development machines. This may require you to
 copy the existing Fuchsia SSH keys files from one machine to another.
+
+## Create the keys
+
+To check the configuration of the ssh keys, run the following command:
+
+```posix-terminal
+ffx config check-ssh-keys
+```
+
+This command generates the keys if they are missing, or updates the public key
+file to include the public key matching the private key if it's missing.
+
+Alternatively, commands that initialize the Fuchsia device, such as `ffx target
+flash` and `ffx emu start`, generate SSH keys if they are not found. The
+location for the SSH key files can be configured using `ffx config set ssh.pub`
+and `ffx config set ssh.priv`.
 
 ## Troubleshooting
 
