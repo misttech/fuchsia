@@ -35,6 +35,10 @@ class AsyncAdapter:
     ```python
     class TestClass(AsyncAdapter, BaseTestClass):
 
+        def __init__(self):
+            AsyncAdapter.__init__(self)
+            # ...
+
         @asyncmethod
         async def foo(self) -> None:
             await asyncio.sleep(1)
@@ -47,6 +51,12 @@ class AsyncAdapter:
     when using the `asyncmethod` decorator, make sure to put this first in the
     inheritance order to ensure proper initialization based on Python's
     method resolution order.
+
+    Limitations:
+
+    It is not currently possible to call one async-wrapped method from inside
+    another async-wrapped method. To workaround this one will have to write
+    regular async helper functions.
     """
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:

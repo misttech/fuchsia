@@ -6,13 +6,13 @@
 import asyncio
 import logging
 import os
-import threading
-import time
 from datetime import datetime
 
 import fidl_fuchsia_tracing as f_tracing
 import fidl_fuchsia_tracing_controller as f_tracingcontroller
 import fuchsia_controller_py as fc
+from fidl import AsyncSocket
+from fuchsia_controller_py.wrappers import AsyncAdapter, asyncmethod
 
 from honeydew import affordances_capable
 from honeydew.affordances.tracing import tracing
@@ -72,7 +72,7 @@ DEFAULT_CATEGORIES: list[str] = [
 # LINT.ThenChange(//src/developer/ffx/plugins/trace/data/config.json)
 
 
-class TracingUsingFc(tracing.Tracing):
+class TracingUsingFc(AsyncAdapter, tracing.Tracing):
     """Tracing affordance implementation using Fuchsia-Controller."""
 
     def __init__(
@@ -81,21 +81,22 @@ class TracingUsingFc(tracing.Tracing):
         fuchsia_controller: fc_transport.FuchsiaController,
         reboot_affordance: affordances_capable.RebootCapableDevice,
     ) -> None:
+        AsyncAdapter.__init__(self)
         self._name: str = device_name
         self._fc_transport: fc_transport.FuchsiaController = fuchsia_controller
 
         self._trace_controller_proxy: f_tracingcontroller.SessionClient | None
 
-        self._trace_socket: fc.Socket | None
+        self._trace_socket: AsyncSocket | None
         self._session_initialized: bool
         self._tracing_active: bool
-        self._drain_thread: threading.Thread | None = None
+        self._drain_task: asyncio.Task[None] | None = None
         self._trace_buffer: bytearray | None
 
         # `_reset_state` needs to be called on initialization, and thereafter on
         # every device bootup.
-        self._reset_state()
-        reboot_affordance.register_for_on_device_boot(fn=self._reset_state)
+        self.loop().run_until_complete(self._reset_state())
+        reboot_affordance.register_for_on_device_boot(fn=self.reboot_handler)
         self.verify_supported()
 
     def verify_supported(self) -> None:
@@ -105,16 +106,28 @@ class TracingUsingFc(tracing.Tracing):
         """
         # TODO(http://b/409625325): Implement the method logic
 
-    def _reset_state(self) -> None:
+    @asyncmethod
+    async def reboot_handler(self) -> None:
+        """A method for handling reboots meant to be passed to the reboot affordance."""
+        _LOGGER.info("Received device boot signal. Resetting")
+        await self._reset_state()
+
+    @asyncmethod
+    async def _reset_state_sync(self) -> None:
+        """Resets internal state. This is primarily for testing."""
+        await self._reset_state()
+
+    async def _reset_state(self) -> None:
         """Resets internal state tracking variables to correspond to an inactive
         state; i.e. tracing uniniailized and not started.
         """
-        if self._drain_thread:
+        if self._drain_task:
             _LOGGER.info(
                 "Trace session reset before trace downloaded, attempting to cleanup."
             )
-            self._drain_thread.join()
-            self._drain_thread = None
+            if not self._drain_task.done():
+                await self._drain_task
+            self._drain_task = None
         self._trace_buffer = None
         self._trace_socket = None
         self._trace_controller_proxy = None
@@ -197,7 +210,6 @@ class TracingUsingFc(tracing.Tracing):
         trace_socket_server, trace_socket_client = fc.Socket.create()
 
         try:
-            # 1-way FIDL calls do not return a Coroutine, so async isn't needed
             trace_provisioner_proxy.initialize_tracing(
                 controller=server.take(),
                 config=f_tracingcontroller.TraceConfig(
@@ -213,10 +225,11 @@ class TracingUsingFc(tracing.Tracing):
                 "fuchsia.tracing.controller.Initialize FIDL Error"
             ) from status
         self._trace_controller_proxy = f_tracingcontroller.SessionClient(client)
-        self._trace_socket = trace_socket_client
+        self._trace_socket = AsyncSocket(trace_socket_client)
         self._session_initialized = True
 
-    def start(self) -> None:
+    @asyncmethod
+    async def start(self) -> None:
         """Starts tracing.
 
         Raises:
@@ -236,18 +249,18 @@ class TracingUsingFc(tracing.Tracing):
 
         try:
             assert self._trace_controller_proxy is not None
-            asyncio.run(
-                self._trace_controller_proxy.start_tracing(
-                    buffer_disposition=f_tracing.BufferDisposition.CLEAR_ENTIRE
-                )
+            await self._trace_controller_proxy.start_tracing(
+                buffer_disposition=f_tracing.BufferDisposition.CLEAR_ENTIRE
             )
         except fc.ZxStatus as status:
             raise TracingError(
                 "fuchsia.tracing.controller.Start FIDL Error"
             ) from status
         self._tracing_active = True
+        self._ensure_drain_task()
 
-    def stop(self) -> None:
+    @asyncmethod
+    async def stop(self) -> None:
         """Stops the current trace.
 
         Raises:
@@ -265,17 +278,12 @@ class TracingUsingFc(tracing.Tracing):
                 f"Cannot stop: Trace not started on {self._name}"
             )
         _LOGGER.info("Stopping trace on '%s'", self._name)
-
-        self._drain_thread = threading.Thread(
-            target=self._drain_socket_and_store_buffer
-        )
-        self._drain_thread.start()
-
         try:
             assert self._trace_controller_proxy is not None
-            stop_tracing_response = asyncio.run(
-                self._trace_controller_proxy.stop_tracing(write_results=True)
-            ).unwrap()
+            res = await self._trace_controller_proxy.stop_tracing(
+                write_results=True
+            )
+            stop_tracing_response = res.unwrap()
             assert (
                 stop_tracing_response.provider_stats is not None
             ), f"{stop_tracing_response!r} missing provider_stats"
@@ -292,41 +300,42 @@ class TracingUsingFc(tracing.Tracing):
             ) from e
         self._tracing_active = False
 
-    def _drain_socket_and_store_buffer(self) -> None:
-        """Helper to run `_drain_socket` in a thread and store the result."""
+    def _ensure_drain_task(self) -> None:
+        """Helper to make sure there is a background task for draining the socket."""
+        # Ensure this isn't set multiple times, else the socket will race itself
+        # and in all likelihood the drain task will never complete.
+        if self._drain_task is None:
+            self._drain_task = self.loop().create_task(
+                self._drain_socket_and_store_buffer()
+            )
+            _LOGGER.debug(f"Spawned drain task: {self._drain_task}")
+        else:
+            _LOGGER.debug("Skipping creation of drain task. Already running")
+
+    async def _drain_socket_and_store_buffer(self) -> None:
+        """Helper to run drain the trace socket and store the result.
+
+        First clears self._trace_buffer then stores the output of the trace
+        socket into self._trace_buffer
+        """
         assert self._trace_socket is not None
         self._trace_buffer = bytearray()
-        _LOGGER.debug("Reading trace data in background thread.")
-        while True:
-            try:
-                result = self._trace_socket.read()
-            except fc.ZxStatus as zx:
-                if zx.args[0] == fc.ZxStatus.ZX_ERR_SHOULD_WAIT:
-                    # The sleep here is only present to ensure this thread
-                    # yields when there is nothing to do, and polls at a slow
-                    # enough rate that we don't consume the CPU.
-                    time.sleep(1)
-                    continue
-                elif zx.args[0] == fc.ZxStatus.ZX_ERR_PEER_CLOSED:
-                    _LOGGER.debug("Trace socket closed, exiting.")
-                    break
-                raise zx
-            self._trace_buffer.extend(result)
+        _LOGGER.info("Reading trace data.")
+        self._trace_buffer.extend(await self._trace_socket.read_all())
+        _LOGGER.info("Finished reading the socket")
 
-    def terminate(self) -> None:
+    @asyncmethod
+    async def terminate(self) -> None:
         """Terminates the trace session, waiting for it to fully stop."""
         if not self._session_initialized:
-            self._reset_state()
+            await self._reset_state()
             return
 
-        async def _terminate_and_wait() -> None:
+        try:
             if self._trace_controller_proxy:
                 self._trace_controller_proxy.close_cleanly()
-            if self._trace_socket:
-                self._wait_for_peer_closed(self._trace_socket)
-
-        try:
-            asyncio.run(_terminate_and_wait())
+            if self._drain_task:
+                await self._drain_task
         except (RuntimeError, fc.ZxStatus, TracingError) as e:
             _LOGGER.warning(
                 "Could not cleanly wait for trace termination: %s. "
@@ -334,9 +343,10 @@ class TracingUsingFc(tracing.Tracing):
                 e,
             )
         finally:
-            self._reset_state()
+            await self._reset_state()
 
-    def terminate_and_download(
+    @asyncmethod
+    async def terminate_and_download(
         self, directory: str, trace_file: str | None = None
     ) -> str:
         """Terminates the trace session and downloads the trace data to the
@@ -368,12 +378,12 @@ class TracingUsingFc(tracing.Tracing):
         if self._trace_controller_proxy:
             self._trace_controller_proxy.close_cleanly()
         _LOGGER.info("Collecting trace on '%s'...", self._name)
-        if self._drain_thread:
-            self._drain_thread.join()
-            self._drain_thread = None
+        if self._drain_task:
+            await self._drain_task
+            self._drain_task = None
 
         if self._trace_buffer is None:
-            if self._drain_thread is None:
+            if self._drain_task is None:
                 raise TracingStateError(
                     "Cannot download: Trace was not stopped."
                 )
@@ -394,36 +404,5 @@ class TracingUsingFc(tracing.Tracing):
             trace_file_handle.write(self._trace_buffer)
         _LOGGER.info("Trace downloaded at '%s'", trace_file_path)
 
-        self._reset_state()
+        await self._reset_state()
         return trace_file_path
-
-    def _wait_for_peer_closed(self, socket: fc.Socket) -> None:
-        """Waits for the remote end of a socket to close, discarding all data.
-
-        This is used to ensure a session is fully terminated before proceeding,
-        preventing race conditions. It's an alternative to `read_all()` when
-        the trace data is not needed.
-
-        Args:
-            socket: The socket to wait on.
-
-        Raises:
-            TracingError: If a Zircon error other than PEER_CLOSED occurs.
-        """
-        _LOGGER.debug("Waiting for trace socket peer to close...")
-        while True:
-            try:
-                # We call read() repeatedly to drain the socket buffer, but we
-                # don't store the data. The loop will exit when read() raises
-                # ZX_ERR_PEER_CLOSED.
-                socket.read()
-            except fc.ZxStatus as zx:
-                if zx.args[0] == fc.ZxStatus.ZX_ERR_PEER_CLOSED:
-                    _LOGGER.debug("Trace socket closed, exiting.")
-                    break
-                else:
-                    raise TracingError(
-                        "An unexpected error occurred while waiting for the "
-                        "trace socket to close."
-                    ) from zx
-        socket.close()

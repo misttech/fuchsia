@@ -7,7 +7,7 @@ import unittest
 
 from fuchsia_controller_py import Channel, Socket, ZxStatus
 
-from fidl import AsyncSocket
+from fidl import AlreadyReadingAll, AsyncSocket
 
 
 class SocketTests(unittest.IsolatedAsyncioTestCase):
@@ -91,3 +91,19 @@ class SocketTests(unittest.IsolatedAsyncioTestCase):
             except ZxStatus as e:
                 self.assertEqual(e.args[0], ZxStatus.ZX_ERR_PEER_CLOSED)
                 raise e
+
+    async def test_async_socket_read_fails_when_already_reading_all(self):
+        """Verifies running `read_all()` twice fails."""
+        (sock_out, sock_in) = Socket.create()
+        with self.assertRaises(AlreadyReadingAll):
+            sock_out = AsyncSocket(sock_out)
+            task = asyncio.get_running_loop().create_task(sock_out.read_all())
+            await asyncio.gather(sock_out.read_all(), task)
+
+    async def test_async_socket_read_fails_when_already_reading_all(self):
+        """Verifies running `read_all()` then `read()` fails."""
+        (sock_out, sock_in) = Socket.create()
+        with self.assertRaises(AlreadyReadingAll):
+            sock_out = AsyncSocket(sock_out)
+            task = asyncio.get_running_loop().create_task(sock_out.read_all())
+            await asyncio.gather(sock_out.read_all(), task)
