@@ -3,12 +3,13 @@
 // found in the LICENSE file.
 
 use crate::types::{Capability, FileInfo, OutputSummary, PackageContents, ProtocolToClientMap};
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use argh::FromArgs;
 use camino::Utf8PathBuf;
+use fuchsia_sync::Mutex;
 use fuchsia_url::Hash;
 use handlebars::{
-    handlebars_helper, Handlebars, Helper, HelperResult, Output, RenderContext, RenderError,
+    Handlebars, Helper, HelperResult, Output, RenderContext, RenderError, handlebars_helper,
 };
 use rayon::prelude::*;
 use serde::Serialize;
@@ -16,7 +17,7 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::io::Write;
 use std::path::Path;
-use std::sync::{LazyLock, Mutex};
+use std::sync::LazyLock;
 use std::time::Instant;
 
 #[derive(FromArgs)]
@@ -90,7 +91,7 @@ impl HtmlCommand {
             self.output.join("index.html"),
         )?;
 
-        *RENDER_PATH.lock().unwrap() = "../".to_string();
+        *RENDER_PATH.lock() = "../".to_string();
         std::fs::create_dir_all(self.output.join("packages"))?;
         input
             .packages
@@ -150,7 +151,7 @@ impl HtmlCommand {
             })
             .collect::<Result<Vec<_>>>()?;
 
-        *RENDER_PATH.lock().unwrap() = "".to_string();
+        *RENDER_PATH.lock() = "".to_string();
 
         File::create(self.output.join("style.css"))
             .context("open style.css")?
@@ -229,7 +230,7 @@ fn package_link_helper(
 fn package_page_url(package_hash: impl AsRef<str>) -> String {
     format!(
         "{}packages/{}.html",
-        *RENDER_PATH.lock().unwrap(),
+        *RENDER_PATH.lock(),
         simplify_name_for_linking(package_hash.as_ref())
     )
 }
@@ -249,7 +250,7 @@ fn content_link_helper(
 
     out.write(&format!(
         "{}contents/{}.html",
-        *RENDER_PATH.lock().unwrap(),
+        *RENDER_PATH.lock(),
         simplify_name_for_linking(input_name)
     ))?;
     Ok(())

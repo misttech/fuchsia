@@ -19,6 +19,7 @@ if (is_host) {
       "//src/lib/assembly/assembled_system",
       "//src/lib/fidl/rust/fidl",
       "//src/lib/fuchsia",
+      "//src/lib/fuchsia-sync",
       "//src/lib/fuchsia-url",
       "//src/sys/pkg/lib/far/rust:fuchsia-archive",
       "//src/sys/pkg/lib/fuchsia-pkg",

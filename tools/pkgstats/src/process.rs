@@ -15,6 +15,7 @@ use fuchsia_archive::Reader as FARReader;
 use fuchsia_pkg::PackageManifest;
 use fuchsia_repo::repo_client::RepoClient;
 use fuchsia_repo::repository::PmRepository;
+use fuchsia_sync::Mutex;
 use fuchsia_url::{Hash, UnpinnedAbsolutePackageUrl};
 use log::debug;
 use rayon::ThreadPoolBuilder;
@@ -25,8 +26,8 @@ use std::env::current_exe;
 use std::fmt::Debug;
 use std::fs::File;
 use std::io::Read;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 #[derive(FromArgs)]
@@ -110,7 +111,7 @@ impl ProcessCommand {
                 if let Some(contents) =
                     process_package_manifest(manifest, package_errors, &content_hash_to_path)
                 {
-                    names.lock().unwrap().insert(hash, contents);
+                    names.lock().insert(hash, contents);
                 }
             });
 
@@ -138,7 +139,7 @@ impl ProcessCommand {
             );
         }
 
-        content_hash_to_path.lock().unwrap().par_iter().for_each(|(hash, path)| {
+        content_hash_to_path.lock().par_iter().for_each(|(hash, path)| {
             // Checks for empty paths, Path::new("").parent is always None.
             if path.parent().is_none() {
                 debug!("Skipping, no path");
@@ -203,12 +204,11 @@ impl ProcessCommand {
                 for line in files.iter() {
                     elf_contents.source_file_references.insert(interner.intern(line));
                 }
-                file_infos.lock().unwrap().insert(hash.clone(), FileInfo::Elf(elf_contents));
+                file_infos.lock().insert(hash.clone(), FileInfo::Elf(elf_contents));
             } else {
                 debug!("Looks like some other kind of file");
                 file_infos
                     .lock()
-                    .unwrap()
                     .insert(hash.clone(), FileInfo::Other(OtherContents { source_path: path }));
                 other_count.fetch_add(1, Ordering::Relaxed);
             }
@@ -220,22 +220,21 @@ impl ProcessCommand {
             "Loaded in {:?}. {} manifests, {} valid, {} manifest errors, {} file errors. {} ELF / {} Other files found. Contents processed: {}",
             duration,
             manifest_count.load(Ordering::Relaxed),
-            names.lock().unwrap().len(),
+            names.lock().len(),
             errors.manifest_errors.load(Ordering::Relaxed),
             errors.manifest_file_errors.load(Ordering::Relaxed),
             elf_count.load(Ordering::Relaxed),
             other_count.load(Ordering::Relaxed),
-            content_hash_to_path.lock().unwrap().len(),
+            content_hash_to_path.lock().len(),
         );
 
         let start = Instant::now();
 
-        let mut packages = names.lock().unwrap().drain().collect::<BTreeMap<_, _>>();
-        let contents = file_infos.lock().unwrap().drain().collect::<BTreeMap<_, _>>();
+        let mut packages = names.lock().drain().collect::<BTreeMap<_, _>>();
+        let contents = file_infos.lock().drain().collect::<BTreeMap<_, _>>();
         let files = interner
             .intern_set
             .lock()
-            .unwrap()
             .drain()
             .map(|(k, v)| (v, FileMetadata { source_path: k }))
             .collect::<BTreeMap<_, _>>();
@@ -359,7 +358,7 @@ fn process_package_manifest(
         if blob.path == "meta/" {
             process_far(&blob_source_path, &mut contents, &errors);
         } else {
-            content_hash_to_path.lock().unwrap().insert(blob.merkle, blob_source_path);
+            content_hash_to_path.lock().insert(blob.merkle, blob_source_path);
             contents
                 .files
                 .push(PackageFile { name: blob.path.to_string(), hash: blob.merkle.to_string() });
@@ -544,10 +543,10 @@ async fn process_universe(
                             &mut contents,
                             &errors.for_package(PackageContext::Universe(&package.name)),
                         );
-                        names.lock().unwrap().insert(hash, contents);
+                        names.lock().insert(hash, contents);
                         break;
                     } else {
-                        content_hash_to_path.lock().unwrap().insert(hash, path);
+                        content_hash_to_path.lock().insert(hash, path);
                     }
                 }
             }
@@ -570,7 +569,7 @@ impl InternEnumerator {
         }
     }
     pub fn intern(&self, value: &str) -> u32 {
-        let mut set = self.intern_set.lock().unwrap();
+        let mut set = self.intern_set.lock();
         if let Some(val) = set.get(value) {
             *val
         } else {
