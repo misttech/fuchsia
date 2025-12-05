@@ -7,11 +7,11 @@ use crate::polisher::Polisher;
 use anyhow::{Context, Error};
 use fidl::HandleBased;
 use fidl::endpoints::Proxy;
-use fuchsia_sync::Mutex as SMutex;
+use fuchsia_sync::{Mutex as SMutex, RwLock};
 use futures::TryStreamExt;
 use futures::lock::Mutex;
 use log::{debug, error, info};
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 use {
     fidl_fuchsia_power_battery as fpower, fidl_fuchsia_power_system as fsystem,
     fuchsia_async as fasync,
@@ -24,7 +24,7 @@ pub(crate) trait BatterySimulationStateObserver {
 
 impl BatterySimulationStateObserver for BatteryManager {
     fn update_simulation(&self, is_simulating: bool) {
-        let mut sim_state = self.simulation_state.write().unwrap();
+        let mut sim_state = self.simulation_state.write();
         *sim_state = is_simulating;
         drop(sim_state);
         if !is_simulating {
@@ -32,7 +32,7 @@ impl BatterySimulationStateObserver for BatteryManager {
         }
     }
     fn update_simulated_battery_info(&self, battery_info: fpower::BatteryInfo) {
-        let mut simulated_battery_info = self.simulated_battery_info.write().unwrap();
+        let mut simulated_battery_info = self.simulated_battery_info.write();
         *simulated_battery_info = battery_info;
         drop(simulated_battery_info);
         self.update_watchers_conditionally(true, None);
@@ -207,7 +207,7 @@ impl BatteryManager {
         self.determine_suspend_status(new_charge_source, sag).await;
         self.publish_battery_level_on_change(info.level_percent).await;
 
-        let mut new_battery_info = self.battery_info.write().unwrap();
+        let mut new_battery_info = self.battery_info.write();
         *new_battery_info = info;
         let now = get_current_time();
         new_battery_info.timestamp = Some(now);
@@ -216,11 +216,11 @@ impl BatteryManager {
     }
 
     pub fn get_battery_info_copy(&self) -> fpower::BatteryInfo {
-        if *self.simulation_state.read().unwrap() {
-            let info_lock = self.simulated_battery_info.read().unwrap();
+        if *self.simulation_state.read() {
+            let info_lock = self.simulated_battery_info.read();
             (*info_lock).clone()
         } else {
-            let info_lock = self.battery_info.read().unwrap();
+            let info_lock = self.battery_info.read();
             (*info_lock).clone()
         }
     }
@@ -232,7 +232,7 @@ impl BatteryManager {
     }
 
     pub fn is_simulating(&self) -> bool {
-        *self.simulation_state.read().unwrap()
+        *self.simulation_state.read()
     }
 
     pub(crate) async fn serve(

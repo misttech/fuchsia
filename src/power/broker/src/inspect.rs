@@ -10,11 +10,12 @@ use fuchsia_inspect::{ArrayProperty, InspectTypeReparentable, Property};
 use fuchsia_inspect_contrib::graph as igraph;
 use fuchsia_inspect_contrib::graph::{Digraph, DigraphOpts};
 use fuchsia_inspect_contrib::nodes::BoundedListNode;
+use fuchsia_sync::Mutex;
 use futures::FutureExt;
 use std::cell::RefCell;
 use std::collections::{HashMap, VecDeque};
 use std::rc::Rc;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use {fidl_fuchsia_power_broker as fpb, fuchsia_inspect as inspect};
 
 const ADD_ELEMENT_EVENT: &str = "add_element";
@@ -258,7 +259,7 @@ impl TopologyInspect {
                 async move {
                     let inspector = inspect::Inspector::default();
                     if let Some(shadow) = shadow_weak.upgrade() {
-                        let shadow_ref = shadow.lock().unwrap();
+                        let shadow_ref = shadow.lock();
                         let root = inspector.root();
                         root.record_uint("event_capacity", max_events as u64);
                         let duration = shadow_ref.history_duration().into_seconds();
@@ -520,7 +521,7 @@ impl TopologyInspect {
                     node.record_int(TIME, instant.into_nanos());
                     node.record_child(event_name, callback);
                 });
-                self.shadow.lock().unwrap().add_entry(ShadowEvent { time: instant })
+                self.shadow.lock().add_entry(ShadowEvent { time: instant })
             }
         }
     }

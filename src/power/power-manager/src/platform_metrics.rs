@@ -1156,11 +1156,11 @@ mod tests {
     ///     - dispatch a Cobalt event for the `raw_temperature` metric
     #[fuchsia::test]
     fn test_cpu_temperature_logging_task() {
-        let executor = std::sync::Mutex::new(fasync::TestExecutor::new_with_fake_time());
+        let executor = fuchsia_sync::Mutex::new(fasync::TestExecutor::new_with_fake_time());
 
         // Initialize current time
         let mut current_time = Seconds(0.0);
-        executor.lock().unwrap().set_fake_time(current_time.into());
+        executor.lock().set_fake_time(current_time.into());
 
         let mut mock_maker = MockNodeMaker::new();
         let mock_cpu_temperature = mock_maker.make("MockCpuTemperature", vec![]);
@@ -1182,7 +1182,7 @@ mod tests {
         let mut futures_out = futures_out.collect::<()>();
 
         let mut iterate_polling_loop = |temperature| {
-            let mut executor = executor.lock().unwrap();
+            let mut executor = executor.lock();
             mock_cpu_temperature.add_msg_response_pair((
                 msg_eq!(ReadTemperature),
                 msg_ok_return!(ReadTemperature(temperature)),
@@ -1210,7 +1210,7 @@ mod tests {
 
         // Verify the `historical_max_cpu_temperature_c` property is published
         assert_data_tree!(
-            @executor executor.lock().unwrap(),
+            @executor executor.lock(),
             inspector,
             root: {
                 platform_metrics: contains {
@@ -1229,7 +1229,7 @@ mod tests {
 
         // Verify the first "minute" is rolled out
         assert_data_tree!(
-            @executor executor.lock().unwrap(),
+            @executor executor.lock(),
             inspector,
             root: {
                 platform_metrics: contains {

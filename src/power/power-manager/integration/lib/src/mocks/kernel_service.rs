@@ -6,9 +6,10 @@ use fidl::endpoints::ServerEnd;
 use fidl_fuchsia_io::DirectoryMarker;
 use fuchsia_component::server::ServiceFs;
 use fuchsia_component_test::LocalComponentHandles;
+use fuchsia_sync::Mutex;
 use futures::{StreamExt, TryStreamExt};
 use log::*;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use {fidl_fuchsia_kernel as fkernel, fuchsia_async as fasync};
 
 /// Mocks the fuchsia.kernel.Stats service to be used in integration tests.
@@ -42,7 +43,7 @@ impl MockKernelService {
                     match stats_request {
                         fkernel::StatsRequest::GetCpuStats { responder } => {
                             responder
-                                .send(&(*this.cpu_stats.lock().unwrap()))
+                                .send(&(*this.cpu_stats.lock()))
                                 .unwrap_or_else(|e| info!("MockKernelService send error: {:?}", e));
                         }
                         _ => info!("MockKernelService: stats request not supported!"),
@@ -59,7 +60,7 @@ impl MockKernelService {
     }
 
     pub async fn set_cpu_stats(&self, cpu_stats: fkernel::CpuStats) {
-        let mut stats = self.cpu_stats.lock().unwrap();
+        let mut stats = self.cpu_stats.lock();
         *stats = cpu_stats;
     }
 }
