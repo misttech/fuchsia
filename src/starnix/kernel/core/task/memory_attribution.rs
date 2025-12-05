@@ -94,7 +94,7 @@ impl MemoryAttributionManager {
                 kernel.kthreads.spawn(move |_, _| {
                     Self::run(weak_kernel, publisher_rx, initial_state_rx, pid_receiver);
                 });
-                kernel.pids.write().set_thread_group_notifier(pid_sender);
+                kernel.pids.read().set_thread_group_notifier(pid_sender);
             }
             events
         }));

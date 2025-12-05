@@ -4,6 +4,7 @@
 
 use crate::task::memory_attribution::MemoryAttributionLifecycleEvent;
 use crate::task::{ProcessGroup, Task, ThreadGroup, ZombieProcess};
+use fuchsia_rcu::rcu_option_cell::RcuOptionCell;
 use starnix_logging::track_stub;
 use starnix_rcu::{RcuHashMap, RcuReadScope};
 use starnix_types::ownership::{OwnedRef, TempRef, WeakRef};
@@ -65,7 +66,7 @@ pub struct PidTable {
     process_groups: RcuHashMap<pid_t, Arc<ProcessGroup>>,
 
     /// Used to notify thread group changes.
-    thread_group_notifier: Option<std::sync::mpsc::Sender<MemoryAttributionLifecycleEvent>>,
+    thread_group_notifier: RcuOptionCell<std::sync::mpsc::Sender<MemoryAttributionLifecycleEvent>>,
 }
 
 impl PidTable {
@@ -89,10 +90,10 @@ impl PidTable {
     }
 
     pub fn set_thread_group_notifier(
-        &mut self,
+        &self,
         notifier: std::sync::mpsc::Sender<MemoryAttributionLifecycleEvent>,
     ) {
-        self.thread_group_notifier = Some(notifier);
+        self.thread_group_notifier.update(Some(notifier));
     }
 
     pub fn allocate_pid(&mut self) -> pid_t {
@@ -127,8 +128,9 @@ impl PidTable {
             assert!(entry.process.is_none());
             entry.process = ProcessEntry::ThreadGroup(OwnedRef::downgrade(task.thread_group()));
 
+            let scope = RcuReadScope::new();
             // Notify thread group changes.
-            if let Some(notifier) = &self.thread_group_notifier {
+            if let Some(notifier) = self.thread_group_notifier.as_ref(&scope) {
                 task.thread_group.write().notifier = Some(notifier.clone());
                 let _ = notifier.send(MemoryAttributionLifecycleEvent::creation(task.tid));
             }
@@ -193,8 +195,9 @@ impl PidTable {
             entry.process = ProcessEntry::None;
         });
 
+        let scope = RcuReadScope::new();
         // Notify thread group changes.
-        if let Some(notifier) = &self.thread_group_notifier {
+        if let Some(notifier) = self.thread_group_notifier.as_ref(&scope) {
             let _ = notifier.send(MemoryAttributionLifecycleEvent::destruction(pid));
         }
     }
