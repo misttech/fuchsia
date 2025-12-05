@@ -63,12 +63,19 @@ fn has_multiple_unknown_targets(targets: &Vec<TargetInfo>) -> bool {
     false
 }
 
-fn is_ipv4(addr: &TargetAddr) -> bool {
-    matches!(addr, TargetAddr::Net(a) if a.is_ipv4())
-}
-
-fn is_ipv6(addr: &TargetAddr) -> bool {
-    matches!(addr, TargetAddr::Net(a) if a.is_ipv6())
+fn matches_addr_type(addr: &TargetAddr, ty: AddressTypes) -> bool {
+    match addr {
+        TargetAddr::Net(a) => {
+            if a.is_ipv4() {
+                ty.contains(AddressTypes::IPV4)
+            } else {
+                debug_assert!(a.is_ipv6());
+                ty.contains(AddressTypes::IPV6)
+            }
+        }
+        TargetAddr::VSockCtx(_) => ty.contains(AddressTypes::USB),
+        TargetAddr::UsbCtx(_) => ty.contains(AddressTypes::VSOCK),
+    }
 }
 
 pub fn filter_targets_by_address_types(
@@ -77,15 +84,11 @@ pub fn filter_targets_by_address_types(
 ) -> Vec<TargetInfo> {
     targets
         .into_iter()
-        .filter_map(|mut target| match address_types {
-            AddressTypes::All => Some(target),
-            AddressTypes::None => None,
-            AddressTypes::Ipv4Only => {
-                target.addresses.retain(is_ipv4);
-                Some(target)
-            }
-            AddressTypes::Ipv6Only => {
-                target.addresses.retain(is_ipv6);
+        .filter_map(|mut target| {
+            if address_types.is_empty() {
+                None
+            } else {
+                target.addresses.retain(|addr| matches_addr_type(addr, address_types));
                 Some(target)
             }
         })
@@ -1046,7 +1049,7 @@ mod test {
     fn test_device_finder_format() {
         let formatter = Box::<dyn TargetFormatter>::try_from((
             Format::Simple,
-            AddressTypes::All,
+            AddressTypes::all(),
             vec![make_valid_target(), make_valid_target()],
         ))
         .unwrap();
@@ -1058,7 +1061,7 @@ mod test {
     fn test_device_finder_format_ipv4_only() {
         let formatter = Box::<dyn TargetFormatter>::try_from((
             Format::Simple,
-            AddressTypes::Ipv4Only,
+            AddressTypes::IPV4,
             vec![make_valid_ipv4_only_target(), make_valid_target()],
         ))
         .unwrap();
@@ -1070,7 +1073,7 @@ mod test {
     fn test_device_finder_format_ipv6_only() {
         let formatter = Box::<dyn TargetFormatter>::try_from((
             Format::Simple,
-            AddressTypes::Ipv6Only,
+            AddressTypes::IPV6,
             vec![make_valid_ipv4_only_target(), make_valid_target()],
         ))
         .unwrap();
@@ -1082,7 +1085,7 @@ mod test {
     fn test_addresses_format() {
         let formatter = Box::<dyn TargetFormatter>::try_from((
             Format::Addresses,
-            AddressTypes::All,
+            AddressTypes::all(),
             vec![make_valid_target(), make_valid_target()],
         ))
         .unwrap();

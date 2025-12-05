@@ -40,6 +40,7 @@ ffx_plugin("ffx_list") {
     "//src/developer/ffx/core:lib",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:argh",
+    "//third_party/rust_crates:bitflags",
   ]
 
   sources = [ "src/lib.rs" ]

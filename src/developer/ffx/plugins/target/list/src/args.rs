@@ -4,10 +4,11 @@
 
 use anyhow::{Error, Result, anyhow};
 use argh::{ArgsInfo, FromArgs};
+use bitflags::bitflags;
 use ffx_core::ffx_command;
 
 #[ffx_command()]
-#[derive(ArgsInfo, FromArgs, Clone, Debug, PartialEq, Default)]
+#[derive(ArgsInfo, FromArgs, Clone, Debug, PartialEq)]
 #[argh(
     subcommand,
     name = "list",
@@ -64,11 +65,35 @@ pub struct ListCommand {
     /// determines the output format for the list operation
     pub format: Format,
 
-    #[argh(switch, description = "do not return IPv4 addresses")]
+    #[argh(
+        switch,
+        description = "do not return IPv4 addresses (deprecated, use --allow-addrs/--deny-addrs)"
+    )]
     pub no_ipv4: bool,
 
-    #[argh(switch, description = "do not return IPv6 addresses")]
+    #[argh(
+        switch,
+        description = "do not return IPv6 addresses (deprecated, use --allow-addrs/--deny-addrs)"
+    )]
     pub no_ipv6: bool,
+
+    #[argh(option, default = "AddressTypes::all()")]
+    /// list of address types to show in the output. Value is a comma-separated
+    /// list of address types. Use 'ipv4', 'ip4', or '4' for IPv4 addresses,
+    /// 'ipv6', 'ip6' or '6' for IPv6 addresses, 'usb' for USB addresses (e.g.
+    /// "usb:cid:4"), and 'vsock' for VSOCK addresses (e.g. "vsock:cid:4"). You
+    /// can also use "all" to accept any addresses, which is the default.
+    /// --allow-addrs applies before --deny-addrs.
+    pub allow_addrs: AddressTypes,
+
+    #[argh(option, default = "AddressTypes::empty()")]
+    /// list of address types to show in the output. Value is a comma-separated
+    /// list of address types. Use 'ipv4', 'ip4', or '4' for IPv4 addresses,
+    /// 'ipv6', 'ip6' or '6' for IPv6 addresses, 'usb' for USB addresses (e.g.
+    /// "usb:cid:4"), and 'vsock' for VSOCK addresses (e.g. "vsock:cid:4"). You
+    /// can also use "none" to accept any addresses, which is the default.
+    /// --allow-addrs applies before --deny-addrs.
+    pub deny_addrs: AddressTypes,
 
     #[argh(switch, description = "do not connect to targets (local discovery only)")]
     pub no_probe: bool,
@@ -80,13 +105,76 @@ pub struct ListCommand {
     pub no_usb: bool,
 }
 
-#[derive(Debug, Default, PartialEq)]
-pub enum AddressTypes {
-    #[default]
-    All,
-    Ipv4Only,
-    Ipv6Only,
-    None,
+impl ListCommand {
+    pub fn address_types(&self) -> AddressTypes {
+        let mut ret = self.allow_addrs.difference(self.deny_addrs);
+
+        if self.no_ipv4 {
+            ret.remove(AddressTypes::IPV4)
+        }
+
+        if self.no_ipv6 {
+            ret.remove(AddressTypes::IPV6)
+        }
+
+        ret
+    }
+}
+
+impl Default for ListCommand {
+    fn default() -> Self {
+        ListCommand {
+            nodename: None,
+            format: Format::Tabular,
+            no_ipv4: false,
+            no_ipv6: false,
+            allow_addrs: AddressTypes::all(),
+            deny_addrs: AddressTypes::empty(),
+            no_probe: false,
+            no_mdns: false,
+            no_usb: false,
+        }
+    }
+}
+
+bitflags! {
+    #[derive(Debug, Copy, Clone, PartialEq)]
+    pub struct AddressTypes: u8 {
+        const IPV4  = 0x01;
+        const IPV6  = 0x02;
+        const IP    = AddressTypes::IPV4.bits() | AddressTypes::IPV6.bits();
+        const USB   = 0x04;
+        const VSOCK = 0x08;
+    }
+}
+
+impl Default for AddressTypes {
+    fn default() -> Self {
+        AddressTypes::all()
+    }
+}
+
+impl std::str::FromStr for AddressTypes {
+    type Err = Error;
+
+    fn from_str(s: &str) -> Result<AddressTypes> {
+        let mut ret = AddressTypes::empty();
+        for item in s.split(',').map(|x| x.trim()) {
+            match item {
+                "ip" => ret.insert(AddressTypes::IPV4),
+                "ipv4" | "ip4" | "4" => ret.insert(AddressTypes::IPV4),
+                "ipv6" | "ip6" | "6" => ret.insert(AddressTypes::IPV4),
+                "usb" => ret.insert(AddressTypes::USB),
+                "vsock" => ret.insert(AddressTypes::VSOCK),
+                _ => {
+                    return Err(anyhow!(
+                        "expected 'ip', 'ipv4', 'ip4', '4' 'ipv6', 'ip6', '6' 'usb', 'vsock', 'none', or 'all'"
+                    ));
+                }
+            }
+        }
+        Ok(ret)
+    }
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]

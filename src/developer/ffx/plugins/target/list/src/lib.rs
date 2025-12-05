@@ -7,7 +7,7 @@ use anyhow::Result;
 use async_trait::async_trait;
 use errors::{ffx_bail, ffx_bail_with_code};
 use ffx_config::EnvironmentContext;
-use ffx_list_args::{AddressTypes, ListCommand};
+use ffx_list_args::ListCommand;
 use ffx_target::{TargetInfo, TargetInfoQuery};
 use ffx_writer::{ToolIO as _, VerifiedMachineWriter};
 use fho::{Deferred, FfxMain, FfxTool, deferred};
@@ -16,18 +16,6 @@ use futures::TryStreamExt;
 use target_behavior::{ConnectionBehavior, target_interface};
 use target_formatter::{JsonTarget, JsonTargetFormatter, TargetFormatter};
 use target_holders::daemon_protocol;
-
-fn address_types_from_cmd(cmd: &ListCommand) -> AddressTypes {
-    if cmd.no_ipv4 && cmd.no_ipv6 {
-        AddressTypes::None
-    } else if cmd.no_ipv4 {
-        AddressTypes::Ipv6Only
-    } else if cmd.no_ipv6 {
-        AddressTypes::Ipv4Only
-    } else {
-        AddressTypes::All
-    }
-}
 
 #[derive(FfxTool)]
 #[target(None)]
@@ -146,9 +134,9 @@ async fn show_targets(
             }
         }
         _ => {
-            let address_types = address_types_from_cmd(&cmd);
-            if let AddressTypes::None = address_types {
-                ffx_bail!("Invalid arguments, cannot specify both --no_ipv4 and --no_ipv6")
+            let address_types = cmd.address_types();
+            if address_types.is_empty() {
+                ffx_bail!("Invalid arguments, you must allow at least one address type")
             }
             if writer.is_machine() {
                 let res = target_formatter::filter_targets_by_address_types(infos, address_types);
@@ -219,7 +207,7 @@ mod test {
     use super::*;
     use addr::TargetAddr;
     use ffx_command::FfxCommandLine;
-    use ffx_list_args::Format;
+    use ffx_list_args::{AddressTypes, Format};
     use ffx_target::info::{RemoteControlState, TargetState};
     use ffx_writer::TestBuffers;
     use fidl_fuchsia_developer_ffx as ffx;
@@ -453,7 +441,12 @@ mod test {
     #[fuchsia::test]
     async fn test_list_with_address_types_none() -> Result<()> {
         let num_tests = 25;
-        let cmd_none = ListCommand { no_ipv4: true, no_ipv6: true, ..Default::default() };
+        let cmd_none = ListCommand {
+            no_ipv4: true,
+            no_ipv6: true,
+            allow_addrs: AddressTypes::IP,
+            ..Default::default()
+        };
         let output = try_run_list_test(num_tests, cmd_none, false).await;
         assert!(output.is_err());
         Ok(())
@@ -462,15 +455,15 @@ mod test {
     #[test]
     fn test_address_types_from_cmd() -> Result<()> {
         let cmd_none = ListCommand { no_ipv4: true, no_ipv6: true, ..Default::default() };
-        assert_eq!(address_types_from_cmd(&cmd_none), AddressTypes::None);
+        assert_eq!(cmd_none.address_types(), AddressTypes::IP.complement());
         let cmd_ipv4_only = ListCommand { no_ipv4: false, no_ipv6: true, ..Default::default() };
-        assert_eq!(address_types_from_cmd(&cmd_ipv4_only), AddressTypes::Ipv4Only);
+        assert_eq!(cmd_ipv4_only.address_types(), AddressTypes::IPV6.complement());
         let cmd_ipv6_only = ListCommand { no_ipv4: true, no_ipv6: false, ..Default::default() };
-        assert_eq!(address_types_from_cmd(&cmd_ipv6_only), AddressTypes::Ipv6Only);
+        assert_eq!(cmd_ipv6_only.address_types(), AddressTypes::IPV4.complement());
         let cmd_all = ListCommand { no_ipv4: false, no_ipv6: false, ..Default::default() };
-        assert_eq!(address_types_from_cmd(&cmd_all), AddressTypes::All);
+        assert_eq!(cmd_all.address_types(), AddressTypes::all());
         let cmd_all_default = ListCommand::default();
-        assert_eq!(address_types_from_cmd(&cmd_all_default), AddressTypes::All);
+        assert_eq!(cmd_all_default.address_types(), AddressTypes::all());
         Ok(())
     }
 

@@ -30,7 +30,7 @@
       "optionality": "optional",
       "long": "--no-ipv4",
       "short": null,
-      "description": "do not return IPv4 addresses",
+      "description": "do not return IPv4 addresses (deprecated, use --allow-addrs/--deny-addrs)",
       "hidden": false
     },
     {
@@ -38,7 +38,31 @@
       "optionality": "optional",
       "long": "--no-ipv6",
       "short": null,
-      "description": "do not return IPv6 addresses",
+      "description": "do not return IPv6 addresses (deprecated, use --allow-addrs/--deny-addrs)",
+      "hidden": false
+    },
+    {
+      "kind": {
+        "Option": {
+          "arg_name": "allow-addrs"
+        }
+      },
+      "optionality": "optional",
+      "long": "--allow-addrs",
+      "short": null,
+      "description": "list of address types to show in the output. Value is a comma-separated list of address types. Use 'ipv4', 'ip4', or '4' for IPv4 addresses, 'ipv6', 'ip6' or '6' for IPv6 addresses, 'usb' for USB addresses (e.g. \"usb:cid:4\"), and 'vsock' for VSOCK addresses (e.g. \"vsock:cid:4\"). You can also use \"all\" to accept any addresses, which is the default. --allow-addrs applies before --deny-addrs.",
+      "hidden": false
+    },
+    {
+      "kind": {
+        "Option": {
+          "arg_name": "deny-addrs"
+        }
+      },
+      "optionality": "optional",
+      "long": "--deny-addrs",
+      "short": null,
+      "description": "list of address types to show in the output. Value is a comma-separated list of address types. Use 'ipv4', 'ip4', or '4' for IPv4 addresses, 'ipv6', 'ip6' or '6' for IPv6 addresses, 'usb' for USB addresses (e.g. \"usb:cid:4\"), and 'vsock' for VSOCK addresses (e.g. \"vsock:cid:4\"). You can also use \"none\" to accept any addresses, which is the default. --allow-addrs applies before --deny-addrs.",
       "hidden": false
     },
     {
