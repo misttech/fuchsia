@@ -78,7 +78,12 @@ pub trait Sink {
             num_events_dropped.fetch_add(previously_dropped + 1, ordering);
         };
 
-        let mut buf = [0u8; MAX_DATAGRAM_LEN_BYTES as _];
+        // TODO(https://fxbug.dev/466294903): Explore optimizations:
+        // 1) Use uninitialized buffer to avoid zeroing.
+        // 2) Potentially use stack allocation for smaller messages by first measuring
+        //    the encoded size.
+
+        let mut buf = vec![0u8; MAX_DATAGRAM_LEN_BYTES as _];
         let mut encoder = Encoder::new(
             Cursor::new(&mut buf[..]),
             EncoderOpts { always_log_file_line: self.config().always_log_file_line },
