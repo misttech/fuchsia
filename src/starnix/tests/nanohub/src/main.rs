@@ -163,6 +163,6 @@ async fn main() {
     info!(status:?; "endpoint_reader stopped");
     assert_eq!(status, ExitStatus::Clean);
 
-    let display_requests = display_requests.lock().unwrap();
+    let display_requests = display_requests.lock();
     assert_eq!(*display_requests, vec!["GetDisplayState", "GetDisplayInfo", "GetDisplaySelect"]);
 }

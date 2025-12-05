@@ -50,7 +50,7 @@ pub trait RwLockFor<L> {
 mod example {
     //! Example implementations of the traits in this crate.
 
-    use std::sync::{Mutex, MutexGuard};
+    use fuchsia_sync::{Mutex, MutexGuard};
 
     use super::*;
 
@@ -64,7 +64,7 @@ mod example {
             Self: 'l;
 
         fn lock(&self) -> Self::Guard<'_> {
-            self.lock().unwrap()
+            self.lock()
         }
     }
 }

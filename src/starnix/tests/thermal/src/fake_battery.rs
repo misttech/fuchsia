@@ -6,8 +6,9 @@ use anyhow::Error;
 use fidl_fuchsia_power_battery::{ChargerRequest, ChargerRequestStream, ChargerServiceRequest};
 use fuchsia_component::server::ServiceFs;
 use fuchsia_component_test::LocalComponentHandles;
+use fuchsia_sync::Mutex;
 use futures::prelude::*;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 pub type ChargerEnableRequests = Arc<Mutex<Vec<bool>>>;
 
@@ -39,7 +40,7 @@ pub async fn mock_charger_service(
                                     "mock_charger_service: Received Enable({}) request",
                                     enable
                                 );
-                                requests.lock().unwrap().push(enable);
+                                requests.lock().push(enable);
                                 responder.send(Ok(()))?;
                             }
                             _ => unreachable!("Unknown charger request"),

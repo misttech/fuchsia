@@ -65,8 +65,8 @@ macro_rules! lock_level {
 #[cfg(test)]
 mod test {
     use crate::{LockBefore, LockEqualOrBefore, LockFor, Locked, Unlocked};
+    use fuchsia_sync::{Mutex, MutexGuard};
     use lock_ordering_macro::lock_ordering;
-    use std::sync::{Mutex, MutexGuard};
     extern crate self as starnix_sync;
 
     lock_ordering! {
@@ -87,7 +87,7 @@ mod test {
         where
             Self: 'l;
         fn lock(&self) -> Self::Guard<'_> {
-            self.a.lock().unwrap()
+            self.a.lock()
         }
     }
 
@@ -98,7 +98,7 @@ mod test {
         where
             Self: 'l;
         fn lock(&self) -> Self::Guard<'_> {
-            self.c.lock().unwrap()
+            self.c.lock()
         }
     }
 
@@ -190,11 +190,11 @@ mod test {
         impl LockFor<LevelA> for HoldsLocks {
             type Data = u8;
             type Guard<'l>
-                = std::sync::MutexGuard<'l, u8>
+                = fuchsia_sync::MutexGuard<'l, u8>
             where
                 Self: 'l;
             fn lock(&self) -> Self::Guard<'_> {
-                self.a.lock().unwrap()
+                self.a.lock()
             }
         }
 

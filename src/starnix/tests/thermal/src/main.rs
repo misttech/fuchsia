@@ -143,6 +143,6 @@ async fn main() {
     info!(status:?; "thermal_client stopped");
     assert_eq!(status, ExitStatus::Clean);
 
-    let battery_charger_enable_requests = battery_charger_enable_requests.lock().unwrap();
+    let battery_charger_enable_requests = battery_charger_enable_requests.lock();
     assert_eq!(*battery_charger_enable_requests, vec![false, true]);
 }

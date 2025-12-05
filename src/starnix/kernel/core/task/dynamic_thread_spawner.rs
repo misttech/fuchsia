@@ -380,14 +380,14 @@ mod tests {
         spawn_kernel_and_run(async |_, current_task| {
             let spawner = DynamicThreadSpawner::new(1, current_task.weak_task());
 
-            let pair = Arc::new((std::sync::Mutex::new(false), std::sync::Condvar::new()));
+            let pair = Arc::new((fuchsia_sync::Mutex::new(false), fuchsia_sync::Condvar::new()));
             for _ in 0..10 {
                 let pair2 = Arc::clone(&pair);
                 spawner.spawn(move |_, _| {
                     let (lock, cvar) = &*pair2;
-                    let mut cont = lock.lock().unwrap();
+                    let mut cont = lock.lock();
                     while !*cont {
-                        cont = cvar.wait(cont).unwrap();
+                        cvar.wait(&mut cont);
                     }
                 });
             }
@@ -396,7 +396,7 @@ mod tests {
                 spawner.spawn_and_get_result_sync(move |_, _| {
                     {
                         let (lock, cvar) = &*pair;
-                        let mut cont = lock.lock().unwrap();
+                        let mut cont = lock.lock();
                         *cont = true;
                         cvar.notify_all();
                     }

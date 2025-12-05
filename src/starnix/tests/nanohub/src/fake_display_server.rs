@@ -9,8 +9,9 @@ use fidl_fuchsia_hardware_google_nanohub::{
 };
 use fuchsia_component::server::ServiceFs;
 use fuchsia_component_test::LocalComponentHandles;
+use fuchsia_sync::Mutex;
 use futures::prelude::*;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 pub type DisplayRequests = Arc<Mutex<Vec<String>>>;
 
@@ -31,7 +32,7 @@ pub async fn mock_display_server(
                     async move {
                         match request {
                             DisplayDeviceRequest::GetDisplayState { responder } => {
-                                requests.lock().unwrap().push("GetDisplayState".into());
+                                requests.lock().push("GetDisplayState".into());
                                 let response = DisplayState {
                                     mode: Some(DisplayMode::On),
                                     ..Default::default()
@@ -39,7 +40,7 @@ pub async fn mock_display_server(
                                 responder.send(Ok(&response))?;
                             }
                             DisplayDeviceRequest::GetDisplayInfo { responder } => {
-                                requests.lock().unwrap().push("GetDisplayInfo".into());
+                                requests.lock().push("GetDisplayInfo".into());
                                 let response = DisplaySyncInfo {
                                     display_mode: Some(DisplayMode::On),
                                     panel_mode: Some(1),
@@ -50,7 +51,7 @@ pub async fn mock_display_server(
                                 responder.send(Ok(&response))?;
                             }
                             DisplayDeviceRequest::GetDisplaySelect { responder } => {
-                                requests.lock().unwrap().push("GetDisplaySelect".into());
+                                requests.lock().push("GetDisplaySelect".into());
                                 let response = DisplayDeviceGetDisplaySelectResponse {
                                     display_select: Some(DisplaySelect::Mcu),
                                     ..Default::default()
@@ -58,7 +59,7 @@ pub async fn mock_display_server(
                                 responder.send(Ok(&response))?;
                             }
                             DisplayDeviceRequest::SetDisplaySelect { payload: _, responder } => {
-                                requests.lock().unwrap().push("SetDisplaySelect".into());
+                                requests.lock().push("SetDisplaySelect".into());
                                 responder.send(Ok(()))?;
                             }
                         }

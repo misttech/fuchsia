@@ -24,7 +24,7 @@
 //! See also tests for this crate.
 //!
 //! ```
-//! use std::sync::Mutex;
+//! use fuchsia_sync::Mutex;
 //! use starnix_sync::{lock_ordering, lock::LockFor, relation::LockAfter, Unlocked};
 //!
 //! #[derive(Default)]
@@ -42,19 +42,19 @@
 //!
 //! impl LockFor<LockA> for HoldsLocks {
 //!    type Data = u8;
-//!    type Guard<'l> = std::sync::MutexGuard<'l, u8>
+//!    type Guard<'l> = fuchsia_sync::MutexGuard<'l, u8>
 //!        where Self: 'l;
 //!    fn lock(&self) -> Self::Guard<'_> {
-//!        self.a.lock().unwrap()
+//!        self.a.lock()
 //!    }
 //! }
 //!
 //! impl LockFor<LockB> for HoldsLocks {
 //!    type Data = u32;
-//!    type Guard<'l> = std::sync::MutexGuard<'l, u32>
+//!    type Guard<'l> = fuchsia_sync::MutexGuard<'l, u32>
 //!        where Self: 'l;
 //!    fn lock(&self) -> Self::Guard<'_> {
-//!        self.b.lock().unwrap()
+//!        self.b.lock()
 //!    }
 //! }
 //!
@@ -88,7 +88,7 @@
 //!
 //! This won't compile because `LockB` does not implement `LockBefore<LockA>`:
 //! ```compile_fail
-//! # use std::sync::Mutex;
+//! # use fuchsia_sync::Mutex;
 //! # use starnix_sync::{lock_ordering, lock::LockFor, Locked, Unlocked};
 //! #
 //! # #[derive(Default)]
@@ -106,7 +106,7 @@
 //! #
 //! # impl LockFor<LockA> for HoldsLocks {
 //! #    type Data = u8;
-//! #    type Guard<'l> = std::sync::MutexGuard<'l, u8>
+//! #    type Guard<'l> = fuchsia_sync::MutexGuard<'l, u8>
 //! #        where Self: 'l;
 //! #    fn lock(&self) -> Self::Guard<'_> {
 //! #        self.a.lock().unwrap()
@@ -115,7 +115,7 @@
 //! #
 //! # impl LockFor<LockB> for HoldsLocks {
 //! #     type Data = u32;
-//! #     type Guard<'l> = std::sync::MutexGuard<'l, u32>
+//! #     type Guard<'l> = fuchsia_sync::MutexGuard<'l, u32>
 //! #         where Self: 'l;
 //! #     fn lock(&self) -> Self::Guard<'_> {
 //! #         self.b.lock().unwrap()
@@ -137,7 +137,7 @@
 //! access state. This doesn't work:
 //!
 //! ```compile_fail
-//! # use std::sync::Mutex;
+//! # use fuchsia_sync::Mutex;
 //! # use starnix_sync::{lock_ordering, lock::LockFor, Locked, Unlocked};
 //! #
 //! # #[derive(Default)]
@@ -155,7 +155,7 @@
 //! #
 //! # impl LockFor<LockA> for HoldsLocks {
 //! #     type Data = u8;
-//! #     type Guard<'l> = std::sync::MutexGuard<'l, u8>
+//! #     type Guard<'l> = fuchsia_sync::MutexGuard<'l, u8>
 //! #         where Self: 'l;
 //! #     fn lock(&self) -> Self::Guard<'_> {
 //! #         self.a.lock().unwrap()
@@ -164,7 +164,7 @@
 //! #
 //! # impl LockFor<LockB> for HoldsLocks {
 //! #     type Data = u32;
-//! #     type Guard<'l> = std::sync::MutexGuard<'l, u32>
+//! #     type Guard<'l> = fuchsia_sync::MutexGuard<'l, u32>
 //! #         where Self: 'l;
 //! #     fn lock(&self) -> Self::Guard<'_> {
 //! #         self.b.lock().unwrap()
@@ -411,7 +411,7 @@ impl<L> Locked<L> {
 
 #[cfg(test)]
 mod test {
-    use std::sync::{Mutex, MutexGuard, RwLock, RwLockReadGuard, RwLockWriteGuard};
+    use fuchsia_sync::{Mutex, MutexGuard, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
     #[test]
     fn example() {
@@ -433,22 +433,22 @@ mod test {
         impl LockFor<LockA> for HoldsLocks {
             type Data = u8;
             type Guard<'l>
-                = std::sync::MutexGuard<'l, u8>
+                = fuchsia_sync::MutexGuard<'l, u8>
             where
                 Self: 'l;
             fn lock(&self) -> Self::Guard<'_> {
-                self.a.lock().unwrap()
+                self.a.lock()
             }
         }
 
         impl LockFor<LockB> for HoldsLocks {
             type Data = u32;
             type Guard<'l>
-                = std::sync::MutexGuard<'l, u32>
+                = fuchsia_sync::MutexGuard<'l, u32>
             where
                 Self: 'l;
             fn lock(&self) -> Self::Guard<'_> {
-                self.b.lock().unwrap()
+                self.b.lock()
             }
         }
 
@@ -502,7 +502,7 @@ mod test {
         type Data = u8;
         type Guard<'l> = MutexGuard<'l, u8>;
         fn lock(&self) -> Self::Guard<'_> {
-            self.a.lock().unwrap()
+            self.a.lock()
         }
     }
 
@@ -510,7 +510,7 @@ mod test {
         type Data = u16;
         type Guard<'l> = MutexGuard<'l, u16>;
         fn lock(&self) -> Self::Guard<'_> {
-            self.b.lock().unwrap()
+            self.b.lock()
         }
     }
 
@@ -518,7 +518,7 @@ mod test {
         type Data = u64;
         type Guard<'l> = MutexGuard<'l, u64>;
         fn lock(&self) -> Self::Guard<'_> {
-            self.c.lock().unwrap()
+            self.c.lock()
         }
     }
 
@@ -527,10 +527,10 @@ mod test {
         type ReadGuard<'l> = RwLockReadGuard<'l, u128>;
         type WriteGuard<'l> = RwLockWriteGuard<'l, u128>;
         fn read_lock(&self) -> Self::ReadGuard<'_> {
-            self.d.read().unwrap()
+            self.d.read()
         }
         fn write_lock(&self) -> Self::WriteGuard<'_> {
-            self.d.write().unwrap()
+            self.d.write()
         }
     }
 
@@ -538,7 +538,7 @@ mod test {
         type Data = Mutex<u8>;
         type Guard<'l> = MutexGuard<'l, Mutex<u8>>;
         fn lock(&self) -> Self::Guard<'_> {
-            self.e.lock().unwrap()
+            self.e.lock()
         }
     }
 
@@ -546,7 +546,7 @@ mod test {
         type Data = u8;
         type Guard<'l> = MutexGuard<'l, u8>;
         fn lock(&self) -> Self::Guard<'_> {
-            self.lock().unwrap()
+            self.lock()
         }
     }
 
@@ -554,7 +554,7 @@ mod test {
         type Data = Vec<Mutex<u8>>;
         type Guard<'l> = MutexGuard<'l, Vec<Mutex<u8>>>;
         fn lock(&self) -> Self::Guard<'_> {
-            self.g.lock().unwrap()
+            self.g.lock()
         }
     }
 
@@ -562,7 +562,7 @@ mod test {
         type Data = u8;
         type Guard<'l> = MutexGuard<'l, u8>;
         fn lock(&self) -> Self::Guard<'_> {
-            self.lock().unwrap()
+            self.lock()
         }
     }
 
