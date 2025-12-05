@@ -2,6 +2,7 @@
     {
         "name": "AEMU",
         "skippable": false,
+        "env_name": "AEMU-x64",
         "tests": [
             {
                 "name": "fuchsia-pkg://fuchsia.com/affected-nonhermetic-test#meta/affected-nonhermetic-test.cm",
@@ -176,6 +177,7 @@
     {
         "name": "affected:AEMU",
         "skippable": false,
+        "env_name": "AEMU-x64",
         "tests": [
             {
                 "name": "fuchsia-pkg://fuchsia.com/affected-hermetic-test#meta/affected-hermetic-test.cm",
@@ -306,6 +308,7 @@
     {
         "name": "hermetic:AEMU",
         "skippable": true,
+        "env_name": "AEMU-x64",
         "tests": [
             {
                 "name": "fuchsia-pkg://fuchsia.com/unaffected-hermetic-test#meta/unaffected-hermetic-test.cm",

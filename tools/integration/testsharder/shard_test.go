@@ -98,6 +98,7 @@ func shard(env build.Environment, os string, ids ...int) *Shard {
 		Env:        populateEnvDefaults(env, "x64", false),
 		ExpectsSSH: true,
 		HostCPU:    GetHostCPU(env, env.Emulator.Accel == build.AccelNone),
+		EnvName:    makeEnvName(env.Dimensions.DeviceType(), env.Dimensions.OS(), "x64"),
 	}
 }
 
@@ -112,6 +113,7 @@ func shardWithMetadata(env build.Environment, os string, testMetadata metadata.T
 		Env:        populateEnvDefaults(env, "x64", false),
 		ExpectsSSH: true,
 		HostCPU:    GetHostCPU(env, env.Emulator.Accel == build.AccelNone),
+		EnvName:    makeEnvName(env.Dimensions.DeviceType(), env.Dimensions.OS(), "x64"),
 	}
 }
 
@@ -128,8 +130,9 @@ func TestMakeShards(t *testing.T) {
 		Dimensions: build.DimensionSet{"os": "Linux", "cpu": "x64"},
 		Tags:       []string{},
 	}
+	// This environment is meant to have an empty device_type field, and this environment should not work.
 	env4 := build.Environment{
-		Dimensions: build.DimensionSet{"device_type": "AEMU", "cpu": "arm64"},
+		Dimensions: build.DimensionSet{"cpu": "x64"},
 		Tags:       []string{},
 	}
 	env5 := build.Environment{
@@ -151,7 +154,8 @@ func TestMakeShards(t *testing.T) {
 	}
 
 	basicOpts := &ShardOptions{
-		Tags: []string{},
+		Tags:       []string{},
+		DefaultCPU: "x64",
 	}
 
 	t.Run("environments have nonempty names", func(t *testing.T) {
@@ -163,8 +167,55 @@ func TestMakeShards(t *testing.T) {
 		}
 	})
 
+	t.Run("envName field is created correctly", func(t *testing.T) {
+		shards, _ := MakeShards(
+			[]build.TestSpec{spec(1, env1, env2), spec(2, env1, env3), spec(3, env3)},
+			nil,
+			basicOpts,
+			make(map[string]metadata.TestMetadata),
+		)
+		var envNames []string
+		for _, shard := range shards {
+			envNames = append(envNames, shard.EnvName)
+		}
+		expected := []string{"QEMU-x64", "NUC-x64", "Linux-x64"}
+		opts := cmp.Options{
+			cmpopts.SortSlices(func(a, b string) bool { return a < b }),
+		}
+		if diff := cmp.Diff(expected, envNames, opts...); diff != "" {
+			t.Fatalf("envNames mismatch: (-want +got):\n%s", diff)
+		}
+	})
+
+	t.Run("error is thrown if device_type and os fields are empty", func(t *testing.T) {
+		_, err := MakeShards(
+			[]build.TestSpec{spec(1, env4, env2), spec(2, env4, env3), spec(3, env3)},
+			nil,
+			basicOpts,
+			make(map[string]metadata.TestMetadata),
+		)
+		if err == nil {
+			t.Fatalf("an error should be thrown if the device_type and os fields are empty\n")
+		}
+	})
+
+	t.Run("error is thrown if the DefaultCPU field on the opts struct is empty", func(t *testing.T) {
+		opts := &ShardOptions{
+			Tags: []string{},
+		}
+		_, err := MakeShards(
+			[]build.TestSpec{spec(1, env1, env2), spec(2, env1, env3), spec(3, env1)},
+			nil,
+			opts,
+			make(map[string]metadata.TestMetadata),
+		)
+		if err == nil {
+			t.Fatalf("an error should be thrown if the DefaultCPU field on the opts struct is empty\n")
+		}
+	})
+
 	t.Run("tests of same environment are grouped", func(t *testing.T) {
-		actual := MakeShards(
+		actual, _ := MakeShards(
 			[]build.TestSpec{spec(1, env1, env2), spec(2, env1, env3), spec(3, env3)},
 			nil,
 			basicOpts,
@@ -175,7 +226,7 @@ func TestMakeShards(t *testing.T) {
 	})
 
 	t.Run("tests with diff emulator envs should be separate", func(t *testing.T) {
-		actual := MakeShards(
+		actual, _ := MakeShards(
 			[]build.TestSpec{spec(1, env5), spec(2, env5), spec(3, env6)},
 			nil,
 			basicOpts,
@@ -195,19 +246,19 @@ func TestMakeShards(t *testing.T) {
 			ComponentID: 1478143,
 		}
 		metadataMap := make(map[string]metadata.TestMetadata)
-		metadataMap["fuchsia-pkg://fuchsia.com/test4"] = testMetadata
-		actual := MakeShards(
-			[]build.TestSpec{spec(1, env1, env2), spec(2, env1, env3), spec(3, env3), spec(4, env4)},
+		metadataMap["fuchsia-pkg://fuchsia.com/test3"] = testMetadata
+		actual, _ := MakeShards(
+			[]build.TestSpec{spec(1, env1, env2), spec(2, env1), spec(3, env3)},
 			nil,
 			basicOpts,
 			metadataMap,
 		)
-		expected := []*Shard{fuchsiaShard(env1, 1, 2), fuchsiaShard(env2, 1), fuchsiaShard(env3, 2, 3), fuchsiaShardWithMetadata(env4, testMetadata, 4)}
+		expected := []*Shard{fuchsiaShard(env1, 1, 2), fuchsiaShard(env2, 1), fuchsiaShardWithMetadata(env3, testMetadata, 3)}
 		assertEqual(t, expected, actual)
 	})
 
 	t.Run("there is no deduplication of tests", func(t *testing.T) {
-		actual := MakeShards(
+		actual, _ := MakeShards(
 			[]build.TestSpec{spec(1, env1), spec(1, env1), spec(1, env1)},
 			nil,
 			basicOpts,
@@ -221,7 +272,7 @@ func TestMakeShards(t *testing.T) {
 	// corresponding environments appear in the input. This is the simplest
 	// deterministic order we can produce for the shards.
 	t.Run("shards are ordered", func(t *testing.T) {
-		actual := MakeShards(
+		actual, _ := MakeShards(
 			[]build.TestSpec{spec(1, env2, env3), spec(2, env1), spec(3, env3)},
 			nil,
 			basicOpts,
@@ -238,7 +289,7 @@ func TestMakeShards(t *testing.T) {
 			return env2
 		}
 
-		actual := MakeShards(
+		actual, _ := MakeShards(
 			[]build.TestSpec{
 				spec(1, tagger(env1, "A")),
 				spec(2, tagger(env1, "A", "B", "C")),
@@ -248,7 +299,8 @@ func TestMakeShards(t *testing.T) {
 			},
 			nil,
 			&ShardOptions{
-				Tags: []string{"A", "C"},
+				Tags:       []string{"A", "C"},
+				DefaultCPU: "x64",
 			},
 			make(map[string]metadata.TestMetadata),
 		)
@@ -266,7 +318,7 @@ func TestMakeShards(t *testing.T) {
 			return env2
 		}
 
-		actual := MakeShards(
+		actual, _ := MakeShards(
 			[]build.TestSpec{
 				spec(1, env1),
 				spec(1, withAcct(env1, "acct1")),
@@ -291,7 +343,7 @@ func TestMakeShards(t *testing.T) {
 			return env2
 		}
 
-		actual := MakeShards(
+		actual, _ := MakeShards(
 			[]build.TestSpec{
 				spec(1, env1),
 				spec(1, withNetboot(env1)),
@@ -314,7 +366,7 @@ func TestMakeShards(t *testing.T) {
 			return test
 		}
 
-		actual := MakeShards(
+		actual, _ := MakeShards(
 			[]build.TestSpec{
 				isolate(spec(1, env1, env2)),
 				spec(2, env1),
@@ -354,7 +406,7 @@ func TestMakeShards(t *testing.T) {
 			},
 			Execution: build.ExecutionDef{Realm: "/some/realm"},
 		}
-		actual := MakeShards(
+		actual, _ := MakeShards(
 			[]build.TestSpec{
 				spec(1, env1, env2),
 				spec(2, env1),
@@ -380,12 +432,14 @@ func TestMakeShards(t *testing.T) {
 				Env:        populateEnvDefaults(env1, "x64", false),
 				ExpectsSSH: true,
 				HostCPU:    GetHostCPU(env1, false),
+				EnvName:    makeEnvName(env1.Dimensions.DeviceType(), env1.Dimensions.OS(), basicOpts.DefaultCPU),
 			}, {
 				Name:       environmentName(env2),
 				Tests:      []Test{makeTestWithTagsAndRealm(1, testListEntry.Tags, "/some/realm"), makeTest(3, "fuchsia")},
 				Env:        populateEnvDefaults(env2, "x64", false),
 				ExpectsSSH: true,
 				HostCPU:    GetHostCPU(env2, false),
+				EnvName:    makeEnvName(env2.Dimensions.DeviceType(), env2.Dimensions.OS(), basicOpts.DefaultCPU),
 			},
 		}
 		assertEqual(t, expected, actual)
@@ -438,7 +492,7 @@ func TestMakeShards(t *testing.T) {
 			return test
 		}
 
-		actual := MakeShards(
+		actual, _ := MakeShards(
 			[]build.TestSpec{
 				withPackageManifest(spec(1, env1, env2)),
 				spec(2, env1),
@@ -483,6 +537,7 @@ func TestMakeShards(t *testing.T) {
 				PkgRepo:    fmt.Sprintf("repo_%s", environmentName(env1)),
 				Deps:       []string{fmt.Sprintf("repo_%s", environmentName(env1))},
 				HostCPU:    GetHostCPU(env1, false),
+				EnvName:    makeEnvName(env1.Dimensions.DeviceType(), env1.Dimensions.OS(), basicOpts.DefaultCPU),
 			}, {
 				Name:       environmentName(env2),
 				Tests:      []Test{makeTestWithPackageManifest(1)},
@@ -491,6 +546,7 @@ func TestMakeShards(t *testing.T) {
 				PkgRepo:    fmt.Sprintf("repo_%s", environmentName(env2)),
 				Deps:       []string{fmt.Sprintf("repo_%s", environmentName(env2))},
 				HostCPU:    GetHostCPU(env2, false),
+				EnvName:    makeEnvName(env2.Dimensions.DeviceType(), env2.Dimensions.OS(), basicOpts.DefaultCPU),
 			},
 		}
 		assertEqual(t, expected, actual)

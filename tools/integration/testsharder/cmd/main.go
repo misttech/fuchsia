@@ -211,7 +211,10 @@ func execute(ctx context.Context, flags testsharderFlags, params *proto.Params, 
 		return fmt.Errorf("failed to look up value of target_cpu arg: %w", err)
 	}
 	opts.DefaultCPU = defaultCPU
-	shards := testsharder.MakeShards(testSpecs, testListEntries, opts, metadataMap)
+	shards, err := testsharder.MakeShards(testSpecs, testListEntries, opts, metadataMap)
+	if err != nil {
+		return fmt.Errorf("failed to make shards: %w", err)
+	}
 
 	var shardsToRun []*testsharder.Shard
 	for _, s := range shards {

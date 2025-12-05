@@ -40,6 +40,9 @@ type Shard struct {
 	// run, this will be false.
 	Skippable bool `json:"skippable"`
 
+	// The device type (or os for host tests) and target CPU architecture.
+	EnvName string `json:"env_name"`
+
 	// Tests is the set of tests to be executed in this shard.
 	Tests []Test `json:"tests"`
 
@@ -357,7 +360,7 @@ func populateEnvDefaults(env build.Environment, defaultCPU string, useTCG bool) 
 
 // MakeShards returns the list of shards associated with a given build.
 // A single output shard will contain only tests that have the same environment.
-func MakeShards(specs []build.TestSpec, testListEntries map[string]build.TestListEntry, opts *ShardOptions, metadataMap map[string]metadata.TestMetadata) []*Shard {
+func MakeShards(specs []build.TestSpec, testListEntries map[string]build.TestListEntry, opts *ShardOptions, metadataMap map[string]metadata.TestMetadata) ([]*Shard, error) {
 	// We don't want to crash if we've passed a nil testListEntries map.
 	if testListEntries == nil {
 		testListEntries = make(map[string]build.TestListEntry)
@@ -384,7 +387,16 @@ func MakeShards(specs []build.TestSpec, testListEntries map[string]build.TestLis
 
 	shards := []*Shard{}
 	for envKey, e := range envs {
-		specs, _ := envToSuites[envKey]
+		deviceType := e.Dimensions.DeviceType()
+		os := e.Dimensions.OS()
+		if deviceType == "" && os == "" {
+			return nil, fmt.Errorf("both the device_type and os fields should not be empty")
+		}
+		if opts.DefaultCPU == "" {
+			return nil, fmt.Errorf("the DefaultCPU field (target_arch) in the ShardOptions should not be empty")
+		}
+		envName := makeEnvName(deviceType, os, opts.DefaultCPU)
+		specs := envToSuites[envKey]
 
 		sort.Slice(specs, func(i, j int) bool {
 			return specs[i].Test.Name < specs[j].Test.Name
@@ -406,6 +418,7 @@ func MakeShards(specs []build.TestSpec, testListEntries map[string]build.TestLis
 					ExpectsSSH:        spec.ExpectsSSH,
 					Env:               e,
 					HostCPU:           GetHostCPU(e, opts.UseTCG || e.Emulator.Accel == build.AccelNone),
+					EnvName:           envName,
 				}
 			}
 			test := Test{Test: spec.Test, Runs: 1}
@@ -428,6 +441,7 @@ func MakeShards(specs []build.TestSpec, testListEntries map[string]build.TestLis
 					ExpectsSSH:        spec.ExpectsSSH,
 					Env:               e,
 					HostCPU:           GetHostCPU(e, opts.UseTCG || e.Emulator.Accel == build.AccelNone),
+					EnvName:           envName,
 				})
 			} else {
 				shard.Tests = append(shard.Tests, test)
@@ -443,7 +457,17 @@ func MakeShards(specs []build.TestSpec, testListEntries map[string]build.TestLis
 
 	makeShardNamesUnique(shards)
 
-	return shards
+	return shards, nil
+}
+
+func makeEnvName(deviceType string, os string, targetArch string) string {
+	var envName string
+	if deviceType != "" {
+		envName = fmt.Sprintf("%s-%s", deviceType, targetArch)
+	} else {
+		envName = fmt.Sprintf("%s-%s", os, targetArch)
+	}
+	return envName
 }
 
 // makeShardNamesUnique updates `shards` in-place to ensure that no two shards

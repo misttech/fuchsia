@@ -2,6 +2,7 @@
     {
         "name": "AEMU-(1)",
         "skippable": false,
+        "env_name": "AEMU-x64",
         "tests": [
             {
                 "name": "fuchsia-pkg://fuchsia.com/fast1#meta/fast1.cm",
@@ -198,6 +199,7 @@
     {
         "name": "AEMU-(2)",
         "skippable": false,
+        "env_name": "AEMU-x64",
         "tests": [
             {
                 "name": "fuchsia-pkg://fuchsia.com/slow#meta/slow.cm",

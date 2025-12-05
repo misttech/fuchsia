@@ -35,6 +35,7 @@ func affectedShard(env build.Environment, os string, ids ...int) *Shard {
 		Env:        populateEnvDefaults(env, "x64", false),
 		ExpectsSSH: true,
 		HostCPU:    GetHostCPU(env, false),
+		EnvName:    makeEnvName(env.Dimensions.DeviceType(), env.Dimensions.OS(), "x64"),
 	}
 }
 
@@ -47,6 +48,7 @@ func isolatedShard(env build.Environment, os string, id int) *Shard {
 		Env:        populateEnvDefaults(env, "x64", false),
 		ExpectsSSH: true,
 		HostCPU:    GetHostCPU(env, false),
+		EnvName:    makeEnvName(env.Dimensions.DeviceType(), env.Dimensions.OS(), "x64"),
 	}
 }
 
@@ -94,6 +96,7 @@ func TestSplitOutMultipliers(t *testing.T) {
 			ExpectsSSH:  true,
 			TimeoutSecs: int(computeShardTimeout(subshard{time.Duration(timeoutSecs) * time.Second, tests}).Seconds()),
 			HostCPU:     GetHostCPU(env, false),
+			EnvName:     makeEnvName(env.Dimensions.DeviceType(), env.Dimensions.OS(), "x64"),
 		}
 	}
 

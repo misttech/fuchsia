@@ -2,6 +2,7 @@
     {
         "name": "multiplied:AEMU",
         "skippable": false,
+        "env_name": "AEMU-x64",
         "tests": [
             {
                 "name": "fuchsia-pkg://fuchsia.com/bar#meta/bar.cm",

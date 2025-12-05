@@ -2,6 +2,7 @@
     {
         "name": "AEMU",
         "skippable": false,
+        "env_name": "AEMU-x64",
         "tests": [
             {
                 "name": "fuchsia-pkg://fuchsia.com/not-affected#meta/not-affected.cm",
@@ -131,6 +132,7 @@
     {
         "name": "affected:AEMU",
         "skippable": false,
+        "env_name": "AEMU-x64",
         "tests": [
             {
                 "name": "fuchsia-pkg://fuchsia.com/affected-hermetic#meta/affected-hermetic.cm",
