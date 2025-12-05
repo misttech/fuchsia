@@ -808,10 +808,8 @@ TEST_F(SuspendedThreadTest, MemorySnapshotStartArgOnSuspendedThread) {
       .found_data = false,
   };
 
-  // The callback will update the result if we find the pointer we're looking for. Note that
-  // technically, the pointer also exists in this thread's stack, but we just want to ensure it's
-  // accessible in the other thread's TCB.
-  auto tls_callback = [](void* mem, size_t len, void* arg) -> void {
+  // The callback will update the result if we find the pointer we're looking for.
+  auto callback = [](void* mem, size_t len, void* arg) -> void {
     auto result = static_cast<CallbackResult*>(arg);
 
     // We already found the pointer we're looking for.
@@ -826,10 +824,13 @@ TEST_F(SuspendedThreadTest, MemorySnapshotStartArgOnSuspendedThread) {
     }
   };
 
-  __sanitizer_memory_snapshot(/*globals=*/nullptr,
-                              /*stacks=*/nullptr,
-                              /*regs=*/nullptr,
-                              /*tls=*/tls_callback, /*done=*/nullptr, static_cast<void*>(&result));
+  // Use the same callback for each of the regions to search. The details of where the
+  // start arg is specific to the libc implementation (meaning it could be anywhere as libc
+  // changes) but the important thing to assert is the argument is still reachable.
+  __sanitizer_memory_snapshot(/*globals=*/callback,
+                              /*stacks=*/callback,
+                              /*regs=*/callback,
+                              /*tls=*/callback, /*done=*/nullptr, static_cast<void*>(&result));
 
   EXPECT_TRUE(result.found_data);
 }
