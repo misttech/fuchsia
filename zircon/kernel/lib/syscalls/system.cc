@@ -669,7 +669,7 @@ zx_status_t sys_system_set_performance_info(zx_handle_t resource, uint32_t topic
         }
       }
 
-      Scheduler::UpdateProcessingRates(performance_info.get(), count);
+      Scheduler::UpdateProcessingRates(ktl::span{performance_info.get(), count});
       return ZX_OK;
     }
 
@@ -703,7 +703,7 @@ zx_status_t sys_system_set_performance_info(zx_handle_t resource, uint32_t topic
         }
       }
 
-      Scheduler::UpdateProcessingLimits(limit_info.get(), count);
+      Scheduler::UpdateProcessingLimits(ktl::span{limit_info.get(), count});
       return ZX_OK;
     }
 
@@ -736,11 +736,11 @@ zx_status_t sys_system_get_performance_info(zx_handle_t resource, uint32_t topic
 
   switch (topic) {
     case ZX_CPU_PERF_SCALE:
-      Scheduler::GetPerformanceScales(performance_info.get(), info_count);
+      Scheduler::GetPerformanceScales(ktl::span{performance_info.get(), info_count});
       break;
 
     case ZX_CPU_DEFAULT_PERF_SCALE:
-      Scheduler::GetDefaultPerformanceScales(performance_info.get(), info_count);
+      Scheduler::GetDefaultPerformanceScales(ktl::span{performance_info.get(), info_count});
       break;
 
     default:

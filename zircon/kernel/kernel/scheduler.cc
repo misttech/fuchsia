@@ -3048,12 +3048,12 @@ void Scheduler::InitializeProcessingRate(SchedProcessingRate scale) TA_NO_THREAD
   exported_processing_rate_ = scale;
 }
 
-void Scheduler::UpdateProcessingRates(zx_cpu_performance_info_t* info, size_t count) {
-  DEBUG_ASSERT(count <= percpu::processor_count());
+void Scheduler::UpdateProcessingRates(ktl::span<zx_cpu_performance_info_t> info) {
+  DEBUG_ASSERT(info.size() <= percpu::processor_count());
   InterruptDisableGuard irqd;
 
   cpu_num_t cpus_to_reschedule_mask = 0;
-  for (auto& entry : ktl::span{info, count}) {
+  for (auto& entry : info) {
     DEBUG_ASSERT(entry.logical_cpu_number <= percpu::processor_count());
 
     cpus_to_reschedule_mask |= cpu_num_to_mask(entry.logical_cpu_number);
@@ -3071,9 +3071,9 @@ void Scheduler::UpdateProcessingRates(zx_cpu_performance_info_t* info, size_t co
   RescheduleMask(cpus_to_reschedule_mask);
 }
 
-void Scheduler::GetPerformanceScales(zx_cpu_performance_info_t* info, size_t count) {
-  DEBUG_ASSERT(count <= percpu::processor_count());
-  for (cpu_num_t i = 0; i < count; i++) {
+void Scheduler::GetPerformanceScales(ktl::span<zx_cpu_performance_info_t> info) {
+  DEBUG_ASSERT(info.size() <= percpu::processor_count());
+  for (cpu_num_t i = 0; i < info.size(); i++) {
     Scheduler* scheduler = Scheduler::Get(i);
     Guard<MonitoredSpinLock, IrqSave> guard{&scheduler->queue_lock_, SOURCE_TAG};
     info[i].logical_cpu_number = i;
@@ -3082,9 +3082,9 @@ void Scheduler::GetPerformanceScales(zx_cpu_performance_info_t* info, size_t cou
   }
 }
 
-void Scheduler::GetDefaultPerformanceScales(zx_cpu_performance_info_t* info, size_t count) {
-  DEBUG_ASSERT(count <= percpu::processor_count());
-  for (cpu_num_t i = 0; i < count; i++) {
+void Scheduler::GetDefaultPerformanceScales(ktl::span<zx_cpu_performance_info_t> info) {
+  DEBUG_ASSERT(info.size() <= percpu::processor_count());
+  for (cpu_num_t i = 0; i < info.size(); i++) {
     Scheduler* scheduler = Scheduler::Get(i);
     Guard<MonitoredSpinLock, IrqSave> guard{&scheduler->queue_lock_, SOURCE_TAG};
     info[i].logical_cpu_number = i;
@@ -3093,15 +3093,15 @@ void Scheduler::GetDefaultPerformanceScales(zx_cpu_performance_info_t* info, siz
   }
 }
 
-void Scheduler::UpdateProcessingLimits(zx_cpu_perf_limit_t* limits, size_t count) {
-  DEBUG_ASSERT(count <= percpu::processor_count());
+void Scheduler::UpdateProcessingLimits(ktl::span<zx_cpu_perf_limit_t> limits) {
+  DEBUG_ASSERT(limits.size() <= percpu::processor_count());
   InterruptDisableGuard interrupts_disabled;
 
   // Set the limits for each CPU in the given limits array, keeping track of one
   // CPU per domain to evaluate the domain's active power level.
   cpu_mask_t cpus_for_handled_domains = 0;
   cpu_mask_t cpus_to_evaluate_updates = 0;
-  for (auto& entry : ktl::span{limits, count}) {
+  for (auto& entry : limits) {
     switch (entry.limit_type) {
       case ZX_CPU_PERF_LIMIT_TYPE_RATE: {
         Scheduler* scheduler = Scheduler::Get(entry.logical_cpu_number);

@@ -36,6 +36,7 @@
 #include <kernel/wait.h>
 #include <ktl/algorithm.h>
 #include <ktl/optional.h>
+#include <ktl/span.h>
 #include <ktl/utility.h>
 
 // Forward declarations.
@@ -328,30 +329,27 @@ class Scheduler {
   // effective values in place, which may be different than the requested values
   // if they are below the minimum safe values for the respective CPUs.
   //
-  // Requires |count| <= num CPUs.
-  static void UpdateProcessingRates(zx_cpu_performance_info_t* info, size_t count)
-      TA_EXCL(queue_lock_);
+  // Requires |info.size()| <= num CPUs.
+  static void UpdateProcessingRates(ktl::span<zx_cpu_performance_info_t> info) TA_EXCL(queue_lock_);
 
   // Gets the performance scales of up to count CPUs. Returns the last values
   // requested by userspace, even if they have not yet taken effect.
   //
-  // Requires |count| <= num CPUs.
-  static void GetPerformanceScales(zx_cpu_performance_info_t* info, size_t count)
-      TA_EXCL(queue_lock_);
+  // Requires |info.size()| <= num CPUs.
+  static void GetPerformanceScales(ktl::span<zx_cpu_performance_info_t> info) TA_EXCL(queue_lock_);
 
   // Gets the default performance scales of up to count CPUs. Returns the
   // initial values determined by the system topology, or 1.0 when no topology
   // is available.
   //
-  // Requires |count| <= num CPUs.
-  static void GetDefaultPerformanceScales(zx_cpu_performance_info_t* info, size_t count)
+  // Requires |info.size()| <= num CPUs.
+  static void GetDefaultPerformanceScales(ktl::span<zx_cpu_performance_info_t> info)
       TA_EXCL(queue_lock_);
 
   // Updates the performance limits of the requested CPUs.
   //
-  // Requires |count| <= num CPUs.
-  static void UpdateProcessingLimits(zx_cpu_perf_limit_t* limits, size_t count)
-      TA_EXCL(queue_lock_);
+  // Requires |limits.size()| <= num CPUs.
+  static void UpdateProcessingLimits(ktl::span<zx_cpu_perf_limit_t> limits) TA_EXCL(queue_lock_);
 
   // Get the mask of valid CPUs that thread may run on. If a new mask
   // is set, the thread will be migrated to satisfy the new constraint.

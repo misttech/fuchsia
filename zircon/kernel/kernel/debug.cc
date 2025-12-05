@@ -452,7 +452,7 @@ static int cmd_rppm(int argc, const cmd_args* argv, uint32_t flags) {
       }
       DEBUG_ASSERT(cpu_mask == 0);
 
-      Scheduler::UpdateProcessingLimits(limits.data(), limits.size());
+      Scheduler::UpdateProcessingLimits(ktl::span{limits.data(), limits.size()});
       return 0;
     }
 
