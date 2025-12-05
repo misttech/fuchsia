@@ -299,8 +299,8 @@ enum StrictCheckErrorEnum {
     MustHaveMachineSpecified,
     #[error("ffx strict requires that the target be explicitly specified")]
     MustHaveTarget,
-    #[error("ffx strict requires that the Target be specified by address or have the prefix \"serial:\". Actually passed: \"{}\"", .0)]
-    TargetMustBeAddressOrSerial(String),
+    #[error("ffx strict requires that the Target be specified by address or have the prefix \"serial:\", \"usb:cid:\" or \"vsock:cid\". Actually passed: \"{}\"", .0)]
+    TargetSpecificationInvalid(String),
     #[error("ffx strict requires that the Target be a valid IP address. Invalid scope ID: \"{}\"", .0)]
     TargetAddressMustHaveValidScopeId(String),
     #[error("When running in strict mode, config flags must be list of Key Value Pairs or valid JSON. Passed: \"{}\"", .0)]
@@ -352,8 +352,11 @@ pub fn check_strict_constraints(ffx: &Ffx, requires_target: bool) -> Result<()> 
             None => errors.push(StrictCheckErrorEnum::MustHaveTarget),
             Some(t) => match netext::parse_address_parts(t.as_str()) {
                 Err(_) => {
-                    if !t.starts_with("serial:") {
-                        errors.push(StrictCheckErrorEnum::TargetMustBeAddressOrSerial(t.clone()));
+                    let valid_prefix = t.starts_with("serial:")
+                        || t.starts_with("usb:cid:")
+                        || t.starts_with("vsock:cid:");
+                    if !valid_prefix {
+                        errors.push(StrictCheckErrorEnum::TargetSpecificationInvalid(t.clone()));
                     }
                 }
                 Ok((_, scope, _)) => {
@@ -693,7 +696,7 @@ mod test {
                     "echo",
                 ],
                 name: "Target must be SocketAddr".into(),
-                expected_errors: vec![StrictCheckErrorEnum::TargetMustBeAddressOrSerial(
+                expected_errors: vec![StrictCheckErrorEnum::TargetSpecificationInvalid(
                     "no waaaaaayyy".into(),
                 )],
             },
@@ -711,7 +714,7 @@ mod test {
                     "echo",
                 ],
                 name: "Target cannot be bare serial".into(),
-                expected_errors: vec![StrictCheckErrorEnum::TargetMustBeAddressOrSerial(
+                expected_errors: vec![StrictCheckErrorEnum::TargetSpecificationInvalid(
                     "1234567890ABCD".into(),
                 )],
             },
