@@ -1896,6 +1896,49 @@ impl<'a> AsMut<[u8]> for SliceBufViewMut<'a> {
     }
 }
 
+/// An implementation of `BufferView` for SplitByteSlices.
+pub struct SplitByteSliceBufView<B>(B);
+
+impl<B> SplitByteSliceBufView<B> {
+    pub fn new(buf: B) -> Self {
+        Self(buf)
+    }
+
+    pub fn into_inner(self) -> B {
+        let Self(buf) = self;
+        buf
+    }
+}
+
+impl<B: SplitByteSlice> AsRef<[u8]> for SplitByteSliceBufView<B> {
+    fn as_ref(&self) -> &[u8] {
+        self.0.as_ref()
+    }
+}
+
+impl<B: SplitByteSlice> BufferView<B> for SplitByteSliceBufView<B> {
+    fn take_front(&mut self, n: usize) -> Option<B> {
+        replace_with::replace_with_and(&mut self.0, |b| match b.split_at(n) {
+            Ok((prefix, suffix)) => (suffix, Some(prefix)),
+            Err(e) => (e, None),
+        })
+    }
+
+    fn take_back(&mut self, n: usize) -> Option<B> {
+        let len = self.0.deref().len();
+        let split_point = len.checked_sub(n)?;
+        replace_with::replace_with_and(&mut self.0, |b| match b.split_at(split_point) {
+            Ok((prefix, suffix)) => (prefix, Some(suffix)),
+            Err(_e) => unreachable!("The length of the buffer was already checked"),
+        })
+    }
+
+    fn into_rest(self) -> B {
+        let Self(b) = self;
+        b
+    }
+}
+
 fn take_front<'a>(bytes: &mut &'a [u8], n: usize) -> &'a [u8] {
     let (prefix, rest) = mem::replace(bytes, &[]).split_at(n);
     *bytes = rest;
@@ -2044,6 +2087,12 @@ mod tests {
         let mut buf = Buf::new(ascending(10), ..);
         test_buffer_view(buf.buffer_view());
         test_buffer_view_post(&buf, true);
+    }
+
+    #[test]
+    fn test_split_byte_slice_buf_view() {
+        let buf = ascending(10);
+        test_buffer_view(SplitByteSliceBufView::new(buf.as_slice()));
     }
 
     fn ascending(n: u8) -> Vec<u8> {

@@ -28,7 +28,7 @@ use zerocopy::{ByteSlice, IntoByteSlice, SplitByteSlice};
 
 use crate::serialize::InnerPacketBuilder;
 use crate::util::{FromRaw, MaybeParsed};
-use crate::{BufferView, BufferViewMut};
+use crate::{BufferView, BufferViewMut, SplitByteSliceBufView};
 
 /// A type that encapsuates the result of a record parsing operation.
 pub type RecordParseResult<T, E> = core::result::Result<ParsedRecord<T>, E>;
@@ -142,7 +142,7 @@ where
         context: &mut R::Context,
     ) -> MaybeParsed<Self, (B, R::Error)> {
         let c = context.clone();
-        let mut b = SplitSliceBufferView(bytes.as_ref());
+        let mut b = SplitSliceBufferView::new(bytes.as_ref());
         let r = loop {
             match R::parse_raw_with_context(&mut b, context) {
                 Ok(true) => {} // continue consuming from data
@@ -729,7 +729,7 @@ where
         // - B could return different bytes each time
         // - R::parse could be non-deterministic
         let c = context.clone();
-        let mut b = SplitSliceBufferView(bytes.as_ref());
+        let mut b = SplitSliceBufferView::new(bytes.as_ref());
         let mut record_count = 0;
         while next::<_, R>(&mut b, context)?.is_some() {
             record_count += 1;
@@ -870,7 +870,7 @@ where
 
     fn next(&mut self) -> Option<R::Record<'a>> {
         replace_with::replace_with_and(&mut self.bytes, |bytes| {
-            let mut bytes = SplitSliceBufferView(bytes);
+            let mut bytes = SplitSliceBufferView::new(bytes);
             // use match rather than expect because expect requires that Err: Debug
             #[allow(clippy::match_wild_err_arm)]
             let result = match next::<_, R>(&mut bytes, &mut self.context) {
@@ -880,8 +880,7 @@ where
             if result.is_some() {
                 self.records_left -= 1;
             }
-            let SplitSliceBufferView(bytes) = bytes;
-            (bytes, result)
+            (bytes.into_inner(), result)
         })
     }
 
@@ -919,15 +918,14 @@ where
 
     fn next(&mut self) -> Option<&'a [u8]> {
         replace_with::replace_with_and(&mut self.bytes, |bytes| {
-            let mut bytes = SplitSliceBufferView(bytes);
+            let mut bytes = SplitSliceBufferView::new(bytes);
             // use match rather than expect because expect requires that Err: Debug
             #[allow(clippy::match_wild_err_arm)]
             let result = match next_bytes::<_, R>(&mut bytes, &mut self.context) {
                 Ok(o) => o,
                 Err(_) => panic!("already-validated options should not fail to parse"),
             };
-            let SplitSliceBufferView(bytes) = bytes;
-            (bytes, result)
+            (bytes.into_inner(), result)
         })
     }
 }
@@ -984,7 +982,20 @@ where
     }
 }
 
-struct SplitSliceBufferView<B>(B);
+/// Like `SplitByteSliceBufferView`, but with a specialized
+/// `BufferView<&'a [u8]>` implementation.
+struct SplitSliceBufferView<B>(SplitByteSliceBufView<B>);
+
+impl<B> SplitSliceBufferView<B> {
+    fn new(buf: B) -> Self {
+        Self(SplitByteSliceBufView::new(buf))
+    }
+
+    fn into_inner(self) -> B {
+        let Self(buf) = self;
+        buf.into_inner()
+    }
+}
 
 impl<B: SplitByteSlice> AsRef<[u8]> for SplitSliceBufferView<B> {
     fn as_ref(&self) -> &[u8] {
@@ -994,21 +1005,15 @@ impl<B: SplitByteSlice> AsRef<[u8]> for SplitSliceBufferView<B> {
 
 impl<'a, B: SplitByteSlice + IntoByteSlice<'a>> BufferView<&'a [u8]> for SplitSliceBufferView<B> {
     fn take_front(&mut self, n: usize) -> Option<&'a [u8]> {
-        replace_with::replace_with_and(&mut self.0, |bytes| match bytes.split_at(n) {
-            Ok((prefix, suffix)) => (suffix, Some(prefix.into_byte_slice())),
-            Err(e) => (e, None),
-        })
+        self.0.take_front(n).map(IntoByteSlice::into_byte_slice)
     }
 
     fn take_back(&mut self, n: usize) -> Option<&'a [u8]> {
-        replace_with::replace_with_and(&mut self.0, |bytes| match bytes.split_at(n) {
-            Ok((prefix, suffix)) => (prefix, Some(suffix.into_byte_slice())),
-            Err(e) => (e, None),
-        })
+        self.0.take_back(n).map(IntoByteSlice::into_byte_slice)
     }
 
     fn into_rest(self) -> &'a [u8] {
-        self.0.into_byte_slice()
+        self.0.into_rest().into_byte_slice()
     }
 }
 
