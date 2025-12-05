@@ -5,10 +5,10 @@
 // Don't complain if one of info/warn/err/debug are unused.
 #![allow(unused)]
 
+use fuchsia_sync::Mutex;
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::atomic::AtomicBool;
-use std::sync::Mutex;
 
 /// A simple rate limiter
 struct RateLimiter<C: Clock> {
@@ -42,7 +42,7 @@ impl<C: Clock> RateLimiter<C> {
     }
 
     fn acquire_one(&self) -> bool {
-        let mut tb = self.inner.lock().unwrap();
+        let mut tb = self.inner.lock();
         if tb.period.into_nanos() == 0 {
             return true;
         }

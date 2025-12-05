@@ -36,6 +36,7 @@ rustc_binary("virtio_sound_bin") {
     "//src/lib/fuchsia",
     "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-component",
+    "//src/lib/fuchsia-sync",
     "//src/lib/mapped-vmo",
     "//src/virtualization/lib/machina-virtio-device",
     "//src/virtualization/lib/virtio-device",
