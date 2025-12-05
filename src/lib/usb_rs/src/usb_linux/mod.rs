@@ -8,6 +8,7 @@ use usbdevice_fs::*;
 mod discovery;
 pub use discovery::{enumerate_devices, wait_for_devices};
 
+use fuchsia_sync::Mutex;
 use futures::future::poll_fn;
 use futures::task::AtomicWaker;
 use std::cell::UnsafeCell;
@@ -18,8 +19,8 @@ use std::io::Read;
 use std::os::fd::{AsRawFd, RawFd};
 use std::os::unix::fs::MetadataExt;
 use std::pin::Pin;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicU8, Ordering};
-use std::sync::{Arc, Mutex};
 use std::task::{Poll, Waker};
 use std::thread;
 use zerocopy::Ref;
@@ -415,7 +416,7 @@ impl InterfaceInner {
     /// Allocate a Urb from the pool.
     async fn alloc_urb<'a>(&'a self, action: &BufferAction<'_, '_>) -> Result<UrbRef<'a>> {
         poll_fn(move |ctx| {
-            let mut queue = self.urb_queue.lock().unwrap();
+            let mut queue = self.urb_queue.lock();
 
             if let Some(got) = queue.free_urbs.pop_back() {
                 self.urbs[got].refs.store(1, Ordering::Relaxed);
@@ -446,7 +447,7 @@ impl InterfaceInner {
 
     /// Free a Urb back into the pool.
     fn free_urb_by_id(&self, id: usize) {
-        let mut queue = self.urb_queue.lock().unwrap();
+        let mut queue = self.urb_queue.lock();
         queue.free_urbs.push_front(id);
         for waker in queue.wakers.drain(..) {
             waker.wake();
@@ -771,7 +772,7 @@ impl BulkInEndpoint {
 
                             let size = fut.await?;
 
-                            out.lock().unwrap().push_back((buf[..size].to_vec(), sequence_number));
+                            out.lock().push_back((buf[..size].to_vec(), sequence_number));
                         }
                     }));
                 }
@@ -783,7 +784,7 @@ impl BulkInEndpoint {
             }
 
             let got = {
-                let mut out = out.lock().unwrap();
+                let mut out = out.lock();
                 let idx = out.iter().enumerate().find(|x| x.1.1 == next_expected).map(|x| x.0);
 
                 idx.and_then(|idx| out.remove(idx))
@@ -964,7 +965,7 @@ mod test {
             self.set.load(Ordering::Relaxed)
         }
         fn endpoint_read_from_target(&self, address: u8) -> Option<Box<[u8]>> {
-            let mut buffers = self.endpoint_buffers.lock().unwrap();
+            let mut buffers = self.endpoint_buffers.lock();
             buffers.get_mut(&address).and_then(|x| {
                 let EndpointBuffer::Data(x) = x else {
                     panic!("Target read from buffer with host reads waiting");
@@ -973,7 +974,7 @@ mod test {
             })
         }
         fn endpoint_write_from_target(&self, address: u8, data: &[u8]) {
-            let mut buffers = self.endpoint_buffers.lock().unwrap();
+            let mut buffers = self.endpoint_buffers.lock();
             let buffer = buffers.entry(address).or_default();
             let queue = match buffer {
                 EndpointBuffer::Data(data) => data,
@@ -1012,7 +1013,7 @@ mod test {
                 set: AtomicU8::new(0),
                 endpoint_buffers: Mutex::new(HashMap::new()),
             };
-            self.fake_devs.lock().unwrap().insert(ret.as_raw_fd(), Arc::new(fake_dev));
+            self.fake_devs.lock().insert(ret.as_raw_fd(), Arc::new(fake_dev));
             ret
         }
 
@@ -1033,7 +1034,6 @@ mod test {
         fn get_dev(&self, fd: RawFd) -> Result<Arc<FakeDev>, std::io::Error> {
             self.fake_devs
                 .lock()
-                .unwrap()
                 .get(&fd)
                 .map(Arc::clone)
                 .ok_or_else(|| std::io::Error::from_raw_os_error(libc::ENODEV))
@@ -1112,7 +1112,7 @@ mod test {
             let endpoint =
                 dev.descriptor.endpoints.iter().find(|x| x.address == urb.endpoint).unwrap();
 
-            let mut buffers = dev.endpoint_buffers.lock().unwrap();
+            let mut buffers = dev.endpoint_buffers.lock();
             let buffer = buffers.entry(endpoint.address).or_default();
 
             match endpoint.direction() {
@@ -1164,7 +1164,7 @@ mod test {
             let endpoint =
                 dev.descriptor.endpoints.iter().find(|x| x.address == urb.endpoint).unwrap();
 
-            let mut buffers = dev.endpoint_buffers.lock().unwrap();
+            let mut buffers = dev.endpoint_buffers.lock();
             let buffer = buffers.entry(endpoint.address).or_default();
 
             match endpoint.direction() {
