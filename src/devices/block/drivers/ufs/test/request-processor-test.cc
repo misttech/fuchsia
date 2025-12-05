@@ -32,12 +32,8 @@ TEST_F(RequestProcessorTest, RequestListCreate) {
   }
 }
 
-TEST_F(RequestProcessorTest, TransferRequestProcessorRingRequestDoorbell) {
-  // Disable completion interrupt
-  InterruptEnableReg::Get()
-      .ReadFrom(mock_device_.GetRegisters())
-      .set_utp_transfer_request_completion_enable(false)
-      .WriteTo(mock_device_.GetRegisters());
+TEST_F(RequestProcessorTest, RingRequestDoorbell) {
+  dut_->GetTransferRequestProcessor().DisableCompletion();
 
   // Reuse the command descriptor in admin slot.
   auto slot_num = ReserveAdminSlot();
@@ -49,16 +45,14 @@ TEST_F(RequestProcessorTest, TransferRequestProcessorRingRequestDoorbell) {
   ASSERT_EQ(RingRequestDoorbell<ufs::TransferRequestProcessor>(slot_num.value()).status_value(),
             ZX_OK);
   ASSERT_EQ(slot.state, SlotState::kScheduled);
+
+  dut_->GetTransferRequestProcessor().EnableCompletion();
   ASSERT_EQ(dut_->GetTransferRequestProcessor().ProcessCompletionOfAdminRequests(), 1U);
   ASSERT_EQ(slot.state, SlotState::kFree);
 }
 
 TEST_F(RequestProcessorTest, FillDescriptorAndSendRequest) {
-  // Disable completion interrupt
-  InterruptEnableReg::Get()
-      .ReadFrom(mock_device_.GetRegisters())
-      .set_utp_transfer_request_completion_enable(false)
-      .WriteTo(mock_device_.GetRegisters());
+  dut_->GetTransferRequestProcessor().DisableCompletion();
 
   auto slot_num = ReserveSlot<ufs::TransferRequestProcessor>();
   ASSERT_TRUE(slot_num.is_ok());
@@ -76,7 +70,9 @@ TEST_F(RequestProcessorTest, FillDescriptorAndSendRequest) {
                 .status_value(),
             ZX_OK);
 
+  dut_->GetTransferRequestProcessor().EnableCompletion();
   ASSERT_EQ(slot.state, SlotState::kScheduled);
+
   ASSERT_EQ(dut_->GetTransferRequestProcessor().ProcessCompletionOfIoRequests(), 1U);
   ASSERT_EQ(slot.state, SlotState::kFree);
 
@@ -131,23 +127,15 @@ TEST_F(RequestProcessorTest, SendQueryUpiu) {
 }
 
 TEST_F(RequestProcessorTest, SendQueryUpiuException) {
-  // Disable completion interrupt
-  InterruptEnableReg::Get()
-      .ReadFrom(mock_device_.GetRegisters())
-      .set_utp_transfer_request_completion_enable(false)
-      .WriteTo(mock_device_.GetRegisters());
+  dut_->GetTransferRequestProcessor().DisableCompletion();
 
   ReadAttributeUpiu request(Attributes::bBootLunEn);
   dut_->GetTransferRequestProcessor().SetTimeout(zx::msec(100));
   auto response = dut_->GetTransferRequestProcessor().SendQueryRequestUpiu(request);
   ASSERT_EQ(response.status_value(), ZX_ERR_TIMED_OUT);
-  dut_->ProcessIoCompletions();
 
-  // Enable completion interrupt
-  InterruptEnableReg::Get()
-      .ReadFrom(mock_device_.GetRegisters())
-      .set_utp_transfer_request_completion_enable(true)
-      .WriteTo(mock_device_.GetRegisters());
+  dut_->GetTransferRequestProcessor().EnableCompletion();
+  dut_->GetTransferRequestProcessor().ProcessCompletionOfIoRequests();
 
   // Hook the query request handler to set a response error
   mock_device_.GetTransferRequestProcessor().SetHook(
@@ -197,17 +185,15 @@ TEST_F(RequestProcessorTest, SendNopUpiu) {
 }
 
 TEST_F(RequestProcessorTest, SendNopUpiuException) {
-  // Disable completion interrupt
-  InterruptEnableReg::Get()
-      .ReadFrom(mock_device_.GetRegisters())
-      .set_utp_transfer_request_completion_enable(false)
-      .WriteTo(mock_device_.GetRegisters());
+  dut_->GetTransferRequestProcessor().DisableCompletion();
 
   NopOutUpiu nop_out_upiu;
   dut_->GetTransferRequestProcessor().SetTimeout(zx::msec(100));
   auto nop_in =
       dut_->GetTransferRequestProcessor().SendRequestUpiu<NopOutUpiu, NopInUpiu>(nop_out_upiu);
   ASSERT_EQ(nop_in.status_value(), ZX_ERR_TIMED_OUT);
+
+  dut_->GetTransferRequestProcessor().EnableCompletion();
   dut_->ProcessIoCompletions();
 
   // Enable completion interrupt
@@ -276,12 +262,7 @@ TEST_F(RequestProcessorTest, SendRequestUsingSlot) {
 TEST_F(RequestProcessorTest, SendRequestUsingSlotTimeout) {
   constexpr uint8_t kTestLun = 0;
 
-  // Disable completion interrupt
-  InterruptEnableReg::Get()
-      .ReadFrom(mock_device_.GetRegisters())
-      .set_utp_transfer_request_completion_enable(false)
-      .WriteTo(mock_device_.GetRegisters());
-
+  dut_->GetTransferRequestProcessor().DisableCompletion();
   dut_->GetTransferRequestProcessor().SetTimeout(zx::msec(100));
 
   auto slot = ReserveSlot<ufs::TransferRequestProcessor>();
@@ -326,12 +307,7 @@ TEST_F(RequestProcessorTest, SendScsiUpiu) {
 TEST_F(RequestProcessorTest, SendScsiUpiuTimeout) {
   constexpr uint8_t kTestLun = 0;
 
-  // Disable completion interrupt
-  InterruptEnableReg::Get()
-      .ReadFrom(mock_device_.GetRegisters())
-      .set_utp_transfer_request_completion_enable(false)
-      .WriteTo(mock_device_.GetRegisters());
-
+  dut_->GetTransferRequestProcessor().DisableCompletion();
   dut_->GetTransferRequestProcessor().SetTimeout(zx::msec(100));
 
   // Send scsi command with SendScsiUpiu()
@@ -364,7 +340,7 @@ TEST_F(RequestProcessorTest, SendScsiUpiuWithSlotIsFull) {
       dut_->GetTransferRequestProcessor().GetRequestList().GetSlotCount() - kAdminCommandSlotCount;
 
   // Reserve all slots.
-  for (uint32_t slot_num = 0; slot_num < kMaxSlotCount; ++slot_num) {
+  for (uint8_t slot_num = 0; slot_num < kMaxSlotCount; ++slot_num) {
     ASSERT_OK(ReserveSlot<ufs::TransferRequestProcessor>());
   }
 

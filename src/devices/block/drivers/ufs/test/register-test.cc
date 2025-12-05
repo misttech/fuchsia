@@ -96,7 +96,7 @@ TEST_F(RegisterTest, InterruptStatus) {
   };
   fbl::String timeout_message = "Timeout waiting for ISR()";
   constexpr uint32_t kTimeoutUs = 1000000;
-  ASSERT_OK(dut_->WaitWithTimeout(wait_for, kTimeoutUs, timeout_message));
+  ASSERT_OK(dut_->WaitWithTimeout(wait_for, zx::usec(kTimeoutUs), timeout_message));
 
   // Verify that the ISR has processed all interruptStatus
   EXPECT_EQ(InterruptStatusReg::Get().ReadFrom(&dut_->GetMmio()).reg_value(), 0U);

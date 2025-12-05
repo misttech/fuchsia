@@ -771,8 +771,8 @@ zx::result<> DeviceManager::InitUicPowerMode(inspect::Node &unipro_node) {
     return InterruptStatusReg::Get().ReadFrom(&controller_.GetMmio()).uic_power_mode_status();
   };
   fbl::String timeout_message = "Timeout waiting for Power Mode Change";
-  if (zx_status_t status =
-          controller_.WaitWithTimeout(wait_for_completion, kDeviceInitTimeoutUs, timeout_message);
+  if (zx_status_t status = controller_.WaitWithTimeout(
+          wait_for_completion, zx::usec(kDeviceInitTimeoutUs), timeout_message);
       status != ZX_OK) {
     return zx::error(status);
   }

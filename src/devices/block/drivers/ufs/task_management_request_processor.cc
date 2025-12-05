@@ -40,6 +40,10 @@ zx::result<> TaskManagementRequestProcessor::Init() {
 uint32_t TaskManagementRequestProcessor::ProcessCompletionOfIoRequests() {
   uint32_t completion_count = 0;
 
+  if (disable_completion_) {
+    return completion_count;
+  }
+
   // Search for all pending slots and signed the ones already done.
   request_list_.ForEachSlot([&](uint8_t slot_num, RequestSlot &request_slot) {
     if (request_slot.state == SlotState::kScheduled) {

@@ -16,11 +16,7 @@ using namespace ufs_mock_device;
 using TaskManagementRequestProcessorTest = UfsTest;
 
 TEST_F(TaskManagementRequestProcessorTest, RingRequestDoorbell) {
-  // Disable completion interrupt
-  InterruptEnableReg::Get()
-      .ReadFrom(mock_device_.GetRegisters())
-      .set_utp_task_management_request_completion_enable(false)
-      .WriteTo(mock_device_.GetRegisters());
+  dut_->GetTaskManagementRequestProcessor().DisableCompletion();
 
   auto slot_num = ReserveSlot<ufs::TaskManagementRequestProcessor>();
   ASSERT_TRUE(slot_num.is_ok());
@@ -32,16 +28,14 @@ TEST_F(TaskManagementRequestProcessorTest, RingRequestDoorbell) {
       RingRequestDoorbell<ufs::TaskManagementRequestProcessor>(slot_num.value()).status_value(),
       ZX_OK);
   ASSERT_EQ(slot.state, SlotState::kScheduled);
+
+  dut_->GetTaskManagementRequestProcessor().EnableCompletion();
   ASSERT_EQ(dut_->GetTaskManagementRequestProcessor().ProcessCompletionOfIoRequests(), 1U);
   ASSERT_OK(slot.result);
 }
 
 TEST_F(TaskManagementRequestProcessorTest, FillDescriptorAndSendRequest) {
-  // Disable completion interrupt
-  InterruptEnableReg::Get()
-      .ReadFrom(mock_device_.GetRegisters())
-      .set_utp_task_management_request_completion_enable(false)
-      .WriteTo(mock_device_.GetRegisters());
+  dut_->GetTaskManagementRequestProcessor().DisableCompletion();
 
   auto slot_num = ReserveSlot<ufs::TaskManagementRequestProcessor>();
   ASSERT_TRUE(slot_num.is_ok());
@@ -54,6 +48,8 @@ TEST_F(TaskManagementRequestProcessorTest, FillDescriptorAndSendRequest) {
             ZX_OK);
 
   ASSERT_EQ(slot.state, SlotState::kScheduled);
+
+  dut_->GetTaskManagementRequestProcessor().EnableCompletion();
   ASSERT_EQ(dut_->GetTaskManagementRequestProcessor().ProcessCompletionOfIoRequests(), 1U);
   ASSERT_OK(slot.result);
 
@@ -176,11 +172,7 @@ TEST_F(TaskManagementRequestProcessorTest, SendLogicalUnitResetTaskManagementReq
 }
 
 TEST_F(TaskManagementRequestProcessorTest, SendTaskManagementRequestException) {
-  // Disable completion interrupt
-  InterruptEnableReg::Get()
-      .ReadFrom(mock_device_.GetRegisters())
-      .set_utp_task_management_request_completion_enable(false)
-      .WriteTo(mock_device_.GetRegisters());
+  dut_->GetTaskManagementRequestProcessor().DisableCompletion();
 
   uint8_t target_lun = 0;
   uint8_t target_task_tag = 0;
@@ -196,13 +188,9 @@ TEST_F(TaskManagementRequestProcessorTest, SendTaskManagementRequestException) {
                                     target_task_tag);
   auto response = dut_->GetTaskManagementRequestProcessor().SendTaskManagementRequest(request);
   ASSERT_EQ(response.status_value(), ZX_ERR_TIMED_OUT);
-  dut_->GetTaskManagementRequestProcessor().ProcessCompletionOfIoRequests();
 
-  // Enable completion interrupt
-  InterruptEnableReg::Get()
-      .ReadFrom(mock_device_.GetRegisters())
-      .set_utp_task_management_request_completion_enable(true)
-      .WriteTo(mock_device_.GetRegisters());
+  dut_->GetTaskManagementRequestProcessor().EnableCompletion();
+  dut_->GetTaskManagementRequestProcessor().ProcessCompletionOfIoRequests();
 
   // Hook the query request handler to set a response error
   mock_device_.GetTaskManagementRequestProcessor().SetHook(
@@ -212,8 +200,8 @@ TEST_F(TaskManagementRequestProcessorTest, SendTaskManagementRequestException) {
 
         // Set response error
         response_upiu->header.response = UpiuHeaderResponseCode::kTargetFailure;
-        mock_device.GetTaskManagementRequestProcessor().DefaultQueryTaskHandler(mock_device,
-                                                                                descriptor);
+        ufs::ufs_mock_device::TaskManagementRequestProcessor::DefaultQueryTaskHandler(mock_device,
+                                                                                      descriptor);
 
         return ZX_OK;
       });
@@ -229,7 +217,7 @@ TEST_F(TaskManagementRequestProcessorTest, SendScsiUpiuWithSlotIsFull) {
       dut_->GetTaskManagementRequestProcessor().GetRequestList().GetSlotCount();
 
   // Reserve all slots.
-  for (uint32_t slot_num = 0; slot_num < kMaxSlotCount; ++slot_num) {
+  for (uint8_t slot_num = 0; slot_num < kMaxSlotCount; ++slot_num) {
     ASSERT_OK(ReserveSlot<ufs::TaskManagementRequestProcessor>());
   }
 

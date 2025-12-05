@@ -374,11 +374,22 @@ bool TransferRequestProcessor::ProcessSlotCompletion(uint8_t slot_num) {
 }
 
 uint32_t TransferRequestProcessor::ProcessCompletionOfAdminRequests() {
-  return ProcessSlotCompletion(kAdminCommandSlotNumber);
+  uint32_t completion_count = 0;
+
+  if (disable_completion_) {
+    return completion_count;
+  }
+
+  completion_count = ProcessSlotCompletion(kAdminCommandSlotNumber);
+  return completion_count;
 }
 
 uint32_t TransferRequestProcessor::ProcessCompletionOfIoRequests() {
   uint32_t completion_count = 0;
+
+  if (disable_completion_) {
+    return completion_count;
+  }
 
   // Search for all pending slots and signal the ones already done.
   request_list_.ForEachSlot([&](uint8_t slot_num, RequestSlot &request_slot) {

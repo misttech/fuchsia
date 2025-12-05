@@ -223,8 +223,9 @@ class Ufs : public fdf::DriverBase, public scsi::Controller {
   // The controller notifies the host controller when it takes the action defined in |event|.
   zx::result<> Notify(NotifyEvent event, uint64_t data);
 
-  zx_status_t WaitWithTimeout(fit::function<zx_status_t()> wait_for, uint32_t timeout_us,
-                              const fbl::String &timeout_message);
+  zx_status_t WaitWithTimeout(fit::function<bool()> wait_for, zx::duration timeout,
+                              const fbl::String &timeout_message,
+                              zx::duration granularity = zx::usec(1));
 
   static zx::result<uint16_t> TranslateUfsLunToScsiLun(uint8_t ufs_lun);
   static zx::result<uint8_t> TranslateScsiLunToUfsLun(uint16_t scsi_lun);
@@ -235,7 +236,6 @@ class Ufs : public fdf::DriverBase, public scsi::Controller {
   // for test
   uint32_t GetLogicalUnitCount() const { return logical_unit_count_; }
 
-  void DisableCompletion() { disable_completion_ = true; }
   void DumpRegisters();
 
   bool HasWellKnownLun(WellKnownLuns lun) {
@@ -366,7 +366,6 @@ class Ufs : public fdf::DriverBase, public scsi::Controller {
   HostControllerCallback host_controller_callback_;
 
   bool driver_shutdown_ TA_GUARDED(lock_) = false;
-  bool disable_completion_ = false;
 
   // The maximum transfer size supported by UFSHCI spec is 65535 * 256 KiB. However, we limit the
   // maximum transfer size to 1MiB for performance reason.

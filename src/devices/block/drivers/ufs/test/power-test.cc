@@ -332,7 +332,7 @@ TEST_F(PowerTest, BackgroundOperations) {
   };
   fbl::String timeout_message = "Timeout waiting for enabling Background Op";
   constexpr uint32_t kTimeoutUs = 1000000;
-  ASSERT_OK(dut_->WaitWithTimeout(wait_for, kTimeoutUs, timeout_message));
+  ASSERT_OK(dut_->WaitWithTimeout(wait_for, zx::usec(kTimeoutUs), timeout_message));
 
   // Clean up
   mock_device_.SetExceptionEventAlert(false);

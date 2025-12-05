@@ -132,19 +132,19 @@ zx::result<> Ufs::Notify(NotifyEvent event, uint64_t data) {
   return host_controller_callback_(event, data);
 }
 
-zx_status_t Ufs::WaitWithTimeout(fit::function<zx_status_t()> wait_for, uint32_t timeout_us,
-                                 const fbl::String& timeout_message) {
-  uint32_t time_left = timeout_us;
+zx_status_t Ufs::WaitWithTimeout(fit::function<bool()> wait_for, zx::duration timeout,
+                                 const fbl::String& timeout_message, zx::duration granularity) {
+  int64_t sleeps_left = (timeout + granularity - zx::nsec(1)) / granularity;
   while (true) {
     if (wait_for()) {
       return ZX_OK;
     }
-    if (time_left == 0) {
-      FDF_LOG(ERROR, "%s after %u usecs", timeout_message.begin(), timeout_us);
+    if (sleeps_left == 0) {
+      FDF_LOG(ERROR, "%s after %ld usecs", timeout_message.begin(), timeout.to_usecs());
       return ZX_ERR_TIMED_OUT;
     }
-    usleep(1);
-    time_left--;
+    zx::nanosleep(zx::deadline_after(granularity));
+    sleeps_left--;
   }
 }
 
@@ -406,9 +406,7 @@ int Ufs::AdminLoop() {
       }
     }
 
-    if (!disable_completion_) {
-      ProcessAdminCompletions();
-    }
+    ProcessAdminCompletions();
   }
   return thrd_success;
 }
@@ -439,9 +437,7 @@ int Ufs::IoLoop() {
 
     // TODO(https://fxbug.dev/42075643): We need to perform a I/O completion on the in-flight I/O
     // before the device is suspended.
-    if (!disable_completion_) {
-      ProcessIoCompletions();
-    }
+    ProcessIoCompletions();
 
     // Unable to send I/O when in suspend.
     if (device_manager_->IsResumed()) {
@@ -904,7 +900,7 @@ zx::result<> Ufs::InitDeviceInterface(inspect::Node& controller_node) {
   NopOutUpiu nop_upiu;
   auto nop_response = transfer_request_processor_->SendRequestUpiu<NopOutUpiu, NopInUpiu>(nop_upiu);
   if (nop_response.is_error()) {
-    FDF_LOG(ERROR, "Failed to send NopInUpiu %s", nop_response.status_string());
+    FDF_LOG(ERROR, "Failed to send NopOutUpiu %s", nop_response.status_string());
     return nop_response.take_error();
   }
 
@@ -1114,7 +1110,7 @@ zx_status_t Ufs::EnableHostController() {
     return HostControllerEnableReg::Get().ReadFrom(&mmio).host_controller_enable();
   };
   fbl::String timeout_message = "Timeout waiting for EnableHostController";
-  return WaitWithTimeout(wait_for, kHostControllerTimeoutUs, timeout_message);
+  return WaitWithTimeout(wait_for, zx::usec(kHostControllerTimeoutUs), timeout_message);
 }
 
 zx_status_t Ufs::DisableHostController() {
@@ -1125,7 +1121,7 @@ zx_status_t Ufs::DisableHostController() {
     return !HostControllerEnableReg::Get().ReadFrom(&mmio).host_controller_enable();
   };
   fbl::String timeout_message = "Timeout waiting for DisableHostController";
-  return WaitWithTimeout(wait_for, kHostControllerTimeoutUs, timeout_message);
+  return WaitWithTimeout(wait_for, zx::usec(kHostControllerTimeoutUs), timeout_message);
 }
 
 zx::result<> Ufs::ConnectToPciService() {

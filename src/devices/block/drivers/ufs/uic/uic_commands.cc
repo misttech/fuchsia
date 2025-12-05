@@ -45,8 +45,8 @@ zx::result<> UicCommand::SendUicCommand() {
     return HostControllerStatusReg::Get().ReadFrom(&mmio).uic_command_ready();
   };
   fbl::String timeout_message = "Timeout waiting for 'UIC command ready'";
-  if (zx_status_t status =
-          controller_.WaitWithTimeout(wait_for_command_ready, timeout_usec_, timeout_message);
+  if (zx_status_t status = controller_.WaitWithTimeout(wait_for_command_ready,
+                                                       zx::usec(timeout_usec_), timeout_message);
       status != ZX_OK) {
     return zx::error(status);
   }
@@ -62,8 +62,8 @@ zx::result<> UicCommand::SendUicCommand() {
     return InterruptStatusReg::Get().ReadFrom(&mmio).uic_command_completion_status();
   };
   timeout_message = "Timeout waiting for 'UIC command completion status'";
-  if (zx_status_t status =
-          controller_.WaitWithTimeout(wait_for_completion, timeout_usec_, timeout_message);
+  if (zx_status_t status = controller_.WaitWithTimeout(wait_for_completion, zx::usec(timeout_usec_),
+                                                       timeout_message);
       status != ZX_OK) {
     return zx::error(status);
   }
@@ -156,13 +156,14 @@ zx::result<> DmeHibernateCommand::UicPostProcess() {
 
   const fdf::MmioBuffer &mmio = GetController().GetMmio();
   uint32_t flag = GetFlag();
-  uint32_t timeout = GetTimeoutUsec();
+  uint32_t timeout_us = GetTimeoutUsec();
 
   auto wait_for = [&]() -> bool {
     return InterruptStatusReg::Get().ReadFrom(&mmio).reg_value() & flag;
   };
   fbl::String timeout_message = "Timeout waiting for hibernation transition";
-  if (zx_status_t status = GetController().WaitWithTimeout(wait_for, timeout, timeout_message);
+  if (zx_status_t status =
+          GetController().WaitWithTimeout(wait_for, zx::usec(timeout_us), timeout_message);
       status != ZX_OK) {
     return zx::error(status);
   }

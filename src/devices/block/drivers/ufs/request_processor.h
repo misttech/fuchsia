@@ -46,6 +46,8 @@ class RequestProcessor {
   // For testing
   void SetTimeout(zx::duration timeout) { timeout_ = timeout; }
   zx::duration GetTimeout() const { return timeout_; }
+  void DisableCompletion() { disable_completion_ = true; }
+  void EnableCompletion() { disable_completion_ = false; }
 
  protected:
   zx::unowned_bti &GetBti() { return bti_; }
@@ -71,6 +73,8 @@ class RequestProcessor {
   const fdf::MmioView register_;
 
   zx::duration timeout_ = kCommandTimeout;
+
+  bool disable_completion_ = false;
 
  private:
   virtual zx::result<uint8_t> GetAdminCommandSlotNumber() {
