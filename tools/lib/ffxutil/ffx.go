@@ -1009,7 +1009,6 @@ func (f *FFXInstance) GetPBArtifacts(ctx context.Context, pbPath string, artifac
 }
 
 func processPBArtifactsResult(raw string, err error) ([]string, error) {
-
 	if raw == "" {
 		if err != nil {
 			return nil, err
@@ -1031,70 +1030,6 @@ func processPBArtifactsResult(raw string, err error) ([]string, error) {
 		return nil, fmt.Errorf("user error: %s", result.UserError.Message)
 	}
 	return result.Ok.Paths, nil
-}
-
-// GetImageFromPB returns an image from a product bundle.
-func (f *FFXInstance) GetImageFromPB(ctx context.Context, pbPath string, slot string, imageType string, bootloader string) (*build.Image, error) {
-	args := []string{"--machine", "json", "product", "get-image-path", pbPath, "-r"}
-	if slot != "" && imageType != "" && bootloader == "" {
-		args = append(args, "--slot", slot, "--image-type", imageType)
-	} else if bootloader != "" && slot == "" && imageType == "" {
-		args = append(args, "--bootloader", bootloader)
-	} else {
-		return nil, fmt.Errorf("either slot and image type should be provided or bootloader "+
-			"should be provided, not both: slot: %s, imageType: %s, bootloader: %s", slot, imageType, bootloader)
-	}
-	i := f.invoker(args).setCaptureOutput().setStrict()
-	err := i.run(ctx)
-	s := i.output.String()
-
-	return processImageFromPBResult(pbPath, strings.TrimSpace(s), err)
-}
-
-func processImageFromPBResult(pbPath string, raw string, err error) (*build.Image, error) {
-	if raw == "" {
-		if err != nil {
-			return nil, err
-		}
-		return nil, fmt.Errorf("No output received from command")
-
-	} else if err != nil {
-		// We got output and there is an error. Try to find it.
-		// We'll only take the last one
-		dec := json.NewDecoder(strings.NewReader(raw))
-		var errMsg FfxMachineError
-		for {
-			if marshalErr := dec.Decode(&errMsg); marshalErr == io.EOF {
-				// Cool we got the message
-				break
-			} else if marshalErr != nil {
-				return nil, fmt.Errorf("Error parsing error message %s: %v", raw, marshalErr)
-			}
-		}
-
-		if errMsg.Type == "unexpected" || errMsg.Type == "user" {
-			// An error is returned if the image cannot be found in the product bundle
-			// which is ok.
-			return nil, nil
-		}
-
-		return nil, fmt.Errorf("Error getting image: %v", errMsg)
-	}
-
-	var result ProductImagePath
-	err = json.Unmarshal([]byte(raw), &result)
-	if err != nil {
-		return nil, fmt.Errorf("Error parsing output %s: %v", raw, err)
-	}
-
-	if result.UnexpectedError.Message != "" || result.UserError.Message != "" {
-		// An error is returned if the image cannot be found in the product bundle
-		// which is ok.
-		return nil, nil
-	}
-
-	imagePath := filepath.Join(pbPath, result.Ok.Path)
-	return &build.Image{Name: result.Ok.Path, Path: imagePath}, nil
 }
 
 // Log runs "ffx log <args>", optionally sending the output to "output"
