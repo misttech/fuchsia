@@ -854,58 +854,6 @@ go_library("go.starlark.net") {
   ]
 }
 
-go_library("go.starlark.net/internal/spell") {
-  name = "go.starlark.net/internal/spell"
-  source_dir = "vendor/go.starlark.net/internal/spell"
-  sources = [ "spell.go" ]
-}
-
-go_library("go.starlark.net/internal/compile") {
-  name = "go.starlark.net/internal/compile"
-  source_dir = "vendor/go.starlark.net/internal/compile"
-  deps = [
-    ":go.starlark.net/resolve",
-    ":go.starlark.net/syntax",
-  ]
-  sources = [
-    "compile.go",
-    "serial.go",
-  ]
-}
-
-go_library("go.starlark.net/starlark") {
-  name = "go.starlark.net/starlark"
-  source_dir = "vendor/go.starlark.net/starlark"
-  deps = [
-    ":go.starlark.net/internal/compile",
-    ":go.starlark.net/internal/spell",
-    ":golang.org/x/sys",
-  ]
-  sources = [
-    "debug.go",
-    "empty.s",
-    "eval.go",
-    "hashtable.go",
-    "int.go",
-    "int_generic.go",
-    "int_posix64.go",
-    "interp.go",
-    "library.go",
-    "profile.go",
-    "unpack.go",
-    "value.go",
-  ]
-}
-
-go_library("go.starlark.net/resolve") {
-  name = "go.starlark.net/resolve"
-  source_dir = "vendor/go.starlark.net/resolve"
-  sources = [
-    "binding.go",
-    "resolve.go",
-  ]
-}
-
 go_library("go.starlark.net/syntax") {
   name = "go.starlark.net/syntax"
   source_dir = "vendor/go.starlark.net/syntax"
