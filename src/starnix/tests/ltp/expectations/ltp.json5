@@ -21,6 +21,7 @@
                 "clock_adjtime02",
                 "clock_settime01",
                 "clock_settime02",
+                "clock_settime04",
 
                 // TODO(https://fxbug.dev/42066087): Requires CLONE_VM without CLONE_THREAD.
                 // Currently, we implement this combination of flags by making a copy-on-write
@@ -57,6 +58,9 @@
                 "cve-2020-11494",
                 "cve-2021-4034",
                 "cve-2022-2590",
+
+                // TODO(https://fxbug.dev/465930802)
+                "epoll_pwait06",
 
                 // Requires SEEK_HOLE.
                 "fallocate04",
@@ -306,6 +310,24 @@
 
                 // Times out, see b/457525944
                 "epoll01",
+
+                // TODO(https://fxbug.dev/465929299): Requires __NR_file_[getattr|setattr].
+                "file_attr01",
+                "file_attr02",
+                "file_attr03",
+                "file_attr04",
+
+                // TODO(https://fxbug.dev/465929750): Requires CONFIG_AF_UNIX_OOB.
+                "cve-2025-38236",
+
+                // Temporarily skipping until a roll containing these tests is available.
+                "ioctl10",
+                "ioctl_pidfd01",
+                "ioctl_pidfd02",
+                "ioctl_pidfd03",
+                "ioctl_pidfd04",
+                "ioctl_pidfd05",
+                "ioctl_pidfd06",
             ],
         },
     ],
