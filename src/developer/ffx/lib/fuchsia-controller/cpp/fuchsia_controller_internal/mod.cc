@@ -11,6 +11,9 @@ namespace mod {
 
 FuchsiaControllerState *get_module_state() {
   auto mod = PyState_FindModule(&fuchsia_controller_internal);
+  if (mod == nullptr) {
+    return nullptr;
+  }
   return reinterpret_cast<FuchsiaControllerState *>(PyModule_GetState(mod));
 }
 
