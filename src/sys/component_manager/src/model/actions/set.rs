@@ -7,12 +7,13 @@ use crate::model::component::ComponentInstance;
 use cm_util::AbortHandle;
 use errors::ActionError;
 use fuchsia_async as fasync;
+use fuchsia_sync::Mutex;
 use futures::channel::oneshot;
-use futures::future::{join_all, BoxFuture, FutureExt};
+use futures::future::{BoxFuture, FutureExt, join_all};
 use futures::select;
 use std::collections::HashMap;
 use std::pin::pin;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 /// Represents a task that implements an action.
 pub struct ActionTask {
@@ -109,7 +110,7 @@ impl ActionSet {
     where
         A: Action,
     {
-        let mut self_ = action_set.lock().unwrap();
+        let mut self_ = action_set.lock();
         let key = action.key();
         // If this Action is already running, just subscribe to the result
         if let Some(action_controller) = self_.rep.get(&key) {
@@ -141,7 +142,7 @@ impl ActionSet {
                     action_fut.await
                 }
             };
-            action_set_clone.lock().unwrap().finish(&key);
+            action_set_clone.lock().finish(&key);
             res
         }
         .boxed();
@@ -189,10 +190,11 @@ impl ActionSet {
         // Stop and Shutdown will attempt to cancel an in-progress Start.
         match key {
             ActionKey::Shutdown | ActionKey::Stop => {
-                vec![self
-                    .rep
-                    .get(&ActionKey::Start)
-                    .and_then(|action_controller| action_controller.maybe_abort_handle.clone())]
+                vec![
+                    self.rep
+                        .get(&ActionKey::Start)
+                        .and_then(|action_controller| action_controller.maybe_abort_handle.clone()),
+                ]
             }
             _ => vec![],
         }
@@ -278,11 +280,11 @@ pub mod tests {
         .await;
 
         // Complete actions, while checking notifications.
-        action_set.lock().unwrap().finish(&ActionKey::Destroy);
+        action_set.lock().finish(&ActionKey::Destroy);
         assert_matches!(rx1.await.expect("Unable to receive result of Notification"), Ok(()));
         assert_matches!(rx3.await.expect("Unable to receive result of Notification"), Ok(()));
 
-        action_set.lock().unwrap().finish(&ActionKey::Shutdown);
+        action_set.lock().finish(&ActionKey::Shutdown);
         assert_matches!(
             rx2.await.expect("Unable to receive result of Notification"),
             Err(ActionError::StopError { err: StopActionError::GetParentFailed })

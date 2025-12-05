@@ -9,10 +9,11 @@ use async_trait::async_trait;
 use errors::RebootError;
 use fidl::endpoints::{self};
 use fuchsia_component::client;
+use fuchsia_sync::Mutex;
 use log::warn;
 use routing::error::RoutingError;
 use sandbox::{Connector, Request, Routable, WeakInstanceToken};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use vfs::directory::entry::OpenRequest;
 use vfs::path::Path;
 use vfs::{ExecutionScope, ToObjectRequest};
@@ -67,14 +68,14 @@ impl ComponentManagerInstance {
 
     #[cfg(all(test, feature = "src_model_tests"))]
     pub fn has_reboot_task(&self) -> bool {
-        self.state.lock().unwrap().reboot_task.is_some()
+        self.state.lock().reboot_task.is_some()
     }
 
     /// Returns the root component instance.
     ///
     /// REQUIRES: The root has already been set. Otherwise panics.
     pub fn root(&self) -> Arc<ComponentInstance> {
-        self.state.lock().unwrap().root.as_ref().expect("root not set").clone()
+        self.state.lock().root.as_ref().expect("root not set").clone()
     }
 
     /// Returns a connector that lazily resolves the given protocol exposed by `/`.
@@ -123,7 +124,7 @@ impl ComponentManagerInstance {
 
     /// Initializes the state of the instance. Panics if already initialized.
     pub fn init(&self, root: Arc<ComponentInstance>) {
-        let mut state = self.state.lock().unwrap();
+        let mut state = self.state.lock();
         assert!(state.root.is_none(), "child of top instance already set");
         state.root = Some(root);
     }
@@ -134,7 +135,7 @@ impl ComponentManagerInstance {
     /// Returns as soon as the call has been made. In the background, component_manager will wait
     /// on the `Reboot` call.
     pub(super) fn trigger_reboot(self: &Arc<Self>) {
-        let mut state = self.state.lock().unwrap();
+        let mut state = self.state.lock();
         if state.reboot_task.is_some() {
             // Reboot task was already scheduled, nothing to do.
             return;

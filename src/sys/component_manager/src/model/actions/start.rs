@@ -688,12 +688,13 @@ mod tests {
     use directed_graph::DirectedGraph;
     use errors::ModelError;
     use fuchsia_async as fasync;
+    use fuchsia_sync::Mutex;
     use futures::channel::mpsc;
     use futures::stream::FuturesUnordered;
     use futures::{FutureExt, StreamExt};
     use hooks::{Event, EventType, Hook, HooksRegistration};
     use rand::seq::SliceRandom;
-    use std::sync::{Mutex, Weak};
+    use std::sync::Weak;
 
     // Child name for test child components instantiated during tests.
     const TEST_CHILD_NAME: &str = "child";
@@ -713,7 +714,7 @@ mod tests {
                 )
                 .await
                 .expect("shutdown failed");
-                self.done.lock().unwrap().try_send(()).unwrap();
+                self.done.lock().try_send(()).unwrap();
             })
             .detach();
             Ok(())
@@ -774,7 +775,7 @@ mod tests {
                 ActionsManager::register(self.component.clone(), StopAction::new(false))
                     .await
                     .expect("stop failed");
-                self.done.lock().unwrap().try_send(()).unwrap();
+                self.done.lock().try_send(()).unwrap();
             })
             .detach();
             Ok(())

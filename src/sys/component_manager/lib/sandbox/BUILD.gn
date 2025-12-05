@@ -20,6 +20,7 @@ rustc_library("sandbox") {
     "//sdk/rust/zx-status",
     "//src/lib/fidl/rust/fidl",
     "//src/lib/from-enum",
+    "//src/lib/fuchsia-sync",
     "//src/sys/component_manager/lib/router_error",
     "//src/sys/lib/cm_types",
     "//third_party/rust_crates:async-trait",

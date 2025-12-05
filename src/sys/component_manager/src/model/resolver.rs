@@ -30,11 +30,12 @@ mod tests {
     use async_trait::async_trait;
     use directed_graph::DirectedGraph;
     use fidl_fuchsia_component_decl as fdecl;
+    use fuchsia_sync::Mutex;
     use hooks::Hooks;
     use moniker::Moniker;
     use routing::bedrock::structured_dict::ComponentInput;
     use routing::resolving::ComponentResolutionContext;
-    use std::sync::{Arc, Mutex, Weak};
+    use std::sync::{Arc, Weak};
 
     #[derive(Debug)]
     struct MockOkResolver {
@@ -100,7 +101,7 @@ mod tests {
             component_address: &ComponentAddress,
         ) -> Result<ResolvedComponent, ResolverError> {
             let ResolveState { expected_url, expected_context, context_to_resolve_children } =
-                self.resolve_states.lock().unwrap().remove(0);
+                self.resolve_states.lock().remove(0);
             let (component_url, some_context) = component_address.to_url_and_context();
             assert_eq!(expected_url, component_url);
             assert_eq!(expected_context.as_ref(), some_context, "resolving {}", component_url);

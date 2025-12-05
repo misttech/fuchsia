@@ -9,10 +9,11 @@ use crate::{
 };
 use fidl::AsHandleRef;
 use fidl_fuchsia_component_sandbox as fsandbox;
+use fuchsia_sync::Mutex;
 use futures::FutureExt;
 use futures::channel::oneshot;
 use log::warn;
-use std::sync::{Arc, Mutex, Weak};
+use std::sync::{Arc, Weak};
 use vfs::directory::entry::DirectoryEntry;
 use vfs::directory::helper::DirectlyMutable;
 use vfs::directory::immutable::simple as pfs;
@@ -119,7 +120,7 @@ impl RemotableCapability for Dict {
                     let value = match value.try_clone() {
                         Ok(value) => value,
                         Err(_err) => {
-                            if let Some(error_sender) = error_sender.lock().unwrap().take() {
+                            if let Some(error_sender) = error_sender.lock().take() {
                                 let _ = error_sender.send(ConversionError::NotSupported);
                             } else {
                                 warn!(
@@ -135,7 +136,7 @@ impl RemotableCapability for Dict {
                     {
                         Ok(dir_entry) => dir_entry,
                         Err(err) => {
-                            if let Some(error_sender) = error_sender.lock().unwrap().take() {
+                            if let Some(error_sender) = error_sender.lock().take() {
                                 let _ = error_sender.send(err);
                             } else {
                                 warn!(
@@ -1443,7 +1444,7 @@ mod tests {
                 EntryUpdate::Idle => Update::Idle,
             };
             update_tx.send(u).unwrap();
-            if *subscribed2.lock().unwrap() {
+            if *subscribed2.lock() {
                 UpdateNotifierRetention::Retain
             } else {
                 UpdateNotifierRetention::Drop_
@@ -1501,7 +1502,7 @@ mod tests {
         store.dictionary_drain(dict_id, None).await.unwrap().unwrap();
 
         // 4. Unsubscribe to updates
-        *subscribed.lock().unwrap() = false;
+        *subscribed.lock() = false;
         let i = 4;
         let unit = Unit::default().into();
         let value = (i + 10) as u64;

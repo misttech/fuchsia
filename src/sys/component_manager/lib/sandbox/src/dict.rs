@@ -5,10 +5,11 @@
 use crate::{Capability, CapabilityBound};
 use derivative::Derivative;
 use fidl_fuchsia_component_sandbox as fsandbox;
+use fuchsia_sync::{Mutex, MutexGuard};
 use std::borrow::Borrow;
 use std::collections::BTreeMap;
 use std::collections::btree_map::Entry;
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::Arc;
 
 #[cfg(target_os = "fuchsia")]
 use fuchsia_async as fasync;
@@ -122,7 +123,7 @@ impl Dict {
     }
 
     pub(crate) fn lock(&self) -> MutexGuard<'_, DictInner> {
-        self.inner.lock().unwrap()
+        self.inner.lock()
     }
 
     /// Registers a new update notifier function with this dictionary. The function will be called

@@ -2,9 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use fuchsia_sync::Mutex;
 use moniker::Moniker;
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use zx::{AsHandleRef, HandleBased, Koid};
 
 use super::context::ModelContext;
@@ -45,7 +46,7 @@ impl InstanceRegistry {
     fn add(&self, moniker: Moniker) -> InstanceToken {
         let event = zx::Event::create();
         let koid = event.get_koid().expect(KOID_ERROR);
-        self.koid_to_moniker.lock().unwrap().insert(koid, moniker);
+        self.koid_to_moniker.lock().insert(koid, moniker);
         InstanceToken(event)
     }
 
@@ -60,11 +61,11 @@ impl InstanceRegistry {
     /// been destroyed, or the token was not minted by component_manager.
     pub fn get(&self, token: &InstanceToken) -> Option<Moniker> {
         let koid = token.0.get_koid().expect(KOID_ERROR);
-        self.koid_to_moniker.lock().unwrap().get(&koid).cloned()
+        self.koid_to_moniker.lock().get(&koid).cloned()
     }
 
     fn remove(&self, koid: Koid) {
-        self.koid_to_moniker.lock().unwrap().remove(&koid);
+        self.koid_to_moniker.lock().remove(&koid);
     }
 }
 

@@ -4,7 +4,8 @@ use fidl::{HandleBased, endpoints};
 use fuchsia_component_test::{RealmBuilder, RealmBuilderParams};
 use fuchsia_criterion::{FuchsiaCriterion, criterion};
 use fuchsia_runtime::{HandleInfo, HandleType};
-use std::sync::{Arc, Mutex};
+use fuchsia_sync::Mutex;
+use std::sync::Arc;
 use std::time::Duration;
 use {
     fidl_fuchsia_component as fcomponent, fidl_fuchsia_component_decl as fdecl,
@@ -24,7 +25,7 @@ fn main() {
         .sample_size(20);
 
     let executor = Arc::new(Mutex::new(fasync::LocalExecutor::default()));
-    let realm = executor.lock().unwrap().run_singlethreaded(async move {
+    let realm = executor.lock().run_singlethreaded(async move {
         // One instance of nested component manager shared by all tests.
         let builder = RealmBuilder::with_params(
             RealmBuilderParams::new().from_relative_url("#meta/root_component.cm"),
@@ -116,7 +117,7 @@ impl ElfComponentLaunchTest {
         url: &str,
         mode: SetupMode,
     ) -> Self {
-        let controller = executor.lock().unwrap().run_singlethreaded(Self::setup(realm, url, mode));
+        let controller = executor.lock().run_singlethreaded(Self::setup(realm, url, mode));
         let (ep1, ep2) = zx::EventPair::create();
         let (_execution_client, execution_server) =
             endpoints::create_endpoints::<fcomponent::ExecutionControllerMarker>();
@@ -166,7 +167,7 @@ impl ElfComponentLaunchTest {
 
     fn run(mut self) {
         let executor = self.executor.take().unwrap();
-        executor.lock().unwrap().run_singlethreaded(async move { self.do_run().await });
+        executor.lock().run_singlethreaded(async move { self.do_run().await });
     }
 
     async fn do_run(self) {

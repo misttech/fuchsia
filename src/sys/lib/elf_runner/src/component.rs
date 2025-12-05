@@ -9,6 +9,7 @@ use async_trait::async_trait;
 use fidl::endpoints::{ClientEnd, Proxy};
 use fidl_fuchsia_component_runner::ComponentControllerOnEscrowRequest;
 use fidl_fuchsia_process_lifecycle::{LifecycleEvent, LifecycleProxy};
+use fuchsia_sync::Mutex;
 use futures::StreamExt;
 use futures::future::{BoxFuture, FutureExt};
 use futures::stream::BoxStream;
@@ -16,7 +17,7 @@ use log::{error, warn};
 use moniker::Moniker;
 use runner::component::Controllable;
 use std::ops::DerefMut;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use vfs::ExecutionScope;
 use zx::{self as zx, AsHandleRef, HandleBased, Process, Task};
 use {fidl_fuchsia_io as fio, fuchsia_async as fasync};
@@ -149,7 +150,7 @@ impl ElfComponent {
 
     /// Sets a closure to be invoked when the object is dropped. Can only be done once.
     pub fn set_on_drop(&self, func: impl FnOnce(&ElfComponentInfo) + Send + 'static) {
-        let mut on_drop = self.on_drop.lock().unwrap();
+        let mut on_drop = self.on_drop.lock();
         let previous = std::mem::replace(
             on_drop.deref_mut(),
             Some(Box::new(func) as Box<dyn FnOnce(&ElfComponentInfo) + Send + 'static>),
@@ -303,7 +304,7 @@ impl Controllable for ElfComponent {
 impl Drop for ElfComponent {
     fn drop(&mut self) {
         // notify others that this object is being dropped
-        if let Some(on_drop) = self.on_drop.lock().unwrap().take() {
+        if let Some(on_drop) = self.on_drop.lock().take() {
             on_drop(self.info().as_ref());
         }
         // just in case we haven't killed the job already

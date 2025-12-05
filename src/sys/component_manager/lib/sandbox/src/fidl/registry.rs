@@ -6,10 +6,11 @@ use crate::{Capability, RemoteError};
 use fidl::HandleRef;
 use fidl::handle::{AsHandleRef, EventPair, Signals};
 use fuchsia_async as fasync;
+use fuchsia_sync::Mutex;
 use futures::FutureExt;
 use std::collections::HashMap;
 use std::future::Future;
-use std::sync::{LazyLock, Mutex};
+use std::sync::LazyLock;
 use zx::Koid;
 
 static REGISTRY: LazyLock<Mutex<Registry>> = LazyLock::new(|| Mutex::new(Registry::default()));
@@ -41,9 +42,9 @@ pub(crate) fn insert(
     koid: Koid,
     fut: impl Future<Output = ()> + Send + 'static,
 ) {
-    let mut registry = REGISTRY.lock().unwrap();
+    let mut registry = REGISTRY.lock();
     let guard = scopeguard::guard((), move |_| {
-        REGISTRY.lock().unwrap().remove(koid);
+        REGISTRY.lock().remove(koid);
     });
     let task = fasync::Task::spawn(async move {
         let _guard = guard;
@@ -68,7 +69,7 @@ pub(crate) fn insert_token(capability: Capability) -> EventPair {
 
 /// Get a capability from the global registry and returns it, if it exists.
 pub(crate) fn get(koid: Koid) -> Option<Capability> {
-    let registry = REGISTRY.lock().unwrap();
+    let registry = REGISTRY.lock();
     registry.get(koid).map(|entry| {
         entry.capability.try_clone().expect("capabilities in the registry must be cloneable")
     })

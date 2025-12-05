@@ -10,10 +10,11 @@ use fuchsia_component_test::{
     Capability, ChildOptions, LocalComponentHandles, RealmBuilder, RealmInstance, Ref, Route,
 };
 use fuchsia_runtime::{HandleInfo, HandleType};
+use fuchsia_sync::Mutex;
 use futures::channel::{mpsc, oneshot};
 use futures::future::BoxFuture;
 use futures::{FutureExt, SinkExt, StreamExt, TryStreamExt};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use test_case::test_case;
 use vfs::file::vmo::read_only;
 use vfs::pseudo_directory;
@@ -34,7 +35,7 @@ struct DropMarksComponentAsStopped {
 
 impl Drop for DropMarksComponentAsStopped {
     fn drop(&mut self) {
-        let mut is_running_guard = self.component_status.is_running.lock().unwrap();
+        let mut is_running_guard = self.component_status.is_running.lock();
         if !*is_running_guard {
             panic!("component was already stopped");
         }
@@ -48,17 +49,17 @@ impl Drop for DropMarksComponentAsStopped {
 /// component is marked as not running.
 #[derive(Clone, Default)]
 struct ComponentStatus {
-    // We use std::sync::Mutex because we need to unlock it in a drop function, which is not async
+    // We use fuchsia_sync::Mutex because we need to unlock it in a drop function, which is not async
     is_running: Arc<Mutex<bool>>,
 }
 
 impl ComponentStatus {
     fn is_running(&self) -> bool {
-        *self.is_running.lock().unwrap()
+        *self.is_running.lock()
     }
 
     fn new_run(&self) -> DropMarksComponentAsStopped {
-        let mut is_running_guard = self.is_running.lock().unwrap();
+        let mut is_running_guard = self.is_running.lock();
         assert!(!*is_running_guard, "component is already running");
         *is_running_guard = true;
         DropMarksComponentAsStopped { component_status: self.clone() }
@@ -88,7 +89,7 @@ async fn launch_child_in_a_collection_in_nested_component_manager(
                     let realm_proxy: fcomponent::RealmProxy =
                         handles.connect_to_protocol().unwrap();
                     let child_args = {
-                        let mut child_args_guard = child_args.lock().unwrap();
+                        let mut child_args_guard = child_args.lock();
                         child_args_guard.take().unwrap()
                     };
                     realm_proxy
@@ -96,7 +97,7 @@ async fn launch_child_in_a_collection_in_nested_component_manager(
                         .await
                         .unwrap()
                         .unwrap();
-                    child_creation_tx.lock().unwrap().take().unwrap().send(()).unwrap();
+                    child_creation_tx.lock().take().unwrap().send(()).unwrap();
                     Ok(())
                 }
                 .boxed()
@@ -209,7 +210,7 @@ async fn build_local_child() -> (
                 async move {
                     let _drop_marks_component_as_stopped = component_status_clone.new_run();
                     handles_sender.send(handles).await.unwrap();
-                    let cancel_receiver = cancel_receiver.lock().unwrap().take().unwrap();
+                    let cancel_receiver = cancel_receiver.lock().take().unwrap();
                     let _ = cancel_receiver.await;
                     Ok(())
                 }
@@ -436,7 +437,7 @@ async fn start_with_dict() {
         loop {
             match receiver_stream.try_next().await.unwrap() {
                 Some(fsandbox::ReceiverRequest::Receive { channel, control_handle: _ }) => {
-                    let mut task_group = task_group.lock().unwrap();
+                    let mut task_group = task_group.lock();
                     task_group.spawn(async move {
                         let server_end = ServerEnd::<fecho::EchoMarker>::new(channel);
                         let mut stream = server_end.into_stream();

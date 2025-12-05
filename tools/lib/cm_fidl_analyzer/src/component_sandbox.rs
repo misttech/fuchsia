@@ -463,19 +463,13 @@ pub(crate) fn static_children_component_output_dictionary_routers(
         ) -> Result<RouterResponse<Dict>, RouterError> {
             let component =
                 self.weak_component.upgrade().expect("part of component tree was dropped");
-            let child = component
-                .children
-                .read()
-                .expect("failed to get lock")
-                .get(&self.child_name)
-                .cloned()
-                .ok_or(RouterError::NotFound(Arc::new(
-                    RoutingError::offer_from_child_instance_not_found(
-                        &self.child_name,
-                        &self.weak_component.moniker,
-                        "component output dictionary",
-                    ),
-                )))?;
+            let child = component.children.read().get(&self.child_name).cloned().ok_or(
+                RouterError::NotFound(Arc::new(RoutingError::offer_from_child_instance_not_found(
+                    &self.child_name,
+                    &self.weak_component.moniker,
+                    "component output dictionary",
+                ))),
+            )?;
             let component_output_dict = child.sandbox.component_output.capabilities();
             Ok(RouterResponse::<Dict>::Capability(component_output_dict))
         }

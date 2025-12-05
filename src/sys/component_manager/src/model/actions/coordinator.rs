@@ -9,10 +9,11 @@ use async_trait::async_trait;
 use cm_util::AbortHandle;
 use errors::ActionError;
 use fuchsia_async as fasync;
+use fuchsia_sync::Mutex;
 use futures::channel::{mpsc, oneshot};
 use futures::future::BoxFuture;
 use futures::{FutureExt, StreamExt};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 /// A command, sent to the action coordinator to request it performs some kind of work.
 pub(super) enum Command {
@@ -81,10 +82,10 @@ impl ActionCoordinator {
                     let _ = notifier_sender.send(notifier);
                 }
                 Some(Command::GetNotifier(key, notifier_sender)) => {
-                    let _ = notifier_sender.send(self.action_set.lock().unwrap().wait(key));
+                    let _ = notifier_sender.send(self.action_set.lock().wait(key));
                 }
                 Some(Command::Contains(key, bool_sender)) => {
-                    let _ = bool_sender.send(self.action_set.lock().unwrap().contains(key));
+                    let _ = bool_sender.send(self.action_set.lock().contains(key));
                 }
                 None => return,
             }

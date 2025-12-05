@@ -9,12 +9,13 @@ use diagnostics_log::{BufferedPublisher, PublisherOptions};
 use fidl::endpoints;
 use fidl::endpoints::DiscoverableProtocolMarker;
 use fidl_fuchsia_logger as flogger;
+use fuchsia_sync::Mutex;
 use log::Log;
 use moniker::Moniker;
 use routing::DictExt;
 use sandbox::{Capability, RouterResponse, WeakInstanceToken};
 use std::collections::LinkedList;
-use std::sync::{Arc, LazyLock, Mutex};
+use std::sync::{Arc, LazyLock};
 
 const CACHE_SIZE: usize = 10;
 static LOGGER_CACHE: LazyLock<Mutex<LoggerCache>> =
@@ -39,7 +40,7 @@ impl LoggerCache {
 
     /// Purges the cache for the component.
     pub fn purge(component: &ComponentInstance) {
-        LOGGER_CACHE.lock().unwrap().list.extract_if(|e| &e.0 == &component.moniker).next();
+        LOGGER_CACHE.lock().list.extract_if(|e| &e.0 == &component.moniker).next();
     }
 
     /// Tries to logs on behalf of the component.
@@ -49,7 +50,7 @@ impl LoggerCache {
         record: &log::Record,
         target: WeakInstanceToken,
     ) -> bool {
-        let mut cache = LOGGER_CACHE.lock().unwrap();
+        let mut cache = LOGGER_CACHE.lock();
         if let Some(element) = cache.list.extract_if(|e| &e.0 == moniker).next() {
             element.1.log(record);
             cache.list.push_front(element);
@@ -276,7 +277,7 @@ mod tests {
             instance.as_weak().into()
         ));
         assert!(rx.receive().await.is_some());
-        assert_eq!(LOGGER_CACHE.lock().unwrap().list.len(), 1);
+        assert_eq!(LOGGER_CACHE.lock().list.len(), 1);
 
         // Second log, should hit cache. Use an instance that would fail.
         let (_, resolved_instance_fail) = new_instance_without_logsink_decl().await;
@@ -286,7 +287,7 @@ mod tests {
             &record,
             instance.as_weak().into(),
         ));
-        assert_eq!(LOGGER_CACHE.lock().unwrap().list.len(), 1);
+        assert_eq!(LOGGER_CACHE.lock().list.len(), 1);
     }
 
     #[fuchsia::test]
@@ -306,7 +307,7 @@ mod tests {
             assert!(rx.receive().await.is_some());
             instances.push(instance);
         }
-        assert_eq!(LOGGER_CACHE.lock().unwrap().list.len(), CACHE_SIZE);
+        assert_eq!(LOGGER_CACHE.lock().list.len(), CACHE_SIZE);
 
         // Log one more time, should evict the first one.
         let (instance, resolved_instance, rx) = new_instance_with_valid_logsink("new-child").await;
@@ -318,7 +319,7 @@ mod tests {
         ));
         assert!(rx.receive().await.is_some());
 
-        let cache = LOGGER_CACHE.lock().unwrap();
+        let cache = LOGGER_CACHE.lock();
         assert_eq!(cache.list.len(), CACHE_SIZE);
         assert!(!cache.list.iter().any(|(m, _)| m == &instances[0].moniker));
         assert!(cache.list.iter().any(|(m, _)| m == &instance.moniker));
@@ -336,10 +337,10 @@ mod tests {
             instance.as_weak().into(),
         ));
         assert!(rx.receive().await.is_some());
-        assert_eq!(LOGGER_CACHE.lock().unwrap().list.len(), 1);
+        assert_eq!(LOGGER_CACHE.lock().list.len(), 1);
 
         // Purge and check that the cache is empty.
         LoggerCache::purge(&instance);
-        assert_eq!(LOGGER_CACHE.lock().unwrap().list.len(), 0);
+        assert_eq!(LOGGER_CACHE.lock().list.len(), 0);
     }
 }

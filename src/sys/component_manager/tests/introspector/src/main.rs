@@ -33,17 +33,18 @@ use component_events::matcher::*;
 use component_events::sequence::{EventSequence, Ordering};
 use fcomponent::{IntrospectorProxy, RealmProxy};
 use fdecl::StartupMode;
-use fidl::endpoints::DiscoverableProtocolMarker;
 use fidl::HandleBased;
+use fidl::endpoints::DiscoverableProtocolMarker;
 use fuchsia_component::server::ServiceFs;
 use fuchsia_component_test::{
     Capability, ChildOptions, RealmBuilder, RealmBuilderParams, RealmInstance, Ref, Route,
 };
+use fuchsia_sync::Mutex as StdMutex;
+use futures::SinkExt;
 use futures::channel::mpsc;
 use futures::lock::Mutex;
-use futures::SinkExt;
 use futures_util::{FutureExt, StreamExt, TryStreamExt};
-use std::sync::{Arc, Mutex as StdMutex};
+use std::sync::Arc;
 use {
     fidl_fuchsia_component as fcomponent, fidl_fuchsia_component_decl as fdecl,
     fidl_fuchsia_component_runner as fcrunner, fidl_fuchsia_io as fio, fidl_fuchsia_sys2 as fsys2,
@@ -144,8 +145,7 @@ async fn setup_realm(mock_runner: Arc<MockRunner>) -> Fixture {
         .add_local_child(
             "mock_runner",
             move |handles| {
-                let mut fs =
-                    fs.lock().unwrap().take().expect("mock runner should only be started once");
+                let mut fs = fs.lock().take().expect("mock runner should only be started once");
                 async {
                     fs.serve_connection(handles.outgoing_dir).unwrap();
                     Ok(fs.collect().await)

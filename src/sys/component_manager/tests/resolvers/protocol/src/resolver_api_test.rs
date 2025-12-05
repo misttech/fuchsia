@@ -12,11 +12,12 @@ use cm_rust::push_box;
 use fidl::endpoints::DiscoverableProtocolMarker;
 use fuchsia_component::server;
 use fuchsia_component_test::{ChildOptions, LocalComponentHandles, RealmBuilder};
+use fuchsia_sync::Mutex;
 use futures::channel::mpsc;
 use futures::prelude::*;
 use log::*;
 use std::collections::HashSet;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use {
     fidl_fuchsia_component_decl as fcdecl, fidl_fuchsia_component_resolution as fcresolution,
     fuchsia_async as fasync,
@@ -124,11 +125,11 @@ async fn local_resolver_impl(
                 match request {
                     fcresolution::ResolverRequest::Resolve { component_url, responder } => {
                         info!("Got Resolve request for {component_url}");
-                        if !urls_to_resolve.lock().unwrap().remove(&component_url) {
+                        if !urls_to_resolve.lock().remove(&component_url) {
                             error!("received unexpected URL: {component_url}");
                             send_complete.send(false).await.expect("failed to send results");
                         }
-                        if urls_to_resolve.lock().unwrap().is_empty() {
+                        if urls_to_resolve.lock().is_empty() {
                             // Success!
                             send_complete.send(true).await.expect("failed to send results");
                         }

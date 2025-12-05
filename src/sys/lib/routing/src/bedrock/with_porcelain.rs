@@ -444,10 +444,11 @@ mod tests {
     use assert_matches::assert_matches;
     use cm_rust_testing::UseBuilder;
     use cm_types::Url;
+    use fuchsia_sync::Mutex;
     use moniker::Moniker;
     use router_error::{DowncastErrorForTest, RouterError};
     use sandbox::{Data, Dict};
-    use std::sync::{Arc, Mutex};
+    use std::sync::Arc;
 
     #[derive(Debug)]
     struct FakeComponent {
@@ -532,7 +533,7 @@ mod tests {
             _err: &RouterError,
             _route_target: sandbox::WeakInstanceToken,
         ) {
-            let mut reported = self.reported.lock().unwrap();
+            let mut reported = self.reported.lock();
             if *reported {
                 panic!("report() was called twice");
             }
@@ -607,7 +608,7 @@ mod tests {
                 } if moniker == &Moniker::root().into() && type_name == "protocol"
             )
         );
-        assert!(*reported.lock().unwrap());
+        assert!(*reported.lock());
     }
 
     #[fuchsia::test]
@@ -645,7 +646,7 @@ mod tests {
                     && expected == "protocol" && actual == "service"
             )
         );
-        assert!(*reported.lock().unwrap());
+        assert!(*reported.lock());
     }
 
     #[fuchsia::test]
@@ -682,6 +683,6 @@ mod tests {
                 ) if moniker == &Moniker::root().into()
             )
         );
-        assert!(*reported.lock().unwrap());
+        assert!(*reported.lock());
     }
 }

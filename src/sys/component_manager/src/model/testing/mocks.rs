@@ -16,6 +16,7 @@ use fidl::epitaph::ChannelEpitaphExt;
 use fidl_fuchsia_component_runner::{
     ComponentDiagnostics, ComponentTasks, Task as DiagnosticsTask,
 };
+use fuchsia_sync::Mutex as SyncMutex;
 use futures::channel::oneshot;
 use futures::future::{AbortHandle, Abortable};
 use futures::lock::Mutex;
@@ -23,7 +24,7 @@ use futures::prelude::*;
 use log::warn;
 use std::collections::{HashMap, HashSet};
 use std::mem;
-use std::sync::{Arc, Mutex as SyncMutex};
+use std::sync::Arc;
 use vfs::directory::entry::OpenRequest;
 use vfs::file::vmo::read_only;
 use vfs::pseudo_directory;
@@ -62,7 +63,7 @@ impl MockResolver {
             const NAME_PREFIX: &str = "test:///";
             debug_assert!(component_url.starts_with(NAME_PREFIX), "invalid component url");
             let (_, name) = component_url.split_at(NAME_PREFIX.len());
-            let mut guard = self.inner.lock().unwrap();
+            let mut guard = self.inner.lock();
             let decl = guard.components.get(name).cloned().ok_or_else(|| {
                 ResolverError::manifest_not_found(format_err!("not in the hashmap"))
             })?;
@@ -115,11 +116,11 @@ impl MockResolver {
     }
 
     pub fn add_component(&self, name: &str, component: ComponentDecl) {
-        self.inner.lock().unwrap().components.insert(name.to_string(), component);
+        self.inner.lock().components.insert(name.to_string(), component);
     }
 
     pub fn add_config_values(&self, path: &str, values: ConfigValuesData) {
-        self.inner.lock().unwrap().configs.insert(path.to_string(), values);
+        self.inner.lock().configs.insert(path.to_string(), values);
     }
 
     pub async fn add_blocker(
@@ -128,12 +129,12 @@ impl MockResolver {
         send: oneshot::Sender<()>,
         recv: oneshot::Receiver<()>,
     ) {
-        self.inner.lock().unwrap().blockers.insert(path.to_string(), Some((send, recv)));
+        self.inner.lock().blockers.insert(path.to_string(), Some((send, recv)));
     }
 
     #[cfg(not(feature = "src_model_tests"))]
     pub fn get_component_decl(&self, name: &str) -> Option<ComponentDecl> {
-        self.inner.lock().unwrap().components.get(name).map(Clone::clone)
+        self.inner.lock().components.get(name).map(Clone::clone)
     }
 }
 
@@ -193,9 +194,9 @@ struct MockRunnerInner {
 pub struct MockRunner {
     // The internal runner state.
     //
-    // Inner state is guarded by a std::sync::Mutex to avoid helper
+    // Inner state is guarded by a fuchsia_sync::Mutex to avoid helper
     // functions needing "async" (and propagating to callers).
-    // std::sync::MutexGuard doesn't have the "Send" trait, so the
+    // fuchsia_sync::MutexGuard doesn't have the "Send" trait, so the
     // compiler will prevent us calling ".await" while holding the lock.
     inner: SyncMutex<MockRunnerInner>,
 }
@@ -223,7 +224,7 @@ impl MockRunner {
     /// Cause the URL `url` to return an error when started.
     #[cfg(not(feature = "src_model_tests"))]
     pub fn add_failing_url(&self, url: &str) {
-        self.inner.lock().unwrap().failing_urls.insert(url.to_string());
+        self.inner.lock().failing_urls.insert(url.to_string());
     }
 
     /// Cause the component `name` to return an error when started.
@@ -234,21 +235,17 @@ impl MockRunner {
 
     /// Register `function` to serve the outgoing directory of component with `url`.
     pub fn add_host_fn(&self, url: &str, function: HostFn) {
-        self.inner.lock().unwrap().outgoing_host_fns.insert(url.to_string(), Arc::new(function));
+        self.inner.lock().outgoing_host_fns.insert(url.to_string(), Arc::new(function));
     }
 
     /// Register `function` to override the controller response for the component with URL `url`.
     pub fn add_controller_response(&self, url: &str, function: ControllerResponseFn) {
-        self.inner
-            .lock()
-            .unwrap()
-            .controller_response_fns
-            .insert(url.to_string(), Arc::new(function));
+        self.inner.lock().controller_response_fns.insert(url.to_string(), Arc::new(function));
     }
 
     /// Get the input namespace for component `name`.
     pub fn get_namespace(&self, name: &str) -> Option<Arc<ManagedNamespace>> {
-        self.inner.lock().unwrap().namespaces.get(name).map(Arc::clone)
+        self.inner.lock().namespaces.get(name).map(Arc::clone)
     }
 
     /// Take the numbered handles for component `name` with `HandleType`.
@@ -258,7 +255,7 @@ impl MockRunner {
         name: &str,
         ordinal: fuchsia_runtime::HandleType,
     ) -> Option<zx::Handle> {
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = self.inner.lock();
         let handles = inner.numbered_handles.get_mut(name)?;
         for i in 0..handles.len() {
             let info = fuchsia_runtime::HandleInfo::try_from(handles[i].id)
@@ -272,7 +269,7 @@ impl MockRunner {
 
     #[cfg(not(feature = "src_model_tests"))]
     pub fn get_request_map(&self) -> Arc<Mutex<HashMap<Koid, Vec<ControlMessage>>>> {
-        self.inner.lock().unwrap().runner_requests.clone()
+        self.inner.lock().runner_requests.clone()
     }
 
     /// Returns a future that completes when `expected_url` is launched by the runner.
@@ -286,7 +283,7 @@ impl MockRunner {
         loop {
             let (sender, receiver) = oneshot::channel();
             {
-                let mut inner = self.inner.lock().unwrap();
+                let mut inner = self.inner.lock();
                 let expected_urls: HashSet<&str> = expected_urls.iter().map(|s| *s).collect();
                 let urls_run: HashSet<&str> = inner.urls_run.iter().map(|s| s as &str).collect();
                 if expected_urls.is_subset(&urls_run) {
@@ -303,12 +300,12 @@ impl MockRunner {
     /// This is useful when `wait_for_url` is to be used repeatedly to run a
     /// component with the same URL.
     pub fn reset_wait_for_url(&self, expected_url: &str) {
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = self.inner.lock();
         inner.urls_run.retain(|url| url != expected_url);
     }
 
     pub fn abort_controller(&self, koid: &Koid) {
-        let mut state = self.inner.lock().unwrap();
+        let mut state = self.inner.lock();
         state.controller_control_handles.remove(koid).expect("koid was not available");
         let handle = state.controller_abort_handles.get(koid).expect("koid was not available");
         handle.abort();
@@ -321,7 +318,7 @@ impl MockRunner {
         koid: &Koid,
         request: fcrunner::ComponentControllerOnEscrowRequest,
     ) {
-        let state = self.inner.lock().unwrap();
+        let state = self.inner.lock();
         let handle = state.controller_control_handles.get(koid).expect("koid was not available");
         handle.send_on_escrow(request).unwrap();
     }
@@ -329,7 +326,7 @@ impl MockRunner {
     /// Sends a `OnStopInfo` event on the controller channel identified by `koid`.
     #[cfg(feature = "src_model_tests")]
     pub fn send_on_stop_info(&self, koid: &Koid, info: fcrunner::ComponentStopInfo) {
-        let state = self.inner.lock().unwrap();
+        let state = self.inner.lock();
         let handle = state.controller_control_handles.get(koid).expect("koid was not available");
         handle.send_on_stop(info).unwrap();
     }
@@ -351,7 +348,7 @@ impl MockRunner {
         // protocol.
         let channel_koid = server_end.as_handle_ref().basic_info().expect("basic info failed").koid;
         {
-            let mut state = self.inner.lock().unwrap();
+            let mut state = self.inner.lock();
 
             // Trigger a failure if previously requested.
             if state.failing_urls.contains(&resolved_url) {
@@ -431,7 +428,7 @@ impl BuiltinRunnerFactory for MockRunner {
         checker: ScopedPolicyChecker,
         open_request: OpenRequest<'_>,
     ) -> Result<(), zx::Status> {
-        self.inner.lock().unwrap().last_checker = Some(checker);
+        self.inner.lock().last_checker = Some(checker);
         open_request.open_service(endpoint(move |scope, server_end| {
             let stream = fcrunner::ComponentRunnerRequestStream::from_channel(server_end);
             scope.spawn(self.clone().handle_stream(stream));

@@ -13,6 +13,7 @@ use cm_config::RuntimeConfig;
 use cm_rust::{CapabilityDecl, CollectionDecl, ComponentDecl, ExposeDecl, OfferDecl, UseDecl};
 use cm_types::{Name, Url};
 use config_encoder::ConfigFields;
+use fuchsia_sync::RwLock;
 use moniker::{BorrowedChildName, ChildName, Moniker};
 use router_error::RouterError;
 use routing::bedrock::program_output_dict::build_program_output_dictionary;
@@ -27,7 +28,7 @@ use routing::error::{ComponentInstanceError, ErrorReporter, RouteRequestErrorInf
 use routing::policy::GlobalPolicyChecker;
 use routing::resolving::{ComponentAddress, ComponentResolutionContext, ResolverError};
 use std::collections::HashMap;
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 
 /// A representation of a v2 component instance.
 #[derive(Debug)]
@@ -191,17 +192,12 @@ impl ComponentInstanceForAnalyzer {
 
     // Returns all children of the component instance.
     pub(crate) fn get_children(&self) -> Vec<Arc<Self>> {
-        self.children
-            .read()
-            .expect("failed to acquire read lock")
-            .values()
-            .map(|c| Arc::clone(c))
-            .collect()
+        self.children.read().values().map(|c| Arc::clone(c)).collect()
     }
 
     // Adds a new child to this component instance.
     pub(crate) fn add_child(&self, child_moniker: ChildName, child: Arc<Self>) {
-        self.children.write().expect("failed to acquire write lock").insert(child_moniker, child);
+        self.children.write().insert(child_moniker, child);
     }
 
     pub(crate) fn moniker(&self) -> &Moniker {
@@ -305,7 +301,7 @@ impl ResolvedInstanceInterface for ComponentInstanceForAnalyzer {
     }
 
     fn get_child(&self, moniker: &BorrowedChildName) -> Option<Arc<Self>> {
-        self.children.read().expect("failed to acquire read lock").get(moniker).map(Arc::clone)
+        self.children.read().get(moniker).map(Arc::clone)
     }
 
     // This is a static model with no notion of a collection.
