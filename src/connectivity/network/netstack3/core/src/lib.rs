@@ -171,7 +171,9 @@ pub mod ip {
     pub use netstack3_ip::socket::{
         IpSockCreateAndSendError, IpSockCreationError, IpSockSendError,
     };
-    pub use netstack3_ip::{IpLayerEvent, ResolveRouteError, RouterAdvertisementEvent};
+    pub use netstack3_ip::{
+        IpLayerEvent, IpRoutingBindingsTypes, ResolveRouteError, RouterAdvertisementEvent,
+    };
 }
 
 /// Types and utilities for dealing with neighbors.
@@ -191,7 +193,7 @@ pub mod routes {
     pub use netstack3_ip::{
         AddRouteError, AddableEntry, AddableEntryEither, AddableMetric, Entry, EntryEither,
         Generation, Metric, NextHop, RawMetric, ResolvedRoute, RoutableIpAddr, RouteResolveOptions,
-        RoutingTableId, Rule, RuleAction, RuleMatcher, TrafficOriginMatcher,
+        RoutingTableCookie, RoutingTableId, Rule, RuleAction, RuleMatcher, TrafficOriginMatcher,
     };
 }
 

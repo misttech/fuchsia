@@ -573,7 +573,7 @@ fn test_send<I: IpSocketIpExt + IpExt>() {
     assert_matches!(bindings_ctx.take_ethernet_frames()[..], []);
 
     // Make sure that sending on an unroutable socket fails.
-    ip::testutil::del_routes_to_subnet::<I, _>(&mut core_ctx.context(), subnet).unwrap();
+    ip::testutil::del_routes_to_subnet::<I, _, _>(&mut core_ctx.context(), subnet).unwrap();
     let res = IpSocketHandler::<I, _>::send_ip_packet(
         &mut core_ctx.context(),
         &mut bindings_ctx,

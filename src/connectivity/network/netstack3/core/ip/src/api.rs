@@ -9,22 +9,22 @@ use assert_matches::assert_matches;
 use net_types::ip::{Ip, IpAddr, IpVersionMarker, Ipv4, Ipv6};
 use net_types::{SpecifiedAddr, Witness as _};
 
-use netstack3_base::sync::{PrimaryRc, RwLock};
+use netstack3_base::sync::PrimaryRc;
 use netstack3_base::{
     AnyDevice, ContextPair, DeferredResourceRemovalContext, DeviceIdContext, InspectableValue,
-    Inspector, InspectorDeviceExt, MarkDomain, MarkMatcher, Marks, MatcherBindingsTypes,
-    ReferenceNotifiersExt as _, RemoveResourceResultWithContext, StrongDeviceIdentifier,
-    SubnetMatcher, WrapBroadcastMarker,
+    Inspector, InspectorDeviceExt, MarkDomain, MarkMatcher, Marks, ReferenceNotifiersExt as _,
+    RemoveResourceResultWithContext, StrongDeviceIdentifier, SubnetMatcher, WrapBroadcastMarker,
 };
 
+use crate::IpRoutingBindingsTypes;
 use crate::internal::base::{
-    self, IpLayerBindingsContext, IpLayerContext, IpLayerIpExt, IpRouteTableContext,
-    IpRouteTablesContext, IpStateContext as _, ResolveRouteError, RoutingTableId,
+    self, BaseRoutingTableState, IpLayerBindingsContext, IpLayerContext, IpLayerIpExt,
+    IpRouteTableContext, IpRouteTablesContext, IpStateContext as _, ResolveRouteError,
+    RoutingTableCookie, RoutingTableId,
 };
 use crate::internal::device::{
     IpDeviceBindingsContext, IpDeviceConfigurationContext, IpDeviceIpExt,
 };
-use crate::internal::routing::RoutingTable;
 use crate::internal::routing::rules::{
     Rule, RuleAction, RuleMatcher, RulesTable, TrafficOriginMatcher,
 };
@@ -32,6 +32,7 @@ use crate::internal::types::{
     Destination, Entry, EntryAndGeneration, Metric, NextHop, OrderedEntry, ResolvedRoute,
     RoutableIpAddr,
 };
+use diagnostics_traits::InspectorRouteTableExt;
 
 /// The options for [`RoutesApi::resolve_route`] api.
 #[derive(Debug, Clone, Default)]
@@ -39,6 +40,13 @@ pub struct RouteResolveOptions {
     /// The marks for the resolution.
     pub marks: Marks,
 }
+
+/// The table ID type for the routes API.
+pub type RoutesApiTableId<I, C> = RoutingTableId<
+    I,
+    <<C as ContextPair>::CoreContext as DeviceIdContext<AnyDevice>>::DeviceId,
+    <C as ContextPair>::BindingsContext,
+>;
 
 /// The routes API for a specific IP version `I`.
 pub struct RoutesApi<I: Ip, C>(C, IpVersionMarker<I>);
@@ -67,11 +75,12 @@ where
     /// Allocates a new table in Core.
     pub fn new_table(
         &mut self,
-        bindings_id: impl Into<u32>,
-    ) -> RoutingTableId<I, <C::CoreContext as DeviceIdContext<AnyDevice>>::DeviceId> {
+        bindings_id: <C::BindingsContext as IpRoutingBindingsTypes>::RoutingTableId,
+    ) -> RoutesApiTableId<I, C> {
         self.core_ctx().with_ip_routing_tables_mut(|tables| {
-            let new_table =
-                PrimaryRc::new(RwLock::new(RoutingTable::with_bindings_id(bindings_id.into())));
+            let new_table = PrimaryRc::new(BaseRoutingTableState::with_bindings_id(
+                RoutingTableCookie::BindingsId(bindings_id),
+            ));
             let table_id = RoutingTableId::new(PrimaryRc::clone_strong(&new_table));
             assert_matches!(tables.insert(table_id.clone(), new_table), None);
             table_id
@@ -85,7 +94,7 @@ where
     /// Panics if `id` is the main table id.
     pub fn remove_table(
         &mut self,
-        id: RoutingTableId<I, <C::CoreContext as DeviceIdContext<AnyDevice>>::DeviceId>,
+        id: RoutesApiTableId<I, C>,
     ) -> RemoveResourceResultWithContext<(), C::BindingsContext> {
         assert!(id != self.main_table_id(), "main table should never be removed");
         self.core_ctx().with_ip_routing_tables_mut(|tables| {
@@ -98,9 +107,7 @@ where
     }
 
     /// Gets the core ID of the main table.
-    pub fn main_table_id(
-        &mut self,
-    ) -> RoutingTableId<I, <C::CoreContext as DeviceIdContext<AnyDevice>>::DeviceId> {
+    pub fn main_table_id(&mut self) -> RoutesApiTableId<I, C> {
         self.core_ctx().main_table_id()
     }
 
@@ -110,7 +117,7 @@ where
         T: Extend<X>,
     >(
         &mut self,
-        table_id: &RoutingTableId<I, <C::CoreContext as DeviceIdContext<AnyDevice>>::DeviceId>,
+        table_id: &RoutesApiTableId<I, C>,
         target: &mut T,
     ) {
         self.core_ctx().with_ip_routing_table(table_id, |_core_ctx, table| {
@@ -138,7 +145,7 @@ where
     where
         F: FnMut(
             B,
-            &RoutingTableId<I, <C::CoreContext as DeviceIdContext<AnyDevice>>::DeviceId>,
+            &RoutesApiTableId<I, C>,
             &Entry<I::Addr, <C::CoreContext as DeviceIdContext<AnyDevice>>::DeviceId>,
         ) -> B,
     {
@@ -193,27 +200,31 @@ where
     }
 
     /// Writes rules and routes tables information to the provided `inspector`.
-    pub fn inspect<N: Inspector>(&mut self, inspector: &mut N, main_table_id: u32)
+    pub fn inspect<N>(&mut self, inspector: &mut N)
     where
-        for<'a> N::ChildInspector<'a>:
-            InspectorDeviceExt<<C::CoreContext as DeviceIdContext<AnyDevice>>::DeviceId>,
+        N: Inspector,
+        for<'a> N::ChildInspector<'a>: InspectorRouteTableExt<RoutesApiTableId<I, C>>
+            + InspectorDeviceExt<<C::CoreContext as DeviceIdContext<AnyDevice>>::DeviceId>,
     {
         inspector.record_child("Rules", |inspector| {
-            self.inspect_rules(inspector, main_table_id);
+            self.inspect_rules(inspector);
         });
         inspector.record_child("RoutingTables", |inspector| {
-            self.inspect_routes(inspector, main_table_id);
+            self.inspect_routes(inspector);
         })
     }
 
     /// Writes rules table information to the provided `inspector`.
-    pub fn inspect_rules<N: Inspector>(&mut self, inspector: &mut N, main_table_id: u32) {
+    pub fn inspect_rules<N>(&mut self, inspector: &mut N)
+    where
+        N: Inspector + InspectorRouteTableExt<RoutesApiTableId<I, C>>,
+    {
         self.core_ctx().with_rules_table(
-        |core_ctx,
+        |_core_ctx,
          rule_table: &RulesTable<
             _,
             _,
-            <C::BindingsContext as MatcherBindingsTypes>::DeviceClass,
+            C::BindingsContext,
         >| {
             for Rule {
                 matcher:
@@ -267,13 +278,8 @@ where
                         RuleAction::Unreachable => inspector.record_str("Action", "Unreachable"),
                         RuleAction::Lookup(table_id) => {
                             inspector.record_child("Action", |inspector| {
-                                let bindings_id = core_ctx
-                                    .with_ip_routing_table(table_id, |_core_ctx, table| {
-                                        table.bindings_id
-                                    });
-                                let bindings_id = bindings_id.unwrap_or(main_table_id);
-                                inspector.record_uint("Lookup", bindings_id)
-                            })
+                                N::record_route_table(inspector, "Lookup", table_id)
+                            });
                         }
                     }
                 })
@@ -282,18 +288,16 @@ where
     }
 
     /// Writes routing table information to the provided `inspector`.
-    pub fn inspect_routes<
-        N: Inspector + InspectorDeviceExt<<C::CoreContext as DeviceIdContext<AnyDevice>>::DeviceId>,
-    >(
-        &mut self,
-        inspector: &mut N,
-        main_table_id: u32,
-    ) {
+    pub fn inspect_routes<N>(&mut self, inspector: &mut N)
+    where
+        N: Inspector
+            + InspectorDeviceExt<<C::CoreContext as DeviceIdContext<AnyDevice>>::DeviceId>
+            + InspectorRouteTableExt<RoutesApiTableId<I, C>>,
+    {
         self.core_ctx().with_ip_routing_tables(|core_ctx, tables| {
             for table_id in tables.keys() {
                 core_ctx.with_ip_routing_table(table_id, |_core_ctx, table| {
-                    let bindings_id = table.bindings_id.unwrap_or(main_table_id);
-                    inspector.record_display_child(bindings_id, |inspector| {
+                    inspector.record_display_child(N::display_route_table(table_id), |inspector| {
                         for Entry { subnet, device, gateway, metric } in table.iter_table() {
                             inspector.record_unnamed_child(|inspector| {
                                 inspector.record_display("Destination", subnet);
@@ -323,7 +327,7 @@ where
     /// Replaces the entire route table atomically.
     pub fn set_routes(
         &mut self,
-        table_id: &RoutingTableId<I, <C::CoreContext as DeviceIdContext<AnyDevice>>::DeviceId>,
+        table_id: &RoutesApiTableId<I, C>,
         mut entries: Vec<
             EntryAndGeneration<I::Addr, <C::CoreContext as DeviceIdContext<AnyDevice>>::DeviceId>,
         >,
@@ -341,11 +345,7 @@ where
     pub fn set_rules(
         &mut self,
         rules: Vec<
-            Rule<
-                I,
-                <C::CoreContext as DeviceIdContext<AnyDevice>>::DeviceId,
-                <C::BindingsContext as MatcherBindingsTypes>::DeviceClass,
-            >,
+            Rule<I, <C::CoreContext as DeviceIdContext<AnyDevice>>::DeviceId, C::BindingsContext>,
         >,
     ) {
         self.core_ctx().with_rules_table_mut(|_core_ctx, rule_table| {
@@ -355,9 +355,7 @@ where
 
     /// Gets all table IDs.
     #[cfg(feature = "testutils")]
-    pub fn list_table_ids(
-        &mut self,
-    ) -> Vec<RoutingTableId<I, <C::CoreContext as DeviceIdContext<AnyDevice>>::DeviceId>> {
+    pub fn list_table_ids(&mut self) -> Vec<RoutesApiTableId<I, C>> {
         self.core_ctx().with_ip_routing_tables(|_ctx, tables| tables.keys().cloned().collect())
     }
 }

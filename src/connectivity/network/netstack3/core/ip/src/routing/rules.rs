@@ -10,20 +10,21 @@ use core::ops::Deref as _;
 
 use net_types::ip::Ip;
 use netstack3_base::{
-    BoundInterfaceMatcher, InterfaceProperties, MarkMatchers, Marks, Matcher, SubnetMatcher,
+    BoundInterfaceMatcher, InterfaceProperties, MarkMatchers, Marks, Matcher, MatcherBindingsTypes,
+    SubnetMatcher,
 };
 
-use crate::RoutingTableId;
 use crate::internal::routing::PacketOrigin;
+use crate::{IpRoutingBindingsTypes, RoutingTableId};
 
 /// Table that contains routing rules.
-pub struct RulesTable<I: Ip, D, DeviceClass> {
+pub struct RulesTable<I: Ip, D, BT: IpRoutingBindingsTypes + MatcherBindingsTypes> {
     /// Rules of the table.
-    rules: Vec<Rule<I, D, DeviceClass>>,
+    rules: Vec<Rule<I, D, BT>>,
 }
 
-impl<I: Ip, D, DeviceClass> RulesTable<I, D, DeviceClass> {
-    pub(crate) fn new(main_table_id: RoutingTableId<I, D>) -> Self {
+impl<I: Ip, D, BT: IpRoutingBindingsTypes + MatcherBindingsTypes> RulesTable<I, D, BT> {
+    pub(crate) fn new(main_table_id: RoutingTableId<I, D, BT>) -> Self {
         // TODO(https://fxbug.dev/355059790): If bindings is installing the main table, we should
         // also let the bindings install this default rule.
         Self {
@@ -34,28 +35,28 @@ impl<I: Ip, D, DeviceClass> RulesTable<I, D, DeviceClass> {
         }
     }
 
-    pub(crate) fn iter(&self) -> impl Iterator<Item = &'_ Rule<I, D, DeviceClass>> {
+    pub(crate) fn iter(&self) -> impl Iterator<Item = &'_ Rule<I, D, BT>> {
         self.rules.iter()
     }
 
     /// Gets the mutable reference to the rules vector.
     #[cfg(any(test, feature = "testutils"))]
-    pub fn rules_mut(&mut self) -> &mut Vec<Rule<I, D, DeviceClass>> {
+    pub fn rules_mut(&mut self) -> &mut Vec<Rule<I, D, BT>> {
         &mut self.rules
     }
 
     /// Replaces the rules inside this table.
-    pub fn replace(&mut self, new_rules: Vec<Rule<I, D, DeviceClass>>) {
+    pub fn replace(&mut self, new_rules: Vec<Rule<I, D, BT>>) {
         self.rules = new_rules;
     }
 }
 
 /// A routing rule.
-pub struct Rule<I: Ip, D, DeviceClass> {
+pub struct Rule<I: Ip, D, BT: IpRoutingBindingsTypes + MatcherBindingsTypes> {
     /// The matcher of the rule.
-    pub matcher: RuleMatcher<I, DeviceClass>,
+    pub matcher: RuleMatcher<I, BT::DeviceClass>,
     /// The action of the rule.
-    pub action: RuleAction<RoutingTableId<I, D>>,
+    pub action: RuleAction<RoutingTableId<I, D, BT>>,
 }
 
 /// The action part of a [`Rule`].

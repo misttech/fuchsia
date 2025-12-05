@@ -23,13 +23,13 @@ use super::*;
 struct IpFakeCoreCtx<I: IpLayerIpExt> {
     stack_wide_counters: IpCounters<I>,
     per_device_counters: MultipleDevicesIdState<IpCounters<I>>,
-    rules_table: Rc<RefCell<RulesTable<I, MultipleDevicesId, ()>>>,
-    main_table_id: RoutingTableId<I, MultipleDevicesId>,
+    rules_table: Rc<RefCell<RulesTable<I, MultipleDevicesId, FakeBindingsCtx>>>,
+    main_table_id: RoutingTableId<I, MultipleDevicesId, FakeBindingsCtx>,
     routing_tables: Rc<
         RefCell<
             HashMap<
-                RoutingTableId<I, MultipleDevicesId>,
-                PrimaryRc<RwLock<RoutingTable<I, MultipleDevicesId>>>,
+                RoutingTableId<I, MultipleDevicesId, FakeBindingsCtx>,
+                PrimaryRc<BaseRoutingTableState<I, MultipleDevicesId, FakeBindingsCtx>>,
             >,
         >,
     >,
@@ -38,7 +38,8 @@ struct IpFakeCoreCtx<I: IpLayerIpExt> {
 
 impl<I: IpLayerIpExt> Default for IpFakeCoreCtx<I> {
     fn default() -> Self {
-        let main_table = PrimaryRc::new(RwLock::new(Default::default()));
+        let main_table =
+            PrimaryRc::new(BaseRoutingTableState::with_bindings_id(RoutingTableCookie::Main));
         let main_table_id = RoutingTableId::new(PrimaryRc::clone_strong(&main_table));
         let route_tables =
             HashMap::from_iter(core::iter::once((main_table_id.clone(), main_table)));
@@ -203,7 +204,10 @@ impl<I: IpLayerIpExt> IpStateContext<I, FakeBindingsCtx> for FakeCoreCtx<I> {
 
     fn with_rules_table<
         O,
-        F: FnOnce(&mut Self::IpRouteTablesCtx<'_>, &RulesTable<I, Self::DeviceId, ()>) -> O,
+        F: FnOnce(
+            &mut Self::IpRouteTablesCtx<'_>,
+            &RulesTable<I, Self::DeviceId, FakeBindingsCtx>,
+        ) -> O,
     >(
         &mut self,
         cb: F,
@@ -215,7 +219,10 @@ impl<I: IpLayerIpExt> IpStateContext<I, FakeBindingsCtx> for FakeCoreCtx<I> {
 
     fn with_rules_table_mut<
         O,
-        F: FnOnce(&mut Self::IpRouteTablesCtx<'_>, &mut RulesTable<I, Self::DeviceId, ()>) -> O,
+        F: FnOnce(
+            &mut Self::IpRouteTablesCtx<'_>,
+            &mut RulesTable<I, Self::DeviceId, FakeBindingsCtx>,
+        ) -> O,
     >(
         &mut self,
         cb: F,
@@ -226,10 +233,10 @@ impl<I: IpLayerIpExt> IpStateContext<I, FakeBindingsCtx> for FakeCoreCtx<I> {
     }
 }
 
-impl<I: IpLayerIpExt> IpRouteTablesContext<I> for FakeCoreCtx<I> {
+impl<I: IpLayerIpExt> IpRouteTablesContext<I, FakeBindingsCtx> for FakeCoreCtx<I> {
     type Ctx<'a> = Self;
 
-    fn main_table_id(&self) -> RoutingTableId<I, Self::DeviceId> {
+    fn main_table_id(&self) -> RoutingTableId<I, Self::DeviceId, FakeBindingsCtx> {
         self.state.main_table_id.clone()
     }
 
@@ -238,8 +245,8 @@ impl<I: IpLayerIpExt> IpRouteTablesContext<I> for FakeCoreCtx<I> {
         F: FnOnce(
             &mut Self::Ctx<'_>,
             &HashMap<
-                RoutingTableId<I, Self::DeviceId>,
-                PrimaryRc<RwLock<RoutingTable<I, Self::DeviceId>>>,
+                RoutingTableId<I, Self::DeviceId, FakeBindingsCtx>,
+                PrimaryRc<BaseRoutingTableState<I, Self::DeviceId, FakeBindingsCtx>>,
             >,
         ) -> O,
     >(
@@ -255,8 +262,8 @@ impl<I: IpLayerIpExt> IpRouteTablesContext<I> for FakeCoreCtx<I> {
         O,
         F: FnOnce(
             &mut HashMap<
-                RoutingTableId<I, Self::DeviceId>,
-                PrimaryRc<RwLock<RoutingTable<I, Self::DeviceId>>>,
+                RoutingTableId<I, Self::DeviceId, FakeBindingsCtx>,
+                PrimaryRc<BaseRoutingTableState<I, Self::DeviceId, FakeBindingsCtx>>,
             >,
         ) -> O,
     >(
@@ -269,7 +276,7 @@ impl<I: IpLayerIpExt> IpRouteTablesContext<I> for FakeCoreCtx<I> {
     }
 }
 
-impl<I: IpLayerIpExt> IpRouteTableContext<I> for FakeCoreCtx<I> {
+impl<I: IpLayerIpExt> IpRouteTableContext<I, FakeBindingsCtx> for FakeCoreCtx<I> {
     type IpDeviceIdCtx<'a> = Self;
 
     fn with_ip_routing_table<
@@ -277,10 +284,10 @@ impl<I: IpLayerIpExt> IpRouteTableContext<I> for FakeCoreCtx<I> {
         F: FnOnce(&mut Self::IpDeviceIdCtx<'_>, &RoutingTable<I, Self::DeviceId>) -> O,
     >(
         &mut self,
-        table_id: &RoutingTableId<I, Self::DeviceId>,
+        table_id: &RoutingTableId<I, Self::DeviceId, FakeBindingsCtx>,
         cb: F,
     ) -> O {
-        let table = table_id.0.read();
+        let table = table_id.0.routing_table.read();
         cb(self, &table)
     }
 
@@ -289,10 +296,10 @@ impl<I: IpLayerIpExt> IpRouteTableContext<I> for FakeCoreCtx<I> {
         F: FnOnce(&mut Self::IpDeviceIdCtx<'_>, &mut RoutingTable<I, Self::DeviceId>) -> O,
     >(
         &mut self,
-        table_id: &RoutingTableId<I, Self::DeviceId>,
+        table_id: &RoutingTableId<I, Self::DeviceId, FakeBindingsCtx>,
         cb: F,
     ) -> O {
-        let mut table = table_id.0.write();
+        let mut table = table_id.0.routing_table.write();
         cb(self, &mut table)
     }
 }
@@ -328,7 +335,8 @@ fn test_walk_rules<I: IpLayerIpExt + TestIpExt>() {
     // rule 2: by default, look up in the main route table.
     // In route_table_1, we route the packets to `MultipleDevicesId::A`.
     // In the main route table, we route the packets to `MultipleDevicesId::B`.
-    let route_table_1 = PrimaryRc::new(RwLock::new(RoutingTable::default()));
+    let route_table_1 =
+        PrimaryRc::new(BaseRoutingTableState::with_bindings_id(RoutingTableCookie::BindingsId(())));
     let table_id = RoutingTableId::new(PrimaryRc::clone_strong(&route_table_1));
     ctx.state.rules_table.borrow_mut().rules_mut()[0] = Rule {
         matcher: RuleMatcher {
@@ -351,7 +359,7 @@ fn test_walk_rules<I: IpLayerIpExt + TestIpExt>() {
     assert_matches!(ctx.state.routing_tables.borrow_mut().insert(table_id, route_table_1), None);
 
     let _entry = testutil::add_entry(
-        &mut IpRouteTablesContext::<I>::main_table_id(&ctx).get_mut(),
+        &mut IpRouteTablesContext::<I, _>::main_table_id(&ctx).get_mut(),
         Entry {
             subnet: I::LOOPBACK_SUBNET,
             device: MultipleDevicesId::B,

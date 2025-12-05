@@ -96,7 +96,8 @@ use crate::internal::reassembly::{
 };
 use crate::internal::routing::rules::{Rule, RuleAction, RuleInput, RulesTable};
 use crate::internal::routing::{
-    IpRoutingDeviceContext, NonLocalSrcAddrPolicy, PacketOrigin, RoutingTable,
+    IpRoutingBindingsTypes, IpRoutingDeviceContext, NonLocalSrcAddrPolicy, PacketOrigin,
+    RoutingTable,
 };
 use crate::internal::socket::{IpSocketBindingsContext, IpSocketContext, IpSocketHandler};
 use crate::internal::types::{
@@ -571,7 +572,7 @@ where
 
 impl<
     I: IpLayerIpExt,
-    BC: FilterBindingsContext + TxMetadataBindingsTypes,
+    BC: FilterBindingsContext + TxMetadataBindingsTypes + IpRoutingBindingsTypes,
     CC: IpDeviceContext<I>
         + IpSocketHandler<I, BC>
         + IpStateContext<I, BC>
@@ -820,19 +821,16 @@ impl IpLayerIpExt for Ipv6 {
 }
 
 /// The state context provided to the IP layer.
-pub trait IpStateContext<I: IpLayerIpExt, BT: MatcherBindingsTypes>:
-    IpRouteTablesContext<I, DeviceId: InterfaceProperties<BT::DeviceClass>>
+pub trait IpStateContext<I: IpLayerIpExt, BT: IpRoutingBindingsTypes + MatcherBindingsTypes>:
+    IpRouteTablesContext<I, BT, DeviceId: InterfaceProperties<BT::DeviceClass>>
 {
     /// The context that provides access to the IP routing tables.
-    type IpRouteTablesCtx<'a>: IpRouteTablesContext<I, DeviceId = Self::DeviceId>;
+    type IpRouteTablesCtx<'a>: IpRouteTablesContext<I, BT, DeviceId = Self::DeviceId>;
 
     /// Gets an immutable reference to the rules table.
     fn with_rules_table<
         O,
-        F: FnOnce(
-            &mut Self::IpRouteTablesCtx<'_>,
-            &RulesTable<I, Self::DeviceId, BT::DeviceClass>,
-        ) -> O,
+        F: FnOnce(&mut Self::IpRouteTablesCtx<'_>, &RulesTable<I, Self::DeviceId, BT>) -> O,
     >(
         &mut self,
         cb: F,
@@ -841,10 +839,7 @@ pub trait IpStateContext<I: IpLayerIpExt, BT: MatcherBindingsTypes>:
     /// Gets a mutable reference to the rules table.
     fn with_rules_table_mut<
         O,
-        F: FnOnce(
-            &mut Self::IpRouteTablesCtx<'_>,
-            &mut RulesTable<I, Self::DeviceId, BT::DeviceClass>,
-        ) -> O,
+        F: FnOnce(&mut Self::IpRouteTablesCtx<'_>, &mut RulesTable<I, Self::DeviceId, BT>) -> O,
     >(
         &mut self,
         cb: F,
@@ -852,14 +847,14 @@ pub trait IpStateContext<I: IpLayerIpExt, BT: MatcherBindingsTypes>:
 }
 
 /// The state context that gives access to routing tables provided to the IP layer.
-pub trait IpRouteTablesContext<I: IpLayerIpExt>:
-    IpRouteTableContext<I> + IpDeviceContext<I>
+pub trait IpRouteTablesContext<I: IpLayerIpExt, BT: IpRoutingBindingsTypes>:
+    IpRouteTableContext<I, BT> + IpDeviceContext<I>
 {
     /// The inner context that can provide access to individual routing tables.
-    type Ctx<'a>: IpRouteTableContext<I, DeviceId = Self::DeviceId, WeakDeviceId = Self::WeakDeviceId>;
+    type Ctx<'a>: IpRouteTableContext<I, BT, DeviceId = Self::DeviceId, WeakDeviceId = Self::WeakDeviceId>;
 
     /// Gets the main table ID.
-    fn main_table_id(&self) -> RoutingTableId<I, Self::DeviceId>;
+    fn main_table_id(&self) -> RoutingTableId<I, Self::DeviceId, BT>;
 
     /// Gets immutable access to all the routing tables that currently exist.
     fn with_ip_routing_tables<
@@ -867,8 +862,8 @@ pub trait IpRouteTablesContext<I: IpLayerIpExt>:
         F: FnOnce(
             &mut Self::Ctx<'_>,
             &HashMap<
-                RoutingTableId<I, Self::DeviceId>,
-                PrimaryRc<RwLock<RoutingTable<I, Self::DeviceId>>>,
+                RoutingTableId<I, Self::DeviceId, BT>,
+                PrimaryRc<BaseRoutingTableState<I, Self::DeviceId, BT>>,
             >,
         ) -> O,
     >(
@@ -881,8 +876,8 @@ pub trait IpRouteTablesContext<I: IpLayerIpExt>:
         O,
         F: FnOnce(
             &mut HashMap<
-                RoutingTableId<I, Self::DeviceId>,
-                PrimaryRc<RwLock<RoutingTable<I, Self::DeviceId>>>,
+                RoutingTableId<I, Self::DeviceId, BT>,
+                PrimaryRc<BaseRoutingTableState<I, Self::DeviceId, BT>>,
             >,
         ) -> O,
     >(
@@ -920,7 +915,9 @@ pub trait IpRouteTablesContext<I: IpLayerIpExt>:
 }
 
 /// The state context that gives access to a singular routing table.
-pub trait IpRouteTableContext<I: IpLayerIpExt>: IpDeviceContext<I> {
+pub trait IpRouteTableContext<I: IpLayerIpExt, BT: IpRoutingBindingsTypes>:
+    IpDeviceContext<I>
+{
     /// The inner device id context.
     type IpDeviceIdCtx<'a>: DeviceIdContext<AnyDevice, DeviceId = Self::DeviceId, WeakDeviceId = Self::WeakDeviceId>
         + IpRoutingDeviceContext<I>
@@ -932,7 +929,7 @@ pub trait IpRouteTableContext<I: IpLayerIpExt>: IpDeviceContext<I> {
         F: FnOnce(&mut Self::IpDeviceIdCtx<'_>, &RoutingTable<I, Self::DeviceId>) -> O,
     >(
         &mut self,
-        table_id: &RoutingTableId<I, Self::DeviceId>,
+        table_id: &RoutingTableId<I, Self::DeviceId, BT>,
         cb: F,
     ) -> O;
 
@@ -942,7 +939,7 @@ pub trait IpRouteTableContext<I: IpLayerIpExt>: IpDeviceContext<I> {
         F: FnOnce(&mut Self::IpDeviceIdCtx<'_>, &mut RoutingTable<I, Self::DeviceId>) -> O,
     >(
         &mut self,
-        table_id: &RoutingTableId<I, Self::DeviceId>,
+        table_id: &RoutingTableId<I, Self::DeviceId, BT>,
         cb: F,
     ) -> O;
 }
@@ -1106,6 +1103,7 @@ pub trait IpLayerBindingsContext<I: IpLayerIpExt, DeviceId>:
     + EventContext<IpLayerEvent<DeviceId, I>>
     + FilterBindingsContext
     + TxMetadataBindingsTypes
+    + IpRoutingBindingsTypes
 {
 }
 impl<
@@ -1114,14 +1112,21 @@ impl<
     BC: InstantContext
         + EventContext<IpLayerEvent<DeviceId, I>>
         + FilterBindingsContext
-        + TxMetadataBindingsTypes,
+        + TxMetadataBindingsTypes
+        + IpRoutingBindingsTypes,
 > IpLayerBindingsContext<I, DeviceId> for BC
 {
 }
 
 /// A marker trait for bindings types at the IP layer.
-pub trait IpLayerBindingsTypes: IcmpBindingsTypes + IpStateBindingsTypes {}
-impl<BT: IcmpBindingsTypes + IpStateBindingsTypes> IpLayerBindingsTypes for BT {}
+pub trait IpLayerBindingsTypes:
+    IcmpBindingsTypes + IpStateBindingsTypes + IpRoutingBindingsTypes
+{
+}
+impl<BT: IcmpBindingsTypes + IpStateBindingsTypes + IpRoutingBindingsTypes> IpLayerBindingsTypes
+    for BT
+{
+}
 
 /// The execution context for the IP layer.
 pub trait IpLayerContext<
@@ -1301,10 +1306,10 @@ struct RuleWalkInfo<O> {
 ///   result.
 fn walk_rules<
     I: IpLayerIpExt,
-    CC: IpRouteTablesContext<I, DeviceId: InterfaceProperties<DeviceClass>>,
+    BT: IpRoutingBindingsTypes + MatcherBindingsTypes,
+    CC: IpRouteTablesContext<I, BT, DeviceId: InterfaceProperties<BT::DeviceClass>>,
     O,
     State,
-    DeviceClass,
     F: FnMut(
         State,
         &mut CC::IpDeviceIdCtx<'_>,
@@ -1312,7 +1317,7 @@ fn walk_rules<
     ) -> ControlFlow<O, State>,
 >(
     core_ctx: &mut CC,
-    rules: &RulesTable<I, CC::DeviceId, DeviceClass>,
+    rules: &RulesTable<I, CC::DeviceId, BT>,
     init: State,
     rule_input: &RuleInput<'_, I, CC::DeviceId>,
     mut lookup_table: F,
@@ -1454,7 +1459,7 @@ pub fn resolve_output_route_to_destination<
         packet_origin: PacketOrigin::Local { bound_address, bound_device: device },
         marks,
     };
-    core_ctx.with_rules_table(|core_ctx, rules: &RulesTable<_, _, BC::DeviceClass>| {
+    core_ctx.with_rules_table(|core_ctx, rules: &RulesTable<_, _, BC>| {
         let mut walk_rules = |rule_input, src_ip_and_policy| {
             walk_rules(
                 core_ctx,
@@ -1934,31 +1939,32 @@ impl<I: IpLayerIpExt, D: StrongDeviceIdentifier, BT: IpLayerBindingsTypes>
 }
 
 impl<I: IpLayerIpExt, D: StrongDeviceIdentifier, BT: IpLayerBindingsTypes>
-    OrderedLockAccess<RulesTable<I, D, BT::DeviceClass>> for IpStateInner<I, D, BT>
+    OrderedLockAccess<RulesTable<I, D, BT>> for IpStateInner<I, D, BT>
 {
-    type Lock = RwLock<RulesTable<I, D, BT::DeviceClass>>;
+    type Lock = RwLock<RulesTable<I, D, BT>>;
     fn ordered_lock_access(&self) -> OrderedLockRef<'_, Self::Lock> {
         OrderedLockRef::new(&self.rules_table)
     }
 }
 
 impl<I: IpLayerIpExt, D: StrongDeviceIdentifier, BT: IpLayerBindingsTypes>
-    OrderedLockAccess<HashMap<RoutingTableId<I, D>, PrimaryRc<RwLock<RoutingTable<I, D>>>>>
+    OrderedLockAccess<HashMap<RoutingTableId<I, D, BT>, PrimaryRc<BaseRoutingTableState<I, D, BT>>>>
     for IpStateInner<I, D, BT>
 {
-    type Lock = Mutex<HashMap<RoutingTableId<I, D>, PrimaryRc<RwLock<RoutingTable<I, D>>>>>;
+    type Lock =
+        Mutex<HashMap<RoutingTableId<I, D, BT>, PrimaryRc<BaseRoutingTableState<I, D, BT>>>>;
     fn ordered_lock_access(&self) -> OrderedLockRef<'_, Self::Lock> {
         OrderedLockRef::new(&self.tables)
     }
 }
 
-impl<I: IpLayerIpExt, D: StrongDeviceIdentifier> OrderedLockAccess<RoutingTable<I, D>>
-    for RoutingTableId<I, D>
+impl<I: IpLayerIpExt, D: StrongDeviceIdentifier, BT: IpRoutingBindingsTypes>
+    OrderedLockAccess<RoutingTable<I, D>> for RoutingTableId<I, D, BT>
 {
     type Lock = RwLock<RoutingTable<I, D>>;
     fn ordered_lock_access(&self) -> OrderedLockRef<'_, Self::Lock> {
         let Self(inner) = self;
-        OrderedLockRef::new(&*inner)
+        OrderedLockRef::new(&inner.routing_table)
     }
 }
 
@@ -1997,6 +2003,7 @@ pub trait IpStateBindingsTypes:
     + FilterBindingsTypes
     + MulticastForwardingBindingsTypes
     + IpDeviceStateBindingsTypes
+    + IpRoutingBindingsTypes
 {
 }
 impl<BT> IpStateBindingsTypes for BT where
@@ -2006,23 +2013,55 @@ impl<BT> IpStateBindingsTypes for BT where
         + FilterBindingsTypes
         + MulticastForwardingBindingsTypes
         + IpDeviceStateBindingsTypes
+        + IpRoutingBindingsTypes
 {
 }
 
-/// Identifier to a routing table.
-#[derive(Clone, PartialEq, Eq, Hash)]
-pub struct RoutingTableId<I: Ip, D>(StrongRc<RwLock<RoutingTable<I, D>>>);
+/// Bindings ID for a routing table.
+#[derive(Derivative)]
+#[derivative(Debug(bound = ""))]
+#[derivative(Clone(bound = "BT::RoutingTableId: Clone"))]
+pub enum RoutingTableCookie<BT: IpRoutingBindingsTypes> {
+    /// Main table.
+    Main,
+    /// A table added by user (Bindings).
+    BindingsId(BT::RoutingTableId),
+}
 
-impl<I: Ip, D> Debug for RoutingTableId<I, D> {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        let Self(rc) = self;
-        f.debug_tuple("RoutingTableId").field(&StrongRc::debug_id(rc)).finish()
+/// State for a routing table.
+#[derive(Derivative)]
+#[derivative(Debug(bound = "D: Debug"))]
+pub struct BaseRoutingTableState<I: Ip, D, BT: IpRoutingBindingsTypes> {
+    routing_table: RwLock<RoutingTable<I, D>>,
+    bindings_id: RoutingTableCookie<BT>,
+}
+
+impl<I: Ip, D, BT: IpRoutingBindingsTypes> BaseRoutingTableState<I, D, BT> {
+    pub(crate) fn with_bindings_id(bindings_id: RoutingTableCookie<BT>) -> Self {
+        Self { bindings_id, routing_table: Default::default() }
     }
 }
 
-impl<I: Ip, D> RoutingTableId<I, D> {
+/// Identifier to a routing table.
+#[derive(Derivative)]
+#[derivative(PartialEq(bound = ""))]
+#[derivative(Eq(bound = ""))]
+#[derivative(Hash(bound = ""))]
+#[derivative(Clone(bound = ""))]
+pub struct RoutingTableId<I: Ip, D, BT: IpRoutingBindingsTypes>(
+    StrongRc<BaseRoutingTableState<I, D, BT>>,
+);
+
+impl<I: Ip, D, BT: IpRoutingBindingsTypes> Debug for RoutingTableId<I, D, BT> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        let Self(rc) = self;
+        f.debug_tuple("RoutingTableId").field(&I::NAME).field(&rc.bindings_id).finish()
+    }
+}
+
+impl<I: Ip, D, BT: IpRoutingBindingsTypes> RoutingTableId<I, D, BT> {
     /// Creates a new table ID.
-    pub(crate) fn new(rc: StrongRc<RwLock<RoutingTable<I, D>>>) -> Self {
+    pub(crate) fn new(rc: StrongRc<BaseRoutingTableState<I, D, BT>>) -> Self {
         Self(rc)
     }
 
@@ -2030,30 +2069,46 @@ impl<I: Ip, D> RoutingTableId<I, D> {
     #[cfg(any(test, feature = "testutils"))]
     pub fn table(&self) -> &RwLock<RoutingTable<I, D>> {
         let Self(inner) = self;
-        &*inner
+        &inner.routing_table
     }
 
     /// Downgrades the strong ID into a weak one.
-    pub fn downgrade(&self) -> WeakRoutingTableId<I, D> {
+    pub fn downgrade(&self) -> WeakRoutingTableId<I, D, BT>
+    where
+        BT::RoutingTableId: Clone,
+    {
         let Self(rc) = self;
-        WeakRoutingTableId(StrongRc::downgrade(rc))
+        WeakRoutingTableId { rc: StrongRc::downgrade(rc), bindings_id: rc.bindings_id.clone() }
     }
 
     #[cfg(test)]
     fn get_mut(&self) -> impl DerefMut<Target = RoutingTable<I, D>> + '_ {
         let Self(rc) = self;
-        rc.write()
+        rc.routing_table.write()
+    }
+
+    /// Gets the bindings cookie for this routing table.
+    pub fn bindings_id(&self) -> &RoutingTableCookie<BT> {
+        let Self(rc) = self;
+        &rc.bindings_id
     }
 }
 
 /// Weak Identifier to a routing table.
-#[derive(Clone, PartialEq, Eq, Hash)]
-pub struct WeakRoutingTableId<I: Ip, D>(WeakRc<RwLock<RoutingTable<I, D>>>);
+#[derive(Derivative)]
+#[derivative(Clone(bound = "BT::RoutingTableId: Clone"))]
+#[derivative(PartialEq, Eq, Hash)]
+pub struct WeakRoutingTableId<I: Ip, D, BT: IpRoutingBindingsTypes> {
+    rc: WeakRc<BaseRoutingTableState<I, D, BT>>,
+    #[derivative(PartialEq = "ignore")]
+    #[derivative(Hash = "ignore")]
+    bindings_id: RoutingTableCookie<BT>,
+}
 
-impl<I: Ip, D> Debug for WeakRoutingTableId<I, D> {
+impl<I: Ip, D, BT: IpRoutingBindingsTypes> Debug for WeakRoutingTableId<I, D, BT> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        let Self(rc) = self;
-        f.debug_tuple("WeakRoutingTableId").field(&WeakRc::debug_id(rc)).finish()
+        let Self { bindings_id, .. } = self;
+        f.debug_tuple("WeakRoutingTableId").field(&I::NAME).field(bindings_id).finish()
     }
 }
 
@@ -2061,9 +2116,9 @@ impl<I: Ip, D> Debug for WeakRoutingTableId<I, D> {
 #[derive(GenericOverIp)]
 #[generic_over_ip(I, Ip)]
 pub struct IpStateInner<I: IpLayerIpExt, D: StrongDeviceIdentifier, BT: IpStateBindingsTypes> {
-    rules_table: RwLock<RulesTable<I, D, BT::DeviceClass>>,
+    rules_table: RwLock<RulesTable<I, D, BT>>,
     // TODO(https://fxbug.dev/355059838): Explore the option to let Bindings create the main table.
-    main_table_id: RoutingTableId<I, D>,
+    main_table_id: RoutingTableId<I, D, BT>,
     multicast_forwarding: RwLock<MulticastForwardingState<I, D, BT>>,
     multicast_forwarding_counters: MulticastForwardingCounters<I>,
     fragment_cache: Mutex<IpPacketFragmentCache<I, BT>>,
@@ -2077,7 +2132,7 @@ pub struct IpStateInner<I: IpLayerIpExt, D: StrongDeviceIdentifier, BT: IpStateB
     // table without dropping `main_table_id` first, it will panic. This serves as an assertion
     // that the main table cannot be removed and Bindings must never attempt to remove the main
     // routing table.
-    tables: Mutex<HashMap<RoutingTableId<I, D>, PrimaryRc<RwLock<RoutingTable<I, D>>>>>,
+    tables: Mutex<HashMap<RoutingTableId<I, D, BT>, PrimaryRc<BaseRoutingTableState<I, D, BT>>>>,
     igmp_counters: IgmpCounters,
     mld_counters: MldCounters,
 }
@@ -2099,7 +2154,7 @@ impl<I: IpLayerIpExt, D: StrongDeviceIdentifier, BT: IpStateBindingsTypes> IpSta
     }
 
     /// Gets the main table ID.
-    pub fn main_table_id(&self) -> &RoutingTableId<I, D> {
+    pub fn main_table_id(&self) -> &RoutingTableId<I, D, BT> {
         &self.main_table_id
     }
 
@@ -2129,12 +2184,13 @@ impl<I: IpLayerIpExt, D: StrongDeviceIdentifier, BT: IpStateBindingsTypes> IpSta
 impl<
     I: IpLayerIpExt,
     D: StrongDeviceIdentifier,
-    BC: TimerContext + RngContext + IpStateBindingsTypes,
+    BC: TimerContext + RngContext + IpStateBindingsTypes + IpRoutingBindingsTypes,
 > IpStateInner<I, D, BC>
 {
     /// Creates a new inner IP layer state.
     fn new<CC: CoreTimerContext<IpLayerTimerId, BC>>(bindings_ctx: &mut BC) -> Self {
-        let main_table: PrimaryRc<RwLock<RoutingTable<I, D>>> = PrimaryRc::new(Default::default());
+        let main_table: PrimaryRc<BaseRoutingTableState<I, D, BC>> =
+            PrimaryRc::new(BaseRoutingTableState::with_bindings_id(RoutingTableCookie::Main));
         let main_table_id = RoutingTableId(PrimaryRc::clone_strong(&main_table));
         Self {
             rules_table: RwLock::new(RulesTable::new(main_table_id.clone())),
@@ -4408,17 +4464,13 @@ fn lookup_route_table<
         PacketOrigin::Local { bound_address: _, bound_device } => bound_device,
         PacketOrigin::NonLocal { source_address: _, incoming_device: _ } => None,
     };
-    core_ctx.with_rules_table(
-        |core_ctx, rules: &RulesTable<_, _, BC::DeviceClass>| match walk_rules(
-            core_ctx,
-            rules,
-            (),
-            &rule_input,
-            |(), core_ctx, table| match table.lookup(core_ctx, bound_device, dst_ip) {
+    core_ctx.with_rules_table(|core_ctx, rules: &RulesTable<_, _, BC>| {
+        match walk_rules(core_ctx, rules, (), &rule_input, |(), core_ctx, table| {
+            match table.lookup(core_ctx, bound_device, dst_ip) {
                 Some(dst) => ControlFlow::Break(Some(dst)),
                 None => ControlFlow::Continue(()),
-            },
-        ) {
+            }
+        }) {
             ControlFlow::Break(RuleAction::Lookup(RuleWalkInfo {
                 inner: dst,
                 observed_source_address_matcher: _,
@@ -4428,8 +4480,8 @@ fn lookup_route_table<
                 inner: (),
                 observed_source_address_matcher: _,
             }) => None,
-        },
-    )
+        }
+    })
 }
 
 /// Packed destination passed to [`IpDeviceSendContext::send_ip_frame`].

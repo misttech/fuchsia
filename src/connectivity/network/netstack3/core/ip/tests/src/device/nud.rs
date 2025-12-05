@@ -929,7 +929,7 @@ fn icmp_error_on_address_resolution_failure_tcp_forwarding<I: TestIpExt + IpExt>
     {
         net.with_context(ctx, |ctx| {
             let mut core_ctx = ctx.core_ctx();
-            ip::testutil::add_route::<I, _>(
+            ip::testutil::add_route::<I, _, _>(
                 &mut core_ctx,
                 AddableEntry {
                     subnet: Subnet::new(I::UNSPECIFIED_ADDRESS, 0).unwrap(),

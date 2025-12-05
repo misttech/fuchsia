@@ -9,13 +9,16 @@
 
 use std::string::ToString as _;
 
-use diagnostics_traits::{FuchsiaInspector, InspectorDeviceIdProvider};
+use diagnostics_traits::{
+    FuchsiaInspector, InspectorDeviceIdProvider, InspectorRouteTableIdProvider,
+};
 use fuchsia_inspect::Node;
 use net_types::ethernet::Mac;
-use net_types::ip::{Ipv4, Ipv6};
+use net_types::ip::{Ip, Ipv4, Ipv6};
 use net_types::{UnicastAddr, Witness as _};
 use netstack3_core::device::{DeviceId, EthernetLinkDevice, WeakDeviceId};
 use netstack3_core::inspect::Inspector as _;
+use netstack3_core::routes::{RoutingTableCookie, RoutingTableId};
 
 use crate::bindings::devices::{
     DeviceIdAndName, DeviceSpecificInfo, DynamicCommonInfo, DynamicNetdeviceInfo, EthernetInfo,
@@ -67,6 +70,17 @@ impl InspectorDeviceIdProvider<WeakDeviceId<BindingsCtx>> for BindingsCtx {
     }
 }
 
+impl<I: Ip> InspectorRouteTableIdProvider<RoutingTableId<I, DeviceId<BindingsCtx>, BindingsCtx>>
+    for BindingsCtx
+{
+    fn route_table_id(id: &RoutingTableId<I, DeviceId<BindingsCtx>, BindingsCtx>) -> u32 {
+        match id.bindings_id() {
+            RoutingTableCookie::Main => main_table_id::<I>().into(),
+            RoutingTableCookie::BindingsId(id) => *id,
+        }
+    }
+}
+
 /// Publishes netstack3 socket diagnostics data to Inspect.
 pub(crate) fn sockets(ctx: &mut Ctx) -> fuchsia_inspect::Inspector {
     let inspector = fuchsia_inspect::Inspector::new(Default::default());
@@ -89,10 +103,10 @@ pub(crate) fn routes(ctx: &mut Ctx) -> fuchsia_inspect::Inspector {
     let mut bindings_inspector = FuchsiaInspector::<BindingsCtx>::new(inspector.root());
     // Group inspect data according to the IP version so that it's easier to decode.
     bindings_inspector.record_child("Ipv4", |inspector| {
-        ctx.api().routes::<Ipv4>().inspect(inspector, main_table_id::<Ipv4>().into());
+        ctx.api().routes::<Ipv4>().inspect(inspector);
     });
     bindings_inspector.record_child("Ipv6", |inspector| {
-        ctx.api().routes::<Ipv6>().inspect(inspector, main_table_id::<Ipv6>().into());
+        ctx.api().routes::<Ipv6>().inspect(inspector);
     });
     inspector
 }

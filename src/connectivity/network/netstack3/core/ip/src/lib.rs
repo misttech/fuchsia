@@ -229,10 +229,10 @@ pub mod raw {
     };
 }
 
-pub use internal::api::{RouteResolveOptions, RoutesAnyApi, RoutesApi};
+pub use internal::api::{RouteResolveOptions, RoutesAnyApi, RoutesApi, RoutesApiTableId};
 pub use internal::base::{
-    AddressStatus, BaseTransportIpContext, DEFAULT_HOP_LIMITS, DEFAULT_TTL, DeviceIpLayerMetadata,
-    DropReason, FilterHandlerProvider, HopLimits, IPV6_DEFAULT_SUBNET,
+    AddressStatus, BaseRoutingTableState, BaseTransportIpContext, DEFAULT_HOP_LIMITS, DEFAULT_TTL,
+    DeviceIpLayerMetadata, DropReason, FilterHandlerProvider, HopLimits, IPV6_DEFAULT_SUBNET,
     IpDeviceConfirmReachableContext, IpDeviceContext, IpDeviceEgressStateContext,
     IpDeviceIngressStateContext, IpDeviceMtuContext, IpLayerBindingsContext, IpLayerContext,
     IpLayerEvent, IpLayerHandler, IpLayerIpExt, IpLayerTimerId, IpPacketDestination,
@@ -240,10 +240,10 @@ pub use internal::base::{
     IpStateContext, IpStateInner, IpTransportContext, IpTransportDispatchContext,
     Ipv4PresentAddressStatus, Ipv4State, Ipv4StateBuilder, Ipv6PresentAddressStatus, Ipv6State,
     Ipv6StateBuilder, MulticastMembershipHandler, NdpBindingsContext, ReceivePacketAction,
-    ResolveRouteError, RouterAdvertisementEvent, RoutingTableId, SendIpPacketMeta,
-    TransportIpContext, TransportReceiveError, gen_ip_packet_id, receive_ipv4_packet,
-    receive_ipv4_packet_action, receive_ipv6_packet, receive_ipv6_packet_action,
-    resolve_output_route_to_destination,
+    ResolveRouteError, RouterAdvertisementEvent, RoutingTableCookie, RoutingTableId,
+    SendIpPacketMeta, TransportIpContext, TransportReceiveError, gen_ip_packet_id,
+    receive_ipv4_packet, receive_ipv4_packet_action, receive_ipv6_packet,
+    receive_ipv6_packet_action, resolve_output_route_to_destination,
 };
 pub use internal::counters::{IpCounters, Ipv6RxCounters};
 pub use internal::fragmentation::FragmentationCounters;
@@ -256,8 +256,8 @@ pub use internal::routing::rules::{
     Rule, RuleAction, RuleMatcher, RulesTable, TrafficOriginMatcher,
 };
 pub use internal::routing::{
-    AddRouteError, IpRoutingDeviceContext, NonLocalSrcAddrPolicy, PacketOrigin, RoutingTable,
-    request_context_add_route, request_context_del_routes,
+    AddRouteError, IpRoutingBindingsTypes, IpRoutingDeviceContext, NonLocalSrcAddrPolicy,
+    PacketOrigin, RoutingTable, request_context_add_route, request_context_del_routes,
 };
 pub use internal::sas::IpSasHandler;
 pub use internal::types::{

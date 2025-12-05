@@ -72,8 +72,8 @@ use netstack3_ip::raw::{
 };
 use netstack3_ip::{
     self as ip, AddRouteError, AddableEntryEither, AddableMetric, DeviceIpLayerMetadata,
-    IpLayerEvent, IpLayerTimerId, RawMetric, ResolveRouteError, ResolvedRoute, RoutableIpAddr,
-    RouterAdvertisementEvent,
+    IpLayerEvent, IpLayerTimerId, IpRoutingBindingsTypes, RawMetric, ResolveRouteError,
+    ResolvedRoute, RoutableIpAddr, RouterAdvertisementEvent,
 };
 use netstack3_tcp::testutil::{ClientBuffers, ProvidedBuffers, RingBuffer, TestSendBuffer};
 use netstack3_tcp::{BufferSizes, TcpBindingsTypes};
@@ -331,17 +331,14 @@ where
     ) -> Result<(), AddRouteError> {
         let (core_ctx, _bindings_ctx) = self.contexts();
         match entry {
-            AddableEntryEither::V4(entry) => ip::testutil::add_route::<Ipv4, _>(core_ctx, entry),
-            AddableEntryEither::V6(entry) => ip::testutil::add_route::<Ipv6, _>(core_ctx, entry),
+            AddableEntryEither::V4(entry) => ip::testutil::add_route::<Ipv4, _, _>(core_ctx, entry),
+            AddableEntryEither::V6(entry) => ip::testutil::add_route::<Ipv6, _, _>(core_ctx, entry),
         }
     }
 
     /// Install rules, these rules will replace the rules currently installed.
     #[netstack3_macros::context_ip_bounds(I, BC, crate)]
-    pub fn set_rules<I: IpExt>(
-        &mut self,
-        rules: Vec<netstack3_ip::Rule<I, DeviceId<BC>, BC::DeviceClass>>,
-    ) {
+    pub fn set_rules<I: IpExt>(&mut self, rules: Vec<netstack3_ip::Rule<I, DeviceId<BC>, BC>>) {
         let (core_ctx, _bindings_ctx) = self.contexts();
         ip::testutil::set_rules(core_ctx, rules)
     }
@@ -383,10 +380,10 @@ where
         let (core_ctx, _bindings_ctx) = self.contexts();
         match subnet {
             SubnetEither::V4(subnet) => {
-                ip::testutil::del_routes_to_subnet::<Ipv4, _>(core_ctx, subnet)
+                ip::testutil::del_routes_to_subnet::<Ipv4, _, _>(core_ctx, subnet)
             }
             SubnetEither::V6(subnet) => {
-                ip::testutil::del_routes_to_subnet::<Ipv6, _>(core_ctx, subnet)
+                ip::testutil::del_routes_to_subnet::<Ipv6, _, _>(core_ctx, subnet)
             }
         }
     }
@@ -394,8 +391,8 @@ where
     /// Deletes all routes targeting `device`.
     pub fn del_device_routes(&mut self, device: &DeviceId<BC>) {
         let (core_ctx, _bindings_ctx) = self.contexts();
-        ip::testutil::del_device_routes::<Ipv4, _>(core_ctx, device);
-        ip::testutil::del_device_routes::<Ipv6, _>(core_ctx, device);
+        ip::testutil::del_device_routes::<Ipv4, _, _>(core_ctx, device);
+        ip::testutil::del_device_routes::<Ipv6, _, _>(core_ctx, device);
     }
 
     /// Removes all of the routes through the device, then removes the device.
@@ -896,6 +893,10 @@ impl TcpBindingsTypes for FakeBindingsCtx {
             client,
         )
     }
+}
+
+impl IpRoutingBindingsTypes for FakeBindingsCtx {
+    type RoutingTableId = ();
 }
 
 #[cfg(not(loom))]

@@ -11,12 +11,20 @@ use fuchsia_async as fasync;
 use fuchsia_inspect::Node;
 use log::warn;
 
-use crate::{InspectableInstant, Inspector, InspectorDeviceExt, InstantPropertyName};
+use crate::{
+    InspectableInstant, Inspector, InspectorDeviceExt, InspectorRouteTableExt, InstantPropertyName,
+};
 
 /// Provides an abstract interface for extracting inspect device identifier.
 pub trait InspectorDeviceIdProvider<DeviceId> {
     /// Extracts the device identifier from the provided opaque type.
     fn device_id(id: &DeviceId) -> u64;
+}
+
+/// Provides an abstract interface for extracting inspect route table identifier.
+pub trait InspectorRouteTableIdProvider<R> {
+    /// Extracts the route table identifier from the provided opaque type.
+    fn route_table_id(id: &R) -> u32;
 }
 
 /// Provides a Fuchsia implementation of `Inspector`.
@@ -86,6 +94,18 @@ impl<'a, D, P: InspectorDeviceIdProvider<D>> InspectorDeviceExt<D> for FuchsiaIn
 
     fn device_identifier_as_address_zone(id: D) -> impl Display {
         P::device_id(&id)
+    }
+}
+
+impl<'a, R, P: InspectorRouteTableIdProvider<R>> InspectorRouteTableExt<R>
+    for FuchsiaInspector<'a, P>
+{
+    fn record_route_table<I: Inspector>(inspector: &mut I, name: &str, table: &R) {
+        inspector.record_uint(name, P::route_table_id(table))
+    }
+
+    fn display_route_table(table: &R) -> impl Display {
+        P::route_table_id(table)
     }
 }
 

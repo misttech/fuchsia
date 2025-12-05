@@ -175,6 +175,14 @@ pub trait InspectorDeviceExt<D> {
     fn device_identifier_as_address_zone(device: D) -> impl Display;
 }
 
+/// An extension to `Inspector` that allows recoding route table IDs.
+pub trait InspectorRouteTableExt<R> {
+    /// Records an entry named `name` with value `table`.
+    fn record_route_table<I: Inspector>(inspector: &mut I, name: &str, table: &R);
+    /// Returns the `Display` representation of `table`.
+    fn display_route_table(table: &R) -> impl Display;
+}
+
 /// A trait that marks a type as an inspectable representation of an instant in
 /// time.
 pub trait InspectableInstant {

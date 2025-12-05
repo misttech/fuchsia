@@ -41,7 +41,7 @@ use {fidl_fuchsia_net_routes as fnet_routes, fidl_fuchsia_net_routes_admin as fn
 use crate::bindings::util::{
     EntryAndTableId, RemoveResourceResultExt as _, ResultExt as _, TryIntoFidlWithContext,
 };
-use crate::bindings::{BindingsCtx, Ctx, DeviceIdExt, IpExt, MatcherBindingsTypes};
+use crate::bindings::{BindingsCtx, Ctx, DeviceIdExt, IpExt};
 
 pub(crate) mod admin;
 pub(crate) mod interface_local;
@@ -235,7 +235,7 @@ pub(crate) enum ChangeOutcome {
 #[derive(Debug, Clone)]
 enum CoreId<I: Ip> {
     Main,
-    User(netstack3_core::routes::RoutingTableId<I, DeviceId>),
+    User(netstack3_core::routes::RoutingTableId<I, DeviceId, BindingsCtx>),
 }
 
 impl<I: Ip> Table<I> {
@@ -759,7 +759,7 @@ where
                         // increasing.
                         None => Err(TableIdOverflowsError),
                         Some(table_id) => {
-                            let core_id = ctx.api().routes().new_table(table_id);
+                            let core_id = ctx.api().routes().new_table(table_id.into());
                             let core_id = CoreId::User(core_id);
                             info!("Adding Route Table: name={name:?} ({core_id:?})");
                             let new_table = Table::new(
@@ -882,10 +882,7 @@ fn to_core_rule<I: netstack3_core::IpExt>(
     ctx: &mut Ctx,
     rule: &rules_admin::Rule<I>,
     tables: &HashMap<TableId<I>, Table<I>>,
-) -> Result<
-    netstack3_core::routes::Rule<I, DeviceId, <BindingsCtx as MatcherBindingsTypes>::DeviceClass>,
-    InvalidTableError,
-> {
+) -> Result<netstack3_core::routes::Rule<I, DeviceId, BindingsCtx>, InvalidTableError> {
     let rules_admin::Rule { matcher, action } = rule;
     let action = match action {
         RuleAction::Unreachable => netstack3_core::routes::RuleAction::Unreachable,

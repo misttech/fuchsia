@@ -35,7 +35,8 @@ use netstack3_ip::raw::{
 };
 use netstack3_ip::socket::IpSocketContext;
 use netstack3_ip::{
-    self as ip, IpLayerBindingsContext, IpLayerContext, IpLayerIpExt, NdpBindingsContext,
+    self as ip, IpLayerBindingsContext, IpLayerContext, IpLayerIpExt, IpRoutingBindingsTypes,
+    NdpBindingsContext,
 };
 use netstack3_tcp::{self as tcp, TcpBindingsContext, TcpBindingsTypes, TcpContext};
 use netstack3_udp::{self as udp, UdpBindingsContext, UdpBindingsTypes, UdpCounterContext};
@@ -142,6 +143,7 @@ pub trait BindingsTypes:
     + UdpBindingsTypes
     + TimerBindingsTypes<DispatchId = TimerId<Self>>
     + TxMetadataBindingsTypes<TxMetadata = CoreTxMetadata<Self>>
+    + IpRoutingBindingsTypes
 {
 }
 
@@ -157,6 +159,7 @@ impl<O> BindingsTypes for O where
         + UdpBindingsTypes
         + TimerBindingsTypes<DispatchId = TimerId<Self>>
         + TxMetadataBindingsTypes<TxMetadata = CoreTxMetadata<Self>>
+        + IpRoutingBindingsTypes
 {
 }
 

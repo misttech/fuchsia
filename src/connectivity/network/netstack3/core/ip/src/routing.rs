@@ -28,6 +28,13 @@ pub trait IpRoutingDeviceContext<I: Ip>: DeviceIdContext<AnyDevice> {
     fn is_ip_device_enabled(&mut self, device_id: &Self::DeviceId) -> bool;
 }
 
+/// Bindings types for IP routing.
+pub trait IpRoutingBindingsTypes {
+    /// An opaque type that represents a routing table ID from the Bindings. The Bindings
+    /// implementation is responsible for providing a unique ID for each routing table.
+    type RoutingTableId: Send + Sync + Debug + 'static;
+}
+
 /// An error encountered when adding a routing entry.
 #[derive(Error, Debug, PartialEq)]
 pub enum AddRouteError {
@@ -95,27 +102,11 @@ pub struct RoutingTable<I: Ip, D> {
     /// then by locality (prefer on-link routes over off-link routes), and
     /// finally by the entry's tenure in the table.
     pub(super) table: Vec<EntryAndGeneration<I::Addr, D>>,
-
-    /// The Bindings ID of this table. This is much more readable than the
-    /// Core id because it is a small integer rather than a random pointer to
-    /// the memory.
-    ///
-    /// The value must be a [`Some`] if this table is created by Bindings. If
-    /// the value is [`None`] it means the table is created by Core; only main
-    /// tables are created by Core.
-    pub(super) bindings_id: Option<u32>,
 }
 
 impl<I: Ip, D> Default for RoutingTable<I, D> {
     fn default() -> RoutingTable<I, D> {
-        RoutingTable { table: Vec::default(), bindings_id: None }
-    }
-}
-
-impl<I: Ip, D> RoutingTable<I, D> {
-    /// Creates a new routing table with the bindings ID.
-    pub fn with_bindings_id(bindings_id: u32) -> Self {
-        RoutingTable { table: Vec::default(), bindings_id: Some(bindings_id) }
+        RoutingTable { table: Vec::default() }
     }
 }
 
@@ -131,7 +122,7 @@ impl<I: BroadcastIpExt, D: Clone + Debug + PartialEq> RoutingTable<I, D> {
         D: PartialOrd,
     {
         debug!("adding route: {}", entry);
-        let Self { table, bindings_id: _ } = self;
+        let Self { table } = self;
 
         if table.contains(&entry) {
             // If we already have this exact route, don't add it again.
@@ -158,7 +149,7 @@ impl<I: BroadcastIpExt, D: Clone + Debug + PartialEq> RoutingTable<I, D> {
     ) -> alloc::vec::Vec<Entry<I::Addr, D>> {
         // TODO(https://github.com/rust-lang/rust/issues/43244): Use
         // drain_filter to avoid extra allocation.
-        let Self { table, bindings_id: _ } = self;
+        let Self { table } = self;
         let owned_table = core::mem::take(table);
         let (removed, owned_table) =
             owned_table.into_iter().partition(|entry| predicate(&entry.entry));
@@ -203,7 +194,7 @@ impl<I: BroadcastIpExt, D: Clone + Debug + PartialEq> RoutingTable<I, D> {
         address: I::Addr,
         mut f: impl FnMut(&mut CC, &D) -> Option<R> + 'a,
     ) -> impl Iterator<Item = (Destination<I::Addr, &D>, R)> + 'a {
-        let Self { table, bindings_id: _ } = self;
+        let Self { table } = self;
 
         #[derive(GenericOverIp)]
         #[generic_over_ip(I, Ip)]
@@ -333,8 +324,8 @@ pub enum PacketOrigin<I: Ip, D> {
 pub(crate) mod testutil {
     use derivative::Derivative;
     use net_types::ip::IpAddress;
-    use netstack3_base::testutil::FakeCoreCtx;
-    use netstack3_base::{NotFoundError, StrongDeviceIdentifier};
+    use netstack3_base::testutil::{FakeBindingsCtx, FakeCoreCtx};
+    use netstack3_base::{MatcherBindingsTypes, NotFoundError, StrongDeviceIdentifier};
     use netstack3_hashmap::HashSet;
 
     use crate::internal::base::{IpRouteTablesContext, IpStateContext};
@@ -342,6 +333,12 @@ pub(crate) mod testutil {
     use crate::internal::types::{AddableMetric, Generation, Metric};
 
     use super::*;
+
+    impl<TimerId: Debug, Event: Debug, State, FrameMeta> IpRoutingBindingsTypes
+        for FakeBindingsCtx<TimerId, Event, State, FrameMeta>
+    {
+        type RoutingTableId = ();
+    }
 
     // Converts the given [`AddableMetric`] into the corresponding [`Metric`],
     // observing the device's metric, if applicable.
@@ -360,7 +357,11 @@ pub(crate) mod testutil {
 
     /// Add a route directly to the routing table, instead of merely
     /// dispatching an event requesting that the route be added.
-    pub fn add_route<I: IpLayerIpExt, CC: IpRouteTablesContext<I>>(
+    pub fn add_route<
+        I: IpLayerIpExt,
+        BT: IpRoutingBindingsTypes + MatcherBindingsTypes,
+        CC: IpStateContext<I, BT>,
+    >(
         core_ctx: &mut CC,
         entry: AddableEntry<I::Addr, CC::DeviceId>,
     ) -> Result<(), AddRouteError>
@@ -385,7 +386,7 @@ pub(crate) mod testutil {
         CC: IpStateContext<I, BC>,
     >(
         core_ctx: &mut CC,
-        rules: Vec<Rule<I, CC::DeviceId, BC::DeviceClass>>,
+        rules: Vec<Rule<I, CC::DeviceId, BC>>,
     ) {
         core_ctx.with_rules_table_mut(|_core_ctx, rules_table| {
             *rules_table.rules_mut() = rules;
@@ -400,7 +401,11 @@ pub(crate) mod testutil {
     /// and routes that require packets destined to a node within `subnet` to be
     /// routed through some next-hop node.
     // TODO(https://fxbug.dev/42077399): Unify this with other route removal methods.
-    pub fn del_routes_to_subnet<I: IpLayerIpExt, CC: IpRouteTablesContext<I>>(
+    pub fn del_routes_to_subnet<
+        I: IpLayerIpExt,
+        BT: IpRoutingBindingsTypes,
+        CC: IpRouteTablesContext<I, BT>,
+    >(
         core_ctx: &mut CC,
         del_subnet: Subnet<I::Addr>,
     ) -> Result<(), NotFoundError> {
@@ -418,7 +423,11 @@ pub(crate) mod testutil {
     }
 
     /// Deletes all routes referencing `del_device` from the routing table.
-    pub fn del_device_routes<I: IpLayerIpExt, CC: IpRouteTablesContext<I>>(
+    pub fn del_device_routes<
+        I: IpLayerIpExt,
+        BT: IpRoutingBindingsTypes,
+        CC: IpRouteTablesContext<I, BT>,
+    >(
         core_ctx: &mut CC,
         del_device: &CC::DeviceId,
     ) {

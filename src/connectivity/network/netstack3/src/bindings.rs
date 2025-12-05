@@ -116,7 +116,7 @@ use netstack3_core::icmp::{
 use netstack3_core::inspect::{InspectableValue, Inspector};
 use netstack3_core::ip::{
     AddIpAddrSubnetError, AddressRemovedReason, IpDeviceEvent, IpLayerEvent,
-    Ipv4DeviceConfigurationUpdate, Ipv6DeviceConfigurationUpdate, Lifetime,
+    IpRoutingBindingsTypes, Ipv4DeviceConfigurationUpdate, Ipv6DeviceConfigurationUpdate, Lifetime,
     RouterAdvertisementEvent,
 };
 use netstack3_core::routes::RawMetric;
@@ -888,6 +888,10 @@ impl DeferredResourceRemovalContext for BindingsCtx {
     fn defer_removal<T: Send + 'static>(&mut self, receiver: Self::ReferenceReceiver<T>) {
         self.resource_removal.defer_removal_with_receiver(receiver);
     }
+}
+
+impl IpRoutingBindingsTypes for BindingsCtx {
+    type RoutingTableId = u32;
 }
 
 impl Ctx {
