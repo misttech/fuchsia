@@ -900,8 +900,8 @@ mod tests {
 #[cfg(test)]
 mod test_doubles {
     use super::*;
-    use futures::future::{ready, Ready};
-    use std::sync::RwLock;
+    use fuchsia_sync::RwLock;
+    use futures::future::{Ready, ready};
 
     // Test double that returns scan results from initially provided data.
     // After exhausting the initial data, perpetually returns an empty `Vec`.
@@ -946,7 +946,7 @@ mod test_doubles {
         type GetNextResponseFut = Ready<GetNextResponse>;
 
         fn get_next(&self) -> Self::GetNextResponseFut {
-            let mut scan_results = self.scan_results.write().expect("internal error");
+            let mut scan_results = self.scan_results.write();
             ready(Ok(Ok(if scan_results.is_empty() { Vec::new() } else { scan_results.remove(0) })))
         }
     }
@@ -964,7 +964,7 @@ mod test_doubles {
 
         fn get_next(&self) -> Self::GetNextResponseFut {
             // Note: the `&mut *` here is due to https://github.com/rust-lang/rust/issues/65489
-            let response_func = &mut *self.0.write().expect("internal error");
+            let response_func = &mut *self.0.write();
             ready(response_func())
         }
     }
@@ -988,7 +988,7 @@ mod test_doubles {
 
         fn get_next(&self) -> Self::GetNextResponseFut {
             // Note: the `&mut *` here is due to https://github.com/rust-lang/rust/issues/65489
-            let response_func = &mut *self.0.write().expect("internal error");
+            let response_func = &mut *self.0.write();
             response_func()
         }
     }

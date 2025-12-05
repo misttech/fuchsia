@@ -11,8 +11,8 @@ use fidl_fuchsia_net_http::{
     Body as HttpBody, LoaderProxyInterface, Request as HttpRequest, Response as HttpResponse,
 };
 
-use futures::io::AsyncReadExt;
 use futures::Future;
+use futures::io::AsyncReadExt;
 use itertools::Itertools;
 use serde_json::json;
 use serde_json::map::Map as JsonMap;
@@ -651,8 +651,8 @@ mod test_doubles {
     use super::*;
     use fidl::endpoints::ClientEnd;
     use fidl_fuchsia_net_http::LoaderClientMarker;
-    use futures::future::{ready, Ready};
-    use std::sync::RwLock;
+    use fuchsia_sync::RwLock;
+    use futures::future::{Ready, ready};
 
     const HTTP_OK: u32 = 200;
 
@@ -705,7 +705,7 @@ mod test_doubles {
 
         fn fetch(&self, request: HttpRequest) -> Self::FetchResponseFut {
             // Note: the `&mut *` here is due to https://github.com/rust-lang/rust/issues/65489
-            let validate = &mut *self.validate.write().expect("internal error");
+            let validate = &mut *self.validate.write();
             let final_url = request.url.clone();
             validate(request);
             ready(Ok(HttpResponse {
