@@ -9,12 +9,12 @@
 //! calling component.
 
 use crate::annotation::{
-    handle_annotation_controller_stream, AnnotationError, AnnotationHolder, WatchResponder,
+    AnnotationError, AnnotationHolder, WatchResponder, handle_annotation_controller_stream,
 };
 use crate::element::Element;
-use anyhow::{anyhow, bail, format_err, Context, Error};
+use anyhow::{Context, Error, anyhow, bail, format_err};
 use fidl::endpoints::{
-    create_proxy, create_request_stream, ClientEnd, ControlHandle, Proxy, RequestStream, ServerEnd,
+    ClientEnd, ControlHandle, Proxy, RequestStream, ServerEnd, create_proxy, create_request_stream,
 };
 use fidl_connector::Connect;
 use fuchsia_async::{self as fasync, DurationExt};
@@ -22,7 +22,7 @@ use fuchsia_fs::directory as ffs_dir;
 use futures::channel::oneshot;
 use futures::future::Fuse;
 use futures::lock::Mutex;
-use futures::{select, FutureExt, StreamExt, TryStreamExt};
+use futures::{FutureExt, StreamExt, TryStreamExt, select};
 use log::{error, info, warn};
 use rand::distr::{Alphanumeric, SampleString};
 use rand::rng;
@@ -129,7 +129,7 @@ pub struct ElementManager {
     persistent_elements_path: &'static str,
 
     /// Running elements and the sender end of a channel to shut down.
-    running_elements: Arc<std::sync::Mutex<HashMap<String, oneshot::Sender<()>>>>,
+    running_elements: Arc<fuchsia_sync::Mutex<HashMap<String, oneshot::Sender<()>>>>,
 }
 
 impl ElementManager {
@@ -212,7 +212,7 @@ impl ElementManager {
                     collection.to_owned(),
                     child_url,
                     err,
-                ))
+                ));
             }
         };
 
@@ -225,7 +225,10 @@ impl ElementManager {
         {
             Ok(result) => result,
             Err(e) => {
-                warn!("could not read directory contents; assuming fuchsia.ui.app.ViewProvider is unavailable: {:?}", e);
+                warn!(
+                    "could not read directory contents; assuming fuchsia.ui.app.ViewProvider is unavailable: {:?}",
+                    e
+                );
                 false
             }
         };
@@ -524,7 +527,7 @@ impl ElementManager {
         };
 
         let (sender, receiver) = oneshot::channel();
-        self.running_elements.lock().unwrap().insert(child_name.to_string(), sender);
+        self.running_elements.lock().insert(child_name.to_string(), sender);
 
         let running_elements = self.running_elements.clone();
         let child_name = child_name.to_string();
@@ -541,7 +544,7 @@ impl ElementManager {
             )
             .await;
 
-            running_elements.lock().unwrap().remove(&child_name);
+            running_elements.lock().remove(&child_name);
 
             // Ignore all errors since there's nothing we can do.
             let _: Result<_, _> =
@@ -602,7 +605,7 @@ impl ElementManager {
         name: &str,
     ) -> Result<Result<(), felement::ManagerError>, Error> {
         let mut found = false;
-        let maybe_sender = self.running_elements.lock().unwrap().remove(name);
+        let maybe_sender = self.running_elements.lock().remove(name);
         if let Some(sender) = maybe_sender {
             let _ = sender.send(());
             found = true;
@@ -610,11 +613,7 @@ impl ElementManager {
         if self.remove_persistent_element(name).await? {
             found = true;
         }
-        if found {
-            Ok(Ok(()))
-        } else {
-            Ok(Err(felement::ManagerError::NotFound))
-        }
+        if found { Ok(Ok(())) } else { Ok(Err(felement::ManagerError::NotFound)) }
     }
 
     // Returns Ok(true) if an element named `name` was found, and `Ok(false)` if an element was not
@@ -740,7 +739,7 @@ async fn run_element_until_closed(
 
 impl Drop for ElementManager {
     fn drop(&mut self) {
-        self.running_elements.lock().unwrap().clear();
+        self.running_elements.lock().clear();
     }
 }
 

@@ -7,9 +7,10 @@ use anyhow::{Context as _, Error, anyhow};
 use fidl::endpoints::{ClientEnd, ServerEnd, create_proxy};
 use fuchsia_component::server::{ServiceFs, ServiceObjLocal};
 use fuchsia_inspect_contrib::nodes::BoundedListNode;
+use fuchsia_sync::Mutex;
 use futures::{StreamExt, TryFutureExt, TryStreamExt};
 use log::{error, warn};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use zx::HandleBased;
 use {
     fidl_fuchsia_component as fcomponent, fidl_fuchsia_component_decl as fdecl,
@@ -211,7 +212,7 @@ impl SessionManagerState {
             Session::Pending(pending) => pending,
             Session::Started(_) => {
                 let (proxy, pending) = PendingSession::new();
-                self.inner.lock().expect("mutex should not be poisoned").exposed_dir = proxy;
+                self.inner.lock().exposed_dir = proxy;
                 pending
             }
         };
@@ -223,11 +224,11 @@ impl SessionManagerState {
         )
         .await
         {
-            self.inner.lock().expect("mutex should not be poisoned").exposed_dir = proxy_on_failure;
+            self.inner.lock().exposed_dir = proxy_on_failure;
             return Err(e);
         }
         *session = Session::Started(StartedSession { url });
-        self.inner.lock().expect("mutex should not be poisoned").diagnostics.record_session_start();
+        self.inner.lock().diagnostics.record_session_start();
         Ok(())
     }
 
@@ -238,7 +239,7 @@ impl SessionManagerState {
         if let Session::Started(_) = &*session {
             let (proxy, new_pending) = Session::new_pending();
             *session = new_pending;
-            self.inner.lock().expect("mutex should not be poisoned").exposed_dir = proxy;
+            self.inner.lock().exposed_dir = proxy;
             startup::stop_session(&self.realm).await?;
         }
         Ok(())
@@ -267,7 +268,7 @@ impl SessionManagerState {
 impl vfs::remote::GetRemoteDir for SessionManagerState {
     #[allow(clippy::unwrap_in_result)]
     fn get_remote_dir(&self) -> Result<fio::DirectoryProxy, zx::Status> {
-        Ok(Clone::clone(&self.inner.lock().expect("mutex should not be poisoned").exposed_dir))
+        Ok(Clone::clone(&self.inner.lock().exposed_dir))
     }
 }
 
@@ -641,7 +642,6 @@ mod tests {
             .state
             .inner
             .lock()
-            .unwrap()
             .exposed_dir
             .open(path, fio::PERM_READABLE, &fio::Options::default(), server_end.into_channel())
             .unwrap();

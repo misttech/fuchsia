@@ -10,10 +10,11 @@ use fuchsia_component::server::ServiceFs;
 use fuchsia_component_test::{
     Capability, ChildOptions, ChildRef, RealmBuilder, RealmInstance, Ref, Route,
 };
+use fuchsia_sync::Mutex;
 use futures::{FutureExt, StreamExt, select};
 use realm_proxy_client::RealmProxyClient;
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use tsc::DeviceProxy;
 use {
     fidl_fuchsia_component as fcomponent, fidl_fuchsia_component_decl as fdecl,
@@ -258,7 +259,6 @@ impl SessionManagerPowerTest {
                 move |handles| {
                     let mut rfs = fs_holder
                         .lock()
-                        .unwrap()
                         .take()
                         .expect("mock component should only be launched once");
                     async {

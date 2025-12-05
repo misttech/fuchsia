@@ -30,6 +30,7 @@ rustc_binary("element_manager_bin") {
     "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-component",
     "//src/lib/fuchsia-fs",
+    "//src/lib/fuchsia-sync",
     "//src/lib/fuchsia_nix",
     "//src/lib/ui/fuchsia-scenic",
     "//src/session/lib/realm_management",

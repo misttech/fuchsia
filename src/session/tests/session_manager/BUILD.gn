@@ -34,6 +34,7 @@ rustc_test("test") {
     "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-component",
     "//src/lib/fuchsia-component-test",
+    "//src/lib/fuchsia-sync",
     "//src/power/system-activity-governor/integration/testing/fidl:test.systemactivitygovernor_rust",
     "//src/power/testing/fake-suspend:test.suspendcontrol_rust",
     "//src/session/bin/session_manager:lib",

@@ -6,8 +6,8 @@ use async_utils::hanging_get::error::HangingGetServerError;
 use async_utils::hanging_get::server as hanging_get;
 use derivative::Derivative;
 use fidl::endpoints::{ControlHandle, RequestStream};
-use futures::lock::Mutex;
 use futures::TryStreamExt;
+use futures::lock::Mutex;
 use log::error;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -360,17 +360,18 @@ fn handle_annotation_controller_request(
 #[cfg(test)]
 mod tests {
     use crate::annotation::{
-        handle_annotation_controller_request, AnnotationError, AnnotationHolder, WatchSubscriber,
-        MAX_ANNOTATIONS,
+        AnnotationError, AnnotationHolder, MAX_ANNOTATIONS, WatchSubscriber,
+        handle_annotation_controller_request,
     };
     use assert_matches::assert_matches;
     use async_utils::hanging_get::error::HangingGetServerError;
-    use fidl::endpoints::{create_proxy_and_stream, ControlHandle, RequestStream};
+    use fidl::endpoints::{ControlHandle, RequestStream, create_proxy_and_stream};
     use fidl_test_util::spawn_stream_handler;
+    use fuchsia_sync::Mutex;
     use futures::stream::FusedStream;
     use futures::{StreamExt, TryStreamExt};
     use std::cmp::Ordering;
-    use std::sync::{Arc, Mutex};
+    use std::sync::Arc;
     use {fidl_fuchsia_element as felement, fuchsia_async as fasync};
 
     fn make_annotation_key(namespace: &str, value: &str) -> felement::AnnotationKey {
@@ -414,11 +415,8 @@ mod tests {
         stream: &mut felement::AnnotationControllerRequestStream,
     ) -> Result<(), AnnotationError> {
         if let Some(request) = stream.try_next().await.unwrap() {
-            let result = handle_annotation_controller_request(
-                &mut holder.lock().unwrap(),
-                watch_subscriber,
-                request,
-            );
+            let result =
+                handle_annotation_controller_request(&mut holder.lock(), watch_subscriber, request);
             if result.is_err() {
                 stream.control_handle().shutdown_with_epitaph(zx::Status::BAD_STATE);
             }
@@ -431,7 +429,7 @@ mod tests {
     fn spawn_annotation_controller_handler(
         holder: Arc<Mutex<AnnotationHolder>>,
     ) -> felement::AnnotationControllerProxy {
-        let mut watch_subscriber = holder.lock().unwrap().new_watch_subscriber();
+        let mut watch_subscriber = holder.lock().new_watch_subscriber();
         let (proxy, mut stream) = create_proxy_and_stream::<felement::AnnotationControllerMarker>();
         fasync::Task::spawn(async move {
             loop {
@@ -621,7 +619,7 @@ mod tests {
     //  `watch_annotations` request is made before the previous request completes for the same client.
     async fn watch_annotations_duplicate_requests() -> Result<(), anyhow::Error> {
         let holder = Arc::new(Mutex::new(AnnotationHolder::new()));
-        let mut watch_subscriber = holder.lock().unwrap().new_watch_subscriber();
+        let mut watch_subscriber = holder.lock().new_watch_subscriber();
         let (proxy, mut stream) = create_proxy_and_stream::<felement::AnnotationControllerMarker>();
 
         // Make the initial request, so that the next one will hang.
@@ -827,14 +825,10 @@ mod tests {
 
         let proxy: felement::AnnotationControllerProxy = spawn_stream_handler(move |req| {
             let holder = holder.clone();
-            let mut watch_subscriber = holder.lock().unwrap().new_watch_subscriber();
+            let mut watch_subscriber = holder.lock().new_watch_subscriber();
             async move {
-                handle_annotation_controller_request(
-                    &mut holder.lock().unwrap(),
-                    &mut watch_subscriber,
-                    req,
-                )
-                .unwrap()
+                handle_annotation_controller_request(&mut holder.lock(), &mut watch_subscriber, req)
+                    .unwrap()
             }
         });
 
