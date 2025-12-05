@@ -65,6 +65,13 @@ def _gen_android_starnix_container_impl(ctx):
     if ctx.attr.skip_subpackages:
         _args.append("--skip-subpackages")
 
+    if ctx.file.ramdisk:
+        _package_inputs.append(ctx.file.ramdisk)
+        _args += [
+            "--ramdisk",
+            ctx.file.ramdisk.path,
+        ]
+
     ctx.actions.run(
         executable = sdk.gen_android_starnix_container,
         arguments = _args,
@@ -108,6 +115,10 @@ fuchsia_gen_android_starnix_container = rule(
         ),
         "vendor": attr.label(
             doc = "The Android vendor image",
+            allow_single_file = True,
+        ),
+        "ramdisk": attr.label(
+            doc = "The ramdisk image",
             allow_single_file = True,
         ),
         "hals": attr.label_list(

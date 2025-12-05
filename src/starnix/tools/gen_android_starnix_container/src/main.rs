@@ -33,6 +33,10 @@ struct Command {
     #[argh(option)]
     vendor: Option<Utf8PathBuf>,
 
+    /// path to a ramdisk image.
+    #[argh(option)]
+    ramdisk: Option<Utf8PathBuf>,
+
     /// path to hal package archive.
     #[argh(option)]
     hal: Vec<Utf8PathBuf>,
@@ -64,6 +68,7 @@ fn main() -> Result<()> {
         skip_subpackages: cmd.skip_subpackages,
         system: cmd.system,
         vendor: cmd.vendor,
+        ramdisk: cmd.ramdisk,
         fstab: cmd.fstab,
         init: cmd.init,
         depfile: cmd.depfile,

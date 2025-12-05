@@ -26,6 +26,7 @@ pub struct StarnixContainerGenerator {
     pub hals: Vec<Utf8PathBuf>, //path to hal package archive
     pub skip_subpackages: bool, //whether to skip including HALs as subpackages.
     pub system: Utf8PathBuf, //path to an Android system image
+    pub ramdisk: Option<Utf8PathBuf>, //path to a ramdisk image
     pub vendor: Option<Utf8PathBuf>, //path to an Android vendor partition image
     pub fstab: Option<Utf8PathBuf>, //path to fstab, will go in /odm which overrides the one in /vendor
     pub init: Vec<Utf8PathBuf>, //path to extra init scripts, will go in /odm/etc/init. Can be passed more than once.
@@ -299,6 +300,7 @@ mod tests {
             base: base_manifest_path,
             system: Utf8PathBuf::from_str(EXT4_IMAGE_PATH).unwrap(),
             vendor: Some(Utf8PathBuf::from_str(EXT4_IMAGE_PATH).unwrap()),
+            ramdisk: None,
             hals: vec![hal_manifest_path],
             depfile: None,
             fstab: None,
@@ -381,6 +383,7 @@ mod tests {
             base: base_manifest_path,
             system: Utf8PathBuf::from_str(EXT4_IMAGE_PATH).unwrap(),
             vendor: Some(Utf8PathBuf::from_str(EXT4_IMAGE_PATH).unwrap()),
+            ramdisk: None,
             hals: vec![hal_manifest_path],
             depfile: None,
             fstab: None,
@@ -428,9 +431,10 @@ mod tests {
             outdir: outdir.to_owned(),
             base: base_manifest_path,
             system: Utf8PathBuf::from_str(EXT4_IMAGE_PATH).unwrap(),
+            vendor: None,
+            ramdisk: None,
             hals: vec![hal_manifest_path],
             depfile: None,
-            vendor: None,
             fstab: None,
             init: vec![],
             skip_subpackages: false,
@@ -503,9 +507,10 @@ mod tests {
             outdir: outdir.to_owned(),
             base: base_manifest_path,
             system: Utf8PathBuf::from_str(EXT4_IMAGE_PATH).unwrap(),
+            vendor: None,
+            ramdisk: None,
             hals: vec![hal_manifest_path],
             depfile: None,
-            vendor: None,
             fstab: None,
             init: vec![],
             skip_subpackages: false,
@@ -571,9 +576,10 @@ tmpfs   /data       tmpfs   defaults            wait
             outdir: outdir.to_owned(),
             base: base_manifest_path,
             system: Utf8PathBuf::from_str(EXT4_IMAGE_PATH).unwrap(),
+            vendor: None,
+            ramdisk: None,
             hals: vec![],
             depfile: None,
-            vendor: None,
             fstab: Some(fstab_path),
             init: vec![],
             skip_subpackages: false,
@@ -628,9 +634,10 @@ tmpfs   /data       tmpfs   defaults            wait
             outdir: outdir.to_owned(),
             base: base_manifest_path,
             system: Utf8PathBuf::from_str(EXT4_IMAGE_PATH).unwrap(),
+            vendor: None,
+            ramdisk: None,
             hals: vec![],
             depfile: None,
-            vendor: None,
             fstab: None,
             init: vec![init_path],
             skip_subpackages: false,
