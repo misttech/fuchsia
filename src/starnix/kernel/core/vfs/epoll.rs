@@ -79,10 +79,7 @@ struct EpollState {
     /// before that, because, if the client process has
     /// not cleared the wait condition, they would just
     /// be immediately triggered.
-    rearm_list: Vec<ReadyItem>,
-    /// A list of waiters waiting for events from this
-    /// epoll instance.
-    waiters: WaitQueue,
+    recheck_list: Vec<ReadyItemKey>,
 }
 
 #[derive(Default)]
@@ -90,6 +87,9 @@ struct EpollWaitableState {
     /// trigger_list is a FIFO of events that have
     /// happened, but have not yet been processed.
     trigger_list: VecDeque<ReadyItem>,
+    /// A list of waiters waiting for events from this
+    /// epoll instance.
+    waiters: WaitQueue,
 }
 
 impl EpollFileObject {
@@ -122,15 +122,23 @@ impl EpollFileObject {
         // First start the wait. If an event happens after this, we'll get it.
         self.wait_on_file_edge_triggered(locked, current_task, key, wait_object)?;
 
-        // Now check the events. If an event happened before this, we'll detect it here. There's
-        // now no race window where an event would be missed.
-        //
-        // That said, if an event happens between the wait and the query_events, we'll get two
-        // notifications. We handle this by deduping on the epoll_wait end.
-        let events = match wait_object.target() {
-            Some(t) => t.query_events(locked, current_task)?,
-            None => FdEvents::empty(),
-        };
+        self.do_recheck(locked, current_task, wait_object, key)?;
+
+        Ok(())
+    }
+
+    fn do_recheck<L>(
+        &self,
+        locked: &mut Locked<L>,
+        current_task: &CurrentTask,
+        wait_object: &mut WaitObject,
+        key: ReadyItemKey,
+    ) -> Result<(), Errno>
+    where
+        L: LockEqualOrBefore<FileOpsCore>,
+    {
+        let Some(target) = wait_object.target() else { return Ok(()) };
+        let events = target.query_events(locked, current_task)?;
         if !(events & wait_object.events).is_empty() {
             self.waiter.wake_immediately(events, self.new_wait_handler(key));
             if let Some(wait_canceler) = wait_object.wait_canceler.take() {
@@ -242,7 +250,7 @@ impl EpollFileObject {
     {
         let mut state = self.state.lock();
         let key = file.id.as_epoll_key();
-        state.rearm_list.retain(|x| x.key != key.into());
+        state.recheck_list.retain(|x| *x != key.into());
         let Some(wait_object) = state.wait_objects.get_mut(&key.into()) else {
             return error!(ENOENT);
         };
@@ -271,7 +279,7 @@ impl EpollFileObject {
             if let Some(wait_canceler) = wait_object.wait_canceler.take() {
                 wait_canceler.cancel();
             }
-            state.rearm_list.retain(|x| x.key != key);
+            state.recheck_list.retain(|x| *x != key);
             Ok(())
         } else {
             error!(ENOENT)
@@ -400,18 +408,15 @@ impl EpollFileObject {
     where
         L: LockEqualOrBefore<FileOpsCore>,
     {
-        // First we start waiting again on wait objects that have
-        // previously been triggered.
         {
             let mut state = self.state.lock();
-            let rearm_list = std::mem::take(&mut state.rearm_list);
-            for to_wait in rearm_list.iter() {
-                // TODO handle interrupts here
-                let w = state.wait_objects.get_mut(&to_wait.key).unwrap();
-                if let ReadyItemKey::Usize(key) = to_wait.key {
-                    current_task.kernel().suspend_resume_manager.remove_epoll(key)
-                };
-                self.wait_on_file(locked, current_task, to_wait.key, w)?;
+            let recheck_list = std::mem::take(&mut state.recheck_list);
+            for key in recheck_list {
+                if let ReadyItemKey::Usize(key) = key {
+                    current_task.kernel().suspend_resume_manager.remove_epoll(key);
+                }
+                let wait_object = state.wait_objects.get_mut(&key).unwrap();
+                self.do_recheck(locked, current_task, wait_object, key)?;
             }
         }
 
@@ -422,29 +427,34 @@ impl EpollFileObject {
         // entries to the rearm_list for the next wait.
         let mut result = vec![];
         let mut state = self.state.lock();
+        let state = &mut *state;
         for pending_event in pending_list.iter().unique_by(|e| e.key) {
             // The wait could have been deleted by here,
             // so ignore the None case.
-            if let Some(wait) = state.wait_objects.get_mut(&pending_event.key) {
-                let reported_events = pending_event.events & wait.events;
-                result.push(EpollEvent::new(reported_events, wait.data));
+            let Some(wait) = state.wait_objects.get_mut(&pending_event.key) else { continue };
 
-                // Files marked with `EPOLLONESHOT` should only notify
-                // once and need to be rearmed manually with epoll_ctl_mod().
-                if wait.events.contains(FdEvents::EPOLLONESHOT) {
-                    continue;
-                }
-                if wait.events.contains(FdEvents::EPOLLET) {
-                    // The file can be closed while registered for epoll which is not an error.
-                    // We do not expect other errors from waiting.
-                    self.wait_on_file_edge_triggered(
-                        locked,
-                        current_task,
-                        pending_event.key,
-                        wait,
-                    )?;
-                    continue;
-                }
+            let reported_events = pending_event.events & wait.events;
+            result.push(EpollEvent::new(reported_events, wait.data));
+
+            // Files marked with `EPOLLONESHOT` should only notify
+            // once and need to be rearmed manually with epoll_ctl_mod().
+            if wait.events.contains(FdEvents::EPOLLONESHOT) {
+                continue;
+            }
+
+            self.wait_on_file_edge_triggered(
+                locked,
+                current_task,
+                pending_event.key,
+                wait,
+            )?;
+
+            if !wait.events.contains(FdEvents::EPOLLET) {
+                state.recheck_list.push(pending_event.key);
+            }
+
+            // TODO: is this really only supposed to happen for level-triggered events?
+            if !wait.events.contains(FdEvents::EPOLLET) {
                 // When this is the first time epoll_wait on this epoll fd, create and
                 // hold a wake lease until the next epoll_wait.
                 if wait.events.contains(FdEvents::EPOLLWAKEUP) {
@@ -452,15 +462,7 @@ impl EpollFileObject {
                         current_task.kernel().suspend_resume_manager.add_epoll(current_task, key)
                     }
                 }
-
-                state.rearm_list.push(pending_event.clone());
             }
-        }
-
-        // Notify waiters of unprocessed events.
-        if !state.processing_list.is_empty() || !self.waitable_state.lock().trigger_list.is_empty()
-        {
-            state.waiters.notify_fd_events(FdEvents::POLLIN);
         }
 
         Ok(result)
@@ -505,19 +507,29 @@ impl FileOps for EpollFileObject {
         events: FdEvents,
         handler: EventHandler,
     ) -> Option<WaitCanceler> {
-        Some(self.state.lock().waiters.wait_async_fd_events(waiter, events, handler))
+        Some(self.waitable_state.lock().waiters.wait_async_fd_events(waiter, events, handler))
     }
 
     fn query_events(
         &self,
-        _locked: &mut Locked<FileOpsCore>,
+        locked: &mut Locked<FileOpsCore>,
         _file: &FileObject,
-        _current_task: &CurrentTask,
+        current_task: &CurrentTask,
     ) -> Result<FdEvents, Errno> {
         let mut events = FdEvents::empty();
         let state = self.state.lock();
-        if state.processing_list.is_empty() && self.waitable_state.lock().trigger_list.is_empty() {
+        if !state.processing_list.is_empty() || !self.waitable_state.lock().trigger_list.is_empty()
+        {
             events |= FdEvents::POLLIN;
+        } else {
+            for key in &state.recheck_list {
+                let wait_object = state.wait_objects.get(&key).unwrap();
+                let Some(target) = wait_object.target() else { continue };
+                if !(target.query_events(locked, current_task)? & wait_object.events).is_empty() {
+                    events |= FdEvents::POLLIN;
+                    break;
+                }
+            }
         }
         Ok(events)
     }
@@ -545,7 +557,9 @@ pub struct EpollEventHandler {
 
 impl EpollEventHandler {
     pub fn handle(self, events: FdEvents) {
-        self.waitable_state.lock().trigger_list.push_back(ReadyItem { key: self.key, events });
+        let mut waitable_state = self.waitable_state.lock();
+        waitable_state.trigger_list.push_back(ReadyItem { key: self.key, events });
+        waitable_state.waiters.notify_fd_events(FdEvents::POLLIN);
     }
 }
 
@@ -936,7 +950,7 @@ mod tests {
 
             std::mem::drop(event);
 
-            assert!(epoll_file.state.lock().waiters.is_empty());
+            assert!(epoll_file.waitable_state.lock().waiters.is_empty());
         })
         .await;
     }

@@ -106,9 +106,6 @@
                 "FusePathWalkRefreshDirEntryTest/FusePathWalkRefreshDirEntryTest.PathWalkRefreshDirEntry/6",
                 "FusePathWalkRefreshDirEntryTest/FusePathWalkRefreshDirEntryTest.PathWalkRefreshDirEntry/7",
 
-                // TODO(https://fxbug.dev/365763270)
-                "EpollTest.EpollIsPollable",
-
                 // TODO(https://fxbug.dev/333132302)
                 "Madvise.MadvRemoveZeroesMemory",
 
