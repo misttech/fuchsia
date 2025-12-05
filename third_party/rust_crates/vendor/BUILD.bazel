@@ -2935,14 +2935,14 @@ alias(
 )
 
 alias(
-    name = "unicode-width-0.2.0",
-    actual = "//third_party/rust_crates/vendor/unicode-width-0.2.0:unicode_width",
+    name = "unicode-width-0.2.2",
+    actual = "//third_party/rust_crates/vendor/unicode-width-0.2.2:unicode_width",
     tags = ["manual"],
 )
 
 alias(
     name = "unicode-width",
-    actual = "//third_party/rust_crates/vendor/unicode-width-0.2.0:unicode_width",
+    actual = "//third_party/rust_crates/vendor/unicode-width-0.2.2:unicode_width",
     tags = ["manual"],
 )
 

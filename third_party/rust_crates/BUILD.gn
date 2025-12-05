@@ -1222,7 +1222,7 @@ group("unicode-segmentation") {
 }
 
 group("unicode-width") {
-  public_deps = [ ":unicode-width-v0_2_0" ]
+  public_deps = [ ":unicode-width-v0_2_2" ]
 }
 
 group("unicode-xid") {
@@ -7671,7 +7671,7 @@ rustc_library("getopts-v0_2_24") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":unicode-width-v0_2_0" ]
+  deps += [ ":unicode-width-v0_2_2" ]
 
   rustenv = []
 
@@ -20117,17 +20117,17 @@ rustc_library("unicode-width-v0_1_14") {
   applicable_licenses = [ ":unicode-width-v0_1_14.license" ]
 }
 
-license("unicode-width-v0_2_0.license") {
+license("unicode-width-v0_2_2.license") {
   public_package_name = "unicode_width"
   license_files =
-      [ "//third_party/rust_crates/vendor/unicode-width-0.2.0/LICENSE-APACHE" ]
+      [ "//third_party/rust_crates/vendor/unicode-width-0.2.2/LICENSE-APACHE" ]
 }
 
-rustc_library("unicode-width-v0_2_0") {
+rustc_library("unicode-width-v0_2_2") {
   crate_name = "unicode_width"
   source_root =
-      "//third_party/rust_crates/vendor/unicode-width-0.2.0/src/lib.rs"
-  output_name = "unicode_width-73160b7502b3536"
+      "//third_party/rust_crates/vendor/unicode-width-0.2.2/src/lib.rs"
+  output_name = "unicode_width-d04005bc7b57df56"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -20139,15 +20139,15 @@ rustc_library("unicode-width-v0_2_0") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=73160b7502b3536",
-    "-Cextra-filename=-73160b7502b3536",
+    "-Cmetadata=d04005bc7b57df56",
+    "-Cextra-filename=-d04005bc7b57df56",
     "--cfg=feature=\"cjk\"",
     "--cfg=feature=\"default\"",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":unicode-width-v0_2_0.license" ]
+  applicable_licenses = [ ":unicode-width-v0_2_2.license" ]
 }
 
 license("unicode-xid-v0_2_6.license") {

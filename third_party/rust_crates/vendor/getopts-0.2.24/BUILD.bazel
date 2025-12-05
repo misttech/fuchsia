@@ -78,6 +78,6 @@ rust_library(
     }),
     version = "0.2.24",
     deps = [
-        "//third_party/rust_crates/vendor/unicode-width-0.2.0:unicode_width",
+        "//third_party/rust_crates/vendor/unicode-width-0.2.2:unicode_width",
     ],
 )
