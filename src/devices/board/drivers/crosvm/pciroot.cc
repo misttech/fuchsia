@@ -12,6 +12,7 @@
 #include <stdint.h>
 #include <zircon/rights.h>
 #include <zircon/status.h>
+#include <zircon/syscalls/iommu.h>
 
 #include "crosvm.h"
 
@@ -57,31 +58,16 @@ zx::result<> Pciroot::CreateInterruptsAndRouting(
 }
 
 zx_status_t Pciroot::PcirootGetBti(uint32_t bdf, uint32_t index, zx::bti* bti) {
-  zx_status_t status = ZX_ERR_INTERNAL;
-  libsync::Completion completion;
-  async::PostTask(dispatcher_, [this, &status, &completion, &bti, bdf, index]() {
-    auto complete = fit::defer([&completion]() { completion.Signal(); });
-    fdf::Arena arena('PCIR');
-    fdf::WireUnownedResult result =
-        fdf::WireCall(iommu_).buffer(arena)->GetBti(/*iommu_index=*/index, /*bti_id=*/bdf);
-    if (!result.ok()) {
-      FDF_LOG(ERROR, "GetBti failed, transport error: %s",
-              result.error().FormatDescription().c_str());
-      status = result.error().status();
-      return;
-    }
-
-    if (result->is_error()) {
-      FDF_LOG(ERROR, "GetBti failed, method error: %s", result.status_string());
-      status = result->error_value();
-      return;
-    }
-
-    *bti = std::move(result->value()->bti);
-    status = ZX_OK;
-  });
-  completion.Wait();
-  return status;
+  // We are creating a fake iommu because we currently don't support a real one. This will
+  // eventually need to change.
+  zx_iommu_desc_stub_t desc;
+  zx::iommu iommu;
+  zx_status_t status =
+      zx::iommu::create(iommu_resource_, ZX_IOMMU_TYPE_STUB, &desc, sizeof(desc), &iommu);
+  if (status != ZX_OK) {
+    return status;
+  }
+  return zx::bti::create(iommu, 0, bdf, bti);
 }
 
 zx_status_t Pciroot::PcirootGetPciPlatformInfo(pci_platform_info_t* info) {

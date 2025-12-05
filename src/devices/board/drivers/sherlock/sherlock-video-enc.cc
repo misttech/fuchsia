@@ -49,7 +49,7 @@ static const std::vector<fpbus::Mmio> sherlock_video_enc_mmios{
 
 static const std::vector<fpbus::Bti> sherlock_video_enc_btis{
     {{
-        .iommu_index = 0,
+        .iommu_id = 0,
         .bti_id = BTI_VIDEO_ENC,
     }},
 };

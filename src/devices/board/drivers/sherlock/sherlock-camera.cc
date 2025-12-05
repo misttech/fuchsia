@@ -52,7 +52,7 @@ static const std::vector<fpbus::Mmio> ge2d_mmios{
 
 static const std::vector<fpbus::Bti> ge2d_btis{
     {{
-        .iommu_index = 0,
+        .iommu_id = 0,
         .bti_id = BTI_GE2D,
     }},
 };
@@ -91,7 +91,7 @@ static const std::vector<fpbus::Mmio> gdc_mmios{
 
 static const std::vector<fpbus::Bti> gdc_btis{
     {{
-        .iommu_index = 0,
+        .iommu_id = 0,
         .bti_id = BTI_GDC,
     }},
 };
@@ -119,7 +119,7 @@ static const fpbus::Node gdc_dev = []() {
 
 static const std::vector<fpbus::Bti> isp_btis{
     {{
-        .iommu_index = 0,
+        .iommu_id = 0,
         .bti_id = BTI_ISP,
     }},
 };
@@ -189,7 +189,7 @@ static const std::vector<fpbus::Mmio> mipi_mmios{
 
 static const std::vector<fpbus::Bti> mipi_btis{
     {{
-        .iommu_index = 0,
+        .iommu_id = 0,
         .bti_id = BTI_MIPI,
     }},
 };

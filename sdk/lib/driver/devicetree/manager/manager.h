@@ -63,6 +63,10 @@ class Manager final : public NodeManager {
   // Moves the node with |node_id| to the |new_index| in the publish list.
   zx::result<> ChangePublishOrder(uint32_t node_id, uint32_t new_index) override;
 
+  // Registers an iommu with the platform bus.
+  zx::result<> RegisterIommu(uint32_t iommu_id,
+                             fuchsia_hardware_platform_bus::Iommu iommu) override;
+
   // Find a node by its name.
   std::optional<Node*> FindNode(std::string_view name);
 
@@ -77,6 +81,8 @@ class Manager final : public NodeManager {
   // Nodes by path.
   std::unordered_map<std::string, Node*> nodes_by_path_;
   uint32_t node_id_ = 0;
+
+  std::unordered_map<uint32_t, fuchsia_hardware_platform_bus::Iommu> iommus_;
 };
 
 }  // namespace fdf_devicetree

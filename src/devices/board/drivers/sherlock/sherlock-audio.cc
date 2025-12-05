@@ -125,7 +125,7 @@ zx_status_t Sherlock::AudioInit() {
 
   static const std::vector<fpbus::Bti> tdm_btis{
       {{
-          .iommu_index = 0,
+          .iommu_id = 0,
           .bti_id = BTI_AUDIO_OUT,
       }},
   };
@@ -375,7 +375,7 @@ zx_status_t Sherlock::AudioInit() {
   {
     static const std::vector<fpbus::Bti> pcm_out_btis{
         {{
-            .iommu_index = 0,
+            .iommu_id = 0,
             .bti_id = BTI_AUDIO_BT_OUT,
         }},
     };
@@ -472,7 +472,7 @@ zx_status_t Sherlock::AudioInit() {
 
     static const std::vector<fpbus::Bti> pdm_btis{
         {{
-            .iommu_index = 0,
+            .iommu_id = 0,
             .bti_id = BTI_AUDIO_IN,
         }},
     };
@@ -514,7 +514,7 @@ zx_status_t Sherlock::AudioInit() {
   {
     static const std::vector<fpbus::Bti> pcm_in_btis{
         {{
-            .iommu_index = 0,
+            .iommu_id = 0,
             .bti_id = BTI_AUDIO_BT_IN,
         }},
     };

@@ -67,7 +67,7 @@ static const std::vector<fpbus::Irq> toddr_b_irqs{
 
 static const std::vector<fpbus::Bti> tdm_btis{
     {{
-        .iommu_index = 0,
+        .iommu_id = 0,
         .bti_id = BTI_AUDIO_OUT,
     }},
 };
@@ -202,7 +202,7 @@ zx_status_t Astro::AudioInit() {
   {
     const std::vector<fpbus::Bti> pcm_out_btis = {
         {{
-            .iommu_index = 0,
+            .iommu_id = 0,
             .bti_id = BTI_AUDIO_BT_OUT,
         }},
     };
@@ -392,7 +392,7 @@ zx_status_t Astro::AudioInit() {
   {
     const std::vector<fpbus::Bti> pcm_in_btis{
         {{
-            .iommu_index = 0,
+            .iommu_id = 0,
             .bti_id = BTI_AUDIO_BT_IN,
         }},
     };
@@ -481,7 +481,7 @@ zx_status_t Astro::AudioInit() {
 
     static const std::vector<fpbus::Bti> pdm_btis{
         {{
-            .iommu_index = 0,
+            .iommu_id = 0,
             .bti_id = BTI_AUDIO_IN,
         }},
     };

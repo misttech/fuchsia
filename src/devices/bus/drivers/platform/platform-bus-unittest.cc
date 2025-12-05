@@ -222,10 +222,6 @@ class PlatformBusTest : public ::testing::Test {
       args.config(config.ToVmo());
     }));
 
-    zx::result iommu = driver_test_.Connect<fuchsia_hardware_platform_bus::Service::Iommu>("pt");
-    ASSERT_OK(iommu);
-    iommu_.Bind(std::move(iommu.value()));
-
     zx::result pbus =
         driver_test_.Connect<fuchsia_hardware_platform_bus::Service::PlatformBus>("pt");
     ASSERT_OK(pbus);
@@ -242,35 +238,14 @@ class PlatformBusTest : public ::testing::Test {
   }
 
   fdf_testing::BackgroundDriverTest<TestConfig>& driver_test() { return driver_test_; }
-  fdf::WireSyncClient<fuchsia_hardware_platform_bus::Iommu>& iommu() { return iommu_; }
   fdf::WireSyncClient<fuchsia_hardware_platform_bus::PlatformBus>& pbus() { return pbus_; }
 
  private:
   fdf_testing::BackgroundDriverTest<TestConfig> driver_test_;
-  fdf::WireSyncClient<fuchsia_hardware_platform_bus::Iommu> iommu_;
   fdf::WireSyncClient<fuchsia_hardware_platform_bus::PlatformBus> pbus_;
 };
 
 uint32_t g_bti_created = 0;
-
-TEST_F(PlatformBusTest, IommuGetBti) {
-  g_bti_created = 0;
-  fdf::Arena arena{'PBUS'};
-
-  EXPECT_EQ(g_bti_created, 0u);
-  fdf::WireUnownedResult bti1 = iommu().buffer(arena)->GetBti(0, 0);
-  ASSERT_OK(bti1.status());
-  ASSERT_TRUE(bti1->is_ok());
-  EXPECT_EQ(g_bti_created, 1u);
-  fdf::WireUnownedResult bti2 = iommu().buffer(arena)->GetBti(0, 0);
-  ASSERT_OK(bti2.status());
-  ASSERT_TRUE(bti2->is_ok());
-  EXPECT_EQ(g_bti_created, 1u);
-  fdf::WireUnownedResult bti3 = iommu().buffer(arena)->GetBti(0, 1);
-  ASSERT_OK(bti3.status());
-  ASSERT_TRUE(bti3->is_ok());
-  EXPECT_EQ(g_bti_created, 2u);
-}
 
 // Verify that the platform bus can create a platform device that exposes an empty partition map
 // found in boot args as metadata.

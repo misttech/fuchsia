@@ -61,7 +61,7 @@ type Irq = table {
 
 /// Definition of a bus transaction initiator (bti) for a platform device node.
 type Bti = table {
-    1: iommu_index uint32;
+    1: iommu_id uint32;
     2: bti_id uint32;
     /// Name that can be used to retrieve the bti using
     /// [`fuchsia.hardware.platform.device/GetBtiByName`].
@@ -176,6 +176,21 @@ closed protocol SysSuspend {
     });
 };
 
+/// A Stub IOMMU
+type StubIommu = struct {};
+
+/// An ARM SMMU
+type ArmSmmu = struct {
+    /// The base address for the SMMU. This is used to uniquely identify which SMMU
+    /// to use when the hardware supports multiple SMMUs.
+    base_address uint64;
+};
+
+type Iommu = flexible union {
+    1: stub_iommu StubIommu;
+    2: arm_smmu ArmSmmu;
+};
+
 @discoverable
 @transport("Driver")
 open protocol PlatformBus {
@@ -221,17 +236,14 @@ open protocol PlatformBus {
         node Node;
         spec fuchsia.driver.framework.CompositeNodeSpec;
     }) -> () error zx.Status;
-};
 
-@discoverable
-@transport("Driver")
-closed protocol Iommu {
-    strict GetBti(struct {
-        iommu_index uint32;
-        bti_id uint32;
-    }) -> (resource struct {
-        bti zx.Handle:BTI;
-    }) error zx.Status;
+    /// Register an iommu. The platform bus will use this to create a new iommu
+    /// object with the kernel based on the parameters passed in.
+    @available(added=HEAD)
+    strict RegisterIommu(resource struct {
+        iommu_id uint32;
+        iommu Iommu;
+    }) -> () error zx.Status;
 };
 
 type FirmwareType = flexible enum : uint32 {
@@ -257,6 +269,5 @@ closed protocol Firmware {
 
 service Service {
     platform_bus client_end:PlatformBus;
-    iommu client_end:Iommu;
     firmware client_end:Firmware;
 };

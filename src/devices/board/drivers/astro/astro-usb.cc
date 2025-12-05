@@ -51,7 +51,7 @@ static const std::vector<fpbus::Irq> dwc2_irqs{
 
 static const std::vector<fpbus::Bti> dwc2_btis{
     {{
-        .iommu_index = 0,
+        .iommu_id = 0,
         .bti_id = BTI_USB,
     }},
 };
@@ -85,7 +85,7 @@ static const std::vector<fpbus::Irq> xhci_irqs{
 
 static const std::vector<fpbus::Bti> usb_btis{
     {{
-        .iommu_index = 0,
+        .iommu_id = 0,
         .bti_id = BTI_USB,
     }},
 };

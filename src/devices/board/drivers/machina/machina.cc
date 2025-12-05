@@ -102,7 +102,7 @@ static int machina_start_thread(void* arg) {
 
   std::vector<fpbus::Bti> pci_btis = {
       {{
-          .iommu_index = 0,
+          .iommu_id = 0,
           .bti_id = 0,
       }},
   };

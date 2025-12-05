@@ -23,7 +23,7 @@ static const std::vector<fpbus::Mmio> astro_ram_ctl_mmios{
 
 static const std::vector<fpbus::Bti> astro_ram_ctl_btis{
     {{
-        .iommu_index = 0,
+        .iommu_id = 0,
         .bti_id = BTI_RAM_CTL,
     }},
 };

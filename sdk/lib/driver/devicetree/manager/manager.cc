@@ -16,6 +16,8 @@ namespace fdf {
 using namespace fuchsia_driver_framework;
 }
 
+namespace fhpb = fuchsia_hardware_platform_bus;
+
 namespace {
 std::string GetPath(const devicetree::NodePath& node_path) {
   std::string path;
@@ -52,7 +54,7 @@ std::string GetParentPath(const devicetree::NodePath& node_path) {
 namespace fdf_devicetree {
 
 zx::result<Manager> Manager::CreateFromNamespace(fdf::Namespace& ns) {
-  zx::result client = ns.Connect<fuchsia_hardware_platform_bus::Service::Firmware>();
+  zx::result client = ns.Connect<fhpb::Service::Firmware>();
   if (client.is_error()) {
     FDF_LOG(ERROR, "Failed to connect to fuchsia.hardware.platform.bus.Firmware: %s",
             client.status_string());
@@ -60,8 +62,8 @@ zx::result<Manager> Manager::CreateFromNamespace(fdf::Namespace& ns) {
   }
 
   fdf::Arena arena('dtdt');
-  auto result = fdf::WireCall(*client).buffer(arena)->GetFirmware(
-      fuchsia_hardware_platform_bus::wire::FirmwareType::kDeviceTree);
+  auto result =
+      fdf::WireCall(*client).buffer(arena)->GetFirmware(fhpb::wire::FirmwareType::kDeviceTree);
   if (!result.ok()) {
     FDF_LOG(ERROR, "Failed to send GetFirmware request: %s", result.FormatDescription().data());
     return zx::error(result.status());
@@ -147,10 +149,23 @@ zx::result<> Manager::Walk(Visitor& visitor) {
 }
 
 zx::result<> Manager::PublishDevices(
-    fdf::WireSyncClient<fuchsia_hardware_platform_bus::PlatformBus>& pbus_client,
+    fdf::WireSyncClient<fhpb::PlatformBus>& pbus_client,
     fidl::ClientEnd<fuchsia_driver_framework::CompositeNodeManager> mgr,
     fidl::SyncClient<fuchsia_driver_framework::Node>& fdf_node) {
   auto mgr_client = fidl::SyncClient(std::move(mgr));
+
+  for (const auto& [iommu_id, iommu] : iommus_) {
+    fdf::Arena arena('PBUS');
+    auto iommu_wire = iommu.stub_iommu()
+                          ? fhpb::wire::Iommu::WithStubIommu({})
+                          : fhpb::wire::Iommu::WithArmSmmu(arena, iommu.arm_smmu()->base_address());
+    auto result = pbus_client.buffer(arena)->RegisterIommu(iommu_id, iommu_wire);
+    if (!result.ok()) {
+      fdf::error("Failed to publish iommu: {}: {}", iommu_id, result.error());
+    } else if (result->is_error()) {
+      fdf::warn("Failed to publish iommu: {}: {}", iommu_id, result->error_value());
+    }
+  }
 
   for (auto& node : nodes_publish_order_) {
     zx::result<> status = node->Publish(pbus_client, mgr_client, fdf_node);
@@ -193,6 +208,14 @@ zx::result<> Manager::ChangePublishOrder(uint32_t node_id, uint32_t new_index) {
 
   std::swap(nodes_publish_order_[new_index], nodes_publish_order_[GetPublishIndex(node_id)]);
 
+  return zx::ok();
+}
+
+zx::result<> Manager::RegisterIommu(uint32_t iommu_id, fhpb::Iommu iommu) {
+  auto [_, inserted] = iommus_.insert({iommu_id, iommu});
+  if (!inserted) {
+    return zx::error(ZX_ERR_ALREADY_EXISTS);
+  }
   return zx::ok();
 }
 

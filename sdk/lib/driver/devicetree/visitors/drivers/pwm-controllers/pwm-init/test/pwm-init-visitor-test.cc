@@ -13,11 +13,13 @@
 #include <bind/fuchsia/cpp/bind.h>
 #include <bind/fuchsia/pwm/cpp/bind.h>
 #include <gtest/gtest.h>
+
 namespace pwm_init_visitor_dt {
 
-class PwmInitVisitorTester : public fdf_devicetree::testing::VisitorTestHelper<PwmInitVisitor> {
+class PwmInitVisitorTester final
+    : public fdf_devicetree::testing::VisitorTestHelper<PwmInitVisitor> {
  public:
-  PwmInitVisitorTester(std::string_view dtb_path)
+  explicit PwmInitVisitorTester(std::string_view dtb_path)
       : fdf_devicetree::testing::VisitorTestHelper<PwmInitVisitor>(dtb_path, "PwmInitVisitorTest") {
   }
 };

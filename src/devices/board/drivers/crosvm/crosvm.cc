@@ -125,12 +125,6 @@ zx::result<> Crosvm::CreateMetadata() {
 }
 
 zx::result<> Crosvm::CreatePciroot(const pci_dt::PciVisitor& pci_visitor) {
-  zx::result iommu = incoming()->Connect<fuchsia_hardware_platform_bus::Service::Iommu>();
-  if (iommu.is_error()) {
-    FDF_LOG(ERROR, "Failed to connect to iommu: %s", iommu.status_string());
-    return iommu.take_error();
-  }
-
   const auto& pci_reg = pci_visitor.reg();
   zx_paddr_t ecam_address = *pci_reg->address();
   size_t ecam_size = *pci_reg->size();
@@ -151,8 +145,14 @@ zx::result<> Crosvm::CreatePciroot(const pci_dt::PciVisitor& pci_visitor) {
     return irq.take_error();
   }
 
-  pciroot_.emplace(kPcirootNodeName, &*root_host_, dispatcher(), std::move(iommu.value()),
-                   std::move(ecam), std::move(irq.value()), pci_visitor.is_extended());
+  zx::result<zx::resource> iommu;
+  if (iommu = GetResource<fuchsia_kernel::IommuResource>(incoming()); iommu.is_error()) {
+    FDF_LOG(ERROR, "Couldn't obtain IRQ resource: %s", iommu.status_string());
+    return iommu.take_error();
+  }
+
+  pciroot_.emplace(kPcirootNodeName, &*root_host_, std::move(ecam), std::move(irq.value()),
+                   std::move(iommu.value()), pci_visitor.is_extended());
 
   if (zx::result<> result =
           pciroot_->CreateInterruptsAndRouting(pci_visitor.gic_v3_interrupt_map_elements());

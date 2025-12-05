@@ -46,7 +46,7 @@ zx_status_t TestBoard::Create(void*, zx_device_t* parent) {
   static const std::vector<fuchsia_hardware_platform_bus::Bti> kBtis{
       []() {
         fuchsia_hardware_platform_bus::Bti ret;
-        ret.iommu_index() = 0;
+        ret.iommu_id() = 0;
         ret.bti_id() = 0;
         ret.name() = "bti-0";
         return ret;

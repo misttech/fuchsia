@@ -59,6 +59,10 @@ class NodeManager {
 
   virtual zx::result<> ChangePublishOrder(uint32_t node_id, uint32_t new_index) = 0;
 
+  // Registers an iommu with the platform bus.
+  virtual zx::result<> RegisterIommu(uint32_t iommu_id,
+                                     fuchsia_hardware_platform_bus::Iommu iommu) = 0;
+
   virtual ~NodeManager();
 };
 
@@ -86,6 +90,11 @@ class Node {
   void AddSmc(fuchsia_hardware_platform_bus::Smc smc);
 
   void AddPowerConfig(fuchsia_hardware_power::PowerElementConfiguration config);
+
+  // Registers an iommu with the platform bus.
+  zx::result<> RegisterIommu(uint32_t iommu_id, fuchsia_hardware_platform_bus::Iommu iommu) {
+    return manager_->RegisterIommu(iommu_id, iommu);
+  }
 
   // Returns the index of the node in the nodes publish list.
   uint32_t GetPublishIndex() const;

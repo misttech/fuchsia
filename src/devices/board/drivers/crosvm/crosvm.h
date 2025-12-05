@@ -30,18 +30,16 @@ namespace board_crosvm {
 class Pciroot : public PcirootBase, public ddk::PcirootProtocol<Pciroot> {
  public:
   Pciroot() = delete;
-  Pciroot(std::string node_name, PciRootHost* root_host, async_dispatcher_t* dispatcher,
-          fdf::ClientEnd<fuchsia_hardware_platform_bus::Iommu> iommu, zx::vmo cam_vmo,
-          zx::resource irq_resource, bool is_extended)
+  Pciroot(std::string node_name, PciRootHost* root_host, zx::vmo cam_vmo, zx::resource irq_resource,
+          zx::resource iommu_resource, bool is_extended)
       : PcirootBase(root_host),
         node_name_(std::move(node_name)),
-        dispatcher_(dispatcher),
-        iommu_(std::move(iommu)),
         cam_(std::move(cam_vmo)),
         irq_resource_(std::move(irq_resource)),
+        iommu_resource_(std::move(iommu_resource)),
         is_extended_(is_extended) {
     ZX_DEBUG_ASSERT(irq_resource_.is_valid());
-    ZX_DEBUG_ASSERT(iommu_.is_valid());
+    ZX_DEBUG_ASSERT(iommu_resource_.is_valid());
   }
   virtual ~Pciroot() = default;
   zx::result<> CreateInterruptsAndRouting(
@@ -68,10 +66,9 @@ class Pciroot : public PcirootBase, public ddk::PcirootProtocol<Pciroot> {
 
  private:
   std::string node_name_;
-  async_dispatcher_t* dispatcher_;
-  fdf::ClientEnd<fuchsia_hardware_platform_bus::Iommu> iommu_;
   zx::vmo cam_;
   const zx::resource irq_resource_;
+  const zx::resource iommu_resource_;
   std::vector<pci_legacy_irq_t> interrupts_;
   std::vector<pci_irq_routing_entry_t> irq_routing_entries_;
   const bool is_extended_;

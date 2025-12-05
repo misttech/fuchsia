@@ -32,7 +32,6 @@ class PlatformBus;
 // This is the main class for the platform bus driver.
 class PlatformBus : public fdf::DriverBase,
                     public fdf::WireServer<fuchsia_hardware_platform_bus::PlatformBus>,
-                    public fdf::WireServer<fuchsia_hardware_platform_bus::Iommu>,
                     public fdf::WireServer<fuchsia_hardware_platform_bus::Firmware>,
                     public fidl::Server<fuchsia_hardware_platform_bus::InterruptAttributor>,
                     public fidl::WireServer<fuchsia_sysinfo::SysInfo> {
@@ -64,13 +63,11 @@ class PlatformBus : public fdf::DriverBase,
                                   RegisterSysSuspendCallbackCompleter::Sync& completer) override;
   void AddCompositeNodeSpec(AddCompositeNodeSpecRequestView request, fdf::Arena& arena,
                             AddCompositeNodeSpecCompleter::Sync& completer) override;
+  void RegisterIommu(RegisterIommuRequestView request, fdf::Arena& arena,
+                     RegisterIommuCompleter::Sync& completer) override;
   void handle_unknown_method(
       fidl::UnknownMethodMetadata<fuchsia_hardware_platform_bus::PlatformBus> metadata,
       fidl::UnknownMethodCompleter::Sync& completer) override;
-
-  // fuchsia.hardware.platform.bus.Iommu implementation.
-  void GetBti(GetBtiRequestView request, fdf::Arena& arena,
-              GetBtiCompleter::Sync& completer) override;
 
   // fuchsia.hardware.platform.bus.Firmware implementation.
   void GetFirmware(GetFirmwareRequestView request, fdf::Arena& arena,
@@ -87,11 +84,12 @@ class PlatformBus : public fdf::DriverBase,
   void GetInterruptControllerInfo(GetInterruptControllerInfoCompleter::Sync& completer) override;
   void GetSerialNumber(GetSerialNumberCompleter::Sync& completer) override;
 
-  zx::result<zx::bti> GetBti(uint32_t iommu_index, uint32_t bti_id, std::string_view name);
+  zx::result<zx::bti> GetBti(uint32_t iommu_id, uint32_t bti_id, std::string_view name);
 
   zx::unowned_resource GetIrqResource() const;
   zx::unowned_resource GetMmioResource() const;
   zx::unowned_resource GetSmcResource() const;
+  zx::unowned_resource GetIommuResource() const;
 
   struct BootItemResult {
     zx::vmo vmo;
@@ -107,10 +105,6 @@ class PlatformBus : public fdf::DriverBase,
 
   fdf::ServerBindingGroup<fuchsia_hardware_platform_bus::PlatformBus>& bindings() {
     return bindings_;
-  }
-
-  fdf::ServerBindingGroup<fuchsia_hardware_platform_bus::Iommu>& iommu_bindings() {
-    return iommu_bindings_;
   }
 
   fdf::ServerBindingGroup<fuchsia_hardware_platform_bus::Firmware>& fw_bindings() {
@@ -133,6 +127,21 @@ class PlatformBus : public fdf::DriverBase,
   }
 
  private:
+  template <typename Protocol>
+  zx::unowned_resource GetResource() const {
+    static zx::resource resource;
+    if (!resource.is_valid()) {
+      zx::result client = incoming()->Connect<Protocol>();
+      if (client.is_ok()) {
+        fidl::Result result = fidl::Call(*client)->Get();
+        if (result.is_ok()) {
+          resource = std::move(result.value().resource());
+        }
+      }
+    }
+    return resource.borrow();
+  }
+
   fidl::WireClient<fuchsia_hardware_platform_bus::SysSuspend> suspend_cb_;
 
   DISALLOW_COPY_ASSIGN_AND_MOVE(PlatformBus);
@@ -154,8 +163,8 @@ class PlatformBus : public fdf::DriverBase,
   fuchsia_sysinfo::wire::InterruptControllerType interrupt_controller_type_ =
       fuchsia_sysinfo::wire::InterruptControllerType::kUnknown;
 
-  // Dummy IOMMU.
-  zx::iommu iommu_handle_;
+  // Map of iommu ids to iommu handles.
+  std::map<uint32_t, zx::iommu> iommu_handles_;
 
   std::map<std::pair<uint32_t, uint32_t>, zx::bti> cached_btis_;
 
@@ -168,7 +177,6 @@ class PlatformBus : public fdf::DriverBase,
   compat::DeviceServer device_server_;
 
   fdf::ServerBindingGroup<fuchsia_hardware_platform_bus::PlatformBus> bindings_;
-  fdf::ServerBindingGroup<fuchsia_hardware_platform_bus::Iommu> iommu_bindings_;
   fdf::ServerBindingGroup<fuchsia_hardware_platform_bus::Firmware> fw_bindings_;
   fidl::ServerBindingGroup<fuchsia_hardware_platform_bus::InterruptAttributor> interrupt_bindings_;
   fidl::ServerBindingGroup<fuchsia_sysinfo::SysInfo> sysinfo_bindings_;

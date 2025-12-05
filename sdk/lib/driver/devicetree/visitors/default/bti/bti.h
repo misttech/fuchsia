@@ -9,7 +9,7 @@
 #include <lib/driver/devicetree/visitors/property-parser.h>
 
 #include <memory>
-#include <vector>
+#include <set>
 
 namespace fdf_devicetree {
 
@@ -21,14 +21,14 @@ class BtiVisitor : public Visitor {
   ~BtiVisitor() override = default;
   zx::result<> Visit(Node& node, const devicetree::PropertyDecoder& decoder) override;
 
-  static bool IsIommu(std::string_view node_name) { return node_name == "iommu"; }
+  static bool IsIommu(std::string_view node_name) { return node_name.starts_with("iommu"); }
 
  private:
   zx::result<> ReferenceChildVisit(Node& child, ReferenceNode& parent,
                                    PropertyCells reference_cells,
                                    std::optional<std::string> iommu_name);
 
-  std::vector<Phandle> iommu_nodes_;
+  std::set<Phandle> iommu_nodes_;
   std::unique_ptr<PropertyParser> reference_parser_;
 };
 

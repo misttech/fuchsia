@@ -51,7 +51,7 @@ static const std::vector<fpbus::Irq> raw_nand_irqs{
 
 static const std::vector<fpbus::Bti> raw_nand_btis{
     {{
-        .iommu_index = 0,
+        .iommu_id = 0,
         .bti_id = BTI_AML_RAW_NAND,
     }},
 };

@@ -21,7 +21,7 @@ constexpr bool IsValid(const fuchsia_hardware_platform_bus::Irq& irq) {
 }
 
 constexpr bool IsValid(const fuchsia_hardware_platform_bus::Bti& bti) {
-  return (bti.bti_id() != std::nullopt) && (bti.iommu_index() != std::nullopt);
+  return (bti.bti_id() != std::nullopt) && (bti.iommu_id() != std::nullopt);
 }
 
 constexpr bool IsValid(const fuchsia_hardware_platform_bus::Smc& smc) {

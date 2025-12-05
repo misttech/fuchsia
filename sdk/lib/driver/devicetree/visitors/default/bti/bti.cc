@@ -78,6 +78,9 @@ zx::result<> BtiVisitor::Visit(Node& node, const devicetree::PropertyDecoder& de
       if (result.is_error()) {
         return result.take_error();
       }
+    } else {
+      FDF_LOG(WARNING, "Node %s iommu references illegal parent: %s", node.name().c_str(),
+              reference.reference_node().name().c_str());
     }
   }
 
@@ -87,31 +90,28 @@ zx::result<> BtiVisitor::Visit(Node& node, const devicetree::PropertyDecoder& de
 zx::result<> BtiVisitor::ReferenceChildVisit(Node& child, ReferenceNode& parent,
                                              PropertyCells reference_cells,
                                              std::optional<std::string> iommu_name) {
-  std::optional<uint32_t> iommu_index;
-
-  // Check if iommu is already registered.
-  for (uint32_t i = 0; i < iommu_nodes_.size(); i++) {
-    if (iommu_nodes_[i] == parent.phandle()) {
-      iommu_index = i;
-      break;
+  const uint32_t iommu_id = parent.id();
+  auto [_, inserted] = iommu_nodes_.insert(iommu_id);
+  if (inserted) {
+    auto reg = parent.GetProperty<std::vector<uint32_t>>("reg");
+    if (reg.is_ok() && !reg->empty()) {
+      std::ignore = child.RegisterIommu(
+          parent.id(), fuchsia_hardware_platform_bus::Iommu::WithArmSmmu(reg.value()[0]));
+    } else {
+      std::ignore =
+          child.RegisterIommu(parent.id(), fuchsia_hardware_platform_bus::Iommu::WithStubIommu({}));
     }
-  }
-
-  // Register iommu if not found.
-  if (!iommu_index) {
-    iommu_nodes_.push_back(*parent.phandle());
-    iommu_index = iommu_nodes_.size() - 1;
   }
 
   auto iommu_cell = IommuCell(reference_cells);
 
   fuchsia_hardware_platform_bus::Bti bti = {{
-      .iommu_index = iommu_index,
+      .iommu_id = iommu_id,
       .bti_id = iommu_cell.bti_id(),
       .name = std::move(iommu_name),
   }};
   FDF_LOG(DEBUG, "BTI %s index: 0x%0x, id: 0x%0x, added to node '%s'.",
-          bti.name().has_value() ? bti.name()->c_str() : "(no name)", *bti.iommu_index(),
+          bti.name().has_value() ? bti.name()->c_str() : "(no name)", *bti.iommu_id(),
           *bti.bti_id(), child.name().c_str());
   child.AddBti(bti);
 

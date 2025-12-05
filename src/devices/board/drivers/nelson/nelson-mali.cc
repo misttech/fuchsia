@@ -65,7 +65,7 @@ static const std::vector<fpbus::Irq> mali_irqs{
 
 static const std::vector<fpbus::Bti> mali_btis{
     {{
-        .iommu_index = 0,
+        .iommu_id = 0,
         .bti_id = BTI_MALI,
     }},
 };

@@ -7,6 +7,7 @@
 #include <fidl/fuchsia.hardware.pci/cpp/wire.h>
 #include <fidl/fuchsia.hardware.platform.bus/cpp/driver/fidl.h>
 #include <fidl/fuchsia.hardware.platform.bus/cpp/fidl.h>
+#include <fidl/fuchsia.kernel/cpp/fidl.h>
 #include <fuchsia/hardware/pciroot/c/banjo.h>
 #include <lib/async/cpp/task.h>
 #include <lib/ddk/debug.h>
@@ -14,12 +15,15 @@
 #include <lib/ddk/platform-defs.h>
 #include <lib/fit/defer.h>
 #include <lib/sync/cpp/completion.h>
+#include <lib/zx/iommu.h>
+#include <lib/zx/resource.h>
 #include <lib/zx/result.h>
 #include <lib/zx/vmo.h>
 #include <stdint.h>
 #include <zircon/errors.h>
 #include <zircon/rights.h>
 #include <zircon/status.h>
+#include <zircon/syscalls/iommu.h>
 #include <zircon/syscalls/types.h>
 
 #include <fbl/alloc_checker.h>
@@ -54,29 +58,25 @@ constexpr McfgAllocation kVirtPcieMcfg = {
 }  // namespace
 
 zx_status_t QemuRiscv64Pciroot::PcirootGetBti(uint32_t bdf, uint32_t index, zx::bti* bti) {
-  zx_status_t status = ZX_ERR_NOT_FOUND;
-  libsync::Completion completion;
-  async::PostTask(dispatcher_, [this, &status, &completion, &bti, bdf, index]() {
-    auto complete = fit::defer([&completion]() { completion.Signal(); });
-    fdf::Arena arena('pcir');
-    fdf::WireUnownedResult result =
-        fdf::WireCall(iommu_).buffer(arena)->GetBti(/*iommu_index=*/index, /*bti_id=*/bdf);
-    if (!result.ok()) {
-      zxlogf(ERROR, "GetBti failed, transport error %s",
-             result.error().FormatDescription().c_str());
-      status = result.error().status();
-      return;
-    }
-    if (result->is_error()) {
-      zxlogf(ERROR, "GetBti failed, domain error %s", zx_status_get_string(result->error_value()));
-      status = result->error_value();
-      return;
-    }
-    *bti = std::move(result->value()->bti);
-    status = ZX_OK;
-  });
-  completion.Wait();
-  return status;
+  // We are creating a fake iommu because we currently don't support a real one. This will
+  // eventually need to change.
+  zx::result client = DdkConnectNsProtocol<fuchsia_kernel::IommuResource>();
+  if (!client.is_ok()) {
+    return client.status_value();
+  }
+  fidl::Result result = fidl::Call(*client)->Get();
+  if (!result.is_ok()) {
+    return result.error_value().status();
+  }
+  auto& iommu_resource = result.value().resource();
+  zx_iommu_desc_stub_t desc;
+  zx::iommu iommu;
+  zx_status_t status =
+      zx::iommu::create(iommu_resource, ZX_IOMMU_TYPE_STUB, &desc, sizeof(desc), &iommu);
+  if (status != ZX_OK) {
+    return status;
+  }
+  return zx::bti::create(iommu, 0, bdf, bti);
 }
 
 zx_status_t QemuRiscv64Pciroot::PcirootGetPciPlatformInfo(pci_platform_info_t* info) {
@@ -101,14 +101,8 @@ zx_status_t QemuRiscv64Pciroot::PcirootGetPciPlatformInfo(pci_platform_info_t* i
 
 zx::result<> QemuRiscv64Pciroot::Create(PciRootHost* root_host, QemuRiscv64Pciroot::Context ctx,
                                         zx_device_t* parent, const char* name) {
-  zx::result iommu =
-      ddk::Device<void>::DdkConnectRuntimeProtocol<fuchsia_hardware_platform_bus::Service::Iommu>(
-          parent);
-  if (iommu.is_error()) {
-    return iommu.take_error();
-  }
   auto pciroot = std::unique_ptr<QemuRiscv64Pciroot>(
-      new QemuRiscv64Pciroot(root_host, std::move(ctx), parent, name, std::move(*iommu)));
+      new QemuRiscv64Pciroot(root_host, std::move(ctx), parent, name));
   if (auto result = pciroot->CreateInterrupts(); result.is_error()) {
     return result.take_error();
   }

@@ -26,7 +26,7 @@ namespace fpbus = fuchsia_hardware_platform_bus;
 
 static const std::vector<fpbus::Bti> astro_secure_mem_btis{
     {{
-        .iommu_index = 0,
+        .iommu_id = 0,
         .bti_id = BTI_AML_SECURE_MEM,
     }},
 };

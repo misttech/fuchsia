@@ -263,7 +263,7 @@ zx_status_t Nelson::Spi1Init() {
 
   static const std::vector<fpbus::Bti> spi_1_btis{
       {{
-          .iommu_index = 0,
+          .iommu_id = 0,
           .bti_id = BTI_SPI1,
       }},
   };

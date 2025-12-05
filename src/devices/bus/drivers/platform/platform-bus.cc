@@ -37,6 +37,8 @@ namespace {
 namespace fhpb = fuchsia_hardware_platform_bus;
 namespace fss = fuchsia_system_state;
 
+constexpr uint32_t kDummyIommuIndex = 0;
+
 zx::result<> ValidateResources(fhpb::Node& node) {
   if (node.name() == std::nullopt) {
     fdf::error("Node has no name?");
@@ -108,8 +110,6 @@ zx::result<fidl::ClientEnd<fuchsia_driver_framework::NodeController>> AddProtoco
   fhpb::Service::InstanceHandler handler({
       .platform_bus = bus->bindings().CreateHandler(bus, bus->driver_dispatcher()->get(),
                                                     fidl::kIgnoreBindingClosure),
-      .iommu = bus->iommu_bindings().CreateHandler(bus, bus->driver_dispatcher()->get(),
-                                                   fidl::kIgnoreBindingClosure),
       .firmware = bus->fw_bindings().CreateHandler(bus, bus->driver_dispatcher()->get(),
                                                    fidl::kIgnoreBindingClosure),
   });
@@ -158,24 +158,25 @@ uint8_t PowerStateToSuspendReason(fss::SystemPowerState power_state) {
 
 }  // anonymous namespace
 
-zx::result<zx::bti> PlatformBus::GetBti(uint32_t iommu_index, uint32_t bti_id,
+zx::result<zx::bti> PlatformBus::GetBti(uint32_t iommu_id, uint32_t bti_id,
                                         std::string_view dev_name) {
-  if (iommu_index != 0) {
-    return zx::error(ZX_ERR_OUT_OF_RANGE);
+  auto iter = iommu_handles_.find(iommu_id);
+  if (iter == iommu_handles_.end()) {
+    return zx::error(ZX_ERR_INVALID_ARGS);
   }
+  auto& iommu_handle = iter->second;
 
-  std::pair key(iommu_index, bti_id);
+  std::pair key(iommu_id, bti_id);
   auto bti = cached_btis_.find(key);
   if (bti == cached_btis_.end()) {
     zx::bti new_bti;
-    zx_status_t status = zx::bti::create(iommu_handle_, 0, bti_id, &new_bti);
+    zx_status_t status = zx::bti::create(iommu_handle, 0, bti_id, &new_bti);
     if (status != ZX_OK) {
       return zx::error(status);
     }
 
     char name[ZX_MAX_NAME_LEN]{};
-    std::format_to_n(name, sizeof(name) - 1, "{}.pbus[{:02x}:{:02x}]", dev_name, iommu_index,
-                     bti_id);
+    std::format_to_n(name, sizeof(name) - 1, "{}.pbus[{:02x}:{:02x}]", dev_name, iommu_id, bti_id);
     status = new_bti.set_property(ZX_PROP_NAME, name, std::size(name));
     if (status != ZX_OK) {
       fdf::warn("Couldn't set name for BTI '{}': {}", std::string_view(name),
@@ -194,45 +195,19 @@ zx::result<zx::bti> PlatformBus::GetBti(uint32_t iommu_index, uint32_t bti_id,
 }
 
 zx::unowned_resource PlatformBus::GetIrqResource() const {
-  static zx::resource irq_resource;
-  if (!irq_resource.is_valid()) {
-    zx::result client = incoming()->Connect<fuchsia_kernel::IrqResource>();
-    if (client.is_ok()) {
-      fidl::Result resource = fidl::Call(*client)->Get();
-      if (resource.is_ok()) {
-        irq_resource = std::move(resource.value().resource());
-      }
-    }
-  }
-  return irq_resource.borrow();
+  return GetResource<fuchsia_kernel::IrqResource>();
 }
 
 zx::unowned_resource PlatformBus::GetMmioResource() const {
-  static zx::resource mmio_resource;
-  if (!mmio_resource.is_valid()) {
-    zx::result client = incoming()->Connect<fuchsia_kernel::MmioResource>();
-    if (client.is_ok()) {
-      fidl::Result resource = fidl::Call(*client)->Get();
-      if (resource.is_ok()) {
-        mmio_resource = std::move(resource.value().resource());
-      }
-    }
-  }
-  return mmio_resource.borrow();
+  return GetResource<fuchsia_kernel::MmioResource>();
 }
 
 zx::unowned_resource PlatformBus::GetSmcResource() const {
-  static zx::resource smc_resource;
-  if (!smc_resource.is_valid()) {
-    zx::result client = incoming()->Connect<fuchsia_kernel::SmcResource>();
-    if (client.is_ok()) {
-      fidl::Result resource = fidl::Call(*client)->Get();
-      if (resource.is_ok()) {
-        smc_resource = std::move(resource.value().resource());
-      }
-    }
-  }
-  return smc_resource.borrow();
+  return GetResource<fuchsia_kernel::SmcResource>();
+}
+
+zx::unowned_resource PlatformBus::GetIommuResource() const {
+  return GetResource<fuchsia_kernel::IommuResource>();
 }
 
 void PlatformBus::NodeAdd(NodeAddRequestView request, fdf::Arena& arena,
@@ -451,16 +426,51 @@ void PlatformBus::AddCompositeNodeSpec(AddCompositeNodeSpecRequestView request, 
   completer.buffer(arena).ReplySuccess();
 }
 
-void PlatformBus::GetBti(GetBtiRequestView request, fdf::Arena& arena,
-                         GetBtiCompleter::Sync& completer) {
-  zx::result bti = GetBti(request->iommu_index, request->bti_id, "");
-
-  if (bti.is_error()) {
-    completer.buffer(arena).ReplyError(bti.status_value());
+void PlatformBus::RegisterIommu(RegisterIommuRequestView request, fdf::Arena& arena,
+                                RegisterIommuCompleter::Sync& completer) {
+  if (iommu_handles_.contains(request->iommu_id)) {
+    fdf::error("Iommu for index {} already created", request->iommu_id);
+    completer.buffer(arena).ReplyError(ZX_ERR_ALREADY_EXISTS);
     return;
   }
 
-  completer.buffer(arena).ReplySuccess(std::move(bti.value()));
+  zx::unowned_resource resource = GetIommuResource();
+  if (!resource->is_valid()) {
+    completer.buffer(arena).ReplyError(ZX_ERR_ACCESS_DENIED);
+    return;
+  }
+
+  zx::iommu iommu;
+  if (request->iommu.is_stub_iommu()) {
+    zx_iommu_desc_stub_t desc{};
+    zx_status_t status =
+        zx::iommu::create(*resource, ZX_IOMMU_TYPE_STUB, &desc, sizeof(desc), &iommu);
+    if (status != ZX_OK) {
+      fdf::error("Failed to get get create iommu {}", zx_status_get_string(status));
+      completer.buffer(arena).ReplyError(status);
+      return;
+    }
+    fdf::info("Registered stub iommu {}", request->iommu_id);
+  } else if (request->iommu.is_arm_smmu()) {
+    zx_iommu_desc_arm_smmu desc{
+        .register_base = request->iommu.arm_smmu().base_address,
+    };
+    zx_status_t status =
+        zx::iommu::create(*resource, ZX_IOMMU_TYPE_ARM_SMMU, &desc, sizeof(desc), &iommu);
+    if (status != ZX_OK) {
+      fdf::error("Failed to create iommu {}", zx_status_get_string(status));
+      completer.buffer(arena).ReplyError(status);
+      return;
+    }
+    fdf::info("Registered arm smmu {}", request->iommu_id);
+  } else {
+    fdf::error("Iommu for index {} using unsupported type", request->iommu_id);
+    completer.buffer(arena).ReplyError(ZX_ERR_NOT_SUPPORTED);
+    return;
+  }
+
+  iommu_handles_[request->iommu_id] = std::move(iommu);
+  completer.buffer(arena).ReplySuccess();
 }
 
 void PlatformBus::GetFirmware(GetFirmwareRequestView request, fdf::Arena& arena,
@@ -593,19 +603,16 @@ zx::result<> PlatformBus::Start() {
 
   // Set up a stub IOMMU protocol to use in the case where our board driver
   // does not set a real one.
-  zx_iommu_desc_stub_t desc;
-
-  zx::result iommu_client = incoming()->Connect<fuchsia_kernel::IommuResource>();
-  if (iommu_client.is_ok()) {
-    auto result = fidl::Call(iommu_client.value())->Get();
-    if (result.is_ok()) {
-      zx_status_t status = zx::iommu::create(result->resource(), ZX_IOMMU_TYPE_STUB, &desc,
-                                             sizeof(desc), &iommu_handle_);
-      if (status != ZX_OK) {
-        fdf::error("Failed to get get create iommu {}", zx_status_get_string(status));
-        return zx::error(status);
-      }
+  if (zx::unowned_resource resource = GetIommuResource(); resource->is_valid()) {
+    zx_iommu_desc_stub_t desc;
+    zx::iommu iommu;
+    zx_status_t status =
+        zx::iommu::create(*resource, ZX_IOMMU_TYPE_STUB, &desc, sizeof(desc), &iommu);
+    if (status != ZX_OK) {
+      fdf::error("Failed to get get create iommu {}", zx_status_get_string(status));
+      return zx::error(status);
     }
+    iommu_handles_[kDummyIommuIndex] = std::move(iommu);
   }
 
   // Read kernel driver.

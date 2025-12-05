@@ -74,6 +74,11 @@ class FakePlatformBus final : public fdf::Server<fuchsia_hardware_platform_bus::
     completer.Reply(zx::error(ZX_ERR_NOT_SUPPORTED));
   }
 
+  void RegisterIommu(RegisterIommuRequest& request,
+                     RegisterIommuCompleter::Sync& completer) override {
+    completer.Reply(zx::ok());
+  }
+
   void handle_unknown_method(
       fidl::UnknownMethodMetadata<fuchsia_hardware_platform_bus::PlatformBus> metadata,
       fidl::UnknownMethodCompleter::Sync& completer) override {}

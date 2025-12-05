@@ -72,7 +72,7 @@ zx_status_t QemuArm64::PciInit() {
 zx_status_t QemuArm64::PciAdd() {
   static const std::vector<fpbus::Bti> kPciBtis{
       {{
-          .iommu_index = 0,
+          .iommu_id = 0,
           .bti_id = 0,
       }},
   };

@@ -99,7 +99,7 @@ static const std::vector<fpbus::Irq> display_irqs{
 
 static const std::vector<fpbus::Bti> display_btis{
     {{
-        .iommu_index = 0,
+        .iommu_id = 0,
         .bti_id = BTI_DISPLAY,
     }},
 };

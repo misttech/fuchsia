@@ -55,21 +55,14 @@ class QemuRiscv64Pciroot : public QemuRiscv64PcirootType,
 
  private:
   QemuRiscv64Pciroot(PciRootHost* root_host, QemuRiscv64Pciroot::Context context,
-                     zx_device_t* parent, const char* name,
-                     fdf::ClientEnd<fuchsia_hardware_platform_bus::Iommu> iommu)
-      : QemuRiscv64PcirootType(parent),
-        PcirootBase(root_host),
-
-        context_(std::move(context)),
-
-        iommu_(std::move(iommu)) {}
+                     zx_device_t* parent, const char* name)
+      : QemuRiscv64PcirootType(parent), PcirootBase(root_host), context_(std::move(context)) {}
   zx::result<> CreateInterrupts();
 
   async_dispatcher_t* dispatcher_ = fdf::Dispatcher::GetCurrent()->async_dispatcher();
   Context context_;
   std::vector<pci_legacy_irq_t> interrupts_;
   std::vector<pci_irq_routing_entry_t> irq_routing_entries_;
-  fdf::ClientEnd<fuchsia_hardware_platform_bus::Iommu> iommu_;
 };
 
 }  // namespace board_qemu_riscv64

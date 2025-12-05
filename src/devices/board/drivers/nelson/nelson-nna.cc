@@ -41,7 +41,7 @@ static const std::vector<fpbus::Mmio> nna_mmios{
 
 static const std::vector<fpbus::Bti> nna_btis{
     {{
-        .iommu_index = 0,
+        .iommu_id = 0,
         .bti_id = BTI_NNA,
     }},
 };

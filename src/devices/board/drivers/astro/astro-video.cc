@@ -50,7 +50,7 @@ static const std::vector<fpbus::Mmio> astro_video_mmios{
 
 static const std::vector<fpbus::Bti> astro_video_btis{
     {{
-        .iommu_index = 0,
+        .iommu_id = 0,
         .bti_id = BTI_VIDEO,
     }},
 };

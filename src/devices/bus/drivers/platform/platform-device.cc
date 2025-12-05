@@ -231,6 +231,7 @@ zx::result<zx::interrupt> PlatformDevice::GetInterrupt(uint32_t index, uint32_t 
 
 zx::result<zx::bti> PlatformDevice::GetBti(uint32_t index) const {
   if (node_.bti() == std::nullopt || index >= node_.bti()->size()) {
+    fdf::error("Trying to get bti with index {}", index);
     return zx::error(ZX_ERR_OUT_OF_RANGE);
   }
 
@@ -239,7 +240,7 @@ zx::result<zx::bti> PlatformDevice::GetBti(uint32_t index) const {
     return zx::error(ZX_ERR_INTERNAL);
   }
 
-  return bus_->GetBti(bti.iommu_index().value(), bti.bti_id().value(), name());
+  return bus_->GetBti(bti.iommu_id().value(), bti.bti_id().value(), name());
 }
 
 zx::result<zx::resource> PlatformDevice::GetSmc(uint32_t index) const {
