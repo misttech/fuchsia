@@ -10,7 +10,7 @@
 #include <fuchsia/net/virtualization/cpp/fidl.h>
 // clang-format on
 
-#include <fuchsia/hardware/network/driver/cpp/banjo.h>
+#include <fidl/fuchsia.hardware.network.driver/cpp/driver/wire.h>
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/fit/function.h>
 #include <lib/syslog/cpp/macros.h>
@@ -20,8 +20,9 @@
 
 class HostToGuestCompletionQueue {
  public:
-  HostToGuestCompletionQueue(async_dispatcher_t* dispatcher,
-                             ddk::NetworkDeviceIfcProtocolClient* device)
+  HostToGuestCompletionQueue(
+      async_dispatcher_t* dispatcher,
+      fdf::WireSharedClient<fuchsia_hardware_network_driver::NetworkDeviceIfc>* device)
       : dispatcher_(dispatcher), device_(device) {}
 
   // Write a completion to the queue, scheduling a task to send a completion to the netstack if
@@ -44,17 +45,20 @@ class HostToGuestCompletionQueue {
 
   std::mutex mutex_;
 
-  async_dispatcher_t* const dispatcher_ = nullptr;                     // Unowned.
-  const ddk::NetworkDeviceIfcProtocolClient* const device_ = nullptr;  // Unowned.
+  async_dispatcher_t* const dispatcher_ = nullptr;  // Unowned.
+  const fdf::WireSharedClient<fuchsia_hardware_network_driver::NetworkDeviceIfc>* const device_ =
+      nullptr;  // Unowned.
 
-  std::array<tx_result, kQueueDepth> result_ __TA_GUARDED(mutex_);
+  std::array<fuchsia_hardware_network_driver::wire::TxResult, kQueueDepth> result_
+      __TA_GUARDED(mutex_);
   uint32_t count_ __TA_GUARDED(mutex_) = 0;
 };
 
 class GuestToHostCompletionQueue {
  public:
-  GuestToHostCompletionQueue(uint8_t port, async_dispatcher_t* dispatcher,
-                             ddk::NetworkDeviceIfcProtocolClient* device);
+  GuestToHostCompletionQueue(
+      uint8_t port, async_dispatcher_t* dispatcher,
+      fdf::WireSharedClient<fuchsia_hardware_network_driver::NetworkDeviceIfc>* device);
 
   // Write a completion to the queue, scheduling a task to send a completion to the netstack if
   // needed. If the queue is full, this won't be batched and instead will be scheduled
@@ -81,13 +85,16 @@ class GuestToHostCompletionQueue {
   std::mutex mutex_;
   const uint8_t port_;
 
-  async_dispatcher_t* const dispatcher_ = nullptr;                     // Unowned.
-  const ddk::NetworkDeviceIfcProtocolClient* const device_ = nullptr;  // Unowned.
+  async_dispatcher_t* const dispatcher_ = nullptr;  // Unowned.
+  const fdf::WireSharedClient<fuchsia_hardware_network_driver::NetworkDeviceIfc>* const device_ =
+      nullptr;  // Unowned.
 
   // Only one buffer part is supported (no scatter/gather), so there is a 1:1 mapping between
   // buffer_ and buffer_part_.
-  std::array<rx_buffer, kQueueDepth> buffer_ __TA_GUARDED(mutex_);
-  std::array<rx_buffer_part, kQueueDepth> buffer_part_ __TA_GUARDED(mutex_);
+  std::array<fuchsia_hardware_network_driver::wire::RxBuffer, kQueueDepth> buffer_
+      __TA_GUARDED(mutex_);
+  std::array<fuchsia_hardware_network_driver::wire::RxBufferPart, kQueueDepth> buffer_part_
+      __TA_GUARDED(mutex_);
   uint32_t count_ __TA_GUARDED(mutex_) = 0;
 };
 

@@ -22,8 +22,8 @@ zx_status_t guest_ethernet_create(GuestEthernetContext* context,
   if (context == nullptr) {
     return ZX_ERR_INVALID_ARGS;
   }
-  auto guest_ethernet = std::make_unique<GuestEthernet>(
-      context->SyncDispatcher(), context->Dispatchers(), context->ShimDispatchers());
+  auto guest_ethernet =
+      std::make_unique<GuestEthernet>(context->SyncDispatcher(), context->Dispatchers());
   *guest_ethernet_out = guest_ethernet.release();
   return ZX_OK;
 }

@@ -27,10 +27,16 @@ void HostToGuestCompletionQueue::Complete(uint32_t buffer_id, zx_status_t status
 void HostToGuestCompletionQueue::SendBatched() {
   std::lock_guard guard(mutex_);
 
+  fdf::Arena arena(0u);
   uint32_t idx = 0;
   while (idx != count_) {
     uint32_t batch_count = std::min(count_ - idx, kMaxDepth);
-    device_->CompleteTx(&result_[idx], batch_count);
+    FX_CHECK(
+        device_->buffer(arena)
+            ->CompleteTx(
+                fidl::VectorView<fuchsia_hardware_network_driver::wire::TxResult>::FromExternal(
+                    &result_[idx], batch_count))
+            .ok());
     idx += batch_count;
   }
 
@@ -39,17 +45,25 @@ void HostToGuestCompletionQueue::SendBatched() {
 
 void HostToGuestCompletionQueue::ScheduleIndividual(uint32_t buffer_id, zx_status_t status) {
   async::PostTask(dispatcher_, [this, buffer_id, status]() {
-    tx_result result = {
+    fuchsia_hardware_network_driver::wire::TxResult result[] = {{
         .id = buffer_id,
         .status = status,
-    };
+    }};
 
-    device_->CompleteTx(&result, /*tx_count=*/1);
+    fdf::Arena arena(0u);
+
+    FX_CHECK(
+        device_->buffer(arena)
+            ->CompleteTx(
+                fidl::VectorView<fuchsia_hardware_network_driver::wire::TxResult>::FromExternal(
+                    result))
+            .ok());
   });
 }
 
-GuestToHostCompletionQueue::GuestToHostCompletionQueue(uint8_t port, async_dispatcher_t* dispatcher,
-                                                       ddk::NetworkDeviceIfcProtocolClient* device)
+GuestToHostCompletionQueue::GuestToHostCompletionQueue(
+    uint8_t port, async_dispatcher_t* dispatcher,
+    fdf::WireSharedClient<fuchsia_hardware_network_driver::NetworkDeviceIfc>* device)
     : port_(port), dispatcher_(dispatcher), device_(device) {
   // Initialize the static parts of the completion notifications. These will be reused.
   FX_CHECK(buffer_.size() == buffer_part_.size());
@@ -58,11 +72,10 @@ GuestToHostCompletionQueue::GuestToHostCompletionQueue(uint8_t port, async_dispa
         .meta =
             {
                 .port = port_,
-                .frame_type =
-                    static_cast<uint8_t>(::fuchsia::hardware::network::FrameType::ETHERNET),
+                .frame_type = fuchsia_hardware_network::wire::FrameType::kEthernet,
             },
-        .data_list = &buffer_part_[i],
-        .data_count = 1,
+        .data = fidl::VectorView<fuchsia_hardware_network_driver::wire::RxBufferPart>::FromExternal(
+            &buffer_part_[i], 1),
     };
   }
 }
@@ -89,10 +102,17 @@ void GuestToHostCompletionQueue::Complete(uint32_t buffer_id, uint32_t length) {
 void GuestToHostCompletionQueue::SendBatched() {
   std::lock_guard guard(mutex_);
 
+  fdf::Arena arena(0u);
   uint32_t idx = 0;
   while (idx != count_) {
     uint32_t batch_count = std::min(count_ - idx, kMaxDepth);
-    device_->CompleteRx(&buffer_[idx], batch_count);
+    FX_CHECK(
+        device_->buffer(arena)
+            ->CompleteRx(
+                fidl::VectorView<fuchsia_hardware_network_driver::wire::RxBuffer>::FromExternal(
+                    &buffer_[idx], batch_count))
+            .ok());
+
     idx += batch_count;
   }
 
@@ -101,22 +121,27 @@ void GuestToHostCompletionQueue::SendBatched() {
 
 void GuestToHostCompletionQueue::ScheduleIndividual(uint32_t buffer_id, uint32_t length) {
   async::PostTask(dispatcher_, [this, buffer_id, length]() {
-    rx_buffer_part part = {
+    fuchsia_hardware_network_driver::wire::RxBufferPart part[] = {{
         .id = buffer_id,
         .offset = 0,
         .length = length,
-    };
-    rx_buffer rx_info = {
+    }};
+    fuchsia_hardware_network_driver::wire::RxBuffer rx_info[] = {{
         .meta =
             {
                 .port = port_,
-                .frame_type =
-                    static_cast<uint8_t>(::fuchsia::hardware::network::FrameType::ETHERNET),
+                .frame_type = fuchsia_hardware_network::wire::FrameType::kEthernet,
             },
-        .data_list = &part,
-        .data_count = 1,
-    };
+        .data = fidl::VectorView<fuchsia_hardware_network_driver::wire::RxBufferPart>::FromExternal(
+            part),
+    }};
 
-    device_->CompleteRx(&rx_info, /*rx_count=*/1);
+    fdf::Arena arena(0u);
+    FX_CHECK(
+        device_->buffer(arena)
+            ->CompleteRx(
+                fidl::VectorView<fuchsia_hardware_network_driver::wire::RxBuffer>::FromExternal(
+                    rx_info))
+            .ok());
   });
 }

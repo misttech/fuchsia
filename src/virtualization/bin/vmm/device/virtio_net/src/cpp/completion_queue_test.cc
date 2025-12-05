@@ -4,6 +4,11 @@
 
 #include "src/virtualization/bin/vmm/device/virtio_net/src/cpp/completion_queue.h"
 
+#include <lib/driver/testing/cpp/driver_runtime.h>
+
+#include <latch>
+
+#include <gmock/gmock.h>
 #include <src/lib/testing/loop_fixture/test_loop_fixture.h>
 
 namespace {
@@ -15,69 +20,75 @@ constexpr uint32_t kFirstBufferLength = 128;
 
 constexpr uint8_t kPort = 5;
 
-class FakeNetDevice : public ddk::NetworkDeviceIfcProtocol<FakeNetDevice> {
+class FakeNetDevice : public fdf::WireServer<fuchsia_hardware_network_driver::NetworkDeviceIfc> {
  public:
-  ddk::NetworkDeviceIfcProtocolClient GetClient() {
-    const network_device_ifc_protocol_t protocol = {
-        .ops = &network_device_ifc_protocol_ops_,
-        .ctx = this,
-    };
-
-    return ddk::NetworkDeviceIfcProtocolClient(&protocol);
+  fdf::ClientEnd<fuchsia_hardware_network_driver::NetworkDeviceIfc> GetClient() {
+    auto [client, server] =
+        fdf::Endpoints<fuchsia_hardware_network_driver::NetworkDeviceIfc>::Create();
+    fdf::BindServer(fdf_testing::DriverRuntime::GetInstance()->StartBackgroundDispatcher()->get(),
+                    std::move(server), this);
+    return std::move(client);
   }
 
-  void NetworkDeviceIfcCompleteRx(const rx_buffer_t* rx_list, size_t rx_count) {
-    std::vector<rx_buffer_part_t> batch;
-    for (size_t i = 0; i < rx_count; i++) {
+  void CompleteRx(fuchsia_hardware_network_driver::wire::NetworkDeviceIfcCompleteRxRequest* request,
+                  fdf::Arena& arena, CompleteRxCompleter::Sync& completer) override {
+    std::vector<fuchsia_hardware_network_driver::wire::RxBufferPart> batch;
+    for (const auto& buffer : request->rx) {
       // Static values which should be the same for every completed buffer.
-      ASSERT_EQ(rx_list->data_list->offset, 0u);
-      ASSERT_EQ(rx_list->meta.port, kPort);
-      ASSERT_EQ(rx_list->data_count, 1u);
-      ASSERT_EQ(rx_list->meta.frame_type,
-                static_cast<uint8_t>(::fuchsia::hardware::network::FrameType::ETHERNET));
+      ASSERT_EQ(buffer.data.size(), 1u);
+      ASSERT_EQ(buffer.data[0].offset, 0u);
+      ASSERT_EQ(buffer.meta.port, kPort);
+      ASSERT_EQ(buffer.meta.frame_type, fuchsia_hardware_network::wire::FrameType::kEthernet);
 
-      batch.push_back(*(rx_list->data_list));
-      rx_list++;
+      batch.push_back(buffer.data[0]);
     }
     rx_batches_.push_back(batch);
+
+    OnCompleteRx();
   }
 
-  void NetworkDeviceIfcCompleteTx(const tx_result_t* tx_list, size_t tx_count) {
-    std::vector<tx_result_t> batch;
-    for (size_t i = 0; i < tx_count; i++) {
-      batch.push_back(*tx_list);
-      tx_list++;
-    }
+  MOCK_METHOD(void, OnCompleteRx, ());
+
+  void CompleteTx(fuchsia_hardware_network_driver::wire::NetworkDeviceIfcCompleteTxRequest* request,
+                  fdf::Arena& arena, CompleteTxCompleter::Sync& completer) override {
+    std::vector<fuchsia_hardware_network_driver::wire::TxResult> batch(request->tx.begin(),
+                                                                       request->tx.end());
     tx_batches_.push_back(batch);
+
+    OnCompleteTx();
   }
 
-  void NetworkDeviceIfcPortStatusChanged(uint8_t port_id, const port_status_t* new_status) {
+  MOCK_METHOD(void, OnCompleteTx, ());
+
+  void PortStatusChanged(
+      fuchsia_hardware_network_driver::wire::NetworkDeviceIfcPortStatusChangedRequest* request,
+      fdf::Arena& arena, PortStatusChangedCompleter::Sync& completer) override {
     FAIL() << "Not supported by the FakeNetDevice";
   }
-  void NetworkDeviceIfcAddPort(uint8_t port_id, const network_port_protocol_t* port,
-                               network_device_ifc_add_port_callback callback, void* cookie) {
+  void AddPort(fuchsia_hardware_network_driver::wire::NetworkDeviceIfcAddPortRequest* request,
+               fdf::Arena& arena, AddPortCompleter::Sync& completer) override {
     []() { FAIL() << "Not supported by the FakeNetDevice"; }();
-    callback(cookie, ZX_OK);
+    completer.buffer(arena).Reply(ZX_ERR_NOT_SUPPORTED);
   }
-  void NetworkDeviceIfcRemovePort(uint8_t port_id) {
+  void RemovePort(fuchsia_hardware_network_driver::wire::NetworkDeviceIfcRemovePortRequest* request,
+                  fdf::Arena& arena, RemovePortCompleter::Sync& completer) override {
     FAIL() << "Not supported by the FakeNetDevice";
   }
-  void NetworkDeviceIfcSnoop(const rx_buffer_t* rx_list, size_t rx_count) {
-    FAIL() << "Not supported by the FakeNetDevice";
-  }
-  void NetworkDeviceIfcDelegateRxLease(const delegated_rx_lease_t* delegated) {
+  void DelegateRxLease(
+      fuchsia_hardware_network_driver::wire::NetworkDeviceIfcDelegateRxLeaseRequest* request,
+      fdf::Arena& arena, DelegateRxLeaseCompleter::Sync& completer) override {
     FAIL() << "Not supported by the FakeNetDevice";
   }
 
-  std::vector<std::vector<tx_result_t>> tx_batches_;
-  std::vector<std::vector<rx_buffer_part_t>> rx_batches_;
+  std::vector<std::vector<fuchsia_hardware_network_driver::wire::TxResult>> tx_batches_;
+  std::vector<std::vector<fuchsia_hardware_network_driver::wire::RxBufferPart>> rx_batches_;
 };
 
 class CompletionQueueTest : public gtest::TestLoopFixture {
  public:
   void SetUp() override {
     TestLoopFixture::SetUp();
-    client_ = device_.GetClient();
+    client_.Bind(device_.GetClient(), driver_runtime_.StartBackgroundDispatcher()->get());
   }
 
   void ValidateTxBatches(std::vector<uint32_t> expected) {
@@ -105,8 +116,9 @@ class CompletionQueueTest : public gtest::TestLoopFixture {
     }
   }
 
+  fdf_testing::DriverRuntime driver_runtime_;
   FakeNetDevice device_;
-  ddk::NetworkDeviceIfcProtocolClient client_;
+  fdf::WireSharedClient<fuchsia_hardware_network_driver::NetworkDeviceIfc> client_;
 };
 
 TEST_F(CompletionQueueTest, TxCompleteFewerThanMaxDepth) {
@@ -116,7 +128,13 @@ TEST_F(CompletionQueueTest, TxCompleteFewerThanMaxDepth) {
   // Dispatch loop hasn't run the task yet.
   ASSERT_TRUE(device_.tx_batches_.empty());
 
+  // Expect one CompleteTx call as per the comment below.
+  std::latch completed_tx(1);
+  EXPECT_CALL(device_, OnCompleteTx).WillOnce([&] { completed_tx.count_down(); });
+
   RunLoopUntilIdle();
+
+  completed_tx.wait();
 
   // Single element in a single batch.
   ASSERT_NO_FATAL_FAILURE(ValidateTxBatches({1}));
@@ -132,7 +150,13 @@ TEST_F(CompletionQueueTest, TxCompleteMoreThanMaxDepth) {
   // Dispatch loop hasn't run the task yet.
   ASSERT_TRUE(device_.tx_batches_.empty());
 
+  // Expect two CompleteTx calls as per the comment below.
+  std::latch completed_tx(2);
+  EXPECT_CALL(device_, OnCompleteTx).Times(2).WillRepeatedly([&] { completed_tx.count_down(); });
+
   RunLoopUntilIdle();
+
+  completed_tx.wait();
 
   // Two batches, one full and one with one element.
   ASSERT_NO_FATAL_FAILURE(ValidateTxBatches({HostToGuestCompletionQueue::kMaxDepth, 1}));
@@ -148,6 +172,10 @@ TEST_F(CompletionQueueTest, TxCompleteMoreThanQueueSize) {
   // Dispatch loop hasn't run the task yet.
   ASSERT_TRUE(device_.tx_batches_.empty());
 
+  // Expect six CompleteTx calls as per the comment below.
+  std::latch completed_tx(6);
+  EXPECT_CALL(device_, OnCompleteTx).Times(6).WillRepeatedly([&] { completed_tx.count_down(); });
+
   RunLoopUntilIdle();
 
   // Stick some more completions into the now empty queue.
@@ -156,6 +184,8 @@ TEST_F(CompletionQueueTest, TxCompleteMoreThanQueueSize) {
   }
 
   RunLoopUntilIdle();
+
+  completed_tx.wait();
 
   // Six batches. The first two are batches from the completion queue, and the next 3 are single
   // element overflows, and the last is another iteration from the completion queue.
@@ -171,7 +201,13 @@ TEST_F(CompletionQueueTest, RxCompleteFewerThanMaxDepth) {
   // Dispatch loop hasn't run the task yet.
   ASSERT_TRUE(device_.rx_batches_.empty());
 
+  // Expect one CompleteRx call as per the comment below.
+  std::latch completed_rx(1);
+  EXPECT_CALL(device_, OnCompleteRx).WillOnce([&] { completed_rx.count_down(); });
+
   RunLoopUntilIdle();
+
+  completed_rx.wait();
 
   // Single element in a single batch.
   ASSERT_NO_FATAL_FAILURE(ValidateRxBatches({1}));
@@ -185,6 +221,10 @@ TEST_F(CompletionQueueTest, RxCompleteMoreThanMaxDepth) {
     queue.Complete(buffer_id++, buffer_length++);
   }
 
+  // Expect three CompleteRx calls as per the comment below.
+  std::latch completed_rx(3);
+  EXPECT_CALL(device_, OnCompleteRx).Times(3).WillRepeatedly([&] { completed_rx.count_down(); });
+
   RunLoopUntilIdle();
 
   for (uint32_t i = 0; i < GuestToHostCompletionQueue::kMaxDepth / 2; i++) {
@@ -192,6 +232,8 @@ TEST_F(CompletionQueueTest, RxCompleteMoreThanMaxDepth) {
   }
 
   RunLoopUntilIdle();
+
+  completed_rx.wait();
 
   // Three batches, one full, one with one element, and then the last half full.
   ASSERT_NO_FATAL_FAILURE(ValidateRxBatches(
@@ -206,7 +248,13 @@ TEST_F(CompletionQueueTest, RxCompleteMoreThanQueueSize) {
     queue.Complete(buffer_id++, buffer_length++);
   }
 
+  // Expect four CompleteRx calls as per the comment below.
+  std::latch completed_rx(4);
+  EXPECT_CALL(device_, OnCompleteRx).Times(4).WillRepeatedly([&] { completed_rx.count_down(); });
+
   RunLoopUntilIdle();
+
+  completed_rx.wait();
 
   // Four batches, two from the completion queue and two single element overflows.
   ASSERT_NO_FATAL_FAILURE(ValidateRxBatches(

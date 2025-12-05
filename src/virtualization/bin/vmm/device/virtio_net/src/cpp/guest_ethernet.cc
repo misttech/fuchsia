@@ -7,7 +7,6 @@
 #include <lib/async/cpp/task.h>
 #include <lib/syslog/cpp/macros.h>
 
-#include "src/connectivity/network/drivers/network-device/device/network_device_shim.h"
 #include "src/virtualization/bin/vmm/device/virtio_net/src/cpp/guest_ethernet_interface.h"
 
 namespace {
@@ -15,7 +14,7 @@ namespace {
 constexpr uint32_t kMtu = 1500;
 
 // Ensure the given buffer can be supported by virtio-net.
-bool IsTxBufferSupported(const tx_buffer& buffer) {
+bool IsTxBufferSupported(const fuchsia_hardware_network_driver::wire::TxBuffer& buffer) {
   // Ensure no padding on the head/tail.
   if (unlikely(buffer.head_length != 0)) {
     FX_LOGS_FIRST_N(WARNING, 10) << "Packet from host contained invalid head length: "
@@ -36,30 +35,40 @@ bool IsTxBufferSupported(const tx_buffer& buffer) {
   }
 
   // Ensure the buffer contains a standard ethernet frame.
-  if (unlikely(static_cast<::fuchsia::hardware::network::FrameType>(buffer.meta.frame_type) !=
-               ::fuchsia::hardware::network::FrameType::ETHERNET)) {
+  if (unlikely(buffer.meta.frame_type != fuchsia_hardware_network::wire::FrameType::kEthernet)) {
     FX_LOGS_FIRST_N(WARNING, 10) << "Packet from host contained unsupported type: "
-                                 << buffer.meta.frame_type;
+                                 << static_cast<uint8_t>(buffer.meta.frame_type);
     return false;
   }
 
   // We currently only support a single data buffer.
-  if (unlikely(buffer.data_count != 1)) {
+  if (unlikely(buffer.data.size() != 1)) {
     FX_LOGS_FIRST_N(WARNING, 10) << "Packet from host contained multiple data buffers";
     return false;
   }
 
   return true;
 }
+
+class GuestEthernetBinder : public network::NetworkDeviceImplBinder {
+ public:
+  GuestEthernetBinder(GuestEthernet* adapter) : adapter_(adapter) {}
+  ~GuestEthernetBinder() override = default;
+
+  zx::result<fdf::ClientEnd<fuchsia_hardware_network_driver::NetworkDeviceImpl>> Bind() override {
+    return zx::ok(adapter_->BindDriver());
+  }
+
+ private:
+  GuestEthernet* adapter_;  // unowned pointer to adapter
+};
+
 }  // namespace
 
 GuestEthernet::GuestEthernet(fdf::Dispatcher* sync_dispatcher,
-                             const network::DeviceInterfaceDispatchers& netdev_dispatchers,
-                             const network::ShimDispatchers& shim_dispatchers)
-    : mac_addr_proto_({&mac_addr_protocol_ops_, this}),
-      sync_dispatcher_(sync_dispatcher),
+                             const network::DeviceInterfaceDispatchers& netdev_dispatchers)
+    : sync_dispatcher_(sync_dispatcher),
       netdev_dispatchers_(netdev_dispatchers),
-      shim_dispatchers_(shim_dispatchers),
       trace_provider_(netdev_dispatchers.impl_->async_dispatcher()),
       svc_(sys::ServiceDirectory::CreateFromNamespace()),
       tx_completion_queue_(kPortId, netdev_dispatchers.impl_->async_dispatcher(), &parent_),
@@ -117,12 +126,10 @@ zx_status_t GuestEthernet::CreateGuestInterface(bool enable_bridge) {
     return status;
   }
 
-  std::unique_ptr shim =
-      std::make_unique<network::NetworkDeviceShim>(GetNetworkDeviceImplClient(), shim_dispatchers_);
-
   // Set up the GuestEthernet device.
   zx::result<std::unique_ptr<network::NetworkDeviceInterface>> device_interface =
-      network::NetworkDeviceInterface::Create(netdev_dispatchers_, std::move(shim));
+      network::NetworkDeviceInterface::Create(netdev_dispatchers_,
+                                              std::make_unique<GuestEthernetBinder>(this));
   if (device_interface.is_error()) {
     FX_PLOGS(WARNING, device_interface.error_value()) << "Failed to create guest interface";
     return device_interface.error_value();
@@ -243,39 +250,46 @@ void GuestEthernet::FinishShutdownIfRequired() {
   }
 }
 
-void GuestEthernet::NetworkDeviceImplInit(const network_device_ifc_protocol_t* iface,
-                                          network_device_impl_init_callback callback,
-                                          void* cookie) {
-  FX_CHECK(!parent_.is_valid()) << "NetworkDeviceImplInit called multiple times";
-  parent_ = ddk::NetworkDeviceIfcProtocolClient(iface);
-
-  using Context = std::tuple<GuestEthernet*, network_device_impl_init_callback, void*>;
-  std::unique_ptr context = std::make_unique<Context>(this, callback, cookie);
-
-  // Create port.
-  parent_.AddPort(
-      kPortId, this, &network_port_protocol_ops_,
-      [](void* ctx, zx_status_t status) {
-        std::unique_ptr<Context> context(static_cast<Context*>(ctx));
-        auto [guest_ethernet, callback, cookie] = *context;
-        if (status != ZX_OK) {
-          FX_LOGS(ERROR) << "Failed to add port: " << zx_status_get_string(status);
-          callback(cookie, status);
-          return;
-        }
-
-        // Inform our parent that the port is active.
-        port_status_t port_status;
-        guest_ethernet->NetworkPortGetStatus(&port_status);
-        guest_ethernet->parent_.PortStatusChanged(kPortId, &port_status);
-
-        callback(cookie, ZX_OK);
-      },
-      context.release());
+fdf::ClientEnd<fuchsia_hardware_network_driver::NetworkDeviceImpl> GuestEthernet::BindDriver() {
+  auto [client, server] =
+      fdf::Endpoints<fuchsia_hardware_network_driver::NetworkDeviceImpl>::Create();
+  fdf::BindServer(netdev_dispatchers_.impl_->get(), std::move(server), this);
+  return std::move(client);
 }
 
-void GuestEthernet::NetworkDeviceImplStart(network_device_impl_start_callback callback,
-                                           void* cookie) {
+void GuestEthernet::Init(
+    fuchsia_hardware_network_driver::wire::NetworkDeviceImplInitRequest* request, fdf::Arena& arena,
+    InitCompleter::Sync& completer) {
+  FX_CHECK(!parent_.is_valid()) << "NetworkDeviceImplInit called multiple times";
+  parent_.Bind(std::move(request->iface), netdev_dispatchers_.impl_->get());
+
+  auto [client, server] = fdf::Endpoints<fuchsia_hardware_network_driver::NetworkPort>::Create();
+  fdf::BindServer(netdev_dispatchers_.impl_->get(), std::move(server), this);
+
+  // Create port.
+  parent_.buffer(arena)
+      ->AddPort(kPortId, std::move(client))
+      .ThenExactlyOnce(
+          [this, completer = completer.ToAsync()](
+              fdf::WireUnownedResult<fuchsia_hardware_network_driver::NetworkDeviceIfc::AddPort>&
+                  result) mutable {
+            fdf::Arena arena(0u);
+            if (!result.ok()) {
+              FX_LOGS(ERROR) << "Failed to add port: " << result.status_string();
+              completer.buffer(arena).Reply(result.status());
+              return;
+            }
+
+            // Inform our parent that the port is active.
+            ZX_ASSERT(parent_.buffer(arena)
+                          ->PortStatusChanged(kPortId, fidl::ToWire(arena, GetPortStatus()))
+                          .ok());
+
+            completer.buffer(arena).Reply(ZX_OK);
+          });
+}
+
+void GuestEthernet::Start(fdf::Arena& arena, StartCompleter::Sync& completer) {
   zx_status_t result = ZX_OK;
   {
     std::lock_guard guard(mutex_);
@@ -285,11 +299,10 @@ void GuestEthernet::NetworkDeviceImplStart(network_device_impl_start_callback ca
       result = ZX_ERR_BAD_STATE;
     }
   }
-  callback(cookie, result);
+  completer.buffer(arena).Reply(result);
 }
 
-void GuestEthernet::NetworkDeviceImplStop(network_device_impl_stop_callback callback,
-                                          void* cookie) {
+void GuestEthernet::Stop(fdf::Arena& arena, StopCompleter::Sync& completer) {
   std::lock_guard guard(mutex_);
   FX_CHECK(state_ == State::kStarted) << "Attempted to stop device when it was in a bad state";
 
@@ -301,41 +314,47 @@ void GuestEthernet::NetworkDeviceImplStop(network_device_impl_stop_callback call
 
   // Wait for in-flight packets to be completed.
   state_ = State::kShuttingDown;
-  shutdown_complete_callback_ = [cookie, callback]() { callback(cookie); };
+  shutdown_complete_callback_ = [completer = completer.ToAsync()]() mutable {
+    fdf::Arena arena(0u);
+    completer.buffer(arena).Reply();
+  };
 
   // If no packets are in-flight, shut down the device.
   FinishShutdownIfRequired();
 }
 
-void GuestEthernet::NetworkDeviceImplGetInfo(device_impl_info_t* out_info) {
-  *out_info = {
-      // Allow at most kMaxTxDepth/kMaxRxDepth buffers in flight to TX/RX,
-      // respectively.
-      .tx_depth = HostToGuestCompletionQueue::kMaxDepth,
-      .rx_depth = GuestToHostCompletionQueue::kMaxDepth,
+void GuestEthernet::GetInfo(
+    fdf::Arena& arena,
+    fdf::WireServer<fuchsia_hardware_network_driver::NetworkDeviceImpl>::GetInfoCompleter::Sync&
+        completer) {
+  auto info = fuchsia_hardware_network_driver::wire::DeviceImplInfo::Builder(arena)
+                  // Allow at most kMaxTxDepth/kMaxRxDepth buffers in flight to TX/RX,
+                  // respectively.
+                  .tx_depth(HostToGuestCompletionQueue::kMaxDepth)
+                  .rx_depth(GuestToHostCompletionQueue::kMaxDepth)
 
-      // Netstack should try to refresh our available RX buffers when they get
-      // to 50% of MaxRxDepth.
-      .rx_threshold = GuestToHostCompletionQueue::kMaxDepth / 2,
+                  // Netstack should try to refresh our available RX buffers when they get
+                  // to 50% of MaxRxDepth.
+                  .rx_threshold(GuestToHostCompletionQueue::kMaxDepth / 2)
 
-      // We only support buffers with 1 memory region (i.e., no scatter/gather).
-      .max_buffer_parts = 1,
+                  // We only support buffers with 1 memory region (i.e., no scatter/gather).
+                  .max_buffer_parts(1)
 
-      // Buffers must be aligned to sizeof(uint64_t).
-      .buffer_alignment = sizeof(uint64_t),
+                  // Buffers must be aligned to sizeof(uint64_t).
+                  .buffer_alignment(sizeof(uint64_t))
 
-      // Require that all RX buffers are at least the size of our MTU.
-      .min_rx_buffer_length = kMtu,
-  };
+                  // Require that all RX buffers are at least the size of our MTU.
+                  .min_rx_buffer_length(kMtu)
+                  .Build();
+  completer.buffer(arena).Reply(info);
 }
 
-void GuestEthernet::NetworkDeviceImplQueueTx(const tx_buffer_t* buffers_list,
-                                             size_t buffers_count) {
+void GuestEthernet::QueueTx(
+    fuchsia_hardware_network_driver::wire::NetworkDeviceImplQueueTxRequest* request,
+    fdf::Arena& arena, QueueTxCompleter::Sync& completer) {
   std::lock_guard guard(mutex_);
 
-  for (size_t i = 0; i < buffers_count; ++i) {
-    const tx_buffer& buffer = buffers_list[i];
-
+  for (const auto& buffer : request->buffers) {
     // Reject transactions if we are not running.
     if (state_ != State::kStarted) {
       RxComplete(buffer.id, ZX_ERR_UNAVAILABLE);
@@ -349,8 +368,8 @@ void GuestEthernet::NetworkDeviceImplQueueTx(const tx_buffer_t* buffers_list,
     }
 
     // Get the data payload.
-    FX_DCHECK(buffer.data_count == 1);  // verified in IsTxBufferSupported
-    const buffer_region& region = buffer.data_list[0];
+    FX_DCHECK(buffer.data.size() == 1);  // verified in IsTxBufferSupported
+    const fuchsia_hardware_network_driver::wire::BufferRegion& region = buffer.data[0];
 
     // Get the caller-specified region.
     zx::result<cpp20::span<uint8_t>> memory_region =
@@ -365,16 +384,15 @@ void GuestEthernet::NetworkDeviceImplQueueTx(const tx_buffer_t* buffers_list,
   }
 }
 
-void GuestEthernet::NetworkDeviceImplQueueRxSpace(const rx_space_buffer_t* buffers_list,
-                                                  size_t buffers_count) {
+void GuestEthernet::QueueRxSpace(
+    fuchsia_hardware_network_driver::wire::NetworkDeviceImplQueueRxSpaceRequest* request,
+    fdf::Arena& arena, QueueRxSpaceCompleter::Sync& completer) {
   std::lock_guard guard(mutex_);
 
   // If we previously ran out of buffers, notify the guest that new ones are available.
   bool need_notify = available_buffers_.empty();
 
-  for (size_t i = 0; i < buffers_count; i++) {
-    const rx_space_buffer_t& buffer = buffers_list[i];
-
+  for (const auto& buffer : request->buffers) {
     // Ensure the specified region is valid.
     zx::result<cpp20::span<uint8_t>> region =
         GetIoRegion(/*vmo_id=*/buffer.region.vmo, /*offset=*/buffer.region.offset,
@@ -394,26 +412,24 @@ void GuestEthernet::NetworkDeviceImplQueueRxSpace(const rx_space_buffer_t* buffe
   }
 }
 
-void GuestEthernet::NetworkDeviceImplPrepareVmo(uint8_t vmo_id, zx::vmo vmo,
-                                                network_device_impl_prepare_vmo_callback callback,
-                                                void* cookie) {
+void GuestEthernet::PrepareVmo(
+    fuchsia_hardware_network_driver::wire::NetworkDeviceImplPrepareVmoRequest* request,
+    fdf::Arena& arena, PrepareVmoCompleter::Sync& completer) {
   std::lock_guard guard(mutex_);
 
   // Ensure another VMO hasn't already been mapped.
   if (io_vmo_.is_valid()) {
     FX_LOGS(INFO) << "Attempted to bind multiple VMOs";
-    async::PostTask(netdev_dispatchers_.impl_->async_dispatcher(),
-                    [callback, cookie]() { callback(cookie, ZX_ERR_NO_RESOURCES); });
+    completer.buffer(arena).Reply(ZX_ERR_NO_RESOURCES);
     return;
   }
 
   // Get the VMO's size.
   uint64_t vmo_size;
-  zx_status_t status = vmo.get_size(&vmo_size);
+  zx_status_t status = request->vmo.get_size(&vmo_size);
   if (status != ZX_OK) {
     FX_PLOGS(INFO, status) << "Failed to get VMO size";
-    async::PostTask(netdev_dispatchers_.impl_->async_dispatcher(),
-                    [callback, cookie, status]() { callback(cookie, status); });
+    completer.buffer(arena).Reply(status);
     return;
   }
 
@@ -421,28 +437,28 @@ void GuestEthernet::NetworkDeviceImplPrepareVmo(uint8_t vmo_id, zx::vmo vmo,
   zx_vaddr_t mapped_address;
   status =
       zx::vmar::root_self()->map(ZX_VM_PERM_READ | ZX_VM_PERM_WRITE | ZX_VM_REQUIRE_NON_RESIZABLE,
-                                 0, vmo, 0, vmo_size, &mapped_address);
+                                 0, request->vmo, 0, vmo_size, &mapped_address);
   if (status != ZX_OK) {
     FX_PLOGS(INFO, status) << "Failed to map IO buffer";
-    async::PostTask(netdev_dispatchers_.impl_->async_dispatcher(),
-                    [callback, cookie, status]() { callback(cookie, status); });
+    completer.buffer(arena).Reply(status);
     return;
   }
 
-  vmo_id_ = vmo_id;
+  vmo_id_ = request->id;
   io_addr_ = reinterpret_cast<uint8_t*>(mapped_address);
-  io_vmo_ = std::move(vmo);
+  io_vmo_ = std::move(request->vmo);
   io_size_ = vmo_size;
-  async::PostTask(netdev_dispatchers_.impl_->async_dispatcher(),
-                  [callback, cookie]() { callback(cookie, ZX_OK); });
+  completer.buffer(arena).Reply(ZX_OK);
 }
 
-void GuestEthernet::NetworkDeviceImplReleaseVmo(uint8_t vmo_id) {
+void GuestEthernet::ReleaseVmo(
+    fuchsia_hardware_network_driver::wire::NetworkDeviceImplReleaseVmoRequest* request,
+    fdf::Arena& arena, ReleaseVmoCompleter::Sync& completer) {
   std::lock_guard guard(mutex_);
 
   // The NetworkDevice protocol states "`ReleaseVmo` is guaranteed to only be
   // called when the implementation holds no buffers that reference that `id`."
-  FX_CHECK(io_vmo_.is_valid() && vmo_id != io_vmo_);
+  FX_CHECK(io_vmo_.is_valid() && request->id != io_vmo_);
   FX_CHECK(available_buffers_.empty());
 
   // Unmap the VMO.
@@ -457,69 +473,78 @@ void GuestEthernet::NetworkDeviceImplReleaseVmo(uint8_t vmo_id) {
   io_size_ = 0;
 }
 
-void GuestEthernet::MacAddrGetAddress(mac_address_t* out_mac) {
-  std::memcpy(out_mac->octets, mac_address_, VIRTIO_ETH_MAC_SIZE);
+void GuestEthernet::GetAddress(fdf::Arena& arena, GetAddressCompleter::Sync& completer) {
+  fuchsia_net::wire::MacAddress mac;
+  std::memcpy(mac.octets.data(), mac_address_, VIRTIO_ETH_MAC_SIZE);
+  completer.buffer(arena).Reply(mac);
 }
 
-void GuestEthernet::MacAddrGetFeatures(features_t* out_features) {
-  *out_features = {
-      // We don't support multicast filtering.
-      .multicast_filter_count = 0,
+void GuestEthernet::GetFeatures(fdf::Arena& arena, GetFeaturesCompleter::Sync& completer) {
+  auto features =
+      fuchsia_hardware_network_driver::wire::Features::Builder(arena)
+          // We don't support multicast filtering.
+          .multicast_filter_count(0)
 
-      // We don't perform any filtering.
-      .supported_modes = SUPPORTED_MAC_FILTER_MODE_PROMISCUOUS,
-  };
+          // We don't perform any filtering.
+          .supported_modes(
+              fuchsia_hardware_network_driver::wire::SupportedMacFilterMode::kPromiscuous)
+          .Build();
+
+  completer.buffer(arena).Reply(features);
 }
 
-void GuestEthernet::MacAddrSetMode(mac_filter_mode_t mode, const mac_address_t* multicast_macs_list,
-                                   size_t multicast_macs_count) {
+void GuestEthernet::SetMode(fuchsia_hardware_network_driver::wire::MacAddrSetModeRequest* request,
+                            fdf::Arena& arena, SetModeCompleter::Sync& completer) {
   FX_LOGS(WARNING) << "MacAddrSetMode not implemented";
+  completer.buffer(arena).Reply();
 }
 
-void GuestEthernet::NetworkPortGetInfo(port_base_info_t* out_info) {
-  static constexpr std::array<uint8_t, 1> kRxTypes = {
-      static_cast<uint8_t>(fuchsia_hardware_network::wire::FrameType::kEthernet),
+void GuestEthernet::GetInfo(
+    fdf::Arena& arena,
+    fdf::WireServer<fuchsia_hardware_network_driver::NetworkPort>::GetInfoCompleter::Sync&
+        completer) {
+  static constexpr std::array<fuchsia_hardware_network::wire::FrameType, 1> kRxTypes = {
+      fuchsia_hardware_network::wire::FrameType::kEthernet,
   };
-  static const std::array<frame_type_support_t, 1> kTxTypes = {
-      frame_type_support_t{
-          .type = static_cast<frame_type_t>(fuchsia_hardware_network::wire::FrameType::kEthernet),
+  static const std::array<fuchsia_hardware_network::wire::FrameTypeSupport, 1> kTxTypes = {
+      fuchsia_hardware_network::wire::FrameTypeSupport{
+          .type = fuchsia_hardware_network::wire::FrameType::kEthernet,
           .features = static_cast<uint32_t>(fuchsia_hardware_network::wire::EthernetFeatures::kRaw),
       },
   };
 
   // Advertise we are a virtual port implementing support for TX/RX of raw
   // ethernet frames.
-  *out_info = {
-      .port_class = static_cast<uint16_t>(fuchsia_hardware_network::wire::PortClass::kVirtual),
-      .rx_types_list = kRxTypes.data(),
-      .rx_types_count = kRxTypes.size(),
-      .tx_types_list = kTxTypes.data(),
-      .tx_types_count = kTxTypes.size(),
-  };
+  auto info = fuchsia_hardware_network::wire::PortBaseInfo::Builder(arena)
+                  .port_class(fuchsia_hardware_network::wire::PortClass::kVirtual)
+                  .rx_types(kRxTypes)
+                  .tx_types(kTxTypes)
+                  .Build();
+  completer.buffer(arena).Reply(info);
 }
 
-void GuestEthernet::NetworkPortGetStatus(port_status_t* out_status) {
-  *out_status = {
-      // Port status flags.
-      //
-      // Status flags, as defined in [`fuchsia.hardware.network/Status`].
-      .flags = static_cast<uint32_t>(::fuchsia_hardware_network::wire::StatusFlags::kOnline),
-
-      // Port's maximum transmission unit, in bytes.
-      .mtu = kMtu,
-  };
+void GuestEthernet::GetStatus(fdf::Arena& arena, GetStatusCompleter::Sync& completer) {
+  completer.buffer(arena).Reply(fidl::ToWire(arena, GetPortStatus()));
 }
 
-void GuestEthernet::NetworkPortGetMac(mac_addr_protocol_t** out_mac_ifc) {
-  if (out_mac_ifc) {
-    *out_mac_ifc = &mac_addr_proto_;
-  }
+fuchsia_hardware_network::PortStatus GuestEthernet::GetPortStatus() {
+  // Port status flags.
+  fuchsia_hardware_network::PortStatus status;
+  // Status flags, as defined in [`fuchsia.hardware.network/Status`].
+  status.flags(fuchsia_hardware_network::wire::StatusFlags::kOnline);
+  // Port's maximum transmission unit, in bytes.
+  status.mtu(kMtu);
+  return status;
 }
 
-ddk::NetworkDeviceImplProtocolClient GuestEthernet::GetNetworkDeviceImplClient() {
-  network_device_impl_protocol_t proto = {
-      .ops = &network_device_impl_protocol_ops_,
-      .ctx = this,
-  };
-  return ddk::NetworkDeviceImplProtocolClient(&proto);
+void GuestEthernet::SetActive(
+    fuchsia_hardware_network_driver::wire::NetworkPortSetActiveRequest* request, fdf::Arena& arena,
+    SetActiveCompleter::Sync& completer) {}
+
+void GuestEthernet::GetMac(fdf::Arena& arena, GetMacCompleter::Sync& completer) {
+  auto [client, server] = fdf::Endpoints<fuchsia_hardware_network_driver::MacAddr>::Create();
+  fdf::BindServer(netdev_dispatchers_.ifc_->get(), std::move(server), this);
+  completer.buffer(arena).Reply(std::move(client));
 }
+
+void GuestEthernet::Removed(fdf::Arena& arena, RemovedCompleter::Sync& completer) {}

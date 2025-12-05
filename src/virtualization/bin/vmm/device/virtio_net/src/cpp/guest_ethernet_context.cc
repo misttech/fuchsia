@@ -35,13 +35,6 @@ zx::result<std::unique_ptr<GuestEthernetContext>> GuestEthernetContext::Create()
   }
   context->dispatchers_ = std::move(dispatchers.value());
 
-  zx::result shim_dispatchers = network::OwnedShimDispatchers::Create();
-  if (shim_dispatchers.is_error()) {
-    FX_LOGS(ERROR) << "Failed to create shim dispatchers: " << shim_dispatchers.status_string();
-    return shim_dispatchers.take_error();
-  }
-  context->shim_dispatchers_ = std::move(shim_dispatchers.value());
-
   return zx::ok(std::move(context));
 }
 
@@ -52,9 +45,6 @@ GuestEthernetContext::~GuestEthernetContext() {
   }
   if (dispatchers_) {
     dispatchers_->ShutdownSync();
-  }
-  if (shim_dispatchers_) {
-    shim_dispatchers_->ShutdownSync();
   }
 
   fdf_env_register_driver_exit();

@@ -20,7 +20,6 @@ class GuestEthernetContext {
 
   fdf::Dispatcher* SyncDispatcher() { return &sync_dispatcher_; }
   network::DeviceInterfaceDispatchers Dispatchers() { return dispatchers_->Unowned(); }
-  network::ShimDispatchers ShimDispatchers() { return shim_dispatchers_->Unowned(); }
 
  private:
   GuestEthernetContext() = default;
@@ -29,7 +28,6 @@ class GuestEthernetContext {
   libsync::Completion sync_dispatcher_shutdown_;
 
   std::unique_ptr<network::OwnedDeviceInterfaceDispatchers> dispatchers_;
-  std::unique_ptr<network::OwnedShimDispatchers> shim_dispatchers_;
 };
 
 #endif  // SRC_VIRTUALIZATION_BIN_VMM_DEVICE_VIRTIO_NET_SRC_CPP_GUEST_ETHERNET_CONTEXT_H_

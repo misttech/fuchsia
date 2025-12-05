@@ -10,7 +10,8 @@
 #include <fuchsia/net/virtualization/cpp/fidl.h>
 // clang-format on
 
-#include <fuchsia/hardware/network/driver/cpp/banjo.h>
+#include <fidl/fuchsia.hardware.network.driver/cpp/wire.h>
+#include <fidl/fuchsia.hardware.network/cpp/fidl.h>
 #include <fuchsia/net/cpp/fidl.h>
 #include <lib/fit/function.h>
 #include <lib/sys/cpp/service_directory.h>
@@ -22,13 +23,12 @@
 #include "src/connectivity/network/drivers/network-device/device/public/network_device.h"
 #include "src/virtualization/bin/vmm/device/virtio_net/src/cpp/completion_queue.h"
 
-class GuestEthernet : public ddk::NetworkDeviceImplProtocol<GuestEthernet>,
-                      ddk::MacAddrProtocol<GuestEthernet>,
-                      ddk::NetworkPortProtocol<GuestEthernet> {
+class GuestEthernet : public fdf::WireServer<fuchsia_hardware_network_driver::NetworkDeviceImpl>,
+                      public fdf::WireServer<fuchsia_hardware_network_driver::MacAddr>,
+                      public fdf::WireServer<fuchsia_hardware_network_driver::NetworkPort> {
  public:
   GuestEthernet(fdf::Dispatcher* sync_dispatcher,
-                const network::DeviceInterfaceDispatchers& netdev_dispatchers,
-                const network::ShimDispatchers& shim_dispatchers);
+                const network::DeviceInterfaceDispatchers& netdev_dispatchers);
   ~GuestEthernet();
 
   // Initializes this guest ethernet object by parsing the Rust provided MAC address, preparing
@@ -47,30 +47,45 @@ class GuestEthernet : public ddk::NetworkDeviceImplProtocol<GuestEthernet>,
   // reclaimed.
   void Complete(uint32_t buffer_id, zx_status_t status);
 
-  // Methods implementing the `NetworkDevice` banjo protocol.
-  void NetworkDeviceImplInit(const network_device_ifc_protocol_t* iface,
-                             network_device_impl_init_callback callback, void* cookie);
-  void NetworkDeviceImplStart(network_device_impl_start_callback callback, void* cookie);
-  void NetworkDeviceImplStop(network_device_impl_stop_callback callback, void* cookie);
-  void NetworkDeviceImplGetInfo(device_impl_info_t* out_info);
-  void NetworkDeviceImplQueueTx(const tx_buffer_t* buffers_list, size_t buffers_count);
-  void NetworkDeviceImplQueueRxSpace(const rx_space_buffer_t* buffers_list, size_t buffers_count);
-  void NetworkDeviceImplPrepareVmo(uint8_t vmo_id, zx::vmo vmo,
-                                   network_device_impl_prepare_vmo_callback callback, void* cookie);
-  void NetworkDeviceImplReleaseVmo(uint8_t vmo_id);
+  fdf::ClientEnd<fuchsia_hardware_network_driver::NetworkDeviceImpl> BindDriver();
 
-  // Methods implementing the `MacAddr` banjo protocol.
-  void MacAddrGetAddress(mac_address_t* out_mac);
-  void MacAddrGetFeatures(features_t* out_features);
-  void MacAddrSetMode(mac_filter_mode_t mode, const mac_address_t* multicast_macs_list,
-                      size_t multicast_macs_count);
+  // Methods implementing the `NetworkDevice` protocol.
+  void Init(fuchsia_hardware_network_driver::wire::NetworkDeviceImplInitRequest* request,
+            fdf::Arena& arena, InitCompleter::Sync& completer) override;
+  void Start(fdf::Arena& arena, StartCompleter::Sync& completer) override;
+  void Stop(fdf::Arena& arena, StopCompleter::Sync& completer) override;
+  void GetInfo(
+      fdf::Arena& arena,
+      fdf::WireServer<fuchsia_hardware_network_driver::NetworkDeviceImpl>::GetInfoCompleter::Sync&
+          completer) override;
+  void QueueTx(fuchsia_hardware_network_driver::wire::NetworkDeviceImplQueueTxRequest* request,
+               fdf::Arena& arena, QueueTxCompleter::Sync& completer) override;
+  void QueueRxSpace(
+      fuchsia_hardware_network_driver::wire::NetworkDeviceImplQueueRxSpaceRequest* request,
+      fdf::Arena& arena, QueueRxSpaceCompleter::Sync& completer) override;
+  void PrepareVmo(
+      fuchsia_hardware_network_driver::wire::NetworkDeviceImplPrepareVmoRequest* request,
+      fdf::Arena& arena, PrepareVmoCompleter::Sync& completer) override;
+  void ReleaseVmo(
+      fuchsia_hardware_network_driver::wire::NetworkDeviceImplReleaseVmoRequest* request,
+      fdf::Arena& arena, ReleaseVmoCompleter::Sync& completer) override;
 
-  // Methods implementing the `NetworkPort` banjo protocol.
-  void NetworkPortGetInfo(port_base_info_t* out_info);
-  void NetworkPortGetStatus(port_status_t* out_status);
-  void NetworkPortGetMac(mac_addr_protocol_t** out_mac_ifc);
-  void NetworkPortSetActive(bool active) {}
-  void NetworkPortRemoved() {}
+  // Methods implementing the `MacAddr` protocol.
+  void GetAddress(fdf::Arena& arena, GetAddressCompleter::Sync& completer) override;
+  void GetFeatures(fdf::Arena& arena, GetFeaturesCompleter::Sync& completer) override;
+  void SetMode(fuchsia_hardware_network_driver::wire::MacAddrSetModeRequest* request,
+               fdf::Arena& arena, SetModeCompleter::Sync& completer) override;
+
+  // Methods implementing the `NetworkPort` protocol.
+  void GetInfo(
+      fdf::Arena& arena,
+      fdf::WireServer<fuchsia_hardware_network_driver::NetworkPort>::GetInfoCompleter::Sync&
+          completer) override;
+  void GetStatus(fdf::Arena& arena, GetStatusCompleter::Sync& completer) override;
+  void SetActive(fuchsia_hardware_network_driver::wire::NetworkPortSetActiveRequest* request,
+                 fdf::Arena& arena, SetActiveCompleter::Sync& completer) override;
+  void GetMac(fdf::Arena& arena, GetMacCompleter::Sync& completer) override;
+  void Removed(fdf::Arena& arena, RemovedCompleter::Sync& completer) override;
 
   // Port GuestEthernet uses for communication.
   static constexpr uint8_t kPortId = 0;
@@ -100,9 +115,6 @@ class GuestEthernet : public ddk::NetworkDeviceImplProtocol<GuestEthernet>,
   // Register this guest ethernet object with the netstack.
   zx_status_t CreateGuestInterface(bool enable_bridge);
 
-  // Binds this class to the banjo protocol.
-  ddk::NetworkDeviceImplProtocolClient GetNetworkDeviceImplClient();
-
   // If in state kShuttingDown with no in flight RX to the guest, this will invoke the shutdown
   // complete callback.
   void FinishShutdownIfRequired() __TA_REQUIRES(mutex_);
@@ -111,9 +123,10 @@ class GuestEthernet : public ddk::NetworkDeviceImplProtocol<GuestEthernet>,
   zx::result<cpp20::span<uint8_t>> GetIoRegion(uint8_t vmo_id, uint64_t offset, uint64_t length)
       __TA_REQUIRES(mutex_);
 
+  fuchsia_hardware_network::PortStatus GetPortStatus();
+
   std::mutex mutex_;
-  ddk::NetworkDeviceIfcProtocolClient parent_;
-  mac_addr_protocol_t mac_addr_proto_;
+  fdf::WireSharedClient<fuchsia_hardware_network_driver::NetworkDeviceIfc> parent_;
 
   // Device state.
   State state_ __TA_GUARDED(mutex_) = State::kStopped;
@@ -135,7 +148,6 @@ class GuestEthernet : public ddk::NetworkDeviceImplProtocol<GuestEthernet>,
 
   const fdf::Dispatcher* sync_dispatcher_;
   const network::DeviceInterfaceDispatchers netdev_dispatchers_;
-  const network::ShimDispatchers shim_dispatchers_;
   trace::TraceProviderWithFdio trace_provider_;
   std::shared_ptr<sys::ServiceDirectory> svc_;
 

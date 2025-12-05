@@ -22,6 +22,7 @@ static_library("guest-ethernet") {
 
   deps = [
     "//sdk/fidl/fuchsia.hardware.network:fuchsia.hardware.network_hlcpp",
+    "//sdk/fidl/fuchsia.hardware.network.driver:fuchsia.hardware.network.driver_cpp",
     "//sdk/fidl/fuchsia.net:fuchsia.net_hlcpp",
     "//sdk/fidl/fuchsia.net.virtualization:fuchsia.net.virtualization_hlcpp",
     "//sdk/lib/async-loop:async-loop-cpp",
@@ -31,7 +32,6 @@ static_library("guest-ethernet") {
     "//sdk/lib/sys/cpp",
     "//sdk/lib/syslog/cpp",
     "//src/connectivity/network/drivers/network-device/device",
-    "//src/connectivity/network/drivers/network-device/device:banjo_shims",
     "//src/connectivity/network/lib/net_interfaces/cpp",
     "//src/devices/bin/driver_runtime",
     "//zircon/system/ulib/sync:sync-cpp",
@@ -111,10 +111,12 @@ cc_test_executable("virtio_net_cpp_unittests_bin") {
   deps = [
     ":guest-ethernet",
     "//sdk/fidl/fuchsia.net.virtualization:fuchsia.net.virtualization_hlcpp",
+    "//sdk/lib/driver/testing/cpp",
     "//sdk/lib/sys/cpp/testing:unit",
     "//src/connectivity/network/drivers/network-device/device",
     "//src/lib/fxl/test:gtest_main",
     "//src/lib/testing/loop_fixture",
+    "//third_party/googletest:gmock",
   ]
 }
 
