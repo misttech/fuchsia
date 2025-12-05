@@ -12,9 +12,9 @@
 //!       all ffx UI.
 
 use anyhow::Result;
+use fuchsia_sync::Mutex;
 use serde::{Deserialize, Serialize};
-use std::io::{stdout, BufRead, BufReader, IsTerminal, Read, Write};
-use std::sync::Mutex;
+use std::io::{BufRead, BufReader, IsTerminal, Read, Write, stdout};
 use unicode_segmentation::UnicodeSegmentation;
 
 // An ANSI escape sequence to clear from the cursor position to the end of the
@@ -423,7 +423,7 @@ impl<'a> TextUi<'a> {
     /// Otherwise, the next `Progress` presentation will overwrite printed lines
     /// when attempting to clobber the previous progress element.
     pub fn clear_progress(&self) -> Result<()> {
-        let mut inner = self.inner.lock().expect("clear_progress lock");
+        let mut inner = self.inner.lock();
         // We only clear the progress presentation if it's going to a TTY
         // terminal, since the shell control sequences don't make sense
         // otherwise.
@@ -443,7 +443,7 @@ impl<'a> TextUi<'a> {
         // Move back to overwrite the previous progress rendering.
         self.clear_progress()?;
 
-        let mut inner = self.inner.lock().expect("present_progress lock");
+        let mut inner = self.inner.lock();
         // We only print the progress text if it's going to a TTY terminal,
         // since the shell control sequences don't make sense otherwise.
         if !inner.is_tty {
@@ -470,7 +470,7 @@ impl<'a> TextUi<'a> {
     }
 
     fn present_notice(&self, element: &Notice) -> Result<Response> {
-        let mut inner = self.inner.lock().expect("present_string_prompt lock");
+        let mut inner = self.inner.lock();
         if let Some(title) = &element.title {
             writeln!(inner.output, "{}", title)?;
         }
@@ -481,7 +481,7 @@ impl<'a> TextUi<'a> {
     }
 
     fn present_string_prompt(&self, element: &SimplePresentation) -> Result<Response> {
-        let mut inner = self.inner.lock().expect("present_string_prompt lock");
+        let mut inner = self.inner.lock();
         // If the terminal is non-interactive, it's not reasonable to prompt
         // the user.
         if !inner.is_tty {
@@ -497,15 +497,11 @@ impl<'a> TextUi<'a> {
         let mut buf_reader = BufReader::new(&mut inner.input);
         let mut choice = String::new();
         buf_reader.read_line(&mut choice).expect("reading string input line");
-        if choice.is_empty() {
-            Ok(Response::Default)
-        } else {
-            Ok(Response::Choice(choice))
-        }
+        if choice.is_empty() { Ok(Response::Default) } else { Ok(Response::Choice(choice)) }
     }
 
     fn present_table(&self, table: &TableRows) -> Result<Response> {
-        let mut inner = self.inner.lock().expect("present_table lock");
+        let mut inner = self.inner.lock();
         if let Some(title) = &table.title {
             writeln!(inner.output, "{}", title)?;
         }
