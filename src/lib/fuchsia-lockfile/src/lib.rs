@@ -494,7 +494,7 @@ mod test {
         std::fs::write(&counter_path, "0").unwrap();
 
         let (tx, rx) = std::sync::mpsc::channel();
-        let rx = std::sync::Arc::new(std::sync::Mutex::new(rx));
+        let rx = std::sync::Arc::new(fuchsia_sync::Mutex::new(rx));
 
         let lock_count = 128;
         let thread_count = 128;
@@ -507,7 +507,7 @@ mod test {
 
             let thread = std::thread::spawn(move || {
                 loop {
-                    let rx = rx.lock().unwrap();
+                    let rx = rx.lock();
                     let Ok(lock_num) = rx.recv() else {
                         break;
                     };
