@@ -347,7 +347,6 @@ user_platform_aib_names =
 
       # Forensics
       "no_remote_feedback_id",
-      "feedback_large_disk",
       "feedback_remote_device_id_provider",
       "feedback_user_config",
       "feedback_userdebug_config",

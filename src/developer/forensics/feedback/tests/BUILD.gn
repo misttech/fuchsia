@@ -561,15 +561,6 @@ resource("prod_build_type_configs") {
   outputs = [ "data/build_type/configs/{{source_file_part}}" ]
 }
 
-resource("prod_product_configs") {
-  sources = [
-    "//src/developer/forensics/feedback/configs/product/default.json",
-    "//src/developer/forensics/feedback/configs/product/large_disk.json",
-  ]
-
-  outputs = [ "data/product/configs/{{source_file_part}}" ]
-}
-
 resource("prod_snapshot_configs") {
   sources =
       [ "//src/developer/forensics/feedback/configs/snapshot/default.json" ]
@@ -703,7 +694,6 @@ fuchsia_unittest_component("prod_configs_unittest") {
   deps = [
     ":prod_build_type_configs",
     ":prod_configs_unittest_exe",
-    ":prod_product_configs",
     ":prod_snapshot_configs",
   ]
 }

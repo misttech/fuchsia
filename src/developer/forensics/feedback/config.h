@@ -36,11 +36,6 @@ enum class SpontaneousRebootReason : std::uint8_t {
   kHardReset,
 };
 
-struct ProductConfig {
-  std::optional<StorageSize> snapshot_persistence_max_tmp_size;
-  std::optional<StorageSize> snapshot_persistence_max_cache_size;
-};
-
 struct BuildTypeConfig {
   CrashReportUploadPolicy crash_report_upload_policy;
   std::optional<uint64_t> daily_per_product_crash_report_quota;
@@ -61,12 +56,10 @@ struct SnapshotExclusionConfig {
 // This should match FeedbackInternalConfig in
 // //src/lib/assembly/platform_configuration/src/subsystems/forensics.rs.
 struct FeedbackConfig {
+  std::optional<StorageSize> snapshot_persistence_max_cache_size;
+  std::optional<StorageSize> snapshot_persistence_max_tmp_size;
   SpontaneousRebootReason spontaneous_reboot_reason;
 };
-
-std::optional<ProductConfig> GetProductConfig(
-    const std::string& default_path = kDefaultProductConfigPath,
-    const std::string& override_path = kOverrideProductConfigPath);
 
 std::optional<BuildTypeConfig> GetBuildTypeConfig(
     const std::string& default_path = kDefaultBuildTypeConfigPath,
@@ -82,7 +75,7 @@ std::optional<FeedbackConfig> GetFeedbackConfig(const std::string& path = kFeedb
 
 // Exposes the static configuration based on build type and product.
 void ExposeConfig(inspect::Node& inspect_root, const BuildTypeConfig& build_type_config,
-                  const ProductConfig& product_config);
+                  const FeedbackConfig& feedback_config);
 
 // Returns the string version of the enum.
 std::string ToString(CrashReportUploadPolicy upload_policy);

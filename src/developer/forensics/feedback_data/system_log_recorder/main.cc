@@ -49,12 +49,6 @@ int main() {
     return EXIT_FAILURE;
   }
 
-  const std::optional<feedback::ProductConfig> product_config = feedback::GetProductConfig();
-  if (!product_config.has_value()) {
-    FX_LOGS(FATAL) << "Failed to parse product config";
-    return EXIT_FAILURE;
-  }
-
   async::Loop write_loop(&kAsyncLoopConfigNoAttachToCurrentThread);
   trace::TraceProviderWithFdio trace_provider(main_loop.dispatcher(), "system_log_recorder");
 

@@ -19,6 +19,10 @@ const FEEDBACK_CONFIG_DIRECTORY: &str = "feedback-config";
 // Filename of FeedbackInternalConfig file within feedback domain config.
 const FEEDBACK_CONFIG_FILENAME: &str = "feedback_config.json";
 
+// -1 as the default value indicates that snapshots should not be persisted to disk.
+const DEFAULT_STORAGE_SIZE_MIB: i64 = -1;
+const LARGE_DISK_STORAGE_SIZE_MIB: i64 = 10;
+
 pub(crate) struct ForensicsSubsystem;
 impl DefineSubsystemConfiguration<(&ForensicsConfig, &PlatformSessionConfig)>
     for ForensicsSubsystem
@@ -30,9 +34,6 @@ impl DefineSubsystemConfiguration<(&ForensicsConfig, &PlatformSessionConfig)>
     ) -> anyhow::Result<()> {
         let (config, session_config) = *platform_config;
 
-        if config.feedback.large_disk {
-            builder.platform_bundle("feedback_large_disk");
-        }
         if config.feedback.remote_device_id_provider {
             builder.platform_bundle("feedback_remote_device_id_provider");
         }
@@ -86,7 +87,15 @@ impl DefineSubsystemConfiguration<(&ForensicsConfig, &PlatformSessionConfig)>
                 &serde_json::to_string_pretty(&config.feedback.snapshot_exclusion)?,
             )?;
 
+            let storage_size_mib = if config.feedback.large_disk {
+                LARGE_DISK_STORAGE_SIZE_MIB
+            } else {
+                DEFAULT_STORAGE_SIZE_MIB
+            };
+
             let feedback_config = FeedbackInternalConfig {
+                snapshot_persistence_max_cache_size_mib: storage_size_mib,
+                snapshot_persistence_max_tmp_size_mib: storage_size_mib,
                 spontaneous_reboot_reason: config.feedback.spontaneous_reboot_reason,
             };
 
@@ -147,6 +156,8 @@ impl DefineSubsystemConfiguration<(&ForensicsConfig, &PlatformSessionConfig)>
 #[serde(default, deny_unknown_fields)]
 struct FeedbackInternalConfig {
     // LINT.IfChange
+    pub snapshot_persistence_max_cache_size_mib: i64,
+    pub snapshot_persistence_max_tmp_size_mib: i64,
     pub spontaneous_reboot_reason: SpontaneousRebootReason,
     // LINT.ThenChange(//src/developer/forensics/feedback/config.cc)
 }
@@ -373,12 +384,9 @@ mod test {
             FileOrContents::Contents(string_contents) => string_contents,
             _ => panic!("FileOrContents::Contents expected"),
         };
-        assert_eq!(
-            serde_json::from_str::<FeedbackInternalConfig>(string_contents).unwrap(),
-            FeedbackInternalConfig {
-                spontaneous_reboot_reason: SpontaneousRebootReason::Spontaneous
-            }
-        );
+
+        let config = serde_json::from_str::<FeedbackInternalConfig>(string_contents).unwrap();
+        assert_eq!(config.spontaneous_reboot_reason, SpontaneousRebootReason::Spontaneous);
     }
 
     #[test]
@@ -423,11 +431,95 @@ mod test {
             FileOrContents::Contents(string_contents) => string_contents,
             _ => panic!("FileOrContents::Contents expected"),
         };
-        assert_eq!(
-            serde_json::from_str::<FeedbackInternalConfig>(string_contents).unwrap(),
-            FeedbackInternalConfig {
-                spontaneous_reboot_reason: SpontaneousRebootReason::BriefPowerLoss
-            }
+
+        let config = serde_json::from_str::<FeedbackInternalConfig>(string_contents).unwrap();
+        assert_eq!(config.spontaneous_reboot_reason, SpontaneousRebootReason::BriefPowerLoss);
+    }
+
+    #[test]
+    fn feedback_config_default_disk_size() {
+        let context = ConfigurationContext {
+            feature_set_level: &FeatureSetLevel::Standard,
+            build_type: &BuildType::Eng,
+            board_config: &Default::default(),
+            gendir: Default::default(),
+            resource_dir: Default::default(),
+            developer_only_options: Default::default(),
+        };
+
+        let forensics_config: ForensicsConfig = Default::default();
+        let session_config: PlatformSessionConfig = Default::default();
+        let mut builder: ConfigurationBuilderImpl = Default::default();
+        let result = ForensicsSubsystem::define_configuration(
+            &context,
+            &(&forensics_config, &session_config),
+            &mut builder,
         );
+        assert!(result.is_ok());
+
+        let config = builder.build();
+        let domain_config: &DomainConfig = config
+            .domain_configs
+            .entries
+            .get(&PackageSetDestination::Blob(PackageDestination::FeedbackConfig))
+            .unwrap();
+
+        let domain_config_directory: &DomainConfigDirectory =
+            domain_config.directories.entries.get(FEEDBACK_CONFIG_DIRECTORY).unwrap();
+        let feedback_config: &FileOrContents =
+            domain_config_directory.entries.get(FEEDBACK_CONFIG_FILENAME).unwrap();
+        let string_contents: &String = match &feedback_config {
+            FileOrContents::Contents(string_contents) => string_contents,
+            _ => panic!("FileOrContents::Contents expected"),
+        };
+
+        let config = serde_json::from_str::<FeedbackInternalConfig>(string_contents).unwrap();
+        assert_eq!(config.snapshot_persistence_max_cache_size_mib, DEFAULT_STORAGE_SIZE_MIB);
+        assert_eq!(config.snapshot_persistence_max_tmp_size_mib, DEFAULT_STORAGE_SIZE_MIB);
+    }
+
+    #[test]
+    fn feedback_config_large_disk() {
+        let context = ConfigurationContext {
+            feature_set_level: &FeatureSetLevel::Standard,
+            build_type: &BuildType::Eng,
+            board_config: &Default::default(),
+            gendir: Default::default(),
+            resource_dir: Default::default(),
+            developer_only_options: Default::default(),
+        };
+
+        let forensics_config = ForensicsConfig {
+            feedback: FeedbackConfig { large_disk: true, ..Default::default() },
+            ..Default::default()
+        };
+        let session_config: PlatformSessionConfig = Default::default();
+        let mut builder: ConfigurationBuilderImpl = Default::default();
+        let result = ForensicsSubsystem::define_configuration(
+            &context,
+            &(&forensics_config, &session_config),
+            &mut builder,
+        );
+        assert!(result.is_ok());
+
+        let config = builder.build();
+        let domain_config: &DomainConfig = config
+            .domain_configs
+            .entries
+            .get(&PackageSetDestination::Blob(PackageDestination::FeedbackConfig))
+            .unwrap();
+
+        let domain_config_directory: &DomainConfigDirectory =
+            domain_config.directories.entries.get(FEEDBACK_CONFIG_DIRECTORY).unwrap();
+        let feedback_config: &FileOrContents =
+            domain_config_directory.entries.get(FEEDBACK_CONFIG_FILENAME).unwrap();
+        let string_contents: &String = match &feedback_config {
+            FileOrContents::Contents(string_contents) => string_contents,
+            _ => panic!("FileOrContents::Contents expected"),
+        };
+
+        let config = serde_json::from_str::<FeedbackInternalConfig>(string_contents).unwrap();
+        assert_eq!(config.snapshot_persistence_max_cache_size_mib, LARGE_DISK_STORAGE_SIZE_MIB);
+        assert_eq!(config.snapshot_persistence_max_tmp_size_mib, LARGE_DISK_STORAGE_SIZE_MIB);
     }
 }

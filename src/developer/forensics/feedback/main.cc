@@ -60,12 +60,6 @@ int main() {
     return EXIT_FAILURE;
   }
 
-  const std::optional<feedback::ProductConfig> product_config = feedback::GetProductConfig();
-  if (!product_config.has_value()) {
-    FX_LOGS(FATAL) << "Failed to parse product config";
-    return EXIT_FAILURE;
-  }
-
   std::unique_ptr<cobalt::Logger> cobalt = std::make_unique<cobalt::Logger>(
       component.Dispatcher(), component.Services(), component.Clock());
 
@@ -92,7 +86,7 @@ int main() {
     }
   }
 
-  ExposeConfig(*component.InspectRoot(), *build_type_config, *product_config);
+  ExposeConfig(*component.InspectRoot(), *build_type_config, *feedback_config);
 
   RebootLog reboot_log =
       RebootLog::ParseRebootLog("/boot/log/last-panic.txt", kPreviousGracefulShutdownInfoFile,
@@ -132,9 +126,9 @@ int main() {
               .build_type_config = *build_type_config,
               .snapshot_store_max_archives_size = kSnapshotArchivesMaxSize,
               .snapshot_persistence_max_tmp_size =
-                  product_config->snapshot_persistence_max_tmp_size,
+                  feedback_config->snapshot_persistence_max_tmp_size,
               .snapshot_persistence_max_cache_size =
-                  product_config->snapshot_persistence_max_cache_size,
+                  feedback_config->snapshot_persistence_max_cache_size,
               .snapshot_collector_window_duration = kSnapshotSharedRequestWindow,
           },
           FeedbackData::Options{

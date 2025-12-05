@@ -23,9 +23,7 @@ pub struct ForensicsConfig {
 #[derive(Debug, Default, Deserialize, Serialize, PartialEq, JsonSchema)]
 #[serde(default, deny_unknown_fields)]
 pub struct FeedbackConfig {
-    /// If true, Feedback will apply the config found at
-    /// //src/developer/forensics/feedback/configs/product/large_disk.json. Compared to the
-    /// default, this will persist snapshots to disk if the network is unavailable.
+    /// If true, Feedback will persist snapshots to disk if the network is unavailable.
     #[serde(skip_serializing_if = "crate::common::is_default")]
     pub large_disk: bool,
 

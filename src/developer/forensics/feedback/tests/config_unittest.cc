@@ -54,13 +54,6 @@ class ConfigTest : public testing::Test {
   files::ScopedTempDir temp_dir_;
 };
 
-class ProductConfigTest : public ConfigTest {
- protected:
-  std::optional<ProductConfig> ParseConfig(const std::string& config) {
-    return GetProductConfig(WriteConfig(config));
-  }
-};
-
 class BuildTypeConfigTest : public ConfigTest {
  protected:
   std::optional<BuildTypeConfig> ParseConfig(const std::string& config) {
@@ -90,142 +83,6 @@ class FeedbackConfigTest : public ConfigTest {
 };
 
 using InspectConfigTest = UnitTestFixture;
-
-TEST_F(ProductConfigTest, MissingSnapshotPersistenceMaxTmpSizeMib) {
-  const std::optional<ProductConfig> config = ParseConfig(R"({
-  "snapshot_persistence_max_cache_size_mib": 1
-})");
-
-  EXPECT_FALSE(config.has_value());
-}
-
-TEST_F(ProductConfigTest, MissingSnapshotPersistenceMaxCacheSizeMib) {
-  const std::optional<ProductConfig> config = ParseConfig(R"({
-  "snapshot_persistence_max_tmp_size_mib": 1
-})");
-
-  EXPECT_FALSE(config.has_value());
-}
-
-TEST_F(ProductConfigTest, SpuriousField) {
-  const std::optional<ProductConfig> config = ParseConfig(R"({
-  "snapshot_persistence_max_tmp_size_mib": 1,
-  "snapshot_persistence_max_cache_size_mib": 1,
-  "spurious": ""
-})");
-
-  EXPECT_FALSE(config.has_value());
-}
-
-TEST_F(ProductConfigTest, SnapshotPersistenceMaxTmpSizeMibPositive) {
-  const std::optional<ProductConfig> config = ParseConfig(R"({
-  "snapshot_persistence_max_tmp_size_mib": 1,
-  "snapshot_persistence_max_cache_size_mib": 1
-})");
-
-  ASSERT_TRUE(config.has_value());
-  EXPECT_EQ(config->snapshot_persistence_max_tmp_size, StorageSize::Megabytes(1));
-}
-
-TEST_F(ProductConfigTest, SnapshotPersistenceMaxTmpSizeMibZero) {
-  const std::optional<ProductConfig> config = ParseConfig(R"({
-  "snapshot_persistence_max_tmp_size_mib": 0,
-  "snapshot_persistence_max_cache_size_mib": 1
-})");
-
-  ASSERT_TRUE(config.has_value());
-  EXPECT_FALSE(config->snapshot_persistence_max_tmp_size.has_value());
-}
-
-TEST_F(ProductConfigTest, SnapshotPersistenceMaxTmpSizeMibNegative) {
-  const std::optional<ProductConfig> config = ParseConfig(R"({
-  "snapshot_persistence_max_tmp_size_mib": -1,
-  "snapshot_persistence_max_cache_size_mib": 1
-})");
-
-  ASSERT_TRUE(config.has_value());
-  EXPECT_FALSE(config->snapshot_persistence_max_tmp_size.has_value());
-}
-
-TEST_F(ProductConfigTest, SnapshotPersistenceMaxTmpSizeMibNotNumber) {
-  const std::optional<ProductConfig> config = ParseConfig(R"({
-  "snapshot_persistence_max_tmp_size_mib": "",
-  "snapshot_persistence_max_cache_size_mib": 1
-})");
-
-  EXPECT_FALSE(config.has_value());
-}
-
-TEST_F(ProductConfigTest, SnapshotPersistenceMaxCacheSizeMibPositive) {
-  const std::optional<ProductConfig> config = ParseConfig(R"({
-  "snapshot_persistence_max_tmp_size_mib": 1,
-  "snapshot_persistence_max_cache_size_mib": 1
-})");
-
-  ASSERT_TRUE(config.has_value());
-  EXPECT_EQ(config->snapshot_persistence_max_cache_size, StorageSize::Megabytes(1));
-}
-
-TEST_F(ProductConfigTest, SnapshotPersistenceMaxCacheSizeMibZero) {
-  const std::optional<ProductConfig> config = ParseConfig(R"({
-  "snapshot_persistence_max_tmp_size_mib": 1,
-  "snapshot_persistence_max_cache_size_mib": 0
-})");
-
-  ASSERT_TRUE(config.has_value());
-  EXPECT_FALSE(config->snapshot_persistence_max_cache_size.has_value());
-}
-
-TEST_F(ProductConfigTest, SnapshotPersistenceMaxCacheSizeMibNegative) {
-  const std::optional<ProductConfig> config = ParseConfig(R"({
-  "snapshot_persistence_max_tmp_size_mib": 1,
-  "snapshot_persistence_max_cache_size_mib": -1
-})");
-
-  ASSERT_TRUE(config.has_value());
-  EXPECT_FALSE(config->snapshot_persistence_max_cache_size.has_value());
-}
-
-TEST_F(ProductConfigTest, SnapshotPersistenceMaxCacheSizeMibNotNumber) {
-  const std::optional<ProductConfig> config = ParseConfig(R"({
-  "snapshot_persistence_max_tmp_size_mib": 1,
-  "snapshot_persistence_max_cache_size_mib": ""
-})");
-
-  EXPECT_FALSE(config.has_value());
-}
-
-TEST_F(ProductConfigTest, UseOverrideConfig) {
-  const std::string override_path = WriteConfig(R"({
-  "snapshot_persistence_max_tmp_size_mib": 1,
-  "snapshot_persistence_max_cache_size_mib": 1
-})");
-
-  const std::optional<ProductConfig> config = GetProductConfig(override_path, "/bad/path");
-
-  ASSERT_TRUE(config.has_value());
-  EXPECT_EQ(config->snapshot_persistence_max_tmp_size, StorageSize::Megabytes(1));
-  EXPECT_EQ(config->snapshot_persistence_max_cache_size, StorageSize::Megabytes(1));
-}
-
-TEST_F(ProductConfigTest, UseDefaultConfig) {
-  const std::string default_path = WriteConfig(R"({
-  "snapshot_persistence_max_tmp_size_mib": 1,
-  "snapshot_persistence_max_cache_size_mib": 1
-})");
-
-  const std::optional<ProductConfig> config = GetProductConfig("/bad/path", default_path);
-
-  ASSERT_TRUE(config.has_value());
-  EXPECT_EQ(config->snapshot_persistence_max_tmp_size, StorageSize::Megabytes(1));
-  EXPECT_EQ(config->snapshot_persistence_max_cache_size, StorageSize::Megabytes(1));
-}
-
-TEST_F(ProductConfigTest, MissingOverrideAndDefaultConfigs) {
-  const std::optional<ProductConfig> config = GetProductConfig("/bad/path", "/bad/path");
-
-  EXPECT_FALSE(config.has_value());
-}
 
 TEST_F(BuildTypeConfigTest, MissingCrashReportUploadPolicy) {
   const std::optional<BuildTypeConfig> config = ParseConfig(R"({
@@ -741,20 +598,43 @@ TEST_F(SnapshotExclusionConfigTest, ExcludedAnnotationsNonEmpty) {
   EXPECT_THAT(config->excluded_annotations, ElementsAreArray({"a", "b"}));
 }
 
-TEST_F(ProductConfigTest, MissingConfigs) {
-  const std::optional<SnapshotConfig> config = GetSnapshotConfig("/bad/path");
+TEST_F(FeedbackConfigTest, MissingConfigs) {
+  const std::optional<FeedbackConfig> config = GetFeedbackConfig("/bad/path");
+
+  EXPECT_FALSE(config.has_value());
+}
+
+TEST_F(FeedbackConfigTest, MissingSnapshotPersistenceMaxCacheSizeMib) {
+  const std::optional<FeedbackConfig> config = ParseConfig(R"({
+    "snapshot_persistence_max_tmp_size_mib": 1,
+    "spontaneous_reboot_reason": "spontaneous"
+})");
+
+  EXPECT_FALSE(config.has_value());
+}
+
+TEST_F(FeedbackConfigTest, MissingSnapshotPersistenceMaxTmpSizeMib) {
+  const std::optional<FeedbackConfig> config = ParseConfig(R"({
+    "snapshot_persistence_max_cache_size_mib": 1,
+    "spontaneous_reboot_reason": "spontaneous"
+})");
 
   EXPECT_FALSE(config.has_value());
 }
 
 TEST_F(FeedbackConfigTest, MissingSpontaneousRebootReason) {
-  const std::optional<FeedbackConfig> config = ParseConfig(R"({})");
+  const std::optional<FeedbackConfig> config = ParseConfig(R"({
+    "snapshot_persistence_max_cache_size_mib": 1,
+    "snapshot_persistence_max_tmp_size_mib": 1
+})");
 
   EXPECT_FALSE(config.has_value());
 }
 
 TEST_F(FeedbackConfigTest, SpuriousField) {
   const std::optional<FeedbackConfig> config = ParseConfig(R"({
+    "snapshot_persistence_max_cache_size_mib": 1,
+    "snapshot_persistence_max_tmp_size_mib": 1,
     "spontaneous_reboot_reason": "spontaneous",
     "spurious": ""
 })");
@@ -762,8 +642,96 @@ TEST_F(FeedbackConfigTest, SpuriousField) {
   EXPECT_FALSE(config.has_value());
 }
 
+TEST_F(FeedbackConfigTest, SnapshotPersistenceMaxCacheSizeMibPositive) {
+  const std::optional<FeedbackConfig> config = ParseConfig(R"({
+    "snapshot_persistence_max_cache_size_mib": 1,
+    "snapshot_persistence_max_tmp_size_mib": 1,
+    "spontaneous_reboot_reason": "spontaneous"
+})");
+
+  ASSERT_TRUE(config.has_value());
+  EXPECT_EQ(config->snapshot_persistence_max_cache_size, StorageSize::Megabytes(1));
+}
+
+TEST_F(FeedbackConfigTest, SnapshotPersistenceMaxCacheSizeMibZero) {
+  const std::optional<FeedbackConfig> config = ParseConfig(R"({
+    "snapshot_persistence_max_cache_size_mib": 0,
+    "snapshot_persistence_max_tmp_size_mib": 1,
+    "spontaneous_reboot_reason": "spontaneous"
+})");
+
+  ASSERT_TRUE(config.has_value());
+  EXPECT_FALSE(config->snapshot_persistence_max_cache_size.has_value());
+}
+
+TEST_F(FeedbackConfigTest, SnapshotPersistenceMaxCacheSizeMibNegative) {
+  const std::optional<FeedbackConfig> config = ParseConfig(R"({
+    "snapshot_persistence_max_cache_size_mib": -1,
+    "snapshot_persistence_max_tmp_size_mib": 1,
+    "spontaneous_reboot_reason": "spontaneous"
+})");
+
+  ASSERT_TRUE(config.has_value());
+  EXPECT_FALSE(config->snapshot_persistence_max_cache_size.has_value());
+}
+
+TEST_F(FeedbackConfigTest, SnapshotPersistenceMaxCacheSizeMibNotNumber) {
+  const std::optional<FeedbackConfig> config = ParseConfig(R"({
+    "snapshot_persistence_max_cache_size_mib": "",
+    "snapshot_persistence_max_tmp_size_mib": 1,
+    "spontaneous_reboot_reason": "spontaneous"
+})");
+
+  EXPECT_FALSE(config.has_value());
+}
+
+TEST_F(FeedbackConfigTest, SnapshotPersistenceMaxTmpSizeMibPositive) {
+  const std::optional<FeedbackConfig> config = ParseConfig(R"({
+    "snapshot_persistence_max_cache_size_mib": 1,
+    "snapshot_persistence_max_tmp_size_mib": 1,
+    "spontaneous_reboot_reason": "spontaneous"
+})");
+
+  ASSERT_TRUE(config.has_value());
+  EXPECT_EQ(config->snapshot_persistence_max_tmp_size, StorageSize::Megabytes(1));
+}
+
+TEST_F(FeedbackConfigTest, SnapshotPersistenceMaxTmpSizeMibZero) {
+  const std::optional<FeedbackConfig> config = ParseConfig(R"({
+    "snapshot_persistence_max_cache_size_mib": 1,
+    "snapshot_persistence_max_tmp_size_mib": 0,
+    "spontaneous_reboot_reason": "spontaneous"
+})");
+
+  ASSERT_TRUE(config.has_value());
+  EXPECT_FALSE(config->snapshot_persistence_max_tmp_size.has_value());
+}
+
+TEST_F(FeedbackConfigTest, SnapshotPersistenceMaxTmpSizeMibNegative) {
+  const std::optional<FeedbackConfig> config = ParseConfig(R"({
+    "snapshot_persistence_max_cache_size_mib": 1,
+    "snapshot_persistence_max_tmp_size_mib": -1,
+    "spontaneous_reboot_reason": "spontaneous"
+})");
+
+  ASSERT_TRUE(config.has_value());
+  EXPECT_FALSE(config->snapshot_persistence_max_tmp_size.has_value());
+}
+
+TEST_F(FeedbackConfigTest, SnapshotPersistenceMaxTmpSizeMibNotNumber) {
+  const std::optional<FeedbackConfig> config = ParseConfig(R"({
+    "snapshot_persistence_max_cache_size_mib": 1,
+    "snapshot_persistence_max_tmp_size_mib": "",
+    "spontaneous_reboot_reason": "spontaneous"
+})");
+
+  EXPECT_FALSE(config.has_value());
+}
+
 TEST_F(FeedbackConfigTest, SpontaneousRebootReasonNotAllowedValue) {
   const std::optional<FeedbackConfig> config = ParseConfig(R"({
+    "snapshot_persistence_max_cache_size_mib": 1,
+    "snapshot_persistence_max_tmp_size_mib": 1,
     "spontaneous_reboot_reason": "not_allowed"
 })");
 
@@ -772,6 +740,8 @@ TEST_F(FeedbackConfigTest, SpontaneousRebootReasonNotAllowedValue) {
 
 TEST_F(FeedbackConfigTest, SpontaneousRebootReasonNotString) {
   const std::optional<FeedbackConfig> config = ParseConfig(R"({
+    "snapshot_persistence_max_cache_size_mib": 1,
+    "snapshot_persistence_max_tmp_size_mib": 1,
     "spontaneous_reboot_reason": 0
 })");
 
@@ -780,6 +750,8 @@ TEST_F(FeedbackConfigTest, SpontaneousRebootReasonNotString) {
 
 TEST_F(FeedbackConfigTest, SpontaneousRebootReasonSpontaneous) {
   const std::optional<FeedbackConfig> config = ParseConfig(R"({
+    "snapshot_persistence_max_cache_size_mib": 1,
+    "snapshot_persistence_max_tmp_size_mib": 1,
     "spontaneous_reboot_reason": "spontaneous"
 })");
 
@@ -789,6 +761,8 @@ TEST_F(FeedbackConfigTest, SpontaneousRebootReasonSpontaneous) {
 
 TEST_F(FeedbackConfigTest, SpontaneousRebootReasonBriefPowerLoss) {
   const std::optional<FeedbackConfig> config = ParseConfig(R"({
+    "snapshot_persistence_max_cache_size_mib": 1,
+    "snapshot_persistence_max_tmp_size_mib": 1,
     "spontaneous_reboot_reason": "brief_power_loss"
 })");
 
@@ -798,6 +772,8 @@ TEST_F(FeedbackConfigTest, SpontaneousRebootReasonBriefPowerLoss) {
 
 TEST_F(FeedbackConfigTest, SpontaneousRebootReasonHardReset) {
   const std::optional<FeedbackConfig> config = ParseConfig(R"({
+    "snapshot_persistence_max_cache_size_mib": 1,
+    "snapshot_persistence_max_tmp_size_mib": 1,
     "spontaneous_reboot_reason": "hard_reset"
 })");
 
@@ -945,7 +921,7 @@ TEST_F(InspectConfigTest, ExposeConfig_BuildTypeEnableAll) {
 
 TEST_F(InspectConfigTest, ExposeConfig_SnapshotPersistenceMaxTmpSizeNone) {
   ExposeConfig(InspectRoot(), {},
-               ProductConfig{
+               FeedbackConfig{
                    .snapshot_persistence_max_tmp_size = std::nullopt,
                });
 
@@ -955,7 +931,7 @@ TEST_F(InspectConfigTest, ExposeConfig_SnapshotPersistenceMaxTmpSizeNone) {
 
 TEST_F(InspectConfigTest, ExposeConfig_SnapshotPersistenceMaxTmpSizePositive) {
   ExposeConfig(InspectRoot(), {},
-               ProductConfig{
+               FeedbackConfig{
                    .snapshot_persistence_max_tmp_size = StorageSize::Megabytes(1),
                });
 
@@ -965,7 +941,7 @@ TEST_F(InspectConfigTest, ExposeConfig_SnapshotPersistenceMaxTmpSizePositive) {
 
 TEST_F(InspectConfigTest, ExposeConfig_SnapshotPersistenceMaxCacheSizeNone) {
   ExposeConfig(InspectRoot(), {},
-               ProductConfig{
+               FeedbackConfig{
                    .snapshot_persistence_max_cache_size = std::nullopt,
                });
 
@@ -975,7 +951,7 @@ TEST_F(InspectConfigTest, ExposeConfig_SnapshotPersistenceMaxCacheSizeNone) {
 
 TEST_F(InspectConfigTest, ExposeConfig_SnapshotPersistenceMaxCacheSizePositive) {
   ExposeConfig(InspectRoot(), {},
-               ProductConfig{
+               FeedbackConfig{
                    .snapshot_persistence_max_cache_size = StorageSize::Megabytes(1),
                });
 
@@ -983,11 +959,11 @@ TEST_F(InspectConfigTest, ExposeConfig_SnapshotPersistenceMaxCacheSizePositive) 
               BuildConfigMatcher({StringIs(kSnapshotPersistenceMaxCacheSizeKey, "1")}));
 }
 
-TEST_F(InspectConfigTest, ExposeConfig_ProductEnableAll) {
+TEST_F(InspectConfigTest, ExposeConfig_FeedbackConfigEnableAll) {
   ExposeConfig(InspectRoot(), {},
-               ProductConfig{
-                   .snapshot_persistence_max_tmp_size = StorageSize::Megabytes(1),
+               FeedbackConfig{
                    .snapshot_persistence_max_cache_size = StorageSize::Megabytes(1),
+                   .snapshot_persistence_max_tmp_size = StorageSize::Megabytes(1),
                });
 
   EXPECT_THAT(InspectTree(), BuildConfigMatcher({
@@ -1005,9 +981,9 @@ TEST_F(InspectConfigTest, ExposeConfig_EnableAll) {
                    .enable_hourly_snapshots = true,
                    .enable_limit_inspect_data = true,
                },
-               ProductConfig{
-                   .snapshot_persistence_max_tmp_size = StorageSize::Megabytes(1),
+               FeedbackConfig{
                    .snapshot_persistence_max_cache_size = StorageSize::Megabytes(1),
+                   .snapshot_persistence_max_tmp_size = StorageSize::Megabytes(1),
                });
 
   EXPECT_THAT(InspectTree(), BuildConfigMatcher({

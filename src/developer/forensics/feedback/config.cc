@@ -79,43 +79,6 @@ std::optional<T> GetConfig(const std::string& schema_str,
   return config;
 }
 
-constexpr char kProductConfigSchema[] = R"({
-    "type": "object",
-    "properties": {
-       "snapshot_persistence_max_tmp_size_mib": {
-           "type": "number"
-       },
-       "snapshot_persistence_max_cache_size_mib": {
-           "type": "number"
-       }
-    },
-    "required": [
-       "snapshot_persistence_max_tmp_size_mib",
-       "snapshot_persistence_max_cache_size_mib"
-    ],
-    "additionalProperties": false
-})";
-
-std::optional<ProductConfig> ParseProductConfig(const rapidjson::Document& json) {
-  ProductConfig config;
-
-  if (const int64_t max_tmp_size_mib = json[kSnapshotPersistenceMaxTmpSizeKey].GetInt64();
-      max_tmp_size_mib > 0) {
-    config.snapshot_persistence_max_tmp_size = StorageSize::Megabytes(max_tmp_size_mib);
-  } else {
-    config.snapshot_persistence_max_tmp_size = std::nullopt;
-  }
-
-  if (const int64_t max_cache_size_mib = json[kSnapshotPersistenceMaxCacheSizeKey].GetInt64();
-      max_cache_size_mib > 0) {
-    config.snapshot_persistence_max_cache_size = StorageSize::Megabytes(max_cache_size_mib);
-  } else {
-    config.snapshot_persistence_max_cache_size = std::nullopt;
-  }
-
-  return config;
-}
-
 const char kBuildTypeConfigSchema[] = R"({
   "type": "object",
   "properties": {
@@ -248,6 +211,12 @@ std::optional<SnapshotExclusionConfig> ParseSnapshotExclusionConfig(
 constexpr char kFeedbackConfigSchema[] = R"({
   "type": "object",
   "properties": {
+    "snapshot_persistence_max_cache_size_mib": {
+      "type": "number"
+    },
+    "snapshot_persistence_max_tmp_size_mib": {
+      "type": "number"
+    },
     "spontaneous_reboot_reason": {
       "type": "string",
       "enum": [
@@ -258,6 +227,8 @@ constexpr char kFeedbackConfigSchema[] = R"({
     }
   },
   "required": [
+    "snapshot_persistence_max_cache_size_mib",
+    "snapshot_persistence_max_tmp_size_mib",
     "spontaneous_reboot_reason"
   ],
   "additionalProperties": false
@@ -265,6 +236,20 @@ constexpr char kFeedbackConfigSchema[] = R"({
 
 std::optional<FeedbackConfig> ParseFeedbackConfig(const rapidjson::Document& json) {
   FeedbackConfig config;
+
+  if (const int64_t max_cache_size_mib = json[kSnapshotPersistenceMaxCacheSizeKey].GetInt64();
+      max_cache_size_mib > 0) {
+    config.snapshot_persistence_max_cache_size = StorageSize::Megabytes(max_cache_size_mib);
+  } else {
+    config.snapshot_persistence_max_cache_size = std::nullopt;
+  }
+
+  if (const int64_t max_tmp_size_mib = json[kSnapshotPersistenceMaxTmpSizeKey].GetInt64();
+      max_tmp_size_mib > 0) {
+    config.snapshot_persistence_max_tmp_size = StorageSize::Megabytes(max_tmp_size_mib);
+  } else {
+    config.snapshot_persistence_max_tmp_size = std::nullopt;
+  }
 
   if (const std::string spontaneous_reboot_reason = json["spontaneous_reboot_reason"].GetString();
       spontaneous_reboot_reason == "spontaneous" ||
@@ -282,12 +267,6 @@ std::optional<FeedbackConfig> ParseFeedbackConfig(const rapidjson::Document& jso
 }
 
 }  // namespace
-
-std::optional<ProductConfig> GetProductConfig(const std::string& default_path,
-                                              const std::string& override_path) {
-  return GetConfig<ProductConfig>(kProductConfigSchema, ParseProductConfig, "product", default_path,
-                                  override_path);
-}
 
 std::optional<BuildTypeConfig> GetBuildTypeConfig(const std::string& default_path,
                                                   const std::string& override_path) {
@@ -312,20 +291,20 @@ std::optional<FeedbackConfig> GetFeedbackConfig(const std::string& path) {
 }
 
 void ExposeConfig(inspect::Node& inspect_root, const BuildTypeConfig& build_type_config,
-                  const ProductConfig& product_config) {
+                  const FeedbackConfig& feedback_config) {
   const std::string crash_report_quota =
       build_type_config.daily_per_product_crash_report_quota.has_value()
           ? std::to_string(*build_type_config.daily_per_product_crash_report_quota)
           : "none";
 
   const std::string snapshot_persistence_tmp_size =
-      product_config.snapshot_persistence_max_tmp_size.has_value()
-          ? std::to_string(product_config.snapshot_persistence_max_tmp_size->ToMegabytes())
+      feedback_config.snapshot_persistence_max_tmp_size.has_value()
+          ? std::to_string(feedback_config.snapshot_persistence_max_tmp_size->ToMegabytes())
           : "none";
 
   const std::string snapshot_persistence_cache_size =
-      product_config.snapshot_persistence_max_cache_size.has_value()
-          ? std::to_string(product_config.snapshot_persistence_max_cache_size->ToMegabytes())
+      feedback_config.snapshot_persistence_max_cache_size.has_value()
+          ? std::to_string(feedback_config.snapshot_persistence_max_cache_size->ToMegabytes())
           : "none";
 
   inspect_root.RecordChild(

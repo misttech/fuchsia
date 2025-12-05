@@ -19,10 +19,6 @@ using testing::UnorderedElementsAreArray;
 
 class ProdConfigTest : public testing::Test {
  public:
-  static std::optional<ProductConfig> ReadProductConfig(const std::string& config_filename) {
-    return GetProductConfig(files::JoinPath("/pkg/data/product/configs", config_filename));
-  }
-
   static std::optional<BuildTypeConfig> ReadBuildTypeConfig(const std::string& config_filename) {
     return GetBuildTypeConfig(files::JoinPath("/pkg/data/build_type/configs", config_filename));
   }
@@ -31,22 +27,6 @@ class ProdConfigTest : public testing::Test {
     return GetSnapshotConfig(files::JoinPath("/pkg/data/snapshot/configs", config_filename));
   }
 };
-
-TEST_F(ProdConfigTest, DefaultProduct) {
-  const std::optional<ProductConfig> config = ReadProductConfig("default.json");
-  ASSERT_TRUE(config.has_value());
-
-  EXPECT_FALSE(config->snapshot_persistence_max_tmp_size.has_value());
-  EXPECT_FALSE(config->snapshot_persistence_max_cache_size.has_value());
-}
-
-TEST_F(ProdConfigTest, LargeDiskProduct) {
-  const std::optional<ProductConfig> config = ReadProductConfig("large_disk.json");
-  ASSERT_TRUE(config.has_value());
-
-  EXPECT_EQ(config->snapshot_persistence_max_tmp_size, StorageSize::Megabytes(10));
-  EXPECT_EQ(config->snapshot_persistence_max_cache_size, StorageSize::Megabytes(10));
-}
 
 TEST_F(ProdConfigTest, DefaultBuildType) {
   const std::optional<BuildTypeConfig> config = ReadBuildTypeConfig("default.json");
