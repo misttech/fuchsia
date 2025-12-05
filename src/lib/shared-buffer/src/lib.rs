@@ -106,7 +106,7 @@
 use core::marker::PhantomData;
 use core::ops::{Bound, Range, RangeBounds};
 use core::ptr;
-use core::sync::atomic::{fence, Ordering};
+use core::sync::atomic::{Ordering, fence};
 
 // A buffer with no ownership or reference semantics. It is the caller's
 // responsibility to wrap this type in a type which provides ownership or
@@ -269,7 +269,7 @@ impl SharedBuffer {
         // must assume that the memory has escaped, and that all future writes
         // to it are observable. See the NOTE above for more details.
         let mut scratch = (ptr::null_mut(), 0);
-        ptr::write_volatile(&mut scratch, (buf, len));
+        unsafe { ptr::write_volatile(&mut scratch, (buf, len)) };
 
         // Acquire any writes to the buffer that happened in a different thread
         // or process already so they are visible without having to call the
@@ -917,12 +917,12 @@ unsafe impl<'a> Sync for SharedBufferSliceMut<'a> {}
 mod tests {
     use core::{mem, ptr};
 
-    use super::{overlap, SharedBuffer};
+    use super::{SharedBuffer, overlap};
 
     // use the referent as the backing memory for a SharedBuffer
     unsafe fn buf_from_ref<T>(x: &mut T) -> SharedBuffer {
         let size = mem::size_of::<T>();
-        SharedBuffer::new(x as *mut _ as *mut u8, size)
+        unsafe { SharedBuffer::new(x as *mut _ as *mut u8, size) }
     }
 
     #[test]

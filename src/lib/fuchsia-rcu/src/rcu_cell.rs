@@ -55,7 +55,7 @@ impl<T: Send + Sync + 'static> RcuCell<T> {
     /// The pointer must have been created by `Box::into_raw` or from `std::ptr::null_mut`.
     unsafe fn replace(&self, ptr: *mut T) {
         let old_ptr = self.ptr.replace(ptr);
-        let object = Box::from_raw(old_ptr);
+        let object = unsafe { Box::from_raw(old_ptr) };
         rcu_drop(object);
     }
 }

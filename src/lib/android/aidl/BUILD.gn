@@ -108,7 +108,7 @@ if (is_host) {
   }
 
   rustc_binary("aidl_wrapper") {
-    edition = "2021"
+    edition = "2024"
     source_root = "aidl_wrapper/main.rs"
     sources = [ "aidl_wrapper/main.rs" ]
     deps = [

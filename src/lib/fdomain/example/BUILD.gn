@@ -6,7 +6,7 @@ import("//build/components.gni")
 import("//build/rust/rustc_test.gni")
 
 rustc_test("fdomain-example-bin") {
-  edition = "2021"
+  edition = "2024"
 
   deps = [
     "//examples/fidl/fuchsia.examples:fuchsia.examples_rust",

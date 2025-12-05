@@ -17,10 +17,10 @@ use zx::Status;
 ///   `rust_url_free`.
 #[unsafe(no_mangle)]
 unsafe extern "C" fn rust_url_parse(input: *const c_char, out: *mut *mut c_void) -> Status {
-    if let Ok(raw_url) = CStr::from_ptr(input).to_str() {
+    if let Ok(raw_url) = unsafe { CStr::from_ptr(input) }.to_str() {
         match Url::parse(raw_url) {
             Ok(url) => {
-                *out = Box::into_raw(Box::new(url)) as *mut c_void;
+                unsafe { *out = Box::into_raw(Box::new(url)) as *mut c_void };
                 Status::OK
             }
             Err(_) => Status::INVALID_ARGS,
@@ -38,7 +38,7 @@ unsafe extern "C" fn rust_url_parse(input: *const c_char, out: *mut *mut c_void)
 /// * This function can only be called once per pointer.
 #[unsafe(no_mangle)]
 unsafe extern "C" fn rust_url_free(url: *mut c_void) {
-    drop(Box::from_raw(url as *mut Url));
+    unsafe { drop(Box::from_raw(url as *mut Url)) };
 }
 
 /// Get the domain from a parsed URL, returning a C-string if available. If no domain is present,
@@ -50,7 +50,7 @@ unsafe extern "C" fn rust_url_free(url: *mut c_void) {
 /// * `url` cannot have been freed before calling this function.
 #[unsafe(no_mangle)]
 unsafe extern "C" fn rust_url_get_domain(url: *const c_void) -> *const c_char {
-    let url = &*(url as *const Url);
+    let url = unsafe { &*(url as *const Url) };
 
     if let Some(domain) = url.domain() {
         CString::new(domain).expect("no null bytes in a valid URL's domain").into_raw()
@@ -67,5 +67,5 @@ unsafe extern "C" fn rust_url_get_domain(url: *const c_void) -> *const c_char {
 /// * This function can only be called once per pointer.
 #[unsafe(no_mangle)]
 unsafe extern "C" fn rust_url_free_domain(domain: *mut c_char) {
-    drop(CString::from_raw(domain));
+    drop(unsafe { CString::from_raw(domain) });
 }

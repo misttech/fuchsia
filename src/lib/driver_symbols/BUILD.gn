@@ -44,7 +44,7 @@ fuchsia_test_package("driver-restricted-symbols-tests") {
 rustc_library("driver_symbols_rust") {
   name = "driver_symbols"
   version = "0.1.0"
-  edition = "2021"
+  edition = "2024"
 
   deps = [
     "//sdk/rust/zx",

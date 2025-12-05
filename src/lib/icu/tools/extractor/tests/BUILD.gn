@@ -10,7 +10,7 @@ import("//src/lib/icu/tzdata/icu_tzres_source.gni")
 
 if (is_host) {
   rustc_test("icu_data_extractor_tests") {
-    edition = "2021"
+    edition = "2024"
     source_root = "tests.rs"
     deps = [
       "//third_party/rust_crates:anyhow",

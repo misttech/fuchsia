@@ -442,7 +442,7 @@ pub fn disable_lsan_for_should_panic() {}
 #[doc(hidden)]
 #[cfg(any(feature = "variant_asan", feature = "variant_hwasan"))]
 pub fn disable_lsan_for_should_panic() {
-    extern "C" {
+    unsafe extern "C" {
         fn __lsan_disable();
     }
     unsafe {
@@ -455,7 +455,7 @@ fn install_lsan_hook() {}
 
 #[cfg(any(feature = "variant_asan", feature = "variant_hwasan"))]
 fn install_lsan_hook() {
-    extern "C" {
+    unsafe extern "C" {
         fn __lsan_do_leak_check();
     }
     // Wrap the call because atexit requires a safe function pointer.

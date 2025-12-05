@@ -128,12 +128,12 @@ pub fn bind_to_fd_with_ops<T: FdOps>(ops: T, fd: RawFd) -> Result<(), zx::Status
     impl<T: FdOps> Adapter<T> {
         unsafe fn to_data(zxio: *mut zxio_sys::zxio_t) -> *mut T {
             let storage = zxio.cast::<zxio_sys::zxio_storage>();
-            let reserved: *mut _ = &mut (*storage).reserved;
+            let reserved: *mut _ = unsafe { &mut (*storage).reserved };
             reserved.cast::<T>()
         }
 
         unsafe extern "C" fn destroy(io: *mut zxio_sys::zxio_t) {
-            std::ptr::drop_in_place(Self::to_data(io));
+            unsafe { std::ptr::drop_in_place(Self::to_data(io)) };
         }
 
         unsafe extern "C" fn writev(
@@ -143,13 +143,12 @@ pub fn bind_to_fd_with_ops<T: FdOps>(ops: T, fd: RawFd) -> Result<(), zx::Status
             _flags: zxio_sys::zxio_flags_t,
             out_actual: *mut usize,
         ) -> zxio_sys::zx_status_t {
-            let data = &*Self::to_data(io);
-            match data.writev(std::slice::from_raw_parts(
-                vector.cast::<zx::sys::zx_iovec_t>(),
-                vector_count,
-            )) {
+            let data = unsafe { &*Self::to_data(io) };
+            match data.writev(unsafe {
+                std::slice::from_raw_parts(vector.cast::<zx::sys::zx_iovec_t>(), vector_count)
+            }) {
                 Ok(count) => {
-                    *out_actual = count;
+                    unsafe { *out_actual = count };
                     zx::sys::ZX_OK
                 }
                 Err(status) => status.into_raw(),
@@ -160,10 +159,10 @@ pub fn bind_to_fd_with_ops<T: FdOps>(ops: T, fd: RawFd) -> Result<(), zx::Status
             io: *mut zxio_sys::zxio_t,
             tty: *mut bool,
         ) -> zxio_sys::zx_status_t {
-            let data = &*Self::to_data(io);
+            let data = unsafe { &*Self::to_data(io) };
             match data.isatty() {
                 Ok(result) => {
-                    *tty = result;
+                    unsafe { *tty = result };
                     zx::sys::ZX_OK
                 }
                 Err(status) => status.into_raw(),
@@ -195,8 +194,8 @@ pub fn bind_to_fd_with_ops<T: FdOps>(ops: T, fd: RawFd) -> Result<(), zx::Status
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
     struct MockFdOps {
         dropped_counter: Arc<AtomicUsize>,
@@ -219,11 +218,7 @@ mod tests {
         }
 
         fn isatty(&self) -> Result<bool, zx::Status> {
-            if let Some(cb) = self.isatty_cb.as_ref() {
-                Ok(cb())
-            } else {
-                Ok(false)
-            }
+            if let Some(cb) = self.isatty_cb.as_ref() { Ok(cb()) } else { Ok(false) }
         }
     }
 

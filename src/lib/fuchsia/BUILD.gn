@@ -9,7 +9,7 @@ import("//build/testing/environments.gni")
 
 rustc_library("fuchsia") {
   name = "fuchsia"
-  edition = "2021"
+  edition = "2024"
   deps = [
     "macro",
     "//src/lib/diagnostics/log/rust",
@@ -37,7 +37,7 @@ rustc_library("fuchsia") {
 
 rustc_test("fuchsia_test") {
   name = "fuchsia_test"
-  edition = "2021"
+  edition = "2024"
   deps = [
     ":fuchsia",
     "//third_party/rust_crates:anyhow",

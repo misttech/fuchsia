@@ -33,9 +33,9 @@ pub static US_COLEMAK: LazyLock<Keymap<'static>> =
 /// found the fallback is always US QWERTY.
 pub fn select_keymap<'a>(keymap: &Option<String>) -> &'a Keymap<'a> {
     match keymap {
-        Some(ref k) if k == "FR_AZERTY" => &FR_AZERTY,
-        Some(ref k) if k == "US_DVORAK" => &US_DVORAK,
-        Some(ref k) if k == "US_COLEMAK" => &US_COLEMAK,
+        Some(k) if k == "FR_AZERTY" => &FR_AZERTY,
+        Some(k) if k == "US_DVORAK" => &US_DVORAK,
+        Some(k) if k == "US_COLEMAK" => &US_COLEMAK,
         _ => &US_QWERTY,
     }
 }

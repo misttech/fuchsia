@@ -70,7 +70,7 @@ impl<T: Send + Sync + 'static> RcuArc<T> {
     /// The caller must have obtained the pointer from `Self::into_ptr` or from `std::ptr::null_mut`.
     unsafe fn replace(&self, ptr: *mut T) {
         let old_ptr = self.ptr.replace(ptr);
-        let arc = Arc::from_raw(old_ptr);
+        let arc = unsafe { Arc::from_raw(old_ptr) };
         rcu_drop(arc);
     }
 }

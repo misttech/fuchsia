@@ -5,7 +5,7 @@
 import("//build/rust/rustc_macro.gni")
 
 rustc_macro("fuzz") {
-  edition = "2021"
+  edition = "2024"
   deps = [
     "//third_party/rust_crates:quote",
     "//third_party/rust_crates:syn",

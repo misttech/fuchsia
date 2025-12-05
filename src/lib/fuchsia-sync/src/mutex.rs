@@ -53,7 +53,7 @@ unsafe impl lock_api::RawMutex for RawSyncMutex {
 
     #[inline]
     unsafe fn unlock(&self) {
-        sync_mutex_unlock(self.as_futex_ptr())
+        unsafe { sync_mutex_unlock(self.as_futex_ptr()) }
     }
 }
 

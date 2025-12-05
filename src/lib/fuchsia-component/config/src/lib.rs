@@ -5,7 +5,7 @@
 //! Generic traits for configuration.
 
 use fuchsia_inspect::Node;
-use fuchsia_runtime::{take_startup_handle, HandleInfo, HandleType};
+use fuchsia_runtime::{HandleInfo, HandleType, take_startup_handle};
 
 pub trait Config: Sized {
     /// Take the config startup handle and parse its contents.
@@ -78,12 +78,10 @@ impl std::error::Error for Error {
     #[allow(unused_parens, reason = "rustfmt errors without parens here")]
     fn source(&self) -> Option<(&'_ (dyn std::error::Error + 'static))> {
         match self {
-            Self::GettingContentSize(ref status) | Self::ReadingConfigBytes(ref status) => {
-                Some(status)
-            }
+            Self::GettingContentSize(status) | Self::ReadingConfigBytes(status) => Some(status),
             Self::TooFewBytes => None,
             Self::ChecksumMismatch { .. } => None,
-            Self::Unpersist(ref fidl_error) => Some(fidl_error),
+            Self::Unpersist(fidl_error) => Some(fidl_error),
         }
     }
     fn description(&self) -> &str {

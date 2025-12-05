@@ -43,7 +43,7 @@ import("//build/rust/rustc_test.gni")
 import("//src/lib/testing/sharding/fuchsia_sharded_test_package.gni")
 
 rustc_test("underlying_test_to_be_sharded") {
-  edition = "2021"
+  edition = "2024"
   sources = [ "src/lib.rs" ]
 }
 

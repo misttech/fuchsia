@@ -2202,7 +2202,7 @@ impl ScopedInstance {
     /// `ScopedInstance` is dropped. Panics if called multiple times.
     pub fn take_destroy_waiter(
         &mut self,
-    ) -> impl futures::Future<Output = Result<(), anyhow::Error>> {
+    ) -> impl futures::Future<Output = Result<(), anyhow::Error>> + use<> {
         if self.destroy_channel.is_some() {
             panic!("destroy waiter already taken");
         }

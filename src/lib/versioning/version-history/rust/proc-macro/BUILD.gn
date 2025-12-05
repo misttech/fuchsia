@@ -8,7 +8,7 @@ import("//build/rust/rustc_macro.gni")
 rustc_macro("proc-macro") {
   name = "version_history_macro"
 
-  edition = "2021"
+  edition = "2024"
   with_unit_tests = true
 
   deps = [
@@ -24,7 +24,7 @@ rustc_macro("proc-macro") {
 }
 
 rustc_embed_files("version-history-data") {
-  edition = "2021"
+  edition = "2024"
 
   _version_history_label = "//sdk:version_history($default_toolchain)"
   _version_history_dir =
