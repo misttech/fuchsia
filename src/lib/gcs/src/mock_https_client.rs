@@ -14,9 +14,9 @@
 //! // requests come in, the premade responses will be returned.
 //! ```
 
+use fuchsia_sync::Mutex;
 use hyper::{Body, Request};
 use std::collections::VecDeque;
-use std::sync::Mutex;
 
 #[derive(Debug)]
 struct HttpsClientEvent {
@@ -41,11 +41,11 @@ impl HttpsClient {
     ///
     /// Note that `res` is actually a Result<> type.
     pub fn expect(&mut self, req: Request<Body>, res: http::Result<http::Response<Body>>) {
-        self.expected.lock().expect("locking").push_back(HttpsClientEvent { req, res });
+        self.expected.lock().push_back(HttpsClientEvent { req, res });
     }
 
     pub async fn request(&self, req: Request<Body>) -> http::Result<http::Response<Body>> {
-        let expected = self.expected.lock().expect("locking").pop_front().unwrap_or_else(|| {
+        let expected = self.expected.lock().pop_front().unwrap_or_else(|| {
             panic!(
                 "Error: received more https requests than expected. \
             No response available for req: {:?}",
@@ -130,6 +130,6 @@ mod tests {
     #[test]
     fn test_new_https_client() {
         let https_client = new_https_client();
-        assert!(https_client.expected.lock().expect("locking").is_empty());
+        assert!(https_client.expected.lock().is_empty());
     }
 }
