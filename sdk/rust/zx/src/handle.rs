@@ -29,11 +29,11 @@ use std::mem::{self, ManuallyDrop};
 pub struct Koid(sys::zx_koid_t);
 
 impl Koid {
-    pub fn from_raw(raw: sys::zx_koid_t) -> Koid {
+    pub const fn from_raw(raw: sys::zx_koid_t) -> Koid {
         Koid(raw)
     }
 
-    pub fn raw_koid(&self) -> sys::zx_koid_t {
+    pub const fn raw_koid(&self) -> sys::zx_koid_t {
         self.0
     }
 }
