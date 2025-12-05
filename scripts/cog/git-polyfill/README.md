@@ -17,6 +17,16 @@ The following `git` subcommands are currently implemented or intercepted:
 
 Any command not explicitly registered in `git.py` will fail with a "not yet implemented" message.
 
+## Working Directory & Environment
+
+The `git` wrapper script changes the current working directory to the location of the script (`scripts/cog/git-polyfill`) before executing `git.py`. This is necessary for `hermetic-env` to function correctly.
+
+**Developers implementing new subcommands must be aware of this:**
+
+*   `os.getcwd()` will return the `git-polyfill` directory, NOT the user's current directory.
+*   The user's original working directory is passed via the `--invoker-cwd` argument and is available in `top_level_args.invoker_cwd`.
+*   If your command needs to operate on files relative to where the user ran the command, you MUST use `top_level_args.invoker_cwd`.
+
 ## Adding New Subcommands
 
 To add support for a new `git` subcommand:

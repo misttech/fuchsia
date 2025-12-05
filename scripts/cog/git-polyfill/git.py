@@ -10,20 +10,32 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Type
 
 
-def get_workspace_root() -> Optional[Path]:
+def get_repository_root() -> Optional[Path]:
+    """Returns the repository root for the current directory.
+
+    The repository root is the directory that would contain the .git directory.
+    """
     cwd = Path.cwd()
-    workspace_root = None
+    repository_root = None
     for ancestor in [cwd] + list(cwd.parents):
-        if (ancestor / ".citc").is_dir():
-            workspace_root = ancestor
+        if (ancestor.parent / ".citc").is_dir():
+            repository_root = ancestor
             break
-    return workspace_root
+    return repository_root
 
 
 def get_workspace_id_and_snapshot_version(
-    workspace_root: Path,
+    repository_root: Path,
 ) -> Tuple[str, int]:
-    citc_dir = workspace_root / ".citc"
+    """Returns the workspace id and snapshot version for the given repository root.
+
+    Args:
+        repository_root: The repository root to get the workspace id and snapshot version for.
+
+    Returns:
+        A tuple of the workspace id and snapshot version.
+    """
+    citc_dir = repository_root.parent / ".citc"
     try:
         workspace_id = (citc_dir / "workspace_id").read_text().strip()
         snapshot_version = (citc_dir / "snapshot_version").read_text().strip()
@@ -34,7 +46,7 @@ def get_workspace_id_and_snapshot_version(
 
 
 def get_relative_git_dir(
-    top_level_args: argparse.Namespace, workspace_root: Path
+    top_level_args: argparse.Namespace, repository_root: Path
 ) -> Optional[Path]:
     if top_level_args.git_dir and top_level_args.C:
         raise ValueError("--git_dir and -C cannot be used together")
@@ -52,7 +64,7 @@ def get_relative_git_dir(
         path = Path(top_level_args.C).expanduser()
 
     if path and path.is_absolute():
-        path = path.relative_to(workspace_root)
+        path = path.relative_to(repository_root)
 
     # If the path is equal to the workspace root we want to return None which is the same as the
     # user not specifying a git_dir or -C
@@ -121,13 +133,13 @@ class RevParseCommand(GitSubCommand):
             print("cog workspaces only support 'HEAD' revisions at this time")
             return 1
 
-        workspace_root = get_workspace_root()
-        if not workspace_root:
+        repository_root = get_repository_root()
+        if not repository_root:
             print("Not in a cog workspace")
             return 1
 
         workspace_id, snapshot_version = get_workspace_id_and_snapshot_version(
-            workspace_root
+            repository_root
         )
         if not workspace_id or not snapshot_version:
             print("Not in a cog workspace")
@@ -135,7 +147,7 @@ class RevParseCommand(GitSubCommand):
 
         # Determine repo_root
         repo_root = "fuchsia"
-        relative_git_dir = get_relative_git_dir(top_level_args, workspace_root)
+        relative_git_dir = get_relative_git_dir(top_level_args, repository_root)
         if relative_git_dir:
             repo_root = f"fuchsia/{relative_git_dir}"
 
@@ -194,6 +206,12 @@ def _create_top_level_parser() -> argparse.ArgumentParser:
         "--real-git",
         type=str,
         help="Path to the real git binary",
+        required=True,
+    )
+    parser.add_argument(
+        "--invoker-cwd",
+        type=str,
+        help="Path that git was invoked from",
         required=True,
     )
     parser.add_argument(
