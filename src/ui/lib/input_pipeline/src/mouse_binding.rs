@@ -11,10 +11,10 @@ use fidl::HandleBased;
 use fidl_fuchsia_input_report::{InputDeviceProxy, InputReport};
 use fuchsia_inspect::ArrayProperty;
 use fuchsia_inspect::health::Reporter;
+use fuchsia_sync::Mutex;
 use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender};
 use metrics_registry::*;
 use std::collections::HashSet;
-use std::sync::Mutex;
 use {fidl_fuchsia_input_report as fidl_input_report, zx};
 
 pub type MouseButton = u8;
@@ -134,7 +134,7 @@ impl Clone for MouseEvent {
             phase: self.phase,
             affected_buttons: self.affected_buttons.clone(),
             pressed_buttons: self.pressed_buttons.clone(),
-            wake_lease: Mutex::new(self.wake_lease.lock().unwrap().as_ref().map(|lease| {
+            wake_lease: Mutex::new(self.wake_lease.lock().as_ref().map(|lease| {
                 lease
                     .duplicate_handle(zx::Rights::SAME_RIGHTS)
                     .expect("failed to duplicate event pair")

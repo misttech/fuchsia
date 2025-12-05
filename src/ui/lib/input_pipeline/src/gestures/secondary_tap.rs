@@ -9,7 +9,7 @@ use super::gesture_arena::{
 };
 use crate::mouse_binding::{MouseEvent, MouseLocation, MousePhase, RelativeLocation};
 use crate::utils::{Position, euclidean_distance};
-use std::sync::Mutex;
+use fuchsia_sync::Mutex;
 
 use maplit::hashset;
 

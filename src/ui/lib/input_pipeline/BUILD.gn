@@ -59,6 +59,7 @@ icu_rustc_library("input_pipeline") {
     "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-component",
     "//src/lib/fuchsia-fs",
+    "//src/lib/fuchsia-sync",
     "//src/lib/trace/rust:trace",
     "//src/lib/ui/fuchsia-scenic",
     "//src/lib/ui/keymaps",

@@ -6,7 +6,7 @@ Reviewed on: 2022-03-22
 
 Rust provides multiple options for how to manage ownership of shared data structures
 (e.g. `Rc`, `Arc`), and multiple options for how to ensure memory safety when mutating
-shared data structures (e.g. `RefCell`, `std::sync::Mutex`).
+shared data structures (e.g. `RefCell`, `fuchsia_sync::Mutex`).
 
 This section describes the recommended options for code within this library.
 If these options seem unsuitable for your use case, please ask a reviewer _before_
@@ -17,7 +17,7 @@ writing code that uses some other option.
    to be `Send`, but may have some performance benefits as well.
 
 1. Implementations of `InputHandler` _should_ wrap mutable state in a `RefCell`,
-   rather than a `std::sync::Mutex`, `futures::lock::Mutex`, or `parking_lot::Mutex`.
+   rather than a `fuchsia_sync::Mutex` or `futures::lock::Mutex`.
    * The primary benefit of `RefCell` over the mutexes is that, if a program
      tries to concurrently access the data in incompatible ways
      (`borrow()` + `borrow_mut()`), the program will panic instead of deadlocking.

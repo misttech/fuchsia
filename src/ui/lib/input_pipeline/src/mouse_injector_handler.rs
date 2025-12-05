@@ -531,7 +531,7 @@ impl MouseInjectorHandler {
             timestamp: Some(event_time.into_nanos()),
             data: Some(pointerinjector::Data::PointerSample(pointer_sample)),
             trace_flow_id: trace_id,
-            wake_lease: mouse_event.wake_lease.lock().unwrap().take(),
+            wake_lease: mouse_event.wake_lease.lock().take(),
             ..Default::default()
         }
     }
