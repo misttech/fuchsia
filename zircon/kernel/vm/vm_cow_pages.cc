@@ -1335,7 +1335,7 @@ zx_status_t VmCowPages::ForEveryOwnedHierarchyPageInRange(S* self, T func, uint6
 // Walks all the descendants in a preorder traversal. Stops if func returns anything other than
 // ZX_OK.
 zx_status_t VmCowPages::DebugForEachDescendant(
-    fit::function<bool(VmCowPages* cow, uint depth)> visit) {
+    fit::inline_function<zx_status_t(VmCowPages* cow, uint depth)> visit) {
   auto cursor = TreeWalkCursor{LockedPtr(this)};
 
   do {

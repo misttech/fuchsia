@@ -722,7 +722,8 @@ class VmCowPages final : public fbl::ContainableBaseClasses<
 
   // Walks all the descendants in a preorder traversal. Stops if func returns anything other than
   // ZX_OK.
-  zx_status_t DebugForEachDescendant(fit::function<bool(VmCowPages* cow, uint depth)>);
+  zx_status_t DebugForEachDescendant(
+      fit::inline_function<zx_status_t(VmCowPages* cow, uint depth)>);
 
   // VMO_FRUGAL_VALIDATION
   bool DebugValidateVmoPageBorrowingLocked() const TA_REQ(lock());
