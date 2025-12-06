@@ -99,7 +99,7 @@ rust_library(
     version = "2.0.111",
     deps = [
         "//third_party/rust_crates/vendor/proc-macro2-1.0.97:proc_macro2",
-        "//third_party/rust_crates/vendor/quote-1.0.42:quote",
+        "//third_party/rust_crates/vendor/quote-1.0.40:quote",
         "//third_party/rust_crates/vendor/unicode-ident-1.0.19:unicode_ident",
     ],
 )

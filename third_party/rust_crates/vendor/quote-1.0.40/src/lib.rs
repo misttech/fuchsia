@@ -89,11 +89,10 @@
 //! [prettyplease]: https://github.com/dtolnay/prettyplease
 
 // Quote types in rustdoc of other crates get linked to here.
-#![doc(html_root_url = "https://docs.rs/quote/1.0.42")]
+#![doc(html_root_url = "https://docs.rs/quote/1.0.40")]
 #![allow(
     clippy::doc_markdown,
     clippy::elidable_lifetime_names,
-    clippy::items_after_statements,
     clippy::missing_errors_doc,
     clippy::missing_panics_doc,
     clippy::module_name_repetitions,
@@ -889,9 +888,9 @@ macro_rules! quote_token_with_context {
     // A repetition with no separator.
     ($tokens:ident $b3:tt $b2:tt $b1:tt (#) ( $($inner:tt)* ) * $a3:tt) => {{
         use $crate::__private::ext::*;
-        let has_iter = $crate::__private::HasIterator::<false>;
+        let has_iter = $crate::__private::ThereIsNoIteratorInRepetition;
         $crate::pounded_var_names!{quote_bind_into_iter!(has_iter) () $($inner)*}
-        <_ as $crate::__private::CheckHasIterator<true>>::check(has_iter);
+        let _: $crate::__private::HasIterator = has_iter;
         // This is `while true` instead of `loop` because if there are no
         // iterators used inside of this repetition then the body would not
         // contain any `break`, so the compiler would emit unreachable code
@@ -912,9 +911,9 @@ macro_rules! quote_token_with_context {
     ($tokens:ident $b3:tt $b2:tt $b1:tt (#) ( $($inner:tt)* ) $sep:tt *) => {{
         use $crate::__private::ext::*;
         let mut _i = 0usize;
-        let has_iter = $crate::__private::HasIterator::<false>;
+        let has_iter = $crate::__private::ThereIsNoIteratorInRepetition;
         $crate::pounded_var_names!{quote_bind_into_iter!(has_iter) () $($inner)*}
-        <_ as $crate::__private::CheckHasIterator<true>>::check(has_iter);
+        let _: $crate::__private::HasIterator = has_iter;
         while true {
             $crate::pounded_var_names!{quote_bind_next_or_break!() () $($inner)*}
             if _i > 0 {
@@ -959,9 +958,9 @@ macro_rules! quote_token_with_context_spanned {
 
     ($tokens:ident $span:ident $b3:tt $b2:tt $b1:tt (#) ( $($inner:tt)* ) * $a3:tt) => {{
         use $crate::__private::ext::*;
-        let has_iter = $crate::__private::HasIterator::<false>;
+        let has_iter = $crate::__private::ThereIsNoIteratorInRepetition;
         $crate::pounded_var_names!{quote_bind_into_iter!(has_iter) () $($inner)*}
-        <_ as $crate::__private::CheckHasIterator<true>>::check(has_iter);
+        let _: $crate::__private::HasIterator = has_iter;
         while true {
             $crate::pounded_var_names!{quote_bind_next_or_break!() () $($inner)*}
             $crate::quote_each_token_spanned!{$tokens $span $($inner)*}
@@ -973,9 +972,9 @@ macro_rules! quote_token_with_context_spanned {
     ($tokens:ident $span:ident $b3:tt $b2:tt $b1:tt (#) ( $($inner:tt)* ) $sep:tt *) => {{
         use $crate::__private::ext::*;
         let mut _i = 0usize;
-        let has_iter = $crate::__private::HasIterator::<false>;
+        let has_iter = $crate::__private::ThereIsNoIteratorInRepetition;
         $crate::pounded_var_names!{quote_bind_into_iter!(has_iter) () $($inner)*}
-        <_ as $crate::__private::CheckHasIterator<true>>::check(has_iter);
+        let _: $crate::__private::HasIterator = has_iter;
         while true {
             $crate::pounded_var_names!{quote_bind_next_or_break!() () $($inner)*}
             if _i > 0 {
