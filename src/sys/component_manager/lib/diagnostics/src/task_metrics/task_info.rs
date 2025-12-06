@@ -105,11 +105,8 @@ impl<T: 'static + RuntimeStatsSource + Debug + Send + Sync> TaskInfo<T> {
             // If we failed to duplicate the handle then still mark this task as terminated to
             // ensure it's cleaned up.
             if let Some(task_state) = weak_task_state.upgrade() {
-                {
-                    let mut terminated_at_nanos_guard =
-                        movable_most_recent_measurement_nanos.lock();
-                    *terminated_at_nanos_guard = Some(movable_time_source.now());
-                }
+                let mut terminated_at_nanos_guard = movable_most_recent_measurement_nanos.lock();
+                *terminated_at_nanos_guard = Some(movable_time_source.now());
                 let mut state = task_state.lock();
                 *state = match std::mem::replace(&mut *state, TaskState::TerminatedAndMeasured) {
                     s @ TaskState::TerminatedAndMeasured => s,
