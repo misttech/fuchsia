@@ -432,7 +432,7 @@ pub(crate) mod tests {
     unsafe fn init<T>(f: impl FnOnce(*mut T)) -> T {
         let mut value = MaybeUninit::uninit();
         f(value.as_mut_ptr());
-        unsafe { value.assume_init() }
+        value.assume_init()
     }
 
     fn create_vk_instance() -> vk::Instance {

@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{Error, Result, bail};
+use anyhow::{bail, Error, Result};
 #[allow(unused_imports)]
 use home::home_dir;
 use nix::unistd;
@@ -279,9 +279,9 @@ mod test {
     // disruptive to other tests. There's little ROI to doing some kind of fork
     // dance here, so the test is included, but not run by default.
     pub fn test_is_test_env() {
-        unsafe { std::env::set_var(TEST_ENV_VAR, "somepath") };
+        std::env::set_var(TEST_ENV_VAR, "somepath");
         assert_eq!(true, is_test_env());
-        unsafe { std::env::remove_var(TEST_ENV_VAR) };
+        std::env::remove_var(TEST_ENV_VAR);
         assert_eq!(false, is_test_env());
     }
 
@@ -291,9 +291,9 @@ mod test {
     // disruptive to other tests. There's little ROI to doing some kind of fork
     // dance here, so the test is included, but not run by default.
     pub fn test_is_analytics_disabled_env() {
-        unsafe { std::env::set_var(ANALYTICS_DISABLED_ENV_VAR, "1") };
+        std::env::set_var(ANALYTICS_DISABLED_ENV_VAR, "1");
         assert_eq!(true, is_fuchsia_analytics_disabled_set());
-        unsafe { std::env::remove_var(ANALYTICS_DISABLED_ENV_VAR) };
+        std::env::remove_var(ANALYTICS_DISABLED_ENV_VAR);
         assert_eq!(false, is_fuchsia_analytics_disabled_set());
     }
 
@@ -301,9 +301,9 @@ mod test {
     // TODO(https://fxbug.dev/42148443): isolate the env test from CI env
     #[ignore]
     pub fn test_is_bot_env() {
-        unsafe { std::env::set_var(&"BUILD_ID", "1") };
+        std::env::set_var(&"BUILD_ID", "1");
         assert_eq!(true, is_running_in_ci_bot_env());
-        unsafe { std::env::remove_var(&"BUILD_ID") };
+        std::env::remove_var(&"BUILD_ID");
         assert_eq!(false, is_fuchsia_analytics_disabled_set());
     }
 

@@ -8,7 +8,7 @@ import("//build/rust/rustc_binary.gni")
 rustc_binary("example_bin") {
   testonly = true
   name = "rust_example_bin"
-  edition = "2024"
+  edition = "2021"
 
   deps = [
     "//sdk/rust/zx",
@@ -29,7 +29,7 @@ rustc_binary("example_bin") {
 
 rustc_test("test_bin") {
   name = "integ_test_bin"
-  edition = "2024"
+  edition = "2021"
 
   sources = [ "test/test.rs" ]
 

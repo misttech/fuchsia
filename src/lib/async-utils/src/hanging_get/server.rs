@@ -334,16 +334,16 @@ mod subscriber_key {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::PollExt;
     use crate::hanging_get::test_util::TestObserver;
+    use crate::PollExt;
     use fuchsia_async as fasync;
     use futures::channel::oneshot;
 
     #[test]
     fn subscriber_key_generator_creates_unique_keys() {
-        let mut generator = subscriber_key::Generator::default();
-        let key1 = generator.next();
-        let key2 = generator.next();
+        let mut gen = subscriber_key::Generator::default();
+        let key1 = gen.next();
+        let key2 = gen.next();
         assert!(key1 != key2);
     }
 

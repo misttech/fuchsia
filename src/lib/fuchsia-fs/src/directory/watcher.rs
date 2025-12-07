@@ -188,11 +188,11 @@ struct IncompleteArrayField<T>(::std::marker::PhantomData<T>);
 impl<T> IncompleteArrayField<T> {
     #[inline]
     pub unsafe fn as_ptr(&self) -> *const T {
-        unsafe { ::std::mem::transmute(self) }
+        ::std::mem::transmute(self)
     }
     #[inline]
     pub unsafe fn as_slice(&self, len: usize) -> &[T] {
-        unsafe { ::std::slice::from_raw_parts(self.as_ptr(), len) }
+        ::std::slice::from_raw_parts(self.as_ptr(), len)
     }
 }
 impl<T> ::std::fmt::Debug for IncompleteArrayField<T> {

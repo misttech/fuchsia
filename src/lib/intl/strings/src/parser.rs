@@ -310,12 +310,12 @@ impl Instance {
             State::Resources => {
                 self.resources(e)?;
             }
-            State::String { name, text } => {
+            State::String { ref name, ref text } => {
                 let name = name.to_owned();
                 let text = text.to_owned();
                 self.string(name, text, e)?;
             }
-            State::XliffG { name, text } => {
+            State::XliffG { ref name, ref text } => {
                 let name = name.to_owned();
                 let text = text.to_owned();
                 self.xliffg(name, text, e)?;

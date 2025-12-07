@@ -231,7 +231,7 @@ impl<'a, T> RcuPtrRef<'a, T> {
         let ptr = self.ptr as *const u8;
         // SAFETY: The caller must ensure that the offset is within the bounds of the object and
         // points to a valid object of type `U`.
-        RcuPtrRef { ptr: unsafe { ptr.add(offset) } as *const U, _marker: std::marker::PhantomData }
+        RcuPtrRef { ptr: ptr.add(offset) as *const U, _marker: std::marker::PhantomData }
     }
 
     /// Subtracts a byte offset from the pointer.
@@ -244,6 +244,6 @@ impl<'a, T> RcuPtrRef<'a, T> {
         let ptr = self.ptr as *const u8;
         // SAFETY: The caller must ensure that the offset is within the bounds of the object and
         // points to a valid object of type `U`.
-        RcuPtrRef { ptr: unsafe { ptr.sub(offset) } as *const U, _marker: std::marker::PhantomData }
+        RcuPtrRef { ptr: ptr.sub(offset) as *const U, _marker: std::marker::PhantomData }
     }
 }

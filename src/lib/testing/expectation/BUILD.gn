@@ -10,7 +10,7 @@ import(
 import("//src/lib/testing/expectation/generated_expectations_file.gni")
 
 rustc_binary("bin") {
-  edition = "2024"
+  edition = "2021"
   name = "expectation_comparer"
   with_unit_tests = true
   deps = [
@@ -37,7 +37,7 @@ rustc_binary("bin") {
 }
 
 rustc_test("example_tests") {
-  edition = "2024"
+  edition = "2021"
   name = "expectation_comparer_example_tests"
   deps = [
     "//src/lib/fuchsia",

@@ -7,7 +7,7 @@ import("//build/rust/rustc_binary.gni")
 import("//build/rust/rustc_library.gni")
 
 rustc_library("unicode_blocks") {
-  edition = "2024"
+  edition = "2018"
   deps = [
     "//third_party/rust_crates:unic-char-range",
     "//third_party/rust_crates:unic-ucd-block",
@@ -26,7 +26,7 @@ compiled_action("generate_unicode_blocks_source") {
 }
 
 rustc_binary("unicode_block_generator") {
-  edition = "2024"
+  edition = "2021"
   deps = [
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:regex",

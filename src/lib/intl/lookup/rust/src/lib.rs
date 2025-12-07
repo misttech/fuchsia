@@ -112,16 +112,16 @@ pub unsafe extern "C" fn intl_lookup_new_fake_for_test(
     array: *mut *const libc::c_char,
     status: *mut i8,
 ) -> *const FakeLookup {
-    unsafe { *status = LookupStatus::OK as i8 };
+    *status = LookupStatus::OK as i8;
     let rsize = len as usize;
-    let input: Vec<*const libc::c_char> = unsafe { Vec::from_raw_parts(array, rsize, rsize) };
+    let input: Vec<*const libc::c_char> = Vec::from_raw_parts(array, rsize, rsize);
     // Do not drop the vector we don't own.
     let input = mem::ManuallyDrop::new(input);
 
     for raw in input.iter() {
-        let cstr = unsafe { ffi::CStr::from_ptr(*raw) }.to_str().expect("not a valid UTF-8");
+        let cstr = ffi::CStr::from_ptr(*raw).to_str().expect("not a valid UTF-8");
         if cstr == "en-US" {
-            unsafe { *status = LookupStatus::Unavailable as i8 };
+            *status = LookupStatus::Unavailable as i8;
             return std::ptr::null::<FakeLookup>();
         }
     }
@@ -130,7 +130,7 @@ pub unsafe extern "C" fn intl_lookup_new_fake_for_test(
 #[allow(clippy::missing_safety_doc)] // TODO(https://fxbug.dev/42181460)
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn intl_lookup_delete_fake_for_test(this: *mut FakeLookup) {
-    unsafe { generic_delete(this) };
+    generic_delete(this);
 }
 
 #[allow(clippy::missing_safety_doc)] // TODO(https://fxbug.dev/42181460)
@@ -140,20 +140,20 @@ pub unsafe extern "C" fn intl_lookup_new(
     array: *mut *const libc::c_char,
     status: *mut i8,
 ) -> *const Lookup {
-    unsafe { *status = LookupStatus::OK as i8 };
+    *status = LookupStatus::OK as i8;
     let rsize = len as usize;
-    let input: Vec<*const libc::c_char> = unsafe { Vec::from_raw_parts(array, rsize, rsize) };
+    let input: Vec<*const libc::c_char> = Vec::from_raw_parts(array, rsize, rsize);
     // Do not drop the vector we don't own.
     let input = mem::ManuallyDrop::new(input);
 
     let mut locales = vec![];
     for raw in input.iter() {
-        let cstr = unsafe { ffi::CStr::from_ptr(*raw) }.to_str();
+        let cstr = ffi::CStr::from_ptr(*raw).to_str();
         match cstr {
             Err(e) => {
                 error!("intl::intl_lookup_new::c_str: {:?}", &e);
                 let ls: LookupStatus = e.into();
-                unsafe { *status = ls as i8 };
+                *status = ls as i8;
                 return std::ptr::null::<Lookup>();
             }
             Ok(s) => {
@@ -168,7 +168,7 @@ pub unsafe extern "C" fn intl_lookup_new(
         Err(e) => {
             error!("intl::intl_lookup_new: {:?}", &e);
             let ls: LookupStatus = e.into();
-            unsafe { *status = ls as i8 };
+            *status = ls as i8;
             std::ptr::null::<Lookup>()
         }
     }
@@ -177,7 +177,7 @@ pub unsafe extern "C" fn intl_lookup_new(
 #[allow(clippy::missing_safety_doc)] // TODO(https://fxbug.dev/42181460)
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn intl_lookup_delete(instance: *mut Lookup) {
-    unsafe { generic_delete(instance) };
+    generic_delete(instance);
 }
 
 #[allow(clippy::missing_safety_doc)] // TODO(https://fxbug.dev/42181460)
@@ -187,14 +187,14 @@ pub unsafe extern "C" fn intl_lookup_string_fake_for_test(
     id: u64,
     status: *mut i8,
 ) -> *const libc::c_char {
-    unsafe { generic_string(this, id, status) }
+    generic_string(this, id, status)
 }
 
 unsafe fn generic_string<T: CApi>(this: *const T, id: u64, status: *mut i8) -> *const libc::c_char {
-    unsafe { *status = LookupStatus::OK as i8 };
-    match unsafe { this.as_ref() }.unwrap().string(id) {
+    *status = LookupStatus::OK as i8;
+    match this.as_ref().unwrap().string(id) {
         Err(e) => {
-            unsafe { *status = e as i8 };
+            *status = e as i8;
             std::ptr::null()
         }
         Ok(s) => s.as_ptr() as *const libc::c_char,
@@ -202,7 +202,7 @@ unsafe fn generic_string<T: CApi>(this: *const T, id: u64, status: *mut i8) -> *
 }
 
 unsafe fn generic_delete<T>(instance: *mut T) {
-    let _ = unsafe { Box::from_raw(instance) };
+    let _ = Box::from_raw(instance);
 }
 
 #[allow(clippy::missing_safety_doc)] // TODO(https://fxbug.dev/42181460)
@@ -212,10 +212,10 @@ pub unsafe extern "C" fn intl_lookup_string(
     id: u64,
     status: *mut i8,
 ) -> *const libc::c_char {
-    unsafe { *status = LookupStatus::OK as i8 };
-    match unsafe { this.as_ref() }.unwrap().string(id) {
+    *status = LookupStatus::OK as i8;
+    match this.as_ref().unwrap().string(id) {
         Err(e) => {
-            unsafe { *status = e as i8 };
+            *status = e as i8;
             std::ptr::null()
         }
         Ok(s) => s.as_ptr() as *const libc::c_char,

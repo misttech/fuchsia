@@ -7,7 +7,7 @@ import("//build/rust/rustc_library.gni")
 
 rustc_library("fidl_fuchsia_net_multicast_ext") {
   with_unit_tests = true
-  edition = "2024"
+  edition = "2021"
   deps = [
     "//sdk/fidl/fuchsia.net.multicast.admin:fuchsia.net.multicast.admin_rust",
     "//src/connectivity/lib/net-types",

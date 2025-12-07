@@ -544,7 +544,7 @@ template("aidl_rust") {
   }
 
   rustc_library(main_target_name) {
-    edition = "2024"
+    edition = "2018"
     sources = [ root_rust_file ]
     name = name
     deps = [

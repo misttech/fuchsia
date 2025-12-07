@@ -6,7 +6,7 @@ import("//build/components.gni")
 import("//build/rust/rustc_binary.gni")
 
 rustc_binary("exit-with-error-bin") {
-  edition = "2024"
+  edition = "2021"
   output_name = "exit_with_error_bin"
   testonly = true
   sources = [ "src/main.rs" ]

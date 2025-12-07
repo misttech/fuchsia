@@ -958,8 +958,7 @@ pub enum RuleWatchError {
 /// Creates a rules event stream from the state proxy.
 pub fn rule_event_stream_from_state<I: FidlRuleIpExt + FidlRouteIpExt>(
     state: &<I::StateMarker as fidl::endpoints::ProtocolMarker>::Proxy,
-) -> Result<impl Stream<Item = Result<RuleEvent<I>, RuleWatchError>> + use<I>, WatcherCreationError>
-{
+) -> Result<impl Stream<Item = Result<RuleEvent<I>, RuleWatchError>>, WatcherCreationError> {
     let watcher = get_rule_watcher::<I>(state)?;
     rule_event_stream_from_watcher(watcher)
 }
@@ -972,8 +971,7 @@ pub fn rule_event_stream_from_state<I: FidlRuleIpExt + FidlRouteIpExt>(
 /// converting the event, the stream is immediately terminated.
 pub fn rule_event_stream_from_watcher<I: FidlRuleIpExt>(
     watcher: <I::RuleWatcherMarker as fidl::endpoints::ProtocolMarker>::Proxy,
-) -> Result<impl Stream<Item = Result<RuleEvent<I>, RuleWatchError>> + use<I>, WatcherCreationError>
-{
+) -> Result<impl Stream<Item = Result<RuleEvent<I>, RuleWatchError>>, WatcherCreationError> {
     Ok(stream::ShortCircuit::new(
         futures::stream::try_unfold(watcher, |watcher| async {
             let events_batch = watch::<I>(&watcher).await.map_err(RuleWatchError::Fidl)?;

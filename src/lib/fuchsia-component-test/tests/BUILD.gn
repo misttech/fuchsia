@@ -9,7 +9,7 @@ import("//build/rust/rustc_test.gni")
 
 rustc_test("fuchsia_component_test_tests_bin") {
   name = "fuchsia_component_test_tests_bin"
-  edition = "2024"
+  edition = "2021"
 
   sources = [ "src/lib.rs" ]
 
@@ -68,7 +68,7 @@ fuchsia_component("echo_server_empty_component") {
 }
 
 rustc_test("scoped-instance-test") {
-  edition = "2024"
+  edition = "2021"
   source_root = "scoped_instance/lib.rs"
   deps = [
     "//src/lib/fuchsia",
@@ -81,7 +81,7 @@ rustc_test("scoped-instance-test") {
 }
 
 rustc_test("offered-cap-passthrough-test") {
-  edition = "2024"
+  edition = "2021"
   source_root = "offered_cap_passthrough/lib.rs"
 
   sources = [ "offered_cap_passthrough/lib.rs" ]
@@ -96,7 +96,7 @@ rustc_test("offered-cap-passthrough-test") {
 }
 
 rustc_binary("realm") {
-  edition = "2024"
+  edition = "2021"
   source_root = "scoped_instance/realm.rs"
   testonly = true
   deps = [
@@ -150,7 +150,7 @@ fuchsia_test_component("echo_realm_component") {
 
 rustc_test("arbitrary_realm_test_bin") {
   name = "arbitrary_realm_test_bin"
-  edition = "2024"
+  edition = "2021"
   source_root = "src/arbitrary_realm_test.rs"
   sources = [ source_root ]
 

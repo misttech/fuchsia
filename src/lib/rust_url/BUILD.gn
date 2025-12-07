@@ -16,7 +16,7 @@ source_set("rust_url") {
 }
 
 rustc_staticlib("rust_url_c_api") {
-  edition = "2024"
+  edition = "2021"
   sources = [ "src/lib.rs" ]
   deps = [
     "//sdk/rust/zx",

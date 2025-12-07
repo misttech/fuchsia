@@ -6,7 +6,7 @@ import("//build/host.gni")
 import("//build/rust/rustc_binary.gni")
 
 rustc_binary("bin") {
-  edition = "2024"
+  edition = "2021"
   name = "list_test_expectations"
   with_unit_tests = true
   deps = [

@@ -7,7 +7,7 @@ import("//build/rust/rustc_library.gni")
 
 rustc_library("rust") {
   name = "version_history"
-  edition = "2024"
+  edition = "2021"
   with_unit_tests = true
 
   deps = [

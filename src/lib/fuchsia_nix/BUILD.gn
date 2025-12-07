@@ -5,7 +5,7 @@
 import("//build/rust/rustc_library.gni")
 
 rustc_library("fuchsia_nix") {
-  edition = "2024"
+  edition = "2021"
   sources = [ "src/lib.rs" ]
   deps = [ "//third_party/rust_crates:nix" ]
 

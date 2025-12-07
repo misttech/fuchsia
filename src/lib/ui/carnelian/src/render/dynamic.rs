@@ -102,7 +102,7 @@ impl Context {
     /// Creates a new image with `size`.
     pub fn new_image(&mut self, size: Size2D<u32>) -> Image {
         match &mut self.inner {
-            ContextInner::Forma(context) => {
+            ContextInner::Forma(ref mut context) => {
                 Image { inner: ImageInner::Forma(context.new_image(size)) }
             }
         }
@@ -114,7 +114,7 @@ impl Context {
     ) -> Result<Image, Error> {
         Ok(Image {
             inner: match &mut self.inner {
-                ContextInner::Forma(context) => {
+                ContextInner::Forma(ref mut context) => {
                     ImageInner::Forma(context.new_image_from_png(reader)?)
                 }
             },
@@ -123,7 +123,7 @@ impl Context {
     /// Returns the image at `image_index`.
     pub fn get_image(&mut self, image_index: u32) -> Image {
         match &mut self.inner {
-            ContextInner::Forma(render_context) => {
+            ContextInner::Forma(ref mut render_context) => {
                 Image { inner: ImageInner::Forma(render_context.get_image(image_index)) }
             }
         }
@@ -131,7 +131,7 @@ impl Context {
     /// Returns the `context`'s current image.
     pub fn get_current_image(&mut self, context: &ViewAssistantContext) -> Image {
         match &mut self.inner {
-            ContextInner::Forma(render_context) => {
+            ContextInner::Forma(ref mut render_context) => {
                 Image { inner: ImageInner::Forma(render_context.get_current_image(context)) }
             }
         }
@@ -165,7 +165,7 @@ impl Context {
         let background_color = composition.background_color;
 
         match &mut self.inner {
-            ContextInner::Forma(context) => {
+            ContextInner::Forma(ref mut context) => {
                 let ImageInner::Forma(image) = image.inner;
                 let ext = generic::RenderExt {
                     pre_clear: ext
@@ -223,7 +223,7 @@ impl PathBuilder {
     /// Move end-point to.
     pub fn move_to(&mut self, point: Point) -> &mut Self {
         match &mut self.inner {
-            PathBuilderInner::Forma(path_builder) => {
+            PathBuilderInner::Forma(ref mut path_builder) => {
                 path_builder.move_to(point);
             }
         }
@@ -232,7 +232,7 @@ impl PathBuilder {
     /// Create line from end-point to point and update end-point.
     pub fn line_to(&mut self, point: Point) -> &mut Self {
         match &mut self.inner {
-            PathBuilderInner::Forma(path_builder) => {
+            PathBuilderInner::Forma(ref mut path_builder) => {
                 path_builder.line_to(point);
             }
         }
@@ -241,7 +241,7 @@ impl PathBuilder {
     /// Create quadratic Bézier from end-point to `p2` with `p1` as control point.
     pub fn quad_to(&mut self, p1: Point, p2: Point) -> &mut Self {
         match &mut self.inner {
-            PathBuilderInner::Forma(path_builder) => {
+            PathBuilderInner::Forma(ref mut path_builder) => {
                 path_builder.quad_to(p1, p2);
             }
         }
@@ -250,7 +250,7 @@ impl PathBuilder {
     /// Create cubic Bézier from end-point to `p3` with `p1` and `p2` as control points.
     pub fn cubic_to(&mut self, p1: Point, p2: Point, p3: Point) -> &mut Self {
         match &mut self.inner {
-            PathBuilderInner::Forma(path_builder) => {
+            PathBuilderInner::Forma(ref mut path_builder) => {
                 path_builder.cubic_to(p1, p2, p3);
             }
         }
@@ -260,7 +260,7 @@ impl PathBuilder {
     /// and `w` as its weight.
     pub fn rat_quad_to(&mut self, p1: Point, p2: Point, w: f32) -> &mut Self {
         match &mut self.inner {
-            PathBuilderInner::Forma(path_builder) => {
+            PathBuilderInner::Forma(ref mut path_builder) => {
                 path_builder.rat_quad_to(p1, p2, w);
             }
         }
@@ -270,7 +270,7 @@ impl PathBuilder {
     /// points, and `w1` and `w2` their weights.
     pub fn rat_cubic_to(&mut self, p1: Point, p2: Point, p3: Point, w1: f32, w2: f32) -> &mut Self {
         match &mut self.inner {
-            PathBuilderInner::Forma(path_builder) => {
+            PathBuilderInner::Forma(ref mut path_builder) => {
                 path_builder.rat_cubic_to(p1, p2, p3, w1, w2);
             }
         }
@@ -335,7 +335,7 @@ impl RasterBuilder {
     /// Add a path to the raster with transform.
     pub fn add_with_transform(&mut self, path: &Path, transform: &Transform2D<f32>) -> &mut Self {
         match &mut self.inner {
-            RasterBuilderInner::Forma(raster_builder) => {
+            RasterBuilderInner::Forma(ref mut raster_builder) => {
                 let PathInner::Forma(path) = &path.inner;
                 raster_builder.add_with_transform(path, transform);
             }

@@ -11,7 +11,7 @@ import("//build/test.gni")
 rustc_library("trace") {
   name = "fuchsia_trace"
   with_unit_tests = true
-  edition = "2024"
+  edition = "2021"
   deps = [
     "//sdk/rust/zx",
     "//third_party/rust_crates:libc",
@@ -26,7 +26,7 @@ rustc_library("trace") {
 rustc_staticlib("rust-cpp-test-lib") {
   name = "rust_cpp_test_lib"
   version = "0.1.0"
-  edition = "2024"
+  edition = "2021"
   testonly = true
 
   deps = [
@@ -110,7 +110,7 @@ bootfs_files_for_assembly("bootfs") {
 
 rustc_library("trace-provider") {
   name = "fuchsia_trace_provider"
-  edition = "2024"
+  edition = "2021"
   source_root = "trace-provider/src/lib.rs"
   deps = [ "//sdk/rust/zx" ]
   non_rust_deps = [ ":rust-trace-provider" ]
@@ -120,7 +120,7 @@ rustc_library("trace-provider") {
 
 rustc_library("trace-observer") {
   name = "fuchsia_trace_observer"
-  edition = "2024"
+  edition = "2021"
   source_root = "trace-observer/src/lib.rs"
   non_rust_deps = [
     ":trace",

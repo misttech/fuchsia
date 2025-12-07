@@ -8,7 +8,7 @@ import("//build/icu/icu_rustc_library.gni")
 import("//src/lib/icu/tzdata/icu_tzdata_resource.gni")
 
 icu_rustc_library("icu_data") {
-  edition = "2024"
+  edition = "2021"
   with_unit_tests = true
 
   icu_deps = [

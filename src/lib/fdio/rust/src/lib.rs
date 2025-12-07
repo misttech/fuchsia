@@ -746,20 +746,18 @@ impl Namespace {
     unsafe fn export_entries(
         flat: *mut fdio_sys::fdio_flat_namespace_t,
     ) -> Result<Vec<NamespaceEntry>, zx::Status> {
-        let fdio_sys::fdio_flat_namespace_t { count, handle, path } = unsafe { *flat };
+        let fdio_sys::fdio_flat_namespace_t { count, handle, path } = *flat;
         let len: isize = count.try_into().map_err(|_: TryFromIntError| zx::Status::INVALID_ARGS)?;
         let mut entries = Vec::with_capacity(count);
         for i in 0..len {
             // Explicitly take ownership of the handle, and invalidate the source.
-            let handle = unsafe {
-                zx::Handle::from_raw(mem::replace(
-                    &mut *handle.offset(i),
-                    zx::sys::ZX_HANDLE_INVALID,
-                ))
-            };
+            let handle = zx::Handle::from_raw(mem::replace(
+                &mut *handle.offset(i),
+                zx::sys::ZX_HANDLE_INVALID,
+            ));
             entries.push(NamespaceEntry {
                 handle,
-                path: unsafe { CStr::from_ptr(*path.offset(i)) }
+                path: CStr::from_ptr(*path.offset(i))
                     .to_str()
                     .map_err(|_: Utf8Error| zx::Status::INVALID_ARGS)?
                     .to_owned(),
@@ -785,7 +783,7 @@ pub struct NamespaceEntry {
 mod tests {
     use super::*;
     use assert_matches::assert_matches;
-    use zx::{MonotonicInstant, Signals, Status, WaitItem, object_wait_many};
+    use zx::{object_wait_many, MonotonicInstant, Signals, Status, WaitItem};
 
     #[test]
     fn namespace_get_installed() {

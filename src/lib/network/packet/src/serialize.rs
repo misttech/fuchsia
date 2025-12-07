@@ -467,7 +467,7 @@ impl<B: AsRef<[u8]>> Buffer for Buf<B> {
         &'a mut self,
         args: ParseArgs,
     ) -> Result<(P, &'a [u8]), P::Error> {
-        let &mut Self { ref mut body, ref buf } = self;
+        let Self { body, ref buf } = self;
         let body_before = body.clone();
         let view = BufView { buf: &buf.as_ref()[body.clone()], body };
         P::parse(view, args).map(|r| (r, &buf.as_ref()[body_before]))

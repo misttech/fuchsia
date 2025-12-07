@@ -8,7 +8,7 @@ import("//build/rust/rustc_binary.gni")
 rustc_binary("bin") {
   testonly = true
   name = "collection_sc"
-  edition = "2024"
+  edition = "2021"
   deps = [
     ":config_lib",
     "//src/lib/fuchsia",

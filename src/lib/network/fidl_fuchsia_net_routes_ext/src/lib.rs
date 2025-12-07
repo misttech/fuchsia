@@ -969,7 +969,7 @@ pub fn watch<'a, I: FidlRouteIpExt>(
 /// [`event_stream_from_state_with_options`] with default [`WatcherOptions`].
 pub fn event_stream_from_state<I: FidlRouteIpExt>(
     routes_state: &<I::StateMarker as fidl::endpoints::ProtocolMarker>::Proxy,
-) -> Result<impl Stream<Item = Result<Event<I>, WatchError>> + use<I>, WatcherCreationError> {
+) -> Result<impl Stream<Item = Result<Event<I>, WatchError>>, WatcherCreationError> {
     event_stream_from_state_with_options(routes_state, Default::default())
 }
 
@@ -982,7 +982,7 @@ pub fn event_stream_from_state<I: FidlRouteIpExt>(
 pub fn event_stream_from_state_with_options<I: FidlRouteIpExt>(
     routes_state: &<I::StateMarker as fidl::endpoints::ProtocolMarker>::Proxy,
     options: WatcherOptions,
-) -> Result<impl Stream<Item = Result<Event<I>, WatchError>> + use<I>, WatcherCreationError> {
+) -> Result<impl Stream<Item = Result<Event<I>, WatchError>>, WatcherCreationError> {
     let watcher = get_watcher::<I>(routes_state, options)?;
     event_stream_from_watcher(watcher)
 }
@@ -995,7 +995,7 @@ pub fn event_stream_from_state_with_options<I: FidlRouteIpExt>(
 /// converting the event, the stream is immediately terminated.
 pub fn event_stream_from_watcher<I: FidlRouteIpExt>(
     watcher: <I::WatcherMarker as fidl::endpoints::ProtocolMarker>::Proxy,
-) -> Result<impl Stream<Item = Result<Event<I>, WatchError>> + use<I>, WatcherCreationError> {
+) -> Result<impl Stream<Item = Result<Event<I>, WatchError>>, WatcherCreationError> {
     Ok(stream::ShortCircuit::new(
         futures::stream::try_unfold(watcher, |watcher| async {
             let events_batch = watch::<I>(&watcher).await.map_err(WatchError::Fidl)?;

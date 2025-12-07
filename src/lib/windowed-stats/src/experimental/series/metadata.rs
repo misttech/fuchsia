@@ -222,8 +222,8 @@ impl From<BitSetNode> for BitSetIndex {
 impl Metadata for BitSetIndex {
     fn record(&self, node: &Node) {
         match self {
-            BitSetIndex::Map(metadata) => metadata.record(node),
-            BitSetIndex::Node(metadata) => metadata.record(node),
+            BitSetIndex::Map(ref metadata) => metadata.record(node),
+            BitSetIndex::Node(ref metadata) => metadata.record(node),
         }
     }
 }

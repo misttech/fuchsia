@@ -45,7 +45,7 @@ source_set("static_cpp_standard_library") {
 }
 
 rustc_library("binder") {
-  edition = "2024"
+  edition = "2021"
   sources = [
     "//third_party/android/platform/frameworks/native/libs/binder/rust/src/binder.rs",
     "//third_party/android/platform/frameworks/native/libs/binder/rust/src/binder_async.rs",

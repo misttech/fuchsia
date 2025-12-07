@@ -74,7 +74,7 @@ impl<T: Send + Sync + 'static> RcuOptionArc<T> {
     unsafe fn replace(&self, ptr: *mut T) {
         let old_ptr = self.ptr.replace(ptr);
         if !old_ptr.is_null() {
-            let arc = unsafe { Arc::from_raw(old_ptr) };
+            let arc = Arc::from_raw(old_ptr);
             rcu_drop(arc);
         }
     }

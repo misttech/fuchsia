@@ -150,7 +150,7 @@ impl Loader {
                     // Fuchsia programs.
                     // Further, we want to load the same ICU data for all programs that need this
                     // file.
-                    unsafe { env::set_var("ICU_TIMEZONE_FILES_DIR", p) };
+                    env::set_var("ICU_TIMEZONE_FILES_DIR", p);
                 }
 
                 // Read ICU data file from the filesystem. The ICU library should

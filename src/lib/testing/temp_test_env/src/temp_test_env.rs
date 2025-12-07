@@ -86,10 +86,8 @@ impl TempTestEnv {
         let home = root.path().join("home").join("test_user");
         create_dir_all(&home)?;
 
-        unsafe {
-            std::env::set_var("HOME", &home.as_path());
-            std::env::set_var("PATH", &bin.as_path());
-        }
+        std::env::set_var("HOME", &home.as_path());
+        std::env::set_var("PATH", &bin.as_path());
         Ok(Self { bash_shell, old_home, old_path, bin, etc, home, root, keep })
     }
 
@@ -131,14 +129,14 @@ impl TempTestEnv {
 impl Drop for TempTestEnv {
     fn drop(&mut self) {
         if let Some(s) = &self.old_home {
-            unsafe { std::env::set_var("HOME", s) };
+            std::env::set_var("HOME", s);
         } else {
-            unsafe { std::env::remove_var("HOME") };
+            std::env::remove_var("HOME");
         }
         if let Some(s) = &self.old_path {
-            unsafe { std::env::set_var("PATH", s) };
+            std::env::set_var("PATH", s);
         } else {
-            unsafe { std::env::remove_var("PATH") };
+            std::env::remove_var("PATH");
         }
         if self.keep {
             let owned = std::mem::replace(

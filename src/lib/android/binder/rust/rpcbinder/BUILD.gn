@@ -5,7 +5,7 @@
 import("//build/rust/rustc_library.gni")
 
 rustc_library("binder_rpc_unstable_bindgen") {
-  edition = "2024"
+  edition = "2021"
   name = "binder_rpc_unstable_bindgen"
 
   #source_root = "third_party/binder_rpc_unstable_bindgen/generated.rs"
@@ -20,7 +20,7 @@ rustc_library("binder_rpc_unstable_bindgen") {
 }
 
 rustc_library("rpcbinder") {
-  edition = "2024"
+  edition = "2021"
   source_root = "//third_party/android/platform/frameworks/native/libs/binder/rust/rpcbinder/src/lib.rs"
   sources = [
     "//third_party/android/platform/frameworks/native/libs/binder/rust/rpcbinder/src/lib.rs",

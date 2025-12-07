@@ -15,7 +15,7 @@ rustc_library("cstringify") {
     "//src/starnix/lib/starnix_syscalls:*",
   ]
   with_unit_tests = true
-  edition = "2024"
+  edition = "2021"
 
   sources = [ "src/lib.rs" ]
 }

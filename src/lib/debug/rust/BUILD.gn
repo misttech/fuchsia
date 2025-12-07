@@ -16,7 +16,7 @@ static_library("debug_sym_for_rust") {
 rustc_library("rust") {
   name = "debug"
   version = "0.1.0"
-  edition = "2024"
+  edition = "2021"
   with_unit_tests = true
 
   sources = [ "src/lib.rs" ]
