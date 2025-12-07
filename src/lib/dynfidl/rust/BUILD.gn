@@ -18,7 +18,7 @@ group("tests") {
 }
 
 rustc_library("dynfidl") {
-  edition = "2021"
+  edition = "2024"
   sources = [ "src/lib.rs" ]
   deps = [ "//src/lib/fidl/rust_constants" ]
 }
@@ -35,7 +35,7 @@ gidl("generate_conformance_test") {
 
 rustc_test("fidl_dynfidl_conformance_tests_bin") {
   output_name = "fidl_dynfidl_conformance_tests"
-  edition = "2018"
+  edition = "2024"
   source_root = conformance_test_source
   deps = [ ":dynfidl" ]
   non_rust_deps = [ ":generate_conformance_test" ]

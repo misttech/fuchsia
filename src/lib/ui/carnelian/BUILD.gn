@@ -33,7 +33,7 @@ rustc_library("carnelian") {
   name = "carnelian"
   with_unit_tests = true
   version = "0.1.0"
-  edition = "2021"
+  edition = "2024"
   deps = [
     "//sdk/fidl/fuchsia.hardware.display:fuchsia.hardware.display_rust",
     "//sdk/fidl/fuchsia.hardware.display.types:fuchsia.hardware.display.types_rust",
@@ -155,7 +155,7 @@ config("carnelian-performance") {
 
 rustc_binary("button") {
   version = "0.1.0"
-  edition = "2021"
+  edition = "2024"
   source_root = "examples/button.rs"
   sources = [ "examples/button.rs" ]
   deps = [
@@ -170,7 +170,7 @@ rustc_binary("button") {
 
 rustc_binary("clockface") {
   version = "0.1.0"
-  edition = "2021"
+  edition = "2024"
   source_root = "examples/clockface.rs"
   sources = [ "examples/clockface.rs" ]
   deps = [
@@ -185,7 +185,7 @@ rustc_binary("clockface") {
 
 rustc_binary("font_metrics") {
   version = "0.1.0"
-  edition = "2021"
+  edition = "2024"
   source_root = "examples/font_metrics.rs"
   sources = [ "examples/font_metrics.rs" ]
   deps = [
@@ -197,7 +197,7 @@ rustc_binary("font_metrics") {
 
 rustc_binary("shapes") {
   version = "0.1.0"
-  edition = "2021"
+  edition = "2024"
   source_root = "examples/shapes.rs"
   sources = [ "examples/shapes.rs" ]
   deps = [
@@ -213,7 +213,7 @@ rustc_binary("shapes") {
 
 rustc_binary("designer") {
   version = "0.1.0"
-  edition = "2021"
+  edition = "2024"
   source_root = "examples/designer.rs"
   sources = [ "examples/designer.rs" ]
   deps = [
@@ -227,7 +227,7 @@ rustc_binary("designer") {
 
 rustc_binary("spinning_square") {
   version = "0.1.0"
-  edition = "2021"
+  edition = "2024"
   source_root = "examples/spinning_square.rs"
   sources = [ "examples/spinning_square.rs" ]
   deps = [
@@ -245,7 +245,7 @@ rustc_binary("spinning_square") {
 
 rustc_binary("gamma") {
   version = "0.1.0"
-  edition = "2021"
+  edition = "2024"
   source_root = "examples/gamma.rs"
   sources = [ "examples/gamma.rs" ]
   deps = [
@@ -259,7 +259,7 @@ rustc_binary("gamma") {
 
 rustc_binary("layout_gallery") {
   version = "0.1.0"
-  edition = "2021"
+  edition = "2024"
   source_root = "examples/layout_gallery.rs"
   sources = [ "examples/layout_gallery.rs" ]
   deps = [
@@ -275,7 +275,7 @@ rustc_binary("layout_gallery") {
 
 rustc_test("layout_gallery_test") {
   version = "0.1.0"
-  edition = "2018"
+  edition = "2024"
   source_root = "examples/layout_gallery.rs"
   sources = [ "examples/layout_gallery.rs" ]
   deps = [
@@ -292,7 +292,7 @@ rustc_test("layout_gallery_test") {
 
 rustc_binary("png") {
   version = "0.1.0"
-  edition = "2021"
+  edition = "2024"
   source_root = "examples/png.rs"
   sources = [ "examples/png.rs" ]
   deps = [
@@ -308,7 +308,7 @@ rustc_binary("png") {
 
 rustc_binary("svg") {
   version = "0.1.0"
-  edition = "2021"
+  edition = "2024"
   source_root = "examples/svg.rs"
   sources = [ "examples/svg.rs" ]
   deps = [
@@ -322,7 +322,7 @@ rustc_binary("svg") {
 
 rustc_binary("rive") {
   version = "0.1.0"
-  edition = "2021"
+  edition = "2024"
   source_root = "examples/rive.rs"
   sources = [ "examples/rive.rs" ]
   deps = [
@@ -338,7 +338,7 @@ rustc_binary("rive") {
 
 rustc_binary("textgrid") {
   version = "0.1.0"
-  edition = "2021"
+  edition = "2024"
   source_root = "examples/textgrid.rs"
   sources = [ "examples/textgrid.rs" ]
   deps = [
@@ -372,7 +372,7 @@ fuchsia_unittest_package("carnelian-layout-tests") {
 
 rustc_binary("carnelian_integration_test_bin") {
   name = "carnelian_integration_test"
-  edition = "2018"
+  edition = "2024"
   source_root = "tests/carnelian_integration_test.rs"
   sources = [ "tests/carnelian_integration_test.rs" ]
   deps = [
@@ -404,7 +404,7 @@ fuchsia_test_package("carnelian-integration-test") {
 
 rustc_binary("carnelian_fb_integration_test_bin") {
   name = "carnelian_fb_integration_test"
-  edition = "2018"
+  edition = "2024"
   source_root = "tests/carnelian_integration_test.rs"
   sources = [ "tests/carnelian_integration_test.rs" ]
   deps = [

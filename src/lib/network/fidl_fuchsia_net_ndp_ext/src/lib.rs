@@ -216,7 +216,7 @@ pub async fn create_watcher_stream(
     params: &fnet_ndp::RouterAdvertisementOptionWatcherParams,
 ) -> Option<
     Result<
-        impl futures::Stream<Item = Result<OptionWatchStreamItem, OptionWatchStreamError>> + 'static,
+        impl futures::Stream<Item = Result<OptionWatchStreamItem, OptionWatchStreamError>> + use<>,
         fidl::Error,
     >,
 > {

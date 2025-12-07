@@ -11,14 +11,14 @@ group("tests") {
 }
 
 rustc_test("underlying_test_to_be_sharded") {
-  edition = "2021"
+  edition = "2024"
   configs -= [ "//build/config/rust/lints:allow_unused_results" ]
   test_deps = [ "//third_party/rust_crates:paste" ]
   sources = [ "src/lib.rs" ]
 }
 
 rustc_test("underlying_test_to_be_sharded_with_failures") {
-  edition = "2021"
+  edition = "2024"
   configs -= [ "//build/config/rust/lints:allow_unused_results" ]
   test_deps = [ "//third_party/rust_crates:paste" ]
   sources = [ "src/lib.rs" ]

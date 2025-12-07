@@ -19,7 +19,7 @@ rustc_library(
             "src/not_fuchsia.rs",
         ],
     }),
-    edition = "2021",
+    edition = "2024",
     test_deps = [
         "//third_party/rust_crates/vendor:assert_matches",
     ] + select({

@@ -29,11 +29,11 @@ impl<T> __IncompleteArrayField<T> {
     }
     #[inline]
     pub unsafe fn as_slice(&self, len: usize) -> &[T] {
-        ::std::slice::from_raw_parts(self.as_ptr(), len)
+        unsafe { ::std::slice::from_raw_parts(self.as_ptr(), len) }
     }
     #[inline]
     pub unsafe fn as_mut_slice(&mut self, len: usize) -> &mut [T] {
-        ::std::slice::from_raw_parts_mut(self.as_mut_ptr(), len)
+        unsafe { ::std::slice::from_raw_parts_mut(self.as_mut_ptr(), len) }
     }
 }
 impl<T> ::std::fmt::Debug for __IncompleteArrayField<T> {
@@ -1581,7 +1581,11 @@ impl Default for usb_key_descriptor {
 }
 impl ::std::fmt::Debug for usb_key_descriptor {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-        write ! (f , "usb_key_descriptor {{ bLength: {:?}, bDescriptorType: {:?}, tTKID: {:?}, bReserved: {:?}, bKeyData: {:?} }}" , self . bLength , self . bDescriptorType , self . tTKID , self . bReserved , self . bKeyData)
+        write!(
+            f,
+            "usb_key_descriptor {{ bLength: {:?}, bDescriptorType: {:?}, tTKID: {:?}, bReserved: {:?}, bKeyData: {:?} }}",
+            self.bLength, self.bDescriptorType, self.tTKID, self.bReserved, self.bKeyData
+        )
     }
 }
 #[repr(C, packed)]
@@ -2896,7 +2900,23 @@ impl Default for usbdevfs_urb {
 }
 impl ::std::fmt::Debug for usbdevfs_urb {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-        write ! (f , "usbdevfs_urb {{ type: {:?}, endpoint: {:?}, status: {:?}, flags: {:?}, buffer: {:?}, buffer_length: {:?}, actual_length: {:?}, start_frame: {:?}, __bindgen_anon_1: {:?}, error_count: {:?}, signr: {:?}, usercontext: {:?}, iso_frame_desc: {:?} }}" , self . type_ , self . endpoint , self . status , self . flags , self . buffer , self . buffer_length , self . actual_length , self . start_frame , self . __bindgen_anon_1 , self . error_count , self . signr , self . usercontext , self . iso_frame_desc)
+        write!(
+            f,
+            "usbdevfs_urb {{ type: {:?}, endpoint: {:?}, status: {:?}, flags: {:?}, buffer: {:?}, buffer_length: {:?}, actual_length: {:?}, start_frame: {:?}, __bindgen_anon_1: {:?}, error_count: {:?}, signr: {:?}, usercontext: {:?}, iso_frame_desc: {:?} }}",
+            self.type_,
+            self.endpoint,
+            self.status,
+            self.flags,
+            self.buffer,
+            self.buffer_length,
+            self.actual_length,
+            self.start_frame,
+            self.__bindgen_anon_1,
+            self.error_count,
+            self.signr,
+            self.usercontext,
+            self.iso_frame_desc
+        )
     }
 }
 #[repr(C)]

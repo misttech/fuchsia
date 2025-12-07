@@ -876,7 +876,10 @@ pub enum IncludedAddresses {
 pub fn event_stream_from_state<I: FieldInterests>(
     interface_state: &fnet_interfaces::StateProxy,
     included_addresses: IncludedAddresses,
-) -> Result<impl Stream<Item = Result<EventWithInterest<I>, fidl::Error>>, WatcherCreationError> {
+) -> Result<
+    impl Stream<Item = Result<EventWithInterest<I>, fidl::Error>> + use<I>,
+    WatcherCreationError,
+> {
     let (watcher, server) = ::fidl::endpoints::create_proxy::<fnet_interfaces::WatcherMarker>();
     let () = interface_state
         .get_watcher(

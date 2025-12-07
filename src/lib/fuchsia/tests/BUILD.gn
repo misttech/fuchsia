@@ -8,7 +8,7 @@ import("//build/rust/rustc_test.gni")
 
 rustc_test("bin") {
   output_name = "fuchsia_tests_bin"
-  edition = "2021"
+  edition = "2024"
   testonly = true
   deps = [
     "//src/lib/diagnostics/data/rust",

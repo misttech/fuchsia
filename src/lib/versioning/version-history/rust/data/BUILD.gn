@@ -8,7 +8,7 @@ import("//build/rust/rustc_library.gni")
 rustc_library("data") {
   name = "version_history_data"
 
-  edition = "2021"
+  edition = "2024"
   with_unit_tests = true
 
   configs -= [ "//build/config/rust/lints:allow_unused_results" ]

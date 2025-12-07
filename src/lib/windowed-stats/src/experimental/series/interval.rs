@@ -243,7 +243,7 @@ impl SamplingInterval {
         &self,
         tick: Tick,
         sample: T,
-    ) -> impl Clone + Iterator<Item = IntervalExpiration<T>>
+    ) -> impl Clone + Iterator<Item = IntervalExpiration<T>> + use<T>
     where
         T: Clone,
     {

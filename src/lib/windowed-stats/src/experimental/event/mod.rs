@@ -103,7 +103,7 @@ impl<T> Event<T> {
     pub fn as_data_record(&self) -> Option<&T> {
         match self {
             Event::System(_) => None,
-            Event::Data(ref event) => Some(&event.record),
+            Event::Data(event) => Some(&event.record),
         }
     }
 }

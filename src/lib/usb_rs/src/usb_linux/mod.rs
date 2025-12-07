@@ -259,8 +259,8 @@ impl Urb {
     /// not in use, i.e. when it has just been allocated from the free pool.
     unsafe fn fill_buffer(&self, action: &BufferAction<'_, '_>) -> Result<()> {
         let mtu = action.mtu();
-        let urb = self.urb.get().as_mut().unwrap();
-        let buf = self.buf.get().as_mut().unwrap();
+        let urb = unsafe { self.urb.get().as_mut() }.unwrap();
+        let buf = unsafe { self.buf.get().as_mut() }.unwrap();
 
         if buf.len() < mtu {
             let new_buf = Pin::new(std::iter::repeat(0).take(mtu).collect());

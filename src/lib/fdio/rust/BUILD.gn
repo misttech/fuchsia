@@ -17,7 +17,7 @@ rustc_link_attribute("fdio_for_rust_stdlib") {
 rustc_library("fdio") {
   with_unit_tests = true
   version = "0.2.0"
-  edition = "2021"
+  edition = "2024"
   deps = [
     "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
     "//sdk/lib/fdio",
@@ -49,7 +49,7 @@ rustc_library("fdio") {
 rustc_library("fdio_zxio") {
   with_unit_tests = true
   version = "0.1.0"
-  edition = "2021"
+  edition = "2024"
   source_root = "src/fdio_zxio.rs"
   sources = [
     "src/fdio_sys.rs",
@@ -68,7 +68,7 @@ rustc_library("fdio_zxio") {
 
 rustc_binary("spawn_test_target") {
   version = "0.2.0"
-  edition = "2021"
+  edition = "2024"
   source_root = "test/spawn_test_target.rs"
   sources = [ "test/spawn_test_target.rs" ]
 
@@ -76,7 +76,7 @@ rustc_binary("spawn_test_target") {
 }
 
 rustc_binary("spawn_builder_test_target") {
-  edition = "2021"
+  edition = "2024"
   visibility = [ ":*" ]
   source_root = "test/spawn_builder_test_target.rs"
   sources = [ "test/spawn_builder_test_target.rs" ]

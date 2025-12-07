@@ -7,7 +7,7 @@ import("//build/rust/rustc_binary.gni")
 import("//build/rust/rustc_library.gni")
 
 rustc_library("scoped_task") {
-  edition = "2021"
+  edition = "2024"
 
   deps = [
     "//sdk/rust/zx",
@@ -25,7 +25,7 @@ rustc_library("scoped_task") {
 
 rustc_test("scoped_task_test") {
   visibility = [ ":*" ]
-  edition = "2021"
+  edition = "2024"
   source_root = "test/main.rs"
   deps = [
     "//sdk/rust/zx",
@@ -38,7 +38,7 @@ rustc_test("scoped_task_test") {
 
 rustc_binary("scoped_task_test_spawner") {
   visibility = [ ":*" ]
-  edition = "2021"
+  edition = "2024"
   source_root = "test/spawner.rs"
   deps = [
     ":scoped_task",

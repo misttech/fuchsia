@@ -59,7 +59,7 @@ impl<'l, 'a> Iterator for LinealyzerIter<'l, 'a> {
         if let Some(i) = self.incoming.iter().position(|b| *b == b'\r' || *b == b'\n') {
             let line_end = &self.incoming[..i];
             let ret = match self.state {
-                PartialLine(ref mut line_begin) => {
+                PartialLine(line_begin) => {
                     let mut line = replace(line_begin, vec![]);
                     line.extend_from_slice(line_end);
                     line.into()
@@ -75,7 +75,7 @@ impl<'l, 'a> Iterator for LinealyzerIter<'l, 'a> {
             return Some(ret);
         } else {
             match self.state {
-                PartialLine(ref mut partial) => {
+                PartialLine(partial) => {
                     partial.extend_from_slice(self.incoming);
                 }
                 ActiveCarriageReturn | Empty => {

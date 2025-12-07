@@ -7,7 +7,7 @@ import("//build/rust/rustc_library.gni")
 rustc_library("syslog-listener") {
   name = "fuchsia_syslog_listener"
   version = "0.1.0"
-  edition = "2021"
+  edition = "2024"
   source_root = "syslog-listener/src/lib.rs"
   deps = [
     "//sdk/fidl/fuchsia.logger:fuchsia.logger_rust",

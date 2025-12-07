@@ -6,7 +6,7 @@ import("//build/rust/rustc_binary.gni")
 
 if (is_host) {
   rustc_binary("bin") {
-    edition = "2021"
+    edition = "2024"
     name = "expectation_file_preprocessor"
     with_unit_tests = true
     deps = [
