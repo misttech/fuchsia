@@ -108,7 +108,6 @@ class HiddenNetworksTest(base_test.WifiBaseTest):
                         f"SSID of hidden network seen after {num_performed_scans} scans"
                     )
                     return
-                # Don't overload SL4F with scan requests
                 time.sleep(1)
 
             self.log.error(
