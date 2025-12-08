@@ -42,12 +42,13 @@ impl ReadActor {
         // Choose a random blob and get a handle to it.
         let blob = blob_list.choose(&mut self.rng).unwrap();
         let merkle: Hash = blob.parse().map_err(|_| Status::IO)?;
-        let vmo = self
-            .reader
-            .get_vmo(&merkle.into())
-            .await
-            .expect("Failed to make FIDL call")
-            .map_err(Status::from_raw)?;
+        let vmo = match self.reader.get_vmo(&merkle.into()).await {
+            Ok(Ok(vmo)) => vmo,
+            Ok(Err(e)) => return Err(Status::from_raw(e)),
+            // Blobfs was shut down.
+            Err(e) if e.is_closed() => return Err(Status::PEER_CLOSED),
+            Err(e) => panic!("Unexpected FIDL error: {:?}", e),
+        };
 
         debug!("Reading from {}", blob);
         let data_size_bytes = vmo.get_stream_size().expect("Failed to get VMO stream size");

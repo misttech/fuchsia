@@ -25,9 +25,6 @@ pub enum WriteError {
     /// A FIDL error occurred.
     #[error(transparent)]
     Fidl(#[from] fidl::Error),
-    /// There was a problem getting the size of the vmo.
-    #[error("failed to get the size of the vmo")]
-    GetSize(#[source] Status),
     /// The outstanding writes queue ended prematurely.
     #[error("outstanding writes queue ended prematurely")]
     QueueEnded,
