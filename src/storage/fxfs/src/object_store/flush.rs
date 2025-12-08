@@ -19,7 +19,7 @@ use crate::object_store::{
     layer_size_from_encrypted_mutations_size, tree,
 };
 use crate::serialized_types::{LATEST_VERSION, Version, VersionedLatest};
-use anyhow::{Context, Error, bail};
+use anyhow::{Context, Error};
 use fxfs_crypto::{EncryptionKey, KeyPurpose};
 use std::sync::OnceLock;
 use std::sync::atomic::Ordering;
@@ -76,9 +76,9 @@ impl ObjectStore {
                             .force_lock(&self)
                             .await
                             .context("Failed to re-lock store during flush")?;
-                    } else {
-                        bail!("No store owner was registered!");
                     }
+                    // The owner might have already been cleaned up, and in doing so it might have
+                    // locked the store.  In this case we should try again.
                 }
             }
             retries += 1;

@@ -264,8 +264,11 @@ impl MountedVolumesGuard<'_> {
     }
 
     async fn force_lock(&mut self, store_id: u64) -> Result<(), Error> {
-        let MountedVolume { volume, locked, .. } =
-            self.mounted_volumes.get_mut(&store_id).ok_or(FxfsError::NotFound)?;
+        let Some(MountedVolume { volume, locked, .. }) = self.mounted_volumes.get_mut(&store_id)
+        else {
+            // The volume is already unmounted, so there's nothing to do.
+            return Ok(());
+        };
 
         if !*locked {
             // Remove the "root" entry so that no more connections can be made.
@@ -930,6 +933,7 @@ impl StoreOwner for VolumesDirectory {
 
 #[cfg(test)]
 mod tests {
+    use crate::fuchsia::RemoteCrypt;
     use crate::fuchsia::memory_pressure::MemoryPressureLevel;
     use crate::fuchsia::testing::{self, TestFixture, open_dir_checked, open_file_checked};
     use crate::fuchsia::volumes_directory::{Mode, VolumesDirectory};
@@ -937,10 +941,10 @@ mod tests {
     use fidl::endpoints::{DiscoverableProtocolMarker, create_proxy, create_request_stream};
     use fidl_fuchsia_fs::AdminMarker;
     use fidl_fuchsia_fs_startup::{MountOptions, VolumeMarker, VolumeProxy};
-    use fidl_fuchsia_fxfs::KeyPurpose;
+    use fidl_fuchsia_fxfs::{CryptRequest, KeyPurpose};
     use fuchsia_component_client::connect_to_protocol_at_dir_svc;
     use fuchsia_fs::file;
-    use futures::join;
+    use futures::{TryStreamExt, join};
     use fxfs::errors::FxfsError;
     use fxfs::filesystem::FxFilesystem;
     use fxfs::fsck::{FsckOptions, fsck, fsck_volume_with_options, fsck_with_options};
@@ -2781,6 +2785,123 @@ mod tests {
             transaction.commit().await.expect("commit failed");
         }
 
+        filesystem.close().await.expect("close filesystem failed");
+    }
+
+    #[fuchsia::test(threads = 10)]
+    async fn test_race_unmount_and_flush_with_crypt_error() {
+        let device = DeviceHolder::new(FakeDevice::new(8192, 512));
+        let filesystem = FxFilesystem::new_empty(device).await.unwrap();
+        let blob_resupplied_count = Arc::new(PageRefaultCounter::new().unwrap());
+        let volumes_directory = VolumesDirectory::new(
+            root_volume(filesystem.clone()).await.unwrap(),
+            Weak::new(),
+            None,
+            blob_resupplied_count,
+        )
+        .await
+        .unwrap();
+
+        let crypt_service = Arc::new(fxfs_crypt::CryptService::new());
+        crypt_service
+            .add_wrapping_key(0, fxfs_insecure_crypto::DATA_KEY.to_vec())
+            .expect("add_wrapping_key failed");
+        crypt_service
+            .add_wrapping_key(1, fxfs_insecure_crypto::METADATA_KEY.to_vec())
+            .expect("add_wrapping_key failed");
+        crypt_service.set_active_key(KeyPurpose::Data, 0).expect("set_active_key failed");
+        crypt_service.set_active_key(KeyPurpose::Metadata, 1).expect("set_active_key failed");
+
+        for _ in 0..20 {
+            let (client, mut stream) = create_request_stream::<fidl_fuchsia_fxfs::CryptMarker>();
+            let (close_tx, mut close_rx) = futures::channel::oneshot::channel::<()>();
+
+            let crypt_task = fasync::Task::spawn(async move {
+                loop {
+                    futures::select! {
+                        _ = close_rx => return, // Close signal
+                        request = stream.try_next() => {
+                            match request {
+                                Ok(Some(CryptRequest::CreateKey { responder, .. })) => {
+                                    responder.send(Ok((&[0; 16], &[0; 48], &[0; 32]))).unwrap();
+                                }
+                                Ok(Some(CryptRequest::UnwrapKey { responder, .. })) => {
+                                    responder.send(Ok(&vec![0; 32])).unwrap();
+                                }
+                                _ => unreachable!(),
+                            }
+                        }
+                    }
+                }
+            });
+
+            let volume = volumes_directory
+                .create_and_mount_volume(
+                    "encrypted",
+                    Some(Arc::new(RemoteCrypt::new(client))),
+                    false,
+                    None,
+                )
+                .await
+                .unwrap();
+
+            // Write some data to dirty the journal.
+            {
+                let mut transaction = filesystem
+                    .clone()
+                    .new_transaction(
+                        lock_keys![LockKey::object(
+                            volume.volume().store().store_object_id(),
+                            volume.root_dir().directory().object_id()
+                        )],
+                        Options::default(),
+                    )
+                    .await
+                    .unwrap();
+                volume
+                    .root_dir()
+                    .directory()
+                    .create_child_file(&mut transaction, "foo")
+                    .await
+                    .expect("create_child_file failed");
+                transaction.commit().await.expect("commit failed");
+            }
+
+            let (dir_proxy, dir_server_end) =
+                fidl::endpoints::create_proxy::<fio::DirectoryMarker>();
+            volumes_directory.serve_volume(&volume, dir_server_end, false).unwrap();
+            volumes_directory.lock().await.auto_unmount(volume.volume().store().store_object_id());
+
+            // Kill crypt.  The next usage should be in flush.
+            let _ = close_tx.send(());
+
+            let filesystem_clone = filesystem.clone();
+            let compact_task = fasync::Task::spawn(async move {
+                // Flush should not fail, because that would close the journal for the rest of the
+                // filesystem.  Instead, the volume should be force-locked and flushed (which
+                // doesn't depend on crypt).
+                filesystem_clone.object_manager().flush().await.expect("flush failed");
+            });
+
+            // Trigger unmount.
+            std::mem::drop(dir_proxy);
+
+            // Wait for volume to be unmounted, so we can clean up for the next iteration.
+            let store_id = volume.volume().store().store_object_id();
+            loop {
+                {
+                    let guard = volumes_directory.lock().await;
+                    if !guard.mounted_volumes.contains_key(&store_id) {
+                        break;
+                    }
+                }
+                fasync::Timer::new(Duration::from_millis(10)).await;
+            }
+
+            join!(compact_task, crypt_task);
+            volumes_directory.remove_volume("encrypted").await.expect("remove_volume failed");
+        }
+        volumes_directory.terminate().await;
         filesystem.close().await.expect("close filesystem failed");
     }
 }
