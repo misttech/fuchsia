@@ -1261,29 +1261,6 @@ TEST_F(SdioControllerDeviceTest, ProbeSdr50LimitedByCard) {
   EXPECT_EQ(sdmmc_.timing(), SDMMC_TIMING_SDR50);
 }
 
-TEST_F(SdioControllerDeviceTest, ProbeFallBackToHs) {
-  sdmmc_.set_command_callback(SDIO_SEND_OP_COND, [](uint32_t out_response[4]) -> void {
-    out_response[0] = OpCondFunctions(5) | SDIO_SEND_OP_COND_RESP_S18A;
-  });
-
-  sdmmc_.Write(0x0008, std::vector<uint8_t>{0x00}, 0);
-  sdmmc_.Write(0x0014, std::vector<uint8_t>{0x07}, 0);
-
-  sdmmc_.set_perform_tuning_status(ZX_ERR_IO);
-  sdmmc_.set_host_info({
-      .caps = SDMMC_HOST_CAP_VOLTAGE_330 | SDMMC_HOST_CAP_SDR104 | SDMMC_HOST_CAP_SDR50 |
-              SDMMC_HOST_CAP_DDR50,
-      .max_transfer_size = 0x1000,
-  });
-
-  ASSERT_OK(StartDriver());
-
-  EXPECT_EQ(sdmmc_.signal_voltage(), SDMMC_VOLTAGE_V180);
-  EXPECT_EQ(sdmmc_.bus_width(), SDMMC_BUS_WIDTH_FOUR);
-  EXPECT_EQ(sdmmc_.bus_freq(), uint32_t{50'000'000});
-  EXPECT_EQ(sdmmc_.timing(), SDMMC_TIMING_HS);
-}
-
 TEST_F(SdioControllerDeviceTest, ProbeSetVoltageMax) {
   sdmmc_.set_command_callback(SDIO_SEND_OP_COND, [](uint32_t out_response[4]) -> void {
     out_response[0] = OpCondFunctions(5);

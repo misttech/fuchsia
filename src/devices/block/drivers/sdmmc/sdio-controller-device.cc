@@ -145,8 +145,15 @@ zx_status_t SdioControllerDevice::ProbeLocked() {
     return st;
   }
 
-  if ((st = TrySwitchUhs()) != ZX_OK) {
-    FDF_LOGL(ERROR, logger(), "Switching to ultra high speed failed, retcode = %d", st);
+  if (ocr & SDIO_SEND_OP_COND_RESP_S18A) {
+    // The voltage switch succeeded and we're now in SDR12 mode. Move to the highest available UHS-I
+    // speed mode.
+    if ((st = TrySwitchUhs()) != ZX_OK) {
+      FDF_LOGL(ERROR, logger(), "Switching to ultra high speed failed, retcode = %d", st);
+      return st;
+    }
+  } else {
+    // The device does not support UHS-I; move to High- or Full-Speed instead.
     if ((st = TrySwitchHs()) != ZX_OK) {
       FDF_LOGL(ERROR, logger(), "Switching to high speed failed, retcode = %d", st);
       if ((st = SwitchFreq(SDIO_DEFAULT_FREQ)) != ZX_OK) {
