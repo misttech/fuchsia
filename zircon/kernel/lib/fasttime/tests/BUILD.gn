@@ -3,10 +3,12 @@
 # found in the LICENSE file.
 
 import("//build/components/fuchsia_unittest_package.gni")
+import("//build/testing/cc_test_executable.gni")
 import("//src/bringup/lib/restricted-machine/loadable.gni")
 
-executable("fasttime-unittests") {
+cc_test_executable("fasttime-unittests") {
   testonly = true
+
   sources = [ "fasttime_test.cc" ]
   deps = [
     "//sdk/lib/fdio",
