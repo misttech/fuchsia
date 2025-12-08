@@ -19,9 +19,11 @@ import (
 )
 
 const (
+	// LINT.IfChange(mobly_test_end)
 	moblyTestResultYAMLHeaderPatternStr = `^\[=====MOBLY RESULTS=====\]$`
-	moblyTestCaseType                   = "Record"
-	moblySummaryType                    = "Summary"
+	// LINT.ThenChange(//src/testing/end_to_end/mobly_driver/mobly_driver/api/api_infra.py:mobly_test_end)
+	moblyTestCaseType = "Record"
+	moblySummaryType  = "Summary"
 )
 
 var (

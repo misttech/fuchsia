@@ -12,8 +12,18 @@ FUCHSIA_DEVICE = "FuchsiaDevice"
 # Defined as an Auxiliary device in https://osscs.corp.google.com/fuchsia/fuchsia/+/main:tools/botanist/targets/auxiliary.go
 ACCESS_POINT = "AccessPoint"
 
-# LINT.IfChange
+# LINT.IfChange(mobly_test_start)
 TESTPARSER_PREAMBLE = "======== Mobly config content ========"
+# LINT.ThenChange(
+# //src/testing/end_to_end/antlion/runner/src/driver/infra.rs:mobly_test_start,
+# //tools/testing/tefmocheck/string_in_log_check.go:mobly_test_start,
+# //tools/testing/testparser/testparser.go:mobly_test_start,
+# )
 
+# LINT.IfChange(mobly_test_end)
 TESTPARSER_RESULT_HEADER = "[=====MOBLY RESULTS=====]"
-# LINT.ThenChange(//tools/testing/tefmocheck/string_in_log_check.go,//tools/testing/testparser/moblytest.go,//src/testing/end_to_end/antlion/runner/src/driver/infra.rs)
+# LINT.ThenChange(
+# //src/testing/end_to_end/antlion/runner/src/driver/infra.rs:mobly_test_end,
+# //tools/testing/tefmocheck/string_in_log_check.go:mobly_test_end,
+# //tools/testing/testparser/moblytest.go:mobly_test_end,
+# )

@@ -15,7 +15,9 @@ import (
 )
 
 var (
-	moblyTestPreamblePatternStr   = `^======== Mobly config content ========$`
+	// LINT.IfChange(mobly_test_start)
+	moblyTestPreamblePatternStr = `^======== Mobly config content ========$`
+	// LINT.ThenChange(//src/testing/end_to_end/mobly_driver/mobly_driver/api/api_infra.py:mobly_test_start)
 	moblyTestPreamblePattern      = regexp.MustCompile(moblyTestPreamblePatternStr)
 	ctsTestPreamblePattern        = regexp.MustCompile(`^dEQP Core .* starting\.\.$`)
 	dartSystemTestPreamblePattern = regexp.MustCompile(`^\[----------\] Test results JSON:$`)

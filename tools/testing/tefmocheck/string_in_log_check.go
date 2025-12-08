@@ -471,8 +471,12 @@ func fuchsiaLogChecks() []FailureModeCheck {
 				// Mobly tests tend to be e2e tests that sometimes reboot the
 				// target, leading to expected job failures.
 				{
+					// LINT.IfChange(mobly_test_start)
 					startString: "======== Mobly config content ========",
-					endString:   "[=====MOBLY RESULTS=====]",
+					// LINT.ThenChange(//src/testing/end_to_end/mobly_driver/mobly_driver/api/api_infra.py:mobly_test_start)
+					// LINT.IfChange(mobly_test_end)
+					endString: "[=====MOBLY RESULTS=====]",
+					// LINT.ThenChange(//src/testing/end_to_end/mobly_driver/mobly_driver/api/api_infra.py:mobly_test_end)
 				},
 				{
 					startString: "=== RUN   TestKillCriticalProcess",
