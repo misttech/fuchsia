@@ -613,7 +613,7 @@ pub mod test {
                     return_value: Type::UNKNOWN_SCALAR,
                     invalidate_array_bounds: false,
                 },
-                EbpfHelperImpl(write_only),
+                EbpfHelperImpl::<TestEbpfProgramContext>(write_only),
             ),
             (
                 103,
@@ -629,7 +629,7 @@ pub mod test {
                     })),
                     invalidate_array_bounds: false,
                 },
-                EbpfHelperImpl(malloc),
+                EbpfHelperImpl::<TestEbpfProgramContext>(malloc),
             ),
             (
                 104,
@@ -638,7 +638,7 @@ pub mod test {
                     return_value: Type::UNKNOWN_SCALAR,
                     invalidate_array_bounds: false,
                 },
-                EbpfHelperImpl(free),
+                EbpfHelperImpl::<TestEbpfProgramContext>(free),
             ),
         ]
     });
