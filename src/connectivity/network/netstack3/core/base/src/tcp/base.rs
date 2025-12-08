@@ -162,12 +162,19 @@ impl EffectiveMss {
     /// Accounts for the size of any variable-sized options present in the
     /// segment.
     pub fn payload_size(&self, options: &SegmentOptions) -> NonZeroU16 {
-        // NB: Ignore the fixed TCP options size, it will be accounted for by
-        // `options`.
-        let Self { mss, fixed_tcp_options_size: _ } = self;
-        // NB: Safe to unwrap here because TCP options have a fixed maximum
-        // size < u16::MAX.
-        let tcp_options_len = u16::try_from(options.builder().bytes_len()).unwrap();
+        let Self { mss, fixed_tcp_options_size } = self;
+        // Determine the length of the TCP Options. If we don't have any
+        // variable-sized options, we can use the already-known fixed size.
+        // otherwise we need to recalculate.
+        let SegmentOptions { timestamp: _, sack_blocks } = options;
+        let tcp_options_len = if sack_blocks.is_empty() {
+            *fixed_tcp_options_size
+        } else {
+            // NB: Safe to unwrap here because TCP options have a fixed maximum
+            // size < u16::MAX.
+            u16::try_from(options.builder().bytes_len()).unwrap()
+        };
+
         // NB: Safe to unwrap here because MSS has a minimum value large enough
         // to fit all TCP options.
         NonZeroU16::new(mss.get() - tcp_options_len).unwrap()
