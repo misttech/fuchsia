@@ -2,11 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::types::common::*;
 use crate::types::environment::EnvironmentRef;
 pub use cm_types::{Name, OnTerminate, StartupMode, Url};
 use json_spanned_value::Spanned;
 use reference_doc::ReferenceDoc;
 use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
+use std::sync::Arc;
 
 /// Example:
 ///
@@ -68,13 +71,42 @@ pub struct Child {
     pub environment: Option<EnvironmentRef>,
 }
 
-#[derive(Deserialize, Debug, PartialEq)]
+#[derive(Deserialize, Debug, PartialEq, Clone)]
 #[serde(deny_unknown_fields)]
-pub struct SpannedChild {
+pub struct ParsedChild {
     pub name: Spanned<Name>,
     pub url: Spanned<Url>,
-    #[serde(default)]
-    pub startup: StartupMode,
-    pub on_terminate: Option<OnTerminate>,
-    pub environment: Option<EnvironmentRef>,
+    pub startup: Option<Spanned<StartupMode>>,
+    pub on_terminate: Option<Spanned<OnTerminate>>,
+    pub environment: Option<Spanned<EnvironmentRef>>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ContextChild {
+    pub name: ContextSpanned<Name>,
+    pub url: ContextSpanned<Url>,
+    pub startup: Option<ContextSpanned<StartupMode>>,
+    pub on_terminate: Option<ContextSpanned<OnTerminate>>,
+    pub environment: Option<ContextSpanned<EnvironmentRef>>,
+}
+
+impl PartialEq for ContextChild {
+    fn eq(&self, other: &Self) -> bool {
+        self.name.value == other.name.value
+    }
+}
+impl Eq for ContextChild {}
+
+impl Hydrate for ParsedChild {
+    type Output = ContextChild;
+
+    fn hydrate(self, file: &Arc<PathBuf>, buffer: &String) -> Self::Output {
+        ContextChild {
+            name: hydrate_simple(self.name, file, buffer),
+            url: hydrate_simple(self.url, file, buffer),
+            startup: hydrate_opt_simple(self.startup, file, buffer),
+            on_terminate: hydrate_opt_simple(self.on_terminate, file, buffer),
+            environment: hydrate_opt_simple(self.environment, file, buffer),
+        }
+    }
 }

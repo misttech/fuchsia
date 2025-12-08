@@ -2,10 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::types::common::*;
 use crate::types::environment::EnvironmentRef;
 pub use cm_types::{AllowedOffers, Durability, Name};
+use json_spanned_value::Spanned;
 use reference_doc::ReferenceDoc;
 use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
+use std::sync::Arc;
 
 #[derive(Deserialize, Debug, PartialEq, ReferenceDoc, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -55,4 +59,63 @@ pub struct Collection {
     /// their descendants will persist after the instances are destroyed. A new child instance
     /// created with the same name will share the same storage path as the previous instance.
     pub persistent_storage: Option<bool>,
+}
+
+#[derive(Deserialize, Debug, PartialEq, Clone)]
+#[serde(deny_unknown_fields)]
+pub struct ParsedCollection {
+    pub name: Spanned<Name>,
+    pub durability: Spanned<Durability>,
+    pub environment: Option<Spanned<EnvironmentRef>>,
+    pub allowed_offers: Option<Spanned<AllowedOffers>>,
+    pub allow_long_names: Option<Spanned<bool>>,
+    pub persistent_storage: Option<Spanned<bool>>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ContextCollection {
+    pub name: ContextSpanned<Name>,
+    pub durability: ContextSpanned<Durability>,
+    pub environment: Option<ContextSpanned<EnvironmentRef>>,
+    pub allowed_offers: Option<ContextSpanned<AllowedOffers>>,
+    pub allow_long_names: Option<ContextSpanned<bool>>,
+    pub persistent_storage: Option<ContextSpanned<bool>>,
+}
+
+impl PartialEq for ContextCollection {
+    fn eq(&self, other: &Self) -> bool {
+        macro_rules! cmp {
+            ($field:ident) => {
+                match (&self.$field, &other.$field) {
+                    (Some(a), Some(b)) => a.value == b.value,
+                    (None, None) => true,
+                    _ => false,
+                }
+            };
+        }
+
+        self.name.value == other.name.value
+            && self.durability.value == other.durability.value
+            && cmp!(environment)
+            && cmp!(allowed_offers)
+            && cmp!(allow_long_names)
+            && cmp!(persistent_storage)
+    }
+}
+
+impl Eq for ContextCollection {}
+
+impl Hydrate for ParsedCollection {
+    type Output = ContextCollection;
+
+    fn hydrate(self, file: &Arc<PathBuf>, buffer: &String) -> Self::Output {
+        ContextCollection {
+            name: hydrate_simple(self.name, file, buffer),
+            durability: hydrate_simple(self.durability, file, buffer),
+            environment: hydrate_opt_simple(self.environment, file, buffer),
+            allowed_offers: hydrate_opt_simple(self.allowed_offers, file, buffer),
+            allow_long_names: hydrate_opt_simple(self.allow_long_names, file, buffer),
+            persistent_storage: hydrate_opt_simple(self.persistent_storage, file, buffer),
+        }
+    }
 }

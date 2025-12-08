@@ -2,10 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::types::common::*;
 use crate::{
-    AnyRef, AsClause, Canonicalize, CapabilityClause, DictionaryRef, EventScope, FromClause,
-    PathClause, SourceAvailability, SpannedCapabilityClause, one_or_many_from_impl,
-    option_one_or_many_as_ref, option_spanned_one_or_many_as_ref,
+    AnyRef, AsClause, AsClauseContext, Canonicalize, CapabilityClause, CapabilityId, DictionaryRef,
+    Error, EventScope, FromClause, FromClauseContext, OfferToAllCapability, PathClause,
+    SourceAvailability, offer_to_all_and_component_diff_capabilities_message,
+    offer_to_all_and_component_diff_sources_message, one_or_many_from_context,
+    one_or_many_from_impl, option_one_or_many_as_ref,
 };
 
 use crate::one_or_many::OneOrMany;
@@ -15,11 +18,14 @@ pub use cm_types::{
     ParseError, Path, RelativePath, StartupMode, Url,
 };
 use cml_macro::{OneOrMany, Reference};
+use itertools::Either;
 use json_spanned_value::Spanned;
 use reference_doc::ReferenceDoc;
 use serde::{Deserialize, Serialize};
 
 use std::fmt;
+use std::path::PathBuf;
+use std::sync::Arc;
 
 /// Example:
 ///
@@ -379,171 +385,6 @@ pub enum TargetAvailability {
     Unknown,
 }
 
-#[derive(Deserialize, Debug, PartialEq, Clone, ReferenceDoc)]
-#[serde(deny_unknown_fields)]
-pub struct SpannedOffer {
-    /// When routing a service, the [name](#name) of a [service capability][doc-service].
-    pub service: Option<OneOrMany<Name>>,
-
-    /// When routing a protocol, the [name](#name) of a [protocol capability][doc-protocol].
-    pub protocol: Option<Spanned<OneOrMany<Name>>>,
-
-    /// When routing a directory, the [name](#name) of a [directory capability][doc-directory].
-    pub directory: Option<OneOrMany<Name>>,
-
-    /// When routing a runner, the [name](#name) of a [runner capability][doc-runners].
-    pub runner: Option<OneOrMany<Name>>,
-
-    /// When routing a resolver, the [name](#name) of a [resolver capability][doc-resolvers].
-    pub resolver: Option<OneOrMany<Name>>,
-
-    /// When routing a storage capability, the [name](#name) of a [storage capability][doc-storage].
-    pub storage: Option<Spanned<OneOrMany<Name>>>,
-
-    /// When routing a dictionary, the [name](#name) of a [dictionary capability][doc-dictionaries].
-    pub dictionary: Option<Spanned<OneOrMany<Name>>>,
-
-    /// When routing a config, the [name](#name) of a configuration capability.
-    pub config: Option<OneOrMany<Name>>,
-
-    /// `from`: The source of the capability, one of:
-    /// - `parent`: The component's parent. This source can be used for all
-    ///     capability types.
-    /// - `self`: This component. Requires a corresponding
-    ///     [`capability`](#capabilities) declaration.
-    /// - `framework`: The Component Framework runtime.
-    /// - `#<child-name>`: A [reference](#references) to a child component
-    ///     instance. This source can only be used when offering protocol,
-    ///     directory, or runner capabilities.
-    /// - `void`: The source is intentionally omitted. Only valid when `availability` is
-    ///     `optional` or `transitional`.
-    pub from: OneOrMany<OfferFromRef>,
-
-    /// Capability target(s). One of:
-    /// - `#<target-name>` or \[`#name1`, ...\]: A [reference](#references) to a child or collection,
-    ///   or an array of references.
-    /// - `all`: Short-hand for an `offer` clause containing all child [references](#references).
-    pub to: OneOrMany<OfferToRef>,
-
-    /// An explicit [name](#name) for the capability as it will be known by the target. If omitted,
-    /// defaults to the original name. `as` cannot be used when an array of multiple names is
-    /// provided.
-    pub r#as: Option<Spanned<Name>>,
-
-    /// The type of dependency between the source and
-    /// targets, one of:
-    /// - `strong`: a strong dependency, which is used to determine shutdown
-    ///     ordering. Component manager is guaranteed to stop the target before the
-    ///     source. This is the default.
-    /// - `weak`: a weak dependency, which is ignored during
-    ///     shutdown. When component manager stops the parent realm, the source may
-    ///     stop before the clients. Clients of weak dependencies must be able to
-    ///     handle these dependencies becoming unavailable.
-    pub dependency: Option<Spanned<DependencyType>>,
-
-    /// (`directory` only) the maximum [directory rights][doc-directory-rights] to apply to
-    /// the offered directory capability.
-    pub rights: Option<Spanned<Rights>>,
-
-    /// (`directory` only) the relative path of a subdirectory within the source directory
-    /// capability to route.
-    pub subdir: Option<RelativePath>,
-
-    /// (`event_stream` only) the name(s) of the event streams being offered.
-    pub event_stream: Option<Spanned<OneOrMany<Name>>>,
-
-    /// (`event_stream` only) When defined the event stream will contain events about only the
-    /// components defined in the scope.
-    pub scope: Option<OneOrMany<EventScope>>,
-
-    /// `availability` _(optional)_: The expectations around this capability's availability. Affects
-    /// build-time and runtime route validation. One of:
-    /// - `required` (default): a required dependency, the source must exist and provide it. Use
-    ///     this when the target of this offer requires this capability to function properly.
-    /// - `optional`: an optional dependency. Use this when the target of the offer can function
-    ///     with or without this capability. The target must not have a `required` dependency on the
-    ///     capability. The ultimate source of this offer must be `void` or an actual component.
-    /// - `same_as_target`: the availability expectations of this capability will match the
-    ///     target's. If the target requires the capability, then this field is set to `required`.
-    ///     If the target has an optional dependency on the capability, then the field is set to
-    ///     `optional`.
-    /// - `transitional`: like `optional`, but will tolerate a missing source. Use this
-    ///     only to avoid validation errors during transitional periods of multi-step code changes.
-    ///
-    /// For more information, see the
-    /// [availability](/docs/concepts/components/v2/capabilities/availability.md) documentation.
-    pub availability: Option<Availability>,
-
-    /// Whether or not the source of this offer must exist. One of:
-    /// - `required` (default): the source (`from`) must be defined in this manifest.
-    /// - `unknown`: the source of this offer will be rewritten to `void` if its source (`from`)
-    ///     is not defined in this manifest after includes are processed.
-    pub source_availability: Option<SourceAvailability>,
-
-    /// Whether or not the target of this offer must exist. One of:
-    /// - `required` (default): the target (`to`) must be defined in this
-    ///   manifest.
-    /// - `unknown`: this offer is omitted if its target (`to`) is not defined
-    ///     in this manifest after includes are processed.
-    pub target_availability: Option<TargetAvailability>,
-}
-
-impl SpannedCapabilityClause for SpannedOffer {
-    fn service(&self) -> Option<OneOrMany<&BorrowedName>> {
-        option_one_or_many_as_ref(&self.service)
-    }
-    fn protocol(&self) -> Option<OneOrMany<&BorrowedName>> {
-        option_spanned_one_or_many_as_ref(&self.protocol)
-    }
-    fn directory(&self) -> Option<OneOrMany<&BorrowedName>> {
-        option_one_or_many_as_ref(&self.directory)
-    }
-    fn storage(&self) -> Option<OneOrMany<&BorrowedName>> {
-        option_spanned_one_or_many_as_ref(&self.storage)
-    }
-    fn runner(&self) -> Option<OneOrMany<&BorrowedName>> {
-        option_one_or_many_as_ref(&self.runner)
-    }
-    fn resolver(&self) -> Option<OneOrMany<&BorrowedName>> {
-        option_one_or_many_as_ref(&self.resolver)
-    }
-    fn event_stream(&self) -> Option<OneOrMany<&BorrowedName>> {
-        option_spanned_one_or_many_as_ref(&self.event_stream)
-    }
-    fn dictionary(&self) -> Option<OneOrMany<&BorrowedName>> {
-        option_spanned_one_or_many_as_ref(&self.dictionary)
-    }
-    fn config(&self) -> Option<OneOrMany<&BorrowedName>> {
-        option_one_or_many_as_ref(&self.config)
-    }
-
-    fn decl_type(&self) -> &'static str {
-        "offer"
-    }
-    fn supported(&self) -> &[&'static str] {
-        &[
-            "service",
-            "protocol",
-            "directory",
-            "storage",
-            "runner",
-            "resolver",
-            "event_stream",
-            "config",
-        ]
-    }
-}
-
-impl AsClause for SpannedOffer {
-    fn r#as(&self) -> Option<&BorrowedName> {
-        self.r#as.as_ref().map(|spanned_value| {
-            let bounded_name: &BoundedName<255> = spanned_value.as_ref();
-            let borrowed_name: &BorrowedName = bounded_name.as_ref();
-            borrowed_name
-        })
-    }
-}
-
 /// A reference in an `offer from`.
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Reference)]
 #[reference(
@@ -606,3 +447,270 @@ pub struct OneOrManyOfferToRefs;
     unique_items = true
 )]
 pub struct OneOrManyOfferFromRefs;
+
+#[derive(Deserialize, Debug, PartialEq, Clone)]
+#[serde(deny_unknown_fields)]
+pub struct ParsedOffer {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub service: Option<Spanned<OneOrMany<Name>>>,
+    pub protocol: Option<Spanned<OneOrMany<Name>>>,
+    pub directory: Option<Spanned<OneOrMany<Name>>>,
+    pub runner: Option<Spanned<OneOrMany<Name>>>,
+    pub resolver: Option<Spanned<OneOrMany<Name>>>,
+    pub storage: Option<Spanned<OneOrMany<Name>>>,
+    pub dictionary: Option<Spanned<OneOrMany<Name>>>,
+    pub config: Option<Spanned<OneOrMany<Name>>>,
+    pub from: Spanned<OneOrMany<OfferFromRef>>,
+    pub to: Spanned<OneOrMany<OfferToRef>>,
+    pub r#as: Option<Spanned<Name>>,
+    pub dependency: Option<Spanned<DependencyType>>,
+    pub rights: Option<Spanned<Rights>>,
+    pub subdir: Option<Spanned<RelativePath>>,
+    pub event_stream: Option<Spanned<OneOrMany<Name>>>,
+    pub scope: Option<Spanned<OneOrMany<EventScope>>>,
+    pub availability: Option<Spanned<Availability>>,
+    pub source_availability: Option<Spanned<SourceAvailability>>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ContextOffer {
+    pub service: Option<ContextSpanned<OneOrMany<Name>>>,
+    pub protocol: Option<ContextSpanned<OneOrMany<Name>>>,
+    pub directory: Option<ContextSpanned<OneOrMany<Name>>>,
+    pub runner: Option<ContextSpanned<OneOrMany<Name>>>,
+    pub resolver: Option<ContextSpanned<OneOrMany<Name>>>,
+    pub storage: Option<ContextSpanned<OneOrMany<Name>>>,
+    pub dictionary: Option<ContextSpanned<OneOrMany<Name>>>,
+    pub config: Option<ContextSpanned<OneOrMany<Name>>>,
+    pub from: ContextSpanned<OneOrMany<OfferFromRef>>,
+    pub to: ContextSpanned<OneOrMany<OfferToRef>>,
+    pub r#as: Option<ContextSpanned<Name>>,
+    pub dependency: Option<ContextSpanned<DependencyType>>,
+    pub rights: Option<ContextSpanned<Rights>>,
+    pub subdir: Option<ContextSpanned<RelativePath>>,
+    pub event_stream: Option<ContextSpanned<OneOrMany<Name>>>,
+    pub scope: Option<ContextSpanned<OneOrMany<EventScope>>>,
+    pub availability: Option<ContextSpanned<Availability>>,
+    pub source_availability: Option<ContextSpanned<SourceAvailability>>,
+}
+
+impl ContextCapabilityClause for ContextOffer {
+    fn service(&self) -> Option<ContextSpanned<OneOrMany<&BorrowedName>>> {
+        option_one_or_many_as_ref_context(&self.service)
+    }
+    fn protocol(&self) -> Option<ContextSpanned<OneOrMany<&BorrowedName>>> {
+        option_one_or_many_as_ref_context(&self.protocol)
+    }
+    fn directory(&self) -> Option<ContextSpanned<OneOrMany<&BorrowedName>>> {
+        option_one_or_many_as_ref_context(&self.directory)
+    }
+    fn storage(&self) -> Option<ContextSpanned<OneOrMany<&BorrowedName>>> {
+        option_one_or_many_as_ref_context(&self.storage)
+    }
+    fn runner(&self) -> Option<ContextSpanned<OneOrMany<&BorrowedName>>> {
+        option_one_or_many_as_ref_context(&self.runner)
+    }
+    fn resolver(&self) -> Option<ContextSpanned<OneOrMany<&BorrowedName>>> {
+        option_one_or_many_as_ref_context(&self.resolver)
+    }
+    fn event_stream(&self) -> Option<ContextSpanned<OneOrMany<&BorrowedName>>> {
+        option_one_or_many_as_ref_context(&self.event_stream)
+    }
+    fn dictionary(&self) -> Option<ContextSpanned<OneOrMany<&BorrowedName>>> {
+        option_one_or_many_as_ref_context(&self.dictionary)
+    }
+    fn config(&self) -> Option<ContextSpanned<OneOrMany<&BorrowedName>>> {
+        option_one_or_many_as_ref_context(&self.config)
+    }
+
+    fn decl_type(&self) -> &'static str {
+        "offer"
+    }
+    fn supported(&self) -> &[&'static str] {
+        &[
+            "service",
+            "protocol",
+            "directory",
+            "storage",
+            "event_stream",
+            "runner",
+            "resolver",
+            "config",
+        ]
+    }
+    fn are_many_names_allowed(&self) -> bool {
+        [
+            "service",
+            "protocol",
+            "directory",
+            "storage",
+            "runner",
+            "resolver",
+            "event_stream",
+            "config",
+        ]
+        .contains(&self.capability_type(None).unwrap())
+    }
+}
+
+impl PartialEq for ContextOffer {
+    fn eq(&self, other: &Self) -> bool {
+        macro_rules! cmp {
+            ($field:ident) => {
+                match (&self.$field, &other.$field) {
+                    (Some(a), Some(b)) => a.value == b.value,
+                    (None, None) => true,
+                    _ => false,
+                }
+            };
+        }
+
+        cmp!(service)
+            && cmp!(protocol)
+            && cmp!(directory)
+            && cmp!(runner)
+            && cmp!(resolver)
+            && cmp!(storage)
+            && cmp!(dictionary)
+            && cmp!(config)
+            && self.from.value == other.from.value
+            && self.to.value == other.to.value
+            && cmp!(r#as)
+            && cmp!(dependency)
+            && cmp!(rights)
+            && cmp!(subdir)
+            && cmp!(event_stream)
+            && cmp!(scope)
+            && cmp!(availability)
+            && cmp!(source_availability)
+    }
+}
+
+impl Eq for ContextOffer {}
+
+impl ContextPathClause for ContextOffer {
+    fn path(&self) -> Option<&ContextSpanned<Path>> {
+        None
+    }
+}
+
+impl AsClauseContext for ContextOffer {
+    fn r#as(&self) -> Option<ContextSpanned<&BorrowedName>> {
+        self.r#as.as_ref().map(|spanned_name| ContextSpanned {
+            value: spanned_name.value.as_ref(),
+            origin: spanned_name.origin.clone(),
+        })
+    }
+}
+
+impl FromClauseContext for ContextOffer {
+    fn from_(&self) -> ContextSpanned<OneOrMany<AnyRef<'_>>> {
+        one_or_many_from_context(&self.from)
+    }
+}
+
+impl Hydrate for ParsedOffer {
+    type Output = ContextOffer;
+
+    fn hydrate(self, file: &Arc<PathBuf>, buffer: &String) -> Self::Output {
+        ContextOffer {
+            service: hydrate_opt_simple(self.service, file, buffer),
+            protocol: hydrate_opt_simple(self.protocol, file, buffer),
+            directory: hydrate_opt_simple(self.directory, file, buffer),
+            runner: hydrate_opt_simple(self.runner, file, buffer),
+            resolver: hydrate_opt_simple(self.resolver, file, buffer),
+            storage: hydrate_opt_simple(self.storage, file, buffer),
+            dictionary: hydrate_opt_simple(self.dictionary, file, buffer),
+            config: hydrate_opt_simple(self.config, file, buffer),
+            from: hydrate_simple(self.from, file, buffer),
+            to: hydrate_simple(self.to, file, buffer),
+            r#as: hydrate_opt_simple(self.r#as, file, buffer),
+            dependency: hydrate_opt_simple(self.dependency, file, buffer),
+            rights: hydrate_opt_simple(self.rights, file, buffer),
+            subdir: hydrate_opt_simple(self.subdir, file, buffer),
+            event_stream: hydrate_opt_simple(self.event_stream, file, buffer),
+            scope: hydrate_opt_simple(self.scope, file, buffer),
+            availability: hydrate_opt_simple(self.availability, file, buffer),
+            source_availability: hydrate_opt_simple(self.source_availability, file, buffer),
+        }
+    }
+}
+
+pub fn offer_to_all_from_offer(
+    value: &ContextOffer,
+) -> impl Iterator<Item = OfferToAllCapability<'_>> {
+    if let Some(protocol) = &value.protocol {
+        Either::Left(
+            protocol.value.iter().map(|protocol| OfferToAllCapability::Protocol(protocol.as_str())),
+        )
+    } else if let Some(dictionary) = &value.dictionary {
+        Either::Right(
+            dictionary
+                .value
+                .iter()
+                .map(|dictionary| OfferToAllCapability::Dictionary(dictionary.as_str())),
+        )
+    } else {
+        panic!("Expected a dictionary or a protocol");
+    }
+}
+
+/// Returns `Ok(true)` if desugaring the `offer_to_all` using `name` duplicates
+/// `specific_offer`. Returns `Ok(false)` if not a duplicate.
+///
+/// Returns Err if there is a validation error.
+pub fn offer_to_all_would_duplicate_context(
+    offer_to_all: &ContextSpanned<ContextOffer>,
+    specific_offer: &ContextSpanned<ContextOffer>,
+    target: &cm_types::BorrowedName,
+) -> Result<bool, Error> {
+    // Only protocols and dictionaries may be offered to all
+    assert!(offer_to_all.value.protocol.is_some() || offer_to_all.value.dictionary.is_some());
+
+    // If none of the pairs of the cross products of the two offer's protocols
+    // match, then the offer is certainly not a duplicate
+    if CapabilityId::from_context_offer(specific_offer).iter().flatten().all(
+        |specific_offer_cap_id| {
+            CapabilityId::from_context_offer(offer_to_all)
+                .iter()
+                .flatten()
+                .all(|offer_to_all_cap_id| offer_to_all_cap_id.0 != specific_offer_cap_id.0)
+        },
+    ) {
+        return Ok(false);
+    }
+
+    let to_field_matches = specific_offer.value.to.value.iter().any(
+        |specific_offer_to| matches!(specific_offer_to, OfferToRef::Named(c) if **c == *target),
+    );
+
+    if !to_field_matches {
+        return Ok(false);
+    }
+
+    if offer_to_all.value.from != specific_offer.value.from {
+        return Err(Error::validate_contexts(
+            offer_to_all_and_component_diff_sources_message(
+                offer_to_all_from_offer(&offer_to_all.value),
+                target.as_str(),
+            ),
+            vec![offer_to_all.origin.clone(), specific_offer.origin.clone()],
+        ));
+    }
+
+    // Since the capability ID's match, the underlying protocol must also match
+    if offer_to_all_from_offer(&offer_to_all.value).all(|to_all_protocol| {
+        offer_to_all_from_offer(&specific_offer.value)
+            .all(|to_specific_protocol| to_all_protocol != to_specific_protocol)
+    }) {
+        return Err(Error::validate_contexts(
+            offer_to_all_and_component_diff_capabilities_message(
+                offer_to_all_from_offer(&offer_to_all.value),
+                target.as_str(),
+            ),
+            vec![offer_to_all.origin.clone(), specific_offer.origin.clone()],
+        ));
+    }
+
+    Ok(true)
+}

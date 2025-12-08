@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::Origin;
 use cm_fidl_validator::error::ErrorList;
 use cm_types::ParseError;
 use fidl_fuchsia_component_decl as fdecl;
@@ -10,7 +11,7 @@ use std::str::Utf8Error;
 use std::{error, fmt, io};
 
 /// The location in the file where an error was detected.
-#[derive(PartialEq, Clone, Debug)]
+#[derive(PartialEq, Clone, Debug, Eq, Hash)]
 pub struct Location {
     /// One-based line number of the error.
     pub line: usize,
@@ -36,10 +37,13 @@ pub enum Error {
         err: String,
         filename: Option<String>,
     },
-    ValidateWithSpan {
+    ValidateContext {
         err: String,
-        location: Option<Location>,
-        filename: Option<String>,
+        origin: Option<Origin>,
+    },
+    ValidateContexts {
+        err: String,
+        origins: Vec<Origin>,
     },
     FidlValidator {
         errs: ErrorList,
@@ -73,16 +77,11 @@ impl Error {
         Self::Validate { err: err.to_string(), filename: None }
     }
 
-    pub fn validate_with_span(
-        err: impl fmt::Display,
-        location: Option<Location>,
-        filename: Option<&Path>,
-    ) -> Self {
-        Self::ValidateWithSpan {
-            err: err.to_string(),
-            location,
-            filename: filename.map(|f| f.to_string_lossy().into_owned()),
-        }
+    pub fn validate_context(err: impl fmt::Display, origin: Option<Origin>) -> Self {
+        Self::ValidateContext { err: err.to_string(), origin }
+    }
+    pub fn validate_contexts(err: impl fmt::Display, origins: Vec<Origin>) -> Self {
+        Self::ValidateContexts { err: err.to_string(), origins }
     }
 
     pub fn fidl_validator(errs: ErrorList) -> Self {
@@ -167,14 +166,34 @@ impl fmt::Display for Error {
                     write!(f, "{}", err)
                 }
             }
-            Error::ValidateWithSpan { err, location, filename } => {
+            Error::ValidateContext { err, origin } => {
                 let mut prefix = String::new();
-                if let Some(filename) = filename {
-                    prefix.push_str(&format!("{}:", filename));
+
+                if let Some(origin) = origin {
+                    prefix.push_str(&format!("{:?}:", origin.file));
+                    prefix
+                        .push_str(&format!("{}:{}:", origin.location.line, origin.location.column));
                 }
-                if let Some(location) = location {
-                    prefix.push_str(&format!("{}:{}:", location.line, location.column));
+
+                if !prefix.is_empty() {
+                    write!(f, "Error at {} {}", prefix, err)
+                } else {
+                    write!(f, "{}", err)
                 }
+            }
+            Error::ValidateContexts { err, origins } => {
+                let mut prefix = String::new();
+
+                for origin in origins {
+                    if !prefix.is_empty() {
+                        prefix.push_str(", and ");
+                    }
+
+                    prefix.push_str(&format!("{:?}:", origin.file));
+                    prefix
+                        .push_str(&format!("{}:{}:", origin.location.line, origin.location.column));
+                }
+
                 if !prefix.is_empty() {
                     write!(f, "Error at {} {}", prefix, err)
                 } else {

@@ -2,11 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::types::common::*;
 use crate::types::right::{Rights, RightsClause};
 use crate::{
-    AnyRef, AsClause, Canonicalize, CapabilityClause, DictionaryRef, EventScope, FilterClause,
-    FromClause, PathClause, SourceAvailability, SpannedCapabilityClause, one_or_many_from_impl,
-    option_one_or_many_as_ref, option_spanned_one_or_many_as_ref,
+    AnyRef, AsClause, AsClauseContext, Canonicalize, CapabilityClause, DictionaryRef, EventScope,
+    FilterClause, FromClause, FromClauseContext, PathClause, SourceAvailability,
+    one_or_many_from_context, one_or_many_from_impl, option_one_or_many_as_ref,
 };
 
 use crate::one_or_many::OneOrMany;
@@ -21,6 +22,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
 use std::fmt;
+use std::path::PathBuf;
+use std::sync::Arc;
 
 /// Example:
 ///
@@ -324,143 +327,6 @@ impl CapabilityClause for Expose {
     }
 }
 
-#[derive(Deserialize, Debug, PartialEq, Clone)]
-#[serde(deny_unknown_fields)]
-pub struct SpannedExpose {
-    /// When routing a service, the [name](#name) of a [service capability][doc-service].
-    pub service: Option<OneOrMany<Name>>,
-
-    /// When routing a protocol, the [name](#name) of a [protocol capability][doc-protocol].
-    pub protocol: Option<OneOrMany<Name>>,
-
-    /// When routing a directory, the [name](#name) of a [directory capability][doc-directory].
-    pub directory: Option<OneOrMany<Name>>,
-
-    /// When routing a runner, the [name](#name) of a [runner capability][doc-runners].
-    pub runner: Option<OneOrMany<Name>>,
-
-    /// When routing a resolver, the [name](#name) of a [resolver capability][doc-resolvers].
-    pub resolver: Option<OneOrMany<Name>>,
-
-    /// When routing a dictionary, the [name](#name) of a [dictionary capability][doc-dictionaries].
-    pub dictionary: Option<OneOrMany<Name>>,
-
-    /// When routing a config, the [name](#name) of a configuration capability.
-    pub config: Option<OneOrMany<Name>>,
-
-    /// `from`: The source of the capability, one of:
-    /// - `self`: This component. Requires a corresponding
-    ///     [`capability`](#capabilities) declaration.
-    /// - `framework`: The Component Framework runtime.
-    /// - `#<child-name>`: A [reference](#references) to a child component
-    ///     instance.
-    pub from: Spanned<OneOrMany<ExposeFromRef>>,
-
-    /// The [name](#name) for the capability as it will be known by the target. If omitted,
-    /// defaults to the original name. `as` cannot be used when an array of multiple capability
-    /// names is provided.
-    pub r#as: Option<Spanned<Name>>,
-
-    /// The capability target. Either `parent` or `framework`. Defaults to `parent`.
-    pub to: Option<Spanned<ExposeToRef>>,
-
-    /// (`directory` only) the maximum [directory rights][doc-directory-rights] to apply to
-    /// the exposed directory capability.
-    pub rights: Option<Spanned<Rights>>,
-
-    /// (`directory` only) the relative path of a subdirectory within the source directory
-    /// capability to route.
-    pub subdir: Option<Spanned<RelativePath>>,
-
-    /// (`event_stream` only) the name(s) of the event streams being exposed.
-    pub event_stream: Option<Spanned<OneOrMany<Name>>>,
-
-    /// (`event_stream` only) the scope(s) of the event streams being exposed. This is used to
-    /// downscope the range of components to which an event stream refers and make it refer only to
-    /// the components defined in the scope.
-    pub scope: Option<OneOrMany<EventScope>>,
-
-    /// `availability` _(optional)_: The expectations around this capability's availability. Affects
-    /// build-time and runtime route validation. One of:
-    /// - `required` (default): a required dependency, the source must exist and provide it. Use
-    ///     this when the target of this expose requires this capability to function properly.
-    /// - `optional`: an optional dependency. Use this when the target of the expose can function
-    ///     with or without this capability. The target must not have a `required` dependency on the
-    ///     capability. The ultimate source of this expose must be `void` or an actual component.
-    /// - `same_as_target`: the availability expectations of this capability will match the
-    ///     target's. If the target requires the capability, then this field is set to `required`.
-    ///     If the target has an optional dependency on the capability, then the field is set to
-    ///     `optional`.
-    /// - `transitional`: like `optional`, but will tolerate a missing source. Use this
-    ///     only to avoid validation errors during transitional periods of multi-step code changes.
-    ///
-    /// For more information, see the
-    /// [availability](/docs/concepts/components/v2/capabilities/availability.md) documentation.
-    pub availability: Option<Availability>,
-
-    /// Whether or not the source of this offer must exist. One of:
-    /// - `required` (default): the source (`from`) must be defined in this manifest.
-    /// - `unknown`: the source of this offer will be rewritten to `void` if its source (`from`)
-    ///     is not defined in this manifest after includes are processed.
-    pub source_availability: Option<SourceAvailability>,
-}
-
-impl AsClause for SpannedExpose {
-    fn r#as(&self) -> Option<&BorrowedName> {
-        self.r#as.as_ref().map(|spanned_value| {
-            let bounded_name: &BoundedName<255> = spanned_value.as_ref();
-            let borrowed_name: &BorrowedName = bounded_name.as_ref();
-            borrowed_name
-        })
-    }
-}
-
-impl SpannedCapabilityClause for SpannedExpose {
-    fn service(&self) -> Option<OneOrMany<&BorrowedName>> {
-        option_one_or_many_as_ref(&self.service)
-    }
-    fn protocol(&self) -> Option<OneOrMany<&BorrowedName>> {
-        option_one_or_many_as_ref(&self.protocol)
-    }
-    fn directory(&self) -> Option<OneOrMany<&BorrowedName>> {
-        option_one_or_many_as_ref(&self.directory)
-    }
-    fn storage(&self) -> Option<OneOrMany<&BorrowedName>> {
-        None
-    }
-    fn runner(&self) -> Option<OneOrMany<&BorrowedName>> {
-        option_one_or_many_as_ref(&self.runner)
-    }
-    fn resolver(&self) -> Option<OneOrMany<&BorrowedName>> {
-        option_one_or_many_as_ref(&self.resolver)
-    }
-    fn event_stream(&self) -> Option<OneOrMany<&BorrowedName>> {
-        option_spanned_one_or_many_as_ref(&self.event_stream)
-    }
-    fn dictionary(&self) -> Option<OneOrMany<&BorrowedName>> {
-        option_one_or_many_as_ref(&self.dictionary)
-    }
-    fn config(&self) -> Option<OneOrMany<&BorrowedName>> {
-        option_one_or_many_as_ref(&self.config)
-    }
-
-    fn decl_type(&self) -> &'static str {
-        "expose"
-    }
-    fn supported(&self) -> &[&'static str] {
-        &[
-            "service",
-            "protocol",
-            "directory",
-            "runner",
-            "resolver",
-            "event_stream",
-            "dictionary",
-            "config",
-        ]
-    }
-}
-
 /// Generates deserializer for `OneOrMany<ExposeFromRef>`.
 #[derive(OneOrMany, Debug, Clone)]
 #[one_or_many(
@@ -495,4 +361,184 @@ pub enum ExposeToRef {
     Parent,
     /// A reference to the framework.
     Framework,
+}
+
+#[derive(Deserialize, Debug, PartialEq, Clone)]
+#[serde(deny_unknown_fields)]
+pub struct ParsedExpose {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub service: Option<Spanned<OneOrMany<Name>>>,
+    pub protocol: Option<Spanned<OneOrMany<Name>>>,
+    pub directory: Option<Spanned<OneOrMany<Name>>>,
+    pub runner: Option<Spanned<OneOrMany<Name>>>,
+    pub resolver: Option<Spanned<OneOrMany<Name>>>,
+    pub dictionary: Option<Spanned<OneOrMany<Name>>>,
+    pub config: Option<Spanned<OneOrMany<Name>>>,
+    pub from: Spanned<OneOrMany<ExposeFromRef>>,
+    pub to: Option<Spanned<ExposeToRef>>,
+    pub r#as: Option<Spanned<Name>>,
+    pub rights: Option<Spanned<Rights>>,
+    pub subdir: Option<Spanned<RelativePath>>,
+    pub event_stream: Option<Spanned<OneOrMany<Name>>>,
+    pub scope: Option<Spanned<OneOrMany<EventScope>>>,
+    pub availability: Option<Spanned<Availability>>,
+    pub source_availability: Option<Spanned<SourceAvailability>>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ContextExpose {
+    pub service: Option<ContextSpanned<OneOrMany<Name>>>,
+    pub protocol: Option<ContextSpanned<OneOrMany<Name>>>,
+    pub directory: Option<ContextSpanned<OneOrMany<Name>>>,
+    pub runner: Option<ContextSpanned<OneOrMany<Name>>>,
+    pub resolver: Option<ContextSpanned<OneOrMany<Name>>>,
+    pub dictionary: Option<ContextSpanned<OneOrMany<Name>>>,
+    pub config: Option<ContextSpanned<OneOrMany<Name>>>,
+    pub from: ContextSpanned<OneOrMany<ExposeFromRef>>,
+    pub to: Option<ContextSpanned<ExposeToRef>>,
+    pub r#as: Option<ContextSpanned<Name>>,
+    pub rights: Option<ContextSpanned<Rights>>,
+    pub subdir: Option<ContextSpanned<RelativePath>>,
+    pub event_stream: Option<ContextSpanned<OneOrMany<Name>>>,
+    pub scope: Option<ContextSpanned<OneOrMany<EventScope>>>,
+    pub availability: Option<ContextSpanned<Availability>>,
+    pub source_availability: Option<ContextSpanned<SourceAvailability>>,
+}
+
+impl ContextCapabilityClause for ContextExpose {
+    fn service(&self) -> Option<ContextSpanned<OneOrMany<&BorrowedName>>> {
+        option_one_or_many_as_ref_context(&self.service)
+    }
+    fn protocol(&self) -> Option<ContextSpanned<OneOrMany<&BorrowedName>>> {
+        option_one_or_many_as_ref_context(&self.protocol)
+    }
+    fn directory(&self) -> Option<ContextSpanned<OneOrMany<&BorrowedName>>> {
+        option_one_or_many_as_ref_context(&self.directory)
+    }
+    fn storage(&self) -> Option<ContextSpanned<OneOrMany<&BorrowedName>>> {
+        None
+    }
+    fn runner(&self) -> Option<ContextSpanned<OneOrMany<&BorrowedName>>> {
+        option_one_or_many_as_ref_context(&self.runner)
+    }
+    fn resolver(&self) -> Option<ContextSpanned<OneOrMany<&BorrowedName>>> {
+        option_one_or_many_as_ref_context(&self.resolver)
+    }
+    fn event_stream(&self) -> Option<ContextSpanned<OneOrMany<&BorrowedName>>> {
+        option_one_or_many_as_ref_context(&self.event_stream)
+    }
+    fn dictionary(&self) -> Option<ContextSpanned<OneOrMany<&BorrowedName>>> {
+        option_one_or_many_as_ref_context(&self.dictionary)
+    }
+    fn config(&self) -> Option<ContextSpanned<OneOrMany<&BorrowedName>>> {
+        option_one_or_many_as_ref_context(&self.config)
+    }
+
+    fn decl_type(&self) -> &'static str {
+        "expose"
+    }
+    fn supported(&self) -> &[&'static str] {
+        &[
+            "service",
+            "protocol",
+            "directory",
+            "event_stream",
+            "runner",
+            "resolver",
+            "config",
+            "dicitionary",
+        ]
+    }
+    fn are_many_names_allowed(&self) -> bool {
+        [
+            "service",
+            "protocol",
+            "directory",
+            "runner",
+            "resolver",
+            "event_stream",
+            "config",
+            "dicitionary",
+        ]
+        .contains(&self.capability_type(None).unwrap())
+    }
+}
+
+impl PartialEq for ContextExpose {
+    fn eq(&self, other: &Self) -> bool {
+        macro_rules! cmp {
+            ($field:ident) => {
+                match (&self.$field, &other.$field) {
+                    (Some(a), Some(b)) => a.value == b.value,
+                    (None, None) => true,
+                    _ => false,
+                }
+            };
+        }
+
+        cmp!(service)
+            && cmp!(protocol)
+            && cmp!(directory)
+            && cmp!(runner)
+            && cmp!(resolver)
+            && cmp!(dictionary)
+            && cmp!(config)
+            && self.from.value == other.from.value
+            && cmp!(to)
+            && cmp!(r#as)
+            && cmp!(rights)
+            && cmp!(subdir)
+            && cmp!(event_stream)
+            && cmp!(scope)
+            && cmp!(availability)
+            && cmp!(source_availability)
+    }
+}
+
+impl Eq for ContextExpose {}
+
+impl ContextPathClause for ContextExpose {
+    fn path(&self) -> Option<&ContextSpanned<Path>> {
+        None
+    }
+}
+
+impl AsClauseContext for ContextExpose {
+    fn r#as(&self) -> Option<ContextSpanned<&BorrowedName>> {
+        self.r#as.as_ref().map(|spanned_name| ContextSpanned {
+            value: spanned_name.value.as_ref(),
+            origin: spanned_name.origin.clone(),
+        })
+    }
+}
+
+impl FromClauseContext for ContextExpose {
+    fn from_(&self) -> ContextSpanned<OneOrMany<AnyRef<'_>>> {
+        one_or_many_from_context(&self.from)
+    }
+}
+
+impl Hydrate for ParsedExpose {
+    type Output = ContextExpose;
+
+    fn hydrate(self, file: &Arc<PathBuf>, buffer: &String) -> Self::Output {
+        ContextExpose {
+            service: hydrate_opt_simple(self.service, file, buffer),
+            protocol: hydrate_opt_simple(self.protocol, file, buffer),
+            directory: hydrate_opt_simple(self.directory, file, buffer),
+            runner: hydrate_opt_simple(self.runner, file, buffer),
+            resolver: hydrate_opt_simple(self.resolver, file, buffer),
+            dictionary: hydrate_opt_simple(self.dictionary, file, buffer),
+            config: hydrate_opt_simple(self.config, file, buffer),
+            from: hydrate_simple(self.from, file, buffer),
+            to: hydrate_opt_simple(self.to, file, buffer),
+            r#as: hydrate_opt_simple(self.r#as, file, buffer),
+            rights: hydrate_opt_simple(self.rights, file, buffer),
+            subdir: hydrate_opt_simple(self.subdir, file, buffer),
+            event_stream: hydrate_opt_simple(self.event_stream, file, buffer),
+            scope: hydrate_opt_simple(self.scope, file, buffer),
+            availability: hydrate_opt_simple(self.availability, file, buffer),
+            source_availability: hydrate_opt_simple(self.source_availability, file, buffer),
+        }
+    }
 }

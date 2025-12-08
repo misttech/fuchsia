@@ -49,6 +49,7 @@ rustc_library("cml") {
     "src/types/capability_id.rs",
     "src/types/child.rs",
     "src/types/collection.rs",
+    "src/types/common.rs",
     "src/types/document.rs",
     "src/types/environment.rs",
     "src/types/expose.rs",

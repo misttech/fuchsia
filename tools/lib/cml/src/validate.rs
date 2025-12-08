@@ -2,23 +2,25 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::error::Location;
 use crate::features::{Feature, FeatureSet};
-use crate::types::capability::{Capability, CapabilityFromRef, SpannedCapability};
+use crate::types::capability::{Capability, CapabilityFromRef, ContextCapability};
 use crate::types::capability_id::CapabilityId;
-use crate::types::child::{Child, SpannedChild};
-use crate::types::collection::Collection;
-use crate::types::document::{Document, SpannedDocument};
+use crate::types::child::{Child, ContextChild};
+use crate::types::collection::{Collection, ContextCollection};
+use crate::types::document::{Document, DocumentContext};
 use crate::types::environment::{Environment, EnvironmentExtends, RegistrationRef};
-use crate::types::expose::{Expose, ExposeFromRef, ExposeToRef, SpannedExpose};
-use crate::types::offer::{Offer, OfferFromRef, OfferToRef, SpannedOffer, TargetAvailability};
+use crate::types::expose::{ContextExpose, Expose, ExposeFromRef, ExposeToRef};
+use crate::types::offer::{
+    ContextOffer, Offer, OfferFromRef, OfferToRef, TargetAvailability,
+    offer_to_all_would_duplicate_context,
+};
 use crate::types::right::Rights;
-use crate::types::r#use::{SpannedUse, Use, UseFromRef};
+use crate::types::r#use::{ContextUse, Use, UseFromRef};
 use crate::{
-    AnyRef, Availability, CapabilityClause, ConfigKey, ConfigType, ConfigValueType, DependencyType,
-    DictionaryRef, Error, EventScope, FromClause, OneOrMany, Program, RootDictionaryRef,
-    SourceAvailability, Spanned, SpannedCapabilityClause, byte_index_to_location,
-    offer_to_all_would_duplicate,
+    AnyRef, Availability, CapabilityClause, ConfigKey, ConfigType, ConfigValueType,
+    ContextCapabilityClause, ContextSpanned, DependencyType, DictionaryRef, Error, EventScope,
+    FromClause, FromClauseContext, OneOrMany, Origin, Program, RootDictionaryRef,
+    SourceAvailability, offer_to_all_would_duplicate,
 };
 use cm_types::{BorrowedName, IterablePath, Name};
 use itertools::Either;
@@ -50,6 +52,12 @@ impl<'a> MustUseRequirement<'a> {
 pub enum OfferToAllCapability<'a> {
     Dictionary(&'a str),
     Protocol(&'a str),
+}
+
+macro_rules! val {
+    ($field:expr) => {
+        $field.as_ref().map(|s| &s.value)
+    };
 }
 
 impl<'a> OfferToAllCapability<'a> {
@@ -108,14 +116,13 @@ pub(crate) fn validate_cml(
     res
 }
 
-/// Validates a given cml with error span.
 #[allow(dead_code)]
-pub(crate) fn validate_cml_with_span(
-    documents: HashMap<&Path, (&SpannedDocument, &String)>,
+pub(crate) fn validate_cml_context(
+    document: &DocumentContext,
     features: &FeatureSet,
     capability_requirements: &CapabilityRequirements<'_>,
 ) -> Result<(), Error> {
-    let mut ctx = ValidationContextWithSpan::new(documents, features, capability_requirements);
+    let mut ctx = ValidationContextV2::new(&document, features, capability_requirements);
     ctx.validate()
 }
 
@@ -126,158 +133,181 @@ fn offer_can_have_dependency_no_span(offer: &Offer) -> bool {
         || offer.dictionary.is_some()
 }
 
+fn offer_can_have_dependency(offer: &ContextOffer) -> bool {
+    offer.directory.is_some()
+        || offer.protocol.is_some()
+        || offer.service.is_some()
+        || offer.dictionary.is_some()
+}
+
 fn offer_dependency_no_span(offer: &Offer) -> DependencyType {
     offer.dependency.clone().unwrap_or(DependencyType::Strong)
 }
 
-fn offer_can_have_dependency(offer: &SpannedOffer) -> bool {
-    offer.directory.is_some()
-        || offer.protocol().is_some()
-        || offer.service.is_some()
-        || offer.dictionary().is_some()
+fn offer_dependency(offer: &ContextOffer) -> DependencyType {
+    match offer.dependency.clone() {
+        Some(cs_dep) => cs_dep.value,
+        None => DependencyType::Strong,
+    }
 }
-struct ValidationContext<'a> {
-    document: &'a Document,
+
+type ConflictInfo<'a> = (CapabilityId<'a>, Origin);
+
+struct ValidationContextV2<'a> {
+    document: &'a DocumentContext,
     features: &'a FeatureSet,
-    capability_requirements: &'a CapabilityRequirements<'a>,
-    all_children: HashMap<&'a BorrowedName, &'a Child>,
+    _capability_requirements: &'a CapabilityRequirements<'a>,
+    all_children: HashSet<&'a BorrowedName>,
     all_collections: HashSet<&'a BorrowedName>,
     all_storages: HashMap<&'a BorrowedName, &'a CapabilityFromRef>,
-    all_services: HashSet<&'a BorrowedName>,
-    all_protocols: HashSet<&'a BorrowedName>,
-    all_directories: HashSet<&'a BorrowedName>,
-    all_runners: HashSet<&'a BorrowedName>,
-    all_resolvers: HashSet<&'a BorrowedName>,
-    all_dictionaries: HashMap<&'a BorrowedName, &'a Capability>,
-    all_configs: HashSet<&'a BorrowedName>,
-    all_environment_names: HashSet<&'a BorrowedName>,
     all_capability_names: HashSet<&'a BorrowedName>,
+    all_dictionaries: HashMap<&'a BorrowedName, &'a ContextCapability>,
 }
 
-struct ValidationContextWithSpan<'a> {
-    documents: HashMap<&'a Path, (&'a SpannedDocument, &'a String)>,
-    features: &'a FeatureSet,
-    #[allow(dead_code)]
-    capability_requirements: &'a CapabilityRequirements<'a>,
-    current_file_path: Option<&'a Path>,
-    current_file_source: Option<&'a String>,
-    all_children: HashMap<&'a BorrowedName, &'a SpannedChild>,
-    all_collections: HashSet<&'a BorrowedName>,
-    capability_ids: HashMap<String, CapabilityId<'a>>,
-    use_ids: HashMap<String, CapabilityId<'a>>,
-    expose_ids: HashMap<String, CapabilityId<'a>>,
-    framework_expose_ids: HashMap<String, CapabilityId<'a>>,
-    offer_ids: HashSet<CapabilityId<'a>>,
-    problem_protocols: Vec<CapabilityId<'a>>,
-    problem_dictionaries: Vec<CapabilityId<'a>>,
-}
-
-impl<'a> ValidationContextWithSpan<'a> {
+impl<'a> ValidationContextV2<'a> {
     fn new(
-        documents: HashMap<&'a Path, (&'a SpannedDocument, &'a String)>,
+        document: &'a DocumentContext,
         features: &'a FeatureSet,
-        capability_requirements: &'a CapabilityRequirements<'a>,
+        _capability_requirements: &'a CapabilityRequirements<'a>,
     ) -> Self {
-        ValidationContextWithSpan {
-            documents,
+        ValidationContextV2 {
+            document,
             features,
-            capability_requirements,
-            current_file_path: None,
-            current_file_source: None,
-            all_children: HashMap::new(),
+            _capability_requirements,
+            all_children: HashSet::new(),
             all_collections: HashSet::new(),
-            capability_ids: HashMap::new(),
-            use_ids: HashMap::new(),
-            expose_ids: HashMap::new(),
-            framework_expose_ids: HashMap::new(),
-            offer_ids: HashSet::new(),
-            problem_protocols: Vec::new(),
-            problem_dictionaries: Vec::new(),
+            all_storages: HashMap::new(),
+            all_capability_names: HashSet::new(),
+            all_dictionaries: HashMap::new(),
         }
     }
 
     fn validate(&mut self) -> Result<(), Error> {
-        let mut deprecated_allowed_packages = false;
+        self.all_children = self.document.all_children_names();
+        self.all_collections = self.document.all_collection_names();
+        self.all_storages = self.document.all_storage_with_sources();
+        self.all_capability_names = self.document.all_capability_names();
+        self.all_dictionaries = self.document.all_dictionaries();
 
-        for (path, (document, source)) in self.documents.clone() {
-            self.current_file_path = Some(path);
-            self.current_file_source = Some(source);
-
-            if let Some(children) = &document.children {
-                for child in children {
-                    self.validate_child(&child)?;
-                    self.all_children.insert(&child.name, child);
-                }
-            }
-
-            if let Some(collections) = &document.collections {
-                for collection in collections {
-                    self.validate_collection(&collection)?;
-                    self.all_collections.insert(&collection.name);
-                }
-            }
-
-            if let Some(capabilities) = &document.capabilities {
-                for capability in capabilities {
-                    self.validate_capability(capability)?;
-                }
-            }
-
-            if let Some(uses) = &document.r#use {
-                for use_ in uses.iter() {
-                    self.validate_use(&use_)?;
-                }
-            }
-
-            if let Some(exposes) = &document.expose {
-                for expose in exposes {
-                    self.validate_expose(&expose)?;
-                }
-            }
-
-            if let Some(offers) = &document.offer {
-                for offer in offers {
-                    self.validate_offer(&offer)?;
-                }
-            }
-
-            if let Some(facet) = &document.facets {
-                let location = byte_index_to_location(self.current_file_source, facet.span().0);
-                let test_facet_option = facet.get(TEST_FACET_KEY);
-                if let Some(test_facet) = test_facet_option {
-                    self.validate_facets(test_facet, location, &mut deprecated_allowed_packages)?;
-                }
+        if let Some(children) = self.document.children.as_ref() {
+            for child in children {
+                self.validate_child(&child)?;
             }
         }
 
-        if !deprecated_allowed_packages {
-            if self.features.has(&Feature::EnableAllowNonHermeticPackagesFeature) {
-                if self.features.has(&Feature::AllowNonHermeticPackages) {
-                    return Err(Error::validate(format!(
-                        "Remove restricted_feature '{}' as manifest does not contain facet '{}'",
-                        Feature::AllowNonHermeticPackages,
-                        TEST_DEPRECATED_ALLOWED_PACKAGES_FACET_KEY
-                    )));
-                }
+        if let Some(collections) = self.document.collections.as_ref() {
+            for collection in collections {
+                self.validate_collection(&collection)?;
+            }
+        }
+
+        if let Some(capabilities) = self.document.capabilities.as_ref() {
+            let mut used_ids = HashMap::new();
+            for capability in capabilities.iter() {
+                self.validate_capability(&capability, &mut used_ids)?;
+            }
+        }
+
+        if let Some(uses) = self.document.r#use.as_ref() {
+            let mut used_ids = HashMap::new();
+            for use_ in uses.iter() {
+                self.validate_use(&use_, &mut used_ids)?;
+            }
+        }
+
+        if let Some(exposes) = self.document.expose.as_ref() {
+            let mut used_ids = HashMap::new();
+            let mut exposed_to_framework_ids = HashMap::new();
+            for expose in exposes.iter() {
+                self.validate_expose(&expose, &mut used_ids, &mut exposed_to_framework_ids)?;
+            }
+        }
+
+        if let Some(offers) = self.document.offer.as_ref() {
+            let mut problem_protocols: Vec<ConflictInfo<'a>> = Vec::new();
+            let mut problem_dictionaries: Vec<ConflictInfo<'a>> = Vec::new();
+            let mut offered_ids: HashSet<CapabilityId<'a>> = HashSet::new();
+
+            offers
+                .iter()
+                .filter(|o_span| matches!(o_span.value.to.value, OneOrMany::One(OfferToRef::All)))
+                .try_for_each(|offer_wrapper| -> Result<(), Error> {
+                    let offer = &offer_wrapper.value;
+                    let mut process_cap = |field_is_some: bool,
+                                           conflict_list: &mut Vec<ConflictInfo<'a>>|
+                     -> Result<(), Error> {
+                        if field_is_some {
+                            for (cap_id, cap_origin) in
+                                CapabilityId::from_context_offer(offer_wrapper)?
+                            {
+                                if !offered_ids.insert(cap_id.clone()) {
+                                    conflict_list.push((cap_id, cap_origin));
+                                }
+                            }
+                        }
+                        Ok(())
+                    };
+
+                    process_cap(offer.protocol.is_some(), &mut problem_protocols)?;
+                    process_cap(offer.dictionary.is_some(), &mut problem_dictionaries)?;
+                    Ok(())
+                })?;
+
+            if !problem_protocols.is_empty() {
+                return Err(Error::validate_contexts(
+                    format!(
+                        r#"{} {:?} offered to "all" multiple times"#,
+                        "Protocol(s)",
+                        problem_protocols.iter().map(|(p, _o)| format!("{p}")).collect::<Vec<_>>()
+                    ),
+                    problem_protocols.iter().map(|(_p, o)| o.clone()).collect::<Vec<_>>(),
+                ));
+            }
+
+            if !problem_dictionaries.is_empty() {
+                return Err(Error::validate_contexts(
+                    format!(
+                        r#"{} {:?} offered to "all" multiple times"#,
+                        "Dictionary(s)",
+                        problem_dictionaries
+                            .iter()
+                            .map(|(p, _)| format!("{p}"))
+                            .collect::<Vec<_>>()
+                    ),
+                    problem_dictionaries.iter().map(|(_p, o)| o.clone()).collect::<Vec<_>>(),
+                ));
+            }
+
+            let offered_to_all = offers
+                .iter()
+                .filter(|o| matches!(o.value.to.value, OneOrMany::One(OfferToRef::All)))
+                .filter(|o| o.value.protocol.is_some() || o.value.dictionary.is_some())
+                .collect::<Vec<&ContextSpanned<ContextOffer>>>();
+
+            let mut offered_ids = HashMap::new();
+            for offer in offers.iter() {
+                self.validate_offer(&offer, &mut offered_ids, &offered_to_all)?;
             }
         }
 
         Ok(())
     }
 
-    fn validate_child(&mut self, child: &'a SpannedChild) -> Result<(), Error> {
-        if let Some(resource) = child.url.resource() {
+    fn validate_child(
+        &mut self,
+        child_wrapper: &'a ContextSpanned<ContextChild>,
+    ) -> Result<(), Error> {
+        let child = &child_wrapper.value;
+
+        if let Some(resource) = child.url.value.resource() {
             if resource.ends_with(".cml") {
-                let byte_start = child.url.span().0;
-                let location = byte_index_to_location(self.current_file_source, byte_start);
-                return Err(Error::validate_with_span(
+                return Err(Error::validate_context(
                     format!(
                         "child URL ends in .cml instead of .cm, \
 which is almost certainly a mistake: {}",
-                        child.url
+                        child.url.value
                     ),
-                    location,
-                    self.current_file_path,
+                    Some(child.url.origin.clone()),
                 ));
             }
         }
@@ -287,119 +317,84 @@ which is almost certainly a mistake: {}",
 
     fn validate_capability(
         &mut self,
-        capability: &'a Spanned<SpannedCapability>,
+        capability_wrapper: &'a ContextSpanned<ContextCapability>,
+        used_ids: &mut HashMap<String, Origin>,
     ) -> Result<(), Error> {
-        if capability.directory.is_some() && capability.path.is_none() {
-            let location = byte_index_to_location(
-                self.current_file_source,
-                capability.directory.as_ref().unwrap().span().0,
-            );
-            return Err(Error::validate_with_span(
-                "\"path\" should be present with \"directory\"",
-                location,
-                self.current_file_path,
-            ));
-        }
-        if capability.directory.is_some() && capability.rights.is_none() {
-            let location = byte_index_to_location(
-                self.current_file_source,
-                capability.directory.as_ref().unwrap().span().0,
-            );
-            return Err(Error::validate_with_span(
-                "\"rights\" should be present with \"directory\"",
-                location,
-                self.current_file_path,
-            ));
-        }
-        if capability.storage.as_ref().is_some() {
-            if capability.from.is_none() {
-                let location = byte_index_to_location(
-                    self.current_file_source,
-                    capability.storage.as_ref().unwrap().span().0,
-                );
-                return Err(Error::validate_with_span(
-                    "\"from\" should be present with \"storage\"",
-                    location,
-                    self.current_file_path,
+        let capability = &capability_wrapper.value;
+
+        if let Some(cs_directory) = &capability.directory {
+            if capability.path.is_none() {
+                return Err(Error::validate_context(
+                    "\"path\" should be present with \"directory\"",
+                    Some(cs_directory.origin.clone()),
                 ));
             }
-            if capability.path.is_some() {
-                let location = byte_index_to_location(
-                    self.current_file_source,
-                    capability.storage.as_ref().unwrap().span().0,
-                );
-                return Err(Error::validate_with_span(
+
+            if capability.rights.is_none() {
+                return Err(Error::validate_context(
+                    "\"rights\" should be present with \"directory\"",
+                    Some(cs_directory.origin.clone()),
+                ));
+            }
+        }
+
+        if let Some(cs_storage) = capability.storage.as_ref() {
+            if capability.from.is_none() {
+                return Err(Error::validate_context(
+                    "\"from\" should be present with \"storage\"",
+                    Some(cs_storage.origin.clone()),
+                ));
+            }
+            if let Some(cs_path) = &capability.path {
+                return Err(Error::validate_context(
                     "\"path\" cannot be present with \"storage\", use \"backing_dir\"",
-                    location,
-                    self.current_file_path,
+                    Some(cs_path.origin.clone()),
                 ));
             }
             if capability.backing_dir.is_none() {
-                let location = byte_index_to_location(
-                    self.current_file_source,
-                    capability.storage.as_ref().unwrap().span().0,
-                );
-                return Err(Error::validate_with_span(
+                return Err(Error::validate_context(
                     "\"backing_dir\" should be present with \"storage\"",
-                    location,
-                    self.current_file_path,
+                    Some(cs_storage.origin.clone()),
                 ));
             }
             if capability.storage_id.is_none() {
-                let location = byte_index_to_location(
-                    self.current_file_source,
-                    capability.storage.as_ref().unwrap().span().0,
-                );
-                return Err(Error::validate_with_span(
+                return Err(Error::validate_context(
                     "\"storage_id\" should be present with \"storage\"",
-                    location,
-                    self.current_file_path,
+                    Some(cs_storage.origin.clone()),
                 ));
             }
         }
-        if capability.runner.is_some() && capability.from.is_some() {
-            let location = byte_index_to_location(
-                self.current_file_source,
-                capability.runner.as_ref().unwrap().span().0,
-            );
-            return Err(Error::validate_with_span(
-                "\"from\" should not be present with \"runner\"",
-                location,
-                self.current_file_path,
-            ));
+
+        if let Some(cs_runner) = &capability.runner {
+            if let Some(cs_from) = &capability.from {
+                return Err(Error::validate_context(
+                    "\"from\" should not be present with \"runner\"",
+                    Some(cs_from.origin.clone()),
+                ));
+            }
+
+            if capability.path.is_none() {
+                return Err(Error::validate_context(
+                    "\"path\" should be present with \"runner\"",
+                    Some(cs_runner.origin.clone()),
+                ));
+            }
         }
-        if capability.runner.is_some() && capability.path.is_none() {
-            let location = byte_index_to_location(
-                self.current_file_source,
-                capability.runner.as_ref().unwrap().span().0,
-            );
-            return Err(Error::validate_with_span(
-                "\"path\" should be present with \"runner\"",
-                location,
-                self.current_file_path,
-            ));
-        }
-        if capability.resolver.is_some() && capability.from.is_some() {
-            let location = byte_index_to_location(
-                self.current_file_source,
-                capability.resolver.as_ref().unwrap().span().0,
-            );
-            return Err(Error::validate_with_span(
-                "\"from\" should not be present with \"resolver\"",
-                location,
-                self.current_file_path,
-            ));
-        }
-        if capability.resolver.is_some() && capability.path.is_none() {
-            let location = byte_index_to_location(
-                self.current_file_source,
-                capability.resolver.as_ref().unwrap().span().0,
-            );
-            return Err(Error::validate_with_span(
-                "\"path\" should be present with \"resolver\"",
-                location,
-                self.current_file_path,
-            ));
+
+        if let Some(cs_resolver) = &capability.resolver {
+            if let Some(cs_from) = &capability.from {
+                return Err(Error::validate_context(
+                    "\"from\" should not be present with \"resolver\"",
+                    Some(cs_from.origin.clone()),
+                ));
+            }
+
+            if capability.path.is_none() {
+                return Err(Error::validate_context(
+                    "\"path\" should be present with \"resolver\"",
+                    Some(cs_resolver.origin.clone()),
+                ));
+            }
         }
 
         if capability.dictionary.as_ref().is_some() && capability.path.is_some() {
@@ -408,26 +403,23 @@ which is almost certainly a mistake: {}",
         if capability.delivery.is_some() {
             self.features.check(Feature::DeliveryType)?;
         }
+        if let Some(from) = capability.from.as_ref() {
+            self.validate_component_child_ref(
+                "\"capabilities\" source",
+                &AnyRef::from(&from.value),
+                Some(&capability_wrapper.origin),
+            )?;
+        }
 
         // Disallow multiple capability ids of the same name.
-        let capability_ids = CapabilityId::from_spanned_capability(
-            capability,
-            self.current_file_path,
-            self.current_file_source,
-        )?;
-
-        for capability_id in capability_ids {
-            if self
-                .capability_ids
-                .insert(capability_id.to_string(), capability_id.clone())
-                .is_some()
+        let capability_ids = CapabilityId::from_context_capability(capability_wrapper)?;
+        for (capability_id, cap_origin) in capability_ids {
+            if let Some(conflict_origin) =
+                used_ids.insert(capability_id.to_string(), cap_origin.clone())
             {
-                let location =
-                    byte_index_to_location(self.current_file_source, capability.span().0);
-                return Err(Error::validate_with_span(
-                    format!("\"{}\" is a duplicate \"capability\" name", capability_id),
-                    location,
-                    self.current_file_path,
+                return Err(Error::validate_contexts(
+                    format!("\"{}\" is a duplicate \"capability\" name", capability_id,),
+                    vec![cap_origin, conflict_origin],
                 ));
             }
         }
@@ -435,246 +427,174 @@ which is almost certainly a mistake: {}",
         Ok(())
     }
 
-    fn validate_use(&mut self, use_: &'a Spanned<SpannedUse>) -> Result<(), Error> {
-        let mut res = use_.capability_type();
-        if let Err(Error::ValidateWithSpan { location, filename, .. }) = &mut res {
-            *location = byte_index_to_location(self.current_file_source, use_.span().0);
-            if let Some(file) = self.current_file_path {
-                *filename = Some(file.to_string_lossy().into_owned());
-            }
+    fn validate_use(
+        &mut self,
+        use_wrapper: &'a ContextSpanned<ContextUse>,
+        used_ids: &mut HashMap<String, (CapabilityId<'a>, Origin)>,
+    ) -> Result<(), Error> {
+        let use_ = &use_wrapper.value;
 
-            return res.map(|_| ());
-        }
+        use_.capability_type(Some(use_wrapper.origin.clone()))?;
 
-        if use_.from.as_ref().map(|s| s.clone().into_inner()) == Some(UseFromRef::Debug)
-            && use_.protocol.is_none()
-        {
-            let location = byte_index_to_location(
-                self.current_file_source,
-                use_.from.as_ref().unwrap().span().0,
-            );
-            return Err(Error::validate_with_span(
+        if val!(&use_.from) == Some(&UseFromRef::Debug) && val!(&use_.protocol).is_none() {
+            return Err(Error::validate_context(
                 "only \"protocol\" supports source from \"debug\"",
-                location,
-                self.current_file_path,
+                use_.from.as_ref().map(|s| s.origin.clone()),
             ));
         }
-        if use_.event_stream.is_some() && use_.availability.is_some() {
-            let location = byte_index_to_location(
-                self.current_file_source,
-                use_.availability.as_ref().unwrap().span().0,
-            );
-            return Err(Error::validate_with_span(
-                "\"availability\" cannot be used with \"event_stream\"",
-                location,
-                self.current_file_path,
-            ));
+
+        if use_.event_stream.is_some() {
+            if let Some(avail) = &use_.availability {
+                return Err(Error::validate_context(
+                    "\"availability\" cannot be used with \"event_stream\"",
+                    Some(avail.origin.clone()),
+                ));
+            }
+            if val!(&use_.from) == Some(&UseFromRef::Self_) {
+                return Err(Error::validate_context(
+                    "\"from: self\" cannot be used with \"event_stream\"",
+                    use_.from.as_ref().map(|s| s.origin.clone()),
+                ));
+            }
+        } else {
+            // event_stream is NONE.
+            if let Some(filter) = &use_.filter {
+                return Err(Error::validate_context(
+                    "\"filter\" can only be used with \"event_stream\"",
+                    Some(filter.origin.clone()),
+                ));
+            }
         }
-        if use_.event_stream.is_none() && use_.filter.is_some() {
-            let location = byte_index_to_location(
-                self.current_file_source,
-                use_.filter.as_ref().unwrap().span().0,
-            );
-            return Err(Error::validate_with_span(
-                "\"filter\" can only be used with \"event_stream\"",
-                location,
-                self.current_file_path,
-            ));
+
+        if use_.storage.is_some() {
+            if let Some(from) = &use_.from {
+                return Err(Error::validate_context(
+                    "\"from\" cannot be used with \"storage\"",
+                    Some(from.origin.clone()),
+                ));
+            }
         }
-        if use_.storage.is_some() && use_.from.is_some() {
-            let location = byte_index_to_location(
-                self.current_file_source,
-                use_.from.as_ref().unwrap().span().0,
-            );
-            return Err(Error::validate_with_span(
-                "\"from\" cannot be used with \"storage\"",
-                location,
-                self.current_file_path,
-            ));
+
+        if use_.runner.is_some() {
+            if let Some(avail) = &use_.availability {
+                return Err(Error::validate_context(
+                    "\"availability\" cannot be used with \"runner\"",
+                    Some(avail.origin.clone()),
+                ));
+            }
+            if val!(&use_.from) == Some(&UseFromRef::Self_) {
+                return Err(Error::validate_context(
+                    "\"from: self\" cannot be used with \"runner\"",
+                    use_.from.as_ref().map(|s| s.origin.clone()),
+                ));
+            }
         }
-        if use_.runner.is_some() && use_.availability.is_some() {
-            let location = byte_index_to_location(
-                self.current_file_source,
-                use_.availability.as_ref().unwrap().span().0,
-            );
-            return Err(Error::validate_with_span(
-                "\"availability\" cannot be used with \"runner\"",
-                location,
-                self.current_file_path,
-            ));
+
+        if let Some(avail) = &use_.availability {
+            if avail.value == Availability::SameAsTarget {
+                return Err(Error::validate_context(
+                    "\"availability: same_as_target\" cannot be used with use declarations",
+                    Some(avail.origin.clone()),
+                ));
+            }
         }
-        if use_.from.as_ref().map(|s| s.clone().into_inner()) == Some(UseFromRef::Self_)
-            && use_.event_stream.is_some()
-        {
-            let location = byte_index_to_location(
-                self.current_file_source,
-                use_.from.as_ref().unwrap().span().0,
-            );
-            return Err(Error::validate_with_span(
-                "\"from: self\" cannot be used with \"event_stream\"",
-                location,
-                self.current_file_path,
-            ));
-        }
-        if use_.from.as_ref().map(|s| s.clone().into_inner()) == Some(UseFromRef::Self_)
-            && use_.runner.is_some()
-        {
-            let location = byte_index_to_location(
-                self.current_file_source,
-                use_.from.as_ref().unwrap().span().0,
-            );
-            return Err(Error::validate_with_span(
-                "\"from: self\" cannot be used with \"runner\"",
-                location,
-                self.current_file_path,
-            ));
-        }
-        if use_.availability.as_ref().map(|s| s.clone().into_inner())
-            == Some(Availability::SameAsTarget)
-        {
-            let location = byte_index_to_location(
-                self.current_file_source,
-                use_.availability.as_ref().unwrap().span().0,
-            );
-            return Err(Error::validate_with_span(
-                "\"availability: same_as_target\" cannot be used with use declarations",
-                location,
-                self.current_file_path,
-            ));
-        }
+
         if use_.dictionary.is_some() {
             self.features.check(Feature::UseDictionaries)?;
         }
-        if let Some(UseFromRef::Dictionary(_)) = use_.from.as_ref().map(|s| s.clone().into_inner())
+        if let Some(ContextSpanned { value: UseFromRef::Dictionary(_), origin: _ }) =
+            use_.from.as_ref()
         {
-            if use_.storage.is_some() {
-                let location = byte_index_to_location(
-                    self.current_file_source,
-                    use_.storage.as_ref().unwrap().span().0,
-                );
-                return Err(Error::validate_with_span(
+            if let Some(storage) = &use_.storage {
+                return Err(Error::validate_context(
                     "Dictionaries do not support \"storage\" capabilities",
-                    location,
-                    self.current_file_path,
+                    Some(storage.origin.clone()),
                 ));
             }
-            if use_.event_stream.is_some() {
-                let location = byte_index_to_location(self.current_file_source, use_.span().0);
-                return Err(Error::validate_with_span(
+            if let Some(event_stream) = &use_.event_stream {
+                return Err(Error::validate_context(
                     "Dictionaries do not support \"event_stream\" capabilities",
-                    location,
-                    self.current_file_path,
-                ));
-            }
-        }
-        if let Some(config) = use_.config.as_ref() {
-            if use_.key == None {
-                let location = byte_index_to_location(
-                    self.current_file_source,
-                    use_.config.as_ref().unwrap().span().0,
-                );
-                return Err(Error::validate_with_span(
-                    format!("Config '{}' missing field 'key'", config),
-                    location,
-                    self.current_file_path,
-                ));
-            }
-            let _ = use_config_to_value_type_span(
-                use_,
-                self.current_file_source,
-                self.current_file_path,
-            )?;
-            let availability = use_
-                .availability
-                .clone()
-                .unwrap_or_else(|| Availability::Required.into())
-                .into_inner();
-            if availability == Availability::Required && use_.config_default.is_some() {
-                let location = byte_index_to_location(
-                    self.current_file_source,
-                    use_.config.as_ref().unwrap().span().0,
-                );
-                return Err(Error::validate_with_span(
-                    format!("Config '{}' is required and has a default value", config),
-                    location,
-                    self.current_file_path,
+                    Some(event_stream.origin.clone()),
                 ));
             }
         }
 
-        if use_.numbered_handle.as_ref().is_some() {
+        if let Some(config) = &use_.config {
+            if use_.key.is_none() {
+                return Err(Error::validate_context(
+                    format!("Config '{}' missing field 'key'", config.value),
+                    Some(config.origin.clone()),
+                ));
+            }
+            let _ = use_config_to_value_type_context(use_)?;
+
+            let availability = val!(&use_.availability).cloned().unwrap_or(Availability::Required);
+            if availability == Availability::Required {
+                if let Some(default) = &use_.config_default {
+                    return Err(Error::validate_context(
+                        format!("Config '{}' is required and has a default value", config.value),
+                        Some(default.origin.clone()),
+                    ));
+                }
+            }
+        }
+
+        if let Some(handle) = &use_.numbered_handle {
             if use_.protocol.is_some() {
-                if use_.path.is_some() {
-                    let location = byte_index_to_location(
-                        self.current_file_source,
-                        use_.path.as_ref().unwrap().span().0,
-                    );
-                    return Err(Error::validate_with_span(
-                        format!("`path` and `numbered_handle` are incompatible"),
-                        location,
-                        self.current_file_path,
+                if let Some(path) = &use_.path {
+                    return Err(Error::validate_context(
+                        "`path` and `numbered_handle` are incompatible",
+                        Some(path.origin.clone()),
                     ));
                 }
             } else {
-                let location = byte_index_to_location(
-                    self.current_file_source,
-                    use_.numbered_handle.as_ref().unwrap().span().0,
-                );
-                return Err(Error::validate_with_span(
-                    format!("`numbered_handle` is only supported for `use protocol`"),
-                    location,
-                    self.current_file_path,
+                return Err(Error::validate_context(
+                    "`numbered_handle` is only supported for `use protocol`",
+                    Some(handle.origin.clone()),
                 ));
             }
         }
 
-        // Disallow multiple capability ids of the same name.
-        let capability_ids =
-            CapabilityId::from_spanned_use(use_, self.current_file_path, self.current_file_source)?;
-        for capability_id in capability_ids {
-            if let Some(conflicting_capability_id) =
-                self.use_ids.insert(capability_id.to_string(), capability_id.clone())
+        let capability_ids_with_origins = CapabilityId::from_context_use(use_wrapper)?;
+        for (capability_id, origin) in capability_ids_with_origins {
+            if let Some((conflicting_id, conflicting_origin)) =
+                used_ids.insert(capability_id.to_string(), (capability_id.clone(), origin.clone()))
             {
-                if let (CapabilityId::UsedDictionary(_), CapabilityId::UsedDictionary(_)) =
-                    (&capability_id, &conflicting_capability_id)
-                {
-                    // Dictionaries may have conflicting use paths, as they'll be merged together
-                    // at runtime.
-                } else {
-                    let location = byte_index_to_location(self.current_file_source, use_.span().0);
-                    return Err(Error::validate_with_span(
+                if !matches!(
+                    (&capability_id, &conflicting_id),
+                    (CapabilityId::UsedDictionary(_), CapabilityId::UsedDictionary(_))
+                ) {
+                    return Err(Error::validate_contexts(
                         format!(
                             "\"{}\" is a duplicate \"use\" target {}",
                             capability_id,
                             capability_id.type_str()
                         ),
-                        location,
-                        self.current_file_path,
+                        vec![origin, conflicting_origin],
                     ));
                 }
             }
+
             let dir = capability_id.get_dir_path();
 
             // Capability paths must not conflict with `/pkg`, or namespace generation might fail
             let pkg_path = cm_types::NamespacePath::new("/pkg").unwrap();
             if let Some(ref dir) = dir {
                 if dir.has_prefix(&pkg_path) {
-                    let location = byte_index_to_location(self.current_file_source, use_.span().0);
-                    return Err(Error::validate_with_span(
+                    return Err(Error::validate_context(
                         format!(
                             "{} \"{}\" conflicts with the protected path \"/pkg\", please use this capability with a different path",
                             capability_id.type_str(),
                             capability_id,
                         ),
-                        location,
-                        self.current_file_path,
+                        Some(origin),
                     ));
                 }
             }
 
             // Validate that paths-based capabilities (service, directory, protocol)
             // are not prefixes of each other.
-            for (_, used_id) in self.use_ids.iter() {
+            for (_, (used_id, origin)) in used_ids.iter() {
                 if capability_id == *used_id {
                     continue;
                 }
@@ -741,8 +661,7 @@ which is almost certainly a mistake: {}",
                     }
                 }
                 if conflicts {
-                    let location = byte_index_to_location(self.current_file_source, use_.span().0);
-                    return Err(Error::validate_with_span(
+                    return Err(Error::validate_contexts(
                         format!(
                             "{} \"{}\" is a prefix of \"use\" target {} \"{}\"",
                             used_id.type_str(),
@@ -750,27 +669,21 @@ which is almost certainly a mistake: {}",
                             capability_id.type_str(),
                             capability_id,
                         ),
-                        location,
-                        self.current_file_path,
+                        vec![origin.clone()],
                     ));
                 }
             }
         }
 
-        if let Some(_) = use_.directory.as_ref() {
-            // All directory "use" expressions must have directory rights.
+        if let Some(dir) = &use_.directory {
             match &use_.rights {
                 Some(rights) => {
-                    let location =
-                        byte_index_to_location(self.current_file_source, rights.span().0);
-                    self.validate_directory_rights(&rights, location, self.current_file_path)?
+                    self.validate_directory_rights(&rights.value, Some(&rights.origin))?
                 }
                 None => {
-                    let location = byte_index_to_location(self.current_file_source, use_.span().0);
-                    return Err(Error::validate_with_span(
+                    return Err(Error::validate_contexts(
                         "This use statement requires a `rights` field. Refer to: https://fuchsia.dev/go/components/directory#consumer.",
-                        location,
-                        self.current_file_path,
+                        vec![dir.origin.clone()],
                     ));
                 }
             };
@@ -779,105 +692,98 @@ which is almost certainly a mistake: {}",
         Ok(())
     }
 
-    fn validate_expose(&mut self, expose: &'a Spanned<SpannedExpose>) -> Result<(), Error> {
-        let mut res = expose.capability_type();
-        if let Err(Error::ValidateWithSpan { location, filename, .. }) = &mut res {
-            *location = byte_index_to_location(self.current_file_source, expose.span().0);
-            if let Some(file) = self.current_file_path {
-                *filename = Some(file.to_string_lossy().into_owned());
-            }
+    fn validate_expose(
+        &self,
+        expose_wrapper: &'a ContextSpanned<ContextExpose>,
+        used_ids: &mut HashMap<String, Origin>,
+        exposed_to_framework_ids: &mut HashMap<String, Origin>,
+    ) -> Result<(), Error> {
+        let expose = &expose_wrapper.value;
 
-            return res.map(|_| ());
-        }
+        expose.capability_type(Some(expose_wrapper.origin.clone()))?;
+
         // Ensure directory rights are valid.
         if let Some(_) = expose.directory.as_ref() {
-            if expose.from.iter().any(|r| *r == ExposeFromRef::Self_) || expose.rights.is_some() {
+            if expose.from.value.iter().any(|r| *r == ExposeFromRef::Self_)
+                || expose.rights.is_some()
+            {
                 if let Some(rights) = expose.rights.as_ref() {
-                    let location = byte_index_to_location(
-                        self.current_file_source,
-                        expose.rights.as_ref().unwrap().span().0,
-                    );
-                    self.validate_directory_rights(&rights, location, self.current_file_path)?;
+                    self.validate_directory_rights(&rights.value, Some(&rights.origin))?;
                 }
             }
 
             // Exposing a subdirectory makes sense for routing but when exposing to framework,
             // the subdir should be exposed directly.
-            if expose.to.as_ref().map(|s| s.clone().into_inner()) == Some(ExposeToRef::Framework) {
-                if expose.subdir.is_some() {
-                    let location = byte_index_to_location(
-                        self.current_file_source,
-                        expose.subdir.as_ref().unwrap().span().0,
-                    );
-                    return Err(Error::validate_with_span(
+            if let Some(e2) = &expose.to {
+                if e2.value == ExposeToRef::Framework
+                    && let Some(expose_subdir) = &expose.subdir
+                {
+                    return Err(Error::validate_context(
                         "`subdir` is not supported for expose to framework. Directly expose the subdirectory instead.",
-                        location,
-                        self.current_file_path,
+                        Some(expose_subdir.origin.clone()),
                     ));
                 }
             }
         }
 
         if let Some(event_stream) = &expose.event_stream {
-            if event_stream.iter().len() > 1 && expose.r#as.is_some() {
-                let location = byte_index_to_location(
-                    self.current_file_source,
-                    expose.r#as.as_ref().unwrap().span().0,
-                );
-                return Err(Error::validate_with_span(
+            if event_stream.value.iter().len() > 1 && expose.r#as.is_some() {
+                return Err(Error::validate_context(
                     format!("as cannot be used with multiple event streams"),
-                    location,
-                    self.current_file_path,
+                    Some(expose.r#as.clone().unwrap().origin),
                 ));
             }
-            if let Some(ExposeToRef::Framework) =
-                &expose.to.as_ref().map(|s| s.clone().into_inner())
+            if let Some(e2) = &expose.to
+                && e2.value == ExposeToRef::Framework
             {
-                let location = byte_index_to_location(
-                    self.current_file_source,
-                    expose.to.as_ref().unwrap().span().0,
-                );
-                return Err(Error::validate_with_span(
+                return Err(Error::validate_context(
                     format!("cannot expose an event_stream to framework"),
-                    location,
-                    self.current_file_path,
+                    Some(event_stream.origin.clone()),
                 ));
             }
-            for from in expose.from.get_ref().into_iter() {
+            for from in expose.from.value.iter() {
                 if from == &ExposeFromRef::Self_ {
-                    let location =
-                        byte_index_to_location(self.current_file_source, expose.from.span().0);
-                    return Err(Error::validate_with_span(
+                    return Err(Error::validate_context(
                         format!("Cannot expose event_streams from self"),
-                        location,
-                        self.current_file_path,
+                        Some(event_stream.origin.clone()),
                     ));
+                }
+            }
+            if let Some(scopes) = &expose.scope {
+                for scope in &scopes.value {
+                    match scope {
+                        EventScope::Named(name) => {
+                            if !self.all_children.contains(&name.as_ref())
+                                && !self.all_collections.contains(&name.as_ref())
+                            {
+                                return Err(Error::validate_context(
+                                    format!(
+                                        "event_stream scope {} did not match a component or collection in this .cml file.",
+                                        name.as_str()
+                                    ),
+                                    Some(scopes.origin.clone()),
+                                ));
+                            }
+                        }
+                    }
                 }
             }
         }
 
-        for ref_ in expose.from.iter() {
+        for ref_ in expose.from.value.iter() {
             if let ExposeFromRef::Dictionary(d) = ref_ {
                 if expose.event_stream.is_some() {
-                    let location = byte_index_to_location(
-                        self.current_file_source,
-                        expose.event_stream.as_ref().unwrap().span().0,
-                    );
-                    return Err(Error::validate_with_span(
+                    return Err(Error::validate_context(
                         "Dictionaries do not support \"event_stream\" capabilities",
-                        location,
-                        self.current_file_path,
+                        Some(expose.event_stream.clone().unwrap().origin),
                     ));
                 }
                 match &d.root {
                     RootDictionaryRef::Self_ | RootDictionaryRef::Named(_) => {}
                     RootDictionaryRef::Parent => {
-                        let location =
-                            byte_index_to_location(self.current_file_source, expose.from.span().0);
-                        return Err(Error::validate_with_span(
+                        return Err(Error::validate_context(
                             "`expose` dictionary path must begin with `self` or `#<child-name>`",
-                            location,
-                            self.current_file_path,
+                            Some(expose.from.origin.clone()),
                         ));
                     }
                 }
@@ -885,222 +791,309 @@ which is almost certainly a mistake: {}",
         }
 
         // Ensure we haven't already exposed an entity of the same name.
-        let capability_ids = CapabilityId::from_spanned_expose(
-            expose,
-            self.current_file_path,
-            self.current_file_source,
-        )?;
-        for capability_id in capability_ids {
-            let mut ids = &mut self.expose_ids;
-            if expose.to.as_ref().map(|s| s.clone().into_inner()) == Some(ExposeToRef::Framework) {
-                ids = &mut self.framework_expose_ids;
+        let target_cap_ids_with_origin = CapabilityId::from_context_expose(expose_wrapper)?;
+        for (capability_id, cap_origin) in target_cap_ids_with_origin {
+            let mut ids = &mut *used_ids;
+            if let Some(e2) = &expose.to
+                && e2.value == ExposeToRef::Framework
+            {
+                ids = &mut *exposed_to_framework_ids;
             }
-            if ids.insert(capability_id.to_string(), capability_id.clone()).is_some() {
+            if let Some(conflict_origin) = ids.insert(capability_id.to_string(), cap_origin.clone())
+            {
                 if let CapabilityId::Service(_) = capability_id {
                     // Services may have duplicates (aggregation).
                 } else {
-                    let location =
-                        byte_index_to_location(self.current_file_source, expose.span().0);
-                    return Err(Error::validate_with_span(
+                    let expose_print = match &expose.to {
+                        Some(expose_to) => &expose_to.value,
+                        None => &ExposeToRef::Parent,
+                    };
+                    return Err(Error::validate_contexts(
                         format!(
                             "\"{}\" is a duplicate \"expose\" target capability for \"{}\"",
-                            capability_id,
-                            expose.to.as_ref().map_or(&ExposeToRef::Parent, |v| v)
+                            capability_id, expose_print
                         ),
-                        location,
-                        self.current_file_path,
+                        vec![cap_origin, conflict_origin],
                     ));
                 }
             }
         }
 
+        // Validate `from` (done last because this validation depends on the capability type, which
+        // must be validated first)
+        self.validate_from_clause(
+            "expose",
+            expose,
+            &expose.source_availability.as_ref().map(|s| s.value.clone()),
+            &expose.availability.as_ref().map(|s| s.value.clone()),
+            expose.from.origin.clone(),
+        )?;
+
         Ok(())
     }
 
-    fn validate_offer(&mut self, offer: &'a Spanned<SpannedOffer>) -> Result<(), Error> {
-        let mut res = offer.capability_type();
-        if let Err(Error::ValidateWithSpan { location, filename, .. }) = &mut res {
-            *location = byte_index_to_location(self.current_file_source, offer.span().0);
-            if let Some(file) = self.current_file_path {
-                *filename = Some(file.to_string_lossy().into_owned());
-            }
+    fn validate_offer(
+        &mut self,
+        offer_wrapper: &'a ContextSpanned<ContextOffer>,
+        used_ids: &mut HashMap<Name, HashMap<String, Origin>>,
+        protocols_offered_to_all: &[&'a ContextSpanned<ContextOffer>],
+    ) -> Result<(), Error> {
+        let offer = &offer_wrapper.value;
+        offer.capability_type(Some(offer_wrapper.origin.clone()))?;
 
-            return res.map(|_| ());
-        }
+        let from_wrapper = &offer.from;
+        let from_one_or_many = &from_wrapper.value;
+        let from_self = self.from_self(from_one_or_many);
 
-        // validate duplicate offer to all
-        if matches!(offer.to, OneOrMany::One(OfferToRef::All)) {
-            if offer.protocol.is_some() {
-                for cap_id in CapabilityId::from_spanned_offer(
-                    offer,
-                    self.current_file_path,
-                    self.current_file_source,
-                )? {
-                    if !self.offer_ids.insert(cap_id.clone()) {
-                        self.problem_protocols.push(cap_id);
-                    }
+        if let Some(stream_span) = offer.event_stream.as_ref() {
+            if stream_span.value.iter().len() > 1 {
+                if let Some(as_span) = offer.r#as.as_ref() {
+                    return Err(Error::validate_context(
+                        "as cannot be used with multiple events",
+                        Some(as_span.origin.clone()),
+                    ));
                 }
             }
 
-            if offer.dictionary.is_some() {
-                for cap_id in CapabilityId::from_spanned_offer(
-                    offer,
-                    self.current_file_path,
-                    self.current_file_source,
-                )? {
-                    if !self.offer_ids.insert(cap_id.clone()) {
-                        self.problem_dictionaries.push(cap_id);
-                    }
-                }
-            }
-
-            if !self.problem_protocols.is_empty() {
-                let location = byte_index_to_location(
-                    self.current_file_source,
-                    offer.protocol.as_ref().unwrap().span().0,
-                );
-
-                return Err(Error::validate_with_span(
-                    format!(
-                        r#"{} {:?} offered to "all" multiple times"#,
-                        "Protocol(s)",
-                        self.problem_protocols.iter().map(|p| format!("{p}")).collect::<Vec<_>>()
-                    ),
-                    location,
-                    self.current_file_path,
-                ));
-            }
-
-            if !self.problem_dictionaries.is_empty() {
-                let location = byte_index_to_location(
-                    self.current_file_source,
-                    offer.dictionary.as_ref().unwrap().span().0,
-                );
-
-                return Err(Error::validate_with_span(
-                    format!(
-                        r#"{} {:?} offered to "all" multiple times"#,
-                        "Dictionary(s)",
-                        self.problem_dictionaries
-                            .iter()
-                            .map(|p| format!("{p}"))
-                            .collect::<Vec<_>>()
-                    ),
-                    location,
-                    self.current_file_path,
+            if from_self {
+                return Err(Error::validate_context(
+                    "cannot offer an event_stream from self",
+                    Some(from_wrapper.origin.clone()),
                 ));
             }
         }
 
-        if let Some(stream) = offer.event_stream.as_ref() {
-            if stream.iter().len() > 1 && offer.r#as.is_some() {
-                let location = byte_index_to_location(
-                    self.current_file_source,
-                    offer.r#as.as_ref().unwrap().span().0,
-                );
-                return Err(Error::validate_with_span(
-                    format!("as cannot be used with multiple events"),
-                    location,
-                    self.current_file_path,
-                ));
-            }
-            for from in &offer.from {
-                match from {
-                    OfferFromRef::Self_ => {
-                        let location = byte_index_to_location(
-                            self.current_file_source,
-                            offer.event_stream.as_ref().unwrap().span().0,
-                        );
-                        return Err(Error::validate_with_span(
-                            format!("cannot offer an event_stream from self"),
-                            location,
-                            self.current_file_path,
-                        ));
-                    }
-                    _ => {}
-                }
-            }
-        }
-
-        // Ensure directory rights are valid.
-        if let Some(_) = offer.directory.as_ref() {
-            if offer.from.iter().any(|r| *r == OfferFromRef::Self_) || offer.rights.is_some() {
-                if let Some(rights) = offer.rights.as_ref() {
-                    let location =
-                        byte_index_to_location(self.current_file_source, rights.span().0);
-                    self.validate_directory_rights(&rights, location, self.current_file_path)?;
+        if offer.directory.as_ref().is_some() {
+            if from_self || offer.rights.is_some() {
+                if let Some(rights_span) = offer.rights.as_ref() {
+                    self.validate_directory_rights(&rights_span.value, Some(&rights_span.origin))?;
                 }
             }
         }
 
         if let Some(storages) = offer.storage.as_ref() {
-            for storage in storages.get_ref() {
-                if offer.from.iter().any(|r| r.is_named()) {
-                    let location =
-                        byte_index_to_location(self.current_file_source, storages.span().0);
-                    return Err(Error::validate_with_span(
+            for storage in &storages.value {
+                if offer.from.value.iter().any(|r| r.is_named()) {
+                    return Err(Error::validate_contexts(
                         format!(
                             "Storage \"{}\" is offered from a child, but storage capabilities cannot be exposed",
                             storage
                         ),
-                        location,
-                        self.current_file_path,
+                        vec![storages.origin.clone()],
                     ));
                 }
             }
         }
 
-        for ref_ in offer.from.iter() {
-            if let OfferFromRef::Dictionary(d) = ref_ {
-                match &d.root {
-                    RootDictionaryRef::Self_
-                    | RootDictionaryRef::Named(_)
-                    | RootDictionaryRef::Parent => {}
-                }
-
-                if offer.storage.is_some() {
-                    let location = byte_index_to_location(
-                        self.current_file_source,
-                        offer.storage.as_ref().unwrap().span().0,
-                    );
-                    return Err(Error::validate_with_span(
+        for from_ref in offer.from.value.iter() {
+            if let OfferFromRef::Dictionary(_) = &from_ref {
+                if let Some(storage_span) = offer.storage.as_ref() {
+                    return Err(Error::validate_context(
                         "Dictionaries do not support \"storage\" capabilities",
-                        location,
-                        self.current_file_path,
+                        Some(storage_span.origin.clone()),
                     ));
                 }
-                if offer.event_stream.is_some() {
-                    let location = byte_index_to_location(
-                        self.current_file_source,
-                        offer.event_stream.as_ref().unwrap().span().0,
-                    );
-                    return Err(Error::validate_with_span(
+                if let Some(stream_span) = offer.event_stream.as_ref() {
+                    return Err(Error::validate_context(
                         "Dictionaries do not support \"event_stream\" capabilities",
-                        location,
-                        self.current_file_path,
+                        Some(stream_span.origin.clone()),
                     ));
                 }
             }
         }
 
-        // Ensure that dependency is set for the right capabilities.
-        if !offer_can_have_dependency(offer) && offer.dependency.is_some() {
-            let location = byte_index_to_location(
-                self.current_file_source,
-                offer.dependency.as_ref().unwrap().span().0,
-            );
-            return Err(Error::validate_with_span(
-                "Dependency can only be provided for protocol, directory, and service capabilities",
-                location,
-                self.current_file_path,
-            ));
+        if !offer_can_have_dependency(offer) {
+            if let Some(dep_span) = offer.dependency.as_ref() {
+                return Err(Error::validate_context(
+                    "Dependency can only be provided for protocol, directory, and service capabilities",
+                    Some(dep_span.origin.clone()),
+                ));
+            }
         }
+
+        let target_cap_ids_with_origin = CapabilityId::from_context_offer(offer_wrapper)?;
+
+        let to_wrapper = &offer.to;
+
+        let to_field_origin = &to_wrapper.origin;
+        let to_targets = &to_wrapper.value;
+
+        for target_ref in to_targets.iter() {
+            let to_target = match target_ref {
+                OfferToRef::All => continue,
+                OfferToRef::Named(to_target) => {
+                    // Verify that only a legal set of offers-to-all are made, including that any
+                    // offer to all duplicated as an offer to a specific component are exactly the same
+                    for offer_to_all in protocols_offered_to_all {
+                        offer_to_all_would_duplicate_context(
+                            offer_to_all,
+                            offer_wrapper,
+                            to_target,
+                        )?;
+                    }
+
+                    // Check that any referenced child actually exists.
+                    if self.all_children.contains(&to_target.as_ref())
+                        || self.all_collections.contains(&to_target.as_ref())
+                    {
+                        // Allowed.
+                    } else {
+                        if let OneOrMany::One(from) = &offer.from.value {
+                            return Err(Error::validate_context(
+                                format!(
+                                    "\"{target_ref}\" is an \"offer\" target from \"{from}\" but \"{target_ref}\" does \
+                            not appear in \"children\" or \"collections\"",
+                                ),
+                                Some(to_field_origin.clone()),
+                            ));
+                        } else {
+                            return Err(Error::validate_context(
+                                format!(
+                                    "\"{target_ref}\" is an \"offer\" target but \"{target_ref}\" does not appear in \
+                            \"children\" or \"collections\"",
+                                ),
+                                Some(to_field_origin.clone()),
+                            ));
+                        }
+                    }
+
+                    // Ensure we are not offering a capability back to its source.
+                    if let Some(storage) = offer.storage.as_ref() {
+                        for storage in &storage.value {
+                            // Storage can only have a single `from` clause and this has been
+                            // verified.
+                            if let OneOrMany::One(OfferFromRef::Self_) = &offer.from.value {
+                                if let Some(CapabilityFromRef::Named(source)) =
+                                    self.all_storages.get(&storage.as_ref())
+                                {
+                                    if to_target == source {
+                                        return Err(Error::validate_context(
+                                            format!(
+                                                "Storage offer target \"{}\" is same as source",
+                                                target_ref
+                                            ),
+                                            Some(to_field_origin.clone()),
+                                        ));
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        for reference in offer.from.value.iter() {
+                            // Weak offers from a child to itself are acceptable.
+                            if offer_dependency(offer) == DependencyType::Weak {
+                                continue;
+                            }
+                            match reference {
+                                OfferFromRef::Named(name) if name == to_target => {
+                                    return Err(Error::validate_context(
+                                        format!(
+                                            "Offer target \"{}\" is same as source",
+                                            target_ref
+                                        ),
+                                        Some(to_field_origin.clone()),
+                                    ));
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
+                    to_target
+                }
+                OfferToRef::OwnDictionary(to_target) => {
+                    let r2 = CapabilityId::from_context_offer(offer_wrapper)?;
+                    for (id, cap_origin) in r2 {
+                        match &id {
+                            CapabilityId::Protocol(_)
+                            | CapabilityId::Dictionary(_)
+                            | CapabilityId::Directory(_)
+                            | CapabilityId::Runner(_)
+                            | CapabilityId::Resolver(_)
+                            | CapabilityId::Service(_)
+                            | CapabilityId::Configuration(_) => {}
+                            CapabilityId::Storage(_) | CapabilityId::EventStream(_) => {
+                                let type_name = id.type_str();
+                                return Err(Error::validate_context(
+                                    format!(
+                                        "\"offer\" to dictionary \"{target_ref}\" for \"{type_name}\" but \
+                                    dictionaries do not support this type yet."
+                                    ),
+                                    Some(cap_origin),
+                                ));
+                            }
+                            CapabilityId::UsedService(_)
+                            | CapabilityId::UsedProtocol(_)
+                            | CapabilityId::UsedDirectory(_)
+                            | CapabilityId::UsedStorage(_)
+                            | CapabilityId::UsedEventStream(_)
+                            | CapabilityId::UsedRunner(_)
+                            | CapabilityId::UsedConfiguration(_)
+                            | CapabilityId::UsedDictionary(_) => {
+                                unreachable!("this is not a use")
+                            }
+                        }
+                    }
+                    // Check that any referenced child actually exists.
+                    let Some(d) = self.all_dictionaries.get(&to_target.as_ref()) else {
+                        return Err(Error::validate_context(
+                            format!(
+                                "\"offer\" has dictionary target \"{target_ref}\" but \"{to_target}\" \
+                                is not a dictionary capability defined by this component"
+                            ),
+                            Some(to_field_origin.clone()),
+                        ));
+                    };
+                    if d.path.is_some() {
+                        return Err(Error::validate_context(
+                            format!(
+                                "\"offer\" has dictionary target \"{target_ref}\" but \"{to_target}\" \
+                            sets \"path\". Therefore, it is a dynamic dictionary that \
+                            does not allow offers into it."
+                            ),
+                            Some(to_field_origin.clone()),
+                        ));
+                    }
+                    to_target
+                }
+            };
+
+            // Ensure that a target is not offered more than once.
+            let ids_for_entity = used_ids.entry(to_target.clone()).or_insert(HashMap::new());
+            for (target_cap_id, target_origin) in &target_cap_ids_with_origin {
+                if let Some(conflict_origin) =
+                    ids_for_entity.insert(target_cap_id.to_string(), target_origin.clone())
+                {
+                    if let CapabilityId::Service(_) = target_cap_id {
+                        // Services may have duplicates (aggregation).
+                    } else {
+                        return Err(Error::validate_contexts(
+                            format!(
+                                "\"{}\" is a duplicate \"offer\" target capability for \"{}\"",
+                                target_cap_id, target_ref
+                            ),
+                            vec![target_origin.clone(), conflict_origin],
+                        ));
+                    }
+                }
+            }
+        }
+
+        self.validate_from_clause(
+            "offer",
+            offer,
+            &offer.source_availability.as_ref().map(|s| s.value.clone()),
+            &offer.availability.as_ref().map(|s| s.value.clone()),
+            offer.from.origin.clone(),
+        )?;
 
         Ok(())
     }
 
-    fn validate_collection(&mut self, collection: &'a Collection) -> Result<(), Error> {
-        if collection.allow_long_names.is_some() {
+    fn validate_collection(
+        &mut self,
+        collection: &'a ContextSpanned<ContextCollection>,
+    ) -> Result<(), Error> {
+        if collection.value.allow_long_names.is_some() {
             self.features.check(Feature::AllowLongNames)?;
         }
         Ok(())
@@ -1111,17 +1104,15 @@ which is almost certainly a mistake: {}",
     fn validate_directory_rights(
         &self,
         rights_clause: &Rights,
-        location: Option<Location>,
-        filename: Option<&Path>,
+        origin: Option<&Origin>,
     ) -> Result<(), Error> {
         let mut rights = HashSet::new();
         for right_token in rights_clause.0.iter() {
             for right in right_token.expand() {
                 if !rights.insert(right) {
-                    return Err(Error::validate_with_span(
+                    return Err(Error::validate_context(
                         format!("\"{}\" is duplicated in the rights clause.", right_token),
-                        location,
-                        filename,
+                        origin.cloned(),
                     ));
                 }
             }
@@ -1129,67 +1120,258 @@ which is almost certainly a mistake: {}",
         Ok(())
     }
 
-    fn validate_facets(
+    fn from_self(&self, from_one_or_many: &OneOrMany<OfferFromRef>) -> bool {
+        for from_ref in from_one_or_many.iter() {
+            match from_ref {
+                OfferFromRef::Self_ => return true,
+                _ => {}
+            }
+        }
+        false
+    }
+
+    /// Validates that the from clause:
+    ///
+    /// - is applicable to the capability type,
+    /// - does not contain duplicates,
+    /// - references names that exist.
+    /// - has availability "optional" if the source is "void"
+    ///
+    /// `verb` is used in any error messages and is expected to be "offer", "expose", etc.
+    fn validate_from_clause<T>(
         &self,
-        test_facet: &serde_json::Value,
-        location: Option<Location>,
-        dap: &mut bool,
-    ) -> Result<(), Error> {
-        let test_facet_map = {
-            match &test_facet {
-                serde_json::Value::Object(m) => Some(m),
-                facet => {
-                    return Err(Error::validate_with_span(
-                        format!("'{TEST_FACET_KEY}' is not an object: {facet:?}"),
-                        location,
-                        self.current_file_path,
-                    ));
-                }
-            }
-        };
-
-        let restrict_test_type = self.features.has(&Feature::RestrictTestTypeInFacet);
-        let enable_allow_non_hermetic_packages =
-            self.features.has(&Feature::EnableAllowNonHermeticPackagesFeature);
-
-        if restrict_test_type {
-            let test_type = test_facet_map.map(|m| m.get(TEST_TYPE_FACET_KEY)).flatten();
-            if test_type.is_some() {
-                return Err(Error::validate_with_span(
-                    format!(
-                        "'{}' is not allowed in facets. Refer \
-https://fuchsia.dev/fuchsia-src/development/testing/components/test_runner_framework?hl=en#non-hermetic_tests \
-to run your test in the correct test realm.",
-                        TEST_TYPE_FACET_KEY
-                    ),
-                    location,
-                    self.current_file_path,
-                ));
-            }
+        verb: &str,
+        cap: &T,
+        source_availability: &Option<SourceAvailability>,
+        availability: &Option<Availability>,
+        origin: Origin,
+    ) -> Result<(), Error>
+    where
+        T: ContextCapabilityClause + FromClauseContext,
+    {
+        let from = cap.from_();
+        if cap.service().is_none() && from.value.is_many() {
+            return Err(Error::validate_context(
+                format!(
+                    "\"{}\" capabilities cannot have multiple \"from\" clauses",
+                    cap.capability_type(None).unwrap()
+                ),
+                Some(origin),
+            ));
         }
 
-        if enable_allow_non_hermetic_packages {
-            let allow_non_hermetic_packages = self.features.has(&Feature::AllowNonHermeticPackages);
-            let deprecated_allowed_packages = test_facet_map
-                .map_or(false, |m| m.contains_key(TEST_DEPRECATED_ALLOWED_PACKAGES_FACET_KEY));
-            if deprecated_allowed_packages {
-                *dap = true;
-            }
+        let from_val = &from.value;
 
-            if deprecated_allowed_packages && !allow_non_hermetic_packages {
-                return Err(Error::validate_with_span(
-                    format!(
-                        "restricted_feature '{}' should be present with facet '{}'",
-                        Feature::AllowNonHermeticPackages,
-                        TEST_DEPRECATED_ALLOWED_PACKAGES_FACET_KEY
-                    ),
-                    location,
-                    self.current_file_path,
-                ));
+        if from_val.is_many() {
+            ensure_no_duplicate_values(from_val.iter())?;
+        }
+
+        let reference_description = format!("\"{}\" source", verb);
+        for from_clause in from_val {
+            // If this is a protocol, it could reference either a child or a storage capability
+            // (for the storage admin protocol).
+            let ref_validity_res = if cap.protocol().is_some() {
+                self.validate_component_child_or_capability_ref(
+                    &reference_description,
+                    &from_clause,
+                    Some(&origin),
+                )
+            } else if cap.service().is_some() {
+                // Services can also be sourced from collections.
+                self.validate_component_child_or_collection_ref(
+                    &reference_description,
+                    &from_clause,
+                    Some(&origin),
+                )
+            } else {
+                self.validate_component_child_ref(
+                    &reference_description,
+                    &from_clause,
+                    Some(&origin),
+                )
+            };
+
+            match ref_validity_res {
+                Ok(()) if *from_clause == AnyRef::Void => {
+                    // The source is valid and void
+                    if availability != &Some(Availability::Optional) {
+                        return Err(Error::validate_context(
+                            format!(
+                                "capabilities with a source of \"void\" must have an availability of \"optional\", capabilities: \"{}\", from: \"{}\"",
+                                cap.names()
+                                    .iter()
+                                    .map(|n| n.as_str())
+                                    .collect::<Vec<_>>()
+                                    .join(", "),
+                                cap.from_().value,
+                            ),
+                            Some(origin),
+                        ));
+                    }
+                }
+                Ok(()) => {
+                    // The source is valid and not void.
+                }
+                Err(_) if source_availability == &Some(SourceAvailability::Unknown) => {
+                    // The source is invalid, and will be rewritten to void
+                    if availability != &Some(Availability::Optional) && availability != &None {
+                        return Err(Error::validate_context(
+                            format!(
+                                "capabilities with an intentionally missing source must have an availability that is either unset or \"optional\", capabilities: \"{}\", from: \"{}\"",
+                                cap.names()
+                                    .iter()
+                                    .map(|n| n.as_str())
+                                    .collect::<Vec<_>>()
+                                    .join(", "),
+                                cap.from_().value,
+                            ),
+                            Some(origin),
+                        ));
+                    }
+                }
+                Err(e) => {
+                    // The source is invalid, but we're expecting it to be valid.
+                    return Err(e);
+                }
             }
         }
         Ok(())
     }
+
+    /// Validates that the given component exists.
+    ///
+    /// - `reference_description` is a human-readable description of the reference used in error
+    ///   message, such as `"offer" source`.
+    /// - `component_ref` is a reference to a component. If the reference is a named child, we
+    ///   ensure that the child component exists.
+    fn validate_component_child_ref(
+        &self,
+        reference_description: &str,
+        component_ref: &AnyRef<'_>,
+        origin: Option<&Origin>,
+    ) -> Result<(), Error> {
+        match component_ref {
+            AnyRef::Named(name) => {
+                // Ensure we have a child defined by that name.
+                if !self.all_children.contains(name) {
+                    return Err(Error::validate_context(
+                        format!(
+                            "{} \"{}\" does not appear in \"children\"",
+                            reference_description, component_ref
+                        ),
+                        origin.cloned(),
+                    ));
+                }
+                Ok(())
+            }
+            // We don't attempt to validate other reference types.
+            _ => Ok(()),
+        }
+    }
+
+    /// Validates that the given component/collection exists.
+    ///
+    /// - `reference_description` is a human-readable description of the reference used in error
+    ///   message, such as `"offer" source`.
+    /// - `component_ref` is a reference to a component/collection. If the reference is a named
+    ///   child or collection, we ensure that the child component/collection exists.
+    fn validate_component_child_or_collection_ref(
+        &self,
+        reference_description: &str,
+        component_ref: &AnyRef<'_>,
+        origin: Option<&Origin>,
+    ) -> Result<(), Error> {
+        match component_ref {
+            AnyRef::Named(name) => {
+                // Ensure we have a child or collection defined by that name.
+                if !self.all_children.contains(name) && !self.all_collections.contains(name) {
+                    return Err(Error::validate_context(
+                        format!(
+                            "{} \"{}\" does not appear in \"children\" or \"collections\"",
+                            reference_description, component_ref
+                        ),
+                        origin.cloned(),
+                    ));
+                }
+                Ok(())
+            }
+            // We don't attempt to validate other reference types.
+            _ => Ok(()),
+        }
+    }
+
+    /// Validates that the given capability exists.
+    ///
+    /// - `reference_description` is a human-readable description of the reference used in error
+    ///   message, such as `"offer" source`.
+    /// - `capability_ref` is a reference to a capability. If the reference is a named capability,
+    ///   we ensure that the capability exists.
+    fn validate_component_capability_ref(
+        &self,
+        reference_description: &str,
+        capability_ref: &AnyRef<'_>,
+        origin: Option<&Origin>,
+    ) -> Result<(), Error> {
+        match capability_ref {
+            AnyRef::Named(name) => {
+                if !self.all_capability_names.contains(name) {
+                    return Err(Error::validate_context(
+                        format!(
+                            "{} \"{}\" does not appear in \"capabilities\"",
+                            reference_description, capability_ref
+                        ),
+                        origin.cloned(),
+                    ));
+                }
+                Ok(())
+            }
+            _ => Ok(()),
+        }
+    }
+
+    /// Validates that the given child component, collection, or capability exists.
+    ///
+    /// - `reference_description` is a human-readable description of the reference used in error
+    ///   message, such as `"offer" source`.
+    /// - `ref_` is a reference to a child component or capability. If the reference contains a
+    ///   name, we ensure that a child component or a capability with the name exists.
+    fn validate_component_child_or_capability_ref(
+        &self,
+        reference_description: &str,
+        ref_: &AnyRef<'_>,
+        origin: Option<&Origin>,
+    ) -> Result<(), Error> {
+        if self.validate_component_child_ref(reference_description, ref_, origin).is_err()
+            && self.validate_component_capability_ref(reference_description, ref_, origin).is_err()
+        {
+            return Err(Error::validate_context(
+                format!(
+                    "{} \"{}\" does not appear in \"children\" or \"capabilities\"",
+                    reference_description, ref_
+                ),
+                origin.cloned(),
+            ));
+        }
+        Ok(())
+    }
+}
+
+struct ValidationContext<'a> {
+    document: &'a Document,
+    features: &'a FeatureSet,
+    capability_requirements: &'a CapabilityRequirements<'a>,
+    all_children: HashMap<&'a BorrowedName, &'a Child>,
+    all_collections: HashSet<&'a BorrowedName>,
+    all_storages: HashMap<&'a BorrowedName, &'a CapabilityFromRef>,
+    all_services: HashSet<&'a BorrowedName>,
+    all_protocols: HashSet<&'a BorrowedName>,
+    all_directories: HashSet<&'a BorrowedName>,
+    all_runners: HashSet<&'a BorrowedName>,
+    all_resolvers: HashSet<&'a BorrowedName>,
+    all_dictionaries: HashMap<&'a BorrowedName, &'a Capability>,
+    all_configs: HashSet<&'a BorrowedName>,
+    all_environment_names: HashSet<&'a BorrowedName>,
+    all_capability_names: HashSet<&'a BorrowedName>,
 }
 
 // Facet key for fuchsia.test
@@ -2819,23 +3001,17 @@ pub fn use_config_to_value_type(u: &Use) -> Result<ConfigValueType, Error> {
 
 // Construct the config type information out of a `use` for a configuration capability.
 // This will return validation errors if the `use` is missing fields.
-pub fn use_config_to_value_type_span(
-    u: &SpannedUse,
-    source: Option<&String>,
-    path: Option<&Path>,
-) -> Result<ConfigValueType, Error> {
+pub fn use_config_to_value_type_context(u: &ContextUse) -> Result<ConfigValueType, Error> {
     let config = u.config.clone().expect("Only call use_config_to_value_type on a Config");
-    let location: Option<Location> = byte_index_to_location(source, config.span().0);
 
     let Some(config_type) = u.config_type.as_ref() else {
-        return Err(Error::validate_with_span(
-            format!("Config '{}' is missing field 'type'", config),
-            location,
-            path,
+        return Err(Error::validate_context(
+            format!("Config '{}' is missing field 'type'", config.value),
+            Some(config.origin),
         ));
     };
 
-    let config_type = match config_type {
+    let config_type = match config_type.value {
         ConfigType::Bool => ConfigValueType::Bool { mutability: None },
         ConfigType::Uint8 => ConfigValueType::Uint8 { mutability: None },
         ConfigType::Uint16 => ConfigValueType::Uint16 { mutability: None },
@@ -2846,33 +3022,39 @@ pub fn use_config_to_value_type_span(
         ConfigType::Int32 => ConfigValueType::Int32 { mutability: None },
         ConfigType::Int64 => ConfigValueType::Int64 { mutability: None },
         ConfigType::String => {
-            let Some(max_size) = u.config_max_size else {
-                return Err(Error::validate_with_span(
-                    format!("Config '{}' is type String but is missing field 'max_size'", config),
-                    location,
-                    path,
+            let Some(ref max_size) = u.config_max_size else {
+                return Err(Error::validate_context(
+                    format!(
+                        "Config '{}' is type String but is missing field 'max_size'",
+                        config.value
+                    ),
+                    Some(config.origin),
                 ));
             };
-            ConfigValueType::String { max_size: max_size.into(), mutability: None }
+            ConfigValueType::String { max_size: max_size.value.into(), mutability: None }
         }
         ConfigType::Vector => {
             let Some(ref element) = u.config_element_type else {
-                return Err(Error::validate_with_span(
-                    format!("Config '{}' is type Vector but is missing field 'element'", config),
-                    location,
-                    path,
+                return Err(Error::validate_context(
+                    format!(
+                        "Config '{}' is type Vector but is missing field 'element'",
+                        config.value
+                    ),
+                    Some(config.origin),
                 ));
             };
-            let Some(max_count) = u.config_max_count else {
-                return Err(Error::validate_with_span(
-                    format!("Config '{}' is type Vector but is missing field 'max_count'", config),
-                    location,
-                    path,
+            let Some(ref max_count) = u.config_max_count else {
+                return Err(Error::validate_context(
+                    format!(
+                        "Config '{}' is type Vector but is missing field 'max_count'",
+                        config.value
+                    ),
+                    Some(config.origin),
                 ));
             };
             ConfigValueType::Vector {
-                max_count: max_count.into(),
-                element: element.clone(),
+                max_count: max_count.value.into(),
+                element: element.value.clone(),
                 mutability: None,
             }
         }
@@ -2923,6 +3105,7 @@ mod tests {
     };
     use assert_matches::assert_matches;
     use serde_json::json;
+    use std::sync::Arc;
 
     macro_rules! test_validate_cml {
         (
@@ -2941,7 +3124,7 @@ mod tests {
         }
     }
 
-    macro_rules! test_validate_cml_with_span {
+    macro_rules! test_validate_cml_with_context {
         (
             $(
                 $test_name:ident($input:expr, $($pattern:tt)+),
@@ -2951,7 +3134,7 @@ mod tests {
                 #[test]
                 fn $test_name() {
                     let input = format!("{}", $input);
-                    let result = validate_for_test_with_span("test.cml", &input.as_bytes());
+                    let result = validate_for_test_context("test.cml", &input.as_bytes());
                     assert_matches!(result, $($pattern)+);
                 }
             )+
@@ -2983,8 +3166,8 @@ mod tests {
         validate_with_features_for_test(filename, input, &FeatureSet::empty(), &[], &[], &[])
     }
 
-    fn validate_for_test_with_span(filename: &str, input: &[u8]) -> Result<(), Error> {
-        validate_with_features_for_test_with_span(
+    fn validate_for_test_context(filename: &str, input: &[u8]) -> Result<(), Error> {
+        validate_with_features_for_test_context(
             filename,
             input,
             &FeatureSet::empty(),
@@ -2994,7 +3177,7 @@ mod tests {
         )
     }
 
-    fn validate_with_features_for_test_with_span(
+    fn validate_with_features_for_test_context(
         filename: &str,
         input: &[u8],
         features: &FeatureSet,
@@ -3004,9 +3187,9 @@ mod tests {
     ) -> Result<(), Error> {
         let input = format!("{}", std::str::from_utf8(input).unwrap().to_string());
         let file = Path::new(filename);
-        let document = crate::parse_one_document_with_span(&input, &file)?;
-        validate_cml_with_span(
-            HashMap::from([(file, (&document, &input))]),
+        let document = crate::load_cml_with_context(&input, file)?;
+        validate_cml_context(
+            &document,
             &features,
             &CapabilityRequirements {
                 must_offer: &required_offers
@@ -3617,7 +3800,7 @@ mod tests {
             ]
         }"##;
 
-        let result = validate_with_features_for_test_with_span(
+        let result = validate_with_features_for_test_context(
             "test.cml",
             input.as_bytes(),
             &FeatureSet::empty(),
@@ -3627,7 +3810,7 @@ mod tests {
         );
 
         assert_matches!(result,
-            Err(Error::ValidateWithSpan { err, .. }) => {
+            Err(Error::ValidateContexts { err, .. }) => {
                 assert_eq!(
                     err,
                     offer_to_all_diff_sources_message(&["fuchsia.logger.LogSink"]),
@@ -4093,7 +4276,7 @@ mod tests {
         );
     }
 
-    test_validate_cml_with_span! {
+    test_validate_cml_with_context! {
         test_cml_empty_json(
             json!({}),
             Ok(())
@@ -4108,9 +4291,11 @@ mod tests {
                     }
                 ]
             }"##,
-            Err(Error::ValidateWithSpan { err, location, filename: Some(f)}) if &err == "child URL ends in .cml instead of .cm, which is almost certainly a mistake: fuchsia-pkg://fuchsia.com/logger/stable#meta/logger.cml" &&
-                location == Some(Location {line: 5, column: 32}) &&
-                f.ends_with("test.cml")
+            Err(Error::ValidateContext { err, origin }) if &err == "child URL ends in .cml instead of .cm, which is almost certainly a mistake: fuchsia-pkg://fuchsia.com/logger/stable#meta/logger.cml" &&
+                origin == Some(Origin {
+                    file:  Arc::new("test.cml".into()),
+                    location: Location {line: 5, column: 32}
+                })
         ),
 
         test_cml_allow_long_names_without_feature(
@@ -4135,8 +4320,11 @@ mod tests {
                     }
                 ]
             }"##,
-            Err(Error::ValidateWithSpan { err, location,  .. }) if &err == "\"path\" should be present with \"directory\"" &&
-                location == Some(Location {line: 4, column: 38})
+            Err(Error::ValidateContext { err, origin}) if &err == "\"path\" should be present with \"directory\"" &&
+                origin == Some(Origin {
+                file:  Arc::new("test.cml".into()),
+                location: Location {line: 4, column: 38}
+            })
         ),
         test_cml_directory_missing_rights(
             r##"{
@@ -4147,8 +4335,11 @@ mod tests {
                     }
                 ]
             }"##,
-            Err(Error::ValidateWithSpan { err, location, .. }) if &err == "\"rights\" should be present with \"directory\"" &&
-                location == Some(Location {line: 4, column: 38})
+            Err(Error::ValidateContext { err, origin }) if &err == "\"rights\" should be present with \"directory\"" &&
+                origin == Some(Origin {
+                file:  Arc::new("test.cml".into()),
+                location: Location {line: 4, column: 38}
+            })
         ),
 
         test_cml_storage_missing_from(
@@ -4161,9 +4352,13 @@ mod tests {
                     }
                 ]
             }"##,
-            Err(Error::ValidateWithSpan { err, location, .. }) if &err == "\"from\" should be present with \"storage\"" &&
-                location == Some(Location {line: 4, column: 36})
+            Err(Error::ValidateContext { err, origin }) if &err == "\"from\" should be present with \"storage\"" &&
+                                origin == Some(Origin {
+                file:  Arc::new("test.cml".into()),
+                location: Location {line: 4, column: 36}
+            })
         ),
+
 
         test_cml_storage_path(
             r##"{
@@ -4174,9 +4369,11 @@ mod tests {
                         "storage_id": "static_instance_id_or_moniker"
                     } ]
                 }"##,
-            Err(Error::ValidateWithSpan { err, location, .. }) if &err == "\"path\" cannot be present with \"storage\", use \"backing_dir\"" &&
-             location == Some(Location {line: 3, column: 36})
-        ),
+            Err(Error::ValidateContext { err, origin }) if &err == "\"path\" cannot be present with \"storage\", use \"backing_dir\"" &&
+                origin == Some(Origin {
+                    file:  Arc::new("test.cml".into()),
+                    location: Location {line: 5, column: 33}
+                })        ),
 
         test_cml_storage_missing_path_or_backing_dir(
             r##"{
@@ -4186,9 +4383,11 @@ mod tests {
                         "storage_id": "static_instance_id_or_moniker"
                     } ]
                 }"##,
-            Err(Error::ValidateWithSpan { err, location, .. }) if &err == "\"backing_dir\" should be present with \"storage\"" &&
-                location == Some(Location {line: 3, column: 36})
-
+            Err(Error::ValidateContext { err, origin }) if &err == "\"backing_dir\" should be present with \"storage\"" &&
+                                origin == Some(Origin {
+                    file:  Arc::new("test.cml".into()),
+                    location: Location {line: 3, column: 36}
+                })
         ),
 
         test_cml_storage_missing_storage_id(
@@ -4199,9 +4398,11 @@ mod tests {
                         "backing_dir": "storage"
                     } ]
                 }"##,
-            Err(Error::ValidateWithSpan{ err, location, .. }) if &err == "\"storage_id\" should be present with \"storage\"" &&
-                location == Some(Location {line: 3, column: 36})
-        ),
+            Err(Error::ValidateContext{ err, origin }) if &err == "\"storage_id\" should be present with \"storage\"" &&
+                origin == Some(Origin {
+                    file:  Arc::new("test.cml".into()),
+                    location: Location {line: 3, column: 36}
+                })        ),
 
         test_cml_capabilities_extraneous_resolver_from(
             r##"{
@@ -4213,8 +4414,11 @@ mod tests {
                     }
                 ]
             }"##,
-            Err(Error::ValidateWithSpan { err, location, .. }) if &err == "\"from\" should not be present with \"resolver\"" &&
-                location == Some(Location {line: 4, column: 37})
+            Err(Error::ValidateContext { err, origin }) if &err == "\"from\" should not be present with \"resolver\"" &&
+               origin == Some(Origin {
+                    file:  Arc::new("test.cml".into()),
+                    location: Location {line: 6, column: 33}
+                })
         ),
 
         test_cml_resolver_missing_path(
@@ -4225,8 +4429,11 @@ mod tests {
                     }
                 ]
             }"##,
-            Err(Error::ValidateWithSpan { err, location, .. }) if &err == "\"path\" should be present with \"resolver\"" &&
-                location == Some(Location {line: 4, column: 37})
+            Err(Error::ValidateContext { err, origin }) if &err == "\"path\" should be present with \"resolver\"" &&
+                origin == Some(Origin {
+                    file:  Arc::new("test.cml".into()),
+                    location: Location {line: 4, column: 37}
+                })
         ),
 
         test_cml_runner_missing_path(
@@ -4237,8 +4444,11 @@ mod tests {
                     }
                 ]
             }"##,
-            Err(Error::ValidateWithSpan { err, location, .. }) if &err == "\"path\" should be present with \"runner\"" &&
-                location == Some(Location {line: 4, column: 35})
+            Err(Error::ValidateContext { err, origin }) if &err == "\"path\" should be present with \"runner\"" &&
+                                origin == Some(Origin {
+                    file:  Arc::new("test.cml".into()),
+                    location: Location {line: 4, column: 35}
+                })
         ),
 
         test_cml_runner_extraneous_from(
@@ -4251,8 +4461,11 @@ mod tests {
                     }
                 ]
             }"##,
-            Err(Error::ValidateWithSpan { err, location, .. }) if &err == "\"from\" should not be present with \"runner\"" &&
-                location == Some(Location {line: 4, column: 35})
+            Err(Error::ValidateContext { err, origin }) if &err == "\"from\" should not be present with \"runner\"" &&
+                                origin == Some(Origin {
+                    file:  Arc::new("test.cml".into()),
+                    location: Location {line: 6, column: 33}
+                })
         ),
 
         test_cml_service_multi_invalid_path(
@@ -4264,8 +4477,11 @@ mod tests {
                     }
                 ]
             }"##,
-            Err(Error::ValidateWithSpan { err, location, .. }) if &err == "\"path\" can only be specified when one `service` is supplied." &&
-            location == Some(Location {line: 5, column: 33})
+            Err(Error::ValidateContext{ err, origin }) if &err == "\"path\" can only be specified when one `service` is supplied." &&
+            origin == Some(Origin {
+                file:  Arc::new("test.cml".into()),
+                location: Location {line: 5, column: 33}
+            })
         ),
 
         test_cml_protocol_multi_invalid_path(
@@ -4277,65 +4493,94 @@ mod tests {
                     }
                 ]
             }"##,
-            Err(Error::ValidateWithSpan { err, location, .. }) if &err == "\"path\" can only be specified when one `protocol` is supplied." &&
-                        location == Some(Location {line: 5, column: 33})
+            Err(Error::ValidateContext { err, origin }) if &err == "\"path\" can only be specified when one `protocol` is supplied." &&
+                        origin == Some(Origin {
+                file:  Arc::new("test.cml".into()),
+                location: Location {line: 5, column: 33}
+            })
 
         ),
 
         test_cml_use_bad_duplicate_target_names(
-            json!({
+            r##"{
                 "use": [
                   { "protocol": "fuchsia.component.Realm" },
-                  { "protocol": "fuchsia.component.Realm" },
-                ],
-            }),
-            Err(Error::ValidateWithSpan { err, .. }) if &err == "\"/svc/fuchsia.component.Realm\" is a duplicate \"use\" target protocol"
+                  { "protocol": "fuchsia.component.Realm" }
+                ]
+            }"##,
+            Err(Error::ValidateContexts { err, origins }) if &err == "\"/svc/fuchsia.component.Realm\" is a duplicate \"use\" target protocol" &&
+            origins == vec![Origin {
+                file:  Arc::new("test.cml".into()),
+                location: Location {line: 4, column: 33}}, Origin {
+                file:  Arc::new("test.cml".into()),
+                location: Location {line: 3, column: 33}
+            }]
         ),
 
         test_cml_use_disallows_nested_dirs_directory(
-            json!({
+            r##"{
                 "use": [
                     { "directory": "foobar", "path": "/foo/bar", "rights": [ "r*" ] },
-                    { "directory": "foobarbaz", "path": "/foo/bar/baz", "rights": [ "r*" ] },
-                ],
-            }),
-            Err(Error::ValidateWithSpan { err, .. }) if &err == "directory \"/foo/bar\" is a prefix of \"use\" target directory \"/foo/bar/baz\""
+                    { "directory": "foobarbaz", "path": "/foo/bar/baz", "rights": [ "r*" ] }
+                ]
+            }"##,
+            Err(Error::ValidateContexts { err, origins }) if &err == "directory \"/foo/bar\" is a prefix of \"use\" target directory \"/foo/bar/baz\"" &&
+            origins == vec![Origin {
+                file:  Arc::new("test.cml".into()),
+                location: Location {line: 3, column: 21}
+            }]
         ),
         test_cml_use_disallows_nested_dirs_storage(
-            json!({
+            r##"{
                 "use": [
                     { "storage": "foobar", "path": "/foo/bar" },
-                    { "storage": "foobarbaz", "path": "/foo/bar/baz" },
-                ],
-            }),
-            Err(Error::ValidateWithSpan { err, .. }) if &err == "storage \"/foo/bar\" is a prefix of \"use\" target storage \"/foo/bar/baz\""
+                    { "storage": "foobarbaz", "path": "/foo/bar/baz" }
+                ]
+            }"##,
+            Err(Error::ValidateContexts { err, origins }) if &err == "storage \"/foo/bar\" is a prefix of \"use\" target storage \"/foo/bar/baz\"" &&
+            origins == vec![Origin {
+                file:  Arc::new("test.cml".into()),
+                location: Location {line: 3, column: 21}
+            }]
         ),
         test_cml_use_disallows_nested_dirs_directory_and_storage(
-            json!({
+            r##"{
                 "use": [
                     { "directory": "foobar", "path": "/foo/bar", "rights": [ "r*" ] },
-                    { "storage": "foobarbaz", "path": "/foo/bar/baz" },
-                ],
-            }),
-            Err(Error::ValidateWithSpan { err, .. }) if &err == "directory \"/foo/bar\" is a prefix of \"use\" target storage \"/foo/bar/baz\""
+                    { "storage": "foobarbaz", "path": "/foo/bar/baz" }
+                ]
+            }"##,
+            Err(Error::ValidateContexts { err, origins }) if &err == "directory \"/foo/bar\" is a prefix of \"use\" target storage \"/foo/bar/baz\"" &&
+            origins == vec![Origin {
+                file:  Arc::new("test.cml".into()),
+                location: Location {line: 3, column: 21}
+            }]
         ),
-        test_cml_use_disallows_common_prefixes_service(
-            json!({
-                "use": [
-                    { "directory": "foobar", "path": "/foo/bar", "rights": [ "r*" ] },
-                    { "protocol": "fuchsia", "path": "/foo/bar/fuchsia" },
-                ],
-            }),
-            Err(Error::ValidateWithSpan { err, .. }) if &err == "directory \"/foo/bar\" is a prefix of \"use\" target protocol \"/foo/bar/fuchsia\""
+         test_cml_use_disallows_common_prefixes_service(
+             r##"{
+                 "use": [
+                     { "directory": "foobar", "path": "/foo/bar", "rights": [ "r*" ] },
+                     { "protocol": "fuchsia", "path": "/foo/bar/fuchsia" }
+                 ]
+             }"##,
+             Err(Error::ValidateContexts { err, origins }) if &err == "directory \"/foo/bar\" is a prefix of \"use\" target protocol \"/foo/bar/fuchsia\"" &&
+            origins == vec![Origin {
+                file:  Arc::new("test.cml".into()),
+                location: Location {line: 3, column: 22}
+            }]
         ),
         test_cml_use_disallows_common_prefixes_protocol(
-            json!({
+            r##"{
                 "use": [
                     { "directory": "foobar", "path": "/foo/bar", "rights": [ "r*" ] },
-                    { "protocol": "fuchsia", "path": "/foo/bar/fuchsia.2" },
-                ],
-            }),
-            Err(Error::ValidateWithSpan { err, .. }) if &err == "directory \"/foo/bar\" is a prefix of \"use\" target protocol \"/foo/bar/fuchsia.2\""
+                    { "protocol": "fuchsia", "path": "/foo/bar/fuchsia.2" }
+                ]
+            }"##,
+            Err(Error::ValidateContexts { err, origins }) if &err == "directory \"/foo/bar\" is a prefix of \"use\" target protocol \"/foo/bar/fuchsia.2\"" &&
+            origins == vec![Origin {
+                file:  Arc::new("test.cml".into()),
+                location: Location {line: 3, column: 21}
+            }]
         ),
 
 
@@ -4343,7 +4588,7 @@ mod tests {
             json!({
                 "use": [ { "service": "foo", "from": "debug" } ]
             }),
-            Err(Error::ValidateWithSpan { err, .. }) if &err == "only \"protocol\" supports source from \"debug\""
+            Err(Error::ValidateContext { err, .. }) if &err == "only \"protocol\" supports source from \"debug\""
         ),
 
         test_cml_use_runner_debug_ref(
@@ -4355,8 +4600,11 @@ mod tests {
                     }
                 ]
             }"##,
-            Err(Error::ValidateWithSpan { err, location, .. }) if &err == "only \"protocol\" supports source from \"debug\"" &&
-            location == Some(Location {line: 5, column: 33})
+            Err(Error::ValidateContext { err, origin }) if &err == "only \"protocol\" supports source from \"debug\"" &&
+            origin == Some(Origin {
+                file:  Arc::new("test.cml".into()),
+                location: Location {line: 5, column: 33}
+            })
         ),
 
         test_cml_availability_not_supported_for_event_streams(
@@ -4369,8 +4617,11 @@ mod tests {
                     }
                 ]
             }"##,
-            Err(Error::ValidateWithSpan { err, location, .. }) if &err == "\"availability\" cannot be used with \"event_stream\"" &&
-            location == Some(Location {line: 6, column: 41})
+            Err(Error::ValidateContext { err, origin }) if &err == "\"availability\" cannot be used with \"event_stream\"" &&
+            origin == Some(Origin {
+                file:  Arc::new("test.cml".into()),
+                location: Location {line: 6, column: 41}
+            })
         ),
 
         test_cml_use_disallows_filter_on_non_events(
@@ -4379,14 +4630,14 @@ mod tests {
                     { "directory": "foobar", "path": "/foo/bar", "rights": [ "r*" ], "filter": {"path": "/diagnostics"} },
                 ],
             }),
-            Err(Error::ValidateWithSpan { err, .. }) if &err == "\"filter\" can only be used with \"event_stream\""
+            Err(Error::ValidateContext { err, .. }) if &err == "\"filter\" can only be used with \"event_stream\""
         ),
 
         test_cml_use_from_with_storage(
             json!({
                 "use": [ { "storage": "cache", "from": "parent" } ]
             }),
-            Err(Error::ValidateWithSpan { err, .. }) if &err == "\"from\" cannot be used with \"storage\""
+            Err(Error::ValidateContext { err, .. }) if &err == "\"from\" cannot be used with \"storage\""
         ),
 
         test_cml_availability_not_supported_for_runner(
@@ -4399,8 +4650,11 @@ mod tests {
                     }
                 ]
             }"##,
-            Err(Error::ValidateWithSpan { err, location, .. }) if &err == "\"availability\" cannot be used with \"runner\"" &&
-            location == Some(Location {line: 6, column: 41})
+            Err(Error::ValidateContext { err, origin }) if &err == "\"availability\" cannot be used with \"runner\"" &&
+            origin == Some(Origin {
+                file:  Arc::new("test.cml".into()),
+                location: Location {line: 6, column: 41}
+            })
         ),
 
         test_cml_use_event_stream_self_ref(
@@ -4413,8 +4667,11 @@ mod tests {
                     }
                 ]
             }"##,
-            Err(Error::ValidateWithSpan { err, location, .. }) if &err == "\"from: self\" cannot be used with \"event_stream\"" &&
-            location == Some(Location {line: 6, column: 33})
+            Err(Error::ValidateContext { err, origin }) if &err == "\"from: self\" cannot be used with \"event_stream\"" &&
+            origin == Some(Origin {
+                file:  Arc::new("test.cml".into()),
+                location: Location {line: 6, column: 33}
+            })
         ),
 
         test_cml_use_runner_self_ref(
@@ -4426,8 +4683,11 @@ mod tests {
                     }
                 ]
             }"##,
-            Err(Error::ValidateWithSpan { err, location, .. }) if &err == "\"from: self\" cannot be used with \"runner\""  &&
-            location == Some(Location {line: 5, column: 33})
+            Err(Error::ValidateContext { err, origin }) if &err == "\"from: self\" cannot be used with \"runner\""  &&
+            origin == Some(Origin {
+                file:  Arc::new("test.cml".into()),
+                location: Location {line: 5, column: 33}
+            })
         ),
 
         test_cml_use_invalid_availability(
@@ -4439,9 +4699,13 @@ mod tests {
                     }
                 ]
             }"##,
-            Err(Error::ValidateWithSpan { err, location, .. }) if &err == "\"availability: same_as_target\" cannot be used with use declarations"   &&
-            location == Some(Location {line: 5, column: 41})
+            Err(Error::ValidateContext { err, origin }) if &err == "\"availability: same_as_target\" cannot be used with use declarations"   &&
+            origin == Some(Origin {
+                file:  Arc::new("test.cml".into()),
+                location: Location {line: 5, column: 41}
+            })
         ),
+
         test_cml_use_config_bad_string(
             r##"{
                 "use": [
@@ -4452,9 +4716,12 @@ mod tests {
                     }
                 ]
             }"##,
-            Err(Error::ValidateWithSpan { err, location, .. })
+            Err(Error::ValidateContext { err, origin })
             if &err == "Config 'fuchsia.config.MyConfig' is type String but is missing field 'max_size'" &&
-            location == Some(Location {line: 4, column: 35})
+            origin == Some(Origin {
+                file:  Arc::new("test.cml".into()),
+                location: Location {line: 4, column: 35}
+            })
         ),
 
         test_config_required_with_default(
@@ -4466,10 +4733,12 @@ mod tests {
                     "default": "true"
                 }
             ]}"##,
-            Err(Error::ValidateWithSpan {err, location, ..})
+            Err(Error::ValidateContext {err, origin})
             if &err == "Config 'fuchsia.config.MyConfig' is required and has a default value" &&
-                                location == Some(Location {line: 3, column: 31})
-
+            origin == Some(Origin {
+                file:  Arc::new("test.cml".into()),
+                location: Location {line: 6, column: 32}
+            })
         ),
 
         test_cml_use_numbered_handle_and_path(
@@ -4477,12 +4746,12 @@ mod tests {
                 "use": [
                     {
                         "protocol": "foo",
-                    "path": "/svc/foo",
-                         "numbered_handle": 0xab
+                        "path": "/svc/foo",
+                        "numbered_handle": 0xab
                     }
                 ]
         }),
-            Err(Error::ValidateWithSpan { err, .. }) if &err == "`path` and `numbered_handle` are incompatible"
+            Err(Error::ValidateContext { err, .. }) if &err == "`path` and `numbered_handle` are incompatible"
         ),
 
         test_cml_use_numbered_handle_not_protocol(
@@ -4494,7 +4763,7 @@ mod tests {
                     }
                 ]
             }),
-            Err(Error::ValidateWithSpan { err, .. }) if &err == "`numbered_handle` is only supported for `use protocol`"
+            Err(Error::ValidateContext { err, .. }) if &err == "`numbered_handle` is only supported for `use protocol`"
         ),
 
         test_cml_expose_invalid_subdir_to_framework(
@@ -4521,8 +4790,11 @@ mod tests {
                     }
                 ]
             }"##,
-            Err(Error::ValidateWithSpan { err, location, .. }) if &err == "`subdir` is not supported for expose to framework. Directly expose the subdirectory instead." &&
-                location == Some(Location { line: 14, column: 35})
+            Err(Error::ValidateContext { err, origin}) if &err == "`subdir` is not supported for expose to framework. Directly expose the subdirectory instead." &&
+            origin == Some(Origin {
+                file:  Arc::new("test.cml".into()),
+                location: Location {line: 14, column: 35}
+            })
         ),
         test_cml_expose_event_stream_multiple_as(
             r##"{
@@ -4534,10 +4806,13 @@ mod tests {
                     }
                 ]
             }"##,
-            Err(Error::ValidateWithSpan { err, location, .. }) if &err == "as cannot be used with multiple event streams" &&
-                location == Some(Location { line: 6, column: 31})
-
+            Err(Error::ValidateContext { err, origin }) if &err == "as cannot be used with multiple event streams" &&
+            origin == Some(Origin {
+                file:  Arc::new("test.cml".into()),
+                location: Location {line: 6, column: 31}
+            })
         ),
+
         test_cml_expose_event_stream_to_framework(
             r##"{
                 "expose": [
@@ -4548,9 +4823,11 @@ mod tests {
                     }
                 ]
             }"##,
-            Err(Error::ValidateWithSpan { err, location, .. }) if &err == "cannot expose an event_stream to framework" &&
-                location == Some(Location { line: 6, column: 31})
-
+            Err(Error::ValidateContext { err, origin }) if &err == "cannot expose an event_stream to framework" &&
+            origin == Some(Origin {
+                file:  Arc::new("test.cml".into()),
+                location: Location {line: 4, column: 41}
+            })
         ),
 
         test_cml_expose_event_stream_from_self(
@@ -4559,7 +4836,7 @@ mod tests {
                     { "event_stream": ["started", "stopped"], "from" : "self" },
                 ]
             }),
-            Err(Error::ValidateWithSpan { err, .. }) if &err == "Cannot expose event_streams from self"
+            Err(Error::ValidateContext { err, .. }) if &err == "Cannot expose event_streams from self"
         ),
 
         test_cml_rights_alias_star_expansion_collision(
@@ -4572,9 +4849,11 @@ mod tests {
                   }
                 ]
             }"##,
-            Err(Error::ValidateWithSpan { err, location, .. }) if &err == "\"x*\" is duplicated in the rights clause." &&
-                location == Some(Location { line: 6, column: 31})
-
+            Err(Error::ValidateContext { err, origin  }) if &err == "\"x*\" is duplicated in the rights clause." &&
+                origin == Some(Origin {
+                    file:  Arc::new("test.cml".into()),
+                    location: Location {line: 6, column: 31}
+                })
         ),
 
         test_cml_rights_alias_star_expansion_with_longform_collision(
@@ -4587,8 +4866,11 @@ mod tests {
                   }
                 ]
             }"##,
-            Err(Error::ValidateWithSpan { err, location, .. }) if &err == "\"read_bytes\" is duplicated in the rights clause." &&
-                location == Some(Location { line: 6, column: 31})
+            Err(Error::ValidateContext { err, origin}) if &err == "\"read_bytes\" is duplicated in the rights clause." &&
+                origin == Some(Origin {
+                    file:  Arc::new("test.cml".into()),
+                    location: Location {line: 6, column: 31}
+                })
 
         ),
 
@@ -4598,14 +4880,15 @@ mod tests {
                   { "directory": "mydir", "path": "/mydir" },
                 ]
             }),
-            Err(Error::ValidateWithSpan { err, .. }) if &err == "This use statement requires a `rights` field. Refer to: https://fuchsia.dev/go/components/directory#consumer."
+            Err(Error::ValidateContexts { err, .. }) if &err == "This use statement requires a `rights` field. Refer to: https://fuchsia.dev/go/components/directory#consumer."
         ),
         test_cml_use_missing_props(
             json!({
                 "use": [ { "path": "/svc/fuchsia.logger.Log" } ]
             }),
-            Err(Error::ValidateWithSpan { err, .. }) if &err == "`use` declaration is missing a capability keyword, one of: \"service\", \"protocol\", \"directory\", \"storage\", \"event_stream\", \"runner\", \"config\", \"dictionary\""
+            Err(Error::ValidateContext { err, .. }) if &err == "`use` declaration is missing a capability keyword, one of: \"service\", \"protocol\", \"directory\", \"storage\", \"event_stream\", \"runner\", \"config\", \"dictionary\""
         ),
+
 
         test_cml_use_two_types_bad(
             r##"{"use": [
@@ -4615,9 +4898,12 @@ mod tests {
                 }
             ]
         }"##,
-            Err(Error::ValidateWithSpan {err, location, ..})
+            Err(Error::ValidateContext {err, origin, ..})
             if &err == "use declaration has multiple capability types defined: [\"service\", \"protocol\"]" &&
-                location == Some(Location {line: 2, column: 17})
+                                origin == Some(Origin {
+                    file:  Arc::new("test.cml".into()),
+                    location: Location {line: 2, column: 17}
+                })
             ),
     test_cml_expose_two_types_bad(
         r##"{"expose": [
@@ -4628,10 +4914,14 @@ mod tests {
             }
         ]
     }"##,
-        Err(Error::ValidateWithSpan {err, location, ..})
+        Err(Error::ValidateContext {err, origin})
         if &err == "expose declaration has multiple capability types defined: [\"service\", \"protocol\"]" &&
-        location == Some(Location {line: 2, column: 13})
+                                        origin == Some(Origin {
+                    file:  Arc::new("test.cml".into()),
+                    location: Location {line: 2, column: 13}
+                })
         ),
+
 
         test_cml_storage_offer_from_child(
             r##"{
@@ -4653,26 +4943,31 @@ mod tests {
                         }
                     ]
                 }"##,
-            Err(Error::ValidateWithSpan { err, location, .. }) if &err == "Storage \"cache\" is offered from a child, but storage capabilities cannot be exposed" &&
-                    location == Some(Location {line: 4, column: 40})
+            Err(Error::ValidateContexts { err, origins }) if &err == "Storage \"cache\" is offered from a child, but storage capabilities cannot be exposed" &&
+                                            origins == vec![Origin {
+                    file:  Arc::new("test.cml".into()),
+                    location: Location {line: 4, column: 40}}]
 
         ),
 
         test_cml_offer_storage_from_collection_invalid(
-            json!({
+            r##"{
                 "collections": [ {
                     "name": "coll",
-                    "durability": "transient",
+                    "durability": "transient"
                 } ],
                 "children": [ {
                     "name": "echo_server",
-                    "url": "fuchsia-pkg://fuchsia.com/echo/stable#meta/echo_server.cm",
+                    "url": "fuchsia-pkg://fuchsia.com/echo/stable#meta/echo_server.cm"
                 } ],
                 "offer": [
-                    { "storage": "cache", "from": "#coll", "to": [ "#echo_server" ] },
+                    { "storage": "cache", "from": "#coll", "to": [ "#echo_server" ] }
                 ]
-            }),
-            Err(Error::ValidateWithSpan { err, .. }) if &err == "Storage \"cache\" is offered from a child, but storage capabilities cannot be exposed"
+            }"##,
+            Err(Error::ValidateContexts { err, origins }) if &err == "Storage \"cache\" is offered from a child, but storage capabilities cannot be exposed" &&
+                origins == vec![Origin {
+                    file:  Arc::new("test.cml".into()),
+                    location: Location {line: 11, column: 34}}]
         ),
     }
 

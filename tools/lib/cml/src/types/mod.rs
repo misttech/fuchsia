@@ -6,6 +6,7 @@ pub mod capability;
 pub mod capability_id;
 pub mod child;
 pub mod collection;
+pub mod common;
 pub mod document;
 pub mod environment;
 pub mod expose;

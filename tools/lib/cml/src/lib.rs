@@ -19,7 +19,6 @@ pub mod translate;
 
 use crate::error::Error;
 use cml_macro::{OneOrMany, Reference};
-use json_spanned_value::Spanned;
 use json5format::{FormatOptions, PathOption};
 use maplit::{hashmap, hashset};
 use serde::{Deserialize, Serialize, de, ser};
@@ -29,18 +28,22 @@ use std::fmt::Write;
 use std::hash::Hash;
 use std::num::NonZeroU32;
 use std::str::FromStr;
+use std::sync::Arc;
 use validate::offer_to_all_from_offer;
 
-pub use crate::types::capability::{Capability, CapabilityFromRef, SpannedCapability};
+pub use crate::types::capability::{Capability, CapabilityFromRef, ContextCapability};
 pub use crate::types::capability_id::CapabilityId;
-pub use crate::types::child::{Child, SpannedChild};
+pub use crate::types::child::Child;
 pub use crate::types::collection::Collection;
-pub use crate::types::document::{Document, SpannedDocument};
+use crate::types::common::{ContextCapabilityClause, ContextSpanned, Origin};
+pub use crate::types::document::{
+    Document, DocumentContext, ParsedDocument, convert_parsed_to_document,
+};
 pub use crate::types::environment::{Environment, ResolverRegistration};
-pub use crate::types::expose::{Expose, SpannedExpose};
-pub use crate::types::offer::{Offer, OfferFromRef, OfferToRef, SpannedOffer};
+pub use crate::types::expose::{ContextExpose, Expose};
+pub use crate::types::offer::{Offer, OfferFromRef, OfferToRef};
 pub use crate::types::program::Program;
-pub use crate::types::r#use::{SpannedUse, Use, UseFromRef};
+pub use crate::types::r#use::{Use, UseFromRef};
 
 pub use cm_types::{
     AllowedOffers, Availability, BorrowedName, BoundedName, DeliveryType, DependencyType,
@@ -62,15 +65,17 @@ pub fn parse_one_document(buffer: &String, file: &std::path::Path) -> Result<Doc
     })
 }
 
-/// Parses a string `buffer` into a [SpannedDocument]. `file` is used for error reporting.
-pub fn parse_one_document_with_span(
+pub fn load_cml_with_context(
     buffer: &String,
     file: &std::path::Path,
-) -> Result<SpannedDocument, Error> {
-    json_spanned_value::from_str(&buffer).map_err(|e| {
+) -> Result<DocumentContext, Error> {
+    let file_arc = Arc::new(file.to_path_buf());
+    let parsed_doc: ParsedDocument = json_spanned_value::from_str(&buffer).map_err(|e| {
         let location = Location { line: e.line(), column: e.column() };
         Error::parse(e, Some(location), Some(file))
-    })
+    })?;
+    let doc = convert_parsed_to_document(parsed_doc, file_arc, buffer);
+    Ok(doc)
 }
 
 /// Parses a string `buffer` into a vector of [Document]. `file` is used for error reporting.
@@ -89,28 +94,24 @@ pub fn parse_many_documents(
     }
 }
 
-pub fn byte_index_to_location(source: Option<&String>, index: usize) -> Option<Location> {
-    if let Some(source) = source {
-        let mut line = 1usize;
-        let mut column = 1usize;
+pub fn byte_index_to_location(source: &String, index: usize) -> Location {
+    let mut line = 1usize;
+    let mut column = 1usize;
 
-        for (i, ch) in source.char_indices() {
-            if i == index {
-                break;
-            }
-
-            if ch == '\n' {
-                line += 1;
-                column = 1;
-            } else {
-                column += 1;
-            }
+    for (i, ch) in source.char_indices() {
+        if i == index {
+            break;
         }
 
-        return Some(Location { line, column });
+        if ch == '\n' {
+            line += 1;
+            column = 1;
+        } else {
+            column += 1;
+        }
     }
 
-    None
+    return Location { line, column };
 }
 
 /// Generates deserializer for `OneOrMany<Name>`.
@@ -654,6 +655,10 @@ pub trait FromClause {
     fn from_(&self) -> OneOrMany<AnyRef<'_>>;
 }
 
+pub trait FromClauseContext {
+    fn from_(&self) -> ContextSpanned<OneOrMany<AnyRef<'_>>>;
+}
+
 pub trait CapabilityClause: Clone + PartialEq + std::fmt::Debug {
     fn service(&self) -> Option<OneOrMany<&BorrowedName>>;
     fn protocol(&self) -> Option<OneOrMany<&BorrowedName>>;
@@ -791,91 +796,16 @@ pub trait CapabilityClause: Clone + PartialEq + std::fmt::Debug {
     }
 }
 
-pub trait SpannedCapabilityClause: Clone + PartialEq + std::fmt::Debug {
-    fn service(&self) -> Option<OneOrMany<&BorrowedName>>;
-    fn protocol(&self) -> Option<OneOrMany<&BorrowedName>>;
-    fn directory(&self) -> Option<OneOrMany<&BorrowedName>>;
-    fn storage(&self) -> Option<OneOrMany<&BorrowedName>>;
-    fn runner(&self) -> Option<OneOrMany<&BorrowedName>>;
-    fn resolver(&self) -> Option<OneOrMany<&BorrowedName>>;
-    fn event_stream(&self) -> Option<OneOrMany<&BorrowedName>>;
-    fn dictionary(&self) -> Option<OneOrMany<&BorrowedName>>;
-    fn config(&self) -> Option<OneOrMany<&BorrowedName>>;
-
-    /// Returns the name of the capability for display purposes.
-    /// If `service()` returns `Some`, the capability name must be "service", etc.
-    ///
-    /// Returns an error if the capability name is not set, or if there is more than one.
-    fn capability_type(&self) -> Result<&'static str, Error> {
-        let mut types = Vec::new();
-        if self.service().is_some() {
-            types.push("service");
-        }
-        if self.protocol().is_some() {
-            types.push("protocol");
-        }
-        if self.directory().is_some() {
-            types.push("directory");
-        }
-        if self.storage().is_some() {
-            types.push("storage");
-        }
-        if self.event_stream().is_some() {
-            types.push("event_stream");
-        }
-        if self.runner().is_some() {
-            types.push("runner");
-        }
-        if self.config().is_some() {
-            types.push("config");
-        }
-        if self.resolver().is_some() {
-            types.push("resolver");
-        }
-        if self.dictionary().is_some() {
-            types.push("dictionary");
-        }
-        match types.len() {
-            0 => {
-                let supported_keywords = self
-                    .supported()
-                    .into_iter()
-                    .map(|k| format!("\"{}\"", k))
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                Err(Error::validate_with_span(
-                    format!(
-                        "`{}` declaration is missing a capability keyword, one of: {}",
-                        self.decl_type(),
-                        supported_keywords,
-                    ),
-                    None,
-                    None,
-                ))
-            }
-            1 => Ok(types[0]),
-            _ => Err(Error::validate_with_span(
-                format!(
-                    "{} declaration has multiple capability types defined: {:?}",
-                    self.decl_type(),
-                    types
-                ),
-                None,
-                None,
-            )),
-        }
-    }
-
-    fn decl_type(&self) -> &'static str;
-    fn supported(&self) -> &[&'static str];
-}
-
 trait Canonicalize {
     fn canonicalize(&mut self);
 }
 
 pub trait AsClause {
     fn r#as(&self) -> Option<&BorrowedName>;
+}
+
+pub trait AsClauseContext {
+    fn r#as(&self) -> Option<ContextSpanned<&BorrowedName>>;
 }
 
 pub trait PathClause {
@@ -900,16 +830,6 @@ where
     o.as_ref().map(|o| o.as_ref())
 }
 
-fn option_spanned_one_or_many_as_ref<T, S: ?Sized>(
-    o: &Option<Spanned<OneOrMany<T>>>,
-) -> Option<OneOrMany<&S>>
-where
-    T: AsRef<S>,
-{
-    o.as_ref()
-        .map(|spanned_value| spanned_value.get_ref().iter().map(|name| name.as_ref()).collect())
-}
-
 fn one_or_many_from_impl<'a, T>(from: &'a OneOrMany<T>) -> OneOrMany<AnyRef<'a>>
 where
     AnyRef<'a>: From<&'a T>,
@@ -922,11 +842,39 @@ where
     r.into()
 }
 
+fn one_or_many_from_context<'a, T>(
+    from: &'a ContextSpanned<OneOrMany<T>>,
+) -> ContextSpanned<OneOrMany<AnyRef<'a>>>
+where
+    AnyRef<'a>: From<&'a T>,
+    T: 'a,
+{
+    let origin = from.origin.clone();
+
+    let converted_value = match &from.value {
+        OneOrMany::One(r) => OneOrMany::One(r.into()),
+        OneOrMany::Many(v) => {
+            let converted_vec = v.iter().map(|r| r.into()).collect();
+            OneOrMany::Many(converted_vec)
+        }
+    };
+
+    ContextSpanned { value: converted_value, origin }
+}
+
 pub fn alias_or_name<'a>(
     alias: Option<&'a BorrowedName>,
     name: &'a BorrowedName,
 ) -> &'a BorrowedName {
     alias.unwrap_or(name)
+}
+
+pub fn alias_or_name_context<'a>(
+    alias: Option<ContextSpanned<&'a BorrowedName>>,
+    name: &'a BorrowedName,
+    origin: Origin,
+) -> ContextSpanned<&'a BorrowedName> {
+    alias.unwrap_or(ContextSpanned { value: name, origin })
 }
 
 pub fn alias_or_path<'a>(alias: Option<&'a Path>, path: &'a Path) -> &'a Path {

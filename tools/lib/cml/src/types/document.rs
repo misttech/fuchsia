@@ -5,10 +5,16 @@
 use indexmap::IndexMap;
 use itertools::Itertools;
 
+use crate::types::capability::{ContextCapability, ParsedCapability};
+use crate::types::child::{ContextChild, ParsedChild};
+use crate::types::collection::{ContextCollection, ParsedCollection};
+use crate::types::common::*;
+use crate::types::expose::{ContextExpose, ParsedExpose};
+use crate::types::offer::{ContextOffer, ParsedOffer};
+use crate::types::r#use::{ContextUse, ParsedUse};
 use crate::{
     Canonicalize, Capability, CapabilityClause, CapabilityFromRef, Child, Collection, ConfigKey,
-    ConfigValueType, Environment, Error, Expose, Offer, Program, SpannedCapability, SpannedChild,
-    SpannedExpose, SpannedOffer, SpannedUse, Use,
+    ConfigValueType, Environment, Error, Expose, Offer, Program, Use,
 };
 
 pub use cm_types::{
@@ -21,6 +27,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
 use std::collections::{BTreeMap, HashMap, HashSet};
+use std::path::PathBuf;
+use std::sync::Arc;
 use std::{cmp, path};
 
 /// # Component manifest (`.cml`) reference
@@ -1014,31 +1022,141 @@ impl ValueMap for IndexMap<String, Value> {
     }
 }
 
+macro_rules! merge_spanned_vec {
+    ($self:expr, $other:expr, $field:ident) => {
+        if let Some(other_vec) = $other.$field.take() {
+            if let Some(self_vec) = $self.$field.as_mut() {
+                self_vec.extend(other_vec);
+            } else {
+                $self.$field = Some(other_vec);
+            }
+        }
+    };
+}
+
 /// # Component manifest (`.cml`) reference
 ///
 /// A `.cml` file contains a single spanned json5 object literal with the keys below.
 #[derive(Deserialize, Debug, Default, PartialEq)]
 #[serde(deny_unknown_fields)]
-pub struct SpannedDocument {
-    pub include: Option<Vec<Spanned<String>>>,
+pub struct ParsedDocument {
+    pub children: Option<Spanned<Vec<Spanned<ParsedChild>>>>,
+    pub collections: Option<Spanned<Vec<Spanned<ParsedCollection>>>>,
+    pub capabilities: Option<Spanned<Vec<Spanned<ParsedCapability>>>>,
+    pub r#use: Option<Spanned<Vec<Spanned<ParsedUse>>>>,
+    pub expose: Option<Spanned<Vec<Spanned<ParsedExpose>>>>,
+    pub offer: Option<Spanned<Vec<Spanned<ParsedOffer>>>>,
+}
 
-    pub program: Option<Spanned<Program>>,
+#[derive(Debug, Default)]
+pub struct DocumentContext {
+    pub children: Option<Vec<ContextSpanned<ContextChild>>>,
+    pub collections: Option<Vec<ContextSpanned<ContextCollection>>>,
+    pub capabilities: Option<Vec<ContextSpanned<ContextCapability>>>,
+    pub r#use: Option<Vec<ContextSpanned<ContextUse>>>,
+    pub expose: Option<Vec<ContextSpanned<ContextExpose>>>,
+    pub offer: Option<Vec<ContextSpanned<ContextOffer>>>,
+}
 
-    pub children: Option<Vec<SpannedChild>>,
+impl DocumentContext {
+    pub fn merge_from(&mut self, mut other: DocumentContext) {
+        merge_spanned_vec!(self, other, children);
+        merge_spanned_vec!(self, other, collections);
+        merge_spanned_vec!(self, other, capabilities);
+        merge_spanned_vec!(self, other, r#use);
+        merge_spanned_vec!(self, other, expose);
+        merge_spanned_vec!(self, other, offer);
+    }
 
-    pub collections: Option<Vec<Spanned<Collection>>>,
+    pub fn all_storage_with_sources<'a>(
+        &'a self,
+    ) -> HashMap<&'a BorrowedName, &'a CapabilityFromRef> {
+        if let Some(capabilities) = self.capabilities.as_ref() {
+            capabilities
+                .iter()
+                .filter_map(|cap_wrapper| {
+                    let c = &cap_wrapper.value;
 
-    pub environments: Option<Vec<Spanned<Environment>>>,
+                    let storage_span_opt = c.storage.as_ref();
+                    let source_span_opt = c.from.as_ref();
 
-    pub capabilities: Option<Vec<Spanned<SpannedCapability>>>,
+                    match (storage_span_opt, source_span_opt) {
+                        (Some(s_span), Some(f_span)) => {
+                            let name_ref: &BorrowedName = s_span.value.as_ref();
+                            let source_ref: &CapabilityFromRef = &f_span.value;
 
-    pub r#use: Option<Vec<Spanned<SpannedUse>>>,
+                            Some((name_ref, source_ref))
+                        }
+                        _ => None,
+                    }
+                })
+                .collect()
+        } else {
+            HashMap::new()
+        }
+    }
 
-    pub expose: Option<Vec<Spanned<SpannedExpose>>>,
+    pub fn all_capability_names(&self) -> HashSet<&BorrowedName> {
+        self.capabilities
+            .as_ref()
+            .map(|c| {
+                c.iter().fold(HashSet::new(), |mut acc, capability_wrapper| {
+                    let capability = &capability_wrapper.value;
+                    acc.extend(capability.names());
+                    acc
+                })
+            })
+            .unwrap_or_default()
+    }
 
-    pub offer: Option<Vec<Spanned<SpannedOffer>>>,
+    pub fn all_collection_names(&self) -> HashSet<&BorrowedName> {
+        if let Some(collections) = self.collections.as_ref() {
+            collections.iter().map(|c| c.value.name.value.as_ref()).collect()
+        } else {
+            HashSet::new()
+        }
+    }
 
-    pub facets: Option<Spanned<IndexMap<String, Value>>>,
+    pub fn all_children_names(&self) -> HashSet<&BorrowedName> {
+        if let Some(children) = self.children.as_ref() {
+            children.iter().map(|c| c.value.name.value.as_ref()).collect()
+        } else {
+            HashSet::new()
+        }
+    }
 
-    pub config: Option<Spanned<BTreeMap<ConfigKey, ConfigValueType>>>,
+    pub fn all_dictionaries<'a>(&'a self) -> HashMap<&'a BorrowedName, &'a ContextCapability> {
+        if let Some(capabilities) = self.capabilities.as_ref() {
+            capabilities
+                .iter()
+                .filter_map(|cap_wrapper| {
+                    let cap = &cap_wrapper.value;
+                    let dict_span_opt = cap.dictionary.as_ref();
+
+                    dict_span_opt.and_then(|dict_span| {
+                        let name_value = &dict_span.value;
+                        let borrowed_name: &BorrowedName = name_value.as_ref();
+                        Some((borrowed_name, cap))
+                    })
+                })
+                .collect()
+        } else {
+            HashMap::new()
+        }
+    }
+}
+
+pub fn convert_parsed_to_document(
+    parsed_doc: ParsedDocument,
+    file_arc: Arc<PathBuf>,
+    buffer: &String,
+) -> DocumentContext {
+    DocumentContext {
+        children: hydrate_list(parsed_doc.children, &file_arc, buffer),
+        collections: hydrate_list(parsed_doc.collections, &file_arc, buffer),
+        capabilities: hydrate_list(parsed_doc.capabilities, &file_arc, buffer),
+        r#use: hydrate_list(parsed_doc.r#use, &file_arc, buffer),
+        expose: hydrate_list(parsed_doc.expose, &file_arc, buffer),
+        offer: hydrate_list(parsed_doc.offer, &file_arc, buffer),
+    }
 }
