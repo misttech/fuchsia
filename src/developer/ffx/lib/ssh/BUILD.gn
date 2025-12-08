@@ -58,6 +58,7 @@ host_test_data("test_data") {
     "testdata/key_parsing/key.pub",
     "testdata/key_parsing/key_copy.pub",
     "testdata/key_parsing/non_key",
+    "testdata/key_parsing/only_private_key/only_private",
     "testdata/key_parsing/other_dir/key_other_copy.pub",
     "testdata/key_parsing/other_key.pub",
   ]

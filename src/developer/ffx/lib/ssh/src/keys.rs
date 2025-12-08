@@ -253,8 +253,12 @@ fn local_ssh_key_dirs(ctx: &EnvironmentContext) -> fho::Result<Vec<PathBuf>> {
     Ok(dirs.into_iter().collect())
 }
 
-fn find_ssh_keys_in_dirs(dirs: &Vec<PathBuf>) -> (SshKeySet, IoErrors) {
-    let mut keys = SshKeySet::new();
+fn find_keys_in_dirs(
+    dirs: &Vec<PathBuf>,
+    file_filter: impl Fn(&PathBuf) -> bool + Copy,
+    file_parser: impl Fn(String, &PathBuf) -> Vec<SshKey>,
+) -> (Vec<SshKey>, IoErrors) {
+    let mut keys = Vec::new();
     let mut io_errors = IoErrors::new();
     for dir in dirs {
         let read_dir = match fs::read_dir(&dir) {
@@ -268,10 +272,7 @@ fn find_ssh_keys_in_dirs(dirs: &Vec<PathBuf>) -> (SshKeySet, IoErrors) {
             .into_iter()
             .filter_map(|entry_res| entry_res.ok())
             .map(|e| e.path())
-            .filter(|path| {
-                path.is_file()
-                    && path.extension().and_then(|s| s.to_str()).map_or(false, |ext| ext == "pub")
-            })
+            .filter(file_filter)
         {
             let content = match fs::read_to_string(&pub_key_file) {
                 Ok(c) => c,
@@ -280,17 +281,58 @@ fn find_ssh_keys_in_dirs(dirs: &Vec<PathBuf>) -> (SshKeySet, IoErrors) {
                     continue;
                 }
             };
-            content
-                .lines()
-                .filter_map(|line| {
-                    auth_keys_filter_map(SshKeySource::File(pub_key_file.clone()), line)
-                })
-                .for_each(|k| {
-                    keys.insert(k);
-                });
+            keys.extend((file_parser)(content, &pub_key_file));
         }
     }
     (keys, io_errors)
+}
+
+fn find_ssh_keys_in_dirs(dirs: &Vec<PathBuf>) -> (SshKeySet, IoErrors) {
+    let mut keys = SshKeySet::new();
+    // Find all public keys.
+    let (public_keys, errs1) = find_keys_in_dirs(
+        dirs,
+        |path| {
+            path.is_file()
+                && path.extension().and_then(|s| s.to_str()).map_or(false, |ext| ext == "pub")
+        },
+        |content, source_file| {
+            content
+                .lines()
+                .filter_map(|line| {
+                    auth_keys_filter_map(SshKeySource::File(source_file.clone()), line)
+                })
+                .collect()
+        },
+    );
+    // Find all private keys.
+    let (private_keys, errs2) = find_keys_in_dirs(
+        dirs,
+        |path| path.is_file() && path.extension().is_none(),
+        |content, source_file| match read_public_key_from_private_string(content) {
+            Ok((key_type, headless_key)) => {
+                // This header is padding zeroes, then 0xb and "ssh-ed25519". The above function
+                // returns the public key with no header included.
+                let mut key = vec![
+                    0x00, 0x00, 0x00, 0x0b, 0x73, 0x73, 0x68, 0x2d, 0x65, 0x64, 0x32, 0x35, 0x35,
+                    0x31, 0x39, 0x00, 0x00, 0x00, 0x20,
+                ];
+                key.extend(headless_key);
+                vec![SshKey {
+                    key_type,
+                    key,
+                    comment: None,
+                    sources: [SshKeySource::File(source_file.clone())].into_iter().collect(),
+                }]
+            }
+            Err(e) => {
+                log::debug!("Unable to read SSH file {}: {e}", source_file.display());
+                Vec::new()
+            }
+        },
+    );
+    public_keys.into_iter().chain(private_keys.into_iter()).for_each(|k| keys.insert(k));
+    (keys, errs1.into_iter().chain(errs2.into_iter()).collect::<Vec<_>>().into())
 }
 
 fn get_ssh_agent_identities() -> SshKeySet {
@@ -392,6 +434,12 @@ impl IoErrors {
 
     pub fn into_iter(self) -> std::vec::IntoIter<(PathBuf, std::io::Error)> {
         self.inner.into_iter()
+    }
+}
+
+impl From<Vec<(PathBuf, std::io::Error)>> for IoErrors {
+    fn from(other: Vec<(PathBuf, std::io::Error)>) -> Self {
+        Self { inner: other }
     }
 }
 
@@ -1016,19 +1064,18 @@ fn write_private_key(
     Ok(())
 }
 
-/// Reads the public key from the private key file.
-fn read_public_key_from_private(path: &PathBuf) -> Result<(String, Vec<u8>), SshKeyInternalError> {
+fn read_public_key_from_private_string(
+    content: String,
+) -> Result<(String, Vec<u8>), SshKeyInternalError> {
     let mut started = false;
     let mut encoded: String = String::from("");
-    let priv_key_file = File::open(path)?;
-    for line_result in BufReader::new(priv_key_file).lines() {
-        let line = line_result?;
+    for line in content.lines() {
         if line.starts_with("----") && line.contains("BEGIN OPENSSH PRIVATE KEY") {
             started = true;
             continue;
         }
         if line.starts_with("----") && line.contains("END OPENSSH PRIVATE KEY") {
-            //done
+            // done
             break;
         }
         if started {
@@ -1093,6 +1140,14 @@ fn read_public_key_from_private(path: &PathBuf) -> Result<(String, Vec<u8>), Ssh
     let pubkey = read_cstring(&mut keydata)?;
 
     Ok((str::from_utf8(&key_type)?.to_string(), pubkey))
+}
+
+/// Reads the public key from the private key file.
+fn read_public_key_from_private(path: &PathBuf) -> Result<(String, Vec<u8>), SshKeyInternalError> {
+    let priv_key_file = File::open(path)?;
+    let mut contents = String::new();
+    let _ = BufReader::new(priv_key_file).read_to_string(&mut contents)?;
+    read_public_key_from_private_string(contents)
 }
 
 fn write_cstring(buf: &mut dyn Write, bytes: &[u8]) -> Result<(), std::io::Error> {
@@ -1804,5 +1859,28 @@ mod test {
             expected_key_str
         );
         assert_eq!(message, expected_msg);
+    }
+
+    const TEST_DATA_DIR_3: &str =
+        "../../src/developer/ffx/lib/ssh/testdata/key_parsing/only_private_key";
+
+    #[test]
+    fn test_ssh_agent_keys_success_with_only_private_keys() {
+        let paths = vec![PathBuf::from(TEST_DATA_DIR_3)];
+        let (keys, _) = find_ssh_keys_in_dirs(&paths);
+        // There should only be one key.
+        assert_eq!(keys.inner.len(), 1);
+        let keyset = keys.into_hashset();
+        let private_key = keyset.iter().next().unwrap();
+        assert!(private_key.sources.iter().any(|loc| *loc
+            == SshKeySource::File(PathBuf::from(
+                "../../src/developer/ffx/lib/ssh/testdata/key_parsing/only_private_key/only_private"
+            ))));
+        assert_eq!(
+            private_key.key,
+            BASE64_STANDARD
+                .decode("AAAAC3NzaC1lZDI1NTE5AAAAIH5Tm3xmV3LGi0pNDiovSVpsoLEZiNSFMJN2wxnj8DnN")
+                .unwrap()
+        );
     }
 }
