@@ -30,24 +30,28 @@ namespace {
 
 constexpr ktl::string_view kDiagnosticsPrefix = "Cannot load ELF image: ";
 
-auto PanicDiagnostics() {
-  return elfldltl::Diagnostics{elfldltl::PrintfDiagnosticsReport(__zx_panic, kDiagnosticsPrefix),
-                               elfldltl::DiagnosticsPanicFlags()};
+auto PanicDiagnostics(ktl::string_view name) {
+  return elfldltl::Diagnostics{
+      elfldltl::PrintfDiagnosticsReport(__zx_panic, kDiagnosticsPrefix, name, ": "),
+      elfldltl::DiagnosticsPanicFlags()};
 }
 
 // TODO(mcgrathr): BFD ld produces a spurious empty .eh_frame with its own
 // empty PT_LOAD segment. This is harmless enough to the actual layout,
 // but triggers a FormatWarning.
 #if 1  // def __clang__
-auto GetDiagnostics() { return PanicDiagnostics(); }
+auto GetDiagnostics(ktl::string_view name) { return PanicDiagnostics(name); }
 #else
-constexpr auto kPanicReport = elfldltl::PrintfDiagnosticsReport(__zx_panic, kDiagnosticsPrefix);
-using DiagBase = elfldltl::Diagnostics<decltype(kPanicReport), elfldltl::DiagnosticsPanicFlags>;
+constexpr auto GetPanicReport(ktl::string_view name) {
+  return elfldltl::PrintfDiagnosticsReport(__zx_panic, kDiagnosticsPrefix, name, ": ");
+}
+using DiagBase =
+    elfldltl::Diagnostics<decltype(GetPanicReport({})), elfldltl::DiagnosticsPanicFlags>;
 struct NoWarnings : public DiagBase {
-  constexpr NoWarnings() : DiagBase(kPanicReport) {}
+  constexpr explicit NoWarnings(std::string_view name) : DiagBase(GetPanicReport(name)) {}
   static constexpr auto FormatWarning = [](auto&&...) { return true; };
 };
-auto GetDiagnostics() { return NoWarnings(); }
+auto GetDiagnostics(ktl::string_view name) { return NoWarnings(name); }
 #endif
 
 }  // namespace
@@ -101,7 +105,7 @@ fit::result<ElfImage::Error> ElfImage::InitFromFile(ElfImage::BootfsDir::iterato
   name_ = file->name;
   image_.set_image(file->data);
 
-  auto diagnostics = GetDiagnostics();
+  auto diagnostics = GetDiagnostics(name_);
   auto phdr_allocator = elfldltl::NoArrayFromFile<Elf::Phdr>();
   auto headers = elfldltl::LoadHeadersFromFile<Elf>(
       // Don't check e_machine here, just stash it in machine_.
@@ -240,7 +244,7 @@ Allocation ElfImage::Load(memalloc::Type type, ktl::optional<uint64_t> relocatio
 void ElfImage::Relocate() {
   ZX_DEBUG_ASSERT(load_bias_);  // The load address has already been chosen.
   if (!dynamic_.empty()) {
-    auto diagnostics = GetDiagnostics();
+    auto diagnostics = GetDiagnostics(name_);
     elfldltl::RelocationInfo<Elf> reloc_info;
     elfldltl::SymbolInfo<Elf> symbol_info;
     elfldltl::DecodeDynamic(diagnostics, image_, dynamic_,
@@ -290,7 +294,7 @@ void ElfImage::InitSelf(ktl::string_view name, elfldltl::DirectMemory& memory, u
   image_.set_base(memory.base());
   load_bias_ = load_bias;
 
-  auto diag = PanicDiagnostics();
+  auto diag = PanicDiagnostics(name);
   ZX_ASSERT(load_info_.AddSegment(diag, AddressSpace::kPageSize, load_segment));
 
   elfldltl::ElfNoteSegment<> notes(build_id_note);
@@ -345,7 +349,7 @@ fit::result<ElfImage::Error> ElfImage::SeparateZeroFill() {
 
     if (zero_fill_size > 0) {
       // Insert a second segment for the whole pages of zero-fill.
-      auto diagnostics = GetDiagnostics();
+      auto diagnostics = GetDiagnostics(name_);
       auto inserted = load_info_.segments().insert(
           diagnostics, "ELF segments for zero-fill normalization", ++it,
           LoadInfo::ZeroFillSegment{zero_fill_vaddr, zero_fill_size});
