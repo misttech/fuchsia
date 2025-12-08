@@ -90,17 +90,9 @@ void add_alloc_stat(void* caller, size_t size, void* heap_ptr) {
 
 #if KERNEL_MEMORY_PROFILER
   {
-    Backtrace bt;
-    Thread::Current::GetBacktrace(bt);
-    Guard<SpinLock, IrqSave> guard(stat_lock::Get());
-    auto [counters, handle] = alloc_map.try_get({bt.data(), bt.size()});
-    if (counters) {
-      const uint32_t act_size = cmpct_get_size(heap_ptr);  // Get rounded up size.
-      counters->allocate(act_size);
-      cmpct_set_cookie(heap_ptr, static_cast<uint32_t>(handle));
-    } else {
-      alloc_map.event_dropped();
-    }
+    // Get rounded up size.
+    const uint32_t act_size = cmpct_get_size(heap_ptr);
+    cmpct_set_cookie(heap_ptr, profile_track_alloc(act_size));
     return;  // Not compatible with HEAP_COLLECT_STATS because both use the cookie.
   }
 #endif
@@ -151,14 +143,7 @@ void add_free_stat(void* heap_ptr) {
   {
     const uint32_t handle = cmpct_get_cookie(heap_ptr);
     const uint32_t size = cmpct_get_size(heap_ptr);
-    Guard<SpinLock, IrqSave> guard(stat_lock::Get());
-    heap_profile::Counters* counters = alloc_map.try_by_handle(handle);
-    if (counters) {
-      counters->deallocate(size);
-    } else {
-      alloc_map.event_dropped();
-    }
-
+    profile_track_free(handle, size);
     return;  // Not compatible with HEAP_COLLECT_STATS.
   }
 #endif
@@ -323,6 +308,33 @@ void get_heap_profile(const void** ptr, size_t* size) {
 #else
   *ptr = nullptr;
   *size = 0;
+#endif
+}
+
+uint32_t profile_track_alloc(size_t size) {
+#if KERNEL_MEMORY_PROFILER
+  Backtrace bt;
+  Thread::Current::GetBacktrace(bt);
+  Guard<SpinLock, IrqSave> guard(stat_lock::Get());
+  auto [counters, handle] = alloc_map.try_get({bt.data(), bt.size()});
+  if (counters) {
+    counters->allocate(size);
+    return static_cast<uint32_t>(handle);
+  }
+  alloc_map.event_dropped();
+#endif
+  return 0;
+}
+
+void profile_track_free(uint32_t handle, size_t size) {
+#if KERNEL_MEMORY_PROFILER
+  Guard<SpinLock, IrqSave> guard(stat_lock::Get());
+  heap_profile::Counters* counters = alloc_map.try_by_handle(handle);
+  if (counters) {
+    counters->deallocate(size);
+  } else {
+    alloc_map.event_dropped();
+  }
 #endif
 }
 

@@ -41,6 +41,14 @@ void heap_init(void);
 // Returns the address of the heap profile buffer if it exists, and zero otherwise.
 void get_heap_profile(const void** ptr, size_t* size);
 
+// Tracks an allocation of the given |size| in the heap profiler. This can be used to make visible
+// allocations that, while not from the general kernel heap, are notionally heap-like or from
+// separate slab / other non-general heap allocators.
+// The return value is a cookie that, along with |size| can be passed to |profile_track_free| to
+// indicate deallocation.
+uint32_t profile_track_alloc(size_t size);
+void profile_track_free(uint32_t handle, size_t size);
+
 #endif  // _KERNEL
 
 __END_CDECLS
