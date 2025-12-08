@@ -21,6 +21,7 @@ from honeydew.auxiliary_devices.usb_power_hub import (
 from honeydew.fuchsia_device import fuchsia_device
 from honeydew.typing import custom_types
 from mobly import base_test, signals, test_runner
+from mobly.records import TestResultRecord
 from mobly_controller import fuchsia_device as fuchsia_device_mobly_controller
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
@@ -232,7 +233,7 @@ class FuchsiaBaseTest(base_test.BaseTestClass):
             )
             self._collect_snapshot(directory=self._teardown_class_artifacts)
 
-    def on_fail(self, _) -> None:  # type: ignore[no-untyped-def]
+    def on_fail(self, record: TestResultRecord) -> None:
         """on_fail is called once when a test case fails.
 
         It does the following things:

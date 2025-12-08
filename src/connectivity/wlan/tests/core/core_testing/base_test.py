@@ -237,12 +237,6 @@ class ConnectionBaseTestClass(AsyncAdapter, base_test.BaseTestClass):
         return self.__access_point
 
     def on_fail(self, record: TestResultRecord) -> None:
-        """A function that is executed upon a test failure.
-
-        Args:
-        record: A copy of the test record for this test, containing all information of
-            the test execution including exception objects.
-        """
         super().on_fail(record)
 
         # Save a snapshot for debugging
