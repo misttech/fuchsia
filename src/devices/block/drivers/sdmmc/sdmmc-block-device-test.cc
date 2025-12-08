@@ -13,16 +13,13 @@
 #include <fidl/fuchsia.power.system/cpp/test_base.h>
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/async-loop/default.h>
-#include <lib/async_patterns/testing/cpp/dispatcher_bound.h>
 #include <lib/ddk/metadata.h>
 #include <lib/driver/compat/cpp/device_server.h>
 #include <lib/driver/component/cpp/driver_export.h>
 #include <lib/driver/metadata/cpp/metadata_server.h>
 #include <lib/driver/power/cpp/testing/fake_element_control.h>
 #include <lib/driver/testing/cpp/driver_runtime.h>
-#include <lib/driver/testing/cpp/internal/driver_lifecycle.h>
-#include <lib/driver/testing/cpp/internal/test_environment.h>
-#include <lib/driver/testing/cpp/test_node.h>
+#include <lib/driver/testing/cpp/driver_test.h>
 #include <lib/fdio/cpp/caller.h>
 #include <lib/fdio/watcher.h>
 #include <lib/fidl/cpp/wire/client.h>
@@ -262,23 +259,79 @@ class FakePowerTokenProvider : public fidl::Server<fuchsia_hardware_power::Power
   fidl::ServerBindingGroup<fuchsia_hardware_power::PowerTokenProvider> bindings_;
 };
 
-struct IncomingNamespace {
-  fdf_testing::TestNode node{"root"};
-  fdf_testing::internal::TestEnvironment env{fdf::Dispatcher::GetCurrent()->get()};
+class TestEnvironment : public fdf_testing::Environment {
+ public:
+  zx::result<> Serve(fdf::OutgoingDirectory& to_driver_vfs) override {
+    zx::result result =
+        metadata_server.Serve(to_driver_vfs, fdf::Dispatcher::GetCurrent()->async_dispatcher());
+    if (result.is_error()) {
+      return result.take_error();
+    }
+
+    // Serve (fake) power_broker.
+    result = to_driver_vfs.component().AddUnmanagedProtocol<fuchsia_power_broker::Topology>(
+        power_broker.CreateHandler());
+    if (result.is_error()) {
+      return result.take_error();
+    }
+
+    // Serve (fake) power_token_provider.
+    result = to_driver_vfs.AddService<fuchsia_hardware_power::PowerTokenService>(
+        std::move(power_token_provider.GetInstanceHandler()), "default");
+    if (result.is_error()) {
+      return result.take_error();
+    }
+
+    // Serve (fake) cpu_element_manager.
+    result =
+        to_driver_vfs.component().AddUnmanagedProtocol<fuchsia_power_system::CpuElementManager>(
+            cpu_element_manager.CreateHandler());
+    if (result.is_error()) {
+      return result.take_error();
+    }
+
+    // Add our package
+    auto [client, server] = fidl::Endpoints<fuchsia_io::Directory>::Create();
+    zx_status_t status = fdio_open3("/pkg/", static_cast<uint64_t>(fuchsia_io::wire::kPermReadable),
+                                    server.TakeChannel().release());
+    if (status != ZX_OK) {
+      return zx::error(status);
+    }
+    result = to_driver_vfs.AddDirectory(std::move(client), "pkg");
+    if (result.is_error()) {
+      return result.take_error();
+    }
+
+    return zx::ok();
+  }
+
+  void SetMetadata(bool removable, fuchsia_hardware_sdmmc::SdmmcHostPrefs speed_capabilities) {
+    std::ignore = metadata_server.SetMetadata(fuchsia_hardware_sdmmc::SdmmcMetadata{{
+        .speed_capabilities = speed_capabilities,
+        .enable_cache = true,
+        .removable = removable,
+        .max_command_packing = 16,
+        .use_fidl = false,
+    }});
+  }
+
   fdf_metadata::MetadataServer<fuchsia_hardware_sdmmc::SdmmcMetadata> metadata_server;
   FakePowerBroker power_broker;
   FakePowerTokenProvider power_token_provider;
   FakeCpuElementManager cpu_element_manager;
 };
 
+class TestConfig final {
+ public:
+  using DriverType = TestSdmmcRootDevice;
+  using EnvironmentType = TestEnvironment;
+};
+
 // WARNING: Don't use this test as a template for new tests as it uses the old driver testing
 // library.
 class SdmmcBlockDeviceTest : public zxtest::TestWithParam<bool> {
  public:
-  SdmmcBlockDeviceTest()
-      : env_dispatcher_(runtime_.StartBackgroundDispatcher()),
-        incoming_(env_dispatcher_->async_dispatcher(), std::in_place),
-        loop_(&kAsyncLoopConfigAttachToCurrentThread) {}
+  SdmmcBlockDeviceTest() {}
 
   void SetUp() override {
     sdmmc_.Reset();
@@ -321,10 +374,9 @@ class SdmmcBlockDeviceTest : public zxtest::TestWithParam<bool> {
   }
 
   void TearDown() override {
-    if (block_device_) {
-      zx::result prepare_stop_result = runtime_.RunToCompletion(dut_.PrepareStop());
-      EXPECT_OK(prepare_stop_result);
-      EXPECT_OK(dut_.Stop());
+    if (dut_) {
+      auto stop_result = driver_test_.StopDriver();
+      EXPECT_EQ(ZX_OK, stop_result.status_value());
     }
   }
 
@@ -363,80 +415,30 @@ class SdmmcBlockDeviceTest : public zxtest::TestWithParam<bool> {
     }
 
     // Initialize driver test environment.
-    fuchsia_driver_framework::DriverStartArgs start_args;
-    auto metadata = CreateMetadata(/*removable=*/is_sd, speed_capabilities);
-    incoming_.SyncCall([&](IncomingNamespace* incoming) mutable {
-      auto start_args_result = incoming->node.CreateStartArgsAndServe();
-      ASSERT_TRUE(start_args_result.is_ok());
-      start_args = std::move(start_args_result->start_args);
-      outgoing_directory_client_ = std::move(start_args_result->outgoing_directory_client);
+    driver_test_.RunInEnvironmentTypeContext(
+        [&](TestEnvironment& env) mutable { env.SetMetadata(is_sd, speed_capabilities); });
 
-      ASSERT_OK(incoming->env.Initialize(std::move(start_args_result->incoming_directory_server)));
-
-      // Serve metadata.
-      ASSERT_OK(incoming->metadata_server.SetMetadata(metadata));
-      ASSERT_OK(incoming->metadata_server.Serve(incoming->env.incoming_directory(),
-                                                fdf::Dispatcher::GetCurrent()->async_dispatcher()));
-
-      if (supply_power_framework) {
-        // Serve (fake) power_broker.
-        {
-          auto result = incoming->env.incoming_directory()
-                            .component()
-                            .AddUnmanagedProtocol<fuchsia_power_broker::Topology>(
-                                incoming->power_broker.CreateHandler());
-          ASSERT_TRUE(result.is_ok());
-        }
-
-        // Serve (fake) power_token_provider.
-        {
-          auto result =
-              incoming->env.incoming_directory()
-                  .AddService<fuchsia_hardware_power::PowerTokenService>(
-                      std::move(incoming->power_token_provider.GetInstanceHandler()), "default");
-          ASSERT_TRUE(result.is_ok());
-        }
-
-        // Serve (fake) cpu_element_manager.
-        {
-          auto result = incoming->env.incoming_directory()
-                            .component()
-                            .AddUnmanagedProtocol<fuchsia_power_system::CpuElementManager>(
-                                incoming->cpu_element_manager.CreateHandler());
-          ASSERT_TRUE(result.is_ok());
-        }
-
-        // Add our package
-        {
-          auto [client, server] = fidl::Endpoints<fuchsia_io::Directory>::Create();
-          ASSERT_OK(fdio_open3("/pkg/", static_cast<uint64_t>(fuchsia_io::wire::kPermReadable),
-                               server.TakeChannel().release()));
-          ASSERT_OK(incoming->env.incoming_directory().AddDirectory(std::move(client), "pkg"));
-        }
-      }
-    });
-
-    {
-      sdmmc_config::Config fake_config;
-      fake_config.enable_suspend() = supply_power_framework;
-      fake_config.storage_power_management_enabled() = supply_power_framework;
-      start_args.config(fake_config.ToVmo());
-    }
-
-    // Start dut_.
-    auto result = runtime_.RunToCompletion(dut_.Start(std::move(start_args)));
-    if (!result.is_ok()) {
+    // Start driver
+    zx::result result =
+        driver_test_.StartDriverWithCustomStartArgs([&](fdf::DriverStartArgs& args) {
+          sdmmc_config::Config fake_config;
+          fake_config.enable_suspend() = supply_power_framework;
+          fake_config.storage_power_management_enabled() = supply_power_framework;
+          args.config(fake_config.ToVmo());
+        });
+    if (result.is_error()) {
       return result.status_value();
     }
+    dut_ = driver_test_.driver();
 
-    const std::unique_ptr<SdmmcBlockDevice>* block_device =
-        std::get_if<std::unique_ptr<SdmmcBlockDevice>>(&dut_->child_device());
+    auto* block_device = std::get_if<std::unique_ptr<SdmmcBlockDevice>>(&dut_->child_device());
     if (block_device == nullptr) {
       return ZX_ERR_BAD_STATE;
     }
     block_device_ = block_device->get();
 
     block_device_->SetBlockInfo(FakeSdmmcDevice::kBlockSize, FakeSdmmcDevice::kBlockCount);
+
     for (size_t i = 0; i < (FakeSdmmcDevice::kBlockSize / sizeof(kTestData)); i++) {
       test_block_.insert(test_block_.end(), kTestData, kTestData + sizeof(kTestData));
     }
@@ -460,35 +462,13 @@ class SdmmcBlockDeviceTest : public zxtest::TestWithParam<bool> {
   // Returns a RemoteBlockDevice for the BlockServer interface.
   zx::result<std::unique_ptr<block_client::RemoteBlockDevice>> GetRemoteBlockDeviceForBlockServer(
       const char* instance_name) {
-    auto [service_client, service_server] = fidl::Endpoints<fuchsia_io::Directory>::Create();
-    std::string path = std::string(component::kServiceDirectory) + "/" +
-                       fuchsia_hardware_block_volume::Service::Name;
-    if (zx_status_t status =
-            fdio_open3_at(outgoing_directory_client_.channel().get(), path.c_str(),
-                          static_cast<uint64_t>(fuchsia_io::wire::Flags::kProtocolDirectory),
-                          service_server.TakeChannel().release());
-        status != ZX_OK) {
-      return zx::error(status);
+    zx::result client =
+        driver_test_.Connect<fuchsia_hardware_block_volume::Service::Volume>(instance_name);
+    if (client.is_error()) {
+      return client.take_error();
     }
 
-    fbl::unique_fd service_dir;
-    if (zx_status_t status = fdio_fd_create(service_client.TakeChannel().release(),
-                                            service_dir.reset_and_get_address());
-        status != ZX_OK) {
-      return zx::error(status);
-    }
-
-    fdio_cpp::FdioCaller service_dir_caller(std::move(service_dir));
-    auto [volume_client, volume_server] =
-        fidl::Endpoints<fuchsia_hardware_block_volume::Volume>::Create();
-    std::string volume_path = std::string(instance_name) + "/volume";
-    if (zx_status_t status = fdio_open3_at(service_dir_caller.borrow_channel(), volume_path.c_str(),
-                                           0, volume_server.TakeChannel().release());
-        status != ZX_OK) {
-      return zx::error(status);
-    }
-
-    return block_client::RemoteBlockDevice::Create(std::move(volume_client));
+    return block_client::RemoteBlockDevice::Create(std::move(client.value()));
   }
 
  protected:
@@ -521,24 +501,13 @@ class SdmmcBlockDeviceTest : public zxtest::TestWithParam<bool> {
     }
   }
 
-  static fuchsia_hardware_sdmmc::SdmmcMetadata CreateMetadata(
-      bool removable, fuchsia_hardware_sdmmc::SdmmcHostPrefs speed_capabilities) {
-    return fuchsia_hardware_sdmmc::SdmmcMetadata{{
-        .speed_capabilities = speed_capabilities,
-        .enable_cache = true,
-        .removable = removable,
-        .max_command_packing = 16,
-        .use_fidl = false,
-    }};
-  }
-
   void BindRpmbClient() {
     auto [client_end, server_end] = fidl::Endpoints<fuchsia_hardware_rpmb::Rpmb>::Create();
 
-    binding_ = fidl::BindServer(loop_.dispatcher(), std::move(server_end),
+    auto dispatcher = driver_test_.runtime().StartBackgroundDispatcher()->async_dispatcher();
+    binding_ = fidl::BindServer(dispatcher, std::move(server_end),
                                 block_device_->child_rpmb_device().get());
-    ASSERT_OK(loop_.StartThread("rpmb-client-thread"));
-    rpmb_client_.Bind(std::move(client_end), loop_.dispatcher());
+    rpmb_client_.Bind(std::move(client_end), dispatcher);
   }
 
   void MakeBlockOp(uint8_t opcode, uint32_t length, uint64_t offset,
@@ -630,18 +599,14 @@ class SdmmcBlockDeviceTest : public zxtest::TestWithParam<bool> {
   }
 
   FakeSdmmcDevice& sdmmc_ = TestSdmmcRootDevice::sdmmc_;
-  fdf_testing::DriverRuntime runtime_;
-  fdf::UnownedSynchronizedDispatcher env_dispatcher_;
-  async_patterns::TestDispatcherBound<IncomingNamespace> incoming_;
-  fdf_testing::internal::DriverUnderTest<TestSdmmcRootDevice> dut_;
-  SdmmcBlockDevice* block_device_;
+  fdf_testing::ForegroundDriverTest<TestConfig> driver_test_;
+  TestSdmmcRootDevice* dut_ = nullptr;
+  SdmmcBlockDevice* block_device_ = nullptr;
   ddk::BlockImplProtocolClient user_;
   ddk::BlockImplProtocolClient boot1_;
   ddk::BlockImplProtocolClient boot2_;
   fidl::WireSharedClient<fuchsia_hardware_rpmb::Rpmb> rpmb_client_;
   std::atomic<bool> run_threads_ = true;
-  async::Loop loop_;
-  fidl::ClientEnd<fuchsia_io::Directory> outgoing_directory_client_;
 
  private:
   static constexpr uint8_t kTestData[] = {
@@ -715,7 +680,7 @@ TEST_P(SdmmcBlockDeviceTest, BlockImplQueue) {
   user_.Queue(op4->operation(), OperationCallback, &ctx);
   user_.Queue(op5->operation(), OperationCallback, &ctx);
 
-  runtime_.PerformBlockingWork(
+  driver_test_.runtime().PerformBlockingWork(
       [&] { EXPECT_OK(sync_completion_wait(&ctx.completion, zx::duration::infinite().get())); });
 
   EXPECT_TRUE(op1->private_storage()->completed);
@@ -770,7 +735,7 @@ TEST_P(SdmmcBlockDeviceTest, BlockImplQueueOutOfRange) {
   user_.Queue(op6->operation(), OperationCallback, &ctx);
   user_.Queue(op7->operation(), OperationCallback, &ctx);
 
-  runtime_.PerformBlockingWork(
+  driver_test_.runtime().PerformBlockingWork(
       [&] { EXPECT_OK(sync_completion_wait(&ctx.completion, zx::duration::infinite().get())); });
 
   EXPECT_TRUE(op1->private_storage()->completed);
@@ -823,7 +788,7 @@ TEST_P(SdmmcBlockDeviceTest, NoCmd12ForSdBlockTransfer) {
   user_.Queue(op4->operation(), OperationCallback, &ctx);
   user_.Queue(op5->operation(), OperationCallback, &ctx);
 
-  runtime_.PerformBlockingWork(
+  driver_test_.runtime().PerformBlockingWork(
       [&] { EXPECT_OK(sync_completion_wait(&ctx.completion, zx::duration::infinite().get())); });
 
   const std::map<uint32_t, uint32_t> command_counts = sdmmc_.command_counts();
@@ -863,7 +828,7 @@ TEST_P(SdmmcBlockDeviceTest, NoCmd12ForMmcBlockTransfer) {
   user_.Queue(op4->operation(), OperationCallback, &ctx);
   user_.Queue(op5->operation(), OperationCallback, &ctx);
 
-  runtime_.PerformBlockingWork(
+  driver_test_.runtime().PerformBlockingWork(
       [&] { EXPECT_OK(sync_completion_wait(&ctx.completion, zx::duration::infinite().get())); });
 
   const std::map<uint32_t, uint32_t> command_counts = sdmmc_.command_counts();
@@ -900,7 +865,7 @@ TEST_P(SdmmcBlockDeviceTest, ErrorsPropagate) {
   user_.Queue(op4->operation(), OperationCallback, &ctx);
   user_.Queue(op5->operation(), OperationCallback, &ctx);
 
-  runtime_.PerformBlockingWork(
+  driver_test_.runtime().PerformBlockingWork(
       [&] { EXPECT_OK(sync_completion_wait(&ctx.completion, zx::duration::infinite().get())); });
 
   EXPECT_TRUE(op1->private_storage()->completed);
@@ -931,7 +896,7 @@ TEST_P(SdmmcBlockDeviceTest, SendCmd12OnCommandFailure) {
 
   user_.Queue(op1->operation(), OperationCallback, &ctx1);
 
-  runtime_.PerformBlockingWork(
+  driver_test_.runtime().PerformBlockingWork(
       [&] { EXPECT_OK(sync_completion_wait(&ctx1.completion, zx::duration::infinite().get())); });
   EXPECT_TRUE(op1->private_storage()->completed);
   EXPECT_EQ(sdmmc_.command_counts().at(SDMMC_STOP_TRANSMISSION), 10);
@@ -952,7 +917,7 @@ TEST_P(SdmmcBlockDeviceTest, SendCmd12OnCommandFailureWhenAutoCmd12) {
 
   user_.Queue(op2->operation(), OperationCallback, &ctx2);
 
-  runtime_.PerformBlockingWork(
+  driver_test_.runtime().PerformBlockingWork(
       [&] { EXPECT_OK(sync_completion_wait(&ctx2.completion, zx::duration::infinite().get())); });
   EXPECT_TRUE(op2->private_storage()->completed);
   EXPECT_EQ(sdmmc_.command_counts().at(SDMMC_STOP_TRANSMISSION), 10);
@@ -994,7 +959,7 @@ TEST_P(SdmmcBlockDeviceTest, Trim) {
   user_.Queue(op6->operation(), OperationCallback, &ctx);
   user_.Queue(op7->operation(), OperationCallback, &ctx);
 
-  runtime_.PerformBlockingWork(
+  driver_test_.runtime().PerformBlockingWork(
       [&] { EXPECT_OK(sync_completion_wait(&ctx.completion, zx::duration::infinite().get())); });
 
   ASSERT_NO_FATAL_FAILURE(CheckVmo(op3->private_storage()->mapper, 10, 0));
@@ -1060,7 +1025,7 @@ TEST_P(SdmmcBlockDeviceTest, TrimErrors) {
   user_.Queue(op4->operation(), OperationCallback, &ctx);
   user_.Queue(op5->operation(), OperationCallback, &ctx);
 
-  runtime_.PerformBlockingWork(
+  driver_test_.runtime().PerformBlockingWork(
       [&] { EXPECT_OK(sync_completion_wait(&ctx.completion, zx::duration::infinite().get())); });
 
   EXPECT_OK(op1->private_storage()->status);
@@ -1181,7 +1146,7 @@ TEST_P(SdmmcBlockDeviceTest, CompleteTransactions) {
   user_.Queue(op4->operation(), OperationCallback, &ctx);
   user_.Queue(op5->operation(), OperationCallback, &ctx);
 
-  runtime_.PerformBlockingWork(
+  driver_test_.runtime().PerformBlockingWork(
       [&] { EXPECT_OK(sync_completion_wait(&ctx.completion, zx::duration::infinite().get())); });
 
   EXPECT_TRUE(op1->private_storage()->completed);
@@ -1219,12 +1184,11 @@ TEST_P(SdmmcBlockDeviceTest, CompleteTransactionsOnStop) {
   user_.Queue(op4->operation(), OperationCallback, &ctx);
   user_.Queue(op5->operation(), OperationCallback, &ctx);
 
-  zx::result prepare_stop_result = runtime_.RunToCompletion(dut_.PrepareStop());
-  EXPECT_OK(prepare_stop_result);
-  EXPECT_OK(dut_.Stop());
+  EXPECT_OK(driver_test_.StopDriver());
+  dut_ = nullptr;
   block_device_ = nullptr;
 
-  runtime_.PerformBlockingWork(
+  driver_test_.runtime().PerformBlockingWork(
       [&] { EXPECT_OK(sync_completion_wait(&ctx.completion, zx::duration::infinite().get())); });
 
   EXPECT_TRUE(op1->private_storage()->completed);
@@ -1324,7 +1288,7 @@ TEST_P(SdmmcBlockDeviceTest, AccessBootPartitions) {
   });
 
   boot1_.Queue(op1->operation(), OperationCallback, &ctx);
-  runtime_.PerformBlockingWork(
+  driver_test_.runtime().PerformBlockingWork(
       [&] { EXPECT_OK(sync_completion_wait(&ctx.completion, zx::duration::infinite().get())); });
 
   ctx.expected_operations.store(1);
@@ -1338,7 +1302,7 @@ TEST_P(SdmmcBlockDeviceTest, AccessBootPartitions) {
   });
 
   boot2_.Queue(op2->operation(), OperationCallback, &ctx);
-  runtime_.PerformBlockingWork(
+  driver_test_.runtime().PerformBlockingWork(
       [&] { EXPECT_OK(sync_completion_wait(&ctx.completion, zx::duration::infinite().get())); });
 
   ctx.expected_operations.store(1);
@@ -1352,7 +1316,7 @@ TEST_P(SdmmcBlockDeviceTest, AccessBootPartitions) {
   });
 
   user_.Queue(op3->operation(), OperationCallback, &ctx);
-  runtime_.PerformBlockingWork(
+  driver_test_.runtime().PerformBlockingWork(
       [&] { EXPECT_OK(sync_completion_wait(&ctx.completion, zx::duration::infinite().get())); });
 
   EXPECT_TRUE(op1->private_storage()->completed);
@@ -1396,7 +1360,7 @@ TEST_P(SdmmcBlockDeviceTest, BootPartitionRepeatedAccess) {
   });
 
   boot2_.Queue(op1->operation(), OperationCallback, &ctx);
-  runtime_.PerformBlockingWork(
+  driver_test_.runtime().PerformBlockingWork(
       [&] { EXPECT_OK(sync_completion_wait(&ctx.completion, zx::duration::infinite().get())); });
 
   ctx.expected_operations.store(2);
@@ -1408,7 +1372,7 @@ TEST_P(SdmmcBlockDeviceTest, BootPartitionRepeatedAccess) {
   boot2_.Queue(op2->operation(), OperationCallback, &ctx);
   boot2_.Queue(op3->operation(), OperationCallback, &ctx);
 
-  runtime_.PerformBlockingWork(
+  driver_test_.runtime().PerformBlockingWork(
       [&] { EXPECT_OK(sync_completion_wait(&ctx.completion, zx::duration::infinite().get())); });
 
   EXPECT_TRUE(op1->private_storage()->completed);
@@ -1456,7 +1420,7 @@ TEST_P(SdmmcBlockDeviceTest, AccessBootPartitionOutOfRange) {
   boot1_.Queue(op5->operation(), OperationCallback, &ctx);
   boot1_.Queue(op6->operation(), OperationCallback, &ctx);
 
-  runtime_.PerformBlockingWork(
+  driver_test_.runtime().PerformBlockingWork(
       [&] { EXPECT_OK(sync_completion_wait(&ctx.completion, zx::duration::infinite().get())); });
 
   EXPECT_TRUE(op1->private_storage()->completed);
@@ -2164,7 +2128,7 @@ TEST_P(SdmmcBlockDeviceTest, RpmbRequestsGetToRun) {
 
   // Choose to run QueueBlockOps() using the foreground dispatcher, while
   // fuchsia_hardware_sdmmc::Sdmmc is being served by the background dispatcher.
-  runtime_.PerformBlockingWork([this] { QueueBlockOps(); });
+  driver_test_.runtime().PerformBlockingWork([this] { QueueBlockOps(); });
   EXPECT_EQ(thrd_join(rpmb_thread, nullptr), thrd_success);
 }
 
@@ -2230,7 +2194,7 @@ TEST_P(SdmmcBlockDeviceTest, BlockOpsGetToRun) {
     user_.Queue(bop, op_callback, &context);
   }
 
-  runtime_.PerformBlockingWork(
+  driver_test_.runtime().PerformBlockingWork(
       [&] { sync_completion_wait(&context.completion, zx::duration::infinite().get()); });
 
   run_threads_.store(false);
@@ -2383,7 +2347,7 @@ TEST_P(SdmmcBlockDeviceTest, Inspect) {
 
   user_.Queue(op1->operation(), OperationCallback, &ctx1);
 
-  runtime_.PerformBlockingWork(
+  driver_test_.runtime().PerformBlockingWork(
       [&] { EXPECT_OK(sync_completion_wait(&ctx1.completion, zx::duration::infinite().get())); });
 
   EXPECT_TRUE(op1->private_storage()->completed);
@@ -2413,7 +2377,7 @@ TEST_P(SdmmcBlockDeviceTest, Inspect) {
 
   user_.Queue(op2->operation(), OperationCallback, &ctx2);
 
-  runtime_.PerformBlockingWork(
+  driver_test_.runtime().PerformBlockingWork(
       [&] { EXPECT_OK(sync_completion_wait(&ctx2.completion, zx::duration::infinite().get())); });
 
   EXPECT_TRUE(op2->private_storage()->completed);
@@ -2482,14 +2446,16 @@ TEST_P(SdmmcBlockDeviceTest, PowerSuspendResume) {
                               });
 
   ASSERT_OK(StartDriverForMmc(/*speed_capabilities=*/{}, /*supply_power_framework=*/true));
-
-  EXPECT_TRUE(incoming_.SyncCall([](IncomingNamespace* incoming) {
-    return incoming->cpu_element_manager.execution_state_dependency_added();
-  }));
-
-  fidl::ServerEnd lease_control_server_end = incoming_.SyncCall([](IncomingNamespace* incoming) {
-    return incoming->power_broker.hardware_power_lessor_->TakeLeaseControlServerEnd();
+  bool dependency_added = driver_test_.RunInEnvironmentTypeContext<bool>([](TestEnvironment& env) {
+    return env.cpu_element_manager.execution_state_dependency_added();
   });
+  EXPECT_TRUE(dependency_added);
+
+  auto lease_control_server_end =
+      driver_test_.RunInEnvironmentTypeContext<fidl::ServerEnd<fuchsia_power_broker::LeaseControl>>(
+          [](TestEnvironment& env) {
+            return env.power_broker.hardware_power_lessor_->TakeLeaseControlServerEnd();
+          });
   ASSERT_TRUE(lease_control_server_end.is_valid());
 
   inspect::InspectTestHelper inspector;
@@ -2513,15 +2479,15 @@ TEST_P(SdmmcBlockDeviceTest, PowerSuspendResume) {
 
   libsync::Completion set_level_complete;
   // Trigger power level change to kPowerLevelOff.
-  incoming_.SyncCall([&](IncomingNamespace* incoming) {
-    incoming->power_broker.hardware_power_element_runner_client_
+  driver_test_.RunInEnvironmentTypeContext([&](TestEnvironment& env) {
+    env.power_broker.hardware_power_element_runner_client_
         ->SetLevel(SdmmcBlockDevice::kPowerLevelOff)
         .ThenExactlyOnce([&](fidl::Result<fuchsia_power_broker::ElementRunner::SetLevel> result) {
           EXPECT_TRUE(result.is_ok());
           set_level_complete.Signal();
         });
   });
-  runtime_.PerformBlockingWork([&] { set_level_complete.Wait(); });
+  driver_test_.runtime().PerformBlockingWork([&] { set_level_complete.Wait(); });
 
   // The lease should still be held after moving to kPowerLevelOff.
   EXPECT_EQ(lease_control_server_end.channel().wait_one(ZX_CHANNEL_PEER_CLOSED,
@@ -2542,15 +2508,16 @@ TEST_P(SdmmcBlockDeviceTest, PowerSuspendResume) {
 
   set_level_complete.Reset();
   // Trigger power level change to kPowerLevelBoot.
-  incoming_.SyncCall([&](IncomingNamespace* incoming) {
-    incoming->power_broker.hardware_power_element_runner_client_
+
+  driver_test_.RunInEnvironmentTypeContext([&](TestEnvironment& env) {
+    env.power_broker.hardware_power_element_runner_client_
         ->SetLevel(SdmmcBlockDevice::kPowerLevelBoot)
         .ThenExactlyOnce([&](fidl::Result<fuchsia_power_broker::ElementRunner::SetLevel> result) {
           EXPECT_TRUE(result.is_ok());
           set_level_complete.Signal();
         });
   });
-  runtime_.PerformBlockingWork([&] { set_level_complete.Wait(); });
+  driver_test_.runtime().PerformBlockingWork([&] { set_level_complete.Wait(); });
 
   // The lease should still be held after moving to kPowerLevelBoot.
   EXPECT_EQ(lease_control_server_end.channel().wait_one(ZX_CHANNEL_PEER_CLOSED,
@@ -2571,8 +2538,9 @@ TEST_P(SdmmcBlockDeviceTest, PowerSuspendResume) {
   set_level_complete.Reset();
   // Trigger power level change to kPowerLevelOn. This should be a no-op other than dropping the
   // lease.
-  incoming_.SyncCall([&](IncomingNamespace* incoming) {
-    incoming->power_broker.hardware_power_element_runner_client_
+
+  driver_test_.RunInEnvironmentTypeContext([&](TestEnvironment& env) {
+    env.power_broker.hardware_power_element_runner_client_
         ->SetLevel(SdmmcBlockDevice::kPowerLevelOn)
         .ThenExactlyOnce([&](fidl::Result<fuchsia_power_broker::ElementRunner::SetLevel> result) {
           EXPECT_TRUE(result.is_ok());
@@ -2581,16 +2549,17 @@ TEST_P(SdmmcBlockDeviceTest, PowerSuspendResume) {
   });
 
   // Wait until the lease has been dropped.
-  runtime_.PerformBlockingWork([&, lease_control_server_end = std::move(lease_control_server_end)] {
-    set_level_complete.Wait();
+  driver_test_.runtime().PerformBlockingWork(
+      [&, lease_control_server_end = std::move(lease_control_server_end)] {
+        set_level_complete.Wait();
 
-    zx_status_t status;
-    zx_signals_t observed;
-    do {
-      status = lease_control_server_end.channel().wait_one(ZX_CHANNEL_PEER_CLOSED,
-                                                           zx::time::infinite_past(), &observed);
-    } while (status != ZX_OK || !(observed & ZX_CHANNEL_PEER_CLOSED));
-  });
+        zx_status_t status;
+        zx_signals_t observed;
+        do {
+          status = lease_control_server_end.channel().wait_one(
+              ZX_CHANNEL_PEER_CLOSED, zx::time::infinite_past(), &observed);
+        } while (status != ZX_OK || !(observed & ZX_CHANNEL_PEER_CLOSED));
+      });
 
   inspector.ReadInspect(block_device_->inspect());
 
@@ -2605,15 +2574,15 @@ TEST_P(SdmmcBlockDeviceTest, PowerSuspendResume) {
   set_level_complete.Reset();
   // Trigger power level change to kPowerLevelOff. This time the transition should be respected, and
   // the device should be put to sleep.
-  incoming_.SyncCall([&](IncomingNamespace* incoming) {
-    incoming->power_broker.hardware_power_element_runner_client_
+  driver_test_.RunInEnvironmentTypeContext([&](TestEnvironment& env) {
+    env.power_broker.hardware_power_element_runner_client_
         ->SetLevel(SdmmcBlockDevice::kPowerLevelOff)
         .ThenExactlyOnce([&](fidl::Result<fuchsia_power_broker::ElementRunner::SetLevel> result) {
           EXPECT_TRUE(result.is_ok());
           set_level_complete.Signal();
         });
   });
-  runtime_.PerformBlockingWork([&] { set_level_complete.Wait(); });
+  driver_test_.runtime().PerformBlockingWork([&] { set_level_complete.Wait(); });
 
   inspector.ReadInspect(block_device_->inspect());
 
@@ -2627,15 +2596,15 @@ TEST_P(SdmmcBlockDeviceTest, PowerSuspendResume) {
 
   set_level_complete.Reset();
   // Trigger power level change back to kPowerLevelOn and wait for the device to be woken up.
-  incoming_.SyncCall([&](IncomingNamespace* incoming) {
-    incoming->power_broker.hardware_power_element_runner_client_
+  driver_test_.RunInEnvironmentTypeContext([&](TestEnvironment& env) {
+    env.power_broker.hardware_power_element_runner_client_
         ->SetLevel(SdmmcBlockDevice::kPowerLevelOn)
         .ThenExactlyOnce([&](fidl::Result<fuchsia_power_broker::ElementRunner::SetLevel> result) {
           EXPECT_TRUE(result.is_ok());
           set_level_complete.Signal();
         });
   });
-  runtime_.PerformBlockingWork([&] { set_level_complete.Wait(); });
+  driver_test_.runtime().PerformBlockingWork([&] { set_level_complete.Wait(); });
 
   inspector.ReadInspect(block_device_->inspect());
 
@@ -2672,56 +2641,59 @@ TEST_P(SdmmcBlockDeviceTest, PowerOffNotification) {
   // POWERED_ON should be set by default after probe.
   EXPECT_EQ(power_off_notification, MMC_EXT_CSD_POWERED_ON);
 
-  EXPECT_TRUE(incoming_.SyncCall([](IncomingNamespace* incoming) {
-    return incoming->cpu_element_manager.execution_state_dependency_added();
+  EXPECT_TRUE(driver_test_.RunInEnvironmentTypeContext<bool>([](TestEnvironment& env) {
+    return env.cpu_element_manager.execution_state_dependency_added();
   }));
 
-  fidl::ServerEnd lease_control_server_end = incoming_.SyncCall([](IncomingNamespace* incoming) {
-    return incoming->power_broker.hardware_power_lessor_->TakeLeaseControlServerEnd();
-  });
+  auto lease_control_server_end =
+      driver_test_.RunInEnvironmentTypeContext<fidl::ServerEnd<fuchsia_power_broker::LeaseControl>>(
+          [](TestEnvironment& env) {
+            return env.power_broker.hardware_power_lessor_->TakeLeaseControlServerEnd();
+          });
   ASSERT_TRUE(lease_control_server_end.is_valid());
 
   // Move to the ON state so that the transition to OFF can be made after.
-  incoming_.SyncCall([](IncomingNamespace* incoming) {
-    incoming->power_broker.hardware_power_element_runner_client_
+  driver_test_.RunInEnvironmentTypeContext([](TestEnvironment& env) {
+    env.power_broker.hardware_power_element_runner_client_
         ->SetLevel(SdmmcBlockDevice::kPowerLevelOn)
         .ThenExactlyOnce([&](fidl::Result<fuchsia_power_broker::ElementRunner::SetLevel> result) {
           EXPECT_TRUE(result.is_ok());
         });
   });
 
-  runtime_.PerformBlockingWork([lease_control_server_end = std::move(lease_control_server_end)] {
-    zx_status_t status;
-    zx_signals_t observed;
-    do {
-      status = lease_control_server_end.channel().wait_one(ZX_CHANNEL_PEER_CLOSED,
-                                                           zx::time::infinite_past(), &observed);
-    } while (status != ZX_OK || !(observed & ZX_CHANNEL_PEER_CLOSED));
-  });
+  driver_test_.runtime().PerformBlockingWork(
+      [lease_control_server_end = std::move(lease_control_server_end)] {
+        zx_status_t status;
+        zx_signals_t observed;
+        do {
+          status = lease_control_server_end.channel().wait_one(
+              ZX_CHANNEL_PEER_CLOSED, zx::time::infinite_past(), &observed);
+        } while (status != ZX_OK || !(observed & ZX_CHANNEL_PEER_CLOSED));
+      });
 
   EXPECT_FALSE(in_sleep_state);
 
   libsync::Completion sleep_complete;
   // Transition to off, then Call PrepareStop().
-  incoming_.SyncCall([&](IncomingNamespace* incoming) {
-    incoming->power_broker.hardware_power_element_runner_client_
+  driver_test_.RunInEnvironmentTypeContext([&](TestEnvironment& env) {
+    env.power_broker.hardware_power_element_runner_client_
         ->SetLevel(SdmmcBlockDevice::kPowerLevelOff)
         .ThenExactlyOnce([&](fidl::Result<fuchsia_power_broker::ElementRunner::SetLevel> result) {
           EXPECT_TRUE(result.is_ok());
           sleep_complete.Signal();
         });
   });
-  runtime_.PerformBlockingWork([&] { sleep_complete.Wait(); });
+  driver_test_.runtime().PerformBlockingWork([&] { sleep_complete.Wait(); });
   EXPECT_TRUE(in_sleep_state);
 
-  EXPECT_OK(runtime_.RunToCompletion(dut_.PrepareStop()));
+  EXPECT_OK(driver_test_.StopDriver());
 
   // The device should have been moved back to TRAN, and a power off notification should have been
   // sent.
   EXPECT_FALSE(in_sleep_state);
   EXPECT_EQ(power_off_notification, MMC_EXT_CSD_POWER_OFF_LONG);
 
-  EXPECT_OK(dut_.Stop());
+  dut_ = nullptr;
   block_device_ = nullptr;
 }
 
@@ -2823,11 +2795,11 @@ TEST_P(SdmmcBlockDeviceTest, BlockServer) {
     bad_request.command.opcode = BLOCK_OPCODE_TRIM;
     EXPECT_STATUS(client->FifoTransaction(&bad_request, 1), ZX_ERR_OUT_OF_RANGE);
   };
-  runtime_.PerformBlockingWork(test_fn);
+  driver_test_.runtime().PerformBlockingWork(test_fn);
   instance_name = "boot1";
-  runtime_.PerformBlockingWork(test_fn);
+  driver_test_.runtime().PerformBlockingWork(test_fn);
   instance_name = "boot2";
-  runtime_.PerformBlockingWork(test_fn);
+  driver_test_.runtime().PerformBlockingWork(test_fn);
 }
 
 TEST_P(SdmmcBlockDeviceTest, BlockServerMaxTransferSize) {
@@ -2847,7 +2819,7 @@ TEST_P(SdmmcBlockDeviceTest, BlockServerMaxTransferSize) {
 
   ASSERT_OK(StartDriverForMmc(/*speed_capabilities=*/{}, /*supply_power_framework=*/false));
 
-  runtime_.PerformBlockingWork([&] {
+  driver_test_.runtime().PerformBlockingWork([&] {
     auto client = GetRemoteBlockDeviceForBlockServer("user");
     ASSERT_OK(client);
 
@@ -2938,7 +2910,7 @@ TEST_P(SdmmcBlockDeviceTest, BlockServerSplitTransfer) {
 
   ASSERT_OK(StartDriverForMmc(/*speed_capabilities=*/{}, /*supply_power_framework=*/false));
 
-  runtime_.PerformBlockingWork([&] {
+  driver_test_.runtime().PerformBlockingWork([&] {
     auto client = GetRemoteBlockDeviceForBlockServer("user");
     ASSERT_OK(client);
 
@@ -3047,7 +3019,7 @@ TEST_P(SdmmcBlockDeviceTest, PackedCommandWriteError) {
   zx::vmo vmo;
   ASSERT_OK(zx::vmo::create(1024, 0, &vmo));
 
-  runtime_.PerformBlockingWork([&] {
+  driver_test_.runtime().PerformBlockingWork([&] {
     auto client = GetRemoteBlockDeviceForBlockServer("user");
     ASSERT_OK(client);
 
@@ -3083,7 +3055,7 @@ TEST_P(SdmmcBlockDeviceTest, PackedCommandWriteError) {
     out_data[MMC_EXT_CSD_PACKED_COMMAND_STATUS] = 1;
   });
 
-  runtime_.PerformBlockingWork([&] {
+  driver_test_.runtime().PerformBlockingWork([&] {
     auto client = GetRemoteBlockDeviceForBlockServer("user");
     ASSERT_OK(client);
 
@@ -3125,7 +3097,7 @@ TEST_P(SdmmcBlockDeviceTest, PackedCommandReadError) {
   zx::vmo vmo;
   ASSERT_OK(zx::vmo::create(1024, 0, &vmo));
 
-  runtime_.PerformBlockingWork([&] {
+  driver_test_.runtime().PerformBlockingWork([&] {
     auto client = GetRemoteBlockDeviceForBlockServer("user");
     ASSERT_OK(client);
 
@@ -3161,7 +3133,7 @@ TEST_P(SdmmcBlockDeviceTest, PackedCommandReadError) {
     out_data[MMC_EXT_CSD_PACKED_COMMAND_STATUS] = 1;
   });
 
-  runtime_.PerformBlockingWork([&] {
+  driver_test_.runtime().PerformBlockingWork([&] {
     auto client = GetRemoteBlockDeviceForBlockServer("user");
     ASSERT_OK(client);
 
