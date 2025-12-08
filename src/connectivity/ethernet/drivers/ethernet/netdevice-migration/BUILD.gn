@@ -27,14 +27,16 @@ source_set("src") {
     ":netdevice-migration-bind",
     "//sdk/banjo/fuchsia.hardware.ethernet:fuchsia.hardware.ethernet_banjo_cpp",
     "//sdk/fidl/fuchsia.hardware.network:fuchsia.hardware.network_cpp",
-    "//sdk/fidl/fuchsia.hardware.network.driver:fuchsia.hardware.network.driver_banjo_cpp",
+    "//sdk/fidl/fuchsia.hardware.network.driver:fuchsia.hardware.network.driver_cpp",
     "//sdk/lib/driver/compat/cpp",
     "//sdk/lib/driver/component/cpp",
+    "//sdk/lib/fit",
     "//src/connectivity/network/drivers/network-device/device:shared_lock",
     "//src/devices/lib/dev-operation:dev-operation-dfv2-compat-logging",
     "//src/lib/vmo_store",
     "//zircon/system/public",
     "//zircon/system/ulib/fbl",
+    "//zircon/system/ulib/sync:sync-cpp",
     "//zircon/system/ulib/zircon-internal",
   ]
 

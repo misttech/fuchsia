@@ -5,15 +5,17 @@
 #ifndef SRC_CONNECTIVITY_ETHERNET_DRIVERS_ETHERNET_NETDEVICE_MIGRATION_NETDEVICE_MIGRATION_H_
 #define SRC_CONNECTIVITY_ETHERNET_DRIVERS_ETHERNET_NETDEVICE_MIGRATION_NETDEVICE_MIGRATION_H_
 
-#include <fidl/fuchsia.hardware.network/cpp/wire.h>
+#include <fidl/fuchsia.hardware.network.driver/cpp/driver/fidl.h>
+#include <fidl/fuchsia.hardware.network/cpp/driver/fidl.h>
 #include <fuchsia/hardware/ethernet/cpp/banjo.h>
-#include <fuchsia/hardware/network/driver/cpp/banjo.h>
 #include <lib/driver/compat/cpp/banjo_server.h>
 #include <lib/driver/compat/cpp/device_server.h>
 #include <lib/driver/component/cpp/driver_base.h>
+#include <lib/sync/cpp/completion.h>
 #include <zircon/system/public/zircon/compiler.h>
 
 #include <queue>
+#include <span>
 #include <unordered_set>
 #include <utility>
 
@@ -27,34 +29,42 @@
 
 namespace netdevice_migration {
 
+namespace netdev = fuchsia_hardware_network_driver;
+
 using NetdeviceMigrationVmoStore = vmo_store::VmoStore<vmo_store::SlabStorage<uint32_t>>;
 using Netbuf = eth::Operation<uint32_t>;
 using NetbufPool = eth::OperationPool<uint32_t>;
 
-class NetdeviceMigration;
 class NetdeviceMigration
     : public fdf::DriverBase,
       public ddk::EthernetIfcProtocol<NetdeviceMigration>,
-      public ddk::NetworkDeviceImplProtocol<NetdeviceMigration, ddk::base_protocol>,
-      public ddk::NetworkPortProtocol<NetdeviceMigration>,
-      public ddk::MacAddrProtocol<NetdeviceMigration> {
+      public fdf::WireServer<fuchsia_hardware_network_driver::NetworkDeviceImpl>,
+      public fdf::WireServer<fuchsia_hardware_network_driver::NetworkPort>,
+      public fdf::WireServer<fuchsia_hardware_network_driver::MacAddr> {
  public:
   static constexpr uint8_t kPortId = 13;
   // Equivalent to old ethernet driver FIFO depth; see
   // https://cs.opensource.google/fuchsia/fuchsia/+/main:src/connectivity/ethernet/drivers/ethernet/ethernet.h;l=169;drc=bd653b0d513ea6cc0d2ec85d38ae31bf084f0651
   static constexpr uint32_t kFifoDepth = 256;
   static constexpr uint32_t kMaxBufferSize = 2048;
-  static constexpr supported_mac_filter_mode_t kSupportedMacFilteringModes =
-      SUPPORTED_MAC_FILTER_MODE_MULTICAST_FILTER | SUPPORTED_MAC_FILTER_MODE_MULTICAST_PROMISCUOUS |
-      SUPPORTED_MAC_FILTER_MODE_PROMISCUOUS;
-  static constexpr uint32_t kMulticastFilterMax = MAX_MAC_FILTER;
+  static constexpr netdev::wire::SupportedMacFilterMode kSupportedMacFilteringModes =
+      netdev::wire::SupportedMacFilterMode::kMulticastFilter |
+      netdev::wire::SupportedMacFilterMode::kMulticastPromiscuous |
+      netdev::wire::SupportedMacFilterMode::kPromiscuous;
+  static constexpr uint32_t kMulticastFilterMax = netdev::wire::kMaxMacFilter;
   static constexpr const char kChildNodeName[] = "netdevice-migration-compat";
 
   NetdeviceMigration(fdf::DriverStartArgs start_args,
                      fdf::UnownedSynchronizedDispatcher driver_dispatcher);
 
-  // DriverBase implementation.
+  // DriverBase implementation. This overrides both of the Start methods and the Stop method to
+  // ensure that they are not hidden by the NetworkDeviceImpl methods with the same name.
   zx::result<> Start() override;
+  // The documentation says that the asynchronous version will be preferred, make it behave as the
+  // synchronous version.
+  void Start(fdf::StartCompleter completer) override { completer(Start()); }
+  void PrepareStop(fdf::PrepareStopCompleter completer) override;
+  void Stop() override {}
 
   // For EthernetIfcProtocol.
   void EthernetIfcStatus(uint32_t status) __TA_EXCLUDES(status_lock_);
@@ -62,58 +72,63 @@ class NetdeviceMigration
       __TA_EXCLUDES(rx_lock_) __TA_EXCLUDES(vmo_lock_);
 
   // For NetworkDeviceImplProtocol.
-  void NetworkDeviceImplInit(const network_device_ifc_protocol_t* iface,
-                             network_device_impl_init_callback callback, void* cookie);
-  void NetworkDeviceImplStart(network_device_impl_start_callback callback, void* cookie)
-      __TA_EXCLUDES(tx_lock_) __TA_EXCLUDES(rx_lock_);
-  void NetworkDeviceImplStop(network_device_impl_stop_callback callback, void* cookie)
-      __TA_EXCLUDES(tx_lock_) __TA_EXCLUDES(rx_lock_);
-  void NetworkDeviceImplGetInfo(device_impl_info_t* out_info);
-  void NetworkDeviceImplQueueTx(const tx_buffer_t* buffers_list, size_t buffers_count);
-  void NetworkDeviceImplQueueRxSpace(const rx_space_buffer_t* buffers_list, size_t buffers_count)
-      __TA_EXCLUDES(rx_lock_);
-  void NetworkDeviceImplPrepareVmo(uint8_t id, zx::vmo vmo,
-                                   network_device_impl_prepare_vmo_callback callback, void* cookie)
-      __TA_EXCLUDES(vmo_lock_);
-  void NetworkDeviceImplReleaseVmo(uint8_t id) __TA_EXCLUDES(vmo_lock_);
+  void Init(netdev::wire::NetworkDeviceImplInitRequest* request, fdf::Arena& arena,
+            InitCompleter::Sync& completer) override;
+  void Start(fdf::Arena& arena, StartCompleter::Sync& completer) override;
+  void Stop(fdf::Arena& arena, StopCompleter::Sync& completer) override;
+  void GetInfo(
+      fdf::Arena& arena,
+      fdf::WireServer<netdev::NetworkDeviceImpl>::GetInfoCompleter::Sync& completer) override;
+  void QueueTx(netdev::wire::NetworkDeviceImplQueueTxRequest* request, fdf::Arena& arena,
+               QueueTxCompleter::Sync& completer) override;
+  void QueueRxSpace(netdev::wire::NetworkDeviceImplQueueRxSpaceRequest* request, fdf::Arena& arena,
+                    QueueRxSpaceCompleter::Sync& completer) override;
+  void PrepareVmo(netdev::wire::NetworkDeviceImplPrepareVmoRequest* request, fdf::Arena& arena,
+                  PrepareVmoCompleter::Sync& completer) override;
+  void ReleaseVmo(netdev::wire::NetworkDeviceImplReleaseVmoRequest* request, fdf::Arena& arena,
+                  ReleaseVmoCompleter::Sync& completer) override;
 
   // For NetworkPortProtocol.
-  void NetworkPortGetInfo(port_base_info_t* out_info);
-  void NetworkPortGetStatus(port_status_t* out_status) __TA_EXCLUDES(status_lock_);
-  void NetworkPortSetActive(bool active);
-  void NetworkPortGetMac(mac_addr_protocol_t** out_mac_ifc);
-  void NetworkPortRemoved();
+  void GetInfo(fdf::Arena& arena,
+               fdf::WireServer<netdev::NetworkPort>::GetInfoCompleter::Sync& completer) override;
+  void GetStatus(fdf::Arena& arena, GetStatusCompleter::Sync& completer) override;
+  void SetActive(fuchsia_hardware_network_driver::wire::NetworkPortSetActiveRequest* request,
+                 fdf::Arena& arena, SetActiveCompleter::Sync& completer) override;
+  void GetMac(fdf::Arena& arena, GetMacCompleter::Sync& completer) override;
+  void Removed(fdf::Arena& arena, RemovedCompleter::Sync& completer) override;
 
   // For MacAddrProtocol.
-  void MacAddrGetAddress(mac_address_t* out_mac);
-  void MacAddrGetFeatures(features_t* out_features);
-  void MacAddrSetMode(mac_filter_mode_t mode, const mac_address_t* multicast_macs_list,
-                      size_t multicast_macs_count);
+  void GetAddress(fdf::Arena& arena, GetAddressCompleter::Sync& completer) override;
+  void GetFeatures(fdf::Arena& arena, GetFeaturesCompleter::Sync& completer) override;
+  void SetMode(fuchsia_hardware_network_driver::wire::MacAddrSetModeRequest* request,
+               fdf::Arena& arena, SetModeCompleter::Sync& completer) override;
 
  private:
-  void SetMacParam(uint32_t param, int32_t value, const mac_address_t* data_buffer,
-                   size_t data_size) const;
+  void SetMacParam(uint32_t param, int32_t value,
+                   std::span<const fuchsia_net::wire::MacAddress> data = {}) const;
 
   zx_status_t DeviceAdd();
   void DeviceRemove();
+  void Shutdown();
 
   compat::SyncInitializedDeviceServer compat_server_;
-  compat::BanjoServer net_device_server_{ZX_PROTOCOL_NETWORK_DEVICE_IMPL, this,
-                                         &network_device_impl_protocol_ops_};
   fidl::ClientEnd<fuchsia_driver_framework::NodeController> netdev_child_;
 
   std::atomic<size_t> no_rx_space_ = 0;
 
-  ddk::NetworkDeviceIfcProtocolClient netdevice_;
-  mac_addr_protocol_t mac_addr_proto_;
-  const ethernet_ifc_protocol_t ethernet_ifc_proto_;
   ddk::EthernetImplProtocolClient ethernet_;
+  fdf::WireSharedClient<netdev::NetworkDeviceIfc> netdevice_;
+  fdf::UnsynchronizedDispatcher netdevice_dispatcher_;
+  libsync::Completion netdevice_dispatcher_shutdown_;
+  // This is only used to pass something in the proto ops of DeviceAddArgs. The contents are
+  // irrelevant.
+  zx_protocol_device_t blank_netdev_ops_{};
 
   zx::bti eth_bti_;
-  device_impl_info_t info_;
+  netdev::DeviceImplInfo info_;
   uint32_t mtu_;
-  std::array<uint8_t, MAC_SIZE> mac_;
-  port_base_info_t port_info_;
+  std::array<uint8_t, ETH_MAC_SIZE> mac_;
+  fuchsia_hardware_network::PortBaseInfo port_info_;
   size_t netbuf_size_;
 
   std::mutex status_lock_;
@@ -128,7 +143,7 @@ class NetdeviceMigration
   bool rx_started_ __TA_GUARDED(rx_lock_) = false;
   // Use a queue to enforce FIFO ordering. With LIFO ordering, some buffers will sit unused unless
   // the driver hits buffer starvation, which could obscure bugs related to malformed buffers.
-  std::queue<rx_space_buffer_t> rx_spaces_ __TA_GUARDED(rx_lock_);
+  std::queue<netdev::wire::RxSpaceBuffer> rx_spaces_ __TA_GUARDED(rx_lock_);
   bool rx_space_queued_ __TA_GUARDED(rx_lock_) = false;
 
   network::SharedLock vmo_lock_ __TA_ACQUIRED_BEFORE(tx_lock_) __TA_ACQUIRED_AFTER(rx_lock_);
