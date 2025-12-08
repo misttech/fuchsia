@@ -8,11 +8,11 @@ use crate::extra_hash_descriptor::ExtraHashDescriptor;
 use crate::vfs::{FilesystemProvider, RealFilesystemProvider};
 use crate::{AssembledSystem, Image};
 use anyhow::{Context, Result};
-use assembly_images_config::{VBMeta, VBMetaDescriptor};
+use assembly_images_config::VBMeta;
 use camino::{Utf8Path, Utf8PathBuf};
 use std::path::Path;
 use utf8_path::path_relative_from_current_dir;
-use vbmeta::{HashDescriptor, Key, Salt, VBMeta as VBMetaImage};
+use vbmeta::{Descriptor, HashDescriptor, Key, Salt, VBMeta as VBMetaImage};
 
 /// Construct the vbmeta image.
 pub fn construct_vbmeta(
@@ -24,13 +24,32 @@ pub fn construct_vbmeta(
     // Generate the salt.
     let salt = Salt::random()?;
 
+    // Collect any additional descriptors.
+    let additional_descriptors: Vec<Descriptor> = vbmeta_config
+        .additional_descriptors
+        .iter()
+        .map(|d| {
+            Descriptor::Hash(
+                ExtraHashDescriptor {
+                    name: Some(d.name.clone()),
+                    size: Some(d.size),
+                    salt: None,
+                    digest: None,
+                    flags: Some(d.flags),
+                    min_avb_version: None, //Some(d.min_avb_version),
+                }
+                .into(),
+            )
+        })
+        .collect();
+
     // Sign the image and construct a VBMeta.
     let (vbmeta, _salt) = crate::vbmeta::sign(
         "zircon",
         zbi,
         &vbmeta_config.key,
         &vbmeta_config.key_metadata,
-        &vbmeta_config.additional_descriptors,
+        additional_descriptors,
         salt,
         &RealFilesystemProvider {},
     )
@@ -52,7 +71,7 @@ fn sign<FSP: FilesystemProvider>(
     image_path: impl AsRef<Path>,
     key: impl AsRef<Path>,
     key_metadata: impl AsRef<Path>,
-    additional_descriptors: &Vec<VBMetaDescriptor>,
+    additional_descriptors: Vec<Descriptor>,
     salt: Salt,
     fs: &FSP,
 ) -> Result<(VBMetaImage, Salt)> {
@@ -66,28 +85,14 @@ fn sign<FSP: FilesystemProvider>(
     // And then create the signing key from those.
     let key = Key::try_new(&key_pem, key_metadata).unwrap();
 
-    let mut descriptors: Vec<HashDescriptor> = additional_descriptors
-        .iter()
-        .map(|d| {
-            ExtraHashDescriptor {
-                name: Some(d.name.clone()),
-                size: Some(d.size),
-                salt: None,
-                digest: None,
-                flags: Some(d.flags),
-                min_avb_version: None, //Some(d.min_avb_version),
-            }
-            .into()
-        })
-        .collect();
-
     // Read the image into memory, so that it can be hashed.
     let image = fs
         .read(&image_path)
         .with_context(|| format!("reading image: {}", image_path.as_ref().display()))?;
 
     // Create the descriptor for the image.
-    let descriptor = HashDescriptor::new(name.as_ref(), &image, salt.clone());
+    let mut descriptors = additional_descriptors;
+    let descriptor = Descriptor::Hash(HashDescriptor::new(name.as_ref(), &image, salt.clone()));
     descriptors.push(descriptor);
 
     // And do the signing operation itself.
@@ -99,7 +104,7 @@ mod tests {
     use super::{construct_vbmeta, sign};
 
     use crate::AssembledSystem;
-    use crate::vbmeta::{Key, Salt};
+    use crate::vbmeta::{Descriptor, Key, Salt};
     use crate::vfs::mock::MockFilesystemProvider;
 
     use assembly_images_config::VBMeta;
@@ -157,7 +162,7 @@ mod tests {
         let salt = Salt::try_from(&[0xAAu8; 32][..]).unwrap();
 
         let (vbmeta, salt) =
-            sign("some_name", "image", "key", "key_metadata", &Vec::new(), salt, &vfs).unwrap();
+            sign("some_name", "image", "key", "key_metadata", Vec::new(), salt, &vfs).unwrap();
 
         // Validate that the key in the arguments was the key that was passed to
         // the vbmeta library for the signing operation.
@@ -167,9 +172,12 @@ mod tests {
         let descriptors = vbmeta.descriptors();
         assert_eq!(descriptors.len(), 1);
 
-        assert_eq!(salt, descriptors[0].salt().unwrap());
-        let name = descriptors[0].image_name();
-        let digest = descriptors[0].digest();
+        let Descriptor::Hash(hash) = &descriptors[0] else {
+            panic!("descriptor 0 is not a hash descriptor!?: {:#?}", descriptors[0]);
+        };
+        assert_eq!(salt, hash.salt().unwrap());
+        let name = hash.image_name();
+        let digest = hash.digest();
         let expected_digest =
             hex::decode("caeaacb8208cfd8d214de6baef8d535f6fce499524c60aa5dcd2fce7043a9700")
                 .unwrap();

@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::descriptor::HashDescriptor;
+use crate::descriptor::Descriptor;
 use crate::header::Header;
 use crate::key::{Key, SIGNATURE_SIZE, SignFailure};
 
@@ -24,7 +24,7 @@ pub struct VBMeta {
     header: Header,
 
     /// The descriptors used to create the VBMeta
-    descriptors: Vec<HashDescriptor>,
+    descriptors: Vec<Descriptor>,
 
     /// The key used to sign the VBMeta
     key: Key,
@@ -33,13 +33,17 @@ pub struct VBMeta {
 impl VBMeta {
     /// Constructs and signs a new VBMeta image using the provided `descriptors` and AVB `key`.
     /// This can fail if signing with `key` failed.
-    pub fn sign(descriptors: Vec<HashDescriptor>, key: Key) -> Result<Self, SignFailure> {
+    pub fn sign(descriptors: Vec<Descriptor>, key: Key) -> Result<Self, SignFailure> {
         let mut header = Header::default();
 
         // the minimum version in the header must be the minimum version required
         // by all HashDescriptors.
-        if let Some(required_avb_version) =
-            descriptors.iter().filter_map(|d| d.get_min_avb_version()).max()
+        if let Some(required_avb_version) = descriptors
+            .iter()
+            .filter_map(|desc| {
+                if let Descriptor::Hash(hash) = desc { hash.get_min_avb_version() } else { None }
+            })
+            .max()
         {
             header.min_avb_version_major = required_avb_version[0].into();
             header.min_avb_version_minor = required_avb_version[1].into();
@@ -62,7 +66,7 @@ impl VBMeta {
     }
 
     /// Returns an immutable slice of the descriptors used to create the VBMeta image.
-    pub fn descriptors(&self) -> &[HashDescriptor] {
+    pub fn descriptors(&self) -> &[Descriptor] {
         &self.descriptors
     }
 
@@ -77,7 +81,7 @@ impl VBMeta {
     }
 }
 
-fn generate_aux_data(header: &mut Header, descriptors: &[HashDescriptor], key: &Key) -> Vec<u8> {
+fn generate_aux_data(header: &mut Header, descriptors: &[Descriptor], key: &Key) -> Vec<u8> {
     let mut data: Vec<u8> = Vec::new();
 
     // Append the descriptors.
@@ -137,8 +141,8 @@ fn generate_auth_data(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::descriptor::Salt;
     use crate::descriptor::builder::RawHashDescriptorBuilder;
+    use crate::descriptor::{HashDescriptor, PropertyDescriptor, Salt};
     use crate::test;
 
     use zerocopy::Ref;
@@ -206,7 +210,7 @@ mod tests {
 
         let key = Key::try_new(test::TEST_PEM, test::TEST_METADATA).expect("new key");
         let salt = Salt::try_from(&[0xAA; 32][..]).expect("new salt");
-        let descriptor = HashDescriptor::new("image_name", &[0xBB; 32], salt);
+        let descriptor = Descriptor::Hash(HashDescriptor::new("image_name", &[0xBB; 32], salt));
         let descriptors = vec![descriptor];
         let vbmeta_bytes = VBMeta::sign(descriptors, key).unwrap().bytes;
         assert_eq!(vbmeta_bytes[..expected_header.len()], expected_header);
@@ -229,8 +233,8 @@ mod tests {
             // Size of auth data: 0x240 bytes
             0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0x40,
 
-            // Size of aux data: 0x500 bytes
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x05, 0x80,
+            // Size of aux data: 0x5C0 bytes
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x05, 0xC0,
 
             // Algorithm: 5 = sha256
             0x00, 0x00, 0x00, 0x05,
@@ -240,12 +244,12 @@ mod tests {
             0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x40, // hash_size
             0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x40, // signature_offset
             0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0x00, // signature_size
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x60, // public_key_offset
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x98, // public_key_offset
             0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x04, 0x08, // public_key_size
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x05, 0x68, // public_key_metadata_offset
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x05, 0xA0, // public_key_metadata_offset
             0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0D, // public_key_metadata_size
             0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // descriptors_offset
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x60, // descriptors_size
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x98, // descriptors_size
 
             // Rollback index: 0
             0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -279,14 +283,20 @@ mod tests {
 
         let key = Key::try_new(test::TEST_PEM, test::TEST_METADATA).expect("new key");
         let salt = Salt::try_from(&[0xAA; 32][..]).expect("new salt");
-        let descriptor = HashDescriptor::new("image_name", &[0xBB; 32], salt);
-        let extra_descriptor = RawHashDescriptorBuilder::default()
-            .min_avb_version([1, 2])
-            .name("other_image")
-            .size(123456789)
-            .flags(1)
-            .build();
-        let descriptors = vec![descriptor, extra_descriptor];
+        let hash = Descriptor::Hash(HashDescriptor::new("image_name", &[0xBB; 32], salt));
+        let hash_from_raw = Descriptor::Hash(
+            RawHashDescriptorBuilder::default()
+                .min_avb_version([1, 2])
+                .name("other_image")
+                .size(123456789)
+                .flags(1)
+                .build(),
+        );
+        let prop = Descriptor::Property(PropertyDescriptor::new(
+            "prop_key".to_string(),
+            "prop_value".to_string(),
+        ));
+        let descriptors = vec![hash, hash_from_raw, prop];
         let vbmeta = VBMeta::sign(descriptors, key).unwrap();
         let vbmeta_bytes = vbmeta.as_bytes();
 
@@ -308,7 +318,7 @@ mod tests {
         }
         test::hash_data_and_expect(
             &vbmeta_bytes,
-            "36e77362cc1bf8d1ca9680e135721d49287334ee323191c513feeb4f3d7a0774",
+            "9d9718f1fc21542f4db9eb7416592f6198f889fbf68b17f43031da58829ae6f1",
         );
     }
 }

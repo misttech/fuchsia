@@ -4,6 +4,7 @@
 
 use anyhow::{Context, Result};
 use std::path::PathBuf;
+use vbmeta::{Descriptor, HashDescriptor, Key, Salt, VBMeta};
 
 /// Command-line arguments for the vbmeta tool.
 #[derive(argh::FromArgs)]
@@ -34,10 +35,10 @@ fn main() -> Result<()> {
     let metadata =
         std::fs::read(args.public_key_metadata).context("failed to read public key metadata")?;
 
-    let key = vbmeta::Key::try_new(pem_str, metadata).context("failed to create AVB key")?;
-    let salt = vbmeta::Salt::random().context("failed to season")?;
-    let descriptor = vbmeta::HashDescriptor::new("zircon", &zbi, salt);
-    let vbmeta = vbmeta::VBMeta::sign(vec![descriptor], key).unwrap();
+    let key = Key::try_new(pem_str, metadata).context("failed to create AVB key")?;
+    let salt = Salt::random().context("failed to season")?;
+    let descriptor = Descriptor::Hash(HashDescriptor::new("zircon", &zbi, salt));
+    let vbmeta = VBMeta::sign(vec![descriptor], key).unwrap();
 
     std::fs::write(args.output, vbmeta.as_bytes()).context("failed to write VBMeta to file")?;
 

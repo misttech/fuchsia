@@ -37,7 +37,7 @@ use std::sync::mpsc::channel;
 use std::time::{Duration, Instant};
 use std::{env, str};
 use tempfile::NamedTempFile;
-use vbmeta::{HashDescriptor, Key, Salt, VBMeta};
+use vbmeta::{Descriptor, HashDescriptor, Key, Salt, VBMeta};
 
 pub(crate) fn get_host_tool(context: &EnvironmentContext, name: &str) -> Result<PathBuf> {
     // Attempts to get a host tool from the SDK manifest. If it fails, falls
@@ -506,7 +506,7 @@ pub(crate) trait QemuBasedEngine: EmulatorEngine {
         let salt = Salt::random().map_err(|e| bug!("{e}"))?;
         // Create a hash descriptor of the same format as Fuchsia images assembly:
         // https://cs.opensource.google/fuchsia/fuchsia/+/main:src/lib/assembly/vbmeta/src/main.rs;l=39;drc=4fcdaf5e61c518ac1bec7462f077f5e1ffd5ddab
-        let descriptor = HashDescriptor::new("zircon", &zbi_bytes, salt);
+        let descriptor = Descriptor::Hash(HashDescriptor::new("zircon", &zbi_bytes, salt));
         let descriptors = vec![descriptor];
         let vbmeta = VBMeta::sign(descriptors, key).map_err(|e| user_error!("{e}"))?;
 

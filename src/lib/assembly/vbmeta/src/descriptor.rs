@@ -15,7 +15,86 @@ pub mod builder;
 
 const ALGORITHM: &str = "sha256";
 
+const PROPERTY_DESCRIPTOR_TAG: u64 = 1;
 const HASH_DESCRIPTOR_TAG: u64 = 2;
+
+/// A VBMeta descriptor.
+#[derive(Debug, PartialEq)]
+pub enum Descriptor {
+    /// Property descriptor.
+    Property(PropertyDescriptor),
+    /// Hash descriptor.
+    Hash(HashDescriptor),
+}
+
+impl Descriptor {
+    /// Serialize the Descriptor in the format expected by VBMeta.
+    pub fn to_bytes(&self) -> Vec<u8> {
+        match self {
+            Self::Property(prop) => prop.to_bytes(),
+            Self::Hash(hash) => hash.to_bytes(),
+        }
+    }
+}
+
+/// A VBMeta property descriptor.
+#[derive(Debug, PartialEq)]
+pub struct PropertyDescriptor {
+    key: String,
+    value: String,
+}
+
+impl PropertyDescriptor {
+    /// Creates a new property descriptor given a (key, value) pair.
+    pub fn new(key: String, value: String) -> Self {
+        Self { key, value }
+    }
+
+    /// Serialize the PropertyDescriptor in the format expected by VBMeta.
+    pub fn to_bytes(&self) -> Vec<u8> {
+        // Header + (key + NUL) + (value + NUL) + padding.
+        let encoding_len =
+            (size_of::<PropertyDescriptorHeader>() + self.key.len() + 1 + self.value.len() + 1)
+                .next_multiple_of(8);
+
+        let mut bytes = Vec::new();
+        bytes.reserve_exact(encoding_len);
+
+        let header = PropertyDescriptorHeader::new(&self.key, &self.value);
+        bytes.extend_from_slice(header.as_bytes());
+
+        bytes.extend_from_slice(self.key.as_bytes());
+        bytes.push(0);
+
+        bytes.extend_from_slice(self.value.as_bytes());
+        bytes.push(0);
+
+        bytes.resize(encoding_len, 0);
+        bytes
+    }
+}
+
+#[repr(C)]
+#[derive(Debug, Immutable, IntoBytes)]
+struct PropertyDescriptorHeader {
+    tag: BigEndianU64,
+    num_bytes_following: BigEndianU64,
+    key_num_bytes: BigEndianU64,
+    value_num_bytes: BigEndianU64,
+}
+
+impl PropertyDescriptorHeader {
+    fn new(key: &str, value: &str) -> Self {
+        let key_len = (key.len() + 1) as u64; // + NUL
+        let value_len = (value.len() + 1) as u64; // + NUL
+        Self {
+            tag: PROPERTY_DESCRIPTOR_TAG.into(),
+            num_bytes_following: (8 + 8 + key_len + value_len).next_multiple_of(8).into(),
+            key_num_bytes: key_len.into(),
+            value_num_bytes: value_len.into(),
+        }
+    }
+}
 
 /// A descriptor that contains the salt and digest of a provided image.
 #[derive(Debug, PartialEq)]
@@ -440,5 +519,44 @@ mod tests {
         let s1 = Salt::random().unwrap();
         let s2 = Salt::random().unwrap();
         assert_ne!(s1.bytes, s2.bytes);
+    }
+
+    #[test]
+    fn test_property_descriptor() {
+        let key = "com.fuchsia.vbmeta.some_property".to_string();
+        let value = "some_value".to_string();
+        let prop = PropertyDescriptor::new(key, value);
+
+        #[rustfmt::skip]
+        let expected_bytes: [u8; 80] = [
+            // Header
+            // tag: 1
+            0, 0, 0, 0, 0, 0, 0, 1,
+            // num_bytes_following: 64
+            0, 0, 0, 0, 0, 0, 0, 0x40,
+            // key_num_bytes: 33
+            0, 0, 0, 0, 0, 0, 0, 0x21,
+            // value_num_bytes: 11
+            0, 0, 0, 0, 0, 0, 0, 0x0B,
+
+            // Key: "com.fuchsia.vbmeta.some_property"
+            0x63, 0x6F, 0x6D, 0x2E, 0x66, 0x75, 0x63, 0x68,
+            0x73, 0x69, 0x61, 0x2E, 0x76, 0x62, 0x6D, 0x65,
+            0x74, 0x61, 0x2E, 0x73, 0x6F, 0x6D, 0x65, 0x5F,
+            0x70, 0x72, 0x6F, 0x70, 0x65, 0x72, 0x74, 0x79,
+            // NUL
+            0,
+
+            // Value: "some_value"
+            0x73, 0x6F, 0x6D, 0x65, 0x5F, 0x76, 0x61, 0x6C,
+            0x75, 0x65,
+            // NUL
+            0,
+
+            // Padding
+            0, 0, 0, 0,
+        ];
+
+        assert_eq!(prop.to_bytes(), &expected_bytes);
     }
 }
