@@ -128,7 +128,7 @@ impl ModelError {
     }
 }
 
-impl Explain for ModelError {
+impl ModelError {
     fn as_zx_status(&self) -> zx::Status {
         match self {
             ModelError::RoutingError { err } => err.as_zx_status(),
@@ -439,12 +439,6 @@ impl Explain for ActionError {
             ActionError::DestroyError { .. } => zx::Status::INTERNAL,
             ActionError::ShutdownError { .. } => zx::Status::INTERNAL,
         }
-    }
-}
-
-impl From<ActionError> for RouterError {
-    fn from(value: ActionError) -> Self {
-        Self::NotFound(Arc::new(value))
     }
 }
 

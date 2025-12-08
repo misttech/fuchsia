@@ -5,13 +5,16 @@
 use crate::model::component::{ComponentInstance, RouterError, RouterResponse};
 use ::routing::capability_source::{BuiltinCapabilities, NamespaceCapabilities};
 use ::routing::component_instance::TopInstanceInterface;
+use anyhow::format_err;
 use async_trait::async_trait;
+use clonable_error::ClonableError;
 use errors::RebootError;
 use fidl::endpoints::{self};
 use fuchsia_component::client;
 use fuchsia_sync::Mutex;
 use log::warn;
-use routing::error::RoutingError;
+use moniker::Moniker;
+use routing::error::{ComponentInstanceError, RoutingError};
 use sandbox::{Connector, Request, Routable, WeakInstanceToken};
 use std::sync::Arc;
 use vfs::directory::entry::OpenRequest;
@@ -102,7 +105,12 @@ impl ComponentManagerInstance {
                     .root
                     .lock_resolved_state()
                     .await
-                    .map_err(|e| RouterError::NotFound(Arc::new(e)))?
+                    .map_err(|e| {
+                        RoutingError::from(ComponentInstanceError::ResolveFailed {
+                            moniker: Moniker::root(),
+                            err: ClonableError::from(format_err!("{:?}", e)),
+                        })
+                    })?
                     .sandbox
                     .component_output
                     .clone();

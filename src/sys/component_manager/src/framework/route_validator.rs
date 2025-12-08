@@ -4,14 +4,16 @@
 
 use crate::model::component::instance::ResolvedInstanceState;
 use crate::model::component::{ComponentInstance, WeakComponentInstance};
-use crate::model::routing::{self, BedrockRouteRequest, Route, RoutingError};
+use crate::model::routing::{self, BedrockRouteRequest, Route};
 use crate::sandbox_util::take_handle_as_stream;
 use ::routing::RouteRequest as LegacyRouteRequest;
 use ::routing::capability_source::CapabilitySource;
 use ::routing::component_instance::ComponentInstanceInterface;
+use ::routing::error::{ComponentInstanceError, RoutingError};
+use anyhow::format_err;
+use clonable_error::ClonableError;
 use cm_rust::{ExposeDecl, NativeIntoFidl, SourceName, UseDecl};
 use cm_types::{Name, RelativePath};
-use errors::{ActionError, StartActionError};
 use futures::future::{BoxFuture, join_all};
 use futures::{FutureExt, TryStreamExt};
 use log::warn;
@@ -374,17 +376,17 @@ impl RouteRequest {
         route_request: BedrockRouteRequest,
         instance: &Arc<ComponentInstance>,
     ) -> Result<RouteData, RouterError> {
-        let res: Result<Capability, ActionError> = async move {
+        let res: Result<Capability, RouterError> = async move {
             let resolved_state = instance.lock_resolved_state().await.map_err(|err| {
-                ActionError::from(StartActionError::ResolveActionError {
+                RoutingError::from(ComponentInstanceError::ResolveFailed {
                     moniker: instance.moniker.clone(),
-                    err: Box::new(err),
+                    err: ClonableError::from(format_err!("{:?}", err)),
                 })
             })?;
             Ok(route_request.into_router(instance.as_weak(), &resolved_state.sandbox))
         }
         .await;
-        let router = res.map_err(|e| RouterError::NotFound(Arc::new(e)))?;
+        let router = res?;
 
         let mut dictionary_entries = None;
         let res = match router {

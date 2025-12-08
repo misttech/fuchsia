@@ -211,9 +211,10 @@ impl<T: Clone + CapabilityBound> Routable<T> for OkRouter<T> {
     async fn route(
         &self,
         _request: Option<Request>,
-        _debug: bool,
+        debug: bool,
         _target: WeakInstanceToken,
     ) -> Result<RouterResponse<T>, RouterError> {
+        assert!(!debug, "OkRouter does not handle debug routes");
         Ok(RouterResponse::Capability(self.v.clone()))
     }
 }

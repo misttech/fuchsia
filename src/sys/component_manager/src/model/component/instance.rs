@@ -66,7 +66,7 @@ use futures::lock::Mutex;
 use hooks::{CapabilityReceiver, EventPayload, EventType};
 use log::warn;
 use moniker::{BorrowedChildName, ChildName, ExtendedMoniker, Moniker};
-use router_error::RouterError;
+use router_error::{Explain, RouterError};
 use sandbox::{
     Capability, Connector, Data, Dict, DirConnector, RemotableCapability, Request, Routable,
     Router, RouterResponse, WeakInstanceToken,
@@ -1439,7 +1439,14 @@ impl Routable<Connector> for CapabilityRequestedHook {
                 target: target_moniker,
                 name: self.name.clone(),
             })
-            .await?;
+            .await
+            .map_err(|e| {
+                RoutingError::from(ComponentInstanceError::StartFailed {
+                    moniker: Moniker::root(),
+                    err_msg: format!("{}", e),
+                    err_as_zx: e.as_zx_status(),
+                })
+            })?;
         let source = self.source.upgrade().map_err(RoutingError::from)?;
         let ExtendedInstance::Component(target) = target.upgrade().map_err(RoutingError::from)?
         else {

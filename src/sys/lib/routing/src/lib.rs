@@ -18,8 +18,8 @@ pub mod subdir;
 pub mod walk_state;
 
 use crate::bedrock::request_metadata::{
-    dictionary_metadata, directory_metadata, protocol_metadata, resolver_metadata, runner_metadata,
-    service_metadata,
+    config_metadata, dictionary_metadata, directory_metadata, protocol_metadata, resolver_metadata,
+    runner_metadata, service_metadata,
 };
 use crate::capability_source::{
     CapabilitySource, ComponentCapability, ComponentSource, InternalCapability, VoidSource,
@@ -27,8 +27,8 @@ use crate::capability_source::{
 use crate::component_instance::{ComponentInstanceInterface, ResolvedInstanceInterface};
 use crate::error::RoutingError;
 use crate::legacy_router::{
-    CapabilityVisitor, ErrorNotFoundFromParent, ErrorNotFoundInChild, ExposeVisitor, NoopVisitor,
-    OfferVisitor, RouteBundle, Sources,
+    CapabilityVisitor, ErrorNotFoundFromParent, ErrorNotFoundInChild, ExposeVisitor, OfferVisitor,
+    RouteBundle, Sources,
 };
 use crate::mapper::DebugRouteMapper;
 use crate::rights::RightsWalker;
@@ -411,7 +411,36 @@ where
             .await
         }
         RouteRequest::ExposeConfig(expose_config_decl) => {
-            route_config_from_expose(expose_config_decl, target, mapper).await
+            let sandbox = target.component_sandbox().await?;
+            let dictionary = match &expose_config_decl.target {
+                ExposeTarget::Parent => sandbox.component_output.capabilities(),
+                ExposeTarget::Framework => sandbox.component_output.framework(),
+            };
+            let source = route_capability_inner::<Data, _>(
+                &dictionary,
+                &expose_config_decl.target_name,
+                config_metadata(expose_config_decl.availability),
+                target,
+            )
+            .await;
+            // If the route was not found, but it's a transitional availability then return
+            // a successful Void capability.
+            let source = match source {
+                Ok(s) => s,
+                Err(e) => {
+                    if *expose_config_decl.availability() == Availability::Transitional
+                        && e.as_zx_status() == zx::Status::NOT_FOUND
+                    {
+                        RouteSource::new(CapabilitySource::Void(VoidSource {
+                            capability: InternalCapability::Config(expose_config_decl.source_name),
+                            moniker: target.moniker().clone(),
+                        }))
+                    } else {
+                        return Err(e);
+                    }
+                }
+            };
+            Ok(source)
         }
 
         // Route a resolver or runner from an environment
@@ -505,7 +534,31 @@ where
                 .await
         }
         RouteRequest::UseConfig(use_config_decl) => {
-            route_config(use_config_decl, target, mapper).await
+            let source = route_capability_inner::<Data, _>(
+                &target.component_sandbox().await?.program_input.config(),
+                &use_config_decl.target_name,
+                config_metadata(use_config_decl.availability),
+                target,
+            )
+            .await;
+            // If the route was not found, but it's a transitional availability then return
+            // a successful Void capability.
+            let source = match source {
+                Ok(s) => s,
+                Err(e) => {
+                    if *use_config_decl.availability() == Availability::Transitional
+                        && e.as_zx_status() == zx::Status::NOT_FOUND
+                    {
+                        RouteSource::new(CapabilitySource::Void(VoidSource {
+                            capability: InternalCapability::Config(use_config_decl.source_name),
+                            moniker: target.moniker().clone(),
+                        }))
+                    } else {
+                        return Err(e);
+                    }
+                }
+            };
+            Ok(source)
         }
         RouteRequest::UseDictionary(use_dictionary_decl) => {
             route_capability_inner::<Dict, _>(
@@ -636,7 +689,23 @@ where
             )
             .await
         }
-        RouteRequest::OfferConfig(offer) => route_config_from_offer(offer, target, mapper).await,
+        RouteRequest::OfferConfig(offer) => {
+            let target_dictionary = get_dictionary_for_offer_target(target, &offer).await?;
+            let metadata = config_metadata(offer.availability);
+            metadata
+                .insert(
+                    Name::new(crate::bedrock::with_policy_check::SKIP_POLICY_CHECKS).unwrap(),
+                    Capability::Data(Data::Uint64(1)),
+                )
+                .unwrap();
+            route_capability_inner::<Data, _>(
+                &target_dictionary,
+                &offer.target_name,
+                metadata,
+                target,
+            )
+            .await
+        }
     }
 }
 
@@ -802,48 +871,6 @@ where
         mapper,
     )
     .await?;
-    Ok(RouteSource::new(source))
-}
-
-async fn route_config_from_offer<C>(
-    offer_decl: OfferConfigurationDecl,
-    target: &Arc<C>,
-    mapper: &mut dyn DebugRouteMapper,
-) -> Result<RouteSource, RoutingError>
-where
-    C: ComponentInstanceInterface + 'static,
-{
-    let allowed_sources = Sources::new(CapabilityTypeName::Config).builtin().component();
-    let source = legacy_router::route_from_offer(
-        RouteBundle::from_offer(offer_decl.into()),
-        target.clone(),
-        allowed_sources,
-        &mut NoopVisitor::new(),
-        mapper,
-    )
-    .await?;
-    Ok(RouteSource::new(source))
-}
-
-async fn route_config_from_expose<C>(
-    expose_decl: ExposeConfigurationDecl,
-    target: &Arc<C>,
-    mapper: &mut dyn DebugRouteMapper,
-) -> Result<RouteSource, RoutingError>
-where
-    C: ComponentInstanceInterface + 'static,
-{
-    let allowed_sources = Sources::new(CapabilityTypeName::Config).component().capability();
-    let source = legacy_router::route_from_expose(
-        RouteBundle::from_expose(expose_decl.into()),
-        target.clone(),
-        allowed_sources,
-        &mut NoopVisitor::new(),
-        mapper,
-    )
-    .await?;
-
-    target.policy_checker().can_route_capability(&source, target.moniker())?;
     Ok(RouteSource::new(source))
 }
 
@@ -1076,47 +1103,6 @@ where
     target.policy_checker().can_route_capability(&source, target.moniker())?;
 
     Ok(RouteSource::new_with_relative_path(source, state.subdir))
-}
-
-/// Finds a Configuration capability that matches the given use.
-async fn route_config<C>(
-    use_decl: UseConfigurationDecl,
-    target: &Arc<C>,
-    mapper: &mut dyn DebugRouteMapper,
-) -> Result<RouteSource, RoutingError>
-where
-    C: ComponentInstanceInterface + 'static,
-{
-    let allowed_sources = Sources::new(CapabilityTypeName::Config).component().capability();
-    let mut availability_visitor = use_decl.availability().clone();
-    let source = legacy_router::route_from_use(
-        use_decl.clone().into(),
-        target.clone(),
-        allowed_sources,
-        &mut availability_visitor,
-        mapper,
-    )
-    .await;
-    // If the route was not found, but it's a transitional availability then return
-    // a successful Void capability.
-    let source = match source {
-        Ok(s) => s,
-        Err(e) => {
-            if *use_decl.availability() == Availability::Transitional
-                && e.as_zx_status() == zx::Status::NOT_FOUND
-            {
-                CapabilitySource::Void(VoidSource {
-                    capability: InternalCapability::Config(use_decl.source_name),
-                    moniker: target.moniker().clone(),
-                })
-            } else {
-                return Err(e);
-            }
-        }
-    };
-
-    target.policy_checker().can_route_capability(&source, target.moniker())?;
-    Ok(RouteSource::new(source))
 }
 
 /// Routes an EventStream capability from `target` to its source, starting from `use_decl`.

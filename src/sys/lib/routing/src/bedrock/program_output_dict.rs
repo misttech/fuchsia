@@ -142,9 +142,37 @@ fn extend_dict_with_capability<C: ComponentInstanceInterface + 'static>(
             let data = sandbox::Data::Bytes(
                 fidl::persist(&c.value.clone().native_into_fidl()).unwrap().into(),
             );
-            match program_output_dict
-                .insert_capability(capability.name(), Router::<Data>::new_ok(data).into())
-            {
+            struct ConfigRouter {
+                data: Data,
+                source: CapabilitySource,
+            }
+            #[async_trait]
+            impl Routable<Data> for ConfigRouter {
+                async fn route(
+                    &self,
+                    _request: Option<Request>,
+                    debug: bool,
+                    _target: WeakInstanceToken,
+                ) -> Result<RouterResponse<Data>, RouterError> {
+                    if debug {
+                        Ok(RouterResponse::Debug(
+                            self.source
+                                .clone()
+                                .try_into()
+                                .expect("failed to convert capability source to dictionary"),
+                        ))
+                    } else {
+                        Ok(RouterResponse::Capability(self.data.clone()))
+                    }
+                }
+            }
+            let source = CapabilitySource::Component(ComponentSource {
+                capability: ComponentCapability::from(capability.clone()),
+                moniker: component.moniker().clone(),
+            });
+            let router = Router::new(ConfigRouter { data, source: source.clone() });
+            let router = router.with_policy_check::<C>(source, component.policy_checker().clone());
+            match program_output_dict.insert_capability(capability.name(), router.into()) {
                 Ok(()) => (),
                 Err(e) => {
                     warn!("failed to add {} to program output dict: {e:?}", capability.name())

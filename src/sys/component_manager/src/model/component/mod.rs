@@ -13,7 +13,7 @@ use crate::model::actions::{
 use crate::model::context::ModelContext;
 use crate::model::logger::LoggerCache;
 use crate::model::program::{StopConclusion, StopDisposition};
-use crate::model::routing::{self, RoutingError};
+use crate::model::routing;
 use crate::model::start::Start;
 use ::namespace::Entry as NamespaceEntry;
 use ::routing::bedrock::request_metadata::resolver_metadata;
@@ -23,12 +23,14 @@ use ::routing::component_instance::{
     ComponentInstanceInterface, ExtendedInstanceInterface, ResolvedInstanceInterface,
     WeakComponentInstanceInterface, WeakExtendedInstanceInterface,
 };
-use ::routing::error::ComponentInstanceError;
+use ::routing::error::{ComponentInstanceError, RoutingError};
 use ::routing::policy::GlobalPolicyChecker;
 use ::routing::resolving::{
     ComponentAddress, ComponentResolutionContext, ResolvedComponent, ResolvedPackage, ResolverError,
 };
+use anyhow::format_err;
 use async_trait::async_trait;
+use clonable_error::ClonableError;
 use cm_graph::DependencyNode;
 use cm_rust::{
     CapabilityTypeName, ChildDecl, CollectionDecl, ComponentDecl, NativeIntoFidl, UseDecl,
@@ -1027,12 +1029,34 @@ impl ComponentInstance {
 
     /// Obtains the program output dict.
     pub async fn get_program_output_dict(self: &Arc<Self>) -> Result<Dict, RouterError> {
-        Ok(self.lock_resolved_state().await?.sandbox.program_output_dict.clone())
+        Ok(self
+            .lock_resolved_state()
+            .await
+            .map_err(|e| {
+                RoutingError::from(ComponentInstanceError::ResolveFailed {
+                    moniker: Moniker::root(),
+                    err: ClonableError::from(format_err!("{:?}", e)),
+                })
+            })?
+            .sandbox
+            .program_output_dict
+            .clone())
     }
 
     /// Obtains the component output dict.
     pub async fn get_component_output_dict(self: &Arc<Self>) -> Result<Dict, RouterError> {
-        Ok(self.lock_resolved_state().await?.sandbox.component_output.capabilities())
+        Ok(self
+            .lock_resolved_state()
+            .await
+            .map_err(|e| {
+                RoutingError::from(ComponentInstanceError::ResolveFailed {
+                    moniker: self.moniker.clone(),
+                    err: ClonableError::from(format_err!("{:?}", e)),
+                })
+            })?
+            .sandbox
+            .component_output
+            .capabilities())
     }
 
     /// Returns a router that delegates to the component output dict.

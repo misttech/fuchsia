@@ -4,8 +4,9 @@
 
 use crate::model::component::manager::ComponentManagerInstance;
 use ::routing::component_instance::ComponentInstanceInterface;
-use ::routing::error::RoutingError;
-use anyhow::Context;
+use ::routing::error::{ComponentInstanceError, RoutingError};
+use anyhow::{Context, format_err};
+use clonable_error::ClonableError;
 use cm_types::Name;
 use fidl::endpoints::{DiscoverableProtocolMarker, create_proxy};
 use fidl_fuchsia_update_verify as fupdate;
@@ -129,7 +130,18 @@ async fn open_protocol(
             )
         })?;
 
-    let instance_output = instance.lock_resolved_state().await?.sandbox.component_output.clone();
+    let instance_output = instance
+        .lock_resolved_state()
+        .await
+        .map_err(|e| {
+            RoutingError::from(ComponentInstanceError::ResolveFailed {
+                moniker: Moniker::root(),
+                err: ClonableError::from(format_err!("{:?}", e)),
+            })
+        })?
+        .sandbox
+        .component_output
+        .clone();
     let capability = instance_output
         .framework()
         .get(&Name::new(fupdate::ComponentOtaHealthCheckMarker::PROTOCOL_NAME).unwrap())

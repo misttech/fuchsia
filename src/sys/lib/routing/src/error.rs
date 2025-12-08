@@ -43,6 +43,18 @@ pub enum ComponentInstanceError {
         #[source]
         err: ClonableError,
     },
+    // The capability routing static analyzer never produces this error subtype, so we don't need
+    // to serialize it.
+    #[cfg_attr(feature = "serde", serde(skip))]
+    #[error("failed to start `{moniker}`:\n\t{err_msg}")]
+    StartFailed {
+        moniker: Moniker,
+        // This error always comes from a StartActionError in
+        // //src/sys/component_manager/lib/errors, but we can't directly use the error value here
+        // because that library already depends on us.
+        err_msg: String,
+        err_as_zx: zx::Status,
+    },
 }
 
 impl ComponentInstanceError {
@@ -53,6 +65,7 @@ impl ComponentInstanceError {
             | ComponentInstanceError::ComponentManagerInstanceUnavailable {}
             | ComponentInstanceError::InstanceNotExecutable { .. }
             | ComponentInstanceError::NoAbsoluteUrl { .. } => zx::Status::NOT_FOUND,
+            ComponentInstanceError::StartFailed { err_as_zx, .. } => *err_as_zx,
             ComponentInstanceError::MalformedUrl { .. }
             | ComponentInstanceError::ComponentManagerInstanceUnexpected { .. } => {
                 zx::Status::INTERNAL
@@ -86,7 +99,8 @@ impl From<ComponentInstanceError> for ExtendedMoniker {
             | ComponentInstanceError::MalformedUrl { moniker, .. }
             | ComponentInstanceError::NoAbsoluteUrl { moniker, .. }
             | ComponentInstanceError::InstanceNotExecutable { moniker }
-            | ComponentInstanceError::ResolveFailed { moniker, .. } => {
+            | ComponentInstanceError::ResolveFailed { moniker, .. }
+            | ComponentInstanceError::StartFailed { moniker, .. } => {
                 ExtendedMoniker::ComponentInstance(moniker)
             }
             ComponentInstanceError::ComponentManagerInstanceUnavailable {}
