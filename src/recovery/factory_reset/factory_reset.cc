@@ -203,13 +203,15 @@ void FactoryReset::Reset(fit::callback<void(zx_status_t)> callback) {
       callback(ZX_OK);
     };
     fidl::Arena arena;
-    auto builder = fuchsia_hardware_power_statecontrol::wire::RebootOptions::Builder(arena);
-    fuchsia_hardware_power_statecontrol::RebootReason2 reasons[1] = {
-        fuchsia_hardware_power_statecontrol::RebootReason2::kFactoryDataReset};
+    auto builder = fuchsia_hardware_power_statecontrol::wire::ShutdownOptions::Builder(arena);
+    builder.action(fuchsia_hardware_power_statecontrol::ShutdownAction::kReboot);
+    fuchsia_hardware_power_statecontrol::ShutdownReason reasons[1] = {
+        fuchsia_hardware_power_statecontrol::ShutdownReason::kFactoryDataReset};
     auto vector_view =
-        fidl::VectorView<fuchsia_hardware_power_statecontrol::RebootReason2>::FromExternal(reasons);
+        fidl::VectorView<fuchsia_hardware_power_statecontrol::ShutdownReason>::FromExternal(
+            reasons);
     builder.reasons(vector_view);
-    admin_->PerformReboot(builder.Build()).ThenExactlyOnce(std::move(cb));
+    admin_->Shutdown(builder.Build()).ThenExactlyOnce(std::move(cb));
   });
 }
 

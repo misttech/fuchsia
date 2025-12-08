@@ -55,14 +55,16 @@ class MockAdmin : public fidl::testing::WireTestBase<fuchsia_hardware_power_stat
     completer.Close(ZX_ERR_NOT_SUPPORTED);
   }
 
-  void PerformReboot(PerformRebootRequestView request,
-                     PerformRebootCompleter::Sync& completer) override {
+  void Shutdown(ShutdownRequestView request, ShutdownCompleter::Sync& completer) override {
     ASSERT_FALSE(suspend_called_);
     suspend_called_ = true;
     ASSERT_TRUE(request->options.has_reasons());
+    ASSERT_TRUE(request->options.has_action());
+    ASSERT_EQ(request->options.action(),
+              fuchsia_hardware_power_statecontrol::ShutdownAction::kReboot);
     ASSERT_THAT(request->options.reasons(),
                 testing::ElementsAre(
-                    fuchsia_hardware_power_statecontrol::RebootReason2::kFactoryDataReset));
+                    fuchsia_hardware_power_statecontrol::ShutdownReason::kFactoryDataReset));
     completer.ReplySuccess();
   }
 
