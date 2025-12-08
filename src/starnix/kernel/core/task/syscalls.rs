@@ -2020,7 +2020,7 @@ pub fn sys_syslog(
             }
             let mut output_buffer =
                 UserBuffersOutputBuffer::unified_new_at(current_task, address, length as usize)?;
-            syslog.read_all(&mut output_buffer)
+            syslog.read_all(current_task, &mut output_buffer)
         }
         SyslogAction::SizeUnread => syslog.size_unread(),
         SyslogAction::SizeBuffer => syslog.size_buffer(),

@@ -287,6 +287,7 @@ _starnix_core_deps = [
   "//src/starnix/lib/devicetree",
   "//src/starnix/lib/ebpf",
   "//src/starnix/lib/ebpf_api",
+  "//src/starnix/lib/estimate_timeline",
   "//src/starnix/lib/expando",
   "//src/starnix/lib/extended_pstate:lib",
   "//src/starnix/lib/filter_methods_macro",

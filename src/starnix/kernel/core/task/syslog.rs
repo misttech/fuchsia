@@ -5,10 +5,13 @@
 use crate::security;
 use crate::task::{CurrentTask, EventHandler, WaitCallback, WaitCanceler, WaitQueue, Waiter};
 use crate::vfs::OutputBuffer;
-use diagnostics_data::{Data, Logs, LogsData, Severity, unapply_mono_to_boot_offset};
+use diagnostics_data::{Data, Logs, LogsData, Severity};
 use diagnostics_message::from_extended_record;
+use estimate_timeline::{DefaultFetcher, TimeFetcher, TimelineEstimator};
 use fidl_fuchsia_diagnostics as fdiagnostics;
 use fuchsia_component::client::connect_to_protocol_sync;
+use fuchsia_inspect::Inspector;
+use futures::FutureExt;
 use serde::Deserialize;
 use starnix_sync::{Locked, Mutex, Unlocked};
 use starnix_uapi::auth::CAP_SYSLOG;
@@ -29,6 +32,7 @@ const MICROS_PER_NANOSECOND: i64 = 1_000;
 #[derive(Default)]
 pub struct Syslog {
     syscall_subscription: OnceLock<Mutex<LogSubscription>>,
+    state: Arc<Mutex<TimelineEstimator<DefaultFetcher>>>,
 }
 
 #[derive(Debug)]
@@ -40,6 +44,21 @@ pub enum SyslogAccess {
 
 impl Syslog {
     pub fn init(&self, system_task: &CurrentTask) -> Result<(), anyhow::Error> {
+        let state = self.state.clone();
+        system_task.kernel.inspect_node.record_lazy_child("syslog", move || {
+            let state = state.clone();
+            async move {
+                let inspector = Inspector::default();
+                let state_guard = state.lock();
+                inspector.root().record_uint("max_timeline_size", state_guard.max_timeline_size());
+                inspector
+                    .root()
+                    .record_uint("timeline_overflows", state_guard.timeline_overflows());
+                Ok(inspector)
+            }
+            .boxed()
+        });
+
         let subscription = LogSubscription::snapshot_then_subscribe(system_task)?;
         self.syscall_subscription.set(Mutex::new(subscription)).expect("syslog inititialized once");
         Ok(())
@@ -149,8 +168,12 @@ impl GrantedSyslog<'_> {
         }
     }
 
-    pub fn read_all(&self, out: &mut dyn OutputBuffer) -> Result<i32, Errno> {
-        let mut subscription = LogSubscription::snapshot()?;
+    pub fn read_all(
+        &self,
+        current_task: &CurrentTask,
+        out: &mut dyn OutputBuffer,
+    ) -> Result<i32, Errno> {
+        let mut subscription = LogSubscription::snapshot(current_task)?;
         let mut buffer = ResultBuffer::new(out.available());
         while let Some(log_result) = subscription.next() {
             buffer.push(log_result?);
@@ -206,8 +229,8 @@ impl LogSubscription {
         }
     }
 
-    fn snapshot() -> Result<LogIterator, Errno> {
-        LogIterator::new(fdiagnostics::StreamMode::Snapshot)
+    fn snapshot(current_task: &CurrentTask) -> Result<LogIterator, Errno> {
+        LogIterator::new(&current_task.kernel.syslog, fdiagnostics::StreamMode::Snapshot)
     }
 
     fn subscribe(current_task: &CurrentTask) -> Result<Self, Errno> {
@@ -222,7 +245,7 @@ impl LogSubscription {
         current_task: &CurrentTask,
         mode: fdiagnostics::StreamMode,
     ) -> Result<Self, Errno> {
-        let iterator = LogIterator::new(mode)?;
+        let iterator = LogIterator::new(&current_task.kernel.syslog, mode)?;
         let (snd, receiver) = mpsc::sync_channel(1);
         let waiters = Arc::new(WaitQueue::default());
         let waiters_clone = waiters.clone();
@@ -262,10 +285,11 @@ struct LogIterator {
     iterator: fdiagnostics::BatchIteratorSynchronousProxy,
     pending_formatted_contents: VecDeque<fdiagnostics::FormattedContent>,
     pending_datas: VecDeque<Data<Logs>>,
+    state: Arc<Mutex<TimelineEstimator<DefaultFetcher>>>,
 }
 
 impl LogIterator {
-    fn new(mode: fdiagnostics::StreamMode) -> Result<Self, Errno> {
+    fn new(syslog: &Syslog, mode: fdiagnostics::StreamMode) -> Result<Self, Errno> {
         let accessor = connect_to_protocol_sync::<fdiagnostics::ArchiveAccessorMarker>()
             .map_err(|_| errno!(ENOENT, format!("Failed to connecto to ArchiveAccessor")))?;
         let is_subscribe = matches!(mode, fdiagnostics::StreamMode::Subscribe);
@@ -293,6 +317,7 @@ impl LogIterator {
             iterator,
             pending_formatted_contents: VecDeque::new(),
             pending_datas: VecDeque::new(),
+            state: syslog.state.clone(),
         })
     }
 
@@ -301,7 +326,7 @@ impl LogIterator {
     fn get_next(&mut self) -> Result<Option<Vec<u8>>, Errno> {
         'main_loop: loop {
             while let Some(data) = self.pending_datas.pop_front() {
-                if let Some(log) = format_log(data).map_err(|_| errno!(EIO))? {
+                if let Some(log) = format_log(data, &self.state).map_err(|_| errno!(EIO))? {
                     return Ok(Some(log));
                 }
             }
@@ -344,7 +369,7 @@ impl LogIterator {
                 };
                 match output {
                     OneOrMany::One(data) => {
-                        if let Some(log) = format_log(data).map_err(|_| errno!(EIO))? {
+                        if let Some(log) = format_log(data, &self.state).map_err(|_| errno!(EIO))? {
                             return Ok(Some(log));
                         }
                     }
@@ -471,7 +496,10 @@ pub(crate) fn extract_level(msg: &[u8]) -> Option<(KmsgLevel, &[u8])> {
         .map(|level| (level, &msg[end + 1..]))
 }
 
-fn format_log(data: Data<Logs>) -> Result<Option<Vec<u8>>, io::Error> {
+fn format_log<T: TimeFetcher>(
+    data: Data<Logs>,
+    state: &Arc<Mutex<TimelineEstimator<T>>>,
+) -> Result<Option<Vec<u8>>, io::Error> {
     let mut formatted_tags = match data.tags() {
         None => vec![],
         Some(tags) => {
@@ -507,7 +535,7 @@ fn format_log(data: Data<Logs>) -> Result<Option<Vec<u8>>, io::Error> {
     // cases. We unapply the *current* offset and in the case where suspension happened between
     // when the log message was generated and when Starnix is forwarding the log message, this will
     // be different from the *actual* offset prior to suspension.
-    let time = unapply_mono_to_boot_offset(data.metadata.timestamp);
+    let time = state.lock().boot_time_to_monotonic_time(data.metadata.timestamp);
     let time_nanos = time.into_nanos();
     let time_secs = time_nanos / NANOS_PER_SECOND;
     // Microsecond-level precision fractional time.

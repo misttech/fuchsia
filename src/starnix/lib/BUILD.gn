@@ -27,6 +27,7 @@ group("tests") {
     "ebpf:tests",
     "ebpf_api:tests",
     "ebpf_loader:tests",
+    "estimate_timeline:tests",
     "expando:tests",
     "extended_pstate:tests",
     "features:tests",
