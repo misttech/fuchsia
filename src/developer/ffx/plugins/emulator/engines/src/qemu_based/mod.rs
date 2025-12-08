@@ -8,6 +8,7 @@
 use crate::arg_templates::process_flag_template;
 use crate::qemu_based::comms::{QemuSocket, spawn_pipe_thread};
 use crate::show_output;
+use assembled_system::vbmeta::FUCHSIA_HASH_DESCRIPTOR_NAME;
 use async_trait::async_trait;
 use emulator_instance::{
     AccelerationMode, ConsoleType, DiskImage, EmulatorConfiguration, EngineState, GuestConfig,
@@ -506,7 +507,8 @@ pub(crate) trait QemuBasedEngine: EmulatorEngine {
         let salt = Salt::random().map_err(|e| bug!("{e}"))?;
         // Create a hash descriptor of the same format as Fuchsia images assembly:
         // https://cs.opensource.google/fuchsia/fuchsia/+/main:src/lib/assembly/vbmeta/src/main.rs;l=39;drc=4fcdaf5e61c518ac1bec7462f077f5e1ffd5ddab
-        let descriptor = Descriptor::Hash(HashDescriptor::new("zircon", &zbi_bytes, salt));
+        let descriptor =
+            Descriptor::Hash(HashDescriptor::new(FUCHSIA_HASH_DESCRIPTOR_NAME, &zbi_bytes, salt));
         let descriptors = vec![descriptor];
         let vbmeta = VBMeta::sign(descriptors, key).map_err(|e| user_error!("{e}"))?;
 

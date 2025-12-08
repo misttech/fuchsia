@@ -14,6 +14,10 @@ use std::path::Path;
 use utf8_path::path_relative_from_current_dir;
 use vbmeta::{Descriptor, HashDescriptor, Key, Salt, VBMeta as VBMetaImage};
 
+/// The conventional name for the partition name of the hash descriptor in a
+/// VBMeta assembled for Fuchsia.
+pub const FUCHSIA_HASH_DESCRIPTOR_NAME: &str = "zircon";
+
 /// Construct the vbmeta image.
 pub fn construct_vbmeta(
     assembled_system: &mut AssembledSystem,
@@ -24,34 +28,31 @@ pub fn construct_vbmeta(
     // Generate the salt.
     let salt = Salt::random()?;
 
-    // Collect any additional descriptors.
-    let additional_descriptors: Vec<Descriptor> = vbmeta_config
-        .additional_descriptors
-        .iter()
-        .map(|d| {
-            Descriptor::Hash(
-                ExtraHashDescriptor {
-                    name: Some(d.name.clone()),
-                    size: Some(d.size),
-                    salt: None,
-                    digest: None,
-                    flags: Some(d.flags),
-                    min_avb_version: None, //Some(d.min_avb_version),
-                }
-                .into(),
-            )
-        })
-        .collect();
+    // Collect the descriptors.
+    let fs = RealFilesystemProvider {};
+    let mut descriptors = descriptors_for_fuchsia(zbi, salt.clone(), &fs)
+        .context("constructing VBMeta descriptors")?;
+    for hash in &vbmeta_config.additional_descriptors {
+        descriptors.push(Descriptor::Hash(
+            ExtraHashDescriptor {
+                name: Some(hash.name.clone()),
+                size: Some(hash.size),
+                salt: None,
+                digest: None,
+                flags: Some(hash.flags),
+                min_avb_version: None, //Some(d.min_avb_version),
+            }
+            .into(),
+        ));
+    }
 
     // Sign the image and construct a VBMeta.
     let (vbmeta, _salt) = crate::vbmeta::sign(
-        "zircon",
-        zbi,
+        descriptors,
         &vbmeta_config.key,
         &vbmeta_config.key_metadata,
-        additional_descriptors,
         salt,
-        &RealFilesystemProvider {},
+        &fs,
     )
     .context("signing vbmeta")?;
 
@@ -65,13 +66,27 @@ pub fn construct_vbmeta(
     Ok(vbmeta_path_relative)
 }
 
-#[allow(clippy::ptr_arg)]
+/// The descriptors for a VBMeta assembled for Fuchsia.
+fn descriptors_for_fuchsia<FSP: FilesystemProvider>(
+    zbi_path: impl AsRef<Path>,
+    salt: Salt,
+    fs: &FSP,
+) -> Result<Vec<Descriptor>> {
+    // Read the image into memory, so that it can be hashed.
+    let zbi = fs
+        .read(&zbi_path)
+        .with_context(|| format!("reading ZBI: {}", zbi_path.as_ref().display()))?;
+
+    // Create the descriptor for the image.
+    let descriptor =
+        Descriptor::Hash(HashDescriptor::new(FUCHSIA_HASH_DESCRIPTOR_NAME, &zbi, salt));
+    Ok(vec![descriptor])
+}
+
 fn sign<FSP: FilesystemProvider>(
-    name: impl AsRef<str>,
-    image_path: impl AsRef<Path>,
+    descriptors: Vec<Descriptor>,
     key: impl AsRef<Path>,
     key_metadata: impl AsRef<Path>,
-    additional_descriptors: Vec<Descriptor>,
     salt: Salt,
     fs: &FSP,
 ) -> Result<(VBMetaImage, Salt)> {
@@ -85,26 +100,16 @@ fn sign<FSP: FilesystemProvider>(
     // And then create the signing key from those.
     let key = Key::try_new(&key_pem, key_metadata).unwrap();
 
-    // Read the image into memory, so that it can be hashed.
-    let image = fs
-        .read(&image_path)
-        .with_context(|| format!("reading image: {}", image_path.as_ref().display()))?;
-
-    // Create the descriptor for the image.
-    let mut descriptors = additional_descriptors;
-    let descriptor = Descriptor::Hash(HashDescriptor::new(name.as_ref(), &image, salt.clone()));
-    descriptors.push(descriptor);
-
     // And do the signing operation itself.
     VBMetaImage::sign(descriptors, key).map_err(Into::into).map(|vbmeta| (vbmeta, salt))
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{construct_vbmeta, sign};
+    use super::{FUCHSIA_HASH_DESCRIPTOR_NAME, construct_vbmeta, descriptors_for_fuchsia, sign};
 
     use crate::AssembledSystem;
-    use crate::vbmeta::{Descriptor, Key, Salt};
+    use crate::vbmeta::{Descriptor, HashDescriptor, Key, Salt};
     use crate::vfs::mock::MockFilesystemProvider;
 
     use assembly_images_config::VBMeta;
@@ -149,6 +154,37 @@ mod tests {
     }
 
     #[test]
+    fn fuchsia_descriptors() {
+        let mut vfs = MockFilesystemProvider::new();
+        vfs.add("zbi", &[0x00u8; 128]);
+        vfs.add("salt", hex::encode([0xAAu8; 32]).as_bytes());
+
+        let salt = Salt::try_from(&[0xAAu8; 32][..]).unwrap();
+
+        let descriptors = descriptors_for_fuchsia("zbi", salt.clone(), &vfs).unwrap();
+
+        // Validate that there's only the one descriptor.
+        assert_eq!(descriptors.len(), 1);
+
+        let Descriptor::Hash(hash) = &descriptors[0] else {
+            panic!("descriptor is not a hash descriptor!?: {:#?}", descriptors[0]);
+        };
+
+        // Validate that the salt was the one from the args.
+        assert_eq!(salt, hash.salt().unwrap());
+
+        // The partition name should be the conventional Fuchsia one.
+        assert_eq!(FUCHSIA_HASH_DESCRIPTOR_NAME, hash.image_name());
+
+        // Validate that the digest is the expected one, based on the image that
+        // was provided in the arguments.
+        let expected_digest =
+            hex::decode("caeaacb8208cfd8d214de6baef8d535f6fce499524c60aa5dcd2fce7043a9700")
+                .unwrap();
+        assert_eq!(Some(expected_digest.as_ref()), hash.digest());
+    }
+
+    #[test]
     fn sign_vbmeta() {
         let key_expected =
             Key::try_new(test_keys::TEST_RSA_4096_PEM, "TEST_METADATA".as_bytes()).unwrap();
@@ -156,13 +192,13 @@ mod tests {
         let mut vfs = MockFilesystemProvider::new();
         vfs.add("key", test_keys::TEST_RSA_4096_PEM.as_bytes());
         vfs.add("key_metadata", &b"TEST_METADATA"[..]);
-        vfs.add("image", &[0x00u8; 128]);
-        vfs.add("salt", hex::encode([0xAAu8; 32]).as_bytes());
 
         let salt = Salt::try_from(&[0xAAu8; 32][..]).unwrap();
+        let descriptor =
+            Descriptor::Hash(HashDescriptor::new("image_name", &[0xBB; 32], salt.clone()));
 
         let (vbmeta, salt) =
-            sign("some_name", "image", "key", "key_metadata", Vec::new(), salt, &vfs).unwrap();
+            sign(vec![descriptor.clone()], "key", "key_metadata", salt, &vfs).unwrap();
 
         // Validate that the key in the arguments was the key that was passed to
         // the vbmeta library for the signing operation.
@@ -171,25 +207,8 @@ mod tests {
         // Validate that there's only the one descriptor.
         let descriptors = vbmeta.descriptors();
         assert_eq!(descriptors.len(), 1);
+        assert_eq!(descriptor, descriptors[0]);
 
-        let Descriptor::Hash(hash) = &descriptors[0] else {
-            panic!("descriptor 0 is not a hash descriptor!?: {:#?}", descriptors[0]);
-        };
-        assert_eq!(salt, hash.salt().unwrap());
-        let name = hash.image_name();
-        let digest = hash.digest();
-        let expected_digest =
-            hex::decode("caeaacb8208cfd8d214de6baef8d535f6fce499524c60aa5dcd2fce7043a9700")
-                .unwrap();
-
-        // Validate that the salt was the one from the args.
         assert_eq!(salt.bytes, [0xAAu8; 32]); // the salt from the args.
-
-        // Validate that the image name was set to the one passed in the arguments.
-        assert_eq!(name, "some_name");
-
-        // Validate that the digest is the expected one, based on the image that
-        // was provided in the arguments.
-        assert_eq!(digest, Some(expected_digest.as_ref()));
     }
 }

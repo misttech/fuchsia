@@ -19,7 +19,7 @@ const PROPERTY_DESCRIPTOR_TAG: u64 = 1;
 const HASH_DESCRIPTOR_TAG: u64 = 2;
 
 /// A VBMeta descriptor.
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Descriptor {
     /// Property descriptor.
     Property(PropertyDescriptor),
@@ -38,7 +38,7 @@ impl Descriptor {
 }
 
 /// A VBMeta property descriptor.
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct PropertyDescriptor {
     key: String,
     value: String,
@@ -97,7 +97,7 @@ impl PropertyDescriptorHeader {
 }
 
 /// A descriptor that contains the salt and digest of a provided image.
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct HashDescriptor {
     header: HashDescriptorHeader,
     image_name: String,
@@ -189,7 +189,7 @@ impl HashDescriptor {
     }
 }
 
-#[derive(IntoBytes, Immutable, Debug, PartialEq)]
+#[derive(Clone, IntoBytes, Immutable, Debug, PartialEq)]
 #[repr(C, packed)]
 struct HashDescriptorHeader {
     tag: BigEndianU64,
