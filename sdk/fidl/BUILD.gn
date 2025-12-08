@@ -392,7 +392,6 @@ _host_tool_fidl_libraries_targets_list = [
   # keep-sorted: begin
   "//sdk/fidl/fuchsia.dash:fuchsia.dash",
   "//sdk/fidl/fuchsia.debugger:fuchsia.debugger",
-  "//sdk/fidl/fuchsia.developer.console:fuchsia.developer.console",
   "//sdk/fidl/fuchsia.developer.ffxdaemonlifecycle:fuchsia.developer.ffxdaemonlifecycle",
   "//sdk/fidl/fuchsia.developer.remotecontrol:fuchsia.developer.remotecontrol",
   "//sdk/fidl/fuchsia.diagnostics.host:fuchsia.diagnostics.host",

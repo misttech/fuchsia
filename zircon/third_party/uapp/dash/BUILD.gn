@@ -11,7 +11,6 @@ executable("dash") {
 
     # Several unittests use dash.
     "//src/bringup/bin/netsvc:*",
-    "//src/developer/console/test:*",
     "//src/lib/process:*",
     "//src/lib/pty:*",
     "//src/sys/tools/debug-dash-launcher:*",

@@ -434,10 +434,6 @@ assembly_input_bundle("embeddable_userdebug") {
     # shell
     "//zircon/third_party/uapp/dash:bootfs",
   ]
-  bootfs_packages = [
-    # Developer console allows SSH and FFX to start consoles.
-    "//src/developer/console:package",
-  ]
   root_shards = [ "//src/developer/toolbox/meta/toolbox.root_shard.cml" ]
   bootstrap_shards =
       [ "//src/developer/toolbox/meta/toolbox.bootstrap_shard.cml" ]
@@ -448,10 +444,7 @@ assembly_input_bundle("embeddable_userdebug") {
       components = [
         {
           component_name = "toolbox"
-          shards = [
-            "//src/developer/toolbox/meta/toolbox.cml",
-            "//src/developer/console/meta/developer-console.toolbox_shard.cml",
-          ]
+          shards = [ "//src/developer/toolbox/meta/toolbox.cml" ]
           cmc_features = [ "use_dictionaries" ]
         },
       ]

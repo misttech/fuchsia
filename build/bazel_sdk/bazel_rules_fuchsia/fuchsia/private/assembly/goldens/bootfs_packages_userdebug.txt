@@ -18,7 +18,6 @@ clock
 ?cpu-manager
 critical-services
 ?debug-dash-launcher
-developer-console
 devfs
 devfs-driver
 device-name-provider

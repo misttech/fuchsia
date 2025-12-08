@@ -6,7 +6,6 @@ group("developer") {
   testonly = true
   deps = [
     ":tests",
-    "console",
     "debug",
     "ffx",
     "forensics",
@@ -22,7 +21,6 @@ group("tests") {
   deps = [
     "adb:tests",
     "build_info:tests",
-    "console:tests",
     "debug:tests",
     "fastboot:tests",
     "ffx:package_deps_for_host_tests",

@@ -32,7 +32,6 @@ const ALLOWED_SERIAL_LOG_COMPONENTS: &[&str] = &[
     "/core/system-update/system-update-committer",
     "/core/wlancfg",
     "/core/wlandevicemonitor",
-    "/toolbox/developer-console",
 ];
 
 const DENIED_SERIAL_LOG_TAGS: &[&str] = &["NUD"];

@@ -6,7 +6,6 @@
 group("use_dictionaries") {
   visibility = [
     "//bundles/assembly:embeddable_userdebug.compiled_package.toolbox.toolbox.cmc_features",
-    "//src/developer/console/test:*",
     "//src/sys/component_manager/tests/*",
   ]
 }
