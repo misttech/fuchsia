@@ -40,7 +40,7 @@ pub struct ReadWriteBytesFile {
 
 impl ReadWriteBytesFile {
     pub fn new_node() -> impl FsNodeOps {
-        SimpleFileNode::new(move || Ok(BytesFile::new(Self::default())))
+        BytesFile::new_node(Self::default())
     }
 }
 
