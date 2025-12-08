@@ -7,10 +7,11 @@ use crate::types::right::{Rights, RightsClause};
 use crate::{
     AnyRef, AsClause, AsClauseContext, Canonicalize, CapabilityClause, DictionaryRef, EventScope,
     FilterClause, FromClause, FromClauseContext, PathClause, SourceAvailability,
-    one_or_many_from_context, one_or_many_from_impl, option_one_or_many_as_ref,
 };
 
-use crate::one_or_many::OneOrMany;
+use crate::one_or_many::{
+    OneOrMany, one_or_many_from_context, one_or_many_from_impl, option_one_or_many_as_ref,
+};
 pub use cm_types::{
     Availability, BorrowedName, BoundedName, DependencyType, HandleType, Name, OnTerminate,
     ParseError, Path, RelativePath, StartupMode, Url,

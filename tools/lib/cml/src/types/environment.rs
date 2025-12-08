@@ -2,12 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::{
-    AnyRef, AsClause, CapabilityClause, Error, FromClause, OfferFromRef, PathClause,
-    option_one_or_many_as_ref,
-};
+use crate::{AnyRef, AsClause, CapabilityClause, Error, FromClause, OfferFromRef, PathClause};
 
-use crate::one_or_many::OneOrMany;
+use crate::one_or_many::{OneOrMany, option_one_or_many_as_ref};
 pub use cm_types::{
     Availability, BorrowedName, BoundedName, DeliveryType, DependencyType, HandleType, Name,
     OnTerminate, ParseError, Path, RelativePath, StartupMode, StorageId, Url,

@@ -4,10 +4,10 @@
 
 use crate::{
     AnyRef, AsClause, AsClauseContext, Canonicalize, CapabilityClause, ConfigNestedValueType,
-    ConfigType, FilterClause, PathClause, always_one, option_one_or_many_as_ref,
+    ConfigType, FilterClause, PathClause,
 };
 
-use crate::one_or_many::OneOrMany;
+use crate::one_or_many::{OneOrMany, always_one, option_one_or_many_as_ref};
 use crate::types::common::*;
 use crate::types::right::{Rights, RightsClause};
 pub use cm_types::{

@@ -5,10 +5,10 @@
 use crate::types::common::*;
 use crate::{
     AnyRef, Canonicalize, CapabilityClause, ConfigNestedValueType, ConfigType, DictionaryRef,
-    EventScope, FilterClause, FromClause, PathClause, always_one, option_one_or_many_as_ref,
+    EventScope, FilterClause, FromClause, PathClause,
 };
 
-use crate::one_or_many::OneOrMany;
+use crate::one_or_many::{OneOrMany, always_one, option_one_or_many_as_ref};
 use crate::types::right::{Rights, RightsClause};
 pub use cm_types::{
     Availability, BorrowedName, DependencyType, HandleType, Name, OnTerminate, ParseError, Path,

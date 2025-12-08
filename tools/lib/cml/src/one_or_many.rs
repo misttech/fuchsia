@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::{AnyRef, ContextSpanned};
 use std::fmt::{self, Display, Formatter};
 use std::{slice, vec};
 
@@ -239,6 +240,54 @@ impl<T> Iterator for IntoIter<T> {
 }
 
 impl<T> ExactSizeIterator for IntoIter<T> {}
+
+pub(crate) fn always_one<T>(o: Option<OneOrMany<T>>) -> Option<T> {
+    o.map(|o| match o {
+        OneOrMany::One(o) => o,
+        OneOrMany::Many(_) => panic!("many is impossible"),
+    })
+}
+
+pub(crate) fn option_one_or_many_as_ref<T, S: ?Sized>(
+    o: &Option<OneOrMany<T>>,
+) -> Option<OneOrMany<&S>>
+where
+    T: AsRef<S>,
+{
+    o.as_ref().map(|o| o.as_ref())
+}
+
+pub(crate) fn one_or_many_from_impl<'a, T>(from: &'a OneOrMany<T>) -> OneOrMany<AnyRef<'a>>
+where
+    AnyRef<'a>: From<&'a T>,
+    T: 'a,
+{
+    let r = match from {
+        OneOrMany::One(r) => OneOrMany::One(r.into()),
+        OneOrMany::Many(v) => OneOrMany::Many(v.into_iter().map(|r| r.into()).collect()),
+    };
+    r.into()
+}
+
+pub(crate) fn one_or_many_from_context<'a, T>(
+    from: &'a ContextSpanned<OneOrMany<T>>,
+) -> ContextSpanned<OneOrMany<AnyRef<'a>>>
+where
+    AnyRef<'a>: From<&'a T>,
+    T: 'a,
+{
+    let origin = from.origin.clone();
+
+    let converted_value = match &from.value {
+        OneOrMany::One(r) => OneOrMany::One(r.into()),
+        OneOrMany::Many(v) => {
+            let converted_vec = v.iter().map(|r| r.into()).collect();
+            OneOrMany::Many(converted_vec)
+        }
+    };
+
+    ContextSpanned { value: converted_value, origin }
+}
 
 #[cfg(test)]
 mod tests {
