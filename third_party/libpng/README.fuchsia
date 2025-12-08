@@ -1,24 +1,22 @@
 Name: libpng
-URL: http://libpng.org/
-Upstream Git: https://github.com/glennrp/libpng
-Version: 1.6.37
+URL: https://www.libpng.org/pub/png/libpng.html
+Upstream Git: https://github.com/pnggroup/libpng
+Version: 1.6.52
 Security Critical: yes
 License: libpng license
 License File: LICENSE
 License Android Compatible: yes
 Description:
 
-Updated to 1.6.37, stripped all unneeded files.
+Updated to 1.6.52, stripped all unneeded files.
 
 - Strip all unneeded files
-  rm -r contrib projects scripts tests \
+  rm -r ci contrib projects scripts tests \
         ANNOUNCE CHANGES INSTALL TODO autogen.sh configure.ac CMakeLists.txt Makefile.am \
 	aclocal.m4 compile config.guess config.sub configure depcomp install.sh ltmain.sh \
-	missing test-driver libpng-manual.txt \
-        *.in *.3 *.5 *.png *.jpg *.dfa
+	missing test-driver libpng-manual.txt .github .editorconfig .editorconfig-checker.json \
+        *.in *.3 *.5 *.png *.jpg *.dfa *.yaml
 
-- Use custom configuration file pnglibconf.h, which turns off all features that
+- Use custom configuration file pnglibconf.h, which turns off features that
   are not in use.
-- Use custom prefix file pngprefix.h, which avoids namespace conflicts with
-  pdfium's copy of libpng.
 - Configures custom png chunk user limits (crbug.com/117369) in pnglibconf.h.

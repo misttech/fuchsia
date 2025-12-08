@@ -2,10 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-/* libpng 1.6.22 CUSTOM API DEFINITION */
+/* libpng 1.6.52 CUSTOM API DEFINITION */
 /* pnglibconf.h - library build configuration */
-/* Libpng version 1.6.22 - May 29, 2016 */
-/* Copyright (c) 1998-2015 Glenn Randers-Pehrson */
+
+/* libpng version 1.6.52 */
+
+/* Copyright (c) 2018-2025 Cosmin Truta */
+/* Copyright (c) 1998-2002,2004,2006-2018 Glenn Randers-Pehrson */
+
 /* This code is released under the libpng license. */
 /* For conditions of distribution and use, see the disclaimer */
 /* and license in png.h */
@@ -24,6 +28,7 @@
 /*#undef PNG_BENIGN_WRITE_ERRORS_SUPPORTED*/
 #define PNG_COLORSPACE_SUPPORTED
 #define PNG_CONVERT_tIME_SUPPORTED
+/*#undef PNG_DISABLE_ADLER32_CHECK_SUPPORTED*/
 #define PNG_EASY_ACCESS_SUPPORTED
 /*#undef PNG_ERROR_NUMBERS_SUPPORTED*/
 #define PNG_ERROR_TEXT_SUPPORTED
@@ -137,7 +142,7 @@
 #define PNG_zTXt_SUPPORTED
 /* end of options */
 /* chromium options */
-/* These are PNG options that chromium chooses to explicitly disable */
+/* These are PNG options that chromium chose to explicitly disable when it depended on libpng. */
 /*#undef PNG_BUILD_GRAYSCALE_PALETTE_SUPPORTED*/
 /*#undef PNG_CHECK_FOR_INVALID_INDEX_SUPPORTED*/
 /*#undef PNG_CONSOLE_IO_SUPPORTED*/
@@ -214,17 +219,9 @@
 #define PNG_sRGB_PROFILE_CHECKS 2
 /* end of default settings */
 /* chromium settings */
-/* These are PNG setting that chromium has modified */
+/* These are PNG setting that chromium modified when it depended on libpng. */
 /* crbug.com/117369 */
 #define PNG_USER_CHUNK_CACHE_MAX 128
 #define PNG_USER_CHUNK_MALLOC_MAX 4000000L
 /* end of chromium settings */
-/* chromium prefixing */
-/*
- * This is necessary to build multiple copies of libpng.  We need this while pdfium builds
- * its own copy of libpng.
- */
-#define PNG_PREFIX
-#include "pngprefix.h"
-/* end of chromium prefixing */
 #endif /* PNGLCONF_H */
