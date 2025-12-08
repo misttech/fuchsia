@@ -127,6 +127,8 @@ where
     D: driver::Driver,
 {
     let mut config = driver.config();
+    driver.setup().context("Failed to set up driver")?;
+
     if let Some(params) = test_params {
         config.merge_test_params(params);
     }

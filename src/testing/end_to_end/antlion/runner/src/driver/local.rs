@@ -176,6 +176,9 @@ impl Driver for LocalDriver {
             mobly_params: config::MoblyParams { log_path: self.output_dir.clone() },
         }
     }
+    fn setup(&self) -> Result<()> {
+        Ok(())
+    }
     fn teardown(&self) -> Result<()> {
         println!(
             "\nView full antlion logs at {}",

@@ -18,6 +18,8 @@ pub(crate) trait Driver {
     fn output_path(&self) -> &Path;
     /// Antlion config for use during test.
     fn config(&self) -> Config;
+    /// Additional logic to run before all tests start
+    fn setup(&self) -> Result<()>;
     /// Additional logic to run after all tests run, regardless of tests passing
     /// or failing.
     fn teardown(&self) -> Result<()>;

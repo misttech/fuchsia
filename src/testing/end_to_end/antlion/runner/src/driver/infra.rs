@@ -309,13 +309,25 @@ impl Driver for InfraDriver {
     fn config(&self) -> Config {
         self.config.clone()
     }
+    fn setup(&self) -> Result<()> {
+        // This string matches //tools/testing/testparser/testparser.go, to indicate that Mobly
+        // results will be printed in the test
+        // LINT.IfChange
+        println!("======== Mobly config content ========");
+        // LINT.ThenChange(src/testing/end_to_end/mobly_driver/mobly_driver/api/api_infra.py)
+        Ok(())
+    }
     fn teardown(&self) -> Result<()> {
         let results_path =
             self.output_dir.join(TESTBED_NAME).join("latest").join(TEST_SUMMARY_FILE);
         match fs::File::open(&results_path) {
             Ok(mut results) => {
                 println!("\nTest results from {}\n", results_path.display());
+                // This string matched //tools/testing/testparser/moblytest.go, so the test parser
+                // knows when test results start.
+                // LINT.IfChange
                 println!("[=====MOBLY RESULTS=====]");
+                // LINT.ThenChange(src/testing/end_to_end/mobly_driver/mobly_driver/api/api_infra.py)
                 std::io::copy(&mut results, &mut std::io::stdout())
                     .context("Failed to copy results to stdout")?;
             }
