@@ -801,6 +801,9 @@ impl Drop for RxLease {
             netdev::DelegatedRxLeaseHandle::Channel(_channel) => {
                 // Dropping the channel is enough to relinquish the lease.
             }
+            netdev::DelegatedRxLeaseHandle::Eventpair(_eventpair) => {
+                // Dropping the eventpair is enough to relinquish the lease.
+            }
             netdev::DelegatedRxLeaseHandle::__SourceBreaking { .. } => {}
         }
     }

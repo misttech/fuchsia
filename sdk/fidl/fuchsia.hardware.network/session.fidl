@@ -204,5 +204,10 @@ type DelegatedRxLease = resource table {
         ///
         /// Close the channel to release the lease.
         1: channel zx.Handle:CHANNEL;
+        /// An eventpair representing a lease.
+        ///
+        /// Close the eventpair to release the lease.
+        2: eventpair
+                zx.Handle:<EVENTPAIR, zx.Rights.TRANSFER | zx.Rights.DUPLICATE | zx.Rights.WAIT>;
     };
 };

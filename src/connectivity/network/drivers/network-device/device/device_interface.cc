@@ -1479,6 +1479,7 @@ void DeviceInterface::DropDelegatedRxLease(netdev::DelegatedRxLease lease) {
   // simply destroying the natural type is not enough to drop the lease.
   switch (lease.handle()->Which()) {
     case netdev::DelegatedRxLeaseHandle::Tag::kChannel:
+    case netdev::DelegatedRxLeaseHandle::Tag::kEventpair:
     case netdev::DelegatedRxLeaseHandle::Tag::_do_not_handle_this__write_a_default_case_instead:
       break;
   }
