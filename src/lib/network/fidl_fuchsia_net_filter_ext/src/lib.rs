@@ -628,6 +628,7 @@ pub enum Action {
     Redirect { dst_port: Option<PortRange> },
     Masquerade { src_port: Option<PortRange> },
     Mark { domain: fnet::MarkDomain, action: MarkAction },
+    None,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -700,6 +701,7 @@ impl From<Action> for fnet_filter::Action {
             Action::Mark { domain, action } => {
                 Self::Mark(fnet_filter::Mark { domain, action: action.into() })
             }
+            Action::None => Self::None(fnet_filter::Empty {}),
         }
     }
 }
@@ -752,6 +754,7 @@ impl TryFrom<fnet_filter::Action> for Action {
             fnet_filter::Action::__SourceBreaking { .. } => {
                 Err(FidlConversionError::UnknownUnionVariant(type_names::ACTION))
             }
+            fnet_filter::Action::None(fnet_filter::Empty {}) => Ok(Self::None),
         }
     }
 }

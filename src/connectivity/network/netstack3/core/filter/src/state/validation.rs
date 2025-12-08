@@ -264,7 +264,8 @@ fn validate_routine<I: IpExt, BT: MatcherBindingsTypes, RuleInfo: Clone>(
         };
 
         match action {
-            Action::Accept | Action::Drop | Action::Return | Action::Mark { .. } => {}
+            Action::Accept | Action::Drop | Action::Return | Action::Mark { .. } | Action::None => {
+            }
             Action::TransparentProxy(_) => {
                 // TransparentProxy is only valid in a rule that matches on
                 // either TCP or UDP.
@@ -451,6 +452,7 @@ impl<I: IpExt, BT: MatcherBindingsTypes, RuleInfo: Clone> Action<I, BT, RuleInfo
                 });
                 Action::Jump(converted)
             }
+            Self::None => Action::None,
         }
     }
 }

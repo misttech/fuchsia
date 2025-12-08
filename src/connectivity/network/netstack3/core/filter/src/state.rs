@@ -139,6 +139,9 @@ pub enum Action<I: IpExt, BT: MatcherBindingsTypes, RuleInfo> {
         /// The action to apply.
         action: MarkAction,
     },
+
+    /// No action.
+    None,
 }
 
 /// Transparently intercept the packet and deliver it to a local socket without
@@ -168,7 +171,8 @@ impl<I: IpExt, BT: MatcherBindingsTypes, RuleInfo> Inspectable for Action<I, BT,
             | Self::TransparentProxy(_)
             | Self::Redirect { .. }
             | Self::Masquerade { .. }
-            | Self::Mark { .. } => {
+            | Self::Mark { .. }
+            | Self::None => {
                 format!("{self:?}")
             }
             Self::Jump(UninstalledRoutine { routine: _, id }) => {

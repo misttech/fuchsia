@@ -312,6 +312,7 @@ where
                         action: action.into_core(),
                     }
                 }
+                fnet_filter_ext::Action::None => netstack3_core::filter::Action::None,
             };
 
             Some(Ok(CoreRule { matcher, action, validation_info: rule_id }))

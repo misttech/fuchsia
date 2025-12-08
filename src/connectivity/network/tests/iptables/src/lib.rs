@@ -60,6 +60,8 @@ const MANGLE_TABLE_WITH_CUSTOM_CHAIN: &[&str] = &[
 const MANGLE_TABLE_WITH_MARK_TARGET: &[&str] =
     &["*mangle", "-A INPUT -i lo -j MARK --set-mark 0x1/0x3", "COMMIT"];
 
+const MANGLE_TABLE_WITH_NOOP_TARGET: &[&str] = &["*mangle", "-A INPUT -i lo", "COMMIT"];
+
 /// Runs component `name` in Realm collection "test-programs" and with `input_lines` as stdin.
 /// Items in `input_lines` are suffixed with newline character, and sent one line at a time, and
 /// then stdin is closed. Checks that component exited with `ExitStatus::Clean` and returns the
@@ -402,6 +404,32 @@ fn mangle_table_with_input_marking(namespace: Namespace) -> Vec<Resource> {
     ]
 }
 
+fn mangle_table_with_noop_target(namespace: Namespace) -> Vec<Resource> {
+    let namespace_id = namespace.id.clone();
+    let priority = -150;
+    let input_routine_id =
+        RoutineId { namespace: namespace_id.clone(), name: String::from("INPUT") };
+    vec![
+        Resource::Namespace(namespace),
+        // INPUT built-in routine
+        Resource::Routine(Routine {
+            id: input_routine_id.clone(),
+            routine_type: RoutineType::Ip(Some(InstalledIpRoutine {
+                hook: IpHook::LocalIngress,
+                priority,
+            })),
+        }),
+        Resource::Rule(Rule {
+            id: RuleId { routine: input_routine_id, index: 0 },
+            matchers: Matchers {
+                in_interface: Some(fnet_matchers_ext::Interface::Name("lo".into())),
+                ..Default::default()
+            },
+            action: Action::None,
+        }),
+    ]
+}
+
 enum Ip {
     V4,
     V6,
@@ -462,6 +490,20 @@ enum Ip {
     MANGLE_TABLE_WITH_MARK_TARGET,
     mangle_table_with_input_marking;
     "mangle chain mark ipv6"
+)]
+#[test_case(
+    Ip::V4,
+    "mangle",
+    MANGLE_TABLE_WITH_NOOP_TARGET,
+    mangle_table_with_noop_target;
+    "mangle chain noop ipv4"
+)]
+#[test_case(
+    Ip::V6,
+    "mangle",
+    MANGLE_TABLE_WITH_NOOP_TARGET,
+    mangle_table_with_noop_target;
+    "mangle chain noop ipv6"
 )]
 #[fuchsia::test]
 async fn create_chain(

@@ -462,6 +462,9 @@ pub enum Target {
 
     // Parsed from `xt_mark_tginfo2`.
     Mark { mask: u32, mark: u32 },
+
+    // Proceed to the next rule in the chain.
+    Next,
 }
 
 #[derive(Debug)]
@@ -850,7 +853,13 @@ impl IptReplaceParser {
                     });
                 }
                 let standard_target = self.view_next_bytes_as::<VerdictWithPadding>()?;
-                Target::Standard(standard_target.verdict)
+
+                let next_offset = self.bytes_since_first_entry() + remaining_size;
+                if standard_target.verdict.try_into() == Ok(next_offset) {
+                    Target::Next
+                } else {
+                    Target::Standard(standard_target.verdict)
+                }
             }
 
             (TARGET_ERROR, 0) => {
@@ -1541,6 +1550,8 @@ impl Entry {
                 domain: fnet::MarkDomain::Mark1,
                 action: fnet_filter_ext::MarkAction::SetMark { mark, clearing_mask: mask },
             })),
+
+            Target::Next => Ok(Some(fnet_filter_ext::Action::None)),
         }
     }
 

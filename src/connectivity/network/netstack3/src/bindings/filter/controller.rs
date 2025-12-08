@@ -394,7 +394,8 @@ impl Validator {
                     | fnet_filter_ext::Action::TransparentProxy(_)
                     | fnet_filter_ext::Action::Redirect { .. }
                     | fnet_filter_ext::Action::Masquerade { .. }
-                    | fnet_filter_ext::Action::Mark { .. } => {}
+                    | fnet_filter_ext::Action::Mark { .. }
+                    | fnet_filter_ext::Action::None => {}
                 }
 
                 let to_insert = Rule { matchers, action };

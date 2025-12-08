@@ -209,7 +209,9 @@ impl UpdateDispatcherInner {
                                 counts.masquerade_actions += 1
                             }
                             fnet_filter_ext::Action::Mark { .. } => counts.mark_actions += 1,
-                            fnet_filter_ext::Action::Accept | fnet_filter_ext::Action::Return => {}
+                            fnet_filter_ext::Action::Accept
+                            | fnet_filter_ext::Action::Return
+                            | fnet_filter_ext::Action::None => {}
                         }
                     }
                 }

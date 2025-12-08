@@ -327,6 +327,10 @@ type Action = flexible union {
         /// The action to apply.
         action MarkAction;
     };
+
+    /// A non-terminal action that does nothing. Useful to run matchers that may
+    /// have side-effects, particularly eBPF matchers.
+    9: none Empty;
 };
 
 /// An action that can be applied to a mark.

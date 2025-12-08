@@ -197,6 +197,9 @@ where
                     // it will continue on processing the next rule in the routine.
                     metadata.apply_mark_action(*domain, *action);
                 }
+                Action::None => {
+                    continue;
+                }
             }
         }
     }
