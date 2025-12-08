@@ -1261,6 +1261,10 @@ pub mod options {
                         );
                     }
                     _ => {
+                        // NB: Subtract 2 since we've already advanced beyond
+                        // the kind and length fields
+                        let len = len - 2;
+
                         // Ignore unknown options, but move `bytes` ahead to
                         // allow subsequent options to be parsed.
                         let _: B = bytes.take_front(len).ok_or(ParseError::Format)?;
@@ -1725,15 +1729,15 @@ mod tests {
         builder.syn(true);
 
         let mut buf = builder
-            .wrap_body((&[0, 1, 2, 3, 3, 4, 5, 7, 8, 9]).into_serializer())
+            .wrap_body((&[0, 1, 2, 3, 4, 5, 7, 8, 9]).into_serializer())
             .serialize_vec_outer()
             .unwrap();
         // assert that we get the literal bytes we expected
         assert_eq!(
             buf.as_ref(),
             [
-                0, 1, 0, 2, 0, 0, 0, 3, 0, 0, 0, 4, 80, 23, 0, 5, 141, 137, 0, 0, 0, 1, 2, 3, 3, 4,
-                5, 7, 8, 9
+                0, 1, 0, 2, 0, 0, 0, 3, 0, 0, 0, 4, 80, 23, 0, 5, 137, 145, 0, 0, 0, 1, 2, 3, 4, 5,
+                7, 8, 9
             ]
         );
         let segment = buf
@@ -1746,7 +1750,7 @@ mod tests {
         assert_eq!(segment.seq_num(), 3);
         assert_eq!(segment.ack_num(), Some(4));
         assert_eq!(segment.window_size(), 5);
-        assert_eq!(segment.body(), [0, 1, 2, 3, 3, 4, 5, 7, 8, 9]);
+        assert_eq!(segment.body(), [0, 1, 2, 3, 4, 5, 7, 8, 9]);
     }
 
     #[test]
@@ -1962,7 +1966,7 @@ mod tests {
 
         // Serialize and Parse the segment.
         let mut buf = builder
-            .wrap_body((&[0, 1, 2, 3, 3, 4, 5, 7, 8, 9]).into_serializer())
+            .wrap_body((&[0, 1, 2, 3, 4, 5, 7, 8, 9]).into_serializer())
             .serialize_vec_outer()
             .unwrap();
         let segment = buf
@@ -1987,7 +1991,7 @@ mod tests {
 
         // Serialize the segment.
         let buf = builder
-            .wrap_body((&[0, 1, 2, 3, 3, 4, 5, 7, 8, 9]).into_serializer())
+            .wrap_body((&[0, 1, 2, 3, 4, 5, 7, 8, 9]).into_serializer())
             .serialize_vec_outer()
             .unwrap();
 
@@ -2002,5 +2006,50 @@ mod tests {
             &buf.as_ref()[HDR_PREFIX_LEN..HDR_PREFIX_LEN + ALIGNED_TIMESTAMP_OPTION_LENGTH],
             &expected_options[..]
         )
+    }
+
+    #[derive(Debug)]
+    struct TcpSegmentBuilderWithUnknownOption<A: IpAddress>(TcpSegmentBuilder<A>);
+
+    impl<A: IpAddress> TcpSegmentBuilderWithUnknownOption<A> {
+        const UNKNOWN_KIND: u8 = 255;
+        const OPTION_LEN: u8 = 4;
+        const OPTION_BYTES: [u8; 4] = [Self::UNKNOWN_KIND, Self::OPTION_LEN, 0, 0];
+    }
+
+    impl<A: IpAddress> PacketBuilder for TcpSegmentBuilderWithUnknownOption<A> {
+        fn constraints(&self) -> PacketConstraints {
+            let header_len = HDR_PREFIX_LEN + usize::from(Self::OPTION_LEN);
+            PacketConstraints::new(header_len, 0, 0, usize::MAX)
+        }
+
+        fn serialize(&self, target: &mut SerializeTarget<'_>, body: FragmentedBytesMut<'_, '_>) {
+            let Self(prefix_builder) = self;
+            let mut header = &mut &mut target.header[..];
+            header.write_obj_back(&Self::OPTION_BYTES).unwrap();
+            prefix_builder.serialize(target, body);
+        }
+    }
+
+    #[test]
+    fn test_parse_unknown_option() {
+        let builder = TcpSegmentBuilderWithUnknownOption(new_builder(TEST_SRC_IPV4, TEST_DST_IPV4));
+
+        // Serialize and Parse the segment. Parsing should ignore the unknown
+        // option.
+        let mut buf = builder
+            .wrap_body((&[0, 1, 2, 3, 4, 5, 7, 8, 9]).into_serializer())
+            .serialize_vec_outer()
+            .unwrap();
+        let segment = buf
+            .parse_with::<_, TcpSegment<_>>(TcpParseArgs::new(TEST_SRC_IPV4, TEST_DST_IPV4))
+            .unwrap();
+
+        // Verify no options are set.
+        assert_eq!(segment.options().mss(), None);
+        assert_eq!(segment.options().window_scale(), None);
+        assert_eq!(segment.options().sack_permitted(), false);
+        assert_eq!(segment.options().sack_blocks(), None);
+        assert_eq!(segment.options().timestamp(), None);
     }
 }
