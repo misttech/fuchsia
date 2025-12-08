@@ -34,12 +34,11 @@ fn auth_keys_filter_map(source: SshKeySource, line: &str) -> Option<SshKey> {
     let not_comments = !line.is_empty() && !line.starts_with('#');
     let parts: Vec<&str> = line.split_whitespace().collect();
     let sufficient_parts = parts.len() >= 2;
-
     if not_comments && sufficient_parts {
         let key_type_idx = parts.iter().position(|p| SSH_KEY_TYPES.iter().any(|t| t == p))?;
         let key_type = parts.get(key_type_idx)?.to_string();
         // There should always be a key after this idx.
-        let key = parts.get(key_type_idx + 1)?.to_string();
+        let key = BASE64_STANDARD.decode(parts.get(key_type_idx + 1)?).ok()?;
         let comment = if parts.len() > key_type_idx + 1 {
             Some(parts[(key_type_idx + 2)..].join(" "))
         } else {
@@ -424,7 +423,7 @@ impl Debug for SshKeySource {
 #[derive(serde::Serialize, Eq, Clone, Debug)]
 pub struct SshKey {
     pub key_type: String,
-    pub key: String,
+    pub key: Vec<u8>,
     pub comment: Option<String>,
     pub sources: HashSet<SshKeySource>,
 }
@@ -449,7 +448,7 @@ impl fmt::Display for SshKey {
             f,
             "key type: {}, key: {}{}",
             self.key_type,
-            self.key,
+            BASE64_STANDARD.encode(self.key.as_slice()),
             match self.sources.len() {
                 0_usize => format!(""),
                 1_usize => {
@@ -1424,7 +1423,7 @@ mod test {
         let mut key_set = SshKeySet::new();
         let mut key1 = SshKey {
             key_type: "ssh-ed25519".to_string(),
-            key: "key1_data".to_string(),
+            key: BASE64_STANDARD.decode("key1data").unwrap(),
             comment: Some("comment1".to_string()),
             sources: HashSet::from([SshKeySource::File(PathBuf::from("/dir1"))]),
         };
@@ -1440,7 +1439,7 @@ mod test {
         // Insert the same key but with a different parent directory
         let key2 = SshKey {
             key_type: "ssh-ed25519".to_string(),
-            key: "key1_data".to_string(),
+            key: BASE64_STANDARD.decode("key1data").unwrap(),
             comment: Some("comment2".to_string()), // comment is ignored for hashing
             sources: HashSet::from([SshKeySource::File(PathBuf::from("/dir2"))]),
         };
@@ -1456,19 +1455,19 @@ mod test {
         let mut key_set = SshKeySet::new();
         let key1 = SshKey {
             key_type: "ssh-ed25519".to_string(),
-            key: "key1_data".to_string(),
+            key: BASE64_STANDARD.decode("key1data").unwrap(),
             comment: Some("comment1".to_string()),
             sources: HashSet::from([SshKeySource::File(PathBuf::from("/dir1"))]),
         };
         let key2 = SshKey {
             key_type: "ssh-ed25519".to_string(),
-            key: "key1_data".to_string(),
+            key: BASE64_STANDARD.decode("key1data").unwrap(),
             comment: Some("comment2".to_string()),
             sources: HashSet::from([SshKeySource::File(PathBuf::from("/dir2"))]),
         };
         let key3 = SshKey {
             key_type: "ssh-ed25519".to_string(),
-            key: "key2_data".to_string(),
+            key: BASE64_STANDARD.decode("key2data").unwrap(),
             comment: None,
             sources: HashSet::from([SshKeySource::File(PathBuf::from("/dir3"))]),
         };
@@ -1483,7 +1482,7 @@ mod test {
 
         let expected_key1 = SshKey {
             key_type: "ssh-ed25519".to_string(),
-            key: "key1_data".to_string(),
+            key: BASE64_STANDARD.decode("key1data").unwrap(),
             comment: Some("comment1".to_string()), // The comment of the first inserted key is kept.
             sources: HashSet::from([
                 SshKeySource::File(PathBuf::from("/dir1")),
@@ -1492,7 +1491,7 @@ mod test {
         };
         let expected_key2 = SshKey {
             key_type: "ssh-ed25519".to_string(),
-            key: "key2_data".to_string(),
+            key: BASE64_STANDARD.decode("key2data").unwrap(),
             comment: None,
             sources: HashSet::from([SshKeySource::File(PathBuf::from("/dir3"))]),
         };
@@ -1510,13 +1509,13 @@ mod test {
         let mut key_set1 = SshKeySet::new();
         let key1 = SshKey {
             key_type: "ssh-ed25519".to_string(),
-            key: "key1_data".to_string(),
+            key: BASE64_STANDARD.decode("key1data").unwrap(),
             comment: Some("comment1".to_string()),
             sources: HashSet::from([SshKeySource::File(PathBuf::from("/dir1"))]),
         };
         let key2 = SshKey {
             key_type: "ssh-ed25519".to_string(),
-            key: "key2_data".to_string(),
+            key: BASE64_STANDARD.decode("key2data").unwrap(),
             comment: None,
             sources: HashSet::from([SshKeySource::File(PathBuf::from("/dir2"))]),
         };
@@ -1526,13 +1525,13 @@ mod test {
         let mut key_set2 = SshKeySet::new();
         let key3 = SshKey {
             key_type: "ssh-ed25519".to_string(),
-            key: "key1_data".to_string(),
+            key: BASE64_STANDARD.decode("key1data").unwrap(),
             comment: Some("comment3".to_string()),
             sources: HashSet::from([SshKeySource::File(PathBuf::from("/dir3"))]),
         };
         let key4 = SshKey {
             key_type: "ssh-dss".to_string(),
-            key: "key3_data".to_string(),
+            key: BASE64_STANDARD.decode("key3data").unwrap(),
             comment: None,
             sources: HashSet::from([SshKeySource::File(PathBuf::from("/dir4"))]),
         };
@@ -1546,7 +1545,7 @@ mod test {
 
         let expected_key1 = SshKey {
             key_type: "ssh-ed25519".to_string(),
-            key: "key1_data".to_string(),
+            key: BASE64_STANDARD.decode("key1data").unwrap(),
             comment: Some("comment1".to_string()),
             sources: HashSet::from([
                 SshKeySource::File(PathBuf::from("/dir1")),
@@ -1555,13 +1554,13 @@ mod test {
         };
         let expected_key2 = SshKey {
             key_type: "ssh-ed25519".to_string(),
-            key: "key2_data".to_string(),
+            key: BASE64_STANDARD.decode("key2data").unwrap(),
             comment: None,
             sources: HashSet::from([SshKeySource::File(PathBuf::from("/dir2"))]),
         };
         let expected_key3 = SshKey {
             key_type: "ssh-dss".to_string(),
-            key: "key3_data".to_string(),
+            key: BASE64_STANDARD.decode("key3data").unwrap(),
             comment: None,
             sources: HashSet::from([SshKeySource::File(PathBuf::from("/dir4"))]),
         };
@@ -1619,7 +1618,7 @@ mod test {
     #[fuchsia::test]
     async fn test_query_device_authorized_keys_success() {
         const FAKE_KEYS: &str = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAID/PA/k3f5aSU/22c9LPn/4A3f/g/2Yj/2c/8A3/g/2Y test1@fuchsia\n\
-                                 ssh-ed25519 AAAAB3NzaC1yc2EAAAADAQABAAABAQD... test2@fuchsia";
+                                 ssh-ed25519 AAAA1234 test2@fuchsia";
         let server_addr = start_test_server(FAKE_KEYS);
 
         let keys = query_device_authorized_keys(server_addr, server_addr.port()).await.unwrap();
@@ -1627,13 +1626,15 @@ mod test {
         assert_eq!(keys.len(), 2);
         let key1 = SshKey {
             key_type: "ssh-ed25519".to_string(),
-            key: "AAAAC3NzaC1lZDI1NTE5AAAAID/PA/k3f5aSU/22c9LPn/4A3f/g/2Yj/2c/8A3/g/2Y".to_string(),
+            key: BASE64_STANDARD
+                .decode("AAAAC3NzaC1lZDI1NTE5AAAAID/PA/k3f5aSU/22c9LPn/4A3f/g/2Yj/2c/8A3/g/2Y")
+                .unwrap(),
             comment: Some("test1@fuchsia".to_string()),
             sources: HashSet::new(),
         };
         let key2 = SshKey {
             key_type: "ssh-ed25519".to_string(),
-            key: "AAAAB3NzaC1yc2EAAAADAQABAAABAQD...".to_string(),
+            key: BASE64_STANDARD.decode("AAAA1234").unwrap(),
             comment: Some("test2@fuchsia".to_string()),
             sources: HashSet::new(),
         };
@@ -1653,20 +1654,20 @@ mod test {
 
     #[fuchsia::test]
     async fn test_find_matching_ssh_keys_impl_success() {
-        const DEVICE_KEYS: &str = "ssh-ed25519 key_on_device_and_local comment1\n\
-                                   ssh-ed25519 key_on_device_only comment2";
+        const DEVICE_KEYS: &str = "ssh-ed25519 akeyondeviceandlocal comment1\n\
+                                   ssh-ed25519 localonlykey comment2";
         let server_addr = start_test_server(DEVICE_KEYS);
 
         let mut local_keys = HashSet::new();
         let matching_key = SshKey {
             key_type: "ssh-ed25519".to_string(),
-            key: "key_on_device_and_local".to_string(),
+            key: BASE64_STANDARD.decode("akeyondeviceandlocal").unwrap(),
             comment: Some("comment1".to_string()),
             sources: HashSet::from([SshKeySource::File(PathBuf::from("/fake/path"))]),
         };
         let non_matching_key = SshKey {
             key_type: "ssh-ed25519".to_string(),
-            key: "key_on_local_only".to_string(),
+            key: BASE64_STANDARD.decode("localonlykey1234").unwrap(),
             comment: Some("comment3".to_string()),
             sources: HashSet::new(),
         };
@@ -1692,13 +1693,13 @@ mod test {
 
     #[fuchsia::test]
     async fn test_find_matching_ssh_keys_impl_no_match() {
-        const DEVICE_KEYS: &str = "ssh-ed25519 key_on_device_only comment1";
+        const DEVICE_KEYS: &str = "ssh-ed25519 AAAA1234 comment1";
         let server_addr = start_test_server(DEVICE_KEYS);
 
         let mut local_keys = HashSet::new();
         let non_matching_key = SshKey {
             key_type: "ssh-ed25519".to_string(),
-            key: "key_on_local_only".to_string(),
+            key: BASE64_STANDARD.decode("localonlykey").unwrap(),
             comment: Some("comment2".to_string()),
             sources: HashSet::from([SshKeySource::File(PathBuf::from("/fake/path"))]),
         };
@@ -1721,8 +1722,8 @@ mod test {
                 "None of the following device SSH public keys matched any local ssh keys"
             )
         );
-        assert!(err.to_string().contains("key_on_device_only"));
-        assert!(err.to_string().contains("key_on_local_only"));
+        assert!(err.to_string().contains("AAAA1234"));
+        assert!(err.to_string().contains("localonlykey"));
     }
 
     #[test]
@@ -1743,13 +1744,13 @@ mod test {
         let key_loc = PathBuf::from("/dir1/key.pub");
         let key = SshKey {
             key_type: "ssh-ed25519".to_string(),
-            key: "some_key".to_string(),
+            key: BASE64_STANDARD.decode("AAAA2345").unwrap(),
             comment: Some("comment".to_string()),
             sources: HashSet::from([SshKeySource::File(key_loc.clone())]),
         };
         local_keys.insert(key);
         let message = local_non_agent_keys_message(&searched_dirs, &local_keys);
-        let expected_key_str = "key type: ssh-ed25519, key: some_key";
+        let expected_key_str = "key type: ssh-ed25519, key: AAAA2345";
         let expected_msg = format!(
             "When searching local directories, we found the following public keys:\n-- {}\n\t-- Found in {:?}",
             expected_key_str,
@@ -1763,7 +1764,7 @@ mod test {
         let mut local_keys = HashSet::new();
         let key = SshKey {
             key_type: "ssh-ed25519".to_string(),
-            key: "some_key".to_string(),
+            key: BASE64_STANDARD.decode("AAAA2345").unwrap(),
             comment: Some("comment".to_string()),
             sources: HashSet::from([SshKeySource::File(PathBuf::from("/dir1/key.pub"))]),
         };
@@ -1777,7 +1778,7 @@ mod test {
         let mut local_keys = HashSet::new();
         let key = SshKey {
             key_type: "ssh-ed25519".to_string(),
-            key: "agent_key".to_string(),
+            key: BASE64_STANDARD.decode("AAAA1234").unwrap(),
             comment: Some("agent comment".to_string()),
             sources: HashSet::new(),
         };
@@ -1791,13 +1792,13 @@ mod test {
         let mut local_keys = HashSet::new();
         let key = SshKey {
             key_type: "ssh-ed25519".to_string(),
-            key: "agent_key".to_string(),
+            key: BASE64_STANDARD.decode("AAAA1234").unwrap(),
             comment: Some("agent comment".to_string()),
             sources: HashSet::from([SshKeySource::SshAgent]),
         };
         local_keys.insert(key);
         let message = ssh_agent_keys_message(&local_keys);
-        let expected_key_str = "key type: ssh-ed25519, key: agent_key, found in: agent";
+        let expected_key_str = "key type: ssh-ed25519, key: AAAA1234, found in: agent";
         let expected_msg = format!(
             "When querying the ssh-agent we found the following keys:\n-- {}",
             expected_key_str

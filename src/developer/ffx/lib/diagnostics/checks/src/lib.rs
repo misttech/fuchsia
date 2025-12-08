@@ -1299,7 +1299,7 @@ mod test {
         keys.insert(SshKey {
             sources,
             key_type: "ssh-ed25519".to_string(),
-            key: "somekey".to_string(),
+            key: vec![0xb2, 0x89, 0x9e, 0x91, 0xec, 0xad, 0x86, 0x29, 0xe0], // "somekeything"
             comment: Some("somekey".to_string()),
         });
         let verifier = MockSshKeyVerifier::with_res(Ok(keys));
