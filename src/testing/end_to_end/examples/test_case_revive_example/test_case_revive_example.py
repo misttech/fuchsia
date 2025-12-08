@@ -46,7 +46,6 @@ class ExampleTestCaseRevive(test_case_revive.TestCaseRevive):
             "This should run in normal Mobly but not run in 'revived' mode"
         )
 
-    @test_case_revive.tag_test()
     def test_firmware_version(self) -> None:
         """This test can be run as a normal or revived test.
 

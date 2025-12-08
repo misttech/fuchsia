@@ -89,7 +89,6 @@ def opt_out() -> Callable[..., Any]:
 
 
 def tag_test(
-    tag_name: str = "revive_test_case",
     fuchsia_device_operation: FuchsiaDeviceOperation | None = None,
     test_method_execution_frequency: TestMethodExecutionFrequency | None = None,
     pre_test_execution_fn: Callable[..., None] | None = None,
@@ -381,15 +380,9 @@ class TestCaseRevive(fuchsia_base_test.FuchsiaBaseTest):
             test_cases,
         )
 
-        revived_test_cases: list[str] = [
-            test_case
-            for test_case in test_cases
-            if "_revive" in dir(getattr(self, test_case))
-            and getattr(self, test_case)._revive
-        ]
         revived_test_cases = [
             test_case
-            for test_case in revived_test_cases
+            for test_case in test_cases
             if "_opt_out" not in dir(getattr(self, test_case))
             or not getattr(self, test_case)._opt_out
         ]
