@@ -271,7 +271,7 @@ class Session : public fbl::DoublyLinkedListable<std::unique_ptr<Session>>,
   // `MAX_VMOS` is used as a marker for invalid VMO identifier.
   // The destructor checks that vmo_id is set to `MAX_VMOS`, which verifies that `ReleaseDataVmo`
   // was called before destruction.
-  uint8_t vmo_id_ = MAX_VMOS;
+  uint8_t vmo_id_ = netdriver::wire::kMaxVmos;
   // Unowned pointer to data VMO stored in DeviceInterface.
   // Set by Session::Create.
   DataVmoStore::StoredVmo* data_vmo_ = nullptr;
@@ -293,7 +293,7 @@ class Session : public fbl::DoublyLinkedListable<std::unique_ptr<Session>>,
 
   // AttachedPorts information. Parent device is responsible for detaching ports from sessions
   // before destroying them.
-  std::array<std::optional<AttachedPort>, MAX_PORTS> attached_ports_
+  std::array<std::optional<AttachedPort>, netdev::wire::kMaxPorts> attached_ports_
       __TA_GUARDED(parent_->control_lock());
   // Pointer to parent network device, not owned.
   DeviceInterface* const parent_;

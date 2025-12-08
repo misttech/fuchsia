@@ -120,7 +120,7 @@ Session::~Session() {
   ZX_ASSERT(!tx_ticket_.has_value());
   ZX_ASSERT(in_flight_rx_ == 0);
   ZX_ASSERT(in_flight_tx_ == 0);
-  ZX_ASSERT(vmo_id_ == MAX_VMOS);
+  ZX_ASSERT(vmo_id_ == netdriver::wire::kMaxVmos);
   for (size_t i = 0; i < attached_ports_.size(); i++) {
     ZX_ASSERT_MSG(!attached_ports_[i].has_value(), "outstanding attached port %ld", i);
   }
@@ -232,7 +232,7 @@ void Session::OnUnbind(fidl::UnbindInfo info, fidl::ServerEnd<netdev::Session> c
   {
     fbl::AutoLock lock(&parent_->control_lock());
     // When the session is unbound we can just detach all the ports from it.
-    for (uint8_t i = 0; i < MAX_PORTS; i++) {
+    for (uint8_t i = 0; i < netdev::wire::kMaxPorts; i++) {
       // We can ignore the return from detaching, this port is about to get
       // destroyed.
       [[maybe_unused]] zx::result<bool> result = DetachPortLocked(i, std::nullopt);
@@ -847,7 +847,7 @@ bool Session::CompleteRxWith(const Session& owner, const RxFrameInfo& frame_info
   }
 
   // Allocate enough descriptors to fit all the data that we want to copy from the other session.
-  std::array<SessionRxBuffer, MAX_BUFFER_PARTS> parts_storage;
+  std::array<SessionRxBuffer, netdriver::wire::kMaxBufferParts> parts_storage;
   auto parts_iter = parts_storage.begin();
   uint16_t* rx_queue_pick = &rx_avail_queue_[rx_avail_queue_count_];
   uint32_t remaining = frame_info.total_length;
@@ -1139,8 +1139,8 @@ bool Session::IsSubscribedToFrameType(uint8_t port, netdev::wire::FrameType fram
 }
 
 void Session::SetDataVmo(uint8_t vmo_id, DataVmoStore::StoredVmo* vmo) {
-  ZX_ASSERT_MSG(vmo_id_ == MAX_VMOS, "data VMO already set");
-  ZX_ASSERT_MSG(vmo_id < MAX_VMOS, "invalid vmo_id %d", vmo_id);
+  ZX_ASSERT_MSG(vmo_id_ == netdriver::wire::kMaxVmos, "data VMO already set");
+  ZX_ASSERT_MSG(vmo_id < netdriver::wire::kMaxVmos, "invalid vmo_id %d", vmo_id);
   vmo_id_ = vmo_id;
   data_vmo_ = vmo;
 }
@@ -1149,7 +1149,7 @@ uint8_t Session::ClearDataVmo() {
   uint8_t id = vmo_id_;
   // Reset identifier to the marker value. The destructor will assert that `ReleaseDataVmo` was
   // called by checking the value.
-  vmo_id_ = MAX_VMOS;
+  vmo_id_ = netdriver::wire::kMaxVmos;
   data_vmo_ = nullptr;
   return id;
 }

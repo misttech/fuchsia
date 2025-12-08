@@ -220,9 +220,9 @@ void RxQueue::CompleteRxList(
     // Always increment frame index for anything the device sends us. Sessions
     // get their local indices for frames that make their way through.
     rx_completed_frame_index_++;
-    ZX_ASSERT_MSG(rx_buffer.data.size() <= MAX_BUFFER_PARTS,
+    ZX_ASSERT_MSG(rx_buffer.data.size() <= netdriver::wire::kMaxBufferParts,
                   "too many buffer parts in rx buffer: %ld", rx_buffer.data.size());
-    std::array<SessionRxBuffer, MAX_BUFFER_PARTS> session_parts;
+    std::array<SessionRxBuffer, netdriver::wire::kMaxBufferParts> session_parts;
     auto session_parts_iter = session_parts.begin();
     bool drop_frame = false;
     uint32_t total_length = 0;
@@ -384,11 +384,12 @@ int RxQueue::WatchThread(
       control_lock.release();
 
       if (pushed != 0) {
-        // Send buffers in batches of at most |MAX_RX_SPACE_BUFFERS| at a time to stay within the
+        // Send buffers in batches of at most |kMaxRxSpaceBuffer| at a time to stay within the
         // FIDL channel maximum.
         netdriver::wire::RxSpaceBuffer* buffers = space_buffers.get();
         while (pushed > 0) {
-          const uint32_t batch = std::min(static_cast<uint32_t>(pushed), MAX_RX_SPACE_BUFFERS);
+          const uint32_t batch =
+              std::min(static_cast<uint32_t>(pushed), netdriver::wire::kMaxRxSpaceBuffers);
           parent_->QueueRxSpace(cpp20::span(buffers, static_cast<uint32_t>(batch)));
           buffers += batch;
           pushed -= batch;

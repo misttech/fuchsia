@@ -60,11 +60,12 @@ void TxQueue::SessionTransaction::Commit() {
   // when we destroy a session transaction, we commit all the queued buffers to
   // the device.
   if (queued_ != 0) {
-    // Send buffers in batches of at most |MAX_TX_BUFFERS| at a time to stay within the FIDL
+    // Send buffers in batches of at most |kMaxTxBuffers| at a time to stay within the FIDL
     // channel maximum.
     netdriver::wire::TxBuffer* buffers = buffers_.data();
     while (queued_ > 0) {
-      const uint32_t batch = std::min(static_cast<uint32_t>(queued_), MAX_TX_BUFFERS);
+      const uint32_t batch =
+          std::min(static_cast<uint32_t>(queued_), netdriver::wire::kMaxTxBuffers);
       queue_->parent_->QueueTx(cpp20::span(buffers, batch));
       buffers += batch;
       queued_ -= batch;

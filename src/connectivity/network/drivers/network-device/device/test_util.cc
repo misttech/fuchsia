@@ -300,7 +300,7 @@ void FakeNetworkDeviceImpl::Stop(fdf::Arena& arena, StopCompleter::Sync& complet
       // Return unfulfilled buffers with zero length and an invalid port number.
       // Zero length buffers are returned to the pool and the port metadata is ignored.
       rx_buffer->return_part().length = 0;
-      rx_return.Enqueue(std::move(rx_buffer), MAX_PORTS);
+      rx_return.Enqueue(std::move(rx_buffer), netdev::wire::kMaxPorts);
     }
     rx_return.Commit();
 

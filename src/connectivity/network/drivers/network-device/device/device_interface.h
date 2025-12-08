@@ -324,7 +324,7 @@ class DeviceInterface : public fidl::WireServer<netdev::Device>,
     std::unique_ptr<DevicePort> port;
     uint8_t salt;
   };
-  std::array<PortSlot, MAX_PORTS> ports_ __TA_GUARDED(control_lock_);
+  std::array<PortSlot, netdev::wire::kMaxPorts> ports_ __TA_GUARDED(control_lock_);
 
   SessionList dead_sessions_ __TA_GUARDED(control_lock_);
 

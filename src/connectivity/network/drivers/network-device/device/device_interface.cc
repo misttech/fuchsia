@@ -348,7 +348,7 @@ zx_status_t DeviceInterface::Init(std::unique_ptr<NetworkDeviceImplBinder>&& bin
 
   {
     fbl::AutoLock lock(&control_lock_);
-    if (zx_status_t status = vmo_store_.Reserve(MAX_VMOS); status != ZX_OK) {
+    if (zx_status_t status = vmo_store_.Reserve(netdriver::wire::kMaxVmos); status != ZX_OK) {
       LOGF_ERROR("init: failed to init session identifiers %s", zx_status_get_string(status));
       return status;
     }
@@ -429,8 +429,8 @@ zx_status_t DeviceInterface::BindPort(uint8_t port_id, fidl::ServerEnd<netdev::P
   if (teardown_state_ != TeardownState::RUNNING) {
     return ZX_ERR_BAD_STATE;
   }
-  if (port_id >= MAX_PORTS) {
-    LOGF_WARN("Port id %u exceeds max port id %u", port_id, MAX_PORTS);
+  if (port_id >= netdev::wire::kMaxPorts) {
+    LOGF_WARN("Port id %u exceeds max port id %u", port_id, netdev::wire::kMaxPorts);
     return ZX_ERR_NOT_FOUND;
   }
   PortSlot& slot = ports_[port_id];
@@ -766,7 +766,7 @@ void DeviceInterface::GetPortWatcher(GetPortWatcherRequestView request,
     return;
   }
 
-  std::array<netdev::wire::PortId, MAX_PORTS> port_ids;
+  std::array<netdev::wire::PortId, netdev::wire::kMaxPorts> port_ids;
   size_t port_id_count = 0;
 
   for (const PortSlot& port : ports_) {

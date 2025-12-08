@@ -1655,8 +1655,8 @@ TEST_F(NetworkDeviceTest, OnlyReceiveOnSubscribedPorts) {
     buffer_descriptor_t& descriptor = session.ResetDescriptor(desc);
     // Garble descriptor port and salt.
     descriptor.port_id = {
-        .base = MAX_PORTS - 1,
-        .salt = static_cast<uint8_t>(~(MAX_PORTS - 1)),
+        .base = netdev::wire::kMaxPorts - 1,
+        .salt = static_cast<uint8_t>(~(netdev::wire::kMaxPorts - 1)),
     };
   }
   size_t actual;
@@ -1722,8 +1722,8 @@ TEST_F(NetworkDeviceTest, RejectsInvalidPortIds) {
   {
     // Add a port with an invalid ID.
     FakeNetworkPortImpl fake_port;
-    ASSERT_EQ(fake_port.AddPortNoWait(MAX_PORTS, impl_dispatcher_.get(), OpenConnection(),
-                                      impl_.client()),
+    ASSERT_EQ(fake_port.AddPortNoWait(netdev::wire::kMaxPorts, impl_dispatcher_.get(),
+                                      OpenConnection(), impl_.client()),
               ZX_ERR_INVALID_ARGS);
     ASSERT_FALSE(fake_port.removed());
   }
@@ -1759,7 +1759,7 @@ TEST_F(NetworkDeviceTest, TxBadPorts) {
           .name = "port doesn't exist",
           .port_id =
               {
-                  .base = MAX_PORTS - 1,
+                  .base = netdev::wire::kMaxPorts - 1,
               },
       },
       {
@@ -2183,7 +2183,7 @@ TEST_F(NetworkDeviceTest, NonExistentPort) {
       {
           .port_id =
               {
-                  .base = MAX_PORTS + 20,
+                  .base = netdev::wire::kMaxPorts + 20,
               },
           .name = "out of range port ID",
           .session_error = ZX_ERR_INVALID_ARGS,
@@ -2263,8 +2263,8 @@ TEST_F(NetworkDeviceTest, MultiplePortsAndSessions) {
       buffer_descriptor_t& descriptor = s.session.ResetDescriptor(desc);
       // Garble descriptor port and salt.
       descriptor.port_id = {
-          .base = MAX_PORTS - 1,
-          .salt = static_cast<uint8_t>(~(MAX_PORTS - 1)),
+          .base = netdev::wire::kMaxPorts - 1,
+          .salt = static_cast<uint8_t>(~(netdev::wire::kMaxPorts - 1)),
       };
     }
     size_t actual;
@@ -2527,7 +2527,7 @@ TEST_F(NetworkDeviceTest, PortWatcherEnforcesQueueLimit) {
       port = nullptr;
     } else {
       port = std::make_unique<FakeNetworkPortImpl>();
-      ASSERT_OK(port->AddPort((event_count / 2) % MAX_PORTS, impl_dispatcher_.get(),
+      ASSERT_OK(port->AddPort((event_count / 2) % netdev::wire::kMaxPorts, impl_dispatcher_.get(),
                               OpenConnection(), impl_.client()));
     }
   }
@@ -3267,7 +3267,7 @@ TEST_F(NetworkDeviceTest, LogDebugInfoToSyslog) {
 TEST_F(NetworkDeviceTest, TooManySessions) {
   ASSERT_OK(CreateDeviceWithPort13());
 
-  std::array<TestSession, MAX_VMOS> sessions;
+  std::array<TestSession, netdriver::wire::kMaxVmos> sessions;
   for (TestSession& s : sessions) {
     ASSERT_OK(OpenSession(&s));
   }
@@ -3298,7 +3298,7 @@ TEST_F(NetworkDeviceStressTest, ManyTxFullWaits) {
   ASSERT_OK(AttachSessionPort(session, port13_));
   ASSERT_OK(WaitStart());
 
-  std::array<TestSession, MAX_VMOS - 1> idle_sessions;
+  std::array<TestSession, netdriver::wire::kMaxVmos - 1> idle_sessions;
 
   for (TestSession& s : idle_sessions) {
     ASSERT_OK(OpenSession(&s));
@@ -3336,7 +3336,7 @@ TEST_F(NetworkDeviceStressTest, ManyTxFullWaits) {
 // Test that QueueTx correctly splits up large numbers of buffers into batches
 // that fit in the maximum FIDL message size.
 TEST_F(NetworkDeviceTest, QueueTxBatches) {
-  constexpr uint16_t kTxDescriptorCount = MAX_TX_BUFFERS + 1;
+  constexpr uint16_t kTxDescriptorCount = netdriver::wire::kMaxTxBuffers + 1;
   impl_.info().tx_depth = kTxDescriptorCount;
   ASSERT_OK(CreateDeviceWithPort13());
   TestSession session;
@@ -3366,14 +3366,14 @@ TEST_F(NetworkDeviceTest, QueueTxBatches) {
   while (impl_.tx_buffer_count() < kTxDescriptorCount) {
     ASSERT_OK(WaitTx());
   }
-  ASSERT_EQ(impl_.queue_tx_called(), MAX_TX_BUFFERS);
+  ASSERT_EQ(impl_.queue_tx_called(), netdriver::wire::kMaxTxBuffers);
   ASSERT_EQ(impl_.queue_tx_called(), 1u);
 }
 
 // Test that QueueRxSpace correctly splits up large numbers of buffers into
 // batches that fit in the maximum FIDL message size.
 TEST_F(NetworkDeviceTest, QueueRxSpaceBatches) {
-  constexpr uint16_t kRxDescriptorCount = MAX_RX_SPACE_BUFFERS + 1;
+  constexpr uint16_t kRxDescriptorCount = netdriver::wire::kMaxRxSpaceBuffers + 1;
   impl_.info().rx_depth = kRxDescriptorCount;
   ASSERT_OK(CreateDeviceWithPort13());
   TestSession session;
@@ -3398,7 +3398,7 @@ TEST_F(NetworkDeviceTest, QueueRxSpaceBatches) {
   while (impl_.rx_buffer_count() < kRxDescriptorCount) {
     ASSERT_OK(WaitRxAvailable());
   }
-  ASSERT_EQ(impl_.queue_rx_space_called(), MAX_RX_SPACE_BUFFERS);
+  ASSERT_EQ(impl_.queue_rx_space_called(), netdriver::wire::kMaxRxSpaceBuffers);
   ASSERT_EQ(impl_.queue_rx_space_called(), 1u);
 }
 
