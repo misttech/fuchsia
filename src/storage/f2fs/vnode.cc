@@ -32,7 +32,7 @@ VnodeF2fs::VnodeF2fs(F2fs* fs, ino_t ino, umode_t mode, LockedPage node_page)
       ino_(ino),
       fs_(fs),
       mode_(mode) {
-  Activate();
+  SetFlag(InodeInfoFlag::kActive);
   if (IsMeta() || IsNode()) {
     CreateFileCacheUnsafe();
     return;
@@ -66,10 +66,7 @@ VnodeF2fs::VnodeF2fs(F2fs* fs, ino_t ino, umode_t mode, LockedPage node_page)
   CreateFileCacheUnsafe();
 }
 
-VnodeF2fs::~VnodeF2fs() {
-  ReleasePagedVmo();
-  Deactivate();
-}
+VnodeF2fs::~VnodeF2fs() { ReleasePagedVmo(); }
 
 fuchsia_io::NodeProtocolKinds VnodeF2fs::GetProtocols() const {
   return fuchsia_io::NodeProtocolKinds::kFile;
@@ -285,46 +282,42 @@ void VnodeF2fs::ReportPagerErrorUnsafe(const uint32_t op, const uint64_t offset,
   }
 }
 
-void VnodeF2fs::RecycleNode() TA_NO_THREAD_SAFETY_ANALYSIS {
-  if (open_count()) {
-    FX_LOGS(WARNING) << "RecycleNode[" << GetNameViewUnsafe().data() << ":" << GetKey()
-                     << "]: open_count must be zero (" << open_count() << ")";
-  }
-  // It is safe to free vnodes that have been already evicted from vnode cache.
-  if (!(*this).fbl::WAVLTreeContainable<VnodeF2fs*>::InContainer()) {
-    delete this;
+void VnodeF2fs::RecycleNode() {
+  do {
+    std::lock_guard lock(mutex_);
+    if (open_count()) {
+      FX_LOGS(WARNING) << "RecycleNode[" << GetNameViewUnsafe().data() << ":" << GetKey()
+                       << "]: open_count must be zero (" << open_count() << ")";
+    }
+    // It is safe to free vnodes that have been already evicted from vnode cache.
+    if (!(*this).fbl::WAVLTreeContainable<VnodeF2fs*>::InContainer()) {
+      break;
+    }
+    if (GetLinkCountUnsafe()) {
+      // This should not happen, as F2FS releases the last references to dirty vnodes after
+      // writeback during checkpoint, while disallowing any file operations that could generate
+      // additional dirty pages.
+      if (GetDirtyPageCount()) {
+        FX_LOGS(WARNING) << "Vnode[" << GetNameViewUnsafe().data() << ":" << GetKey()
+                         << "] is deleted with " << GetDirtyPageCount() << " of dirty pages"
+                         << ". CpFlag::kCpErrorFlag is "
+                         << (superblock_info_.TestCpFlags(CpFlag::kCpErrorFlag) ? "set."
+                                                                                : "not set.");
+      }
+      if (fs()->GetMemoryStatus(MemoryStatus::kNeedReclaim)) {
+        CleanupCache();
+      }
+      PutRefPtr();
+      return;
+    }
+    PutRefPtr();
+    ZX_ASSERT_MSG(
+        false,
+        "An orphan(%s, 0x%x) should not drop to a zero refcount while it is preserved in the vnode cache",
+        GetNameViewUnsafe().data(), GetKey());
     return;
-  }
-  std::optional vfs = this->vfs();
-  if ((vfs && vfs->get().IsTerminating()) || fs()->IsTearDown()) {
-    // During teardown, |this| remains in the vnode cache. All vnodes in the cache
-    // will be freed in ~VnodeCache(). Here, it is safe to call ResurrectRef()
-    // without acquiring VnodeCache::table_lock_ since no attempt is made to create
-    // a RefPtr from |this| during teardown.
-    ResurrectRef();
-    fbl::RefPtr<VnodeF2fs> vnode = fbl::ImportFromRawPtr(this);
-    [[maybe_unused]] auto leak = fbl::ExportToRawPtr(&vnode);
-    Deactivate();
-  } else if (GetLinkCountUnsafe()) {
-    // This should not happen, as F2FS releases the last references to dirty vnodes after writeback
-    // during checkpoint, while disallowing any file operations that could generate additional dirty
-    // pages.
-    if (GetDirtyPageCount()) {
-      FX_LOGS(WARNING) << "Vnode[" << GetNameViewUnsafe().data() << ":" << GetKey()
-                       << "] is deleted with " << GetDirtyPageCount() << " of dirty pages"
-                       << ". CpFlag::kCpErrorFlag is "
-                       << (superblock_info_.TestCpFlags(CpFlag::kCpErrorFlag) ? "set."
-                                                                              : "not set.");
-    }
-    if (fs()->GetMemoryStatus(MemoryStatus::kNeedReclaim)) {
-      CleanupCache();
-    }
-    fs()->GetVCache().Downgrade(this);
-    Deactivate();
-  } else {
-    Purge();
-    delete this;
-  }
+  } while (false);
+  delete this;
 }
 
 zx::result<fs::VnodeAttributes> VnodeF2fs::GetAttributes() const {
@@ -858,18 +851,31 @@ void VnodeF2fs::InitExtentTree() {
   extent_tree_ = std::make_unique<ExtentTree>();
 }
 
-void VnodeF2fs::Activate() { SetFlag(InodeInfoFlag::kActive); }
+zx::result<fbl::RefPtr<VnodeF2fs>> VnodeF2fs::GetRefPtr() {
+  std::lock_guard lock(ref_mutex_);
+  if (!TestFlag(InodeInfoFlag::kActive)) {
+    fbl::RefPtr<VnodeF2fs> vnode = fbl::ImportFromRawPtr(this);
+    SetFlag(InodeInfoFlag::kActive);
+    return zx::ok(std::move(vnode));
+  }
 
-void VnodeF2fs::Deactivate() {
-  if (IsActive()) {
-    ClearFlag(InodeInfoFlag::kActive);
-    flag_cvar_.notify_all();
+  fbl::RefPtr<VnodeF2fs> vnode = fbl::MakeRefPtrUpgradeFromRaw(this, ref_mutex_);
+  if (!vnode) {
+    flag_cvar_.wait(ref_mutex_, [this]() { return !TestFlag(InodeInfoFlag::kActive); });
+    return zx::error(ZX_ERR_SHOULD_WAIT);
   }
+  SetFlag(InodeInfoFlag::kActive);
+  return zx::ok(std::move(vnode));
 }
-void VnodeF2fs::WaitForDeactive(std::mutex& mutex) {
-  if (IsActive()) {
-    flag_cvar_.wait(mutex, [this]() { return !IsActive(); });
-  }
+
+void VnodeF2fs::PutRefPtr() {
+  std::lock_guard lock(ref_mutex_);
+  ZX_ASSERT(IsActive());
+  ResurrectRef();
+  fbl::RefPtr<VnodeF2fs> vnode = fbl::ImportFromRawPtr(this);
+  [[maybe_unused]] auto leak = fbl::ExportToRawPtr(&vnode);
+  ClearFlag(InodeInfoFlag::kActive);
+  flag_cvar_.notify_all();
 }
 
 bool VnodeF2fs::IsActive() const { return TestFlag(InodeInfoFlag::kActive); }
@@ -891,10 +897,10 @@ void VnodeF2fs::SetOrphan() {
     }
     // If no fd is open for |this|, it is safe to mark it clean and keep it frozen
     // until RecycleNode().
-    if (!open_count()) {
-      ClearDirty();
-      SetFlag(InodeInfoFlag::kNoAlloc);
+    if (open_count()) {
+      return;
     }
+    PurgeUnsafe();
   }
 }
 
@@ -1515,11 +1521,7 @@ zx_status_t VnodeF2fs::CloseNode() {
   fs::SharedLock lock(f2fs::GetGlobalLock());
   {
     fs::SharedLock file_lock(mutex_);
-    if (open_count() || !TestFlag(InodeInfoFlag::kOrphan)) {
-      return ZX_OK;
-    }
-    ClearDirty();
-    if (fs()->IsTearDown()) {
+    if (open_count() || GetLinkCountUnsafe()) {
       return ZX_OK;
     }
   }
@@ -1528,8 +1530,13 @@ zx_status_t VnodeF2fs::CloseNode() {
 }
 
 void VnodeF2fs::Purge() {
-  std::lock_guard file_lock(mutex_);
+  std::lock_guard lock(mutex_);
+  return PurgeUnsafe();
+}
+
+void VnodeF2fs::PurgeUnsafe() {
   SetFlag(InodeInfoFlag::kNoAlloc);
+  ClearDirty();
   PurgeDataBlocks();
   PurgeInodeBlock();
   fs()->GetVCache().Evict(this);

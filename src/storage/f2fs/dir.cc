@@ -328,7 +328,7 @@ size_t Dir::RoomForFilename(const PageBitmap &bits, size_t slots) {
 }
 
 zx_status_t Dir::AddLink(std::string_view name, VnodeF2fs *vnode) {
-  auto umount = fit::defer([&]() {
+  auto set_dirty = fit::defer([&]() {
     if (TestFlag(InodeInfoFlag::kUpdateDir)) {
       ClearFlag(InodeInfoFlag::kUpdateDir);
       SetDirty();

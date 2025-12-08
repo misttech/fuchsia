@@ -45,7 +45,6 @@ class VnodeCache {
   // It tries to remove |vnode| from dirty_list_.
   zx_status_t RemoveDirty(VnodeF2fs* vnode) __TA_EXCLUDES(list_lock_);
   zx_status_t RemoveDirtyUnsafe(VnodeF2fs* vnode) __TA_REQUIRES(list_lock_);
-  void Downgrade(VnodeF2fs* raw_vnode);
 
   void Reset();
   // It traverses dirty_lists and executes cb for the dirty vnodes with
@@ -54,11 +53,11 @@ class VnodeCache {
       __TA_EXCLUDES(list_lock_);
 
   // It traverses vnode_tables and execute cb with every vnode.
-  zx_status_t ForAllVnodes(VnodeCallback callback, bool evict_inactive = false)
-      __TA_EXCLUDES(table_lock_);
+  zx_status_t ForAllVnodes(VnodeCallback callback) __TA_EXCLUDES(table_lock_);
 
   // It evicts all inactive vnodes and resets the cache of active vnodes.
-  void Shrink() __TA_EXCLUDES(table_lock_) __TA_REQUIRES_SHARED(f2fs::GetGlobalLock());
+  void Shrink() __TA_EXCLUDES(table_lock_) __TA_REQUIRES_SHARED(f2fs::GetGlobalLock())
+      __TA_EXCLUDES(table_lock_, list_lock_);
 
   bool IsDirtyListEmpty() __TA_EXCLUDES(list_lock_) {
     bool ret = false;
@@ -80,7 +79,7 @@ class VnodeCache {
   // are deleted when they are evicted from the list.
   using DirtyVnodeList = fbl::DoublyLinkedList<fbl::RefPtr<VnodeF2fs>>;
 
-  std::mutex table_lock_{};
+  std::shared_mutex table_lock_{};
   std::shared_mutex list_lock_{};
   VnodeTable vnode_table_ __TA_GUARDED(table_lock_);
   DirtyVnodeList dirty_list_ __TA_GUARDED(list_lock_);

@@ -422,76 +422,80 @@ TEST_F(CheckpointTest, RemoveOrphanInode) {
 }
 
 TEST_F(CheckpointTest, PurgeOrphanInode) {
-  CheckpointCallback check_recover_orphan_inode = [this](uint32_t expect_cp_position,
-                                                         uint32_t expect_cp_ver, bool after_mkfs) {
-    fbl::RefPtr<Page> cp_page;
-    SuperblockInfo &superblock_info = fs_->GetSuperblockInfo();
+  CheckpointCallback check_recover_orphan_inode =
+      [this](uint32_t expect_cp_position, uint32_t expect_cp_ver, bool after_mkfs)
+          TA_NO_THREAD_SAFETY_ANALYSIS {
+            fbl::RefPtr<Page> cp_page;
+            SuperblockInfo &superblock_info = fs_->GetSuperblockInfo();
 
-    // 1. Get last checkpoint
-    GetLastCheckpoint(expect_cp_position, after_mkfs, &cp_page);
-    Checkpoint *cp = cp_page->GetAddress<Checkpoint>();
-    ASSERT_EQ(cp->checkpoint_ver, expect_cp_ver);
+            // 1. Get last checkpoint
+            GetLastCheckpoint(expect_cp_position, after_mkfs, &cp_page);
+            Checkpoint *cp = cp_page->GetAddress<Checkpoint>();
+            ASSERT_EQ(cp->checkpoint_ver, expect_cp_ver);
 
-    uint32_t orphan_inos = kOrphansPerBlock;
-    auto &vnodes = GetVnodes();
-    if (!after_mkfs) {
-      // Reset FileCache for node pages
-      fs_->GetNodeVnode().CleanupCache();
-      ASSERT_TRUE(superblock_info.TestCpFlags(CpFlag::kCpOrphanPresentFlag));
-      ASSERT_EQ(vnodes.size(), orphan_inos);
+            uint32_t orphan_inos = kOrphansPerBlock;
+            auto &vnodes = GetVnodes();
+            if (!after_mkfs) {
+              // Reset FileCache for node pages
+              fs_->GetNodeVnode().CleanupCache();
+              ASSERT_TRUE(superblock_info.TestCpFlags(CpFlag::kCpOrphanPresentFlag));
+              ASSERT_EQ(vnodes.size(), orphan_inos);
 
-      for (auto &vnode_refptr : vnodes) {
-        ASSERT_EQ(vnode_refptr.get()->GetLinkCount(), (uint32_t)1);
-      }
-      // Check device peer closed exception
-      {
-        auto hook = [](const block_fifo_request_t &_req, const zx::vmo *_vmo) {
-          if (_req.command.opcode == BLOCK_OPCODE_READ) {
-            return ZX_ERR_PEER_CLOSED;
-          }
-          return ZX_OK;
-        };
-        DeviceTester::SetHook(fs_.get(), hook);
-        ASSERT_EQ(fs_->PurgeOrphanInodes(), ZX_ERR_PEER_CLOSED);
-        ASSERT_TRUE(fs_->GetSuperblockInfo().TestCpFlags(CpFlag::kCpErrorFlag));
+              std::vector<nid_t> inos;
+              for (auto &vnode : vnodes) {
+                ASSERT_EQ(vnode->GetLinkCount(), (uint32_t)1);
+                inos.push_back(vnode->GetKey());
+              }
+              vnodes.clear();
+              vnodes.shrink_to_fit();
 
-        DeviceTester::SetHook(fs_.get(), nullptr);
-        superblock_info.ClearCpFlags(CpFlag::kCpErrorFlag);
-      }
-      ASSERT_EQ(fs_->PurgeOrphanInodes(), 0);
+              // Check device peer closed exception
+              {
+                auto hook = [](const block_fifo_request_t &_req, const zx::vmo *_vmo) {
+                  if (_req.command.opcode == BLOCK_OPCODE_READ) {
+                    return ZX_ERR_PEER_CLOSED;
+                  }
+                  return ZX_OK;
+                };
+                DeviceTester::SetHook(fs_.get(), hook);
+                ASSERT_EQ(fs_->PurgeOrphanInodes(), ZX_ERR_PEER_CLOSED);
+                ASSERT_TRUE(fs_->GetSuperblockInfo().TestCpFlags(CpFlag::kCpErrorFlag));
 
-      for (auto &vnode_refptr : vnodes) {
-        ASSERT_EQ(vnode_refptr.get()->GetLinkCount(), (uint32_t)0);
-        fs_->RemoveFromVnodeSet(VnodeSet::kOrphan, vnode_refptr->GetKey());
-        vnode_refptr.reset();
-      }
-      vnodes.clear();
-      vnodes.shrink_to_fit();
-    }
+                DeviceTester::SetHook(fs_.get(), nullptr);
+                superblock_info.ClearCpFlags(CpFlag::kCpErrorFlag);
+              }
+              ASSERT_EQ(fs_->PurgeOrphanInodes(), 0);
 
-    if (cp->checkpoint_ver > kCheckpointLoopCnt) {
-      return;
-    }
+              for (ino_t ino : inos) {
+                fbl::RefPtr<VnodeF2fs> vnode;
+                ASSERT_EQ(fs_->GetVCache().Lookup(ino, &vnode), ZX_ERR_NOT_FOUND);
+                fs_->RemoveFromVnodeSet(VnodeSet::kOrphan, ino);
+              }
+            }
 
-    // 3. Add shuffled orphan inodes for next checkpoint
-    std::vector<uint32_t> inos(orphan_inos);
-    auto start_ino = cp->checkpoint_ver * orphan_inos;
-    std::iota(inos.begin(), inos.end(), start_ino);
+            if (cp->checkpoint_ver > kCheckpointLoopCnt) {
+              return;
+            }
 
-    std::shuffle(inos.begin(), inos.end(),
-                 std::default_random_engine(static_cast<uint32_t>(cp->checkpoint_ver)));
+            // 3. Add shuffled orphan inodes for next checkpoint
+            std::vector<uint32_t> inos(orphan_inos);
+            auto start_ino = cp->checkpoint_ver * orphan_inos;
+            std::iota(inos.begin(), inos.end(), start_ino);
 
-    for (auto ino : inos) {
-      fbl::RefPtr<VnodeF2fs> vnode =
-          fbl::MakeRefCounted<File>(fs_.get(), ino, static_cast<umode_t>(S_IFREG));
-      vnode->ClearFlag(InodeInfoFlag::kNewInode);
-      fs_->GetVCache().Add(vnode.get());
-      vnodes.push_back(std::move(vnode));
-      fs_->AddToVnodeSet(VnodeSet::kOrphan, ino);
-    }
+            std::shuffle(inos.begin(), inos.end(),
+                         std::default_random_engine(static_cast<uint32_t>(cp->checkpoint_ver)));
 
-    ASSERT_EQ(fs_->GetVnodeSetSize(VnodeSet::kOrphan), orphan_inos);
-  };
+            for (auto ino : inos) {
+              fbl::RefPtr<VnodeF2fs> vnode =
+                  fbl::MakeRefCounted<File>(fs_.get(), ino, static_cast<umode_t>(S_IFREG));
+              vnode->ClearFlag(InodeInfoFlag::kNewInode);
+              fs_->GetVCache().Add(vnode.get());
+              vnodes.push_back(std::move(vnode));
+              fs_->AddToVnodeSet(VnodeSet::kOrphan, ino);
+            }
+
+            ASSERT_EQ(fs_->GetVnodeSetSize(VnodeSet::kOrphan), orphan_inos);
+          };
 
   DoFirstCheckpoint(check_recover_orphan_inode);
   DoCheckpoints(check_recover_orphan_inode, kCheckpointLoopCnt);

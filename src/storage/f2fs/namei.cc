@@ -13,29 +13,6 @@
 
 namespace f2fs {
 
-zx_status_t Dir::DoCreate(std::string_view name, umode_t mode, fbl::RefPtr<fs::Vnode> *out) {
-  zx::result vnode = fs()->CreateNewVnode(safemath::CheckOr<umode_t>(S_IFREG, mode).ValueOrDie());
-  if (vnode.is_error()) {
-    return vnode.error_value();
-  }
-
-  vnode->SetName(name);
-  if (!GetSuperblockInfo().TestOpt(MountOption::kDisableExtIdentify)) {
-    vnode->SetColdFile();
-  }
-
-  if (zx_status_t err = AddLink(name, (*vnode).get()); err != ZX_OK) {
-    vnode->ClearLinkCount();
-    vnode->ClearDirty();
-    fs()->GetNodeManager().AddFreeNid(vnode->Ino());
-    return err;
-  }
-
-  vnode->ClearFlag(InodeInfoFlag::kNewInode);
-  *out = *std::move(vnode);
-  return ZX_OK;
-}
-
 zx::result<> Dir::RecoverLink(VnodeF2fs &vnode) {
   std::lock_guard dir_lock(mutex_);
   fbl::RefPtr<Page> page;
@@ -118,6 +95,13 @@ zx_status_t Dir::DoUnlink(VnodeF2fs *vnode, std::string_view name) {
   return ZX_OK;
 }
 
+zx_status_t Dir::Rmdir(Dir *vnode, std::string_view name) {
+  if (vnode->IsEmptyDir()) {
+    return DoUnlink(vnode, name);
+  }
+  return ZX_ERR_NOT_EMPTY;
+}
+
 #if 0  // porting needed
 // int Dir::F2fsSymlink(dentry *dentry, const char *symname) {
 //   return 0;
@@ -152,35 +136,7 @@ zx_status_t Dir::DoUnlink(VnodeF2fs *vnode, std::string_view name) {
 //   //   fs()->GetNodeManager().AllocNidFailed(vnode->Ino());
 //   //   return err;
 // }
-#endif
 
-zx_status_t Dir::Mkdir(std::string_view name, umode_t mode, fbl::RefPtr<fs::Vnode> *out) {
-  zx::result vnode = fs()->CreateNewVnode(safemath::CheckOr<umode_t>(S_IFDIR, mode).ValueOrDie());
-  if (vnode.is_error()) {
-    return vnode.error_value();
-  }
-  vnode->SetName(name);
-  vnode->SetFlag(InodeInfoFlag::kIncLink);
-  if (zx_status_t err = AddLink(name, (*vnode).get()); err != ZX_OK) {
-    vnode->ClearFlag(InodeInfoFlag::kIncLink);
-    vnode->ClearLinkCount();
-    vnode->ClearDirty();
-    fs()->GetNodeManager().AddFreeNid(vnode->Ino());
-    return err;
-  }
-  vnode->ClearFlag(InodeInfoFlag::kNewInode);
-  *out = *std::move(vnode);
-  return ZX_OK;
-}
-
-zx_status_t Dir::Rmdir(Dir *vnode, std::string_view name) {
-  if (vnode->IsEmptyDir()) {
-    return DoUnlink(vnode, name);
-  }
-  return ZX_ERR_NOT_EMPTY;
-}
-
-#if 0  // porting needed
 // int Dir::F2fsMknod(dentry *dentry, umode_t mode, dev_t rdev) {
 //   fbl::RefPtr<VnodeF2fs> vnode_refptr;
 //   VnodeF2fs *vnode = nullptr;
@@ -413,29 +369,49 @@ zx::result<fbl::RefPtr<fs::Vnode>> Dir::CreateWithMode(std::string_view name, um
   }
 
   fs()->BalanceFs(kMaxNeededBlocksForUpdate + 1);
-  fbl::RefPtr<fs::Vnode> new_vnode;
-  {
-    fs::SharedLock lock(f2fs::GetGlobalLock());
-    std::lock_guard dir_lock(mutex_);
-    if (!GetLinkCountUnsafe()) {
-      return zx::error(ZX_ERR_NOT_FOUND);
-    }
 
-    if (LookUpEntries(name).is_ok()) {
-      return zx::error(ZX_ERR_ALREADY_EXISTS);
+  fs::SharedLock lock(f2fs::GetGlobalLock());
+  bool is_dir = S_ISDIR(mode);
+  fbl::RefPtr<VnodeF2fs> new_vnode;
+  auto purge = fit::defer([&]() TA_NO_THREAD_SAFETY_ANALYSIS {
+    if (!new_vnode) {
+      return;
     }
+    new_vnode->ClearFlag(InodeInfoFlag::kIncLink);
+    new_vnode->ClearLinkCount();
+    new_vnode->Purge();
+    fs()->GetNodeManager().AddFreeNid(new_vnode->Ino());
+  });
 
-    if (S_ISDIR(mode)) {
-      if (zx_status_t status = Mkdir(name, mode, &new_vnode); status != ZX_OK) {
-        return zx::error(status);
-      }
-    } else {
-      if (zx_status_t status = DoCreate(name, mode, &new_vnode); status != ZX_OK) {
-        return zx::error(status);
-      }
-    }
+  std::lock_guard dir_lock(mutex_);
+  if (!GetLinkCountUnsafe()) {
+    return zx::error(ZX_ERR_NOT_FOUND);
   }
-  fbl::RefPtr<VnodeF2fs>::Downcast(new_vnode)->ResetTime();
+
+  if (LookUpEntries(name).is_ok()) {
+    return zx::error(ZX_ERR_ALREADY_EXISTS);
+  }
+
+  zx::result vnode = fs()->CreateNewVnode(mode);
+  if (vnode.is_error()) {
+    return vnode.take_error();
+  }
+
+  vnode->SetName(name);
+  if (is_dir) {
+    vnode->SetFlag(InodeInfoFlag::kIncLink);
+  } else if (!GetSuperblockInfo().TestOpt(MountOption::kDisableExtIdentify)) {
+    vnode->SetColdFile();
+  }
+
+  new_vnode = std::move(*vnode);
+  if (zx_status_t err = AddLink(name, new_vnode.get()); err != ZX_OK) {
+    return zx::error(err);
+  }
+
+  new_vnode->ClearFlag(InodeInfoFlag::kNewInode);
+  new_vnode->ResetTime();
+  purge.cancel();
   return zx::make_result(new_vnode->Open(nullptr), new_vnode);
 }
 

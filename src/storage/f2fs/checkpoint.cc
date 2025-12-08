@@ -86,8 +86,7 @@ zx::result<> F2fs::PurgeOrphanInode(nid_t ino) {
     return vnode.take_error();
   }
   vnode->ClearLinkCount();
-  vnode->SetOrphan();
-  // Here, |*vnode| should be deleted to purge its metadata.
+  vnode->Purge();
   return zx::ok();
 }
 
@@ -164,20 +163,6 @@ void F2fs::WriteOrphanInodes(block_t start_blk) {
     orphan_blk->entry_count = CpuToLe(nentries);
     page.SetDirty();
   }
-}
-
-void F2fs::UpdateOrphanInodes() {
-  ForAllVnodeSet(VnodeSet::kOrphan, [&](nid_t ino) {
-    LockedPage page;
-    zx::result vnode = GetVnode(ino);
-    if (vnode.is_error()) {
-      return;
-    }
-    if (zx_status_t ret = GetNodeManager().GetNodePage(ino, &page); ret != ZX_OK) {
-      return;
-    }
-    vnode->UpdateInodePage(page, true);
-  });
 }
 
 zx_status_t F2fs::ValidateCheckpoint(block_t cp_addr, uint64_t *version, LockedPage *out) {
@@ -308,16 +293,18 @@ zx::result<pgoff_t> F2fs::FlushDirtyNodePages(WritebackOperation &operation) {
             return ZX_OK;
           },
           [this](fbl::RefPtr<VnodeF2fs> &vnode) {
-            if (vnode->GetDirtyPageCount()) {
+            if (vnode->GetDirtyPageCount() && vnode->GetLinkCount()) {
               return ZX_ERR_NEXT;
             }
-            // Update the node page of every dirty vnode before writeback.
             LockedPage node_page;
             if (zx_status_t ret = node_manager_->GetNodePage(vnode->GetKey(), &node_page);
                 ret != ZX_OK) {
               return ret;
             }
             vnode->UpdateInodePage(node_page, true);
+            if (!vnode->GetLinkCount()) {
+              return ZX_ERR_NEXT;
+            }
             return ZX_OK;
           });
       status != ZX_OK) {
@@ -506,7 +493,6 @@ zx_status_t F2fs::WriteCheckpointUnsafe(bool is_umount) {
   if (superblock_info_->TestCpFlags(CpFlag::kCpErrorFlag)) {
     return ZX_ERR_BAD_STATE;
   }
-  UpdateOrphanInodes();
   FlushDirsAndNodes();
   if (is_umount) {
     FX_LOGS(INFO) << "flushing dirty nodes… done";

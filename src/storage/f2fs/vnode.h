@@ -144,9 +144,10 @@ class VnodeF2fs : public fs::PagedVnode,
       __TA_REQUIRES_SHARED(f2fs::GetGlobalLock()) __TA_REQUIRES(mutex_);
 
   // handling orphans
-  void SetOrphan() __TA_EXCLUDES(mutex_);
+  void SetOrphan() __TA_EXCLUDES(mutex_) __TA_REQUIRES_SHARED(f2fs::GetGlobalLock());
   zx_status_t PurgeInodeBlock() __TA_REQUIRES(mutex_);
   void PurgeDataBlocks() __TA_REQUIRES_SHARED(f2fs::GetGlobalLock()) __TA_REQUIRES(mutex_);
+  void PurgeUnsafe() __TA_REQUIRES_SHARED(f2fs::GetGlobalLock()) __TA_REQUIRES(mutex_);
   void Purge() __TA_REQUIRES_SHARED(f2fs::GetGlobalLock()) __TA_EXCLUDES(mutex_);
 
   // Reserve space for a new block
@@ -306,10 +307,9 @@ class VnodeF2fs : public fs::PagedVnode,
     return flags_[static_cast<uint8_t>(flag)].test(std::memory_order_acquire);
   }
 
-  void Activate();
-  void Deactivate();
   bool IsActive() const;
-  void WaitForDeactive(std::mutex& mutex);
+  void PutRefPtr() __TA_EXCLUDES(ref_mutex_);
+  zx::result<fbl::RefPtr<VnodeF2fs>> GetRefPtr() __TA_EXCLUDES(ref_mutex_);
 
   zx_status_t FindPage(pgoff_t index, fbl::RefPtr<Page>* out) {
     return file_cache_->FindPage(index, out);
@@ -449,6 +449,7 @@ class VnodeF2fs : public fs::PagedVnode,
   uint64_t current_depth_ __TA_GUARDED(mutex_) = 1;  // use only in directory structure
   std::unique_ptr<Timestamps> time_ __TA_GUARDED(mutex_);
 
+  std::mutex ref_mutex_;
   std::atomic<block_t> dirty_pages_ = 0;  // # of dirty dentry/data pages
   std::atomic<ino_t> parent_ino_ = kNullIno;
   std::array<std::atomic_flag, static_cast<uint8_t>(InodeInfoFlag::kFlagSize)> flags_ = {

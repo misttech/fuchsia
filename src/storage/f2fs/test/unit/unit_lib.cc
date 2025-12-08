@@ -244,7 +244,8 @@ void FileTester::DeleteChildren(std::vector<fbl::RefPtr<VnodeF2fs>> &vnodes,
   ASSERT_EQ(deleted_file_cnt, inode_cnt);
 }
 
-void FileTester::VnodeWithoutParent(F2fs *fs, umode_t mode, fbl::RefPtr<VnodeF2fs> &vnode) {
+void FileTester::VnodeWithoutParent(F2fs *fs, umode_t mode,
+                                    fbl::RefPtr<VnodeF2fs> &vnode) TA_NO_THREAD_SAFETY_ANALYSIS {
   nid_t inode_nid;
   auto nid_or = fs->GetNodeManager().AllocNid();
   ASSERT_TRUE(nid_or.is_ok());

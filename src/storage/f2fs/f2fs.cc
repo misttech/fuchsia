@@ -273,15 +273,24 @@ zx_status_t F2fs::SyncFsUnsafe(bool bShutdown) {
     // Stop listening to memorypressure.
     memory_pressure_watcher_.reset();
     // Clear the dirty flag of orphans to avoid unnecessary block writes.
-    ForAllVnodeSet(VnodeSet::kOrphan, [&](nid_t ino) {
-      zx::result vnode = GetVnode(ino);
-      if (vnode.is_error()) {
-        return;
-      }
-      vnode->ClearDirty();
-      vnode->SetFlag(InodeInfoFlag::kNoAlloc);
-    });
-
+    GetVCache().ForDirtyVnodesIf(
+        [&](fbl::RefPtr<VnodeF2fs>& vnode) {
+          LockedPage page;
+          vnode->ClearDirty();
+          vnode->SetFlag(InodeInfoFlag::kNoAlloc);
+          if (zx_status_t ret = GetNodeManager().GetNodePage(vnode->GetKey(), &page);
+              ret != ZX_OK) {
+            return ZX_ERR_NEXT;
+          }
+          vnode->UpdateInodePage(page, true);
+          return ZX_OK;
+        },
+        [](fbl::RefPtr<VnodeF2fs>& vnode) {
+          if (!vnode->GetLinkCount()) {
+            return ZX_OK;
+          }
+          return ZX_ERR_NEXT;
+        });
     // Flush every dirty Pages.
     do {
       // If CpFlag::kCpErrorFlag is set, it cannot be synchronized to disk. So we will drop all
