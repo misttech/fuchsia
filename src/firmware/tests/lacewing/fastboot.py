@@ -73,6 +73,18 @@ def parse_getvar(line: str) -> Tuple[str, str]:  # type: ignore[return]
     asserts.fail("Failed to parse getvar output", extras={"line": line})
 
 
+def ignore_line(line: str) -> bool:
+    """Returns True if this fastboot output line should be ignored.
+
+    Infra devices seem to occasionally drop off fastboot for short periods of
+    time, and if we issue a command during this time we get a
+    "<waiting for _serial_>" line that we should ignore (b/419262916).
+
+    TODO(b/466453484): consider addressing this centrally in Lacewing instead.
+    """
+    return "waiting for" in line
+
+
 class FastbootTest(fuchsia_base_test.FuchsiaBaseTest):
     def setup_class(self) -> None:
         """Initializes all DUT(s)"""
@@ -107,11 +119,7 @@ class FastbootTest(fuchsia_base_test.FuchsiaBaseTest):
 
             if len(lines) == 1:
                 output = lines[0]
-            elif len(lines) == 2 and "waiting for" in lines[0]:
-                # The infra devices seem to occasionally drop off fastboot for short
-                # periods of time, and if we query them during this time we get an
-                # initial "<waiting for _serial_>" line (b/419262916). This is
-                # harmless, so just skip this line if we see it.
+            elif len(lines) == 2 and ignore_line(lines[0]):
                 output = lines[1]
             else:
                 asserts.fail(
@@ -135,6 +143,8 @@ class FastbootTest(fuchsia_base_test.FuchsiaBaseTest):
         logging.info("Checking `getvar all`")
         getvar_all_vars = []
         for line in self.device.fastboot.run(["getvar", "all"]):
+            if ignore_line(line):
+                continue
             name, _ = parse_getvar(line)
             if name != "all":
                 getvar_all_vars.append(name)
