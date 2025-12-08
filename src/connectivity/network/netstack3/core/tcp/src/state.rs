@@ -17,9 +17,10 @@ use assert_matches::assert_matches;
 use derivative::Derivative;
 use explicit::ResultExt as _;
 use netstack3_base::{
-    Control, EffectiveMss, HandshakeOptions, IcmpErrorCode, Instant, Mss, MssSizeLimiters, Options,
-    Payload, PayloadLen as _, ResetOptions, SackBlocks, Segment, SegmentHeader, SegmentOptions,
-    SeqNum, UnscaledWindowSize, WindowScale, WindowSize,
+    Control, EffectiveMss, HandshakeOptions, IcmpErrorCode, Instant, Milliseconds, Mss,
+    MssSizeLimiters, Options, Payload, PayloadLen as _, ResetOptions, RxTimestampOption,
+    SackBlocks, Segment, SegmentHeader, SegmentOptions, SeqNum, Timestamp, TimestampOption,
+    TxTimestampOption, UnscaledWindowSize, WindowScale, WindowSize,
 };
 use netstack3_trace::{TraceResourceId, trace_instant};
 use packet_formats::utils::NonZeroDuration;
@@ -36,6 +37,7 @@ use crate::internal::congestion::{
 };
 use crate::internal::counters::TcpCountersRefs;
 use crate::internal::rtt::{Estimator, Rto, RttSampler};
+use crate::internal::timestamp::{TimestampOptionNegotiationState, TimestampOptionState};
 
 /// Per RFC 793 (https://tools.ietf.org/html/rfc793#page-81):
 /// MSL
@@ -118,6 +120,7 @@ impl Closed<Initial> {
     /// sequence number of SYN.
     pub(crate) fn connect<I: Instant, ActiveOpen>(
         iss: SeqNum,
+        timestamp_offset: Timestamp<Milliseconds>,
         now: I,
         active_open: ActiveOpen,
         buffer_sizes: BufferSizes,
@@ -138,6 +141,11 @@ impl Closed<Initial> {
         //  The window field in a segment where the SYN bit is set (i.e., a
         //  <SYN> or <SYN,ACK>) MUST NOT be scaled.
         let rwnd = buffer_sizes.rwnd_unscaled();
+        // Per RFC 7323 section 3.2:
+        //   A TCP MAY send the TSopt in an initial <SYN> segment (i.e., segment
+        //   containing a SYN bit and no ACK bit)
+        let ts_opt = TimestampOptionNegotiationState::new(now, timestamp_offset);
+        let timestamp = ts_opt.make_option_for_syn(now).map(TxTimestampOption::into);
         (
             SynSent {
                 iss,
@@ -153,6 +161,7 @@ impl Closed<Initial> {
                 device_mss,
                 default_mss,
                 rcv_wnd_scale,
+                ts_opt,
             },
             Segment::syn(
                 iss,
@@ -161,9 +170,7 @@ impl Closed<Initial> {
                     mss: Some(device_mss),
                     window_scale: Some(rcv_wnd_scale),
                     sack_permitted: SACK_PERMITTED,
-                    // TODO(https://fxbug.dev/436529062): Use the timestamp
-                    // option.
-                    timestamp: None,
+                    timestamp,
                 },
             ),
         )
@@ -171,12 +178,13 @@ impl Closed<Initial> {
 
     pub(crate) fn listen(
         iss: SeqNum,
+        timestamp_offset: Timestamp<Milliseconds>,
         buffer_sizes: BufferSizes,
         device_mss: Mss,
         default_mss: Mss,
         user_timeout: Option<NonZeroDuration>,
     ) -> Listen {
-        Listen { iss, buffer_sizes, device_mss, default_mss, user_timeout }
+        Listen { iss, timestamp_offset, buffer_sizes, device_mss, default_mss, user_timeout }
     }
 }
 
@@ -205,11 +213,18 @@ impl<Error> Closed<Error> {
         if *control == Some(Control::RST) {
             return None;
         }
+        // Although RFC 7323 section 3.2 states that the timestamp option, once
+        // negotiated, SHOULD be included in all reset segments, we don't do so
+        // here. In the `Closed` state we don't known whether the timestamp
+        // option was previously negotiated.
+        let timestamp = None;
         Some(match seg_ack {
-            Some(seg_ack) => Segment::rst(*seg_ack, ResetOptions::default()),
-            None => {
-                Segment::rst_ack(SeqNum::from(0), *seg_seq + segment_len, ResetOptions::default())
-            }
+            Some(seg_ack) => Segment::rst(*seg_ack, ResetOptions { timestamp }),
+            None => Segment::rst_ack(
+                SeqNum::from(0),
+                *seg_seq + segment_len,
+                ResetOptions { timestamp },
+            ),
         })
     }
 }
@@ -231,6 +246,7 @@ impl<Error> Closed<Error> {
 #[cfg_attr(test, derive(PartialEq, Eq))]
 pub struct Listen {
     iss: SeqNum,
+    timestamp_offset: Timestamp<Milliseconds>,
     buffer_sizes: BufferSizes,
     device_mss: Mss,
     default_mss: Mss,
@@ -253,7 +269,8 @@ impl Listen {
     ) -> ListenOnSegmentDisposition<I> {
         let (header, _data) = seg.into_parts();
         let SegmentHeader { seq, ack, wnd: _, control, options, push: _ } = header;
-        let Listen { iss, buffer_sizes, device_mss, default_mss, user_timeout } = *self;
+        let Listen { iss, timestamp_offset, buffer_sizes, device_mss, default_mss, user_timeout } =
+            *self;
         let smss = options.mss().unwrap_or(default_mss).min(device_mss);
         // Per RFC 793 (https://tools.ietf.org/html/rfc793#page-65):
         //   first check for an RST
@@ -270,7 +287,12 @@ impl Listen {
             //   formatted as follows:
             //     <SEQ=SEG.ACK><CTL=RST>
             //   Return.
-            return ListenOnSegmentDisposition::SendRst(Segment::rst(ack, ResetOptions::default()));
+
+            // Note: We haven't negotiated the timestamp option if we're in the
+            // Listen state. Don't send it as part of the reset.
+            let options = ResetOptions { timestamp: None };
+
+            return ListenOnSegmentDisposition::SendRst(Segment::rst(ack, options));
         }
         if control == Some(Control::SYN) {
             let sack_permitted = options.sack_permitted();
@@ -291,10 +313,19 @@ impl Listen {
             //  The window field in a segment where the SYN bit is set (i.e., a
             //  <SYN> or <SYN,ACK>) MUST NOT be scaled.
             let rwnd = buffer_sizes.rwnd_unscaled();
+            // Per RFC 7323 section 3.2:
+            //   A TCP MAY send a TSopt in <SYN,ACK> only if it received a TSopt
+            //   in the initial <SYN> segment for the connection.
+            let initial_ack_sent = seq + 1;
+            let ts_opt = TimestampOptionState::negotiate(
+                TimestampOptionNegotiationState::new(now, timestamp_offset),
+                options.timestamp().map(RxTimestampOption::from),
+                initial_ack_sent,
+            );
             return ListenOnSegmentDisposition::SendSynAckAndEnterSynRcvd(
                 Segment::syn_ack(
                     iss,
-                    seq + 1,
+                    initial_ack_sent,
                     rwnd,
                     HandshakeOptions {
                         mss: Some(smss),
@@ -304,9 +335,7 @@ impl Listen {
                         //   Scale option in the <SYN,ACK> segment.
                         window_scale: options.window_scale().map(|_| rcv_wnd_scale),
                         sack_permitted: SACK_PERMITTED,
-                        // TODO(https://fxbug.dev/436529062): Use the timestamp
-                        // option.
-                        timestamp: None,
+                        timestamp: ts_opt.make_option_for_ack(now).map(TxTimestampOption::into),
                     },
                 ),
                 SynRcvd {
@@ -321,16 +350,16 @@ impl Listen {
                     ),
                     simultaneous_open: None,
                     buffer_sizes,
-                    // TODO(https://fxbug.dev/1338804): Support the Timestamp Option
                     smss: EffectiveMss::from_mss(
                         smss,
-                        MssSizeLimiters { timestamp_enabled: false },
+                        MssSizeLimiters { timestamp_enabled: ts_opt.is_enabled() },
                     ),
                     rcv_wnd_scale,
                     snd_wnd_scale: options.window_scale(),
                     sack_permitted,
                     rcv: RecvParams {
-                        ack: seq + 1,
+                        ack: initial_ack_sent,
+                        ts_opt,
                         // We advertised an unscaled window, now
                         // set up the rcv state accordingly.
                         wnd_scale: WindowScale::default(),
@@ -370,6 +399,8 @@ pub struct SynSent<I, ActiveOpen> {
     device_mss: Mss,
     default_mss: Mss,
     rcv_wnd_scale: WindowScale,
+    // The state used to negotiate the TCP timestamp option.
+    ts_opt: TimestampOptionNegotiationState<I>,
 }
 
 /// Dispositions of [`SynSent::on_segment`].
@@ -405,7 +436,8 @@ impl<I: Instant + 'static, ActiveOpen> SynSent<I, ActiveOpen> {
             device_mss,
             default_mss,
             rcv_wnd_scale,
-        } = *self;
+            ts_opt,
+        } = self;
         // Per RFC 793 (https://tools.ietf.org/html/rfc793#page-65):
         //   first check the ACK bit
         //   If the ACK bit is set
@@ -418,13 +450,15 @@ impl<I: Instant + 'static, ActiveOpen> SynSent<I, ActiveOpen> {
             Some(ack) => {
                 // In our implementation, because we don't carry data in our
                 // initial SYN segment, SND.UNA == ISS, SND.NXT == ISS+1.
-                if ack.before(iss) || ack.after(iss + 1) {
+                if ack.before(*iss) || ack.after(*iss + 1) {
                     return if control == Some(Control::RST) {
                         SynSentOnSegmentDisposition::Ignore
                     } else {
+                        // NB: The segment is unacceptable, so don't consider
+                        // its timestamp option (if included).
                         SynSentOnSegmentDisposition::SendRst(Segment::rst(
                             ack,
-                            ResetOptions::default(),
+                            ResetOptions { timestamp: None },
                         ))
                     };
                 }
@@ -451,10 +485,7 @@ impl<I: Instant + 'static, ActiveOpen> SynSent<I, ActiveOpen> {
                 }
             }
             Some(Control::SYN) => {
-                let smss = options.mss().unwrap_or(default_mss).min(device_mss);
-                // TODO(https://fxbug.dev/1338804): Support the Timestamp Option
-                let smss =
-                    EffectiveMss::from_mss(smss, MssSizeLimiters { timestamp_enabled: false });
+                let smss = options.mss().unwrap_or(*default_mss).min(*device_mss);
                 let sack_permitted = options.sack_permitted();
                 // Per RFC 793 (https://tools.ietf.org/html/rfc793#page-67):
                 //   fourth check the SYN bit
@@ -479,17 +510,33 @@ impl<I: Instant + 'static, ActiveOpen> SynSent<I, ActiveOpen> {
                         //   other controls or text in the segment then
                         //   continue processing at the sixth step below where
                         //   the URG bit is checked, otherwise return.
-                        if seg_ack.after(iss) {
+                        if seg_ack.after(*iss) {
                             let irs = seg_seq;
                             let mut rtt_estimator = Estimator::default();
                             if let Some(syn_sent_ts) = syn_sent_ts {
-                                rtt_estimator.sample(now.saturating_duration_since(syn_sent_ts));
+                                rtt_estimator.sample(now.saturating_duration_since(*syn_sent_ts));
                             }
                             let (rcv_wnd_scale, snd_wnd_scale) = options
                                 .window_scale()
-                                .map(|snd_wnd_scale| (rcv_wnd_scale, snd_wnd_scale))
+                                .map(|snd_wnd_scale| (*rcv_wnd_scale, snd_wnd_scale))
                                 .unwrap_or_default();
-                            let next = iss + 1;
+                            let next = *iss + 1;
+                            // We received a SYN-ACK, check if TSopt has been
+                            // negotiated.
+                            //
+                            // Per RFC 7323 section 3.2, a
+                            //   TSopt has been successfully negotiated, that is
+                            //   both <SYN> and <SYN,ACK> contain TSopt.
+                            let initial_ack_sent = irs + 1;
+                            let ts_opt = TimestampOptionState::negotiate(
+                                ts_opt.clone(),
+                                options.timestamp().map(RxTimestampOption::from),
+                                initial_ack_sent,
+                            );
+                            let smss = EffectiveMss::from_mss(
+                                smss,
+                                MssSizeLimiters { timestamp_enabled: ts_opt.is_enabled() },
+                            );
                             let established = Established {
                                 snd: Send {
                                     nxt: next,
@@ -512,7 +559,7 @@ impl<I: Instant + 'static, ActiveOpen> SynSent<I, ActiveOpen> {
                                 rcv: Recv {
                                     buffer: RecvBufferState::Open {
                                         buffer: (),
-                                        assembler: Assembler::new(irs + 1),
+                                        assembler: Assembler::new(initial_ack_sent),
                                     },
                                     remaining_quickacks: quickack_counter(
                                         buffer_sizes.rcv_limits(),
@@ -522,8 +569,9 @@ impl<I: Instant + 'static, ActiveOpen> SynSent<I, ActiveOpen> {
                                     timer: None,
                                     mss: smss,
                                     wnd_scale: rcv_wnd_scale,
-                                    last_window_update: (irs + 1, buffer_sizes.rwnd()),
+                                    last_window_update: (initial_ack_sent, buffer_sizes.rwnd()),
                                     sack_permitted,
+                                    ts_opt,
                                 }
                                 .into(),
                             };
@@ -547,39 +595,57 @@ impl<I: Instant + 'static, ActiveOpen> SynSent<I, ActiveOpen> {
                             //  is set (i.e., a <SYN> or <SYN,ACK>) MUST NOT be
                             //  scaled.
                             let rwnd = buffer_sizes.rwnd_unscaled();
+                            // Per RFC 7323 section 3.2:
+                            //   A TCP MAY send a TSopt in <SYN,ACK> only if it
+                            //   received a TSopt in the initial <SYN> segment
+                            //   for the connection.
+                            // Here since we're in `SynSent` we decide only to
+                            // send a timestamp option if we previously sent one
+                            // as part of the initial SYN.
+                            let initial_ack_sent = seg_seq + 1;
+                            let ts_opt = TimestampOptionState::negotiate(
+                                ts_opt.clone(),
+                                options.timestamp().map(RxTimestampOption::from),
+                                initial_ack_sent,
+                            );
+                            let smss = EffectiveMss::from_mss(
+                                smss,
+                                MssSizeLimiters { timestamp_enabled: ts_opt.is_enabled() },
+                            );
                             SynSentOnSegmentDisposition::SendSynAckAndEnterSynRcvd(
                                 Segment::syn_ack(
-                                    iss,
-                                    seg_seq + 1,
+                                    *iss,
+                                    initial_ack_sent,
                                     rwnd,
                                     HandshakeOptions {
                                         mss: Some(*smss.mss()),
                                         window_scale: options.window_scale().map(|_| rcv_wnd_scale),
                                         sack_permitted: SACK_PERMITTED,
-                                        // TODO(https://fxbug.dev/436529062):
-                                        // Use the timestamp option.
-                                        timestamp: None,
+                                        timestamp: ts_opt
+                                            .make_option_for_ack(now)
+                                            .map(TxTimestampOption::into),
                                     },
                                 ),
                                 SynRcvd {
-                                    iss,
+                                    iss: *iss,
                                     irs: seg_seq,
                                     timestamp: Some(now),
                                     retrans_timer: RetransTimer::new_with_user_deadline(
                                         now,
                                         Rto::DEFAULT,
-                                        user_timeout_until,
+                                        *user_timeout_until,
                                         DEFAULT_MAX_SYNACK_RETRIES,
                                     ),
                                     // This should be set to active_open by the caller:
                                     simultaneous_open: None,
-                                    buffer_sizes,
+                                    buffer_sizes: *buffer_sizes,
                                     smss,
                                     rcv_wnd_scale,
                                     snd_wnd_scale: options.window_scale(),
                                     sack_permitted,
                                     rcv: RecvParams {
-                                        ack: seg_seq + 1,
+                                        ack: initial_ack_sent,
+                                        ts_opt,
                                         // We advertised an unscaled window, now
                                         // set up the rcv state accordingly.
                                         wnd_scale: WindowScale::default(),
@@ -645,7 +711,7 @@ pub struct SynRcvd<I, ActiveOpen> {
     //   (i.e., a <SYN> or <SYN,ACK>) MUST NOT be scaled.
     // Put another way, we've advertised an unscaled window, and should only
     // accept segments within that unscaled window.
-    rcv: RecvParams,
+    rcv: RecvParams<I>,
 }
 
 impl<I: Instant, R: ReceiveBuffer, S: SendBuffer, ActiveOpen> From<SynRcvd<I, Infallible>>
@@ -954,6 +1020,7 @@ pub(crate) struct Recv<I, R> {
 
     // Buffer may be closed once receive is shutdown (e.g. with `shutdown(SHUT_RD)`).
     buffer: RecvBufferState<R>,
+    ts_opt: TimestampOptionState<I>,
 }
 
 impl<I> Recv<I, ()> {
@@ -967,6 +1034,7 @@ impl<I> Recv<I, ()> {
             remaining_quickacks,
             last_segment_at,
             sack_permitted,
+            ts_opt,
         } = self;
         let nxt = match old_buffer {
             RecvBufferState::Open { assembler, .. } => assembler.nxt(),
@@ -981,6 +1049,7 @@ impl<I> Recv<I, ()> {
             last_segment_at,
             buffer: RecvBufferState::Open { buffer, assembler: Assembler::new(nxt) },
             sack_permitted,
+            ts_opt,
         }
     }
 }
@@ -990,8 +1059,9 @@ impl<I, R> Recv<I, R> {
         if self.sack_permitted {
             match &self.buffer {
                 RecvBufferState::Open { buffer: _, assembler } => {
-                    // TODO(https://fxbug.dev/360401604): Support timestamps.
-                    assembler.sack_blocks(SackBlockSizeLimiters { timestamp_enabled: false })
+                    assembler.sack_blocks(SackBlockSizeLimiters {
+                        timestamp_enabled: self.ts_opt.is_enabled(),
+                    })
                 }
                 RecvBufferState::Closed { buffer_size: _, nxt: _ } => SackBlocks::default(),
             }
@@ -1002,9 +1072,15 @@ impl<I, R> Recv<I, R> {
     }
 }
 
+impl<I: Instant, R> Recv<I, R> {
+    fn timestamp_option_for_ack(&self, now: I) -> Option<TimestampOption> {
+        self.ts_opt.make_option_for_ack(now).map(TxTimestampOption::into)
+    }
+}
+
 /// The calculation returned from [`Recv::calculate_window_size`].
 struct WindowSizeCalculation {
-    /// THe sequence number of the next octet that we expect to receive from the
+    /// The sequence number of the next octet that we expect to receive from the
     /// peer.
     rcv_nxt: SeqNum,
     /// The next window size to advertise.
@@ -1030,6 +1106,7 @@ impl<I: Instant, R: ReceiveBuffer> Recv<I, R> {
             remaining_quickacks: _,
             last_segment_at: _,
             sack_permitted: _,
+            ts_opt: _,
         } = self;
 
         // Per RFC 9293 Section 3.8.6.2.2:
@@ -1072,7 +1149,7 @@ impl<I: Instant, R: ReceiveBuffer> Recv<I, R> {
 
     /// Processes data being removed from the receive buffer. Returns a window
     /// update segment to be sent immediately if necessary.
-    fn poll_receive_data_dequeued(&mut self, snd_max: SeqNum) -> Option<Segment<()>> {
+    fn poll_receive_data_dequeued(&mut self, snd_max: SeqNum, now: I) -> Option<Segment<()>> {
         let WindowSizeCalculation { rcv_nxt, window_size: calculated_window_size, threshold } =
             self.calculate_window_size();
         let (rcv_wup, last_window_size) = self.last_window_update;
@@ -1103,16 +1180,21 @@ impl<I: Instant, R: ReceiveBuffer> Recv<I, R> {
         // immediately send a window update to get the sender back into normal
         // operation.
         if last_window_size_usize < threshold && effective_window_size_usize >= threshold {
+            let ack = self.nxt();
+            // A segment was produced, update the receiver with last info.
             self.last_window_update = (rcv_nxt, calculated_window_size);
+            self.ts_opt.process_tx_ack(ack);
             // Discard delayed ack timer if any, we're sending out an
             // acknowledgement now.
             self.timer = None;
             Some(Segment::ack(
                 snd_max,
-                self.nxt(),
+                ack,
                 calculated_window_size >> self.wnd_scale,
-                // TODO(https://fxbug.dev/436529062): Use the timestamp option.
-                SegmentOptions { sack_blocks: self.sack_blocks(), timestamp: None },
+                SegmentOptions {
+                    sack_blocks: self.sack_blocks(),
+                    timestamp: self.timestamp_option_for_ack(now),
+                },
             ))
         } else {
             None
@@ -1130,20 +1212,21 @@ impl<I: Instant, R: ReceiveBuffer> Recv<I, R> {
         match self.timer {
             Some(ReceiveTimer::DelayedAck { at }) => (at <= now).then(|| {
                 self.timer = None;
-                self.make_ack(snd_max)
+                self.make_ack(snd_max, now)
             }),
             None => None,
         }
     }
 
     /// Handles a FIN, returning the [`RecvParams`]` to use from now on.
-    fn handle_fin(&self) -> RecvParams {
+    fn handle_fin(&self) -> RecvParams<I> {
         let WindowSizeCalculation { rcv_nxt, window_size, threshold: _ } =
             self.calculate_window_size();
         RecvParams {
             ack: rcv_nxt + 1,
             wnd: window_size.checked_sub(1).unwrap_or(WindowSize::ZERO),
             wnd_scale: self.wnd_scale,
+            ts_opt: self.ts_opt.clone(),
         }
     }
 
@@ -1157,6 +1240,7 @@ impl<I: Instant, R: ReceiveBuffer> Recv<I, R> {
             buffer,
             last_segment_at: _,
             sack_permitted: _,
+            ts_opt: _,
         } = self;
         let new_remaining = quickack_counter(buffer.limits(), *mss);
         // Update if we increased the number of quick acks.
@@ -1164,35 +1248,53 @@ impl<I: Instant, R: ReceiveBuffer> Recv<I, R> {
     }
 }
 
-impl<'a, I: Instant, R: ReceiveBuffer> RecvSegmentArgumentsProvider for &'a mut Recv<I, R> {
-    fn take_rcv_segment_args(self) -> (SeqNum, UnscaledWindowSize, SackBlocks) {
+impl<'a, I: Instant, R: ReceiveBuffer> RecvSegmentArgumentsProvider<'a, I> for &'a mut Recv<I, R> {
+    fn take_rcv_segment_args(
+        self,
+    ) -> (SeqNum, UnscaledWindowSize, SackBlocks, &'a TimestampOptionState<I>) {
         let WindowSizeCalculation { rcv_nxt, window_size, threshold: _ } =
             self.calculate_window_size();
         // A segment was produced, update the receiver with last info.
         self.last_window_update = (rcv_nxt, window_size);
-        (rcv_nxt, window_size >> self.wnd_scale, self.sack_blocks())
+        self.ts_opt.process_tx_ack(rcv_nxt);
+        (rcv_nxt, window_size >> self.wnd_scale, self.sack_blocks(), &self.ts_opt)
     }
 }
 
 /// Cached parameters for states that do not have a full receive state machine.
 #[derive(Debug, Clone)]
 #[cfg_attr(test, derive(PartialEq, Eq))]
-pub(super) struct RecvParams {
+pub(super) struct RecvParams<I> {
     pub(super) ack: SeqNum,
     pub(super) wnd_scale: WindowScale,
     pub(super) wnd: WindowSize,
+    ts_opt: TimestampOptionState<I>,
 }
 
-impl<'a> RecvSegmentArgumentsProvider for &'a mut RecvParams {
-    fn take_rcv_segment_args(self) -> (SeqNum, UnscaledWindowSize, SackBlocks) {
-        (self.ack, self.wnd >> self.wnd_scale, SackBlocks::default())
+impl<I: Instant> RecvParams<I> {
+    fn timestamp_option_for_ack(&self, now: I) -> Option<TimestampOption> {
+        self.ts_opt.make_option_for_ack(now).map(TxTimestampOption::into)
+    }
+
+    fn timestamp_option_for_non_ack(&self, now: I) -> Option<TimestampOption> {
+        self.ts_opt.make_option_for_non_ack(now).map(TxTimestampOption::into)
+    }
+}
+
+impl<'a, I: Instant> RecvSegmentArgumentsProvider<'a, I> for &'a mut RecvParams<I> {
+    fn take_rcv_segment_args(
+        self,
+    ) -> (SeqNum, UnscaledWindowSize, SackBlocks, &'a TimestampOptionState<I>) {
+        // A segment was produced, update the receiver with last info.
+        self.ts_opt.process_tx_ack(self.ack);
+        (self.ack, self.wnd >> self.wnd_scale, SackBlocks::default(), &self.ts_opt)
     }
 }
 
 /// Abstracts over [`Recv`] and [`RecvParams`] with a cached window calculation.
 enum CalculatedRecvParams<'a, I, R> {
     Recv { backing_state: &'a mut Recv<I, R>, cached_window: WindowSizeCalculation },
-    RecvParams { backing_state: &'a mut RecvParams },
+    RecvParams { backing_state: &'a mut RecvParams<I> },
 }
 
 impl<'a, I, R> CalculatedRecvParams<'a, I, R> {
@@ -1200,7 +1302,7 @@ impl<'a, I, R> CalculatedRecvParams<'a, I, R> {
     ///
     /// Note: do not use [`Recv::to_params`] to instantiate this, prefer
     /// [`CalculatedRecvParams::from_recv`] instead.
-    fn from_params(params: &'a mut RecvParams) -> Self {
+    fn from_params(params: &'a mut RecvParams<I>) -> Self {
         Self::RecvParams { backing_state: params }
     }
 
@@ -1217,6 +1319,20 @@ impl<'a, I, R> CalculatedRecvParams<'a, I, R> {
             Self::RecvParams { backing_state } => backing_state.wnd,
         }
     }
+
+    fn ts_opt(&self) -> &TimestampOptionState<I> {
+        match self {
+            Self::Recv { backing_state, cached_window: _ } => &backing_state.ts_opt,
+            Self::RecvParams { backing_state } => &backing_state.ts_opt,
+        }
+    }
+
+    fn ts_opt_mut(&mut self) -> &mut TimestampOptionState<I> {
+        match self {
+            Self::Recv { backing_state, cached_window: _ } => &mut backing_state.ts_opt,
+            Self::RecvParams { backing_state } => &mut backing_state.ts_opt,
+        }
+    }
 }
 
 impl<'a, I: Instant, R: ReceiveBuffer> CalculatedRecvParams<'a, I, R> {
@@ -1230,22 +1346,33 @@ impl<'a, I: Instant, R: ReceiveBuffer> CalculatedRecvParams<'a, I, R> {
     }
 }
 
-impl<'a, I, R> RecvSegmentArgumentsProvider for CalculatedRecvParams<'a, I, R> {
-    fn take_rcv_segment_args(self) -> (SeqNum, UnscaledWindowSize, SackBlocks) {
-        let (ack, wnd, wnd_scale, sack_blocks) = match self {
+impl<'a, I: Instant, R> RecvSegmentArgumentsProvider<'a, I> for CalculatedRecvParams<'a, I, R> {
+    fn take_rcv_segment_args(
+        self,
+    ) -> (SeqNum, UnscaledWindowSize, SackBlocks, &'a TimestampOptionState<I>) {
+        let (ack, wnd, wnd_scale, sack_blocks, ts_opt) = match self {
             Self::Recv {
                 backing_state,
                 cached_window: WindowSizeCalculation { rcv_nxt, window_size, threshold: _ },
             } => {
                 // A segment was produced, update the receiver with last info.
                 backing_state.last_window_update = (rcv_nxt, window_size);
-                (rcv_nxt, window_size, backing_state.wnd_scale, backing_state.sack_blocks())
+                backing_state.ts_opt.process_tx_ack(rcv_nxt);
+                (
+                    rcv_nxt,
+                    window_size,
+                    backing_state.wnd_scale,
+                    backing_state.sack_blocks(),
+                    &backing_state.ts_opt,
+                )
             }
-            Self::RecvParams { backing_state: RecvParams { ack, wnd_scale, wnd } } => {
-                (*ack, *wnd, *wnd_scale, SackBlocks::default())
+            Self::RecvParams { backing_state: RecvParams { ack, wnd_scale, wnd, ts_opt } } => {
+                // A segment was produced, update the receiver with last info.
+                ts_opt.process_tx_ack(*ack);
+                (*ack, *wnd, *wnd_scale, SackBlocks::default(), &*ts_opt)
             }
         };
-        (ack, wnd >> wnd_scale, sack_blocks)
+        (ack, wnd >> wnd_scale, sack_blocks, ts_opt)
     }
 }
 
@@ -1256,30 +1383,45 @@ impl<'a, I: Instant, R: ReceiveBuffer> CalculatedRecvParams<'a, I, R> {
     }
 }
 
-trait RecvSegmentArgumentsProvider: Sized {
-    /// Consumes this provider returning the ACK, WND, and selective ack blocks
-    /// to be placed in a segment.
+trait RecvSegmentArgumentsProvider<'a, I: Instant>: Sized {
+    /// Returns the receive state needed to construct a segment.
     ///
     /// The implementer assumes that the parameters *will be sent to a peer* and
     /// may cache the yielded values as the last sent receiver information.
-    fn take_rcv_segment_args(self) -> (SeqNum, UnscaledWindowSize, SackBlocks);
+    fn take_rcv_segment_args(
+        self,
+    ) -> (SeqNum, UnscaledWindowSize, SackBlocks, &'a TimestampOptionState<I>);
 
-    /// Consumes this provider and calls `f` with the ACK and window size
-    /// arguments that should be put in the segment to be returned by `f`.
-    fn make_segment<P, F: FnOnce(SeqNum, UnscaledWindowSize, SackBlocks) -> Segment<P>>(
+    /// Consumes this provider and calls `f` with the arguments that should be
+    /// put in the segment to be returned by `f`.
+    fn make_segment<
+        P,
+        F: FnOnce(SeqNum, UnscaledWindowSize, SackBlocks, &TimestampOptionState<I>) -> Segment<P>,
+    >(
         self,
         f: F,
     ) -> Segment<P> {
-        let (ack, wnd, sack) = self.take_rcv_segment_args();
-        f(ack, wnd, sack)
+        let (ack, wnd, sack, ts_opt) = self.take_rcv_segment_args();
+        f(ack, wnd, sack, ts_opt)
     }
 
     /// Makes an ACK segment with the provided `seq` and `self`'s receiver
     /// state.
-    fn make_ack<P: Payload>(self, seq: SeqNum) -> Segment<P> {
-        let (ack, wnd, sack_blocks) = self.take_rcv_segment_args();
-        // TODO(https://fxbug.dev/436529062): Use the timestamp option.
-        Segment::ack(seq, ack, wnd, SegmentOptions { sack_blocks, timestamp: None })
+    fn make_ack<P: Payload>(self, seq: SeqNum, now: I) -> Segment<P> {
+        let (ack, wnd, sack_blocks, ts_opt) = self.take_rcv_segment_args();
+        Segment::ack(
+            seq,
+            ack,
+            wnd,
+            // Per RFC 7323 section 3.2:
+            //   Once TSopt has been successfully negotiated [...] the TSopt
+            //   MUST be sent in every non-<RST> segment for the duration of the
+            //   connection.
+            SegmentOptions {
+                sack_blocks,
+                timestamp: ts_opt.make_option_for_ack(now).map(TxTimestampOption::into),
+            },
+        )
     }
 }
 
@@ -1331,11 +1473,11 @@ impl<I: Instant, S: SendBuffer, const FIN_QUEUED: bool> Send<I, S, FIN_QUEUED> {
     /// `limit` is the maximum bytes wanted in the TCP segment (if any). The
     /// returned segment will have payload size up to the smaller of the given
     /// limit or the calculated MSS for the connection.
-    fn poll_send(
+    fn poll_send<'a>(
         &mut self,
         id: &impl StateMachineDebugId,
         counters: &TcpCountersRefs<'_>,
-        rcv: impl RecvSegmentArgumentsProvider,
+        rcv: impl RecvSegmentArgumentsProvider<'a, I>,
         now: I,
         SocketOptions {
             keep_alive,
@@ -1413,7 +1555,7 @@ impl<I: Instant, S: SendBuffer, const FIN_QUEUED: bool> Send<I, S, FIN_QUEUED> {
                         *already_sent = already_sent.saturating_add(1);
                         // Per RFC 9293 Section 3.8.4:
                         //   Such a segment generally contains SEG.SEQ = SND.NXT-1
-                        return Some(rcv.make_ack(*snd_max - 1));
+                        return Some(rcv.make_ack(*snd_max - 1, now));
                     }
                 } else {
                     *timer = None;
@@ -1567,9 +1709,15 @@ impl<I: Instant, S: SendBuffer, const FIN_QUEUED: bool> Send<I, S, FIN_QUEUED> {
                 }
             }
 
-            let seg = rcv.make_segment(|ack, wnd, sack_blocks| {
-                // TODO(https://fxbug.dev/436529062): Use the timestamp option.
-                let options = SegmentOptions { sack_blocks, timestamp: None };
+            let seg = rcv.make_segment(|ack, wnd, sack_blocks, ts_opt| {
+                let options = SegmentOptions {
+                    sack_blocks,
+                    // Per RFC 7323 section 3.2:
+                    //   Once TSopt has been successfully negotiated [...]
+                    //   the TSopt MUST be sent in every non-<RST> segment
+                    //   for the duration of the connection.
+                    timestamp: ts_opt.make_option_for_ack(now).map(TxTimestampOption::into),
+                };
                 // We may have to trim bytes_to_send to account for options.
                 let bytes_to_send = bytes_to_send.min(u32::from(mss.payload_size(&options).get()));
 
@@ -1680,7 +1828,7 @@ impl<I: Instant, S: SendBuffer, const FIN_QUEUED: bool> Send<I, S, FIN_QUEUED> {
 
     /// Processes an incoming ACK and returns a segment if one needs to be sent,
     /// along with whether at least one byte of data was ACKed.
-    fn process_ack<R: RecvSegmentArgumentsProvider>(
+    fn process_ack<'a, R: RecvSegmentArgumentsProvider<'a, I>>(
         &mut self,
         id: &impl StateMachineDebugId,
         counters: &TcpCountersRefs<'_>,
@@ -1753,7 +1901,7 @@ impl<I: Instant, S: SendBuffer, const FIN_QUEUED: bool> Send<I, S, FIN_QUEUED> {
             //   If the ACK acks something not yet sent (SEG.ACK >
             //   SND.NXT) then send an ACK, drop the segment, and
             //   return.
-            return (Some(rcv.make_ack(*snd_max)), DataAcked::No);
+            return (Some(rcv.make_ack(*snd_max, now)), DataAcked::No);
         }
 
         let bytes_acked = match u32::try_from(seg_ack - *snd_una) {
@@ -2009,7 +2157,7 @@ impl<I: Instant, S: SendBuffer> Send<I, S, { FinQueued::NO }> {
 #[cfg_attr(test, derive(PartialEq, Eq))]
 pub struct CloseWait<I, S> {
     snd: Takeable<Send<I, S, { FinQueued::NO }>>,
-    closed_rcv: RecvParams,
+    closed_rcv: RecvParams<I>,
 }
 
 /// Per RFC 793 (https://tools.ietf.org/html/rfc793#page-21):
@@ -2031,7 +2179,7 @@ pub struct CloseWait<I, S> {
 #[cfg_attr(test, derive(PartialEq, Eq))]
 pub struct LastAck<I, S> {
     snd: Send<I, S, { FinQueued::YES }>,
-    closed_rcv: RecvParams,
+    closed_rcv: RecvParams<I>,
 }
 
 /// Per RFC 793 (https://tools.ietf.org/html/rfc793#page-21):
@@ -2093,7 +2241,7 @@ pub struct FinWait2<I, R> {
 ///   - connect
 pub struct Closing<I, S> {
     snd: Send<I, S, { FinQueued::YES }>,
-    closed_rcv: RecvParams,
+    closed_rcv: RecvParams<I>,
 }
 
 /// Per RFC 793 (https://tools.ietf.org/html/rfc793#page-22):
@@ -2115,7 +2263,7 @@ pub struct Closing<I, S> {
 pub struct TimeWait<I> {
     pub(super) last_seq: SeqNum,
     pub(super) expiry: I,
-    pub(super) closed_rcv: RecvParams,
+    pub(super) closed_rcv: RecvParams<I>,
 }
 
 fn new_time_wait_expiry<I: Instant>(now: I) -> I {
@@ -2418,7 +2566,9 @@ impl<I: Instant + 'static, R: ReceiveBuffer, S: SendBuffer, ActiveOpen: Debug>
                                         snd: snd.map(|s| s.with_buffer(snd_buffer)),
                                         rcv: rcv.map(|s| s.with_buffer(rcv_buffer)),
                                     };
-                                    let ack = Some(established.rcv.make_ack(established.snd.max));
+                                    let ack = Some(
+                                        established.rcv.make_ack(established.snd.max, now)
+                                    );
                                     (State::Established(established), ack)
                                 })
                             }),
@@ -2487,11 +2637,23 @@ impl<I: Instant + 'static, R: ReceiveBuffer, S: SendBuffer, ActiveOpen: Debug>
                 }
             };
 
+            // Unreachable note(1): The above match returns early for states CLOSED,
+            // SYN_SENT and LISTEN, so it is impossible to have the above states
+            // past this line.
+
             // Reset the connection if we receive new data while the socket is being closed
             // and the receiver has been shut down.
             if rst_on_new_data && (incoming.header().seq + incoming.data().len()).after(rcv.nxt()) {
                 return (
-                    Some(Segment::rst(snd_max, ResetOptions::default())),
+                    Some(Segment::rst(
+                        snd_max,
+                        ResetOptions {
+                            timestamp: rcv
+                                .ts_opt()
+                                .make_option_for_non_ack(now)
+                                .map(TxTimestampOption::into),
+                        },
+                    )),
                     self.transition_to_state(
                         counters,
                         State::Closed(Closed { reason: Some(ConnectionError::ConnectionReset) }),
@@ -2499,9 +2661,26 @@ impl<I: Instant + 'static, R: ReceiveBuffer, S: SendBuffer, ActiveOpen: Debug>
                 );
             }
 
-            // Unreachable note(1): The above match returns early for states CLOSED,
-            // SYN_SENT and LISTEN, so it is impossible to have the above states
-            // past this line.
+            // NOTE: RFC 7323, section 3.2 states that:
+            //   If a non-<RST> segment is received without a TSopt, a TCP
+            //   SHOULD silently drop the segment.
+            //
+            // This recommendation is relevant for implementations that support
+            // PAWS, as it's impossible for the PAWS algorithm to verify a
+            // segment that lacks the timestamp option.
+            //
+            // We choose not to abide by the recommendation for two reasons:
+            //   1) We don't yet support PAWS, and
+            //   2) Other platforms in the industry do not abide by it. Linux,
+            //      for example, does not drop such segments (even though it
+            //      does implement PAWS).
+            //
+            // Future readers may find this email thread from the RFC's authors
+            // useful for understanding the rational behind this RFC text:
+            // https://mailarchive.ietf.org/arch/msg/tcpm/a9WVwj7s8jR0zCOFgKWQLzHZpGw/
+            // TODO(https://fxbug.dev/438961717): Revisit this decision when
+            // implementing PAWS.
+
             // Per RFC 793 (https://tools.ietf.org/html/rfc793#page-69):
             //   first check sequence number
             let is_rst = incoming.header().control == Some(Control::RST);
@@ -2524,7 +2703,7 @@ impl<I: Instant + 'static, R: ReceiveBuffer, S: SendBuffer, ActiveOpen: Debug>
                         // Enter quickacks when we receive a segment out of
                         // the window.
                         rcv.reset_quickacks();
-                        Some(rcv.make_ack(snd_max))
+                        Some(rcv.make_ack(snd_max, now))
                     };
 
                     return (segment, NewlyClosed::No);
@@ -2541,6 +2720,15 @@ impl<I: Instant + 'static, R: ReceiveBuffer, S: SendBuffer, ActiveOpen: Debug>
                 },
                 data,
             ) = segment.into_parts();
+
+            // Per RFC 7323, section 5.3, updating the cached "recent" timestamp
+            // from our peer should only occur after we've validated that the
+            // segment is within the receive window.
+            rcv.ts_opt_mut().update_recent_timestamp(
+                seg_seq,
+                seg_options.timestamp().map(RxTimestampOption::from),
+            );
+
             // Per RFC 793 (https://tools.ietf.org/html/rfc793#page-70):
             //   second check the RST bit
             //   If the RST bit is set then, any outstanding RECEIVEs and SEND
@@ -2569,7 +2757,15 @@ impl<I: Instant + 'static, R: ReceiveBuffer, S: SendBuffer, ActiveOpen: Debug>
             //   number check).
             if control == Some(Control::SYN) {
                 return (
-                    Some(Segment::rst(snd_max, ResetOptions::default())),
+                    Some(Segment::rst(
+                        snd_max,
+                        ResetOptions {
+                            timestamp: rcv
+                                .ts_opt()
+                                .make_option_for_non_ack(now)
+                                .map(TxTimestampOption::into),
+                        },
+                    )),
                     self.transition_to_state(
                         counters,
                         State::Closed(Closed { reason: Some(ConnectionError::ConnectionReset) }),
@@ -2595,7 +2791,7 @@ impl<I: Instant + 'static, R: ReceiveBuffer, S: SendBuffer, ActiveOpen: Debug>
                         rcv_wnd_scale,
                         snd_wnd_scale,
                         sack_permitted,
-                        rcv: _,
+                        rcv,
                     }) => {
                         // Per RFC 793 (https://tools.ietf.org/html/rfc793#page-72):
                         //    if the ACK bit is on
@@ -2609,10 +2805,16 @@ impl<I: Instant + 'static, R: ReceiveBuffer, S: SendBuffer, ActiveOpen: Debug>
                         // Note: We don't support sending data with SYN, so we don't
                         // store the `SND` variables because they can be easily derived
                         // from ISS: SND.UNA=ISS and SND.NXT=ISS+1.
-                        let next = *iss + 1;
-                        if seg_ack != next {
+                        let snd_next = *iss + 1;
+                        let rcv_next = *irs + 1;
+                        if seg_ack != snd_next {
                             return (
-                                Some(Segment::rst(seg_ack, ResetOptions::default())),
+                                Some(Segment::rst(
+                                    seg_ack,
+                                    ResetOptions {
+                                        timestamp: rcv.timestamp_option_for_non_ack(now),
+                                    },
+                                )),
                                 NewlyClosed::No,
                             );
                         } else {
@@ -2634,13 +2836,13 @@ impl<I: Instant + 'static, R: ReceiveBuffer, S: SendBuffer, ActiveOpen: Debug>
                                 .unwrap_or_default();
                             let established = Established {
                                 snd: Send {
-                                    nxt: next,
-                                    max: next,
+                                    nxt: snd_next,
+                                    max: snd_next,
                                     una: seg_ack,
                                     wnd: seg_wnd << snd_wnd_scale,
                                     wl1: seg_seq,
                                     wl2: seg_ack,
-                                    last_push: next,
+                                    last_push: snd_next,
                                     buffer: snd_buffer,
                                     rtt_sampler: RttSampler::default(),
                                     rtt_estimator,
@@ -2653,7 +2855,7 @@ impl<I: Instant + 'static, R: ReceiveBuffer, S: SendBuffer, ActiveOpen: Debug>
                                 rcv: Recv {
                                     buffer: RecvBufferState::Open {
                                         buffer: rcv_buffer,
-                                        assembler: Assembler::new(*irs + 1),
+                                        assembler: Assembler::new(rcv_next),
                                     },
                                     timer: None,
                                     mss: *smss,
@@ -2663,8 +2865,9 @@ impl<I: Instant + 'static, R: ReceiveBuffer, S: SendBuffer, ActiveOpen: Debug>
                                         buffer_sizes.rcv_limits(),
                                         *smss,
                                     ),
-                                    last_window_update: (*irs + 1, buffer_sizes.rwnd()),
+                                    last_window_update: (rcv_next, buffer_sizes.rwnd()),
                                     sack_permitted: *sack_permitted,
+                                    ts_opt: rcv.ts_opt.clone(),
                                 }
                                 .into(),
                             };
@@ -2789,7 +2992,7 @@ impl<I: Instant + 'static, R: ReceiveBuffer, S: SendBuffer, ActiveOpen: Debug>
                             // NB: The compiler gets confused about "reborrow
                             // coercion". Add a type annotation to help it. See
                             // https://github.com/rust-lang/rust/issues/35919.
-                            let closed_rcv: &mut RecvParams = closed_rcv;
+                            let closed_rcv: &mut RecvParams<I> = closed_rcv;
                             snd.process_ack(
                                 id,
                                 counters,
@@ -2926,7 +3129,7 @@ impl<I: Instant + 'static, R: ReceiveBuffer, S: SendBuffer, ActiveOpen: Debug>
                 let segment =
                     (!matches!(rcv.timer, Some(ReceiveTimer::DelayedAck { .. }))).then(|| {
                         rcv.remaining_quickacks = rcv.remaining_quickacks.saturating_sub(1);
-                        rcv.make_ack(snd_max)
+                        rcv.make_ack(snd_max, now)
                     });
                 (segment, rcv.nxt())
             };
@@ -2971,7 +3174,7 @@ impl<I: Instant + 'static, R: ReceiveBuffer, S: SendBuffer, ActiveOpen: Debug>
                         // Per RFC 793 (https://tools.ietf.org/html/rfc793#page-75):
                         //   Enter the CLOSE-WAIT state.
                         let mut params = rcv.handle_fin();
-                        let segment = params.make_ack(snd_max);
+                        let segment = params.make_ack(snd_max, now);
                         let closewait =
                             CloseWait { snd: snd.to_ref().to_takeable(), closed_rcv: params };
                         assert_eq!(
@@ -2992,7 +3195,7 @@ impl<I: Instant + 'static, R: ReceiveBuffer, S: SendBuffer, ActiveOpen: Debug>
                     }
                     State::FinWait1(FinWait1 { snd, rcv }) => {
                         let mut params = rcv.handle_fin();
-                        let segment = params.make_ack(snd_max);
+                        let segment = params.make_ack(snd_max, now);
                         let closing = Closing { snd: snd.to_ref().take(), closed_rcv: params };
                         assert_eq!(
                             self.transition_to_state(counters, State::Closing(closing)),
@@ -3002,7 +3205,7 @@ impl<I: Instant + 'static, R: ReceiveBuffer, S: SendBuffer, ActiveOpen: Debug>
                     }
                     State::FinWait2(FinWait2 { last_seq, rcv, timeout_at: _ }) => {
                         let mut params = rcv.handle_fin();
-                        let segment = params.make_ack(snd_max);
+                        let segment = params.make_ack(snd_max, now);
                         let timewait = TimeWait {
                             last_seq: *last_seq,
                             expiry: new_time_wait_expiry(now),
@@ -3020,7 +3223,7 @@ impl<I: Instant + 'static, R: ReceiveBuffer, S: SendBuffer, ActiveOpen: Debug>
                         //     Remain in the TIME-WAIT state.  Restart the 2 MSL time-wait
                         //     timeout.
                         *expiry = new_time_wait_expiry(now);
-                        Some(closed_rcv.make_ack(*last_seq))
+                        Some(closed_rcv.make_ack(*last_seq, now))
                     }
                 }
             } else {
@@ -3036,7 +3239,7 @@ impl<I: Instant + 'static, R: ReceiveBuffer, S: SendBuffer, ActiveOpen: Debug>
     /// To be called when bytes have been dequeued from the receive buffer.
     ///
     /// Returns a segment to send.
-    pub(crate) fn poll_receive_data_dequeued(&mut self) -> Option<Segment<()>> {
+    pub(crate) fn poll_receive_data_dequeued(&mut self, now: I) -> Option<Segment<()>> {
         let (rcv, snd_max) = match self {
             State::Closed(_)
             | State::Listen(_)
@@ -3051,7 +3254,7 @@ impl<I: Instant + 'static, R: ReceiveBuffer, S: SendBuffer, ActiveOpen: Debug>
             State::FinWait2(FinWait2 { last_seq, rcv, timeout_at: _ }) => (rcv, *last_seq),
         };
 
-        rcv.poll_receive_data_dequeued(snd_max)
+        rcv.poll_receive_data_dequeued(snd_max, now)
     }
 
     /// Polls if there are any bytes available to send in the buffer.
@@ -3112,6 +3315,7 @@ impl<I: Instant + 'static, R: ReceiveBuffer, S: SendBuffer, ActiveOpen: Debug>
                 device_mss,
                 default_mss: _,
                 rcv_wnd_scale,
+                ts_opt,
             }) => (retrans_timer.at <= now).then(|| {
                 *timestamp = None;
                 retrans_timer.backoff(now);
@@ -3122,9 +3326,7 @@ impl<I: Instant + 'static, R: ReceiveBuffer, S: SendBuffer, ActiveOpen: Debug>
                         mss: Some(*device_mss),
                         window_scale: Some(*rcv_wnd_scale),
                         sack_permitted: SACK_PERMITTED,
-                        // TODO(https://fxbug.dev/436529062): Use the timestamp
-                        // option.
-                        timestamp: None,
+                        timestamp: ts_opt.make_option_for_syn(now).map(TxTimestampOption::into),
                     },
                 )
             }),
@@ -3139,7 +3341,7 @@ impl<I: Instant + 'static, R: ReceiveBuffer, S: SendBuffer, ActiveOpen: Debug>
                 rcv_wnd_scale,
                 snd_wnd_scale,
                 sack_permitted: _,
-                rcv: _,
+                rcv,
             }) => (retrans_timer.at <= now).then(|| {
                 *timestamp = None;
                 retrans_timer.backoff(now);
@@ -3151,9 +3353,11 @@ impl<I: Instant + 'static, R: ReceiveBuffer, S: SendBuffer, ActiveOpen: Debug>
                         mss: Some(*smss.mss()),
                         window_scale: snd_wnd_scale.map(|_| *rcv_wnd_scale),
                         sack_permitted: SACK_PERMITTED,
-                        // TODO(https://fxbug.dev/436529062): Use the timestamp
-                        // option.
-                        timestamp: None,
+                        // Per RFC 7323 section 3.2:
+                        //   A TCP MAY send a TSopt in <SYN,ACK> only if it
+                        //   received a TSopt in the initial <SYN> segment for
+                        //   the connection.
+                        timestamp: rcv.timestamp_option_for_ack(now),
                     },
                 )
             }),
@@ -3201,29 +3405,8 @@ impl<I: Instant + 'static, R: ReceiveBuffer, S: SendBuffer, ActiveOpen: Debug>
             State::LastAck(LastAck { snd, closed_rcv: _ })
             | State::Closing(Closing { snd, closed_rcv: _ }) => snd.timed_out(now, keep_alive),
             State::FinWait1(FinWait1 { snd, rcv: _ }) => snd.timed_out(now, keep_alive),
-            State::SynSent(SynSent {
-                iss: _,
-                timestamp: _,
-                retrans_timer,
-                active_open: _,
-                buffer_sizes: _,
-                device_mss: _,
-                default_mss: _,
-                rcv_wnd_scale: _,
-            })
-            | State::SynRcvd(SynRcvd {
-                iss: _,
-                irs: _,
-                timestamp: _,
-                retrans_timer,
-                simultaneous_open: _,
-                buffer_sizes: _,
-                smss: _,
-                rcv_wnd_scale: _,
-                snd_wnd_scale: _,
-                sack_permitted: _,
-                rcv: _,
-            }) => retrans_timer.timed_out(now),
+            State::SynSent(SynSent { retrans_timer, .. })
+            | State::SynRcvd(SynRcvd { retrans_timer, .. }) => retrans_timer.timed_out(now),
 
             State::Closed(_) | State::Listen(_) | State::TimeWait(_) => false,
             State::FinWait2(FinWait2 { last_seq: _, rcv: _, timeout_at }) => {
@@ -3321,7 +3504,7 @@ impl<I: Instant + 'static, R: ReceiveBuffer, S: SendBuffer, ActiveOpen: Debug>
                 rcv_wnd_scale,
                 snd_wnd_scale,
                 sack_permitted,
-                rcv: _,
+                rcv: RecvParams { ack: _, wnd_scale: _, wnd: _, ts_opt },
             }) => {
                 // Per RFC 793 (https://tools.ietf.org/html/rfc793#page-60):
                 //   SYN-RECEIVED STATE
@@ -3386,6 +3569,7 @@ impl<I: Instant + 'static, R: ReceiveBuffer, S: SendBuffer, ActiveOpen: Debug>
                         wnd_scale: rcv_wnd_scale,
                         last_window_update: (*irs + 1, buffer_sizes.rwnd()),
                         sack_permitted: *sack_permitted,
+                        ts_opt: ts_opt.clone(),
                     }
                     .into(),
                 };
@@ -3453,6 +3637,7 @@ impl<I: Instant + 'static, R: ReceiveBuffer, S: SendBuffer, ActiveOpen: Debug>
     pub(crate) fn abort(
         &mut self,
         counters: &TcpCountersRefs<'_>,
+        now: I,
     ) -> (Option<Segment<()>>, NewlyClosed) {
         let reply = match self {
             //   LISTEN STATE
@@ -3495,24 +3680,36 @@ impl<I: Instant + 'static, R: ReceiveBuffer, S: SendBuffer, ActiveOpen: Debug>
                 rcv_wnd_scale: _,
                 snd_wnd_scale: _,
                 sack_permitted: _,
-                rcv: _,
+                rcv,
             }) => {
                 // When we're in SynRcvd we already sent out SYN-ACK with iss,
                 // so a RST must have iss+1.
-                Some(Segment::rst_ack(*iss + 1, *irs + 1, ResetOptions::default()))
+                Some(Segment::rst_ack(
+                    *iss + 1,
+                    *irs + 1,
+                    ResetOptions { timestamp: rcv.timestamp_option_for_ack(now) },
+                ))
             }
-            State::Established(Established { snd, rcv }) => {
-                Some(Segment::rst_ack(snd.nxt, rcv.nxt(), ResetOptions::default()))
-            }
-            State::FinWait1(FinWait1 { snd, rcv }) => {
-                Some(Segment::rst_ack(snd.nxt, rcv.nxt(), ResetOptions::default()))
-            }
-            State::FinWait2(FinWait2 { rcv, last_seq, timeout_at: _ }) => {
-                Some(Segment::rst_ack(*last_seq, rcv.nxt(), ResetOptions::default()))
-            }
-            State::CloseWait(CloseWait { snd, closed_rcv }) => {
-                Some(Segment::rst_ack(snd.nxt, closed_rcv.ack, ResetOptions::default()))
-            }
+            State::Established(Established { snd, rcv }) => Some(Segment::rst_ack(
+                snd.nxt,
+                rcv.nxt(),
+                ResetOptions { timestamp: rcv.timestamp_option_for_ack(now) },
+            )),
+            State::FinWait1(FinWait1 { snd, rcv }) => Some(Segment::rst_ack(
+                snd.nxt,
+                rcv.nxt(),
+                ResetOptions { timestamp: rcv.timestamp_option_for_ack(now) },
+            )),
+            State::FinWait2(FinWait2 { rcv, last_seq, timeout_at: _ }) => Some(Segment::rst_ack(
+                *last_seq,
+                rcv.nxt(),
+                ResetOptions { timestamp: rcv.timestamp_option_for_ack(now) },
+            )),
+            State::CloseWait(CloseWait { snd, closed_rcv }) => Some(Segment::rst_ack(
+                snd.nxt,
+                closed_rcv.ack,
+                ResetOptions { timestamp: closed_rcv.timestamp_option_for_ack(now) },
+            )),
         };
         (
             reply,
@@ -3623,6 +3820,7 @@ impl<I: Instant + 'static, R: ReceiveBuffer, S: SendBuffer, ActiveOpen: Debug>
                 device_mss: _,
                 default_mss: _,
                 rcv_wnd_scale: _,
+                ts_opt: _,
             }) => {
                 if *iss == seq {
                     return (
@@ -3706,8 +3904,10 @@ mod test {
     use netstack3_base::sync::ResourceTokenValue;
     use netstack3_base::testutil::{FakeInstant, FakeInstantCtx};
     use netstack3_base::{
-        CounterCollection, FragmentedPayload, InstantContext as _, Options, SackBlock,
+        CounterCollection, FragmentedPayload, InstantContext as _, Milliseconds, Options,
+        SackBlock, Timestamp, TimestampOption, Unitless,
     };
+    use packet::InnerPacketBuilder as _;
     use test_case::{test_case, test_matrix};
 
     use super::*;
@@ -3717,6 +3917,7 @@ mod test {
     use crate::internal::congestion::DUP_ACK_THRESHOLD;
     use crate::internal::counters::TcpCountersWithSocketInner;
     use crate::internal::counters::testutil::CounterExpectations;
+    use crate::internal::timestamp::{TS_ECHO_REPLY_FOR_NON_ACKS, TimestampValueState};
 
     const TEST_IRS: SeqNum = SeqNum::new(100);
     const TEST_ISS: SeqNum = SeqNum::new(300);
@@ -3728,24 +3929,88 @@ mod test {
 
     const DEVICE_MAXIMUM_SEGMENT_SIZE: Mss = Mss::new(1400).unwrap();
 
-    const TEST_MSS: EffectiveMss = EffectiveMss::from_mss(
-        Mss::new(256).unwrap(),
-        MssSizeLimiters { timestamp_enabled: false },
-    );
+    const TEST_MSS: EffectiveMss =
+        EffectiveMss::from_mss(Mss::new(256).unwrap(), MssSizeLimiters { timestamp_enabled: true });
     // Support Buffering up to three MSS.
     const BUFFER_SIZE: usize = (TEST_MSS.get() as usize) * 3;
     // One MSS worth of test data.
     const TEST_BYTES: &[u8] = &[0xab; TEST_MSS.get() as usize];
 
+    // The TCP Timestamp Option uses randomized offsets per connection for
+    // security. Simplify tests by using a fixed value.
+    const TIMESTAMP_OFFSET: Timestamp<Milliseconds> = Timestamp::new(12345);
+
+    // The timestamp we'll send if the system clock has not advanced.
+    const DEFAULT_TIMESTAMP: Timestamp<Unitless> = TIMESTAMP_OFFSET.discard_unit();
+    // The default Timestamp Option we'll send in a Non-ACK segment.
+    const DEFAULT_NON_ACK_TS_OPT: TimestampOption =
+        TimestampOption::new(DEFAULT_TIMESTAMP, TS_ECHO_REPLY_FOR_NON_ACKS);
+    // The default Timestamp Option we'll send in an ACK segment
+    const DEFAULT_ACK_TS_OPT: TimestampOption = TimestampOption::new(
+        // NB: Most of the tests establish a connection with ourself. As such,
+        // we end up echoing back our own timestamp.
+        DEFAULT_TIMESTAMP,
+        DEFAULT_TIMESTAMP,
+    );
+
+    // The timestamp we'll send if the system clock has advance by one RTT.
+    // TODO(https://github.com/rust-lang/rust/issues/143802): Directly add `RTT`
+    // to `TIMESTAMP_OFFSET` once const `Add` implementations are supported.
+    const RTT_TIMESTAMP: Timestamp<Unitless> =
+        Timestamp::new(TIMESTAMP_OFFSET.get() + RTT.as_millis() as u32);
+    // The Timestamp Option we'll send in a Non-ACK segment after a single RTT
+    // has elapsed.
+    const NON_ACK_TS_OPT_AFTER_RTT: TimestampOption =
+        TimestampOption::new(RTT_TIMESTAMP, TS_ECHO_REPLY_FOR_NON_ACKS);
+    // The Timestamp Option we'll send in an ACK segment after a single RTT has
+    // elapsed.
+    const ACK_TS_OPT_AFTER_RTT: TimestampOption =
+        TimestampOption::new(RTT_TIMESTAMP, DEFAULT_TIMESTAMP);
+
+    const fn default_ts_opt_state(last_ack: SeqNum) -> TimestampOptionState<FakeInstant> {
+        TimestampOptionState::Enabled {
+            // Most tests negotiate the Timestamp Option with ourself.
+            // As such the most recent timestamp value we've received from the
+            // peer is our own timestamp.
+            ts_recent: DEFAULT_TIMESTAMP,
+            last_ack_sent: last_ack,
+            ts_val: TimestampValueState {
+                offset: TIMESTAMP_OFFSET,
+                initialized_at: FakeInstant { offset: Duration::ZERO },
+            },
+        }
+    }
+
+    const fn default_ts_opt_negotiation_state() -> TimestampOptionNegotiationState<FakeInstant> {
+        TimestampOptionNegotiationState::Negotiating(TimestampValueState {
+            offset: TIMESTAMP_OFFSET,
+            initialized_at: FakeInstant { offset: Duration::ZERO },
+        })
+    }
+
+    const fn default_segment_options(
+        ts_val: Timestamp<Unitless>,
+        ts_echo_reply: Timestamp<Unitless>,
+    ) -> SegmentOptions {
+        SegmentOptions {
+            sack_blocks: SackBlocks::EMPTY,
+            timestamp: Some(TimestampOption::new(ts_val, ts_echo_reply)),
+        }
+    }
+
     const DEFAULT_SEGMENT_OPTIONS: SegmentOptions =
-        SegmentOptions { sack_blocks: SackBlocks::EMPTY, timestamp: None };
+        default_segment_options(DEFAULT_TIMESTAMP, DEFAULT_TIMESTAMP);
+
+    fn timestamp_now(clock: &FakeInstantCtx) -> Timestamp<Unitless> {
+        (TIMESTAMP_OFFSET + clock.now().offset).discard_unit()
+    }
 
     fn default_quickack_counter() -> usize {
         quickack_counter(
             BufferLimits { capacity: WindowSize::DEFAULT.into(), len: 0 },
             EffectiveMss::from_mss(
                 DEVICE_MAXIMUM_SEGMENT_SIZE,
-                MssSizeLimiters { timestamp_enabled: false },
+                MssSizeLimiters { timestamp_enabled: true },
             ),
         )
     }
@@ -3951,7 +4216,7 @@ mod test {
                 buffer_sizes: Default::default(),
                 smss: EffectiveMss::from_mss(
                     DEVICE_MAXIMUM_SEGMENT_SIZE,
-                    MssSizeLimiters { timestamp_enabled: false },
+                    MssSizeLimiters { timestamp_enabled: true },
                 ),
                 rcv_wnd_scale: WindowScale::default(),
                 snd_wnd_scale: Some(WindowScale::default()),
@@ -3960,6 +4225,7 @@ mod test {
                     ack: TEST_IRS + 1,
                     wnd: WindowSize::DEFAULT,
                     wnd_scale: WindowScale::default(),
+                    ts_opt: default_ts_opt_state(TEST_IRS + 1),
                 },
             })
         }
@@ -3982,7 +4248,7 @@ mod test {
                 timer: None,
                 congestion_control: CongestionControl::cubic_with_mss(EffectiveMss::from_mss(
                     DEVICE_MAXIMUM_SEGMENT_SIZE,
-                    MssSizeLimiters { timestamp_enabled: false },
+                    MssSizeLimiters { timestamp_enabled: true },
                 )),
                 wnd_scale: WindowScale::default(),
             }
@@ -4002,7 +4268,7 @@ mod test {
                 timer: None,
                 mss: EffectiveMss::from_mss(
                     DEVICE_MAXIMUM_SEGMENT_SIZE,
-                    MssSizeLimiters { timestamp_enabled: false },
+                    MssSizeLimiters { timestamp_enabled: true },
                 ),
                 remaining_quickacks: 0,
                 last_segment_at: None,
@@ -4012,6 +4278,7 @@ mod test {
                     WindowSize::from_u32(avail_buffer.try_into().unwrap()).unwrap(),
                 ),
                 sack_permitted: SACK_PERMITTED,
+                ts_opt: default_ts_opt_state(seq),
             }
         }
 
@@ -4047,7 +4314,11 @@ mod test {
     #[test_case(Segment::syn_ack(TEST_IRS, TEST_ISS, UnscaledWindowSize::from(0), HandshakeOptions::default()) => Some(Segment::rst(TEST_ISS, ResetOptions::default())); "reset SYN|ACK")]
     #[test_case(
         Segment::with_data(
-            TEST_IRS, TEST_ISS, UnscaledWindowSize::from(0), DEFAULT_SEGMENT_OPTIONS, &[0, 1, 2][..]
+            TEST_IRS,
+            TEST_ISS,
+            UnscaledWindowSize::from(0),
+            SegmentOptions::default(),
+            &[0, 1, 2][..]
         ) => Some(Segment::rst(TEST_ISS, ResetOptions::default())); "reset data segment")]
     fn segment_arrives_when_closed(
         incoming: impl Into<Segment<&'static [u8]>>,
@@ -4086,6 +4357,7 @@ mod test {
             UnscaledWindowSize::from(u16::MAX),
             HandshakeOptions {
                 window_scale: Some(WindowScale::default()),
+                timestamp: Some(DEFAULT_NON_ACK_TS_OPT),
                 ..Default::default() }
         ), RTT
     => SynSentOnSegmentDisposition::SendSynAckAndEnterSynRcvd(
@@ -4097,6 +4369,7 @@ mod test {
                 mss: Some(Mss::DEFAULT_IPV4),
                 window_scale: Some(WindowScale::default()),
                 sack_permitted: SACK_PERMITTED,
+                timestamp: Some(ACK_TS_OPT_AFTER_RTT),
                 ..Default::default()
             }),
         SynRcvd {
@@ -4112,7 +4385,7 @@ mod test {
             simultaneous_open: None,
             buffer_sizes: BufferSizes::default(),
             smss: EffectiveMss::from_mss(
-                Mss::DEFAULT_IPV4, MssSizeLimiters { timestamp_enabled: false }
+                Mss::DEFAULT_IPV4, MssSizeLimiters { timestamp_enabled: true }
             ),
             rcv_wnd_scale: WindowScale::default(),
             snd_wnd_scale: Some(WindowScale::default()),
@@ -4121,6 +4394,7 @@ mod test {
                 ack: TEST_ISS + 1,
                 wnd: WindowSize::DEFAULT,
                 wnd_scale: WindowScale::default(),
+                ts_opt: default_ts_opt_state(TEST_ISS + 1),
             }
         }
     ); "SYN only")]
@@ -4166,6 +4440,7 @@ mod test {
             default_mss: Mss::DEFAULT_IPV4,
             device_mss: DEVICE_MAXIMUM_SEGMENT_SIZE,
             rcv_wnd_scale: WindowScale::default(),
+            ts_opt: default_ts_opt_negotiation_state(),
         };
         syn_sent.on_segment(incoming, FakeInstant::from(delay))
     }
@@ -4179,6 +4454,7 @@ mod test {
     #[test_case(Segment::syn(TEST_ISS, UnscaledWindowSize::from(u16::MAX),
         HandshakeOptions {
             window_scale: Some(WindowScale::default()),
+            timestamp: Some(DEFAULT_NON_ACK_TS_OPT),
             ..Default::default()
         }) =>
         ListenOnSegmentDisposition::SendSynAckAndEnterSynRcvd(
@@ -4189,6 +4465,7 @@ mod test {
                 HandshakeOptions {
                     mss: Some(Mss::DEFAULT_IPV4),
                     window_scale: Some(WindowScale::default()),
+                    timestamp: Some(DEFAULT_ACK_TS_OPT),
                     sack_permitted: SACK_PERMITTED,
                     ..Default::default()
                 }),
@@ -4205,7 +4482,7 @@ mod test {
                 simultaneous_open: None,
                 buffer_sizes: BufferSizes::default(),
                 smss: EffectiveMss::from_mss(
-                    Mss::DEFAULT_IPV4, MssSizeLimiters { timestamp_enabled: false }
+                    Mss::DEFAULT_IPV4, MssSizeLimiters{timestamp_enabled: true}
                 ),
                 sack_permitted: false,
                 rcv_wnd_scale: WindowScale::default(),
@@ -4214,6 +4491,7 @@ mod test {
                     ack: TEST_ISS + 1,
                     wnd: WindowSize::DEFAULT,
                     wnd_scale: WindowScale::default(),
+                    ts_opt: default_ts_opt_state(TEST_ISS + 1),
                 }
             }); "accept syn")]
     fn segment_arrives_when_listen(
@@ -4221,6 +4499,7 @@ mod test {
     ) -> ListenOnSegmentDisposition<FakeInstant> {
         let listen = Closed::<Initial>::listen(
             TEST_IRS,
+            TIMESTAMP_OFFSET,
             Default::default(),
             DEVICE_MAXIMUM_SEGMENT_SIZE,
             Mss::DEFAULT_IPV4,
@@ -4235,7 +4514,10 @@ mod test {
         ),
         None
     => Some(Segment::ack(
-        TEST_ISS + 1, TEST_IRS + 1, UnscaledWindowSize::from(u16::MAX), DEFAULT_SEGMENT_OPTIONS
+        TEST_ISS + 1,
+        TEST_IRS + 1,
+        UnscaledWindowSize::from(u16::MAX),
+        default_segment_options(RTT_TIMESTAMP, DEFAULT_TIMESTAMP),
     )) ; "OTW segment")]
     #[test_case(
         Segment::rst_ack(TEST_IRS, TEST_ISS, ResetOptions::default()),
@@ -4246,11 +4528,14 @@ mod test {
         Some(State::Closed(Closed { reason: Some(ConnectionError::ConnectionReset) }))
     => None; "acceptable RST")]
     #[test_case(
-        Segment::syn(TEST_IRS + 1, UnscaledWindowSize::from(u16::MAX),
-        HandshakeOptions { window_scale: Some(WindowScale::default()), ..Default::default() }),
+        Segment::syn(TEST_IRS + 1, UnscaledWindowSize::from(u16::MAX), HandshakeOptions {
+            window_scale: Some(WindowScale::default()),
+            timestamp: Some(DEFAULT_NON_ACK_TS_OPT),
+            ..Default::default()
+        }),
         Some(State::Closed(Closed { reason: Some(ConnectionError::ConnectionReset) }))
     => Some(
-        Segment::rst(TEST_ISS + 1, ResetOptions::default())
+        Segment::rst(TEST_ISS + 1, ResetOptions { timestamp: Some(NON_ACK_TS_OPT_AFTER_RTT) }),
     ); "duplicate syn")]
     #[test_case(
         Segment::ack(
@@ -4258,7 +4543,7 @@ mod test {
         ),
         None
     => Some(
-        Segment::rst(TEST_ISS, ResetOptions::default())
+        Segment::rst(TEST_ISS, ResetOptions { timestamp: Some(NON_ACK_TS_OPT_AFTER_RTT) }),
     ); "unacceptable ack (ISS)")]
     #[test_case(
         Segment::ack(
@@ -4278,7 +4563,7 @@ mod test {
                         capacity: WindowSize::DEFAULT.into(),
                         len: 0,
                     }, EffectiveMss::from_mss(
-                        DEVICE_MAXIMUM_SEGMENT_SIZE, MssSizeLimiters { timestamp_enabled: false }
+                        DEVICE_MAXIMUM_SEGMENT_SIZE, MssSizeLimiters { timestamp_enabled: true }
                     )),
                     ..Recv::default_for_test(RingBuffer::default())
                 }.into(),
@@ -4291,7 +4576,7 @@ mod test {
         ),
         None
     => Some(
-        Segment::rst(TEST_ISS + 2, ResetOptions::default())
+        Segment::rst(TEST_ISS + 2, ResetOptions { timestamp: Some(NON_ACK_TS_OPT_AFTER_RTT) })
     ); "unacceptable ack (ISS + 2)")]
     #[test_case(
         Segment::ack(
@@ -4299,13 +4584,14 @@ mod test {
         ),
         None
     => Some(
-        Segment::rst(TEST_ISS - 1, ResetOptions::default())
+        Segment::rst(TEST_ISS - 1, ResetOptions { timestamp: Some(NON_ACK_TS_OPT_AFTER_RTT) })
     ); "unacceptable ack (ISS - 1)")]
     #[test_case(
         Segment::new_empty(
             SegmentHeader {
                 seq: TEST_IRS + 1,
                 wnd: UnscaledWindowSize::from(u16::MAX),
+                options: DEFAULT_SEGMENT_OPTIONS.into(),
                 ..Default::default()
             }
         ),
@@ -4327,10 +4613,14 @@ mod test {
                 ack: TEST_IRS + 2,
                 wnd: WindowSize::from_u32(u32::from(u16::MAX - 1)).unwrap(),
                 wnd_scale: WindowScale::ZERO,
+                ts_opt: default_ts_opt_state(TEST_IRS + 2),
             }
         }))
     => Some(Segment::ack(
-        TEST_ISS + 1, TEST_IRS + 2, UnscaledWindowSize::from(u16::MAX - 1), DEFAULT_SEGMENT_OPTIONS
+        TEST_ISS + 1,
+        TEST_IRS + 2,
+        UnscaledWindowSize::from(u16::MAX - 1),
+        default_segment_options(RTT_TIMESTAMP, DEFAULT_TIMESTAMP),
     )); "fin")]
     fn segment_arrives_when_syn_rcvd(
         incoming: Segment<()>,
@@ -4359,7 +4649,7 @@ mod test {
         let counters = FakeTcpCounters::default();
         let mut state = State::new_syn_rcvd(clock.now());
         let segment = assert_matches!(
-            state.abort(&counters.refs()),
+            state.abort(&counters.refs(), clock.now()),
             (Some(seg), NewlyClosed::Yes) => seg
         );
         assert_eq!(segment.header().control, Some(Control::RST));
@@ -4368,11 +4658,14 @@ mod test {
     }
 
     #[test_case(
-        Segment::syn(TEST_IRS + 1, UnscaledWindowSize::from(u16::MAX), HandshakeOptions::default()),
+        Segment::syn(TEST_IRS + 1, UnscaledWindowSize::from(u16::MAX), HandshakeOptions {
+            timestamp: Some(DEFAULT_NON_ACK_TS_OPT), ..Default::default()
+        }),
         Some(State::Closed (
             Closed { reason: Some(ConnectionError::ConnectionReset) },
         ))
-    => Some(Segment::rst(TEST_ISS + 1, ResetOptions::default())); "duplicate syn")]
+    => Some(Segment::rst(TEST_ISS + 1, ResetOptions {timestamp: Some(DEFAULT_NON_ACK_TS_OPT)}));
+    "duplicate syn")]
     #[test_case(
         Segment::rst(TEST_IRS + 1, ResetOptions::default()),
         Some(State::Closed (
@@ -4403,6 +4696,7 @@ mod test {
                 ack: TEST_IRS + 2,
                 wnd: WindowSize::new(1).unwrap(),
                 wnd_scale: WindowScale::ZERO,
+                ts_opt: default_ts_opt_state(TEST_IRS + 2),
             }
         }))
     => Some(
@@ -4424,6 +4718,7 @@ mod test {
                 ack: TEST_IRS + 3,
                 wnd: WindowSize::ZERO,
                 wnd_scale: WindowScale::ZERO,
+                ts_opt: default_ts_opt_state(TEST_IRS + 3),
             }
         }))
     => Some(
@@ -4528,6 +4823,7 @@ mod test {
                     ack: TEST_IRS + 1,
                     wnd: WindowSize::ZERO,
                     wnd_scale: WindowScale::default(),
+                    ts_opt: default_ts_opt_state(TEST_IRS + 1),
                 },
             }),
             State::CloseWait(CloseWait {
@@ -4536,6 +4832,7 @@ mod test {
                     ack: TEST_IRS + 1,
                     wnd: WindowSize::ZERO,
                     wnd_scale: WindowScale::default(),
+                    ts_opt: default_ts_opt_state(TEST_IRS + 1),
                 },
             }),
             State::LastAck(LastAck {
@@ -4544,6 +4841,7 @@ mod test {
                     ack: TEST_IRS + 1,
                     wnd: WindowSize::ZERO,
                     wnd_scale: WindowScale::default(),
+                    ts_opt: default_ts_opt_state(TEST_IRS + 1),
                 },
             }),
         ] {
@@ -4553,9 +4851,10 @@ mod test {
                     SegmentHeader {
                         seq: TEST_ISS + 1,
                         ack: Some(TEST_IRS + 1),
+                        control: None,
                         wnd: UnscaledWindowSize::from(0),
                         push: true,
-                        ..Default::default()
+                        options: DEFAULT_SEGMENT_OPTIONS.into(),
                     },
                     FragmentedPayload::new_contiguous(TEST_BYTES)
                 ))
@@ -4596,11 +4895,11 @@ mod test {
 
     #[test_case(
         Segment::syn(TEST_IRS + 2, UnscaledWindowSize::from(u16::MAX),
-            HandshakeOptions::default()),
+            HandshakeOptions {timestamp: Some(DEFAULT_NON_ACK_TS_OPT), ..Default::default()}),
         Some(State::Closed (
             Closed { reason: Some(ConnectionError::ConnectionReset) },
         ))
-    => Some(Segment::rst(TEST_ISS + 1, ResetOptions::default())); "syn")]
+    => Some(Segment::rst(TEST_ISS + 1, ResetOptions {timestamp: Some(DEFAULT_NON_ACK_TS_OPT)})); "syn")]
     #[test_case(
         Segment::rst(TEST_IRS + 2, ResetOptions::default()),
         Some(State::Closed (
@@ -4636,7 +4935,8 @@ mod test {
         Some(State::Closed (
             Closed { reason: Some(ConnectionError::ConnectionReset) },
         ))
-    => Some(Segment::rst(TEST_ISS + 1, ResetOptions::default())); "reset on new data")]
+    => Some(Segment::rst(TEST_ISS + 1, ResetOptions {timestamp: Some(DEFAULT_NON_ACK_TS_OPT)}));
+    "reset on new data")]
     fn segment_arrives_when_close_wait(
         incoming: Segment<&[u8]>,
         expected: Option<State<FakeInstant, RingBuffer, NullBuffer, ()>>,
@@ -4648,6 +4948,7 @@ mod test {
                 ack: TEST_IRS + 2,
                 wnd: WindowSize::DEFAULT,
                 wnd_scale: WindowScale::ZERO,
+                ts_opt: default_ts_opt_state(TEST_IRS + 1),
             },
         });
         let (seg, _passive_open) = state
@@ -4672,6 +4973,7 @@ mod test {
         let active_iss = ISS_1;
         let (syn_sent, syn_seg) = Closed::<Initial>::connect(
             active_iss,
+            TIMESTAMP_OFFSET,
             clock.now(),
             (),
             Default::default(),
@@ -4689,7 +4991,7 @@ mod test {
                     window_scale: Some(WindowScale::default()),
                     // Matches the stack-wide constant.
                     sack_permitted: SACK_PERMITTED,
-                    timestamp: None,
+                    timestamp: Some(DEFAULT_NON_ACK_TS_OPT),
                 },
             )
         );
@@ -4709,17 +5011,21 @@ mod test {
                 default_mss: Mss::DEFAULT_IPV4,
                 device_mss: DEVICE_MAXIMUM_SEGMENT_SIZE,
                 rcv_wnd_scale: WindowScale::default(),
+                ts_opt: default_ts_opt_negotiation_state(),
             }
         );
         let mut active = State::SynSent(syn_sent);
         let mut passive = State::Listen(Closed::<Initial>::listen(
             passive_iss,
+            TIMESTAMP_OFFSET,
             Default::default(),
             DEVICE_MAXIMUM_SEGMENT_SIZE,
             Mss::DEFAULT_IPV4,
             None,
         ));
         clock.sleep(RTT / 2);
+
+        let initialized_at = clock.now();
 
         // Update the SYN segment to match what the test wants.
         let syn_seg = {
@@ -4748,7 +5054,7 @@ mod test {
                     window_scale: Some(WindowScale::default()),
                     // Matches the stack-wide constant.
                     sack_permitted: SACK_PERMITTED,
-                    timestamp: None,
+                    timestamp: Some(DEFAULT_ACK_TS_OPT),
                 },
             )
         );
@@ -4766,7 +5072,7 @@ mod test {
             buffer_sizes: Default::default(),
             smss: EffectiveMss::from_mss(
                 DEVICE_MAXIMUM_SEGMENT_SIZE,
-                MssSizeLimiters {timestamp_enabled: false}
+                MssSizeLimiters {timestamp_enabled: true}
             ),
             rcv_wnd_scale: WindowScale::default(),
             snd_wnd_scale: Some(WindowScale::default()),
@@ -4775,6 +5081,14 @@ mod test {
                 ack: active_iss + 1,
                 wnd: WindowSize::DEFAULT,
                 wnd_scale: WindowScale::default(),
+                ts_opt: TimestampOptionState::Enabled {
+                    ts_recent: DEFAULT_TIMESTAMP,
+                    last_ack_sent: active_iss + 1,
+                    ts_val: TimestampValueState {
+                        offset: TIMESTAMP_OFFSET,
+                        initialized_at,
+                    },
+                },
             },
         });
         clock.sleep(RTT / 2);
@@ -4795,13 +5109,14 @@ mod test {
             );
         let ack_seg = seg.expect("failed to generate a ack segment");
         assert_eq!(passive_open, None);
+        let ts_val = timestamp_now(&clock);
         assert_eq!(
             ack_seg,
             Segment::ack(
                 active_iss + 1,
                 passive_iss + 1,
                 UnscaledWindowSize::from(u16::MAX),
-                DEFAULT_SEGMENT_OPTIONS
+                default_segment_options(ts_val, DEFAULT_TIMESTAMP),
             )
         );
         let established = assert_matches!(&active, State::Established(e) => e);
@@ -4844,6 +5159,11 @@ mod test {
                 rcv: Recv {
                     remaining_quickacks: default_quickack_counter(),
                     sack_permitted,
+                    ts_opt: TimestampOptionState::Enabled {
+                        ts_recent: ts_val,
+                        last_ack_sent: active_iss + 1,
+                        ts_val: TimestampValueState { offset: TIMESTAMP_OFFSET, initialized_at },
+                    },
                     ..Recv::default_for_test_at(active_iss + 1, RingBuffer::default())
                 }
                 .into()
@@ -4857,6 +5177,7 @@ mod test {
         let counters = FakeTcpCounters::default();
         let (syn_sent1, syn1) = Closed::<Initial>::connect(
             ISS_1,
+            TIMESTAMP_OFFSET,
             clock.now(),
             (),
             Default::default(),
@@ -4866,6 +5187,7 @@ mod test {
         );
         let (syn_sent2, syn2) = Closed::<Initial>::connect(
             ISS_2,
+            TIMESTAMP_OFFSET,
             clock.now(),
             (),
             Default::default(),
@@ -4874,6 +5196,7 @@ mod test {
             &SocketOptions::default_for_state_tests(),
         );
 
+        let time1 = timestamp_now(&clock);
         assert_eq!(
             syn1,
             Segment::syn(
@@ -4883,7 +5206,7 @@ mod test {
                     mss: Some(DEVICE_MAXIMUM_SEGMENT_SIZE),
                     window_scale: Some(WindowScale::default()),
                     sack_permitted: SACK_PERMITTED,
-                    timestamp: None,
+                    timestamp: Some(TimestampOption::new(time1, TS_ECHO_REPLY_FOR_NON_ACKS)),
                 },
             )
         );
@@ -4896,7 +5219,7 @@ mod test {
                     mss: Some(DEVICE_MAXIMUM_SEGMENT_SIZE),
                     window_scale: Some(WindowScale::default()),
                     sack_permitted: SACK_PERMITTED,
-                    timestamp: None,
+                    timestamp: Some(TimestampOption::new(time1, TS_ECHO_REPLY_FOR_NON_ACKS)),
                 },
             )
         );
@@ -4905,6 +5228,7 @@ mod test {
         let mut state2 = State::SynSent(syn_sent2);
 
         clock.sleep(RTT);
+        let time2 = timestamp_now(&clock);
         let (seg, passive_open) = state1
             .on_segment_with_default_options::<_, ClientlessBufferProvider>(
                 syn2,
@@ -4932,7 +5256,7 @@ mod test {
                     mss: Some(DEVICE_MAXIMUM_SEGMENT_SIZE),
                     window_scale: Some(WindowScale::default()),
                     sack_permitted: SACK_PERMITTED,
-                    timestamp: None,
+                    timestamp: Some(TimestampOption::new(time2, time1)),
                 },
             )
         );
@@ -4946,7 +5270,7 @@ mod test {
                     mss: Some(DEVICE_MAXIMUM_SEGMENT_SIZE),
                     window_scale: Some(WindowScale::default()),
                     sack_permitted: SACK_PERMITTED,
-                    timestamp: None,
+                    timestamp: Some(TimestampOption::new(time2, time1)),
                 },
             )
         );
@@ -4965,7 +5289,7 @@ mod test {
             buffer_sizes: BufferSizes::default(),
             smss: EffectiveMss::from_mss(
                 DEVICE_MAXIMUM_SEGMENT_SIZE,
-                MssSizeLimiters { timestamp_enabled: false}
+                MssSizeLimiters{timestamp_enabled: true}
             ),
             rcv_wnd_scale: WindowScale::default(),
             snd_wnd_scale: Some(WindowScale::default()),
@@ -4974,6 +5298,7 @@ mod test {
                 ack: ISS_2 + 1,
                 wnd: WindowSize::DEFAULT,
                 wnd_scale: WindowScale::default(),
+                ts_opt: default_ts_opt_state(ISS_2 + 1),
             },
         });
         assert_matches!(state2, State::SynRcvd(ref syn_rcvd) if syn_rcvd == &SynRcvd {
@@ -4990,7 +5315,7 @@ mod test {
             buffer_sizes: BufferSizes::default(),
             smss: EffectiveMss::from_mss(
                 DEVICE_MAXIMUM_SEGMENT_SIZE,
-                MssSizeLimiters { timestamp_enabled: false }
+                MssSizeLimiters{timestamp_enabled: true}
             ),
             rcv_wnd_scale: WindowScale::default(),
             snd_wnd_scale: Some(WindowScale::default()),
@@ -4999,10 +5324,12 @@ mod test {
                 ack: ISS_1 + 1,
                 wnd: WindowSize::DEFAULT,
                 wnd_scale: WindowScale::default(),
+                ts_opt: default_ts_opt_state(ISS_1 + 1),
             },
         });
 
         clock.sleep(RTT);
+        let time3 = timestamp_now(&clock);
         assert_eq!(
             state1.on_segment_with_default_options::<_, ClientlessBufferProvider>(
                 syn_ack2,
@@ -5014,7 +5341,7 @@ mod test {
                     ISS_1 + 1,
                     ISS_2 + 1,
                     UnscaledWindowSize::from(u16::MAX),
-                    DEFAULT_SEGMENT_OPTIONS
+                    default_segment_options(time3, time2),
                 )),
                 None
             )
@@ -5030,7 +5357,7 @@ mod test {
                     ISS_2 + 1,
                     ISS_1 + 1,
                     UnscaledWindowSize::from(u16::MAX),
-                    DEFAULT_SEGMENT_OPTIONS
+                    default_segment_options(time3, time2),
                 )),
                 None
             )
@@ -5045,7 +5372,7 @@ mod test {
                     rtt_estimator: Estimator::Measured { srtt: RTT, rtt_var: RTT / 2 },
                     congestion_control: CongestionControl::cubic_with_mss(EffectiveMss::from_mss(
                         Mss::DEFAULT_IPV4,
-                        MssSizeLimiters { timestamp_enabled: false },
+                        MssSizeLimiters { timestamp_enabled: true },
                     )),
                     ..Send::default_for_test_at(ISS_1 + 1, RingBuffer::default())
                 }
@@ -5053,6 +5380,14 @@ mod test {
                 rcv: Recv {
                     remaining_quickacks: default_quickack_counter() - 1,
                     last_segment_at: Some(clock.now()),
+                    ts_opt: TimestampOptionState::Enabled {
+                        ts_recent: time2,
+                        last_ack_sent: ISS_2 + 1,
+                        ts_val: TimestampValueState {
+                            offset: TIMESTAMP_OFFSET,
+                            initialized_at: FakeInstant::default(),
+                        }
+                    },
                     ..Recv::default_for_test_at(ISS_2 + 1, RingBuffer::default())
                 }
                 .into()
@@ -5068,7 +5403,7 @@ mod test {
                     rtt_estimator: Estimator::Measured { srtt: RTT, rtt_var: RTT / 2 },
                     congestion_control: CongestionControl::cubic_with_mss(EffectiveMss::from_mss(
                         Mss::DEFAULT_IPV4,
-                        MssSizeLimiters { timestamp_enabled: false },
+                        MssSizeLimiters { timestamp_enabled: true },
                     )),
                     ..Send::default_for_test_at(ISS_2 + 1, RingBuffer::default())
                 }
@@ -5076,6 +5411,14 @@ mod test {
                 rcv: Recv {
                     remaining_quickacks: default_quickack_counter() - 1,
                     last_segment_at: Some(clock.now()),
+                    ts_opt: TimestampOptionState::Enabled {
+                        ts_recent: time2,
+                        last_ack_sent: ISS_1 + 1,
+                        ts_val: TimestampValueState {
+                            offset: TIMESTAMP_OFFSET,
+                            initialized_at: FakeInstant::default(),
+                        }
+                    },
                     ..Recv::default_for_test_at(ISS_1 + 1, RingBuffer::default())
                 }
                 .into()
@@ -5167,7 +5510,7 @@ mod test {
                         } else {
                             SackBlocks::default()
                         },
-                        timestamp: None,
+                        timestamp: Some(DEFAULT_ACK_TS_OPT),
                     },
                 )),
                 None
@@ -5210,7 +5553,7 @@ mod test {
                 assert_eq!(available, &[[TEST_BYTES, TEST_BYTES].concat()]);
                 available[0].len()
             }),
-            usize::from(TEST_MSS.get() * 2)
+            TEST_BYTES.len() * 2
         );
     }
 
@@ -5299,9 +5642,10 @@ mod test {
                 SegmentHeader {
                     seq: TEST_ISS + TEST_BYTES.len() + 2,
                     ack: Some(TEST_IRS + 1),
+                    control: None,
                     wnd: UnscaledWindowSize::from_usize(BUFFER_SIZE),
                     push: true,
-                    ..Default::default()
+                    options: DEFAULT_SEGMENT_OPTIONS.into(),
                 },
                 FragmentedPayload::new_contiguous(&TEST_BYTES[..PARTIAL_LEN - 2]),
             ))
@@ -5317,6 +5661,7 @@ mod test {
         let counters = FakeTcpCounters::default();
         let (syn_sent, syn) = Closed::<Initial>::connect(
             ISS_1,
+            TIMESTAMP_OFFSET,
             clock.now(),
             (),
             Default::default(),
@@ -5324,14 +5669,32 @@ mod test {
             Mss::DEFAULT_IPV4,
             &SocketOptions::default_for_state_tests(),
         );
+
+        let expected_syn = |ts_val| {
+            Segment::syn(
+                ISS_1,
+                UnscaledWindowSize::from(u16::MAX),
+                HandshakeOptions {
+                    mss: Some(*TEST_MSS.mss()),
+                    window_scale: Some(WindowScale::default()),
+                    sack_permitted: SACK_PERMITTED,
+                    timestamp: Some(TimestampOption::new(ts_val, TS_ECHO_REPLY_FOR_NON_ACKS)),
+                },
+            )
+        };
+
+        let time1 = timestamp_now(&clock);
+        assert_eq!(syn, expected_syn(time1));
         let mut state = State::<_, RingBuffer, RingBuffer, ()>::SynSent(syn_sent);
+
         // Retransmission timer should be installed.
         assert_eq!(state.poll_send_at(), Some(FakeInstant::from(Rto::DEFAULT.get())));
         clock.sleep(Rto::DEFAULT.get());
+        let time2 = timestamp_now(&clock);
         // The SYN segment should be retransmitted.
         assert_eq!(
             state.poll_send_with_default_options(clock.now(), &counters.refs()),
-            Some(syn.clone().into_empty())
+            Some(expected_syn(time2).into_empty())
         );
 
         // Bring the state to SYNRCVD.
@@ -5342,14 +5705,31 @@ mod test {
                 &counters.refs(),
             );
         let syn_ack = seg.expect("expected SYN-ACK");
+
+        let expected_syn_ack = |ts_val| {
+            Segment::syn_ack(
+                ISS_1,
+                ISS_1 + 1,
+                UnscaledWindowSize::from(u16::MAX),
+                HandshakeOptions {
+                    mss: Some(*TEST_MSS.mss()),
+                    window_scale: Some(WindowScale::default()),
+                    sack_permitted: SACK_PERMITTED,
+                    timestamp: Some(TimestampOption::new(ts_val, time1)),
+                },
+            )
+        };
+
+        assert_eq!(syn_ack, expected_syn_ack(time2));
         assert_eq!(passive_open, None);
         // Retransmission timer should be installed.
         assert_eq!(state.poll_send_at(), Some(clock.now() + Rto::DEFAULT.get()));
         clock.sleep(Rto::DEFAULT.get());
+        let time3 = timestamp_now(&clock);
         // The SYN-ACK segment should be retransmitted.
         assert_eq!(
             state.poll_send_with_default_options(clock.now(), &counters.refs()),
-            Some(syn_ack.clone().into_empty())
+            Some(expected_syn_ack(time3).into_empty())
         );
 
         // Bring the state to ESTABLISHED and write some data.
@@ -5364,7 +5744,7 @@ mod test {
                     ISS_1 + 1,
                     ISS_1 + 1,
                     UnscaledWindowSize::from(u16::MAX),
-                    DEFAULT_SEGMENT_OPTIONS
+                    default_segment_options(time3, time2),
                 )),
                 None
             )
@@ -5396,9 +5776,10 @@ mod test {
                     SegmentHeader {
                         seq: ISS_1 + 1,
                         ack: Some(ISS_1 + 1),
+                        control: None,
                         wnd: UnscaledWindowSize::from(u16::MAX),
                         push: true,
-                        ..Default::default()
+                        options: default_segment_options(timestamp_now(&clock), time2).into(),
                     },
                     FragmentedPayload::new_contiguous(TEST_BYTES),
                 ))
@@ -5413,6 +5794,7 @@ mod test {
             }
             .assert_counters(&counters);
         }
+        let time4 = timestamp_now(&clock);
         // The receiver acks the first byte of the payload.
         assert_eq!(
             state.on_segment_with_default_options::<(), ClientlessBufferProvider>(
@@ -5420,7 +5802,7 @@ mod test {
                     ISS_1 + 1 + TEST_BYTES.len(),
                     ISS_1 + 1 + 1,
                     UnscaledWindowSize::from(u16::MAX),
-                    DEFAULT_SEGMENT_OPTIONS
+                    default_segment_options(time4, time4),
                 ),
                 clock.now(),
                 &counters.refs(),
@@ -5431,6 +5813,7 @@ mod test {
         // be RTO_INIT.
         assert_eq!(state.poll_send_at(), Some(clock.now() + Rto::DEFAULT.get()));
         clock.sleep(Rto::DEFAULT.get());
+        let time5 = timestamp_now(&clock);
         assert_eq!(
             state.poll_send_with_default_options(clock.now(), &counters.refs(),),
             Some(Segment::new_assert_no_discard(
@@ -5439,6 +5822,7 @@ mod test {
                     ack: Some(ISS_1 + 1),
                     wnd: UnscaledWindowSize::from(u16::MAX),
                     push: true,
+                    options: default_segment_options(time5, time2).into(),
                     ..Default::default()
                 },
                 FragmentedPayload::new_contiguous(&TEST_BYTES[1..]),
@@ -5450,7 +5834,12 @@ mod test {
             state.on_pmtu_update(Mss::MIN, ISS_1 + TEST_BYTES.len()),
             ShouldRetransmit::Yes
         );
+        let new_mss = usize::from(EffectiveMss::from_mss(
+            Mss::MIN,
+            MssSizeLimiters { timestamp_enabled: true },
+        ));
         clock.sleep(2 * Rto::DEFAULT.get());
+        let time6 = timestamp_now(&clock);
         assert_eq!(
             state.poll_send_with_default_options(clock.now(), &counters.refs(),),
             Some(Segment::new_assert_no_discard(
@@ -5459,9 +5848,10 @@ mod test {
                     ack: Some(ISS_1 + 1),
                     wnd: UnscaledWindowSize::from(u16::MAX),
                     push: false,
+                    options: default_segment_options(time6, time2).into(),
                     ..Default::default()
                 },
-                FragmentedPayload::new_contiguous(&TEST_BYTES[1..usize::from(Mss::MIN) + 1]),
+                FragmentedPayload::new_contiguous(&TEST_BYTES[1..new_mss + 1]),
             ))
         );
 
@@ -5474,9 +5864,9 @@ mod test {
             state.on_segment_with_default_options::<(), ClientlessBufferProvider>(
                 Segment::ack(
                     ISS_1 + 1 + TEST_BYTES.len(),
-                    ISS_1 + usize::from(Mss::MIN) + 2,
+                    ISS_1 + new_mss + 2,
                     UnscaledWindowSize::from(u16::MAX),
-                    DEFAULT_SEGMENT_OPTIONS
+                    default_segment_options(time6, time6),
                 ),
                 clock.now(),
                 &counters.refs(),
@@ -5499,13 +5889,14 @@ mod test {
             state.poll_send_with_default_options(clock.now(), &counters.refs()),
             Some(Segment::new_assert_no_discard(
                 SegmentHeader {
-                    seq: ISS_1 + usize::from(Mss::MIN) + 2,
+                    seq: ISS_1 + new_mss + 2,
                     ack: Some(ISS_1 + 1),
                     wnd: UnscaledWindowSize::from(u16::MAX),
                     push: true,
+                    options: default_segment_options(time6, time2).into(),
                     ..Default::default()
                 },
-                FragmentedPayload::new_contiguous(&TEST_BYTES[usize::from(Mss::MIN) + 1..]),
+                FragmentedPayload::new_contiguous(&TEST_BYTES[new_mss + 1..]),
             ))
         );
 
@@ -5516,7 +5907,7 @@ mod test {
                     ISS_1 + 1 + TEST_BYTES.len(),
                     ISS_1 + 1 + TEST_BYTES.len(),
                     UnscaledWindowSize::from(u16::MAX),
-                    DEFAULT_SEGMENT_OPTIONS
+                    default_segment_options(time6, time6),
                 ),
                 clock.now(),
                 &counters.refs()
@@ -5585,7 +5976,8 @@ mod test {
                 closed_rcv: RecvParams {
                     ack: TEST_IRS + 2,
                     wnd: last_wnd,
-                    wnd_scale: last_wnd_scale
+                    wnd_scale: last_wnd_scale,
+                    ts_opt: default_ts_opt_state(TEST_IRS + 2),
                 }
             })
         );
@@ -5610,7 +6002,7 @@ mod test {
                     control: Some(Control::FIN),
                     wnd: last_wnd >> WindowScale::default(),
                     push: true,
-                    ..Default::default()
+                    options: DEFAULT_SEGMENT_OPTIONS.into(),
                 },
                 FragmentedPayload::new_contiguous(&TEST_BYTES[..PARTIAL_LEN]),
             ))
@@ -5639,7 +6031,7 @@ mod test {
                 TEST_ISS + TEST_BYTES.len() + PARTIAL_LEN + 1,
                 TEST_IRS + 2,
                 last_wnd >> WindowScale::default(),
-                DEFAULT_SEGMENT_OPTIONS
+                default_segment_options(timestamp_now(&clock), DEFAULT_TIMESTAMP),
             ))
         );
 
@@ -5686,7 +6078,7 @@ mod test {
             buffer_sizes: Default::default(),
             smss: EffectiveMss::from_mss(
                 Mss::DEFAULT_IPV4,
-                MssSizeLimiters { timestamp_enabled: false },
+                MssSizeLimiters { timestamp_enabled: true },
             ),
             rcv_wnd_scale: WindowScale::default(),
             snd_wnd_scale: Some(WindowScale::default()),
@@ -5695,6 +6087,7 @@ mod test {
                 ack: TEST_IRS + 1,
                 wnd: WindowSize::DEFAULT,
                 wnd_scale: WindowScale::default(),
+                ts_opt: default_ts_opt_state(TEST_IRS + 1),
             },
         });
         assert_eq!(
@@ -5776,7 +6169,7 @@ mod test {
                     control: Some(Control::FIN),
                     wnd: UnscaledWindowSize::from_usize(BUFFER_SIZE),
                     push: true,
-                    ..Default::default()
+                    options: DEFAULT_SEGMENT_OPTIONS.into(),
                 },
                 FragmentedPayload::new_contiguous(&TEST_BYTES[..PARTIAL_LEN])
             ))
@@ -5830,7 +6223,8 @@ mod test {
                     control: Some(Control::FIN),
                     wnd: UnscaledWindowSize::from_usize(BUFFER_SIZE),
                     push: true,
-                    ..Default::default()
+                    options: default_segment_options(timestamp_now(&clock), DEFAULT_TIMESTAMP)
+                        .into(),
                 },
                 FragmentedPayload::new_contiguous(&TEST_BYTES[..PARTIAL_LEN]),
             ))
@@ -5870,7 +6264,7 @@ mod test {
                     TEST_ISS + TEST_BYTES.len() + PARTIAL_LEN + 2,
                     TEST_IRS + 2 * TEST_BYTES.len() + 1,
                     UnscaledWindowSize::from_usize(BUFFER_SIZE - TEST_BYTES.len()),
-                    DEFAULT_SEGMENT_OPTIONS
+                    default_segment_options(timestamp_now(&clock), DEFAULT_TIMESTAMP),
                 )),
                 None
             )
@@ -5902,7 +6296,7 @@ mod test {
                     TEST_ISS + TEST_BYTES.len() + PARTIAL_LEN + 2,
                     TEST_IRS + 2 * TEST_BYTES.len() + 2,
                     UnscaledWindowSize::from_usize(BUFFER_SIZE - 1),
-                    DEFAULT_SEGMENT_OPTIONS
+                    default_segment_options(timestamp_now(&clock), DEFAULT_TIMESTAMP),
                 )),
                 None
             )
@@ -6005,7 +6399,7 @@ mod test {
                     control: Some(Control::FIN),
                     wnd: UnscaledWindowSize::from_usize(BUFFER_SIZE),
                     push: true,
-                    ..Default::default()
+                    options: DEFAULT_SEGMENT_OPTIONS.into(),
                 },
                 FragmentedPayload::new_contiguous(TEST_BYTES),
             ))
@@ -6078,6 +6472,7 @@ mod test {
                 ack: TEST_IRS + 2,
                 wnd: WindowSize::DEFAULT,
                 wnd_scale: WindowScale::default(),
+                ts_opt: default_ts_opt_state(TEST_IRS + 1),
             },
             expiry: new_time_wait_expiry(clock.now()),
         });
@@ -6100,7 +6495,7 @@ mod test {
                     TEST_ISS + 2,
                     TEST_IRS + 2,
                     UnscaledWindowSize::from(u16::MAX),
-                    DEFAULT_SEGMENT_OPTIONS
+                    default_segment_options(timestamp_now(&clock), DEFAULT_TIMESTAMP),
                 )),
                 None
             ),
@@ -6141,7 +6536,7 @@ mod test {
             simultaneous_open: None,
             buffer_sizes: BufferSizes::default(),
             smss: EffectiveMss::from_mss(
-                Mss::DEFAULT_IPV4, MssSizeLimiters { timestamp_enabled: false }
+                Mss::DEFAULT_IPV4, MssSizeLimiters {timestamp_enabled: true }
             ),
             rcv_wnd_scale: WindowScale::default(),
             snd_wnd_scale: Some(WindowScale::default()),
@@ -6150,10 +6545,18 @@ mod test {
                 ack: TEST_IRS + 1,
                 wnd: WindowSize::DEFAULT,
                 wnd_scale: WindowScale::default(),
+                ts_opt: default_ts_opt_state(TEST_IRS+1),
             },
         }),
-        Segment::syn_ack(TEST_IRS, TEST_ISS + 1, UnscaledWindowSize::from(u16::MAX),
-        HandshakeOptions { window_scale: Some(WindowScale::default()), ..Default::default() }) =>
+        Segment::syn_ack(
+            TEST_IRS,
+            TEST_ISS + 1,
+            UnscaledWindowSize::from(u16::MAX),
+            HandshakeOptions {
+                window_scale: Some(WindowScale::default()),
+                timestamp: Some(DEFAULT_ACK_TS_OPT),
+                ..Default::default()
+            }) =>
         Some(Segment::ack(
             TEST_ISS + 1, TEST_IRS + 1, UnscaledWindowSize::from(u16::MAX), DEFAULT_SEGMENT_OPTIONS
         )); "retransmit syn_ack"
@@ -6178,19 +6581,20 @@ mod test {
         let mut clock = FakeInstantCtx::default();
         let counters = FakeTcpCounters::default();
         let mut send_buffer = RingBuffer::default();
+        let mss =
+            EffectiveMss::from_mss(Mss::DEFAULT_IPV4, MssSizeLimiters { timestamp_enabled: true });
+
         let first_payload_byte = b'A';
         let last_payload_byte = b'D';
+
         for b in first_payload_byte..=last_payload_byte {
-            assert_eq!(
-                send_buffer.enqueue_data(&[b; Mss::DEFAULT_IPV4.get() as usize]),
-                usize::from(Mss::DEFAULT_IPV4),
-            );
+            assert_eq!(send_buffer.enqueue_data(&vec![b; usize::from(mss)]), usize::from(mss));
         }
         let mut state: State<_, _, _, ()> = State::Established(Established {
             snd: Send {
                 congestion_control: CongestionControl::cubic_with_mss(EffectiveMss::from_mss(
                     Mss::DEFAULT_IPV4,
-                    MssSizeLimiters { timestamp_enabled: false },
+                    MssSizeLimiters { timestamp_enabled: true },
                 )),
                 ..Send::default_for_test_at(TEST_ISS, send_buffer.clone())
             }
@@ -6205,7 +6609,7 @@ mod test {
                 TEST_IRS,
                 UnscaledWindowSize::from(u16::MAX),
                 DEFAULT_SEGMENT_OPTIONS,
-                FragmentedPayload::new_contiguous(&[b'A'; Mss::DEFAULT_IPV4.get() as usize]),
+                FragmentedPayload::new_contiguous(&vec![b'A'; usize::from(mss)])
             ))
         );
 
@@ -6230,16 +6634,15 @@ mod test {
                 Some(Segment::new_assert_no_discard(
                     SegmentHeader {
                         seq: TEST_ISS
-                            + u32::from(expected_byte - first_payload_byte)
-                                * u32::from(Mss::DEFAULT_IPV4),
+                            + u32::from(expected_byte - first_payload_byte) * u32::from(mss),
                         ack: Some(TEST_IRS),
+                        control: None,
                         wnd: UnscaledWindowSize::from(u16::MAX),
                         push: expected_byte == last_payload_byte,
-                        ..Default::default()
+                        options: default_segment_options(timestamp_now(&clock), DEFAULT_TIMESTAMP)
+                            .into(),
                     },
-                    FragmentedPayload::new_contiguous(
-                        &[expected_byte; Mss::DEFAULT_IPV4.get() as usize]
-                    )
+                    FragmentedPayload::new_contiguous(&vec![expected_byte; usize::from(mss)])
                 ))
             );
         };
@@ -6291,10 +6694,7 @@ mod test {
             (None, None)
         );
         let established = assert_matches!(state, State::Established(established) => established);
-        assert_eq!(
-            established.snd.congestion_control.inspect_cwnd().cwnd(),
-            2 * u32::from(Mss::DEFAULT_IPV4)
-        );
+        assert_eq!(established.snd.congestion_control.inspect_cwnd().cwnd(), 2 * u32::from(mss));
         assert_eq!(established.snd.congestion_control.inspect_loss_recovery_mode(), None);
         CounterExpectations {
             retransmits: 1,
@@ -6374,7 +6774,7 @@ mod test {
                     TEST_ISS - 1,
                     TEST_IRS,
                     UnscaledWindowSize::from(u16::MAX),
-                    DEFAULT_SEGMENT_OPTIONS
+                    default_segment_options(timestamp_now(&clock), DEFAULT_TIMESTAMP),
                 ))
             );
             clock.sleep(keep_alive.interval.into());
@@ -6471,6 +6871,7 @@ mod test {
                         ack: TEST_ISS,
                         wnd: WindowSize::DEFAULT,
                         wnd_scale: WindowScale::ZERO,
+                        ts_opt: default_ts_opt_state(TEST_IRS + 1),
                     },
                     FakeInstant::default(),
                     &SocketOptions::default_for_state_tests(),
@@ -6530,7 +6931,7 @@ mod test {
                 TEST_ISS + 1,
                 TEST_IRS + 1,
                 UnscaledWindowSize::from_usize(BUFFER_SIZE),
-                DEFAULT_SEGMENT_OPTIONS,
+                default_segment_options(timestamp_now(&clock), DEFAULT_TIMESTAMP),
                 FragmentedPayload::new_contiguous(&TEST_BYTES[0..1])
             ))
         );
@@ -6565,7 +6966,7 @@ mod test {
                 TEST_ISS + 1,
                 TEST_IRS + 1,
                 UnscaledWindowSize::from_usize(BUFFER_SIZE),
-                DEFAULT_SEGMENT_OPTIONS,
+                default_segment_options(timestamp_now(&clock), DEFAULT_TIMESTAMP),
                 FragmentedPayload::new_contiguous(&TEST_BYTES[0..1])
             ))
         );
@@ -6591,9 +6992,11 @@ mod test {
                 SegmentHeader {
                     seq: TEST_ISS + 2,
                     ack: Some(TEST_IRS + 1),
+                    control: None,
                     wnd: UnscaledWindowSize::from_usize(BUFFER_SIZE),
                     push: true,
-                    ..Default::default()
+                    options: default_segment_options(timestamp_now(&clock), DEFAULT_TIMESTAMP)
+                        .into(),
                 },
                 FragmentedPayload::new_contiguous(&TEST_BYTES[1..])
             ))
@@ -6659,9 +7062,10 @@ mod test {
                 SegmentHeader {
                     seq: TEST_ISS + TEST_BYTES.len() + 1,
                     ack: Some(TEST_IRS + 1),
+                    control: None,
                     wnd: UnscaledWindowSize::from_usize(BUFFER_SIZE),
                     push: true,
-                    ..Default::default()
+                    options: DEFAULT_SEGMENT_OPTIONS.into(),
                 },
                 FragmentedPayload::new_contiguous(&TEST_BYTES[..PARTIAL_LEN])
             ))
@@ -6678,6 +7082,7 @@ mod test {
         let counters = FakeTcpCounters::default();
         let (syn_sent, syn) = Closed::<Initial>::connect(
             TEST_ISS,
+            TIMESTAMP_OFFSET,
             clock.now(),
             (),
             Default::default(),
@@ -6732,6 +7137,8 @@ mod test {
             }
         }
         // Expect to only receive MSS bytes.
+        let effective_mss =
+            EffectiveMss::from_mss(mss, MssSizeLimiters { timestamp_enabled: true });
         assert_eq!(
             state.poll_send_with_default_options(clock.now(), &counters.refs()),
             Some(Segment::with_data(
@@ -6739,7 +7146,7 @@ mod test {
                 TEST_ISS + 1,
                 UnscaledWindowSize::from(u16::MAX),
                 DEFAULT_SEGMENT_OPTIONS,
-                FragmentedPayload::new_contiguous(&TEST_BYTES[..usize::from(mss)]),
+                FragmentedPayload::new_contiguous(&TEST_BYTES[..usize::from(effective_mss)]),
             ))
         );
     }
@@ -6931,7 +7338,7 @@ mod test {
                 TEST_ISS + 1,
                 TEST_IRS + 1 + TEST_BYTES.len(),
                 UnscaledWindowSize::from_u32(2 * u32::from(DEVICE_MAXIMUM_SEGMENT_SIZE)),
-                DEFAULT_SEGMENT_OPTIONS
+                default_segment_options(timestamp_now(&clock), DEFAULT_TIMESTAMP),
             ))
         );
         let full_segment_sized_payload =
@@ -6988,7 +7395,7 @@ mod test {
                     TEST_ISS + 1,
                     TEST_IRS + 1 + TEST_BYTES.len() + 2 * u32::from(DEVICE_MAXIMUM_SEGMENT_SIZE),
                     UnscaledWindowSize::from(0),
-                    DEFAULT_SEGMENT_OPTIONS
+                    default_segment_options(timestamp_now(&clock), DEFAULT_TIMESTAMP),
                 )),
                 None,
                 DataAcked::No,
@@ -7056,7 +7463,7 @@ mod test {
                         } else {
                             SackBlocks::default()
                         },
-                        timestamp: None,
+                        timestamp: Some(DEFAULT_ACK_TS_OPT),
                     },
                 )),
                 None,
@@ -7200,6 +7607,7 @@ mod test {
             device_mss: Mss::DEFAULT_IPV4,
             default_mss: Mss::DEFAULT_IPV4,
             rcv_wnd_scale: WindowScale::default(),
+            ts_opt: default_ts_opt_negotiation_state(),
         })
     => DEFAULT_MAX_SYN_RETRIES.get(); "syn_sent")]
     #[test_case(
@@ -7216,7 +7624,7 @@ mod test {
             simultaneous_open: None,
             buffer_sizes: BufferSizes::default(),
             smss: EffectiveMss::from_mss(
-                Mss::DEFAULT_IPV4, MssSizeLimiters { timestamp_enabled: false }
+                Mss::DEFAULT_IPV4, MssSizeLimiters { timestamp_enabled: true }
             ),
             rcv_wnd_scale: WindowScale::default(),
             snd_wnd_scale: Some(WindowScale::default()),
@@ -7225,6 +7633,7 @@ mod test {
                 ack: TEST_IRS + 1,
                 wnd: WindowSize::DEFAULT,
                 wnd_scale: WindowScale::default(),
+                ts_opt: default_ts_opt_state(TEST_IRS+1),
             },
         })
     => DEFAULT_MAX_SYNACK_RETRIES.get(); "syn_rcvd")]
@@ -7264,6 +7673,7 @@ mod test {
         let counters = FakeTcpCounters::default();
         let (syn_sent, syn_seg) = Closed::<Initial>::connect(
             TEST_ISS,
+            TIMESTAMP_OFFSET,
             clock.now(),
             (),
             BufferSizes { receive: buffer_size, ..Default::default() },
@@ -7280,7 +7690,7 @@ mod test {
                     mss: Some(DEVICE_MAXIMUM_SEGMENT_SIZE),
                     window_scale: Some(syn_window_scale),
                     sack_permitted: SACK_PERMITTED,
-                    timestamp: None,
+                    timestamp: Some(DEFAULT_NON_ACK_TS_OPT),
                 },
             )
         );
@@ -7296,7 +7706,7 @@ mod test {
                         mss: Some(Mss::DEFAULT_IPV4),
                         window_scale: syn_ack_window_scale,
                         sack_permitted: SACK_PERMITTED,
-                        timestamp: None,
+                        timestamp: Some(DEFAULT_ACK_TS_OPT),
                     },
                 ),
                 clock.now(),
@@ -7319,7 +7729,7 @@ mod test {
             TEST_IRS + 1 + u16::MAX as usize,
             TEST_ISS + 1,
             UnscaledWindowSize::from(u16::MAX),
-            HandshakeOptions::default(),
+            HandshakeOptions{timestamp: Some(DEFAULT_NON_ACK_TS_OPT), .. Default::default()},
         )
     )]
     #[test_case(
@@ -7328,7 +7738,7 @@ mod test {
             TEST_IRS + 1 + u16::MAX as usize,
             TEST_ISS + 1,
             UnscaledWindowSize::from(u16::MAX),
-            HandshakeOptions::default(),
+            HandshakeOptions{timestamp: Some(DEFAULT_NON_ACK_TS_OPT), .. Default::default()},
         )
     )]
     #[test_case(
@@ -7359,6 +7769,7 @@ mod test {
             ack: TEST_IRS + 1,
             wnd_scale: WindowScale::default(),
             wnd: buffer_sizes.rwnd_unscaled() << WindowScale::default(),
+            ts_opt: default_ts_opt_state(TEST_IRS + 1),
         };
         let mut syn_rcvd: State<_, RingBuffer, RingBuffer, ()> = State::SynRcvd(SynRcvd {
             iss: TEST_ISS,
@@ -7374,7 +7785,7 @@ mod test {
             buffer_sizes: BufferSizes { send: 0, receive: receive_buf_size },
             smss: EffectiveMss::from_mss(
                 Mss::DEFAULT_IPV4,
-                MssSizeLimiters { timestamp_enabled: false },
+                MssSizeLimiters { timestamp_enabled: true },
             ),
             rcv_wnd_scale,
             snd_wnd_scale: WindowScale::new(1),
@@ -7418,6 +7829,7 @@ mod test {
                     ack: TEST_IRS + 1,
                     wnd: WindowSize::DEFAULT,
                     wnd_scale: WindowScale::ZERO,
+                    ts_opt: default_ts_opt_state(TEST_IRS + 1),
                 },
                 FakeInstant::default(),
                 &SocketOptions::default_for_state_tests(),
@@ -7503,6 +7915,7 @@ mod test {
                     ack: TEST_IRS + 1,
                     wnd: wnd_size,
                     wnd_scale: rcv_wnd_scale,
+                    ts_opt: default_ts_opt_state(TEST_IRS + 1),
                 },
             }),
             State::CloseWait(CloseWait {
@@ -7511,6 +7924,7 @@ mod test {
                     ack: TEST_IRS + 1,
                     wnd: wnd_size,
                     wnd_scale: rcv_wnd_scale,
+                    ts_opt: default_ts_opt_state(TEST_IRS + 1),
                 },
             }),
             State::LastAck(LastAck {
@@ -7519,6 +7933,7 @@ mod test {
                     ack: TEST_IRS + 1,
                     wnd: wnd_size,
                     wnd_scale: rcv_wnd_scale,
+                    ts_opt: default_ts_opt_state(TEST_IRS + 1),
                 },
             }),
         ] {
@@ -7528,11 +7943,12 @@ mod test {
                     SegmentHeader {
                         seq: TEST_ISS + 1,
                         ack: Some(TEST_IRS + 1),
+                        control: None,
                         // We expect this to be wnd_size >> rcv_wnd_scale, which
                         // equals 1024 >> 8 == 4
                         wnd: UnscaledWindowSize::from(4),
                         push: true,
-                        ..Default::default()
+                        options: DEFAULT_SEGMENT_OPTIONS.into(),
                     },
                     FragmentedPayload::new_contiguous(TEST_BYTES)
                 ))
@@ -7568,6 +7984,7 @@ mod test {
                     ack: TEST_IRS + 1,
                     wnd: WindowSize::DEFAULT,
                     wnd_scale: WindowScale::ZERO,
+                    ts_opt: default_ts_opt_state(TEST_IRS + 1),
                 },
                 clock.now(),
                 &SocketOptions::default_for_state_tests(),
@@ -7594,6 +8011,7 @@ mod test {
                     ack: TEST_IRS + 1,
                     wnd_scale: WindowScale::default(),
                     wnd: WindowSize::DEFAULT,
+                    ts_opt: default_ts_opt_state(TEST_IRS + 1),
                 },
                 clock.now(),
                 &SocketOptions::default(),
@@ -7611,6 +8029,7 @@ mod test {
                     ack: TEST_IRS + 1,
                     wnd: WindowSize::DEFAULT,
                     wnd_scale: WindowScale::ZERO,
+                    ts_opt: default_ts_opt_state(TEST_IRS + 1),
                 },
                 clock.now(),
                 &SocketOptions::default_for_state_tests(),
@@ -7638,6 +8057,7 @@ mod test {
                     ack: TEST_IRS + 1,
                     wnd: WindowSize::DEFAULT,
                     wnd_scale: WindowScale::ZERO,
+                    ts_opt: default_ts_opt_state(TEST_IRS + 1),
                 },
                 clock.now(),
                 &SocketOptions::default_for_state_tests(),
@@ -7646,7 +8066,7 @@ mod test {
                 TEST_ISS + 1 + TEST_BYTES.len(),
                 TEST_IRS + 1,
                 UnscaledWindowSize::from(u16::MAX),
-                DEFAULT_SEGMENT_OPTIONS,
+                default_segment_options(timestamp_now(&clock), DEFAULT_TIMESTAMP),
                 FragmentedPayload::new_contiguous(&TEST_BYTES[..1]),
             ))
         );
@@ -7667,6 +8087,7 @@ mod test {
                         ack: TEST_IRS + 1,
                         wnd_scale: WindowScale::default(),
                         wnd: WindowSize::DEFAULT,
+                        ts_opt: default_ts_opt_state(TEST_IRS + 1),
                     },
                     clock.now(),
                     &SocketOptions::default(),
@@ -7688,6 +8109,7 @@ mod test {
                         ack: TEST_IRS + 1,
                         wnd_scale: WindowScale::default(),
                         wnd: WindowSize::DEFAULT,
+                        ts_opt: default_ts_opt_state(TEST_IRS + 1),
                     },
                     clock.now(),
                     &SocketOptions::default(),
@@ -7710,6 +8132,7 @@ mod test {
                         ack: TEST_IRS + 1,
                         wnd_scale: WindowScale::default(),
                         wnd: WindowSize::DEFAULT,
+                        ts_opt: default_ts_opt_state(TEST_IRS + 1),
                     },
                     clock.now(),
                     &SocketOptions::default(),
@@ -7727,6 +8150,7 @@ mod test {
                     ack: TEST_IRS + 1,
                     wnd: WindowSize::DEFAULT,
                     wnd_scale: WindowScale::ZERO,
+                    ts_opt: default_ts_opt_state(TEST_IRS + 1),
                 },
                 clock.now(),
                 &SocketOptions::default_for_state_tests(),
@@ -7750,6 +8174,7 @@ mod test {
                     ack: TEST_IRS + 1,
                     wnd: WindowSize::DEFAULT,
                     wnd_scale: WindowScale::ZERO,
+                    ts_opt: default_ts_opt_state(TEST_IRS + 1),
                 },
                 clock.now(),
                 &SocketOptions::default_for_state_tests(),
@@ -7758,7 +8183,7 @@ mod test {
                 TEST_ISS + 1 + TEST_BYTES.len() + seq_index,
                 TEST_IRS + 1,
                 UnscaledWindowSize::from(u16::MAX),
-                DEFAULT_SEGMENT_OPTIONS,
+                default_segment_options(timestamp_now(&clock), DEFAULT_TIMESTAMP),
                 FragmentedPayload::new_contiguous(&TEST_BYTES[seq_index..3 + seq_index]),
             ))
         );
@@ -7791,6 +8216,7 @@ mod test {
                     ack: TEST_IRS + 1,
                     wnd: WindowSize::DEFAULT,
                     wnd_scale: WindowScale::ZERO,
+                    ts_opt: default_ts_opt_state(TEST_IRS + 1),
                 },
                 clock.now(),
                 &SocketOptions::default_for_state_tests(),
@@ -7828,6 +8254,7 @@ mod test {
                     ack: TEST_IRS + 1,
                     wnd_scale: WindowScale::default(),
                     wnd: WindowSize::DEFAULT,
+                    ts_opt: default_ts_opt_state(TEST_IRS + 1),
                 },
                 clock.now(),
                 &SocketOptions::default(),
@@ -7845,6 +8272,7 @@ mod test {
                     ack: TEST_IRS + 1,
                     wnd: WindowSize::DEFAULT,
                     wnd_scale: WindowScale::ZERO,
+                    ts_opt: default_ts_opt_state(TEST_IRS + 1),
                 },
                 clock.now(),
                 &SocketOptions::default_for_state_tests(),
@@ -7895,9 +8323,10 @@ mod test {
                 SegmentHeader {
                     seq: iss + TEST_BYTES.len(),
                     ack: Some(iss),
+                    control: None,
                     wnd: UnscaledWindowSize::from(u16::try_from(BUFFER_SIZE).unwrap()),
                     push: true,
-                    ..Default::default()
+                    options: DEFAULT_SEGMENT_OPTIONS.into(),
                 },
                 FragmentedPayload::new_contiguous(TEST_BYTES),
             )),
@@ -7911,7 +8340,7 @@ mod test {
                 iss,
                 iss,
                 UnscaledWindowSize::from(u16::try_from(BUFFER_SIZE).unwrap()),
-                DEFAULT_SEGMENT_OPTIONS,
+                default_segment_options(timestamp_now(&clock), DEFAULT_TIMESTAMP),
                 FragmentedPayload::new_contiguous(TEST_BYTES),
             )),
         );
@@ -7937,7 +8366,7 @@ mod test {
                     UnscaledWindowSize::from(
                         u16::try_from(BUFFER_SIZE - TEST_BYTES.len()).unwrap()
                     ),
-                    DEFAULT_SEGMENT_OPTIONS
+                    default_segment_options(timestamp_now(&clock), DEFAULT_TIMESTAMP),
                 )),
                 None,
             )
@@ -7962,6 +8391,7 @@ mod test {
             default_mss: Mss::DEFAULT_IPV4,
             device_mss: DEVICE_MAXIMUM_SEGMENT_SIZE,
             rcv_wnd_scale: WindowScale::default(),
+            ts_opt: default_ts_opt_negotiation_state(),
         }),
         State::Closed(Closed { reason: None }) => NewlyClosed::Yes; "non-closed to closed")]
     #[test_case(
@@ -7979,6 +8409,7 @@ mod test {
                 default_mss: Mss::DEFAULT_IPV4,
                 device_mss: DEVICE_MAXIMUM_SEGMENT_SIZE,
                 rcv_wnd_scale: WindowScale::default(),
+                ts_opt: default_ts_opt_negotiation_state(),
             },
         ),
         State::SynRcvd(SynRcvd {
@@ -7994,7 +8425,7 @@ mod test {
             simultaneous_open: None,
             buffer_sizes: BufferSizes { send: 0, receive: 0 },
             smss: EffectiveMss::from_mss(
-                Mss::DEFAULT_IPV4, MssSizeLimiters { timestamp_enabled: false }
+                Mss::DEFAULT_IPV4, MssSizeLimiters{timestamp_enabled: true}
             ),
             rcv_wnd_scale: WindowScale::new(0).unwrap(),
             snd_wnd_scale: WindowScale::new(0),
@@ -8003,6 +8434,7 @@ mod test {
                 ack: TEST_IRS + 1,
                 wnd: WindowSize::DEFAULT,
                 wnd_scale: WindowScale::default(),
+                ts_opt: default_ts_opt_state(TEST_IRS+1),
             }
         }) => NewlyClosed::No; "non-closed to non-closed")]
     fn transition_to_state(
@@ -8043,7 +8475,7 @@ mod test {
         ] {
             // At the beginning, our last window update was greater than MSS, so there's no
             // need to send an update.
-            assert_matches!(state.poll_receive_data_dequeued(), None);
+            assert_matches!(state.poll_receive_data_dequeued(clock.now()), None);
             let expect_window_update = (TEST_IRS + 1, WindowSize::new(BUFFER_SIZE).unwrap());
             assert_eq!(state.recv_mut().unwrap().last_window_update, expect_window_update);
 
@@ -8070,7 +8502,7 @@ mod test {
                 DEFAULT_SEGMENT_OPTIONS,
             ));
             assert_eq!(seg, (expect_ack, None));
-            assert_matches!(state.poll_receive_data_dequeued(), None);
+            assert_matches!(state.poll_receive_data_dequeued(clock.now()), None);
 
             let expect_window_update = if delayed_ack {
                 expect_window_update
@@ -8104,7 +8536,7 @@ mod test {
                     // received data out of order.
                     assert_eq!(assembler.insert(gap_start..gap_start + 1), 0);
                     let expected_sack_blocks =
-                        assembler.sack_blocks(SackBlockSizeLimiters { timestamp_enabled: false });
+                        assembler.sack_blocks(SackBlockSizeLimiters { timestamp_enabled: true });
                     assert!(!expected_sack_blocks.is_empty());
                     expected_sack_blocks
                 } else {
@@ -8112,12 +8544,15 @@ mod test {
                 };
 
                 assert_eq!(
-                    state.poll_receive_data_dequeued(),
+                    state.poll_receive_data_dequeued(clock.now()),
                     Some(Segment::ack(
                         TEST_ISS + 1,
                         TEST_IRS + 1 + TEST_BYTES.len(),
                         UnscaledWindowSize::from(BUFFER_SIZE as u16),
-                        SegmentOptions { sack_blocks: expected_sack_blocks, timestamp: None },
+                        SegmentOptions {
+                            sack_blocks: expected_sack_blocks,
+                            timestamp: Some(DEFAULT_ACK_TS_OPT),
+                        },
                     ))
                 );
                 assert_eq!(
@@ -8130,15 +8565,14 @@ mod test {
                 // Dequeue data we just received, but not enough that will cause
                 // the window to be half open (given we're using a very small
                 // buffer size).
-                let mss: usize = TEST_MSS.get().into();
                 assert_eq!(
                     state.read_with(|available| {
                         assert_eq!(available, &[TEST_BYTES]);
-                        mss / 2 - 1
+                        TEST_BYTES.len() / 2 - 1
                     }),
-                    mss / 2 - 1
+                    TEST_BYTES.len() / 2 - 1
                 );
-                assert_eq!(state.poll_receive_data_dequeued(), None,);
+                assert_eq!(state.poll_receive_data_dequeued(clock.now()), None,);
                 assert_eq!(
                     state.recv_mut().unwrap().last_window_update,
                     // No change, no ACK was sent.
@@ -8154,11 +8588,13 @@ mod test {
         const MSS: Mss = Mss::new(65000).unwrap();
         const WINDOW: WindowSize = WindowSize::from_u32(500).unwrap();
         let mut recv = Recv::<FakeInstant, _> {
-            mss: EffectiveMss::from_mss(MSS, MssSizeLimiters { timestamp_enabled: false }),
+            mss: EffectiveMss::from_mss(MSS, MssSizeLimiters { timestamp_enabled: true }),
             last_window_update: (TEST_IRS + 1, WindowSize::from_u32(1).unwrap()),
             ..Recv::default_for_test(RingBuffer::new(WINDOW.into()))
         };
-        let seg = recv.poll_receive_data_dequeued(TEST_ISS).expect("generates segment");
+        let seg = recv
+            .poll_receive_data_dequeued(TEST_ISS, FakeInstant::default())
+            .expect("generates segment");
         assert_eq!(seg.header().ack, Some(recv.nxt()));
         assert_eq!(seg.header().wnd << recv.wnd_scale, WINDOW);
     }
@@ -8181,7 +8617,12 @@ mod test {
         while quickack != 0 {
             let seq = state.recv_mut().unwrap().nxt();
             let segment = Segment::new_assert_no_discard(
-                SegmentHeader { seq, ack: Some(TEST_ISS + 1), ..Default::default() },
+                SegmentHeader {
+                    seq,
+                    ack: Some(TEST_ISS + 1),
+                    options: DEFAULT_SEGMENT_OPTIONS.into(),
+                    ..Default::default()
+                },
                 &data[..],
             );
             let (seg, passive_open) = state.on_segment_with_options::<_, ClientlessBufferProvider>(
@@ -8206,6 +8647,7 @@ mod test {
             SegmentHeader {
                 seq: state.recv_mut().unwrap().nxt(),
                 ack: Some(TEST_ISS + 1),
+                options: DEFAULT_SEGMENT_OPTIONS.into(),
                 ..Default::default()
             },
             &data[..],
@@ -8236,6 +8678,7 @@ mod test {
                 // Generate a segment that is out of the receiving window.
                 seq: state.recv_mut().unwrap().nxt() - i32::try_from(data.len() + 1).unwrap(),
                 ack: Some(TEST_ISS + 1),
+                options: DEFAULT_SEGMENT_OPTIONS.into(),
                 ..Default::default()
             },
             &data[..],
@@ -8271,6 +8714,7 @@ mod test {
             SegmentHeader {
                 seq: state.recv_mut().unwrap().nxt(),
                 ack: Some(TEST_ISS + 1),
+                options: DEFAULT_SEGMENT_OPTIONS.into(),
                 ..Default::default()
             },
             &data[..],
@@ -8310,6 +8754,7 @@ mod test {
                 seq: seg_start,
                 ack: Some(TEST_ISS + 1),
                 wnd: WindowSize::DEFAULT >> WindowScale::default(),
+                options: DEFAULT_SEGMENT_OPTIONS.into(),
                 ..Default::default()
             },
             &data[..],
@@ -8348,18 +8793,18 @@ mod test {
         assert_eq!(sack_blocks, &expect);
         // If there are sack blocks, the segment length should have been
         // restricted.
-        let expect_len = if sack_permitted {
-            // Single SACK block (8 + 2) plus padding (2).
-            mss - 12
-        } else {
-            mss
-        };
+        let expect_len = mss - u32::try_from(seg.header().options.builder().bytes_len()).unwrap();
         assert_eq!(seg.len(), expect_len);
 
         // Now receive the out of order block, no SACK should be present
         // anymore.
         let segment = Segment::new_assert_no_discard(
-            SegmentHeader { seq: TEST_IRS + 1, ack: Some(TEST_ISS + 1), ..Default::default() },
+            SegmentHeader {
+                seq: TEST_IRS + 1,
+                ack: Some(TEST_ISS + 1),
+                options: DEFAULT_SEGMENT_OPTIONS.into(),
+                ..Default::default()
+            },
             &data[..],
         );
         let (seg, passive_open) = state
@@ -8585,7 +9030,7 @@ mod test {
     fn sack_recovery_rearms_rto() {
         let mss = EffectiveMss::from_mss(
             DEVICE_MAXIMUM_SEGMENT_SIZE,
-            MssSizeLimiters { timestamp_enabled: false },
+            MssSizeLimiters { timestamp_enabled: true },
         );
         let una = TEST_ISS + 1;
         let nxt = una + (u32::from(DUP_ACK_THRESHOLD) + 1) * u32::from(mss);
@@ -8640,7 +9085,7 @@ mod test {
                 .unwrap()]
                 .into_iter()
                 .collect(),
-                timestamp: None,
+                timestamp: Some(DEFAULT_ACK_TS_OPT),
             },
         );
         let (seg, passive_open, data_acked, newly_closed) = state
@@ -8719,7 +9164,7 @@ mod test {
 
         let mss = EffectiveMss::from_mss(
             DEVICE_MAXIMUM_SEGMENT_SIZE,
-            MssSizeLimiters { timestamp_enabled: false },
+            MssSizeLimiters { timestamp_enabled: true },
         );
         let generate_sack = match sack_permitted {
             SackPermitted::Yes => true,
@@ -8813,7 +9258,7 @@ mod test {
                         TEST_IRS + 1,
                         ack,
                         snd_wnd >> wnd_scale,
-                        SegmentOptions { sack_blocks, timestamp: None },
+                        SegmentOptions { sack_blocks, timestamp: Some(DEFAULT_ACK_TS_OPT) },
                     );
                     let (seg, passive_open, data_acked, newly_closed) = state
                         .on_segment::<_, ClientlessBufferProvider>(
@@ -8897,7 +9342,7 @@ mod test {
                     let _: usize = receiver.insert(seq..(seq + len));
                 }
                 let sack_blocks = if generate_sack {
-                    receiver.sack_blocks(SackBlockSizeLimiters { timestamp_enabled: false })
+                    receiver.sack_blocks(SackBlockSizeLimiters { timestamp_enabled: true })
                 } else {
                     SackBlocks::default()
                 };
@@ -8929,7 +9374,7 @@ mod test {
         let send_segments = u32::from(DUP_ACK_THRESHOLD + 2);
         let mss = EffectiveMss::from_mss(
             DEVICE_MAXIMUM_SEGMENT_SIZE,
-            MssSizeLimiters { timestamp_enabled: false },
+            MssSizeLimiters { timestamp_enabled: true },
         );
 
         let send_bytes = send_segments * u32::from(mss);
@@ -9013,7 +9458,10 @@ mod test {
             TEST_IRS + 1,
             start,
             snd_wnd >> wnd_scale,
-            SegmentOptions { sack_blocks: [sack_block].into_iter().collect(), timestamp: None },
+            SegmentOptions {
+                sack_blocks: [sack_block].into_iter().collect(),
+                timestamp: Some(DEFAULT_ACK_TS_OPT),
+            },
         );
         assert_eq!(
             state.on_segment::<_, ClientlessBufferProvider>(
@@ -9048,9 +9496,9 @@ mod test {
         let send_segments = 16;
         let mss = EffectiveMss::from_mss(
             DEVICE_MAXIMUM_SEGMENT_SIZE,
-            MssSizeLimiters { timestamp_enabled: false },
+            MssSizeLimiters { timestamp_enabled: true },
         );
-        let send_bytes = send_segments * u32::from(mss);
+        let send_bytes = send_segments * usize::from(mss);
         // Use a receiver window that can take 4 Mss at a time, so we should set
         // the PSH bit every 2 MSS.
         let snd_wnd = WindowSize::from_u32(4 * u32::from(mss)).unwrap();
@@ -9061,9 +9509,7 @@ mod test {
                 wnd_scale,
                 wnd: snd_wnd,
                 wnd_max: snd_wnd,
-                ..Send::default_for_test(RepeatingSendBuffer::new(
-                    usize::try_from(send_bytes).unwrap(),
-                ))
+                ..Send::default_for_test(RepeatingSendBuffer::new(send_bytes))
             }
             .into(),
             rcv: Recv::default_for_test(RingBuffer::default()).into(),
@@ -9108,5 +9554,283 @@ mod test {
                 (None, None, DataAcked::Yes, NewlyClosed::No)
             );
         }
+    }
+
+    #[test]
+    fn connect_with_timestamp_option() {
+        let mut alice_clock = FakeInstantCtx::default();
+        let mut bob_clock = FakeInstantCtx::default();
+        let counters = FakeTcpCounters::default();
+
+        // Use different timestamp offsets on both sides to make distinguishing
+        // the two sets of timestamps easier.
+        const ALICE_OFFSET: Timestamp<Milliseconds> = Timestamp::new(1000);
+        const BOB_OFFSET: Timestamp<Milliseconds> = Timestamp::new(2000);
+        let alice_time1 = (ALICE_OFFSET + alice_clock.now().offset).discard_unit();
+        let bob_time1 = (BOB_OFFSET + bob_clock.now().offset).discard_unit();
+        assert_ne!(alice_time1, bob_time1);
+
+        // Call connect on Alice's side and expect a SYN with an appropriate
+        // timestamp option.
+        let (alice_state, syn_seg) = Closed::<Initial>::connect(
+            ISS_1,
+            ALICE_OFFSET,
+            alice_clock.now(),
+            (),
+            Default::default(),
+            *TEST_MSS.mss(),
+            Mss::DEFAULT_IPV4,
+            &SocketOptions::default_for_state_tests(),
+        );
+        assert_eq!(syn_seg.header().control, Some(Control::SYN));
+        assert_eq!(syn_seg.header().ack, None);
+        assert_eq!(
+            *syn_seg.header().options.timestamp(),
+            Some(TimestampOption::new(alice_time1, TS_ECHO_REPLY_FOR_NON_ACKS))
+        );
+        let mut alice_state = State::<_, RingBuffer, RingBuffer, _>::SynSent(alice_state);
+
+        // Call listen on Bob's side and expect a SYN-ACK in response to Alice's
+        // initial SYN. The SYN-ACK's timestamp should echo back Alice's
+        // timestamp.
+        let mut bob_state =
+            State::<_, RingBuffer, RingBuffer, _>::Listen(Closed::<Initial>::listen(
+                ISS_2,
+                BOB_OFFSET,
+                Default::default(),
+                DEVICE_MAXIMUM_SEGMENT_SIZE,
+                Mss::DEFAULT_IPV4,
+                None,
+            ));
+        let syn_ack_seg = assert_matches!(
+            bob_state.on_segment_with_default_options::<(), ClientlessBufferProvider>(
+                syn_seg,
+                bob_clock.now(),
+                &counters.refs(),
+            ),
+            (Some(syn_ack_seg), _) => syn_ack_seg
+        );
+        assert_eq!(syn_ack_seg.header().control, Some(Control::SYN));
+        assert_eq!(syn_ack_seg.header().ack, Some(ISS_1 + 1));
+        assert_eq!(
+            *syn_ack_seg.header().options.timestamp(),
+            Some(TimestampOption::new(bob_time1, alice_time1))
+        );
+
+        // Receive the SYN-ACK on Alice's side and expect an ACK in response. It
+        // should echo back Bob's timestamp.
+        let ack_seg = assert_matches!(
+            alice_state.on_segment_with_default_options::<(), ClientlessBufferProvider>(
+                syn_ack_seg,
+                alice_clock.now(),
+                &counters.refs(),
+            ),
+            (Some(ack_seg), _) => ack_seg
+        );
+        assert_eq!(ack_seg.header().control, None);
+        assert_eq!(ack_seg.header().ack, Some(ISS_2 + 1));
+        assert_eq!(
+            *ack_seg.header().options.timestamp(),
+            Some(TimestampOption::new(alice_time1, bob_time1))
+        );
+        assert_matches!(
+            bob_state.on_segment_with_default_options::<(), ClientlessBufferProvider>(
+                ack_seg,
+                bob_clock.now(),
+                &counters.refs(),
+            ),
+            (None, _)
+        );
+
+        // Advance time so that both sides update timestamps.
+        // Note: The timestamp option doesn't place any requirements on both
+        // sides having a synchronized view of time. Advance the two clocks
+        // differently to exercise this allowed asymmetry.
+        alice_clock.sleep(RTT);
+        bob_clock.sleep(2 * RTT);
+
+        let alice_time2 = (ALICE_OFFSET + alice_clock.now().offset).discard_unit();
+        let bob_time2 = (BOB_OFFSET + bob_clock.now().offset).discard_unit();
+        assert_ne!(alice_time2, bob_time2);
+
+        // Send data from Alice's side. The timestamp option should include
+        // Alice's new time and Bob's old time.
+        assert_eq!(
+            alice_state
+                .buffers_mut()
+                .into_send_buffer()
+                .expect("should have a send buffer")
+                .enqueue_data(TEST_BYTES),
+            TEST_BYTES.len()
+        );
+        let data_seg = alice_state
+            .poll_send(
+                &FakeStateMachineDebugId::default(),
+                &counters.refs(),
+                alice_clock.now(),
+                &SocketOptions::default_for_state_tests(),
+            )
+            .expect("poll_send should succeed");
+        assert_eq!(data_seg.header().control, None);
+        assert_eq!(data_seg.header().ack, Some(ISS_2 + 1));
+        assert_eq!(
+            *data_seg.header().options.timestamp(),
+            Some(TimestampOption::new(alice_time2, bob_time1))
+        );
+
+        // Upon receiving Alice's data, Bob should respond with an ACK. The
+        // timestamp option should include Bob's new time and echo back Alice's
+        // new time.
+        let ack_seg = assert_matches!(
+            bob_state.on_segment_with_default_options::<_, ClientlessBufferProvider>(
+                data_seg,
+                bob_clock.now(),
+                &counters.refs(),
+            ),
+            (Some(ack_seg), _) => ack_seg
+        );
+        assert_eq!(ack_seg.header().control, None);
+        assert_eq!(ack_seg.header().ack, Some(ISS_1 + TEST_BYTES.len() + 1));
+        assert_eq!(
+            *ack_seg.header().options.timestamp(),
+            Some(TimestampOption::new(bob_time2, alice_time2))
+        );
+        assert_matches!(
+            alice_state.on_segment_with_default_options::<(), ClientlessBufferProvider>(
+                ack_seg,
+                alice_clock.now(),
+                &counters.refs(),
+            ),
+            (None, _)
+        );
+    }
+
+    #[test]
+    fn connect_without_timestamp_option() {
+        let clock = FakeInstantCtx::default();
+        let counters = FakeTcpCounters::default();
+        let (state, seg) = Closed::<Initial>::connect(
+            TEST_ISS,
+            TIMESTAMP_OFFSET,
+            clock.now(),
+            (),
+            Default::default(),
+            DEVICE_MAXIMUM_SEGMENT_SIZE,
+            Mss::DEFAULT_IPV4,
+            &SocketOptions::default_for_state_tests(),
+        );
+        // Expect to have sent a SYN advertising support for timestamps.
+        assert_eq!(
+            seg,
+            Segment::syn(
+                TEST_ISS,
+                UnscaledWindowSize::from(u16::MAX),
+                HandshakeOptions {
+                    mss: Some(DEVICE_MAXIMUM_SEGMENT_SIZE),
+                    window_scale: Some(WindowScale::default()),
+                    sack_permitted: SACK_PERMITTED,
+                    timestamp: Some(DEFAULT_NON_ACK_TS_OPT),
+                },
+            )
+        );
+
+        let mut state = State::SynSent::<_, RingBuffer, RingBuffer, _>(state);
+
+        // Simulate a SYN-ACK from a peer that does not support timestamps.
+        // Expect an ACK to be generated that omits the timestamp.
+        let (seg, passive_open) = state
+            .on_segment_with_default_options::<(), ClientlessBufferProvider>(
+                Segment::syn_ack(
+                    TEST_IRS,
+                    TEST_ISS + 1,
+                    UnscaledWindowSize::from(u16::MAX),
+                    HandshakeOptions {
+                        mss: Some(DEVICE_MAXIMUM_SEGMENT_SIZE),
+                        window_scale: Some(WindowScale::default()),
+                        sack_permitted: SACK_PERMITTED,
+                        timestamp: None,
+                    },
+                ),
+                clock.now(),
+                &counters.refs(),
+            );
+        assert_eq!(passive_open, None);
+        assert_eq!(
+            seg,
+            Some(Segment::ack(
+                TEST_ISS + 1,
+                TEST_IRS + 1,
+                UnscaledWindowSize::from(u16::MAX),
+                SegmentOptions { sack_blocks: SackBlocks::EMPTY, timestamp: None }
+            ))
+        );
+
+        // The connection should now be established, with timestamps disabled.
+        let (wl1, wl2, ts_opt, mss) = assert_matches!(
+            &state,
+            State::Established(Established {
+                snd: Takeable(Some(Send { wl1, wl2, .. })),
+                rcv: Takeable(Some(Recv { ts_opt, mss, ..})),
+            }) => (wl1, wl2, ts_opt, mss)
+        );
+        assert_eq!(*wl1, TEST_IRS);
+        assert_eq!(*wl2, TEST_ISS + 1);
+        assert_eq!(*ts_opt, TimestampOptionState::Disabled);
+        // NB: The EffectiveMss should account for the lack of Timestamps.
+        assert_eq!(
+            *mss,
+            EffectiveMss::from_mss(
+                DEVICE_MAXIMUM_SEGMENT_SIZE,
+                MssSizeLimiters { timestamp_enabled: false }
+            )
+        );
+    }
+
+    #[test]
+    fn segments_with_missing_timestamp_option() {
+        let clock = FakeInstantCtx::default();
+        let counters = FakeTcpCounters::default();
+        // An established connection that has negotiated the use of timestamps.
+        let mut established = State::Established(Established {
+            snd: Send::default_for_test(NullBuffer).into(),
+            rcv: Recv {
+                ts_opt: default_ts_opt_state(TEST_IRS + 1),
+                ..Recv::default_for_test(RingBuffer::new(BUFFER_SIZE))
+            }
+            .into(),
+        });
+
+        // Receive a segment that lacks the timestamp option. Although the RFC
+        // states we SHOULD drop such segments, we ignore the RFC recommendation
+        // for conformance with Linux. Expect the segment to be processed.
+        let (seg, passive_open) = established
+            .on_segment_with_default_options::<_, ClientlessBufferProvider>(
+                Segment::with_data(
+                    TEST_IRS + 1,
+                    TEST_ISS + 1,
+                    UnscaledWindowSize::from(0),
+                    SegmentOptions { sack_blocks: SackBlocks::EMPTY, timestamp: None },
+                    TEST_BYTES,
+                ),
+                clock.now(),
+                &counters.refs(),
+            );
+        assert_eq!(passive_open, None);
+        assert_eq!(
+            seg,
+            Some(Segment::ack(
+                TEST_ISS + 1,
+                TEST_IRS + 1 + TEST_BYTES.len(),
+                UnscaledWindowSize::from((BUFFER_SIZE - TEST_BYTES.len()) as u16),
+                DEFAULT_SEGMENT_OPTIONS,
+            )),
+        );
+        assert_eq!(
+            established.read_with(|available| {
+                assert_eq!(available, &[TEST_BYTES]);
+                available[0].len()
+            }),
+            TEST_BYTES.len()
+        );
     }
 }

@@ -59,9 +59,9 @@ var tcpHighperfExpectations map[AnvlCaseNumber]outcome.Outcome = map[AnvlCaseNum
 }
 
 var tcpHighperfExpectationsNS3 map[AnvlCaseNumber]outcome.Outcome = map[AnvlCaseNumber]outcome.Outcome{
-	{1, 17}: Fail,
+	{1, 17}: Pass,
 	{1, 18}: Pass,
-	{1, 19}: Fail,
+	{1, 19}: Pass,
 	{1, 20}: Pass,
 	{1, 21}: Pass,
 	{1, 22}: Pass,
@@ -72,29 +72,42 @@ var tcpHighperfExpectationsNS3 map[AnvlCaseNumber]outcome.Outcome = map[AnvlCase
 	{2, 21}: Pass,
 	{2, 22}: Pass,
 	{2, 23}: Fail,
-	{2, 24}: Fail,
-	{3, 17}: Fail,
-	{3, 18}: Fail,
-	{3, 19}: Fail,
-	{3, 20}: Fail,
-	{3, 21}: Fail,
-	{3, 22}: Fail,
-	{3, 23}: Fail,
-	{3, 24}: Fail,
-	{3, 25}: Fail,
-	{3, 26}: Fail,
-	{3, 27}: Fail,
-	{3, 28}: Fail,
-	{3, 29}: Fail,
+	{2, 24}: Pass,
+	{3, 17}: Pass,
+	{3, 18}: Pass,
+	{3, 19}: Pass,
+	{3, 20}: Pass,
+	// TODO(https://fxbug.dev/438960357): Use timestamps for RTT/RTO.
+	{3, 21}: Flaky,
+	{3, 22}: Pass,
+	{3, 23}: Pass,
+	{3, 24}: Pass,
+	{3, 25}: Pass,
+	{3, 26}: Pass,
+	{3, 27}: Pass,
+	{3, 28}: Pass,
+	// TODO(https://fxbug.dev/438960357): Use timestamps for RTT/RTO.
+	{3, 29}: Flaky,
+	// This test is incompatible with Netstack3's quick ack implementation to
+	// accelerate slow start. See https://fxbug.dev/450061853.
 	{3, 30}: Fail,
-	{3, 31}: Fail,
-	{3, 32}: Fail,
+	{3, 31}: Pass,
+	{3, 32}: Pass,
+	// TODO(https://fxbug.dev/438961717): Support TCP PAWS.
 	{4, 17}: Fail,
+	// TODO(https://fxbug.dev/438961717): Support TCP PAWS.
 	{4, 18}: Fail,
-	{4, 19}: Fail,
-	{4, 20}: Pass,
-	{5, 18}: Fail,
-	{5, 19}: Fail,
+	{4, 19}: Pass,
+	// This test verifies that TCP timestamps use a clock speed no-faster than
+	// 1 tick per millisecond. It times the difference between two TCP segments
+	// with millisecond precision, and asserts that the difference in timestamp
+	// is appropriate. Because Netstack3 uses a millisecond timer, were right up
+	// against the allowed lower bound. That fact alongside CQ timing randomness
+	// leads to this test flaking.
+	{4, 20}: Flaky,
+	{5, 18}: Pass,
+	{5, 19}: Pass,
+	// TODO(https://fxbug.dev/438961717): Support TCP PAWS.
 	{5, 20}: Fail,
 	{5, 21}: Pass,
 	{6, 17}: Pass,

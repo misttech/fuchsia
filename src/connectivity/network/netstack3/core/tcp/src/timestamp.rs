@@ -4,10 +4,6 @@
 
 //! TCP Timestamp Option as defined in RFC 7323.
 
-// TODO(https://fxbug.dev/436529062) Integrate the timestamp option into the
-// TCP state machine.
-#![allow(dead_code)]
-
 use core::time::Duration;
 
 use netstack3_base::{
@@ -31,7 +27,7 @@ pub const IS_TS_OPT_LOCALLY_ENABLED: bool = true;
 pub(super) const TS_ECHO_REPLY_FOR_NON_ACKS: Timestamp<Unitless> = Timestamp::new(0);
 
 /// State used to calculate the `ts_val` to populate in timestamp options.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct TimestampValueState<I> {
     /// A randomized offset to apply to our timestamps.
     pub(super) offset: Timestamp<Milliseconds>,
@@ -48,7 +44,7 @@ impl<I: Instant> TimestampValueState<I> {
 
 /// State held for a TCP connection that is in the process of negotiating
 /// the timestamp option (e.g. is undergoing the TCP handshake).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) enum TimestampOptionNegotiationState<I> {
     /// The timestamp option is not being negotiated for this connection.
     Disabled,
@@ -89,7 +85,7 @@ impl<I: Instant> TimestampOptionNegotiationState<I> {
 }
 
 /// State held for each TCP connection regarding the timestamp option.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) enum TimestampOptionState<I> {
     /// The timestamp option is not in use for this connection.
     Disabled,
@@ -331,7 +327,7 @@ mod test {
         let now = FakeInstant { offset: Duration::from_millis(10) };
 
         assert_eq!(
-            TimestampOptionNegotiationState::Negotiating(ts_val).make_option_for_syn(now),
+            TimestampOptionNegotiationState::Negotiating(ts_val.clone()).make_option_for_syn(now),
             Some(TxTimestampOption {
                 ts_val: Timestamp::new(15),
                 ts_echo_reply: TS_ECHO_REPLY_FOR_NON_ACKS
