@@ -11,7 +11,9 @@ use crate::types::environment::{
     DebugRegistration, Environment, EnvironmentExtends, EnvironmentRef, RunnerRegistration,
 };
 use crate::types::expose::{Expose, ExposeFromRef, ExposeToRef};
-use crate::types::offer::{Offer, OfferFromRef, OfferToRef, TargetAvailability};
+use crate::types::offer::{
+    Offer, OfferFromRef, OfferToRef, TargetAvailability, offer_to_all_would_duplicate,
+};
 use crate::types::right::RightsClause;
 use crate::types::r#use::{Use, UseFromRef};
 use crate::validate::CapabilityRequirements;
@@ -19,7 +21,7 @@ use crate::{
     AnyRef, AsClause, Availability, Capability, CapabilityClause, ConfigKey, ConfigNestedValueType,
     ConfigRuntimeSource, ConfigType, ConfigValueType, DictionaryRef, EventScope, FromClause,
     OneOrMany, Path, PathClause, Program, ResolverRegistration, RootDictionaryRef,
-    SourceAvailability, offer_to_all_would_duplicate, validate,
+    SourceAvailability, validate,
 };
 use cm_rust::NativeIntoFidl;
 use cm_types::{self as cm, BorrowedName, Name};
@@ -2190,9 +2192,9 @@ mod tests {
     use crate::error::Error;
     use crate::features::Feature;
     use crate::translate::test_util::must_parse_cml;
+    use crate::types::offer::create_offer;
     use crate::{
         AsClause, CapabilityClause, Document, FromClause, OneOrMany, Path, PathClause, Program,
-        create_offer,
     };
     use assert_matches::assert_matches;
     use cm_fidl_validator::error::{AvailabilityList, DeclField, Error as CmFidlError, ErrorList};

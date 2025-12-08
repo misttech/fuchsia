@@ -11,8 +11,8 @@ use crate::types::document::{Document, DocumentContext};
 use crate::types::environment::{Environment, EnvironmentExtends, RegistrationRef};
 use crate::types::expose::{ContextExpose, Expose, ExposeFromRef, ExposeToRef};
 use crate::types::offer::{
-    ContextOffer, Offer, OfferFromRef, OfferToRef, TargetAvailability,
-    offer_to_all_would_duplicate_context,
+    ContextOffer, Offer, OfferFromRef, OfferToAllCapability, OfferToRef, TargetAvailability,
+    offer_to_all_would_duplicate, offer_to_all_would_duplicate_context,
 };
 use crate::types::right::Rights;
 use crate::types::r#use::{ContextUse, Use, UseFromRef};
@@ -20,10 +20,9 @@ use crate::{
     AnyRef, Availability, CapabilityClause, ConfigKey, ConfigType, ConfigValueType,
     ContextCapabilityClause, ContextSpanned, DependencyType, DictionaryRef, Error, EventScope,
     FromClause, FromClauseContext, OneOrMany, Origin, Program, RootDictionaryRef,
-    SourceAvailability, offer_to_all_would_duplicate,
+    SourceAvailability,
 };
 use cm_types::{BorrowedName, IterablePath, Name};
-use itertools::Either;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::hash::Hash;
 use std::path::Path;
@@ -48,55 +47,10 @@ impl<'a> MustUseRequirement<'a> {
     }
 }
 
-#[derive(PartialEq, Clone)]
-pub enum OfferToAllCapability<'a> {
-    Dictionary(&'a str),
-    Protocol(&'a str),
-}
-
 macro_rules! val {
     ($field:expr) => {
         $field.as_ref().map(|s| &s.value)
     };
-}
-
-impl<'a> OfferToAllCapability<'a> {
-    pub fn name(&self) -> &'a str {
-        match self {
-            OfferToAllCapability::Dictionary(name) => name,
-            OfferToAllCapability::Protocol(name) => name,
-        }
-    }
-
-    pub fn offer_type(&self) -> &'static str {
-        match self {
-            OfferToAllCapability::Dictionary(_) => "Dictionary",
-            OfferToAllCapability::Protocol(_) => "Protocol",
-        }
-    }
-
-    pub fn offer_type_plural(&self) -> &'static str {
-        match self {
-            OfferToAllCapability::Dictionary(_) => "dictionaries",
-            OfferToAllCapability::Protocol(_) => "protocols",
-        }
-    }
-}
-
-pub fn offer_to_all_from_offer(value: &Offer) -> impl Iterator<Item = OfferToAllCapability<'_>> {
-    if let Some(protocol) = &value.protocol {
-        Either::Left(
-            protocol.iter().map(|protocol| OfferToAllCapability::Protocol(protocol.as_str())),
-        )
-    } else if let Some(dictionary) = &value.dictionary {
-        Either::Right(
-            dictionary
-                .iter()
-                .map(|dictionary| OfferToAllCapability::Dictionary(dictionary.as_str())),
-        )
-    } else {
-        panic!("Expected a dictionary or a protocol");
-    }
 }
 
 /// Validates a given cml.
@@ -3099,7 +3053,7 @@ where
 mod tests {
     use super::*;
     use crate::error::Location;
-    use crate::{
+    use crate::types::offer::{
         offer_to_all_and_component_diff_capabilities_message,
         offer_to_all_and_component_diff_sources_message,
     };

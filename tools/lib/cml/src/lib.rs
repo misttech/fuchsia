@@ -24,12 +24,10 @@ use maplit::{hashmap, hashset};
 use serde::{Deserialize, Serialize, de, ser};
 use serde_json::{Map, Value};
 use std::fmt;
-use std::fmt::Write;
 use std::hash::Hash;
 use std::num::NonZeroU32;
 use std::str::FromStr;
 use std::sync::Arc;
-use validate::offer_to_all_from_offer;
 
 pub use crate::types::capability::{Capability, CapabilityFromRef, ContextCapability};
 pub use crate::types::capability_id::CapabilityId;
@@ -41,7 +39,9 @@ pub use crate::types::document::{
 };
 pub use crate::types::environment::{Environment, ResolverRegistration};
 pub use crate::types::expose::{ContextExpose, Expose};
-pub use crate::types::offer::{Offer, OfferFromRef, OfferToRef};
+pub use crate::types::offer::{
+    Offer, OfferFromRef, OfferToAllCapability, OfferToRef, offer_to_all_from_offer,
+};
 pub use crate::types::program::Program;
 pub use crate::types::r#use::{Use, UseFromRef};
 
@@ -54,7 +54,7 @@ use error::Location;
 
 pub use crate::one_or_many::OneOrMany;
 pub use crate::translate::{CompileOptions, compile};
-pub use crate::validate::{CapabilityRequirements, MustUseRequirement, OfferToAllCapability};
+pub use crate::validate::{CapabilityRequirements, MustUseRequirement};
 
 /// Parses a string `buffer` into a [Document]. `file` is used for error reporting.
 pub fn parse_one_document(buffer: &String, file: &std::path::Path) -> Result<Document, Error> {
@@ -144,7 +144,7 @@ pub struct OneOrManyPaths;
 )]
 pub struct OneOrManyEventScope;
 
-/// A reference in an `offer to`.
+/// A reference in an `offer to` or `exose to`.
 #[derive(Debug, Deserialize, PartialEq, Eq, Hash, Clone, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SourceAvailability {
@@ -952,116 +952,6 @@ pub fn format_cml(buffer: &str, file: Option<&std::path::Path>) -> Result<Vec<u8
 
     json5format::format(buffer, file.map(|f| f.to_string_lossy().to_string()), Some(options))
         .map_err(|e| Error::json5(e, file))
-}
-
-pub fn offer_to_all_and_component_diff_sources_message<'a>(
-    capability: impl Iterator<Item = OfferToAllCapability<'a>>,
-    component: &str,
-) -> String {
-    let mut output = String::new();
-    let mut capability = capability.peekable();
-    write!(&mut output, "{} ", capability.peek().unwrap().offer_type()).unwrap();
-    for (i, capability) in capability.enumerate() {
-        if i > 0 {
-            write!(&mut output, ", ").unwrap();
-        }
-        write!(&mut output, "{}", capability.name()).unwrap();
-    }
-    write!(
-        &mut output,
-        r#" is offered to both "all" and child component "{}" with different sources"#,
-        component
-    )
-    .unwrap();
-    output
-}
-
-pub fn offer_to_all_and_component_diff_capabilities_message<'a>(
-    capability: impl Iterator<Item = OfferToAllCapability<'a>>,
-    component: &str,
-) -> String {
-    let mut output = String::new();
-    let mut capability_peek = capability.peekable();
-
-    // Clone is needed so the iterator can be moved forward.
-    // This doesn't actually allocate memory or copy a string, as only the reference
-    // held by the OfferToAllCapability<'a> is copied.
-    let first_offer_to_all = capability_peek.peek().unwrap().clone();
-    write!(&mut output, "{} ", first_offer_to_all.offer_type()).unwrap();
-    for (i, capability) in capability_peek.enumerate() {
-        if i > 0 {
-            write!(&mut output, ", ").unwrap();
-        }
-        write!(&mut output, "{}", capability.name()).unwrap();
-    }
-    write!(&mut output, r#" is aliased to "{}" with the same name as an offer to "all", but from different source {}"#, component, first_offer_to_all.offer_type_plural()).unwrap();
-    output
-}
-
-/// Returns `Ok(true)` if desugaring the `offer_to_all` using `name` duplicates
-/// `specific_offer`. Returns `Ok(false)` if not a duplicate.
-///
-/// Returns Err if there is a validation error.
-pub fn offer_to_all_would_duplicate(
-    offer_to_all: &Offer,
-    specific_offer: &Offer,
-    target: &cm_types::BorrowedName,
-) -> Result<bool, Error> {
-    // Only protocols and dictionaries may be offered to all
-    assert!(offer_to_all.protocol.is_some() || offer_to_all.dictionary.is_some());
-
-    // If none of the pairs of the cross products of the two offer's protocols
-    // match, then the offer is certainly not a duplicate
-    if CapabilityId::from_offer_expose(specific_offer).iter().flatten().all(
-        |specific_offer_cap_id| {
-            CapabilityId::from_offer_expose(offer_to_all)
-                .iter()
-                .flatten()
-                .all(|offer_to_all_cap_id| offer_to_all_cap_id != specific_offer_cap_id)
-        },
-    ) {
-        return Ok(false);
-    }
-
-    let to_field_matches = specific_offer.to.iter().any(
-        |specific_offer_to| matches!(specific_offer_to, OfferToRef::Named(c) if **c == *target),
-    );
-
-    if !to_field_matches {
-        return Ok(false);
-    }
-
-    if offer_to_all.from != specific_offer.from {
-        return Err(Error::validate(offer_to_all_and_component_diff_sources_message(
-            offer_to_all_from_offer(offer_to_all),
-            target.as_str(),
-        )));
-    }
-
-    // Since the capability ID's match, the underlying protocol must also match
-    if offer_to_all_from_offer(offer_to_all).all(|to_all_protocol| {
-        offer_to_all_from_offer(specific_offer)
-            .all(|to_specific_protocol| to_all_protocol != to_specific_protocol)
-    }) {
-        return Err(Error::validate(offer_to_all_and_component_diff_capabilities_message(
-            offer_to_all_from_offer(offer_to_all),
-            target.as_str(),
-        )));
-    }
-
-    Ok(true)
-}
-
-#[cfg(test)]
-pub fn create_offer(
-    protocol_name: &str,
-    from: OneOrMany<OfferFromRef>,
-    to: OneOrMany<OfferToRef>,
-) -> Offer {
-    Offer {
-        protocol: Some(OneOrMany::One(Name::from_str(protocol_name).unwrap())),
-        ..Offer::empty(from, to)
-    }
 }
 
 #[cfg(test)]
@@ -2040,95 +1930,6 @@ mod tests {
         let expected =
             document(json!({ "program": { "binary": "bin/hello_world", "runner": "elf" } }));
         assert_eq!(some.program, expected.program);
-    }
-
-    #[test]
-    fn test_offer_would_duplicate() {
-        let offer = create_offer(
-            "fuchsia.logger.LegacyLog",
-            OneOrMany::One(OfferFromRef::Parent {}),
-            OneOrMany::One(OfferToRef::Named(Name::from_str("something").unwrap())),
-        );
-
-        let offer_to_all = create_offer(
-            "fuchsia.logger.LogSink",
-            OneOrMany::One(OfferFromRef::Parent {}),
-            OneOrMany::One(OfferToRef::All),
-        );
-
-        // different protocols
-        assert!(
-            !offer_to_all_would_duplicate(
-                &offer_to_all,
-                &offer,
-                &Name::from_str("something").unwrap()
-            )
-            .unwrap()
-        );
-
-        let offer = create_offer(
-            "fuchsia.logger.LogSink",
-            OneOrMany::One(OfferFromRef::Parent {}),
-            OneOrMany::One(OfferToRef::Named(Name::from_str("not-something").unwrap())),
-        );
-
-        // different targets
-        assert!(
-            !offer_to_all_would_duplicate(
-                &offer_to_all,
-                &offer,
-                &Name::from_str("something").unwrap()
-            )
-            .unwrap()
-        );
-
-        let mut offer = create_offer(
-            "fuchsia.logger.LogSink",
-            OneOrMany::One(OfferFromRef::Parent {}),
-            OneOrMany::One(OfferToRef::Named(Name::from_str("something").unwrap())),
-        );
-
-        offer.r#as = Some(Name::from_str("FakeLog").unwrap());
-
-        // target has alias
-        assert!(
-            !offer_to_all_would_duplicate(
-                &offer_to_all,
-                &offer,
-                &Name::from_str("something").unwrap()
-            )
-            .unwrap()
-        );
-
-        let offer = create_offer(
-            "fuchsia.logger.LogSink",
-            OneOrMany::One(OfferFromRef::Parent {}),
-            OneOrMany::One(OfferToRef::Named(Name::from_str("something").unwrap())),
-        );
-
-        assert!(
-            offer_to_all_would_duplicate(
-                &offer_to_all,
-                &offer,
-                &Name::from_str("something").unwrap()
-            )
-            .unwrap()
-        );
-
-        let offer = create_offer(
-            "fuchsia.logger.LogSink",
-            OneOrMany::One(OfferFromRef::Named(Name::from_str("other").unwrap())),
-            OneOrMany::One(OfferToRef::Named(Name::from_str("something").unwrap())),
-        );
-
-        assert!(
-            offer_to_all_would_duplicate(
-                &offer_to_all,
-                &offer,
-                &Name::from_str("something").unwrap()
-            )
-            .is_err()
-        );
     }
 
     #[test_case(

@@ -5,10 +5,8 @@
 use crate::types::common::*;
 use crate::{
     AnyRef, AsClause, AsClauseContext, Canonicalize, CapabilityClause, CapabilityId, DictionaryRef,
-    Error, EventScope, FromClause, FromClauseContext, OfferToAllCapability, PathClause,
-    SourceAvailability, offer_to_all_and_component_diff_capabilities_message,
-    offer_to_all_and_component_diff_sources_message, one_or_many_from_context,
-    one_or_many_from_impl, option_one_or_many_as_ref,
+    Error, EventScope, FromClause, FromClauseContext, PathClause, SourceAvailability,
+    one_or_many_from_context, one_or_many_from_impl, option_one_or_many_as_ref,
 };
 
 use crate::one_or_many::OneOrMany;
@@ -24,7 +22,10 @@ use reference_doc::ReferenceDoc;
 use serde::{Deserialize, Serialize};
 
 use std::fmt;
+use std::fmt::Write;
 use std::path::PathBuf;
+#[allow(unused)] // A test-only macro is defined outside of a test builds.
+use std::str::FromStr;
 use std::sync::Arc;
 
 /// Example:
@@ -385,6 +386,148 @@ pub enum TargetAvailability {
     Unknown,
 }
 
+#[derive(PartialEq, Clone)]
+pub enum OfferToAllCapability<'a> {
+    Dictionary(&'a str),
+    Protocol(&'a str),
+}
+
+impl<'a> OfferToAllCapability<'a> {
+    pub fn name(&self) -> &'a str {
+        match self {
+            OfferToAllCapability::Dictionary(name) => name,
+            OfferToAllCapability::Protocol(name) => name,
+        }
+    }
+
+    pub fn offer_type(&self) -> &'static str {
+        match self {
+            OfferToAllCapability::Dictionary(_) => "Dictionary",
+            OfferToAllCapability::Protocol(_) => "Protocol",
+        }
+    }
+
+    pub fn offer_type_plural(&self) -> &'static str {
+        match self {
+            OfferToAllCapability::Dictionary(_) => "dictionaries",
+            OfferToAllCapability::Protocol(_) => "protocols",
+        }
+    }
+}
+
+pub fn offer_to_all_from_offer(value: &Offer) -> impl Iterator<Item = OfferToAllCapability<'_>> {
+    if let Some(protocol) = &value.protocol {
+        Either::Left(
+            protocol.iter().map(|protocol| OfferToAllCapability::Protocol(protocol.as_str())),
+        )
+    } else if let Some(dictionary) = &value.dictionary {
+        Either::Right(
+            dictionary
+                .iter()
+                .map(|dictionary| OfferToAllCapability::Dictionary(dictionary.as_str())),
+        )
+    } else {
+        panic!("Expected a dictionary or a protocol");
+    }
+}
+pub fn offer_to_all_and_component_diff_sources_message<'a>(
+    capability: impl Iterator<Item = OfferToAllCapability<'a>>,
+    component: &str,
+) -> String {
+    let mut output = String::new();
+    let mut capability = capability.peekable();
+    write!(&mut output, "{} ", capability.peek().unwrap().offer_type()).unwrap();
+    for (i, capability) in capability.enumerate() {
+        if i > 0 {
+            write!(&mut output, ", ").unwrap();
+        }
+        write!(&mut output, "{}", capability.name()).unwrap();
+    }
+    write!(
+        &mut output,
+        r#" is offered to both "all" and child component "{}" with different sources"#,
+        component
+    )
+    .unwrap();
+    output
+}
+
+pub fn offer_to_all_and_component_diff_capabilities_message<'a>(
+    capability: impl Iterator<Item = OfferToAllCapability<'a>>,
+    component: &str,
+) -> String {
+    let mut output = String::new();
+    let mut capability_peek = capability.peekable();
+
+    // Clone is needed so the iterator can be moved forward.
+    // This doesn't actually allocate memory or copy a string, as only the reference
+    // held by the OfferToAllCapability<'a> is copied.
+    let first_offer_to_all = capability_peek.peek().unwrap().clone();
+    write!(&mut output, "{} ", first_offer_to_all.offer_type()).unwrap();
+    for (i, capability) in capability_peek.enumerate() {
+        if i > 0 {
+            write!(&mut output, ", ").unwrap();
+        }
+        write!(&mut output, "{}", capability.name()).unwrap();
+    }
+    write!(&mut output, r#" is aliased to "{}" with the same name as an offer to "all", but from different source {}"#, component, first_offer_to_all.offer_type_plural()).unwrap();
+    output
+}
+
+/// Returns `Ok(true)` if desugaring the `offer_to_all` using `name` duplicates
+/// `specific_offer`. Returns `Ok(false)` if not a duplicate.
+///
+/// Returns Err if there is a validation error.
+pub fn offer_to_all_would_duplicate(
+    offer_to_all: &Offer,
+    specific_offer: &Offer,
+    target: &cm_types::BorrowedName,
+) -> Result<bool, Error> {
+    // Only protocols and dictionaries may be offered to all
+    assert!(offer_to_all.protocol.is_some() || offer_to_all.dictionary.is_some());
+
+    // If none of the pairs of the cross products of the two offer's protocols
+    // match, then the offer is certainly not a duplicate
+    if CapabilityId::from_offer_expose(specific_offer).iter().flatten().all(
+        |specific_offer_cap_id| {
+            CapabilityId::from_offer_expose(offer_to_all)
+                .iter()
+                .flatten()
+                .all(|offer_to_all_cap_id| offer_to_all_cap_id != specific_offer_cap_id)
+        },
+    ) {
+        return Ok(false);
+    }
+
+    let to_field_matches = specific_offer.to.iter().any(
+        |specific_offer_to| matches!(specific_offer_to, OfferToRef::Named(c) if **c == *target),
+    );
+
+    if !to_field_matches {
+        return Ok(false);
+    }
+
+    if offer_to_all.from != specific_offer.from {
+        return Err(Error::validate(offer_to_all_and_component_diff_sources_message(
+            offer_to_all_from_offer(offer_to_all),
+            target.as_str(),
+        )));
+    }
+
+    // Since the capability ID's match, the underlying protocol must also match
+    if offer_to_all_from_offer(offer_to_all).all(|to_all_protocol| {
+        offer_to_all_from_offer(specific_offer)
+            .all(|to_specific_protocol| to_all_protocol != to_specific_protocol)
+    }) {
+        return Err(Error::validate(offer_to_all_and_component_diff_capabilities_message(
+            offer_to_all_from_offer(offer_to_all),
+            target.as_str(),
+        )));
+    }
+
+    Ok(true)
+}
+
 /// A reference in an `offer from`.
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Reference)]
 #[reference(
@@ -636,7 +779,7 @@ impl Hydrate for ParsedOffer {
     }
 }
 
-pub fn offer_to_all_from_offer(
+pub fn offer_to_all_from_context_offer(
     value: &ContextOffer,
 ) -> impl Iterator<Item = OfferToAllCapability<'_>> {
     if let Some(protocol) = &value.protocol {
@@ -691,7 +834,7 @@ pub fn offer_to_all_would_duplicate_context(
     if offer_to_all.value.from != specific_offer.value.from {
         return Err(Error::validate_contexts(
             offer_to_all_and_component_diff_sources_message(
-                offer_to_all_from_offer(&offer_to_all.value),
+                offer_to_all_from_context_offer(&offer_to_all.value),
                 target.as_str(),
             ),
             vec![offer_to_all.origin.clone(), specific_offer.origin.clone()],
@@ -699,13 +842,13 @@ pub fn offer_to_all_would_duplicate_context(
     }
 
     // Since the capability ID's match, the underlying protocol must also match
-    if offer_to_all_from_offer(&offer_to_all.value).all(|to_all_protocol| {
-        offer_to_all_from_offer(&specific_offer.value)
+    if offer_to_all_from_context_offer(&offer_to_all.value).all(|to_all_protocol| {
+        offer_to_all_from_context_offer(&specific_offer.value)
             .all(|to_specific_protocol| to_all_protocol != to_specific_protocol)
     }) {
         return Err(Error::validate_contexts(
             offer_to_all_and_component_diff_capabilities_message(
-                offer_to_all_from_offer(&offer_to_all.value),
+                offer_to_all_from_context_offer(&offer_to_all.value),
                 target.as_str(),
             ),
             vec![offer_to_all.origin.clone(), specific_offer.origin.clone()],
@@ -713,4 +856,110 @@ pub fn offer_to_all_would_duplicate_context(
     }
 
     Ok(true)
+}
+
+#[cfg(test)]
+pub fn create_offer(
+    protocol_name: &str,
+    from: OneOrMany<OfferFromRef>,
+    to: OneOrMany<OfferToRef>,
+) -> Offer {
+    Offer {
+        protocol: Some(OneOrMany::One(Name::from_str(protocol_name).unwrap())),
+        ..Offer::empty(from, to)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_offer_would_duplicate() {
+        let offer = create_offer(
+            "fuchsia.logger.LegacyLog",
+            OneOrMany::One(OfferFromRef::Parent {}),
+            OneOrMany::One(OfferToRef::Named(Name::from_str("something").unwrap())),
+        );
+
+        let offer_to_all = create_offer(
+            "fuchsia.logger.LogSink",
+            OneOrMany::One(OfferFromRef::Parent {}),
+            OneOrMany::One(OfferToRef::All),
+        );
+
+        // different protocols
+        assert!(
+            !offer_to_all_would_duplicate(
+                &offer_to_all,
+                &offer,
+                &Name::from_str("something").unwrap()
+            )
+            .unwrap()
+        );
+
+        let offer = create_offer(
+            "fuchsia.logger.LogSink",
+            OneOrMany::One(OfferFromRef::Parent {}),
+            OneOrMany::One(OfferToRef::Named(Name::from_str("not-something").unwrap())),
+        );
+
+        // different targets
+        assert!(
+            !offer_to_all_would_duplicate(
+                &offer_to_all,
+                &offer,
+                &Name::from_str("something").unwrap()
+            )
+            .unwrap()
+        );
+
+        let mut offer = create_offer(
+            "fuchsia.logger.LogSink",
+            OneOrMany::One(OfferFromRef::Parent {}),
+            OneOrMany::One(OfferToRef::Named(Name::from_str("something").unwrap())),
+        );
+
+        offer.r#as = Some(Name::from_str("FakeLog").unwrap());
+
+        // target has alias
+        assert!(
+            !offer_to_all_would_duplicate(
+                &offer_to_all,
+                &offer,
+                &Name::from_str("something").unwrap()
+            )
+            .unwrap()
+        );
+
+        let offer = create_offer(
+            "fuchsia.logger.LogSink",
+            OneOrMany::One(OfferFromRef::Parent {}),
+            OneOrMany::One(OfferToRef::Named(Name::from_str("something").unwrap())),
+        );
+
+        assert!(
+            offer_to_all_would_duplicate(
+                &offer_to_all,
+                &offer,
+                &Name::from_str("something").unwrap()
+            )
+            .unwrap()
+        );
+
+        let offer = create_offer(
+            "fuchsia.logger.LogSink",
+            OneOrMany::One(OfferFromRef::Named(Name::from_str("other").unwrap())),
+            OneOrMany::One(OfferToRef::Named(Name::from_str("something").unwrap())),
+        );
+
+        assert!(
+            offer_to_all_would_duplicate(
+                &offer_to_all,
+                &offer,
+                &Name::from_str("something").unwrap()
+            )
+            .is_err()
+        );
+    }
 }
