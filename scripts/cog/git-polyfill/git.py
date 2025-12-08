@@ -288,6 +288,11 @@ class LsFilesCommand(GitSubCommand):
             metavar="<format>",
             help="A string that interpolates %(fieldname) from the result being shown.",
         )
+        parser.add_argument(
+            "--exclude-standard",
+            action="store_true",
+            help="Exclude the standard git files.",
+        )
         parser.add_argument("file", nargs="*", help="Files to show.")
 
     def execute(
