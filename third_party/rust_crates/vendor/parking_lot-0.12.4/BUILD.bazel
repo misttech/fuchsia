@@ -78,6 +78,6 @@ rust_library(
     version = "0.12.4",
     deps = [
         "//third_party/rust_crates/vendor/lock_api-0.4.13:lock_api",
-        "//third_party/rust_crates/vendor/parking_lot_core-0.9.11:parking_lot_core",
+        "//third_party/rust_crates/vendor/parking_lot_core-0.9.12:parking_lot_core",
     ],
 )

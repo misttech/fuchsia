@@ -686,7 +686,7 @@ if (!(current_os == "fuchsia")) {
 
 if (!(current_os == "fuchsia")) {
   group("parking_lot_core") {
-    public_deps = [ ":parking_lot_core-v0_9_11" ]
+    public_deps = [ ":parking_lot_core-v0_9_12" ]
   }
 }
 
@@ -11895,7 +11895,7 @@ rustc_library("parking_lot-v0_12_4") {
 
   deps = []
   deps += [ ":lock_api-v0_4_13" ]
-  deps += [ ":parking_lot_core-v0_9_11" ]
+  deps += [ ":parking_lot_core-v0_9_12" ]
 
   rustenv = []
 
@@ -11961,19 +11961,19 @@ rustc_library("parking_lot_core-v0_8_3") {
   applicable_licenses = [ ":parking_lot_core-v0_8_3.license" ]
 }
 
-license("parking_lot_core-v0_9_11.license") {
+license("parking_lot_core-v0_9_12.license") {
   public_package_name = "parking_lot_core"
   license_files = [
-    "//third_party/rust_crates/vendor/parking_lot_core-0.9.11/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/parking_lot_core-0.9.11/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/parking_lot_core-0.9.12/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/parking_lot_core-0.9.12/LICENSE-MIT",
   ]
 }
 
-rustc_library("parking_lot_core-v0_9_11") {
+rustc_library("parking_lot_core-v0_9_12") {
   crate_name = "parking_lot_core"
   source_root =
-      "//third_party/rust_crates/vendor/parking_lot_core-0.9.11/src/lib.rs"
-  output_name = "parking_lot_core-160a58f59f396e4e"
+      "//third_party/rust_crates/vendor/parking_lot_core-0.9.12/src/lib.rs"
+  output_name = "parking_lot_core-ed94bf345736bbbc"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -11989,15 +11989,15 @@ rustc_library("parking_lot_core-v0_9_11") {
     deps += [ ":libc-v0_2_174" ]
   }
   if (false) {
-    deps += [ ":windows-targets-v0_52_6" ]
+    deps += [ ":windows-link-v0_2_1" ]
   }
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=160a58f59f396e4e",
-    "-Cextra-filename=-160a58f59f396e4e",
+    "-Cmetadata=ed94bf345736bbbc",
+    "-Cextra-filename=-ed94bf345736bbbc",
   ]
 
   aliased_deps = {
@@ -12005,7 +12005,7 @@ rustc_library("parking_lot_core-v0_9_11") {
   }
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":parking_lot_core-v0_9_11.license" ]
+  applicable_licenses = [ ":parking_lot_core-v0_9_12.license" ]
 }
 
 license("paste-v1_0_15.license") {
@@ -21261,31 +21261,6 @@ rustc_library("windows-sys-v0_60_2") {
     "-Cextra-filename=-d52d8ffb6acbef0d",
     "--cfg=feature=\"Win32_Foundation\"",
     "--cfg=feature=\"Win32_System_Threading\"",
-  ]
-
-  visibility = [ ":*" ]
-
-  applicable_licenses = [ "//build/licenses:fuchsia_license" ]
-}
-
-rustc_library("windows-targets-v0_52_6") {
-  crate_name = "windows_targets"
-  source_root =
-      "//third_party/rust_crates/empty/windows-targets-0.52.6/src/lib.rs"
-  output_name = "windows_targets-fe5c5a409b973a40"
-  edition = "2015"
-  disable_clippy = true
-  enforce_source_listing = false
-  configs -= [ "//build/config/rust:2018_idioms" ]
-
-  deps = []
-
-  rustenv = []
-
-  rustflags = [
-    "--cap-lints=allow",
-    "-Cmetadata=fe5c5a409b973a40",
-    "-Cextra-filename=-fe5c5a409b973a40",
   ]
 
   visibility = [ ":*" ]

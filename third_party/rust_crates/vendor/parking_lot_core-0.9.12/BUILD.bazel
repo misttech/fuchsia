@@ -23,7 +23,7 @@ package_info(
     name = "package_info",
     package_name = "parking_lot_core",
     package_url = "https://github.com/Amanieu/parking_lot",
-    package_version = "0.9.11",
+    package_version = "0.9.12",
 )
 
 license(
@@ -73,10 +73,10 @@ rust_library(
         "@rules_rust//rust/platform:x86_64-unknown-linux-gnu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    version = "0.9.11",
+    version = "0.9.12",
     deps = [
         "//third_party/rust_crates/vendor/cfg-if-1.0.3:cfg_if",
-        "//third_party/rust_crates/vendor/parking_lot_core-0.9.11:build_script_build",
+        "//third_party/rust_crates/vendor/parking_lot_core-0.9.12:build_script_build",
         "//third_party/rust_crates/vendor/smallvec-1.15.1:smallvec",
     ] + select({
         "@rules_rust//rust/platform:aarch64-apple-darwin": [
@@ -143,7 +143,7 @@ cargo_build_script(
         "noclippy",
         "norustfmt",
     ],
-    version = "0.9.11",
+    version = "0.9.12",
     visibility = ["//visibility:private"],
 )
 

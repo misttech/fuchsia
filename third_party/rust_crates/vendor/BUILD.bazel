@@ -1675,14 +1675,14 @@ alias(
 )
 
 alias(
-    name = "parking_lot_core-0.9.11",
-    actual = "//third_party/rust_crates/vendor/parking_lot_core-0.9.11:parking_lot_core",
+    name = "parking_lot_core-0.9.12",
+    actual = "//third_party/rust_crates/vendor/parking_lot_core-0.9.12:parking_lot_core",
     tags = ["manual"],
 )
 
 alias(
     name = "parking_lot_core",
-    actual = "//third_party/rust_crates/vendor/parking_lot_core-0.9.11:parking_lot_core",
+    actual = "//third_party/rust_crates/vendor/parking_lot_core-0.9.12:parking_lot_core",
     tags = ["manual"],
 )
 
