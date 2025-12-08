@@ -6,6 +6,7 @@
         {
             name: "toolbox",
             url: "fuchsia-boot:///toolbox#meta/toolbox.cm",
+            environment: "#elf-env",
         },
     ],
     capabilities: [
