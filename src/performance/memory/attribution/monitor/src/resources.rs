@@ -518,15 +518,17 @@ impl KernelResourcesExplorer {
 
         let vmo_koids = if collection.collect_vmos() {
             duration!(CATEGORY_MEMORY_CAPTURE, c"vmos:explore_process");
-            let (mut vmo_infos, available) = process.info_vmos(self.cache.vmos_cache(0))?;
+            let (mut vmo_infos, available) = {
+                duration!(CATEGORY_MEMORY_CAPTURE, c"fetch:vmos:explore_process");
+                process.info_vmos(self.cache.vmos_cache(0))?
+            };
 
             if vmo_infos.len() < available {
-                duration!(CATEGORY_MEMORY_CAPTURE, c"grow:vmos:explore_process",
+                duration!(CATEGORY_MEMORY_CAPTURE, c"refetch:vmos:explore_process",
                     "initial_length" => vmo_infos.len(), "target_length" => available);
                 (vmo_infos, _) = process.info_vmos(self.cache.vmos_cache(available))?;
             }
 
-            duration!(CATEGORY_MEMORY_CAPTURE, c"insert:vmos:explore_process");
             let mut vmo_koids = HashSet::with_capacity(vmo_infos.len());
             for vmo_info in vmo_infos {
                 if !vmo_koids.insert(vmo_info.koid.clone()) {
@@ -562,13 +564,17 @@ impl KernelResourcesExplorer {
 
         let process_maps = if let Some(selected_range) = collection.collect_maps {
             duration!(CATEGORY_MEMORY_CAPTURE, c"maps:explore_process");
-            let (mut info_maps, available) = process.info_maps(self.cache.maps_cache(0))?;
+
+            let (mut info_maps, available) = {
+                duration!(CATEGORY_MEMORY_CAPTURE, c"fetch:maps:explore_process");
+                process.info_maps(self.cache.maps_cache(0))?
+            };
             if info_maps.len() < available {
-                duration!(CATEGORY_MEMORY_CAPTURE, c"grow:maps:explore_process", "initial_length" => info_maps.len(), "target_length" => available);
+                duration!(CATEGORY_MEMORY_CAPTURE, c"refetch:maps:explore_process",
+                    "initial_length" => info_maps.len(), "target_length" => available);
                 (info_maps, _) = process.info_maps(self.cache.maps_cache(available))?;
             }
 
-            duration!(CATEGORY_MEMORY_CAPTURE, c"insert:maps:explore_process");
             // This overestimates the capacity needed, but it is still better than resizing several
             // times.
             let mut mappings = Vec::with_capacity(info_maps.len());
