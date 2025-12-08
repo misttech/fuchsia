@@ -76,8 +76,7 @@ async fn main() -> Result<(), Error> {
             },
             sender,
         )
-        .await
-        .unwrap();
+        .await?;
     let boot_ts = Timestamp::from_nanos(
         fuchsia_runtime::utc_time().into_nanos() - zx::BootInstant::get().into_nanos(),
     );
@@ -100,13 +99,22 @@ async fn main() -> Result<(), Error> {
         }
     }
     formatter.set_boot_timestamp(boot_ts);
-    let _ = read_logs_from_socket(
+    if let Err(e) = read_logs_from_socket(
         fuchsia_async::Socket::from_socket(receiver),
         &mut formatter,
         &Symbolizer::new(),
         true,
     )
-    .await;
-    let _ = std::io::stdout().flush();
+    .await
+    {
+        eprintln!("Error in log_listener reading logs from socket, exiting: {e:?}");
+        return Err(e.into());
+    };
+
+    if let Err(e) = std::io::stdout().flush() {
+        eprintln!("Error in log_listener flushing stdout: {e:?}");
+        return Err(e.into());
+    };
+
     Ok(())
 }
