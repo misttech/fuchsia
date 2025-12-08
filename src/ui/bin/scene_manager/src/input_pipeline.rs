@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use ::input_pipeline::CursorMessage;
 #[cfg(fuchsia_api_level_at_least = "HEAD")]
 use ::input_pipeline::interaction_state_handler::{
     InteractionStateHandler, InteractionStatePublisher,
@@ -12,7 +13,6 @@ use ::input_pipeline::light_sensor::{
 };
 use ::input_pipeline::light_sensor_handler::make_light_sensor_handler_and_spawn_led_watcher;
 use ::input_pipeline::text_settings_handler::TextSettingsHandler;
-use ::input_pipeline::CursorMessage;
 use anyhow::{Context, Error};
 use fidl_fuchsia_factory::MiscFactoryStoreProviderMarker;
 use fidl_fuchsia_input_injection::InputDeviceRegistryRequestStream;
@@ -82,6 +82,9 @@ pub async fn handle_input(
     idle_threshold_ms: i64,
     interaction_state_publisher: InteractionStatePublisher,
     suspend_enabled: bool,
+    enable_button_baton_passing: bool,
+    enable_mouse_baton_passing: bool,
+    enable_touch_baton_passing: bool,
 ) -> Result<InputPipeline, Error> {
     let input_handlers_node = node.create_child("input_handlers");
     let metrics_logger = metrics::MetricsLogger::new();
@@ -92,6 +95,9 @@ pub async fn handle_input(
         &input_handlers_node,
         interaction_state_publisher,
         suspend_enabled,
+        enable_button_baton_passing,
+        enable_mouse_baton_passing,
+        enable_touch_baton_passing,
     )
     .await;
     let factory_reset_handler =

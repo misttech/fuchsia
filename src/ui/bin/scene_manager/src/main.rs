@@ -178,6 +178,9 @@ async fn main() -> Result<(), Error> {
         suspend_enabled,
         #[cfg(fuchsia_api_level_at_least = "HEAD")]
         attach_a11y_view,
+        enable_button_baton_passing,
+        enable_mouse_baton_passing,
+        enable_touch_baton_passing,
         ..
     } = Config::take_from_startup_handle();
 
@@ -190,7 +193,9 @@ async fn main() -> Result<(), Error> {
             }
         }
         Err(_) => {
-            warn!("Failed to parse display_pixel_density value from structured config - expected a decimal, but got: {display_pixel_density}. Falling back to default.");
+            warn!(
+                "Failed to parse display_pixel_density value from structured config - expected a decimal, but got: {display_pixel_density}. Falling back to default."
+            );
             None
         }
     };
@@ -260,6 +265,9 @@ async fn main() -> Result<(), Error> {
         idle_threshold_ms as i64,
         interaction_state_publisher,
         suspend_enabled,
+        enable_button_baton_passing,
+        enable_mouse_baton_passing,
+        enable_touch_baton_passing,
     )
     .await
     {
@@ -406,7 +414,9 @@ async fn main() -> Result<(), Error> {
                 #[cfg(fuchsia_api_level_less_than = "HEAD")]
                 {
                     let _ = stream;
-                    error!("scene_manager built without InteractionStateHandler due to stable API level.")
+                    error!(
+                        "scene_manager built without InteractionStateHandler due to stable API level."
+                    )
                 }
             }
             ExposedServices::GraphicalPresenter(stream) => {
@@ -483,7 +493,9 @@ pub async fn handle_scene_manager_request_stream(
                 view_ref: _,
                 responder,
             } => {
-                error!("Unsupported call to fuchsia.session.scene.Manager/PresentRootViewLegacy() (GFX only).");
+                error!(
+                    "Unsupported call to fuchsia.session.scene.Manager/PresentRootViewLegacy() (GFX only)."
+                );
                 if let Err(e) = responder.send(Err(PresentRootViewError::InternalError)) {
                     error!("Error responding to PresentRootViewLegacy(): {}", e);
                 }
@@ -518,7 +530,9 @@ pub async fn handle_graphical_presenter_request_stream(
                         viewport_creation_token: None,
                         ..
                     } => {
-                        error!("Processing fuchsia.element.GraphicalPresenter/PresentView() with GFX view tokens.");
+                        error!(
+                            "Processing fuchsia.element.GraphicalPresenter/PresentView() with GFX view tokens."
+                        );
                         if let Err(e) = responder.send(Err(PresentViewError::InvalidArgs)) {
                             error!("Error responding to PresentView(): {}", e);
                         }
@@ -529,7 +543,9 @@ pub async fn handle_graphical_presenter_request_stream(
                         view_ref: None,
                         ..
                     } => {
-                        info!("Processing fuchsia.element.GraphicalPresenter/PresentView() with Flatland view tokens.");
+                        info!(
+                            "Processing fuchsia.element.GraphicalPresenter/PresentView() with Flatland view tokens."
+                        );
                         let mut scene_manager = scene_manager.lock().await;
                         let set_root_view_result = scene_manager
                             .set_root_view(viewport_creation_token, None)
@@ -559,8 +575,8 @@ pub async fn handle_graphical_presenter_request_stream(
 
 mod tests {
     use super::*;
-    use fidl::endpoints::create_proxy_and_stream;
     use fidl::AsHandleRef;
+    use fidl::endpoints::create_proxy_and_stream;
     use fidl_fuchsia_element::GraphicalPresenterMarker;
     use fuchsia_scenic as scenic;
     use scene_management_mocks::MockSceneManager;

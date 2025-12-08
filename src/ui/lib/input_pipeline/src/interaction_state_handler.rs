@@ -102,6 +102,11 @@ pub struct InteractionStateHandler {
 
     /// The inventory of this handler's Inspect status.
     pub inspect_status: InputHandlerStatus,
+
+    // TODO(b/443729860): Remove these temporary feature flags once enabled.
+    enable_button_baton_passing: bool,
+    enable_mouse_baton_passing: bool,
+    enable_touch_baton_passing: bool,
 }
 
 impl InteractionStateHandler {
@@ -112,6 +117,9 @@ impl InteractionStateHandler {
         input_handlers_node: &fuchsia_inspect::Node,
         state_publisher: InteractionStatePublisher,
         suspend_enabled: bool,
+        enable_button_baton_passing: bool,
+        enable_mouse_baton_passing: bool,
+        enable_touch_baton_passing: bool,
     ) -> Rc<Self> {
         log::info!(
             "InteractionStateHandler is initialized with idle_threshold_ms: {:?}",
@@ -145,6 +153,9 @@ impl InteractionStateHandler {
             lease_holder,
             inspect_status,
             state_publisher,
+            enable_button_baton_passing,
+            enable_mouse_baton_passing,
+            enable_touch_baton_passing,
         ))
     }
 
@@ -170,6 +181,9 @@ impl InteractionStateHandler {
             lease_holder,
             inspect_status,
             state_publisher,
+            /* enable_button_baton_passing */ false,
+            /* enable_mouse_baton_passing */ false,
+            /* enable_touch_baton_passing */ false,
         ))
     }
 
@@ -179,6 +193,9 @@ impl InteractionStateHandler {
         lease_holder: Option<Rc<RefCell<LeaseHolder>>>,
         inspect_status: InputHandlerStatus,
         state_publisher: InteractionStatePublisher,
+        enable_button_baton_passing: bool,
+        enable_mouse_baton_passing: bool,
+        enable_touch_baton_passing: bool,
     ) -> Self {
         let task = Self::create_idle_transition_task(
             initial_timestamp + idle_threshold_ms,
@@ -193,6 +210,9 @@ impl InteractionStateHandler {
             lease_holder,
             state_publisher,
             inspect_status,
+            enable_button_baton_passing,
+            enable_mouse_baton_passing,
+            enable_touch_baton_passing,
         }
     }
 
@@ -293,22 +313,74 @@ impl UnhandledInputHandler for InteractionStateHandler {
     ) -> Vec<input_device::InputEvent> {
         fuchsia_trace::duration!(c"input", c"interaction_state_handler");
         match unhandled_input_event.device_event {
-            input_device::InputDeviceEvent::ConsumerControls(_)
-            | input_device::InputDeviceEvent::Mouse(_)
-            | input_device::InputDeviceEvent::TouchScreen(_) => {
-                fuchsia_trace::duration!(c"input", c"interaction_state_handler[processing]");
-                // Clamp the time to now so that clients cannot send events far off
-                // in the future to keep the system always active.
-                // Note: We use the global executor to get the current time instead
-                // of the kernel so that we do not unnecessarily clamp
-                // test-injected times.
-                let event_time = unhandled_input_event.event_time.clamp(
-                    zx::MonotonicInstant::ZERO,
-                    fuchsia_async::MonotonicInstant::now().into_zx(),
-                );
+            input_device::InputDeviceEvent::ConsumerControls(ref consumer_controls_event) => {
+                if self.enable_button_baton_passing {
+                    if !consumer_controls_event.wake_lease.is_some() {
+                        log::debug!(
+                            "InteractionStateHandler received a button event without a wake lease, even though one was expected."
+                        );
+                    }
+                } else {
+                    fuchsia_trace::duration!(c"input", c"interaction_state_handler[processing]");
+                    // Clamp the time to now so that clients cannot send events far off
+                    // in the future to keep the system always active.
+                    // Note: We use the global executor to get the current time instead
+                    // of the kernel so that we do not unnecessarily clamp
+                    // test-injected times.
+                    let event_time = unhandled_input_event.event_time.clamp(
+                        zx::MonotonicInstant::ZERO,
+                        fuchsia_async::MonotonicInstant::now().into_zx(),
+                    );
 
-                self.inspect_status.count_received_event(&event_time);
-                self.transition_to_idle_after_new_time(event_time).await;
+                    self.inspect_status.count_received_event(&event_time);
+                    self.transition_to_idle_after_new_time(event_time).await;
+                }
+            }
+            input_device::InputDeviceEvent::Mouse(ref mouse_event) => {
+                if self.enable_mouse_baton_passing {
+                    if !mouse_event.wake_lease.lock().is_some() {
+                        log::debug!(
+                            "InteractionStateHandler received a mouse event without a wake lease, even though one was expected."
+                        );
+                    }
+                } else {
+                    fuchsia_trace::duration!(c"input", c"interaction_state_handler[processing]");
+                    // Clamp the time to now so that clients cannot send events far off
+                    // in the future to keep the system always active.
+                    // Note: We use the global executor to get the current time instead
+                    // of the kernel so that we do not unnecessarily clamp
+                    // test-injected times.
+                    let event_time = unhandled_input_event.event_time.clamp(
+                        zx::MonotonicInstant::ZERO,
+                        fuchsia_async::MonotonicInstant::now().into_zx(),
+                    );
+
+                    self.inspect_status.count_received_event(&event_time);
+                    self.transition_to_idle_after_new_time(event_time).await;
+                }
+            }
+            input_device::InputDeviceEvent::TouchScreen(ref touch_event) => {
+                if self.enable_touch_baton_passing {
+                    if !touch_event.wake_lease.is_some() {
+                        log::debug!(
+                            "InteractionStateHandler received a touch event without a wake lease, even though one was expected."
+                        );
+                    }
+                } else {
+                    fuchsia_trace::duration!(c"input", c"interaction_state_handler[processing]");
+                    // Clamp the time to now so that clients cannot send events far off
+                    // in the future to keep the system always active.
+                    // Note: We use the global executor to get the current time instead
+                    // of the kernel so that we do not unnecessarily clamp
+                    // test-injected times.
+                    let event_time = unhandled_input_event.event_time.clamp(
+                        zx::MonotonicInstant::ZERO,
+                        fuchsia_async::MonotonicInstant::now().into_zx(),
+                    );
+
+                    self.inspect_status.count_received_event(&event_time);
+                    self.transition_to_idle_after_new_time(event_time).await;
+                }
             }
             _ => {}
         }
