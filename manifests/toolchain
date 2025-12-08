@@ -121,7 +121,7 @@
      <!-- rust-bindgen, used for generating rust bindings to c/c++ headers -->
      <!-- mac platforms added to support CIPD tagging -->
      <package name="fuchsia/third_party/rust_bindgen/${platform}"
-              version="git_revision:ac3bc6ebfd5a8d6c99d42837ec123a90d37af679"
+              version="git_revision:ccd563767ab1509f7c0eb68c6effc79eaf3684a9"
               platforms="linux-amd64,mac-amd64,mac-arm64"
               path="prebuilt/third_party/rust_bindgen/{{.OS}}-{{.Arch}}"/>
 
