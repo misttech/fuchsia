@@ -14,8 +14,10 @@ kernel_elf_binary("trivial-test-userboot") {
   visibility = [ ":*" ]
   testonly = true
 
-  configs += [ "//zircon/kernel/phys:phys-elf-module.config" ]
   has_patches = false
+
+  # This ensures the PT_LOAD layout of the binary will be one physboot handles.
+  configs += [ "//zircon/kernel/phys:phys-elf-module.config" ]
 
   sources = [ "trivial-test-userboot.cc" ]
   defines = [ "BOOT_TEST_SUCCESS_STRING=\"$boot_test_success_string\"" ]
@@ -34,7 +36,7 @@ kernel_elf_binary("trivial-test-userboot") {
 
   # A standalone binary should indicate its stack requirements.
   # They should be minimal for this test.
-  ldflags = [ "-Wl,-z,stack-size=0x1000" ]
+  ldflags = [ "-Wl,-z,stack-size=0x10000" ]
 }
 
 user_basic_redirect("trivial-test-userboot.basic") {
