@@ -7,7 +7,7 @@
 
 use diagnostics_log::PublishOptions;
 use fuchsia_async::LocalExecutor;
-use log::info;
+use log::{error, info};
 use std::ffi::c_void;
 use std::sync::Once;
 use wlan_ffi_transport::completers::Completer;
@@ -15,7 +15,7 @@ use wlan_ffi_transport::{EthernetRx, FfiEthernetRx, FfiWlanTx, WlanTx};
 use wlan_mlme::device::Device;
 use {fidl_fuchsia_wlan_softmac as fidl_softmac, wlan_trace as wtrace};
 
-use fdf::{DispatcherBuilder, OnDispatcher};
+use fdf::{AsyncDispatcher, DispatcherBuilder};
 
 static LOGGER_ONCE: Once = Once::new();
 
@@ -136,8 +136,12 @@ pub unsafe extern "C" fn start_bridged_wlansoftmac(
         })
     };
 
-    let task = dispatcher.spawn_task(async move {
+    let task = dispatcher.post_task_sync(move |status| {
         wtrace::duration!(c"Rust MLME dispatcher");
+        if let Err(status) = Result::from(status) {
+            error!("Rust MLME dispatcher failed to start: {status}");
+            return;
+        }
 
         let mut executor = LocalExecutor::default();
 
