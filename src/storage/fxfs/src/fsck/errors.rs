@@ -223,6 +223,7 @@ pub enum FsckError {
     AllocatedSizeMismatch(u64, u64, u64, u64),
     AllocationForNonexistentOwner(Allocation),
     AllocationMismatch(Allocation, Allocation),
+    BadCasefoldHash(u64, u64, u64),
     BadGraveyardValue(u64, u64),
     CasefoldInconsistency(u64, u64, u64),
     ChildEncryptedWithDifferentWrappingKeyThanParent(u64, u64, u64, WrappingKeyId, WrappingKeyId),
@@ -292,6 +293,12 @@ impl FsckError {
             }
             FsckError::AllocationMismatch(observed, stored) => {
                 format!("Observed allocation {:?} but allocator has {:?}", observed, stored)
+            }
+            FsckError::BadCasefoldHash(store_id, parent_id, child_id) => {
+                format!(
+                    "Bad casefold hash code for store {store_id}, directory {parent_id}, child \
+                     {child_id}",
+                )
             }
             FsckError::CasefoldInconsistency(store_id, parent_id, child_id) => {
                 format!(
@@ -505,29 +512,29 @@ impl FsckError {
             }
             FsckError::TombstonedAttributeDoesNotExist(store_id, object_id, attribute_id) => {
                 format!(
-                    "Object {} in store {} has an attribute {} that is tombstoned but does not
-                        exist.",
+                    "Object {} in store {} has an attribute {} that is tombstoned but does not \
+                     exist.",
                     object_id, store_id, attribute_id
                 )
             }
             FsckError::TrimValueForGraveyardAttributeEntry(store_id, object_id, attribute_id) => {
                 format!(
-                    "Object {} in store {} has a GraveyardAttributeEntry for attribute {} that has
-                        ObjectValue::Trim",
+                    "Object {} in store {} has a GraveyardAttributeEntry for attribute {} that has \
+                     ObjectValue::Trim",
                     object_id, store_id, attribute_id,
                 )
             }
             FsckError::MissingOverwriteExtents(store_id, object_id, attribute_id) => {
                 format!(
                     "Object {} in store {} has an attribute {} that indicated it had overwrite \
-                    extents but none were found",
+                     extents but none were found",
                     object_id, store_id, attribute_id,
                 )
             }
             FsckError::OverwriteExtentFlagUnset(store_id, object_id, attribute_id) => {
                 format!(
                     "Object {} in store {} has an attribute {} with overwrite extents but the \
-                    metadata indicated it would not",
+                     metadata indicated it would not",
                     object_id, store_id, attribute_id,
                 )
             }
@@ -550,6 +557,9 @@ impl FsckError {
             }
             FsckError::AllocationMismatch(observed, stored) => {
                 error!(observed:?, stored:?; "Unexpected allocation");
+            }
+            FsckError::BadCasefoldHash(store_id, parent_id, child_id) => {
+                error!(store_id, parent_id, child_id; "Bad casefold hash code");
             }
             FsckError::CasefoldInconsistency(store_id, parent_id, child_id) => {
                 error!(store_id:?, parent_id:?, child_id:?; "CasefoldChild inconsistent");

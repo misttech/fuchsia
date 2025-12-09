@@ -8,21 +8,25 @@ use crate::lsm_tree::Query;
 use crate::lsm_tree::types::{Item, ItemRef, LayerIterator};
 use crate::object_handle::INVALID_OBJECT_ID;
 use crate::object_store::allocator::{self, AllocatorKey, AllocatorValue};
+use crate::object_store::directory::decrypt_filename;
 use crate::object_store::graveyard::Graveyard;
+use crate::object_store::object_record::EncryptedCasefoldChild;
 use crate::object_store::{
     AttributeKey, ChildValue, DEFAULT_DATA_ATTRIBUTE_ID, EXTENDED_ATTRIBUTE_RANGE_END,
     EXTENDED_ATTRIBUTE_RANGE_START, ExtendedAttributeValue, ExtentKey, ExtentMode, ExtentValue,
-    FSVERITY_MERKLE_ATTRIBUTE_ID, FsverityMetadata, ObjectAttributes, ObjectDescriptor, ObjectKey,
-    ObjectKeyData, ObjectKind, ObjectStore, ObjectValue, ProjectProperty, RootDigest,
+    FSCRYPT_KEY_ID, FSVERITY_MERKLE_ATTRIBUTE_ID, FsverityMetadata, ObjectAttributes,
+    ObjectDescriptor, ObjectKey, ObjectKeyData, ObjectKind, ObjectStore, ObjectValue,
+    ProjectProperty, RootDigest, VOLUME_DATA_KEY_ID,
 };
 use crate::range::RangeExt;
 use crate::round::round_up;
 use anyhow::{Error, bail};
-use fxfs_crypto::WrappingKeyId;
+use fxfs_crypto::{Crypt, WrappedKey, WrappingKeyId, key_to_cipher};
 use rustc_hash::FxHashSet as HashSet;
 use std::cell::UnsafeCell;
 use std::collections::btree_map::BTreeMap;
 use std::ops::Range;
+use std::sync::Arc;
 
 // Information about a specific attribute.
 #[derive(Debug)]
@@ -97,6 +101,8 @@ struct ScannedDir {
     attributes: ScannedAttributes,
     // True if directory uses casefold
     casefold: bool,
+    // The fscrypt encryption key.
+    fscrypt_key: Option<WrappedKey>,
 }
 
 unsafe impl Sync for ScannedDir {}
@@ -124,6 +130,7 @@ enum ScannedObject {
 
 struct ScannedStore<'a> {
     fsck: &'a Fsck<'a>,
+    crypt: Option<Arc<dyn Crypt>>,
     objects: BTreeMap<u64, ScannedObject>,
     root_objects: Vec<u64>,
     store_id: u64,
@@ -146,6 +153,7 @@ struct CurrentObject {
 impl<'a> ScannedStore<'a> {
     fn new(
         fsck: &'a Fsck<'a>,
+        crypt: Option<Arc<dyn Crypt>>,
         root_objects: impl AsRef<[u64]>,
         store_id: u64,
         is_root_store: bool,
@@ -154,6 +162,7 @@ impl<'a> ScannedStore<'a> {
     ) -> Self {
         Self {
             fsck,
+            crypt,
             objects: BTreeMap::new(),
             root_objects: root_objects.as_ref().into(),
             store_id,
@@ -264,6 +273,7 @@ impl<'a> ScannedStore<'a> {
                                     extended_attributes: Vec::new(),
                                 },
                                 casefold: *casefold,
+                                fscrypt_key: None,
                             }),
                         );
                     }
@@ -356,13 +366,20 @@ impl<'a> ScannedStore<'a> {
                         // Duplicates items should have already been checked, but not
                         // duplicate key IDs.
                         assert!(current_file.key_ids.is_empty());
-                        for (key_id, _) in keys.iter() {
+                        for (key_id, encryption_key) in keys.iter() {
                             if !current_file.key_ids.insert(*key_id) {
                                 self.fsck.error(FsckError::DuplicateKey(
                                     self.store_id,
                                     key.object_id,
                                     *key_id,
                                 ))?;
+                            }
+                            if *key_id == FSCRYPT_KEY_ID {
+                                if let Some(ScannedObject::Directory(dir)) =
+                                    self.objects.get_mut(&current_file.object_id)
+                                {
+                                    dir.fscrypt_key = Some(encryption_key.clone().into());
+                                }
                             }
                         }
                     } else {
@@ -630,7 +647,7 @@ impl<'a> ScannedStore<'a> {
 
     /// Performs some checks on the child link and records information such as the sub-directory
     /// count that get verified later.
-    fn process_child(
+    async fn process_child(
         &mut self,
         parent_id: u64,
         child_id: u64,
@@ -658,7 +675,42 @@ impl<'a> ScannedStore<'a> {
                         ))?;
                     }
                 }
-                ObjectKeyData::EncryptedChild(_) | ObjectKeyData::EncryptedCasefoldChild(_) => {
+                ObjectKeyData::EncryptedCasefoldChild(EncryptedCasefoldChild {
+                    hash_code,
+                    name,
+                }) => {
+                    if dir.wrapping_key_id.is_none() {
+                        self.fsck.error(FsckError::UnencryptedDirectoryHasEncryptedChild(
+                            self.store_id,
+                            parent_id,
+                            child_id,
+                        ))?;
+                    }
+                    if let Some(crypt) = &self.crypt
+                        && let Some(key) = &dir.fscrypt_key
+                        && !matches!(key, WrappedKey::Fxfs(_))
+                    {
+                        // Ignore unwrap errors.
+                        if let Ok(unwrapped_key) = crypt.unwrap_key(key, parent_id).await {
+                            let cipher = key_to_cipher(key, &unwrapped_key)?;
+                            match decrypt_filename(cipher.as_ref(), parent_id, &name) {
+                                Ok(name) => {
+                                    if cipher.hash_code_casefold(&name) != *hash_code {
+                                        self.fsck.error(FsckError::BadCasefoldHash(
+                                            self.store_id,
+                                            parent_id,
+                                            child_id,
+                                        ))?;
+                                    }
+                                }
+                                Err(_) => {
+                                    // Ignore decryption errors; we can't verify the hash.
+                                }
+                            }
+                        }
+                    }
+                }
+                ObjectKeyData::EncryptedChild(_) => {
                     if dir.wrapping_key_id.is_none() {
                         self.fsck.error(FsckError::UnencryptedDirectoryHasEncryptedChild(
                             self.store_id,
@@ -955,31 +1007,31 @@ impl<'a> ScannedStore<'a> {
                         ..
                     })) => {
                         if !attributes.extended_attributes.is_empty() {
-                            if !key_ids.contains(&0) {
+                            if !key_ids.contains(&VOLUME_DATA_KEY_ID) {
                                 self.fsck.error(FsckError::MissingKey(
                                     self.store_id,
                                     current_file.object_id,
-                                    0,
+                                    VOLUME_DATA_KEY_ID,
                                 ))?;
                             }
                         }
                         if wrapping_key_id.is_some() {
-                            if !key_ids.contains(&1) {
+                            if !key_ids.contains(&FSCRYPT_KEY_ID) {
                                 self.fsck.error(FsckError::MissingKey(
                                     self.store_id,
                                     current_file.object_id,
-                                    1,
+                                    FSCRYPT_KEY_ID,
                                 ))?;
                             }
                         }
                     }
                     Some(ScannedObject::Symlink(ScannedSymlink { encrypted, .. })) => {
                         if *encrypted {
-                            if !key_ids.contains(&1) {
+                            if !key_ids.contains(&FSCRYPT_KEY_ID) {
                                 self.fsck.error(FsckError::MissingKey(
                                     self.store_id,
                                     current_file.object_id,
-                                    1,
+                                    FSCRYPT_KEY_ID,
                                 ))?;
                             }
                         }
@@ -1072,7 +1124,9 @@ async fn scan_extents_and_directory_children<'a>(
                 value: ObjectValue::Child(ChildValue { object_id: child_id, object_descriptor }),
                 ..
             } => {
-                scanned.process_child(*object_id, *child_id, object_descriptor, object_key_data)?
+                scanned
+                    .process_child(*object_id, *child_id, object_descriptor, object_key_data)
+                    .await?
             }
             _ => {}
         }
@@ -1266,6 +1320,7 @@ pub(super) async fn scan_store(
 
     let mut scanned = ScannedStore::new(
         fsck,
+        store.crypt(),
         root_objects,
         store_id,
         store.is_root(),

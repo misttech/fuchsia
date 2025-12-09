@@ -13,7 +13,9 @@ use crate::lsm_tree::types::{Item, ItemRef, Key, LayerIterator, LayerWriter, Val
 use crate::object_handle::{INVALID_OBJECT_ID, ObjectHandle, ReadObjectHandle, WriteObjectHandle};
 use crate::object_store::allocator::{AllocatorKey, AllocatorValue, CoalescingIterator};
 use crate::object_store::data_object_handle::OverwriteOptions;
-use crate::object_store::directory::{self, Directory, MutableAttributesInternal};
+use crate::object_store::directory::{
+    self, Directory, MutableAttributesInternal, encrypt_filename,
+};
 use crate::object_store::transaction::{self, LockKey, ObjectStoreMutation, Options, lock_keys};
 use crate::object_store::volume::root_volume;
 use crate::object_store::{
@@ -2814,7 +2816,17 @@ async fn test_unencrypted_directory_has_encrypted_child() {
         .await
         .expect_err("Fsck should fail");
 
-    assert_matches!(&test.errors()[..], [ FsckIssue::Error(FsckError::UnencryptedDirectoryHasEncryptedChild(sid, oid, oid_child)), .. ] if *sid == store_id && *oid == parent_oid && *oid_child == child_oid);
+    assert_matches!(
+        &test.errors()[..],
+        [
+            FsckIssue::Error(FsckError::UnencryptedDirectoryHasEncryptedChild(
+                sid1,
+                oid1,
+                oid_child1
+            )),
+            ..
+        ] if *sid1 == store_id && *oid1 == parent_oid && *oid_child1 == child_oid
+    );
 }
 
 #[fuchsia::test]
@@ -4252,4 +4264,131 @@ async fn test_invalid_bloom_filter_for_volume() {
         .await
         .expect_err("Fsck should fail");
     assert_matches!(test.errors()[..], [FsckIssue::Fatal(FsckFatal::InvalidBloomFilter(..))]);
+}
+
+#[fuchsia::test]
+async fn test_bad_casefold_hash() {
+    let mut test = FsckTest::new().await;
+    let store_id = {
+        let fs = test.filesystem();
+        let root_volume = root_volume(fs.clone()).await.unwrap();
+        let store = root_volume
+            .new_volume(
+                "vol",
+                NewChildStoreOptions {
+                    options: StoreOptions {
+                        crypt: Some(test.get_crypt()),
+                        ..StoreOptions::default()
+                    },
+                    ..NewChildStoreOptions::default()
+                },
+            )
+            .await
+            .unwrap();
+        let root_directory =
+            Directory::open(&store, store.root_directory_object_id()).await.expect("open failed");
+
+        let mut transaction = fs
+            .clone()
+            .new_transaction(
+                lock_keys![LockKey::object(store.store_object_id(), root_directory.object_id())],
+                Options::default(),
+            )
+            .await
+            .expect("new_transaction failed");
+
+        let dir = root_directory
+            .create_child_dir(&mut transaction, "casefold_dir")
+            .await
+            .expect("create_child_dir failed");
+        transaction.commit().await.expect("commit failed");
+
+        // Verify object exists in tree
+        let _tree_res =
+            store.tree().find(&ObjectKey::object(dir.object_id())).await.expect("find failed");
+        let dir = Directory::open(&store, dir.object_id()).await.expect("open dir failed");
+
+        dir.set_casefold(true).await.expect("set_casefold failed");
+
+        let mut transaction = fs
+            .clone()
+            .new_transaction(
+                lock_keys![LockKey::object(store.store_object_id(), dir.object_id())],
+                Options::default(),
+            )
+            .await
+            .expect("new_transaction failed");
+        test.get_crypt().add_wrapping_key(WRAPPING_KEY_ID, [0; 32]).unwrap();
+        dir.set_wrapping_key(&mut transaction, WRAPPING_KEY_ID)
+            .await
+            .expect("set_wrapping_key failed");
+        transaction.commit().await.expect("commit failed");
+
+        // Create a child file "foo" so we have a valid child and key set up.
+        // But we want to insert a BAD child "bar" with wrong hash.
+        let mut transaction = fs
+            .clone()
+            .new_transaction(
+                lock_keys![LockKey::object(store.store_object_id(), dir.object_id())],
+                Options::default(),
+            )
+            .await
+            .expect("new_transaction failed");
+        let _file =
+            dir.create_child_file(&mut transaction, "foo").await.expect("create_child_file failed");
+        transaction.commit().await.expect("commit failed");
+
+        // Create another file manually with wrong hash.
+        let mut transaction = fs
+            .clone()
+            .new_transaction(
+                lock_keys![LockKey::object(store.store_object_id(), dir.object_id())],
+                Options::default(),
+            )
+            .await
+            .expect("new_transaction failed");
+        let bad_file = ObjectStore::create_object(
+            &store,
+            &mut transaction,
+            HandleOptions::default(),
+            Some(WRAPPING_KEY_ID),
+        )
+        .await
+        .expect("create_object failed");
+
+        let cipher = dir.get_fscrypt_key().await.expect("get_key").into_cipher().expect("cipher");
+        let name = "bar";
+        let encrypted_name = encrypt_filename(cipher.as_ref(), dir.object_id(), name).unwrap();
+        let correct_hash = cipher.hash_code_casefold(name);
+        let bad_hash = correct_hash.wrapping_add(1);
+
+        transaction.add(
+            store.store_object_id(),
+            Mutation::replace_or_insert_object(
+                ObjectKey::encrypted_child(dir.object_id(), encrypted_name, Some(bad_hash)),
+                ObjectValue::child(bad_file.object_id(), ObjectDescriptor::File),
+            ),
+        );
+        dir.update_dir_attributes_internal(
+            &mut transaction,
+            dir.object_id(),
+            MutableAttributesInternal::new(
+                0,
+                Some(Timestamp::now()),
+                Some(Timestamp::now().as_nanos()),
+                None,
+            ),
+        )
+        .await
+        .expect("update attr failed");
+
+        transaction.commit().await.expect("commit failed");
+        store.store_object_id()
+    };
+
+    test.remount().await.expect("Remount failed");
+    test.run(TestOptions { volume_store_id: Some(store_id), ..Default::default() })
+        .await
+        .expect_err("Fsck should fail");
+    assert_matches!(test.errors()[..], [FsckIssue::Error(FsckError::BadCasefoldHash(..)), ..]);
 }

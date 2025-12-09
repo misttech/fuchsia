@@ -330,7 +330,7 @@ pub trait Crypt: Send + Sync {
     /// This method is generally only used with StreamCipher and FF1.
     /// Returns `zx::Status::UNAVAILABLE` if the key is known but cannot be unwrapped (e.g. it is
     /// locked).
-    /// Returns `zx::Status::NOT_FOUND` if the key is not known.
+    /// Returns `zx::Status::NOT_FOUND` if the wrapping key is not known.
     async fn unwrap_key(
         &self,
         wrapped_key: &WrappedKey,

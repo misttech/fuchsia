@@ -71,14 +71,22 @@ impl MutableAttributesInternal {
 }
 
 /// Encrypts a unicode `name` into a sequence of bytes using the fscrypt key.
-fn encrypt_filename(key: &dyn Cipher, object_id: u64, name: &str) -> Result<Vec<u8>, Error> {
+pub(crate) fn encrypt_filename(
+    key: &dyn Cipher,
+    object_id: u64,
+    name: &str,
+) -> Result<Vec<u8>, Error> {
     let mut name_bytes = name.to_string().into_bytes();
     key.encrypt_filename(object_id, &mut name_bytes)?;
     Ok(name_bytes)
 }
 
 /// Decrypts a unicode `name` from a sequence of bytes using the fscrypt key.
-fn decrypt_filename(key: &dyn Cipher, object_id: u64, data: &Vec<u8>) -> Result<String, Error> {
+pub(crate) fn decrypt_filename(
+    key: &dyn Cipher,
+    object_id: u64,
+    data: &Vec<u8>,
+) -> Result<String, Error> {
     let mut raw = data.clone();
     key.decrypt_filename(object_id, &mut raw)?;
     Ok(String::from_utf8(raw)?)
