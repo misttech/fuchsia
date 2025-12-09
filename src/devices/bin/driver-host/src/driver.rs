@@ -187,7 +187,7 @@ struct DriverInner {
 
     // The initial dispatcher of the driver.
     // This is where the initialize hook is called for the driver.
-    dispatcher: Option<fdf::DispatcherRef<'static>>,
+    dispatcher: Option<fdf::AutoReleaseDispatcher>,
 
     // This is the handle we use to represent the driver to the driver runtime.
     runtime_handle: Option<fdf_env::Driver<Driver>>,
@@ -326,8 +326,8 @@ impl Driver {
             DispatcherOpts::AllowSyncCalls => dispatcher.allow_thread_blocking(),
             DispatcherOpts::Default => dispatcher,
         };
-        let dispatcher = driver_runtime_handle.new_dispatcher(dispatcher)?.release();
-        driver.inner.lock().dispatcher = Some(dispatcher);
+        let dispatcher = driver_runtime_handle.new_dispatcher(dispatcher)?;
+        driver.inner.lock().dispatcher = Some(dispatcher.into());
         driver.inner.lock().runtime_handle = Some(driver_runtime_handle);
 
         Ok((driver, start_args))
@@ -401,8 +401,8 @@ impl Driver {
             DispatcherOpts::AllowSyncCalls => dispatcher.allow_thread_blocking(),
             DispatcherOpts::Default => dispatcher,
         };
-        let dispatcher = driver_runtime_handle.new_dispatcher(dispatcher)?.release();
-        driver.inner.lock().dispatcher = Some(dispatcher);
+        let dispatcher = driver_runtime_handle.new_dispatcher(dispatcher)?;
+        driver.inner.lock().dispatcher = Some(dispatcher.into());
         driver.inner.lock().runtime_handle = Some(driver_runtime_handle);
 
         Ok((driver, start_args))
@@ -427,6 +427,7 @@ impl Driver {
                 .dispatcher
                 .as_ref()
                 .expect("dispatcher should always be valid")
+                .downgrade()
                 .spawn_task(async move {
                     {
                         let mut inner = self_clone.inner.lock();
@@ -514,6 +515,7 @@ impl Driver {
             .dispatcher
             .as_ref()
             .expect("dispatcher should always be valid")
+            .downgrade()
             .spawn_task(async move {
             // Wait for driver manager to issue stop or the driver to have dropped its end of the
             // driver channel.

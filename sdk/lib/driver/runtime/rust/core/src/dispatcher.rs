@@ -11,6 +11,7 @@ use core::ffi;
 use core::marker::PhantomData;
 use core::mem::ManuallyDrop;
 use core::ptr::{NonNull, null_mut};
+use std::sync::atomic::{AtomicPtr, Ordering};
 use std::sync::{Arc, Weak};
 
 use zx::Status;
@@ -251,63 +252,68 @@ impl Drop for Dispatcher {
 ///
 /// This is particularly useful in tests.
 #[derive(Debug)]
-pub struct AutoReleaseDispatcher(*const Dispatcher, Weak<Dispatcher>);
+pub struct AutoReleaseDispatcher(Arc<AtomicPtr<fdf_dispatcher>>);
 
-// SAFETY: The inner dispatcher pointer is really a raw representation of an `Arc<Dispatcher` that
-// is not accessed or used except to create [`Arc`] and [`Weak`] references to.
-unsafe impl Send for AutoReleaseDispatcher {}
-unsafe impl Sync for AutoReleaseDispatcher {}
+impl AutoReleaseDispatcher {
+    /// Returns a weakened reference to this dispatcher. This weak reference will only be valid so
+    /// long as the [`AutoReleaseDispatcher`] object that spawned it is alive, after which it will
+    /// no longer be usable to spawn tasks on.
+    pub fn downgrade(&self) -> WeakDispatcher {
+        WeakDispatcher::from(self)
+    }
+}
 
 impl From<Dispatcher> for AutoReleaseDispatcher {
-    fn from(value: Dispatcher) -> Self {
-        let dispatcher = Arc::new(value);
-        let weak = Arc::downgrade(&dispatcher);
-        Self(Arc::into_raw(dispatcher), weak)
+    fn from(dispatcher: Dispatcher) -> Self {
+        let dispatcher_ptr = dispatcher.release().0.0.as_ptr();
+        Self(Arc::new(AtomicPtr::new(dispatcher_ptr)))
     }
 }
 
 impl Drop for AutoReleaseDispatcher {
     fn drop(&mut self) {
-        // SAFETY: This is the pointer that was created in the constructor and this is the only place
-        // we reconstitute a full [`Arc`] from it.
-        let dispatcher = unsafe { Arc::from_raw(self.0) };
-        Arc::try_unwrap(dispatcher)
-            .expect("Outstanding strong reference to `AutoReleaseDispatcher` at drop time")
-            .release();
+        // Store nullptr into the atomic so that any future attempts to obtain a strong reference
+        // through a WeakDispatcher will not successfully upgrade.
+        self.0.store(null_mut(), Ordering::Relaxed);
+        // We want to allow for any outstanding `on_dispatcher` calls to finish before returning
+        // from drop, so we're going to loop until the strong reference count goes down to zero,
+        // after which any future attempts to call `on_dispatcher` on a `WeakDispatcher` will fail.
+        while Arc::strong_count(&self.0) > 1 {
+            // This sleep is kind of gross, but it should happen extremely rarely and
+            // `on_dispatcher` calls should not be performing any blocking work.
+            std::thread::sleep(std::time::Duration::from_nanos(100))
+        }
     }
 }
 
 /// An unowned but reference counted reference to a dispatcher. This would usually come from
-/// an [`AutoReleaseDispatcher`] or from an existing [`Arc`] or [`Weak`] reference to a dispatcher.
+/// an [`AutoReleaseDispatcher`] reference to a dispatcher.
 ///
 /// The advantage to using this instead of using [`Weak`] directly is that it controls the lifetime
 /// of any given strong reference to the dispatcher, since the only way to access that strong
 /// reference is through [`OnDispatcher::on_dispatcher`]. This makes it much easier to be sure
 /// that you aren't leaving any dangling strong references to the dispatcher object around.
 #[derive(Clone, Debug)]
-pub struct WeakDispatcher(Weak<Dispatcher>);
-
-impl From<&Arc<Dispatcher>> for WeakDispatcher {
-    fn from(value: &Arc<Dispatcher>) -> Self {
-        Self(Arc::downgrade(value))
-    }
-}
-
-impl From<Weak<Dispatcher>> for WeakDispatcher {
-    fn from(value: Weak<Dispatcher>) -> Self {
-        Self(value)
-    }
-}
+pub struct WeakDispatcher(Weak<AtomicPtr<fdf_dispatcher>>);
 
 impl From<&AutoReleaseDispatcher> for WeakDispatcher {
     fn from(value: &AutoReleaseDispatcher) -> Self {
-        Self(value.1.clone())
+        Self(Arc::downgrade(&value.0))
     }
 }
 
 impl OnDispatcher for WeakDispatcher {
     fn on_dispatcher<R>(&self, f: impl FnOnce(Option<AsyncDispatcherRef<'_>>) -> R) -> R {
-        self.0.on_dispatcher(f)
+        let Some(dispatcher_ptr) = self.0.upgrade() else {
+            return f(None);
+        };
+        let Some(dispatcher) = NonNull::new(dispatcher_ptr.load(Ordering::Relaxed)) else {
+            return f(None);
+        };
+        // SAFETY: As long as we hold the strong reference in dispatcher_ptr, the
+        // AutoReleaseDispatcher will not allow its drop to finish and the dispatcher should still
+        // be valid.
+        f(Some(unsafe { DispatcherRef::from_raw(dispatcher) }.as_async_dispatcher_ref()))
     }
 }
 

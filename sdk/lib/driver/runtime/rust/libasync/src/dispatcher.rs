@@ -107,10 +107,16 @@ impl<'a> AsyncDispatcher for AsyncDispatcherRef<'a> {
 pub trait OnDispatcher: Clone + Send + Sync {
     /// Runs the function `f` with a lifetime-bound [`AsyncDispatcherRef`] for this object's dispatcher.
     /// If the dispatcher is no longer valid, the callback will be given [`None`].
+    ///
+    /// Note that it is *very important* that no blocking work be done in this callback to prevent
+    /// long lived strong references to dispatchers that might be shutting down.
     fn on_dispatcher<R>(&self, f: impl FnOnce(Option<AsyncDispatcherRef<'_>>) -> R) -> R;
 
     /// Helper version of [`OnDispatcher::on_dispatcher`] that translates an invalidated dispatcher
     /// handle into a [`Status::BAD_STATE`] error instead of giving the callback [`None`].
+    ///
+    /// Note that it is *very important* that no blocking work be done in this callback to prevent
+    /// long lived strong references to dispatchers that might be shutting down.
     fn on_maybe_dispatcher<R, E: From<Status>>(
         &self,
         f: impl FnOnce(AsyncDispatcherRef<'_>) -> Result<R, E>,
