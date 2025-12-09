@@ -51,7 +51,7 @@ use crate::bindings::socket::event_pair::SocketEventPair;
 use crate::bindings::socket::queue::{BodyLen, MessageQueue, NoSpace, QueueReadableListener as _};
 use crate::bindings::socket::worker::{self, SocketWorker};
 use crate::bindings::util::{
-    DeviceNotFoundError, ErrnoResultExt as _, IntoCore as _, IntoFidl,
+    DeviceNotFoundError, ErrnoResultExt as _, IntoCore as _, IntoFidl, OpAndAddr,
     RemoveResourceResultExt as _, ResultExt as _, ScopeExt as _, TryFromFidlWithContext,
     TryIntoCore, TryIntoCoreWithContext, TryIntoFidl, TryIntoFidlWithContext,
 };
@@ -1489,7 +1489,7 @@ where
             Request::Connect { addr, responder } => {
                 let result = self.connect(addr);
                 responder
-                    .send(result.log_errno_error("connect"))
+                    .send(result.log_errno_error(OpAndAddr { op: "connect", addr: Some(addr) }))
                     .unwrap_or_log("failed to respond");
             }
             Request::Disconnect { responder } => {
@@ -1509,7 +1509,9 @@ where
             }
             Request::Bind { addr, responder } => {
                 let result = self.bind(addr);
-                responder.send(result.log_errno_error("bind")).unwrap_or_log("failed to respond");
+                responder
+                    .send(result.log_errno_error(OpAndAddr { op: "bind", addr: Some(addr) }))
+                    .unwrap_or_log("failed to respond");
             }
             Request::Query { responder } => {
                 responder
@@ -1546,10 +1548,11 @@ where
                     .unwrap_or_log("failed to respond")
             }
             Request::SendMsg { addr, data, control: _, flags: _, responder } => {
+                let addr = addr.map(|addr| *addr);
                 // TODO(https://fxbug.dev/42094933): handle control.
-                let result = self.send_msg(addr.map(|addr| *addr), data);
+                let result = self.send_msg(addr, data);
                 responder
-                    .send(result.log_errno_error("sendmsg"))
+                    .send(result.log_errno_error(OpAndAddr { op: "sendmsg", addr }))
                     .unwrap_or_log("failed to respond");
             }
             Request::GetInfo { responder } => {

@@ -40,8 +40,8 @@ use crate::bindings::socket::{
 };
 use crate::bindings::util::{
     AllowBindingIdFromWeak, ConversionContext, DataNotifier, ErrnoResultExt as _, IntoCore,
-    IntoFidl, IntoFidlWithContext as _, ResultExt as _, ScopeExt as _, TryIntoCoreWithContext,
-    TryIntoFidlWithContext,
+    IntoFidl, IntoFidlWithContext as _, OpAndAddr, ResultExt as _, ScopeExt as _,
+    TryIntoCoreWithContext, TryIntoFidlWithContext,
 };
 use crate::bindings::waker::WakeGroupId;
 use crate::bindings::{BindingsCtx, Ctx};
@@ -856,14 +856,16 @@ impl<I: IpSockAddrExt + IpExt> RequestHandler<'_, I> {
         match request {
             fposix_socket::StreamSocketRequest::Bind { addr, responder } => {
                 responder
-                    .send(self.bind(addr).log_errno_error("bind"))
+                    .send(
+                        self.bind(addr).log_errno_error(OpAndAddr { op: "bind", addr: Some(addr) }),
+                    )
                     .unwrap_or_log("failed to respond");
             }
             fposix_socket::StreamSocketRequest::Connect { addr, responder } => {
                 // Connect always spawns on the socket scope.
                 let response = self.connect(addr);
                 responder
-                    .send(response.log_errno_error("connect"))
+                    .send(response.log_errno_error(OpAndAddr { op: "connect", addr: Some(addr) }))
                     .unwrap_or_log("failed to respond");
             }
             fposix_socket::StreamSocketRequest::Describe { responder } => {

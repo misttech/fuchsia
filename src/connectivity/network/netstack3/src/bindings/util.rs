@@ -1419,6 +1419,40 @@ impl IntoFidl<fnet_interfaces_admin::IgmpVersion> for IgmpConfigMode {
     }
 }
 
+/// A [`core::fmt::Display`] implementation for a socket operation and a socket
+/// address.
+pub(crate) struct OpAndAddr {
+    pub(crate) op: &'static str,
+    pub(crate) addr: Option<fidl_net::SocketAddress>,
+}
+
+impl core::fmt::Display for OpAndAddr {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> Result<(), core::fmt::Error> {
+        let Self { op, addr } = self;
+        match addr {
+            Some(fidl_net::SocketAddress::Ipv4(addr)) => {
+                write!(
+                    f,
+                    "{op}(addr={}, port={}, zone={})",
+                    addr.addr(),
+                    addr.port(),
+                    addr.zone().map(|z| z.get()).unwrap_or(0)
+                )
+            }
+            Some(fidl_net::SocketAddress::Ipv6(addr)) => {
+                write!(
+                    f,
+                    "{op}(addr={}, port={}, zone={})",
+                    addr.addr(),
+                    addr.port(),
+                    addr.zone().map(|z| z.get()).unwrap_or(0)
+                )
+            }
+            None => write!(f, "{op}(addr=None, port=None, zone=None)"),
+        }
+    }
+}
+
 #[cfg(test)]
 pub(crate) mod testutils {
     use crate::bindings::integration_tests::{StackSetupBuilder, TestSetup, TestSetupBuilder};

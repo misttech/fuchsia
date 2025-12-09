@@ -33,8 +33,8 @@ use crate::bindings::socket::queue::{BodyLen, MessageQueue, NoSpace};
 use crate::bindings::socket::{ErrnoError, IntoErrno, IpSockAddrExt, SockAddr};
 use crate::bindings::util::{
     AllowBindingIdFromWeak, DeviceNotFoundError, ErrnoResultExt as _, IntoCore, IntoFidl,
-    IntoFidlWithContext as _, RemoveResourceResultExt, ResultExt as _, ScopeExt as _, TryFromFidl,
-    TryFromFidlWithContext, WrongIpVersionError,
+    IntoFidlWithContext as _, OpAndAddr, RemoveResourceResultExt, ResultExt as _, ScopeExt as _,
+    TryFromFidl, TryFromFidlWithContext, WrongIpVersionError,
 };
 use crate::bindings::{BindingsCtx, Ctx};
 
@@ -557,10 +557,11 @@ impl<'a, I: IpExt + IpSockAddrExt> RequestHandler<'a, I> {
                     .unwrap_or_log("failed to respond")
             }
             fpraw::SocketRequest::SendMsg { addr, data: msg, control, flags, responder } => {
+                let addr = addr.map(|addr| *addr);
                 responder
                     .send(
                         handle_sendmsg(ctx, data, addr, msg, control, flags)
-                            .log_errno_error("raw::SendMsg"),
+                            .log_errno_error(OpAndAddr { op: "raw::SendMsg", addr }),
                     )
                     .unwrap_or_log("failed to respond")
             }
@@ -737,7 +738,7 @@ fn handle_recvmsg<I: IpExt + IpSockAddrExt>(
 fn handle_sendmsg<I: IpExt + IpSockAddrExt>(
     ctx: &mut Ctx,
     socket: &SocketWorkerState<I>,
-    addr: Option<Box<fnet::SocketAddress>>,
+    addr: Option<fnet::SocketAddress>,
     data: Vec<u8>,
     control: fposix_socket::NetworkSocketSendControlData,
     flags: fposix_socket::SendMsgFlags,
@@ -750,12 +751,12 @@ fn handle_sendmsg<I: IpExt + IpSockAddrExt>(
         .map(|addr| {
             // Match Linux and return `Einval` when asked to send to an IPv4
             // addr on an IPv6 socket. This errno is unique to raw IP sockets.
-            let addr = match (I::VERSION, *addr) {
+            let addr = match (I::VERSION, addr) {
                 (IpVersion::V6, fnet::SocketAddress::Ipv4(_)) => Err(ErrnoError::new(
                     fposix::Errno::Einval,
                     "cannot send to IPv4 on raw IPv6 socket",
                 )),
-                (_, _) => I::SocketAddress::from_sock_addr(*addr),
+                (_, _) => I::SocketAddress::from_sock_addr(addr),
             }?;
             // NB: raw IP sockets ignore the port.
             let (remote_addr, _port) =
