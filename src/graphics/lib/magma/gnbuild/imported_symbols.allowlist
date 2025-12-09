@@ -70,7 +70,9 @@ ferror
 fstat
 fstatvfs
 futimens
+getchar
 getcwd
+getline
 ioctl
 isatty
 link
@@ -93,6 +95,7 @@ rename
 stat
 statvfs
 stderr
+stdin
 stdout
 symlink
 umask
@@ -200,11 +203,14 @@ access
 bind
 connect
 gethostname
+htonl
 htons
+inet_addr
 listen
 ntohs
 recv
 send
+sendto
 shutdown
 socket
 
@@ -230,6 +236,11 @@ qsort
 # PRNG
 rand
 srand
+
+# REGULAR EXPRESSIONS
+regcomp
+regexec
+regfree
 
 # SCHED
 __sched_cpucount
@@ -340,6 +351,7 @@ strspn
 strstr
 strtod
 strtof
+strtok
 strtok_r
 strtol
 strtold
@@ -415,6 +427,7 @@ thrd_join
 clock_gettime
 clock_nanosleep
 gettimeofday
+localtime
 localtime_r
 nanosleep
 strftime
