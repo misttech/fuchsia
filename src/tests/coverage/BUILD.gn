@@ -125,7 +125,7 @@ action("copy_clang_coverage_test_binary_on_target") {
 # Rust coverage test is compiled with coverage enabled.
 # It generates an llvm raw profile (.profraw file) upon execution.
 rustc_binary("rust_coverage_test_bin") {
-  edition = "2021"
+  edition = "2024"
   testonly = true
   source_root = "rust_coverage_test.rs"
   sources = [ "rust_coverage_test.rs" ]

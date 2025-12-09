@@ -8,7 +8,7 @@ import("//tools/cmc/build/expect_includes.gni")
 rustc_library("rust") {
   name = "realm_client"
   testonly = true
-  edition = "2021"
+  edition = "2024"
   sources = [
     "src/error.rs",
     "src/lib.rs",

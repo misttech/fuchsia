@@ -10,7 +10,7 @@ import("//build/testing/run_target_test_and_host_script.gni")
 rustc_binary("bin") {
   name = "ui_app_instrumentor"
   testonly = true
-  edition = "2018"
+  edition = "2024"
   source_root = "src/ui_app_instrumentor.rs"
   sources = [ "src/ui_app_instrumentor.rs" ]
   deps = [

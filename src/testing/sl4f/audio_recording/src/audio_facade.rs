@@ -89,7 +89,7 @@ impl VirtualOutput {
             .as_mut()
             .ok_or_else(|| format_err!("device_specific not in config"))?
         {
-            fidl_fuchsia_virtualaudio::DeviceSpecific::StreamConfig(ref mut stream_config) => {
+            fidl_fuchsia_virtualaudio::DeviceSpecific::StreamConfig(stream_config) => {
                 let ring_buffer = stream_config
                     .ring_buffer
                     .as_mut()
@@ -226,7 +226,7 @@ impl VirtualInput {
             .as_mut()
             .ok_or_else(|| format_err!("device_specific not in config"))?
         {
-            fidl_fuchsia_virtualaudio::DeviceSpecific::StreamConfig(ref mut stream_config) => {
+            fidl_fuchsia_virtualaudio::DeviceSpecific::StreamConfig(stream_config) => {
                 let ring_buffer = stream_config
                     .ring_buffer
                     .as_mut()

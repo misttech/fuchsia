@@ -31,7 +31,7 @@ template("rust_gidl_benchmark_suite") {
   rustc_library(target_name) {
     testonly = true
     name = invoker.pkg_name
-    edition = "2018"
+    edition = "2024"
     source_root = output_file
 
     deps = [
@@ -81,7 +81,7 @@ action("benchmark_suite_rust_lib_gen") {
 rustc_library("benchmark_suite_rust_lib") {
   testonly = true
   name = "benchmark_suite"
-  edition = "2018"
+  edition = "2024"
   source_root = benchmark_suite_file
 
   deps = [ "//src/developer/fuchsia-criterion" ] + gidl_lib_deps
@@ -94,7 +94,7 @@ rustc_library("benchmark_suite_rust_lib") {
 rustc_binary("rust_fidl_microbenchmarks_bin") {
   testonly = true
   name = "rust_fidl_microbenchmarks"
-  edition = "2021"
+  edition = "2024"
 
   deps = [
     ":benchmark_suite_rust_lib",

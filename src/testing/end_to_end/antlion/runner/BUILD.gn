@@ -9,7 +9,7 @@ assert(is_host, "antlion-runner only supported on the host toolchain")
 
 rustc_binary("runner") {
   output_name = "antlion-runner"
-  edition = "2021"
+  edition = "2024"
   with_unit_tests = true
 
   deps = [

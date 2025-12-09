@@ -50,7 +50,7 @@ fidl_compatibilty_test_impls = [
 rustc_binary("test_driver_bin") {
   testonly = true
   output_name = "test_driver"
-  edition = "2021"
+  edition = "2024"
   source_root = "test_driver.rs"
 
   deps = [

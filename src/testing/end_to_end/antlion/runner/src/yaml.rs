@@ -7,7 +7,7 @@ use serde_yaml::Value;
 /// Merge `b` into `a`, appending arrays and overwriting everything else.
 pub fn merge(a: &mut Value, b: Value) {
     match (a, b) {
-        (Value::Mapping(ref mut a), Value::Mapping(b)) => {
+        (Value::Mapping(a), Value::Mapping(b)) => {
             for (k, v) in b {
                 if !a.contains_key(&k) {
                     a.insert(k, v);
@@ -16,7 +16,7 @@ pub fn merge(a: &mut Value, b: Value) {
                 }
             }
         }
-        (Value::Sequence(ref mut a), Value::Sequence(ref mut b)) => {
+        (Value::Sequence(a), Value::Sequence(ref mut b)) => {
             a.append(b);
         }
         (a, b) => *a = b,

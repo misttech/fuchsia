@@ -11,7 +11,7 @@ rustc_binary("bin") {
   testonly = true
   output_name = "rust-impl"
   output_dir = target_out_dir
-  edition = "2021"
+  edition = "2024"
   source_root = "main.rs"
 
   deps = [

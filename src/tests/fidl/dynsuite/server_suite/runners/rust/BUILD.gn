@@ -9,7 +9,7 @@ rustc_binary("bin") {
   testonly = true
   name = "server_suite_under_test_rust"
   sources = [ "src/main.rs" ]
-  edition = "2021"
+  edition = "2024"
   deps = [
     "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia",
