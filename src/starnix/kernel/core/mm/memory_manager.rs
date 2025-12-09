@@ -27,6 +27,7 @@ use linux_uapi::BUS_ADRERR;
 use memory_pinning::PinnedMapping;
 use range_map::RangeMap;
 use starnix_ext::map_ext::EntryExt;
+use starnix_lifecycle::DropNotifier;
 use starnix_logging::{
     CATEGORY_STARNIX_MM, impossible_error, log_warn, trace_duration, track_stub,
 };
@@ -2840,6 +2841,9 @@ pub struct MemoryManager {
     /// For details on why this isn't under the `RwLock` protected `MemoryManagerState`,
     /// See [`InflightVmsplicedPayloads::payloads`].
     pub inflight_vmspliced_payloads: InflightVmsplicedPayloads,
+
+    /// A mechanism to be notified when this `MemoryManager` is destroyed.
+    pub drop_notifier: DropNotifier,
 }
 
 impl MemoryManager {
@@ -2881,6 +2885,7 @@ impl MemoryManager {
                 user_vmar_info.base + user_vmar_info.len,
             ),
             inflight_vmspliced_payloads: Default::default(),
+            drop_notifier: DropNotifier::default(),
         }
     }
 

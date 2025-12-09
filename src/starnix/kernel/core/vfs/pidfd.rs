@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::mm::MemoryManager;
 use crate::task::{
     CurrentTask, EventHandler, SignalHandler, SignalHandlerInner, ThreadGroup, ThreadGroupKey,
     WaitCanceler, Waiter,
@@ -49,15 +50,25 @@ pub fn new_pidfd<L>(
     locked: &mut Locked<L>,
     current_task: &CurrentTask,
     proc: &ThreadGroup,
+    mm: &MemoryManager,
     flags: OpenFlags,
 ) -> FileHandle
 where
     L: LockEqualOrBefore<FileOpsCore>,
 {
+    // We should really be monitoring the ThreadGroup's drop_notifier instead, but we also need to
+    // ensure that we're not signalling the pidfd until after all memory resources associated with
+    // the process are released. In the current Starnix codebase, the MemoryManager of a process may
+    // outlive the ThreadGroup in some circumstances. Therefore, as a temporary workaround, here we
+    // monitor the MemoryManager's drop_notifier, which is guaranteed to only fire when all the
+    // memory mappings associated with the process have been released. To be revisited once Starnix
+    // implements explicit cleanup of resources on process exit.
+    let terminated_event = mm.drop_notifier.event();
+
     Anon::new_private_file(
         locked,
         current_task,
-        Box::new(PidFdFileObject { tg: proc.into(), terminated_event: proc.drop_notifier.event() }),
+        Box::new(PidFdFileObject { tg: proc.into(), terminated_event }),
         flags,
         "[pidfd]",
     )

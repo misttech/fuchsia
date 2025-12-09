@@ -2101,21 +2101,22 @@ pub fn sys_pidfd_open(
     let file = {
         let pid_table = current_task.kernel().pids.read();
 
-        // Validate that a process (and not just a task) entry exists for the PID.
-        let Some(process_entry) = pid_table.get_process(pid) else {
-            if pid_table.get_task(pid).upgrade().is_some() {
-                return error!(EINVAL);
-            } else {
-                return error!(ESRCH);
-            }
-        };
-
         let blocking = (flags & PIDFD_NONBLOCK) == 0;
         let open_flags = if blocking { OpenFlags::empty() } else { OpenFlags::NONBLOCK };
-        match process_entry {
-            ProcessEntryRef::Process(proc) => new_pidfd(locked, current_task, &proc, open_flags),
-            ProcessEntryRef::Zombie(_) => new_zombie_pidfd(locked, current_task, open_flags),
-        }
+
+        // Validate that a process (and not just a task) entry exists for the PID.
+        let task = pid_table.get_task(pid);
+        let file = match (pid_table.get_process(pid), task.upgrade()) {
+            (Some(ProcessEntryRef::Process(proc)), Some(task)) => {
+                new_pidfd(locked, current_task, &proc, &*task.mm()?, open_flags)
+            }
+            (Some(ProcessEntryRef::Zombie(_)), _) => {
+                new_zombie_pidfd(locked, current_task, open_flags)
+            }
+            (None, Some(_)) => return error!(EINVAL),
+            _ => return error!(ESRCH),
+        };
+        file
     };
 
     current_task.add_file(locked, file, FdFlags::CLOEXEC)
