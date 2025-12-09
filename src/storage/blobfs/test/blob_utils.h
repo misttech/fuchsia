@@ -27,9 +27,13 @@
 #include <utility>
 
 #include <fbl/array.h>
+#include <fbl/ref_ptr.h>
 #include <fbl/unique_fd.h>
 
+#include "src/storage/blobfs/blob.h"
 #include "src/storage/blobfs/blob_layout.h"
+#include "src/storage/blobfs/blobfs.h"
+#include "src/storage/blobfs/compression_settings.h"
 #include "src/storage/blobfs/format.h"
 
 namespace blobfs {
@@ -108,17 +112,6 @@ void MakeBlob(const BlobInfo& info, fbl::unique_fd* fd);
 // Returns the name of |format| for use in parameterized tests.
 std::string GetBlobLayoutFormatNameForTests(BlobLayoutFormat format);
 
-// An in-memory representation of a Merkle tree.
-struct MerkleTreeInfo {
-  std::unique_ptr<uint8_t[]> merkle_tree;
-  uint64_t merkle_tree_size;
-  Digest root;
-};
-
-// Constructs a Merkle tree for |data|.
-std::unique_ptr<MerkleTreeInfo> CreateMerkleTree(const uint8_t* data, uint64_t data_size,
-                                                 bool use_compact_format);
-
 constexpr uint64_t kRingBufferSize = 256ul * 1024;
 
 // Class for creating blob data and generating its merkle root.
@@ -195,6 +188,11 @@ class TestDeliveryBlob {
 
   // Wrapper for TestDeliveryBlob::CreateUncompressed(TestBlobData::Create(size, fill)).
   static TestDeliveryBlob CreateUncompressed(size_t size, uint8_t fill = 0xAB);
+
+  // Creates a delivery blob for `blob_data` using the compression specified by
+  // `compression_algorithm`.
+  static TestDeliveryBlob CreateWithCompressionAlgorithm(
+      const TestBlobData& blob_data, CompressionAlgorithm compression_algorithm);
 
   std::span<const uint8_t> data() const { return data_; }
   const Digest& digest() const { return digest_; }
@@ -274,6 +272,13 @@ class BlobCreatorWrapper {
 
   fidl::WireSyncClient<fuchsia_fxfs::BlobCreator> creator_;
 };
+
+// Creates a new blob in `blobfs` with the contents of `delivery_blob`. The returned blob will be in
+// the same state as if it had just been written by `BlobWriter`.
+zx::result<fbl::RefPtr<Blob>> CreateBlob(Blobfs& blobfs, const TestDeliveryBlob& delivery_blob);
+
+// Retrieve a blob in `blobfs` with the digest `digest`.
+zx::result<fbl::RefPtr<Blob>> GetBlob(Blobfs& blobfs, const Digest& digest);
 
 }  // namespace blobfs
 

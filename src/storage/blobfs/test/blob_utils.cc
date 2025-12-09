@@ -39,6 +39,7 @@
 #include <vector>
 
 #include <fbl/array.h>
+#include <fbl/ref_ptr.h>
 #include <fbl/unique_fd.h>
 #include <gtest/gtest.h>
 #include <safemath/safe_conversions.h>
@@ -46,7 +47,11 @@
 
 #include "src/lib/digest/digest.h"
 #include "src/lib/digest/merkle-tree.h"
+#include "src/storage/blobfs/blob.h"
 #include "src/storage/blobfs/blob_layout.h"
+#include "src/storage/blobfs/blobfs.h"
+#include "src/storage/blobfs/cache_node.h"
+#include "src/storage/blobfs/compression_settings.h"
 #include "src/storage/blobfs/delivery_blob.h"
 #include "src/storage/blobfs/format.h"
 
@@ -96,11 +101,11 @@ std::unique_ptr<BlobInfo> GenerateBlob(const BlobSrcFunction& data_generator,
     data_generator(info->data.get(), data_size);
   }
 
-  auto merkle_tree = CreateMerkleTree(info->data.get(), data_size, /*use_compact_format=*/true);
+  TestMerkleTree merkle_tree(std::span(info->data.get(), data_size), /*use_compact_format=*/true);
   // Ensure we include a path separator if mount_path is specified and does not include one.
   const bool requires_separator = !mount_path.empty() && *mount_path.cend() != '/';
   snprintf(info->path, sizeof(info->path), "%s%s%s", mount_path.c_str(),
-           requires_separator ? "/" : "", merkle_tree->root.ToString().c_str());
+           requires_separator ? "/" : "", merkle_tree.digest().ToString().c_str());
 
   return info;
 }
@@ -192,28 +197,6 @@ std::string GetBlobLayoutFormatNameForTests(BlobLayoutFormat format) {
     case BlobLayoutFormat::kCompactMerkleTreeAtEnd:
       return "CompactMerkleTreeAtEndLayout";
   }
-}
-
-std::unique_ptr<MerkleTreeInfo> CreateMerkleTree(const uint8_t* data, uint64_t data_size,
-                                                 bool use_compact_format) {
-  auto merkle_tree_info = std::make_unique<MerkleTreeInfo>();
-  digest::MerkleTreeCreator mtc;
-  mtc.SetUseCompactFormat(use_compact_format);
-  zx_status_t status = mtc.SetDataLength(data_size);
-  ZX_ASSERT_MSG(status == ZX_OK, "Failed to set data length: %s", zx_status_get_string(status));
-  merkle_tree_info->merkle_tree_size = mtc.GetTreeLength();
-  if (merkle_tree_info->merkle_tree_size > 0) {
-    merkle_tree_info->merkle_tree.reset(new uint8_t[merkle_tree_info->merkle_tree_size]);
-  }
-  uint8_t merkle_tree_root[digest::kSha256Length];
-  status = mtc.SetTree(merkle_tree_info->merkle_tree.get(), merkle_tree_info->merkle_tree_size,
-                       merkle_tree_root, digest::kSha256Length);
-  ZX_ASSERT_MSG(status == ZX_OK, "Failed to set Merkle tree: %s", zx_status_get_string(status));
-  status = mtc.Append(data, data_size);
-  ZX_ASSERT_MSG(status == ZX_OK, "Failed to add data to Merkle tree: %s",
-                zx_status_get_string(status));
-  merkle_tree_info->root = merkle_tree_root;
-  return merkle_tree_info;
 }
 
 std::string BlobInfo::GetMerkleRoot() const { return std::filesystem::path(path).filename(); }
@@ -315,6 +298,16 @@ TestDeliveryBlob TestDeliveryBlob::CreateUncompressed(const TestBlobData& blob_d
 
 TestDeliveryBlob TestDeliveryBlob::CreateUncompressed(size_t size, uint8_t fill) {
   return TestDeliveryBlob(TestBlobData::Create(size, fill), /*compress=*/false);
+}
+
+TestDeliveryBlob TestDeliveryBlob::CreateWithCompressionAlgorithm(
+    const TestBlobData& blob_data, CompressionAlgorithm compression_algorithm) {
+  switch (compression_algorithm) {
+    case CompressionAlgorithm::kUncompressed:
+      return TestDeliveryBlob(blob_data, /*compress=*/false);
+    case CompressionAlgorithm::kChunked:
+      return TestDeliveryBlob(blob_data, /*compress=*/true);
+  }
 }
 
 BlobReaderWrapper::BlobReaderWrapper(fidl::WireSyncClient<fuchsia_fxfs::BlobReader> reader)
@@ -472,6 +465,38 @@ zx::result<bool> BlobCreatorWrapper::NeedsOverwrite(const Digest& digest) const 
     return zx::error(result->error_value());
   }
   return zx::ok(result->value()->needs_overwrite);
+}
+
+zx::result<fbl::RefPtr<Blob>> CreateBlob(Blobfs& blobfs, const TestDeliveryBlob& delivery_blob) {
+  fbl::RefPtr blob =
+      fbl::MakeRefCounted<Blob>(blobfs, delivery_blob.digest(), /*is_delivery_blob=*/true);
+  if (zx_status_t status = blobfs.GetCache().Add(blob); status != ZX_OK) {
+    return zx::error(status);
+  }
+  if (zx_status_t status = blob->Truncate(delivery_blob.data().size()); status != ZX_OK) {
+    return zx::error(status);
+  }
+  size_t actual = 0;
+  if (zx_status_t status =
+          blob->Write(delivery_blob.data().data(), delivery_blob.data().size(), 0, &actual);
+      status != ZX_OK) {
+    return zx::error(status);
+  }
+  if (actual != delivery_blob.data().size()) {
+    return zx::error(ZX_ERR_IO);
+  }
+  if (!blob->IsReadable()) {
+    return zx::error(ZX_ERR_BAD_STATE);
+  }
+  return zx::ok(blob);
+}
+
+zx::result<fbl::RefPtr<Blob>> GetBlob(Blobfs& blobfs, const Digest& digest) {
+  fbl::RefPtr<CacheNode> node;
+  if (zx_status_t status = blobfs.GetCache().Lookup(digest, &node); status != ZX_OK) {
+    return zx::error(status);
+  }
+  return zx::ok(fbl::RefPtr<Blob>::Downcast(std::move(node)));
 }
 
 }  // namespace blobfs

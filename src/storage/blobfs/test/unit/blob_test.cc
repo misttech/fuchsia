@@ -4,21 +4,18 @@
 
 #include "src/storage/blobfs/blob.h"
 
-#include <fidl/fuchsia.io/cpp/wire_types.h>
 #include <fuchsia/hardware/block/driver/c/banjo.h>
-#include <lib/sync/completion.h>
 #include <lib/zx/result.h>
 #include <lib/zx/time.h>
 #include <lib/zx/vmo.h>
 #include <limits.h>
+#include <zircon/assert.h>
 #include <zircon/compiler.h>
 #include <zircon/errors.h>
+#include <zircon/syscalls.h>
 #include <zircon/syscalls/object.h>
-#include <zircon/time.h>
 #include <zircon/types.h>
 
-#include <algorithm>
-#include <array>
 #include <atomic>
 #include <chrono>
 #include <cstddef>
@@ -38,31 +35,25 @@
 #include "src/devices/block/drivers/core/block-fifo.h"
 #include "src/lib/digest/digest.h"
 #include "src/lib/digest/node-digest.h"
+#include "src/lib/testing/predicates/status.h"
 #include "src/storage/blobfs/blob_layout.h"
 #include "src/storage/blobfs/blobfs.h"
+#include "src/storage/blobfs/cache_node.h"
 #include "src/storage/blobfs/common.h"
 #include "src/storage/blobfs/compression_settings.h"
 #include "src/storage/blobfs/format.h"
 #include "src/storage/blobfs/mkfs.h"
-#include "src/storage/blobfs/mount.h"
 #include "src/storage/blobfs/test/blob_utils.h"
 #include "src/storage/blobfs/test/blobfs_test_setup.h"
-#include "src/storage/blobfs/test/test_scoped_vnode_open.h"
 #include "src/storage/blobfs/test/unit/utils.h"
 #include "src/storage/lib/block_client/cpp/fake_block_device.h"
-#include "src/storage/lib/vfs/cpp/vfs_types.h"
-#include "src/storage/lib/vfs/cpp/vnode.h"
 
 namespace blobfs {
 
 namespace {
 
-constexpr const char kEmptyBlobName[] =
-    "15ec7bf0b50732b49f8228e07d24365338f9e3ab994b00af08e5a3bffe55fd8b";
-
 constexpr uint32_t kTestDeviceBlockSize = 512;
 constexpr uint32_t kTestDeviceNumBlocks = 400 * kBlobfsBlockSize / kTestDeviceBlockSize;
-namespace fio = fuchsia_io;
 
 const size_t kPageSize = zx_system_get_page_size();
 
@@ -90,25 +81,40 @@ class BlobTest : public BlobfsTestSetup,
         .blob_layout_format = std::get<0>(GetParam()),
         .oldest_minor_version = GetOldestMinorVersion(),
     };
-    ASSERT_EQ(FormatFilesystem(device.get(), filesystem_options), ZX_OK);
-
-    MountOptions mount_options{
-        .compression_settings =
-            {
-                .compression_algorithm = std::get<1>(GetParam()),
-            },
-    };
-    ASSERT_EQ(ZX_OK, Mount(std::move(device), mount_options));
+    ASSERT_OK(FormatFilesystem(device.get(), filesystem_options));
+    ASSERT_OK(Mount(std::move(device)));
   }
 
-  const zx::vmo& GetPagedVmo(Blob& blob) {
+  static CompressionAlgorithm GetCompressionAlgorithm() { return std::get<1>(GetParam()); }
+
+  static const zx::vmo& GetPagedVmo(Blob& blob) {
     std::lock_guard lock(blob.mutex_);
     return blob.paged_vmo();
   }
 
+  static bool IsPurgeable(Blob& blob) {
+    std::lock_guard lock(blob.mutex_);
+    return blob.Purgeable();
+  }
+
+  static bool IsDeletionQueued(Blob& blob) { return blob.DeletionQueued(); }
+
   void set_hook(block_client::FakeBlockDevice::Hook hook) {
     std::lock_guard l(this->hook_lock_);
     hook_ = std::move(hook);
+  }
+
+  zx::result<fbl::RefPtr<Blob>> CreateBlob(const TestBlobData& blob_data) {
+    return CreateBlob(
+        TestDeliveryBlob::CreateWithCompressionAlgorithm(blob_data, GetCompressionAlgorithm()));
+  }
+
+  zx::result<fbl::RefPtr<Blob>> CreateBlob(const TestDeliveryBlob& delivery_blob) {
+    return blobfs::CreateBlob(*blobfs(), delivery_blob);
+  }
+
+  zx::result<fbl::RefPtr<Blob>> GetBlob(const Digest& digest) {
+    return blobfs::GetBlob(*blobfs(), digest);
   }
 
  private:
@@ -118,78 +124,22 @@ class BlobTest : public BlobfsTestSetup,
 
 namespace {
 
-TEST_P(BlobTest, TruncateWouldOverflow) {
-  fbl::RefPtr root = OpenRoot();
-  zx::result file = root->Create(kEmptyBlobName, fs::CreationType::kFile);
-  ASSERT_TRUE(file.is_ok()) << file.status_string();
-  EXPECT_EQ(file->Truncate(UINT64_MAX), ZX_ERR_OUT_OF_RANGE);
-}
-
-// Tests that Blob::Sync issues the callback in the right way in the right cases. This does not
-// currently test that the data was actually written to the block device.
-TEST_P(BlobTest, SyncBehavior) {
-  auto root = OpenRoot();
-
-  std::unique_ptr<BlobInfo> info = GenerateRandomBlob("", 64);
-
-  zx::result file = root->Create(info->path, fs::CreationType::kFile);
-  ASSERT_TRUE(file.is_ok()) << file.status_string();
-  size_t out_actual = 0;
-  EXPECT_EQ(file->Truncate(info->size_data), ZX_OK);
-
-  // Try syncing before the data has been written. This currently issues an error synchronously but
-  // we accept either synchronous or asynchronous callbacks.
-  sync_completion_t sync;
-  file->Sync([&](zx_status_t status) {
-    EXPECT_EQ(ZX_ERR_BAD_STATE, status);
-    sync_completion_signal(&sync);
-  });
-  sync_completion_wait(&sync, ZX_TIME_INFINITE);
-
-  EXPECT_EQ(file->Write(info->data.get(), info->size_data, 0, &out_actual), ZX_OK);
-  EXPECT_EQ(info->size_data, out_actual);
-
-  // It's difficult to get a precise hook into the period between when data has been written and
-  // when it has been flushed to disk.  The journal will delay flushing metadata, so the following
-  // should test sync being called before metadata has been flushed, and then again afterwards.
-  for (int i = 0; i < 2; ++i) {
-    sync_completion_t sync;
-    file->Sync([&](zx_status_t status) {
-      EXPECT_EQ(ZX_OK, status) << i;
-      sync_completion_signal(&sync);
-    });
-    sync_completion_wait(&sync, ZX_TIME_INFINITE);
-  }
-}
-
 TEST_P(BlobTest, ReadingBlobZerosTail) {
-  // Remount without compression so that we can manipulate the data that is loaded.
-  MountOptions options = {.compression_settings = {
-                              .compression_algorithm = CompressionAlgorithm::kUncompressed,
-                          }};
-  ASSERT_EQ(ZX_OK, Remount(options));
-
-  std::unique_ptr<BlobInfo> info = GenerateRandomBlob("", 64);
+  // An uncompressed blob is used so the exact size of it in storage is known.
+  auto delivery_blob = TestDeliveryBlob::CreateUncompressed(64);
   uint64_t block;
+  // Create the blob and pull out of the block where the blob contents were written.
   {
-    auto root = OpenRoot();
-    zx::result file = root->Create(info->path, fs::CreationType::kFile);
-    ASSERT_TRUE(file.is_ok()) << file.status_string();
-    size_t out_actual = 0;
-    EXPECT_EQ(file->Truncate(info->size_data), ZX_OK);
-    EXPECT_EQ(file->Write(info->data.get(), info->size_data, 0, &out_actual), ZX_OK);
-    EXPECT_EQ(out_actual, info->size_data);
-    {
-      auto blob = fbl::RefPtr<Blob>::Downcast(*file);
-      block = blobfs()->GetNode(blob->Ino())->extents[0].Start() + DataStartBlock(blobfs()->Info());
-    }
+    auto blob = CreateBlob(delivery_blob);
+    ASSERT_OK(blob);
+    block = blobfs()->GetNode(blob->Ino())->extents[0].Start() + DataStartBlock(blobfs()->Info());
   }
 
   auto block_device = Unmount();
 
   // Read the block that contains the blob.
   storage::VmoBuffer buffer;
-  ASSERT_EQ(buffer.Initialize(block_device.get(), 1, kBlobfsBlockSize, "test_buffer"), ZX_OK);
+  ASSERT_OK(buffer.Initialize(block_device.get(), 1, kBlobfsBlockSize, "test_buffer"));
   block_fifo_request_t request = {
       .command = {.opcode = BLOCK_OPCODE_READ, .flags = 0},
       .vmoid = buffer.vmoid(),
@@ -197,227 +147,155 @@ TEST_P(BlobTest, ReadingBlobZerosTail) {
       .vmo_offset = 0,
       .dev_offset = block * kBlobfsBlockSize / kTestDeviceBlockSize,
   };
-  ASSERT_EQ(block_device->FifoTransaction(&request, 1), ZX_OK);
+  ASSERT_OK(block_device->FifoTransaction(&request, 1));
 
   // Corrupt the end of the page.
   static_cast<uint8_t*>(buffer.Data(0))[kPageSize - 1] = 1;
 
   // Write the block back.
   request.command = {.opcode = BLOCK_OPCODE_WRITE, .flags = 0};
-  ASSERT_EQ(block_device->FifoTransaction(&request, 1), ZX_OK);
+  ASSERT_OK(block_device->FifoTransaction(&request, 1));
 
   // Remount and try and read the blob.
-  ASSERT_EQ(ZX_OK, Mount(std::move(block_device), options));
+  ASSERT_OK(Mount(std::move(block_device)));
 
-  auto root = OpenRoot();
-  fbl::RefPtr<fs::Vnode> file;
-  ASSERT_EQ(root->Lookup(info->path, &file), ZX_OK);
+  auto blob = GetBlob(delivery_blob.digest());
+  ASSERT_OK(blob);
+  auto vmo = blob->GetVmoForBlobReader();
+  ASSERT_OK(vmo);
+  ASSERT_EQ(GetVmoStreamSize(*vmo), 64ul);
+  ASSERT_EQ(GetVmoSize(*vmo), kPageSize);
 
-  TestScopedVnodeOpen open(file);  // Must be open to read or get the Vmo.
-
-  // Trying to read from the blob would fail if the tail wasn't zeroed.
-  size_t actual;
   uint8_t data;
-  EXPECT_EQ(file->Read(&data, 1, 0, &actual), ZX_OK);
-
-  zx::vmo vmo;
-  EXPECT_EQ(file->GetVmo(fio::wire::VmoFlags::kRead, &vmo), ZX_OK);
-
-  ASSERT_EQ(GetVmoStreamSize(vmo), 64ul);
-  ASSERT_EQ(GetVmoSize(vmo), kPageSize);
-
-  EXPECT_EQ(vmo.read(&data, kPageSize - 1, 1), ZX_OK);
+  EXPECT_OK(vmo->read(&data, kPageSize - 1, 1));
   // The corrupted bit in the tail was zeroed when being read.
   EXPECT_EQ(data, 0);
 }
 
 TEST_P(BlobTest, WriteBlobWithSharedBlockInCompactFormat) {
-  // Remount without compression so we can force a specific blob size in storage.
-  MountOptions options = {.compression_settings = {
-                              .compression_algorithm = CompressionAlgorithm::kUncompressed,
-                          }};
-  Remount(options);
-
   // Create a blob where the Merkle tree in the compact layout fits perfectly into the space
   // remaining at the end of the blob.
   ASSERT_EQ(blobfs()->Info().block_size, digest::kDefaultNodeSize);
-  std::unique_ptr<BlobInfo> info =
-      GenerateRealisticBlob("", (digest::kDefaultNodeSize - digest::kSha256Length) * 3);
-  {
-    std::unique_ptr<MerkleTreeInfo> merkle_tree =
-        CreateMerkleTree(info->data.get(), info->size_data, /*use_compact_format=*/true);
-    EXPECT_EQ(info->size_data + merkle_tree->merkle_tree_size, digest::kDefaultNodeSize * 3);
+  auto blob_data =
+      TestBlobData::CreateRealistic((digest::kDefaultNodeSize - digest::kSha256Length) * 3);
+  // An uncompressed blob is used so the exact size of it in storage is known.
+  auto delivery_blob = TestDeliveryBlob::CreateUncompressed(blob_data);
 
-    auto root = OpenRoot();
-    zx::result file = root->Create(info->path, fs::CreationType::kFile);
-    ASSERT_TRUE(file.is_ok()) << file.status_string();
-    size_t out_actual = 0;
-    EXPECT_EQ(file->Truncate(info->size_data), ZX_OK);
-    EXPECT_EQ(file->Write(info->data.get(), info->size_data, 0, &out_actual), ZX_OK);
-    EXPECT_EQ(out_actual, info->size_data);
+  auto merkle_tree = TestMerkleTree::CreateCompact(blob_data);
+  EXPECT_EQ(blob_data.data().size() + merkle_tree.merkle_tree().size(),
+            digest::kDefaultNodeSize * 3);
+
+  {
+    auto blob = CreateBlob(delivery_blob);
+    ASSERT_OK(blob);
   }
 
   // Remount to avoid caching.
-  Remount(options);
+  Remount();
 
   // Read back the blob
-  {
-    fbl::RefPtr<fs::Vnode> file;
-    auto root = OpenRoot();
-    ASSERT_EQ(root->Lookup(info->path, &file), ZX_OK);
-
-    TestScopedVnodeOpen open(file);  // Must be open to read.
-    size_t actual;
-    auto data = std::make_unique<uint8_t[]>(info->size_data);
-    EXPECT_EQ(file->Read(data.get(), info->size_data, 0, &actual), ZX_OK);
-    EXPECT_EQ(info->size_data, actual);
-    EXPECT_EQ(memcmp(data.get(), info->data.get(), info->size_data), 0);
-  }
+  auto blob = GetBlob(blob_data.digest());
+  ASSERT_OK(blob);
+  auto vmo = blob->GetVmoForBlobReader();
+  ASSERT_OK(vmo);
+  ASSERT_TRUE(VerifyContents(*vmo, blob_data.data()));
 }
 
 TEST_P(BlobTest, WriteErrorsAreFused) {
-  std::unique_ptr<BlobInfo> info =
-      GenerateRandomBlob("", static_cast<size_t>(kTestDeviceBlockSize) * kTestDeviceNumBlocks);
-  auto root = OpenRoot();
-  zx::result file = root->Create(info->path, fs::CreationType::kFile);
-  ASSERT_TRUE(file.is_ok()) << file.status_string();
-  ASSERT_EQ(file->Truncate(info->size_data), ZX_OK);
-  uint64_t out_actual;
-  EXPECT_EQ(file->Write(info->data.get(), info->size_data, 0, &out_actual), ZX_ERR_NO_SPACE);
+  // A uncompressed blob is used to ensure that blobfs will run out of space.
+  auto delivery_blob = TestDeliveryBlob::CreateUncompressed(
+      static_cast<size_t>(kTestDeviceBlockSize) * kTestDeviceNumBlocks);
+
+  fbl::RefPtr blob =
+      fbl::MakeRefCounted<Blob>(*blobfs(), delivery_blob.digest(), /*is_delivery_blob=*/true);
+  ASSERT_OK(blobfs()->GetCache().Add(blob));
+  ASSERT_OK(blob->Truncate(delivery_blob.data().size()));
+  size_t out_actual = 0;
+  ASSERT_STATUS(
+      blob->Write(delivery_blob.data().data(), delivery_blob.data().size(), 0, &out_actual),
+      ZX_ERR_NO_SPACE);
   // Writing just 1 byte now should see the same error returned.
-  EXPECT_EQ(file->Write(info->data.get(), 1, 0, &out_actual), ZX_ERR_NO_SPACE);
+  ASSERT_STATUS(blob->Write(delivery_blob.data().data(), 1, 0, &out_actual), ZX_ERR_NO_SPACE);
 
   // Whilst we have the failed file still open, we should be able to try again immediately.
-  zx::result file2 = root->Create(info->path, fs::CreationType::kFile);
-  ASSERT_TRUE(file2.is_ok()) << file2.status_string();
-  ASSERT_EQ(file2->Truncate(info->size_data), ZX_OK);
+  fbl::RefPtr blob2 =
+      fbl::MakeRefCounted<Blob>(*blobfs(), delivery_blob.digest(), /*is_delivery_blob=*/true);
+  ASSERT_OK(blobfs()->GetCache().Add(blob2));
+  ASSERT_OK(blob2->Truncate(delivery_blob.data().size()));
+  ASSERT_OK(blob2->Write(delivery_blob.data().data(), 1, 0, &out_actual));
+  ASSERT_EQ(out_actual, 1ul);
 }
 
 TEST_P(BlobTest, UnlinkBlocksUntilNoVmoChildren) {
-  std::unique_ptr<BlobInfo> info = GenerateRealisticBlob("", 1 << 16);
-  auto root = OpenRoot();
+  auto blob_data = TestBlobData::CreateRealistic(1 << 16);
 
-  // Write the blob
-  {
-    zx::result file = root->Create(info->path, fs::CreationType::kFile);
-    ASSERT_TRUE(file.is_ok()) << file.status_string();
-    size_t out_actual = 0;
-    ASSERT_EQ(file->Truncate(info->size_data), ZX_OK);
-    ASSERT_EQ(file->Write(info->data.get(), info->size_data, 0, &out_actual), ZX_OK);
-    ASSERT_EQ(file->Close(), ZX_OK);
-    ASSERT_EQ(out_actual, info->size_data);
-  }
+  // Write the blob.
+  auto blob = CreateBlob(blob_data);
+  ASSERT_OK(blob);
 
-  // Get a copy of the VMO, but discard the vnode reference.
-  zx::vmo vmo = [&]() {
-    fbl::RefPtr<fs::Vnode> file;
-    // Lookup doesn't call Open, so no need to Close later.
-    EXPECT_EQ(root->Lookup(info->path, &file), ZX_OK);
+  // Get a clone of the VMO.
+  auto vmo = blob->GetVmoForBlobReader();
+  ASSERT_OK(vmo);
 
-    // Open the blob, get the vmo, and close the blob.
-    TestScopedVnodeOpen open(file);
-    zx::vmo vmo;
-    EXPECT_EQ(file->GetVmo(fio::wire::VmoFlags::kRead, &vmo), ZX_OK);
+  // Mark the blob to be purged.
+  ASSERT_OK(blob->QueueUnlink());
 
-    EXPECT_EQ(GetVmoStreamSize(vmo), info->size_data);
-
-    return vmo;
-  }();
-
-  ASSERT_EQ(root->Unlink(info->path, /* must_be_dir=*/false), ZX_OK);
-  uint8_t buf[8192];
-  for (size_t off = 0; off < 1 << 16; off += kBlobfsBlockSize) {
-    EXPECT_EQ(vmo.read(buf, off, kBlobfsBlockSize), ZX_OK);
-  }
+  // The blob can still be read.
+  ASSERT_TRUE(VerifyContents(*vmo, blob_data.data()));
+  // The blob isn't purgeable because of `vmo`.
+  ASSERT_FALSE(IsPurgeable(**blob));
+  ASSERT_TRUE(IsDeletionQueued(**blob));
 }
 
 TEST_P(BlobTest, VmoChildDeletedTriggersPurging) {
-  std::unique_ptr<BlobInfo> info = GenerateRealisticBlob("", 1 << 16);
-  auto root = OpenRoot();
+  auto blob_data = TestBlobData::CreateRealistic(1 << 16);
 
-  // Write the blob
-  {
-    zx::result file = root->Create(info->path, fs::CreationType::kFile);
-    ASSERT_TRUE(file.is_ok()) << file.status_string();
-    size_t out_actual = 0;
-    ASSERT_EQ(file->Truncate(info->size_data), ZX_OK);
-    ASSERT_EQ(file->Write(info->data.get(), info->size_data, 0, &out_actual), ZX_OK);
-    ASSERT_EQ(file->Close(), ZX_OK);
-    ASSERT_EQ(out_actual, info->size_data);
-  }
+  // Write the blob.
+  auto blob = CreateBlob(blob_data);
+  ASSERT_OK(blob);
 
-  // Get a copy of the VMO, but discard the vnode reference.
-  zx::vmo vmo = [&]() {
-    fbl::RefPtr<fs::Vnode> file;
-    // Lookup doesn't call Open, so no need to Close later.
-    EXPECT_EQ(root->Lookup(info->path, &file), ZX_OK);
-    zx::vmo vmo;
+  // Get a clone of the VMO.
+  auto blob_vmo = blob->GetVmoForBlobReader();
+  ASSERT_OK(blob_vmo);
+  zx::vmo vmo = std::move(*blob_vmo);
 
-    // Open the blob, get the vmo, and close the blob.
-    TestScopedVnodeOpen open(file);
-    EXPECT_EQ(file->GetVmo(fio::wire::VmoFlags::kRead, &vmo), ZX_OK);
+  // Mark the blob to be purged.
+  ASSERT_OK(blob->QueueUnlink());
+  ASSERT_EQ(GetVmoStreamSize(vmo), blob_data.data().size());
 
-    EXPECT_EQ(GetVmoStreamSize(vmo), info->size_data);
-
-    return vmo;
-  }();
-
-  ASSERT_EQ(root->Unlink(info->path, /* must_be_dir=*/false), ZX_OK);
-
-  // Delete the VMO. This should eventually trigger deletion of the blob.
+  // Drop the VMO. This should eventually trigger deletion of the blob.
   vmo.reset();
 
-  // Unfortunately, polling the filesystem is the best option for checking the file as deleted.
+  // Unfortunately, polling the filesystem is the best option for checking if the blob is deleted.
   bool deleted = false;
   const auto start = std::chrono::steady_clock::now();
   constexpr auto kMaxWait = std::chrono::seconds(60);
   while (std::chrono::steady_clock::now() <= start + kMaxWait) {
     loop().RunUntilIdle();
-
-    fbl::RefPtr<fs::Vnode> file;
-    zx_status_t status = root->Lookup(info->path, &file);
-    if (status == ZX_ERR_NOT_FOUND) {
-      deleted = true;
-      break;
+    auto blob = GetBlob(blob_data.digest());
+    if (blob.is_ok()) {
+      // The blob still exists.
+      zx::nanosleep(zx::deadline_after(zx::msec(10)));
+      continue;
     }
-    ASSERT_EQ(status, ZX_OK);
-
-    zx::nanosleep(zx::deadline_after(zx::sec(1)));
+    ASSERT_STATUS(blob, ZX_ERR_NOT_FOUND);
+    deleted = true;
+    break;
   }
   EXPECT_TRUE(deleted);
 }
 
 // Some paging failures result in permanent failure. Failed block ops should not.
 TEST_P(BlobTest, ReadErrorsTemporary) {
-  std::unique_ptr<BlobInfo> info = GenerateRealisticBlob("", 1 << 16);
-  auto root = OpenRoot();
+  auto blob_data = TestBlobData::CreateRealistic(1 << 16);
 
-  // Write the blob
-  {
-    zx::result file = root->Create(info->path, fs::CreationType::kFile);
-    ASSERT_TRUE(file.is_ok()) << file.status_string();
-    size_t out_actual = 0;
-    ASSERT_EQ(file->Truncate(info->size_data), ZX_OK);
-    ASSERT_EQ(file->Write(info->data.get(), info->size_data, 0, &out_actual), ZX_OK);
-    ASSERT_EQ(file->Close(), ZX_OK);
-    ASSERT_EQ(out_actual, info->size_data);
-  }
+  // Write the blob.
+  auto blob = CreateBlob(blob_data);
+  ASSERT_OK(blob);
 
-  // Get a copy of the VMO.
-  zx::vmo vmo = [&]() {
-    fbl::RefPtr<fs::Vnode> file;
-    // Lookup doesn't call Open, so no need to Close later.
-    EXPECT_EQ(root->Lookup(info->path, &file), ZX_OK);
-    zx::vmo vmo;
-
-    // Open the blob, get the vmo, and close the blob.
-    TestScopedVnodeOpen open(file);
-    EXPECT_EQ(file->GetVmo(fio::wire::VmoFlags::kRead, &vmo), ZX_OK);
-
-    EXPECT_EQ(GetVmoStreamSize(vmo), info->size_data);
-
-    return vmo;
-  }();
+  // Get a clone of the VMO.
+  auto vmo = blob->GetVmoForBlobReader();
+  ASSERT_OK(vmo);
 
   // Add a hook to toggle read failure.
   std::atomic<zx_status_t> fail_ops = ZX_OK;
@@ -430,269 +308,94 @@ TEST_P(BlobTest, ReadErrorsTemporary) {
   for (zx_status_t err :
        {ZX_ERR_IO, ZX_ERR_IO_DATA_INTEGRITY, ZX_ERR_IO_REFUSED, ZX_ERR_BAD_STATE}) {
     fail_ops.store(err);
-    ASSERT_NE(vmo.read(&buf, 0, 1), ZX_OK);
+    ASSERT_NE(vmo->read(&buf, 0, 1), ZX_OK);
   }
 
   // Now succeed.
   fail_ops.store(ZX_OK);
-  ASSERT_EQ(vmo.read(&buf, 0, 1), ZX_OK);
+  ASSERT_OK(vmo->read(&buf, 0, 1));
 
   // Clear the hook to stop using the atomic.
-  set_hook([](const block_fifo_request_t& _req, const zx::vmo* _vmo) { return ZX_OK; });
+  set_hook({});
 }
 
 std::string GetVmoName(const zx::vmo& vmo) {
   char buf[ZX_MAX_NAME_LEN + 1] = {'\0'};
-  EXPECT_EQ(vmo.get_property(ZX_PROP_NAME, buf, ZX_MAX_NAME_LEN), ZX_OK);
+  EXPECT_OK(vmo.get_property(ZX_PROP_NAME, buf, ZX_MAX_NAME_LEN));
   return std::string(buf, ::strlen(buf));
 }
 
-TEST_P(BlobTest, VmoNameActiveWhileFdOpen) {
-  std::unique_ptr<BlobInfo> info = GenerateRandomBlob("", 64);
-  auto root = OpenRoot();
-  const std::string active_name = std::string("blob-").append(std::string_view(info->path, 8));
-  const std::string inactive_name =
-      std::string("inactive-blob-").append(std::string_view(info->path, 8));
+TEST_P(BlobTest, VmoNameMatchesStateOfBlob) {
+  auto blob_data = TestBlobData::Create(64);
+  auto blob = CreateBlob(blob_data);
+  ASSERT_OK(blob);
 
-  zx::result file = root->Create(info->path, fs::CreationType::kFile);
-  ASSERT_TRUE(file.is_ok()) << file.status_string();
-  size_t out_actual = 0;
-  ASSERT_EQ(file->Truncate(info->size_data), ZX_OK);
-  ASSERT_EQ(file->Write(info->data.get(), info->size_data, 0, &out_actual), ZX_OK);
-  // Make sure the async part of the write finishes.
-  loop().RunUntilIdle();
-  ASSERT_EQ(file->Close(), ZX_OK);
-  ASSERT_EQ(file->Open(nullptr), ZX_OK);
-  auto blob = fbl::RefPtr<Blob>::Downcast(*std::move(file));
-
-  // Blobfs lazily creates the data VMO on first read.
-  EXPECT_FALSE(GetPagedVmo(*blob));
-  char c;
-  size_t actual;
-  ASSERT_EQ(blob->Read(&c, sizeof(c), 0u, &actual), ZX_OK);
-  EXPECT_TRUE(GetPagedVmo(*blob));
-  EXPECT_EQ(GetVmoName(GetPagedVmo(*blob)), active_name);
-
-  ASSERT_EQ(blob->Close(), ZX_OK);
-  EXPECT_EQ(GetVmoName(GetPagedVmo(*blob)), inactive_name);
-
-  ASSERT_EQ(blob->Open(nullptr), ZX_OK);
-  EXPECT_EQ(GetVmoName(GetPagedVmo(*blob)), active_name);
-
-  ASSERT_EQ(blob->Close(), ZX_OK);
-}
-
-TEST_P(BlobTest, VmoNameActiveWhileVmoClonesExist) {
-  std::unique_ptr<BlobInfo> info = GenerateRandomBlob("", 64);
-  auto root = OpenRoot();
-  const std::string active_name = std::string("blob-").append(std::string_view(info->path, 8));
-  const std::string inactive_name =
-      std::string("inactive-blob-").append(std::string_view(info->path, 8));
-
-  zx::result file = root->Create(info->path, fs::CreationType::kFile);
-  ASSERT_TRUE(file.is_ok()) << file.status_string();
-  size_t out_actual = 0;
-  ASSERT_EQ(file->Truncate(info->size_data), ZX_OK);
-  ASSERT_EQ(file->Write(info->data.get(), info->size_data, 0, &out_actual), ZX_OK);
-  // Make sure the async part of the write finishes.
-  loop().RunUntilIdle();
-  ASSERT_EQ(file->Close(), ZX_OK);
-  ASSERT_EQ(file->Open(nullptr), ZX_OK);
-  auto blob = fbl::RefPtr<Blob>::Downcast(*std::move(file));
-
-  zx::vmo vmo;
-  ASSERT_EQ(blob->GetVmo(fio::wire::VmoFlags::kRead, &vmo), ZX_OK);
-  ASSERT_EQ(blob->Close(), ZX_OK);
-  EXPECT_EQ(GetVmoName(GetPagedVmo(*blob)), active_name);
+  {
+    auto vmo = blob->GetVmoForBlobReader();
+    ASSERT_OK(vmo);
+    auto active_blob_name = FormatBlobDataVmoName(blob_data.digest());
+    ASSERT_EQ(GetVmoName(*vmo), std::string_view(active_blob_name));
+  }
 
   // The ZX_VMO_ZERO_CHILDREN signal is asynchronous; unfortunately polling is the best we can do.
-  vmo.reset();
   bool active = true;
+  auto inactive_blob_name = FormatInactiveBlobDataVmoName(blob_data.digest());
   const auto start = std::chrono::steady_clock::now();
   constexpr auto kMaxWait = std::chrono::seconds(60);
   while (std::chrono::steady_clock::now() <= start + kMaxWait) {
     loop().RunUntilIdle();
-    if (GetVmoName(GetPagedVmo(*blob)) == inactive_name) {
+    if (GetVmoName(GetPagedVmo(**blob)) == std::string_view(inactive_blob_name)) {
       active = false;
       break;
     }
-    zx::nanosleep(zx::deadline_after(zx::sec(1)));
+    zx::nanosleep(zx::deadline_after(zx::msec(10)));
   }
   EXPECT_FALSE(active) << "Name did not become inactive after deadline";
 }
 
-TEST_P(BlobTest, GetAttributes) {
-  std::unique_ptr<BlobInfo> info = GenerateRandomBlob("", 64);
-  uint32_t inode;
-  uint64_t block_count;
-
-  auto check_attributes = [&](const fs::VnodeAttributes& attributes) {
-    EXPECT_EQ(attributes.id, inode);
-    EXPECT_EQ(attributes.content_size, 64u);
-    EXPECT_EQ(attributes.storage_size, block_count * kBlobfsBlockSize);
-  };
-
-  {
-    auto root = OpenRoot();
-
-    zx::result file = root->Create(info->path, fs::CreationType::kFile);
-    ASSERT_TRUE(file.is_ok()) << file.status_string();
-    ASSERT_EQ(file->Truncate(info->size_data), ZX_OK);
-
-    size_t out_actual;
-    ASSERT_EQ(file->Write(info->data.get(), info->size_data, 0, &out_actual), ZX_OK);
-    ASSERT_EQ(out_actual, info->size_data);
-
-    auto blob = fbl::RefPtr<Blob>::Downcast(*file);
-    inode = blob->Ino();
-    block_count = blobfs()->GetNode(inode)->block_count;
-
-    zx::result attributes = file->GetAttributes();
-    ASSERT_TRUE(attributes.is_ok()) << attributes.status_string();
-    check_attributes(*attributes);
-  }
-
-  Remount();
-
-  auto root = OpenRoot();
-  fbl::RefPtr<fs::Vnode> file;
-  ASSERT_EQ(root->Lookup(info->path, &file), ZX_OK);
-  zx::result attributes = file->GetAttributes();
-  ASSERT_TRUE(attributes.is_ok()) << attributes.status_string();
-  check_attributes(*attributes);
-}
-
-TEST_P(BlobTest, AppendSetsOutEndCorrectly) {
-  std::unique_ptr<BlobInfo> info = GenerateRandomBlob("", 64);
-  auto root = OpenRoot();
-
-  zx::result file = root->Create(info->path, fs::CreationType::kFile);
-  ASSERT_TRUE(file.is_ok()) << file.status_string();
-  ASSERT_EQ(file->Truncate(info->size_data), ZX_OK);
-
-  size_t out_end;
-  size_t out_actual;
-  ASSERT_EQ(file->Append(info->data.get(), 32, &out_end, &out_actual), ZX_OK);
-  ASSERT_EQ(out_end, 32u);
-  ASSERT_EQ(out_actual, 32u);
-
-  ASSERT_EQ(file->Append(info->data.get() + 32, 32, &out_end, &out_actual), ZX_OK);
-  ASSERT_EQ(out_end, 64u);
-  ASSERT_EQ(out_actual, 32u);
-}
-
 TEST_P(BlobTest, WritesToArbitraryOffsetsFails) {
-  std::unique_ptr<BlobInfo> info = GenerateRandomBlob("", 64);
-  auto root = OpenRoot();
-
-  zx::result file = root->Create(info->path, fs::CreationType::kFile);
-  ASSERT_TRUE(file.is_ok()) << file.status_string();
-  ASSERT_EQ(file->Truncate(info->size_data), ZX_OK);
+  auto blob_data = TestBlobData::Create(64);
+  auto delivery_blob =
+      TestDeliveryBlob::CreateWithCompressionAlgorithm(blob_data, GetCompressionAlgorithm());
+  fbl::RefPtr blob =
+      fbl::MakeRefCounted<Blob>(*blobfs(), delivery_blob.digest(), /*is_delivery_blob=*/true);
+  ASSERT_OK(blobfs()->GetCache().Add(blob));
+  ASSERT_OK(blob->Truncate(delivery_blob.data().size()));
 
   size_t out_actual;
-  ASSERT_EQ(file->Write(info->data.get(), 10, 10, &out_actual), ZX_ERR_NOT_SUPPORTED);
-  ASSERT_EQ(file->Write(info->data.get(), 10, 0, &out_actual), ZX_OK);
+  ASSERT_STATUS(blob->Write(delivery_blob.data().data(), 10, 10, &out_actual),
+                ZX_ERR_NOT_SUPPORTED);
+  ASSERT_OK(blob->Write(delivery_blob.data().data(), 10, 0, &out_actual));
   ASSERT_EQ(out_actual, 10u);
-  ASSERT_EQ(file->Write(info->data.get() + 10, info->size_data - 10, 20, &out_actual),
-            ZX_ERR_NOT_SUPPORTED);
-  ASSERT_EQ(file->Write(info->data.get() + 10, info->size_data - 10, 10, &out_actual), ZX_OK);
-  ASSERT_EQ(out_actual, info->size_data - 10);
+  ASSERT_STATUS(blob->Write(delivery_blob.data().data() + 10, delivery_blob.data().size() - 10, 20,
+                            &out_actual),
+                ZX_ERR_NOT_SUPPORTED);
+  ASSERT_OK(blob->Write(delivery_blob.data().data() + 10, delivery_blob.data().size() - 10, 10,
+                        &out_actual));
+  ASSERT_EQ(out_actual, delivery_blob.data().size() - 10);
 }
 
-TEST_P(BlobTest, WrittenBlobsArePagedOutWhenClosed) {
-  std::unique_ptr<BlobInfo> info = GenerateRandomBlob("", 64);
-  auto root = OpenRoot();
-  {
-    zx::result file = root->Create(info->path, fs::CreationType::kFile);
-    ASSERT_TRUE(file.is_ok()) << file.status_string();
-    size_t out_actual = 0;
-    EXPECT_EQ(file->Truncate(info->size_data), ZX_OK);
-    EXPECT_EQ(file->Write(info->data.get(), info->size_data, 0, &out_actual), ZX_OK);
-    EXPECT_EQ(out_actual, info->size_data);
+TEST_P(BlobTest, WrittenBlobsAreInitiallyPagedOut) {
+  auto blob_data = TestBlobData::Create(64);
+  auto blob = CreateBlob(blob_data);
+  ASSERT_OK(blob);
 
-    auto blob = fbl::RefPtr<Blob>::Downcast(*std::move(file));
-    // Blobfs lazily creates the data VMO on first read.
-    char c;
-    size_t actual;
-    ASSERT_EQ(blob->Read(&c, sizeof(c), 0u, &actual), ZX_OK);
-
-    EXPECT_EQ(blob->Close(), ZX_OK);
-  }
-
-  fbl::RefPtr<fs::Vnode> file;
-  // Lookup doesn't call Open, so no need to Close later.
-  EXPECT_EQ(root->Lookup(info->path, &file), ZX_OK);
-  auto blob = fbl::RefPtr<Blob>::Downcast(std::move(file));
-
-  // Unfortunately, the name of the blob is the best signal that we have for whether it's pageable
-  // or not.
-  const std::string inactive_name =
-      std::string("inactive-blob-").append(std::string_view(info->path, 8));
-  EXPECT_EQ(GetVmoName(GetPagedVmo(*blob)), inactive_name) << "VMO wasn't inactive";
+  // The pager backed VMO isn't created until the blob is opened.
+  ASSERT_FALSE(GetPagedVmo(**blob).is_valid());
 }
 
-// Verify that Blobfs handles writing blobs in chunks by repeatedly appending data.
-TEST_P(BlobTest, WriteBlobChunked) {
-  // To exercise more code paths, we use a non-block aligned blob size.
-  constexpr size_t kUnalignedBlobSize = (1 << 10) - 1;
-  static_assert(kUnalignedBlobSize % kBlobfsBlockSize, "blob size must be non block aligned");
-  std::unique_ptr<BlobInfo> info = GenerateRealisticBlob("", kUnalignedBlobSize);
-  auto root = OpenRoot();
+TEST_P(BlobTest, GetVmoForBlobReaderOnNullBlobIsSupported) {
+  auto delivery_blob = TestDeliveryBlob::CreateUncompressed(0);
+  ASSERT_OK(CreateBlob(delivery_blob));
 
-  // Write the blob in chunks.
-  constexpr size_t kWriteLength = 100;
-  {
-    zx::result file = root->Create(info->path, fs::CreationType::kFile);
-    ASSERT_TRUE(file.is_ok()) << file.status_string();
-    ASSERT_EQ(file->Truncate(info->size_data), ZX_OK);
-    size_t bytes_written = 0;
-    while (bytes_written < info->size_data) {
-      const size_t to_write = std::min(kWriteLength, info->size_data - bytes_written);
-      size_t out_end;
-      size_t out_actual;
-      ASSERT_EQ(file->Append(info->data.get() + bytes_written, to_write, &out_end, &out_actual),
-                ZX_OK);
-      bytes_written += out_actual;
-    }
-    ASSERT_EQ(bytes_written, info->size_data);
-    ASSERT_EQ(file->Close(), ZX_OK);
-  }
-
-  fbl::RefPtr<fs::Vnode> file;
-  // Lookup doesn't call Open, so no need to Close later.
-  EXPECT_EQ(root->Lookup(info->path, &file), ZX_OK);
-
-  // Open the blob, get the vmo, and close the blob.
-  TestScopedVnodeOpen open(file);
-
-  // Read back data in chunks.
-  std::array<uint8_t, 4096> read_buff;
-  size_t offset = 0;
-  while (offset < kUnalignedBlobSize) {
-    size_t out_actual;
-    size_t read_len = std::min(read_buff.size(), kUnalignedBlobSize - offset);
-    ASSERT_EQ(file->Read(read_buff.data(), read_len, offset, &out_actual), ZX_OK);
-    offset += out_actual;
-  }
-}
-
-TEST_P(BlobTest, GetVmoOnNullBlobIsSupported) {
-  std::unique_ptr<BlobInfo> info = GenerateRandomBlob("", 0);
-  auto root = OpenRoot();
-
-  zx::result blob = root->Create(info->path, fs::CreationType::kFile);
-  ASSERT_TRUE(blob.is_ok()) << blob.status_string();
-  ASSERT_EQ(blob->Truncate(0), ZX_OK);
   // Make sure the async part of the write finishes.
   loop().RunUntilIdle();
-  ASSERT_EQ(blob->Close(), ZX_OK);
-  ASSERT_EQ(blob->Open(nullptr), ZX_OK);
-  zx::vmo vmo;
-  ASSERT_EQ(blob->GetVmo(fio::wire::VmoFlags::kRead, &vmo), ZX_OK);
 
-  ASSERT_EQ(blob->Close(), ZX_OK);
-
-  ASSERT_EQ(GetVmoStreamSize(vmo), 0ul);
+  auto blob = GetBlob(delivery_blob.digest());
+  ASSERT_OK(blob);
+  auto vmo = blob->GetVmoForBlobReader();
+  ASSERT_OK(vmo);
+  ASSERT_EQ(GetVmoStreamSize(*vmo), 0ul);
 }
 
 std::string GetTestParamName(
