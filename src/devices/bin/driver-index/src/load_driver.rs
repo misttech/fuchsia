@@ -6,6 +6,7 @@ use crate::indexer::*;
 use crate::resolved_driver::{DriverPackageType, ResolvedDriver};
 use anyhow::Context;
 use fidl_fuchsia_component_resolution as fresolution;
+use futures::stream::{self, StreamExt};
 use std::collections::HashSet;
 use std::rc::Rc;
 
@@ -65,32 +66,35 @@ pub async fn load_drivers(
     disabled_drivers: &HashSet<cm_types::Url>,
     package_type: DriverPackageType,
 ) -> Result<Vec<ResolvedDriver>, anyhow::Error> {
-    let mut resolved_drivers = std::vec::Vec::new();
-    for driver_url in drivers {
-        let url = match cm_types::Url::new(driver_url) {
-            Ok(u) => u,
-            Err(e) => {
-                log::error!("Found bad driver url: {}: error: {}", driver_url, e);
-                continue;
+    Ok(stream::iter(drivers)
+        .map(|driver_url| async move {
+            let url = match cm_types::Url::new(driver_url) {
+                Ok(u) => u,
+                Err(e) => {
+                    log::error!("Found bad driver url: {}: error: {}", driver_url, e);
+                    return None;
+                }
+            };
+            let resolve = ResolvedDriver::resolve(url, &resolver, package_type).await;
+            if resolve.is_err() {
+                return None;
             }
-        };
-        let resolve = ResolvedDriver::resolve(url, &resolver, package_type).await;
-        if resolve.is_err() {
-            continue;
-        }
 
-        let mut resolved_driver = resolve.unwrap();
-        if disabled_drivers.contains(&resolved_driver.component_url) {
-            log::info!("Skipping driver: {}", resolved_driver.component_url);
-            continue;
-        }
-        log::info!("Found driver: {}", resolved_driver.component_url);
-        if eager_drivers.contains(&resolved_driver.component_url) {
-            resolved_driver.fallback = false;
-        }
-        resolved_drivers.push(resolved_driver);
-    }
-    Ok(resolved_drivers)
+            let mut resolved_driver = resolve.unwrap();
+            if disabled_drivers.contains(&resolved_driver.component_url) {
+                log::info!("Skipping driver: {}", resolved_driver.component_url);
+                return None;
+            }
+            log::info!("Found driver: {}", resolved_driver.component_url);
+            if eager_drivers.contains(&resolved_driver.component_url) {
+                resolved_driver.fallback = false;
+            }
+            Some(resolved_driver)
+        })
+        .buffer_unordered(30)
+        .filter_map(|d| async move { d })
+        .collect()
+        .await)
 }
 
 #[cfg(test)]
