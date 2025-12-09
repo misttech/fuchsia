@@ -305,7 +305,7 @@ func visit(value ir.Value, decl mixer.Declaration) string {
 	case nil:
 		if !decl.IsNullable() {
 			if _, ok := decl.(*mixer.HandleDecl); ok {
-				return "Value::Handle(Handle::invalid(), fidl::ObjectType::NONE, None)"
+				return "Value::Handle(NullableHandle::invalid(), fidl::ObjectType::NONE, None)"
 			}
 			panic(fmt.Sprintf("got nil for non-nullable type: %T", decl))
 		}

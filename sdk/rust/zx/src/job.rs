@@ -5,18 +5,18 @@
 //! Type-safe bindings for Zircon jobs.
 
 use crate::{
-    object_get_info_single, object_get_info_vec, ok, sys, AsHandleRef, Handle, HandleBased,
-    HandleRef, Koid, MonotonicDuration, ObjectQuery, Process, ProcessOptions, Rights, Status, Task,
-    Topic, Vmar,
+    AsHandleRef, HandleBased, HandleRef, Koid, MonotonicDuration, NullableHandle, ObjectQuery,
+    Process, ProcessOptions, Rights, Status, Task, Topic, Vmar, object_get_info_single,
+    object_get_info_vec, ok, sys,
 };
 use bitflags::bitflags;
 
 /// An object representing a Zircon job.
 ///
-/// As essentially a subtype of `Handle`, it can be freely interconverted.
+/// As essentially a subtype of `NullableHandle`, it can be freely interconverted.
 #[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 #[repr(transparent)]
-pub struct Job(Handle);
+pub struct Job(NullableHandle);
 impl_handle_based!(Job);
 
 #[derive(Default, Debug, Copy, Clone, Eq, PartialEq)]
@@ -73,7 +73,7 @@ impl Job {
         let options = 0;
         let status = unsafe { sys::zx_job_create(parent_job_raw, options, &mut out) };
         ok(status)?;
-        unsafe { Ok(Job::from(Handle::from_raw(out))) }
+        unsafe { Ok(Job::from(NullableHandle::from_raw(out))) }
     }
 
     /// Create a new process as a child of the current job.
@@ -107,8 +107,8 @@ impl Job {
         ok(status)?;
         unsafe {
             Ok((
-                Process::from(Handle::from_raw(process_out)),
-                Vmar::from(Handle::from_raw(vmar_out)),
+                Process::from(NullableHandle::from_raw(process_out)),
+                Vmar::from(NullableHandle::from_raw(vmar_out)),
             ))
         }
     }
@@ -198,7 +198,7 @@ impl Job {
     /// Wraps the
     /// [zx_object_get_child](https://fuchsia.dev/fuchsia-src/reference/syscalls/object_get_child.md)
     /// syscall.
-    pub fn get_child(&self, koid: &Koid, rights: Rights) -> Result<Handle, Status> {
+    pub fn get_child(&self, koid: &Koid, rights: Rights) -> Result<NullableHandle, Status> {
         let mut handle: sys::zx_handle_t = Default::default();
         let status = unsafe {
             sys::zx_object_get_child(
@@ -209,7 +209,7 @@ impl Job {
             )
         };
         ok(status)?;
-        Ok(unsafe { Handle::from_raw(handle) })
+        Ok(unsafe { NullableHandle::from_raw(handle) })
     }
 }
 
@@ -341,9 +341,8 @@ mod tests {
     use std::collections::HashSet;
     use std::ffi::CString;
     use zx::{
-        sys, AsHandleRef, Instant, JobAction, JobCondition, JobCriticalOptions,
-        JobDefaultTimerMode, JobInfo, JobPolicy, JobPolicyOption, Koid, MonotonicDuration, Signals,
-        Task,
+        AsHandleRef, Instant, JobAction, JobCondition, JobCriticalOptions, JobDefaultTimerMode,
+        JobInfo, JobPolicy, JobPolicyOption, Koid, MonotonicDuration, Signals, Task, sys,
     };
 
     #[test]

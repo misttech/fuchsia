@@ -7,18 +7,18 @@ use fidl::handle::{self, HandleBased};
 
 /// A capability that wraps a single Zircon handle.
 #[derive(Debug)]
-pub struct Handle(handle::Handle);
+pub struct Handle(handle::NullableHandle);
 
 impl Handle {
     /// Creates a new [Handle] containing a Zircon `handle`.
-    pub fn new(handle: handle::Handle) -> Self {
+    pub fn new(handle: handle::NullableHandle) -> Self {
         Self(handle)
     }
 }
 
-impl From<handle::Handle> for Handle {
-    fn from(handle: handle::Handle) -> Self {
-        Handle(handle)
+impl From<handle::NullableHandle> for Handle {
+    fn from(handle: handle::NullableHandle) -> Self {
+        Self(handle)
     }
 }
 
@@ -34,7 +34,7 @@ impl Handle {
     }
 }
 
-impl From<Handle> for handle::Handle {
+impl From<Handle> for handle::NullableHandle {
     fn from(value: Handle) -> Self {
         value.0
     }
@@ -67,7 +67,7 @@ mod tests {
         let handle = assert_matches!(any, Capability::Handle(h) => h);
 
         // Get the handle.
-        let handle: zx::Handle = handle.into();
+        let handle: zx::NullableHandle = handle.into();
 
         // The handle should be for same Event that was in the original OneShotHandle.
         let got_koid = handle.get_koid().unwrap();
@@ -82,7 +82,7 @@ mod tests {
 
         let handle = Handle::from(event.into_handle());
         let handle = handle.try_clone().unwrap();
-        let handle: zx::Handle = handle.into();
+        let handle: zx::NullableHandle = handle.into();
 
         let got_koid = handle.get_koid().unwrap();
         assert_eq!(got_koid, expected_koid);

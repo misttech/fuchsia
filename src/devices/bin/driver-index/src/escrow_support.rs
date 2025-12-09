@@ -14,7 +14,7 @@ const STATE_DRIVER_NOTIFIER: &str = "notifier";
 const STATE_SAVED_STATE: &str = "saved_state";
 
 pub struct ResumedState {
-    pub notifier: Option<zx::Handle>,
+    pub notifier: Option<zx::NullableHandle>,
     pub composite_specs: CompositeNodeSpecManager,
     pub boot_repo: Option<Vec<ResolvedDriver>>,
     pub base_repo: Option<BaseRepo>,
@@ -283,7 +283,7 @@ async fn get_handle_from_dictionary(
     id_gen: &sandbox::CapabilityIdGenerator,
     dict_id: u64,
     key: &str,
-) -> Result<zx::Handle, anyhow::Error> {
+) -> Result<zx::NullableHandle, anyhow::Error> {
     let dest_id = id_gen.next();
     capability_store
         .dictionary_remove(dict_id, key, Some(&fsandbox::WrappedNewCapabilityId { id: dest_id }))

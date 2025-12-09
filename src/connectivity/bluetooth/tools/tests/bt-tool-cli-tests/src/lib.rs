@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{format_err, Error};
+use anyhow::{Error, format_err};
 use fdio::{SpawnAction, SpawnOptions};
 use std::ffi::{CStr, CString};
 use std::fs::File;
@@ -63,7 +63,7 @@ pub struct TestProcess {
 
 impl TestProcess {
     pub fn spawn(path: &str, args: &[&str]) -> Result<TestProcess, Error> {
-        let job = zx::Job::from(zx::Handle::invalid());
+        let job = zx::Job::from(zx::NullableHandle::invalid());
         let cpath = cstr(path);
         let (stdin_file, stdin_sock) = fdio::pipe_half().expect("Failed to make pipe");
         let (stdout_file, stdout_sock) = fdio::pipe_half().expect("Failed to make pipe");

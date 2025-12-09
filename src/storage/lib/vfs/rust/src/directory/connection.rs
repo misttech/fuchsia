@@ -510,7 +510,7 @@ impl<DirectoryType: Directory> BaseConnection<DirectoryType> {
     async fn handle_link(
         &self,
         source_name: &str,
-        target_parent_token: fidl::Handle,
+        target_parent_token: fidl::NullableHandle,
         target_name: String,
     ) -> Result<(), Status> {
         if source_name.contains('/') || target_name.contains('/') {

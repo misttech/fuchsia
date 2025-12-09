@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::{layout, socket};
-use fidl::endpoints::{create_proxy, ClientEnd};
+use fidl::endpoints::{ClientEnd, create_proxy};
 use fidl_fuchsia_dash::LauncherError;
 use fuchsia_component::client::connect_to_protocol;
 use log::warn;
@@ -37,9 +37,9 @@ pub async fn explore_over_pty(
 
 async fn explore_over_handles(
     moniker: &str,
-    stdin: zx::Handle,
-    stdout: zx::Handle,
-    stderr: zx::Handle,
+    stdin: zx::NullableHandle,
+    stdout: zx::NullableHandle,
+    stderr: zx::NullableHandle,
     tool_urls: Vec<String>,
     command: Option<String>,
     ns_layout: fdash::DashNamespaceLayout,

@@ -72,7 +72,7 @@ impl AllowedSynchronousProxy {
 }
 
 #[cfg(target_os = "fuchsia")]
-impl From<AllowedSynchronousProxy> for zx::Handle {
+impl From<AllowedSynchronousProxy> for zx::NullableHandle {
     fn from(value: AllowedSynchronousProxy) -> Self {
         value.into_channel().into()
     }
@@ -478,7 +478,7 @@ impl DenyEachBindingSynchronousProxy {
 }
 
 #[cfg(target_os = "fuchsia")]
-impl From<DenyEachBindingSynchronousProxy> for zx::Handle {
+impl From<DenyEachBindingSynchronousProxy> for zx::NullableHandle {
     fn from(value: DenyEachBindingSynchronousProxy) -> Self {
         value.into_channel().into()
     }
@@ -1456,7 +1456,7 @@ impl ImportsSameNameContextSynchronousProxy {
 }
 
 #[cfg(target_os = "fuchsia")]
-impl From<ImportsSameNameContextSynchronousProxy> for zx::Handle {
+impl From<ImportsSameNameContextSynchronousProxy> for zx::NullableHandle {
     fn from(value: ImportsSameNameContextSynchronousProxy) -> Self {
         value.into_channel().into()
     }

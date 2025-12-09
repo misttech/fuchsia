@@ -48,7 +48,7 @@ pub fn enter(locked: &mut Locked<Unlocked>, current_task: &mut CurrentTask) -> E
         clippy::undocumented_unsafe_blocks,
         reason = "Force documented unsafe blocks in Starnix"
     )]
-    let state_vmo = unsafe { zx::Vmo::from(zx::Handle::from_raw(out_vmo_handle)) };
+    let state_vmo = unsafe { zx::Vmo::from(zx::NullableHandle::from_raw(out_vmo_handle)) };
 
     // Unbind when we leave this scope to avoid unnecessarily retaining the VMO via this
     // thread's binding.  Of course, we'll still have to remove any mappings and close any

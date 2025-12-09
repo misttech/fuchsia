@@ -88,7 +88,7 @@ mod tests {
         .detach();
 
         let read_only_log = proxy.get().await?;
-        let info = zx::Handle::from(read_only_log).basic_info()?;
+        let info = zx::NullableHandle::from(read_only_log).basic_info()?;
         assert_eq!(info.rights, zx::Rights::BASIC | zx::Rights::READ | zx::Rights::SIGNAL);
         Ok(())
     }
@@ -97,7 +97,7 @@ mod tests {
     async fn has_correct_rights_for_write_only() -> Result<(), Error> {
         // The kernel requires a valid `Resource` to be provided when creating a `Debuglog` that
         // can be read from, but not one that can be written to.  This may change in the future.
-        let resource = Resource::from(zx::Handle::invalid());
+        let resource = Resource::from(zx::NullableHandle::invalid());
         let write_only_log =
             WriteOnlyLog::new(zx::DebugLog::create(&resource, zx::DebugLogOpts::empty()).unwrap());
         let (proxy, stream) =
@@ -110,7 +110,7 @@ mod tests {
         .detach();
 
         let write_only_log = proxy.get().await?;
-        let info = zx::Handle::from(write_only_log).basic_info()?;
+        let info = zx::NullableHandle::from(write_only_log).basic_info()?;
         assert_eq!(info.rights, zx::Rights::BASIC | zx::Rights::WRITE | zx::Rights::SIGNAL);
 
         Ok(())

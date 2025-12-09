@@ -51,14 +51,14 @@ pub(crate) enum LibraryCommand {
         responder: Responder<CmdResult<zx_types::zx_handle_t>>,
     },
     HandleGetKoid {
-        handle: fidl::Handle,
+        handle: fidl::NullableHandle,
         responder: Responder<Result<Koid, zx_status::Status>>,
     },
     ChannelRead {
         lib: Arc<LibContext>,
         channel: fidl::Channel,
         out_buf: ExtBuffer<u8>,
-        out_handles: ExtBuffer<MaybeUninit<fidl::Handle>>,
+        out_handles: ExtBuffer<MaybeUninit<fidl::NullableHandle>>,
         responder: Responder<ReadResponse>,
     },
     ChannelCreate {
@@ -67,7 +67,7 @@ pub(crate) enum LibraryCommand {
     ChannelWrite {
         channel: fidl::Channel,
         buf: ExtBuffer<u8>,
-        handles: ExtBuffer<fidl::Handle>,
+        handles: ExtBuffer<fidl::NullableHandle>,
         responder: Responder<zx_status::Status>,
     },
     ConfigGetString {
@@ -89,20 +89,20 @@ pub(crate) enum LibraryCommand {
         responder: Responder<(fidl::EventPair, fidl::EventPair)>,
     },
     ObjectSignal {
-        handle: fidl::Handle,
+        handle: fidl::NullableHandle,
         clear_mask: fidl::Signals,
         set_mask: fidl::Signals,
         responder: Responder<zx_status::Status>,
     },
     ObjectSignalPeer {
-        handle: fidl::Handle,
+        handle: fidl::NullableHandle,
         clear_mask: fidl::Signals,
         set_mask: fidl::Signals,
         responder: Responder<zx_status::Status>,
     },
     ObjectSignalPoll {
         lib: Arc<LibContext>,
-        handle: fidl::Handle,
+        handle: fidl::NullableHandle,
         signals: fidl::Signals,
         responder: Responder<CmdResult<fidl::Signals>>,
     },
@@ -277,7 +277,8 @@ impl LibraryCommand {
                             rights: 0,
                         },
                     );
-                    let handle_op = HandleOp::Move(unsafe { fidl::Handle::from_raw(disp.handle) });
+                    let handle_op =
+                        HandleOp::Move(unsafe { fidl::NullableHandle::from_raw(disp.handle) });
                     let object_type = ObjectType::from_raw(disp.type_);
                     let rights = Rights::from_bits(disp.rights).unwrap();
                     let result = Status::from_raw(disp.result);

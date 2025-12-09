@@ -6,10 +6,10 @@
 
 use crate::sys::{self as sys, PadByte, ZX_OBJ_TYPE_UPPER_BOUND, zx_handle_t};
 use crate::{
-    AsHandleRef, Handle, HandleBased, HandleRef, Job, Koid, MapInfo, MonotonicInstant, Name,
-    ObjectQuery, Property, PropertyQuery, Rights, Status, Task, Thread, Topic, Vmar, VmoInfo,
-    object_get_info, object_get_info_single, object_get_info_vec, object_get_property,
-    object_set_property, ok,
+    AsHandleRef, HandleBased, HandleRef, Job, Koid, MapInfo, MonotonicInstant, Name,
+    NullableHandle, ObjectQuery, Property, PropertyQuery, Rights, Status, Task, Thread, Topic,
+    Vmar, VmoInfo, object_get_info, object_get_info_single, object_get_info_vec,
+    object_get_property, object_set_property, ok,
 };
 use bitflags::bitflags;
 use static_assertions::const_assert_eq;
@@ -47,10 +47,10 @@ bitflags! {
 
 /// An object representing a Zircon process.
 ///
-/// As essentially a subtype of `Handle`, it can be freely interconverted.
+/// As essentially a subtype of `NullableHandle`, it can be freely interconverted.
 #[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 #[repr(transparent)]
-pub struct Process(Handle);
+pub struct Process(NullableHandle);
 impl_handle_based!(Process);
 unsafe_handle_properties!(object: Process,
     props: [
@@ -182,10 +182,10 @@ impl Process {
         })?;
 
         // SAFETY: the above call succeeded so `this` is a valid handle.
-        let this = Self(unsafe { Handle::from_raw(this) });
+        let this = Self(unsafe { NullableHandle::from_raw(this) });
 
         // SAFETY: the above call succeeded so `vmar` is a valid handle.
-        let vmar = Vmar::from(unsafe { Handle::from_raw(vmar) });
+        let vmar = Vmar::from(unsafe { NullableHandle::from_raw(vmar) });
 
         Ok((this, vmar))
     }
@@ -200,7 +200,7 @@ impl Process {
         thread: &Thread,
         entry: usize,
         stack: usize,
-        arg1: Handle,
+        arg1: NullableHandle,
         arg2: usize,
     ) -> Result<(), Status> {
         let process_raw = self.raw_handle();
@@ -224,7 +224,7 @@ impl Process {
             sys::zx_thread_create(process_raw, name_ptr, name_len, options, &mut thread_out)
         };
         ok(status)?;
-        unsafe { Ok(Thread::from(Handle::from_raw(thread_out))) }
+        unsafe { Ok(Thread::from(NullableHandle::from_raw(thread_out))) }
     }
 
     /// Write memory inside a process.
@@ -367,7 +367,7 @@ impl Process {
             sys::zx_object_get_child(self.raw_handle(), koid.raw_koid(), rights.bits(), &mut handle)
         };
         ok(status)?;
-        Ok(Thread::from(unsafe { Handle::from_raw(handle) }))
+        Ok(Thread::from(unsafe { NullableHandle::from_raw(handle) }))
     }
 
     /// Wraps the
@@ -720,7 +720,7 @@ mod tests {
 
         // start with the thread suspended, so we don't care about executing invalid code.
         let thread1_suspended = thread1.suspend().unwrap();
-        process.start(&thread1, valid_addr, valid_addr, zx::Handle::invalid(), 0).unwrap();
+        process.start(&thread1, valid_addr, valid_addr, zx::NullableHandle::invalid(), 0).unwrap();
 
         let threads_koids = process.threads().unwrap();
         assert_eq!(threads_koids.len(), 1);

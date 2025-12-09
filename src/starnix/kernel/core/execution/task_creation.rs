@@ -128,8 +128,8 @@ fn create_shared(
     )]
     unsafe {
         Ok((
-            zx::Process::from(zx::Handle::from_raw(process_out)),
-            zx::Vmar::from(zx::Handle::from_raw(restricted_vmar_out)),
+            zx::Process::from(zx::NullableHandle::from_raw(process_out)),
+            zx::Vmar::from(zx::NullableHandle::from_raw(restricted_vmar_out)),
         ))
     }
 }
@@ -286,7 +286,7 @@ where
         TaskCommand::new(b"kthreadd"),
         fs,
         |locked, pid, process_group| {
-            let process = zx::Process::from(zx::Handle::invalid());
+            let process = zx::Process::from(zx::NullableHandle::invalid());
             let thread_group = ThreadGroup::new(
                 locked.cast_locked::<TaskRelease>(),
                 kernel.clone(),

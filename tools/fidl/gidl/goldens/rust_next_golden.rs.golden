@@ -24,7 +24,7 @@ use {
         select_raw_handle_infos, to_zx_handle_disposition_t,
     },
     std::convert::TryFrom,
-    zx::{Handle, AsHandleRef as _},
+    zx::{NullableHandle, AsHandleRef as _},
 };
 
 

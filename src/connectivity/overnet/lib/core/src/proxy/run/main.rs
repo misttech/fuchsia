@@ -28,7 +28,7 @@ use zx_status;
 #[derive(Debug)]
 enum FinishProxyLoopAction<Hdl: Proxyable> {
     InitiateTransfer {
-        paired_handle: fidl::Handle,
+        paired_handle: fidl::NullableHandle,
         drain_stream: FramedStreamWriter,
         stream_ref_sender: StreamRefSender,
         stream_reader: StreamReader<Hdl::Message>,
@@ -58,7 +58,7 @@ impl<Hdl: 'static + Proxyable> FinishProxyLoopSender<Hdl> {
     // This join is to initiate a new transfer.
     fn and_then_initiate(
         self,
-        paired_handle: fidl::Handle,
+        paired_handle: fidl::NullableHandle,
         drain_stream: FramedStreamWriter,
         stream_ref_sender: StreamRefSender,
         stream_reader: StreamReader<Hdl::Message>,

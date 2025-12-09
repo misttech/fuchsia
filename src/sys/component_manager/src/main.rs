@@ -62,7 +62,8 @@ fn main() {
     // freed, as component manager won't make use of a loader service such as by calling dlopen.
     // If userboot invoked component manager directly, this service was the only reason userboot
     // continued to run and closing it will let userboot terminate.
-    let ldsvc = unsafe { zx::Handle::from_raw(dl_set_loader_service(zx::sys::ZX_HANDLE_INVALID)) };
+    let ldsvc =
+        unsafe { zx::NullableHandle::from_raw(dl_set_loader_service(zx::sys::ZX_HANDLE_INVALID)) };
     drop(ldsvc);
 
     // TODO(https://fxbug.dev/462815022) remove once deadlocks addressed

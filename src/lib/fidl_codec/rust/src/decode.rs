@@ -19,10 +19,10 @@ use crate::value::Value;
 use std::str;
 
 #[cfg(feature = "fdomain")]
-use fdomain_client::{Handle, HandleInfo};
+use fdomain_client::{HandleInfo, NullableHandle};
 
 #[cfg(not(feature = "fdomain"))]
-use fidl::{Handle, HandleInfo};
+use fidl::{HandleInfo, NullableHandle};
 
 type DResult<'a, R> = IResult<&'a [u8], R, Error>;
 
@@ -481,7 +481,7 @@ fn object_type_from_info(info: &HandleInfo) -> fidl::ObjectType {
 fn decode_handle_with<T: Clone + 'static>(
     handle_type: T,
     nullable: bool,
-    value_builder: &'static (impl Fn(Handle, T, Option<fidl::Rights>) -> Value + 'static),
+    value_builder: &'static (impl Fn(NullableHandle, T, Option<fidl::Rights>) -> Value + 'static),
     constrain_type: Option<fidl::ObjectType>,
     constrain_rights: Option<fidl::Rights>,
 ) -> impl Fn(&[u8]) -> DResult<'_, Defer<'static>> {

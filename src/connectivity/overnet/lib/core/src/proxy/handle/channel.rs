@@ -29,11 +29,11 @@ impl std::fmt::Debug for Channel {
 impl Proxyable for Channel {
     type Message = ChannelMessage;
 
-    fn from_fidl_handle(hdl: fidl::Handle) -> Result<Self, Error> {
+    fn from_fidl_handle(hdl: fidl::NullableHandle) -> Result<Self, Error> {
         Ok(fidl::Channel::from_handle(hdl).into_proxied()?)
     }
 
-    fn into_fidl_handle(self) -> Result<fidl::Handle, Error> {
+    fn into_fidl_handle(self) -> Result<fidl::NullableHandle, Error> {
         Ok(self.chan.into_zx_channel().into_handle())
     }
 
@@ -103,7 +103,7 @@ impl IO<'_> for ChannelWriter {
 #[derive(Default, Debug)]
 pub(crate) struct ChannelMessage {
     bytes: Vec<u8>,
-    handles: Vec<fidl::Handle>,
+    handles: Vec<fidl::NullableHandle>,
 }
 
 impl Message for ChannelMessage {
@@ -127,7 +127,9 @@ pub(crate) enum ChannelMessageParser {
     New,
     Pending {
         bytes: Vec<u8>,
-        handles: Pin<Box<dyn 'static + Send + Future<Output = Result<Vec<fidl::Handle>, Error>>>>,
+        handles: Pin<
+            Box<dyn 'static + Send + Future<Output = Result<Vec<fidl::NullableHandle>, Error>>>,
+        >,
     },
     Done,
 }

@@ -82,7 +82,7 @@ impl FirstProtocolSynchronousProxy {
 }
 
 #[cfg(target_os = "fuchsia")]
-impl From<FirstProtocolSynchronousProxy> for zx::Handle {
+impl From<FirstProtocolSynchronousProxy> for zx::NullableHandle {
     fn from(value: FirstProtocolSynchronousProxy) -> Self {
         value.into_channel().into()
     }
@@ -428,7 +428,7 @@ impl SecondProtocolSynchronousProxy {
 }
 
 #[cfg(target_os = "fuchsia")]
-impl From<SecondProtocolSynchronousProxy> for zx::Handle {
+impl From<SecondProtocolSynchronousProxy> for zx::NullableHandle {
     fn from(value: SecondProtocolSynchronousProxy) -> Self {
         value.into_channel().into()
     }

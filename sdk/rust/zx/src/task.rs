@@ -3,7 +3,9 @@
 // found in the LICENSE file.
 
 use crate::sys::{self as sys, zx_duration_t};
-use crate::{object_get_info_single, ok, AsHandleRef, Channel, Handle, ObjectQuery, Status, Topic};
+use crate::{
+    AsHandleRef, Channel, NullableHandle, ObjectQuery, Status, Topic, object_get_info_single, ok,
+};
 use bitflags::bitflags;
 
 bitflags! {
@@ -90,11 +92,11 @@ pub trait Task: AsHandleRef {
     /// syscall.
     ///
     /// Resume the task by closing the returned handle.
-    fn suspend(&self) -> Result<Handle, Status> {
+    fn suspend(&self) -> Result<NullableHandle, Status> {
         let mut suspend_token = 0;
         let status = unsafe { sys::zx_task_suspend(self.raw_handle(), &mut suspend_token) };
         ok(status)?;
-        unsafe { Ok(Handle::from_raw(suspend_token)) }
+        unsafe { Ok(NullableHandle::from_raw(suspend_token)) }
     }
 
     /// Create an exception channel (with options) for the task.
@@ -111,7 +113,7 @@ pub trait Task: AsHandleRef {
             sys::zx_task_create_exception_channel(self.raw_handle(), opts.bits(), &mut handle)
         };
         ok(status)?;
-        unsafe { Ok(Channel::from(Handle::from_raw(handle))) }
+        unsafe { Ok(Channel::from(NullableHandle::from_raw(handle))) }
     }
 
     /// Create an exception channel for the task.

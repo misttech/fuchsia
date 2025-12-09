@@ -13,7 +13,7 @@ pub use fidl_test_handles__common::*;
 use futures::future::{self, MaybeDone, TryFutureExt};
 use zx_status;
 
-pub type AliasedPlainHandle = fidl::Handle;
+pub type AliasedPlainHandle = fidl::NullableHandle;
 
 pub type AliasedRightsHandle = fidl::Vmo;
 
@@ -21,7 +21,7 @@ pub type AliasedSubtypeHandle = fidl::Vmo;
 
 #[derive(Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Handles {
-    pub plain_handle: fidl::Handle,
+    pub plain_handle: fidl::NullableHandle,
     pub bti_handle: fidl::Bti,
     pub channel_handle: fidl::Channel,
     pub clock_handle: fidl::Clock,
@@ -51,7 +51,7 @@ pub struct Handles {
     pub vmar_handle: fidl::Vmar,
     pub vmo_handle: fidl::Vmo,
     pub rights_handle: fidl::Vmo,
-    pub aliased_plain_handle_field: fidl::Handle,
+    pub aliased_plain_handle_field: fidl::NullableHandle,
     pub aliased_subtype_handle_field: fidl::Vmo,
     pub aliased_rights_handle_field: fidl::Vmo,
     pub some_protocol: fidl::endpoints::ClientEnd<SomeProtocolMarker>,
@@ -185,7 +185,7 @@ impl SomeProtocolSynchronousProxy {
 }
 
 #[cfg(target_os = "fuchsia")]
-impl From<SomeProtocolSynchronousProxy> for zx::Handle {
+impl From<SomeProtocolSynchronousProxy> for zx::NullableHandle {
     fn from(value: SomeProtocolSynchronousProxy) -> Self {
         value.into_channel().into()
     }
@@ -469,7 +469,7 @@ mod internal {
             // Delegate to tuple encoding.
             fidl::encoding::Encode::<Handles, fidl::encoding::DefaultFuchsiaResourceDialect>::encode(
                 (
-                    <fidl::encoding::HandleType<fidl::Handle, { fidl::ObjectType::NONE.into_raw() }, 2147483648> as fidl::encoding::ResourceTypeMarker>::take_or_borrow(&mut self.plain_handle),
+                    <fidl::encoding::HandleType<fidl::NullableHandle, { fidl::ObjectType::NONE.into_raw() }, 2147483648> as fidl::encoding::ResourceTypeMarker>::take_or_borrow(&mut self.plain_handle),
                     <fidl::encoding::HandleType<fidl::Bti, { fidl::ObjectType::BTI.into_raw() }, 2147483648> as fidl::encoding::ResourceTypeMarker>::take_or_borrow(&mut self.bti_handle),
                     <fidl::encoding::HandleType<fidl::Channel, { fidl::ObjectType::CHANNEL.into_raw() }, 2147483648> as fidl::encoding::ResourceTypeMarker>::take_or_borrow(&mut self.channel_handle),
                     <fidl::encoding::HandleType<fidl::Clock, { fidl::ObjectType::CLOCK.into_raw() }, 2147483648> as fidl::encoding::ResourceTypeMarker>::take_or_borrow(&mut self.clock_handle),
@@ -499,7 +499,7 @@ mod internal {
                     <fidl::encoding::HandleType<fidl::Vmar, { fidl::ObjectType::VMAR.into_raw() }, 2147483648> as fidl::encoding::ResourceTypeMarker>::take_or_borrow(&mut self.vmar_handle),
                     <fidl::encoding::HandleType<fidl::Vmo, { fidl::ObjectType::VMO.into_raw() }, 2147483648> as fidl::encoding::ResourceTypeMarker>::take_or_borrow(&mut self.vmo_handle),
                     <fidl::encoding::HandleType<fidl::Vmo, { fidl::ObjectType::VMO.into_raw() }, 5> as fidl::encoding::ResourceTypeMarker>::take_or_borrow(&mut self.rights_handle),
-                    <fidl::encoding::HandleType<fidl::Handle, { fidl::ObjectType::NONE.into_raw() }, 2147483648> as fidl::encoding::ResourceTypeMarker>::take_or_borrow(&mut self.aliased_plain_handle_field),
+                    <fidl::encoding::HandleType<fidl::NullableHandle, { fidl::ObjectType::NONE.into_raw() }, 2147483648> as fidl::encoding::ResourceTypeMarker>::take_or_borrow(&mut self.aliased_plain_handle_field),
                     <fidl::encoding::HandleType<fidl::Vmo, { fidl::ObjectType::VMO.into_raw() }, 2147483648> as fidl::encoding::ResourceTypeMarker>::take_or_borrow(&mut self.aliased_subtype_handle_field),
                     <fidl::encoding::HandleType<fidl::Vmo, { fidl::ObjectType::VMO.into_raw() }, 1> as fidl::encoding::ResourceTypeMarker>::take_or_borrow(&mut self.aliased_rights_handle_field),
                     <fidl::encoding::Endpoint<fidl::endpoints::ClientEnd<SomeProtocolMarker>> as fidl::encoding::ResourceTypeMarker>::take_or_borrow(&mut self.some_protocol),
@@ -512,7 +512,7 @@ mod internal {
     unsafe impl<
         T0: fidl::encoding::Encode<
                 fidl::encoding::HandleType<
-                    fidl::Handle,
+                    fidl::NullableHandle,
                     { fidl::ObjectType::NONE.into_raw() },
                     2147483648,
                 >,
@@ -748,7 +748,7 @@ mod internal {
             >,
         T30: fidl::encoding::Encode<
                 fidl::encoding::HandleType<
-                    fidl::Handle,
+                    fidl::NullableHandle,
                     { fidl::ObjectType::NONE.into_raw() },
                     2147483648,
                 >,
@@ -870,7 +870,7 @@ mod internal {
         #[inline(always)]
         fn new_empty() -> Self {
             Self {
-                plain_handle: fidl::new_empty!(fidl::encoding::HandleType<fidl::Handle, { fidl::ObjectType::NONE.into_raw() }, 2147483648>, fidl::encoding::DefaultFuchsiaResourceDialect),
+                plain_handle: fidl::new_empty!(fidl::encoding::HandleType<fidl::NullableHandle, { fidl::ObjectType::NONE.into_raw() }, 2147483648>, fidl::encoding::DefaultFuchsiaResourceDialect),
                 bti_handle: fidl::new_empty!(fidl::encoding::HandleType<fidl::Bti, { fidl::ObjectType::BTI.into_raw() }, 2147483648>, fidl::encoding::DefaultFuchsiaResourceDialect),
                 channel_handle: fidl::new_empty!(fidl::encoding::HandleType<fidl::Channel, { fidl::ObjectType::CHANNEL.into_raw() }, 2147483648>, fidl::encoding::DefaultFuchsiaResourceDialect),
                 clock_handle: fidl::new_empty!(fidl::encoding::HandleType<fidl::Clock, { fidl::ObjectType::CLOCK.into_raw() }, 2147483648>, fidl::encoding::DefaultFuchsiaResourceDialect),
@@ -900,7 +900,7 @@ mod internal {
                 vmar_handle: fidl::new_empty!(fidl::encoding::HandleType<fidl::Vmar, { fidl::ObjectType::VMAR.into_raw() }, 2147483648>, fidl::encoding::DefaultFuchsiaResourceDialect),
                 vmo_handle: fidl::new_empty!(fidl::encoding::HandleType<fidl::Vmo, { fidl::ObjectType::VMO.into_raw() }, 2147483648>, fidl::encoding::DefaultFuchsiaResourceDialect),
                 rights_handle: fidl::new_empty!(fidl::encoding::HandleType<fidl::Vmo, { fidl::ObjectType::VMO.into_raw() }, 5>, fidl::encoding::DefaultFuchsiaResourceDialect),
-                aliased_plain_handle_field: fidl::new_empty!(fidl::encoding::HandleType<fidl::Handle, { fidl::ObjectType::NONE.into_raw() }, 2147483648>, fidl::encoding::DefaultFuchsiaResourceDialect),
+                aliased_plain_handle_field: fidl::new_empty!(fidl::encoding::HandleType<fidl::NullableHandle, { fidl::ObjectType::NONE.into_raw() }, 2147483648>, fidl::encoding::DefaultFuchsiaResourceDialect),
                 aliased_subtype_handle_field: fidl::new_empty!(fidl::encoding::HandleType<fidl::Vmo, { fidl::ObjectType::VMO.into_raw() }, 2147483648>, fidl::encoding::DefaultFuchsiaResourceDialect),
                 aliased_rights_handle_field: fidl::new_empty!(fidl::encoding::HandleType<fidl::Vmo, { fidl::ObjectType::VMO.into_raw() }, 1>, fidl::encoding::DefaultFuchsiaResourceDialect),
                 some_protocol: fidl::new_empty!(
@@ -926,7 +926,7 @@ mod internal {
         ) -> fidl::Result<()> {
             decoder.debug_check_bounds::<Self>(offset);
             // Verify that padding bytes are zero.
-            fidl::decode!(fidl::encoding::HandleType<fidl::Handle, { fidl::ObjectType::NONE.into_raw() }, 2147483648>, fidl::encoding::DefaultFuchsiaResourceDialect, &mut self.plain_handle, decoder, offset + 0, _depth)?;
+            fidl::decode!(fidl::encoding::HandleType<fidl::NullableHandle, { fidl::ObjectType::NONE.into_raw() }, 2147483648>, fidl::encoding::DefaultFuchsiaResourceDialect, &mut self.plain_handle, decoder, offset + 0, _depth)?;
             fidl::decode!(fidl::encoding::HandleType<fidl::Bti, { fidl::ObjectType::BTI.into_raw() }, 2147483648>, fidl::encoding::DefaultFuchsiaResourceDialect, &mut self.bti_handle, decoder, offset + 4, _depth)?;
             fidl::decode!(fidl::encoding::HandleType<fidl::Channel, { fidl::ObjectType::CHANNEL.into_raw() }, 2147483648>, fidl::encoding::DefaultFuchsiaResourceDialect, &mut self.channel_handle, decoder, offset + 8, _depth)?;
             fidl::decode!(fidl::encoding::HandleType<fidl::Clock, { fidl::ObjectType::CLOCK.into_raw() }, 2147483648>, fidl::encoding::DefaultFuchsiaResourceDialect, &mut self.clock_handle, decoder, offset + 12, _depth)?;
@@ -956,7 +956,7 @@ mod internal {
             fidl::decode!(fidl::encoding::HandleType<fidl::Vmar, { fidl::ObjectType::VMAR.into_raw() }, 2147483648>, fidl::encoding::DefaultFuchsiaResourceDialect, &mut self.vmar_handle, decoder, offset + 108, _depth)?;
             fidl::decode!(fidl::encoding::HandleType<fidl::Vmo, { fidl::ObjectType::VMO.into_raw() }, 2147483648>, fidl::encoding::DefaultFuchsiaResourceDialect, &mut self.vmo_handle, decoder, offset + 112, _depth)?;
             fidl::decode!(fidl::encoding::HandleType<fidl::Vmo, { fidl::ObjectType::VMO.into_raw() }, 5>, fidl::encoding::DefaultFuchsiaResourceDialect, &mut self.rights_handle, decoder, offset + 116, _depth)?;
-            fidl::decode!(fidl::encoding::HandleType<fidl::Handle, { fidl::ObjectType::NONE.into_raw() }, 2147483648>, fidl::encoding::DefaultFuchsiaResourceDialect, &mut self.aliased_plain_handle_field, decoder, offset + 120, _depth)?;
+            fidl::decode!(fidl::encoding::HandleType<fidl::NullableHandle, { fidl::ObjectType::NONE.into_raw() }, 2147483648>, fidl::encoding::DefaultFuchsiaResourceDialect, &mut self.aliased_plain_handle_field, decoder, offset + 120, _depth)?;
             fidl::decode!(fidl::encoding::HandleType<fidl::Vmo, { fidl::ObjectType::VMO.into_raw() }, 2147483648>, fidl::encoding::DefaultFuchsiaResourceDialect, &mut self.aliased_subtype_handle_field, decoder, offset + 124, _depth)?;
             fidl::decode!(fidl::encoding::HandleType<fidl::Vmo, { fidl::ObjectType::VMO.into_raw() }, 1>, fidl::encoding::DefaultFuchsiaResourceDialect, &mut self.aliased_rights_handle_field, decoder, offset + 128, _depth)?;
             fidl::decode!(

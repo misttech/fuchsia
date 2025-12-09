@@ -4,15 +4,15 @@
 
 //! Type-safe bindings for Zircon cuonter objects.
 
-use crate::{ok, sys, AsHandleRef, Handle, HandleBased, HandleRef, Status};
+use crate::{AsHandleRef, HandleBased, HandleRef, NullableHandle, Status, ok, sys};
 
 /// An object representing a Zircon
 /// [counter](https://fuchsia.dev/fuchsia-src/concepts/objects/counter.md).
 ///
-/// As essentially a subtype of `Handle`, it can be freely interconverted.
+/// As essentially a subtype of `NullableHandle`, it can be freely interconverted.
 #[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 #[repr(transparent)]
-pub struct Counter(Handle);
+pub struct Counter(NullableHandle);
 impl_handle_based!(Counter);
 
 impl Counter {
@@ -36,7 +36,7 @@ impl Counter {
         ok(status).expect(
             "counter creation always succeeds except with OOM or when job policy denies it",
         );
-        unsafe { Counter::from(Handle::from_raw(handle)) }
+        unsafe { Counter::from(NullableHandle::from_raw(handle)) }
     }
 
     /// Adds `value` to this counter.

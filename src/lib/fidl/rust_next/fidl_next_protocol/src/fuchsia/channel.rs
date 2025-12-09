@@ -19,7 +19,7 @@ use zx::sys::{
     ZX_ERR_BUFFER_TOO_SMALL, ZX_ERR_PEER_CLOSED, ZX_ERR_SHOULD_WAIT, ZX_OK, zx_channel_read,
     zx_channel_write, zx_handle_t,
 };
-use zx::{AsHandleRef as _, Channel, Handle, HandleBased, Status};
+use zx::{AsHandleRef as _, Channel, HandleBased, NullableHandle, Status};
 
 use crate::{NonBlockingTransport, Transport};
 
@@ -38,7 +38,7 @@ impl Shared {
 /// A channel buffer.
 #[derive(Default)]
 pub struct Buffer {
-    handles: Vec<Handle>,
+    handles: Vec<NullableHandle>,
     chunks: Vec<Chunk>,
 }
 
@@ -49,7 +49,7 @@ impl Buffer {
     }
 
     /// Retrieve the handles.
-    pub fn handles(&self) -> &[Handle] {
+    pub fn handles(&self) -> &[NullableHandle] {
         &self.handles
     }
 
@@ -59,12 +59,12 @@ impl Buffer {
     }
 
     /// Make a buffer out of handles and chunks.
-    pub fn from_raw(handles: Vec<Handle>, chunks: Vec<Chunk>) -> Self {
+    pub fn from_raw(handles: Vec<NullableHandle>, chunks: Vec<Chunk>) -> Self {
         Self { handles, chunks }
     }
 
     /// Make a buffer out of handles and bytes. The bytes will be copied.
-    pub fn from_raw_bytes(handles: Vec<Handle>, bytes: impl AsRef<[u8]>) -> Self {
+    pub fn from_raw_bytes(handles: Vec<NullableHandle>, bytes: impl AsRef<[u8]>) -> Self {
         let bytes = bytes.as_ref();
         assert!(bytes.len() % CHUNK_SIZE == 0);
         let chunks = bytes
@@ -105,7 +105,7 @@ impl Encoder for Buffer {
 }
 
 impl HandleEncoder for Buffer {
-    fn push_handle(&mut self, handle: Handle) -> Result<(), EncodeError> {
+    fn push_handle(&mut self, handle: NullableHandle) -> Result<(), EncodeError> {
         self.handles.push(handle);
         Ok(())
     }
@@ -159,7 +159,7 @@ unsafe impl Decoder for RecvBuffer {
     fn commit(&mut self) {
         for handle in &mut self.buffer.handles[0..self.handles_taken] {
             // This handle was taken. To commit the current changes, we need to forget it.
-            let _ = replace(handle, Handle::invalid()).into_raw();
+            let _ = replace(handle, NullableHandle::invalid()).into_raw();
         }
     }
 
@@ -187,7 +187,7 @@ impl InternalHandleDecoder for RecvBuffer {
         }
 
         for i in self.handles_taken..self.handles_taken + count {
-            let handle = replace(&mut self.buffer.handles[i], Handle::invalid());
+            let handle = replace(&mut self.buffer.handles[i], NullableHandle::invalid());
             drop(handle);
         }
         self.handles_taken += count;
@@ -346,7 +346,9 @@ mod tests {
         Unconstrained, Wire, munge,
     };
     use fuchsia_async as fasync;
-    use zx::{AsHandleRef, Channel, Handle, HandleBased as _, Instant, Signals, WaitResult};
+    use zx::{
+        AsHandleRef, Channel, HandleBased as _, Instant, NullableHandle, Signals, WaitResult,
+    };
 
     use crate::fuchsia::channel::{Buffer, RecvBuffer};
     use crate::testing::*;
@@ -382,7 +384,7 @@ mod tests {
     }
 
     struct HandleAndBoolean {
-        handle: Handle,
+        handle: NullableHandle,
         boolean: bool,
     }
 
@@ -430,7 +432,7 @@ mod tests {
 
     impl FromWire<WireHandleAndBoolean> for HandleAndBoolean {
         fn from_wire(wire: WireHandleAndBoolean) -> Self {
-            Self { handle: Handle::from_wire(wire.handle), boolean: wire.boolean }
+            Self { handle: NullableHandle::from_wire(wire.handle), boolean: wire.boolean }
         }
     }
 

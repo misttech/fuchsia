@@ -45,7 +45,7 @@ pub enum LogError {
 /// Creates a combined socket handle for stdout and stderr and hooks them to same socket.
 /// It also wraps the socket into stream and returns it back.
 pub fn create_std_combined_log_stream()
--> Result<(LoggerStream, zx::Handle, zx::Handle), LoggerError> {
+-> Result<(LoggerStream, zx::NullableHandle, zx::NullableHandle), LoggerError> {
     let (client, log) = zx::Socket::create_stream();
 
     let stream = LoggerStream::new(client).map_err(LoggerError::InvalidSocket)?;
@@ -57,7 +57,7 @@ pub fn create_std_combined_log_stream()
 
 /// Creates a socket handle for stdout/stderr and hooks it to a file handle.
 /// It also wraps the socket into stream and returns it back.
-pub fn create_log_stream() -> Result<(LoggerStream, zx::Handle), LoggerError> {
+pub fn create_log_stream() -> Result<(LoggerStream, zx::NullableHandle), LoggerError> {
     let (client, log) = zx::Socket::create_stream();
 
     let stream = LoggerStream::new(client).map_err(LoggerError::InvalidSocket)?;

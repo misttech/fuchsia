@@ -9,17 +9,17 @@ use zerocopy::{FromBytes, Immutable};
 use zx_sys::zx_paddr_t;
 
 use crate::{
-    AsHandleRef, Handle, HandleBased, HandleRef, Iommu, ObjectQuery, Pmt, Status, Topic, Vmo,
-    object_get_info_single, ok, sys,
+    AsHandleRef, HandleBased, HandleRef, Iommu, NullableHandle, ObjectQuery, Pmt, Status, Topic,
+    Vmo, object_get_info_single, ok, sys,
 };
 
 /// An object representing a Zircon Bus Transaction Initiator object.
 /// See [BTI Documentation](https://fuchsia.dev/fuchsia-src/reference/kernel_objects/bus_transaction_initiator) for details.
 ///
-/// As essentially a subtype of `Handle`, it can be freely interconverted.
+/// As essentially a subtype of `NullableHandle`, it can be freely interconverted.
 #[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 #[repr(transparent)]
-pub struct Bti(Handle);
+pub struct Bti(NullableHandle);
 impl_handle_based!(Bti);
 
 static_assert_align!(
@@ -79,7 +79,7 @@ impl Bti {
         unsafe {
             // SAFETY: The syscall docs claim that upon success, bti_handle will be a valid
             // handle to bti object.
-            Ok(Bti::from(Handle::from_raw(bti_handle)))
+            Ok(Bti::from(NullableHandle::from_raw(bti_handle)))
         }
     }
 
@@ -119,7 +119,7 @@ impl Bti {
         unsafe {
             // SAFETY: The syscall docs claim that upon success, pmt will be a valid handle to a
             // zx_pmt_t.
-            Ok(Pmt::from(Handle::from_raw(pmt)))
+            Ok(Pmt::from(NullableHandle::from_raw(pmt)))
         }
     }
 }
@@ -133,14 +133,14 @@ mod tests {
 
     #[test]
     fn create_bti_invalid_handle() {
-        let status = Bti::create(&Iommu::from(Handle::invalid()), 0);
+        let status = Bti::create(&Iommu::from(NullableHandle::invalid()), 0);
         assert_eq!(status, Err(Status::BAD_HANDLE));
     }
 
     #[test]
     fn create_bti_wrong_handle() {
         let vmo = Vmo::create(0).unwrap();
-        let wrong_handle = unsafe { Iommu::from(Handle::from_raw(vmo.into_raw())) };
+        let wrong_handle = unsafe { Iommu::from(NullableHandle::from_raw(vmo.into_raw())) };
 
         let status = Bti::create(&wrong_handle, 0);
         assert_eq!(status, Err(Status::WRONG_TYPE));
@@ -156,7 +156,7 @@ mod tests {
         // This test and fuchsia-zircon are different crates, so we need
         // to use from_raw to convert between the zx handle and this test handle.
         // See https://fxbug.dev/42173139 for details.
-        let resource = unsafe { Resource::from(Handle::from_raw(resource.into_raw())) };
+        let resource = unsafe { Resource::from(NullableHandle::from_raw(resource.into_raw())) };
         Iommu::create_stub(&resource, IommuDescStub::default()).unwrap()
     }
 

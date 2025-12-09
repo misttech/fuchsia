@@ -3,14 +3,14 @@
 // found in the LICENSE file.
 
 use fidl::encoding::{
-    Context, Decode, Decoder, DefaultFuchsiaResourceDialect, Depth, Encode, Encoder,
-    ResourceTypeMarker, TypeMarker, ALLOC_ABSENT_U32, ALLOC_PRESENT_U32,
+    ALLOC_ABSENT_U32, ALLOC_PRESENT_U32, Context, Decode, Decoder, DefaultFuchsiaResourceDialect,
+    Depth, Encode, Encoder, ResourceTypeMarker, TypeMarker,
 };
 
 use fdf::{Channel, MixedHandle, MixedHandleType};
 use zx::{
-    AsHandleRef, Handle, HandleBased, HandleDisposition, HandleInfo, HandleOp, ObjectType, Rights,
-    Status,
+    AsHandleRef, HandleBased, HandleDisposition, HandleInfo, HandleOp, NullableHandle, ObjectType,
+    Rights, Status,
 };
 
 use std::marker::PhantomData;
@@ -91,8 +91,9 @@ unsafe impl<T: 'static> Encode<DriverEndpoint<T>, DefaultFuchsiaResourceDialect>
         // handle for the benefit of the fidl encoding library. If something tries to close it,
         // it will cause an error and leak the driver handle but it will not cause any other
         // unsoundness.
-        let handle =
-            unsafe { fidl::Handle::from_raw(channel.into_driver_handle().into_raw().get()) };
+        let handle = unsafe {
+            fidl::NullableHandle::from_raw(channel.into_driver_handle().into_raw().get())
+        };
 
         // SAFETY: the caller is responsible for ensuring that there's enough space for this
         // value.
@@ -121,7 +122,7 @@ unsafe impl<T: 'static> Encode<DriverEndpoint<T>, DefaultFuchsiaResourceDialect>
 pub unsafe fn mixed_into_handle_info(this: Option<MixedHandle>) -> Result<HandleInfo, Status> {
     use MixedHandleType::*;
     let Some(this) = this else {
-        return Ok(HandleInfo::new(Handle::invalid(), ObjectType::NONE, Rights::empty()));
+        return Ok(HandleInfo::new(NullableHandle::invalid(), ObjectType::NONE, Rights::empty()));
     };
     match this.resolve() {
         Zircon(handle) => {
@@ -132,7 +133,7 @@ pub unsafe fn mixed_into_handle_info(this: Option<MixedHandle>) -> Result<Handle
             // SAFETY: we are wrapping the technically invalid handle in a `ManuallyDrop`
             // to prevent it from being dropped.
             Ok(HandleInfo::new(
-                unsafe { Handle::from_raw(handle.into_raw().get()) },
+                unsafe { NullableHandle::from_raw(handle.into_raw().get()) },
                 ObjectType::NONE,
                 Rights::empty(),
             ))
@@ -185,7 +186,9 @@ mod tests {
     #[test]
     fn driver_handle_disposition() {
         let handle_disposition = HandleDisposition::new(
-            HandleOp::Move(unsafe { Handle::from_raw(make_driver_handle().into_raw().get()) }),
+            HandleOp::Move(unsafe {
+                NullableHandle::from_raw(make_driver_handle().into_raw().get())
+            }),
             ObjectType::NONE,
             Rights::empty(),
             Status::OK,

@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{format_err, Error};
+use anyhow::{Error, format_err};
 use fidl_fuchsia_kernel as fkernel;
 use futures::prelude::*;
 use std::sync::Arc;
@@ -62,7 +62,7 @@ mod tests {
     #[fuchsia::test]
     async fn fail_with_no_irq_resource() -> Result<(), Error> {
         let (_, stream) = fidl::endpoints::create_proxy_and_stream::<fkernel::IrqResourceMarker>();
-        IrqResource::new(Resource::from(zx::Handle::invalid()))
+        IrqResource::new(Resource::from(zx::NullableHandle::invalid()))
             .serve(stream)
             .await
             .expect_err("should fail to serve stream with an invalid resource");

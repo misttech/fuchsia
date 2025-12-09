@@ -132,7 +132,7 @@ impl Drop for TempHandle {
         if *self.tombstone.get_mut() {
             // SAFETY: The primary handle has been dropped and it is our job to clean up the
             // handle. There are no memory safety issues here.
-            unsafe { fidl::Handle::from_raw(self.raw_handle) };
+            unsafe { fidl::NullableHandle::from_raw(self.raw_handle) };
         } else {
             if let Entry::Occupied(o) = clones().lock().entry(self.raw_handle) {
                 // There's a small window where another TempHandle could have been inserted, so

@@ -17,7 +17,7 @@ use crate::token_registry::{TokenInterface, TokenRegistry, Tokenizable};
 use crate::{ObjectRequestRef, ProtocolsExt};
 
 use anyhow::Error;
-use fidl::Handle;
+use fidl::NullableHandle;
 use fidl_fuchsia_io as fio;
 use std::ops::ControlFlow;
 use std::pin::Pin;
@@ -71,7 +71,8 @@ impl<DirectoryType: MutableDirectory> MutableConnection<DirectoryType> {
                 responder.send(status.into_raw(), token)?;
             }
             fio::DirectoryRequest::Rename { src, dst_parent_token, dst, responder } => {
-                let result = this.handle_rename(src, Handle::from(dst_parent_token), dst).await;
+                let result =
+                    this.handle_rename(src, NullableHandle::from(dst_parent_token), dst).await;
                 responder.send(result.map_err(Status::into_raw))?;
             }
             #[cfg(fuchsia_api_level_at_least = "28")]
@@ -166,7 +167,7 @@ impl<DirectoryType: MutableDirectory> MutableConnection<DirectoryType> {
             .await
     }
 
-    fn handle_get_token(this: Pin<&Tokenizable<Self>>) -> Result<Handle, Status> {
+    fn handle_get_token(this: Pin<&Tokenizable<Self>>) -> Result<NullableHandle, Status> {
         // GetToken exists to support linking, so we must make sure the connection has the
         // permission to modify the directory.
         if !this.base.options.rights.contains(fio::Rights::MODIFY_DIRECTORY) {
@@ -178,7 +179,7 @@ impl<DirectoryType: MutableDirectory> MutableConnection<DirectoryType> {
     async fn handle_rename(
         &self,
         src: String,
-        dst_parent_token: Handle,
+        dst_parent_token: NullableHandle,
         dst: String,
     ) -> Result<(), Status> {
         if !self.base.options.rights.contains(fio::Rights::MODIFY_DIRECTORY) {

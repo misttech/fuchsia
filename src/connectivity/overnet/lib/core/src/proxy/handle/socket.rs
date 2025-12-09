@@ -4,7 +4,7 @@
 
 use super::signals::Collector;
 use super::{
-    IntoProxied, Message, Proxyable, ProxyableRW, ReadValue, RouterHolder, Serializer, IO,
+    IO, IntoProxied, Message, Proxyable, ProxyableRW, ReadValue, RouterHolder, Serializer,
 };
 use crate::peer::PeerConnRef;
 use anyhow::Error;
@@ -28,11 +28,11 @@ impl std::fmt::Debug for Socket {
 impl Proxyable for Socket {
     type Message = SocketMessage;
 
-    fn from_fidl_handle(hdl: fidl::Handle) -> Result<Self, Error> {
+    fn from_fidl_handle(hdl: fidl::NullableHandle) -> Result<Self, Error> {
         Ok(fidl::Socket::from_handle(hdl).into_proxied()?)
     }
 
-    fn into_fidl_handle(self) -> Result<fidl::Handle, Error> {
+    fn into_fidl_handle(self) -> Result<fidl::NullableHandle, Error> {
         Ok(self.socket.into_zx_socket().into_handle())
     }
 

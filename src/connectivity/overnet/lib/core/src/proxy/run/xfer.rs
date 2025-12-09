@@ -5,13 +5,13 @@
 use super::super::handle::{Message, ProxyableHandle, ProxyableRW, ReadValue};
 use super::super::stream::{Frame, StreamReader, StreamWriter, StreamWriterBinder};
 use super::super::{Proxy, ProxyTransferInitiationReceiver, StreamRefSender};
-use crate::labels::{generate_transfer_key, Endpoint, NodeId, TransferKey};
+use crate::labels::{Endpoint, NodeId, TransferKey, generate_transfer_key};
 use crate::peer::{FramedStreamReader, FramedStreamWriter};
 use crate::router::OpenedTransfer;
-use anyhow::{bail, format_err, Error};
+use anyhow::{Error, bail, format_err};
 use futures::future::Either;
 use futures::prelude::*;
-use futures::task::{noop_waker_ref, Context, Poll};
+use futures::task::{Context, Poll, noop_waker_ref};
 use std::sync::{Arc, Weak};
 use zx_status;
 
@@ -77,7 +77,7 @@ fn make_boxed_main_loop<Hdl: 'static + for<'a> ProxyableRW<'a>>(
 // new endpoint.
 pub(crate) async fn initiate<Hdl: 'static + for<'a> ProxyableRW<'a>>(
     proxy: Proxy<Hdl>,
-    pair: fidl::Handle,
+    pair: fidl::NullableHandle,
     mut stream_writer: StreamWriter<Hdl::Message>,
     mut stream_reader: StreamReader<Hdl::Message>,
     drain_stream: FramedStreamWriter,

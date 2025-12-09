@@ -11,11 +11,7 @@ fn reverse<T>(value: (T, T)) -> (T, T) {
 }
 
 fn maybe_reverse<T>(really_do_it: bool, value: (T, T)) -> (T, T) {
-    if really_do_it {
-        (value.1, value.0)
-    } else {
-        (value.0, value.1)
-    }
+    if really_do_it { (value.1, value.0) } else { (value.0, value.1) }
 }
 
 pub enum CreateHandlePurpose {
@@ -38,7 +34,7 @@ async fn send_message(
     fixture: &mut impl LoggingFixture,
     channels: (fidl::Channel, fidl::Channel),
     after_send: AfterSend,
-    mut out: Vec<(&[u8], &mut Vec<fidl::Handle>)>,
+    mut out: Vec<(&[u8], &mut Vec<fidl::NullableHandle>)>,
 ) {
     let channels = (
         fidl::AsyncChannel::from_channel(channels.0),

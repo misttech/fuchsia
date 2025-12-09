@@ -545,7 +545,7 @@ impl fmt::Display for LockSource {
 }
 
 pub trait OnWakeOps: Send + Sync {
-    fn on_wake(&self, current_task: &CurrentTask, baton_lease: &zx::Handle);
+    fn on_wake(&self, current_task: &CurrentTask, baton_lease: &zx::NullableHandle);
 }
 
 /// Creates a proxy between `remote_channel` and the returned `zx::Channel`.

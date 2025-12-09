@@ -117,7 +117,7 @@ impl FileOps for SyncFile {
         &self,
         _file: &FileObject,
         _current_task: &CurrentTask,
-    ) -> Result<Option<zx::Handle>, Errno> {
+    ) -> Result<Option<zx::NullableHandle>, Errno> {
         assert!(self.fence.sync_points.len() == 1);
         let dup = self.fence.sync_points[0]
             .counter

@@ -9,7 +9,7 @@ pub mod natural {
     #[derive(PartialEq, Debug)]
     #[repr(C)]
     pub struct ChannelProtocolTakeHandleRequest {
-        pub h: ::fidl_next::fuchsia::zx::Handle,
+        pub h: ::fidl_next::fuchsia::zx::NullableHandle,
     }
 
     unsafe impl<___E> ::fidl_next::Encode<crate::wire::ChannelProtocolTakeHandleRequest, ___E>
@@ -23,8 +23,8 @@ pub mod natural {
             crate::wire::ChannelProtocolTakeHandleRequest,
         > = unsafe {
             ::fidl_next::CopyOptimization::enable_if(
-                true && <::fidl_next::fuchsia::zx::Handle as ::fidl_next::Encode<
-                    ::fidl_next::fuchsia::WireHandle,
+                true && <::fidl_next::fuchsia::zx::NullableHandle as ::fidl_next::Encode<
+                    ::fidl_next::fuchsia::WireNullableHandle,
                     ___E,
                 >>::COPY_OPTIMIZATION
                     .is_enabled(),
@@ -91,8 +91,8 @@ pub mod natural {
             Self,
         > = unsafe {
             ::fidl_next::CopyOptimization::enable_if(
-                true && <::fidl_next::fuchsia::zx::Handle as ::fidl_next::FromWire<
-                    ::fidl_next::fuchsia::WireHandle,
+                true && <::fidl_next::fuchsia::zx::NullableHandle as ::fidl_next::FromWire<
+                    ::fidl_next::fuchsia::WireNullableHandle,
                 >>::COPY_OPTIMIZATION
                     .is_enabled(),
             )
@@ -917,7 +917,7 @@ pub mod natural {
     #[derive(PartialEq, Debug)]
     #[repr(C)]
     pub struct WithErrorSyntaxHandleInResultResponse {
-        pub h: ::fidl_next::fuchsia::zx::Handle,
+        pub h: ::fidl_next::fuchsia::zx::NullableHandle,
     }
 
     unsafe impl<___E> ::fidl_next::Encode<crate::wire::WithErrorSyntaxHandleInResultResponse, ___E>
@@ -931,8 +931,8 @@ pub mod natural {
             crate::wire::WithErrorSyntaxHandleInResultResponse,
         > = unsafe {
             ::fidl_next::CopyOptimization::enable_if(
-                true && <::fidl_next::fuchsia::zx::Handle as ::fidl_next::Encode<
-                    ::fidl_next::fuchsia::WireHandle,
+                true && <::fidl_next::fuchsia::zx::NullableHandle as ::fidl_next::Encode<
+                    ::fidl_next::fuchsia::WireNullableHandle,
                     ___E,
                 >>::COPY_OPTIMIZATION
                     .is_enabled(),
@@ -999,8 +999,8 @@ pub mod natural {
             Self,
         > = unsafe {
             ::fidl_next::CopyOptimization::enable_if(
-                true && <::fidl_next::fuchsia::zx::Handle as ::fidl_next::FromWire<
-                    ::fidl_next::fuchsia::WireHandle,
+                true && <::fidl_next::fuchsia::zx::NullableHandle as ::fidl_next::FromWire<
+                    ::fidl_next::fuchsia::WireNullableHandle,
                 >>::COPY_OPTIMIZATION
                     .is_enabled(),
             )
@@ -1686,7 +1686,7 @@ pub mod wire {
     #[derive(Debug)]
     #[repr(C)]
     pub struct ChannelProtocolTakeHandleRequest {
-        pub h: ::fidl_next::fuchsia::WireHandle,
+        pub h: ::fidl_next::fuchsia::WireNullableHandle,
     }
 
     static_assertions::const_assert_eq!(std::mem::size_of::<ChannelProtocolTakeHandleRequest>(), 4);
@@ -2278,7 +2278,7 @@ pub mod wire {
     #[derive(Debug)]
     #[repr(C)]
     pub struct WithErrorSyntaxHandleInResultResponse {
-        pub h: ::fidl_next::fuchsia::WireHandle,
+        pub h: ::fidl_next::fuchsia::WireNullableHandle,
     }
 
     static_assertions::const_assert_eq!(
@@ -2791,7 +2791,7 @@ pub mod generic {
     where
         ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
         ___E: ::fidl_next::fuchsia::HandleEncoder,
-        T0: ::fidl_next::Encode<::fidl_next::fuchsia::WireHandle, ___E>,
+        T0: ::fidl_next::Encode<::fidl_next::fuchsia::WireNullableHandle, ___E>,
     {
         #[inline]
         fn encode(
@@ -3100,7 +3100,7 @@ pub mod generic {
     where
         ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
         ___E: ::fidl_next::fuchsia::HandleEncoder,
-        T0: ::fidl_next::Encode<::fidl_next::fuchsia::WireHandle, ___E>,
+        T0: ::fidl_next::Encode<::fidl_next::fuchsia::WireNullableHandle, ___E>,
     {
         #[inline]
         fn encode(
@@ -3570,7 +3570,7 @@ pub mod channel_protocol {
                 &self,
 
                 h: impl ::fidl_next::Encode<
-                    ::fidl_next::fuchsia::WireHandle,
+                    ::fidl_next::fuchsia::WireNullableHandle,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
             ) -> ::fidl_next::TwoWayFuture<'_, super::TakeHandle, ___T>

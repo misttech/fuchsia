@@ -6,8 +6,8 @@
 
 use crate::epitaph::ChannelEpitaphExt;
 use crate::{
-    AsHandleRef, AsyncChannel, Channel, Error, Handle, HandleBased, HandleRef, OnSignalsRef,
-    ServeInner,
+    AsHandleRef, AsyncChannel, Channel, Error, HandleBased, HandleRef, NullableHandle,
+    OnSignalsRef, ServeInner,
 };
 use futures::{Stream, TryStream};
 use std::marker::PhantomData;
@@ -363,8 +363,8 @@ impl<T> AsHandleRef for ClientEnd<T> {
     }
 }
 
-impl<T> From<ClientEnd<T>> for Handle {
-    fn from(client: ClientEnd<T>) -> Handle {
+impl<T> From<ClientEnd<T>> for NullableHandle {
+    fn from(client: ClientEnd<T>) -> NullableHandle {
         client.into_channel().into()
     }
 }
@@ -375,8 +375,8 @@ impl<T> From<ClientEnd<T>> for Channel {
     }
 }
 
-impl<T> From<Handle> for ClientEnd<T> {
-    fn from(handle: Handle) -> Self {
+impl<T> From<NullableHandle> for ClientEnd<T> {
+    fn from(handle: NullableHandle) -> Self {
         ClientEnd { inner: handle.into(), phantom: PhantomData }
     }
 }
@@ -486,8 +486,8 @@ impl<T> AsHandleRef for ServerEnd<T> {
     }
 }
 
-impl<T> From<ServerEnd<T>> for Handle {
-    fn from(server: ServerEnd<T>) -> Handle {
+impl<T> From<ServerEnd<T>> for NullableHandle {
+    fn from(server: ServerEnd<T>) -> NullableHandle {
         server.into_channel().into()
     }
 }
@@ -498,8 +498,8 @@ impl<T> From<ServerEnd<T>> for Channel {
     }
 }
 
-impl<T> From<Handle> for ServerEnd<T> {
-    fn from(handle: Handle) -> Self {
+impl<T> From<NullableHandle> for ServerEnd<T> {
+    fn from(handle: NullableHandle) -> Self {
         ServerEnd { inner: handle.into(), phantom: PhantomData }
     }
 }

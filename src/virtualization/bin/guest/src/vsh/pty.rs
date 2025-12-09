@@ -114,8 +114,10 @@ impl Drop for RawPty {
     fn drop(&mut self) {
         // If previous mode wasn't already raw, reset it.
         if (self.previous_feature & fpty::FEATURE_RAW) != fpty::FEATURE_RAW {
-            let pty_chan =
-                std::mem::replace(&mut self.pty, zx::Channel::from_handle(zx::Handle::invalid()));
+            let pty_chan = std::mem::replace(
+                &mut self.pty,
+                zx::Channel::from_handle(zx::NullableHandle::invalid()),
+            );
             let pty = fpty::DeviceSynchronousProxy::new(pty_chan);
             let (status, _) =
                 pty.clr_set_feature(fpty::FEATURE_RAW, 0, zx::MonotonicInstant::INFINITE).unwrap();

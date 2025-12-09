@@ -4,9 +4,9 @@
 
 use super::SuiteServer;
 use crate::errors::ArgumentError;
-use anyhow::{anyhow, Context};
+use anyhow::{Context, anyhow};
 use async_trait::async_trait;
-use fidl::endpoints::{create_proxy, ClientEnd, ProtocolMarker, Proxy, ServerEnd};
+use fidl::endpoints::{ClientEnd, ProtocolMarker, Proxy, ServerEnd, create_proxy};
 use fidl_fuchsia_ldsvc::LoaderMarker;
 use fidl_fuchsia_test_runner::{
     LibraryLoaderCacheBuilderMarker, LibraryLoaderCacheMarker, LibraryLoaderCacheProxy,
@@ -15,7 +15,7 @@ use fuchsia_async::{self as fasync, TimeoutExt};
 use fuchsia_component::client::connect_to_protocol;
 use fuchsia_component::server::ServiceFs;
 use fuchsia_runtime::job_default;
-use futures::future::{abortable, BoxFuture};
+use futures::future::{BoxFuture, abortable};
 use futures::prelude::*;
 use log::{error, info, warn};
 use namespace::Namespace;
@@ -592,7 +592,7 @@ where
 }
 
 fn take_server_end<P: ProtocolMarker>(end: &mut ServerEnd<P>) -> ServerEnd<P> {
-    let invalid_end: ServerEnd<P> = zx::Handle::invalid().into();
+    let invalid_end: ServerEnd<P> = zx::NullableHandle::invalid().into();
     mem::replace(end, invalid_end)
 }
 

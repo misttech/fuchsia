@@ -843,7 +843,7 @@ impl FileOps for MagmaFile {
                             let handle = {
                                 #[allow(clippy::undocumented_unsafe_blocks)]
                                 unsafe {
-                                    zx::Handle::from_raw(raw_handle)
+                                    zx::NullableHandle::from_raw(raw_handle)
                                 }
                             };
 

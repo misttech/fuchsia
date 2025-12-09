@@ -4,16 +4,18 @@
 
 //! Type-safe bindings for Zircon pager objects.
 
-use crate::{ok, sys, AsHandleRef, Handle, HandleBased, HandleRef, Port, Status, Vmo, VmoOptions};
+use crate::{
+    AsHandleRef, HandleBased, HandleRef, NullableHandle, Port, Status, Vmo, VmoOptions, ok, sys,
+};
 use bitflags::bitflags;
 
 /// An object representing a Zircon
 /// [pager](https://fuchsia.dev/fuchsia-src/concepts/objects/pager.md).
 ///
-/// As essentially a subtype of `Handle`, it can be freely interconverted.
+/// As essentially a subtype of `NullableHandle`, it can be freely interconverted.
 #[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 #[repr(transparent)]
-pub struct Pager(Handle);
+pub struct Pager(NullableHandle);
 impl_handle_based!(Pager);
 
 bitflags! {
@@ -45,7 +47,7 @@ impl Pager {
         let mut out = 0;
         let status = unsafe { sys::zx_pager_create(options.bits(), &mut out) };
         ok(status)?;
-        Ok(Pager::from(unsafe { Handle::from_raw(out) }))
+        Ok(Pager::from(unsafe { NullableHandle::from_raw(out) }))
     }
 
     /// See [zx_pager_create_vmo](https://fuchsia.dev/fuchsia-src/reference/syscalls/pager_create_vmo)
@@ -68,7 +70,7 @@ impl Pager {
             )
         };
         ok(status)?;
-        Ok(Vmo::from(unsafe { Handle::from_raw(out) }))
+        Ok(Vmo::from(unsafe { NullableHandle::from_raw(out) }))
     }
 
     /// See [zx_pager_detach_vmo](https://fuchsia.dev/fuchsia-src/reference/syscalls/pager_detach_vmo)

@@ -254,7 +254,7 @@ impl MockRunner {
         &self,
         name: &str,
         ordinal: fuchsia_runtime::HandleType,
-    ) -> Option<zx::Handle> {
+    ) -> Option<zx::NullableHandle> {
         let mut inner = self.inner.lock();
         let handles = inner.numbered_handles.get_mut(name)?;
         for i in 0..handles.len() {

@@ -2,11 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::{AsHandleRef, Guest, Handle, HandleBased, HandleRef, Packet, Status, ok, sys};
+use crate::{AsHandleRef, Guest, HandleBased, HandleRef, NullableHandle, Packet, Status, ok, sys};
 
 #[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 #[repr(transparent)]
-pub struct Vcpu(Handle);
+pub struct Vcpu(NullableHandle);
 impl_handle_based!(Vcpu);
 
 impl Vcpu {
@@ -15,7 +15,7 @@ impl Vcpu {
         unsafe {
             let mut vcpu_handle = 0;
             ok(sys::zx_vcpu_create(guest.raw_handle(), 0, entry, &mut vcpu_handle))?;
-            Ok(Self::from(Handle::from_raw(vcpu_handle)))
+            Ok(Self::from(NullableHandle::from_raw(vcpu_handle)))
         }
     }
 
@@ -97,7 +97,7 @@ mod tests {
             .get()
             .await
             .unwrap();
-        unsafe { Resource::from(Handle::from_raw(resource.into_raw())) }
+        unsafe { Resource::from(NullableHandle::from_raw(resource.into_raw())) }
     }
 
     #[fuchsia::test]

@@ -4,15 +4,15 @@
 
 //! Type-safe bindings for Zircon event objects.
 
-use crate::{ok, AsHandleRef, Handle, HandleBased, HandleRef};
+use crate::{AsHandleRef, HandleBased, HandleRef, NullableHandle, ok};
 
 /// An object representing a Zircon
 /// [event object](https://fuchsia.dev/fuchsia-src/concepts/objects/event.md).
 ///
-/// As essentially a subtype of `Handle`, it can be freely interconverted.
+/// As essentially a subtype of `NullableHandle`, it can be freely interconverted.
 #[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 #[repr(transparent)]
-pub struct Event(Handle);
+pub struct Event(NullableHandle);
 impl_handle_based!(Event);
 
 impl Event {
@@ -29,6 +29,6 @@ impl Event {
         let status = unsafe { crate::sys::zx_event_create(opts, &mut out) };
         ok(status)
             .expect("event creation always succeeds except with OOM or when job policy denies it");
-        unsafe { Self::from(Handle::from_raw(out)) }
+        unsafe { Self::from(NullableHandle::from_raw(out)) }
     }
 }

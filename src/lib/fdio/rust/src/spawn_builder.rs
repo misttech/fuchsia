@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::{spawn_etc, transfer_fd, SpawnAction, SpawnOptions};
+use crate::{SpawnAction, SpawnOptions, spawn_etc, transfer_fd};
 
 use std::ffi::CString;
 use std::fs::File;
@@ -19,7 +19,7 @@ pub struct SpawnBuilder {
         // moving out of the handles.
         //
         // This is always `Some` until the builder is consumed.
-        Option<zx::Handle>,
+        Option<zx::NullableHandle>,
     )>,
 }
 
@@ -72,7 +72,11 @@ impl SpawnBuilder {
         self.add_handle_to_namespace(path, client_end.into())
     }
 
-    fn add_handle_to_namespace(mut self, path: String, handle: zx::Handle) -> Result<Self, Error> {
+    fn add_handle_to_namespace(
+        mut self,
+        path: String,
+        handle: zx::NullableHandle,
+    ) -> Result<Self, Error> {
         let path = CString::new(path).map_err(Error::ConvertNamespacePathToCString)?;
         self.dirs.push((path, Some(handle)));
         Ok(self)

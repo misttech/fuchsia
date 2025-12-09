@@ -391,9 +391,9 @@ pub trait FileOps: Send + Sync + AsAny + 'static {
         &self,
         file: &FileObject,
         current_task: &CurrentTask,
-    ) -> Result<Option<zx::Handle>, Errno> {
+    ) -> Result<Option<zx::NullableHandle>, Errno> {
         serve_file(current_task, file, current_task.full_current_creds())
-            .map(|c| Some(c.0.into_handle()))
+            .map(|c| Some(c.0.into_handle().into()))
     }
 
     /// Returns the associated pid_t.
@@ -591,7 +591,7 @@ impl<T: FileOps + CloseFreeSafe, P: Deref<Target = T> + Send + Sync + 'static> F
         &self,
         file: &FileObject,
         current_task: &CurrentTask,
-    ) -> Result<Option<zx::Handle>, Errno> {
+    ) -> Result<Option<zx::NullableHandle>, Errno> {
         self.deref().to_handle(file, current_task)
     }
 
@@ -2056,7 +2056,10 @@ impl FileObject {
         Ok(())
     }
 
-    pub fn to_handle(&self, current_task: &CurrentTask) -> Result<Option<zx::Handle>, Errno> {
+    pub fn to_handle(
+        &self,
+        current_task: &CurrentTask,
+    ) -> Result<Option<zx::NullableHandle>, Errno> {
         self.ops().to_handle(self, current_task)
     }
 
@@ -2248,7 +2251,7 @@ impl fmt::Debug for FileObject {
 
 impl OnWakeOps for FileReleaser {
     /// Called when the underneath `FileOps` is waken up by the power framework.
-    fn on_wake(&self, current_task: &CurrentTask, baton_lease: &zx::Handle) {
+    fn on_wake(&self, current_task: &CurrentTask, baton_lease: &zx::NullableHandle) {
         // Activate associated wake leases in registered epfd.
         for (_, file) in self.epoll_files.lock().iter() {
             if let Some(file) = file.upgrade() {

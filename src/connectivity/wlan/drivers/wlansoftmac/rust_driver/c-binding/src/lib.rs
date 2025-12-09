@@ -144,7 +144,8 @@ pub unsafe extern "C" fn start_bridged_wlansoftmac(
         let wlan_softmac_bridge_proxy = {
             // Safety: This is safe because the caller promises `wlan_softmac_bridge_client_handle`
             // is a valid handle.
-            let handle = unsafe { fidl::Handle::from_raw(wlan_softmac_bridge_client_handle) };
+            let handle =
+                unsafe { fidl::NullableHandle::from_raw(wlan_softmac_bridge_client_handle) };
             let channel = fidl::Channel::from(handle);
             let channel = fidl::AsyncChannel::from_channel(channel);
             fidl_softmac::WlanSoftmacBridgeProxy::new(channel)

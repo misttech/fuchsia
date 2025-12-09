@@ -17,8 +17,8 @@ pub use fuchsia_async::{Channel as AsyncChannel, OnSignalsRef, Socket as AsyncSo
 pub mod fuchsia_handles {
 
     pub use zx::{
-        AsHandleRef, Handle, HandleBased, HandleDisposition, HandleInfo, HandleOp, HandleRef,
-        MessageBufEtc, ObjectType, Peered, Rights, Signals, Status,
+        AsHandleRef, HandleBased, HandleDisposition, HandleInfo, HandleOp, HandleRef,
+        MessageBufEtc, NullableHandle, ObjectType, Peered, Rights, Signals, Status,
     };
 
     pub use fuchsia_async::invoke_for_handle_types;
@@ -28,20 +28,20 @@ pub mod fuchsia_handles {
             /// Stub implementation of Zircon handle type $x.
             #[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
             #[repr(transparent)]
-            pub struct $x(zx::Handle);
+            pub struct $x(zx::NullableHandle);
 
             impl zx::AsHandleRef for $x {
                 fn as_handle_ref(&self) -> HandleRef<'_> {
                     self.0.as_handle_ref()
                 }
             }
-            impl From<Handle> for $x {
-                fn from(handle: Handle) -> Self {
+            impl From<NullableHandle> for $x {
+                fn from(handle: NullableHandle) -> Self {
                     $x(handle)
                 }
             }
-            impl From<$x> for Handle {
-                fn from(x: $x) -> Handle {
+            impl From<$x> for NullableHandle {
+                fn from(x: $x) -> NullableHandle {
                     x.0
                 }
             }
@@ -61,8 +61,9 @@ pub mod fuchsia_handles {
 #[cfg(not(target_os = "fuchsia"))]
 pub mod non_fuchsia_handles {
     pub use fuchsia_async::emulated_handle::{
-        AsHandleRef, EmulatedHandleRef, Handle, HandleBased, HandleDisposition, HandleInfo,
-        HandleOp, HandleRef, MessageBufEtc, ObjectType, Peered, Rights, Signals, SocketOpts,
+        AsHandleRef, EmulatedHandleRef, Handle, Handle as NullableHandle, HandleBased,
+        HandleDisposition, HandleInfo, HandleOp, HandleRef, MessageBufEtc, ObjectType, Peered,
+        Rights, Signals, SocketOpts,
     };
     pub use zx_status::Status;
 
@@ -74,14 +75,14 @@ pub mod non_fuchsia_handles {
             #[derive(PartialEq, Eq, Debug, PartialOrd, Ord, Hash)]
             pub struct $name;
 
-            impl From<$crate::handle::Handle> for $name {
-                fn from(_: $crate::handle::Handle) -> $name {
+            impl From<$crate::handle::NullableHandle> for $name {
+                fn from(_: $crate::handle::NullableHandle) -> $name {
                     $name
                 }
             }
-            impl From<$name> for Handle {
-                fn from(_: $name) -> $crate::handle::Handle {
-                    $crate::handle::Handle::invalid()
+            impl From<$name> for NullableHandle {
+                fn from(_: $name) -> $crate::handle::NullableHandle {
+                    $crate::handle::NullableHandle::invalid()
                 }
             }
             impl HandleBased for $name {}

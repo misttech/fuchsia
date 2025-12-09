@@ -5,8 +5,8 @@
 //! Type-safe bindings for Zircon channel objects.
 
 use crate::{
-    ok, sys, AsHandleRef, Handle, HandleBased, HandleDisposition, HandleInfo, HandleRef,
-    MonotonicInstant, Peered, Status,
+    AsHandleRef, HandleBased, HandleDisposition, HandleInfo, HandleRef, MonotonicInstant,
+    NullableHandle, Peered, Status, ok, sys,
 };
 use std::mem::MaybeUninit;
 
@@ -18,10 +18,10 @@ pub use self::message_buf::*;
 /// An object representing a Zircon
 /// [channel](https://fuchsia.dev/fuchsia-src/concepts/objects/channel.md).
 ///
-/// As essentially a subtype of `Handle`, it can be freely interconverted.
+/// As essentially a subtype of `NullableHandle`, it can be freely interconverted.
 #[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 #[repr(transparent)]
-pub struct Channel(Handle);
+pub struct Channel(NullableHandle);
 impl_handle_based!(Channel);
 impl Peered for Channel {}
 
@@ -45,7 +45,7 @@ impl Channel {
             ok(sys::zx_channel_create(opts, &mut handle0, &mut handle1)).expect(
                 "channel creation always succeeds except with OOM or when job policy denies it",
             );
-            (Self(Handle::from_raw(handle0)), Self(Handle::from_raw(handle1)))
+            (Self(NullableHandle::from_raw(handle0)), Self(NullableHandle::from_raw(handle1)))
         }
     }
 
@@ -56,14 +56,14 @@ impl Channel {
     pub fn read_uninit<'b, 'h>(
         &self,
         bytes: &'b mut [MaybeUninit<u8>],
-        handles: &'h mut [MaybeUninit<Handle>],
-    ) -> ChannelReadResult<(&'b mut [u8], &'h mut [Handle])> {
+        handles: &'h mut [MaybeUninit<NullableHandle>],
+    ) -> ChannelReadResult<(&'b mut [u8], &'h mut [NullableHandle])> {
         // SAFETY: bytes and handles are valid to write to for their lengths
         match unsafe {
             self.read_raw(
                 bytes.as_mut_ptr().cast::<u8>(),
                 bytes.len(),
-                handles.as_mut_ptr().cast::<Handle>(),
+                handles.as_mut_ptr().cast::<NullableHandle>(),
                 handles.len(),
             )
         } {
@@ -76,7 +76,7 @@ impl Channel {
                             actual_bytes as usize,
                         ),
                         std::slice::from_raw_parts_mut(
-                            handles.as_mut_ptr().cast::<Handle>(),
+                            handles.as_mut_ptr().cast::<NullableHandle>(),
                             actual_handles as usize,
                         ),
                     )
@@ -101,7 +101,7 @@ impl Channel {
         &self,
         bytes: *mut u8,
         bytes_len: usize,
-        handles: *mut Handle,
+        handles: *mut NullableHandle,
         handles_len: usize,
     ) -> ChannelReadResult<(usize, usize)> {
         // SAFETY: invariants for these pointers are upheld by our caller.
@@ -148,7 +148,11 @@ impl Channel {
     /// Note that this method can cause internal reallocations in the `Vec`s
     /// if they lacks capacity to hold the full message. If such reallocations
     /// are not desirable, use `read_uninit` instead.
-    pub fn read_split(&self, bytes: &mut Vec<u8>, handles: &mut Vec<Handle>) -> Result<(), Status> {
+    pub fn read_split(
+        &self,
+        bytes: &mut Vec<u8>,
+        handles: &mut Vec<NullableHandle>,
+    ) -> Result<(), Status> {
         loop {
             // Ensure the capacity slices are the entire `Vec`s.
             bytes.truncate(0);
@@ -323,7 +327,7 @@ impl Channel {
     ///
     /// On return, the elements pointed to by `handles` will have been zeroed to reflect
     /// the fact that the handles have been transferred.
-    pub fn write(&self, bytes: &[u8], handles: &mut [Handle]) -> Result<(), Status> {
+    pub fn write(&self, bytes: &[u8], handles: &mut [NullableHandle]) -> Result<(), Status> {
         // SAFETY: provided pointers are valid because they come from references.
         unsafe { self.write_raw(bytes.as_ptr(), bytes.len(), handles.as_mut_ptr(), handles.len()) }
     }
@@ -337,7 +341,7 @@ impl Channel {
     pub fn writev(
         &self,
         buffers: &[ChannelIoSlice<'_>],
-        handles: &mut [Handle],
+        handles: &mut [NullableHandle],
     ) -> Result<(), Status> {
         // SAFETY: provided pointers are valid because they come from references.
         unsafe {
@@ -361,10 +365,10 @@ impl Channel {
         &self,
         bytes: *const u8,
         bytes_len: usize,
-        handles: *mut Handle,
+        handles: *mut NullableHandle,
         handles_len: usize,
     ) -> Result<(), Status> {
-        // SAFETY: caller is responsible for upholding pointer invariants. `Handle` is a
+        // SAFETY: caller is responsible for upholding pointer invariants. `NullableHandle` is a
         // `repr(transparent)` wrapper around `zx_handle_t`.
         let res = unsafe {
             ok(sys::zx_channel_write(
@@ -380,7 +384,7 @@ impl Channel {
         // Outgoing handles have been consumed by zx_channel_write_etc. Zero them to inhibit drop
         // implementations.
         // SAFETY: caller guarantees that `handles` is valid to write to for `handles_len`
-        // elements. `Handle` is valid when it is all zeroes.
+        // elements. `NullableHandle` is valid when it is all zeroes.
         unsafe {
             std::ptr::write_bytes(handles, 0, handles_len);
         }
@@ -404,10 +408,10 @@ impl Channel {
         &self,
         buffers: *const ChannelIoSlice<'_>,
         buffers_len: usize,
-        handles: *mut Handle,
+        handles: *mut NullableHandle,
         handles_len: usize,
     ) -> Result<(), Status> {
-        // SAFETY: caller is responsible for upholding pointer invariants. `Handle` is a
+        // SAFETY: caller is responsible for upholding pointer invariants. `NullableHandle` is a
         // `repr(transparent)` wrapper around `zx_handle_t`.
         let res = unsafe {
             ok(sys::zx_channel_write(
@@ -423,7 +427,7 @@ impl Channel {
         // Outgoing handles have been consumed by zx_channel_write_etc. Zero them to inhibit drop
         // implementations.
         // SAFETY: caller guarantees that `handles` is valid to write to for `handles_len`
-        // elements. `Handle` is valid when it is all zeroes.
+        // elements. `NullableHandle` is valid when it is all zeroes.
         unsafe {
             std::ptr::write_bytes(handles, 0, handles_len);
         }
@@ -589,7 +593,7 @@ impl Channel {
         &self,
         timeout: MonotonicInstant,
         bytes: &[u8],
-        handles: &mut [Handle],
+        handles: &mut [NullableHandle],
         buf: &mut MessageBuf,
     ) -> Result<(), Status> {
         buf.clear();
@@ -643,7 +647,7 @@ impl Channel {
         &self,
         timeout: MonotonicInstant,
         buffers_in: &[ChannelIoSlice<'_>],
-        handles: &mut [Handle],
+        handles: &mut [NullableHandle],
         buf: &mut MessageBuf,
     ) -> Result<(), Status> {
         buf.clear();
@@ -698,10 +702,10 @@ impl Channel {
         &self,
         timeout: MonotonicInstant,
         bytes_in: &[u8],
-        handles_in: &mut [Handle],
+        handles_in: &mut [NullableHandle],
         bytes_out: &'b mut [MaybeUninit<u8>],
-        handles_out: &'h mut [MaybeUninit<Handle>],
-    ) -> Result<(&'b mut [u8], &'h mut [Handle]), Status> {
+        handles_out: &'h mut [MaybeUninit<NullableHandle>],
+    ) -> Result<(&'b mut [u8], &'h mut [NullableHandle]), Status> {
         // SAFETY: in-pointers are both valid to read from for their provided lengths, and
         // out-pointers are both valid to write to for their provided lengths.
         let (actual_bytes, actual_handles) = unsafe {
@@ -713,7 +717,7 @@ impl Channel {
                 handles_in.len(),
                 bytes_out.as_mut_ptr().cast::<u8>(),
                 bytes_out.len(),
-                handles_out.as_mut_ptr().cast::<Handle>(),
+                handles_out.as_mut_ptr().cast::<NullableHandle>(),
                 handles_out.len(),
             )?
         };
@@ -726,7 +730,7 @@ impl Channel {
                     actual_bytes as usize,
                 ),
                 std::slice::from_raw_parts_mut(
-                    handles_out.as_mut_ptr().cast::<Handle>(),
+                    handles_out.as_mut_ptr().cast::<NullableHandle>(),
                     actual_handles as usize,
                 ),
             ))
@@ -759,10 +763,10 @@ impl Channel {
         &self,
         timeout: MonotonicInstant,
         buffers_in: &[ChannelIoSlice<'_>],
-        handles_in: &mut [Handle],
+        handles_in: &mut [NullableHandle],
         bytes_out: &'b mut [MaybeUninit<u8>],
-        handles_out: &'h mut [MaybeUninit<Handle>],
-    ) -> Result<(&'b mut [u8], &'h mut [Handle]), Status> {
+        handles_out: &'h mut [MaybeUninit<NullableHandle>],
+    ) -> Result<(&'b mut [u8], &'h mut [NullableHandle]), Status> {
         // SAFETY: in-pointers are both valid to read from for their provided lengths, and
         // out-pointers are both valid to write to for their provided lengths.
         let (actual_bytes, actual_handles) = unsafe {
@@ -774,7 +778,7 @@ impl Channel {
                 handles_in.len(),
                 bytes_out.as_mut_ptr().cast::<u8>(),
                 bytes_out.len(),
-                handles_out.as_mut_ptr().cast::<Handle>(),
+                handles_out.as_mut_ptr().cast::<NullableHandle>(),
                 handles_out.len(),
             )?
         };
@@ -787,7 +791,7 @@ impl Channel {
                     actual_bytes as usize,
                 ),
                 std::slice::from_raw_parts_mut(
-                    handles_out.as_mut_ptr().cast::<Handle>(),
+                    handles_out.as_mut_ptr().cast::<NullableHandle>(),
                     actual_handles as usize,
                 ),
             ))
@@ -832,11 +836,11 @@ impl Channel {
         timeout: MonotonicInstant,
         bytes_in: *const u8,
         bytes_in_len: usize,
-        handles_in: *mut Handle,
+        handles_in: *mut NullableHandle,
         handles_in_len: usize,
         bytes_out: *mut u8,
         bytes_out_len: usize,
-        handles_out: *mut Handle,
+        handles_out: *mut NullableHandle,
         handles_out_len: usize,
     ) -> Result<(usize, usize), Status> {
         // Don't let replies get silently dropped.
@@ -850,8 +854,8 @@ impl Channel {
         let mut actual_read_handles: u32 = 0;
 
         // SAFETY: pointer invariants are upheld by this method's caller, see Safety section in
-        // docs. Handle is ABI-compatible with zx_handle_t, this allows the kernel to safely write
-        // the latter and and for us to later interpret them as the former.
+        // docs. NullableHandle is ABI-compatible with zx_handle_t, this allows the kernel to safely
+        // write the latter and and for us to later interpret them as the former.
         let res = unsafe {
             ok(sys::zx_channel_call(
                 self.raw_handle(),
@@ -924,11 +928,11 @@ impl Channel {
         timeout: MonotonicInstant,
         buffers_in: *const ChannelIoSlice<'_>,
         buffers_in_len: usize,
-        handles_in: *mut Handle,
+        handles_in: *mut NullableHandle,
         handles_in_len: usize,
         bytes_out: *mut u8,
         bytes_out_len: usize,
-        handles_out: *mut Handle,
+        handles_out: *mut NullableHandle,
         handles_out_len: usize,
     ) -> Result<(usize, usize), Status> {
         // Don't let replies get silently dropped.
@@ -942,8 +946,8 @@ impl Channel {
         let mut actual_read_handles: u32 = 0;
 
         // SAFETY: pointer invariants are upheld by this method's caller, see Safety section in
-        // docs. Handle is ABI-compatible with zx_handle_t, this allows the kernel to safely write
-        // the latter and and for us to later interpret them as the former.
+        // docs. NullableHandle is ABI-compatible with zx_handle_t, this allows the kernel to safely
+        // write the latter and and for us to later interpret them as the former.
         let res = unsafe {
             ok(sys::zx_channel_call(
                 self.raw_handle(),
@@ -1461,9 +1465,10 @@ mod tests {
         let (p1, p2) = Channel::create();
 
         let mut empty = vec![];
-        assert!(p1
-            .writev(&[ChannelIoSlice::new(b"hel"), ChannelIoSlice::new(b"lo")], &mut empty)
-            .is_ok());
+        assert!(
+            p1.writev(&[ChannelIoSlice::new(b"hel"), ChannelIoSlice::new(b"lo")], &mut empty)
+                .is_ok()
+        );
 
         let mut buf = MessageBuf::new();
         assert!(p2.read(&mut buf).is_ok());
@@ -1487,9 +1492,10 @@ mod tests {
         let (p1, p2) = Channel::create();
 
         let mut empty = vec![];
-        assert!(p1
-            .writev_etc(&[ChannelIoSlice::new(b"he"), ChannelIoSlice::new(b"llo")], &mut empty)
-            .is_ok());
+        assert!(
+            p1.writev_etc(&[ChannelIoSlice::new(b"he"), ChannelIoSlice::new(b"llo")], &mut empty)
+                .is_ok()
+        );
 
         let mut buf = MessageBufEtc::new();
         assert!(p2.read_etc(&mut buf).is_ok());
@@ -1519,7 +1525,7 @@ mod tests {
         assert_eq!(buf.n_handle_infos(), 1);
         let out_handles = buf.handle_infos;
         assert_eq!(out_handles.len(), 1);
-        assert_ne!(out_handles[0].handle, Handle::invalid());
+        assert_ne!(out_handles[0].handle, NullableHandle::invalid());
         assert_eq!(out_handles[0].rights, Rights::TRANSFER);
         assert_eq!(out_handles[0].object_type, ObjectType::PORT);
     }
@@ -1547,7 +1553,7 @@ mod tests {
         assert_eq!(buf.n_handle_infos(), 1);
         let out_handles = buf.handle_infos;
         assert_eq!(out_handles.len(), 1);
-        assert_ne!(out_handles[0].handle, Handle::invalid());
+        assert_ne!(out_handles[0].handle, NullableHandle::invalid());
         assert_eq!(out_handles[0].rights, Rights::TRANSFER);
         assert_eq!(out_handles[0].object_type, ObjectType::PORT);
     }
@@ -1649,7 +1655,7 @@ mod tests {
         BACKING_BYTES.iter().map(|v| ChannelIoSlice::new(&*v)).collect()
     }
 
-    fn too_many_handles() -> Vec<Handle> {
+    fn too_many_handles() -> Vec<NullableHandle> {
         let mut handles = vec![];
         for _ in 0..sys::ZX_CHANNEL_MAX_MSG_HANDLES + 1 {
             handles.push(crate::Event::create().into());
@@ -1961,7 +1967,7 @@ mod tests {
 
         // Duplicate VMO handle and send it down the channel.
         let duplicate_vmo_handle = vmo.duplicate_handle(Rights::SAME_RIGHTS).unwrap().into();
-        let mut handles_to_send: Vec<Handle> = vec![duplicate_vmo_handle];
+        let mut handles_to_send: Vec<NullableHandle> = vec![duplicate_vmo_handle];
         assert!(p1.write(b"", &mut handles_to_send).is_ok());
         // The handle vector should only contain invalid handles.
         for handle in handles_to_send {
@@ -1999,7 +2005,7 @@ mod tests {
 
         // Duplicate VMO handle and send it down the channel.
         let duplicate_vmo_handle = vmo.duplicate_handle(Rights::SAME_RIGHTS).unwrap().into();
-        let mut handles_to_send: Vec<Handle> = vec![duplicate_vmo_handle];
+        let mut handles_to_send: Vec<NullableHandle> = vec![duplicate_vmo_handle];
         assert!(p1.writev(&[], &mut handles_to_send).is_ok());
         // The handle vector should only contain invalid handles.
         for handle in handles_to_send {
@@ -2037,7 +2043,7 @@ mod tests {
 
         // Duplicate VMO handle and send it along with the call.
         let duplicate_vmo_handle = vmo.duplicate_handle(Rights::SAME_RIGHTS).unwrap().into();
-        let mut handles_to_send: Vec<Handle> = vec![duplicate_vmo_handle];
+        let mut handles_to_send: Vec<NullableHandle> = vec![duplicate_vmo_handle];
         let mut buf = MessageBuf::new();
         assert_eq!(
             p1.call(MonotonicInstant::after(ten_ms), b"0000call", &mut handles_to_send, &mut buf),
@@ -2066,7 +2072,7 @@ mod tests {
 
         // Duplicate VMO handle and send it along with the call.
         let duplicate_vmo_handle = vmo.duplicate_handle(Rights::SAME_RIGHTS).unwrap().into();
-        let mut handles_to_send: Vec<Handle> = vec![duplicate_vmo_handle];
+        let mut handles_to_send: Vec<NullableHandle> = vec![duplicate_vmo_handle];
         let mut buf = MessageBuf::new();
         assert_eq!(
             p1.callv(

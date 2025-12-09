@@ -96,7 +96,7 @@ pub(crate) struct MessageHeader {
 /// [ProcessBuilder::add_handles()]: crate::ProcessBuilder::add_handles()
 pub struct StartupHandle {
     /// A handle.
-    pub handle: zx::Handle,
+    pub handle: zx::NullableHandle,
 
     /// Handle metadata. See [fuchsia_runtime::HandleInfo].
     pub info: HandleInfo,
@@ -128,7 +128,7 @@ pub struct MessageContents {
 /// [processargs]: https://fuchsia.googlesource.com/fuchsia/+/HEAD/zircon/system/public/zircon/processargs.h
 pub struct Message {
     bytes: Vec<u8>,
-    handles: Vec<zx::Handle>,
+    handles: Vec<zx::NullableHandle>,
 }
 
 // Return type of fuchsia_runtime::HandleInfo::as_raw(), checked with static assert below.

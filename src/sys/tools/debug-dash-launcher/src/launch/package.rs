@@ -44,9 +44,9 @@ pub async fn explore_over_handles(
     fuchsia_pkg_resolver: fdash::FuchsiaPkgResolver,
     url: &str,
     subpackages: &[String],
-    stdin: zx::Handle,
-    stdout: zx::Handle,
-    stderr: zx::Handle,
+    stdin: zx::NullableHandle,
+    stdout: zx::NullableHandle,
+    stderr: zx::NullableHandle,
     tool_urls: Vec<String>,
     command: Option<String>,
 ) -> Result<zx::Process, fdash::LauncherError> {

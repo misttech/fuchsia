@@ -105,7 +105,7 @@ impl<'a, H: AsHandleRef + 'a> OnSignalsFuture<'a, H> {
         if self.registration.is_registered() {
             self.as_mut().unregister();
         }
-        mem::replace(self.project().handle, zx::Handle::invalid().into())
+        mem::replace(self.project().handle, zx::NullableHandle::invalid().into())
     }
 
     fn register(

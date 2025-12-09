@@ -233,7 +233,7 @@ pub trait SocketOps: Send + Sync + AsAny {
         &self,
         _socket: &Socket,
         _current_task: &CurrentTask,
-    ) -> Result<Option<zx::Handle>, Errno> {
+    ) -> Result<Option<zx::NullableHandle>, Errno> {
         Ok(None)
     }
 }
@@ -743,7 +743,7 @@ impl Socket {
         &self,
         _file: &FileObject,
         current_task: &CurrentTask,
-    ) -> Result<Option<zx::Handle>, Errno> {
+    ) -> Result<Option<zx::NullableHandle>, Errno> {
         self.ops.to_handle(self, current_task)
     }
 

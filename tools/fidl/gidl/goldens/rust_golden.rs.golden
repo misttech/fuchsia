@@ -5,7 +5,7 @@
 
 use {
     assert_matches::assert_matches,
-    fidl::{AsHandleRef, Error, Handle, HandleDisposition, HandleInfo, HandleOp, ObjectType, Rights},
+    fidl::{AsHandleRef, Error, NullableHandle, HandleDisposition, HandleInfo, HandleOp, ObjectType, Rights},
     fidl::encoding::{Context, Decode, Decoder, DefaultFuchsiaResourceDialect, Encoder, WireFormatVersion},
     fidl_test_conformance as test_conformance,
     zx_status::Status,

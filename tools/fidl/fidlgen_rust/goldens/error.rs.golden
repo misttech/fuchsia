@@ -92,7 +92,7 @@ impl ExampleSynchronousProxy {
 }
 
 #[cfg(target_os = "fuchsia")]
-impl From<ExampleSynchronousProxy> for zx::Handle {
+impl From<ExampleSynchronousProxy> for zx::NullableHandle {
     fn from(value: ExampleSynchronousProxy) -> Self {
         value.into_channel().into()
     }

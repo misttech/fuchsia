@@ -30,7 +30,7 @@ pub struct HandleResourceBinding {
 impl HandleResourceBinding {
     fn handle_subtype_name(subtype: HandleSubtype) -> &'static str {
         match subtype {
-            HandleSubtype::None => "Handle",
+            HandleSubtype::None => "NullableHandle",
             HandleSubtype::Process => "Process",
             HandleSubtype::Thread => "Thread",
             HandleSubtype::Vmo => "Vmo",
@@ -60,7 +60,7 @@ impl HandleResourceBinding {
             HandleSubtype::Iob => "Iob",
             HandleSubtype::Counter => "Counter",
             // These handle subtypes do not have newtypes in zx yet. Generate them as handles.
-            HandleSubtype::SuspendToken | HandleSubtype::Msi => "Handle",
+            HandleSubtype::SuspendToken | HandleSubtype::Msi => "NullableHandle",
         }
     }
 

@@ -177,7 +177,7 @@ impl FileOps for SocketFile {
         &self,
         file: &FileObject,
         current_task: &CurrentTask,
-    ) -> Result<Option<zx::Handle>, Errno> {
+    ) -> Result<Option<zx::NullableHandle>, Errno> {
         if let Some(handle) = self.socket.to_handle(file, current_task)? {
             Ok(Some(handle))
         } else {

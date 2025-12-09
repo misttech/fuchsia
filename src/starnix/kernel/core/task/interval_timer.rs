@@ -80,7 +80,7 @@ struct UtcWaiter {
 impl OnWakeOps for UtcWaiter {
     // This fn is called when a wake alarm expires. [UtcWaiter] must be
     // submitted to HrTimerManager for that to happen.
-    fn on_wake(&self, _: &CurrentTask, _: &zx::Handle) {
+    fn on_wake(&self, _: &CurrentTask, _: &zx::NullableHandle) {
         self.on_wake_internal()
     }
 }

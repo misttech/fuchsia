@@ -197,7 +197,7 @@ impl SocketOps for RemoteUnixDomainSocket {
             return error!(ECONNREFUSED);
         }
 
-        let mut handles: Vec<zx::Handle> = vec![];
+        let mut handles: Vec<zx::NullableHandle> = vec![];
         for data in ancillary_data {
             match data {
                 AncillaryData::Unix(UnixControlData::Rights(file_handles)) => {
@@ -343,10 +343,10 @@ impl SocketOps for RemoteUnixDomainSocket {
         &self,
         _socket: &Socket,
         _current_task: &CurrentTask,
-    ) -> Result<Option<zx::Handle>, Errno> {
+    ) -> Result<Option<zx::NullableHandle>, Errno> {
         let (proxy, server) = zx::Channel::create();
         self.client.clone(server.into()).map_err(|_| errno!(ECONNREFUSED))?;
-        Ok(Some(proxy.into()))
+        Ok(Some(zx::NullableHandle::from(proxy).into()))
     }
 }
 
@@ -366,7 +366,7 @@ mod tests {
     #[derive(Debug)]
     struct Data {
         bytes: Vec<u8>,
-        handles: Vec<zx::Handle>,
+        handles: Vec<zx::NullableHandle>,
     }
 
     impl Data {
@@ -396,7 +396,7 @@ mod tests {
                 new_handles.push(new_handle);
             }
             let new_handles =
-                new_handles.into_iter().collect::<Result<Vec<zx::Handle>, zx::Status>>()?;
+                new_handles.into_iter().collect::<Result<Vec<zx::NullableHandle>, zx::Status>>()?;
             Ok(Self { bytes: self.bytes.clone(), handles: new_handles })
         }
     }

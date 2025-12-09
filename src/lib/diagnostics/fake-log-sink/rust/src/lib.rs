@@ -213,7 +213,8 @@ pub mod ffi {
     /// `fake` must be from `fake_log_sink_new()` and `handle` must be valid.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn fake_log_sink_serve(fake: *mut FakeLogSink, handle: u32) {
-        unsafe { &*fake }.serve(ServerEnd::new(unsafe { zx::Handle::from_raw(handle) }.into()));
+        unsafe { &*fake }
+            .serve(ServerEnd::new(unsafe { zx::NullableHandle::from_raw(handle) }.into()));
     }
 
     /// Reads a new record.

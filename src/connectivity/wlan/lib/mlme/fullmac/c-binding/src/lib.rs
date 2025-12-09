@@ -43,7 +43,7 @@ pub unsafe extern "C" fn start_fullmac_mlme(
     let fullmac_impl_sync_proxy = {
         // Safety: This is safe because the caller promises `fullmac_client_end_handle`
         // is a valid handle.
-        let handle = unsafe { fidl::Handle::from_raw(fullmac_client_end_handle) };
+        let handle = unsafe { fidl::NullableHandle::from_raw(fullmac_client_end_handle) };
         let channel = fidl::Channel::from(handle);
         fidl_fullmac::WlanFullmacImpl_SynchronousProxy::new(channel)
     };

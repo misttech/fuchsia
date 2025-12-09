@@ -10,7 +10,8 @@ pub use static_assertions::const_assert_eq;
 
 use crate::endpoints::ProtocolMarker;
 use crate::handle::{
-    Handle, HandleBased, HandleDisposition, HandleInfo, HandleOp, ObjectType, Rights, Status,
+    HandleBased, HandleDisposition, HandleInfo, HandleOp, NullableHandle, ObjectType, Rights,
+    Status,
 };
 use crate::time::{Instant, Ticks, Timeline};
 use crate::{Error, MethodType, Result};
@@ -380,7 +381,7 @@ impl ProxyChannelBox<DefaultFuchsiaResourceDialect> for FuchsiaProxyBox {
 #[derive(Debug, Default, Copy, Clone)]
 pub struct DefaultFuchsiaResourceDialect;
 impl ResourceDialect for DefaultFuchsiaResourceDialect {
-    type Handle = Handle;
+    type Handle = NullableHandle;
     type MessageBufEtc = crate::MessageBufEtc;
     type ProxyChannel = crate::AsyncChannel;
 
@@ -428,20 +429,20 @@ impl ProxyChannelFor<DefaultFuchsiaResourceDialect> for crate::AsyncChannel {
 }
 
 impl HandleDispositionFor<DefaultFuchsiaResourceDialect> for HandleDisposition<'static> {
-    fn from_handle(handle: Handle, object_type: ObjectType, rights: Rights) -> Self {
+    fn from_handle(handle: NullableHandle, object_type: ObjectType, rights: Rights) -> Self {
         HandleDisposition::new(HandleOp::Move(handle), object_type, rights, Status::OK)
     }
 }
 
-impl HandleFor<DefaultFuchsiaResourceDialect> for Handle {
+impl HandleFor<DefaultFuchsiaResourceDialect> for NullableHandle {
     type HandleInfo = HandleInfo;
 
     fn invalid() -> Self {
-        Handle::invalid()
+        NullableHandle::invalid()
     }
 
     fn is_invalid(&self) -> bool {
-        Handle::is_invalid(self)
+        self.is_invalid()
     }
 }
 
@@ -450,10 +451,10 @@ impl HandleInfoFor<DefaultFuchsiaResourceDialect> for HandleInfo {
         &mut self,
         expected_object_type: ObjectType,
         expected_rights: Rights,
-    ) -> Result<Handle> {
+    ) -> Result<NullableHandle> {
         let handle_info = std::mem::replace(
             self,
-            HandleInfo::new(Handle::invalid(), ObjectType::NONE, Rights::NONE),
+            HandleInfo::new(NullableHandle::invalid(), ObjectType::NONE, Rights::NONE),
         );
         let received_object_type = handle_info.object_type;
         if expected_object_type != ObjectType::NONE
@@ -486,7 +487,7 @@ impl HandleInfoFor<DefaultFuchsiaResourceDialect> for HandleInfo {
 
     #[inline(always)]
     fn drop_in_place(&mut self) {
-        *self = HandleInfo::new(Handle::invalid(), ObjectType::NONE, Rights::NONE);
+        *self = HandleInfo::new(NullableHandle::invalid(), ObjectType::NONE, Rights::NONE);
     }
 }
 
@@ -4087,7 +4088,11 @@ mod test {
                 Decoder::<DefaultFuchsiaResourceDialect>::decode_with_context::<EmptyPayload>(
                     ctx,
                     &[],
-                    &mut [HandleInfo::new(Handle::invalid(), ObjectType::NONE, Rights::NONE,)],
+                    &mut [HandleInfo::new(
+                        NullableHandle::invalid(),
+                        ObjectType::NONE,
+                        Rights::NONE,
+                    )],
                     &mut ()
                 ),
                 Err(Error::ExtraHandles)
@@ -4105,7 +4110,7 @@ mod test {
 
     #[test]
     fn encode_handle() {
-        type T = HandleType<Handle, OBJECT_TYPE_NONE, SAME_RIGHTS>;
+        type T = HandleType<NullableHandle, OBJECT_TYPE_NONE, SAME_RIGHTS>;
         for ctx in CONTEXTS {
             let handle = crate::handle::Event::create().into_handle();
             let raw_handle = handle.raw_handle();
@@ -4138,11 +4143,11 @@ mod test {
 
     #[test]
     fn decode_too_few_handles() {
-        type T = HandleType<Handle, OBJECT_TYPE_NONE, SAME_RIGHTS>;
+        type T = HandleType<NullableHandle, OBJECT_TYPE_NONE, SAME_RIGHTS>;
         for ctx in CONTEXTS {
             let bytes: &[u8] = &[0xff; 8];
             let handle_buf = &mut Vec::new();
-            let mut handle_out = Handle::invalid();
+            let mut handle_out = NullableHandle::invalid();
             let res = Decoder::<DefaultFuchsiaResourceDialect>::decode_with_context::<T>(
                 ctx,
                 bytes,

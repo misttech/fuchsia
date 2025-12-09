@@ -17,8 +17,8 @@ use num_traits::cast::FromPrimitive;
 use thiserror::Error;
 use zx::sys::{ZX_HANDLE_INVALID, zx_handle_t, zx_status_t};
 use zx::{
-    BootTimeline, Clock, ClockDetails, ClockTransformation, ClockUpdate, Duration, Handle,
-    HandleBased, Instant, Job, Process, Rights, Status, Thread, Timeline, Unowned, Vmar,
+    BootTimeline, Clock, ClockDetails, ClockTransformation, ClockUpdate, Duration, HandleBased,
+    Instant, Job, NullableHandle, Process, Rights, Status, Thread, Timeline, Unowned, Vmar,
 };
 
 // TODO(https://fxbug.dev/42139436): Document these.
@@ -285,10 +285,10 @@ impl TryFrom<u32> for HandleInfo {
 /// This function will return `Some` at-most once per handle type.
 /// This function will return `None` if the requested type was not received at
 /// startup or if the handle with the provided type was already taken.
-pub fn take_startup_handle(info: HandleInfo) -> Option<Handle> {
+pub fn take_startup_handle(info: HandleInfo) -> Option<NullableHandle> {
     unsafe {
         let raw = zx_take_startup_handle(info.as_raw());
-        if raw == ZX_HANDLE_INVALID { None } else { Some(Handle::from_raw(raw)) }
+        if raw == ZX_HANDLE_INVALID { None } else { Some(NullableHandle::from_raw(raw)) }
     }
 }
 
@@ -327,12 +327,12 @@ pub fn vmar_root_self() -> Unowned<'static, Vmar> {
 }
 
 /// Get a reference to the fuchsia.ldsvc.Loader channel.
-pub fn loader_svc() -> Result<Handle, Status> {
+pub fn loader_svc() -> Result<NullableHandle, Status> {
     unsafe {
         let mut handle: zx_handle_t = 0;
         let status = dl_clone_loader_service(&mut handle);
         Status::ok(status)?;
-        Ok(Handle::from_raw(handle))
+        Ok(NullableHandle::from_raw(handle))
     }
 }
 
@@ -424,7 +424,7 @@ pub fn swap_utc_clock_handle(new_clock: UtcClock) -> Result<UtcClock, Status> {
     Ok(unsafe {
         let mut prev_handle = ZX_HANDLE_INVALID;
         Status::ok(zx_utc_reference_swap(new_clock.into_raw(), &mut prev_handle))?;
-        Handle::from_raw(prev_handle)
+        NullableHandle::from_raw(prev_handle)
     }
     .into())
 }

@@ -339,7 +339,7 @@ impl RemoteNode {
     }
 }
 
-/// Create a file handle from a zx::Handle.
+/// Create a file handle from a zx::NullableHandle.
 ///
 /// The handle must be a channel, socket, vmo or debuglog object.  If the handle is a channel, then
 /// the channel must implement the `fuchsia.unknown/Queryable` protocol.
@@ -351,14 +351,14 @@ impl RemoteNode {
 pub fn new_remote_file<L>(
     locked: &mut Locked<L>,
     current_task: &CurrentTask,
-    handle: zx::Handle,
+    handle: zx::NullableHandle,
     flags: OpenFlags,
 ) -> Result<FileHandle, Errno>
 where
     L: LockEqualOrBefore<FileOpsCore>,
 {
     let remote_creds = current_task.full_current_creds();
-    let (attrs, ops) = remote_file_attrs_and_ops(current_task, handle, remote_creds)?;
+    let (attrs, ops) = remote_file_attrs_and_ops(current_task, handle.into(), remote_creds)?;
     let mut rights = fio::Flags::empty();
     if flags.can_read() {
         rights |= fio::PERM_READABLE;
@@ -373,12 +373,12 @@ where
     Ok(Anon::new_private_file_extended(locked, current_task, ops, flags, "[fuchsia:remote]", info))
 }
 
-// Create a FileOps from a zx::Handle.
+// Create a FileOps from a zx::NullableHandle.
 //
 // The handle must satisfy the same requirements as `new_remote_file`.
 pub fn new_remote_file_ops(
     current_task: &CurrentTask,
-    handle: zx::Handle,
+    handle: zx::NullableHandle,
     creds: FullCredentials,
 ) -> Result<Box<dyn FileOps>, Errno> {
     let (_, ops) = remote_file_attrs_and_ops(current_task, handle, creds)?;
@@ -387,7 +387,7 @@ pub fn new_remote_file_ops(
 
 fn remote_file_attrs_and_ops(
     current_task: &CurrentTask,
-    mut handle: zx::Handle,
+    mut handle: zx::NullableHandle,
     remote_creds: FullCredentials,
 ) -> Result<(zxio_node_attr, Box<dyn FileOps>), Errno> {
     let handle_type =
@@ -1479,7 +1479,7 @@ impl FileOps for RemoteDirectoryObject {
         &self,
         _file: &FileObject,
         _current_task: &CurrentTask,
-    ) -> Result<Option<zx::Handle>, Errno> {
+    ) -> Result<Option<zx::NullableHandle>, Errno> {
         self.zxio
             .deep_clone()
             .and_then(Zxio::release)
@@ -1574,7 +1574,7 @@ impl FileOps for RemoteFileObject {
         &self,
         _file: &FileObject,
         _current_task: &CurrentTask,
-    ) -> Result<Option<zx::Handle>, Errno> {
+    ) -> Result<Option<zx::NullableHandle>, Errno> {
         self.zxio
             .deep_clone()
             .and_then(Zxio::release)

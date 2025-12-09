@@ -27,7 +27,7 @@ use fuchsia_async as fasync;
 use futures::future;
 use futures::stream::StreamExt;
 use std::io::prelude::*;
-use zx::{Handle, MonotonicInstant, ObjectType, Rights, Signals};
+use zx::{MonotonicInstant, ObjectType, Rights, Signals};
 
 const SEND_HANDLE_REDUCED_RIGHTS_ORDINAL: u64 = 0x7675407e0eb5f825;
 const SEND_HANDLE_SAME_RIGHTS_ORDINAL: u64 = 0x1d43414e5560333a;
@@ -69,10 +69,10 @@ impl NoTransformChannel {
 
 impl TransformableChannel for NoTransformChannel {
     fn take_client_end(&mut self) -> Channel {
-        std::mem::replace(&mut self.client_end, Handle::invalid().into())
+        std::mem::replace(&mut self.client_end, zx::NullableHandle::invalid().into())
     }
     fn take_server_end(&mut self) -> Channel {
-        std::mem::replace(&mut self.server_end, Handle::invalid().into())
+        std::mem::replace(&mut self.server_end, zx::NullableHandle::invalid().into())
     }
     fn transform(&mut self) {}
     fn reversed_transform(&mut self) {}
@@ -122,7 +122,7 @@ impl OrdinalTransformChannel {
         assert!(signals.contains(Signals::CHANNEL_READABLE));
 
         let mut bytes = Vec::<u8>::new();
-        let mut handles = Vec::<Handle>::new();
+        let mut handles = Vec::<zx::NullableHandle>::new();
         in_end.read_split(&mut bytes, &mut handles).unwrap();
 
         let existing_ordinal = u64::from_le_bytes(bytes[8..16].try_into().unwrap());
@@ -135,10 +135,10 @@ impl OrdinalTransformChannel {
 
 impl TransformableChannel for OrdinalTransformChannel {
     fn take_client_end(&mut self) -> Channel {
-        std::mem::replace(&mut self.client_end, Handle::invalid().into())
+        std::mem::replace(&mut self.client_end, zx::NullableHandle::invalid().into())
     }
     fn take_server_end(&mut self) -> Channel {
-        std::mem::replace(&mut self.server_end, Handle::invalid().into())
+        std::mem::replace(&mut self.server_end, zx::NullableHandle::invalid().into())
     }
     fn transform(&mut self) {
         Self::transform_impl(

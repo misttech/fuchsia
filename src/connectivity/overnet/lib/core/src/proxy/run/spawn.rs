@@ -40,7 +40,10 @@ pub(crate) async fn recv<Hdl, CreateType>(
     stream_ref: StreamRef,
     conn: PeerConnRef<'_>,
     router: Weak<Router>,
-) -> Result<(fidl::Handle, Option<impl Send + Future<Output = Result<(), Error>> + 'static>), Error>
+) -> Result<
+    (fidl::NullableHandle, Option<impl Send + Future<Output = Result<(), Error>> + 'static>),
+    Error,
+>
 where
     Hdl: 'static + for<'a> ProxyableRW<'a>,
     CreateType: fidl::HandleBased + IntoProxied<Proxied = Hdl> + std::fmt::Debug + WithRights,

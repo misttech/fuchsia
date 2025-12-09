@@ -331,7 +331,7 @@ impl<'a, 'b> FidlMessage<'a, 'b> {
             .enumerate()
             .map(|(i, info)| {
                 fidl::HandleInfo::new(
-                    unsafe { fidl::Handle::from_raw(i as u32) },
+                    unsafe { fidl::NullableHandle::from_raw(i as u32) },
                     fidl::ObjectType::from_raw(info.type_),
                     fidl::Rights::from_bits_truncate(info.rights),
                 )
@@ -404,7 +404,7 @@ mod tests {
     use super::*;
     use zx_types::*;
 
-    /// Format a fidl::Handle (and similar) for display to the user.
+    /// Format a fidl::NullableHandle (and similar) for display to the user.
     fn handle_to_string(handle: impl AsHandleRef, message: &FidlMessage<'_, '_>) -> Result<String> {
         let mut string = String::new();
         fmt_handle(handle, message, &mut string)?;
@@ -453,7 +453,7 @@ mod tests {
             rights: zx_rights_t,
             type_: zx_obj_type_t,
             related_koid: zx_koid_t,
-        ) -> fidl::Handle {
+        ) -> fidl::NullableHandle {
             let mut info = zx_info_handle_basic_t::default();
             info.koid = koid;
             info.rights = rights;
@@ -461,7 +461,9 @@ mod tests {
             info.related_koid = related_koid;
             const INFO_SIZE: usize = std::mem::size_of::<zx_info_handle_basic_t>();
             let new_handle = unsafe {
-                fidl::Handle::from_raw((self.object_info_bytes.len() / INFO_SIZE) as zx_handle_t)
+                fidl::NullableHandle::from_raw(
+                    (self.object_info_bytes.len() / INFO_SIZE) as zx_handle_t,
+                )
             };
             let mut bytes = [0u8; INFO_SIZE];
             unsafe {

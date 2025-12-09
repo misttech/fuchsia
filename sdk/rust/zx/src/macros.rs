@@ -11,14 +11,14 @@ macro_rules! impl_handle_based {
             }
         }
 
-        impl From<Handle> for $type_name {
-            fn from(handle: Handle) -> Self {
+        impl From<NullableHandle> for $type_name {
+            fn from(handle: NullableHandle) -> Self {
                 $type_name(handle)
             }
         }
 
-        impl From<$type_name> for Handle {
-            fn from(x: $type_name) -> Handle {
+        impl From<$type_name> for NullableHandle {
+            fn from(x: $type_name) -> NullableHandle {
                 x.0
             }
         }

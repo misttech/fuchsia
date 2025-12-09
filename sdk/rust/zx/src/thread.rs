@@ -5,8 +5,8 @@
 //! Type-safe bindings for Zircon threads.
 
 use crate::{
-    AsHandleRef, ExceptionReport, Handle, HandleBased, HandleRef, MonotonicDuration, ObjectQuery,
-    Profile, Status, Task, Topic, object_get_info_single, ok, sys,
+    AsHandleRef, ExceptionReport, HandleBased, HandleRef, MonotonicDuration, NullableHandle,
+    ObjectQuery, Profile, Status, Task, Topic, object_get_info_single, ok, sys,
 };
 use bitflags::bitflags;
 
@@ -24,10 +24,10 @@ bitflags! {
 
 /// An object representing a Zircon thread.
 ///
-/// As essentially a subtype of `Handle`, it can be freely interconverted.
+/// As essentially a subtype of `NullableHandle`, it can be freely interconverted.
 #[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 #[repr(transparent)]
-pub struct Thread(Handle);
+pub struct Thread(NullableHandle);
 impl_handle_based!(Thread);
 
 struct ThreadExceptionReport;
@@ -277,14 +277,14 @@ impl ExceptionChannelType {
 
 #[cfg(test)]
 mod tests {
-    use zx::{Handle, HandleBased, Profile, Status};
+    use zx::{HandleBased, NullableHandle, Profile, Status};
 
     #[test]
     fn set_profile_invalid() {
         let thread = fuchsia_runtime::with_thread_self(|thread| {
             thread.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap()
         });
-        let profile = Profile::from(Handle::invalid());
+        let profile = Profile::from(NullableHandle::invalid());
         assert_eq!(thread.set_profile(profile, 0), Err(Status::BAD_HANDLE));
     }
 }

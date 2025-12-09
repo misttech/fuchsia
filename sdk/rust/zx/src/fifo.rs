@@ -4,19 +4,22 @@
 
 //! Type-safe bindings for Zircon fifo objects.
 
-use crate::{ok, sys, AsHandleRef, Handle, HandleBased, HandleRef, Status};
+use crate::{AsHandleRef, HandleBased, HandleRef, NullableHandle, Status, ok, sys};
 use std::mem::MaybeUninit;
 use zerocopy::{FromBytes, IntoBytes};
 
 /// An object representing a Zircon fifo.
 ///
-/// As essentially a subtype of `Handle`, it can be freely interconverted.
+/// As essentially a subtype of `NullableHandle`, it can be freely interconverted.
 ///
 /// Encodes the element type in the type. Defaults to `()` for the entry type to allow for untyped
 /// IPC. Use `Fifo::cast()` to convert an IPC-transferred fifo to one of the specific type required
 /// that will support reads and writes.
 #[repr(transparent)]
-pub struct Fifo<R = UnspecifiedFifoElement, W = R>(Handle, std::marker::PhantomData<(R, W)>);
+pub struct Fifo<R = UnspecifiedFifoElement, W = R>(
+    NullableHandle,
+    std::marker::PhantomData<(R, W)>,
+);
 
 impl<R: IntoBytes + FromBytes, W: IntoBytes + FromBytes> Fifo<R, W> {
     /// Create a pair of fifos and return their endpoints. Writing to one endpoint enqueues an
@@ -40,7 +43,12 @@ impl<R: IntoBytes + FromBytes, W: IntoBytes + FromBytes> Fifo<R, W> {
         ok(status)?;
 
         // SAFETY: if the above call succeeded, these are valid handle numbers.
-        unsafe { Ok((Fifo::from(Handle::from_raw(out0)), Fifo::from(Handle::from_raw(out1)))) }
+        unsafe {
+            Ok((
+                Fifo::from(NullableHandle::from_raw(out0)),
+                Fifo::from(NullableHandle::from_raw(out1)),
+            ))
+        }
     }
 
     /// Attempts to write some number of elements into the fifo. On success, returns the number of
@@ -174,14 +182,14 @@ impl<R, W> AsHandleRef for Fifo<R, W> {
     }
 }
 
-impl<R, W> From<Handle> for Fifo<R, W> {
-    fn from(handle: Handle) -> Self {
+impl<R, W> From<NullableHandle> for Fifo<R, W> {
+    fn from(handle: NullableHandle) -> Self {
         Self(handle, std::marker::PhantomData)
     }
 }
 
-impl<R, W> From<Fifo<R, W>> for Handle {
-    fn from(x: Fifo<R, W>) -> Handle {
+impl<R, W> From<Fifo<R, W>> for NullableHandle {
+    fn from(x: Fifo<R, W>) -> NullableHandle {
         x.0
     }
 }

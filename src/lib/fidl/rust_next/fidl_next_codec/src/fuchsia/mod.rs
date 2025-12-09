@@ -9,7 +9,7 @@ mod handle_types;
 mod object_type;
 mod rights;
 
-use zx::Handle;
+use zx::NullableHandle;
 use zx::sys::zx_handle_t;
 
 use crate::decoder::InternalHandleDecoder;
@@ -42,7 +42,7 @@ pub trait HandleDecoder: InternalHandleDecoder {
 /// An encoder which supports Zircon handles.
 pub trait HandleEncoder: InternalHandleEncoder {
     /// Pushes a handle into the encoder.
-    fn push_handle(&mut self, handle: Handle) -> Result<(), EncodeError>;
+    fn push_handle(&mut self, handle: NullableHandle) -> Result<(), EncodeError>;
 
     /// Returns the number of handles added to the encoder.
     fn handles_pushed(&self) -> usize;

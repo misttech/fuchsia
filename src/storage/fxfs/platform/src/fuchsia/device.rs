@@ -485,7 +485,7 @@ mod tests {
     use rustc_hash::FxHashSet as HashSet;
     use zx::HandleBased as _;
 
-    struct BlockConnector(FileBackedVolumeProviderProxy, zx::Handle, &'static str);
+    struct BlockConnector(FileBackedVolumeProviderProxy, zx::NullableHandle, &'static str);
 
     impl BlockConnector {
         async fn new(fixture: &TestFixture, dir: &DirectoryProxy, name: &'static str) -> Self {

@@ -107,7 +107,7 @@ pub enum FDomainEvent {
 }
 
 /// An [`FDomainEvent`] that needs a bit more processing before it can be sent.
-/// I.e. it still contains `fidl::Handle` objects that need to be replaced with
+/// I.e. it still contains `fidl::NullableHandle` objects that need to be replaced with
 /// FDomain IDs.
 enum UnprocessedFDomainEvent {
     Ready(FDomainEvent),

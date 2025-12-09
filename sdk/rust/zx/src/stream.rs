@@ -5,7 +5,7 @@
 //! Type-safe bindings for Zircon stream objects.
 
 use crate::{
-    AsHandleRef, Handle, HandleBased, HandleRef, Property, PropertyQuery, Status, Vmo,
+    AsHandleRef, HandleBased, HandleRef, NullableHandle, Property, PropertyQuery, Status, Vmo,
     object_get_property, object_set_property, ok, sys,
 };
 use bitflags::bitflags;
@@ -14,10 +14,10 @@ use std::mem::MaybeUninit;
 
 /// An object representing a Zircon [stream](https://fuchsia.dev/fuchsia-src/concepts/objects/stream.md).
 ///
-/// As essentially a subtype of `Handle`, it can be freely interconverted.
+/// As essentially a subtype of `NullableHandle`, it can be freely interconverted.
 #[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 #[repr(transparent)]
-pub struct Stream(Handle);
+pub struct Stream(NullableHandle);
 impl_handle_based!(Stream);
 
 bitflags! {
@@ -52,7 +52,7 @@ impl Stream {
         let status =
             unsafe { sys::zx_stream_create(options.bits(), vmo.raw_handle(), offset, &mut handle) };
         ok(status)?;
-        unsafe { Ok(Stream::from(Handle::from_raw(handle))) }
+        unsafe { Ok(Stream::from(NullableHandle::from_raw(handle))) }
     }
 
     /// Wraps the
@@ -358,8 +358,11 @@ mod tests {
 
     #[test]
     fn create_invalid() {
-        let result =
-            Stream::create(StreamOptions::MODE_READ, &zx::Vmo::from(zx::Handle::invalid()), 0);
+        let result = Stream::create(
+            StreamOptions::MODE_READ,
+            &zx::Vmo::from(zx::NullableHandle::invalid()),
+            0,
+        );
         assert_eq!(result, Err(zx::Status::BAD_HANDLE));
     }
 

@@ -7,18 +7,18 @@
 #![allow(clippy::bad_bit_mask)] // TODO(https://fxbug.dev/42080521): stop using bitflags for ResourceKind
 
 use crate::{
-    object_get_info_single, object_get_info_vec, ok, AsHandleRef, Event, Handle, HandleBased,
-    HandleRef, MonotonicDuration, ObjectQuery, Status, Topic,
+    AsHandleRef, Event, HandleBased, HandleRef, MonotonicDuration, NullableHandle, ObjectQuery,
+    Status, Topic, object_get_info_single, object_get_info_vec, ok,
 };
 use bitflags::bitflags;
-use zx_sys::{self as sys, zx_duration_mono_t, zx_duration_t, ZX_MAX_NAME_LEN};
+use zx_sys::{self as sys, ZX_MAX_NAME_LEN, zx_duration_mono_t, zx_duration_t};
 
 /// An object representing a Zircon resource.
 ///
-/// As essentially a subtype of `Handle`, it can be freely interconverted.
+/// As essentially a subtype of `NullableHandle`, it can be freely interconverted.
 #[derive(Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[repr(transparent)]
-pub struct Resource(Handle);
+pub struct Resource(NullableHandle);
 impl_handle_based!(Resource);
 
 sys::zx_info_kmem_stats_t!(MemStats);
@@ -301,7 +301,7 @@ impl Resource {
             )
         };
         ok(status)?;
-        unsafe { Ok(Resource::from(Handle::from_raw(resource_out))) }
+        unsafe { Ok(Resource::from(NullableHandle::from_raw(resource_out))) }
     }
 
     /// Wraps the
@@ -369,7 +369,7 @@ impl Resource {
             )
         };
         ok(status)?;
-        unsafe { Ok(Event::from(Handle::from_raw(event_out))) }
+        unsafe { Ok(Event::from(NullableHandle::from_raw(event_out))) }
     }
 }
 
@@ -379,7 +379,7 @@ mod tests {
 
     #[test]
     fn create_child() {
-        let invalid_resource = Resource::from(Handle::invalid());
+        let invalid_resource = Resource::from(NullableHandle::invalid());
         assert_eq!(
             invalid_resource.create_child(ResourceKind::IRQ, None, 0, 0, b"irq"),
             Err(Status::BAD_HANDLE)
@@ -388,25 +388,25 @@ mod tests {
 
     #[test]
     fn cpu_stats() {
-        let invalid_resource = Resource::from(Handle::invalid());
+        let invalid_resource = Resource::from(NullableHandle::invalid());
         assert_eq!(invalid_resource.cpu_stats(), Err(Status::BAD_HANDLE));
     }
 
     #[test]
     fn mem_stats() {
-        let invalid_resource = Resource::from(Handle::invalid());
+        let invalid_resource = Resource::from(NullableHandle::invalid());
         assert_eq!(invalid_resource.mem_stats(), Err(Status::BAD_HANDLE));
     }
 
     #[test]
     fn mem_stats_extended() {
-        let invalid_resource = Resource::from(Handle::invalid());
+        let invalid_resource = Resource::from(NullableHandle::invalid());
         assert_eq!(invalid_resource.mem_stats_extended(), Err(Status::BAD_HANDLE));
     }
 
     #[test]
     fn mem_stats_compression() {
-        let invalid_resource = Resource::from(Handle::invalid());
+        let invalid_resource = Resource::from(NullableHandle::invalid());
         assert_eq!(invalid_resource.mem_stats_compression(), Err(Status::BAD_HANDLE));
     }
 }

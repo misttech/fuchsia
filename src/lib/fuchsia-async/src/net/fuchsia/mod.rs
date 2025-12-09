@@ -231,7 +231,7 @@ where
                 &mut raw_signals,
             );
 
-            let handle = zx::Handle::from_raw(raw_handle);
+            let handle = zx::NullableHandle::from_raw(raw_handle);
             let signals = zx::Signals::from_bits_truncate(raw_signals);
 
             let res = handle.wait_async_handle(

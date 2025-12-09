@@ -13,7 +13,7 @@ use test_runners_lib::logs::LoggerStream;
 use zx::HandleBased;
 use {fidl_fuchsia_fuzzer as fuzzer, fidl_fuchsia_process as fproc, fuchsia_runtime as runtime};
 
-static VDSO_VMO: LazyLock<zx::Handle> = LazyLock::new(|| {
+static VDSO_VMO: LazyLock<zx::NullableHandle> = LazyLock::new(|| {
     runtime::take_startup_handle(runtime::HandleInfo::new(runtime::HandleType::VdsoVmo, 0))
         .expect("failed to take vDSO handle")
 });

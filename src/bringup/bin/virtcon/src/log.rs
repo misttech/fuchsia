@@ -141,7 +141,7 @@ mod tests {
 
     #[fasync::run_singlethreaded(test)]
     async fn can_start_log() -> Result<(), Error> {
-        let resource = zx::Resource::from(zx::Handle::invalid());
+        let resource = zx::Resource::from(zx::NullableHandle::invalid());
         let debuglog = zx::DebugLog::create(&resource, zx::DebugLogOpts::empty()).unwrap();
         let client = TestLogClient::default();
         let _ = Log::start(debuglog, &client, 0)?;

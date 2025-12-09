@@ -40,7 +40,7 @@ mod tests {
         .detach();
 
         let root_job = proxy.get().await?;
-        let info = zx::Handle::from(root_job).basic_info()?;
+        let info = zx::NullableHandle::from(root_job).basic_info()?;
         assert_eq!(info.rights, zx::Rights::TRANSFER);
         Ok(())
     }

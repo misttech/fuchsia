@@ -35,7 +35,7 @@ impl fidl::Standalone<fidl::encoding::DefaultFuchsiaResourceDialect>
 
 #[derive(Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct ChannelProtocolTakeHandleRequest {
-    pub h: fidl::Handle,
+    pub h: fidl::NullableHandle,
 }
 
 impl fidl::Standalone<fidl::encoding::DefaultFuchsiaResourceDialect>
@@ -95,7 +95,7 @@ impl fidl::Standalone<fidl::encoding::DefaultFuchsiaResourceDialect> for Protoco
 
 #[derive(Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct WithErrorSyntaxHandleInResultResponse {
-    pub h: fidl::Handle,
+    pub h: fidl::NullableHandle,
 }
 
 impl fidl::Standalone<fidl::encoding::DefaultFuchsiaResourceDialect>
@@ -224,7 +224,7 @@ impl AnotherDiscoverableProtocolSynchronousProxy {
 }
 
 #[cfg(target_os = "fuchsia")]
-impl From<AnotherDiscoverableProtocolSynchronousProxy> for zx::Handle {
+impl From<AnotherDiscoverableProtocolSynchronousProxy> for zx::NullableHandle {
     fn from(value: AnotherDiscoverableProtocolSynchronousProxy) -> Self {
         value.into_channel().into()
     }
@@ -484,7 +484,7 @@ pub trait ChannelProtocolProxyInterface: Send + Sync {
     type MethodBResponseFut: std::future::Future<Output = Result<i64, fidl::Error>> + Send;
     fn r#method_b(&self, a: i64, b: i64) -> Self::MethodBResponseFut;
     type TakeHandleResponseFut: std::future::Future<Output = Result<(), fidl::Error>> + Send;
-    fn r#take_handle(&self, h: fidl::Handle) -> Self::TakeHandleResponseFut;
+    fn r#take_handle(&self, h: fidl::NullableHandle) -> Self::TakeHandleResponseFut;
     type MutateSocketResponseFut: std::future::Future<Output = Result<fidl::Socket, fidl::Error>>
         + Send;
     fn r#mutate_socket(&self, a: fidl::Socket) -> Self::MutateSocketResponseFut;
@@ -560,7 +560,7 @@ impl ChannelProtocolSynchronousProxy {
 
     pub fn r#take_handle(
         &self,
-        mut h: fidl::Handle,
+        mut h: fidl::NullableHandle,
         ___deadline: zx::MonotonicInstant,
     ) -> Result<(), fidl::Error> {
         let _response = self
@@ -592,7 +592,7 @@ impl ChannelProtocolSynchronousProxy {
 }
 
 #[cfg(target_os = "fuchsia")]
-impl From<ChannelProtocolSynchronousProxy> for zx::Handle {
+impl From<ChannelProtocolSynchronousProxy> for zx::NullableHandle {
     fn from(value: ChannelProtocolSynchronousProxy) -> Self {
         value.into_channel().into()
     }
@@ -665,7 +665,7 @@ impl ChannelProtocolProxy {
 
     pub fn r#take_handle(
         &self,
-        mut h: fidl::Handle,
+        mut h: fidl::NullableHandle,
     ) -> fidl::client::QueryResponseFut<(), fidl::encoding::DefaultFuchsiaResourceDialect> {
         ChannelProtocolProxyInterface::r#take_handle(self, h)
     }
@@ -711,7 +711,7 @@ impl ChannelProtocolProxyInterface for ChannelProtocolProxy {
 
     type TakeHandleResponseFut =
         fidl::client::QueryResponseFut<(), fidl::encoding::DefaultFuchsiaResourceDialect>;
-    fn r#take_handle(&self, mut h: fidl::Handle) -> Self::TakeHandleResponseFut {
+    fn r#take_handle(&self, mut h: fidl::NullableHandle) -> Self::TakeHandleResponseFut {
         fn _decode(
             mut _buf: Result<<fidl::encoding::DefaultFuchsiaResourceDialect as fidl::encoding::ResourceDialect>::MessageBufEtc, fidl::Error>,
         ) -> Result<(), fidl::Error> {
@@ -974,7 +974,7 @@ impl futures::Stream for ChannelProtocolRequestStream {
 pub enum ChannelProtocolRequest {
     MethodA { a: i64, b: i64, control_handle: ChannelProtocolControlHandle },
     MethodB { a: i64, b: i64, responder: ChannelProtocolMethodBResponder },
-    TakeHandle { h: fidl::Handle, responder: ChannelProtocolTakeHandleResponder },
+    TakeHandle { h: fidl::NullableHandle, responder: ChannelProtocolTakeHandleResponder },
     MutateSocket { a: fidl::Socket, responder: ChannelProtocolMutateSocketResponder },
 }
 
@@ -998,7 +998,9 @@ impl ChannelProtocolRequest {
     }
 
     #[allow(irrefutable_let_patterns)]
-    pub fn into_take_handle(self) -> Option<(fidl::Handle, ChannelProtocolTakeHandleResponder)> {
+    pub fn into_take_handle(
+        self,
+    ) -> Option<(fidl::NullableHandle, ChannelProtocolTakeHandleResponder)> {
         if let ChannelProtocolRequest::TakeHandle { h, responder } = self {
             Some((h, responder))
         } else {
@@ -1330,7 +1332,7 @@ impl DiscoverableProtocolSynchronousProxy {
 }
 
 #[cfg(target_os = "fuchsia")]
-impl From<DiscoverableProtocolSynchronousProxy> for zx::Handle {
+impl From<DiscoverableProtocolSynchronousProxy> for zx::NullableHandle {
     fn from(value: DiscoverableProtocolSynchronousProxy) -> Self {
         value.into_channel().into()
     }
@@ -1698,7 +1700,7 @@ impl HandleRightsProtocolSynchronousProxy {
 }
 
 #[cfg(target_os = "fuchsia")]
-impl From<HandleRightsProtocolSynchronousProxy> for zx::Handle {
+impl From<HandleRightsProtocolSynchronousProxy> for zx::NullableHandle {
     fn from(value: HandleRightsProtocolSynchronousProxy) -> Self {
         value.into_channel().into()
     }
@@ -2227,7 +2229,7 @@ impl ManyParametersSynchronousProxy {
 }
 
 #[cfg(target_os = "fuchsia")]
-impl From<ManyParametersSynchronousProxy> for zx::Handle {
+impl From<ManyParametersSynchronousProxy> for zx::NullableHandle {
     fn from(value: ManyParametersSynchronousProxy) -> Self {
         value.into_channel().into()
     }
@@ -2692,7 +2694,7 @@ impl MethodWithUnionSynchronousProxy {
 }
 
 #[cfg(target_os = "fuchsia")]
-impl From<MethodWithUnionSynchronousProxy> for zx::Handle {
+impl From<MethodWithUnionSynchronousProxy> for zx::NullableHandle {
     fn from(value: MethodWithUnionSynchronousProxy) -> Self {
         value.into_channel().into()
     }
@@ -3122,7 +3124,7 @@ impl PlatformServer_SynchronousProxy {
 }
 
 #[cfg(target_os = "fuchsia")]
-impl From<PlatformServer_SynchronousProxy> for zx::Handle {
+impl From<PlatformServer_SynchronousProxy> for zx::NullableHandle {
     fn from(value: PlatformServer_SynchronousProxy) -> Self {
         value.into_channel().into()
     }
@@ -3520,7 +3522,7 @@ impl WithAndWithoutRequestResponseSynchronousProxy {
 }
 
 #[cfg(target_os = "fuchsia")]
-impl From<WithAndWithoutRequestResponseSynchronousProxy> for zx::Handle {
+impl From<WithAndWithoutRequestResponseSynchronousProxy> for zx::NullableHandle {
     fn from(value: WithAndWithoutRequestResponseSynchronousProxy) -> Self {
         value.into_channel().into()
     }
@@ -4430,7 +4432,7 @@ impl fidl::endpoints::ProtocolMarker for WithErrorSyntaxMarker {
 pub type WithErrorSyntaxResponseAsStructResult = Result<(i64, i64, i64), u32>;
 pub type WithErrorSyntaxErrorAsPrimitiveResult = Result<(), u32>;
 pub type WithErrorSyntaxErrorAsEnumResult = Result<(), ErrorEnum>;
-pub type WithErrorSyntaxHandleInResultResult = Result<fidl::Handle, u32>;
+pub type WithErrorSyntaxHandleInResultResult = Result<fidl::NullableHandle, u32>;
 
 pub trait WithErrorSyntaxProxyInterface: Send + Sync {
     type ResponseAsStructResponseFut: std::future::Future<Output = Result<WithErrorSyntaxResponseAsStructResult, fidl::Error>>
@@ -4556,7 +4558,7 @@ impl WithErrorSyntaxSynchronousProxy {
 }
 
 #[cfg(target_os = "fuchsia")]
-impl From<WithErrorSyntaxSynchronousProxy> for zx::Handle {
+impl From<WithErrorSyntaxSynchronousProxy> for zx::NullableHandle {
     fn from(value: WithErrorSyntaxSynchronousProxy) -> Self {
         value.into_channel().into()
     }
@@ -5287,7 +5289,7 @@ impl WithErrorSyntaxHandleInResultResponder {
     /// Sends a response to the FIDL transaction.
     ///
     /// Sets the channel to shutdown if an error occurs.
-    pub fn send(self, mut result: Result<fidl::Handle, u32>) -> Result<(), fidl::Error> {
+    pub fn send(self, mut result: Result<fidl::NullableHandle, u32>) -> Result<(), fidl::Error> {
         let _result = self.send_raw(result);
         if _result.is_err() {
             self.control_handle.shutdown();
@@ -5299,14 +5301,14 @@ impl WithErrorSyntaxHandleInResultResponder {
     /// Similar to "send" but does not shutdown the channel if an error occurs.
     pub fn send_no_shutdown_on_err(
         self,
-        mut result: Result<fidl::Handle, u32>,
+        mut result: Result<fidl::NullableHandle, u32>,
     ) -> Result<(), fidl::Error> {
         let _result = self.send_raw(result);
         self.drop_without_shutdown();
         _result
     }
 
-    fn send_raw(&self, mut result: Result<fidl::Handle, u32>) -> Result<(), fidl::Error> {
+    fn send_raw(&self, mut result: Result<fidl::NullableHandle, u32>) -> Result<(), fidl::Error> {
         self.control_handle.inner.send::<fidl::encoding::ResultType<
             WithErrorSyntaxHandleInResultResponse,
             u32,
@@ -5448,7 +5450,7 @@ impl WithProtocolEndsSynchronousProxy {
 }
 
 #[cfg(target_os = "fuchsia")]
-impl From<WithProtocolEndsSynchronousProxy> for zx::Handle {
+impl From<WithProtocolEndsSynchronousProxy> for zx::NullableHandle {
     fn from(value: WithProtocolEndsSynchronousProxy) -> Self {
         value.into_channel().into()
     }
@@ -6406,7 +6408,7 @@ mod internal {
                 fidl::encoding::DefaultFuchsiaResourceDialect,
             >::encode(
                 (<fidl::encoding::HandleType<
-                    fidl::Handle,
+                    fidl::NullableHandle,
                     { fidl::ObjectType::NONE.into_raw() },
                     2147483648,
                 > as fidl::encoding::ResourceTypeMarker>::take_or_borrow(
@@ -6421,7 +6423,7 @@ mod internal {
     unsafe impl<
         T0: fidl::encoding::Encode<
                 fidl::encoding::HandleType<
-                    fidl::Handle,
+                    fidl::NullableHandle,
                     { fidl::ObjectType::NONE.into_raw() },
                     2147483648,
                 >,
@@ -6458,7 +6460,7 @@ mod internal {
         #[inline(always)]
         fn new_empty() -> Self {
             Self {
-                h: fidl::new_empty!(fidl::encoding::HandleType<fidl::Handle, { fidl::ObjectType::NONE.into_raw() }, 2147483648>, fidl::encoding::DefaultFuchsiaResourceDialect),
+                h: fidl::new_empty!(fidl::encoding::HandleType<fidl::NullableHandle, { fidl::ObjectType::NONE.into_raw() }, 2147483648>, fidl::encoding::DefaultFuchsiaResourceDialect),
             }
         }
 
@@ -6474,7 +6476,7 @@ mod internal {
         ) -> fidl::Result<()> {
             decoder.debug_check_bounds::<Self>(offset);
             // Verify that padding bytes are zero.
-            fidl::decode!(fidl::encoding::HandleType<fidl::Handle, { fidl::ObjectType::NONE.into_raw() }, 2147483648>, fidl::encoding::DefaultFuchsiaResourceDialect, &mut self.h, decoder, offset + 0, _depth)?;
+            fidl::decode!(fidl::encoding::HandleType<fidl::NullableHandle, { fidl::ObjectType::NONE.into_raw() }, 2147483648>, fidl::encoding::DefaultFuchsiaResourceDialect, &mut self.h, decoder, offset + 0, _depth)?;
             Ok(())
         }
     }
@@ -7191,7 +7193,7 @@ mod internal {
                 fidl::encoding::DefaultFuchsiaResourceDialect,
             >::encode(
                 (<fidl::encoding::HandleType<
-                    fidl::Handle,
+                    fidl::NullableHandle,
                     { fidl::ObjectType::NONE.into_raw() },
                     2147483648,
                 > as fidl::encoding::ResourceTypeMarker>::take_or_borrow(
@@ -7206,7 +7208,7 @@ mod internal {
     unsafe impl<
         T0: fidl::encoding::Encode<
                 fidl::encoding::HandleType<
-                    fidl::Handle,
+                    fidl::NullableHandle,
                     { fidl::ObjectType::NONE.into_raw() },
                     2147483648,
                 >,
@@ -7243,7 +7245,7 @@ mod internal {
         #[inline(always)]
         fn new_empty() -> Self {
             Self {
-                h: fidl::new_empty!(fidl::encoding::HandleType<fidl::Handle, { fidl::ObjectType::NONE.into_raw() }, 2147483648>, fidl::encoding::DefaultFuchsiaResourceDialect),
+                h: fidl::new_empty!(fidl::encoding::HandleType<fidl::NullableHandle, { fidl::ObjectType::NONE.into_raw() }, 2147483648>, fidl::encoding::DefaultFuchsiaResourceDialect),
             }
         }
 
@@ -7259,7 +7261,7 @@ mod internal {
         ) -> fidl::Result<()> {
             decoder.debug_check_bounds::<Self>(offset);
             // Verify that padding bytes are zero.
-            fidl::decode!(fidl::encoding::HandleType<fidl::Handle, { fidl::ObjectType::NONE.into_raw() }, 2147483648>, fidl::encoding::DefaultFuchsiaResourceDialect, &mut self.h, decoder, offset + 0, _depth)?;
+            fidl::decode!(fidl::encoding::HandleType<fidl::NullableHandle, { fidl::ObjectType::NONE.into_raw() }, 2147483648>, fidl::encoding::DefaultFuchsiaResourceDialect, &mut self.h, decoder, offset + 0, _depth)?;
             Ok(())
         }
     }

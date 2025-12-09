@@ -95,7 +95,7 @@ impl Loader {
         // driver_host. We always re-install the original one, so there is always a valid one
         // currently installed.
         let old_loader =
-            unsafe { zx::Handle::from_raw(dl_set_loader_service(client_end.into_raw())) };
+            unsafe { zx::NullableHandle::from_raw(dl_set_loader_service(client_end.into_raw())) };
 
         let loader = Rc::new(Loader {
             lock_guard,
@@ -185,7 +185,7 @@ impl Drop for Loader {
         // SAFETY: We need to re-install the old loader service in order to ensure there are no
         // safety problems in the future.
         let _ = unsafe {
-            zx::Handle::from_raw(dl_set_loader_service(
+            zx::NullableHandle::from_raw(dl_set_loader_service(
                 self.old_loader.take().unwrap().into_channel().into_raw(),
             ))
         };

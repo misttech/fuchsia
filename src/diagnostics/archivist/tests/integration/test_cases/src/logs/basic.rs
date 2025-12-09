@@ -89,7 +89,7 @@ async fn listen_for_klog() {
     let logs = run_listener("klog", log_proxy);
     let msg = format!("logger_integration_rust test_klog {}", rand::random::<u64>());
 
-    let resource = zx::Resource::from(zx::Handle::invalid());
+    let resource = zx::Resource::from(zx::NullableHandle::invalid());
     let debuglog = zx::DebugLog::create(&resource, zx::DebugLogOpts::empty()).unwrap();
     debuglog.write(msg.as_bytes()).unwrap();
 

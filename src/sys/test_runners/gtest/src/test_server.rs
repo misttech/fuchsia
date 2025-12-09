@@ -34,7 +34,7 @@ use {
 
 const DYNAMIC_SKIP_RESULT: &str = "SKIPPED";
 
-static NEXT_VDSO: LazyLock<zx::Handle> = LazyLock::new(|| {
+static NEXT_VDSO: LazyLock<zx::NullableHandle> = LazyLock::new(|| {
     runtime::take_startup_handle(runtime::HandleInfo::new(runtime::HandleType::VdsoVmo, 0))
         .expect("failed to take next vDSO handle")
 });

@@ -7,8 +7,8 @@
 use crate::clock::Clock;
 use crate::iob::Iob;
 use crate::{
-    AsHandleRef, Handle, HandleBased, HandleRef, Koid, Name, ObjectQuery, Status, Timeline, Topic,
-    Vmo, object_get_info, object_get_info_single, object_get_info_vec, ok, sys,
+    AsHandleRef, HandleBased, HandleRef, Koid, Name, NullableHandle, ObjectQuery, Status, Timeline,
+    Topic, Vmo, object_get_info, object_get_info_single, object_get_info_vec, ok, sys,
 };
 use bitflags::bitflags;
 use std::mem::MaybeUninit;
@@ -18,10 +18,10 @@ use zx_sys::PadByte;
 /// An object representing a Zircon
 /// [virtual memory address region](https://fuchsia.dev/fuchsia-src/concepts/objects/vm_address_region.md).
 ///
-/// As essentially a subtype of `Handle`, it can be freely interconverted.
+/// As essentially a subtype of `NullableHandle`, it can be freely interconverted.
 #[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 #[repr(transparent)]
-pub struct Vmar(Handle);
+pub struct Vmar(NullableHandle);
 impl_handle_based!(Vmar);
 
 sys::zx_info_vmar_t!(VmarInfo);
@@ -219,7 +219,7 @@ impl Vmar {
             )
         };
         ok(status)?;
-        unsafe { Ok((Vmar::from(Handle::from_raw(handle)), mapped)) }
+        unsafe { Ok((Vmar::from(NullableHandle::from_raw(handle)), mapped)) }
     }
 
     pub fn map(

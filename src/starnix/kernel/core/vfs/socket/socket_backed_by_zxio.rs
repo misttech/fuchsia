@@ -789,7 +789,7 @@ impl SocketOps for ZxioBackedSocket {
         &self,
         _socket: &Socket,
         _current_task: &CurrentTask,
-    ) -> Result<Option<zx::Handle>, Errno> {
+    ) -> Result<Option<zx::NullableHandle>, Errno> {
         self.zxio
             .deep_clone()
             .and_then(Zxio::release)
@@ -849,7 +849,7 @@ mod tokens_store {
     }
 
     impl syncio::ZxioTokenResolver for TokenCollection {
-        fn get_token(&self, token_type: syncio::ZxioTokenType) -> Option<zx::Handle> {
+        fn get_token(&self, token_type: syncio::ZxioTokenType) -> Option<zx::NullableHandle> {
             match token_type {
                 syncio::ZxioTokenType::SharingDomain => {
                     let token = self
@@ -1016,7 +1016,7 @@ mod tokens_store {
     }
 
     impl<H: SocketTokenStoreHost> syncio::ZxioTokenResolver for SocketTokenResolver<H> {
-        fn get_token(&self, token_type: syncio::ZxioTokenType) -> Option<zx::Handle> {
+        fn get_token(&self, token_type: syncio::ZxioTokenType) -> Option<zx::NullableHandle> {
             self.tokens.get_token(token_type)
         }
     }

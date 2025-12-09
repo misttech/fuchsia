@@ -42,7 +42,7 @@ impl FakeBti {
                 zx::ok(ffi::fake_bti_create(&mut raw_handle))?;
             }
             // SAFETY: `fake_bti_create` returned a valid handle on success
-            unsafe { zx::Handle::from_raw(raw_handle) }
+            unsafe { zx::NullableHandle::from_raw(raw_handle) }
         };
         Ok(Self(handle.into()))
     }

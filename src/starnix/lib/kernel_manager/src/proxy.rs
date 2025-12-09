@@ -80,7 +80,7 @@ async fn start_proxy(
     wake_sources: Arc<Mutex<WakeSources>>,
     bounce_bytes: Rc<RefCell<[MaybeUninit<u8>; zx::sys::ZX_CHANNEL_MAX_MSG_BYTES as usize]>>,
     bounce_handles: Rc<
-        RefCell<[MaybeUninit<zx::Handle>; zx::sys::ZX_CHANNEL_MAX_MSG_HANDLES as usize]>,
+        RefCell<[MaybeUninit<zx::NullableHandle>; zx::sys::ZX_CHANNEL_MAX_MSG_HANDLES as usize]>,
     >,
 ) {
     let proxy_name = proxy.name.as_str();
@@ -179,7 +179,7 @@ fn forward_message(
     write_channel: &zx::Channel,
     message_counter: Option<&zx::Counter>,
     bytes: &mut [MaybeUninit<u8>; zx::sys::ZX_CHANNEL_MAX_MSG_BYTES as usize],
-    handles: &mut [MaybeUninit<zx::Handle>; zx::sys::ZX_CHANNEL_MAX_MSG_HANDLES as usize],
+    handles: &mut [MaybeUninit<zx::NullableHandle>; zx::sys::ZX_CHANNEL_MAX_MSG_HANDLES as usize],
     name: &str,
 ) -> Result<(), Error> {
     trace_duration(c"starnix_runner:forward_message", name);

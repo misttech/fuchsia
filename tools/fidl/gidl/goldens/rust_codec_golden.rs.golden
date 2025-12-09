@@ -6,7 +6,7 @@
 
 use {
     assert_matches::assert_matches,
-    fidl::{AsHandleRef, Handle, HandleDisposition, HandleInfo, HandleOp, ObjectType, Rights},
+    fidl::{AsHandleRef, NullableHandle, HandleDisposition, HandleInfo, HandleOp, ObjectType, Rights},
     fidl::encoding::{Context, Decode, Decoder, Encoder, WireFormatVersion},
     fidl_codec::{Value, Error},
     zx_status::Status,

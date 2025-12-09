@@ -5,7 +5,7 @@
 //! Implementation of [`TokenRegistry`].
 
 use crate::directory::entry_container::MutableDirectory;
-use fidl::{Event, Handle, HandleBased, Rights};
+use fidl::{Event, HandleBased, NullableHandle, Rights};
 use fuchsia_sync::Mutex;
 use pin_project::{pin_project, pinned_drop};
 use std::collections::hash_map::{Entry, HashMap};
@@ -35,7 +35,7 @@ struct Inner {
     /// Owners must be wrapped in Tokenizable which will ensure tokens are unregistered when
     /// Tokenizable is dropped.  They must be pinned since pointers are used.  They must also
     /// implement the TokenInterface trait which extracts the information that `get_owner` returns.
-    owner_to_token: HashMap<*const (), Handle>,
+    owner_to_token: HashMap<*const (), NullableHandle>,
 
     /// Maps a koid of an owner to the owner.
     token_to_owner: HashMap<Koid, *const dyn TokenInterface>,
@@ -55,7 +55,9 @@ impl TokenRegistry {
 
     /// Returns a token for the owner, creating one if one doesn't already exist.  Tokens will be
     /// automatically removed when Tokenizable is dropped.
-    pub fn get_token<T: TokenInterface>(owner: Pin<&Tokenizable<T>>) -> Result<Handle, Status> {
+    pub fn get_token<T: TokenInterface>(
+        owner: Pin<&Tokenizable<T>>,
+    ) -> Result<NullableHandle, Status> {
         let ptr = owner.get_ref() as *const _ as *const ();
         let mut this = owner.token_registry().inner.lock();
         let Inner { owner_to_token, token_to_owner, .. } = &mut *this;
@@ -76,7 +78,10 @@ impl TokenRegistry {
 
     /// Returns the information provided by get_node_and_flags for the given token.  Returns None if
     /// no such token exists (perhaps because the owner has been dropped).
-    pub fn get_owner(&self, token: Handle) -> Result<Option<Arc<dyn MutableDirectory>>, Status> {
+    pub fn get_owner(
+        &self,
+        token: NullableHandle,
+    ) -> Result<Option<Arc<dyn MutableDirectory>>, Status> {
         let koid = token.get_koid()?;
         let this = self.inner.lock();
 

@@ -3222,7 +3222,7 @@ impl MemoryManager {
             // SAFETY: This operation is safe because this is the only `Task` active in the address-
             // space, and accesses by remote tasks will use syscalls on the `root_vmar`.
             unsafe { state.user_vmar.destroy()? }
-            state.user_vmar = zx::Handle::invalid().into();
+            state.user_vmar = zx::NullableHandle::invalid().into();
 
             if arch_width.is_arch32() {
                 info.len = (LOWER_4GB_LIMIT.ptr() - info.base) as usize;

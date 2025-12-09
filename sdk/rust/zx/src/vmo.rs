@@ -5,7 +5,7 @@
 //! Type-safe bindings for Zircon vmo objects.
 
 use crate::{
-    AsHandleRef, Bti, Handle, HandleBased, HandleRef, Koid, Name, ObjectQuery, Property,
+    AsHandleRef, Bti, HandleBased, HandleRef, Koid, Name, NullableHandle, ObjectQuery, Property,
     PropertyQuery, Resource, Rights, Status, Topic, object_get_info_single, object_get_property,
     object_set_property, ok, sys,
 };
@@ -18,10 +18,10 @@ use zx_sys::PadByte;
 /// An object representing a Zircon
 /// [virtual memory object](https://fuchsia.dev/fuchsia-src/concepts/objects/vm_object.md).
 ///
-/// As essentially a subtype of `Handle`, it can be freely interconverted.
+/// As essentially a subtype of `NullableHandle`, it can be freely interconverted.
 #[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 #[repr(transparent)]
-pub struct Vmo(Handle);
+pub struct Vmo(NullableHandle);
 impl_handle_based!(Vmo);
 
 static_assert_align!(
@@ -98,7 +98,7 @@ impl Vmo {
         let mut handle = 0;
         let status = unsafe { sys::zx_vmo_create(size, opts.bits(), &mut handle) };
         ok(status)?;
-        unsafe { Ok(Vmo::from(Handle::from_raw(handle))) }
+        unsafe { Ok(Vmo::from(NullableHandle::from_raw(handle))) }
     }
 
     /// Create a physically contiguous virtual memory object.
@@ -115,7 +115,7 @@ impl Vmo {
         unsafe {
             // SAFETY: The syscall docs claim that upon success, vmo_handle will be a valid
             // handle to a virtual memory object.
-            Ok(Vmo::from(Handle::from_raw(vmo_handle)))
+            Ok(Vmo::from(NullableHandle::from_raw(vmo_handle)))
         }
     }
 
@@ -363,7 +363,7 @@ impl Vmo {
             sys::zx_vmo_create_child(self.raw_handle(), opts.bits(), offset, size, &mut out)
         };
         ok(status)?;
-        unsafe { Ok(Vmo::from(Handle::from_raw(out))) }
+        unsafe { Ok(Vmo::from(NullableHandle::from_raw(out))) }
     }
 
     /// Replace a VMO, adding execute rights.
@@ -381,7 +381,7 @@ impl Vmo {
         // to close the now-invalid handle value.
         std::mem::forget(self);
         ok(status)?;
-        unsafe { Ok(Vmo::from(Handle::from_raw(out))) }
+        unsafe { Ok(Vmo::from(NullableHandle::from_raw(out))) }
     }
 }
 
@@ -526,7 +526,7 @@ mod tests {
 
     #[test]
     fn vmo_create_contiguous_invalid_handle() {
-        let status = Vmo::create_contiguous(&Bti::from(Handle::invalid()), 4096, 0);
+        let status = Vmo::create_contiguous(&Bti::from(NullableHandle::invalid()), 4096, 0);
         assert_eq!(status, Err(Status::BAD_HANDLE));
     }
 
@@ -541,7 +541,7 @@ mod tests {
         // This test and fuchsia-zircon are different crates, so we need
         // to use from_raw to convert between the zx handle and this test handle.
         // See https://fxbug.dev/42173139 for details.
-        let resource = unsafe { Resource::from(Handle::from_raw(resource.into_raw())) };
+        let resource = unsafe { Resource::from(NullableHandle::from_raw(resource.into_raw())) };
         let iommu = Iommu::create_stub(&resource, IommuDescStub::default()).unwrap();
         let bti = Bti::create(&iommu, 0).unwrap();
 
@@ -801,7 +801,8 @@ mod tests {
         connect_channel_to_protocol::<fkernel::VmexResourceMarker>(server_end).unwrap();
         let service = fkernel::VmexResourceSynchronousProxy::new(client_end);
         let resource = service.get(MonotonicInstant::INFINITE).expect("couldn't get vmex resource");
-        let resource = unsafe { crate::Resource::from(Handle::from_raw(resource.into_raw())) };
+        let resource =
+            unsafe { crate::Resource::from(NullableHandle::from_raw(resource.into_raw())) };
 
         let exec_vmo = vmo.replace_as_executable(&resource).unwrap();
         let info = exec_vmo.as_handle_ref().basic_info().unwrap();

@@ -59,8 +59,8 @@ impl CompatFrom<String> for String {
 }
 
 #[cfg(feature = "fuchsia")]
-impl CompatFrom<zx::Handle> for zx::Handle {
-    fn compat_from(value: zx::Handle) -> Self {
+impl CompatFrom<zx::NullableHandle> for zx::NullableHandle {
+    fn compat_from(value: zx::NullableHandle) -> Self {
         value
     }
 }

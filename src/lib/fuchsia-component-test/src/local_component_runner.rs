@@ -2,17 +2,17 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{format_err, Context as _, Error};
+use anyhow::{Context as _, Error, format_err};
 use fidl::endpoints::{
-    create_request_stream, ClientEnd, ControlHandle, DiscoverableProtocolMarker, RequestStream,
-    ServerEnd, ServiceMarker, ServiceProxy,
+    ClientEnd, ControlHandle, DiscoverableProtocolMarker, RequestStream, ServerEnd, ServiceMarker,
+    ServiceProxy, create_request_stream,
 };
-use fuchsia_component::client::Connect;
 use fuchsia_component::DEFAULT_SERVICE_INSTANCE;
+use fuchsia_component::client::Connect;
 use futures::channel::oneshot;
 use futures::future::BoxFuture;
 use futures::lock::Mutex;
-use futures::{select, FutureExt, TryStreamExt};
+use futures::{FutureExt, TryStreamExt, select};
 use log::*;
 use runner::get_value as get_dictionary_value;
 use std::collections::HashMap;
@@ -28,7 +28,7 @@ use {
 /// components.
 pub struct LocalComponentHandles {
     namespace: HashMap<String, fio::DirectoryProxy>,
-    numbered_handles: HashMap<u32, zx::Handle>,
+    numbered_handles: HashMap<u32, zx::NullableHandle>,
 
     stop_notifier: Arc<Mutex<Option<oneshot::Sender<()>>>>,
 
@@ -67,11 +67,11 @@ impl LocalComponentHandles {
         ))
     }
 
-    pub fn take_numbered_handle(&mut self, id: u32) -> Option<zx::Handle> {
+    pub fn take_numbered_handle(&mut self, id: u32) -> Option<zx::NullableHandle> {
         self.numbered_handles.remove(&id)
     }
 
-    pub fn numbered_handles(&self) -> &HashMap<u32, zx::Handle> {
+    pub fn numbered_handles(&self) -> &HashMap<u32, zx::NullableHandle> {
         &self.numbered_handles
     }
 
@@ -398,7 +398,7 @@ fn extract_local_component_name(dict: fdata::Dictionary) -> Result<String, Error
 mod tests {
     use super::*;
     use assert_matches::assert_matches;
-    use fidl::endpoints::{create_proxy, Proxy as _};
+    use fidl::endpoints::{Proxy as _, create_proxy};
     use futures::future::pending;
     use zx::AsHandleRef;
 

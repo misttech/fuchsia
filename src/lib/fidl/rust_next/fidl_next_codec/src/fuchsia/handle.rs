@@ -6,7 +6,7 @@ use core::fmt;
 use core::mem::{MaybeUninit, forget};
 
 use fidl_constants::{ALLOC_ABSENT_U32, ALLOC_PRESENT_U32};
-use zx::Handle;
+use zx::NullableHandle;
 use zx::sys::{ZX_HANDLE_INVALID, zx_handle_t};
 
 use crate::fuchsia::{HandleDecoder, HandleEncoder};
@@ -14,6 +14,9 @@ use crate::{
     Constrained, Decode, DecodeError, Encode, EncodeError, EncodeOption, FromWire, FromWireOption,
     IntoNatural, Slot, Unconstrained, Wire, WireU32, munge,
 };
+
+/// TODO(https://fxbug.dev/465766514): remove
+pub type WireNullableHandle = WireHandle;
 
 /// A Zircon handle.
 #[repr(C, align(4))]
@@ -25,7 +28,7 @@ pub union WireHandle {
 impl Drop for WireHandle {
     fn drop(&mut self) {
         // SAFETY: `WireHandle` is always a valid `Handle`.
-        let handle = unsafe { Handle::from_raw(self.as_raw_handle()) };
+        let handle = unsafe { NullableHandle::from_raw(self.as_raw_handle()) };
         drop(handle);
     }
 }
@@ -97,6 +100,9 @@ impl Constrained for WireHandle {
     }
 }
 
+/// TODO(https://fxbug.dev/465766514): remove
+pub type WireOptionalNullableHandle = WireOptionalHandle;
+
 /// An optional Zircon handle.
 #[derive(Debug)]
 #[repr(transparent)]
@@ -162,7 +168,7 @@ unsafe impl<D: HandleDecoder + ?Sized> Decode<D> for WireOptionalHandle {
     }
 }
 
-unsafe impl<E: HandleEncoder + ?Sized> Encode<WireHandle, E> for Handle {
+unsafe impl<E: HandleEncoder + ?Sized> Encode<WireHandle, E> for NullableHandle {
     fn encode(
         self,
         encoder: &mut E,
@@ -179,20 +185,20 @@ unsafe impl<E: HandleEncoder + ?Sized> Encode<WireHandle, E> for Handle {
     }
 }
 
-impl FromWire<WireHandle> for Handle {
+impl FromWire<WireHandle> for NullableHandle {
     fn from_wire(wire: WireHandle) -> Self {
-        // SAFETY: `WireHandle` is always a valid `Handle`.
-        let handle = unsafe { Handle::from_raw(wire.as_raw_handle()) };
+        // SAFETY: `WireHandle` is always a valid `NullableHandle`.
+        let handle = unsafe { NullableHandle::from_raw(wire.as_raw_handle()) };
         forget(wire);
         handle
     }
 }
 
 impl IntoNatural for WireHandle {
-    type Natural = Handle;
+    type Natural = NullableHandle;
 }
 
-unsafe impl<E: HandleEncoder + ?Sized> EncodeOption<WireOptionalHandle, E> for Handle {
+unsafe impl<E: HandleEncoder + ?Sized> EncodeOption<WireOptionalHandle, E> for NullableHandle {
     fn encode_option(
         this: Option<Self>,
         encoder: &mut E,
@@ -209,16 +215,16 @@ unsafe impl<E: HandleEncoder + ?Sized> EncodeOption<WireOptionalHandle, E> for H
     }
 }
 
-impl FromWireOption<WireOptionalHandle> for Handle {
+impl FromWireOption<WireOptionalHandle> for NullableHandle {
     fn from_wire_option(wire: WireOptionalHandle) -> Option<Self> {
         let raw_handle = wire.as_raw_handle();
         forget(wire);
-        raw_handle.map(|raw| unsafe { Handle::from_raw(raw) })
+        raw_handle.map(|raw| unsafe { NullableHandle::from_raw(raw) })
     }
 }
 
 impl IntoNatural for WireOptionalHandle {
-    type Natural = Option<Handle>;
+    type Natural = Option<NullableHandle>;
 }
 
 // TODO: validate handle rights

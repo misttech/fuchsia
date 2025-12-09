@@ -4,14 +4,14 @@
 
 //! Type-safe bindings for Zircon iommu objects.
 
-use crate::{AsHandleRef, Handle, HandleBased, HandleRef, Resource, Status, ok, sys};
+use crate::{AsHandleRef, HandleBased, HandleRef, NullableHandle, Resource, Status, ok, sys};
 
 /// An object representing a Zircon iommu
 ///
-/// As essentially a subtype of `Handle`, it can be freely interconverted.
+/// As essentially a subtype of `NullableHandle`, it can be freely interconverted.
 #[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 #[repr(transparent)]
-pub struct Iommu(Handle);
+pub struct Iommu(NullableHandle);
 impl_handle_based!(Iommu);
 
 // ABI-compatible with zx_iommu_desc_stub_t.
@@ -47,7 +47,7 @@ impl Iommu {
         unsafe {
             // SAFETY: The syscall docs claim that upon success, iommu_handle will be a valid
             // handle to an iommu object.
-            Ok(Iommu::from(Handle::from_raw(iommu_handle)))
+            Ok(Iommu::from(NullableHandle::from_raw(iommu_handle)))
         }
     }
 
@@ -66,8 +66,10 @@ mod tests {
 
     #[test]
     fn iommu_create_invalid_resource() {
-        let status =
-            Iommu::create_stub(&Resource::from(Handle::invalid()), IommuDescStub::default());
+        let status = Iommu::create_stub(
+            &Resource::from(NullableHandle::invalid()),
+            IommuDescStub::default(),
+        );
         assert_eq!(status, Err(Status::BAD_HANDLE));
     }
 
@@ -82,7 +84,7 @@ mod tests {
         // This test and fuchsia-zircon are different crates, so we need
         // to use from_raw to convert between the zx handle and this test handle.
         // See https://fxbug.dev/42173139 for details.
-        let resource = unsafe { Resource::from(Handle::from_raw(resource.into_raw())) };
+        let resource = unsafe { Resource::from(NullableHandle::from_raw(resource.into_raw())) };
         let iommu = Iommu::create_stub(&resource, IommuDescStub::default()).unwrap();
         assert!(!iommu.as_handle_ref().is_invalid());
 

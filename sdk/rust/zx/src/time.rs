@@ -5,8 +5,8 @@
 //! Type-safe bindings for Zircon timer objects.
 
 use crate::{
-    object_get_info_single, ok, sys, AsHandleRef, Handle, HandleBased, HandleRef, ObjectQuery,
-    Status, Topic,
+    AsHandleRef, HandleBased, HandleRef, NullableHandle, ObjectQuery, Status, Topic,
+    object_get_info_single, ok, sys,
 };
 use std::cmp::{Eq, Ord, PartialEq, PartialOrd};
 use std::hash::Hash;
@@ -411,11 +411,11 @@ impl MonotonicDuration {
 /// An object representing a Zircon timer, such as the one returned by
 /// [zx_timer_create](https://fuchsia.dev/fuchsia-src/reference/syscalls/timer_create.md).
 ///
-/// As essentially a subtype of `Handle`, it can be freely interconverted.
+/// As essentially a subtype of `NullableHandle`, it can be freely interconverted.
 #[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 #[repr(transparent)]
 // TODO(https://fxbug.dev/361661898) remove default type when FIDL understands mono vs. boot timers
-pub struct Timer<T = MonotonicTimeline>(Handle, std::marker::PhantomData<T>);
+pub struct Timer<T = MonotonicTimeline>(NullableHandle, std::marker::PhantomData<T>);
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone, Eq, PartialEq, FromBytes, Immutable)]
@@ -487,7 +487,7 @@ impl Timer<MonotonicTimeline> {
         let status = unsafe { sys::zx_timer_create(opts, sys::ZX_CLOCK_MONOTONIC, &mut out) };
         ok(status)
             .expect("timer creation always succeeds except with OOM or when job policy denies it");
-        unsafe { Self::from(Handle::from_raw(out)) }
+        unsafe { Self::from(NullableHandle::from_raw(out)) }
     }
 }
 
@@ -509,7 +509,7 @@ impl Timer<BootTimeline> {
         let status = unsafe { sys::zx_timer_create(opts, sys::ZX_CLOCK_BOOT, &mut out) };
         ok(status)
             .expect("timer creation always succeeds except with OOM or when job policy denies it");
-        unsafe { Self::from(Handle::from_raw(out)) }
+        unsafe { Self::from(NullableHandle::from_raw(out)) }
     }
 }
 
@@ -539,14 +539,14 @@ impl<T: Timeline> AsHandleRef for Timer<T> {
     }
 }
 
-impl<T: Timeline> From<Handle> for Timer<T> {
-    fn from(handle: Handle) -> Self {
+impl<T: Timeline> From<NullableHandle> for Timer<T> {
+    fn from(handle: NullableHandle) -> Self {
         Timer(handle, std::marker::PhantomData)
     }
 }
 
-impl<T: Timeline> From<Timer<T>> for Handle {
-    fn from(x: Timer<T>) -> Handle {
+impl<T: Timeline> From<Timer<T>> for NullableHandle {
+    fn from(x: Timer<T>) -> NullableHandle {
         x.0
     }
 }

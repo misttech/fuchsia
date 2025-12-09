@@ -5,7 +5,7 @@
 //! Type-safe bindings for Zircon port objects.
 
 use crate::{
-    AsHandleRef, GPAddr, Handle, HandleBased, HandleRef, MonotonicInstant, Signals, Status,
+    AsHandleRef, GPAddr, HandleBased, HandleRef, MonotonicInstant, NullableHandle, Signals, Status,
     VcpuContents, guest, ok, sys,
 };
 use bitflags::bitflags;
@@ -14,10 +14,10 @@ use std::mem;
 /// An object representing a Zircon
 /// [port](https://fuchsia.dev/fuchsia-src/concepts/objects/port.md).
 ///
-/// As essentially a subtype of `Handle`, it can be freely interconverted.
+/// As essentially a subtype of `NullableHandle`, it can be freely interconverted.
 #[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 #[repr(transparent)]
-pub struct Port(Handle);
+pub struct Port(NullableHandle);
 impl_handle_based!(Port);
 
 bitflags! {
@@ -509,7 +509,7 @@ impl Port {
             ok(status).expect(
                 "port creation always succeeds except with OOM or when job policy denies it",
             );
-            Handle::from_raw(handle).into()
+            NullableHandle::from_raw(handle).into()
         }
     }
 

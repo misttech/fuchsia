@@ -8,7 +8,7 @@
 use {
     fidl::{
         encoding::{Context, Decode, Decoder, DefaultFuchsiaResourceDialect, Encoder, with_tls_encode_buf, WireFormatVersion},
-        handle::Handle, handle::HandleDisposition, handle::HandleInfo, handle::HandleOp,
+        handle::NullableHandle, handle::HandleDisposition, handle::HandleInfo, handle::HandleOp,
         ObjectType, Rights,
     },
     fidl_test_benchmarkfidl{{ .CrateSuffix }} as test_benchmarkfidl{{ .CrateSuffix }},

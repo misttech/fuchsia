@@ -46,7 +46,7 @@ impl Directory for ClientEnd<fio::DirectoryMarker> {
         let raw_handle = self.channel().as_handle_ref().raw_handle();
         // Safety: we call forget on objects that reference `raw_handle` leaving it usable.
         unsafe {
-            let borrowed: zx::Channel = zx::Handle::from_raw(raw_handle).into();
+            let borrowed: zx::Channel = zx::NullableHandle::from_raw(raw_handle).into();
             let proxy = fio::DirectorySynchronousProxy::new(borrowed);
             #[cfg(fuchsia_api_level_at_least = "27")]
             proxy.open(path, flags, &fio::Options::default(), server_end.into())?;

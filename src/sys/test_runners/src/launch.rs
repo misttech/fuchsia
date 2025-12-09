@@ -130,8 +130,8 @@ pub async fn launch_process_with_separate_std_handles(
 async fn launch_process_impl(
     args: LaunchProcessArgs<'_>,
     launcher: fproc::LauncherProxy,
-    stdout_handle: zx::Handle,
-    stderr_handle: zx::Handle,
+    stdout_handle: zx::NullableHandle,
+    stderr_handle: zx::NullableHandle,
 ) -> Result<(Process, ScopedJob), LaunchError> {
     const STDOUT: u16 = 1;
     const STDERR: u16 = 2;

@@ -177,7 +177,7 @@ impl fidl_next::encoder::InternalHandleEncoder for SendBuffer {
 }
 
 impl fidl_next::fuchsia::HandleEncoder for SendBuffer {
-    fn push_handle(&mut self, handle: zx::Handle) -> Result<(), fidl_next::EncodeError> {
+    fn push_handle(&mut self, handle: zx::NullableHandle) -> Result<(), fidl_next::EncodeError> {
         if let Some(handle) = MixedHandle::from_zircon_handle(handle) {
             if handle.is_driver() {
                 return Err(fidl_next::EncodeError::ExpectedZirconHandle);

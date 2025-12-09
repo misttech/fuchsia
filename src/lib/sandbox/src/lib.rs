@@ -288,7 +288,7 @@ impl_capability_ref!(
 
 impl_capability_ref!(
     /// A reference to a Zircon handle capability in the store.
-    Handle, fidl::Handle, fsandbox::Capability::Handle
+    Handle, fidl::NullableHandle, fsandbox::Capability::Handle
 );
 
 impl_capability_ref!(

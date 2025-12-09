@@ -123,7 +123,7 @@ impl ExampleUseOfErrorSyntaxSynchronousProxy {
 }
 
 #[cfg(target_os = "fuchsia")]
-impl From<ExampleUseOfErrorSyntaxSynchronousProxy> for zx::Handle {
+impl From<ExampleUseOfErrorSyntaxSynchronousProxy> for zx::NullableHandle {
     fn from(value: ExampleUseOfErrorSyntaxSynchronousProxy) -> Self {
         value.into_channel().into()
     }

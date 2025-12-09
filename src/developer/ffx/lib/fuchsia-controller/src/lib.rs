@@ -167,7 +167,7 @@ pub unsafe extern "C" fn destroy_ffx_env_context(ctx: *const EnvContext) {
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ffx_close_handle(hdl: zx_types::zx_handle_t) {
-    drop(unsafe { fidl::Handle::from_raw(hdl) });
+    drop(unsafe { fidl::NullableHandle::from_raw(hdl) });
 }
 
 fn safe_write<T>(dest: *mut T, value: T) {
@@ -186,12 +186,12 @@ pub unsafe extern "C" fn ffx_channel_write(
 ) -> zx_status::Status {
     let ctx = unsafe { get_arc(ctx) };
     let (responder, rx) = mpsc::sync_channel(1);
-    let handle = unsafe { fidl::Handle::from_raw(handle) };
+    let handle = unsafe { fidl::NullableHandle::from_raw(handle) };
     let channel = fidl::Channel::from_handle(handle);
     ctx.run(LibraryCommand::ChannelWrite {
         channel,
         buf: unsafe { ExtBuffer::new(out_buf, out_len as usize) },
-        handles: unsafe { ExtBuffer::new(hdls as *mut fidl::Handle, hdls_len as usize) },
+        handles: unsafe { ExtBuffer::new(hdls as *mut fidl::NullableHandle, hdls_len as usize) },
         responder,
     });
     rx.recv().unwrap()
@@ -208,7 +208,7 @@ pub unsafe extern "C" fn ffx_channel_write_etc(
 ) -> zx_status::Status {
     let ctx = unsafe { get_arc(ctx) };
     let (responder, rx) = mpsc::sync_channel(1);
-    let handle = unsafe { fidl::Handle::from_raw(handle) };
+    let handle = unsafe { fidl::NullableHandle::from_raw(handle) };
     let channel = fidl::Channel::from_handle(handle);
     ctx.run(LibraryCommand::ChannelWriteEtc {
         channel,
@@ -234,14 +234,14 @@ pub unsafe extern "C" fn ffx_channel_read(
 ) -> zx_status::Status {
     let ctx = unsafe { get_arc(ctx) };
     let (responder, rx) = mpsc::sync_channel(1);
-    let handle = unsafe { fidl::Handle::from_raw(handle) };
+    let handle = unsafe { fidl::NullableHandle::from_raw(handle) };
     let channel = fidl::Channel::from_handle(handle);
     ctx.run(LibraryCommand::ChannelRead {
         lib: ctx.clone(),
         channel,
         out_buf: unsafe { ExtBuffer::new(out_buf, out_len as usize) },
         out_handles: unsafe {
-            ExtBuffer::new(hdls as *mut MaybeUninit<fidl::Handle>, hdls_len as usize)
+            ExtBuffer::new(hdls as *mut MaybeUninit<fidl::NullableHandle>, hdls_len as usize)
         },
         responder,
     });
@@ -285,7 +285,7 @@ pub unsafe extern "C" fn ffx_socket_write(
 ) -> zx_status::Status {
     let ctx = unsafe { get_arc(ctx) };
     let (responder, rx) = mpsc::sync_channel(1);
-    let handle = unsafe { fidl::Handle::from_raw(handle) };
+    let handle = unsafe { fidl::NullableHandle::from_raw(handle) };
     let socket = fidl::Socket::from_handle(handle);
     ctx.run(LibraryCommand::SocketWrite {
         socket,
@@ -305,7 +305,7 @@ pub unsafe extern "C" fn ffx_socket_read(
 ) -> zx_status::Status {
     let ctx = unsafe { get_arc(ctx) };
     let (responder, rx) = mpsc::sync_channel(1);
-    let handle = unsafe { fidl::Handle::from_raw(handle) };
+    let handle = unsafe { fidl::NullableHandle::from_raw(handle) };
     let socket = fidl::Socket::from_handle(handle);
     ctx.run(LibraryCommand::SocketRead {
         lib: ctx.clone(),
@@ -365,7 +365,7 @@ pub unsafe extern "C" fn ffx_object_signal(
 ) -> zx_status::Status {
     let ctx = unsafe { get_arc(ctx) };
     let (tx, rx) = mpsc::sync_channel(1);
-    let handle = unsafe { fidl::Handle::from_raw(hdl) };
+    let handle = unsafe { fidl::NullableHandle::from_raw(hdl) };
     let clear_mask = fidl::Signals::from_bits_retain(clear_mask);
     let set_mask = fidl::Signals::from_bits_retain(set_mask);
     ctx.run(LibraryCommand::ObjectSignal { handle, clear_mask, set_mask, responder: tx });
@@ -381,7 +381,7 @@ pub unsafe extern "C" fn ffx_object_signal_peer(
 ) -> zx_status::Status {
     let ctx = unsafe { get_arc(ctx) };
     let (tx, rx) = mpsc::sync_channel(1);
-    let handle = unsafe { fidl::Handle::from_raw(hdl) };
+    let handle = unsafe { fidl::NullableHandle::from_raw(hdl) };
     let clear_mask = fidl::Signals::from_bits_retain(clear_mask);
     let set_mask = fidl::Signals::from_bits_retain(set_mask);
     ctx.run(LibraryCommand::ObjectSignalPeer { handle, clear_mask, set_mask, responder: tx });
@@ -397,7 +397,7 @@ pub unsafe extern "C" fn ffx_object_signal_poll(
 ) -> zx_status::Status {
     let ctx = unsafe { get_arc(ctx) };
     let (tx, rx) = mpsc::sync_channel(1);
-    let handle = unsafe { fidl::Handle::from_raw(hdl) };
+    let handle = unsafe { fidl::NullableHandle::from_raw(hdl) };
     let signals = fidl::Signals::from_bits_retain(signals);
     ctx.run(LibraryCommand::ObjectSignalPoll { lib: ctx.clone(), handle, signals, responder: tx });
     match rx.recv().unwrap() {
@@ -430,7 +430,7 @@ pub unsafe extern "C" fn ffx_handle_get_koid(
 ) -> zx_status::Status {
     let ctx = unsafe { get_arc(ctx) };
     let (tx, rx) = mpsc::sync_channel(1);
-    let handle = unsafe { fidl::Handle::from_raw(hdl) };
+    let handle = unsafe { fidl::NullableHandle::from_raw(hdl) };
     ctx.run(LibraryCommand::HandleGetKoid { handle, responder: tx });
     let koid = match rx.recv().unwrap() {
         Ok(k) => k,
@@ -703,7 +703,7 @@ mod test {
         let c_handle = c.raw_handle();
         let d_handle = d.raw_handle();
         let mut write_buf = [1u8, 2u8];
-        let mut handles_buf: [fidl::Handle; 2] = [c.into(), d.into()];
+        let mut handles_buf: [fidl::NullableHandle; 2] = [c.into(), d.into()];
         let result = unsafe {
             ffx_channel_write(
                 lib_ctx,
@@ -1147,7 +1147,7 @@ mod test {
         assert_eq!(result, zx_status::Status::SHOULD_WAIT);
         let (c, d) = fidl::Channel::create();
         let mut write_buf = [1u8, 2u8];
-        let mut handles_buf: [fidl::Handle; 2] = [c.into(), d.into()];
+        let mut handles_buf: [fidl::NullableHandle; 2] = [c.into(), d.into()];
         let result = unsafe {
             ffx_channel_write(
                 lib_ctx,

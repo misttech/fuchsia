@@ -142,40 +142,40 @@ pub fn open_fd_at(dir: &File, path: &str, flags: fio::Flags) -> Result<File, zx:
 }
 
 /// Clones an object's underlying handle.
-pub fn clone_fd(f: impl AsFd) -> Result<zx::Handle, zx::Status> {
+pub fn clone_fd(f: impl AsFd) -> Result<zx::NullableHandle, zx::Status> {
     clone_fd_inner(f.as_fd())
 }
 
-fn clone_fd_inner<'a>(fd: BorrowedFd<'a>) -> Result<zx::Handle, zx::Status> {
+fn clone_fd_inner<'a>(fd: BorrowedFd<'a>) -> Result<zx::NullableHandle, zx::Status> {
     // we expect fdio to initialize this to a legal value.
-    let mut handle = MaybeUninit::new(zx::Handle::invalid().raw_handle());
+    let mut handle = MaybeUninit::new(zx::NullableHandle::invalid().raw_handle());
     let status = {
         let handle = handle.as_mut_ptr();
         unsafe { fdio_sys::fdio_fd_clone(fd.as_raw_fd(), handle) }
     };
     let () = zx::Status::ok(status)?;
     let handle = unsafe { handle.assume_init() };
-    let handle = unsafe { zx::Handle::from_raw(handle) };
+    let handle = unsafe { zx::NullableHandle::from_raw(handle) };
     debug_assert!(!handle.is_invalid(), "({:?}).is_invalid()", handle);
     Ok(handle)
 }
 
 /// Removes an object from the file descriptor table and returns its underlying handle.
-pub fn transfer_fd(f: impl Into<OwnedFd>) -> Result<zx::Handle, zx::Status> {
+pub fn transfer_fd(f: impl Into<OwnedFd>) -> Result<zx::NullableHandle, zx::Status> {
     transfer_fd_inner(f.into())
 }
 
-fn transfer_fd_inner(fd: OwnedFd) -> Result<zx::Handle, zx::Status> {
+fn transfer_fd_inner(fd: OwnedFd) -> Result<zx::NullableHandle, zx::Status> {
     let fd = fd.into_raw_fd();
     // we expect fdio to initialize this to a legal value.
-    let mut handle = MaybeUninit::new(zx::Handle::invalid().raw_handle());
+    let mut handle = MaybeUninit::new(zx::NullableHandle::invalid().raw_handle());
     let status = {
         let handle = handle.as_mut_ptr();
         unsafe { fdio_sys::fdio_fd_transfer(fd.as_raw_fd(), handle) }
     };
     let () = zx::Status::ok(status)?;
     let handle = unsafe { handle.assume_init() };
-    let handle = unsafe { zx::Handle::from_raw(handle) };
+    let handle = unsafe { zx::NullableHandle::from_raw(handle) };
     debug_assert!(!handle.is_invalid(), "({:?}).is_invalid()", handle);
     Ok(handle)
 }
@@ -184,7 +184,7 @@ fn transfer_fd_inner(fd: OwnedFd) -> Result<zx::Handle, zx::Status> {
 ///
 /// Afterward, the handle is owned by fdio, and will close with `OwnedFd`.
 /// See `transfer_fd` for a way to get it back.
-pub fn create_fd(handle: zx::Handle) -> Result<OwnedFd, zx::Status> {
+pub fn create_fd(handle: zx::NullableHandle) -> Result<OwnedFd, zx::Status> {
     let handle = handle.into_raw();
     // file descriptors are always positive; we expect fdio to initialize this to a legal value.
     let mut fd = MaybeUninit::new(-1);
@@ -204,7 +204,7 @@ pub fn create_fd(handle: zx::Handle) -> Result<OwnedFd, zx::Status> {
 ///
 /// Afterward, the handle is owned by fdio, and will close when the file descriptor is closed.
 /// See `transfer_fd` for a way to get it back.
-pub fn bind_to_fd(handle: zx::Handle, fd: RawFd) -> Result<(), zx::Status> {
+pub fn bind_to_fd(handle: zx::NullableHandle, fd: RawFd) -> Result<(), zx::Status> {
     if fd < 0 {
         // fdio_bind_to_fd supports finding the next available fd when provided with a negative
         // number, but due to lack of use-cases for this in Rust this is currently unsupported by
@@ -251,7 +251,7 @@ pub fn pipe_half() -> Result<(File, zx::Socket), zx::Status> {
     // file descriptors are always positive; we expect fdio to initialize this to a legal value.
     let mut fd = MaybeUninit::new(-1);
     // we expect fdio to initialize this to a legal value.
-    let mut handle = MaybeUninit::new(zx::Handle::invalid().raw_handle());
+    let mut handle = MaybeUninit::new(zx::NullableHandle::invalid().raw_handle());
     let status = {
         let fd = fd.as_mut_ptr();
         let handle = handle.as_mut_ptr();
@@ -262,7 +262,7 @@ pub fn pipe_half() -> Result<(File, zx::Socket), zx::Status> {
     debug_assert!(fd >= 0, "{} >= 0", fd);
     let f = unsafe { File::from_raw_fd(fd) };
     let handle = unsafe { handle.assume_init() };
-    let handle = unsafe { zx::Handle::from_raw(handle) };
+    let handle = unsafe { zx::NullableHandle::from_raw(handle) };
     debug_assert!(!handle.is_invalid(), "({:?}).is_invalid()", handle);
     Ok((f, zx::Socket::from(handle)))
 }
@@ -272,7 +272,7 @@ pub fn create_transferrable() -> Result<(File, zx::Channel), zx::Status> {
     // We expect fdio to initialize this to a legal value.
     let mut fd = MaybeUninit::new(-1);
     // We expect fdio to initialize this to a legal value.
-    let mut handle = MaybeUninit::new(zx::Handle::invalid().raw_handle());
+    let mut handle = MaybeUninit::new(zx::NullableHandle::invalid().raw_handle());
     let status: i32 =
         { unsafe { fdio_sys::fdio_transferable_fd(fd.as_mut_ptr(), handle.as_mut_ptr()) } };
     zx::Status::ok(status)?;
@@ -281,7 +281,7 @@ pub fn create_transferrable() -> Result<(File, zx::Channel), zx::Status> {
     debug_assert!(fd >= 0, "{} >= 0", fd);
     let file = unsafe { File::from_raw_fd(fd) };
     let handle = unsafe { handle.assume_init() };
-    let handle = unsafe { zx::Handle::from_raw(handle) };
+    let handle = unsafe { zx::NullableHandle::from_raw(handle) };
     debug_assert!(!handle.is_invalid(), "({:?}).is_invalid()", handle);
     Ok((file, zx::Channel::from(handle)))
 }
@@ -335,7 +335,7 @@ pub fn spawn(
     let path = path.as_ptr();
     let argv = nul_term_from_slice(argv);
     // we expect fdio to initialize this to a legal value.
-    let mut process = MaybeUninit::new(zx::Handle::invalid().raw_handle());
+    let mut process = MaybeUninit::new(zx::NullableHandle::invalid().raw_handle());
 
     // Safety: spawn consumes no handles and frees no pointers, and only
     // produces a valid process upon success.
@@ -346,7 +346,7 @@ pub fn spawn(
     };
     let () = zx::Status::ok(status)?;
     let process = unsafe { process.assume_init() };
-    let process = unsafe { zx::Handle::from_raw(process) };
+    let process = unsafe { zx::NullableHandle::from_raw(process) };
     debug_assert!(!process.is_invalid(), "({:?}).is_invalid()", process);
     Ok(zx::Process::from(process))
 }
@@ -413,7 +413,7 @@ impl<'a> SpawnAction<'a> {
     ///
     /// If `SpawnOptions::CLONE_NAMESPACE` is set, the namespace entry is added
     /// to the cloned namespace from the calling process.
-    pub fn add_namespace_entry(prefix: &'a CStr, handle: zx::Handle) -> Self {
+    pub fn add_namespace_entry(prefix: &'a CStr, handle: zx::NullableHandle) -> Self {
         // Safety: ownership of the `handle` is consumed.
         // The prefix string must stay valid through the 'a lifetime.
         Self(
@@ -431,7 +431,7 @@ impl<'a> SpawnAction<'a> {
     }
 
     /// Add the given handle to the process arguments of the spawned process.
-    pub fn add_handle(kind: fuchsia_runtime::HandleInfo, handle: zx::Handle) -> Self {
+    pub fn add_handle(kind: fuchsia_runtime::HandleInfo, handle: zx::NullableHandle) -> Self {
         // Safety: ownership of the `handle` is consumed.
         // The prefix string must stay valid through the 'a lifetime.
         Self(
@@ -508,7 +508,7 @@ fn spawn_with_actions(
     }
 
     // we expect fdio to initialize this to a legal value.
-    let mut process = MaybeUninit::new(zx::Handle::invalid().raw_handle());
+    let mut process = MaybeUninit::new(zx::NullableHandle::invalid().raw_handle());
     let mut err_msg = MaybeUninit::new([0; ERR_MSG_MAX_LENGTH]);
 
     let status = {
@@ -540,7 +540,7 @@ fn spawn_with_actions(
     actions.iter_mut().for_each(SpawnAction::nullify);
 
     let process = unsafe { process.assume_init() };
-    let process = unsafe { zx::Handle::from_raw(process) };
+    let process = unsafe { zx::NullableHandle::from_raw(process) };
     debug_assert!(!process.is_invalid(), "({:?}).is_invalid()", process);
     Ok(zx::Process::from(process))
 }
@@ -616,14 +616,14 @@ pub fn spawn_vmo(
 pub fn get_vmo_copy_from_file(f: &File) -> Result<zx::Vmo, zx::Status> {
     let fd = f.as_raw_fd();
     // we expect fdio to initialize this to a legal value.
-    let mut vmo = MaybeUninit::new(zx::Handle::invalid().raw_handle());
+    let mut vmo = MaybeUninit::new(zx::NullableHandle::invalid().raw_handle());
     let status = {
         let vmo = vmo.as_mut_ptr();
         unsafe { fdio_sys::fdio_get_vmo_copy(fd, vmo) }
     };
     let () = zx::Status::ok(status)?;
     let vmo = unsafe { vmo.assume_init() };
-    let vmo = unsafe { zx::Handle::from_raw(vmo) };
+    let vmo = unsafe { zx::NullableHandle::from_raw(vmo) };
     debug_assert!(!vmo.is_invalid(), "({:?}).is_invalid()", vmo);
     Ok(zx::Vmo::from(vmo))
 }
@@ -632,13 +632,13 @@ pub fn get_vmo_copy_from_file(f: &File) -> Result<zx::Vmo, zx::Status> {
 pub fn get_vmo_exec_from_file(f: &File) -> Result<zx::Vmo, zx::Status> {
     let fd = f.as_raw_fd();
     // we expect fdio to initialize this to a legal value.
-    let mut vmo = MaybeUninit::new(zx::Handle::invalid().raw_handle());
+    let mut vmo = MaybeUninit::new(zx::NullableHandle::invalid().raw_handle());
     let status = {
         let vmo = vmo.as_mut_ptr();
         unsafe { fdio_sys::fdio_get_vmo_exec(fd, vmo) }
     };
     zx::Status::ok(status)?;
-    let vmo = unsafe { zx::Handle::from_raw(vmo.assume_init()) };
+    let vmo = unsafe { zx::NullableHandle::from_raw(vmo.assume_init()) };
     debug_assert!(!vmo.is_invalid(), "({:?}).is_invalid()", vmo);
     Ok(zx::Vmo::from(vmo))
 }
@@ -648,14 +648,14 @@ pub fn get_vmo_exec_from_file(f: &File) -> Result<zx::Vmo, zx::Status> {
 pub fn get_vmo_exact_from_file(f: &File) -> Result<zx::Vmo, zx::Status> {
     let fd = f.as_raw_fd();
     // we expect fdio to initialize this to a legal value.
-    let mut vmo = MaybeUninit::new(zx::Handle::invalid().raw_handle());
+    let mut vmo = MaybeUninit::new(zx::NullableHandle::invalid().raw_handle());
     let status = {
         let vmo = vmo.as_mut_ptr();
         unsafe { fdio_sys::fdio_get_vmo_exact(fd, vmo) }
     };
     let () = zx::Status::ok(status)?;
     let vmo = unsafe { vmo.assume_init() };
-    let vmo = unsafe { zx::Handle::from_raw(vmo) };
+    let vmo = unsafe { zx::NullableHandle::from_raw(vmo) };
     debug_assert!(!vmo.is_invalid(), "({:?}).is_invalid()", vmo);
     Ok(zx::Vmo::from(vmo))
 }
@@ -752,7 +752,7 @@ impl Namespace {
         for i in 0..len {
             // Explicitly take ownership of the handle, and invalidate the source.
             let handle = unsafe {
-                zx::Handle::from_raw(mem::replace(
+                zx::NullableHandle::from_raw(mem::replace(
                     &mut *handle.offset(i),
                     zx::sys::ZX_HANDLE_INVALID,
                 ))
@@ -777,7 +777,7 @@ impl Namespace {
 /// Entry in a flat representation of a namespace.
 #[derive(Debug)]
 pub struct NamespaceEntry {
-    pub handle: zx::Handle,
+    pub handle: zx::NullableHandle,
     pub path: String,
 }
 
@@ -855,7 +855,7 @@ mod tests {
 
     #[test]
     fn fdio_spawn_run_target_bin_no_env() {
-        let job = zx::Job::from(zx::Handle::invalid());
+        let job = zx::Job::from(zx::NullableHandle::invalid());
         let cpath = cstr("/pkg/bin/spawn_test_target");
         let (stdout_file, stdout_sock) = pipe_half().expect("Failed to make pipe");
         let mut spawn_actions = [SpawnAction::clone_fd(stdout_file.as_fd(), 1)];

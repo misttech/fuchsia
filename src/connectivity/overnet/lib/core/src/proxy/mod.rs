@@ -29,7 +29,7 @@ pub use self::run::set_proxy_drop_event_handler;
 #[derive(Debug)]
 pub(crate) enum RemoveFromProxyTable {
     InitiateTransfer {
-        paired_handle: fidl::Handle,
+        paired_handle: fidl::NullableHandle,
         drain_stream: FramedStreamWriter,
         stream_ref_sender: StreamRefSender,
     },

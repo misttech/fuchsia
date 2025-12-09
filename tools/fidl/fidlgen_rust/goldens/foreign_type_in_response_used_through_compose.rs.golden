@@ -88,7 +88,7 @@ impl TopSynchronousProxy {
 }
 
 #[cfg(target_os = "fuchsia")]
-impl From<TopSynchronousProxy> for zx::Handle {
+impl From<TopSynchronousProxy> for zx::NullableHandle {
     fn from(value: TopSynchronousProxy) -> Self {
         value.into_channel().into()
     }

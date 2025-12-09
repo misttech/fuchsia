@@ -5,7 +5,9 @@
 //! This crate contains utility functions used in GIDL tests and benchmarks.
 
 use fidl::encoding::{Context, Decode, Decoder, DefaultFuchsiaResourceDialect, TypeMarker};
-use fidl::{AsHandleRef, Handle, HandleBased, HandleDisposition, HandleInfo, HandleOp, Rights};
+use fidl::{
+    AsHandleRef, HandleBased, HandleDisposition, HandleInfo, HandleOp, NullableHandle, Rights,
+};
 use zx_status::Status;
 use zx_types;
 
@@ -88,7 +90,7 @@ pub fn copy_handle<T: HandleBased>(handle_info: &zx_types::zx_handle_info_t) -> 
     // Safety: The `from_raw` method is only unsafe because it can lead to
     // handles being double-closed if used incorrectly. GIDL-generated code
     // ensures that handles are only closed once.
-    T::from_handle(unsafe { Handle::from_raw(handle_info.handle) })
+    T::from_handle(unsafe { NullableHandle::from_raw(handle_info.handle) })
 }
 
 /// Copies raw handles from the given indices to a new vector.
@@ -117,7 +119,8 @@ pub fn get_handle_koid(handle_info: &zx_types::zx_handle_info_t) -> zx_types::zx
     // Safety: The `from_raw` method is only unsafe because it can lead to
     // handles being double-closed if used incorrectly. We wrap it in
     // ManuallyDrop to prevent closing the handle.
-    let handle = std::mem::ManuallyDrop::new(unsafe { Handle::from_raw(handle_info.handle) });
+    let handle =
+        std::mem::ManuallyDrop::new(unsafe { NullableHandle::from_raw(handle_info.handle) });
     handle.basic_info().unwrap().koid.raw_koid()
 }
 
@@ -173,15 +176,12 @@ pub fn get_info_handle_valid(handle_info: &zx_types::zx_handle_info_t) -> Result
     // Safety: The `from_raw` method is only unsafe because it can lead to
     // handles being double-closed if used incorrectly. We wrap it in
     // ManuallyDrop to prevent closing the handle.
-    let handle = std::mem::ManuallyDrop::new(unsafe { Handle::from_raw(handle_info.handle) });
+    let handle =
+        std::mem::ManuallyDrop::new(unsafe { NullableHandle::from_raw(handle_info.handle) });
     // Match the behavior of the syscall, returning BAD_HANDLE if the handle is
     // the special "never a valid handle" ZX_HANDLE_INVALID, or if it is invalid
     // because it was closed or never assigned in the first place (dangling).
-    if handle.is_invalid() || handle.is_dangling() {
-        Err(Status::BAD_HANDLE)
-    } else {
-        Ok(())
-    }
+    if handle.is_invalid() || handle.is_dangling() { Err(Status::BAD_HANDLE) } else { Ok(()) }
 }
 
 /// Returns a vector of `value` repeated `len` times.

@@ -106,7 +106,7 @@ impl ChildSynchronousProxy {
 }
 
 #[cfg(target_os = "fuchsia")]
-impl From<ChildSynchronousProxy> for zx::Handle {
+impl From<ChildSynchronousProxy> for zx::NullableHandle {
     fn from(value: ChildSynchronousProxy) -> Self {
         value.into_channel().into()
     }
@@ -467,7 +467,7 @@ impl ParentSynchronousProxy {
 }
 
 #[cfg(target_os = "fuchsia")]
-impl From<ParentSynchronousProxy> for zx::Handle {
+impl From<ParentSynchronousProxy> for zx::NullableHandle {
     fn from(value: ParentSynchronousProxy) -> Self {
         value.into_channel().into()
     }

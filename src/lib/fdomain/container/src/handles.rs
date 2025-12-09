@@ -14,7 +14,9 @@ const READ_BUFFER_SIZE: usize = 4096;
 /// This is implemented on the `fidl::*` objects for every type of handle FDomain
 /// supports. It essentially makes the handle object a responder to a stream of
 /// [`HandleOperation`]s.
-pub trait HandleType: Sync + Sized + Into<fidl::Handle> + fidl::AsHandleRef + 'static {
+pub trait HandleType:
+    Sync + Sized + Into<fidl::NullableHandle> + fidl::AsHandleRef + 'static
+{
     /// This should be the handle type corresponding to the implementing handle.
     /// We use this to generalize some of the error reporting in this trait.
     fn object_type(&self) -> fidl::ObjectType;
@@ -198,10 +200,10 @@ impl HandleType for fidl::Event {
     }
 }
 
-pub struct Unknown(pub fidl::Handle, pub fidl::ObjectType);
+pub struct Unknown(pub fidl::NullableHandle, pub fidl::ObjectType);
 
-impl Into<fidl::Handle> for Unknown {
-    fn into(self) -> fidl::Handle {
+impl Into<fidl::NullableHandle> for Unknown {
+    fn into(self) -> fidl::NullableHandle {
         self.0
     }
 }
@@ -422,8 +424,8 @@ impl fidl::AsHandleRef for AnyHandle {
     }
 }
 
-impl Into<fidl::Handle> for AnyHandle {
-    fn into(self) -> fidl::Handle {
+impl Into<fidl::NullableHandle> for AnyHandle {
+    fn into(self) -> fidl::NullableHandle {
         impl_method!(self => h.into())
     }
 }

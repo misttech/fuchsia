@@ -181,7 +181,7 @@ impl Connection {
                     vmo_size: Some(VMO_SIZE),
                     ..Default::default()
                 };
-                let handle: Option<zx::Handle>;
+                let handle: Option<zx::NullableHandle>;
                 let out = self.fidl.initialize(&params).await?;
                 if let (Some(out_handle), _) = out {
                     handle = Some(out_handle);

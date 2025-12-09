@@ -526,7 +526,7 @@ pub fn export_buffer(
             clippy::undocumented_unsafe_blocks,
             reason = "Force documented unsafe blocks in Starnix"
         )]
-        let vmo = unsafe { zx::Vmo::from(zx::Handle::from_raw(buffer_handle_out)) };
+        let vmo = unsafe { zx::Vmo::from(zx::NullableHandle::from_raw(buffer_handle_out)) };
         let memory = MemoryObject::from(vmo);
 
         let mut image_info_opt: Option<ImageInfo> = None;
@@ -621,7 +621,7 @@ pub fn get_buffer_handle(
             clippy::undocumented_unsafe_blocks,
             reason = "Force documented unsafe blocks in Starnix"
         )]
-        let vmo = unsafe { zx::Vmo::from(zx::Handle::from_raw(buffer_handle_out)) };
+        let vmo = unsafe { zx::Vmo::from(zx::NullableHandle::from_raw(buffer_handle_out)) };
         let memory = MemoryObject::from(vmo);
         // TODO: https://fxbug.dev/404739824 - Confirm whether to handle this as a "private" node.
         let file = Anon::new_private_file(
@@ -672,7 +672,7 @@ pub fn query(
             clippy::undocumented_unsafe_blocks,
             reason = "Force documented unsafe blocks in Starnix"
         )]
-        let vmo = unsafe { zx::Vmo::from(zx::Handle::from_raw(result_buffer_out)) };
+        let vmo = unsafe { zx::Vmo::from(zx::NullableHandle::from_raw(result_buffer_out)) };
         let memory = MemoryObject::from(vmo);
         let memory_size = memory.get_size();
         // TODO: https://fxbug.dev/404739824 - Confirm whether to handle this as a "private" node.

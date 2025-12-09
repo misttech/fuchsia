@@ -14,6 +14,9 @@ use std::task::{Context, Poll};
 
 pub(crate) mod unowned;
 
+// TODO(https://fxbug.dev/465766514): remove
+pub type NullableHandle = Handle;
+
 /// A handle of unspecified type within a remote FDomain.
 #[derive(Debug)]
 pub struct Handle {

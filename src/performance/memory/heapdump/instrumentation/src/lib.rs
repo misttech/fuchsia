@@ -60,7 +60,7 @@ pub fn with_profiler(f: impl FnOnce(&Profiler, &mut PerThreadData)) {
 /// The caller must pass either a channel handle or an invalid handle.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn heapdump_bind_with_channel(registry_channel: zx_handle_t) {
-    let handle = unsafe { zx::Handle::from_raw(registry_channel) };
+    let handle = unsafe { zx::NullableHandle::from_raw(registry_channel) };
     if handle.is_invalid() {
         #[cfg(not(test))]
         enable_quick_early_return();

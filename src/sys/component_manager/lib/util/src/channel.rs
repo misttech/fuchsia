@@ -6,6 +6,6 @@ use std::mem;
 
 /// Takes ownership of the channel in `chan`. `chan` is replaced with an invalid channel.
 pub fn take_channel(chan: &mut zx::Channel) -> zx::Channel {
-    let invalid_chan: zx::Channel = zx::Handle::invalid().into();
+    let invalid_chan: zx::Channel = zx::NullableHandle::invalid().into();
     mem::replace(chan, invalid_chan)
 }

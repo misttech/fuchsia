@@ -94,7 +94,7 @@ impl FileOps for DevNull {
         &self,
         _file: &FileObject,
         _current_task: &CurrentTask,
-    ) -> Result<Option<zx::Handle>, Errno> {
+    ) -> Result<Option<zx::NullableHandle>, Errno> {
         Ok(None)
     }
 }

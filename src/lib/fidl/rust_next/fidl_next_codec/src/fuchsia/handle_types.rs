@@ -10,7 +10,7 @@ use crate::{
     IntoNatural, Slot, Unconstrained, Wire, munge,
 };
 
-use zx::Handle;
+use zx::NullableHandle;
 use zx::sys::zx_handle_t;
 
 macro_rules! define_wire_handle_types {
@@ -120,13 +120,13 @@ macro_rules! define_wire_handle_types {
                 constraint:  <$wire as Constrained>::Constraint,
             ) -> Result<(), EncodeError> {
                 munge!(let $wire { handle } = out);
-                Handle::from(self).encode(encoder, handle, constraint)
+                NullableHandle::from(self).encode(encoder, handle, constraint)
             }
         }
 
         impl FromWire<$wire> for zx::$natural {
             fn from_wire(wire: $wire) -> Self {
-                Handle::from_wire(wire.handle).into()
+                NullableHandle::from_wire(wire.handle).into()
             }
         }
 
@@ -142,13 +142,13 @@ macro_rules! define_wire_handle_types {
                 constraint: (),
             ) -> Result<(), EncodeError> {
                 munge!(let $wire_optional { handle } = out);
-                Encode::encode(this.map(Handle::from), encoder, handle, constraint)
+                Encode::encode(this.map(NullableHandle::from), encoder, handle, constraint)
             }
         }
 
         impl FromWireOption<$wire_optional> for zx::$natural {
             fn from_wire_option(wire: $wire_optional) -> Option<Self> {
-                Handle::from_wire_option(wire.handle).map(zx::$natural::from)
+                NullableHandle::from_wire_option(wire.handle).map(zx::$natural::from)
             }
         }
 

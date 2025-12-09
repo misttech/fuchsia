@@ -350,7 +350,7 @@ mod tests {
             let http_loader = HttpFidlResponder::new(|| {
                 Ok(HttpResponse {
                     error: None,
-                    body: Some(zx::Socket::from(zx::Handle::invalid())),
+                    body: Some(zx::Socket::from(zx::NullableHandle::invalid())),
                     final_url: None,
                     status_code: None,
                     status_line: None,

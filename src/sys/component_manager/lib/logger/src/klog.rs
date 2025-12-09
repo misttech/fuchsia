@@ -176,7 +176,7 @@ mod tests {
     fn init() {
         const STDOUT_FD: i32 = 1;
 
-        let resource = zx::Resource::from(zx::Handle::invalid());
+        let resource = zx::Resource::from(zx::NullableHandle::invalid());
         let debuglog = zx::DebugLog::create(&resource, zx::DebugLogOpts::empty())
             .context("Failed to create debuglog object")
             .unwrap();

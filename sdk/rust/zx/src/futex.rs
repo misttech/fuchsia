@@ -3,11 +3,11 @@
 // found in the LICENSE file.
 
 use crate::sys::{
-    zx_futex_get_owner, zx_futex_requeue, zx_futex_requeue_single_owner, zx_futex_t, zx_futex_wait,
-    zx_futex_wake, zx_futex_wake_handle_close_thread_exit, zx_futex_wake_single_owner,
-    ZX_HANDLE_INVALID, ZX_KOID_INVALID, ZX_OK,
+    ZX_HANDLE_INVALID, ZX_KOID_INVALID, ZX_OK, zx_futex_get_owner, zx_futex_requeue,
+    zx_futex_requeue_single_owner, zx_futex_t, zx_futex_wait, zx_futex_wake,
+    zx_futex_wake_handle_close_thread_exit, zx_futex_wake_single_owner,
 };
-use crate::{AsHandleRef, Handle, Koid, MonotonicInstant, Status, Thread};
+use crate::{AsHandleRef, Koid, MonotonicInstant, NullableHandle, Status, Thread};
 
 /// A safe wrapper around zx_futex_t, generally called as part of higher-level synchronization
 /// primitives.
@@ -63,7 +63,7 @@ impl Futex {
         &self,
         wake_count: u32,
         new_value: i32,
-        to_close: Handle,
+        to_close: NullableHandle,
     ) -> ! {
         // SAFETY: Arguments for this system call do not have any liveness or validity requirements.
         unsafe {
@@ -149,11 +149,7 @@ impl Futex {
         Status::ok(unsafe { zx_futex_get_owner(self.value_ptr(), &mut koid) })
             .expect("get_owner only fails due to misaligned or unmapped pointers");
 
-        if koid != ZX_KOID_INVALID {
-            Some(Koid::from_raw(koid))
-        } else {
-            None
-        }
+        if koid != ZX_KOID_INVALID { Some(Koid::from_raw(koid)) } else { None }
     }
 }
 

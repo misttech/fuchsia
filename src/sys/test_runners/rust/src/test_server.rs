@@ -26,7 +26,7 @@ use {
     fuchsia_runtime as runtime,
 };
 
-static VDSO_VMO: LazyLock<zx::Handle> = LazyLock::new(|| {
+static VDSO_VMO: LazyLock<zx::NullableHandle> = LazyLock::new(|| {
     runtime::take_startup_handle(runtime::HandleInfo::new(runtime::HandleType::VdsoVmo, 0))
         .expect("failed to take vDSO handle")
 });

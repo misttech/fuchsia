@@ -25,11 +25,11 @@ pub use remote_volume::*;
 pub use syslog::*;
 pub use timer::*;
 
-/// Create a FileHandle from a zx::Handle.
+/// Create a FileHandle from a zx::NullableHandle.
 pub fn create_file_from_handle<L>(
     locked: &mut Locked<L>,
     current_task: &CurrentTask,
-    handle: zx::Handle,
+    handle: zx::NullableHandle,
 ) -> Result<FileHandle, Errno>
 where
     L: LockEqualOrBefore<FileOpsCore>,
@@ -46,7 +46,10 @@ mod test {
     #[fuchsia::test]
     async fn test_create_from_invalid_handle() {
         spawn_kernel_and_run(async |locked, current_task| {
-            assert!(create_file_from_handle(locked, current_task, zx::Handle::invalid()).is_err());
+            assert!(
+                create_file_from_handle(locked, current_task, zx::NullableHandle::invalid())
+                    .is_err()
+            );
         })
         .await;
     }

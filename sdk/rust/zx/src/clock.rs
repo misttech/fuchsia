@@ -5,9 +5,9 @@
 //! Type-safe bindings for Zircon clock objects.
 
 use crate::{
-    AsHandleRef, BootTimeline, ClockUpdate, Handle, HandleBased, HandleRef, Instant,
-    MonotonicTimeline, ObjectQuery, SyntheticTimeline, Ticks, Timeline, Topic,
-    object_get_info_single, ok, sys,
+    AsHandleRef, BootTimeline, ClockUpdate, HandleBased, HandleRef, Instant, MonotonicTimeline,
+    NullableHandle, ObjectQuery, SyntheticTimeline, Ticks, Timeline, Topic, object_get_info_single,
+    ok, sys,
 };
 use bitflags::bitflags;
 use std::mem::MaybeUninit;
@@ -18,14 +18,14 @@ use zx_status::Status;
 /// one-dimensional affine transformation of the [clock monotonic] reference timeline which may be
 /// atomically adjusted by a maintainer and observed by clients.
 ///
-/// As essentially a subtype of `Handle`, it can be freely interconverted.
+/// As essentially a subtype of `NullableHandle`, it can be freely interconverted.
 ///
 /// [clock]: https://fuchsia.dev/fuchsia-src/reference/kernel_objects/clock
 /// [clock monotonic]: https://fuchsia.dev/fuchsia-src/reference/syscalls/clock_get_monotonic.md
 #[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 #[repr(transparent)]
 pub struct Clock<Reference = MonotonicTimeline, Output = SyntheticTimeline>(
-    Handle,
+    NullableHandle,
     std::marker::PhantomData<(Reference, Output)>,
 );
 
@@ -54,7 +54,7 @@ impl<Output: Timeline> Clock<MonotonicTimeline, Output> {
             None => unsafe { sys::zx_clock_create(opts.bits(), ptr::null(), &mut out) },
         };
         ok(status)?;
-        unsafe { Ok(Self::from(Handle::from_raw(out))) }
+        unsafe { Ok(Self::from(NullableHandle::from_raw(out))) }
     }
 }
 
@@ -81,7 +81,7 @@ impl<Output: Timeline> Clock<BootTimeline, Output> {
             None => unsafe { sys::zx_clock_create(opts.bits(), ptr::null(), &mut out) },
         };
         ok(status)?;
-        unsafe { Ok(Self::from(Handle::from_raw(out))) }
+        unsafe { Ok(Self::from(NullableHandle::from_raw(out))) }
     }
 }
 
@@ -206,14 +206,14 @@ impl<Reference: Timeline, Output: Timeline> AsHandleRef for Clock<Reference, Out
     }
 }
 
-impl<Reference: Timeline, Output: Timeline> From<Handle> for Clock<Reference, Output> {
-    fn from(handle: Handle) -> Self {
+impl<Reference: Timeline, Output: Timeline> From<NullableHandle> for Clock<Reference, Output> {
+    fn from(handle: NullableHandle) -> Self {
         Clock(handle, std::marker::PhantomData)
     }
 }
 
-impl<Reference: Timeline, Output: Timeline> From<Clock<Reference, Output>> for Handle {
-    fn from(x: Clock<Reference, Output>) -> Handle {
+impl<Reference: Timeline, Output: Timeline> From<Clock<Reference, Output>> for NullableHandle {
+    fn from(x: Clock<Reference, Output>) -> NullableHandle {
         x.0
     }
 }

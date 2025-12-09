@@ -4,16 +4,16 @@
 
 //! Type-safe bindings for Zircon pmt objects.
 
-use crate::{AsHandleRef, Handle, HandleBased, HandleRef, Status, ok, sys};
+use crate::{AsHandleRef, HandleBased, HandleRef, NullableHandle, Status, ok, sys};
 use std::mem;
 
 /// An object representing a Zircon Pinned Memory Token.
 /// See [PMT Documentation](https://fuchsia.dev/fuchsia-src/reference/kernel_objects/pinned_memory_token) for details.
 ///
-/// As essentially a subtype of `Handle`, it can be freely interconverted.
+/// As essentially a subtype of `NullableHandle`, it can be freely interconverted.
 #[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 #[repr(transparent)]
-pub struct Pmt(Handle);
+pub struct Pmt(NullableHandle);
 impl_handle_based!(Pmt);
 
 impl Pmt {
@@ -50,7 +50,7 @@ mod tests {
 
     #[test]
     fn pmt_unpin_invalid_handle() {
-        let pmt = Pmt::from(Handle::invalid());
+        let pmt = Pmt::from(NullableHandle::invalid());
         let status = unsafe { pmt.unpin() };
         assert_eq!(status, Err(Status::BAD_HANDLE));
     }
@@ -58,7 +58,7 @@ mod tests {
     #[test]
     fn pmt_unpin_wrong_handle() {
         let vmo = Vmo::create(0).unwrap();
-        let pmt = unsafe { Pmt::from(Handle::from_raw(vmo.into_raw())) };
+        let pmt = unsafe { Pmt::from(NullableHandle::from_raw(vmo.into_raw())) };
 
         let status = unsafe { pmt.unpin() };
         assert_eq!(status, Err(Status::WRONG_TYPE));

@@ -87,7 +87,7 @@ impl<'a> SyscallHandlerBuilder<'a> {
             Some(resource) => resource,
             None => {
                 if self.use_fake_cpu_resource {
-                    zx::Resource::from(zx::Handle::invalid())
+                    zx::Resource::from(zx::NullableHandle::invalid())
                 } else {
                     let proxy = fuchsia_component::client::connect_to_protocol::<
                         fkernel::CpuResourceMarker,
@@ -332,13 +332,16 @@ mod tests {
         });
         let builder = SyscallHandlerBuilder::new_from_json(json_data);
         let handler = builder.build().await.unwrap();
-        assert_eq!(zx::Handle::invalid().as_handle_ref(), handler.cpu_resource.as_handle_ref());
+        assert_eq!(
+            zx::NullableHandle::invalid().as_handle_ref(),
+            handler.cpu_resource.as_handle_ref()
+        );
     }
 
     // Tests that errors are logged to Inspect as expected.
     #[fasync::run_singlethreaded(test)]
     async fn test_inspect_data() {
-        let resource = zx::Handle::invalid().into();
+        let resource = zx::NullableHandle::invalid().into();
         let inspector = inspect::Inspector::default();
         let builder = SyscallHandlerBuilder::new()
             .with_cpu_resource(resource)

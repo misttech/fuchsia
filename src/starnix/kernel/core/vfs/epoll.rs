@@ -479,7 +479,7 @@ impl EpollFileObject {
         &self,
         current_task: &CurrentTask,
         file: &FileHandle,
-        _baton_lease: &zx::Handle,
+        _baton_lease: &zx::NullableHandle,
     ) -> Result<(), Errno> {
         let key = file.id.as_epoll_key();
         current_task.kernel().suspend_resume_manager.add_epoll(current_task, key);

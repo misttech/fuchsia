@@ -64,10 +64,10 @@ async fn main_async() -> Result<(), Error> {
 
 struct EscrowState {
     // Keep the internal pair alive so clients can't observe EVENTPAIR_PEER_CLOSED.
-    p_internal: ::fidl::Handle,
-    p_external: ::fidl::Handle,
+    p_internal: ::fidl::NullableHandle,
+    p_external: ::fidl::NullableHandle,
     // Inspect fails open so in rare cases it may not be available.
-    frozen_inspect: Option<::fidl::Handle>,
+    frozen_inspect: Option<::fidl::NullableHandle>,
 }
 
 // It should not be possible for this function to be called more than once per boot in prod because:

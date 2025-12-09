@@ -63,7 +63,7 @@ impl ServerPty {
         ftrace::duration!(c"pty", c"Pty:spawn");
         let client_pty = self.open_client_pty().await.context("unable to create client_pty")?;
         let process = match fdio::spawn_etc(
-            &zx::Job::from_handle(zx::Handle::invalid()),
+            &zx::Job::from_handle(zx::NullableHandle::invalid()),
             fdio::SpawnOptions::CLONE_ALL - fdio::SpawnOptions::CLONE_STDIO,
             command,
             argv,

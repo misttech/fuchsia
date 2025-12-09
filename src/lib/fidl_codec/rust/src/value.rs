@@ -4,9 +4,9 @@
 
 use crate::error::{Error, Result};
 #[cfg(feature = "fdomain")]
-use fdomain_client::{Channel, Handle};
+use fdomain_client::{Channel, NullableHandle};
 #[cfg(not(feature = "fdomain"))]
-use fidl::{Channel, Handle};
+use fidl::{Channel, NullableHandle};
 
 /// An empty type.
 #[derive(Debug)]
@@ -41,7 +41,7 @@ pub enum Value<OutOfLine = Forbid> {
     List(Vec<Self>),
     ServerEnd(Channel, String, Option<fidl::Rights>),
     ClientEnd(Channel, String, Option<fidl::Rights>),
-    Handle(Handle, fidl::ObjectType, Option<fidl::Rights>),
+    Handle(NullableHandle, fidl::ObjectType, Option<fidl::Rights>),
     OutOfLine(OutOfLine),
 }
 

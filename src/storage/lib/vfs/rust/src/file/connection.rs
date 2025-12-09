@@ -1226,7 +1226,7 @@ mod tests {
                 callback,
                 file_size: MOCK_FILE_SIZE,
                 #[cfg(target_os = "fuchsia")]
-                vmo: zx::Handle::invalid().into(),
+                vmo: zx::NullableHandle::invalid().into(),
             })
         }
 

@@ -284,7 +284,7 @@ impl ProcessBuilder {
     /// Add handles to the process's bootstrap message. Successive calls append (not replace)
     /// handles.
     ///
-    /// Each [process_args::StartupHandle] contains a [zx::Handle] object accompanied by a [HandleInfo] object
+    /// Each [process_args::StartupHandle] contains a [zx::NullableHandle] object accompanied by a [HandleInfo] object
     /// that includes the handle type and a type/context-dependent argument.
     ///
     /// A [HandleType::LdsvcLoader] handle will automatically be passed along to
@@ -405,7 +405,7 @@ impl ProcessBuilder {
         for entry in entries.drain(..) {
             self.msg_contents.namespace_paths.push(entry.path);
             self.msg_contents.handles.push(process_args::StartupHandle {
-                handle: zx::Handle::from(entry.directory),
+                handle: entry.directory.into(),
                 info: HandleInfo::new(HandleType::NamespaceDirectory, idx),
             });
             idx += 1;
@@ -472,7 +472,8 @@ impl ProcessBuilder {
             // Build the dynamic linker bootstrap message and write it to the bootstrap channel.
             // This message is written before the primary bootstrap message since it is consumed
             // first in the dynamic linker.
-            let executable = mem::replace(&mut self.executable, zx::Handle::invalid().into());
+            let executable =
+                mem::replace(&mut self.executable, zx::NullableHandle::invalid().into());
             let msg = self.build_linker_message(ldsvc, executable, loaded_elf.vmar)?;
             msg.write(&bootstrap_wr).map_err(ProcessBuilderError::WriteBootstrapMessage)?;
         } else {
@@ -612,7 +613,7 @@ impl ProcessBuilder {
     fn load_vdso(&mut self) -> Result<usize, ProcessBuilderError> {
         let vdso = match self.non_default_vdso.take() {
             Some(vmo) => vmo,
-            None => mem::replace(&mut self.system_vdso_vmo, zx::Handle::invalid().into()),
+            None => mem::replace(&mut self.system_vdso_vmo, zx::NullableHandle::invalid().into()),
         };
         let vdso_headers = elf_parse::Elf64Headers::from_vmo(&vdso)?;
         let loaded_vdso = elf_load::load_elf(&vdso, &vdso_headers, &self.common.root_vmar)?;
@@ -684,7 +685,7 @@ pub fn calculate_initial_linker_stack_size(
     // added to the message contents.
     msg_contents.handles.extend(
         iter::repeat_with(|| process_args::StartupHandle {
-            handle: zx::Handle::invalid(),
+            handle: zx::NullableHandle::invalid(),
             info: HandleInfo::new(HandleType::User0, 0),
         })
         .take(extra_handles),
@@ -975,7 +976,7 @@ mod tests {
         let status = unsafe { dl_clone_loader_service(&mut raw) };
         zx::Status::ok(status)?;
 
-        let handle = unsafe { zx::Handle::from_raw(raw) };
+        let handle = unsafe { zx::NullableHandle::from(zx::NullableHandle::from_raw(raw)) };
         Ok(ClientEnd::new(zx::Channel::from(handle)))
     }
 
@@ -1566,7 +1567,7 @@ mod tests {
     // Verify that invalid handles are correctly rejected.
     #[fasync::run_singlethreaded(test)]
     async fn rejects_invalid_handles() -> Result<(), Error> {
-        let invalid = || zx::Handle::invalid();
+        let invalid = || zx::NullableHandle::invalid();
         let assert_invalid_arg = |result| match result {
             Err(ProcessBuilderError::BadHandle(_)) => {}
             Err(err) => {
@@ -1585,7 +1586,7 @@ mod tests {
         assert_invalid_arg(
             ProcessBuilder::new(
                 &procname,
-                &invalid().into(),
+                &zx::NullableHandle::from(invalid()).into(),
                 zx::ProcessOptions::empty(),
                 vmo,
                 get_system_vdso_vmo().unwrap(),
@@ -1597,7 +1598,7 @@ mod tests {
                 &procname,
                 &job,
                 zx::ProcessOptions::empty(),
-                invalid().into(),
+                zx::NullableHandle::from(invalid()).into(),
                 get_system_vdso_vmo().unwrap(),
             )
             .map(|_| ()),

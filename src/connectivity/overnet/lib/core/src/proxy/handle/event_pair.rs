@@ -4,10 +4,10 @@
 
 use super::signals::Collector;
 use super::{
-    IntoProxied, Message, Proxyable, ProxyableRW, ReadValue, RouterHolder, Serializer, IO,
+    IO, IntoProxied, Message, Proxyable, ProxyableRW, ReadValue, RouterHolder, Serializer,
 };
 use crate::peer::PeerConnRef;
-use anyhow::{format_err, Error};
+use anyhow::{Error, format_err};
 use fidl::{AsHandleRef, HandleBased, Peered, Signals};
 use std::task::{Context, Poll};
 use zx_status;
@@ -25,11 +25,11 @@ impl std::fmt::Debug for EventPair {
 impl Proxyable for EventPair {
     type Message = EventPairMessage;
 
-    fn from_fidl_handle(hdl: fidl::Handle) -> Result<Self, Error> {
+    fn from_fidl_handle(hdl: fidl::NullableHandle) -> Result<Self, Error> {
         Ok(fidl::EventPair::from_handle(hdl).into_proxied()?)
     }
 
-    fn into_fidl_handle(self) -> Result<fidl::Handle, Error> {
+    fn into_fidl_handle(self) -> Result<fidl::NullableHandle, Error> {
         Ok(self.event_pair.into_handle())
     }
 

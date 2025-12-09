@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::{Handle, HandleInfo, ObjectType, Rights};
+use crate::{HandleInfo, NullableHandle, ObjectType, Rights};
 
 /// A buffer for _receiving_ messages from a channel.
 ///
@@ -10,11 +10,11 @@ use crate::{Handle, HandleInfo, ObjectType, Rights};
 /// handles, but move semantics for "taking" handles requires special handling.
 ///
 /// Note that for sending messages to a channel, the caller manages the buffers,
-/// using a plain byte slice and `Vec<Handle>`.
+/// using a plain byte slice and `Vec<NullableHandle>`.
 #[derive(Debug, Default)]
 pub struct MessageBuf {
     pub(super) bytes: Vec<u8>,
-    pub(super) handles: Vec<Handle>,
+    pub(super) handles: Vec<NullableHandle>,
 }
 
 impl MessageBuf {
@@ -24,17 +24,17 @@ impl MessageBuf {
     }
 
     /// Create a new non-empty message buffer.
-    pub fn new_with(v: Vec<u8>, h: Vec<Handle>) -> Self {
+    pub fn new_with(v: Vec<u8>, h: Vec<NullableHandle>) -> Self {
         Self { bytes: v, handles: h }
     }
 
     /// Splits apart the message buf into a vector of bytes and a vector of handles.
-    pub fn split_mut(&mut self) -> (&mut Vec<u8>, &mut Vec<Handle>) {
+    pub fn split_mut(&mut self) -> (&mut Vec<u8>, &mut Vec<NullableHandle>) {
         (&mut self.bytes, &mut self.handles)
     }
 
     /// Splits apart the message buf into a vector of bytes and a vector of handles.
-    pub fn split(self) -> (Vec<u8>, Vec<Handle>) {
+    pub fn split(self) -> (Vec<u8>, Vec<NullableHandle>) {
         (self.bytes, self.handles)
     }
 
@@ -76,12 +76,12 @@ impl MessageBuf {
     /// Take the handle at the specified index from the message buffer. If the
     /// method is called again with the same index, it will return `None`, as
     /// will happen if the index exceeds the number of handles available.
-    pub fn take_handle(&mut self, index: usize) -> Option<Handle> {
+    pub fn take_handle(&mut self, index: usize) -> Option<NullableHandle> {
         self.handles.get_mut(index).and_then(|handle| {
             if handle.is_invalid() {
                 None
             } else {
-                Some(std::mem::replace(handle, Handle::invalid()))
+                Some(std::mem::replace(handle, NullableHandle::invalid()))
             }
         })
     }
@@ -177,7 +177,7 @@ impl MessageBufEtc {
                 Some(std::mem::replace(
                     handle_info,
                     HandleInfo {
-                        handle: Handle::invalid(),
+                        handle: NullableHandle::invalid(),
                         object_type: ObjectType::NONE,
                         rights: Rights::NONE,
                         _unused: 0,

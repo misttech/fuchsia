@@ -62,7 +62,7 @@ pub fn convert_node_proxy<T: Proxy>(proxy: fio::NodeProxy) -> T {
 
 /// Helper function to call `get_token` on a directory. Only use this if testing something
 /// other than the `get_token` call directly.
-pub async fn get_token(dir: &fio::DirectoryProxy) -> fidl::Handle {
+pub async fn get_token(dir: &fio::DirectoryProxy) -> fidl::NullableHandle {
     let (status, token) = dir.get_token().await.expect("get_token failed");
     assert_eq!(zx::Status::from_raw(status), zx::Status::OK);
     token.expect("handle missing")

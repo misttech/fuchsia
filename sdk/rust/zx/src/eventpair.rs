@@ -4,15 +4,15 @@
 
 //! Type-safe bindings for Zircon event pairs.
 
-use crate::{ok, AsHandleRef, Handle, HandleBased, HandleRef, Peered};
+use crate::{AsHandleRef, HandleBased, HandleRef, NullableHandle, Peered, ok};
 
 /// An object representing a Zircon
 /// [event_pair](https://fuchsia.dev/fuchsia-src/concepts/kernel/concepts#events_event_pairs)
 ///
-/// As essentially a subtype of `Handle`, it can be freely interconverted.
+/// As essentially a subtype of `NullableHandle`, it can be freely interconverted.
 #[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 #[repr(transparent)]
-pub struct EventPair(Handle);
+pub struct EventPair(NullableHandle);
 impl_handle_based!(EventPair);
 impl Peered for EventPair {}
 
@@ -33,7 +33,9 @@ impl EventPair {
         ok(status).expect(
             "eventpair creation always succeeds except with OOM or when job policy denies it",
         );
-        unsafe { (Self::from(Handle::from_raw(out0)), Self::from(Handle::from_raw(out1))) }
+        unsafe {
+            (Self::from(NullableHandle::from_raw(out0)), Self::from(NullableHandle::from_raw(out1)))
+        }
     }
 }
 

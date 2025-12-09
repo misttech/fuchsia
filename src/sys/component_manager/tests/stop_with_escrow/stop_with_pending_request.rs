@@ -23,7 +23,7 @@ pub async fn main() {
     }
 }
 
-async fn escrow_outgoing_dir_then_stop(user_0: zx::Handle) {
+async fn escrow_outgoing_dir_then_stop(user_0: zx::NullableHandle) {
     // Synchronize with test case first.
     fasync::OnSignals::new(&user_0, zx::Signals::OBJECT_PEER_CLOSED).await.unwrap();
 

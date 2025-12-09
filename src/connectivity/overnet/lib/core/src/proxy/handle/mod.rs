@@ -107,9 +107,9 @@ pub(crate) trait Proxyable: Send + Sync + Sized + std::fmt::Debug {
     type Message: Message;
 
     /// Convert a FIDL handle into a proxyable instance (or fail).
-    fn from_fidl_handle(hdl: fidl::Handle) -> Result<Self, Error>;
+    fn from_fidl_handle(hdl: fidl::NullableHandle) -> Result<Self, Error>;
     /// Collapse this Proxyable instance back to the underlying FIDL handle (or fail).
-    fn into_fidl_handle(self) -> Result<fidl::Handle, Error>;
+    fn into_fidl_handle(self) -> Result<fidl::NullableHandle, Error>;
     /// Clear/set signals on this handle's peer.
     fn signal_peer(&self, clear: Signals, set: Signals) -> Result<(), Error>;
     /// Set a reason for this handle to close.
@@ -145,7 +145,7 @@ impl<Hdl: Proxyable> ProxyableHandle<Hdl> {
         Self { hdl, router }
     }
 
-    pub(crate) fn into_fidl_handle(self) -> Result<fidl::Handle, Error> {
+    pub(crate) fn into_fidl_handle(self) -> Result<fidl::NullableHandle, Error> {
         self.hdl.into_fidl_handle()
     }
 
@@ -230,7 +230,7 @@ impl<Hdl: Proxyable> ProxyableHandle<Hdl> {
     pub(crate) async fn drain_stream_to_handle(
         self,
         drain_stream: FramedStreamReader,
-    ) -> Result<fidl::Handle, Error>
+    ) -> Result<fidl::NullableHandle, Error>
     where
         Hdl: for<'a> ProxyableRW<'a>,
     {

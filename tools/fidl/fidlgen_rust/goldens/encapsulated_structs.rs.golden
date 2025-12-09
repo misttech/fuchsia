@@ -16,7 +16,7 @@ use zx_status;
 #[derive(Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct NonInlineStructTestStruct {
     pub element: Option<Box<Int16Int8>>,
-    pub h: fidl::Handle,
+    pub h: fidl::NullableHandle,
 }
 
 impl fidl::Standalone<fidl::encoding::DefaultFuchsiaResourceDialect> for NonInlineStructTestStruct {}
@@ -82,7 +82,7 @@ mod internal {
                         &self.element,
                     ),
                     <fidl::encoding::HandleType<
-                        fidl::Handle,
+                        fidl::NullableHandle,
                         { fidl::ObjectType::NONE.into_raw() },
                         2147483648,
                     > as fidl::encoding::ResourceTypeMarker>::take_or_borrow(
@@ -102,7 +102,7 @@ mod internal {
             >,
         T1: fidl::encoding::Encode<
                 fidl::encoding::HandleType<
-                    fidl::Handle,
+                    fidl::NullableHandle,
                     { fidl::ObjectType::NONE.into_raw() },
                     2147483648,
                 >,
@@ -148,7 +148,7 @@ mod internal {
                     fidl::encoding::Boxed<Int16Int8>,
                     fidl::encoding::DefaultFuchsiaResourceDialect
                 ),
-                h: fidl::new_empty!(fidl::encoding::HandleType<fidl::Handle, { fidl::ObjectType::NONE.into_raw() }, 2147483648>, fidl::encoding::DefaultFuchsiaResourceDialect),
+                h: fidl::new_empty!(fidl::encoding::HandleType<fidl::NullableHandle, { fidl::ObjectType::NONE.into_raw() }, 2147483648>, fidl::encoding::DefaultFuchsiaResourceDialect),
             }
         }
 
@@ -181,7 +181,7 @@ mod internal {
                 offset + 0,
                 _depth
             )?;
-            fidl::decode!(fidl::encoding::HandleType<fidl::Handle, { fidl::ObjectType::NONE.into_raw() }, 2147483648>, fidl::encoding::DefaultFuchsiaResourceDialect, &mut self.h, decoder, offset + 8, _depth)?;
+            fidl::decode!(fidl::encoding::HandleType<fidl::NullableHandle, { fidl::ObjectType::NONE.into_raw() }, 2147483648>, fidl::encoding::DefaultFuchsiaResourceDialect, &mut self.h, decoder, offset + 8, _depth)?;
             Ok(())
         }
     }

@@ -5,17 +5,17 @@
 //! Type-safe bindings for Zircon interrupts.
 
 use crate::{
-    ok, sys, AsHandleRef, BootTimeline, Handle, HandleBased, HandleRef, Instant, MonotonicTimeline,
-    Port, Status, Timeline,
+    AsHandleRef, BootTimeline, HandleBased, HandleRef, Instant, MonotonicTimeline, NullableHandle,
+    Port, Status, Timeline, ok, sys,
 };
 use std::marker::PhantomData;
 
 /// An object representing a Zircon interrupt.
 ///
-/// As essentially a subtype of `Handle`, it can be freely interconverted.
+/// As essentially a subtype of `NullableHandle`, it can be freely interconverted.
 #[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 #[repr(transparent)]
-pub struct Interrupt<K = RealInterruptKind, T = BootTimeline>(Handle, PhantomData<(K, T)>);
+pub struct Interrupt<K = RealInterruptKind, T = BootTimeline>(NullableHandle, PhantomData<(K, T)>);
 
 pub trait InterruptKind: private::Sealed {}
 
@@ -81,7 +81,7 @@ impl<T: InterruptTimeline> Interrupt<VirtualInterruptKind, T> {
                 sys::ZX_INTERRUPT_VIRTUAL,
                 &mut handle,
             ))?;
-            Handle::from_raw(handle)
+            NullableHandle::from_raw(handle)
         };
         Ok(Interrupt(handle, PhantomData))
     }
@@ -102,14 +102,14 @@ impl<K: InterruptKind, T: Timeline> AsHandleRef for Interrupt<K, T> {
     }
 }
 
-impl<K: InterruptKind, T: Timeline> From<Handle> for Interrupt<K, T> {
-    fn from(handle: Handle) -> Self {
+impl<K: InterruptKind, T: Timeline> From<NullableHandle> for Interrupt<K, T> {
+    fn from(handle: NullableHandle) -> Self {
         Interrupt::<K, T>(handle, PhantomData)
     }
 }
 
-impl<K: InterruptKind, T: Timeline> From<Interrupt<K, T>> for Handle {
-    fn from(x: Interrupt<K, T>) -> Handle {
+impl<K: InterruptKind, T: Timeline> From<Interrupt<K, T>> for NullableHandle {
+    fn from(x: Interrupt<K, T>) -> NullableHandle {
         x.0
     }
 }
@@ -123,13 +123,13 @@ mod private {
 #[cfg(test)]
 mod tests {
     use crate::{
-        BootInstant, Handle, Interrupt, MonotonicInstant, MonotonicTimeline, Port, PortOptions,
-        Status, VirtualInterrupt, VirtualInterruptKind,
+        BootInstant, Interrupt, MonotonicInstant, MonotonicTimeline, NullableHandle, Port,
+        PortOptions, Status, VirtualInterrupt, VirtualInterruptKind,
     };
 
     #[test]
     fn bind() {
-        let interrupt: Interrupt = Handle::invalid().into();
+        let interrupt: Interrupt = NullableHandle::invalid().into();
         let port = Port::create_with_opts(PortOptions::BIND_TO_INTERRUPT);
         let key = 1;
         let result = interrupt.bind_port(&port, key);
@@ -138,7 +138,7 @@ mod tests {
 
     #[test]
     fn ack() {
-        let interrupt: Interrupt = Handle::invalid().into();
+        let interrupt: Interrupt = NullableHandle::invalid().into();
         let result = interrupt.ack();
         assert_eq!(result.err(), Some(Status::BAD_HANDLE));
     }

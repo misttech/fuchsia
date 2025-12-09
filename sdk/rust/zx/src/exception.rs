@@ -5,17 +5,17 @@
 //! Type-safe bindings for Zircon event objects.
 
 use crate::{
-    AsHandleRef, Handle, HandleBased, HandleRef, Process, Property, PropertyQuery, Status, Thread,
-    object_get_property, object_set_property, ok, sys,
+    AsHandleRef, HandleBased, HandleRef, NullableHandle, Process, Property, PropertyQuery, Status,
+    Thread, object_get_property, object_set_property, ok, sys,
 };
 
 /// An object representing a Zircon
 /// [exception object](https://fuchsia.dev/fuchsia-src/concepts/kernel/exceptions).
 ///
-/// As essentially a subtype of `Handle`, it can be freely interconverted.
+/// As essentially a subtype of `NullableHandle`, it can be freely interconverted.
 #[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 #[repr(transparent)]
-pub struct Exception(Handle);
+pub struct Exception(NullableHandle);
 impl_handle_based!(Exception);
 
 impl Exception {
@@ -28,7 +28,7 @@ impl Exception {
         let mut handle = 0;
         let status = unsafe { sys::zx_exception_get_thread(self.raw_handle(), &mut handle) };
         ok(status)?;
-        unsafe { Ok(Thread::from(Handle::from_raw(handle))) }
+        unsafe { Ok(Thread::from(NullableHandle::from_raw(handle))) }
     }
 
     /// Create a handle for the exception's process
@@ -40,7 +40,7 @@ impl Exception {
         let mut handle = 0;
         let status = unsafe { sys::zx_exception_get_process(self.raw_handle(), &mut handle) };
         ok(status)?;
-        unsafe { Ok(Process::from(Handle::from_raw(handle))) }
+        unsafe { Ok(Process::from(NullableHandle::from_raw(handle))) }
     }
 }
 

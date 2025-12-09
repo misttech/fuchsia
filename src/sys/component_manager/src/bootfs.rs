@@ -474,7 +474,7 @@ mod tests {
         assert_eq!(committed_bytes(&bootfs_dup), bootfs_dup.get_size().unwrap());
 
         bootfs_svc
-            .ingest_bootfs_vmo(Resource::from(zx::Handle::invalid()), Vec::new())
+            .ingest_bootfs_vmo(Resource::from(zx::NullableHandle::invalid()), Vec::new())
             .unwrap()
             .create_and_bind_vfs()
             .unwrap();
@@ -526,7 +526,7 @@ mod tests {
         assert!(parsed_payload(entry2).starts_with("Lorem ipsum"));
 
         bootfs_svc
-            .ingest_bootfs_vmo(Resource::from(zx::Handle::invalid()), Vec::new())
+            .ingest_bootfs_vmo(Resource::from(zx::NullableHandle::invalid()), Vec::new())
             .unwrap()
             .create_and_bind_vfs()
             .unwrap();
@@ -567,7 +567,7 @@ mod tests {
         assert_eq!(parsed_payload(entry1), parsed_payload(entry2));
 
         bootfs_svc
-            .ingest_bootfs_vmo(Resource::from(zx::Handle::invalid()), Vec::new())
+            .ingest_bootfs_vmo(Resource::from(zx::NullableHandle::invalid()), Vec::new())
             .unwrap()
             .create_and_bind_vfs()
             .unwrap();
@@ -643,7 +643,10 @@ mod tests {
             .push(BootfsFileVmo { offset: entry1.offset as u32, contents: entry1_bootfs_vmo });
 
         bootfs_svc
-            .ingest_bootfs_vmo(Resource::from(zx::Handle::invalid()), userboot_bootfs_entries)
+            .ingest_bootfs_vmo(
+                Resource::from(zx::NullableHandle::invalid()),
+                userboot_bootfs_entries,
+            )
             .unwrap()
             .create_and_bind_vfs()
             .unwrap();

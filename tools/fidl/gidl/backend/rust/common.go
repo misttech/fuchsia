@@ -140,7 +140,7 @@ func visit(value ir.Value, decl mixer.Declaration) string {
 	case nil:
 		if !decl.IsNullable() {
 			if _, ok := decl.(*mixer.HandleDecl); ok {
-				return "Handle::invalid()"
+				return "NullableHandle::invalid()"
 			}
 			panic(fmt.Sprintf("got nil for non-nullable type: %T", decl))
 		}
@@ -193,7 +193,7 @@ func primitiveTypeName(subtype fidlgen.PrimitiveSubtype) string {
 func handleTypeName(subtype fidlgen.HandleSubtype) string {
 	switch subtype {
 	case fidlgen.HandleSubtypeNone:
-		return "Handle"
+		return "NullableHandle"
 	case fidlgen.HandleSubtypeChannel:
 		return "Channel"
 	case fidlgen.HandleSubtypeEvent:

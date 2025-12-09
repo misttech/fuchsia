@@ -204,7 +204,7 @@ impl ObjectRequest {
         Self {
             object_request: std::mem::replace(
                 &mut self.object_request,
-                fidl::Handle::invalid().into(),
+                fidl::NullableHandle::invalid().into(),
             ),
             what_to_send: self.what_to_send,
             attributes: self.attributes,
@@ -307,11 +307,11 @@ pub trait Representation {
 ///
 /// If [`fio::Options`] need to be specified, use [`ObjectRequest::new`].
 pub trait ToObjectRequest: ProtocolsExt {
-    fn to_object_request(&self, object_request: impl Into<fidl::Handle>) -> ObjectRequest;
+    fn to_object_request(&self, object_request: impl Into<fidl::NullableHandle>) -> ObjectRequest;
 }
 
 impl ToObjectRequest for fio::OpenFlags {
-    fn to_object_request(&self, object_request: impl Into<fidl::Handle>) -> ObjectRequest {
+    fn to_object_request(&self, object_request: impl Into<fidl::NullableHandle>) -> ObjectRequest {
         ObjectRequest::new_deprecated(
             object_request.into().into(),
             if self.contains(fio::OpenFlags::DESCRIBE) {
@@ -327,7 +327,7 @@ impl ToObjectRequest for fio::OpenFlags {
 }
 
 impl ToObjectRequest for fio::Flags {
-    fn to_object_request(&self, object_request: impl Into<fidl::Handle>) -> ObjectRequest {
+    fn to_object_request(&self, object_request: impl Into<fidl::NullableHandle>) -> ObjectRequest {
         ObjectRequest::new(*self, &Default::default(), object_request.into().into())
     }
 }

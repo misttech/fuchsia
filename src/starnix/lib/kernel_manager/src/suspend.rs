@@ -18,7 +18,7 @@ pub const AWAKE_SIGNAL: zx::Signals = zx::Signals::USER_0;
 pub const ASLEEP_SIGNAL: zx::Signals = zx::Signals::USER_1;
 
 pub struct WakeSource {
-    handle: zx::Handle,
+    handle: zx::NullableHandle,
     name: String,
     signals: zx::Signals,
 }
@@ -28,7 +28,7 @@ impl WakeSource {
         Self { handle: counter.into_handle(), name, signals: zx::Signals::COUNTER_POSITIVE }
     }
 
-    pub fn from_handle(handle: zx::Handle, name: String, signals: zx::Signals) -> Self {
+    pub fn from_handle(handle: zx::NullableHandle, name: String, signals: zx::Signals) -> Self {
         Self { handle, name, signals }
     }
 
@@ -190,8 +190,8 @@ pub async fn suspend_container(
 ///
 /// Returns an error if any individual suspend failed. Any suspend handles will be dropped before
 /// the error is returned.
-async fn suspend_job(kernel_job: &zx::Job) -> Result<Vec<zx::Handle>, Error> {
-    let mut handles = std::collections::HashMap::<zx::Koid, zx::Handle>::new();
+async fn suspend_job(kernel_job: &zx::Job) -> Result<Vec<zx::NullableHandle>, Error> {
+    let mut handles = std::collections::HashMap::<zx::Koid, zx::NullableHandle>::new();
     loop {
         let process_koids = kernel_job.processes().expect("failed to get processes");
         let mut found_new_process = false;

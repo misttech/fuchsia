@@ -416,7 +416,7 @@ fn install_loader(loader: ClientEnd<fldsvc::LoaderMarker>) {
     let loader_handle = loader.into_channel().into_raw();
     // SAFETY: The old loader implementation should be a valid channel which should be closed after
     // it is swapped out.
-    let _old_loader = unsafe { zx::Handle::from_raw(dl_set_loader_service(loader_handle)) };
+    let _old_loader = unsafe { zx::NullableHandle::from_raw(dl_set_loader_service(loader_handle)) };
 }
 
 fn ignore_peer_closed(err: fidl::Error) -> Result<(), fidl::Error> {

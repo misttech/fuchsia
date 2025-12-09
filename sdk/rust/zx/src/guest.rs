@@ -2,7 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::{AsHandleRef, Handle, HandleBased, HandleRef, Port, Resource, Status, Vmar, ok, sys};
+use crate::{
+    AsHandleRef, HandleBased, HandleRef, NullableHandle, Port, Resource, Status, Vmar, ok, sys,
+};
 
 /// Wrapper type for guest physical addresses.
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash)]
@@ -11,10 +13,10 @@ pub struct GPAddr(pub usize);
 
 /// An object representing a Zircon guest
 ///
-/// As essentially a subtype of `Handle`, it can be freely interconverted.
+/// As essentially a subtype of `NullableHandle`, it can be freely interconverted.
 #[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 #[repr(transparent)]
-pub struct Guest(Handle);
+pub struct Guest(NullableHandle);
 impl_handle_based!(Guest);
 
 impl Guest {
@@ -29,8 +31,8 @@ impl Guest {
                 &mut vmar_handle,
             ))?;
             Ok((
-                Self::from(Handle::from_raw(guest_handle)),
-                Vmar::from(Handle::from_raw(vmar_handle)),
+                Self::from(NullableHandle::from_raw(guest_handle)),
+                Vmar::from(NullableHandle::from_raw(vmar_handle)),
             ))
         }
     }
@@ -147,7 +149,7 @@ mod tests {
             .get()
             .await
             .unwrap();
-        unsafe { Resource::from(Handle::from_raw(resource.into_raw())) }
+        unsafe { Resource::from(NullableHandle::from_raw(resource.into_raw())) }
     }
 
     #[fuchsia::test]

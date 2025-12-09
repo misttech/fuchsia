@@ -1208,7 +1208,7 @@ impl UnknownInteractionsAjarProtocolSynchronousProxy {
 }
 
 #[cfg(target_os = "fuchsia")]
-impl From<UnknownInteractionsAjarProtocolSynchronousProxy> for zx::Handle {
+impl From<UnknownInteractionsAjarProtocolSynchronousProxy> for zx::NullableHandle {
     fn from(value: UnknownInteractionsAjarProtocolSynchronousProxy) -> Self {
         value.into_channel().into()
     }
@@ -4020,7 +4020,7 @@ impl UnknownInteractionsClosedProtocolSynchronousProxy {
 }
 
 #[cfg(target_os = "fuchsia")]
-impl From<UnknownInteractionsClosedProtocolSynchronousProxy> for zx::Handle {
+impl From<UnknownInteractionsClosedProtocolSynchronousProxy> for zx::NullableHandle {
     fn from(value: UnknownInteractionsClosedProtocolSynchronousProxy) -> Self {
         value.into_channel().into()
     }
@@ -7636,7 +7636,7 @@ impl UnknownInteractionsProtocolSynchronousProxy {
 }
 
 #[cfg(target_os = "fuchsia")]
-impl From<UnknownInteractionsProtocolSynchronousProxy> for zx::Handle {
+impl From<UnknownInteractionsProtocolSynchronousProxy> for zx::NullableHandle {
     fn from(value: UnknownInteractionsProtocolSynchronousProxy) -> Self {
         value.into_channel().into()
     }

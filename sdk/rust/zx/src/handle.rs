@@ -49,19 +49,20 @@ impl Koid {
 /// enforced in the type system; attempting to use them will result in errors
 /// returned by the kernel. These conversions don't change the underlying
 /// representation, but do change the type and thus what operations are available.
+// TODO(https://fxbug.dev/465766514): remove
 #[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 #[repr(transparent)]
-pub struct Handle(sys::zx_handle_t);
+pub struct NullableHandle(sys::zx_handle_t);
 
-impl AsHandleRef for Handle {
+impl AsHandleRef for NullableHandle {
     fn as_handle_ref(&self) -> HandleRef<'_> {
-        Unowned { inner: ManuallyDrop::new(Handle(self.0)), marker: PhantomData }
+        Unowned { inner: ManuallyDrop::new(NullableHandle(self.0)), marker: PhantomData }
     }
 }
 
-impl HandleBased for Handle {}
+impl HandleBased for NullableHandle {}
 
-impl Drop for Handle {
+impl Drop for NullableHandle {
     fn drop(&mut self) {
         if self.0 != sys::ZX_HANDLE_INVALID {
             unsafe { sys::zx_handle_close(self.0) };
@@ -69,11 +70,11 @@ impl Drop for Handle {
     }
 }
 
-impl Handle {
+impl NullableHandle {
     /// Initialize a handle backed by ZX_HANDLE_INVALID, the only safe non-handle.
     #[inline(always)]
-    pub const fn invalid() -> Handle {
-        Handle(sys::ZX_HANDLE_INVALID)
+    pub const fn invalid() -> Self {
+        Self(sys::ZX_HANDLE_INVALID)
     }
 
     /// If a raw handle is obtained from some other source, this method converts
@@ -83,25 +84,25 @@ impl Handle {
     ///
     /// `raw` must either be a valid handle (i.e. not dangling), or
     /// `ZX_HANDLE_INVALID`. If `raw` is a valid handle, then either:
-    /// - `raw` may be closed manually and the returned `Handle` must not be
+    /// - `raw` may be closed manually and the returned `NullableHandle` must not be
     ///   dropped.
-    /// - Or `raw` must not be closed until the returned `Handle` is dropped, at
+    /// - Or `raw` must not be closed until the returned `NullableHandle` is dropped, at
     ///   which time it will close `raw`.
-    pub const unsafe fn from_raw(raw: sys::zx_handle_t) -> Handle {
-        Handle(raw)
+    pub const unsafe fn from_raw(raw: sys::zx_handle_t) -> Self {
+        Self(raw)
     }
 
     pub fn is_invalid(&self) -> bool {
         self.0 == sys::ZX_HANDLE_INVALID
     }
 
-    pub fn replace(self, rights: Rights) -> Result<Handle, Status> {
+    pub fn replace(self, rights: Rights) -> Result<Self, Status> {
         let handle = self.0;
         let mut out = 0;
         let status = unsafe { sys::zx_handle_replace(handle, rights.bits(), &mut out) };
         // zx_handle_replace always invalidates |handle| so we can't run our drop handler.
         std::mem::forget(self);
-        ok(status).map(|()| Handle(out))
+        ok(status).map(|()| Self(out))
     }
 }
 
@@ -118,20 +119,20 @@ unsafe impl PropertyQuery for NameProperty {
 /// This is primarily used for working with borrowed values of `HandleBased` types.
 #[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 #[repr(transparent)]
-pub struct Unowned<'a, T: Into<Handle>> {
+pub struct Unowned<'a, T: Into<NullableHandle>> {
     inner: ManuallyDrop<T>,
     marker: PhantomData<&'a T>,
 }
 
-impl<T: Into<Handle>> Drop for Unowned<'_, T> {
+impl<T: Into<NullableHandle>> Drop for Unowned<'_, T> {
     fn drop(&mut self) {
         // SAFETY: This is safe because we don't use this ManuallyDrop again.
-        let handle: Handle = unsafe { ManuallyDrop::take(&mut self.inner).into() };
+        let handle: NullableHandle = unsafe { ManuallyDrop::take(&mut self.inner).into() };
         mem::forget(handle);
     }
 }
 
-impl<'a, T: Into<Handle>> ::std::ops::Deref for Unowned<'a, T> {
+impl<'a, T: Into<NullableHandle>> ::std::ops::Deref for Unowned<'a, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -145,13 +146,13 @@ impl<T: HandleBased> Clone for Unowned<'_, T> {
     }
 }
 
-pub type HandleRef<'a> = Unowned<'a, Handle>;
+pub type HandleRef<'a> = Unowned<'a, NullableHandle>;
 
-impl<'a, T: Into<Handle>> Unowned<'a, T> {
+impl<'a, T: Into<NullableHandle>> Unowned<'a, T> {
     /// Returns a new object that borrows the underyling handle.  This will work for any type that
     /// implements `From<U>` where `U` is handle-like i.e. it implements `AsHandleRef` and
     /// `From<Handle>`.
-    pub fn new<U: AsHandleRef + From<Handle>>(inner: &'a U) -> Self
+    pub fn new<U: AsHandleRef + From<NullableHandle>>(inner: &'a U) -> Self
     where
         T: From<U>,
     {
@@ -159,7 +160,7 @@ impl<'a, T: Into<Handle>> Unowned<'a, T> {
         // then when we drop, we convert T into a handle that we forget.
         Unowned {
             inner: ManuallyDrop::new(T::from(U::from(unsafe {
-                Handle::from_raw(inner.as_handle_ref().raw_handle())
+                NullableHandle::from_raw(inner.as_handle_ref().raw_handle())
             }))),
             marker: PhantomData,
         }
@@ -180,7 +181,7 @@ impl<'a, T: HandleBased> Unowned<'a, T> {
     /// closed for the lifetime `'a`.
     pub unsafe fn from_raw_handle(handle: sys::zx_handle_t) -> Self {
         Unowned {
-            inner: ManuallyDrop::new(T::from(unsafe { Handle::from_raw(handle) })),
+            inner: ManuallyDrop::new(T::from(unsafe { NullableHandle::from_raw(handle) })),
             marker: PhantomData,
         }
     }
@@ -193,7 +194,7 @@ impl<'a, T: HandleBased> Unowned<'a, T> {
         let mut out = 0;
         let status =
             unsafe { sys::zx_handle_duplicate(self.raw_handle(), rights.bits(), &mut out) };
-        ok(status).map(|()| T::from(Handle(out)))
+        ok(status).map(|()| T::from(NullableHandle(out)))
     }
 
     pub fn signal(&self, clear_mask: Signals, set_mask: Signals) -> Result<(), Status> {
@@ -326,7 +327,7 @@ impl WaitResult {
     }
 }
 
-impl<'a> Unowned<'a, Handle> {
+impl<'a> Unowned<'a, NullableHandle> {
     /// Convert this HandleRef to one of a specific type.
     pub fn cast<T: HandleBased>(self) -> Unowned<'a, T> {
         // SAFETY: this function's guarantees are upheld by the self input.
@@ -422,7 +423,7 @@ pub trait AsHandleRef {
 
 impl<'a, T: HandleBased> AsHandleRef for Unowned<'a, T> {
     fn as_handle_ref(&self) -> HandleRef<'_> {
-        Unowned { inner: ManuallyDrop::new(Handle(self.raw_handle())), marker: PhantomData }
+        Unowned { inner: ManuallyDrop::new(NullableHandle(self.raw_handle())), marker: PhantomData }
     }
 }
 
@@ -439,7 +440,7 @@ impl<T: AsHandleRef> AsHandleRef for &T {
 /// represented as a newtype of `Channel`, and implement the `as_handle_ref`
 /// method and the `From<Handle>` trait to facilitate conversion from and to the
 /// interface.
-pub trait HandleBased: AsHandleRef + From<Handle> + Into<Handle> {
+pub trait HandleBased: AsHandleRef + From<NullableHandle> + Into<NullableHandle> {
     /// Duplicate a handle, possibly reducing the rights available. Wraps the
     /// [zx_handle_duplicate](https://fuchsia.dev/fuchsia-src/reference/syscalls/handle_duplicate.md)
     /// syscall.
@@ -452,13 +453,13 @@ pub trait HandleBased: AsHandleRef + From<Handle> + Into<Handle> {
     /// [zx_handle_replace](https://fuchsia.dev/fuchsia-src/reference/syscalls/handle_replace.md)
     /// syscall.
     fn replace_handle(self, rights: Rights) -> Result<Self, Status> {
-        <Self as Into<Handle>>::into(self).replace(rights).map(|handle| Self::from(handle))
+        <Self as Into<NullableHandle>>::into(self).replace(rights).map(|handle| Self::from(handle))
     }
 
     /// Converts the value into its inner handle.
     ///
     /// This is a convenience function which simply forwards to the `Into` trait.
-    fn into_handle(self) -> Handle {
+    fn into_handle(self) -> NullableHandle {
         self.into()
     }
 
@@ -475,7 +476,7 @@ pub trait HandleBased: AsHandleRef + From<Handle> + Into<Handle> {
     /// Creates an instance of this type from a handle.
     ///
     /// This is a convenience function which simply forwards to the `From` trait.
-    fn from_handle(handle: Handle) -> Self {
+    fn from_handle(handle: NullableHandle) -> Self {
         Self::from(handle)
     }
 
@@ -635,7 +636,7 @@ unsafe impl ObjectQuery for HandleCountInfoQuery {
 /// Handle operation.
 #[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub enum HandleOp<'a> {
-    Move(Handle),
+    Move(NullableHandle),
     Duplicate(HandleRef<'a>),
 }
 
@@ -718,7 +719,10 @@ impl<'a> HandleDisposition<'a> {
                 // SAFETY: this is guaranteed to be a valid handle number by a combination of this
                 // type's public API and the kernel's guarantees.
                 HandleOp::Move(unsafe {
-                    Handle::from_raw(std::mem::replace(&mut self.handle, sys::ZX_HANDLE_INVALID))
+                    NullableHandle::from_raw(std::mem::replace(
+                        &mut self.handle,
+                        sys::ZX_HANDLE_INVALID,
+                    ))
                 })
             }
             sys::ZX_HANDLE_OP_DUPLICATE => {
@@ -734,7 +738,7 @@ impl<'a> HandleDisposition<'a> {
         match self.take_op() {
             HandleOp::Move(mut handle) => sys::zx_handle_disposition_t {
                 operation: sys::ZX_HANDLE_OP_MOVE,
-                handle: std::mem::replace(&mut handle, Handle::invalid()).into_raw(),
+                handle: std::mem::replace(&mut handle, NullableHandle::invalid()).into_raw(),
                 type_: self.object_type.0,
                 rights: self.rights.bits(),
                 result: self.result.into_raw(),
@@ -754,7 +758,7 @@ impl<'a> Drop for HandleDisposition<'a> {
     fn drop(&mut self) {
         // Ensure we clean up owned handle variants.
         if self.operation == sys::ZX_HANDLE_OP_MOVE {
-            unsafe { drop(Handle::from_raw(self.handle)) };
+            unsafe { drop(NullableHandle::from_raw(self.handle)) };
         }
     }
 }
@@ -765,7 +769,7 @@ impl<'a> Drop for HandleDisposition<'a> {
 #[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 #[repr(C)]
 pub struct HandleInfo {
-    pub handle: Handle,
+    pub handle: NullableHandle,
     pub object_type: ObjectType,
     pub rights: Rights,
 
@@ -793,7 +797,7 @@ static_assertions::const_assert_eq!(
 
 impl HandleInfo {
     /// Make a new `HandleInfo`.
-    pub const fn new(handle: Handle, object_type: ObjectType, rights: Rights) -> Self {
+    pub const fn new(handle: NullableHandle, object_type: ObjectType, rights: Rights) -> Self {
         Self { handle, object_type, rights, _unused: 0 }
     }
 
@@ -807,7 +811,7 @@ impl HandleInfo {
     pub const unsafe fn from_raw(raw: sys::zx_handle_info_t) -> HandleInfo {
         HandleInfo::new(
             // SAFETY: invariants to not double-close are upheld by the caller.
-            unsafe { Handle::from_raw(raw.handle) },
+            unsafe { NullableHandle::from_raw(raw.handle) },
             ObjectType(raw.ty),
             Rights::from_bits_retain(raw.rights),
         )
@@ -820,8 +824,8 @@ mod tests {
     // The unit tests are built with a different crate name, but fuchsia_runtime returns a "real"
     // zx::Vmar that we need to use.
     use zx::{
-        AsHandleRef, Channel, Handle, HandleBased, HandleDisposition, HandleInfo, HandleOp, Name,
-        ObjectType, Rights, Vmo,
+        AsHandleRef, Channel, HandleBased, HandleDisposition, HandleInfo, HandleOp, Name,
+        NullableHandle, ObjectType, Rights, Vmo,
     };
     use zx_sys as sys;
 
@@ -829,7 +833,7 @@ mod tests {
     fn into_raw() {
         let vmo = Vmo::create(1).unwrap();
         let h = vmo.into_raw();
-        let vmo2 = Vmo::from(unsafe { Handle::from_raw(h) });
+        let vmo2 = Vmo::from(unsafe { NullableHandle::from_raw(h) });
         assert!(vmo2.write(b"1", 0).is_ok());
     }
 
@@ -936,7 +940,7 @@ mod tests {
     fn raw_handle_disposition() {
         const RAW_HANDLE: sys::zx_handle_t = 1;
         let hd = HandleDisposition::new(
-            HandleOp::Move(unsafe { Handle::from_raw(RAW_HANDLE) }),
+            HandleOp::Move(unsafe { NullableHandle::from_raw(RAW_HANDLE) }),
             ObjectType::VMO,
             Rights::EXECUTE,
             Status::OK,

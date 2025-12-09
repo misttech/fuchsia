@@ -5,7 +5,7 @@
 use std::fmt;
 use std::future::Future;
 use std::pin::Pin;
-use std::task::{ready, Context, Poll};
+use std::task::{Context, Poll, ready};
 
 use zx::{self as zx, AsHandleRef, MessageBuf, MessageBufEtc};
 
@@ -66,7 +66,7 @@ impl Channel {
         &self,
         cx: &mut Context<'_>,
         bytes: &mut Vec<u8>,
-        handles: &mut Vec<zx::Handle>,
+        handles: &mut Vec<zx::NullableHandle>,
     ) -> Poll<Result<(), zx::Status>> {
         loop {
             let res = self.0.get_ref().read_split(bytes, handles);
@@ -140,7 +140,11 @@ impl Channel {
     }
 
     /// Writes a message into the channel.
-    pub fn write(&self, bytes: &[u8], handles: &mut [zx::Handle]) -> Result<(), zx::Status> {
+    pub fn write(
+        &self,
+        bytes: &[u8],
+        handles: &mut [zx::NullableHandle],
+    ) -> Result<(), zx::Status> {
         self.0.get_ref().write(bytes, handles)
     }
 
@@ -200,7 +204,7 @@ mod tests {
     use super::*;
     use crate::TestExecutor;
 
-    use futures::task::{waker, ArcWake};
+    use futures::task::{ArcWake, waker};
     use std::future::poll_fn;
     use std::mem;
     use std::pin::pin;

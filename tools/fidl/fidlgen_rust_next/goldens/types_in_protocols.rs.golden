@@ -235,7 +235,7 @@ pub mod natural {
 
     #[derive(PartialEq, Debug)]
     pub struct Resource {
-        pub handle: ::fidl_next::fuchsia::zx::Handle,
+        pub handle: ::fidl_next::fuchsia::zx::NullableHandle,
 
         pub vmo: ::fidl_next::fuchsia::zx::Vmo,
 
@@ -249,7 +249,7 @@ pub mod natural {
 
         pub union: crate::natural::ResourceUnion,
 
-        pub opt_handle: ::core::option::Option<::fidl_next::fuchsia::zx::Handle>,
+        pub opt_handle: ::core::option::Option<::fidl_next::fuchsia::zx::NullableHandle>,
 
         pub opt_vmo: ::core::option::Option<::fidl_next::fuchsia::zx::Vmo>,
 
@@ -265,7 +265,7 @@ pub mod natural {
 
         pub opt_union: ::core::option::Option<::std::boxed::Box<crate::natural::ResourceUnion>>,
 
-        pub array_handle: [::fidl_next::fuchsia::zx::Handle; 5],
+        pub array_handle: [::fidl_next::fuchsia::zx::NullableHandle; 5],
 
         pub array_vmo: [::fidl_next::fuchsia::zx::Vmo; 5],
 
@@ -281,7 +281,7 @@ pub mod natural {
 
         pub array_union: [crate::natural::ResourceUnion; 5],
 
-        pub vector_handle: ::std::vec::Vec<::fidl_next::fuchsia::zx::Handle>,
+        pub vector_handle: ::std::vec::Vec<::fidl_next::fuchsia::zx::NullableHandle>,
 
         pub vector_vmo: ::std::vec::Vec<::fidl_next::fuchsia::zx::Vmo>,
 
@@ -806,7 +806,7 @@ pub mod wire {
     #[derive(Debug)]
     #[repr(C)]
     pub struct Resource<'de> {
-        pub handle: ::fidl_next::fuchsia::WireHandle,
+        pub handle: ::fidl_next::fuchsia::WireNullableHandle,
 
         pub vmo: ::fidl_next::fuchsia::WireVmo,
 
@@ -820,7 +820,7 @@ pub mod wire {
 
         pub union: crate::wire::ResourceUnion<'de>,
 
-        pub opt_handle: ::fidl_next::fuchsia::WireOptionalHandle,
+        pub opt_handle: ::fidl_next::fuchsia::WireOptionalNullableHandle,
 
         pub opt_vmo: ::fidl_next::fuchsia::WireOptionalVmo,
 
@@ -834,7 +834,7 @@ pub mod wire {
 
         pub opt_union: crate::wire_optional::ResourceUnion<'de>,
 
-        pub array_handle: [::fidl_next::fuchsia::WireHandle; 5],
+        pub array_handle: [::fidl_next::fuchsia::WireNullableHandle; 5],
 
         pub array_vmo: [::fidl_next::fuchsia::WireVmo; 5],
 
@@ -850,7 +850,7 @@ pub mod wire {
 
         pub array_union: [crate::wire::ResourceUnion<'de>; 5],
 
-        pub vector_handle: ::fidl_next::WireVector<'de, ::fidl_next::fuchsia::WireHandle>,
+        pub vector_handle: ::fidl_next::WireVector<'de, ::fidl_next::fuchsia::WireNullableHandle>,
 
         pub vector_vmo: ::fidl_next::WireVector<'de, ::fidl_next::fuchsia::WireVmo>,
 
@@ -1462,7 +1462,7 @@ pub mod generic {
         ___E: ::fidl_next::encoder::InternalHandleEncoder + ?Sized,
         ___E: ::fidl_next::Encoder,
         ___E: ::fidl_next::fuchsia::HandleEncoder,
-        T0: ::fidl_next::Encode<::fidl_next::fuchsia::WireHandle, ___E>,
+        T0: ::fidl_next::Encode<::fidl_next::fuchsia::WireNullableHandle, ___E>,
         T1: ::fidl_next::Encode<::fidl_next::fuchsia::WireVmo, ___E>,
         T2: ::fidl_next::Encode<
                 ::fidl_next::ClientEnd<crate::Protocol, ::fidl_next::fuchsia::WireChannel>,
@@ -1475,7 +1475,7 @@ pub mod generic {
         T4: ::fidl_next::Encode<crate::wire::ResourceStruct, ___E>,
         T5: ::fidl_next::Encode<crate::wire::ResourceTable<'static>, ___E>,
         T6: ::fidl_next::Encode<crate::wire::ResourceUnion<'static>, ___E>,
-        T7: ::fidl_next::Encode<::fidl_next::fuchsia::WireOptionalHandle, ___E>,
+        T7: ::fidl_next::Encode<::fidl_next::fuchsia::WireOptionalNullableHandle, ___E>,
         T8: ::fidl_next::Encode<::fidl_next::fuchsia::WireOptionalVmo, ___E>,
         T9: ::fidl_next::Encode<
                 ::fidl_next::ClientEnd<crate::Protocol, ::fidl_next::fuchsia::WireOptionalChannel>,
@@ -1487,7 +1487,7 @@ pub mod generic {
             >,
         T11: ::fidl_next::Encode<::fidl_next::WireBox<'static, crate::wire::ResourceStruct>, ___E>,
         T12: ::fidl_next::Encode<crate::wire_optional::ResourceUnion<'static>, ___E>,
-        T13: ::fidl_next::Encode<[::fidl_next::fuchsia::WireHandle; 5], ___E>,
+        T13: ::fidl_next::Encode<[::fidl_next::fuchsia::WireNullableHandle; 5], ___E>,
         T14: ::fidl_next::Encode<[::fidl_next::fuchsia::WireVmo; 5], ___E>,
         T15: ::fidl_next::Encode<
                 [::fidl_next::ClientEnd<crate::Protocol, ::fidl_next::fuchsia::WireChannel>; 5],
@@ -1501,7 +1501,7 @@ pub mod generic {
         T18: ::fidl_next::Encode<[crate::wire::ResourceTable<'static>; 5], ___E>,
         T19: ::fidl_next::Encode<[crate::wire::ResourceUnion<'static>; 5], ___E>,
         T20: ::fidl_next::Encode<
-                ::fidl_next::WireVector<'static, ::fidl_next::fuchsia::WireHandle>,
+                ::fidl_next::WireVector<'static, ::fidl_next::fuchsia::WireNullableHandle>,
                 ___E,
             >,
         T21: ::fidl_next::Encode<
@@ -3903,7 +3903,7 @@ pub mod protocol {
                 &self,
 
                 handle: impl ::fidl_next::Encode<
-                    ::fidl_next::fuchsia::WireHandle,
+                    ::fidl_next::fuchsia::WireNullableHandle,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
@@ -3938,7 +3938,7 @@ pub mod protocol {
                 >,
 
                 opt_handle: impl ::fidl_next::Encode<
-                    ::fidl_next::fuchsia::WireOptionalHandle,
+                    ::fidl_next::fuchsia::WireOptionalNullableHandle,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
@@ -3974,7 +3974,7 @@ pub mod protocol {
                 >,
 
                 array_handle: impl ::fidl_next::Encode<
-                    [::fidl_next::fuchsia::WireHandle; 5],
+                    [::fidl_next::fuchsia::WireNullableHandle; 5],
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
@@ -4009,7 +4009,7 @@ pub mod protocol {
                 >,
 
                 vector_handle: impl ::fidl_next::Encode<
-                    ::fidl_next::WireVector<'static, ::fidl_next::fuchsia::WireHandle>,
+                    ::fidl_next::WireVector<'static, ::fidl_next::fuchsia::WireNullableHandle>,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
@@ -4133,7 +4133,7 @@ pub mod protocol {
                 &self,
 
                 handle: impl ::fidl_next::Encode<
-                    ::fidl_next::fuchsia::WireHandle,
+                    ::fidl_next::fuchsia::WireNullableHandle,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
@@ -4168,7 +4168,7 @@ pub mod protocol {
                 >,
 
                 opt_handle: impl ::fidl_next::Encode<
-                    ::fidl_next::fuchsia::WireOptionalHandle,
+                    ::fidl_next::fuchsia::WireOptionalNullableHandle,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
@@ -4204,7 +4204,7 @@ pub mod protocol {
                 >,
 
                 array_handle: impl ::fidl_next::Encode<
-                    [::fidl_next::fuchsia::WireHandle; 5],
+                    [::fidl_next::fuchsia::WireNullableHandle; 5],
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
@@ -4239,7 +4239,7 @@ pub mod protocol {
                 >,
 
                 vector_handle: impl ::fidl_next::Encode<
-                    ::fidl_next::WireVector<'static, ::fidl_next::fuchsia::WireHandle>,
+                    ::fidl_next::WireVector<'static, ::fidl_next::fuchsia::WireNullableHandle>,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
@@ -5060,7 +5060,7 @@ pub mod protocol {
                 &self,
 
                 handle: impl ::fidl_next::Encode<
-                    ::fidl_next::fuchsia::WireHandle,
+                    ::fidl_next::fuchsia::WireNullableHandle,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
@@ -5095,7 +5095,7 @@ pub mod protocol {
                 >,
 
                 opt_handle: impl ::fidl_next::Encode<
-                    ::fidl_next::fuchsia::WireOptionalHandle,
+                    ::fidl_next::fuchsia::WireOptionalNullableHandle,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
@@ -5131,7 +5131,7 @@ pub mod protocol {
                 >,
 
                 array_handle: impl ::fidl_next::Encode<
-                    [::fidl_next::fuchsia::WireHandle; 5],
+                    [::fidl_next::fuchsia::WireNullableHandle; 5],
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 
@@ -5166,7 +5166,7 @@ pub mod protocol {
                 >,
 
                 vector_handle: impl ::fidl_next::Encode<
-                    ::fidl_next::WireVector<'static, ::fidl_next::fuchsia::WireHandle>,
+                    ::fidl_next::WireVector<'static, ::fidl_next::fuchsia::WireNullableHandle>,
                     <___T as ::fidl_next::Transport>::SendBuffer,
                 >,
 

@@ -10,7 +10,7 @@ pub mod natural {
     pub struct NonInlineStructTestStruct {
         pub element: ::core::option::Option<::std::boxed::Box<crate::natural::Int16Int8>>,
 
-        pub h: ::fidl_next::fuchsia::zx::Handle,
+        pub h: ::fidl_next::fuchsia::zx::NullableHandle,
     }
 
     unsafe impl<___E> ::fidl_next::Encode<crate::wire::NonInlineStructTestStruct<'static>, ___E>
@@ -181,7 +181,7 @@ pub mod wire {
     pub struct NonInlineStructTestStruct<'de> {
         pub element: ::fidl_next::WireBox<'de, crate::wire::Int16Int8>,
 
-        pub h: ::fidl_next::fuchsia::WireHandle,
+        pub h: ::fidl_next::fuchsia::WireNullableHandle,
     }
 
     static_assertions::const_assert_eq!(std::mem::size_of::<NonInlineStructTestStruct<'_>>(), 16);
@@ -358,7 +358,7 @@ pub mod generic {
         ___E: ::fidl_next::Encoder,
         ___E: ::fidl_next::fuchsia::HandleEncoder,
         T0: ::fidl_next::Encode<::fidl_next::WireBox<'static, crate::wire::Int16Int8>, ___E>,
-        T1: ::fidl_next::Encode<::fidl_next::fuchsia::WireHandle, ___E>,
+        T1: ::fidl_next::Encode<::fidl_next::fuchsia::WireNullableHandle, ___E>,
     {
         #[inline]
         fn encode(

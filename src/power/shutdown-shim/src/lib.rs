@@ -310,10 +310,12 @@ impl<D: Directory + AsRefDirectory> ProgramContext<D> {
                     }
                     let kernel_zbi = std::mem::replace(
                         &mut state.mexec_kernel_zbi,
-                        zx::Handle::invalid().into(),
+                        zx::NullableHandle::invalid().into(),
                     );
-                    let data_zbi =
-                        std::mem::replace(&mut state.mexec_data_zbi, zx::Handle::invalid().into());
+                    let data_zbi = std::mem::replace(
+                        &mut state.mexec_data_zbi,
+                        zx::NullableHandle::invalid().into(),
+                    );
                     let _ = responder.send(Ok((kernel_zbi, data_zbi)));
                 }
             }
@@ -458,8 +460,8 @@ impl SystemState {
     fn new() -> Self {
         Self {
             power_state: SystemPowerState::FullyOn,
-            mexec_kernel_zbi: zx::Handle::invalid().into(),
-            mexec_data_zbi: zx::Handle::invalid().into(),
+            mexec_kernel_zbi: zx::NullableHandle::invalid().into(),
+            mexec_data_zbi: zx::NullableHandle::invalid().into(),
         }
     }
 }

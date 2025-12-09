@@ -96,7 +96,7 @@ impl Clone for Namespace {
             let raw_handle = dir.channel().as_handle_ref().raw_handle();
             // SAFETY: the channel is forgotten at the end of scope so it is not double closed.
             unsafe {
-                let borrowed: zx::Channel = zx::Handle::from_raw(raw_handle).into();
+                let borrowed: zx::Channel = zx::NullableHandle::from_raw(raw_handle).into();
                 let borrowed = fio::DirectorySynchronousProxy::new(borrowed);
                 let (client_end, server_end) =
                     fidl::endpoints::create_endpoints::<fio::DirectoryMarker>();

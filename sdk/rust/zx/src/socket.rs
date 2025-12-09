@@ -7,8 +7,9 @@
 #![allow(clippy::bad_bit_mask)] // TODO(https://fxbug.dev/42080521): stop using bitflags for SocketOpts
 
 use crate::{
-    object_get_info_single, object_get_property, object_set_property, ok, sys, AsHandleRef, Handle,
-    HandleBased, HandleRef, ObjectQuery, Peered, Property, PropertyQuery, Status, Topic,
+    AsHandleRef, HandleBased, HandleRef, NullableHandle, ObjectQuery, Peered, Property,
+    PropertyQuery, Status, Topic, object_get_info_single, object_get_property, object_set_property,
+    ok, sys,
 };
 use bitflags::bitflags;
 use std::mem::MaybeUninit;
@@ -16,10 +17,10 @@ use std::mem::MaybeUninit;
 /// An object representing a Zircon
 /// [socket](https://fuchsia.dev/fuchsia-src/concepts/kernel/concepts#message_passing_sockets_and_channels)
 ///
-/// As essentially a subtype of `Handle`, it can be freely interconverted.
+/// As essentially a subtype of `NullableHandle`, it can be freely interconverted.
 #[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 #[repr(transparent)]
-pub struct Socket(Handle);
+pub struct Socket(NullableHandle);
 impl_handle_based!(Socket);
 impl Peered for Socket {}
 
@@ -159,7 +160,10 @@ impl Socket {
             let mut out1 = 0;
             let status = sys::zx_socket_create(sock_opts.bits(), &mut out0, &mut out1);
             ok(status)?;
-            Ok((Self::from(Handle::from_raw(out0)), Self::from(Handle::from_raw(out1))))
+            Ok((
+                Self::from(NullableHandle::from_raw(out0)),
+                Self::from(NullableHandle::from_raw(out1)),
+            ))
         }
     }
 

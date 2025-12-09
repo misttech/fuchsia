@@ -5,17 +5,18 @@
 //! Type-safe bindings for Zircon resources.
 
 use crate::{
-    ok, sys, AsHandleRef, BootInstant, Handle, HandleBased, HandleRef, Koid, Resource, Status,
+    AsHandleRef, BootInstant, HandleBased, HandleRef, Koid, NullableHandle, Resource, Status, ok,
+    sys,
 };
 use bitflags::bitflags;
 use bstr::BStr;
 
 /// An object representing a Zircon 'debuglog' object.
 ///
-/// As essentially a subtype of `Handle`, it can be freely interconverted.
+/// As essentially a subtype of `NullableHandle`, it can be freely interconverted.
 #[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 #[repr(transparent)]
-pub struct DebugLog(Handle);
+pub struct DebugLog(NullableHandle);
 impl_handle_based!(DebugLog);
 
 bitflags! {
@@ -38,7 +39,7 @@ impl DebugLog {
         let status =
             unsafe { sys::zx_debuglog_create(resource.raw_handle(), opts.bits(), &mut handle) };
         ok(status)?;
-        unsafe { Ok(DebugLog::from(Handle::from_raw(handle))) }
+        unsafe { Ok(DebugLog::from(NullableHandle::from_raw(handle))) }
     }
 
     /// Write a message to the kernel debug log.
@@ -156,7 +157,7 @@ impl DebugLogSeverity {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{cprng_draw, Instant, Signals};
+    use crate::{Instant, Signals, cprng_draw};
     use fidl_fuchsia_kernel as fkernel;
     use fuchsia_component::client::connect_channel_to_protocol;
 
@@ -173,7 +174,7 @@ mod tests {
         // This test and fuchsia-zircon are different crates, so we need
         // to use from_raw to convert between the zx handle and this test handle.
         // See https://fxbug.dev/42173139 for details.
-        let resource = unsafe { Resource::from(Handle::from_raw(resource.into_raw())) };
+        let resource = unsafe { Resource::from(NullableHandle::from_raw(resource.into_raw())) };
         let debuglog = DebugLog::create(&resource, DebugLogOpts::READABLE).unwrap();
         for _ in 0..10000 {
             match debuglog.read() {
@@ -199,7 +200,7 @@ mod tests {
 
     #[test]
     fn read_from_nonreadable() {
-        let resource = Resource::from(Handle::invalid());
+        let resource = Resource::from(NullableHandle::invalid());
         let debuglog = DebugLog::create(&resource, DebugLogOpts::empty()).unwrap();
         assert!(debuglog.read().err() == Some(Status::ACCESS_DENIED));
     }
@@ -210,7 +211,7 @@ mod tests {
         cprng_draw(&mut bytes);
         let message = format!("log message {:?}", bytes);
 
-        let resource = Resource::from(Handle::invalid());
+        let resource = Resource::from(NullableHandle::invalid());
         let debuglog = DebugLog::create(&resource, DebugLogOpts::empty()).unwrap();
         debuglog.write(message.as_bytes()).unwrap();
         expect_message_in_debuglog(message);

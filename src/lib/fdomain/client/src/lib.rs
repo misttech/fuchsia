@@ -37,7 +37,9 @@ pub use channel::{
 pub use event::Event;
 pub use event_pair::Eventpair as EventPair;
 pub use handle::unowned::Unowned;
-pub use handle::{AsHandleRef, Handle, HandleBased, HandleRef, OnFDomainSignals, Peered};
+pub use handle::{
+    AsHandleRef, Handle, HandleBased, HandleRef, NullableHandle, OnFDomainSignals, Peered,
+};
 pub use proto::{Error as FDomainError, WriteChannelError, WriteSocketError};
 pub use socket::{Socket, SocketDisposition, SocketReadStream, SocketWriter};
 

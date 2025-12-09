@@ -133,7 +133,7 @@ fn check_all_processes_terminated(job: &zx::Job) {
                 continue;
             }
             assert_eq!(zx::Status::OK, status);
-            zx::Handle::from_raw(handle)
+            zx::NullableHandle::from(zx::NullableHandle::from_raw(handle))
         }
         .into();
         let info = process.info().unwrap();
@@ -177,7 +177,7 @@ fn check_all_processes_terminated(job: &zx::Job) {
                 continue;
             }
             assert_eq!(zx::Status::OK, status);
-            zx::Handle::from_raw(handle)
+            zx::NullableHandle::from(zx::NullableHandle::from_raw(handle))
         }
         .into();
         check_all_processes_terminated(&job);

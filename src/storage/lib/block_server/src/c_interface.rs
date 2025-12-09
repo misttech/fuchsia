@@ -557,7 +557,7 @@ pub unsafe extern "C" fn block_server_delete_async(
 pub unsafe extern "C" fn block_server_serve(block_server: *const BlockServer, handle: zx_handle_t) {
     let block_server = unsafe { &*block_server };
     let ehandle = &block_server.ehandle;
-    let handle = unsafe { zx::Handle::from_raw(handle) };
+    let handle = unsafe { zx::NullableHandle::from_raw(handle) };
     ehandle.global_scope().spawn(async move {
         let _ = block_server
             .server

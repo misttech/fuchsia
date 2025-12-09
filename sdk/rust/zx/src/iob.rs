@@ -4,7 +4,7 @@
 
 //! Type-safe bindings for Zircon iobuffer objects.
 
-use crate::{ok, sys, AsHandleRef, Handle, HandleBased, HandleRef, Status};
+use crate::{AsHandleRef, HandleBased, HandleRef, NullableHandle, Status, ok, sys};
 use bitflags::bitflags;
 
 mod io_slice;
@@ -14,10 +14,10 @@ pub use self::io_slice::*;
 /// An object representing a Zircon
 /// [IOBuffer](https://fuchsia.dev/reference/syscalls/iob_create).
 ///
-/// As essentially a subtype of `Handle`, it can be freely interconverted.
+/// As essentially a subtype of `NullableHandle`, it can be freely interconverted.
 #[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 #[repr(transparent)]
-pub struct Iob(Handle);
+pub struct Iob(NullableHandle);
 impl_handle_based!(Iob);
 
 #[derive(Default)]
@@ -138,7 +138,12 @@ impl Iob {
             )
         };
         ok(status)?;
-        unsafe { Ok((Iob::from(Handle::from_raw(handle1)), Iob::from(Handle::from_raw(handle2)))) }
+        unsafe {
+            Ok((
+                Iob::from(NullableHandle::from_raw(handle1)),
+                Iob::from(NullableHandle::from_raw(handle2)),
+            ))
+        }
     }
 
     /// Performs a mediated write to an IOBuffer region.
@@ -185,7 +190,7 @@ pub(crate) mod vdso_next {
 
     #[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
     #[repr(transparent)]
-    pub struct IobSharedRegion(Handle);
+    pub struct IobSharedRegion(NullableHandle);
     impl_handle_based!(IobSharedRegion);
 
     /// Options for `IobSharedRegion::create`.
@@ -221,7 +226,7 @@ pub(crate) mod vdso_next {
             let mut handle = 0;
             let status = unsafe { zx_iob_create_shared_region(0, size, &mut handle) };
             ok(status)?;
-            Ok(Self::from(unsafe { Handle::from_raw(handle) }))
+            Ok(Self::from(unsafe { NullableHandle::from_raw(handle) }))
         }
     }
 
@@ -229,8 +234,8 @@ pub(crate) mod vdso_next {
     mod tests {
         use crate::handle::AsHandleRef;
         use crate::{
-            sys, system_get_page_size, Iob, IobDiscipline, IobRegion, IobRegionType,
-            IobSharedRegion, Unowned, Vmar, VmarFlags,
+            Iob, IobDiscipline, IobRegion, IobRegionType, IobSharedRegion, Unowned, Vmar,
+            VmarFlags, sys, system_get_page_size,
         };
         use std::sync::atomic::{AtomicU64, Ordering};
 

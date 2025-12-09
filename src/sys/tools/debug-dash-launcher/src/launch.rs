@@ -21,9 +21,9 @@ const DASH_ARGS_FOR_INTERACTIVE: [&[u8]; 2] = ["-i".as_bytes(), "-s".as_bytes()]
 const DASH_ARGS_FOR_COMMAND: [&[u8]; 2] = ["-v".as_bytes(), "-c".as_bytes()];
 
 async fn explore_over_handles(
-    stdin: zx::Handle,
-    stdout: zx::Handle,
-    stderr: zx::Handle,
+    stdin: zx::NullableHandle,
+    stdout: zx::NullableHandle,
+    stderr: zx::NullableHandle,
     tool_urls: Vec<String>,
     command: Option<String>,
     mut name_infos: Vec<fproc::NameInfo>,
@@ -85,7 +85,7 @@ async fn explore_over_handles(
 
 fn split_pty_into_handles(
     pty: ClientEnd<pty::DeviceMarker>,
-) -> Result<(zx::Handle, zx::Handle, zx::Handle), LauncherError> {
+) -> Result<(zx::NullableHandle, zx::NullableHandle, zx::NullableHandle), LauncherError> {
     let pty = pty.into_proxy();
 
     // Split the PTY into 3 channels (stdin, stdout, stderr).
@@ -107,9 +107,9 @@ fn split_pty_into_handles(
 
 fn create_handle_infos(
     job: &zx::Job,
-    stdin: zx::Handle,
-    stdout: zx::Handle,
-    stderr: zx::Handle,
+    stdin: zx::NullableHandle,
+    stdout: zx::NullableHandle,
+    stderr: zx::NullableHandle,
 ) -> Result<Vec<fproc::HandleInfo>, LauncherError> {
     let stdin_handle = fproc::HandleInfo {
         handle: stdin.into_handle(),
@@ -129,7 +129,7 @@ fn create_handle_infos(
     let job_dup =
         job.duplicate_handle(zx::Rights::SAME_RIGHTS).map_err(|_| LauncherError::Internal)?;
     let job_handle = fproc::HandleInfo {
-        handle: zx::Handle::from(job_dup),
+        handle: zx::NullableHandle::from(job_dup),
         id: HandleId::new(HandleType::DefaultJob, 0).as_raw(),
     };
 

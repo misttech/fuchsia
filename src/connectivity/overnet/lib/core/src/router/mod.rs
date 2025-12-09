@@ -21,16 +21,16 @@
 mod service_map;
 
 use self::service_map::ServiceMap;
-use crate::future_help::{log_errors, Observer};
-use crate::handle_info::{handle_info, HandleKey, HandleType};
+use crate::future_help::{Observer, log_errors};
+use crate::handle_info::{HandleKey, HandleType, handle_info};
 use crate::labels::{NodeId, TransferKey};
 use crate::peer::{FramedStreamReader, FramedStreamWriter, Peer, PeerConnRef};
 use crate::proxy::{
     IntoProxied, ProxyTransferInitiationReceiver, RemoveFromProxyTable, StreamRefSender,
 };
-use anyhow::{bail, format_err, Context as _, Error};
+use anyhow::{Context as _, Error, bail, format_err};
 use async_utils::mutex_ticket::MutexTicket;
-use fidl::{AsHandleRef, Channel, EventPair, Handle, HandleBased, Socket};
+use fidl::{AsHandleRef, Channel, EventPair, HandleBased, NullableHandle, Socket};
 use fidl_fuchsia_overnet_protocol::{
     ChannelHandle, EventPairHandle, EventPairRights, SocketHandle, SocketType, StreamId, StreamRef,
     ZirconHandle,
@@ -60,14 +60,14 @@ type PendingTransferMap = BTreeMap<TransferKey, PendingTransfer>;
 
 #[derive(Debug)]
 pub(crate) enum FoundTransfer {
-    Fused(Handle),
+    Fused(NullableHandle),
     Remote(FramedStreamWriter, FramedStreamReader),
 }
 
 #[derive(Debug)]
 pub(crate) enum OpenedTransfer {
     Fused,
-    Remote(FramedStreamWriter, FramedStreamReader, Handle),
+    Remote(FramedStreamWriter, FramedStreamReader, NullableHandle),
 }
 
 #[derive(Debug)]
@@ -79,11 +79,7 @@ enum CircuitState {
 
 impl CircuitState {
     fn peer(&self) -> Option<Arc<Peer>> {
-        if let CircuitState::Peer(peer) = self {
-            Some(Arc::clone(peer))
-        } else {
-            None
-        }
+        if let CircuitState::Peer(peer) = self { Some(Arc::clone(peer)) } else { None }
     }
 }
 
@@ -338,12 +334,14 @@ impl Router {
                 router.remove_proxied(this_handle_key, pair_handle_key).await;
             }
         });
-        assert!(proxied_streams
-            .insert(
-                this_handle_key,
-                ProxiedHandle { remove_sender, original_paired: pair_handle_key, proxy_task },
-            )
-            .is_none());
+        assert!(
+            proxied_streams
+                .insert(
+                    this_handle_key,
+                    ProxiedHandle { remove_sender, original_paired: pair_handle_key, proxy_task },
+                )
+                .is_none()
+        );
     }
 
     // Remove a proxied handle from our table.
@@ -372,7 +370,7 @@ impl Router {
     // Returns a ZirconHandle describing the established proxy.
     pub(crate) async fn send_proxied(
         self: &Arc<Self>,
-        handle: Handle,
+        handle: NullableHandle,
         conn: PeerConnRef<'_>,
     ) -> Result<ZirconHandle, Error> {
         let raw_handle = handle.raw_handle(); // for debugging
@@ -493,13 +491,13 @@ impl Router {
         }
     }
 
-    // Take a received handle description and construct a fidl::Handle that represents it
+    // Take a received handle description and construct a fidl::NullableHandle that represents it
     // whilst establishing proxies as required
     pub(crate) async fn recv_proxied(
         self: &Arc<Self>,
         handle: ZirconHandle,
         conn: PeerConnRef<'_>,
-    ) -> Result<Handle, Error> {
+    ) -> Result<NullableHandle, Error> {
         match handle {
             ZirconHandle::Channel(ChannelHandle { stream_ref, rights }) => {
                 self.recv_proxied_handle(conn, stream_ref, move || Ok(Channel::create()), rights)
@@ -532,7 +530,7 @@ impl Router {
         stream_ref: StreamRef,
         create_handles: impl FnOnce() -> Result<(CreateType, CreateType), Error> + 'static,
         rights: CreateType::Rights,
-    ) -> Result<Handle, Error>
+    ) -> Result<NullableHandle, Error>
     where
         Hdl: 'static + for<'a> crate::proxy::ProxyableRW<'a>,
         CreateType: 'static
@@ -613,7 +611,7 @@ impl Router {
         self: &Arc<Router>,
         target: NodeId,
         transfer_key: TransferKey,
-        handle: Handle,
+        handle: NullableHandle,
     ) -> Result<OpenedTransfer, Error> {
         if target == self.node_id {
             // The target is local: we just file away the handle.
@@ -751,9 +749,9 @@ mod tests {
 
     use super::*;
     use crate::test_util::*;
+    use circuit::Quality;
     use circuit::multi_stream::multi_stream_node_connection;
     use circuit::stream::stream;
-    use circuit::Quality;
 
     #[fuchsia::test]
     async fn no_op(run: usize) {

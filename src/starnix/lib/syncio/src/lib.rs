@@ -727,7 +727,7 @@ impl TryFrom<zxio::zxio_token_type_t> for ZxioTokenType {
 /// `set_token_resolver`.
 pub trait ZxioTokenResolver: Send + Sync {
     /// Returns a token of the specified type.
-    fn get_token(&self, token_type: ZxioTokenType) -> Option<zx::Handle>;
+    fn get_token(&self, token_type: ZxioTokenType) -> Option<zx::NullableHandle>;
 }
 
 /// `zxio_token_resolver` callback provided to ZXIO. Calls `ZxioTokenResolver`.
@@ -744,7 +744,7 @@ unsafe extern "C" fn resolve_token(
     ZxioTokenType::try_from(token_type)
         .ok()
         .and_then(|type_| resolver.get_token(type_))
-        .map(zx::Handle::into_raw)
+        .map(zx::NullableHandle::into_raw)
         .unwrap_or(zx::sys::ZX_HANDLE_INVALID)
 }
 
@@ -804,7 +804,7 @@ impl Zxio {
         &self.inner.storage as *const zxio::zxio_storage_t as *mut zxio::zxio_storage_t
     }
 
-    pub fn create(handle: zx::Handle) -> Result<Zxio, zx::Status> {
+    pub fn create(handle: zx::NullableHandle) -> Result<Zxio, zx::Status> {
         let zxio = Zxio::default();
         #[allow(
             clippy::undocumented_unsafe_blocks,
@@ -815,7 +815,7 @@ impl Zxio {
         Ok(zxio)
     }
 
-    pub fn release(self) -> Result<zx::Handle, zx::Status> {
+    pub fn release(self) -> Result<zx::NullableHandle, zx::Status> {
         let mut handle = 0;
         #[allow(
             clippy::undocumented_unsafe_blocks,
@@ -828,7 +828,7 @@ impl Zxio {
             reason = "Force documented unsafe blocks in Starnix"
         )]
         unsafe {
-            Ok(zx::Handle::from_raw(handle))
+            Ok(zx::NullableHandle::from_raw(handle))
         }
     }
 
@@ -898,7 +898,7 @@ impl Zxio {
     }
 
     pub fn create_with_on_representation(
-        handle: zx::Handle,
+        handle: zx::NullableHandle,
         attributes: Option<&mut zxio_node_attributes_t>,
     ) -> Result<Zxio, zx::Status> {
         if let Some(attr) = &attributes {
@@ -1016,7 +1016,7 @@ impl Zxio {
         Zxio::create(self.clone_handle()?)
     }
 
-    pub fn clone_handle(&self) -> Result<zx::Handle, zx::Status> {
+    pub fn clone_handle(&self) -> Result<zx::NullableHandle, zx::Status> {
         let mut handle = 0;
         #[allow(
             clippy::undocumented_unsafe_blocks,
@@ -1029,7 +1029,7 @@ impl Zxio {
             reason = "Force documented unsafe blocks in Starnix"
         )]
         unsafe {
-            Ok(zx::Handle::from_raw(handle))
+            Ok(zx::NullableHandle::from_raw(handle))
         }
     }
 
@@ -1230,7 +1230,7 @@ impl Zxio {
             clippy::undocumented_unsafe_blocks,
             reason = "Force documented unsafe blocks in Starnix"
         )]
-        let handle = unsafe { zx::Handle::from_raw(vmo) };
+        let handle = unsafe { zx::NullableHandle::from_raw(vmo) };
         Ok(zx::Vmo::from(handle))
     }
 
@@ -1276,7 +1276,7 @@ impl Zxio {
         zx::ok(status)?;
         let proxy = fio::NodeSynchronousProxy::from_channel(
             // SAFETY: `out_handle` extracted from `zxio_release` should be a valid handle.
-            unsafe { zx::Handle::from_raw(out_handle) }.into(),
+            unsafe { zx::NullableHandle::from_raw(out_handle) }.into(),
         );
 
         // Don't wait for response from `get_attributes` (by setting deadline to `INFINITE_PAST`).
@@ -1365,7 +1365,7 @@ impl Zxio {
     pub fn wait_begin(
         &self,
         zxio_signals: zxio_signals_t,
-    ) -> (zx::Unowned<'_, zx::Handle>, zx::Signals) {
+    ) -> (zx::Unowned<'_, zx::NullableHandle>, zx::Signals) {
         let mut handle = zx::sys::ZX_HANDLE_INVALID;
         let mut zx_signals = zx::sys::ZX_SIGNAL_NONE;
         #[allow(
@@ -1379,7 +1379,7 @@ impl Zxio {
             clippy::undocumented_unsafe_blocks,
             reason = "Force documented unsafe blocks in Starnix"
         )]
-        let handle = unsafe { zx::Unowned::<zx::Handle>::from_raw_handle(handle) };
+        let handle = unsafe { zx::Unowned::<zx::NullableHandle>::from_raw_handle(handle) };
         let signals = zx::Signals::from_bits_truncate(zx_signals);
         (handle, signals)
     }
