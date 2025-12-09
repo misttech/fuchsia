@@ -47,8 +47,8 @@ component to record the CPU usage data to Inspect, Trace, and/or syslog.
 ",
     note = "\
 Please specify a duration for immediate load display, or alternatively, utilize the start/stop \
-subcommand to instruct the metrics-logger component to record the CPU usage data to Inspect, Trace,\
-and/or syslog.
+subcommand to instruct the metrics-logger component to record the CPU usage data to Inspect, \
+Trace, and/or syslog.
 If the metrics-logger component is not available to the target, add \
 `--with //src/power/metrics-logger` to fx set."
 )]
