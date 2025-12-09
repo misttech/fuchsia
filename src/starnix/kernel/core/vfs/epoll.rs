@@ -73,12 +73,11 @@ struct EpollState {
     /// longer than we need to. This reduces contention with waited-on objects
     /// that tries to notify this epoll object on subscribed events.
     processing_list: VecDeque<ReadyItem>,
-    /// rearm_list is the list of event that need to
-    /// be waited upon prior to actually waiting in
-    /// EpollFileObject::wait. They cannot be re-armed
-    /// before that, because, if the client process has
-    /// not cleared the wait condition, they would just
-    /// be immediately triggered.
+    /// recheck_list is the list of items that need to have query_events checked
+    /// at the start of the next EpollFileObject::wait call. This is only items
+    /// that were returned from the last wait call, because those are the only
+    /// ones that might need to be returned even if no events come in between
+    /// wait calls.
     recheck_list: Vec<ReadyItemKey>,
 }
 
@@ -442,12 +441,7 @@ impl EpollFileObject {
                 continue;
             }
 
-            self.wait_on_file_edge_triggered(
-                locked,
-                current_task,
-                pending_event.key,
-                wait,
-            )?;
+            self.wait_on_file_edge_triggered(locked, current_task, pending_event.key, wait)?;
 
             if !wait.events.contains(FdEvents::EPOLLET) {
                 state.recheck_list.push(pending_event.key);
