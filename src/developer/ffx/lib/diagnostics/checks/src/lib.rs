@@ -2,13 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use check_analytics::{PointOfFailure, ResultExt};
 use discovery::query::TargetInfoQuery;
 use discovery::{DiscoverySources, FastbootConnectionState, TargetHandle, TargetState};
 use fdomain_client::fidl::DiscoverableProtocolMarker as _;
 use fdomain_fuchsia_hwinfo::{ProductInfo, ProductMarker, ProductProxy};
 use ffx_config::EnvironmentContext;
 use ffx_diagnostics::{Check, CheckExt, CheckFut, Notifier};
+use ffx_diagnostics_analytics::{PointOfFailure, ResultExt};
+use ffx_diagnostics_formatting::AsDiagnosticMessage;
 use ffx_fastboot_connection_factory::{
     ConnectionFactory, FastbootConnectionFactory, FastbootConnectionKind,
 };
@@ -16,20 +17,17 @@ use ffx_ssh::keys::{MatchingKeysInfo, SshKey};
 use ffx_target::connection::ConnectionError;
 use ffx_target::ssh_connector::SshConnector;
 use ffx_target::{Connection, TargetConnection, TargetConnectionError, TargetConnector};
-use formatting::AsDiagnosticMessage;
 use futures::stream::StreamExt;
 use std::collections::HashSet;
 use std::path::PathBuf;
 use std::time::Duration;
 use termion::{color, style};
 
-mod check_analytics;
 mod discovery_stream;
-mod formatting;
 
 pub use discovery_stream::{DiagnosticsResolver, NotifierMessage, SingleTargetResolver};
 
-pub async fn check_analytics<N>(notifier: &mut N) -> fho::Result<()>
+pub async fn ffx_diagnostics_analytics<N>(notifier: &mut N) -> fho::Result<()>
 where
     N: Notifier + std::marker::Unpin,
 {
@@ -51,7 +49,7 @@ pub async fn run_diagnostics_with_handle<N>(
 where
     N: Notifier + std::marker::Unpin,
 {
-    check_analytics(notifier).await?;
+    ffx_diagnostics_analytics(notifier).await?;
     run_diagnostics_with_handle_inner(env_context, target_handle, notifier, product_timeout).await
 }
 
@@ -63,7 +61,7 @@ pub async fn run_diagnostics<N>(
 where
     N: Notifier + std::marker::Unpin,
 {
-    check_analytics(notifier).await?;
+    ffx_diagnostics_analytics(notifier).await?;
     let (target, notifier) = GetTargetSpecifier::new(&env)
         .check_with_notifier((), notifier)
         .and_then_check(ResolveTarget::<N>::new(&env))
@@ -73,7 +71,7 @@ where
 }
 
 /// Helper function so that both `run_diagnostics_with_handle` and `run_diagnostics`, as top level
-/// functions, can invoke `check_analytics` exactly once.
+/// functions, can invoke `ffx_diagnostics_analytics` exactly once.
 async fn run_diagnostics_with_handle_inner<N>(
     env_context: &EnvironmentContext,
     target_handle: TargetHandle,
@@ -191,7 +189,8 @@ where
         output: &Self::Output,
         notifier: &mut Self::Notifier,
     ) -> anyhow::Result<()> {
-        let formatting::ReadableQuery { kind, value } = formatting::format_query(output);
+        let ffx_diagnostics_formatting::ReadableQuery { kind, value } =
+            ffx_diagnostics_formatting::format_query(output);
         if value.is_empty() {
             notifier.on_success(format!("The target specifier is {kind}"))
         } else {
@@ -314,7 +313,7 @@ where
         output: &Self::Output,
         notifier: &mut Self::Notifier,
     ) -> anyhow::Result<()> {
-        let state_str = formatting::format_target_state(&output.state);
+        let state_str = ffx_diagnostics_formatting::format_target_state(&output.state);
         if let Some(name) = &output.node_name {
             notifier.on_success(format!(
                 "Device resolved to node: \"{}{}{}\" {state_str}",
@@ -385,18 +384,22 @@ where
                         notifier.info(additional_message)?;
                     }
                 }
-                check_analytics::mark_point_of_failure(PointOfFailure::NoMatchingTargets {
-                    query: input.clone(),
-                    discovery_sources: sources,
-                })
+                ffx_diagnostics_analytics::mark_point_of_failure(
+                    PointOfFailure::NoMatchingTargets {
+                        query: input.clone(),
+                        discovery_sources: sources,
+                    },
+                )
                 .await;
                 return Err(anyhow::anyhow!("Unable to find any matching devices"));
             }
             if targets.len() > 1 {
-                check_analytics::mark_point_of_failure(PointOfFailure::TooManyMatchingTargets {
-                    query: input,
-                    discovery_sources: sources,
-                })
+                ffx_diagnostics_analytics::mark_point_of_failure(
+                    PointOfFailure::TooManyMatchingTargets {
+                        query: input,
+                        discovery_sources: sources,
+                    },
+                )
                 .await;
                 return Err(anyhow::anyhow!(
                     "Too many targets. You may need to be more specific in the device you are checking. Found: {targets:?}"
@@ -607,7 +610,7 @@ where
         input: &Self::Input,
         notifier: &mut Self::Notifier,
     ) -> anyhow::Result<()> {
-        let state_str = formatting::format_target_state(&input.state);
+        let state_str = ffx_diagnostics_formatting::format_target_state(&input.state);
         if let Some(name) = &input.node_name {
             notifier.info(format!(
                 "Attempting to connect ssh to device node: \"{}{}{}\" {state_str}",
@@ -642,10 +645,9 @@ where
             match Connection::new(connector).await {
                 Ok(res) => Ok(res),
                 Err(e) => {
-                    check_analytics::mark_point_of_failure(PointOfFailure::SshConnectionFailed {
-                        state: input.state,
-                        reason: &e,
-                    })
+                    ffx_diagnostics_analytics::mark_point_of_failure(
+                        PointOfFailure::SshConnectionFailed { state: input.state, reason: &e },
+                    )
                     .await;
                     Err(anyhow::anyhow!(
                         "\nUnable to connect to ssh. Consider running the above `ssh` command and evaluating the output.\nIn addition, consult https://fuchsia.dev/fuchsia-src/development/tools/ffx/workflows/network-connectivity/ssh-daemon\nUnderlying error: {}",
@@ -770,7 +772,7 @@ where
             let fastboot_state = match input.state {
                 TargetState::Fastboot(ref s) => s,
                 _ => {
-                    check_analytics::mark_point_of_failure(
+                    ffx_diagnostics_analytics::mark_point_of_failure(
                         PointOfFailure::NonFastbootTargetHandle { handle: input.clone() },
                     )
                     .await;

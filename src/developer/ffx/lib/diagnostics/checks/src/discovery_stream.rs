@@ -1,7 +1,6 @@
 // Copyright 2025 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-use crate::formatting;
 use discovery::emulator_watcher::EmulatorWatcher;
 use discovery::fastboot_file_watcher::FastbootWatcher;
 use discovery::query::TargetInfoQuery;
@@ -98,7 +97,10 @@ pub(crate) fn build_discovery_stream(
         let mdns_sender = sender.clone();
         let ns_clone = notifier_sender.clone();
         config.set_mdns_event_handler(move |res: ffx::MdnsEventType| {
-            ns_clone.info(format!("Got MDNS event: {}", formatting::format_mdns_event(&res)));
+            ns_clone.info(format!(
+                "Got MDNS event: {}",
+                ffx_diagnostics_formatting::format_mdns_event(&res)
+            ));
             let event = TargetEvent::try_from(res).ok();
             if let Some(event) = event {
                 let _ = mdns_sender.unbounded_send(event);

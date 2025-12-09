@@ -6,7 +6,7 @@ use discovery::query::TargetInfoQuery;
 use discovery::{DiscoverySources, TargetState};
 use {fidl_fuchsia_developer_ffx as ffx, fidl_fuchsia_net as fnet};
 
-pub(crate) trait AsDiagnosticMessage {
+pub trait AsDiagnosticMessage {
     fn as_diagnostic_message(&self) -> String;
 }
 

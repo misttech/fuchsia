@@ -8,7 +8,7 @@ use std::collections::BTreeMap;
 
 /// An enum used for our analytics to have a well-defined way of specifying a point of failure.
 /// We can assume that all previous steps that would precede our checks would have succeeded.
-pub(crate) enum PointOfFailure<'a> {
+pub enum PointOfFailure<'a> {
     /// We've failed trying to get the target specifier.
     GetTargetSpecifier,
     /// This denotes a failure when we run `DiagnosticsResolver::discovered_targets`, specifically.
@@ -81,7 +81,7 @@ pub(crate) enum PointOfFailure<'a> {
 }
 
 #[derive(Default)]
-pub(crate) struct CustomEvent {
+pub struct CustomEvent {
     category: &'static str,
     action: Option<String>,
     custom_dimensions: BTreeMap<&'static str, analytics::GA4Value>,
@@ -100,7 +100,7 @@ fn format_target_state(state: &TargetState) -> String {
 /// Convenience combinators for uploading analytics when using Result<_> types. Simpler than using
 /// a newtype.
 #[allow(async_fn_in_trait)]
-pub(crate) trait ResultExt {
+pub trait ResultExt {
     type Error;
     type Success;
 
@@ -169,7 +169,7 @@ impl From<PointOfFailure<'_>> for CustomEvent {
             }
             DiscoveryFailure { query, discovery_sources } => CustomEvent {
                 category: "discovery_failed",
-                action: Some(crate::formatting::format_query(&query).kind.to_owned()),
+                action: Some(ffx_diagnostics_formatting::format_query(&query).kind.to_owned()),
                 custom_dimensions: [(
                     "discovery_sources",
                     (discovery_sources.bits() as u64).into(),
@@ -179,7 +179,7 @@ impl From<PointOfFailure<'_>> for CustomEvent {
             },
             NoMatchingTargets { query, discovery_sources } => CustomEvent {
                 category: "no_matching_targets",
-                action: Some(crate::formatting::format_query(&query).kind.to_owned()),
+                action: Some(ffx_diagnostics_formatting::format_query(&query).kind.to_owned()),
                 custom_dimensions: [(
                     "discovery_sources",
                     (discovery_sources.bits() as u64).into(),
@@ -189,7 +189,7 @@ impl From<PointOfFailure<'_>> for CustomEvent {
             },
             TooManyMatchingTargets { query, discovery_sources } => CustomEvent {
                 category: "too_many_matching_targets",
-                action: Some(crate::formatting::format_query(&query).kind.to_owned()),
+                action: Some(ffx_diagnostics_formatting::format_query(&query).kind.to_owned()),
                 custom_dimensions: [(
                     "discovery_sources",
                     (discovery_sources.bits() as u64).into(),
@@ -273,7 +273,7 @@ impl From<PointOfFailure<'_>> for CustomEvent {
 
 /// Takes an error, and a "point of failure," and uploads the analytics for this specific type of
 /// failure for tracking.
-pub(crate) async fn mark_point_of_failure(failure_point: PointOfFailure<'_>) {
+pub async fn mark_point_of_failure(failure_point: PointOfFailure<'_>) {
     let CustomEvent { category, action, mut custom_dimensions } = failure_point.into();
     if !ffx_command::send_enhanced_analytics().await {
         return;
