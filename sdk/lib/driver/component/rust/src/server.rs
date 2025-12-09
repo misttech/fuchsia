@@ -11,7 +11,7 @@ use std::sync::OnceLock;
 use log::{debug, warn};
 use zx::Status;
 
-use fdf::{Channel, Dispatcher, DispatcherBuilder, DispatcherRef};
+use fdf::{Channel, DispatcherBuilder, DispatcherRef};
 use fidl_fuchsia_driver_framework::DriverRequest;
 
 use fdf::{AsyncDispatcher, DriverHandle, Message, fdf_handle_t};
@@ -80,7 +80,7 @@ impl<T: Driver> DriverServer<T> {
             .post_task_sync(move |status| {
                 // bail immediately if we were somehow cancelled before we started
                 let Status::OK = status else { return };
-                Dispatcher::override_current(root_dispatcher.clone(), || {
+                fdf_core::override_current_dispatcher(root_dispatcher.clone(), || {
                     // create and run a fuchsia-async executor, giving it the "root" dispatcher to
                     // actually execute driver tasks on, as this thread will be effectively blocked
                     // by the reactor loop.

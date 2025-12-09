@@ -373,8 +373,7 @@ mod tests {
     use std::sync::{Arc, mpsc};
 
     use fdf_core::dispatcher::{
-        AsyncDispatcher, CurrentDispatcher, Dispatcher, DispatcherBuilder, DispatcherRef,
-        OnDispatcher,
+        AsyncDispatcher, CurrentDispatcher, DispatcherBuilder, DispatcherRef, OnDispatcher,
     };
     use fdf_core::handle::MixedHandleType;
     use fdf_env::test::spawn_in_driver;
@@ -521,7 +520,7 @@ mod tests {
 
             rust_async_dispatcher
                 .post_task_sync(move |_| {
-                    Dispatcher::override_current(fdf_dispatcher, || {
+                    fdf_core::override_current_dispatcher(fdf_dispatcher, || {
                         let mut executor = fuchsia_async::LocalExecutor::default();
                         executor.run_singlethreaded(ping(ping_chan));
                     });
@@ -663,7 +662,7 @@ mod tests {
                 let pending_count_clone = pending_count.clone();
                 dispatcher
                     .post_task_sync(move |_| {
-                        Dispatcher::override_current(fdf_dispatcher, || {
+                        fdf_core::override_current_dispatcher(fdf_dispatcher, || {
                             let mut executor = fuchsia_async::LocalExecutor::default();
                             executor.run_singlethreaded(recv_lots_of_bytes_with_cancellations(
                                 rx,

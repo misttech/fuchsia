@@ -6,7 +6,7 @@
 
 use std::sync::{Arc, mpsc};
 
-use fdf::{AsyncDispatcher, CurrentDispatcher, OnDispatcher};
+use fdf_core::dispatcher::{AsyncDispatcher, CurrentDispatcher, OnDispatcher};
 
 use super::*;
 

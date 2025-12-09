@@ -7,3 +7,25 @@
 
 pub mod dispatcher;
 pub mod handle;
+pub mod shutdown_observer;
+
+/// Gets the inner pointer of a dispatcher ref
+pub fn dispatcher_ptr<'a>(
+    dispatcher: &'a dispatcher::DispatcherRef<'a>,
+) -> &'a core::ptr::NonNull<fdf_sys::fdf_dispatcher_t> {
+    &dispatcher.0
+}
+
+/// Overrides the current dispatcher used by [`dispatcher::CurrentDispatcher::on_dispatcher`] while
+/// the callback is being called.
+pub fn override_current_dispatcher<R>(
+    dispatcher: dispatcher::DispatcherRef<'_>,
+    f: impl FnOnce() -> R,
+) -> R {
+    dispatcher::OVERRIDE_DISPATCHER.with(|global| {
+        let previous = global.replace(Some(dispatcher.0));
+        let res = f();
+        global.replace(previous);
+        res
+    })
+}

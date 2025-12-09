@@ -31,6 +31,7 @@ rustc_library("core") {
     "src/dispatcher.rs",
     "src/handle.rs",
     "src/lib.rs",
+    "src/shutdown_observer.rs",
   ]
 
   visibility = [

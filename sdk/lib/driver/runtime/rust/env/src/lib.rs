@@ -15,7 +15,8 @@ use core::ptr::{NonNull, null_mut};
 
 use zx::Status;
 
-use fdf::{Dispatcher, DispatcherBuilder, DispatcherRef, ShutdownObserver};
+use fdf_core::dispatcher::{Dispatcher, DispatcherBuilder, DispatcherRef};
+use fdf_core::shutdown_observer::ShutdownObserver;
 
 pub mod test;
 
@@ -35,7 +36,8 @@ fn create_with_driver<'a>(
     let scheduler_role = dispatcher.scheduler_role.as_ptr() as *mut ffi::c_char;
     let scheduler_role_len = dispatcher.scheduler_role.len();
     let observer =
-        dispatcher.shutdown_observer.unwrap_or_else(|| ShutdownObserver::new(|_| {})).into_ptr();
+        ShutdownObserver::new(dispatcher.shutdown_observer.unwrap_or_else(|| Box::new(|_| {})))
+            .into_ptr();
     // SAFETY: all arguments point to memory that will be available for the duration
     // of the call, except `observer`, which will be available until it is unallocated
     // by the dispatcher exit handler.
@@ -370,7 +372,9 @@ impl Environment {
 
     /// Returns whether the dispatcher has any queued tasks.
     pub fn dispatcher_has_queued_tasks(&self, dispatcher: DispatcherRef<'_>) -> bool {
-        unsafe { fdf_env_dispatcher_has_queued_tasks(dispatcher.inner().as_ptr()) }
+        unsafe {
+            fdf_env_dispatcher_has_queued_tasks(fdf_core::dispatcher_ptr(&dispatcher).as_ptr())
+        }
     }
 
     /// Returns the current maximum number of threads which will be spawned for thread pool associated

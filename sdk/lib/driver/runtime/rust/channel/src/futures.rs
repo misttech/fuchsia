@@ -181,7 +181,7 @@ impl ReadMessageState {
                         // has `repr(C)` layout, so is safe to be cast to the latter.
                         let res = Status::ok(unsafe {
                             fdf_channel_wait_async(
-                                dispatcher.inner().as_ptr(),
+                                fdf_core::dispatcher_ptr(&dispatcher).as_ptr(),
                                 op.cast_mut().cast(),
                                 options,
                             )
