@@ -137,6 +137,7 @@ struct vm_page {
       uint32_t free_slot;
       uint32_t peak_allocated;
       uint32_t allocated;
+      uint32_t profile_cookie;
     } __PACKED slab;
   };
   using object_t = decltype(object);

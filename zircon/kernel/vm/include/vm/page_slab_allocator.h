@@ -92,6 +92,13 @@ class PageSlabAllocator {
     return reinterpret_cast<Entry*>(paddr_to_physmap(slab->paddr())) + index;
   }
   void DebugFreeAllSlabs() {
+    vm_page_t* p;
+    list_for_every_entry (&full_slabs_, p, vm_page_t, queue_node) {
+      profile_track_free(p->slab.profile_cookie, kPageSize);
+    }
+    list_for_every_entry (&available_slabs_, p, vm_page_t, queue_node) {
+      profile_track_free(p->slab.profile_cookie, kPageSize);
+    }
     Pmm::Node().FreeList(&full_slabs_);
     Pmm::Node().FreeList(&available_slabs_);
   }
@@ -99,10 +106,18 @@ class PageSlabAllocator {
     vm_page_t* page = Pmm::Node().AllocPage(0).value_or(nullptr);
     if (page) {
       page->set_state(vm_page_state::SLAB);
+      // There is enough space to store a cookie per allocation in the slab, so amortize it and
+      // record a per slab cookie. On average this should have every different call site using this
+      // allocator to get proportional blame.
+      page->slab.profile_cookie = profile_track_alloc(kPageSize);
     }
     return page;
   }
-  virtual void FreeSlab(vm_page_t* slab) { Pmm::Node().FreePage(slab); }
+  virtual void FreeSlab(vm_page_t* slab) {
+    DEBUG_ASSERT(slab->state() == vm_page_state::SLAB);
+    profile_track_free(slab->slab.profile_cookie, kPageSize);
+    Pmm::Node().FreePage(slab);
+  }
   virtual vm_page_t* PaddrToPage(paddr_t paddr) const { return Pmm::Node().PaddrToPage(paddr); }
 
  private:
