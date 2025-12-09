@@ -10,8 +10,8 @@ use net_types::ip::{Ip, IpAddress as _};
 use netstack3_base::{IpSocketProperties, Marks, Matcher, WeakDeviceIdentifier};
 
 use crate::internal::socket::{
-    BoundSocketState, DualStackIpExt, SocketCookie, TcpBindingsTypes, TcpSocketId, TcpSocketState,
-    TcpSocketStateInner,
+    BoundSocketState, DualStackIpExt, MaybeListener, SocketCookie, TcpBindingsTypes, TcpSocketId,
+    TcpSocketState, TcpSocketStateInner,
 };
 use crate::internal::state::State;
 
@@ -251,8 +251,14 @@ where
     pub(crate) fn base_state(&self) -> netstack3_base::TcpSocketState {
         match &self.socket_state {
             TcpSocketStateInner::Unbound(_) => netstack3_base::TcpSocketState::Close,
-            TcpSocketStateInner::Bound(BoundSocketState::Listener(_)) => {
-                netstack3_base::TcpSocketState::Listen
+            TcpSocketStateInner::Bound(BoundSocketState::Listener((maybe_listener, _, _))) => {
+                match maybe_listener {
+                    MaybeListener::Listener(_) => netstack3_base::TcpSocketState::Listen,
+                    // Despite being in the BoundSocketState::Listener variant,
+                    // this is used for a socket that is bound, but not yet
+                    // either connected or listening.
+                    MaybeListener::Bound(_) => netstack3_base::TcpSocketState::Close,
+                }
             }
             TcpSocketStateInner::Bound(BoundSocketState::Connected { conn, .. }) => {
                 match I::get_state(conn) {
