@@ -352,30 +352,30 @@ To check if the offer of the service exists in the child node, run the
 following command (you may also use the `ffx component doctor` command):
 
 ```posix-terminal
-ffx driver list-devices -v
+ffx driver node list <child_node_name>
 ```
 
 This command prints the details of all the services offered in
 each node, for example:
 
 ```none {:.devsite-disable-click-to-copy}
-Name     : RTC_-composite-spec
-Moniker  : acpi._SB_.PCI0.ISA_.RTC_.pt.RTC_-composite-spec
-Driver   : fuchsia-boot:///intel-rtc#meta/intel-rtc.cm
-0 Properties
-4 Offers
-Service: fuchsia.driver.compat.Service
-  Source: board
-  Instances: default acpi
-Service: fuchsia.hardware.acpi.Service
-  Source: board
-  Instances: default acpi
-Service: fuchsia.driver.compat.Service
-  Source: 00_00_1b
-  Instances: sysmem
-Service: fuchsia.hardware.sysmem.Service
-  Source: 00_00_1b
-  Instances: sysmem
+          Name:  intel-hda-000
+       Moniker:  PCI0.bus.00_01_0.00_01_0.intel-hda-000
+         Owner:  parent
+    Node State:  Bound
+     Host Koid:
+  Parent Count:  1
+   Child Count:  1
+
+  Bus Topology:  Bus Type  Stability  Address
+                 Pci       Stable     0, 1, 0
+
+  Node Properties:  Key                            Value
+                    fuchsia.BIND_PROTOCOL          76
+                    fuchsia.driver.compat.Service  fuchsia.driver.compat.Service.ZirconTransport
+
+  Node Offers:  Service                        Source                    Instances
+                fuchsia.driver.compat.Service  PCI0.bus.00_01_0.00_01_0  default
 ```
 
 Also, if the offer is not found in the child node, you may see
