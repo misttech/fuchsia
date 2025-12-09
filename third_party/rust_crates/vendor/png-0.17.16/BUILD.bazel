@@ -78,6 +78,6 @@ rust_library(
         "//third_party/rust_crates/vendor/crc32fast-1.2.0:crc32fast",
         "//third_party/rust_crates/vendor/fdeflate-0.3.7:fdeflate",
         "//third_party/rust_crates/vendor/flate2-1.1.1:flate2",
-        "//third_party/rust_crates/vendor/miniz_oxide-0.8.8:miniz_oxide",
+        "//third_party/rust_crates/vendor/miniz_oxide-0.8.9:miniz_oxide",
     ],
 )

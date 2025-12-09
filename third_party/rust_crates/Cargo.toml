@@ -162,7 +162,7 @@ maybe-owned = "0.3.4"
 md-5 = "0.10.6"
 memchr = "2.7.6"
 memoffset = "0.9.1"
-miniz_oxide = "0.8.8"
+miniz_oxide = "0.8.9"
 mock-omaha-server = { version = "0.3.7", default-features = false }
 mockall = "0.14"
 munge = "0.4.4"

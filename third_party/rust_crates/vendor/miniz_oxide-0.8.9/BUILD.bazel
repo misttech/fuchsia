@@ -22,7 +22,7 @@ package_info(
     name = "package_info",
     package_name = "miniz_oxide",
     package_url = "https://github.com/Frommi/miniz_oxide/tree/master/miniz_oxide",
-    package_version = "0.8.8",
+    package_version = "0.8.9",
 )
 
 license(
@@ -79,7 +79,7 @@ rust_library(
         "@rules_rust//rust/platform:x86_64-unknown-linux-gnu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    version = "0.8.8",
+    version = "0.8.9",
     deps = [
         "//third_party/rust_crates/vendor/adler2-2.0.0:adler2",
         "//third_party/rust_crates/vendor/simd-adler32-0.3.7:simd_adler32",

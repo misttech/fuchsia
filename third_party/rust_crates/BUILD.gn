@@ -577,7 +577,7 @@ group("memoffset") {
 }
 
 group("miniz_oxide") {
-  public_deps = [ ":miniz_oxide-v0_8_8" ]
+  public_deps = [ ":miniz_oxide-v0_8_9" ]
 }
 
 if (!(current_os == "fuchsia")) {
@@ -6695,9 +6695,9 @@ rustc_library("flate2-v1_1_1") {
 
   deps = []
   deps += [ ":crc32fast-v1_2_0" ]
-  deps += [ ":miniz_oxide-v0_8_8" ]
+  deps += [ ":miniz_oxide-v0_8_9" ]
   if (current_cpu == "wasm32" && !false) {
-    deps += [ ":miniz_oxide-v0_8_8" ]
+    deps += [ ":miniz_oxide-v0_8_9" ]
   }
 
   rustenv = []
@@ -10091,20 +10091,20 @@ rustc_library("memoffset-v0_9_1") {
   applicable_licenses = [ ":memoffset-v0_9_1.license" ]
 }
 
-license("miniz_oxide-v0_8_8.license") {
+license("miniz_oxide-v0_8_9.license") {
   public_package_name = "miniz_oxide"
   license_files = [
-    "//third_party/rust_crates/vendor/miniz_oxide-0.8.8/LICENSE",
-    "//third_party/rust_crates/vendor/miniz_oxide-0.8.8/LICENSE-APACHE.md",
-    "//third_party/rust_crates/vendor/miniz_oxide-0.8.8/LICENSE-MIT.md",
-    "//third_party/rust_crates/vendor/miniz_oxide-0.8.8/LICENSE-ZLIB.md",
+    "//third_party/rust_crates/vendor/miniz_oxide-0.8.9/LICENSE",
+    "//third_party/rust_crates/vendor/miniz_oxide-0.8.9/LICENSE-APACHE.md",
+    "//third_party/rust_crates/vendor/miniz_oxide-0.8.9/LICENSE-MIT.md",
+    "//third_party/rust_crates/vendor/miniz_oxide-0.8.9/LICENSE-ZLIB.md",
   ]
 }
 
-rustc_library("miniz_oxide-v0_8_8") {
+rustc_library("miniz_oxide-v0_8_9") {
   crate_name = "miniz_oxide"
-  source_root = "//third_party/rust_crates/vendor/miniz_oxide-0.8.8/src/lib.rs"
-  output_name = "miniz_oxide-916223155ab9b230"
+  source_root = "//third_party/rust_crates/vendor/miniz_oxide-0.8.9/src/lib.rs"
+  output_name = "miniz_oxide-2ec62f7b5e81fb0c"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -10118,8 +10118,8 @@ rustc_library("miniz_oxide-v0_8_8") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=916223155ab9b230",
-    "-Cextra-filename=-916223155ab9b230",
+    "-Cmetadata=2ec62f7b5e81fb0c",
+    "-Cextra-filename=-2ec62f7b5e81fb0c",
     "--cfg=feature=\"default\"",
     "--cfg=feature=\"simd\"",
     "--cfg=feature=\"simd-adler32\"",
@@ -10128,7 +10128,7 @@ rustc_library("miniz_oxide-v0_8_8") {
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":miniz_oxide-v0_8_8.license" ]
+  applicable_licenses = [ ":miniz_oxide-v0_8_9.license" ]
 }
 
 license("mio-v0_7_14.license") {
@@ -12687,7 +12687,7 @@ rustc_library("png-v0_17_16") {
   deps += [ ":crc32fast-v1_2_0" ]
   deps += [ ":fdeflate-v0_3_7" ]
   deps += [ ":flate2-v1_1_1" ]
-  deps += [ ":miniz_oxide-v0_8_8" ]
+  deps += [ ":miniz_oxide-v0_8_9" ]
 
   rustenv = []
 
