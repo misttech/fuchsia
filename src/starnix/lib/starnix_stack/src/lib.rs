@@ -48,8 +48,8 @@ fn get_unsafe_stack_ptr() -> Option<usize> {
 }
 
 pub fn clean_stack() {
-    // Stacks are 2Mo, but syscalls rarely exceed ~70 Kb. We'll cleanup 128 Kb here.
-    const CLEAN_SIZE: usize = 0x20000;
+    // Stacks are 2Mo, clean 1Mo.
+    const CLEAN_SIZE: usize = 0x100000;
     let page_size: usize = zx::system_get_page_size() as usize;
     let stack_ptr_factories = [get_unsafe_stack_ptr, get_safe_stack_ptr];
     for factory in stack_ptr_factories {
