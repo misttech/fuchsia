@@ -40,7 +40,7 @@ void UberStructSystem::RemoveSession(scheduling::SessionId session_id) {
   FX_DCHECK(pending_structs_queues_.contains(session_id));
 
   pending_structs_queues_.erase(session_id);
-  uber_struct_map_.erase(session_id);
+  snapshot_.map.erase(session_id);
 }
 
 UberStructSystem::UpdateResults UberStructSystem::UpdateInstances(
@@ -49,6 +49,7 @@ UberStructSystem::UpdateResults UberStructSystem::UpdateInstances(
   FLATLAND_VERBOSE_LOG << "UberStructSystem::UpdateSessions for " << instances_to_update.size()
                        << " sessions.";
   UpdateResults results;
+  bool recompute_view_tree = false;
   for (const auto& [session_id, present_id] : instances_to_update) {
     // Find the queue associated with this SessonId. It may not exist if the SessionId is
     // associated with a GFX session instead of a Flatland one.
@@ -66,40 +67,52 @@ UberStructSystem::UpdateResults UberStructSystem::UpdateInstances(
     auto pending_struct = queue_kv->second->Pop();
     while (pending_struct.has_value()) {
       ++present_credits_returned;
+
+      // We may squash some UberStructs together; we must recompute the view tree if any of them
+      // required recomputation.
+      recompute_view_tree = recompute_view_tree || pending_struct->recompute_view_tree;
+
       if (pending_struct->present_id == present_id) {
         FLATLAND_VERBOSE_LOG << "    Updating UberStruct for session_id=" << session_id
                              << " present_id=" << present_id;
-        uber_struct_map_[session_id] = std::move(pending_struct->uber_struct);
+        snapshot_.map[session_id] = std::move(pending_struct->uber_struct);
         successful_update = true;
         break;
-      } else if (pending_struct->present_id > present_id) {
+      }
+      if (pending_struct->present_id > present_id) {
+        FX_LOGS(WARNING) << "Popped past the target present_id (target=" << present_id
+                         << " found=" << pending_struct->present_id << ")";
         break;
       }
 
       pending_struct = queue_kv->second->Pop();
     }
 
-    FX_DCHECK(successful_update);
+    FX_DCHECK(successful_update) << "No UberStruct found for session_id=" << session_id
+                                 << " present_id=" << present_id;
     results.present_credits_returned[session_id] = present_credits_returned;
   }
+  snapshot_.recompute_view_tree = recompute_view_tree;
   return results;
 }
 
 void UberStructSystem::ForceUpdateAllSessions(size_t max_updates_per_queue) {
   // Pop entries from each queue until empty.
+  bool recompute_view_tree = false;
   for (auto& [session_id, queue] : pending_structs_queues_) {
     size_t update_count = 0;
     while (auto pending_struct = queue->Pop()) {
-      uber_struct_map_[session_id] = std::move(pending_struct->uber_struct);
-
+      snapshot_.map[session_id] = std::move(pending_struct->uber_struct);
+      recompute_view_tree = recompute_view_tree || pending_struct->recompute_view_tree;
       if (++update_count == max_updates_per_queue) {
         break;
       }
     }
   }
+  snapshot_.recompute_view_tree = recompute_view_tree;
 }
 
-const UberStruct::InstanceMap& UberStructSystem::Snapshot() { return uber_struct_map_; }
+const UberStructSnapshot& UberStructSystem::Snapshot() { return snapshot_; }
 
 size_t UberStructSystem::GetSessionCount() { return pending_structs_queues_.size(); }
 
@@ -110,7 +123,8 @@ TransformHandle::InstanceId UberStructSystem::GetLatestInstanceId() const {
 // |UberStructSystem::Queue| implementations.
 
 void UberStructSystem::UberStructQueue::Push(scheduling::PresentId present_id,
-                                             std::unique_ptr<UberStruct> uber_struct) {
+                                             std::unique_ptr<UberStruct> uber_struct,
+                                             bool recompute_view_tree) {
   FX_DCHECK(uber_struct);
 #ifndef NDEBUG
   // PresentIds must be strictly increasing
@@ -118,8 +132,9 @@ void UberStructSystem::UberStructQueue::Push(scheduling::PresentId present_id,
   last_present_id_.store(present_id);
 #endif
 
-  pending_structs_.Push(
-      PendingUberStruct{.present_id = present_id, .uber_struct = std::move(uber_struct)});
+  pending_structs_.Push(PendingUberStruct{.present_id = present_id,
+                                          .uber_struct = std::move(uber_struct),
+                                          .recompute_view_tree = recompute_view_tree});
 }
 
 std::optional<UberStructSystem::PendingUberStruct> UberStructSystem::UberStructQueue::Pop() {

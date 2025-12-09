@@ -515,7 +515,7 @@ class FlatlandTest : public LoggingEventLoop, public ::testing::Test {
     auto snapshot = uber_struct_system_->Snapshot();
     auto links = link_system_->GetResolvedTopologyLinks();
     auto data = GlobalTopologyData::ComputeGlobalTopologyData(
-        snapshot, links, link_system_->GetInstanceId(), parent);
+        snapshot.map, links, link_system_->GetInstanceId(), parent);
     for (auto handle : data.topology_vector) {
       if (handle == child) {
         return true;
@@ -530,8 +530,8 @@ class FlatlandTest : public LoggingEventLoop, public ::testing::Test {
     auto snapshot = uber_struct_system_->Snapshot();
 
     auto root = flatland->GetRoot();
-    auto uber_struct_kv = snapshot.find(root.GetInstanceId());
-    if (uber_struct_kv == snapshot.end()) {
+    auto uber_struct_kv = snapshot.map.find(root.GetInstanceId());
+    if (uber_struct_kv == snapshot.map.end()) {
       return nullptr;
     }
 
@@ -554,11 +554,12 @@ class FlatlandTest : public LoggingEventLoop, public ::testing::Test {
     const auto snapshot = uber_struct_system_->Snapshot();
     const auto links = link_system_->GetResolvedTopologyLinks();
     const auto data = GlobalTopologyData::ComputeGlobalTopologyData(
-        snapshot, links, link_system_->GetInstanceId(), root_transform);
+        snapshot.map, links, link_system_->GetInstanceId(), root_transform);
     const auto matrices =
-        flatland::ComputeGlobalMatrices(data.topology_vector, data.parent_indices, snapshot);
+        flatland::ComputeGlobalMatrices(data.topology_vector, data.parent_indices, snapshot.map);
 
-    link_system_->UpdateLinkWatchers(data.topology_vector, data.live_handles, matrices, snapshot);
+    link_system_->UpdateLinkWatchers(data.topology_vector, data.live_handles, matrices,
+                                     snapshot.map);
     link_system_->UpdateDevicePixelRatio(display_pixel_ratio_);
 
     // Run the looper again to process any queued FIDL events (i.e., Link callbacks).
@@ -2360,12 +2361,12 @@ TEST_F(FlatlandTest, ViewportClippingPersistsAcrossInstances) {
   const auto link_system_id = link_system_->GetInstanceId();
 
   const auto topology_data = flatland::GlobalTopologyData::ComputeGlobalTopologyData(
-      snapshot, links, link_system_id, parent->GetRoot());
+      snapshot.map, links, link_system_id, parent->GetRoot());
   const auto global_matrices = flatland::ComputeGlobalMatrices(
-      topology_data.topology_vector, topology_data.parent_indices, snapshot);
+      topology_data.topology_vector, topology_data.parent_indices, snapshot.map);
 
   const auto global_clip_regions = ComputeGlobalTransformClipRegions(
-      topology_data.topology_vector, topology_data.parent_indices, global_matrices, snapshot);
+      topology_data.topology_vector, topology_data.parent_indices, global_matrices, snapshot.map);
 
   auto child_root_handle = topology_data.topology_vector[3];
   EXPECT_EQ(child->GetRoot(), child_root_handle);

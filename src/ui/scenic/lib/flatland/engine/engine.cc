@@ -69,7 +69,7 @@ void Engine::InitializeInspectObjects() {
     SceneState scene_state;
     scene_state.Initialize(*this, *root_transform);
     std::ostringstream output;
-    DumpScene(scene_state.snapshot, scene_state.topology_data, scene_state.images,
+    DumpScene(scene_state.snapshot.map, scene_state.topology_data, scene_state.images,
               scene_state.image_indices, scene_state.image_rectangles, output);
     inspector.GetRoot().CreateString(kSceneDump, output.str(), &inspector);
     return fpromise::make_ok_promise(std::move(inspector));
@@ -135,7 +135,7 @@ void Engine::RenderScheduledFrame(uint64_t frame_number, zx::time presentation_t
   // (maybe just in the SceneState?).
   link_system_->UpdateLinkWatchers(scene_state.topology_data.topology_vector,
                                    scene_state.topology_data.live_handles,
-                                   scene_state.global_matrices, scene_state.snapshot);
+                                   scene_state.global_matrices, scene_state.snapshot.map);
   link_system_->UpdateDevicePixelRatio(hw_display->device_pixel_ratio());
 
   // TODO(https://fxbug.dev/42156567): hack!  need a better place to call AddDisplay().
@@ -211,16 +211,22 @@ view_tree::GeneratedSubtreeSnapshot Engine::GenerateViewTreeSnapshot(
     const TransformHandle& root_transform) {
   TRACE_DURATION("gfx", "flatland::Engine::GenerateViewTreeSnapshot");
 
+  const auto [link_child_to_parent_transform_map, link_topology_changed] =
+      link_system_->GetLinkChildToParentTransformMap();
+
   FX_DCHECK(current_scene_state_);
+  if (!current_scene_state_->snapshot.recompute_view_tree && !link_topology_changed) {
+    return view_tree::SubtreeSnapshotNoDiff();
+  }
+
   const auto& uber_struct_snapshot = current_scene_state_->snapshot;
   const auto& topology_data = current_scene_state_->topology_data;
   const auto& global_matrices = current_scene_state_->global_matrices;
   const auto& global_clip_regions = current_scene_state_->clip_regions;
-  const auto link_child_to_parent_transform_map = link_system_->GetLinkChildToParentTransformMap();
 
   auto hit_regions =
       ComputeGlobalHitRegions(topology_data.topology_vector, topology_data.parent_indices,
-                              global_matrices, uber_struct_snapshot);
+                              global_matrices, uber_struct_snapshot.map);
 
   return flatland::GlobalTopologyData::GenerateViewTreeSnapshot(
       topology_data, std::move(hit_regions), global_clip_regions, global_matrices,
@@ -248,20 +254,20 @@ void Engine::SceneState::Initialize(Engine& engine, TransformHandle root_transfo
   const auto links = engine.link_system_->GetResolvedTopologyLinks();
   const auto link_system_id = engine.link_system_->GetInstanceId();
 
-  GlobalTopologyData::ComputeGlobalTopologyData(/*output=*/topology_data, snapshot, links,
+  GlobalTopologyData::ComputeGlobalTopologyData(/*output=*/topology_data, snapshot.map, links,
                                                 link_system_id, root_transform);
 
   ComputeGlobalMatrices(/*output=*/global_matrices, topology_data.topology_vector,
-                        topology_data.parent_indices, snapshot);
+                        topology_data.parent_indices, snapshot.map);
 
   ComputeGlobalImageData(/*output_indices=*/this->image_indices, /*output_images=*/this->images,
-                         topology_data.topology_vector, topology_data.parent_indices, snapshot);
+                         topology_data.topology_vector, topology_data.parent_indices, snapshot.map);
 
   ComputeGlobalImageSampleRegions(/*output=*/image_sample_regions, topology_data.topology_vector,
-                                  topology_data.parent_indices, snapshot);
+                                  topology_data.parent_indices, snapshot.map);
 
   ComputeGlobalTransformClipRegions(/*output=*/clip_regions, topology_data.topology_vector,
-                                    topology_data.parent_indices, global_matrices, snapshot);
+                                    topology_data.parent_indices, global_matrices, snapshot.map);
 
   ComputeGlobalRectangles(/*output=*/image_rectangles, global_matrices, image_sample_regions,
                           clip_regions, image_indices, images);
@@ -271,7 +277,7 @@ void Engine::SceneState::Clear() {
   TRACE_DURATION("gfx", "flatland::Engine::SceneState::Clear");
   {
     TRACE_DURATION("gfx", "flatland::Engine::SceneState::Clear[snapshot]");
-    snapshot.clear();
+    snapshot.map.clear();
   }
   {
     TRACE_DURATION("gfx", "flatland::Engine::SceneState::Clear[topology_data]");

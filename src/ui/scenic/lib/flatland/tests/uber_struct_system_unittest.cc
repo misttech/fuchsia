@@ -117,9 +117,9 @@ TEST(UberStructSystemTest, RemoveSessionCleansUpSession) {
   system.ForceUpdateAllSessions();
 
   auto snapshot = system.Snapshot();
-  EXPECT_EQ(snapshot.size(), 1ul);
-  EXPECT_TRUE(snapshot.contains(kSession1));
-  EXPECT_FALSE(snapshot.contains(kSession2));
+  EXPECT_EQ(snapshot.map.size(), 1ul);
+  EXPECT_TRUE(snapshot.map.contains(kSession1));
+  EXPECT_FALSE(snapshot.map.contains(kSession2));
 
   // Queue an UberStruct for kSession2, but don't update sessions.
   queue2->Push(0, std::make_unique<UberStruct>());
@@ -132,9 +132,9 @@ TEST(UberStructSystemTest, RemoveSessionCleansUpSession) {
   EXPECT_EQ(system.GetSessionCount(), 1ul);
 
   snapshot = system.Snapshot();
-  EXPECT_EQ(snapshot.size(), 1ul);
-  EXPECT_TRUE(snapshot.contains(kSession1));
-  EXPECT_FALSE(snapshot.contains(kSession2));
+  EXPECT_EQ(snapshot.map.size(), 1ul);
+  EXPECT_TRUE(snapshot.map.contains(kSession1));
+  EXPECT_FALSE(snapshot.map.contains(kSession2));
 
   // Remove kSession1 and ensure the system is empty.
   system.RemoveSession(kSession1);
@@ -142,7 +142,7 @@ TEST(UberStructSystemTest, RemoveSessionCleansUpSession) {
   EXPECT_EQ(system.GetSessionCount(), 0ul);
 
   snapshot = system.Snapshot();
-  EXPECT_TRUE(snapshot.empty());
+  EXPECT_TRUE(snapshot.map.empty());
 }
 
 TEST(UberStructSystemTest, UpdateInstancesTriggersSnapshotUpdate) {
@@ -160,17 +160,17 @@ TEST(UberStructSystemTest, UpdateInstancesTriggersSnapshotUpdate) {
   queue2->Push(0, std::make_unique<UberStruct>());
 
   auto snapshot = system.Snapshot();
-  EXPECT_TRUE(snapshot.empty());
+  EXPECT_TRUE(snapshot.map.empty());
 
   // Call UpdateInstances, but with only the second session, which should push that UberStruct into
   // the snapshot.
   system.UpdateInstances({{kSession2, 0}});
 
   snapshot = system.Snapshot();
-  EXPECT_EQ(snapshot.size(), 1ul);
+  EXPECT_EQ(snapshot.map.size(), 1ul);
 
-  auto iter = snapshot.find(kSession2);
-  EXPECT_NE(iter, snapshot.end());
+  auto iter = snapshot.map.find(kSession2);
+  EXPECT_NE(iter, snapshot.map.end());
   EXPECT_NE(iter->second, nullptr);
 
   // Call it a second time with the first session, which should result in both UberStructs being in
@@ -178,14 +178,14 @@ TEST(UberStructSystemTest, UpdateInstancesTriggersSnapshotUpdate) {
   system.UpdateInstances({{kSession1, 0}});
 
   snapshot = system.Snapshot();
-  EXPECT_EQ(snapshot.size(), 2ul);
+  EXPECT_EQ(snapshot.map.size(), 2ul);
 
-  iter = snapshot.find(kSession1);
-  EXPECT_NE(iter, snapshot.end());
+  iter = snapshot.map.find(kSession1);
+  EXPECT_NE(iter, snapshot.map.end());
   EXPECT_NE(iter->second, nullptr);
 
-  iter = snapshot.find(kSession2);
-  EXPECT_NE(iter, snapshot.end());
+  iter = snapshot.map.find(kSession2);
+  EXPECT_NE(iter, snapshot.map.end());
   EXPECT_NE(iter->second, nullptr);
 }
 
@@ -201,23 +201,23 @@ TEST(UberStructSystemTest, UpdateInstancesIgnoresGfxSessionIds) {
   queue->Push(0, std::make_unique<UberStruct>());
 
   auto snapshot = system.Snapshot();
-  EXPECT_TRUE(snapshot.empty());
+  EXPECT_TRUE(snapshot.map.empty());
 
   // Call UpdateInstances, but with only the GFX session, which should update nothing.
   system.UpdateInstances({{kGfxSession, 0}});
 
   snapshot = system.Snapshot();
-  EXPECT_TRUE(snapshot.empty());
+  EXPECT_TRUE(snapshot.map.empty());
 
   // Call it a second time with the Flatland session, which should result in an UberStruct in the
   // snapshot.
   system.UpdateInstances({{kFlatlandSession, 0}});
 
   snapshot = system.Snapshot();
-  EXPECT_EQ(snapshot.size(), 1ul);
+  EXPECT_EQ(snapshot.map.size(), 1ul);
 
-  auto iter = snapshot.find(kFlatlandSession);
-  EXPECT_NE(iter, snapshot.end());
+  auto iter = snapshot.map.find(kFlatlandSession);
+  EXPECT_NE(iter, snapshot.map.end());
   EXPECT_NE(iter->second, nullptr);
 }
 
@@ -245,17 +245,17 @@ TEST(UberStructSystemTest, UpdateInstancesConsumesPreviousPresents) {
   queue->Push(3, std::move(struct3));
 
   auto snapshot = system.Snapshot();
-  EXPECT_TRUE(snapshot.empty());
+  EXPECT_TRUE(snapshot.map.empty());
 
   // Call UpdateInstances with PresentId = 2. This should skip struct1, place struct2 in the
   // snapshot, and leave struct3 queued.
   system.UpdateInstances({{kSession, 2}});
 
   snapshot = system.Snapshot();
-  EXPECT_EQ(snapshot.size(), 1ul);
+  EXPECT_EQ(snapshot.map.size(), 1ul);
 
-  auto iter = snapshot.find(kSession);
-  EXPECT_NE(iter, snapshot.end());
+  auto iter = snapshot.map.find(kSession);
+  EXPECT_NE(iter, snapshot.map.end());
   EXPECT_NE(iter->second, nullptr);
   EXPECT_EQ(iter->second->local_topology[0].handle, kTransform2);
 
@@ -263,10 +263,10 @@ TEST(UberStructSystemTest, UpdateInstancesConsumesPreviousPresents) {
   system.UpdateInstances({{kSession, 3}});
 
   snapshot = system.Snapshot();
-  EXPECT_EQ(snapshot.size(), 1ul);
+  EXPECT_EQ(snapshot.map.size(), 1ul);
 
-  iter = snapshot.find(kSession);
-  EXPECT_NE(iter, snapshot.end());
+  iter = snapshot.map.find(kSession);
+  EXPECT_NE(iter, snapshot.map.end());
   EXPECT_NE(iter->second, nullptr);
   EXPECT_EQ(iter->second->local_topology[0].handle, kTransform3);
 
@@ -305,8 +305,8 @@ TEST(UberStructSystemTest, BasicTopologyRetrieval) {
 
   auto snapshot = system.Snapshot();
   for (const auto& v : vectors) {
-    auto iter = snapshot.find(v[0].handle.GetInstanceId());
-    EXPECT_NE(iter, snapshot.end());
+    auto iter = snapshot.map.find(v[0].handle.GetInstanceId());
+    EXPECT_NE(iter, snapshot.map.end());
     EXPECT_EQ(iter->second->local_topology, v);
   }
 }
@@ -491,7 +491,7 @@ TEST(UberStructSystemTest, GlobalTopologyMultithreadedUpdates) {
     // Because the threads always swap out each graph with an equivalent alternate graph, any
     // intermediate state, with a mix of graphs, should always produce the same set of parent
     // indexes.
-    auto output = GlobalTopologyData::ComputeGlobalTopologyData(system.Snapshot(), links,
+    auto output = GlobalTopologyData::ComputeGlobalTopologyData(system.Snapshot().map, links,
                                                                 kLinkInstanceId, {1, 0});
     CHECK_GLOBAL_TOPOLOGY_DATA(output, 0u);
 
@@ -507,6 +507,52 @@ TEST(UberStructSystemTest, GlobalTopologyMultithreadedUpdates) {
   for (auto& t : threads) {
     t.join();
   }
+}
+
+TEST(UberStructSystemTest, NeedsViewTreeRecompute) {
+  UberStructSystem system;
+
+  const scheduling::SessionId kSession1 = 1;
+  const scheduling::SessionId kSession2 = 2;
+
+  auto queue1 = system.AllocateQueueForSession(kSession1);
+  auto queue2 = system.AllocateQueueForSession(kSession2);
+
+  queue1->Push(1, std::make_unique<UberStruct>(), /*recompute_view_tree=*/false);
+  queue1->Push(2, std::make_unique<UberStruct>(), /*recompute_view_tree=*/true);
+
+  // Updating to present where `recompute_view_tree` not set.
+  system.UpdateInstances({{kSession1, 1}});
+  auto snapshot = system.Snapshot();
+  EXPECT_EQ(snapshot.map.size(), 1U);
+  EXPECT_TRUE(snapshot.map.contains(kSession1));
+  EXPECT_FALSE(snapshot.recompute_view_tree);
+
+  // Updating to present where `recompute_view_tree` is set.
+  system.UpdateInstances({{kSession1, 2}});
+  snapshot = system.Snapshot();
+  EXPECT_TRUE(snapshot.recompute_view_tree);
+
+  queue2->Push(3, std::make_unique<UberStruct>(), /*recompute_view_tree=*/false);
+  queue2->Push(4, std::make_unique<UberStruct>(), /*recompute_view_tree=*/false);
+  queue2->Push(5, std::make_unique<UberStruct>(), /*recompute_view_tree=*/false);
+  system.UpdateInstances({{kSession2, 5}});
+
+  // Updating to present where `recompute_view_tree` not set.
+  snapshot = system.Snapshot();
+  EXPECT_EQ(snapshot.map.size(), 2U);
+  EXPECT_TRUE(snapshot.map.contains(kSession2));
+  EXPECT_FALSE(snapshot.recompute_view_tree);
+
+  queue2->Push(6, std::make_unique<UberStruct>(), /*recompute_view_tree=*/false);
+  queue2->Push(7, std::make_unique<UberStruct>(), /*recompute_view_tree=*/true);
+  queue2->Push(8, std::make_unique<UberStruct>(), /*recompute_view_tree=*/false);
+
+  // Updating to present where `recompute_view_tree` not set, but a previous present did set it
+  // (presents were squashed).
+  system.UpdateInstances({{kSession2, 8}});
+  snapshot = system.Snapshot();
+  EXPECT_TRUE(snapshot.recompute_view_tree);
 }
 
 }  // namespace test
