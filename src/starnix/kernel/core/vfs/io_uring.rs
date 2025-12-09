@@ -82,11 +82,19 @@ bitflags! {
 
         /// The flags that we support. Specifying a flag outside of this set will generate an
         /// error.
-        const SupportedFlags = starnix_uapi::IORING_SETUP_CQSIZE | starnix_uapi::IORING_SETUP_COOP_TASKRUN | starnix_uapi::IORING_SETUP_SINGLE_ISSUER | starnix_uapi::IORING_SETUP_DEFER_TASKRUN;
-        /// The flags that we ignore. Specifying a flags in this set will not generate an error but
-        /// will have no effect.
+        const SupportedFlags = starnix_uapi::IORING_SETUP_CQSIZE |
+                               starnix_uapi::IORING_SETUP_COOP_TASKRUN |
+                               starnix_uapi::IORING_SETUP_TASKRUN_FLAG |
+                               starnix_uapi::IORING_SETUP_SINGLE_ISSUER |
+                               starnix_uapi::IORING_SETUP_DEFER_TASKRUN;
+
+        /// The flags that we ignore. Specifying a flags in this set will not generate an
+        /// error but will have no effect.
         // TODO(https://fxbug.dev/297431387): Implement these flags.
-        const IgnoredFlags = starnix_uapi::IORING_SETUP_COOP_TASKRUN | starnix_uapi::IORING_SETUP_SINGLE_ISSUER | starnix_uapi::IORING_SETUP_DEFER_TASKRUN;
+        const IgnoredFlags = starnix_uapi::IORING_SETUP_COOP_TASKRUN |
+                             starnix_uapi::IORING_SETUP_TASKRUN_FLAG |
+                             starnix_uapi::IORING_SETUP_SINGLE_ISSUER |
+                             starnix_uapi::IORING_SETUP_DEFER_TASKRUN;
     }
 
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
