@@ -123,26 +123,55 @@ ViewTreeSnapshotter::ViewTreeSnapshotter(std::vector<SubtreeSnapshotGenerator> s
     // a workaround to avoid flakes. Rework this after deciding on a new synchronization mechanism.
     subscriber_callbacks_.emplace_back(std::move(subscriber_callback));
   }
+
+  cached_subtree_snapshots_.resize(subtree_generators_.size());
 }
 
-void ViewTreeSnapshotter::UpdateSnapshot() const {
+void ViewTreeSnapshotter::UpdateSnapshot() {
   TRACE_DURATION("gfx", "ViewTreeSnapshotter::UpdateSnapshot");
+
+  bool any_subtree_changed = false;
+  for (size_t i = 0; i < subtree_generators_.size(); ++i) {
+    TRACE_DURATION("gfx", "ViewTreeSnapshotter::UpdateSnapshot [generate]");
+
+    GeneratedSubtreeSnapshot generated_subtree = subtree_generators_[i]();
+    if (auto* full_subtree = std::get_if<std::unique_ptr<SubtreeSnapshot>>(&generated_subtree)) {
+      FX_DCHECK(*full_subtree);
+      FX_DCHECK(ValidateSubtree(*full_subtree->get()));
+      cached_subtree_snapshots_[i] = std::move(*full_subtree);
+      any_subtree_changed = true;
+      continue;
+    }
+    if (auto* _ = std::get_if<SubtreeSnapshotNoDiff>(&generated_subtree)) {
+      FX_CHECK(cached_subtree_snapshots_[i])
+          << "NoDiff requires there to already be a SubtreeSnapshot";
+      continue;
+    }
+    // Guarantee that all variant types are handled above.
+    __UNREACHABLE;
+  }
+  if (!any_subtree_changed) {
+    // Nothing has changed, so we don't need to rebuild the snapshot nor notify subscribers.
+    return;
+  }
 
   auto new_snapshot = std::make_shared<Snapshot>();
   std::multimap<zx_koid_t, zx_koid_t> tree_boundaries;
+  {
+    size_t reserved_view_tree_size = 0;
+    size_t reserved_unconnected_views_size = 0;
+    for (auto& cached_subtree : cached_subtree_snapshots_) {
+      reserved_view_tree_size += cached_subtree->view_tree.size();
+      reserved_unconnected_views_size += cached_subtree->unconnected_views.size();
+    }
+    new_snapshot->view_tree.reserve(reserved_view_tree_size);
+    new_snapshot->unconnected_views.reserve(reserved_unconnected_views_size);
+    // TODO(https://fxbug.dev/465552708): consider using `std::unordered_multimap` for tree
+    // boundaries because that supports `reserve()`, but `std::multimap` does not.
+  }
 
   // Merge subtrees.
-  for (auto& generator : subtree_generators_) {
-    std::unique_ptr<SubtreeSnapshot> subtree;
-    {
-      TRACE_DURATION("gfx", "ViewTreeSnapshotter::UpdateSnapshot [generate]");
-      GeneratedSubtreeSnapshot generated_subtree = generator();
-      FX_CHECK(std::holds_alternative<std::unique_ptr<SubtreeSnapshot>>(generated_subtree))
-          << "Only full snapshots are currently supported";
-      subtree = std::move(std::get<std::unique_ptr<SubtreeSnapshot>>(generated_subtree));
-      FX_DCHECK(subtree);
-    }
-    FX_DCHECK(ValidateSubtree(*subtree));
+  for (auto& subtree : cached_subtree_snapshots_) {
     auto& [root, view_tree, unconnected_views, hit_tester, subtree_boundaries] = *subtree;
 
     TRACE_DURATION("gfx", "ViewTreeSnapshotter::UpdateSnapshot [merge]");
@@ -154,14 +183,14 @@ void ViewTreeSnapshotter::UpdateSnapshot() const {
     {
       const size_t tree_size_before = new_snapshot->view_tree.size();
       const size_t subtree_size = view_tree.size();
-      new_snapshot->view_tree.merge(view_tree);
+      new_snapshot->view_tree.insert(view_tree.begin(), view_tree.end());
       FX_DCHECK(new_snapshot->view_tree.size() == tree_size_before + subtree_size)
           << "Two subtrees had duplicate nodes";
     }
     {
       const size_t unconnected_size_before = new_snapshot->unconnected_views.size();
       const size_t subtree_unconnected_size = unconnected_views.size();
-      new_snapshot->unconnected_views.merge(unconnected_views);
+      new_snapshot->unconnected_views.insert(unconnected_views.begin(), unconnected_views.end());
       FX_DCHECK(new_snapshot->unconnected_views.size() ==
                 unconnected_size_before + subtree_unconnected_size)
           << "Two subtrees had duplicate unconnected nodes";
@@ -170,20 +199,20 @@ void ViewTreeSnapshotter::UpdateSnapshot() const {
     {
       const size_t boundaries_size_before = tree_boundaries.size();
       const size_t subtree_boundaries_size = subtree_boundaries.size();
-      tree_boundaries.merge(subtree_boundaries);
+      tree_boundaries.insert(subtree_boundaries.begin(), subtree_boundaries.end());
       FX_DCHECK(tree_boundaries.size() == boundaries_size_before + subtree_boundaries_size)
           << "Two subtrees had duplicate tree boundaries";
     }
 
     if (hit_tester) {
-      new_snapshot->hit_testers.emplace_back(std::move(hit_tester));
+      new_snapshot->hit_testers.push_back(hit_tester);
     }
   }
 
   // Fix parent pointers at subtree boundaries.
   for (const auto& [parent, child] : tree_boundaries) {
-    FX_DCHECK(new_snapshot->view_tree.contains(parent));
-    FX_DCHECK(new_snapshot->view_tree.contains(child));
+    FX_DCHECK(new_snapshot->view_tree.contains(parent)) << "missing parent: " << parent;
+    FX_DCHECK(new_snapshot->view_tree.contains(child)) << "missing child: " << child;
     new_snapshot->view_tree.at(child).parent = parent;
   }
 

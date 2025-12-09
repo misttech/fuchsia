@@ -45,11 +45,13 @@ class ViewTreeSnapshotter final {
 
   // Calls each SubtreeSnapshotGenerator() in |subtree_generators_| in turn, combines the results
   // into a snapshot and hands out the snapshot to each subscriber in |subscriber_callbacks_|.
-  void UpdateSnapshot() const;
+  void UpdateSnapshot();
 
  private:
   const std::vector<SubtreeSnapshotGenerator> subtree_generators_;
   std::vector<OnNewViewTree> subscriber_callbacks_;
+
+  std::vector<std::unique_ptr<const SubtreeSnapshot>> cached_subtree_snapshots_;
 };
 
 }  // namespace view_tree

@@ -33,7 +33,7 @@ using OnNewViewTree = fit::function<void(std::shared_ptr<const Snapshot>)>;
 // |start_node| defines the root of the hit testing tree walk. It can be any arbitrary node.
 // |is_semantic_hit_test| defines if this is a semantic hit test, and this if it should follow the
 // special accessibility hit testing rules or not.
-using SubtreeHitTester = fit::function<SubtreeHitTestResult(
+using SubtreeHitTester = std::function<SubtreeHitTestResult(
     zx_koid_t start_node, glm::vec2 local_point, bool is_semantic_hit_test)>;
 
 struct BoundingBox {

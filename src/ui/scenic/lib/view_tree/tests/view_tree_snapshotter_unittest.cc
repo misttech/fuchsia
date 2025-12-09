@@ -274,4 +274,58 @@ TEST(ViewTreeSnapshotterTest, SubscriberCallbackLifetime) {
   EXPECT_EQ(snapshot1->root, kRoot1A);
 }
 
+TEST(ViewTreeSnapshotterTest, NoDiff) {
+  auto subtree_generators = BasicTree();
+
+  bool nodiffA = false;
+  bool nodiffB = false;
+  bool nodiffC = false;
+
+  // Wrap generators so that we can control whether they produce a subtree snapshot, or "no diff".
+  auto wrapper = [](SubtreeSnapshotGenerator& gen, bool nodiff) -> GeneratedSubtreeSnapshot {
+    if (nodiff) {
+      return SubtreeSnapshotNoDiff();
+    }
+    return gen();
+  };
+  subtree_generators[0] = [gen = std::move(subtree_generators[0]), &nodiffA, &wrapper]() mutable {
+    return wrapper(gen, nodiffA);
+  };
+  subtree_generators[1] = [gen = std::move(subtree_generators[1]), &nodiffB, &wrapper]() mutable {
+    return wrapper(gen, nodiffB);
+  };
+  subtree_generators[2] = [gen = std::move(subtree_generators[2]), &nodiffC, &wrapper]() mutable {
+    return wrapper(gen, nodiffC);
+  };
+
+  std::vector<ViewTreeSnapshotter::Subscriber> subscribers;
+  async::TestLoop loop;
+
+  std::vector<std::shared_ptr<const Snapshot>> snapshots;
+  subscribers.push_back(
+      {.on_new_view_tree =
+           [&snapshots](auto snapshot) { snapshots.push_back(std::move(snapshot)); },
+       .dispatcher = loop.dispatcher()});
+
+  auto tree =
+      std::make_unique<ViewTreeSnapshotter>(std::move(subtree_generators), std::move(subscribers));
+
+  tree->UpdateSnapshot();
+  loop.RunUntilIdle();
+  EXPECT_EQ(snapshots.size(), 1U);
+
+  // If even one generator doesn't return "no diff", then a new snapshot will be generated.
+  nodiffB = nodiffC = true;
+  tree->UpdateSnapshot();
+  loop.RunUntilIdle();
+  EXPECT_EQ(snapshots.size(), 2U);
+  EXPECT_EQ(*snapshots[0], *snapshots[1]);
+
+  // If all generators return "no diff", then no new snapshot will be generatated.
+  nodiffA = true;
+  tree->UpdateSnapshot();
+  loop.RunUntilIdle();
+  EXPECT_EQ(snapshots.size(), 2U);
+}
+
 }  // namespace view_tree::test
