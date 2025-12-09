@@ -585,9 +585,14 @@ impl FxFilesystem {
             debug_assert_not_too_long!(task);
         }
         self.journal.stop_compactions().await;
-        let sync_status =
-            self.journal.sync(SyncOptions { flush_device: true, ..Default::default() }).await;
+        let sync_status = if self.options().read_only {
+            // We don't want a final sync if we are in read-only mode (no changes).
+            Ok(None)
+        } else {
+            self.journal.sync(SyncOptions { flush_device: true, ..Default::default() }).await
+        };
         match &sync_status {
+            Ok(None) => {}
             Ok(checkpoint) => info!(
                 "Filesystem closed (checkpoint={}, metadata_reservation={:?}, \
                  reservation_required={}, borrowed={})",
@@ -2013,5 +2018,61 @@ mod tests {
         test_file.read(0, read_buf.as_mut()).await.expect("read failed");
         assert_eq!(read_buf.as_slice(), [0xf0; 4096]);
         fs.close().await.expect("closed");
+    }
+
+    #[fuchsia::test]
+    async fn test_read_only_mount_on_full_filesystem() {
+        let device = DeviceHolder::new(FakeDevice::new(8192, TEST_DEVICE_BLOCK_SIZE));
+        let fs =
+            FxFilesystemBuilder::new().format(true).open(device).await.expect("new_empty failed");
+        let root_store = fs.root_store();
+        let root_directory = Directory::open(&root_store, root_store.root_directory_object_id())
+            .await
+            .expect("open failed");
+
+        let mut transaction = fs
+            .clone()
+            .new_transaction(
+                lock_keys![LockKey::object(
+                    root_store.store_object_id(),
+                    root_directory.object_id()
+                )],
+                Options::default(),
+            )
+            .await
+            .expect("new_transaction failed");
+        let handle = root_directory
+            .create_child_file(&mut transaction, "test")
+            .await
+            .expect("create_child_file failed");
+        transaction.commit().await.expect("commit failed");
+
+        let mut buf = handle.allocate_buffer(4096).await;
+        buf.as_mut_slice().fill(0xaa);
+        loop {
+            if handle.write_or_append(None, buf.as_ref()).await.is_err() {
+                break;
+            }
+        }
+
+        let max_offset = fs.allocator().maximum_offset();
+        fs.close().await.expect("Close failed");
+
+        let device = fs.take_device().await;
+        device.reopen(false);
+        let mut buffer = device
+            .allocate_buffer(
+                crate::round::round_up(max_offset, TEST_DEVICE_BLOCK_SIZE).unwrap() as usize
+            )
+            .await;
+        device.read(0, buffer.as_mut()).await.expect("read failed");
+
+        let device = DeviceHolder::new(
+            FakeDevice::from_image(&buffer.as_slice()[..], TEST_DEVICE_BLOCK_SIZE)
+                .expect("from_image failed"),
+        );
+        let fs =
+            FxFilesystemBuilder::new().read_only(true).open(device).await.expect("open failed");
+        fs.close().await.expect("Close failed");
     }
 }

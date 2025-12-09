@@ -927,8 +927,13 @@ impl Allocator {
         // space at all times. This may change if we ever support mounting of read-only
         // redistributable filesystem images.
         if !self.rebuild_strategy().await.context("Build free extents")? {
-            error!("Device contains no free space.");
-            return Err(FxfsError::Inconsistent).context("Device appears to contain no free space");
+            if self.filesystem.upgrade().unwrap().options().read_only {
+                info!("Device contains no free space (read-only mode).");
+            } else {
+                info!("Device contains no free space.");
+                return Err(FxfsError::Inconsistent)
+                    .context("Device appears to contain no free space");
+            }
         }
 
         assert_eq!(std::mem::replace(&mut self.inner.lock().opened, true), false);

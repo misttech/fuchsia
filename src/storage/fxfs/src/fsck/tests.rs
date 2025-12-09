@@ -38,6 +38,7 @@ use std::ops::Deref;
 use std::sync::Arc;
 use storage_device::DeviceHolder;
 use storage_device::fake_device::FakeDevice;
+use test_case::test_case;
 
 const TEST_DEVICE_BLOCK_SIZE: u32 = 512;
 const TEST_DEVICE_BLOCK_COUNT: u64 = 8192;
@@ -75,6 +76,20 @@ impl FsckTest {
         self.filesystem = Some(
             FxFilesystemBuilder::new()
                 .read_only(true)
+                .open(device)
+                .await
+                .context("Failed to open FS")?,
+        );
+        Ok(())
+    }
+    async fn remount_rw(&mut self) -> Result<(), Error> {
+        let fs = self.filesystem.take().unwrap();
+        fs.close().await.expect("Failed to close FS");
+        let device = fs.take_device().await;
+        device.reopen(true);
+        self.filesystem = Some(
+            FxFilesystemBuilder::new()
+                .read_only(false)
                 .open(device)
                 .await
                 .context("Failed to open FS")?,
@@ -3696,8 +3711,10 @@ async fn test_empty_volume() {
         .expect("Fsck should succeed");
 }
 
+#[test_case(true; "read_only")]
+#[test_case(false; "read_write")]
 #[fuchsia::test]
-async fn test_full_disk() {
+async fn test_full_disk(read_only: bool) {
     let mut test = FsckTest::new().await;
 
     {
@@ -3799,8 +3816,11 @@ async fn test_full_disk() {
             .await
             .expect("overwrite failed");
     }
-
-    test.remount().await.expect_err("Remount succeeded");
+    if read_only {
+        test.remount().await.expect("Remount failed");
+    } else {
+        test.remount_rw().await.expect_err("Remount succeeded");
+    }
 }
 
 #[fuchsia::test]

@@ -625,6 +625,10 @@ impl ObjectManager {
     }
 
     pub fn init_metadata_reservation(&self) -> Result<(), Error> {
+        if self.root_parent_store().filesystem().options().read_only {
+            // We don't need metadata reservations in read-only mode.
+            return Ok(());
+        }
         let inner = self.inner.read();
         let required = inner.required_reservation();
         ensure!(required >= inner.borrowed_metadata_space, FxfsError::Inconsistent);
@@ -716,7 +720,9 @@ impl ObjectManager {
                         )
                     };
                     let root = inspector.root();
-                    root.record_uint("metadata_reservation", this.metadata_reservation().amount());
+                    if let Some(reservation) = this.metadata_reservation.get() {
+                        root.record_uint("metadata_reservation", reservation.amount());
+                    }
                     root.record_uint("required_reservation", required);
                     root.record_uint("borrowed_reservation", borrowed);
                     if let Some(earliest_checkpoint) = earliest_checkpoint {
