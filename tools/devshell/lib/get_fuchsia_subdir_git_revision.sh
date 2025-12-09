@@ -15,15 +15,5 @@ set -o errexit
 fuchsia_dir="$1"
 repo_root="$2"
 
-if [[ -d "${fuchsia_dir}/.git" ]]; then
-  git --no-optional-locks -C "${fuchsia_dir}/${repo_root}" rev-parse HEAD
-else
-  # For the cog workspace case
-  workspace_id=$(cat "${fuchsia_dir}/../.citc/workspace_id")
-  base_snapshot_version=$(cat "${fuchsia_dir}/../.citc/snapshot_version")
-
-  # This payload follow the format of request proto. example grpc_cli invocation
-  # can be found in: https://chromium.googlesource.com/external/github.com/grpc/grpc/+/refs/heads/chromium-deps/2016-08-17/doc/command_line_tool.md#basic-usage
-  request="request_base { workspace_id: \"${workspace_id}\" base_snapshot_version: ${base_snapshot_version}} repo_root: \"fuchsia/${repo_root}\""
-  git citc api.call GetDrafts "${request}" | grep 'commit_hash:' | awk -F '"' '{print $2}'
-fi
+# This code is now handled by the //scripts/cog/git-polyfill tool.
+git --no-optional-locks -C "${fuchsia_dir}/${repo_root}" rev-parse HEAD

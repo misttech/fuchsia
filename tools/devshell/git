@@ -6,53 +6,15 @@
 #### CATEGORY=Source
 ### Run git commands in the Fuchsia tree.
 ##
-## usage: fx git get-rev [--repo_root <repo>]
-##   get-rev   Get the current git revision of the Fuchsia checkout. If no
-##             --repo_root is pass in, we will use "fuchsia" as default value.
+## usage: fx git <args>
 ##
-## Sample usage:
+## This command delegates to the `git` binary found in the PATH.
 ##
-##    $ fx git get-rev (This will get the HEAD of fuchsia repo)
-##    $ fx git get-rev --repo_root third_party/icu/default (This will get the
-##                     HEAD of third_party/icu/default repo)
+## In a standard checkout, this will be the system git.
+##
+## In a Cog workspace (or other non-standard environment), `fx` may inject
+## a git-polyfill into the PATH (see scripts/cog/git-polyfill/README.md).
+## In that case, this command will invoke the polyfill, allowing `fx git`
+## to work transparently even when a real .git directory is missing.
 
-set -o errexit
-
-SCRIPTS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
-source "${SCRIPTS_DIR}/lib/vars.sh" || exit $?
-
-function cmd_get_rev() {
-  local repo_root=""
-  while [[ $# -ge 1 ]]; do
-    case "$1" in
-      --repo_root)
-        shift
-        repo_root="$1"
-        ;;
-      *)
-        fx-error "Unknown argument for get-rev: $1"
-        exit 1
-        ;;
-    esac
-    shift
-  done
-
-  "${SCRIPTS_DIR}/lib/get_fuchsia_subdir_git_revision.sh" "${FUCHSIA_DIR}" "${repo_root}"
-}
-
-main() {
-  local subcommand="$1"
-  shift
-
-  case "${subcommand}" in
-    get-rev)
-      cmd_get_rev "$@"
-      ;;
-    *)
-      fx-error "Unknown command: git ${subcommand}"
-      exit 1
-      ;;
-  esac
-}
-
-main "$@"
+git "$@"

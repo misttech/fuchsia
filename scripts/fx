@@ -190,6 +190,11 @@ function find_tree_root {
   echo "$parent"
 }
 
+function should_use_git_polyfill {
+  local root_dir="$1"
+  [[ ! -d "$root_dir/.git" ]]
+}
+
 function check_running_on_supported_platform {
   if [[ "$(uname -s)" == "Darwin" ]]; then
     fx-error "This tool is no longer supported on macOS per go/fuchsia-on-mac."
@@ -234,6 +239,13 @@ fi
 # This line allows commands to find other scripts even if they have not
 # run `source scripts/fx-env.sh`
 export PATH="$PATH:${script_dir}"
+
+# If the current directory is not a git repository (e.g. a Cog workspace),
+# we inject a git polyfill to handle git commands.
+# See scripts/cog/git-polyfill/README.md for more information.
+if should_use_git_polyfill "${fuchsia_dir}"; then
+  export PATH="${fuchsia_dir}/scripts/cog/git-polyfill:${PATH}"
+fi
 
 declare -r vars_sh="${fuchsia_dir}/tools/devshell/lib/vars.sh"
 source "${vars_sh}" || exit $?
