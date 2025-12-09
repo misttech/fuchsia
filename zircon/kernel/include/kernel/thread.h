@@ -13,6 +13,7 @@
 #include <lib/backtrace.h>
 #include <lib/concurrent/capability_token.h>
 #include <lib/fit/function.h>
+#include <lib/flow_id.h>
 #include <lib/fxt/thread_ref.h>
 #include <lib/kconcurrent/chainlock.h>
 #include <lib/relaxed_atomic.h>
@@ -1696,7 +1697,7 @@ struct Thread : public ChainLockable {
   // Returns a unique flow id for lock contention tracing. The same value is
   // returned by lock_flow_id() until another id is allocated for this thread
   // by calling this method again.
-  uint64_t TakeNextLockFlowId() { return lock_flow_id_ = lock_flow_id_generator_ += 1; }
+  uint64_t TakeNextLockFlowId() { return lock_flow_id_ = FlowId::Generate(); }
 
   void RecomputeEffectiveProfile() TA_REQ(get_lock()) {
     scheduler_state_.RecomputeEffectiveProfile();
@@ -1864,9 +1865,6 @@ struct Thread : public ChainLockable {
 
   // The flow id allocated before blocking on the last lock.
   RelaxedAtomic<uint64_t> lock_flow_id_{0};
-
-  // Generates unique flow ids for tracing lock contention.
-  inline static RelaxedAtomic<uint64_t> lock_flow_id_generator_{0};
 
   // Indicates whether user register state (debug, vector, fp regs, etc.) has been saved to the
   // arch_thread_t as part of thread suspension / exception handling.
