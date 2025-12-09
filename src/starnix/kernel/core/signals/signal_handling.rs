@@ -154,7 +154,7 @@ where
         }
     }
 
-    if action == Some(DeliveryAction::CoreDump) {
+    if action == Some(DeliveryAction::CoreDump) && !task_state.is_ptraced() {
         // If the signal is a core dump, request a backtrace to get information about the sender.
         // TODO(https://fxbug.dev/356732164) collect a backtrace ourselves.
         log_info!(
