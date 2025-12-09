@@ -50,7 +50,7 @@ ta_manager_config_test("ta-manager-ta-read-props-test") {
 }
 
 rustc_test("test_props") {
-  edition = "2021"
+  edition = "2024"
 
   source_root = "src/properties.rs"
   sources = [ "src/properties.rs" ]

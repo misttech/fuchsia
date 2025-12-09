@@ -33,7 +33,7 @@ template("ta_manager_config_test") {
   test_package_target = "${target_name}-package"
 
   rustc_test(rustc_test_target) {
-    edition = "2021"
+    edition = "2024"
 
     source_root = invoker.test_source_root
     sources = [ source_root ]

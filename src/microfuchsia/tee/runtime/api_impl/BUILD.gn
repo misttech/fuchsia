@@ -35,7 +35,7 @@ sanitizer_extra_options("malloc_fill_byte_zero_hwasan") {
 }
 
 rustc_library("api_impl") {
-  edition = "2021"
+  edition = "2024"
   sources = [
     "src/binding_stubs.rs",
     "src/context.rs",

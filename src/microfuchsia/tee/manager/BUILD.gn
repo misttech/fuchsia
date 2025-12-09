@@ -10,7 +10,7 @@ import("//build/components/fuchsia_unittest_component.gni")
 import("//build/rust/rustc_binary.gni")
 
 rustc_binary("manager") {
-  edition = "2021"
+  edition = "2024"
   output_name = "ta_manager"
   sources = [ "src/main.rs" ]
   deps = [

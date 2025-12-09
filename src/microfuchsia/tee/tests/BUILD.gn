@@ -17,7 +17,7 @@ group("tests") {
 }
 
 rustc_test("ta_lifecycle_test") {
-  edition = "2021"
+  edition = "2024"
 
   source_root = "src/ta_lifecycle.rs"
   sources = [ source_root ]
@@ -55,7 +55,7 @@ fuchsia_test("ta-lifecycle") {
 }
 
 rustc_test("tee_internal_api_entry_points_test") {
-  edition = "2021"
+  edition = "2024"
 
   source_root = "src/entry_points.rs"
   sources = [ source_root ]

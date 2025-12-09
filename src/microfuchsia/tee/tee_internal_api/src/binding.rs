@@ -33,11 +33,11 @@ impl<T> __IncompleteArrayField<T> {
     }
     #[inline]
     pub unsafe fn as_slice(&self, len: usize) -> &[T] {
-        ::std::slice::from_raw_parts(self.as_ptr(), len)
+        unsafe { ::std::slice::from_raw_parts(self.as_ptr(), len) }
     }
     #[inline]
     pub unsafe fn as_mut_slice(&mut self, len: usize) -> &mut [T] {
-        ::std::slice::from_raw_parts_mut(self.as_mut_ptr(), len)
+        unsafe { ::std::slice::from_raw_parts_mut(self.as_mut_ptr(), len) }
     }
 }
 impl<T> ::std::fmt::Debug for __IncompleteArrayField<T> {
@@ -385,13 +385,13 @@ impl ::std::fmt::Debug for TEE_Param {
     }
 }
 #[repr(C)]
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug)]
 pub struct __TEE_TASessionHandle {
     _unused: [u8; 0],
 }
 pub type TEE_TASessionHandle = *mut __TEE_TASessionHandle;
 #[repr(C)]
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug)]
 pub struct __TEE_PropSetHandle {
     _unused: [u8; 0],
 }
@@ -445,13 +445,13 @@ pub struct TEE_ObjectInfo {
 }
 pub type TEE_Whence = u32;
 #[repr(C)]
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug)]
 pub struct __TEE_ObjectHandle {
     _unused: [u8; 0],
 }
 pub type TEE_ObjectHandle = *mut __TEE_ObjectHandle;
 #[repr(C)]
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug)]
 pub struct __TEE_ObjectEnumHandle {
     _unused: [u8; 0],
 }
@@ -489,7 +489,7 @@ pub struct TEE_OperationInfoMultiple {
     pub keyInformation: __IncompleteArrayField<TEE_OperationInfoKey>,
 }
 #[repr(C)]
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug)]
 pub struct __TEE_OperationHandle {
     _unused: [u8; 0],
 }

@@ -19,7 +19,7 @@ group("tests") {
 }
 
 rustc_binary("binder_proxy_enumerate_tests") {
-  edition = "2021"
+  edition = "2024"
   source_root = "src/binder_proxy_enumerate.rs"
   sources = [ source_root ]
   deps = [
