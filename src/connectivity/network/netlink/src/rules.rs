@@ -7,6 +7,7 @@
 //! RTM_DELRULE.
 
 use std::collections::BTreeMap;
+use std::time::Duration;
 
 use assert_matches::assert_matches;
 use derivative::Derivative;
@@ -26,6 +27,7 @@ use fidl_fuchsia_net_routes_ext::rules::{FidlRuleAdminIpExt, FidlRuleIpExt};
 use fidl_fuchsia_net_routes_ext::{self as fnet_routes_ext, FidlRouteIpExt};
 
 use crate::client::InternalClient;
+use crate::logging::log_warn;
 use crate::messaging::Sender;
 use crate::netlink_packet::errno::Errno;
 use crate::protocol_family::ProtocolFamily;
@@ -401,7 +403,7 @@ impl<I: IpExt> RulesWorker<I> {
     pub(crate) async fn new_with_defaults(
         rule_set: <I::RuleSetMarker as ProtocolMarker>::Proxy,
         route_table_map: &mut RouteTableMap<I>,
-    ) -> RulesWorker<I> {
+    ) -> Result<RulesWorker<I>, AddRuleError> {
         struct NoIif;
         impl conversions::LookupIfInterfaceIsLoopback for NoIif {
             fn is_loopback(&self, _interface: &str) -> Option<bool> {
@@ -414,21 +416,37 @@ impl<I: IpExt> RulesWorker<I> {
             table
                 // None of the rules specify `iif`.
                 .add_rule(rule, route_table_map, &NoIif)
-                .await
-                .expect("should not fail to add a default rule");
+                .await?
         }
 
-        table
+        Ok(table)
     }
 
     pub(crate) async fn create(
         provider: &<I::RuleTableMarker as ProtocolMarker>::Proxy,
         route_table_map: &mut RouteTableMap<I>,
     ) -> Self {
-        let rule_set =
-            fnet_routes_ext::rules::new_rule_set::<I>(provider, NETLINK_RULE_SET_PRIORITY)
-                .expect("new rule set should succeed");
-        Self::new_with_defaults(rule_set, route_table_map).await
+        const MAX_ATTEMPTS: u32 = 10;
+        let mut delay = Duration::from_millis(100);
+        // Retry for up to 10 times, in case the asynchronous rule set removal is not yet complete.
+        // The maximum time before giving up on creating a rule set is 100ms * (2 ^ 10 - 1) = 102.3s
+        for _ in 0..MAX_ATTEMPTS {
+            let rule_set =
+                fnet_routes_ext::rules::new_rule_set::<I>(provider, NETLINK_RULE_SET_PRIORITY)
+                    .expect("new rule set should succeed");
+            match Self::new_with_defaults(rule_set, route_table_map).await {
+                Ok(table) => return table,
+                Err(AddRuleError::PriorityConflict) => {
+                    log_warn!(
+                        "priority conflict when creating rule set at {NETLINK_RULE_SET_PRIORITY:?}"
+                    )
+                }
+                Err(e) => panic!("failed to add initial rules {e:?}"),
+            }
+            fuchsia_async::Timer::new(delay).await;
+            delay *= 2;
+        }
+        panic!("failed to create rule set after {MAX_ATTEMPTS} retries");
     }
 
     /// Adds the given rule to the table.
@@ -512,7 +530,18 @@ impl<I: IpExt> RulesWorker<I> {
                         token,
                     )
                     .await
-                    .expect("should not get FIDL error")
+                    .map_err(|e| match e {
+                        // We allow bubbling up error that indicates a priority conflict
+                        // to allow the caller to retry.
+                        fidl::Error::ClientChannelClosed {
+                            status: fidl::Status::ALREADY_EXISTS,
+                            protocol_name: _,
+                            epitaph: _,
+                        } => AddRuleError::PriorityConflict,
+                        _ => {
+                            panic!("should not get FIDL error: {e:?}");
+                        }
+                    })?
                     .expect("authentication should be valid");
                     *rule_set_authenticated = true;
                 }
@@ -591,8 +620,9 @@ impl<I: IpExt> RulesWorker<I> {
 
 /// Possible errors when adding a rule to a [`RuleTable`].
 #[derive(Debug)]
-enum AddRuleError {
+pub(crate) enum AddRuleError {
     AlreadyExists,
+    PriorityConflict,
     IndicesExhausted,
     InvalidRule,
     NoSuchInterface,
@@ -606,6 +636,7 @@ impl AddRuleError {
             AddRuleError::IndicesExhausted => Errno::ETOOMANYREFS,
             AddRuleError::InvalidRule => Errno::EINVAL,
             AddRuleError::NoSuchInterface => Errno::ENODEV,
+            AddRuleError::PriorityConflict => panic!("should handle rule set conflict on creation"),
             AddRuleError::RuleSetError(e) => match e {
                 RuleSetError::Unauthenticated => panic!("should handle authentication prior"),
                 RuleSetError::InvalidAction => Errno::EINVAL,
