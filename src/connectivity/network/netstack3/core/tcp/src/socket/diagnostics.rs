@@ -289,7 +289,7 @@ mod tests {
     use ip_test_macro::ip_test;
     use net_types::ZonedAddr;
     use net_types::ip::{Ip, Subnet};
-    use netstack3_base::testutil::FakeDeviceId;
+    use netstack3_base::testutil::{FakeDeviceId, set_logger_for_test};
     use netstack3_base::{
         AddressMatcher, AddressMatcherEither, AddressMatcherType, BoundInterfaceMatcher,
         InterfaceMatcher, IpSocketMatcher, Mark, MarkDomain, MarkMatcher, PortMatcher,
@@ -319,6 +319,8 @@ mod tests {
         TcpCoreCtx<FakeDeviceId, TcpBindingsCtx<FakeDeviceId>>:
             TcpContext<I, TcpBindingsCtx<FakeDeviceId>>,
     {
+        set_logger_for_test();
+
         let mut ctx = TcpCtx::with_core_ctx(TcpCoreCtx::new::<I>(
             I::TEST_ADDRS.local_ip,
             I::TEST_ADDRS.remote_ip,
@@ -356,6 +358,8 @@ mod tests {
         TcpCoreCtx<FakeDeviceId, TcpBindingsCtx<FakeDeviceId>>:
             TcpContext<I, TcpBindingsCtx<FakeDeviceId>>,
     {
+        set_logger_for_test();
+
         let mut ctx = TcpCtx::with_core_ctx(TcpCoreCtx::new::<I>(
             I::TEST_ADDRS.local_ip,
             I::TEST_ADDRS.remote_ip,
@@ -430,6 +434,8 @@ mod tests {
         TcpCoreCtx<FakeDeviceId, TcpBindingsCtx<FakeDeviceId>>:
             TcpContext<I, TcpBindingsCtx<FakeDeviceId>>,
     {
+        set_logger_for_test();
+
         let mut ctx = TcpCtx::with_core_ctx(TcpCoreCtx::new::<I>(
             I::TEST_ADDRS.local_ip,
             I::TEST_ADDRS.remote_ip,
@@ -507,6 +513,8 @@ mod tests {
         TcpCoreCtx<FakeDeviceId, TcpBindingsCtx<FakeDeviceId>>:
             TcpContext<I, TcpBindingsCtx<FakeDeviceId>>,
     {
+        set_logger_for_test();
+
         let mut ctx = TcpCtx::with_core_ctx(TcpCoreCtx::new::<I>(
             I::TEST_ADDRS.local_ip,
             I::TEST_ADDRS.remote_ip,
@@ -545,6 +553,8 @@ mod tests {
         TcpCoreCtx<FakeDeviceId, TcpBindingsCtx<FakeDeviceId>>:
             TcpContext<I, TcpBindingsCtx<FakeDeviceId>>,
     {
+        set_logger_for_test();
+
         let mut ctx = TcpCtx::with_core_ctx(TcpCoreCtx::new::<I>(
             I::TEST_ADDRS.local_ip,
             I::TEST_ADDRS.remote_ip,
@@ -586,6 +596,8 @@ mod tests {
         TcpCoreCtx<FakeDeviceId, TcpBindingsCtx<FakeDeviceId>>:
             TcpContext<I, TcpBindingsCtx<FakeDeviceId>>,
     {
+        set_logger_for_test();
+
         let mut ctx = TcpCtx::with_core_ctx(TcpCoreCtx::new::<I>(
             I::TEST_ADDRS.local_ip,
             I::TEST_ADDRS.remote_ip,
@@ -644,6 +656,8 @@ mod tests {
         TcpCoreCtx<FakeDeviceId, TcpBindingsCtx<FakeDeviceId>>:
             TcpContext<I, TcpBindingsCtx<FakeDeviceId>>,
     {
+        set_logger_for_test();
+
         let mut ctx = TcpCtx::with_core_ctx(TcpCoreCtx::new::<I>(
             I::TEST_ADDRS.local_ip,
             I::TEST_ADDRS.remote_ip,
@@ -689,6 +703,8 @@ mod tests {
         TcpCoreCtx<FakeDeviceId, TcpBindingsCtx<FakeDeviceId>>:
             TcpContext<I, TcpBindingsCtx<FakeDeviceId>>,
     {
+        set_logger_for_test();
+
         let mut ctx = TcpCtx::with_core_ctx(TcpCoreCtx::new::<I>(
             I::TEST_ADDRS.local_ip,
             I::TEST_ADDRS.remote_ip,
@@ -787,6 +803,8 @@ mod tests {
                 DualStackConverter = I::DualStackConverter,
             >,
     {
+        set_logger_for_test();
+
         let mut ctx = TcpCtx::with_core_ctx(TcpCoreCtx::new::<I>(
             I::TEST_ADDRS.local_ip,
             I::TEST_ADDRS.remote_ip,
@@ -843,6 +861,8 @@ mod tests {
                 DualStackConverter = I::DualStackConverter,
             >,
     {
+        set_logger_for_test();
+
         let mut ctx = TcpCtx::with_core_ctx(TcpCoreCtx::new::<I>(
             I::TEST_ADDRS.local_ip,
             I::TEST_ADDRS.remote_ip,
@@ -902,6 +922,8 @@ mod tests {
                 DualStackConverter = I::DualStackConverter,
             >,
     {
+        set_logger_for_test();
+
         let mut ctx = TcpCtx::with_core_ctx(TcpCoreCtx::new::<I>(
             I::TEST_ADDRS.local_ip,
             I::TEST_ADDRS.remote_ip,

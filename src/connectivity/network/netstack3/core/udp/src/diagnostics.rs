@@ -163,7 +163,7 @@ mod tests {
     use ip_test_macro::ip_test;
     use net_types::ip::Subnet;
     use net_types::{Witness as _, ZonedAddr};
-    use netstack3_base::testutil::FakeDeviceId;
+    use netstack3_base::testutil::{FakeDeviceId, set_logger_for_test};
     use netstack3_base::{
         AddressMatcher, AddressMatcherEither, AddressMatcherType, BoundInterfaceMatcher,
         InterfaceMatcher, IpSocketMatcher, Mark, MarkDomain, MarkMatcher, PortMatcher,
@@ -188,6 +188,8 @@ mod tests {
 
     #[ip_test(I)]
     fn diagnostics_match_ip_version<I: TestIpExt>() {
+        set_logger_for_test();
+
         let mut ctx = UdpFakeDeviceCtx::with_core_ctx(FakeUdpCoreCtx::new_fake_device::<I>());
         let mut api = UdpApi::<I, _>::new(ctx.as_mut());
 
@@ -217,6 +219,8 @@ mod tests {
 
     #[ip_test(I)]
     fn diagnostics_match_src_addr<I: TestIpExt>() {
+        set_logger_for_test();
+
         let mut ctx = UdpFakeDeviceCtx::with_core_ctx(FakeUdpCoreCtx::new_fake_device::<I>());
         let mut api = UdpApi::<I, _>::new(ctx.as_mut());
 
@@ -279,6 +283,8 @@ mod tests {
 
     #[ip_test(I)]
     fn diagnostics_match_dst_addr<I: TestIpExt>() {
+        set_logger_for_test();
+
         let mut ctx = UdpFakeDeviceCtx::with_core_ctx(FakeUdpCoreCtx::new_fake_device::<I>());
         let mut api = UdpApi::<I, _>::new(ctx.as_mut());
 
@@ -349,6 +355,8 @@ mod tests {
 
     #[ip_test(I)]
     fn diagnostics_match_proto<I: TestIpExt>() {
+        set_logger_for_test();
+
         let mut ctx = UdpFakeDeviceCtx::with_core_ctx(FakeUdpCoreCtx::new_fake_device::<I>());
         let mut api = UdpApi::<I, _>::new(ctx.as_mut());
 
@@ -379,6 +387,8 @@ mod tests {
 
     #[ip_test(I)]
     fn diagnostics_match_src_port<I: TestIpExt>() {
+        set_logger_for_test();
+
         let mut ctx = UdpFakeDeviceCtx::with_core_ctx(FakeUdpCoreCtx::new_fake_device::<I>());
         let mut api = UdpApi::<I, _>::new(ctx.as_mut());
 
@@ -423,6 +433,8 @@ mod tests {
 
     #[ip_test(I)]
     fn diagnostics_match_dst_port<I: TestIpExt>() {
+        set_logger_for_test();
+
         let mut ctx = UdpFakeDeviceCtx::with_core_ctx(FakeUdpCoreCtx::new_fake_device::<I>());
         let mut api = UdpApi::<I, _>::new(ctx.as_mut());
 
@@ -475,6 +487,8 @@ mod tests {
 
     #[ip_test(I)]
     fn diagnostics_match_state<I: TestIpExt>() {
+        set_logger_for_test();
+
         let mut ctx = UdpFakeDeviceCtx::with_core_ctx(FakeUdpCoreCtx::new_fake_device::<I>());
         let mut api = UdpApi::<I, _>::new(ctx.as_mut());
 
@@ -535,6 +549,8 @@ mod tests {
 
     #[ip_test(I)]
     fn diagnostics_match_device<I: TestIpExt>() {
+        set_logger_for_test();
+
         let mut ctx = UdpFakeDeviceCtx::with_core_ctx(FakeUdpCoreCtx::new_fake_device::<I>());
         let mut api = UdpApi::<I, _>::new(ctx.as_mut());
 
@@ -568,6 +584,8 @@ mod tests {
 
     #[ip_test(I)]
     fn diagnostics_match_cookie<I: TestIpExt>() {
+        set_logger_for_test();
+
         let mut ctx = UdpFakeDeviceCtx::with_core_ctx(FakeUdpCoreCtx::new_fake_device::<I>());
         let mut api = UdpApi::<I, _>::new(ctx.as_mut());
 
@@ -606,6 +624,8 @@ mod tests {
     #[test_case::test_case(MarkDomain::Mark1; "mark_1")]
     #[test_case::test_case(MarkDomain::Mark2; "mark_2")]
     fn diagnostics_match_mark<I: TestIpExt>(domain: MarkDomain) {
+        set_logger_for_test();
+
         let mut ctx = UdpFakeDeviceCtx::with_core_ctx(FakeUdpCoreCtx::new_fake_device::<I>());
         let mut api = UdpApi::<I, _>::new(ctx.as_mut());
 
@@ -645,6 +665,8 @@ mod tests {
     /// sure that multiple matching sockets are returned.
     #[ip_test(I)]
     fn diagnostics_match_multiple<I: TestIpExt>() {
+        set_logger_for_test();
+
         let mut ctx = UdpFakeDeviceCtx::with_core_ctx(FakeUdpCoreCtx::new_fake_device::<I>());
         let mut api = UdpApi::<I, _>::new(ctx.as_mut());
 
