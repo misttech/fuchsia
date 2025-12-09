@@ -238,6 +238,78 @@ TEST_P(RebootLogReasonTest, Succeed) {
   EXPECT_EQ(reboot_log.GetFinalShutdownInfo().ToRebootReasonString(), param.output_reboot_reason);
 }
 
+using ColdBootTest = RebootLogTest<ShutdownActionTestParam>;
+
+INSTANTIATE_TEST_SUITE_P(WithVariousShutdownActions, ColdBootTest,
+                         ::testing::ValuesIn(std::vector<ShutdownActionTestParam>({
+                             {
+                                 "Reboot",
+                                 ShutdownAction::REBOOT,
+                                 std::nullopt,
+                             },
+                             {
+                                 "RebootToRecovery",
+                                 ShutdownAction::REBOOT_TO_RECOVERY,
+                                 std::nullopt,
+                             },
+                             {
+                                 "RebootToBootloader",
+                                 ShutdownAction::REBOOT_TO_BOOTLOADER,
+                                 std::nullopt,
+                             },
+                         })),
+                         [](const testing::TestParamInfo<ShutdownActionTestParam>& info) {
+                           return info.param.test_name;
+                         });
+
+TEST_P(ColdBootTest, OnlyPoweroffOverridesColdBoot) {
+  const ShutdownActionTestParam& param = GetParam();
+
+  WriteGracefulShutdownInfoContents(
+      NewShutdownOptions(*param.shutdown_action, {ShutdownReason::USER_REQUEST}));
+
+  const RebootLog reboot_log(
+      RebootLog::ParseRebootLog(zircon_reboot_log_path_, graceful_shutdown_info_path_,
+                                /*legacy_graceful_reboot_log_path=*/"", /*not_a_fdr=*/true));
+
+  EXPECT_FALSE(reboot_log.GetFinalShutdownInfo().ToGracefulShutdownAction().has_value());
+  EXPECT_EQ(reboot_log.GetFinalShutdownInfo().ToRebootReasonString(), "COLD");
+}
+
+TEST_F(ColdBootTest, UsesGracefulPoweroffReasons) {
+  WriteGracefulShutdownInfoContents(
+      NewShutdownOptions(ShutdownAction::POWEROFF, {ShutdownReason::USER_REQUEST}));
+
+  const RebootLog reboot_log(
+      RebootLog::ParseRebootLog(zircon_reboot_log_path_, graceful_shutdown_info_path_,
+                                /*legacy_graceful_reboot_log_path=*/"", /*not_a_fdr=*/true));
+
+  EXPECT_EQ(reboot_log.GetFinalShutdownInfo().ToGracefulShutdownAction(),
+            GracefulShutdownAction::kPoweroff);
+  EXPECT_EQ(reboot_log.GetFinalShutdownInfo().ToRebootReasonString(), "USER REQUEST");
+}
+
+TEST_F(ColdBootTest, EmptyGracefulReasonsIsGenericGraceful) {
+  WriteGracefulShutdownInfoContents(NewShutdownOptions(ShutdownAction::POWEROFF, {}));
+
+  const RebootLog reboot_log(
+      RebootLog::ParseRebootLog(zircon_reboot_log_path_, graceful_shutdown_info_path_,
+                                /*legacy_graceful_reboot_log_path=*/"", /*not_a_fdr=*/true));
+
+  EXPECT_EQ(reboot_log.GetFinalShutdownInfo().ToGracefulShutdownAction(),
+            GracefulShutdownAction::kPoweroff);
+  EXPECT_EQ(reboot_log.GetFinalShutdownInfo().ToRebootReasonString(), "GENERIC GRACEFUL");
+}
+
+TEST_F(ColdBootTest, EmptyGracefulInfoIsCold) {
+  const RebootLog reboot_log(
+      RebootLog::ParseRebootLog(zircon_reboot_log_path_, graceful_shutdown_info_path_,
+                                /*legacy_graceful_reboot_log_path=*/"", /*not_a_fdr=*/true));
+
+  EXPECT_FALSE(reboot_log.GetFinalShutdownInfo().ToGracefulShutdownAction().has_value());
+  EXPECT_EQ(reboot_log.GetFinalShutdownInfo().ToRebootReasonString(), "COLD");
+}
+
 using ShutdownActionTest = RebootLogTest<ShutdownActionTestParam>;
 
 INSTANTIATE_TEST_SUITE_P(WithVariousShutdownAction, ShutdownActionTest,

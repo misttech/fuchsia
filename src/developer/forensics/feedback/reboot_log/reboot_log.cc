@@ -237,7 +237,6 @@ std::unique_ptr<FinalShutdownInfo> DetermineFinalShutdownInfo(
     const ZirconRebootReason zircon_reason,
     const std::optional<GracefulShutdownInfo>& graceful_info, const bool not_a_fdr) {
   switch (zircon_reason) {
-    case ZirconRebootReason::kCold:
     case ZirconRebootReason::kKernelPanic:
     case ZirconRebootReason::kOOM:
     case ZirconRebootReason::kHwWatchdog:
@@ -246,6 +245,14 @@ std::unique_ptr<FinalShutdownInfo> DetermineFinalShutdownInfo(
     case ZirconRebootReason::kUnknown:
     case ZirconRebootReason::kRootJobTermination:
     case ZirconRebootReason::kNotParseable:
+      return std::make_unique<FinalZirconShutdownInfo>(zircon_reason);
+    case ZirconRebootReason::kCold:
+      // Graceful poweroffs will likely result in a cold boot. If so, the graceful info might have
+      // reasons more informative than just "cold."
+      if (graceful_info.has_value() && graceful_info->action == GracefulShutdownAction::kPoweroff) {
+        return std::make_unique<FinalGracefulShutdownInfo>(graceful_info->action,
+                                                           graceful_info->reasons, not_a_fdr);
+      }
       return std::make_unique<FinalZirconShutdownInfo>(zircon_reason);
     case ZirconRebootReason::kNoCrash: {
       if (graceful_info.has_value()) {
