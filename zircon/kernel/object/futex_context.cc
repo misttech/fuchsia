@@ -17,6 +17,7 @@
 #include <fbl/intrusive_hash_table.h>
 #include <fbl/null_lock.h>
 #include <kernel/auto_preempt_disabler.h>
+#include <kernel/lock_trace.h>
 #include <kernel/mutex.h>
 #include <kernel/scheduler.h>
 #include <object/process_dispatcher.h>
@@ -113,6 +114,7 @@ void FutexContext::WakeHook::OnWakeOrRequeue(Thread& t) {
   // lock.
   if (t.user_thread() != nullptr) {
     t.user_thread()->blocking_futex_id_ = FutexId::Null();
+    LOCK_TRACE_FLOW_STEP("contend_futex", t.lock_flow_id());
   }
 }
 
@@ -483,9 +485,16 @@ zx_status_t FutexContext::FutexWait(user_in_ptr<const zx_futex_t> value_ptr,
             kFutexBlockTracingEnabled, "kernel:sched", "futex_block", ("futex_id", futex_id.get()),
             ("blocking_tid", new_owner ? new_owner->tid() : ZX_KOID_INVALID));
 
+        LOCK_TRACE_DURATION("Futex::Wait", ("futex_id", ktrace::Pointer{futex_id.get()}));
+
+        const uint64_t flow_id = current_core_thread->TakeNextLockFlowId();
+        LOCK_TRACE_FLOW_BEGIN("contend_futex", flow_id);
+
         result = futex_ref->waiters_.BlockAndAssignOwnerLocked(
             current_kernel_thread, deadline, locking_details, ResourceOwnership::Normal,
             Interruptible::Yes);
+
+        LOCK_TRACE_FLOW_END("contend_futex", flow_id);
       }
 
       // Do _not_ allow the PendingOpRef helper to release our pending op
@@ -588,6 +597,8 @@ zx_status_t FutexContext::FutexWake(user_in_ptr<const zx_futex_t> value_ptr, uin
     // Now actually wake up the threads. OwnedWakeQueue will handle the
     // ownership bookkeeping for us.
     {
+      LOCK_TRACE_DURATION("Futex::Wake", ("futex_id", ktrace::Pointer{futex_id.get()}));
+
       // Attempt to wake |wake_count| threads.  Count the number of thread that
       // we have successfully woken, and assign each of their blocking futex IDs
       // to 0 as we go.  We need an accurate count in order to properly adjust
