@@ -52,7 +52,6 @@ type Features = table {
 };
 
 @transport("Driver")
-@banjo_layout("ddk-interface")
 closed protocol MacAddr {
     /// Gets this device's MAC address.
     // TODO(https://fxbug.dev/42120438) we need an address changed event (in

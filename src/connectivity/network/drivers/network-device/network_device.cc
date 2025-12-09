@@ -4,15 +4,12 @@
 
 #include "network_device.h"
 
-#include <lib/driver/compat/cpp/banjo_client.h>
 #include <lib/driver/component/cpp/driver_export.h>
 #include <lib/driver/component/cpp/node_add_args.h>
 #include <lib/fdf/cpp/env.h>
 
 #include <fbl/alloc_checker.h>
 #include <fbl/auto_lock.h>
-
-#include "device/network_device_shim.h"
 
 namespace network {
 namespace {
@@ -30,9 +27,6 @@ NetworkDevice::NetworkDevice(fdf::DriverStartArgs start_args,
 NetworkDevice::~NetworkDevice() {
   if (dispatchers_) {
     dispatchers_->ShutdownSync();
-  }
-  if (shim_dispatchers_) {
-    shim_dispatchers_->ShutdownSync();
   }
 }
 
@@ -112,30 +106,6 @@ void NetworkDevice::Connect(fidl::ServerEnd<fuchsia_hardware_network::DeviceInst
 zx::result<std::unique_ptr<NetworkDeviceImplBinder>> NetworkDevice::CreateImplBinder() {
   fbl::AllocChecker ac;
 
-  // If the `parent` is Banjo based, then we must use "shims" to translate between Banjo and FIDL in
-  // order to leverage the netdevice core library.
-  zx::result banjo_client = compat::ConnectBanjo<ddk::NetworkDeviceImplProtocolClient>(incoming());
-  if (banjo_client.is_ok() && banjo_client->is_valid()) {
-    // These dispatchers are only needed for Banjo parents.
-    zx::result shim_dispatchers = OwnedShimDispatchers::Create();
-    if (shim_dispatchers.is_error()) {
-      FDF_LOG(ERROR, "failed to create owned shim dispatchers: %s",
-              shim_dispatchers.status_string());
-      return shim_dispatchers.take_error();
-    }
-    shim_dispatchers_ = std::move(shim_dispatchers.value());
-
-    auto shim = fbl::make_unique_checked<NetworkDeviceShim>(&ac, banjo_client.value(),
-                                                            shim_dispatchers_->Unowned());
-    if (!ac.check()) {
-      FDF_LOG(ERROR, "no memory");
-      return zx::error(ZX_ERR_NO_MEMORY);
-    }
-    return zx::ok(std::move(shim));
-  }
-
-  // If the `parent` is FIDL based, then return a binder that connects to the device with no extra
-  // translation layer.
   std::unique_ptr fidl = fbl::make_unique_checked<FidlNetworkDeviceImplBinder>(&ac, incoming());
   if (!ac.check()) {
     FDF_LOG(ERROR, "no memory");

@@ -49,7 +49,6 @@ class NetworkDevice : public fdf::DriverBase,
   zx::result<std::unique_ptr<NetworkDeviceImplBinder>> CreateImplBinder();
 
   std::unique_ptr<OwnedDeviceInterfaceDispatchers> dispatchers_;
-  std::unique_ptr<OwnedShimDispatchers> shim_dispatchers_;
 
   std::unique_ptr<NetworkDeviceInterface> device_;
 

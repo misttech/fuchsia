@@ -20,10 +20,5 @@
     },
     use: [
         { service: "fuchsia.hardware.network.driver.Service" },
-        {
-            // Uses banjo NetworkDeviceImpl if it's available, otherwise uses the fidl.
-            service: 'fuchsia.driver.compat.Service',
-            availability: 'optional',
-        },
     ],
 }

@@ -10,7 +10,6 @@
 #include <perftest/perftest.h>
 
 #include "device_interface.h"
-#include "network_device_shim.h"
 #include "src/lib/fxl/strings/string_printf.h"
 #include "test_session.h"
 
@@ -19,84 +18,94 @@
 
 namespace network {
 
-class FakeDeviceImpl : public ddk::NetworkPortProtocol<FakeDeviceImpl>,
-                       public ddk::NetworkDeviceImplProtocol<FakeDeviceImpl> {
+class FakeDeviceImpl : public fdf::WireServer<netdriver::NetworkPort>,
+                       public fdf::WireServer<netdriver::NetworkDeviceImpl> {
  public:
   static constexpr uint16_t kDepth = 256;
   static constexpr uint32_t kMaxBufferLength = 2048;
   static constexpr uint32_t kBufferAlignment = 4096;
   static constexpr uint16_t kPortId = 1;
   static constexpr uint32_t kMtu = 1500;
-  static constexpr uint8_t kRxFrameTypes[] = {
-      static_cast<uint8_t>(netdev::wire::FrameType::kEthernet),
+  static constexpr netdev::wire::FrameType kRxFrameTypes[] = {
+      netdev::wire::FrameType::kEthernet,
   };
-  static constexpr frame_type_support_t kTxFrameTypes[] = {
-      {.type = static_cast<uint8_t>(netdev::wire::FrameType::kEthernet)},
+  static constexpr netdev::wire::FrameTypeSupport kTxFrameTypes[] = {
+      {.type = netdev::wire::FrameType::kEthernet},
   };
 
   FakeDeviceImpl(perftest::RepeatState* state) : perftest_state_(state) {}
 
-  void NetworkDeviceImplInit(const network_device_ifc_protocol_t* iface,
-                             network_device_impl_init_callback callback, void* cookie) {
-    iface_ = ddk::NetworkDeviceIfcProtocolClient(iface);
+  void Init(netdriver::wire::NetworkDeviceImplInitRequest* request, fdf::Arena& arena,
+            InitCompleter::Sync& completer) override {
+    iface_.Bind(std::move(request->iface));
 
-    using Context = std::tuple<network_device_impl_init_callback, void*>;
-    std::unique_ptr context = std::make_unique<Context>(callback, cookie);
+    auto [client, server] = fdf::Endpoints<netdriver::NetworkPort>::Create();
+    fdf::BindServer(fdf_testing::DriverRuntime::GetInstance()->StartBackgroundDispatcher()->get(),
+                    std::move(server), this);
 
-    iface_.AddPort(
-        kPortId, this, &network_port_protocol_ops_,
-        [](void* ctx, zx_status_t status) {
-          std::unique_ptr<Context> context(static_cast<Context*>(ctx));
-          auto [callback, cookie] = *context;
-          ZX_ASSERT_OK(status, "AddPort failed");
-          callback(cookie, status);
-        },
-        context.release());
-  }
-  void NetworkDeviceImplStart(network_device_impl_start_callback callback, void* cookie) {
-    callback(cookie, ZX_OK);
-  }
-  void NetworkDeviceImplStop(network_device_impl_stop_callback callback, void* cookie) {
-    callback(cookie);
-  }
-  void NetworkDeviceImplGetInfo(device_impl_info_t* out_info) {
-    *out_info = {
-        .tx_depth = kDepth,
-        .rx_depth = kDepth,
-        .rx_threshold = kDepth,
-        .max_buffer_length = kMaxBufferLength,
-        .buffer_alignment = kBufferAlignment,
-    };
+    fdf::WireUnownedResult result = iface_.buffer(arena)->AddPort(kPortId, std::move(client));
+    ZX_ASSERT_OK(result.status(), "AddPort FIDL error");
+    ZX_ASSERT_OK(result->status, "AddPort failed");
+    completer.buffer(arena).Reply(ZX_OK);
   }
 
-  void NetworkDeviceImplQueueTx(const tx_buffer_t* buf_list, size_t buf_count) {
-    ZX_ASSERT_MSG(buf_count <= kDepth, "received %ld tx buffers (depth = %d)", buf_count, kDepth);
+  void Start(fdf::Arena& arena, StartCompleter::Sync& completer) override {
+    completer.buffer(arena).Reply(ZX_OK);
+  }
+
+  void Stop(fdf::Arena& arena, StopCompleter::Sync& completer) override {
+    completer.buffer(arena).Reply();
+  }
+
+  void GetInfo(
+      fdf::Arena& arena,
+      fdf::WireServer<netdriver::NetworkDeviceImpl>::GetInfoCompleter::Sync& completer) override {
+    auto info = netdriver::wire::DeviceImplInfo::Builder(arena)
+                    .tx_depth(kDepth)
+                    .rx_depth(kDepth)
+                    .rx_threshold(kDepth)
+                    .max_buffer_length(kMaxBufferLength)
+                    .buffer_alignment(kBufferAlignment)
+                    .Build();
+    completer.buffer(arena).Reply(info);
+  }
+
+  void QueueTx(netdriver::wire::NetworkDeviceImplQueueTxRequest* request, fdf::Arena& arena,
+               QueueTxCompleter::Sync& completer) override {
+    ZX_ASSERT_MSG(request->buffers.size() <= kDepth, "received %ld tx buffers (depth = %d)",
+                  request->buffers.size(), kDepth);
     // NB: This may be called on a thread different than the test thread. To guarantee this doesn't
     // happen concurrently with other perftest actions, the latency test must make sure that no
     // descriptors belong to the device upon each test iteration.
     perftest_state_->NextStep();
-    std::array<tx_result_t, kDepth> result;
+    std::array<netdriver::wire::TxResult, kDepth> result;
     auto iter = result.begin();
-    for (auto& buff : cpp20::span(buf_list, buf_count)) {
+    for (const auto& buff : request->buffers) {
       *iter++ = {
           .id = buff.id,
           .status = ZX_OK,
       };
     }
-    iface_.CompleteTx(&*result.begin(), buf_count);
+    ZX_ASSERT_OK(iface_.buffer(arena)
+                     ->CompleteTx(fidl::VectorView<netdriver::wire::TxResult>::FromExternal(
+                         result.data(), request->buffers.size()))
+                     .status(),
+                 "Failed to CompleteTx");
   }
 
-  void NetworkDeviceImplQueueRxSpace(const rx_space_buffer_t* buf_list, size_t buf_count) {
-    ZX_ASSERT_MSG(buf_count <= kDepth, "received %ld tx buffers (depth = %d)", buf_count, kDepth);
+  void QueueRxSpace(netdriver::wire::NetworkDeviceImplQueueRxSpaceRequest* request,
+                    fdf::Arena& arena, QueueRxSpaceCompleter::Sync& completer) override {
+    ZX_ASSERT_MSG(request->buffers.size() <= kDepth, "received %ld tx buffers (depth = %d)",
+                  request->buffers.size(), kDepth);
     // NB: This may be called on a thread different than the test thread. To guarantee this doesn't
     // happen concurrently with other perftest actions, the latency test must make sure that no
     // descriptors belong to the device upon each test iteration.
     perftest_state_->NextStep();
-    std::array<rx_buffer_t, kDepth> result;
-    std::array<rx_buffer_part_t, kDepth> parts;
+    std::array<netdriver::wire::RxBuffer, kDepth> result;
+    std::array<netdriver::wire::RxBufferPart, kDepth> parts;
     auto result_iter = result.begin();
     auto part_iter = parts.begin();
-    for (auto& buff : cpp20::span(buf_list, buf_count)) {
+    for (const auto& buff : request->buffers) {
       auto& part = *part_iter++;
       part = {
           .id = buff.id,
@@ -108,51 +117,77 @@ class FakeDeviceImpl : public ddk::NetworkPortProtocol<FakeDeviceImpl>,
           .meta =
               {
                   .port = kPortId,
-                  .frame_type = static_cast<uint8_t>(netdev::wire::FrameType::kEthernet),
+                  .frame_type = netdev::wire::FrameType::kEthernet,
               },
-          .data_list = &part,
-          .data_count = 1};
+          .data = fidl::VectorView<netdriver::wire::RxBufferPart>::FromExternal(&part, 1)};
     }
-    iface_.CompleteRx(&*result.begin(), buf_count);
+    ZX_ASSERT_OK(iface_.buffer(arena)
+                     ->CompleteRx(fidl::VectorView<netdriver::wire::RxBuffer>::FromExternal(
+                         result.data(), request->buffers.size()))
+                     .status(),
+                 "Failed to CompleteRx");
   }
 
-  ddk::NetworkDeviceImplProtocolClient client() {
-    network_device_impl_protocol_t proto = {
-        .ops = &network_device_impl_protocol_ops_,
-        .ctx = this,
-    };
-    return ddk::NetworkDeviceImplProtocolClient(&proto);
+  void PrepareVmo(netdriver::wire::NetworkDeviceImplPrepareVmoRequest* request, fdf::Arena& arena,
+                  PrepareVmoCompleter::Sync& completer) override {
+    completer.buffer(arena).Reply(ZX_OK);
   }
 
-  void NetworkDeviceImplPrepareVmo(uint8_t vmo_id, zx::vmo vmo,
-                                   network_device_impl_prepare_vmo_callback callback,
-                                   void* cookie) {
-    callback(cookie, ZX_OK);
+  void ReleaseVmo(netdriver::wire::NetworkDeviceImplReleaseVmoRequest* request, fdf::Arena& arena,
+                  ReleaseVmoCompleter::Sync& completer) override {
+    completer.buffer(arena).Reply();
   }
-  void NetworkDeviceImplReleaseVmo(uint8_t vmo_id) {}
-  void NetworkPortGetInfo(port_base_info_t* out_info) {
-    *out_info = {
-        .port_class = static_cast<uint16_t>(netdev::wire::PortClass::kEthernet),
-        .rx_types_list = kRxFrameTypes,
-        .rx_types_count = std::size(kRxFrameTypes),
-        .tx_types_list = kTxFrameTypes,
-        .tx_types_count = std::size(kTxFrameTypes),
-    };
+
+  void GetInfo(
+      fdf::Arena& arena,
+      fdf::WireServer<netdriver::NetworkPort>::GetInfoCompleter::Sync& completer) override {
+    auto info = netdev::wire::PortBaseInfo::Builder(arena)
+                    .port_class(netdev::wire::PortClass::kEthernet)
+                    .rx_types(kRxFrameTypes)
+                    .tx_types(kTxFrameTypes)
+                    .Build();
+    completer.buffer(arena).Reply(info);
   }
-  void NetworkPortGetStatus(port_status_t* out_status) {
-    *out_status = {
-        .flags = static_cast<uint32_t>(netdev::wire::StatusFlags::kOnline),
-        .mtu = kMtu,
-    };
+
+  void GetStatus(fdf::Arena& arena, GetStatusCompleter::Sync& completer) override {
+    auto status = netdev::wire::PortStatus::Builder(arena)
+                      .flags(netdev::wire::StatusFlags::kOnline)
+                      .mtu(kMtu)
+                      .Build();
+    completer.buffer(arena).Reply(status);
   }
-  void NetworkPortSetActive(bool active) {}
-  void NetworkPortGetMac(mac_addr_protocol_t** out_mac_ifc) { *out_mac_ifc = &mac_addr_proto_; }
-  void NetworkPortRemoved() {}
+
+  void SetActive(fuchsia_hardware_network_driver::wire::NetworkPortSetActiveRequest* request,
+                 fdf::Arena& arena, SetActiveCompleter::Sync& completer) override {}
+
+  void GetMac(fdf::Arena& arena, GetMacCompleter::Sync& completer) override {
+    completer.buffer(arena).Reply(fdf::ClientEnd<netdriver::MacAddr>{});
+  }
+
+  void Removed(fdf::Arena& arena, RemovedCompleter::Sync& completer) override {}
+
+  fdf::ClientEnd<netdriver::NetworkDeviceImpl> Bind() {
+    auto [client, server] = fdf::Endpoints<netdriver::NetworkDeviceImpl>::Create();
+    fdf::BindServer(fdf_testing::DriverRuntime::GetInstance()->StartBackgroundDispatcher()->get(),
+                    std::move(server), this);
+    return std::move(client);
+  }
 
  private:
-  ddk::NetworkDeviceIfcProtocolClient iface_;
-  mac_addr_protocol_t mac_addr_proto_{};
+  fdf::WireSyncClient<netdriver::NetworkDeviceIfc> iface_;
   perftest::RepeatState* const perftest_state_;
+};
+
+class FakeDeviceImplBinder : public network::NetworkDeviceImplBinder {
+ public:
+  explicit FakeDeviceImplBinder(FakeDeviceImpl& impl) : impl_(impl) {}
+
+  zx::result<fdf::ClientEnd<fuchsia_hardware_network_driver::NetworkDeviceImpl>> Bind() override {
+    return zx::ok(impl_.Bind());
+  }
+
+ private:
+  FakeDeviceImpl& impl_;
 };
 
 }  // namespace network
@@ -212,16 +247,11 @@ bool LatencyTest(perftest::RepeatState* state, const uint16_t buffer_count) {
   zx::result dispatchers = network::OwnedDeviceInterfaceDispatchers::Create();
   ZX_ASSERT_OK(dispatchers.status_value(), "failed to create dispatchers");
 
-  zx::result shim_dispatchers = network::OwnedShimDispatchers::Create();
-  ZX_ASSERT_OK(shim_dispatchers.status_value(), "failed to create shim dispatchers");
-
   network::FakeDeviceImpl impl(state);
 
-  std::unique_ptr shim =
-      std::make_unique<network::NetworkDeviceShim>(impl.client(), shim_dispatchers->Unowned());
+  zx::result device_status = network::internal::DeviceInterface::Create(
+      dispatchers->Unowned(), std::make_unique<network::FakeDeviceImplBinder>(impl));
 
-  zx::result device_status =
-      network::internal::DeviceInterface::Create(dispatchers->Unowned(), std::move(shim));
   ZX_ASSERT_OK(device_status.status_value(), "failed to create device");
   std::unique_ptr device = std::move(device_status.value());
 
@@ -280,7 +310,6 @@ bool LatencyTest(perftest::RepeatState* state, const uint16_t buffer_count) {
   status = sync_completion_wait(&completion, zx::duration::infinite().get());
   ZX_ASSERT_OK(status, "sync_completion_wait(_, _) failed ");
   dispatchers->ShutdownSync();
-  shim_dispatchers->ShutdownSync();
   return true;
 }
 

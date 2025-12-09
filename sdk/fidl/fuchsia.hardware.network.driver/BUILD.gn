@@ -20,5 +20,4 @@ fidl("fuchsia.hardware.network.driver") {
     "//zircon/vdso/zx",
   ]
   contains_drivers = true
-  enable_banjo = true
 }

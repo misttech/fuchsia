@@ -33,8 +33,6 @@ namespace internal {
 
 class MacClientInstance;
 
-// Implements the API translation between MacAddr (banjo) and
-// fuchsia.hardware.network.MacAddressing (FIDL).
 class MacInterface : public ::network::MacAddrDeviceInterface {
  public:
   static void Create(fdf::WireSharedClient<netdriver::MacAddr>&& parent, OnCreated&& on_created);

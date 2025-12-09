@@ -21,7 +21,6 @@ driver_source_split("mac") {
 
   public_deps = [
     "//sdk/fidl/fuchsia.hardware.network:fuchsia.hardware.network_cpp",
-    "//sdk/fidl/fuchsia.hardware.network.driver:fuchsia.hardware.network.driver_banjo_cpp",
     "//sdk/fidl/fuchsia.hardware.network.driver:fuchsia.hardware.network.driver_cpp",
     "//sdk/lib/async:async-cpp",
     "//sdk/lib/fidl",
@@ -34,8 +33,6 @@ driver_source_split("test_util") {
   sources = [
     "test_util.cc",
     "test_util.h",
-    "test_util_banjo.cc",
-    "test_util_banjo.h",
   ]
   public_deps = [
     "//src/lib/testing/predicates",

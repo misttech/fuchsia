@@ -14,25 +14,6 @@ source_set("shared_lock") {
   sources = [ "public/locks.h" ]
 }
 
-driver_source_split("banjo_shims") {
-  sources = [
-    "log.h",
-    "mac_addr_shim.cc",
-    "network_device_shim.cc",
-    "network_port_shim.cc",
-  ]
-  non_driver_deps = [
-    "//sdk/lib/syslog/cpp",
-    "//src/connectivity/network/drivers/network-device/log",
-  ]
-  public_deps = [
-    "//sdk/fidl/fuchsia.hardware.network.driver:fuchsia.hardware.network.driver_banjo_cpp",
-    "//sdk/fidl/fuchsia.hardware.network.driver:fuchsia.hardware.network.driver_cpp",
-    "//sdk/lib/driver/runtime:driver_runtime_env_cpp",
-    "//zircon/system/ulib/fbl",
-  ]
-}
-
 driver_source_split("device") {
   sources = [
     "definitions.h",
@@ -86,8 +67,6 @@ driver_source_split("test_util") {
     "test_session.h",
     "test_util.cc",
     "test_util.h",
-    "test_util_banjo.cc",
-    "test_util_banjo.h",
   ]
   public_deps = [ "//src/lib/testing/predicates" ]
   driver_deps = [ ":device_driver" ]
@@ -103,7 +82,6 @@ test("test_bin") {
   ]
 
   deps = [
-    ":banjo_shims",
     ":device",
     ":test_util",
     "//sdk/lib/driver/testing/cpp",
@@ -136,7 +114,6 @@ test("microbenchmarks_bin") {
   ]
 
   deps = [
-    ":banjo_shims",
     ":device",
     "//sdk/lib/driver/runtime/testing/cpp",
     "//sdk/lib/driver/testing/cpp",

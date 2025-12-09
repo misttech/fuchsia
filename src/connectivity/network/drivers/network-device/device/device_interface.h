@@ -21,9 +21,6 @@
 namespace network::testing {
 class NetworkDeviceTest;
 class FakeNetworkDeviceImpl;
-namespace banjo {
-class FakeNetworkDeviceImpl;
-}
 }  // namespace network::testing
 
 namespace network::internal {
@@ -206,7 +203,6 @@ class DeviceInterface : public fidl::WireServer<netdev::Device>,
  private:
   friend testing::NetworkDeviceTest;
   friend testing::FakeNetworkDeviceImpl;
-  friend testing::banjo::FakeNetworkDeviceImpl;
 
   // Helper class to keep track of clients bound to DeviceInterface.
   class Binding : public fbl::DoublyLinkedListable<std::unique_ptr<Binding>> {

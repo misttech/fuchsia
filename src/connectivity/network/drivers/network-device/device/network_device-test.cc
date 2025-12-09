@@ -17,14 +17,12 @@
 
 #include "device_interface.h"
 #include "log.h"
-#include "network_device_shim.h"
 #include "session.h"
 #include "src/connectivity/network/drivers/network-device/mac/test_util.h"
 #include "src/lib/fsl/handles/object_info.h"
 #include "src/lib/testing/predicates/status.h"
 #include "test_session.h"
 #include "test_util.h"
-#include "test_util_banjo.h"
 
 // Enable timeouts only to test things locally, committed code should not use timeouts.
 #define ENABLE_TIMEOUTS 0
@@ -86,21 +84,6 @@ class NetworkDeviceTest : public ::testing::Test {
   static constexpr uint16_t kDescriptorIndex2 = 2;
   static constexpr uint16_t kDescriptorIndex3 = 3;
   static constexpr uint16_t kDescriptorIndex4 = 4;
-
-  // A minimally valid mock MacAddressing implementation.
-  static constexpr mac_addr_protocol_ops_t kMockMacOps = {
-      .get_address =
-          [](void* ctx, mac_address_t* out_mac) {
-            constexpr uint8_t kMac[] = {1, 2, 3, 4, 5, 6};
-            std::copy(std::begin(kMac), std::end(kMac), out_mac->octets);
-          },
-      .get_features =
-          [](void* ctx, features_t* out_features) {
-            *out_features = {.supported_modes = SUPPORTED_MAC_FILTER_MODE_MULTICAST_FILTER};
-          },
-      .set_mode = [](void* ctx, mac_filter_mode_t mode, const mac_address_t* multicast_macs_list,
-                     size_t multicast_macs_count) {},
-  };
 
   void SetUp() override {
     auto impl_dispatcher = fdf::UnsynchronizedDispatcher::Create(
@@ -3592,181 +3575,6 @@ TEST_F(NetworkDeviceTest, SessionTakeoverOnAttach) {
   ASSERT_OK(WaitSessionDied());
   ASSERT_OK(AttachSessionPort(session2, port13_));
   ASSERT_OK(WaitSessionStarted());
-}
-
-class NetworkDeviceShimTest : public ::testing::Test {
- public:
-  NetworkDeviceShimTest() = default;
-  void SetUp() override {
-    auto ifc_dispatcher = fdf::SynchronizedDispatcher::Create(
-        fdf::SynchronizedDispatcher::Options::kAllowSyncCalls, "shim-test-ifc",
-        [this](fdf_dispatcher_t*) { ifc_dispatcher_shutdown_.Signal(); });
-    ASSERT_OK(ifc_dispatcher.status_value());
-    ifc_dispatcher_ = std::move(ifc_dispatcher.value());
-
-    zx::result shim_dispatchers = OwnedShimDispatchers::Create();
-    ASSERT_OK(shim_dispatchers.status_value());
-    shim_dispatchers_ = std::move(shim_dispatchers.value());
-
-    CreateShim();
-  }
-
-  void TearDown() override {
-    if (ifc_dispatcher_.get()) {
-      ifc_dispatcher_.ShutdownAsync();
-      ifc_dispatcher_shutdown_.Wait();
-    }
-    if (shim_dispatchers_) {
-      shim_dispatchers_->ShutdownSync();
-    }
-
-    if (shim_) {
-      // With the dispatchers shut down this should be synchronous.
-      ASSERT_EQ(shim_->Teardown([] {}), NetworkDeviceImplBinder::Synchronicity::Sync);
-    }
-  }
-
-  zx_status_t InitImpl() {
-    auto ifc_client_end = ifc_.Bind(&ifc_dispatcher_);
-    if (ifc_client_end.is_error()) {
-      return ifc_client_end.status_value();
-    }
-
-    fdf::Arena arena('NETD');
-    auto result = fidl_impl_.buffer(arena)->Init(std::move(ifc_client_end.value()));
-    if (!result.ok()) {
-      return result.status();
-    }
-    return result->s;
-  }
-
-  zx_status_t AddPortSync(uint8_t port_id, network_port_protocol_t* proto) {
-    using Context = std::pair<libsync::Completion, zx_status_t>;
-    Context context;
-
-    shim_->NetworkDeviceIfcAddPort(
-        port_id, proto,
-        [](void* ctx, zx_status_t status) {
-          Context* context = static_cast<Context*>(ctx);
-          context->second = status;
-          context->first.Signal();
-        },
-        &context);
-    context.first.Wait();
-    return context.second;
-  }
-
- protected:
-  fdf_testing::DriverRuntime driver_runtime_;
-  // This is the client that the shim will call into, i.e. the vendor driver.
-  banjo::FakeNetworkDeviceImpl banjo_impl_;
-  // This is the client that the shim will serve, i.e. the netdevice driver.
-  fdf::WireSyncClient<netdriver::NetworkDeviceImpl> fidl_impl_;
-  FakeNetworkDeviceIfc ifc_;
-  std::unique_ptr<NetworkDeviceShim> shim_;
-
-  fdf::Dispatcher ifc_dispatcher_;
-  libsync::Completion ifc_dispatcher_shutdown_;
-  std::unique_ptr<OwnedShimDispatchers> shim_dispatchers_;
-
- private:
-  void CreateShim() {
-    auto proto = banjo_impl_.proto();
-    shim_ = std::make_unique<NetworkDeviceShim>(&proto, shim_dispatchers_->Unowned());
-    auto fidl_impl = shim_->Bind();
-    ASSERT_OK(fidl_impl.status_value());
-    fidl_impl_.Bind(std::move(fidl_impl.value()));
-  }
-};
-
-TEST_F(NetworkDeviceShimTest, BindAndTeardown) {
-  // Verify that a bound NetworkDeviceShim can be safely destroyed in its teardown callback.
-
-  libsync::Completion teardown_complete;
-  NetworkDeviceImplBinder::Synchronicity synchronicity = shim_->Teardown([&] {
-    shim_.reset();
-    teardown_complete.Signal();
-  });
-  ASSERT_EQ(synchronicity, NetworkDeviceImplBinder::Synchronicity::Async);
-  teardown_complete.Wait();
-}
-
-TEST_F(NetworkDeviceShimTest, TeardownFromOtherDispatcher) {
-  // Verify that a bound NetworkDeviceShim can be safely torn down from a dispatcher with a
-  // different driver owner. This is a tricky case because it allows posted tasks to be inlined
-  // which can cause unbinding to deadlock. The different driver owner case happens because the shim
-  // dispatchers are created with a different owner to support inlining.
-
-  libsync::Completion teardown_complete;
-  // The ifc dispatcher has a different owner, post a task to it to set up the correct prerequisites
-  // for inlining.
-  async::PostTask(ifc_dispatcher_.async_dispatcher(),
-                  [&]() { shim_->Teardown([&] { teardown_complete.Signal(); }); });
-  teardown_complete.Wait();
-}
-
-TEST_F(NetworkDeviceShimTest, AddPort) {
-  // Verify that AddPort works and manages the lifetime of the NetworkPortShim object correctly.
-  ASSERT_OK(InitImpl());
-
-  constexpr uint8_t kPortId = 13;
-  ifc_.add_port_ = [&](netdriver::wire::NetworkDeviceIfcAddPortRequest* request, fdf::Arena& arena,
-                       FakeNetworkDeviceIfc::AddPortCompleter::Sync& completer) {
-    ASSERT_EQ(request->id, kPortId);
-    completer.buffer(arena).Reply(ZX_OK);
-  };
-
-  network_port_protocol_t port_proto{};
-  ASSERT_OK(AddPortSync(kPortId, &port_proto));
-}
-
-TEST_F(NetworkDeviceShimTest, GetMac) {
-  // Verify that GetMac works and manages the lifetime of the MacAddrShim object correctly.
-  ASSERT_OK(InitImpl());
-
-  fdf::WireSyncClient<netdriver::NetworkPort> port_client;
-  ifc_.add_port_ = [&](netdriver::wire::NetworkDeviceIfcAddPortRequest* request, fdf::Arena& arena,
-                       FakeNetworkDeviceIfc::AddPortCompleter::Sync& completer) {
-    port_client.Bind(std::move(request->port));
-    completer.buffer(arena).Reply(ZX_OK);
-  };
-
-  banjo::FakeNetworkPortImpl port;
-  auto port_proto = port.protocol();
-  ASSERT_OK(AddPortSync(12, &port_proto));
-
-  fdf::Arena arena('NETD');
-  auto mac = port_client.buffer(arena)->GetMac();
-  ASSERT_OK(mac.status());
-}
-
-TEST_F(NetworkDeviceShimTest, TeardownAndThenPortClientUnbinds) {
-  // Verify asynchronous Teardown when a port client is still bound during the teardown call and
-  // later unbound.
-  ASSERT_OK(InitImpl());
-
-  fdf::WireSyncClient<netdriver::NetworkPort> port_client;
-  ifc_.add_port_ = [&](netdriver::wire::NetworkDeviceIfcAddPortRequest* request, fdf::Arena& arena,
-                       FakeNetworkDeviceIfc::AddPortCompleter::Sync& completer) {
-    port_client.Bind(std::move(request->port));
-    completer.buffer(arena).Reply(ZX_OK);
-  };
-
-  banjo::FakeNetworkPortImpl port;
-  auto port_proto = port.protocol();
-  ASSERT_OK(AddPortSync(12, &port_proto));
-
-  fdf::Arena arena('NETD');
-  auto mac = port_client.buffer(arena)->GetMac();
-  ASSERT_OK(mac.status());
-
-  libsync::Completion teardown_complete;
-  ASSERT_EQ(shim_->Teardown([&] { teardown_complete.Signal(); }),
-            NetworkDeviceImplBinder::Synchronicity::Async);
-  ASSERT_FALSE(teardown_complete.signaled());
-  // Unbinding the client (by destroying it) should trigger port removal and complete the teardown.
-  port_client = {};
-  teardown_complete.Wait();
 }
 
 }  // namespace testing

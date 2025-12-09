@@ -11,7 +11,6 @@
 #include "device/test_session.h"
 #include "device/test_util.h"
 #include "mac/test_util.h"
-#include "network_device_test_banjo.h"
 #include "src/lib/testing/predicates/status.h"
 
 namespace {
@@ -173,21 +172,9 @@ class NetDeviceDriverTest : public ::testing::Test {
   FakeNetworkPortImpl port_impl_;
 };
 
-// Create a stand-alone empty test fixture class for use with typed tests. This allows us to run the
-// same tests with both FIDL and Banjo test fixtures without having to repeat the same tests. Gtest
-// only provides typed tests through template parameters so this sub-class is used to inherit from
-// either the FIDL or Banjo based test fixture. Once the Banjo shims are removed these can all
-// revert to regular tests.
-template <typename Base>
-class NetDeviceDriverTestFixture : public Base {};
+TEST_F(NetDeviceDriverTest, TestCreateSimple) { ASSERT_OK(this->CreateDevice()); }
 
-// Create the test suite with the two different test fixtures.
-using TestTypes = ::testing::Types<NetDeviceDriverTest, BanjoNetDeviceDriverTest>;
-TYPED_TEST_SUITE(NetDeviceDriverTestFixture, TestTypes);
-
-TYPED_TEST(NetDeviceDriverTestFixture, TestCreateSimple) { ASSERT_OK(this->CreateDevice()); }
-
-TYPED_TEST(NetDeviceDriverTestFixture, TestOpenSession) {
+TEST_F(NetDeviceDriverTest, TestOpenSession) {
   ASSERT_OK(this->CreateDevice());
   TestSession session;
   zx::result connect_result = this->ConnectNetDevice();
@@ -203,7 +190,7 @@ TYPED_TEST(NetDeviceDriverTestFixture, TestOpenSession) {
                                                       zx::deadline_after(kTestTimeout), nullptr));
 }
 
-TYPED_TEST(NetDeviceDriverTestFixture, TestWatcherDestruction) {
+TEST_F(NetDeviceDriverTest, TestWatcherDestruction) {
   // Test that on device removal watcher channels get closed.
   ASSERT_OK(this->CreateDevice());
 

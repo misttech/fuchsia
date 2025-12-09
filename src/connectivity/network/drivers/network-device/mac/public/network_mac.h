@@ -7,7 +7,6 @@
 
 #include <fidl/fuchsia.hardware.network.driver/cpp/driver/wire.h>
 #include <fidl/fuchsia.hardware.network/cpp/wire.h>
-#include <fuchsia/hardware/network/driver/cpp/banjo.h>
 
 #include <memory>
 
@@ -22,10 +21,6 @@ class MacAddrDeviceInterface {
   using OnCreated = fit::callback<void(zx::result<std::unique_ptr<MacAddrDeviceInterface>>)>;
 
   virtual ~MacAddrDeviceInterface() = default;
-
-  // Creates a new MacAddrDeviceInterface that is bound to the provided parent.
-  static zx::result<std::unique_ptr<MacAddrDeviceInterface>> Create(
-      ddk::MacAddrProtocolClient parent);
 
   // Creates a new MacAddrDeviceInterface that is bound to the provided parent. The creation process
   // will make asynchronous calls into the provided parent and the resulting object will be returned

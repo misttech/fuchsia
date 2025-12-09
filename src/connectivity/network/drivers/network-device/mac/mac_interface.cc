@@ -12,11 +12,6 @@
 
 namespace network {
 
-zx::result<std::unique_ptr<MacAddrDeviceInterface>> MacAddrDeviceInterface::Create(
-    ddk::MacAddrProtocolClient parent) {
-  return zx::ok(nullptr);
-}
-
 void MacAddrDeviceInterface::Create(
     fdf::WireSharedClient<fuchsia_hardware_network_driver::MacAddr> parent,
     OnCreated&& on_created) {

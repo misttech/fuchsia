@@ -53,19 +53,6 @@ struct DeviceInterfaceDispatchers {
   fdf::UnownedUnsynchronizedDispatcher port_;
 };
 
-struct ShimDispatchers {
-  ShimDispatchers() = default;
-  ShimDispatchers(fdf::UnsynchronizedDispatcher& shim, fdf::SynchronizedDispatcher& port)
-      : shim_(shim), port_(port) {}
-  ShimDispatchers(const ShimDispatchers&) = default;
-  ShimDispatchers& operator=(const ShimDispatchers&) = default;
-
-  // This is used by NetworkDeviceShim to serve the NetworkDeviceImpl protocol.
-  fdf::UnownedUnsynchronizedDispatcher shim_;
-  // This is used by NetworkPortShim to serve the NetworkPort protocol.
-  fdf::UnownedSynchronizedDispatcher port_;
-};
-
 // A class that represents a set of owned dispatchers suitable for use with a
 // NetworkDeviceInterface. The class owns the dispatchers and provides functionality for
 // synchronously shutting down the dispatchers. Shutdown has to be explicitly invoked, if the object
@@ -86,27 +73,6 @@ class OwnedDeviceInterfaceDispatchers {
   fdf::UnsynchronizedDispatcher ifc_;
   libsync::Completion ifc_shutdown_;
   fdf::UnsynchronizedDispatcher port_;
-  libsync::Completion port_shutdown_;
-};
-
-// A class that represents a set of owned shim dispatchers suitable for use with a
-// NetworkDeviceInterface. The class owns the dispatchers and provides functionality for
-// synchronously shutting down the dispatchers. Shutdown has to be explicitly invoked, if the object
-// is destroyed without being shutdown assert will be triggered.
-class OwnedShimDispatchers {
- public:
-  static zx::result<std::unique_ptr<OwnedShimDispatchers>> Create();
-
-  ShimDispatchers Unowned();
-
-  void ShutdownSync();
-
- private:
-  OwnedShimDispatchers();
-
-  fdf::UnsynchronizedDispatcher shim_;
-  libsync::Completion shim_shutdown_;
-  fdf::SynchronizedDispatcher port_;
   libsync::Completion port_shutdown_;
 };
 

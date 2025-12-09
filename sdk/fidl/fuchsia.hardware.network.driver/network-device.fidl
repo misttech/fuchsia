@@ -215,7 +215,6 @@ type TxResult = struct {
 };
 
 @transport("Driver")
-@banjo_layout("ddk-interface")
 closed protocol NetworkPort {
     /// Gets information about the port.
     ///
@@ -252,8 +251,6 @@ closed protocol NetworkPort {
     /// Gets an interface to the MAC addressing layer of the port.
     ///
     /// Ports that do not support MAC addressing must return an empty interface.
-    /// That means the generated-banjo bindings `ctx` and `ops` fields must both
-    /// be null.
     ///
     /// - response `mac_ifc` mac addressing handle.
     strict GetMac() -> (resource struct {
@@ -291,7 +288,6 @@ const MAX_TX_RESULTS uint32 = 8188;
 const MAX_RX_BUFFERS uint32 = 818;
 
 @transport("Driver")
-@banjo_layout("ddk-interface")
 closed protocol NetworkDeviceIfc {
     /// Notifies the interface of status changes on port with `id`.
     ///
@@ -498,7 +494,6 @@ const MAX_RX_SPACE_BUFFERS uint32 = 2047;
 
 @discoverable
 @transport("Driver")
-@banjo_layout("ddk-protocol")
 closed protocol NetworkDeviceImpl {
     /// Initializes the network device.
     ///

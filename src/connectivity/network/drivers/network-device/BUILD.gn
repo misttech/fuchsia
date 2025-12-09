@@ -24,10 +24,8 @@ source_set("src") {
   ]
   public_deps = [
     ":network-device_bind",
-    "device:banjo_shims_driver",
     "device:device_driver",
     "//sdk/fidl/fuchsia.hardware.network.driver:fuchsia.hardware.network.driver_cpp",
-    "//sdk/lib/driver/compat/cpp",
     "//sdk/lib/driver/component/cpp",
     "//sdk/lib/driver/devfs/cpp",
     "//src/devices/lib/driver:driver_runtime",
@@ -79,7 +77,6 @@ test("driver-test") {
     ":src",
     "device:test_util_driver",
     "mac:test_util_driver",
-    "//sdk/lib/driver/compat/cpp",
     "//sdk/lib/driver/testing/cpp",
     "//src/lib/fxl/test:gtest_main",
     "//src/lib/testing/predicates",

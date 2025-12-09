@@ -15,7 +15,6 @@
 #include <fbl/alloc_checker.h>
 
 #include "log.h"
-#include "network_device_shim.h"
 #include "rx_queue.h"
 #include "session.h"
 #include "src/connectivity/lib/network-device/buffer_descriptor/buffer_descriptor.h"
@@ -176,56 +175,6 @@ void OwnedDeviceInterfaceDispatchers::ShutdownSync() {
 }
 
 OwnedDeviceInterfaceDispatchers::OwnedDeviceInterfaceDispatchers() = default;
-
-zx::result<std::unique_ptr<OwnedShimDispatchers>> OwnedShimDispatchers::Create() {
-  fbl::AllocChecker ac;
-
-  std::unique_ptr<OwnedShimDispatchers> dispatchers(new (&ac) OwnedShimDispatchers);
-  if (!ac.check()) {
-    LOGF_ERROR("Failed to allocate OwnedShimDispatchers");
-    return zx::error(ZX_ERR_NO_MEMORY);
-  }
-
-  // Create the shim dispatcher with a different owner, as if it was a separate driver from the
-  // network device driver. This is required to allow inlining calls between dispatchers within the
-  // same driver.
-  zx::result shim_dispatcher = fdf_env::DispatcherBuilder::CreateUnsynchronizedWithOwner(
-      dispatchers.get(), {}, "netdev-shim", [dispatchers = dispatchers.get()](fdf_dispatcher_t*) {
-        dispatchers->shim_shutdown_.Signal();
-      });
-  if (shim_dispatcher.is_error()) {
-    LOGF_ERROR("failed to create shim dispatcher: %s", shim_dispatcher.status_string());
-    return shim_dispatcher.take_error();
-  }
-  dispatchers->shim_ = std::move(shim_dispatcher.value());
-
-  zx::result port_dispatcher = fdf::SynchronizedDispatcher::Create(
-      {}, "netdev-shim-port", [dispatchers = dispatchers.get()](fdf_dispatcher_t*) {
-        dispatchers->port_shutdown_.Signal();
-      });
-  if (port_dispatcher.is_error()) {
-    LOGF_ERROR("failed to create shim port dispatcher: %s", port_dispatcher.status_string());
-    return port_dispatcher.take_error();
-  }
-  dispatchers->port_ = std::move(port_dispatcher.value());
-
-  return zx::ok(std::move(dispatchers));
-}
-
-ShimDispatchers OwnedShimDispatchers::Unowned() { return ShimDispatchers(shim_, port_); }
-
-void OwnedShimDispatchers::ShutdownSync() {
-  if (shim_.get()) {
-    shim_.ShutdownAsync();
-    shim_shutdown_.Wait();
-  }
-  if (port_.get()) {
-    port_.ShutdownAsync();
-    port_shutdown_.Wait();
-  }
-}
-
-OwnedShimDispatchers::OwnedShimDispatchers() = default;
 
 zx::result<std::unique_ptr<NetworkDeviceInterface>> NetworkDeviceInterface::Create(
     const DeviceInterfaceDispatchers& dispatchers,
