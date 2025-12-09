@@ -141,7 +141,7 @@ test("fat_filename_tests") {
   ]
 }
 
-storage_driver_test_realm_v2_component("fatfs-fat-filename-tests") {
+storage_driver_test_realm_component("fatfs-fat-filename-tests") {
   deps = [
     ":fat_filename_tests",
     ":test_fatfs_component_manifest_shard",

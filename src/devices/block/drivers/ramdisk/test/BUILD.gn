@@ -30,7 +30,7 @@ test("ramdisk") {
   ]
 }
 
-storage_driver_test_realm_v2_component("ramdisk-test") {
+storage_driver_test_realm_component("ramdisk-test") {
   deps = [ ":ramdisk" ]
 }
 

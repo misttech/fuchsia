@@ -31,7 +31,7 @@ rustc_library("payload_streamer") {
   sources = [ "src/lib.rs" ]
 }
 
-storage_driver_test_realm_v2_component("payload-streamer-tests") {
+storage_driver_test_realm_component("payload-streamer-tests") {
   deps = [ ":payload_streamer_test" ]
 }
 

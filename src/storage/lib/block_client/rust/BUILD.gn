@@ -55,7 +55,7 @@ rustc_library("fake-block-client") {
   source_root = "src/fake_block_client.rs"
 }
 
-storage_driver_test_realm_v2_component("block-client-tests-component") {
+storage_driver_test_realm_component("block-client-tests-component") {
   component_name = "block-client-tests"
   deps = [ ":block-client_test" ]
 }

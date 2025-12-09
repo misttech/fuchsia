@@ -150,7 +150,7 @@ test("minfs_component_runner_test") {
   ]
 }
 
-storage_driver_test_realm_v2_component("minfs-integration-fs-tests") {
+storage_driver_test_realm_component("minfs-integration-fs-tests") {
   deps = [ ":fs_tests" ]
 }
 
@@ -176,16 +176,16 @@ fuchsia_fuzzer_package("minfs-fuzzers") {
   cpp_fuzzer_components = [ ":minfs-fuzzer-component" ]
 }
 
-storage_driver_test_realm_v2_component("minfs-integration-test") {
+storage_driver_test_realm_component("minfs-integration-test") {
   deps = [ ":minfs-integration" ]
 }
 
-storage_driver_test_realm_v2_component("minfs-dirty-cache-integration-test") {
+storage_driver_test_realm_component("minfs-dirty-cache-integration-test") {
   manifest = "meta/minfs-dirty-cache-integration-test.cml"
   deps = [ ":minfs_dirty_cache_integration" ]
 }
 
-storage_driver_test_realm_v2_component("minfs-power-test") {
+storage_driver_test_realm_component("minfs-power-test") {
   deps = [ ":minfs-power" ]
 }
 

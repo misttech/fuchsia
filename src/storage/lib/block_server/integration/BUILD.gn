@@ -32,7 +32,7 @@ rustc_test("block_server_integration_tests") {
   ]
 }
 
-storage_driver_test_realm_v2_component("block_server_integration_component") {
+storage_driver_test_realm_component("block_server_integration_component") {
   deps = [ ":block_server_integration_tests" ]
 }
 

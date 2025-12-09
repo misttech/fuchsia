@@ -196,8 +196,7 @@ test("fvm_sparse_image_reader_test") {
   ]
 }
 
-storage_driver_test_realm_v2_component(
-    "fvm-sparse-image-reader-tests-component") {
+storage_driver_test_realm_component("fvm-sparse-image-reader-tests-component") {
   component_name = "fvm-sparse-image-reader-tests"
   manifest = "sparse-image-reader-tests.cml"
   deps = [

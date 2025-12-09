@@ -38,7 +38,7 @@ rustc_library("ramdevice_client") {
   sources = [ "src/lib.rs" ]
 }
 
-storage_driver_test_realm_v2_component("ramdevice-client-test-component") {
+storage_driver_test_realm_component("ramdevice-client-test-component") {
   deps = [ ":ramdevice_client_test" ]
 }
 

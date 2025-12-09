@@ -104,7 +104,7 @@ test("blobfs_integration") {
   ]
 }
 
-storage_driver_test_realm_v2_component("blobfs-integration") {
+storage_driver_test_realm_component("blobfs-integration") {
   manifest = "meta/blobfs_integration.cml"
   deps = [ ":blobfs_integration" ]
 }
@@ -130,7 +130,7 @@ test("blobfs_mount") {
   ]
 }
 
-storage_driver_test_realm_v2_component("blobfs-mount") {
+storage_driver_test_realm_component("blobfs-mount") {
   deps = [ ":blobfs_mount" ]
 }
 
@@ -179,7 +179,7 @@ test("blobfs_sync") {
   ]
 }
 
-storage_driver_test_realm_v2_component("blobfs-sync") {
+storage_driver_test_realm_component("blobfs-sync") {
   deps = [ ":blobfs_sync" ]
 }
 
@@ -197,7 +197,7 @@ test("blobfs_superblock") {
   ]
 }
 
-storage_driver_test_realm_v2_component("blobfs-superblock") {
+storage_driver_test_realm_component("blobfs-superblock") {
   deps = [ ":blobfs_superblock" ]
 }
 
@@ -215,7 +215,7 @@ test("ota_health_check_service") {
   ]
 }
 
-storage_driver_test_realm_v2_component("ota-health-check-service") {
+storage_driver_test_realm_component("ota-health-check-service") {
   deps = [ ":ota_health_check_service" ]
 }
 
@@ -234,7 +234,7 @@ test("blob-creator-test-bin") {
   ]
 }
 
-storage_driver_test_realm_v2_component("blob-creator-test") {
+storage_driver_test_realm_component("blob-creator-test") {
   deps = [ ":blob-creator-test-bin" ]
 }
 
@@ -268,7 +268,7 @@ template("blobfs_large_integration_test") {
     }
   }
 
-  storage_driver_test_realm_v2_component(component_name) {
+  storage_driver_test_realm_component(component_name) {
     deps = [ ":$bin_name" ]
   }
 }

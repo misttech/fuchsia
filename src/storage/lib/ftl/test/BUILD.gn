@@ -67,7 +67,7 @@ test("ftl-wear-simulator-test") {
   ]
 }
 
-storage_driver_test_realm_v2_component("ftl-wear-simulator") {
+storage_driver_test_realm_component("ftl-wear-simulator") {
   deps = [ ":ftl-wear-simulator-test" ]
 }
 

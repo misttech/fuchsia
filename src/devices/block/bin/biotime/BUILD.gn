@@ -39,7 +39,7 @@ test("biotime-test") {
   ]
 }
 
-storage_driver_test_realm_v2_component("biotime-test-component") {
+storage_driver_test_realm_component("biotime-test-component") {
   deps = [ ":biotime-test" ]
 
   # This test overrides main to implement new command line flags

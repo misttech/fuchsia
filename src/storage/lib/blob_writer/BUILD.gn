@@ -59,7 +59,7 @@ rustc_test("blob-writer-test") {
   source_root = "tests/lib.rs"
 }
 
-storage_driver_test_realm_v2_component("blob-writer-test-component") {
+storage_driver_test_realm_component("blob-writer-test-component") {
   component_name = "blob-writer-test-component"
   manifest = "meta/blob_writer_test.cml"
   deps = [

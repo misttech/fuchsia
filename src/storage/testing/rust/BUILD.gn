@@ -47,7 +47,7 @@ rustc_library("storage-isolated-driver-manager") {
   ]
 }
 
-storage_driver_test_realm_v2_component(
+storage_driver_test_realm_component(
     "storage-isolated-driver-manager-unittests-component") {
   manifest = "meta/storage-isolated-driver-manager-unittests.cml"
   deps = [ ":storage-isolated-driver-manager_test" ]

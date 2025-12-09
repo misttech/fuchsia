@@ -46,7 +46,7 @@ fuchsia_component("fatfs-mounter") {
   manifest = "meta/fatfs_mounter.cml"
 }
 
-storage_driver_test_realm_v2_component("fatfs-mounter-test") {
+storage_driver_test_realm_component("fatfs-mounter-test") {
   deps = [ ":bin_test" ]
 }
 

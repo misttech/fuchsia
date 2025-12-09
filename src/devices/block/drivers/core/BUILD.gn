@@ -141,7 +141,7 @@ rustc_test("block_driver_integration_test") {
   ]
 }
 
-storage_driver_test_realm_v2_component("block-driver-integration-test") {
+storage_driver_test_realm_component("block-driver-integration-test") {
   deps = [ ":block_driver_integration_test" ]
 }
 

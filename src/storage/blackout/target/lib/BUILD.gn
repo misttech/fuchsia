@@ -87,7 +87,7 @@ rustc_library("blackout-target") {
 #   source_root = "tests/setup_then_find_with_path.rs"
 # }
 
-storage_driver_test_realm_v2_component("blackout-target-test-component") {
+storage_driver_test_realm_component("blackout-target-test-component") {
   component_name = "blackout-target-test"
   deps = [
     ":blackout-target_test",
@@ -95,13 +95,13 @@ storage_driver_test_realm_v2_component("blackout-target-test-component") {
   ]
 }
 
-# storage_driver_test_realm_v2_component(
+# storage_driver_test_realm_component(
 #     "blackout-target-test-no-path-component") {
 #   component_name = "blackout-target-no-with-path"
 #   deps = [ ":blackout-target-test-no-path" ]
 # }
 
-# storage_driver_test_realm_v2_component(
+# storage_driver_test_realm_component(
 #     "blackout-target-test-with-path-component") {
 #   component_name = "blackout-target-test-with-path"
 #   deps = [ ":blackout-target-test-with-path" ]

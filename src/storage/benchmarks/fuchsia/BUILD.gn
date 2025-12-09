@@ -141,13 +141,13 @@ fuchsia_test_package("storage-benchmarks") {
   ]
 }
 
-storage_driver_test_realm_v2_component(
+storage_driver_test_realm_component(
     "fuchsia-storage-benchmarks-lib-tests-component") {
   manifest = "meta/fuchsia-storage-benchmarks-lib-tests.cml"
   deps = [ ":framework_test" ]
 }
 
-storage_driver_test_realm_v2_component(
+storage_driver_test_realm_component(
     "fuchsia-storage-benchmarks-tests-component") {
   manifest = "meta/fuchsia-storage-benchmarks-tests.cml"
   deps = [ ":fuchsia-storage-benchmarks_test" ]
