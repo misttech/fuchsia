@@ -57,8 +57,6 @@ InjectorInspector::InjectorInspector(inspect::Node node)
       cancelled_injections_node_(node_.CreateChild("cancelled_injections")),
       total_cancelled_injections_(
           cancelled_injections_node_.CreateUint("total_cancelled_injections", 0)),
-      injection_in_flight_count_(
-          cancelled_injections_node_.CreateUint("injection_in_flight_count", 0)),
       pending_events_empty_count_(
           cancelled_injections_node_.CreateUint("pending_events_empty_count", 0)),
       scene_not_ready_count_(cancelled_injections_node_.CreateUint("scene_not_ready_count", 0)) {}
@@ -82,16 +80,12 @@ void InjectorInspector::OnInjectedEvents(uint64_t num_events) {
   }
 }
 
-void InjectorInspector::OnInjectPendingCancelled(bool injection_in_flight,
-                                                 bool pending_events_empty, bool scene_not_ready) {
-  FX_DCHECK(injection_in_flight || pending_events_empty || scene_not_ready)
+void InjectorInspector::OnInjectPendingCancelled(bool pending_events_empty, bool scene_not_ready) {
+  FX_DCHECK(pending_events_empty || scene_not_ready)
       << "Should only cancel an inject with one or more valid reasons";
 
   total_cancelled_injections_.Add(1);
 
-  if (injection_in_flight) {
-    injection_in_flight_count_.Add(1);
-  }
   if (pending_events_empty) {
     pending_events_empty_count_.Add(1);
   }
@@ -203,45 +197,32 @@ void Injector::InjectPending(InjectorId injector_id) {
     }
   }
 
-  if (injector.injection_in_flight || injector.pending_events.empty() || !scene_ready_) {
-    injector_inspector_.OnInjectPendingCancelled(injector.injection_in_flight,
-                                                 injector.pending_events.empty(), !scene_ready_);
+  if (injector.pending_events.empty() || !scene_ready_) {
+    injector_inspector_.OnInjectPendingCancelled(injector.pending_events.empty(), !scene_ready_);
     return;
   }
 
-  injector.injection_in_flight = true;
   injector.injecting_first_event = false;
 
-  std::vector<fuchsia::ui::pointerinjector::Event> events_to_inject;
-  while (!injector.pending_events.empty() &&
-         events_to_inject.size() < fuchsia::ui::pointerinjector::MAX_INJECT) {
-    events_to_inject.emplace_back(std::move(injector.pending_events.front()));
-    injector.pending_events.pop_front();
-  }
-
-  for (const auto& event : events_to_inject) {
-    TRACE_FLOW_BEGIN("input", "dispatch_event_to_scenic", event.trace_flow_id());
-  }
-
-  injector_inspector_.OnInjectedEvents(events_to_inject.size());
-  injector.touch_injector->Inject(std::move(events_to_inject), [this, injector_id] {
-    if (num_failed_injection_attempts_ > 0) {
-      FX_LOGS(INFO) << "Injection successful after " << num_failed_injection_attempts_
-                    << " failed attempts.";
-      num_failed_injection_attempts_ = 0;
+  while (!injector.pending_events.empty()) {
+    std::vector<fuchsia::ui::pointerinjector::Event> events_to_inject;
+    while (!injector.pending_events.empty() &&
+           events_to_inject.size() < fuchsia::ui::pointerinjector::MAX_INJECT) {
+      events_to_inject.emplace_back(std::move(injector.pending_events.front()));
+      injector.pending_events.pop_front();
     }
 
-    FX_DCHECK(injectors_.count(injector_id));
-    auto& injector = injectors_.at(injector_id);
-    injector.injection_in_flight = false;
-    // Drain the queue eagerly, instead of draining lazily (i.e. on receiving the next input
-    // event).
-    if (!injector.pending_events.empty()) {
-      InjectPending(injector_id);
-    } else if (injector.kill_when_empty) {
-      injectors_.erase(injector_id);
+    for (const auto& event : events_to_inject) {
+      TRACE_FLOW_BEGIN("input", "dispatch_event_to_scenic", event.trace_flow_id());
     }
-  });
+
+    injector_inspector_.OnInjectedEvents(events_to_inject.size());
+    injector.touch_injector->InjectEvents(std::move(events_to_inject));
+  }
+
+  if (injector.kill_when_empty) {
+    injectors_.erase(injector_id);
+  }
 }
 
 // Both the API for injecting into RootPresenter and the API for injecting into Scenic support
@@ -313,9 +294,15 @@ fuchsia::ui::pointerinjector::Viewport Injector::GetCurrentViewport() const {
                                                /*max*/ {viewport_.width, viewport_.height}}};
   viewport.set_extents(extents);
   viewport.set_viewport_to_context_transform(std::array<float, 9>{
-      viewport_.scale, 0, 0,                      // first column
-      0, viewport_.scale, 0,                      // second column
-      viewport_.x_offset, viewport_.y_offset, 1,  // third column
+      viewport_.scale,
+      0,
+      0,  // first column
+      0,
+      viewport_.scale,
+      0,  // second column
+      viewport_.x_offset,
+      viewport_.y_offset,
+      1,  // third column
   });
 
   return viewport;
@@ -353,7 +340,6 @@ void Injector::SetupInputInjection(InjectorId injector_id, uint32_t device_id) {
     }
   }
 
-  injector.injection_in_flight = false;
   injector.injecting_first_event = true;
   component_context_->svc()->Connect<fuchsia::ui::pointerinjector::Registry>()->Register(
       std::move(config), injectors_.at(injector_id).touch_injector.NewRequest(), [] {});

@@ -165,6 +165,8 @@ void Injector::Inject(std::vector<fuchsia::ui::pointerinjector::Event> events,
   callback();
 }
 
+// TODO: b/465440651 - revisit if we need to add flow control here since no flow control on caller
+// side.
 void Injector::InjectEvents(std::vector<fuchsia::ui::pointerinjector::Event> events) {
   TRACE_DURATION("input", "Injector::Inject");
   if (!is_descendant_and_connected_(settings_.target_koid, settings_.context_koid)) {

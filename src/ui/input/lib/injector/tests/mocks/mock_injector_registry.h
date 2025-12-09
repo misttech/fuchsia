@@ -28,8 +28,6 @@ class MockInjectorRegistry : public fuchsia::ui::pointerinjector::Registry,
               InjectCallback callback) override;
   void InjectEvents(std::vector<fuchsia::ui::pointerinjector::Event> events) override;
 
-  void FirePendingCallbacks();
-
   void KillAllBindings();
 
   uint32_t num_register_calls() { return num_register_calls_; }
@@ -43,7 +41,6 @@ class MockInjectorRegistry : public fuchsia::ui::pointerinjector::Registry,
 
   fidl::BindingSet<fuchsia::ui::pointerinjector::Registry> registry_;
 
-  std::vector<InjectCallback> pending_callbacks_;
   std::unordered_map<uint32_t, fidl::Binding<fuchsia::ui::pointerinjector::Device>> bindings_;
 };
 

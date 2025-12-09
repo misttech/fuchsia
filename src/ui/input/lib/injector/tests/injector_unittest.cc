@@ -57,14 +57,6 @@ TEST_F(InjectorTest, Multiple_MarkSceneReady_ShouldNotCauseMultipleRegistrations
 
   EXPECT_EQ(injector_registry.num_register_calls(), 1u);
   EXPECT_EQ(injector_registry.num_registered(), 1u);
-  EXPECT_EQ(injector_registry.num_events_received(), 1u);
-
-  injector_registry.FirePendingCallbacks();
-
-  RunLoopUntilIdle();
-
-  EXPECT_EQ(injector_registry.num_register_calls(), 1u);
-  EXPECT_EQ(injector_registry.num_registered(), 1u);
   EXPECT_EQ(injector_registry.num_events_received(), 2u);
 }
 
@@ -95,7 +87,6 @@ TEST_F(InjectorTest, ShouldWaitUntilADD_ForFirstInjection) {
   injector.OnEvent(event);
   RunLoopUntilIdle();
   EXPECT_EQ(injector_registry.num_events_received(), 0u);
-  injector_registry.FirePendingCallbacks();
 
   // First event with ADD sent.
   event.set_pointer({.device_id = kDeviceId, .phase = PointerEventPhase::ADD});
@@ -108,7 +99,6 @@ TEST_F(InjectorTest, ShouldWaitUntilADD_ForFirstInjection) {
   injector.OnEvent(event);
   event.set_pointer({.device_id = kDeviceId, .phase = PointerEventPhase::REMOVE});
   injector.OnEvent(event);
-  injector_registry.FirePendingCallbacks();
   RunLoopUntilIdle();
   EXPECT_EQ(injector_registry.num_events_received(), 3u);
 }
@@ -158,7 +148,6 @@ TEST_F(InjectorTest, AfterKilledChannel_ShouldWaitUntilADD_ForRecoveryInjectionA
   injector.OnEvent(event);
   event.set_pointer({.device_id = kDeviceId, .phase = PointerEventPhase::REMOVE});
   injector.OnEvent(event);
-  injector_registry.FirePendingCallbacks();
   RunLoopUntilIdle();
   EXPECT_EQ(injector_registry.num_events_received(), 4u);
 }

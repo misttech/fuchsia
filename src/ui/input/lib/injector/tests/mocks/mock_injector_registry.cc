@@ -28,19 +28,11 @@ void MockInjectorRegistry::Register(
 
 void MockInjectorRegistry::Inject(std::vector<fuchsia::ui::pointerinjector::Event> events,
                                   InjectCallback callback) {
-  num_events_received_ += events.size();
-  pending_callbacks_.emplace_back(std::move(callback));
+  FX_LOGS(FATAL) << "Device::Inject is deprecated.";
 }
 
 void MockInjectorRegistry::InjectEvents(std::vector<fuchsia::ui::pointerinjector::Event> events) {
   num_events_received_ += events.size();
-}
-
-void MockInjectorRegistry::FirePendingCallbacks() {
-  for (auto& callback : pending_callbacks_) {
-    callback();
-  }
-  pending_callbacks_.clear();
 }
 
 void MockInjectorRegistry::KillAllBindings() { bindings_.clear(); }

@@ -24,8 +24,7 @@ class InjectorInspector {
   explicit InjectorInspector(inspect::Node inspect_node);
 
   void OnInjectedEvents(uint64_t num_events);
-  void OnInjectPendingCancelled(bool injection_in_flight, bool pending_events_empty,
-                                bool scene_not_ready);
+  void OnInjectPendingCancelled(bool pending_events_empty, bool scene_not_ready);
 
   // How long to track injection history.
   static constexpr uint64_t kNumMinutesOfHistory = 10;
@@ -45,7 +44,6 @@ class InjectorInspector {
   inspect::Node cancelled_injections_node_;
 
   inspect::UintProperty total_cancelled_injections_;
-  inspect::UintProperty injection_in_flight_count_;
   inspect::UintProperty pending_events_empty_count_;
   inspect::UintProperty scene_not_ready_count_;
 
@@ -122,7 +120,6 @@ class Injector {
     fuchsia::ui::pointerinjector::DevicePtr touch_injector;
     std::deque<fuchsia::ui::pointerinjector::Event> pending_events;
     bool injecting_first_event = true;
-    bool injection_in_flight = false;
     bool kill_when_empty = false;
   };
 
