@@ -8,6 +8,8 @@ use std::time::Duration;
 use argh::{ArgsInfo, FromArgValue, FromArgs};
 use ffx_core::ffx_command;
 use regex::Regex;
+use schemars::JsonSchema;
+use serde::Serialize;
 
 #[ffx_command()]
 #[derive(ArgsInfo, FromArgs, Debug, PartialEq)]
@@ -57,7 +59,7 @@ pub struct ForwardCommand {
     pub spec: Vec<ForwardSpec>,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, JsonSchema, Serialize, PartialEq)]
 pub struct ForwardSpec {
     pub host: ProtoSpec,
     pub target: ProtoSpec,
@@ -79,7 +81,14 @@ impl FromArgValue for ForwardSpec {
     }
 }
 
-#[derive(Debug, PartialEq)]
+impl std::fmt::Display for ForwardSpec {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let Self { host, direction, target } = self;
+        write!(f, "{}{}{}", host, direction, target)
+    }
+}
+
+#[derive(Debug, Clone, JsonSchema, Serialize, PartialEq)]
 pub enum ProtoSpec {
     Tcp(SocketAddr),
 }
@@ -118,10 +127,30 @@ impl ProtoSpec {
     }
 }
 
-#[derive(Debug, PartialEq)]
+impl std::fmt::Display for ProtoSpec {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Tcp(addr) => {
+                write!(f, "tcp:{}", addr)
+            }
+        }
+    }
+}
+
+#[derive(Debug, Copy, Clone, JsonSchema, Serialize, PartialEq)]
 pub enum Direction {
     HostToTarget,
     TargetToHost,
+}
+
+impl std::fmt::Display for Direction {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let message = match self {
+            Self::HostToTarget => &"=>",
+            Self::TargetToHost => &"<=",
+        };
+        write!(f, "{}", message)
+    }
 }
 
 fn interval_ms(v: &str) -> Result<Duration, String> {

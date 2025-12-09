@@ -12,13 +12,15 @@ use std::time::{Duration, Instant};
 use errors::ffx_error;
 use ffx_forward_args::{Direction, ForwardCommand, ForwardSpec, ProtoSpec};
 use ffx_target_net::{Bidirectional, Counters, PortForwarder};
-use ffx_writer::SimpleWriter;
+use ffx_writer::{ToolIO, VerifiedMachineWriter};
 use fho::{FfxMain, FfxTool};
 use fuchsia_async as fasync;
 use futures::future::{BoxFuture, Fuse, FusedFuture as _, OptionFuture};
 use futures::stream::FusedStream;
 use futures::{FutureExt as _, Stream, StreamExt as _};
 use log::{error, info};
+use schemars::JsonSchema;
+use serde::Serialize;
 use speedtest::{BytesFormatter, Throughput};
 use target_connector::Connector;
 use target_holders::RemoteControlProxyHolder;
@@ -40,9 +42,29 @@ fn interval(dur: Duration) -> impl Stream<Item = ()> + FusedStream {
     futures::stream::unfold((), move |()| fasync::Timer::new(dur).map(|()| Some(((), ())))).fuse()
 }
 
+#[derive(Debug, Serialize, JsonSchema, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum ForwardMessage {
+    Forwarding(Vec<ForwardSpec>),
+}
+
+impl std::fmt::Display for ForwardMessage {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Forwarding(specs) => {
+                write!(
+                    f,
+                    "Forwarding: \n\t{}",
+                    specs.iter().map(|f| f.to_string()).collect::<Vec<_>>().join("\n\t")
+                )
+            }
+        }
+    }
+}
+
 #[async_trait::async_trait(?Send)]
 impl FfxMain for ForwardTool {
-    type Writer = SimpleWriter;
+    type Writer = VerifiedMachineWriter<ForwardMessage>;
 
     async fn main(self, mut writer: Self::Writer) -> fho::Result<()> {
         let Self { remote_control_connector, cmd } = self;
@@ -57,9 +79,14 @@ impl FfxMain for ForwardTool {
             interval(ui_interval).right_stream()
         };
 
+        let emit_machine_messages = !quiet && writer.is_machine();
+        let forwarder = Forwarder::new(&spec, &remote_control_connector).await?;
+        if emit_machine_messages {
+            writer.item(&ForwardMessage::Forwarding(forwarder.forwarded_specs()))?;
+        }
         // The mutable state kept by the tool:
         // The current forwarder, None if we're disconnected.
-        let mut forwarder = Some(Forwarder::new(&spec, &remote_control_connector).await?);
+        let mut forwarder = Some(forwarder);
         // The last error captured for display in the rendered.
         let mut display_error = None;
         // An optional future that may be waiting for a new forwarder to be
@@ -73,7 +100,7 @@ impl FfxMain for ForwardTool {
         // OptionFuture more easily.
         let mut connection_deadline = Instant::now();
 
-        let mut renderer = (!quiet).then(Renderer::default);
+        let mut renderer = (!quiet && !writer.is_machine()).then(Renderer::default);
 
         loop {
             enum Work {
@@ -104,6 +131,9 @@ impl FfxMain for ForwardTool {
                 }
                 Work::NewForwarder(r) => match r {
                     Ok(f) => {
+                        if emit_machine_messages {
+                            writer.item(&ForwardMessage::Forwarding(f.forwarded_specs()))?;
+                        }
                         forwarder = Some(f);
                         forwarder_fut.set(None.into());
                         display_error = None;
@@ -155,10 +185,35 @@ impl FfxMain for ForwardTool {
     }
 }
 
+async fn new_port_forwarder(
+    connector: &Connector<RemoteControlProxyHolder>,
+) -> fho::Result<PortForwarder> {
+    let rcs_proxy = connector
+        .try_connect(|target, err| {
+            log::info!(
+                "Waiting for target '{}'",
+                match target {
+                    Some(s) => s,
+                    _ => "None",
+                }
+            );
+            if let Some(err) = err {
+                log::error!("target connect is in error state: {err:?}");
+            }
+            Ok(())
+        })
+        .await?;
+    let forwarder = PortForwarder::new_with_rcs(Duration::from_secs(10), &*rcs_proxy)
+        .await
+        .map_err(|e| ffx_error!(e))?;
+    Ok(forwarder)
+}
+
 struct Forwarder {
     inner: PortForwarder,
     scope: fasync::Scope,
     sentinel: Fuse<BoxFuture<'static, ffx_target_net::Error>>,
+    forwarded_specs: Vec<ForwardSpec>,
 }
 
 impl Forwarder {
@@ -166,25 +221,14 @@ impl Forwarder {
         spec: &Vec<ForwardSpec>,
         connector: &Connector<RemoteControlProxyHolder>,
     ) -> fho::Result<Self> {
-        let rcs_proxy = connector
-            .try_connect(|target, err| {
-                log::info!(
-                    "Waiting for target '{}'",
-                    match target {
-                        Some(s) => s,
-                        _ => "None",
-                    }
-                );
-                if let Some(err) = err {
-                    log::error!("target connect is in error state: {err:?}");
-                }
-                Ok(())
-            })
-            .await?;
-        let forwarder = PortForwarder::new_with_rcs(Duration::from_secs(10), &*rcs_proxy)
-            .await
-            .map_err(|e| ffx_error!(e))?;
+        let forwarder = new_port_forwarder(connector).await?;
+        Self::new_with_forwarder(spec, forwarder).await
+    }
 
+    async fn new_with_forwarder(
+        spec: &Vec<ForwardSpec>,
+        forwarder: PortForwarder,
+    ) -> fho::Result<Self> {
         let scope = fasync::Scope::new();
 
         // Create a sentinel socket whose accept call just drops all
@@ -204,6 +248,11 @@ impl Forwarder {
             .boxed()
             .fuse();
 
+        // The ForwardSpec's that are passed to us may have `0` in them,
+        // instructing the host OS to pick a port for us. For debugging/reporting
+        // purposes we need to keep track of the "final" forwarding specs.
+        let mut forwarded_specs = vec![];
+
         for ForwardSpec { host, target, direction } in spec.iter() {
             info!(
                 "setting up forwarding host: {:?}, target: {:?}, direction: {:?}",
@@ -219,11 +268,20 @@ impl Forwarder {
                     let target_addr = match target {
                         ProtoSpec::Tcp(addr) => addr,
                     };
+                    let host_addr = listener
+                        .local_addr()
+                        .map_err(|e| ffx_error!("Could not get local address: {}", e))?;
+
                     let _: fasync::JoinHandle<()> = scope.spawn_local(
                         forwarder
                             .forward(listener, *target_addr)
                             .map(|r| r.unwrap_or_else(|e| error!("forwarding error: {e:?}"))),
                     );
+                    forwarded_specs.push(ForwardSpec {
+                        direction: *direction,
+                        host: ProtoSpec::Tcp(host_addr),
+                        target: target.clone(),
+                    });
                 }
                 Direction::TargetToHost => {
                     let listener = match target {
@@ -236,20 +294,30 @@ impl Forwarder {
                     let host_addr = match host {
                         ProtoSpec::Tcp(addr) => addr,
                     };
+                    let target_addr = ProtoSpec::Tcp(listener.local_addr());
                     let _: fasync::JoinHandle<()> =
                         scope.spawn_local(forwarder.reverse(listener, *host_addr).map(|r| {
                             r.unwrap_or_else(|e| error!("reverse forwarding error: {e:?}"))
                         }));
+                    forwarded_specs.push(ForwardSpec {
+                        direction: *direction,
+                        host: host.clone(),
+                        target: target_addr,
+                    });
                 }
             }
         }
 
-        Ok(Self { inner: forwarder, scope, sentinel })
+        Ok(Self { inner: forwarder, forwarded_specs, scope, sentinel })
     }
 
     async fn shutdown(self) {
-        let Self { inner: _, scope, sentinel: _ } = self;
+        let Self { inner: _, scope, sentinel: _, forwarded_specs: _ } = self;
         scope.abort().await;
+    }
+
+    fn forwarded_specs(&self) -> Vec<ForwardSpec> {
+        self.forwarded_specs.clone()
     }
 }
 
@@ -451,6 +519,12 @@ mod tests {
     use super::*;
 
     use assert_matches::assert_matches;
+    use ffx_forward_args::{Direction, ForwardSpec, ProtoSpec};
+    use ffx_target_net_testutil::FakeNetstack;
+    use ffx_writer::{Format, TestBuffers};
+    use itertools::Itertools;
+    use net_declare::{std_ip_v4, std_socket_addr};
+    use serde_json::json;
     use vte::{Parser, Perform};
 
     const INTERVAL: Duration = Duration::from_secs(1);
@@ -689,5 +763,176 @@ mod tests {
         assert_eq!(bar.to_string(), "▇▁");
         bar.update(20.0, 2, 1.0);
         assert_eq!(bar.to_string(), "▁▇");
+    }
+
+    #[test]
+    fn forward_message_display_single_spec_h2t() {
+        let spec = ForwardSpec {
+            host: ProtoSpec::Tcp(std_socket_addr!("127.0.0.1:8080")),
+            target: ProtoSpec::Tcp(std_socket_addr!("127.0.0.1:8081")),
+            direction: Direction::HostToTarget,
+        };
+        let message = ForwardMessage::Forwarding(vec![spec]);
+        pretty_assertions::assert_eq!(
+            message.to_string(),
+            "Forwarding: \n\ttcp:127.0.0.1:8080=>tcp:127.0.0.1:8081"
+        );
+    }
+
+    #[test]
+    fn forward_message_display_single_spec_t2h() {
+        let spec = ForwardSpec {
+            host: ProtoSpec::Tcp(std_socket_addr!("192.168.1.1:22")),
+            target: ProtoSpec::Tcp(std_socket_addr!("10.0.0.1:23")),
+            direction: Direction::TargetToHost,
+        };
+        let message = ForwardMessage::Forwarding(vec![spec]);
+        pretty_assertions::assert_eq!(
+            message.to_string(),
+            "Forwarding: \n\ttcp:192.168.1.1:22<=tcp:10.0.0.1:23"
+        );
+    }
+
+    #[test]
+    fn forward_message_display_multiple_specs() {
+        let spec1 = ForwardSpec {
+            host: ProtoSpec::Tcp(std_socket_addr!("127.0.0.1:8080")),
+            target: ProtoSpec::Tcp(std_socket_addr!("127.0.0.1:8081")),
+            direction: Direction::HostToTarget,
+        };
+        let spec2 = ForwardSpec {
+            host: ProtoSpec::Tcp(std_socket_addr!("192.168.1.1:22")),
+            target: ProtoSpec::Tcp(std_socket_addr!("10.0.0.1:23")),
+            direction: Direction::TargetToHost,
+        };
+        let spec3 = ForwardSpec {
+            host: ProtoSpec::Tcp(std_socket_addr!("[::1]:9000")),
+            target: ProtoSpec::Tcp(std_socket_addr!("[::1]:9001")),
+            direction: Direction::HostToTarget,
+        };
+        let message = ForwardMessage::Forwarding(vec![spec1, spec2, spec3]);
+        pretty_assertions::assert_eq!(
+            message.to_string(),
+            "Forwarding: \n\ttcp:127.0.0.1:8080=>tcp:127.0.0.1:8081\n\ttcp:192.168.1.1:22<=tcp:10.0.0.1:23\n\ttcp:[::1]:9000=>tcp:[::1]:9001"
+        );
+    }
+
+    #[fuchsia::test]
+    async fn test_forwarder() -> fho::Result<()> {
+        let fake_netstack = FakeNetstack::new();
+        let socket = fake_netstack.new_socket_provider();
+        let port_forward = PortForwarder::new(socket);
+
+        let orig_specs = vec![
+            ForwardSpec {
+                host: ProtoSpec::Tcp(std_socket_addr!("127.0.0.1:0")),
+                target: ProtoSpec::Tcp(std_socket_addr!("127.0.0.1:1414")),
+                direction: Direction::HostToTarget,
+            },
+            ForwardSpec {
+                host: ProtoSpec::Tcp(std_socket_addr!("127.0.0.1:8084")),
+                target: ProtoSpec::Tcp(std_socket_addr!("127.0.0.1:1515")),
+                direction: Direction::TargetToHost,
+            },
+            ForwardSpec {
+                host: ProtoSpec::Tcp(std_socket_addr!("127.0.0.1:8085")),
+                target: ProtoSpec::Tcp(std_socket_addr!("127.0.0.1:0")),
+                direction: Direction::TargetToHost,
+            },
+        ];
+        let forwarder = Forwarder::new_with_forwarder(&orig_specs, port_forward).await?;
+        let specs = forwarder.forwarded_specs();
+
+        let (spec0, spec1, spec2) = assert_matches!(&specs[..], [a,b,c] => (a,b,c));
+
+        // The first port is going to be randomly chosen by the host,
+        // dont assert on the full port.
+        let ForwardSpec { host: host_0, target: target_0, direction: direction_0 } = &spec0;
+        assert_eq!(target_0, &ProtoSpec::Tcp(std_socket_addr!("127.0.0.1:1414")));
+        assert_eq!(direction_0, &Direction::HostToTarget);
+        let s = assert_matches!(host_0, ProtoSpec::Tcp(s)=> s);
+        assert_ne!(s.port(), 0);
+        assert_eq!(s.ip(), std_ip_v4!("127.0.0.1"));
+
+        assert_eq!(
+            spec1,
+            &ForwardSpec {
+                host: ProtoSpec::Tcp(std_socket_addr!("127.0.0.1:8084")),
+                target: ProtoSpec::Tcp(std_socket_addr!("127.0.0.1:1515")),
+                direction: Direction::TargetToHost,
+            }
+        );
+
+        // The target port is going to be randomly chosen by the target,
+        // dont assert on the full port.
+        let ForwardSpec { host: host_2, target: target_2, direction: direction_2 } = &spec2;
+        assert_eq!(host_2, &ProtoSpec::Tcp(std_socket_addr!("127.0.0.1:8085")));
+        assert_eq!(direction_2, &Direction::TargetToHost);
+        let s = assert_matches!(target_2, ProtoSpec::Tcp(s)=> s);
+        assert_ne!(s.port(), 0);
+        assert_eq!(s.ip(), std_ip_v4!("127.0.0.1"));
+        forwarder.shutdown().await;
+        Ok(())
+    }
+
+    #[fuchsia::test]
+    fn test_writer_schema() -> fho::Result<()> {
+        let buffers = TestBuffers::default();
+        let mut writer = <ForwardTool as FfxMain>::Writer::new_test(Some(Format::Json), &buffers);
+
+        // Write a few items
+        writer.item(&ForwardMessage::Forwarding(vec![ForwardSpec {
+            host: ProtoSpec::Tcp(std_socket_addr!("127.0.0.1:8000")),
+            target: ProtoSpec::Tcp(std_socket_addr!("127.0.0.1:1515")),
+            direction: Direction::TargetToHost,
+        }]))?;
+        writer.item(&ForwardMessage::Forwarding(vec![ForwardSpec {
+            host: ProtoSpec::Tcp(std_socket_addr!("[::1]:8090")),
+            target: ProtoSpec::Tcp(std_socket_addr!("127.0.0.1:1432")),
+            direction: Direction::TargetToHost,
+        }]))?;
+        writer.item(&ForwardMessage::Forwarding(vec![ForwardSpec {
+            host: ProtoSpec::Tcp(std_socket_addr!("127.0.0.1:8085")),
+            target: ProtoSpec::Tcp(std_socket_addr!("[::]:1588")),
+            direction: Direction::HostToTarget,
+        }]))?;
+
+        let output = buffers.into_stdout_str();
+
+        let messages: Vec<_> = output.split("\n").collect();
+        assert_eq!(messages.len(), 4);
+        for i in 0..(messages.len() - 1) {
+            let message = messages[i];
+            eprintln!("{message}");
+            let err = format!("schema not valid {message}");
+            let json = serde_json::from_str(&message).expect(&err);
+            <ForwardTool as FfxMain>::Writer::verify_schema(&json).expect(&err);
+        }
+        Ok(())
+    }
+
+    #[fuchsia::test]
+    fn test_message_representation() {
+        let repr = r#"{"forwarding":[{"direction":"TargetToHost","host":{"Tcp":"[::]:8084"},"target":{"Tcp":"127.0.0.1:1515"}}]}
+{"forwarding":[{"direction":"HostToTarget","host":{"Tcp":"[::1]:9090"},"target":{"Tcp":"127.0.0.1:8765"}}]}
+{"forwarding":[{"direction":"TargetToHost","host":{"Tcp":"127.0.0.1:8888"},"target":{"Tcp":"[::]:7890"}}]}"#;
+        let items = vec![
+            ForwardMessage::Forwarding(vec![ForwardSpec {
+                host: ProtoSpec::Tcp(std_socket_addr!("[::]:8084")),
+                target: ProtoSpec::Tcp(std_socket_addr!("127.0.0.1:1515")),
+                direction: Direction::TargetToHost,
+            }]),
+            ForwardMessage::Forwarding(vec![ForwardSpec {
+                host: ProtoSpec::Tcp(std_socket_addr!("[::1]:9090")),
+                target: ProtoSpec::Tcp(std_socket_addr!("127.0.0.1:8765")),
+                direction: Direction::HostToTarget,
+            }]),
+            ForwardMessage::Forwarding(vec![ForwardSpec {
+                host: ProtoSpec::Tcp(std_socket_addr!("127.0.0.1:8888")),
+                target: ProtoSpec::Tcp(std_socket_addr!("[::]:7890")),
+                direction: Direction::TargetToHost,
+            }]),
+        ];
+        pretty_assertions::assert_eq!(repr, items.into_iter().map(|i| json!(i)).join("\n"));
     }
 }
