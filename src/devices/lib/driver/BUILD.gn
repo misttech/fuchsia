@@ -58,7 +58,6 @@ shared_library("driver") {
     "//src/connectivity/ethernet/drivers/usb-cdc-ecm:*",
     "//src/connectivity/ethernet/drivers/usb-cdc-function:*",
     "//src/connectivity/ethernet/drivers/virtio:*",
-    "//src/connectivity/network/drivers/network-device:*",
     "//src/connectivity/openthread/drivers/ot-radio:*",
     "//src/connectivity/openthread/tests/fake-drivers/fake-ot-radio:*",
     "//src/connectivity/telephony/drivers/qmi-fake-transport:*",
