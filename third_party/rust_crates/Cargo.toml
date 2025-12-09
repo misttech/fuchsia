@@ -164,7 +164,7 @@ memchr = "2.7.6"
 memoffset = "0.9.1"
 miniz_oxide = "0.8.8"
 mock-omaha-server = { version = "0.3.7", default-features = false }
-mockall = "0.9"
+mockall = "0.14"
 munge = "0.4.4"
 nix = { version = "0.29.0", features = ["feature", "fs", "hostname", "net", "process", "signal", "user"] }
 nom = { version = "8.0.0", default-features = false, features = ["std"] }
@@ -723,8 +723,11 @@ deps = [
   "//third_party/rust_crates:tokio",
 ]
 
-[gn.package.mockall."0.9.0"]
+[gn.package.mockall."0.14.0"]
 deps = ["//build/validate:non_production_tag"]
+
+[gn.package.mockall_derive."0.14.0"]
+# Has build script but no config needed.
 
 [gn.package.nix."0.29.0"]
 group_visibility = { import = "//src/lib/fuchsia_nix/nix_visibility.gni", variable = "nix_visibility" }

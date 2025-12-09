@@ -1216,9 +1216,9 @@ dependencies = [
 
 [[package]]
 name = "downcast"
-version = "0.10.0"
+version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4bb454f0228b18c7f4c3b0ebbee346ed9c52e7443b0999cd543ff3571205701d"
+checksum = "1435fa1053d8b2fbbe9be7e97eca7f33d37b28409959813daefc1446a14247f1"
 
 [[package]]
 name = "downcast-rs"
@@ -1438,15 +1438,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "float-cmp"
-version = "0.8.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e1267f4ac4f343772758f7b1bdcbe767c218bbab93bb432acbf5162bbf85a6c4"
-dependencies = [
- "num-traits",
-]
-
-[[package]]
 name = "flyweights"
 version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1495,12 +1486,6 @@ checksum = "cb4cb245038516f5f85277875cdaa4f7d2c9a0fa0468de06ed190163b1581fcf"
 dependencies = [
  "percent-encoding 2.3.1",
 ]
-
-[[package]]
-name = "fragile"
-version = "1.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "69a039c3498dc930fe810151a34ba0c1c70b02b8625035592e74432f678591f2"
 
 [[package]]
 name = "fragile"
@@ -1614,7 +1599,7 @@ dependencies = [
  "flyweights",
  "foreign-types",
  "foreign-types-shared",
- "fragile 2.0.1",
+ "fragile",
  "fs_extra",
  "fuse3",
  "futures",
@@ -2677,14 +2662,13 @@ dependencies = [
 
 [[package]]
 name = "mockall"
-version = "0.9.0"
+version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "619634fd9149c4a06e66d8fd9256e85326d8eeee75abee4565ff76c92e4edfe0"
+checksum = "f58d964098a5f9c6b63d0798e5372fd04708193510a7af313c22e9f29b7b620b"
 dependencies = [
  "cfg-if 1.0.3",
  "downcast",
- "fragile 1.0.0",
- "lazy_static",
+ "fragile",
  "mockall_derive",
  "predicates",
  "predicates-tree",
@@ -2692,14 +2676,14 @@ dependencies = [
 
 [[package]]
 name = "mockall_derive"
-version = "0.9.0"
+version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "83714c95dbf4c24202f0f1b208f0f248e6bd65abfa8989303611a71c0f781548"
+checksum = "ca41ce716dda6a9be188b385aa78ee5260fc25cd3802cb2a8afdc6afbe6b6dbf"
 dependencies = [
  "cfg-if 1.0.3",
  "proc-macro2",
  "quote",
- "syn 1.0.98",
+ "syn 2.0.111",
 ]
 
 [[package]]
@@ -2791,12 +2775,6 @@ dependencies = [
  "memchr",
  "nom",
 ]
-
-[[package]]
-name = "normalize-line-endings"
-version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "61807f77802ff30975e01f4f071c8ba10c022052f98b3294119f3e615d13e5be"
 
 [[package]]
 name = "notify"
@@ -3389,15 +3367,12 @@ dependencies = [
 
 [[package]]
 name = "predicates"
-version = "1.0.8"
+version = "3.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f49cfaf7fdaa3bfacc6fa3e7054e65148878354a5cfddcf661df4c851f8021df"
+checksum = "a5d19ee57562043d37e82899fade9a22ebab7be9cef5026b07fda9cdd4293573"
 dependencies = [
- "difference",
- "float-cmp",
- "normalize-line-endings",
+ "anstyle",
  "predicates-core",
- "regex",
 ]
 
 [[package]]

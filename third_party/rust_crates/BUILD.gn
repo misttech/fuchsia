@@ -591,7 +591,7 @@ group("mock-omaha-server") {
 }
 
 group("mockall") {
-  public_deps = [ ":mockall-v0_9_0" ]
+  public_deps = [ ":mockall-v0_14_0" ]
 }
 
 group("munge") {
@@ -5827,17 +5827,17 @@ rustc_library("digest-v0_10_7") {
   applicable_licenses = [ ":digest-v0_10_7.license" ]
 }
 
-license("downcast-v0_10_0.license") {
+license("downcast-v0_11_0.license") {
   public_package_name = "downcast"
   license_files =
-      [ "//third_party/rust_crates/vendor/downcast-0.10.0/LICENSE-MIT" ]
+      [ "//third_party/rust_crates/vendor/downcast-0.11.0/LICENSE-MIT" ]
 }
 
-rustc_library("downcast-v0_10_0") {
+rustc_library("downcast-v0_11_0") {
   crate_name = "downcast"
-  source_root = "//third_party/rust_crates/vendor/downcast-0.10.0/src/lib.rs"
-  output_name = "downcast-417417cb956aacf6"
-  edition = "2015"
+  source_root = "//third_party/rust_crates/vendor/downcast-0.11.0/src/lib.rs"
+  output_name = "downcast-78c0f69e81e43f3c"
+  edition = "2018"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
@@ -5848,15 +5848,15 @@ rustc_library("downcast-v0_10_0") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=417417cb956aacf6",
-    "-Cextra-filename=-417417cb956aacf6",
+    "-Cmetadata=78c0f69e81e43f3c",
+    "-Cextra-filename=-78c0f69e81e43f3c",
     "--cfg=feature=\"default\"",
     "--cfg=feature=\"std\"",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":downcast-v0_10_0.license" ]
+  applicable_licenses = [ ":downcast-v0_11_0.license" ]
 }
 
 license("downcast-rs-v2_0_1.license") {
@@ -6717,39 +6717,6 @@ rustc_library("flate2-v1_1_1") {
   applicable_licenses = [ ":flate2-v1_1_1.license" ]
 }
 
-license("float-cmp-v0_8_0.license") {
-  public_package_name = "float_cmp"
-  license_files = [ "//third_party/rust_crates/vendor/float-cmp-0.8.0/LICENSE" ]
-}
-
-rustc_library("float-cmp-v0_8_0") {
-  crate_name = "float_cmp"
-  source_root = "//third_party/rust_crates/vendor/float-cmp-0.8.0/src/lib.rs"
-  output_name = "float_cmp-25495b83f43346cf"
-  edition = "2018"
-  disable_clippy = true
-  enforce_source_listing = false
-  configs -= [ "//build/config/rust:2018_idioms" ]
-
-  deps = []
-  deps += [ ":num-traits-v0_2_19" ]
-
-  rustenv = []
-
-  rustflags = [
-    "--cap-lints=allow",
-    "-Cmetadata=25495b83f43346cf",
-    "-Cextra-filename=-25495b83f43346cf",
-    "--cfg=feature=\"default\"",
-    "--cfg=feature=\"num-traits\"",
-    "--cfg=feature=\"ratio\"",
-  ]
-
-  visibility = [ ":*" ]
-
-  applicable_licenses = [ ":float-cmp-v0_8_0.license" ]
-}
-
 license("flyweights-v0_1_5.license") {
   public_package_name = "flyweights"
   license_files =
@@ -6955,35 +6922,6 @@ rustc_library("form_urlencoded-v1_2_2") {
   visibility = [ ":*" ]
 
   applicable_licenses = [ ":form_urlencoded-v1_2_2.license" ]
-}
-
-license("fragile-v1_0_0.license") {
-  public_package_name = "fragile"
-  license_files = [ "//third_party/rust_crates/vendor/fragile-1.0.0/LICENSE" ]
-}
-
-rustc_library("fragile-v1_0_0") {
-  crate_name = "fragile"
-  source_root = "//third_party/rust_crates/vendor/fragile-1.0.0/src/lib.rs"
-  output_name = "fragile-4fff0e17f0e7f677"
-  edition = "2018"
-  disable_clippy = true
-  enforce_source_listing = false
-  configs -= [ "//build/config/rust:2018_idioms" ]
-
-  deps = []
-
-  rustenv = []
-
-  rustflags = [
-    "--cap-lints=allow",
-    "-Cmetadata=4fff0e17f0e7f677",
-    "-Cextra-filename=-4fff0e17f0e7f677",
-  ]
-
-  visibility = [ ":*" ]
-
-  applicable_licenses = [ ":fragile-v1_0_0.license" ]
 }
 
 license("fragile-v2_0_1.license") {
@@ -10360,59 +10298,58 @@ rustc_library("mock-omaha-server-v0_3_7") {
   applicable_licenses = [ ":mock-omaha-server-v0_3_7.license" ]
 }
 
-license("mockall-v0_9_0.license") {
+license("mockall-v0_14_0.license") {
   public_package_name = "mockall"
   license_files = [
-    "//third_party/rust_crates/vendor/mockall-0.9.0/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/mockall-0.9.0/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/mockall-0.14.0/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/mockall-0.14.0/LICENSE-MIT",
   ]
 }
 
-rustc_library("mockall-v0_9_0") {
+rustc_library("mockall-v0_14_0") {
   crate_name = "mockall"
-  source_root = "//third_party/rust_crates/vendor/mockall-0.9.0/src/lib.rs"
-  output_name = "mockall-101dad7ffbea75df"
-  edition = "2018"
+  source_root = "//third_party/rust_crates/vendor/mockall-0.14.0/src/lib.rs"
+  output_name = "mockall-b368ef338c33f60e"
+  edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
   deps += [ ":cfg-if-v1_0_3" ]
-  deps += [ ":downcast-v0_10_0" ]
-  deps += [ ":fragile-v1_0_0" ]
-  deps += [ ":lazy_static-v1_5_0" ]
-  deps += [ ":mockall_derive-v0_9_0($host_toolchain)" ]
+  deps += [ ":downcast-v0_11_0" ]
+  deps += [ ":fragile-v2_0_1" ]
+  deps += [ ":mockall_derive-v0_14_0($host_toolchain)" ]
   deps += [ ":predicates-tree-v1_0_12" ]
-  deps += [ ":predicates-v1_0_8" ]
+  deps += [ ":predicates-v3_1_3" ]
   deps += [ "//build/validate:non_production_tag" ]
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=101dad7ffbea75df",
-    "-Cextra-filename=-101dad7ffbea75df",
+    "-Cmetadata=b368ef338c33f60e",
+    "-Cextra-filename=-b368ef338c33f60e",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":mockall-v0_9_0.license" ]
+  applicable_licenses = [ ":mockall-v0_14_0.license" ]
 }
 
-license("mockall_derive-v0_9_0.license") {
+license("mockall_derive-v0_14_0.license") {
   public_package_name = "mockall_derive"
   license_files = [
-    "//third_party/rust_crates/vendor/mockall_derive-0.9.0/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/mockall_derive-0.9.0/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/mockall_derive-0.14.0/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/mockall_derive-0.14.0/LICENSE-MIT",
   ]
 }
 
-rustc_macro("mockall_derive-v0_9_0") {
+rustc_macro("mockall_derive-v0_14_0") {
   crate_name = "mockall_derive"
   source_root =
-      "//third_party/rust_crates/vendor/mockall_derive-0.9.0/src/lib.rs"
-  output_name = "mockall_derive-6535f5e9d7922162"
-  edition = "2018"
+      "//third_party/rust_crates/vendor/mockall_derive-0.14.0/src/lib.rs"
+  output_name = "mockall_derive-fc905da1df8fdf68"
+  edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
@@ -10421,19 +10358,19 @@ rustc_macro("mockall_derive-v0_9_0") {
   deps += [ ":cfg-if-v1_0_3" ]
   deps += [ ":proc-macro2-v1_0_97" ]
   deps += [ ":quote-v1_0_42" ]
-  deps += [ ":syn-v1_0_98" ]
+  deps += [ ":syn-v2_0_111" ]
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=6535f5e9d7922162",
-    "-Cextra-filename=-6535f5e9d7922162",
+    "-Cmetadata=fc905da1df8fdf68",
+    "-Cextra-filename=-fc905da1df8fdf68",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":mockall_derive-v0_9_0.license" ]
+  applicable_licenses = [ ":mockall_derive-v0_14_0.license" ]
 }
 
 license("multimap-v0_8_3.license") {
@@ -10809,38 +10746,6 @@ rustc_library("nom_locate-v5_0_0") {
   visibility = [ ":*" ]
 
   applicable_licenses = [ ":nom_locate-v5_0_0.license" ]
-}
-
-license("normalize-line-endings-v0_3_0.license") {
-  public_package_name = "normalize_line_endings"
-  license_files = [
-    "//third_party/rust_crates/vendor/normalize-line-endings-0.3.0/LICENSE",
-  ]
-}
-
-rustc_library("normalize-line-endings-v0_3_0") {
-  crate_name = "normalize_line_endings"
-  source_root =
-      "//third_party/rust_crates/vendor/normalize-line-endings-0.3.0/src/lib.rs"
-  output_name = "normalize_line_endings-4054253ee9a0f431"
-  edition = "2015"
-  disable_clippy = true
-  enforce_source_listing = false
-  configs -= [ "//build/config/rust:2018_idioms" ]
-
-  deps = []
-
-  rustenv = []
-
-  rustflags = [
-    "--cap-lints=allow",
-    "-Cmetadata=4054253ee9a0f431",
-    "-Cextra-filename=-4054253ee9a0f431",
-  ]
-
-  visibility = [ ":*" ]
-
-  applicable_licenses = [ ":normalize-line-endings-v0_3_0.license" ]
 }
 
 license("notify-v5_2_0.license") {
@@ -12954,46 +12859,38 @@ rustc_library("ppv-lite86-v0_2_21") {
   applicable_licenses = [ ":ppv-lite86-v0_2_21.license" ]
 }
 
-license("predicates-v1_0_8.license") {
+license("predicates-v3_1_3.license") {
   public_package_name = "predicates"
   license_files = [
-    "//third_party/rust_crates/vendor/predicates-1.0.8/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/predicates-1.0.8/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/predicates-3.1.3/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/predicates-3.1.3/LICENSE-MIT",
   ]
 }
 
-rustc_library("predicates-v1_0_8") {
+rustc_library("predicates-v3_1_3") {
   crate_name = "predicates"
-  source_root = "//third_party/rust_crates/vendor/predicates-1.0.8/src/lib.rs"
-  output_name = "predicates-800197c7ca1923da"
-  edition = "2018"
+  source_root = "//third_party/rust_crates/vendor/predicates-3.1.3/src/lib.rs"
+  output_name = "predicates-97a83999f0d0d7f1"
+  edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":difference-v2_0_0" ]
-  deps += [ ":float-cmp-v0_8_0" ]
-  deps += [ ":normalize-line-endings-v0_3_0" ]
+  deps += [ ":anstyle-v1_0_13" ]
   deps += [ ":predicates-core-v1_0_9" ]
-  deps += [ ":regex-v1_7_3" ]
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=800197c7ca1923da",
-    "-Cextra-filename=-800197c7ca1923da",
-    "--cfg=feature=\"default\"",
-    "--cfg=feature=\"difference\"",
-    "--cfg=feature=\"float-cmp\"",
-    "--cfg=feature=\"normalize-line-endings\"",
-    "--cfg=feature=\"regex\"",
+    "-Cmetadata=97a83999f0d0d7f1",
+    "-Cextra-filename=-97a83999f0d0d7f1",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":predicates-v1_0_8.license" ]
+  applicable_licenses = [ ":predicates-v3_1_3.license" ]
 }
 
 license("predicates-core-v1_0_9.license") {

@@ -1495,14 +1495,14 @@ alias(
 )
 
 alias(
-    name = "mockall-0.9.0",
-    actual = "//third_party/rust_crates/vendor/mockall-0.9.0:mockall",
+    name = "mockall-0.14.0",
+    actual = "//third_party/rust_crates/vendor/mockall-0.14.0:mockall",
     tags = ["manual"],
 )
 
 alias(
     name = "mockall",
-    actual = "//third_party/rust_crates/vendor/mockall-0.9.0:mockall",
+    actual = "//third_party/rust_crates/vendor/mockall-0.14.0:mockall",
     tags = ["manual"],
 )
 
