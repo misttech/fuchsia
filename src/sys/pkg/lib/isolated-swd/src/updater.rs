@@ -387,7 +387,9 @@ pub(crate) mod for_tests {
                     Route::new()
                         .capability(Capability::protocol_by_name("fuchsia.pkg.PackageCache"))
                         .capability(Capability::protocol_by_name("fuchsia.pkg.RetainedPackages"))
-                        .capability(Capability::protocol_by_name("fuchsia.space.Manager"))
+                        .capability(Capability::protocol_by_name(
+                            "fuchsia.pkg.garbagecollector.Manager",
+                        ))
                         .from(&resolver_realm.cache)
                         .to(&system_updater),
                 )

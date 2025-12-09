@@ -29,9 +29,9 @@ use zx::{self as zx, Status};
 use {
     fidl_fuchsia_boot as fboot, fidl_fuchsia_component_resolution as fcomponent_resolution,
     fidl_fuchsia_fxfs as ffxfs, fidl_fuchsia_io as fio, fidl_fuchsia_metrics as fmetrics,
-    fidl_fuchsia_pkg as fpkg, fidl_fuchsia_pkg_ext as fpkg_ext, fidl_fuchsia_space as fspace,
-    fidl_fuchsia_update as fupdate, fidl_fuchsia_update_verify as fupdate_verify,
-    fuchsia_async as fasync,
+    fidl_fuchsia_pkg as fpkg, fidl_fuchsia_pkg_ext as fpkg_ext,
+    fidl_fuchsia_pkg_garbagecollector as fpkg_gc, fidl_fuchsia_update as fupdate,
+    fidl_fuchsia_update_verify as fupdate_verify, fuchsia_async as fasync,
 };
 
 mod base_pkg_index;
@@ -811,7 +811,7 @@ where
                     .capability(Capability::protocol::<fpkg::PackageCacheMarker>())
                     .capability(Capability::protocol::<fpkg::RetainedPackagesMarker>())
                     .capability(Capability::protocol::<fpkg::RetainedBlobsMarker>())
-                    .capability(Capability::protocol::<fspace::ManagerMarker>())
+                    .capability(Capability::protocol::<fpkg_gc::ManagerMarker>())
                     .capability(Capability::protocol::<fpkg::PackageResolverMarker>())
                     .capability(Capability::protocol::<fcomponent_resolution::ResolverMarker>())
                     .capability(Capability::directory(SHELL_COMMANDS_BIN_PATH))
@@ -870,7 +870,7 @@ where
 
 struct Proxies {
     commit_status_provider: fupdate::CommitStatusProviderProxy,
-    space_manager: fspace::ManagerProxy,
+    space_manager: fpkg_gc::ManagerProxy,
     package_cache: fpkg::PackageCacheProxy,
     retained_packages: fpkg::RetainedPackagesProxy,
     retained_blobs: fpkg::RetainedBlobsProxy,

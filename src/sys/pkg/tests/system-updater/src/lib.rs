@@ -43,7 +43,7 @@ use zx::Status;
 use {
     cobalt_sw_delivery_registry as metrics, fidl_fuchsia_fxfs as ffxfs, fidl_fuchsia_io as fio,
     fidl_fuchsia_net_http as fhttp, fidl_fuchsia_paver as paver, fidl_fuchsia_pkg as fpkg,
-    fidl_fuchsia_pkg_internal as fpkg_internal, fidl_fuchsia_space as fspace,
+    fidl_fuchsia_pkg_garbagecollector as fpkg_gc, fidl_fuchsia_pkg_internal as fpkg_internal,
     fidl_fuchsia_update_installer as finstaller, fuchsia_async as fasync,
 };
 
@@ -530,7 +530,7 @@ impl TestEnvBuilder {
                     .capability(Capability::protocol::<fpkg::RetainedBlobsMarker>())
                     .capability(Capability::protocol::<fhttp::LoaderMarker>())
                     .capability(Capability::protocol::<fpkg_internal::OtaDownloaderMarker>())
-                    .capability(Capability::protocol::<fspace::ManagerMarker>())
+                    .capability(Capability::protocol::<fpkg_gc::ManagerMarker>())
                     .capability(Capability::protocol::<
                         fidl_fuchsia_hardware_power_statecontrol::AdminMarker,
                     >())
@@ -846,10 +846,12 @@ impl MockSpaceService {
 
     async fn run_space_service(
         self: Arc<Self>,
-        mut stream: fidl_fuchsia_space::ManagerRequestStream,
+        mut stream: fidl_fuchsia_pkg_garbagecollector::ManagerRequestStream,
     ) -> Result<(), Error> {
         while let Some(event) = stream.try_next().await.expect("received request") {
-            let fidl_fuchsia_space::ManagerRequest::Gc { responder } = event;
+            let fidl_fuchsia_pkg_garbagecollector::ManagerRequest::Gc { responder } = event else {
+                return Err(anyhow!("Unknown method called on garbage collector."));
+            };
             self.interactions.lock().push(Gc);
             responder.send(Ok(()))?;
         }

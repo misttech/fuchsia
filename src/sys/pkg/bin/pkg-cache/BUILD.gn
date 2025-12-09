@@ -27,7 +27,7 @@ rustc_binary("bin") {
     "//sdk/fidl/fuchsia.mem:fuchsia.mem_rust",
     "//sdk/fidl/fuchsia.metrics:fuchsia.metrics_rust",
     "//sdk/fidl/fuchsia.pkg:fuchsia.pkg_rust",
-    "//sdk/fidl/fuchsia.space:fuchsia.space_rust",
+    "//sdk/fidl/fuchsia.pkg.garbagecollector:fuchsia.pkg.garbagecollector_rust",
     "//sdk/fidl/fuchsia.update:fuchsia.update_rust",
     "//sdk/rust/zx",
     "//src/lib/async-utils",

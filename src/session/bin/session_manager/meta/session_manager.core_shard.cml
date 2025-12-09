@@ -436,7 +436,7 @@
         },
         {
             protocol: [
-                "fuchsia.space.Manager",
+                "fuchsia.pkg.garbagecollector.Manager",
                 "fuchsia.sys2.RealmExplorer.root",
                 "fuchsia.sys2.RealmQuery.root",
             ],

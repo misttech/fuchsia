@@ -4,6 +4,10 @@
 
 import("//build/fidl/fidl.gni")
 
-fidl("fuchsia.space") {
-  sources = [ "space.fidl" ]
+fidl("fuchsia.pkg.garbagecollector") {
+  sdk_category = "host_tool"
+  stable = true
+  sdk_area = "Software Delivery"
+
+  sources = [ "garbagecollector.fidl" ]
 }

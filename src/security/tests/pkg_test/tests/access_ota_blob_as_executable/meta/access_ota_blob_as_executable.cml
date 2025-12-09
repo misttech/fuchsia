@@ -382,8 +382,8 @@
         },
         {
             protocol: [
+                "fuchsia.pkg.garbagecollector.Manager",
                 "fuchsia.pkg.RetainedPackages",
-                "fuchsia.space.Manager",
             ],
             from: "#pkg-cache",
             to: "#system-updater",

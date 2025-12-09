@@ -157,10 +157,10 @@
         },
         {
             protocol: [
+                "fuchsia.pkg.garbagecollector.Manager",
                 "fuchsia.pkg.PackageCache",
                 "fuchsia.pkg.RetainedBlobs",
                 "fuchsia.pkg.RetainedPackages",
-                "fuchsia.space.Manager",
             ],
             from: "#pkg-cache",
             to: "#system-updater",

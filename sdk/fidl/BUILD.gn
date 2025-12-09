@@ -400,6 +400,7 @@ _host_tool_fidl_libraries_targets_list = [
   "//sdk/fidl/fuchsia.memory.heapdump.client:fuchsia.memory.heapdump.client",
   "//sdk/fidl/fuchsia.memory.inspection:fuchsia.memory.inspection",
   "//sdk/fidl/fuchsia.overnet.protocol:fuchsia.overnet.protocol",
+  "//sdk/fidl/fuchsia.pkg.garbagecollector:fuchsia.pkg.garbagecollector",
   "//sdk/fidl/fuchsia.power.metrics:fuchsia.power.metrics",
   "//sdk/fidl/fuchsia.starnix.container:fuchsia.starnix.container",
   "//sdk/fidl/fuchsia.sys2:fuchsia.sys2",

@@ -6,8 +6,8 @@ use crate::base_packages::{BasePackages, CachePackages};
 use crate::index::PackageIndex;
 use crate::upgradable_packages::UpgradablePackages;
 use anyhow::{Context as _, anyhow};
-use fidl_fuchsia_space::{
-    ErrorCode as SpaceErrorCode, ManagerRequest as SpaceManagerRequest,
+use fidl_fuchsia_pkg_garbagecollector::{
+    GcError as SpaceErrorCode, ManagerRequest as SpaceManagerRequest,
     ManagerRequestStream as SpaceManagerRequestStream,
 };
 use fidl_fuchsia_update::CommitStatusProviderProxy;
@@ -33,7 +33,9 @@ pub async fn serve(
         .context("while getting event pair")?;
 
     while let Some(event) = stream.try_next().await? {
-        let SpaceManagerRequest::Gc { responder } = event;
+        let SpaceManagerRequest::Gc { responder } = event else {
+            return Err(anyhow!("Unknown method called on garbage collector."));
+        };
         responder.send(
             gc(
                 &blobfs,

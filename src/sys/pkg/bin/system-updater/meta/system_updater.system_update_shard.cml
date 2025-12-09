@@ -26,11 +26,11 @@
         {
             protocol: [
                 "fuchsia.fxfs.BlobReader",
+                "fuchsia.pkg.garbagecollector.Manager",
                 "fuchsia.pkg.internal.OtaDownloader",
                 "fuchsia.pkg.PackageCache",
                 "fuchsia.pkg.RetainedBlobs",
                 "fuchsia.pkg.RetainedPackages",
-                "fuchsia.space.Manager",
             ],
             from: "parent",
             to: "#system-updater",

@@ -13,7 +13,7 @@ use fidl_fuchsia_paver::{BootManagerProxy, DataSinkProxy};
 use fidl_fuchsia_pkg::{
     PackageCacheProxy, PackageResolverProxy, RetainedBlobsProxy, RetainedPackagesProxy,
 };
-use fidl_fuchsia_space::ManagerProxy as SpaceManagerProxy;
+use fidl_fuchsia_pkg_garbagecollector::ManagerProxy as SpaceManagerProxy;
 use fuchsia_component::client::connect_to_protocol;
 use futures::future::BoxFuture;
 use futures::prelude::*;
@@ -91,8 +91,9 @@ impl Environment {
                 .context("connect to fuchsia.pkg.RetainedPackages")?,
             retained_blobs: connect_to_protocol::<fidl_fuchsia_pkg::RetainedBlobsMarker>()
                 .context("connect to fuchsia.pkg.RetainedBlobs")?,
-            space_manager: connect_to_protocol::<fidl_fuchsia_space::ManagerMarker>()
-                .context("connect to fuchsia.space.Manager")?,
+            space_manager: connect_to_protocol::<fidl_fuchsia_pkg_garbagecollector::ManagerMarker>(
+            )
+            .context("connect to fuchsia.pkg.garbagecollector.Manager")?,
             power_state_control: connect_to_protocol::<PowerStateControlMarker>()
                 .context("connect to fuchsia.hardware.power.statecontrol.Admin")?,
             ota_downloader: connect_to_protocol::<fidl_fuchsia_pkg_internal::OtaDownloaderMarker>()

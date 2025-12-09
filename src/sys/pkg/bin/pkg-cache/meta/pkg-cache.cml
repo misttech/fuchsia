@@ -14,11 +14,11 @@
         {
             protocol: [
                 "fuchsia.component.resolution.Resolver",
+                "fuchsia.pkg.garbagecollector.Manager",
                 "fuchsia.pkg.PackageCache",
                 "fuchsia.pkg.PackageResolver",
                 "fuchsia.pkg.RetainedBlobs",
                 "fuchsia.pkg.RetainedPackages",
-                "fuchsia.space.Manager",
             ],
         },
         {
@@ -120,11 +120,11 @@
         {
             protocol: [
                 "fuchsia.component.resolution.Resolver",
+                "fuchsia.pkg.garbagecollector.Manager",
                 "fuchsia.pkg.PackageCache",
                 "fuchsia.pkg.PackageResolver",
                 "fuchsia.pkg.RetainedBlobs",
                 "fuchsia.pkg.RetainedPackages",
-                "fuchsia.space.Manager",
             ],
             from: "self",
         },

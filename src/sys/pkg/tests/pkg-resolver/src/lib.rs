@@ -45,9 +45,9 @@ use vfs::directory::helper::DirectlyMutable as _;
 use zx::{self as zx, AsHandleRef as _, HandleBased as _};
 use {
     fidl_fuchsia_boot as fboot, fidl_fuchsia_fxfs as ffxfs, fidl_fuchsia_io as fio,
-    fidl_fuchsia_pkg_internal as fpkg_internal, fidl_fuchsia_pkg_rewrite as fpkg_rewrite,
-    fidl_fuchsia_space as fspace, fidl_fuchsia_sys2 as fsys2, fidl_fuchsia_update as fupdate,
-    fuchsia_async as fasync,
+    fidl_fuchsia_pkg_garbagecollector as fpkg_gc, fidl_fuchsia_pkg_internal as fpkg_internal,
+    fidl_fuchsia_pkg_rewrite as fpkg_rewrite, fidl_fuchsia_sys2 as fsys2,
+    fidl_fuchsia_update as fupdate, fuchsia_async as fasync,
 };
 
 // If the body of an https response is not large enough, hyper will download the body
@@ -740,7 +740,7 @@ where
         builder
             .add_route(
                 Route::new()
-                    .capability(Capability::protocol::<fspace::ManagerMarker>())
+                    .capability(Capability::protocol::<fpkg_gc::ManagerMarker>())
                     .from(&pkg_cache)
                     .to(Ref::parent()),
             )
@@ -847,7 +847,7 @@ pub struct Proxies {
     pub repo_manager: RepositoryManagerProxy,
     pub rewrite_engine: fpkg_rewrite::EngineProxy,
     pub cup: CupProxy,
-    pub space_manager: fspace::ManagerProxy,
+    pub space_manager: fpkg_gc::ManagerProxy,
     pub ota_downloader: fpkg_internal::OtaDownloaderProxy,
 }
 

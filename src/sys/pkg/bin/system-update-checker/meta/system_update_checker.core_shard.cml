@@ -19,7 +19,7 @@
             to: "#system-update",
         },
         {
-            protocol: "fuchsia.space.Manager",
+            protocol: "fuchsia.pkg.garbagecollector.Manager",
             from: "parent",
             to: "#system-update",
         },

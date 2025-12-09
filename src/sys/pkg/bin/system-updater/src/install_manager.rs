@@ -539,7 +539,7 @@ mod tests {
     use fidl_fuchsia_pkg::{
         PackageCacheMarker, PackageResolverMarker, RetainedBlobsMarker, RetainedPackagesMarker,
     };
-    use fidl_fuchsia_space::ManagerMarker as SpaceManagerMarker;
+    use fidl_fuchsia_pkg_garbagecollector::ManagerMarker as SpaceManagerMarker;
     use fidl_fuchsia_update_installer_ext::{
         PrepareFailureReason, Progress, UpdateInfo, UpdateInfoAndProgress,
     };

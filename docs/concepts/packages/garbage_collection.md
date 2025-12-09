@@ -7,7 +7,7 @@ resolution).
 
 ## How to trigger
 
-GC is implemented by pkg-cache, which exposes the functionality via [fuchsia.space/Manager.GC][src_gc_fidl].
+GC is implemented by pkg-cache, which exposes the functionality via [fuchsia.pkg.garbagecollector/Manager.GC][src_gc_fidl].
 
 It can be triggered manually by running `fx shell pkgctl gc`.
 

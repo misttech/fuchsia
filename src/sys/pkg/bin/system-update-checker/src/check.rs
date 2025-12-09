@@ -14,7 +14,7 @@ use fuchsia_component::client::connect_to_protocol;
 use fuchsia_hash::Hash;
 use log::{error, info, warn};
 use std::io;
-use {fidl_fuchsia_mem as fmem, fidl_fuchsia_space as fspace};
+use {fidl_fuchsia_mem as fmem, fidl_fuchsia_pkg_garbagecollector as fpkg_gc};
 
 #[derive(PartialEq, Eq, Debug, Clone)]
 pub enum SystemUpdateStatus {
@@ -31,7 +31,7 @@ pub async fn check_for_system_update(
         connect_to_protocol::<PackageResolverMarker>().map_err(Error::ConnectPackageResolver)?;
     let paver = connect_to_protocol::<PaverMarker>().map_err(Error::ConnectPaver)?;
     let space_manager =
-        connect_to_protocol::<fspace::ManagerMarker>().map_err(Error::ConnectSpaceManager)?;
+        connect_to_protocol::<fpkg_gc::ManagerMarker>().map_err(Error::ConnectSpaceManager)?;
 
     check_for_system_update_impl(
         DEFAULT_UPDATE_PACKAGE_URL,
@@ -65,7 +65,7 @@ async fn check_for_system_update_impl(
     paver: &PaverProxy,
     target_channel_manager: &dyn TargetChannelUpdater,
     last_known_update_package: Option<&Hash>,
-    space_manager: &fspace::ManagerProxy,
+    space_manager: &fpkg_gc::ManagerProxy,
 ) -> Result<SystemUpdateStatus, Error> {
     let update_pkg = latest_update_package(
         default_update_url,
@@ -142,7 +142,7 @@ fn current_system_image_merkle(file_system: &impl FileSystem) -> Result<Hash, Er
         .map_err(Error::ParseSystemMeta)
 }
 
-async fn gc(space_manager: &fspace::ManagerProxy) -> Result<(), anyhow::Error> {
+async fn gc(space_manager: &fpkg_gc::ManagerProxy) -> Result<(), anyhow::Error> {
     let () = space_manager
         .gc()
         .await
@@ -155,7 +155,7 @@ async fn latest_update_package(
     default_update_url: &str,
     package_resolver: &impl PackageResolverProxyInterface,
     channel_manager: &dyn TargetChannelUpdater,
-    space_manager: &fspace::ManagerProxy,
+    space_manager: &fpkg_gc::ManagerProxy,
 ) -> Result<update_package::UpdatePackage, errors::UpdatePackage> {
     match latest_update_package_attempt(default_update_url, package_resolver, channel_manager).await
     {
@@ -504,9 +504,9 @@ pub mod test_check_for_system_update_impl {
         }
 
         /// Spawns a new task to serve the space manager protocol.
-        pub fn spawn_gc_service(self: &Arc<Self>) -> fspace::ManagerProxy {
+        pub fn spawn_gc_service(self: &Arc<Self>) -> fpkg_gc::ManagerProxy {
             let (proxy, server_end) =
-                fidl::endpoints::create_proxy_and_stream::<fspace::ManagerMarker>();
+                fidl::endpoints::create_proxy_and_stream::<fpkg_gc::ManagerMarker>();
 
             fasync::Task::spawn(Arc::clone(self).run_gc_service(server_end).unwrap_or_else(|e| {
                 panic!("error running space manager service: {:#}", anyhow!(e))
@@ -518,13 +518,16 @@ pub mod test_check_for_system_update_impl {
 
         async fn run_gc_service(
             self: Arc<Self>,
-            mut stream: fspace::ManagerRequestStream,
+            mut stream: fpkg_gc::ManagerRequestStream,
         ) -> Result<(), anyhow::Error> {
             while let Some(req) = stream.try_next().await? {
                 match req {
-                    fspace::ManagerRequest::Gc { responder } => {
+                    fpkg_gc::ManagerRequest::Gc { responder } => {
                         *self.call_count.lock() += 1;
                         responder.send(Ok(())).unwrap()
+                    }
+                    fpkg_gc::ManagerRequest::_UnknownMethod { .. } => {
+                        return Err(anyhow!("Unknown method called on garbage collector."));
                     }
                 }
             }

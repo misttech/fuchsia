@@ -31,7 +31,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use tempfile::TempDir;
 use {
     fidl_fuchsia_io as fio, fidl_fuchsia_paver as fpaver, fidl_fuchsia_pkg as fpkg,
-    fidl_fuchsia_space as fspace, fidl_fuchsia_update_installer as finstaller,
+    fidl_fuchsia_pkg_garbagecollector as fpkg_gc, fidl_fuchsia_update_installer as finstaller,
     fidl_fuchsia_update_installer_ext as installer, fidl_fuchsia_update_verify as fupdate_verify,
     fuchsia_async as fasync,
 };
@@ -275,7 +275,7 @@ impl TestEnvBuilder {
                     .capability(Capability::protocol::<fpkg::PackageResolverMarker>())
                     .capability(Capability::protocol::<fpkg::RepositoryManagerMarker>())
                     .capability(Capability::protocol::<fidl_fuchsia_pkg_rewrite::EngineMarker>())
-                    .capability(Capability::protocol::<fspace::ManagerMarker>())
+                    .capability(Capability::protocol::<fpkg_gc::ManagerMarker>())
                     .capability(
                         Capability::directory("system").path("/system").rights(fio::R_STAR_DIR),
                     )
@@ -724,7 +724,7 @@ async fn test_update_manager_out_of_space_gc_succeeds() {
     )
     .await;
 
-    // Make sure we tried to call `fuchsia.space.Manager.Gc()`.
+    // Make sure we tried to call `fuchsia.pkg.garbagecollector.Manager.Gc()`.
     assert_eq!(called.load(Ordering::SeqCst), 1);
 }
 
@@ -735,7 +735,7 @@ async fn test_update_manager_out_of_space_gc_fails() {
         let called = Arc::clone(&called);
         MockSpaceService::new(Box::new(move || {
             called.fetch_add(1, Ordering::SeqCst);
-            Err(fspace::ErrorCode::Internal)
+            Err(fpkg_gc::GcError::Internal)
         }))
     };
 
@@ -786,7 +786,7 @@ async fn test_update_manager_out_of_space_gc_fails() {
     )
     .await;
 
-    // Make sure we tried to call `fuchsia.space.Manager.Gc()`.
+    // Make sure we tried to call `fuchsia.pkg.garbagecollector.Manager.Gc()`.
     assert_eq!(called.load(Ordering::SeqCst), 1);
 }
 

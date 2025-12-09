@@ -15,14 +15,16 @@ use anyhow::{Context as _, bail, format_err};
 use fetch_url::fetch_url;
 use fidl_fuchsia_pkg_rewrite::EngineMarker;
 use fidl_fuchsia_pkg_rewrite_ext::{Rule as RewriteRule, RuleConfig, do_transaction};
-use fidl_fuchsia_space::ManagerMarker as SpaceManagerMarker;
 use fuchsia_component::client::connect_to_protocol;
 use fuchsia_url::RepositoryUrl;
 use futures::stream::TryStreamExt;
 use std::fs::File;
 use std::io;
 use std::process::exit;
-use {fidl_fuchsia_pkg as fpkg, fidl_fuchsia_pkg_ext as pkg, fuchsia_async as fasync};
+use {
+    fidl_fuchsia_pkg as fpkg, fidl_fuchsia_pkg_ext as pkg,
+    fidl_fuchsia_pkg_garbagecollector as fpkg_gc, fuchsia_async as fasync,
+};
 
 mod args;
 
@@ -306,7 +308,7 @@ async fn main_helper(command: Command) -> Result<i32, anyhow::Error> {
             Ok(0)
         }
         Command::Gc(GcCommand {}) => {
-            let space_manager = connect_to_protocol::<SpaceManagerMarker>()
+            let space_manager = connect_to_protocol::<fpkg_gc::ManagerMarker>()
                 .context("Failed to connect to space manager service")?;
             space_manager
                 .gc()

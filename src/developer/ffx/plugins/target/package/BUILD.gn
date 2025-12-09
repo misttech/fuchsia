@@ -12,6 +12,7 @@ ffx_plugin("ffx_target_package") {
 
   plugin_deps = [
     "explore:ffx_target_package_explore",
+    "gc:ffx_target_package_gc",
     "resolve:ffx_target_package_resolve",
   ]
 

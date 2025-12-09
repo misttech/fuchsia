@@ -361,6 +361,17 @@
                 ],
             },
 
+            // Allow garbage collection on eng builds.
+            {
+                source_moniker: "/bootstrap/pkg-cache",
+                source: "component",
+                source_name: "fuchsia.garbagecollector.Manager",
+                capability: "protocol",
+                target_monikers: [
+                    "/toolbox",
+                ],
+            },
+
             // Allow full packages to resolve on eng builds.
             {
                 source_moniker: "/core/pkg-resolver",

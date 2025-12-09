@@ -3,12 +3,14 @@
 // found in the LICENSE file.
 
 use anyhow::{Error, anyhow};
-use fidl_fuchsia_space::ErrorCode;
+use fidl_fuchsia_pkg_garbagecollector::{
+    GcError, ManagerMarker, ManagerProxy, ManagerRequest, ManagerRequestStream,
+};
 use fuchsia_async as fasync;
 use futures::prelude::*;
 use std::sync::Arc;
 
-type CallHook = Box<dyn Fn() -> Result<(), ErrorCode> + Send + Sync>;
+type CallHook = Box<dyn Fn() -> Result<(), GcError> + Send + Sync>;
 
 pub struct MockSpaceService {
     call_hook: CallHook,
@@ -19,9 +21,8 @@ impl MockSpaceService {
         Self { call_hook }
     }
 
-    pub fn spawn_space_service(self: &Arc<Self>) -> fidl_fuchsia_space::ManagerProxy {
-        let (proxy, stream) =
-            fidl::endpoints::create_proxy_and_stream::<fidl_fuchsia_space::ManagerMarker>();
+    pub fn spawn_space_service(self: &Arc<Self>) -> ManagerProxy {
+        let (proxy, stream) = fidl::endpoints::create_proxy_and_stream::<ManagerMarker>();
 
         fasync::Task::spawn(
             Arc::clone(self)
@@ -35,10 +36,12 @@ impl MockSpaceService {
 
     pub async fn run_space_service(
         self: Arc<Self>,
-        mut stream: fidl_fuchsia_space::ManagerRequestStream,
+        mut stream: ManagerRequestStream,
     ) -> Result<(), Error> {
         while let Some(event) = stream.try_next().await.expect("received request") {
-            let fidl_fuchsia_space::ManagerRequest::Gc { responder } = event;
+            let ManagerRequest::Gc { responder } = event else {
+                return Err(anyhow!("Unknown method called on garbage collector."));
+            };
             responder.send((self.call_hook)())?;
         }
 
@@ -81,12 +84,12 @@ mod tests {
         let called_clone = Arc::clone(&called);
         let mock = Arc::new(MockSpaceService::new(Box::new(move || {
             called_clone.fetch_add(1, Ordering::SeqCst);
-            Err(ErrorCode::Internal)
+            Err(GcError::Internal)
         })));
         let proxy = mock.spawn_space_service();
 
         let gc_result = proxy.gc().await.expect("made fidl call");
-        assert_eq!(gc_result, Err(ErrorCode::Internal));
+        assert_eq!(gc_result, Err(GcError::Internal));
 
         assert_eq!(called.load(Ordering::SeqCst), 1);
     }

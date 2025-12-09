@@ -23,7 +23,7 @@ use std::time::Duration;
 use update_package::manifest::OtaManifestV1;
 use {
     fidl_fuchsia_mem as fmem, fidl_fuchsia_paver as fpaver, fidl_fuchsia_pkg as fpkg,
-    fidl_fuchsia_pkg_ext as fpkg_ext, fidl_fuchsia_space as fspace,
+    fidl_fuchsia_pkg_ext as fpkg_ext, fidl_fuchsia_pkg_garbagecollector as fpkg_gc,
     fidl_fuchsia_update_installer_ext as fupdate_installer_ext,
 };
 
@@ -1687,7 +1687,7 @@ async fn sync_package_cache(pkg_cache: &fpkg::PackageCacheProxy) -> Result<(), E
     .context("while flushing packages to persistent storage")
 }
 
-async fn gc(space_manager: &fspace::ManagerProxy) -> Result<(), Error> {
+async fn gc(space_manager: &fpkg_gc::ManagerProxy) -> Result<(), Error> {
     let () = space_manager
         .gc()
         .await
@@ -1705,7 +1705,7 @@ async fn write_image_packages(
     data_sink: &fpaver::DataSinkProxy,
     update_pkg: Option<Hash>,
     retained_packages: &fpkg::RetainedPackagesProxy,
-    space_manager: &fspace::ManagerProxy,
+    space_manager: &fpkg_gc::ManagerProxy,
     concurrent_package_resolves: usize,
 ) -> Result<(), StageError> {
     match images_to_write
@@ -1739,7 +1739,7 @@ async fn write_image_packages(
 async fn resolve_update_package(
     pkg_resolver: &fpkg::PackageResolverProxy,
     update_url: &AbsolutePackageUrl,
-    space_manager: &fspace::ManagerProxy,
+    space_manager: &fpkg_gc::ManagerProxy,
     retained_packages: &fpkg::RetainedPackagesProxy,
 ) -> Result<update_package::UpdatePackage, ResolveError> {
     // First, attempt to resolve the update package.

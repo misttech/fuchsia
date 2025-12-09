@@ -13,7 +13,7 @@ use vfs::execution_scope::ExecutionScope;
 use {
     fidl_fuchsia_boot as fboot, fidl_fuchsia_component_decl as fcomponent_decl,
     fidl_fuchsia_component_resolution as fcomponent_resolution, fidl_fuchsia_io as fio,
-    fidl_fuchsia_pkg as fpkg, fidl_fuchsia_space as fspace,
+    fidl_fuchsia_pkg as fpkg, fidl_fuchsia_pkg_garbagecollector as fpkg_gc,
 };
 
 static PKGFS_BOOT_ARG_KEY: &'static str = "zircon.system.pkgfs.cmd";
@@ -240,7 +240,7 @@ impl TestEnvBuilder {
                 Route::new()
                     .capability(Capability::protocol::<fpkg::PackageCacheMarker>())
                     .capability(Capability::protocol::<fpkg::RetainedPackagesMarker>())
-                    .capability(Capability::protocol::<fspace::ManagerMarker>())
+                    .capability(Capability::protocol::<fpkg_gc::ManagerMarker>())
                     .capability(Capability::protocol::<fpkg::PackageResolverMarker>())
                     .capability(Capability::protocol::<fcomponent_resolution::ResolverMarker>())
                     .capability(Capability::directory("pkgfs"))

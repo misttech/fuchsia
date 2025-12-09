@@ -8,7 +8,7 @@ use crate::{
 use assert_matches::assert_matches;
 use fidl_fuchsia_pkg::{self as fpkg, NeededBlobsMarker};
 use fidl_fuchsia_pkg_ext::BlobId;
-use fidl_fuchsia_space::ErrorCode;
+use fidl_fuchsia_pkg_garbagecollector::GcError;
 use fuchsia_pkg_testing::{PackageBuilder, SystemImageBuilder};
 use futures::TryFutureExt as _;
 use mock_paver::{MockPaverServiceBuilder, PaverEvent, hooks as mphooks};
@@ -43,7 +43,7 @@ async fn gc_error_pending_commit() {
             configuration: fpaver::Configuration::A,
         },
     ]);
-    assert_matches!(env.proxies.space_manager.gc().await, Ok(Err(ErrorCode::PendingCommit)));
+    assert_matches!(env.proxies.space_manager.gc().await, Ok(Err(GcError::PendingCommit)));
 
     // When the commit completes, GC should unblock as well.
     let () = throttler.emit_next_paver_events(&[

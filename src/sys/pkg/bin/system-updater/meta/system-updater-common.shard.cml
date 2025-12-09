@@ -21,12 +21,12 @@
                 "fuchsia.metrics.MetricEventLoggerFactory",
                 "fuchsia.net.http.Loader",
                 "fuchsia.paver.Paver",
+                "fuchsia.pkg.garbagecollector.Manager",
                 "fuchsia.pkg.internal.OtaDownloader",
                 "fuchsia.pkg.PackageCache",
                 "fuchsia.pkg.PackageResolver",
                 "fuchsia.pkg.RetainedBlobs",
                 "fuchsia.pkg.RetainedPackages",
-                "fuchsia.space.Manager",
             ],
         },
         {

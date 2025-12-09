@@ -33,7 +33,9 @@ use std::sync::Arc;
 use tempfile::TempDir;
 use vfs::directory::entry_container::Directory;
 use zx::Status;
-use {fidl_fuchsia_io as fio, fidl_fuchsia_space as fidl_space, fuchsia_async as fasync};
+use {
+    fidl_fuchsia_io as fio, fidl_fuchsia_pkg_garbagecollector as fpkg_gc, fuchsia_async as fasync,
+};
 
 const BINARY_PATH: &str = "/pkg/bin/pkgctl";
 
@@ -103,7 +105,7 @@ impl TestEnv {
 
         let space_manager = Arc::new(MockSpaceManagerService::new());
         let space_manager_clone = space_manager.clone();
-        fs.add_fidl_service(move |stream: fidl_space::ManagerRequestStream| {
+        fs.add_fidl_service(move |stream: fpkg_gc::ManagerRequestStream| {
             let space_manager_clone = space_manager_clone.clone();
             fasync::Task::spawn(
                 space_manager_clone
@@ -502,7 +504,7 @@ impl MockPackageCacheService {
 
 struct MockSpaceManagerService {
     call_count: Mutex<u32>,
-    gc_err: Mutex<Option<fidl_space::ErrorCode>>,
+    gc_err: Mutex<Option<fpkg_gc::GcError>>,
 }
 
 impl MockSpaceManagerService {
@@ -511,18 +513,21 @@ impl MockSpaceManagerService {
     }
     async fn run_service(
         self: Arc<Self>,
-        mut stream: fidl_space::ManagerRequestStream,
+        mut stream: fpkg_gc::ManagerRequestStream,
     ) -> Result<(), Error> {
         while let Some(req) = stream.try_next().await? {
             *self.call_count.lock() += 1;
 
             match req {
-                fidl_space::ManagerRequest::Gc { responder } => {
+                fpkg_gc::ManagerRequest::Gc { responder } => {
                     if let Some(e) = *self.gc_err.lock() {
                         responder.send(Err(e))?;
                     } else {
                         responder.send(Ok(()))?;
                     }
+                }
+                fpkg_gc::ManagerRequest::_UnknownMethod { .. } => {
+                    panic!("unexpected request")
                 }
             }
         }
@@ -751,7 +756,7 @@ async fn test_gc_success() {
 #[fasync::run_singlethreaded(test)]
 async fn test_gc_error() {
     let env = TestEnv::new();
-    *env.space_manager.gc_err.lock() = Some(fidl_space::ErrorCode::Internal);
+    *env.space_manager.gc_err.lock() = Some(fpkg_gc::GcError::Internal);
     let output = env.run_pkgctl(vec!["gc"]).await;
     assert!(!output.is_ok());
     env.assert_only_space_manager_called();

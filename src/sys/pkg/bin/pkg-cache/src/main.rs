@@ -305,8 +305,8 @@ async fn main_inner() -> Result<(), Error> {
 
         let () = svc_dir
             .add_entry(
-                fidl_fuchsia_space::ManagerMarker::PROTOCOL_NAME,
-                vfs::service::host(move |stream: fidl_fuchsia_space::ManagerRequestStream| {
+                fidl_fuchsia_pkg_garbagecollector::ManagerMarker::PROTOCOL_NAME,
+                vfs::service::host(move |stream: fidl_fuchsia_pkg_garbagecollector::ManagerRequestStream| {
                     gc_service::serve(
                         blobfs.clone(),
                         Arc::clone(&base_packages),
@@ -318,11 +318,11 @@ async fn main_inner() -> Result<(), Error> {
                         stream,
                     )
                     .unwrap_or_else(|e| {
-                        error!("error handling fuchsia.space/Manager connection: {:#}", anyhow!(e))
+                        error!("error handling fuchsia.pkg.garbagecollector/Manager connection: {:#}", anyhow!(e))
                     })
                 }),
             )
-            .context("adding fuchsia.space/Manager to /svc")?;
+            .context("adding fuchsia.pkg.garbagecollector/Manager to /svc")?;
     }
     {
         let base_resolver_base_packages = Arc::clone(&base_resolver_base_packages);
@@ -349,7 +349,7 @@ async fn main_inner() -> Result<(), Error> {
                     },
                 ),
             )
-            .context("adding fuchsia.space/Manager to /svc")?;
+            .context("adding fuchsia.pkg.garbagecollector/Manager to /svc")?;
     }
     {
         let base_resolver_base_packages = Arc::clone(&base_resolver_base_packages);
@@ -376,7 +376,7 @@ async fn main_inner() -> Result<(), Error> {
                     },
                 ),
             )
-            .context("adding fuchsia.space/Manager to /svc")?;
+            .context("adding fuchsia.pkg.garbagecollector/Manager to /svc")?;
     }
 
     let base_package_entry = |name: &'static str| {
