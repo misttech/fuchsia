@@ -942,7 +942,7 @@ struct TaskRuntimeStatsTests {
     EXPECT_EQ(0, trs.lock_contention_ticks);
 
     auto DelayTicks = [](zx_duration_mono_ticks_t ticks) {
-      zx_instant_mono_ticks_t deadline = current_mono_ticks() + kCpuTicks;
+      zx_instant_mono_ticks_t deadline = current_mono_ticks() + ticks;
       do {
         arch::Yield();
       } while (current_mono_ticks() < deadline);
