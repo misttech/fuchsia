@@ -1399,7 +1399,10 @@ class VmCowPages final : public fbl::ContainableBaseClasses<
 
   // When cleaning up a hidden vmo, merges the hidden vmo's content (e.g. page list, view
   // of the parent) into the remaining child.
-  void MergeContentWithChildLocked() TA_REQ(lock());
+  // This can fail (return false) indicating content may have been partially merged. If this happens
+  // the two vmos are in a valid state and can continue being used, but the parent must be retained
+  // and cannot be deleted.
+  bool MergeContentWithChildLocked() TA_REQ(lock());
 
   // Moves an existing page to the wired queue as a consequence of the page being pinned.
   void MoveToPinnedLocked(vm_page_t* page, uint64_t offset) TA_REQ(lock());

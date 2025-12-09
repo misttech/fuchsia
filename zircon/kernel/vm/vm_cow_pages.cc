@@ -1129,39 +1129,35 @@ fbl::RefPtr<VmCowPages> VmCowPages::DeadTransitionLocked(const LockedPtr& parent
   VMO_FRUGAL_VALIDATION_ASSERT(DebugValidateVmoPageBorrowingLocked());
   fbl::RefPtr<VmCowPages> deferred;
 
-  // If we're not a hidden vmo then we need to remove ourselves from our parent and free any pages
-  // that we own.
   if (!is_hidden()) {
     // Clear out all content that we can see. This means dropping references to any pages in our
     // parents, as well as removing any pages in our own page list.
     __UNINITIALIZED ScopedPageFreedList freed_list;
     ReleaseOwnedPagesLocked(0, parent, freed_list);
     freed_list.FreePages(this);
-
-    DEBUG_ASSERT(parent.get() == parent_.get());
-    if (parent_) {
-      parent.locked().RemoveChildLocked(this, sibling);
-
-      // We removed a child from the parent, and so it may also need to be cleaned.
-      // Avoid recursing destructors and dead transitions when we delete our parent by using the
-      // deferred deletion method, i.e. return the parent_ and have the caller call dead transition
-      // on it.
-      deferred = ktl::move(parent_);
-    } else {
-      // If we had a parent then RemoveChildLocked would have cleaned up any cursors, but otherwise
-      // we must erase from any lists. As we have no parent and cannot have children the root and
-      // current cursor list must be equivalent, and so only need to process one.
-      TreeWalkCursor::Erase(root_cursor_list_, this);
-    }
+    DEBUG_ASSERT(page_list_.IsEmpty());
   } else {
-    // Most of the hidden vmo's state should have already been cleaned up when it merged
-    // itself into its child in ::RemoveChildLocked.
-    DEBUG_ASSERT(children_list_len_ == 0);
+    // Hidden nodes might have markers left in them (due to markers not being ref counted), but all
+    // pages and references should have been cleaned up when its children went away.
     DEBUG_ASSERT(page_list_.HasNoPageOrRef());
-    DEBUG_ASSERT(!parent_);
   }
 
-  DEBUG_ASSERT(page_list_.IsEmpty());
+  DEBUG_ASSERT(parent.get() == parent_.get());
+  if (parent_) {
+    parent.locked().RemoveChildLocked(this, sibling);
+
+    // We removed a child from the parent, and so it may also need to be cleaned.
+    // Avoid recursing destructors and dead transitions when we delete our parent by using the
+    // deferred deletion method, i.e. return the parent_ and have the caller call dead transition
+    // on it.
+    deferred = ktl::move(parent_);
+  } else {
+    // If we had a parent then RemoveChildLocked would have cleaned up any cursors, but otherwise
+    // we must erase from any lists. As we have no parent and cannot have children the root and
+    // current cursor list must be equivalent, and so only need to process one.
+    TreeWalkCursor::Erase(root_cursor_list_, this);
+  }
+
   DEBUG_ASSERT(root_cursor_list_.is_empty());
   DEBUG_ASSERT(cur_cursor_list_.is_empty());
 
@@ -2025,7 +2021,9 @@ void VmCowPages::RemoveChildLocked(VmCowPages* removed, const LockedPtr& sibling
   // be positioned outside their subtree.
   DEBUG_ASSERT(removed->root_cursor_list_.is_empty());
 
-  if (!is_hidden() || children_list_len_ > 2) {
+  // Note that due to a previous failed merge a hidden vmo could have a single child, which will
+  // also result in just calling DropChildLocked. Only attempt to merge if exactly 2 children.
+  if (!is_hidden() || children_list_len_ != 2) {
     DropChildLocked(removed);
     // Things should be consistent after dropping the child.
     VMO_VALIDATION_ASSERT(DebugValidateHierarchyLocked());
@@ -2033,15 +2031,15 @@ void VmCowPages::RemoveChildLocked(VmCowPages* removed, const LockedPtr& sibling
     return;
   }
 
-  // Hidden vmos have 0, 2 or more children. If we had more we would have already returned, and we
-  // cannot be here with 0 children, therefore we must have 2, including the one we are removing.
-  DEBUG_ASSERT(children_list_len_ == 2);
-
   // Merge any cursors into the remaining child.
   TreeWalkCursor::MergeToChild(cur_cursor_list_, root_cursor_list_, this, &sibling.locked());
 
   DropChildLocked(removed);
-  MergeContentWithChildLocked();
+  if (!MergeContentWithChildLocked()) {
+    // Merge failed, leave the hidden parent. It will get cleaned up once the child goes away, there
+    // will just be an inefficient extra node in the tree until then.
+    return;
+  }
 
   DEBUG_ASSERT(sibling.get() == &children_list_.front());
 
@@ -2095,7 +2093,7 @@ void VmCowPages::RemoveChildLocked(VmCowPages* removed, const LockedPtr& sibling
   VMO_FRUGAL_VALIDATION_ASSERT(sibling.locked().DebugValidateVmoPageBorrowingLocked());
 }
 
-void VmCowPages::MergeContentWithChildLocked() {
+bool VmCowPages::MergeContentWithChildLocked() {
   canary_.Assert();
 
   DEBUG_ASSERT(is_hidden());
@@ -2179,6 +2177,9 @@ void VmCowPages::MergeContentWithChildLocked() {
   // It will be made consistent by the caller and checked then.
   VMO_FRUGAL_VALIDATION_ASSERT(DebugValidateVmoPageBorrowingLocked());
   VMO_FRUGAL_VALIDATION_ASSERT(child.DebugValidateVmoPageBorrowingLocked());
+
+  // Merge succeeded.
+  return true;
 }
 
 void VmCowPages::DumpLocked(uint depth, bool verbose) const {
