@@ -113,7 +113,9 @@ scheduling::SessionId FlatlandManager::CreateFlatland(
   async::PostTask(instance->loop->dispatcher(), []() {
     zx_status_t status = fuchsia_scheduler::SetRoleForThisThread("fuchsia.graphics.flatland");
     if (status != ZX_OK) {
-      FX_LOGS(WARNING) << "Failed to apply profile to flatland thread: " << status;
+      // "fuchsia.graphics.flatland" isn't defined for all products. This is a no-op on those
+      // products and a failure is WAI.
+      FX_LOGS(INFO) << "Failed to apply profile to flatland thread: " << status;
     }
   });
   instance->impl = NewFlatland(instance->loop, std::move(request), id,
