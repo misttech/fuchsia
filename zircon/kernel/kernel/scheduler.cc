@@ -1503,6 +1503,14 @@ void Scheduler::UpdateEstimatedEnergyConsumption(Thread* current_thread,
     current_thread->scheduler_state().estimated_energy_consumption_nj +=
         active_energy_consumption_nj.raw_value();
 
+    // If the thread is dying, report its active energy concumption after the
+    // final update to ensure an accurate estimate based on its full runtime.
+    if (current_thread->scheduler_state().state() == THREAD_DEATH) {
+      KTRACE_INSTANT("kernel:power", "Thread Energy",
+                     ("estimated energy consumption (nJ)",
+                      current_thread->scheduler_state().estimated_energy_consumption_nj));
+    }
+
     // TODO(https://fxbug.dev/377583571): Select the correct power coefficient
     // when deeper idle states are implemented. For now the max idle power
     // coefficient corresponds to the most general arch idle state (e.g. WFI,
