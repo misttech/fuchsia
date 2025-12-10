@@ -157,6 +157,7 @@ python_library("honeydew_no_testonly") {
     "utils/http_utils.py",
     "utils/inspect.py",
     "utils/properties.py",
+    "utils/screenshot.py",
   ]
   library_deps = [
     ":honeydew_ffx_tool_deps",
@@ -264,7 +265,7 @@ group("unit_tests") {
       "honeydew/transports/fuchsia_controller/tests/unit_tests:tests",
       "honeydew/transports/serial/tests/unit_tests:tests",
       "honeydew/transports/sl4f/tests/unit_tests:tests",
-      "honeydew/utils/tests/unit_tests:tests",
+      "honeydew/utils/tests/unit_tests:tests($host_toolchain)",
       "tests/unit_tests:tests",
     ]
   }

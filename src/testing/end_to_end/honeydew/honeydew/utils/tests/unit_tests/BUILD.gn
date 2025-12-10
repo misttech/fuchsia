@@ -4,16 +4,28 @@
 
 import("//build/python/python_host_test.gni")
 
-if (is_host) {
-  python_host_test("inspect_test") {
-    main_source = "inspect_test.py"
-    libraries = [ "//src/testing/end_to_end/honeydew" ]
-    main_callable = "unittest.main"
-    extra_args = [ "-v" ]
-  }
+assert(is_host)
+
+python_host_test("inspect_test") {
+  main_source = "inspect_test.py"
+  libraries = [ "//src/testing/end_to_end/honeydew" ]
+  main_callable = "unittest.main"
+  extra_args = [ "-v" ]
+}
+
+python_host_test("screenshot_test") {
+  main_source = "screenshot_test.py"
+  libraries = [
+    "//third_party/mobly",
+    "//src/testing/end_to_end/honeydew",
+    "//third_party/parameterized",
+  ]
 }
 
 group("tests") {
   testonly = true
-  public_deps = [ ":inspect_test($host_toolchain)" ]
+  public_deps = [
+    ":inspect_test",
+    ":screenshot_test",
+  ]
 }
