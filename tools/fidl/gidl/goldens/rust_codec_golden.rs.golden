@@ -8,7 +8,7 @@ use {
     assert_matches::assert_matches,
     fidl::{AsHandleRef, NullableHandle, HandleDisposition, HandleInfo, HandleOp, ObjectType, Rights},
     fidl::encoding::{Context, Decode, Decoder, Encoder, WireFormatVersion},
-    fidl_codec::{Value, Error},
+    fidl_codec::{Value, Error, AsPlatform as _, FromPlatform as _},
     zx_status::Status,
     zx_types as zx_types,
     gidl_util::{
@@ -26,6 +26,10 @@ fn ns() -> &'static fidl_codec::library::Namespace {
         ns.load(FIDL_JSON).unwrap();
         ns
     })
+}
+
+fn convert_handle_infos(infos: Vec<fidl::HandleInfo>) -> Vec<fidl_codec::HandleInfo> {
+    infos.into_iter().map(Into::into).collect()
 }
 
 
@@ -255,12 +259,12 @@ HandleDef{
 	rights: Rights::from_bits(61454).unwrap(),
 },
 ]);
-    let (bytes, handle_dispositions) = fidl_codec::encode(ns(), "test.conformance/GoldenHandleBasicRightsStruct", false, Value::Object(vec![("v".to_owned(), Value::Handle(copy_handle(&handle_defs[0]), fidl::ObjectType::EVENT, Some(Rights::from_bits(handle_defs[0].rights).unwrap())))])).unwrap();
+    let (bytes, handle_dispositions) = fidl_codec::encode(ns(), "test.conformance/GoldenHandleBasicRightsStruct", false, Value::Object(vec![("v".to_owned(), Value::Handle(copy_handle(&handle_defs[0]), fidl_codec::ObjectType::Event, Some(fidl_codec::Rights::from_bits(handle_defs[0].rights).unwrap())))])).unwrap();
     assert_eq!(bytes, &[
 0xff,0xff,0xff,0xff,0x00,0x00,0x00,0x00,
 ]);
     assert_eq!(
-        handle_dispositions.into_iter().map(to_zx_handle_disposition_t).collect::<Vec<_>>(),
+        handle_dispositions.into_iter().map(Into::into).map(to_zx_handle_disposition_t).collect::<Vec<_>>(),
         &[
 zx_types::zx_handle_disposition_t {
    operation: zx_types::ZX_HANDLE_OP_MOVE,
@@ -281,7 +285,7 @@ HandleDef{
 	rights: Rights::from_bits(2147483648).unwrap(),
 },
 ]);
-    let (bytes, handle_dispositions) = fidl_codec::encode(ns(), "test.conformance/GoldenNullableHandleStruct", false, Value::Object(vec![("v".to_owned(), Value::Handle(copy_handle(&handle_defs[0]), fidl::ObjectType::NONE, Some(Rights::from_bits(handle_defs[0].rights).unwrap())))])).unwrap();
+    let (bytes, handle_dispositions) = fidl_codec::encode(ns(), "test.conformance/GoldenNullableHandleStruct", false, Value::Object(vec![("v".to_owned(), Value::Handle(copy_handle(&handle_defs[0]), fidl_codec::ObjectType::None, Some(fidl_codec::Rights::from_bits(handle_defs[0].rights).unwrap())))])).unwrap();
     assert_eq!(bytes, &[
 0xff,0xff,0xff,0xff,0x00,0x00,0x00,0x00,
 ]);
@@ -310,7 +314,7 @@ fn test_golden_bool_struct_v2_decode() {
 ];
     let handle_infos = Vec::new();
     let confirm_value = Value::Object(vec![("v".to_owned(), Value::Bool(true))]);
-    let value = fidl_codec::decode(ns(), "test.conformance/GoldenBoolStruct", bytes, handle_infos).unwrap();
+    let value = fidl_codec::decode(ns(), "test.conformance/GoldenBoolStruct", bytes, convert_handle_infos(handle_infos)).unwrap();
     assert_eq!(value, confirm_value);
 }
 
@@ -321,7 +325,7 @@ fn test_golden_int_struct_v2_decode() {
 ];
     let handle_infos = Vec::new();
     let confirm_value = Value::Object(vec![("v".to_owned(), Value::I16(1i16))]);
-    let value = fidl_codec::decode(ns(), "test.conformance/GoldenIntStruct", bytes, handle_infos).unwrap();
+    let value = fidl_codec::decode(ns(), "test.conformance/GoldenIntStruct", bytes, convert_handle_infos(handle_infos)).unwrap();
     assert_eq!(value, confirm_value);
 }
 
@@ -332,7 +336,7 @@ fn test_golden_uint_struct_v2_decode() {
 ];
     let handle_infos = Vec::new();
     let confirm_value = Value::Object(vec![("v".to_owned(), Value::U16(1u16))]);
-    let value = fidl_codec::decode(ns(), "test.conformance/GoldenUintStruct", bytes, handle_infos).unwrap();
+    let value = fidl_codec::decode(ns(), "test.conformance/GoldenUintStruct", bytes, convert_handle_infos(handle_infos)).unwrap();
     assert_eq!(value, confirm_value);
 }
 
@@ -343,7 +347,7 @@ fn test_golden_float_struct_v2_decode() {
 ];
     let handle_infos = Vec::new();
     let confirm_value = Value::Object(vec![("v".to_owned(), Value::F32(0f32))]);
-    let value = fidl_codec::decode(ns(), "test.conformance/GoldenFloatStruct", bytes, handle_infos).unwrap();
+    let value = fidl_codec::decode(ns(), "test.conformance/GoldenFloatStruct", bytes, convert_handle_infos(handle_infos)).unwrap();
     assert_eq!(value, confirm_value);
 }
 
@@ -354,7 +358,7 @@ fn test_golden_double_struct_v2_decode() {
 ];
     let handle_infos = Vec::new();
     let confirm_value = Value::Object(vec![("v".to_owned(), Value::F64(0f64))]);
-    let value = fidl_codec::decode(ns(), "test.conformance/GoldenDoubleStruct", bytes, handle_infos).unwrap();
+    let value = fidl_codec::decode(ns(), "test.conformance/GoldenDoubleStruct", bytes, convert_handle_infos(handle_infos)).unwrap();
     assert_eq!(value, confirm_value);
 }
 
@@ -367,7 +371,7 @@ fn test_golden_string_struct_v2_decode() {
 ];
     let handle_infos = Vec::new();
     let confirm_value = Value::Object(vec![("v".to_owned(), Value::String(String::from("abcd")))]);
-    let value = fidl_codec::decode(ns(), "test.conformance/GoldenStringStruct", bytes, handle_infos).unwrap();
+    let value = fidl_codec::decode(ns(), "test.conformance/GoldenStringStruct", bytes, convert_handle_infos(handle_infos)).unwrap();
     assert_eq!(value, confirm_value);
 }
 
@@ -380,7 +384,7 @@ fn test_golden_nullable_string_struct_non_null_v2_decode() {
 ];
     let handle_infos = Vec::new();
     let confirm_value = Value::Object(vec![("v".to_owned(), Value::String(String::from("abcd")))]);
-    let value = fidl_codec::decode(ns(), "test.conformance/GoldenNullableStringStruct", bytes, handle_infos).unwrap();
+    let value = fidl_codec::decode(ns(), "test.conformance/GoldenNullableStringStruct", bytes, convert_handle_infos(handle_infos)).unwrap();
     assert_eq!(value, confirm_value);
 }
 
@@ -392,7 +396,7 @@ fn test_golden_nullable_string_struct_null_v2_decode() {
 ];
     let handle_infos = Vec::new();
     let confirm_value = Value::Object(vec![("v".to_owned(), Value::Null)]);
-    let value = fidl_codec::decode(ns(), "test.conformance/GoldenNullableStringStruct", bytes, handle_infos).unwrap();
+    let value = fidl_codec::decode(ns(), "test.conformance/GoldenNullableStringStruct", bytes, convert_handle_infos(handle_infos)).unwrap();
     assert_eq!(value, confirm_value);
 }
 
@@ -403,7 +407,7 @@ fn test_golden_enum_struct_v2_decode() {
 ];
     let handle_infos = Vec::new();
     let confirm_value = Value::Object(vec![("v".to_owned(), Value::Enum("test.conformance/GoldenEnum".to_owned(), Box::new(Value::U16(1u16))))]);
-    let value = fidl_codec::decode(ns(), "test.conformance/GoldenEnumStruct", bytes, handle_infos).unwrap();
+    let value = fidl_codec::decode(ns(), "test.conformance/GoldenEnumStruct", bytes, convert_handle_infos(handle_infos)).unwrap();
     assert_eq!(value, confirm_value);
 }
 
@@ -414,7 +418,7 @@ fn test_golden_bits_struct_v2_decode() {
 ];
     let handle_infos = Vec::new();
     let confirm_value = Value::Object(vec![("v".to_owned(), Value::Bits("test.conformance/GoldenBits".to_owned(), Box::new(Value::U16(1u16))))]);
-    let value = fidl_codec::decode(ns(), "test.conformance/GoldenBitsStruct", bytes, handle_infos).unwrap();
+    let value = fidl_codec::decode(ns(), "test.conformance/GoldenBitsStruct", bytes, convert_handle_infos(handle_infos)).unwrap();
     assert_eq!(value, confirm_value);
 }
 
@@ -427,7 +431,7 @@ fn test_golden_table_struct_v2_decode() {
 ];
     let handle_infos = Vec::new();
     let confirm_value = Value::Object(vec![("v".to_owned(), Value::Object(vec![("v".to_owned(), Value::I16(1i16))]))]);
-    let value = fidl_codec::decode(ns(), "test.conformance/GoldenTableStruct", bytes, handle_infos).unwrap();
+    let value = fidl_codec::decode(ns(), "test.conformance/GoldenTableStruct", bytes, convert_handle_infos(handle_infos)).unwrap();
     assert_eq!(value, confirm_value);
 }
 
@@ -439,7 +443,7 @@ fn test_golden_union_struct_v2_decode() {
 ];
     let handle_infos = Vec::new();
     let confirm_value = Value::Object(vec![("v".to_owned(), Value::Union("test.conformance/GoldenUnion".to_owned(), "v".to_owned(), Box::new(Value::I16(1i16))))]);
-    let value = fidl_codec::decode(ns(), "test.conformance/GoldenUnionStruct", bytes, handle_infos).unwrap();
+    let value = fidl_codec::decode(ns(), "test.conformance/GoldenUnionStruct", bytes, convert_handle_infos(handle_infos)).unwrap();
     assert_eq!(value, confirm_value);
 }
 
@@ -451,7 +455,7 @@ fn test_golden_nullable_union_struct_non_null_v2_decode() {
 ];
     let handle_infos = Vec::new();
     let confirm_value = Value::Object(vec![("v".to_owned(), Value::Union("test.conformance/GoldenUnion".to_owned(), "v".to_owned(), Box::new(Value::I16(1i16))))]);
-    let value = fidl_codec::decode(ns(), "test.conformance/GoldenNullableUnionStruct", bytes, handle_infos).unwrap();
+    let value = fidl_codec::decode(ns(), "test.conformance/GoldenNullableUnionStruct", bytes, convert_handle_infos(handle_infos)).unwrap();
     assert_eq!(value, confirm_value);
 }
 
@@ -463,7 +467,7 @@ fn test_golden_nullable_union_struct_null_v2_decode() {
 ];
     let handle_infos = Vec::new();
     let confirm_value = Value::Object(vec![("v".to_owned(), Value::Null)]);
-    let value = fidl_codec::decode(ns(), "test.conformance/GoldenNullableUnionStruct", bytes, handle_infos).unwrap();
+    let value = fidl_codec::decode(ns(), "test.conformance/GoldenNullableUnionStruct", bytes, convert_handle_infos(handle_infos)).unwrap();
     assert_eq!(value, confirm_value);
 }
 
@@ -474,7 +478,7 @@ fn test_golden_byte_array_struct_v2_decode() {
 ];
     let handle_infos = Vec::new();
     let confirm_value = Value::Object(vec![("v".to_owned(), Value::List(vec![Value::U8(1u8), Value::U8(2u8), Value::U8(3u8), Value::U8(4u8)]))]);
-    let value = fidl_codec::decode(ns(), "test.conformance/GoldenByteArrayStruct", bytes, handle_infos).unwrap();
+    let value = fidl_codec::decode(ns(), "test.conformance/GoldenByteArrayStruct", bytes, convert_handle_infos(handle_infos)).unwrap();
     assert_eq!(value, confirm_value);
 }
 
@@ -485,7 +489,7 @@ fn test_golden_struct_array_struct_v2_decode() {
 ];
     let handle_infos = Vec::new();
     let confirm_value = Value::Object(vec![("v".to_owned(), Value::List(vec![Value::Object(vec![("v".to_owned(), Value::I16(1i16))]), Value::Object(vec![("v".to_owned(), Value::I16(2i16))])]))]);
-    let value = fidl_codec::decode(ns(), "test.conformance/GoldenStructArrayStruct", bytes, handle_infos).unwrap();
+    let value = fidl_codec::decode(ns(), "test.conformance/GoldenStructArrayStruct", bytes, convert_handle_infos(handle_infos)).unwrap();
     assert_eq!(value, confirm_value);
 }
 
@@ -499,7 +503,7 @@ fn test_golden_byte_vector_struct_v2_decode() {
 ];
     let handle_infos = Vec::new();
     let confirm_value = Value::Object(vec![("v".to_owned(), Value::List(vec![Value::U8(1u8), Value::U8(2u8), Value::U8(3u8), Value::U8(4u8), Value::U8(1u8), Value::U8(2u8), Value::U8(3u8), Value::U8(4u8), Value::U8(1u8), Value::U8(2u8), Value::U8(3u8), Value::U8(4u8)]))]);
-    let value = fidl_codec::decode(ns(), "test.conformance/GoldenByteVectorStruct", bytes, handle_infos).unwrap();
+    let value = fidl_codec::decode(ns(), "test.conformance/GoldenByteVectorStruct", bytes, convert_handle_infos(handle_infos)).unwrap();
     assert_eq!(value, confirm_value);
 }
 
@@ -512,7 +516,7 @@ fn test_golden_byte_nullable_vector_struct_non_null_v2_decode() {
 ];
     let handle_infos = Vec::new();
     let confirm_value = Value::Object(vec![("v".to_owned(), Value::List(vec![Value::U8(1u8), Value::U8(2u8), Value::U8(3u8), Value::U8(4u8)]))]);
-    let value = fidl_codec::decode(ns(), "test.conformance/GoldenNullableByteVectorStruct", bytes, handle_infos).unwrap();
+    let value = fidl_codec::decode(ns(), "test.conformance/GoldenNullableByteVectorStruct", bytes, convert_handle_infos(handle_infos)).unwrap();
     assert_eq!(value, confirm_value);
 }
 
@@ -524,7 +528,7 @@ fn test_golden_nullable_byte_vector_struct_null_v2_decode() {
 ];
     let handle_infos = Vec::new();
     let confirm_value = Value::Object(vec![("v".to_owned(), Value::Null)]);
-    let value = fidl_codec::decode(ns(), "test.conformance/GoldenNullableByteVectorStruct", bytes, handle_infos).unwrap();
+    let value = fidl_codec::decode(ns(), "test.conformance/GoldenNullableByteVectorStruct", bytes, convert_handle_infos(handle_infos)).unwrap();
     assert_eq!(value, confirm_value);
 }
 
@@ -537,7 +541,7 @@ fn test_golden_struct_vector_struct_v2_decode() {
 ];
     let handle_infos = Vec::new();
     let confirm_value = Value::Object(vec![("v".to_owned(), Value::List(vec![Value::Object(vec![("v".to_owned(), Value::I16(1i16))]), Value::Object(vec![("v".to_owned(), Value::I16(2i16))])]))]);
-    let value = fidl_codec::decode(ns(), "test.conformance/GoldenStructVectorStruct", bytes, handle_infos).unwrap();
+    let value = fidl_codec::decode(ns(), "test.conformance/GoldenStructVectorStruct", bytes, convert_handle_infos(handle_infos)).unwrap();
     assert_eq!(value, confirm_value);
 }
 
@@ -549,7 +553,7 @@ fn test_golden_nullable_struct_non_null_v2_decode() {
 ];
     let handle_infos = Vec::new();
     let confirm_value = Value::Object(vec![("v".to_owned(), Value::Object(vec![("v".to_owned(), Value::Bool(true))]))]);
-    let value = fidl_codec::decode(ns(), "test.conformance/GoldenNullableStruct", bytes, handle_infos).unwrap();
+    let value = fidl_codec::decode(ns(), "test.conformance/GoldenNullableStruct", bytes, convert_handle_infos(handle_infos)).unwrap();
     assert_eq!(value, confirm_value);
 }
 
@@ -560,7 +564,7 @@ fn test_golden_nullable_struct_null_v2_decode() {
 ];
     let handle_infos = Vec::new();
     let confirm_value = Value::Object(vec![("v".to_owned(), Value::Null)]);
-    let value = fidl_codec::decode(ns(), "test.conformance/GoldenNullableStruct", bytes, handle_infos).unwrap();
+    let value = fidl_codec::decode(ns(), "test.conformance/GoldenNullableStruct", bytes, convert_handle_infos(handle_infos)).unwrap();
     assert_eq!(value, confirm_value);
 }
 
@@ -579,8 +583,8 @@ HandleDef{
     let _handle_koids = handle_defs.iter().map(get_handle_koid).collect::<Vec<_>>();
     let handle_infos = select_handle_infos(&handle_defs, &[
 0,]);
-    let confirm_value = Value::Object(vec![("v".to_owned(), Value::Handle(copy_handle(&handle_defs[0]), fidl::ObjectType::EVENT, Some(Rights::from_bits(49155).unwrap())))]);
-    let value = fidl_codec::decode(ns(), "test.conformance/GoldenHandleBasicRightsStruct", bytes, handle_infos).unwrap();
+    let confirm_value = Value::Object(vec![("v".to_owned(), Value::Handle(copy_handle(&handle_defs[0]), fidl_codec::ObjectType::Event, Some(fidl_codec::Rights::from_bits(49155).unwrap())))]);
+    let value = fidl_codec::decode(ns(), "test.conformance/GoldenHandleBasicRightsStruct", bytes, convert_handle_infos(handle_infos)).unwrap();
     assert_eq!(value, confirm_value);
 }
 
@@ -599,8 +603,8 @@ HandleDef{
     let _handle_koids = handle_defs.iter().map(get_handle_koid).collect::<Vec<_>>();
     let handle_infos = select_handle_infos(&handle_defs, &[
 0,]);
-    let confirm_value = Value::Object(vec![("v".to_owned(), Value::Handle(copy_handle(&handle_defs[0]), fidl::ObjectType::NONE, Some(Rights::from_bits(handle_defs[0].rights).unwrap())))]);
-    let value = fidl_codec::decode(ns(), "test.conformance/GoldenNullableHandleStruct", bytes, handle_infos).unwrap();
+    let confirm_value = Value::Object(vec![("v".to_owned(), Value::Handle(copy_handle(&handle_defs[0]), fidl_codec::ObjectType::None, Some(fidl_codec::Rights::from_bits(handle_defs[0].rights).unwrap())))]);
+    let value = fidl_codec::decode(ns(), "test.conformance/GoldenNullableHandleStruct", bytes, convert_handle_infos(handle_infos)).unwrap();
     assert_eq!(value, confirm_value);
 }
 
@@ -611,7 +615,7 @@ fn test_golden_nullable_handle_struct_null_v2_decode() {
 ];
     let handle_infos = Vec::new();
     let confirm_value = Value::Object(vec![("v".to_owned(), Value::Null)]);
-    let value = fidl_codec::decode(ns(), "test.conformance/GoldenNullableHandleStruct", bytes, handle_infos).unwrap();
+    let value = fidl_codec::decode(ns(), "test.conformance/GoldenNullableHandleStruct", bytes, convert_handle_infos(handle_infos)).unwrap();
     assert_eq!(value, confirm_value);
 }
 
@@ -634,7 +638,7 @@ HandleDef{
     let handle_infos = select_handle_infos(&handle_defs, &[
 0,]);
     let confirm_value = Value::Object(vec![("v".to_owned(), Value::Object(vec![]))]);
-    let value = fidl_codec::decode(ns(), "test.conformance/GoldenTableStruct", bytes, handle_infos).unwrap();
+    let value = fidl_codec::decode(ns(), "test.conformance/GoldenTableStruct", bytes, convert_handle_infos(handle_infos)).unwrap();
     assert_eq!(value, confirm_value);
     let unused_handles = select_raw_handle_infos(&handle_defs, &[
 0,]);
@@ -664,7 +668,7 @@ fn test_golden_string_struct_null_body_v2_decode_failure() {
 0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
 ];
     let handle_infos = Vec::new();
-    match fidl_codec::decode(ns(), "test.conformance/GoldenStringStruct", bytes, handle_infos) {
+    match fidl_codec::decode(ns(), "test.conformance/GoldenStringStruct", bytes, convert_handle_infos(handle_infos)) {
         // TODO: Assert the specific error once the enum variants are more specific
         Err(err) => assert_matches!(err, Error::DecodeError(_)|Error::Utf8Error(_)|Error::RecursionLimitExceeded),
         Ok(_) => panic!("unexpected successful decoding"),

@@ -379,9 +379,12 @@ impl ReplayableIteratorCursor for ServeCursor {
             let interpreter = weak_inner.upgrade().ok_or_else(|| RuntimeError::InterpreterDied)?;
             let (bytes, handles) = buf.split();
 
-            let (header, value) =
-                fidl_codec_fdomain::decode_request(interpreter.lib_namespace(), &bytes, handles)
-                    .map_err(|e| MessageError::DecodeRequestFailed(Arc::new(e)))?;
+            let (header, value) = fidl_codec_fdomain::decode_request(
+                interpreter.lib_namespace(),
+                &bytes,
+                handles.into_iter().map(Into::into).collect(),
+            )
+            .map_err(|e| MessageError::DecodeRequestFailed(Arc::new(e)))?;
 
             let mut value = value.upcast();
 
@@ -443,7 +446,10 @@ impl ReplayableIteratorCursor for ServeCursor {
                                     )
                                 })?;
                                 channel
-                                    .fdomain_write_etc(&bytes, handles)
+                                    .fdomain_write_etc(
+                                        &bytes,
+                                        handles.into_iter().map(Into::into).collect(),
+                                    )
                                     .await
                                     .map_err(IOError::ChannelWrite)?;
                                 Ok(Value::Null)
@@ -824,7 +830,7 @@ mod test {
                 };
                 let (echo, server) = fdomain_client.create_proxy::<fctest::EchoMarker>();
                 let server = Value::ServerEnd(
-                    server.into_channel(),
+                    Into::<fidl_codec_fdomain::NullableHandle>::into(server).into(),
                     "test.fidlcodec.examples/Echo".to_owned(),
                     None,
                 );

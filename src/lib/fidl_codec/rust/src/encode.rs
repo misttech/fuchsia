@@ -2,25 +2,17 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#[cfg(feature = "fdomain")]
-use fdomain_client::{AsHandleRef as _, HandleOp};
-#[cfg(feature = "fdomain")]
-use fidl::encoding::HandleFor as _;
-use fidl::encoding::{AtRestFlags, DynamicFlags, MAGIC_NUMBER_INITIAL};
-#[cfg(not(feature = "fdomain"))]
-use fidl::{AsHandleRef as _, HandleOp};
-
-#[cfg(feature = "fdomain")]
-use HandleOp as HandleDisposition;
-#[cfg(not(feature = "fdomain"))]
-use fidl::HandleDisposition;
-
-use fidl_constants::{ALLOC_ABSENT_U32, ALLOC_ABSENT_U64, ALLOC_PRESENT_U32, ALLOC_PRESENT_U64};
+use fidl_constants::{
+    ALLOC_ABSENT_U32, ALLOC_ABSENT_U64, ALLOC_PRESENT_U32, ALLOC_PRESENT_U64, MAGIC_NUMBER_INITIAL,
+};
+use fidl_data_zx::{DEFAULT_CHANNEL_RIGHTS, ObjType as ObjectType, Rights};
 
 use std::collections::HashMap;
 
 use crate::error::{Error, Result};
+use crate::handle::*;
 use crate::library;
+use crate::transaction::*;
 use crate::util::*;
 use crate::value::Value;
 
@@ -48,7 +40,7 @@ enum HandleType<'s> {
 struct EncodeBuffer<'n> {
     ns: &'n library::Namespace,
     bytes: Vec<u8>,
-    handles: Vec<HandleDisposition<'static>>,
+    handles: Vec<HandleDisposition>,
 }
 
 impl<'n> EncodeBuffer<'n> {
@@ -65,7 +57,7 @@ impl<'n> EncodeBuffer<'n> {
         direction: Direction,
         method_name: &str,
         value: Value,
-    ) -> Result<(Vec<u8>, Vec<HandleDisposition<'static>>)> {
+    ) -> Result<(Vec<u8>, Vec<HandleDisposition>)> {
         let mut buf = EncodeBuffer { ns, bytes: Vec::new(), handles: Vec::new() };
 
         let protocol = match ns.lookup(protocol_name)? {
@@ -200,8 +192,8 @@ impl<'n> EncodeBuffer<'n> {
             }
             FrameworkError => self.encode_raw(&[0, 0, 0, 0]),
             Endpoint { role, protocol, rights, nullable } => self.encode_handle(
-                fidl::ObjectType::CHANNEL,
-                Some(rights.unwrap_or(fidl::Rights::CHANNEL_DEFAULT)),
+                ObjectType::Channel,
+                Some(rights.unwrap_or(DEFAULT_CHANNEL_RIGHTS)),
                 match role {
                     library::EndpointRole::Client => HandleType::ClientEnd(protocol),
                     library::EndpointRole::Server => HandleType::ServerEnd(protocol),
@@ -336,8 +328,8 @@ impl<'n> EncodeBuffer<'n> {
 
     fn encode_handle<'t>(
         &mut self,
-        object_type: fidl::ObjectType,
-        rights: Option<fidl::Rights>,
+        object_type: ObjectType,
+        rights: Option<Rights>,
         expect: HandleType<'_>,
         nullable: bool,
         value: Value,
@@ -348,26 +340,22 @@ impl<'n> EncodeBuffer<'n> {
         let (handle, handle_rights) = match (value, nullable, expect) {
             (Value::Null, true, _) => Ok((None, None)),
             (Value::Handle(h, _, _), true, _) if h.is_invalid() => Ok((None, None)),
-            (Value::ServerEnd(h, _, _), true, _) if h.as_handle_ref().is_invalid() => {
-                Ok((None, None))
-            }
-            (Value::ClientEnd(h, _, _), true, _) if h.as_handle_ref().is_invalid() => {
-                Ok((None, None))
-            }
+            (Value::ServerEnd(h, _, _), true, _) if h.is_invalid() => Ok((None, None)),
+            (Value::ClientEnd(h, _, _), true, _) if h.is_invalid() => Ok((None, None)),
             (Value::Handle(h, _, _), false, _) if h.is_invalid() => {
                 Err(Error::EncodeError("Got invalid handle for non-nullable handle".to_owned()))
             }
-            (Value::ServerEnd(h, _, _), false, _) if h.as_handle_ref().is_invalid() => {
+            (Value::ServerEnd(h, _, _), false, _) if h.is_invalid() => {
                 Err(Error::EncodeError("Got invalid handle for non-nullable handle".to_owned()))
             }
-            (Value::ClientEnd(h, _, _), false, _) if h.as_handle_ref().is_invalid() => {
+            (Value::ClientEnd(h, _, _), false, _) if h.is_invalid() => {
                 Err(Error::EncodeError("Got invalid handle for non-nullable handle".to_owned()))
             }
             (Value::Null, false, _) => {
                 Err(Error::EncodeError("Got null for non-nullable handle".to_owned()))
             }
             (Value::Handle(h, s, r), _, _) => {
-                if s != object_type && s != fidl::ObjectType::NONE {
+                if s != object_type && s != ObjectType::None {
                     Err(Error::EncodeError(format!(
                         "Expected object type {object_type:?} got {s:?}"
                     )))
@@ -381,7 +369,7 @@ impl<'n> EncodeBuffer<'n> {
                     Err(Error::EncodeError(format!(
                         "Expected endpoint for protocol {expect}, got one for {s}"
                     )))
-                } else if object_type != fidl::ObjectType::CHANNEL {
+                } else if object_type != ObjectType::Channel {
                     Err(Error::EncodeError(format!(
                         "Expected object type {object_type:?} got channel for protocol {s}"
                     )))
@@ -395,7 +383,7 @@ impl<'n> EncodeBuffer<'n> {
                     Err(Error::EncodeError(format!(
                         "Expected endpoint for protocol {expect}, got one for {s}"
                     )))
-                } else if object_type != fidl::ObjectType::CHANNEL {
+                } else if object_type != ObjectType::Channel {
                     Err(Error::EncodeError(format!(
                         "Expected object type {object_type:?} got channel for protocol {s}"
                     )))
@@ -405,7 +393,7 @@ impl<'n> EncodeBuffer<'n> {
             }
             (Value::ServerEnd(h, s, r), _, HandleType::Bare)
             | (Value::ClientEnd(h, s, r), _, HandleType::Bare) => {
-                if object_type != fidl::ObjectType::CHANNEL {
+                if object_type != ObjectType::Channel {
                     Err(Error::EncodeError(format!(
                         "Expected object type {object_type:?} got channel for protocol {s}"
                     )))
@@ -420,28 +408,13 @@ impl<'n> EncodeBuffer<'n> {
             (Some(_), Some(rights)) => rights,
             (Some(handle_rights), None) => handle_rights,
             (None, Some(rights)) => rights,
-            (None, None) => fidl::Rights::SAME_RIGHTS,
+            (None, None) => Rights::SAME_RIGHTS,
         };
 
         if let Some(handle) = handle {
-            #[cfg(feature = "fdomain")]
-            let handle_op = HandleOp::Move(handle, encoded_rights);
-            #[cfg(not(feature = "fdomain"))]
-            let handle_op = HandleOp::Move(handle);
             self.bytes.extend(&ALLOC_PRESENT_U32.to_le_bytes());
             Ok(Box::new(move |this, _| {
-                #[cfg(feature = "fdomain")]
-                {
-                    let _ = object_type;
-                    this.handles.push(handle_op);
-                }
-                #[cfg(not(feature = "fdomain"))]
-                this.handles.push(HandleDisposition::new(
-                    handle_op,
-                    object_type,
-                    encoded_rights,
-                    fidl::Status::OK,
-                ));
+                this.handles.push(HandleDisposition::move_op(handle, object_type, encoded_rights));
                 Ok(())
             }))
         } else {
@@ -713,7 +686,7 @@ pub fn encode_request(
     protocol_name: &str,
     method_name: &str,
     value: Value,
-) -> Result<(Vec<u8>, Vec<HandleDisposition<'static>>)> {
+) -> Result<(Vec<u8>, Vec<HandleDisposition>)> {
     EncodeBuffer::encode_transaction(
         ns,
         txid,
@@ -731,7 +704,7 @@ pub fn encode_response(
     protocol_name: &str,
     method_name: &str,
     value: Value,
-) -> Result<(Vec<u8>, Vec<HandleDisposition<'static>>)> {
+) -> Result<(Vec<u8>, Vec<HandleDisposition>)> {
     EncodeBuffer::encode_transaction(
         ns,
         txid,
@@ -748,7 +721,7 @@ pub fn encode(
     type_name: &str,
     nullable: bool,
     value: Value,
-) -> Result<(Vec<u8>, Vec<HandleDisposition<'static>>)> {
+) -> Result<(Vec<u8>, Vec<HandleDisposition>)> {
     let mut buf = EncodeBuffer { ns, bytes: Vec::new(), handles: Vec::new() };
     let cb = buf.encode_identifier(type_name.to_owned(), nullable, value)?;
     buf.align_8();

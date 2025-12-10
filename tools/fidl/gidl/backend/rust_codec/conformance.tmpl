@@ -12,7 +12,7 @@ use {
     assert_matches::assert_matches,
     fidl::{AsHandleRef, NullableHandle, HandleDisposition, HandleInfo, HandleOp, ObjectType, Rights},
     fidl::encoding::{Context, Decode, Decoder, Encoder, WireFormatVersion},
-    fidl_codec::{Value, Error},
+    fidl_codec::{Value, Error, AsPlatform as _, FromPlatform as _},
     zx_status::Status,
     zx_types as zx_types,
     gidl_util::{
@@ -32,6 +32,10 @@ fn ns() -> &'static fidl_codec::library::Namespace {
     })
 }
 
+fn convert_handle_infos(infos: Vec<fidl::HandleInfo>) -> Vec<fidl_codec::HandleInfo> {
+    infos.into_iter().map(Into::into).collect()
+}
+
 {{ range .EncodeSuccessCases }}
 #[test]
 fn test_{{ .Name }}_encode() {
@@ -42,7 +46,7 @@ fn test_{{ .Name }}_encode() {
     assert_eq!(bytes, &{{ .Bytes }});
     {{- if .HandleDispositions }}
     assert_eq!(
-        handle_dispositions.into_iter().map(to_zx_handle_disposition_t).collect::<Vec<_>>(),
+        handle_dispositions.into_iter().map(Into::into).map(to_zx_handle_disposition_t).collect::<Vec<_>>(),
         &{{ .HandleDispositions }}
     );
     {{- else if .Handles }}
@@ -68,7 +72,7 @@ fn test_{{ .Name }}_decode() {
     let handle_infos = Vec::new();
     {{- end }}
     let confirm_value = {{.ConfirmValue}};
-    let value = fidl_codec::decode(ns(), "{{.DeclName}}", bytes, handle_infos).unwrap();
+    let value = fidl_codec::decode(ns(), "{{.DeclName}}", bytes, convert_handle_infos(handle_infos)).unwrap();
     assert_eq!(value, confirm_value);
     {{- if .UnusedHandles }}
     let unused_handles = select_raw_handle_infos(&handle_defs, &{{ .UnusedHandles }});
@@ -110,7 +114,7 @@ fn test_{{ .Name }}_decode_failure() {
     {{- else }}
     let handle_infos = Vec::new();
     {{- end }}
-    match fidl_codec::decode(ns(), "{{.DeclName}}", bytes, handle_infos) {
+    match fidl_codec::decode(ns(), "{{.DeclName}}", bytes, convert_handle_infos(handle_infos)) {
         // TODO: Assert the specific error once the enum variants are more specific
         Err(err) => assert_matches!(err, Error::DecodeError(_)|Error::Utf8Error(_)|Error::RecursionLimitExceeded),
         Ok(_) => panic!("unexpected successful decoding"),

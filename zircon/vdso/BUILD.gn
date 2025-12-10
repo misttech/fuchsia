@@ -165,6 +165,13 @@ group("zx-sys") {
   metadata = barrier_metadata
 }
 
+group("fidl-codec-rust") {
+  # //src/lib/fidl_codec/rust uses the ObjType and Rights definitions from the zither.rust backend.
+  visibility = [ "//src/lib/fidl_codec/rust:*" ]
+  public_deps = [ ":zx_zither.rust" ]
+  metadata = barrier_metadata
+}
+
 # Used to publish reference documentation.
 if (current_toolchain == default_toolchain) {
   action("syscall_docs.zip") {

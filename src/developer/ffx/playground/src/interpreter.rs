@@ -6,7 +6,7 @@ use fancy_regex::Regex;
 use fdomain_client::HandleBased as _;
 use fdomain_client::fidl::{DiscoverableProtocolMarker, Proxy};
 use fdomain_fuchsia_io as fio;
-use fidl_codec_fdomain::{Value as FidlValue, library as lib};
+use fidl_codec_fdomain::{ObjectType, Value as FidlValue, library as lib};
 use futures::channel::mpsc::{UnboundedSender, unbounded as unbounded_channel};
 use futures::channel::oneshot::{Sender as OneshotSender, channel as oneshot_channel};
 use futures::future::BoxFuture;
@@ -400,7 +400,9 @@ impl InterpreterInner {
                 Arc::new(e),
             )
         })?;
-        in_use_handle.write_channel_etc(&bytes, handles).await?;
+        in_use_handle
+            .write_channel_etc(&bytes, handles.into_iter().map(Into::into).collect())
+            .await?;
 
         if tx_id != 0 {
             let (sender, receiver) = oneshot_channel();
@@ -410,14 +412,18 @@ impl InterpreterInner {
             let (bytes, handles) =
                 receiver.await.map_err(|_| RuntimeError::InterpreterDied)??.split();
 
-            let value = fidl_codec_fdomain::decode_response(self.lib_namespace(), &bytes, handles)
-                .map_err(|e| {
-                    MessageError::DecodeReplyFailed(
-                        protocol_name.clone(),
-                        method_name.clone(),
-                        Arc::new(e),
-                    )
-                })?;
+            let value = fidl_codec_fdomain::decode_response(
+                self.lib_namespace(),
+                &bytes,
+                handles.into_iter().map(Into::into).collect(),
+            )
+            .map_err(|e| {
+                MessageError::DecodeReplyFailed(
+                    protocol_name.clone(),
+                    method_name.clone(),
+                    Arc::new(e),
+                )
+            })?;
 
             Ok(value.1.upcast())
         } else {
@@ -449,7 +455,7 @@ impl InterpreterInner {
             ("options".to_owned(), FidlValue::Object(options)),
             (
                 "object".to_owned(),
-                FidlValue::Handle(server.into_handle(), fidl::ObjectType::CHANNEL, None),
+                FidlValue::Handle(server.into_handle(), ObjectType::Channel, None),
             ),
         ]);
 
@@ -464,6 +470,7 @@ impl InterpreterInner {
         .map_err(|e| {
             MessageError::EncodeRequestFailed(library_name, "Open".to_owned(), Arc::new(e))
         })?;
+        let handles: Vec<_> = handles.into_iter().map(Into::into).collect();
         fs_root.write_channel_etc(&bytes, handles).await?;
         Ok(node)
     }

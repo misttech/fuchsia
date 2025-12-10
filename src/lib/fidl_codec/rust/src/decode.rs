@@ -2,8 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use fidl::Rights;
-use fidl::encoding::TransactionHeader;
 use fidl_constants::{ALLOC_PRESENT_U32, ALLOC_PRESENT_U64};
 use nom::bytes::complete::take;
 use nom::combinator::{map, value, verify};
@@ -11,18 +9,16 @@ use nom::multi::count;
 use nom::sequence::{pair, preceded, terminated};
 use nom::{IResult, Parser};
 
+use fidl_data_zx::{DEFAULT_CHANNEL_RIGHTS, ObjType as ObjectType, Rights};
+
 use crate::error::{Error, Result};
+use crate::handle::*;
 use crate::library;
+use crate::transaction::{TransactionHeader, decode_transaction_header};
 use crate::util::*;
 use crate::value::Value;
 
 use std::str;
-
-#[cfg(feature = "fdomain")]
-use fdomain_client::{HandleInfo, NullableHandle};
-
-#[cfg(not(feature = "fdomain"))]
-use fidl::{HandleInfo, NullableHandle};
 
 type DResult<'a, R> = IResult<&'a [u8], R, Error>;
 
@@ -153,7 +149,7 @@ fn value_f64(data: &[u8]) -> DResult<'_, Value> {
 }
 
 fn transaction_header(data: &[u8]) -> DResult<'_, TransactionHeader> {
-    fidl::encoding::decode_transaction_header(data)
+    decode_transaction_header(data)
         .map(|(a, b)| (b, a))
         .map_err(|e| Error::DecodeError(format!("Invalid FIDL transaction header ({e:?})")).into())
 }
@@ -277,7 +273,7 @@ fn decode_type<'t>(
                     return decode_client_end(
                         protocol.clone(),
                         *nullable,
-                        rights.or(Some(Rights::CHANNEL_DEFAULT)),
+                        rights.or(Some(DEFAULT_CHANNEL_RIGHTS)),
                     )
                     .parse(b);
                 }
@@ -285,7 +281,7 @@ fn decode_type<'t>(
                     return decode_server_end(
                         protocol.clone(),
                         *nullable,
-                        rights.or(Some(Rights::CHANNEL_DEFAULT)),
+                        rights.or(Some(DEFAULT_CHANNEL_RIGHTS)),
                     )
                     .parse(b);
                 }
@@ -435,13 +431,13 @@ fn decode_string(
 fn decode_server_end(
     interface: String,
     nullable: bool,
-    rights: Option<fidl::Rights>,
+    rights: Option<Rights>,
 ) -> impl Fn(&[u8]) -> DResult<'_, Defer<'static>> {
     decode_handle_with(
         interface,
         nullable,
         &|x, y, z| Value::ServerEnd(x.into(), y, z),
-        Some(fidl::ObjectType::CHANNEL),
+        Some(ObjectType::Channel),
         rights,
     )
 }
@@ -449,41 +445,31 @@ fn decode_server_end(
 fn decode_client_end(
     interface: String,
     nullable: bool,
-    rights: Option<fidl::Rights>,
+    rights: Option<Rights>,
 ) -> impl Fn(&[u8]) -> DResult<'_, Defer<'static>> {
     decode_handle_with(
         interface,
         nullable,
         &|x, y, z| Value::ClientEnd(x.into(), y, z),
-        Some(fidl::ObjectType::CHANNEL),
+        Some(ObjectType::Channel),
         rights,
     )
 }
 
 fn decode_handle(
-    handle_type: fidl::ObjectType,
+    handle_type: ObjectType,
     nullable: bool,
-    rights: Option<fidl::Rights>,
+    rights: Option<Rights>,
 ) -> impl Fn(&[u8]) -> DResult<'_, Defer<'static>> {
     decode_handle_with(handle_type, nullable, &Value::Handle, None, rights)
-}
-
-#[cfg(not(feature = "fdomain"))]
-fn object_type_from_info(info: &HandleInfo) -> fidl::ObjectType {
-    info.object_type
-}
-
-#[cfg(feature = "fdomain")]
-fn object_type_from_info(info: &HandleInfo) -> fidl::ObjectType {
-    info.handle.object_type()
 }
 
 fn decode_handle_with<T: Clone + 'static>(
     handle_type: T,
     nullable: bool,
-    value_builder: &'static (impl Fn(NullableHandle, T, Option<fidl::Rights>) -> Value + 'static),
-    constrain_type: Option<fidl::ObjectType>,
-    constrain_rights: Option<fidl::Rights>,
+    value_builder: &'static (impl Fn(NullableHandle, T, Option<Rights>) -> Value + 'static),
+    constrain_type: Option<ObjectType>,
+    constrain_rights: Option<Rights>,
 ) -> impl Fn(&[u8]) -> DResult<'_, Defer<'static>> {
     move |bytes: &[u8]| {
         let handle_type = handle_type.clone();
@@ -503,19 +489,13 @@ fn decode_handle_with<T: Clone + 'static>(
                 Defer::Action(Box::new(
                     move |bytes: &[u8], handles: &mut Vec<HandleInfo>, _: RecursionCounter| {
                         if !handles.is_empty() {
-                            if constrain_type
-                                .map(|x| x == object_type_from_info(&handles[0]))
-                                .unwrap_or(true)
+                            if constrain_type.map(|x| x == handles[0].object_type()).unwrap_or(true)
                             {
-                                let handle = handles.remove(0);
+                                let handle_info = handles.remove(0);
 
-                                let decoded_rights = match (handle.rights, constrain_rights) {
-                                    (fidl::Rights::SAME_RIGHTS, Some(_)) => {
-                                        fidl::Rights::SAME_RIGHTS
-                                    }
-                                    (handle_rights, Some(fidl::Rights::SAME_RIGHTS)) => {
-                                        handle_rights
-                                    }
+                                let decoded_rights = match (handle_info.rights(), constrain_rights) {
+                                    (Rights::SAME_RIGHTS, Some(_)) => Rights::SAME_RIGHTS,
+                                    (handle_rights, Some(Rights::SAME_RIGHTS)) => handle_rights,
                                     (handle_rights, None) => handle_rights,
                                     (handle_rights, Some(constrain_rights)) => {
                                         if handle_rights.contains(constrain_rights) {
@@ -534,7 +514,7 @@ fn decode_handle_with<T: Clone + 'static>(
                                 Ok((
                                     bytes,
                                     value_builder(
-                                        handle.handle.into(),
+                                        handle_info.into_handle(),
                                         handle_type,
                                         Some(decoded_rights),
                                     ),

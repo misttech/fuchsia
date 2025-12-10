@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use fidl_data_zx::{ObjType as ObjectType, Rights};
 use serde::de::{Deserialize as DeserializeIface, Deserializer};
 use serde_derive::Deserialize;
 use std::collections::HashMap;
@@ -33,11 +34,11 @@ macro_rules! named {
     };
 }
 
-/// Deserializer helper for fidl::ObjectType
+/// Deserializer helper for ObjectType
 fn object_type<'de, D: Deserializer<'de>>(
     deserializer: D,
-) -> std::result::Result<Option<fidl::ObjectType>, D::Error> {
-    Ok(Option::<u32>::deserialize(deserializer)?.map(|x| fidl::ObjectType::from_raw(x)))
+) -> std::result::Result<Option<ObjectType>, D::Error> {
+    Ok(Option::<u32>::deserialize(deserializer)?.map(|x| ObjectType::from_raw(x)).flatten())
 }
 
 /// Deserializer helper for composed protocols
@@ -51,12 +52,12 @@ fn composed_protocols<'de, D: Deserializer<'de>>(
     Ok(Vec::<ComposedProtocol>::deserialize(deserializer)?.into_iter().map(|x| x.name).collect())
 }
 
-/// Deserializer helper for fidl::ObjectType
+/// Deserializer helper for ObjectType
 fn rights<'de, D: Deserializer<'de>>(
     deserializer: D,
-) -> std::result::Result<Option<fidl::Rights>, D::Error> {
+) -> std::result::Result<Option<Rights>, D::Error> {
     if let Some(rights) = Option::<u32>::deserialize(deserializer)? {
-        Ok(Some(fidl::Rights::from_bits_truncate(rights)))
+        Ok(Some(Rights::from_bits_truncate(rights)))
     } else {
         Ok(None)
     }
@@ -356,8 +357,8 @@ pub enum Type {
     Array(Box<Type>, usize),
     Vector { ty: Box<Type>, nullable: bool, element_count: Option<usize> },
     String { nullable: bool, byte_count: Option<usize> },
-    Handle { object_type: fidl::ObjectType, rights: Option<fidl::Rights>, nullable: bool },
-    Endpoint { role: EndpointRole, protocol: String, rights: Option<fidl::Rights>, nullable: bool },
+    Handle { object_type: ObjectType, rights: Option<Rights>, nullable: bool },
+    Endpoint { role: EndpointRole, protocol: String, rights: Option<Rights>, nullable: bool },
 }
 
 impl Type {
@@ -404,10 +405,10 @@ pub struct TypeInfo {
     #[serde(default)]
     #[serde(rename = "obj_type")]
     #[serde(deserialize_with = "object_type")]
-    pub object_type: Option<fidl::ObjectType>,
+    pub object_type: Option<ObjectType>,
     #[serde(default)]
     #[serde(deserialize_with = "rights")]
-    pub rights: Option<fidl::Rights>,
+    pub rights: Option<Rights>,
     pub identifier: Option<String>,
     pub protocol: Option<String>,
     pub role: Option<EndpointRole>,

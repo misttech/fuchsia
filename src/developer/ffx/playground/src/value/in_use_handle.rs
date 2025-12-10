@@ -4,7 +4,7 @@
 
 use super::ValueError;
 use fdomain_client::AsHandleRef;
-use fidl_codec_fdomain::Value as FidlValue;
+use fidl_codec_fdomain::{ObjectType, Value as FidlValue};
 use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll};
 
@@ -296,7 +296,7 @@ impl InUseHandle {
                 else {
                     unreachable!();
                 };
-                Ok(FidlValue::Handle(h.into(), fidl::ObjectType::SOCKET, None))
+                Ok(FidlValue::Handle(h.into(), ObjectType::Socket, None))
             }
             HandleObject::Endpoint(Endpoint::Socket(_)) => {
                 let HandleObject::Endpoint(Endpoint::Socket(h)) =
@@ -304,7 +304,7 @@ impl InUseHandle {
                 else {
                     unreachable!();
                 };
-                Ok(FidlValue::Handle(h.into(), fidl::ObjectType::SOCKET, None))
+                Ok(FidlValue::Handle(h.into(), ObjectType::Socket, None))
             }
             HandleObject::Undetermined(e) => {
                 let mut e = e.lock().unwrap();
@@ -312,7 +312,7 @@ impl InUseHandle {
                 let (a, b) = c.create_stream_socket();
                 *e = EndpointOrFDomain::Endpoint(Endpoint::Socket(a));
                 drop(e);
-                Ok(FidlValue::Handle(b.into(), fidl::ObjectType::SOCKET, None))
+                Ok(FidlValue::Handle(b.into(), ObjectType::Socket, None))
             }
             HandleObject::Defunct => Err(ValueError::HandleClosed.into()),
             _ => Err(ValueError::NotSocket.into()),
@@ -465,7 +465,7 @@ mod test {
         let FidlValue::Handle(a, a_ty, _) = a.take_socket().unwrap() else {
             panic!();
         };
-        assert_eq!(fidl::ObjectType::SOCKET, a_ty);
+        assert_eq!(ObjectType::Socket, a_ty);
         const TEST_STR: &[u8] = b"Why were we programmed to get bored anyway?";
         let a = fdomain_client::Socket::from(a);
         fasync::Task::spawn(async move {
@@ -477,7 +477,7 @@ mod test {
             panic!();
         };
         let mut b = fdomain_client::Socket::from(b);
-        assert_eq!(fidl::ObjectType::SOCKET, b_ty);
+        assert_eq!(ObjectType::Socket, b_ty);
         let mut buf = Vec::with_capacity(TEST_STR.len());
         let got = b.read_to_end(&mut buf).await.unwrap();
         assert_eq!(TEST_STR.len(), got);

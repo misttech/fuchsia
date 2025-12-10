@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use fidl_codec_fdomain::{Value as FidlValue, library as lib};
+use fidl_codec_fdomain::{AsPlatform as _, ObjectType, Value as FidlValue, library as lib};
 use futures::future::BoxFuture;
 use num::BigInt;
 use num::rational::BigRational;
@@ -173,33 +173,33 @@ impl<'a> std::fmt::Display for LookupResultOrType<'a> {
                 write!(f, "String{}", nullable_mark(nullable))
             }
             LookupResultOrType::Type(lib::Type::Handle { object_type, .. }) => match object_type {
-                &fidl::ObjectType::BTI => write!(f, "bti"),
-                &fidl::ObjectType::CHANNEL => write!(f, "channel"),
-                &fidl::ObjectType::CLOCK => write!(f, "clock"),
-                &fidl::ObjectType::DEBUGLOG => write!(f, "debuglog"),
-                &fidl::ObjectType::EVENT => write!(f, "event"),
-                &fidl::ObjectType::EVENTPAIR => write!(f, "eventpair"),
-                &fidl::ObjectType::EXCEPTION => write!(f, "exception"),
-                &fidl::ObjectType::INTERRUPT => write!(f, "interrupt"),
-                &fidl::ObjectType::IOMMU => write!(f, "iommu"),
-                &fidl::ObjectType::JOB => write!(f, "job"),
-                &fidl::ObjectType::MSI => write!(f, "msi"),
-                &fidl::ObjectType::NONE => write!(f, "handle"),
-                &fidl::ObjectType::PAGER => write!(f, "pager"),
-                &fidl::ObjectType::PCI_DEVICE => write!(f, "pci_device"),
-                &fidl::ObjectType::PMT => write!(f, "pmt"),
-                &fidl::ObjectType::PORT => write!(f, "port"),
-                &fidl::ObjectType::PROCESS => write!(f, "process"),
-                &fidl::ObjectType::PROFILE => write!(f, "profile"),
-                &fidl::ObjectType::RESOURCE => write!(f, "resource"),
-                &fidl::ObjectType::SOCKET => write!(f, "socket"),
-                &fidl::ObjectType::STREAM => write!(f, "stream"),
-                &fidl::ObjectType::SUSPEND_TOKEN => write!(f, "suspend_token"),
-                &fidl::ObjectType::THREAD => write!(f, "thread"),
-                &fidl::ObjectType::TIMER => write!(f, "timer"),
-                &fidl::ObjectType::VCPU => write!(f, "vcpu"),
-                &fidl::ObjectType::VMAR => write!(f, "vmar"),
-                &fidl::ObjectType::VMO => write!(f, "vmo"),
+                &ObjectType::Bti => write!(f, "bti"),
+                &ObjectType::Channel => write!(f, "channel"),
+                &ObjectType::Clock => write!(f, "clock"),
+                &ObjectType::Log => write!(f, "debuglog"),
+                &ObjectType::Event => write!(f, "event"),
+                &ObjectType::Eventpair => write!(f, "eventpair"),
+                &ObjectType::Exception => write!(f, "exception"),
+                &ObjectType::Interrupt => write!(f, "interrupt"),
+                &ObjectType::Iommu => write!(f, "iommu"),
+                &ObjectType::Job => write!(f, "job"),
+                &ObjectType::Msi => write!(f, "msi"),
+                &ObjectType::None => write!(f, "handle"),
+                &ObjectType::Pager => write!(f, "pager"),
+                &ObjectType::PciDevice => write!(f, "pci_device"),
+                &ObjectType::Pmt => write!(f, "pmt"),
+                &ObjectType::Port => write!(f, "port"),
+                &ObjectType::Process => write!(f, "process"),
+                &ObjectType::Profile => write!(f, "profile"),
+                &ObjectType::Resource => write!(f, "resource"),
+                &ObjectType::Socket => write!(f, "socket"),
+                &ObjectType::Stream => write!(f, "stream"),
+                &ObjectType::SuspendToken => write!(f, "suspend_token"),
+                &ObjectType::Thread => write!(f, "thread"),
+                &ObjectType::Timer => write!(f, "timer"),
+                &ObjectType::Vcpu => write!(f, "vcpu"),
+                &ObjectType::Vmar => write!(f, "vmar"),
+                &ObjectType::Vmo => write!(f, "vmo"),
                 _ => write!(f, "unknown_type_handle"),
             },
             LookupResultOrType::Type(lib::Type::FrameworkError) => {
@@ -320,7 +320,8 @@ impl ValueExt for Value {
                 let Value::Handle(a, b, _) = std::mem::replace(self, Value::Null) else {
                     unreachable!();
                 };
-                let mut playground_value = PlaygroundValue::InUseHandle(InUseHandle::handle(a, b));
+                let mut playground_value =
+                    PlaygroundValue::InUseHandle(InUseHandle::handle(a, b.as_platform()));
                 *self = Value::OutOfLine(playground_value.duplicate());
                 Value::OutOfLine(playground_value)
             }
@@ -590,7 +591,7 @@ impl ValueExt for Value {
         match self {
             Value::ServerEnd(h, p, _) => Some(InUseHandle::server_end(h, p)),
             Value::ClientEnd(h, p, _) => Some(InUseHandle::client_end(h, p)),
-            Value::Handle(h, t, _) => Some(InUseHandle::handle(h, t)),
+            Value::Handle(h, t, _) => Some(InUseHandle::handle(h, t.as_platform())),
             Value::OutOfLine(PlaygroundValue::InUseHandle(s)) => Some(s),
             _ => None,
         }
@@ -723,7 +724,7 @@ impl PlaygroundValue {
                 .map_err(|_| ValueError::ClientConversionFailed(protocol.clone()).into()),
             (
                 LookupResultOrType::Type(lib::Type::Handle {
-                    object_type: fidl::ObjectType::SOCKET,
+                    object_type: fidl_codec_fdomain::ObjectType::Socket,
                     rights: _,
                     nullable: _,
                 }),
@@ -927,6 +928,7 @@ impl std::fmt::Display for PlaygroundValue {
 mod test {
     use super::*;
     use fdomain_client::HandleBased;
+    use fidl_codec_fdomain::Rights;
     use futures::{AsyncReadExt, FutureExt};
 
     #[test]
@@ -1335,7 +1337,7 @@ mod test {
             &lib::Type::Endpoint {
                 role: lib::EndpointRole::Client,
                 protocol: "test.fidlcodec.examples/FidlCodecTestProtocol".to_owned(),
-                rights: Some(fidl::Rights::SAME_RIGHTS),
+                rights: Some(Rights::SAME_RIGHTS),
                 nullable: false,
             },
         ) else {
@@ -1348,7 +1350,7 @@ mod test {
             &lib::Type::Endpoint {
                 role: lib::EndpointRole::Server,
                 protocol: "test.fidlcodec.examples/FidlCodecTestProtocol".to_owned(),
-                rights: Some(fidl::Rights::SAME_RIGHTS),
+                rights: Some(Rights::SAME_RIGHTS),
                 nullable: false,
             },
         ) else {
@@ -1367,6 +1369,11 @@ mod test {
 
     #[fuchsia::test]
     async fn promote_to_socket() {
+        use fidl_codec_fdomain::zx;
+
+        let socket_default_rights =
+            zx::RIGHTS_BASIC | zx::RIGHTS_IO | Rights::SIGNAL | Rights::SIGNAL_PEER;
+
         let ns = lib::Namespace::new();
         let client = fdomain_local::local_client(|| Err(zx_status::Status::NOT_SUPPORTED));
         let (a, b) = InUseHandle::new_endpoints(Arc::clone(&client));
@@ -1376,13 +1383,13 @@ mod test {
             .to_fidl_value(
                 &ns,
                 &lib::Type::Handle {
-                    object_type: fidl::ObjectType::SOCKET,
-                    rights: Some(fidl::Rights::SOCKET_DEFAULT),
+                    object_type: ObjectType::Socket,
+                    rights: Some(socket_default_rights),
                     nullable: false,
                 },
             )
             .unwrap();
-        let FidlValue::Handle(a, fidl::ObjectType::SOCKET, None) = a else { panic!() };
+        let FidlValue::Handle(a, ObjectType::Socket, None) = a else { panic!() };
         let mut a = fdomain_client::Socket::from(a);
         let mut b = b.unwrap_socket();
         static CALL: &[u8] = b"What if we shared some extremely basic opinions?";
@@ -1411,7 +1418,7 @@ mod test {
         let client = fdomain_local::local_client(|| Err(zx_status::Status::NOT_SUPPORTED));
         let (socket, _b) = client.create_stream_socket();
         let socket = socket.into_handle();
-        let mut socket = Value::Handle(socket, fidl::ObjectType::SOCKET, None);
+        let mut socket = Value::Handle(socket, ObjectType::Socket, None);
         let socket_dup = socket.duplicate();
         let Value::OutOfLine(PlaygroundValue::InUseHandle(socket)) = socket else { panic!() };
         let Value::OutOfLine(PlaygroundValue::InUseHandle(socket_dup)) = socket_dup else {

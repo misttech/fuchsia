@@ -225,28 +225,28 @@ func visit(value ir.Value, decl mixer.Declaration) string {
 		case *mixer.ServerEndDecl:
 			return fmt.Sprintf("Value::ServerEnd(%s, \"%s\".to_owned(), %s)", expr, decl.ProtocolName(), rights)
 		case *mixer.HandleDecl:
-			ty := "NONE"
+			ty := "None"
 
 			if decl.Subtype() != "handle" {
-				ty = strings.ToUpper(string(decl.Subtype()))
+				ty = fidlgen.ToUpperCamelCase(string(decl.Subtype()))
 			}
-			return fmt.Sprintf("Value::Handle(%s, fidl::ObjectType::%s, %s)", expr, ty, rights)
+			return fmt.Sprintf("Value::Handle(%s, fidl_codec::ObjectType::%s, %s)", expr, ty, rights)
 		}
 	case ir.RestrictedHandle:
 		expr := buildHandleValue(value.Handle)
-		rights := fmt.Sprintf("Some(Rights::from_bits(%d).unwrap())", value.Rights)
+		rights := fmt.Sprintf("Some(fidl_codec::Rights::from_bits(%d).unwrap())", value.Rights)
 		switch decl := decl.(type) {
 		case *mixer.ClientEndDecl:
 			return fmt.Sprintf("Value::ClientEnd(%s, \"%s\".to_owned(), %s)", expr, decl.ProtocolName(), rights)
 		case *mixer.ServerEndDecl:
 			return fmt.Sprintf("Value::ServerEnd(%s, \"%s\".to_owned(), %s)", expr, decl.ProtocolName(), rights)
 		case *mixer.HandleDecl:
-			ty := "NONE"
+			ty := "None"
 
 			if decl.Subtype() != "handle" {
-				ty = strings.ToUpper(string(decl.Subtype()))
+				ty = fidlgen.ToUpperCamelCase(string(decl.Subtype()))
 			}
-			return fmt.Sprintf("Value::Handle(%s, fidl::ObjectType::%s, %s)", expr, ty, rights)
+			return fmt.Sprintf("Value::Handle(%s, fidl_codec::ObjectType::%s, %s)", expr, ty, rights)
 		}
 	case ir.Record:
 		switch decl := decl.(type) {
@@ -305,7 +305,7 @@ func visit(value ir.Value, decl mixer.Declaration) string {
 	case nil:
 		if !decl.IsNullable() {
 			if _, ok := decl.(*mixer.HandleDecl); ok {
-				return "Value::Handle(NullableHandle::invalid(), fidl::ObjectType::NONE, None)"
+				return "Value::Handle(fidl_codec::NullableHandle::invalid(), fidl_codec::ObjectType::None, None)"
 			}
 			panic(fmt.Sprintf("got nil for non-nullable type: %T", decl))
 		}
@@ -454,13 +454,13 @@ func buildHandleValue(handle ir.Handle) string {
 }
 
 func buildHandleRights(handle ir.Handle) string {
-	return fmt.Sprintf("Some(Rights::from_bits(handle_defs[%d].rights).unwrap())", handle)
+	return fmt.Sprintf("Some(fidl_codec::Rights::from_bits(handle_defs[%d].rights).unwrap())", handle)
 }
 
 func handleTypeName(subtype fidlgen.HandleSubtype) string {
 	switch subtype {
 	case fidlgen.HandleSubtypeNone:
-		return "Handle"
+		return "NullableHandle"
 	case fidlgen.HandleSubtypeChannel:
 		return "Channel"
 	case fidlgen.HandleSubtypeEvent:

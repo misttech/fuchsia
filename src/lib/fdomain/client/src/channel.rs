@@ -81,7 +81,7 @@ pub struct HandleInfo {
 
 /// Sum type of all the handle types which can be read from a channel. Allows
 /// the user to learn the type of a handle after it has been read.
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum AnyHandle {
     Channel(Channel),
     Socket(Socket),

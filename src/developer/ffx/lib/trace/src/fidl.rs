@@ -4,8 +4,7 @@
 
 use anyhow::{Result, anyhow, bail};
 use ffx_config::EnvironmentContext;
-use fidl::AsHandleRef;
-use fidl_codec::library::LookupResult;
+use fidl_codec_pure::library::LookupResult;
 use itertools::Itertools;
 use std::cell::OnceCell;
 use std::collections::BTreeMap;
@@ -17,7 +16,7 @@ use zx_types::{zx_info_handle_basic_t, zx_obj_type_t, zx_rights_t};
 /// and decoding FIDL messages from traces.
 #[derive(Default)]
 pub struct FidlLibraries {
-    ns: fidl_codec::library::Namespace,
+    ns: fidl_codec_pure::library::Namespace,
     obj_types: OnceCell<BTreeMap<zx_obj_type_t, String>>,
     rights: OnceCell<BTreeMap<zx_rights_t, String>>,
 }
@@ -25,7 +24,7 @@ pub struct FidlLibraries {
 impl FidlLibraries {
     pub fn from_context(env_ctx: &EnvironmentContext) -> Result<Self> {
         let mut map = Self {
-            ns: fidl_codec::library::Namespace::new(),
+            ns: fidl_codec_pure::library::Namespace::new(),
             obj_types: OnceCell::new(),
             rights: OnceCell::new(),
         };
@@ -98,7 +97,7 @@ impl FidlLibraries {
         self.ns.lookup_method_ordinal(ordinal).is_ok()
     }
 
-    pub fn ns(&self) -> &fidl_codec::library::Namespace {
+    pub fn ns(&self) -> &fidl_codec_pure::library::Namespace {
         &self.ns
     }
 
@@ -135,12 +134,12 @@ fn trim_identifier<'s>(identifier: &'s str) -> &'s str {
 /// Format a handle for display to the user.
 /// The actual handle value is just an index into the handle table.
 fn fmt_handle(
-    handle: impl AsHandleRef,
+    handle: fidl_codec_pure::NullableHandle,
     message: &FidlMessage<'_, '_>,
     f: &mut impl std::fmt::Write,
 ) -> std::fmt::Result {
     // Look up handle info from zx_handle_t index we passed into fidl_codec.
-    let info = message.object_info[handle.raw_handle() as usize];
+    let info = message.object_info[handle.as_raw() as usize];
 
     // Show handle type.
     if let Some(name) = message.obj_types.get(&info.type_) {
@@ -181,13 +180,13 @@ fn fmt_handle(
     write!(f, ")")
 }
 
-/// Format a fidl_codec::Value for display to the user.
+/// Format a fidl_codec_pure::Value for display to the user.
 fn fmt_value(
-    value: fidl_codec::Value,
+    value: fidl_codec_pure::Value,
     message: &FidlMessage<'_, '_>,
     f: &mut impl std::fmt::Write,
 ) -> std::fmt::Result {
-    use fidl_codec::Value::*;
+    use fidl_codec_pure::Value::*;
     match value {
         Null => write!(f, "null"),
         Bool(value) => write!(f, "{value}"),
@@ -269,12 +268,12 @@ fn fmt_value(
         }
         ServerEnd(handle, id, _) => {
             write!(f, "server_end<{id}>(")?;
-            fmt_handle(handle, message, f)?;
+            fmt_handle(handle.into(), message, f)?;
             write!(f, ")")
         }
         ClientEnd(handle, id, _) => {
             write!(f, "client_end<{id}>(")?;
-            fmt_handle(handle, message, f)?;
+            fmt_handle(handle.into(), message, f)?;
             write!(f, ")")
         }
         Handle(handle, object_type, _) => {
@@ -286,8 +285,8 @@ fn fmt_value(
     }
 }
 
-/// Format a fidl_codec::Value for display to the user.
-fn value_to_string(value: fidl_codec::Value, message: &FidlMessage<'_, '_>) -> Result<String> {
+/// Format a fidl_codec_pure::Value for display to the user.
+fn value_to_string(value: fidl_codec_pure::Value, message: &FidlMessage<'_, '_>) -> Result<String> {
     let mut string = String::new();
     fmt_value(value, message, &mut string)?;
     Ok(string)
@@ -301,14 +300,14 @@ struct FidlMessage<'a, 'b> {
     object_info: Vec<zx_info_handle_basic_t>,
     obj_types: &'a BTreeMap<zx_obj_type_t, String>,
     rights: &'a BTreeMap<zx_rights_t, String>,
-    ns: &'a fidl_codec::library::Namespace,
+    ns: &'a fidl_codec_pure::library::Namespace,
 }
 impl<'a, 'b> FidlMessage<'a, 'b> {
     fn new(
         ordinal: u64,
         bytes: &'b [u8],
         object_info_bytes: &[u8],
-        ns: &'a fidl_codec::library::Namespace,
+        ns: &'a fidl_codec_pure::library::Namespace,
         obj_types: &'a BTreeMap<zx_obj_type_t, String>,
         rights: &'a BTreeMap<zx_rights_t, String>,
     ) -> Result<Self> {
@@ -325,15 +324,16 @@ impl<'a, 'b> FidlMessage<'a, 'b> {
 
     /// Return a Vec of HandleInfo, one for each handle in |object_info|, but
     /// with the handle id of each handle being the index into |object_info|.
-    fn make_handle_info(&self) -> Vec<fidl::HandleInfo> {
+    fn make_handle_info(&self) -> Vec<fidl_codec_pure::HandleInfo> {
         self.object_info
             .iter()
             .enumerate()
             .map(|(i, info)| {
-                fidl::HandleInfo::new(
-                    unsafe { fidl::NullableHandle::from_raw(i as u32) },
-                    fidl::ObjectType::from_raw(info.type_),
-                    fidl::Rights::from_bits_truncate(info.rights),
+                fidl_codec_pure::HandleInfo::new(
+                    fidl_codec_pure::NullableHandle::from_raw(i as u32),
+                    fidl_codec_pure::ObjectType::from_raw(info.type_)
+                        .unwrap_or(fidl_codec_pure::ObjectType::None),
+                    fidl_codec_pure::Rights::from_bits_truncate(info.rights),
                 )
             })
             .collect()
@@ -348,7 +348,7 @@ impl<'a, 'b> FidlMessage<'a, 'b> {
         value_to_string(value, self)
     }
 
-    fn decode_to_value<'m>(&'m self) -> Result<fidl_codec::Value> {
+    fn decode_to_value<'m>(&'m self) -> Result<fidl_codec_pure::Value> {
         let method = if let Ok((_, method)) = self.ns.lookup_method_ordinal(self.ordinal) {
             method
         } else {
@@ -385,15 +385,15 @@ impl<'a, 'b> FidlMessage<'a, 'b> {
     }
 
     /// Try to decode this message, assuming it's a request.
-    fn decode_as_request(&self) -> Result<fidl_codec::Value> {
-        fidl_codec::decode_request(&self.ns, self.bytes, self.make_handle_info())
+    fn decode_as_request(&self) -> Result<fidl_codec_pure::Value> {
+        fidl_codec_pure::decode_request(&self.ns, self.bytes, self.make_handle_info())
             .map(|(_, body)| body)
             .map_err(|e| anyhow!(e))
     }
 
     /// Try to decode this message, assuming it's a response.
-    fn decode_as_response(&self) -> Result<fidl_codec::Value> {
-        fidl_codec::decode_response(&self.ns, self.bytes, self.make_handle_info())
+    fn decode_as_response(&self) -> Result<fidl_codec_pure::Value> {
+        fidl_codec_pure::decode_response(&self.ns, self.bytes, self.make_handle_info())
             .map(|(_, body)| body)
             .map_err(|e| anyhow!(e))
     }
@@ -404,8 +404,11 @@ mod tests {
     use super::*;
     use zx_types::*;
 
-    /// Format a fidl::NullableHandle (and similar) for display to the user.
-    fn handle_to_string(handle: impl AsHandleRef, message: &FidlMessage<'_, '_>) -> Result<String> {
+    /// Format a Handle (and similar) for display to the user.
+    fn handle_to_string(
+        handle: fidl_codec_pure::NullableHandle,
+        message: &FidlMessage<'_, '_>,
+    ) -> Result<String> {
         let mut string = String::new();
         fmt_handle(handle, message, &mut string)?;
         Ok(string)
@@ -416,7 +419,7 @@ mod tests {
         ordinal: u64,
         bytes: Vec<u8>,
         object_info_bytes: Vec<u8>,
-        ns: fidl_codec::library::Namespace,
+        ns: fidl_codec_pure::library::Namespace,
         obj_types: BTreeMap<zx_obj_type_t, String>,
         rights: BTreeMap<zx_rights_t, String>,
     }
@@ -453,18 +456,16 @@ mod tests {
             rights: zx_rights_t,
             type_: zx_obj_type_t,
             related_koid: zx_koid_t,
-        ) -> fidl::NullableHandle {
+        ) -> fidl_codec_pure::NullableHandle {
             let mut info = zx_info_handle_basic_t::default();
             info.koid = koid;
             info.rights = rights;
             info.type_ = type_;
             info.related_koid = related_koid;
             const INFO_SIZE: usize = std::mem::size_of::<zx_info_handle_basic_t>();
-            let new_handle = unsafe {
-                fidl::NullableHandle::from_raw(
-                    (self.object_info_bytes.len() / INFO_SIZE) as zx_handle_t,
-                )
-            };
+            let new_handle = fidl_codec_pure::NullableHandle::from_raw(
+                (self.object_info_bytes.len() / INFO_SIZE) as zx_handle_t,
+            );
             let mut bytes = [0u8; INFO_SIZE];
             unsafe {
                 std::ptr::copy_nonoverlapping(
@@ -492,8 +493,8 @@ mod tests {
         let one_handle = for_test.message();
         let one_handle_info = one_handle.make_handle_info();
         assert_eq!(one_handle_info.len(), 1);
-        assert_eq!(one_handle_info[0].object_type.into_raw(), 6);
-        assert_eq!(one_handle_info[0].rights, fidl::Rights::from_bits_truncate(5));
+        assert_eq!(one_handle_info[0].object_type, fidl_codec_pure::ObjectType::Port);
+        assert_eq!(one_handle_info[0].rights, fidl_codec_pure::Rights::from_bits_truncate(5));
         assert_eq!(
             "Port(1234, rights=DUPLICATE|READ, related_koid=7890)",
             handle_to_string(h, &one_handle).unwrap()
@@ -506,7 +507,7 @@ mod tests {
         let message = for_test.message();
         let to_string = |value| value_to_string(value, &message).unwrap();
 
-        use fidl_codec::Value::*;
+        use fidl_codec_pure::Value::*;
         assert_eq!("null", to_string(Null));
         assert_eq!("true", to_string(Bool(true)));
         assert_eq!("false", to_string(Bool(false)));
@@ -529,7 +530,7 @@ mod tests {
         let message = for_test.message();
         let to_string = |value| value_to_string(value, &message).unwrap();
 
-        use fidl_codec::Value::*;
+        use fidl_codec_pure::Value::*;
 
         // Lists (ie: FIDL arrays and vectors)
         assert_eq!(
