@@ -82,6 +82,6 @@ rust_library(
         "//third_party/rust_crates/vendor/futures-0.3.31:futures",
         "//third_party/rust_crates/vendor/lazy_static-1.5.0:lazy_static",
         "//third_party/rust_crates/vendor/log-0.4.27:log",
-        "//third_party/rust_crates/vendor/parking_lot-0.12.4:parking_lot",
+        "//third_party/rust_crates/vendor/parking_lot-0.12.5:parking_lot",
     ],
 )

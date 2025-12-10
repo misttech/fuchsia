@@ -1663,14 +1663,14 @@ alias(
 )
 
 alias(
-    name = "parking_lot-0.12.4",
-    actual = "//third_party/rust_crates/vendor/parking_lot-0.12.4:parking_lot",
+    name = "parking_lot-0.12.5",
+    actual = "//third_party/rust_crates/vendor/parking_lot-0.12.5:parking_lot",
     tags = ["manual"],
 )
 
 alias(
     name = "parking_lot",
-    actual = "//third_party/rust_crates/vendor/parking_lot-0.12.4:parking_lot",
+    actual = "//third_party/rust_crates/vendor/parking_lot-0.12.5:parking_lot",
     tags = ["manual"],
 )
 
