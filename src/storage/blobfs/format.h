@@ -388,6 +388,10 @@ struct __PACKED alignas(8) Inode {
   ExtentContainer* AsExtentContainer() { return reinterpret_cast<ExtentContainer*>(this); }
 
   bool IsCompressed() const { return header.flags & kBlobFlagMaskAnyCompression; }
+
+  bool IsLegacyPaddedFormat() const {
+    return header.flags & kBlobFlagDeprecatedPaddedMerkleTreeFormat;
+  }
 };
 
 // The largest number of extents which can compose a blob.

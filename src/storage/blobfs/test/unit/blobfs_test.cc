@@ -4,8 +4,12 @@
 
 #include "src/storage/blobfs/blobfs.h"
 
+#include <fidl/fuchsia.fxfs/cpp/markers.h>
 #include <fidl/fuchsia.hardware.block/cpp/wire.h>
+#include <fidl/fuchsia.io/cpp/markers.h>
 #include <fuchsia/hardware/block/driver/c/banjo.h>
+#include <lib/fidl/cpp/wire/channel.h>
+#include <lib/fidl/cpp/wire/connect_service.h>
 #include <lib/sync/completion.h>
 #include <lib/zx/process.h>
 #include <lib/zx/result.h>
@@ -30,7 +34,10 @@
 #include <storage/operation/operation.h>
 
 #include "src/devices/block/drivers/core/block-fifo.h"
+#include "src/lib/testing/predicates/status.h"
 #include "src/storage/blobfs/blob.h"
+#include "src/storage/blobfs/blob_creator.h"
+#include "src/storage/blobfs/blob_layout.h"
 #include "src/storage/blobfs/blobfs_inspect_tree.h"
 #include "src/storage/blobfs/common.h"
 #include "src/storage/blobfs/compression/external_decompressor.h"
@@ -43,6 +50,7 @@
 #include "src/storage/blobfs/transaction.h"
 #include "src/storage/lib/block_client/cpp/fake_block_device.h"
 #include "src/storage/lib/block_client/cpp/reader_writer.h"
+#include "src/storage/lib/vfs/cpp/pseudo_dir.h"
 #include "src/storage/lib/vfs/cpp/vfs_types.h"
 #include "src/storage/lib/vfs/cpp/vnode.h"
 
@@ -233,6 +241,44 @@ TEST_F(BlobfsTest, TrimsData) {
   EXPECT_EQ(sync_completion_wait(&completion, zx::duration::infinite().get()), ZX_OK);
 
   ASSERT_TRUE(device_->saw_trim());
+}
+
+class BlobfsOverwriteStatusTest : public BlobfsTestSetupWithThread, public testing::Test {};
+
+TEST_F(BlobfsOverwriteStatusTest, ChangeOverwriteConfig) {
+  ASSERT_OK(CreateFormatMount(1024, kBlobfsBlockSize));
+
+  auto svc_dir = fbl::MakeRefCounted<fs::PseudoDir>();
+  svc_dir->AddEntry(fidl::DiscoverableProtocolName<fuchsia_fxfs::BlobCreator>,
+                    fbl::MakeRefCounted<BlobCreator>(*blobfs()));
+  auto svc_endpoints = fidl::CreateEndpoints<fuchsia_io::Directory>();
+  ASSERT_OK(vfs()->ServeDirectory(std::move(svc_dir), std::move(svc_endpoints->server)));
+  BlobCreatorWrapper creator = BlobCreatorWrapper::Connect(svc_endpoints->client.borrow());
+
+  blobfs()->SetOverwriteConfig(BlobOverwriteConfig::kOverwriteToCompact);
+  ASSERT_EQ(blobfs()->BlobWriteFormat(), BlobLayoutFormat::kCompactMerkleTreeAtEnd);
+  TestDeliveryBlob blob = TestDeliveryBlob::CreateUncompressed(16000, 7);
+  ASSERT_OK(creator.CreateAndWriteBlob(blob));
+
+  ASSERT_FALSE(creator.NeedsOverwrite(blob.digest()).value());
+  blobfs()->SetOverwriteConfig(BlobOverwriteConfig::kNoOverwrite);
+  ASSERT_FALSE(creator.NeedsOverwrite(blob.digest()).value());
+
+  // Shift to padded format. Now wants an overwrite.
+  blobfs()->SetOverwriteConfig(BlobOverwriteConfig::kOverwriteToPadded);
+  ASSERT_TRUE(creator.NeedsOverwrite(blob.digest()).value());
+  {
+    BlobWriterWrapper writer = creator.CreateExisting(blob.digest()).value();
+    ASSERT_OK(writer.WriteBlob(blob));
+  }
+
+  ASSERT_FALSE(creator.NeedsOverwrite(blob.digest()).value());
+  blobfs()->SetOverwriteConfig(BlobOverwriteConfig::kNoOverwrite);
+  ASSERT_FALSE(creator.NeedsOverwrite(blob.digest()).value());
+
+  // Shift back to compact format, now it wants an overwrite.
+  blobfs()->SetOverwriteConfig(BlobOverwriteConfig::kOverwriteToCompact);
+  ASSERT_TRUE(creator.NeedsOverwrite(blob.digest()).value());
 }
 
 TEST_F(BlobfsTest, GetNodeWithAnInvalidNodeIndexIsAnError) {

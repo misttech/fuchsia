@@ -28,11 +28,13 @@
 #include <fbl/ref_ptr.h>
 
 #include "src/storage/blobfs/blob.h"
+#include "src/storage/blobfs/blob_layout.h"
 #include "src/storage/blobfs/blobfs.h"
 #include "src/storage/blobfs/cache_node.h"
 #include "src/storage/blobfs/delivery_blob_private.h"
 #include "src/storage/blobfs/format.h"
 #include "src/storage/blobfs/mount.h"
+#include "src/storage/blobfs/node_finder.h"
 #include "src/storage/lib/vfs/cpp/service.h"
 
 namespace blobfs {
@@ -287,11 +289,25 @@ zx::result<fidl::ClientEnd<fuchsia_fxfs::BlobWriter>> BlobCreator::CreateImpl(co
 void BlobCreator::NeedsOverwrite(fuchsia_fxfs::wire::BlobCreatorNeedsOverwriteRequest* request,
                                  NeedsOverwriteCompleter::Sync& completer) {
   Digest digest(request->blob_hash.data_);
-  fbl::RefPtr<CacheNode> cache_node;
-  if (zx_status_t status = blobfs_.GetCache().Lookup(digest, &cache_node); status != ZX_OK) {
+  fbl::RefPtr<CacheNode> found;
+  if (zx_status_t status = blobfs_.GetCache().Lookup(digest, &found); status != ZX_OK) {
     completer.ReplyError(status);
   } else {
-    completer.ReplySuccess(false);
+    BlobOverwriteConfig config = blobfs_.OverwriteConfig();
+    if (config == BlobOverwriteConfig::kNoOverwrite) {
+      completer.ReplySuccess(false);
+      return;
+    }
+    auto blob = fbl::RefPtr<Blob>::Downcast(std::move(found));
+    auto ino_or = blobfs_.GetNode(blob->Ino());
+    if (ino_or.is_error()) {
+      completer.ReplyError(ino_or.error_value());
+      return;
+    }
+    InodePtr ino = std::move(ino_or.value());
+    // If the intended format is not the same as the current format, return true.
+    completer.ReplySuccess(ino->IsLegacyPaddedFormat() !=
+                           (config == BlobOverwriteConfig::kOverwriteToPadded));
   }
 }
 

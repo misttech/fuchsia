@@ -377,12 +377,12 @@ zx::result<std::unique_ptr<Blobfs>> Blobfs::Create(async_dispatcher_t* dispatche
                   << *(fs->write_compression_settings_.compression_level);
   }
 
-  FX_LOGS(INFO) << "Writing blob layout format: "
-                << BlobLayoutFormatToString(GetDefaultBlobLayoutFormat(*superblock));
-
   if (zx_status_t status = fs->Migrate(); status != ZX_OK) {
     return zx::error(status);
   }
+
+  FX_LOGS(INFO) << "Writing blob layout format: "
+                << BlobLayoutFormatToString(fs->BlobWriteFormat());
 
   fs->InitializeInspectTree();
 
@@ -417,6 +417,24 @@ void Blobfs::InitializeInspectTree() {
   }
 
   inspect_tree_.CalculateFragmentationMetrics(*this);
+}
+
+BlobLayoutFormat Blobfs::BlobWriteFormat() const {
+  switch (overwrite_config_) {
+    case BlobOverwriteConfig::kNoOverwrite:
+      return GetDefaultBlobLayoutFormat(Info());
+    case BlobOverwriteConfig::kOverwriteToCompact:
+      return BlobLayoutFormat::kCompactMerkleTreeAtEnd;
+    case BlobOverwriteConfig::kOverwriteToPadded:
+      return BlobLayoutFormat::kDeprecatedPaddedMerkleTreeAtStart;
+  }
+}
+
+BlobOverwriteConfig Blobfs::OverwriteConfig() const { return overwrite_config_; }
+
+void Blobfs::SetOverwriteConfig(BlobOverwriteConfig config) {
+  overwrite_config_ = config;
+  FX_LOGS(INFO) << "Writing blob layout format: " << BlobLayoutFormatToString(BlobWriteFormat());
 }
 
 // Writeback enabled, journaling enabled.

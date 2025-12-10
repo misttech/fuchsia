@@ -25,6 +25,7 @@
 #include "src/storage/blobfs/blob_creator.h"
 #include "src/storage/blobfs/blob_layout.h"
 #include "src/storage/blobfs/blob_reader.h"
+#include "src/storage/blobfs/blobfs.h"
 #include "src/storage/blobfs/common.h"
 #include "src/storage/blobfs/format.h"
 #include "src/storage/blobfs/mount.h"
@@ -262,12 +263,10 @@ TEST_F(BlobfsMigrationTest, MountV9Rev4ReadOnly) {
 TEST_F(BlobfsMigrationTest, MixedBlobLayoutFormatsFromV8) {
   auto device = LoadBlobfsImage(kBlobfsImageV8Rev4);
   Mount(std::move(device), kMountWritable);
-  EXPECT_EQ(GetDefaultBlobLayoutFormat(blobfs()->Info()),
-            BlobLayoutFormat::kDeprecatedPaddedMerkleTreeAtStart);
+  EXPECT_EQ(blobfs()->BlobWriteFormat(), BlobLayoutFormat::kDeprecatedPaddedMerkleTreeAtStart);
   // Force writing the other format to ensure that it can parse properly.
-  const_cast<Superblock*>(&blobfs_->Info())->flags &= ~kBlobWriteLegacyMerkle;
-  EXPECT_EQ(GetDefaultBlobLayoutFormat(blobfs()->Info()),
-            BlobLayoutFormat::kCompactMerkleTreeAtEnd);
+  blobfs()->SetOverwriteConfig(BlobOverwriteConfig::kOverwriteToCompact);
+  EXPECT_EQ(blobfs()->BlobWriteFormat(), BlobLayoutFormat::kCompactMerkleTreeAtEnd);
 
   auto blob = TestDeliveryBlob::CreateCompressed(9000);
   WriteBlob(blob);
@@ -293,12 +292,10 @@ TEST_F(BlobfsMigrationTest, MixedBlobLayoutFormatsFromV8) {
 TEST_F(BlobfsMigrationTest, MixedBlobLayoutFormatsFromV9) {
   auto device = LoadBlobfsImage(kBlobfsImageV9Rev4);
   Mount(std::move(device), kMountWritable);
-  EXPECT_EQ(GetDefaultBlobLayoutFormat(blobfs()->Info()),
-            BlobLayoutFormat::kCompactMerkleTreeAtEnd);
+  EXPECT_EQ(blobfs()->BlobWriteFormat(), BlobLayoutFormat::kCompactMerkleTreeAtEnd);
   // Force writing the other format to ensure that it can parse properly.
-  const_cast<Superblock*>(&blobfs_->Info())->flags |= kBlobWriteLegacyMerkle;
-  EXPECT_EQ(GetDefaultBlobLayoutFormat(blobfs()->Info()),
-            BlobLayoutFormat::kDeprecatedPaddedMerkleTreeAtStart);
+  blobfs()->SetOverwriteConfig(BlobOverwriteConfig::kOverwriteToPadded);
+  EXPECT_EQ(blobfs()->BlobWriteFormat(), BlobLayoutFormat::kDeprecatedPaddedMerkleTreeAtStart);
 
   auto blob = TestDeliveryBlob::CreateCompressed(9000);
   WriteBlob(blob);

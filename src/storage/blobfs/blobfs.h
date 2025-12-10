@@ -36,6 +36,7 @@
 #include "src/storage/blobfs/allocator/allocator.h"
 #include "src/storage/blobfs/allocator/extent_reserver.h"
 #include "src/storage/blobfs/blob_cache.h"
+#include "src/storage/blobfs/blob_layout.h"
 #include "src/storage/blobfs/blob_loader.h"
 #include "src/storage/blobfs/blobfs_inspect_tree.h"
 #include "src/storage/blobfs/blobfs_metrics.h"
@@ -65,6 +66,12 @@ namespace blobfs {
 using block_client::BlockDevice;
 
 constexpr char kOutgoingDataRoot[] = "root";
+
+enum class BlobOverwriteConfig : uint8_t {
+  kNoOverwrite,
+  kOverwriteToCompact,
+  kOverwriteToPadded,
+};
 
 class Blobfs : public TransactionManager, public BlockIteratorProvider {
  public:
@@ -108,6 +115,11 @@ class Blobfs : public TransactionManager, public BlockIteratorProvider {
 
   // Returns filesystem specific information.
   zx::result<fs::FilesystemInfo> GetFilesystemInfo();
+
+  BlobLayoutFormat BlobWriteFormat() const;
+
+  BlobOverwriteConfig OverwriteConfig() const;
+  void SetOverwriteConfig(BlobOverwriteConfig config);
 
   fs_inspect::NodeOperations& node_operations() { return inspect_tree_.node_operations(); }
 
@@ -299,6 +311,7 @@ class Blobfs : public TransactionManager, public BlockIteratorProvider {
 
   // Journal object is only created if the filesystem is mounted as writable.
   std::unique_ptr<fs::Journal> journal_;
+  BlobOverwriteConfig overwrite_config_ = BlobOverwriteConfig::kNoOverwrite;
   Superblock info_;
 
   BlobCache blob_cache_;
