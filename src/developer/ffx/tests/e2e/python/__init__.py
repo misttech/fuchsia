@@ -14,6 +14,24 @@ from honeydew.fuchsia_device import fuchsia_device
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 
 
+class SpawnedFfx:
+    """A running ffx process."""
+
+    def __init__(self, proc: subprocess.Popen[bytes], cmd: list[str]):
+        self.proc = proc
+        self.cmd = cmd
+
+    def wait(self) -> str:
+        """Wait for the ffx process to terminate. Raise an exception if it failed."""
+        stdout, stderr = self.proc.communicate()
+        if self.proc.returncode != 0:
+            _LOGGER.warning("FFX cmd failed. Stderr: %s", stderr.decode())
+            raise subprocess.CalledProcessError(
+                self.proc.returncode, cmd=self.cmd, output=stdout, stderr=stderr
+            )
+        return stdout.decode()
+
+
 class FfxTestCase(fuchsia_base_test.FuchsiaBaseTest):
     """FFX host tool E2E test For Strict."""
 
@@ -31,6 +49,23 @@ class FfxTestCase(fuchsia_base_test.FuchsiaBaseTest):
         # anymore.
         self.dut.ffx.run(["daemon", "start", "--background"])
         super().teardown_test()
+
+    def spawn_ffx(self, args: list[str]) -> SpawnedFfx:
+        """Run ffx in the specific way we need, not the standard Honeydew way.
+        Don't wait for the command to return."""
+        config = self.dut.ffx.config
+        cmd = [config.binary_path]
+        if "--strict" not in args:
+            cmd += [
+                "--isolate-dir",
+                config.isolate_dir.directory(),
+            ]
+        cmd += args
+        _LOGGER.info("Running FFX cmd: %s", cmd)
+        proc = subprocess.Popen(
+            cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+        )
+        return SpawnedFfx(proc, cmd)
 
     def run_ffx(self, args: list[str]) -> str:
         """Run ffx in the specific way we need, not the standard Honeydew way"""
