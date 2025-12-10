@@ -271,36 +271,16 @@ impl Directory for Simple {
         let (mut sink, entries_iter) = match pos {
             TraversalPosition::Start => {
                 match sink.append(&EntryInfo::new(self.inode, fio::DirentType::Directory), ".") {
-                    AppendResult::Ok(sink) => {
-                        // I wonder why, but rustc can not infer T in
-                        //
-                        //   pub fn range<T, R>(&self, range: R) -> Range<K, V>
-                        //   where
-                        //     K: Borrow<T>,
-                        //     R: RangeBounds<T>,
-                        //     T: Ord + Sized:?,
-                        //
-                        // for some reason here.  It says:
-                        //
-                        //   error[E0283]: type annotations required: cannot resolve `_: std::cmp::Ord`
-                        //
-                        // pointing to "range".  Same for two the other "range()" invocations
-                        // below.
-                        (sink, this.entries.range::<Name, _>(..))
-                    }
+                    AppendResult::Ok(sink) => (sink, this.entries.range::<Name, _>(..)),
                     AppendResult::Sealed(sealed) => {
-                        let new_pos = match this.entries.keys().next() {
-                            None => TraversalPosition::End,
-                            Some(first_name) => TraversalPosition::Name(first_name.clone().into()),
-                        };
-                        return Ok((new_pos, sealed));
+                        return Ok((TraversalPosition::Start, sealed));
                     }
                 }
             }
 
             TraversalPosition::Name(next_name) => {
                 // The only way to get a `TraversalPosition::Name` is if we returned it in the
-                // `AppendResult::Sealed` code path above. Therefore, the conversion from
+                // `AppendResult::Sealed` code path below. Therefore, the conversion from
                 // `next_name` to `Name` will never fail in practice.
                 let next: Name = next_name.to_owned().try_into().unwrap();
                 (sink, this.entries.range::<Name, _>(next..))

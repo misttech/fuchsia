@@ -6,6 +6,7 @@ mod create;
 mod get_token;
 mod link;
 mod open;
+mod read_dirents;
 mod rename;
 mod unlink;
 mod watch;

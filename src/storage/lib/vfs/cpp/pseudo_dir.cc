@@ -63,12 +63,10 @@ zx_status_t PseudoDir::WatchDir(fs::FuchsiaVfs* vfs, fio::wire::WatchMask mask, 
 
 zx_status_t PseudoDir::Readdir(VdirCookie* cookie, void* dirents, size_t len, size_t* out_actual) {
   fs::DirentFiller df(dirents, len);
-  zx_status_t r = 0;
   if (cookie->n < kDotId) {
     constexpr uint64_t ino = fio::kInoUnknown;
-    if ((r = df.Next(".", fio::DirentType::kDirectory, ino)) != ZX_OK) {
-      *out_actual = df.BytesFilled();
-      return r;
+    if (!df.Next(".", fio::DirentType::kDirectory, ino)) {
+      return ZX_ERR_BUFFER_TOO_SMALL;
     }
     cookie->n = kDotId;
   }
@@ -88,10 +86,9 @@ zx_status_t PseudoDir::Readdir(VdirCookie* cookie, void* dirents, size_t len, si
                    : internal::GetPosixMode(it->node()->GetProtocols(), it->node()->GetAbilities());
     const uint8_t d_type = IFTODT(mode);
 
-    if (df.Next(it->name(), fio::DirentType{d_type}, attr->id.value_or(fio::kInoUnknown)) !=
-        ZX_OK) {
+    if (!df.Next(it->name(), fio::DirentType{d_type}, attr->id.value_or(fio::kInoUnknown))) {
       *out_actual = df.BytesFilled();
-      return ZX_OK;
+      return *out_actual == 0 ? ZX_ERR_BUFFER_TOO_SMALL : ZX_OK;
     }
     cookie->n = it->id();
   }

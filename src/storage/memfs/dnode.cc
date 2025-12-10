@@ -4,13 +4,12 @@
 
 #include "src/storage/memfs/dnode.h"
 
-#include <dirent.h>
+#include <fidl/fuchsia.io/cpp/common_types.h>
 #include <lib/zx/result.h>
 #include <zircon/assert.h>
 #include <zircon/errors.h>
 #include <zircon/types.h>
 
-#include <cstdint>
 #include <cstring>
 #include <memory>
 #include <string>
@@ -120,13 +119,12 @@ struct dircookie_t {
 static_assert(sizeof(dircookie_t) <= sizeof(fs::VdirCookie),
               "MemFS dircookie too large to fit in IO state");
 
-void Dnode::Readdir(fs::DirentFiller& df, void* cookie) const {
+zx_status_t Dnode::Readdir(fs::DirentFiller& df, void* cookie) const {
   dircookie_t* c = static_cast<dircookie_t*>(cookie);
 
   if (c->order == 0) {
-    if (zx_status_t status = df.Next(".", fuchsia_io::DirentType::kDirectory, vnode_->ino());
-        status != ZX_OK) {
-      return;
+    if (!df.Next(".", fuchsia_io::DirentType::kDirectory, vnode_->ino())) {
+      return ZX_ERR_BUFFER_TOO_SMALL;
     }
     c->order = 1;
   }
@@ -137,11 +135,12 @@ void Dnode::Readdir(fs::DirentFiller& df, void* cookie) const {
     }
     fuchsia_io::DirentType type =
         dn.IsDirectory() ? fuchsia_io::DirentType::kDirectory : fuchsia_io::DirentType::kFile;
-    if (zx_status_t status = df.Next(dn.name_, type, dn.AcquireVnode()->ino()); status != ZX_OK) {
-      return;
+    if (!df.Next(dn.name_, type, dn.AcquireVnode()->ino())) {
+      return df.BytesFilled() == 0 ? ZX_ERR_BUFFER_TOO_SMALL : ZX_OK;
     }
     c->order = dn.ordering_token_ + 1;
   }
+  return ZX_OK;
 }
 
 // Answers the question: "Is dn a subdirectory of this?"

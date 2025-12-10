@@ -340,11 +340,11 @@ zx_status_t Dir::ReadInlineDir(fs::VdirCookie *cookie, void *dirents, size_t len
                           LeToCpu(de->name_len));
 
     if (de->ino && name != "..") {
-      if (zx_status_t ret = df.Next(name, d_type, LeToCpu(de->ino)); ret != ZX_OK) {
+      if (!df.Next(name, d_type, LeToCpu(de->ino))) {
         *pos_cookie = bit_pos;
 
         *out_actual = df.BytesFilled();
-        return ZX_OK;
+        return *out_actual == 0 ? ZX_ERR_NO_SPACE : ZX_OK;
       }
     }
 

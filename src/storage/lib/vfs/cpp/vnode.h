@@ -370,11 +370,13 @@ class DirentFiller {
 
   DirentFiller(void* ptr, size_t len);
 
-  // Attempts to add the name to the end of the dirent buffer
-  // which is returned by readdir.
-  zx_status_t Next(std::string_view name, fuchsia_io::DirentType type, uint64_t ino);
+  // Attempts to add the name to the end of the dirent buffer which is returned by readdir.
+  //  - Returns true if the name was added to the buffer.
+  //  - Returns false if the name was not added to the buffer because it did not fit.
+  //  - Panics if the name is longer than |NAME_MAX|.
+  bool Next(std::string_view name, fuchsia_io::DirentType type, uint64_t ino);
 
-  zx_status_t BytesFilled() const { return static_cast<zx_status_t>(pos_); }
+  size_t BytesFilled() const { return pos_; }
 
  private:
   char* ptr_;

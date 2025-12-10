@@ -647,8 +647,9 @@ zx_status_t Blobfs::Readdir(fs::VdirCookie* cookie, void* dirents, size_t len, s
 
       const auto name = digest.ToString();
       constexpr uint64_t ino = fuchsia_io::wire::kInoUnknown;
-      if (df.Next(name, fuchsia_io::DirentType::kFile, ino) != ZX_OK) {
-        break;
+      if (!df.Next(name, fuchsia_io::DirentType::kFile, ino)) {
+        *out_actual = df.BytesFilled();
+        return *out_actual == 0 ? ZX_ERR_BUFFER_TOO_SMALL : ZX_OK;
       }
       c->index = i + 1;
     }

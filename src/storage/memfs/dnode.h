@@ -76,7 +76,7 @@ class Dnode : public fbl::DoublyLinkedListable<std::unique_ptr<Dnode>> {
   zx_status_t CanUnlink() const;
 
   // Populates df with this directory's entries.
-  void Readdir(fs::DirentFiller& df, void* cookie) const;
+  zx_status_t Readdir(fs::DirentFiller& df, void* cookie) const;
 
   // Answers the question: "Is dn a subdirectory of this?"
   bool IsSubdirectory(const Dnode* dn) const;

@@ -76,6 +76,7 @@ rustc_test("conformance_test") {
     "tests/directory/get_token.rs",
     "tests/directory/link.rs",
     "tests/directory/open.rs",
+    "tests/directory/read_dirents.rs",
     "tests/directory/rename.rs",
     "tests/directory/unlink.rs",
     "tests/directory/watch.rs",

@@ -236,18 +236,21 @@ fio::Abilities Vnode::GetAbilities() const {
 DirentFiller::DirentFiller(void* ptr, size_t len)
     : ptr_(static_cast<char*>(ptr)), pos_(0), len_(len) {}
 
-zx_status_t DirentFiller::Next(std::string_view name, fio::DirentType type, uint64_t ino) {
+bool DirentFiller::Next(std::string_view name, fio::DirentType type, uint64_t ino) {
+  // Assert in debug builds that the name isn't too long. Truncate the name in release builds.
+  ZX_DEBUG_ASSERT(name.length() <= NAME_MAX);
+  size_t name_length = std::min(name.length(), static_cast<size_t>(NAME_MAX));
   fs::DirectoryEntry* de = reinterpret_cast<fs::DirectoryEntry*>(ptr_ + pos_);
-  size_t sz = sizeof(fs::DirectoryEntry) + name.length();
-  if (sz > len_ - pos_ || name.length() > NAME_MAX) {
-    return ZX_ERR_INVALID_ARGS;
+  size_t sz = sizeof(fs::DirectoryEntry) + name_length;
+  if (sz > len_ - pos_) {
+    return false;
   }
   de->ino = ino;
-  de->name_length = static_cast<uint8_t>(name.length());
+  de->name_length = static_cast<uint8_t>(name_length);
   de->type = type;
-  memcpy(de->name, name.data(), name.length());
+  memcpy(de->name, name.data(), name_length);
   pos_ += sz;
-  return ZX_OK;
+  return true;
 }
 
 }  // namespace fs

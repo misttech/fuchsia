@@ -6,7 +6,7 @@
 
 #include <dirent.h>
 #include <fidl/fuchsia.io/cpp/common_types.h>
-#include <fidl/fuchsia.io/cpp/wire.h>
+#include <fidl/fuchsia.io/cpp/natural_types.h>
 #include <zircon/errors.h>
 #include <zircon/types.h>
 
@@ -34,14 +34,6 @@ int CompareLazyDirPtrs(const void* a, const void* b) {
   }
   return a_id < b_id ? -1 : 1;
 }
-
-bool DoDot(VdirCookie* cookie) {
-  if (cookie->p == 0) {
-    cookie->p = (void*)1;
-    return true;
-  }
-  return false;
-}
 }  // namespace
 
 LazyDir::LazyDir() = default;
@@ -66,13 +58,15 @@ zx_status_t LazyDir::Readdir(VdirCookie* cookie, void* dirents, size_t len, size
   qsort(entries.data(), entries.size(), sizeof(LazyEntry), CompareLazyDirPtrs);
 
   fs::DirentFiller df(dirents, len);
-  zx_status_t r = 0;
 
-  if (DoDot(cookie)) {
-    if ((r = df.Next(".", fio::DirentType::kDirectory, fio::kInoUnknown)) != ZX_OK) {
-      *out_actual = df.BytesFilled();
-      return r;
+  // The cookie's pointer is used as a bool to indicate whether "." should be output. nullptr
+  // indicates that "." should be output. Any non-nullptr value indicates that "." was already
+  // output.
+  if (cookie->p == nullptr) {
+    if (!df.Next(".", fio::DirentType::kDirectory, fio::kInoUnknown)) {
+      return ZX_ERR_BUFFER_TOO_SMALL;
     }
+    cookie->p = this;
   }
 
   for (auto it = std::lower_bound(entries.begin(), entries.end(), cookie->n,
@@ -82,9 +76,9 @@ zx_status_t LazyDir::Readdir(VdirCookie* cookie, void* dirents, size_t len, size
       continue;
     }
     const uint8_t d_type = IFTODT(it->type);
-    if ((r = df.Next(it->name, fio::DirentType{d_type}, fio::kInoUnknown)) != ZX_OK) {
+    if (!df.Next(it->name, fio::DirentType{d_type}, fio::kInoUnknown)) {
       *out_actual = df.BytesFilled();
-      return r;
+      return *out_actual == 0 ? ZX_ERR_BUFFER_TOO_SMALL : ZX_OK;
     }
     cookie->n = it->id;
   }

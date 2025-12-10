@@ -576,6 +576,7 @@ zx_status_t Directory::Readdir(fs::VdirCookie* cookie, void* dirents, size_t len
 
     DirentBuffer dirent_buffer;
     Dirent* de = &dirent_buffer.dirent;
+    bool entry_did_not_fit = false;
 
     if (off != 0 && dc->seqno != GetInode()->seq_num) {
       // The offset *might* be invalid, if we called Readdir after a directory
@@ -612,9 +613,8 @@ zx_status_t Directory::Readdir(fs::VdirCookie* cookie, void* dirents, size_t len
       std::string_view name(de->name, de->namelen);
 
       if (de->ino && name != "..") {
-        zx_status_t status;
-        if ((status = df.Next(name, fuchsia_io::DirentType{de->type}, de->ino)) != ZX_OK) {
-          // no more space
+        if (!df.Next(name, fuchsia_io::DirentType{de->type}, de->ino)) {
+          entry_did_not_fit = true;
           goto done;
         }
       }
@@ -628,7 +628,7 @@ zx_status_t Directory::Readdir(fs::VdirCookie* cookie, void* dirents, size_t len
     dc->seqno = GetInode()->seq_num;
     *out_actual = df.BytesFilled();
     ZX_DEBUG_ASSERT(*out_actual <= len);  // Otherwise, we're overflowing the input buffer.
-    return ZX_OK;
+    return *out_actual == 0 && entry_did_not_fit ? ZX_ERR_BUFFER_TOO_SMALL : ZX_OK;
 
   fail:
     dc->off = 0;

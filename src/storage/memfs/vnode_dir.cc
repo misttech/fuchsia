@@ -95,9 +95,9 @@ zx_status_t VnodeDir::Readdir(fs::VdirCookie* cookie, void* dirents, size_t len,
     *out_actual = 0;
     return ZX_OK;
   }
-  dnode_->Readdir(df, cookie);
+  zx_status_t status = dnode_->Readdir(df, cookie);
   *out_actual = df.BytesFilled();
-  return ZX_OK;
+  return status;
 }
 
 zx::result<fbl::RefPtr<fs::Vnode>> VnodeDir::Create(std::string_view name, fs::CreationType type) {
