@@ -7,6 +7,7 @@
 //! Library for constructing and serializing the VBMeta struct for verified boot.
 
 mod descriptor;
+mod footer;
 mod header;
 mod key;
 mod test;

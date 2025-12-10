@@ -3,9 +3,12 @@
 // found in the LICENSE file.
 
 use crate::descriptor::Descriptor;
+use crate::footer::append_vbmeta_as_footer;
 use crate::header::Header;
 use crate::key::{Key, SIGNATURE_SIZE, SignFailure};
 
+use anyhow::Result;
+use camino::Utf8Path;
 use ring::digest;
 use zerocopy::IntoBytes;
 
@@ -88,6 +91,20 @@ impl VBMeta {
     /// Returns an immutable reference to the key used to sign the VBMeta image.
     pub fn key(&self) -> &Key {
         &self.key
+    }
+
+    /// Appends the binary contents to a copy of `image` as a VBMeta footer at
+    /// `destination`.
+    pub fn append_as_footer(
+        &self,
+        image: impl AsRef<Utf8Path>,
+        destination: impl AsRef<Utf8Path>,
+    ) -> Result<()> {
+        append_vbmeta_as_footer(
+            self.as_bytes(),
+            image.as_ref().as_std_path(),
+            destination.as_ref().as_std_path(),
+        )
     }
 }
 

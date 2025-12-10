@@ -16,6 +16,8 @@ rustc_library("vbmeta") {
   deps = [
     "//src/lib/mundane",
     "//third_party/modinv",
+    "//third_party/rust_crates:anyhow",
+    "//third_party/rust_crates:camino",
     "//third_party/rust_crates:hex",
     "//third_party/rust_crates:num",
     "//third_party/rust_crates:pem",
@@ -28,11 +30,13 @@ rustc_library("vbmeta") {
   test_deps = [
     "//src/lib/assembly/test_keys",
     "//third_party/rust_crates:assert_matches",
+    "//third_party/rust_crates:tempfile",
   ]
 
   sources = [
     "src/descriptor.rs",
     "src/descriptor/builder.rs",
+    "src/footer.rs",
     "src/header.rs",
     "src/key.rs",
     "src/lib.rs",
