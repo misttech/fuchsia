@@ -129,7 +129,7 @@ use std::hash::Hash;
 use std::marker::PhantomData;
 use std::num::{NonZero, Saturating};
 use std::ops::Range;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Weak};
 
 /// This trait is implemented by things that own reservations.
@@ -472,6 +472,7 @@ pub struct Allocator {
     allocation_mutex: futures::lock::Mutex<()>,
     counters: Mutex<AllocatorCounters>,
     maximum_offset: AtomicU64,
+    allocations_allowed: AtomicBool,
 }
 
 /// Tracks the different stages of byte allocations for an individual owner.
@@ -788,11 +789,18 @@ impl Allocator {
             allocation_mutex: futures::lock::Mutex::new(()),
             counters: Mutex::new(AllocatorCounters::default()),
             maximum_offset: AtomicU64::new(0),
+            allocations_allowed: AtomicBool::new(filesystem.options().image_builder_mode.is_none()),
         }
     }
 
     pub fn tree(&self) -> &LSMTree<AllocatorKey, AllocatorValue> {
         &self.tree
+    }
+
+    /// Enables allocations.
+    /// This is only valid to call if the allocator was created in image builder mode.
+    pub fn enable_allocations(&self) {
+        self.allocations_allowed.store(true, Ordering::Relaxed);
     }
 
     /// Returns an iterator that yields all allocations, filtering out tombstones and any
@@ -1289,6 +1297,7 @@ impl Allocator {
         owner_object_id: u64,
         mut len: u64,
     ) -> Result<Range<u64>, Error> {
+        ensure!(self.allocations_allowed.load(Ordering::Relaxed), FxfsError::Unavailable);
         assert_eq!(len % self.block_size, 0);
         len = std::cmp::min(len, self.max_extent_size_bytes);
         debug_assert_ne!(owner_object_id, INVALID_OBJECT_ID);

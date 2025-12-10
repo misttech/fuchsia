@@ -585,8 +585,10 @@ impl FxFilesystem {
             debug_assert_not_too_long!(task);
         }
         self.journal.stop_compactions().await;
-        let sync_status = if self.options().read_only {
-            // We don't want a final sync if we are in read-only mode (no changes).
+        let sync_status = if self.options().image_builder_mode.is_some() || self.options().read_only
+        {
+            // We don't want a final sync if we are in image_builder_mode (already done in
+            // finalize()), or read-only mode (no changes).
             Ok(None)
         } else {
             self.journal.sync(SyncOptions { flush_device: true, ..Default::default() }).await
@@ -624,6 +626,13 @@ impl FxFilesystem {
 
     pub fn allocator(&self) -> Arc<Allocator> {
         self.objects.allocator()
+    }
+
+    /// Enables allocations for the allocator.
+    /// This is only used in image_builder_mode where it *must*
+    /// be called before any allocations can take place.
+    pub fn enable_allocations(&self) {
+        self.allocator().enable_allocations();
     }
 
     pub fn object_manager(&self) -> &Arc<ObjectManager> {
@@ -1040,7 +1049,7 @@ impl FsckAfterEveryTransaction {
 
 #[cfg(test)]
 mod tests {
-    use super::{FxFilesystem, FxFilesystemBuilder, SyncOptions};
+    use super::{FxFilesystem, FxFilesystemBuilder, FxfsError, SyncOptions};
     use crate::fsck::{fsck, fsck_volume};
     use crate::log::*;
     use crate::lsm_tree::Operation;
@@ -1116,6 +1125,89 @@ mod tests {
 
         fsck(fs.clone()).await.expect("fsck failed");
         fs.close().await.expect("Close failed");
+    }
+
+    #[fuchsia::test]
+    async fn test_enable_allocations() {
+        // 1. enable_allocations() has no impact if image_builder_mode is not used.
+        {
+            let device = DeviceHolder::new(FakeDevice::new(8192, TEST_DEVICE_BLOCK_SIZE));
+            let fs = FxFilesystem::new_empty(device).await.expect("new_empty failed");
+            fs.enable_allocations();
+            let root_store = fs.root_store();
+            let root_directory =
+                Directory::open(&root_store, root_store.root_directory_object_id())
+                    .await
+                    .expect("open failed");
+            let mut transaction = fs
+                .clone()
+                .new_transaction(
+                    lock_keys![LockKey::object(
+                        root_store.store_object_id(),
+                        root_directory.object_id()
+                    )],
+                    Options::default(),
+                )
+                .await
+                .expect("new_transaction failed");
+            root_directory
+                .create_child_file(&mut transaction, "test")
+                .await
+                .expect("create_child_file failed");
+            transaction.commit().await.expect("commit failed");
+            fs.close().await.expect("close failed");
+        }
+
+        // 2. Allocations blow up if done before this call (in image_builder_mode), but work after
+        {
+            let device = DeviceHolder::new(FakeDevice::new(8192, TEST_DEVICE_BLOCK_SIZE));
+            let fs = FxFilesystemBuilder::new()
+                .format(true)
+                .image_builder_mode(Some(SuperBlockInstance::A))
+                .open(device)
+                .await
+                .expect("open failed");
+            let root_store = fs.root_store();
+            let root_directory =
+                Directory::open(&root_store, root_store.root_directory_object_id())
+                    .await
+                    .expect("open failed");
+
+            let mut transaction = fs
+                .clone()
+                .new_transaction(
+                    lock_keys![LockKey::object(
+                        root_store.store_object_id(),
+                        root_directory.object_id()
+                    )],
+                    Options::default(),
+                )
+                .await
+                .expect("new_transaction failed");
+            let handle = root_directory
+                .create_child_file(&mut transaction, "test_fail")
+                .await
+                .expect("create_child_file failed");
+            transaction.commit().await.expect("commit failed");
+
+            // Allocations should fail before enable_allocations()
+            assert!(
+                FxfsError::Unavailable
+                    .matches(&handle.allocate(0..4096).await.expect_err("allocate should fail"))
+            );
+
+            // Allocations should work after enable_allocations()
+            fs.enable_allocations();
+            handle.allocate(0..4096).await.expect("allocate should work after enable_allocations");
+
+            // 3. finalize() works regardless of whether enable_allocations() is called.
+            // (We already called it above, so this verifies it works after it was called).
+            fs.finalize().await.expect("finalize failed");
+            fs.close().await.expect("close failed");
+        }
+        // TODO(https://fxbug.dev/467401079): Add a failure test where we finalize without
+        // enabling allocations. (Trivial to do, but causes error logs, which are interpreted as
+        // test failures and only seem controllable at the BUILD target level).
     }
 
     #[fuchsia::test(threads = 10)]
@@ -1936,6 +2028,7 @@ mod tests {
             .open(device)
             .await
             .expect("open failed");
+        fs.enable_allocations();
         // Image builder mode only writes when data is written or fs.finalize() is called, so
         // we shouldn't see any errors here.
         fs.close().await.expect("closed");
@@ -1964,6 +2057,7 @@ mod tests {
                 .open(device)
                 .await
                 .expect("open failed");
+            fs.enable_allocations();
             {
                 let root_store = fs.root_store();
                 let root_directory =

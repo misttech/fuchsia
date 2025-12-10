@@ -295,6 +295,7 @@ pub async fn migrate(
                             },
                         ),
                     );
+
                     if dir.wrapping_key_id().is_some() {
                         transaction.add(
                             dir.store().store_object_id(),
@@ -1083,8 +1084,11 @@ pub async fn migrate_device(
             &metadata_object_handle,
         )
         .await?;
-        transaction.commit().await.context("commit txn")?;
+        transaction.commit().await.context("commit reserve txn")?;
 
+        // All required reserved regions should have been marked allocated so it should be safe
+        // from here on to perform allocations.
+        fxfs.enable_allocations();
         deep_copy_files(offset, &f2fs, &mut fxfs, vol, files_to_copy).await?;
 
         // finalize() mutates disk, leave as rw.
