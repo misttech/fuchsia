@@ -519,7 +519,15 @@ class TxFidlReturnTransaction {
   DISALLOW_COPY_AND_ASSIGN_ALLOW_MOVE(TxFidlReturnTransaction);
 };
 
-std::tuple<netdev::DelegatedRxLease, zx::channel> CreateDelegatedLease(uint64_t hold_until_frame);
+enum class LeaseHandleType : uint8_t {
+  kChannel,
+  kEventpair,
+};
+
+const char* LeaseHandleTypeToString(LeaseHandleType type);
+
+std::tuple<netdev::DelegatedRxLease, zx::handle> CreateDelegatedLease(LeaseHandleType type,
+                                                                      uint64_t hold_until_frame);
 
 }  // namespace network::testing
 

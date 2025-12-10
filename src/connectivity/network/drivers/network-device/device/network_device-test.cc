@@ -3385,9 +3385,44 @@ TEST_F(NetworkDeviceTest, QueueRxSpaceBatches) {
   ASSERT_EQ(impl_.queue_rx_space_called(), 1u);
 }
 
+class SessionLeaseTest : public NetworkDeviceTest,
+                         public ::testing::WithParamInterface<LeaseHandleType> {
+ public:
+  static std::tuple<netdev::DelegatedRxLease, zx::handle> CreateDelegatedLease(uint64_t frame) {
+    return ::network::testing::CreateDelegatedLease(GetParam(), frame);
+  }
+
+  static void VerifyLease(const netdev::wire::DelegatedRxLease& received_lease,
+                          const zx::handle& handle) {
+    // ToNatural will move the contents of the wire type, so we need to make a copy to avoid
+    // invalidating the reference.
+    const netdev::wire::DelegatedRxLease copy{received_lease};
+    VerifyLease(fidl::ToNatural(copy), handle);
+  }
+
+  static void VerifyLease(const netdev::DelegatedRxLease& received_lease,
+                          const zx::handle& handle) {
+    ASSERT_TRUE(received_lease.handle().has_value());
+    switch (GetParam()) {
+      case LeaseHandleType::kChannel:
+        ASSERT_EQ(received_lease.handle().value().Which(),
+                  netdev::DelegatedRxLeaseHandle::Tag::kChannel);
+        EXPECT_EQ(fsl::GetKoid(received_lease.handle().value().channel().value().get()),
+                  fsl::GetRelatedKoid(handle.get()));
+        break;
+      case LeaseHandleType::kEventpair:
+        ASSERT_EQ(received_lease.handle().value().Which(),
+                  netdev::DelegatedRxLeaseHandle::Tag::kEventpair);
+        EXPECT_EQ(fsl::GetKoid(received_lease.handle().value().eventpair().value().get()),
+                  fsl::GetRelatedKoid(handle.get()));
+        break;
+    }
+  }
+};
+
 // Tests that leases are never given to sessions that don't have the lease
 // delegation flag.
-TEST_F(NetworkDeviceTest, SessionLeasesRequiresFlag) {
+TEST_P(SessionLeaseTest, RequiresFlag) {
   fdf::Arena arena('NETD');
   ASSERT_OK(CreateDeviceWithPort13());
 
@@ -3399,18 +3434,20 @@ TEST_F(NetworkDeviceTest, SessionLeasesRequiresFlag) {
   // A lease with frame 0 should always be fulfilled, but we're _not_ going to
   // observe it in a session without the flag. Instead the lease is dropped
   // internally.
-  auto [lease, chan] = CreateDelegatedLease(0);
+  auto [lease, handle] = CreateDelegatedLease(0);
   fidl::OneWayStatus status =
       impl_.client().buffer(arena)->DelegateRxLease(fidl::ToWire(arena, std::move(lease)));
   ASSERT_OK(status.status());
   zx_signals_t observed;
-  ASSERT_OK(chan.wait_one(ZX_CHANNEL_PEER_CLOSED, TEST_DEADLINE, &observed));
-  ASSERT_EQ(observed, ZX_CHANNEL_PEER_CLOSED);
+  const auto peer_closed_signal =
+      GetParam() == LeaseHandleType::kChannel ? ZX_CHANNEL_PEER_CLOSED : ZX_EVENTPAIR_PEER_CLOSED;
+  ASSERT_OK(handle.wait_one(peer_closed_signal, TEST_DEADLINE, &observed));
+  ASSERT_EQ(observed, peer_closed_signal);
 }
 
 // Tests that calling watch when a lease is ready to be consumed returns
 // immediately.
-TEST_F(NetworkDeviceTest, SessionLeaseImmediateReturn) {
+TEST_P(SessionLeaseTest, ImmediateReturn) {
   fdf::Arena arena('NETD');
   ASSERT_OK(CreateDeviceWithPort13());
 
@@ -3421,7 +3458,7 @@ TEST_F(NetworkDeviceTest, SessionLeaseImmediateReturn) {
   ASSERT_OK(WaitSessionStarted());
   ASSERT_OK(WaitStart());
   // A lease with frame 0 should always be fulfilled.
-  auto [lease, chan] = CreateDelegatedLease(0);
+  auto [lease, handle] = CreateDelegatedLease(0);
   fidl::OneWayStatus status =
       impl_.client().buffer(arena)->DelegateRxLease(fidl::ToWire(arena, std::move(lease)));
   ASSERT_OK(status.status());
@@ -3430,14 +3467,12 @@ TEST_F(NetworkDeviceTest, SessionLeaseImmediateReturn) {
   netdev::wire::DelegatedRxLease& received_lease = result.value().lease;
   ASSERT_TRUE(received_lease.has_hold_until_frame());
   EXPECT_EQ(received_lease.hold_until_frame(), 0u);
-  ASSERT_TRUE(received_lease.has_handle());
-  ASSERT_EQ(received_lease.handle().Which(), netdev::wire::DelegatedRxLeaseHandle::Tag::kChannel);
-  EXPECT_EQ(fsl::GetKoid(received_lease.handle().channel().get()), fsl::GetRelatedKoid(chan.get()));
+  VerifyLease(received_lease, handle);
 }
 
 // Tests that leases are never given to sessions that don't have the lease
 // delegation flag.
-TEST_F(NetworkDeviceTest, SessionLeaseDelegation) {
+TEST_P(SessionLeaseTest, Delegation) {
   ASSERT_OK(CreateDeviceWithPort13());
   static constexpr uint8_t kPort5 = 5;
   FakeNetworkPortImpl port5;
@@ -3476,7 +3511,7 @@ TEST_F(NetworkDeviceTest, SessionLeaseDelegation) {
 
   // Create a lease that will fulfill on the second frame.
   fdf::Arena arena('NETD');
-  auto [lease, chan] = CreateDelegatedLease(2);
+  auto [lease, handle] = CreateDelegatedLease(2);
   fidl::OneWayStatus status =
       impl_.client().buffer(arena)->DelegateRxLease(fidl::ToWire(arena, std::move(lease)));
   ASSERT_OK(status.status());
@@ -3518,11 +3553,16 @@ TEST_F(NetworkDeviceTest, SessionLeaseDelegation) {
   // Session observes a single frame so this is what the delegated lease should
   // show.
   EXPECT_EQ(received_lease.hold_until_frame().value(), 1u);
-  ASSERT_TRUE(received_lease.handle().has_value());
-  ASSERT_EQ(received_lease.handle().value().Which(), netdev::DelegatedRxLeaseHandle::Tag::kChannel);
-  EXPECT_EQ(fsl::GetKoid(chan.get()),
-            fsl::GetRelatedKoid(received_lease.handle().value().channel().value().get()));
+  VerifyLease(received_lease, handle);
 }
+
+namespace {
+INSTANTIATE_TEST_SUITE_P(NetworkDeviceTest, SessionLeaseTest,
+                         ::testing::Values(LeaseHandleType::kChannel, LeaseHandleType::kEventpair),
+                         [](const ::testing::TestParamInfo<LeaseHandleType>& info) {
+                           return LeaseHandleTypeToString(info.param);
+                         });
+}  // namespace
 
 // Tests that the session channel is closed if two pending rx lease watches are
 // created.

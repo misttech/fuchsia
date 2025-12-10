@@ -576,13 +576,35 @@ void FakeNetworkDeviceIfc::DelegateRxLease(
   }
 }
 
-std::tuple<netdev::DelegatedRxLease, zx::channel> CreateDelegatedLease(uint64_t hold_until_frame) {
-  zx::channel a, b;
-  EXPECT_OK(zx::channel::create(0, &a, &b));
+const char* LeaseHandleTypeToString(LeaseHandleType type) {
+  switch (type) {
+    case LeaseHandleType::kChannel:
+      return "Channel";
+    case LeaseHandleType::kEventpair:
+      return "Eventpair";
+  }
+}
+
+std::tuple<netdev::DelegatedRxLease, zx::handle> CreateDelegatedLease(LeaseHandleType type,
+                                                                      uint64_t hold_until_frame) {
   netdev::DelegatedRxLease lease;
   lease.hold_until_frame(hold_until_frame);
-  lease.handle(netdev::DelegatedRxLeaseHandle::WithChannel(std::move(a)));
-  return std::make_tuple(std::move(lease), std::move(b));
+  zx::handle handle;
+  switch (type) {
+    case LeaseHandleType::kChannel: {
+      zx::channel a, b;
+      EXPECT_OK(zx::channel::create(0, &a, &b));
+      lease.handle(netdev::DelegatedRxLeaseHandle::WithChannel(std::move(a)));
+      handle = std::move(b);
+    } break;
+    case LeaseHandleType::kEventpair: {
+      zx::eventpair a, b;
+      EXPECT_OK(zx::eventpair::create(0, &a, &b));
+      lease.handle(netdev::DelegatedRxLeaseHandle::WithEventpair(std::move(a)));
+      handle = std::move(b);
+    } break;
+  }
+  return std::make_tuple(std::move(lease), std::move(handle));
 }
 
 }  // namespace network::testing
