@@ -104,11 +104,17 @@ pub fn build_battery_power_supply_directory(
 ) {
     build_device_directory(device, dir);
     dir.entry(
+        "capacity",
+        IioFile::new_node(proxy.clone(), "battery_capacity"),
+        mode!(IFREG, 0o444),
+    );
+    dir.entry(
         "charge_type",
         IioFile::new_node(proxy.clone(), "battery_charge_type"),
         mode!(IFREG, 0o444),
     );
     dir.entry("health", IioFile::new_node(proxy.clone(), "battery_health"), mode!(IFREG, 0o444));
+    dir.entry("status", IioFile::new_node(proxy.clone(), "battery_status"), mode!(IFREG, 0o444));
 }
 
 struct IioFile {
