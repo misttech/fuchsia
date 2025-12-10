@@ -40,12 +40,18 @@ function main() {
         echo "Error: Could not find real git binary." >&2
         exit 1
     fi
+
+    local log_args=()
+    if [[ -n "${FUCHSIA_LOG_GIT_POLYFILL_COMMANDS}" ]]; then
+        log_args+=(--log-file "${FUCHSIA_LOG_GIT_POLYFILL_COMMANDS}")
+    fi
+
     # We need to run this script from within the fuchsia directory or else the hermetic-env will not work.
     # This is because we might be running this from the build directory which is symlinked to the
     # fuchsia directory and the hermetic-env will not work if we are not in the fuchsia directory.
     # We could run this from the FUCHSIA_DIR but this might not be set and we want to ensure that we
     # are using a variable that is set so we run it in the scripts/cog/bin directory.
-    exec env -C "${SCRIPTS_COG_BIN_DIR}" "$PY_TOOL" "git.py" --invoker-cwd "$(pwd)" --real-git "${real_git}" "$@"
+    exec env -C "${SCRIPTS_COG_BIN_DIR}" "$PY_TOOL" "git.py" "${log_args[@]}" --invoker-cwd "$(pwd)" --real-git "${real_git}" -- "$@"
 }
 
 main "$@"

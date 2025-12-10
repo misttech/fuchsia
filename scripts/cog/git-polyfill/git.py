@@ -4,10 +4,67 @@
 
 import abc
 import argparse
+import shlex
 import subprocess
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Type
+
+
+class Context:
+    """Holds the context for the git polyfill execution."""
+
+    def __init__(self, args: "ArgsCollection"):
+        self.args = args
+        self.git_subcommand_args: Optional[argparse.Namespace] = None
+
+        # Polyfill arguments
+        polyfill_parser = _create_polyfill_parser()
+        self.polyfill_options = polyfill_parser.parse_args(args.polyfill_args)
+
+        self.real_git: str = self.polyfill_options.real_git
+        self.invoker_cwd: str = self.polyfill_options.invoker_cwd
+        self.log_file: Optional[str] = self.polyfill_options.log_file
+
+        self._log_file_path = Path(self.log_file) if self.log_file else None
+
+        # Global git arguments
+        global_git_parser = _create_global_git_args_parser()
+        self.global_git_options, _ = global_git_parser.parse_known_args(
+            args.global_git_args
+        )
+
+    def write_log(self, level: str, message: str):
+        if self._log_file_path:
+            with self._log_file_path.open("a") as f:
+                f.write(f"[{level}] {message}\n")
+
+    def print(self, message: str, file=sys.stdout):
+        """Prints a message and logs it."""
+        print(message, file=file)
+        self.write_log("PRINT", message)
+
+    def error(self, message: str):
+        """Prints an error message to stderr and logs it."""
+        print(message, file=sys.stderr)
+        self.write_log("ERROR", message)
+
+    def fatal(self, message: str):
+        """Prints a fatal error message to stderr and logs it."""
+        print(f"fatal: {message}", file=sys.stderr)
+        self.write_log("FATAL", message)
+
+    def log_info(self, message: str):
+        """Logs an info message to the log."""
+        self.write_log("INFO", message)
+
+    def output(self, message: str, end: str = ""):
+        """Prints output to stdout and logs it."""
+        sys.stdout.write(message)
+        if end:
+            sys.stdout.write(end)
+        self.write_log("OUTPUT", message.strip())
 
 
 def get_repository_root() -> Optional[Path]:
@@ -25,11 +82,13 @@ def get_repository_root() -> Optional[Path]:
 
 
 def get_workspace_id_and_snapshot_version(
+    context: Context,
     repository_root: Path,
 ) -> Tuple[str, int]:
     """Returns the workspace id and snapshot version for the given repository root.
 
     Args:
+        context: The execution context.
         repository_root: The repository root to get the workspace id and snapshot version for.
 
     Returns:
@@ -40,7 +99,7 @@ def get_workspace_id_and_snapshot_version(
         workspace_id = (citc_dir / "workspace_id").read_text().strip()
         snapshot_version = (citc_dir / "snapshot_version").read_text().strip()
     except Exception as e:
-        print(f"fatal: could not read citc metadata: {e}", file=sys.stderr)
+        context.fatal(f"could not read citc metadata: {e}")
         return "", 0
     return workspace_id, int(snapshot_version)
 
@@ -74,39 +133,6 @@ def get_relative_git_dir(
     return path
 
 
-def namespace_to_args(
-    namespace: argparse.Namespace, ignored_flags: List[str] = []
-) -> List[str]:
-    """Converts an argparse.Namespace object back into a list of command-line arguments."""
-    args: List[str] = []
-    for key, value in vars(namespace).items():
-        if value is None:
-            continue
-
-        flag = ""
-        if len(key) == 1:
-            # Assume single character keys are for short options (e.g. -C)
-            flag = f"-{key}"
-        else:
-            flag = f"--{key.replace('_', '-')}"
-
-        if flag in ignored_flags:
-            continue
-
-        if isinstance(value, bool):
-            if value:
-                args.append(flag)
-        elif isinstance(value, list):
-            for item in value:
-                args.append(flag)
-                args.append(str(item))
-        else:
-            args.append(flag)
-            args.append(str(value))
-
-    return args
-
-
 class GitSubCommand(abc.ABC):
     """Abstract base class for git subcommands."""
 
@@ -114,29 +140,26 @@ class GitSubCommand(abc.ABC):
         """Override to add subcommand-specific arguments."""
 
     @abc.abstractmethod
-    def execute(
-        self, top_level_args: argparse.Namespace, args: argparse.Namespace
-    ) -> int:
+    def execute(self, context: Context) -> int:
         """Executes the command.
 
         Args:
-            top_level_args: The parsed top-level arguments.
-            args: The parsed subcommand arguments.
+            context: The execution context.
 
         Returns:
             The exit code (0 for success, non-zero for failure).
         """
 
-    def run(
-        self, top_level_args: argparse.Namespace, raw_args: List[str]
-    ) -> int:
+    def run(self, context: Context) -> int:
         """Parses arguments and executes the command."""
         parser = argparse.ArgumentParser(
             prog=f"git {getattr(self, '_command_name')}"
         )
         self.add_arguments(parser)
-        args = parser.parse_args(raw_args)
-        return self.execute(top_level_args, args)
+        context.git_subcommand_args = parser.parse_args(
+            context.args.remaining_args
+        )
+        return self.execute(context)
 
 
 _COMMANDS: Dict[str, Type[GitSubCommand]] = {}
@@ -158,29 +181,32 @@ class RevParseCommand(GitSubCommand):
     def add_arguments(self, parser: argparse.ArgumentParser) -> None:
         parser.add_argument("rev", help="The revision to parse")
 
-    def execute(
-        self, top_level_args: argparse.Namespace, args: argparse.Namespace
-    ) -> int:
+    def execute(self, context: Context) -> int:
+        args = context.git_subcommand_args
         # We only support HEAD for now
         if args.rev != "HEAD":
-            print("cog workspaces only support 'HEAD' revisions at this time")
+            context.error(
+                "cog workspaces only support 'HEAD' revisions at this time"
+            )
             return 1
 
         repository_root = get_repository_root()
         if not repository_root:
-            print("Not in a cog workspace")
+            context.error("Not in a cog workspace")
             return 1
 
         workspace_id, snapshot_version = get_workspace_id_and_snapshot_version(
-            repository_root
+            context, repository_root
         )
         if not workspace_id or not snapshot_version:
-            print("Not in a cog workspace")
+            context.error("Not in a cog workspace")
             return 1
 
         # Determine repo_root
         repo_root = "fuchsia"
-        relative_git_dir = get_relative_git_dir(top_level_args, repository_root)
+        relative_git_dir = get_relative_git_dir(
+            context.global_git_options, repository_root
+        )
         if relative_git_dir:
             repo_root = f"fuchsia/{relative_git_dir}"
 
@@ -188,7 +214,7 @@ class RevParseCommand(GitSubCommand):
 
         try:
             cmd = [
-                top_level_args.real_git,
+                context.real_git,
                 "citc",
                 "api.call",
                 "GetDrafts",
@@ -197,30 +223,28 @@ class RevParseCommand(GitSubCommand):
             result = subprocess.run(cmd, capture_output=True, text=True)
 
             if result.returncode != 0:
-                print(result.stderr, file=sys.stderr)
+                context.error(result.stderr)
                 return result.returncode
 
             for line in result.stdout.splitlines():
                 if "commit_hash:" in line:
                     parts = line.split('"')
                     if len(parts) >= 2:
-                        print(parts[1])
+                        context.print(parts[1])
                         return 0
 
             return 1
         except Exception as e:
-            print(f"fatal: {e}", file=sys.stderr)
+            context.fatal(f"{e}")
             return 1
 
 
 @register_command("status")
 class StatusCommand(GitSubCommand):
-    def execute(
-        self, top_level_args: argparse.Namespace, args: argparse.Namespace
-    ) -> int:
-        print(top_level_args)
-        print(args)
-        print("not implemented yet")
+    def execute(self, context: Context) -> int:
+        context.log_info(str(context.args.global_git_args))
+        context.log_info(str(context.git_subcommand_args))
+        context.print("not implemented yet")
         return 0
 
 
@@ -295,45 +319,32 @@ class LsFilesCommand(GitSubCommand):
         )
         parser.add_argument("file", nargs="*", help="Files to show.")
 
-    def execute(
-        self, top_level_args: argparse.Namespace, args: argparse.Namespace
-    ) -> int:
+    def execute(self, context: Context) -> int:
+        args = context.git_subcommand_args
         try:
             cmd = [
-                top_level_args.real_git,
+                context.real_git,
             ]
-            cmd.extend(
-                namespace_to_args(
-                    top_level_args,
-                    ignored_flags=["--real-git", "--invoker-cwd"],
-                )
-            )
+            cmd.extend(context.args.global_git_args)
             cmd.append("ls-files")
-
-            # The namespace_to_args function does not know how to handle positional
-            # arguments, it will convert all positional arguments to flags and so we need to
-            # handle it here.
-            cmd.extend(namespace_to_args(args, ignored_flags=["--file"]))
-
-            if args.file:
-                cmd.extend(args.file)
+            cmd.extend(context.args.remaining_args)
 
             result = subprocess.run(
                 cmd,
                 capture_output=True,
                 text=True,
-                cwd=top_level_args.invoker_cwd,
+                cwd=context.invoker_cwd,
             )
 
             if result.returncode != 0:
-                print(result.stderr, file=sys.stderr)
+                context.error(result.stderr)
                 return result.returncode
 
             end = "\0" if args.z else "\n"
-            print(result.stdout, end=end)
+            context.output(result.stdout, end=end)
             return 0
         except Exception as e:
-            print(f"fatal: {e}", file=sys.stderr)
+            context.fatal(f"{e}")
             return 10
 
 
@@ -346,8 +357,18 @@ def _find_command_name_and_position(
     return None, -1
 
 
-def _create_top_level_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="git", add_help=False)
+def _split_args(args: List[str]) -> Tuple[List[str], List[str]]:
+    """Splits args into two lists, everything before '--' and everything after."""
+    i = 0
+    while i < len(args):
+        if args[i] == "--":
+            return args[:i], args[i + 1 :]
+        i += 1
+    return args, []
+
+
+def _create_polyfill_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog="git-polyfill", add_help=False)
     parser.add_argument(
         "--real-git",
         type=str,
@@ -360,6 +381,16 @@ def _create_top_level_parser() -> argparse.ArgumentParser:
         help="Path that git was invoked from",
         required=True,
     )
+    parser.add_argument(
+        "--log-file",
+        type=str,
+        help="Path to a file to append logs to.",
+    )
+    return parser
+
+
+def _create_global_git_args_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog="git", add_help=False)
     parser.add_argument(
         "-C",
         type=str,
@@ -380,10 +411,38 @@ def _create_top_level_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--version", action="version", version="git version 2.x (fuchsia-cog)"
     )
-    parser.add_argument(
-        "--help", action="help", help="show this help message and exit"
-    )
     return parser
+
+
+@dataclass
+class ArgsCollection:
+    polyfill_args: List[str]
+    global_git_args: List[str]
+    command_name: str
+    remaining_args: List[str]
+
+    def __init__(self, args: List[str]):
+        if "--" not in args:
+            raise ValueError(
+                "Arguments must contain '--' to separate polyfill args from git args."
+            )
+
+        # We split on the first '--' found. This is important because git commands
+        # can also use '--' to separate flags from positional arguments (e.g. file paths).
+        # We want to ensure that the first '--' is used to separate the polyfill arguments
+        # from the git command and its arguments.
+        #
+        # Example: git.py <polyfill-args> -- <global-git-args> <command> <command-args> -- <files>
+        self.polyfill_args, git_args = _split_args(args)
+
+        command_name, command_index = _find_command_name_and_position(git_args)
+
+        if not command_name:
+            raise ValueError("No git command found.")
+
+        self.global_git_args = git_args[:command_index]
+        self.command_name = command_name
+        self.remaining_args = git_args[command_index + 1 :]
 
 
 def main() -> int:
@@ -392,24 +451,18 @@ def main() -> int:
         return 1
 
     provided_args = sys.argv[1:]
-    command_name, command_index = _find_command_name_and_position(provided_args)
-
-    if command_name is None:
-        # If no registered command is found, we fail.
-        # We try to identify what the user intended to run for a better error message.
-        print("This command is not yet implemented.", file=sys.stderr)
+    try:
+        args_collection = ArgsCollection(provided_args)
+    except ValueError as e:
+        print(f"error: {e}", file=sys.stderr)
         return 1
 
-    top_level_parser = _create_top_level_parser()
+    context = Context(args_collection)
+    context.write_log("START", f"{shlex.join(sys.argv)}\n")
 
-    top_level_args = provided_args[:command_index]
-    remaining_args = provided_args[command_index + 1 :]
-
-    top_level_args = top_level_parser.parse_args(top_level_args)
-
-    command_class = _COMMANDS[command_name]
+    command_class = _COMMANDS[args_collection.command_name]
     command = command_class()
-    return command.run(top_level_args, remaining_args)
+    return command.run(context)
 
 
 if __name__ == "__main__":
