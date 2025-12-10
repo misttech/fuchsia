@@ -155,7 +155,7 @@ impl<T: ?Sized + 'static> Channel<T> {
         //   inside it are from the arena it holds, but just in case `fdf_channel_write` will check
         //   that we are using the correct arena so we do not need to re-verify that they are from
         //   the same arena.
-        Status::ok(unsafe {
+        let res = Status::ok(unsafe {
             fdf_channel_write(
                 self.handle.get_raw().get(),
                 0,
@@ -165,13 +165,14 @@ impl<T: ?Sized + 'static> Channel<T> {
                 handles_ptr,
                 handles_count,
             )
-        })?;
+        });
 
         // SAFETY: this is the valid-by-contruction arena we were passed in through the [`Message`]
         // object, and now that we have completed `fdf_channel_write` it is safe to drop our copy
         // of it.
         unsafe { fdf_arena_drop_ref(arena.as_ptr()) };
-        Ok(())
+
+        res
     }
 
     /// Shorthand for calling [`Self::write`] with the result of [`Message::new_with`]
