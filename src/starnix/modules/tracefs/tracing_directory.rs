@@ -49,6 +49,7 @@ impl FileOps for TraceMarkerFile {
         fuchsia_trace::duration!(CATEGORY_TRACE_META, c"Write atrace event");
         if self.queue.is_enabled() {
             let mut bytes = data.read_all()?;
+            let bytes_read = bytes.len();
             // The TraceEvent struct appends a new line to the trace data unconditionally, so
             // remove the trailing newline if here to avoid generating empty events when reading.
             if bytes.ends_with(&['\n' as u8]) {
@@ -63,7 +64,7 @@ impl FileOps for TraceMarkerFile {
                 bytes.len(),
             );
             self.queue.push_event(trace_event, &bytes)?;
-            Ok(bytes.len())
+            Ok(bytes_read) // Includes '\n', if present
         } else {
             Ok(data.available())
         }
