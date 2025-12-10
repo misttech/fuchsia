@@ -55,9 +55,10 @@ class DeviceAdapterParent {
 class DeviceAdapter : public fdf::WireServer<fuchsia_hardware_network_driver::NetworkDeviceImpl> {
  public:
   // Creates a new `DeviceAdapter` with  `parent`, that will serve its requests through
-  // `dispatcher`.
+  // `netdev_dispatcher`. `dispatchers` is passed on to the the network-device library.
   static zx::result<std::unique_ptr<DeviceAdapter>> Create(
-      const DeviceInterfaceDispatchers& dispatchers, DeviceAdapterParent* parent);
+      const DeviceInterfaceDispatchers& dispatchers,
+      fdf::UnownedUnsynchronizedDispatcher&& netdev_dispatcher, DeviceAdapterParent* parent);
 
   // Binds `req` to this adapter's `NetworkDeviceInterface`.
   zx_status_t Bind(fidl::ServerEnd<fuchsia_hardware_network::Device> req);
@@ -136,12 +137,14 @@ class DeviceAdapter : public fdf::WireServer<fuchsia_hardware_network_driver::Ne
   // Delegates |lease| up the receive path.
   zx_status_t DelegateRxLease(fuchsia_hardware_network::wire::DelegatedRxLease lease);
 
-  const fdf::UnownedUnsynchronizedDispatcher& netdevice_dispatcher() const { return dispatcher_; }
+  const fdf::UnownedUnsynchronizedDispatcher& netdevice_dispatcher() const {
+    return netdev_dispatcher_;
+  }
 
  private:
   static constexpr uint16_t kFifoDepth = fuchsia_net_tun::wire::kFifoDepth;
-  explicit DeviceAdapter(DeviceAdapterParent* parent,
-                         const DeviceInterfaceDispatchers& dispatchers);
+  explicit DeviceAdapter(DeviceAdapterParent* parent, const DeviceInterfaceDispatchers& dispatchers,
+                         fdf::UnownedUnsynchronizedDispatcher&& netdev_dispatcher);
 
   // Enqueues a single fulfilled rx frame.
   void EnqueueRx(uint8_t port_id, fuchsia_hardware_network::wire::FrameType frame_type,
@@ -185,7 +188,8 @@ class DeviceAdapter : public fdf::WireServer<fuchsia_hardware_network_driver::Ne
       __TA_GUARDED(tx_lock_);
   fdf::WireSharedClient<fuchsia_hardware_network_driver::NetworkDeviceIfc> device_iface_;
   std::array<std::atomic_bool, fuchsia_hardware_network::wire::kMaxPorts> port_online_status_;
-  fdf::UnownedUnsynchronizedDispatcher dispatcher_;
+  DeviceInterfaceDispatchers dispatchers_;
+  fdf::UnownedUnsynchronizedDispatcher netdev_dispatcher_;
 };
 }  // namespace tun
 }  // namespace network

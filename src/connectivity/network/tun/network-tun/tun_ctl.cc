@@ -25,6 +25,22 @@ zx::result<std::unique_ptr<TunCtl>> TunCtl::Create(async_dispatcher_t* fidl_disp
   }
   tun_ctl->dispatchers_ = std::move(dispatchers.value());
 
+  // Create the netdev dispatcher with a different owner, as if it was a separate driver from the
+  // network device driver. This is required to allow inlining calls between dispatchers within the
+  // same driver. It doesn't matter which pointer we use as the owner, as long as it doesn't clash
+  // with the network device driver owner.
+  zx::result netdev_dispatcher = fdf_env::DispatcherBuilder::CreateUnsynchronizedWithOwner(
+      &tun_ctl->netdev_dispatcher_, {}, "netdev-dispatcher",
+      [tun_ctl = tun_ctl.get()](fdf_dispatcher_t*) {
+        tun_ctl->netdev_dispatcher_shutdown_.Signal();
+      });
+  if (netdev_dispatcher.is_error()) {
+    FX_PLOGST(ERROR, "tun", netdev_dispatcher.status_value())
+        << "failed to create netdev dispatcher";
+    return netdev_dispatcher.take_error();
+  }
+  tun_ctl->netdev_dispatcher_ = std::move(netdev_dispatcher.value());
+
   return zx::ok(std::move(tun_ctl));
 }
 
@@ -32,11 +48,16 @@ TunCtl::~TunCtl() {
   if (dispatchers_) {
     dispatchers_->ShutdownSync();
   }
+  if (netdev_dispatcher_.get()) {
+    netdev_dispatcher_.ShutdownAsync();
+    netdev_dispatcher_shutdown_.Wait();
+    netdev_dispatcher_.reset();
+  }
 }
 
 void TunCtl::CreateDevice(CreateDeviceRequestView request, CreateDeviceCompleter::Sync& completer) {
   zx::result tun_device = TunDevice::Create(
-      dispatchers_->Unowned(),
+      dispatchers_->Unowned(), netdev_dispatcher_.borrow(),
       [this](TunDevice* dev) {
         // If this is posted on fdf_dispatcher then there's a lockup because we're
         // then creating a double lock in DevicePort.
@@ -60,7 +81,7 @@ void TunCtl::CreateDevice(CreateDeviceRequestView request, CreateDeviceCompleter
 
 void TunCtl::CreatePair(CreatePairRequestView request, CreatePairCompleter::Sync& completer) {
   zx::result tun_pair = TunPair::Create(
-      dispatchers_->Unowned(), fidl_dispatcher_,
+      dispatchers_->Unowned(), netdev_dispatcher_.borrow(), fidl_dispatcher_,
       [this](TunPair* pair) {
         async::PostTask(fidl_dispatcher_, [this, pair]() {
           device_pairs_.erase(*pair);

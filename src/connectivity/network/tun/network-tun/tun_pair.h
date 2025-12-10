@@ -26,10 +26,10 @@ class TunPair : public fbl::DoublyLinkedListable<std::unique_ptr<TunPair>>,
  public:
   // Creates a new `TunPair` with `config`.
   // `teardown` is called when all the bound client channels are closed.
-  static zx::result<std::unique_ptr<TunPair>> Create(const DeviceInterfaceDispatchers& dispatchers,
-                                                     async_dispatcher_t* fidl_dispatcher,
-                                                     fit::callback<void(TunPair*)> teardown,
-                                                     DevicePairConfig&& config);
+  static zx::result<std::unique_ptr<TunPair>> Create(
+      const DeviceInterfaceDispatchers& dispatchers,
+      fdf::UnownedUnsynchronizedDispatcher&& netdev_dispatcher, async_dispatcher_t* fidl_dispatcher,
+      fit::callback<void(TunPair*)> teardown, DevicePairConfig&& config);
   ~TunPair() override;
 
   // DeviceAdapterParent implementation:

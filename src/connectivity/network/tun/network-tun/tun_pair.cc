@@ -17,10 +17,10 @@ TunPair::TunPair(async_dispatcher_t* dispatcher, fit::callback<void(TunPair*)> t
                  DevicePairConfig config)
     : teardown_callback_(std::move(teardown)), config_(std::move(config)) {}
 
-zx::result<std::unique_ptr<TunPair>> TunPair::Create(const DeviceInterfaceDispatchers& dispatchers,
-                                                     async_dispatcher_t* fidl_dispatcher,
-                                                     fit::callback<void(TunPair*)> teardown,
-                                                     DevicePairConfig&& config) {
+zx::result<std::unique_ptr<TunPair>> TunPair::Create(
+    const DeviceInterfaceDispatchers& dispatchers,
+    fdf::UnownedUnsynchronizedDispatcher&& netdev_dispatcher, async_dispatcher_t* fidl_dispatcher,
+    fit::callback<void(TunPair*)> teardown, DevicePairConfig&& config) {
   fbl::AllocChecker ac;
   std::unique_ptr<TunPair> tun(
       new (&ac) TunPair(fidl_dispatcher, std::move(teardown), std::move(config)));
@@ -28,14 +28,14 @@ zx::result<std::unique_ptr<TunPair>> TunPair::Create(const DeviceInterfaceDispat
     return zx::error(ZX_ERR_NO_MEMORY);
   }
 
-  zx::result left = DeviceAdapter::Create(dispatchers, tun.get());
+  zx::result left = DeviceAdapter::Create(dispatchers, netdev_dispatcher->borrow(), tun.get());
   if (left.is_error()) {
     FX_PLOGST(ERROR, "tun", left.status_value()) << "TunDevice::Init device init left failed";
     return left.take_error();
   }
   tun->left_ = std::move(left.value());
 
-  zx::result right = DeviceAdapter::Create(dispatchers, tun.get());
+  zx::result right = DeviceAdapter::Create(dispatchers, netdev_dispatcher->borrow(), tun.get());
   if (right.is_error()) {
     FX_PLOGST(ERROR, "tun", right.status_value()) << "TunDevice::Init device init right failed";
     return right.take_error();

@@ -27,9 +27,11 @@ class DeviceAdapterBinder : public network::NetworkDeviceImplBinder {
 };
 
 zx::result<std::unique_ptr<DeviceAdapter>> DeviceAdapter::Create(
-    const DeviceInterfaceDispatchers& dispatchers, DeviceAdapterParent* parent) {
+    const DeviceInterfaceDispatchers& dispatchers,
+    fdf::UnownedUnsynchronizedDispatcher&& netdev_dispatcher, DeviceAdapterParent* parent) {
   fbl::AllocChecker ac;
-  std::unique_ptr<DeviceAdapter> adapter(new (&ac) DeviceAdapter(parent, dispatchers));
+  std::unique_ptr<DeviceAdapter> adapter(
+      new (&ac) DeviceAdapter(parent, dispatchers, std::move(netdev_dispatcher)));
   if (!ac.check()) {
     return zx::error(ZX_ERR_NO_MEMORY);
   }
@@ -60,14 +62,14 @@ zx_status_t DeviceAdapter::BindPort(uint8_t port_id,
 fdf::ClientEnd<fuchsia_hardware_network_driver::NetworkDeviceImpl> DeviceAdapter::BindDriver() {
   auto [client, server] =
       fdf::Endpoints<fuchsia_hardware_network_driver::NetworkDeviceImpl>::Create();
-  fdf::BindServer(dispatcher_->get(), std::move(server), this);
+  fdf::BindServer(netdev_dispatcher_->get(), std::move(server), this);
   return std::move(client);
 }
 
 void DeviceAdapter::Init(
     fuchsia_hardware_network_driver::wire::NetworkDeviceImplInitRequest* request, fdf::Arena& arena,
     InitCompleter::Sync& completer) {
-  device_iface_.Bind(std::move(request->iface), dispatcher_->get());
+  device_iface_.Bind(std::move(request->iface), dispatchers_.port_->get());
   completer.buffer(arena).Reply(ZX_OK);
 }
 
@@ -475,8 +477,9 @@ void DeviceAdapter::CommitTx() {
 }
 
 DeviceAdapter::DeviceAdapter(DeviceAdapterParent* parent,
-                             const DeviceInterfaceDispatchers& dispatchers)
-    : parent_(parent), dispatcher_(dispatchers.impl_) {
+                             const DeviceInterfaceDispatchers& dispatchers,
+                             fdf::UnownedUnsynchronizedDispatcher&& netdev_dispatcher)
+    : parent_(parent), dispatchers_(dispatchers), netdev_dispatcher_(std::move(netdev_dispatcher)) {
   for (std::atomic_bool& p : port_online_status_) {
     p = false;
   }

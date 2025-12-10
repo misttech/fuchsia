@@ -53,8 +53,9 @@ TunDevice::TunDevice(fdf::Dispatcher* dispatcher, fit::callback<void(TunDevice*)
       dispatcher_(dispatcher) {}
 
 zx::result<std::unique_ptr<TunDevice>> TunDevice::Create(
-    const DeviceInterfaceDispatchers& dispatchers, fit::callback<void(TunDevice*)> teardown,
-    DeviceConfig&& config) {
+    const DeviceInterfaceDispatchers& dispatchers,
+    fdf::UnownedUnsynchronizedDispatcher&& netdev_dispatcher,
+    fit::callback<void(TunDevice*)> teardown, DeviceConfig&& config) {
   fbl::AllocChecker ac;
   std::unique_ptr<TunDevice> tun(new (&ac)
                                      TunDevice(nullptr, std::move(teardown), std::move(config)));
@@ -68,7 +69,7 @@ zx::result<std::unique_ptr<TunDevice>> TunDevice::Create(
     return zx::error(status);
   }
 
-  zx::result device = DeviceAdapter::Create(dispatchers, tun.get());
+  zx::result device = DeviceAdapter::Create(dispatchers, std::move(netdev_dispatcher), tun.get());
   if (device.is_error()) {
     FX_PLOGST(ERROR, "tun", device.status_value()) << "TunDevice::Init device init failed";
     return device.take_error();
