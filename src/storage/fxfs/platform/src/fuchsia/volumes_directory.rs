@@ -941,7 +941,7 @@ mod tests {
     use fidl::endpoints::{DiscoverableProtocolMarker, create_proxy, create_request_stream};
     use fidl_fuchsia_fs::AdminMarker;
     use fidl_fuchsia_fs_startup::{MountOptions, VolumeMarker, VolumeProxy};
-    use fidl_fuchsia_fxfs::{CryptRequest, KeyPurpose};
+    use fidl_fuchsia_fxfs::{CryptRequest, FxfsKey, KeyPurpose, WrappedKey};
     use fuchsia_component_client::connect_to_protocol_at_dir_svc;
     use fuchsia_fs::file;
     use futures::{TryStreamExt, join};
@@ -2825,10 +2825,18 @@ mod tests {
                                 Ok(Some(CryptRequest::CreateKey { responder, .. })) => {
                                     responder.send(Ok((&[0; 16], &[0; 48], &[0; 32]))).unwrap();
                                 }
+                                Ok(Some(CryptRequest::CreateKeyWithId {
+                                        wrapping_key_id, responder, .. })) => {
+                                    let key = WrappedKey::Fxfs(FxfsKey {
+                                        wrapping_key_id,
+                                        wrapped_key: [0u8; 48],
+                                    });
+                                    responder.send(Ok((&key, &[0; 32]))).unwrap();
+                                }
                                 Ok(Some(CryptRequest::UnwrapKey { responder, .. })) => {
                                     responder.send(Ok(&vec![0; 32])).unwrap();
                                 }
-                                _ => unreachable!(),
+                                _ => return,
                             }
                         }
                     }
