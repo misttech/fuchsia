@@ -30,4 +30,8 @@ pub struct ScrutinyStructuredConfigCommand {
     /// build scrutiny model based on recovery-mode build artifacts.
     #[argh(switch)]
     pub recovery: bool,
+    /// absolute or working path-relative path to component tree configuration file that affects
+    /// how component tree data is gathered.
+    #[argh(option)]
+    pub component_tree_config: Option<PathBuf>,
 }

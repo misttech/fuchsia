@@ -20,12 +20,17 @@ fho::embedded_plugin!(ScrutinyStructuredConfigTool);
 impl FfxMain for ScrutinyStructuredConfigTool {
     type Writer = SimpleWriter;
     async fn main(self, _writer: Self::Writer) -> fho::Result<()> {
-        let artifacts = if self.cmd.recovery {
+        let mut scrutiny = if self.cmd.recovery {
             Scrutiny::from_product_bundle_recovery(&self.cmd.product_bundle)
         } else {
             Scrutiny::from_product_bundle(&self.cmd.product_bundle)
-        }?
-        .collect()?;
+        }?;
+
+        if let Some(component_tree_config) = &self.cmd.component_tree_config {
+            scrutiny.set_component_tree_config_path(component_tree_config)
+        }
+
+        let artifacts = scrutiny.collect()?;
         let response = artifacts.extract_structured_config()?;
         let result = serde_json::to_string_pretty(&response.components)
             .map_err(|e| bug!("prettifying response JSON: {e}"))?;

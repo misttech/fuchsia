@@ -10,12 +10,17 @@ use std::path::PathBuf;
 
 pub async fn verify(cmd: &Command, recovery: bool) -> Result<HashSet<PathBuf>> {
     let policy_path = &cmd.policy.to_str().context("converting policy path to string")?.to_owned();
-    let artifacts = if recovery {
+    let mut scrutiny = if recovery {
         Scrutiny::from_product_bundle_recovery(&cmd.product_bundle)
     } else {
         Scrutiny::from_product_bundle(&cmd.product_bundle)
-    }?
-    .collect()?;
+    }?;
+
+    if let Some(component_tree_config) = &cmd.component_tree_config {
+        scrutiny.set_component_tree_config_path(component_tree_config)
+    }
+
+    let artifacts = scrutiny.collect()?;
 
     let response = artifacts.verify_structured_config(policy_path.clone())?;
     response.check_errors().with_context(|| {
