@@ -38,8 +38,9 @@ fuchsia_unittest_package("package") {
 
     # DTR requirements.
     "//sdk/lib/driver_test_realm/realm_builder:client_includes",
-    "//sdk/lib/sys/component/cpp/testing:cpp",
+
+    # Include the test parent (if your driver binds to it).
+    "//src/devices/misc/drivers/test-parent",
   ]
-  subpackages = [ "//sdk/lib/driver_test_realm:package" ]
 }
 # [END example]

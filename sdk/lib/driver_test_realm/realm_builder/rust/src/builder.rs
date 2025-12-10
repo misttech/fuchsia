@@ -151,6 +151,7 @@ fn capabilities_eq_name(a: &ftest::Capability, b: &ftest::Capability) -> bool {
 
 #[derive(Debug, Clone, Default)]
 pub struct Options {
+    using_subpackage: Option<bool>,
     driver_offers: Option<(Ref, Vec<ftest::Capability>)>,
     driver_exposes: Option<Vec<ftest::Capability>>,
     extra_realm_capabilities: Vec<(ftest::Capability, Ref)>,
@@ -159,6 +160,11 @@ pub struct Options {
 impl Options {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub fn using_subpackage(mut self, using_subpackage: bool) -> Self {
+        self.using_subpackage = Some(using_subpackage);
+        self
     }
 
     pub fn driver_offers(mut self, provider: Ref, offers: Vec<ftest::Capability>) -> Self {
@@ -202,7 +208,13 @@ impl DriverTestRealmBuilder for RealmBuilder {
     ) -> Result<&Self> {
         let manifest_provider =
             fuchsia_component::client::connect_to_protocol::<fdt::ManifestProviderMarker>()?;
-        let stream = manifest_provider.get_manifest().await?.expect("manifest stream");
+        let stream = manifest_provider
+            .get_manifest(&fdt::GetManifestRequest {
+                using_subpackage: options.using_subpackage,
+                ..Default::default()
+            })
+            .await?
+            .expect("manifest stream");
 
         let mut manifest: Vec<u8> = vec![];
         loop {

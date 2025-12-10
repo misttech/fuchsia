@@ -12,6 +12,11 @@
 
 namespace driver_test_realm {
 
+OptionsBuilder& OptionsBuilder::using_subpackage(bool using_subpackage) {
+  options_.using_subpackage = using_subpackage;
+  return *this;
+}
+
 OptionsBuilder& OptionsBuilder::driver_offers(
     component_testing::Ref provider,
     const std::vector<fuchsia_component_test::Capability>& offers) {
@@ -280,7 +285,10 @@ void Setup(RealmBuilder& realm_builder, async_dispatcher_t* dispatcher, Options 
   auto manifest_provider = component::Connect<fuchsia_driver_test::ManifestProvider>();
   ZX_ASSERT(manifest_provider.is_ok());
 
-  auto manifest_result = fidl::Call(*manifest_provider)->GetManifest();
+  auto manifest_result = fidl::Call(*manifest_provider)
+                             ->GetManifest({{
+                                 .using_subpackage = options.using_subpackage,
+                             }});
   ZX_ASSERT(manifest_result.is_ok());
 
   std::vector<uint8_t> manifest;

@@ -39,7 +39,6 @@ rustc_test("driver_test_realm_test") {
 
 fuchsia_unittest_package("package") {
   package_name = "driver_test_realm_test"
-  subpackages = [ "//sdk/lib/driver_test_realm:package" ]
   deps = [
     ":driver_test_realm_test",
     "//sdk/lib/driver_test_realm/realm_builder:client_includes",

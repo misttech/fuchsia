@@ -5,7 +5,7 @@
     children: [
         {
             name: "manifest_provider",
-            url: "#meta/manifest_provider.cm",
+            url: "driver_test_realm#meta/manifest_provider.cm",
         },
     ],
     use: [

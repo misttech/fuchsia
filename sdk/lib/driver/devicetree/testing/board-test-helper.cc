@@ -68,7 +68,9 @@ void BoardTestHelper::SetupRealm() {
                     .board_name(platform_id_.board_name)
                     .Build();
 
-    driver_test_realm::Setup(*realm_builder_, dispatcher_, {}, fidl::ToNatural(args));
+    driver_test_realm::Setup(*realm_builder_, dispatcher_,
+                             driver_test_realm::OptionsBuilder().using_subpackage(true).Build(),
+                             fidl::ToNatural(args));
   } else {
     driver_test_realm::Setup(*realm_builder_);
   }

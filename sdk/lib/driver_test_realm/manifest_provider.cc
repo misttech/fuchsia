@@ -15,7 +15,7 @@ namespace {
 
 class ManifestProvider final : public fidl::WireServer<fuchsia_driver_test::ManifestProvider> {
  public:
-  void GetManifest(GetManifestCompleter::Sync& completer) override {
+  void GetManifest(GetManifestRequestView request, GetManifestCompleter::Sync& completer) override {
     zx::result dir = component::OpenDirectory("/pkg/meta/");
     if (dir.is_error()) {
       FX_LOGS(ERROR) << "failed to open /pkg/meta/: " << dir.error_value();
@@ -23,11 +23,18 @@ class ManifestProvider final : public fidl::WireServer<fuchsia_driver_test::Mani
       return;
     }
 
+    std::string path;
+    if (request->has_using_subpackage() && request->using_subpackage()) {
+      path = "driver_test_realm_base_subpackage.cm";
+    } else {
+      path = "driver_test_realm_base_no_subpackage.cm";
+    }
+
     auto [client, server] = fidl::Endpoints<fuchsia_io::File>::Create();
     auto open_result =
         fidl::Call(dir.value())
             ->Open({{
-                .path = "driver_test_realm_base.cm",
+                .path = path,
                 .flags = fuchsia_io::Flags::kPermReadBytes | fuchsia_io::Flags::kProtocolFile,
                 .options = {},
                 .object = server.TakeChannel(),

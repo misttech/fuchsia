@@ -98,7 +98,7 @@ fuchsia_component_manifest(
     name = "test-manifest",
     src = "meta/example-board-test.cml",
     includes = [
-        "@fuchsia_sdk//pkg/driver_test_realm/realm_builder:client",
+        "@fuchsia_sdk//pkg/driver_test_realm/realm_builder:client_subpackage",
         "@fuchsia_sdk//pkg/sys/component:realm_builder_absolute",
     ],
 )

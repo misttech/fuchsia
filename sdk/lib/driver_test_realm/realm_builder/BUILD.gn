@@ -11,6 +11,6 @@ expect_includes("client_includes") {
 
 sdk_component_manifests("client_shard_sdk") {
   name = "driver_test_realm/realm_builder"
-  manifests = [ "client.shard.cml" ]
+  manifests = [ "client_subpackage.shard.cml" ]
   category = "partner"
 }

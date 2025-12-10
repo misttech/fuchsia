@@ -13,6 +13,7 @@
 namespace driver_test_realm {
 
 struct Options {
+  std::optional<bool> using_subpackage;
   std::optional<std::tuple<component_testing::Ref, std::vector<fuchsia_component_test::Capability>>>
       driver_offers;
   std::optional<std::vector<fuchsia_component_test::Capability>> driver_exposes;
@@ -22,6 +23,7 @@ struct Options {
 
 class OptionsBuilder {
  public:
+  OptionsBuilder& using_subpackage(bool using_subpackage);
   OptionsBuilder& driver_offers(component_testing::Ref provider,
                                 const std::vector<fuchsia_component_test::Capability>& offers);
   OptionsBuilder& driver_exposes(const std::vector<fuchsia_component_test::Capability>& exposes);

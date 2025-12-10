@@ -208,9 +208,14 @@ open protocol Realm {
 };
 
 @available(added=HEAD)
+type GetManifestRequest = table {
+    1: using_subpackage bool;
+};
+
+@available(added=HEAD)
 @discoverable(server="platform")
 closed protocol ManifestProvider {
-    strict GetManifest() -> (resource struct {
+    strict GetManifest(GetManifestRequest) -> (resource struct {
         manifest zx.Handle:STREAM;
     }) error zx.Status;
 };

@@ -216,7 +216,8 @@ executable("manifest_provider_bin") {
 fuchsia_component("manifest_provider") {
   manifest = "meta/manifest_provider.cml"
   deps = [
-    ":driver_test_realm_base_manifest",
+    ":driver_test_realm_base_no_subpackage",
+    ":driver_test_realm_base_subpackage",
     ":manifest_provider_bin",
   ]
 }
@@ -254,9 +255,15 @@ fuchsia_component_manifest("test_realm_manifest") {
   restricted_features = [ "allow_long_names" ]
 }
 
-fuchsia_component_manifest("driver_test_realm_base_manifest") {
-  component_name = "driver_test_realm_base"
-  manifest = "meta/driver_test_realm_base.cml"
+fuchsia_component_manifest("driver_test_realm_base_no_subpackage") {
+  component_name = "driver_test_realm_base_no_subpackage"
+  manifest = "meta/driver_test_realm_base_no_subpackage.cml"
+  restricted_features = [ "allow_long_names" ]
+}
+
+fuchsia_component_manifest("driver_test_realm_base_subpackage") {
+  component_name = "driver_test_realm_base_subpackage"
+  manifest = "meta/driver_test_realm_base_subpackage.cml"
   restricted_features = [ "allow_long_names" ]
 }
 

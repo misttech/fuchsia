@@ -193,9 +193,7 @@ async fn dtr_v2_test_empty_args() -> Result<()> {
         info.iter()
             .any(|d| d.url == Some("fuchsia-boot:///dtr#meta/test-parent-sys.cm".to_string()))
     );
-    assert!(
-        info.iter().any(|d| d.url == Some("dtr-test-pkg://fuchsia.com/#meta/test.cm".to_string()))
-    );
+    assert!(info.iter().any(|d| d.url == Some("fuchsia-boot:///dtr#meta/test.cm".to_string())));
 
     instance.destroy().await?;
     Ok(())
