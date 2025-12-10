@@ -27,7 +27,6 @@ pub trait AtomicElisionExt {
 pub fn have_elision() -> bool {
     cfg!(all(
         feature = "hardware-lock-elision",
-        not(miri),
         any(target_arch = "x86", target_arch = "x86_64"),
     ))
 }
@@ -36,7 +35,6 @@ pub fn have_elision() -> bool {
 // have_elision().
 #[cfg(not(all(
     feature = "hardware-lock-elision",
-    not(miri),
     any(target_arch = "x86", target_arch = "x86_64")
 )))]
 impl AtomicElisionExt for AtomicUsize {
@@ -55,7 +53,6 @@ impl AtomicElisionExt for AtomicUsize {
 
 #[cfg(all(
     feature = "hardware-lock-elision",
-    not(miri),
     any(target_arch = "x86", target_arch = "x86_64")
 ))]
 impl AtomicElisionExt for AtomicUsize {

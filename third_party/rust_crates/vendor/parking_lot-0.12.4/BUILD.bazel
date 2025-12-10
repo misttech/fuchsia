@@ -22,7 +22,7 @@ package_info(
     name = "package_info",
     package_name = "parking_lot",
     package_url = "https://github.com/Amanieu/parking_lot",
-    package_version = "0.12.5",
+    package_version = "0.12.4",
 )
 
 license(
@@ -75,7 +75,7 @@ rust_library(
         "@rules_rust//rust/platform:x86_64-unknown-linux-gnu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    version = "0.12.5",
+    version = "0.12.4",
     deps = [
         "//third_party/rust_crates/vendor/lock_api-0.4.14:lock_api",
         "//third_party/rust_crates/vendor/parking_lot_core-0.9.12:parking_lot_core",
