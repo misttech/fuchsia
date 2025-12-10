@@ -227,6 +227,28 @@ impl Component {
             .map_err(|e| ComponentError::InvalidArgs(url.clone(), e.into()))?;
         let is_shared_process = runner::get_bool(program, "is_shared_process").unwrap_or(false);
 
+        let job = job_default().create_child_job().map_err(ComponentError::CreateJob)?;
+        match runner::get_enum(program, "job_policy_bad_handles", &["deny", "allow_exception"])
+            .unwrap_or(None)
+        {
+            Some("deny") => {
+                let _ = job
+                    .set_policy(zx::JobPolicy::Basic(
+                        zx::JobPolicyOption::Absolute,
+                        vec![(zx::JobCondition::BadHandle, zx::JobAction::Deny)],
+                    ))
+                    .map_err(|e| ComponentError::CreateJob(e))?;
+            }
+            Some("allow_exception") => {
+                let _ = job
+                    .set_policy(zx::JobPolicy::Basic(
+                        zx::JobPolicyOption::Absolute,
+                        vec![(zx::JobCondition::BadHandle, zx::JobAction::AllowException)],
+                    ))
+                    .map_err(|e| ComponentError::CreateJob(e))?;
+            }
+            _ => {}
+        };
         let ns = start_info.ns.ok_or_else(|| ComponentError::MissingNamespace(url.clone()))?;
         let ns = Namespace::try_from(ns)
             .map_err(|e| ComponentError::InvalidArgs(url.clone(), e.into()))?;
@@ -267,7 +289,7 @@ impl Component {
                 args: args,
                 environ,
                 ns: ns,
-                job: job_default().create_child_job().map_err(ComponentError::CreateJob)?,
+                job: job,
                 executable_vmo,
                 lib_loader_cache,
                 options: if is_shared_process {
