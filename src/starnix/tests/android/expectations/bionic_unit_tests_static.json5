@@ -194,6 +194,9 @@
 
                 // TODO: https://fxbug.dev/287114492 - maybe we'll implement sched_setattr?
                 "sched.sched_setattr_failure", // https://fxbug.dev/287114492
+
+                // TODO: https://fxbug.dev/467539761 - requires hardware FE_TONEARESTFROMZERO.
+                "fenv.fesetround_fegetround_FE_TONEARESTFROMZERO",
             ],
         },
     ],
