@@ -39,7 +39,7 @@ impl TryFromEnv for RemoteControlProxyHolder {
         let behavior = target_env.init_connection_behavior(env.environment_context()).await?;
         match *behavior {
             ConnectionBehavior::DirectConnector(ref dc) => {
-                let conn = dc.get_connection(env.environment_context()).await?;
+                let conn = dc.resolution().await?.get_connection(env.environment_context()).await?;
                 return conn.rcs_proxy_fdomain().await.bug().map(Into::into).map_err(Into::into);
             }
             ConnectionBehavior::DaemonConnector(ref dc) => {

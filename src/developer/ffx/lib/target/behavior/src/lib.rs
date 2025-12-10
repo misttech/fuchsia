@@ -16,15 +16,53 @@ use tokio::sync::OnceCell;
 
 mod injection;
 
+struct DirectConnectorInner {
+    context: EnvironmentContext,
+    resolution: futures::lock::Mutex<Arc<Resolution>>,
+}
+
+#[derive(Clone)]
+pub struct DirectConnector(Arc<DirectConnectorInner>);
+
+impl DirectConnector {
+    pub fn from_resolution_for_test(resolution: Resolution) -> Self {
+        DirectConnector(Arc::new(DirectConnectorInner {
+            context: EnvironmentContext::default(),
+            resolution: futures::lock::Mutex::new(Arc::new(resolution)),
+        }))
+    }
+
+    pub async fn resolution(&self) -> anyhow::Result<Arc<Resolution>> {
+        let mut resolution = self.0.resolution.lock().await;
+
+        if resolution.ensure_not_terminated(&self.0.context).await.is_ok() {
+            return Ok(Arc::clone(&*resolution));
+        }
+
+        let new = Arc::new(Resolution::try_from_env_context(&self.0.context).await?);
+        *resolution = Arc::clone(&new);
+
+        Ok(new)
+    }
+
+    fn get_connection_if_already_established(&self) -> Option<Arc<ffx_target::Connection>> {
+        if let Some(guard) = self.0.resolution.try_lock() {
+            guard.get_connection_if_already_established()
+        } else {
+            None
+        }
+    }
+}
+
 #[derive(Clone)]
 pub enum ConnectionBehavior {
     DaemonConnector(Arc<dyn Injector>),
-    DirectConnector(Arc<Resolution>),
+    DirectConnector(DirectConnector),
 }
 
 impl ConnectionBehavior {
     pub fn fake_direct_connector(resolution: Resolution) -> Self {
-        ConnectionBehavior::DirectConnector(Arc::new(resolution))
+        ConnectionBehavior::DirectConnector(DirectConnector::from_resolution_for_test(resolution))
     }
     pub fn fake_daemon_connector<T: Injector + 'static>(injector: T) -> Self {
         ConnectionBehavior::DaemonConnector(Arc::new(injector))
@@ -220,7 +258,11 @@ impl FhoTargetEnvironmentInner {
             .initialize_behavior_with(|| async {
                 log::info!("Initializing ConnectionBehavior::DirectConnector");
                 let resolution = Resolution::try_from_env_context(context).await?;
-                Ok(ConnectionBehavior::DirectConnector(Arc::new(resolution)))
+                let connector = DirectConnector(Arc::new(DirectConnectorInner {
+                    context: context.clone(),
+                    resolution: futures::lock::Mutex::new(Arc::new(resolution)),
+                }));
+                Ok(ConnectionBehavior::DirectConnector(connector))
             })
             .await?;
         // If the behavior was set explicitly, e.g. with FfxTool's TargetProxy

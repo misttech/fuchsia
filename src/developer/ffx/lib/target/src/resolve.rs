@@ -704,6 +704,14 @@ impl Resolution {
         self.get_connection(context).await.map(|_| ())
     }
 
+    pub async fn ensure_not_terminated(&self, context: &EnvironmentContext) -> Result<()> {
+        if self.connection.lock().await.is_some() {
+            self.ensure_connected(context).await
+        } else {
+            Ok(())
+        }
+    }
+
     pub async fn get_connection(&self, context: &EnvironmentContext) -> Result<Arc<Connection>> {
         // Hold a lock to make sure only one connection is being initialized at a time.
         // Note that this is a tokio Mutex, not a std Mutex, so it's safe to hold across

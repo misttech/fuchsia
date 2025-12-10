@@ -70,7 +70,8 @@ impl TryFromEnv for HostAddrHolder {
                 Ok(HostAddrHolder::from(id.ssh_host_address))
             }
             ConnectionBehavior::DirectConnector(ref direct) => {
-                let conn = direct.get_connection(env.environment_context()).await?;
+                let conn =
+                    direct.resolution().await?.get_connection(env.environment_context()).await?;
                 let host_addr_info = conn.host_ssh_address();
                 Ok(HostAddrHolder::from(host_addr_info))
             }

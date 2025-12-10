@@ -5,13 +5,13 @@
 use async_trait::async_trait;
 use errors::FfxError;
 use ffx_command_error::{Error, Result};
-use ffx_target::Resolution;
 use fho::{FhoEnvironment, TryFromEnv};
 use fidl::endpoints::DiscoverableProtocolMarker;
 use fidl_fuchsia_developer_ffx as ffx_fidl;
-use std::sync::Arc;
 use std::time::Duration;
-use target_behavior::{ConnectionBehavior, FhoTargetEnvironment, target_interface};
+use target_behavior::{
+    ConnectionBehavior, DirectConnector, FhoTargetEnvironment, target_interface,
+};
 use target_holders::DaemonProxyHolder;
 
 /// A connector lets a tool make multiple attempts to connect to an object. It
@@ -145,13 +145,14 @@ async fn daemon_try_connect<T: TryFromEnv>(
 
 async fn direct_connector_try_connect<T: TryFromEnv>(
     env: &FhoEnvironment,
-    dc: &Arc<Resolution>,
+    dc: &DirectConnector,
     log_target_wait: &mut impl FnMut(&Option<String>, &Option<Error>) -> Result<()>,
 ) -> Result<T> {
     loop {
         let target_spec = {
-            dc.ensure_connected(env.environment_context()).await?;
-            dc.target_spec()
+            let resolution = dc.resolution().await?;
+            resolution.ensure_connected(env.environment_context()).await?;
+            resolution.target_spec()
         };
         return match T::try_from_env(env).await {
             Err(conn_error) => {

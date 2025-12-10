@@ -27,8 +27,8 @@ impl TryFromEnv for SshAddrHolder {
                 let tia: TargetIpAddr = tiai.into();
                 tia.into()
             }
-            target_behavior::ConnectionBehavior::DirectConnector(resolution) => {
-                resolution.addr()?
+            target_behavior::ConnectionBehavior::DirectConnector(connector) => {
+                connector.resolution().await?.addr()?
             }
         }))
     }

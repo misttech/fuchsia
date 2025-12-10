@@ -10,7 +10,6 @@ use fdomain_fuchsia_buildinfo::ProviderProxy;
 use fdomain_fuchsia_feedback::{DeviceIdProviderProxy, LastRebootInfoProviderProxy};
 use fdomain_fuchsia_hwinfo::{Architecture, BoardProxy, DeviceProxy, ProductProxy};
 use fdomain_fuchsia_update_channelcontrol::ChannelControlProxy;
-use ffx_target::Resolution;
 use ffx_writer::{ToolIO as _, VerifiedMachineWriter};
 use fho::{Deferred, FfxMain, FfxTool, FhoEnvironment, deferred};
 use fidl_fuchsia_developer_ffx::TargetIpAddrInfo;
@@ -18,9 +17,8 @@ use show::{
     AddressData, BoardData, BuildData, DeviceData, ProductData, TargetShowInfo, UpdateData,
 };
 use std::net::IpAddr;
-use std::sync::Arc;
 use std::time::Duration;
-use target_behavior::ConnectionBehavior;
+use target_behavior::{ConnectionBehavior, DirectConnector};
 use target_holders::TargetProxyHolder;
 use target_holders::fdomain::{RemoteControlProxyHolder, moniker};
 use timeout::timeout;
@@ -68,15 +66,15 @@ impl ShowTool {
         // list, as well as the labels in the Ok() and vec![] just below.
         // Returns Some(dc) only if we have a direct connection
         let behavior = target_behavior::target_interface(&self.fho_env).behavior()?;
-        let resolution = match *behavior {
-            ConnectionBehavior::DirectConnector(ref resolution) => Some(resolution.clone()),
+        let connector = match *behavior {
+            ConnectionBehavior::DirectConnector(ref connector) => Some(connector.clone()),
             _ => None,
         };
         let show = match futures::try_join!(
             gather_target_show(
                 self.rcs_proxy,
                 &self.fho_env,
-                resolution,
+                connector,
                 self.target_proxy,
                 self.last_reboot_info_proxy
             ),
@@ -145,7 +143,7 @@ async fn gather_target_info_from_daemon(
 async fn gather_target_show(
     rcs_proxy: RemoteControlProxyHolder,
     fho_env: &FhoEnvironment,
-    resolution: Option<Arc<Resolution>>,
+    connector: Option<DirectConnector>,
     target_proxy: Deferred<TargetProxyHolder>,
     last_reboot_info_proxy: LastRebootInfoProviderProxy,
 ) -> Result<TargetData> {
@@ -154,9 +152,11 @@ async fn gather_target_show(
         .await?
         .map_err(|e| anyhow!("Failed to identify host: {:?}", e))?;
     let name = host.nodename;
-    let (ssh_address, compat) = if let Some(resolution) = resolution {
-        gather_target_info_direct(&*resolution.get_connection(fho_env.environment_context()).await?)
-            .await?
+    let (ssh_address, compat) = if let Some(connector) = connector {
+        gather_target_info_direct(
+            &*connector.resolution().await?.get_connection(fho_env.environment_context()).await?,
+        )
+        .await?
     } else {
         gather_target_info_from_daemon(target_proxy.await?).await?
     };
@@ -288,11 +288,12 @@ mod tests {
     };
     use fdomain_fuchsia_intl::RegulatoryDomain;
     use fdomain_fuchsia_update_channelcontrol::ChannelControlRequest;
-    use ffx_target::{FidlPipe, TargetProxy};
+    use ffx_target::{FidlPipe, Resolution, TargetProxy};
     use ffx_writer::{Format, TestBuffers};
     use fidl_fuchsia_developer_ffx::{TargetAddrInfo, TargetInfo, TargetIp, TargetRequest};
     use fidl_fuchsia_net::{IpAddress, Ipv4Address};
     use serde_json::Value;
+    use std::sync::Arc;
     use target_holders::fdomain::fake_proxy;
 
     const IPV4_ADDR: [u8; 4] = [127, 0, 0, 1];

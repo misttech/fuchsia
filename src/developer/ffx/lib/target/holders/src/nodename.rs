@@ -23,8 +23,8 @@ impl TryFromEnv for NodenameHolder {
                 let target = injector.target_factory().await?;
                 target.identity().await.map_err(|e| bug!(e))?.nodename
             }
-            target_behavior::ConnectionBehavior::DirectConnector(resolution) => {
-                resolution.identify(&env.environment_context()).await?.nodename
+            target_behavior::ConnectionBehavior::DirectConnector(conn) => {
+                conn.resolution().await?.identify(&env.environment_context()).await?.nodename
             }
         };
         Ok(Self(identity))

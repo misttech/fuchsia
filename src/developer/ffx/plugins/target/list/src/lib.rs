@@ -91,10 +91,10 @@ impl ListTool {
                 // user useful guidance in that situation.)
                 let target_env = target_interface(&self.fho_env);
                 let behavior = target_env.init_connection_behavior(&self.context).await?;
-                let ConnectionBehavior::DirectConnector(ref resolution) = *behavior else {
+                let ConnectionBehavior::DirectConnector(ref connector) = *behavior else {
                     ffx_bail!("Could not get direct connector for {}", String::from(query));
                 };
-                vec![resolution.get_target_info(addr, &self.context).await?]
+                vec![connector.resolution().await?.get_target_info(addr, &self.context).await?]
             }
             _ => {
                 ffx_target::list_targets(
@@ -214,6 +214,7 @@ mod test {
     use fidl_fuchsia_developer_ffx::TargetInfo as FidlTargetInfo;
     use regex::Regex;
     use std::net::IpAddr;
+    use target_behavior::DirectConnector;
     use target_holders::fake_proxy;
 
     fn tab_list_cmd(nodename: Option<String>) -> ListCommand {
@@ -544,7 +545,9 @@ mod test {
 
         let resolution =
             ffx_target::Resolution::mock(|| Err(anyhow::anyhow!("MockConnectionError")));
-        let behavior = ConnectionBehavior::DirectConnector(std::sync::Arc::new(resolution));
+        let behavior = ConnectionBehavior::DirectConnector(
+            DirectConnector::from_resolution_for_test(resolution),
+        );
 
         let target_env = target_interface(&fho_env);
         target_env.set_behavior_for_test(behavior);
