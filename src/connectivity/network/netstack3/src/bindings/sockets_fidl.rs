@@ -47,7 +47,7 @@ pub(crate) async fn serve_diagnostics(
                         });
                     responder.send(&fnet_sockets::IterateIpResult::Ok(fnet_sockets::Empty))?
                 }
-                Err(err) => responder.send(&fnet_sockets::IterateIpResult::MatcherError(err))?,
+                Err(err) => responder.send(&fnet_sockets::IterateIpResult::InvalidMatcher(err))?,
             },
         }
     }
@@ -58,26 +58,16 @@ pub(crate) async fn serve_diagnostics(
 fn iterate_ip(
     ctx: &mut Ctx,
     matchers: Vec<fnet_sockets::IpSocketMatcher>,
-) -> Result<Vec<fnet_sockets::IpSocketState>, fnet_sockets::IterateIpMatcherError> {
-    let matchers = matchers
-        .into_iter()
-        .enumerate()
-        .map(|(i, matcher)| match fnet_sockets_ext::IpSocketMatcher::try_from(matcher) {
-            Ok(matcher) => Ok(matcher.into_core()),
-            Err(err) => Err((err, i)),
-        })
-        .collect::<Result<Vec<_>, (IpSocketMatcherError, usize)>>();
-
-    let matchers = match matchers {
+) -> Result<Vec<fnet_sockets::IpSocketState>, fnet_sockets::InvalidMatcher> {
+    let matchers = match convert_matchers(matchers) {
         Ok(matchers) => matchers,
         Err((err, index)) => {
             log::debug!("encountered matcher error in IterateIp request: {err}");
-            return Err(fnet_sockets::IterateIpMatcherError {
+            return Err(fnet_sockets::InvalidMatcher {
                 // Unwrap is safe because the target type is a u32, and the
                 // index will never be more than MAX_IP_SOCKET_MATCHERS, which
                 // is a u32.
-                index: Some(index.try_into().unwrap()),
-                __source_breaking: fidl::marker::SourceBreaking,
+                index: index.try_into().unwrap(),
             });
         }
     };
@@ -121,6 +111,22 @@ async fn serve_ipiterator(
     }
 
     Ok(())
+}
+
+fn convert_matchers(
+    matchers: Vec<fnet_sockets::IpSocketMatcher>,
+) -> Result<
+    Vec<IpSocketMatcher<<BindingsCtx as MatcherBindingsTypes>::DeviceClass>>,
+    (IpSocketMatcherError, usize),
+> {
+    matchers
+        .into_iter()
+        .enumerate()
+        .map(|(i, matcher)| match fnet_sockets_ext::IpSocketMatcher::try_from(matcher) {
+            Ok(matcher) => Ok(matcher.into_core()),
+            Err(err) => Err((err, i)),
+        })
+        .collect()
 }
 
 impl TryFromFidl<fnet_sockets_ext::IpSocketMatcher>

@@ -43,7 +43,7 @@ const MAX_IP_SOCKET_MATCHERS uint32 = 128;
 @discoverable
 closed protocol Diagnostics {
     /// Populates an iterator over all IP sockets that match the provided
-    /// filters.
+    /// matchers.
     ///
     /// Unbound sockets are not returned.
     strict IterateIp(resource struct {
@@ -56,8 +56,8 @@ closed protocol Diagnostics {
             /// Populates the `tcp_info` field on returned TCP sockets.
             TCP_INFO = 0b1;
         };
-        /// Filters to apply to all sockets on the system in Conjunctive Normal
-        /// Form. Only sockets matched by all filters are returned through the
+        /// Matchers to apply to all sockets on the system in Conjunctive Normal
+        /// Form. Only sockets matched by all matchers are returned through the
         /// `IpIterator` protocol.
         ///
         /// For example, if you want to match all IPv4 TCP sockets with a local
@@ -92,13 +92,8 @@ closed protocol Diagnostics {
         1: ok Empty;
         /// A matcher in the request was invalid.
         ///
-        /// NOTE: Only the first matcher error encountered will be returned.
-        2: matcher_error @generated_name("IterateIpMatcherError") table {
-            /// The index of matcher in the request that caused the error.
-            ///
-            /// Always populated.
-            1: index uint32;
-        };
+        /// NOTE: Only the first matcher error encountered is returned.
+        2: invalid_matcher InvalidMatcher;
     });
 };
 
@@ -203,6 +198,12 @@ open protocol IpIterator {
     });
 };
 
+/// Error information for a matcher in a request.
+type InvalidMatcher = struct {
+    /// The index of the matcher in the request that caused the error.
+    index uint32;
+};
+
 /// Provides control operations on sockets.
 @discoverable
 closed protocol Control {
@@ -220,27 +221,28 @@ closed protocol Control {
     /// - TCP all other states: The TCP connection is put in state CLOSE and an
     ///   RST is sent to the remote peer, if required.
     ///
-    /// If no filters are specified, or the provided filters match all sockets,
+    /// If no matchers are specified, or the provided matchers match all sockets,
     /// an error is returned and no action is taken.
     strict DisconnectIp(table {
-        /// Sockets matching all filters will be disconnected (see above).
+        /// Sockets matching all matchers will be disconnected (see above).
         ///
         /// More information on the semantics of the matchers can be found in
         /// [`fuchsia.net.sockets.IpSocketMatcher`].
         ///
         /// Required.
-        1: filters vector<IpSocketMatcher>:MAX_IP_SOCKET_MATCHERS;
-        /// If present, sockets are only disconnected if there are this many
-        /// or fewer matching sockets.
-        2: max_sockets uint32;
-    }) -> (struct {
-        /// The number of disconnected sockets.
-        disconnected uint32;
-    }) error flexible enum {
-        /// A set of filters were specified that would disconnect all sockets.
-        /// This indicates a bug in the request.
-        UNCONSTRAINED_FILTERS = 1;
-        /// The maximum number of sockets in the request was exceeded.
-        MAXIMUM_SOCKETS_EXCEEDED = 2;
-    };
+        1: matchers vector<IpSocketMatcher>:MAX_IP_SOCKET_MATCHERS;
+    }) -> (@generated_name("DisconnectIpResult") flexible union {
+        /// The request was valid.
+        1: ok @generated_name("DisconnectIpResponse") struct {
+            /// The number of disconnected sockets.
+            disconnected uint32;
+        };
+        /// A matcher in the request was invalid.
+        ///
+        /// NOTE: Only the first matcher error encountered is returned.
+        2: invalid_matcher InvalidMatcher;
+        /// The specified set of matchers would disconnect all sockets. This
+        /// indicates a bug in the request.
+        3: unconstrained_matchers Empty;
+    });
 };

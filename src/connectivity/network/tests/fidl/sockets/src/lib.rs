@@ -97,10 +97,7 @@ async fn invalid_matcher(name: &str) {
             )
             .await
             .expect("failed to call fidl"),
-        fnet_sockets::IterateIpResult::MatcherError(fnet_sockets::IterateIpMatcherError {
-            index: Some(0),
-            ..
-        })
+        fnet_sockets::IterateIpResult::InvalidMatcher(fnet_sockets::InvalidMatcher { index: 0 })
     );
     assert_matches!(proxy.next().await, Err(ClientChannelClosed { .. }));
 
@@ -114,10 +111,7 @@ async fn invalid_matcher(name: &str) {
             )
             .await
             .expect("failed to call fidl"),
-        fnet_sockets::IterateIpResult::MatcherError(fnet_sockets::IterateIpMatcherError {
-            index: Some(2),
-            ..
-        })
+        fnet_sockets::IterateIpResult::InvalidMatcher(fnet_sockets::InvalidMatcher { index: 2 })
     );
     assert_matches!(proxy.next().await, Err(ClientChannelClosed { .. }));
 }
