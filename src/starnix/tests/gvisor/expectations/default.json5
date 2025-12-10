@@ -592,6 +592,7 @@
                 "ProcCpuinfo.RequiredFieldsArePresent",
                 "ProcSentryMeminfo.ContainsFieldsAndEndsWithNewline",
                 "ProcStat.ContainsBasicFields",
+                "ProcPid.AccessDeny",
                 "ProcPidSymlink.SubprocessZombied",
                 "ProcPidFile.SubprocessRunning",
                 "ProcPidFile.SubprocessZombie",
