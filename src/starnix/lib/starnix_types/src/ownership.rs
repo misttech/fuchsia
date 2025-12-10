@@ -165,7 +165,9 @@ impl<T> OwnedRef<T> {
     }
 
     fn inner(this: &Self) -> &Arc<RefInner<T>> {
-        this.inner.as_ref().expect("OwnedRef has been released.")
+        this.inner.as_ref().unwrap_or_else(|| {
+            panic!("OwnedRef<{}> has been released.", std::any::type_name::<T>())
+        })
     }
 
     fn re_own(inner: Arc<RefInner<T>>) -> Option<Self> {
@@ -196,7 +198,9 @@ impl<T: Releasable> OwnedRef<T> {
     /// reference to the data.
     pub fn take(this: &mut Self) -> Option<ReleaseGuard<T>> {
         this.drop_guard.disarm();
-        let inner = this.inner.take().expect("OwnedRef has been released.");
+        let inner = this.inner.take().unwrap_or_else(|| {
+            panic!("OwnedRef<{}> has been released.", std::any::type_name::<T>())
+        });
         let previous_count = inner.owned_refs_count.fetch_sub(1, Ordering::Release);
         if previous_count == 1 {
             fence(Ordering::Acquire);
