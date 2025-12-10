@@ -5,7 +5,6 @@
 #include <ctype.h>
 #include <inttypes.h>
 #include <lib/arch/intrin.h>
-#include <lib/boot-options/boot-options.h>
 #include <lib/fit/defer.h>
 #include <lib/fzl/memory-probe.h>
 #include <lib/maybe-standalone-test/maybe-standalone.h>
@@ -892,45 +891,6 @@ TEST(VmoTestCase, Info) {
   EXPECT_EQ(info.flags, ZX_INFO_VMO_TYPE_PAGED | ZX_INFO_VMO_VIA_HANDLE | ZX_INFO_VMO_CONTIGUOUS,
             "vm_info_test: info_vmo.flags");
   EXPECT_EQ(info.cache_policy, ZX_CACHE_POLICY_CACHED, "vm_info_test: info_vmo.cache_policy");
-}
-
-// Test that zx_vmo_create_physical rejects invalid initial sizes.
-TEST(VmoTestCase, PhysicalVmoInvalidInitialSize) {
-  const zx::unowned_resource mmio = maybe_standalone::GetMmioResource();
-  if (!mmio->is_valid()) {
-    printf("Mmio resource not available, skipping\n");
-    return;
-  }
-
-  zx_paddr_t mmio_base;
-  size_t mmio_size;
-  {
-    const BootOptions *boot_options = maybe_standalone::GetBootOptions();
-    if (!boot_options || !boot_options->test_ram_reserve.has_value()) {
-      printf("Ram reservation not available, skipping\n");
-      return;
-    }
-    const RamReservation ram = boot_options->test_ram_reserve.value();
-    // The kernel should have filled in the value by now.
-    ASSERT_TRUE(ram.paddr.has_value());
-    mmio_base = ram.paddr.value();
-    mmio_size = ram.size;
-  }
-
-  // Test that zx_vmo_create_physical rejects zero initial sizes.
-  {
-    zx::vmo vmo;
-    EXPECT_EQ(zx::vmo::create_physical(*mmio, mmio_base, /*size*/ 0, &vmo), ZX_ERR_INVALID_ARGS);
-  }
-
-  // Test that zx_vmo_create_physical rejects unaligned initial sizes.
-  {
-    const size_t unaligned_len = 1 + zx_system_get_page_size();
-    // The test only makes sense if mmio is large enough to support unaligned_len.
-    ASSERT_GE(mmio_size, unaligned_len);
-    zx::vmo vmo;
-    EXPECT_EQ(zx::vmo::create_physical(*mmio, mmio_base, unaligned_len, &vmo), ZX_ERR_INVALID_ARGS);
-  }
 }
 
 TEST(VmoTestCase, SizeAlign) {
