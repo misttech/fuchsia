@@ -21361,6 +21361,10 @@ rustc_library("zerocopy-v0_8_31") {
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
+  configs += [
+    "//third_party/rust_crates/configs/release:optimize_speed",
+    "//third_party/rust_crates/configs/balanced:optimize_moderate",
+  ]
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []

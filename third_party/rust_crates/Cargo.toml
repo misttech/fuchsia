@@ -1229,6 +1229,10 @@ rustflags = []
 
 [gn.package.zerocopy."0.8.31"]
 rustflags = []
+configs = [
+  "//third_party/rust_crates/configs/release:optimize_speed",
+  "//third_party/rust_crates/configs/balanced:optimize_moderate"
+]
 
 [gn.package.zerocopy-derive."0.8.31"]
 # See https://github.com/google/zerocopy/issues/1792
