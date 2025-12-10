@@ -62,7 +62,10 @@ template("ffx") {
         # without spending an undue amount of time (this is still faster than
         # using codegen_units=1)
         # Add thinlto config.
-        configs += [ "//build/config/lto:thinlto-if-not-enabled" ]
+        configs += [
+          "//build/config/lto:thinlto-if-not-enabled",
+          "//build/config/lto:lto-rust-linker-plugin",
+        ]
       }
     }
 
