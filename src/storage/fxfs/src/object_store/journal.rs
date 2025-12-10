@@ -1611,10 +1611,6 @@ impl Journal {
     }
 
     async fn flush_device(&self, checkpoint_offset: u64) -> Result<(), Error> {
-        assert!(
-            self.inner.lock().image_builder_mode.is_none(),
-            "flush_device called in image builder mode"
-        );
         debug_assert_not_too_long!(poll_fn(|ctx| {
             let mut inner = self.inner.lock();
             if inner.flushed_offset >= checkpoint_offset {
@@ -1876,10 +1872,6 @@ impl Journal {
     /// fxfs.Debug.
     #[trace]
     pub async fn compact(&self) -> Result<(), Error> {
-        assert!(
-            self.inner.lock().image_builder_mode.is_none(),
-            "compact called in image builder mode"
-        );
         let trace = self.trace.load(Ordering::Relaxed);
         debug!("Compaction starting");
         if trace {
@@ -2315,7 +2307,6 @@ mod tests {
             .open(device)
             .await
             .expect("open failed");
-        fs.enable_allocations();
         let generation0 = fs.super_block_header().generation;
         assert_eq!(generation0, 1);
         fs.close().await.expect("close failed");
@@ -2345,7 +2336,6 @@ mod tests {
             .open(device)
             .await
             .expect("open failed");
-        fs.enable_allocations();
         let generation2 = fs.super_block_header().generation;
         assert!(
             generation2 > generation1,
@@ -2375,7 +2365,6 @@ mod tests {
             .await
             .expect("open failed");
 
-        fs.enable_allocations();
         let generation2 = fs.super_block_header().generation;
         assert!(
             generation2 > generation1,
