@@ -20,6 +20,12 @@ not yet contain any code, submit an issue in Issue Tracker using the
 This issue lets Fuchsia’s OSRB review the code that you want to add, to ensure
 that the code that you want to add is in compliance with [Fuchsia Open Source Licensing Policies](/docs/contribute/governance/policy/open-source-licensing-policies.md).
 
+If the dependency or sub-dependency will not be used in the Fuchsia checkout,
+specify that in your OSRB request and state that it will be blocklisted from the
+Fuchsia checkout via [adding to this
+blocklist.](https://fuchsia.googlesource.com/fuchsia/+/main/scripts/shac/mirror_blocklists.star)
+Most licensing issues arise if it is to be used in the Fuchsia checkout.
+
 Warning: You must receive approval from the OSRB _before_ pushing a commit to Gerrit that adds external code to new repositories. Do not request a code review for adding external code to new repositories until you have approval from the OSRB.
 
 If the request is approved, a member of the OSRB communicates the next steps
