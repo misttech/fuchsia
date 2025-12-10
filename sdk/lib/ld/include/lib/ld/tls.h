@@ -8,6 +8,7 @@
 #include <bit>
 #include <cassert>
 #include <cstddef>
+#include <ranges>
 
 #include "abi.h"
 
@@ -123,24 +124,44 @@ constexpr void TlsModuleInit(const Module& module, std::span<std::byte> segment,
   }
 }
 
+// This describes a single module's PT_TLS and its segment in a given thread.
+template <class Elf, class AbiTraits>
+struct TlsSegment {
+  using TlsModule = abi::Abi<Elf, AbiTraits>::TlsModule;
+
+  const TlsModule& module;       // Points to initial data for new threads.
+  std::span<std::byte> segment;  // Points to one thread's own data.
+};
+
+// This returns an input range of TlsSegment objects for each module that has a
+// PT_TLS segment.  The span passed should cover the whole area allocated for
+// static TLS data (and the like) for a given thread.  The offset should be the
+// location within that span where the thread pointer will point (which may be
+// at the end of the span for x86 negative TLS offsets).
+template <class Elf, class AbiTraits>
+inline std::ranges::input_range auto TlsInitialExecSegments(
+    const typename abi::Abi<Elf, AbiTraits>& abi, std::span<std::byte> block, size_t tp_offset) {
+  using size_type = typename Elf::size_type;
+  return std::views::iota(size_type{1}, abi.static_tls_modules.size() + 1) |
+         std::views::transform([&abi, block, tp_offset](size_type modid) {
+           const auto& module = abi.static_tls_modules[modid - 1];
+           const ptrdiff_t offset = TlsInitialExecOffset(abi, modid);
+           const size_t start = tp_offset + offset;
+           assert(start <= block.size_bytes());
+           assert(block.size_bytes() - start >= module.tls_size());
+           std::span segment = block.subspan(start, module.tls_size());
+           return TlsSegment<Elf, AbiTraits>{module, segment};
+         });
+}
+
 // Populate the static TLS block with initial data and zero'd tbss regions for
-// each module that has a PT_TLS segment.  The span passed should cover the
-// whole area allocated for static TLS data for a new thread.  The offset
-// should be the location in that span where the thread pointer will point
-// (which may be at the end of the span for x86 negative TLS offsets).
+// each module that has a PT_TLS segment.
 template <class Elf, class AbiTraits>
 inline void TlsInitialExecDataInit(const typename abi::Abi<Elf, AbiTraits>& abi,
                                    std::span<std::byte> block, size_t tp_offset,
                                    bool known_zero = false) {
-  using size_type = typename Elf::size_type;
-  for (size_t i = 0; i < abi.static_tls_modules.size(); ++i) {
-    const auto& module = abi.static_tls_modules[i];
-    const size_type modid = static_cast<size_type>(i + 1);
-    const ptrdiff_t offset = TlsInitialExecOffset(abi, modid);
-    const size_t start = tp_offset + offset;
-    assert(start <= block.size_bytes());
-    assert(block.size_bytes() - start >= module.tls_size());
-    std::span segment = block.subspan(start, module.tls_size());
+  auto tls_segments = TlsInitialExecSegments(abi, block, tp_offset);
+  for (const auto& [module, segment] : tls_segments) {
     TlsModuleInit(module, segment, known_zero);
   }
 }
