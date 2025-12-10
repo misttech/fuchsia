@@ -155,6 +155,7 @@ python_library("honeydew_no_testonly") {
     "utils/decorators.py",
     "utils/host_shell.py",
     "utils/http_utils.py",
+    "utils/inspect.py",
     "utils/properties.py",
   ]
   library_deps = [
@@ -263,6 +264,7 @@ group("unit_tests") {
       "honeydew/transports/fuchsia_controller/tests/unit_tests:tests",
       "honeydew/transports/serial/tests/unit_tests:tests",
       "honeydew/transports/sl4f/tests/unit_tests:tests",
+      "honeydew/utils/tests/unit_tests:tests",
       "tests/unit_tests:tests",
     ]
   }
