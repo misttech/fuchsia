@@ -19,6 +19,7 @@ OutgoingDirectory& OutgoingDirectory::operator=(OutgoingDirectory&& other) noexc
 }
 
 void OutgoingDirectory::RegisterRuntimeToken(zx::channel token, AnyHandler handler) {
+#if FUCHSIA_API_LEVEL_LESS_THAN(NEXT)
   auto token_connect_handler = [handler = std::move(handler)](
                                    fdf_dispatcher_t* dispatcher, fdf::Protocol* protocol,
                                    zx_status_t status, fdf::Channel channel) mutable {
@@ -35,6 +36,13 @@ void OutgoingDirectory::RegisterRuntimeToken(zx::channel token, AnyHandler handl
   if (status == ZX_OK) {
     protocol.release();  // Will be deleted in the callback.
   }
+#else
+  auto channel = ProtocolReceive(std::move(token));
+  if (channel.is_ok()) {
+    ZX_ASSERT(channel->is_valid());
+    handler(std::move(*channel));
+  }
+#endif
 }
 
 }  // namespace fdf
