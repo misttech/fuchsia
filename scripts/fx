@@ -402,9 +402,15 @@ if [[ $# -lt 1 ]]; then
   exit 1
 fi
 
-# If we're running in a coding agent, quiet all the build output to save on tokens.
-if [[ -n "${ANTIGRAVITY_EDITOR_APP_ROOT}" ]]; then
+# Check if we're running in antigravity (a coding agent)
+if [[ -n "${ANTIGRAVITY_EDITOR_APP_ROOT}" || -n "${ANTIGRAVITY_AGENT}" ]]; then
+  # quiet the build to save on tokens
   export FX_BUILD_QUIET=1
+
+  # if FUCHSIA_FX_INVOKER has not yet been defined, override it with antigravity
+  if [[ -z "${FUCHSIA_FX_INVOKER}" ]]; then
+    export FUCHSIA_FX_INVOKER="antigravity"
+  fi
 fi
 
 command_name="$1"
