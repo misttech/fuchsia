@@ -16,15 +16,15 @@
 #ifndef __ASSEMBLER__
 
 #include <stdint.h>
-#include <stdio.h>
+#include <zircon/compiler.h>
 
 // Registers saved on entering the kernel via architectural exception.
 struct iframe_t {
-  uint64_t r[30];
-  uint64_t lr;
-  uint64_t usp;
-  uint64_t elr;
-  uint64_t spsr;
+  uint64_t r[30];  // x0-x29
+  uint64_t lr;     // x30 (arm64 lr)
+  uint64_t usp;    // either SP_EL0 if from lower EL otherwise the SP before the iframe was pushed
+  uint64_t elr;    // ELR_EL1
+  uint64_t spsr;   // SPSR_EL1
 };
 
 static_assert(sizeof(iframe_t) % 16u == 0u);

@@ -18,6 +18,12 @@
 
 #define LOCAL_TRACE 0
 
+namespace {
+// In Arm32 mode, only registers r0-r14 are used from the general purpose
+// register set.
+constexpr size_t kArm32BitModeRegisterCount = 15;
+}  // namespace
+
 void RestrictedState::ArchDump(const zx_restricted_state_t& state) {
   for (size_t i = 0; i < ktl::size(state.x); i++) {
     printf("R%zu: %#18" PRIx64 "\n", i, state.x[i]);
@@ -88,9 +94,17 @@ void RestrictedState::ArchSaveStatePreRestrictedEntry(ArchSavedNormalState& arch
 
   // Copy restricted state to an interrupt frame.
   iframe_t iframe{};
-  static_assert(sizeof(iframe.r) <= sizeof(state.x));
-  memcpy(iframe.r, state.x, sizeof(iframe.r));
-  iframe.lr = state.x[30];
+  if (state.cpsr & kArm32BitMode) {
+    // If the thread is in a 32-bit execution mode, then ignore the upper bits of
+    // the registers and only copy the registers that map to to ARM32 state r0-r14.
+    for (size_t i = 0; i < kArm32BitModeRegisterCount; i++) {
+      iframe.r[i] = state.x[i] & 0x00000000ffffffff;
+    }
+  } else {
+    static_assert(sizeof(iframe.r) <= sizeof(state.x));
+    memcpy(iframe.r, state.x, sizeof(iframe.r));
+    iframe.lr = state.x[30];
+  }
   iframe.usp = state.sp;
   iframe.elr = state.pc;
   iframe.spsr = static_cast<uint64_t>(state.cpsr);
@@ -125,6 +139,46 @@ void RestrictedState::ArchRedirectRestrictedExceptionToNormal(
   DEBUG_ASSERT(status == ZX_OK);
 }
 
+namespace {
+
+// Save the registers from either a zx_thread_state_general_regs_t or a syscall_regs_t
+// to the zx_restricted_state_t. The input structures are subtly different so requires templating
+// to deal with the difference.
+template <typename T>
+  requires(ktl::is_same_v<T, zx_thread_state_general_regs_t> || ktl::is_same_v<T, syscall_regs_t>)
+inline void SaveRegs(const uint64_t cpsr, zx_restricted_state_t& state, const T& regs) {
+  // If the thread is in a 32-bit execution mode, then ignore the upper bits of
+  // the registers and only copy the registers that map to to ARM32 state r0-r14.
+  if (cpsr & kArm32BitMode) {
+    for (size_t i = 0; i < kArm32BitModeRegisterCount; i++) {
+      state.x[i] = regs.r[i] & 0x00000000ffffffff;
+    }
+  } else {
+    static_assert(sizeof(regs.r) <= sizeof(state.x));
+    memcpy(state.x, regs.r, sizeof(regs.r));
+    state.x[30] = regs.lr;
+  }
+
+  // This part of the input structures have slightly different field names.
+  if constexpr (ktl::is_same_v<T, zx_thread_state_general_regs_t>) {
+    state.sp = regs.sp;
+    state.pc = regs.pc;
+    // Save only the non-reserved portions of the SPSR.
+    state.cpsr = static_cast<uint32_t>(regs.cpsr);
+  }
+  if constexpr (ktl::is_same_v<T, syscall_regs_t>) {
+    state.sp = regs.usp;
+    state.pc = regs.elr;
+    // Save only the non-reserved portions of the SPSR.
+    state.cpsr = static_cast<uint32_t>(regs.spsr);
+  }
+
+  // Save the thread local storage location in restricted mode.
+  state.tpidr_el0 = __arm_rsr64("tpidr_el0");
+}
+
+}  // namespace
+
 void RestrictedState::ArchSaveRestrictedExceptionState(zx_restricted_state_t& state) {
   zx_thread_state_general_regs_t regs = {};
   [[maybe_unused]] zx_status_t status = arch_get_general_regs(Thread::Current().Get(), &regs);
@@ -133,23 +187,7 @@ void RestrictedState::ArchSaveRestrictedExceptionState(zx_restricted_state_t& st
   DEBUG_ASSERT(status == ZX_OK);
 
   // Save the registers from restricted mode.
-  static_assert(sizeof(regs.r) <= sizeof(state.x));
-  // If the thread is in a 32-bit execution mode, then ignore the upper bits of
-  // the registers and only save up to x[15].
-  if (regs.cpsr & kArm32BitMode) {
-    for (size_t i = 0; i < ktl::size(state.x) >> 1; i++) {
-      state.x[i] = regs.r[i] & 0x00000000ffffffff;
-    }
-  } else {
-    memcpy(state.x, regs.r, sizeof(regs.r));
-  }
-  state.x[30] = regs.lr;
-  state.sp = regs.sp;
-  state.pc = regs.pc;
-  state.cpsr = static_cast<uint32_t>(regs.cpsr);
-
-  // Save the thread local storage location in restricted mode.
-  state.tpidr_el0 = __arm_rsr64("tpidr_el0");
+  SaveRegs(regs.cpsr, state, regs);
 }
 
 void RestrictedState::ArchSaveRestrictedSyscallState(zx_restricted_state_t& state,
@@ -157,25 +195,7 @@ void RestrictedState::ArchSaveRestrictedSyscallState(zx_restricted_state_t& stat
   DEBUG_ASSERT(arch_ints_disabled());
 
   // Save the registers from restricted mode.
-  static_assert(sizeof(regs.r) <= sizeof(state.x));
-  // If the thread is in a 32-bit execution mode, then ignore the upper bits of
-  // the registers and only save the upper half.
-  if (regs.spsr & kArm32BitMode) {
-    for (size_t i = 0; i < ktl::size(state.x) >> 1; i++) {
-      state.x[i] = regs.r[i] & 0x00000000ffffffff;
-    }
-  } else {
-    memcpy(state.x, regs.r, sizeof(regs.r));
-  }
-  state.x[30] = regs.lr;
-  state.sp = regs.usp;
-  state.pc = regs.elr;
-
-  // Save the thread local storage location in restricted mode.
-  state.tpidr_el0 = __arm_rsr64("tpidr_el0");
-
-  // Save only the non-reserved portions of the SPSR.
-  state.cpsr = static_cast<uint32_t>(regs.spsr);
+  SaveRegs(regs.spsr, state, regs);
 }
 
 void RestrictedState::ArchSaveRestrictedIframeState(zx_restricted_state_t& state,
