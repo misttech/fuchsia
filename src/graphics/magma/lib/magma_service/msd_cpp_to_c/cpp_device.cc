@@ -66,11 +66,7 @@ magma_status_t CppDevice::MsdGetIcdList(std::vector<MsdIcdInfo>* icd_info_out) {
 }
 
 std::unique_ptr<Connection> CppDevice::MsdOpen(msd_client_id_t client_id) {
-  struct MsdConnection* msd_connection = msd_device_create_connection(device_, client_id);
-  if (!msd_connection)
-    return MAGMA_DRETP(nullptr, "msd_device_create_connection failed");
-
-  return std::make_unique<CppConnection>(msd_connection, client_id);
+  return CppConnection::Create(device_, client_id);
 }
 
 void CppDevice::MsdSetPowerState(int64_t power_state,

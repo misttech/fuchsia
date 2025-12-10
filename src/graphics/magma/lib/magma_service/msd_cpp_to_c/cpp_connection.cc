@@ -11,9 +11,33 @@
 
 namespace msd {
 
-CppConnection::CppConnection(struct MsdConnection* connection, uint64_t client_id)
-    : connection_(connection) {
-  MAGMA_DASSERT(connection_);
+static void cpp_connection_killed(void* context) {
+  reinterpret_cast<CppConnection*>(context)->ContextKilled();
+}
+
+std::unique_ptr<CppConnection> CppConnection::Create(struct MsdDevice* device, uint64_t client_id) {
+  auto connection = std::make_unique<CppConnection>();
+
+  struct MsdConnection* msd_connection =
+      msd_device_create_connection(device, client_id,
+                                   MsdConnectionCallbacks{
+                                       .token = connection.get(),
+                                       .context_killed = cpp_connection_killed,
+                                   });
+  if (!msd_connection) {
+    return MAGMA_DRETP(nullptr, "msd_device_create_connection failed");
+  }
+  connection->connection_ = msd_connection;
+
+  return connection;
+}
+
+void CppConnection::ContextKilled() {
+  if (notification_handler_) {
+    notification_handler_->ContextKilled();
+  } else {
+    MAGMA_LOG(WARNING, "CppConnection Context Killed but no notification handler");
+  }
 }
 
 CppConnection::~CppConnection() { msd_connection_release(connection_); }

@@ -9,9 +9,11 @@
 #include <lib/magma_service/msd_c.h>
 
 namespace msd {
+
 class CppConnection : public msd::Connection {
  public:
-  explicit CppConnection(struct MsdConnection* connection, uint64_t client_id);
+  static std::unique_ptr<CppConnection> Create(struct MsdDevice* device, uint64_t client_id);
+  explicit CppConnection() = default;
 
   ~CppConnection() override;
 
@@ -22,9 +24,15 @@ class CppConnection : public msd::Connection {
 
   std::unique_ptr<msd::Context> MsdCreateContext() override;
   std::unique_ptr<msd::Context> MsdCreateContext2(uint64_t priority) override;
+  void MsdSetNotificationCallback(NotificationHandler* handler) override {
+    notification_handler_ = handler;
+  }
+
+  void ContextKilled();
 
  private:
-  struct MsdConnection* connection_;
+  msd::NotificationHandler* notification_handler_ = nullptr;
+  struct MsdConnection* connection_ = nullptr;
 };
 }  // namespace msd
 

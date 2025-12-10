@@ -43,6 +43,14 @@ struct MsdDriverCallbacks {
                                  const char* vthread, uint64_t vthread_id, uint64_t timestamp);
 };
 
+// This represents the system's view of a connection.
+// These callbacks can be called from any thread.
+struct MsdConnectionCallbacks {
+  void* token;
+  // The driver calls this to have the system kill the connection.
+  void (*context_killed)(void* token);
+};
+
 typedef void (*msd_device_set_power_state_callback_t)(uintptr_t callback_context,
                                                       magma_status_t status);
 
@@ -61,7 +69,8 @@ void msd_device_set_power_state(struct MsdDevice* device, int64_t power_state,
                                 msd_device_set_power_state_callback_t callback,
                                 uintptr_t callback_context);
 
-struct MsdConnection* msd_device_create_connection(struct MsdDevice* device, uint64_t client_id);
+struct MsdConnection* msd_device_create_connection(struct MsdDevice* device, uint64_t client_id,
+                                                   struct MsdConnectionCallbacks connection);
 
 void msd_connection_release(struct MsdConnection* connection);
 
