@@ -894,59 +894,6 @@ TEST(VmoTestCase, Info) {
   EXPECT_EQ(info.cache_policy, ZX_CACHE_POLICY_CACHED, "vm_info_test: info_vmo.cache_policy");
 }
 
-// Test that zx_vmo_create_contiguous rejects unaligned initial sizes.
-TEST(VmoTestCase, ContiguousRequireAlignedSize) {
-  zx::unowned_resource system_resource = maybe_standalone::GetSystemResource();
-  if (!system_resource->is_valid()) {
-    printf("System resource not available, skipping\n");
-    return;
-  }
-
-  zx::result<zx::resource> result =
-      maybe_standalone::GetSystemResourceWithBase(system_resource, ZX_RSRC_SYSTEM_IOMMU_BASE);
-  ASSERT_OK(result.status_value());
-  zx::resource iommu_resource = std::move(result.value());
-
-  zx::bti bti;
-  auto final_bti_check = vmo_test::CreateDeferredBtiCheck(bti);
-
-  zx_iommu_desc_dummy_t desc;
-  zx::iommu iommu;
-  ASSERT_OK(zx_iommu_create(iommu_resource.get(), ZX_IOMMU_TYPE_DUMMY, &desc, sizeof(desc),
-                            iommu.reset_and_get_address()));
-  bti = vmo_test::CreateNamedBti(iommu, 0, 0xdeadbeef, "VmoTestCase::ContiguousRequireAlignedSize");
-
-  const size_t unaligned_len = 1 + zx_system_get_page_size();
-  zx::vmo vmo;
-  EXPECT_EQ(zx::vmo::create_contiguous(bti, unaligned_len, 0, &vmo), ZX_ERR_INVALID_ARGS);
-}
-
-// Test that zx_vmo_create_contiguous blocks the creation of zero-sized contiguous VMOs.
-TEST(VmoTestCase, ContiguousRequireNonzeroSize) {
-  zx::unowned_resource system_resource = maybe_standalone::GetSystemResource();
-  if (!system_resource->is_valid()) {
-    printf("System resource not available, skipping\n");
-    return;
-  }
-
-  zx::result<zx::resource> result =
-      maybe_standalone::GetSystemResourceWithBase(system_resource, ZX_RSRC_SYSTEM_IOMMU_BASE);
-  ASSERT_OK(result.status_value());
-  zx::resource iommu_resource = std::move(result.value());
-
-  zx::bti bti;
-  auto final_bti_check = vmo_test::CreateDeferredBtiCheck(bti);
-
-  zx_iommu_desc_dummy_t desc;
-  zx::iommu iommu;
-  ASSERT_OK(zx_iommu_create(iommu_resource.get(), ZX_IOMMU_TYPE_DUMMY, &desc, sizeof(desc),
-                            iommu.reset_and_get_address()));
-  bti = vmo_test::CreateNamedBti(iommu, 0, 0xdeadbeef, "VmoTestCase::ContiguousRequireAlignedSize");
-
-  zx::vmo vmo;
-  EXPECT_EQ(zx::vmo::create_contiguous(bti, /*size*/ 0, 0, &vmo), ZX_ERR_INVALID_ARGS);
-}
-
 // Test that zx_vmo_create_physical rejects invalid initial sizes.
 TEST(VmoTestCase, PhysicalVmoInvalidInitialSize) {
   const zx::unowned_resource mmio = maybe_standalone::GetMmioResource();

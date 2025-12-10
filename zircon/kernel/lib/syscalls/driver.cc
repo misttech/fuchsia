@@ -61,10 +61,6 @@ zx_status_t sys_vmo_create_contiguous(zx_handle_t bti, size_t size, uint32_t ali
     return ZX_ERR_INVALID_ARGS;
   }
 
-  if (!IsPageRounded(size)) {
-    return ZX_ERR_INVALID_ARGS;
-  }
-
   if (alignment_log2 == 0) {
     alignment_log2 = kPageShift;
   }
@@ -87,9 +83,15 @@ zx_status_t sys_vmo_create_contiguous(zx_handle_t bti, size_t size, uint32_t ali
 
   auto align_log2_arg = static_cast<uint8_t>(alignment_log2);
 
+  uint64_t vmo_size = 0;
+  status = VmObject::RoundSize(size, &vmo_size);
+  if (status != ZX_OK) {
+    return status;
+  }
+
   // create a vm object
   fbl::RefPtr<VmObjectPaged> vmo;
-  status = VmObjectPaged::CreateContiguous(PMM_ALLOC_FLAG_ANY, size, align_log2_arg, &vmo);
+  status = VmObjectPaged::CreateContiguous(PMM_ALLOC_FLAG_ANY, vmo_size, align_log2_arg, &vmo);
   if (status != ZX_OK) {
     return status;
   }
