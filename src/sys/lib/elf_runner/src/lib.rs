@@ -212,6 +212,12 @@ impl ElfRunner {
                 vec![(zx::JobCondition::BadHandle, zx::JobAction::DenyException)],
             ))
             .map_err(JobError::SetPolicy)?;
+        } else if program_config.allow_exception_bad_handles {
+            job.set_policy(zx::JobPolicy::Basic(
+                zx::JobPolicyOption::Absolute,
+                vec![(zx::JobCondition::BadHandle, zx::JobAction::AllowException)],
+            ))
+            .map_err(JobError::SetPolicy)?;
         }
 
         Ok(if program_config.job_with_available_exception_channel {
