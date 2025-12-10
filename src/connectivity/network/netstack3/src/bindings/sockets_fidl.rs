@@ -113,6 +113,60 @@ async fn serve_ipiterator(
     Ok(())
 }
 
+pub(crate) async fn serve_control(
+    mut stream: fnet_sockets::ControlRequestStream,
+    mut ctx: Ctx,
+) -> Result<(), fidl::Error> {
+    log::debug!("serving {}", fnet_sockets::ControlMarker::DEBUG_NAME);
+    while let Some(req) = stream.try_next().await? {
+        match req {
+            fnet_sockets::ControlRequest::DisconnectIp { payload, responder } => {
+                let res = disconnect_ip(&mut ctx, payload);
+                responder.send(&res)?;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn disconnect_ip(
+    ctx: &mut Ctx,
+    payload: fnet_sockets::ControlDisconnectIpRequest,
+) -> fnet_sockets::DisconnectIpResult {
+    let matchers = payload.matchers.unwrap_or_default();
+    if matchers.is_empty() {
+        return fnet_sockets::DisconnectIpResult::UnconstrainedMatchers(fnet_sockets::Empty);
+    }
+
+    let matchers = match convert_matchers(matchers) {
+        Ok(matchers) => matchers,
+        Err((err, index)) => {
+            log::debug!("encountered matcher error in DisconnectIp request: {err}");
+            return fnet_sockets::DisconnectIpResult::InvalidMatcher(
+                fnet_sockets::InvalidMatcher {
+                    // Unwrap is safe because the target type is a u32, and the
+                    // index will never be more than MAX_IP_SOCKET_MATCHERS, which
+                    // is a u32.
+                    index: index.try_into().unwrap(),
+                },
+            );
+        }
+    };
+
+    // TODO(https://fxbug.dev/452064956): Track which transport
+    // protocols and IP versions could be matched and scope the API
+    // calls to just those.
+    let mut count: usize = 0;
+    count += ctx.api().tcp::<Ipv4>().disconnect_bound(&matchers[..]);
+    count += ctx.api().udp::<Ipv4>().disconnect_bound(&matchers[..]);
+    count += ctx.api().tcp::<Ipv6>().disconnect_bound(&matchers[..]);
+    count += ctx.api().udp::<Ipv6>().disconnect_bound(&matchers[..]);
+
+    fnet_sockets::DisconnectIpResult::Ok(fnet_sockets::DisconnectIpResponse {
+        disconnected: count.try_into().unwrap_or(u32::MAX),
+    })
+}
+
 fn convert_matchers(
     matchers: Vec<fnet_sockets::IpSocketMatcher>,
 ) -> Result<

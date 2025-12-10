@@ -314,3 +314,79 @@ async fn paginated_results(name: &str) {
 
     assert_matches!(proxy.next().await, Err(ClientChannelClosed { .. }));
 }
+
+#[netstack_test]
+async fn control_disconnect_ip_unconstrained_matchers_error(name: &str) {
+    let sandbox = netemul::TestSandbox::new().expect("create sandbox");
+    let realm = sandbox.create_netstack_realm::<Netstack3, _>(name).expect("create realm");
+    let control =
+        realm.connect_to_protocol::<fnet_sockets::ControlMarker>().expect("connect to protocol");
+
+    let result = control
+        .disconnect_ip(&fnet_sockets::ControlDisconnectIpRequest::default())
+        .await
+        .expect("call disconnect_ip");
+    assert_eq!(
+        result,
+        fnet_sockets::DisconnectIpResult::UnconstrainedMatchers(fnet_sockets::Empty)
+    );
+
+    // Receiving an error should not close the channel.
+    let result = control
+        .disconnect_ip(&fnet_sockets::ControlDisconnectIpRequest {
+            matchers: Some(vec![]),
+            ..Default::default()
+        })
+        .await
+        .expect("call disconnect_ip");
+    assert_eq!(
+        result,
+        fnet_sockets::DisconnectIpResult::UnconstrainedMatchers(fnet_sockets::Empty)
+    );
+}
+
+#[netstack_test]
+async fn control_disconnect_ip_matcher_error(name: &str) {
+    let sandbox = netemul::TestSandbox::new().expect("create sandbox");
+    let realm = sandbox.create_netstack_realm::<Netstack3, _>(name).expect("create realm");
+    let control =
+        realm.connect_to_protocol::<fnet_sockets::ControlMarker>().expect("connect to protocol");
+
+    let invalid_matcher = fnet_sockets::IpSocketMatcher::BoundInterface(
+        fnet_matchers::BoundInterface::Bound(fnet_matchers::Interface::Id(0)),
+    );
+
+    let result = control
+        .disconnect_ip(&fnet_sockets::ControlDisconnectIpRequest {
+            matchers: Some(vec![invalid_matcher]),
+            ..Default::default()
+        })
+        .await
+        .expect("call disconnect_ip");
+    assert_eq!(
+        result,
+        fnet_sockets::DisconnectIpResult::InvalidMatcher(fnet_sockets::InvalidMatcher { index: 0 })
+    );
+}
+
+#[netstack_test]
+async fn control_disconnect_ip_no_sockets_success(name: &str) {
+    let sandbox = netemul::TestSandbox::new().expect("create sandbox");
+    let realm = sandbox.create_netstack_realm::<Netstack3, _>(name).expect("create realm");
+    let control =
+        realm.connect_to_protocol::<fnet_sockets::ControlMarker>().expect("connect to protocol");
+
+    let result = control
+        .disconnect_ip(&fnet_sockets::ControlDisconnectIpRequest {
+            matchers: Some(vec![fnet_sockets::IpSocketMatcher::Family(fnet::IpVersion::V4)]),
+            ..Default::default()
+        })
+        .await
+        .expect("call disconnect_ip");
+    assert_eq!(
+        result,
+        fnet_sockets::DisconnectIpResult::Ok(fnet_sockets::DisconnectIpResponse {
+            disconnected: 0
+        })
+    );
+}

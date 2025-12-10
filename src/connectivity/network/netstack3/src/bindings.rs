@@ -1244,6 +1244,7 @@ pub(crate) enum Service {
     RuleTableV6(fnet_routes_admin::RuleTableV6RequestStream),
     Socket(fidl_fuchsia_posix_socket::ProviderRequestStream),
     SocketControl(fidl_fuchsia_net_filter::SocketControlRequestStream),
+    Control(fidl_fuchsia_net_sockets::ControlRequestStream),
     SocketDiagnostics(fidl_fuchsia_net_sockets::DiagnosticsRequestStream),
     Stack(fidl_fuchsia_net_stack::StackRequestStream),
     SettingsControl(fidl_fuchsia_net_settings::ControlRequestStream),
@@ -1463,6 +1464,10 @@ impl NetstackSeed {
                 Service::SocketControl(rs) => services_handle
                     .spawn_request_stream_handler(rs, |rs| {
                         filter::socket_filters::serve_socket_control(rs, netstack.ctx.clone())
+                    }),
+                Service::Control(stream) => services_handle
+                    .spawn_request_stream_handler(stream, |stream| {
+                        sockets_fidl::serve_control(stream, netstack.ctx.clone())
                     }),
                 Service::RoutesState(rs) => services_handle
                     .spawn_request_stream_handler(rs, |rs| {

@@ -4494,6 +4494,18 @@ where
         });
     }
 
+    /// Disconnects all bound sockets matching the provided matcher.
+    ///
+    /// Returns the number of sockets that were disconnected.
+    pub fn disconnect_bound<M>(&mut self, _matcher: &M) -> usize
+    where
+        M: IpSocketPropertiesMatcher<<C::BindingsContext as MatcherBindingsTypes>::DeviceClass>
+            + ?Sized,
+    {
+        // TODO(https://fxbug.dev/459456549): Implement disconnect for TCP.
+        0
+    }
+
     /// Provides access to shared and per-socket TCP stats via a visitor.
     pub fn inspect<N>(&mut self, inspector: &mut N)
     where

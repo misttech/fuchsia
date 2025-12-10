@@ -65,6 +65,7 @@ pub fn main() {
         // client to be dependent on Netstack version when using
         // netstack-proxy.
         .add_proxy_service::<fidl_fuchsia_net_dhcp::ClientProviderMarker, _>()
+        .add_fidl_service(Service::Control)
         .add_service_connector(Service::DebugDiagnostics)
         .add_fidl_service(Service::DebugInterfaces)
         .add_fidl_service(Service::DnsServerWatcher)

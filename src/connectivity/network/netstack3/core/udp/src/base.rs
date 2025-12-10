@@ -1852,6 +1852,19 @@ where
         });
     }
 
+    /// Disconnects all bound sockets matching the provided matcher.
+    ///
+    ///
+    /// Returns the number of sockets that were disconnected.
+    pub fn disconnect_bound<M>(&mut self, _matcher: &M) -> usize
+    where
+        M: IpSocketPropertiesMatcher<<C::BindingsContext as MatcherBindingsTypes>::DeviceClass>
+            + ?Sized,
+    {
+        // TODO(https://fxbug.dev/459457112): Implement disconnect for UDP.
+        0
+    }
+
     fn datagram(&mut self) -> &mut DatagramApi<I, C, Udp<C::BindingsContext>> {
         let Self(pair, IpVersionMarker { .. }) = self;
         DatagramApi::wrap(pair)
