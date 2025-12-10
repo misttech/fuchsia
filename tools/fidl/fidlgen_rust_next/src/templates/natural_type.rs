@@ -8,18 +8,18 @@ use super::{Context, Contextual};
 use fidl_ir::{EndpointRole, InternalSubtype, Type, TypeKind};
 
 pub struct NaturalTypeTemplate<'a> {
-    context: Context<'a>,
+    context: &'a Context,
     ty: &'a Type,
 }
 
 impl<'a> NaturalTypeTemplate<'a> {
-    pub fn new(ty: &'a Type, context: Context<'a>) -> Self {
+    pub fn new(ty: &'a Type, context: &'a Context) -> Self {
         Self { context, ty }
     }
 }
 
-impl<'a> Contextual<'a> for NaturalTypeTemplate<'a> {
-    fn context(&self) -> Context<'a> {
+impl Contextual for NaturalTypeTemplate<'_> {
+    fn context(&self) -> &Context {
         self.context
     }
 }
@@ -76,7 +76,7 @@ impl fmt::Display for NaturalTypeTemplate<'_> {
                 }
             }
             TypeKind::Primitive { subtype } => {
-                write!(f, "{}", self.natural_prim(subtype))?;
+                write!(f, "{}", self.natural_prim(*subtype))?;
             }
             TypeKind::Identifier { identifier, nullable, .. } => {
                 let natural_id = self.natural_id(identifier);

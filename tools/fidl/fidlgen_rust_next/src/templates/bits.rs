@@ -5,40 +5,36 @@
 use core::ops::Deref;
 
 use askama::Template;
+use fidlgen::rust::RustIdent as _;
 
-use super::{Context, Contextual, filters};
-use crate::templates::filters::escape_camel;
-use crate::templates::prim::{NaturalPrimTemplate, WirePrimTemplate};
-use fidl_ir::{Bits, Type, TypeKind};
+use super::prim::{NaturalIntTemplate, WireIntTemplate};
+use super::{Context, Contextual};
+use fidl_ir::Bits;
 
 pub struct BitsTemplate<'a> {
     bits: &'a Bits,
-    context: Context<'a>,
+    context: &'a Context,
 
     name: String,
-    natural_subtype: NaturalPrimTemplate<'a>,
-    wire_subtype: WirePrimTemplate<'a>,
+    natural_subtype: NaturalIntTemplate,
+    wire_subtype: WireIntTemplate,
 }
 
-impl<'a> Contextual<'a> for BitsTemplate<'a> {
-    fn context(&self) -> Context<'a> {
+impl Contextual for BitsTemplate<'_> {
+    fn context(&self) -> &Context {
         self.context
     }
 }
 
 impl<'a> BitsTemplate<'a> {
-    pub fn new(bits: &'a Bits, context: Context<'a>) -> Self {
-        let Type { kind: TypeKind::Primitive { subtype }, .. } = &bits.ty else {
-            panic!("invalid non-integral primitive subtype for bits");
-        };
-
+    pub fn new(bits: &'a Bits, context: &'a Context) -> Self {
         Self {
             bits,
             context,
 
-            name: escape_camel(bits.name.decl_name()),
-            natural_subtype: context.natural_prim(subtype),
-            wire_subtype: context.wire_prim(subtype),
+            name: bits.name.decl_name().camel(),
+            natural_subtype: context.natural_int(bits.subtype()),
+            wire_subtype: context.wire_int(bits.subtype()),
         }
     }
 

@@ -4,43 +4,11 @@
 
 use fidl_ir::Ident;
 
-pub trait IdentExt {
+pub trait SplitIdent {
     fn split(&self) -> Split<'_>;
-
-    fn camel(&self) -> String {
-        let mut result = String::new();
-        for piece in self.split() {
-            let mut chars = piece.chars();
-            result.push(chars.next().unwrap().to_ascii_uppercase());
-            result.extend(chars.map(|c| c.to_ascii_lowercase()));
-        }
-        result
-    }
-
-    fn snake(&self) -> String {
-        let mut result = String::new();
-        for piece in self.split() {
-            if !result.is_empty() {
-                result.push('_');
-            }
-            result.extend(piece.chars().map(|c| c.to_ascii_lowercase()));
-        }
-        result
-    }
-
-    fn screaming_snake(&self) -> String {
-        let mut result = String::new();
-        for piece in self.split() {
-            if !result.is_empty() {
-                result.push('_');
-            }
-            result.extend(piece.chars().map(|c| c.to_ascii_uppercase()));
-        }
-        result
-    }
 }
 
-impl IdentExt for Ident {
+impl SplitIdent for Ident {
     fn split(&self) -> Split<'_> {
         Split { str: self.non_canonical() }
     }
@@ -88,8 +56,9 @@ impl<'a> Iterator for Split<'a> {
 
 #[cfg(test)]
 mod tests {
-    use crate::ident_ext::IdentExt as _;
     use fidl_ir::Ident;
+
+    use super::*;
 
     const TEST_CASES: &[&str] = &[
         "foo_bar",

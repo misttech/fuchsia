@@ -9,7 +9,7 @@
 )]
 pub enum {{ name }} {
     {% for member in union_.members %}
-        {{ member.name|camel }}({{ self.natural_type(member.ty) }}),
+        {{ member.name.camel() }}({{ self.natural_type(member.ty) }}),
     {% endfor %}
     {% if !union_.is_strict %}
         UnknownOrdinal_(u64),
@@ -49,7 +49,7 @@ where
 
         match self {
             {% for member in union_.members %}
-                Self::{{ member.name|camel }}(value) => ::fidl_next::RawWireUnion::{{ encode_as }}::<
+                Self::{{ member.name.camel() }}(value) => ::fidl_next::RawWireUnion::{{ encode_as }}::<
                     ___E,
                     {{ self.static_wire_type(member.ty) }},
                 >(value, {{ member.ordinal }}, encoder, raw, {{ self.constraint(member.ty) }})?,
@@ -84,7 +84,7 @@ where
 
         match self {
             {% for member in union_.members %}
-                {{ name }}::{{ member.name|camel }}(value) => ::fidl_next::RawWireUnion::{{ encode_as }}::<
+                {{ name }}::{{ member.name.camel() }}(value) => ::fidl_next::RawWireUnion::{{ encode_as }}::<
                     ___E,
                     {{ self.static_wire_type(member.ty) }},
                 >(value, {{ member.ordinal }}, encoder, raw, {{ self.constraint(member.ty) }})?,
@@ -171,7 +171,7 @@ impl{{ de }} ::fidl_next::FromWire<crate::wire::{{ name }}{{ de }}> for {{ name 
         let wire = ::core::mem::ManuallyDrop::new(wire);
         match wire.raw.ordinal() {
             {% for member in union_.members %}
-                {{ member.ordinal }} => Self::{{ member.name|camel }}(
+                {{ member.ordinal }} => Self::{{ member.name.camel() }}(
                     ::fidl_next::FromWire::from_wire(
                         unsafe { wire.raw.get().read_unchecked::<{{ self.wire_type(member.ty) }}>() }
                     )
@@ -192,7 +192,7 @@ impl{{ de }} ::fidl_next::FromWireRef<crate::wire::{{ name }}{{ de }}> for {{ na
     fn from_wire_ref(wire: &crate::wire::{{ name }}{{ de }}) -> Self {
         match wire.raw.ordinal() {
             {% for member in union_.members %}
-                {{ member.ordinal }} => Self::{{ member.name|camel }}(
+                {{ member.ordinal }} => Self::{{ member.name.camel() }}(
                     ::fidl_next::FromWireRef::from_wire_ref(
                         unsafe { wire.raw.get().deref_unchecked::<{{ self.wire_type(member.ty) }}>() }
                     )

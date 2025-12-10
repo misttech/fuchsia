@@ -47,7 +47,7 @@ unsafe impl ::fidl_next::Wire for {{ name }}{{ static_ }} {
 pub mod {{ mod_name }} {
     pub enum Ref{{ access_params }} {
         {% for member in union_.members %}
-            {{ member.name|camel }}(&'de {{ self.wire_type(member.ty) }}),
+            {{ member.name.camel() }}(&'de {{ self.wire_type(member.ty) }}),
         {% endfor %}
         {% if !union_.is_strict %}
             UnknownOrdinal_(u64),
@@ -59,7 +59,7 @@ impl{{ de }} {{ name }}{{ de }} {
     pub fn as_ref(&self) -> crate::wire::{{ mod_name }}::Ref{{ access_args }} {
         match self.raw.ordinal() {
             {% for member in union_.members %}
-                {{ member.ordinal }} => crate::wire::{{ mod_name }}::Ref::{{ member.name|camel }}(
+                {{ member.ordinal }} => crate::wire::{{ mod_name }}::Ref::{{ member.name.camel() }}(
                     unsafe { self.raw.get().deref_unchecked::<{{ self.anonymous_wire_type(member.ty) }}>() }
                 ),
             {% endfor %}

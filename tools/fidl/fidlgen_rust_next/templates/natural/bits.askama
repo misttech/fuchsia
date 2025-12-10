@@ -13,7 +13,7 @@
     pub struct {{ name }}: {{ natural_subtype }} {
         {% for member in bits.members -%}
             {{ self.doc_string(member.attributes) -}}
-            const {{ member.name|screaming_snake }} = {{ member.value.value }};
+            const {{ member.name.screaming_snake() }} = {{ member.value.value }};
         {% endfor %}
         {%- if !bits.is_strict -%}
             const _ = !0;

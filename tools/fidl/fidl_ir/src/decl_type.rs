@@ -14,7 +14,6 @@ pub enum DeclType {
     Enum,
     ExperimentalResource,
     NewType,
-    Overlay,
     Protocol,
     Service,
     Struct,

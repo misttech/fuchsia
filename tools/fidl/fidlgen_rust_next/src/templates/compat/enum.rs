@@ -4,12 +4,11 @@
 
 use askama::Template;
 
-use crate::ident_ext::IdentExt as _;
-use crate::templates::reserved::escape;
-use crate::templates::{Context, Contextual, Denylist};
+use crate::templates::{Context, Contextual, Denylist, compat_camel};
 use fidl_ir::Enum;
+use fidlgen::rust::RustIdent as _;
 
-use super::{CompatTemplate, filters};
+use super::CompatTemplate;
 
 #[derive(Template)]
 #[template(path = "compat/enum.askama")]
@@ -22,8 +21,8 @@ pub struct EnumCompatTemplate<'a> {
     denylist: Denylist,
 }
 
-impl<'a> Contextual<'a> for EnumCompatTemplate<'a> {
-    fn context(&self) -> Context<'a> {
+impl Contextual for EnumCompatTemplate<'_> {
+    fn context(&self) -> &Context {
         self.compat.context()
     }
 }
@@ -34,8 +33,8 @@ impl<'a> EnumCompatTemplate<'a> {
             enm,
             compat,
 
-            name: escape(enm.name.decl_name().camel()),
-            compat_name: filters::escape_compat_camel(enm.name.decl_name()),
+            name: enm.name.decl_name().camel(),
+            compat_name: compat_camel(enm.name.decl_name()),
             denylist: compat.rust_or_rust_next_denylist(&enm.name),
         }
     }

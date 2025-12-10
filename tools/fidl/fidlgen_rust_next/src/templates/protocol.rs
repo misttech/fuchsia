@@ -7,34 +7,18 @@ use std::collections::BTreeSet;
 use askama::Template;
 
 use super::{Context, Contextual};
-use crate::ident_ext::IdentExt as _;
-use crate::templates::reserved::escape;
 use fidl_ir::{
     CompoundIdent, CompoundIdentifier, Protocol, ProtocolMethod, ProtocolMethodKind,
     ProtocolOpenness, Struct, Type, TypeKind,
 };
-use fidl_ir_util::TypeShapeExt;
-
-mod filters {
-    pub use crate::templates::filters::*;
-
-    pub fn is_strict_to_flexibility(
-        is_strict: &bool,
-        _: &dyn askama::Values,
-    ) -> askama::Result<&'static str> {
-        if *is_strict {
-            Ok("::fidl_next::protocol::Flexibility::Strict")
-        } else {
-            Ok("::fidl_next::protocol::Flexibility::Flexible")
-        }
-    }
-}
+use fidlgen::TypeShapeExt as _;
+use fidlgen::rust::RustIdent as _;
 
 #[derive(Template)]
 #[template(path = "protocol.askama", whitespace = "preserve")]
 pub struct ProtocolTemplate<'a> {
     protocol: &'a Protocol,
-    context: Context<'a>,
+    context: &'a Context,
 
     non_canonical_name: &'a str,
     protocol_name: String,
@@ -55,7 +39,7 @@ struct Transport<'a> {
 }
 
 impl<'a> ProtocolTemplate<'a> {
-    pub fn new(protocol: &'a Protocol, context: Context<'a>) -> Self {
+    pub fn new(protocol: &'a Protocol, context: &'a Context) -> Self {
         let base_name = protocol.name.decl_name().camel();
 
         let name = protocol.transport().unwrap_or("Channel");
@@ -72,14 +56,14 @@ impl<'a> ProtocolTemplate<'a> {
             context,
 
             non_canonical_name: protocol.name.decl_name().non_canonical(),
-            protocol_name: escape(protocol.name.decl_name().camel()),
-            module_name: escape(protocol.name.decl_name().snake()),
+            protocol_name: protocol.name.decl_name().camel(),
+            module_name: protocol.name.decl_name().snake(),
 
-            client_name: escape(format!("{base_name}Client")),
-            client_handler_name: escape(format!("{base_name}ClientHandler")),
+            client_name: format!("{base_name}Client"),
+            client_handler_name: format!("{base_name}ClientHandler"),
 
-            server_name: escape(format!("{base_name}Server")),
-            server_handler_name: escape(format!("{base_name}ServerHandler")),
+            server_name: format!("{base_name}Server"),
+            server_handler_name: format!("{base_name}ServerHandler"),
 
             transport,
         }
@@ -201,8 +185,8 @@ impl<'a> ProtocolTemplate<'a> {
     }
 }
 
-impl<'a> Contextual<'a> for ProtocolTemplate<'a> {
-    fn context(&self) -> Context<'a> {
+impl Contextual for ProtocolTemplate<'_> {
+    fn context(&self) -> &Context {
         self.context
     }
 }

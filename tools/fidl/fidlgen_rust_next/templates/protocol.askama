@@ -34,7 +34,7 @@ pub mod {{ module_name }} {
     }
 
     {% for method in protocol.methods %}
-        {% let method_name = filters::escape_camel(method.name) %}
+        {% let method_name = method.name.camel() %}
         pub struct {{ method_name }};
 
         impl ::fidl_next::Method for {{ method_name }} {
@@ -126,12 +126,12 @@ pub mod {{ module_name }} {
                             {% if !method.is_strict %}
                                 ::fidl_next::Flexible::Ok(
                                     {{ self.generic_id(response_struct.name) }} {
-                                        {{ member.name|snake }}: response,
+                                        {{ member.name.snake() }}: response,
                                     }
                                 )
                             {% else %}
                                 {{ self.generic_id(response_struct.name) }} {
-                                    {{ member.name|snake }}: response,
+                                    {{ member.name.snake() }}: response,
                                 }
                             {% endif %}
                         }
@@ -168,7 +168,7 @@ pub mod {{ module_name }} {
                                 ::core::result::Result::Ok
                             {% endif %}
                             ({{ self.generic_id(response_struct.name) }} {
-                                {{ member.name|snake }}: response,
+                                {{ member.name.snake() }}: response,
                             })
                         }
                     }
@@ -218,7 +218,7 @@ pub mod {{ module_name }} {
                                 ::core::result::Result::Err
                             {% endif %}
                             ({{ self.generic_id(response_struct.name) }} {
-                                {{ member.name|snake }}: response,
+                                {{ member.name.snake() }}: response,
                             })
                         }
                     }
@@ -270,8 +270,8 @@ pub mod {{ module_name }} {
             ___T: ::fidl_next::Transport,
         {
             {% for method in protocol.methods %}
-                {% let method_name = filters::escape_snake(method.name) %}
-                {% let method_type_name = filters::escape_camel(method.name) %}
+                {% let method_name = method.name.snake() %}
+                {% let method_type_name = method.name.camel() %}
 
                 {% match method.kind %}
                     {% when ProtocolMethodKind::OneWay %}
@@ -282,7 +282,7 @@ pub mod {{ module_name }} {
                             pub fn {{ method_name }}(
                                 &self,
                                 {% for member in args.members %}
-                                    {{ member.name|snake }}: impl ::fidl_next::Encode<
+                                    {{ member.name.snake() }}: impl ::fidl_next::Encode<
                                         {{ self.static_wire_type(member.ty) }},
                                         <___T as ::fidl_next::Transport>::SendBuffer,
                                     >,
@@ -299,7 +299,7 @@ pub mod {{ module_name }} {
                             {
                                 self.{{ method_name }}_with({{ self.generic_id(&args.name) }} {
                                     {% for member in args.members %}
-                                        {{ member.name|snake }},
+                                        {{ member.name.snake() }},
                                     {% endfor %}
                                 })
                             }
@@ -346,7 +346,7 @@ pub mod {{ module_name }} {
                             pub fn {{ method_name }}(
                                 &self,
                                 {% for member in args.members %}
-                                    {{ member.name|snake }}: impl ::fidl_next::Encode<
+                                    {{ member.name.snake() }}: impl ::fidl_next::Encode<
                                         {{ self.static_wire_type(member.ty) }},
                                         <___T as ::fidl_next::Transport>::SendBuffer,
                                     >,
@@ -363,7 +363,7 @@ pub mod {{ module_name }} {
                             {
                                 self.{{ method_name }}_with({{ self.generic_id(&args.name) }} {
                                     {% for member in args.members %}
-                                        {{ member.name|snake }},
+                                        {{ member.name.snake() }},
                                     {% endfor %}
                                 })
                             }
@@ -418,8 +418,8 @@ pub mod {{ module_name }} {
             ___T: ::fidl_next::Transport,
         {
             {% for method in protocol.methods %}
-                {% let method_name = filters::escape_snake(method.name) %}
-                {% let method_type_name = filters::escape_camel(method.name) %}
+                {% let method_name = method.name.snake() %}
+                {% let method_type_name = method.name.camel() %}
 
                 {% if method.kind == ProtocolMethodKind::Event %}
                     {% if let Some(args) = self.get_request_args_struct(method) %}
@@ -429,7 +429,7 @@ pub mod {{ module_name }} {
                         pub fn {{ method_name }}(
                             &self,
                             {% for member in args.members %}
-                                {{ member.name|snake }}: impl ::fidl_next::Encode<
+                                {{ member.name.snake() }}: impl ::fidl_next::Encode<
                                     {{ self.static_wire_type(member.ty) }},
                                     <___T as ::fidl_next::Transport>::SendBuffer,
                                 >,
@@ -446,7 +446,7 @@ pub mod {{ module_name }} {
                         {
                             self.{{ method_name }}_with({{ self.generic_id(&args.name) }} {
                                 {% for member in args.members %}
-                                    {{ member.name|snake }},
+                                    {{ member.name.snake() }},
                                 {% endfor %}
                             })
                         }
@@ -454,7 +454,7 @@ pub mod {{ module_name }} {
 
                     {{ self.doc_string(method.attributes) -}}
                     {% if method.maybe_response_payload.is_some() %}
-                        {% let method_type_name = filters::escape_camel(method.name) %}
+                        {% let method_type_name = method.name.camel() %}
                         pub fn {{ method_name }}_with<___R>(
                             &self,
                             request: ___R,
@@ -505,8 +505,8 @@ pub trait {{ client_handler_name }}<
 > {
     {% for method in protocol.methods %}
         {% if method.kind == ProtocolMethodKind::Event %}
-            {% let method_name = filters::escape_snake(method.name) %}
-            {% let method_type_name = filters::escape_camel(method.name) %}
+            {% let method_name = method.name.snake() %}
+            {% let method_type_name = method.name.camel() %}
 
             {{ self.doc_string(method.attributes) -}}
             fn {{ method_name }}(
@@ -534,8 +534,8 @@ where
 {
     {% for method in protocol.methods %}
         {% if method.kind == ProtocolMethodKind::Event %}
-            {% let method_name = filters::escape_snake(method.name) %}
-            {% let method_type_name = filters::escape_camel(method.name) %}
+            {% let method_name = method.name.snake() %}
+            {% let method_type_name = method.name.camel() %}
 
             async fn {{ method_name }}(
                 &mut self,
@@ -560,7 +560,7 @@ where
     ___T: ::fidl_next::Transport,
     {% for method in protocol.methods %}
         {% if method.kind == ProtocolMethodKind::Event && method.maybe_response_payload.is_some() %}
-            {% let method_type_name = filters::escape_camel(method.name) %}
+            {% let method_type_name = method.name.camel() %}
             <{{ module_name }}::{{ method_type_name }} as ::fidl_next::Method>::Request:
                 ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
         {% endif %}
@@ -574,7 +574,7 @@ where
     ) -> ::core::result::Result<(), ::fidl_next::ProtocolError<___T::Error>> {
         match ordinal {
             {% for method in protocol.methods %}
-                {% let method_name = filters::escape_snake(method.name) %}
+                {% let method_name = method.name.snake() %}
                 {% if method.kind == ProtocolMethodKind::Event %}
                     {{ method.ordinal }} => {
                         {% if method.maybe_response_payload.is_some() %}
@@ -623,8 +623,8 @@ pub trait {{ server_handler_name }}<
     ___T: ::fidl_next::Transport,
 > {
     {% for method in protocol.methods %}
-        {% let method_name = filters::escape_snake(method.name) %}
-        {% let method_type_name = filters::escape_camel(method.name) %}
+        {% let method_name = method.name.snake() %}
+        {% let method_type_name = method.name.camel() %}
 
         {% match method.kind %}
             {% when ProtocolMethodKind::OneWay %}
@@ -664,7 +664,7 @@ where
     ___T: ::fidl_next::Transport,
     {% for method in protocol.methods %}
         {% if method.maybe_request_payload.is_some() %}
-            {% let method_type_name = filters::escape_camel(method.name) %}
+            {% let method_type_name = method.name.camel() %}
             <{{ module_name }}::{{ method_type_name }} as ::fidl_next::Method>::Request:
                 ::fidl_next::Decode<<___T as ::fidl_next::Transport>::RecvBuffer>,
         {% endif %}
@@ -678,7 +678,7 @@ where
     ) -> ::core::result::Result<(), ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>> {
         match ordinal {
             {% for method in protocol.methods %}
-                {% let method_name = filters::escape_snake(method.name) %}
+                {% let method_name = method.name.snake() %}
                 {% if method.kind == ProtocolMethodKind::OneWay %}
                     {{ method.ordinal }} => {
                         {% if let Some(request) = method.maybe_request_payload %}
@@ -723,7 +723,7 @@ where
     ) -> ::core::result::Result<(), ::fidl_next::ProtocolError<<___T as ::fidl_next::Transport>::Error>> {
         match ordinal {
             {% for method in protocol.methods %}
-                {% let method_name = filters::escape_snake(method.name) %}
+                {% let method_name = method.name.snake() %}
                 {% if method.kind == ProtocolMethodKind::TwoWay %}
                     {{ method.ordinal }} => {
                         let responder = ::fidl_next::Responder::from_untyped(responder);

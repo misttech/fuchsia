@@ -4,9 +4,7 @@
 
 use fidl_ir::*;
 
-mod decl;
-
-pub use self::decl::*;
+use crate::Decl;
 
 pub trait LibraryExt {
     fn get_local_decl(&self, ident: &CompoundIdent) -> Option<&dyn Decl>;
@@ -26,7 +24,9 @@ impl LibraryExt for Library {
             DeclType::Struct => Some(self.struct_declarations.get(ident)?),
             DeclType::Table => Some(self.table_declarations.get(ident)?),
             DeclType::Union => Some(self.union_declarations.get(ident)?),
-            DeclType::NewType | DeclType::ExperimentalResource | DeclType::Overlay => None,
+            DeclType::NewType | DeclType::ExperimentalResource => None,
+            #[cfg(feature = "vdso")]
+            DeclType::Overlay => None,
         }
     }
 
@@ -46,15 +46,5 @@ impl LibraryExt for Library {
         } else {
             self.library_dependencies.get(library)?.declarations.get(ident)?.shape.as_ref()
         }
-    }
-}
-
-pub trait TypeShapeExt {
-    fn is_static(&self) -> bool;
-}
-
-impl TypeShapeExt for TypeShape {
-    fn is_static(&self) -> bool {
-        self.max_out_of_line == 0 && !self.has_flexible_envelope
     }
 }

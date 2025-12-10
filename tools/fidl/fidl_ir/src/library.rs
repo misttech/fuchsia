@@ -7,8 +7,8 @@ use std::collections::HashMap;
 use serde::Deserialize;
 
 use crate::{
-    Bits, CompoundIdentifier, Const, DeclType, Enum, LibraryDependency, Protocol, Service, Struct,
-    Table, TypeAlias, Union,
+    Bits, CompoundIdentifier, Const, DeclType, Enum, LibraryDependency, Protocol, Resource,
+    Service, Struct, Table, TypeAlias, Union,
 };
 
 /// A FIDL library.
@@ -39,4 +39,6 @@ pub struct Library {
     pub declarations: HashMap<CompoundIdentifier, DeclType>,
     #[serde(deserialize_with = "crate::de::index")]
     pub library_dependencies: HashMap<String, LibraryDependency>,
+    #[serde(deserialize_with = "crate::de::index", rename = "experimental_resource_declarations")]
+    pub resource_declarations: HashMap<CompoundIdentifier, Resource>,
 }

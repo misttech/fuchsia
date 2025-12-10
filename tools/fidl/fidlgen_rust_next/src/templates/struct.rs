@@ -6,14 +6,14 @@ use core::ops::Deref;
 
 use askama::Template;
 
-use super::{Context, Contextual, filters};
-use crate::templates::filters::escape_camel;
+use super::{Context, Contextual};
 use fidl_ir::{Struct, TypeKind};
-use fidl_ir_util::TypeShapeExt;
+use fidlgen::TypeShapeExt as _;
+use fidlgen::rust::RustIdent as _;
 
 pub struct StructTemplate<'a> {
     strct: &'a Struct,
-    context: Context<'a>,
+    context: &'a Context,
 
     is_empty: bool,
     is_static: bool,
@@ -26,7 +26,7 @@ pub struct StructTemplate<'a> {
 }
 
 impl<'a> StructTemplate<'a> {
-    pub fn new(strct: &'a Struct, context: Context<'a>) -> Self {
+    pub fn new(strct: &'a Struct, context: &'a Context) -> Self {
         let is_empty = strct.members.is_empty();
         let is_static = strct.shape.is_static();
 
@@ -40,7 +40,7 @@ impl<'a> StructTemplate<'a> {
             is_empty,
             is_static,
             has_padding: strct.shape.has_padding,
-            name: escape_camel(strct.name.decl_name()),
+            name: strct.name.decl_name().camel(),
 
             de,
             infer,
@@ -61,8 +61,8 @@ impl<'a> StructTemplate<'a> {
     }
 }
 
-impl<'a> Contextual<'a> for StructTemplate<'a> {
-    fn context(&self) -> Context<'a> {
+impl Contextual for StructTemplate<'_> {
+    fn context(&self) -> &Context {
         self.context
     }
 }

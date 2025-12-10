@@ -6,16 +6,16 @@ use core::ops::Deref;
 
 use askama::Template;
 
+use super::natural_type::NaturalTypeTemplate;
+use super::wire_type::WireTypeTemplate;
 use super::{Context, Contextual};
-use crate::templates::filters::escape_camel;
-use crate::templates::natural_type::NaturalTypeTemplate;
-use crate::templates::wire_type::WireTypeTemplate;
 use fidl_ir::TypeAlias;
-use fidl_ir_util::TypeShapeExt;
+use fidlgen::TypeShapeExt as _;
+use fidlgen::rust::RustIdent as _;
 
 pub struct AliasTemplate<'a> {
     alias: &'a TypeAlias,
-    context: Context<'a>,
+    context: &'a Context,
 
     name: String,
     is_static: bool,
@@ -23,19 +23,19 @@ pub struct AliasTemplate<'a> {
     wire_ty: WireTypeTemplate<'a>,
 }
 
-impl<'a> Contextual<'a> for AliasTemplate<'a> {
-    fn context(&self) -> Context<'a> {
+impl Contextual for AliasTemplate<'_> {
+    fn context(&self) -> &Context {
         self.context
     }
 }
 
 impl<'a> AliasTemplate<'a> {
-    pub fn new(alias: &'a TypeAlias, context: Context<'a>) -> Self {
+    pub fn new(alias: &'a TypeAlias, context: &'a Context) -> Self {
         Self {
             alias,
             context,
 
-            name: escape_camel(alias.name.decl_name()),
+            name: alias.name.decl_name().camel(),
             is_static: alias.ty.shape.is_static(),
             natural_ty: context.natural_type(&alias.ty),
             wire_ty: context.wire_type(&alias.ty),

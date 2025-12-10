@@ -6,7 +6,7 @@ pub struct {{ name }}<
     {% endfor %}
 > {
     {% for (i, member) in strct.members.iter().enumerate() %}
-        pub {{ member.name|snake }}: T{{ i }},
+        pub {{ member.name.snake() }}: T{{ i }},
     {% endfor %}
 }
 
@@ -45,13 +45,13 @@ where
                     _empty,
                 {% endif %}
                 {% for member in strct.members -%}
-                    {{ member.name|snake }},
+                    {{ member.name.snake() }},
                 {% endfor %}
             } = out_;
         }
 
         {% for member in strct.members %}
-            {% let member_name = filters::escape_snake(member.name) %}
+            {% let member_name = member.name.snake() %}
             ::fidl_next::Encode::encode(self.{{ member_name }}, encoder_, {{ member_name }}, {{ self.constraint(member.ty) }})?;
         {% endfor %}
         Ok(())

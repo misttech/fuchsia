@@ -5,12 +5,13 @@
 mod bits;
 mod r#enum;
 mod protocol;
-mod reserved;
 mod r#struct;
 mod table;
 mod union;
 
 use askama::Template;
+use fidl_ir::Ident;
+use fidlgen::rust::{RustIdent as _, is_rust_keyword};
 
 use crate::templates::{Context, Contextual, Denylist};
 use fidl_ir::{Bits, CompoundIdent, DeclType, Enum, Protocol, Struct, Table, Union};
@@ -18,7 +19,6 @@ use fidl_ir::{Bits, CompoundIdent, DeclType, Enum, Protocol, Struct, Table, Unio
 use self::bits::*;
 use self::r#enum::*;
 use self::protocol::*;
-use self::reserved::*;
 use self::r#struct::*;
 use self::table::*;
 use self::union::*;
@@ -26,13 +26,13 @@ use self::union::*;
 #[derive(Template)]
 #[template(path = "compat.askama")]
 pub struct CompatTemplate<'a> {
-    context: Context<'a>,
+    context: &'a Context,
 
     crate_name: String,
 }
 
 impl<'a> CompatTemplate<'a> {
-    pub fn new(context: Context<'a>) -> Self {
+    pub fn new(context: &'a Context) -> Self {
         Self { context, crate_name: context.compat_crate_name() }
     }
 
@@ -65,32 +65,31 @@ impl<'a> CompatTemplate<'a> {
     }
 }
 
-impl<'a> Contextual<'a> for CompatTemplate<'a> {
-    fn context(&self) -> Context<'a> {
+impl Contextual for CompatTemplate<'_> {
+    fn context(&self) -> &Context {
         self.context
     }
 }
 
-mod filters {
-    use crate::ident_ext::IdentExt as _;
-    use crate::templates::compat::escape_compat;
-    use fidl_ir::Ident;
-
-    pub use crate::templates::filters::*;
-
-    pub fn escape_compat_snake(ident: &Ident) -> String {
-        escape_compat(ident.snake(), ident)
+pub fn compat_camel(ident: &Ident) -> String {
+    let mut result = ident.camel();
+    if !result.ends_with('_') && is_reserved(ident.non_canonical()) {
+        result.push('_');
     }
-
-    pub fn escape_compat_camel(ident: &Ident) -> String {
-        escape_compat(ident.camel(), ident)
-    }
-
-    pub fn compat_snake(ident: &Ident, _: &dyn askama::Values) -> askama::Result<String> {
-        Ok(escape_compat_snake(ident))
-    }
-
-    pub fn compat_camel(ident: &Ident, _: &dyn askama::Values) -> askama::Result<String> {
-        Ok(escape_compat_camel(ident))
-    }
+    result
 }
+
+pub fn compat_snake(ident: &Ident) -> String {
+    let mut result = ident.snake();
+    if !result.ends_with('_') && is_reserved(ident.non_canonical()) {
+        result.push('_');
+    }
+    result
+}
+
+pub fn is_reserved(name: &str) -> bool {
+    is_rust_keyword(name) || RESERVED_SUFFIX_LIST.iter().any(|suffix| name.ends_with(suffix))
+}
+
+const RESERVED_SUFFIX_LIST: &[&str] =
+    &["Impl", "Marker", "Proxy", "ProxyProtocol", "ControlHandle", "Responder", "Server"];

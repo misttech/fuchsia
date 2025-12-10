@@ -8,7 +8,7 @@ use serde::Deserialize;
 
 use crate::de::Index;
 
-use crate::{Attributes, CompoundIdentifier, Identifier, Type, TypeShape};
+use crate::{Attributes, CompoundIdentifier, Identifier, PartialTypeConstructor, Type, TypeShape};
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct Union {
@@ -42,4 +42,6 @@ pub struct UnionMember {
     pub ordinal: NonZeroI64,
     #[serde(rename = "type")]
     pub ty: Type,
+    #[serde(rename = "experimental_maybe_from_alias")]
+    pub from_alias: Option<PartialTypeConstructor>,
 }

@@ -6,14 +6,14 @@ use core::ops::Deref;
 
 use askama::Template;
 
-use super::{Context, Contextual, filters};
-use crate::templates::filters::{escape_camel, escape_snake};
+use super::{Context, Contextual};
 use fidl_ir::Union;
-use fidl_ir_util::TypeShapeExt;
+use fidlgen::TypeShapeExt as _;
+use fidlgen::rust::RustIdent as _;
 
 pub struct UnionTemplate<'a> {
     union_: &'a Union,
-    context: Context<'a>,
+    context: &'a Context,
 
     is_static: bool,
     name: String,
@@ -29,7 +29,7 @@ pub struct UnionTemplate<'a> {
 }
 
 impl<'a> UnionTemplate<'a> {
-    pub fn new(union_: &'a Union, context: Context<'a>) -> Self {
+    pub fn new(union_: &'a Union, context: &'a Context) -> Self {
         let is_static = union_.shape.is_static();
 
         let (de, infer, static_, phantom, decode_unknown, decode_as, encode_as) = if is_static {
@@ -51,8 +51,8 @@ impl<'a> UnionTemplate<'a> {
             context,
 
             is_static,
-            name: escape_camel(union_.name.decl_name()),
-            mod_name: escape_snake(union_.name.decl_name()),
+            name: union_.name.decl_name().camel(),
+            mod_name: union_.name.decl_name().snake(),
 
             de,
             infer,
@@ -81,8 +81,8 @@ impl<'a> UnionTemplate<'a> {
     }
 }
 
-impl<'a> Contextual<'a> for UnionTemplate<'a> {
-    fn context(&self) -> Context<'a> {
+impl Contextual for UnionTemplate<'_> {
+    fn context(&self) -> &Context {
         self.context
     }
 }

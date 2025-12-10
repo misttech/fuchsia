@@ -5,7 +5,9 @@
 use serde::Deserialize;
 
 use crate::de::Index;
-use crate::{Attributes, CompoundIdentifier, Constant, Identifier, Type};
+use crate::{
+    Attributes, CompoundIdentifier, Constant, Identifier, IntType, PrimSubtype, Type, TypeKind,
+};
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct Bits {
@@ -18,6 +20,22 @@ pub struct Bits {
     pub is_strict: bool,
     #[serde(rename = "type")]
     pub ty: Type,
+}
+
+impl Bits {
+    pub fn subtype(&self) -> IntType {
+        let Type { kind: TypeKind::Primitive { subtype }, .. } = &self.ty else {
+            panic!("invalid non-integral primitive subtype for bits");
+        };
+
+        match subtype {
+            PrimSubtype::Uint8 => IntType::Uint8,
+            PrimSubtype::Uint16 => IntType::Uint16,
+            PrimSubtype::Uint32 => IntType::Uint32,
+            PrimSubtype::Uint64 => IntType::Uint64,
+            _ => unreachable!(),
+        }
+    }
 }
 
 impl Index for Bits {

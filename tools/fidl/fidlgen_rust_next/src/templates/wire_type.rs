@@ -6,34 +6,34 @@ use core::fmt;
 
 use super::{Context, Contextual};
 use fidl_ir::{DeclType, EndpointRole, InternalSubtype, Type, TypeKind};
-use fidl_ir_util::{LibraryExt, TypeShapeExt};
+use fidlgen::{LibraryExt as _, TypeShapeExt as _};
 
 pub struct WireTypeTemplate<'a> {
-    context: Context<'a>,
+    context: &'a Context,
     ty: &'a Type,
     lifetime: &'a str,
 }
 
 impl<'a> WireTypeTemplate<'a> {
-    pub fn new(ty: &'a Type, lifetime: &'a str, context: Context<'a>) -> Self {
+    pub fn new(ty: &'a Type, lifetime: &'a str, context: &'a Context) -> Self {
         Self { context, ty, lifetime }
     }
 
-    pub fn with_de(ty: &'a Type, context: Context<'a>) -> Self {
+    pub fn with_de(ty: &'a Type, context: &'a Context) -> Self {
         Self::new(ty, "'de", context)
     }
 
-    pub fn with_static(ty: &'a Type, context: Context<'a>) -> Self {
+    pub fn with_static(ty: &'a Type, context: &'a Context) -> Self {
         Self::new(ty, "'static", context)
     }
 
-    pub fn with_anonymous(ty: &'a Type, context: Context<'a>) -> Self {
+    pub fn with_anonymous(ty: &'a Type, context: &'a Context) -> Self {
         Self::new(ty, "'_", context)
     }
 }
 
-impl<'a> Contextual<'a> for WireTypeTemplate<'a> {
-    fn context(&self) -> Context<'a> {
+impl Contextual for WireTypeTemplate<'_> {
+    fn context(&self) -> &Context {
         self.context
     }
 }
@@ -98,7 +98,7 @@ impl fmt::Display for WireTypeTemplate<'_> {
                 }
             }
             TypeKind::Primitive { subtype } => {
-                write!(f, "{}", self.wire_prim(subtype))?;
+                write!(f, "{}", self.wire_prim(*subtype))?;
             }
             TypeKind::Identifier { identifier, nullable, .. } => {
                 let wire_id = self.wire_id(identifier);

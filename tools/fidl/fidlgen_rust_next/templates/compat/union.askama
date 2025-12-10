@@ -5,8 +5,8 @@ impl ::fidl_next::CompatFrom<crate::{{ name }}> for ::{{ compat.crate_name }}::{
     fn compat_from(value: crate::{{ name }}) -> Self {
         match value {
             {% for member in union_.members %}
-                crate::{{ name }}::{{ member.name|camel }}(value) =>
-                    Self::{{ member.name|compat_camel }}(::fidl_next::CompatFrom::compat_from(value)),
+                crate::{{ name }}::{{ member.name.camel() }}(value) =>
+                    Self::{{ self::compat_camel(member.name) }}(::fidl_next::CompatFrom::compat_from(value)),
             {% endfor %}
             {% if !union_.is_strict %}
                 crate::{{ name }}::UnknownOrdinal_(unknown_ordinal) =>
@@ -21,8 +21,8 @@ impl ::fidl_next::CompatFrom<::{{ compat.crate_name }}::{{ compat_name }}> for c
     fn compat_from(value: ::{{ compat.crate_name }}::{{ compat_name }}) -> Self {
         match value {
             {% for member in union_.members %}
-                ::{{ compat.crate_name }}::{{ compat_name }}::{{ member.name|compat_camel }}(value) =>
-                    Self::{{ member.name|camel }}(::fidl_next::CompatFrom::compat_from(value)),
+                ::{{ compat.crate_name }}::{{ compat_name }}::{{ self::compat_camel(member.name) }}(value) =>
+                    Self::{{ member.name.camel() }}(::fidl_next::CompatFrom::compat_from(value)),
             {% endfor %}
             {% if !union_.is_strict %}
                 ::{{ compat.crate_name }}::{{ compat_name }}::__SourceBreaking { unknown_ordinal } =>

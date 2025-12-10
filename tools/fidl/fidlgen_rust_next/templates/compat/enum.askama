@@ -3,8 +3,8 @@ impl ::fidl_next::CompatFrom<crate::{{ name }}> for ::{{ compat.crate_name }}::{
     fn compat_from(value: crate::{{ name }}) -> Self {
         match value {
             {% for member in enm.members %}
-                crate::{{ name }}::{{ member.name|camel }} =>
-                    Self::{{ member.name|compat_camel }},
+                crate::{{ name }}::{{ member.name.camel() }} =>
+                    Self::{{ self::compat_camel(member.name) }},
             {% endfor %}
             {% if !enm.is_strict %}
                 crate::{{ name }}::UnknownOrdinal_(unknown_ordinal) =>
@@ -19,8 +19,8 @@ impl ::fidl_next::CompatFrom<::{{ compat.crate_name }}::{{ compat_name }}> for c
     fn compat_from(value: ::{{ compat.crate_name }}::{{ compat_name }}) -> Self {
         match value {
             {% for member in enm.members %}
-                ::{{ compat.crate_name }}::{{ compat_name }}::{{ member.name|compat_camel }} =>
-                    Self::{{ member.name|camel }},
+                ::{{ compat.crate_name }}::{{ compat_name }}::{{ self::compat_camel(member.name) }} =>
+                    Self::{{ member.name.camel() }},
             {% endfor %}
             {% if !enm.is_strict %}
                 ::{{ compat.crate_name }}::{{ compat_name }}::__SourceBreaking { unknown_ordinal: value } =>

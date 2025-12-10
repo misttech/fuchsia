@@ -5,24 +5,24 @@
 use core::ops::Deref;
 
 use askama::Template;
+use fidlgen::rust::RustIdent as _;
 
-use super::{Context, Contextual, filters};
-use crate::templates::filters::escape_camel;
-use crate::templates::prim::{NaturalIntTemplate, WireIntTemplate};
+use super::prim::{NaturalIntTemplate, WireIntTemplate};
+use super::{Context, Contextual};
 use fidl_ir::{Enum, IntType};
 
 pub struct EnumTemplate<'a> {
     enm: &'a Enum,
-    context: Context<'a>,
+    context: &'a Context,
 
     name: String,
-    natural_int: NaturalIntTemplate<'a>,
-    wire_int: WireIntTemplate<'a>,
+    natural_int: NaturalIntTemplate,
+    wire_int: WireIntTemplate,
     unknown_ordinal_value: i128,
 }
 
 impl<'a> EnumTemplate<'a> {
-    pub fn new(enm: &'a Enum, context: Context<'a>) -> Self {
+    pub fn new(enm: &'a Enum, context: &'a Context) -> Self {
         let unknown_ordinal_value = enm
             .members
             .iter()
@@ -34,9 +34,9 @@ impl<'a> EnumTemplate<'a> {
             enm,
             context,
 
-            name: escape_camel(enm.name.decl_name()),
-            natural_int: context.natural_int(&enm.ty),
-            wire_int: context.wire_int(&enm.ty),
+            name: enm.name.decl_name().camel(),
+            natural_int: context.natural_int(enm.ty),
+            wire_int: context.wire_int(enm.ty),
             unknown_ordinal_value,
         }
     }
@@ -50,8 +50,8 @@ impl<'a> EnumTemplate<'a> {
     }
 }
 
-impl<'a> Contextual<'a> for EnumTemplate<'a> {
-    fn context(&self) -> Context<'a> {
+impl Contextual for EnumTemplate<'_> {
+    fn context(&self) -> &Context {
         self.context
     }
 }

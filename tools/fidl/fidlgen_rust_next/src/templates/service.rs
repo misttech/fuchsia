@@ -6,16 +6,15 @@ use std::collections::BTreeSet;
 
 use askama::Template;
 
-use super::{Context, Contextual, filters};
-use crate::ident_ext::IdentExt as _;
-use crate::templates::reserved::escape;
+use super::{Context, Contextual};
 use fidl_ir::{CompoundIdent, Service, ServiceMember, TypeKind};
+use fidlgen::rust::RustIdent as _;
 
 #[derive(Template)]
 #[template(path = "service.askama", whitespace = "preserve")]
 pub struct ServiceTemplate<'a> {
     service: &'a Service,
-    context: Context<'a>,
+    context: &'a Context,
 
     non_canonical_name: &'a str,
     service_name: String,
@@ -24,7 +23,7 @@ pub struct ServiceTemplate<'a> {
 }
 
 impl<'a> ServiceTemplate<'a> {
-    pub fn new(service: &'a Service, context: Context<'a>) -> Self {
+    pub fn new(service: &'a Service, context: &'a Context) -> Self {
         let base_name = service.name.decl_name().camel();
         let connector_name = format!("{base_name}Connector");
         let handler_name = format!("{base_name}Handler");
@@ -34,9 +33,9 @@ impl<'a> ServiceTemplate<'a> {
             context,
 
             non_canonical_name: service.name.decl_name().non_canonical(),
-            service_name: escape(base_name),
-            connector_name: escape(connector_name),
-            handler_name: escape(handler_name),
+            service_name: base_name,
+            connector_name: connector_name,
+            handler_name: handler_name,
         }
     }
 
@@ -66,8 +65,8 @@ impl<'a> ServiceTemplate<'a> {
     }
 }
 
-impl<'a> Contextual<'a> for ServiceTemplate<'a> {
-    fn context(&self) -> Context<'a> {
+impl Contextual for ServiceTemplate<'_> {
+    fn context(&self) -> &Context {
         self.context
     }
 }

@@ -5,7 +5,10 @@
 use serde::Deserialize;
 
 use crate::de::Index;
-use crate::{Attributes, CompoundIdentifier, CompoundIdentifierOrMember, Literal, Type};
+use crate::{
+    Attributes, CompoundIdentifier, CompoundIdentifierOrMember, Literal, PartialTypeConstructor,
+    Type,
+};
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -16,6 +19,8 @@ pub struct Const {
     #[serde(rename = "type")]
     pub ty: Type,
     pub value: Constant,
+    #[serde(rename = "experimental_maybe_from_alias")]
+    pub from_alias: Option<PartialTypeConstructor>,
 }
 
 impl Index for Const {

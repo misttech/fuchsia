@@ -24,7 +24,7 @@ unsafe impl ::fidl_next::Wire for {{ name }} {
 
 impl {{ name }} {
     {% for member in enm.members %}
-        pub const {{ member.name|screaming_snake }}: {{ name }} = {{ name }} {
+        pub const {{ member.name.screaming_snake() }}: {{ name }} = {{ name }} {
             value:
             {% match enm.ty %}
                 {% when IntType::Int8 %} {{ member.value.value }}
@@ -66,7 +66,7 @@ impl ::core::convert::From<crate::natural::{{ name }}> for {{ name }} {
     fn from(natural: crate::natural::{{ name }}) -> Self {
         match natural {
             {% for member in enm.members %}
-                crate::natural::{{ name }}::{{ member.name|camel }} => {{ name }}::{{ member.name|screaming_snake }},
+                crate::natural::{{ name }}::{{ member.name.camel() }} => {{ name }}::{{ member.name.screaming_snake() }},
             {% endfor %}
             {% if !enm.is_strict %}
                 crate::natural::{{ name }}::UnknownOrdinal_(value) => {{ name }} {

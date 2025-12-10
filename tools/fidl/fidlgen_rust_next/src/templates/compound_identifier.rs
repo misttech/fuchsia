@@ -4,11 +4,10 @@
 
 use core::fmt;
 
-use crate::templates::filters::{escape_camel, escape_screaming_snake};
-
 use super::{Context, Contextual};
 use fidl_ir::{CompoundIdent, DeclType};
-use fidl_ir_util::LibraryExt as _;
+use fidlgen::LibraryExt as _;
+use fidlgen::rust::RustIdent as _;
 
 enum Module {
     None,
@@ -19,39 +18,39 @@ enum Module {
 }
 
 pub struct CompoundIdentifierTemplate<'a> {
-    context: Context<'a>,
+    context: &'a Context,
     id: &'a CompoundIdent,
     module: Module,
 }
 
 impl<'a> CompoundIdentifierTemplate<'a> {
-    fn new(id: &'a CompoundIdent, module: Module, context: Context<'a>) -> Self {
+    fn new(id: &'a CompoundIdent, module: Module, context: &'a Context) -> Self {
         Self { context, id, module }
     }
 
-    pub fn non_type(id: &'a CompoundIdent, context: Context<'a>) -> Self {
+    pub fn non_type(id: &'a CompoundIdent, context: &'a Context) -> Self {
         Self::new(id, Module::None, context)
     }
 
-    pub fn natural(id: &'a CompoundIdent, context: Context<'a>) -> Self {
+    pub fn natural(id: &'a CompoundIdent, context: &'a Context) -> Self {
         Self::new(id, Module::Natural, context)
     }
 
-    pub fn wire(id: &'a CompoundIdent, context: Context<'a>) -> Self {
+    pub fn wire(id: &'a CompoundIdent, context: &'a Context) -> Self {
         Self::new(id, Module::Wire, context)
     }
 
-    pub fn wire_optional(id: &'a CompoundIdent, context: Context<'a>) -> Self {
+    pub fn wire_optional(id: &'a CompoundIdent, context: &'a Context) -> Self {
         Self::new(id, Module::WireOptional, context)
     }
 
-    pub fn generic(id: &'a CompoundIdent, context: Context<'a>) -> Self {
+    pub fn generic(id: &'a CompoundIdent, context: &'a Context) -> Self {
         Self::new(id, Module::Generic, context)
     }
 }
 
-impl<'a> Contextual<'a> for CompoundIdentifierTemplate<'a> {
-    fn context(&self) -> Context<'a> {
+impl Contextual for CompoundIdentifierTemplate<'_> {
+    fn context(&self) -> &Context {
         self.context
     }
 }
@@ -104,12 +103,9 @@ impl fmt::Display for CompoundIdentifierTemplate<'_> {
             | DeclType::Struct
             | DeclType::Table
             | DeclType::Union
-            | DeclType::Protocol => escape_camel(ty),
-            DeclType::Const => escape_screaming_snake(ty),
-            DeclType::ExperimentalResource
-            | DeclType::NewType
-            | DeclType::Overlay
-            | DeclType::Service => {
+            | DeclType::Protocol => ty.camel(),
+            DeclType::Const => ty.screaming_snake(),
+            DeclType::ExperimentalResource | DeclType::NewType | DeclType::Service => {
                 todo!()
             }
         };

@@ -6,9 +6,9 @@ use core::fmt;
 
 use fidl_ir::{IntType, PrimSubtype};
 
-pub struct NaturalPrimTemplate<'a>(pub &'a PrimSubtype);
+pub struct NaturalPrimTemplate(pub PrimSubtype);
 
-impl fmt::Display for NaturalPrimTemplate<'_> {
+impl fmt::Display for NaturalPrimTemplate {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
@@ -30,9 +30,9 @@ impl fmt::Display for NaturalPrimTemplate<'_> {
     }
 }
 
-pub struct NaturalIntTemplate<'a>(pub &'a IntType);
+pub struct NaturalIntTemplate(pub IntType);
 
-impl fmt::Display for NaturalIntTemplate<'_> {
+impl fmt::Display for NaturalIntTemplate {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
@@ -51,9 +51,9 @@ impl fmt::Display for NaturalIntTemplate<'_> {
     }
 }
 
-pub struct WirePrimTemplate<'a>(pub &'a PrimSubtype);
+pub struct WirePrimTemplate(pub PrimSubtype);
 
-impl fmt::Display for WirePrimTemplate<'_> {
+impl fmt::Display for WirePrimTemplate {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
@@ -75,9 +75,9 @@ impl fmt::Display for WirePrimTemplate<'_> {
     }
 }
 
-pub struct WireIntTemplate<'a>(pub &'a IntType);
+pub struct WireIntTemplate(pub IntType);
 
-impl fmt::Display for WireIntTemplate<'_> {
+impl fmt::Display for WireIntTemplate {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,

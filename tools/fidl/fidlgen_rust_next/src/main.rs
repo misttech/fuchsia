@@ -1,43 +1,23 @@
-// Copyright 2024 The Fuchsia Authors. All rights reserved.
+// Copyright 2025 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-//! Next-generation FIDL Rust bindings generator
-
-#![deny(
-    future_incompatible,
-    missing_docs,
-    nonstandard_style,
-    unused,
-    warnings,
-    clippy::all,
-    clippy::alloc_instead_of_core,
-    clippy::missing_safety_doc,
-    clippy::std_instead_of_core,
-    clippy::undocumented_unsafe_blocks,
-    rustdoc::broken_intra_doc_links,
-    rustdoc::missing_crate_level_docs
-)]
-#![forbid(unsafe_op_in_unsafe_fn)]
-
-mod config;
-mod ident_ext;
-mod templates;
-
 use std::fs::File;
-use std::io::{BufReader, BufWriter, Write};
+use std::io::BufReader;
 use std::path::PathBuf;
 use std::process::Command;
 
 use argh::FromArgs;
+use askama::Template as _;
 use fidl_ir::Library;
+use fidlgen::trim_trailing_whitespace;
 
-use self::config::Config;
-use self::templates::render_library;
+mod config;
+mod templates;
 
 /// Generate Rust bindings from FIDL IR
 #[derive(FromArgs)]
-struct Fidlgen {
+pub struct Fidlgen {
     /// source JSON IR file path
     #[argh(option)]
     json: PathBuf,
@@ -69,7 +49,7 @@ fn main() {
         .expect("failed to parse source JSON IR");
 
     let file = File::open(&args.config).expect("failed to open source JSON config file");
-    let mut config = serde_json::from_reader::<_, Config>(BufReader::new(file))
+    let mut config = serde_json::from_reader::<_, self::config::Config>(BufReader::new(file))
         .expect("failed to parse source JSON IR");
     config.emit_compat = args.emit_compat;
     config.common_lib = args.common_lib;
@@ -77,15 +57,13 @@ fn main() {
     if config.is_common && config.common_lib.is_some() {
         panic!("Common crate cannot have a common crate");
     }
-    let result = render_library(&library, &config).expect("failed to emit FIDL bindings");
 
-    // Manually trim trailing whitespace; rustfmt ICEs on some long lines with trailing whitespace.
-    let out = File::create(&args.output_filename).expect("failed to create output file");
-    let mut writer = BufWriter::new(out);
-    for line in result.lines() {
-        writeln!(writer, "{}", line.trim_end()).expect("failed to write to output file");
-    }
-    writer.flush().unwrap();
+    let context = templates::Context::new(library, config);
+    let result =
+        templates::LibraryTemplate::new(&context).render().expect("failed to emit FIDL bindings");
+    let result = trim_trailing_whitespace(&result);
+
+    std::fs::write(&args.output_filename, result).expect("failed to write to output file");
 
     Command::new(&args.rustfmt)
         .arg("--config-path")

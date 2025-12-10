@@ -14,11 +14,11 @@ use super::{
 #[derive(Template)]
 #[template(path = "library.askama")]
 pub struct LibraryTemplate<'a> {
-    context: Context<'a>,
+    context: &'a Context,
 }
 
 impl<'a> LibraryTemplate<'a> {
-    pub fn new(context: Context<'a>) -> Self {
+    pub fn new(context: &'a Context) -> Self {
         Self { context }
     }
 
@@ -63,8 +63,8 @@ impl<'a> LibraryTemplate<'a> {
     }
 }
 
-impl<'a> Contextual<'a> for LibraryTemplate<'a> {
-    fn context(&self) -> Context<'a> {
+impl Contextual for LibraryTemplate<'_> {
+    fn context(&self) -> &Context {
         self.context
     }
 }

@@ -12,7 +12,7 @@
 {% endif -%}
 pub struct {{ name }} {
     {% for member in strct.members %}
-        pub {{ member.name|snake }}: {{ self.natural_type(member.ty) }},
+        pub {{ member.name.snake() }}: {{ self.natural_type(member.ty) }},
     {% endfor %}
 }
 
@@ -52,13 +52,13 @@ where
             ::fidl_next::munge! {
                 let crate::wire::{{ name }} {
                     {% for member in strct.members -%}
-                        {{ member.name|snake }},
+                        {{ member.name.snake() }},
                     {% endfor %}
                 } = out_;
             }
 
             {% for member in strct.members %}
-                {% let member_name = filters::escape_snake(member.name) %}
+                {% let member_name = member.name.snake() %}
                 ::fidl_next::Encode::encode(self.{{ member_name }}, encoder_, {{ member_name }}, {{ self.constraint(member.ty) }})?;
                 {# SAFETY: the field was just initialied and written to by the encode call above. #}
                 let mut _field = unsafe { ::fidl_next::Slot::new_unchecked({{ member_name }}.as_mut_ptr()) };
@@ -90,13 +90,13 @@ where
                     _empty,
                 {% endif %}
                 {% for member in strct.members -%}
-                    {{ member.name|snake }},
+                    {{ member.name.snake() }},
                 {% endfor %}
             } = out_;
         }
 
         {% for member in strct.members %}
-            {% let member_name = filters::escape_snake(member.name) %}
+            {% let member_name = member.name.snake() %}
             ::fidl_next::Encode::encode(&self.{{ member_name }}, encoder_, {{ member_name }}, {{ self.constraint(member.ty) }})?;
             {# SAFETY: the field was just initialied and written to by the encode call above. #}
             let mut _field = unsafe { ::fidl_next::Slot::new_unchecked({{ member_name }}.as_mut_ptr()) };
@@ -173,7 +173,7 @@ impl{{ de }} ::fidl_next::FromWire<crate::wire::{{ name }}{{ de }}> for {{ name 
     fn from_wire(wire: crate::wire::{{ name }}{{ de }}) -> Self {
         Self {
             {% for member in strct.members %}
-                {% let member_name = filters::escape_snake(member.name) %}
+                {% let member_name = member.name.snake() %}
                 {{ member_name }}: ::fidl_next::FromWire::from_wire(wire.{{ member_name }}),
             {% endfor %}
         }
@@ -186,7 +186,7 @@ impl{{ de }} ::fidl_next::FromWireRef<crate::wire::{{ name }}{{ de }}> for {{ na
     fn from_wire_ref(wire: &crate::wire::{{ name }}{{ de }}) -> Self {
         Self {
             {% for member in strct.members %}
-                {% let member_name = filters::escape_snake(member.name) %}
+                {% let member_name = member.name.snake() %}
                 {{ member_name }}: ::fidl_next::FromWireRef::from_wire_ref(&wire.{{ member_name }}),
             {% endfor %}
         }

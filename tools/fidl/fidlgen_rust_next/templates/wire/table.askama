@@ -111,7 +111,7 @@ where
 
 impl<'de> {{ name }}<'de> {
     {% for member in table.members %}
-        pub fn {{ member.name|snake }}(&self) -> ::core::option::Option<&{{ self.wire_type(member.ty) }}> {
+        pub fn {{ member.name.snake() }}(&self) -> ::core::option::Option<&{{ self.wire_type(member.ty) }}> {
             unsafe {
                 Some(self.table.get({{ member.ordinal }})?.deref_unchecked())
             }
@@ -127,7 +127,7 @@ impl<'de> {{ name }}<'de> {
         ) -> ::core::result::Result<(), ::core::fmt::Error> {
             f.debug_struct("{{ name }}")
             {% for member in table.members %}
-                {% let member_name = filters::escape_snake(member.name) %}
+                {% let member_name = member.name.snake() %}
                 .field("{{ member_name }}", &self.{{ member_name }}())
             {% endfor %}
                 .finish()

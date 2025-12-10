@@ -5,24 +5,24 @@
 use core::fmt;
 
 use super::{Context, Contextual};
-use crate::ident_ext::IdentExt as _;
 use fidl_ir::{Constant, ConstantKind, DeclType, LiteralKind, Type, TypeKind};
-use fidl_ir_util::LibraryExt as _;
+use fidlgen::LibraryExt as _;
+use fidlgen::rust::RustIdent as _;
 
 pub struct ConstantTemplate<'a> {
     constant: &'a Constant,
     ty: &'a Type,
-    context: Context<'a>,
+    context: &'a Context,
 }
 
 impl<'a> ConstantTemplate<'a> {
-    pub fn new(constant: &'a Constant, ty: &'a Type, context: Context<'a>) -> Self {
+    pub fn new(constant: &'a Constant, ty: &'a Type, context: &'a Context) -> Self {
         Self { constant, ty, context }
     }
 }
 
-impl<'a> Contextual<'a> for ConstantTemplate<'a> {
-    fn context(&self) -> Context<'a> {
+impl Contextual for ConstantTemplate<'_> {
+    fn context(&self) -> &Context {
         self.context
     }
 }

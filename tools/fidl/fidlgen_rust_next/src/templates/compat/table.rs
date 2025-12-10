@@ -4,11 +4,11 @@
 
 use askama::Template;
 
-use crate::ident_ext::IdentExt as _;
-use crate::templates::{Context, Contextual, Denylist};
+use crate::templates::{Context, Contextual, Denylist, compat_camel, compat_snake};
 use fidl_ir::Table;
+use fidlgen::rust::RustIdent as _;
 
-use super::{CompatTemplate, filters};
+use super::CompatTemplate;
 
 #[derive(Template)]
 #[template(path = "compat/table.askama")]
@@ -21,8 +21,8 @@ pub struct TableCompatTemplate<'a> {
     denylist: Denylist,
 }
 
-impl<'a> Contextual<'a> for TableCompatTemplate<'a> {
-    fn context(&self) -> Context<'a> {
+impl Contextual for TableCompatTemplate<'_> {
+    fn context(&self) -> &Context {
         self.compat.context()
     }
 }
@@ -34,7 +34,7 @@ impl<'a> TableCompatTemplate<'a> {
             compat,
 
             name: table.name.decl_name().camel(),
-            compat_name: filters::escape_compat_camel(table.name.decl_name()),
+            compat_name: compat_camel(table.name.decl_name()),
             denylist: compat.rust_or_rust_next_denylist(&table.name),
         }
     }

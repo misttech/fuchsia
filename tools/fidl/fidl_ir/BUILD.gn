@@ -57,6 +57,7 @@ if (is_host) {
       "src/literal.rs",
       "src/primitive.rs",
       "src/protocol.rs",
+      "src/resource.rs",
       "src/service.rs",
       "src/struct.rs",
       "src/table.rs",

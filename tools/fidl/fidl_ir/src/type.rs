@@ -74,3 +74,11 @@ pub enum InternalSubtype {
 fn default_protocol_transport() -> String {
     "Channel".to_string()
 }
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct PartialTypeConstructor {
+    pub name: CompoundIdentifier,
+    pub args: Vec<PartialTypeConstructor>,
+    #[serde(rename = "nullable")]
+    pub is_nullable: bool,
+}

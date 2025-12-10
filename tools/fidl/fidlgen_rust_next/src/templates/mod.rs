@@ -15,12 +15,10 @@ mod context;
 mod denylist;
 mod doc_string;
 mod r#enum;
-mod filters;
 mod library;
 mod natural_type;
 mod prim;
 mod protocol;
-mod reserved;
 mod service;
 mod r#struct;
 mod table;
@@ -28,35 +26,23 @@ mod r#union;
 mod validation;
 mod wire_type;
 
-use askama::Template;
-
-use crate::config::Config;
-use fidl_ir::*;
-
-use self::alias::*;
-use self::bits::*;
-use self::compat::*;
-use self::compound_identifier::*;
-use self::r#const::*;
-use self::constant::*;
-use self::context::*;
-use self::denylist::*;
-use self::doc_string::*;
-use self::r#enum::*;
-use self::library::*;
-use self::natural_type::*;
-use self::prim::*;
-use self::protocol::*;
-use self::reserved::*;
-use self::service::*;
-use self::r#struct::*;
-use self::table::*;
-use self::r#union::*;
-use self::validation::*;
-use self::wire_type::*;
-
-pub fn render_library(library: &Library, config: &Config) -> Result<String, askama::Error> {
-    let context = Context::new(library, config);
-
-    LibraryTemplate::new(context).render()
-}
+pub use self::alias::*;
+pub use self::bits::*;
+pub use self::compat::*;
+pub use self::compound_identifier::*;
+pub use self::r#const::*;
+pub use self::constant::*;
+pub use self::context::*;
+pub use self::denylist::*;
+pub use self::doc_string::*;
+pub use self::r#enum::*;
+pub use self::library::*;
+pub use self::natural_type::*;
+pub use self::prim::*;
+pub use self::protocol::*;
+pub use self::service::*;
+pub use self::r#struct::*;
+pub use self::table::*;
+pub use self::r#union::*;
+pub use self::validation::*;
+pub use self::wire_type::*;

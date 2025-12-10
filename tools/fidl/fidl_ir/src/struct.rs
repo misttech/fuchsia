@@ -6,7 +6,7 @@ use serde::Deserialize;
 
 use crate::de::Index;
 
-use crate::{Attributes, CompoundIdentifier, Identifier, Type, TypeShape};
+use crate::{Attributes, CompoundIdentifier, Identifier, PartialTypeConstructor, Type, TypeShape};
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct Struct {
@@ -39,6 +39,8 @@ pub struct StructMember {
     pub ty: Type,
     #[serde(rename = "field_shape_v2")]
     pub field_shape: FieldShape,
+    #[serde(rename = "experimental_maybe_from_alias")]
+    pub from_alias: Option<PartialTypeConstructor>,
 }
 
 #[derive(Clone, Debug, Deserialize)]

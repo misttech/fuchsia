@@ -13,14 +13,14 @@ pub struct {{ name }}{{ de }} {
         pub(crate) _empty: fidl_next::WireEmptyStructPlaceholder,
     {% endif %}
     {% for member in strct.members %}
-        pub {{ member.name|snake }}: {{ self.wire_type(member.ty) }},
+        pub {{ member.name.snake() }}: {{ self.wire_type(member.ty) }},
     {% endfor %}
 }
 
 static_assertions::const_assert_eq!(std::mem::size_of::<{{ name }}{{ infer }}>(), {{ strct.shape.inline_size }});
 static_assertions::const_assert_eq!(std::mem::align_of::<{{ name }}{{ infer }}>(), {{ strct.shape.alignment }});
 {% for member in strct.members %}
-    static_assertions::const_assert_eq!(std::mem::offset_of!({{ name }}{{ infer }}, {{ member.name|snake }}), {{ member.field_shape.offset }});
+    static_assertions::const_assert_eq!(std::mem::offset_of!({{ name }}{{ infer }}, {{ member.name.snake() }}), {{ member.field_shape.offset }});
 {% endfor %}
 
 unsafe impl ::fidl_next::Wire for {{ name }}{{ static_ }} {
@@ -34,12 +34,12 @@ unsafe impl ::fidl_next::Wire for {{ name }}{{ static_ }} {
                     _empty,
                 {% endif %}
                 {% for member in strct.members -%}
-                    {{ member.name|snake }},
+                    {{ member.name.snake() }},
                 {% endfor %}
             } = &mut *out_;
         }
         {% for member in strct.members %}
-            ::fidl_next::Wire::zero_padding({{ member.name|snake }});
+            ::fidl_next::Wire::zero_padding({{ member.name.snake() }});
         {% endfor %}
         {% for range in self.zero_padding_ranges() %}
             unsafe {
@@ -76,7 +76,7 @@ where
                     mut _empty,
                 {% endif %}
                 {% for member in strct.members -%}
-                    mut {{ member.name|snake }},
+                    mut {{ member.name.snake() }},
                 {% endfor %}
             } = slot_;
         }
@@ -88,7 +88,7 @@ where
         {% endif %}
 
         {% for member in strct.members %}
-            {% let member_name = filters::escape_snake(member.name) %}
+            {% let member_name = member.name.snake() %}
             {# SAFETY: We definitely have bytes for the inline portion of the field,
             and all validation functions will cope with arbitrary bytes. #}
             let _field = {{ member_name }}.as_mut();

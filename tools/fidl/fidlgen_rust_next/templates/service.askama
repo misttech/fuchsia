@@ -46,7 +46,7 @@ where
 {
     {% for member in service.members %}
         /// Attempts to connect to the `{{ member.name.non_canonical() }}` service member.
-        pub fn {{ member.name|snake }}(
+        pub fn {{ member.name.snake() }}(
             &self,
             server_end: ::fidl_next::ServerEnd<
                 {{ self.non_type_id(self.member_protocol(member)) }},
@@ -73,7 +73,7 @@ where
 pub trait {{ handler_name }} {
     {% for member in service.members %}
         /// Handles an attempt to connect to the `{{ member.name.non_canonical() }}` member.
-        fn {{ member.name|snake }}(
+        fn {{ member.name.snake() }}(
             &self,
             server_end: ::fidl_next::ServerEnd<{{ self.non_type_id(self.member_protocol(member)) }}, {{ self.member_transport(member) }}>,
         );
@@ -95,7 +95,7 @@ where
         use ::fidl_next::InstanceFromServiceTransport;
         match member {
             {% for member in service.members %}
-                "{{ member.name.non_canonical() }}" => handler.{{ member.name|snake }}(
+                "{{ member.name.non_canonical() }}" => handler.{{ member.name.snake() }}(
                     ::fidl_next::ServerEnd::from_untyped({{ self.member_transport(member) }}::from_service_transport(server_end)),
                 ),
             {% endfor %}

@@ -1,4 +1,4 @@
-# Copyright 2019 The Fuchsia Authors. All rights reserved.
+# Copyright 2025 The Fuchsia Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -14,7 +14,6 @@ if (is_host) {
     edition = "2024"
     sources = [
       "src/config.rs",
-      "src/ident_ext.rs",
       "src/main.rs",
       "src/templates/alias.rs",
       "src/templates/bits.rs",
@@ -22,7 +21,6 @@ if (is_host) {
       "src/templates/compat/enum.rs",
       "src/templates/compat/mod.rs",
       "src/templates/compat/protocol.rs",
-      "src/templates/compat/reserved.rs",
       "src/templates/compat/struct.rs",
       "src/templates/compat/table.rs",
       "src/templates/compat/union.rs",
@@ -33,13 +31,11 @@ if (is_host) {
       "src/templates/denylist.rs",
       "src/templates/doc_string.rs",
       "src/templates/enum.rs",
-      "src/templates/filters.rs",
       "src/templates/library.rs",
       "src/templates/mod.rs",
       "src/templates/natural_type.rs",
       "src/templates/prim.rs",
       "src/templates/protocol.rs",
-      "src/templates/reserved.rs",
       "src/templates/service.rs",
       "src/templates/struct.rs",
       "src/templates/table.rs",
@@ -53,7 +49,7 @@ if (is_host) {
       "//third_party/rust_crates:serde",
       "//third_party/rust_crates:serde_json",
       "//tools/fidl/fidl_ir",
-      "//tools/fidl/fidl_ir/fidl_ir_util",
+      "//tools/fidl/lib/fidlgen_rs",
     ]
     inputs = [
       "askama.toml",

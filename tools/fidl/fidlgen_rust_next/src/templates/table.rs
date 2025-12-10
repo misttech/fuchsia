@@ -5,21 +5,21 @@
 use core::ops::Deref;
 
 use askama::Template;
+use fidlgen::rust::RustIdent as _;
 
-use super::{Context, Contextual, filters};
-use crate::templates::filters::escape_camel;
+use super::{Context, Contextual};
 use fidl_ir::{Table, TypeKind};
 
 pub struct TableTemplate<'a> {
     table: &'a Table,
-    context: Context<'a>,
+    context: &'a Context,
 
     name: String,
 }
 
 impl<'a> TableTemplate<'a> {
-    pub fn new(table: &'a Table, context: Context<'a>) -> Self {
-        Self { table, context, name: escape_camel(table.name.decl_name()) }
+    pub fn new(table: &'a Table, context: &'a Context) -> Self {
+        Self { table, context, name: table.name.decl_name().camel() }
     }
 
     pub fn natural(self) -> NaturalTableTemplate<'a> {
@@ -31,8 +31,8 @@ impl<'a> TableTemplate<'a> {
     }
 }
 
-impl<'a> Contextual<'a> for TableTemplate<'a> {
-    fn context(&self) -> Context<'a> {
+impl Contextual for TableTemplate<'_> {
+    fn context(&self) -> &Context {
         self.context
     }
 }

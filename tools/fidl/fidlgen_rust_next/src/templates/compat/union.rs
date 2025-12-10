@@ -4,11 +4,11 @@
 
 use askama::Template;
 
-use crate::ident_ext::IdentExt as _;
-use crate::templates::{Context, Contextual, Denylist};
+use crate::templates::{Context, Contextual, Denylist, compat_camel};
 use fidl_ir::Union;
+use fidlgen::rust::RustIdent as _;
 
-use super::{CompatTemplate, filters};
+use super::CompatTemplate;
 
 #[derive(Template)]
 #[template(path = "compat/union.askama")]
@@ -21,8 +21,8 @@ pub struct UnionCompatTemplate<'a> {
     denylist: Denylist,
 }
 
-impl<'a> Contextual<'a> for UnionCompatTemplate<'a> {
-    fn context(&self) -> Context<'a> {
+impl Contextual for UnionCompatTemplate<'_> {
+    fn context(&self) -> &Context {
         self.compat.context()
     }
 }
@@ -34,7 +34,7 @@ impl<'a> UnionCompatTemplate<'a> {
             compat,
 
             name: union.name.decl_name().camel(),
-            compat_name: filters::escape_compat_camel(union.name.decl_name()),
+            compat_name: compat_camel(union.name.decl_name()),
             denylist: compat.rust_or_rust_next_denylist(&union.name),
         }
     }

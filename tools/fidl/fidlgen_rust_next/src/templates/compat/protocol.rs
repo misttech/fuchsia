@@ -4,11 +4,11 @@
 
 use askama::Template;
 
-use crate::ident_ext::IdentExt as _;
-use crate::templates::{Context, Contextual, Denylist, escape};
+use crate::templates::{Context, Contextual, Denylist, compat_camel};
 use fidl_ir::Protocol;
+use fidlgen::rust::RustIdent as _;
 
-use super::{CompatTemplate, escape_compat};
+use super::CompatTemplate;
 
 #[derive(Template)]
 #[template(path = "compat/protocol.askama")]
@@ -23,8 +23,8 @@ pub struct ProtocolCompatTemplate<'a> {
     denylist: Denylist,
 }
 
-impl<'a> Contextual<'a> for ProtocolCompatTemplate<'a> {
-    fn context(&self) -> Context<'a> {
+impl Contextual for ProtocolCompatTemplate<'_> {
+    fn context(&self) -> &Context {
         self.compat.context()
     }
 }
@@ -33,7 +33,7 @@ impl<'a> ProtocolCompatTemplate<'a> {
     pub fn new(protocol: &'a Protocol, compat: &'a CompatTemplate<'a>) -> Self {
         let base_name = protocol.name.decl_name().camel();
         let proxy_name = format!("{base_name}Proxy");
-        let compat_base_name = escape_compat(base_name.clone(), protocol.name.decl_name());
+        let compat_base_name = compat_camel(protocol.name.decl_name());
         let compat_name = format!("{compat_base_name}Marker");
         let compat_proxy_name = format!("{compat_base_name}Proxy");
 
@@ -41,7 +41,7 @@ impl<'a> ProtocolCompatTemplate<'a> {
             protocol,
             compat,
 
-            name: escape(base_name),
+            name: base_name,
             proxy_name,
             compat_name,
             compat_proxy_name,

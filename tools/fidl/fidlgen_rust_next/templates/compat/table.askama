@@ -3,7 +3,7 @@ impl ::fidl_next::CompatFrom<crate::{{ name }}> for ::{{ compat.crate_name }}::{
     fn compat_from(value: crate::{{ name }}) -> Self {
         Self {
             {% for member in table.members %}
-                {{ member.name|compat_snake }}: ::fidl_next::CompatFrom::compat_from(value.{{ member.name|snake }}),
+                {{ self::compat_snake(member.name) }}: ::fidl_next::CompatFrom::compat_from(value.{{ member.name.snake() }}),
             {% endfor %}
             __source_breaking: ::fidl::marker::SourceBreaking,
         }
@@ -15,7 +15,7 @@ impl ::fidl_next::CompatFrom<::{{ compat.crate_name }}::{{ compat_name }}> for c
     fn compat_from(value: ::{{ compat.crate_name }}::{{ compat_name }}) -> Self {
         Self {
             {% for member in table.members %}
-                {{ member.name|snake }}: ::fidl_next::CompatFrom::compat_from(value.{{ member.name|compat_snake }}),
+                {{ member.name.snake() }}: ::fidl_next::CompatFrom::compat_from(value.{{ self::compat_snake(member.name) }}),
             {% endfor %}
         }
     }
