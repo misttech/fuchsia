@@ -143,7 +143,7 @@ pub struct EnumStateRecorder<T: RecordableEnum> {
     _root_node: inspect::Node,
     trace_id: ftrace::Id,
     trace_track_name: &'static CStr,
-    trace_state_event: Option<ftrace::AsyncScope>,
+    trace_state_event: Option<ftrace::AsyncScope<&'static CStr, &'static CStr>>,
 }
 
 impl<T: RecordableEnum> std::fmt::Debug for EnumStateRecorder<T> {

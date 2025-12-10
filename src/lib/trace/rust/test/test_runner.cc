@@ -30,16 +30,18 @@ TEST(TEST_SUITE, test_category_enabled) {
 
   fixture_initialize_and_start_tracing();
 
-  EXPECT_FALSE(rs_test_category_disabled());
-  EXPECT_TRUE(rs_test_category_enabled());
+  EXPECT_FALSE(rs_test_category_disabled_cstr());
+  EXPECT_FALSE(rs_test_category_disabled_str());
+  EXPECT_TRUE(rs_test_category_enabled_cstr());
+  EXPECT_TRUE(rs_test_category_enabled_str());
 }
 
-TEST(TEST_SUITE, test_counter) {
+TEST(TEST_SUITE, test_counter_cstr) {
   BEGIN_TRACE_TEST;
 
   fixture_initialize_and_start_tracing();
 
-  rs_test_counter_macro();
+  rs_test_counter_macro_cstr();
 
   ASSERT_RECORDS(
       "String(index: 1, \"+enabled\")\n"
@@ -52,12 +54,47 @@ TEST(TEST_SUITE, test_counter) {
       "int32(10)})\n");
 }
 
-TEST(TEST_SUITE, test_instant) {
+TEST(TEST_SUITE, test_counter_str) {
   BEGIN_TRACE_TEST;
 
   fixture_initialize_and_start_tracing();
 
-  rs_test_instant_macro();
+  rs_test_counter_macro_str();
+
+  ASSERT_RECORDS(
+      "String(index: 1, \"+enabled\")\n"
+      "String(index: 2, \"arg\")\n"
+      "String(index: 3, \"name\")\n"
+      "String(index: 4, \"process\")\n"
+      "KernelObject(koid: <>, type: thread, name: \"initial-thread\", {process: koid(<>)})\n"
+      "Thread(index: 1, <>)\n"
+      "Event(ts: <>, pt: <>, category: \"+enabled\", name: \"name\", Counter(id: 42), {arg: "
+      "int32(10)})\n");
+}
+
+TEST(TEST_SUITE, test_counter_str_and_string) {
+  BEGIN_TRACE_TEST;
+
+  fixture_initialize_and_start_tracing();
+
+  rs_test_counter_macro_str_and_string();
+
+  ASSERT_RECORDS(
+      "String(index: 1, \"+enabled\")\n"
+      "String(index: 2, \"arg\")\n"
+      "String(index: 3, \"process\")\n"
+      "KernelObject(koid: <>, type: thread, name: \"initial-thread\", {process: koid(<>)})\n"
+      "Thread(index: 1, <>)\n"
+      "Event(ts: <>, pt: <>, category: \"+enabled\", name: \"name\", Counter(id: 42), {arg: "
+      "int32(10)})\n");
+}
+
+TEST(TEST_SUITE, test_instant_cstr) {
+  BEGIN_TRACE_TEST;
+
+  fixture_initialize_and_start_tracing();
+
+  rs_test_instant_macro_cstr();
 
   ASSERT_RECORDS(
       "String(index: 1, \"+enabled\")\n"
@@ -70,12 +107,47 @@ TEST(TEST_SUITE, test_instant) {
       "{arg: int32(10)})\n");
 }
 
-TEST(TEST_SUITE, test_duration) {
+TEST(TEST_SUITE, test_instant_str) {
   BEGIN_TRACE_TEST;
 
   fixture_initialize_and_start_tracing();
 
-  rs_test_duration_macro();
+  rs_test_instant_macro_str();
+
+  ASSERT_RECORDS(
+      "String(index: 1, \"+enabled\")\n"
+      "String(index: 2, \"arg\")\n"
+      "String(index: 3, \"name\")\n"
+      "String(index: 4, \"process\")\n"
+      "KernelObject(koid: <>, type: thread, name: \"initial-thread\", {process: koid(<>)})\n"
+      "Thread(index: 1, <>)\n"
+      "Event(ts: <>, pt: <>, category: \"+enabled\", name: \"name\", Instant(scope: process), "
+      "{arg: int32(10)})\n");
+}
+
+TEST(TEST_SUITE, test_instant_str_and_string) {
+  BEGIN_TRACE_TEST;
+
+  fixture_initialize_and_start_tracing();
+
+  rs_test_instant_macro_str_and_string();
+
+  ASSERT_RECORDS(
+      "String(index: 1, \"+enabled\")\n"
+      "String(index: 2, \"arg\")\n"
+      "String(index: 3, \"process\")\n"
+      "KernelObject(koid: <>, type: thread, name: \"initial-thread\", {process: koid(<>)})\n"
+      "Thread(index: 1, <>)\n"
+      "Event(ts: <>, pt: <>, category: \"+enabled\", name: \"name\", Instant(scope: process), "
+      "{arg: int32(10)})\n");
+}
+
+TEST(TEST_SUITE, test_duration_cstr) {
+  BEGIN_TRACE_TEST;
+
+  fixture_initialize_and_start_tracing();
+
+  rs_test_duration_macro_cstr();
 
   ASSERT_RECORDS(
       "String(index: 1, \"+enabled\")\n"
@@ -83,6 +155,43 @@ TEST(TEST_SUITE, test_duration) {
       "String(index: 3, \"y\")\n"
       "String(index: 4, \"name\")\n"
       "String(index: 5, \"process\")\n"
+      "KernelObject(koid: <>, type: thread, name: \"initial-thread\", {process: koid(<>)})\n"
+      "Thread(index: 1, <>)\n"
+      "Event(ts: <>, pt: <>, category: \"+enabled\", name: \"name\", DurationComplete(end_ts: <>), "
+      "{x: int32(5), y: int32(10)})\n");
+}
+
+TEST(TEST_SUITE, test_duration_str) {
+  BEGIN_TRACE_TEST;
+
+  fixture_initialize_and_start_tracing();
+
+  rs_test_duration_macro_str();
+
+  ASSERT_RECORDS(
+      "String(index: 1, \"+enabled\")\n"
+      "String(index: 2, \"x\")\n"
+      "String(index: 3, \"y\")\n"
+      "String(index: 4, \"name\")\n"
+      "String(index: 5, \"process\")\n"
+      "KernelObject(koid: <>, type: thread, name: \"initial-thread\", {process: koid(<>)})\n"
+      "Thread(index: 1, <>)\n"
+      "Event(ts: <>, pt: <>, category: \"+enabled\", name: \"name\", DurationComplete(end_ts: <>), "
+      "{x: int32(5), y: int32(10)})\n");
+}
+
+TEST(TEST_SUITE, test_duration_str_and_string) {
+  BEGIN_TRACE_TEST;
+
+  fixture_initialize_and_start_tracing();
+
+  rs_test_duration_macro_str_and_string();
+
+  ASSERT_RECORDS(
+      "String(index: 1, \"+enabled\")\n"
+      "String(index: 2, \"x\")\n"
+      "String(index: 3, \"y\")\n"
+      "String(index: 4, \"process\")\n"
       "KernelObject(koid: <>, type: thread, name: \"initial-thread\", {process: koid(<>)})\n"
       "Thread(index: 1, <>)\n"
       "Event(ts: <>, pt: <>, category: \"+enabled\", name: \"name\", DurationComplete(end_ts: <>), "
@@ -111,12 +220,12 @@ TEST(TEST_SUITE, test_scoped_duration) {
       "{x: int32(5), y: int32(10)})\n");
 }
 
-TEST(TEST_SUITE, test_duration_granular) {
+TEST(TEST_SUITE, test_duration_granular_cstr) {
   BEGIN_TRACE_TEST;
 
   fixture_initialize_and_start_tracing();
 
-  rs_test_duration_begin_end_macros();
+  rs_test_duration_begin_end_macros_cstr();
 
   ASSERT_RECORDS(
       "String(index: 1, \"+enabled\")\n"
@@ -135,12 +244,59 @@ TEST(TEST_SUITE, test_duration_granular) {
       "string(\"foo\")})\n");
 }
 
-TEST(TEST_SUITE, test_blob) {
+TEST(TEST_SUITE, test_duration_granular_str) {
   BEGIN_TRACE_TEST;
 
   fixture_initialize_and_start_tracing();
 
-  rs_test_blob_macro();
+  rs_test_duration_begin_end_macros_str();
+
+  ASSERT_RECORDS(
+      "String(index: 1, \"+enabled\")\n"
+      "String(index: 2, \"x\")\n"
+      "String(index: 3, \"name\")\n"
+      "String(index: 4, \"process\")\n"
+      "KernelObject(koid: <>, type: thread, name: \"initial-thread\", {process: koid(<>)})\n"
+      "Thread(index: 1, <>)\n"
+      "Event(ts: <>, pt: <>, category: \"+enabled\", name: \"name\", DurationBegin, {x: "
+      "int32(5)})\n"
+      "String(index: 5, \"arg\")\n"
+      "Event(ts: <>, pt: <>, category: \"+enabled\", name: \"name\", Instant(scope: process), "
+      "{arg: int32(10)})\n"
+      "String(index: 6, \"y\")\n"
+      "Event(ts: <>, pt: <>, category: \"+enabled\", name: \"name\", DurationEnd, {y: "
+      "string(\"foo\")})\n");
+}
+
+TEST(TEST_SUITE, test_duration_granular_str_and_string) {
+  BEGIN_TRACE_TEST;
+
+  fixture_initialize_and_start_tracing();
+
+  rs_test_duration_begin_end_macros_str_and_string();
+
+  ASSERT_RECORDS(
+      "String(index: 1, \"+enabled\")\n"
+      "String(index: 2, \"x\")\n"
+      "String(index: 3, \"process\")\n"
+      "KernelObject(koid: <>, type: thread, name: \"initial-thread\", {process: koid(<>)})\n"
+      "Thread(index: 1, <>)\n"
+      "Event(ts: <>, pt: <>, category: \"+enabled\", name: \"name\", DurationBegin, {x: "
+      "int32(5)})\n"
+      "String(index: 4, \"arg\")\n"
+      "Event(ts: <>, pt: <>, category: \"+enabled\", name: \"name\", Instant(scope: process), "
+      "{arg: int32(10)})\n"
+      "String(index: 5, \"y\")\n"
+      "Event(ts: <>, pt: <>, category: \"+enabled\", name: \"name\", DurationEnd, {y: "
+      "string(\"foo\")})\n");
+}
+
+TEST(TEST_SUITE, test_blob_cstr) {
+  BEGIN_TRACE_TEST;
+
+  fixture_initialize_and_start_tracing();
+
+  rs_test_blob_macro_cstr();
 
   ASSERT_RECORDS(
       "String(index: 1, \"+enabled\")\n"
@@ -153,12 +309,47 @@ TEST(TEST_SUITE, test_blob) {
       "<>, {x: int32(5)}, size: 13, preview: <62 6c 6f 62 20 63 6f 6e 74 65 6e 74 73>))\n");
 }
 
-TEST(TEST_SUITE, test_flow) {
+TEST(TEST_SUITE, test_blob_str) {
   BEGIN_TRACE_TEST;
 
   fixture_initialize_and_start_tracing();
 
-  rs_test_flow_begin_step_end_macros();
+  rs_test_blob_macro_str();
+
+  ASSERT_RECORDS(
+      "String(index: 1, \"+enabled\")\n"
+      "String(index: 2, \"x\")\n"
+      "String(index: 3, \"name\")\n"
+      "String(index: 4, \"process\")\n"
+      "KernelObject(koid: <>, type: thread, name: \"initial-thread\", {process: koid(<>)})\n"
+      "Thread(index: 1, <>)\n"
+      "LargeRecord(Blob(format: blob_event, category: \"+enabled\", name: \"name\", ts: <>, pt: "
+      "<>, {x: int32(5)}, size: 13, preview: <62 6c 6f 62 20 63 6f 6e 74 65 6e 74 73>))\n");
+}
+
+TEST(TEST_SUITE, test_blob_str_and_string) {
+  BEGIN_TRACE_TEST;
+
+  fixture_initialize_and_start_tracing();
+
+  rs_test_blob_macro_str_and_string();
+
+  ASSERT_RECORDS(
+      "String(index: 1, \"+enabled\")\n"
+      "String(index: 2, \"x\")\n"
+      "String(index: 3, \"process\")\n"
+      "KernelObject(koid: <>, type: thread, name: \"initial-thread\", {process: koid(<>)})\n"
+      "Thread(index: 1, <>)\n"
+      "LargeRecord(Blob(format: blob_event, category: \"+enabled\", name: \"name\", ts: <>, pt: "
+      "<>, {x: int32(5)}, size: 13, preview: <62 6c 6f 62 20 63 6f 6e 74 65 6e 74 73>))\n");
+}
+
+TEST(TEST_SUITE, test_flow_cstr) {
+  BEGIN_TRACE_TEST;
+
+  fixture_initialize_and_start_tracing();
+
+  rs_test_flow_begin_step_end_macros_cstr();
 
   ASSERT_RECORDS(
       "String(index: 1, \"+enabled\")\n"
@@ -174,6 +365,54 @@ TEST(TEST_SUITE, test_flow) {
       "Event(ts: <>, pt: <>, category: \"+enabled\", name: \"step\", FlowStep(id: 123), {z: "
       "int32(42)})\n"
       "String(index: 7, \"y\")\n"
+      "Event(ts: <>, pt: <>, category: \"+enabled\", name: \"name\", FlowEnd(id: 123), {y: "
+      "string(\"foo\")})\n");
+}
+
+TEST(TEST_SUITE, test_flow_str) {
+  BEGIN_TRACE_TEST;
+
+  fixture_initialize_and_start_tracing();
+
+  rs_test_flow_begin_step_end_macros_str();
+
+  ASSERT_RECORDS(
+      "String(index: 1, \"+enabled\")\n"
+      "String(index: 2, \"x\")\n"
+      "String(index: 3, \"name\")\n"
+      "String(index: 4, \"process\")\n"
+      "KernelObject(koid: <>, type: thread, name: \"initial-thread\", {process: koid(<>)})\n"
+      "Thread(index: 1, <>)\n"
+      "Event(ts: <>, pt: <>, category: \"+enabled\", name: \"name\", FlowBegin(id: 123), {x: "
+      "int32(5)})\n"
+      "String(index: 5, \"z\")\n"
+      "String(index: 6, \"step\")\n"
+      "Event(ts: <>, pt: <>, category: \"+enabled\", name: \"step\", FlowStep(id: 123), {z: "
+      "int32(42)})\n"
+      "String(index: 7, \"y\")\n"
+      "Event(ts: <>, pt: <>, category: \"+enabled\", name: \"name\", FlowEnd(id: 123), {y: "
+      "string(\"foo\")})\n");
+}
+
+TEST(TEST_SUITE, test_flow_str_and_string) {
+  BEGIN_TRACE_TEST;
+
+  fixture_initialize_and_start_tracing();
+
+  rs_test_flow_begin_step_end_macros_str_and_string();
+
+  ASSERT_RECORDS(
+      "String(index: 1, \"+enabled\")\n"
+      "String(index: 2, \"x\")\n"
+      "String(index: 3, \"process\")\n"
+      "KernelObject(koid: <>, type: thread, name: \"initial-thread\", {process: koid(<>)})\n"
+      "Thread(index: 1, <>)\n"
+      "Event(ts: <>, pt: <>, category: \"+enabled\", name: \"name\", FlowBegin(id: 123), {x: "
+      "int32(5)})\n"
+      "String(index: 4, \"z\")\n"
+      "Event(ts: <>, pt: <>, category: \"+enabled\", name: \"step\", FlowStep(id: 123), {z: "
+      "int32(42)})\n"
+      "String(index: 5, \"y\")\n"
       "Event(ts: <>, pt: <>, category: \"+enabled\", name: \"name\", FlowEnd(id: 123), {y: "
       "string(\"foo\")})\n");
 }
@@ -235,23 +474,45 @@ TEST(TEST_SUITE, test_async_event) {
       "Event(ts: <>, pt: <>, category: \"+enabled\", name: \"name\", AsyncEnd(id: 1), {})\n");
 }
 
-TEST(TEST_SUITE, test_alert) {
+TEST(TEST_SUITE, test_alert_cstr) {
   BEGIN_TRACE_TEST;
 
   fixture_initialize_and_start_tracing();
 
-  rs_test_alert();
+  rs_test_alert_str();
 
   ASSERT_TRUE(fixture_wait_alert_notification());
   ASSERT_TRUE(fixture_compare_last_alert_name("alert_name"));
 }
 
-TEST(TEST_SUITE, test_trace_future_enabled) {
+TEST(TEST_SUITE, test_alert_str) {
   BEGIN_TRACE_TEST;
 
   fixture_initialize_and_start_tracing();
 
-  rs_test_trace_future_enabled();
+  rs_test_alert_str();
+
+  ASSERT_TRUE(fixture_wait_alert_notification());
+  ASSERT_TRUE(fixture_compare_last_alert_name("alert_name"));
+}
+
+TEST(TEST_SUITE, test_alert_str_and_string) {
+  BEGIN_TRACE_TEST;
+
+  fixture_initialize_and_start_tracing();
+
+  rs_test_alert_str_and_string();
+
+  ASSERT_TRUE(fixture_wait_alert_notification());
+  ASSERT_TRUE(fixture_compare_last_alert_name("alert_name"));
+}
+
+TEST(TEST_SUITE, test_trace_future_enabled_cstr) {
+  BEGIN_TRACE_TEST;
+
+  fixture_initialize_and_start_tracing();
+
+  rs_test_trace_future_enabled_cstr();
 
   ASSERT_RECORDS(
       // Future immediately ready.
@@ -272,6 +533,109 @@ TEST(TEST_SUITE, test_trace_future_enabled) {
       "Event(ts: <>, pt: <>, category: \"+enabled\", name: \"name\", DurationBegin, {})\n"
       "Event(ts: <>, pt: <>, category: \"+enabled\", name: \"name\", FlowBegin(id: 4), {})\n"
       "String(index: 7, \"pending\")\n"
+      "Event(ts: <>, pt: <>, category: \"+enabled\", name: \"name\", DurationEnd, "
+      "{poll-state: string(\"pending\"), poll-count: uint64(1)})\n"
+      // Poll 2.
+      "Event(ts: <>, pt: <>, category: \"+enabled\", name: \"name\", DurationBegin, {})\n"
+      "Event(ts: <>, pt: <>, category: \"+enabled\", name: \"name\", FlowEnd(id: 4), {})\n"
+      "Event(ts: <>, pt: <>, category: \"+enabled\", name: \"name\", DurationEnd, "
+      "{poll-state: string(\"ready\"), poll-count: uint64(2)})\n"
+
+      // Future that returns pending twice then ready.
+      // Poll 1.
+      "Event(ts: <>, pt: <>, category: \"+enabled\", name: \"name\", DurationBegin, {})\n"
+      "Event(ts: <>, pt: <>, category: \"+enabled\", name: \"name\", FlowBegin(id: 5), {})\n"
+      "Event(ts: <>, pt: <>, category: \"+enabled\", name: \"name\", DurationEnd, "
+      "{poll-state: string(\"pending\"), poll-count: uint64(1)})\n"
+      // Poll 2.
+      "Event(ts: <>, pt: <>, category: \"+enabled\", name: \"name\", DurationBegin, {})\n"
+      "Event(ts: <>, pt: <>, category: \"+enabled\", name: \"name\", FlowStep(id: 5), {})\n"
+      "Event(ts: <>, pt: <>, category: \"+enabled\", name: \"name\", DurationEnd, "
+      "{poll-state: string(\"pending\"), poll-count: uint64(2)})\n"
+      // Poll 3.
+      "Event(ts: <>, pt: <>, category: \"+enabled\", name: \"name\", DurationBegin, {})\n"
+      "Event(ts: <>, pt: <>, category: \"+enabled\", name: \"name\", FlowEnd(id: 5), {})\n"
+      "Event(ts: <>, pt: <>, category: \"+enabled\", name: \"name\", DurationEnd, "
+      "{poll-state: string(\"ready\"), poll-count: uint64(3)})\n");
+}
+
+TEST(TEST_SUITE, test_trace_future_enabled_str) {
+  BEGIN_TRACE_TEST;
+
+  fixture_initialize_and_start_tracing();
+
+  rs_test_trace_future_enabled_str();
+
+  ASSERT_RECORDS(
+      // Future immediately ready.
+      "String(index: 1, \"+enabled\")\n"
+      "String(index: 2, \"name\")\n"
+      "String(index: 3, \"process\")\n"
+      "KernelObject(koid: <>, type: thread, name: \"initial-thread\", {process: koid(<>)})\n"
+      "Thread(index: 1, <>)\n"
+      "Event(ts: <>, pt: <>, category: \"+enabled\", name: \"name\", DurationBegin, {})\n"
+      "String(index: 4, \"ready\")\n"
+      "String(index: 5, \"poll-state\")\n"
+      "String(index: 6, \"poll-count\")\n"
+      "Event(ts: <>, pt: <>, category: \"+enabled\", name: \"name\", DurationEnd, "
+      "{poll-state: string(\"ready\"), poll-count: uint64(1)})\n"
+
+      // Future that returns pending then ready.
+      // Poll 1.
+      "Event(ts: <>, pt: <>, category: \"+enabled\", name: \"name\", DurationBegin, {})\n"
+      "Event(ts: <>, pt: <>, category: \"+enabled\", name: \"name\", FlowBegin(id: 4), {})\n"
+      "String(index: 7, \"pending\")\n"
+      "Event(ts: <>, pt: <>, category: \"+enabled\", name: \"name\", DurationEnd, "
+      "{poll-state: string(\"pending\"), poll-count: uint64(1)})\n"
+      // Poll 2.
+      "Event(ts: <>, pt: <>, category: \"+enabled\", name: \"name\", DurationBegin, {})\n"
+      "Event(ts: <>, pt: <>, category: \"+enabled\", name: \"name\", FlowEnd(id: 4), {})\n"
+      "Event(ts: <>, pt: <>, category: \"+enabled\", name: \"name\", DurationEnd, "
+      "{poll-state: string(\"ready\"), poll-count: uint64(2)})\n"
+
+      // Future that returns pending twice then ready.
+      // Poll 1.
+      "Event(ts: <>, pt: <>, category: \"+enabled\", name: \"name\", DurationBegin, {})\n"
+      "Event(ts: <>, pt: <>, category: \"+enabled\", name: \"name\", FlowBegin(id: 5), {})\n"
+      "Event(ts: <>, pt: <>, category: \"+enabled\", name: \"name\", DurationEnd, "
+      "{poll-state: string(\"pending\"), poll-count: uint64(1)})\n"
+      // Poll 2.
+      "Event(ts: <>, pt: <>, category: \"+enabled\", name: \"name\", DurationBegin, {})\n"
+      "Event(ts: <>, pt: <>, category: \"+enabled\", name: \"name\", FlowStep(id: 5), {})\n"
+      "Event(ts: <>, pt: <>, category: \"+enabled\", name: \"name\", DurationEnd, "
+      "{poll-state: string(\"pending\"), poll-count: uint64(2)})\n"
+      // Poll 3.
+      "Event(ts: <>, pt: <>, category: \"+enabled\", name: \"name\", DurationBegin, {})\n"
+      "Event(ts: <>, pt: <>, category: \"+enabled\", name: \"name\", FlowEnd(id: 5), {})\n"
+      "Event(ts: <>, pt: <>, category: \"+enabled\", name: \"name\", DurationEnd, "
+      "{poll-state: string(\"ready\"), poll-count: uint64(3)})\n");
+}
+
+TEST(TEST_SUITE, test_trace_future_enabled_str_and_string) {
+  BEGIN_TRACE_TEST;
+
+  fixture_initialize_and_start_tracing();
+
+  rs_test_trace_future_enabled_str_and_string();
+
+  ASSERT_RECORDS(
+      // Future immediately ready.
+      "String(index: 1, \"+enabled\")\n"
+      "String(index: 2, \"process\")\n"
+      "KernelObject(koid: <>, type: thread, name: \"initial-thread\", {process: koid(<>)})\n"
+      "Thread(index: 1, <>)\n"
+      "Event(ts: <>, pt: <>, category: \"+enabled\", name: \"name\", DurationBegin, {})\n"
+      "String(index: 3, \"ready\")\n"
+      "String(index: 4, \"poll-state\")\n"
+      "String(index: 5, \"poll-count\")\n"
+      "Event(ts: <>, pt: <>, category: \"+enabled\", name: \"name\", DurationEnd, "
+      "{poll-state: string(\"ready\"), poll-count: uint64(1)})\n"
+
+      // Future that returns pending then ready.
+      // Poll 1.
+      "Event(ts: <>, pt: <>, category: \"+enabled\", name: \"name\", DurationBegin, {})\n"
+      "Event(ts: <>, pt: <>, category: \"+enabled\", name: \"name\", FlowBegin(id: 4), {})\n"
+      "String(index: 6, \"pending\")\n"
       "Event(ts: <>, pt: <>, category: \"+enabled\", name: \"name\", DurationEnd, "
       "{poll-state: string(\"pending\"), poll-count: uint64(1)})\n"
       // Poll 2.

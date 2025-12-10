@@ -41,10 +41,8 @@ pub fn is_enabled() -> bool {
 }
 
 /// Returns true if tracing has been enabled for the given category.
-pub fn category_enabled(category: &'static CStr) -> bool {
-    // Function requires a pointer to a static null-terminated string literal,
-    // which `&'static CStr` is.
-    unsafe { sys::trace_is_category_enabled(category.as_ptr()) }
+pub fn category_enabled<S: CategoryString>(category: S) -> bool {
+    category.is_category_enabled()
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -117,10 +115,185 @@ impl From<Id> for u64 {
     }
 }
 
+pub trait CategoryString: Copy {
+    /// Registers `self` as with the provided context and returns a string ref for it.
+    fn register(&self, context: &Context) -> sys::trace_string_ref_t;
+
+    /// Acquires a context for the category named by `self` if the category is enabled, returning
+    /// None otherwise.
+    fn acquire_context(&self) -> Option<TraceCategoryContext>;
+
+    /// Same as `acquire_context`, but uses the additional `site` parameter to cache the result.
+    fn acquire_context_cached(&self, site: &sys::trace_site_t) -> Option<TraceCategoryContext>;
+
+    /// Returns true if the category named by `self` is enabled.
+    fn is_category_enabled(&self) -> bool;
+}
+
+impl CategoryString for &'static CStr {
+    fn register(&self, context: &Context) -> sys::trace_string_ref_t {
+        unsafe {
+            let mut self_ref = mem::MaybeUninit::<sys::trace_string_ref_t>::uninit();
+            sys::trace_context_register_string_literal(
+                context.raw,
+                self.as_ptr(),
+                self_ref.as_mut_ptr(),
+            );
+            self_ref.assume_init()
+        }
+    }
+
+    fn acquire_context(&self) -> Option<TraceCategoryContext> {
+        unsafe {
+            let mut category_ref = mem::MaybeUninit::<sys::trace_string_ref_t>::uninit();
+            let raw =
+                sys::trace_acquire_context_for_category(self.as_ptr(), category_ref.as_mut_ptr());
+            if raw != ptr::null() {
+                Some(TraceCategoryContext {
+                    context: Context { raw },
+                    category_ref: category_ref.assume_init(),
+                })
+            } else {
+                None
+            }
+        }
+    }
+
+    fn acquire_context_cached(&self, site: &sys::trace_site_t) -> Option<TraceCategoryContext> {
+        unsafe {
+            // SAFETY: The call to `trace_acquire_context_for_category_cached` is sound because
+            // all arguments are live and non-null. If this function returns a non-null
+            // pointer then it also guarantees that `category_ref` will have been initialized.
+            // Internally, it uses relaxed atomic semantics to load and store site.
+            let mut category_ref = mem::MaybeUninit::<sys::trace_string_ref_t>::uninit();
+            let raw = sys::trace_acquire_context_for_category_cached(
+                self.as_ptr(),
+                site.as_ptr(),
+                category_ref.as_mut_ptr(),
+            );
+            if raw != ptr::null() {
+                Some(TraceCategoryContext {
+                    context: Context { raw },
+                    category_ref: category_ref.assume_init(),
+                })
+            } else {
+                None
+            }
+        }
+    }
+
+    fn is_category_enabled(&self) -> bool {
+        unsafe { sys::trace_is_category_enabled(self.as_ptr()) }
+    }
+}
+
+#[cfg(fuchsia_api_level_at_least = "27")]
+impl CategoryString for &'static str {
+    fn register(&self, context: &Context) -> sys::trace_string_ref_t {
+        unsafe {
+            let mut self_ref = mem::MaybeUninit::<sys::trace_string_ref_t>::uninit();
+            sys::trace_context_register_bytestring(
+                context.raw,
+                self.as_ptr().cast::<libc::c_char>(),
+                self.len(),
+                self_ref.as_mut_ptr(),
+            );
+            self_ref.assume_init()
+        }
+    }
+
+    fn acquire_context(&self) -> Option<TraceCategoryContext> {
+        unsafe {
+            let mut category_ref = mem::MaybeUninit::<sys::trace_string_ref_t>::uninit();
+            let raw = sys::trace_acquire_context_for_category_bytestring(
+                self.as_ptr(),
+                self.len(),
+                category_ref.as_mut_ptr(),
+            );
+            if raw != ptr::null() {
+                Some(TraceCategoryContext {
+                    context: Context { raw },
+                    category_ref: category_ref.assume_init(),
+                })
+            } else {
+                None
+            }
+        }
+    }
+
+    fn acquire_context_cached(&self, site: &sys::trace_site_t) -> Option<TraceCategoryContext> {
+        unsafe {
+            // SAFETY: The call to `trace_acquire_context_for_category_bytestring_cached` is sound
+            // because all arguments are live and non-null. If this function returns a non-null
+            // pointer then it also guarantees that `category_ref` will have been initialized.
+            // Internally, it uses relaxed atomic semantics to load and store site.
+            let mut category_ref = mem::MaybeUninit::<sys::trace_string_ref_t>::uninit();
+            let raw = sys::trace_acquire_context_for_category_bytestring_cached(
+                self.as_ptr(),
+                self.len(),
+                site.as_ptr(),
+                category_ref.as_mut_ptr(),
+            );
+            if raw != ptr::null() {
+                Some(TraceCategoryContext {
+                    context: Context { raw },
+                    category_ref: category_ref.assume_init(),
+                })
+            } else {
+                None
+            }
+        }
+    }
+
+    fn is_category_enabled(&self) -> bool {
+        unsafe { sys::trace_is_category_bytestring_enabled(self.as_ptr(), self.len()) }
+    }
+}
+
+pub trait AlertString {
+    /// Sends an alert named by `self` to the provided context.
+    fn send_alert(&self, context: &Context);
+}
+
+impl AlertString for &CStr {
+    fn send_alert(&self, context: &Context) {
+        unsafe {
+            sys::trace_context_send_alert(context.raw, self.as_ptr());
+        }
+    }
+}
+
+#[cfg(fuchsia_api_level_at_least = "27")]
+impl AlertString for &str {
+    fn send_alert(&self, context: &Context) {
+        unsafe {
+            sys::trace_context_send_alert_bytestring(context.raw, self.as_ptr(), self.len());
+        }
+    }
+}
+
+#[cfg(fuchsia_api_level_at_least = "27")]
+impl AlertString for &String {
+    fn send_alert(&self, context: &Context) {
+        unsafe {
+            sys::trace_context_send_alert_bytestring(context.raw, self.as_ptr(), self.len());
+        }
+    }
+}
+
 pub trait AsTraceStrRef {
     fn as_trace_str_ref(&self, context: &TraceCategoryContext) -> sys::trace_string_ref_t;
 }
 
+impl AsTraceStrRef for &'static CStr {
+    fn as_trace_str_ref(&self, context: &TraceCategoryContext) -> sys::trace_string_ref_t {
+        context.register_string_literal(*self)
+    }
+}
+
+// NOTE: Ideally we'd implement AsTraceStrRef for non-static &str using inline refs. There
+// isn't a good way to do this right now because trait specialization is unstable. Hopefully
+// supporting inline refs for &String suffices in the meantime.
 impl AsTraceStrRef for &'static str {
     fn as_trace_str_ref(&self, context: &TraceCategoryContext) -> sys::trace_string_ref_t {
         context.register_str(self)
@@ -130,6 +303,13 @@ impl AsTraceStrRef for &'static str {
 impl AsTraceStrRef for String {
     fn as_trace_str_ref(&self, _context: &TraceCategoryContext) -> sys::trace_string_ref_t {
         trace_make_inline_string_ref(self.as_str())
+    }
+}
+
+// This effectively makes deref coercion work for `as_trace_str_ref` calls.
+impl<T: AsTraceStrRef> AsTraceStrRef for &T {
+    fn as_trace_str_ref(&self, context: &TraceCategoryContext) -> sys::trace_string_ref_t {
+        (*self).as_trace_str_ref(context)
     }
 }
 
@@ -391,15 +571,15 @@ macro_rules! instant {
 /// Writes an instant event representing a single moment in time.
 /// The number of `args` must not be greater than 15.
 #[inline]
-pub fn instant(
+pub fn instant<S: AsTraceStrRef>(
     context: &TraceCategoryContext,
-    name: &'static CStr,
+    name: S,
     scope: Scope,
     args: &[Arg<'_>],
 ) {
     assert!(args.len() <= 15, "no more than 15 trace arguments are supported");
 
-    let name_ref = context.register_string_literal(name);
+    let name_ref = name.as_trace_str_ref(context);
     context.write_instant(name_ref, scope, args);
 }
 
@@ -424,18 +604,9 @@ macro_rules! alert {
 }
 
 /// Sends an alert, which can be mapped to an action.
-pub fn alert(category: &'static CStr, name: &'static CStr) {
-    // trace_context_write_xxx functions require that:
-    // - category and name are static null-terminated strings (`&'static CStr).
-    // - the refs must be valid for the given call
-    unsafe {
-        let mut category_ref = mem::MaybeUninit::<sys::trace_string_ref_t>::uninit();
-        let context =
-            sys::trace_acquire_context_for_category(category.as_ptr(), category_ref.as_mut_ptr());
-        if context != ptr::null() {
-            sys::trace_context_send_alert(context, name.as_ptr());
-            sys::trace_release_context(context);
-        }
+pub fn alert<C: CategoryString, S: AlertString>(category: C, name: S) {
+    if let Some(context) = category.acquire_context() {
+        name.send_alert(&context.context);
     }
 }
 
@@ -478,56 +649,56 @@ macro_rules! counter {
 ///
 /// 1 to 15 numeric arguments can be associated with an event, each of which is
 /// interpreted as a distinct time series.
-pub fn counter(
+pub fn counter<S: AsTraceStrRef>(
     context: &TraceCategoryContext,
-    name: &'static CStr,
+    name: S,
     counter_id: u64,
     args: &[Arg<'_>],
 ) {
     assert!(args.len() >= 1, "trace counter args must include at least one numeric argument");
     assert!(args.len() <= 15, "no more than 15 trace arguments are supported");
 
-    let name_ref = context.register_string_literal(name);
+    let name_ref = name.as_trace_str_ref(context);
     context.write_counter(name_ref, counter_id, args);
 }
 
 /// The scope of a duration event, returned by the `duration` function and the `duration!` macro.
 /// The duration will be `end'ed` when this object is dropped.
 #[must_use = "DurationScope must be `end`ed to be recorded"]
-pub struct DurationScope<'a> {
-    category: &'static CStr,
-    name: &'static CStr,
+pub struct DurationScope<'a, C: CategoryString, S: AsTraceStrRef> {
+    category: C,
+    name: S,
     args: &'a [Arg<'a>],
     start_time: zx::BootTicks,
 }
 
-impl<'a> DurationScope<'a> {
+impl<'a, C: CategoryString, S: AsTraceStrRef> DurationScope<'a, C, S> {
     /// Starts a new duration scope that starts now and will be end'ed when
     /// this object is dropped.
-    pub fn begin(category: &'static CStr, name: &'static CStr, args: &'a [Arg<'_>]) -> Self {
+    pub fn begin(category: C, name: S, args: &'a [Arg<'_>]) -> Self {
         let start_time = zx::BootTicks::get();
         Self { category, name, args, start_time }
     }
 }
 
-impl<'a> Drop for DurationScope<'a> {
+impl<'a, C: CategoryString, S: AsTraceStrRef> Drop for DurationScope<'a, C, S> {
     fn drop(&mut self) {
         if let Some(context) = TraceCategoryContext::acquire(self.category) {
-            let name_ref = context.register_string_literal(self.name);
+            let name_ref = self.name.as_trace_str_ref(&context);
             context.write_duration(name_ref, self.start_time, self.args);
         }
     }
 }
 
 /// Write a "duration complete" record representing both the beginning and end of a duration.
-pub fn complete_duration(
-    category: &'static CStr,
-    name: &'static CStr,
+pub fn complete_duration<C: CategoryString, S: AsTraceStrRef>(
+    category: C,
+    name: S,
     start_time: zx::BootTicks,
     args: &[Arg<'_>],
 ) {
     if let Some(context) = TraceCategoryContext::acquire(category) {
-        let name_ref = context.register_string_literal(name);
+        let name_ref = name.as_trace_str_ref(&context);
         context.write_duration(name_ref, start_time, args);
     }
 }
@@ -601,11 +772,11 @@ macro_rules! duration {
 ///
 /// NOTE: For performance reasons, it is advisable to create a cached context scope, which will
 /// avoid expensive lookups when tracing is disabled.  See the example in the `duration!` macro.
-pub fn duration<'a>(
-    category: &'static CStr,
-    name: &'static CStr,
+pub fn duration<'a, C: CategoryString, S: AsTraceStrRef>(
+    category: C,
+    name: S,
     args: &'a [Arg<'_>],
-) -> DurationScope<'a> {
+) -> DurationScope<'a, C, S> {
     assert!(args.len() <= 15, "no more than 15 trace arguments are supported");
     DurationScope::begin(category, name, args)
 }
@@ -673,11 +844,11 @@ macro_rules! duration_end {
 /// to annotate the duration with additional information.  The arguments provided
 /// to matching duration begin and duration end events are combined together in
 /// the trace; it is not necessary to repeat them.
-pub fn duration_begin(context: &TraceCategoryContext, name: &'static CStr, args: &[Arg<'_>]) {
+pub fn duration_begin<S: AsTraceStrRef>(context: &TraceCategoryContext, name: S, args: &[Arg<'_>]) {
     let ticks = zx::BootTicks::get();
     assert!(args.len() <= 15, "no more than 15 trace arguments are supported");
 
-    let name_ref = context.register_string_literal(name);
+    let name_ref = name.as_trace_str_ref(&context);
     context.write_duration_begin(ticks, name_ref, args);
 }
 
@@ -690,11 +861,11 @@ pub fn duration_begin(context: &TraceCategoryContext, name: &'static CStr, args:
 /// to annotate the duration with additional information.  The arguments provided
 /// to matching duration begin and duration end events are combined together in
 /// the trace; it is not necessary to repeat them.
-pub fn duration_end(context: &TraceCategoryContext, name: &'static CStr, args: &[Arg<'_>]) {
+pub fn duration_end<S: AsTraceStrRef>(context: &TraceCategoryContext, name: S, args: &[Arg<'_>]) {
     let ticks = zx::BootTicks::get();
     assert!(args.len() <= 15, "no more than 15 trace arguments are supported");
 
-    let name_ref = context.register_string_literal(name);
+    let name_ref = name.as_trace_str_ref(&context);
     context.write_duration_end(ticks, name_ref, args);
 }
 
@@ -702,37 +873,36 @@ pub fn duration_end(context: &TraceCategoryContext, name: &'static CStr, args: &
 /// async_enter! macro.
 #[must_use = "emits an end event when dropped, so if dropped immediately creates an essentially \
               zero length duration that should just be an instant instead"]
-pub struct AsyncScope {
+pub struct AsyncScope<C: CategoryString = &'static CStr, S: AsTraceStrRef = &'static CStr> {
     // AsyncScope::end uses std::mem::forget to bypass AsyncScope's Drop impl, so if any fields
     // with Drop impls are added, AsyncScope::end should be updated.
     id: Id,
-    category: &'static CStr,
-    name: &'static CStr,
+    category: C,
+    name: S,
 }
-impl AsyncScope {
+
+impl<C: CategoryString, S: AsTraceStrRef> AsyncScope<C, S> {
     /// Starts a new async event scope, generating a begin event now, and ended when the
     /// object is dropped.
-    pub fn begin(id: Id, category: &'static CStr, name: &'static CStr, args: &[Arg<'_>]) -> Self {
-        async_begin(id, category, name, args);
+    pub fn begin(id: Id, category: C, name: S, args: &[Arg<'_>]) -> Self {
+        async_begin(id, category, &name, args);
         Self { id, category, name }
     }
 
     /// Manually end the async event scope with `args` instead of waiting until the guard is
     /// dropped (which would end the event scope with an empty `args`).
     pub fn end(self, args: &[Arg<'_>]) {
-        let Self { id, category, name } = self;
-        async_end(id, category, name, args);
+        async_end(self.id, self.category, &self.name, args);
         std::mem::forget(self);
     }
 }
 
-impl Drop for AsyncScope {
+impl<C: CategoryString, S: AsTraceStrRef> Drop for AsyncScope<C, S> {
     fn drop(&mut self) {
         // AsyncScope::end uses std::mem::forget to bypass this Drop impl (to avoid emitting
         // extraneous end events), so any logic added to this Drop impl (or any fields added to
         // AsyncScope that have Drop impls) should addressed (if necessary) in AsyncScope::end.
-        let Self { id, category, name } = *self;
-        async_end(id, category, name, &[]);
+        async_end(self.id, self.category, &self.name, &[]);
     }
 }
 
@@ -744,12 +914,12 @@ impl Drop for AsyncScope {
 ///
 /// 0 to 15 arguments can be associated with the event, each of which is used to annotate the
 /// duration with additional information.
-pub fn async_enter(
+pub fn async_enter<C: CategoryString, S: AsTraceStrRef>(
     id: Id,
-    category: &'static CStr,
-    name: &'static CStr,
+    category: C,
+    name: S,
     args: &[Arg<'_>],
-) -> AsyncScope {
+) -> AsyncScope<C, S> {
     assert!(args.len() <= 15, "no more than 15 trace arguments are supported");
     AsyncScope::begin(id, category, name, args)
 }
@@ -846,11 +1016,16 @@ macro_rules! async_instant {
 /// 0 to 15 arguments can be associated with the event, each of which is used to annotate the
 /// async event with additional information. Arguments provided in matching async begin and end
 /// events are combined together in the trace; it is not necessary to repeat them.
-pub fn async_begin(id: Id, category: &'static CStr, name: &'static CStr, args: &[Arg<'_>]) {
+pub fn async_begin<C: CategoryString, S: AsTraceStrRef>(
+    id: Id,
+    category: C,
+    name: S,
+    args: &[Arg<'_>],
+) {
     assert!(args.len() <= 15, "no more than 15 trace arguments are supported");
 
     if let Some(context) = TraceCategoryContext::acquire(category) {
-        let name_ref = context.register_string_literal(name);
+        let name_ref = name.as_trace_str_ref(&context);
         context.write_async_begin(id, name_ref, args);
     }
 }
@@ -866,11 +1041,16 @@ pub fn async_begin(id: Id, category: &'static CStr, name: &'static CStr, args: &
 /// 0 to 15 arguments can be associated with the event, each of which is used to annotate the
 /// async event with additional information. Arguments provided in matching async begin and end
 /// events are combined together in the trace; it is not necessary to repeat them.
-pub fn async_end(id: Id, category: &'static CStr, name: &'static CStr, args: &[Arg<'_>]) {
+pub fn async_end<C: CategoryString, S: AsTraceStrRef>(
+    id: Id,
+    category: C,
+    name: S,
+    args: &[Arg<'_>],
+) {
     assert!(args.len() <= 15, "no more than 15 trace arguments are supported");
 
     if let Some(context) = TraceCategoryContext::acquire(category) {
-        let name_ref = context.register_string_literal(name);
+        let name_ref = name.as_trace_str_ref(&context);
         context.write_async_end(id, name_ref, args);
     }
 }
@@ -886,15 +1066,15 @@ pub fn async_end(id: Id, category: &'static CStr, name: &'static CStr, args: &[A
 /// to annotate the asynchronous operation with additional information.  The
 /// arguments provided to matching async begin, async instant, and async end
 /// events are combined together in the trace; it is not necessary to repeat them.
-pub fn async_instant(
+pub fn async_instant<S: AsTraceStrRef>(
     id: Id,
     context: &TraceCategoryContext,
-    name: &'static CStr,
+    name: S,
     args: &[Arg<'_>],
 ) {
     assert!(args.len() <= 15, "no more than 15 trace arguments are supported");
 
-    let name_ref = context.register_string_literal(name);
+    let name_ref = name.as_trace_str_ref(context);
     context.write_async_instant(id, name_ref, args);
 }
 
@@ -910,13 +1090,13 @@ macro_rules! blob {
         }
     }
 }
-pub fn blob_fn(
+pub fn blob_fn<S: AsTraceStrRef>(
     context: &TraceCategoryContext,
-    name: &'static CStr,
+    name: S,
     bytes: &[u8],
     args: &[Arg<'_>],
 ) {
-    let name_ref = context.register_string_literal(name);
+    let name_ref = name.as_trace_str_ref(context);
     context.write_blob(name_ref, bytes, args);
 }
 
@@ -1022,16 +1202,16 @@ macro_rules! flow_end {
 /// to annotate the flow with additional information.  The arguments provided
 /// to matching flow begin, flow step, and flow end events are combined together
 /// in the trace; it is not necessary to repeat them.
-pub fn flow_begin(
+pub fn flow_begin<S: AsTraceStrRef>(
     context: &TraceCategoryContext,
-    name: &'static CStr,
+    name: S,
     flow_id: Id,
     args: &[Arg<'_>],
 ) {
     let ticks = zx::BootTicks::get();
     assert!(args.len() <= 15, "no more than 15 trace arguments are supported");
 
-    let name_ref = context.register_string_literal(name);
+    let name_ref = name.as_trace_str_ref(context);
     context.write_flow_begin(ticks, name_ref, flow_id, args);
 }
 
@@ -1051,16 +1231,16 @@ pub fn flow_begin(
 /// to annotate the flow with additional information.  The arguments provided
 /// to matching flow begin, flow step, and flow end events are combined together
 /// in the trace; it is not necessary to repeat them.
-pub fn flow_end(
+pub fn flow_end<S: AsTraceStrRef>(
     context: &TraceCategoryContext,
-    name: &'static CStr,
+    name: S,
     flow_id: Id,
     args: &[Arg<'_>],
 ) {
     let ticks = zx::BootTicks::get();
     assert!(args.len() <= 15, "no more than 15 trace arguments are supported");
 
-    let name_ref = context.register_string_literal(name);
+    let name_ref = name.as_trace_str_ref(context);
     context.write_flow_end(ticks, name_ref, flow_id, args);
 }
 
@@ -1080,16 +1260,16 @@ pub fn flow_end(
 /// to annotate the flow with additional information.  The arguments provided
 /// to matching flow begin, flow step, and flow end events are combined together
 /// in the trace; it is not necessary to repeat them.
-pub fn flow_step(
+pub fn flow_step<S: AsTraceStrRef>(
     context: &TraceCategoryContext,
-    name: &'static CStr,
+    name: S,
     flow_id: Id,
     args: &[Arg<'_>],
 ) {
     let ticks = zx::BootTicks::get();
     assert!(args.len() <= 15, "no more than 15 trace arguments are supported");
 
-    let name_ref = context.register_string_literal(name);
+    let name_ref = name.as_trace_str_ref(context);
     context.write_flow_step(ticks, name_ref, flow_id, args);
 }
 
@@ -1218,18 +1398,18 @@ macro_rules! instaflow_step {
 /// 0 to 15 arguments can be associated with the event, each of which is used to annotate the flow
 /// with additional information. The arguments provided to matching flow begin, flow step, and flow
 /// end events are combined together in the trace; it is not necessary to repeat them.
-pub fn instaflow_begin(
+pub fn instaflow_begin<S1: AsTraceStrRef, S2: AsTraceStrRef>(
     context: &TraceCategoryContext,
-    flow_name: &'static CStr,
-    step_name: &'static CStr,
+    flow_name: S1,
+    step_name: S2,
     flow_id: Id,
     args: &[Arg<'_>],
 ) {
     let ticks = zx::BootTicks::get();
     assert!(args.len() <= 15, "no more than 15 trace arguments are supported");
 
-    let flow_name_ref = context.register_string_literal(flow_name);
-    let step_name_ref = context.register_string_literal(step_name);
+    let flow_name_ref = flow_name.as_trace_str_ref(context);
+    let step_name_ref = step_name.as_trace_str_ref(context);
 
     context.write_duration_begin(ticks, step_name_ref, args);
     context.write_flow_begin(ticks, flow_name_ref, flow_id, args);
@@ -1247,18 +1427,18 @@ pub fn instaflow_begin(
 /// 0 to 15 arguments can be associated with the event, each of which is used to annotate the flow
 /// with additional information. The arguments provided to matching flow begin, flow step, and flow
 /// end events are combined together in the trace; it is not necessary to repeat them.
-pub fn instaflow_end(
+pub fn instaflow_end<S1: AsTraceStrRef, S2: AsTraceStrRef>(
     context: &TraceCategoryContext,
-    flow_name: &'static CStr,
-    step_name: &'static CStr,
+    flow_name: S1,
+    step_name: S2,
     flow_id: Id,
     args: &[Arg<'_>],
 ) {
     let ticks = zx::BootTicks::get();
     assert!(args.len() <= 15, "no more than 15 trace arguments are supported");
 
-    let flow_name_ref = context.register_string_literal(flow_name);
-    let step_name_ref = context.register_string_literal(step_name);
+    let flow_name_ref = flow_name.as_trace_str_ref(context);
+    let step_name_ref = step_name.as_trace_str_ref(context);
 
     context.write_duration_begin(ticks, step_name_ref, args);
     context.write_flow_end(ticks, flow_name_ref, flow_id, args);
@@ -1276,18 +1456,18 @@ pub fn instaflow_end(
 /// 0 to 15 arguments can be associated with the event, each of which is used to annotate the flow
 /// with additional information. The arguments provided to matching flow begin, flow step, and flow
 /// end events are combined together in the trace; it is not necessary to repeat them.
-pub fn instaflow_step(
+pub fn instaflow_step<S1: AsTraceStrRef, S2: AsTraceStrRef>(
     context: &TraceCategoryContext,
-    flow_name: &'static CStr,
-    step_name: &'static CStr,
+    flow_name: S1,
+    step_name: S2,
     flow_id: Id,
     args: &[Arg<'_>],
 ) {
     let ticks = zx::BootTicks::get();
     assert!(args.len() <= 15, "no more than 15 trace arguments are supported");
 
-    let flow_name_ref = context.register_string_literal(flow_name);
-    let step_name_ref = context.register_string_literal(step_name);
+    let flow_name_ref = flow_name.as_trace_str_ref(context);
+    let step_name_ref = step_name.as_trace_str_ref(context);
 
     context.write_duration_begin(ticks, step_name_ref, args);
     context.write_flow_step(ticks, flow_name_ref, flow_id, args);
@@ -1339,61 +1519,26 @@ fn trace_make_inline_string_ref(string: &str) -> sys::trace_string_ref_t {
 
 /// RAII wrapper for a trace context for a specific category.
 pub struct TraceCategoryContext {
-    raw: *const sys::trace_context_t,
+    context: Context,
     category_ref: sys::trace_string_ref_t,
 }
 
 impl TraceCategoryContext {
     #[inline]
-    pub fn acquire_cached(
-        category: &'static CStr,
+    pub fn acquire_cached<C: CategoryString>(
+        category: C,
         site: &sys::trace_site_t,
     ) -> Option<TraceCategoryContext> {
-        unsafe {
-            // SAFETY: The call to `trace_acquire_context_for_category_cached` is sound because
-            // all arguments are live and non-null. If this function returns a non-null
-            // pointer then it also guarantees that `category_ref` will have been initialized.
-            // Internally, it uses relaxed atomic semantics to load and store site.
-            let mut category_ref = mem::MaybeUninit::<sys::trace_string_ref_t>::uninit();
-            let raw = sys::trace_acquire_context_for_category_cached(
-                category.as_ptr(),
-                site.as_ptr(),
-                category_ref.as_mut_ptr(),
-            );
-            if raw != ptr::null() {
-                Some(TraceCategoryContext { raw, category_ref: category_ref.assume_init() })
-            } else {
-                None
-            }
-        }
+        category.acquire_context_cached(site)
     }
 
-    pub fn acquire(category: &'static CStr) -> Option<TraceCategoryContext> {
-        unsafe {
-            let mut category_ref = mem::MaybeUninit::<sys::trace_string_ref_t>::uninit();
-            let raw = sys::trace_acquire_context_for_category(
-                category.as_ptr(),
-                category_ref.as_mut_ptr(),
-            );
-            if raw != ptr::null() {
-                Some(TraceCategoryContext { raw, category_ref: category_ref.assume_init() })
-            } else {
-                None
-            }
-        }
+    pub fn acquire<C: CategoryString>(category: C) -> Option<TraceCategoryContext> {
+        category.acquire_context()
     }
 
     #[inline]
-    pub fn register_string_literal(&self, name: &'static CStr) -> sys::trace_string_ref_t {
-        unsafe {
-            let mut name_ref = mem::MaybeUninit::<sys::trace_string_ref_t>::uninit();
-            sys::trace_context_register_string_literal(
-                self.raw,
-                name.as_ptr(),
-                name_ref.as_mut_ptr(),
-            );
-            name_ref.assume_init()
-        }
+    pub fn register_string_literal<T: CategoryString>(&self, name: T) -> sys::trace_string_ref_t {
+        name.register(&self.context)
     }
 
     #[inline]
@@ -1402,7 +1547,7 @@ impl TraceCategoryContext {
         unsafe {
             let mut name_ref = mem::MaybeUninit::<sys::trace_string_ref_t>::uninit();
             sys::trace_context_register_bytestring(
-                self.raw,
+                self.context.raw,
                 name.as_ptr().cast::<libc::c_char>(),
                 name.len(),
                 name_ref.as_mut_ptr(),
@@ -1420,7 +1565,7 @@ impl TraceCategoryContext {
     fn register_current_thread(&self) -> sys::trace_thread_ref_t {
         unsafe {
             let mut thread_ref = mem::MaybeUninit::<sys::trace_thread_ref_t>::uninit();
-            sys::trace_context_register_current_thread(self.raw, thread_ref.as_mut_ptr());
+            sys::trace_context_register_current_thread(self.context.raw, thread_ref.as_mut_ptr());
             thread_ref.assume_init()
         }
     }
@@ -1431,7 +1576,7 @@ impl TraceCategoryContext {
         let thread_ref = self.register_current_thread();
         unsafe {
             sys::trace_context_write_instant_event_record(
-                self.raw,
+                self.context.raw,
                 ticks.into_raw(),
                 &thread_ref,
                 &self.category_ref,
@@ -1453,7 +1598,7 @@ impl TraceCategoryContext {
         let thread_ref = self.register_current_thread();
         unsafe {
             sys::trace_context_write_counter_event_record(
-                self.raw,
+                self.context.raw,
                 ticks.into_raw(),
                 &thread_ref,
                 &self.category_ref,
@@ -1480,7 +1625,7 @@ impl TraceCategoryContext {
         let thread_ref = self.register_current_thread();
         unsafe {
             sys::trace_context_write_duration_event_record(
-                self.raw,
+                self.context.raw,
                 start_time.into_raw(),
                 ticks.into_raw(),
                 &thread_ref,
@@ -1511,7 +1656,7 @@ impl TraceCategoryContext {
         let thread_ref = self.register_current_thread();
         unsafe {
             sys::trace_context_write_duration_begin_event_record(
-                self.raw,
+                self.context.raw,
                 ticks.into_raw(),
                 &thread_ref,
                 &self.category_ref,
@@ -1536,7 +1681,7 @@ impl TraceCategoryContext {
         let thread_ref = self.register_current_thread();
         unsafe {
             sys::trace_context_write_duration_end_event_record(
-                self.raw,
+                self.context.raw,
                 ticks.into_raw(),
                 &thread_ref,
                 &self.category_ref,
@@ -1557,7 +1702,7 @@ impl TraceCategoryContext {
         let thread_ref = self.register_current_thread();
         unsafe {
             sys::trace_context_write_async_begin_event_record(
-                self.raw,
+                self.context.raw,
                 ticks.into_raw(),
                 &thread_ref,
                 &self.category_ref,
@@ -1579,7 +1724,7 @@ impl TraceCategoryContext {
         let thread_ref = self.register_current_thread();
         unsafe {
             sys::trace_context_write_async_end_event_record(
-                self.raw,
+                self.context.raw,
                 ticks.into_raw(),
                 &thread_ref,
                 &self.category_ref,
@@ -1601,7 +1746,7 @@ impl TraceCategoryContext {
         let thread_ref = self.register_current_thread();
         unsafe {
             sys::trace_context_write_async_instant_event_record(
-                self.raw,
+                self.context.raw,
                 ticks.into_raw(),
                 &thread_ref,
                 &self.category_ref,
@@ -1618,7 +1763,7 @@ impl TraceCategoryContext {
         let thread_ref = self.register_current_thread();
         unsafe {
             sys::trace_context_write_blob_event_record(
-                self.raw,
+                self.context.raw,
                 ticks.into_raw(),
                 &thread_ref,
                 &self.category_ref,
@@ -1641,7 +1786,7 @@ impl TraceCategoryContext {
         let thread_ref = self.register_current_thread();
         unsafe {
             sys::trace_context_write_flow_begin_event_record(
-                self.raw,
+                self.context.raw,
                 ticks.into_raw(),
                 &thread_ref,
                 &self.category_ref,
@@ -1663,7 +1808,7 @@ impl TraceCategoryContext {
         let thread_ref = self.register_current_thread();
         unsafe {
             sys::trace_context_write_flow_end_event_record(
-                self.raw,
+                self.context.raw,
                 ticks.into_raw(),
                 &thread_ref,
                 &self.category_ref,
@@ -1685,7 +1830,7 @@ impl TraceCategoryContext {
         let thread_ref = self.register_current_thread();
         unsafe {
             sys::trace_context_write_flow_step_event_record(
-                self.raw,
+                self.context.raw,
                 ticks.into_raw(),
                 &thread_ref,
                 &self.category_ref,
@@ -1698,37 +1843,21 @@ impl TraceCategoryContext {
     }
 }
 
-impl std::ops::Drop for TraceCategoryContext {
-    fn drop(&mut self) {
-        unsafe {
-            sys::trace_release_context(self.raw);
-        }
-    }
-}
-
 /// RAII wrapper for trace contexts without a specific associated category.
 pub struct Context {
-    context: *const sys::trace_context_t,
+    raw: *const sys::trace_context_t,
 }
 
 impl Context {
     #[inline]
     pub fn acquire() -> Option<Self> {
         let context = unsafe { sys::trace_acquire_context() };
-        if context.is_null() { None } else { Some(Self { context }) }
+        if context.is_null() { None } else { Some(Self { raw: context }) }
     }
 
     #[inline]
-    pub fn register_string_literal(&self, s: &'static CStr) -> sys::trace_string_ref_t {
-        unsafe {
-            let mut s_ref = mem::MaybeUninit::<sys::trace_string_ref_t>::uninit();
-            sys::trace_context_register_string_literal(
-                self.context,
-                s.as_ptr(),
-                s_ref.as_mut_ptr(),
-            );
-            s_ref.assume_init()
-        }
+    pub fn register_string_literal<T: CategoryString>(&self, s: T) -> sys::trace_string_ref_t {
+        s.register(self)
     }
 
     pub fn write_blob_record(
@@ -1739,7 +1868,7 @@ impl Context {
     ) {
         unsafe {
             sys::trace_context_write_blob_record(
-                self.context,
+                self.raw,
                 type_,
                 name_ref as *const sys::trace_string_ref_t,
                 data.as_ptr() as *const libc::c_void,
@@ -1753,8 +1882,7 @@ impl Context {
     // returns Ok(num_bytes_written) on success
     pub fn copy_record(&self, buffer: &[u64]) -> Option<usize> {
         unsafe {
-            let ptr =
-                sys::trace_context_alloc_record(self.context, 8 * buffer.len() as libc::size_t);
+            let ptr = sys::trace_context_alloc_record(self.raw, 8 * buffer.len() as libc::size_t);
             if ptr == std::ptr::null_mut() {
                 return None;
             }
@@ -1764,7 +1892,7 @@ impl Context {
     }
 
     pub fn buffering_mode(&self) -> BufferingMode {
-        match unsafe { sys::trace_context_get_buffering_mode(self.context) } {
+        match unsafe { sys::trace_context_get_buffering_mode(self.raw) } {
             sys::TRACE_BUFFERING_MODE_ONESHOT => BufferingMode::OneShot,
             sys::TRACE_BUFFERING_MODE_CIRCULAR => BufferingMode::Circular,
             sys::TRACE_BUFFERING_MODE_STREAMING => BufferingMode::Streaming,
@@ -1775,7 +1903,7 @@ impl Context {
 
 impl std::ops::Drop for Context {
     fn drop(&mut self) {
-        unsafe { sys::trace_release_context(self.context) }
+        unsafe { sys::trace_release_context(self.raw) }
     }
 }
 
@@ -2033,6 +2161,13 @@ mod sys {
 
         pub fn trace_context_send_alert(context: *const trace_context_t, name: *const libc::c_char);
 
+        #[cfg(fuchsia_api_level_at_least = "27")]
+        pub fn trace_context_send_alert_bytestring(
+            context: *const trace_context_t,
+            name: *const u8,
+            length: usize,
+        );
+
         pub fn trace_context_write_counter_event_record(
             context: *const trace_context_t,
             event_time: trace_ticks_t,
@@ -2191,6 +2326,12 @@ mod sys {
 
         pub fn trace_state() -> trace_state_t;
 
+        #[cfg(fuchsia_api_level_at_least = "27")]
+        pub fn trace_is_category_bytestring_enabled(
+            category_literal: *const u8,
+            length: usize,
+        ) -> bool;
+
         pub fn trace_is_category_enabled(category_literal: *const libc::c_char) -> bool;
 
         pub fn trace_acquire_context() -> *const trace_context_t;
@@ -2202,6 +2343,21 @@ mod sys {
 
         pub fn trace_acquire_context_for_category_cached(
             category_literal: *const libc::c_char,
+            trace_site: *const u64,
+            out_ref: *mut trace_string_ref_t,
+        ) -> *const trace_context_t;
+
+        #[cfg(fuchsia_api_level_at_least = "27")]
+        pub fn trace_acquire_context_for_category_bytestring(
+            bytes: *const u8,
+            length: usize,
+            out_ref: *mut trace_string_ref_t,
+        ) -> *const trace_context_t;
+
+        #[cfg(fuchsia_api_level_at_least = "27")]
+        pub fn trace_acquire_context_for_category_bytestring_cached(
+            bytes: *const u8,
+            length: usize,
             trace_site: *const u64,
             out_ref: *mut trace_string_ref_t,
         ) -> *const trace_context_t;
@@ -2226,9 +2382,9 @@ mod sys {
 
 /// Arguments for `TraceFuture` and `TraceFutureExt`. Use `trace_future_args!` to construct this
 /// object.
-pub struct TraceFutureArgs<'a> {
-    pub category: &'static CStr,
-    pub name: &'static CStr,
+pub struct TraceFutureArgs<'a, C: CategoryString, S: AsTraceStrRef> {
+    pub category: C,
+    pub name: S,
 
     /// The trace arguments to appear in every duration event written by the `TraceFuture`. `args`
     /// should be empty if `context` is `None`.
@@ -2314,7 +2470,10 @@ pub trait TraceFutureExt: Future + Sized {
     /// TraceFuture::new(trace_future_args!(c"category", c"name"), future).await;
     /// ```
     #[inline(always)]
-    fn trace<'a>(self, args: TraceFutureArgs<'a>) -> TraceFuture<'a, Self> {
+    fn trace<'a, C: CategoryString, S: AsTraceStrRef>(
+        self,
+        args: TraceFutureArgs<'a, C, S>,
+    ) -> TraceFuture<'a, Self, C, S> {
         TraceFuture::new(args, self)
     }
 }
@@ -2324,19 +2483,19 @@ impl<T: Future + Sized> TraceFutureExt for T {}
 /// Wraps a `Future` and writes duration events every time it's polled. The duration events are
 /// connected by flow events.
 #[pin_project]
-pub struct TraceFuture<'a, Fut: Future> {
+pub struct TraceFuture<'a, Fut: Future, C: CategoryString, S: AsTraceStrRef> {
     #[pin]
     future: Fut,
-    category: &'static CStr,
-    name: &'static CStr,
+    category: C,
+    name: S,
     args: Box<[Arg<'a>]>,
     flow_id: Option<Id>,
     poll_count: u64,
 }
 
-impl<'a, Fut: Future> TraceFuture<'a, Fut> {
+impl<'a, Fut: Future, C: CategoryString, S: AsTraceStrRef> TraceFuture<'a, Fut, C, S> {
     #[inline(always)]
-    pub fn new(args: TraceFutureArgs<'a>, future: Fut) -> Self {
+    pub fn new(args: TraceFutureArgs<'a, C, S>, future: Fut) -> Self {
         Self {
             future,
             category: args.category,
@@ -2356,7 +2515,7 @@ impl<'a, Fut: Future> TraceFuture<'a, Fut> {
         let start_time = zx::BootTicks::get();
         let this = self.project();
         *this.poll_count = this.poll_count.saturating_add(1);
-        let name_ref = context.register_string_literal(this.name);
+        let name_ref = this.name.as_trace_str_ref(context);
         context.write_duration_begin(start_time, name_ref, &this.args);
 
         let result = this.future.poll(cx);
@@ -2387,7 +2546,7 @@ impl<'a, Fut: Future> TraceFuture<'a, Fut> {
     }
 }
 
-impl<Fut: Future> Future for TraceFuture<'_, Fut> {
+impl<Fut: Future, C: CategoryString, S: AsTraceStrRef> Future for TraceFuture<'_, Fut, C, S> {
     type Output = Fut::Output;
     fn poll(self: Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> Poll<Fut::Output> {
         if let Some(context) = TraceCategoryContext::acquire(self.as_ref().get_ref().category) {

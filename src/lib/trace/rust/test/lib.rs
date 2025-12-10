@@ -14,28 +14,68 @@ pub extern "C" fn rs_test_trace_enabled() -> bool {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn rs_test_category_disabled() -> bool {
+pub extern "C" fn rs_test_category_disabled_cstr() -> bool {
     return trace::category_enabled(c"-disabled");
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn rs_test_category_enabled() -> bool {
+pub extern "C" fn rs_test_category_disabled_str() -> bool {
+    return trace::category_enabled("-disabled");
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rs_test_category_enabled_cstr() -> bool {
     return trace::category_enabled(c"+enabled");
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn rs_test_counter_macro() {
+pub extern "C" fn rs_test_category_enabled_str() -> bool {
+    return trace::category_enabled("+enabled");
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rs_test_counter_macro_cstr() {
     trace::counter!(c"+enabled", c"name", 42, "arg" => 10);
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn rs_test_instant_macro() {
+pub extern "C" fn rs_test_counter_macro_str() {
+    trace::counter!("+enabled", "name", 42, "arg" => 10);
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rs_test_counter_macro_str_and_string() {
+    trace::counter!("+enabled", "name".to_string(), 42, "arg" => 10);
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rs_test_instant_macro_cstr() {
     trace::instant!(c"+enabled", c"name", trace::Scope::Process, "arg" => 10);
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn rs_test_duration_macro() {
+pub extern "C" fn rs_test_instant_macro_str() {
+    trace::instant!("+enabled", "name", trace::Scope::Process, "arg" => 10);
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rs_test_instant_macro_str_and_string() {
+    trace::instant!("+enabled", "name".to_string(), trace::Scope::Process, "arg" => 10);
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rs_test_duration_macro_cstr() {
     trace::duration!(c"+enabled", c"name", "x" => 5, "y" => 10);
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rs_test_duration_macro_str() {
+    trace::duration!("+enabled", "name", "x" => 5, "y" => 10);
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rs_test_duration_macro_str_and_string() {
+    trace::duration!("+enabled", "name".to_string(), "x" => 5, "y" => 10);
 }
 
 #[unsafe(no_mangle)]
@@ -48,22 +88,62 @@ pub extern "C" fn rs_test_duration_macro_with_scope() {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn rs_test_duration_begin_end_macros() {
+pub extern "C" fn rs_test_duration_begin_end_macros_cstr() {
     trace::duration_begin!(c"+enabled", c"name", "x" => 5);
     trace::instant!(c"+enabled", c"name", trace::Scope::Process, "arg" => 10);
     trace::duration_end!(c"+enabled", c"name", "y" => "foo");
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn rs_test_blob_macro() {
+pub extern "C" fn rs_test_duration_begin_end_macros_str() {
+    trace::duration_begin!("+enabled", "name", "x" => 5);
+    trace::instant!("+enabled", "name", trace::Scope::Process, "arg" => 10);
+    trace::duration_end!("+enabled", "name", "y" => "foo");
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rs_test_duration_begin_end_macros_str_and_string() {
+    let name = "name".to_string();
+    trace::duration_begin!("+enabled", &name, "x" => 5);
+    trace::instant!("+enabled", &name, trace::Scope::Process, "arg" => 10);
+    trace::duration_end!("+enabled", &name, "y" => "foo");
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rs_test_blob_macro_cstr() {
     trace::blob!(c"+enabled", c"name", "blob contents".as_bytes().to_vec().as_slice(), "x" => 5);
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn rs_test_flow_begin_step_end_macros() {
+pub extern "C" fn rs_test_blob_macro_str() {
+    trace::blob!("+enabled", "name", "blob contents".as_bytes().to_vec().as_slice(), "x" => 5);
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rs_test_blob_macro_str_and_string() {
+    trace::blob!("+enabled", "name".to_string(), "blob contents".as_bytes().to_vec().as_slice(), "x" => 5);
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rs_test_flow_begin_step_end_macros_cstr() {
     trace::flow_begin!(c"+enabled", c"name", 123.into(), "x" => 5);
     trace::flow_step!(c"+enabled", c"step", 123.into(), "z" => 42);
     trace::flow_end!(c"+enabled", c"name", 123.into(), "y" => "foo");
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rs_test_flow_begin_step_end_macros_str() {
+    trace::flow_begin!("+enabled", "name", 123.into(), "x" => 5);
+    trace::flow_step!("+enabled", "step", 123.into(), "z" => 42);
+    trace::flow_end!("+enabled", "name", 123.into(), "y" => "foo");
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rs_test_flow_begin_step_end_macros_str_and_string() {
+    let name = "name".to_string();
+    trace::flow_begin!("+enabled", &name, 123.into(), "x" => 5);
+    trace::flow_step!("+enabled", "step".to_string(), 123.into(), "z" => 42);
+    trace::flow_end!("+enabled", &name, 123.into(), "y" => "foo");
 }
 
 #[unsafe(no_mangle)]
@@ -97,8 +177,19 @@ pub extern "C" fn rs_test_async_event_with_scope() {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn rs_test_alert() {
+pub extern "C" fn rs_test_alert_cstr() {
     trace::alert!(c"+enabled", c"alert_name");
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rs_test_alert_str() {
+    trace::alert!("+enabled", "alert_name");
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rs_test_alert_str_and_string() {
+    let name = "alert_name".to_string();
+    trace::alert!("+enabled", &name);
 }
 
 fn run_future(fut: impl Future<Output = ()>) {
@@ -118,7 +209,7 @@ fn multi_poll_future(mut ready_after: u64) -> impl Future<Output = ()> {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn rs_test_trace_future_enabled() {
+pub extern "C" fn rs_test_trace_future_enabled_cstr() {
     // The future is immediately ready. There will be a single duration event around the poll call.
     // No flow events will be generated.
     run_future(multi_poll_future(0).trace(trace::trace_future_args!(
@@ -143,6 +234,40 @@ pub extern "C" fn rs_test_trace_future_enabled() {
         c"name",
         5.into()
     )));
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rs_test_trace_future_enabled_str() {
+    // The future is immediately ready. There will be a single duration event around the poll call.
+    // No flow events will be generated.
+    run_future(multi_poll_future(0).trace(trace::trace_future_args!("+enabled", "name", 3.into())));
+
+    // The future will return pending once followed by ready. There will be 2 duration events. The
+    // 1st duration will contain a flow begin, and the 2nd duration will contain a flow end.
+    run_future(multi_poll_future(1).trace(trace::trace_future_args!("+enabled", "name", 4.into())));
+
+    // The future will return pending twice followed by ready. There will be 3 duration events. The
+    // 1st duration will contain a flow begin, the 2nd duration will contain a flow step, and the
+    // 3rd duration will contain a flow end.
+    run_future(multi_poll_future(2).trace(trace::trace_future_args!("+enabled", "name", 5.into())));
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rs_test_trace_future_enabled_str_and_string() {
+    let name = "name".to_string();
+
+    // The future is immediately ready. There will be a single duration event around the poll call.
+    // No flow events will be generated.
+    run_future(multi_poll_future(0).trace(trace::trace_future_args!("+enabled", &name, 3.into())));
+
+    // The future will return pending once followed by ready. There will be 2 duration events. The
+    // 1st duration will contain a flow begin, and the 2nd duration will contain a flow end.
+    run_future(multi_poll_future(1).trace(trace::trace_future_args!("+enabled", &name, 4.into())));
+
+    // The future will return pending twice followed by ready. There will be 3 duration events. The
+    // 1st duration will contain a flow begin, the 2nd duration will contain a flow step, and the
+    // 3rd duration will contain a flow end.
+    run_future(multi_poll_future(2).trace(trace::trace_future_args!("+enabled", &name, 5.into())));
 }
 
 #[unsafe(no_mangle)]

@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use fuchsia_criterion::{criterion, FuchsiaCriterion};
+use fuchsia_criterion::{FuchsiaCriterion, criterion};
 use fuchsia_trace as trace;
 use fuchsia_trace::Scope;
 use std::time::Duration;
@@ -18,13 +18,13 @@ macro_rules! bench_trace_record_fn {
         $bench = $bench
             .with_function(
                 concat!(stringify!($name), "/0Args"),
-                |b| {
+                move |b| {
                     b.iter(|| {trace::$name!(c"benchmark", name $(, $arg)? $(, $key => $val)?);});
                 }
             )
             .with_function(
                 concat!(stringify!($name), "/15Args"),
-                |b| {
+                move |b| {
                     b.iter(|| {trace::$name!(c"benchmark", name $(, $arg)?,
                             "a"=>1,
                             "b"=>2,
@@ -52,13 +52,13 @@ macro_rules! bench_async_trace_record_fn {
         $bench = $bench
             .with_function(
                 concat!(stringify!($name), "/0Args"),
-                |b| {
+                move |b| {
                     b.iter(|| trace::$name!(fuchsia_trace::Id::new(), c"benchmark", name));
                 }
             )
             .with_function(
                 concat!(stringify!($name), "/15Args"),
-                |b| {
+                move |b| {
                     b.iter(|| trace::$name!(fuchsia_trace::Id::new(), c"benchmark", name,
                             "a"=>1,
                             "b"=>2,
