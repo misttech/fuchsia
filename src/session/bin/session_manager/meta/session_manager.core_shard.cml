@@ -626,6 +626,7 @@
                 "fuchsia.lowpan.DeviceWatcher",
                 "fuchsia.lowpan.thread.CapabilitiesConnector",
                 "fuchsia.lowpan.thread.DatasetConnector",
+                "fuchsia.lowpan.thread.EpskcConnector",
                 "fuchsia.lowpan.thread.FeatureConnector",
                 "fuchsia.lowpan.thread.MeshcopConnector",
             ],
