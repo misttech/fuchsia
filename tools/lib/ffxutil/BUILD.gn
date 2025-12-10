@@ -12,6 +12,7 @@ go_library("ffxutil") {
     "ffx_test.go",
     "flash.go",
     "mock.go",
+    "repository.go",
     "test.go",
   ]
   deps = [

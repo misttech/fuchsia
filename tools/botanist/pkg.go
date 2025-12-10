@@ -160,7 +160,7 @@ func NewPackageServer(ctx context.Context, repoPath string, port int) (*PackageS
 		srv:       pkgSrv,
 		c:         cPkgRepo,
 		RepoURL:   fmt.Sprintf("http://%s:%d/repository", localhostPlaceholder, port),
-		BlobURL:   fmt.Sprintf("http://%s:%d/blobs", localhostPlaceholder, port),
+		BlobURL:   fmt.Sprintf("http://%s:%d/repository/blobs", localhostPlaceholder, port),
 	}, nil
 }
 

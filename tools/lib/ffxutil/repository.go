@@ -1,0 +1,73 @@
+// Copyright 2025 The Fuchsia Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
+package ffxutil
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"strconv"
+)
+
+// Output for `repository server list`.
+type RepoServersList struct {
+	Ok struct {
+		Data []struct {
+			Name string `json:"name"`
+		} `json:"data"`
+	} `json:"ok"`
+}
+
+// StartPackageServer starts a package repository server at the given repoDir.
+func (f *FFXInstance) StartPackageServer(ctx context.Context, name, address, repoDir string, port int) error {
+	if f.target == "" {
+		return fmt.Errorf("no target is set")
+	}
+	args := []string{"repository", "server", "start", "--foreground", "--address", fmt.Sprintf("%s:%d", address, port),
+		"--repository", name, "--repo-path", repoDir,
+		"--trusted-root", fmt.Sprintf("%s/repository/9.root.json", repoDir),
+		"--alias", "fuchsia.com", "--alias", "chromium.org",
+		"--no-device",
+	}
+	return f.invoker(args).setTimeout(0).setStrict().setTarget(f.target).setMachineFormat(MachineRaw).run(ctx)
+}
+
+// StopPackageServer stops the package repository server with the given name.
+func (f *FFXInstance) StopPackageServer(ctx context.Context, name string, port int) error {
+	if f.target == "" {
+		return fmt.Errorf("no target is set")
+	}
+	return f.invoker([]string{"repository", "server", "stop", name, "--port", strconv.Itoa(port)}).setStrict().setTarget(f.target).run(ctx)
+}
+
+// ListPackageServer lists the running package servers.
+func (f *FFXInstance) ListPackageServer(ctx context.Context) ([]string, error) {
+	if f.target == "" {
+		return nil, fmt.Errorf("no target is set")
+	}
+	i := f.invoker([]string{"repository", "server", "list"}).setStrict().setTarget(f.target).setCaptureOutput()
+	err := i.run(ctx)
+	var result RepoServersList
+	if err := json.Unmarshal(i.output.Bytes(), &result); err != nil {
+		return nil, err
+	}
+	servers := []string{}
+	for _, server := range result.Ok.Data {
+		servers = append(servers, server.Name)
+	}
+
+	return servers, err
+}
+
+// RegisterRepository registers the given package repository server with the target.
+func (f *FFXInstance) RegisterRepository(ctx context.Context, repoName string, port int) error {
+	if f.target == "" {
+		return fmt.Errorf("no target is set")
+	}
+	args := []string{"target", "repository", "register", "--repository", repoName, "--port", strconv.Itoa(port),
+		"--alias", "fuchsia.com", "--alias", "chromium.org",
+		"--alias-conflict-mode", "replace"}
+	return f.invoker(args).setStrict().setTarget(f.target).run(ctx)
+}

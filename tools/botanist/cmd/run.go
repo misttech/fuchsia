@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -24,6 +25,7 @@ import (
 	"go.fuchsia.dev/fuchsia/tools/lib/flagmisc"
 	"go.fuchsia.dev/fuchsia/tools/lib/logger"
 	"go.fuchsia.dev/fuchsia/tools/lib/osmisc"
+	"go.fuchsia.dev/fuchsia/tools/lib/retry"
 	"go.fuchsia.dev/fuchsia/tools/lib/serial"
 	"go.fuchsia.dev/fuchsia/tools/lib/subprocess"
 	"go.fuchsia.dev/fuchsia/tools/lib/syslog"
@@ -183,7 +185,7 @@ func (r *RunCommand) setupSerialLog(ctx context.Context, eg *errgroup.Group, fuc
 		return nil
 	}
 
-	if err := os.Mkdir(r.serialLogDir, os.ModePerm); err != nil {
+	if err := os.MkdirAll(r.serialLogDir, os.ModePerm); err != nil {
 		return err
 	}
 
@@ -217,11 +219,7 @@ func (r *RunCommand) setupSerialLog(ctx context.Context, eg *errgroup.Group, fuc
 	return nil
 }
 
-func (r *RunCommand) setupPackageServer(ctx context.Context) (*botanist.PackageServer, error) {
-	if r.localRepo == "" {
-		return nil, nil
-	}
-
+func getPkgSrvPort(ctx context.Context) (int, error) {
 	var port int
 	pkgSrvPort := os.Getenv(constants.PkgSrvPortKey)
 	if pkgSrvPort == "" {
@@ -231,10 +229,44 @@ func (r *RunCommand) setupPackageServer(ctx context.Context) (*botanist.PackageS
 		var err error
 		port, err = strconv.Atoi(pkgSrvPort)
 		if err != nil {
-			return nil, err
+			return 0, err
 		}
 	}
+	return port, nil
+}
 
+func (r *RunCommand) setupFFXPackageServer(ctx context.Context, ffx *targets.FFXInstance, name string) (int, func(), error) {
+	cleanup := func() {}
+	if r.localRepo == "" {
+		return 0, cleanup, nil
+	}
+
+	port, err := getPkgSrvPort(ctx)
+	if err != nil {
+		return port, cleanup, err
+	}
+	cleanup = botanist.WaitForProcess(ctx, func(cmCtx context.Context) error {
+		logger.Debugf(ctx, "starting package server")
+		return ffx.StartPackageServer(cmCtx, name, "[::]", r.localRepo, port)
+	}, "ffx repository server")
+	finalCleanup := func() {
+		if err := ffx.StopPackageServer(botanist.GetLoggerCtx(ctx), name, port); err != nil {
+			logger.Errorf(ctx, "failed to stop package server: %s", err)
+		}
+		cleanup()
+	}
+	return port, finalCleanup, nil
+}
+
+func (r *RunCommand) setupPackageServer(ctx context.Context) (*botanist.PackageServer, error) {
+	if r.localRepo == "" {
+		return nil, nil
+	}
+
+	port, err := getPkgSrvPort(ctx)
+	if err != nil {
+		return nil, err
+	}
 	pkgSrv, err := botanist.NewPackageServer(ctx, r.localRepo, port)
 	if err != nil {
 		return pkgSrv, err
@@ -280,7 +312,7 @@ func (r *RunCommand) dispatchTests(ctx context.Context, cancel context.CancelFun
 		logger.Debugf(ctx, "successfully started all targets")
 
 		defer func() {
-			ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+			ctx, cancel := context.WithTimeout(botanist.GetLoggerCtx(ctx), time.Minute)
 			defer cancel()
 			targets.StopTargets(ctx, fuchsiaTargets)
 		}()
@@ -314,6 +346,30 @@ func (r *RunCommand) dispatchTests(ctx context.Context, cancel context.CancelFun
 					return err
 				}
 				t.GetFFX().SetTarget(addr.String())
+				if experiments.Contains(botanist.UseFFXRepository) {
+					repoName := "fuchsia-package-server"
+					pkgSrvPort, cleanupPkgServer, err := r.setupFFXPackageServer(ctx, t.GetFFX(), repoName)
+					if err != nil {
+						return err
+					}
+					defer cleanupPkgServer()
+					if pkgSrvPort != 0 {
+						if err := retry.Retry(ctx, retry.WithMaxDuration(retry.NewConstantBackoff(time.Second), 5*time.Second), func() error {
+							if servers, err := t.GetFFX().ListPackageServer(ctx); err != nil {
+								return err
+							} else if !slices.Contains(servers, repoName) {
+								return fmt.Errorf("package server not started yet")
+							}
+							return nil
+						}, nil); err != nil {
+							return err
+						}
+						if err := t.GetFFX().RegisterRepository(ctx, repoName, pkgSrvPort); err != nil {
+							return err
+						}
+						logger.Debugf(ctx, "added package repo to target %s", t.Nodename())
+					}
+				}
 				cleanupControlMaster, err := t.SetupSSHControlMaster(ctx, t.SSHKey(), addr.String())
 				if err != nil {
 					return fmt.Errorf("failed to set up ssh controlmaster: %w", err)
@@ -355,7 +411,7 @@ func (r *RunCommand) dispatchTests(ctx context.Context, cancel context.CancelFun
 
 				// Stop the ffx monitor when done
 				defer func() {
-					ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+					ctx, cancel := context.WithTimeout(botanist.GetLoggerCtx(ctx), time.Minute)
 					defer cancel()
 					if err := ffx.StopFFXMonitor(ctx); err != nil {
 						logger.Errorf(ctx, "failed to stop ffx monitor: %s", err)
@@ -456,12 +512,15 @@ func (r *RunCommand) execute(ctx context.Context, args []string) error {
 		return err
 	}
 
-	pkgSrv, err := r.setupPackageServer(ctx)
-	if pkgSrv != nil {
-		defer pkgSrv.Close()
-	}
-	if err != nil {
-		return err
+	var pkgSrv *botanist.PackageServer
+	if !experiments.Contains(botanist.UseFFXRepository) {
+		pkgSrv, err = r.setupPackageServer(ctx)
+		if pkgSrv != nil {
+			defer pkgSrv.Close()
+		}
+		if err != nil {
+			return err
+		}
 	}
 
 	r.dispatchTests(ctx, cancel, eg, baseTargets, fuchsiaTargets, primaryTarget, pkgSrv, testsPath, experiments)

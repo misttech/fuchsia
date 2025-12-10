@@ -518,7 +518,7 @@ func TestMakeShards(t *testing.T) {
 			if err := s.CreatePackageRepo(buildDir, "", true); err != nil {
 				t.Fatal(err)
 			}
-			if _, err := os.Stat(filepath.Join(buildDir, s.PkgRepo, blobsDirName, blobMerkle.String())); err != nil {
+			if _, err := os.Stat(filepath.Join(buildDir, s.PkgRepo, metadataDirName, blobsDirName, blobMerkle.String())); err != nil {
 				t.Error(err)
 			}
 		}
@@ -565,17 +565,17 @@ func TestMakeShards(t *testing.T) {
 				t.Fatal(err)
 			}
 			// Check that delivery blobs are used.
-			if _, err := os.Stat(filepath.Join(buildDir, s.PkgRepo, blobsDirName, "1", blobMerkle.String())); err != nil {
+			if _, err := os.Stat(filepath.Join(buildDir, s.PkgRepo, metadataDirName, blobsDirName, "1", blobMerkle.String())); err != nil {
 				t.Error(err)
 			}
-			if _, err := os.Stat(filepath.Join(buildDir, s.PkgRepo, blobsDirName, blobMerkle.String())); !os.IsNotExist(err) {
+			if _, err := os.Stat(filepath.Join(buildDir, s.PkgRepo, metadataDirName, blobsDirName, blobMerkle.String())); !os.IsNotExist(err) {
 				t.Errorf("got err: %s; want file not exist err", err)
 			}
 			// Check that the subpackage blob was included too
-			if _, err := os.Stat(filepath.Join(buildDir, s.PkgRepo, blobsDirName, "1", indirectBlobMerkle.String())); err != nil {
+			if _, err := os.Stat(filepath.Join(buildDir, s.PkgRepo, metadataDirName, blobsDirName, "1", indirectBlobMerkle.String())); err != nil {
 				t.Error(err)
 			}
-			if _, err := os.Stat(filepath.Join(buildDir, s.PkgRepo, blobsDirName, indirectBlobMerkle.String())); !os.IsNotExist(err) {
+			if _, err := os.Stat(filepath.Join(buildDir, s.PkgRepo, metadataDirName, blobsDirName, indirectBlobMerkle.String())); !os.IsNotExist(err) {
 				t.Errorf("got err: %s; want file not exist err", err)
 			}
 		}

@@ -439,33 +439,21 @@ func (t *genericFuchsiaTarget) SetupSSHControlMaster(ctx context.Context, sshKey
 		return cleanup, fmt.Errorf("failed to start ssh controlmaster: %w", err)
 	}
 	t.sshControlMasterRunning = true
-	// Use a new context so that the subprocess can only be terminated by
-	// a direct call to the cancel function.
-	cmCtx, cmCancel := context.WithCancel(context.Background())
-	cmdWait := make(chan error)
-	go func() {
+	cleanup = botanist.WaitForProcess(ctx, func(cmCtx context.Context) error {
 		// Using subprocess.WaitForCmd() instead of cmd.Wait() ensures that
 		// the function returns when the context is done.
 		err := subprocess.WaitForCmd(cmCtx, cmdProcess)
 		t.sshControlMasterRunning = false
-		if err != nil && !errors.Is(err, context.Canceled) {
-			logger.Errorf(ctx, "ssh controlmaster process finished with err: %s", err)
-		} else {
-			logger.Debugf(ctx, "ssh controlmaster process finished")
-		}
-		close(cmdWait)
-	}()
-	cleanup = func() {
-		cmCancel()
-		<-cmdWait
+		return err
+	}, "ssh controlmaster")
+	return func() {
+		cleanup()
 		// Killing the process should cause the socket to be deleted as well,
 		// but try removing just in case.
 		if err := os.Remove(t.sshControlMasterPath); err != nil && !os.IsNotExist(err) {
 			logger.Errorf(ctx, "failed to remove ssh controlmaster socket: %s", err)
 		}
-
-	}
-	return cleanup, nil
+	}, nil
 }
 
 // AddPackageRepository adds the given package repository to the target.

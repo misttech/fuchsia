@@ -7,6 +7,7 @@ package botanist
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"math"
 	"time"
@@ -38,9 +39,38 @@ const (
 	UseFFXTestParallel Experiment = "use_ffx_test_parallel"
 	UseFFXMonitor      Experiment = "use_ffx_monitor"
 	ForceFFXUSB        Experiment = "force_ffx_usb"
+	UseFFXRepository   Experiment = "use_ffx_repository"
 )
 
-var SupportedExperiments = []Experiment{UseFFXTestParallel, UseFFXMonitor, ForceFFXUSB}
+var SupportedExperiments = []Experiment{UseFFXTestParallel, UseFFXMonitor, ForceFFXUSB, UseFFXRepository}
+
+// GetLoggerCtx returns a new context with the logger of the provided ctx.
+func GetLoggerCtx(ctx context.Context) context.Context {
+	return logger.WithLogger(context.Background(), logger.LoggerFromContext(ctx))
+}
+
+// WaitForProcess launches a long-running process in the background and returns a cleanup
+// function to cancel the context and wait for the process to finish.
+func WaitForProcess(ctx context.Context, process func(context.Context) error, processName string) func() {
+	// Use a new context so that the subprocess can only be terminated by
+	// a direct call to the cancel function.
+	processCtx, cancel := context.WithCancel(GetLoggerCtx(ctx))
+	cmdWait := make(chan error)
+	go func() {
+		err := process(processCtx)
+		if err != nil && !errors.Is(err, context.Canceled) {
+			logger.Errorf(ctx, "%s process finished with err: %s", processName, err)
+		} else {
+			logger.Debugf(ctx, "%s process finished", processName)
+		}
+		close(cmdWait)
+	}()
+	cleanup := func() {
+		cancel()
+		<-cmdWait
+	}
+	return cleanup
+}
 
 // LockedWriter is a wrapper around a writer that locks around each write so
 // that multiple writes won't interleave with each other.

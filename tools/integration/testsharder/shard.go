@@ -238,14 +238,14 @@ func (s *Shard) CreatePackageRepo(buildDir string, globalRepoMetadata string, ca
 		if err != nil {
 			return fmt.Errorf("failed to get blobs dir: %w", err)
 		}
-		blobsDir := filepath.Join(localRepo, blobsDirRel)
+		blobsDir := filepath.Join(localRepoMetadata, blobsDirRel)
 		addedBlobs := make(map[string]struct{})
 		if err := os.MkdirAll(blobsDir, os.ModePerm); err != nil {
 			return err
 		}
 		for testName, pkgManifests := range pkgManifestsPerTest {
 			for _, p := range pkgManifests {
-				if err := prepareBlobsForPackage(p, testName, addedBlobs, buildDir, globalRepoMetadata, blobsDirRel, blobsDir); err != nil {
+				if err := prepareBlobsForPackage(p, testName, addedBlobs, buildDir, globalRepoMetadata, localRepoMetadata, blobsDirRel); err != nil {
 					return err
 				}
 			}
@@ -267,8 +267,8 @@ func prepareBlobsForPackage(
 	addedBlobs map[string]struct{},
 	buildDir string,
 	globalRepoMetadata string,
+	localRepoMetadata string,
 	blobsDirRel string,
-	blobsDir string,
 ) error {
 	manifestAbsPath := manifestPath
 	if !filepath.IsAbs(manifestAbsPath) {
@@ -285,7 +285,7 @@ func prepareBlobsForPackage(
 			// Use the blobs from the blobs dir instead of blob.SourcePath
 			// since SourcePath only points to uncompressed blobs.
 			src := filepath.Join(globalRepoMetadata, blobsDirRel, blob.Merkle.String())
-			dst := filepath.Join(blobsDir, blob.Merkle.String())
+			dst := filepath.Join(localRepoMetadata, blobsDirRel, blob.Merkle.String())
 			if err := linkOrCopy(src, dst); err != nil {
 				return fmt.Errorf("failed to copy blob %s from %s for %s: %w", blob.SourcePath, manifestPath, testName, err)
 			}
@@ -295,7 +295,7 @@ func prepareBlobsForPackage(
 
 	// Walk all subpackages and ensure their blobs are added too.
 	for _, subpackage := range manifest.Subpackages {
-		if err := prepareBlobsForPackage(subpackage.ManifestPath, testName, addedBlobs, buildDir, globalRepoMetadata, blobsDirRel, blobsDir); err != nil {
+		if err := prepareBlobsForPackage(subpackage.ManifestPath, testName, addedBlobs, buildDir, globalRepoMetadata, localRepoMetadata, blobsDirRel); err != nil {
 			return err
 		}
 	}
