@@ -25,7 +25,7 @@ group("tests") {
 rustc_binary("bin") {
   testonly = true
   output_name = "mock"
-  edition = "2021"
+  edition = "2024"
 
   # Generates a GN target for unit-tests with the label `bin_test`, and
   # a binary named `mock_bin_test`.

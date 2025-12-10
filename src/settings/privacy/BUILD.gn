@@ -16,7 +16,7 @@ group("privacy") {
 rustc_library("settings_privacy") {
   name = "settings_privacy"
   with_unit_tests = true
-  edition = "2021"
+  edition = "2024"
 
   visibility = [
     ":*",

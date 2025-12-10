@@ -11,7 +11,7 @@ group("session_manager") {
 }
 
 rustc_test("test") {
-  edition = "2021"
+  edition = "2024"
   output_name = "session_manager_integration_test"
 
   source_root = "src/main.rs"

@@ -14,7 +14,7 @@ zbi_lib_sources = [
 rustc_library("zbi-rs") {
   name = "zbi"
   version = "0.1.0"
-  edition = "2021"
+  edition = "2024"
 
   deps = [
     "//third_party/rust_crates:bitflags",
@@ -32,7 +32,7 @@ rustc_library("zbi-rs") {
 # Since `with_unit_tests = true` produces binary that is in conflict with c implementation
 rustc_test("zbi-rs-test") {
   version = "0.1.0"
-  edition = "2021"
+  edition = "2024"
   testonly = true
   output_name = "firmware_zbi_rs_test"
 

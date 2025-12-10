@@ -661,8 +661,7 @@ impl ClientIface for SmeClientIface {
         &self,
         mode: fidl_internal::BtCoexistenceMode,
     ) -> Result<(), fidl_wlanix::WlanixError> {
-        let result = self
-            .monitor_svc
+        self.monitor_svc
             .set_bt_coexistence_mode(self.phy_id, mode)
             .await
             .map_err(|e| {
@@ -672,8 +671,7 @@ impl ClientIface for SmeClientIface {
             .map_err(|e| {
                 warn!("Failed to set BT coexistence mode: {:?}", e);
                 fidl_wlanix::WlanixError::InternalError
-            });
-        result
+            })
     }
 
     async fn set_power_save_mode(&self, enabled: bool) -> Result<(), Error> {

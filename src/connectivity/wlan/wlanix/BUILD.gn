@@ -22,7 +22,7 @@ fidl("fuchsia.wlan.wlanix") {
 
 rustc_binary("wlanix_bin") {
   output_name = "wlanix"
-  edition = "2018"
+  edition = "2024"
   with_unit_tests = true
 
   deps = [

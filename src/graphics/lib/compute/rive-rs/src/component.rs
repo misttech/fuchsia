@@ -7,6 +7,7 @@ use std::cell::Cell;
 use std::hash::{Hash, Hasher};
 use std::iter;
 
+use crate::TransformComponent;
 use crate::artboard::Artboard;
 use crate::bones::Skin;
 use crate::component_dirt::ComponentDirt;
@@ -20,7 +21,6 @@ use crate::shapes::{
     ClippingShape, Ellipse, Path, PathComposer, PointsPath, Polygon, Rectangle, Shape, Triangle,
 };
 use crate::status_code::StatusCode;
-use crate::TransformComponent;
 
 #[derive(Debug)]
 pub struct Component {
@@ -66,7 +66,7 @@ impl ObjectRef<'_, Component> {
         self.parent.get()
     }
 
-    pub fn parents(&self) -> impl Iterator<Item = Object<ContainerComponent>> {
+    pub fn parents(&self) -> impl Iterator<Item = Object<ContainerComponent>> + use<> {
         iter::successors(self.parent(), |component| component.cast::<Component>().as_ref().parent())
     }
 

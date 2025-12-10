@@ -45,7 +45,7 @@ resource("roboto_regular") {
 }
 
 rustc_library("fdr_lib") {
-  edition = "2021"
+  edition = "2024"
   with_unit_tests = true
   deps = [
     "//sdk/fidl/fuchsia.input.report:fuchsia.input.report_rust",
@@ -78,7 +78,7 @@ fuchsia_unittest_package("fdr_lib_unittests") {
 #  //src/recovery/system:ota_lib
 #
 rustc_library("ota_lib") {
-  edition = "2021"
+  edition = "2024"
   with_unit_tests = true
   deps = [
     ":fdr_lib",
@@ -138,7 +138,7 @@ fuchsia_unittest_package("ota_lib_unittests") {
 
 rustc_binary("bin_fdr") {
   name = "system_recovery_fdr"
-  edition = "2021"
+  edition = "2024"
   with_unit_tests = true
   deps = [
     ":fdr_lib",

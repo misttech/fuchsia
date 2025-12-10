@@ -8,7 +8,7 @@ rustc_library("recovery-util-block") {
   # This is a separate target so it can be depended on without pulling in all
   # of //src/recovery/system:ota_lib, which in turn pulls in rustls, webpki,
   # and ring, when ring's assembly has some constraints around linking.
-  edition = "2021"
+  edition = "2024"
   deps = [
     "//sdk/fidl/fuchsia.device:fuchsia.device_rust",
     "//sdk/fidl/fuchsia.hardware.block:fuchsia.hardware.block_rust",

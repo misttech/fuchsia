@@ -8,7 +8,7 @@ import("//build/rust/rustc_binary.gni")
 rustc_binary("actor-bin") {
   testonly = true
   name = "actor"
-  edition = "2018"
+  edition = "2024"
   source_root = "actor/main.rs"
   deps = [
     "//sdk/fidl/fuchsia.diagnostics:fuchsia.diagnostics_rust",

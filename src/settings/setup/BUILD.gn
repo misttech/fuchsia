@@ -16,7 +16,7 @@ group("setup") {
 rustc_library("settings_setup") {
   name = "settings_setup"
   with_unit_tests = true
-  edition = "2021"
+  edition = "2024"
 
   visibility = [
     ":*",

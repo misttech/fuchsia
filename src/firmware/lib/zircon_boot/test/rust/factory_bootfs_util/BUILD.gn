@@ -6,7 +6,7 @@ import("//build/rust/rustc_staticlib.gni")
 
 rustc_staticlib("factory-bootfs-util") {
   name = "factory_bootfs_util"
-  edition = "2018"
+  edition = "2024"
 
   deps = [
     "//sdk/rust/zx",

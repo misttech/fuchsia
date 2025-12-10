@@ -360,10 +360,10 @@ fn maybe_run_callback<T: fidl::endpoints::Proxy>(
     if dropped.is_some() {
         warn!("Dropped {} proxy because channel is closed", T::Protocol::DEBUG_NAME);
     }
-    if let Some(callback) = callback {
-        if let Err(e) = callback_fn(callback) {
-            warn!("Failed sending {} event: {}", event_name, e);
-        }
+    if let Some(callback) = callback
+        && let Err(e) = callback_fn(callback)
+    {
+        warn!("Failed sending {} event: {}", event_name, e);
     }
 }
 
@@ -384,10 +384,10 @@ async fn handle_wifi_request<I: IfaceManager>(
     match req {
         fidl_wlanix::WifiRequest::RegisterEventCallback { payload, .. } => {
             info!("fidl_wlanix::WifiRequest::RegisterEventCallback");
-            if let Some(callback) = payload.callback {
-                if state.lock().callback.replace(callback.into_proxy()).is_some() {
-                    warn!("Replaced a WifiEventCallbackProxy when there's one existing");
-                }
+            if let Some(callback) = payload.callback
+                && state.lock().callback.replace(callback.into_proxy()).is_some()
+            {
+                warn!("Replaced a WifiEventCallbackProxy when there's one existing");
             }
         }
         fidl_wlanix::WifiRequest::Start { responder } => {

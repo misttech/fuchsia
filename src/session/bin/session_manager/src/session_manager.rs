@@ -115,10 +115,10 @@ impl PowerState {
             return;
         }
         let power_element = &mut *self.power_element.lock().await;
-        if let Some(power_element) = power_element {
-            if power_element.has_lease() {
-                return;
-            }
+        if let Some(power_element) = power_element
+            && power_element.has_lease()
+        {
+            return;
         }
         *power_element = match power::PowerElement::new().await {
             Ok(element) => Some(element),

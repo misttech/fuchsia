@@ -80,7 +80,7 @@ copy("copy_sources") {
 # Build the at command library from the generated sources
 rustc_library("lib") {
   name = "at_commands"
-  edition = "2018"
+  edition = "2024"
   deps = [
     "//third_party/rust_crates:num-derive",
     "//third_party/rust_crates:num-traits",
@@ -132,7 +132,7 @@ group("tests") {
 
 # Build the at command tests from the generated sources
 rustc_test("lib_tests") {
-  edition = "2018"
+  edition = "2024"
   deps = [
     "//third_party/rust_crates:num-derive",
     "//third_party/rust_crates:num-traits",

@@ -90,17 +90,15 @@ fn bind_credential_to_protocol(
         },
         SecurityDescriptor::Wpa(wpa) => match wpa {
             WpaDescriptor::Wpa1 { .. } | WpaDescriptor::Wpa2 { .. } => match credential {
-                Credential::Password(ref passphrase) => Passphrase::try_from(passphrase.as_slice())
+                Credential::Password(passphrase) => Passphrase::try_from(passphrase.as_slice())
                     .ok()
                     .and_then(|passphrase| protocol.bind(Some(passphrase.into())).ok()),
                 _ => None,
             },
             WpaDescriptor::Wpa3 { .. } => match credential {
-                Credential::SaePassword(ref passphrase) => {
-                    Passphrase::try_from(passphrase.as_slice())
-                        .ok()
-                        .and_then(|passphrase| protocol.bind(Some(passphrase.into())).ok())
-                }
+                Credential::SaePassword(passphrase) => Passphrase::try_from(passphrase.as_slice())
+                    .ok()
+                    .and_then(|passphrase| protocol.bind(Some(passphrase.into())).ok()),
                 _ => None,
             },
         },
@@ -124,7 +122,7 @@ pub fn select_authentication_method(
         Reverse(match protocol {
             SecurityDescriptor::Open => 0,
             SecurityDescriptor::Wep => 1,
-            SecurityDescriptor::Wpa(ref wpa) => match wpa {
+            SecurityDescriptor::Wpa(wpa) => match wpa {
                 WpaDescriptor::Wpa1 { .. } => 2,
                 WpaDescriptor::Wpa2 { .. } => 3,
                 WpaDescriptor::Wpa3 { .. } => 4,

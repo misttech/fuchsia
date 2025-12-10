@@ -17,7 +17,7 @@ import("//build/zircon/tools.gni")
 
 rustc_test("resolve_bootfs_package") {
   name = "resolve-bootfs-package"
-  edition = "2018"
+  edition = "2024"
 
   source_root = "src/resolve_bootfs_package.rs"
 

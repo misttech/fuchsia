@@ -8,7 +8,7 @@ import("//build/fidl/fidl.gni")
 import("//build/rust/rustc_binary.gni")
 
 rustc_test("bin") {
-  edition = "2021"
+  edition = "2024"
   source_root = "src/main.rs"
   sources = [ source_root ]
   name = "role_manager_test"

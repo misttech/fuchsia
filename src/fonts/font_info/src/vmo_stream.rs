@@ -43,11 +43,11 @@ impl VmoStreamInternal {
         buffer: *mut c_uchar,
         count: c_ulong,
     ) -> c_ulong {
-        let wrapper = &mut *((*stream).descriptor as *mut VmoStreamInternal);
+        let wrapper = unsafe { &mut *((*stream).descriptor as *mut VmoStreamInternal) };
         if buffer.is_null() || count == 0 {
             return 0;
         }
-        let buffer_slice = slice::from_raw_parts_mut(buffer as *mut u8, count as usize);
+        let buffer_slice = unsafe { slice::from_raw_parts_mut(buffer as *mut u8, count as usize) };
         wrapper.read(offset as u64, buffer_slice) as c_ulong
     }
 
@@ -91,7 +91,7 @@ impl VmoStream {
     /// Unsafe to call FreeType FFI.
     /// Caller must ensure that the returned `FT_Stream` is not used after `VmoStream` is dropped.
     pub unsafe fn ft_stream(&self) -> FT_Stream {
-        self.internal.ft_stream()
+        unsafe { self.internal.ft_stream() }
     }
 }
 
@@ -99,6 +99,6 @@ impl FTStreamProvider for VmoStream {
     /// Unsafe to call FreeType FFI.
     /// Caller must ensure that the returned `FT_Stream` is not used after `VmoStream` is dropped.
     unsafe fn ft_stream(&self) -> FT_Stream {
-        VmoStream::ft_stream(self)
+        unsafe { VmoStream::ft_stream(self) }
     }
 }

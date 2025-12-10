@@ -47,7 +47,7 @@ template("ffx_protocols") {
   rustc_macro(protocols_macro_lib) {
     output_name = protocols_macro_lib
     version = protocol_version
-    edition = "2018"
+    edition = "2024"
     visibility = _visibility
     source_root = "$target_gen_dir/macros.rs"
     sources = [ "$target_gen_dir/macros.rs" ]
@@ -62,7 +62,7 @@ template("ffx_protocols") {
   rustc_library(output_name + "_lib") {
     name = output_name
     version = protocol_version
-    edition = "2018"
+    edition = "2024"
     with_unit_tests = true
     visibility = _visibility
     deps = protocol_deps + [ ":" + protocols_macro_lib ] + [

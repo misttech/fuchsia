@@ -23,7 +23,7 @@ resource("static") {
 rustc_binary("bin") {
   output_name = "gumshoe"
   with_unit_tests = true
-  edition = "2021"
+  edition = "2024"
 
   deps = [
     "//sdk/fidl/fuchsia.hardware.block:fuchsia.hardware.block_rust",

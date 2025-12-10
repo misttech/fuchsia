@@ -9,7 +9,7 @@ import("//build/rust/rustc_binary.gni")
 rustc_binary("element_launcher_bin") {
   output_name = "element_launcher"
   with_unit_tests = true
-  edition = "2021"
+  edition = "2024"
 
   deps = [
     ":element_launcher_config",

@@ -512,7 +512,7 @@ fuchsia_test_package("h264_encoder_test") {
 
 rustc_test("h265_encoder_test_bin") {
   name = "h265_encoder_test"
-  edition = "2018"
+  edition = "2024"
   source_root = "h265_encoder_test/lib.rs"
 
   deps = [

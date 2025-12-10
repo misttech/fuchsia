@@ -9,7 +9,7 @@ import("//build/testing/environments.gni")
 
 rustc_binary("hwinfo_bin") {
   name = "hwinfo"
-  edition = "2021"
+  edition = "2024"
 
   deps = [
     ":hwinfo_structured_config",
@@ -114,7 +114,7 @@ template("hwinfo_integration_test") {
 }
 
 rustc_test("hwinfo_positive_test") {
-  edition = "2021"
+  edition = "2024"
   source_root = "tests/hwinfo_positive_test.rs"
 
   deps = [
@@ -128,7 +128,7 @@ rustc_test("hwinfo_positive_test") {
 }
 
 rustc_test("hwinfo_negative_test") {
-  edition = "2021"
+  edition = "2024"
   source_root = "tests/hwinfo_negative_test.rs"
 
   deps = [
@@ -142,7 +142,7 @@ rustc_test("hwinfo_negative_test") {
 }
 
 rustc_test("hwinfo_retail_test") {
-  edition = "2021"
+  edition = "2024"
   source_root = "tests/hwinfo_retail_test.rs"
 
   deps = [

@@ -16,7 +16,7 @@ group("night_mode") {
 rustc_library("settings_night_mode") {
   name = "settings_night_mode"
   with_unit_tests = true
-  edition = "2021"
+  edition = "2024"
 
   visibility = [
     ":*",

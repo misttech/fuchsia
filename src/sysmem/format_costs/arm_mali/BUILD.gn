@@ -8,7 +8,7 @@ import("//build/rust/rustc_binary.gni")
 
 # the binary expects a single arg which is the path of the output file
 rustc_binary("generate_format_costs_arm_mali") {
-  edition = "2021"
+  edition = "2024"
   configs -= [ "//build/config/rust/lints:allow_unused_results" ]
   sources = [ "src/main.rs" ]
   deps = [

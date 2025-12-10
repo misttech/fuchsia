@@ -11,7 +11,7 @@ group("test") {
 }
 
 rustc_test("bin") {
-  edition = "2021"
+  edition = "2024"
   name = "tzdata_provider_test"
 
   deps = [

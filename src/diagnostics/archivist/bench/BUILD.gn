@@ -9,7 +9,7 @@ import("//src/diagnostics/archivist/build/archivist.gni")
 
 archivist_optimized_binary("logging-bin") {
   output_name = "archivist_logging_benchmarks"
-  edition = "2018"
+  edition = "2024"
 
   source_root = "src/logging.rs"
 
@@ -31,7 +31,7 @@ archivist_optimized_binary("logging-bin") {
 rustc_binary("logging-e2e-bin") {
   testonly = true
   name = "archivist_logging_e2e_benchmarks"
-  edition = "2018"
+  edition = "2024"
 
   source_root = "src/logging_e2e.rs"
 
@@ -52,7 +52,7 @@ rustc_binary("logging-e2e-bin") {
 
 archivist_optimized_binary("formatter-bin") {
   output_name = "archivist_formatter_benchmarks"
-  edition = "2018"
+  edition = "2024"
 
   source_root = "src/formatter.rs"
 

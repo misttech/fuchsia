@@ -9,7 +9,7 @@ import("//build/rust/rustc_test.gni")
 rustc_binary("mock_services") {
   testonly = true
   name = "critical_services_mock_services"
-  edition = "2021"
+  edition = "2024"
   source_root = "src/mock_services.rs"
 
   deps = [
@@ -34,7 +34,7 @@ rustc_binary("mock_services") {
 rustc_test("test_driver") {
   testonly = true
   name = "critical_services_integration_test"
-  edition = "2021"
+  edition = "2024"
   source_root = "src/test.rs"
 
   deps = [

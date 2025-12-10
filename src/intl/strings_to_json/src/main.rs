@@ -111,7 +111,12 @@ fn run(args: Args) -> Result<(), Error> {
 }
 
 fn main() -> Result<(), Error> {
-    env::set_var("RUST_BACKTRACE", "full");
+    // SAFETY: We are setting an environment variable at the start of main.
+    // This is generally unsafe in multi-threaded contexts, but this is the
+    // very beginning of the program.
+    unsafe {
+        env::set_var("RUST_BACKTRACE", "full");
+    }
     run(Args::parse())
 }
 

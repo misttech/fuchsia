@@ -13,7 +13,7 @@ group("tests") {
 }
 
 rustc_test("bin") {
-  edition = "2021"
+  edition = "2024"
   source_root = "src/main.rs"
   sources = [ source_root ]
   name = "mock_test"

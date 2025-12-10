@@ -8,7 +8,7 @@ import("//build/rust/rustc_binary.gni")
 rustc_binary("bin") {
   name = "display-tweak"
   with_unit_tests = true
-  edition = "2021"
+  edition = "2024"
 
   deps = [
     "//sdk/fidl/fuchsia.hardware.backlight:fuchsia.hardware.backlight_rust",
