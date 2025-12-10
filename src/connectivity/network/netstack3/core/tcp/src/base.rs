@@ -71,6 +71,9 @@ pub enum ConnectionError {
     /// The connection was closed because there was a protocol error.
     #[error("connection was closed because there was a protocol error")]
     ProtocolError,
+    /// The connection was aborted by the system.
+    #[error("connection was aborted by the system")]
+    Aborted,
 }
 
 /// The meaning of a particular ICMP error to a TCP socket.

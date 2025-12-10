@@ -4,6 +4,7 @@
 
 #![cfg(test)]
 
+use std::io::{ErrorKind, Read as _};
 use std::os::fd::AsFd;
 
 use assert_matches::assert_matches;
@@ -16,12 +17,13 @@ use netemul::RealmUdpSocket as _;
 use netstack_testing_common::realms::{Netstack3, TestSandboxExt as _};
 use netstack_testing_macros::netstack_test;
 use test_case::test_case;
+
 use {
     fidl_fuchsia_net as fnet, fidl_fuchsia_net_matchers as fnet_matchers,
     fidl_fuchsia_net_matchers_ext as fnet_matchers_ext, fidl_fuchsia_net_sockets as fnet_sockets,
     fidl_fuchsia_net_sockets_ext as fnet_sockets_ext, fidl_fuchsia_net_tcp as fnet_tcp,
     fidl_fuchsia_net_udp as fnet_udp, fidl_fuchsia_posix_socket as fposix_socket,
-    fuchsia_async as fasync,
+    fuchsia_async as fasync, libc,
 };
 
 const MARK_1: u32 = 100;
@@ -388,5 +390,171 @@ async fn control_disconnect_ip_no_sockets_success(name: &str) {
         fnet_sockets::DisconnectIpResult::Ok(fnet_sockets::DisconnectIpResponse {
             disconnected: 0
         })
+    );
+}
+
+#[netstack_test]
+#[variant(I, Ip)]
+async fn control_disconnect_ip_tcp_listener<I: Ip>(name: &str) {
+    let sandbox = netemul::TestSandbox::new().expect("create sandbox");
+    let realm = sandbox.create_netstack_realm::<Netstack3, _>(name).expect("create realm");
+    let control =
+        realm.connect_to_protocol::<fnet_sockets::ControlMarker>().expect("connect to protocol");
+
+    let local_addr = std::net::SocketAddr::new(I::LOOPBACK_ADDRESS.to_ip_addr().into(), LOCAL_PORT);
+    let domain = match I::VERSION {
+        IpVersion::V4 => fposix_socket::Domain::Ipv4,
+        IpVersion::V6 => fposix_socket::Domain::Ipv6,
+    };
+
+    let listener =
+        realm.stream_socket(domain, fposix_socket::StreamSocketProtocol::Tcp).await.unwrap();
+    listener.bind(&local_addr.into()).unwrap();
+    listener.listen(1).expect("listen");
+
+    let client =
+        realm.stream_socket(domain, fposix_socket::StreamSocketProtocol::Tcp).await.unwrap();
+    let () = client.connect(&local_addr.into()).expect("connect");
+
+    let result = control
+        .disconnect_ip(&fnet_sockets::ControlDisconnectIpRequest {
+            matchers: Some(vec![fnet_sockets::IpSocketMatcher::Proto(
+                fnet_matchers::SocketTransportProtocol::Tcp(fnet_matchers::TcpSocket::States(
+                    fnet_matchers::TcpState::LISTEN,
+                )),
+            )]),
+            ..Default::default()
+        })
+        .await
+        .expect("call disconnect_ip");
+
+    assert_matches!(
+        result,
+        fnet_sockets::DisconnectIpResult::Ok(fnet_sockets::DisconnectIpResponse {
+            disconnected: 1
+        })
+    );
+
+    // We can't connect anymore :-(
+    let client =
+        realm.stream_socket(domain, fposix_socket::StreamSocketProtocol::Tcp).await.unwrap();
+    assert_matches!(
+        client.connect(&local_addr.into()),
+        Err(err) => assert_eq!(err.raw_os_error(), Some(libc::ECONNREFUSED))
+    );
+
+    // We're able to "resurrect" a listener by calling listen on it again.
+    listener.listen(1).expect("listen");
+    let client =
+        realm.stream_socket(domain, fposix_socket::StreamSocketProtocol::Tcp).await.unwrap();
+    assert_matches!(client.connect(&local_addr.into()), Ok(_));
+    let _ = listener.accept().expect("accept");
+}
+
+#[netstack_test]
+#[variant(I, Ip)]
+async fn control_disconnect_ip_tcp_listener_with_pending<I: Ip>(name: &str) {
+    let sandbox = netemul::TestSandbox::new().expect("create sandbox");
+    let realm = sandbox.create_netstack_realm::<Netstack3, _>(name).expect("create realm");
+    let control =
+        realm.connect_to_protocol::<fnet_sockets::ControlMarker>().expect("connect to protocol");
+
+    let local_addr = std::net::SocketAddr::new(I::LOOPBACK_ADDRESS.to_ip_addr().into(), LOCAL_PORT);
+    let domain = match I::VERSION {
+        IpVersion::V4 => fposix_socket::Domain::Ipv4,
+        IpVersion::V6 => fposix_socket::Domain::Ipv6,
+    };
+
+    let listener =
+        realm.stream_socket(domain, fposix_socket::StreamSocketProtocol::Tcp).await.unwrap();
+    listener.bind(&local_addr.into()).unwrap();
+    listener.listen(1).expect("listen");
+
+    // Connect a client but DO NOT accept to leave it in the accept queue.
+    let client =
+        realm.stream_socket(domain, fposix_socket::StreamSocketProtocol::Tcp).await.unwrap();
+    let () = client.connect(&local_addr.into()).expect("connect");
+
+    let result = control
+        .disconnect_ip(&fnet_sockets::ControlDisconnectIpRequest {
+            matchers: Some(vec![fnet_sockets::IpSocketMatcher::Proto(
+                fnet_matchers::SocketTransportProtocol::Tcp(fnet_matchers::TcpSocket::States(
+                    fnet_matchers::TcpState::LISTEN,
+                )),
+            )]),
+            ..Default::default()
+        })
+        .await
+        .expect("call disconnect_ip");
+
+    assert_matches!(
+        result,
+        fnet_sockets::DisconnectIpResult::Ok(fnet_sockets::DisconnectIpResponse {
+            disconnected: 1
+        })
+    );
+
+    let mut client = std::net::TcpStream::from(client);
+    let mut buf = [0u8; 1];
+    assert_matches!(
+        client.read(&mut buf),
+        Err(err) => assert_eq!(err.kind(), ErrorKind::ConnectionReset)
+    );
+}
+
+#[netstack_test]
+#[variant(I, Ip)]
+async fn control_disconnect_ip_tcp_connected<I: Ip>(name: &str) {
+    let sandbox = netemul::TestSandbox::new().expect("create sandbox");
+    let realm = sandbox.create_netstack_realm::<Netstack3, _>(name).expect("create realm");
+    let control =
+        realm.connect_to_protocol::<fnet_sockets::ControlMarker>().expect("connect to protocol");
+
+    let local_addr = std::net::SocketAddr::new(I::LOOPBACK_ADDRESS.to_ip_addr().into(), LOCAL_PORT);
+    let domain = match I::VERSION {
+        IpVersion::V4 => fposix_socket::Domain::Ipv4,
+        IpVersion::V6 => fposix_socket::Domain::Ipv6,
+    };
+
+    let listener =
+        realm.stream_socket(domain, fposix_socket::StreamSocketProtocol::Tcp).await.unwrap();
+    listener.bind(&local_addr.into()).unwrap();
+    listener.listen(1).expect("listen");
+
+    let client =
+        realm.stream_socket(domain, fposix_socket::StreamSocketProtocol::Tcp).await.unwrap();
+    let () = client.connect(&local_addr.into()).expect("connect");
+    let _server_socket = listener.accept().expect("accept");
+
+    let result = control
+        .disconnect_ip(&fnet_sockets::ControlDisconnectIpRequest {
+            matchers: Some(vec![
+                fnet_sockets::IpSocketMatcher::Proto(fnet_matchers::SocketTransportProtocol::Tcp(
+                    fnet_matchers::TcpSocket::SrcPort(fnet_matchers::Port {
+                        start: LOCAL_PORT,
+                        end: LOCAL_PORT,
+                        invert: false,
+                    }),
+                )),
+                fnet_sockets::IpSocketMatcher::Proto(fnet_matchers::SocketTransportProtocol::Tcp(
+                    fnet_matchers::TcpSocket::States(fnet_matchers::TcpState::ESTABLISHED),
+                )),
+            ]),
+            ..Default::default()
+        })
+        .await
+        .expect("call disconnect_ip");
+    assert_matches!(
+        result,
+        fnet_sockets::DisconnectIpResult::Ok(fnet_sockets::DisconnectIpResponse {
+            disconnected: 1
+        })
+    );
+
+    let mut client = std::net::TcpStream::from(client);
+    let mut buf = [0u8; 1];
+    assert_matches!(
+        client.read(&mut buf),
+        Err(err) => assert_eq!(err.kind(), ErrorKind::ConnectionReset)
     );
 }

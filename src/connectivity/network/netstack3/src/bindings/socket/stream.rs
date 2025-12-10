@@ -417,6 +417,7 @@ impl IntoErrno for ConnectionError {
             ConnectionError::TimedOut => fposix::Errno::Etimedout,
             ConnectionError::PermissionDenied => fposix::Errno::Eacces,
             ConnectionError::ProtocolError => fposix::Errno::Eproto,
+            ConnectionError::Aborted => fposix::Errno::Econnaborted,
         }
     }
 }

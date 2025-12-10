@@ -22,6 +22,7 @@ pub(crate) mod demux;
 pub(crate) mod diagnostics;
 pub(crate) mod generators;
 
+use alloc::vec::Vec;
 use core::convert::Infallible as Never;
 use core::fmt::{self, Debug};
 use core::marker::PhantomData;
@@ -3195,7 +3196,7 @@ where
         let (core_ctx, bindings_ctx) = self.contexts();
         let (result, pending) =
             core_ctx.with_socket_mut_transport_demux(id, |core_ctx, socket_state| {
-                let TcpSocketState { socket_state, ip_options: _, socket_options  } = socket_state;
+                let TcpSocketState { socket_state, ip_options: _, socket_options } = socket_state;
                 match socket_state {
                     TcpSocketStateInner::Unbound(_) => Err(NoConnection),
                     TcpSocketStateInner::Bound(BoundSocketState::Connected {
@@ -3325,45 +3326,14 @@ where
                         if !shutdown_receive {
                             return Ok((false, None));
                         }
-                        match maybe_listener {
-                            MaybeListener::Bound(_) => return Err(NoConnection),
-                            MaybeListener::Listener(_) => {}
-                        }
 
-                        let new_sharing = {
-                            let ListenerSharingState { sharing, listening } = sharing;
-                            assert!(*listening, "listener {id:?} is not listening");
-                            ListenerSharingState { listening: false, sharing: sharing.clone() }
-                        };
-                        *sharing = try_update_listener_sharing::<_, C::CoreContext, _>(
-                            core_ctx,
-                            id,
-                            addr.clone(),
-                            sharing,
-                            new_sharing,
-                        )
-                        .unwrap_or_else(|e| {
-                            unreachable!(
-                                "downgrading a TCP listener to bound should not fail, got {e:?}"
-                            )
-                        });
-
-                        let queued_items =
-                            replace_with::replace_with_and(maybe_listener, |maybe_listener| {
-                                let Listener {
-                                    backlog: _,
-                                    accept_queue,
-                                    buffer_sizes,
-                                } = assert_matches!(maybe_listener,
-                            MaybeListener::Listener(l) => l, "must be a listener");
-                                let (pending, socket_extra) = accept_queue.close();
-                                let bound_state = BoundState {
-                                    buffer_sizes,
-                                    socket_extra: Takeable::new(socket_extra),
-                                };
-                                (MaybeListener::Bound(bound_state), pending)
-                            });
-
+                        let queued_items = shut_down_listener_socket::<
+                            I,
+                            C::CoreContext,
+                            C::BindingsContext,
+                        >(
+                            core_ctx, id, maybe_listener, sharing, addr
+                        )?;
                         Ok((false, Some(queued_items)))
                     }
                 }
@@ -4496,14 +4466,45 @@ where
 
     /// Disconnects all bound sockets matching the provided matcher.
     ///
+    /// They are moved to state CLOSE, and an RST is sent if required. For
+    /// LISTEN sockets, an RST is sent to any sockets that are in the accept
+    /// queue. The tuple is *not* cleared.
+    ///
     /// Returns the number of sockets that were disconnected.
-    pub fn disconnect_bound<M>(&mut self, _matcher: &M) -> usize
+    pub fn disconnect_bound<M>(&mut self, matcher: &M) -> usize
     where
         M: IpSocketPropertiesMatcher<<C::BindingsContext as MatcherBindingsTypes>::DeviceClass>
             + ?Sized,
+        <C::CoreContext as DeviceIdContext<AnyDevice>>::DeviceId:
+            netstack3_base::InterfaceProperties<
+                    <C::BindingsContext as MatcherBindingsTypes>::DeviceClass,
+                >,
     {
-        // TODO(https://fxbug.dev/459456549): Implement disconnect for TCP.
-        0
+        let (core_ctx, bindings_ctx) = self.contexts();
+
+        // We filter and disconnect separately here because disconnection is not a
+        // performance-sensitive operation and it's significantly easier to do
+        // than to manage the lifetimes and locking. Also, the only expected
+        // user at the time of writing is Starnix's SOCK_DESTROY implementation,
+        // which will only call this with a single socket at a time.
+        let mut ids = Vec::new();
+        core_ctx.for_each_socket(|id, state| {
+            if matcher.matches_ip_socket(&TcpSocketStateForMatching { state, id }) {
+                ids.push(id.clone());
+            }
+        });
+
+        // It's possible a socket no longer matches. However, this is a
+        // small race in comparison to the ones between API calls for different
+        // sockets (bind, connect, etc).
+        ids.into_iter()
+            .filter(|id| match disconnect_socket(core_ctx, bindings_ctx, &id) {
+                Ok(()) => true,
+                // We're okay with this because it's possible we raced with the
+                // socket being closed.
+                Err(NoConnection) => false,
+            })
+            .count()
     }
 
     /// Provides access to shared and per-socket TCP stats via a visitor.
@@ -4689,6 +4690,134 @@ fn destroy_socket<I, CC, BC>(
     })
 }
 
+fn shut_down_listener_socket<I, CC, BC>(
+    core_ctx: MaybeDualStack<
+        (&mut CC::DualStackIpTransportAndDemuxCtx<'_>, CC::DualStackConverter),
+        (&mut CC::SingleStackIpTransportAndDemuxCtx<'_>, CC::SingleStackConverter),
+    >,
+    id: &TcpSocketId<I, CC::WeakDeviceId, BC>,
+    maybe_listener: &mut MaybeListener<I, CC::WeakDeviceId, BC>,
+    sharing: &mut ListenerSharingState,
+    addr: &mut ListenerAddr<I::ListenerIpAddr, CC::WeakDeviceId>,
+) -> Result<impl Iterator<Item = TcpSocketId<I, CC::WeakDeviceId, BC>> + use<I, CC, BC>, NoConnection>
+where
+    I: DualStackIpExt,
+    BC: TcpBindingsContext<CC::DeviceId>,
+    CC: TcpContext<I, BC>,
+{
+    match maybe_listener {
+        MaybeListener::Bound(_) => return Err(NoConnection),
+        MaybeListener::Listener(_) => {}
+    }
+
+    let new_sharing = {
+        let ListenerSharingState { sharing, listening } = sharing;
+        assert!(*listening, "listener {id:?} is not listening");
+        ListenerSharingState { listening: false, sharing: sharing.clone() }
+    };
+    *sharing =
+        try_update_listener_sharing::<_, CC, _>(core_ctx, id, addr.clone(), sharing, new_sharing)
+            .unwrap_or_else(|e| {
+                unreachable!("downgrading a TCP listener to bound should not fail, got {e:?}")
+            });
+
+    let queued_items = replace_with::replace_with_and(maybe_listener, |maybe_listener| {
+        let Listener { backlog: _, accept_queue, buffer_sizes } = assert_matches!(maybe_listener,
+                            MaybeListener::Listener(l) => l, "must be a listener");
+        let (pending, socket_extra) = accept_queue.close();
+        let bound_state = BoundState { buffer_sizes, socket_extra: Takeable::new(socket_extra) };
+        (MaybeListener::Bound(bound_state), pending)
+    });
+
+    Ok(queued_items)
+}
+
+fn disconnect_socket<I, CC, BC>(
+    core_ctx: &mut CC,
+    bindings_ctx: &mut BC,
+    id: &TcpSocketId<I, CC::WeakDeviceId, BC>,
+) -> Result<(), NoConnection>
+where
+    I: DualStackIpExt,
+    BC: TcpBindingsContext<CC::DeviceId>,
+    CC: TcpContext<I, BC>,
+{
+    debug!("disconnect for {id:?}");
+    let pending = core_ctx.with_socket_mut_transport_demux(id, |core_ctx, socket_state| {
+        let TcpSocketState { socket_state, ip_options: _, socket_options } = socket_state;
+        match socket_state {
+            TcpSocketStateInner::Unbound(_) => Err(NoConnection),
+            TcpSocketStateInner::Bound(BoundSocketState::Connected { conn, sharing: _, timer }) => {
+                match core_ctx {
+                    MaybeDualStack::NotDualStack((core_ctx, converter)) => {
+                        let (conn, addr) = converter.convert(conn);
+                        abort_socket(
+                            core_ctx,
+                            bindings_ctx,
+                            id,
+                            &I::into_demux_socket_id(id.clone()),
+                            socket_options,
+                            timer,
+                            conn,
+                            addr,
+                            ConnectionError::Aborted,
+                        )
+                    }
+                    MaybeDualStack::DualStack((core_ctx, converter)) => {
+                        match converter.convert(conn) {
+                            EitherStack::ThisStack((conn, addr)) => abort_socket(
+                                core_ctx,
+                                bindings_ctx,
+                                id,
+                                &I::into_demux_socket_id(id.clone()),
+                                socket_options,
+                                timer,
+                                conn,
+                                addr,
+                                ConnectionError::Aborted,
+                            ),
+                            EitherStack::OtherStack((conn, addr)) => abort_socket(
+                                core_ctx,
+                                bindings_ctx,
+                                id,
+                                &core_ctx.into_other_demux_socket_id(id.clone()),
+                                socket_options,
+                                timer,
+                                conn,
+                                addr,
+                                ConnectionError::Aborted,
+                            ),
+                        }
+                    }
+                };
+                Ok(None)
+            }
+            TcpSocketStateInner::Bound(BoundSocketState::Listener((
+                maybe_listener,
+                sharing,
+                addr,
+            ))) => Ok(
+                match shut_down_listener_socket::<I, CC, BC>(
+                    core_ctx,
+                    id,
+                    maybe_listener,
+                    sharing,
+                    addr,
+                ) {
+                    Ok(pending) => Some(pending),
+                    Err(NoConnection) => None,
+                },
+            ),
+        }
+    })?;
+
+    if let Some(pending) = pending {
+        close_pending_sockets(core_ctx, bindings_ctx, pending.into_iter());
+    }
+
+    Ok(())
+}
+
 /// Closes all sockets in `pending`.
 ///
 /// Used to cleanup all pending sockets in the accept queue when a listener
@@ -4740,37 +4869,35 @@ fn close_pending_sockets<I, CC, BC>(
             };
 
             match this_or_other_stack {
-                EitherStack::ThisStack((core_ctx, demux_id, conn, conn_addr)) => {
-                    close_pending_socket(
-                        core_ctx,
-                        bindings_ctx,
-                        &conn_id,
-                        &demux_id,
-                        socket_options,
-                        timer,
-                        conn,
-                        &conn_addr,
-                    )
-                }
-                EitherStack::OtherStack((core_ctx, demux_id, conn, conn_addr)) => {
-                    close_pending_socket(
-                        core_ctx,
-                        bindings_ctx,
-                        &conn_id,
-                        &demux_id,
-                        socket_options,
-                        timer,
-                        conn,
-                        &conn_addr,
-                    )
-                }
+                EitherStack::ThisStack((core_ctx, demux_id, conn, conn_addr)) => abort_socket(
+                    core_ctx,
+                    bindings_ctx,
+                    &conn_id,
+                    &demux_id,
+                    socket_options,
+                    timer,
+                    conn,
+                    &conn_addr,
+                    ConnectionError::ConnectionReset,
+                ),
+                EitherStack::OtherStack((core_ctx, demux_id, conn, conn_addr)) => abort_socket(
+                    core_ctx,
+                    bindings_ctx,
+                    &conn_id,
+                    &demux_id,
+                    socket_options,
+                    timer,
+                    conn,
+                    &conn_addr,
+                    ConnectionError::ConnectionReset,
+                ),
             }
         });
         destroy_socket(core_ctx, bindings_ctx, conn_id);
     }
 }
 
-fn close_pending_socket<WireI, SockI, DC, BC>(
+fn abort_socket<WireI, SockI, DC, BC>(
     core_ctx: &mut DC,
     bindings_ctx: &mut BC,
     sock_id: &TcpSocketId<SockI, DC::WeakDeviceId, BC>,
@@ -4779,6 +4906,7 @@ fn close_pending_socket<WireI, SockI, DC, BC>(
     timer: &mut BC::Timer,
     conn: &mut Connection<SockI, WireI, DC::WeakDeviceId, BC>,
     conn_addr: &ConnAddr<ConnIpAddr<WireI::Addr, NonZeroU16, NonZeroU16>, DC::WeakDeviceId>,
+    reason: ConnectionError,
 ) where
     WireI: DualStackIpExt,
     SockI: DualStackIpExt,
@@ -4788,9 +4916,9 @@ fn close_pending_socket<WireI, SockI, DC, BC>(
         + TcpSocketContext<SockI, DC::WeakDeviceId, BC>,
     BC: TcpBindingsContext<DC::DeviceId>,
 {
-    debug!("aborting pending socket {sock_id:?}");
+    debug!("aborting socket {sock_id:?} with reason {reason}");
     let (maybe_reset, newly_closed) =
-        conn.state.abort(&TcpCountersRefs::from_ctx(core_ctx, sock_id), bindings_ctx.now());
+        conn.state.abort(&TcpCountersRefs::from_ctx(core_ctx, sock_id), bindings_ctx.now(), reason);
     handle_newly_closed(core_ctx, bindings_ctx, newly_closed, demux_id, conn_addr, timer);
     if let Some(reset) = maybe_reset {
         let ConnAddr { ip, device: _ } = conn_addr;
@@ -5835,7 +5963,7 @@ mod tests {
 
     pub(crate) type TcpCtx<D> = CtxPair<TcpCoreCtx<D, TcpBindingsCtx<D>>, TcpBindingsCtx<D>>;
 
-    struct FakeTcpNetworkSpec<D: FakeStrongDeviceId>(PhantomData<D>, Never);
+    pub(crate) struct FakeTcpNetworkSpec<D: FakeStrongDeviceId>(PhantomData<D>, Never);
     impl<D: FakeStrongDeviceId> FakeNetworkSpec for FakeTcpNetworkSpec<D> {
         type Context = TcpCtx<D>;
         type TimerId = TcpTimerId<D::Weak, TcpBindingsCtx<D>>;

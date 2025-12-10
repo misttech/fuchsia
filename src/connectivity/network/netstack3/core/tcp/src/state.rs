@@ -3638,6 +3638,7 @@ impl<I: Instant + 'static, R: ReceiveBuffer, S: SendBuffer, ActiveOpen: Debug>
         &mut self,
         counters: &TcpCountersRefs<'_>,
         now: I,
+        reason: ConnectionError,
     ) -> (Option<Segment<()>>, NewlyClosed) {
         let reply = match self {
             //   LISTEN STATE
@@ -3711,13 +3712,7 @@ impl<I: Instant + 'static, R: ReceiveBuffer, S: SendBuffer, ActiveOpen: Debug>
                 ResetOptions { timestamp: closed_rcv.timestamp_option_for_ack(now) },
             )),
         };
-        (
-            reply,
-            self.transition_to_state(
-                counters,
-                State::Closed(Closed { reason: Some(ConnectionError::ConnectionReset) }),
-            ),
-        )
+        (reply, self.transition_to_state(counters, State::Closed(Closed { reason: Some(reason) })))
     }
 
     pub(crate) fn buffers_mut(&mut self) -> BuffersRefMut<'_, R, S> {
@@ -4649,7 +4644,7 @@ mod test {
         let counters = FakeTcpCounters::default();
         let mut state = State::new_syn_rcvd(clock.now());
         let segment = assert_matches!(
-            state.abort(&counters.refs(), clock.now()),
+            state.abort(&counters.refs(), clock.now(), ConnectionError::ConnectionReset),
             (Some(seg), NewlyClosed::Yes) => seg
         );
         assert_eq!(segment.header().control, Some(Control::RST));

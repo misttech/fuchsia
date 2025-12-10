@@ -211,15 +211,16 @@ closed protocol Control {
     /// `Diagnostics.IterateIp` for matcher semantics.
     ///
     /// Disconnecting a socket depends on the transport protocol. In all cases,
-    /// all further operations on the socket will return `ECONNABORTED`:
+    /// the next read or write operation will see `ECONNABORTED`.
     ///
     /// - UDP: the behavior is equivalent to calling
     ///   `fuchsia.posix.socket/*.Disconnect`. Any destination port and address,
-    ///   and bound device are removed.
+    ///   and bound device are removed. The socket may be reused.
     /// - TCP LISTEN state: TCP moves to state CLOSE. All non-accepted sockets
-    ///   are closed and an RST is sent to the peer.
+    ///   are closed and an RST is sent to the peer. The socket may be reused.
     /// - TCP all other states: The TCP connection is put in state CLOSE and an
-    ///   RST is sent to the remote peer, if required.
+    ///   RST is sent to the remote peer, if required. The socket may not be
+    ///   reused.
     ///
     /// If no matchers are specified, or the provided matchers match all sockets,
     /// an error is returned and no action is taken.

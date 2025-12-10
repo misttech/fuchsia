@@ -284,23 +284,26 @@ mod tests {
     use alloc::string::ToString;
     use alloc::vec;
     use alloc::vec::Vec;
+    use assert_matches::assert_matches;
     use core::num::NonZeroUsize;
 
     use ip_test_macro::ip_test;
     use net_types::ZonedAddr;
     use net_types::ip::{Ip, Subnet};
-    use netstack3_base::testutil::{FakeDeviceId, set_logger_for_test};
+    use netstack3_base::testutil::{FakeDeviceId, FakeNetworkSpec as _, set_logger_for_test};
     use netstack3_base::{
         AddressMatcher, AddressMatcherEither, AddressMatcherType, BoundInterfaceMatcher,
         InterfaceMatcher, IpSocketMatcher, Mark, MarkDomain, MarkMatcher, PortMatcher,
-        SocketCookieMatcher, SocketTransportProtocolMatcher, SubnetMatcher, TcpSocketMatcher,
-        TcpStateMatcher, UdpSocketMatcher,
+        SocketCookieMatcher, SocketTransportProtocolMatcher, StrongDeviceIdentifier, SubnetMatcher,
+        TcpSocketMatcher, TcpStateMatcher, UdpSocketMatcher,
     };
 
     use super::*;
-    use crate::TcpContext;
+    use crate::AcceptError;
+    use crate::internal::base::ConnectionError;
+    use crate::internal::socket::TcpContext;
     use crate::internal::socket::tests::{
-        TcpApiExt, TcpBindingsCtx, TcpCoreCtx, TcpCtx, TcpTestIpExt,
+        FakeTcpNetworkSpec, TcpApiExt, TcpBindingsCtx, TcpCoreCtx, TcpCtx, TcpTestIpExt,
     };
 
     const LOCAL_PORT_1: NonZeroU16 = NonZeroU16::new(1234).unwrap();
@@ -1008,5 +1011,315 @@ mod tests {
             &mut results,
         );
         assert_eq!(results, Vec::new());
+    }
+
+    const LOCAL: &'static str = "local";
+    const REMOTE: &'static str = "remote";
+
+    #[ip_test(I)]
+    fn disconnect_connected<I: TcpTestIpExt>()
+    where
+        TcpCoreCtx<FakeDeviceId, TcpBindingsCtx<FakeDeviceId>>: TcpContext<
+                I,
+                TcpBindingsCtx<FakeDeviceId>,
+                SingleStackConverter = I::SingleStackConverter,
+                DualStackConverter = I::DualStackConverter,
+            >,
+    {
+        set_logger_for_test();
+
+        let mut net = FakeTcpNetworkSpec::new_network(
+            [
+                (
+                    LOCAL,
+                    TcpCtx::with_core_ctx(TcpCoreCtx::new::<I>(
+                        I::TEST_ADDRS.local_ip,
+                        I::TEST_ADDRS.remote_ip,
+                    )),
+                ),
+                (
+                    REMOTE,
+                    TcpCtx::with_core_ctx(TcpCoreCtx::new::<I>(
+                        I::TEST_ADDRS.remote_ip,
+                        I::TEST_ADDRS.local_ip,
+                    )),
+                ),
+            ],
+            |net, meta| {
+                if net == LOCAL {
+                    alloc::vec![(REMOTE, meta, None)]
+                } else {
+                    alloc::vec![(LOCAL, meta, None)]
+                }
+            },
+        );
+
+        let client_socket = net.with_context(LOCAL, |ctx| {
+            let mut api = ctx.tcp_api();
+            let s: TcpSocketId<I, _, _> = api.create(Default::default());
+            // Set device so we can check that it's not cleared.
+            api.set_device(&s, Some(FakeDeviceId)).expect("set device should succeed");
+            api.bind(&s, Some(ZonedAddr::Unzoned(I::TEST_ADDRS.local_ip)), Some(LOCAL_PORT_1))
+                .expect("bind should succeed");
+            api.connect(&s, Some(ZonedAddr::Unzoned(I::TEST_ADDRS.remote_ip)), REMOTE_PORT_1)
+                .expect("can connect");
+            s
+        });
+        let server_listener = net.with_context(REMOTE, |ctx| {
+            let mut api = ctx.tcp_api::<I>();
+            let s = api.create(Default::default());
+            api.bind(&s, None, Some(REMOTE_PORT_1)).expect("failed to bind the server socket");
+            api.listen(&s, NonZeroUsize::MIN).expect("can listen");
+            s
+        });
+
+        net.run_until_idle();
+
+        let server_socket = net.with_context(REMOTE, |ctx| {
+            let mut api = ctx.tcp_api();
+            let (server_connection, _addr, _buffers) =
+                api.accept(&server_listener).expect("connection is waiting");
+            server_connection
+        });
+
+        net.with_context(LOCAL, |ctx| {
+            let mut api = ctx.tcp_api();
+            let count = api.disconnect_bound(&IpSocketMatcher::Cookie(SocketCookieMatcher {
+                cookie: client_socket.socket_cookie().export_value(),
+                invert: false,
+            }));
+            assert_eq!(count, 1);
+
+            ctx.core_ctx.with_socket(&client_socket, |s| {
+                let conn = assert_matches!(
+                    &s.socket_state,
+                    TcpSocketStateInner::Bound(BoundSocketState::Connected {conn, ..}) => conn
+                );
+
+                let info = I::get_conn_info(conn);
+                assert_eq!(info.local_addr.ip.addr().get(), I::TEST_ADDRS.local_ip.get());
+                assert_eq!(info.remote_addr.ip.addr().get(), I::TEST_ADDRS.remote_ip.get());
+                assert_eq!(info.local_addr.port, LOCAL_PORT_1);
+                assert_eq!(info.remote_addr.port, REMOTE_PORT_1);
+                assert_eq!(info.device, Some(FakeDeviceId.downgrade()));
+            });
+        });
+
+        // Deliver the RST from `client_socket` to `server_socket`.
+        net.run_until_idle();
+
+        net.with_context(REMOTE, |ctx| {
+            let mut api = ctx.tcp_api();
+            assert_matches!(
+                api.get_socket_error(&server_socket),
+                Some(ConnectionError::ConnectionReset)
+            );
+        });
+
+        // Trying to connect to the same remote will "succeed" because the
+        // connect call is idempotent. However, the socket thinks it's already
+        // connected so no SYN will be sent. This is done to align with the
+        // implementation of TcpApi::shutdown.
+
+        net.with_context(LOCAL, |ctx| {
+            let mut api = ctx.tcp_api::<I>();
+            assert_matches!(
+                api.connect(
+                    &client_socket,
+                    Some(ZonedAddr::Unzoned(I::TEST_ADDRS.remote_ip)),
+                    REMOTE_PORT_1
+                ),
+                Ok(())
+            );
+        });
+        net.run_until_idle();
+        net.with_context(REMOTE, |ctx| {
+            let mut api = ctx.tcp_api();
+            assert_matches!(api.accept(&server_listener), Err(AcceptError::WouldBlock));
+        });
+
+        // Another socket can be created with the exact same tuple as the
+        // disconnected socket. This matches Linux behavior.
+        net.with_context(LOCAL, |ctx| {
+            let mut api = ctx.tcp_api();
+            let s: TcpSocketId<I, _, _> = api.create(Default::default());
+            api.set_device(&s, Some(FakeDeviceId)).expect("set device should succeed");
+            api.bind(&s, Some(ZonedAddr::Unzoned(I::TEST_ADDRS.local_ip)), Some(LOCAL_PORT_1))
+                .expect("bind should succeed");
+            api.connect(&s, Some(ZonedAddr::Unzoned(I::TEST_ADDRS.remote_ip)), REMOTE_PORT_1)
+                .expect("can connect");
+
+            // Close both sockets to ensure nothing bad happens from them
+            // having the same tuple.
+            api.close(s);
+            api.close(client_socket);
+        });
+    }
+
+    #[ip_test(I)]
+    fn disconnect_listener<I: TcpTestIpExt>()
+    where
+        TcpCoreCtx<FakeDeviceId, TcpBindingsCtx<FakeDeviceId>>: TcpContext<
+                I,
+                TcpBindingsCtx<FakeDeviceId>,
+                SingleStackConverter = I::SingleStackConverter,
+                DualStackConverter = I::DualStackConverter,
+            >,
+    {
+        set_logger_for_test();
+
+        let mut net = FakeTcpNetworkSpec::new_network(
+            [
+                (
+                    LOCAL,
+                    TcpCtx::with_core_ctx(TcpCoreCtx::new::<I>(
+                        I::TEST_ADDRS.local_ip,
+                        I::TEST_ADDRS.remote_ip,
+                    )),
+                ),
+                (
+                    REMOTE,
+                    TcpCtx::with_core_ctx(TcpCoreCtx::new::<I>(
+                        I::TEST_ADDRS.remote_ip,
+                        I::TEST_ADDRS.local_ip,
+                    )),
+                ),
+            ],
+            |net, meta| {
+                if net == LOCAL {
+                    alloc::vec![(REMOTE, meta, None)]
+                } else {
+                    alloc::vec![(LOCAL, meta, None)]
+                }
+            },
+        );
+
+        let client_accepted_socket = net.with_context(LOCAL, |ctx| {
+            let mut api = ctx.tcp_api();
+            let s: TcpSocketId<I, _, _> = api.create(Default::default());
+            api.connect(&s, Some(ZonedAddr::Unzoned(I::TEST_ADDRS.remote_ip)), REMOTE_PORT_1)
+                .expect("can connect");
+            s
+        });
+        let client_unaccepted_socket = net.with_context(LOCAL, |ctx| {
+            let mut api = ctx.tcp_api();
+            let s: TcpSocketId<I, _, _> = api.create(Default::default());
+            api.connect(&s, Some(ZonedAddr::Unzoned(I::TEST_ADDRS.remote_ip)), REMOTE_PORT_1)
+                .expect("can connect");
+            s
+        });
+        let server_listener = net.with_context(REMOTE, |ctx| {
+            let mut api = ctx.tcp_api::<I>();
+            let s = api.create(Default::default());
+            // Set device so we can check that it's not cleared.
+            api.set_device(&s, Some(FakeDeviceId)).expect("set device should succeed");
+            api.bind(&s, Some(ZonedAddr::Unzoned(I::TEST_ADDRS.remote_ip)), Some(REMOTE_PORT_1))
+                .expect("bind should succeed");
+            api.listen(&s, NonZeroUsize::new(2).unwrap()).expect("listen should succeed");
+            s
+        });
+
+        // Establish both connections.
+        net.run_until_idle();
+
+        net.with_context(REMOTE, |ctx| {
+            let mut api = ctx.tcp_api();
+            let _: (TcpSocketId<_, _, _>, _, _) =
+                api.accept(&server_listener).expect("connection is waiting");
+
+            let count = api.disconnect_bound(&IpSocketMatcher::Cookie(SocketCookieMatcher {
+                cookie: server_listener.socket_cookie().export_value(),
+                invert: false,
+            }));
+            assert_eq!(count, 1);
+
+            ctx.core_ctx.with_socket(&server_listener, |s| {
+                let (sharing_state, addr) = assert_matches!(
+                    &s.socket_state,
+                    TcpSocketStateInner::Bound(BoundSocketState::Listener((
+                        MaybeListener::Bound(_),
+                        sharing_state,
+                        addr,
+                    ))) => (sharing_state, addr)
+                );
+                assert_eq!(sharing_state.listening, false);
+                let info = I::get_bound_info(addr);
+                assert_eq!(
+                    info.addr.expect("address is set").addr().get(),
+                    I::TEST_ADDRS.remote_ip.get(),
+                );
+                assert_eq!(info.port, REMOTE_PORT_1);
+                assert_eq!(info.device, Some(FakeDeviceId.downgrade()));
+            });
+
+            let mut api = ctx.tcp_api::<I>();
+            api.listen(&server_listener, NonZeroUsize::new(1).unwrap())
+                .expect("listen should succeed");
+        });
+
+        // Deliver the RSTs.
+        net.run_until_idle();
+
+        // Since the first socket was already accepted, it shouldn't have been
+        // affected by the disconnection of the listener. However, the (pending)
+        // second socket should have received an RST.
+        net.with_context(LOCAL, |ctx| {
+            let mut api = ctx.tcp_api();
+            assert_matches!(api.get_socket_error(&client_accepted_socket), None);
+            assert_matches!(
+                api.get_socket_error(&client_unaccepted_socket),
+                Some(ConnectionError::ConnectionReset)
+            );
+        })
+    }
+
+    #[ip_test(I)]
+    fn disconnect_bound<I: TcpTestIpExt>()
+    where
+        TcpCoreCtx<FakeDeviceId, TcpBindingsCtx<FakeDeviceId>>: TcpContext<
+                I,
+                TcpBindingsCtx<FakeDeviceId>,
+                SingleStackConverter = I::SingleStackConverter,
+                DualStackConverter = I::DualStackConverter,
+            >,
+    {
+        set_logger_for_test();
+
+        let mut ctx = TcpCtx::with_core_ctx(TcpCoreCtx::new::<I>(
+            I::TEST_ADDRS.local_ip,
+            I::TEST_ADDRS.remote_ip,
+        ));
+        let mut api = ctx.tcp_api::<I>();
+        let s = api.create(Default::default());
+        // Set device so we can check that it's not cleared.
+        api.set_device(&s, Some(FakeDeviceId)).expect("set device should succeed");
+        api.bind(&s, Some(ZonedAddr::Unzoned(I::TEST_ADDRS.local_ip)), Some(LOCAL_PORT_1))
+            .expect("bind should succeed");
+
+        let mut api = ctx.tcp_api::<I>();
+        let count = api.disconnect_bound(&IpSocketMatcher::Cookie(SocketCookieMatcher {
+            cookie: s.socket_cookie().export_value(),
+            invert: false,
+        }));
+        assert_eq!(count, 1);
+
+        ctx.core_ctx.with_socket(&s, |s| {
+            let (sharing_state, addr) = assert_matches!(
+                &s.socket_state,
+                TcpSocketStateInner::Bound(BoundSocketState::Listener((
+                    MaybeListener::Bound(_),
+                    sharing_state,
+                    addr,
+                ))) => (sharing_state, addr)
+            );
+            assert_eq!(sharing_state.listening, false);
+            let info = I::get_bound_info(addr);
+            assert_eq!(
+                info.addr.expect("address is set").addr().get(),
+                I::TEST_ADDRS.local_ip.get(),
+            );
+            assert_eq!(info.port, LOCAL_PORT_1);
+            assert_eq!(info.device, Some(FakeDeviceId.downgrade()));
+        });
     }
 }
