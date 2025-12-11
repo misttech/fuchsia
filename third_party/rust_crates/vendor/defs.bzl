@@ -517,7 +517,7 @@ _NORMAL_DEPENDENCIES = {
             "mio": Label("//third_party/rust_crates/vendor/mio-0.8.11:mio"),
             "notify": Label("//third_party/rust_crates/vendor/notify-5.2.0:notify"),
             "num_cpus": Label("//third_party/rust_crates/vendor/num_cpus-1.16.0:num_cpus"),
-            "parking_lot": Label("//third_party/rust_crates/vendor/parking_lot-0.12.4:parking_lot"),
+            "parking_lot": Label("//third_party/rust_crates/vendor/parking_lot-0.12.5:parking_lot"),
             "parking_lot_core": Label("//third_party/rust_crates/vendor/parking_lot_core-0.9.12:parking_lot_core"),
             "petgraph": Label("//third_party/rust_crates/vendor/petgraph-0.6.2:petgraph"),
             "proc-macro2": Label("//third_party/rust_crates/vendor/proc-macro2-1.0.97:proc_macro2"),
