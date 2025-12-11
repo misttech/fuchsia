@@ -419,6 +419,13 @@
         //     source_availability: "unknown",
         // },
         {
+            protocol: "fuchsia.power.broker.Topology",
+            from: "#power-broker",
+            to: "#driver_manager",
+            availability: "optional",
+            source_availability: "unknown",
+        },
+        {
             protocol: "fuchsia.driver.test.DriverLists",
             from: "void",
             to: "#driver_index",

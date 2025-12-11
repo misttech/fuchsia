@@ -271,7 +271,8 @@ DriverRunner::DriverRunner(
     fidl::ClientEnd<fdi::DriverIndex> driver_index, inspect::ComponentInspector& inspect,
     LoaderServiceFactory loader_service_factory, async_dispatcher_t* dispatcher,
     bool enable_test_shutdown_delays, OfferInjector offer_injector,
-    std::optional<DynamicLinkerArgs> dynamic_linker_args)
+    std::optional<DynamicLinkerArgs> dynamic_linker_args,
+    std::optional<fidl::ClientEnd<fuchsia_power_broker::Topology>> topology_client)
     : driver_index_(std::move(driver_index), dispatcher),
       capability_store_(std::move(capability_store), dispatcher),
       loader_service_factory_(std::move(loader_service_factory)),
@@ -311,6 +312,11 @@ DriverRunner::DriverRunner(
   fidl::OneWayStatus status = driver_index_->SetNotifier(std::move(notifier_client));
   if (!status.ok()) {
     fdf_log::warn("Failed to set the driver notifier: {}", status.status_string());
+  }
+
+  if (topology_client.has_value()) {
+    topology_ =
+        fidl::WireSyncClient<fuchsia_power_broker::Topology>(std::move(topology_client.value()));
   }
 }
 

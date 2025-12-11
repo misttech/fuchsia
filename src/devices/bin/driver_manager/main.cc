@@ -5,6 +5,7 @@
 #include <fidl/fuchsia.boot/cpp/wire.h>
 #include <fidl/fuchsia.driver.index/cpp/wire.h>
 #include <fidl/fuchsia.io/cpp/wire.h>
+#include <fidl/fuchsia.power.broker/cpp/fidl.h>
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/async-loop/default.h>
 #include <lib/async/cpp/task.h>
@@ -94,6 +95,16 @@ int main(int argc, char** argv) {
     return introspector_result.error_value();
   }
 
+  std::optional<fidl::ClientEnd<fuchsia_power_broker::Topology>> topology_client;
+  if (config.power_suspend_enabled()) {
+    zx::result<fidl::ClientEnd<fuchsia_power_broker::Topology>> topology_result =
+        component::Connect<fuchsia_power_broker::Topology>();
+    if (topology_result.is_error()) {
+      return topology_result.error_value();
+    }
+    topology_client.emplace(std::move(topology_result.value()));
+  }
+
   auto capability_store_result = component::Connect<fuchsia_component_sandbox::CapabilityStore>();
   if (capability_store_result.is_error()) {
     return capability_store_result.error_value();
@@ -144,7 +155,8 @@ int main(int argc, char** argv) {
       driver_manager::OfferInjector{{
           .power_inject_offer = config.power_inject_offer(),
           .power_suspend_enabled = config.power_suspend_enabled(),
-      }});
+      }},
+      std::nullopt, std::move(topology_client));
 
   // Setup devfs.
   std::shared_ptr<driver_manager::Devfs> devfs;

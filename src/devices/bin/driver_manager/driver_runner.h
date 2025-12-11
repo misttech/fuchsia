@@ -12,6 +12,7 @@
 #include <fidl/fuchsia.driver.index/cpp/wire.h>
 #include <fidl/fuchsia.driver.token/cpp/fidl.h>
 #include <fidl/fuchsia.ldsvc/cpp/wire.h>
+#include <fidl/fuchsia.power.broker/cpp/fidl.h>
 #include <lib/async/cpp/wait.h>
 #include <lib/component/outgoing/cpp/outgoing_directory.h>
 #include <lib/fit/function.h>
@@ -71,7 +72,9 @@ class DriverRunner : public fidl::WireServer<fuchsia_driver_framework::Composite
                inspect::ComponentInspector& inspect, LoaderServiceFactory loader_service_factory,
                async_dispatcher_t* dispatcher, bool enable_test_shutdown_delays,
                OfferInjector offer_injector,
-               std::optional<DynamicLinkerArgs> dynamic_linker_args = std::nullopt);
+               std::optional<DynamicLinkerArgs> dynamic_linker_args = std::nullopt,
+               std::optional<fidl::ClientEnd<fuchsia_power_broker::Topology>> topology_client =
+                   std::nullopt);
 
   // fidl::WireServer<fuchsia_driver_framework::CompositeNodeManager> interface
   void AddSpec(AddSpecRequestView request, AddSpecCompleter::Sync& completer) override;
@@ -266,6 +269,8 @@ class DriverRunner : public fidl::WireServer<fuchsia_driver_framework::Composite
   // channel for each driver host.
   std::optional<fidl::WireSharedClient<fuchsia_driver_loader::DriverHostLauncher>>
       driver_host_launcher_;
+
+  std::optional<fidl::WireSyncClient<fuchsia_power_broker::Topology>> topology_;
 };
 
 Collection ToCollection(const Node& node, fuchsia_driver_framework::DriverPackageType package_type);

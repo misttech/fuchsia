@@ -1558,7 +1558,7 @@ void Node::StartDriver(
                start_args = std::move(dynamic_linker_start_args), url = std::string(url),
                component_controller = std::move(component_controller),
                cb = std::move(cb)](zx::result<DriverHost*> driver_host) mutable {
-                auto node_ptr = weak_self.lock();
+                std::shared_ptr<driver_manager::Node> node_ptr = weak_self.lock();
                 if (!node_ptr) {
                   fdf_log::warn("Node '{}' freed before it is used", name);
                   cb(zx::error(ZX_ERR_BAD_STATE));

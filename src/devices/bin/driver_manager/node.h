@@ -10,6 +10,7 @@
 #include <fidl/fuchsia.driver.framework/cpp/fidl.h>
 #include <fidl/fuchsia.driver.host/cpp/wire.h>
 #include <fidl/fuchsia.driver.index/cpp/wire.h>
+#include <fidl/fuchsia.power.broker/cpp/fidl.h>
 #include <lib/zx/event.h>
 #include <zircon/assert.h>
 #include <zircon/types.h>
@@ -85,6 +86,13 @@ using AddNodeResultCallback =
 using OnBindWaitCompleter =
     fit::callback<void(zx::result<fuchsia_driver_framework::wire::DriverResult>)>;
 
+struct PowerElementHandles {
+  fidl::ClientEnd<fuchsia_power_broker::ElementControl> element_control;
+  fidl::ServerEnd<fuchsia_power_broker::ElementRunner> element_runner;
+  fidl::ClientEnd<fuchsia_power_broker::Lessor> lessor;
+  fuchsia_power_broker::DependencyToken token;
+};
+
 class NodeManager {
  public:
   virtual ~NodeManager() = default;
@@ -133,6 +141,11 @@ class NodeManager {
   virtual void ImportDictionary(fuchsia_component_sandbox::DictionaryRef dictionary,
                                 fit::callback<void(zx::result<uint64_t>)> callback) {
     callback(zx::error(ZX_ERR_NOT_SUPPORTED));
+  }
+
+  virtual zx::result<PowerElementHandles> CreatePowerElement(
+      std::span<fuchsia_power_broker::DependencyToken> deps) {
+    return zx::error(ZX_ERR_NOT_SUPPORTED);
   }
 };
 
