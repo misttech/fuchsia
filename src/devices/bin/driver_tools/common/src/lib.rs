@@ -50,13 +50,31 @@ pub async fn get_device_info(
         .context("FIDL call to get device info failed")?;
 
     let mut info_result = Vec::new();
-    loop {
-        let mut device_info =
-            iterator.get_next().await.context("FIDL call to get device info failed")?;
-        if device_info.len() == 0 {
-            break;
+
+    'outer: loop {
+        // To minimize round trips we request several results in one go.
+        let device_info_futures = vec![
+            iterator.get_next(),
+            iterator.get_next(),
+            iterator.get_next(),
+            iterator.get_next(),
+            iterator.get_next(),
+            iterator.get_next(),
+            iterator.get_next(),
+            iterator.get_next(),
+            iterator.get_next(),
+            iterator.get_next(),
+            iterator.get_next(),
+            iterator.get_next(),
+        ];
+        let device_info_result = futures::future::join_all(device_info_futures).await;
+        for result in device_info_result {
+            let mut device_info = result.context("FIDL call to get device info failed")?;
+            if device_info.len() == 0 {
+                break 'outer;
+            }
+            info_result.append(&mut device_info)
         }
-        info_result.append(&mut device_info)
     }
     Ok(info_result)
 }
@@ -74,13 +92,26 @@ pub async fn get_driver_info(
         .context("FIDL call to get driver info failed")?;
 
     let mut info_result = Vec::new();
-    loop {
-        let mut driver_info =
-            iterator.get_next().await.context("FIDL call to get driver info failed")?;
-        if driver_info.len() == 0 {
-            break;
+    'outer: loop {
+        // To minimize round trips we request several results in one go.
+        let driver_info_futures = vec![
+            iterator.get_next(),
+            iterator.get_next(),
+            iterator.get_next(),
+            iterator.get_next(),
+            iterator.get_next(),
+            iterator.get_next(),
+            iterator.get_next(),
+            iterator.get_next(),
+        ];
+        let driver_info_result = futures::future::join_all(driver_info_futures).await;
+        for result in driver_info_result {
+            let mut driver_info = result.context("FIDL call to get driver info failed")?;
+            if driver_info.len() == 0 {
+                break 'outer;
+            }
+            info_result.append(&mut driver_info)
         }
-        info_result.append(&mut driver_info)
     }
     Ok(info_result)
 }
