@@ -793,6 +793,7 @@ pub mod test_utils {
                 ]),
                 hardware_capability: Some(0),
                 band_caps: Some(fake_band_caps()),
+                factory_addr: Some([7u8; 6]),
                 ..Default::default()
             })
         }
@@ -1307,6 +1308,7 @@ mod tests {
         let (mut fake_device, _) = FakeDevice::new().await;
         let query_response = fake_device.wlan_softmac_query_response().await.unwrap();
         assert_eq!(query_response.sta_addr, [7u8; 6].into());
+        assert_eq!(query_response.factory_addr, [7u8; 6].into());
         assert_eq!(query_response.mac_role, Some(fidl_common::WlanMacRole::Client));
         assert_eq!(
             query_response.supported_phys,

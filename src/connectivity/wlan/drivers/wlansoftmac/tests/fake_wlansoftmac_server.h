@@ -125,7 +125,8 @@ class BasicWlanSoftmacServer : public UnimplementedWlanSoftmacServer {
         .mac_role(fuchsia_wlan_common::WlanMacRole::kClient)
         .supported_phys(
             std::vector<fuchsia_wlan_common::WlanPhyType>{fuchsia_wlan_common::WlanPhyType::kDsss})
-        .hardware_capability(0);
+        .hardware_capability(0)
+        .factory_addr({std::array<uint8_t, 6>{8, 8, 8, 8, 8, 8}});
 
     fuchsia_wlan_softmac::WlanSoftmacBandCapability band_capability;
     band_capability.band(fuchsia_wlan_ieee80211::WlanBand::kTwoGhz)

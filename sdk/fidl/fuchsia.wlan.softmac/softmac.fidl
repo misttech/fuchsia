@@ -156,6 +156,10 @@ type WlanSoftmacQueryResponse = table {
     /// Supported bands.
     @mutable
     5: band_caps vector<WlanSoftmacBandCapability>:fuchsia.wlan.common.MAX_BANDS;
+
+    /// The MAC address of the device as assigned in the factory.
+    @available(added=HEAD)
+    6: factory_addr ieee80211.MacAddr;
 };
 
 
