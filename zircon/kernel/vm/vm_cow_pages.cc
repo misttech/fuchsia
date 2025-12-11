@@ -814,7 +814,8 @@ bool VmCowRange::IsBoundedBy(uint64_t max) const { return InRange(offset, len, m
 zx_status_t VmCowPages::AllocateCopyPage(paddr_t parent_paddr, list_node_t* alloc_list,
                                          AnonymousPageRequest* request, vm_page_t** clone) {
   DEBUG_ASSERT(request || !(pmm_alloc_flags_ & PMM_ALLOC_FLAG_CAN_WAIT));
-  DEBUG_ASSERT(!is_source_supplying_specific_physical_pages());
+  DEBUG_ASSERT(page_source_type() == PageSourceType::Anonymous ||
+               page_source_type() == PageSourceType::UserPager);
 
   vm_page_t* p_clone = nullptr;
 
@@ -854,7 +855,8 @@ zx_status_t VmCowPages::AllocateCopyPage(paddr_t parent_paddr, list_node_t* allo
 
 zx_status_t VmCowPages::AllocUninitializedPage(vm_page_t** page, AnonymousPageRequest* request) {
   paddr_t paddr = 0;
-  DEBUG_ASSERT(!is_source_supplying_specific_physical_pages());
+  DEBUG_ASSERT(page_source_type() == PageSourceType::Anonymous ||
+               page_source_type() == PageSourceType::UserPager);
   // Another layer has already allocated a page for us.
   if (request->has_page()) {
     *page = request->take_page();
@@ -878,7 +880,8 @@ zx_status_t VmCowPages::AllocPage(vm_page_t** page, AnonymousPageRequest* reques
 
 template <typename F>
 zx::result<vm_page_t*> VmCowPages::AllocLoanedPage(F allocated) {
-  DEBUG_ASSERT(!is_source_supplying_specific_physical_pages());
+  DEBUG_ASSERT(page_source_type() == PageSourceType::Anonymous ||
+               page_source_type() == PageSourceType::UserPager);
   return Pmm::Node().AllocLoanedPage([allocated](vm_page_t* page) {
     InitializeVmPage(page);
     allocated(page);

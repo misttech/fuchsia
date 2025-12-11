@@ -1047,10 +1047,6 @@ class VmCowPages final : public fbl::ContainableBaseClasses<
     return true;
   }
 
-  bool is_source_supplying_specific_physical_pages() const {
-    return page_source_ && !page_source_->properties().is_user_pager;
-  }
-
   // See |ForEveryOwnedHierarchyPageInRange|. Each entry given to `T` is constant and may not be
   // modified in any way.
   template <typename T>
