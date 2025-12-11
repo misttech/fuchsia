@@ -33,6 +33,8 @@ ffx/target/repository.golden
 ffx/target/repository/deregister.golden
 ffx/target/repository/list.golden
 ffx/target/repository/register.golden
+ffx/target/repository/rule.golden
+ffx/target/repository/rule/replace.golden
 ffx/target/screenshot.golden
 ffx/target/set-preferred-ssh-address.golden
 ffx/target/show.golden
