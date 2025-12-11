@@ -19,6 +19,7 @@ rustc_library("installer") {
     "//src/lib/fdio/rust:fdio",
     "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia-component",
+    "//src/lib/fuchsia-sync",
     "//src/recovery/lib/recovery-util-block",
     "//src/storage/lib/block_client/rust",
     "//src/sys/lib/payload_streamer",

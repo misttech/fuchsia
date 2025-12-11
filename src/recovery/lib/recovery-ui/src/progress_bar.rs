@@ -4,21 +4,22 @@
 
 use anyhow::Error;
 use carnelian::color::Color;
-use carnelian::drawing::{load_font, measure_text_width, FontFace};
+use carnelian::drawing::{FontFace, load_font, measure_text_width};
 use carnelian::scene::facets::{
     FacetId, SetColorMessage, SetSizeMessage, SetTextMessage, TextFacetOptions,
     TextHorizontalAlignment, TextVerticalAlignment,
 };
 use carnelian::scene::layout::{Alignment, Stack, StackOptions};
 use carnelian::scene::scene::{Scene, SceneBuilder};
-use carnelian::{make_message, AppSender, MessageTarget, Point, Size, ViewKey};
+use carnelian::{AppSender, MessageTarget, Point, Size, ViewKey, make_message};
 use euclid::size2;
 use fuchsia_async as fasync;
-use futures::channel::mpsc::{channel as pipe, Sender};
+use fuchsia_sync::Mutex;
 use futures::StreamExt;
+use futures::channel::mpsc::{Sender, channel as pipe};
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
-use std::sync::{Arc, Mutex};
 use zx::MonotonicDuration;
 
 const PROGRESS_GRANULARITY: f32 = 1000.0;
@@ -143,7 +144,7 @@ impl ProgressBar {
         let step_time_ms = (elapsed_time.into_millis()
             / (current_progress as i32 - progress as i32).abs() as i64)
             as i64;
-        let mut running = self.task_running_mutex.lock().unwrap();
+        let mut running = self.task_running_mutex.lock();
         if !*running {
             *running = true;
             let app_sender = self.app_sender.clone();

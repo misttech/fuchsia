@@ -327,14 +327,15 @@ impl PayloadStreamer for BlockDevicePayloadStreamer {
 mod tests {
 
     use super::*;
-    use anyhow::{anyhow, Context};
+    use anyhow::{Context, anyhow};
     use fidl_fuchsia_hardware_block::BlockMarker;
     use fidl_fuchsia_paver::{PayloadStreamMarker, PayloadStreamProxy};
     use fuchsia_async as fasync;
+    use fuchsia_sync::Mutex;
     use futures::future::try_join;
     use ramdevice_client::{RamdiskClient, RamdiskClientBuilder};
     use std::io::Cursor;
-    use std::sync::{Arc, Mutex};
+    use std::sync::Arc;
     use zx::{self as zx, HandleBased};
 
     struct StatusUpdate {
@@ -437,7 +438,7 @@ mod tests {
         let mut read = 0;
         while read < buf.len() {
             read = read_slice(&vmo, dst_size, &proxy, byte, read).await?;
-            let data = callback_status.lock().unwrap();
+            let data = callback_status.lock();
             assert_eq!(data.data_size, src_size);
             assert_eq!(data.data_read, read);
         }
@@ -472,9 +473,8 @@ mod tests {
         };
 
         let status_update = Arc::new(Mutex::new(StatusUpdate { data_read: 0, data_size: 0 }));
-        let status_callback = |data_read, data_size| {
-            status_update.lock().unwrap().status_callback(data_read, data_size)
-        };
+        let status_callback =
+            |data_read, data_size| status_update.lock().status_callback(data_read, data_size);
         let (proxy, server) = serve_payload(streamer, Some(&status_callback))
             .await
             .context("serve payload failed")?;

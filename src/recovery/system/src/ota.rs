@@ -3,14 +3,14 @@
 // found in the LICENSE file.
 use crate::config::{RecoveryUpdateConfig, UpdateType};
 use crate::setup::DevhostConfig;
-use anyhow::{bail, format_err, Context, Error};
+use anyhow::{Context, Error, bail, format_err};
 use fidl::endpoints::ServerEnd;
 use fidl_fuchsia_buildinfo::ProviderMarker as BuildInfoMarker;
 use fuchsia_component::client;
 use futures::prelude::*;
 use hyper::Uri;
-use isolated_ota::{download_and_apply_update, OmahaConfig};
-use serde_json::{json, Value};
+use isolated_ota::{OmahaConfig, download_and_apply_update};
+use serde_json::{Value, json};
 use std::fs::File;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -333,12 +333,12 @@ mod tests {
     use fidl_fuchsia_pkg_ext::RepositoryKey;
     use fuchsia_async as fasync;
     use fuchsia_pkg_testing::serve::HttpResponder;
-    use fuchsia_pkg_testing::{make_epoch_json, Package, PackageBuilder, RepositoryBuilder};
-    use fuchsia_runtime::{take_startup_handle, HandleType};
-    use futures::future::{ready, BoxFuture};
-    use hyper::{header, Body, Request, Response, StatusCode};
+    use fuchsia_pkg_testing::{Package, PackageBuilder, RepositoryBuilder, make_epoch_json};
+    use fuchsia_runtime::{HandleType, take_startup_handle};
+    use fuchsia_sync::Mutex;
+    use futures::future::{BoxFuture, ready};
+    use hyper::{Body, Request, Response, StatusCode, header};
     use std::collections::{BTreeSet, HashMap};
-    use std::sync::Mutex;
     use url::Url;
 
     /// Wrapper around a ramdisk blobfs.
@@ -382,7 +382,7 @@ mod tests {
         }
 
         pub fn set_repo_address(self: Arc<Self>, addr: String) {
-            let mut val = self.address.lock().unwrap();
+            let mut val = self.address.lock();
             *val = addr;
         }
     }
@@ -399,7 +399,7 @@ mod tests {
 
             // We don't expect any contention on this lock: we only need it
             // because the test doesn't know the address of the server until it's running.
-            let val = self.arc.address.lock().unwrap();
+            let val = self.arc.address.lock();
             if *val == "unknown" {
                 panic!("Expected address to be set!");
             }

@@ -74,9 +74,10 @@ mod test {
     use crate::ota::state_machine::{Event, OtaStatus, State};
     use anyhow::Error;
     use async_trait::async_trait;
+    use fuchsia_sync::Mutex;
     use futures::channel::{mpsc, oneshot};
     use ota_lib::OtaManager;
-    use std::sync::{Arc, Mutex};
+    use std::sync::Arc;
 
     struct FakeOtaManager {
         sender: Mutex<Option<oneshot::Sender<OtaStatus>>>,
@@ -98,13 +99,7 @@ mod test {
             Ok(())
         }
         async fn complete_ota(&self, status: OtaStatus) {
-            self.sender
-                .lock()
-                .unwrap()
-                .take()
-                .expect("only one event expected")
-                .send(status)
-                .unwrap();
+            self.sender.lock().take().expect("only one event expected").send(status).unwrap();
         }
     }
 

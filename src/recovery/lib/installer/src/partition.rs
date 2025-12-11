@@ -11,13 +11,13 @@ use fidl_fuchsia_hardware_block_partition::PartitionProxy;
 use fidl_fuchsia_mem::Buffer;
 use fidl_fuchsia_paver::{Asset, Configuration, DynamicDataSinkProxy};
 
-use futures::future::try_join;
+use fuchsia_sync::Mutex;
 use futures::TryFutureExt;
+use futures::future::try_join;
 use payload_streamer::{BlockDevicePayloadStreamer, PayloadStreamer};
 use recovery_util_block::BlockDevice;
 use std::cmp::min;
 use std::fmt;
-use std::sync::Mutex;
 
 /// Number of nanoseconds in a second.
 const NS_PER_S: i64 = 1_000_000_000;
@@ -245,7 +245,7 @@ impl Partition {
             }
             let percent: i64 =
                 unsafe { (((data_read as f64) / (data_total as f64)) * 100.0).to_int_unchecked() };
-            let mut prev = last_percent.lock().unwrap();
+            let mut prev = last_percent.lock();
             if percent != *prev {
                 let now = zx::MonotonicInstant::get();
                 let nanos = now.into_nanos() - start_time.into_nanos();

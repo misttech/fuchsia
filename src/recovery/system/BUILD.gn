@@ -112,6 +112,7 @@ rustc_library("ota_lib") {
     "//sdk/fidl/fuchsia.mem:fuchsia.mem_rust",
     "//src/lib/fuchsia",
     "//src/lib/fuchsia-runtime",
+    "//src/lib/fuchsia-sync",
     "//src/sys/lib/fidl-fuchsia-pkg-ext",
     "//src/sys/pkg/lib/fuchsia-merkle",
     "//src/sys/pkg/lib/fuchsia-pkg-testing",

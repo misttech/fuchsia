@@ -24,6 +24,7 @@ rustc_library("payload_streamer") {
   test_deps = [
     "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia-async",
+    "//src/lib/fuchsia-sync",
     "//src/storage/lib/ramdevice_client",
     "//third_party/rust_crates:futures",
   ]

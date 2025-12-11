@@ -13,6 +13,7 @@ rustc_library("recovery-ui") {
     "//sdk/rust/zx",
     "//src/graphics/lib/compute/rive-rs",
     "//src/lib/fuchsia-async",
+    "//src/lib/fuchsia-sync",
     "//src/lib/ui/carnelian",
     "//src/recovery/lib/recovery-util",
     "//third_party/rust_crates:anyhow",

@@ -4,10 +4,11 @@
 
 use anyhow::Error;
 use fuchsia_async as fasync;
+use fuchsia_sync::RwLock;
 use futures::prelude::*;
 use std::cell::RefCell;
 use std::fmt::Debug;
-use std::sync::RwLock;
+
 pub struct SimpleCallRecorder<T>(RwLock<Vec<T>>);
 impl<T: Clone> SimpleCallRecorder<T> {
     pub fn new() -> Self {

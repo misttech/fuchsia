@@ -10,7 +10,7 @@
 
 pub mod partition;
 
-use anyhow::{anyhow, Context, Error};
+use anyhow::{Context, Error, anyhow};
 use fidl::endpoints::{Proxy, ServerEnd};
 use fidl_fuchsia_hardware_power_statecontrol::{AdminMarker, RebootOptions, RebootReason2};
 use fidl_fuchsia_paver::{
@@ -19,9 +19,9 @@ use fidl_fuchsia_paver::{
 use fidl_fuchsia_sysinfo::SysInfoMarker;
 use fuchsia_component::client;
 
+use fuchsia_sync::Mutex;
 use partition::Partition;
 use recovery_util_block::BlockDevice;
-use std::sync::Mutex;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum BootloaderType {
@@ -184,7 +184,7 @@ where
             }
             let cur_percent: i64 =
                 unsafe { (((data_read as f64) / (data_total as f64)) * 100.0).to_int_unchecked() };
-            let mut prev = prev_percent.lock().unwrap();
+            let mut prev = prev_percent.lock();
             if cur_percent == *prev {
                 return;
             }
