@@ -440,8 +440,6 @@ impl PolicyIndex {
         target_type: TypeId,
         class: &Class,
     ) -> Option<TypeId> {
-        // Return first match. The `checkpolicy` tool will not compile a policy that has
-        // multiple matches, so behavior on multiple matches is undefined.
         let rule = self.parsed_policy.find_access_vector_rule(
             source_type,
             target_type,
