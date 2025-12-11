@@ -120,6 +120,20 @@ enum class VmCowReclaimFailure : uint8_t {
   Other,
 };
 
+enum class PageSourceType : uint8_t {
+  // The VmCowPages is not directly backed by a page_source_.
+  Anonymous = 0,
+  // The VmCowPages is directly backed by a contiguous page source. That has the following
+  // implications:
+  // * The direct page source provides specific physical pages.
+  // * The direct page source (possibly with the help of the VmCowPages) provides zeroed pages.
+  Contiguous,
+  // The VmCowPages is directly backed by a user pager. That has the following implications:
+  // * The direct page source is responsible for freeing the page content.
+  // * The VmCowPages must implement dirty tracking.
+  UserPager,
+};
+
 class ScopedPageFreedList;
 
 // Implements a copy-on-write hierarchy of pages in a VmPageList.
@@ -353,7 +367,7 @@ class VmCowPages final : public fbl::ContainableBaseClasses<
     if (!is_dirty_tracked()) {
       return;
     }
-    DEBUG_ASSERT(is_source_preserving_page_content());
+    DEBUG_ASSERT(page_source_type() == PageSourceType::UserPager);
     pager_stats_modified_ = true;
   }
 
@@ -492,11 +506,12 @@ class VmCowPages final : public fbl::ContainableBaseClasses<
     canary_.Assert();
     DEBUG_ASSERT(stats);
     // The modified state should only be set for VMOs directly backed by a pager.
-    DEBUG_ASSERT(!pager_stats_modified_ || is_source_preserving_page_content());
+    DEBUG_ASSERT(!pager_stats_modified_ || page_source_type() == PageSourceType::UserPager);
 
-    if (!is_source_preserving_page_content()) {
+    if (page_source_type() != PageSourceType::UserPager) {
       return ZX_ERR_NOT_SUPPORTED;
     }
+
     stats->modified = pager_stats_modified_ ? ZX_PAGER_VMO_STATS_MODIFIED : 0;
     if (reset) {
       ResetPagerVmoStatsLocked();
@@ -970,6 +985,16 @@ class VmCowPages final : public fbl::ContainableBaseClasses<
     return !(options_ & VmCowPagesOptions::kCannotDecommitZeroPages);
   }
 
+  PageSourceType page_source_type() const {
+    if (!page_source_) {
+      return PageSourceType::Anonymous;
+    }
+    if (page_source_->properties().is_user_pager) {
+      return PageSourceType::UserPager;
+    }
+    return PageSourceType::Contiguous;
+  }
+
   bool direct_source_supplies_zero_pages() const {
     return page_source_ && !page_source_->properties().is_user_pager;
   }
@@ -1018,10 +1043,6 @@ class VmCowPages final : public fbl::ContainableBaseClasses<
     }
 
     return true;
-  }
-
-  bool is_source_preserving_page_content() const {
-    return page_source_ && page_source_->properties().is_user_pager;
   }
 
   bool is_source_supplying_specific_physical_pages() const {
@@ -1510,16 +1531,16 @@ class VmCowPages final : public fbl::ContainableBaseClasses<
                                                                      MultiPageRequest* page_request)
       TA_REQ(lock());
 
-  // Specialized internal version of ZeroPagesLocked that only operates for a VMO where
-  // |is_source_preserving_page_content| is true. |dirty_track| can be set to |true| if any zeroes
-  // inserted are to be treated as Dirty, otherwise they are not dirty tracked.
+  // Specialized internal version of ZeroPagesLocked that only operates for a VMO with a user pager.
+  // |dirty_track| can be set to |true| if any zeroes inserted are to be treated as Dirty, otherwise
+  // they are not dirty tracked.
   //
   // Returns the number of bytes that were actually zeroed, which may be
   // nonzero even if the returned status != ZX_OK.
-  ktl::pair<zx_status_t, uint64_t> ZeroPagesPreservingContentLocked(VmCowRange range,
-                                                                    bool dirty_track,
-                                                                    DeferredOps& deferred,
-                                                                    MultiPageRequest* page_request)
+  ktl::pair<zx_status_t, uint64_t> ZeroPagesDirectUserPagerLocked(VmCowRange range,
+                                                                  bool dirty_track,
+                                                                  DeferredOps& deferred,
+                                                                  MultiPageRequest* page_request)
       TA_REQ(lock());
 
   // Applies the specific operation to all mappings in the given range against descendants/cow
@@ -1834,8 +1855,9 @@ class VmCowPages::LookupCursor {
       : target_(target),
         offset_(range.offset),
         end_offset_(range.end()),
-        target_preserving_page_content_(target->is_source_preserving_page_content()),
-        zero_fork_(!target_preserving_page_content_ && target->can_decommit_zero_pages()) {}
+        target_directly_backed_by_user_pager_(target->page_source_type() ==
+                                              PageSourceType::UserPager),
+        zero_fork_(!target_directly_backed_by_user_pager_ && target->can_decommit_zero_pages()) {}
 
   // Note: Some of these methods are marked __ALWAYS_INLINE as doing so has a dramatic performance
   // improvement, and is worth the increase in code size. Due to gcc limitations to mark them
@@ -1936,7 +1958,7 @@ class VmCowPages::LookupCursor {
   // The cursor can be considered to have content of zero if either it points at a zero marker, or
   // the cursor itself is empty and content is initially zero. Content is initially zero if either
   // there isn't a page source, or the offset is in a zero interval.
-  // If a page source is not preserving content then we could consider it to be zero, except we
+  // If a page source is not a user pager then we could consider it to be zero, except we
   // would not necessarily be able to fork that zero page to create an owned/writable page. In
   // practice this case only exists for contiguous VMOs, and the way they are used makes optimizing
   // to return the zero page in the case of reads not beneficial.
@@ -1954,10 +1976,7 @@ class VmCowPages::LookupCursor {
 
   // Returns whether the target is tracking the dirtying of content with dirty pages and dirty
   // transitions.
-  bool TargetDirtyTracked() const {
-    // Presently no distinction between preserving page content and being dirty tracked.
-    return target_preserving_page_content_;
-  }
+  bool TargetDirtyTracked() const { return target_directly_backed_by_user_pager_; }
 
   // Turns the supplied page into a result. Does not increment the cursor. |in_target| specifies
   // whether the page is known to be in target_ or in some parent object.
@@ -2032,10 +2051,10 @@ class VmCowPages::LookupCursor {
   // This is a cache of owner_info_.cursor.current()
   VmPageOrMarkerRef owner_cursor_;
 
-  // Value of target_->is_source_preserving_page_content() cached on creation as there is spare
-  // padding space to store it here, and needed to retrieve this value to initialize zero_fork_
-  // anyway.
-  const bool target_preserving_page_content_;
+  // Value of target_->page_source_type() == PageSourceType::UserPager cached on
+  // creation as there is spare padding space to store it here, and needed to retrieve this value to
+  // initialize zero_fork_ anyway.
+  const bool target_directly_backed_by_user_pager_;
 
   // Tracks whether zero forks should be tracked and placed in the corresponding page queue. This is
   // initialized to true if it's legal to place pages in the zero fork queue, which requires that

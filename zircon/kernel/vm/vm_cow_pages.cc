@@ -2100,7 +2100,8 @@ bool VmCowPages::MergeContentWithChildLocked() {
   // There's no technical reason why this merging code cannot be run if there is a page source,
   // however a bi-directional clone will never have a page source and so in case there are any
   // consequence that have no been considered, ensure we are not in this case.
-  DEBUG_ASSERT(!is_source_preserving_page_content());
+  DEBUG_ASSERT(page_source_type() == PageSourceType::Anonymous);
+
   DEBUG_ASSERT(children_list_len_ == 1);
 
   VmCowPages& child = children_list_.front();
@@ -2213,7 +2214,7 @@ void VmCowPages::DumpLocked(uint depth, bool verbose) const {
     for (uint i = 0; i < depth + 1; ++i) {
       printf("  ");
     }
-    printf("page_source preserves content %d\n", is_source_preserving_page_content());
+    printf("page_source is user pager %d\n", page_source_type() == PageSourceType::UserPager);
     page_source_->Dump(depth + 1, UINT32_MAX);
   }
 
@@ -2333,9 +2334,10 @@ zx::result<VmCowPages::AddPageTransaction> VmCowPages::BeginAddPageWithSlotLocke
     return zx::error(status);
   }
   // Do additinoal checks. The IsOffsetInZeroInterval check is expensive, but the assumption is that
-  // this method is not used when is_source_preserving_page_content is true, so the assertion should
-  // short circuit.
-  DEBUG_ASSERT(!is_source_preserving_page_content() || !slot->IsEmpty() ||
+  // this method is not used when this node is directly backed by a user pager, so the assertion
+  // should short circuit.
+  DEBUG_ASSERT(page_source_type() == PageSourceType::Anonymous ||
+               page_source_type() == PageSourceType::Contiguous || !slot->IsEmpty() ||
                !page_list_.IsOffsetInZeroInterval(offset));
   return zx::ok(AddPageTransaction(slot, offset, overwrite));
 }
@@ -2344,10 +2346,11 @@ zx::result<VmCowPages::AddPageTransaction> VmCowPages::BeginAddPageLocked(
     uint64_t offset, CanOverwriteSlot overwrite) {
   canary_.Assert();
   auto interval_handling = VmPageList::IntervalHandling::NoIntervals;
-  // If we're backed by a page source that preserves content (user pager), we cannot directly update
-  // empty slots in the page list. An empty slot might lie in a sparse zero interval, which would
-  // require splitting the interval around the required offset before it can be manipulated.
-  if (is_source_preserving_page_content()) {
+  // If we're backed by a user pager, we cannot directly update empty slots in the
+  // page list. An empty slot might lie in a sparse zero interval, which would
+  // require splitting the interval around the required offset before it can be
+  // manipulated.
+  if (page_source_type() == PageSourceType::UserPager) {
     // We can overwrite zero intervals if we're allowed to overwrite zeros (or non-zeros).
     interval_handling = overwrite != CanOverwriteSlot::Empty
                             ? VmPageList::IntervalHandling::SplitInterval
@@ -2456,8 +2459,8 @@ VmPageOrMarker VmCowPages::CompleteAddPageLocked(AddPageTransaction& transaction
     // If the old entry is a reference then we know that there can be no mappings to it, since a
     // reference cannot be mapped in, and we can skip the range update.
     if (!old.IsReference()) {
-      if (old.IsEmpty() && is_source_preserving_page_content()) {
-        // An empty slot where the page source is preserving content cannot have any mappings,
+      if (old.IsEmpty() && page_source_type() == PageSourceType::UserPager) {
+        // An empty slot where the page source is a user pager cannot have any mappings,
         // either in self or the children, since the content is unknown (i.e. not the zero page),
         // and so we do not need to perform any range change update.
         // However, as we are modifying the contents we still must synchronize with any other
@@ -2527,7 +2530,7 @@ VmPageOrMarker VmCowPages::CompleteAddNewPageLocked(AddPageTransaction& transact
   // Pages being added to pager backed VMOs should have a valid dirty_state before being added to
   // the page list, so that they can be inserted in the correct page queue. New pages start off
   // clean.
-  if (is_source_preserving_page_content()) {
+  if (page_source_type() == PageSourceType::UserPager) {
     // Only zero pages can be added as new pages to pager backed VMOs.
     DEBUG_ASSERT(zero || IsZeroPage(page));
     UpdateDirtyStateLocked(page, transaction.offset(), DirtyState::Clean, /*is_pending_add=*/true);
@@ -2591,7 +2594,7 @@ zx_status_t VmCowPages::CloneCowPageLocked(uint64_t offset, list_node_t* alloc_l
   DEBUG_ASSERT(!is_hidden());
   // We don't want to handle intervals here. They should only be present when this node is backed by
   // a user pager, and such nodes don't have parents so cannot be the target of a forked page.
-  DEBUG_ASSERT(!is_source_preserving_page_content());
+  DEBUG_ASSERT(page_source_type() == PageSourceType::Anonymous);
 
   // Ensure this node is ready to accept a newly-allocated page. If a subsequent step fails (such as
   // allocating the page itself), cancelling the `page_transaction` will handle any rollback logic.
@@ -2867,7 +2870,7 @@ void VmCowPages::FindInitialPageContentLocked(uint64_t offset, PageLookup* out) 
 void VmCowPages::UpdateDirtyStateLocked(vm_page_t* page, uint64_t offset, DirtyState dirty_state,
                                         bool is_pending_add) {
   ASSERT(page);
-  ASSERT(is_source_preserving_page_content());
+  ASSERT(page_source_type() == PageSourceType::UserPager);
 
   // If the page is not pending being added to the page list, it should have valid object info.
   DEBUG_ASSERT(is_pending_add || page->object.get_object() == this);
@@ -2955,7 +2958,7 @@ zx_status_t VmCowPages::PrepareForWriteLocked(VmCowRange range, LazyPageRequest*
   DEBUG_ASSERT(range.IsBoundedBy(size_));
 
   DEBUG_ASSERT(page_source_);
-  DEBUG_ASSERT(is_source_preserving_page_content());
+  DEBUG_ASSERT(page_source_type() == PageSourceType::UserPager);
 
   uint64_t dirty_len = 0;
   const uint64_t start_offset = range.offset;
@@ -3209,9 +3212,9 @@ inline VmCowPages::LookupCursor::RequireResult VmCowPages::LookupCursor::PageAsR
     vm_page_t* page, bool in_target) {
   // The page is writable if it's present in the target (non owned pages are never writable) and it
   // does not need a dirty transition. A page doesn't need a dirty transition if the target isn't
-  // preserving page contents, or if the page is just already dirty.
-  RequireResult result{page,
-                       (in_target && (!target_preserving_page_content_ || is_page_dirty(page)))};
+  // a user pager, or if the page is just already dirty.
+  RequireResult result{
+      page, (in_target && (!target_directly_backed_by_user_pager_ || is_page_dirty(page)))};
   return result;
 }
 
@@ -3275,7 +3278,7 @@ VmCowPages::LookupCursor::TargetAllocateCopyPageAsResult(vm_page_t* source, Dirt
   // We could be allocating a page to replace a zero page marker in a pager-backed VMO. If so then
   // set its dirty state to what was requested, AddPageLocked below will then insert the page into
   // the appropriate page queue.
-  if (target_preserving_page_content_) {
+  if (target_directly_backed_by_user_pager_) {
     // The only page we can be forking here is the zero page.
     DEBUG_ASSERT(source == vm_get_zero_page());
     // The object directly owns the page.
@@ -3291,13 +3294,13 @@ VmCowPages::LookupCursor::TargetAllocateCopyPageAsResult(vm_page_t* source, Dirt
   //    the insertion is happening.
   //  * owner_pl_cursor_.current() != nullptr - Must be an actual node and slot already allocated,
   //    it is either Empty() or a marker type.
-  //  * !is_source_preserving_page_content() - A source preserving page content may have intervals,
-  //    which are zeroes that we could be overwriting here, but the slot itself we have found could
-  //    be empty and the interval may need splitting. For simplicity we do not attempt to check for
-  //    and handle interval splitting, and just skip reusing our slot in this case.
+  //  * page_source_type() != PageSourceType::UserPager - May have intervals, which are
+  //    zeroes that we could be overwriting here, but the slot itself we have found could be empty
+  //    and the interval may need splitting. For simplicity we do not attempt to check for and
+  //    handle interval splitting, and just skip reusing our slot in this case.
   const bool can_reuse_slot =
       (TargetIsOwner() && owner_info_.cursor.current() &&
-       !owner_info_.owner.locked_or(target_).is_source_preserving_page_content());
+       owner_info_.owner.locked_or(target_).page_source_type() != PageSourceType::UserPager);
   __UNINITIALIZED auto page_transaction =
       can_reuse_slot ? target_->BeginAddPageWithSlotLocked(offset_, owner_info_.cursor.current(),
                                                            CanOverwriteSlot::ZeroMarkerOrInterval)
@@ -3580,12 +3583,11 @@ zx::result<VmCowPages::LookupCursor::RequireResult> VmCowPages::LookupCursor::Re
   // If page exists in the target, i.e. the owner is the target, then we handle this case separately
   // as it's the only scenario where we might be dirtying an existing committed page.
   if (TargetIsOwner() && CursorIsPage()) {
-    // If we're writing to a root VMO backed by a user pager, i.e. a VMO whose page source preserves
-    // page contents, we might need to mark pages Dirty so that they can be written back later. This
-    // is the only path that can result in a write to such a page; if the page was not present, we
-    // would have already blocked on a read request the first time, and ended up here when
-    // unblocked, at which point the page would be present.
-    if (will_write && target_preserving_page_content_) {
+    // If we're writing to a root VMO backed by a user pager, we might need to mark pages Dirty so
+    // that they can be written back later. This is the only path that can result in a write to such
+    // a page; if the page was not present, we would have already blocked on a read request the
+    // first time, and ended up here when unblocked, at which point the page would be present.
+    if (will_write && target_directly_backed_by_user_pager_) {
       // If this page was loaned, it should be replaced with a non-loaned page, so that we can make
       // progress with marking pages dirty. PrepareForWriteLocked terminates its page walk when it
       // encounters a loaned page; loaned pages are reclaimed by evicting them and we cannot evict
@@ -3651,10 +3653,10 @@ zx::result<VmCowPages::LookupCursor::RequireResult> VmCowPages::LookupCursor::Re
   // Zero content is the most complicated cases where, even if reading, dirty requests might need to
   // be performed and the resulting committed pages may / may not be dirty.
   if (CursorIsContentZero()) {
-    // If the page source is preserving content (is a PagerProxy), and is configured to trap dirty
-    // transitions, we first need to generate a DIRTY request *before* the zero page can be forked
-    // and marked dirty. If dirty transitions are not trapped, we will fall through to allocate the
-    // page and then mark it dirty below.
+    // If the page source is a PagerProxy, and is configured to trap dirty
+    // transitions, we first need to generate a DIRTY request *before* the zero page
+    // can be forked and marked dirty. If dirty transitions are not trapped, we will
+    // fall through to allocate the page and then mark it dirty below.
     //
     // Note that the check for ShouldTrapDirtyTransitions() is an optimization here.
     // PrepareForWriteLocked() would do the right thing depending on ShouldTrapDirtyTransitions(),
@@ -3901,7 +3903,7 @@ zx_status_t VmCowPages::DecommitRange(VmCowRange range) {
   }
 
   // Currently, we can't decommit if the absence of a page doesn't imply zeroes.
-  if (parent_ || is_source_preserving_page_content()) {
+  if (parent_ || page_source_type() == PageSourceType::UserPager) {
     return ZX_ERR_NOT_SUPPORTED;
   }
 
@@ -3968,7 +3970,7 @@ bool VmCowPages::PageWouldReadZeroLocked(uint64_t page_offset) {
     // This is already considered zero as there's a marker.
     return true;
   }
-  if (is_source_preserving_page_content() &&
+  if (page_source_type() == PageSourceType::UserPager &&
       ((slot && slot->IsIntervalZero()) || page_list_.IsOffsetInZeroInterval(page_offset))) {
     // Pages in zero intervals are supplied as zero by the kernel.
     return true;
@@ -3986,12 +3988,12 @@ bool VmCowPages::PageWouldReadZeroLocked(uint64_t page_offset) {
   return false;
 }
 
-ktl::pair<zx_status_t, uint64_t> VmCowPages::ZeroPagesPreservingContentLocked(
+ktl::pair<zx_status_t, uint64_t> VmCowPages::ZeroPagesDirectUserPagerLocked(
     VmCowRange range, bool dirty_track, DeferredOps& deferred, MultiPageRequest* page_request) {
   // Validate inputs.
   DEBUG_ASSERT(range.is_page_aligned());
   DEBUG_ASSERT(range.IsBoundedBy(size_));
-  DEBUG_ASSERT(is_source_preserving_page_content());
+  DEBUG_ASSERT(page_source_type() == PageSourceType::UserPager);
 
   // Give us easier names for our range.
   const uint64_t start = range.offset;
@@ -4211,7 +4213,7 @@ void VmCowPages::ZeroPagesDirectSourceSuppliesZeroPagesLocked(VmCowRange range) 
   DEBUG_ASSERT(range.is_page_aligned());
   DEBUG_ASSERT(direct_source_supplies_zero_pages());
   DEBUG_ASSERT(!is_root_source_user_pager_backed());
-  DEBUG_ASSERT(!is_source_preserving_page_content());
+  DEBUG_ASSERT(page_source_type() == PageSourceType::Contiguous);
 
   // The presence of a page_source_ is inferred from
   // direct_source_supplies_zero_pages.
@@ -4243,7 +4245,7 @@ ktl::pair<zx_status_t, uint64_t> VmCowPages::ZeroPagesNoDirectPageSourceLocked(
 
   // If the VMO is directly backed by a page source, it should be zeroed by
   // ZeroPagesDirectSourceSuppliesZeroPagesLocked or
-  // ZeroPagesPreservingContentLocked.
+  // ZeroPagesDirectUserPagerLocked.
   DEBUG_ASSERT(!page_source_);
 
   // Since there is no direct page_source_, it is always safe to decommit zero
@@ -4471,9 +4473,10 @@ ktl::pair<zx_status_t, uint64_t> VmCowPages::ZeroPagesLocked(VmCowRange range, b
   // This function is only valid on a visible node as it will not handle zeroing children.
   DEBUG_ASSERT(!is_hidden());
 
-  // If the VMO is directly backed by a page source that preserves content, it should be the root
+  // If the VMO is directly backed by a user pager, it should be the root
   // VMO of the hierarchy.
-  DEBUG_ASSERT(!is_source_preserving_page_content() || !parent_);
+  DEBUG_ASSERT(page_source_type() == PageSourceType::Anonymous ||
+               page_source_type() == PageSourceType::Contiguous || !parent_);
 
   // The methods we call below will call RangeChangeUpdateLocked themselves if
   // needed.
@@ -4484,15 +4487,15 @@ ktl::pair<zx_status_t, uint64_t> VmCowPages::ZeroPagesLocked(VmCowRange range, b
     return {ZX_OK, range.len};
   }
 
-  // If the page source preserves content, we can perform efficient zeroing by inserting dirty zero
-  // intervals. Handle this case separately.
-  if (is_source_preserving_page_content()) {
-    return ZeroPagesPreservingContentLocked(range, dirty_track, deferred, page_request);
+  if (page_source_type() == PageSourceType::UserPager) {
+    // We can perform efficient zeroing by inserting dirty zero intervals.
+    // Handle this case separately.
+    return ZeroPagesDirectUserPagerLocked(range, dirty_track, deferred, page_request);
   }
 
   // We already handled the non-user-pager and user-pager backed cases, so
   // there must be no pager.
-  DEBUG_ASSERT(!page_source_);
+  DEBUG_ASSERT(!page_source_ && page_source_type() == PageSourceType::Anonymous);
   return ZeroPagesNoDirectPageSourceLocked(range, deferred, page_request);
 }
 
@@ -4502,7 +4505,7 @@ void VmCowPages::MoveToPinnedLocked(vm_page_t* page, uint64_t offset) {
 
 void VmCowPages::MoveToNotPinnedLocked(vm_page_t* page, uint64_t offset) {
   PageQueues* pq = pmm_page_queues();
-  if (is_source_preserving_page_content()) {
+  if (page_source_type() == PageSourceType::UserPager) {
     DEBUG_ASSERT(is_page_dirty_tracked(page));
     // We can only move Clean pages to the pager backed queues as they track age information for
     // eviction; only Clean pages can be evicted. Pages in AwaitingClean and Dirty are protected
@@ -4552,7 +4555,7 @@ void VmCowPages::MoveToNotPinnedLocked(vm_page_t* page, uint64_t offset) {
 
 void VmCowPages::SetNotPinnedLocked(vm_page_t* page, uint64_t offset) {
   PageQueues* pq = pmm_page_queues();
-  if (is_source_preserving_page_content()) {
+  if (page_source_type() == PageSourceType::UserPager) {
     DEBUG_ASSERT(is_page_dirty_tracked(page));
     // We can only move Clean pages to the pager backed queues as they track age information for
     // eviction; only Clean pages can be evicted. Pages in AwaitingClean and Dirty are protected
@@ -4570,6 +4573,8 @@ void VmCowPages::SetNotPinnedLocked(vm_page_t* page, uint64_t offset) {
       pq->SetPagerBackedDirty(page, this, offset);
     }
   } else {
+    DEBUG_ASSERT(page_source_type() == PageSourceType::Anonymous ||
+                 page_source_type() == PageSourceType::Contiguous);
     // Place pages from contiguous VMOs in the wired queue, as they are notionally pinned until the
     // owner explicitly releases them.
     if (can_decommit_zero_pages()) {
@@ -5144,7 +5149,7 @@ void VmCowPages::InvalidateDirtyRequestsLocked(uint64_t offset, uint64_t len) {
   DEBUG_ASSERT(IsPageRounded(len));
   DEBUG_ASSERT(InRange(offset, len, size_));
 
-  DEBUG_ASSERT(is_source_preserving_page_content());
+  DEBUG_ASSERT(page_source_type() == PageSourceType::UserPager);
   DEBUG_ASSERT(page_source_->ShouldTrapDirtyTransitions());
 
   const uint64_t start = offset;
@@ -5252,14 +5257,15 @@ zx_status_t VmCowPages::Resize(uint64_t s) {
         // If DIRTY requests are supported, also tell the page source that any non-Dirty pages that
         // are now out-of-bounds were dirtied (without actually dirtying them), to ensure that any
         // threads blocked on DIRTY requests for those pages get woken up.
-        if (is_source_preserving_page_content() && page_source_->ShouldTrapDirtyTransitions()) {
+        if (page_source_type() == PageSourceType::UserPager &&
+            page_source_->ShouldTrapDirtyTransitions()) {
           InvalidateDirtyRequestsLocked(start, len);
         }
       }
 
       // If pager-backed and the new size falls partway in an interval, we will need to clip the
       // interval.
-      if (is_source_preserving_page_content()) {
+      if (page_source_type() == PageSourceType::UserPager) {
         // Check if the first populated slot we find in the now-invalid range is an interval end.
         uint64_t interval_end = UINT64_MAX;
         zx_status_t status = page_list_.ForEveryPageInRange(
@@ -5322,7 +5328,7 @@ zx_status_t VmCowPages::Resize(uint64_t s) {
       RangeChangeUpdateLocked(VmCowRange(start, len), RangeChangeOp::Unmap, &deferred);
 
       // If pager-backed, need to insert a dirty zero interval beyond the old size.
-      if (is_source_preserving_page_content()) {
+      if (page_source_type() == PageSourceType::UserPager) {
         zx_status_t status =
             page_list_.AddZeroInterval(start, end, VmPageOrMarker::IntervalDirtyState::Dirty);
         if (status != ZX_OK) {
@@ -5712,7 +5718,7 @@ zx_status_t VmCowPages::TakePages(VmCowRange range, uint64_t splice_offset, VmPa
 zx_status_t VmCowPages::ProcessPagesForSupply(VmPageSpliceList* pages) {
   // With a page source only actual pages are supported, so convert references to real pages.
   if (page_source_) {
-    DEBUG_ASSERT(is_source_preserving_page_content());
+    DEBUG_ASSERT(page_source_type() == PageSourceType::UserPager);
     uint64_t processed = 0;
     zx_status_t status = ZX_OK;
     __UNINITIALIZED AnonymousPageRequest page_request;
@@ -5872,7 +5878,7 @@ zx_status_t VmCowPages::SupplyPagesLocked(VmCowRange range, VmPageSpliceList* pa
         const uint64_t dst_offset = start + src_offset;
 
         // A newly supplied page starts off as Clean.
-        if (slot.IsPage() && is_source_preserving_page_content()) {
+        if (slot.IsPage() && page_source_type() == PageSourceType::UserPager) {
           UpdateDirtyStateLocked(slot.Page(), dst_offset, DirtyState::Clean,
                                  /*is_pending_add=*/true);
         }
@@ -6021,7 +6027,7 @@ zx_status_t VmCowPages::DirtyPages(VmCowRange range, list_node_t* alloc_list,
   if (!page_source_->ShouldTrapDirtyTransitions()) {
     return ZX_ERR_NOT_SUPPORTED;
   }
-  DEBUG_ASSERT(is_source_preserving_page_content());
+  DEBUG_ASSERT(page_source_type() == PageSourceType::UserPager);
 
   const uint64_t start_offset = range.offset;
   const uint64_t end_offset = range.end();
@@ -6309,8 +6315,8 @@ zx_status_t VmCowPages::EnumerateDirtyRangesLocked(VmCowRange range,
                                                    DirtyRangeEnumerateFunction&& dirty_range_fn) {
   canary_.Assert();
 
-  // Dirty pages are only tracked if the page source preserves content.
-  if (!is_source_preserving_page_content()) {
+  // Dirty pages are only tracked if the page source is a user pager.
+  if (page_source_type() != PageSourceType::UserPager) {
     return ZX_ERR_NOT_SUPPORTED;
   }
 
@@ -6375,7 +6381,7 @@ zx_status_t VmCowPages::WritebackBeginLocked(VmCowRange range, bool is_zero_rang
     return ZX_ERR_OUT_OF_RANGE;
   }
 
-  if (!is_source_preserving_page_content()) {
+  if (page_source_type() != PageSourceType::UserPager) {
     return ZX_ERR_NOT_SUPPORTED;
   }
 
@@ -6503,7 +6509,7 @@ zx_status_t VmCowPages::WritebackEndLocked(VmCowRange range) {
     return ZX_ERR_OUT_OF_RANGE;
   }
 
-  if (!is_source_preserving_page_content()) {
+  if (page_source_type() != PageSourceType::UserPager) {
     return ZX_ERR_NOT_SUPPORTED;
   }
 
@@ -6626,11 +6632,10 @@ void VmCowPages::DetachSource() {
   page_source_->Detach();
 
   // We would like to remove all committed pages so that all future page faults on this VMO and its
-  // clones can fail in a deterministic manner. However, if the page source is preserving content
-  // (is a userpager), we need to hold on to un-Clean (Dirty and AwaitingClean pages) so that they
-  // can be written back by the page source. If the page source is not preserving content, its pages
-  // will not be dirty tracked to begin with i.e. their dirty state will be Untracked, so we will
-  // end up removing all pages.
+  // clones can fail in a deterministic manner. However, if the page source is a userpager, we need
+  // to hold on to un-Clean (Dirty and AwaitingClean pages) so that they can be written back by the
+  // page source. If the page source is not a userpager, its pages will not be dirty tracked
+  // to begin with i.e. their dirty state will be Untracked, so we will end up removing all pages.
 
   // We should only be removing pages from the root VMO.
   DEBUG_ASSERT(!parent_);
@@ -7605,9 +7610,10 @@ bool VmCowPages::DebugValidateZeroIntervalsLocked() const {
   canary_.Assert();
   bool in_interval = false;
   auto dirty_state = VmPageOrMarker::IntervalDirtyState::Untracked;
-  zx_status_t status = page_list_.ForEveryPage(
-      [&in_interval, &dirty_state, pager_backed = is_source_preserving_page_content()](
-          const VmPageOrMarker* p, uint64_t off) {
+  zx_status_t status =
+      page_list_.ForEveryPage([&in_interval, &dirty_state,
+                               pager_backed = (page_source_type() == PageSourceType::UserPager)](
+                                  const VmPageOrMarker* p, uint64_t off) {
         if (!pager_backed) {
           if (p->IsInterval()) {
             dprintf(INFO, "found interval at offset 0x%" PRIx64 " in non pager backed vmo\n", off);
