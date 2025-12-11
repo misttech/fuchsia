@@ -493,10 +493,14 @@ config("optimize_size") {
 
   rustflags = [ "-Copt-level=s" ]
 
-  configs = [
-    ":linker_string_merging",
-    ":bp-compression-sort",
-  ]
+  configs = [ ":linker_string_merging" ]
+
+  # Enable LLD's Balanced Partitioning (BP) to reorder functions for better
+  # binary compression. This optimization is specific to the ELF linker (ld.lld)
+  # and is not supported by the Windows/COFF linker (lld-link) used for EFI.
+  if (is_elf) {
+    configs += [ ":bp-compression-sort" ]
+  }
 }
 
 config("optimize_size_thinlto") {
