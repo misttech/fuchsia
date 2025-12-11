@@ -9,6 +9,7 @@
 #include <lib/driver_test_realm/realm_builder/cpp/builder.h>
 #include <lib/driver_test_realm/src/internal_server.h>
 #include <lib/fdio/directory.h>
+#include <lib/sync/cpp/completion.h>
 
 namespace driver_test_realm {
 
@@ -739,6 +740,13 @@ zx::result<fuchsia_driver_development::NodeInfo> WaitForNode(
   }
 
   return zx::error(ZX_ERR_NOT_FOUND);
+}
+
+void ShutdownRealm(component_testing::RealmRoot& realm_root) {
+  libsync::Completion completion;
+  realm_root.Teardown(
+      [&completion](fit::result<fuchsia::component::Error>) { completion.Signal(); });
+  completion.Wait();
 }
 
 }  // namespace driver_test_realm
