@@ -817,7 +817,6 @@ impl<T> RefInner<T> {
     }
 }
 
-make_ownership_types!(ByRef, &Self);
 make_ownership_types!(ByMut, &mut Self);
 make_ownership_types!(, Self);
 
@@ -886,10 +885,6 @@ mod test {
     #[derive(Default)]
     struct Data;
 
-    impl ReleasableByRef for Data {
-        type Context<'a> = ();
-        fn release<'a>(&self, _: ()) {}
-    }
     impl ReleasableByMut for Data {
         type Context<'a> = ();
         fn release<'a>(&mut self, _: ()) {}
@@ -1005,14 +1000,6 @@ mod test {
     #[should_panic]
     fn test_unrelease_release_guard() {
         let _value = ReleaseGuard::<Data>::default();
-    }
-
-    #[::fuchsia::test]
-    #[should_panic]
-    fn test_double_release_release_guard() {
-        let value = ReleaseGuard::<Data>::default();
-        ReleasableByRef::release(&value, ());
-        ReleasableByRef::release(&value, ());
     }
 
     #[::fuchsia::test]
