@@ -610,7 +610,7 @@ template("_bind_library_rust") {
       non_rust_deps = [ ":${rust_file_gen_target}" ]
     }
 
-    edition = "2018"
+    edition = "2024"
     name = "bind_${library_name_underscore}"
     output_dir = crate_output_directory
     sources = [ rust_file ]

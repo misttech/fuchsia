@@ -40,7 +40,7 @@ Create a new component project at `examples/fidl/rust/client_sync`:
    # Declare an executable for the client.
    rustc_binary("bin") {
      name = "fidl_echo_rust_client_sync"
-     edition = "2021"
+     edition = "2024"
 
      sources = [ "src/main.rs" ]
    }

@@ -196,7 +196,7 @@ template("fidl_rust_next") {
       name = _crate_name
       output_dir = "$target_out_dir/$target_name"
       version = "0.1.0"
-      edition = "2018"
+      edition = "2024"
       disable_clippy = true
 
       deps = [

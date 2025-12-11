@@ -28,7 +28,7 @@ template("banjo_rust_library") {
   rustc_library(rustc_target_name) {
     name = underscore_name
     version = "0.1.0"
-    edition = "2018"
+    edition = "2024"
     disable_clippy = true
     forward_variables_from(invoker, [ "testonly" ])
     deps = [

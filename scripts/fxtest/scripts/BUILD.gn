@@ -40,7 +40,7 @@ if (is_host) {
   }
 
   rustc_binary("dldist") {
-    edition = "2021"
+    edition = "2024"
     source_root = "dldist.rs"
     with_unit_tests = true
     sources = [ "dldist.rs" ]

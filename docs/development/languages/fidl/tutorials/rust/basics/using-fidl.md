@@ -45,7 +45,7 @@ rm -r examples/fidl/rust/fidl_crates/*
    {% includecode gerrit_repo="fuchsia/fuchsia" gerrit_path="examples/fidl/rust/fidl_crates/BUILD.gn" region_tag="imports" %}
 
    rustc_binary("fidl_crates_bin") {
-     edition = "2021"
+     edition = "2024"
      sources = [ "src/main.rs" ]
    }
 
@@ -94,7 +94,7 @@ target should look like:
 
 ```gn
 rustc_binary("fidl_crates_bin") {
-  edition = "2021"
+  edition = "2024"
   deps = [ "//examples/fidl/fuchsia.examples:fuchsia.examples_rust" ]
 
   sources = [ "src/main.rs" ]

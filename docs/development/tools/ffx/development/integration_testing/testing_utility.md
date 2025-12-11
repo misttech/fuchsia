@@ -27,7 +27,7 @@ import("//build/rust/rustc_binary.gni")
 if (is_host) {
   rustc_test("ffx_<something>_test") {
     testonly = true
-    edition = "2021"
+    edition = "2024"
     source_root = "src/tests.rs"
 
     sources = [ "src/tests.rs" ]

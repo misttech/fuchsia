@@ -574,7 +574,7 @@ template("fuchsia_structured_config_rust_lib") {
                              "testonly",
                              "visibility",
                            ])
-    edition = "2018"
+    edition = "2024"
     sources = [ rust_source_file ]
     source_root = rust_source_file
     deps = [
