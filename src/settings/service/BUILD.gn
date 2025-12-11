@@ -26,14 +26,9 @@ icu_rustc_library("lib") {
   with_unit_tests = true
   edition = "2024"
 
-  icu_deps = [
-    "//src/lib/icu_data/rust/icu_data",
-    "//third_party/rust_crates:rust_icu_uenum-v5_4_0",
-    "//third_party/rust_crates:rust_icu_uloc-v5_4_0",
-  ]
+  icu_deps = [ "//src/settings/intl:settings_intl" ]
 
   deps = [
-    "//sdk/fidl/fuchsia.intl:fuchsia.intl_rust",
     "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
     "//sdk/fidl/fuchsia.media:fuchsia.media_rust",
     "//sdk/fidl/fuchsia.media.audio:fuchsia.media.audio_rust",
@@ -148,10 +143,6 @@ icu_rustc_library("lib") {
     "src/input/input_test_environment.rs",
     "src/input/input_tests.rs",
     "src/input/types.rs",
-    "src/intl.rs",
-    "src/intl/intl_controller.rs",
-    "src/intl/intl_fidl_handler.rs",
-    "src/intl/types.rs",
     "src/lib.rs",
     "src/migration.rs",
     "src/storage_migrations.rs",

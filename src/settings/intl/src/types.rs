@@ -131,7 +131,7 @@ impl From<HourCycle> for fidl_fuchsia_settings::HourCycle {
 
 #[cfg(test)]
 mod tests {
-    use crate::intl::types::{HourCycle, IntlInfo, LocaleId, TemperatureUnit};
+    use super::*;
     use fidl_fuchsia_settings::IntlSettings;
     use settings_storage::fidl_storage::FidlStorageConvertible;
 

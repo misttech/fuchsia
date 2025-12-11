@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use super::intl_fidl_handler::Publisher;
-use crate::intl::types::{HourCycle, IntlInfo, LocaleId, TemperatureUnit};
+use crate::intl_fidl_handler::Publisher;
+use crate::types::{HourCycle, IntlInfo, LocaleId, TemperatureUnit};
 use anyhow::Error;
 use futures::StreamExt;
 use futures::channel::mpsc::UnboundedReceiver;
@@ -162,7 +162,7 @@ impl IntlController {
         if let Some(time_zone_id) = &info.time_zone_id {
             // Make sure the given time zone ID is valid.
             if !self.time_zone_ids.contains(time_zone_id.as_str()) {
-                return Err(IntlError::InvalidArgument("timezone id", time_zone_id.into()));
+                return Err(IntlError::InvalidArgument("timezone id", time_zone_id.clone()));
             }
         }
 
@@ -175,18 +175,12 @@ impl IntlController {
                     Ok(parsed) => {
                         if parsed.label().is_empty() {
                             log::error!("Locale is invalid: {:?}", locale.id);
-                            return Err(IntlError::InvalidArgument(
-                                "locale id",
-                                locale.id.clone().into(),
-                            ));
+                            return Err(IntlError::InvalidArgument("locale id", locale.id.clone()));
                         }
                     }
                     Err(err) => {
                         log::error!("Error loading locale: {:?}", err);
-                        return Err(IntlError::InvalidArgument(
-                            "locale id",
-                            locale.id.clone().into(),
-                        ));
+                        return Err(IntlError::InvalidArgument("locale id", locale.id.clone()));
                     }
                 }
             }

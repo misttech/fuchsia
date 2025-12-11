@@ -15223,7 +15223,7 @@ icu_rustc_library("rust_icu_uenum-v5_4_0") {
 
   visibility = []
   visibility += [ ":*" ]
-  visibility += [ "//src/settings/service:*" ]
+  visibility += [ "//src/settings/intl:*" ]
 
   applicable_licenses = [ ":rust_icu_uenum-v5_4_0.license" ]
 }
@@ -15268,7 +15268,7 @@ icu_rustc_library("rust_icu_uloc-v5_4_0") {
   visibility = []
   visibility += [ ":*" ]
   visibility += [ "//src/lib/intl/lookup/rust:*" ]
-  visibility += [ "//src/settings/service:*" ]
+  visibility += [ "//src/settings/intl:*" ]
 
   applicable_licenses = [ ":rust_icu_uloc-v5_4_0.license" ]
 }

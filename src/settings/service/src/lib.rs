@@ -35,6 +35,7 @@ use settings_common::inspect::event::{
 };
 use settings_common::inspect::listener_logger::ListenerInspectLogger;
 use settings_common::service_context::{ExternalServiceEvent, GenerateService, ServiceContext};
+use settings_intl::intl_controller::IntlController;
 use settings_keyboard::keyboard_controller::KeyboardController;
 use settings_light::light_controller::LightController;
 use settings_night_mode::night_mode_controller::NightModeController;
@@ -58,7 +59,6 @@ use crate::display::display_controller::{DisplayController, ExternalBrightnessCo
 use crate::do_not_disturb::do_not_disturb_controller::DoNotDisturbController;
 use crate::ingress::fidl;
 use crate::input::input_controller::InputController;
-use crate::intl::intl_controller::IntlController;
 
 mod accessibility;
 pub mod audio;
@@ -67,7 +67,6 @@ pub mod display;
 mod do_not_disturb;
 mod factory_reset;
 pub mod input;
-mod intl;
 mod storage_migrations;
 
 pub mod agent;
@@ -817,12 +816,13 @@ impl<T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilder<T>
         }
 
         if components.contains(&SettingType::Intl) {
-            let intl::SetupResult { mut intl_fidl_handler, task } = intl::setup_intl_api(
-                Rc::clone(&device_storage_factory),
-                SettingValuePublisher::new(setting_value_tx.clone()),
-                UsagePublisher::new(usage_event_tx.clone(), Rc::clone(&listener_logger)),
-            )
-            .await;
+            let settings_intl::SetupResult { mut intl_fidl_handler, task } =
+                settings_intl::setup_intl_api(
+                    Rc::clone(&device_storage_factory),
+                    SettingValuePublisher::new(setting_value_tx.clone()),
+                    UsagePublisher::new(usage_event_tx.clone(), Rc::clone(&listener_logger)),
+                )
+                .await;
             tasks.push(task);
             let _ = service_dir.add_fidl_service(move |stream: IntlRequestStream| {
                 intl_fidl_handler.handle_stream(stream)

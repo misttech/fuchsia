@@ -962,7 +962,7 @@ configs = [ "//src/lib/icu:version" ]
 target_renaming = { import = "//build/icu/icu_rustc_library.gni", rule_name = "icu_rustc_library" }
 visibility = [
   ":*",
-  "//src/settings/service:*",
+  "//src/settings/intl:*",
 ]
 [gn.package.rust_icu_uloc."5.4.0"]
 configs = [ "//src/lib/icu:version" ]
@@ -970,7 +970,7 @@ target_renaming = { import = "//build/icu/icu_rustc_library.gni", rule_name = "i
 visibility = [
   ":*",
   "//src/lib/intl/lookup/rust:*",
-  "//src/settings/service:*",
+  "//src/settings/intl:*",
 ]
 [gn.package.rust_icu_unorm2."5.4.0"]
 configs = [ "//src/lib/icu:version" ]
