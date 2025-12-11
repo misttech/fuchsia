@@ -8,6 +8,7 @@ Base Class for Defining Common WiFi Test Functionality
 """
 
 import copy
+import logging
 import os
 from typing import Any, TypedDict, TypeVar
 
@@ -38,6 +39,7 @@ from antlion.test_utils.net import net_test_utils as nutils
 from antlion.test_utils.wifi import wifi_test_utils as wutils
 from antlion.types import Controller
 from antlion.validation import MapValidator
+from honeydew.typing import custom_types
 from mobly import signals
 from mobly.base_test import BaseTestClass
 from mobly.config_parser import TestRunConfig
@@ -45,6 +47,8 @@ from mobly.records import TestResultRecord
 
 WifiEnums = wutils.WifiEnums
 MAX_AP_COUNT = 2
+
+_LOGGER: logging.Logger = logging.getLogger(__name__)
 
 
 class Network(TypedDict):
@@ -166,6 +170,10 @@ class WifiBaseTest(BaseTestClass):
             wutils.set_wifi_country_code(ad, self.country_code)
 
     def setup_test(self) -> None:
+        self.write_to_device_logs(
+            f"Started executing '{self.current_test_info.name}'",
+            custom_types.LEVEL.INFO,
+        )
         if self.android_devices and self.cnss_diag_file and self.pixel_models:
             wutils.start_cnss_diags(
                 self.android_devices, self.cnss_diag_file, self.pixel_models
@@ -180,6 +188,10 @@ class WifiBaseTest(BaseTestClass):
             )
 
     def teardown_test(self) -> None:
+        self.write_to_device_logs(
+            f"Finished executing '{self.current_test_info.name}'",
+            custom_types.LEVEL.INFO,
+        )
         if self.android_devices and self.cnss_diag_file and self.pixel_models:
             wutils.stop_cnss_diags(self.android_devices, self.pixel_models)
             for proc in self.tcpdump_proc:
@@ -295,6 +307,23 @@ class WifiBaseTest(BaseTestClass):
             f"Invalid device_type specified: {device_type.__name__}. "
             "Expected FuchsiaDevice or AndroidDevice."
         )
+
+    def write_to_device_logs(
+        self, message: str, level: custom_types.LEVEL
+    ) -> None:
+        """Writes a message to device logs."""
+        for fd in self.fuchsia_devices:
+            try:
+                fd.honeydew_fd.log_message_to_device(
+                    message=message, level=level
+                )
+            except Exception as err:  # pylint: disable=broad-except
+                _LOGGER.exception(
+                    "Unable to log message '%s' on '%s'. Failed with error: %s",
+                    message,
+                    fd.name,
+                    err,
+                )
 
     def download_logs(self) -> None:
         """Downloads the DHCP and hostapad logs from the access_point.
