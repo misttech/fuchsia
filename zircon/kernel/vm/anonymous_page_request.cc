@@ -12,6 +12,7 @@
 #include <kernel/thread.h>
 #include <vm/pmm.h>
 #include <vm/scanner.h>
+#include <vm/vm.h>
 
 namespace {
 // Atomic token used to ensure that only one thread performs the informational dump so that in the
@@ -22,6 +23,8 @@ constinit ktl::atomic<bool> dump_info_before_panic_token = true;
 zx::result<> AnonymousPageRequest::Allocate() {
   DEBUG_ASSERT(active_);
   DEBUG_ASSERT(!has_page());
+
+  VM_KTRACE_DURATION(1, "AnonymousPageRequest::Allocate");
 
   // Although the pmm_wait_till_free_pages call will unblock based on bounded kernel action, and not
   // some unbounded user request, the kernel might need to acquire arbitrary locks to achieve this.
