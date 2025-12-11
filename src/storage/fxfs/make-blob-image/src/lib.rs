@@ -183,6 +183,7 @@ impl FxBlobBuilder {
             .open(device)
             .await
             .context("Failed to format filesystem")?;
+        filesystem.enable_allocations();
         let root_volume = root_volume(filesystem.clone()).await?;
         let vol = root_volume
             .new_volume(BLOB_VOLUME_NAME, NewChildStoreOptions::default())
