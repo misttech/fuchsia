@@ -45,6 +45,12 @@ impl ExtensibleBitmap {
         false
     }
 
+    /// Returns an iterator that yields the indices of this [`ExtensibleBitmap`]'s set bits.
+    pub fn indices_of_set_bits<'a>(&'a self) -> impl Iterator<Item = u32> {
+        ExtensibleBitmapSpansIterator::<'a> { bitmap: self, map_item: 0, next_bit: 0 }
+            .flat_map(|span| span.low..=span.high)
+    }
+
     /// Returns an iterator that returns a set of spans of continuous set bits.
     /// Each span consists of inclusive low and high bit indexes (i.e. zero-based).
     pub fn spans<'a>(&'a self) -> ExtensibleBitmapSpansIterator<'a> {

@@ -1370,9 +1370,7 @@ pub(super) struct MlsLevel {
 
 impl MlsLevel {
     pub fn category_ids(&self) -> impl Iterator<Item = CategoryId> + use<'_> {
-        self.categories.spans().flat_map(|span| {
-            (span.low..=span.high).map(|i| CategoryId(NonZeroU32::new(i + 1).unwrap()))
-        })
+        self.categories.indices_of_set_bits().map(|i| CategoryId(NonZeroU32::new(i + 1).unwrap()))
     }
 }
 

@@ -202,8 +202,7 @@ impl From<&Operand<'_>> for ContextOperand {
             Operand::TypeIds(type_ids) => Self::TypeIds(
                 type_ids
                     .underlying
-                    .spans()
-                    .flat_map(|span| span.low..=span.high)
+                    .indices_of_set_bits()
                     .map(|i| TypeId(NonZeroU32::new(i + 1).unwrap()))
                     .collect(),
             ),
@@ -377,10 +376,7 @@ impl<'a> ContextExpression<'a> {
         source: &SecurityContext,
         target: &SecurityContext,
     ) -> Result<(Operand<'a>, Operand<'a>), ConstraintError> {
-        let ids = names
-            .spans()
-            .flat_map(|span| span.low..=span.high)
-            .map(|i| NonZeroU32::new(i + 1).unwrap());
+        let ids = names.indices_of_set_bits().map(|i| NonZeroU32::new(i + 1).unwrap());
 
         if operand_type & CONSTRAINT_EXPR_WITH_NAMES_OPERAND_TYPE_TARGET_MASK == 0 {
             match operand_type {

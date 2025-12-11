@@ -166,41 +166,37 @@ impl ParsedPolicy {
         let target_attribute_bitmap: &ExtensibleBitmap =
             &self.attribute_maps[(target_type.0.get() - 1) as usize];
 
-        for source_span in source_attribute_bitmap.spans() {
-            for source_bit_index in source_span.low..=source_span.high {
-                let source_id = TypeId(NonZeroU32::new(source_bit_index + 1).unwrap());
-                for target_span in target_attribute_bitmap.spans() {
-                    for target_bit_index in target_span.low..=target_span.high {
-                        let target_id = TypeId(NonZeroU32::new(target_bit_index + 1).unwrap());
+        for source_bit_index in source_attribute_bitmap.indices_of_set_bits() {
+            let source_id = TypeId(NonZeroU32::new(source_bit_index + 1).unwrap());
+            for target_bit_index in target_attribute_bitmap.indices_of_set_bits() {
+                let target_id = TypeId(NonZeroU32::new(target_bit_index + 1).unwrap());
 
-                        if let Some(allow_rule) = self.find_access_vector_rule(
-                            source_id,
-                            target_id,
-                            target_class_id,
-                            ACCESS_VECTOR_RULE_TYPE_ALLOW,
-                        ) {
-                            // `access_vector` has bits set for each permission allowed by this rule.
-                            computed_access_vector |= allow_rule.access_vector().unwrap();
-                        }
-                        if let Some(auditallow_rule) = self.find_access_vector_rule(
-                            source_id,
-                            target_id,
-                            target_class_id,
-                            ACCESS_VECTOR_RULE_TYPE_AUDITALLOW,
-                        ) {
-                            // `access_vector` has bits set for each permission to audit when allowed.
-                            computed_audit_allow |= auditallow_rule.access_vector().unwrap();
-                        }
-                        if let Some(dontaudit_rule) = self.find_access_vector_rule(
-                            source_id,
-                            target_id,
-                            target_class_id,
-                            ACCESS_VECTOR_RULE_TYPE_DONTAUDIT,
-                        ) {
-                            // `access_vector` has bits cleared for each permission not to audit on denial.
-                            computed_audit_deny &= dontaudit_rule.access_vector().unwrap();
-                        }
-                    }
+                if let Some(allow_rule) = self.find_access_vector_rule(
+                    source_id,
+                    target_id,
+                    target_class_id,
+                    ACCESS_VECTOR_RULE_TYPE_ALLOW,
+                ) {
+                    // `access_vector` has bits set for each permission allowed by this rule.
+                    computed_access_vector |= allow_rule.access_vector().unwrap();
+                }
+                if let Some(auditallow_rule) = self.find_access_vector_rule(
+                    source_id,
+                    target_id,
+                    target_class_id,
+                    ACCESS_VECTOR_RULE_TYPE_AUDITALLOW,
+                ) {
+                    // `access_vector` has bits set for each permission to audit when allowed.
+                    computed_audit_allow |= auditallow_rule.access_vector().unwrap();
+                }
+                if let Some(dontaudit_rule) = self.find_access_vector_rule(
+                    source_id,
+                    target_id,
+                    target_class_id,
+                    ACCESS_VECTOR_RULE_TYPE_DONTAUDIT,
+                ) {
+                    // `access_vector` has bits cleared for each permission not to audit on denial.
+                    computed_audit_deny &= dontaudit_rule.access_vector().unwrap();
                 }
             }
         }
