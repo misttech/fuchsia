@@ -1887,7 +1887,8 @@ zx::result<VmCowPages::LockedRefPtr> VmCowPages::CreateCloneLocked(SnapshotType 
   // them. Once there is a cow hierarchy tracking exactly what node a page was from to free it is
   // not performed, and it is assumed that therefore that we do not need to free owned pages to
   // their 'correct' object.
-  ASSERT(!is_source_handling_free());
+  ASSERT(page_source_type() == PageSourceType::Anonymous ||
+         page_source_type() == PageSourceType::UserPager);
 
   if (unidirectional) {
     ParentAndRange child_range = FindParentAndRangeForCloneLocked(range.offset, range.len, false);

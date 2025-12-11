@@ -838,10 +838,12 @@ class VmCowPages final : public fbl::ContainableBaseClasses<
   // Callers should avoid calling pmm_free() directly from inside VmCowPages, and instead should use
   // this helper.
   void FreePages(list_node* pages) {
-    if (!is_source_handling_free()) {
+    if (page_source_type() == PageSourceType::Anonymous ||
+        page_source_type() == PageSourceType::UserPager) {
       CacheFree(pages, should_delay_reuse_on_free());
       return;
     }
+    DEBUG_ASSERT(page_source_type() == PageSourceType::Contiguous);
     page_source_->FreePages(pages);
   }
 
@@ -857,10 +859,12 @@ class VmCowPages final : public fbl::ContainableBaseClasses<
   // should use this helper.
   void FreePage(vm_page_t* page) {
     DEBUG_ASSERT(!list_in_list(&page->queue_node));
-    if (!is_source_handling_free()) {
+    if (page_source_type() == PageSourceType::Anonymous ||
+        page_source_type() == PageSourceType::UserPager) {
       CacheFree(page, should_delay_reuse_on_free());
       return;
     }
+    DEBUG_ASSERT(page_source_type() == PageSourceType::Contiguous);
     list_node_t list;
     list_initialize(&list);
     list_add_tail(&list, &page->queue_node);
@@ -1476,12 +1480,6 @@ class VmCowPages final : public fbl::ContainableBaseClasses<
   // Helper to check whether the requested range for LockRangeLocked() / TryLockRangeLocked() /
   // UnlockRangeLocked() is valid.
   bool IsLockRangeValidLocked(VmCowRange range) const TA_REQ(lock());
-
-  bool is_source_handling_free() const {
-    // As specified in the PageSourceProperties, the page source handles free iff it is specifying
-    // specific pages.
-    return is_source_supplying_specific_physical_pages();
-  }
 
   // If page is still at offset, replace it with a different page.  If with_loaned is true, replace
   // with a loaned page.  If with_loaned is false, replace with a non-loaned page and a page_request
