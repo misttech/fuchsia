@@ -25,8 +25,9 @@
 use std::path::PathBuf;
 
 use anyhow::{Context, format_err};
+use fuchsia_sync::Mutex;
 use std::borrow::Cow;
-use std::sync::{Arc, LazyLock, Mutex, Weak};
+use std::sync::{Arc, LazyLock, Weak};
 use std::{env, fs, io};
 use thiserror::Error;
 use {rust_icu_common as icu, rust_icu_ucal as ucal, rust_icu_udata as udata};
@@ -130,7 +131,7 @@ impl Loader {
     ) -> Result<Self, Error> {
         // The lock contention should not be an issue.  Only a few calls (single digits) to this
         // function are expected.  So we take a write lock immmediately.
-        let mut l = REFCOUNT.lock().expect("refcount lock acquired");
+        let mut l = REFCOUNT.lock();
         match l.upgrade() {
             Some(_refs) => Ok(Loader { _refs }),
             None => {

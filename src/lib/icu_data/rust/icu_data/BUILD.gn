@@ -19,6 +19,7 @@ icu_rustc_library("icu_data") {
 
   deps = [
     "//sdk/rust/zx",
+    "//src/lib/fuchsia-sync",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:thiserror",
   ]
