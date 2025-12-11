@@ -5,7 +5,7 @@ use {
         self, WriteResult, Writer as CoreWriter,
         WriterBuilder as CoreWriterBuilder,
     },
-    serde::Serialize,
+    serde_core::Serialize,
 };
 
 use crate::{
@@ -1216,7 +1216,7 @@ impl Buffer {
 mod tests {
     use std::io::{self, Write};
 
-    use serde::{serde_if_integer128, Serialize};
+    use serde::Serialize;
 
     use crate::{
         byte_record::ByteRecord, error::ErrorKind, string_record::StringRecord,
@@ -1231,7 +1231,7 @@ mod tests {
     #[test]
     fn one_record() {
         let mut wtr = WriterBuilder::new().from_writer(vec![]);
-        wtr.write_record(&["a", "b", "c"]).unwrap();
+        wtr.write_record(["a", "b", "c"]).unwrap();
 
         assert_eq!(wtr_as_string(wtr), "a,b,c\n");
     }
@@ -1263,7 +1263,7 @@ mod tests {
     #[test]
     fn one_empty_record() {
         let mut wtr = WriterBuilder::new().from_writer(vec![]);
-        wtr.write_record(&[""]).unwrap();
+        wtr.write_record([""]).unwrap();
 
         assert_eq!(wtr_as_string(wtr), "\"\"\n");
     }
@@ -1279,8 +1279,8 @@ mod tests {
     #[test]
     fn two_empty_records() {
         let mut wtr = WriterBuilder::new().from_writer(vec![]);
-        wtr.write_record(&[""]).unwrap();
-        wtr.write_record(&[""]).unwrap();
+        wtr.write_record([""]).unwrap();
+        wtr.write_record([""]).unwrap();
 
         assert_eq!(wtr_as_string(wtr), "\"\"\n\"\"\n");
     }
@@ -1350,7 +1350,7 @@ mod tests {
         struct MarkWriteAndFlush(Vec<u8>);
 
         impl MarkWriteAndFlush {
-            fn to_str(self) -> String {
+            fn into_string(self) -> String {
                 String::from_utf8(self.0).unwrap()
             }
         }
@@ -1379,7 +1379,7 @@ mod tests {
         wtr.flush().unwrap();
         wtr.write_byte_record(&ByteRecord::from(vec!["e", "f"])).unwrap();
 
-        let got = wtr.into_inner().unwrap().to_str();
+        let got = wtr.into_inner().unwrap().into_string();
 
         // As the buffer size is 4 we should write each record separately, and
         // flush when explicitly called and implictly in into_inner.
@@ -1415,25 +1415,24 @@ mod tests {
         assert_eq!(wtr_as_string(wtr), "42,42.5,true\n");
     }
 
-    serde_if_integer128! {
-        #[test]
-        fn serialize_no_headers_128() {
-            #[derive(Serialize)]
-            struct Row {
-                foo: i128,
-                bar: f64,
-                baz: bool,
-            }
-
-            let mut wtr =
-                WriterBuilder::new().has_headers(false).from_writer(vec![]);
-            wtr.serialize(Row {
-                foo: 9_223_372_036_854_775_808,
-                bar: 42.5,
-                baz: true,
-            }).unwrap();
-            assert_eq!(wtr_as_string(wtr), "9223372036854775808,42.5,true\n");
+    #[test]
+    fn serialize_no_headers_128() {
+        #[derive(Serialize)]
+        struct Row {
+            foo: i128,
+            bar: f64,
+            baz: bool,
         }
+
+        let mut wtr =
+            WriterBuilder::new().has_headers(false).from_writer(vec![]);
+        wtr.serialize(Row {
+            foo: 9_223_372_036_854_775_808,
+            bar: 42.5,
+            baz: true,
+        })
+        .unwrap();
+        assert_eq!(wtr_as_string(wtr), "9223372036854775808,42.5,true\n");
     }
 
     #[test]
@@ -1447,7 +1446,7 @@ mod tests {
     fn comment_char_is_automatically_quoted() {
         let mut wtr =
             WriterBuilder::new().comment(Some(b'#')).from_writer(Vec::new());
-        wtr.write_record(&["# comment", "another"]).unwrap();
+        wtr.write_record(["# comment", "another"]).unwrap();
         let buf = wtr.into_inner().unwrap();
         assert_eq!(String::from_utf8(buf).unwrap(), "\"# comment\",another\n");
     }

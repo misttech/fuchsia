@@ -254,7 +254,7 @@ group("crypto-common") {
 }
 
 group("csv") {
-  public_deps = [ ":csv-v1_3_1" ]
+  public_deps = [ ":csv-v1_4_0" ]
 }
 
 group("darling") {
@@ -4659,7 +4659,7 @@ rustc_library("criterion-v0_2_11") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":csv-v1_3_1" ]
+  deps += [ ":csv-v1_4_0" ]
   deps += [ ":walkdir-v2_5_0" ]
   deps += [ ":atty-v0_2_11" ]
   deps += [ ":cast-v0_2_2" ]
@@ -5123,15 +5123,15 @@ rustc_macro("cstr-v0_2_12") {
   applicable_licenses = [ ":cstr-v0_2_12.license" ]
 }
 
-license("csv-v1_3_1.license") {
+license("csv-v1_4_0.license") {
   public_package_name = "csv"
   license_files = [ "//third_party/rust_crates/ask2patch/csv/LICENSE-MIT" ]
 }
 
-rustc_library("csv-v1_3_1") {
+rustc_library("csv-v1_4_0") {
   crate_name = "csv"
   source_root = "//third_party/rust_crates/ask2patch/csv/src/lib.rs"
-  output_name = "csv-ff1010399cb16e52"
+  output_name = "csv-2f37e1f9e7d61e45"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -5141,19 +5141,19 @@ rustc_library("csv-v1_3_1") {
   deps += [ ":csv-core-v0_1_12" ]
   deps += [ ":itoa-v1_0_15" ]
   deps += [ ":ryu-v1_0_3" ]
-  deps += [ ":serde-v1_0_228" ]
+  deps += [ ":serde_core-v1_0_228" ]
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=ff1010399cb16e52",
-    "-Cextra-filename=-ff1010399cb16e52",
+    "-Cmetadata=2f37e1f9e7d61e45",
+    "-Cextra-filename=-2f37e1f9e7d61e45",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":csv-v1_3_1.license" ]
+  applicable_licenses = [ ":csv-v1_4_0.license" ]
 }
 
 license("csv-core-v0_1_12.license") {
@@ -13048,7 +13048,7 @@ rustc_library("prettytable-rs-v0_8_0") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":csv-v1_3_1" ]
+  deps += [ ":csv-v1_4_0" ]
   deps += [ ":atty-v0_2_11" ]
   deps += [ ":encode_unicode-v0_3_6" ]
   deps += [ ":lazy_static-v1_5_0" ]

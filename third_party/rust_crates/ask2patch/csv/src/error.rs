@@ -40,10 +40,7 @@ impl Error {
     /// If this is true, the underlying `ErrorKind` is guaranteed to be
     /// `ErrorKind::Io`.
     pub fn is_io_error(&self) -> bool {
-        match *self.0 {
-            ErrorKind::Io(_) => true,
-            _ => false,
-        }
+        matches!(*self.0, ErrorKind::Io(_))
     }
 
     /// Return the position for this error, if one exists.
@@ -57,6 +54,7 @@ impl Error {
 
 /// The specific type of an error.
 #[derive(Debug)]
+#[non_exhaustive]
 pub enum ErrorKind {
     /// An I/O error that occurred while reading CSV data.
     Io(io::Error),
@@ -97,13 +95,6 @@ pub enum ErrorKind {
         /// The deserialization error.
         err: DeserializeError,
     },
-    /// Hints that destructuring should not be exhaustive.
-    ///
-    /// This enum may grow additional variants, so this makes sure clients
-    /// don't count on exhaustive matching. (Otherwise, adding a new variant
-    /// could break existing code.)
-    #[doc(hidden)]
-    __Nonexhaustive,
 }
 
 impl ErrorKind {
@@ -197,7 +188,6 @@ impl fmt::Display for Error {
                 pos.byte(),
                 err
             ),
-            _ => unreachable!(),
         }
     }
 }

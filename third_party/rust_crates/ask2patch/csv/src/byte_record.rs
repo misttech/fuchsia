@@ -5,7 +5,7 @@ use std::{
     result,
 };
 
-use serde::de::Deserialize;
+use serde_core::de::Deserialize;
 
 use crate::{
     deserializer::deserialize_byte_record,
@@ -50,7 +50,7 @@ impl<T: AsRef<[u8]>> PartialEq<Vec<T>> for ByteRecord {
     }
 }
 
-impl<'a, T: AsRef<[u8]>> PartialEq<Vec<T>> for &'a ByteRecord {
+impl<T: AsRef<[u8]>> PartialEq<Vec<T>> for &ByteRecord {
     fn eq(&self, other: &Vec<T>) -> bool {
         self.iter_eq(other)
     }
@@ -62,7 +62,7 @@ impl<T: AsRef<[u8]>> PartialEq<[T]> for ByteRecord {
     }
 }
 
-impl<'a, T: AsRef<[u8]>> PartialEq<[T]> for &'a ByteRecord {
+impl<T: AsRef<[u8]>> PartialEq<[T]> for &ByteRecord {
     fn eq(&self, other: &[T]) -> bool {
         self.iter_eq(other)
     }
@@ -251,7 +251,7 @@ impl ByteRecord {
     /// }
     /// ```
     #[inline]
-    pub fn iter(&self) -> ByteRecordIter {
+    pub fn iter(&self) -> ByteRecordIter<'_> {
         self.into_iter()
     }
 
@@ -698,7 +698,7 @@ impl Bounds {
     /// If there are no fields, this returns `0`.
     #[inline]
     fn end(&self) -> usize {
-        self.ends().last().map(|&i| i).unwrap_or(0)
+        self.ends().last().copied().unwrap_or(0)
     }
 
     /// Returns the number of fields in these bounds.

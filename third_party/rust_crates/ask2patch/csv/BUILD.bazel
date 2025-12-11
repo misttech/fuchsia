@@ -22,7 +22,7 @@ package_info(
     name = "package_info",
     package_name = "csv",
     package_url = "https://github.com/BurntSushi/rust-csv",
-    package_version = "1.3.1",
+    package_version = "1.4.0",
 )
 
 license(
@@ -72,11 +72,11 @@ rust_library(
         "@rules_rust//rust/platform:x86_64-unknown-linux-gnu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    version = "1.3.1",
+    version = "1.4.0",
     deps = [
         "//third_party/rust_crates/ask2patch/csv-core:csv_core",
         "//third_party/rust_crates/vendor/itoa-1.0.15:itoa",
         "//third_party/rust_crates/vendor/ryu-1.0.3:ryu",
-        "//third_party/rust_crates/vendor/serde-1.0.228:serde",
+        "//third_party/rust_crates/vendor/serde_core-1.0.228:serde_core",
     ],
 )

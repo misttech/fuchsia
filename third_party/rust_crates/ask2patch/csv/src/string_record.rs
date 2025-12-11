@@ -5,7 +5,7 @@ use std::{
     result, str,
 };
 
-use serde::de::Deserialize;
+use serde_core::de::Deserialize;
 
 use crate::{
     byte_record::{ByteRecord, ByteRecordIter, Position},
@@ -49,7 +49,7 @@ impl<T: AsRef<[u8]>> PartialEq<Vec<T>> for StringRecord {
     }
 }
 
-impl<'a, T: AsRef<[u8]>> PartialEq<Vec<T>> for &'a StringRecord {
+impl<T: AsRef<[u8]>> PartialEq<Vec<T>> for &StringRecord {
     fn eq(&self, other: &Vec<T>) -> bool {
         self.0.iter_eq(other)
     }
@@ -61,7 +61,7 @@ impl<T: AsRef<[u8]>> PartialEq<[T]> for StringRecord {
     }
 }
 
-impl<'a, T: AsRef<[u8]>> PartialEq<[T]> for &'a StringRecord {
+impl<T: AsRef<[u8]>> PartialEq<[T]> for &StringRecord {
     fn eq(&self, other: &[T]) -> bool {
         self.0.iter_eq(other)
     }
@@ -311,7 +311,7 @@ impl StringRecord {
     /// }
     /// ```
     #[inline]
-    pub fn iter(&self) -> StringRecordIter {
+    pub fn iter(&self) -> StringRecordIter<'_> {
         self.into_iter()
     }
 
@@ -664,7 +664,7 @@ impl ops::Index<usize> for StringRecord {
 impl<T: AsRef<str>> From<Vec<T>> for StringRecord {
     #[inline]
     fn from(xs: Vec<T>) -> StringRecord {
-        StringRecord::from_iter(xs.into_iter())
+        StringRecord::from_iter(xs)
     }
 }
 

@@ -555,7 +555,7 @@ StringRecord(["Oakman", "AL", "", "33.7133333", "-87.3886111"])
 ```
 
 If you ever need to access the header record directly, then you can use the
-[`Reader::header`](../struct.Reader.html#method.headers)
+[`Reader::headers`](../struct.Reader.html#method.headers)
 method like so:
 
 ```no_run
@@ -564,17 +564,13 @@ method like so:
 #
 fn run() -> Result<(), Box<dyn Error>> {
     let mut rdr = csv::Reader::from_reader(io::stdin());
-    {
-        // We nest this call in its own scope because of lifetimes.
-        let headers = rdr.headers()?;
-        println!("{:?}", headers);
-    }
+    let headers = rdr.headers()?;
+    println!("{:?}", headers);
     for result in rdr.records() {
         let record = result?;
         println!("{:?}", record);
     }
-    // We can ask for the headers at any time. There's no need to nest this
-    // call in its own scope because we never try to borrow the reader again.
+    // We can ask for the headers at any time.
     let headers = rdr.headers()?;
     println!("{:?}", headers);
     Ok(())
@@ -587,24 +583,6 @@ fn run() -> Result<(), Box<dyn Error>> {
 #     }
 # }
 ```
-
-One interesting thing to note in this example is that we put the call to
-`rdr.headers()` in its own scope. We do this because `rdr.headers()` returns
-a *borrow* of the reader's internal header state. The nested scope in this
-code allows the borrow to end before we try to iterate over the records. If
-we didn't nest the call to `rdr.headers()` in its own scope, then the code
-wouldn't compile because we cannot borrow the reader's headers at the same time
-that we try to borrow the reader to iterate over its records.
-
-Another way of solving this problem is to *clone* the header record:
-
-```ignore
-let headers = rdr.headers()?.clone();
-```
-
-This converts it from a borrow of the CSV reader to a new owned value. This
-makes the code a bit easier to read, but at the cost of copying the header
-record into a new allocation.
 
 ## Delimiters, quotes and variable length records
 
@@ -1153,10 +1131,10 @@ fn run() -> Result<(), Box<dyn Error>> {
     // Since we're writing records manually, we must explicitly write our
     // header record. A header record is written the same way that other
     // records are written.
-    wtr.write_record(&["City", "State", "Population", "Latitude", "Longitude"])?;
-    wtr.write_record(&["Davidsons Landing", "AK", "", "65.2419444", "-165.2716667"])?;
-    wtr.write_record(&["Kenai", "AK", "7610", "60.5544444", "-151.2583333"])?;
-    wtr.write_record(&["Oakman", "AL", "", "33.7133333", "-87.3886111"])?;
+    wtr.write_record(["City", "State", "Population", "Latitude", "Longitude"])?;
+    wtr.write_record(["Davidsons Landing", "AK", "", "65.2419444", "-165.2716667"])?;
+    wtr.write_record(["Kenai", "AK", "7610", "60.5544444", "-151.2583333"])?;
+    wtr.write_record(["Oakman", "AL", "", "33.7133333", "-87.3886111"])?;
 
     // A CSV writer maintains an internal buffer, so it's important
     // to flush the buffer when you're done.
@@ -1223,7 +1201,7 @@ Now, let's apply our new found understanding of the type signature of
 `write_record`. If you recall, in our previous example, we used it like so:
 
 ```ignore
-wtr.write_record(&["field 1", "field 2", "etc"])?;
+wtr.write_record(["field 1", "field 2", "etc"])?;
 ```
 
 So how do the types match up? Well, the type of each of our fields in this
@@ -1240,6 +1218,8 @@ Here are a few more examples of ways you can call `write_record`:
 # let mut wtr = csv::Writer::from_writer(vec![]);
 // A slice of byte strings.
 wtr.write_record(&[b"a", b"b", b"c"]);
+// An array of byte strings.
+wtr.write_record([b"a", b"b", b"c"]);
 // A vector.
 wtr.write_record(vec!["a", "b", "c"]);
 // A string record.
@@ -1264,10 +1244,10 @@ fn run() -> Result<(), Box<dyn Error>> {
     let file_path = get_first_arg()?;
     let mut wtr = csv::Writer::from_path(file_path)?;
 
-    wtr.write_record(&["City", "State", "Population", "Latitude", "Longitude"])?;
-    wtr.write_record(&["Davidsons Landing", "AK", "", "65.2419444", "-165.2716667"])?;
-    wtr.write_record(&["Kenai", "AK", "7610", "60.5544444", "-151.2583333"])?;
-    wtr.write_record(&["Oakman", "AL", "", "33.7133333", "-87.3886111"])?;
+    wtr.write_record(["City", "State", "Population", "Latitude", "Longitude"])?;
+    wtr.write_record(["Davidsons Landing", "AK", "", "65.2419444", "-165.2716667"])?;
+    wtr.write_record(["Kenai", "AK", "7610", "60.5544444", "-151.2583333"])?;
+    wtr.write_record(["Oakman", "AL", "", "33.7133333", "-87.3886111"])?;
 
     wtr.flush()?;
     Ok(())
@@ -1324,10 +1304,10 @@ fn run() -> Result<(), Box<dyn Error>> {
         .quote_style(csv::QuoteStyle::NonNumeric)
         .from_writer(io::stdout());
 
-    wtr.write_record(&["City", "State", "Population", "Latitude", "Longitude"])?;
-    wtr.write_record(&["Davidsons Landing", "AK", "", "65.2419444", "-165.2716667"])?;
-    wtr.write_record(&["Kenai", "AK", "7610", "60.5544444", "-151.2583333"])?;
-    wtr.write_record(&["Oakman", "AL", "", "33.7133333", "-87.3886111"])?;
+    wtr.write_record(["City", "State", "Population", "Latitude", "Longitude"])?;
+    wtr.write_record(["Davidsons Landing", "AK", "", "65.2419444", "-165.2716667"])?;
+    wtr.write_record(["Kenai", "AK", "7610", "60.5544444", "-151.2583333"])?;
+    wtr.write_record(["Oakman", "AL", "", "33.7133333", "-87.3886111"])?;
 
     wtr.flush()?;
     Ok(())
@@ -1376,7 +1356,7 @@ fn run() -> Result<(), Box<dyn Error>> {
     let mut wtr = csv::Writer::from_writer(io::stdout());
 
     // We still need to write headers manually.
-    wtr.write_record(&["City", "State", "Population", "Latitude", "Longitude"])?;
+    wtr.write_record(["City", "State", "Population", "Latitude", "Longitude"])?;
 
     // But now we can write records by providing a normal Rust value.
     //
@@ -1586,7 +1566,7 @@ fn run() -> Result<(), Box<dyn Error>> {
     // `query` to `wtr`.
     for result in rdr.records() {
         let record = result?;
-        if record.iter().any(|field| field == &query) {
+        if record.iter().any(|field| field == query) {
             wtr.write_record(&record)?;
         }
     }
@@ -1788,13 +1768,11 @@ fn run() -> Result<(), Box<dyn Error>> {
         // indicate which type we want to deserialize our record into.
         let record: Record = result?;
 
-        // `map_or` is a combinator on `Option`. It take two parameters:
-        // a value to use when the `Option` is `None` (i.e., the record has
-        // no population count) and a closure that returns another value of
-        // the same type when the `Option` is `Some`. In this case, we test it
-        // against our minimum population count that we got from the command
-        // line.
-        if record.population.map_or(false, |pop| pop >= minimum_pop) {
+        // `is_some_and` is a combinator on `Option`. It takes a closure that
+        // returns `bool` when the `Option` is `Some`. When the `Option` is
+        // `None`, `false` is always returned. In this case, we test it against
+        // our minimum population count that we got from the command line.
+        if record.population.is_some_and(|pop| pop >= minimum_pop) {
             wtr.serialize(record)?;
         }
     }
