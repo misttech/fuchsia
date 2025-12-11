@@ -7,8 +7,9 @@ are unlikely to be implemented.
 ## Available hardware
 
 Virtualization is available on Intel devices with VMX enabled and ARMv8.0 and
-above devices that boot into EL2. The following hardware will have the best
-availability:
+above devices that boot into EL2. Virtualization is *not* available on AMD CPUs
+([b/467349022][ref.bug467349022]).
+The following hardware will have the best availability:
 
 *   Pixelbook Go m3
 *   Intel NUC7 (NUC7i5DNHE)
@@ -200,6 +201,8 @@ $ fx test virtualization-gpu-tests
 $ fx test virtualization-input-tests
 ```
 
+[ref.bug467349022]:
+    https://b.corp.google.com/issues/467349022
 [ref.debian_guest_readme]:
     https://fuchsia.googlesource.com/fuchsia/+/refs/heads/main/src/virtualization/packages/debian_guest/README.md
 [ref.termina]:
