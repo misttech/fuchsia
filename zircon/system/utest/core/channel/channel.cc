@@ -113,6 +113,36 @@ TEST(ChannelTest, WriteConsumesAllHandles) {
   }
 }
 
+// Regression test for https://fxbug.dev/467142666.
+TEST(ChannelWriteTest, MoveHandlesWithRightsCheckFailure) {
+  zx::channel channel_local, channel_remote;
+  zx::event event, event_dup_no_transfer;
+
+  ASSERT_OK(zx::channel::create(0, &channel_local, &channel_remote));
+  ASSERT_OK(zx::event::create(0, &event));
+  ASSERT_OK(
+      event.duplicate(ZX_DEFAULT_EVENT_RIGHTS & (~ZX_RIGHT_TRANSFER), &event_dup_no_transfer));
+
+  zx_handle_t send_handle_list[] = {
+      // This entry should transfer just fine.
+      event.release(),
+      // This entry should fail to transfer since this handle lacks ZX_RIGHT_TRANSFER.
+      event_dup_no_transfer.release(),
+  };
+
+  // Without the fix for https://fxbug.dev/467142666 the kernel would identify
+  // the handle transfer failure and then erroneously attempt to close all
+  // handles in send_handle_list including the entry for |event| after removing
+  // it from the handle table.
+  EXPECT_EQ(ZX_ERR_ACCESS_DENIED,
+            channel_local.write(0, &kChannelData, sizeof(kChannelData), send_handle_list,
+                                std::size(send_handle_list)));
+
+  // Both handles should be removed from our handle table even though the operation failed.
+  EXPECT_EQ(ZX_ERR_NOT_FOUND, zx_handle_check_valid(send_handle_list[0]));
+  EXPECT_EQ(ZX_ERR_NOT_FOUND, zx_handle_check_valid(send_handle_list[1]));
+}
+
 enum class WorkerCompleteStatus : int {
   kSuccess = 0,
   kWaitError = 1,
@@ -1036,9 +1066,8 @@ TEST(ChannelTest, CallHandleAndBytesFitsIsOk) {
 // nullptr.
 [[gnu::noinline]]
 #endif
-zx_status_t
-local_call(const zx::channel& local, zx_channel_call_args_t& args, uint32_t* bytes,
-           uint32_t* handles) {
+zx_status_t local_call(const zx::channel& local, zx_channel_call_args_t& args, uint32_t* bytes,
+                       uint32_t* handles) {
   return zx_channel_call(local.get(), 0, zx::time::infinite().get(), &args, bytes, handles);
 }
 

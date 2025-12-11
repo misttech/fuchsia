@@ -386,14 +386,16 @@ static zx_status_t channel_write(zx_handle_t handle_value, uint32_t options,
     return status;
   }
 
+  // msg_put_handles() always consumes all handles that should be consumed (or
+  // there are zero handles, and so there's nothing to be done).
+  cleanup.cancel();
+
   if (num_handles > 0u) {
     status = msg_put_handles(up, msg.get(), user_handles, num_handles,
                              static_cast<Dispatcher*>(channel.get()));
     if (status != ZX_OK)
       return status;
   }
-
-  cleanup.cancel();
 
   status = channel->Write(up->handle_table().get_koid(), ktl::move(msg));
   if (status != ZX_OK)

@@ -77,6 +77,39 @@ TEST(ChannelWriteEtcTest, MultipleHandlesSomeInvalidResultsReportedCorrectly) {
   EXPECT_OK(zx_handle_close(channel_handle));
 }
 
+TEST(ChannelWriteEtcTest, MoveHandlesWithRightsCheckFailure) {
+  zx::channel channel_local, channel_remote;
+  zx::event event, event_dup, event_dup_no_transfer;
+
+  ASSERT_OK(zx::channel::create(0, &channel_local, &channel_remote));
+  ASSERT_OK(zx::event::create(0, &event));
+  ASSERT_OK(event.duplicate(ZX_RIGHT_SAME_RIGHTS, &event_dup));
+  ASSERT_OK(
+      event.duplicate(ZX_DEFAULT_EVENT_RIGHTS & (~ZX_RIGHT_TRANSFER), &event_dup_no_transfer));
+
+  zx_handle_disposition_t send_handle_list[] = {
+      // This operation will fail since this handle lacks ZX_RIGHT_TRANSFER.
+      {.operation = ZX_HANDLE_OP_MOVE,
+       .handle = event_dup_no_transfer.release(),
+       .type = ZX_OBJ_TYPE_EVENT,
+       .rights = ZX_RIGHT_SAME_RIGHTS,
+       .result = ZX_OK},
+      // This operation should succeed.
+      {.operation = ZX_HANDLE_OP_MOVE,
+       .handle = event_dup.release(),
+       .type = ZX_OBJ_TYPE_EVENT,
+       .rights = ZX_RIGHT_SAME_RIGHTS,
+       .result = ZX_OK},
+  };
+
+  EXPECT_EQ(ZX_ERR_ACCESS_DENIED,
+            channel_local.write_etc(0, &kChannelData, sizeof(kChannelData), send_handle_list,
+                                    std::size(send_handle_list)));
+
+  EXPECT_EQ(ZX_ERR_ACCESS_DENIED, send_handle_list[0].result);
+  EXPECT_EQ(ZX_OK, send_handle_list[1].result);
+}
+
 TEST(ChannelWriteEtcTest, ImproperlyInitalizedResultsArgReportedBackAsOriginallyInitalized) {
   zx::channel channel_local, channel_remote;
   zx::event event;

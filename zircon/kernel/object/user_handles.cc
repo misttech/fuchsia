@@ -12,25 +12,23 @@
 
 namespace {
 // Basic checks for a |handle| to be able to be sent via |channel|.
-static zx_status_t handle_checks_locked(const Handle* handle, const Dispatcher* channel,
+static zx_status_t handle_checks_locked(const Handle& handle, const Dispatcher* channel,
                                         zx_handle_op_t operation, zx_rights_t desired_rights,
                                         zx_obj_type_t type) {
-  if (!handle)
-    return ZX_ERR_BAD_HANDLE;
-  if (!handle->HasRights(ZX_RIGHT_TRANSFER))
+  if (!handle.HasRights(ZX_RIGHT_TRANSFER))
     return ZX_ERR_ACCESS_DENIED;
-  if (handle->dispatcher().get() == channel)
+  if (handle.dispatcher().get() == channel)
     return ZX_ERR_NOT_SUPPORTED;
-  if (type != ZX_OBJ_TYPE_NONE && handle->dispatcher()->get_type() != type)
+  if (type != ZX_OBJ_TYPE_NONE && handle.dispatcher()->get_type() != type)
     return ZX_ERR_WRONG_TYPE;
   if (operation != ZX_HANDLE_OP_MOVE && operation != ZX_HANDLE_OP_DUPLICATE)
     return ZX_ERR_INVALID_ARGS;
   if (desired_rights != ZX_RIGHT_SAME_RIGHTS) {
-    if ((handle->rights() & desired_rights) != desired_rights) {
+    if ((handle.rights() & desired_rights) != desired_rights) {
       return ZX_ERR_INVALID_ARGS;
     }
   }
-  if ((operation == ZX_HANDLE_OP_DUPLICATE) && !handle->HasRights(ZX_RIGHT_DUPLICATE))
+  if ((operation == ZX_HANDLE_OP_DUPLICATE) && !handle.HasRights(ZX_RIGHT_DUPLICATE))
     return ZX_ERR_ACCESS_DENIED;
   return ZX_OK;
 }
@@ -70,27 +68,56 @@ zx::result<Handle*> get_handle_for_message_locked(ProcessDispatcher* process,
                                                   const zx_handle_t* handle_val) {
   Handle* source = process->handle_table().GetHandleLocked(*process, *handle_val);
 
-  auto status = handle_checks_locked(source, channel, ZX_HANDLE_OP_MOVE, ZX_RIGHT_SAME_RIGHTS,
+  if (!source) {
+    return zx::error(ZX_ERR_BAD_HANDLE);
+  }
+
+  // At this point we're committed to removing the handle from our handle table
+  // even if the operation cannot be completed.
+  auto handle = process->handle_table().RemoveHandleLocked(source);
+
+  auto status = handle_checks_locked(*handle, channel, ZX_HANDLE_OP_MOVE, ZX_RIGHT_SAME_RIGHTS,
                                      ZX_OBJ_TYPE_NONE);
   if (status != ZX_OK)
     return zx::error(status);
 
-  return zx::ok(process->handle_table().RemoveHandleLocked(source).release());
+  return zx::ok(handle.release());
 }
 
 // This overload is used by zx_channel_write_etc.
 zx::result<Handle*> get_handle_for_message_locked(ProcessDispatcher* process,
                                                   const Dispatcher* channel,
                                                   zx_handle_disposition_t* handle_disposition) {
-  Handle* source = process->handle_table().GetHandleLocked(*process, handle_disposition->handle);
-
   const zx_handle_op_t operation = handle_disposition->operation;
   const zx_rights_t desired_rights = handle_disposition->rights;
   const zx_obj_type_t type = handle_disposition->type;
 
-  auto status = handle_checks_locked(source, channel, operation, desired_rights, type);
+  Handle* source = process->handle_table().GetHandleLocked(*process, handle_disposition->handle);
+
+  if (!source) {
+    handle_disposition->result = ZX_ERR_BAD_HANDLE;
+    return zx::error(ZX_ERR_BAD_HANDLE);
+  }
+
+  auto status = handle_checks_locked(*source, channel, operation, desired_rights, type);
+
   if (status != ZX_OK) {
     handle_disposition->result = status;
+    if (operation != ZX_HANDLE_OP_DUPLICATE) {
+      // The documentation for zx_channel_write_etc says this about the operation performed on
+      // handles:
+      /// The operation applied to *handle* is one of:
+      ///
+      /// *   `ZX_HANDLE_OP_MOVE` This is equivalent to first issuing [`zx_handle_replace()`] then
+      ///      [`zx_channel_write()`]. The source handle is always closed.
+      ///
+      /// *   `ZX_HANDLE_OP_DUPLICATE` This is equivalent to first issuing [`zx_handle_duplicate()`]
+      ///     then [`zx_channel_write()`]. The source handle always remains open and accessible to
+      ///     the caller.
+      // So if we were asked to perform an operation other than ZX_HANDLE_OP_DUPLICATE and we failed
+      // a handle check, we still need to close the source handle.
+      process->handle_table().RemoveHandleLocked(source);
+    }
     return zx::error(status);
   }
   // This if() block is purely an optimization and can be removed without
