@@ -215,10 +215,6 @@ When updating, please add the value in alphabetical order.
     |                                         | enabled. Defaults to `false`       |
     | `repository.server.listen`              |                                    |
     | `repository.server.last_used_address`   |                                    |
-    | `ssh.allow_fdomain`                     | Allow FDomain to be used as a      |
-    |                                         | remoting protocol. Defaults to     |
-    |                                         | `false` unless ffx is in "strict"  |
-    |                                         | mode.                              |
     | `ssh.auth-sock`                         | If set, the path to the            |
     |                                         | authorization socket for SSH used  |
     |                                         | by overnet. Defaults to unset      |
