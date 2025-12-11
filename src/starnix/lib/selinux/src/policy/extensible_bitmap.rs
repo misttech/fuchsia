@@ -316,7 +316,7 @@ mod tests {
         }};
     }
 
-    pub(in super::super) struct ExtensibleBitmapIterator<B: Borrow<ExtensibleBitmap>> {
+    struct ExtensibleBitmapIterator<B: Borrow<ExtensibleBitmap>> {
         extensible_bitmap: B,
         i: u32,
     }
@@ -331,15 +331,6 @@ mod tests {
             let value = self.extensible_bitmap.borrow().is_set(self.i);
             self.i = self.i + 1;
             Some(value)
-        }
-    }
-
-    impl IntoIterator for ExtensibleBitmap {
-        type Item = bool;
-        type IntoIter = ExtensibleBitmapIterator<ExtensibleBitmap>;
-
-        fn into_iter(self) -> Self::IntoIter {
-            ExtensibleBitmapIterator { extensible_bitmap: self, i: 0 }
         }
     }
 
