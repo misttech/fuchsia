@@ -57,10 +57,10 @@ impl DynamicFileSource for MeminfoFile {
             / 1024;
 
         let swap_used = compression_stats.uncompressed_storage_bytes.unwrap_or_default() / 1024;
-        // Fuchsia doesn't have a limit on the size of its swap file, so we just pretend that
-        // we're willing to grow the swap by half the amount of available memory.
-        let swap_free = mem_available / 2;
-        let swap_total = swap_used + swap_free;
+        // Fuchsia doesn't have a limit on the size of its swap file, but a common value is 75% of
+        // the total memory.
+        let swap_total = 3 * mem_total / 4;
+        let swap_free = swap_total.saturating_sub(swap_used);
 
         writeln!(sink, "MemTotal:       {:8} kB", mem_total)?;
         writeln!(sink, "MemFree:        {:8} kB", mem_free)?;
