@@ -105,6 +105,9 @@ if (is_host) {
     # TODO(https://fxbug.dev/418047052): Remove when upstream googletest
     # resolves https://github.com/google/googletest/issues/4762
     configs += [ "//build/config:Wno-character-conversion" ]
+
+    # TODO(https://468021875): The code is not yet compatible with C++23.
+    configs += [ "//build/config:c++20" ]
   }
 
   rustc_binary("aidl_wrapper") {
