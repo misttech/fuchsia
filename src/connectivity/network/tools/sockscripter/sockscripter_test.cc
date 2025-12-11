@@ -6,6 +6,7 @@
 
 #include <arpa/inet.h>
 #include <netinet/icmp6.h>
+#include <netinet/tcp.h>
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
@@ -673,4 +674,5 @@ INSTANTIATE_TEST_SUITE_P(
                     MakeSockOptParam("mcast-loop6", "1", IPPROTO_IPV6, IPV6_MULTICAST_LOOP, 1),
                     MakeSockOptParam("mcast-if6", "1", IPPROTO_IPV6, IPV6_MULTICAST_IF, 1),
                     MakeSockOptParam("ipv6-only", "1", IPPROTO_IPV6, IPV6_V6ONLY, 1),
-                    MakeSockOptParam("ip-hdrincl", "1", IPPROTO_IP, IP_HDRINCL, 1)));
+                    MakeSockOptParam("ip-hdrincl", "1", IPPROTO_IP, IP_HDRINCL, 1),
+                    MakeSockOptParam("tcp-syncnt", "5", IPPROTO_TCP, TCP_SYNCNT, 5)));

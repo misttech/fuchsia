@@ -8,6 +8,7 @@
 #include <getopt.h>
 #include <net/if.h>
 #include <netinet/icmp6.h>
+#include <netinet/tcp.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
@@ -138,6 +139,8 @@ const struct Command {
      &SockScripter::LogBindToDevice},
     {"set-recvtclass", "{0|1}", "set IPV6_RECVTCLASS flag", &SockScripter::SetRecvtclass},
     {"log-recvtclass", nullptr, "log IPV6_RECVTCLASS option value", &SockScripter::LogRecvtclass},
+    {"set-tcp-syncnt", "<count>", "set TCP_SYNCNT option", &SockScripter::SetTcpSyncnt},
+    {"log-tcp-syncnt", nullptr, "log TCP_SYNCNT option value", &SockScripter::LogTcpSyncnt},
     {"set-recvtos", "{0|1}", "set IP_RECVTOS flag", &SockScripter::SetRecvtos},
     {"log-recvtos", nullptr, "log IP_RECVTOS option value", &SockScripter::LogRecvtos},
     {"set-reuseaddr", "{0|1}", "set SO_REUSEADDR flag", &SockScripter::SetReuseaddr},
@@ -529,6 +532,17 @@ bool SockScripter::SetRecvtclass(char* arg) {
 }
 
 bool SockScripter::LogRecvtclass(char* arg) { LOG_SOCK_OPT_VAL(IPPROTO_IPV6, IPV6_RECVTCLASS, int) }
+
+bool SockScripter::SetTcpSyncnt(char* arg) {
+  int count;
+  if (!str2int(arg, &count) || count < 0) {
+    LOG(ERROR) << "Error: Invalid TCP_SYNCNT count='" << arg << "'!";
+    return false;
+  }
+  SET_SOCK_OPT_VAL(IPPROTO_TCP, TCP_SYNCNT, count)
+}
+
+bool SockScripter::LogTcpSyncnt(char* arg) { LOG_SOCK_OPT_VAL(IPPROTO_TCP, TCP_SYNCNT, int) }
 
 bool SockScripter::SetRecvtos(char* arg) {
   int flag;

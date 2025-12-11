@@ -52,6 +52,8 @@ class SockScripter {
   bool LogBroadcast(char* arg);
   bool SetRecvtclass(char* arg);
   bool LogRecvtclass(char* arg);
+  bool SetTcpSyncnt(char* arg);
+  bool LogTcpSyncnt(char* arg);
   bool SetRecvtos(char* arg);
   bool LogRecvtos(char* arg);
   bool SetReuseaddr(char* arg);
