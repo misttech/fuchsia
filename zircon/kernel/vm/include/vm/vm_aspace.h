@@ -174,6 +174,7 @@ class VmAspace : public fbl::DoublyLinkedListable<VmAspace*>, public fbl::RefCou
   //    hardware exception handler.
   //  * May be invoked spuriously in situations where the hardware mappings would have prevented a
   //    real PageFault from occurring.
+  // May block on page requests and must be called without locks held.
   zx_status_t SoftFault(vaddr_t va, uint flags);
   // Similar to SoftFault, but additionally takes a length indicating that the range of [va, va+len)
   // is expected to be accessed with |flags| after resolving this fault. The aspace can take this

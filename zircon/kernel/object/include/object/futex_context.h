@@ -133,6 +133,7 @@ class FutexContext {
   // thread handle, and this check needs to happen inside of the futex context lock.  To do
   // otherwise leaves the potential to hit a race condition where we end up appearing to violate
   // the "bad handle" policy when actually we didn't.  See https://fxbug.dev/42109683 for details.
+  // May block on page requests and must be called without locks held.
   zx_status_t FutexWait(user_in_ptr<const zx_futex_t> value_ptr, zx_futex_t current_value,
                         zx_handle_t new_futex_owner, const Deadline& deadline)
       TA_EXCL(chainlock_transaction_token);
@@ -156,6 +157,7 @@ class FutexContext {
   // process.  If the owner_action is set to ASSIGN_WOKEN, then the wake_count *must* be 1, and
   // the futex's owner will be set to the thread which was woken during the operation, or nullptr
   // if no thread was woken.
+  // May block on page requests and must be called without locks held.
   zx_status_t FutexRequeue(user_in_ptr<const zx_futex_t> wake_ptr, uint32_t wake_count,
                            zx_futex_t current_value, OwnerAction owner_action,
                            user_in_ptr<const zx_futex_t> requeue_ptr, uint32_t requeue_count,

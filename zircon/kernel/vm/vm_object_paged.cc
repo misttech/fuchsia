@@ -1593,9 +1593,8 @@ ktl::pair<zx_status_t, size_t> VmObjectPaged::ReadUser(user_out_ptr<char> ptr, u
     return ptr.byte_offset(offset).copy_array_to_user_capture_faults(src, len);
   };
 
-  if (can_block_on_page_requests()) {
-    lockdep::AssertNoLocksHeld();
-  }
+  // As we may need to perform fault resolution later, ensure our caller is not holding any locks.
+  lockdep::AssertNoLocksHeld();
 
   return ReadWriteInternal(offset, len, false, options, read_routine);
 }
@@ -1619,9 +1618,8 @@ ktl::pair<zx_status_t, size_t> VmObjectPaged::WriteUser(
     return copy_result;
   };
 
-  if (can_block_on_page_requests()) {
-    lockdep::AssertNoLocksHeld();
-  }
+  // As we may need to perform fault resolution later, ensure our caller is not holding any locks.
+  lockdep::AssertNoLocksHeld();
 
   return ReadWriteInternal(offset, len, true, options, write_routine);
 }

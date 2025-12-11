@@ -315,6 +315,9 @@ zx_status_t KTrace::Rewind() {
 }
 
 zx::result<size_t> KTrace::ReadUser(user_out_ptr<void> ptr, uint32_t offset, size_t len) {
+  // As we may need to perform fault resolution later, ensure our caller is not holding any locks.
+  lockdep::AssertNoLocksHeld();
+
   // Reads must be serialized with respect to all other non-write operations.
   Guard<Mutex> guard{&lock_};
 

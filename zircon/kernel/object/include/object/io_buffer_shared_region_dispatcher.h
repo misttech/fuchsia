@@ -26,6 +26,7 @@ class IoBufferSharedRegionDispatcher
   // SoloDispatcher implementation.
   zx_obj_type_t get_type() const final { return ZX_OBJ_TYPE_IOB_SHARED_REGION; }
 
+  // May block on page requests and must be called without locks held.
   zx::result<> Write(uint64_t tag, user_in_iovec_t message);
 
   const fbl::RefPtr<VmObjectPaged>& vmo() const { return vmo_; }

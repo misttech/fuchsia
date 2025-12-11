@@ -28,10 +28,12 @@ class PagerDispatcher final : public SoloDispatcher<PagerDispatcher, ZX_DEFAULT_
   zx_status_t RangeOp(uint32_t op, fbl::RefPtr<VmObject> vmo, uint64_t offset, uint64_t length,
                       uint64_t data);
 
+  // May block on page requests and must be called without locks held.
   zx_status_t QueryDirtyRanges(fbl::RefPtr<VmObject> vmo, uint64_t offset, uint64_t length,
                                user_out_ptr<void> buffer, size_t buffer_size,
                                user_out_ptr<size_t> actual, user_out_ptr<size_t> avail);
 
+  // May block on page requests and must be called without locks held.
   zx_status_t QueryPagerVmoStats(fbl::RefPtr<VmObject> vmo, uint32_t options,
                                  user_out_ptr<void> buffer, size_t buffer_size);
 

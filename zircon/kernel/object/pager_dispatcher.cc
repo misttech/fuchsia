@@ -155,6 +155,9 @@ zx_status_t PagerDispatcher::QueryDirtyRanges(fbl::RefPtr<VmObject> vmo, uint64_
                                               uint64_t length, user_out_ptr<void> buffer,
                                               size_t buffer_size, user_out_ptr<size_t> actual,
                                               user_out_ptr<size_t> avail) {
+  // As we may need to perform fault resolution later, ensure our caller is not holding any locks.
+  lockdep::AssertNoLocksHeld();
+
   // State captured by |copy_to_buffer| below.
   struct CopyToBufferInfo {
     // Index into |buffer|, used to populate its entries.
@@ -286,6 +289,9 @@ zx_status_t PagerDispatcher::QueryDirtyRanges(fbl::RefPtr<VmObject> vmo, uint64_
 
 zx_status_t PagerDispatcher::QueryPagerVmoStats(fbl::RefPtr<VmObject> vmo, uint32_t options,
                                                 user_out_ptr<void> buffer, size_t buffer_size) {
+  // As we may need to perform fault resolution later, ensure our caller is not holding any locks.
+  lockdep::AssertNoLocksHeld();
+
   if (buffer_size < sizeof(zx_pager_vmo_stats_t)) {
     return ZX_ERR_BUFFER_TOO_SMALL;
   }

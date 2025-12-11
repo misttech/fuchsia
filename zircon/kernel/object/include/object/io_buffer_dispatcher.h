@@ -64,6 +64,7 @@ class IoBufferDispatcher : public PeeredDispatcher<IoBufferDispatcher, ZX_DEFAUL
                                   size_t blob_size);
 
   // Performs a mediated write to a region.
+  // May block on page requests and must be called without locks held.
   zx::result<> Write(size_t region_index, user_in_iovec_t message);
 
   // PeeredDispatcher implementation

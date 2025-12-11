@@ -27,8 +27,10 @@ class FifoDispatcher final : public PeeredDispatcher<FifoDispatcher, ZX_DEFAULT_
 
   zx_obj_type_t get_type() const final { return ZX_OBJ_TYPE_FIFO; }
 
+  // May block on page requests and must be called without locks held.
   zx_status_t WriteFromUser(size_t elem_size, user_in_ptr<const uint8_t> src, size_t count,
                             size_t* actual);
+  // May block on page requests and must be called without locks held.
   zx_status_t ReadToUser(size_t elem_size, user_out_ptr<uint8_t> dst, size_t count, size_t* actual);
 
   // PeeredDispatcher implementation.

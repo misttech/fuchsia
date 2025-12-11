@@ -45,6 +45,9 @@ zx_status_t IoBufferSharedRegionDispatcher::Create(
 }
 
 zx::result<> IoBufferSharedRegionDispatcher::Write(const uint64_t tag, user_in_iovec_t message) {
+  // As we may need to perform fault resolution later, ensure our caller is not holding any locks.
+  lockdep::AssertNoLocksHeld();
+
   // 8 bytes for the tag, plus 8 bytes for the length.
   constexpr size_t kHeaderSize = 16;
 

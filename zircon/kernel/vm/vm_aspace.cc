@@ -589,6 +589,10 @@ zx_status_t VmAspace::PageFault(vaddr_t va, uint flags) {
 }
 
 zx_status_t VmAspace::PageFaultInternal(vaddr_t va, uint flags, size_t additional_pages) {
+  // As page fault resolution may take arbitrary locks and wait on page requests, ensure our caller
+  // is not holding any locks.
+  lockdep::AssertNoLocksHeld();
+
   canary_.Assert();
   DEBUG_ASSERT((flags & VMM_PF_FLAG_ACCESS) == 0);
   if (type_ == Type::GuestPhysical) {

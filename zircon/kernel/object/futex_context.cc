@@ -272,6 +272,9 @@ zx_status_t FutexContext::FutexWait(user_in_ptr<const zx_futex_t> value_ptr,
                                     const Deadline& deadline) {
   LTRACE_ENTRY;
 
+  // As we may need to perform fault resolution later, ensure our caller is not holding any locks.
+  lockdep::AssertNoLocksHeld();
+
   // Make sure the futex pointer is following the basic rules.
   zx_status_t result = ValidateFutexPointer(value_ptr);
   if (result != ZX_OK) {
@@ -634,6 +637,9 @@ zx_status_t FutexContext::FutexRequeue(user_in_ptr<const zx_futex_t> wake_ptr, u
                                        zx_handle_t new_requeue_owner_handle) {
   LTRACE_ENTRY;
   zx_status_t result;
+
+  // As we may need to perform fault resolution later, ensure our caller is not holding any locks.
+  lockdep::AssertNoLocksHeld();
 
   // Make sure the futex pointers are following the basic rules.
   result = ValidateFutexPointer(wake_ptr);

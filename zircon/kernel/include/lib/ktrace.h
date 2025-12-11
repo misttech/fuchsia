@@ -912,6 +912,7 @@ class KTrace {
 
   // ReadUser reads len bytes from the ktrace buffer starting at offset off into the given user
   // buffer.
+  // May block on page requests and must be called without locks held.
   //
   // The return value is one of the following:
   // * If ptr is nullptr, the number of bytes needed to read all of the available data is returned.

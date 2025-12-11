@@ -1446,6 +1446,7 @@ struct Thread : public ChainLockable {
     //
     // Calling any of these methods on a pure kernel thread (i.e. one without an associated
     // `ThreadDispatcher`) is a programming error.
+    // May block on page requests and must be called without locks held.
     static zx_status_t PageFault(vaddr_t va, uint flags);
     static zx_status_t SoftFault(vaddr_t va, uint flags);
     static zx_status_t SoftFaultInRange(vaddr_t va, uint flags, size_t len);

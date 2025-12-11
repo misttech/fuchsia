@@ -86,6 +86,8 @@ void FifoDispatcher::OnPeerZeroHandlesLocked() {
 
 zx_status_t FifoDispatcher::WriteFromUser(size_t elem_size, user_in_ptr<const uint8_t> ptr,
                                           size_t count, size_t* actual) {
+  // As we may need to perform fault resolution later, ensure our caller is not holding any locks.
+  lockdep::AssertNoLocksHeld();
   canary_.Assert();
 
   while (true) {
@@ -190,6 +192,8 @@ ktl::variant<zx_status_t, UserCopyCaptureFaultsResult> FifoDispatcher::WriteSelf
 zx_status_t FifoDispatcher::ReadToUser(size_t elem_size, user_out_ptr<uint8_t> ptr, size_t count,
                                        size_t* actual) {
   canary_.Assert();
+  // As we may need to perform fault resolution later, ensure our caller is not holding any locks.
+  lockdep::AssertNoLocksHeld();
   while (true) {
     ktl::variant<zx_status_t, UserCopyCaptureFaultsResult> read_result;
     {
