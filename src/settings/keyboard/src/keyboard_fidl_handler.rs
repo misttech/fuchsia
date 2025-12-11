@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use super::keyboard_controller::{KeyboardController, KeyboardError, Request};
-use crate::keyboard::types::{Autorepeat, KeyboardInfo, KeymapId};
+use crate::keyboard_controller::{KeyboardController, KeyboardError, Request};
+use crate::types::{Autorepeat, KeyboardInfo, KeymapId};
 use anyhow::Error;
 use async_utils::hanging_get::server;
 use fidl_fuchsia_settings::{
@@ -140,7 +140,7 @@ impl RequestHandler {
 
     async fn set(&self, settings: KeyboardSettings) -> Result<(), HandlerError> {
         let (set_tx, set_rx) = oneshot::channel();
-        let info = to_request(settings).map_err(|e| HandlerError::InvalidArgument(e))?;
+        let info = to_request(settings).map_err(HandlerError::InvalidArgument)?;
         self.controller_tx
             .unbounded_send(Request::Set(info, set_tx))
             .map_err(|_| HandlerError::ControllerStopped)?;
@@ -176,7 +176,7 @@ mod tests {
 
     #[fuchsia::test]
     fn test_request_from_settings() {
-        use crate::keyboard::types::Autorepeat;
+        use crate::types::Autorepeat;
 
         const KEYMAP_ID: fidl_fuchsia_input::KeymapId = fidl_fuchsia_input::KeymapId::FrAzerty;
         const DELAY: i64 = 1;

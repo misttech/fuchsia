@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use super::keyboard_fidl_handler::Publisher;
-use crate::keyboard::types::{KeyboardInfo, KeymapId};
+use crate::keyboard_fidl_handler::Publisher;
+use crate::types::{KeyboardInfo, KeymapId};
 use anyhow::Error;
 use fuchsia_async as fasync;
 use futures::StreamExt;
@@ -147,9 +147,8 @@ impl KeyboardController {
 
 #[cfg(test)]
 mod tests {
-    use crate::keyboard::types::Autorepeat;
-
     use super::*;
+    use crate::types::Autorepeat;
     use futures::channel::mpsc;
     use settings_test_common::storage::InMemoryStorageFactory;
 
@@ -172,7 +171,7 @@ mod tests {
 
         // Set a new value.
         let result = keyboard_controller
-            .set(changed_value.clone())
+            .set(changed_value)
             .await
             .expect("set successful")
             .expect("keyboard info changed");

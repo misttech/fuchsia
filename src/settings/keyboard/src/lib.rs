@@ -2,6 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// TODO(https://github.com/rust-lang/rust-clippy/issues/13885) Upstream issue
+// Clippy lints on the license comment above.
+#![allow(clippy::literal_string_with_formatting_args)]
+
 pub mod keyboard_controller;
 pub mod keyboard_fidl_handler;
 pub mod types;

@@ -14,7 +14,7 @@ pub struct KeyboardInfo {
 
 impl KeyboardInfo {
     pub(crate) fn is_valid(&self) -> bool {
-        self.autorepeat.map_or(true, |x| x.is_valid())
+        self.autorepeat.is_none_or(|x| x.is_valid())
     }
 }
 
@@ -93,7 +93,7 @@ impl From<Autorepeat> for fidl_fuchsia_settings::Autorepeat {
 
 #[cfg(test)]
 mod tests {
-    use crate::keyboard::types::KeymapId;
+    use super::*;
 
     #[fuchsia::test]
     fn test_try_from_keymapid() {

@@ -35,6 +35,7 @@ use settings_common::inspect::event::{
 };
 use settings_common::inspect::listener_logger::ListenerInspectLogger;
 use settings_common::service_context::{ExternalServiceEvent, GenerateService, ServiceContext};
+use settings_keyboard::keyboard_controller::KeyboardController;
 use settings_light::light_controller::LightController;
 use settings_night_mode::night_mode_controller::NightModeController;
 use settings_privacy::privacy_controller::PrivacyController;
@@ -58,7 +59,6 @@ use crate::do_not_disturb::do_not_disturb_controller::DoNotDisturbController;
 use crate::ingress::fidl;
 use crate::input::input_controller::InputController;
 use crate::intl::intl_controller::IntlController;
-use crate::keyboard::keyboard_controller::KeyboardController;
 
 mod accessibility;
 pub mod audio;
@@ -68,7 +68,6 @@ mod do_not_disturb;
 mod factory_reset;
 pub mod input;
 mod intl;
-mod keyboard;
 mod storage_migrations;
 
 pub mod agent;
@@ -831,8 +830,8 @@ impl<T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilder<T>
         }
 
         if components.contains(&SettingType::Keyboard) {
-            let keyboard::SetupResult { mut keyboard_fidl_handler, task } =
-                keyboard::setup_keyboard_api(
+            let settings_keyboard::SetupResult { mut keyboard_fidl_handler, task } =
+                settings_keyboard::setup_keyboard_api(
                     Rc::clone(&device_storage_factory),
                     SettingValuePublisher::new(setting_value_tx.clone()),
                     UsagePublisher::new(usage_event_tx.clone(), Rc::clone(&listener_logger)),
