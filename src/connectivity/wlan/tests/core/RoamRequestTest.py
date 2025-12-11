@@ -308,7 +308,7 @@ class RoamRequestTest(base_test.ConnectionBaseTestClass):
             origin_bss_desc = bss_desc_5g
             target_bss_desc = bss_desc_2g
 
-        with ConnectTransactionEventHandler() as ctx:
+        with ConnectTransactionEventHandler(loop=self.loop()) as ctx:
             txn_queue = ctx.txn_queue
             server = ctx.server
 

@@ -4,6 +4,7 @@
 """
 Tests for connecting to an access point.
 """
+import asyncio
 import logging
 
 logger = logging.getLogger(__name__)
@@ -94,7 +95,9 @@ class ConnectToApTest(base_test.ConnectionBaseTestClass):
                 break
         assert bss_description is not None, f"Failed to find SSID: {ssid}"
 
-        with ConnectTransactionEventHandler() as ctx:
+        with ConnectTransactionEventHandler(
+            loop=asyncio.get_running_loop()
+        ) as ctx:
             txn_queue = ctx.txn_queue
             server = ctx.server
 

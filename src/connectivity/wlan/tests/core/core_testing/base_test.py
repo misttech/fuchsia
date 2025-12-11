@@ -15,13 +15,12 @@ import fidl_fuchsia_wlan_device_service as fidl_svc
 import fidl_fuchsia_wlan_sme as fidl_sme
 import honeydew.affordances.connectivity.wlan.utils.types as hd_util_types
 from antlion import controllers
-from antlion.controllers import fuchsia_device as fuchsia_device_antlion
 from antlion.controllers.access_point import AccessPoint
 from fuchsia_controller_py import Channel, ZxStatus
 from fuchsia_controller_py.wrappers import AsyncAdapter, asyncmethod
 from fuchsia_wlan_base_test import FuchsiaWlanBaseTest
 from honeydew.typing.custom_types import FidlEndpoint
-from mobly import base_test, signals
+from mobly import signals
 from mobly.asserts import abort_class_if, assert_equal, fail
 from mobly.records import TestResultRecord
 
@@ -100,50 +99,35 @@ class ConnectionBaseTestClassSync(FuchsiaWlanBaseTest):
         self.access_point.stop_all_aps()
 
 
-class ConnectionBaseTestClass(AsyncAdapter, base_test.BaseTestClass):
-    iface_id: int | None
+class CoreBaseTestClass(AsyncAdapter, FuchsiaWlanBaseTest):
+    device_monitor_proxy: fidl_svc.DeviceMonitorClient
 
-    @asyncmethod
-    async def setup_class(self) -> None:
+    def setup_class(self) -> None:
         super().setup_class()
-        self.pdu_devices = None
-
-        fuchsia_devices = self.register_controller(fuchsia_device_antlion)
 
         abort_class_if(
-            len(fuchsia_devices) != 1, "Requires exactly one Fuchsia device"
+            len(self.fuchsia_devices) != 1,
+            "Requires exactly one Fuchsia device",
         )
-        self.fuchsia_device: fuchsia_device_antlion.FuchsiaDevice = (
-            fuchsia_devices[0]
-        )
-        abort_class_if(
-            not hasattr(self.fuchsia_device, "honeydew_fd")
-            or self.fuchsia_device.honeydew_fd is None,
-            "Requires a Honeydew-enabled FuchsiaDevice",
-        )
-
-        access_points = self.register_controller(
-            controllers.access_point, min_number=1
-        )
-        if access_points is None or len(access_points) == 0:
-            raise signals.TestAbortClass("Requires at least one access point")
-        self.__access_point = access_points[0]
-
-        self.pdu_devices = self.register_controller(
-            controllers.pdu,
-            # TODO(https://fxbug.dev/369159708) This should be required, but it inhibits
-            # local testing when a PDU is not present.
-            required=False,
-        )
+        self.fuchsia_device = self.fuchsia_devices[0]
 
         self.device_monitor_proxy = fidl_svc.DeviceMonitorClient(
-            self.fuchsia_device.honeydew_fd.fuchsia_controller.connect_device_proxy(
+            self.fuchsia_device.fuchsia_controller.connect_device_proxy(
                 FidlEndpoint(
                     "core/wlandevicemonitor",
                     "fuchsia.wlan.device.service.DeviceMonitor",
                 )
             )
         )
+
+
+class ConnectionBaseTestClass(CoreBaseTestClass):
+    iface_id: int | None
+
+    @asyncmethod
+    async def setup_class(self) -> None:
+        super().setup_class()
+
         list_phys_response = await self.device_monitor_proxy.list_phys()
         assert (
             list_phys_response.phy_list is not None
@@ -200,15 +184,23 @@ class ConnectionBaseTestClass(AsyncAdapter, base_test.BaseTestClass):
         ).unwrap()
         self.client_sme_proxy = fidl_sme.ClientSmeClient(proxy)
 
+        access_points = self.register_controller(
+            controllers.access_point, min_number=1
+        )
+        if access_points is None or len(access_points) == 0:
+            raise signals.TestAbortClass("Requires at least one access point")
+        self.__access_point = access_points[0]
+
         self.access_point().stop_all_aps()
 
-    @asyncmethod
-    async def teardown_test(self) -> None:
+    def teardown_test(self) -> None:
         # Maintain the invariant that every test starts with no access points.
         self.access_point().download_ap_logs(self.log_path)
         self.access_point().stop_all_aps()
-        await self.client_sme_proxy.disconnect(
-            reason=fidl_sme.UserDisconnectReason.UNKNOWN
+        self.loop().run_until_complete(
+            self.client_sme_proxy.disconnect(
+                reason=fidl_sme.UserDisconnectReason.UNKNOWN
+            )
         )
         super().teardown_test()
 
@@ -224,11 +216,6 @@ class ConnectionBaseTestClass(AsyncAdapter, base_test.BaseTestClass):
                 "DeviceMonitor.DestroyIface() failed",
             )
         self.iface_id = None
-
-        # Save a snapshot after the entire test suite completes. This will be the only snapshot
-        # if all tests succeeded.
-        self.fuchsia_device.take_bug_report()
-        self.access_point().stop_all_aps()
         super().teardown_class()
 
     def access_point(self) -> AccessPoint:
@@ -239,23 +226,35 @@ class ConnectionBaseTestClass(AsyncAdapter, base_test.BaseTestClass):
     def on_fail(self, record: TestResultRecord) -> None:
         super().on_fail(record)
 
-        # Save a snapshot for debugging
-        if (
-            hasattr(self.fuchsia_device, "take_bug_report_on_fail")
-            and self.fuchsia_device.take_bug_report_on_fail
-        ):
-            self.fuchsia_device.take_bug_report()
-
-        # Rebooting on failure can avoid unintentionally propagating
-        # a single test failure to tests that follow.
-        if (
-            hasattr(self.fuchsia_device, "hard_reboot_on_fail")
-            and self.fuchsia_device.hard_reboot_on_fail
-            and self.pdu_devices
-        ):
-            self.fuchsia_device.reboot(
-                reboot_type="hard", testbed_pdus=self.pdu_devices
-            )
-
         # Maintain the invariant that every test starts with no access points.
         self.access_point().stop_all_aps()
+
+    def ping(
+        self,
+        dest_ip: str,
+        count: int = 3,
+        interval: int = 1000,
+        timeout: int = 1000,
+        size: int = 25,
+        additional_ping_params: str | None = None,
+    ) -> str:
+        """Pings from a Fuchsia device to an IPv4 address or hostname
+
+        Args:
+            dest_ip: (str) The ip or hostname to ping.
+            count: (int) How many icmp packets to send.
+            interval: (int) How long to wait between pings (ms)
+            timeout: (int) How long to wait before having the icmp packet
+                timeout (ms).
+            size: (int) Size of the icmp packet.
+            additional_ping_params: (str) command option flags to
+                append to the command string
+        """
+        logger.info(f"Pinging {dest_ip}...")
+        if not additional_ping_params:
+            additional_ping_params = ""
+
+        return self.fuchsia_device.ffx.run_ssh_cmd(
+            f"ping -c {count} -i {interval} -t {timeout} -s {size} "
+            f"{additional_ping_params} {dest_ip}"
+        )

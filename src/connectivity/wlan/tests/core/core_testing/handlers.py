@@ -33,8 +33,10 @@ class ConnectTransactionContext:
 class ConnectTransactionEventHandler(fidl_sme.ConnectTransactionEventHandler):
     def __init__(
         self,
+        loop: asyncio.AbstractEventLoop,
         verbose: bool = True,
     ) -> None:
+        self.loop = loop
         self.verbose = verbose
         self.txn_queue: asyncio.Queue[
             fidl_sme.ConnectTransactionOnConnectResultRequest
@@ -87,7 +89,7 @@ class ConnectTransactionEventHandler(fidl_sme.ConnectTransactionEventHandler):
     def __enter__(self) -> ConnectTransactionContext:
         proxy, server = Channel.create()
         super().__init__(client=fidl_sme.ConnectTransactionClient(proxy.take()))
-        self.server_task = asyncio.get_running_loop().create_task(self.serve())
+        self.server_task = self.loop.create_task(self.serve())
         return ConnectTransactionContext(
             txn_queue=self.txn_queue,
             server=server,

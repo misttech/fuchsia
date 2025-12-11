@@ -26,9 +26,8 @@ from antlion.controllers.ap_lib.hostapd_security import Security, SecurityMode
 from core_testing import base_test
 from core_testing.handlers import ConnectTransactionEventHandler
 from core_testing.ies import read_ssid
-from fuchsia_controller_py.wrappers import asyncmethod
 from mobly import test_runner
-from mobly.asserts import assert_equal, assert_true, signals
+from mobly.asserts import assert_equal, assert_true, fail
 
 
 class FirmwarePowerModesTest(base_test.ConnectionBaseTestClass):
@@ -42,8 +41,7 @@ class FirmwarePowerModesTest(base_test.ConnectionBaseTestClass):
     def name_func(self, mode: fidl_common.PowerSaveType) -> str:
         return f"test_pm_mode_{mode.name.replace('PS_MODE_', '').lower()}"
 
-    @asyncmethod
-    async def _test_logic(self, ps_mode: fidl_common.PowerSaveType) -> None:
+    def _test_logic(self, ps_mode: fidl_common.PowerSaveType) -> None:
         ssid = utils.rand_ascii_str(AP_SSID_LENGTH_5G)
 
         setup_ap(
@@ -54,9 +52,11 @@ class FirmwarePowerModesTest(base_test.ConnectionBaseTestClass):
             security=Security(security_mode=SecurityMode.OPEN),
         )
 
-        ps_resp = await self.device_monitor_proxy.set_power_save_mode(
-            req=fidl_device_svc.SetPowerSaveModeRequest(
-                phy_id=self.phy_id, ps_mode=ps_mode
+        ps_resp = self.loop().run_until_complete(
+            self.device_monitor_proxy.set_power_save_mode(
+                req=fidl_device_svc.SetPowerSaveModeRequest(
+                    phy_id=self.phy_id, ps_mode=ps_mode
+                )
             )
         )
         assert (
@@ -65,9 +65,11 @@ class FirmwarePowerModesTest(base_test.ConnectionBaseTestClass):
 
         scan_results = (
             (
-                await self.client_sme_proxy.scan_for_controller(
-                    req=fidl_sme.ScanRequest(
-                        passive=fidl_sme.PassiveScanRequest()
+                self.loop().run_until_complete(
+                    self.client_sme_proxy.scan_for_controller(
+                        req=fidl_sme.ScanRequest(
+                            passive=fidl_sme.PassiveScanRequest()
+                        )
                     )
                 )
             )
@@ -93,7 +95,7 @@ class FirmwarePowerModesTest(base_test.ConnectionBaseTestClass):
                 break
         assert bss_description is not None, f"Failed to find SSID: {ssid}"
 
-        with ConnectTransactionEventHandler() as ctx:
+        with ConnectTransactionEventHandler(loop=self.loop()) as ctx:
             txn_queue = ctx.txn_queue
             server = ctx.server
 
@@ -112,7 +114,7 @@ class FirmwarePowerModesTest(base_test.ConnectionBaseTestClass):
                 req=connect_request, txn=server.take()
             )
 
-            next_txn = await txn_queue.get()
+            next_txn = self.loop().run_until_complete(txn_queue.get())
             assert_equal(
                 next_txn,
                 fidl_sme.ConnectTransactionOnConnectResultRequest(
@@ -142,11 +144,12 @@ class FirmwarePowerModesTest(base_test.ConnectionBaseTestClass):
 
         ap_test_interface = self.access_point().wlan_5g
         ap_address = utils.get_addr(self.access_point().ssh, ap_test_interface)
-        ping_result = self.fuchsia_device.ping(ap_address)
-        if ping_result.success:
-            logger.info("Ping was successful.")
-        else:
-            raise signals.TestFailure(f"Ping was unsuccessful: {ping_result}")
+        try:
+            ping_result = self.ping(ap_address)
+            logger.info(f"Ping succeeded: {ping_result}")
+        except Exception as e:
+            logger.error(f"{e}")
+            fail(f"Ping failed.")
 
 
 if __name__ == "__main__":
