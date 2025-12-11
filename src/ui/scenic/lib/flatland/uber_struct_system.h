@@ -17,16 +17,6 @@
 
 namespace flatland {
 
-// Snapshot of all Flatland sessions' state, plus additional info.
-struct UberStructSnapshot {
-  UberStruct::InstanceMap map;
-
-  // True if the ViewTree needs to be recomputed.  It's more efficient to receive this info from
-  // upstream, versus generating the full global topology etc., and diffing against the previous
-  // version.
-  bool recompute_view_tree;
-};
-
 // TODO(https://fxbug.dev/42122511): write a bug to find a better name for this system
 //
 // A system for aggregating local data from Flatland instances to be consumed by the render loop.
@@ -47,7 +37,6 @@ class UberStructSystem {
   struct PendingUberStruct {
     scheduling::PresentId present_id;
     std::unique_ptr<UberStruct> uber_struct;
-    bool recompute_view_tree = true;
   };
 
   // An interface for UberStructSystem clients to queue UberStructs to be published into the
@@ -57,8 +46,7 @@ class UberStructSystem {
     // Queues an UberStruct for |present_id|. Each Flatland instance can queue multiple UberStructs
     // in the UberStructSystem by using different PresentIds. PresentIds must be increasing between
     // subsequent calls.
-    void Push(scheduling::PresentId present_id, std::unique_ptr<UberStruct> uber_struct,
-              bool recompute_view_tree = true);
+    void Push(scheduling::PresentId present_id, std::unique_ptr<UberStruct> uber_struct);
 
     // Pops a PendingUberStruct off of this Queue. If the queue is currently empty, returns
     // std::nullopt.
@@ -98,7 +86,7 @@ class UberStructSystem {
   // Snapshots the current map of UberStructs and returns the copy.
   // Note that this function returns a reference. This structure may only be modified on main
   // thread.
-  const UberStructSnapshot& Snapshot();
+  const UberStruct::InstanceMap& Snapshot();
 
   // For pushing all pending UberStructs in tests.
   void ForceUpdateAllSessions(size_t max_updates_per_queue = 10);
@@ -118,7 +106,7 @@ class UberStructSystem {
       pending_structs_queues_;
 
   // The current UberStruct for each Flatland instance.
-  UberStructSnapshot snapshot_;
+  UberStruct::InstanceMap uber_struct_map_;
 
   // The InstanceId most recently returned from GetNextInstanceId().
   TransformHandle::InstanceId latest_instance_id_;

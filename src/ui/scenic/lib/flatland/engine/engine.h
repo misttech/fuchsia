@@ -83,7 +83,7 @@ class Engine {
     // Clear all fields without deallocating memory.
     void Clear();
 
-    UberStructSnapshot snapshot;
+    UberStruct::InstanceMap snapshot;
     flatland::GlobalTopologyData topology_data;
     flatland::GlobalMatrixVector global_matrices;
     flatland::GlobalImageVector images;
