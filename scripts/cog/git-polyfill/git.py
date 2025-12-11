@@ -66,6 +66,21 @@ class Context:
             sys.stdout.write(end)
         self.write_log("OUTPUT", message.strip())
 
+    def run_real_git(self, args: List[str], cwd: Optional[str] = None) -> str:
+        """Runs the real git command with the given arguments."""
+        full_command = [self.real_git] + args
+        self.write_log("EXEC", shlex.join(full_command))
+
+        result = subprocess.run(
+            full_command,
+            capture_output=True,
+            text=True,
+            cwd=cwd,
+            check=True,
+        )
+
+        return result.stdout
+
 
 def get_repository_root() -> Optional[Path]:
     """Returns the repository root for the current directory.
@@ -213,20 +228,10 @@ class RevParseCommand(GitSubCommand):
         request = f'request_base {{ workspace_id: "{workspace_id}" base_snapshot_version: {snapshot_version}}} repo_root: "{repo_root}"'
 
         try:
-            cmd = [
-                context.real_git,
-                "citc",
-                "api.call",
-                "GetDrafts",
-                request,
-            ]
-            result = subprocess.run(cmd, capture_output=True, text=True)
+            args = ["citc", "api.call", "GetDrafts", request]
+            stdout = context.run_real_git(args)
 
-            if result.returncode != 0:
-                context.error(result.stderr)
-                return result.returncode
-
-            for line in result.stdout.splitlines():
+            for line in stdout.splitlines():
                 if "commit_hash:" in line:
                     parts = line.split('"')
                     if len(parts) >= 2:
@@ -234,6 +239,9 @@ class RevParseCommand(GitSubCommand):
                         return 0
 
             return 1
+        except subprocess.CalledProcessError as e:
+            context.error(e.stderr)
+            return e.returncode
         except Exception as e:
             context.fatal(f"{e}")
             return 1
@@ -322,27 +330,19 @@ class LsFilesCommand(GitSubCommand):
     def execute(self, context: Context) -> int:
         args = context.git_subcommand_args
         try:
-            cmd = [
-                context.real_git,
-            ]
-            cmd.extend(context.args.global_git_args)
-            cmd.append("ls-files")
-            cmd.extend(context.args.remaining_args)
+            git_args = []
+            git_args.extend(context.args.global_git_args)
+            git_args.append("ls-files")
+            git_args.extend(context.args.remaining_args)
 
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                cwd=context.invoker_cwd,
-            )
-
-            if result.returncode != 0:
-                context.error(result.stderr)
-                return result.returncode
+            stdout = context.run_real_git(git_args, cwd=context.invoker_cwd)
 
             end = "\0" if args.z else "\n"
-            context.output(result.stdout, end=end)
+            context.output(stdout, end=end)
             return 0
+        except subprocess.CalledProcessError as e:
+            context.error(e.stderr)
+            return e.returncode
         except Exception as e:
             context.fatal(f"{e}")
             return 10
