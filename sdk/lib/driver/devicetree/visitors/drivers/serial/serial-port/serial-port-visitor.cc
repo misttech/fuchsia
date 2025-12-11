@@ -136,6 +136,9 @@ zx::result<> SerialPortVisitor::AddChildNodeSpec(fdf_devicetree::Node& child, ui
               fdf::MakeAcceptBindRule2(bind_fuchsia::SERIAL_CLASS, serial_class),
               fdf::MakeAcceptBindRule2(bind_fuchsia_hardware_serialimpl::SERVICE,
                                        bind_fuchsia_hardware_serialimpl::SERVICE_DRIVERTRANSPORT),
+              // TODO(https://fxbug.dev/467370573): Temporary workaround for a composite issue.
+              // Remove this once the composite issue is resolved.
+              fdf::MakeRejectBindRule2(bind_fuchsia_serial::NAME, "bt-passthrough-hci"),
           },
       .properties =
           {
