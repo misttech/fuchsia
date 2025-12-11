@@ -24,6 +24,13 @@ if (is_host) {
       nelson_env,
       sherlock_env,
     ]
+    honeydew_config = {
+      transports = {
+        ffx = {
+          use_monitor_state = true
+        }
+      }
+    }
   }
 
   # It uses "fuchsia-controller" to reboot the device. However, once device comes
@@ -48,6 +55,11 @@ if (is_host) {
         }
         wlan = {
           implementation = "sl4f"
+        }
+      }
+      transports = {
+        ffx = {
+          use_monitor_state = true
         }
       }
     }

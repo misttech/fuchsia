@@ -2,7 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 """Data types that match the machine output of ffx."""
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from honeydew.typing.custom_types import IpPort
@@ -187,18 +187,18 @@ class MonitorTargetInfo:
         addresses: A list of addresses associated with the target.
         target_type: The type of the target (e.g., "core.x64").
         is_default: Whether this is the default target.
+        is_manual: Whether this target is added manually.
+        serial: The serial number of the target.
     """
 
-    nodename: str
-    target_state: str
-    rcs_state: str
-    addresses: list[IpPort]
-    target_type: str
-    is_default: bool | None
-
-    def __init__(self, **kwargs: Any) -> None:
-        for k, v in kwargs.items():
-            object.__setattr__(self, k, v)
+    nodename: str = ""
+    target_state: str = "Disconnected"
+    rcs_state: str = "N"
+    addresses: list[IpPort] = field(default_factory=list)
+    target_type: str = "."
+    is_default: bool = False
+    is_manual: bool = False
+    serial: str = "<unknown>"
 
 
 # LINT.ThenChange(//src/developer/ffx/lib/target/src/info.rs)
