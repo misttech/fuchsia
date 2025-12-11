@@ -999,10 +999,6 @@ class VmCowPages final : public fbl::ContainableBaseClasses<
     return PageSourceType::Contiguous;
   }
 
-  bool direct_source_supplies_zero_pages() const {
-    return page_source_ && !page_source_->properties().is_user_pager;
-  }
-
   // Returns whether or not performing a bidirectional clone would result in a valid tree structure.
   // This does not perform checks on whether there are pinned pages, or if a bidirectional clone
   // would semantically make sense. Additionally the target |parent| for the new node should be
@@ -1514,7 +1510,7 @@ class VmCowPages final : public fbl::ContainableBaseClasses<
 
   // Specialized internal version of ZeroPagesLocked that only operates for
   // pager-backed VMOs backed by non-user pagers.
-  void ZeroPagesDirectSourceSuppliesZeroPagesLocked(VmCowRange range) TA_REQ(lock());
+  void ZeroPagesContiguous(VmCowRange range) TA_REQ(lock());
 
   // Specialized internal version of ZeroPagesLocked that only operates for a
   // VMO where there is no direct page_source_.

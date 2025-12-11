@@ -4212,15 +4212,14 @@ ktl::pair<zx_status_t, uint64_t> VmCowPages::ZeroPagesDirectUserPagerLocked(
   return {ZX_OK, processed_len};
 }
 
-void VmCowPages::ZeroPagesDirectSourceSuppliesZeroPagesLocked(VmCowRange range) {
+void VmCowPages::ZeroPagesContiguous(VmCowRange range) {
   DEBUG_ASSERT(range.IsBoundedBy(size_));
   DEBUG_ASSERT(range.is_page_aligned());
-  DEBUG_ASSERT(direct_source_supplies_zero_pages());
   DEBUG_ASSERT(!is_root_source_user_pager_backed());
   DEBUG_ASSERT(page_source_type() == PageSourceType::Contiguous);
 
   // The presence of a page_source_ is inferred from
-  // direct_source_supplies_zero_pages.
+  // PageSourceType::Contiguous.
   DEBUG_ASSERT(page_source_);
   // If there is a direct page source, there is no parent.
   DEBUG_ASSERT(!parent_);
@@ -4248,8 +4247,7 @@ ktl::pair<zx_status_t, uint64_t> VmCowPages::ZeroPagesNoDirectPageSourceLocked(
   DEBUG_ASSERT(page_request);
 
   // If the VMO is directly backed by a page source, it should be zeroed by
-  // ZeroPagesDirectSourceSuppliesZeroPagesLocked or
-  // ZeroPagesDirectUserPagerLocked.
+  // ZeroPagesContiguous or ZeroPagesDirectUserPagerLocked.
   DEBUG_ASSERT(!page_source_);
 
   // Since there is no direct page_source_, it is always safe to decommit zero
@@ -4485,9 +4483,9 @@ ktl::pair<zx_status_t, uint64_t> VmCowPages::ZeroPagesLocked(VmCowRange range, b
   // The methods we call below will call RangeChangeUpdateLocked themselves if
   // needed.
 
-  if (direct_source_supplies_zero_pages()) {
-    // ZeroPagesDirectSourceSuppliesZeroPagesLocked always succeeds.
-    ZeroPagesDirectSourceSuppliesZeroPagesLocked(range);
+  if (page_source_type() == PageSourceType::Contiguous) {
+    // ZeroPagesContiguous always succeeds.
+    ZeroPagesContiguous(range);
     return {ZX_OK, range.len};
   }
 
@@ -7576,7 +7574,8 @@ bool VmCowPages::DebugValidateVmoPageBorrowingLocked() const {
     if (!p->IsPage()) {
       // If we don't have a page, this is either a marker or reference, both of which are not
       // allowed with contiguous VMOs.
-      DEBUG_ASSERT(!direct_source_supplies_zero_pages());
+      DEBUG_ASSERT(page_source_type() == PageSourceType::Anonymous ||
+                   page_source_type() == PageSourceType::UserPager);
       return ZX_ERR_NEXT;
     }
     vm_page_t* page = p->Page();
