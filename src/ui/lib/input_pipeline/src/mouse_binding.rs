@@ -126,6 +126,7 @@ pub struct MouseEvent {
 
 impl Clone for MouseEvent {
     fn clone(&self) -> Self {
+        log::debug!("MouseEvent cloned without wake lease.");
         Self {
             location: self.location,
             wheel_delta_v: self.wheel_delta_v.clone(),
@@ -134,11 +135,7 @@ impl Clone for MouseEvent {
             phase: self.phase,
             affected_buttons: self.affected_buttons.clone(),
             pressed_buttons: self.pressed_buttons.clone(),
-            wake_lease: Mutex::new(self.wake_lease.lock().as_ref().map(|lease| {
-                lease
-                    .duplicate_handle(zx::Rights::SAME_RIGHTS)
-                    .expect("failed to duplicate event pair")
-            })),
+            wake_lease: None.into(),
         }
     }
 }
@@ -182,6 +179,24 @@ impl MouseEvent {
             pressed_buttons,
             is_precision_scroll,
             wake_lease: Mutex::new(wake_lease),
+        }
+    }
+
+    pub fn clone_with_wake_lease(&self) -> Self {
+        log::debug!("MouseEvent cloned with wake lease: {:?}", self.wake_lease);
+        Self {
+            location: self.location,
+            wheel_delta_v: self.wheel_delta_v.clone(),
+            wheel_delta_h: self.wheel_delta_h.clone(),
+            is_precision_scroll: self.is_precision_scroll,
+            phase: self.phase,
+            affected_buttons: self.affected_buttons.clone(),
+            pressed_buttons: self.pressed_buttons.clone(),
+            wake_lease: Mutex::new(self.wake_lease.lock().as_ref().map(|lease| {
+                lease
+                    .duplicate_handle(zx::Rights::SAME_RIGHTS)
+                    .expect("failed to duplicate event pair")
+            })),
         }
     }
 
@@ -647,7 +662,7 @@ fn send_mouse_event(
         trace_id: Some(trace_id),
     };
 
-    match sender.unbounded_send(event.clone()) {
+    match sender.unbounded_send(event.clone_with_wake_lease()) {
         Err(e) => {
             metrics_logger.log_error(
                 InputPipelineErrorMetricDimensionEvent::MouseFailedToSendEvent,

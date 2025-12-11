@@ -35,14 +35,8 @@ pub struct ConsumerControlsEvent {
 
 impl Clone for ConsumerControlsEvent {
     fn clone(&self) -> Self {
-        Self {
-            pressed_buttons: self.pressed_buttons.clone(),
-            wake_lease: self.wake_lease.as_ref().map(|lease| {
-                lease
-                    .duplicate_handle(zx::Rights::SAME_RIGHTS)
-                    .expect("failed to duplicate event pair")
-            }),
-        }
+        log::debug!("ConsumerControlsEvent cloned without wake lease.");
+        Self { pressed_buttons: self.pressed_buttons.clone(), wake_lease: None }
     }
 }
 
@@ -51,6 +45,12 @@ impl PartialEq for ConsumerControlsEvent {
         self.pressed_buttons == other.pressed_buttons
             && self.wake_lease.as_ref().map(|h| h.get_koid())
                 == other.wake_lease.as_ref().map(|h| h.get_koid())
+    }
+}
+
+impl Drop for ConsumerControlsEvent {
+    fn drop(&mut self) {
+        log::debug!("ConsumerControlsEvent dropped, had_wake_lease: {:?}", self.wake_lease);
     }
 }
 
@@ -64,6 +64,18 @@ impl ConsumerControlsEvent {
         wake_lease: Option<zx::EventPair>,
     ) -> Self {
         Self { pressed_buttons, wake_lease }
+    }
+
+    pub fn clone_with_wake_lease(&self) -> Self {
+        log::debug!("ConsumerControlsEvent cloned with wake lease: {:?}", self.wake_lease);
+        Self {
+            pressed_buttons: self.pressed_buttons.clone(),
+            wake_lease: self.wake_lease.as_ref().map(|lease| {
+                lease
+                    .duplicate_handle(zx::Rights::SAME_RIGHTS)
+                    .expect("failed to duplicate event pair")
+            }),
+        }
     }
 
     pub fn record_inspect(&self, node: &fuchsia_inspect::Node) {
@@ -312,7 +324,7 @@ fn send_consumer_controls_event(
         trace_id: Some(trace_id),
     };
 
-    match sender.unbounded_send(event.clone()) {
+    match sender.unbounded_send(event.clone_with_wake_lease()) {
         Err(e) => metrics_logger.log_error(
             InputPipelineErrorMetricDimensionEvent::ConsumerControlsSendEventFailed,
             std::format!("Failed to send ConsumerControlsEvent with error: {:?}", e),

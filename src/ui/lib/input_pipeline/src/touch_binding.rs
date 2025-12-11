@@ -61,6 +61,25 @@ pub struct TouchScreenEvent {
 
 impl Clone for TouchScreenEvent {
     fn clone(&self) -> Self {
+        log::debug!("TouchScreenEvent cloned without wake lease.");
+        Self {
+            contacts: self.contacts.clone(),
+            injector_contacts: self.injector_contacts.clone(),
+            pressed_buttons: self.pressed_buttons.clone(),
+            wake_lease: None,
+        }
+    }
+}
+
+impl Drop for TouchScreenEvent {
+    fn drop(&mut self) {
+        log::debug!("TouchScreenEvent dropped, had_wake_lease: {:?}", self.wake_lease);
+    }
+}
+
+impl TouchScreenEvent {
+    pub fn clone_with_wake_lease(&self) -> Self {
+        log::debug!("TouchScreenEvent cloned with wake lease: {:?}", self.wake_lease);
         Self {
             contacts: self.contacts.clone(),
             injector_contacts: self.injector_contacts.clone(),
@@ -72,9 +91,7 @@ impl Clone for TouchScreenEvent {
             }),
         }
     }
-}
 
-impl TouchScreenEvent {
     pub fn record_inspect(&self, node: &fuchsia_inspect::Node) {
         let contacts_clone = self.injector_contacts.clone();
         node.record_child("injector_contacts", move |contacts_node| {
@@ -770,7 +787,7 @@ fn send_touch_screen_event(
         trace_id: Some(trace_id),
     };
 
-    match input_event_sender.unbounded_send(event.clone()) {
+    match input_event_sender.unbounded_send(event.clone_with_wake_lease()) {
         Err(e) => {
             metrics_logger.log_error(
                 InputPipelineErrorMetricDimensionEvent::TouchFailedToSendTouchScreenEvent,
