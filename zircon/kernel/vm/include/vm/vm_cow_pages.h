@@ -999,8 +999,6 @@ class VmCowPages final : public fbl::ContainableBaseClasses<
     return page_source_ && !page_source_->properties().is_user_pager;
   }
 
-  bool can_decommit() const { return !page_source_ || !page_source_->properties().is_user_pager; }
-
   // Returns whether or not performing a bidirectional clone would result in a valid tree structure.
   // This does not perform checks on whether there are pinned pages, or if a bidirectional clone
   // would semantically make sense. Additionally the target |parent| for the new node should be

@@ -3907,8 +3907,8 @@ zx_status_t VmCowPages::DecommitRange(VmCowRange range) {
     return ZX_ERR_NOT_SUPPORTED;
   }
 
-  // VmObjectPaged::DecommitRange() rejects is_contiguous() VMOs (for now).
-  DEBUG_ASSERT(can_decommit());
+  DEBUG_ASSERT(page_source_type() == PageSourceType::Anonymous ||
+               page_source_type() == PageSourceType::Contiguous);
 
   // Demand offset and length be correctly aligned to not give surprising user semantics.
   if (!range.is_page_aligned()) {
