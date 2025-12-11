@@ -285,6 +285,10 @@ impl WalkPaths for PostProcessingScript {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, SupportsFileRelativePaths, WalkPaths)]
 #[serde(deny_unknown_fields)]
 pub struct VBMeta {
+    /// The style of VBMeta image to assemble.
+    #[serde(default)]
+    pub style: VBMetaStyle,
+
     /// Path on host to the key for signing VBMeta.
     #[file_relative_paths]
     #[walk_paths]
@@ -315,6 +319,33 @@ pub struct VBMetaDescriptor {
 
     /// Minimum AVB version to add.
     pub min_avb_version: String,
+}
+
+/// The style of VBMeta image to assemble.
+#[derive(Serialize, Deserialize, Debug, Default, Clone, Copy, PartialEq)]
+#[serde(rename_all = "kebab-case")]
+pub enum VBMetaStyle {
+    /// Generates a standalone, Fuchsia-style VBMeta image.
+    #[default]
+    Fuchsia,
+
+    /// Generates the VBMeta expected by Android protected VMs as a footer to
+    /// the product bundle's QEMU kernel (i.e., boot shim), where the choice of
+    /// ramdisk (i.e., ZBI) hash descriptor 'partition name' - which controls a
+    /// UART-related debug policy - is "initrd_normal" in user builds and
+    /// "initrd_debug" in non-user builds.
+    ///
+    /// See https://android.googlesource.com/platform/packages/modules/Virtualization/+/refs/heads/android16-release/guest/pvmfw/README.md#guest-image-signing
+    /// for more details.
+    AndroidPvmAuto,
+
+    /// Similar to `AndroidPvmAuto`, except that the ramdisk hash descriptor partition name
+    /// is fixed as "initrd_normal".
+    AndroidPvmNormal,
+
+    /// Similar to `AndroidPvmAuto`, except that the ramdisk hash descriptor partition name
+    /// is fixed as "initrd_debug".
+    AndroidPvmDebug,
 }
 
 /// The parameters describing how to create an Fxfs image.

@@ -8,7 +8,7 @@ use crate::extra_hash_descriptor::ExtraHashDescriptor;
 use crate::vfs::{FilesystemProvider, RealFilesystemProvider};
 use crate::{AssembledSystem, Image};
 use anyhow::{Context, Result};
-use assembly_images_config::VBMeta;
+use assembly_images_config::{VBMeta, VBMetaStyle};
 use camino::{Utf8Path, Utf8PathBuf};
 use std::path::Path;
 use utf8_path::path_relative_from_current_dir;
@@ -30,8 +30,11 @@ pub fn construct_vbmeta(
 
     // Collect the descriptors.
     let fs = RealFilesystemProvider {};
-    let mut descriptors = descriptors_for_fuchsia(zbi, salt.clone(), &fs)
-        .context("constructing VBMeta descriptors")?;
+    let mut descriptors = match vbmeta_config.style {
+        VBMetaStyle::Fuchsia => descriptors_for_fuchsia(zbi, salt.clone(), &fs)
+            .context("constructing VBMeta descriptors")?,
+        _ => todo!("TODO(https://fxbug.dev/449201661): Support Android pVM VBMeta styles"),
+    };
     for hash in &vbmeta_config.additional_descriptors {
         descriptors.push(Descriptor::Hash(
             ExtraHashDescriptor {
@@ -112,7 +115,7 @@ mod tests {
     use crate::vbmeta::{Descriptor, HashDescriptor, Key, Salt};
     use crate::vfs::mock::MockFilesystemProvider;
 
-    use assembly_images_config::VBMeta;
+    use assembly_images_config::{VBMeta, VBMetaStyle};
     use assembly_release_info::SystemReleaseInfo;
     use camino::Utf8Path;
     use tempfile::tempdir;
@@ -129,6 +132,7 @@ mod tests {
         std::fs::write(&metadata_path, test_keys::TEST_RSA_4096_PEM).unwrap();
 
         let vbmeta_config = VBMeta {
+            style: VBMetaStyle::Fuchsia,
             name: "fuchsia".into(),
             key: key_path,
             key_metadata: metadata_path,

@@ -71,6 +71,9 @@ pub struct VBMeta {
     #[serde(default = "default_vbmeta_name")]
     pub name: String,
 
+    /// The style of VBMeta to assemble.
+    pub style: bfc::VBMetaStyle,
+
     /// Path on host to the key for signing VBMeta.
     pub key: Utf8PathBuf,
 
@@ -375,9 +378,10 @@ impl ImagesConfig {
             postprocessing_script: board.zbi.postprocessing_script.clone(),
         }));
         if let Some(vbmeta) = &board.vbmeta {
-            let bfc::VBMeta { key, key_metadata, additional_descriptors } = vbmeta.clone();
+            let bfc::VBMeta { style, key, key_metadata, additional_descriptors } = vbmeta.clone();
             images.push(Image::VBMeta(VBMeta {
                 name: product.image_name.0.clone(),
+                style,
                 key: key.into(),
                 key_metadata: key_metadata.into(),
                 additional_descriptors,
@@ -502,6 +506,7 @@ mod tests {
                 }),
             },
             vbmeta: Some(bfc::VBMeta {
+                style: bfc::VBMetaStyle::Fuchsia,
                 key: "path/to/key".into(),
                 key_metadata: "path/to/metadata".into(),
                 additional_descriptors: vec![],
@@ -549,6 +554,7 @@ mod tests {
                 }),
             },
             vbmeta: Some(bfc::VBMeta {
+                style: bfc::VBMetaStyle::Fuchsia,
                 key: "path/to/key".into(),
                 key_metadata: "path/to/metadata".into(),
                 additional_descriptors: vec![],
@@ -618,6 +624,7 @@ mod tests {
                     }),
                     Image::VBMeta(VBMeta {
                         name: "a-product".into(),
+                        style: bfc::VBMetaStyle::Fuchsia,
                         key: "path/to/key".into(),
                         key_metadata: "path/to/metadata".into(),
                         additional_descriptors: vec![],
@@ -657,6 +664,7 @@ mod tests {
                     }),
                     Image::VBMeta(VBMeta {
                         name: "a-product".into(),
+                        style: bfc::VBMetaStyle::Fuchsia,
                         key: "path/to/key".into(),
                         key_metadata: "path/to/metadata".into(),
                         additional_descriptors: vec![],
@@ -708,6 +716,7 @@ mod tests {
                     }),
                     Image::VBMeta(VBMeta {
                         name: "a-product".into(),
+                        style: bfc::VBMetaStyle::Fuchsia,
                         key: "path/to/key".into(),
                         key_metadata: "path/to/metadata".into(),
                         additional_descriptors: vec![],
@@ -805,6 +814,7 @@ mod tests {
                     }),
                     Image::VBMeta(VBMeta {
                         name: "a-product".into(),
+                        style: bfc::VBMetaStyle::Fuchsia,
                         key: "path/to/key".into(),
                         key_metadata: "path/to/metadata".into(),
                         additional_descriptors: vec![],
@@ -909,6 +919,7 @@ mod tests {
                     },
                     {
                         type: "vbmeta",
+                        style: "fuchsia",
                         name: "fuchsia",
                         key: "path/to/key",
                         key_metadata: "path/to/key/metadata",
@@ -1036,6 +1047,7 @@ mod tests {
                     },
                     {
                         type: "vbmeta",
+                        style: "fuchsia",
                         key: "path/to/key",
                         key_metadata: "path/to/key/metadata",
                     },
