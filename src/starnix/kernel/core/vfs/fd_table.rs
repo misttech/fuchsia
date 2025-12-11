@@ -10,7 +10,7 @@ use fuchsia_rcu::rcu_arc::RcuArc;
 use fuchsia_rcu_collections::rcu_array::RcuArray;
 use starnix_sync::{LockBefore, Locked, Mutex, MutexGuard, ThreadGroupLimits};
 use starnix_syscalls::SyscallResult;
-use starnix_types::ownership::{Releasable, ReleasableByRef};
+use starnix_types::ownership::Releasable;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::resource_limits::Resource;
@@ -589,6 +589,11 @@ impl FdTable {
         self.inner.update(unshared);
     }
 
+    /// Releases the `FdTable`, closing any files opened exclusively by this table.
+    pub fn release(&self) {
+        self.inner.update(Default::default());
+    }
+
     /// Trims close-on-exec file descriptors from the table.
     pub fn exec(&self) {
         self.retain(|_fd, flags| !flags.contains(FdFlags::CLOEXEC));
@@ -808,14 +813,6 @@ impl FdTable {
     }
 }
 
-impl ReleasableByRef for FdTable {
-    type Context<'a> = ();
-    /// Drop the fd table, closing any files opened exclusively by this table.
-    fn release<'a>(&self, _context: ()) {
-        self.inner.update(Default::default());
-    }
-}
-
 impl Clone for FdTable {
     fn clone(&self) -> Self {
         FdTable { inner: self.inner.clone() }
@@ -854,7 +851,7 @@ mod test {
             assert!(Arc::ptr_eq(&files.get(fd1).unwrap(), &file));
             assert_eq!(files.get(FdNumber::from_raw(fd1.raw() + 1)).map(|_| ()), error!(EBADF));
 
-            files.release(());
+            files.release();
         })
         .await;
     }
@@ -886,8 +883,8 @@ mod test {
             assert_eq!(FdFlags::CLOEXEC, files.get_fd_flags_allowing_opath(fd0).unwrap());
             assert_ne!(FdFlags::CLOEXEC, forked.get_fd_flags_allowing_opath(fd0).unwrap());
 
-            forked.release(());
-            files.release(());
+            forked.release();
+            files.release();
         })
         .await;
     }
@@ -911,7 +908,7 @@ mod test {
             assert!(files.get(fd0).is_err());
             assert!(files.get(fd1).is_ok());
 
-            files.release(());
+            files.release();
         })
         .await;
     }
@@ -938,7 +935,7 @@ mod test {
             let another_fd = add(locked, &current_task, &files, file).unwrap();
             assert_eq!(another_fd.raw(), 0);
 
-            files.release(());
+            files.release();
         })
         .await;
     }

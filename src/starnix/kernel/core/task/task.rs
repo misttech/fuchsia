@@ -26,9 +26,7 @@ use starnix_sync::{
 };
 use starnix_task_command::TaskCommand;
 use starnix_types::arch::ArchWidth;
-use starnix_types::ownership::{
-    OwnedRef, Releasable, ReleasableByRef, ReleaseGuard, TempRef, WeakRef,
-};
+use starnix_types::ownership::{OwnedRef, Releasable, ReleaseGuard, TempRef, WeakRef};
 use starnix_types::stats::TaskTimeStats;
 use starnix_uapi::auth::{Credentials, FsCred};
 use starnix_uapi::errors::Errno;
@@ -1599,8 +1597,7 @@ impl Releasable for Task {
 
         std::mem::drop(pids);
 
-        // Release the fd table.
-        self.files.release(());
+        self.files.release();
 
         self.signal_vfork();
 
