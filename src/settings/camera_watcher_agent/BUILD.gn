@@ -5,38 +5,37 @@
 import("//build/components.gni")
 import("//build/rust/rustc_library.gni")
 
-group("camera") {
+group("camera_watcher_agent") {
   testonly = true
   deps = [
-    ":settings_camera",
+    ":settings_camera_watcher_agent",
     ":tests",
   ]
 }
 
-rustc_library("settings_camera") {
-  name = "settings_camera"
+rustc_library("settings_camera_watcher_agent") {
+  name = "settings_camera_watcher_agent"
   with_unit_tests = true
-  edition = "2024"
+  edition = "2021"
 
   visibility = [
     ":*",
-    "//src/settings/camera_watcher_agent:*",
-    "//src/settings/light:*",
     "//src/settings/service:*",
-    "//src/settings/test_common:*",
   ]
 
   deps = [
-    "//sdk/fidl/fuchsia.camera3:fuchsia.camera3_rust",
-    "//sdk/rust/zx",
-    "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia-async",
+    "//src/lib/trace/rust:trace",
+    "//src/settings/camera:settings_camera",
     "//src/settings/common:settings_common",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:futures",
   ]
 
-  test_deps = []
+  test_deps = [
+    "//src/lib/fuchsia",
+    "//src/settings/test_common:settings_test_common",
+  ]
 
   sources = [ "src/lib.rs" ]
 
@@ -44,10 +43,10 @@ rustc_library("settings_camera") {
   configs += [ "//build/config/rust/lints:clippy_warn_all" ]
 }
 
-fuchsia_unittest_package("settings_camera_tests") {
-  component_name = "settings_camera_test"
-  manifest = "meta/settings_camera_tests.cml"
-  deps = [ ":settings_camera_test" ]
+fuchsia_unittest_package("settings_camera_watcher_agent_tests") {
+  component_name = "settings_camera_watcher_agent_test"
+  manifest = "meta/settings_camera_watcher_agent_tests.cml"
+  deps = [ ":settings_camera_watcher_agent_test" ]
   test_specs = {
     log_settings = {
       max_severity = "ERROR"
@@ -57,5 +56,5 @@ fuchsia_unittest_package("settings_camera_tests") {
 
 group("tests") {
   testonly = true
-  deps = [ ":settings_camera_tests" ]
+  deps = [ ":settings_camera_watcher_agent_tests" ]
 }

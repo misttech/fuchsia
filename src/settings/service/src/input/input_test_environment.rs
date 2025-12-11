@@ -136,7 +136,7 @@ impl TestInputEnvironmentBuilder {
         task.detach();
 
         let camera_watcher_agent = self.agents.contains(&AgentType::CameraWatcher).then(|| {
-            crate::agent::camera_watcher::CameraWatcherAgent::new(
+            settings_camera_watcher_agent::CameraWatcherAgent::new(
                 vec![camera_watcher_event_tx],
                 external_publisher.clone(),
             )

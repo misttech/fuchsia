@@ -21,6 +21,7 @@ rustc_library("settings_common") {
   visibility = [
     ":*",
     "//src/settings/camera:*",
+    "//src/settings/camera_watcher_agent:*",
     "//src/settings/intl:*",
     "//src/settings/keyboard:*",
     "//src/settings/light:*",
