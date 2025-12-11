@@ -30,11 +30,17 @@
             protocol: [ "fuchsia.net.name.Lookup" ],
             from: "#dns_resolver",
         },
+
+        // fuchsia_hyper::new_https_client fails if there isn't a file at /config/ssl/cert.pem, but
+        // the tests don't actually make https connections and so don't need any certs, so we can
+        // just give them an empty file instead of making them a system test and giving them the
+        // system certs.
         {
-            // TODO(https://fxbug.dev/42055086): use certs from this package rather than the system realm.
-            directory: "root-ssl-certificates",
+            directory: "pkg",
+            from: "framework",
             rights: [ "r*" ],
             path: "/config/ssl",
+            subdir: "fake-ssl-certs",
         },
     ],
     offer: [

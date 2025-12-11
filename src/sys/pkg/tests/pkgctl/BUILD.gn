@@ -42,7 +42,6 @@ fuchsia_test_component("pkgctl_integration_test-component") {
   component_name = "pkgctl-integration-test"
   manifest = "meta/pkgctl-integration-test.cml"
   deps = [ ":driver" ]
-  test_type = "system"
 }
 
 fuchsia_test_package("pkgctl-integration-tests") {
@@ -52,6 +51,7 @@ fuchsia_test_package("pkgctl-integration-tests") {
     "//src/connectivity/network/dns:component",
     "//src/connectivity/policy/http-client:component",
     "//src/sys/pkg/bin/pkgctl:pkgctl-binary",
+    "//src/sys/pkg/testing:fake-ssl-certs",
   ]
 }
 

@@ -64,9 +64,9 @@ fuchsia_unittest_package("omaha-client-fuchsia-tests") {
     "//src/connectivity/network/dns:component",
     "//src/power/shutdown-shim/tests:shutdown_shim_component",
     "//src/sys/pkg/bin/fake-channel-control",
+    "//src/sys/pkg/testing:fake-ssl-certs",
     "//src/sys/stash:stash2_v2",
   ]
-  test_type = "system"
 }
 
 group("tests") {

@@ -38,10 +38,18 @@
             from: "parent",
             to: "#test_driver",
         },
+
+        // fuchsia_hyper::new_https_client fails if there isn't a file at /config/ssl/cert.pem, but
+        // the tests don't actually make https connections and so don't need any certs, so we can
+        // just give them an empty file instead of making them a system test and giving them the
+        // system certs.
         {
-            directory: "root-ssl-certificates",
-            from: "parent",
+            directory: "pkg",
+            from: "framework",
+            as: "root-ssl-certificates",
             to: "#test_driver",
+            rights: [ "r*" ],
+            subdir: "fake-ssl-certs",
         },
     ],
     expose: [

@@ -165,9 +165,6 @@ fuchsia_package("pkg-resolver-eng") {
 fuchsia_test_component("unit-tests-root") {
   component_name = "test_root"
   manifest = "meta/test_root.cml"
-
-  # Depends on root ssl certificate which is a system capability.
-  test_type = "system"
 }
 
 fuchsia_component("unit-tests-driver") {
@@ -190,6 +187,7 @@ fuchsia_test_package("unit-tests-package") {
     "//src/connectivity/network:netstack-for-tests",
     "//src/connectivity/network/dns:component",
     "//src/sys/pkg/lib/fuchsia-pkg-testing/certs",
+    "//src/sys/pkg/testing:fake-ssl-certs",
     "//src/sys/pkg/tests/pkg-resolver:empty-repo",
   ]
   test_components = [ ":unit-tests-root" ]

@@ -67,7 +67,6 @@ rustc_test("driver") {
 fuchsia_test_component("omaha-client-test-root") {
   component_name = "test_root"
   manifest = "meta/test_root.cml"
-  test_type = "system"
 }
 
 fuchsia_component("omaha-client-test-driver") {
@@ -88,6 +87,7 @@ fuchsia_test_package("omaha-client-integration-tests") {
     "//src/sys/pkg/bin/omaha-client:omaha-client-structured-config-test",
     "//src/sys/pkg/bin/system-update-committer:component",
     "//src/sys/pkg/bin/system-updater:production-component-and-config",
+    "//src/sys/pkg/testing:fake-ssl-certs",
     "//src/sys/stash:stash2_v2",
   ]
 
