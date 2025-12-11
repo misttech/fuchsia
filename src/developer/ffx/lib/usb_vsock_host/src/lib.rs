@@ -365,64 +365,6 @@ async fn run_usb_link<S: AsyncRead + AsyncWrite + Send + 'static>(
     }
 }
 
-/// Contains senders for routing incoming connections when listening on a port.
-#[derive(Clone)]
-enum PortListening<S> {
-    AnyCid(mpsc::Sender<IncomingConnection<S>>),
-    ByCid(HashMap<u32, mpsc::Sender<IncomingConnection<S>>>),
-}
-
-impl<S: AsyncRead + AsyncWrite + Send + 'static> PortListening<S> {
-    /// Try to add an additional port to listen on to this listener. This also
-    /// accounts for the case where the listener that's already registered is
-    /// dead, so if the sender for new connections we have is hung up already
-    /// this will quietly replace it.
-    ///
-    /// The `port` argument is for error reporting; `PortListening` values are
-    /// implicitly 1:1 associated with ports already.
-    fn add_listener(
-        &mut self,
-        cid: Option<u32>,
-        port: u32,
-        sender: mpsc::Sender<IncomingConnection<S>>,
-    ) -> Result<(), ListenError> {
-        match self {
-            PortListening::AnyCid(old) if old.is_closed() => {
-                if let Some(cid) = cid {
-                    *self = PortListening::ByCid([(cid, sender)].into_iter().collect());
-                } else {
-                    *self = PortListening::AnyCid(sender);
-                }
-                Ok(())
-            }
-            PortListening::ByCid(map) => {
-                if let Some(cid) = cid {
-                    match map.entry(cid) {
-                        std::collections::hash_map::Entry::Vacant(vacant_entry) => {
-                            vacant_entry.insert(sender);
-                            Ok(())
-                        }
-                        std::collections::hash_map::Entry::Occupied(mut occupied_entry) => {
-                            if occupied_entry.get().is_closed() {
-                                occupied_entry.insert(sender);
-                                Ok(())
-                            } else {
-                                Err(ListenError::PortInUse(port))
-                            }
-                        }
-                    }
-                } else if map.values().all(|x| x.is_closed()) {
-                    *self = PortListening::AnyCid(sender);
-                    Ok(())
-                } else {
-                    Err(ListenError::PortInUse(port))
-                }
-            }
-            _ => Err(ListenError::PortInUse(port)),
-        }
-    }
-}
-
 /// State of a local port.
 #[derive(Clone)]
 enum PortState<S> {
@@ -432,7 +374,7 @@ enum PortState<S> {
 
     /// We are listening on this port. Incoming connections are delivered via
     /// the sender.
-    Listening(PortListening<S>),
+    Listening(mpsc::Sender<IncomingConnection<S>>),
 }
 
 impl<S: AsyncRead + AsyncWrite + Send + 'static> PortState<S> {
@@ -441,13 +383,19 @@ impl<S: AsyncRead + AsyncWrite + Send + 'static> PortState<S> {
     /// associated with.
     fn add_listener(
         &mut self,
-        cid: Option<u32>,
         port: u32,
         sender: mpsc::Sender<IncomingConnection<S>>,
     ) -> Result<(), ListenError> {
         match self {
             PortState::Reserved => Err(ListenError::PortInUse(port)),
-            PortState::Listening(l) => l.add_listener(cid, port, sender),
+            PortState::Listening(l) => {
+                if l.is_closed() {
+                    *l = sender;
+                    Ok(())
+                } else {
+                    Err(ListenError::PortInUse(port))
+                }
+            }
         }
     }
 }
@@ -718,8 +666,7 @@ impl<S: AsyncRead + AsyncWrite + Send + 'static> UsbVsockHost<S> {
                 .port_states
                 .get(&port)
                 .and_then(|state| match state {
-                    PortState::Listening(PortListening::AnyCid(l)) => Some(l),
-                    PortState::Listening(PortListening::ByCid(map)) => map.get(&cid),
+                    PortState::Listening(l) => Some(l),
                     PortState::Reserved => None,
                 })
                 .filter(|x| !x.is_closed())
@@ -864,32 +811,17 @@ impl<S: AsyncRead + AsyncWrite + Send + 'static> UsbVsockHost<S> {
     pub fn listen(
         &self,
         port: u32,
-        cid: Option<NonZero<u32>>,
     ) -> Result<impl Stream<Item = IncomingConnection<S>> + 'static, ListenError> {
-        let cid = cid.map(|x| x.get()).map(|x| if x == CID_LOOPBACK { CID_HOST } else { x });
         let mut inner = self.inner.lock().unwrap();
-
-        // Technically this might not be spec behavior but I think it's smart.
-        // See comment in add_incoming_request_handler
-        if let Some(cid) = cid {
-            if cid > CID_HOST && !inner.conns.contains_key(&cid) {
-                return Err(ListenError::NotFound(cid));
-            }
-        }
 
         let (sender, receiver) = mpsc::channel(1);
 
-        match (cid, inner.port_states.entry(port)) {
-            (Some(cid), std::collections::hash_map::Entry::Vacant(port_state)) => {
-                port_state.insert(PortState::Listening(PortListening::ByCid(
-                    [(cid, sender)].into_iter().collect(),
-                )));
+        match inner.port_states.entry(port) {
+            std::collections::hash_map::Entry::Vacant(port_state) => {
+                port_state.insert(PortState::Listening(sender));
             }
-            (None, std::collections::hash_map::Entry::Vacant(port_state)) => {
-                port_state.insert(PortState::Listening(PortListening::AnyCid(sender)));
-            }
-            (_, std::collections::hash_map::Entry::Occupied(mut port_state)) => {
-                port_state.get_mut().add_listener(cid, port, sender)?;
+            std::collections::hash_map::Entry::Occupied(mut port_state) => {
+                port_state.get_mut().add_listener(port, sender)?;
             }
         }
 
@@ -950,15 +882,6 @@ impl<S: AsyncRead + AsyncWrite + Send + 'static> UsbVsockHost<S> {
             return;
         };
         std::mem::drop(got);
-        for port_state in inner.port_states.values_mut() {
-            // If we're being strictly POSIXy I think tehcnically we
-            // shouldn't do this. If you want to keep waiting and hope
-            // the CID comes back you should be welcome to. In practice
-            // it's probably best to notify a listener that the CID is gone.
-            if let PortState::Listening(PortListening::ByCid(ports)) = port_state {
-                std::mem::drop(ports.remove(&cid));
-            }
-        }
 
         let mut sender = self.event_sender.clone();
         self.scope.spawn(async move {
@@ -998,14 +921,9 @@ impl<S: AsyncRead + AsyncWrite + Send + 'static> UsbVsockHost<S> {
                         log::warn!("USB device usb:cid:{cid} tried to relay a connection from {device_cid}");
                         None
                     } else {
-                        let ret = if let Some(PortState::Listening(ch)) = inner.port_states.get(&host_port) {
-                            match ch {
-                                PortListening::AnyCid(sender) if !sender.is_closed() => Some(sender.clone()),
-                                PortListening::ByCid(senders) => {
-                                    senders.get(&device_cid).cloned().filter(|x| !x.is_closed())
-                                },
-                                _ => None,
-                            }
+                        let ret = if let Some(PortState::Listening(ch)) = inner.port_states.get(&host_port) &&
+                        !ch.is_closed() {
+                            Some(ch.clone())
                         } else {
                             None
                         };
@@ -1247,7 +1165,7 @@ mod test {
         for port_offset in 0..2 {
             let (a, other_end) = fasync::emulated_handle::Socket::create_stream();
             let other_end = fasync::Socket::from_socket(other_end);
-            let mut listener = host.listen(1234, None).unwrap();
+            let mut listener = host.listen(1234).unwrap();
             let connection_clone = Arc::clone(&connection);
             let connect_task = fasync::Task::spawn(async move {
                 connection_clone
@@ -1285,60 +1203,6 @@ mod test {
             b.read_exact(&mut buf).await.unwrap();
             assert_eq!(&buf, TEST_STR_1);
         }
-    }
-
-    #[fuchsia::test]
-    async fn test_listen_one_cid() {
-        let (
-            TestHost { host, event_receiver: _ },
-            TestConnection {
-                cid,
-                connection,
-                serial: _,
-                abort_transfer: _,
-                incoming_requests: _,
-                scope: _scope,
-            },
-        ) = TestConnection::<fasync::Socket>::new();
-
-        let (a, other_end) = fasync::emulated_handle::Socket::create_stream();
-        let other_end = fasync::Socket::from_socket(other_end);
-        let mut listener = host.listen(1234, Some(cid.try_into().unwrap())).unwrap();
-        let connect_task = fasync::Task::spawn(async move {
-            connection
-                .connect(
-                    usb_vsock::Address {
-                        device_cid: cid,
-                        host_cid: 2,
-                        device_port: 16384,
-                        host_port: 1234,
-                    },
-                    other_end,
-                )
-                .await
-        });
-
-        let (b, other_end) = fasync::emulated_handle::Socket::create_stream();
-        let other_end = fasync::Socket::from_socket(other_end);
-        let _state = listener.next().await.unwrap().accept(other_end).await.unwrap();
-        let _remote_state = connect_task.await.unwrap();
-
-        let mut a = fasync::Socket::from_socket(a);
-        let mut b = fasync::Socket::from_socket(b);
-
-        const TEST_STR_1: &[u8] = b"Y'all seem disenchanted with my whimsical diversions.";
-        const TEST_STR_2: &[u8] = b"Why were we programmed to get bored anyway?";
-
-        a.write_all(TEST_STR_1).await.unwrap();
-        b.write_all(TEST_STR_2).await.unwrap();
-
-        let mut buf = vec![0u8; TEST_STR_2.len()];
-        a.read_exact(&mut buf).await.unwrap();
-        assert_eq!(&buf, TEST_STR_2);
-
-        let mut buf = vec![0u8; TEST_STR_1.len()];
-        b.read_exact(&mut buf).await.unwrap();
-        assert_eq!(&buf, TEST_STR_1);
     }
 
     #[fuchsia::test]
@@ -1453,7 +1317,7 @@ mod test {
 
         let (socket, _) = fasync::emulated_handle::Socket::create_stream();
         let socket = fasync::Socket::from_socket(socket);
-        let _listener = host.listen(1234, None).unwrap();
+        let _listener = host.listen(1234).unwrap();
         let Err(_) = connection
             .connect(
                 usb_vsock::Address {
@@ -1486,7 +1350,7 @@ mod test {
 
         let (socket, _) = fasync::emulated_handle::Socket::create_stream();
         let socket = fasync::Socket::from_socket(socket);
-        let _listener = host.listen(1234, None).unwrap();
+        let _listener = host.listen(1234).unwrap();
         let Err(_) = connection
             .connect(
                 usb_vsock::Address {
@@ -1517,8 +1381,8 @@ mod test {
             },
         ) = TestConnection::<fasync::Socket>::new();
 
-        let _listener = host.listen(1234, None).unwrap();
-        let Err(ListenError::PortInUse(port)) = host.listen(1234, None) else {
+        let _listener = host.listen(1234).unwrap();
+        let Err(ListenError::PortInUse(port)) = host.listen(1234) else {
             panic!();
         };
         assert_eq!(1234, port);
@@ -1553,7 +1417,7 @@ mod test {
         let socket = fasync::Socket::from_socket(socket);
         let _remote_state = connection.accept(request, socket).await.unwrap();
         connect_task.await.unwrap();
-        let Err(ListenError::PortInUse(port)) = host.listen(host_port, None) else {
+        let Err(ListenError::PortInUse(port)) = host.listen(host_port) else {
             panic!();
         };
         assert_eq!(host_port, port);
@@ -1562,106 +1426,10 @@ mod test {
             // Ports are reaped in the background, so we need to give the
             // executor a little time to do it.
             fasync::Timer::new(std::time::Duration::from_millis(100)).await;
-            if host.listen(host_port, None).is_ok() {
+            if host.listen(host_port).is_ok() {
                 return;
             }
         }
-    }
-
-    #[fuchsia::test]
-    async fn test_double_listen_second_narrower() {
-        let (
-            TestHost { host, event_receiver: _ },
-            TestConnection {
-                cid,
-                connection: _connection,
-                serial: _,
-                abort_transfer: _,
-                incoming_requests: _,
-                scope: _scope,
-            },
-        ) = TestConnection::<fasync::Socket>::new();
-
-        let _listener = host.listen(1234, None).unwrap();
-        let Err(ListenError::PortInUse(port)) = host.listen(1234, Some(cid.try_into().unwrap()))
-        else {
-            panic!();
-        };
-        assert_eq!(1234, port);
-    }
-
-    #[fuchsia::test]
-    async fn test_double_listen_second_broader() {
-        let (
-            TestHost { host, event_receiver: _ },
-            TestConnection {
-                cid,
-                connection: _connection,
-                serial: _,
-                abort_transfer: _,
-                incoming_requests: _,
-                scope: _scope,
-            },
-        ) = TestConnection::<fasync::Socket>::new();
-
-        let _listener = host.listen(1234, Some(cid.try_into().unwrap())).unwrap();
-        let Err(ListenError::PortInUse(port)) = host.listen(1234, None) else {
-            panic!();
-        };
-        assert_eq!(1234, port);
-    }
-
-    #[fuchsia::test]
-    async fn test_listen_bad_cid() {
-        let (
-            TestHost { host, event_receiver: _ },
-            TestConnection {
-                cid: _,
-                connection: _connection,
-                serial: _,
-                abort_transfer: _,
-                incoming_requests: _,
-                scope: _scope,
-            },
-        ) = TestConnection::<fasync::Socket>::new();
-
-        let Err(ListenError::NotFound(cid)) = host.listen(1234, Some(60.try_into().unwrap()))
-        else {
-            panic!();
-        };
-        assert_eq!(60, cid);
-    }
-
-    #[fuchsia::test]
-    async fn test_listen_dropped_conn() {
-        let (
-            TestHost { host, event_receiver: _ },
-            TestConnection {
-                cid,
-                connection,
-                serial: _,
-                abort_transfer: _,
-                incoming_requests: _,
-                scope: _scope,
-            },
-        ) = TestConnection::<fasync::Socket>::new();
-
-        let mut listener = host.listen(1234, Some(cid.try_into().unwrap())).unwrap();
-
-        assert!(
-            listener
-                .poll_next_unpin(&mut std::task::Context::from_waker(
-                    futures::task::noop_waker_ref()
-                ))
-                .is_pending()
-        );
-        host.remove_device(cid);
-        std::mem::drop(connection);
-        let Err(ListenError::NotFound(got_cid)) = host.listen(5678, Some(cid.try_into().unwrap()))
-        else {
-            panic!();
-        };
-        assert_eq!(cid, got_cid);
     }
 
     #[fuchsia::test]
@@ -1753,9 +1521,9 @@ mod test {
             },
         ) = TestConnection::<fasync::Socket>::new();
 
-        let listener = host.listen(1234, None).unwrap();
+        let listener = host.listen(1234).unwrap();
         std::mem::drop(listener);
-        let _listener = host.listen(1234, None).unwrap();
+        let _listener = host.listen(1234).unwrap();
     }
 
     #[fuchsia::test]
@@ -1795,7 +1563,7 @@ mod test {
         let (event_sender, _receiver) = mpsc::channel(0);
         let host = UsbVsockHost::<fasync::Socket>::new_for_test(event_sender);
 
-        let mut incoming_requests = host.listen(TEST_PORT, None).unwrap();
+        let mut incoming_requests = host.listen(TEST_PORT).unwrap();
         let (a, other_end) = fasync::emulated_handle::Socket::create_stream();
         let other_end = fasync::Socket::from_socket(other_end);
 

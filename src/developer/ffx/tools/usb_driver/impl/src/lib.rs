@@ -650,7 +650,7 @@ impl HostDriver {
         body: &[u8],
     ) -> Result<(), anyhow::Error> {
         let usb_fidl::ControlListenRequest { port } = fidl_message::decode_message(header, body)?;
-        let resp = match self.driver.listen(port, None) {
+        let resp = match self.driver.listen(port) {
             Ok(s) => {
                 self.listeners.init_listener(session_id, port);
 
