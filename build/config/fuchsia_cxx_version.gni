@@ -17,10 +17,18 @@ _available_cxx_versions = [
 # after the `experimental_cxx_version` build argument is removed.
 fuchsia_cxx_version = _default_cxx_version
 
+# The C++ standard versions supported by the Fuchsia SDK.
+#
+# https://fuchsia.dev/fuchsia-src/contribute/governance/rfcs/0258_update_from_c++17_to_c++20
+fuchsia_sdk_cxx_supported_versions = [
+  17,
+  20,
+]
+
 declare_args() {
   # **NOTE:** This is for **experimentation only** and should not normally be
   # changed.  Set the version of the C++ standard to use when compiling. Must be
-  # on of the values in `_available_cxx_versions`.
+  # one of the values in `_available_cxx_versions`.
   # Note also that GN code should never use this variable directly, but always
   # instead use the `fuchsia_cxx_version` variable.
   experimental_cxx_version = false
@@ -33,4 +41,11 @@ if (experimental_cxx_version != false) {
       _available_cxx_versions + [ experimental_cxx_version ] -
           [ experimental_cxx_version ] != _available_cxx_versions,
       "`experimental_cxx_version=$experimental_cxx_version` must be one of $_available_cxx_versions")
+
+  if (fuchsia_sdk_cxx_supported_versions + [ experimental_cxx_version ] -
+      [ experimental_cxx_version ] != fuchsia_sdk_cxx_supported_versions) {
+    # Temporarily act as if this is an SDK-supported version too.  This will
+    # enable testing the new experimental version as if it were SDK-supported.
+    fuchsia_sdk_cxx_supported_versions += [ experimental_cxx_version ]
+  }
 }

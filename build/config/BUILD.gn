@@ -43,17 +43,18 @@ config("language") {
   cflags_cc = [ "-std=c++$fuchsia_cxx_version" ]
   defines = []
 
-  if (fuchsia_cxx_version < 20) {
-    # TODO(https://fxbug.dev/42064981): libc++ now marks the C++20
-    # synchronization primitives as deprecated in older C++ standards which
-    # affects Fuchsia since we use these primitives across the codebase. We
-    # temporarily suppress these warnings until C++20 becomes the default.
-    defines += [ "_LIBCPP_DISABLE_DEPRECATION_WARNINGS" ]
-  }
-
   # Pass the same C/C++ flags to the Objective-C/C++ compiler.
   cflags_objc = cflags_c
   cflags_objcc = cflags_cc
+}
+
+# These configs can be used to override the C++ version for a particular
+# target.  This is used primarily for tests to specifically validate building
+# under supported modes other than $fuchsia_cxx_version.
+foreach(cxx_version, fuchsia_sdk_cxx_supported_versions) {
+  config("c++$cxx_version") {
+    cflags_cc = [ "-std=c++$cxx_version" ]
+  }
 }
 
 config("color_diagnostics") {
