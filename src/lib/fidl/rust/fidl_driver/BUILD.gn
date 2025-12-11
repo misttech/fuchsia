@@ -28,6 +28,7 @@ rustc_library("fidl_driver") {
     "//sdk/fidl/fuchsia.hardware.cqhci:*",
     "//sdk/fidl/fuchsia.hardware.i2cimpl:*",
     "//sdk/fidl/fuchsia.hardware.sdmmc:*",
+    "//sdk/fidl/fuchsia.power.broker:*",
     "//tools/fidl/fidlc/testdata/*",
   ]
 }

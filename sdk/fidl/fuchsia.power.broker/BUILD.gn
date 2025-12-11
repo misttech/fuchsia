@@ -16,6 +16,7 @@ fidl("fuchsia.power.broker") {
     "//examples/power/*",
     "//sdk:*",
     "//sdk/fidl:*",
+    "//sdk/fidl/fuchsia.driver.framework/*",
     "//sdk/fidl/fuchsia.hardware.hrtimer/*",
     "//sdk/fidl/fuchsia.power.system/*",
     "//sdk/fidl/fuchsia.power.topology.test/*",
@@ -48,4 +49,8 @@ fidl("fuchsia.power.broker") {
     "//src/sys/time/timekeeper/*",
     "//vendor/*",
   ]
+  enable_hlcpp = true
+  enable_rust_next = true
+  enable_rust_drivers = true
+  contains_drivers = true
 }
