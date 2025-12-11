@@ -7,7 +7,7 @@
 
 use super::BpfMap;
 use crate::bpf::attachments::{BpfAttachAttr, bpf_prog_attach, bpf_prog_detach};
-use crate::bpf::fs::{BpfFsDir, BpfFsObject, BpfHandle, get_bpf_object};
+use crate::bpf::fs::{BpfFsDir, BpfHandle, get_bpf_object, resolve_pinned_bpf_object};
 use crate::bpf::program::{Program, ProgramInfo};
 use crate::mm::{MemoryAccessor, MemoryAccessorExt};
 use crate::security;
@@ -421,11 +421,8 @@ pub fn sys_bpf(
                 _ => return error!(EINVAL),
             };
             let pathname = current_task.read_path(path_addr)?;
-            let node = current_task.lookup_path_from_root(locked, pathname.as_ref())?;
-            // TODO(tbodt): This might be the wrong error code, write a test program to find out
-            let object =
-                node.entry.node.downcast_ops::<BpfFsObject>().ok_or_else(|| errno!(EINVAL))?;
-            let handle = object.handle.clone();
+            let (handle, node) =
+                resolve_pinned_bpf_object(locked, current_task, pathname.as_ref(), open_flags)?;
             reopen_bpf_fd(locked, current_task, node, handle, open_flags)
         }
 

@@ -18,6 +18,7 @@
 #include <algorithm>
 #include <atomic>
 #include <climits>
+#include <fstream>
 #include <vector>
 
 #include <fbl/unique_fd.h>
@@ -243,52 +244,52 @@ class BpfMapTest : public BpfTestBase {
     ASSERT_EQ(bpf(BPF_OBJ_PIN, &attr), 0) << strerror(errno);
   }
 
-  int BpfLock(int fd, short type) {
-    if (fd < 0)
+  fbl::unique_fd BpfLock(fbl::unique_fd fd, short type) {
+    if (!fd.is_valid())
       return fd;  // pass any errors straight through
-    int mapId = BpfGetMapId(fd);
-    if (mapId <= 0) {
-      EXPECT_GT(mapId, 0);
-      return -1;
+    int map_id = BpfGetMapId(fd.get());
+    if (map_id <= 0) {
+      EXPECT_GT(map_id, 0);
+      return fbl::unique_fd();
     }
 
     struct flock64 fl = {
         .l_type = type,        // short: F_{RD,WR,UN}LCK
         .l_whence = SEEK_SET,  // short: SEEK_{SET,CUR,END}
-        .l_start = mapId,      // off_t: start offset
+        .l_start = map_id,     // off_t: start offset
         .l_len = 1,            // off_t: number of bytes
     };
 
-    int ret = fcntl(fd, F_OFD_SETLK, &fl);
-    if (!ret)
-      return fd;  // success
-    close(fd);
-    return ret;  // most likely -1 with errno == EAGAIN, due to already held lock
+    int ret = fcntl(fd.get(), F_OFD_SETLK, &fl);
+    if (ret != 0) {
+      fd.reset();
+    }
+    return fd;
   }
 
-  int BpfFdGet(const char* pathname, uint32_t flag) {
+  fbl::unique_fd BpfFdGet(const char* pathname, uint32_t flag) {
     bpf_attr attr = {
         .pathname = reinterpret_cast<uint64_t>(pathname),
         .file_flags = flag,
     };
-    return bpf(BPF_OBJ_GET, &attr);
+    return fbl::unique_fd(bpf(BPF_OBJ_GET, &attr));
   }
 
-  int MapRetrieveLocklessRW(const char* pathname) { return BpfFdGet(pathname, 0); }
+  fbl::unique_fd MapRetrieveLocklessRW(const char* pathname) { return BpfFdGet(pathname, 0); }
 
-  int MapRetrieveExclusiveRW(const char* pathname) {
+  fbl::unique_fd MapRetrieveExclusiveRW(const char* pathname) {
     return BpfLock(MapRetrieveLocklessRW(pathname), F_WRLCK);
   }
 
-  int MapRetrieveRW(const char* pathname) {
+  fbl::unique_fd MapRetrieveRW(const char* pathname) {
     return BpfLock(MapRetrieveLocklessRW(pathname), F_RDLCK);
   }
 
-  int MapRetrieveRO(const char* pathname) { return BpfFdGet(pathname, BPF_F_RDONLY); }
+  fbl::unique_fd MapRetrieveRO(const char* pathname) { return BpfFdGet(pathname, BPF_F_RDONLY); }
 
   // WARNING: it's impossible to grab a shared (ie. read) lock on a write-only fd,
   // so we instead choose to grab an exclusive (ie. write) lock.
-  int MapRetrieveWO(const char* pathname) {
+  fbl::unique_fd MapRetrieveWO(const char* pathname) {
     return BpfLock(BpfFdGet(pathname, BPF_F_WRONLY), F_WRLCK);
   }
 
@@ -532,19 +533,29 @@ TEST_F(BpfMapTest, MapReadOnly) {
 TEST_F(BpfMapTest, PinMap) {
   const char* pin_path = "/sys/fs/bpf/foo";
 
-  unlink(pin_path);
-  bpf_attr attr = {
-      .pathname = (uintptr_t)pin_path,
-      .bpf_fd = (unsigned)map_fd(),
-  };
-  ASSERT_EQ(bpf(BPF_OBJ_PIN, &attr), 0) << strerror(errno);
+  Pin(map_fd(), pin_path);
   EXPECT_EQ(access(pin_path, F_OK), 0) << strerror(errno);
 
+  struct statx statx1;
+  ASSERT_EQ(statx(AT_FDCWD, pin_path, 0, STATX_ATIME, &statx1), 0) << strerror(errno);
+
+  // Close the map fd.
   EXPECT_EQ(close(map_fd()), 0);
-  attr = {.pathname = (uintptr_t)pin_path};
+
+  // Sleep a bit to allow the atime to change.
+  usleep(10000);
+
+  union bpf_attr attr = {.pathname = (uintptr_t)pin_path};
   int map_fd = bpf(BPF_OBJ_GET, &attr);
   ASSERT_GE(map_fd, 0) << strerror(errno);
   CheckMapInfo(map_fd);
+
+  // The atime should have changed.
+  struct statx statx2;
+  ASSERT_EQ(statx(AT_FDCWD, pin_path, 0, STATX_ATIME, &statx2), 0) << strerror(errno);
+  EXPECT_TRUE(statx1.stx_atime.tv_sec < statx2.stx_atime.tv_sec ||
+              (statx1.stx_atime.tv_sec == statx2.stx_atime.tv_sec &&
+               statx1.stx_atime.tv_nsec < statx2.stx_atime.tv_nsec));
 }
 
 TEST_F(BpfMapTest, FreezeMap) {
@@ -628,25 +639,66 @@ TEST_F(BpfMapTest, LockTest) {
   Pin(array_fd(), m1);
   Pin(map_fd(), m2);
 
-  fbl::unique_fd fd0(MapRetrieveExclusiveRW(m1));
+  fbl::unique_fd fd0 = MapRetrieveExclusiveRW(m1);
   ASSERT_TRUE(fd0.is_valid());
-  fbl::unique_fd fd1(MapRetrieveExclusiveRW(m2));
+  fbl::unique_fd fd1 = MapRetrieveExclusiveRW(m2);
   ASSERT_TRUE(fd1.is_valid());  // no conflict with fd0
-  fbl::unique_fd fd2(MapRetrieveExclusiveRW(m2));
+  fbl::unique_fd fd2 = MapRetrieveExclusiveRW(m2);
   ASSERT_FALSE(fd2.is_valid());  // busy due to fd1
-  fbl::unique_fd fd3(MapRetrieveRO(m2));
+  fbl::unique_fd fd3 = MapRetrieveRO(m2);
   ASSERT_TRUE(fd3.is_valid());  // no lock taken
-  fbl::unique_fd fd4(MapRetrieveRW(m2));
+  fbl::unique_fd fd4 = MapRetrieveRW(m2);
   ASSERT_FALSE(fd4.is_valid());  // busy due to fd1
   fd1.reset();                   // releases exclusive lock
-  fbl::unique_fd fd5(MapRetrieveRO(m2));
+  fbl::unique_fd fd5 = MapRetrieveRO(m2);
   ASSERT_TRUE(fd5.is_valid());  // no lock taken
-  fbl::unique_fd fd6(MapRetrieveRW(m2));
+  fbl::unique_fd fd6 = MapRetrieveRW(m2);
   ASSERT_TRUE(fd6.is_valid());  // now ok
-  fbl::unique_fd fd7(MapRetrieveRO(m2));
+  fbl::unique_fd fd7 = MapRetrieveRO(m2);
   ASSERT_TRUE(fd7.is_valid());  // no lock taken
-  fbl::unique_fd fd8(MapRetrieveExclusiveRW(m2));
+  fbl::unique_fd fd8 = MapRetrieveExclusiveRW(m2);
   ASSERT_FALSE(fd8.is_valid());  // busy due to fd6
+}
+
+// Verify BPF_GET_OBJ behavior on a regular file.
+TEST_F(BpfMapTest, GetObjFile) {
+  test_helper::ScopedTempDir temp_dir;
+  std::string file_name = temp_dir.path() + "/file";
+  {
+    std::ofstream file(file_name);
+    file << "test";
+    ASSERT_TRUE(file.is_open());
+  }
+
+  fbl::unique_fd file_fd(BpfFdGet(file_name.c_str(), BPF_F_RDONLY));
+  ASSERT_FALSE(file_fd.is_valid());
+  EXPECT_EQ(errno, EPERM);
+}
+
+// Verify that BPF_OBJ_GET checks file permissions.
+TEST_F(BpfMapTest, PinAccessCheck) {
+  const char* array_path = "/sys/fs/bpf/array_access";
+  Pin(array_fd(), array_path);
+
+  const uid_t TEST_UID = 32;
+
+  EXPECT_EQ(chmod(array_path, 0770), 0) << strerror(errno);
+  EXPECT_EQ(chown(array_path, TEST_UID, TEST_UID), 0) << strerror(errno);
+
+  EXPECT_EQ(setegid(TEST_UID), 0) << strerror(errno);
+  EXPECT_EQ(seteuid(TEST_UID), 0) << strerror(errno);
+
+  fbl::unique_fd map_fd(BpfFdGet(array_path, BPF_F_RDONLY));
+  EXPECT_TRUE(map_fd.is_valid()) << strerror(errno);
+
+  // Reset permissions and try opening the same file again. It should fail.
+  EXPECT_EQ(chmod(array_path, 0), 0) << strerror(errno);
+  map_fd = fbl::unique_fd(BpfFdGet(array_path, BPF_F_RDONLY));
+  EXPECT_FALSE(map_fd.is_valid());
+
+  // Restore original uid.
+  EXPECT_EQ(setresuid(0, 0, 0), 0) << strerror(errno);
+  EXPECT_EQ(setresgid(0, 0, 0), 0) << strerror(errno);
 }
 
 TEST_F(BpfMapTest, ArrayEpoll) {

@@ -15,11 +15,13 @@ use crate::task::{
 };
 use crate::vfs::buffers::{InputBuffer, OutputBuffer};
 use crate::vfs::{
-    CacheMode, FdNumber, FileObject, FileOps, FileSystem, FileSystemHandle, FileSystemOps,
-    FileSystemOptions, FsNode, FsNodeHandle, FsNodeInfo, FsNodeOps, FsStr, MemoryDirectoryFile,
-    MemoryXattrStorage, NamespaceNode, XattrStorage as _, fileops_impl_nonseekable,
-    fileops_impl_noop_sync, fs_node_impl_not_dir, fs_node_impl_xattr_delegate,
+    CacheMode, CheckAccessReason, FdNumber, FileObject, FileOps, FileSystem, FileSystemHandle,
+    FileSystemOps, FileSystemOptions, FsNode, FsNodeHandle, FsNodeInfo, FsNodeOps, FsStr,
+    MemoryDirectoryFile, MemoryXattrStorage, NamespaceNode, XattrStorage as _,
+    fileops_impl_nonseekable, fileops_impl_noop_sync, fs_node_impl_not_dir,
+    fs_node_impl_xattr_delegate,
 };
+use bstr::BStr;
 use ebpf::{MapFlags, MapSchema};
 use ebpf_api::{RINGBUF_SIGNAL, compute_map_storage_size};
 use starnix_logging::track_stub;
@@ -28,7 +30,7 @@ use starnix_types::vfs::default_statfs;
 use starnix_uapi::auth::FsCred;
 use starnix_uapi::device_type::DeviceType;
 use starnix_uapi::errors::Errno;
-use starnix_uapi::file_mode::{FileMode, mode};
+use starnix_uapi::file_mode::{Access, FileMode, mode};
 use starnix_uapi::math::round_up_to_increment;
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::vfs::FdEvents;
@@ -461,4 +463,30 @@ impl FsNodeOps for BpfFsObject {
     ) -> Result<Box<dyn FileOps>, Errno> {
         error!(EIO)
     }
+}
+
+/// Resolves a pinned BPF object from a path, returning the handle and the node.
+/// Performs DAC and MAC checks using the specified `open_flags `. Also updates
+/// atime unless `NOATIME` flag is set.
+pub fn resolve_pinned_bpf_object(
+    locked: &mut Locked<Unlocked>,
+    current_task: &CurrentTask,
+    path: &BStr,
+    open_flags: OpenFlags,
+) -> Result<(BpfHandle, NamespaceNode), Errno> {
+    let node = current_task.lookup_path_from_root(locked, path.as_ref())?;
+
+    let access = Access::from_open_flags(open_flags);
+    node.check_access(locked, current_task, access, CheckAccessReason::Access)?;
+
+    let object = node.entry.node.downcast_ops::<BpfFsObject>().ok_or_else(|| errno!(EPERM))?;
+
+    // TODO(https://fxbug.dev/467820683): Enforce BPF-specific MAC policy.
+    // (`check_access` call above performsfile system checks only).
+
+    if !open_flags.contains(OpenFlags::NOATIME) {
+        node.update_atime();
+    }
+
+    Ok((object.handle.clone(), node))
 }
