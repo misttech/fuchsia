@@ -24,7 +24,10 @@ use ::routing::error::{
 use ::routing::policy::GlobalPolicyChecker;
 use async_trait::async_trait;
 use cm_config::RuntimeConfig;
-use cm_rust::{CapabilityTypeName, ComponentDecl, DeliveryType, DictionaryDecl, ProtocolDecl};
+use cm_rust::{
+    CapabilityTypeName, ComponentDecl, ConfigSingleValue, ConfigValue, ConfigurationDecl,
+    DeliveryType, DictionaryDecl, ProtocolDecl,
+};
 use cm_types::{Availability, Path};
 use fidl::endpoints::DiscoverableProtocolMarker;
 use futures::stream::{FuturesUnordered, StreamExt};
@@ -345,6 +348,19 @@ impl ProgramOutputGenerator {
                                 name: capability_name.clone(),
                                 source_path: None,
                                 delivery: DeliveryType::Immediate,
+                            }),
+                            moniker: component.moniker.clone(),
+                        }),
+                    );
+                    dict.insert_capability(&capability_name, router.into())
+                        .expect("can insert to dict");
+                }
+                CapabilityTypeName::Config => {
+                    let router = new_debug_only_specific_router::<Data>(
+                        CapabilitySource::Component(ComponentSource {
+                            capability: ComponentCapability::from(ConfigurationDecl {
+                                name: capability_name.clone(),
+                                value: ConfigValue::Single(ConfigSingleValue::Bool(true)),
                             }),
                             moniker: component.moniker.clone(),
                         }),

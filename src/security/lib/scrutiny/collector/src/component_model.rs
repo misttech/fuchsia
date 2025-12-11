@@ -65,6 +65,8 @@ pub struct ComponentTreeConfig {
 pub enum DictionaryCapabilities {
     #[serde(rename = "protocols")]
     Protocols(Vec<Name>),
+    #[serde(rename = "configs")]
+    Configs(Vec<Name>),
 }
 
 #[derive(Default)]
@@ -211,9 +213,18 @@ impl V2ComponentModelDataCollector {
                 dynamic_dictionaries.entry(moniker).or_default();
             for (dictionary_name, capabilities) in dynamic_dictionary {
                 map.entry(dictionary_name).or_default().extend(match capabilities {
-                    DictionaryCapabilities::Protocols(protocols) => protocols
-                        .into_iter()
-                        .map(|protocol_name| (CapabilityTypeName::Protocol, protocol_name)),
+                    DictionaryCapabilities::Protocols(protocols) => Box::new(
+                        protocols
+                            .into_iter()
+                            .map(|protocol_name| (CapabilityTypeName::Protocol, protocol_name)),
+                    )
+                        as Box<dyn Iterator<Item = (CapabilityTypeName, Name)>>,
+                    DictionaryCapabilities::Configs(configs) => Box::new(
+                        configs
+                            .into_iter()
+                            .map(|config_name| (CapabilityTypeName::Config, config_name)),
+                    )
+                        as Box<dyn Iterator<Item = (CapabilityTypeName, Name)>>,
                 });
             }
         }
