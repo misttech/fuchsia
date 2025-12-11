@@ -15,7 +15,7 @@ use crate::task::memory_attribution::MemoryAttributionLifecycleEvent;
 use crate::task::{
     AtomicStopState, ControllingTerminal, CurrentTask, ExitStatus, Kernel, PidTable, ProcessGroup,
     PtraceAllowedPtracers, PtraceEvent, PtraceOptions, PtraceStatus, Session, StopState, Task,
-    TaskFlags, TaskMutableState, TaskPersistentInfo, TimerTable, TypedWaitQueue, ZombiePtraces,
+    TaskFlags, TaskMutableState, TaskPersistentInfo, TimerTable, TypedWaitQueue, ZombiePtracees,
     ptrace_detach,
 };
 use itertools::Itertools;
@@ -154,7 +154,7 @@ pub struct ThreadGroupMutableState {
     pub zombie_children: Vec<OwnedRef<ZombieProcess>>,
 
     /// ptracees of this process that have exited, but not yet been waited for.
-    pub zombie_ptracees: ZombiePtraces,
+    pub zombie_ptracees: ZombiePtracees,
 
     /// Child processes that have exited, but the zombie ptrace needs to be consumed
     /// before they can be waited for.
@@ -609,7 +609,7 @@ impl ThreadGroup {
                     tasks: BTreeMap::new(),
                     children: BTreeMap::new(),
                     zombie_children: vec![],
-                    zombie_ptracees: ZombiePtraces::new(),
+                    zombie_ptracees: ZombiePtracees::new(),
                     deferred_zombie_ptracers: vec![],
                     lifecycle_waiters: TypedWaitQueue::<ThreadGroupLifecycleWaitValue>::default(),
                     is_child_subreaper: false,
@@ -801,7 +801,7 @@ impl ThreadGroup {
                         }
                         reaper_state.zombie_children.append(&mut state.zombie_children);
                     }
-                    ZombiePtraces::reparent(self, &reaper);
+                    ZombiePtracees::reparent(self, &reaper);
                 } else {
                     // If we don't have a reaper then just drop the zombies.
                     let mut state = self.write();

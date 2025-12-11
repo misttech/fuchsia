@@ -504,13 +504,13 @@ impl TracedZombie {
 /// have not yet notified that tracer of their exit.  Once the tracer is
 /// notified, the original parent will be notified.
 #[derive(Default)]
-pub struct ZombiePtraces {
+pub struct ZombiePtracees {
     /// A list of zombies that have to be delivered to the ptracer.  The key is
     /// the tid of the traced process.
     zombies: BTreeMap<tid_t, ReleaseGuard<TracedZombie>>,
 }
 
-impl ZombiePtraces {
+impl ZombiePtracees {
     pub fn new() -> Self {
         Self::default()
     }
