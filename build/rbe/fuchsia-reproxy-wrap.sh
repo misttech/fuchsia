@@ -436,8 +436,49 @@ function shutdown() {
 # EXIT also covers INT
 trap shutdown EXIT
 
+# To prevent a race condition, we must wait for the wrapped command to exit
+# before this script exits, which would trigger the `shutdown` trap.
+# The following signal handling logic is modeled after the robust implementation
+# in rsproxy-wrap.sh.
+
+WRAPPED_PID=""
+
+# Forwards signals to the wrapped command and waits for it to exit.
+function handle_signal() {
+  local signal_name="$1"
+  _timetrace "Received ${signal_name}, forwarding to wrapped command's process group..."
+  if [[ -n "${WRAPPED_PID:-}" ]] && kill -0 "${WRAPPED_PID}" 2>/dev/null; then
+    # Forward the signal to the entire process group of the wrapped command.
+    kill "-${signal_name}" "-${WRAPPED_PID}"
+    local exit_code=0
+    # Wait for the process to terminate.
+    wait "${WRAPPED_PID}" || exit_code=$?
+    _timetrace "Wrapped command exited with status ${exit_code} after receiving ${signal_name}."
+    # Exit this script with the same status code.
+    # The EXIT trap will handle the rest of the cleanup.
+    exit "${exit_code}"
+  fi
+
+  # If there's no wrapped command PID, exit with the standard code for the signal.
+  local signal_number
+  signal_number=$(kill -l "${signal_name}")
+  exit $((128 + signal_number))
+}
+
+# Trap signals to ensure graceful shutdown of the wrapped command.
+trap 'handle_signal SIGHUP' HUP
+trap 'handle_signal SIGINT' INT
+trap 'handle_signal SIGTERM' TERM
+
 # original command is in "$@"
-# Do not 'exec' this, so that trap takes effect.
+# Do not 'exec' this, so that the trap takes effect.
+# Enable job control to run the wrapped command in a new process group.
+set -m
 _timetrace "Running wrapped command"
-"${rewrapper_env[@]}" "$@"
+"${rewrapper_env[@]}" "$@" &
+WRAPPED_PID=$!
+set +m
+
+# Wait for the wrapped command to finish.
+wait "${WRAPPED_PID}"
 _timetrace "Running wrapped command (done)"
