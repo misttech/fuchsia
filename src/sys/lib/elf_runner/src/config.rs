@@ -9,7 +9,7 @@ use runner::StartInfoProgramError;
 
 const CREATE_RAW_PROCESSES_KEY: &str = "job_policy_create_raw_processes";
 const BAD_HANDLE_POLICY_KEY: &str = "job_policy_bad_handles";
-const BAD_HANDLE_POLICY_VARIANTS: [&'static str; 2] = ["deny", "allow_exception"];
+const BAD_HANDLE_POLICY_VARIANTS: [&'static str; 2] = ["deny_exception", "allow_exception"];
 const SHARED_PROCESS_KEY: &str = "is_shared_process";
 const CRITICAL_KEY: &str = "main_process_critical";
 const FORWARD_STDOUT_KEY: &str = "forward_stdout_to";
@@ -36,6 +36,13 @@ impl Default for StreamSink {
     }
 }
 
+#[derive(Debug, Default, Eq, PartialEq, Clone)]
+pub enum ElfProgramBadHandlesPolicy {
+    #[default]
+    DenyException,
+    AllowException,
+}
+
 /// Parsed representation of the `ComponentStartInfo.program` dictionary.
 #[derive(Debug, Default, Eq, PartialEq, Clone)]
 pub struct ElfProgramConfig {
@@ -45,8 +52,7 @@ pub struct ElfProgramConfig {
     pub ambient_mark_vmo_exec: bool,
     pub main_process_critical: bool,
     pub create_raw_processes: bool,
-    pub deny_bad_handles: bool,
-    pub allow_exception_bad_handles: bool,
+    pub job_policy_bad_handles: Option<ElfProgramBadHandlesPolicy>,
     pub is_shared_process: bool,
     pub use_next_vdso: bool,
     pub job_with_available_exception_channel: bool,
@@ -95,11 +101,11 @@ impl ElfProgramConfig {
                 _ => false,
             };
 
-        let (deny_bad_handles, allow_exception_bad_handles) =
+        let job_policy_bad_handles =
             match runner::get_enum(program, BAD_HANDLE_POLICY_KEY, &BAD_HANDLE_POLICY_VARIANTS)? {
-                Some("deny") => (true, false),
-                Some("allow_exception") => (false, true),
-                _ => (false, false),
+                Some("deny_exception") => Some(ElfProgramBadHandlesPolicy::DenyException),
+                Some("allow_exception") => Some(ElfProgramBadHandlesPolicy::AllowException),
+                _ => None,
             };
 
         Ok(ElfProgramConfig {
@@ -109,8 +115,7 @@ impl ElfProgramConfig {
             ambient_mark_vmo_exec: runner::get_bool(program, VMEX_KEY)?,
             main_process_critical: runner::get_bool(program, CRITICAL_KEY)?,
             create_raw_processes: runner::get_bool(program, CREATE_RAW_PROCESSES_KEY)?,
-            deny_bad_handles,
-            allow_exception_bad_handles,
+            job_policy_bad_handles,
             is_shared_process: runner::get_bool(program, SHARED_PROCESS_KEY)?,
             use_next_vdso: runner::get_bool(program, USE_NEXT_VDSO_KEY)?,
             job_with_available_exception_channel: runner::get_bool(

@@ -21,6 +21,7 @@ use self::error::{JobError, StartComponentError, StartInfoError};
 use self::runtime_dir::RuntimeDirBuilder;
 use self::stdout::bind_streams_to_syslog;
 use crate::component_set::ComponentSet;
+use crate::config::ElfProgramBadHandlesPolicy;
 use crate::crash_info::CrashRecords;
 use crate::memory::reporter::MemoryReporter;
 use crate::vdso_vmo::get_next_vdso_vmo;
@@ -206,16 +207,14 @@ impl ElfRunner {
             .map_err(JobError::SetPolicy)?;
         }
 
-        if program_config.deny_bad_handles {
+        if let Some(job_policy_bad_handles) = &program_config.job_policy_bad_handles {
+            let action = match job_policy_bad_handles {
+                ElfProgramBadHandlesPolicy::DenyException => zx::JobAction::DenyException,
+                ElfProgramBadHandlesPolicy::AllowException => zx::JobAction::AllowException,
+            };
             job.set_policy(zx::JobPolicy::Basic(
                 zx::JobPolicyOption::Absolute,
-                vec![(zx::JobCondition::BadHandle, zx::JobAction::DenyException)],
-            ))
-            .map_err(JobError::SetPolicy)?;
-        } else if program_config.allow_exception_bad_handles {
-            job.set_policy(zx::JobPolicy::Basic(
-                zx::JobPolicyOption::Absolute,
-                vec![(zx::JobCondition::BadHandle, zx::JobAction::AllowException)],
+                vec![(zx::JobCondition::BadHandle, action)],
             ))
             .map_err(JobError::SetPolicy)?;
         }

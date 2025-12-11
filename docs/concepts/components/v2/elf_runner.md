@@ -182,8 +182,9 @@ exception channel available for taking.
 #### Bad handle policy
 
 The `job_policy_bad_handles` field configures the job's bad handle policy. The
-supported values are `deny` and `allow_exception` which correspond to the
-`ZX_POL_ACTION_DENY` and `ZX_POL_ALLOW_EXCEPTION` actions documented in
+supported values are `deny_exception` and `allow_exception` which correspond to
+the `ZX_POL_ACTION_DENY_EXCEPTION` and `ZX_POL_ALLOW_EXCEPTION` actions
+documented in
 https://fuchsia.dev/reference/syscalls/job_set_policy#zx_job_pol_basic_v2_and_v1.
 
 ```json5
@@ -191,7 +192,7 @@ https://fuchsia.dev/reference/syscalls/job_set_policy#zx_job_pol_basic_v2_and_v1
     program: {
         runner: "elf",
         binary: "bin/foo",
-        {{ '<strong>' }}job_policy_bad_handles: "deny"{{ '</strong>' }}
+        {{ '<strong>' }}job_policy_bad_handles: "deny_exception"{{ '</strong>' }}
     }
 }
 ```

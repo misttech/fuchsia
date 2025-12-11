@@ -228,10 +228,14 @@ impl Component {
         let is_shared_process = runner::get_bool(program, "is_shared_process").unwrap_or(false);
 
         let job = job_default().create_child_job().map_err(ComponentError::CreateJob)?;
-        match runner::get_enum(program, "job_policy_bad_handles", &["deny", "allow_exception"])
-            .unwrap_or(None)
+        match runner::get_enum(
+            program,
+            "job_policy_bad_handles",
+            &["deny_exception", "allow_exception"],
+        )
+        .unwrap_or(None)
         {
-            Some("deny") => {
+            Some("deny_exception") => {
                 let _ = job
                     .set_policy(zx::JobPolicy::Basic(
                         zx::JobPolicyOption::Absolute,
