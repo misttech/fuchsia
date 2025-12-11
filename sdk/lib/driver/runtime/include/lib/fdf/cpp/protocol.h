@@ -68,7 +68,7 @@ class Protocol final : public fdf_token_t {
 
   Handler handler_;
   fdf_dispatcher_t* dispatcher_ = nullptr;
-} ZX_REMOVED_SINCE(1, NEXT, NEXT, "Use ProtocolReceive instead");
+};
 
 // Connects to the runtime protocol which was, or will be registered with the channel peer of
 // |token|. |channel| may be closed by the parent to terminate the connection.
@@ -94,7 +94,7 @@ zx_status_t ProtocolConnect(zx::channel token, fdf::Channel channel);
 // ZX_ERR_BAD_HANDLE: |token| is not a valid channel handle.
 //
 // ZX_ERR_NOT_FOUND: |ProtocolConnect| has not been called on |token|'s pair.
-zx::result<fdf::Channel> ProtocolReceive(zx::channel token) ZX_AVAILABLE_SINCE(NEXT);
+zx::result<fdf::Channel> ProtocolReceive(zx::channel token) ZX_AVAILABLE_SINCE(HEAD);
 
 }  // namespace fdf
 
