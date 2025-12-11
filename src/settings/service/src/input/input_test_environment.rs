@@ -143,7 +143,7 @@ impl TestInputEnvironmentBuilder {
         });
         let media_buttons_agent = self.agents.contains(&AgentType::MediaButtons).then(|| {
             self.media_buttons_event_txs.extend(Some(media_buttons_event_tx));
-            crate::agent::media_buttons::MediaButtonsAgent::new(
+            settings_media_buttons_agent::MediaButtonsAgent::new(
                 self.media_buttons_event_txs,
                 external_publisher,
             )

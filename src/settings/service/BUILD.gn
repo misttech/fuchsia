@@ -38,8 +38,6 @@ icu_rustc_library("lib") {
     "//sdk/fidl/fuchsia.settings:fuchsia.settings_rust",
     "//sdk/fidl/fuchsia.stash:fuchsia.stash_rust",
     "//sdk/fidl/fuchsia.ui.brightness:fuchsia.ui.brightness_rust",
-    "//sdk/fidl/fuchsia.ui.input:fuchsia.ui.input_rust",
-    "//sdk/fidl/fuchsia.ui.policy:fuchsia.ui.policy_rust",
     "//sdk/fidl/fuchsia.ui.types:fuchsia.ui.types_rust",
     "//sdk/rust/zx",
     "//src/lib/async-utils",
@@ -57,6 +55,7 @@ icu_rustc_library("lib") {
     "//src/settings/keyboard:settings_keyboard",
     "//src/settings/light:settings_light",
     "//src/settings/media_buttons:settings_media_buttons",
+    "//src/settings/media_buttons_agent:settings_media_buttons_agent",
     "//src/settings/night_mode:settings_night_mode",
     "//src/settings/privacy:settings_privacy",
     "//src/settings/setup:settings_setup",
@@ -107,7 +106,6 @@ icu_rustc_library("lib") {
     "src/agent/inspect/setting_proxy.rs",
     "src/agent/inspect/setting_values.rs",
     "src/agent/inspect/usage_counts.rs",
-    "src/agent/media_buttons.rs",
     "src/audio.rs",
     "src/audio/audio_controller.rs",
     "src/audio/audio_default_settings.rs",
@@ -151,7 +149,6 @@ icu_rustc_library("lib") {
     "src/tests.rs",
     "src/tests/display_tests.rs",
     "src/tests/environment_tests.rs",
-    "src/tests/media_buttons_agent_tests.rs",
     "src/tests/service_configuration_tests.rs",
   ]
 

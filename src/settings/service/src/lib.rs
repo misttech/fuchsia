@@ -901,7 +901,7 @@ impl<T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilder<T>
 struct AgentResult {
     earcons_agent: Option<agent::earcons::agent::Agent>,
     camera_watcher_agent: Option<settings_camera_watcher_agent::CameraWatcherAgent>,
-    media_buttons_agent: Option<agent::media_buttons::MediaButtonsAgent>,
+    media_buttons_agent: Option<settings_media_buttons_agent::MediaButtonsAgent>,
     inspect_settings_values_agent: Option<agent::inspect::setting_values::AgentSetup>,
     inspect_external_apis_agent: Option<agent::inspect::external_apis::ExternalApiInspectAgent>,
     inspect_setting_proxy_agent: Option<agent::inspect::setting_proxy::SettingProxyInspectAgent>,
@@ -940,7 +940,10 @@ fn create_agents(
         )
     });
     let media_buttons_agent = agent_types.contains(&AgentType::MediaButtons).then(|| {
-        agent::media_buttons::MediaButtonsAgent::new(media_buttons_event_txs, external_publisher)
+        settings_media_buttons_agent::MediaButtonsAgent::new(
+            media_buttons_event_txs,
+            external_publisher,
+        )
     });
     let inspect_settings_values_agent = agent_types
         .contains(&AgentType::InspectSettingValues)

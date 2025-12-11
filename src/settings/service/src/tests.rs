@@ -4,5 +4,4 @@
 
 mod display_tests;
 mod environment_tests;
-mod media_buttons_agent_tests;
 mod service_configuration_tests;

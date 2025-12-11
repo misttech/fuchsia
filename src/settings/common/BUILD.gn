@@ -25,6 +25,7 @@ rustc_library("settings_common") {
     "//src/settings/intl:*",
     "//src/settings/keyboard:*",
     "//src/settings/light:*",
+    "//src/settings/media_buttons_agent:*",
     "//src/settings/night_mode:*",
     "//src/settings/privacy:*",
     "//src/settings/service:*",
