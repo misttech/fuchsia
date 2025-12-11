@@ -271,11 +271,16 @@ impl From<PointOfFailure<'_>> for CustomEvent {
     }
 }
 
+pub async fn is_analytics_enabled() -> bool {
+    // For the time being only enable enhanced analytics for internal users.
+    ffx_command::send_enhanced_analytics().await
+}
+
 /// Takes an error, and a "point of failure," and uploads the analytics for this specific type of
 /// failure for tracking.
 pub async fn mark_point_of_failure(failure_point: PointOfFailure<'_>) {
     let CustomEvent { category, action, mut custom_dimensions } = failure_point.into();
-    if !ffx_command::send_enhanced_analytics().await {
+    if !is_analytics_enabled().await {
         return;
     }
     let mut client = match analytics::ga4_metrics().await {

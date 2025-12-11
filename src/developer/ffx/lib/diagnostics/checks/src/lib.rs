@@ -31,8 +31,7 @@ pub async fn ffx_diagnostics_analytics<N>(notifier: &mut N) -> fho::Result<()>
 where
     N: Notifier + std::marker::Unpin,
 {
-    // For the time being only enable enhanced analytics for internal users.
-    if ffx_command::send_enhanced_analytics().await {
+    if ffx_diagnostics_analytics::is_analytics_enabled().await {
         notifier.info("Analytics enabled.")?;
     } else {
         notifier.info("Analytics NOT enabled. Skipping.")?;
