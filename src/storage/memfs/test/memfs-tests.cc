@@ -47,7 +47,17 @@
 namespace memfs {
 namespace {
 
-constexpr uint64_t kMaxFileSize = std::numeric_limits<zx_off_t>::max() - (1ull << 17) + 1;
+zx_status_t GetMaxFileSize(uint64_t* size) {
+  zx::vmo vmo;
+
+  // Use the size of an unbounded VMO as the maximum vmo size.
+  zx_status_t status = zx::vmo::create(0, ZX_VMO_UNBOUNDED, &vmo);
+  if (status != ZX_OK) {
+    return status;
+  }
+
+  return vmo.get_size(size);
+}
 
 TEST(MemfsTests, TestMemfsBasic) {
   async::Loop loop(&kAsyncLoopConfigNoAttachToCurrentThread);
@@ -489,16 +499,20 @@ TEST(MemfsTest, WriteMaxFileSize) {
       .buffer = data.data(),
       .capacity = data.size(),
   };
+
+  uint64_t max_file_size = 0;
+  ASSERT_OK(GetMaxFileSize(&max_file_size));
+
   size_t actual = 0;
-  ASSERT_OK(stream->writev_at(0, kMaxFileSize - 1, &iov, 1, &actual));
+  ASSERT_OK(stream->writev_at(0, max_file_size - 1, &iov, 1, &actual));
   ASSERT_EQ(actual, data.size());
 
   zx::result attributes = file->GetAttributes();
   ASSERT_TRUE(attributes.is_ok()) << attributes.status_string();
-  ASSERT_EQ(attributes->content_size, kMaxFileSize);
+  ASSERT_EQ(attributes->content_size, max_file_size);
 
   // Try to write beyond the max file size.
-  ASSERT_STATUS(stream->writev_at(0, kMaxFileSize, &iov, 1, &actual), ZX_ERR_OUT_OF_RANGE);
+  ASSERT_STATUS(stream->writev_at(0, max_file_size, &iov, 1, &actual), ZX_ERR_OUT_OF_RANGE);
 }
 
 TEST(MemfsTest, TruncateToMaxFileSize) {
@@ -508,15 +522,18 @@ TEST(MemfsTest, TruncateToMaxFileSize) {
   ASSERT_TRUE(result.is_ok()) << result.status_string();
   auto& [vfs, root] = result.value();
 
+  uint64_t max_file_size = 0;
+  ASSERT_OK(GetMaxFileSize(&max_file_size));
+
   zx::result file = root->Create("file", fs::CreationType::kFile);
   ASSERT_OK(file.status_value());
-  ASSERT_OK(file->Truncate(kMaxFileSize));
+  ASSERT_OK(file->Truncate(max_file_size));
   zx::result attributes = file->GetAttributes();
   ASSERT_TRUE(attributes.is_ok()) << attributes.status_string();
-  ASSERT_EQ(attributes->content_size, kMaxFileSize);
+  ASSERT_EQ(attributes->content_size, max_file_size);
 
   // Try to truncate beyond the max file size.
-  ASSERT_STATUS(file->Truncate(kMaxFileSize + 1), ZX_ERR_OUT_OF_RANGE);
+  ASSERT_STATUS(file->Truncate(max_file_size + 1), ZX_ERR_OUT_OF_RANGE);
 }
 
 }  // namespace
