@@ -71,6 +71,7 @@ options:
   --loas-type TYPE: {skip,auto,restricted,unrestricted}, default [$loas_type]
     'skip' will bypass any preflight authentication checks
     'auto' will attempt to detect as restricted or unrestricted.
+  --async_reproxy_termination: shutdown reproxy in the background.
   -t: print additional timestamps for measuring overhead.
   -v | --verbose: print events verbosely
   All other flags before -- are forwarded to the reproxy bootstrap.
@@ -90,6 +91,7 @@ reproxy_tmpdir=
 verbose=0
 print_times=0
 bootstrap_options=()
+shutdown_options=()
 prev_opt=
 prev_opt_append=
 # Extract script options before --
@@ -130,6 +132,8 @@ do
     --tmpdir) prev_opt=reproxy_tmpdir ;;
     --loas-type=*) loas_type="$optarg" ;;
     --loas-type) prev_opt=loas_type ;;
+    # Forward some options to shutdown.
+    --async_reproxy_termination) shutdown_options+=("$opt") ;;
     -t) print_times=1 ;;
     -v | --verbose) verbose=1 ;;
     # stop option processing
@@ -397,7 +401,7 @@ function shutdown() {
     "$bootstrap" \
     --shutdown \
     --fast_log_collection \
-    --async_reproxy_termination \
+    "${shutdown_options[@]}" \
     --cfg="$bootstrap_reproxy_cfg" \
     > "$reproxy_logdir"/shutdown.stdout 2>&1 || shutdown_status="$?"
   [[ "$shutdown_status" == 0 && "$verbose" != 1 ]] || {
@@ -433,7 +437,6 @@ function shutdown() {
   }
 }
 
-# EXIT also covers INT
 trap shutdown EXIT
 
 # To prevent a race condition, we must wait for the wrapped command to exit

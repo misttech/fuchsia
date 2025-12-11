@@ -1169,7 +1169,7 @@ EOF
 
     # Honor additional cfg files from the current build dir.
     local -r rbe_config_json="$FUCHSIA_BUILD_DIR/rbe_config.json"
-    local proxy_cfg_args=()
+    local -a proxy_cfg_args=()
     if [[ -r "$rbe_config_json" ]]
     then
       # shellcheck disable=SC2207
@@ -1180,12 +1180,22 @@ EOF
       done
     fi
 
-    rbe_wrapper=(
+    local -a rbe_wrapper_shutdown_opts=()
+    if [[ "${RESULTSTORE_ENABLED}" -eq 0 ]]; then
+      # When resultstore is enabled, we need to wait for reproxy to fully
+      # shutdown to guarantee that produces the logs and metrics that will
+      # be uploaded as post-build artifacts by rsproxy.
+      # Otherwise, allow reproxy to shutdown asynchronously.
+      rbe_wrapper_shutdown_opts=(--async_reproxy_termination)
+    fi
+
+    local -a rbe_wrapper=(
       env
       "${RBE_WRAPPER[@]}"
       --logdir "$reproxy_logdir"
       --tmpdir "$reproxy_tmpdir"
       "${proxy_cfg_args[@]}"
+      "${rbe_wrapper_shutdown_opts[@]}"
       "${rbe_wrapper_loas_args[@]}"
       --
     )
