@@ -30,6 +30,7 @@ rustc_library("net-types") {
   features = [ "std" ]
 
   configs -= [ "//build/config/rust/lints:allow_unused_results" ]
+  configs += [ "//src/connectivity/network:performance_critical_rust_crate" ]
 }
 
 rustc_library("net-types-nostd") {

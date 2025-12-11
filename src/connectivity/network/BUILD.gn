@@ -85,6 +85,18 @@ network_unified_binary_regular_and_gub_packages("netstack-migration") {
   ]
 }
 
+# This is a single definition for the optimization configuration of crates used
+# by networking components that are performance sensitive.
+#
+# This roughly follows the same shape as
+# src/connectivity/network/netstack3:netstack3_configs, but we intentionally
+# define it as a separate target for split evolution if necessary.
+config("performance_critical_rust_crate") {
+  if (is_release && !is_host) {
+    configs = [ "//build/config:optimize_speed" ]
+  }
+}
+
 group("drivers") {
   deps = [ "drivers/network-device" ]
 }

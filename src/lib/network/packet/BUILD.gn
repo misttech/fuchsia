@@ -33,6 +33,7 @@ rustc_library("packet") {
   ]
 
   configs -= [ "//build/config/rust/lints:allow_unused_results" ]
+  configs += [ "//src/connectivity/network:performance_critical_rust_crate" ]
 }
 
 fuchsia_unittest_package("packet-test") {

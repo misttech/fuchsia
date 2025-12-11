@@ -544,6 +544,12 @@ rustflags = []
 [gn.package.async-trait."0.1.88"]
 rustflags = []
 
+[gn.package.async-ringbuf."0.3.4"]
+configs = [
+  "//third_party/rust_crates/configs/release:optimize_speed",
+  "//third_party/rust_crates/configs/balanced:optimize_moderate"
+]
+
 [gn.package.base64."0.13.0"]
 #visibility = [":*", "//third_party/alacritty/alacritty_terminal:*" ]
 # FIXME: temporarily allow anyone to depend on 0.13.0 to enable a soft migration.
@@ -916,6 +922,12 @@ visibility = [
 ]
 deps = [ "//third_party/rust_crates/compat/ring-0.17.8:ring-core" ]
 env_vars = [ "RING_CORE_PREFIX=ring_core_0_17_8_" ]
+
+[gn.package.ringbuf."0.4.8"]
+configs = [
+  "//third_party/rust_crates/configs/release:optimize_speed",
+  "//third_party/rust_crates/configs/balanced:optimize_moderate"
+]
 
 # Please keep the rust_icu_* crates together in this list.
 # Refer to //build/icu/README.md for the details of the approach.
