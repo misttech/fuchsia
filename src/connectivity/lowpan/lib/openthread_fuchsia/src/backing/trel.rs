@@ -439,7 +439,34 @@ impl PlatformBacking {
         if let Some(trel) = trel.as_ref() {
             let mut counters = trel.counters.borrow_mut();
             debug!(tag = "trel"; "otPlatTrelSend: {:?} -> {}", sockaddr, hex::encode(payload));
-            match trel.socket.send_to(payload, (*sockaddr).into()).now_or_never() {
+            let mut addr: SocketAddr = (*sockaddr).into();
+            if let SocketAddr::V6(ref mut addr_v6) = addr {
+                match self.netif_index_backbone {
+                    Some(scope_id) => {
+                        if addr_v6.scope_id() == 0 {
+                            addr_v6.set_scope_id(scope_id);
+                        } else if addr_v6.scope_id() != scope_id {
+                            warn!(
+                                tag = "trel";
+                                "otPlatTrelSend: dest addr's scope_id {} does not match infra \
+                                interface {}",
+                                addr_v6.scope_id(),
+                                scope_id
+                            );
+                        }
+                    }
+                    None => {
+                        if addr_v6.scope_id() == 0 {
+                            warn!(
+                                tag = "trel";
+                                "otPlatTrelSend: No scope_id present for infra interface, dropping"
+                            );
+                            return;
+                        }
+                    }
+                }
+            }
+            match trel.socket.send_to(payload, addr).now_or_never() {
                 Some(Ok(_)) => {
                     counters.update_tx_bytes(payload.len().try_into().unwrap());
                     counters.update_tx_packets(1);
