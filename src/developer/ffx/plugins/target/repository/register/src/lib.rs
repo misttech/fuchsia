@@ -25,11 +25,9 @@ use serde_json;
 use std::collections::BTreeSet;
 use std::fs::File;
 use std::io;
-use target_holders::{HostAddrHolder, moniker};
+use target_holders::{HostAddrHolder, toolbox};
 use url::Url;
 use zx_types::{ZX_ERR_ACCESS_DENIED, ZX_ERR_ALREADY_EXISTS, ZX_ERR_INVALID_ARGS};
-
-const REPOSITORY_MANAGER_MONIKER: &str = "/core/pkg-resolver";
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq)]
 #[serde(rename_all = "snake_case")]
@@ -48,9 +46,9 @@ pub struct RegisterTool {
     cmd: RegisterCommand,
     fho_env: FhoEnvironment,
     context: EnvironmentContext,
-    #[with(moniker(REPOSITORY_MANAGER_MONIKER))]
+    #[with(toolbox())]
     repo_proxy: RepositoryManagerProxy,
-    #[with(moniker(REPOSITORY_MANAGER_MONIKER))]
+    #[with(toolbox())]
     engine_proxy: EngineProxy,
 }
 

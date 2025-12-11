@@ -15,10 +15,8 @@ use serde::{Deserialize, Serialize};
 use serde_json;
 use std::fs::File;
 use std::io;
-use target_holders::moniker;
+use target_holders::toolbox;
 use url::Url;
-
-const REPOSITORY_MANAGER_MONIKER: &str = "/core/pkg-resolver";
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq)]
 #[serde(rename_all = "snake_case")]
@@ -37,7 +35,7 @@ pub struct ReplaceTool {
     cmd: ReplaceCommand,
     _fho_env: FhoEnvironment,
     _context: EnvironmentContext,
-    #[with(moniker(REPOSITORY_MANAGER_MONIKER))]
+    #[with(toolbox())]
     engine_proxy: EngineProxy,
 }
 

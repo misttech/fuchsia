@@ -15,15 +15,15 @@ use prettytable::format::FormatBuilder;
 use prettytable::{Table, cell, row};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use target_holders::moniker;
+use target_holders::toolbox;
 
 #[derive(FfxTool)]
 pub struct ListTool {
     #[command]
     _cmd: ListCommand,
-    #[with(moniker(REPOSITORY_MANAGER_MONIKER))]
+    #[with(toolbox())]
     repo_proxy: RepositoryManagerProxy,
-    #[with(moniker(REPOSITORY_MANAGER_MONIKER))]
+    #[with(toolbox())]
     engine_proxy: EngineProxy,
 }
 
@@ -98,8 +98,6 @@ pub enum CommandStatus {
     /// A known error that can be reported to the user.
     UserError { message: String },
 }
-
-const REPOSITORY_MANAGER_MONIKER: &str = "/core/pkg-resolver";
 
 fho::embedded_plugin!(ListTool);
 #[async_trait(?Send)]

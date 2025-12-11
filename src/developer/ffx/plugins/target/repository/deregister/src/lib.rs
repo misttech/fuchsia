@@ -11,10 +11,9 @@ use fidl_fuchsia_pkg::RepositoryManagerProxy;
 use fidl_fuchsia_pkg_rewrite::EngineProxy;
 use fidl_fuchsia_pkg_rewrite_ext::{Rule, do_transaction};
 use pkg::{PkgServerInstanceInfo as _, PkgServerInstances};
-use target_holders::moniker;
+use target_holders::toolbox;
 use zx_status::Status;
 
-const REPOSITORY_MANAGER_MONIKER: &str = "/core/pkg-resolver";
 const REPOSITORY_URL_PREFIX: &str = "fuchsia-pkg://";
 
 #[derive(FfxTool)]
@@ -22,9 +21,9 @@ pub struct DeregisterTool {
     #[command]
     cmd: DeregisterCommand,
     context: EnvironmentContext,
-    #[with(moniker(REPOSITORY_MANAGER_MONIKER))]
+    #[with(toolbox())]
     repo_proxy: RepositoryManagerProxy,
-    #[with(moniker(REPOSITORY_MANAGER_MONIKER))]
+    #[with(toolbox())]
     engine_proxy: EngineProxy,
 }
 
