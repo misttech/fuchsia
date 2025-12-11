@@ -194,57 +194,79 @@ def register_command(name: str):
 @register_command("rev-parse")
 class RevParseCommand(GitSubCommand):
     def add_arguments(self, parser: argparse.ArgumentParser) -> None:
-        parser.add_argument("rev", help="The revision to parse")
+        parser.add_argument("rev", nargs="*", help="The revision to parse")
+        parser.add_argument(
+            "--show-toplevel",
+            action="store_true",
+            help="Show the absolute path of the top-level directory",
+        )
 
     def execute(self, context: Context) -> int:
-        args = context.git_subcommand_args
-        # We only support HEAD for now
-        if args.rev != "HEAD":
-            context.error(
-                "cog workspaces only support 'HEAD' revisions at this time"
-            )
-            return 1
-
         repository_root = get_repository_root()
         if not repository_root:
             context.error("Not in a cog workspace")
             return 1
 
-        workspace_id, snapshot_version = get_workspace_id_and_snapshot_version(
-            context, repository_root
-        )
-        if not workspace_id or not snapshot_version:
-            context.error("Not in a cog workspace")
-            return 1
+        rev_cache = {}
 
-        # Determine repo_root
-        repo_root = "fuchsia"
-        relative_git_dir = get_relative_git_dir(
-            context.global_git_options, repository_root
-        )
-        if relative_git_dir:
-            repo_root = f"fuchsia/{relative_git_dir}"
+        def _get_rev(rev: str) -> Optional[str]:
+            if rev in rev_cache:
+                return rev_cache[rev]
 
-        request = f'request_base {{ workspace_id: "{workspace_id}" base_snapshot_version: {snapshot_version}}} repo_root: "{repo_root}"'
+            (
+                workspace_id,
+                snapshot_version,
+            ) = get_workspace_id_and_snapshot_version(context, repository_root)
+            if not workspace_id or not snapshot_version:
+                context.error("Not in a cog workspace")
+                return None
 
-        try:
-            args = ["citc", "api.call", "GetDrafts", request]
-            stdout = context.run_real_git(args)
+            # Determine repo_root
+            repo_root = "fuchsia"
+            relative_git_dir = get_relative_git_dir(
+                context.global_git_options, repository_root
+            )
+            if relative_git_dir:
+                repo_root = f"fuchsia/{relative_git_dir}"
 
-            for line in stdout.splitlines():
-                if "commit_hash:" in line:
-                    parts = line.split('"')
-                    if len(parts) >= 2:
-                        context.print(parts[1])
-                        return 0
+            request = f'request_base {{ workspace_id: "{workspace_id}" base_snapshot_version: {snapshot_version}}} repo_root: "{repo_root}"'
 
-            return 1
-        except subprocess.CalledProcessError as e:
-            context.error(e.stderr)
-            return e.returncode
-        except Exception as e:
-            context.fatal(f"{e}")
-            return 1
+            try:
+                args = ["citc", "api.call", "GetDrafts", request]
+                stdout = context.run_real_git(args)
+
+                for line in stdout.splitlines():
+                    if "commit_hash:" in line:
+                        parts = line.split('"')
+                        if len(parts) >= 2:
+                            fetched_rev = parts[1]
+                            rev_cache[rev] = fetched_rev
+                            return fetched_rev
+            except subprocess.CalledProcessError as e:
+                context.error(e.stderr)
+            except Exception as e:
+                context.fatal(f"{e}")
+
+        # Iterate over arguments in the order they were provided. This is important because
+        # the order of arguments determines the order of the output. For example, if the
+        # arguments are ["--show-toplevel", "HEAD"], the output should be the repository root
+        # followed by the head revision.
+        for arg in context.args.remaining_args:
+            if arg == "--show-toplevel":
+                context.print(str(repository_root))
+            elif arg.startswith("-"):
+                pass
+            else:
+                if arg != "HEAD":
+                    context.error(
+                        "cog workspaces only support 'HEAD' revisions at this time"
+                    )
+                    return 1
+
+                if rev := _get_rev(arg):
+                    context.print(rev)
+
+        return 0
 
 
 @register_command("status")
