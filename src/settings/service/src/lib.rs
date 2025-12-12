@@ -11,7 +11,6 @@ use anyhow::{Context, Error};
 use audio::AudioInfoLoader;
 use audio::types::AudioInfo;
 use display::display_controller::DisplayInfoLoader;
-use factory_reset::factory_reset_controller::FactoryResetController;
 use fidl_fuchsia_io::DirectoryProxy;
 use fidl_fuchsia_settings::{
     AccessibilityRequestStream, AudioRequestStream, DisplayRequestStream,
@@ -35,6 +34,7 @@ use settings_common::inspect::event::{
 };
 use settings_common::inspect::listener_logger::ListenerInspectLogger;
 use settings_common::service_context::{ExternalServiceEvent, GenerateService, ServiceContext};
+use settings_factory_reset::factory_reset_controller::FactoryResetController;
 use settings_input::input_controller::InputController;
 use settings_intl::intl_controller::IntlController;
 use settings_keyboard::keyboard_controller::KeyboardController;
@@ -65,7 +65,6 @@ pub mod audio;
 mod clock;
 pub mod display;
 mod do_not_disturb;
-mod factory_reset;
 mod storage_migrations;
 
 pub mod agent;
@@ -730,7 +729,7 @@ impl<T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilder<T>
         }
 
         if components.contains(&SettingType::FactoryReset) {
-            match factory_reset::setup_factory_reset_api(
+            match settings_factory_reset::setup_factory_reset_api(
                 &*service_context,
                 Rc::clone(&device_storage_factory),
                 SettingValuePublisher::new(setting_value_tx.clone()),
@@ -739,7 +738,10 @@ impl<T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilder<T>
             )
             .await
             {
-                Ok(factory_reset::SetupResult { mut factory_reset_fidl_handler, task }) => {
+                Ok(settings_factory_reset::SetupResult {
+                    mut factory_reset_fidl_handler,
+                    task,
+                }) => {
                     tasks.push(task);
                     let _ =
                         service_dir.add_fidl_service(move |stream: FactoryResetRequestStream| {

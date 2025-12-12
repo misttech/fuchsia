@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use super::factory_reset_fidl_handler::Publisher;
-use crate::factory_reset::types::FactoryResetInfo;
+use crate::factory_reset_fidl_handler::Publisher;
+use crate::types::FactoryResetInfo;
 use anyhow::{Context, Error};
 use fidl_fuchsia_recovery_policy::{DeviceMarker, DeviceProxy};
 use fuchsia_async as fasync;
@@ -32,6 +32,9 @@ impl Default for FactoryResetInfo {
     }
 }
 
+// Clippy doesn't like the same "Failure" suffix for all variants, but we prefer
+// to follow the convention used in the other setting error types.
+#[allow(clippy::enum_variant_names)]
 #[derive(thiserror::Error, Debug)]
 pub(crate) enum FactoryResetError {
     #[error("Failed to initialize controller: {0:?}")]
