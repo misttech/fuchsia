@@ -139,6 +139,7 @@ pub trait DisconnectSourceExt {
     fn flattened_reason_code(&self) -> u32;
     fn cobalt_reason_code(&self) -> u16;
     fn locally_initiated(&self) -> bool;
+    fn has_roaming_cause(&self) -> bool;
 }
 
 impl DisconnectSourceExt for fidl_sme::DisconnectSource {
@@ -191,6 +192,21 @@ impl DisconnectSourceExt for fidl_sme::DisconnectSource {
         match self {
             fidl_sme::DisconnectSource::Ap(..) => false,
             fidl_sme::DisconnectSource::Mlme(..) | fidl_sme::DisconnectSource::User(..) => true,
+        }
+    }
+
+    fn has_roaming_cause(&self) -> bool {
+        match self {
+            fidl_sme::DisconnectSource::User(_) => false,
+            fidl_sme::DisconnectSource::Ap(cause) | fidl_sme::DisconnectSource::Mlme(cause) => {
+                matches!(
+                    cause.mlme_event_name,
+                    fidl_sme::DisconnectMlmeEventName::RoamStartIndication
+                        | fidl_sme::DisconnectMlmeEventName::RoamResultIndication
+                        | fidl_sme::DisconnectMlmeEventName::RoamRequest
+                        | fidl_sme::DisconnectMlmeEventName::RoamConfirmation
+                )
+            }
         }
     }
 }
@@ -642,7 +658,8 @@ fn inspect_create_counters(
                     connect_attempts_count: counters.connect_attempts_count,
                     connect_successful_count: counters.connect_successful_count,
                     disconnect_count: counters.disconnect_count,
-                    total_non_roam_non_user_disconnect_count: counters.total_non_roam_disconnect_count,
+                    total_non_roam_disconnect_count: counters.total_non_roam_disconnect_count,
+                    total_roam_disconnect_count: counters.total_roam_disconnect_count,
                     policy_roam_attempts_count: counters.policy_roam_attempts_count,
                     policy_roam_successful_count: counters.policy_roam_successful_count,
                     policy_roam_disconnects_count: counters.policy_roam_disconnects_count,
@@ -2096,12 +2113,13 @@ impl StatsLogger {
             StatOp::AddConnectSuccessfulCount => {
                 StatCounters { connect_successful_count: 1, ..zero }
             }
-            StatOp::AddDisconnectCount(disconnect_source) => match disconnect_source {
-                fidl_sme::DisconnectSource::User(_) => StatCounters { disconnect_count: 1, ..zero },
-                fidl_sme::DisconnectSource::Mlme(_) | fidl_sme::DisconnectSource::Ap(_) => {
+            StatOp::AddDisconnectCount(disconnect_source) => {
+                if disconnect_source.has_roaming_cause() {
+                    StatCounters { disconnect_count: 1, total_roam_disconnect_count: 1, ..zero }
+                } else {
                     StatCounters { disconnect_count: 1, total_non_roam_disconnect_count: 1, ..zero }
                 }
-            },
+            }
             StatOp::AddPolicyRoamAttemptsCount(reasons) => {
                 let mut counters = StatCounters { policy_roam_attempts_count: 1, ..zero };
                 for reason in reasons {
@@ -2712,23 +2730,27 @@ impl StatsLogger {
             payload: MetricEventPayload::Count(1),
         });
 
-        // Log for non-roaming and non-user disconnects. Roaming disconnect counts are handled
-        // in the roam result event, where we have more information.
+        // Log only non-roaming disconnects. Roaming disconnect counts are handled in the roam
+        //result event, to differentiate a successful roam from a true disconnect.
         let duration_minutes = disconnect_info.connected_duration.into_minutes();
-        match disconnect_info.disconnect_source {
-            fidl_sme::DisconnectSource::Ap(_) | fidl_sme::DisconnectSource::Mlme(_) => {
-                metric_events.push(MetricEvent {
-                    metric_id: metrics::CONNECTED_DURATION_BEFORE_NON_ROAM_DISCONNECT_METRIC_ID,
-                    event_codes: vec![],
-                    payload: MetricEventPayload::IntegerValue(duration_minutes),
-                });
-                metric_events.push(MetricEvent {
-                    metric_id: metrics::NON_ROAM_DISCONNECT_COUNTS_METRIC_ID,
-                    event_codes: vec![],
-                    payload: MetricEventPayload::Count(1),
-                });
-            }
-            _ => {}
+        if !disconnect_info.disconnect_source.has_roaming_cause() {
+            metric_events.push(MetricEvent {
+                metric_id: metrics::CONNECTED_DURATION_BEFORE_NON_ROAM_DISCONNECT_METRIC_ID,
+                event_codes: vec![],
+                payload: MetricEventPayload::IntegerValue(duration_minutes),
+            });
+            // Daily device occurrence count
+            metric_events.push(MetricEvent {
+                metric_id: metrics::NON_ROAM_DISCONNECT_COUNTS_METRIC_ID,
+                event_codes: vec![],
+                payload: MetricEventPayload::Count(1),
+            });
+            // Fleetwide occurrence count
+            metric_events.push(MetricEvent {
+                metric_id: metrics::TOTAL_NON_ROAM_DISCONNECT_COUNT_METRIC_ID,
+                event_codes: vec![],
+                payload: MetricEventPayload::Count(1),
+            })
         }
 
         metric_events.push(MetricEvent {
@@ -3059,18 +3081,14 @@ impl StatsLogger {
     ) {
         let mut metric_events = vec![];
 
-        // Log the reconnect time for non-roaming, non-user initiated disconnects. Roaming reconnect
-        // times are logged in the roam result event, where we have more info.
-        match disconnect_reason {
-            fidl_sme::DisconnectSource::Ap(_) | fidl_sme::DisconnectSource::Mlme(_) => {
-                // The other disconnect sources are AP and MLME, which are all considered unexpected.
-                metric_events.push(MetricEvent {
-                    metric_id: metrics::NON_ROAM_RECONNECT_DURATION_METRIC_ID,
-                    event_codes: vec![],
-                    payload: MetricEventPayload::IntegerValue(reconnect_duration.into_micros()),
-                });
-            }
-            _ => {}
+        // Log the reconnect time for non-roaming disconnects. Roaming reconnect
+        // times are logged in the roam result event, as they are different than true disconnects.
+        if !disconnect_reason.has_roaming_cause() {
+            metric_events.push(MetricEvent {
+                metric_id: metrics::NON_ROAM_RECONNECT_DURATION_METRIC_ID,
+                event_codes: vec![],
+                payload: MetricEventPayload::IntegerValue(reconnect_duration.into_micros()),
+            });
         }
 
         self.throttled_error_logger.throttle_error(log_cobalt_batch!(
@@ -3294,7 +3312,9 @@ impl StatsLogger {
             return;
         }
 
-        // Log a disconnect, since the device left the original AP.
+        // Log disconnects, since the device left the original AP (for either roam success, or
+        // failure when the original association was not maintained).
+        // Log a policy roam disconnect.
         self.throttled_error_logger.throttle_error(log_cobalt!(
             self.cobalt_proxy,
             log_occurrence,
@@ -3304,7 +3324,6 @@ impl StatsLogger {
         ));
         // Add to the policy roam disconnect count stat counter
         self.log_stat(StatOp::AddPolicyRoamDisconnectsCount).await;
-
         // Log with roam reasons
         for reason in &request.reasons {
             self.throttled_error_logger.throttle_error(log_cobalt!(
@@ -3315,6 +3334,14 @@ impl StatsLogger {
                 &[convert::convert_roam_reason_dimension(*reason) as u32],
             ));
         }
+        // Log a total (policy or firmware initiated) roam disconnect.
+        self.throttled_error_logger.throttle_error(log_cobalt!(
+            self.cobalt_proxy,
+            log_occurrence,
+            metrics::TOTAL_ROAM_DISCONNECT_COUNT_METRIC_ID,
+            1,
+            &[],
+        ));
 
         if result.status_code == fidl_ieee80211::StatusCode::Success {
             self.log_stat(StatOp::AddPolicyRoamSuccessfulCount(request.reasons)).await;
@@ -4510,6 +4537,7 @@ struct StatCounters {
     connect_successful_count: u64,
     disconnect_count: u64,
     total_non_roam_disconnect_count: u64,
+    total_roam_disconnect_count: u64,
     policy_roam_attempts_count: u64,
     policy_roam_successful_count: u64,
     policy_roam_disconnects_count: u64,
@@ -4574,6 +4602,8 @@ impl Add for StatCounters {
             disconnect_count: self.disconnect_count + other.disconnect_count,
             total_non_roam_disconnect_count: self.total_non_roam_disconnect_count
                 + other.total_non_roam_disconnect_count,
+            total_roam_disconnect_count: self.total_roam_disconnect_count
+                + other.total_roam_disconnect_count,
             policy_roam_attempts_count: self.policy_roam_attempts_count
                 + other.policy_roam_attempts_count,
             policy_roam_successful_count: self.policy_roam_successful_count
@@ -4644,6 +4674,9 @@ impl SaturatingAdd for StatCounters {
             total_non_roam_disconnect_count: self
                 .total_non_roam_disconnect_count
                 .saturating_add(v.total_non_roam_disconnect_count),
+            total_roam_disconnect_count: self
+                .total_roam_disconnect_count
+                .saturating_add(v.total_roam_disconnect_count),
             policy_roam_attempts_count: self
                 .policy_roam_attempts_count
                 .saturating_add(v.policy_roam_attempts_count),
@@ -5802,12 +5835,14 @@ mod tests {
                 "1d_counters": contains {
                     disconnect_count: 1u64,
                     policy_roam_disconnects_count: 0u64,
-                    total_non_roam_non_user_disconnect_count: 1u64,
+                    total_non_roam_disconnect_count: 1u64,
+                    total_roam_disconnect_count: 0u64,
                 },
                 "7d_counters": contains {
                     disconnect_count: 1u64,
                     policy_roam_disconnects_count: 0u64,
-                    total_non_roam_non_user_disconnect_count: 1u64,
+                    total_non_roam_disconnect_count: 1u64,
+                    total_roam_disconnect_count: 0u64,
                 },
             }
         });
@@ -5829,22 +5864,24 @@ mod tests {
                 "1d_counters": contains {
                     disconnect_count: 2u64,
                     policy_roam_disconnects_count: 0u64,
-                    total_non_roam_non_user_disconnect_count: 1u64,
+                    total_non_roam_disconnect_count: 2u64,
+                    total_roam_disconnect_count: 0u64,
                 },
                 "7d_counters": contains {
                     disconnect_count: 2u64,
                     policy_roam_disconnects_count: 0u64,
-                    total_non_roam_non_user_disconnect_count: 1u64,
+                    total_non_roam_disconnect_count: 2u64,
+                    total_roam_disconnect_count: 0u64,
                 },
             }
         });
 
-        // Send a user initiated disconnect. There should not be an increase
-        // total_non_roam_non_user_disconnect_count.
+        // Send a firmware initiated roam disconnect.
         let info = DisconnectInfo {
-            disconnect_source: fidl_sme::DisconnectSource::User(
-                fidl_sme::UserDisconnectReason::ProactiveNetworkSwitch,
-            ),
+            disconnect_source: fidl_sme::DisconnectSource::Mlme(fidl_sme::DisconnectCause {
+                reason_code: fidl_ieee80211::ReasonCode::UnspecifiedReason,
+                mlme_event_name: fidl_sme::DisconnectMlmeEventName::RoamResultIndication,
+            }),
             ..fake_disconnect_info()
         };
         test_helper.telemetry_sender.send(TelemetryEvent::Disconnected {
@@ -5858,12 +5895,14 @@ mod tests {
                 "1d_counters": contains {
                     disconnect_count: 3u64,
                     policy_roam_disconnects_count: 0u64,
-                    total_non_roam_non_user_disconnect_count: 1u64,
+                    total_non_roam_disconnect_count: 2u64,
+                    total_roam_disconnect_count: 1u64,
                 },
                 "7d_counters": contains {
                     disconnect_count: 3u64,
                     policy_roam_disconnects_count: 0u64,
-                    total_non_roam_non_user_disconnect_count: 1u64,
+                    total_non_roam_disconnect_count: 2u64,
+                    total_roam_disconnect_count: 1u64,
                 },
             }
         });
@@ -5900,7 +5939,7 @@ mod tests {
     }
 
     #[fuchsia::test]
-    fn test_roam_disconnects_count_counter() {
+    fn test_policy_roam_disconnects_count_counter() {
         let (mut test_helper, mut test_fut) = setup_test();
         test_helper.send_connected_event(random_bss_description!(Wpa2));
         assert_eq!(test_helper.advance_test_fut(&mut test_fut), Poll::Pending);
@@ -5909,10 +5948,14 @@ mod tests {
                 "1d_counters": contains {
                     disconnect_count: 0u64,
                     policy_roam_disconnects_count: 0u64,
+                    total_roam_disconnect_count: 0u64,
+                    total_non_roam_disconnect_count: 0u64,
                 },
                 "7d_counters": contains {
                     disconnect_count: 0u64,
                     policy_roam_disconnects_count: 0u64,
+                    total_roam_disconnect_count: 0u64,
+                    total_non_roam_disconnect_count: 0u64,
                 },
             }
         });
@@ -5941,10 +5984,18 @@ mod tests {
                 "1d_counters": contains {
                     disconnect_count: 0u64,
                     policy_roam_disconnects_count: 1u64,
+                    // Total roam disconnects should still be zero, as those are logged in the
+                    // disconnect metric event, not the PolicyInitiatedRoamResult event.
+                    total_roam_disconnect_count: 0u64,
+                    total_non_roam_disconnect_count: 0u64,
                 },
                 "7d_counters": contains {
                     disconnect_count: 0u64,
                     policy_roam_disconnects_count: 1u64,
+                    // Total roam disconnects should still be zero, as those are logged in the
+                    // disconnect metric event, not the PolicyInitiatedRoamResult event.
+                    total_roam_disconnect_count: 0u64,
+                    total_non_roam_disconnect_count: 0u64,
                 },
             }
         });
@@ -5967,10 +6018,18 @@ mod tests {
                 "1d_counters": contains {
                     disconnect_count: 0u64,
                     policy_roam_disconnects_count: 2u64,
+                    // Total roam disconnects should still be zero, as those are logged in the
+                    // disconnect metric event, not the PolicyInitiatedRoamResult event.
+                    total_roam_disconnect_count: 0u64,
+                    total_non_roam_disconnect_count: 0u64,
                 },
                 "7d_counters": contains {
                     disconnect_count: 0u64,
                     policy_roam_disconnects_count: 2u64,
+                    // Total roam disconnects should still be zero, as those are logged in the
+                    // disconnect metric event, not the PolicyInitiatedRoamResult event.
+                    total_roam_disconnect_count: 0u64,
+                    total_non_roam_disconnect_count: 0u64,
                 },
             }
         });
@@ -5992,10 +6051,14 @@ mod tests {
                 "1d_counters": contains {
                     disconnect_count: 0u64,
                     policy_roam_disconnects_count: 2u64,
+                    total_roam_disconnect_count: 0u64,
+                    total_non_roam_disconnect_count: 0u64,
                 },
                 "7d_counters": contains {
                     disconnect_count: 0u64,
                     policy_roam_disconnects_count: 2u64,
+                    total_roam_disconnect_count: 0u64,
+                    total_non_roam_disconnect_count: 0u64,
                 },
             }
         });
@@ -6453,35 +6516,40 @@ mod tests {
     fn test_log_daily_disconnect_per_day_connected_cobalt_metric() {
         let (mut test_helper, mut test_fut) = setup_test();
 
-        // Send 1 user disconnec and 1 non-user disconnect with the device connected for a
-        // total of 12 of 24 hours. The user disconnect is counted toward total disconnects but not
-        // for non-roaming disconnects.
-        let mlme_source = fidl_sme::DisconnectSource::Mlme(fidl_sme::DisconnectCause {
+        // Send 1 disconnect and 1 roaming disconnect with the device connected for a
+        // total of 12 of 24 hours.
+        let mlme_non_roam_source = fidl_sme::DisconnectSource::Mlme(fidl_sme::DisconnectCause {
             reason_code: fidl_ieee80211::ReasonCode::LeavingNetworkDeauth,
             mlme_event_name: fidl_sme::DisconnectMlmeEventName::DeauthenticateIndication,
         });
-        connect_and_disconnect_with_source(&mut test_helper, test_fut.as_mut(), mlme_source);
-
-        let user_source = fidl_sme::DisconnectSource::User(
-            fidl_sme::UserDisconnectReason::FidlStopClientConnectionsRequest,
+        connect_and_disconnect_with_source(
+            &mut test_helper,
+            test_fut.as_mut(),
+            mlme_non_roam_source,
         );
-        connect_and_disconnect_with_source(&mut test_helper, test_fut.as_mut(), user_source);
+
+        let mlme_roam_source = fidl_sme::DisconnectSource::Mlme(fidl_sme::DisconnectCause {
+            reason_code: fidl_ieee80211::ReasonCode::UnspecifiedReason,
+            mlme_event_name: fidl_sme::DisconnectMlmeEventName::RoamConfirmation,
+        });
+        connect_and_disconnect_with_source(&mut test_helper, test_fut.as_mut(), mlme_roam_source);
 
         test_helper.advance_by(zx::MonotonicDuration::from_hours(12), test_fut.as_mut());
 
         let dpdc_ratios =
             test_helper.get_logged_metrics(metrics::DISCONNECT_PER_DAY_CONNECTED_METRIC_ID);
         assert_eq!(dpdc_ratios.len(), 1);
-        // 2 disconnects, 0.5 day connected => 6 disconnects per day connected
+        // 2 disconnects, 0.5 day connected => 4 disconnects per day connected
         assert_eq!(dpdc_ratios[0].payload, MetricEventPayload::IntegerValue(40_000));
 
-        // 1 non-roaming non-user disconnect, 0.5 day connected => 2 non-roam disconnects per day connected
+        // 1 non-roaming disconnect, 0.5 day connected => 2 non-roam disconnects per day connected
         let non_roam_dpdc_ratios = test_helper
             .get_logged_metrics(metrics::NON_ROAM_DISCONNECT_PER_DAY_CONNECTED_METRIC_ID);
         assert_eq!(non_roam_dpdc_ratios.len(), 1);
         assert_eq!(non_roam_dpdc_ratios[0].payload, MetricEventPayload::IntegerValue(20_000));
 
-        // Roam disconnects get logged in the roam result event, so this shouldn't have any.
+        // Roam disconnects get logged in the roam result event, so this shouldn't have any, even
+        // though we directly sent the roam disconnect..
         let roam_dpdc_ratios = test_helper
             .get_logged_metrics(metrics::POLICY_ROAM_DISCONNECT_COUNT_PER_DAY_CONNECTED_METRIC_ID);
         assert_eq!(roam_dpdc_ratios.len(), 1);
@@ -6501,7 +6569,7 @@ mod tests {
 
         test_helper.advance_by(zx::MonotonicDuration::from_hours(24), test_fut.as_mut());
 
-        // No disconnect in the last day, so the 1d ratio would be 0.
+        // No disconnect in the last day, so the 1d ratio would be 0 for all types.
         let dpdc_ratios =
             test_helper.get_logged_metrics(metrics::DISCONNECT_PER_DAY_CONNECTED_METRIC_ID);
         assert_eq!(dpdc_ratios.len(), 1);
@@ -6512,11 +6580,16 @@ mod tests {
         assert_eq!(non_roam_dpdc_ratios.len(), 1);
         assert_eq!(non_roam_dpdc_ratios[0].payload, MetricEventPayload::IntegerValue(0));
 
+        let roam_dpdc_ratios = test_helper
+            .get_logged_metrics(metrics::POLICY_ROAM_DISCONNECT_COUNT_PER_DAY_CONNECTED_METRIC_ID);
+        assert_eq!(roam_dpdc_ratios.len(), 1);
+        assert_eq!(roam_dpdc_ratios[0].payload, MetricEventPayload::IntegerValue(0));
+
         let dpdc_ratios_7d =
             test_helper.get_logged_metrics(metrics::DISCONNECT_PER_DAY_CONNECTED_7D_METRIC_ID);
         assert_eq!(dpdc_ratios_7d.len(), 1);
-        // 2 disconnects, 1.5 day connected => 1.333 disconnects per day connected
-        // (which equals 13,333 in TenThousandth unit)
+        // The original 2 disconnects, now with 1.5 day connected => 1.333 disconnects per day
+        // connected (which equals 13,333 in TenThousandth unit)
         assert_eq!(dpdc_ratios_7d[0].payload, MetricEventPayload::IntegerValue(13_333));
     }
 
@@ -7178,14 +7251,15 @@ mod tests {
 
         let primary_channel = 8;
         let channel = Channel::new(primary_channel, Cbw::Cbw20);
-        let ap_state = random_bss_description!(Wpa2, channel: channel).into();
+        let ap_state: client::types::ApState =
+            random_bss_description!(Wpa2, channel: channel).into();
         let info = DisconnectInfo {
             connected_duration: zx::MonotonicDuration::from_hours(5),
             disconnect_source: fidl_sme::DisconnectSource::Mlme(fidl_sme::DisconnectCause {
                 reason_code: fidl_ieee80211::ReasonCode::LeavingNetworkDeauth,
                 mlme_event_name: fidl_sme::DisconnectMlmeEventName::DeauthenticateIndication,
             }),
-            ap_state,
+            ap_state: ap_state.clone(),
             ..fake_disconnect_info()
         };
         test_helper.telemetry_sender.send(TelemetryEvent::Disconnected {
@@ -7272,35 +7346,106 @@ mod tests {
         );
         assert_eq!(breakdowns_by_security_type[0].payload, MetricEventPayload::Count(1));
 
-        // Roam disconnects should not be logged, as they are logged in the roam result event.
-        let roam_connected_duration = test_helper.get_logged_metrics(
+        // Connected duration should be logged for overall disconnect metric and for non-roam
+        // metric.
+        let connected_duration_before_disconnect =
+            test_helper.get_logged_metrics(metrics::CONNECTED_DURATION_BEFORE_DISCONNECT_METRIC_ID);
+        assert_eq!(connected_duration_before_disconnect.len(), 1);
+        assert_eq!(
+            connected_duration_before_disconnect[0].payload,
+            MetricEventPayload::IntegerValue(300)
+        );
+        let connected_duration_before_non_roam_disconnect = test_helper
+            .get_logged_metrics(metrics::CONNECTED_DURATION_BEFORE_NON_ROAM_DISCONNECT_METRIC_ID);
+        assert_eq!(connected_duration_before_non_roam_disconnect.len(), 1);
+        assert_eq!(
+            connected_duration_before_non_roam_disconnect[0].payload,
+            MetricEventPayload::IntegerValue(300)
+        );
+        let connected_duration_before_roam_attempt = test_helper.get_logged_metrics(
             metrics::POLICY_ROAM_CONNECTED_DURATION_BEFORE_ROAM_ATTEMPT_METRIC_ID,
         );
-        assert_eq!(roam_connected_duration.len(), 0);
+        assert_eq!(connected_duration_before_roam_attempt.len(), 0);
 
-        let non_roam_connected_duration = test_helper
-            .get_logged_metrics(metrics::CONNECTED_DURATION_BEFORE_NON_ROAM_DISCONNECT_METRIC_ID);
-        assert_eq!(non_roam_connected_duration.len(), 1);
-        assert_eq!(non_roam_connected_duration[0].payload, MetricEventPayload::IntegerValue(300));
-
-        let total_connected_duration =
-            test_helper.get_logged_metrics(metrics::CONNECTED_DURATION_BEFORE_DISCONNECT_METRIC_ID);
-        assert_eq!(total_connected_duration.len(), 1);
-        assert_eq!(total_connected_duration[0].payload, MetricEventPayload::IntegerValue(300));
-
-        let roam_disconnect_counts =
-            test_helper.get_logged_metrics(metrics::POLICY_ROAM_DISCONNECT_COUNT_METRIC_ID);
-        assert!(roam_disconnect_counts.is_empty());
+        // Disconnect count should be logged for overall disconnect metric and for non-roam
+        // metric.
+        let network_disconnect_counts =
+            test_helper.get_logged_metrics(metrics::NETWORK_DISCONNECT_COUNTS_METRIC_ID);
+        assert_eq!(network_disconnect_counts.len(), 1);
+        assert_eq!(network_disconnect_counts[0].payload, MetricEventPayload::Count(1));
 
         let non_roam_disconnect_counts =
             test_helper.get_logged_metrics(metrics::NON_ROAM_DISCONNECT_COUNTS_METRIC_ID);
         assert_eq!(non_roam_disconnect_counts.len(), 1);
         assert_eq!(non_roam_disconnect_counts[0].payload, MetricEventPayload::Count(1));
 
-        let total_disconnect_counts =
+        let roam_disconnect_counts =
+            test_helper.get_logged_metrics(metrics::POLICY_ROAM_DISCONNECT_COUNT_METRIC_ID);
+        assert!(roam_disconnect_counts.is_empty());
+
+        // Clear events.
+        test_helper.clear_cobalt_events();
+
+        // Advance and get state back to connected.
+        test_helper.advance_by(zx::MonotonicDuration::from_minutes(1), test_fut.as_mut());
+        test_helper.send_connected_event(random_bss_description!(Wpa2));
+        assert_eq!(test_helper.advance_test_fut(&mut test_fut), Poll::Pending);
+
+        test_helper.advance_by(zx::MonotonicDuration::from_hours(6), test_fut.as_mut());
+
+        // Send a disconnect count with roam cause.
+        let info = DisconnectInfo {
+            connected_duration: zx::MonotonicDuration::from_hours(6),
+            disconnect_source: fidl_sme::DisconnectSource::Mlme(fidl_sme::DisconnectCause {
+                reason_code: fidl_ieee80211::ReasonCode::UnspecifiedReason,
+                mlme_event_name: fidl_sme::DisconnectMlmeEventName::RoamResultIndication,
+            }),
+            ap_state,
+            ..fake_disconnect_info()
+        };
+        test_helper.telemetry_sender.send(TelemetryEvent::Disconnected {
+            track_subsequent_downtime: true,
+            info: Some(info),
+        });
+        test_helper.drain_cobalt_events(&mut test_fut);
+
+        // Connected duration should be logged for overall disconnect metric, but not for non-roam
+        // metric.
+        let connected_duration_before_disconnect =
+            test_helper.get_logged_metrics(metrics::CONNECTED_DURATION_BEFORE_DISCONNECT_METRIC_ID);
+        assert_eq!(connected_duration_before_disconnect.len(), 1);
+        assert_eq!(
+            connected_duration_before_disconnect[0].payload,
+            MetricEventPayload::IntegerValue(360)
+        );
+
+        let connected_duration_before_non_roam_disconnect = test_helper
+            .get_logged_metrics(metrics::CONNECTED_DURATION_BEFORE_NON_ROAM_DISCONNECT_METRIC_ID);
+        assert!(connected_duration_before_non_roam_disconnect.is_empty());
+
+        // Connected duration before roam attempt should also not be logged, despite the roam
+        // disconnect source, because we log that in the roam result event where we can distinguish
+        // successful roams from failed roams.
+        let connected_duration_before_roam_attempt = test_helper.get_logged_metrics(
+            metrics::POLICY_ROAM_CONNECTED_DURATION_BEFORE_ROAM_ATTEMPT_METRIC_ID,
+        );
+        assert!(connected_duration_before_roam_attempt.is_empty());
+
+        // Disconnect count should be logged for overall disconnect metric, but not for non-roam
+        // metric.
+        let network_disconnect_counts =
             test_helper.get_logged_metrics(metrics::NETWORK_DISCONNECT_COUNTS_METRIC_ID);
-        assert_eq!(total_disconnect_counts.len(), 1);
-        assert_eq!(total_disconnect_counts[0].payload, MetricEventPayload::Count(1));
+        assert_eq!(network_disconnect_counts.len(), 1);
+        assert_eq!(network_disconnect_counts[0].payload, MetricEventPayload::Count(1));
+
+        let non_roam_disconnect_counts =
+            test_helper.get_logged_metrics(metrics::NON_ROAM_DISCONNECT_COUNTS_METRIC_ID);
+        assert!(non_roam_disconnect_counts.is_empty());
+
+        // Roam disconnect count should not be logged, because we log that in the roam result event.
+        let roam_disconnect_counts =
+            test_helper.get_logged_metrics(metrics::POLICY_ROAM_DISCONNECT_COUNT_METRIC_ID);
+        assert!(roam_disconnect_counts.is_empty());
     }
 
     #[fuchsia::test]
@@ -7327,15 +7472,16 @@ mod tests {
         });
         test_helper.drain_cobalt_events(&mut test_fut);
 
-        // Check that nothing was logged for roaming and non-roaming, non-user disconnects.
+        // Check that nothing was logged for roaming disconnects.
         let roam_connected_duration = test_helper.get_logged_metrics(
             metrics::POLICY_ROAM_CONNECTED_DURATION_BEFORE_ROAM_ATTEMPT_METRIC_ID,
         );
         assert_eq!(roam_connected_duration.len(), 0);
 
+        // Check that a non_roam disconnect was logged
         let non_roam_connected_duration = test_helper
             .get_logged_metrics(metrics::CONNECTED_DURATION_BEFORE_NON_ROAM_DISCONNECT_METRIC_ID);
-        assert_eq!(non_roam_connected_duration.len(), 0);
+        assert_eq!(non_roam_connected_duration.len(), 1);
 
         let roam_disconnect_counts =
             test_helper.get_logged_metrics(metrics::POLICY_ROAM_DISCONNECT_COUNT_METRIC_ID);
@@ -7343,7 +7489,7 @@ mod tests {
 
         let non_roam_disconnect_counts =
             test_helper.get_logged_metrics(metrics::NON_ROAM_DISCONNECT_COUNTS_METRIC_ID);
-        assert!(non_roam_disconnect_counts.is_empty());
+        assert!(!non_roam_disconnect_counts.is_empty());
 
         // Check that a connected duration and a count were logged for overall disconnects.
         let total_connected_duration =
@@ -8016,37 +8162,7 @@ mod tests {
         test_helper.send_connected_event(random_bss_description!(Wpa2));
         test_helper.drain_cobalt_events(&mut test_fut);
 
-        let info = DisconnectInfo {
-            disconnect_source: fidl_sme::DisconnectSource::Mlme(fidl_sme::DisconnectCause {
-                reason_code: fidl_ieee80211::ReasonCode::LeavingNetworkDeauth,
-                mlme_event_name: fidl_sme::DisconnectMlmeEventName::DeauthenticateIndication,
-            }),
-            ..fake_disconnect_info()
-        };
-        test_helper.telemetry_sender.send(TelemetryEvent::Disconnected {
-            track_subsequent_downtime: true,
-            info: Some(info),
-        });
-        assert_eq!(test_helper.advance_test_fut(&mut test_fut), Poll::Pending);
-
-        test_helper.advance_by(zx::MonotonicDuration::from_seconds(3), test_fut.as_mut());
-        // Reconnect
-        test_helper.send_connected_event(random_bss_description!(Wpa2));
-        test_helper.drain_cobalt_events(&mut test_fut);
-
-        // Verify the reconnect duration was logged for an unexpected disconnect and not a roam.
-        // 3 seconds would be sent as 3,000,000 microseconds.
-        let metrics =
-            test_helper.get_logged_metrics(metrics::NON_ROAM_RECONNECT_DURATION_METRIC_ID);
-        assert_eq!(metrics.len(), 1);
-        assert_eq!(metrics[0].payload, MetricEventPayload::IntegerValue(3_000_000));
-        assert_eq!(
-            test_helper.get_logged_metrics(metrics::POLICY_ROAM_RECONNECT_DURATION_METRIC_ID).len(),
-            0
-        );
-
-        // Send a disconnect and reconnect for a proactive network switch.
-        test_helper.clear_cobalt_events();
+        // Send disconnect with non-roam cause.
         let info = DisconnectInfo {
             disconnect_source: fidl_sme::DisconnectSource::User(
                 fidl_sme::UserDisconnectReason::ProactiveNetworkSwitch,
@@ -8058,13 +8174,57 @@ mod tests {
             info: Some(info),
         });
         assert_eq!(test_helper.advance_test_fut(&mut test_fut), Poll::Pending);
-        let downtime = 5_000_000;
-        test_helper.advance_by(zx::MonotonicDuration::from_micros(downtime), test_fut.as_mut());
 
-        // Reconnect and verify that a non-roam, non-user reconnect time is not logged.
-        let non_roam_reconnect =
+        test_helper.advance_by(zx::MonotonicDuration::from_seconds(3), test_fut.as_mut());
+        // Reconnect.
+        test_helper.send_connected_event(random_bss_description!(Wpa2));
+        test_helper.drain_cobalt_events(&mut test_fut);
+
+        // Verify the reconnect duration was logged for a non-roam disconnect only.
+        let metrics =
             test_helper.get_logged_metrics(metrics::NON_ROAM_RECONNECT_DURATION_METRIC_ID);
-        assert_eq!(non_roam_reconnect.len(), 0);
+        assert_eq!(metrics.len(), 1);
+        assert_eq!(metrics[0].payload, MetricEventPayload::IntegerValue(3_000_000));
+        assert!(
+            test_helper
+                .get_logged_metrics(metrics::POLICY_ROAM_RECONNECT_DURATION_METRIC_ID)
+                .is_empty()
+        );
+
+        // Send a disconnect with a roaming cause.
+        test_helper.clear_cobalt_events();
+        let info = DisconnectInfo {
+            disconnect_source: fidl_sme::DisconnectSource::Mlme(fidl_sme::DisconnectCause {
+                reason_code: fidl_ieee80211::ReasonCode::UnspecifiedReason,
+                mlme_event_name: fidl_sme::DisconnectMlmeEventName::RoamResultIndication,
+            }),
+            ..fake_disconnect_info()
+        };
+        test_helper.telemetry_sender.send(TelemetryEvent::Disconnected {
+            track_subsequent_downtime: true,
+            info: Some(info),
+        });
+        assert_eq!(test_helper.advance_test_fut(&mut test_fut), Poll::Pending);
+        test_helper.advance_by(zx::MonotonicDuration::from_seconds(1), test_fut.as_mut());
+        // Reconnect.
+        test_helper.send_connected_event(random_bss_description!(Wpa2));
+        test_helper.drain_cobalt_events(&mut test_fut);
+
+        // Verify the reconnect duration was NOT logged for a non-roam reconnect, since the cause
+        // was a roam cause.
+        assert!(
+            test_helper
+                .get_logged_metrics(metrics::NON_ROAM_RECONNECT_DURATION_METRIC_ID)
+                .is_empty()
+        );
+        // Verify the reconnect duration is also NOT logged for a roam reconnect, despite the roam
+        // cause, as roam reconnect durations are logged in the roam result event where we can
+        // distinguish successful roams from failures.
+        assert!(
+            test_helper
+                .get_logged_metrics(metrics::POLICY_ROAM_RECONNECT_DURATION_METRIC_ID)
+                .is_empty()
+        );
     }
 
     #[fuchsia::test]
