@@ -54,6 +54,8 @@ class SockScripter {
   bool LogRecvtclass(char* arg);
   bool SetTcpSyncnt(char* arg);
   bool LogTcpSyncnt(char* arg);
+  bool SetTcpUserTimeout(char* arg);
+  bool LogTcpUserTimeout(char* arg);
   bool SetRecvtos(char* arg);
   bool LogRecvtos(char* arg);
   bool SetReuseaddr(char* arg);

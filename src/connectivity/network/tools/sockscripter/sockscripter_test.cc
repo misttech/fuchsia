@@ -650,29 +650,30 @@ TEST(SockOptTestIcmp6Filter, SetGetParamOmitLeadingZeros) {
 
 INSTANTIATE_TEST_SUITE_P(
     ParameterizedSockOpt, SockOptTest,
-    testing::Values(MakeSockOptParam("broadcast", "1", SOL_SOCKET, SO_BROADCAST, 1),
+    testing::Values(
+        MakeSockOptParam("broadcast", "1", SOL_SOCKET, SO_BROADCAST, 1),
 #ifdef SO_BINDTODEVICE
-                    MakeSockOptParam("bindtodevice", "device", SOL_SOCKET, SO_BINDTODEVICE,
-                                     "device"),
+        MakeSockOptParam("bindtodevice", "device", SOL_SOCKET, SO_BINDTODEVICE, "device"),
 #endif
 #ifdef IP_RECVORIGDSTADDR
-                    MakeSockOptParam("ip-recvorigdstaddr", "1", IPPROTO_IP, IP_RECVORIGDSTADDR, 1),
+        MakeSockOptParam("ip-recvorigdstaddr", "1", IPPROTO_IP, IP_RECVORIGDSTADDR, 1),
 #endif
 #ifdef IPV6_RECVPKTINFO
-                    MakeSockOptParam("ipv6-recvpktinfo", "1", IPPROTO_IPV6, IPV6_RECVPKTINFO, 1),
+        MakeSockOptParam("ipv6-recvpktinfo", "1", IPPROTO_IPV6, IPV6_RECVPKTINFO, 1),
 #endif
 #ifdef IP_TRANSPARENT
-                    MakeSockOptParam("transparent", "1", IPPROTO_IP, IP_TRANSPARENT, 1),
+        MakeSockOptParam("transparent", "1", IPPROTO_IP, IP_TRANSPARENT, 1),
 #endif
-                    MakeSockOptParam("reuseaddr", "1", SOL_SOCKET, SO_REUSEADDR, 1),
-                    MakeSockOptParam("reuseport", "1", SOL_SOCKET, SO_REUSEPORT, 1),
-                    MakeSockOptParam("unicast-ttl", "20", IPPROTO_IP, IP_TTL, 20),
-                    MakeSockOptParam("unicast-hops", "10", IPPROTO_IPV6, IPV6_UNICAST_HOPS, 10),
-                    MakeSockOptParam("mcast-ttl", "10", IPPROTO_IP, IP_MULTICAST_TTL, 10),
-                    MakeSockOptParam("mcast-loop4", "1", IPPROTO_IP, IP_MULTICAST_LOOP, 1),
-                    MakeSockOptParam("mcast-hops", "15", IPPROTO_IPV6, IPV6_MULTICAST_HOPS, 15),
-                    MakeSockOptParam("mcast-loop6", "1", IPPROTO_IPV6, IPV6_MULTICAST_LOOP, 1),
-                    MakeSockOptParam("mcast-if6", "1", IPPROTO_IPV6, IPV6_MULTICAST_IF, 1),
-                    MakeSockOptParam("ipv6-only", "1", IPPROTO_IPV6, IPV6_V6ONLY, 1),
-                    MakeSockOptParam("ip-hdrincl", "1", IPPROTO_IP, IP_HDRINCL, 1),
-                    MakeSockOptParam("tcp-syncnt", "5", IPPROTO_TCP, TCP_SYNCNT, 5)));
+        MakeSockOptParam("reuseaddr", "1", SOL_SOCKET, SO_REUSEADDR, 1),
+        MakeSockOptParam("reuseport", "1", SOL_SOCKET, SO_REUSEPORT, 1),
+        MakeSockOptParam("unicast-ttl", "20", IPPROTO_IP, IP_TTL, 20),
+        MakeSockOptParam("unicast-hops", "10", IPPROTO_IPV6, IPV6_UNICAST_HOPS, 10),
+        MakeSockOptParam("mcast-ttl", "10", IPPROTO_IP, IP_MULTICAST_TTL, 10),
+        MakeSockOptParam("mcast-loop4", "1", IPPROTO_IP, IP_MULTICAST_LOOP, 1),
+        MakeSockOptParam("mcast-hops", "15", IPPROTO_IPV6, IPV6_MULTICAST_HOPS, 15),
+        MakeSockOptParam("mcast-loop6", "1", IPPROTO_IPV6, IPV6_MULTICAST_LOOP, 1),
+        MakeSockOptParam("mcast-if6", "1", IPPROTO_IPV6, IPV6_MULTICAST_IF, 1),
+        MakeSockOptParam("ipv6-only", "1", IPPROTO_IPV6, IPV6_V6ONLY, 1),
+        MakeSockOptParam("ip-hdrincl", "1", IPPROTO_IP, IP_HDRINCL, 1),
+        MakeSockOptParam("tcp-syncnt", "5", IPPROTO_TCP, TCP_SYNCNT, 5),
+        MakeSockOptParam("tcp-user-timeout", "10000", IPPROTO_TCP, TCP_USER_TIMEOUT, 10000)));
