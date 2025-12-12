@@ -7,7 +7,6 @@ mod cgroup;
 pub mod container_namespace;
 mod current_task;
 mod delayed_release;
-mod dynamic_thread_spawner;
 mod hr_timer_manager;
 mod interval_timer;
 mod iptables;
@@ -34,6 +33,7 @@ pub mod tracing;
 mod uts_namespace;
 mod waiter;
 
+pub mod dynamic_thread_spawner;
 pub use abstract_socket_namespace::*;
 pub use cgroup::*;
 pub use current_task::*;
