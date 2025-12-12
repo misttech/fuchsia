@@ -45,7 +45,7 @@ the mix threads), we maintain *Nodes* separately from *PipelineStages*:
     pipeline trees to produce output at each Consumer.
 
     Edges between PipelineStage objects flow from destination to source. For
-    example, the edge `A -> B` says that A reads audio from from B. If there is
+    example, the edge `A -> B` says that A reads audio from B. If there is
     a path from ConsumerStage C to PipelineStage object O, then object O is said
     to be *assigned* to the same mix thread as C. Otherwise, O is said to be
     *detached*.
