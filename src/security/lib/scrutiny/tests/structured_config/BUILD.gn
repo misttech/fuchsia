@@ -33,6 +33,7 @@ if (is_fuchsia) {
 
   extract_assembled_structured_config("extractor") {
     testonly = true
+    component_tree_config = "//src/security/lib/scrutiny/tests/structured_config/component_tree_config.json5"
     product_bundle_path = "$target_out_dir/product_bundle"
     output = "$target_out_dir/structured_config.json"
     deps = [ ":product_bundle" ]
@@ -59,6 +60,8 @@ if (is_host) {
 
   files = {
     ffx = "$ffx_test_host_tools_out_dir/ffx-scrutiny"
+
+    component_tree_config = "//src/security/lib/scrutiny/tests/structured_config/component_tree_config.json5"
 
     product_bundle_target_out_dir =
         get_label_info(labels.product_bundle, "target_out_dir")
@@ -104,6 +107,7 @@ if (is_host) {
 
   verify_assembled_structured_config("verifier_pass") {
     testonly = true
+    component_tree_config = "//src/security/lib/scrutiny/tests/structured_config/component_tree_config.json5"
     product_bundle_path = files.product_bundle_dir
     policy = "passing_policy.json5"
     deps = [ labels.product_bundle ]
@@ -117,6 +121,7 @@ if (is_host) {
     sources = get_target_outputs(":check_failed_verifier_bin")
     sources += [
       "failing_policy.json5",
+      files.component_tree_config,
       files.product_bundle_dir,
     ]
     deps = [
@@ -142,6 +147,8 @@ if (is_host) {
       rebase_path(depfile, root_build_dir),
       "--product-bundle",
       rebase_path(files.product_bundle_dir, root_build_dir),
+      "--component-tree-config",
+      rebase_path(files.component_tree_config, root_build_dir),
     ]
     depfile = [ depfile ]
 

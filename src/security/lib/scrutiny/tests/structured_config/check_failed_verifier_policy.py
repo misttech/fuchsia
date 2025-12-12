@@ -41,6 +41,12 @@ def main() -> None:
         required=True,
         help="Path to the product bundle.",
     )
+    parser.add_argument(
+        "--component-tree-config",
+        type=pathlib.Path,
+        required=False,
+        help="Path to the component tree config.",
+    )
     args = parser.parse_args()
 
     # Assume we're in the root build dir right now and that is where we'll find ffx env.
@@ -67,6 +73,12 @@ def main() -> None:
         "--product-bundle",
         args.product_bundle,
     ]
+
+    if args.component_tree_config:
+        ffx_args += [
+            "--component-tree-config",
+            args.component_tree_config,
+        ]
 
     test = unittest.TestCase()
 

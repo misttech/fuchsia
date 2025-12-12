@@ -60,6 +60,14 @@ template("extract_assembled_structured_config") {
       rebase_path(invoker.output, root_build_dir),
     ]
 
+    if (defined(invoker.component_tree_config)) {
+      inputs += [ invoker.component_tree_config ]
+      args += [
+        "--component-tree-config",
+        rebase_path(invoker.component_tree_config, root_build_dir),
+      ]
+    }
+
     if (defined(invoker.recovery) && invoker.recovery) {
       args += [ "--recovery" ]
     }
@@ -140,5 +148,13 @@ template("verify_assembled_structured_config") {
       "--product-bundle",
       rebase_path(invoker.product_bundle_path, root_build_dir),
     ]
+
+    if (defined(invoker.component_tree_config)) {
+      inputs += [ invoker.component_tree_config ]
+      args += [
+        "--component-tree-config",
+        rebase_path(invoker.component_tree_config, root_build_dir),
+      ]
+    }
   }
 }
