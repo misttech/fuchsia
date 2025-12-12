@@ -1683,7 +1683,7 @@ async fn expose_unmanaged_block_devices() {
 }
 
 // Regression test for https://fxbug.dev/408423972.
-#[cfg(feature = "storage_host")]
+#[cfg(feature = "storage-host")]
 #[fuchsia::test]
 async fn fuse_gpt_once_container_found() {
     let mut builder = new_builder();
@@ -1707,7 +1707,7 @@ async fn fuse_gpt_once_container_found() {
     fixture.check_fs_type("blob", blob_fs_type()).await;
     fixture.check_fs_type("data", data_fs_type()).await;
 
-    task.join().await;
+    task.await;
 
     fixture.tear_down().await;
 }
