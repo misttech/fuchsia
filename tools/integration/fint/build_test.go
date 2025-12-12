@@ -159,7 +159,7 @@ func TestBuild(t *testing.T) {
 			name:              "empty spec produces no ninja targets",
 			staticSpec:        &fintpb.Static{},
 			expectedArtifacts: &fintpb.BuildArtifacts{},
-			mustRun:           []string{`ninja -C .*out/default --chrome_trace ninja_build_trace\.json\.gz$`},
+			mustRun:           []string{`ninja -C .*out/default --edge_weights_list=ninja_edge_weights\.csv --chrome_trace ninja_build_trace\.json\.gz$`},
 		},
 		{
 			name: "enable_jobserver flag support",
@@ -167,7 +167,7 @@ func TestBuild(t *testing.T) {
 				GnArgs: []string{"enable_jobserver = true"},
 			},
 			expectedArtifacts: &fintpb.BuildArtifacts{},
-			mustRun:           []string{`ninja -C .*out/default --chrome_trace ninja_build_trace\.json\.gz --jobserver$`},
+			mustRun:           []string{`ninja -C .*out/default --edge_weights_list=ninja_edge_weights\.csv --chrome_trace ninja_build_trace\.json\.gz --jobserver$`},
 		},
 		{
 			name:       "artifact dir set",
@@ -179,7 +179,7 @@ func TestBuild(t *testing.T) {
 				BuildstatsJsonFiles: []string{filepath.Join(buildDir, buildstatsJSONName)},
 				NinjatraceJsonFiles: []string{filepath.Join(buildDir, ninjatraceJSONName)},
 			},
-			mustRun: []string{`ninja -C .*out/default --chrome_trace ninja_build_trace\.json\.gz$`},
+			mustRun: []string{`ninja -C .*out/default --edge_weights_list=ninja_edge_weights\.csv --chrome_trace ninja_build_trace\.json\.gz$`},
 		},
 		{
 			name:       "affected tests",
@@ -803,8 +803,16 @@ func findNinjaTargets(cmds [][]string) []string {
 			continue
 		}
 		// Skip over each `-flag value` pair until we reach the list of targets.
-		for i := 1; i < len(cmd); i += 2 {
-			if !strings.HasPrefix(cmd[i], "-") {
+		for i := 1; i < len(cmd); i += 1 {
+			if strings.HasPrefix(cmd[i], "-") {
+				// The current token appears to be an option.
+				if !strings.Contains(cmd[i], "=") {
+					// It doesn't contain an '=' to separate the value from the key,
+					// so assume the following token is the value for this argument
+					// and skip it.
+					i += 1
+				}
+			} else {
 				// We've reached the start of the list of targets, assumed to
 				// come after all flags.
 				return cmd[i:]

@@ -1417,9 +1417,12 @@ function fx-run-ninja {
     FUCHSIA_BAZEL_JOB_COUNT=${concurrency}
   fi
 
+
   # Tell ninja to source edge weights from a GN-generated file of estimates
   # that come from GN metadata on the actions.
+  # LINT.IfChange(edge_weights_file)
   args=("--edge_weights_list=ninja_edge_weights.csv" "${args[@]}")
+  # LINT.ThenChange(//tools/integration/fint/ninja.go)
 
   fx-run-build-command "${print_full_cmd}" "ninja" "${cmd}" "${args[@]}"
 }

@@ -99,6 +99,12 @@ const (
 	// unrecognizedFailureMsg is the message we'll output if ninja fails but its
 	// output doesn't match any of the known failure modes.
 	unrecognizedFailureMsg = "Unrecognized failures, please check the original stdout instead."
+
+	// ninjaEdgeWeightsArg is the arg to pass to ninja to use the ninja edge weights
+	// file created by the regeneration script.
+	// LINT.IfChange(edge_weights_file)
+	ninjaEdgeWeightsArg = "--edge_weights_list=ninja_edge_weights.csv"
+	// LINT.ThenChange(//tools/devshell/lib/vars.sh)
 )
 
 // ninjaRunner provides logic for running ninja commands using common flags
@@ -117,6 +123,11 @@ func (r ninjaRunner) run(ctx context.Context, args []string, stdout, stderr io.W
 	if r.jobCount > 0 {
 		cmd = append(cmd, "-j", fmt.Sprintf("%d", r.jobCount))
 	}
+
+	// Tell ninja to source edge weights from a GN-generated file of estimates
+	// that come from GN metadata on the actions.
+	cmd = append(cmd, ninjaEdgeWeightsArg)
+
 	cmd = append(cmd, args...)
 	return r.runner.Run(ctx, cmd, subprocess.RunOptions{Stdout: stdout, Stderr: stderr, Env: []string{
 		fmt.Sprintf("NINJA_STATUS=%s", ninjaStatus),
