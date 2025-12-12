@@ -84,7 +84,7 @@ class DevicePort : public fidl::WireServer<netdev::Port> {
   void GetCounters(GetCountersCompleter::Sync& completer) override;
   void GetDiagnostics(GetDiagnosticsRequestView request,
                       GetDiagnosticsCompleter::Sync& _completer) override;
-  void GetIdEvent(GetIdEventCompleter::Sync& completer) override;
+  void GetIdentity(GetIdentityCompleter::Sync& completer) override;
 
   Counters& counters() { return counters_; }
 

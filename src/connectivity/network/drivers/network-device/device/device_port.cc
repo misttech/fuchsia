@@ -433,7 +433,7 @@ void DevicePort::GetDiagnostics(GetDiagnosticsRequestView request,
   parent_->diagnostics().Bind(std::move(request->diagnostics));
 }
 
-void DevicePort::GetIdEvent(GetIdEventCompleter::Sync& completer) {
+void DevicePort::GetIdentity(GetIdentityCompleter::Sync& completer) {
   zx::event event;
   const zx_status_t status = id_event_.duplicate(ZX_RIGHT_DUPLICATE | ZX_RIGHT_TRANSFER, &event);
   // This should never fail. Port creation should fail if the event cannot be created. Other errors

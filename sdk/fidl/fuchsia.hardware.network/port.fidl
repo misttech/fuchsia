@@ -190,7 +190,7 @@ closed protocol Port {
     ///
     /// This event may be used to uniquely identify a specific port instance
     /// across different APIs in the system.
-    strict GetIdEvent() -> (resource struct {
+    strict GetIdentity() -> (resource struct {
         event zx.Handle:<EVENT, zx.Rights.TRANSFER | zx.Rights.DUPLICATE>;
     });
 };

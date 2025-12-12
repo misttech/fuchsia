@@ -3211,11 +3211,11 @@ TEST_F(NetworkDeviceTest, GetPortIdEvent) {
   ASSERT_OK(port.status_value());
   fidl::WireSyncClient port_connection = std::move(port.value());
 
-  fidl::WireResult first_event = port_connection->GetIdEvent();
+  fidl::WireResult first_event = port_connection->GetIdentity();
   ASSERT_TRUE(first_event.ok());
   EXPECT_TRUE(first_event->event.is_valid());
 
-  fidl::WireResult second_event = port_connection->GetIdEvent();
+  fidl::WireResult second_event = port_connection->GetIdentity();
   ASSERT_TRUE(second_event.ok());
   EXPECT_TRUE(second_event->event.is_valid());
 
