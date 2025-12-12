@@ -28,6 +28,7 @@
 #include <id_allocator/id_allocator.h>
 
 #include "src/devices/block/drivers/core/block-fifo.h"
+#include "src/lib/testing/predicates/status.h"
 #include "src/storage/blobfs/allocator/extent_reserver.h"
 #include "src/storage/blobfs/allocator/node_reserver.h"
 #include "src/storage/blobfs/blobfs.h"
@@ -38,8 +39,6 @@
 #include "src/storage/blobfs/test/blobfs_test_setup.h"
 #include "src/storage/blobfs/test/unit/utils.h"
 #include "src/storage/lib/block_client/cpp/fake_block_device.h"
-#include "src/storage/lib/vfs/cpp/vfs_types.h"
-#include "src/storage/lib/vfs/cpp/vnode.h"
 
 namespace blobfs {
 namespace {
@@ -586,32 +585,21 @@ TEST(AllocatorTest, FreedBlocksAreReservedUntilTransactionCommits) {
   ASSERT_EQ(ZX_OK, setup.Mount(std::move(device)));
 
   // Create a blob that takes up more than half of the volume.
-  fbl::RefPtr<fs::Vnode> root;
-  ASSERT_EQ(setup.blobfs()->OpenRootNode(&root), ZX_OK);
-  // Use a blob size large enough to fit one, but not two.
   size_t blob_size = setup.blobfs()->Info().data_block_count * kBlobfsBlockSize * 3 / 4;
-  std::unique_ptr<BlobInfo> info = GenerateRandomBlob(/*mount_path=*/"", blob_size);
-  zx::result file = root->Create(info->path, fs::CreationType::kFile);
-  ASSERT_TRUE(file.is_ok()) << file.status_string();
-  size_t actual;
-  EXPECT_EQ(file->Truncate(info->size_data), ZX_OK);
-  EXPECT_EQ(file->Write(info->data.get(), info->size_data, 0, &actual), ZX_OK);
-  EXPECT_EQ(file->Close(), ZX_OK);
+  auto delivery_blob1 = TestDeliveryBlob::CreateUncompressed(blob_size, 0x01);
+  auto blob1 = CreateBlob(*setup.blobfs(), delivery_blob1);
+  ASSERT_OK(blob1);
 
   // Attempting to create another blob should result in a no-space condition.
-  std::unique_ptr<BlobInfo> info2 = GenerateRandomBlob("", blob_size);
-
-  file = root->Create(info2->path, fs::CreationType::kFile);
-  ASSERT_TRUE(file.is_ok()) << file.status_string();
-  EXPECT_EQ(file->Truncate(info2->size_data), ZX_OK);
-  EXPECT_EQ(file->Write(info2->data.get(), info2->size_data, 0, &actual), ZX_ERR_NO_SPACE);
-  EXPECT_EQ(file->Close(), ZX_OK);
+  auto delivery_blob2 = TestDeliveryBlob::CreateUncompressed(blob_size);
+  auto blob2 = CreateBlob(*setup.blobfs(), delivery_blob2);
+  ASSERT_STATUS(blob2, ZX_ERR_NO_SPACE);
 
   // Prevent any more writes from hitting the disk.
   device_ref.Pause();
 
   // Unlink the blob we just created.
-  EXPECT_EQ(root->Unlink(info->path, /*must_be_dir=*/false), ZX_OK);
+  ASSERT_OK(blob1->QueueUnlink());
 
   std::atomic<bool> done(false);
 
@@ -623,11 +611,8 @@ TEST(AllocatorTest, FreedBlocksAreReservedUntilTransactionCommits) {
     device_ref.Resume();
   });
 
-  file = root->Create(info2->path, fs::CreationType::kFile);
-  ASSERT_TRUE(file.is_ok()) << file.status_string();
-  EXPECT_EQ(file->Truncate(info2->size_data), ZX_OK);
-  EXPECT_EQ(file->Write(info2->data.get(), info2->size_data, 0, &actual), ZX_OK);
-  EXPECT_EQ(file->Close(), ZX_OK);
+  blob2 = CreateBlob(*setup.blobfs(), delivery_blob2);
+  ASSERT_OK(blob2);
   done.store(true);
 
   thread.join();

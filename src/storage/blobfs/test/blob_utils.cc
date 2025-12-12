@@ -29,9 +29,6 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
-#include <filesystem>
-#include <limits>
-#include <memory>
 #include <optional>
 #include <span>
 #include <string>
@@ -42,7 +39,6 @@
 #include <fbl/ref_ptr.h>
 #include <fbl/unique_fd.h>
 #include <gtest/gtest.h>
-#include <safemath/safe_conversions.h>
 #include <zstd/zstd.h>
 
 #include "src/lib/digest/digest.h"
@@ -83,80 +79,6 @@ std::vector<uint8_t> LoadTemplateData() {
 
 }  // namespace
 
-void RandomFill(uint8_t* data, size_t length) {
-  for (size_t i = 0; i < length; i++) {
-    // TODO(jfsulliv): Use explicit seed
-    data[i] = static_cast<uint8_t>(rand());
-  }
-}
-
-// Creates, writes, reads (to verify) and operates on a blob.
-std::unique_ptr<BlobInfo> GenerateBlob(const BlobSrcFunction& data_generator,
-                                       const std::string& mount_path, size_t data_size) {
-  std::unique_ptr<BlobInfo> info(new BlobInfo);
-  info->data = nullptr;
-  info->size_data = data_size;
-  if (data_size > 0) {
-    info->data.reset(new uint8_t[data_size]);
-    data_generator(info->data.get(), data_size);
-  }
-
-  TestMerkleTree merkle_tree(std::span(info->data.get(), data_size), /*use_compact_format=*/true);
-  // Ensure we include a path separator if mount_path is specified and does not include one.
-  const bool requires_separator = !mount_path.empty() && *mount_path.cend() != '/';
-  snprintf(info->path, sizeof(info->path), "%s%s%s", mount_path.c_str(),
-           requires_separator ? "/" : "", merkle_tree.digest().ToString().c_str());
-
-  return info;
-}
-
-std::unique_ptr<BlobInfo> GenerateRandomBlob(const std::string& mount_path, size_t data_size) {
-  return GenerateBlob(RandomFill, mount_path, data_size);
-}
-
-std::unique_ptr<BlobInfo> GenerateRealisticBlob(const std::string& mount_path, size_t data_size) {
-  static auto* template_data = [] {
-    auto* data = new std::vector(LoadTemplateData());
-    ZX_ASSERT_MSG(data->size() > 0ul, "Failed to load realistic data");
-    return data;
-  }();
-  return GenerateBlob(
-      [](uint8_t* data, size_t length) {
-        // TODO(jfsulliv): Use explicit seed
-        int nonce = rand();
-        size_t nonce_size = std::min(sizeof(nonce), length);
-        memcpy(data, &nonce, nonce_size);
-        data += nonce_size;
-        length -= nonce_size;
-
-        while (length > 0) {
-          size_t to_copy = std::min(template_data->size(), length);
-          memcpy(data, template_data->data(), to_copy);
-          data += to_copy;
-          length -= to_copy;
-        }
-      },
-      mount_path, data_size);
-}
-
-void VerifyContents(int fd, const uint8_t* data, size_t data_size) {
-  ASSERT_EQ(0, lseek(fd, 0, SEEK_SET));
-
-  // Cast |data_size| to ssize_t to match the return type of |read| and avoid narrowing conversion
-  // warnings from mixing size_t and ssize_t.
-  ZX_ASSERT(std::numeric_limits<ssize_t>::max() >= data_size);
-  ssize_t data_size_signed = safemath::checked_cast<ssize_t>(data_size);
-
-  constexpr ssize_t kBuffersize = 8192;
-  std::unique_ptr<char[]> buffer(new char[kBuffersize]);
-
-  for (ssize_t total_read = 0; total_read < data_size_signed; total_read += kBuffersize) {
-    ssize_t read_size = std::min(kBuffersize, data_size_signed - total_read);
-    ASSERT_EQ(read_size, read(fd, buffer.get(), read_size)) << strerror(errno);
-    ASSERT_EQ(memcmp(&data[total_read], buffer.get(), read_size), 0);
-  }
-}
-
 bool VerifyContents(const zx::vmo& blob_vmo, std::span<const uint8_t> expected_data) {
   uint64_t blob_size = GetVmoStreamSize(blob_vmo);
   if (blob_size != expected_data.size()) {
@@ -182,14 +104,6 @@ uint64_t GetVmoStreamSize(const zx::vmo& vmo) {
   return stream_size;
 }
 
-void MakeBlob(const BlobInfo& info, fbl::unique_fd* fd) {
-  fd->reset(open(info.path, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR));
-  ASSERT_TRUE(*fd) << "Open failed: " << strerror(errno);
-  ASSERT_EQ(ftruncate(fd->get(), info.size_data), 0);
-  ASSERT_EQ(StreamAll(write, fd->get(), info.data.get(), info.size_data), 0);
-  VerifyContents(fd->get(), info.data.get(), info.size_data);
-}
-
 std::string GetBlobLayoutFormatNameForTests(BlobLayoutFormat format) {
   switch (format) {
     case BlobLayoutFormat::kDeprecatedPaddedMerkleTreeAtStart:
@@ -198,8 +112,6 @@ std::string GetBlobLayoutFormatNameForTests(BlobLayoutFormat format) {
       return "CompactMerkleTreeAtEndLayout";
   }
 }
-
-std::string BlobInfo::GetMerkleRoot() const { return std::filesystem::path(path).filename(); }
 
 TestMerkleTree::TestMerkleTree(std::span<const uint8_t> data, bool use_compact_format) {
   digest::MerkleTreeCreator mtc;

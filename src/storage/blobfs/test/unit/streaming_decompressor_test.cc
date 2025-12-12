@@ -2,15 +2,29 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <lib/fzl/owned-vmo-mapper.h>
+#include <lib/zx/result.h>
+#include <zircon/assert.h>
+#include <zircon/errors.h>
+#include <zircon/types.h>
 
+#include <algorithm>
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
+#include <memory>
 #include <span>
+#include <utility>
+#include <vector>
 
-#include <gmock/gmock.h>
+#include <fbl/array.h>
 #include <gtest/gtest.h>
 
+#include "src/lib/chunked-compression/chunked-archive.h"
+#include "src/lib/chunked-compression/status.h"
 #include "src/storage/blobfs/compression/chunked.h"
+#include "src/storage/blobfs/compression/external_decompressor.h"
 #include "src/storage/blobfs/compression/streaming_chunked_decompressor.h"
+#include "src/storage/blobfs/compression_settings.h"
 #include "src/storage/blobfs/test/blob_utils.h"
 #include "src/storage/blobfs/test/unit/local_decompressor_creator.h"
 
@@ -30,9 +44,8 @@ class StreamingDecompressorTest : public ::testing::Test {
   void SetUp() override {
     // Generate some data to use for the test case.
     {
-      std::unique_ptr<BlobInfo> blob = GenerateRealisticBlob("", kTestDataSize);
-      original_data_ = std::move(blob->data);
-      original_data_size_ = blob->size_data;
+      auto blob_data = TestBlobData::CreateRealistic(kTestDataSize);
+      original_data_ = std::vector<uint8_t>(blob_data.data().begin(), blob_data.data().end());
     }
     // Compress the data.
     {
@@ -44,7 +57,7 @@ class StreamingDecompressorTest : public ::testing::Test {
 
       compressed_data_ = std::vector<uint8_t>(output_limit);
       ASSERT_EQ(compressor->SetOutput(compressed_data_.data(), compressed_data_.size()), ZX_OK);
-      ASSERT_EQ(compressor->Update(original_data_.get(), original_data_size_), ZX_OK);
+      ASSERT_EQ(compressor->Update(original_data_.data(), original_data_.size()), ZX_OK);
       ASSERT_EQ(compressor->End(), ZX_OK);
     }
     // Parse the resulting seek table.
@@ -64,9 +77,7 @@ class StreamingDecompressorTest : public ::testing::Test {
 
   const chunked_compression::SeekTable& seek_table() { return seek_table_; }
 
-  std::span<const uint8_t> original_data() const {
-    return {original_data_.get(), original_data_size_};
-  }
+  std::span<const uint8_t> original_data() const { return original_data_; }
 
   std::span<const uint8_t> compressed_data() const {
     ZX_ASSERT(seek_table_.SerializedHeaderSize() <= compressed_data_.size());
@@ -78,8 +89,7 @@ class StreamingDecompressorTest : public ::testing::Test {
   }
 
  private:
-  std::unique_ptr<uint8_t[]> original_data_;
-  size_t original_data_size_;
+  std::vector<uint8_t> original_data_;
   std::vector<uint8_t> compressed_data_;
   chunked_compression::SeekTable seek_table_;
   std::unique_ptr<LocalDecompressorCreator> local_decompressor_;

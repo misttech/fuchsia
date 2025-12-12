@@ -3,27 +3,28 @@
 // found in the LICENSE file.
 
 #include <stdlib.h>
-#include <zircon/assert.h>
 #include <zircon/errors.h>
 
 #include <algorithm>
+#include <cstdint>
+#include <cstring>
+#include <limits>
 #include <memory>
+#include <optional>
+#include <utility>
 
+#include <fbl/algorithm.h>
 #include <gtest/gtest.h>
 
-#include "src/storage/blobfs/blobfs.h"
-#include "src/storage/blobfs/common.h"
 #include "src/storage/blobfs/compression/blob_compressor.h"
 #include "src/storage/blobfs/compression/decompressor.h"
-#include "src/storage/blobfs/directory.h"
+#include "src/storage/blobfs/compression_settings.h"
 #include "src/storage/blobfs/format.h"
-#include "src/storage/blobfs/test/blob_utils.h"
-#include "src/storage/blobfs/test/blobfs_test_setup.h"
 
 namespace blobfs {
 namespace {
 
-enum class DataType {
+enum class DataType : uint8_t {
   Compressible,
   Random,
 };
@@ -212,122 +213,6 @@ TEST(CompressorTests, CompressRoundDecompressRandom3) {
 TEST(CompressorTests, CompressRoundDecompressRandom4) {
   RunCompressRoundDecompressTest(CompressionAlgorithm::kChunked, DataType::Random, 1 << 15,
                                  1 << 10);
-}
-
-class BlobfsTestFixture : public testing::Test {
- protected:
-  BlobfsTestFixture() {
-    constexpr uint64_t kBlockCount = 1024;
-    EXPECT_EQ(ZX_OK, setup_.CreateFormatMount(kBlockCount, kBlobfsBlockSize));
-
-    fbl::RefPtr<fs::Vnode> root;
-    EXPECT_EQ(setup_.blobfs()->OpenRootNode(&root), ZX_OK);
-    root_ = fbl::RefPtr<Directory>::Downcast(std::move(root));
-  }
-
-  fbl::RefPtr<fs::Vnode> AddBlobToBlobfs(size_t data_size, DataType type) {
-    std::unique_ptr<BlobInfo> blob_info = GenerateBlob(
-        [type](uint8_t* data, size_t length) {
-          auto generated_data = GenerateInput(type, 0, length);
-          memcpy(data, generated_data.get(), length);
-        },
-        "", data_size);
-
-    zx::result file = root_->Create(blob_info->path, fs::CreationType::kFile);
-    EXPECT_TRUE(file.is_ok()) << "Could not create blob: " << file.status_string();
-    if (!file.is_ok()) {
-      return nullptr;
-    }
-
-    zx_status_t status = file->Truncate(data_size);
-    EXPECT_EQ(status, ZX_OK) << "Could not truncate file";
-    if (status != ZX_OK) {
-      return nullptr;
-    }
-    size_t actual = 0;
-    status = file->Write(blob_info->data.get(), data_size, 0, &actual);
-    EXPECT_EQ(status, ZX_OK) << "Could not write file";
-    if (status != ZX_OK) {
-      return nullptr;
-    }
-    EXPECT_EQ(actual, data_size) << "Unexpected amount of written data";
-    if (actual != data_size) {
-      return nullptr;
-    }
-
-    return *std::move(file);
-    ;
-  }
-
- private:
-  BlobfsTestSetup setup_;
-  fbl::RefPtr<Directory> root_;
-};
-
-using CompressorBlobfsTests = BlobfsTestFixture;
-
-// Test that we do compress small blobs with compressible content.
-TEST_F(CompressorBlobfsTests, CompressSmallCompressibleBlobs) {
-  struct TestCase {
-    size_t data_size;
-    size_t expected_max_storage_size;
-  };
-
-  TestCase test_cases[] = {
-      {
-          16 * static_cast<size_t>(1024) - 1,
-          16 * static_cast<size_t>(1024),
-      },
-      {
-          16 * static_cast<size_t>(1024),
-          16 * static_cast<size_t>(1024),
-      },
-      {
-          16 * static_cast<size_t>(1024) + 1,
-          16 * static_cast<size_t>(1024),
-      },
-  };
-
-  for (const TestCase& test_case : test_cases) {
-    printf("Test case: data size %zu\n", test_case.data_size);
-    fbl::RefPtr<fs::Vnode> file = AddBlobToBlobfs(test_case.data_size, DataType::Compressible);
-
-    zx::result attributes = file->GetAttributes();
-    ASSERT_TRUE(attributes.is_ok()) << attributes.status_string();
-
-    EXPECT_EQ(attributes->content_size, test_case.data_size);
-    EXPECT_LE(attributes->storage_size, test_case.expected_max_storage_size);
-
-    ASSERT_EQ(file->Close(), ZX_OK);
-  }
-}
-
-TEST_F(CompressorBlobfsTests, DoNotInflateIncompressibleBlobs) {
-  size_t data_sizes[] = {
-      8 * static_cast<size_t>(1024) - 1,   8 * static_cast<size_t>(1024),
-      8 * static_cast<size_t>(1024) + 1,   16 * static_cast<size_t>(1024) - 1,
-      16 * static_cast<size_t>(1024),      16 * static_cast<size_t>(1024) + 1,
-      128 * static_cast<size_t>(8192) + 1,
-  };
-
-  for (size_t data_size : data_sizes) {
-    if (data_size != 8193)
-      continue;
-    printf("Test case: data size %zu\n", data_size);
-    fbl::RefPtr<fs::Vnode> file = AddBlobToBlobfs(data_size, DataType::Random);
-
-    zx::result attributes = file->GetAttributes();
-    ASSERT_TRUE(attributes.is_ok()) << attributes.status_string();
-
-    EXPECT_EQ(attributes->content_size, data_size);
-    // Beyond 1 block, we need 1 block for the Merkle tree.
-    size_t expected_max_storage_size = fbl::round_up(data_size, kBlobfsBlockSize) +
-                                       (data_size > kBlobfsBlockSize ? kBlobfsBlockSize : 0);
-
-    EXPECT_LE(attributes->storage_size, expected_max_storage_size);
-
-    ASSERT_EQ(file->Close(), ZX_OK);
-  }
 }
 
 }  // namespace

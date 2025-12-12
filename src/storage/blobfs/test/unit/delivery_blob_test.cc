@@ -6,7 +6,6 @@
 
 #include <lib/zx/result.h>
 #include <zircon/assert.h>
-#include <zircon/errors.h>
 
 #include <algorithm>
 #include <cstddef>
@@ -16,13 +15,15 @@
 #include <string>
 #include <tuple>
 #include <utility>
-#include <vector>
 
 #include <fbl/array.h>
 #include <fbl/ref_ptr.h>
 #include <gtest/gtest.h>
 
 #include "src/lib/digest/digest.h"
+#include "src/lib/testing/predicates/status.h"
+#include "src/storage/blobfs/blob.h"
+#include "src/storage/blobfs/blob_layout.h"
 #include "src/storage/blobfs/common.h"
 #include "src/storage/blobfs/format.h"
 #include "src/storage/blobfs/mkfs.h"
@@ -97,14 +98,14 @@ class DeliveryBlobTest : public BlobfsTestSetup,
     const FilesystemOptions filesystem_options{
         .blob_layout_format = GetParam().format,
     };
-    ASSERT_EQ(FormatFilesystem(device.get(), filesystem_options), ZX_OK);
-    ASSERT_EQ(ZX_OK, Mount(std::move(device), {}));
-    ASSERT_EQ(ZX_OK, blobfs()->OpenRootNode(&root_));
+    ASSERT_OK(FormatFilesystem(device.get(), filesystem_options));
+    ASSERT_OK(Mount(std::move(device), {}));
+    ASSERT_OK(blobfs()->OpenRootNode(&root_));
   }
 
   void TearDown() override {
     if (root_) {
-      ASSERT_EQ(ZX_OK, root_->Close());
+      ASSERT_OK(root_->Close());
     }
   }
 
@@ -118,92 +119,61 @@ class DeliveryBlobTest : public BlobfsTestSetup,
 };
 
 TEST_P(DeliveryBlobTest, WriteAll) {
-  const std::unique_ptr<BlobInfo> info =
-      GenerateRandomBlob(/*mount_path*/ "", GetParam().blob_size);
-  const fbl::Array<uint8_t> delivery_blob =
-      GenerateDeliveryBlobType1({info->data.get(), info->size_data}, GetParam().compress).value();
+  auto blob_data = TestBlobData::CreateRandom(GetParam().blob_size);
+  TestDeliveryBlob delivery_blob(blob_data, GetParam().compress);
 
-  zx::result file =
-      root()->Create(GetDeliveryBlobPath(info->GetMerkleRoot()), fs::CreationType::kFile);
-  ASSERT_TRUE(file.is_ok()) << file.status_string();
-  ASSERT_EQ(ZX_OK, file->Truncate(delivery_blob.size()));
-  size_t out_actual;
-  ASSERT_EQ(ZX_OK, file->Write(delivery_blob.data(), delivery_blob.size(), 0, &out_actual));
-  ASSERT_EQ(out_actual, delivery_blob.size());
-  ASSERT_EQ(ZX_OK, file->Close());
-
-  // Try to open the newly created blob.
-  fbl::RefPtr<fs::Vnode> file_ptr;
-  ASSERT_EQ(ZX_OK, root()->Lookup(info->GetMerkleRoot(), &file_ptr));
-  ASSERT_EQ(ZX_OK, file_ptr->Open(&*file));
+  auto blob = CreateBlob(*blobfs(), delivery_blob);
+  ASSERT_OK(blob);
 
   // Validate file contents.
   if (GetParam().blob_size > 0) {
-    std::vector<uint8_t> file_contents(info->size_data);
-    ASSERT_EQ(ZX_OK, file->Read(file_contents.data(), info->size_data, 0, &out_actual));
-    ASSERT_EQ(out_actual, info->size_data);
-    ASSERT_EQ(std::memcmp(info->data.get(), file_contents.data(), info->size_data), 0)
+    auto vmo = blob->GetVmoForBlobReader();
+    ASSERT_OK(vmo);
+    ASSERT_TRUE(VerifyContents(*vmo, blob_data.data()))
         << "Blob contents don't match after writing to disk.";
   }
-
-  ASSERT_EQ(ZX_OK, file->Close());
 }
 
 TEST_P(DeliveryBlobTest, WriteChunked) {
-  const std::unique_ptr<BlobInfo> info =
-      GenerateRandomBlob(/*mount_path*/ "", GetParam().blob_size);
-  const fbl::Array<uint8_t> delivery_blob =
-      GenerateDeliveryBlobType1({info->data.get(), info->size_data}, GetParam().compress).value();
+  auto blob_data = TestBlobData::CreateRandom(GetParam().blob_size);
+  TestDeliveryBlob delivery_blob(blob_data, GetParam().compress);
 
-  zx::result file =
-      root()->Create(GetDeliveryBlobPath(info->GetMerkleRoot()), fs::CreationType::kFile);
-  ASSERT_TRUE(file.is_ok()) << file.status_string();
-  ASSERT_EQ(file->Truncate(delivery_blob.size()), ZX_OK);
+  fbl::RefPtr blob =
+      fbl::MakeRefCounted<Blob>(*blobfs(), blob_data.digest(), /*is_delivery_blob=*/true);
+  ASSERT_OK(blobfs()->GetCache().Add(blob));
+  ASSERT_OK(blob->Truncate(delivery_blob.data().size()));
 
   // Write the delivery blob in chunks. We use a very small chunk size to cover more edge cases.
   constexpr size_t kChunkSize = 4;
   size_t bytes_written = 0;
-  while (bytes_written < delivery_blob.size()) {
-    const size_t to_write = std::min(kChunkSize, delivery_blob.size() - bytes_written);
+  while (bytes_written < delivery_blob.data().size()) {
+    const size_t to_write = std::min(kChunkSize, delivery_blob.data().size() - bytes_written);
     size_t out_actual;
-    ASSERT_EQ(ZX_OK, file->Write(delivery_blob.data() + bytes_written, to_write, bytes_written,
-                                 &out_actual))
+    ASSERT_OK(blob->Write(delivery_blob.data().data() + bytes_written, to_write, bytes_written,
+                          &out_actual))
         << "Failed to write " << to_write << " bytes at offset " << bytes_written;
     ASSERT_EQ(out_actual, to_write);
     bytes_written += out_actual;
   }
-
-  ASSERT_EQ(bytes_written, delivery_blob.size());
-  ASSERT_EQ(file->Close(), ZX_OK);
-
-  // Try to open the newly created blob.
-  fbl::RefPtr<fs::Vnode> file_ptr;
-  ASSERT_EQ(ZX_OK, root()->Lookup(info->GetMerkleRoot(), &file_ptr));
-  ASSERT_EQ(ZX_OK, file_ptr->Open(&*file));
+  ASSERT_EQ(bytes_written, delivery_blob.data().size());
 
   // Validate file contents.
   if (GetParam().blob_size > 0) {
-    std::vector<uint8_t> file_contents(info->size_data);
-    size_t out_actual;
-    ASSERT_EQ(ZX_OK, file->Read(file_contents.data(), info->size_data, 0, &out_actual));
-    ASSERT_EQ(out_actual, info->size_data);
-    ASSERT_EQ(std::memcmp(info->data.get(), file_contents.data(), info->size_data), 0)
+    auto vmo = blob->GetVmoForBlobReader();
+    ASSERT_OK(vmo);
+    ASSERT_TRUE(VerifyContents(*vmo, blob_data.data()))
         << "Blob contents don't match after writing to disk.";
   }
-
-  ASSERT_EQ(ZX_OK, file->Close());
 }
 
 // Verify that CalculateDeliveryBlobDigest works with all types of generated delivery blobs.
 TEST_P(DeliveryBlobTest, CalculateDeliveryBlobDigest) {
-  const std::unique_ptr<BlobInfo> info =
-      GenerateRandomBlob(/*mount_path*/ "", GetParam().blob_size);
+  auto blob_data = TestBlobData::CreateRandom(GetParam().blob_size);
   const fbl::Array<uint8_t> delivery_blob =
-      GenerateDeliveryBlobType1({info->data.get(), info->size_data}, GetParam().compress).value();
+      GenerateDeliveryBlobType1(blob_data.data(), GetParam().compress).value();
   zx::result<digest::Digest> digest = CalculateDeliveryBlobDigest(delivery_blob);
-  ASSERT_TRUE(digest.is_ok()) << digest.status_string() << "Data length: " << delivery_blob.size();
-  const auto digest_str = digest->ToString();
-  ASSERT_EQ(info->GetMerkleRoot(), digest_str);
+  ASSERT_OK(digest) << "Data length: " << delivery_blob.size();
+  ASSERT_EQ(*digest, blob_data.digest());
 }
 
 std::string GetTestParamName(const ::testing::TestParamInfo<DeliveryBlobTestParams>& p) {

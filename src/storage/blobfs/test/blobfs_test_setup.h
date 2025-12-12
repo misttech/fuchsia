@@ -19,15 +19,12 @@
 #include <cstdint>
 #include <memory>
 
-#include <fbl/ref_ptr.h>
-
 #include "src/storage/blobfs/blobfs.h"
 #include "src/storage/blobfs/common.h"
 #include "src/storage/blobfs/compression/external_decompressor.h"
 #include "src/storage/blobfs/mount.h"
 #include "src/storage/blobfs/test/unit/local_decompressor_creator.h"
 #include "src/storage/lib/vfs/cpp/paged_vfs.h"
-#include "src/storage/lib/vfs/cpp/vnode.h"
 
 namespace blobfs {
 
@@ -71,20 +68,11 @@ class BlobfsTestSetupBase {
   // called or the BlobCache destructor will assert that there are live blobs.
   zx_status_t Remount(const MountOptions& options = MountOptions());
 
-  fbl::RefPtr<fs::Vnode> OpenRoot() {
-    fbl::RefPtr<fs::Vnode> root;
-    ZX_ASSERT(blobfs()->OpenRootNode(&root) == ZX_OK);
-    return root;
-  }
-
  protected:
   // Provided by the derived classes that set up the loop.
   virtual async::Loop& GetLoop() = 0;
 
   virtual void ShutdownVfs() = 0;
-
-  // Should be called in the derived class' destructor.
-  void DestroyBlobfs();
 
   std::unique_ptr<LocalDecompressorCreator> decompressor_connector_;
   std::unique_ptr<fs::PagedVfs> vfs_;

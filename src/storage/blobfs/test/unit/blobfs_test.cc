@@ -14,7 +14,6 @@
 #include <lib/zx/process.h>
 #include <lib/zx/result.h>
 #include <lib/zx/time.h>
-#include <zircon/assert.h>
 #include <zircon/errors.h>
 #include <zircon/syscalls/object.h>
 #include <zircon/time.h>
@@ -46,7 +45,6 @@
 #include "src/storage/blobfs/mount.h"
 #include "src/storage/blobfs/test/blob_utils.h"
 #include "src/storage/blobfs/test/blobfs_test_setup.h"
-#include "src/storage/blobfs/test/test_scoped_vnode_open.h"
 #include "src/storage/blobfs/transaction.h"
 #include "src/storage/lib/block_client/cpp/fake_block_device.h"
 #include "src/storage/lib/block_client/cpp/reader_writer.h"
@@ -219,22 +217,12 @@ TEST_F(BlobfsTest, RunOperationReadWrite) {
 }
 
 TEST_F(BlobfsTest, TrimsData) {
-  fbl::RefPtr<fs::Vnode> root;
-  ASSERT_EQ(blobfs()->OpenRootNode(&root), ZX_OK);
-  fs::Vnode* root_node = root.get();
-
-  std::unique_ptr<BlobInfo> info = GenerateRandomBlob("", 1024);
-
-  zx::result file = root->Create(info->path, fs::CreationType::kFile);
-  ASSERT_TRUE(file.is_ok()) << file.status_string();
-
-  size_t actual;
-  EXPECT_EQ(file->Truncate(info->size_data), ZX_OK);
-  EXPECT_EQ(file->Write(info->data.get(), info->size_data, 0, &actual), ZX_OK);
-  EXPECT_EQ(file->Close(), ZX_OK);
+  auto delivery_blob = TestDeliveryBlob::CreateUncompressed(1024);
+  auto blob = CreateBlob(*blobfs(), delivery_blob);
+  ASSERT_OK(blob);
 
   EXPECT_FALSE(device_->saw_trim());
-  ASSERT_EQ(root_node->Unlink(info->path, false), ZX_OK);
+  ASSERT_OK(blob->QueueUnlink());
 
   sync_completion_t completion;
   blobfs()->Sync([&completion](zx_status_t status) { sync_completion_signal(&completion); });
@@ -305,36 +293,25 @@ using BlobfsTestWithLargeDevice =
 
 TEST_F(BlobfsTestWithLargeDevice, WritingBlobLargerThanWritebackCapacitySucceeds) {
   fbl::RefPtr<fs::Vnode> root;
-  ASSERT_EQ(blobfs()->OpenRootNode(&root), ZX_OK);
-  fs::Vnode* root_node = root.get();
+  ASSERT_OK(blobfs()->OpenRootNode(&root));
 
-  std::unique_ptr<BlobInfo> info =
-      GenerateRealisticBlob("", (blobfs()->WriteBufferBlockCount() + 1) * kBlobfsBlockSize);
-  zx::result file = root->Create(info->path, fs::CreationType::kFile);
-  ASSERT_TRUE(file.is_ok()) << file.status_string();
-  auto blob = fbl::RefPtr<Blob>::Downcast(*file);
-  EXPECT_EQ(blob->Truncate(info->size_data), ZX_OK);
-  size_t actual;
+  auto blob_data = TestBlobData::Create((blobfs()->WriteBufferBlockCount() + 1) * kBlobfsBlockSize);
+  auto delivery_blob = TestDeliveryBlob::CreateUncompressed(blob_data);
+  auto blob = CreateBlob(*blobfs(), delivery_blob);
   // If this starts to fail with an ERR_NO_SPACE error it could be because WriteBufferBlockCount()
   // has changed and is now returning something too big for the device we're using in this test.
-  EXPECT_EQ(blob->Write(info->data.get(), info->size_data, 0, &actual), ZX_OK);
+  ASSERT_OK(blob);
 
   sync_completion_t sync;
-  blob->Sync([&](zx_status_t status) {
-    EXPECT_EQ(status, ZX_OK);
+  root->Sync([&](zx_status_t status) {
+    EXPECT_OK(status);
     sync_completion_signal(&sync);
   });
   sync_completion_wait(&sync, ZX_TIME_INFINITE);
-  EXPECT_EQ(blob->Close(), ZX_OK);
-  blob.reset();
 
-  fbl::RefPtr<fs::Vnode> lookup_vn;
-  ASSERT_EQ(root_node->Lookup(info->path, &lookup_vn), ZX_OK);
-  TestScopedVnodeOpen open(lookup_vn);  // File must be open to read from it.
-
-  auto buffer = std::make_unique<uint8_t[]>(info->size_data);
-  EXPECT_EQ(file->Read(buffer.get(), info->size_data, 0, &actual), ZX_OK);
-  EXPECT_EQ(memcmp(buffer.get(), info->data.get(), info->size_data), 0);
+  auto vmo = blob->GetVmoForBlobReader();
+  ASSERT_OK(vmo);
+  ASSERT_TRUE(VerifyContents(*vmo, blob_data.data()));
 }
 
 #ifndef NDEBUG
@@ -349,21 +326,11 @@ class FsckAtEndOfEveryTransactionTest : public BlobfsTest {
 };
 
 TEST_F(FsckAtEndOfEveryTransactionTest, FsckAtEndOfEveryTransaction) {
-  fbl::RefPtr<fs::Vnode> root;
-  ASSERT_EQ(blobfs()->OpenRootNode(&root), ZX_OK);
-  fs::Vnode* root_node = root.get();
-
-  std::unique_ptr<BlobInfo> info = GenerateRealisticBlob("", 500123);
-  {
-    zx::result file = root->Create(info->path, fs::CreationType::kFile);
-    ASSERT_TRUE(file.is_ok()) << file.status_string();
-    EXPECT_EQ(file->Truncate(info->size_data), ZX_OK);
-    size_t actual;
-    EXPECT_EQ(file->Write(info->data.get(), info->size_data, 0, &actual), ZX_OK);
-    EXPECT_EQ(actual, info->size_data);
-    EXPECT_EQ(file->Close(), ZX_OK);
-  }
-  EXPECT_EQ(root_node->Unlink(info->path, false), ZX_OK);
+  auto blob_data = TestBlobData::CreateRealistic(500123);
+  auto delivery_blob = TestDeliveryBlob::CreateUncompressed(blob_data);
+  auto blob = CreateBlob(*blobfs(), delivery_blob);
+  ASSERT_OK(blob);
+  blob->QueueUnlink();
 
   blobfs()->Sync([loop = &loop()](zx_status_t) { loop->Quit(); });
   loop().Run();
@@ -386,21 +353,6 @@ void VnodeSync(fs::Vnode* vnode) {
   }
 }
 */
-
-std::unique_ptr<BlobInfo> CreateBlob(const fbl::RefPtr<fs::Vnode>& root, size_t size) {
-  std::unique_ptr<BlobInfo> info = GenerateRandomBlob("", size);
-
-  zx::result file = root->Create(info->path, fs::CreationType::kFile);
-  ZX_ASSERT_MSG(file.is_ok(), "Failed to create blob: %s", file.status_string());
-  size_t out_actual = 0;
-  EXPECT_EQ(file->Truncate(info->size_data), ZX_OK);
-
-  EXPECT_EQ(file->Write(info->data.get(), info->size_data, 0, &out_actual), ZX_OK);
-  EXPECT_EQ(info->size_data, out_actual);
-
-  file->Close();
-  return info;
-}
 
 // In this test we try to simulate fragmentation and test fragmentation metrics. We create
 // fragmentation by first creating few blobs, deleting a subset of those blobs and then finally
@@ -444,14 +396,16 @@ TEST(BlobfsFragmentationTest, FragmentationMetrics) {
 
   fbl::RefPtr<fs::Vnode> root;
   ASSERT_EQ(setup.blobfs()->OpenRootNode(&root), ZX_OK);
-  std::vector<std::unique_ptr<BlobInfo>> infos;
+  std::vector<Digest> digests;
   constexpr int kSmallBlobCount = 10;
-  infos.reserve(kSmallBlobCount);
+  digests.reserve(kSmallBlobCount);
   // We create 10 blobs that occupy 1 block each. After these creation, data block bitmap should
   // look like (first 10 bits set and all other bits unset.)
   // 111111111100000000....
-  for (int i = 0; i < kSmallBlobCount; i++) {
-    infos.push_back(CreateBlob(root, 64));
+  for (uint8_t i = 0; i < kSmallBlobCount; i++) {
+    auto delivery_blob = TestDeliveryBlob::CreateUncompressed(64, i);
+    ASSERT_OK(CreateBlob(*setup.blobfs(), delivery_blob));
+    digests.push_back(delivery_blob.digest());
   }
 
   // The last free fragment should reflect the number of blocks we allocated.
@@ -474,10 +428,11 @@ TEST(BlobfsFragmentationTest, FragmentationMetrics) {
   // block bitmap will look as follows 1010100111000000... This creates 4 free fragments. 6 used
   // fragments.
   constexpr uint64_t kBlobsDeleted = 4;
-  ASSERT_EQ(root->Unlink(infos[1]->path, false), ZX_OK);
-  ASSERT_EQ(root->Unlink(infos[3]->path, false), ZX_OK);
-  ASSERT_EQ(root->Unlink(infos[5]->path, false), ZX_OK);
-  ASSERT_EQ(root->Unlink(infos[6]->path, false), ZX_OK);
+  for (size_t i : {1, 3, 5, 6}) {
+    auto blob = GetBlob(*setup.blobfs(), digests[i]);
+    ASSERT_OK(blob);
+    ASSERT_OK(blob->QueueUnlink());
+  }
 
   // Ensure that all reserved extents get returned.
   {
@@ -503,16 +458,12 @@ TEST(BlobfsFragmentationTest, FragmentationMetrics) {
   // Create a huge (20 blocks) blob that potentially fills at least three free fragments that we
   // created above.
   const uint64_t kLargeFileNumBlocks = 20;
-  auto info = CreateBlob(root, kLargeFileNumBlocks * kBlobfsBlockSize);
-  fbl::RefPtr<fs::Vnode> file;
-  ASSERT_EQ(root->Lookup(info->path, &file), ZX_OK);
-
-  zx::result attributes = file->GetAttributes();
-  ASSERT_TRUE(attributes.is_ok());
-  uint64_t blocks = *attributes->storage_size / 8192;
-
-  // For some reason, if it turns out that the random data is highly compressible then our math
-  // belows blows up. Assert that is not the case.
+  auto delivery_blob = TestDeliveryBlob::CreateUncompressed(kLargeFileNumBlocks * kBlobfsBlockSize);
+  auto blob = CreateBlob(*setup.blobfs(), delivery_blob);
+  ASSERT_OK(blob);
+  auto node = setup.blobfs()->GetNode(blob->Ino());
+  ASSERT_OK(node);
+  uint64_t blocks = node->block_count;
   ASSERT_GT(blocks, kBlobsDeleted);
 
   {

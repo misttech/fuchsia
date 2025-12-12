@@ -27,13 +27,11 @@
 #include "src/lib/testing/predicates/status.h"
 #include "src/storage/blobfs/blob.h"
 #include "src/storage/blobfs/blobfs.h"
-#include "src/storage/blobfs/cache_node.h"
 #include "src/storage/blobfs/format.h"
 #include "src/storage/blobfs/test/blob_utils.h"
 #include "src/storage/blobfs/test/blobfs_test_setup.h"
 #include "src/storage/blobfs/test/unit/utils.h"
 #include "src/storage/lib/block_client/cpp/block_device.h"
-#include "src/storage/lib/block_client/cpp/fake_block_device.h"
 #include "src/storage/lib/vfs/cpp/vnode.h"
 
 namespace blobfs {
@@ -141,15 +139,14 @@ class BlobfsCheckerTest : public testing::Test {
                    std::unique_ptr<BlockDevice>* device_out) {
     Digest digest;
     AddRandomBlob(1024, nullptr, nullptr, &digest);
-    fbl::RefPtr<CacheNode> cache_node;
-    ASSERT_OK(blobfs()->GetCache().Lookup(digest, &cache_node));
-    auto blob = fbl::RefPtr<Blob>::Downcast(std::move(cache_node));
+    auto blob = GetBlob(*blobfs(), digest);
+    ASSERT_OK(blob);
 
     const uint32_t inode = blob->Ino();
     const uint64_t node_block =
         NodeMapStartBlock(blobfs()->Info()) + (inode / kBlobfsInodesPerBlock);
 
-    blob.reset();
+    blob.value().reset();
 
     auto device = setup_.Unmount();
 
