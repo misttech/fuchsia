@@ -11,15 +11,4 @@ declare_args() {
   # * 1 disables `ZX_DEBUG_ASSERT`. Standard C `assert()` remains enabled.
   # * 2 enables all asserts.
   zx_assert_level = 2
-
-  # Zircon optimization level. Same acceptable values as `optimize`.
-  #
-  # This functions as an override for the global `optimize` GN arg,
-  # as it pertains to the Zircon toolchains.
-  #
-  # The default value of 'false` is used to mark this as "unset", and
-  # that the global optimize value should be used, unless it's set to
-  # one of the incompatible values, in which case `moderate` is used
-  # instead.  See zircon_toolchain.gni for the specific logic.
-  zircon_optimize = false
 }

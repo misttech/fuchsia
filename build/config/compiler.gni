@@ -3,42 +3,86 @@
 # found in the LICENSE file.
 
 import("//build/config/compilation_modes.gni")
+import("//build/toolchain/toolchain_environment.gni")
 
-# NOTE: Keep in sync with //build/config/zircon/levels.gni
 declare_args() {
-  # * `none`: really unoptimized, usually only build-tested and not run
-  # * `debug`: "optimized for debugging", light enough to avoid confusion
-  # * `moderate`: moderate optimization level (clang's default -O2)
-  # * `size`:  optimized for space rather than purely for speed
-  # * `size_lto`:  optimize for space and use LTO
-  # * `speed`: optimized purely for speed
-  # * `sanitizer`: optimized for sanitizers (ASan, etc.)
-  # * `profile`: optimized for coverage/profile data collection
-  # * `coverage`: optimized for coverage data collection
-  optimize = compilation_settings.optimize
+  # Global override for the "foo_optimize" args.
+  optimize = false
 }
 
-_optimize_valid = [
-  "none",
-  "debug",
-  "minimal",
-  "moderate",
-  "size",
-  "size_thinlto",
-  "size_lto",
-  "speed",
-  "sanitizer",
-  "profile",
-  "coverage",
-]
+# Compute the actual "optimize" value to use for each toolchain based on its
+# environment.
 
-assert(
-    optimize != "default",
-    "optimize = \"default\" has been renamed to \"moderate\", please update your build args.")
+# Kernel and related toolchains
+if (is_kernel) {
+  _optimize = compilation_settings.kernel_optimize
 
-assert(
-    _optimize_valid + [ optimize ] - [ optimize ] != _optimize_valid,
-    "`optimize=\"...\"` must be one of $_optimize_valid (\"$optimize\" was specified)")
+  # Apply the global override for the optimization level to use, if set.
+  if (optimize != false) {
+    # Only use the following optimize modes with the kernel toolchain(s)
+    if (optimize == "sanitizer" || optimize == "profile" ||
+        optimize == "size_lto" || optimize == "size_thinlto" ||
+        optimize == "minimal") {
+      _optimize = optimize
+    } else {
+      _optimize = "moderate"
+    }
+  }
+
+  # Host and linux toolchains
+} else if (is_host || toolchain_environment == "linux") {
+  _optimize = compilation_settings.host_optimize
+
+  # Apply the global override for the optimization level to use, if set.
+  if (optimize != false) {
+    _optimize = optimize
+  }
+
+  # 'user.basic' and 'user.libc' and should follow Fuchsia, except that they
+  # need to use a higher level of optimization at the moment
+} else if (toolchain_environment == "user.basic" ||
+           toolchain_environment == "user.libc") {
+  # Only use the following optimize modes
+  if (compilation_settings.fuchsia_optimize == "sanitizer" ||
+      compilation_settings.fuchsia_optimize == "profile" ||
+      compilation_settings.fuchsia_optimize == "size_lto" ||
+      compilation_settings.fuchsia_optimize == "size_thinlto" ||
+      compilation_settings.fuchsia_optimize == "minimal") {
+    _optimize = compilation_settings.fuchsia_optimize
+  } else {
+    _optimize = "moderate"
+  }
+
+  if (optimize != false) {
+    # Only use the following optimize modes when the global override
+    # has been specified
+    if (optimize == "sanitizer" || optimize == "profile" ||
+        optimize == "size_lto" || optimize == "size_thinlto" ||
+        optimize == "minimal") {
+      _optimize = optimize
+    } else {
+      _optimize = "moderate"
+    }
+  }
+
+  # Fuchsia
+} else if (is_fuchsia || toolchain_environment == "bionic") {
+  _optimize = compilation_settings.fuchsia_optimize
+
+  # Apply the global override for the optimization level to use, if set.
+  if (optimize != false) {
+    _optimize = optimize
+  }
+
+  # Anything else isn't categorized correctly, and should be a failure.
+} else {
+  assert(
+      false,
+      "uncategorized toolchain: $current_toolchain environment: $toolchain_environment")
+}
+
+# Now set the value that will actually be used in GN
+optimize = _optimize
 
 declare_args() {
   # * `none` means no debugging information

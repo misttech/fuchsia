@@ -41,15 +41,21 @@ declare_args() {
 
 _default_compilation_settings = {
   debug = {
-    optimize = "none"
+    fuchsia_optimize = "none"
+    host_optimize = "none"
+    kernel_optimize = "moderate"
   }
 
   balanced = {
-    optimize = "size_thinlto"
+    fuchsia_optimize = "size_thinlto"
+    host_optimize = "size"
+    kernel_optimize = "moderate"
   }
 
   release = {
-    optimize = "size_lto"
+    fuchsia_optimize = "size_lto"
+    host_optimize = "size"
+    kernel_optimize = "moderate"
   }
 }
 
@@ -73,7 +79,12 @@ compilation_settings = {
   if (_print_warnings) {
     # Warn if the overridden settings are not at their default value for this
     # compilation mode.
-    foreach(_setting_name, [ "optimize" ]) {
+    foreach(_setting_name,
+            [
+              "fuchsia_optimize",
+              "host_optimize",
+              "kernel_optimize",
+            ]) {
       if (defined(compilation_settings_overrides[_setting_name]) &&
           compilation_settings_overrides[_setting_name] ==
           _settings_defaults[_setting_name]) {
@@ -89,8 +100,43 @@ compilation_settings = {
   # (such as warning about setting overrides to default values or using
   # deprecated options).
 
-  # optimization setting
-  if (defined(compilation_settings_overrides.optimize)) {
-    optimize = compilation_settings_overrides.optimize
+  # optimization settings
+  if (defined(compilation_settings_overrides.fuchsia_optimize)) {
+    fuchsia_optimize = compilation_settings_overrides.fuchsia_optimize
   }
+  if (defined(compilation_settings_overrides.host_optimize)) {
+    host_optimize = compilation_settings_overrides.host_optimize
+  }
+  if (defined(compilation_settings_overrides.kernel_optimize)) {
+    kernel_optimize = compilation_settings_overrides.kernel_optimize
+  }
+}
+
+# Validate that the configured 'foo_optimize' values set above are one of the valid
+# optimization modes:
+_optimize_valid = [
+  "none",
+  "debug",
+  "minimal",
+  "moderate",
+  "size",
+  "size_thinlto",
+  "size_lto",
+  "speed",
+  "sanitizer",
+  "profile",
+  "coverage",
+]
+
+foreach(_optimize_arg,
+        [
+          "fuchsia_optimize",
+          "host_optimize",
+          "kernel_optimize",
+        ]) {
+  _optimize_value = compilation_settings[_optimize_arg]
+  assert(
+      _optimize_valid + [ _optimize_value ] - [ _optimize_value ] !=
+          _optimize_valid,
+      "`${_optimize_arg}=\"...\"` must be one of $_optimize_valid (\"$_optimize_value\" was specified)")
 }
