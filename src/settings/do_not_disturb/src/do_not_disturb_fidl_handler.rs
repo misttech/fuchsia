@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use super::do_not_disturb_controller::{DoNotDisturbController, DoNotDisturbError, Request};
-use crate::do_not_disturb::types::DoNotDisturbInfo;
+use crate::do_not_disturb_controller::{DoNotDisturbController, DoNotDisturbError, Request};
+use crate::types::DoNotDisturbInfo;
 use async_utils::hanging_get::server;
 use fidl_fuchsia_settings::{
     DoNotDisturbRequest, DoNotDisturbRequestStream, DoNotDisturbSettings,

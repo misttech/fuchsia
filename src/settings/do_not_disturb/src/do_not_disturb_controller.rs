@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use super::do_not_disturb_fidl_handler::Publisher;
-use crate::do_not_disturb::types::DoNotDisturbInfo;
+use crate::do_not_disturb_fidl_handler::Publisher;
+use crate::types::DoNotDisturbInfo;
 use anyhow::{Context, Error};
 use fuchsia_async as fasync;
 use futures::StreamExt;

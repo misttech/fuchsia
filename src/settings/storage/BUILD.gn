@@ -25,6 +25,7 @@ rustc_library("settings_storage") {
 
   visibility = [
     ":*",
+    "//src/settings/do_not_disturb:*",
     "//src/settings/factory_reset:*",
     "//src/settings/input:*",
     "//src/settings/intl:*",

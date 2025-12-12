@@ -27,6 +27,7 @@ use futures::channel::mpsc::{self, UnboundedReceiver, UnboundedSender};
 use futures::{StreamExt, TryStreamExt};
 #[cfg(test)]
 use log as _;
+use serde::Deserialize;
 use settings_common::config::default_settings::DefaultSetting;
 use settings_common::config::{AgentType, ControllerFlag};
 use settings_common::inspect::event::{
@@ -34,6 +35,7 @@ use settings_common::inspect::event::{
 };
 use settings_common::inspect::listener_logger::ListenerInspectLogger;
 use settings_common::service_context::{ExternalServiceEvent, GenerateService, ServiceContext};
+use settings_do_not_disturb::do_not_disturb_controller::DoNotDisturbController;
 use settings_factory_reset::factory_reset_controller::FactoryResetController;
 use settings_input::input_controller::InputController;
 use settings_intl::intl_controller::IntlController;
@@ -48,7 +50,6 @@ use settings_storage::storage_factory::{FidlStorageFactory, StorageFactory};
 use {fidl_fuchsia_update_verify as fupdate, fuchsia_async as fasync};
 
 pub use display::display_configuration::DisplayConfiguration;
-use serde::Deserialize;
 pub use settings_input::input_device_configuration::InputConfiguration;
 pub use settings_light::light_hardware_configuration::LightHardwareConfiguration;
 
@@ -57,14 +58,12 @@ use crate::audio::Request as AudioRequest;
 use crate::audio::audio_controller::AudioController;
 use crate::base::SettingType;
 use crate::display::display_controller::{DisplayController, ExternalBrightnessControl};
-use crate::do_not_disturb::do_not_disturb_controller::DoNotDisturbController;
 use crate::ingress::fidl;
 
 mod accessibility;
 pub mod audio;
 mod clock;
 pub mod display;
-mod do_not_disturb;
 mod storage_migrations;
 
 pub mod agent;
@@ -715,8 +714,8 @@ impl<T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilder<T>
         }
 
         if components.contains(&SettingType::DoNotDisturb) {
-            let do_not_disturb::SetupResult { mut do_not_disturb_fidl_handler, task } =
-                do_not_disturb::setup_do_not_disturb_api(
+            let settings_do_not_disturb::SetupResult { mut do_not_disturb_fidl_handler, task } =
+                settings_do_not_disturb::setup_do_not_disturb_api(
                     Rc::clone(&device_storage_factory),
                     SettingValuePublisher::new(setting_value_tx.clone()),
                     UsagePublisher::new(usage_event_tx.clone(), Rc::clone(&listener_logger)),
