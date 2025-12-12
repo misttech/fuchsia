@@ -21,7 +21,6 @@
 #include <zircon/availability.h>
 
 #include <memory>
-#include <unordered_map>
 
 namespace fdf_internal {
 template <typename DriverBaseImpl>
@@ -323,14 +322,6 @@ class DriverBase {
 
   std::string name_;
   DriverStartArgs start_args_;
-
-#if FUCHSIA_API_LEVEL_AT_MOST(26)
-  std::unordered_map<std::string, cpp20::span<const fuchsia_driver_framework::NodeProperty>>
-      node_properties_;
-#endif  // FUCHSIA_API_LEVEL_AT_MOST(26)
-
-  std::unordered_map<std::string, cpp20::span<const fuchsia_driver_framework::NodeProperty2>>
-      node_properties_2_;
 
   fdf::UnownedSynchronizedDispatcher driver_dispatcher_;
   async_dispatcher_t* dispatcher_;

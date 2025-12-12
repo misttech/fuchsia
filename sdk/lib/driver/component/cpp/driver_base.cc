@@ -8,8 +8,6 @@
 #include <lib/inspect/component/cpp/component.h>
 #include <zircon/availability.h>
 
-#include <mutex>
-
 namespace fdf {
 
 #if FUCHSIA_API_LEVEL_LESS_THAN(29)
@@ -41,22 +39,6 @@ DriverBase::DriverBase(std::string_view name, DriverStartArgs start_args,
   std::optional outgoing_request = std::move(start_args_.outgoing_dir());
   ZX_ASSERT(outgoing_request.has_value());
   InitializeAndServe(std::move(incoming), std::move(outgoing_request.value()));
-
-#if FUCHSIA_API_LEVEL_AT_MOST(26)
-  const auto& node_properties = start_args_.node_properties();
-  if (node_properties.has_value()) {
-    for (const auto& entry : node_properties.value()) {
-      node_properties_.emplace(std::string{entry.name()}, entry.properties());
-    }
-  }
-#endif
-
-  const auto& node_properties_2 = start_args_.node_properties_2();
-  if (node_properties_2.has_value()) {
-    for (const auto& entry : node_properties_2.value()) {
-      node_properties_2_.emplace(std::string{entry.name()}, entry.properties());
-    }
-  }
 
   zx::result val = fdf_internal::ProgramValue(program(), "service_connect_validation");
   if (val.is_ok() && val.value() == "true") {
@@ -109,11 +91,15 @@ void DriverBase::InitInspectorExactlyOnce(inspect::Inspector inspector) {
 #if FUCHSIA_API_LEVEL_AT_MOST(26)
 cpp20::span<const fuchsia_driver_framework::NodeProperty> DriverBase::node_properties(
     const std::string& parent_node_name) const {
-  auto it = node_properties_.find(parent_node_name);
-  if (it == node_properties_.end()) {
-    return {};
+  const auto& node_properties = start_args_.node_properties();
+  if (node_properties.has_value()) {
+    for (const auto& entry : node_properties.value()) {
+      if (entry.name() == parent_node_name) {
+        return entry.properties();
+      }
+    }
   }
-  return {it->second};
+  return {};
 }
 #endif
 
@@ -156,11 +142,15 @@ zx::result<fidl::ClientEnd<fuchsia_driver_framework::NodeController>> DriverBase
 
 cpp20::span<const fuchsia_driver_framework::NodeProperty2> DriverBase::node_properties_2(
     const std::string& parent_node_name) const {
-  auto it = node_properties_2_.find(parent_node_name);
-  if (it == node_properties_2_.end()) {
-    return {};
+  const auto& node_properties_2 = start_args_.node_properties_2();
+  if (node_properties_2.has_value()) {
+    for (const auto& entry : node_properties_2.value()) {
+      if (entry.name() == parent_node_name) {
+        return entry.properties();
+      }
+    }
   }
-  return {it->second};
+  return {};
 }
 
 DriverBase::~DriverBase() { Logger::SetGlobalInstance(nullptr); }
