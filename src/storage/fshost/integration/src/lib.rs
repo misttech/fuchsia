@@ -60,6 +60,7 @@ pub struct TestFixtureBuilder {
     storage_host: bool,
     device_config: Vec<BlockDeviceConfig>,
     crypt_policy: crypt_policy::Policy,
+    force_fxfs_provisioner_failure: bool,
 }
 
 impl TestFixtureBuilder {
@@ -73,6 +74,7 @@ impl TestFixtureBuilder {
             storage_host,
             device_config: Vec::new(),
             crypt_policy: crypt_policy::Policy::Null,
+            force_fxfs_provisioner_failure: false,
         }
     }
 
@@ -120,6 +122,11 @@ impl TestFixtureBuilder {
         self
     }
 
+    pub fn force_fxfs_provisioner_failure(mut self) -> Self {
+        self.force_fxfs_provisioner_failure = true;
+        self
+    }
+
     pub async fn build(self) -> TestFixture {
         let builder = RealmBuilder::new().await.unwrap();
         let fshost = self.fshost.build(&builder).await;
@@ -130,7 +137,13 @@ impl TestFixtureBuilder {
             None => None,
         };
         let (tx, crash_reports) = mpsc::channel(32);
-        let mocks = mocks::new_mocks(maybe_zbi_vmo, tx, device_config, self.crypt_policy);
+        let mocks = mocks::new_mocks(
+            maybe_zbi_vmo,
+            tx,
+            device_config,
+            self.crypt_policy,
+            self.force_fxfs_provisioner_failure,
+        );
 
         let mocks = builder
             .add_local_child("mocks", move |h| mocks(h).boxed(), ChildOptions::new())

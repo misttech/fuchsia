@@ -1991,3 +1991,27 @@ async fn shred_data_volume_when_mounted_keymint() {
 
     fixture.tear_down().await;
 }
+
+#[cfg(all(feature = "storage-host", feature = "fxblob"))]
+#[fuchsia::test]
+async fn test_provision_fxfs() {
+    let mut builder = new_builder();
+    builder.fshost().set_config_value("provision_fxfs", true);
+    builder.fshost().set_config_value("merge_super_and_userdata", true);
+    let mut fixture = builder.build().await;
+
+    let mut disk = DiskBuilder::new();
+    // Use unformatted volume manager to build an unformatted disk
+    disk.with_gpt()
+        .with_unformatted_volume_manager()
+        .with_system_partition_label("super")
+        .with_extra_gpt_partition("userdata", 1)
+        .with_extra_gpt_partition("other", 1);
+    fixture.add_main_disk(Disk::Builder(disk)).await;
+
+    fixture.check_system_partitions(vec!["other", "super_and_userdata"]).await;
+    fixture.check_fs_type("data", VFS_TYPE_FXFS).await;
+    fixture.check_test_data_file().await;
+
+    fixture.tear_down().await;
+}

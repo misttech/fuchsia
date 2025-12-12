@@ -30,14 +30,22 @@ pub fn new_mocks(
     crash_reports_sink: mpsc::Sender<ffeedback::CrashReport>,
     device_config: String,
     crypt_policy: crypt_policy::Policy,
+    force_fxfs_provisioner_failure: bool,
 ) -> impl Fn(LocalComponentHandles) -> BoxFuture<'static, Result<(), Error>> + Sync + Send + 'static
 {
     let vmo = vmo.map(Arc::new);
     let mock = move |handles: LocalComponentHandles| {
         let vmo_clone = vmo.clone();
         let config_clone = device_config.clone();
-        run_mocks(handles, vmo_clone, crash_reports_sink.clone(), config_clone, crypt_policy)
-            .boxed()
+        run_mocks(
+            handles,
+            vmo_clone,
+            crash_reports_sink.clone(),
+            config_clone,
+            crypt_policy,
+            force_fxfs_provisioner_failure,
+        )
+        .boxed()
     };
 
     mock
@@ -49,6 +57,7 @@ async fn run_mocks(
     crash_reports_sink: mpsc::Sender<ffeedback::CrashReport>,
     device_config: String,
     crypt_policy: crypt_policy::Policy,
+    force_fxfs_provisioner_failure: bool,
 ) -> Result<(), Error> {
     let export = vfs::pseudo_directory! {
         "boot" => vfs::pseudo_directory! {
@@ -69,7 +78,7 @@ async fn run_mocks(
                 run_crash_reporter(stream, crash_reports_sink.clone())
             }),
             ffxfsprovisioner::FxfsProvisionerMarker::PROTOCOL_NAME => vfs::service::host(
-                move |stream| { run_fxfs_provisioner(stream) }
+                move |stream| { run_fxfs_provisioner(stream, force_fxfs_provisioner_failure) }
             ),
         },
     };
@@ -125,13 +134,20 @@ async fn run_crash_reporter(
     }
 }
 
-async fn run_fxfs_provisioner(mut stream: ffxfsprovisioner::FxfsProvisionerRequestStream) {
+async fn run_fxfs_provisioner(
+    mut stream: ffxfsprovisioner::FxfsProvisionerRequestStream,
+    force_failure: bool,
+) {
     while let Some(request) = stream.next().await {
         match request.unwrap() {
             ffxfsprovisioner::FxfsProvisionerRequest::Provision {
                 partition_service,
                 responder,
             } => {
+                if force_failure {
+                    responder.send(Err(zx::Status::INTERNAL.into_raw())).unwrap();
+                    return;
+                }
                 let partition_service = partition_service.into_proxy();
 
                 let overlay = connect_to_named_protocol_at_dir_root::<

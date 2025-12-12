@@ -4,19 +4,19 @@
 
 pub mod config;
 use crate::config::new_builder;
-use fshost_test_fixture::VFS_TYPE_FXFS;
+use assert_matches::assert_matches;
+use fidl_fuchsia_io as fio;
 use fshost_test_fixture::disk_builder::{Disk, DiskBuilder};
 
 #[cfg(feature = "fxblob")]
 #[fuchsia::test]
-async fn test_provision_fxfs() {
-    let mut builder = new_builder();
+async fn test_fshost_crashes_when_provision_fxfs_fails() {
+    let mut builder = new_builder().force_fxfs_provisioner_failure();
     builder.fshost().set_config_value("provision_fxfs", true);
     builder.fshost().set_config_value("merge_super_and_userdata", true);
     let mut fixture = builder.build().await;
 
     let mut disk = DiskBuilder::new();
-    // Use unformatted volume manager to build an unformatted disk
     disk.with_gpt()
         .with_unformatted_volume_manager()
         .with_system_partition_label("super")
@@ -24,11 +24,15 @@ async fn test_provision_fxfs() {
         .with_extra_gpt_partition("other", 1);
     fixture.add_main_disk(Disk::Builder(disk)).await;
 
-    fixture.check_system_partitions(vec!["other", "super_and_userdata"]).await;
-    fixture.check_fs_type("data", VFS_TYPE_FXFS).await;
-    fixture.check_test_data_file().await;
+    let data_dir = fixture.dir("data", fio::Flags::empty());
+    let status = data_dir
+        .query_filesystem()
+        .await
+        .expect_err("Opening connection to data should have failed if fshost panicked");
+    assert_matches!(
+        status,
+        fidl::Error::ClientChannelClosed { status: zx::Status::PEER_CLOSED, .. }
+    );
 
     fixture.tear_down().await;
 }
-
-// TODO(https://fxbug.dev/446778379): Add test that fshost crashes when provisioning fails.

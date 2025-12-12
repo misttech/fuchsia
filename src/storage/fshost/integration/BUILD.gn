@@ -183,8 +183,8 @@ template("fshost_integration_test_component") {
 #     [bool] Include tests for fuchsia.fshost/Recovery methods that manipulate volumes in the
 #            system container.
 #
-#   enable_provision_fxfs_tests (default: false)
-#     [bool] Include provision fxfs tests in the integration test package.
+#   enable_bad_provision_fxfs_tests (default: false)
+#     [bool] Include test for bad provisioning of fxfs in the integration test package.
 #
 #   data_filesystem_variant (optional)
 #     [string] A variant string passed to the integration test harness. Defaults to the
@@ -424,19 +424,42 @@ template("fshost_integration_test_package") {
   }
 
   #
-  # Provision Fxfs Tests
+  # Bad Provision Fxfs Tests
   #
-  if (defined(invoker.enable_provision_fxfs_tests) &&
-      invoker.enable_provision_fxfs_tests) {
-    _provision_fxfs_component_target = "${target_name}_provision_fxfs"
-    _test_components += [ ":$_provision_fxfs_component_target" ]
-    fshost_integration_test_component(_provision_fxfs_component_target) {
+  if (defined(invoker.enable_bad_provision_fxfs_tests) &&
+      invoker.enable_bad_provision_fxfs_tests) {
+    _bad_provision_fxfs_component_target = "${target_name}_bad_provision_fxfs"
+    fshost_integration_test_component(_bad_provision_fxfs_component_target) {
       fshost_target = _fshost_target
       data_filesystem_format = fshost_options.data_filesystem_format
       data_filesystem_variant = invoker.data_filesystem_variant
       extra_features = _extra_features
-      source_root = "tests/provision_fxfs.rs"
-      deps = []
+      source_root = "tests/bad_provision_fxfs.rs"
+      deps = [
+        "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
+        "//sdk/rust/zx",
+        "//src/lib/fidl/rust/fidl",
+        "//third_party/rust_crates:assert_matches",
+      ]
+    }
+
+    # Bad Provision Fxfs tests get their own package so we can give them separate test specs. The
+    # tests will trigger fshost to crash and produce messages of ERROR severity.
+    _bad_provision_fxfs_test_package =
+        "${target_name}_bad_provision_fxfs_package"
+    _test_packages += [ ":$_bad_provision_fxfs_test_package" ]
+    fuchsia_test_package(_bad_provision_fxfs_test_package) {
+      package_name = "$_bad_provision_fxfs_component_target"
+      test_specs = {
+        log_settings = {
+          # Allow logs of up to ERROR severity.
+          max_severity = "ERROR"
+        }
+        parallel = 1
+      }
+      test_components = [ ":$_bad_provision_fxfs_component_target" ]
+
+      deps = [ ":$_fshost_target" ]
     }
   }
 
@@ -484,7 +507,7 @@ fshost_integration_test_package("fshost_integration_tests_fxfs") {
 fshost_integration_test_package("fshost_integration_tests_storage_host_fxfs") {
   enable_migration_tests = false
   data_filesystem_variant = "fxblob"
-  enable_provision_fxfs_tests = true
+  enable_bad_provision_fxfs_tests = true
   enable_system_volume_manipulation_tests = true
   options = {
     use_disk_migration = false
