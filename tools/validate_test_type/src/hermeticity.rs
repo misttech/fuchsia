@@ -8,10 +8,10 @@ use fidl::unpersist;
 use fidl_fuchsia_component_decl::Component;
 use fidl_fuchsia_data as fdata;
 use fidl_fuchsia_data::Dictionary;
+use fuchsia_sync::Mutex;
 use fuchsia_url::AbsoluteComponentUrl;
 use rayon::prelude::*;
 use std::collections::{BTreeSet, HashMap};
-use std::sync::Mutex;
 
 use crate::{
     CategorizedTestInfo, FailureReason, HermeticityStatus, TestPackageInfo, ValidationStatus,
@@ -87,7 +87,7 @@ fn check_manifest_hermeticity(
 ) -> Result<HermeticityStatus> {
     if test.package_manifests.len() > 0 {
         let pkg_manifest = &test.package_manifests[0];
-        inputs_for_depfile.lock().expect("Failed to get depfile lock.").insert(pkg_manifest.into());
+        inputs_for_depfile.lock().insert(pkg_manifest.into());
         let res = find_meta_far(build_dir, pkg_manifest);
         if res.is_err() {
             return Err(format_err!(
@@ -101,10 +101,7 @@ fn check_manifest_hermeticity(
         let pkg_url = AbsoluteComponentUrl::parse(&test.package_url)?;
         let cm_path = pkg_url.resource();
 
-        inputs_for_depfile
-            .lock()
-            .expect("Failed to get depfile lock.")
-            .insert(meta_far_path.to_owned());
+        inputs_for_depfile.lock().insert(meta_far_path.to_owned());
 
         let decl = cm_decl_from_meta_far(&meta_far_path, cm_path)?;
         let facets = decl.facets.unwrap_or_default();
