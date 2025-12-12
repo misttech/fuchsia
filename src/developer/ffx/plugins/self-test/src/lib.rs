@@ -61,7 +61,6 @@ pub async fn selftest(context: &EnvironmentContext, cmd: SelftestCommand) -> Res
         // TODO(bbosak): re-enable once proactive-logging is disabled (https://fxbug.dev/42076295)
         // log::include_log::test_log_run_normal,
         component::include_target::test_list,
-        target::include_target::test_target_list_includes_port,
         target::include_target::test_target_show
     ];
 
