@@ -17,6 +17,12 @@ import("//src/storage/fs_test/suite.gni")
 import("//src/storage/testing/driver_test_realm.gni")
 import("//tools/cmc/build/expect_includes.gni")
 
+# Fxfs' internal libraries are only intended to be used by storage.
+FXFS_LIBS_VISIBILITY = [
+  "//src/storage/*",
+  "//vendor/google/storage/*",
+]
+
 fxfs_deps = [
   ":fxfs_macros",
   "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
@@ -159,6 +165,7 @@ rustc_library("lib") {
   edition = "2024"
   with_unit_tests = true
   name = "fxfs"
+  visibility = FXFS_LIBS_VISIBILITY
 
   deps = fxfs_deps
   sources = fxfs_sources
@@ -177,6 +184,7 @@ rustc_library("migration") {
   edition = "2024"
   name = "fxfs"
   features = [ "migration" ]
+  visibility = FXFS_LIBS_VISIBILITY
 
   deps = fxfs_deps
   sources = fxfs_sources
