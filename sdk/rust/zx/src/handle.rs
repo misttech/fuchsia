@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 //! Type-safe bindings for Zircon handles.
-//!
+
 use crate::{
     MonotonicInstant, Name, ObjectQuery, Port, Property, PropertyQuery, Rights, Signals, Status,
     Topic, WaitAsyncOpts, object_get_info_single, object_get_property, object_set_property, ok,
@@ -11,6 +11,99 @@ use crate::{
 };
 use std::marker::PhantomData;
 use std::mem::{self, ManuallyDrop};
+use std::num::NonZeroU32;
+
+/// An owned and valid Zircon
+/// [handle](https://fuchsia.dev/fuchsia-src/concepts/objects/handles) to a kernel object.
+///
+/// This type can be interconverted to and from more specific types. Those conversions are not
+/// enforced in the type system; attempting to use them will result in errors returned by the
+/// kernel. These conversions don't change the underlying representation, but do change the type and
+/// what operations are available.
+///
+/// # Lifecycle
+///
+/// This type closes the handle it owns when dropped.
+///
+/// # Layout
+///
+/// `Option<Handle>` is guaranteed to have the same layout and bit patterns as `zx_handle_t`.
+/// Unlike many types in this crate it does not implement `zerocopy` traits because those are not
+/// appropriate for types with real `Drop` implementations.
+#[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
+#[repr(transparent)]
+pub struct Handle(NonZeroU32);
+
+// Ensure ABI-compatibility with zx_handle_t with the following static assertions. NonZeroU32 lets
+// Option store the None variant in the all-zeroes bit pattern, which is ZX_HANDLE_INVALID. By
+// banning use of ZX_HANDLE_INVALID inside a Handle, we ensure that Option<Handle> is ABI-compatible
+// with sys::zx_handle_t while providing statically checkable nullability.
+static_assertions::const_assert_eq!(sys::ZX_HANDLE_INVALID, 0);
+static_assertions::assert_eq_size!(Handle, sys::zx_handle_t);
+static_assertions::assert_eq_align!(Handle, sys::zx_handle_t);
+static_assertions::assert_eq_size!(Option<Handle>, sys::zx_handle_t);
+static_assertions::assert_eq_align!(Option<Handle>, sys::zx_handle_t);
+
+impl Handle {
+    /// Take exclusive ownership over a raw handle.
+    ///
+    /// # Safety
+    ///
+    /// `raw` must be a valid handle present in the current handle table that will not be closed by
+    /// another owner.
+    ///
+    /// # Panics
+    ///
+    /// If `ZX_HANDLE_INVALID` is passed.
+    pub unsafe fn from_raw(raw: sys::zx_handle_t) -> Self {
+        debug_assert!(Self::check_raw_valid(raw).is_ok());
+        Self(NonZeroU32::new(raw).unwrap())
+    }
+
+    /// Wraps the
+    /// [zx_handle_check_valid](https://fuchsia.dev/fuchsia-src/reference/syscalls/handle_check_valid.md)
+    /// syscall.
+    ///
+    /// Note that this does *not* guarantee that the handle is safe to pass to `Handle::from_raw`
+    /// in cases where another function may close the handle.
+    pub fn check_raw_valid(raw: sys::zx_handle_t) -> Result<(), Status> {
+        // SAFETY: basic FFI call.
+        ok(unsafe { sys::zx_handle_check_valid(raw) })
+    }
+
+    /// Returns the raw handle's integer value.
+    pub const fn raw_handle(&self) -> sys::zx_handle_t {
+        self.0.get()
+    }
+
+    /// Return the raw handle's integer value without closing it when `self` is dropped.
+    pub const fn into_raw(self) -> sys::zx_handle_t {
+        let ret = self.0.get();
+        std::mem::forget(self);
+        ret
+    }
+
+    /// Wraps the
+    /// [zx_handle_replace](https://fuchsia.dev/fuchsia-src/reference/syscalls/handle_replace.md)
+    /// syscall.
+    pub fn replace(self, rights: Rights) -> Result<Self, Status> {
+        let mut out = 0;
+
+        // SAFETY: basic FFI call.
+        let status = unsafe { sys::zx_handle_replace(self.into_raw(), rights.bits(), &mut out) };
+        ok(status)?;
+
+        // SAFETY: zx_handle_replace gives us a valid owned handle if the call succeeded.
+        unsafe { Ok(Self::from_raw(out)) }
+    }
+}
+
+impl Drop for Handle {
+    fn drop(&mut self) {
+        // SAFETY: basic FFI call.
+        unsafe { sys::zx_handle_close(self.0.get()) };
+    }
+}
 
 #[derive(
     Debug,
@@ -52,21 +145,27 @@ impl Koid {
 // TODO(https://fxbug.dev/465766514): remove
 #[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 #[repr(transparent)]
-pub struct NullableHandle(sys::zx_handle_t);
+pub struct NullableHandle(Option<Handle>);
 
 impl AsHandleRef for NullableHandle {
     fn as_handle_ref(&self) -> HandleRef<'_> {
-        Unowned { inner: ManuallyDrop::new(NullableHandle(self.0)), marker: PhantomData }
+        if let Some(inner) = &self.0 {
+            // SAFETY: inner is a guaranteed valid handle.
+            unsafe { Unowned::from_raw_handle(inner.raw_handle()) }
+        } else {
+            // SAFETY: ZX_HANDLE_INVALID is a valid handle for Unowned::from_raw_handle.
+            unsafe { Unowned::from_raw_handle(sys::ZX_HANDLE_INVALID) }
+        }
+    }
+
+    fn raw_handle(&self) -> sys::zx_handle_t {
+        self.0.as_ref().map(|h| h.raw_handle()).unwrap_or(sys::ZX_HANDLE_INVALID)
     }
 }
 
-impl HandleBased for NullableHandle {}
-
-impl Drop for NullableHandle {
-    fn drop(&mut self) {
-        if self.0 != sys::ZX_HANDLE_INVALID {
-            unsafe { sys::zx_handle_close(self.0) };
-        }
+impl HandleBased for NullableHandle {
+    fn into_raw(self) -> sys::zx_handle_t {
+        if let Some(inner) = self.0 { inner.into_raw() } else { sys::ZX_HANDLE_INVALID }
     }
 }
 
@@ -74,7 +173,7 @@ impl NullableHandle {
     /// Initialize a handle backed by ZX_HANDLE_INVALID, the only safe non-handle.
     #[inline(always)]
     pub const fn invalid() -> Self {
-        Self(sys::ZX_HANDLE_INVALID)
+        Self(None)
     }
 
     /// If a raw handle is obtained from some other source, this method converts
@@ -89,23 +188,25 @@ impl NullableHandle {
     /// - Or `raw` must not be closed until the returned `NullableHandle` is dropped, at
     ///   which time it will close `raw`.
     pub const unsafe fn from_raw(raw: sys::zx_handle_t) -> Self {
-        Self(raw)
+        // We need to manually construct the inner `Handle` because its constructor is not
+        // const since the only valid way to call this function in a `const` context is to pass
+        // `ZX_HANDLE_INVALID`.
+        if let Some(inner) = NonZeroU32::new(raw) { Self(Some(Handle(inner))) } else { Self(None) }
     }
 
     pub fn is_invalid(&self) -> bool {
-        self.0 == sys::ZX_HANDLE_INVALID
+        self.0.is_none()
     }
 
-    pub fn replace(self, rights: Rights) -> Result<Self, Status> {
-        let handle = self.0;
-        let mut out = 0;
-        let status = unsafe { sys::zx_handle_replace(handle, rights.bits(), &mut out) };
-        // zx_handle_replace always invalidates |handle| so we can't run our drop handler.
-        std::mem::forget(self);
-        ok(status).map(|()| Self(out))
+    pub fn replace(mut self, rights: Rights) -> Result<Self, Status> {
+        if let Some(inner) = self.0.take() {
+            let inner = inner.replace(rights)?;
+            Ok(Self(Some(inner)))
+        } else {
+            Ok(Self(None))
+        }
     }
 }
-
 struct NameProperty();
 unsafe impl PropertyQuery for NameProperty {
     const PROPERTY: Property = Property::NAME;
@@ -192,9 +293,13 @@ impl<'a, T: HandleBased> Unowned<'a, T> {
 
     pub fn duplicate(&self, rights: Rights) -> Result<T, Status> {
         let mut out = 0;
+        // SAFETY: basic FFI call.
         let status =
             unsafe { sys::zx_handle_duplicate(self.raw_handle(), rights.bits(), &mut out) };
-        ok(status).map(|()| T::from(NullableHandle(out)))
+        ok(status)?;
+
+        // SAFETY: zx_handle_duplicate returns a valid handle that this function owns.
+        Ok(T::from(unsafe { NullableHandle::from_raw(out) }))
     }
 
     pub fn signal(&self, clear_mask: Signals, set_mask: Signals) -> Result<(), Status> {
@@ -345,7 +450,7 @@ pub trait AsHandleRef {
     /// handles will have different raw values (so it can perhaps be used as a
     /// key in a data structure).
     fn raw_handle(&self) -> sys::zx_handle_t {
-        self.as_handle_ref().inner.0
+        self.as_handle_ref().inner.raw_handle()
     }
 
     /// Set and clear userspace-accessible signal bits on an object. Wraps the
@@ -423,7 +528,7 @@ pub trait AsHandleRef {
 
 impl<'a, T: HandleBased> AsHandleRef for Unowned<'a, T> {
     fn as_handle_ref(&self) -> HandleRef<'_> {
-        Unowned { inner: ManuallyDrop::new(NullableHandle(self.raw_handle())), marker: PhantomData }
+        self.inner.as_handle_ref()
     }
 }
 
@@ -467,10 +572,7 @@ pub trait HandleBased: AsHandleRef + From<NullableHandle> + Into<NullableHandle>
     ///
     /// The caller takes ownership over the raw handle, and must close or transfer it to avoid a handle leak.
     fn into_raw(self) -> sys::zx_handle_t {
-        let h = self.into_handle();
-        let r = h.0;
-        mem::forget(h);
-        r
+        self.into_handle().into_raw()
     }
 
     /// Creates an instance of this type from a handle.
@@ -837,6 +939,16 @@ mod tests {
         assert!(vmo2.write(b"1", 0).is_ok());
     }
 
+    #[test]
+    fn check_raw_valid() {
+        assert!(Handle::check_raw_valid(sys::ZX_HANDLE_INVALID).is_err());
+        let vmo = Vmo::create(1).unwrap();
+        let vmo_raw = vmo.raw_handle();
+        assert!(Handle::check_raw_valid(vmo_raw).is_ok());
+        drop(vmo);
+        assert!(Handle::check_raw_valid(vmo_raw).is_err());
+    }
+
     /// Test duplication by means of a VMO
     #[test]
     fn duplicate() {
@@ -951,6 +1063,19 @@ mod tests {
         assert_eq!(raw_hd.rights, sys::ZX_RIGHT_EXECUTE);
         assert_eq!(raw_hd.type_, sys::ZX_OBJ_TYPE_VMO);
         assert_eq!(raw_hd.result, sys::ZX_OK);
+    }
+
+    #[test]
+    fn regression_nullable_handle_into_raw_recursion() {
+        let h = NullableHandle::invalid();
+        // This should not stack overflow
+        assert_eq!(h.into_raw(), sys::ZX_HANDLE_INVALID);
+
+        let vmo = Vmo::create(1).unwrap();
+        let raw = vmo.raw_handle();
+        let h = vmo.into_handle();
+        // This should not stack overflow
+        assert_eq!(h.into_raw(), raw);
     }
 
     #[test]
