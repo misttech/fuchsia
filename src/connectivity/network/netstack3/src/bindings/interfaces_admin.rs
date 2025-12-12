@@ -172,6 +172,8 @@ async fn run_blackhole_interface(
         InterfaceProperties {
             name: name.clone(),
             port_class: fidl_fuchsia_net_interfaces_ext::PortClass::Blackhole,
+            // Blackhole interfaces do not have a backing port.
+            port_identity_koid: None,
         },
     );
     let local_route_tables =

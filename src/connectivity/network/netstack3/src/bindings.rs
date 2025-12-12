@@ -1144,6 +1144,8 @@ impl Netstack {
             InterfaceProperties {
                 name: LOOPBACK_NAME.to_string(),
                 port_class: fidl_fuchsia_net_interfaces_ext::PortClass::Loopback,
+                // Loopback is not backed by a netdevice port.
+                port_identity_koid: None,
             },
         );
 

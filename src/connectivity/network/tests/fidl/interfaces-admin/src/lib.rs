@@ -1520,6 +1520,13 @@ async fn device_control_create_interface<N: Netstack>(name: &str) {
             panic!("failed to retrieve new interface with id {}", id)
         }
     };
+
+    let port_identity_koid = if N::VERSION.is_netstack3() {
+        Some(endpoint.get_port_identity_koid().await.expect("get id event"))
+    } else {
+        None
+    };
+
     assert_eq!(
         properties,
         fidl_fuchsia_net_interfaces_ext::Properties {
@@ -1532,7 +1539,7 @@ async fn device_control_create_interface<N: Netstack>(name: &str) {
             addresses: vec![],
             has_default_ipv4_route: false,
             has_default_ipv6_route: false,
-            port_identity_koid: None,
+            port_identity_koid,
         }
     );
 }

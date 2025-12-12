@@ -47,6 +47,7 @@ async fn watcher_existing<N: Netstack>(name: &str) {
             addr: fidl_fuchsia_net::Subnet,
             has_default_ipv4_route: bool,
             has_default_ipv6_route: bool,
+            port_identity_koid: Option<zx::Koid>,
         },
     }
 
@@ -102,6 +103,7 @@ async fn watcher_existing<N: Netstack>(name: &str) {
                     addr,
                     has_default_ipv4_route,
                     has_default_ipv6_route,
+                    port_identity_koid,
                 } => {
                     let fidl_fuchsia_net_interfaces_ext::Properties {
                         id: rhs_id,
@@ -129,9 +131,7 @@ async fn watcher_existing<N: Netstack>(name: &str) {
                         && has_default_ipv4_route == rhs_ipv4_route
                         && has_default_ipv6_route == rhs_ipv6_route
                         && port_class == &fidl_fuchsia_net_interfaces_ext::PortClass::Virtual
-                        // TODO(https://fxbug.dev/460241935): Update expectation
-                        // when netstack exposes the port id event.
-                        && rhs_port_identity_koid.is_none()
+                        && rhs_port_identity_koid == port_identity_koid
                 }
             }
         }
@@ -168,6 +168,12 @@ async fn watcher_existing<N: Netstack>(name: &str) {
         // assigned state later.
         let () = iface.set_link_up(true).await.expect("bring device up");
 
+        let port_identity_koid = if N::VERSION.is_netstack3() {
+            Some(iface.endpoint().get_port_identity_koid().await.expect("get id event"))
+        } else {
+            None
+        };
+
         let addr = fidl_fuchsia_net::Subnet {
             addr: fidl_fuchsia_net::IpAddress::Ipv4(fidl_fuchsia_net::Ipv4Address {
                 addr: [192, 168, idx.try_into().unwrap(), 1],
@@ -180,6 +186,7 @@ async fn watcher_existing<N: Netstack>(name: &str) {
             addr,
             has_default_ipv4_route,
             has_default_ipv6_route,
+            port_identity_koid,
         };
         assert_eq!(expectations.insert(id, expected), None);
         let address_state_provider = interfaces::add_address_wait_assigned(
@@ -1588,7 +1595,14 @@ async fn watcher<N: Netstack>(name: &str) {
         .await
         .expect("add endpoint to Netstack");
     let () = dev.set_link_up(true).await.expect("bring device up");
+
     let id = dev.id();
+    let port_identity_koid = if N::VERSION.is_netstack3() {
+        Some(dev.endpoint().get_port_identity_koid().await.expect("get id event").raw_koid())
+    } else {
+        None
+    };
+
     let want = fidl_fuchsia_net_interfaces::Event::Added(fidl_fuchsia_net_interfaces::Properties {
         id: Some(id),
         // We're not explicitly setting the name when adding the interface, so
@@ -1601,7 +1615,8 @@ async fn watcher<N: Netstack>(name: &str) {
         addresses: Some(vec![]),
         has_default_ipv4_route: Some(false),
         has_default_ipv6_route: Some(false),
-        ..Default::default()
+        port_identity_koid,
+        __source_breaking: fidl::marker::SourceBreaking,
     });
     assert_eq!(next(&mut blocking_stream).await, want);
     assert_eq!(next(&mut stream).await, want);

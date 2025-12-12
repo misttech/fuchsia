@@ -109,7 +109,7 @@ impl EventQueue {
         // NB: Compiler can't infer the parameter types.
         let state_to_event = |(id, state): (&BindingId, &InterfaceState)| {
             let InterfaceState {
-                properties: InterfaceProperties { name, port_class },
+                properties: InterfaceProperties { name, port_class, port_identity_koid },
                 addresses,
                 has_default_ipv4_route,
                 has_default_ipv6_route,
@@ -126,9 +126,7 @@ impl EventQueue {
                         has_default_ipv4_route: *has_default_ipv4_route,
                         has_default_ipv6_route: *has_default_ipv6_route,
                         port_class: *port_class,
-                        // TODO(https://fxbug.dev/460241935): Yield port ID
-                        // event.
-                        port_identity_koid: None,
+                        port_identity_koid: *port_identity_koid,
                     }
                     .into(),
                 );
@@ -321,6 +319,7 @@ pub(crate) struct AddressPropertiesUpdate {
 pub(crate) struct InterfaceProperties {
     pub(crate) name: String,
     pub(crate) port_class: finterfaces_ext::PortClass,
+    pub(crate) port_identity_koid: Option<zx::Koid>,
 }
 
 /// Cached interface state by the worker.
@@ -676,7 +675,7 @@ impl Worker {
         match event {
             InterfaceEvent::Reserved {
                 id,
-                properties: InterfaceProperties { name, port_class },
+                properties: InterfaceProperties { name, port_class, port_identity_koid },
             } => {
                 let enabled = IpEnabledState::default();
                 let has_default_ipv4_route = false;
@@ -685,7 +684,7 @@ impl Worker {
                 match state.insert(
                     id,
                     InterfaceState {
-                        properties: InterfaceProperties { name, port_class },
+                        properties: InterfaceProperties { name, port_class, port_identity_koid },
                         enabled,
                         addresses: HashMap::new(),
                         has_default_ipv4_route,
@@ -701,7 +700,7 @@ impl Worker {
                 None => Err(WorkerError::PublishedNonexistentInterface(id)),
                 Some(state) => {
                     let InterfaceState {
-                        properties: InterfaceProperties { name, port_class },
+                        properties: InterfaceProperties { name, port_class, port_identity_koid },
                         enabled,
                         addresses,
                         has_default_ipv4_route,
@@ -715,6 +714,7 @@ impl Worker {
                     let port_class = port_class.clone();
                     let has_default_ipv4_route = *has_default_ipv4_route;
                     let has_default_ipv6_route = *has_default_ipv6_route;
+                    let port_identity_koid = *port_identity_koid;
                     let online = enabled.online();
                     Ok(Some((
                         finterfaces::Event::Added(
@@ -726,9 +726,7 @@ impl Worker {
                                 addresses: Self::collect_addresses(addresses),
                                 has_default_ipv4_route,
                                 has_default_ipv6_route,
-                                // TODO(https://fxbug.dev/460241935): Yield port
-                                // ID event.
-                                port_identity_koid: None,
+                                port_identity_koid,
                             }
                             .into(),
                         ),
@@ -1124,10 +1122,28 @@ mod tests {
     const IFACE1_ID: BindingId = NonZeroU64::new(111).unwrap();
     const IFACE1_NAME: &str = "iface1";
     const IFACE1_TYPE: finterfaces_ext::PortClass = finterfaces_ext::PortClass::Ethernet;
+    const IFACE1_PORT_IDENTITY_KOID: Option<zx::Koid> = Some(zx::Koid::from_raw(1000));
 
     const IFACE2_ID: BindingId = NonZeroU64::new(222).unwrap();
     const IFACE2_NAME: &str = "iface2";
     const IFACE2_TYPE: finterfaces_ext::PortClass = finterfaces_ext::PortClass::Loopback;
+    const IFACE2_PORT_IDENTITY_KOID: Option<zx::Koid> = None;
+
+    fn iface1_properties() -> InterfaceProperties {
+        InterfaceProperties {
+            name: IFACE1_NAME.to_string(),
+            port_class: IFACE1_TYPE,
+            port_identity_koid: IFACE1_PORT_IDENTITY_KOID,
+        }
+    }
+
+    fn iface2_properties() -> InterfaceProperties {
+        InterfaceProperties {
+            name: IFACE2_NAME.to_string(),
+            port_class: IFACE2_TYPE,
+            port_identity_koid: IFACE2_PORT_IDENTITY_KOID,
+        }
+    }
 
     /// Tests full integration between [`Worker`] and [`Watcher`]s through basic
     /// state updates.
@@ -1141,10 +1157,7 @@ mod tests {
         assert_eq!(watcher.next().await, Some(finterfaces::Event::Idle(finterfaces::Empty {})));
 
         let producer = interface_sink
-            .reserve_interface(
-                IFACE1_ID,
-                InterfaceProperties { name: IFACE1_NAME.to_string(), port_class: IFACE1_TYPE },
-            )
+            .reserve_interface(IFACE1_ID, iface1_properties())
             .expect("add interface");
         producer.start_publishing().expect("start publishing");
 
@@ -1159,7 +1172,7 @@ mod tests {
                     has_default_ipv4_route: false,
                     has_default_ipv6_route: false,
                     name: IFACE1_NAME.to_string(),
-                    port_identity_koid: None,
+                    port_identity_koid: IFACE1_PORT_IDENTITY_KOID,
                 }
                 .into()
             ))
@@ -1255,7 +1268,7 @@ mod tests {
                     }],
                     has_default_ipv4_route: true,
                     has_default_ipv6_route: false,
-                    port_identity_koid: None,
+                    port_identity_koid: IFACE1_PORT_IDENTITY_KOID,
                 }
                 .into()
             ))
@@ -1273,18 +1286,12 @@ mod tests {
         let mut watcher = watcher_sink.create_watcher_event_stream();
         assert_eq!(watcher.next().await, Some(finterfaces::Event::Idle(finterfaces::Empty {})));
         let producer1 = interface_sink
-            .reserve_interface(
-                IFACE1_ID,
-                InterfaceProperties { name: IFACE1_NAME.to_string(), port_class: IFACE1_TYPE },
-            )
+            .reserve_interface(IFACE1_ID, iface1_properties())
             .expect(" add interface");
         producer1.start_publishing().expect("start publishing");
 
         let producer2 = interface_sink
-            .reserve_interface(
-                IFACE2_ID,
-                InterfaceProperties { name: IFACE2_NAME.to_string(), port_class: IFACE2_TYPE },
-            )
+            .reserve_interface(IFACE2_ID, iface2_properties())
             .expect("add interface");
         producer2.start_publishing().expect("start publishing");
         assert_matches!(
@@ -1321,10 +1328,7 @@ mod tests {
         (
             IFACE1_ID,
             InterfaceState {
-                properties: InterfaceProperties {
-                    name: IFACE1_NAME.to_string(),
-                    port_class: IFACE1_TYPE,
-                },
+                properties: iface1_properties(),
                 enabled: IpEnabledState { v4: false, v6: false },
                 addresses: Default::default(),
                 has_default_ipv4_route: false,
@@ -1370,7 +1374,7 @@ mod tests {
                         addresses: Default::default(),
                         has_default_ipv4_route: false,
                         has_default_ipv6_route: false,
-                        port_identity_koid: None,
+                        port_identity_koid: initial_state.properties.port_identity_koid,
                     }
                     .into()
                 ),
@@ -1472,7 +1476,7 @@ mod tests {
                         }],
                         has_default_ipv4_route: false,
                         has_default_ipv6_route: true,
-                        port_identity_koid: None,
+                        port_identity_koid: initial_state.properties.port_identity_koid,
                     }
                     .into()
                 ),
@@ -1524,7 +1528,7 @@ mod tests {
                         addresses: Vec::new(),
                         has_default_ipv4_route: false,
                         has_default_ipv6_route: false,
-                        port_identity_koid: None,
+                        port_identity_koid: initial_state.properties.port_identity_koid,
                     }
                     .into()
                 ),
@@ -2328,7 +2332,7 @@ mod tests {
                 let producer = interface_sink
                     .reserve_interface(
                         i,
-                        InterfaceProperties { name: format!("if{}", i), port_class: IFACE1_TYPE },
+                        InterfaceProperties { name: format!("if{}", i), ..iface1_properties() },
                     )
                     .expect("failed to add interface");
                 producer.start_publishing().expect("start publishing");
@@ -2380,7 +2384,7 @@ mod tests {
             let producer = interface_sink
                 .reserve_interface(
                     BindingId::new(i).unwrap(),
-                    InterfaceProperties { name: format!("if{}", i), port_class: IFACE1_TYPE },
+                    InterfaceProperties { name: format!("if{}", i), ..iface1_properties() },
                 )
                 .expect("failed to add interface");
             producer.start_publishing().expect("start publishing");
@@ -2431,10 +2435,7 @@ mod tests {
 
         for addrs in [ADDR1, ADDR2, ADDR3].into_iter().permutations(3) {
             let producer = interface_sink
-                .reserve_interface(
-                    IFACE1_ID,
-                    InterfaceProperties { name: IFACE1_NAME.to_string(), port_class: IFACE1_TYPE },
-                )
+                .reserve_interface(IFACE1_ID, iface1_properties())
                 .expect("failed to add interface");
             producer.start_publishing().expect("start publishing");
             assert_matches!(

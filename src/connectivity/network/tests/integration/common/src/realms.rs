@@ -120,6 +120,14 @@ impl NetstackVersion {
             ),
         }
     }
+
+    /// Returns true if this is a netstack3 version.
+    pub const fn is_netstack3(&self) -> bool {
+        match self {
+            Self::Netstack3 | Self::ProdNetstack3 => true,
+            Self::Netstack2 { .. } | Self::ProdNetstack2 => false,
+        }
+    }
 }
 
 /// An extension trait for [`Netstack`].

@@ -1120,6 +1120,17 @@ pub struct TestEndpoint<'a> {
     _sandbox: &'a TestSandbox,
 }
 
+impl<'a> TestEndpoint<'a> {
+    /// Returns the KOID  of the `zx::Event` identifier for the port backing
+    /// this endpoint.
+    pub async fn get_port_identity_koid(&self) -> Result<zx::Koid> {
+        let (client, server) = fidl::endpoints::create_proxy::<fnetwork::PortMarker>();
+        self.get_port(server)?;
+        let identity = client.get_identity().await?;
+        Ok(identity.get_koid()?)
+    }
+}
+
 impl<'a> std::fmt::Debug for TestEndpoint<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
         let Self { endpoint: _, name, _sandbox } = self;

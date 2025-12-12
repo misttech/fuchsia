@@ -24,6 +24,7 @@ use netstack3_core::routes::RawMetric;
 use netstack3_core::sync::RwLock as CoreRwLock;
 use netstack3_core::trace::trace_duration;
 use thiserror::Error;
+use zx::AsHandleRef as _;
 use {
     fidl_fuchsia_net as fnet, fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext,
     fuchsia_async as fasync,
@@ -418,6 +419,10 @@ impl DeviceHandler {
         let port_proxy = device.connect_port(port)?;
         let netdevice_client::client::PortInfo { id: _, base_info } =
             port_proxy.get_info().await?.try_into().map_err(Error::InvalidPortInfo)?;
+        let port_identity = port_proxy.get_identity().await?;
+        // FIDL bindings protect us from getting an invalid handle, getting the
+        // KOID from a handle that is open always succeeds.
+        let port_identity_koid = Some(port_identity.get_koid().expect("extract port id event"));
 
         let mut status_stream =
             netdevice_client::client::new_port_status_stream(&port_proxy, None)?;
@@ -545,7 +550,11 @@ impl DeviceHandler {
                     crate::bindings::create_interface_event_producer(
                         interfaces_event_sink,
                         binding_id,
-                        crate::bindings::InterfaceProperties { name: name.clone(), port_class },
+                        crate::bindings::InterfaceProperties {
+                            name: name.clone(),
+                            port_class,
+                            port_identity_koid,
+                        },
                     ),
                     control_hook,
                 ),
