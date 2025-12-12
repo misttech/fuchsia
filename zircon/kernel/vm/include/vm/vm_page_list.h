@@ -526,30 +526,28 @@ class VmPageListNode final : public fbl::WAVLTreeContainable<ktl::unique_ptr<VmP
 
   // for every page or marker in the node call the passed in function.
   template <typename PTR_TYPE, typename F>
-  zx_status_t ForEveryPage(F func, uint64_t skew) {
-    return ForEveryPageInRange<PTR_TYPE>(this, func, offset(), end_offset(), skew);
+  zx_status_t ForEveryPage(F func) {
+    return ForEveryPageInRange<PTR_TYPE>(this, func, offset(), end_offset());
   }
 
   // for every page or marker in the node call the passed in function.
   template <typename PTR_TYPE, typename F>
-  zx_status_t ForEveryPage(F func, uint64_t skew) const {
-    return ForEveryPageInRange<PTR_TYPE>(this, func, offset(), end_offset(), skew);
+  zx_status_t ForEveryPage(F func) const {
+    return ForEveryPageInRange<PTR_TYPE>(this, func, offset(), end_offset());
   }
 
   // for every page or marker in the node in the range call the passed in function. The range is
   // assumed to be within the nodes object range.
   template <typename PTR_TYPE, typename F>
-  zx_status_t ForEveryPageInRange(F func, uint64_t start_offset, uint64_t end_offset,
-                                  uint64_t skew) {
-    return ForEveryPageInRange<PTR_TYPE>(this, func, start_offset, end_offset, skew);
+  zx_status_t ForEveryPageInRange(F func, uint64_t start_offset, uint64_t end_offset) {
+    return ForEveryPageInRange<PTR_TYPE>(this, func, start_offset, end_offset);
   }
 
   // for every page or marker in the node in the range call the passed in function. The range is
   // assumed to be within the nodes object range.
   template <typename PTR_TYPE, typename F>
-  zx_status_t ForEveryPageInRange(F func, uint64_t start_offset, uint64_t end_offset,
-                                  uint64_t skew) const {
-    return ForEveryPageInRange<PTR_TYPE>(this, func, start_offset, end_offset, skew);
+  zx_status_t ForEveryPageInRange(F func, uint64_t start_offset, uint64_t end_offset) const {
+    return ForEveryPageInRange<PTR_TYPE>(this, func, start_offset, end_offset);
   }
 
   // Checks if the given offset is part of an interval involving this node. This method cannot find
@@ -637,31 +635,35 @@ class VmPageListNode final : public fbl::WAVLTreeContainable<ktl::unique_ptr<VmP
     return true;
   }
 
-  // For any non-empty slots in |this| call the |migrate_fn| with |this| and the corresponding slot
-  // in |other|.
   template <typename F>
-  void MergeOnto(F migrate_fn, VmPageListNode& other, uint64_t skew) {
-    for (size_t i = 0; i < kPageFanOut; i++) {
-      if (!pages_[i].IsEmpty()) {
-        migrate_fn(&pages_[i], &other.pages_[i], other.obj_offset_ + i * kPageSize - skew);
-      }
-    }
+  void MergeRangeOnto(F migrate_fn, VmPageListNode& other, uint64_t start_offset,
+                      uint64_t end_offset, uint64_t other_start_offset) {
+    DEBUG_ASSERT(other_start_offset >= other.offset());
+    DEBUG_ASSERT(other_start_offset + (end_offset - start_offset) <= other.end_offset());
+    ForEveryPageInRange<VmPageOrMarker*>(
+        [&](VmPageOrMarker* slot, uint64_t offset) {
+          const uint64_t other_offset = offset - start_offset + other_start_offset;
+          DEBUG_ASSERT(NodeOffset(other_offset) == other.offset());
+          migrate_fn(slot, &other.pages_[NodeIndex(other_offset)], other_offset);
+          return ZX_ERR_NEXT;
+        },
+        start_offset, end_offset);
   }
 
-  // Converts the supplied offset into a VmPageListNode base offset, taking into account the skew.
-  static uint64_t NodeOffset(uint64_t offset, uint64_t skew) {
-    return ROUNDDOWN(offset + skew, kPageSize * VmPageListNode::kPageFanOut);
+  // Converts the supplied offset into a VmPageListNode base offset.
+  static uint64_t NodeOffset(uint64_t offset) {
+    return ROUNDDOWN(offset, kPageSize * VmPageListNode::kPageFanOut);
   }
 
-  // Converts the supplied offset into a VmPageListNode index, taking into account the skew.
-  static uint64_t NodeIndex(uint64_t offset, uint64_t skew) {
-    return ((offset + skew) >> kPageShift) % VmPageListNode::kPageFanOut;
+  // Converts the supplied offset into a VmPageListNode index.
+  static uint64_t NodeIndex(uint64_t offset) {
+    return (offset >> kPageShift) % VmPageListNode::kPageFanOut;
   }
 
  private:
   template <typename PTR_TYPE, typename S, typename F>
-  static zx_status_t ForEveryPageInRange(S self, F func, uint64_t start_offset, uint64_t end_offset,
-                                         uint64_t skew) {
+  static zx_status_t ForEveryPageInRange(S self, F func, uint64_t start_offset,
+                                         uint64_t end_offset) {
     // Assert that the requested range is sensible and falls within our nodes actual offset range.
     DEBUG_ASSERT(end_offset >= start_offset);
     DEBUG_ASSERT(start_offset >= self->obj_offset_);
@@ -670,8 +672,7 @@ class VmPageListNode final : public fbl::WAVLTreeContainable<ktl::unique_ptr<VmP
     const size_t end = (end_offset - self->obj_offset_) / kPageSize;
     for (size_t i = start; i < end; i++) {
       if (!self->pages_[i].IsEmpty()) {
-        zx_status_t status =
-            func(PTR_TYPE{&self->pages_[i]}, self->obj_offset_ + i * kPageSize - skew);
+        zx_status_t status = func(PTR_TYPE{&self->pages_[i]}, self->obj_offset_ + i * kPageSize);
         if (status != ZX_ERR_NEXT) {
           return status;
         }
@@ -740,9 +741,9 @@ class VMPLCursor {
 
   // Returns the offset of the |current| position of the cursor. This is invalid to call if
   // |current| is returning a nullptr.
-  uint64_t offset(uint64_t list_skew) const {
+  uint64_t offset() const {
     DEBUG_ASSERT(valid());
-    return node_->obj_offset_ - list_skew + (static_cast<uint64_t>(index_) * kPageSize);
+    return node_->obj_offset_ + (static_cast<uint64_t>(index_) * kPageSize);
   }
 
  private:
@@ -789,16 +790,6 @@ class VmPageList final {
   VmPageList& operator=(VmPageList&& other);
   VmPageList(VmPageList&& other);
 
-  void InitializeSkew(uint64_t parent_skew, uint64_t offset) {
-    // Checking list_skew_ doesn't catch all instances of double-initialization, but
-    // it should catch some of them.
-    DEBUG_ASSERT(list_skew_ == 0);
-    DEBUG_ASSERT(list_.is_empty());
-
-    list_skew_ = (parent_skew + offset) % (kPageSize * VmPageListNode::kPageFanOut);
-  }
-  uint64_t GetSkew() const { return list_skew_; }
-
   DISALLOW_COPY_AND_ASSIGN_ALLOW_MOVE(VmPageList);
 
   // walk the page tree, calling the passed in function on every tree node.
@@ -826,7 +817,7 @@ class VmPageList final {
   template <typename F>
   zx_status_t ForEveryPageInCursorRange(F per_page_func, VMPLCursor cursor,
                                         uint64_t end_offset) const {
-    const uint64_t start_offset = cursor.offset(list_skew_);
+    const uint64_t start_offset = cursor.offset();
     if (start_offset >= end_offset) {
       return ZX_OK;
     }
@@ -1042,8 +1033,13 @@ class VmPageList final {
     ForEveryPage<VmPageOrMarker*>(this, per_page_func);
 
     // empty the tree
-    list_.clear();
+    Clear();
   }
+
+  // Clears the tree of any remaining slots, leaving it in the initially allocated state. It is an
+  // error, and will trigger a panic, for any of the slots to hold pages or references, as clearing
+  // them would otherwise result in a memory leak.
+  void Clear() { list_.clear(); }
 
   // Calls the provided callback for every page or marker in the range [start_offset, end_offset).
   // The callback can modify the VmPageOrMarker and take ownership of any pages, or leave them in
@@ -1081,97 +1077,68 @@ class VmPageList final {
   // reference to |this| and the corresponding slot in |other| and has the signature of:
   // void migrate_fn(VmPageOrMarker* this_slot, VmPageOrMarker* other_slot, uint64_t other_offset);
   //
-  // At the end of merging |this| is cleared and so it is an error for |this| to have any content
-  // that is not a Marker that does not get moved to |other|, either because it is outside the
-  // specified range or because the |migrate_fn| did not move or clear it.
+  // If this returns |true| then migrate_fn was called on everything in range of |offset| to
+  // |end_offset|. If false is returned then merging did not complete due to inability to allocates
+  // nodes in |other|. The partial merge is not rolled back and is up to the caller to deal with.
   template <typename F>
-  void MergeRangeOntoAndClear(F migrate_fn, VmPageList& other, uint64_t offset,
-                              uint64_t end_offset) {
-    // The skewed |offset| in |this| must be equal to 0 skewed in |other|. This allows
-    // nodes to moved directly between the lists, without having to worry about allocations.
-    constexpr uint64_t kNodeSize = kPageSize * VmPageListNode::kPageFanOut;
-    DEBUG_ASSERT((list_skew_ + offset) % kNodeSize == other.list_skew_);
-
-    // Calculate skewed versions of start and end offset to simplify comparisons later.
-    const uint64_t skewed_offset = offset + list_skew_;
-    const uint64_t skewed_end_offset = end_offset + list_skew_;
-
-    // Calculate how much we need to shift nodes so that the node in |this| which contains
-    // |offset| gets mapped to offset 0 in |other|.
-    const uint64_t node_shift =
-        ROUNDDOWN(offset + list_skew_ - other.list_skew_, kPageSize * VmPageListNode::kPageFanOut);
-
-    // Initialize our merge target as the start of the other list as we are merging offset in this
-    // to 0 in other. As we merge in offset order our merge target is monotonically increasing and
-    // aims to minimizes doing full searches of the other wavl tree. The only time we need to search
-    // is if there is a gap in this such that our merge offset jumps.
-    // Once our merge target becomes invalid then we know there are no further nodes and also do not
-    // need to keep searching.
-    auto cur_other = other.list_.begin();
-
+  bool MergeRangeOnto(F migrate_fn, VmPageList& other, uint64_t offset, uint64_t end_offset) {
     // Iterate the range in this we are merging.
-    for (auto iter = list_.lower_bound(ROUNDDOWN(skewed_offset, kNodeSize));
-         iter && iter->offset() < skewed_end_offset;) {
-      __UNINITIALIZED ktl::unique_ptr<VmPageListNode> node = list_.erase(iter++);
+    for (auto iter = list_.lower_bound(NodeOffset(offset)); iter && iter->offset() < end_offset;) {
+      VmPageListNode* node = &*iter;
+      iter++;
+
       DEBUG_ASSERT(node->HasNoIntervalSentinel());
-      // Trim start/end slots that are not in the range, make sure that the node does not end up
-      // completely empty.
-      if (node->offset() < skewed_offset || node->end_offset() > skewed_end_offset) {
-        bool empty = true;
-        node->ForEveryPage<VmPageOrMarker*>(
-            [&](VmPageOrMarker* p, uint64_t off) {
-              if (off < offset || off >= end_offset) {
-                VmPageOrMarker page = ktl::move(*p);
-              } else {
-                empty = false;
-              }
-              return ZX_ERR_NEXT;
-            },
-            list_skew_);
-        if (empty) {
-          continue;
+      // Calculate start and end in |node|
+      uint64_t node_start_off = ktl::max(node->offset(), offset);
+      const uint64_t node_end_off = ktl::min(node->end_offset(), end_offset);
+
+      // If offset is not a multiple of kNodeSize then items in this node will need to be split
+      // across two different nodes in other.
+      while (node_start_off < node_end_off) {
+        // Translate the start in |node| to an offset in |other|
+        const uint64_t other_start_off = node_start_off - offset;
+
+        // Find the node in |other| that contains the start address.
+        auto cur_other = other.list_.find(NodeOffset(other_start_off));
+
+        // Allocate a new node if none was found.
+        if (!cur_other) {
+          fbl::AllocChecker ac;
+          ktl::unique_ptr<VmPageListNode> pl = ktl::unique_ptr<VmPageListNode>(
+              new (&ac) VmPageListNode(NodeOffset(other_start_off)));
+          if (!ac.check()) {
+            return false;
+          }
+          VmPageListNode& raw = *pl;
+          other.list_.insert(ktl::move(pl));
+          cur_other = NodeList::materialize_iterator(raw);
         }
+
+        // Cap the range to the end of |cur_other|, which could be less than length of the range in
+        // |node|.
+        const uint64_t other_end_off = ktl::min(cur_other->end_offset(), node_end_off - offset);
+
+        const uint64_t len = other_end_off - other_start_off;
+
+        node->MergeRangeOnto(migrate_fn, *cur_other, node_start_off, node_start_off + len,
+                             other_start_off);
+
+        // If either nothing was transferred, or all existing content was removed, then remove
+        // |cur_other|.
+        if (cur_other->IsEmpty()) {
+          other.list_.erase(cur_other);
+        }
+
+        node_start_off += len;
       }
-      // Change to the other lists skew.
-      const uint64_t target_node_offset = node->offset() - node_shift;
-      node->set_offset(target_node_offset);
-      // Check if we have progressed past our merge target, and if so update it.
-      if (cur_other && cur_other->offset() < target_node_offset) {
-        cur_other = other.list_.lower_bound(target_node_offset);
-      }
-      // If there is a target node we need to merge the nodes, otherwise we migrate this node over.
-      if (cur_other && cur_other->offset() == target_node_offset) {
-        DEBUG_ASSERT(cur_other->HasNoIntervalSentinel());
-        node->MergeOnto(migrate_fn, *cur_other, other.list_skew_);
-        // Done merging this node, move to the next node. This might not be the correct node if
-        // |this| has a gap, but we will search for the right one in that case.
-        auto prev = cur_other++;
-        // If prev was empty after migrating then remove it now that we have found the next node.
-        if (prev->IsEmpty()) {
-          other.list_.erase(prev);
-        }
-      } else {
-        // Merge target either doesn't exist, or is further ahead in the range.
-        DEBUG_ASSERT(!cur_other || cur_other->offset() > target_node_offset);
-        // Call the migrate on any pages and insert the node.
-        node->ForEveryPage<VmPageOrMarker*>(
-            [&](VmPageOrMarker* p, uint64_t offset) {
-              // Use a temporary VmPageOrMarker to give to the |migrate_fn| that is initially empty
-              // so that it does not have to deal with the src and dest slots potentially being the
-              // same when 'moving'. In practice the migrate_fn will get inlined and this temporary
-              // gets elided.
-              VmPageOrMarker temp = VmPageOrMarker::Empty();
-              migrate_fn(p, &temp, offset);
-              *p = ktl::move(temp);
-              return ZX_ERR_NEXT;
-            },
-            other.list_skew_);
-        if (!node->IsEmpty()) {
-          other.list_.insert(ktl::move(node));
-        }
+      // If all the content was moved out of |node| then remove it. |node| could still have content
+      // if |migrate_fn| chose to leave it, or if the range being processed only partially covered
+      // |node|.
+      if (node->IsEmpty()) {
+        list_.erase(*node);
       }
     }
-    list_.clear();
+    return true;
   }
 
   // Takes the content out of this page list and places them in the provided |splice| list, which
@@ -1181,100 +1148,11 @@ class VmPageList final {
   // have been moved into |splice|.
   zx_status_t TakePages(uint64_t offset, VmPageSpliceList* splice);
 
-  // Moves the pages in the specified range in |this| onto the |other| with |offset| in this
-  // mapping to the offset of 0 in |other|.
-  //
-  // |other| is assumed to be empty and so there is no need to deal with the case where content
-  // exists in both |this| and |other|. Where partial nodes need to be moved allocations may need to
-  // be performed, and hence this can fail with ZX_ERR_NO_MEMORY. On failure any partial move is
-  // left as is and the caller must clean up.
-  //
-  // For any offset in |this| that is not empty then the given |on_migrate_fn| is called with a
-  // reference to |this| and has the signature of:
-  // void on_migrate_fn(VmPageOrMarkerRef slot, uint64_t offset);
-  template <typename F>
-  zx_status_t MoveRange(F on_migrate_fn, VmPageList& other, uint64_t offset, uint64_t end_offset) {
-    DEBUG_ASSERT(other.IsEmpty());
-    // The skewed |offset| in |this| must be equal to 0 skewed in |other|. This allows
-    // nodes to moved directly between the lists, without having to worry about allocations.
-    constexpr uint64_t kNodeSize = kPageSize * VmPageListNode::kPageFanOut;
-    DEBUG_ASSERT((list_skew_ + offset) % kNodeSize == other.list_skew_);
-
-    // Calculate skewed versions of start and end offset to simplify comparisons later.
-    const uint64_t skewed_offset = offset + list_skew_;
-    const uint64_t skewed_end_offset = end_offset + list_skew_;
-
-    // Calculate how much we need to shift nodes so that the node in |this| which contains
-    // |offset| gets mapped to offset 0 in |other|.
-    const uint64_t node_shift =
-        ROUNDDOWN(offset + list_skew_ - other.list_skew_, kPageSize * VmPageListNode::kPageFanOut);
-
-    // Iterate the range in this we are merging.
-    for (auto iter = list_.lower_bound(ROUNDDOWN(skewed_offset, kNodeSize));
-         iter && iter->offset() < skewed_end_offset;) {
-      const uint64_t target_node_offset = iter->offset() - node_shift;
-      ktl::unique_ptr<VmPageListNode> node;
-      if (iter->offset() < skewed_offset || iter->end_offset() > skewed_end_offset) {
-        fbl::AllocChecker ac;
-        node = ktl::unique_ptr<VmPageListNode>(new (&ac) VmPageListNode(target_node_offset));
-        if (!ac.check()) {
-          return ZX_ERR_NO_MEMORY;
-        }
-
-        bool src_empty = true;
-        bool target_empty = true;
-
-        iter->MergeOnto(
-            [&](VmPageOrMarker* src, VmPageOrMarker* dest, uint64_t off) {
-              DEBUG_ASSERT(!src->IsEmpty());
-              // Convert |off|, which is an offset in |node|, to an offset in |this| to check if
-              // this slot is one that should be moved or not.
-              uint64_t this_off = off + other.list_skew_ + node_shift;
-              if (this_off < skewed_offset || this_off >= skewed_end_offset) {
-                // Not moving this slot, and since it's non-empty then we know that the node will be
-                // non-empty when we are finished.
-                src_empty = false;
-              } else {
-                // Slot is in the desired range and so should be moved. This also tells us that the
-                // target will end up with at least 1 non-empty slot.
-                target_empty = false;
-                on_migrate_fn(VmPageOrMarkerRef(src), this_off);
-                *dest = ktl::move(*src);
-              }
-            },
-            *node, other.list_skew_);
-        auto old = iter++;
-        // If both the old source and new target are empty that would imply that src was originally
-        // empty, which would be an invalid state.
-        DEBUG_ASSERT(!(src_empty && target_empty));
-        if (src_empty) {
-          list_.erase(*old);
-        }
-        if (target_empty) {
-          continue;
-        }
-      } else {
-        node = list_.erase(iter++);
-        node->ForEveryPage<VmPageOrMarkerRef>(
-            [&on_migrate_fn](VmPageOrMarkerRef slot, uint64_t offset) {
-              on_migrate_fn(slot, offset);
-              return ZX_ERR_NEXT;
-            },
-            list_skew_);
-        // Change to the other lists skew.
-        node->set_offset(target_node_offset);
-      }
-      other.list_.insert(ktl::move(node));
-    }
-    return ZX_OK;
-  }
-
   uint64_t HeapAllocationBytes() const { return list_.size() * sizeof(VmPageListNode); }
 
-  // Allow the implementation to use a one-past-the-end for VmPageListNode offsets,
-  // plus to account for skew_.
+  // Allow the implementation to use a one-past-the-end for VmPageListNode offsets.
   static constexpr uint64_t MAX_SIZE =
-      ROUNDDOWN(UINT64_MAX, 2 * VmPageListNode::kPageFanOut * kPageSize);
+      ROUNDDOWN(UINT64_MAX, VmPageListNode::kPageFanOut* kPageSize);
 
   // Add a sparse zero interval spanning the range [start_offset, end_offset) with the specified
   // dirty_state. The specified range must be previously unpopulated. This will try to merge the new
@@ -1336,13 +1214,9 @@ class VmPageList final {
                                     VmPageOrMarker::IntervalDirtyState new_dirty_state);
 
  private:
-  uint64_t NodeOffset(uint64_t offset) const {
-    return VmPageListNode::NodeOffset(offset, list_skew_);
-  }
+  uint64_t NodeOffset(uint64_t offset) const { return VmPageListNode::NodeOffset(offset); }
 
-  uint64_t NodeIndex(uint64_t offset) const {
-    return VmPageListNode::NodeIndex(offset, list_skew_);
-  }
+  uint64_t NodeIndex(uint64_t offset) const { return VmPageListNode::NodeIndex(offset); }
 
   // Returns true if the specified offset falls in a sparse page interval.
   bool IsOffsetInInterval(uint64_t offset) const;
@@ -1354,7 +1228,6 @@ class VmPageList final {
   // returned.
   const VmPageOrMarker* IsOffsetInIntervalHelper(uint64_t offset,
                                                  const VmPageListNode& lower_bound) const {
-    offset += list_skew_;
     if (offset < lower_bound.offset()) {
       return lower_bound.NodeStartsInInterval();
     }
@@ -1399,7 +1272,7 @@ class VmPageList final {
   template <typename PTR_TYPE, typename S, typename F>
   static zx_status_t ForEveryPage(S self, F per_page_func) {
     for (auto& pl : self->list_) {
-      zx_status_t status = pl.template ForEveryPage<PTR_TYPE, F>(per_page_func, self->list_skew_);
+      zx_status_t status = pl.template ForEveryPage<PTR_TYPE, F>(per_page_func);
       if (status != ZX_ERR_NEXT) {
         if (status == ZX_ERR_STOP) {
           break;
@@ -1422,14 +1295,12 @@ class VmPageList final {
                                                  uint64_t start_offset, uint64_t end_offset) {
     DEBUG_ASSERT(IsPageRounded(start_offset));
     DEBUG_ASSERT(IsPageRounded(end_offset));
-    start_offset += self->list_skew_;
-    end_offset += self->list_skew_;
 
     while (cur && cur->offset() < end_offset) {
       uint64_t start = ktl::max(start_offset, cur->offset());
       uint64_t end = ktl::min(cur->end_offset(), end_offset);
-      zx_status_t status = cur->template ForEveryPageInRange<PTR_TYPE, F>(per_page_func, start, end,
-                                                                          self->list_skew_);
+      zx_status_t status =
+          cur->template ForEveryPageInRange<PTR_TYPE, F>(per_page_func, start, end);
       auto prev = cur++;
       if constexpr (NODE_CHECK == NodeCheck::CleanupEmpty) {
         if (prev->IsEmpty()) {
@@ -1794,19 +1665,13 @@ class VmPageList final {
 
   using NodeList = fbl::WAVLTree<uint64_t, ktl::unique_ptr<VmPageListNode>>;
   NodeList list_;
-  // A skew added to offsets provided as arguments to VmPageList functions before
-  // interfacing with list_. This allows all VmPageLists within a clone tree
-  // to place individual vm_page_t entries at the same offsets within their nodes, so
-  // that the nodes can be moved between different lists without having to worry
-  // about needing to split up a node.
-  uint64_t list_skew_ = 0;
 };
 
 // Class which holds the list of vm_page structs removed from a VmPageList
 // by TakePages. The list include information about uncommitted pages and markers.
 // Every splice list is expected to go through the following series of states:
 // 1. The splice list is created.
-// 2. List is Initialized with the desired range and skew.
+// 2. List is Initialized with the desired range.
 // 3. Pages are added to the splice list.
 // 4. The list is `Finalize`d, meaning that it can no longer be modified by `Append`.
 // 5. Pages are then `Pop`d from the list. Once all the pages are popped, the list is considered
@@ -1824,8 +1689,8 @@ class VmPageSpliceList final {
   static zx_status_t CreateFromPageList(uint64_t length, list_node* pages,
                                         VmPageSpliceList* splice);
 
-  // Initialize the list with the given range and skew. Can only be done once, and must be done
-  // before providing pages.
+  // Initialize the list with the given range. Can only be done once, and must be done before
+  // providing pages.
   void Initialize(uint64_t length) {
     DEBUG_ASSERT(IsEmpty() && state_ == State::Constructed);
     length_ = length;
@@ -1929,13 +1794,6 @@ class VmPageSpliceList final {
 
  private:
   void FreeAllPages();
-
-  // Initialize the skew. Must be done after calling Initialize, but before adding any content. Only
-  // necessary if directly moving list nodes where the skew has an impact.
-  void InitializeSkew(uint64_t offset, uint64_t skew) {
-    DEBUG_ASSERT(IsInitialized() && IsEmpty());
-    page_list_.InitializeSkew(skew, offset);
-  }
 
   uint64_t length_ = 0;
   uint64_t pos_ = 0;

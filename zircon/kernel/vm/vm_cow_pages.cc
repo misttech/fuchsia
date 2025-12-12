@@ -1490,11 +1490,6 @@ void VmCowPages::AddChildLocked(VmCowPages* child, uint64_t offset, uint64_t par
   child->parent_offset_ = offset;
   child->parent_limit_ = parent_limit;
 
-  // The child's page list should skew by the child's offset relative to the parent. This allows
-  // fast copies of page list entries when merging the lists later (entire blocks of entries can be
-  // copied at once).
-  child->page_list_.InitializeSkew(page_list_.GetSkew(), offset);
-
   // If the child has a non-zero high priority count, then it is counting as an incoming edge to our
   // count.
   if (child->high_priority_count_ > 0) {
@@ -1638,29 +1633,40 @@ zx::result<VmCowPages::LockedRefPtr> VmCowPages::CloneNewHiddenParentLocked(
   // will eventually become our page_list_, but not until we've updated the backlinks and moved it
   // into the hidden parent.
   VmPageList temp_list;
-  temp_list.InitializeSkew(page_list_.GetSkew(), 0);
+  if (tree_has_parent_content_markers()) {
+    zx_status_t status = page_list_.ForEveryPage([&](const VmPageOrMarker* p, uint64_t offset) {
+      // If a tree is using parent content markers then, since we are a leaf node, we know that
+      // there can be no markers and no intervals, hence this is either content, or a parent
+      // marker. In either case we need to retain a ParentContent marker in |this|, and since
+      // the page list being iterated will be moved into |hidden_parent|, add a slot to the
+      // |temp_list|.
+      DEBUG_ASSERT(node_has_parent_content_markers());
+      DEBUG_ASSERT(p->IsParentContent() || p->IsPageOrRef());
+      auto [slot, _] =
+          temp_list.LookupOrAllocate(offset, VmPageList::IntervalHandling::NoIntervals);
+      if (!slot) {
+        return ZX_ERR_NO_MEMORY;
+      }
+      *slot = VmPageOrMarker::ParentContent();
 
-  VmCompression* compression = Pmm::Node().GetPageCompression();
-  zx_status_t status = ZX_OK;
+      return ZX_ERR_NEXT;
+    });
+    // If allocating the parent content slots failed we can abort now before we've changed anything.
+    if (status != ZX_OK) {
+      // Only reason for failure should be out of memory.
+      ASSERT(status == ZX_ERR_NO_MEMORY);
+      return zx::error(status);
+    }
+  }
 
   {
+    VmCompression* compression = Pmm::Node().GetPageCompression();
     __UNINITIALIZED BatchPQUpdateBacklink page_backlink_updater(&hidden_parent.locked());
-    status = page_list_.RemovePages(
+    zx_status_t status = page_list_.RemovePages(
         [&](VmPageOrMarker* p, uint64_t offset) {
           if (tree_has_parent_content_markers()) {
-            // If a tree is uses parent content markers then, since we are a leaf node, we know that
-            // there can be no markers and no intervals, hence this is either content, or a parent
-            // marker. In either case we need to retain a ParentContent marker in |this|, and since
-            // the page list being iterated will be moved into |hidden_parent|, add a slot to the
-            // |temp_list|.
-            DEBUG_ASSERT(node_has_parent_content_markers());
-            DEBUG_ASSERT(p->IsParentContent() || p->IsPageOrRef());
-            auto [slot, _] =
-                temp_list.LookupOrAllocate(offset, VmPageList::IntervalHandling::NoIntervals);
-            if (!slot) {
-              return ZX_ERR_NO_MEMORY;
-            }
-            *slot = VmPageOrMarker::ParentContent();
+            // The parent content marker was already allocated in temp_list previously, just need to
+            // potentially update |p| now.
             if (p->IsParentContent()) {
               // Hidden nodes do not themselves have parent content markers, as we have effectively
               // moved this to ourselves can clear this slot and continue.
@@ -1691,37 +1697,8 @@ zx::result<VmCowPages::LockedRefPtr> VmCowPages::CloneNewHiddenParentLocked(
         },
         0, size_);
 
+    ASSERT(status == ZX_OK);
     page_backlink_updater.Flush();
-  }
-
-  // On error we need to roll-back any partial modifications.
-  if (status != ZX_OK) {
-    DEBUG_ASSERT_MSG(status == ZX_ERR_NO_MEMORY, "status: %d", status);
-    // Re-set all the backlinks back to |this|. Any backlinks that hadn't yet been moved will get a
-    // harmless no-op.
-    __UNINITIALIZED BatchPQUpdateBacklink page_backlink_updater(this);
-    page_list_.ForEveryPage([&](const VmPageOrMarker* p, uint64_t offset) {
-      if (p->IsPage()) {
-        page_backlink_updater.Push(p->Page(), offset);
-      }
-      return ZX_ERR_NEXT;
-    });
-    // Need to put back any ParentContent markers we had deleted.
-    temp_list.MergeRangeOntoAndClear(
-        [](VmPageOrMarker* src, VmPageOrMarker* dst, uint64_t) {
-          // The only items in temp_list are parent content markers we just put in.
-          DEBUG_ASSERT(src->IsParentContent());
-          // If dst is empty then it use to hold a ParentContent marker, but we deleted it, so put
-          // it back. A non-empty dst we leave alone, as that indicates where we created a
-          // ParentContent marker for content that we did not modify, and hence do not need to roll
-          // back.
-          if (dst->IsEmpty()) {
-            *dst = ktl::move(*src);
-          }
-        },
-        page_list_, 0, size_);
-    // temp_list just contains ParentContent markers, which can be safely dropped.
-    return zx::error(status);
   }
 
   // Move our pagelist before adding ourselves as its child, because we cannot be added as a child
@@ -1756,9 +1733,7 @@ zx::result<VmCowPages::LockedRefPtr> VmCowPages::CloneNewHiddenParentLocked(
   // Add the children and then populate their initial page lists.
   hidden_parent.locked().AddChildLocked(this, 0, size_);
   hidden_parent.locked().AddChildLocked(&cow_clone.locked(), offset, limit);
-  DEBUG_ASSERT(temp_list.GetSkew() == page_list_.GetSkew());
   page_list_ = ktl::move(temp_list);
-  DEBUG_ASSERT(cow_clone.locked().page_list_.GetSkew() == initial_page_list.GetSkew());
   cow_clone.locked().page_list_ = ktl::move(initial_page_list);
 
   // Checking this node's hierarchy will also check the parent's hierarchy.
@@ -1806,7 +1781,6 @@ zx::result<VmCowPages::LockedRefPtr> VmCowPages::CloneChildLocked(uint64_t offse
   AddChildLocked(&cow_clone.locked(), offset, limit);
   // If given a non-empty initial_page_list then place it in the clone.
   if (!initial_page_list.IsEmpty()) {
-    DEBUG_ASSERT(cow_clone.locked().page_list_.GetSkew() == initial_page_list.GetSkew());
     cow_clone.locked().page_list_ = ktl::move(initial_page_list);
   }
 
@@ -1922,7 +1896,6 @@ zx::result<VmCowPages::LockedRefPtr> VmCowPages::CreateCloneLocked(SnapshotType 
   // content we are able to see is possibly determined by content markers in *this* node, even if we
   // will be able to mechanically hang the new node higher up.
   VmPageList page_list;
-  page_list.InitializeSkew(page_list_.GetSkew(), range.offset);
 
   // To account for any errors that result in needing to roll back we remember the range we have
   // processed the share counts for.
@@ -2120,7 +2093,7 @@ bool VmCowPages::MergeContentWithChildLocked() {
   VmCompression* compression = Pmm::Node().GetPageCompression();
 
   __UNINITIALIZED BatchPQUpdateBacklink page_backlink_updater(&child);
-  page_list_.MergeRangeOntoAndClear(
+  bool all_merged = page_list_.MergeRangeOnto(
       [&](VmPageOrMarker* src, VmPageOrMarker* dst, uint64_t off) __ALWAYS_INLINE {
         // Never overwrite any actual content in the destination.
         if (dst->IsPageOrRef()) {
@@ -2164,8 +2137,15 @@ bool VmCowPages::MergeContentWithChildLocked() {
 
   page_backlink_updater.Flush();
 
-  // MergeRangeOntoAndClear clears out the page_list_ for us.
-  DEBUG_ASSERT(page_list_.IsEmpty());
+  // If MergeRangeOnto failed then there is still relevant content in our page_list_ and we cannot
+  // proceed with the rest of the merge. Both page lists are in a consistent state, so we can just
+  // inform our caller that the hidden node should be retained for the time being.
+  if (!all_merged) {
+    return false;
+  }
+
+  // If the merge was successful then clear out any remaining markers etc that might have remained.
+  page_list_.Clear();
 
   // Adjust the child's offset and limit so it will still see the correct range after it replaces
   // this node. The limit must be adjusted before the offset.
@@ -2791,8 +2771,7 @@ void VmCowPages::FindPageContentLocked(uint64_t offset, uint64_t max_owner_lengt
     __UNINITIALIZED VMPLCursor cursor =
         cur.locked_or(this).page_list_.LookupNearestMutableCursor(offset);
     VmPageOrMarkerRef p = cursor.current();
-    const bool cursor_correct_offset =
-        p && cursor.offset(cur.locked_or(this).page_list_.GetSkew()) == offset;
+    const bool cursor_correct_offset = p && cursor.offset() == offset;
     // If this slot has any actual content, then can immediately return it.
     if (cursor_correct_offset && !p->IsEmpty() && !p->IsParentContent()) {
       *out = {cursor, ktl::move(cur), offset, max_owner_length + this_offset};

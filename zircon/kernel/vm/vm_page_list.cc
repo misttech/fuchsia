@@ -36,8 +36,6 @@ VmPageList::VmPageList() { LTRACEF("%p\n", this); }
 
 VmPageList::VmPageList(VmPageList&& other) : list_(ktl::move(other.list_)) {
   LTRACEF("%p\n", this);
-  list_skew_ = other.list_skew_;
-  other.list_skew_ = 0;
 }
 
 VmPageList::~VmPageList() {
@@ -47,8 +45,6 @@ VmPageList::~VmPageList() {
 
 VmPageList& VmPageList::operator=(VmPageList&& other) {
   list_ = ktl::move(other.list_);
-  list_skew_ = other.list_skew_;
-  other.list_skew_ = 0;
   return *this;
 }
 
@@ -156,7 +152,7 @@ ktl::pair<const VmPageOrMarker*, uint64_t> VmPageList::FindIntervalStartForEnd(
     auto slot = &pln->Lookup(index);
     if (!slot->IsEmpty()) {
       DEBUG_ASSERT(slot->IsIntervalStart());
-      return {slot, pln->offset() + index * kPageSize - list_skew_};
+      return {slot, pln->offset() + index * kPageSize};
     }
   }
 
@@ -166,7 +162,7 @@ ktl::pair<const VmPageOrMarker*, uint64_t> VmPageList::FindIntervalStartForEnd(
     auto slot = &pln->Lookup(index - 1);
     if (!slot->IsEmpty()) {
       DEBUG_ASSERT(slot->IsIntervalStart());
-      return {slot, pln->offset() + (index - 1) * kPageSize - list_skew_};
+      return {slot, pln->offset() + (index - 1) * kPageSize};
     }
   }
 
@@ -192,7 +188,7 @@ ktl::pair<const VmPageOrMarker*, uint64_t> VmPageList::FindIntervalEndForStart(
     auto slot = &pln->Lookup(index);
     if (!slot->IsEmpty()) {
       DEBUG_ASSERT(slot->IsIntervalEnd());
-      return {slot, pln->offset() + index * kPageSize - list_skew_};
+      return {slot, pln->offset() + index * kPageSize};
     }
   }
 
@@ -202,7 +198,7 @@ ktl::pair<const VmPageOrMarker*, uint64_t> VmPageList::FindIntervalEndForStart(
     auto slot = &pln->Lookup(index);
     if (!slot->IsEmpty()) {
       DEBUG_ASSERT(slot->IsIntervalEnd());
-      return {slot, pln->offset() + index * kPageSize - list_skew_};
+      return {slot, pln->offset() + index * kPageSize};
     }
   }
 
@@ -1171,14 +1167,13 @@ zx_status_t VmPageList::ClipIntervalEnd(uint64_t interval_end, uint64_t len) {
 }
 
 zx_status_t VmPageList::TakePages(uint64_t offset, VmPageSpliceList* splice) {
-  splice->InitializeSkew(offset, list_skew_);
-
   const uint64_t end = offset + splice->length_;
 
-  zx_status_t result =
-      MoveRange([](VmPageOrMarkerRef slot, uint64_t offset) {}, splice->page_list_, offset, end);
+  bool result = MergeRangeOnto(
+      [](VmPageOrMarker* src, VmPageOrMarker* dst, uint64_t) { *dst = ktl::move(*src); },
+      splice->page_list_, offset, end);
   splice->Finalize();
-  return result;
+  return result ? ZX_OK : ZX_ERR_NO_MEMORY;
 }
 
 VmPageSpliceList::~VmPageSpliceList() {

@@ -285,7 +285,7 @@ static bool vmpl_near_last_offset_free() {
 
   VmPageList pl2;
   EXPECT_NULL(
-      pl2.LookupOrAllocate(0xfffffffffffe0000, VmPageList::IntervalHandling::NoIntervals).first,
+      pl2.LookupOrAllocate(0xffffffffffff0000, VmPageList::IntervalHandling::NoIntervals).first,
       "unexpected offset addable\n");
 
   pmm_free_page(page);
@@ -615,7 +615,6 @@ static bool vmpl_for_every_page_test() {
   BEGIN_TEST;
 
   VmPageList list;
-  list.InitializeSkew(0, kPageSize);
 
   static constexpr uint32_t kCount = 5;
   const auto test_pages = GetPages<kCount>();
@@ -674,7 +673,6 @@ static bool vmpl_skip_last_gap_test() {
   BEGIN_TEST;
 
   VmPageList list;
-  list.InitializeSkew(0, 0);
 
   vm_page_t* test_page;
   ASSERT_OK(pmm_alloc_page(0, &test_page));
@@ -715,7 +713,6 @@ static bool vmpl_contiguous_run_test() {
   BEGIN_TEST;
 
   VmPageList list;
-  list.InitializeSkew(0, 0);
 
   static constexpr uint32_t kCount = 6;
   const auto test_pages = GetPages<kCount>();
@@ -773,7 +770,6 @@ static bool vmpl_contiguous_run_compare_test() {
   BEGIN_TEST;
 
   VmPageList list;
-  list.InitializeSkew(0, 0);
 
   static constexpr uint32_t kCount = 5;
   const auto test_pages = GetPages<kCount>();
@@ -835,7 +831,6 @@ static bool vmpl_contiguous_traversal_end_test() {
   BEGIN_TEST;
 
   VmPageList list;
-  list.InitializeSkew(0, 0);
 
   static constexpr uint32_t kCount = 3;
   const auto test_pages = GetPages<kCount>();
@@ -935,7 +930,6 @@ static bool vmpl_contiguous_traversal_error_test() {
   BEGIN_TEST;
 
   VmPageList list;
-  list.InitializeSkew(0, 0);
 
   static constexpr uint32_t kCount = 3;
   const auto test_pages = GetPages<kCount>();
@@ -1035,7 +1029,6 @@ static bool vmpl_cursor_test() {
   BEGIN_TEST;
 
   VmPageList list;
-  list.InitializeSkew(0, 0);
 
   // Add some entries to produce some contiguous and non-contiguous nodes.
   constexpr uint64_t off1 = VmPageListNode::kPageFanOut * 3 + 4;
@@ -1112,7 +1105,6 @@ static bool vmpl_interval_single_node_test() {
   BEGIN_TEST;
 
   VmPageList list;
-  list.InitializeSkew(0, 0);
 
   // Interval [1, 3] in a single page list node.
   constexpr uint64_t expected_start = 1, expected_end = 3;
@@ -1187,7 +1179,6 @@ static bool vmpl_interval_multiple_nodes_test() {
   BEGIN_TEST;
 
   VmPageList list;
-  list.InitializeSkew(0, 0);
 
   // Interval spanning across 3 nodes, with the middle one unpopulated.
   constexpr uint64_t expected_start = 1, expected_end = 2 * VmPageListNode::kPageFanOut;
@@ -1262,7 +1253,6 @@ static bool vmpl_interval_traversal_test() {
   BEGIN_TEST;
 
   VmPageList list;
-  list.InitializeSkew(0, 0);
 
   // Interval spanning across 3 nodes, with the middle one unpopulated.
   constexpr uint64_t expected_start = 1, expected_end = 2 * VmPageListNode::kPageFanOut;
@@ -1391,7 +1381,6 @@ static bool vmpl_interval_merge_test() {
   BEGIN_TEST;
 
   VmPageList list;
-  list.InitializeSkew(0, 0);
 
   // Interval [7, 12].
   constexpr uint64_t expected_start = 7, expected_end = 12;
@@ -1478,7 +1467,6 @@ static bool vmpl_interval_add_page_test() {
   BEGIN_TEST;
 
   VmPageList list;
-  list.InitializeSkew(0, 0);
 
   // Interval spanning across 3 nodes, with the middle one unpopulated.
   constexpr uint64_t expected_start = 1, expected_end = 2 * VmPageListNode::kPageFanOut;
@@ -1561,7 +1549,6 @@ static bool vmpl_interval_add_page_slots_test() {
   BEGIN_TEST;
 
   VmPageList list;
-  list.InitializeSkew(0, 0);
 
   // 3 page interval such that adding a page in the middle creates two distinct slots.
   constexpr uint64_t expected_start = 0, expected_end = 2;
@@ -1635,7 +1622,6 @@ static bool vmpl_interval_add_page_start_test() {
   BEGIN_TEST;
 
   VmPageList list;
-  list.InitializeSkew(0, 0);
 
   constexpr uint64_t expected_start = 0, expected_end = 2;
   constexpr uint64_t size = VmPageListNode::kPageFanOut;
@@ -1755,7 +1741,6 @@ static bool vmpl_interval_add_page_end_test() {
   BEGIN_TEST;
 
   VmPageList list;
-  list.InitializeSkew(0, 0);
 
   constexpr uint64_t expected_start = 0;
   uint64_t expected_end = 2;
@@ -1876,7 +1861,6 @@ static bool vmpl_interval_replace_slot_test() {
   BEGIN_TEST;
 
   VmPageList list;
-  list.InitializeSkew(0, 0);
 
   constexpr uint64_t expected_interval = 0;
   constexpr uint64_t size = VmPageListNode::kPageFanOut;
@@ -1960,7 +1944,6 @@ static bool vmpl_interval_contig_full_test() {
   BEGIN_TEST;
 
   VmPageList list;
-  list.InitializeSkew(0, 0);
 
   // Interval spanning across 3 nodes, with the middle one unpopulated.
   constexpr uint64_t expected_start = 1, expected_end = 2 * VmPageListNode::kPageFanOut;
@@ -2024,7 +2007,6 @@ static bool vmpl_interval_contig_partial_test() {
   BEGIN_TEST;
 
   VmPageList list;
-  list.InitializeSkew(0, 0);
 
   // Interval spanning across 3 nodes, with the middle one unpopulated.
   constexpr uint64_t expected_start = 1, expected_end = 2 * VmPageListNode::kPageFanOut;
@@ -2136,7 +2118,6 @@ static bool vmpl_interval_contig_compare_test() {
   BEGIN_TEST;
 
   VmPageList list;
-  list.InitializeSkew(0, 0);
 
   // Interval spanning across 3 nodes, with the middle one unpopulated.
   constexpr uint64_t expected_start = 1, expected_end = 2 * VmPageListNode::kPageFanOut;
@@ -2200,7 +2181,6 @@ static bool vmpl_interval_populate_full_test() {
   BEGIN_TEST;
 
   VmPageList list;
-  list.InitializeSkew(0, 0);
 
   // Interval spanning across 5 nodes, with the middle ones unpopulated.
   constexpr uint64_t expected_start = 1, expected_end = 4 * VmPageListNode::kPageFanOut;
@@ -2256,7 +2236,6 @@ static bool vmpl_interval_populate_partial_test() {
   BEGIN_TEST;
 
   VmPageList list;
-  list.InitializeSkew(0, 0);
 
   // Interval spanning across 3 nodes, with the middle one unpopulated.
   constexpr uint64_t expected_start = 1, expected_end = 2 * VmPageListNode::kPageFanOut;
@@ -2331,7 +2310,6 @@ static bool vmpl_interval_populate_start_test() {
   BEGIN_TEST;
 
   VmPageList list;
-  list.InitializeSkew(0, 0);
 
   // Interval spanning across 3 nodes, with the middle one unpopulated.
   constexpr uint64_t expected_start = 1, expected_end = 2 * VmPageListNode::kPageFanOut;
@@ -2405,7 +2383,6 @@ static bool vmpl_interval_populate_end_test() {
   BEGIN_TEST;
 
   VmPageList list;
-  list.InitializeSkew(0, 0);
 
   // Interval spanning across 3 nodes, with the middle one unpopulated.
   constexpr uint64_t expected_start = 1, expected_end = 2 * VmPageListNode::kPageFanOut;
@@ -2479,7 +2456,6 @@ static bool vmpl_interval_populate_slot_test() {
   BEGIN_TEST;
 
   VmPageList list;
-  list.InitializeSkew(0, 0);
 
   // Interval spanning across 3 nodes, with the middle one unpopulated.
   constexpr uint64_t expected_start = 1, expected_end = 2 * VmPageListNode::kPageFanOut;
@@ -2625,7 +2601,6 @@ static bool vmpl_interval_overwrite_full_test() {
   BEGIN_TEST;
 
   VmPageList list;
-  list.InitializeSkew(0, 0);
 
   // Interval spanning across 3 nodes, with the middle one unpopulated.
   constexpr uint64_t expected_start = 1, expected_end = 2 * VmPageListNode::kPageFanOut;
@@ -2670,7 +2645,6 @@ static bool vmpl_interval_overwrite_start_test() {
   BEGIN_TEST;
 
   VmPageList list;
-  list.InitializeSkew(0, 0);
 
   // Interval spanning across 3 nodes, with the middle one unpopulated.
   constexpr uint64_t old_start = 1, old_end = 2 * VmPageListNode::kPageFanOut;
@@ -2723,7 +2697,6 @@ static bool vmpl_interval_overwrite_end_test() {
   BEGIN_TEST;
 
   VmPageList list;
-  list.InitializeSkew(0, 0);
 
   // Interval spanning across 3 nodes, with the middle one unpopulated.
   constexpr uint64_t old_start = 1, old_end = 2 * VmPageListNode::kPageFanOut;
@@ -2776,7 +2749,6 @@ static bool vmpl_interval_overwrite_slot_test() {
   BEGIN_TEST;
 
   VmPageList list;
-  list.InitializeSkew(0, 0);
 
   // Interval spanning a single slot.
   constexpr uint64_t expected_slot = 1;
@@ -2814,7 +2786,6 @@ static bool vmpl_interval_overwrite_merge_left_test() {
   BEGIN_TEST;
 
   VmPageList list;
-  list.InitializeSkew(0, 0);
 
   // Two intervals next to each other with different dirty states.
   constexpr uint64_t left_start = 1, left_end = 4;
@@ -2868,7 +2839,6 @@ static bool vmpl_interval_overwrite_merge_right_test() {
   BEGIN_TEST;
 
   VmPageList list;
-  list.InitializeSkew(0, 0);
 
   // Two intervals next to each other with different dirty states.
   constexpr uint64_t left_start = 1, left_end = 6;
@@ -2922,7 +2892,6 @@ static bool vmpl_interval_overwrite_merge_slots_test() {
   BEGIN_TEST;
 
   VmPageList list;
-  list.InitializeSkew(0, 0);
 
   // Three interval slots with alternating dirty states.
   constexpr uint64_t left = 3, mid = 4, right = 5;
@@ -2975,7 +2944,6 @@ static bool vmpl_interval_clip_start_test() {
   BEGIN_TEST;
 
   VmPageList list;
-  list.InitializeSkew(0, 0);
 
   // Interval spanning across 3 nodes, with the middle one unpopulated.
   constexpr uint64_t old_start = 1, old_end = 2 * VmPageListNode::kPageFanOut;
@@ -3067,7 +3035,6 @@ static bool vmpl_interval_clip_end_test() {
   BEGIN_TEST;
 
   VmPageList list;
-  list.InitializeSkew(0, 0);
 
   // Interval spanning across 3 nodes, with the middle one unpopulated.
   constexpr uint64_t old_start = 1, old_end = 2 * VmPageListNode::kPageFanOut;
@@ -3159,7 +3126,6 @@ static bool vmpl_awaiting_clean_split_test() {
   BEGIN_TEST;
 
   VmPageList list;
-  list.InitializeSkew(0, 0);
 
   // Interval spanning across 3 nodes, with the middle one unpopulated.
   constexpr uint64_t start = kPageSize, end = 2 * VmPageListNode::kPageFanOut * kPageSize;
@@ -3214,7 +3180,6 @@ static bool vmpl_awaiting_clean_clip_test() {
   BEGIN_TEST;
 
   VmPageList list;
-  list.InitializeSkew(0, 0);
 
   // Interval spanning across 3 nodes, with the middle one unpopulated.
   constexpr uint64_t start = kPageSize, end = 2 * VmPageListNode::kPageFanOut * kPageSize;
@@ -3252,7 +3217,6 @@ static bool vmpl_awaiting_clean_return_slot_test() {
   BEGIN_TEST;
 
   VmPageList list;
-  list.InitializeSkew(0, 0);
 
   // Interval spanning across 3 nodes, with the middle one unpopulated.
   constexpr uint64_t start = kPageSize, end = 2 * VmPageListNode::kPageFanOut * kPageSize;
@@ -3292,7 +3256,6 @@ static bool vmpl_awaiting_clean_return_slots_test() {
   BEGIN_TEST;
 
   VmPageList list;
-  list.InitializeSkew(0, 0);
 
   // Interval spanning across 3 nodes, with the middle one unpopulated.
   constexpr uint64_t start = kPageSize, end = 2 * VmPageListNode::kPageFanOut * kPageSize;
@@ -3368,7 +3331,6 @@ static bool vmpl_awaiting_clean_populate_slots_test() {
   BEGIN_TEST;
 
   VmPageList list;
-  list.InitializeSkew(0, 0);
 
   // Interval spanning across 3 nodes, with the middle one unpopulated.
   constexpr uint64_t start = kPageSize, end = 2 * VmPageListNode::kPageFanOut * kPageSize;
@@ -3441,7 +3403,6 @@ static bool vmpl_awaiting_clean_intersecting_test() {
   BEGIN_TEST;
 
   VmPageList list;
-  list.InitializeSkew(0, 0);
 
   // Interval spanning across 3 nodes, with the middle one unpopulated.
   constexpr uint64_t start = kPageSize, end = 2 * VmPageListNode::kPageFanOut * kPageSize;
@@ -3538,7 +3499,6 @@ static bool vmpl_awaiting_clean_non_intersecting_test() {
   BEGIN_TEST;
 
   VmPageList list;
-  list.InitializeSkew(0, 0);
 
   // Interval spanning across 3 nodes, with the middle one unpopulated.
   constexpr uint64_t start = kPageSize, end = 2 * VmPageListNode::kPageFanOut * kPageSize;
