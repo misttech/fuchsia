@@ -37,6 +37,7 @@ ffx/target/repository/rule.golden
 ffx/target/repository/rule/replace.golden
 ffx/target/screenshot.golden
 ffx/target/set-preferred-ssh-address.golden
+ffx/target/shell.golden
 ffx/target/show.golden
 ffx/target/snapshot.golden
 ffx/target/ssh.golden
