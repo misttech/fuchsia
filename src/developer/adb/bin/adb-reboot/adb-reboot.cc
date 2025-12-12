@@ -80,29 +80,12 @@ zx_status_t AdbReboot::Reboot(std::optional<std::string> args) {
 
   FX_LOGS(INFO) << "adb reboot " << args.value_or("");
   if (args->empty() || args.value().empty()) {
-    status =
-        ScheduleReboot([](fidl::WireSyncClient<fuchsia_hardware_power_statecontrol::Admin> client) {
-          fidl::Arena arena;
-          auto builder = fuchsia_hardware_power_statecontrol::wire::RebootOptions::Builder(arena);
-          fuchsia_hardware_power_statecontrol::RebootReason2 reasons[1] = {
-              fuchsia_hardware_power_statecontrol::RebootReason2::kDeveloperRequest};
-          auto vector_view =
-              fidl::VectorView<fuchsia_hardware_power_statecontrol::RebootReason2>::FromExternal(
-                  reasons);
-          builder.reasons(vector_view);
-          return client->PerformReboot(builder.Build());
-        });
-
+    status = ScheduleReboot(fuchsia_hardware_power_statecontrol::ShutdownAction::kReboot);
   } else if (args.value() == "bootloader") {
     status =
-        ScheduleReboot([](fidl::WireSyncClient<fuchsia_hardware_power_statecontrol::Admin> client) {
-          return client->RebootToBootloader();
-        });
+        ScheduleReboot(fuchsia_hardware_power_statecontrol::ShutdownAction::kRebootToBootloader);
   } else if (args.value() == "recovery") {
-    status =
-        ScheduleReboot([](fidl::WireSyncClient<fuchsia_hardware_power_statecontrol::Admin> client) {
-          return client->RebootToRecovery();
-        });
+    status = ScheduleReboot(fuchsia_hardware_power_statecontrol::ShutdownAction::kRebootToRecovery);
   } else if (args.value() == "fastboot" || args.value() == "sideload" ||
              args.value() == "sideload-auto-reboot") {
     // Reference implementation in system/core/init/reboot.cpp
@@ -112,10 +95,7 @@ zx_status_t AdbReboot::Reboot(std::optional<std::string> args) {
       FX_LOGS(ERROR) << "Failed to write bootloader message: " << zx_status_get_string(status);
       return status;
     }
-    status =
-        ScheduleReboot([](fidl::WireSyncClient<fuchsia_hardware_power_statecontrol::Admin> client) {
-          return client->RebootToRecovery();
-        });
+    status = ScheduleReboot(fuchsia_hardware_power_statecontrol::ShutdownAction::kRebootToRecovery);
   } else {
     FX_LOGS(ERROR) << "Error: Invalid args for adb reboot: " << args.value();
     status = ZX_ERR_INVALID_ARGS;
@@ -124,8 +104,8 @@ zx_status_t AdbReboot::Reboot(std::optional<std::string> args) {
   return status;
 }
 
-template <typename RebootFunction>
-zx_status_t AdbReboot::ScheduleReboot(RebootFunction f) {
+zx_status_t AdbReboot::ScheduleReboot(
+    const fuchsia_hardware_power_statecontrol::ShutdownAction action) {
   auto client_end = component::ConnectAt<fuchsia_hardware_power_statecontrol::Admin>(svc_);
   if (client_end.is_error()) {
     FX_LOGS(ERROR) << "Could not connect to hardware power state control: "
@@ -137,8 +117,19 @@ zx_status_t AdbReboot::ScheduleReboot(RebootFunction f) {
       std::move(*client_end));
 
   // Post task on dispatcher so that reboot occurs after replying to adb command.
-  return async::PostTask(dispatcher_, [&, client = std::move(reboot_client)]() mutable {
-    auto response = f(std::move(client));
+  return async::PostTask(dispatcher_, [action, client = std::move(reboot_client)]() mutable {
+    fuchsia_hardware_power_statecontrol::ShutdownReason reasons[1] = {
+        fuchsia_hardware_power_statecontrol::ShutdownReason::kDeveloperRequest};
+    auto reasons_view =
+        fidl::VectorView<fuchsia_hardware_power_statecontrol::ShutdownReason>::FromExternal(
+            reasons);
+
+    fidl::Arena arena;
+    auto builder = fuchsia_hardware_power_statecontrol::wire::ShutdownOptions::Builder(arena)
+                       .action(action)
+                       .reasons(reasons_view);
+
+    auto response = client->Shutdown(builder.Build());
     if (response.status() != ZX_OK) {
       // Note: This warning might be triggered in tests when the realm builder shuts down power
       // statecontrol instance before the adb-reboot instance, which is fine.

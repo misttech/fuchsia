@@ -81,20 +81,23 @@ class LocalPowerStateControl
     FX_LOGS(ERROR) << "Not implemented " << name;
   }
 
-  void PerformReboot(::fuchsia::hardware::power::statecontrol::RebootOptions options,
-                     PerformRebootCallback callback) override {
-    expect_reboot_--;
-    reboot_complete = true;
-  }
-
-  void RebootToBootloader(RebootToBootloaderCallback callback) override {
-    expect_reboot_bootloader_--;
-    reboot_complete = true;
-  }
-
-  void RebootToRecovery(RebootToRecoveryCallback callback) override {
-    expect_reboot_recovery_--;
-    reboot_complete = true;
+  void Shutdown(::fuchsia::hardware::power::statecontrol::ShutdownOptions options,
+                ShutdownCallback callback) override {
+    if (options.has_action() &&
+        options.action() == fuchsia::hardware::power::statecontrol::ShutdownAction::REBOOT) {
+      expect_reboot_--;
+      reboot_complete = true;
+    } else if (options.has_action() &&
+               options.action() ==
+                   fuchsia::hardware::power::statecontrol::ShutdownAction::REBOOT_TO_BOOTLOADER) {
+      expect_reboot_bootloader_--;
+      reboot_complete = true;
+    } else if (options.has_action() &&
+               options.action() ==
+                   fuchsia::hardware::power::statecontrol::ShutdownAction::REBOOT_TO_RECOVERY) {
+      expect_reboot_recovery_--;
+      reboot_complete = true;
+    }
   }
 
   void ExpectReboot() { expect_reboot_++; }

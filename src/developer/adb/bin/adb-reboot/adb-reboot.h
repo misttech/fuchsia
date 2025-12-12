@@ -6,6 +6,7 @@
 #define SRC_DEVELOPER_ADB_BIN_ADB_REBOOT_ADB_REBOOT_H_
 
 #include <fidl/fuchsia.hardware.adb/cpp/wire.h>
+#include <fidl/fuchsia.hardware.power.statecontrol/cpp/wire.h>
 #include <fidl/fuchsia.io/cpp/wire.h>
 #include <zircon/types.h>
 
@@ -30,8 +31,7 @@ class AdbReboot : public fidl::WireServer<fuchsia_hardware_adb::Provider> {
 
   // Post reboot task onto the scheduler so that we can reply to the adb client before shutting
   // down.
-  template <typename RebootFunction>
-  zx_status_t ScheduleReboot(RebootFunction f);
+  zx_status_t ScheduleReboot(fuchsia_hardware_power_statecontrol::ShutdownAction action);
 
   fidl::ClientEnd<fuchsia_io::Directory> svc_;
   async_dispatcher_t* dispatcher_;
