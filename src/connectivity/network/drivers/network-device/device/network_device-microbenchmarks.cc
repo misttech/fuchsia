@@ -16,6 +16,17 @@
 #define ZX_ASSERT_OK(status, msg) \
   ZX_ASSERT_MSG((status) == ZX_OK, msg " %s", zx_status_get_string(status))
 
+namespace {
+
+void SyncShutdownBackgroundDispatcher(fdf_dispatcher_t* dispatcher) {
+  libsync::Completion shutdown;
+  fdf_testing::DriverRuntime::GetInstance()->ShutdownBackgroundDispatcher(
+      dispatcher, [&] { shutdown.Signal(); });
+  shutdown.Wait();
+}
+
+}  // namespace
+
 namespace network {
 
 class FakeDeviceImpl : public fdf::WireServer<netdriver::NetworkPort>,
@@ -33,15 +44,19 @@ class FakeDeviceImpl : public fdf::WireServer<netdriver::NetworkPort>,
       {.type = netdev::wire::FrameType::kEthernet},
   };
 
-  FakeDeviceImpl(perftest::RepeatState* state) : perftest_state_(state) {}
+  explicit FakeDeviceImpl(perftest::RepeatState* state) : perftest_state_(state) {}
+
+  ~FakeDeviceImpl() override {
+    SyncShutdownBackgroundDispatcher(impl_dispatcher_->get());
+    SyncShutdownBackgroundDispatcher(port_dispatcher_->get());
+  }
 
   void Init(netdriver::wire::NetworkDeviceImplInitRequest* request, fdf::Arena& arena,
             InitCompleter::Sync& completer) override {
     iface_.Bind(std::move(request->iface));
 
     auto [client, server] = fdf::Endpoints<netdriver::NetworkPort>::Create();
-    fdf::BindServer(fdf_testing::DriverRuntime::GetInstance()->StartBackgroundDispatcher()->get(),
-                    std::move(server), this);
+    fdf::BindServer(port_dispatcher_->get(), std::move(server), this);
 
     fdf::WireUnownedResult result = iface_.buffer(arena)->AddPort(kPortId, std::move(client));
     ZX_ASSERT_OK(result.status(), "AddPort FIDL error");
@@ -168,12 +183,15 @@ class FakeDeviceImpl : public fdf::WireServer<netdriver::NetworkPort>,
 
   fdf::ClientEnd<netdriver::NetworkDeviceImpl> Bind() {
     auto [client, server] = fdf::Endpoints<netdriver::NetworkDeviceImpl>::Create();
-    fdf::BindServer(fdf_testing::DriverRuntime::GetInstance()->StartBackgroundDispatcher()->get(),
-                    std::move(server), this);
+    fdf::BindServer(impl_dispatcher_->get(), std::move(server), this);
     return std::move(client);
   }
 
  private:
+  fdf::UnownedSynchronizedDispatcher impl_dispatcher_ =
+      fdf_testing::DriverRuntime::GetInstance()->StartBackgroundDispatcher();
+  fdf::UnownedSynchronizedDispatcher port_dispatcher_ =
+      fdf_testing::DriverRuntime::GetInstance()->StartBackgroundDispatcher();
   fdf::WireSyncClient<netdriver::NetworkDeviceIfc> iface_;
   perftest::RepeatState* const perftest_state_;
 };
