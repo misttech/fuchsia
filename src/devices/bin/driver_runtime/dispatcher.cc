@@ -2001,11 +2001,12 @@ bool Dispatcher::ThreadPool::ScanThreadsForStalls() {
   zx::time stalled_time = current_time - zx::msec(kStallTimeMs);
   zx::time stale_time = current_time - zx::msec(kStaleTimeMs);
   uint32_t stalled_threads = 0;
+  // TODO(468352723): Make these logs less annoying so they can be raised above DEBUG
   for (auto& slot : thread_entry_time_slots_) {
     zx::time timestamp(slot.second->load());
     if (timestamp != zx::time(0) && timestamp < stalled_time) {
       if (timestamp > stale_time) {
-        LOGF(INFO, "Found a thread (id: %u, role: '%s') that has been stalled for %ld ms",
+        LOGF(DEBUG, "Found a thread (id: %u, role: '%s') that has been stalled for %ld ms",
              slot.first, scheduler_role_.c_str(), (current_time - timestamp).to_msecs());
       }
       stalled_threads++;
@@ -2015,7 +2016,7 @@ bool Dispatcher::ThreadPool::ScanThreadsForStalls() {
     // if we weren't already stalled try to spawn a new thread.
     if (!stalled_) {
       LOGF(
-          WARNING,
+          DEBUG,
           "All threads on thread pool (role: '%s') are stalled (%d/%d). Spawning a new thread, if possible (max threads: %d).",
           scheduler_role_.c_str(), stalled_threads, num_threads_, MaxThreadsLocked());
       stalled_ = true;
