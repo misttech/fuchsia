@@ -177,8 +177,10 @@ class PipeOutputSink(OutputSink):
     def close(self) -> None:
         if self._pipe_write_fd >= 0:
             os.close(self._pipe_write_fd)
-        if self._pipe_read_fd >= 0:
-            os.close(self._pipe_read_fd)
+        # NOTE(https://fxbug.dev/466166329): Wait for thread to finish
+        # reading all pipe inputs before closing the read descriptor.
         if self._thread:
             self._thread.join()
+        if self._pipe_read_fd >= 0:
+            os.close(self._pipe_read_fd)
         self._output_sink.close()
