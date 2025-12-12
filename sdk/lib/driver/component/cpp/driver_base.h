@@ -205,7 +205,7 @@ class DriverBase {
 
   // The async_dispatcher_t interface of the synchronized driver dispatcher that the driver
   // is started with.
-  async_dispatcher_t* dispatcher() const { return dispatcher_; }
+  async_dispatcher_t* dispatcher() const { return driver_dispatcher_->async_dispatcher(); }
 
   // The program dictionary in the start args.
   // This is the `program` entry in the cml of the driver.
@@ -324,7 +324,6 @@ class DriverBase {
   DriverStartArgs start_args_;
 
   fdf::UnownedSynchronizedDispatcher driver_dispatcher_;
-  async_dispatcher_t* dispatcher_;
   std::shared_ptr<Namespace> incoming_;
   std::shared_ptr<OutgoingDirectory> outgoing_;
   std::optional<inspect::ComponentInspector> inspector_;

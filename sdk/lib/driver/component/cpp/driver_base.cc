@@ -18,8 +18,7 @@ DriverBase::DriverBase(std::string_view name, DriverStartArgs start_args,
                        fdf::UnownedSynchronizedDispatcher driver_dispatcher)
     : name_(name),
       start_args_(std::move(start_args)),
-      driver_dispatcher_(std::move(driver_dispatcher)),
-      dispatcher_(driver_dispatcher_->async_dispatcher()) {
+      driver_dispatcher_(std::move(driver_dispatcher)) {
   Namespace incoming = [ns = std::move(start_args_.incoming())]() mutable {
     ZX_ASSERT(ns.has_value());
     zx::result incoming = Namespace::Create(ns.value());
@@ -27,7 +26,7 @@ DriverBase::DriverBase(std::string_view name, DriverStartArgs start_args,
     return std::move(incoming.value());
   }();
   logger_ = [&incoming, this]() {
-    auto logger = Logger::Create2(incoming, dispatcher_, name_, FUCHSIA_LOG_INFO
+    auto logger = Logger::Create2(incoming, dispatcher(), name_, FUCHSIA_LOG_INFO
 #if FUCHSIA_API_LEVEL_LESS_THAN(29)
                                   ,
                                   logger_wait_for_initial_interest
