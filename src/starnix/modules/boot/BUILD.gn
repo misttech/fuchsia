@@ -4,8 +4,8 @@
 
 import("//build/rust/rustc_library.gni")
 
-rustc_library("boot_notifier") {
-  name = "starnix-modules-boot-notifier"
+rustc_library("boot") {
+  name = "starnix-modules-boot"
   edition = "2024"
   version = "0.1.0"
   source_root = "lib.rs"
@@ -26,4 +26,9 @@ rustc_library("boot_notifier") {
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:zerocopy",
   ]
+}
+
+group("tests") {
+  testonly = true
+  deps = [ "tests" ]
 }

@@ -12,7 +12,7 @@ use starnix_core::vfs::FsString;
 use starnix_features::Feature;
 use starnix_logging::log_error;
 use starnix_modules_ashmem::ashmem_device_init;
-use starnix_modules_boot_notifier::booted_device_init;
+use starnix_modules_boot::booted_device_init;
 use starnix_modules_fastrpc::fastrpc_device_init;
 use starnix_modules_framebuffer::{AspectRatio, Framebuffer};
 use starnix_modules_gpu::gpu_device_init;

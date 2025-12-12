@@ -35,7 +35,7 @@ pub fn booted_device_init(locked: &mut Locked<Unlocked>, system_task: &CurrentTa
     let registry = &kernel.device_registry;
     registry
         .register_misc_device(locked, system_task, "booted".into(), device)
-        .expect("can register boot_notifier");
+        .expect("can register boot module");
 }
 
 #[derive(Clone)]
