@@ -491,12 +491,13 @@ impl FormattedRamdisk {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use delivery_blob::delivery_blob_path;
-    use std::io::Write as _;
+    use test_case::test_case;
 
+    #[test_case(Implementation::CppBlobfs; "blobfs")]
+    #[test_case(Implementation::Fxblob; "fxblob")]
     #[fuchsia_async::run_singlethreaded(test)]
-    async fn clean_start_and_stop() {
-        let blobfs = BlobfsRamdisk::start().await.unwrap();
+    async fn clean_start_and_stop(implementation: Implementation) {
+        let blobfs = BlobfsRamdisk::builder().implementation(implementation).start().await.unwrap();
 
         let proxy = blobfs.root_dir_proxy().unwrap();
         drop(proxy);
@@ -504,9 +505,11 @@ mod tests {
         blobfs.stop().await.unwrap();
     }
 
+    #[test_case(Implementation::CppBlobfs; "blobfs")]
+    #[test_case(Implementation::Fxblob; "fxblob")]
     #[fuchsia_async::run_singlethreaded(test)]
-    async fn clean_start_contains_no_blobs() {
-        let blobfs = BlobfsRamdisk::start().await.unwrap();
+    async fn clean_start_contains_no_blobs(implementation: Implementation) {
+        let blobfs = BlobfsRamdisk::builder().implementation(implementation).start().await.unwrap();
 
         assert_eq!(blobfs.list_blobs().unwrap(), BTreeSet::new());
 
@@ -529,11 +532,14 @@ mod tests {
             .with_blob(Cow::from(&b"cow"[..]));
     }
 
+    #[test_case(Implementation::CppBlobfs; "blobfs")]
+    #[test_case(Implementation::Fxblob; "fxblob")]
     #[fuchsia_async::run_singlethreaded(test)]
-    async fn with_blob_ignores_duplicates() {
+    async fn with_blob_ignores_duplicates(implementation: Implementation) {
         let blob = BlobInfo::from(&b"duplicate"[..]);
 
         let blobfs = BlobfsRamdisk::builder()
+            .implementation(implementation)
             .with_blob(blob.clone())
             .with_blob(blob.clone())
             .start()
@@ -546,9 +552,12 @@ mod tests {
         assert_eq!(blobfs.list_blobs().unwrap(), BTreeSet::from([blob.merkle]));
     }
 
+    #[test_case(Implementation::CppBlobfs; "blobfs")]
+    #[test_case(Implementation::Fxblob; "fxblob")]
     #[fuchsia_async::run_singlethreaded(test)]
-    async fn build_with_two_blobs() {
+    async fn build_with_two_blobs(implementation: Implementation) {
         let blobfs = BlobfsRamdisk::builder()
+            .implementation(implementation)
             .with_blob(&b"blob 1"[..])
             .with_blob(&b"blob 2"[..])
             .start()
@@ -565,10 +574,16 @@ mod tests {
         blobfs.stop().await.unwrap();
     }
 
+    #[test_case(Implementation::CppBlobfs; "blobfs")]
+    #[test_case(Implementation::Fxblob; "fxblob")]
     #[fuchsia_async::run_singlethreaded(test)]
-    async fn blobfs_remount() {
-        let blobfs =
-            BlobfsRamdisk::builder().cpp_blobfs().with_blob(&b"test"[..]).start().await.unwrap();
+    async fn remount(implementation: Implementation) {
+        let blobfs = BlobfsRamdisk::builder()
+            .implementation(implementation)
+            .with_blob(&b"test"[..])
+            .start()
+            .await
+            .unwrap();
         let blobs = blobfs.list_blobs().unwrap();
 
         let blobfs = blobfs.into_builder().await.unwrap().start().await.unwrap();
@@ -578,49 +593,18 @@ mod tests {
         blobfs.stop().await.unwrap();
     }
 
+    #[test_case(Implementation::CppBlobfs; "blobfs")]
+    #[test_case(Implementation::Fxblob; "fxblob")]
     #[fuchsia_async::run_singlethreaded(test)]
-    async fn fxblob_remount() {
-        let blobfs =
-            BlobfsRamdisk::builder().fxblob().with_blob(&b"test"[..]).start().await.unwrap();
-        let blobs = blobfs.list_blobs().unwrap();
+    async fn blob_appears_in_readdir(implementation: Implementation) {
+        let blobfs = BlobfsRamdisk::builder().implementation(implementation).start().await.unwrap();
 
-        let blobfs = blobfs.into_builder().await.unwrap().start().await.unwrap();
-
-        assert_eq!(blobs, blobfs.list_blobs().unwrap());
+        let data = b"Hello blobfs!";
+        let hello_merkle = fuchsia_merkle::root_from_slice(data);
+        blobfs.write_blob(hello_merkle, data).await.unwrap();
+        assert_eq!(blobfs.list_blobs().unwrap(), BTreeSet::from([hello_merkle]));
 
         blobfs.stop().await.unwrap();
-    }
-
-    #[fuchsia_async::run_singlethreaded(test)]
-    async fn blob_appears_in_readdir() {
-        let blobfs = BlobfsRamdisk::start().await.unwrap();
-        let root = blobfs.root_dir().unwrap();
-
-        let hello_merkle = write_blob(&root, "Hello blobfs!".as_bytes());
-        assert_eq!(list_blobs(&root), vec![hello_merkle]);
-
-        drop(root);
-        blobfs.stop().await.unwrap();
-    }
-
-    /// Writes a blob to blobfs, returning the computed merkle root of the blob.
-    #[allow(clippy::zero_prefixed_literal)]
-    fn write_blob(dir: &openat::Dir, payload: &[u8]) -> String {
-        let merkle = fuchsia_merkle::root_from_slice(payload).to_string();
-        let compressed_data = Type1Blob::generate(payload, CompressionMode::Always);
-        let mut f = dir.new_file(delivery_blob_path(&merkle), 0600).unwrap();
-        f.set_len(compressed_data.len() as u64).unwrap();
-        f.write_all(&compressed_data).unwrap();
-
-        merkle
-    }
-
-    /// Returns an unsorted list of blobs in the given blobfs dir.
-    fn list_blobs(dir: &openat::Dir) -> Vec<String> {
-        dir.list_dir(".")
-            .unwrap()
-            .map(|entry| entry.unwrap().file_name().to_owned().into_string().unwrap())
-            .collect()
     }
 
     #[fuchsia_async::run_singlethreaded(test)]
@@ -634,51 +618,42 @@ mod tests {
         }
     }
 
+    #[test_case(Implementation::CppBlobfs; "blobfs")]
+    #[test_case(Implementation::Fxblob; "fxblob")]
     #[fuchsia_async::run_singlethreaded(test)]
-    async fn ramdisk_into_blobfs_formats_ramdisk() {
-        let _: BlobfsRamdisk =
-            Ramdisk::builder().into_blobfs_builder().await.unwrap().start().await.unwrap();
+    async fn ramdisk_into_blobfs_formats_ramdisk(implementation: Implementation) {
+        let _: BlobfsRamdisk = Ramdisk::builder()
+            .into_blobfs_builder()
+            .await
+            .unwrap()
+            .implementation(implementation)
+            .start()
+            .await
+            .unwrap();
     }
 
+    #[test_case(Implementation::CppBlobfs; "blobfs")]
+    #[test_case(Implementation::Fxblob; "fxblob")]
     #[fuchsia_async::run_singlethreaded(test)]
-    async fn blobfs_supports_blob_creator_api() {
-        let blobfs = BlobfsRamdisk::builder().cpp_blobfs().start().await.unwrap();
+    async fn read_and_write(implementation: Implementation) {
+        let blobfs = BlobfsRamdisk::builder().implementation(implementation).start().await.unwrap();
 
-        let _: ffxfs::BlobCreatorProxy = blobfs.blob_creator_proxy().unwrap();
-
-        blobfs.stop().await.unwrap();
-    }
-
-    #[fuchsia_async::run_singlethreaded(test)]
-    async fn blobfs_supports_blob_reader_api() {
-        let blobfs = BlobfsRamdisk::builder().cpp_blobfs().start().await.unwrap();
-
-        let _: ffxfs::BlobReaderProxy = blobfs.blob_reader_proxy().unwrap();
-
-        blobfs.stop().await.unwrap();
-    }
-
-    #[fuchsia_async::run_singlethreaded(test)]
-    async fn fxblob_read_and_write() {
-        let blobfs = BlobfsRamdisk::builder().fxblob().start().await.unwrap();
-        let root = blobfs.root_dir().unwrap();
-
-        assert_eq!(list_blobs(&root), Vec::<String>::new());
+        assert_eq!(blobfs.list_blobs().unwrap(), BTreeSet::from([]));
         let data = "Hello blobfs!".as_bytes();
         let merkle = fuchsia_merkle::root_from_slice(data);
         blobfs.write_blob(merkle, data).await.unwrap();
 
-        assert_eq!(list_blobs(&root), vec![merkle.to_string()]);
+        assert_eq!(blobfs.list_blobs().unwrap(), BTreeSet::from([merkle]));
 
-        drop(root);
         blobfs.stop().await.unwrap();
     }
 
+    #[test_case(Implementation::CppBlobfs; "blobfs")]
+    #[test_case(Implementation::Fxblob; "fxblob")]
     #[fuchsia_async::run_singlethreaded(test)]
-    async fn fxblob_blob_creator_api() {
-        let blobfs = BlobfsRamdisk::builder().fxblob().start().await.unwrap();
-        let root = blobfs.root_dir().unwrap();
-        assert_eq!(list_blobs(&root), Vec::<String>::new());
+    async fn blob_creator_api(implementation: Implementation) {
+        let blobfs = BlobfsRamdisk::builder().implementation(implementation).start().await.unwrap();
+        assert_eq!(blobfs.list_blobs().unwrap(), BTreeSet::from([]));
 
         let bytes = &[1u8; 40];
         let hash = fuchsia_merkle::root_from_slice(bytes);
@@ -692,20 +667,25 @@ mod tests {
                 .unwrap();
         let () = blob_writer.write(&compressed_data).await.unwrap();
 
-        assert_eq!(list_blobs(&root), vec![hash.to_string()]);
+        assert_eq!(blobfs.list_blobs().unwrap(), BTreeSet::from([hash]));
 
-        drop(root);
         blobfs.stop().await.unwrap();
     }
 
+    #[test_case(Implementation::CppBlobfs; "blobfs")]
+    #[test_case(Implementation::Fxblob; "fxblob")]
     #[fuchsia_async::run_singlethreaded(test)]
-    async fn fxblob_blob_reader_api() {
+    async fn blob_reader_api(implementation: Implementation) {
         let data = "Hello blobfs!".as_bytes();
         let hash = fuchsia_merkle::root_from_slice(data);
-        let blobfs = BlobfsRamdisk::builder().fxblob().with_blob(data).start().await.unwrap();
+        let blobfs = BlobfsRamdisk::builder()
+            .implementation(implementation)
+            .with_blob(data)
+            .start()
+            .await
+            .unwrap();
 
-        let root = blobfs.root_dir().unwrap();
-        assert_eq!(list_blobs(&root), vec![hash.to_string()]);
+        assert_eq!(blobfs.list_blobs().unwrap(), BTreeSet::from([hash]));
 
         let blob_reader = blobfs.blob_reader_proxy().unwrap();
         let vmo = blob_reader.get_vmo(&hash.into()).await.unwrap().unwrap();
@@ -713,7 +693,6 @@ mod tests {
         let () = vmo.read(&mut buf, 0).unwrap();
         assert_eq!(buf, data);
 
-        drop(root);
         blobfs.stop().await.unwrap();
     }
 }

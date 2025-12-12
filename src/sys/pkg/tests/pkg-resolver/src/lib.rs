@@ -36,7 +36,7 @@ use mock_metrics::MockMetricEventLoggerFactory;
 use serde::Serialize;
 use std::collections::HashMap;
 use std::fs::File;
-use std::io::{self, BufWriter, Write};
+use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
@@ -893,27 +893,13 @@ pub struct TestEnv<B = BlobfsRamdisk> {
 }
 
 impl TestEnv<BlobfsRamdisk> {
-    pub fn add_slice_to_blobfs(&self, slice: &[u8]) {
-        let merkle = fuchsia_merkle::root_from_slice(slice).to_string();
-        let mut blob = self
-            .blobfs
-            .root_dir()
-            .expect("blobfs has root dir")
-            .write_file(merkle, 0)
-            .expect("create file in blobfs");
-        blob.set_len(slice.len() as u64).expect("set_len");
-        io::copy(&mut &slice[..], &mut blob).expect("copy from slice to blob");
+    pub async fn add_slice_to_blobfs(&self, slice: &[u8]) {
+        let merkle = fuchsia_merkle::root_from_slice(slice);
+        self.blobfs.write_blob(merkle, slice).await.expect("add blob to blobfs")
     }
 
-    pub fn add_file_with_hash_to_blobfs(&self, mut file: File, hash: &Hash) {
-        let mut blob = self
-            .blobfs
-            .root_dir()
-            .expect("blobfs has root dir")
-            .write_file(hash.to_string(), 0)
-            .expect("create file in blobfs");
-        blob.set_len(file.metadata().expect("file has metadata").len()).expect("set_len");
-        io::copy(&mut file, &mut blob).expect("copy file to blobfs");
+    pub async fn add_file_with_hash_to_blobfs(&self, file: File, hash: &Hash) {
+        self.blobfs.add_blob_from(*hash, file).await.expect("add blob to blobfs")
     }
 
     pub async fn stop(self) {

@@ -139,7 +139,7 @@ async fn separate_blobs_url() {
 // The backing blobfs is empty before the resolve.
 async fn verify_resolve_with_altered_env(
     pkg: Package,
-    alter_env: impl FnOnce(&TestEnv, &Package),
+    alter_env: impl AsyncFnOnce(&TestEnv, &Package),
 ) -> () {
     let env = TestEnvBuilder::new()
         .blobfs_and_system_image_hash(blobfs_ramdisk::BlobfsRamdisk::start().await.unwrap(), None)
@@ -174,7 +174,7 @@ async fn verify_resolve_with_altered_env(
         Vec::<String>::new()
     );
 
-    alter_env(&env, &pkg);
+    alter_env(&env, &pkg).await;
 
     let pkg_url = format!("fuchsia-pkg://test/{}", pkg.name());
     let (package_dir, _resolved_context) = env.resolve_package(&pkg_url).await.unwrap();
@@ -191,7 +191,7 @@ async fn verify_resolve_with_altered_env(
 
 // The backing blobfs is empty before the resolve.
 fn verify_resolve(pkg: Package) -> impl Future<Output = ()> {
-    verify_resolve_with_altered_env(pkg, |_, _| {})
+    verify_resolve_with_altered_env(pkg, async |_, _| {})
 }
 
 #[fuchsia::test]
@@ -549,7 +549,9 @@ async fn use_cached_package() {
 async fn meta_far_already_in_blobfs() {
     verify_resolve_with_altered_env(
         make_pkg_with_extra_blobs("meta_far_already_in_blobfs", 3).await,
-        |env, pkg| env.add_file_with_hash_to_blobfs(pkg.meta_far().unwrap(), pkg.hash()),
+        async |env, pkg| {
+            env.add_file_with_hash_to_blobfs(pkg.meta_far().unwrap(), pkg.hash()).await
+        },
     )
     .await
 }
@@ -557,11 +559,11 @@ async fn meta_far_already_in_blobfs() {
 #[fuchsia::test]
 async fn all_blobs_already_in_blobfs() {
     let s = "all_blobs_already_in_blobfs";
-    verify_resolve_with_altered_env(make_pkg_with_extra_blobs(s, 3).await, |env, pkg| {
-        env.add_file_with_hash_to_blobfs(pkg.meta_far().unwrap(), pkg.hash());
-        env.add_slice_to_blobfs(&test_package_bin(s)[..]);
+    verify_resolve_with_altered_env(make_pkg_with_extra_blobs(s, 3).await, async |env, pkg| {
+        env.add_file_with_hash_to_blobfs(pkg.meta_far().unwrap(), pkg.hash()).await;
+        env.add_slice_to_blobfs(&test_package_bin(s)[..]).await;
         for i in 0..3 {
-            env.add_slice_to_blobfs(extra_blob_contents(s, i).as_slice());
+            env.add_slice_to_blobfs(extra_blob_contents(s, i).as_slice()).await;
         }
     })
     .await
@@ -570,9 +572,9 @@ async fn all_blobs_already_in_blobfs() {
 #[fuchsia::test]
 async fn meta_far_and_one_content_blob_already_in_blobfs() {
     let s = "meta_far_and_one_content_blob_in_blobfs";
-    verify_resolve_with_altered_env(make_pkg_with_extra_blobs(s, 3).await, |env, pkg| {
-        env.add_file_with_hash_to_blobfs(pkg.meta_far().unwrap(), pkg.hash());
-        env.add_slice_to_blobfs(&test_package_bin(s)[..]);
+    verify_resolve_with_altered_env(make_pkg_with_extra_blobs(s, 3).await, async |env, pkg| {
+        env.add_file_with_hash_to_blobfs(pkg.meta_far().unwrap(), pkg.hash()).await;
+        env.add_slice_to_blobfs(&test_package_bin(s)[..]).await;
     })
     .await
 }
