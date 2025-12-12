@@ -2467,14 +2467,14 @@ alias(
 )
 
 alias(
-    name = "slab-0.4.9",
-    actual = "//third_party/rust_crates/vendor/slab-0.4.9:slab",
+    name = "slab-0.4.11",
+    actual = "//third_party/rust_crates/vendor/slab-0.4.11:slab",
     tags = ["manual"],
 )
 
 alias(
     name = "slab",
-    actual = "//third_party/rust_crates/vendor/slab-0.4.9:slab",
+    actual = "//third_party/rust_crates/vendor/slab-0.4.11:slab",
     tags = ["manual"],
 )
 

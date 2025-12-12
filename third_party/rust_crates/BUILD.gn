@@ -1018,7 +1018,7 @@ group("siphasher") {
 }
 
 group("slab") {
-  public_deps = [ ":slab-v0_4_9" ]
+  public_deps = [ ":slab-v0_4_11" ]
 }
 
 group("smallvec") {
@@ -7045,7 +7045,7 @@ rustc_library("fuse3-v0_6_1") {
   deps += [ ":futures-util-v0_3_31" ]
   deps += [ ":libc-v0_2_174" ]
   deps += [ ":serde-v1_0_228" ]
-  deps += [ ":slab-v0_4_9" ]
+  deps += [ ":slab-v0_4_11" ]
   deps += [ ":tokio-v1_38_1" ]
   deps += [ ":tracing-v0_1_41" ]
   deps += [ ":which-v4_0_2" ]
@@ -7486,7 +7486,7 @@ rustc_library("futures-util-v0_3_31") {
   deps += [ ":futures-task-v0_3_31" ]
   deps += [ ":pin-project-lite-v0_2_16" ]
   deps += [ ":pin-utils-v0_1_0" ]
-  deps += [ ":slab-v0_4_9" ]
+  deps += [ ":slab-v0_4_11" ]
 
   rustenv = [ "CARGO_PKG_NAME=futures-util" ]
 
@@ -17183,15 +17183,15 @@ rustc_library("siphasher-v1_0_1") {
   applicable_licenses = [ ":siphasher-v1_0_1.license" ]
 }
 
-license("slab-v0_4_9.license") {
+license("slab-v0_4_11.license") {
   public_package_name = "slab"
-  license_files = [ "//third_party/rust_crates/vendor/slab-0.4.9/LICENSE" ]
+  license_files = [ "//third_party/rust_crates/vendor/slab-0.4.11/LICENSE" ]
 }
 
-rustc_library("slab-v0_4_9") {
+rustc_library("slab-v0_4_11") {
   crate_name = "slab"
-  source_root = "//third_party/rust_crates/vendor/slab-0.4.9/src/lib.rs"
-  output_name = "slab-4972c41855e4b08c"
+  source_root = "//third_party/rust_crates/vendor/slab-0.4.11/src/lib.rs"
+  output_name = "slab-d361e45d2bc8338e"
   edition = "2018"
   disable_clippy = true
   enforce_source_listing = false
@@ -17203,15 +17203,15 @@ rustc_library("slab-v0_4_9") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=4972c41855e4b08c",
-    "-Cextra-filename=-4972c41855e4b08c",
+    "-Cmetadata=d361e45d2bc8338e",
+    "-Cextra-filename=-d361e45d2bc8338e",
     "--cfg=feature=\"default\"",
     "--cfg=feature=\"std\"",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":slab-v0_4_9.license" ]
+  applicable_licenses = [ ":slab-v0_4_11.license" ]
 }
 
 license("smallvec-v1_15_1.license") {
