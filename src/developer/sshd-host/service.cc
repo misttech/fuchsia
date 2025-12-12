@@ -321,9 +321,21 @@ void Service::LogRedirect::OnLog(async_dispatcher_t* dispatcher, async::WaitBase
   Wait();
 }
 
-void Service::OnStop(zx_status_t status, Controller* ptr) {
-  if (status != ZX_OK) {
-    FX_PLOGS(INFO, status) << "sshd component stopped with status";
+void Service::OnStop(zx_status_t status, std::optional<int64_t> exit_code, Controller* ptr) {
+  if (status == 11 && exit_code.has_value() && exit_code.value() == 255) {
+    // Exit status of 11 indicates that the component terminated with a non-standard
+    // exit code, and the sshd process returning 255 indicates that the
+    // sshd instance was terminated by the client.
+    FX_LOGS(TRACE) << "sshd component stopped with client termination. Code: " << exit_code.value();
+  } else if (status != ZX_OK) {
+    std::string exit_code_message;
+    if (exit_code.has_value()) {
+      exit_code_message = std::to_string(exit_code.value());
+    } else {
+      exit_code_message = "(none)";
+    }
+    FX_PLOGS(INFO, status) << "sshd component stopped with status " << status << "and exit code "
+                           << exit_code_message;
   }
 
   // The controller is currently executing on the dispatcher thread. We can't
