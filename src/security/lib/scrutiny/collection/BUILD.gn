@@ -12,6 +12,7 @@ if (is_host) {
     edition = "2024"
     deps = [
       "//src/lib/assembly/product_bundle",
+      "//src/lib/fuchsia-sync",
       "//src/lib/fuchsia-url",
       "//src/security/lib/scrutiny/utils",
       "//src/storage/lib/delivery_blob",

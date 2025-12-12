@@ -6,10 +6,11 @@ use crate::collection::DataCollection;
 use crate::error::ModelError;
 use crate::model_config::ModelConfig;
 use anyhow::{Error, Result};
+use fuchsia_sync::Mutex;
 use serde::{Deserialize, Serialize};
 use std::any::{Any, TypeId};
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 /// The DataModel is the public facing data abstraction which acts as the
 /// driver for the underlying data store. It is the job of the data model to
@@ -33,7 +34,7 @@ impl DataModel {
     pub fn get<T: DataCollection + Any + 'static + Send + Sync + for<'de> Deserialize<'de>>(
         &self,
     ) -> Result<Arc<T>> {
-        let collections = self.collections.lock().unwrap();
+        let collections = self.collections.lock();
         let type_id = TypeId::of::<T>();
         if collections.contains_key(&type_id) {
             if let Ok(result) = collections.get(&type_id).unwrap().clone().downcast::<T>() {
@@ -60,7 +61,7 @@ impl DataModel {
         &self,
         collection: T,
     ) -> Result<()> {
-        let mut collections = self.collections.lock().unwrap();
+        let mut collections = self.collections.lock();
         let type_id = TypeId::of::<T>();
         collections.insert(type_id, Arc::new(collection));
         Ok(())

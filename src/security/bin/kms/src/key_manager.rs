@@ -3,14 +3,14 @@
 // found in the LICENSE file.
 
 use crate::common::{DataRequest, KeyAttributes, KeyRequestType, KeyType, KmsKey};
+use crate::crypto_provider::CryptoProvider;
 use crate::crypto_provider::optee_provider::OpteeProvider;
 use crate::crypto_provider::software_provider::SoftwareProvider;
-use crate::crypto_provider::CryptoProvider;
 use crate::kms_asymmetric_key::KmsAsymmetricKey;
 use crate::kms_sealing_key::{KmsSealingKey, SEALING_KEY_NAME};
 use anyhow::format_err;
-use base64::engine::general_purpose::URL_SAFE as BASE64_URL_SAFE;
 use base64::engine::Engine as _;
+use base64::engine::general_purpose::URL_SAFE as BASE64_URL_SAFE;
 use fidl::endpoints::ServerEnd;
 use fidl_fuchsia_kms::{
     AsymmetricKeyAlgorithm, AsymmetricPrivateKeyMarker, Error, KeyManagerRequest, KeyOrigin,
@@ -18,13 +18,14 @@ use fidl_fuchsia_kms::{
 };
 use fidl_fuchsia_mem::Buffer;
 use fuchsia_async as fasync;
+use fuchsia_sync::{Mutex, RwLock};
 use futures::prelude::*;
 use log::{error, warn};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::io::{Error as IOError, ErrorKind};
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::Arc;
 use std::{fs, str};
 
 const DEFAULT_PROVIDER: KeyProvider = KeyProvider::SoftwareProvider;
@@ -82,7 +83,7 @@ impl KeyManager {
     }
 
     pub fn set_provider(&mut self, crypto_provider: KeyProvider) -> Result<(), anyhow::Error> {
-        if !self.crypto_provider_map.read().unwrap().contains_key(&crypto_provider) {
+        if !self.crypto_provider_map.read().contains_key(&crypto_provider) {
             return Err(format_err!("Invalid crypto provider name"));
         }
         self.provider = crypto_provider;
@@ -177,7 +178,6 @@ impl KeyManager {
                 while let Some(r) = request_stream.try_next().await? {
                     key_to_bind
                         .lock()
-                        .unwrap()
                         .handle_request(KeyRequestType::AsymmetricPrivateKeyRequest(r))?;
                 }
                 Ok(())
@@ -202,7 +202,7 @@ impl KeyManager {
     /// * `key_map` - The reference to the key object map.
     /// * `key_name` - The name for the key that is no longer required.
     fn clean_up(key_map: Arc<Mutex<HashMap<String, Arc<Mutex<dyn KmsKey>>>>>, key_name: &str) {
-        let mut key_map = key_map.lock().unwrap();
+        let mut key_map = key_map.lock();
         if key_map.contains_key(key_name) {
             let key_only_referenced_in_map = {
                 let key = &key_map[key_name];
@@ -307,7 +307,7 @@ impl KeyManager {
         Self::check_asymmmetric_supported_algorithms(key_algorithm, provider)?;
         // Create a new symmetric key object and store it into the key map.
         // Obtain a lock on the key map to start a critical section.
-        let mut key_map = self.user_key_map.lock().unwrap();
+        let mut key_map = self.user_key_map.lock();
         if key_map.contains_key(key_name) || self.key_file_exists(key_name, true) {
             return Err(Error::KeyAlreadyExists);
         }
@@ -361,12 +361,12 @@ impl KeyManager {
     /// * `key_name` - The name for the key to be find.
     fn get_asymmetric_private_key(&self, key_name: &str) -> Result<Arc<Mutex<dyn KmsKey>>, Error> {
         // Start a critical section.
-        let mut key_map = self.user_key_map.lock().unwrap();
+        let mut key_map = self.user_key_map.lock();
         let key_to_bind = match key_map.get(key_name) {
             Some(key) => Arc::clone(key),
             None => {
                 // The key is not in key map, read it from file.
-                let provider_map = self.crypto_provider_map.read().unwrap();
+                let provider_map = self.crypto_provider_map.read();
                 let key_attributes =
                     self.read_key_attributes_from_file(key_name, &provider_map, true)?;
                 let asym_key = KmsAsymmetricKey::parse_key(key_name, key_attributes)?;
@@ -394,7 +394,7 @@ impl KeyManager {
     fn delete_key(&self, key_name: &str) -> Result<(), Error> {
         // Obtain a lock on the user_key_map to start a critical section to make sure there is no
         // overlapping deleting/generating/importing/getting key operations.
-        let mut key_map = self.user_key_map.lock().unwrap();
+        let mut key_map = self.user_key_map.lock();
         // Always remove the key from key_map first. This would have no side effect even if the
         // delete operation fails early because we could always read the key from file and put
         // it back to the key_map later.
@@ -403,10 +403,10 @@ impl KeyManager {
             // currently being used, this operation would blocked. However, if the key handle is
             // possessed in another job but there is no operation ongoing with the handle, we would
             // set the deleted bit so that the handle would fail on any further operations.
-            key.lock().unwrap().delete()?;
+            key.lock().delete()?;
         } else {
             // The key is not currently used, create an in-memory key structure.
-            let provider_map = self.crypto_provider_map.read().unwrap();
+            let provider_map = self.crypto_provider_map.read();
             let key_attributes =
                 self.read_key_attributes_from_file(key_name, &provider_map, true)?;
             // Ask the crypto provider to delete the key.
@@ -446,7 +446,6 @@ impl KeyManager {
         // guaranteed to not return any FIDL error.
         sealing_key
             .lock()
-            .unwrap()
             .handle_request(KeyRequestType::SealingKeyRequest(DataRequest {
                 data,
                 result: &mut result,
@@ -481,7 +480,6 @@ impl KeyManager {
         let mut result = Err(Error::InternalError);
         sealing_key
             .lock()
-            .unwrap()
             .handle_request(KeyRequestType::UnsealingKeyRequest(DataRequest {
                 data,
                 result: &mut result,
@@ -497,11 +495,11 @@ impl KeyManager {
     ) -> Result<Arc<Mutex<dyn KmsKey>>, Error> {
         // Sealing key is managed internally, so we store them in internal_key_map.
         // Begin a critical section.
-        let mut key_map = self.internal_key_map.lock().unwrap();
+        let mut key_map = self.internal_key_map.lock();
         let key_name = SEALING_KEY_NAME;
         let sealing_key = if !key_map.contains_key(key_name) {
             // If sealing key is not in the key map, load it in.
-            let provider_map = self.crypto_provider_map.read().unwrap();
+            let provider_map = self.crypto_provider_map.read();
             // Sealing key is not a user key.
             let sealing_key =
                 match self.read_key_attributes_from_file(&key_name, &provider_map, false) {
@@ -696,11 +694,11 @@ impl KeyManager {
         name: KeyProvider,
         f: F,
     ) -> O {
-        f(self.crypto_provider_map.read().unwrap().get(&name).map(|provider| provider.as_ref()))
+        f(self.crypto_provider_map.read().get(&name).map(|provider| provider.as_ref()))
     }
 
     pub fn add_provider(&mut self, provider: Box<dyn CryptoProvider>) {
-        let provider_map = &mut self.crypto_provider_map.write().unwrap();
+        let provider_map = &mut self.crypto_provider_map.write();
         if provider_map.contains_key(&provider.get_name()) {
             panic!("Two providers should not have the same name!");
         }
@@ -712,8 +710,8 @@ impl KeyManager {
 mod tests {
     use super::*;
     use crate::common::{self as common, ASYMMETRIC_KEY_ALGORITHMS};
-    use crate::crypto_provider::mock_provider::MockProvider;
     use crate::crypto_provider::CryptoProviderError;
+    use crate::crypto_provider::mock_provider::MockProvider;
     use tempfile::tempdir;
     static TEST_KEY_NAME: &str = "TestKey";
 
@@ -762,7 +760,7 @@ mod tests {
         let key = key_manager
             .generate_asymmetric_key(TEST_KEY_NAME, key_algorithm, mock_provider)
             .unwrap();
-        let key = key.lock().unwrap();
+        let key = key.lock();
         assert_eq!(TEST_KEY_NAME, key.get_key_name());
         assert_eq!(key_algorithm, key.get_key_algorithm());
         assert_eq!(test_output_data, key.get_key_data());
@@ -806,11 +804,11 @@ mod tests {
                 .generate_asymmetric_key(TEST_KEY_NAME, key_algorithm, mock_provider)
                 .unwrap();
             let key_info = {
-                let key = key.lock().unwrap();
+                let key = key.lock();
                 (key.get_key_name().to_string(), key.get_key_data())
             };
             let same_key = key_manager.get_asymmetric_private_key(TEST_KEY_NAME).unwrap();
-            let same_key_lock = same_key.lock().unwrap();
+            let same_key_lock = same_key.lock();
             assert_eq!(same_key_lock.get_key_name(), &key_info.0);
             assert_eq!(same_key_lock.get_key_data(), key_info.1);
             key_info
@@ -821,7 +819,7 @@ mod tests {
 
         // If we read again, it should read from file.
         let new_key_to_bind = key_manager.get_asymmetric_private_key(TEST_KEY_NAME).unwrap();
-        let same_key_lock = new_key_to_bind.lock().unwrap();
+        let same_key_lock = new_key_to_bind.lock();
         assert_eq!(same_key_lock.get_key_name(), &key_info.0);
         assert_eq!(same_key_lock.get_key_data(), key_info.1);
         assert_eq!(mock_provider.get_called_key_data(), key_info.1);
@@ -858,7 +856,7 @@ mod tests {
                 mock_provider,
             )
             .unwrap();
-        let key = key.lock().unwrap();
+        let key = key.lock();
         assert_eq!(TEST_KEY_NAME, key.get_key_name());
         assert_eq!(test_output_data, key.get_key_data());
         assert_eq!(key_algorithm, key.get_key_algorithm());
@@ -935,7 +933,7 @@ mod tests {
             key_manager.delete_key(TEST_KEY_NAME).unwrap();
             // Try deleting the key again, should fail.
             assert_eq!(Error::KeyNotFound, key_manager.delete_key(TEST_KEY_NAME).unwrap_err());
-            assert_eq!(true, key.lock().unwrap().is_deleted());
+            assert_eq!(true, key.lock().is_deleted());
             // Try getting the deleted key, should get key_not_found.
             assert_eq!(
                 Error::KeyNotFound,
