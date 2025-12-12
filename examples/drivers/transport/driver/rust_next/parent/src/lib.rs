@@ -132,7 +132,7 @@ mod tests {
         started_driver
             .harness()
             .dispatcher()
-            .spawn_task(async move {
+            .spawn(async move {
                 let dispatcher = ClientDispatcher::new(client_end);
                 let client = dispatcher.client();
                 sender.send(client).unwrap();

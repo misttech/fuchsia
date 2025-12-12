@@ -496,7 +496,7 @@ mod tests {
     fn async_ping_pong() {
         spawn_in_driver("async ping pong", async {
             let (ping_chan, pong_chan) = Channel::create();
-            CurrentDispatcher.spawn_task(ping(ping_chan)).unwrap();
+            CurrentDispatcher.spawn(ping(ping_chan)).unwrap();
             pong(pong_chan).await;
         });
     }
@@ -602,7 +602,7 @@ mod tests {
         let (fin_tx, fin_rx) = oneshot::channel();
         let pending_count = Arc::new(AtomicU64::new(0));
         dispatcher
-            .spawn_task(recv_lots_of_bytes_with_cancellations(rx, fin_tx, pending_count.clone()))
+            .spawn(recv_lots_of_bytes_with_cancellations(rx, fin_tx, pending_count.clone()))
             .unwrap();
 
         send_lots_of_bytes(tx, fin_rx, pending_count).await;

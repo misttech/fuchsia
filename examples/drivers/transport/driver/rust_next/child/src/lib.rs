@@ -125,7 +125,7 @@ mod tests {
         ) {
             let bitrate = self.bitrate.clone();
             self.dispatcher
-                .spawn_task(async move {
+                .spawn(async move {
                     let dispatcher = ServerDispatcher::new(server_end);
                     dispatcher.run(I2cImplServer { bitrate }).await.unwrap();
                 })

@@ -253,19 +253,15 @@ mod tests {
 
         let (server_chan, client_chan) = Channel::<[fidl_next::Chunk]>::create();
 
-        let (client_exit_tx, client_exit_rx) = futures::channel::oneshot::channel();
         spawn_in_driver("driver registration", async move {
             let client_end: ClientEnd<fidl_next_fuchsia_driver_framework::Driver, _> =
                 ClientEnd::from_untyped(fdf_fidl::DriverChannel::new(client_chan));
             let dispatcher = ClientDispatcher::new(client_end);
             let client = dispatcher.client();
 
-            CurrentDispatcher
-                .spawn_task(async move {
-                    dispatcher.run(DriverClient).await.unwrap_err();
-                    client_exit_tx.send(()).unwrap();
-                })
-                .unwrap();
+            let client_task = CurrentDispatcher.compute(async move {
+                dispatcher.run(DriverClient).await.unwrap_err();
+            });
 
             let channel_handle = server_chan.into_driver_handle().into_raw().get();
             let driver_server = unsafe { initialize_func(channel_handle) } as usize;
@@ -278,7 +274,7 @@ mod tests {
                 .unwrap();
 
             client.stop().await.unwrap();
-            client_exit_rx.await.unwrap();
+            client_task.await.unwrap();
 
             unsafe {
                 destroy_func(driver_server as *mut c_void);

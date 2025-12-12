@@ -2,6 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+//! Safe bindings for using FIDL with the fuchsia driver framework C API
+#![deny(unsafe_op_in_unsafe_fn, missing_docs)]
+
 mod wire;
 
 use fuchsia_sync::{Mutex, MutexGuard};
@@ -11,7 +14,7 @@ use std::pin::Pin;
 use std::ptr::NonNull;
 use std::task::{Context, Poll};
 
-use fidl_next::Chunk;
+use fidl_next::{Chunk, HasExecutor};
 use zx::{HandleBased, Status};
 
 use fdf_channel::arena::{Arena, ArenaBox};
@@ -209,6 +212,7 @@ impl fidl_next::fuchsia::HandleEncoder for SendBuffer {
     }
 }
 
+#[doc(hidden)] // Internal implementation detail of the fidl bindings.
 pub struct RecvBuffer {
     buffer: Option<Message<[Chunk]>>,
     data_offset: usize,
@@ -463,7 +467,7 @@ impl<D: OnDispatcher> fidl_next::Transport for DriverChannel<D> {
 
 impl<D> fidl_next::RunsTransport<DriverChannel<D>> for fidl_next::fuchsia_async::FuchsiaAsync {}
 
-impl<D> fidl_next::HasExecutor for DriverChannel<D> {
+impl<D: OnDispatcher + 'static> HasExecutor for DriverChannel<D> {
     type Executor = fidl_next::fuchsia_async::FuchsiaAsync;
 
     fn executor(&self) -> Self::Executor {
@@ -518,13 +522,13 @@ mod test {
             let client = client_dispatcher.client();
 
             CurrentDispatcher
-                .spawn_task(async {
+                .spawn(async {
                     server_dispatcher.run(DeviceServer).await.unwrap();
                     println!("server task finished");
                 })
                 .unwrap();
             CurrentDispatcher
-                .spawn_task(async {
+                .spawn(async {
                     client_dispatcher.run(DeviceClient).await.unwrap();
                     println!("client task finished");
                 })

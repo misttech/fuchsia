@@ -19,7 +19,9 @@ use zx::Status;
 use crate::shutdown_observer::ShutdownObserver;
 
 pub use fdf_sys::fdf_dispatcher_t;
-pub use libasync::{AfterDeadline, AsyncDispatcher, AsyncDispatcherRef, OnDispatcher};
+pub use libasync::{
+    AfterDeadline, AsyncDispatcher, AsyncDispatcherRef, JoinHandle, OnDispatcher, Task,
+};
 
 /// A marker trait for a function type that can be used as a shutdown observer for [`Dispatcher`].
 pub trait ShutdownObserverFn: FnOnce(DispatcherRef<'_>) + Send + 'static {}
@@ -569,8 +571,8 @@ mod tests {
             let (fin_tx, fin_rx) = mpsc::channel();
             let (ping_tx, pong_rx) = async_mpsc::channel(10);
             let (pong_tx, ping_rx) = async_mpsc::channel(10);
-            dispatcher.spawn_task(ping(ping_tx, ping_rx)).unwrap();
-            dispatcher.spawn_task(pong(fin_tx, pong_tx, pong_rx)).unwrap();
+            dispatcher.spawn(ping(ping_tx, ping_rx)).unwrap();
+            dispatcher.spawn(pong(fin_tx, pong_tx, pong_rx)).unwrap();
 
             fin_rx.recv().expect("to receive final value");
         });
@@ -606,7 +608,7 @@ mod tests {
             let (pong_tx, ping_rx) = async_mpsc::channel(10);
 
             // spawn ping on the driver dispatcher
-            dispatcher.spawn_task(ping(ping_tx, ping_rx)).unwrap();
+            dispatcher.spawn(ping(ping_tx, ping_rx)).unwrap();
 
             // and run pong on the fuchsia_async executor
             let mut executor = fuchsia_async::LocalExecutor::default();

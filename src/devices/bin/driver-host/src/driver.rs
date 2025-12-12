@@ -428,7 +428,7 @@ impl Driver {
                 .as_ref()
                 .expect("dispatcher should always be valid")
                 .downgrade()
-                .spawn_task(async move {
+                .spawn(async move {
                     {
                         let mut inner = self_clone.inner.lock();
                         let hooks = &inner.hooks;
@@ -516,7 +516,7 @@ impl Driver {
             .as_ref()
             .expect("dispatcher should always be valid")
             .downgrade()
-            .spawn_task(async move {
+            .spawn(async move {
             // Wait for driver manager to issue stop or the driver to have dropped its end of the
             // driver channel.
             futures::select! {

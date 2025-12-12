@@ -5,24 +5,20 @@
 //! Safe bindings for the C libasync async dispatcher library
 
 use libasync_sys::*;
-use zx::sys::ZX_OK;
 
 use core::cell::UnsafeCell;
 use core::future::Future;
 use core::marker::PhantomData;
 use core::ptr::NonNull;
-use core::task::Context;
-use fuchsia_sync::Mutex;
 use std::sync::{Arc, Weak};
 
 use zx::Status;
 
-use futures::future::{BoxFuture, FutureExt};
-use futures::task::{ArcWake, waker_ref};
-
 mod after_deadline;
+mod task;
 
 pub use after_deadline::*;
+pub use task::*;
 
 /// An unowned reference to a driver runtime dispatcher such as is produced by calling
 /// [`AsyncDispatcher::release`]. When this object goes out of scope it won't shut down the dispatcher,
@@ -127,16 +123,37 @@ pub trait OnDispatcher: Clone + Send + Sync {
         })
     }
 
-    /// Spawn an asynchronous task on this dispatcher. If this returns [`Ok`] then the task
-    /// has successfully been scheduled and will run or be cancelled and dropped when the dispatcher
-    /// shuts down.
-    fn spawn_task(&self, future: impl Future<Output = ()> + Send + 'static) -> Result<(), Status>
+    /// Spawn an asynchronous task on this dispatcher. If this returns [`Ok`] then the task has
+    /// successfully been scheduled and will run or be cancelled and dropped when the dispatcher
+    /// shuts down. The returned future's result will be [`Ok`] if the future completed
+    /// successfully, or an [`Err`] if the task did not complete for some reason (like the
+    /// dispatcher shut down).
+    ///
+    /// Returns a [`JoinHandle`] that will detach the future when dropped.
+    fn spawn(
+        &self,
+        future: impl Future<Output = ()> + Send + 'static,
+    ) -> Result<JoinHandle<()>, Status>
     where
         Self: 'static,
     {
-        let task =
-            Arc::new(Task { future: Mutex::new(Some(future.boxed())), dispatcher: self.clone() });
-        task.queue()
+        Task::try_start(future, self.clone()).map(Task::detach_on_drop)
+    }
+
+    /// Spawn an asynchronous task that outputs type 'T' on this dispatcher. The returned future's
+    /// result will be [`Ok`] if the task was started and completed successfully, or an [`Err`] if
+    /// the task couldn't be started or failed to complete (for example because the dispatcher was
+    /// shutting down).
+    ///
+    /// Returns a [`Task`] that will cancel the future when dropped.
+    fn compute<T: Send + 'static>(
+        &self,
+        future: impl Future<Output = T> + Send + 'static,
+    ) -> Task<T>
+    where
+        Self: 'static,
+    {
+        Task::start(future, self.clone())
     }
 
     /// Returns a future that will fire when after the given deadline time.
@@ -181,55 +198,6 @@ impl<T: AsyncDispatcher> OnDispatcher for Weak<T> {
 /// A marker trait for a callback that can be used with [`Dispatcher::post_task_sync`].
 pub trait TaskCallback: FnOnce(Status) + 'static + Send {}
 impl<T> TaskCallback for T where T: FnOnce(Status) + 'static + Send {}
-
-struct Task<D> {
-    future: Mutex<Option<BoxFuture<'static, ()>>>,
-    dispatcher: D,
-}
-
-impl<D: OnDispatcher + 'static> ArcWake for Task<D> {
-    fn wake_by_ref(arc_self: &Arc<Self>) {
-        match arc_self.queue() {
-            Err(e) if e == Status::BAD_STATE => {
-                // the dispatcher is shutting down so drop the future, if there
-                // is one, to cancel it.
-                let future_slot = arc_self.future.lock().take();
-                core::mem::drop(future_slot);
-            }
-            res => res.expect("Unexpected error waking dispatcher task"),
-        }
-    }
-}
-
-impl<D: OnDispatcher + 'static> Task<D> {
-    /// Posts a task to progress the currently stored future. The task will
-    /// consume the future if the future is ready after the next poll.
-    /// Otherwise, the future is kept to be polled again after being woken.
-    fn queue(self: &Arc<Self>) -> Result<(), Status> {
-        let arc_self = self.clone();
-        self.dispatcher.on_maybe_dispatcher(move |dispatcher| {
-            dispatcher
-                .post_task_sync(move |status| {
-                    let mut future_slot = arc_self.future.lock();
-                    // if we're cancelled, drop the future we're waiting on.
-                    if status != Status::from_raw(ZX_OK) {
-                        core::mem::drop(future_slot.take());
-                        return;
-                    }
-
-                    let Some(mut future) = future_slot.take() else {
-                        return;
-                    };
-                    let waker = waker_ref(&arc_self);
-                    let context = &mut Context::from_waker(&waker);
-                    if future.as_mut().poll(context).is_pending() {
-                        *future_slot = Some(future);
-                    }
-                })
-                .map(|_| ())
-        })
-    }
-}
 
 #[repr(C)]
 struct TaskFunc {

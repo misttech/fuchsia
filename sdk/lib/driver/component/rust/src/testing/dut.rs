@@ -12,7 +12,6 @@ use fdf_env::Environment;
 use fdf_fidl::DriverChannel;
 use fidl_next::{Client as NextClient, ClientDispatcher, ClientEnd as NextClientEnd};
 use fidl_next_fuchsia_driver_framework::{Driver as NextDriver, DriverStartArgs};
-use futures::channel::oneshot;
 use std::marker::PhantomData;
 use std::sync::{Arc, mpsc};
 use zx::Status;
@@ -90,25 +89,23 @@ impl<'a, D: Driver> DriverUnderTest<'a, D> {
             AutoReleaseDispatcher::from(driver.new_dispatcher(dispatcher_builder).unwrap());
         let (server_chan, client_chan) = fdf::Channel::<[fidl_next::Chunk]>::create();
         let channel_handle = server_chan.into_driver_handle().into_raw().get();
-        let (token_sender, token_receiver) = oneshot::channel();
         let (client_exit_tx, client_exit_rx) = mpsc::channel();
         let initialize_fn = registration.v1.initialize.unwrap();
-        WeakDispatcher::from(&dispatcher)
-            .spawn_task(async move {
+        let token = WeakDispatcher::from(&dispatcher)
+            .compute(async move {
                 // SAFETY: We know it's safe to call initialize from the initial dispatcher and we
                 // know channel_handle is non-zero.
-                let token = unsafe { initialize_fn(channel_handle) }.addr();
-                token_sender.send(token).expect("send");
+                unsafe { initialize_fn(channel_handle) }.addr()
             })
+            .await
             .unwrap();
 
-        let token = token_receiver.await.unwrap();
         let client_end: NextClientEnd<NextDriver, DriverChannel> =
             NextClientEnd::from_untyped(DriverChannel::new(client_chan));
         let client_dispatcher = ClientDispatcher::new(client_end);
         let client = client_dispatcher.client();
         WeakDispatcher::from(&dispatcher)
-            .spawn_task(async move {
+            .spawn(async move {
                 // We have to manually run the client indefinitely until it returns a PEER_CLOSED.
                 // At that point the driver has closed its server which signifies it has
                 // completed its stop or has failed to start.
