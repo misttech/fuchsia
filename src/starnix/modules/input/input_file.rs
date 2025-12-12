@@ -153,8 +153,8 @@ impl LinuxEventWithTraceId {
         match event.type_ as u32 {
             uapi::EV_SYN => {
                 let trace_id = fuchsia_trace::Id::random();
-                trace_duration!(c"input", c"linux_event_create");
-                trace_flow_begin!(c"input", c"linux_event", trace_id);
+                trace_duration!("input", "linux_event_create");
+                trace_flow_begin!("input", "linux_event", trace_id);
                 LinuxEventWithTraceId { event: event, trace_id: Some(trace_id) }
             }
             // EV_SYN marks the end of a complete input event. Other event types are its properties,
@@ -526,7 +526,7 @@ impl FileOps for InputFile {
         offset: usize,
         data: &mut dyn OutputBuffer,
     ) -> Result<usize, Errno> {
-        trace_duration!(c"input", c"InputFile::read");
+        trace_duration!("input", "InputFile::read");
         debug_assert!(offset == 0);
         let mut inner = self.inner.lock();
         let num_events = inner.events.len();
@@ -563,8 +563,8 @@ impl FileOps for InputFile {
 
         for event in &events {
             if let Some(trace_id) = event.trace_id {
-                trace_duration!(c"input", c"linux_event_read");
-                trace_flow_end!(c"input", c"linux_event", trace_id);
+                trace_duration!("input", "linux_event_read");
+                trace_flow_end!("input", "linux_event", trace_id);
             }
         }
 

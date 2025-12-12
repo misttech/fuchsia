@@ -35,7 +35,6 @@ use starnix_uapi::user_address::{UserAddress, UserCStringPtr, UserRef};
 use starnix_uapi::vfs::FdEvents;
 use starnix_uapi::{errno, errno_from_code, error, pid_t, uapi};
 use std::collections::{HashMap, HashSet, VecDeque};
-use std::ffi::CStr;
 use std::rc::Rc;
 use std::sync::{Arc, Weak};
 use zx::Peered;
@@ -47,11 +46,10 @@ use {
 const EXECUTOR_THREAD_ROLE: &str = "fuchsia.starnix.remote_binder.executor";
 
 // The name used to track the duration of a remote binder ioctl.
-const NAME_REMOTE_BINDER_IOCTL: &'static CStr = c"remote_binder_ioctl";
-const NAME_REMOTE_BINDER_IOCTL_SEND_WORK: &'static CStr = c"remote_binder_ioctl_send_work";
-const NAME_REMOTE_BINDER_IOCTL_FIDL_REPLY: &'static CStr = c"remote_binder_ioctl_fidl_reply";
-const NAME_REMOTE_BINDER_IOCTL_WORKER_PROCESS: &'static CStr =
-    c"remote_binder_ioctl_worker_process";
+const NAME_REMOTE_BINDER_IOCTL: &'static str = "remote_binder_ioctl";
+const NAME_REMOTE_BINDER_IOCTL_SEND_WORK: &'static str = "remote_binder_ioctl_send_work";
+const NAME_REMOTE_BINDER_IOCTL_FIDL_REPLY: &'static str = "remote_binder_ioctl_fidl_reply";
+const NAME_REMOTE_BINDER_IOCTL_WORKER_PROCESS: &'static str = "remote_binder_ioctl_worker_process";
 
 const WAKE_LOCK_ACQUIRED_SIGNAL: zx::Signals = zx::Signals::USER_0;
 

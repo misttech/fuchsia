@@ -46,7 +46,7 @@ impl FileOps for TraceMarkerFile {
         _offset: usize,
         data: &mut dyn InputBuffer,
     ) -> Result<usize, Errno> {
-        fuchsia_trace::duration!(CATEGORY_TRACE_META, c"Write atrace event");
+        fuchsia_trace::duration!(CATEGORY_TRACE_META, "Write atrace event");
         if self.queue.is_enabled() {
             let mut bytes = data.read_all()?;
             let bytes_read = bytes.len();

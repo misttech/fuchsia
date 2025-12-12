@@ -332,11 +332,11 @@ impl InputEventsRelay {
         default_touch_device: &mut DeviceState,
         touch_events: Vec<FidlTouchEvent>,
     ) -> Vec<FidlTouchResponse> {
-        trace_duration!(c"input", c"starnix_process_touch_event");
+        trace_duration!("input", "starnix_process_touch_event");
         for e in &touch_events {
             match e.trace_flow_id {
                 Some(trace_flow_id) => {
-                    trace_flow_step!(c"input", c"dispatch_event_to_client", trace_flow_id.into());
+                    trace_flow_step!("input", "dispatch_event_to_client", trace_flow_id.into());
                 }
                 None => {
                     log_warn!("touch event has not tracing id");
@@ -355,7 +355,7 @@ impl InputEventsRelay {
         num_ignored_events += ignored_events;
 
         for (device_id, events) in events_by_device {
-            trace_duration_begin!(c"input", c"starnix_process_per_device_touch_event");
+            trace_duration_begin!("input", "starnix_process_per_device_touch_event");
 
             let dev = self.devices.get_mut(&device_id).unwrap_or(default_touch_device);
 
@@ -372,7 +372,7 @@ impl InputEventsRelay {
                 num_unexpected_events += batch.count_unexpected_fidl_events;
                 last_event_time_ns = batch.last_event_time_ns;
             } else {
-                trace_duration_end!(c"input", c"starnix_process_per_device_touch_event");
+                trace_duration_end!("input", "starnix_process_per_device_touch_event");
                 log_warn!(
                     "Non touch device received touch events: device_id = {}, device_type = {}",
                     device_id,
@@ -398,7 +398,7 @@ impl InputEventsRelay {
                 );
             }
 
-            trace_duration_end!(c"input", c"starnix_process_per_device_touch_event");
+            trace_duration_end!("input", "starnix_process_per_device_touch_event");
             dev.open_files.lock().retain(|f| {
                 let Some(file) = f.upgrade() else {
                     log_warn!("Dropping input file for touch that failed to upgrade");
@@ -446,7 +446,7 @@ impl InputEventsRelay {
     ) {
         match request {
             KeyboardListenerRequest::OnKeyEvent { event, responder } => {
-                trace_duration!(c"input", c"starnix_process_keyboard_event");
+                trace_duration!("input", "starnix_process_keyboard_event");
 
                 let new_events = parse_fidl_keyboard_event_to_linux_input_event(
                     &event,
@@ -493,7 +493,7 @@ impl InputEventsRelay {
         let mut function_was_pressed_after = false;
         match button_event {
             fuipolicy::MediaButtonsListenerRequest::OnEvent { event, responder } => {
-                trace_duration!(c"input", c"starnix_process_media_button_event");
+                trace_duration!("input", "starnix_process_media_button_event");
 
                 let batch =
                     parse_fidl_media_button_event(&event, power_was_pressed, function_was_pressed);
@@ -580,7 +580,7 @@ impl InputEventsRelay {
         button_event: fuipolicy::TouchButtonsListenerRequest,
         palm_was_pressed: bool,
     ) -> bool {
-        trace_duration!(c"input", c"starnix_process_touch_button_event");
+        trace_duration!("input", "starnix_process_touch_button_event");
         match button_event {
             fuipolicy::TouchButtonsListenerRequest::OnEvent { event, responder } => {
                 let batch = parse_fidl_touch_button_event(&event, palm_was_pressed);
