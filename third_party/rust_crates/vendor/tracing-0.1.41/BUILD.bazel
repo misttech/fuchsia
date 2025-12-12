@@ -83,6 +83,6 @@ rust_library(
     deps = [
         "//third_party/rust_crates/forks/tracing-core:tracing_core",
         "//third_party/rust_crates/vendor/log-0.4.27:log",
-        "//third_party/rust_crates/vendor/pin-project-lite-0.2.13:pin_project_lite",
+        "//third_party/rust_crates/vendor/pin-project-lite-0.2.16:pin_project_lite",
     ],
 )

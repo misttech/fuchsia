@@ -73,6 +73,6 @@ rust_library(
     deps = [
         "//third_party/rust_crates/vendor/bytes-1.10.1:bytes",
         "//third_party/rust_crates/vendor/http-0.2.4:http",
-        "//third_party/rust_crates/vendor/pin-project-lite-0.2.13:pin_project_lite",
+        "//third_party/rust_crates/vendor/pin-project-lite-0.2.16:pin_project_lite",
     ],
 )

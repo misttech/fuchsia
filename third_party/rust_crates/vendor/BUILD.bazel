@@ -1783,14 +1783,14 @@ alias(
 )
 
 alias(
-    name = "pin-project-lite-0.2.13",
-    actual = "//third_party/rust_crates/vendor/pin-project-lite-0.2.13:pin_project_lite",
+    name = "pin-project-lite-0.2.16",
+    actual = "//third_party/rust_crates/vendor/pin-project-lite-0.2.16:pin_project_lite",
     tags = ["manual"],
 )
 
 alias(
     name = "pin-project-lite",
-    actual = "//third_party/rust_crates/vendor/pin-project-lite-0.2.13:pin_project_lite",
+    actual = "//third_party/rust_crates/vendor/pin-project-lite-0.2.16:pin_project_lite",
     tags = ["manual"],
 )
 

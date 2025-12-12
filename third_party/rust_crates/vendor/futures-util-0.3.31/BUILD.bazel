@@ -99,7 +99,7 @@ rust_library(
         "//third_party/rust_crates/vendor/futures-io-0.3.31:futures_io",
         "//third_party/rust_crates/vendor/futures-sink-0.3.31:futures_sink",
         "//third_party/rust_crates/vendor/futures-task-0.3.31:futures_task",
-        "//third_party/rust_crates/vendor/pin-project-lite-0.2.13:pin_project_lite",
+        "//third_party/rust_crates/vendor/pin-project-lite-0.2.16:pin_project_lite",
         "//third_party/rust_crates/vendor/pin-utils-0.1.0:pin_utils",
         "//third_party/rust_crates/vendor/slab-0.4.9:slab",
     ],
