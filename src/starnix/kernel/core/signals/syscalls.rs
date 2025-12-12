@@ -1145,6 +1145,7 @@ mod tests {
     use crate::mm::{MemoryAccessor, PAGE_SIZE};
     use crate::signals::send_standard_signal;
     use crate::signals::testing::dequeue_signal_for_test;
+    use crate::task::dynamic_thread_spawner::SpawnRequestBuilder;
     use crate::task::{EventHandler, ExitStatus, ProcessExitInfo};
     use crate::testing::*;
     use starnix_sync::Mutex;
@@ -1982,30 +1983,31 @@ mod tests {
             let init_task_weak = current_task.weak_task();
             let (tx, rx) = std::sync::mpsc::sync_channel::<()>(0);
 
-            let thread = current_task.kernel().kthreads.spawner().spawn_and_get_result(
-                move |locked, current_task| {
-                    let init_task_temp = init_task_weak.upgrade().expect("Task must be alive");
+            let closure = move |locked: &mut Locked<Unlocked>, current_task: &CurrentTask| {
+                let init_task_temp = init_task_weak.upgrade().expect("Task must be alive");
 
-                    // Wait for the init task to be suspended.
-                    let mut suspended = false;
-                    while !suspended {
-                        suspended = init_task_temp.read().is_blocked();
-                        std::thread::sleep(std::time::Duration::from_millis(10));
-                    }
+                // Wait for the init task to be suspended.
+                let mut suspended = false;
+                while !suspended {
+                    suspended = init_task_temp.read().is_blocked();
+                    std::thread::sleep(std::time::Duration::from_millis(10));
+                }
 
-                    // Signal the suspended task with a signal that is not blocked (only SIGHUP in this test).
-                    let _ = sys_kill(
-                        locked,
-                        current_task,
-                        init_task_temp.tid,
-                        UncheckedSignal::from(SIGHUP),
-                    );
+                // Signal the suspended task with a signal that is not blocked (only SIGHUP in this test).
+                let _ = sys_kill(
+                    locked,
+                    current_task,
+                    init_task_temp.tid,
+                    UncheckedSignal::from(SIGHUP),
+                );
 
-                    // Wait for the sigsuspend to complete.
-                    rx.recv().expect("receive");
-                    assert!(!init_task_temp.read().is_blocked());
-                },
-            );
+                // Wait for the sigsuspend to complete.
+                rx.recv().expect("receive");
+                assert!(!init_task_temp.read().is_blocked());
+            };
+            let (thread, req) =
+                SpawnRequestBuilder::new().with_sync_closure(closure).build_with_async_result();
+            current_task.kernel().kthreads.spawner().spawn_from_request(req);
 
             let addr = map_memory(locked, &current_task, UserAddress::default(), *PAGE_SIZE);
             let user_ref = UserRef::<SigSet>::new(addr);

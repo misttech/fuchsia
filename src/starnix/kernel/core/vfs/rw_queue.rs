@@ -365,6 +365,7 @@ use tracing_mutex as _;
 mod test {
     use super::*;
     use crate::task::Kernel;
+    use crate::task::dynamic_thread_spawner::SpawnRequestBuilder;
     use crate::testing::*;
     use futures::executor::block_on;
     use futures::future::join_all;
@@ -437,22 +438,26 @@ mod test {
                 Arc::new(Info { barrier: Barrier::new(2), queue: RwQueue::<TestLevel>::default() });
 
             let info1 = Arc::clone(&info);
-            let thread1 =
-                kernel.kthreads.spawner().spawn_and_get_result(move |locked, current_task| {
-                    let guard =
-                        info1.queue.read(locked, current_task).expect("shouldn't be interrupted");
-                    info1.barrier.wait();
-                    std::mem::drop(guard);
-                });
+            let closure1 = move |locked: &mut Locked<Unlocked>, current_task: &CurrentTask| {
+                let guard =
+                    info1.queue.read(locked, current_task).expect("shouldn't be interrupted");
+                info1.barrier.wait();
+                std::mem::drop(guard);
+            };
+            let (thread1, req) =
+                SpawnRequestBuilder::new().with_sync_closure(closure1).build_with_async_result();
+            kernel.kthreads.spawner().spawn_from_request(req);
 
             let info2 = Arc::clone(&info);
-            let thread2 =
-                kernel.kthreads.spawner().spawn_and_get_result(move |locked, current_task| {
-                    let guard =
-                        info2.queue.read(locked, current_task).expect("shouldn't be interrupted");
-                    info2.barrier.wait();
-                    std::mem::drop(guard);
-                });
+            let closure2 = move |locked: &mut Locked<Unlocked>, current_task: &CurrentTask| {
+                let guard =
+                    info2.queue.read(locked, current_task).expect("shouldn't be interrupted");
+                info2.barrier.wait();
+                std::mem::drop(guard);
+            };
+            let (thread2, req) =
+                SpawnRequestBuilder::new().with_sync_closure(closure2).build_with_async_result();
+            kernel.kthreads.spawner().spawn_from_request(req);
 
             block_on(async {
                 thread1.await.expect("failed to join thread");
@@ -487,7 +492,7 @@ mod test {
             kernel: Arc<Kernel>,
             count: usize,
         ) -> Pin<Box<dyn Future<Output = Result<(), Errno>> + Send>> {
-            Box::pin(kernel.kthreads.spawner().spawn_and_get_result(move |locked, current_task| {
+            let closure = move |locked: &mut Locked<Unlocked>, current_task: &CurrentTask| {
                 state.gate.wait();
                 for _ in 0..count {
                     let guard =
@@ -502,7 +507,11 @@ mod test {
                         "A reader and writer held the lock at the same time."
                     );
                 }
-            }))
+            };
+            let (result, req) =
+                SpawnRequestBuilder::new().with_sync_closure(closure).build_with_async_result();
+            kernel.kthreads.spawner().spawn_from_request(req);
+            Box::pin(result)
         }
 
         fn spawn_reader(
@@ -510,7 +519,7 @@ mod test {
             kernel: Arc<Kernel>,
             count: usize,
         ) -> Pin<Box<dyn Future<Output = Result<(), Errno>> + Send>> {
-            Box::pin(kernel.kthreads.spawner().spawn_and_get_result(move |locked, current_task| {
+            let closure = move |locked: &mut Locked<Unlocked>, current_task: &CurrentTask| {
                 state.gate.wait();
                 for _ in 0..count {
                     let guard =
@@ -525,7 +534,11 @@ mod test {
                     );
                     assert!(reader_count > 0, "A reader held the lock without being counted.");
                 }
-            }))
+            };
+            let (result, req) =
+                SpawnRequestBuilder::new().with_sync_closure(closure).build_with_async_result();
+            kernel.kthreads.spawner().spawn_from_request(req);
+            Box::pin(result)
         }
     }
 

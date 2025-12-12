@@ -347,6 +347,7 @@ mod test {
     };
     use futures::StreamExt as _;
     use pretty_assertions::assert_eq;
+    use starnix_core::task::dynamic_thread_spawner::SpawnRequestBuilder;
     use starnix_core::task::{EventHandler, Waiter};
     #[allow(deprecated, reason = "pre-existing usage")]
     use starnix_core::testing::create_kernel_task_and_unlocked;
@@ -896,11 +897,15 @@ mod test {
         // Ask `input_file` to notify `waiter` when data is available to read.
         input_file.wait_async(locked, &current_task, &waiter, FdEvents::POLLIN, EventHandler::None);
 
-        let mut waiter_thread = kernel
-            .kthreads
-            .spawner()
-            .spawn_and_get_result(move |locked, task| waiter.wait(locked, &task));
-        assert!(futures::poll!(&mut waiter_thread).is_pending());
+        let closure =
+            move |locked: &mut Locked<Unlocked>, task: &CurrentTask| waiter.wait(locked, &task);
+
+        let (waiter_thread, req) =
+            SpawnRequestBuilder::new().with_sync_closure(closure).build_with_async_result();
+        kernel.kthreads.spawner().spawn_from_request(req);
+
+        let mut waiter_thread = Box::pin(waiter_thread);
+        assert_matches!(futures::poll!(&mut waiter_thread), futures::task::Poll::Pending);
 
         // Reply to first `Watch` request.
         answer_next_touch_watch_request(

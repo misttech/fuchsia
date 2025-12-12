@@ -33,11 +33,11 @@ pub mod tracing;
 mod uts_namespace;
 mod waiter;
 
-pub mod dynamic_thread_spawner;
 pub use abstract_socket_namespace::*;
 pub use cgroup::*;
 pub use current_task::*;
 pub use delayed_release::*;
+pub mod dynamic_thread_spawner;
 pub use hr_timer_manager::*;
 pub use interval_timer::*;
 pub use iptables::*;

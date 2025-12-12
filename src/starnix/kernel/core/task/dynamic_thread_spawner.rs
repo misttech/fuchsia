@@ -40,7 +40,6 @@ const DEFAULT_THREAD_ROLE: &str = "fuchsia.starnix.fair.16";
 /// - A task may return a result, or may not return a result.
 /// - The task's result can be collected synchronously, asynchronously, or not collected at all.
 ///
-///
 /// Note that these parameters are not perfectly orthogonal. For example, a task spawned from an
 /// async closure can not return a value asynchronously. (This is not a limitation of the approach,
 /// rather it's the API that we explicitly use today.) Also, some parameter combinations do not
@@ -59,14 +58,14 @@ const DEFAULT_THREAD_ROLE: &str = "fuchsia.starnix.fair.16";
 /// usage examples.
 pub struct SpawnRequestBuilder<C: ClosureKind> {
     role: Option<&'static str>,
-    closure: C,
+    closure_kind: C,
 }
 
 /// You can only create an empty request builder.
 impl SpawnRequestBuilder<ClosureNone> {
     /// Creates a new spawn request builder.
     pub fn new() -> Self {
-        Self { role: None, closure: ClosureNone {} }
+        Self { role: None, closure_kind: ClosureNone {} }
     }
 }
 
@@ -86,13 +85,13 @@ impl SpawnRequestBuilder<ClosureNone> {
         F: FnOnce(&mut Locked<Unlocked>, &CurrentTask) -> T + Send + 'static,
         T: Send + 'static,
     {
-        let SpawnRequestBuilder { role, closure: _ } = self;
+        let SpawnRequestBuilder { role, closure_kind: _ } = self;
         let (sender, receiver) = sync_channel::<T>(1);
         let _keepalive = sender.clone();
         let closure = Box::new(move |locked: &mut Locked<Unlocked>, current_task: &CurrentTask| {
             let _ = sender.send(f(locked, current_task));
         });
-        SpawnRequestBuilder { role, closure: ClosureSome { closure, receiver, _keepalive } }
+        SpawnRequestBuilder { role, closure_kind: ClosureSome { closure, receiver, _keepalive } }
     }
 
     /// Provides the closure that the spawner will run.
@@ -133,7 +132,7 @@ where
     /// let result = result_fn();
     /// ```
     pub fn build_with_sync_result(self) -> (impl FnOnce() -> Result<T, Errno>, SpawnRequest) {
-        let Self { role, closure: closure_kind } = self;
+        let Self { role, closure_kind } = self;
         let ClosureSome { closure, receiver, _keepalive } = closure_kind;
         let result_fn = move || {
             let result =
@@ -158,7 +157,7 @@ where
     /// let result = result_fut.await;
     /// ```
     pub fn build_with_async_result(self) -> (impl Future<Output = Result<T, Errno>>, SpawnRequest) {
-        let Self { role, closure: closure_kind } = self;
+        let Self { role, closure_kind } = self;
         let ClosureSome { closure, receiver, _keepalive } = closure_kind;
         let (sender_async, result_fut) = oneshot::channel::<Result<T, Errno>>();
         let maybe_with_role = maybe_apply_role(role, closure);
@@ -293,28 +292,7 @@ impl DynamicThreadSpawner {
         }
     }
 
-    /// Run the given closure on a thread and returns a Future that will resolve to the return
-    /// value of the closure.
-    ///
-    /// This method will use an idle thread in the pool if one is available, otherwise it will
-    /// start a new thread. When this method returns, it is guaranteed that a thread is
-    /// responsible to start running the closure.
-    pub fn spawn_and_get_result<R, F>(
-        &self,
-        f: F,
-    ) -> impl Future<Output = Result<R, Errno>> + use<R, F>
-    where
-        R: Send + 'static,
-        F: FnOnce(&mut Locked<Unlocked>, &CurrentTask) -> R + Send + 'static,
-    {
-        let (sender, receiver) = oneshot::channel::<R>();
-        self.spawn(move |locked, current_task| {
-            let _ = sender.send(f(locked, current_task));
-        });
-        receiver.map_err(|_| errno!(EINTR))
-    }
-
-    // TODO(b/465144050): can be removed.
+    /// TODO: b/465144050: can be removed.
     /// Run the given closure on a thread and block to get the result.
     ///
     /// This method will use an idle thread in the pool if one is available, otherwise it will

@@ -357,11 +357,13 @@ mod tests {
     use super::*;
     use crate::fs::fuchsia::create_fuchsia_pipe;
     use crate::mm::PAGE_SIZE;
+    use crate::task::dynamic_thread_spawner::SpawnRequestBuilder;
     use crate::testing::spawn_kernel_and_run;
     use crate::vfs::EpollFileObject;
     use crate::vfs::buffers::{VecInputBuffer, VecOutputBuffer};
     use crate::vfs::socket::SocketFile;
     use futures::executor::block_on;
+    use starnix_sync::Unlocked;
     use starnix_uapi::vfs::EpollEvent;
     use syncio::Zxio;
     use zx::HandleBased;
@@ -467,13 +469,15 @@ mod tests {
             const XFER_SIZE: usize = 42;
 
             let socket_clone = socket_file.clone();
-            let thread =
-                kernel.kthreads.spawner().spawn_and_get_result(move |locked, current_task| {
-                    let bytes_read = socket_clone
-                        .read(locked, current_task, &mut VecOutputBuffer::new(XFER_SIZE))
-                        .unwrap();
-                    assert_eq!(XFER_SIZE, bytes_read);
-                });
+            let closure = move |locked: &mut Locked<Unlocked>, current_task: &CurrentTask| {
+                let bytes_read = socket_clone
+                    .read(locked, current_task, &mut VecOutputBuffer::new(XFER_SIZE))
+                    .unwrap();
+                assert_eq!(XFER_SIZE, bytes_read);
+            };
+            let (result, req) =
+                SpawnRequestBuilder::new().with_sync_closure(closure).build_with_async_result();
+            kernel.kthreads.spawner().spawn_from_request(req);
 
             // Wait for the thread to become blocked on the read.
             std::thread::sleep(std::time::Duration::from_secs(2));
@@ -485,7 +489,7 @@ mod tests {
             let mut buffer = [0u8; 1024];
             assert_eq!(XFER_SIZE, fs1.read(&mut buffer).unwrap());
             assert_eq!(XFER_SIZE, fs1.write(&buffer[..XFER_SIZE]).unwrap());
-            block_on(thread).unwrap();
+            block_on(result).unwrap();
         })
         .await;
     }
