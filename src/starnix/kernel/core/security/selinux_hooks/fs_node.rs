@@ -979,7 +979,7 @@ pub(in crate::security) fn has_dontaudit_access(
     current_task: &CurrentTask,
     fs_node: &FsNode,
 ) -> bool {
-    trace_duration!(CATEGORY_STARNIX_SECURITY, c"security.selinux.has_dontaudit_access");
+    trace_duration!(CATEGORY_STARNIX_SECURITY, "security.selinux.has_dontaudit_access");
 
     let FsNodeSidAndClass { sid, class } = fs_node_effective_sid_and_class(fs_node);
     let permission_check = security_server.as_permission_check();

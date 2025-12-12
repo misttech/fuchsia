@@ -65,8 +65,8 @@ fn wait_signaled_sync<H: HandleBased>(handle: &H) -> zx::WaitResult {
             return result;
         }
         fuchsia_trace::instant!(
-            c"alarms",
-            c"starnix:hrtimer:wait_timeout",
+            "alarms",
+            "starnix:hrtimer:wait_timeout",
             fuchsia_trace::Scope::Process
         );
         // This is bad and should never happen. If it does, it's a bug that has to be found and
@@ -137,7 +137,7 @@ async fn cancel_by_id(
         task.detach();
     }
     if let Some(timer_state) = timer_state {
-        ftrace::duration!(c"alarms", c"starnix:hrtimer:cancel_by_id", "timer_id" => *timer_id);
+        ftrace::duration!("alarms", "starnix:hrtimer:cancel_by_id", "timer_id" => *timer_id);
         log_debug!("cancel_by_id: START canceling timer: {:?}: alarm_id: {}", timer_id, alarm_id);
         proxy.cancel(&alarm_id).expect("infallible");
         log_debug!("cancel_by_id: 1/2 canceling timer: {:?}: alarm_id: {}", timer_id, alarm_id);
@@ -609,7 +609,7 @@ impl HrTimerManager {
     ) -> Result<()> {
         let timer_id = timer.hr_timer.get_id();
         log_debug!("watch_new_hrtimer_loop: Cmd::Alarm: triggered alarm: {:?}", timer_id);
-        ftrace::duration!(c"alarms", c"starnix:hrtimer:notify_timer", "timer_id" => timer_id);
+        ftrace::duration!("alarms", "starnix:hrtimer:notify_timer", "timer_id" => timer_id);
         self.lock().pending_timers.remove(&timer_id).map(|s| s.task.detach());
         signal_handle(&timer.hr_timer.event(), zx::Signals::NONE, zx::Signals::TIMER_SIGNALED)
             .context("notify_timer: hrtimer signal handle")?;
@@ -623,7 +623,7 @@ impl HrTimerManager {
             // are activated.
             drop(lease_token);
         }
-        ftrace::instant!(c"alarms", c"starnix:hrtimer:notify_timer:drop_lease", ftrace::Scope::Process, "timer_id" => timer_id);
+        ftrace::instant!("alarms", "starnix:hrtimer:notify_timer:drop_lease", ftrace::Scope::Process, "timer_id" => timer_id);
         Ok(())
     }
 
@@ -708,7 +708,7 @@ impl HrTimerManager {
         message_counter_for_test: Option<zx::Counter>,
         setup_done: Option<zx::Event>,
     ) -> Result<()> {
-        ftrace::instant!(c"alarms", c"watch_new_hrtimer_loop:init", ftrace::Scope::Process);
+        ftrace::instant!("alarms", "watch_new_hrtimer_loop:init", ftrace::Scope::Process);
         defer! {
             log_warn!("watch_new_hrtimer_loop: exiting. This should only happen in tests.");
         }
@@ -747,10 +747,10 @@ impl HrTimerManager {
         // Per timer tasks.
         let mut task_by_timer_id: HashMap<zx::Koid, fasync::Task<()>> = HashMap::new();
 
-        ftrace::instant!(c"alarms", c"watch_new_hrtimer_loop:init_done", ftrace::Scope::Process);
+        ftrace::instant!("alarms", "watch_new_hrtimer_loop:init_done", ftrace::Scope::Process);
         while let Some(cmd) = start_next_receiver.next().await {
             self.lock().last_loop_started_timestamp = zx::BootInstant::get();
-            ftrace::duration!(c"alarms", c"start_next_receiver:loop");
+            ftrace::duration!("alarms", "start_next_receiver:loop");
 
             log_debug!("watch_new_hrtimer_loop: got command: {cmd:?}");
             self.lock().debug_start_stage_counter = 0;
@@ -774,8 +774,8 @@ impl HrTimerManager {
                         timer_id,
                         wake_alarm_id
                     );
-                    ftrace::duration!(c"alarms", c"starnix:hrtimer:start", "timer_id" => timer_id);
-                    ftrace::flow_begin!(c"alarms", c"hrtimer_lifecycle", trace_id);
+                    ftrace::duration!("alarms", "starnix:hrtimer:start", "timer_id" => timer_id);
+                    ftrace::flow_begin!("alarms", "hrtimer_lifecycle", trace_id);
 
                     self.lock().debug_start_stage_counter = 2;
                     let maybe_cancel = self.lock().pending_timers.remove(&timer_id);
@@ -788,14 +788,14 @@ impl HrTimerManager {
                         &mut task_by_timer_id,
                         &wake_alarm_id,
                     ));
-                    ftrace::instant!(c"alarms", c"starnix:hrtimer:cancel_pre_start", ftrace::Scope::Process, "timer_id" => timer_id);
+                    ftrace::instant!("alarms", "starnix:hrtimer:cancel_pre_start", ftrace::Scope::Process, "timer_id" => timer_id);
 
                     // Signaled when the timer completed setup. We can not forward `done` because
                     // we have post-schedule work as well.
                     let setup_event = zx::Event::create();
                     let deadline = new_timer_node.deadline;
 
-                    ftrace::duration!(c"alarms", c"starnix:hrtimer:signaled", "timer_id" => timer_id);
+                    ftrace::duration!("alarms", "starnix:hrtimer:signaled", "timer_id" => timer_id);
 
                     self.lock().debug_start_stage_counter = 3;
                     // Make a request here. Move it into the closure after. Current FIDL semantics
@@ -826,15 +826,15 @@ impl HrTimerManager {
                         log_debug!(
                             "wake_alarm_future: set_and_wait will block here: {wake_alarm_id:?}"
                         );
-                        ftrace::instant!(c"alarms", c"starnix:hrtimer:wait", ftrace::Scope::Process, "timer_id" => timer_id);
-                        ftrace::flow_step!(c"alarms", c"hrtimer_lifecycle", trace_id);
+                        ftrace::instant!("alarms", "starnix:hrtimer:wait", ftrace::Scope::Process, "timer_id" => timer_id);
+                        ftrace::flow_step!("alarms", "hrtimer_lifecycle", trace_id);
 
                         // Wait for this timer to expire. This wait can be arbitrarily long.
                         let response = request_fut.await;
 
                         // The counter was already incremented by the wake proxy when the alarm fired.
                         let message_counter = self_clone.lock().share_message_counter(false);
-                        ftrace::instant!(c"alarms", c"starnix:hrtimer:wake", ftrace::Scope::Process, "timer_id" => timer_id);
+                        ftrace::instant!("alarms", "starnix:hrtimer:wake", ftrace::Scope::Process, "timer_id" => timer_id);
 
                         log_debug!("wake_alarm_future: set_and_wait over: {:?}", response);
                         match response {
@@ -850,7 +850,7 @@ impl HrTimerManager {
                                 .expect("infallible");
                             }
                             Ok(Err(error)) => {
-                                ftrace::duration!(c"alarms", c"starnix:hrtimer:wake_error", "timer_id" => timer_id);
+                                ftrace::duration!("alarms", "starnix:hrtimer:wake_error", "timer_id" => timer_id);
                                 log_debug!(
                                     "wake_alarm_future: protocol error: {error:?}: timer_id: {timer_id:?}"
                                 );
@@ -859,7 +859,7 @@ impl HrTimerManager {
                                 process_alarm_protocol_error(pending, &timer_id, error);
                             }
                             Err(error) => {
-                                ftrace::duration!(c"alarms", c"starnix:hrtimer:fidl_error", "timer_id" => timer_id);
+                                ftrace::duration!("alarms", "starnix:hrtimer:fidl_error", "timer_id" => timer_id);
                                 log_debug!(
                                     "wake_alarm_future: FIDL error: {error:?}: timer_id: {timer_id:?}"
                                 );
@@ -869,12 +869,12 @@ impl HrTimerManager {
                         log_debug!("wake_alarm_future: closure done for timer_id: {timer_id:?}");
                     });
                     self.lock().debug_start_stage_counter = 5;
-                    ftrace::instant!(c"alarms", c"starnix:hrtimer:pre_setup_event_signal", ftrace::Scope::Process, "timer_id" => timer_id);
+                    ftrace::instant!("alarms", "starnix:hrtimer:pre_setup_event_signal", ftrace::Scope::Process, "timer_id" => timer_id);
 
                     // This should be almost instantaneous.  Blocking for a long time here is a
                     // bug.
                     log_long_op!(wait_signaled(&setup_event)).map_err(|e| to_errno_with_log(e))?;
-                    ftrace::instant!(c"alarms", c"starnix:hrtimer:setup_event_signaled", ftrace::Scope::Process, "timer_id" => timer_id);
+                    ftrace::instant!("alarms", "starnix:hrtimer:setup_event_signaled", ftrace::Scope::Process, "timer_id" => timer_id);
                     let mut guard = self.lock();
                     guard.debug_start_stage_counter = 6;
                     self.record_inspect_on_start(&mut guard, timer_id, task, deadline, prev_len);
@@ -884,8 +884,8 @@ impl HrTimerManager {
                 Cmd::Alarm { new_timer_node, lease, message_counter } => {
                     let timer = &new_timer_node.hr_timer;
                     let timer_id = timer.get_id();
-                    ftrace::duration!(c"alarms", c"starnix:hrtimer:alarm", "timer_id" => timer_id);
-                    ftrace::flow_step!(c"alarms", c"hrtimer_lifecycle", timer.trace_id());
+                    ftrace::duration!("alarms", "starnix:hrtimer:alarm", "timer_id" => timer_id);
+                    ftrace::flow_step!("alarms", "hrtimer_lifecycle", timer.trace_id());
                     self.notify_timer(system_task, &new_timer_node, lease)
                         .map_err(|e| to_errno_with_log(e))?;
 
@@ -913,8 +913,8 @@ impl HrTimerManager {
                     }
                     let timer_id = timer.get_id();
                     log_debug!("watch_new_hrtimer_loop: Cmd::Stop: timer_id: {:?}", timer_id);
-                    ftrace::duration!(c"alarms", c"starnix:hrtimer:stop", "timer_id" => timer_id);
-                    ftrace::flow_step!(c"alarms", c"hrtimer_lifecycle", timer.trace_id());
+                    ftrace::duration!("alarms", "starnix:hrtimer:stop", "timer_id" => timer_id);
+                    ftrace::flow_step!("alarms", "hrtimer_lifecycle", timer.trace_id());
 
                     let (maybe_cancel, prev_len) = {
                         let mut guard = self.lock();
@@ -932,7 +932,7 @@ impl HrTimerManager {
                         &mut task_by_timer_id,
                         &wake_alarm_id,
                     ));
-                    ftrace::instant!(c"alarms", c"starnix:hrtimer:cancel_at_stop", ftrace::Scope::Process, "timer_id" => timer_id);
+                    ftrace::instant!("alarms", "starnix:hrtimer:cancel_at_stop", ftrace::Scope::Process, "timer_id" => timer_id);
 
                     {
                         let mut guard = self.lock();
@@ -941,8 +941,8 @@ impl HrTimerManager {
                     log_debug!("Cmd::Stop done: {timer_id:?}");
                 }
                 Cmd::MonitorUtc { timer, counter, recv } => {
-                    ftrace::duration!(c"alarms", c"starnix:hrtimer:monitor_utc", "timer_id" => timer.get_id());
-                    ftrace::flow_step!(c"alarms", c"hrtimer_lifecycle", timer.trace_id());
+                    ftrace::duration!("alarms", "starnix:hrtimer:monitor_utc", "timer_id" => timer.get_id());
+                    ftrace::flow_step!("alarms", "hrtimer_lifecycle", timer.trace_id());
                     let monitor_task = fasync::Task::local(async move {
                         run_utc_timeline_monitor(counter, recv).await;
                     });
@@ -997,8 +997,8 @@ impl HrTimerManager {
         deadline: TargetTime,
     ) -> Result<(), Errno> {
         log_debug!("add_timer: entry: {new_timer:?}, deadline: {deadline:?}");
-        ftrace::duration!(c"alarms", c"starnix:add_timer", "deadline" => deadline.estimate_boot().unwrap().into_nanos());
-        ftrace::flow_step!(c"alarms", c"hrtimer_lifecycle", new_timer.trace_id());
+        ftrace::duration!("alarms", "starnix:add_timer", "deadline" => deadline.estimate_boot().unwrap().into_nanos());
+        ftrace::flow_step!("alarms", "hrtimer_lifecycle", new_timer.trace_id());
 
         // Keep system awake until timer is scheduled.
         let message_counter_until_timer_scheduled = self.lock().share_message_counter(true);
@@ -1029,7 +1029,7 @@ impl HrTimerManager {
     /// The timer is removed if scheduled, nothing is changed if it is not.
     pub fn remove_timer(self: &HrTimerManagerHandle, timer: &HrTimerHandle) -> Result<(), Errno> {
         log_debug!("remove_timer: entry:  {timer:?}");
-        ftrace::duration!(c"alarms", c"starnix:remove_timer");
+        ftrace::duration!("alarms", "starnix:remove_timer");
         // Keep system awake until timer is removed.
         let message_counter_until_removed = self.lock().share_message_counter(true);
 
@@ -1074,8 +1074,8 @@ pub type HrTimerHandle = Arc<HrTimer>;
 impl Drop for HrTimer {
     fn drop(&mut self) {
         let wake_alarm_id = self.wake_alarm_id();
-        ftrace::duration!(c"alarms", c"hrtimer::drop", "timer_id" => self.get_id(), "wake_alarm_id" => &wake_alarm_id[..]);
-        ftrace::flow_end!(c"alarms", c"hrtimer_lifecycle", self.trace_id());
+        ftrace::duration!("alarms", "hrtimer::drop", "timer_id" => self.get_id(), "wake_alarm_id" => &wake_alarm_id[..]);
+        ftrace::flow_end!("alarms", "hrtimer_lifecycle", self.trace_id());
     }
 }
 
@@ -1083,8 +1083,8 @@ impl HrTimer {
     pub fn new() -> HrTimerHandle {
         let ret = Arc::new(Self { event: zx::Event::create(), is_interval: Mutex::new(false) });
         let wake_alarm_id = ret.wake_alarm_id();
-        ftrace::duration!(c"alarms", c"hrtimer::new", "timer_id" => ret.get_id(), "wake_alarm_id" => &wake_alarm_id[..]);
-        ftrace::flow_begin!(c"alarms", c"hrtimer_lifecycle", ret.trace_id(), "wake_alarm_id" => &wake_alarm_id[..]);
+        ftrace::duration!("alarms", "hrtimer::new", "timer_id" => ret.get_id(), "wake_alarm_id" => &wake_alarm_id[..]);
+        ftrace::flow_begin!("alarms", "hrtimer_lifecycle", ret.trace_id(), "wake_alarm_id" => &wake_alarm_id[..]);
         ret
     }
 

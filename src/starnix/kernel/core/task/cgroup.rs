@@ -650,7 +650,7 @@ impl CgroupOps for Cgroup {
     }
 
     fn kill(&self) {
-        trace_duration!(CATEGORY_STARNIX, c"CgroupKill");
+        trace_duration!(CATEGORY_STARNIX, "CgroupKill");
         let state = self.state.lock();
         state.propagate_kill();
     }
@@ -677,7 +677,7 @@ impl CgroupOps for Cgroup {
     }
 
     fn freeze(&self, locked: &mut Locked<FileOpsCore>) {
-        trace_duration!(CATEGORY_STARNIX, c"CgroupFreeze");
+        trace_duration!(CATEGORY_STARNIX, "CgroupFreeze");
         let mut state = self.state.lock();
         let inherited_freezer_state = state.inherited_freezer_state;
         state.propagate_freeze(locked, inherited_freezer_state);
@@ -685,7 +685,7 @@ impl CgroupOps for Cgroup {
     }
 
     fn thaw(&self) {
-        trace_duration!(CATEGORY_STARNIX, c"CgroupThaw");
+        trace_duration!(CATEGORY_STARNIX, "CgroupThaw");
         let mut state = self.state.lock();
         state.self_freezer_state = FreezerState::Thawed;
         let inherited_freezer_state = state.inherited_freezer_state;

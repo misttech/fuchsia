@@ -244,15 +244,15 @@ pub trait FileOps: Send + Sync + AsAny + 'static {
         options: MappingOptions,
         filename: NamespaceNode,
     ) -> Result<UserAddress, Errno> {
-        trace_duration!(CATEGORY_STARNIX_MM, c"FileOpsDefaultMmap");
+        trace_duration!(CATEGORY_STARNIX_MM, "FileOpsDefaultMmap");
         let min_memory_size = (memory_offset as usize)
             .checked_add(round_up_to_system_page_size(length)?)
             .ok_or_else(|| errno!(EINVAL))?;
         let mut memory = if options.contains(MappingOptions::SHARED) {
-            trace_duration!(CATEGORY_STARNIX_MM, c"GetSharedVmo");
+            trace_duration!(CATEGORY_STARNIX_MM, "GetSharedVmo");
             self.get_memory(locked, file, current_task, Some(min_memory_size), prot_flags)?
         } else {
-            trace_duration!(CATEGORY_STARNIX_MM, c"GetPrivateVmo");
+            trace_duration!(CATEGORY_STARNIX_MM, "GetPrivateVmo");
             // TODO(tbodt): Use PRIVATE_CLONE to have the filesystem server do the clone for us.
             let base_prot_flags = (prot_flags | ProtectionFlags::READ) - ProtectionFlags::WRITE;
             let memory = self.get_memory(
@@ -266,7 +266,7 @@ pub trait FileOps: Send + Sync + AsAny + 'static {
             if !prot_flags.contains(ProtectionFlags::WRITE) {
                 clone_flags |= zx::VmoChildOptions::NO_WRITE;
             }
-            trace_duration!(CATEGORY_STARNIX_MM, c"CreatePrivateChildVmo");
+            trace_duration!(CATEGORY_STARNIX_MM, "CreatePrivateChildVmo");
             Arc::new(
                 memory.create_child(clone_flags, 0, memory.get_size()).map_err(impossible_error)?,
             )

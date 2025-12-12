@@ -104,7 +104,7 @@ impl CrashReporter {
         exit_status: &ExitStatus,
         pending_crash_report: PendingCrashReport,
     ) {
-        trace_instant!(CATEGORY_STARNIX, c"RecordCoreDump", TraceScope::Process);
+        trace_instant!(CATEGORY_STARNIX, "RecordCoreDump", TraceScope::Process);
 
         let argv = pending_crash_report.argv;
         let argv0 = pending_crash_report.argv0;

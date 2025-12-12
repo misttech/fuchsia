@@ -1556,7 +1556,7 @@ impl FileOps for RemoteFileObject {
         _length: Option<usize>,
         prot: ProtectionFlags,
     ) -> Result<Arc<MemoryObject>, Errno> {
-        trace_duration!(CATEGORY_STARNIX_MM, c"RemoteFileGetVmo");
+        trace_duration!(CATEGORY_STARNIX_MM, "RemoteFileGetVmo");
         let memory_cache = if prot == (ProtectionFlags::READ | ProtectionFlags::EXEC) {
             Some(&self.read_exec_memory)
         } else if prot == ProtectionFlags::READ {

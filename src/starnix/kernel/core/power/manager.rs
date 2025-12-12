@@ -438,7 +438,7 @@ impl SuspendResumeManager {
 
         let manager = connect_to_protocol_sync::<frunner::ManagerMarker>()
             .expect("Failed to connect to manager");
-        fuchsia_trace::duration!(c"power", c"suspend_container:fidl");
+        fuchsia_trace::duration!("power", "suspend_container:fidl");
         log_info!("Asking runner to suspend container.");
         match manager.suspend_container(
             frunner::ManagerSuspendContainerRequest {
@@ -473,8 +473,8 @@ impl SuspendResumeManager {
                     reason: resume_reason.unwrap_or_default(),
                 });
                 fuchsia_trace::instant!(
-                    c"power",
-                    c"suspend_container:done",
+                    "power",
+                    "suspend_container:done",
                     fuchsia_trace::Scope::Process
                 );
             }
@@ -511,8 +511,8 @@ impl SuspendResumeManager {
                     epolls: epoll_names,
                 });
                 fuchsia_trace::instant!(
-                    c"power",
-                    c"suspend_container:error",
+                    "power",
+                    "suspend_container:error",
                     fuchsia_trace::Scope::Process
                 );
                 return error!(EINVAL);

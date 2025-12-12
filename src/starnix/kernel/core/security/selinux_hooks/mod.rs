@@ -230,7 +230,7 @@ fn has_fs_node_permissions_dontaudit(
 ) -> Result<(), Errno> {
     trace_duration!(
         CATEGORY_STARNIX_SECURITY,
-        c"security.selinux.has_fs_node_permissions_dontaudit"
+        "security.selinux.has_fs_node_permissions_dontaudit"
     );
 
     if Anon::is_private(fs_node) {
@@ -259,7 +259,7 @@ fn has_fs_node_permissions(
     permissions: &[impl ForClass<FsNodeClass>],
     audit_context: Auditable<'_>,
 ) -> Result<(), Errno> {
-    trace_duration!(CATEGORY_STARNIX_SECURITY, c"security.selinux.has_fs_node_permissions");
+    trace_duration!(CATEGORY_STARNIX_SECURITY, "security.selinux.has_fs_node_permissions");
 
     if Anon::is_private(fs_node) {
         return Ok(());
@@ -294,7 +294,7 @@ fn todo_has_fs_node_permissions(
     permissions: &[impl ForClass<FsNodeClass>],
     audit_context: Auditable<'_>,
 ) -> Result<(), Errno> {
-    trace_duration!(CATEGORY_STARNIX_SECURITY, c"security.selinux.todo_has_fs_node_permissions");
+    trace_duration!(CATEGORY_STARNIX_SECURITY, "security.selinux.todo_has_fs_node_permissions");
 
     if Anon::is_private(fs_node) {
         return Ok(());
@@ -398,7 +398,7 @@ fn todo_check_permission<P: ClassPermission + Into<KernelPermission> + Clone + '
             audit_context,
         )
     } else {
-        trace_duration!(CATEGORY_STARNIX_SECURITY, c"security.selinux.todo_check_permission");
+        trace_duration!(CATEGORY_STARNIX_SECURITY, "security.selinux.todo_check_permission");
 
         let result = permission_check.has_permission(source_sid, target_sid, permission.clone());
 
@@ -428,7 +428,7 @@ fn check_permission<P: ClassPermission + Into<KernelPermission> + Clone + 'stati
     permission: P,
     audit_context: Auditable<'_>,
 ) -> Result<(), Errno> {
-    trace_duration!(CATEGORY_STARNIX_SECURITY, c"security.selinux.check_permission");
+    trace_duration!(CATEGORY_STARNIX_SECURITY, "security.selinux.check_permission");
 
     if is_internal_operation(current_task) {
         return Ok(());

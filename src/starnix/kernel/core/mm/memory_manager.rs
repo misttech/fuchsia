@@ -363,7 +363,7 @@ fn map_in_vmar(
             // need it.
             zx::VmoOp::PREFETCH
         };
-        trace_duration!(CATEGORY_STARNIX_MM, c"MmapCommitPages");
+        trace_duration!(CATEGORY_STARNIX_MM, "MmapCommitPages");
         let _ = memory.op_range(op, memory_offset, length as u64);
         // "The mmap() call doesn't fail if the mapping cannot be populated."
     }

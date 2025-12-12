@@ -145,7 +145,7 @@ impl FileOps for SyncFile {
 
         match ioctl_number {
             SYNC_IOC_MERGE => {
-                trace_duration!(CATEGORY_STARNIX, c"SyncFileMerge");
+                trace_duration!(CATEGORY_STARNIX, "SyncFileMerge");
                 let user_ref = UserRef::new(user_addr);
                 let mut merge_data: sync_merge_data = current_task.read_object(user_ref)?;
                 let file2 = current_task.files.get(FdNumber::from_raw(merge_data.fd2))?;
@@ -220,7 +220,7 @@ impl FileOps for SyncFile {
                 Ok(SUCCESS)
             }
             SYNC_IOC_FILE_INFO => {
-                trace_duration!(CATEGORY_STARNIX, c"SyncFileInfo");
+                trace_duration!(CATEGORY_STARNIX, "SyncFileInfo");
                 let user_ref = UserRef::new(user_addr);
                 let mut info: sync_file_info = current_task.read_object(user_ref)?;
 

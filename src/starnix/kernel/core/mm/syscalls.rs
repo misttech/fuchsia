@@ -162,10 +162,10 @@ where
     security::mmap_file(current_task, file.as_ref(), prot_flags, options)?;
 
     if flags & MAP_ANONYMOUS != 0 {
-        trace_duration!(CATEGORY_STARNIX_MM, c"AnonymousMmap");
+        trace_duration!(CATEGORY_STARNIX_MM, "AnonymousMmap");
         current_task.mm()?.map_anonymous(addr, length, prot_flags, options, MappingName::None)
     } else {
-        trace_duration!(CATEGORY_STARNIX_MM, c"FileBackedMmap");
+        trace_duration!(CATEGORY_STARNIX_MM, "FileBackedMmap");
         // TODO(tbodt): maximize protection flags so that mprotect works
         let file = file.expect("file retrieved above for file-backed mapping");
         file.mmap(
