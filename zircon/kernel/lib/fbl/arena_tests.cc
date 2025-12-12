@@ -434,7 +434,7 @@ static bool memory_cleanup() {
   delete arena;
   EXPECT_TRUE(count_committed_bytes(start, end, &committed, &uncommitted));
   // 0/0 means "no mapping at this address".
-  // FLAKY: Another thread could could come in and allocate a mapping at the
+  // FLAKY: Another thread could come in and allocate a mapping at the
   // old location.
   EXPECT_EQ(committed, 0u);
   EXPECT_EQ(uncommitted, 0u);

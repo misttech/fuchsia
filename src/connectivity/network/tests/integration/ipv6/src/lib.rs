@@ -1102,7 +1102,7 @@ fn check_mldv2_report(
     assert_eq!(
         dst_ip,
         net_ip_v6!("ff02::16"),
-        "MLDv2 reports should should be sent to the MLDv2 routers address"
+        "MLDv2 reports should be sent to the MLDv2 routers address"
     );
 
     has_snmc_record

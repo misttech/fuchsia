@@ -109,7 +109,7 @@ type AttemptedEvent = table {
     /// The id of the enrollment used to produce this attempt.
     2: enrollment_id EnrollmentId;
 
-    /// Enrollment data which should should replace the old enrollment data upon
+    /// Enrollment data which should replace the old enrollment data upon
     /// successful authentication. This field is only populated if a change in
     /// enrollment data is required.
     3: updated_enrollment_data EnrollmentData;

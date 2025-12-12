@@ -107,7 +107,7 @@ fn check_igmpv3_report(
     assert_eq!(
         dst_ip,
         net_ip_v4!("224.0.0.22"),
-        "IGMPv3 reports should should be sent to the IGMPv3 routers address",
+        "IGMPv3 reports should be sent to the IGMPv3 routers address",
     );
 
     true

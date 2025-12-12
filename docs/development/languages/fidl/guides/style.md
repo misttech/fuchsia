@@ -200,7 +200,7 @@ name. Second, the `Service` suffix is banned.
 
 #### Explicit "`open`/`ajar`/`closed`" modifier {#explicit-open-ajar-closed}
 
-For protocols, `open`, `ajar`, or `closed` should should always be specified
+For protocols, `open`, `ajar`, or `closed` should always be specified
 rather than relying on defaults. That is, always prefer `open protocol Foo {
 ...` to just `protocol Foo { ...`.
 
@@ -247,7 +247,7 @@ and possibly renaming the existing method.
 #### Explicit "`strict`/`flexible`" modifier {#explicit-strict-flexible-method}
 
 
-For methods and events, `strict` or `flexible` should should always be specified
+For methods and events, `strict` or `flexible` should always be specified
 rather than relying on defaults. That is, always prefer `flexible Foo();` to
 just `Foo()`.
 

@@ -4,7 +4,7 @@
 
 The new C++ bindings come in **natural** and **wire** variants. The natural
 bindings are optimized for safety and ergonomics, while the wire bindings are
-optimized for performance. Most code should should use the natural bindings.
+optimized for performance. Most code should use the natural bindings.
 Only turn to the wire bindings when performance requirements demand it or when
 you need precise control over memory allocation.
 

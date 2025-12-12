@@ -8673,7 +8673,7 @@ mod tests {
         test_helper.advance_by(zx::MonotonicDuration::from_seconds(10), test_fut.as_mut());
 
         // Send another stop client connections shortly before a start request. The second request
-        // should should not cause a metric to be logged, since connections were already off.
+        // should not cause a metric to be logged, since connections were already off.
         test_helper.telemetry_sender.send(TelemetryEvent::StopClientConnectionsRequest);
         test_helper.advance_by(zx::MonotonicDuration::from_seconds(1), test_fut.as_mut());
         test_helper.telemetry_sender.send(TelemetryEvent::StartClientConnectionsRequest);

@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{format_err, Context, Error};
-use fidl::endpoints::{create_proxy, create_request_stream, Responder};
+use anyhow::{Context, Error, format_err};
+use fidl::endpoints::{Responder, create_proxy, create_request_stream};
 use fidl_fuchsia_bluetooth_avrcp as fidl_avrcp;
 use fidl_fuchsia_media_sessions2::{
     DiscoveryMarker, DiscoveryProxy, SessionControlProxy, SessionInfoDelta, SessionsWatcherRequest,
@@ -12,17 +12,17 @@ use fidl_fuchsia_media_sessions2::{
 use fuchsia_async::{self as fasync, TimeoutExt};
 use fuchsia_component::client::connect_to_protocol;
 use fuchsia_sync::RwLock;
-use futures::{future, Future, TryStreamExt};
+use futures::{Future, TryStreamExt, future};
 use log::{trace, warn};
 use std::collections::HashMap;
 use std::sync::Arc;
 
 use crate::media::media_state::{
-    MediaState, MEDIA_SESSION_ADDRESSED_PLAYER_ID, MEDIA_SESSION_DISPLAYABLE_NAME,
+    MEDIA_SESSION_ADDRESSED_PLAYER_ID, MEDIA_SESSION_DISPLAYABLE_NAME, MediaState,
 };
 use crate::media::media_types::Notification;
 use crate::types::bounded_queue::BoundedQueue;
-use crate::types::{NotificationData, MAX_NOTIFICATION_EVENT_QUEUE_SIZE};
+use crate::types::{MAX_NOTIFICATION_EVENT_QUEUE_SIZE, NotificationData};
 
 /// The system-wide ID assigned to a specific MediaSession. This identifier is created and assigned
 /// by the Fuchsia media system.
@@ -470,9 +470,9 @@ pub(crate) mod tests {
     use fidl::endpoints::create_proxy_and_stream;
     use fidl_fuchsia_bluetooth_avrcp::{NotificationEvent, TargetHandlerMarker};
     use fidl_fuchsia_media_sessions2 as fidl_media;
+    use futures::FutureExt;
     use futures::future::join_all;
     use futures::task::Poll;
-    use futures::FutureExt;
 
     /// Creates the MediaSessions object and sets an active session if `is_active` = true.
     /// Returns the object and the id of the set active session.
@@ -499,7 +499,7 @@ pub(crate) mod tests {
 
     #[fuchsia::test]
     /// Normal case of registering a supported notification.
-    /// Notification should should be packaged into a `NotificationData` and inserted
+    /// Notification should be packaged into a `NotificationData` and inserted
     /// into the HashMap.
     /// Since there are no state updates, it should stay there until the variable goes
     /// out of program scope.
