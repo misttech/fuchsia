@@ -57,7 +57,7 @@ impl Server {
             debug!("time_adjust::serve: exited  serving loop");
         };
         while let Some(request) = stream.next().await {
-            trace::duration!(c"timekeeper", c"adjust:request");
+            trace::duration!("timekeeper", "adjust:request");
             debug!("time_adjust::Server::serve: request: {:?}", request);
             match request {
                 Ok(ffte::AdjustRequest::ReportBootToUtcMapping {
@@ -65,7 +65,7 @@ impl Server {
                     utc_reference,
                     responder,
                 }) => {
-                    trace::instant!(c"alarms", c"adjust:request:params", trace::Scope::Process,
+                    trace::instant!("alarms", "adjust:request:params", trace::Scope::Process,
                         "boot_reference" => boot_reference.into_nanos(), "utc_reference" => utc_reference);
                     let utc_reference = fxr::UtcInstant::from_nanos(utc_reference);
                     let (tx, mut rx) = mpsc::channel(1);

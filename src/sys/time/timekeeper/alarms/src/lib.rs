@@ -309,7 +309,7 @@ impl std::future::Future for HwResponseFut {
 
 /// Stops a currently running hardware timer.
 async fn stop_hrtimer(hrtimer: &Box<dyn TimerOps>, timer_config: &TimerConfig) {
-    trace::duration!(c"alarms", c"hrtimer:stop", "id" => timer_config.id);
+    trace::duration!("alarms", "hrtimer:stop", "id" => timer_config.id);
     debug!("stop_hrtimer: stopping hardware timer: {}", timer_config.id);
     hrtimer.stop(timer_config.id).await;
     debug!("stop_hrtimer: stopped  hardware timer: {}", timer_config.id);
@@ -1108,18 +1108,18 @@ async fn wake_timer_loop(
 
     while let Some(cmd) = cmds.next().await {
         let _i = ScopedInc::new(&loop_count);
-        trace::duration!(c"alarms", c"Cmd");
+        trace::duration!("alarms", "Cmd");
         // Use a consistent notion of "now" across commands.
         let now = fasync::BootInstant::now();
         now_prop.set(now.into_nanos());
-        trace::instant!(c"alarms", c"wake_timer_loop", trace::Scope::Process, "now" => now.into_nanos());
+        trace::instant!("alarms", "wake_timer_loop", trace::Scope::Process, "now" => now.into_nanos());
         match cmd {
             Cmd::Start { conn_id, deadline, mode, alarm_id, responder } => {
                 let _i = ScopedInc::new(&start_count);
-                trace::duration!(c"alarms", c"Cmd::Start");
+                trace::duration!("alarms", "Cmd::Start");
                 fuchsia_trace::flow_step!(
-                    c"alarms",
-                    c"hrtimer_lifecycle",
+                    "alarms",
+                    "hrtimer_lifecycle",
                     timers::get_trace_id(&alarm_id)
                 );
                 // NOTE: hold keep_alive until all work is done.
@@ -1153,10 +1153,10 @@ async fn wake_timer_loop(
                 };
 
                 if timers::Heap::expired(now, deadline_boot) {
-                    trace::duration!(c"alarms", c"Cmd::Start:immediate");
+                    trace::duration!("alarms", "Cmd::Start:immediate");
                     fuchsia_trace::flow_step!(
-                        c"alarms",
-                        c"hrtimer_lifecycle",
+                        "alarms",
+                        "hrtimer_lifecycle",
                         timers::get_trace_id(&alarm_id)
                     );
                     // A timer set into now or the past expires right away.
@@ -1186,10 +1186,10 @@ async fn wake_timer_loop(
                         }
                     }
                 } else {
-                    trace::duration!(c"alarms", c"Cmd::Start:regular");
+                    trace::duration!("alarms", "Cmd::Start:regular");
                     fuchsia_trace::flow_step!(
-                        c"alarms",
-                        c"hrtimer_lifecycle",
+                        "alarms",
+                        "hrtimer_lifecycle",
                         timers::get_trace_id(&alarm_id)
                     );
                     // A timer scheduled for the future gets inserted into the timer heap.
@@ -1235,10 +1235,10 @@ async fn wake_timer_loop(
                 defer! {
                     signal(&done);
                 }
-                trace::duration!(c"alarms", c"Cmd::StopById", "alarm_id" => timer_id.alarm());
+                trace::duration!("alarms", "Cmd::StopById", "alarm_id" => timer_id.alarm());
                 fuchsia_trace::flow_step!(
-                    c"alarms",
-                    c"hrtimer_lifecycle",
+                    "alarms",
+                    "hrtimer_lifecycle",
                     timers::get_trace_id(&timer_id.alarm())
                 );
                 debug!("wake_timer_loop: STOP timer: {}", timer_id);
@@ -1293,7 +1293,7 @@ async fn wake_timer_loop(
             Cmd::Alarm { expired_deadline, keep_alive } => {
                 let _i = ScopedInc::new(&alarm_count);
 
-                trace::duration!(c"alarms", c"Cmd::Alarm");
+                trace::duration!("alarms", "Cmd::Alarm");
                 // Expire all eligible timers, based on "now".  This is because
                 // we may have woken up earlier than the actual deadline. This
                 // happens for example if the timer can not make the actual
@@ -1330,7 +1330,7 @@ async fn wake_timer_loop(
             Cmd::AlarmFidlError { expired_deadline, error } => {
                 let _i = ScopedInc::new(&alarm_fidl_count);
 
-                trace::duration!(c"alarms", c"Cmd::AlarmFidlError");
+                trace::duration!("alarms", "Cmd::AlarmFidlError");
                 // We do not have a wake lease, so the system may sleep before
                 // we get to schedule a new timer. We have no way to avoid it
                 // today.
@@ -1384,7 +1384,7 @@ async fn wake_timer_loop(
             } => {
                 let _i = ScopedInc::new(&alarm_driver_count);
 
-                trace::duration!(c"alarms", c"Cmd::AlarmDriverError");
+                trace::duration!("alarms", "Cmd::AlarmDriverError");
                 let (_dummy_lease, peer) = zx::EventPair::create();
                 debug!(
                     "bogus lease: {:?} driver error. [{}:{}]",
@@ -1440,7 +1440,7 @@ async fn wake_timer_loop(
             Cmd::UtcUpdated { transform } => {
                 let _i = ScopedInc::new(&utc_update_count);
 
-                trace::duration!(c"alarms", c"Cmd::UtcUpdated");
+                trace::duration!("alarms", "Cmd::UtcUpdated");
                 debug!("wake_timer_loop: applying new clock transform: {transform:?}");
 
                 // Assigning to this shared reference updates the deadlines of all
@@ -1476,7 +1476,7 @@ async fn wake_timer_loop(
             // duration for performance awareness.  Note that iterations happen
             // only occasionally, so these stats can remain unchanged for a long
             // time.
-            trace::duration!(c"timekeeper", c"inspect");
+            trace::duration!("timekeeper", "inspect");
             let now_formatted = format_timer(now.into());
             debug!("wake_timer_loop: now:                             {}", &now_formatted);
             now_formatted_prop.set(&now_formatted);
@@ -1539,7 +1539,7 @@ async fn schedule_hrtimer(
     debug_node: &finspect::Node,
 ) -> TimerState {
     let timeout = std::cmp::max(zx::BootDuration::ZERO, deadline - now);
-    trace::duration!(c"alarms", c"schedule_hrtimer", "timeout" => timeout.into_nanos());
+    trace::duration!("alarms", "schedule_hrtimer", "timeout" => timeout.into_nanos());
     // When signaled, the hrtimer has been scheduled.
     let hrtimer_scheduled = zx::Event::create();
 
@@ -1562,7 +1562,7 @@ async fn schedule_hrtimer(
     // b/437177931.
     let useful_ticks = std::cmp::max(MIN_USEFUL_TICKS, slack.ticks());
 
-    trace::instant!(c"alarms", c"hrtimer:programmed",
+    trace::instant!("alarms", "hrtimer:programmed",
         trace::Scope::Process,
         "resolution_ns" => resolution_nanos,
         "ticks" => useful_ticks
@@ -1581,16 +1581,16 @@ async fn schedule_hrtimer(
     let hrtimer_scheduled_if_error = clone_handle(&hrtimer_scheduled);
     let hrtimer_task = scope.spawn_local(async move {
         debug!("hrtimer_task: waiting for hrtimer driver response");
-        trace::instant!(c"alarms", c"hrtimer:started", trace::Scope::Process);
+        trace::instant!("alarms", "hrtimer:started", trace::Scope::Process);
         let response = start_and_wait_fut.await;
-        trace::instant!(c"alarms", c"hrtimer:response", trace::Scope::Process);
+        trace::instant!("alarms", "hrtimer:response", trace::Scope::Process);
         match response {
             Err(TimerOpsError::Fidl(e)) => {
                 defer! {
                     // Allow hrtimer_scheduled to proceed anyways.
                     signal(&hrtimer_scheduled_if_error);
                 }
-                trace::instant!(c"alarms", c"hrtimer:response:fidl_error", trace::Scope::Process);
+                trace::instant!("alarms", "hrtimer:response:fidl_error", trace::Scope::Process);
                 command_send
                     .start_send(Cmd::AlarmFidlError { expired_deadline: now, error: e })
                     .unwrap();
@@ -1603,7 +1603,7 @@ async fn schedule_hrtimer(
                     signal(&hrtimer_scheduled_if_error);
                 }
                 let driver_error_str = format!("{:?}", e);
-                trace::instant!(c"alarms", c"hrtimer:response:driver_error", trace::Scope::Process, "error" => &driver_error_str[..]);
+                trace::instant!("alarms", "hrtimer:response:driver_error", trace::Scope::Process, "error" => &driver_error_str[..]);
                 // This is very common. For example, a "timer canceled" event
                 // will result in this code path being hit.
                 debug!("schedule_hrtimer: hrtimer driver error: {:?}", e);
@@ -1619,7 +1619,7 @@ async fn schedule_hrtimer(
                 // BAD: no way to keep alive.
             }
             Ok(keep_alive) => {
-                trace::instant!(c"alarms", c"hrtimer:response:alarm", trace::Scope::Process);
+                trace::instant!("alarms", "hrtimer:response:alarm", trace::Scope::Process);
                 debug!("hrtimer: got alarm response: {:?}", keep_alive);
                 // May trigger sooner than the deadline.
                 command_send
@@ -1628,7 +1628,7 @@ async fn schedule_hrtimer(
             }
         }
         debug!("hrtimer_task: exiting task.");
-        trace::instant!(c"alarms", c"hrtimer:task_exit", trace::Scope::Process);
+        trace::instant!("alarms", "hrtimer:task_exit", trace::Scope::Process);
     }).into();
     debug!("schedule_hrtimer: waiting for event to be signaled");
 
@@ -1641,7 +1641,7 @@ async fn schedule_hrtimer(
     let now_after_signaled = fasync::BootInstant::now();
     let duration_until_scheduled: zx::BootDuration = (now_after_signaled - now).into();
     if duration_until_scheduled > zx::BootDuration::from_nanos(LONG_DELAY_NANOS) {
-        trace::duration!(c"alarms", c"schedule_hrtimer:unusual_duration",
+        trace::duration!("alarms", "schedule_hrtimer:unusual_duration",
             "duration" => duration_until_scheduled.into_nanos());
         warn!(
             "unusual duration until hrtimer scheduled: {}",
@@ -1671,7 +1671,7 @@ fn notify_all(
     timer_ops_error: Option<TimerOpsError>,
     _unusual_slack_histogram: &finspect::IntExponentialHistogramProperty,
 ) -> Result<usize> {
-    trace::duration!(c"alarms", c"notify_all");
+    trace::duration!("alarms", "notify_all");
     let now = fasync::BootInstant::now();
     let mut expired = 0;
     while let Some(timer_node) = timers.maybe_expire_earliest(reference_instant) {
@@ -1680,12 +1680,12 @@ fn notify_all(
         let deadline = timer_node.get_boot_deadline();
         let alarm = timer_node.id().alarm();
         let alarm_id = alarm.to_string();
-        trace::duration!(c"alarms", c"notify_all:notified", "alarm_id" => &*alarm_id);
-        fuchsia_trace::flow_step!(c"alarms", c"hrtimer_lifecycle", timers::get_trace_id(&alarm_id));
+        trace::duration!("alarms", "notify_all:notified", "alarm_id" => &*alarm_id);
+        fuchsia_trace::flow_step!("alarms", "hrtimer_lifecycle", timers::get_trace_id(&alarm_id));
         let conn_id = timer_node.id().conn.clone();
         let slack: zx::BootDuration = deadline - now;
         if slack < zx::BootDuration::from_nanos(-LONG_DELAY_NANOS) {
-            trace::duration!(c"alarms", c"schedule_hrtimer:unusual_slack", "slack" => slack.into_nanos());
+            trace::duration!("alarms", "schedule_hrtimer:unusual_slack", "slack" => slack.into_nanos());
             // This alarm triggered noticeably later than it should have.
             warn!(
                 "alarm id: {} had an unusually large slack: {}",
@@ -1718,13 +1718,13 @@ fn notify_all(
             format_duration(slack),
         );
         let lease = clone_handle(lease_prototype);
-        trace::instant!(c"alarms", c"notify", trace::Scope::Process, "alarm_id" => &alarm_id[..], "conn_id" => conn_id);
+        trace::instant!("alarms", "notify", trace::Scope::Process, "alarm_id" => &alarm_id[..], "conn_id" => conn_id);
         if let Some(Err(e)) = timer_node.get_responder().send(alarm, Ok(lease)) {
             error!("could not signal responder: {:?}", e);
         }
-        trace::instant!(c"alarms", c"notified", trace::Scope::Process);
+        trace::instant!("alarms", "notified", trace::Scope::Process);
     }
-    trace::instant!(c"alarms", c"notify", trace::Scope::Process, "expired_count" => expired);
+    trace::instant!("alarms", "notify", trace::Scope::Process, "expired_count" => expired);
     debug!("notify_all: expired count: {}", expired);
     Ok(expired)
     // A new timer is not scheduled yet here.

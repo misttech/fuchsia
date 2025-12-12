@@ -449,7 +449,7 @@ async fn main() -> Result<()> {
             let timer_loop = timer_loop.clone();
             let adjust_server = adjust_server.clone();
             let scope = scope.to_handle();
-            fuchsia_trace::instant!(c"timekeeper", c"request", fuchsia_trace::Scope::Process);
+            fuchsia_trace::instant!("timekeeper", "request", fuchsia_trace::Scope::Process);
             async move {
                 match request {
                     Rpcs::TimeTest(stream) => {
