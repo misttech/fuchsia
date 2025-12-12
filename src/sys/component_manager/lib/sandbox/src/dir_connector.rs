@@ -65,7 +65,13 @@ pub trait DirConnectable: Send + Sync + Debug {
     ) -> Result<(), ()>;
 }
 
-impl DirConnectable for mpsc::UnboundedSender<ServerEnd<fio::DirectoryMarker>> {
+pub struct DirConnectorMessage {
+    pub dir: ServerEnd<fio::DirectoryMarker>,
+    pub subdir: RelativePath,
+    pub flags: Option<fio::Flags>,
+}
+
+impl DirConnectable for mpsc::UnboundedSender<DirConnectorMessage> {
     fn maximum_flags(&self) -> fio::Flags {
         fio::Flags::empty()
     }
@@ -76,9 +82,7 @@ impl DirConnectable for mpsc::UnboundedSender<ServerEnd<fio::DirectoryMarker>> {
         subdir: RelativePath,
         flags: Option<fio::Flags>,
     ) -> Result<(), ()> {
-        assert_eq!(subdir, RelativePath::dot());
-        assert_eq!(flags, None);
-        self.unbounded_send(dir).map_err(|_| ())
+        self.unbounded_send(DirConnectorMessage { dir, subdir, flags }).map_err(|_| ())
     }
 }
 

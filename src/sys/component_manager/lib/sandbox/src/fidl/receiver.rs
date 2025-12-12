@@ -35,12 +35,17 @@ impl DirReceiver {
         let mut on_closed = receiver_proxy.on_closed();
         loop {
             match future::select(pin!(self.receive()), on_closed).await {
-                Either::Left((ch, fut)) => {
+                Either::Left((payload, fut)) => {
                     on_closed = fut;
-                    let Some(ch) = ch else {
+                    let Some(payload) = payload else {
                         return;
                     };
-                    if let Err(_) = receiver_proxy.receive(ch) {
+                    if let Err(_) = receiver_proxy.receive(fsandbox::DirReceiverReceiveRequest {
+                        channel: Some(payload.dir.into()),
+                        flags: payload.flags,
+                        subdir: Some(payload.subdir.to_string()),
+                        ..Default::default()
+                    }) {
                         return;
                     }
                 }

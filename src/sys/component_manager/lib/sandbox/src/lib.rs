@@ -26,7 +26,7 @@ pub use self::data::Data;
 pub use self::dict::{
     Dict, EntryUpdate, Key as DictKey, UpdateNotifierFn, UpdateNotifierRetention,
 };
-pub use self::dir_connector::{DirConnectable, DirConnector};
+pub use self::dir_connector::{DirConnectable, DirConnector, DirConnectorMessage};
 pub use self::dir_entry::DirEntry;
 pub use self::directory::Directory;
 pub use self::handle::Handle;

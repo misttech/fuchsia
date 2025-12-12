@@ -2,13 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::Message;
+use crate::{DirConnectorMessage, Message};
 use derivative::Derivative;
-use fidl::endpoints::ServerEnd;
-use fidl_fuchsia_io as fio;
+use futures::StreamExt;
 use futures::channel::mpsc::{self, UnboundedReceiver};
 use futures::lock::Mutex;
-use futures::StreamExt;
 use std::sync::Arc;
 
 /// Type that represents the receiving end of a [Connector]. Every [Connector] is coupled to
@@ -49,7 +47,7 @@ impl Receiver {
 pub struct DirReceiver {
     /// `inner` uses an async mutex because it will be locked across an await point
     /// when asynchronously waiting for the next message.
-    inner: Arc<Mutex<UnboundedReceiver<ServerEnd<fio::DirectoryMarker>>>>,
+    inner: Arc<Mutex<UnboundedReceiver<DirConnectorMessage>>>,
 }
 
 impl Clone for DirReceiver {
@@ -59,13 +57,13 @@ impl Clone for DirReceiver {
 }
 
 impl DirReceiver {
-    pub fn new(receiver: mpsc::UnboundedReceiver<ServerEnd<fio::DirectoryMarker>>) -> Self {
+    pub fn new(receiver: mpsc::UnboundedReceiver<DirConnectorMessage>) -> Self {
         Self { inner: Arc::new(Mutex::new(receiver)) }
     }
 
     /// Waits to receive a message, or return `None` if there are no more messages and all
     /// senders are dropped.
-    pub async fn receive(&self) -> Option<ServerEnd<fio::DirectoryMarker>> {
+    pub async fn receive(&self) -> Option<DirConnectorMessage> {
         let mut receiver_guard = self.inner.lock().await;
         receiver_guard.next().await
     }

@@ -252,13 +252,11 @@ open protocol CapabilityStore {
         receiver client_end:DirReceiver;
     }) -> () error CapabilityStoreError;
 
-    /// Open a connection from the provided [DirConnector] capability that will be dispatched to
-    /// the [DirReceiver] on the other end.
-    ///
-    /// This method does not take `Open`/`Open3` parameters such as `flags` or `path`.
-    /// Clients that wish to specify these can get an initial connection from this method
-    /// and call `fuchsia.io/Directory.Open` on it. See the [DirReceiver] documentation for
-    /// more information about the expectations of the server side.
+    /// Open a connection from the provided [DirConnector] capability that will
+    /// be dispatched to the [DirReceiver] on the other end. The `id` and
+    /// `server_end` arguments are required, and the `flags` and `path`
+    /// arguments are optional (a path of `.` will be used if one is not
+    /// otherwise set).
     ///
     /// If there was an error making the connection, it will be reported as a zx.Status
     /// epitaph on `server_end`.
@@ -267,9 +265,11 @@ open protocol CapabilityStore {
     ///
     /// - `ID_NOT_FOUND` if `id` was not a valid capability id in this store.
     /// - `WRONG_TYPE` if `id` was not a connector capability.
-    flexible DirConnectorOpen(resource struct {
-        id CapabilityId;
-        server_end server_end:fuchsia.io.Directory;
+    flexible DirConnectorOpen(resource table {
+        1: id CapabilityId;
+        2: server_end server_end:fuchsia.io.Directory;
+        3: flags fuchsia.io.Flags;
+        4: path fuchsia.io.Path;
     }) -> () error CapabilityStoreError;
 
     /// Creates a new empty dictionary in this [`CapabilityStore`] with client-assigned `id`.
@@ -621,12 +621,11 @@ open protocol DirReceiver {
     /// Sends a directory channel to this receiver.
     ///
     /// The server should implement this method by forwarding `channel` to a vfs instance
-    /// of the language appropriate `vfs` library. To keep this interface decoupled from
-    /// `fuchsia.io`, it deliberately omits `Open`/`Open3` parameters such as `flags` and
-    /// `path`. If a client wishes to specify these, they can obtain an initial
-    /// [fuchsia.io/Directory] channel first and then call `Open`/`Open3` on it.
-    flexible Receive(resource struct {
-        channel server_end:fuchsia.io.Directory;
+    /// of the language appropriate `vfs` library.
+    flexible Receive(resource table {
+        1: channel zx.Handle:CHANNEL;
+        2: flags fuchsia.io.Flags;
+        3: subdir string:fuchsia.io.MAX_PATH_LENGTH;
     });
 };
 

@@ -362,7 +362,17 @@ impl<'a> DirConnector<'a> {
         &self,
         server_end: fidl::endpoints::ServerEnd<fio::DirectoryMarker>,
     ) -> Result<(), Error> {
-        Ok(self.store.proxy.dir_connector_open(self.id, server_end).await??)
+        Ok(self
+            .store
+            .proxy
+            .dir_connector_open(fsandbox::CapabilityStoreDirConnectorOpenRequest {
+                id: Some(self.id),
+                server_end: Some(server_end),
+                flags: None,
+                path: None,
+                ..Default::default()
+            })
+            .await??)
     }
 }
 
@@ -715,7 +725,7 @@ mod tests {
 
         let responder = assert_matches!(
             stream.next().await.unwrap().unwrap(),
-            fsandbox::CapabilityStoreRequest::DirConnectorOpen { id, server_end, responder } if id == 10 && server_end.as_handle_ref().is_invalid() == false => responder
+            fsandbox::CapabilityStoreRequest::DirConnectorOpen { payload, responder } if payload.id == Some(10) && payload.server_end.as_ref().expect("server_end").as_handle_ref().is_invalid() == false => responder
         );
 
         responder.send(Ok(())).unwrap();

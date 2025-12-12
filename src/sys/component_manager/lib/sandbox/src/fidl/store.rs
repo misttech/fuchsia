@@ -87,10 +87,22 @@ pub async fn serve_capability_store(
                 })();
                 responder.send(result)?;
             }
-            fsandbox::CapabilityStoreRequest::DirConnectorOpen { id, server_end, responder } => {
+            fsandbox::CapabilityStoreRequest::DirConnectorOpen { payload, responder } => {
                 let result = (|| {
+                    let Some(id) = payload.id else {
+                        return Err(fsandbox::CapabilityStoreError::InvalidArgs);
+                    };
+                    let Some(server_end) = payload.server_end else {
+                        return Err(fsandbox::CapabilityStoreError::InvalidArgs);
+                    };
                     let this = get_dir_connector(&store, id)?;
-                    let _ = this.send(server_end, RelativePath::dot(), None);
+                    let path = payload
+                        .path
+                        .map(RelativePath::new)
+                        .transpose()
+                        .map_err(|_| fsandbox::CapabilityStoreError::InvalidArgs)?
+                        .unwrap_or_else(|| RelativePath::dot());
+                    let _ = this.send(server_end, path, payload.flags);
                     Ok(())
                 })();
                 responder.send(result)?;
