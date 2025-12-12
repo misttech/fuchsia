@@ -30,6 +30,7 @@ template("bazel_test_product_bundle") {
                            [
                              "bazel_inputs_from_gn",
                              "deps",
+                             "image_use_vbmeta",
                            ])
 
     # Test bundles should be in product_bundles.json for infra.
