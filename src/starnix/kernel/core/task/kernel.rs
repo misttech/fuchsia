@@ -46,7 +46,7 @@ use starnix_logging::{log_debug, log_error, log_info, log_warn};
 use starnix_sync::{
     FileOpsCore, KernelSwapFiles, LockEqualOrBefore, Locked, Mutex, OrderedMutex, RwLock,
 };
-use starnix_types::ownership::{TempRef, WeakRef};
+use starnix_types::ownership::TempRef;
 use starnix_uapi::device_type::DeviceType;
 use starnix_uapi::errors::{Errno, errno};
 use starnix_uapi::open_flags::OpenFlags;
@@ -564,7 +564,6 @@ impl Kernel {
                     .read()
                     .get_thread_groups()
                     .filter(|tg| tg.leader != SYSTEM_TASK_PID && tg.leader != INIT_PID)
-                    .map(TempRef::into_static)
                     .collect::<Vec<_>>()
             };
             if tgs.is_empty() {
@@ -575,7 +574,7 @@ impl Kernel {
             log_debug!(tgs:?; "shutting down thread groups");
             let mut tasks = vec![];
             for tg in tgs {
-                let task = fasync::Task::local(ThreadGroup::shut_down(WeakRef::from(tg)));
+                let task = fasync::Task::local(ThreadGroup::shut_down(Arc::downgrade(&tg)));
                 tasks.push(task);
             }
             futures::future::join_all(tasks).await;
@@ -585,7 +584,7 @@ impl Kernel {
         let maybe_init = {
             // Exiting thread groups need to acquire a write lock for the pid table to successfully
             // exit so we need to acquire that lock in a reduced scope.
-            self.pids.read().get_thread_group(1).map(|tg| WeakRef::from(tg))
+            self.pids.read().get_thread_group(1).map(|tg| Arc::downgrade(&tg))
         };
         if let Some(init) = maybe_init {
             log_debug!("shutting down init");
@@ -776,7 +775,7 @@ impl Kernel {
         // Avoid holding locks for the entire iteration.
         let all_thread_groups = {
             let pid_table = self.pids.read();
-            pid_table.get_thread_groups().map(TempRef::into_static).collect::<Vec<_>>()
+            pid_table.get_thread_groups().collect::<Vec<_>>()
         };
         for thread_group in all_thread_groups {
             // Avoid holding the state lock while summarizing.

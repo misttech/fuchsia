@@ -59,6 +59,11 @@ impl<T> WeakKey<T> {
         Self(Arc::downgrade(arc), Arc::as_ptr(arc).into())
     }
 }
+impl<T> Clone for WeakKey<T> {
+    fn clone(&self) -> Self {
+        Self(self.0.clone(), self.1.clone())
+    }
+}
 impl<T> PartialEq<Weak<T>> for WeakKey<T> {
     fn eq(&self, other: &Weak<T>) -> bool {
         Weak::ptr_eq(&self.0, other)
@@ -101,6 +106,11 @@ pub struct PtrKey<T>(*const T);
 impl<T> From<*const T> for PtrKey<T> {
     fn from(ptr: *const T) -> Self {
         Self(ptr)
+    }
+}
+impl<T> Clone for PtrKey<T> {
+    fn clone(&self) -> Self {
+        Self(self.0)
     }
 }
 impl<T> PartialEq for PtrKey<T> {

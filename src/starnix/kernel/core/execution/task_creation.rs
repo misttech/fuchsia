@@ -15,7 +15,7 @@ use starnix_sync::{
 };
 use starnix_task_command::TaskCommand;
 use starnix_types::arch::ArchWidth;
-use starnix_types::ownership::{OwnedRef, Releasable, ReleaseGuard, Share, TempRef};
+use starnix_types::ownership::TempRef;
 use starnix_types::release_on_error;
 use starnix_uapi::auth::Credentials;
 use starnix_uapi::errors::Errno;
@@ -32,18 +32,10 @@ pub struct TaskInfo {
     pub thread: Option<zx::Thread>,
 
     /// The thread group that the task should be added to.
-    pub thread_group: OwnedRef<ThreadGroup>,
+    pub thread_group: Arc<ThreadGroup>,
 
     /// The memory manager to use for the task.
     pub memory_manager: Option<Arc<MemoryManager>>,
-}
-
-impl Releasable for TaskInfo {
-    type Context<'a> = ();
-
-    fn release<'a>(self, _: ()) {
-        self.thread_group.release(());
-    }
 }
 
 pub fn create_zircon_process<L>(
@@ -55,7 +47,7 @@ pub fn create_zircon_process<L>(
     process_group: Arc<ProcessGroup>,
     signal_actions: Arc<SignalActions>,
     name: TaskCommand,
-) -> Result<ReleaseGuard<TaskInfo>, Errno>
+) -> Result<TaskInfo, Errno>
 where
     L: LockBefore<ProcessGroupState>,
 {
@@ -86,7 +78,7 @@ where
         signal_actions,
     );
 
-    Ok(TaskInfo { thread: None, thread_group, memory_manager: Some(memory_manager) }.into())
+    Ok(TaskInfo { thread: None, thread_group, memory_manager: Some(memory_manager) })
 }
 
 /// Creates a process that shares half its address space with this process.
@@ -197,8 +189,9 @@ where
     {
         let mut init_writer = init_task.thread_group().write();
         let mut new_process_writer = task.thread_group().write();
-        new_process_writer.parent = Some(ThreadGroupParent::from(init_task.thread_group()));
-        init_writer.children.insert(task.tid, OwnedRef::downgrade(task.thread_group()));
+        new_process_writer.parent =
+            Some(ThreadGroupParent::new(Arc::downgrade(&init_task.thread_group())));
+        init_writer.children.insert(task.tid, Arc::downgrade(task.thread_group()));
     }
     // A child process created via fork(2) inherits its parent's
     // resource limits.  Resource limits are preserved across execve(2).
@@ -313,7 +306,7 @@ pub fn create_task<F, L>(
     security_state: security::TaskState,
 ) -> Result<TaskBuilder, Errno>
 where
-    F: FnOnce(&mut Locked<L>, i32, Arc<ProcessGroup>) -> Result<ReleaseGuard<TaskInfo>, Errno>,
+    F: FnOnce(&mut Locked<L>, i32, Arc<ProcessGroup>) -> Result<TaskInfo, Errno>,
     L: LockBefore<TaskRelease>,
 {
     let mut pids = kernel.pids.write();
@@ -345,7 +338,7 @@ fn create_task_with_pid<F, L>(
     security_state: security::TaskState,
 ) -> Result<TaskBuilder, Errno>
 where
-    F: FnOnce(&mut Locked<L>, i32, Arc<ProcessGroup>) -> Result<ReleaseGuard<TaskInfo>, Errno>,
+    F: FnOnce(&mut Locked<L>, i32, Arc<ProcessGroup>) -> Result<TaskInfo, Errno>,
     L: LockBefore<TaskRelease>,
 {
     debug_assert!(pids.get_task(pid).upgrade().is_none());
@@ -354,7 +347,7 @@ where
     pids.add_process_group(process_group.clone());
 
     let TaskInfo { thread, thread_group, memory_manager } =
-        ReleaseGuard::take(task_info_factory(locked, pid, process_group.clone())?);
+        task_info_factory(locked, pid, process_group.clone())?;
 
     process_group.insert(locked.cast_locked::<TaskRelease>(), &thread_group);
 
@@ -435,7 +428,7 @@ where
     let current_task: CurrentTask = TaskBuilder::new(Task::new(
         pid,
         initial_name,
-        OwnedRef::share(system_task.thread_group()),
+        system_task.thread_group().clone(),
         None,
         FdTable::default(),
         system_task.mm().ok(),

@@ -28,7 +28,6 @@ use starnix_logging::{
 };
 use starnix_sync::{FileOpsCore, Locked, Mutex, MutexGuard, Unlocked};
 use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
-use starnix_types::ownership::{OwnedRef, WeakRef};
 use starnix_uapi::device_type::DeviceType;
 use starnix_uapi::errors::{EAGAIN, EINTR, Errno, ErrnoCode};
 use starnix_uapi::open_flags::OpenFlags;
@@ -38,7 +37,7 @@ use starnix_uapi::{errno, errno_from_code, error, pid_t, uapi};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::ffi::CStr;
 use std::rc::Rc;
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 use zx::Peered;
 use {
     fidl_fuchsia_posix as fposix, fidl_fuchsia_starnix_binder as fbinder, fuchsia_async as fasync,
@@ -331,7 +330,7 @@ impl PendingRequest {
 struct RemoteBinderHandleState {
     /// The thread_group of the tasks that interact with this remote binder. This is used to
     /// interrupt a random thread in the task group is a taskless request needs to be handled.
-    thread_group: WeakRef<ThreadGroup>,
+    thread_group: Weak<ThreadGroup>,
 
     /// Mapping from the koid of the remote process to the local task.
     koid_to_task: HashMap<u64, pid_t>,
@@ -467,7 +466,7 @@ impl<F: RemoteControllerConnector> RemoteBinderHandle<F> {
         Arc::new(Self {
             kernel: current_task.kernel().clone(),
             state: Mutex::new(RemoteBinderHandleState {
-                thread_group: OwnedRef::downgrade(&current_task.thread_group()),
+                thread_group: Arc::downgrade(&current_task.thread_group()),
                 koid_to_task: Default::default(),
                 unassigned_tasks: Default::default(),
                 unassigned_requests: Default::default(),

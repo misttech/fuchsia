@@ -16,7 +16,6 @@ use starnix_core::{
     fileops_impl_delegate_read_and_seek, fileops_impl_noop_sync, fs_node_impl_not_dir,
 };
 use starnix_sync::{FileOpsCore, Locked};
-use starnix_types::ownership::TempRef;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::{errno, error, pid_t};
@@ -129,7 +128,7 @@ impl FileOps for ControlGroupFile {
         let thread_group = if let Some(ProcessEntryRef::Process(thread_group)) =
             current_task.kernel().pids.read().get_process(pid)
         {
-            TempRef::into_static(thread_group)
+            thread_group
         } else {
             return error!(EINVAL);
         };

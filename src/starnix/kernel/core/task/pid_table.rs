@@ -7,10 +7,10 @@ use crate::task::{ProcessGroup, Task, ThreadGroup, ZombieProcess};
 use fuchsia_rcu::rcu_option_cell::RcuOptionCell;
 use starnix_logging::track_stub;
 use starnix_rcu::{RcuHashMap, RcuReadScope};
-use starnix_types::ownership::{OwnedRef, TempRef, WeakRef};
+use starnix_types::ownership::{TempRef, WeakRef};
 use starnix_uapi::{pid_t, tid_t};
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 
 // The maximal pid considered.
 const PID_MAX_LIMIT: pid_t = 1 << 15;
@@ -19,7 +19,7 @@ const PID_MAX_LIMIT: pid_t = 1 << 15;
 enum ProcessEntry {
     #[default]
     None,
-    ThreadGroup(WeakRef<ThreadGroup>),
+    ThreadGroup(Weak<ThreadGroup>),
     Zombie(WeakRef<ZombieProcess>),
 }
 
@@ -28,7 +28,7 @@ impl ProcessEntry {
         matches!(self, Self::None)
     }
 
-    fn thread_group(&self) -> Option<&WeakRef<ThreadGroup>> {
+    fn thread_group(&self) -> Option<&Weak<ThreadGroup>> {
         match self {
             Self::ThreadGroup(group) => Some(group),
             _ => None,
@@ -50,7 +50,7 @@ impl PidEntry {
 }
 
 pub enum ProcessEntryRef<'a> {
-    Process(TempRef<'a, ThreadGroup>),
+    Process(Arc<ThreadGroup>),
     Zombie(TempRef<'a, ZombieProcess>),
 }
 
@@ -126,7 +126,7 @@ impl PidTable {
         // If we're not cloning a thread, add its thread group
         if task.is_leader() {
             assert!(entry.process.is_none());
-            entry.process = ProcessEntry::ThreadGroup(OwnedRef::downgrade(task.thread_group()));
+            entry.process = ProcessEntry::ThreadGroup(Arc::downgrade(task.thread_group()));
 
             let scope = RcuReadScope::new();
             // Notify thread group changes.
@@ -163,14 +163,14 @@ impl PidTable {
         }
     }
 
-    pub fn get_thread_group(&self, pid: pid_t) -> Option<TempRef<'_, ThreadGroup>> {
+    pub fn get_thread_group(&self, pid: pid_t) -> Option<Arc<ThreadGroup>> {
         match self.get_process(pid) {
             Some(ProcessEntryRef::Process(tg)) => Some(tg),
             _ => None,
         }
     }
 
-    pub fn get_thread_groups(&self) -> impl Iterator<Item = TempRef<'_, ThreadGroup>> + '_ {
+    pub fn get_thread_groups(&self) -> impl Iterator<Item = Arc<ThreadGroup>> + '_ {
         self.table
             .iter()
             .flat_map(|(_pid, entry)| entry.process.thread_group())

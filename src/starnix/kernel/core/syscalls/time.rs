@@ -648,9 +648,9 @@ mod test {
     use crate::testing::{map_memory, spawn_kernel_and_run};
     use crate::time::utc::UtcClockOverrideGuard;
     use fuchsia_runtime::{UtcDuration, UtcTimeline};
-    use starnix_types::ownership::OwnedRef;
     use starnix_uapi::signals;
     use starnix_uapi::user_address::UserAddress;
+    use std::sync::Arc;
     use test_util::{assert_geq, assert_leq};
     use zx::{self as zx, BootTimeline, Clock, ClockUpdate, HandleBased};
 
@@ -753,7 +753,7 @@ mod test {
             let interruption_target =
                 zx::MonotonicInstant::get() + zx::MonotonicDuration::from_seconds(1);
 
-            let thread_group = OwnedRef::downgrade(current_task.thread_group());
+            let thread_group = Arc::downgrade(current_task.thread_group());
             let thread_join_handle = std::thread::Builder::new()
                 .name("clock_nanosleep_interruptor".to_string())
                 .spawn(move || {

@@ -977,7 +977,7 @@ pub struct Task {
     ///
     /// The group of tasks in a thread group roughly corresponds to the userspace notion of a
     /// process.
-    pub thread_group: OwnedRef<ThreadGroup>,
+    pub thread_group: Arc<ThreadGroup>,
 
     /// A handle to the underlying Zircon thread object.
     ///
@@ -1056,7 +1056,7 @@ impl Task {
         &self.kernel
     }
 
-    pub fn thread_group(&self) -> &OwnedRef<ThreadGroup> {
+    pub fn thread_group(&self) -> &Arc<ThreadGroup> {
         &self.thread_group
     }
 
@@ -1083,7 +1083,7 @@ impl Task {
             // Add a zombie that the ptracer will notice.
             ptrace.last_signal_waitable = true;
             let tracer_pid = ptrace.get_pid();
-            let tracer_tg = pids.get_thread_group(tracer_pid).map(TempRef::into_static);
+            let tracer_tg = pids.get_thread_group(tracer_pid);
             if let Some(tracer_tg) = tracer_tg {
                 drop(state);
                 let mut tracer_state = tracer_tg.write();
@@ -1150,7 +1150,7 @@ impl Task {
     pub fn new(
         tid: tid_t,
         command: TaskCommand,
-        thread_group: OwnedRef<ThreadGroup>,
+        thread_group: Arc<ThreadGroup>,
         thread: Option<zx::Thread>,
         files: FdTable,
         mm: Option<Arc<MemoryManager>>,
@@ -1612,8 +1612,7 @@ impl Releasable for Task {
         // and from the resulting ReleaseGuard.
         let CurrentTask { mut task, .. } = current_task;
         let task = OwnedRef::take(&mut task).expect("task should not have been re-owned");
-        let task: Self = ReleaseGuard::take(task);
-        task.thread_group.release(());
+        let _task: Self = ReleaseGuard::take(task);
     }
 }
 

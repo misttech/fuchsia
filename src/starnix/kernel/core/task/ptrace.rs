@@ -21,7 +21,7 @@ use starnix_logging::track_stub;
 use starnix_sync::{LockBefore, Locked, MmDumpable, ThreadGroupLimits, Unlocked};
 use starnix_syscalls::SyscallResult;
 use starnix_syscalls::decls::SyscallDecl;
-use starnix_types::ownership::{OwnedRef, Releasable, ReleaseGuard, TempRef, WeakRef};
+use starnix_types::ownership::{OwnedRef, Releasable, ReleaseGuard, WeakRef};
 use starnix_uapi::auth::{CAP_SYS_PTRACE, PTRACE_MODE_ATTACH_REALCREDS};
 use starnix_uapi::elf::ElfNoteType;
 use starnix_uapi::errors::Errno;
@@ -43,8 +43,8 @@ use starnix_uapi::{
 };
 
 use std::collections::BTreeMap;
-use std::sync::Arc;
 use std::sync::atomic::Ordering;
+use std::sync::{Arc, Weak};
 use zerocopy::FromBytes;
 
 #[cfg(target_arch = "x86_64")]
@@ -461,7 +461,7 @@ struct TracedZombie {
 
     /// An optional real zombie to be sent to the given ThreadGroup after the zomboe has been
     /// delivered to the tracer.
-    delegate: Option<(WeakRef<ThreadGroup>, OwnedRef<ZombieProcess>)>,
+    delegate: Option<(Weak<ThreadGroup>, OwnedRef<ZombieProcess>)>,
 }
 
 impl Releasable for TracedZombie {
@@ -482,7 +482,7 @@ impl TracedZombie {
 
     fn new_with_delegate(
         artificial_zombie: ZombieProcess,
-        delegate: (WeakRef<ThreadGroup>, OwnedRef<ZombieProcess>),
+        delegate: (Weak<ThreadGroup>, OwnedRef<ZombieProcess>),
     ) -> ReleaseGuard<Self> {
         ReleaseGuard::from(Self { artificial_zombie, delegate: Some(delegate) })
     }
@@ -610,7 +610,7 @@ impl ZombiePtracees {
         &mut self,
         selector: &ProcessSelector,
         options: &WaitingOptions,
-    ) -> Option<(ZombieProcess, Option<(WeakRef<ThreadGroup>, OwnedRef<ZombieProcess>)>)> {
+    ) -> Option<(ZombieProcess, Option<(Weak<ThreadGroup>, OwnedRef<ZombieProcess>)>)> {
         // We look for the last zombie in the vector that matches pid
         // selector and waiting options
         let Some((t, found_zombie)) = self
@@ -1135,13 +1135,8 @@ where
     L: LockBefore<ThreadGroupLimits>,
 {
     {
-        let weak_tg = tracee_task
-            .thread_group()
-            .kernel
-            .pids
-            .read()
-            .get_thread_group(ptrace_state.pid)
-            .map(TempRef::into_static);
+        let weak_tg =
+            tracee_task.thread_group().kernel.pids.read().get_thread_group(ptrace_state.pid);
         let tracer_tg = weak_tg.ok_or_else(|| errno!(ESRCH))?;
         do_attach(
             &tracer_tg,

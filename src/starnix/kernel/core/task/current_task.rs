@@ -32,9 +32,7 @@ use starnix_syscalls::decls::Syscall;
 use starnix_task_command::TaskCommand;
 use starnix_types::arch::ArchWidth;
 use starnix_types::futex_address::FutexAddress;
-use starnix_types::ownership::{
-    OwnedRef, Releasable, ReleaseGuard, Share, TempRef, WeakRef, release_on_error,
-};
+use starnix_types::ownership::{OwnedRef, Releasable, TempRef, WeakRef, release_on_error};
 use starnix_uapi::auth::{
     CAP_KILL, CAP_SYS_ADMIN, CAP_SYS_PTRACE, Credentials, FsCred, PTRACE_MODE_FSCREDS,
     PTRACE_MODE_REALCREDS, PtraceAccessMode, UserAndOrGroupId,
@@ -1693,7 +1691,7 @@ impl CurrentTask {
             if clone_thread {
                 TaskInfo {
                     thread: None,
-                    thread_group: OwnedRef::share(self.thread_group()),
+                    thread_group: self.thread_group().clone(),
                     memory_manager: self.mm().ok(),
                 }
             } else {
@@ -1708,7 +1706,7 @@ impl CurrentTask {
                 };
                 let process_group = thread_group_state.process_group.clone();
 
-                let task_info = ReleaseGuard::take(create_zircon_process(
+                let task_info = create_zircon_process(
                     locked,
                     kernel,
                     Some(thread_group_state),
@@ -1717,7 +1715,7 @@ impl CurrentTask {
                     process_group,
                     signal_actions,
                     command.clone(),
-                )?);
+                )?;
 
                 cgroup2_pid_table.inherit_cgroup(self.thread_group(), &task_info.thread_group);
 

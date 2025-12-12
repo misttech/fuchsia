@@ -22,7 +22,6 @@ use starnix_uapi::{tid_t, uapi};
 use starnix_logging::track_stub;
 use starnix_sync::{Locked, Unlocked};
 use starnix_syscalls::SyscallResult;
-use starnix_types::ownership::{OwnedRef, TempRef};
 use starnix_types::time::{duration_from_timespec, timeval_from_duration};
 use starnix_uapi::errors::{EINTR, ETIMEDOUT, Errno, ErrnoResultExt};
 use starnix_uapi::open_flags::OpenFlags;
@@ -516,7 +515,7 @@ pub fn sys_kill(
                     None => {
                         let weak_task = pids.get_task(pid);
                         let task = Task::from_weak(&weak_task)?;
-                        TempRef::into_static(OwnedRef::temp(&task.thread_group()))
+                        task.thread_group().clone()
                     }
                 }
             };
@@ -559,9 +558,9 @@ pub fn sys_kill(
             };
 
             let process_group = pids.get_process_group(process_group_id);
-            let thread_groups = process_group.iter().flat_map(|pg| {
-                pg.read(locked).thread_groups().map(TempRef::into_static).collect::<Vec<_>>()
-            });
+            let thread_groups = process_group
+                .iter()
+                .flat_map(|pg| pg.read(locked).thread_groups().collect::<Vec<_>>());
             signal_thread_groups(current_task, unchecked_signal, thread_groups)?;
         }
     };

@@ -21,12 +21,12 @@ use std::pin::pin;
 use futures::stream::AbortHandle;
 use starnix_logging::{log_error, log_trace, log_warn, track_stub};
 use starnix_sync::Mutex;
-use starnix_types::ownership::{TempRef, WeakRef};
+use starnix_types::ownership::TempRef;
 use starnix_types::time::{duration_from_timespec, timespec_from_duration};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::{SI_TIMER, itimerspec};
 use std::fmt::Debug;
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 
 #[derive(Default)]
 pub struct TimerRemaining {
@@ -240,7 +240,7 @@ impl IntervalTimer {
     async fn start_timer_loop(
         self: &IntervalTimerHandle,
         kernel: &Kernel,
-        timer_thread_group: WeakRef<ThreadGroup>,
+        timer_thread_group: Weak<ThreadGroup>,
     ) {
         loop {
             let overtime = loop {

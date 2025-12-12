@@ -26,9 +26,10 @@ use starnix_sync::{
     LockBefore, Locked, Mutex, OrderedMutex, ProcessGroupState, RwLock, ThreadGroupLimits, Unlocked,
 };
 use starnix_task_command::TaskCommand;
-use starnix_types::ownership::{OwnedRef, Releasable, TempRef, WeakRef, WeakRefKey};
+use starnix_types::ownership::{OwnedRef, Releasable, TempRef, WeakRef};
 use starnix_types::stats::TaskTimeStats;
 use starnix_types::time::{itimerspec_from_itimerval, timeval_from_duration};
+use starnix_uapi::arc_key::WeakKey;
 use starnix_uapi::auth::{CAP_SYS_ADMIN, CAP_SYS_RESOURCE, Credentials};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::personality::PersonalityFlags;
@@ -43,15 +44,15 @@ use starnix_uapi::{
 };
 use std::collections::BTreeMap;
 use std::fmt;
-use std::sync::Arc;
 use std::sync::atomic::Ordering;
+use std::sync::{Arc, Weak};
 use zx::{AsHandleRef, Koid, Status};
 
 /// A weak reference to a thread group that can be used in set and maps.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ThreadGroupKey {
     pid: pid_t,
-    key: WeakRefKey<ThreadGroup>,
+    thread_group: WeakKey<ThreadGroup>,
 }
 
 impl ThreadGroupKey {
@@ -65,15 +66,15 @@ impl ThreadGroupKey {
 }
 
 impl std::ops::Deref for ThreadGroupKey {
-    type Target = WeakRef<ThreadGroup>;
+    type Target = Weak<ThreadGroup>;
     fn deref(&self) -> &Self::Target {
-        &self.key
+        &self.thread_group.0
     }
 }
 
 impl From<&ThreadGroup> for ThreadGroupKey {
     fn from(tg: &ThreadGroup) -> Self {
-        Self { pid: tg.leader, key: tg.weak_self.clone().into() }
+        Self { pid: tg.leader, thread_group: WeakKey::from(&tg.weak_self.upgrade().unwrap()) }
     }
 }
 
@@ -148,7 +149,7 @@ pub struct ThreadGroupMutableState {
     /// to their parent.
     /// It is still expected that these weak references are always valid, as thread groups must unregister
     /// themselves before they are deleted.
-    pub children: BTreeMap<pid_t, WeakRef<ThreadGroup>>,
+    pub children: BTreeMap<pid_t, Weak<ThreadGroup>>,
 
     /// Child tasks that have exited, but not yet been waited for.
     pub zombie_children: Vec<OwnedRef<ZombieProcess>>,
@@ -223,7 +224,7 @@ pub struct ThreadGroupMutableState {
 pub struct ThreadGroup {
     /// Weak reference to the `OwnedRef` of this `ThreadGroup`. This allows to retrieve the
     /// `TempRef` from a raw `ThreadGroup`.
-    pub weak_self: WeakRef<ThreadGroup>,
+    pub weak_self: Weak<ThreadGroup>,
 
     /// The kernel to which this thread group belongs.
     pub kernel: Arc<Kernel>,
@@ -298,12 +299,6 @@ impl PartialEq for ThreadGroup {
     }
 }
 
-impl Releasable for ThreadGroup {
-    type Context<'a> = ();
-
-    fn release<'a>(self, _: ()) {}
-}
-
 #[cfg(any(test, debug_assertions))]
 impl Drop for ThreadGroup {
     fn drop(&mut self) {
@@ -326,17 +321,17 @@ impl Drop for ThreadGroup {
     }
 }
 
-/// A wrapper around a `WeakRef<ThreadGroup>` that expects the underlying `WeakRef` to always be
+/// A wrapper around a `Weak<ThreadGroup>` that expects the underlying `Weak` to always be
 /// valid. The wrapper will check this at runtime during creation and upgrade.
-pub struct ThreadGroupParent(WeakRef<ThreadGroup>);
+pub struct ThreadGroupParent(Weak<ThreadGroup>);
 
 impl ThreadGroupParent {
-    pub fn new(t: WeakRef<ThreadGroup>) -> Self {
+    pub fn new(t: Weak<ThreadGroup>) -> Self {
         debug_assert!(t.upgrade().is_some());
         Self(t)
     }
 
-    pub fn upgrade<'a>(&'a self) -> TempRef<'a, ThreadGroup> {
+    pub fn upgrade(&self) -> Arc<ThreadGroup> {
         self.0.upgrade().expect("ThreadGroupParent references must always be valid")
     }
 }
@@ -344,12 +339,6 @@ impl ThreadGroupParent {
 impl Clone for ThreadGroupParent {
     fn clone(&self) -> Self {
         Self(self.0.clone())
-    }
-}
-
-impl<I: Into<WeakRef<ThreadGroup>>> From<I> for ThreadGroupParent {
-    fn from(r: I) -> Self {
-        Self::new(r.into())
     }
 }
 
@@ -569,11 +558,11 @@ impl ThreadGroup {
         exit_signal: Option<Signal>,
         process_group: Arc<ProcessGroup>,
         signal_actions: Arc<SignalActions>,
-    ) -> OwnedRef<ThreadGroup>
+    ) -> Arc<ThreadGroup>
     where
         L: LockBefore<ProcessGroupState>,
     {
-        OwnedRef::new_cyclic(|weak_self| {
+        Arc::new_cyclic(|weak_self| {
             let mut thread_group = ThreadGroup {
                 weak_self: weak_self.clone(),
                 kernel,
@@ -598,7 +587,7 @@ impl ThreadGroup {
                 mutable_state: RwLock::new(ThreadGroupMutableState {
                     parent: parent
                         .as_ref()
-                        .map(|p| ThreadGroupParent::from(p.base.weak_self.clone())),
+                        .map(|p| ThreadGroupParent::new(p.base.weak_self.clone())),
                     exit_signal,
                     tasks: BTreeMap::new(),
                     children: BTreeMap::new(),
@@ -624,7 +613,7 @@ impl ThreadGroup {
 
             if let Some(mut parent) = parent {
                 thread_group.next_seccomp_filter_id.reset(parent.base.next_seccomp_filter_id.get());
-                parent.children.insert(leader, weak_self);
+                parent.children.insert(leader, weak_self.clone());
                 process_group.insert(locked, &thread_group);
             };
             thread_group
@@ -789,7 +778,8 @@ impl ThreadGroup {
                                 let mut child_state = child.write();
 
                                 child_state.exit_signal = Some(SIGCHLD);
-                                child_state.parent = Some(ThreadGroupParent::from(&reaper));
+                                child_state.parent =
+                                    Some(ThreadGroupParent::new(Arc::downgrade(&reaper)));
                                 reaper_state.children.insert(child.leader, weak_child.clone());
                             }
                         }
@@ -1300,8 +1290,7 @@ impl ThreadGroup {
     where
         L: LockBefore<ProcessGroupState>,
     {
-        let mut thread_groups =
-            self.read().children().map(TempRef::into_static).collect::<Vec<_>>();
+        let mut thread_groups = self.read().children().collect::<Vec<_>>();
         let this = self.weak_self.upgrade().unwrap();
         thread_groups.push(this);
         let process_groups =
@@ -1349,7 +1338,7 @@ impl ThreadGroup {
             // stats from starnix process.
             assert_eq!(
                 self as *const ThreadGroup,
-                TempRef::as_ptr(&self.kernel.kthreads.system_thread_group())
+                Arc::as_ptr(&self.kernel.kthreads.system_thread_group())
             );
             &self.kernel.kthreads.starnix_process
         } else {
@@ -1407,7 +1396,7 @@ impl ThreadGroup {
             Some((zombie, None)) => return Some(zombie.to_wait_result()),
             Some((zombie, Some((tg, z)))) => {
                 if let Some(tg) = tg.upgrade() {
-                    if TempRef::as_ptr(&tg) != self as *const Self {
+                    if Arc::as_ptr(&tg) != self as *const Self {
                         tg.do_zombie_notifications(z);
                     } else {
                         {
@@ -1684,7 +1673,7 @@ impl ThreadGroup {
     /// Returns once `ThreadGroup::exit()` has completed.
     ///
     /// Must be called from the system task.
-    pub async fn shut_down(this: WeakRef<Self>) {
+    pub async fn shut_down(this: Weak<Self>) {
         const SHUTDOWN_SIGNAL_HANDLING_TIMEOUT: zx::MonotonicDuration =
             zx::MonotonicDuration::from_seconds(1);
 
@@ -1764,7 +1753,7 @@ impl ThreadGroupMutableState<Base = ThreadGroup> {
         !matches!(self.run_state, ThreadGroupRunState::Running)
     }
 
-    pub fn children(&self) -> impl Iterator<Item = TempRef<'_, ThreadGroup>> + '_ {
+    pub fn children(&self) -> impl Iterator<Item = Arc<ThreadGroup>> + '_ {
         self.children.values().map(|v| {
             v.upgrade().expect("Weak references to processes in ThreadGroup must always be valid")
         })
@@ -2157,10 +2146,7 @@ mod test {
                 child_task.get_pid()
             );
             assert!(
-                !old_process_group
-                    .read(locked)
-                    .thread_groups()
-                    .contains(&OwnedRef::temp(child_task.thread_group()))
+                !old_process_group.read(locked).thread_groups().contains(child_task.thread_group())
             );
         })
         .await;
@@ -2257,7 +2243,7 @@ mod test {
                 !old_process_group
                     .read(locked)
                     .thread_groups()
-                    .contains(&OwnedRef::temp(child_task2.thread_group()))
+                    .contains(child_task2.thread_group())
             );
         })
         .await;

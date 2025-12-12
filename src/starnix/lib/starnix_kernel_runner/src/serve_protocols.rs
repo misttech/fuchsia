@@ -26,7 +26,6 @@ use starnix_logging::{log_error, log_warn};
 use starnix_modules_framebuffer::Framebuffer;
 use starnix_sync::{Locked, Unlocked};
 use starnix_task_command::TaskCommand;
-use starnix_types::ownership::TempRef;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::signals::UncheckedSignal;
@@ -188,7 +187,6 @@ pub async fn serve_container_controller(
                             .pids
                             .read()
                             .get_thread_groups()
-                            .map(TempRef::into_static)
                             .collect::<Vec<_>>();
                         let mut results = vec![];
                         for thread_group in thread_groups {

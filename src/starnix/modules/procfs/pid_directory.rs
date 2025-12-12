@@ -31,7 +31,7 @@ use starnix_core::vfs::{
 use starnix_logging::{bug_ref, track_stub};
 use starnix_sync::{FileOpsCore, Locked};
 use starnix_task_command::TaskCommand;
-use starnix_types::ownership::{OwnedRef, TempRef, WeakRef};
+use starnix_types::ownership::{TempRef, WeakRef};
 use starnix_types::time::duration_to_scheduler_clock;
 use starnix_uapi::auth::{CAP_SYS_NICE, CAP_SYS_RESOURCE};
 use starnix_uapi::device_type::DeviceType;
@@ -254,9 +254,7 @@ impl FsNodeOps for TaskDirectoryNode {
             }
             b"task" => {
                 let task = self.task_weak.upgrade().ok_or_else(|| errno!(ESRCH))?;
-                Box::new(TaskListDirectory {
-                    thread_group: OwnedRef::downgrade(&task.thread_group()),
-                })
+                Box::new(TaskListDirectory { thread_group: Arc::downgrade(&task.thread_group()) })
             }
             name => unreachable!(
                 "entry \"{:?}\" should be supported to keep in sync with task_entries()",
@@ -631,11 +629,11 @@ fn fds_to_directory_entries(fds: Vec<FdNumber>) -> Vec<VecDirectoryEntry> {
 
 /// Directory that lists the task IDs (tid) in a process. Located at `/proc/<pid>/task/`.
 struct TaskListDirectory {
-    thread_group: WeakRef<ThreadGroup>,
+    thread_group: Weak<ThreadGroup>,
 }
 
 impl TaskListDirectory {
-    fn thread_group(&self) -> Result<TempRef<'_, ThreadGroup>, Errno> {
+    fn thread_group(&self) -> Result<Arc<ThreadGroup>, Errno> {
         self.thread_group.upgrade().ok_or_else(|| errno!(ESRCH))
     }
 }
@@ -841,7 +839,7 @@ impl FileOps for CommFile {
         data: &mut dyn InputBuffer,
     ) -> Result<usize, Errno> {
         let task = Task::from_weak(&self.task)?;
-        if !OwnedRef::ptr_eq(&task.thread_group(), &current_task.thread_group()) {
+        if !Arc::ptr_eq(&task.thread_group(), &current_task.thread_group()) {
             return error!(EINVAL);
         }
         // What happens if userspace writes to this file in multiple syscalls? We need more
