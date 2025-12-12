@@ -10,20 +10,6 @@ import("//build/testing/host_test_data.gni")
 
 # Declares a host-side antlion test.
 #
-# Examples
-#
-# ```
-# antlion_host_test("sl4f_sanity_test") {
-#   main_source = "Sl4fSanityTest.py"
-# }
-#
-# antlion_host_test("wlan_rvr_test_2g") {
-#   main_source = "WlanRvrTest.py"
-#   test_params = "rvr_settings.yaml"
-#   test_cases = [ "test_rvr_11n_2g_*" ]
-# }
-# ```
-#
 # Parameters
 #
 #  main_source

@@ -615,7 +615,7 @@ mod test {
                 "ipv6": FUCHSIA_ADDR,
                 "ssh_key": ssh_key.path(),
                 "test_params": {
-                    "sl4f_sanity_test_params": {
+                    "my_test_params": {
                         "can_overwrite": false,
                         "from_original": true,
                     }
@@ -637,7 +637,7 @@ mod test {
         )
         .unwrap();
         let params = "
-            sl4f_sanity_test_params:
+            my_test_params:
                 merged_with: true
                 can_overwrite: true
         ";
@@ -675,7 +675,7 @@ mod test {
                   bluetooth:
                     implementation: fuchsia-controller
           TestParams:
-            sl4f_sanity_test_params:
+            my_test_params:
               can_overwrite: true
               from_original: true
               merged_with: true

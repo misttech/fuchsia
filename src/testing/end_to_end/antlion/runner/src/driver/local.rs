@@ -448,7 +448,7 @@ mod test {
         .unwrap();
 
         let params_yaml = "
-        sl4f_sanity_test_params:
+        my_test_params:
             foo: bar
         ";
         let params = serde_yaml::from_str(params_yaml).unwrap();
@@ -486,7 +486,7 @@ mod test {
                   bluetooth:
                     implementation: fuchsia-controller
           TestParams:
-            sl4f_sanity_test_params:
+            my_test_params:
               foo: bar
         MoblyParams:
           LogPath: {out_path}
