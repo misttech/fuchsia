@@ -83,21 +83,21 @@ async fn update_android_bootreason(dir: Option<fio::DirectoryProxy>) -> Result<S
 }
 
 /// Get the last reboot reason code.
-fn get_reboot_reason() -> Option<u16> {
+fn get_reboot_reason() -> Option<RebootReason> {
     let reboot_info_proxy = connect_to_protocol_sync::<LastRebootInfoProviderMarker>().ok();
     let deadline = zx::MonotonicInstant::after(LRIP_FIDL_TIMEOUT);
     let reboot_info = reboot_info_proxy?.get(deadline);
     match reboot_info {
         Ok(info) => match info.reason {
-            Some(r) => Some(r.into_primitive()),
+            Some(r) => Some(r),
             None => {
                 info!("Failed to get the reboot reason.");
-                Some(RebootReason::unknown().into_primitive())
+                Some(RebootReason::unknown())
             }
         },
         Err(e) => {
             info!("Failed to get the reboot info: {:?}", e);
-            Some(RebootReason::unknown().into_primitive())
+            Some(RebootReason::unknown())
         }
     }
 }
@@ -110,10 +110,9 @@ pub fn get_console_ramoops() -> Option<Vec<u8>> {
     debug!("Getting console-ramoops contents");
     match ANDROID_BOOTREASON.wait_blocking() {
         Ok(reason) => match reason.as_str() {
-            "kernel_panic" | "watchdog" | "watchdog,sw" => {
-                Some(format!("Last Reboot Reason: {}\n", get_reboot_reason()?).as_bytes().to_vec())
-                // TODO: Log additional crash signature.
-            }
+            "kernel_panic" | "watchdog" | "watchdog,sw" => Some(
+                format!("Last Reboot Reason: {:?}\n", get_reboot_reason()?).as_bytes().to_vec(),
+            ),
             _ => None,
         },
         Err(e) => {
