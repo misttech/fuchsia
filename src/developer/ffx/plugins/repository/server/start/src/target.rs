@@ -31,6 +31,8 @@ use target_connector::Connector;
 use target_holders::RemoteControlProxyHolder;
 use timeout::timeout;
 
+// The monikers are used in calls to rcs::toolbox::connect_with_timeout
+// as backup only, in case connection via toolbox fails.
 const REPOSITORY_MANAGER_MONIKER: &str = "/core/pkg-resolver";
 const ENGINE_MONIKER: &str = "/core/pkg-resolver";
 const MAX_CONSECUTIVE_CONNECT_ATTEMPTS: u8 = 10;
@@ -47,18 +49,21 @@ async fn connect_to_target(
     alias_conflict_mode: RepositoryRegistrationAliasConflictMode,
     tunnel_addr: SocketAddr,
 ) -> Result<impl Stream<Item = anyhow::Result<TargetTcpStream>>, anyhow::Error> {
-    let repo_proxy = rcs::connect_to_protocol::<RepositoryManagerMarker>(
-        connect_timeout,
-        REPOSITORY_MANAGER_MONIKER,
+    let repo_proxy = rcs::toolbox::connect_with_timeout::<RepositoryManagerMarker>(
         &rcs_proxy,
+        Some(REPOSITORY_MANAGER_MONIKER),
+        connect_timeout,
     )
     .await
     .with_context(|| format!("connecting to repository manager on {:?}", target_spec))?;
 
-    let engine_proxy =
-        rcs::connect_to_protocol::<EngineMarker>(connect_timeout, ENGINE_MONIKER, &rcs_proxy)
-            .await
-            .with_context(|| format!("binding engine to stream on {:?}", target_spec))?;
+    let engine_proxy = rcs::toolbox::connect_with_timeout::<EngineMarker>(
+        &rcs_proxy,
+        Some(ENGINE_MONIKER),
+        connect_timeout,
+    )
+    .await
+    .with_context(|| format!("binding engine to stream on {:?}", target_spec))?;
 
     let port_forward = ffx_target_net::SocketProvider::new_with_rcs(connect_timeout, &rcs_proxy)
         .await
