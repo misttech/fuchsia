@@ -3,10 +3,10 @@
 // found in the LICENSE file.
 
 use super::input_test_environment::{TestInputEnvironment, TestInputEnvironmentBuilder};
-use crate::input::input_device_configuration::{
+use crate::input_device_configuration::{
     InputConfiguration, InputDeviceConfiguration, SourceState,
 };
-use crate::input::types::{
+use crate::types::{
     DeviceState, DeviceStateSource, InputCategory, InputDeviceType, InputInfoSources, InputState,
 };
 use fidl_fuchsia_settings::{

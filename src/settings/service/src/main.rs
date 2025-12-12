@@ -12,7 +12,6 @@ use futures::lock::Mutex;
 use settings::audio::build_audio_default_settings;
 use settings::base::get_default_interfaces;
 use settings::display::build_display_default_settings;
-use settings::input::build_input_default_settings;
 use settings::{
     AgentConfiguration, EnabledInterfacesConfiguration, EnvironmentBuilder, ServiceConfiguration,
     ServiceFlags,
@@ -21,6 +20,7 @@ use settings_common::config::default_settings::DefaultSetting;
 use settings_common::config::get_default_agent_types;
 use settings_common::inspect::config_logger::InspectConfigLogger;
 use settings_common::inspect::listener_logger::ListenerInspectLogger;
+use settings_input::build_input_default_settings;
 use settings_light::build_light_default_settings;
 use settings_storage::stash_logger::StashInspectLogger;
 use settings_storage::storage_factory::StashDeviceStorageFactory;

@@ -19,6 +19,7 @@ group("tests") {
     "camera_watcher_agent:tests",
     "common:tests",
     "config:tests",
+    "input:tests",
     "inspect_utils:tests",
     "intl:tests",
     "keyboard:tests",

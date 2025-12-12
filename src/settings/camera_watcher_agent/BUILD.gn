@@ -20,6 +20,7 @@ rustc_library("settings_camera_watcher_agent") {
 
   visibility = [
     ":*",
+    "//src/settings/input:*",
     "//src/settings/service:*",
   ]
 

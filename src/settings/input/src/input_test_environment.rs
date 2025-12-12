@@ -2,9 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::input::build_input_default_settings;
-use crate::input::input_device_configuration::InputConfiguration;
-use crate::input::types::InputInfoSources;
+use crate::build_input_default_settings;
+use crate::input_device_configuration::InputConfiguration;
+use crate::types::InputInfoSources;
 use fidl_fuchsia_settings::{InputMarker, InputProxy, InputRequestStream};
 use fuchsia_async as fasync;
 use fuchsia_component::server::ServiceFs;
@@ -113,12 +113,12 @@ impl TestInputEnvironmentBuilder {
         let service_context =
             Rc::new(ServiceContext::new(Some(ServiceRegistry::serve(service_registry))));
 
-        let crate::input::SetupResult {
+        let crate::SetupResult {
             mut input_fidl_handler,
             camera_watcher_event_tx,
             media_buttons_event_tx,
             task,
-        } = crate::input::setup_input_api(
+        } = crate::setup_input_api(
             Rc::clone(&service_context),
             &mut (self
                 .input_device_config
@@ -150,11 +150,11 @@ impl TestInputEnvironmentBuilder {
         });
 
         if let Some(camera_watcher_agent) = camera_watcher_agent {
-            camera_watcher_agent.spawn(&*service_context).await.expect("camera watcher agent");
+            camera_watcher_agent.spawn(&service_context).await.expect("camera watcher agent");
         }
 
         if let Some(media_buttons_agent) = media_buttons_agent {
-            media_buttons_agent.spawn(&*service_context).await.expect("media buttons agent");
+            media_buttons_agent.spawn(&service_context).await.expect("media buttons agent");
         }
 
         let mut fs = ServiceFs::new_local();

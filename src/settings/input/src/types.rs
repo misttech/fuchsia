@@ -2,10 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::input::input_device_configuration::InputConfiguration;
-use settings_common::inspect::event::Nameable;
-use settings_storage::device_storage::DeviceStorageConvertible;
-
+use crate::input_device_configuration::InputConfiguration;
 use anyhow::Error;
 use bitflags::bitflags;
 use fidl_fuchsia_settings::{
@@ -15,6 +12,8 @@ use fidl_fuchsia_settings::{
     ToggleStateFlags as FidlToggleFlags,
 };
 use serde::{Deserialize, Serialize};
+use settings_common::inspect::event::Nameable;
+use settings_storage::device_storage::DeviceStorageConvertible;
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
@@ -29,7 +28,7 @@ impl From<&InputInfo> for FidlInputSettings {
                     .input_categories
                     .iter()
                     .flat_map(|(_, category)| {
-                        category.devices.iter().map(|(_, device)| device.clone().into())
+                        category.devices.values().cloned().map(|device| device.into())
                     })
                     .collect(),
             ),
@@ -448,7 +447,7 @@ bitflags_serde_legacy::impl_traits!(DeviceState);
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::input::input_device_configuration::{InputDeviceConfiguration, SourceState};
+    use crate::input_device_configuration::{InputDeviceConfiguration, SourceState};
 
     const DEFAULT_MIC_NAME: &str = "microphone";
     const DEFAULT_CAMERA_NAME: &str = "camera";

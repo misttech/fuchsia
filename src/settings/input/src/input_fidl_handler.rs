@@ -2,9 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use super::input_controller::{InputController, InputError, Request};
-use super::types::InputInfo;
-use crate::input::types::{DeviceStateSource, InputDevice, InputDeviceType};
+use crate::input_controller::{InputController, InputError, Request};
+use crate::types::{DeviceStateSource, InputDevice, InputDeviceType, InputInfo};
 use anyhow::{Error, anyhow};
 use async_utils::hanging_get::server;
 use fidl_fuchsia_settings::{
@@ -150,7 +149,7 @@ impl RequestHandler {
 
     async fn set(&self, input_states: Vec<InputState>) -> Result<(), HandlerError> {
         let (set_tx, set_rx) = oneshot::channel();
-        let info = to_request(input_states).map_err(|e| HandlerError::InvalidArgument(e))?;
+        let info = to_request(input_states).map_err(HandlerError::InvalidArgument)?;
         self.controller_tx
             .unbounded_send(Request::Set(info, set_tx))
             .map_err(|_| HandlerError::ControllerStopped)?;

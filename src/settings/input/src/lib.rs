@@ -10,7 +10,7 @@ pub mod types;
 use self::input_controller::InputController;
 pub use self::input_device_configuration::build_input_default_settings;
 use self::input_fidl_handler::InputFidlHandler;
-use crate::InputConfiguration;
+use crate::input_device_configuration::InputConfiguration;
 use anyhow::{Context, Result};
 use fuchsia_async as fasync;
 use futures::StreamExt;
@@ -53,7 +53,7 @@ where
         external_publisher,
     )
     .await
-    .context("Failed to initialize input: {e:?}")?;
+    .context("initializing input controller")?;
     let initial_value = input_controller.restore().await.context("Failed to restore input")?;
     let _ = setting_value_publisher.publish(&initial_value);
 

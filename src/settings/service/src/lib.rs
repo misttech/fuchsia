@@ -35,6 +35,7 @@ use settings_common::inspect::event::{
 };
 use settings_common::inspect::listener_logger::ListenerInspectLogger;
 use settings_common::service_context::{ExternalServiceEvent, GenerateService, ServiceContext};
+use settings_input::input_controller::InputController;
 use settings_intl::intl_controller::IntlController;
 use settings_keyboard::keyboard_controller::KeyboardController;
 use settings_light::light_controller::LightController;
@@ -47,8 +48,8 @@ use settings_storage::storage_factory::{FidlStorageFactory, StorageFactory};
 use {fidl_fuchsia_update_verify as fupdate, fuchsia_async as fasync};
 
 pub use display::display_configuration::DisplayConfiguration;
-pub use input::input_device_configuration::InputConfiguration;
 use serde::Deserialize;
+pub use settings_input::input_device_configuration::InputConfiguration;
 pub use settings_light::light_hardware_configuration::LightHardwareConfiguration;
 
 use crate::accessibility::accessibility_controller::AccessibilityController;
@@ -58,7 +59,6 @@ use crate::base::SettingType;
 use crate::display::display_controller::{DisplayController, ExternalBrightnessControl};
 use crate::do_not_disturb::do_not_disturb_controller::DoNotDisturbController;
 use crate::ingress::fidl;
-use crate::input::input_controller::InputController;
 
 mod accessibility;
 pub mod audio;
@@ -66,7 +66,6 @@ mod clock;
 pub mod display;
 mod do_not_disturb;
 mod factory_reset;
-pub mod input;
 mod storage_migrations;
 
 pub mod agent;
@@ -756,7 +755,7 @@ impl<T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilder<T>
         if components.contains(&SettingType::Input) {
             let mut input_configuration =
                 input_configuration.expect("Input controller requires an input configuration");
-            match input::setup_input_api(
+            match settings_input::setup_input_api(
                 Rc::clone(&service_context),
                 &mut input_configuration,
                 Rc::clone(&device_storage_factory),
@@ -766,7 +765,7 @@ impl<T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilder<T>
             )
             .await
             {
-                Ok(input::SetupResult {
+                Ok(settings_input::SetupResult {
                     mut input_fidl_handler,
                     camera_watcher_event_tx,
                     media_buttons_event_tx,

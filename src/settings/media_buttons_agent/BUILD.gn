@@ -20,6 +20,7 @@ rustc_library("settings_media_buttons_agent") {
 
   visibility = [
     ":*",
+    "//src/settings/input:*",
     "//src/settings/service:*",
   ]
 

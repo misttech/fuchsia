@@ -2,9 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use super::input_fidl_handler::Publisher;
-use crate::input::input_device_configuration::InputConfiguration;
-use crate::input::types::{
+use crate::input_device_configuration::InputConfiguration;
+use crate::input_fidl_handler::Publisher;
+use crate::types::{
     DeviceState, DeviceStateSource, InputDevice, InputDeviceType, InputInfo, InputInfoSources,
     InputState, Microphone,
 };
@@ -515,7 +515,7 @@ impl InputController {
         // camera proxy using the id that is returned. The connection will drop out
         // of scope after the mute state is sent.
         let camera_proxy =
-            connect_to_camera(&*self.service_context, self.external_publisher.clone())
+            connect_to_camera(&self.service_context, self.external_publisher.clone())
                 .await
                 .map_err(|e| {
                     InputError::UnexpectedError(
@@ -536,7 +536,7 @@ impl InputController {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::input::input_device_configuration::{InputDeviceConfiguration, SourceState};
+    use crate::input_device_configuration::{InputDeviceConfiguration, SourceState};
     use fuchsia_async as fasync;
     use fuchsia_inspect::component;
     use futures::channel::mpsc;
@@ -547,8 +547,7 @@ mod tests {
     #[fuchsia::test]
     fn test_input_migration_v1_to_current() {
         const MUTED_MIC: Microphone = Microphone { muted: true };
-        let mut v1 = InputInfoSourcesV1::default();
-        v1.sw_microphone = MUTED_MIC;
+        let v1 = InputInfoSourcesV1 { sw_microphone: MUTED_MIC, ..Default::default() };
 
         let serialized_v1 = v1.serialize_to();
         let current = InputInfoSources::try_deserialize_from(&serialized_v1)
@@ -572,8 +571,7 @@ mod tests {
     #[fuchsia::test]
     fn test_input_migration_v1_to_v2() {
         const MUTED_MIC: Microphone = Microphone { muted: true };
-        let mut v1 = InputInfoSourcesV1::default();
-        v1.sw_microphone = MUTED_MIC;
+        let v1 = InputInfoSourcesV1 { sw_microphone: MUTED_MIC, ..Default::default() };
 
         let serialized_v1 = v1.serialize_to();
         let v2 = InputInfoSourcesV2::try_deserialize_from(&serialized_v1)
