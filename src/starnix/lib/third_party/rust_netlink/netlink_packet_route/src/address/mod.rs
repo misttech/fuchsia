@@ -15,4 +15,4 @@ pub use self::addr_scope::AddressScope;
 pub use self::attribute::AddressAttribute;
 pub use self::cache_info::{CacheInfo, CacheInfoBuffer};
 pub use self::error::AddressError;
-pub use self::message::{AddressHeader, AddressMessage, AddressMessageBuffer};
+pub use self::message::{ADDRESS_HEADER_LEN, AddressHeader, AddressMessage, AddressMessageBuffer};

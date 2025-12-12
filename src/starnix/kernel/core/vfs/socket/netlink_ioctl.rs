@@ -381,8 +381,8 @@ pub fn netlink_ioctl(
                         request_header,
                         NetlinkPayload::InnerMessage(RouteNetlinkMessage::NewAddress({
                             let mut msg = AddressMessage::default();
-                            msg.header.family = AddressFamily::Inet;
-                            msg.header.index = if_index;
+                            msg.header.family = AddressFamily::Inet.into();
+                            msg.header.index = if_index.into();
 
                             // The SIOCSIFADDR ioctl already provides the address to set in
                             // network byte order.
@@ -752,7 +752,7 @@ where
             },
             NetlinkPayload::InnerMessage(RouteNetlinkMessage::GetAddress({
                 let mut msg = AddressMessage::default();
-                msg.header.family = AddressFamily::Inet;
+                msg.header.family = AddressFamily::Inet.into();
                 msg
             })),
         );

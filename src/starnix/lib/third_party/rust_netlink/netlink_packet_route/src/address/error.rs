@@ -19,5 +19,5 @@ pub enum AddressError {
     NlaAttribute(#[from] NlaError),
 
     #[error("Faield to parse address buffer: {0:?}")]
-    FailedBufferInit(DecodeError),
+    FailedBufferInit(#[source] DecodeError),
 }

@@ -45,11 +45,11 @@ fn test_get_loopback_ipv6_addr() {
 
     let expected = AddressMessage {
         header: AddressHeader {
-            family: AddressFamily::Inet6,
+            family: AddressFamily::Inet6.into(),
             prefix_len: 128,
-            flags: AddressHeaderFlags::Permanent,
-            scope: AddressScope::Host,
-            index: 1,
+            flags: AddressHeaderFlags::Permanent.bits(),
+            scope: AddressScope::Host.into(),
+            index: 1.into(),
         },
         attributes: vec![
             AddressAttribute::Address(IpAddr::V6(Ipv6Addr::LOCALHOST)),

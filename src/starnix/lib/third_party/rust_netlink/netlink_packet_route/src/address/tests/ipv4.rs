@@ -23,11 +23,11 @@ fn test_ipv4_get_loopback_address() {
 
     let expected = AddressMessage {
         header: AddressHeader {
-            family: AddressFamily::Inet,
+            family: AddressFamily::Inet.into(),
             prefix_len: 8,
-            flags: AddressHeaderFlags::Permanent,
-            scope: AddressScope::Host,
-            index: 1,
+            flags: AddressHeaderFlags::Permanent.bits(),
+            scope: AddressScope::Host.into(),
+            index: 1.into(),
         },
         attributes: vec![
             AddressAttribute::Address(IpAddr::V4(Ipv4Addr::LOCALHOST)),

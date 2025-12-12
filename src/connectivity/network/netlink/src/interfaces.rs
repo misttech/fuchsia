@@ -1084,7 +1084,7 @@ impl<H: InterfacesHandler, S: Sender<<NetlinkRoute as ProtocolFamily>::InnerMess
                             .flatten()
                             .filter(|NetlinkAddressMessage(message)| {
                                 ip_version_filter.map_or(true, |ip_version| {
-                                    ip_version.eq(&match message.header.family {
+                                    ip_version.eq(&match message.header.family() {
                                         AddressFamily::Inet => IpVersion::V4,
                                         AddressFamily::Inet6 => IpVersion::V6,
                                         family => unreachable!(
@@ -1146,7 +1146,7 @@ fn update_addresses<S: Sender<<NetlinkRoute as ProtocolFamily>::InnerMessage>>(
 
     let send_update = |addr: &NetlinkAddressMessage, kind| {
         let NetlinkAddressMessage(inner) = addr;
-        let group = match inner.header.family {
+        let group = match inner.header.family() {
             AddressFamily::Inet => rtnetlink_groups_RTNLGRP_IPV4_IFADDR,
             AddressFamily::Inet6 => rtnetlink_groups_RTNLGRP_IPV6_IFADDR,
             family => {
@@ -1484,7 +1484,7 @@ fn interface_properties_to_address_messages(
 
                 // The possible constants below are in the range of u8-accepted values, so they can
                 // be safely casted to a u8.
-                addr_header.family = family.try_into().expect("should fit into u8");
+                addr_header.family = family.into();
                 addr_header.prefix_len = *prefix_len;
 
                 // TODO(https://issues.fuchsia.dev/284980862): Determine proper
@@ -1503,8 +1503,8 @@ fn interface_properties_to_address_messages(
                             AddressHeaderFlags::Tentative
                         }
                     };
-                addr_header.flags = flags;
-                addr_header.index = id;
+                addr_header.flags = flags.bits();
+                addr_header.index = id.into();
 
                 // The NLA order follows the list that attributes are listed on the
                 // rtnetlink man page.
@@ -1806,10 +1806,10 @@ pub(crate) mod testutil {
                 (AddressFamily::Inet6, IpAddr::V6(ip_addr.addr.into()))
             }
         };
-        addr_header.family = family;
+        addr_header.family = family.into();
         addr_header.prefix_len = subnet.prefix_len;
-        addr_header.flags = AddressHeaderFlags::from_bits(flags as u8).unwrap();
-        addr_header.index = interface_id;
+        addr_header.flags = AddressHeaderFlags::from_bits(flags as u8).unwrap().bits();
+        addr_header.index = interface_id.into();
 
         let nlas = vec![
             AddressAttribute::Address(addr),

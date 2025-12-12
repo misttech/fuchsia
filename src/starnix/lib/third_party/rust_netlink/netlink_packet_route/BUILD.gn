@@ -18,6 +18,7 @@ rustc_library("netlink_packet_route") {
     "//third_party/rust_crates:libc",
     "//third_party/rust_crates:log",
     "//third_party/rust_crates:thiserror",
+    "//third_party/rust_crates:zerocopy",
   ]
 
   sources = [

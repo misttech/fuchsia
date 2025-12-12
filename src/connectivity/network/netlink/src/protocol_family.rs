@@ -243,7 +243,7 @@ pub mod route {
     ) -> Result<Option<ExtractedAddressRequest>, Errno> {
         let kind = if is_new { "new" } else { "del" };
 
-        let interface_id = match NonZeroU32::new(message.header.index) {
+        let interface_id = match NonZeroU32::new(message.header.index.into()) {
             Some(interface_id) => interface_id,
             None => {
                 log_debug!(
@@ -337,7 +337,7 @@ pub mod route {
             }
         };
 
-        let addr = match message.header.family {
+        let addr = match message.header.family() {
             AddressFamily::Inet => {
                 if addr.is_unspecified() {
                     // Linux treats adding the unspecified IPv4 address as a
@@ -407,7 +407,7 @@ pub mod route {
             address_and_interface_id: interfaces::AddressAndInterfaceArgs { address, interface_id },
             addr_flags: addr_flags
                 .map(|value| value.bits())
-                .unwrap_or_else(|| message.header.flags.bits().into()),
+                .unwrap_or_else(|| message.header.flags.into()),
         }))
     }
 
@@ -753,7 +753,7 @@ pub mod route {
                         }
                 }
                 GetAddress(ref message) if is_dump => {
-                    let ip_version_filter = match message.header.family {
+                    let ip_version_filter = match message.header.family() {
                         AddressFamily::Unspec => None,
                         AddressFamily::Inet => Some(IpVersion::V4),
                         AddressFamily::Inet6 => Some(IpVersion::V6),
@@ -2096,7 +2096,7 @@ mod test {
         let address_message = {
             let mut message = AddressMessage::default();
             // Conversion is safe, because family is guaranteed to fit into an 8-bit integer.
-            message.header.family = AddressFamily::from(family as u8);
+            message.header.family = AddressFamily::from(family as u8).into();
             message
         };
 
@@ -2767,8 +2767,8 @@ mod test {
         let address_message = {
             let mut message = AddressMessage::default();
             // Conversion is safe because family is guaranteed to fit into an 8-bit integer.
-            message.header.family = AddressFamily::from(family as u8);
-            message.header.index = interface_id;
+            message.header.family = AddressFamily::from(family as u8).into();
+            message.header.index = interface_id.into();
             message.header.prefix_len = prefix_len;
             message.attributes = nlas;
             message
