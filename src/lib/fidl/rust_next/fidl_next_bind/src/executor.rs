@@ -9,7 +9,7 @@ pub trait Executor {
     /// A task which completes with the output of a future.
     ///
     /// `Tasks`s have abort-on-drop semantics.
-    type Task<T>: Future<Output = T>
+    type Task<T>
     where
         T: 'static;
 
