@@ -202,22 +202,34 @@ class FidlClient(metaclass=FidlMeta):
                     self._channel_waker.unregister(self._channel)
                     _LOGGER.warning(f"{self} received channel error: {e}")
                     raise e
-            loop = asyncio.get_running_loop()
-            channel_waker_task = loop.create_task(
-                self._channel_waker.wait_ready(self._channel)
-            )
-            staged_msg_task = loop.create_task(self._get_staged_message(txid))
-            epitaph_event_task = loop.create_task(self._epitaph_event_wait())
-            done, pending = await asyncio.wait(
-                [
-                    channel_waker_task,
-                    staged_msg_task,
-                    epitaph_event_task,
-                ],
-                return_when=asyncio.FIRST_COMPLETED,
-            )
-            for p in pending:
-                p.cancel()
+            try:
+                async with asyncio.TaskGroup() as tg:
+                    channel_waker_task = tg.create_task(
+                        self._channel_waker.wait_ready(self._channel)
+                    )
+                    staged_msg_task = tg.create_task(
+                        self._get_staged_message(txid)
+                    )
+                    epitaph_event_task = tg.create_task(
+                        self._epitaph_event_wait()
+                    )
+                    done, pending = await asyncio.wait(
+                        [
+                            channel_waker_task,
+                            staged_msg_task,
+                            epitaph_event_task,
+                        ],
+                        return_when=asyncio.FIRST_COMPLETED,
+                    )
+                    for p in pending:
+                        p.cancel()
+            # Unwrap an exception if it's the only one. The particular case
+            # we care about is when an epitaph is raised as an exception.
+            except ExceptionGroup as eg:
+                if len(eg.exceptions) == 1:
+                    raise eg.exceptions[0] from None
+                raise
+
             # Multiple notifications happened at the same time.
             if len(done) > 1:
                 results = [r.result() for r in done]
