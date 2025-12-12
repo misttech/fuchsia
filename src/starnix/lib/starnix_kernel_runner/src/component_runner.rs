@@ -300,11 +300,12 @@ pub async fn start_component(
                 }
             },
             move |result| {
+                // Unmount all the directories for this component.
+                std::mem::drop(mount_record);
+
                 // If the component controller server has gone away, there is nobody for us to
                 // report the result to.
                 let _ = task_complete_sender.send(result);
-                // Unmount all the directories for this component.
-                std::mem::drop(mount_record);
             },
             None,
         )
