@@ -12,7 +12,7 @@ use fuchsia_async::Task;
 use fuchsia_component::server::{ServiceFs, ServiceFsDir};
 use fuchsia_inspect::Property as _;
 use futures::channel::mpsc;
-use futures::{Stream, StreamExt as _};
+use futures::{FutureExt as _, Stream, StreamExt as _};
 use log::{error, info, warn};
 use networking_metrics_registry::networking_metrics_registry as metrics_registry;
 use {
@@ -359,7 +359,7 @@ trait CrashReporter {
     /// induced crash report.
     const ROLLBACK_CRASH_REPORT_DELAY: Duration;
 
-    async fn file_report(&mut self, reason: CrashReportReason);
+    fn file_report(&mut self, reason: CrashReportReason);
 }
 
 /// An implementation of `CrashReporter` that connects to the API over FIDL.
@@ -368,7 +368,7 @@ struct Reporter {}
 impl CrashReporter for Reporter {
     const ROLLBACK_CRASH_REPORT_DELAY: Duration = Duration::from_secs(180);
 
-    async fn file_report(&mut self, reason: CrashReportReason) {
+    fn file_report(&mut self, reason: CrashReportReason) {
         const PROGRAM_NAME: &str = "netstack_migration";
         const FAILED_HEALTHCHECK_SIGNATURE: &str = "fuchsia-netstack3-healthcheck-failed";
         const ROLLED_BACK_SIGNATURE: &str = "fuchsia-netstack3-rolled-back";
@@ -397,11 +397,15 @@ impl CrashReporter for Reporter {
             ..Default::default()
         };
 
-        match proxy.file_report(report).await {
+        // File the crash report in a background task. It may take a while and
+        // we don't want to block the migration worker from serving other
+        // operations.
+        Task::spawn(proxy.file_report(report).map(|result| match result {
             Ok(Ok(status)) => info!("Successfully filed crash report. Status={status:?}"),
             Ok(Err(e)) => error!("Failed to file crash report: {e:?}"),
             Err(e) => error!("Failed to request crash report: {e:?}"),
-        }
+        }))
+        .detach();
     }
 }
 
@@ -523,7 +527,7 @@ impl<P: PersistenceProvider, CR: CollaborativeRebootScheduler, R: CrashReporter>
 
             if let rollback::Persisted::HealthcheckFailures(f) = new_state {
                 if f >= HEALTHCHECK_FAILURE_THRESHOLD_FOR_CRASH_REPORTS {
-                    self.crash_reporter.file_report(CrashReportReason::FailedHealthcheck).await;
+                    self.crash_reporter.file_report(CrashReportReason::FailedHealthcheck);
                 }
             }
         }
@@ -963,7 +967,7 @@ async fn main_inner<
                 inspect_nodes.update(&migration);
             }
             Action::FileRollbackCrashReport => {
-                migration.crash_reporter.file_report(CrashReportReason::RolledBack).await;
+                migration.crash_reporter.file_report(CrashReportReason::RolledBack);
             }
         }
     }
@@ -1059,7 +1063,7 @@ mod tests {
 
     impl CrashReporter for NoCrashReports {
         const ROLLBACK_CRASH_REPORT_DELAY: Duration = Duration::ZERO;
-        async fn file_report(&mut self, reason: CrashReportReason) {
+        fn file_report(&mut self, reason: CrashReportReason) {
             panic!("unexpectedly attemped to file a crash report: {reason:?}")
         }
     }
@@ -1071,7 +1075,7 @@ mod tests {
 
     impl CrashReporter for FakeCrashReporter {
         const ROLLBACK_CRASH_REPORT_DELAY: Duration = Duration::from_millis(1);
-        async fn file_report(&mut self, reason: CrashReportReason) {
+        fn file_report(&mut self, reason: CrashReportReason) {
             self.reports.push(reason)
         }
     }
@@ -1093,7 +1097,7 @@ mod tests {
 
     impl CrashReporter for AwaitCrashReports {
         const ROLLBACK_CRASH_REPORT_DELAY: Duration = Duration::from_millis(1);
-        async fn file_report(&mut self, reason: CrashReportReason) {
+        fn file_report(&mut self, reason: CrashReportReason) {
             self.reports.push(reason);
             if self.reports == self.target {
                 assert!(self.event.signal());
