@@ -17,7 +17,7 @@ macro_rules! embedded_plugin {
             use $crate::FfxMain as _;
             #[allow(unused_imports)]
             use $crate::macro_deps::{
-                argh, bug, check_strict_constraints, return_bug,
+                argh, bug, check_strict_constraints, ffx_diagnostics_analytics_state, return_bug,
                 writer::{Format, ToolIO},
             };
 
@@ -41,6 +41,7 @@ macro_rules! embedded_plugin {
                 return Ok(());
             }
 
+            ffx_diagnostics_analytics_state::set_command_line_context(env.ffx_command(), &cmd);
             let tool = <$tool as $crate::subtool::FfxTool>::from_env(env.clone(), cmd).await?;
             env.update_log_file(tool.log_basename())?;
             let res = $crate::FfxMain::main(tool, writer).await;

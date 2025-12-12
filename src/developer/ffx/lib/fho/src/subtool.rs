@@ -215,6 +215,7 @@ impl<T: FfxTool> FhoTool<T> {
 
         let is_machine_output = ffx.global.machine.is_some();
         let env = FhoEnvironment::new(context, &ffx);
+        ffx_diagnostics_analytics_state::set_command_line_context(env.ffx_command(), &tool);
         let redacted_args = match send_enhanced_analytics().await {
             false => ffx.redact_subcmd(&tool),
             true => ffx.unredacted_args_for_analytics(),

@@ -86,6 +86,42 @@ impl FfxCommandLine {
         args
     }
 
+    /// Creates a Vec<String> of the subcommand args ignoring flags and positionals.
+    /// e.g. if the user runs `ffx target list foo` this would return `["target", "list"]`
+    pub fn redact_subcmd_for_enhanced_analytics<C: ArgsInfo>(&self, _cmd: &C) -> Vec<String> {
+        let main_info = C::get_args_info();
+        let mut info_ref = &main_info;
+        let mut ffx_subcmd_iter = self.subcmd_iter();
+        // For single-argument commands (subtools) the first argument always matches, but
+        // for multi-argument subcommands (e.g. `target list`) we need to continue iterating
+        // through the remainder of the args.
+        let mut res = vec![ffx_subcmd_iter.next().unwrap().to_owned()];
+        // There's a bit of a fencepost problem here. If we have more arguments, the first of
+        // the list of the arguments needs to match the current subcommand's name before continuing
+        // to iterate, or else it indicates we're looking at flags for a single-argument
+        // subcommand.
+        if let Some(cmd) = ffx_subcmd_iter.next()
+            && cmd == info_ref.name
+        {
+            res.push(cmd.to_owned());
+        } else {
+            return res;
+        }
+        // The args info struct contains a list of _possible_ subcommands, so we need
+        // to match until we've run out (as that means we're now dealing with positional
+        // arguments or flags that would need to be otherwise redacted).
+        for arg in ffx_subcmd_iter {
+            let subcmds = &info_ref.commands;
+            if let Some(item) = subcmds.iter().find(|s| s.name == arg) {
+                res.push(arg.to_owned());
+                info_ref = &item.command;
+            } else {
+                return res;
+            }
+        }
+        res
+    }
+
     /// This produces an error type that will print help appropriate help output
     /// for what the command line looks like, and do the appropriate metrics
     /// logic.
@@ -827,7 +863,7 @@ mod test {
     }
 
     /// A subcommand
-    #[derive(FromArgs, Default)]
+    #[derive(FromArgs, ArgsInfo, Default)]
     #[argh(subcommand, name = "subcommand")]
     #[allow(unused)]
     struct TestCmd {
@@ -846,6 +882,99 @@ mod test {
         assert_eq!(cmd_line.command, vec!["ffx"]);
         assert_eq!(cmd_line.ffx_args, vec!["-v", "--env", "boom"]);
         assert_eq!(cmd_line.redact_ffx_cmd(), vec!["ffx", "--env", "-v"]);
+    }
+
+    /// A fake command that does nothing.
+    #[derive(FromArgs, ArgsInfo)]
+    #[argh(subcommand)]
+    #[allow(unused)]
+    enum TestCmdMiddleEnum {
+        Middle(TestCmd),
+        This(TestCmd),
+    }
+
+    /// A fake command that does nothing.
+    #[derive(FromArgs, ArgsInfo)]
+    #[argh(subcommand, name = "middle")]
+    #[allow(unused)]
+    struct TestCmdMiddle {
+        #[argh(subcommand)]
+        subcommand: TestCmdMiddleEnum,
+    }
+
+    /// Another fake command that does nothing.
+    #[derive(FromArgs, ArgsInfo)]
+    #[argh(subcommand)]
+    #[allow(unused)]
+    enum TestCmdRootEnum {
+        Root(TestCmdMiddle),
+        That(TestCmd),
+    }
+
+    /// The root level command. Intended to be a simulacrum of ffx command hierarchy.
+    #[derive(FromArgs, ArgsInfo)]
+    #[argh(subcommand, name = "root")]
+    #[allow(unused)]
+    struct TestCmdRoot {
+        #[argh(subcommand)]
+        subcommand: TestCmdRootEnum,
+    }
+
+    #[test]
+    fn redact_subcmd_args_for_enhanced_analytics() {
+        let args = ["ffx", "-v", "--env", "boom", "subcommand", "--arg"];
+        let cmd_line =
+            FfxCommandLine::new(None, &args).expect("Command line should parse correctly");
+        assert_eq!(cmd_line.command, vec!["ffx"]);
+        assert_eq!(cmd_line.ffx_args, vec!["-v", "--env", "boom"]);
+        assert_eq!(
+            cmd_line.redact_subcmd_for_enhanced_analytics(&TestCmd::default()),
+            vec!["subcommand"],
+        );
+    }
+
+    // You might be wondering for this test, and the other (3_args), why they are structured the way
+    // they are. There is no test command with "target" in front of it. It is simply added to the
+    // front of the test to emulate how ffx subcommands are parsed. There is actually one higher
+    // level command that is passed to the ffx subcommands list before the actual command. It's
+    // unclear if this is a good idea generally, but these tests are just handling the way ffx
+    // works currently.
+    #[test]
+    fn redact_subcmd_args_for_enhanced_analytics_2_args() {
+        let args = ["ffx", "-v", "--env", "boom", "target", "middle", "subcommand", "--arg"];
+        let cmd_line =
+            FfxCommandLine::new(None, &args).expect("Command line should parse correctly");
+        assert_eq!(cmd_line.command, vec!["ffx"]);
+        assert_eq!(cmd_line.ffx_args, vec!["-v", "--env", "boom"]);
+        assert_eq!(cmd_line.global.subcommand, vec!["target", "middle", "subcommand", "--arg"]);
+        assert_eq!(
+            cmd_line.redact_subcmd_for_enhanced_analytics(&TestCmdMiddle {
+                subcommand: TestCmdMiddleEnum::Middle(Default::default())
+            }),
+            vec!["target", "middle", "subcommand"],
+        );
+    }
+
+    #[test]
+    fn redact_subcmd_args_for_enhanced_analytics_3_args() {
+        let args =
+            ["ffx", "-v", "--env", "boom", "target", "root", "middle", "subcommand", "--arg"];
+        let cmd_line =
+            FfxCommandLine::new(None, &args).expect("Command line should parse correctly");
+        assert_eq!(cmd_line.command, vec!["ffx"]);
+        assert_eq!(cmd_line.ffx_args, vec!["-v", "--env", "boom"]);
+        assert_eq!(
+            cmd_line.global.subcommand,
+            vec!["target", "root", "middle", "subcommand", "--arg"]
+        );
+        assert_eq!(
+            cmd_line.redact_subcmd_for_enhanced_analytics(&TestCmdRoot {
+                subcommand: TestCmdRootEnum::Root(TestCmdMiddle {
+                    subcommand: TestCmdMiddleEnum::Middle(Default::default())
+                })
+            }),
+            vec!["target", "root", "middle", "subcommand"],
+        );
     }
 
     #[test]

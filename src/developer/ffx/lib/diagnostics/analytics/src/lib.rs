@@ -276,6 +276,19 @@ pub async fn is_analytics_enabled() -> bool {
     ffx_command::send_enhanced_analytics().await
 }
 
+fn set_or_panic(
+    categories: &mut BTreeMap<&'static str, analytics::GA4Value>,
+    category_name_key: &'static str,
+    value: impl Into<analytics::GA4Value>,
+) {
+    if let Some(v) = categories.insert(category_name_key, value.into()) {
+        panic!(
+            "{category_name_key:?} somehow already set to {v:?}. This is a bug. Please report this to {}",
+            errors::BUG_REPORT_URL
+        );
+    }
+}
+
 /// Takes an error, and a "point of failure," and uploads the analytics for this specific type of
 /// failure for tracking.
 pub async fn mark_point_of_failure(failure_point: PointOfFailure<'_>) {
@@ -287,12 +300,9 @@ pub async fn mark_point_of_failure(failure_point: PointOfFailure<'_>) {
         Ok(a) => a,
         _ => return,
     };
-    let category_name_key: &'static str = "category_name";
-    if let Some(v) = custom_dimensions.insert(category_name_key, category.into()) {
-        panic!(
-            "{category_name_key:?} somehow already set to {v:?}. This is a bug. Please report this to {}",
-            errors::BUG_REPORT_URL
-        );
+    set_or_panic(&mut custom_dimensions, "category_name", category);
+    if let Some(subcmd_args) = ffx_diagnostics_analytics_state::get_command_line() {
+        set_or_panic(&mut custom_dimensions, "command_root", subcmd_args.join(" "));
     }
     for (_k, v) in custom_dimensions.iter_mut() {
         if let analytics::GA4Value::Str(s) = v {

@@ -32,21 +32,15 @@ pub struct FhoEnvironment {
 impl FhoEnvironment {
     pub fn new(context: &EnvironmentContext, ffx: &FfxCommandLine) -> Self {
         log::info!("FhoEnvironment created");
-        FhoEnvironment {
-            ffx: ffx.clone(),
-            context: context.clone(),
-            interfaces: Default::default(),
-        }
+        let ffx = ffx.clone();
+        FhoEnvironment { ffx, context: context.clone(), interfaces: Default::default() }
     }
 
     /// Create new instance for use in tests.
     pub fn new_with_args(context: &EnvironmentContext, argv: &[impl AsRef<str>]) -> Self {
         log::info!("FhoEnvironment test instance with args created");
-        FhoEnvironment {
-            ffx: FfxCommandLine::new(None, argv).unwrap(),
-            context: context.clone(),
-            interfaces: Default::default(),
-        }
+        let ffx = FfxCommandLine::new(None, argv).unwrap();
+        FhoEnvironment { ffx, context: context.clone(), interfaces: Default::default() }
     }
 
     pub fn ffx_command(&self) -> &FfxCommandLine {
