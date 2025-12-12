@@ -896,31 +896,14 @@ macro_rules! syscall_arch32_number_to_name_literal_callback {
     }
 }
 
-/// Creates a `&'static CStr` from a syscall. Cribbed from cstringify which does not support adding
-/// a string prefix and is not likely to be a useful feature for other users.
-#[macro_export]
-#[doc(hidden)]
-macro_rules! syscall_name_cstr {
-    ($x:path) => {
-        // Safety: The concat!() adds a nul byte, and a Rust path cannot contain a nul byte.
-        // The latter is true because https://doc.rust-lang.org/reference/identifiers.html excludes
-        // Unicode control characters from identifiers, and U+0000 is a control character.
-        unsafe {
-            ::core::ffi::CStr::from_bytes_with_nul_unchecked(
-                concat!("sys_", stringify!($x), "\0").as_bytes(),
-            )
-        }
-    };
-}
-
-/// Evaluates to a CStr literal for the given syscall number when called back by for_each_syscall.
+/// Evaluates to a str literal for the given syscall number when called back by for_each_syscall.
 #[macro_export]
 macro_rules! syscall_number_to_trace_name_callback {
     {$number:ident; $($name:ident,)*} => {
         $crate::__paste::paste! {
             match $number as u32 {
-                $(starnix_uapi::[<__NR_ $name>] => $crate::syscall_name_cstr!($name),)*
-                _ => c"<unknown syscall>",
+                $(starnix_uapi::[<__NR_ $name>] => concat!("sys_", stringify!($name)),)*
+                _ => "<unknown syscall>",
             }
         }
     }
@@ -933,8 +916,8 @@ macro_rules! syscall_arch32_number_to_trace_name_callback {
     {$number:ident; $($name:ident,)*} => {
         $crate::__paste::paste! {
             match $number as u32 {
-                $(starnix_uapi::arch32::[<__NR_ $name>] => $crate::syscall_name_cstr!($name),)*
-                _ => c"<unknown syscall>",
+                $(starnix_uapi::arch32::[<__NR_ $name>] => concat!("sys_", stringify!($name)),)*
+                _ => "<unknown syscall>",
             }
         }
     }
@@ -971,7 +954,7 @@ impl SyscallDecl {
         for_each_syscall! { syscall_number_to_name_literal_callback, number }
     }
 
-    pub fn trace_name(&self) -> &'static std::ffi::CStr {
+    pub fn trace_name(&self) -> &'static str {
         // Make a binding because the macro makes it difficult to pass a member variable.
         let number = self.number;
 

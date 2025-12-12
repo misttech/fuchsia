@@ -93,7 +93,6 @@ use starnix_uapi::{
 use std::cell::Cell;
 use std::collections::btree_map::Entry;
 use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
-use std::ffi::CStr;
 use std::mem::MaybeUninit;
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
@@ -102,10 +101,10 @@ use zerocopy::{FromBytes, Immutable, IntoBytes};
 use {fidl_fuchsia_posix as fposix, fidl_fuchsia_starnix_binder as fbinder};
 
 /// The trace category used for binder command tracing.
-const TRACE_CATEGORY: &'static CStr = c"starnix:binder";
+const TRACE_CATEGORY: &'static str = "starnix:binder";
 
 /// The name used to track the duration of a local binder ioctl.
-const NAME_BINDER_IOCTL: &'static CStr = c"binder_ioctl";
+const NAME_BINDER_IOCTL: &'static str = "binder_ioctl";
 
 /// Allows for sequential reading of a task's userspace memory.
 pub struct UserMemoryCursor {
@@ -2454,7 +2453,7 @@ struct CommandTraceGuard(Option<CommandTraceGuardInner>);
 #[derive(Debug)]
 struct CommandTraceGuardInner {
     id: fuchsia_trace::Id,
-    kind: &'static CStr,
+    kind: &'static str,
 }
 
 impl CommandTraceGuard {
@@ -2463,29 +2462,29 @@ impl CommandTraceGuard {
             return Self(None);
         }
         let kind = match command {
-            Command::AcquireRef(_) => c"AcquireRef",
-            Command::ReleaseRef(_) => c"ReleaseRef",
-            Command::IncRef(_) => c"IncRef",
-            Command::DecRef(_) => c"DecRef",
-            Command::Error(_) => c"Error",
-            Command::OnewayTransaction(_) => c"OnewayTransaction",
-            Command::Transaction { .. } => c"Transaction",
-            Command::Reply(_) => c"Reply",
-            Command::TransactionComplete => c"TransactionComplete",
-            Command::OnewayTransactionComplete => c"OnewayTransactionComplete",
-            Command::FailedReply => c"FailedReply",
-            Command::DeadReply { .. } => c"DeadReply",
-            Command::DeadBinder(_) => c"DeadBinder",
-            Command::ClearDeathNotificationDone(_) => c"ClearDeathNotificationDone",
-            Command::SpawnLooper => c"SpawnLooper",
-            Command::FrozenReply => c"FrozenReply",
-            Command::PendingFrozen => c"PendingFrozen",
-            Command::FrozenBinder(_) => c"FrozenBinder",
-            Command::ClearFreezeNotificationDone(_) => c"ClearFreezeNotificationDone",
+            Command::AcquireRef(_) => "AcquireRef",
+            Command::ReleaseRef(_) => "ReleaseRef",
+            Command::IncRef(_) => "IncRef",
+            Command::DecRef(_) => "DecRef",
+            Command::Error(_) => "Error",
+            Command::OnewayTransaction(_) => "OnewayTransaction",
+            Command::Transaction { .. } => "Transaction",
+            Command::Reply(_) => "Reply",
+            Command::TransactionComplete => "TransactionComplete",
+            Command::OnewayTransactionComplete => "OnewayTransactionComplete",
+            Command::FailedReply => "FailedReply",
+            Command::DeadReply { .. } => "DeadReply",
+            Command::DeadBinder(_) => "DeadBinder",
+            Command::ClearDeathNotificationDone(_) => "ClearDeathNotificationDone",
+            Command::SpawnLooper => "SpawnLooper",
+            Command::FrozenReply => "FrozenReply",
+            Command::PendingFrozen => "PendingFrozen",
+            Command::FrozenBinder(_) => "FrozenBinder",
+            Command::ClearFreezeNotificationDone(_) => "ClearFreezeNotificationDone",
         };
         let id = fuchsia_trace::Id::random();
         let f = format!("{:?}", command);
-        trace_instaflow_begin!(TRACE_CATEGORY, c"BinderFlow", kind, id, "cmd" => &*f);
+        trace_instaflow_begin!(TRACE_CATEGORY, "BinderFlow", kind, id, "cmd" => &*f);
         Self(Some(CommandTraceGuardInner { id, kind }))
     }
 }
@@ -2493,7 +2492,7 @@ impl CommandTraceGuard {
 impl Drop for CommandTraceGuard {
     fn drop(&mut self) {
         if let Some(CommandTraceGuardInner { id, kind }) = self.0.take() {
-            trace_instaflow_end!(TRACE_CATEGORY, c"BinderFlow", kind, id);
+            trace_instaflow_end!(TRACE_CATEGORY, "BinderFlow", kind, id);
         }
     }
 }
@@ -4061,7 +4060,7 @@ impl BinderDriver {
         L: LockEqualOrBefore<ResourceAccessorLevel>,
     {
         let command = cursor.read_object::<binder_driver_command_protocol>()?;
-        trace_duration!(CATEGORY_STARNIX, c"handle_thread_write", "command" => command);
+        trace_duration!(CATEGORY_STARNIX, "handle_thread_write", "command" => command);
         let result = match command {
             binder_driver_command_protocol_BC_ENTER_LOOPER => {
                 let mut proc_state = context.binder_proc.lock();

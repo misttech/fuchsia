@@ -84,7 +84,7 @@ async fn start_proxy(
     >,
 ) {
     let proxy_name = proxy.name.as_str();
-    trace_instant(c"starnix_runner:start_proxy:loop:enter", proxy_name);
+    trace_instant("starnix_runner:start_proxy:loop:enter", proxy_name);
 
     'outer: loop {
         // Wait on messages from both the container and remote channel endpoints.
@@ -100,14 +100,14 @@ async fn start_proxy(
         .fuse();
 
         let (signals, finished_wait) = {
-            trace_duration(c"starnix_runner:start_proxy:wait_for_messages", proxy_name);
+            trace_duration("starnix_runner:start_proxy:wait_for_messages", proxy_name);
             let result = futures::select! {
                 res = container_wait => {
-                    trace_instant(c"starnix_runner:start_proxy:container_readable", proxy_name);
+                    trace_instant("starnix_runner:start_proxy:container_readable", proxy_name);
                     res.map(|s| (s, WaitReturn::Container))
                 },
                 res = remote_wait => {
-                    trace_instant(c"starnix_runner:start_proxy:remote_readable", proxy_name);
+                    trace_instant("starnix_runner:start_proxy:remote_readable", proxy_name);
                     res.map(|s| (s, WaitReturn::Remote))
                 },
             };
@@ -115,7 +115,7 @@ async fn start_proxy(
             match result {
                 Ok(result) => result,
                 Err(e) => {
-                    trace_instant(c"starnix_runner:start_proxy:result:error", proxy_name);
+                    trace_instant("starnix_runner:start_proxy:result:error", proxy_name);
                     log::warn!("Failed to wait on proxied channels in runner: {:?}", e);
                     break 'outer;
                 }
@@ -161,7 +161,7 @@ async fn start_proxy(
         }
     }
 
-    trace_instant(c"starnix_runner:start_proxy:loop:exit", proxy_name);
+    trace_instant("starnix_runner:start_proxy:loop:exit", proxy_name);
     if let Ok(koid) = proxy.message_counter.get_koid() {
         wake_sources.lock().remove(&koid);
     }
@@ -182,7 +182,7 @@ fn forward_message(
     handles: &mut [MaybeUninit<zx::NullableHandle>; zx::sys::ZX_CHANNEL_MAX_MSG_HANDLES as usize],
     name: &str,
 ) -> Result<(), Error> {
-    trace_duration(c"starnix_runner:forward_message", name);
+    trace_duration("starnix_runner:forward_message", name);
 
     if signals.contains(zx::Signals::CHANNEL_READABLE) {
         let (actual_bytes, actual_handles) = {
@@ -194,7 +194,7 @@ fn forward_message(
 
         if let Some(counter) = message_counter {
             counter.add(1).expect("Failed to add to the proxy's message counter");
-            trace_instant(c"starnix_runner:forward_message:counter_incremented", name);
+            trace_instant("starnix_runner:forward_message:counter_incremented", name);
         }
 
         write_channel.write(actual_bytes, actual_handles)?;
@@ -209,13 +209,13 @@ fn forward_message(
     }
 }
 
-fn trace_duration(event: &'static std::ffi::CStr, name: &str) {
-    fuchsia_trace::duration!(c"power", event, "name" => name);
+fn trace_duration(event: &'static str, name: &str) {
+    fuchsia_trace::duration!("power", event, "name" => name);
 }
 
-fn trace_instant(event: &'static std::ffi::CStr, name: &str) {
+fn trace_instant(event: &'static str, name: &str) {
     fuchsia_trace::instant!(
-        c"power",
+        "power",
         event,
         fuchsia_trace::Scope::Process,
         "name" => name

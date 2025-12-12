@@ -58,7 +58,7 @@ pub async fn suspend_container(
     Result<fstarnixrunner::ManagerSuspendContainerResponse, fstarnixrunner::SuspendError>,
     Error,
 > {
-    fuchsia_trace::duration!(c"power", c"starnix-runner:suspending-container");
+    fuchsia_trace::duration!("power", "starnix-runner:suspending-container");
     let Some(container_job) = payload.container_job else {
         warn!(
             "error suspending container: could not find container job {:?}",
@@ -75,8 +75,8 @@ pub async fn suspend_container(
         Err(e) => {
             warn!("error suspending container {:?}", e);
             fuchsia_trace::instant!(
-                c"power",
-                c"starnix-runner:suspend-failed-actual",
+                "power",
+                "starnix-runner:suspend-failed-actual",
                 fuchsia_trace::Scope::Process
             );
             return Ok(Err(fstarnixrunner::SuspendError::SuspendFailure));
@@ -97,8 +97,8 @@ pub async fn suspend_container(
                     // and fail the suspend call.
                     warn!("error suspending container: Linux wake locks exist");
                     fuchsia_trace::instant!(
-                        c"power",
-                        c"starnix-runner:suspend-failed-with-wake-locks",
+                        "power",
+                        "starnix-runner:suspend-failed-with-wake-locks",
                         fuchsia_trace::Scope::Process
                     );
                     return Ok(Err(fstarnixrunner::SuspendError::WakeLocksExist));
@@ -130,7 +130,7 @@ pub async fn suspend_container(
         // future, at which point we may want to consider a Port-based approach. This
         // would also allow us to unblock this thread.
         {
-            fuchsia_trace::duration!(c"power", c"starnix-runner:waiting-on-container-wake");
+            fuchsia_trace::duration!("power", "starnix-runner:waiting-on-container-wake");
             if wait_items.len() > 0 {
                 log::info!("Waiting on container to receive incoming message on wake proxies");
                 match zx::object_wait_many(
@@ -227,7 +227,7 @@ async fn suspend_job(kernel_job: &zx::Job) -> Result<Vec<zx::NullableHandle>, Er
         for process in processes {
             let threads = process.threads().expect("failed to get threads");
             for thread_koid in &threads {
-                fuchsia_trace::duration!(c"power", c"starnix-runner:suspend_kernel", "thread_koid" => *thread_koid);
+                fuchsia_trace::duration!("power", "starnix-runner:suspend_kernel", "thread_koid" => *thread_koid);
                 if let Ok(thread) = process.get_child(&thread_koid, zx::Rights::SAME_RIGHTS) {
                     match thread
                         .wait_handle(
