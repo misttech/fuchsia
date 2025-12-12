@@ -23,3 +23,7 @@ To change this file, a migration strategy is recommended as follows:
 6. Remove the previous sshd_config_userdebug golden file.
 7. Rename the updated sshd_config to sshd_config_userdebug.
 8. Update pre_signing_userdebug.json5 to only use the new sshd_config_userdebug file in the matches_golden check.
+
+## Component Tree Config
+
+This platform-level file exists to teach Scrutiny about dynamic route information so that it can construct a component model representative of the running system. This assumes that enough information can be inferred to represent the set of possible capabilities in this config file, which may or may not be practical depending on what kind of dynamic routing strategy is employed.

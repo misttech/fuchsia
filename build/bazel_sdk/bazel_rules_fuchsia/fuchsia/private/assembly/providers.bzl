@@ -160,6 +160,7 @@ FuchsiaScrutinyConfigInfo = provider(
         "bootfs_packages": "Set of packages expected in bootfs",
         "kernel_cmdline": "Set of cmdline args expected to be passed to the kernel",
         "component_tree_config": "Tree of expected component routes",
+        "component_tree_configs": "List of files of tree of expected component routes",
         "routes_config_golden": "Config file for route resources validation",
         "component_resolver_allowlist": "Allowlist of components that can be resolved using privileged component resolvers",
         "component_route_exceptions": "Allowlist of all capability routes that are exempt from route checking",

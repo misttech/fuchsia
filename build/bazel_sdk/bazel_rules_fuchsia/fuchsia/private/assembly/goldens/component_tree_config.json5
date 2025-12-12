@@ -1,0 +1,6 @@
+{
+    // Dynamic capability routing information needed by Scrutiny to construct
+    // a valid routing graph for verify_routes and structured_config.
+    dynamic_components: {},
+    dynamic_dictionaries: {},
+}

@@ -143,6 +143,13 @@ def _scrutiny_validation(
         "scrutiny",
         "verify",
     ]
+
+    # TODO(b/468009955): Remove single file config tree field once OOT usages migrated.
+    component_tree_configs = platform_scrutiny_config.component_tree_configs + scrutiny_config.component_tree_configs
+    if platform_scrutiny_config.component_tree_config:
+        component_tree_configs.append(platform_scrutiny_config.component_tree_config)
+    if scrutiny_config.component_tree_config:
+        component_tree_configs.append(scrutiny_config.component_tree_config)
     if is_recovery:
         ffx_invocation.append("--recovery")
     label_name = ctx.label.name + ("_recovery" if is_recovery else "")
@@ -209,7 +216,7 @@ def _scrutiny_validation(
                 ffx_scrutiny_inputs,
                 pb_out_dir,
                 platform_scrutiny_config.component_route_exceptions,
-                scrutiny_config.component_tree_config,
+                component_tree_configs,
             )
         if SCRUTINY_VERIFIERS.STRUCTURED_CONFIG not in scrutiny_config.excluded_verifiers:
             deps += _verify_structured_config(
@@ -218,6 +225,7 @@ def _scrutiny_validation(
                 ffx_scrutiny_inputs,
                 pb_out_dir,
                 platform_scrutiny_config.structured_config_policy,
+                component_tree_configs,
             )
 
         deps += _extract_structured_config(
@@ -226,6 +234,7 @@ def _scrutiny_validation(
             ffx_scrutiny_inputs,
             pb_out_dir,
             is_recovery,
+            component_tree_configs,
         )
     return deps
 
@@ -387,7 +396,7 @@ def _verify_routes(
         ffx_scrutiny_inputs,
         pb_out_dir,
         allow_lists,
-        component_tree_config):
+        component_tree_configs):
     stamp_file = ctx.actions.declare_file(ctx.label.name + "_routes.stamp")
     tmp_dir = ctx.actions.declare_directory(ctx.label.name + "_routes.tmp")
     ffx_isolate_dir = ctx.actions.declare_directory(ctx.label.name + "_routes.ffx")
@@ -400,10 +409,10 @@ def _verify_routes(
         "--product-bundle",
         pb_out_dir.path,
     ]
-    if component_tree_config:
+    for config in component_tree_configs:
         _ffx_invocation += [
             "--component-tree-config",
-            component_tree_config.path,
+            config.path,
         ]
     for allow_list in allow_lists:
         _ffx_invocation += [
@@ -414,7 +423,7 @@ def _verify_routes(
         "set -e",
         " ".join(_ffx_invocation),
     ]
-    inputs = [pb_out_dir, component_tree_config] + allow_lists + ffx_scrutiny_inputs
+    inputs = [pb_out_dir] + component_tree_configs + allow_lists + ffx_scrutiny_inputs
     ctx.actions.run_shell(
         inputs = inputs,
         outputs = [stamp_file, tmp_dir, ffx_isolate_dir],
@@ -513,7 +522,8 @@ def _verify_structured_config(
         ffx_invocation,
         ffx_scrutiny_inputs,
         pb_out_dir,
-        structured_config_policy):
+        structured_config_policy,
+        component_tree_configs):
     stamp_file = ctx.actions.declare_file(ctx.label.name + "_structured_config.stamp")
     tmp_dir = ctx.actions.declare_directory(ctx.label.name + "_structured_config.tmp")
     ffx_isolate_dir = ctx.actions.declare_directory(ctx.label.name + "_structured_config.ffx")
@@ -528,11 +538,16 @@ def _verify_structured_config(
         "--policy",
         structured_config_policy.path,
     ]
+    for config in component_tree_configs:
+        _ffx_invocation += [
+            "--component-tree-config",
+            config.path,
+        ]
     script_lines = [
         "set -e",
         " ".join(_ffx_invocation),
     ]
-    inputs = [pb_out_dir, structured_config_policy] + ffx_scrutiny_inputs
+    inputs = [pb_out_dir, structured_config_policy] + component_tree_configs + ffx_scrutiny_inputs
     ctx.actions.run_shell(
         inputs = inputs,
         outputs = [stamp_file, tmp_dir, ffx_isolate_dir],
@@ -544,7 +559,7 @@ def _verify_structured_config(
     )
     return [stamp_file, tmp_dir]
 
-def _extract_structured_config(ctx, ffx_invocation, ffx_scrutiny_inputs, pb_out_dir, is_recovery):
+def _extract_structured_config(ctx, ffx_invocation, ffx_scrutiny_inputs, pb_out_dir, is_recovery, component_tree_configs):
     structured_config = ctx.actions.declare_file(ctx.label.name + "_structured_config")
     depfile = ctx.actions.declare_file(ctx.label.name + "_depfile")
     ffx_isolate_dir = ctx.actions.declare_directory(ctx.label.name + "_extract_structured_config.ffx")
@@ -562,13 +577,18 @@ def _extract_structured_config(ctx, ffx_invocation, ffx_scrutiny_inputs, pb_out_
         "--depfile",
         depfile.path,
     ]
+    for config in component_tree_configs:
+        _ffx_invocation += [
+            "--component-tree-config",
+            config.path,
+        ]
     if is_recovery:
         _ffx_invocation.append("--recovery")
     script_lines = [
         "set -e",
         " ".join(_ffx_invocation),
     ]
-    inputs = [pb_out_dir] + ffx_scrutiny_inputs
+    inputs = [pb_out_dir] + component_tree_configs + ffx_scrutiny_inputs
     ctx.actions.run_shell(
         inputs = inputs,
         outputs = [structured_config, depfile, ffx_isolate_dir],
