@@ -9,6 +9,7 @@ rustc_library("fidl_fuchsia_net_filter_ext") {
   with_unit_tests = true
   edition = "2024"
   deps = [
+    "//sdk/fidl/fuchsia.ebpf:fuchsia.ebpf_rust",
     "//sdk/fidl/fuchsia.net:fuchsia.net_rust",
     "//sdk/fidl/fuchsia.net.filter:fuchsia.net.filter_rust",
     "//sdk/fidl/fuchsia.net.root:fuchsia.net.root_rust",

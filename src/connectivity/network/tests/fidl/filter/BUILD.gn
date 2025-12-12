@@ -8,12 +8,14 @@ rustc_test("filter") {
   edition = "2024"
   output_name = "netstack_filter_fidl_test"
   deps = [
+    "//sdk/fidl/fuchsia.ebpf:fuchsia.ebpf_rust",
     "//sdk/fidl/fuchsia.net:fuchsia.net_rust",
     "//sdk/fidl/fuchsia.net.filter:fuchsia.net.filter_rust",
     "//sdk/fidl/fuchsia.net.matchers:fuchsia.net.matchers_rust",
     "//sdk/fidl/fuchsia.net.root:fuchsia.net.root_rust",
     "//sdk/fidl/fuchsia.net.routes:fuchsia.net.routes_rust",
     "//sdk/fidl/fuchsia.posix.socket:fuchsia.posix.socket_rust",
+    "//sdk/rust/zx",
     "//src/connectivity/lib/net-declare",
     "//src/connectivity/lib/net-types",
     "//src/connectivity/lib/packet-formats",

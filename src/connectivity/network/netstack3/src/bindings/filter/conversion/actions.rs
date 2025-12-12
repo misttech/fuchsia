@@ -5,20 +5,25 @@
 use fidl_fuchsia_net_ext::IntoExt as _;
 use net_types::ip::{GenericOverIp, Ip};
 use packet_formats::ip::IpExt;
+
 use {fidl_fuchsia_net as fnet, fidl_fuchsia_net_filter_ext as fnet_filter_ext};
 
-use super::{ConversionResult, IpVersionMismatchError, IpVersionStrictness, TryConvertToCoreState};
+use crate::bindings::filter::conversion::{
+    ConversionError, ConversionResult, ConvertToCoreStateContext, IpVersionStrictness,
+    TryConvertToCoreState,
+};
 
 impl TryConvertToCoreState for fnet::IpAddress {
     type CoreState<I: IpExt> = I::Addr;
 
-    fn try_convert<I: IpExt>(
+    fn try_convert<C: ConvertToCoreStateContext, I: IpExt>(
         self,
+        _ctx: &C,
         ip_version_strictness: IpVersionStrictness,
-    ) -> Result<ConversionResult<Self::CoreState<I>>, IpVersionMismatchError> {
+    ) -> Result<ConversionResult<Self::CoreState<I>>, ConversionError> {
         #[derive(GenericOverIp)]
         #[generic_over_ip(I, Ip)]
-        struct Wrap<I: IpExt>(Result<ConversionResult<I::Addr>, IpVersionMismatchError>);
+        struct Wrap<I: IpExt>(Result<ConversionResult<I::Addr>, ConversionError>);
         let Wrap(result) = I::map_ip_out(
             self,
             |addr| match addr {
@@ -37,29 +42,30 @@ impl TryConvertToCoreState for fnet::IpAddress {
 impl TryConvertToCoreState for fnet_filter_ext::TransparentProxy {
     type CoreState<I: IpExt> = netstack3_core::filter::TransparentProxy<I>;
 
-    fn try_convert<I: IpExt>(
+    fn try_convert<C: ConvertToCoreStateContext, I: IpExt>(
         self,
+        ctx: &C,
         ip_version_strictness: IpVersionStrictness,
-    ) -> Result<ConversionResult<Self::CoreState<I>>, IpVersionMismatchError> {
+    ) -> Result<ConversionResult<Self::CoreState<I>>, ConversionError> {
         match self {
             Self::LocalPort(port) => Ok(ConversionResult::State(
                 netstack3_core::filter::TransparentProxy::LocalPort(port),
             )),
             Self::LocalAddr(addr) => {
-                let addr = match addr.try_convert::<I>(ip_version_strictness) {
+                let addr = match addr.try_convert::<C, I>(ctx, ip_version_strictness) {
                     Ok(ConversionResult::State(addr)) => addr,
                     Ok(ConversionResult::Omit) => return Ok(ConversionResult::Omit),
-                    Err(IpVersionMismatchError) => return Err(IpVersionMismatchError),
+                    Err(e) => return Err(e),
                 };
                 Ok(ConversionResult::State(netstack3_core::filter::TransparentProxy::LocalAddr(
                     addr,
                 )))
             }
             Self::LocalAddrAndPort(addr, port) => {
-                let addr = match addr.try_convert::<I>(ip_version_strictness) {
+                let addr = match addr.try_convert::<C, I>(ctx, ip_version_strictness) {
                     Ok(ConversionResult::State(addr)) => addr,
                     Ok(ConversionResult::Omit) => return Ok(ConversionResult::Omit),
-                    Err(IpVersionMismatchError) => return Err(IpVersionMismatchError),
+                    Err(e) => return Err(e),
                 };
                 Ok(ConversionResult::State(
                     netstack3_core::filter::TransparentProxy::LocalAddrAndPort(addr, port),

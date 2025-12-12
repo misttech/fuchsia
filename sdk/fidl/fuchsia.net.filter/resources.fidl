@@ -4,6 +4,7 @@
 
 library fuchsia.net.filter;
 
+using fuchsia.ebpf;
 using fuchsia.net;
 using fuchsia.net.matchers;
 
@@ -187,6 +188,15 @@ type Matchers = table {
     /// at the transport layer (such as TCP or UDP ports), clients should use
     /// the fields of a protocol-specific matcher.
     5: transport_protocol fuchsia.net.matchers.PacketTransportProtocol;
+    /// An eBPF program used as a matcher.
+    ///
+    /// The program should be registered by calling
+    /// ['fuchsia.net.filter.NamespaceController/RegisterEbpfProgram'] prior to
+    /// committing the rule containing the matcher.
+    ///
+    /// When the program is executed, a non-zero result from the program
+    /// indicates a match.
+    6: ebpf_program fuchsia.ebpf.ProgramId;
 };
 
 /// An inclusive range of transport-layer ports.

@@ -6,12 +6,14 @@ mod actions;
 mod matchers;
 
 use std::collections::{BTreeMap, HashMap};
+use std::sync::Arc;
 
 use assert_matches::assert_matches;
-use fidl_fuchsia_net_filter_ext as fnet_filter_ext;
 use net_types::ip::{GenericOverIp, Ip, Ipv4, Ipv6};
 use packet_formats::ip::IpExt;
+use {fidl_fuchsia_ebpf as febpf, fidl_fuchsia_net_filter_ext as fnet_filter_ext};
 
+use crate::bindings::bpf::SocketFilterProgram;
 use crate::bindings::ctx::BindingsCtx;
 use crate::bindings::filter::CommitError;
 use crate::bindings::filter::controller::{
@@ -34,9 +36,9 @@ enum IpVersionStrictness {
 }
 
 impl IpVersionStrictness {
-    pub(super) fn mismatch_result<T>(&self) -> Result<ConversionResult<T>, IpVersionMismatchError> {
+    pub(super) fn mismatch_result<T>(&self) -> Result<ConversionResult<T>, ConversionError> {
         match self {
-            IpVersionStrictness::IpVersionMustMatchState => Err(IpVersionMismatchError),
+            IpVersionStrictness::IpVersionMustMatchState => Err(ConversionError::IpVersionMismatch),
             IpVersionStrictness::IpVersionCanDifferFromState => Ok(ConversionResult::Omit),
         }
     }
@@ -47,7 +49,18 @@ enum ConversionResult<CoreState> {
     Omit,
 }
 
-struct IpVersionMismatchError;
+pub(super) enum ConversionError {
+    IpVersionMismatch,
+    InvalidEbpfProgramId,
+}
+
+/// Context for TryConvertToCoreState. Allows to access eBPF programs registered
+/// with the controller.
+pub(super) trait ConvertToCoreStateContext {
+    /// Returns the eBPF program with the specified `program_id`, if any. Conversion should fail
+    /// with `ConversionError::InvalidEbpfProgramId` if this function returns `None`.
+    fn get_ebpf_program(&self, program_id: febpf::ProgramId) -> Option<Arc<SocketFilterProgram>>;
+}
 
 trait TryConvertToCoreState {
     type CoreState<I: IpExt>;
@@ -58,12 +71,14 @@ trait TryConvertToCoreState {
     /// `self` (for example, if `self` contains an IPv4-specific address matcher
     /// and this method is called with `Ipv6`), returns either:
     ///
-    ///   * Err(IpVersionMismatchError) if `ip_version_strictness` is `IpVersionMustMatchState`
+    ///   * Err(ConversionError::IpVersionMismatch) if `ip_version_strictness` is
+    ///     `IpVersionMustMatchState`
     ///   * Ok(ConversionResult::Omit) otherwise
-    fn try_convert<I: IpExt>(
+    fn try_convert<C: ConvertToCoreStateContext, I: IpExt>(
         self,
+        ctx: &C,
         ip_version_strictness: IpVersionStrictness,
-    ) -> Result<ConversionResult<Self::CoreState<I>>, IpVersionMismatchError>;
+    ) -> Result<ConversionResult<Self::CoreState<I>>, ConversionError>;
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, PartialOrd, Ord, Eq)]
@@ -136,8 +151,9 @@ impl<I: IpExt> State<I> {
         merge_hook(&mut nat_routines.egress, &other.nat_routines.egress);
     }
 
-    fn add_namespace(
+    fn add_namespace<C: ConvertToCoreStateContext>(
         &mut self,
+        ctx: &C,
         namespace: &fnet_filter_ext::NamespaceId,
         installed_routines: Vec<InstalledRoutine>,
         uninstalled_routines: HashMap<String, UninstalledRoutine>,
@@ -149,6 +165,7 @@ impl<I: IpExt> State<I> {
         // already been "resolved", or fully converted to their `netstack3_core`
         // representation.
         let uninstalled_routines = CoreUninstalledRoutines::convert_routines(
+            ctx,
             uninstalled_routines,
             namespace,
             ip_version_strictness,
@@ -192,6 +209,7 @@ impl<I: IpExt> State<I> {
             };
 
             let rules = convert_rules(
+                ctx,
                 namespace,
                 &name,
                 rules,
@@ -245,7 +263,8 @@ impl TryFromFidl<fnet_filter_ext::MarkAction> for netstack3_core::filter::MarkAc
     }
 }
 
-fn convert_rules<I, F>(
+fn convert_rules<C, I, F>(
+    ctx: &C,
     namespace: &fnet_filter_ext::NamespaceId,
     routine: &str,
     rules: BTreeMap<u32, Rule>,
@@ -253,6 +272,7 @@ fn convert_rules<I, F>(
     mut resolve_jump_target: F,
 ) -> Result<Vec<CoreRule<I>>, CommitError>
 where
+    C: ConvertToCoreStateContext,
     I: IpExt,
     F: FnMut(String, fnet_filter_ext::RuleId) -> Result<CoreUninstalledRoutine<I>, CommitError>,
 {
@@ -267,10 +287,10 @@ where
                 index,
             };
 
-            let matcher = match matchers.try_convert(ip_version_strictness) {
+            let matcher = match matchers.try_convert(ctx, ip_version_strictness) {
                 Ok(ConversionResult::State(matcher)) => matcher,
                 Ok(ConversionResult::Omit) => return None,
-                Err(IpVersionMismatchError) => {
+                Err(_) => {
                     return Some(Err(CommitError::RuleWithInvalidMatcher(rule_id)));
                 }
             };
@@ -287,11 +307,11 @@ where
                     netstack3_core::filter::Action::Jump(target)
                 }
                 fnet_filter_ext::Action::TransparentProxy(proxy) => {
-                    let proxy = match proxy.try_convert(ip_version_strictness) {
+                    let proxy = match proxy.try_convert(ctx, ip_version_strictness) {
                         Ok(ConversionResult::State(proxy)) => proxy,
                         Ok(ConversionResult::Omit) => return None,
-                        Err(IpVersionMismatchError) => {
-                            return Some(Err(CommitError::RuleWithInvalidMatcher(rule_id)));
+                        Err(_) => {
+                            return Some(Err(CommitError::RuleWithInvalidAction(rule_id)));
                         }
                     };
                     netstack3_core::filter::Action::TransparentProxy(proxy)
@@ -343,7 +363,8 @@ impl<I: IpExt> CoreUninstalledRoutines<I> {
     /// front, and checks for cycles in each routine graph by keeping track of which
     /// routines we've seen thus far, and returning an error if we ever encounter
     /// the same routine twice.
-    fn convert_routines(
+    fn convert_routines<C: ConvertToCoreStateContext>(
+        ctx: &C,
         mut uninstalled_routines: HashMap<String, UninstalledRoutine>,
         namespace: &fnet_filter_ext::NamespaceId,
         ip_version_strictness: IpVersionStrictness,
@@ -355,6 +376,7 @@ impl<I: IpExt> CoreUninstalledRoutines<I> {
             let name = uninstalled_routines.keys().next().expect("should not be empty").clone();
 
             let _ = core_uninstalled.convert_routine(
+                ctx,
                 &namespace,
                 &name,
                 &mut uninstalled_routines,
@@ -369,8 +391,9 @@ impl<I: IpExt> CoreUninstalledRoutines<I> {
     /// routines referenced in `Jump` actions in the routine. The converted routine
     /// is stored in either `self.nat` or `self.ip` depending on its type, and its
     /// type is stored in `self.routine_types`.
-    fn convert_routine(
+    fn convert_routine<C: ConvertToCoreStateContext>(
         &mut self,
+        ctx: &C,
         namespace: &fnet_filter_ext::NamespaceId,
         name: &str,
         uninstalled_routines: &mut HashMap<String, UninstalledRoutine>,
@@ -393,6 +416,7 @@ impl<I: IpExt> CoreUninstalledRoutines<I> {
             })?;
 
         let rules = convert_rules(
+            ctx,
             &namespace,
             name,
             rules,
@@ -406,6 +430,7 @@ impl<I: IpExt> CoreUninstalledRoutines<I> {
                     self.expect_routine_resolved(&name, routine_type, rule_id)
                 } else {
                     self.convert_routine(
+                        ctx,
                         namespace,
                         &name,
                         uninstalled_routines,
@@ -486,7 +511,8 @@ struct UninstalledRoutine {
 /// Because Core state is parameterized on IP version, this requires splitting
 /// the state in each of the controller's namespaces into v4-specific and v6-
 /// specific state.
-pub(super) fn convert_to_core(
+pub(super) fn convert_to_core<C: ConvertToCoreStateContext>(
+    ctx: &C,
     namespaces: HashMap<fnet_filter_ext::NamespaceId, Namespace>,
 ) -> Result<(State<Ipv4>, State<Ipv6>), CommitError> {
     let (mut v4, mut v6) = (State::<Ipv4>::default(), State::<Ipv6>::default());
@@ -539,6 +565,7 @@ pub(super) fn convert_to_core(
         match domain {
             fnet_filter_ext::Domain::Ipv4 => {
                 v4.add_namespace(
+                    ctx,
                     &id,
                     installed,
                     uninstalled,
@@ -549,6 +576,7 @@ pub(super) fn convert_to_core(
             }
             fnet_filter_ext::Domain::Ipv6 => {
                 v6.add_namespace(
+                    ctx,
                     &id,
                     installed,
                     uninstalled,
@@ -563,12 +591,14 @@ pub(super) fn convert_to_core(
                 // that does not match the rule's version. For example, a rule with an IPv4
                 // address matcher will not be installed in Core's IPv6 filtering state.
                 v4.add_namespace(
+                    ctx,
                     &id,
                     installed.clone(),
                     uninstalled.clone(),
                     IpVersionStrictness::IpVersionCanDifferFromState,
                 )?;
                 v6.add_namespace(
+                    ctx,
                     &id,
                     installed,
                     uninstalled,

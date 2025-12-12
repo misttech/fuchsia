@@ -4,10 +4,10 @@
 
 use crate::{
     Change, CommitError, ControllerCreationError, ControllerId, PushChangesError,
-    handle_change_validation_result, handle_commit_result,
+    RegisterEbpfProgramError, handle_change_validation_result, handle_commit_result,
 };
 use fidl::marker::SourceBreaking;
-use fidl_fuchsia_net_filter as fnet_filter;
+use {fidl_fuchsia_ebpf as febpf, fidl_fuchsia_net_filter as fnet_filter};
 
 /// A controller for filtering state with blocking methods.
 pub struct Controller {
@@ -43,6 +43,18 @@ impl Controller {
 
     pub fn id(&self) -> &ControllerId {
         &self.id
+    }
+
+    pub fn register_ebpf_program(
+        &mut self,
+        handle: febpf::ProgramHandle,
+        program: febpf::VerifiedProgram,
+        deadline: zx::MonotonicInstant,
+    ) -> Result<(), RegisterEbpfProgramError> {
+        self.controller
+            .register_ebpf_program(handle, program, deadline)
+            .map_err(RegisterEbpfProgramError::CallMethod)?
+            .map_err(RegisterEbpfProgramError::from)
     }
 
     pub fn push_changes(

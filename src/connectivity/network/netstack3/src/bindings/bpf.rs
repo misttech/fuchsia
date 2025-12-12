@@ -11,15 +11,16 @@ use ebpf::{
 use ebpf_api::{
     __sk_buff, CGROUP_SKB_ARGS, CGROUP_SKB_SK_BUF_TYPE, Map, MapError, MapValueRef,
     PacketWithLoadBytes, PinnedMap, SKF_AD_OFF, SKF_AD_PROTOCOL, SKF_LL_OFF, SKF_NET_OFF,
-    SOCKET_FILTER_CBPF_CONFIG, SOCKET_FILTER_SK_BUF_TYPE, SocketUidContext, uid_t,
+    SOCKET_FILTER_ARGS, SOCKET_FILTER_CBPF_CONFIG, SOCKET_FILTER_SK_BUF_TYPE, SocketUidContext,
+    uid_t,
 };
-use fidl_fuchsia_ebpf as febpf;
 use fidl_table_validation::ValidFidlTable;
 use log::{error, warn};
 use net_types::ip::IpVersion;
 use netstack3_core::device::{DeviceId, StrongDeviceIdentifier};
 use netstack3_core::filter::{
-    FilterIpExt, IpPacket, SocketEgressFilterResult, SocketIngressFilterResult, SocketOpsFilter,
+    BindingsPacketMatcher, FilterIpExt, IpPacket, SocketEgressFilterResult,
+    SocketIngressFilterResult, SocketOpsFilter,
 };
 use netstack3_core::ip::{Mark, MarkDomain, Marks};
 use netstack3_core::socket::SocketCookie;
@@ -32,6 +33,10 @@ use std::mem::offset_of;
 use std::sync::{Arc, Weak};
 use zerocopy::FromBytes;
 use zx::AsHandleRef;
+use {
+    fidl_fuchsia_ebpf as febpf, fidl_fuchsia_net_filter as fnet_filter,
+    fidl_fuchsia_posix as fposix,
+};
 
 // Transmutes `Vec<u64>` to `Vec<EbpfInstruction>`.
 fn code_from_vec(code: Vec<u64>) -> Vec<EbpfInstruction> {
@@ -249,6 +254,7 @@ impl<C: SkBuffContext> ProgramArgument for &'_ SkBuff<'_, C> {
     }
 }
 
+#[derive(Debug)]
 pub struct SocketInfo {
     socket_cookie: u64,
     socket_uid: Option<uid_t>,
@@ -306,7 +312,7 @@ pub(crate) struct SocketFilterProgram {
 impl BpfProgramContext for SocketFilterProgram {
     type RunContext<'a> = SocketRunContext<'a>;
     type Packet<'a> = &'a SocketFilterSkBuff<'a>;
-    type Map = PinnedMap;
+    type Map = CachedMapRef;
     const CBPF_CONFIG: &'static CbpfConfig = &SOCKET_FILTER_CBPF_CONFIG;
 }
 
@@ -329,21 +335,23 @@ pub(crate) enum SocketFilterResult {
 }
 
 impl SocketFilterProgram {
-    pub(crate) fn new(code: Vec<u64>) -> Self {
+    pub(crate) fn new(
+        program: ValidVerifiedProgram,
+        map_cache: &Arc<EbpfMapCache>,
+    ) -> Result<Self, EbpfError> {
         // TODO(https://fxbug.dev/370043219): Currently we assume that the code has been verified.
         // This is safe because fuchsia.posix.socket.packet is routed only to Starnix,
         // but that may change in the future. We need a better mechanism for permissions & BPF
         // verification.
-        let program = VerifiedEbpfProgram::from_verified_code(
-            code_from_vec(code),
-            SocketFilterProgram::get_arg_types(),
-            vec![],
-            vec![],
-        );
-        let program = ebpf::link_program::<SocketFilterProgram>(&program, vec![])
-            .expect("Failed to link SocketFilter program");
+        let (program, maps) =
+            parse_verified_program_fidl(program, map_cache, SOCKET_FILTER_ARGS.clone())?;
 
-        Self { program }
+        let program = ebpf::link_program(&program, maps).map_err(|e| {
+            error!("Failed to link eBPF program: {:?}", e);
+            EbpfError::LinkFailed
+        })?;
+
+        Ok(Self { program })
     }
 
     pub(crate) fn run(
@@ -351,12 +359,34 @@ impl SocketFilterProgram {
         socket_info: SocketInfo,
         mut skb: SocketFilterSkBuff<'_>,
     ) -> SocketFilterResult {
+        trace_duration!(
+            c"ebpf::socket_filter::run",
+            "len" => skb.sk_buff.len,
+            "protocol" => skb.sk_buff.protocol
+        );
+
         let mut context = SocketRunContext::new(socket_info);
         let result = self.program.run(&mut context, &mut skb);
         match result {
             0 => SocketFilterResult::Reject,
             n => SocketFilterResult::Accept(n.try_into().unwrap()),
         }
+    }
+}
+
+impl diagnostics_traits::InspectableValue for SocketFilterProgram {
+    fn record<I: diagnostics_traits::Inspector>(&self, _name: &str, _inspector: &mut I) {
+        // TODO(https://fxbug.dev/467448866): Record program name.
+    }
+}
+
+impl BindingsPacketMatcher for SocketFilterProgram {
+    fn matches<I: FilterIpExt, P: IpPacket<I>>(&self, _packet: &P) -> bool {
+        trace_duration!(c"ebpf::packet_matcher");
+
+        // TODO(https://fxbug.dev/455585276): Wire `PartialSerializer` for the
+        // `packet`. Use it to construct `SkBuff` and run the program.
+        false
     }
 }
 
@@ -391,19 +421,59 @@ ebpf_api::ebpf_program_context_type!(CgroupSkbProgram, ebpf_api::CgroupSkbProgra
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub(crate) enum EbpfError {
-    NotSupported,
     LinkFailed,
     MapFailed,
+}
+
+impl From<EbpfError> for fposix::Errno {
+    fn from(e: EbpfError) -> Self {
+        match e {
+            EbpfError::LinkFailed => fposix::Errno::Eio,
+            EbpfError::MapFailed => fposix::Errno::Eio,
+        }
+    }
+}
+
+impl From<EbpfError> for fnet_filter::SocketControlAttachEbpfProgramError {
+    fn from(e: EbpfError) -> Self {
+        match e {
+            EbpfError::LinkFailed => fnet_filter::SocketControlAttachEbpfProgramError::LinkFailed,
+            EbpfError::MapFailed => fnet_filter::SocketControlAttachEbpfProgramError::MapFailed,
+        }
+    }
+}
+
+impl From<EbpfError> for fnet_filter::RegisterEbpfProgramError {
+    fn from(e: EbpfError) -> Self {
+        match e {
+            EbpfError::LinkFailed => fnet_filter::RegisterEbpfProgramError::LinkFailed,
+            EbpfError::MapFailed => fnet_filter::RegisterEbpfProgramError::MapFailed,
+        }
+    }
+}
+
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+pub(crate) enum AttachmentError {
     DuplicateAttachment,
+}
+
+impl From<AttachmentError> for fnet_filter::SocketControlAttachEbpfProgramError {
+    fn from(e: AttachmentError) -> Self {
+        match e {
+            AttachmentError::DuplicateAttachment => {
+                fnet_filter::SocketControlAttachEbpfProgramError::DuplicateAttachment
+            }
+        }
+    }
 }
 
 #[derive(ValidFidlTable)]
 #[fidl_table_src(febpf::VerifiedProgram)]
 #[fidl_table_strict]
 pub(crate) struct ValidVerifiedProgram {
-    code: Vec<u64>,
-    struct_access_instructions: Vec<febpf::StructAccess>,
-    maps: Vec<febpf::Map>,
+    pub code: Vec<u64>,
+    pub struct_access_instructions: Vec<febpf::StructAccess>,
+    pub maps: Vec<febpf::Map>,
 }
 
 /// Translate FIDL representation of a verified eBPF program to
@@ -622,10 +692,10 @@ impl EbpfManager {
         &self,
         program: Option<CgroupSkbProgram>,
         allow_replace: bool,
-    ) -> Result<(), EbpfError> {
+    ) -> Result<(), AttachmentError> {
         let mut state = self.state.write();
         if !allow_replace && state.root_cgroup_egress.is_some() && program.is_some() {
-            return Err(EbpfError::DuplicateAttachment);
+            return Err(AttachmentError::DuplicateAttachment);
         }
         state.root_cgroup_egress = program;
         Ok(())
@@ -635,10 +705,10 @@ impl EbpfManager {
         &self,
         program: Option<CgroupSkbProgram>,
         allow_replace: bool,
-    ) -> Result<(), EbpfError> {
+    ) -> Result<(), AttachmentError> {
         let mut state = self.state.write();
         if !allow_replace && state.root_cgroup_ingress.is_some() && program.is_some() {
-            return Err(EbpfError::DuplicateAttachment);
+            return Err(AttachmentError::DuplicateAttachment);
         }
         state.root_cgroup_ingress = program;
         Ok(())

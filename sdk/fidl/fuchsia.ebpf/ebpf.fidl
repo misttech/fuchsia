@@ -128,3 +128,18 @@ type VerifiedProgram = resource table {
     /// by their index in this array.
     3: maps vector<Map>:MAX_PROGRAM_MAPS;
 };
+
+/// A handle of an eBPF program.
+type ProgramHandle = resource struct {
+    handle zx.Handle:<EVENTPAIR, zx.Rights.TRANSFER | zx.Rights.SIGNAL | zx.Rights.WAIT>;
+};
+
+/// The signal raised on a [`ProgramHandle`] to indicate that the program
+/// should be dropped.
+const PROGRAM_DEFUNCT_SIGNAL uint32 = 0x01000000; // ZX_USER_SIGNAL_0
+
+/// An ID used to uniquely identify an eBPF program. The ID is the KOID of the
+/// [`ProgramHandle`].
+type ProgramId = struct {
+    id zx.Koid;
+};

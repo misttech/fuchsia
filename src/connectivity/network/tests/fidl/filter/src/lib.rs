@@ -19,11 +19,11 @@ use fidl::endpoints::Proxy as _;
 use fidl_fuchsia_net_filter_ext::{
     self as fnet_filter_ext, Action, Change, ChangeCommitError, CommitError, Controller,
     ControllerId, Domain, Event, InstalledIpRoutine, InstalledNatRoutine, IpHook, Matchers,
-    Namespace, NamespaceId, NatHook, PortRange, PushChangesError, Resource, ResourceId, Routine,
-    RoutineId, RoutineType, Rule, RuleId, TransparentProxy,
+    Namespace, NamespaceId, NatHook, PortRange, PushChangesError, RegisterEbpfProgramError,
+    Resource, ResourceId, Routine, RoutineId, RoutineType, Rule, RuleId, TransparentProxy,
 };
 use fidl_fuchsia_net_interfaces_ext::PortClass;
-use fuchsia_async::{DurationExt as _, TimeoutExt as _};
+use fuchsia_async::{DurationExt as _, OnSignals, TimeoutExt as _};
 use futures::{FutureExt as _, StreamExt as _, TryFutureExt as _};
 use itertools::Itertools as _;
 use net_declare::{fidl_ip, fidl_subnet};
@@ -35,8 +35,9 @@ use netstack_testing_common::{
 };
 use netstack_testing_macros::netstack_test;
 use test_case::{test_case, test_matrix};
+use zx::{AsHandleRef as _, HandleBased as _};
 use {
-    fidl_fuchsia_net as fnet, fidl_fuchsia_net_filter as fnet_filter,
+    fidl_fuchsia_ebpf as febpf, fidl_fuchsia_net as fnet, fidl_fuchsia_net_filter as fnet_filter,
     fidl_fuchsia_net_matchers as fnet_matchers, fidl_fuchsia_net_matchers_ext as fnet_matchers_ext,
 };
 
@@ -2127,4 +2128,130 @@ async fn invalid_matcher_for_action_with_specified_port(
             assert_eq!(invalid_rule, rule_id);
         }
     }
+}
+
+// Returns a `VerifiedProgram` for a trivial program that returns 0.
+fn get_test_ebpf_program() -> febpf::VerifiedProgram {
+    febpf::VerifiedProgram {
+        code: Some(
+            [
+                // r0 <- 0 (BPF_ALU64 | BPF_MOV | BPF_K)
+                0x6100_0000_0000_0000,
+                // exit (BPF_JMP | BPF_EXIT)
+                0x9500_0000_0000_0000,
+            ]
+            .into_iter()
+            .map(|x| u64::from_be(x))
+            .collect(),
+        ),
+        struct_access_instructions: Some(vec![]),
+        maps: Some(vec![]),
+        __source_breaking: Default::default(),
+    }
+}
+
+#[netstack_test]
+async fn ebpf_program_registration(name: &str) {
+    let sandbox = netemul::TestSandbox::new().expect("create sandbox");
+    let realm = sandbox.create_netstack_realm::<Netstack3, _>(name).expect("create realm");
+    let control =
+        realm.connect_to_protocol::<fnet_filter::ControlMarker>().expect("connect to protocol");
+    let mut controller =
+        Controller::new(&control, &ControllerId(name.to_owned())).await.expect("create controller");
+
+    let (program_handle, server_handle) = zx::EventPair::create();
+    let program_handle = febpf::ProgramHandle { handle: program_handle };
+    let dup_program_handle = || {
+        let handle = program_handle
+            .handle
+            .duplicate_handle(zx::Rights::SAME_RIGHTS)
+            .expect("duplicate handle");
+        febpf::ProgramHandle { handle }
+    };
+
+    controller
+        .register_ebpf_program(dup_program_handle(), get_test_ebpf_program())
+        .await
+        .expect("register ebpf program");
+
+    // Repeated attempt to register the same program should fail.
+    assert_matches!(
+        controller
+            .register_ebpf_program(dup_program_handle(), get_test_ebpf_program())
+            .await
+            .expect_err("duplicate program registration should fail"),
+        RegisterEbpfProgramError::AlreadyRegistered
+    );
+
+    // Register the same program from another controller.
+    let mut controller2 =
+        Controller::new(&control, &ControllerId(name.to_owned())).await.expect("create controller");
+    controller2
+        .register_ebpf_program(dup_program_handle(), get_test_ebpf_program())
+        .await
+        .expect("register ebpf program");
+
+    // Raising `PROGRAM_DEFUNCT_SIGNAL` should result in the program being dropped
+    // by the netstack.
+    program_handle
+        .handle
+        .signal_handle(
+            zx::Signals::empty(),
+            zx::Signals::from_bits_truncate(febpf::PROGRAM_DEFUNCT_SIGNAL),
+        )
+        .expect("signal EventPair");
+
+    std::mem::drop(program_handle);
+
+    // Wait for the program to be dropped by the netstack.
+    let _: Result<zx::Signals, zx::Status> =
+        OnSignals::new(&server_handle, zx::Signals::EVENTPAIR_PEER_CLOSED)
+            .on_timeout(ASYNC_EVENT_NEGATIVE_CHECK_TIMEOUT.after_now(), || panic!("timeout"))
+            .await;
+}
+
+#[netstack_test]
+async fn ebpf_matcher(name: &str) {
+    let sandbox = netemul::TestSandbox::new().expect("create sandbox");
+    let realm = sandbox.create_netstack_realm::<Netstack3, _>(name).expect("create realm");
+    let control =
+        realm.connect_to_protocol::<fnet_filter::ControlMarker>().expect("connect to protocol");
+    let mut controller =
+        Controller::new(&control, &ControllerId(name.to_owned())).await.expect("create controller");
+
+    let (program_handle, _service_handle) = zx::EventPair::create();
+    let program_handle = febpf::ProgramHandle { handle: program_handle };
+    let program_id =
+        febpf::ProgramId { id: program_handle.handle.get_koid().expect("get koid").raw_koid() };
+
+    controller
+        .register_ebpf_program(program_handle, get_test_ebpf_program())
+        .await
+        .expect("register ebpf program");
+
+    let namespace_id = NamespaceId(String::from("namespace"));
+    const TARGET_ROUTINE: &str = "target-routine";
+    let target_routine_id =
+        RoutineId { namespace: namespace_id.clone(), name: TARGET_ROUTINE.to_owned() };
+    let rule_id = RuleId { routine: target_routine_id.clone(), index: 0 };
+    let resources = [
+        Resource::Namespace(Namespace { id: namespace_id.clone(), domain: Domain::AllIp }),
+        Resource::Routine(Routine {
+            id: target_routine_id,
+            routine_type: RoutineType::Ip(Some(InstalledIpRoutine {
+                hook: IpHook::Ingress,
+                priority: 0,
+            })),
+        }),
+        Resource::Rule(Rule {
+            id: rule_id.clone(),
+            matchers: Matchers { ebpf_program: Some(program_id), ..Default::default() },
+            action: Action::Drop,
+        }),
+    ];
+    controller
+        .push_changes(resources.iter().cloned().map(Change::Create).collect())
+        .await
+        .expect("push changes");
+    controller.commit().await.expect("commit pending changes");
 }

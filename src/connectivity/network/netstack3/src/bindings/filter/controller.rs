@@ -3,13 +3,20 @@
 // found in the LICENSE file.
 
 use std::collections::{BTreeMap, HashMap, btree_map, hash_map};
+use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use derivative::Derivative;
 use net_types::ip::{Ipv4, Ipv6};
-use {fidl_fuchsia_net_filter as fnet_filter, fidl_fuchsia_net_filter_ext as fnet_filter_ext};
+use {
+    fidl_fuchsia_ebpf as febpf, fidl_fuchsia_net_filter as fnet_filter,
+    fidl_fuchsia_net_filter_ext as fnet_filter_ext,
+};
 
 use super::CommitError;
+use super::conversion::ConvertToCoreStateContext;
+use crate::bindings::BindingsCtx;
+use crate::bindings::bpf::{SocketFilterProgram, ValidVerifiedProgram};
 
 #[derive(Debug, Clone, PartialEq)]
 pub(super) struct Rule {
@@ -192,6 +199,47 @@ pub(crate) enum Event {
     Removed(fnet_filter_ext::ResourceId),
 }
 
+pub(super) struct EbpfProgramRegistry {
+    // Programs that are registered with the `Controller`.
+    programs: HashMap<febpf::ProgramId, Arc<SocketFilterProgram>>,
+}
+
+impl EbpfProgramRegistry {
+    pub fn new() -> Self {
+        Self { programs: HashMap::new() }
+    }
+
+    pub(super) fn register(
+        &mut self,
+        ctx: &BindingsCtx,
+        id: febpf::ProgramId,
+        program: ValidVerifiedProgram,
+    ) -> Result<(), fnet_filter::RegisterEbpfProgramError> {
+        match self.programs.entry(id) {
+            hash_map::Entry::Occupied(_) => {
+                Err(fnet_filter::RegisterEbpfProgramError::AlreadyRegistered)
+            }
+            hash_map::Entry::Vacant(entry) => {
+                let program =
+                    Arc::new(SocketFilterProgram::new(program, ctx.ebpf_manager.maps_cache())?);
+                let _: &Arc<SocketFilterProgram> = entry.insert(program);
+                Ok(())
+            }
+        }
+    }
+
+    pub(super) fn remove(&mut self, id: febpf::ProgramId) {
+        let removed = self.programs.remove(&id);
+        assert!(removed.is_some());
+    }
+}
+
+impl ConvertToCoreStateContext for EbpfProgramRegistry {
+    fn get_ebpf_program(&self, program_id: febpf::ProgramId) -> Option<Arc<SocketFilterProgram>> {
+        self.programs.get(&program_id).map(|program| program.clone())
+    }
+}
+
 pub(crate) struct CommitResult {
     pub events: Vec<Event>,
     pub new_state: HashMap<fnet_filter_ext::NamespaceId, Namespace>,
@@ -265,11 +313,12 @@ impl Controller {
         &self,
         changes: Vec<fnet_filter_ext::Change>,
         idempotent: bool,
+        ebpf_registry: &EbpfProgramRegistry,
     ) -> Result<CommitResult, CommitError> {
         let validator = Validator::new(self.namespaces.clone());
         let (new_state, events) = validator.validate(changes, idempotent)?;
 
-        let (v4, v6) = super::conversion::convert_to_core(new_state.clone())?;
+        let (v4, v6) = super::conversion::convert_to_core(ebpf_registry, new_state.clone())?;
 
         Ok(CommitResult { events, new_state, core_state_v4: v4, core_state_v6: v6 })
     }

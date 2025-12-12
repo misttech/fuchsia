@@ -2,31 +2,45 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use std::sync::Arc;
+
 use net_types::ip::{GenericOverIp, Ip};
 use packet_formats::ip::{IpExt, IpProto, Ipv4Proto, Ipv6Proto};
 use {
-    fidl_fuchsia_net_filter_ext as fnet_filter_ext,
+    fidl_fuchsia_ebpf as febpf, fidl_fuchsia_net_filter_ext as fnet_filter_ext,
     fidl_fuchsia_net_matchers_ext as fnet_matchers_ext,
 };
 
-use super::{ConversionResult, IpVersionMismatchError, IpVersionStrictness, TryConvertToCoreState};
+use crate::bindings::bpf::SocketFilterProgram;
 use crate::bindings::ctx::BindingsCtx;
+use crate::bindings::filter::conversion::{
+    ConversionError, ConversionResult, ConvertToCoreStateContext, IpVersionStrictness,
+    TryConvertToCoreState,
+};
 use crate::bindings::util::IntoCore;
 
 impl TryConvertToCoreState for fnet_filter_ext::Matchers {
     type CoreState<I: IpExt> = netstack3_core::filter::PacketMatcher<I, BindingsCtx>;
 
-    fn try_convert<I: IpExt>(
+    fn try_convert<C: ConvertToCoreStateContext, I: IpExt>(
         self,
+        ctx: &C,
         ip_version_strictness: IpVersionStrictness,
-    ) -> Result<ConversionResult<Self::CoreState<I>>, IpVersionMismatchError> {
-        let Self { in_interface, out_interface, src_addr, dst_addr, transport_protocol } = self;
+    ) -> Result<ConversionResult<Self::CoreState<I>>, ConversionError> {
+        let Self {
+            in_interface,
+            out_interface,
+            src_addr,
+            dst_addr,
+            transport_protocol,
+            ebpf_program,
+        } = self;
 
         let in_interface = in_interface.map(|matcher| matcher.into_core());
         let out_interface = out_interface.map(|matcher| matcher.into_core());
 
         let src_address = match src_addr
-            .map(|matcher| matcher.try_convert::<I>(ip_version_strictness))
+            .map(|matcher| matcher.try_convert::<C, I>(ctx, ip_version_strictness))
             .transpose()?
         {
             Some(ConversionResult::Omit) => return Ok(ConversionResult::Omit),
@@ -34,7 +48,7 @@ impl TryConvertToCoreState for fnet_filter_ext::Matchers {
             None => None,
         };
         let dst_address = match dst_addr
-            .map(|matcher| matcher.try_convert::<I>(ip_version_strictness))
+            .map(|matcher| matcher.try_convert::<C, I>(ctx, ip_version_strictness))
             .transpose()?
         {
             Some(ConversionResult::Omit) => return Ok(ConversionResult::Omit),
@@ -42,7 +56,7 @@ impl TryConvertToCoreState for fnet_filter_ext::Matchers {
             None => None,
         };
         let transport_protocol = match transport_protocol
-            .map(|matcher| matcher.try_convert::<I>(ip_version_strictness))
+            .map(|matcher| matcher.try_convert::<C, I>(ctx, ip_version_strictness))
             .transpose()?
         {
             Some(ConversionResult::Omit) => return Ok(ConversionResult::Omit),
@@ -50,7 +64,14 @@ impl TryConvertToCoreState for fnet_filter_ext::Matchers {
             None => None,
         };
 
-        // TODO(https://fxbug.dev/455585276): Add external matcher for the eBPF matcher.
+        let external_matcher = match ebpf_program
+            .map(|program| program.try_convert::<C, I>(ctx, ip_version_strictness))
+            .transpose()?
+        {
+            Some(ConversionResult::Omit) => return Ok(ConversionResult::Omit),
+            Some(ConversionResult::State(matcher)) => Some(matcher),
+            None => None,
+        };
 
         Ok(ConversionResult::State(netstack3_core::filter::PacketMatcher {
             in_interface,
@@ -58,7 +79,7 @@ impl TryConvertToCoreState for fnet_filter_ext::Matchers {
             src_address,
             dst_address,
             transport_protocol,
-            external_matcher: None,
+            external_matcher,
         }))
     }
 }
@@ -66,17 +87,15 @@ impl TryConvertToCoreState for fnet_filter_ext::Matchers {
 impl TryConvertToCoreState for fnet_matchers_ext::Address {
     type CoreState<I: IpExt> = netstack3_core::ip::AddressMatcher<I::Addr>;
 
-    fn try_convert<I: IpExt>(
+    fn try_convert<C: ConvertToCoreStateContext, I: IpExt>(
         self,
+        _ctx: &C,
         ip_version_strictness: IpVersionStrictness,
-    ) -> Result<ConversionResult<Self::CoreState<I>>, IpVersionMismatchError> {
+    ) -> Result<ConversionResult<Self::CoreState<I>>, ConversionError> {
         #[derive(GenericOverIp)]
         #[generic_over_ip(I, Ip)]
         pub(super) struct Wrap<I: IpExt>(
-            Result<
-                ConversionResult<netstack3_core::ip::AddressMatcher<I::Addr>>,
-                IpVersionMismatchError,
-            >,
+            Result<ConversionResult<netstack3_core::ip::AddressMatcher<I::Addr>>, ConversionError>,
         );
 
         let either_matcher: netstack3_core::ip::AddressMatcherEither = self.into_core();
@@ -107,15 +126,14 @@ impl TryConvertToCoreState for fnet_matchers_ext::Address {
 impl TryConvertToCoreState for fnet_matchers_ext::TransportProtocol {
     type CoreState<I: IpExt> = netstack3_core::filter::TransportProtocolMatcher<I::Proto>;
 
-    fn try_convert<I: IpExt>(
+    fn try_convert<C: ConvertToCoreStateContext, I: IpExt>(
         self,
+        _ctx: &C,
         ip_version_strictness: IpVersionStrictness,
-    ) -> Result<ConversionResult<Self::CoreState<I>>, IpVersionMismatchError> {
+    ) -> Result<ConversionResult<Self::CoreState<I>>, ConversionError> {
         #[derive(GenericOverIp)]
         #[generic_over_ip(I, Ip)]
-        pub(super) struct Wrap<I: IpExt>(
-            Result<ConversionResult<I::Proto>, IpVersionMismatchError>,
-        );
+        pub(super) struct Wrap<I: IpExt>(Result<ConversionResult<I::Proto>, ConversionError>);
 
         let matcher = match self {
             fnet_matchers_ext::TransportProtocol::Tcp { src_port, dst_port } => {
@@ -174,5 +192,19 @@ impl TryConvertToCoreState for fnet_matchers_ext::TransportProtocol {
             }
         };
         Ok(ConversionResult::State(matcher))
+    }
+}
+
+impl TryConvertToCoreState for febpf::ProgramId {
+    type CoreState<I: IpExt> = Arc<SocketFilterProgram>;
+
+    fn try_convert<C: ConvertToCoreStateContext, I: IpExt>(
+        self,
+        ctx: &C,
+        _ip_version_strictness: IpVersionStrictness,
+    ) -> Result<ConversionResult<Self::CoreState<I>>, ConversionError> {
+        ctx.get_ebpf_program(self)
+            .ok_or(ConversionError::InvalidEbpfProgramId)
+            .map(ConversionResult::State)
     }
 }

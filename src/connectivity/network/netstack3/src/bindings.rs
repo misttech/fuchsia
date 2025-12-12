@@ -51,7 +51,6 @@ mod timers;
 mod util;
 mod waker;
 
-use std::convert::Infallible as Never;
 use std::fmt::Debug;
 use std::ops::Deref;
 use std::sync::Arc;
@@ -87,7 +86,7 @@ use netdevice_worker::LinkMulticastEvent;
 use power::{PowerWorker, PowerWorkerSink};
 use resource_removal::{ResourceRemovalSink, ResourceRemovalWorker};
 
-use crate::bindings::bpf::EbpfManager;
+use crate::bindings::bpf::{EbpfManager, SocketFilterProgram};
 use crate::bindings::counters::BindingsCounters;
 pub use crate::bindings::interface_config::InterfaceConfigDefaults;
 use crate::bindings::interface_config::InterfaceConfigType;
@@ -462,9 +461,7 @@ impl InstantContext for BindingsCtx {
 
 impl MatcherBindingsTypes for BindingsCtx {
     type DeviceClass = fidl_fuchsia_net_interfaces::PortClass;
-
-    // TODO(https://fxbug.dev/455585276): Add external matcher for the eBPF matcher.
-    type BindingsPacketMatcher = Never;
+    type BindingsPacketMatcher = Arc<SocketFilterProgram>;
 }
 
 impl SocketOpsFilterBindingContext<DeviceId<BindingsCtx>> for BindingsCtx {

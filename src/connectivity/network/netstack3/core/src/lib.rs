@@ -107,11 +107,11 @@ pub mod filter {
     mod integration;
 
     pub use netstack3_filter::{
-        Action, FilterApi, FilterBindingsContext, FilterBindingsTypes, FilterIpExt, Hook, IpPacket,
-        IpRoutines, MarkAction, NatRoutines, PacketMatcher, ProofOfEgressCheck, Routine, Routines,
-        Rule, SocketEgressFilterResult, SocketIngressFilterResult, SocketOpsFilter,
-        SocketOpsFilterBindingContext, TransparentProxy, TransportProtocolMatcher, Tuple,
-        UninstalledRoutine, ValidationError,
+        Action, BindingsPacketMatcher, FilterApi, FilterBindingsContext, FilterBindingsTypes,
+        FilterIpExt, Hook, IpPacket, IpRoutines, MarkAction, NatRoutines, PacketMatcher,
+        ProofOfEgressCheck, Routine, Routines, Rule, SocketEgressFilterResult,
+        SocketIngressFilterResult, SocketOpsFilter, SocketOpsFilterBindingContext,
+        TransparentProxy, TransportProtocolMatcher, Tuple, UninstalledRoutine, ValidationError,
     };
 }
 

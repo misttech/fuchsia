@@ -16,14 +16,16 @@ use fidl::endpoints::{ControlHandle as _, RequestStream as _};
 use futures::channel::mpsc;
 use futures::future::FusedFuture as _;
 use futures::lock::Mutex;
-use futures::{FutureExt as _, StreamExt as _, TryStreamExt as _};
+use futures::{FutureExt as _, StreamExt as _, TryStreamExt as _, select, stream};
 use itertools::Itertools;
 use log::{debug, error, info, warn};
 use thiserror::Error;
+use zx::AsHandleRef as _;
 
 use {
-    fidl_fuchsia_net_filter as fnet_filter, fidl_fuchsia_net_filter_ext as fnet_filter_ext,
-    fidl_fuchsia_net_root as fnet_root, fuchsia_async as fasync,
+    fidl_fuchsia_ebpf as febpf, fidl_fuchsia_net_filter as fnet_filter,
+    fidl_fuchsia_net_filter_ext as fnet_filter_ext, fidl_fuchsia_net_root as fnet_root,
+    fuchsia_async as fasync,
 };
 
 use crate::bindings::util::{ErrorLogExt, ScopeExt as _};
@@ -127,6 +129,7 @@ impl UpdateDispatcherInner {
         controller_id: &fnet_filter_ext::ControllerId,
         changes: Vec<fnet_filter_ext::Change>,
         idempotent: bool,
+        ebpf_registry: &controller::EbpfProgramRegistry,
         ctx: &mut crate::bindings::Ctx,
     ) -> Result<(), CommitError> {
         let Self { resources, clients } = self;
@@ -138,7 +141,7 @@ impl UpdateDispatcherInner {
         let CommitResult { events, new_state, core_state_v4, core_state_v6 } = resources
             .get(controller_id)
             .expect("controller should not be removed while serving")
-            .validate_and_convert_changes(changes, idempotent)?;
+            .validate_and_convert_changes(changes, idempotent, ebpf_registry)?;
 
         // Merge the new Core state from this controller with existing state
         // from all the other controllers. Note that this is an infallible
@@ -328,7 +331,7 @@ impl Watcher {
 
     fn watch(&mut self) -> impl futures::Future<Output = Vec<fnet_filter_ext::Event>> + Unpin + '_ {
         let Self { existing_resources, receiver, canceled: _ } = self;
-        futures::stream::iter(existing_resources)
+        stream::iter(existing_resources)
             .chain(receiver)
             .ready_chunks(fnet_filter::MAX_BATCH_SIZE.into())
             .into_future()
@@ -510,9 +513,76 @@ async fn serve_controller(
     let control_handle = stream.control_handle();
     control_handle.send_on_id_assigned(&id.0)?;
 
+    // List of ebpf programs registered by this controller.
+    let mut ebpf_registry = controller::EbpfProgramRegistry::new();
+
+    // Set of OnSignal futures waiting on ebpf program handles.
+    let mut ebpf_shutdown_signals = stream::FuturesUnordered::new();
+
     let mut pending_changes = Vec::new();
-    while let Some(request) = stream.try_next().await? {
+    loop {
+        let request = select! {
+            request = stream.try_next() =>  {
+                match request? {
+                    Some(request) => request,
+                    None => break Ok(()),
+                }
+            },
+
+            // Select `ebpf_shutdown_signals` only if it is not empty.
+            id = ebpf_shutdown_signals.select_next_some() => {
+                ebpf_registry.remove(id);
+                continue;
+            }
+        };
+
         match request {
+            NamespaceControllerRequest::RegisterEbpfProgram {
+                handle: febpf::ProgramHandle { handle },
+                program,
+                responder,
+            } => {
+                let program = match program.try_into() {
+                    Ok(r) => r,
+                    Err(e) => {
+                        warn!("encountered an invalid RegisterEbpfProgram request: {:?}", e);
+                        responder.send(Err(
+                            fnet_filter::RegisterEbpfProgramError::MissingRequiredField,
+                        ))?;
+                        continue;
+                    }
+                };
+                let id = febpf::ProgramId {
+                    id: handle.get_koid().expect("Failed to get koid").raw_koid(),
+                };
+                let result = ebpf_registry.register(ctx.bindings_ctx(), id, program);
+
+                if result.is_ok() {
+                    // Observe signals on the program handle to remove it from set when necessary.
+                    ebpf_shutdown_signals.push(
+                        fasync::OnSignals::new(
+                            handle,
+                            zx::Signals::EVENTPAIR_PEER_CLOSED
+                                | zx::Signals::from_bits_truncate(febpf::PROGRAM_DEFUNCT_SIGNAL),
+                        )
+                        .map(move |result| {
+                            match result {
+                                // The program is dropped when either of the two signals is raised.
+                                Ok(_signals) => (),
+                                Err(e) => {
+                                    error!(
+                                        "Error waiting for signals on an eBPF program handle: {:?}",
+                                        e
+                                    );
+                                }
+                            };
+                            id
+                        }),
+                    );
+                }
+
+                responder.send(result)?;
+            }
             NamespaceControllerRequest::PushChanges { changes, responder } => {
                 let num_changes = changes.len();
                 if pending_changes.len() + num_changes > fnet_filter::MAX_COMMIT_SIZE.into() {
@@ -618,8 +688,13 @@ async fn serve_controller(
                 let idempotent = idempotent.unwrap_or(false);
                 let changes = std::mem::take(&mut pending_changes);
                 let num_changes = changes.len();
-                let result =
-                    dispatcher.lock().await.commit_changes(id, changes, idempotent, &mut ctx);
+                let result = dispatcher.lock().await.commit_changes(
+                    id,
+                    changes,
+                    idempotent,
+                    &ebpf_registry,
+                    &mut ctx,
+                );
                 let result = match result {
                     Ok(()) => fnet_filter::CommitResult::Ok(fnet_filter::Empty {}),
                     Err(error) => match error {
@@ -664,5 +739,4 @@ async fn serve_controller(
             }
         }
     }
-    Ok(())
 }

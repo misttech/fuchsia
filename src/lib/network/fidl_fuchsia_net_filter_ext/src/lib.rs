@@ -24,7 +24,7 @@ use fidl::marker::SourceBreaking;
 use futures::{Stream, StreamExt as _, TryStreamExt as _};
 use thiserror::Error;
 use {
-    fidl_fuchsia_net as fnet, fidl_fuchsia_net_filter as fnet_filter,
+    fidl_fuchsia_ebpf as febpf, fidl_fuchsia_net as fnet, fidl_fuchsia_net_filter as fnet_filter,
     fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext,
     fidl_fuchsia_net_matchers_ext as fnet_matchers_ext, fidl_fuchsia_net_root as fnet_root,
 };
@@ -546,18 +546,26 @@ pub struct Matchers {
     pub src_addr: Option<fnet_matchers_ext::Address>,
     pub dst_addr: Option<fnet_matchers_ext::Address>,
     pub transport_protocol: Option<fnet_matchers_ext::TransportProtocol>,
+    pub ebpf_program: Option<febpf::ProgramId>,
 }
 
 impl From<Matchers> for fnet_filter::Matchers {
     fn from(matchers: Matchers) -> Self {
-        let Matchers { in_interface, out_interface, src_addr, dst_addr, transport_protocol } =
-            matchers;
+        let Matchers {
+            in_interface,
+            out_interface,
+            src_addr,
+            dst_addr,
+            transport_protocol,
+            ebpf_program,
+        } = matchers;
         Self {
             in_interface: in_interface.map(Into::into),
             out_interface: out_interface.map(Into::into),
             src_addr: src_addr.map(Into::into),
             dst_addr: dst_addr.map(Into::into),
             transport_protocol: transport_protocol.map(Into::into),
+            ebpf_program: ebpf_program.map(Into::into),
             __source_breaking: SourceBreaking,
         }
     }
@@ -573,6 +581,7 @@ impl TryFrom<fnet_filter::Matchers> for Matchers {
             src_addr,
             dst_addr,
             transport_protocol,
+            ebpf_program,
             __source_breaking,
         } = matchers;
         Ok(Self {
@@ -581,6 +590,7 @@ impl TryFrom<fnet_filter::Matchers> for Matchers {
             src_addr: src_addr.map(TryInto::try_into).transpose()?,
             dst_addr: dst_addr.map(TryInto::try_into).transpose()?,
             transport_protocol: transport_protocol.map(TryInto::try_into).transpose()?,
+            ebpf_program: ebpf_program.map(Into::into),
         })
     }
 }
@@ -589,8 +599,14 @@ impl Debug for Matchers {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut debug_struct = f.debug_struct("Matchers");
 
-        let Matchers { in_interface, out_interface, src_addr, dst_addr, transport_protocol } =
-            &self;
+        let Matchers {
+            in_interface,
+            out_interface,
+            src_addr,
+            dst_addr,
+            transport_protocol,
+            ebpf_program,
+        } = &self;
 
         // Omit empty fields.
         if let Some(matcher) = in_interface {
@@ -611,6 +627,10 @@ impl Debug for Matchers {
 
         if let Some(matcher) = transport_protocol {
             let _ = debug_struct.field("transport_protocol", matcher);
+        }
+
+        if let Some(matcher) = ebpf_program {
+            let _ = debug_struct.field("ebpf_program", matcher);
         }
 
         debug_struct.finish()
@@ -1182,6 +1202,37 @@ impl TryFrom<fnet_filter::ChangeValidationError> for ChangeValidationError {
     }
 }
 
+#[derive(Debug, Error)]
+pub enum RegisterEbpfProgramError {
+    #[error("failed to call FIDL method: {0}")]
+    CallMethod(fidl::Error),
+
+    #[error("failed to link the program")]
+    LinkFailed,
+
+    #[error("failed to initialize a map")]
+    MapFailed,
+
+    #[error("the program is already registered")]
+    AlreadyRegistered,
+
+    #[error("the request is missing a required field")]
+    MissingRequiredField,
+}
+
+impl From<fnet_filter::RegisterEbpfProgramError> for RegisterEbpfProgramError {
+    fn from(error: fnet_filter::RegisterEbpfProgramError) -> Self {
+        match error {
+            fnet_filter::RegisterEbpfProgramError::LinkFailed => Self::LinkFailed,
+            fnet_filter::RegisterEbpfProgramError::MapFailed => Self::MapFailed,
+            fnet_filter::RegisterEbpfProgramError::AlreadyRegistered => Self::AlreadyRegistered,
+            fnet_filter::RegisterEbpfProgramError::MissingRequiredField => {
+                Self::MissingRequiredField
+            }
+        }
+    }
+}
+
 /// Errors for the NamespaceController.PushChanges method.
 #[derive(Debug, Error)]
 pub enum PushChangesError {
@@ -1346,6 +1397,18 @@ impl Controller {
 
     pub fn id(&self) -> &ControllerId {
         &self.id
+    }
+
+    pub async fn register_ebpf_program(
+        &mut self,
+        handle: febpf::ProgramHandle,
+        program: febpf::VerifiedProgram,
+    ) -> Result<(), RegisterEbpfProgramError> {
+        self.controller
+            .register_ebpf_program(handle, program)
+            .await
+            .map_err(RegisterEbpfProgramError::CallMethod)?
+            .map_err(RegisterEbpfProgramError::from)
     }
 
     pub async fn push_changes(&mut self, changes: Vec<Change>) -> Result<(), PushChangesError> {

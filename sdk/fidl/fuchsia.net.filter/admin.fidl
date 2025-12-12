@@ -4,6 +4,8 @@
 
 library fuchsia.net.filter;
 
+using fuchsia.ebpf;
+
 alias ControllerId = string:MAX_NAME_LEN;
 
 /// An arbitrary limit on the number of changes that can be applied in a single
@@ -61,6 +63,39 @@ closed protocol NamespaceController {
     /// client would call `Detach` is to be able to reconnect *again* in the
     /// future, given the key is invalidated after use.
     strict Detach() -> (ControllerKey);
+
+    /// Registers the specified eBPF program with the sevice.
+    ///
+    /// The program must be verified as a valid socket filter (i.e.
+    ///`BPF_PROG_TYPE_SOCKET_FILTER`).
+    ///
+    /// The registration is scoped to this controller. The server keeps the
+    /// program registered until the [`fuchsia.ebpf.PROGRAM_DEFUNCT_SIGNAL`]
+    /// signal is raised on the program handle or the peer handle is closed.
+    /// Matchers installed with this program remain functional even after the
+    /// program is unregistered. The caller should keep the peer handle and not
+    /// signal [`fuchsia.ebpf.PROGRAM_DEFUNCT_SIGNAL`] until the matchers that
+    /// rely on that registration are commited using `Commit()`.
+    ///
+    // TODO(https://fxbug.dev/399946028): The second argument should be removed
+    // once the BPF service is implemented. Netstack will fetch the program
+    // from the service.
+    strict RegisterEbpfProgram(resource struct {
+        handle fuchsia.ebpf.ProgramHandle;
+        program fuchsia.ebpf.VerifiedProgram;
+    }) -> () error @generated_name("RegisterEbpfProgramError") strict enum {
+        // Failed to link the program.
+        LINK_FAILED = 1;
+
+        /// Failed to initialize a map.
+        MAP_FAILED = 2;
+
+        /// The program is already registered.
+        ALREADY_REGISTERED = 3;
+
+        /// The request is missing a required field.
+        MISSING_REQUIRED_FIELD = 4;
+    };
 
     /// Append a set of changes to a pending transactional update to the
     /// filtering configuration.

@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::bindings::Ctx;
-use crate::bindings::bpf::{CgroupSkbProgram, EbpfError, EbpfManager, ValidVerifiedProgram};
+use crate::bindings::bpf::{CgroupSkbProgram, EbpfManager, ValidVerifiedProgram};
 use fidl::endpoints::{ControlHandle, Responder};
 use fidl_fuchsia_net_filter as fnet_filter;
 use fidl_table_validation::ValidFidlTable;
@@ -31,22 +31,19 @@ impl<'a> SocketControlConnectionState<'a> {
         // client then it can be replaced.
         let replace = self.attached.contains(&hook);
 
-        use fnet_filter::SocketControlAttachEbpfProgramError as AttachFidlError;
         CgroupSkbProgram::new(program, &self.ebpf_manager.maps_cache())
+            .map_err(|e| e.into())
             .and_then(|program| match hook {
                 fnet_filter::SocketHook::Egress => {
-                    self.ebpf_manager.set_egress_hook(Some(program), replace)
+                    self.ebpf_manager.set_egress_hook(Some(program), replace).map_err(|e| e.into())
                 }
                 fnet_filter::SocketHook::Ingress => {
-                    self.ebpf_manager.set_ingress_hook(Some(program), replace)
+                    self.ebpf_manager.set_ingress_hook(Some(program), replace).map_err(|e| e.into())
                 }
-                fnet_filter::SocketHook::__SourceBreaking { .. } => Err(EbpfError::NotSupported),
-            })
-            .map_err(|e| match e {
-                EbpfError::NotSupported => AttachFidlError::NotSupported,
-                EbpfError::LinkFailed => AttachFidlError::LinkFailed,
-                EbpfError::MapFailed => AttachFidlError::MapFailed,
-                EbpfError::DuplicateAttachment => AttachFidlError::DuplicateAttachment,
+                fnet_filter::SocketHook::__SourceBreaking { unknown_ordinal } => {
+                    log::warn!("Unsupported SocketHook ordinal: {}", unknown_ordinal);
+                    Err(fnet_filter::SocketControlAttachEbpfProgramError::NotSupported)
+                }
             })?;
 
         if !replace {

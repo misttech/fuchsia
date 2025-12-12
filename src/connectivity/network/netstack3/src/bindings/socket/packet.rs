@@ -32,6 +32,7 @@ use zx::{self as zx, HandleBased as _};
 
 use crate::bindings::bpf::{
     SocketFilterProgram, SocketFilterResult, SocketFilterSkBuff, SocketInfo as BpfSocketInfo,
+    ValidVerifiedProgram,
 };
 use crate::bindings::devices::BindingId;
 use crate::bindings::errno::ErrnoError;
@@ -631,9 +632,16 @@ impl<'a> RequestHandler<'a> {
             }
             fppacket::SocketRequest::AttachBpfFilterUnsafe { code, responder } => {
                 info!("AttachBpfFilterUnsafe is called on a packet socket.");
-                *self.data.id.socket_state().bpf_filter.write() =
-                    Some(SocketFilterProgram::new(code));
-                responder.send(Ok(())).unwrap_or_log("failed to respond");
+                let program =
+                    ValidVerifiedProgram { code, struct_access_instructions: vec![], maps: vec![] };
+                let maps_cache = self.ctx.bindings_ctx().ebpf_manager.maps_cache();
+                let result = SocketFilterProgram::new(program, maps_cache)
+                    .map(|program| {
+                        *self.data.id.socket_state().bpf_filter.write() = Some(program);
+                        ()
+                    })
+                    .map_err(|e| e.into());
+                responder.send(result).unwrap_or_log("failed to respond");
             }
             fppacket::SocketRequest::GetCookie { responder } => {
                 let cookie = self.data.id.socket_cookie();
