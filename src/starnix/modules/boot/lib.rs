@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 use anyhow::Context;
+use fidl_fuchsia_power_cpu_manager::{BoostMarker, BoostSynchronousProxy};
 use fidl_fuchsia_sys2 as fsys;
 use fuchsia_inspect::Property;
 use starnix_core::device::DeviceOps;
@@ -23,12 +24,17 @@ use std::sync::mpsc::{Receiver, Sender, channel};
 use zerocopy::IntoBytes;
 
 /// Initializes the boot notifier device.
-pub fn booted_device_init(locked: &mut Locked<Unlocked>, system_task: &CurrentTask) {
+pub fn booted_device_init(
+    locked: &mut Locked<Unlocked>,
+    system_task: &CurrentTask,
+    cpu_boost: bool,
+) {
     let kernel = system_task.kernel();
 
     let (booted_sender, booted_receiver) = channel::<bool>();
     let node = fuchsia_inspect::component::inspector().root().create_child("boot");
-    let device = BootedDevice::new(booted_sender, node);
+    let device = BootedDevice::new(system_task.kernel(), booted_sender, node, cpu_boost)
+        .expect("must be able to initialize booted device");
     device.clone().register(locked, &kernel.kthreads.system_task());
     device.start_relay(&kernel, booted_receiver);
 
@@ -46,15 +52,37 @@ struct BootedDevice {
 const INSPECT_KEY: &str = "boot_timestamp";
 
 impl BootedDevice {
-    pub fn new(booted_sender: Sender<bool>, inspect_node: fuchsia_inspect::Node) -> Self {
+    pub fn new(
+        kernel: &Kernel,
+        booted_sender: Sender<bool>,
+        inspect_node: fuchsia_inspect::Node,
+        cpu_boost: bool,
+    ) -> Result<Self, anyhow::Error> {
         let boot_timestamp = inspect_node.create_uint(INSPECT_KEY, 0);
-        Self {
+
+        let booster = if cpu_boost {
+            log_info!("Enabling boot-time CPU boost");
+            let booster = kernel
+                .connect_to_protocol_at_container_svc::<BoostMarker>()
+                .context("connecting to cpu boost protocol")?
+                .into_sync_proxy();
+            booster
+                .set_boost(true, zx::MonotonicInstant::INFINITE)
+                .context("sending set boost message")?
+                .map_err(|e| anyhow::format_err!("failed setting boost: {e:?}"))?;
+            Some(booster)
+        } else {
+            None
+        };
+
+        Ok(Self {
             inner: Arc::new(Inner {
                 file: File::new(booted_sender),
                 _inspect_node: inspect_node,
                 boot_timestamp,
+                booster,
             }),
-        }
+        })
     }
 
     pub fn register<L>(self, locked: &mut Locked<L>, system_task: &CurrentTask)
@@ -80,11 +108,9 @@ impl BootedDevice {
             let mut prev_booted = false;
             while let Ok(booted) = booted_receiver.recv() {
                 if booted && !prev_booted {
-                    match this.notify_component_manager() {
-                        Ok(()) => log_info!("Notified component_manager of system boot"),
-                        Err(e) => {
-                            log_error!("Failed to notify component_manager of system boot: {e}")
-                        }
+                    match this.notify_boot_completed() {
+                        Ok(()) => log_info!("Notified system boot completed"),
+                        Err(e) => log_error!(e:?; "Failed to notify system boot completed"),
                     }
                 }
                 prev_booted = booted;
@@ -98,16 +124,28 @@ struct Inner {
     file: Arc<File>,
     _inspect_node: fuchsia_inspect::Node,
     boot_timestamp: fuchsia_inspect::UintProperty,
+    booster: Option<BoostSynchronousProxy>,
 }
 
 impl Inner {
-    fn notify_component_manager(&self) -> Result<(), anyhow::Error> {
+    fn notify_boot_completed(&self) -> Result<(), anyhow::Error> {
+        log_info!("Boot has been marked completed");
         let client =
             fuchsia_component::client::connect_to_protocol_sync::<fsys::BootControllerMarker>()
                 .context("connecting to BootController")?;
         client.notify(zx::MonotonicInstant::INFINITE).context("calling BootController/Notify")?;
         let ts = zx::BootInstant::get().into_nanos() as u64;
         let _ = self.boot_timestamp.set(ts);
+
+        if let Some(booster) = &self.booster {
+            log_info!("Disabling boot-time CPU boost");
+            match booster.set_boost(false, zx::MonotonicInstant::INFINITE) {
+                Ok(Ok(())) => (),
+                Ok(Err(e)) => log_error!(e:?; "Failed to disable boost (logical error)"),
+                Err(e) => log_error!(e:?; "Failed to disable boost (FIDL error)"),
+            }
+        }
+
         Ok(())
     }
 }

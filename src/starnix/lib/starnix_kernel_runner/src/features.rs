@@ -57,6 +57,9 @@ pub struct Features {
     /// Whether to enable a boot notifier device.
     pub boot_notifier: bool,
 
+    /// Whether to boost CPU until boot is notified as complete.
+    pub boot_notifier_cpu_boost: bool,
+
     /// Whether to enable a framebuffer device.
     pub framebuffer: bool,
 
@@ -161,6 +164,7 @@ impl Features {
                 selinux,
                 ashmem,
                 boot_notifier,
+                boot_notifier_cpu_boost,
                 framebuffer,
                 aspect_ratio,
                 enable_visual_debugging,
@@ -188,6 +192,7 @@ impl Features {
                 inspect_node.record_bool("selinux", selinux.enabled);
                 inspect_node.record_bool("ashmem", *ashmem);
                 inspect_node.record_bool("boot_notifier", *boot_notifier);
+                inspect_node.record_bool("boot_notifier_cpu_boost", *boot_notifier_cpu_boost);
                 inspect_node.record_bool("framebuffer", *framebuffer);
                 inspect_node.record_bool("gralloc", *gralloc);
                 inspect_node.record_bool("kgsl", *kgsl);
@@ -326,6 +331,7 @@ pub fn parse_features(
             (Feature::CustomArtifacts, _) => features.custom_artifacts = true,
             (Feature::Ashmem, _) => features.ashmem = true,
             (Feature::BootNotifier, _) => features.boot_notifier = true,
+            (Feature::BootNotifierCpuBoost, _) => features.boot_notifier_cpu_boost = true,
             (Feature::Framebuffer, _) => features.framebuffer = true,
             (Feature::Gralloc, _) => features.gralloc = true,
             (Feature::Kgsl, _) => features.kgsl = true,
@@ -410,6 +416,10 @@ pub fn parse_features(
                 features.additional_mounts = Some(additional_mounts.clone())
             }
         };
+    }
+
+    if features.boot_notifier_cpu_boost && !features.boot_notifier {
+        return Err(anyhow!("boot_notifier_cpu_boost feature requires boot_notifier"));
     }
 
     if *ui_visual_debugging_level > 0 {
@@ -574,7 +584,7 @@ pub fn run_container_features(
         ashmem_device_init(locked, system_task);
     }
     if features.boot_notifier {
-        booted_device_init(locked, system_task);
+        booted_device_init(locked, system_task, features.boot_notifier_cpu_boost);
     }
     if features.android_fdr {
         android_bootloader_message_store_init(locked, system_task);
