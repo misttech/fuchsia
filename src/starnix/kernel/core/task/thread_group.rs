@@ -301,14 +301,10 @@ impl PartialEq for ThreadGroup {
 impl Releasable for ThreadGroup {
     type Context<'a> = &'a mut PidTable;
 
-    fn release<'a>(mut self, pids: &'a mut PidTable) {
+    fn release<'a>(mut self, _pids: &'a mut PidTable) {
         let state = self.mutable_state.get_mut();
-
-        for zombie in state.zombie_children.drain(..) {
-            zombie.release(pids);
-        }
-
-        state.zombie_ptracees.release(pids);
+        assert!(state.zombie_children.is_empty());
+        assert!(state.zombie_ptracees.is_empty());
     }
 }
 
@@ -808,7 +804,15 @@ impl ThreadGroup {
                     for zombie in state.zombie_children.drain(..) {
                         zombie.release(pids);
                     }
+                    state.zombie_ptracees.release(pids);
                 }
+            }
+
+            #[cfg(any(test, debug_assertions))]
+            {
+                let state = self.read();
+                assert!(state.zombie_children.is_empty());
+                assert!(state.zombie_ptracees.is_empty());
             }
 
             if let Some(ref parent) = parent {

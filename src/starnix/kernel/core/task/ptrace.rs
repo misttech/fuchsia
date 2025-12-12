@@ -530,6 +530,10 @@ impl ZombiePtracees {
         self.zombies.remove(&tid).release(pids);
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.zombies.is_empty()
+    }
+
     /// Provide a parent task and a zombie to notify when the tracer has been
     /// notified.
     pub fn set_parent_of(
