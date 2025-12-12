@@ -184,6 +184,7 @@ fn write_tabulated_interfaces_info<
             mac,
             has_default_ipv4_route,
             has_default_ipv6_route,
+            port_identity_koid,
         },
     ) in interfaces.into_iter().enumerate()
     {
@@ -254,6 +255,12 @@ fn write_tabulated_interfaces_info<
         match mac {
             None => add_row(&mut t, row!["mac", "-"]),
             Some(mac) => add_row(&mut t, row!["mac", mac]),
+        }
+        match port_identity_koid {
+            None => add_row(&mut t, row!["port_identity_koid", "-"]),
+            Some(port_identity_koid) => {
+                add_row(&mut t, row!["port_identity_koid", port_identity_koid])
+            }
         }
     }
     writeln!(out, "{}", t)?;
@@ -789,16 +796,7 @@ async fn do_if<C: NetCliDepsConnector>(
                             |(
                                 id,
                                 finterfaces_ext::PropertiesAndState {
-                                    properties:
-                                        finterfaces_ext::Properties {
-                                            name,
-                                            id: _,
-                                            port_class: _,
-                                            online: _,
-                                            addresses: _,
-                                            has_default_ipv4_route: _,
-                                            has_default_ipv6_route: _,
-                                        },
+                                    properties: finterfaces_ext::Properties { name, .. },
                                     state: (),
                                 },
                             )| (name, id),
@@ -2092,6 +2090,19 @@ mod tests {
         port_class: finterfaces_ext::PortClass,
         octets: Option<[u8; 6]>,
     ) -> (finterfaces_ext::Properties<finterfaces_ext::AllInterest>, Option<fnet::MacAddress>) {
+        let port_identity_koid = match port_class {
+            finterfaces_ext::PortClass::Loopback => None,
+            finterfaces_ext::PortClass::Virtual
+            | finterfaces_ext::PortClass::Ethernet
+            | finterfaces_ext::PortClass::WlanClient
+            | finterfaces_ext::PortClass::WlanAp
+            | finterfaces_ext::PortClass::Ppp
+            | finterfaces_ext::PortClass::Bridge
+            | finterfaces_ext::PortClass::Lowpan
+            | finterfaces_ext::PortClass::Blackhole => {
+                Some(finterfaces_ext::PortIdentityKoid::from_raw(id))
+            }
+        };
         (
             finterfaces_ext::Properties {
                 id: id.try_into().unwrap(),
@@ -2101,6 +2112,7 @@ mod tests {
                 addresses: Vec::new(),
                 has_default_ipv4_route: false,
                 has_default_ipv6_route: false,
+                port_identity_koid,
             },
             octets.map(|octets| fnet::MacAddress { octets }),
         )
@@ -2752,6 +2764,7 @@ mod tests {
                 .collect(),
             has_default_ipv4_route: false,
             has_default_ipv6_route: false,
+            port_identity_koid: None,
         }
         .into()
     }
@@ -2863,6 +2876,7 @@ mod tests {
                 "online": true,
                 "has_default_ipv4_route": false,
                 "has_default_ipv6_route": false,
+                "port_identity_koid": null,
             },
             {
                 "addresses": {
@@ -2876,6 +2890,7 @@ mod tests {
                 "online": true,
                 "has_default_ipv4_route": false,
                 "has_default_ipv6_route": false,
+                "port_identity_koid": 10,
             },
             {
                 "addresses": {
@@ -2889,6 +2904,7 @@ mod tests {
                 "online": true,
                 "has_default_ipv4_route": false,
                 "has_default_ipv6_route": false,
+                "port_identity_koid": 20,
             },
             {
                 "addresses": {
@@ -2909,6 +2925,7 @@ mod tests {
                 "online": true,
                 "has_default_ipv4_route": false,
                 "has_default_ipv6_route": true,
+                "port_identity_koid": null,
             },
             {
                 "addresses": {
@@ -2927,6 +2944,7 @@ mod tests {
                 "online": true,
                 "has_default_ipv4_route": true,
                 "has_default_ipv6_route": true,
+                "port_identity_koid": null,
             },
         ])
         .to_string()
@@ -2935,42 +2953,47 @@ mod tests {
     fn wanted_net_if_list_tabular() -> String {
         String::from(
             r#"
-nicid             1
-name              lo
-device class      loopback
-online            true
-default routes    -
-mac               00:00:00:00:00:00
+nicid                 1
+name                  lo
+device class          loopback
+online                true
+default routes        -
+mac                   00:00:00:00:00:00
+port_identity_koid    -
 
-nicid             10
-name              eth001
-device class      ethernet
-online            true
-default routes    -
-mac               01:02:03:04:05:06
+nicid                 10
+name                  eth001
+device class          ethernet
+online                true
+default routes        -
+mac                   01:02:03:04:05:06
+port_identity_koid    10
 
-nicid             20
-name              virt001
-device class      virtual
-online            true
-default routes    -
-mac               -
+nicid                 20
+name                  virt001
+device class          virtual
+online                true
+default routes        -
+mac                   -
+port_identity_koid    20
 
-nicid             30
-name              eth002
-device class      ethernet
-online            true
-default routes    IPv6
-addr              192.168.0.1/24       TENTATIVE valid until [2.5s]
-mac               -
+nicid                 30
+name                  eth002
+device class          ethernet
+online                true
+default routes        IPv6
+addr                  192.168.0.1/24       TENTATIVE valid until [2.5s]
+mac                   -
+port_identity_koid    -
 
-nicid             40
-name              eth003
-device class      ethernet
-online            true
-default routes    IPv4,IPv6
-addr              2001:db8::1/64       UNAVAILABLE
-mac               -
+nicid                 40
+name                  eth003
+device class          ethernet
+online                true
+default routes        IPv4,IPv6
+addr                  2001:db8::1/64       UNAVAILABLE
+mac                   -
+port_identity_koid    -
 "#,
         )
     }
@@ -3046,6 +3069,7 @@ mac               -
                     }],
                     has_default_ipv4_route: false,
                     has_default_ipv6_route: true,
+                    port_identity_koid: None,
                 },
                 None,
             ),
@@ -3064,6 +3088,7 @@ mac               -
                     }],
                     has_default_ipv4_route: true,
                     has_default_ipv6_route: true,
+                    port_identity_koid: None,
                 },
                 None,
             ),
@@ -3089,6 +3114,7 @@ mac               -
                          addresses,
                          has_default_ipv4_route,
                          has_default_ipv6_route,
+                         port_identity_koid,
                      }| {
                         finterfaces::Event::Existing(finterfaces::Properties {
                             id: Some(id.get()),
@@ -3100,6 +3126,7 @@ mac               -
                             ),
                             has_default_ipv4_route: Some(has_default_ipv4_route),
                             has_default_ipv6_route: Some(has_default_ipv6_route),
+                            port_identity_koid: port_identity_koid.map(|p| p.raw_koid()),
                             ..Default::default()
                         })
                     },

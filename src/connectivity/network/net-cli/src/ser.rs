@@ -179,6 +179,7 @@ pub(crate) struct InterfaceView {
     pub(crate) has_default_ipv4_route: bool,
     pub(crate) has_default_ipv6_route: bool,
     pub(crate) mac: Option<fidl_fuchsia_net_ext::MacAddress>,
+    pub(crate) port_identity_koid: Option<zx_types::zx_koid_t>,
 }
 
 impl
@@ -204,6 +205,7 @@ impl
                 addresses,
                 has_default_ipv4_route,
                 has_default_ipv6_route,
+                port_identity_koid,
             },
             mac,
         ) = t;
@@ -216,6 +218,7 @@ impl
             has_default_ipv4_route,
             has_default_ipv6_route,
             mac: mac.map(Into::into),
+            port_identity_koid: port_identity_koid.map(|e| e.raw_koid()),
         }
     }
 }

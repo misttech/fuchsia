@@ -126,6 +126,9 @@ impl EventQueue {
                         has_default_ipv4_route: *has_default_ipv4_route,
                         has_default_ipv6_route: *has_default_ipv6_route,
                         port_class: *port_class,
+                        // TODO(https://fxbug.dev/460241935): Yield port ID
+                        // event.
+                        port_identity_koid: None,
                     }
                     .into(),
                 );
@@ -723,6 +726,9 @@ impl Worker {
                                 addresses: Self::collect_addresses(addresses),
                                 has_default_ipv4_route,
                                 has_default_ipv6_route,
+                                // TODO(https://fxbug.dev/460241935): Yield port
+                                // ID event.
+                                port_identity_koid: None,
                             }
                             .into(),
                         ),
@@ -1153,6 +1159,7 @@ mod tests {
                     has_default_ipv4_route: false,
                     has_default_ipv6_route: false,
                     name: IFACE1_NAME.to_string(),
+                    port_identity_koid: None,
                 }
                 .into()
             ))
@@ -1248,6 +1255,7 @@ mod tests {
                     }],
                     has_default_ipv4_route: true,
                     has_default_ipv6_route: false,
+                    port_identity_koid: None,
                 }
                 .into()
             ))
@@ -1362,6 +1370,7 @@ mod tests {
                         addresses: Default::default(),
                         has_default_ipv4_route: false,
                         has_default_ipv6_route: false,
+                        port_identity_koid: None,
                     }
                     .into()
                 ),
@@ -1463,6 +1472,7 @@ mod tests {
                         }],
                         has_default_ipv4_route: false,
                         has_default_ipv6_route: true,
+                        port_identity_koid: None,
                     }
                     .into()
                 ),
@@ -1514,6 +1524,7 @@ mod tests {
                         addresses: Vec::new(),
                         has_default_ipv4_route: false,
                         has_default_ipv6_route: false,
+                        port_identity_koid: None,
                     }
                     .into()
                 ),

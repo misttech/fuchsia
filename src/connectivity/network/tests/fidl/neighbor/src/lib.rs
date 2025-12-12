@@ -66,15 +66,7 @@ async fn create_realm<'a, N: Netstack>(
         .expect("failed to join network");
     ep.add_address_and_subnet_route(static_addr).await.expect("configure address");
 
-    let fidl_fuchsia_net_interfaces_ext::Properties {
-        id: loopback_id,
-        name: _,
-        port_class: _,
-        online: _,
-        addresses: _,
-        has_default_ipv4_route: _,
-        has_default_ipv6_route: _,
-    } = realm
+    let fidl_fuchsia_net_interfaces_ext::Properties { id: loopback_id, .. } = realm
         .loopback_properties()
         .await
         .expect("loopback properties")

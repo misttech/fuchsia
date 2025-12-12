@@ -630,6 +630,7 @@ impl<H: InterfacesHandler, S: Sender<<NetlinkRoute as ProtocolFamily>::InnerMess
                         online: _,
                         has_default_ipv4_route: _,
                         has_default_ipv6_route: _,
+                        port_identity_koid: _,
                     },
                 state:
                     InterfaceState {
@@ -1304,6 +1305,7 @@ fn interface_properties_to_link_message(
         addresses: _,
         has_default_ipv4_route: _,
         has_default_ipv6_route: _,
+        port_identity_koid: _,
     }: &fnet_interfaces_ext::Properties<fnet_interfaces_ext::AllInterest>,
     link_address: &Option<Vec<u8>>,
 ) -> Result<NetlinkLinkMessage, NetlinkLinkMessageConversionError> {
@@ -1446,6 +1448,7 @@ fn interface_properties_to_address_messages(
         online: _,
         has_default_ipv4_route: _,
         has_default_ipv6_route: _,
+        port_identity_koid: _,
     }: &fnet_interfaces_ext::Properties<fnet_interfaces_ext::AllInterest>,
 ) -> Result<BTreeMap<fnet::IpAddress, NetlinkAddressMessage>, NetlinkAddressMessageConversionError>
 {
@@ -1878,6 +1881,7 @@ mod tests {
             addresses,
             has_default_ipv4_route: false,
             has_default_ipv6_route: false,
+            port_identity_koid: None,
         }
     }
 

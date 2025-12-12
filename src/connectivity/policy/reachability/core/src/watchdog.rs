@@ -858,6 +858,7 @@ mod tests {
                     addresses: vec![],
                     has_default_ipv4_route: true,
                     has_default_ipv6_route: true,
+                    port_identity_koid: None,
                 },
                 routes: testutil::build_route_table_from_flattened_routes(routes),
                 neighbors: neighbors.into_iter().collect(),

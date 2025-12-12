@@ -134,6 +134,16 @@ type Properties = table {
     /// The port class of the interface. Immutable.
     @available(added=22)
     8: port_class PortClass;
+    /// The KOID of the identity event vended out by the interface's backing
+    /// [`fuchsia.hardware.network/Port`].
+    ///
+    /// Callers may use this identifier to correlate port instances to installed
+    /// interfaces.
+    ///
+    /// Immutable. Present for interfaces backed by a
+    /// [`fuchsia.hardware.network/Port`], absent otherwise.
+    @available(added=HEAD)
+    9: port_identity_koid zx.Koid;
 };
 
 /// The port class of an interface.

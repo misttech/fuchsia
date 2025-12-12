@@ -75,7 +75,8 @@ async fn create_blackhole_interface() {
                 online: false,
                 addresses: vec![],
                 has_default_ipv4_route: false,
-                has_default_ipv6_route: false
+                has_default_ipv6_route: false,
+                port_identity_koid: None,
             }
         );
     }

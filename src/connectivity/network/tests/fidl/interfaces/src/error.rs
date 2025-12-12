@@ -78,6 +78,7 @@ async fn interfaces_watcher_after_invalid_state_request<N: Netstack>(name: &str)
                     ],
                     has_default_ipv4_route: false,
                     has_default_ipv6_route: false,
+                    port_identity_koid: None,
                 },
                 state: (),
             },

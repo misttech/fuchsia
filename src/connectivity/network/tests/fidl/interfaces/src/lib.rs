@@ -93,6 +93,7 @@ async fn watcher_existing<N: Netstack>(name: &str) {
                             ],
                             has_default_ipv4_route: false,
                             has_default_ipv6_route: false,
+                            port_identity_koid: None,
                         }
                 }
                 Expectation::Ethernet {
@@ -110,6 +111,7 @@ async fn watcher_existing<N: Netstack>(name: &str) {
                         addresses,
                         has_default_ipv4_route: rhs_ipv4_route,
                         has_default_ipv6_route: rhs_ipv6_route,
+                        port_identity_koid: rhs_port_identity_koid,
                     } = other;
 
                     // We use contains here because netstack can generate
@@ -127,6 +129,9 @@ async fn watcher_existing<N: Netstack>(name: &str) {
                         && has_default_ipv4_route == rhs_ipv4_route
                         && has_default_ipv6_route == rhs_ipv6_route
                         && port_class == &fidl_fuchsia_net_interfaces_ext::PortClass::Virtual
+                        // TODO(https://fxbug.dev/460241935): Update expectation
+                        // when netstack exposes the port id event.
+                        && rhs_port_identity_koid.is_none()
                 }
             }
         }
@@ -301,6 +306,7 @@ async fn watcher_after_state_closed<N: Netstack>(name: &str) {
                     ],
                     has_default_ipv4_route: false,
                     has_default_ipv6_route: false,
+                    port_identity_koid: None,
                 },
                 state: (),
             },
@@ -1626,6 +1632,7 @@ async fn watcher<N: Netstack>(name: &str) {
                 port_class: None,
                 has_default_ipv4_route: None,
                 has_default_ipv6_route: None,
+                port_identity_koid: None,
                 __source_breaking: fidl::marker::SourceBreaking,
             }) if got_id == id => (online, addresses)
         );
@@ -1720,6 +1727,7 @@ async fn watcher<N: Netstack>(name: &str) {
                 online: None,
                 has_default_ipv4_route: None,
                 has_default_ipv6_route: None,
+                port_identity_koid: None,
                 __source_breaking: fidl::marker::SourceBreaking,
             }) if event_id == id => {
                 addresses
@@ -1799,6 +1807,7 @@ async fn watcher<N: Netstack>(name: &str) {
                     port_class: None,
                     has_default_ipv4_route: None,
                     has_default_ipv6_route: None,
+                    port_identity_koid: None,
                     __source_breaking: fidl::marker::SourceBreaking,
                 }) if got_id == id => (online, addresses)
             );

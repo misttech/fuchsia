@@ -1531,7 +1531,8 @@ async fn device_control_create_interface<N: Netstack>(name: &str) {
             // to it yet.
             addresses: vec![],
             has_default_ipv4_route: false,
-            has_default_ipv6_route: false
+            has_default_ipv6_route: false,
+            port_identity_koid: None,
         }
     );
 }

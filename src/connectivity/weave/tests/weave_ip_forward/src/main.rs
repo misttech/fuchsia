@@ -43,16 +43,7 @@ fn get_interface_id(
     intf.values()
         .find_map(
             |fnet_interfaces_ext::PropertiesAndState {
-                 properties:
-                     fnet_interfaces_ext::Properties {
-                         id,
-                         name,
-                         port_class: _,
-                         online: _,
-                         addresses: _,
-                         has_default_ipv4_route: _,
-                         has_default_ipv6_route: _,
-                     },
+                 properties: fnet_interfaces_ext::Properties { id, name, .. },
                  state: _,
              }| if name == want_name { Some(id.get()) } else { None },
         )

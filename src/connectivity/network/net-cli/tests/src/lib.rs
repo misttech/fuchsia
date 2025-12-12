@@ -566,6 +566,7 @@ async fn add_remove_blackhole() {
                 "name": INTERFACE1_NAME,
                 "nicid": 2,
                 "online": false,
+                "port_identity_koid": null,
             })
         );
     }

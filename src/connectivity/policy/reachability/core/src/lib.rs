@@ -1148,6 +1148,7 @@ impl<Time: TimeProvider> NetworkChecker for Monitor<Time> {
                     ref addresses,
                     has_default_ipv4_route,
                     has_default_ipv6_route,
+                    port_identity_koid: _,
                 },
             routes,
             neighbors,
@@ -1883,6 +1884,7 @@ mod tests {
             addresses: Default::default(),
             has_default_ipv4_route: Default::default(),
             has_default_ipv6_route: Default::default(),
+            port_identity_koid: Default::default(),
         };
 
         let mock_count = mocks.len();
@@ -2026,6 +2028,7 @@ mod tests {
             addresses: vec![],
             has_default_ipv4_route: false,
             has_default_ipv6_route: true,
+            port_identity_koid: Default::default(),
         };
         let neighbors = InterfaceNeighborCache::default();
 
@@ -2070,6 +2073,7 @@ mod tests {
             addresses: vec![],
             has_default_ipv4_route: false,
             has_default_ipv6_route: true,
+            port_identity_koid: Default::default(),
         };
         let neighbors = InterfaceNeighborCache::default();
 
@@ -2114,6 +2118,7 @@ mod tests {
             addresses: vec![],
             has_default_ipv4_route: false,
             has_default_ipv6_route: true,
+            port_identity_koid: Default::default(),
         };
         let neighbors = InterfaceNeighborCache {
             neighbors: [(
@@ -2174,6 +2179,7 @@ mod tests {
             addresses: vec![],
             has_default_ipv4_route: true,
             has_default_ipv6_route: true,
+            port_identity_koid: Default::default(),
         };
         let neighbors = InterfaceNeighborCache {
             neighbors: [
@@ -2980,6 +2986,7 @@ mod tests {
                     assignment_state: fnet_interfaces::AddressAssignmentState::Assigned,
                 },
             ],
+            port_identity_koid: Default::default(),
         };
         let local_routes = testutil::build_route_table_from_flattened_routes([
             Route {
@@ -3034,6 +3041,7 @@ mod tests {
                 has_default_ipv4_route: false,
                 has_default_ipv6_route: false,
                 addresses: vec![],
+                port_identity_koid: Default::default(),
             },
             &Default::default(),
             None,
@@ -3350,6 +3358,7 @@ mod tests {
             addresses: vec![],
             has_default_ipv4_route: false,
             has_default_ipv6_route: false,
+            port_identity_koid: Default::default(),
         };
 
         // Insert a placeholder state so that the interface is tracked.

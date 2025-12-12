@@ -17,7 +17,7 @@ use fidl_table_validation::*;
 use futures::{Stream, TryStreamExt as _};
 use std::collections::btree_map::{self, BTreeMap};
 use std::collections::hash_map::{self, HashMap};
-use std::convert::TryFrom as _;
+use std::convert::{Infallible as Never, TryFrom as _};
 use std::fmt::Debug;
 use std::marker::PhantomData;
 use std::num::NonZeroU64;
@@ -153,6 +153,33 @@ impl TryFrom<fhardware_network::PortClass> for PortClass {
     }
 }
 
+/// The type of [`Properties::port_identity_koid`].
+///
+/// This is a new-type to handle the OS abstraction around the availability of
+/// [`zx::Koid`] type, offering easy conversions for use both in host and target
+/// code.
+#[cfg(not(target_os = "fuchsia"))]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+pub struct PortIdentityKoid(zx_types::zx_koid_t);
+
+#[cfg(not(target_os = "fuchsia"))]
+impl PortIdentityKoid {
+    /// Creates a [`PortIdentityKoid`] from a raw `koid` value.
+    pub fn from_raw(koid: zx_types::zx_koid_t) -> Self {
+        Self(koid)
+    }
+
+    /// Returns the raw koid value.
+    pub fn raw_koid(&self) -> zx_types::zx_koid_t {
+        let Self(raw) = self;
+        *raw
+    }
+}
+
+/// Type alias as [`zx::Koid`] when available in Fuchsia.
+#[cfg(target_os = "fuchsia")]
+pub type PortIdentityKoid = zx::Koid;
+
 /// Properties of a network interface.
 #[derive(Derivative, ValidFidlTable)]
 #[derivative(Clone(bound = ""), Debug(bound = ""), Eq(bound = ""), PartialEq(bound = ""))]
@@ -173,6 +200,16 @@ pub struct Properties<I: FieldInterests> {
     pub has_default_ipv6_route: bool,
     /// The device type of the interface. Immutable.
     pub port_class: PortClass,
+    /// The KOID of the event vended out by the interface's backing
+    /// `fuchsia.hardware.network/Port`.
+    ///
+    /// Callers may use this identifier to correlate port instances to installed
+    /// interfaces.
+    ///
+    /// Immutable. Absent for interfaces not backed by a
+    /// `fuchsia.hardware.network/Port`.
+    #[fidl_field_type(optional_converter = PortIdentityKoidConverter)]
+    pub port_identity_koid: Option<PortIdentityKoid>,
 }
 
 /// An address and its properties.
@@ -443,7 +480,8 @@ impl<S, I: FieldInterests> Update<S> for PropertiesAndState<S, I> {
                     has_default_ipv4_route,
                     has_default_ipv6_route,
                     addresses,
-                    ..
+                    port_identity_koid: _,
+                    __source_breaking: _,
                 } = &mut change;
                 if let Some(id) = *id {
                     if properties.id.get() == id {
@@ -1122,6 +1160,28 @@ impl<I: FieldInterests> From<fnet_interfaces::Event> for EventWithInterest<I> {
 impl<I: FieldInterests> From<EventWithInterest<I>> for fnet_interfaces::Event {
     fn from(value: EventWithInterest<I>) -> Self {
         value.into_inner()
+    }
+}
+
+struct PortIdentityKoidConverter;
+
+impl From<Never> for PropertiesValidationError {
+    fn from(value: Never) -> Self {
+        match value {}
+    }
+}
+
+impl fidl_table_validation::Converter for PortIdentityKoidConverter {
+    type Fidl = Option<u64>;
+    type Validated = Option<PortIdentityKoid>;
+    type Error = Never;
+
+    fn try_from_fidl(value: Self::Fidl) -> Result<Self::Validated, Self::Error> {
+        Ok(value.map(|value| PortIdentityKoid::from_raw(value)))
+    }
+
+    fn from_validated(validated: Self::Validated) -> Self::Fidl {
+        validated.map(|validated| validated.raw_koid())
     }
 }
 

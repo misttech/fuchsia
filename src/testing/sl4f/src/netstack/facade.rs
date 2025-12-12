@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use anyhow::{Context as _, Error};
-use component_debug::dirs::{connect_to_instance_protocol, OpenDirType};
+use component_debug::dirs::{OpenDirType, connect_to_instance_protocol};
 use fidl_fuchsia_net_stackmigrationdeprecated as fnet_stack_migration;
 use once_cell::sync::OnceCell;
 use serde::Serialize;
@@ -85,6 +85,7 @@ impl
                 addresses,
                 has_default_ipv4_route: _,
                 has_default_ipv6_route: _,
+                port_identity_koid: _,
             },
             mac,
         ) = t;
@@ -212,8 +213,8 @@ pub struct NetstackFacade {
     netstack_migration_control: OnceCell<fnet_stack_migration::ControlProxy>,
 }
 
-async fn get_netstack_proxy<P: fidl::endpoints::DiscoverableProtocolMarker>(
-) -> Result<P::Proxy, Error> {
+async fn get_netstack_proxy<P: fidl::endpoints::DiscoverableProtocolMarker>()
+-> Result<P::Proxy, Error> {
     let query =
         fuchsia_component::client::connect_to_protocol::<fidl_fuchsia_sys2::RealmQueryMarker>()?;
     let moniker = "./core/network/netstack".try_into()?;
@@ -221,8 +222,8 @@ async fn get_netstack_proxy<P: fidl::endpoints::DiscoverableProtocolMarker>(
     Ok(proxy)
 }
 
-async fn get_netstack_migration_proxy<P: fidl::endpoints::DiscoverableProtocolMarker>(
-) -> Result<P::Proxy, Error> {
+async fn get_netstack_migration_proxy<P: fidl::endpoints::DiscoverableProtocolMarker>()
+-> Result<P::Proxy, Error> {
     let query =
         fuchsia_component::client::connect_to_protocol::<fidl_fuchsia_sys2::RealmQueryMarker>()?;
     let moniker = "./core/network/netstack-migration".try_into()?;
@@ -419,7 +420,7 @@ impl NetstackFacade {
                     );
                 }
                 fidl_fuchsia_net_interfaces::Event::Idle(fidl_fuchsia_net_interfaces::Empty {}) => {
-                    break
+                    break;
                 }
                 event => unreachable!("{:?}", event),
             }

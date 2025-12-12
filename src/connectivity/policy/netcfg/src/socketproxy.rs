@@ -367,6 +367,7 @@ mod tests {
             has_default_ipv6_route: true,
             addresses: vec![],
             port_class: fnet_interfaces_ext::PortClass::Ethernet,
+            port_identity_koid: Default::default(),
         }
     }
 

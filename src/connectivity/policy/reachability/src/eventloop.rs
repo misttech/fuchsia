@@ -9,11 +9,11 @@
 
 use reachability_handler::ReachabilityState;
 
-use anyhow::{anyhow, Context as _};
+use anyhow::{Context as _, anyhow};
 use fidl_fuchsia_net_interfaces_ext::{self as fnet_interfaces_ext, Update as _};
 use fuchsia_async::{self as fasync};
-use fuchsia_inspect::health::Reporter;
 use fuchsia_inspect::Inspector;
+use fuchsia_inspect::health::Reporter;
 use futures::channel::mpsc;
 use futures::prelude::*;
 use futures::select;
@@ -25,8 +25,8 @@ use reachability_core::ping::Ping;
 use reachability_core::route_table::RouteTable;
 use reachability_core::telemetry::{self, TelemetryEvent, TelemetrySender};
 use reachability_core::{
-    watchdog, InterfaceView, Monitor, NeighborCache, NetworkCheckAction, NetworkCheckCookie,
-    NetworkCheckResult, NetworkChecker, NetworkCheckerOutcome, FIDL_TIMEOUT_ID,
+    FIDL_TIMEOUT_ID, InterfaceView, Monitor, NeighborCache, NetworkCheckAction, NetworkCheckCookie,
+    NetworkCheckResult, NetworkChecker, NetworkCheckerOutcome, watchdog,
 };
 use reachability_handler::ReachabilityHandler;
 use std::collections::{HashMap, HashSet};
@@ -501,6 +501,7 @@ impl EventLoop {
                         online: _,
                         has_default_ipv4_route: _,
                         has_default_ipv6_route: _,
+                        port_identity_koid: _,
                     },
                 state: _,
             } => {

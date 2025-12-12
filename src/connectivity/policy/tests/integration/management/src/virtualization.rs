@@ -448,15 +448,7 @@ async fn virtualization<N: Netstack>(name: &str, sub_name: &str, steps: &[Step])
                             interfaces_map.values().find_map(
                                 |&fidl_fuchsia_net_interfaces_ext::PropertiesAndState {
                                      properties:
-                                         fnet_interfaces_ext::Properties {
-                                             id,
-                                             port_class,
-                                             addresses: _,
-                                             name: _,
-                                             online: _,
-                                             has_default_ipv4_route: _,
-                                             has_default_ipv6_route: _,
-                                         },
+                                         fnet_interfaces_ext::Properties { id, port_class, .. },
                                      state: _,
                                  }| {
                                     match port_class {

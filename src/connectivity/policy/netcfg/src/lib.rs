@@ -742,6 +742,7 @@ fn start_dhcpv6_client(
         port_class: _,
         has_default_ipv4_route: _,
         has_default_ipv6_route: _,
+        port_identity_koid: _,
     }: &fnet_interfaces_ext::Properties<fnet_interfaces_ext::DefaultInterest>,
     duid: fnet_dhcpv6::Duid,
     dhcpv6_client_provider: &fnet_dhcpv6::ClientProviderProxy,
