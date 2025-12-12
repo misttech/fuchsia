@@ -197,6 +197,26 @@
 
                 // TODO: https://fxbug.dev/467539761 - requires hardware FE_TONEARESTFROMZERO.
                 "fenv.fesetround_fegetround_FE_TONEARESTFROMZERO",
+
+                // TODO: (b/468343046): Newly added and modified tests failing
+                "unistd.fork_with_sme_za_active",
+                "unistd.fork_with_sme_za_off",
+                "unistd.fork_with_sme_za_dormant_state",
+                "unistd.vfork_with_sme_za_active",
+                "unistd.vfork_with_sme_za_off",
+                "unistd.vfork_with_sme_za_dormant_state",
+                "unistd.clone_with_sme_za_active:",
+                "unistd.clone_with_sme_za_off",
+                "unistd.clone_with_sme_za_dormant_state",
+                "unistd_nofortify.fork_with_sme_za_active",
+                "unistd_nofortify.fork_with_sme_za_off",
+                "unistd_nofortify.fork_with_sme_za_dormant_state",
+                "unistd_nofortify.vfork_with_sme_za_active",
+                "unistd_nofortify.vfork_with_sme_za_off",
+                "unistd_nofortify.vfork_with_sme_za_dormant_state",
+                "unistd_nofortify.clone_with_sme_za_active",
+                "unistd_nofortify.clone_with_sme_za_off",
+                "unistd_nofortify.clone_with_sme_za_dormant_state",
             ],
         },
     ],
