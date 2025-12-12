@@ -1587,13 +1587,10 @@ impl Releasable for Task {
         (Box<ThreadState>, &'a mut Locked<TaskRelease>, RwLockWriteGuard<'a, PidTable>);
 
     fn release<'a>(mut self, context: Self::Context<'a>) {
-        let (thread_state, locked, mut pids) = context;
+        let (thread_state, locked, pids) = context;
 
         *self.proc_pid_directory_cache.get_mut() = None;
         self.ptrace_disconnect(&pids);
-
-        // Release the ThreadGroup.
-        OwnedRef::take(&mut self.thread_group).release(&mut pids);
 
         std::mem::drop(pids);
 
@@ -1615,7 +1612,8 @@ impl Releasable for Task {
         // and from the resulting ReleaseGuard.
         let CurrentTask { mut task, .. } = current_task;
         let task = OwnedRef::take(&mut task).expect("task should not have been re-owned");
-        let _task: Self = ReleaseGuard::take(task);
+        let task: Self = ReleaseGuard::take(task);
+        task.thread_group.release(());
     }
 }
 

@@ -299,13 +299,9 @@ impl PartialEq for ThreadGroup {
 }
 
 impl Releasable for ThreadGroup {
-    type Context<'a> = &'a mut PidTable;
+    type Context<'a> = ();
 
-    fn release<'a>(mut self, _pids: &'a mut PidTable) {
-        let state = self.mutable_state.get_mut();
-        assert!(state.zombie_children.is_empty());
-        assert!(state.zombie_ptracees.is_empty());
-    }
+    fn release<'a>(self, _: ()) {}
 }
 
 #[cfg(any(test, debug_assertions))]
@@ -314,6 +310,8 @@ impl Drop for ThreadGroup {
         let state = self.mutable_state.get_mut();
         assert!(state.tasks.is_empty());
         assert!(state.children.is_empty());
+        assert!(state.zombie_children.is_empty());
+        assert!(state.zombie_ptracees.is_empty());
         assert!(
             state
                 .parent
