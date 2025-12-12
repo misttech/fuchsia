@@ -464,6 +464,13 @@
             from: "parent",
             to: "#core",
         },
+        {
+            protocol: "fuchsia.developer.console.Launcher",
+            from: "#toolbox",
+            to: "#core",
+            dependency: "weak",
+            source_availability: "unknown",
+        },
     ],
     expose: [
         {

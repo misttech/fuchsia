@@ -7,6 +7,7 @@
 
 #include <fidl/fuchsia.boot/cpp/fidl.h>
 #include <fidl/fuchsia.component/cpp/fidl.h>
+#include <fidl/fuchsia.developer.console/cpp/fidl.h>
 #include <lib/async/dispatcher.h>
 #include <lib/async/wait.h>
 #include <lib/fidl/cpp/wire/unknown_interaction_handler.h>
@@ -42,6 +43,7 @@ class Service {
 
   void Wait();
   void Launch(fbl::unique_fd conn);
+  void LaunchConsole(fbl::unique_fd conn);
 
   void OnStop(zx_status_t status, Controller* controller);
 
@@ -49,13 +51,28 @@ class Service {
   fbl::unique_fd sock_;
   fsl::FDWaiter waiter_;
   uint64_t next_child_num_ = 0;
+  fidl::Client<fuchsia_developer_console::Launcher> developer_console_launcher_;
+  zx::eventpair console_stopper_local_;
+  zx::eventpair console_stopper_;
+
+  struct LogRedirect {
+    LogRedirect(async_dispatcher_t* dispatcher, zx::socket socket, uint64_t child_tag);
+    ~LogRedirect();
+    void OnLog(async_dispatcher_t* dispatcher, async::WaitBase* wait, zx_status_t status,
+               const zx_packet_signal_t* signal);
+    void Wait();
+    async_dispatcher_t* dispatcher_;
+    zx::socket socket_;
+    uint64_t child_tag_;
+    async::WaitMethod<LogRedirect, &LogRedirect::OnLog> waiter_;
+    std::string buf_;
+  };
 
   struct Controller final : public fidl::AsyncEventHandler<fuchsia_component::ExecutionController> {
     Controller(Service* service, uint64_t child_num, std::string child_name,
                fidl::ClientEnd<fuchsia_component::ExecutionController> client_end,
                async_dispatcher_t* dispatcher, fidl::SyncClient<fuchsia_component::Realm> realm,
                zx::socket stderr_socket);
-    ~Controller();
     void OnStop(fidl::Event<fuchsia_component::ExecutionController::OnStop>& event) override {
       service_->OnStop(event.stopped_payload().status().value_or(ZX_OK), this);
     }
@@ -70,8 +87,6 @@ class Service {
     }
 
     void Wait();
-    void OnStderr(async_dispatcher_t* dispatcher, async::WaitBase* wait, zx_status_t status,
-                  const zx_packet_signal_t* signal);
 
     fidl::Client<fuchsia_component::ExecutionController>& operator->() { return client_; }
 
@@ -80,9 +95,7 @@ class Service {
     std::string child_name_;
     fidl::Client<fuchsia_component::ExecutionController> client_;
     fidl::SyncClient<fuchsia_component::Realm> realm_;
-    zx::socket stderr_socket_;
-    async::WaitMethod<Controller, &Controller::OnStderr> stderr_waiter_;
-    std::string stderr_buf_;
+    LogRedirect stderr_redirect_;
   };
 
   std::map<uint64_t, Controller> controllers_;

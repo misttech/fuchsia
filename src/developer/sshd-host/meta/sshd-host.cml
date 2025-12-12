@@ -25,6 +25,9 @@
                 // Needed to get ssh keys from the bootloader file.
                 "fuchsia.boot.Items",
 
+                // Needed to start developer console.
+                "fuchsia.developer.console.Launcher",
+
                 // Needed to listen on TCP port 22.
                 "fuchsia.posix.socket.Provider",
 

@@ -143,6 +143,11 @@
             to: "#sshd-host",
             availability: "optional",
         },
+        {
+            protocol: "fuchsia.developer.console.Launcher",
+            from: "parent",
+            to: "#sshd-host",
+        },
 
         // SWD
         {
