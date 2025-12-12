@@ -1662,24 +1662,19 @@ TEST_P(RamdiskTestWithClient, DiscardRandomOnWakeWithBarriers) {
 
       block_fifo_request_t requests[4];
       for (size_t i = 0; i < std::size(requests); ++i) {
+        requests[i].group = 0;
+        requests[i].vmoid = vmoid_.id;
+        requests[i].command = {.opcode = BLOCK_OPCODE_WRITE, .flags = 0};
+        requests[i].length = 1;
+        requests[i].vmo_offset = i;
+        requests[i].dev_offset = i;
         if (i == 2) {
-          // Insert a barrier midway through
-          requests[i].group = 0;
-          requests[i].vmoid = vmoid_.id;
-          requests[i].command = {.opcode = BLOCK_OPCODE_WRITE, .flags = BLOCK_IO_FLAG_PRE_BARRIER};
-          requests[i].length = 1;
-          requests[i].vmo_offset = i;
-          requests[i].dev_offset = i;
-        } else {
-          requests[i].group = 0;
-          requests[i].vmoid = vmoid_.id;
-          requests[i].command = {.opcode = BLOCK_OPCODE_WRITE, .flags = 0};
-          requests[i].length = 1;
-          requests[i].vmo_offset = i;
-          requests[i].dev_offset = i;
+          // Insert a barrier mid-way through
+          requests[i].command.flags |= BLOCK_IO_FLAG_PRE_BARRIER;
         }
+        // Per the documentation of PRE_BARRIER, we must submit the requests individually.
+        ASSERT_EQ(client_->Transaction(&requests[i], 1), ZX_OK);
       }
-      ASSERT_EQ(client_->Transaction(requests, std::size(requests)), ZX_OK);
 
       // Wake the device and it should randomly discard blocks.
       ASSERT_EQ(ramdisk_->Wake().status_value(), ZX_OK);

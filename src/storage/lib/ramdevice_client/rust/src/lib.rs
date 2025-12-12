@@ -30,6 +30,7 @@ pub struct RamdiskClientBuilder {
     guid: Option<[u8; GUID_LEN]>,
     use_v2: bool,
     ramdisk_service: Option<fio::DirectoryProxy>,
+    device_flags: Option<fhardware_block::Flag>,
 
     // Whether to publish this ramdisk as a fuchsia.hardware.block.volume.Service service.  This
     // only works for the v2 driver.
@@ -53,6 +54,7 @@ impl RamdiskClientBuilder {
             use_v2: false,
             ramdisk_service: None,
             publish: false,
+            device_flags: None,
         }
     }
 
@@ -67,6 +69,7 @@ impl RamdiskClientBuilder {
             use_v2: false,
             ramdisk_service: None,
             publish: false,
+            device_flags: None,
         }
     }
 
@@ -106,6 +109,12 @@ impl RamdiskClientBuilder {
         self
     }
 
+    /// Use the provided device flags.
+    pub fn device_flags(mut self, device_flags: fhardware_block::Flag) -> Self {
+        self.device_flags = Some(device_flags);
+        self
+    }
+
     /// Create the ramdisk.
     pub async fn build(self) -> Result<RamdiskClient, Error> {
         let Self {
@@ -117,6 +126,7 @@ impl RamdiskClientBuilder {
             use_v2,
             ramdisk_service,
             publish,
+            device_flags,
         } = self;
 
         if use_v2 {
@@ -142,6 +152,7 @@ impl RamdiskClientBuilder {
                     type_guid,
                     publish: Some(publish),
                     max_transfer_blocks,
+                    device_flags,
                     ..Default::default()
                 },
                 RamdiskSource::Size { block_count } => framdisk::Options {
@@ -150,6 +161,7 @@ impl RamdiskClientBuilder {
                     type_guid,
                     publish: Some(publish),
                     max_transfer_blocks,
+                    device_flags,
                     ..Default::default()
                 },
             };
@@ -343,6 +355,23 @@ impl RamdiskClient {
                 Ok(controller_proxy)
             }
             Self::V2 { .. } => Err(anyhow!("Not supported")),
+        }
+    }
+
+    /// Get an open channel to the Ramdisk protocol.
+    pub fn open_ramdisk(&self) -> Result<framdisk::RamdiskProxy, Error> {
+        match self {
+            Self::V1 { .. } => Err(anyhow!("Not supported")),
+            Self::V2 { outgoing, .. } => {
+                let (client, server) = fidl::endpoints::create_proxy::<framdisk::RamdiskMarker>();
+                outgoing.open(
+                    &format!("svc/{}", framdisk::RamdiskMarker::PROTOCOL_NAME),
+                    fio::Flags::empty(),
+                    &fio::Options::default(),
+                    server.into_channel(),
+                )?;
+                Ok(client)
+            }
         }
     }
 

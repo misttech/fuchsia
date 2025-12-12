@@ -129,10 +129,6 @@ impl GptPartition {
             .await
     }
 
-    pub fn barrier(&self) {
-        self.block_client.barrier();
-    }
-
     pub async fn write(
         &self,
         device_block_offset: u64,
@@ -1002,6 +998,10 @@ mod tests {
                 initial_contents: InitialContents::FromCapacity(BLOCK_COUNT),
                 block_size: BLOCK_SIZE,
                 observer: Some(Box::new(Observer(expect_force_access.clone()))),
+                info: DeviceInfo::Block(BlockInfo {
+                    device_flags: fblock::Flag::FUA_SUPPORT,
+                    ..Default::default()
+                }),
                 ..Default::default()
             },
             vec![PartitionInfo {
@@ -1052,8 +1052,19 @@ mod tests {
         struct Observer(Arc<AtomicBool>);
 
         impl vmo_backed_block_server::Observer for Observer {
-            fn barrier(&self, _writes: Option<&mut vmo_backed_block_server::Writes>) {
-                self.0.store(true, Ordering::Relaxed);
+            fn write(
+                &self,
+                _device_block_offset: u64,
+                _block_count: u32,
+                _vmo: &Arc<zx::Vmo>,
+                _vmo_offset: u64,
+                opts: WriteOptions,
+            ) -> vmo_backed_block_server::WriteAction {
+                assert_eq!(
+                    opts.flags.contains(WriteFlags::PRE_BARRIER),
+                    self.0.load(Ordering::Relaxed)
+                );
+                vmo_backed_block_server::WriteAction::Write
             }
         }
 
@@ -1063,6 +1074,10 @@ mod tests {
                 initial_contents: InitialContents::FromCapacity(BLOCK_COUNT),
                 block_size: BLOCK_SIZE,
                 observer: Some(Box::new(Observer(expect_barrier.clone()))),
+                info: DeviceInfo::Block(BlockInfo {
+                    device_flags: fblock::Flag::BARRIER_SUPPORT,
+                    ..Default::default()
+                }),
                 ..Default::default()
             },
             vec![PartitionInfo {
@@ -1091,10 +1106,9 @@ mod tests {
         let buffer = vec![0; BLOCK_SIZE as usize];
         client.write_at(BufferSlice::Memory(&buffer), 0).await.unwrap();
 
+        expect_barrier.store(true, Ordering::Relaxed);
         client.barrier();
         client.write_at(BufferSlice::Memory(&buffer), 0).await.unwrap();
-
-        assert!(expect_barrier.load(Ordering::Relaxed));
 
         manager.shutdown().await;
     }

@@ -4,7 +4,6 @@
 
 #include <fidl/fuchsia.hardware.block.volume/cpp/wire.h>
 
-#include <array>
 #include <span>
 #include <unordered_set>
 
@@ -22,6 +21,8 @@ namespace fvolume = ::fuchsia_hardware_block_volume;
 constexpr uint64_t kBlocks = 1024;
 constexpr uint64_t kBlockSize = 512;
 
+using RequestHook = std::function<zx::result<>(const Request&)>;
+
 class TestInterface : public Interface {
  public:
   explicit TestInterface(const block_server::PartitionInfo& info) { server_.emplace(info, this); }
@@ -30,6 +31,7 @@ class TestInterface : public Interface {
 
   BlockServer& server() { return *server_; }
   int threads_running() const { return threads_running_; }
+  void SetHook(RequestHook hook) { hook_ = std::move(hook); }
 
   void StartThread(Thread thread) override {
     std::thread([this, thread = std::move(thread)]() mutable {
@@ -62,6 +64,12 @@ class TestInterface : public Interface {
     std::vector<Request> reqs(requests.begin(), requests.end());
     std::thread([this, requests = std::move(reqs)] {
       for (const Request& request : requests) {
+        if (hook_) {
+          if (zx::result status = (*hook_)(request); status.is_error()) {
+            server_->SendReply(request.request_id, status);
+            continue;
+          }
+        }
         switch (request.operation.tag) {
           case Operation::Tag::Read:
             EXPECT_EQ(
@@ -78,7 +86,8 @@ class TestInterface : public Interface {
                                   request.operation.write.block_count * kBlockSize),
                 ZX_OK);
             break;
-
+          case Operation::Tag::Flush:
+            break;
           default:
             ZX_PANIC("Unexpected operation");
         }
@@ -91,6 +100,7 @@ class TestInterface : public Interface {
   std::optional<BlockServer> server_;
   std::atomic<int> threads_running_ = 0;
   std::unique_ptr<uint8_t[]> data_ = std::make_unique<uint8_t[]>(kBlockSize * kBlocks);
+  std::optional<RequestHook> hook_;
 };
 
 TEST(BlockServer, Basic) {
@@ -327,7 +337,7 @@ TEST(BlockServer, Group) {
   }
 
   zx::vmo vmo;
-  ASSERT_EQ(zx::vmo::create(1024 * 1024, 0, &vmo), ZX_OK);
+  ASSERT_EQ(zx::vmo::create(1024ul * 1024, 0, &vmo), ZX_OK);
   zx::vmo duplicate;
   ASSERT_EQ(vmo.duplicate(ZX_RIGHT_SAME_RIGHTS, &duplicate), ZX_OK);
 
@@ -337,7 +347,7 @@ TEST(BlockServer, Group) {
     ASSERT_TRUE(result.ok());
     fit::result response = result.value();
     ASSERT_TRUE(response.is_ok());
-    vmo_id = std::move(response->vmoid.id);
+    vmo_id = response->vmoid.id;
   }
 
   block_fifo_request_t request = {
@@ -400,6 +410,494 @@ TEST(BlockServer, SplitRequest) {
   EXPECT_EQ(request.operation.read.device_block_offset, 15u);
   EXPECT_EQ(request.operation.read.block_count, 15u);
   EXPECT_EQ(request.operation.read.vmo_offset, 6656u);
+}
+
+TEST(BlockServer, SimulatedBarrierFlushFailure) {
+  fidl::ServerEnd<fvolume::Volume> server_end;
+  zx::result client_end = fidl::CreateEndpoints(&server_end);
+  ASSERT_EQ(client_end.status_value(), ZX_OK);
+
+  TestInterface test_interface(PartitionInfo{
+      .start_block = 0,
+      .block_count = kBlocks,
+      .block_size = kBlockSize,
+      .type_guid = {1, 2, 3, 4},
+      .instance_guid = {5, 6, 7, 8},
+      .name = "partition",
+  });
+  test_interface.SetHook([](const Request& request) -> zx::result<> {
+    if (request.operation.tag == Operation::Tag::Flush) {
+      return zx::error(ZX_ERR_IO);
+    }
+    return zx::ok();
+  });
+  test_interface.server().Serve(std::move(server_end));
+
+  auto client = block_client::RemoteBlockDevice::Create(*std::move(client_end));
+  ASSERT_EQ(client.status_value(), ZX_OK);
+
+  zx::vmo vmo;
+  ASSERT_EQ(zx::vmo::create(4096, 0, &vmo), ZX_OK);
+  ASSERT_EQ(vmo.write("hello", kBlockSize, 5), ZX_OK);
+  storage::Vmoid vmoid;
+  ASSERT_EQ(client->BlockAttachVmo(vmo, &vmoid), ZX_OK);
+  storage::OwnedVmoid owned_vmoid(std::move(vmoid), (*client).get());
+
+  block_fifo_request_t request = {
+      .command =
+          {
+              .opcode = BLOCK_OPCODE_WRITE,
+              .flags = BLOCK_IO_FLAG_PRE_BARRIER,
+          },
+      .vmoid = owned_vmoid.get(),
+      .length = 1,
+      .vmo_offset = 1,
+      .dev_offset = 3,
+  };
+
+  ASSERT_EQ(client->FifoTransaction(&request, 1), ZX_ERR_IO);
+
+  test_interface.TakeServer();
+  EXPECT_EQ(test_interface.threads_running(), 0);
+}
+
+TEST(BlockServer, SimulatedBarrierWriteFailure) {
+  fidl::ServerEnd<fvolume::Volume> server_end;
+  zx::result client_end = fidl::CreateEndpoints(&server_end);
+  ASSERT_EQ(client_end.status_value(), ZX_OK);
+
+  TestInterface test_interface(PartitionInfo{
+      .start_block = 0,
+      .block_count = kBlocks,
+      .block_size = kBlockSize,
+      .type_guid = {1, 2, 3, 4},
+      .instance_guid = {5, 6, 7, 8},
+      .name = "partition",
+  });
+  test_interface.SetHook([](const Request& request) -> zx::result<> {
+    if (request.operation.tag == Operation::Tag::Write) {
+      return zx::error(ZX_ERR_IO);
+    }
+    return zx::ok();
+  });
+  test_interface.server().Serve(std::move(server_end));
+
+  auto client = block_client::RemoteBlockDevice::Create(*std::move(client_end));
+  ASSERT_EQ(client.status_value(), ZX_OK);
+
+  zx::vmo vmo;
+  ASSERT_EQ(zx::vmo::create(4096, 0, &vmo), ZX_OK);
+  ASSERT_EQ(vmo.write("hello", kBlockSize, 5), ZX_OK);
+  storage::Vmoid vmoid;
+  ASSERT_EQ(client->BlockAttachVmo(vmo, &vmoid), ZX_OK);
+  storage::OwnedVmoid owned_vmoid(std::move(vmoid), (*client).get());
+
+  block_fifo_request_t request = {
+      .command =
+          {
+              .opcode = BLOCK_OPCODE_WRITE,
+              .flags = BLOCK_IO_FLAG_PRE_BARRIER,
+          },
+      .vmoid = owned_vmoid.get(),
+      .length = 1,
+      .vmo_offset = 1,
+      .dev_offset = 3,
+  };
+
+  ASSERT_EQ(client->FifoTransaction(&request, 1), ZX_ERR_IO);
+
+  test_interface.TakeServer();
+  EXPECT_EQ(test_interface.threads_running(), 0);
+}
+
+TEST(BlockServer, SimulatedFuaFlushFailure) {
+  fidl::ServerEnd<fvolume::Volume> server_end;
+  zx::result client_end = fidl::CreateEndpoints(&server_end);
+  ASSERT_EQ(client_end.status_value(), ZX_OK);
+
+  TestInterface test_interface(PartitionInfo{
+      .start_block = 0,
+      .block_count = kBlocks,
+      .block_size = kBlockSize,
+      .type_guid = {1, 2, 3, 4},
+      .instance_guid = {5, 6, 7, 8},
+      .name = "partition",
+  });
+  test_interface.SetHook([](const Request& request) -> zx::result<> {
+    if (request.operation.tag == Operation::Tag::Flush) {
+      return zx::error(ZX_ERR_IO);
+    }
+    return zx::ok();
+  });
+  test_interface.server().Serve(std::move(server_end));
+
+  auto client = block_client::RemoteBlockDevice::Create(*std::move(client_end));
+  ASSERT_EQ(client.status_value(), ZX_OK);
+
+  zx::vmo vmo;
+  ASSERT_EQ(zx::vmo::create(4096, 0, &vmo), ZX_OK);
+  ASSERT_EQ(vmo.write("hello", kBlockSize, 5), ZX_OK);
+  storage::Vmoid vmoid;
+  ASSERT_EQ(client->BlockAttachVmo(vmo, &vmoid), ZX_OK);
+  storage::OwnedVmoid owned_vmoid(std::move(vmoid), (*client).get());
+
+  block_fifo_request_t request = {
+      .command =
+          {
+              .opcode = BLOCK_OPCODE_WRITE,
+              .flags = BLOCK_IO_FLAG_FORCE_ACCESS,
+          },
+      .vmoid = owned_vmoid.get(),
+      .length = 1,
+      .vmo_offset = 1,
+      .dev_offset = 3,
+  };
+
+  ASSERT_EQ(client->FifoTransaction(&request, 1), ZX_ERR_IO);
+
+  test_interface.TakeServer();
+  EXPECT_EQ(test_interface.threads_running(), 0);
+}
+
+TEST(BlockServer, SimulatedFuaWriteFailure) {
+  fidl::ServerEnd<fvolume::Volume> server_end;
+  zx::result client_end = fidl::CreateEndpoints(&server_end);
+  ASSERT_EQ(client_end.status_value(), ZX_OK);
+
+  TestInterface test_interface(PartitionInfo{
+      .start_block = 0,
+      .block_count = kBlocks,
+      .block_size = kBlockSize,
+      .type_guid = {1, 2, 3, 4},
+      .instance_guid = {5, 6, 7, 8},
+      .name = "partition",
+  });
+  test_interface.SetHook([](const Request& request) -> zx::result<> {
+    if (request.operation.tag == Operation::Tag::Write) {
+      return zx::error(ZX_ERR_IO);
+    }
+    return zx::ok();
+  });
+  test_interface.server().Serve(std::move(server_end));
+
+  auto client = block_client::RemoteBlockDevice::Create(*std::move(client_end));
+  ASSERT_EQ(client.status_value(), ZX_OK);
+
+  zx::vmo vmo;
+  ASSERT_EQ(zx::vmo::create(4096, 0, &vmo), ZX_OK);
+  ASSERT_EQ(vmo.write("hello", kBlockSize, 5), ZX_OK);
+  storage::Vmoid vmoid;
+  ASSERT_EQ(client->BlockAttachVmo(vmo, &vmoid), ZX_OK);
+  storage::OwnedVmoid owned_vmoid(std::move(vmoid), (*client).get());
+
+  block_fifo_request_t request = {
+      .command =
+          {
+              .opcode = BLOCK_OPCODE_WRITE,
+              .flags = BLOCK_IO_FLAG_FORCE_ACCESS,
+          },
+      .vmoid = owned_vmoid.get(),
+      .length = 1,
+      .vmo_offset = 1,
+      .dev_offset = 3,
+  };
+
+  ASSERT_EQ(client->FifoTransaction(&request, 1), ZX_ERR_IO);
+
+  test_interface.TakeServer();
+  EXPECT_EQ(test_interface.threads_running(), 0);
+}
+
+TEST(BlockServer, GroupWithSimulatedFua) {
+  fidl::ServerEnd<fvolume::Volume> server_end;
+  zx::result client_end = fidl::CreateEndpoints(&server_end);
+  ASSERT_EQ(client_end.status_value(), ZX_OK);
+
+  TestInterface test_interface(PartitionInfo{
+      .start_block = 0,
+      .block_count = kBlocks,
+      .block_size = kBlockSize,
+      .type_guid = {1, 2, 3, 4},
+      .instance_guid = {5, 6, 7, 8},
+      .name = "partition",
+  });
+  std::optional<Request> last_write;
+  bool flushed = false;
+  test_interface.SetHook([&](const Request& request) -> zx::result<> {
+    if (request.operation.tag == Operation::Tag::Write) {
+      last_write = request;
+    } else if (request.operation.tag == Operation::Tag::Flush) {
+      EXPECT_TRUE(last_write);
+      EXPECT_EQ(last_write->operation.write.device_block_offset, 1u);
+      EXPECT_FALSE(flushed);
+      flushed = true;
+    }
+    return zx::ok();
+  });
+  test_interface.server().Serve(std::move(server_end));
+
+  auto [session, server] = fidl::Endpoints<fuchsia_hardware_block::Session>::Create();
+  ASSERT_TRUE(fidl::WireCall(*client_end)->OpenSession(std::move(server)).ok());
+
+  zx::fifo fifo;
+  {
+    fidl::WireResult result = fidl::WireCall(session)->GetFifo();
+    ASSERT_TRUE(result.ok());
+    fit::result response = result.value();
+    ASSERT_TRUE(response.is_ok());
+    fifo = std::move(response->fifo);
+  }
+
+  zx::vmo vmo;
+  ASSERT_EQ(zx::vmo::create(1024ul * 1024, 0, &vmo), ZX_OK);
+  zx::vmo duplicate;
+  ASSERT_EQ(vmo.duplicate(ZX_RIGHT_SAME_RIGHTS, &duplicate), ZX_OK);
+
+  uint16_t vmo_id;
+  {
+    fidl::WireResult result = fidl::WireCall(session)->AttachVmo(std::move(duplicate));
+    ASSERT_TRUE(result.ok());
+    fit::result response = result.value();
+    ASSERT_TRUE(response.is_ok());
+    vmo_id = response->vmoid.id;
+  }
+
+  block_fifo_request_t request = {
+      .command =
+          {
+              .opcode = BLOCK_OPCODE_WRITE,
+              .flags = BLOCK_IO_FLAG_GROUP_ITEM,
+          },
+      .group = 1234,
+      .vmoid = vmo_id,
+      .length = 1,
+      .vmo_offset = 0,
+      .dev_offset = 0,
+  };
+
+  // Write 3 requests as a group.  Set the FORCE_ACCESS flag on the middle one.
+  for (uint32_t request_id = 0; request_id < 3; ++request_id) {
+    request.reqid = request_id;
+    request.dev_offset = request_id;
+    if (request_id == 1) {
+      request.command.flags |= BLOCK_IO_FLAG_FORCE_ACCESS;
+    } else {
+      request.command.flags &= ~BLOCK_IO_FLAG_FORCE_ACCESS;
+    }
+    if (request_id == 2)
+      request.command.flags |= BLOCK_IO_FLAG_GROUP_LAST;
+    zx_status_t status;
+    size_t actual;
+    while ((status = fifo.write(sizeof(block_fifo_request_t), &request, 1, &actual)) ==
+           ZX_ERR_SHOULD_WAIT) {
+      zx_signals_t signals;
+      fifo.wait_one(ZX_FIFO_WRITABLE, zx::time::infinite(), &signals);
+    }
+    ASSERT_EQ(actual, 1u);
+    ASSERT_EQ(status, ZX_OK);
+  }
+
+  block_fifo_response_t response;
+  zx_status_t status;
+  size_t actual;
+  while ((status = fifo.read(sizeof(block_fifo_response_t), &response, 1, &actual)) ==
+         ZX_ERR_SHOULD_WAIT) {
+    zx_signals_t signals;
+    fifo.wait_one(ZX_FIFO_READABLE, zx::time::infinite(), &signals);
+  }
+  ASSERT_EQ(status, ZX_OK);
+  EXPECT_EQ(response.status, ZX_OK);
+  EXPECT_EQ(response.group, 1234);
+  EXPECT_EQ(response.reqid, 2u);
+}
+TEST(BlockServer, GroupWithSimulatedBarrierAndFailedFlush) {
+  fidl::ServerEnd<fvolume::Volume> server_end;
+  zx::result client_end = fidl::CreateEndpoints(&server_end);
+  ASSERT_EQ(client_end.status_value(), ZX_OK);
+
+  TestInterface test_interface(PartitionInfo{
+      .start_block = 0,
+      .block_count = kBlocks,
+      .block_size = kBlockSize,
+      .type_guid = {1, 2, 3, 4},
+      .instance_guid = {5, 6, 7, 8},
+      .name = "partition",
+  });
+  test_interface.SetHook([](const Request& request) -> zx::result<> {
+    if (request.operation.tag == Operation::Tag::Flush) {
+      return zx::error(ZX_ERR_IO);
+    }
+    return zx::ok();
+  });
+  test_interface.server().Serve(std::move(server_end));
+
+  auto [session, server] = fidl::Endpoints<fuchsia_hardware_block::Session>::Create();
+  ASSERT_TRUE(fidl::WireCall(*client_end)->OpenSession(std::move(server)).ok());
+
+  zx::fifo fifo;
+  {
+    fidl::WireResult result = fidl::WireCall(session)->GetFifo();
+    ASSERT_TRUE(result.ok());
+    fit::result response = result.value();
+    ASSERT_TRUE(response.is_ok());
+    fifo = std::move(response->fifo);
+  }
+
+  zx::vmo vmo;
+  ASSERT_EQ(zx::vmo::create(1024ul * 1024, 0, &vmo), ZX_OK);
+  zx::vmo duplicate;
+  ASSERT_EQ(vmo.duplicate(ZX_RIGHT_SAME_RIGHTS, &duplicate), ZX_OK);
+
+  uint16_t vmo_id;
+  {
+    fidl::WireResult result = fidl::WireCall(session)->AttachVmo(std::move(duplicate));
+    ASSERT_TRUE(result.ok());
+    fit::result response = result.value();
+    ASSERT_TRUE(response.is_ok());
+    vmo_id = response->vmoid.id;
+  }
+
+  block_fifo_request_t request = {
+      .command =
+          {
+              .opcode = BLOCK_OPCODE_WRITE,
+              .flags = BLOCK_IO_FLAG_GROUP_ITEM,
+          },
+      .group = 1234,
+      .vmoid = vmo_id,
+      .length = 1,
+      .vmo_offset = 0,
+      .dev_offset = 0,
+  };
+
+  // Write 1000 requests as a group.  Set the BARRIER flag on the middle one.
+  for (uint32_t request_id = 0; request_id < 1000; ++request_id) {
+    request.reqid = request_id;
+    if (request_id == 500) {
+      request.command.flags |= BLOCK_IO_FLAG_PRE_BARRIER;
+    } else {
+      request.command.flags &= ~BLOCK_IO_FLAG_PRE_BARRIER;
+    }
+    if (request_id == 999)
+      request.command.flags |= BLOCK_IO_FLAG_GROUP_LAST;
+    zx_status_t status;
+    size_t actual;
+    while ((status = fifo.write(sizeof(block_fifo_request_t), &request, 1, &actual)) ==
+           ZX_ERR_SHOULD_WAIT) {
+      zx_signals_t signals;
+      fifo.wait_one(ZX_FIFO_WRITABLE, zx::time::infinite(), &signals);
+    }
+    ASSERT_EQ(actual, 1u);
+    ASSERT_EQ(status, ZX_OK);
+  }
+
+  block_fifo_response_t response;
+  zx_status_t status;
+  size_t actual;
+  while ((status = fifo.read(sizeof(block_fifo_response_t), &response, 1, &actual)) ==
+         ZX_ERR_SHOULD_WAIT) {
+    zx_signals_t signals;
+    fifo.wait_one(ZX_FIFO_READABLE, zx::time::infinite(), &signals);
+  }
+  ASSERT_EQ(status, ZX_OK);
+  EXPECT_EQ(response.status, ZX_ERR_IO);
+  EXPECT_EQ(response.group, 1234);
+  EXPECT_EQ(response.reqid, 999u);
+}
+
+TEST(BlockServer, GroupWithSimulatedFuaAndFailedFlush) {
+  fidl::ServerEnd<fvolume::Volume> server_end;
+  zx::result client_end = fidl::CreateEndpoints(&server_end);
+  ASSERT_EQ(client_end.status_value(), ZX_OK);
+
+  TestInterface test_interface(PartitionInfo{
+      .start_block = 0,
+      .block_count = kBlocks,
+      .block_size = kBlockSize,
+      .type_guid = {1, 2, 3, 4},
+      .instance_guid = {5, 6, 7, 8},
+      .name = "partition",
+  });
+  test_interface.SetHook([](const Request& request) -> zx::result<> {
+    if (request.operation.tag == Operation::Tag::Flush) {
+      return zx::error(ZX_ERR_IO);
+    }
+    return zx::ok();
+  });
+  test_interface.server().Serve(std::move(server_end));
+
+  auto [session, server] = fidl::Endpoints<fuchsia_hardware_block::Session>::Create();
+  ASSERT_TRUE(fidl::WireCall(*client_end)->OpenSession(std::move(server)).ok());
+
+  zx::fifo fifo;
+  {
+    fidl::WireResult result = fidl::WireCall(session)->GetFifo();
+    ASSERT_TRUE(result.ok());
+    fit::result response = result.value();
+    ASSERT_TRUE(response.is_ok());
+    fifo = std::move(response->fifo);
+  }
+
+  zx::vmo vmo;
+  ASSERT_EQ(zx::vmo::create(1024ul * 1024, 0, &vmo), ZX_OK);
+  zx::vmo duplicate;
+  ASSERT_EQ(vmo.duplicate(ZX_RIGHT_SAME_RIGHTS, &duplicate), ZX_OK);
+
+  uint16_t vmo_id;
+  {
+    fidl::WireResult result = fidl::WireCall(session)->AttachVmo(std::move(duplicate));
+    ASSERT_TRUE(result.ok());
+    fit::result response = result.value();
+    ASSERT_TRUE(response.is_ok());
+    vmo_id = response->vmoid.id;
+  }
+
+  block_fifo_request_t request = {
+      .command =
+          {
+              .opcode = BLOCK_OPCODE_WRITE,
+              .flags = BLOCK_IO_FLAG_GROUP_ITEM,
+          },
+      .group = 1234,
+      .vmoid = vmo_id,
+      .length = 1,
+      .vmo_offset = 0,
+      .dev_offset = 0,
+  };
+
+  // Write 1000 requests as a group.  Set the FORCE_ACCESS flag on the middle one.
+  for (uint32_t request_id = 0; request_id < 1000; ++request_id) {
+    request.reqid = request_id;
+    if (request_id == 500) {
+      request.command.flags |= BLOCK_IO_FLAG_FORCE_ACCESS;
+    } else {
+      request.command.flags &= ~BLOCK_IO_FLAG_FORCE_ACCESS;
+    }
+    if (request_id == 999)
+      request.command.flags |= BLOCK_IO_FLAG_GROUP_LAST;
+    zx_status_t status;
+    size_t actual;
+    while ((status = fifo.write(sizeof(block_fifo_request_t), &request, 1, &actual)) ==
+           ZX_ERR_SHOULD_WAIT) {
+      zx_signals_t signals;
+      fifo.wait_one(ZX_FIFO_WRITABLE, zx::time::infinite(), &signals);
+    }
+    ASSERT_EQ(actual, 1u);
+    ASSERT_EQ(status, ZX_OK);
+  }
+
+  block_fifo_response_t response;
+  zx_status_t status;
+  size_t actual;
+  while ((status = fifo.read(sizeof(block_fifo_response_t), &response, 1, &actual)) ==
+         ZX_ERR_SHOULD_WAIT) {
+    zx_signals_t signals;
+    fifo.wait_one(ZX_FIFO_READABLE, zx::time::infinite(), &signals);
+  }
+  ASSERT_EQ(status, ZX_OK);
+  EXPECT_EQ(response.status, ZX_ERR_IO);
+  EXPECT_EQ(response.group, 1234);
+  EXPECT_EQ(response.reqid, 999u);
 }
 
 }  // namespace

@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::WriteFlags;
+
 use super::{
     ActiveRequests, DecodedRequest, IntoSessionManager, OffsetMap, Operation, RequestId,
     SessionHelper, TraceFlowId,
@@ -19,6 +21,7 @@ use std::collections::{HashMap, VecDeque};
 use std::ffi::{CStr, c_char, c_void};
 use std::mem::MaybeUninit;
 use std::num::NonZero;
+use std::ops::{Deref, DerefMut};
 use std::sync::{Arc, Weak};
 use zx::{self as zx, AsHandleRef as _};
 use {fidl_fuchsia_hardware_block as fblock, fidl_fuchsia_hardware_block_volume as fvolume};
@@ -26,8 +29,10 @@ use {fidl_fuchsia_hardware_block as fblock, fidl_fuchsia_hardware_block_volume a
 pub struct SessionManager {
     callbacks: Callbacks,
     open_sessions: Mutex<HashMap<usize, Weak<Session>>>,
+    open_sessions_condvar: Condvar,
     active_requests: ActiveRequests<Arc<Session>>,
-    condvar: Condvar,
+    inflight_requests: Mutex<usize>,
+    no_inflight_requests_condvar: Condvar,
     mbox: ExecutorMailbox,
     info: super::DeviceInfo,
 }
@@ -36,11 +41,47 @@ unsafe impl Send for SessionManager {}
 unsafe impl Sync for SessionManager {}
 
 impl SessionManager {
-    fn complete_request(&self, request_id: RequestId, status: zx::Status) {
+    fn submit_requests(&self, requests: &mut [Request]) {
+        *self.inflight_requests.lock() += requests.len();
+        // SAFETY: `request` points to a valid array of `requests.len()` elements.
+        // The callback implementation is assumed to uphold its contract.
+        unsafe {
+            (self.callbacks.on_requests)(
+                self.callbacks.context,
+                std::ptr::from_mut(&mut requests[0]),
+                requests.len(),
+            )
+        }
+    }
+
+    /// Waits for there to be no requests in-flight.
+    ///
+    /// NOTE: To void TOCTOUs, this must be called on the same thread which calls
+    /// [`Self::submit_requests`].
+    fn wait_for_no_inflight_requests(&self) {
+        let mut guard = self.inflight_requests.lock();
+        self.no_inflight_requests_condvar.wait_while(&mut guard, |count| *count > 0);
+    }
+
+    /// Called instead of `[Self::complete_request]` when a request is completed before it was
+    /// actually submitted.
+    fn complete_unsubmitted_request(&self, request_id: RequestId, status: zx::Status) {
         if let Some((session, response)) =
             self.active_requests.complete_and_take_response(request_id, status)
         {
             session.send_response(response);
+        }
+    }
+
+    fn complete_request(&self, request_id: RequestId, status: zx::Status) {
+        let notify = {
+            let mut inflight_requests = self.inflight_requests.lock();
+            *inflight_requests -= 1;
+            *inflight_requests == 0
+        };
+        self.complete_unsubmitted_request(request_id, status);
+        if notify {
+            self.no_inflight_requests_condvar.notify_all();
         }
     }
 
@@ -58,7 +99,7 @@ impl SessionManager {
             }
         }
         let mut guard = self.open_sessions.lock();
-        self.condvar.wait_while(&mut guard, |s| !s.is_empty());
+        self.open_sessions_condvar.wait_while(&mut guard, |s| !s.is_empty());
     }
 }
 
@@ -132,11 +173,28 @@ impl IntoSessionManager for Arc<SessionManager> {
 
 #[repr(C)]
 pub struct Callbacks {
+    /// An opaque context object retained by this library.  The library will pass this back into all
+    /// callbacks.  The memory pointed to by `context` must last until [`block_server_delete`] is
+    /// called.
     pub context: *mut c_void,
+    /// Starts a thread.  The implementation must call [`block_server_thread`] on this newly created
+    /// thread, providing `arg`.  The implementation must then call [`block_server_thread_delete`]
+    /// after [`block_server_thread`] returns (but before [`block_server_delete`] is called).
     pub start_thread: unsafe extern "C" fn(context: *mut c_void, arg: *const c_void),
+    /// Notifies the implementation of a new session.  The implementation must call
+    /// [`block_server_session_run`] on a separate thread, and must call
+    /// [`block_server_session_release`] after [`block_server_session_run`] (but before
+    /// [`block_server_delete`] is called).
     pub on_new_session: unsafe extern "C" fn(context: *mut c_void, session: *const Session),
+    /// Submits a batch of requests to be handled by the implementation.  The implementation must
+    /// not retain references to `requests` after it returns.  The implementation must ensure that
+    /// [`block_server_send_reply`] is called exactly once with the request ID of each entry in
+    /// `requests`, regardless of its status; this call can be asynchronous but must occur before
+    /// [`block_server_delete`] is called.
     pub on_requests:
         unsafe extern "C" fn(context: *mut c_void, requests: *mut Request, request_count: usize),
+    /// Logs `message` to the implementation's logger.  The implementation must not retain
+    /// references to `message`.
     pub log: unsafe extern "C" fn(context: *mut c_void, message: *const c_char, message_len: usize),
 }
 
@@ -239,34 +297,106 @@ impl Session {
         }
     }
 
+    /// Synchronously performs a device flush.
+    fn pre_flush(self: &Arc<Self>, request_id: RequestId) -> Result<(), zx::Status> {
+        let trace_flow_id = {
+            let mut request = self.manager.active_requests.request(request_id);
+            if let Some(id) = request.trace_flow_id {
+                fuchsia_trace::async_instant!(
+                    fuchsia_trace::Id::from(id.get()),
+                    c"storage",
+                    c"block_server::SimulatedBarrier",
+                    "request_id" => request_id.0
+                );
+            }
+            request.count += 1;
+            request.trace_flow_id
+        };
+        self.manager.submit_requests(&mut [Request {
+            request_id,
+            operation: Operation::Flush,
+            trace_flow_id,
+            vmo: UnownedVmo(zx::sys::ZX_HANDLE_INVALID),
+        }]);
+        self.manager.wait_for_no_inflight_requests();
+        let status = self.manager.active_requests.request(request_id).status;
+        match status {
+            zx::Status::OK => Ok(()),
+            status => {
+                // Respond for the unsubmitted request too.
+                self.manager.complete_unsubmitted_request(request_id, status);
+                Err(status)
+            }
+        }
+    }
+
+    /// Synchronously completes `decoded_requests`, and inserts a post-flush into `decoded_requests`
+    /// to be submitted later.
+    fn post_flush(self: &Arc<Self>, request_id: RequestId, decoded_requests: &mut DecodedRequests) {
+        if decoded_requests.len() > 0 {
+            self.manager.submit_requests(decoded_requests);
+            decoded_requests.clear();
+        }
+        self.manager.wait_for_no_inflight_requests();
+        let request = self.manager.active_requests.request(request_id);
+        match request.status {
+            zx::Status::OK => decoded_requests.push(Request {
+                request_id,
+                operation: Operation::Flush,
+                trace_flow_id: request.trace_flow_id,
+                vmo: UnownedVmo(zx::sys::ZX_HANDLE_INVALID),
+            }),
+            status => {
+                drop(request);
+                self.manager.complete_unsubmitted_request(request_id, status)
+            }
+        }
+    }
+
     fn handle_requests<'a>(
         self: &Arc<Self>,
         requests: impl Iterator<Item = &'a mut BlockFifoRequest>,
     ) {
-        let mut c_requests: [MaybeUninit<Request>; MAX_REQUESTS] =
-            unsafe { MaybeUninit::uninit().assume_init() };
-        let mut count = 0;
+        let mut decoded_requests = DecodedRequests::default();
         for request in requests {
             match self.helper.decode_fifo_request(self.clone(), request) {
                 Ok(DecodedRequest { operation: Operation::CloseVmo, request_id, .. }) => {
-                    self.complete_request(request_id, zx::Status::OK);
+                    self.manager.complete_unsubmitted_request(request_id, zx::Status::OK);
                 }
                 Ok(mut request) => {
                     let request_id = request.request_id;
+                    // Strip the PRE_BARRIER flag if we don't support it, and simulate the barrier
+                    // with a pre-flush.
+                    if !self.manager.info.device_flags().contains(fblock::Flag::BARRIER_SUPPORT)
+                        && request.operation.take_write_flag(WriteFlags::PRE_BARRIER)
+                        && self.pre_flush(request_id).is_err()
+                    {
+                        continue;
+                    }
+                    // Strip the FORCE_ACCESS flag if we don't support it, and simulate the FUA with
+                    // a post-flush.
+                    let simulate_fua =
+                        !self.manager.info.device_flags().contains(fblock::Flag::FUA_SUPPORT)
+                            && request.operation.take_write_flag(WriteFlags::FORCE_ACCESS);
+                    if simulate_fua {
+                        // Account for the additional request we need at the end.
+                        self.manager.active_requests.request(request_id).count += 1;
+                    }
+
                     loop {
-                        let map_result = self.helper.map_request(
+                        let result = self.helper.map_request(
                             request,
-                            &mut self.helper.session_manager.active_requests.request(request_id),
+                            &mut self.manager.active_requests.request(request_id),
                         );
-                        match map_result {
+                        match result {
                             Ok((
-                                DecodedRequest { request_id, operation, trace_flow_id, vmo },
+                                DecodedRequest { request_id, operation, vmo, trace_flow_id },
                                 remainder,
                             )) => {
-                                // We are handing out unowned references to the VMO here.  This
-                                // is safe because the VMO bin holds references to any closed
-                                // VMOs until all preceding operations have finished.
-                                c_requests[count].write(Request {
+                                // We are handing out unowned references to the VMO here.  This is
+                                // safe because the VMO bin holds references to any closed VMOs
+                                // until all preceding operations have finished.
+                                decoded_requests.push(Request {
                                     request_id,
                                     operation,
                                     trace_flow_id,
@@ -276,16 +406,10 @@ impl Session {
                                             .unwrap_or(zx::sys::ZX_HANDLE_INVALID),
                                     ),
                                 });
-                                count += 1;
-                                if count == MAX_REQUESTS {
-                                    unsafe {
-                                        (self.manager.callbacks.on_requests)(
-                                            self.manager.callbacks.context,
-                                            c_requests[0].as_mut_ptr(),
-                                            count,
-                                        );
-                                    }
-                                    count = 0;
+
+                                if decoded_requests.is_full() {
+                                    self.manager.submit_requests(&mut decoded_requests);
+                                    decoded_requests.clear();
                                 }
                                 if let Some(r) = remainder {
                                     request = r;
@@ -294,29 +418,23 @@ impl Session {
                                 }
                             }
                             Err(status) => {
-                                self.complete_request(request_id, status);
+                                self.manager.complete_unsubmitted_request(request_id, status);
                                 break;
                             }
                         }
+                    }
+
+                    if simulate_fua {
+                        self.post_flush(request_id, &mut decoded_requests);
                     }
                 }
                 Err(None) => {}
                 Err(Some(response)) => self.send_response(response),
             }
         }
-        if count > 0 {
-            unsafe {
-                (self.manager.callbacks.on_requests)(
-                    self.manager.callbacks.context,
-                    c_requests[0].as_mut_ptr(),
-                    count,
-                );
-            }
+        if !decoded_requests.is_empty() {
+            self.manager.submit_requests(&mut decoded_requests);
         }
-    }
-
-    fn complete_request(&self, request_id: RequestId, status: zx::Status) {
-        self.manager.complete_request(request_id, status);
     }
 
     fn send_response(&self, response: BlockFifoResponse) {
@@ -349,7 +467,7 @@ impl Drop for Session {
             open_sessions.is_empty()
         };
         if notify {
-            self.manager.condvar.notify_all();
+            self.manager.open_sessions_condvar.notify_all();
         }
     }
 }
@@ -443,6 +561,49 @@ impl PartitionInfo {
     }
 }
 
+struct DecodedRequests {
+    requests: [MaybeUninit<Request>; MAX_REQUESTS],
+    count: usize,
+}
+
+impl Default for DecodedRequests {
+    fn default() -> Self {
+        Self { requests: unsafe { MaybeUninit::uninit().assume_init() }, count: 0 }
+    }
+}
+
+impl DecodedRequests {
+    fn push(&mut self, request: Request) {
+        assert!(self.count < MAX_REQUESTS);
+        self.requests[self.count].write(request);
+        self.count += 1;
+    }
+
+    fn is_full(&self) -> bool {
+        self.count == MAX_REQUESTS
+    }
+
+    fn clear(&mut self) {
+        self.count = 0;
+    }
+}
+
+impl Deref for DecodedRequests {
+    type Target = [Request];
+
+    fn deref(&self) -> &Self::Target {
+        // SAFETY: We wrote the request in [`Self::push`].
+        unsafe { std::slice::from_raw_parts(self.requests[0].as_ptr(), self.count) }
+    }
+}
+
+impl DerefMut for DecodedRequests {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        // SAFETY: We wrote the request in [`Self::push`].
+        unsafe { std::slice::from_raw_parts_mut(self.requests[0].as_mut_ptr(), self.count) }
+    }
+}
+
 /// # Safety
 ///
 /// All callbacks in `callbacks` must be safe.
@@ -455,7 +616,9 @@ pub unsafe extern "C" fn block_server_new(
         callbacks,
         open_sessions: Mutex::default(),
         active_requests: ActiveRequests::default(),
-        condvar: Condvar::new(),
+        open_sessions_condvar: Condvar::new(),
+        inflight_requests: Mutex::default(),
+        no_inflight_requests_condvar: Condvar::new(),
         mbox: ExecutorMailbox::new(),
         info: unsafe { partition_info.to_rust() },
     });

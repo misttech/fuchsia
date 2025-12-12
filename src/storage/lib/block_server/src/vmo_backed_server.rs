@@ -4,7 +4,7 @@
 
 use anyhow::{Error, anyhow};
 use block_server::async_interface::{Interface, SessionManager};
-use block_server::{BlockInfo, BlockServer, DeviceInfo, ReadOptions, WriteOptions};
+use block_server::{BlockInfo, BlockServer, DeviceInfo, ReadOptions, WriteFlags, WriteOptions};
 use fidl::endpoints::{ClientEnd, FromClient, RequestStream, ServerEnd, create_endpoints};
 use fs_management::filesystem::BlockConnector;
 use fuchsia_sync::Mutex;
@@ -14,6 +14,7 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 use std::num::NonZero;
 use std::sync::Arc;
+use std::time::Duration;
 use {fidl_fuchsia_hardware_block as fblock, fidl_fuchsia_hardware_block_volume as fvolume};
 
 /// The Observer can silently discard writes, or fail them explicitly (zx::Status::IO is returned).
@@ -46,15 +47,11 @@ pub trait Observer: Send + Sync {
 
     // If [`VmoBackedServerOptions::write_tracking`] is enabled, `writes` is set to the batch since
     // last flush or barrier and can be freely modified.
-    fn barrier(&self, _writes: Option<&mut Writes>) {}
+    fn flush(&self, _writes: Option<&mut WriteCache>) {}
 
     // If [`VmoBackedServerOptions::write_tracking`] is enabled, `writes` is set to the batch since
     // last flush or barrier and can be freely modified.
-    fn flush(&self, _writes: Option<&mut Writes>) {}
-
-    // If [`VmoBackedServerOptions::write_tracking`] is enabled, `writes` is set to the batch since
-    // last flush or barrier and can be freely modified.
-    fn close(&self, _writes: Option<&mut Writes>) {}
+    fn close(&self, _writes: Option<&mut WriteCache>) {}
 
     fn trim(&self, _device_block_offset: u64, _block_count: u32) {}
 }
@@ -92,9 +89,12 @@ pub struct VmoBackedServerOptions<'a> {
     pub initial_contents: InitialContents<'a>,
     pub observer: Option<Box<dyn Observer>>,
     /// Enables write tracking so [`Observer::flush`] and [`Observer::barrier`] will be provided
-    /// with [`Writes`].
+    /// with [`WriteCache`].
     /// Note that this is expensive and should mainly be used for tests.
     pub write_tracking: bool,
+    /// If set, each operation will be delayed by a random duration <= this value, which is useful
+    /// for testing race conditions due to out-of-order block requests.
+    pub max_jitter_usec: Option<u64>,
 }
 
 impl Default for VmoBackedServerOptions<'_> {
@@ -109,6 +109,7 @@ impl Default for VmoBackedServerOptions<'_> {
             initial_contents: InitialContents::FromCapacity(0),
             observer: None,
             write_tracking: false,
+            max_jitter_usec: None,
         }
     }
 }
@@ -169,12 +170,13 @@ impl VmoBackedServerOptions<'_> {
                     block_size: self.block_size,
                     data,
                     observer: self.observer,
-                    write_tracking: if self.write_tracking {
-                        Some(Mutex::new(Writes::new(self.block_size as u64)))
+                    write_cache: if self.write_tracking {
+                        Some(Mutex::new(WriteCache::new(self.block_size as u64)))
                     } else {
                         None
                     },
                     fscrypt_info: fscrypt_info.clone(),
+                    max_jitter_usec: self.max_jitter_usec,
                 }),
             ),
             fscrypt_info,
@@ -186,7 +188,7 @@ impl VmoBackedServer {
     /// Handles `requests`.  The future will resolve when the stream terminates.
     pub async fn serve(&self, requests: fvolume::VolumeRequestStream) -> Result<(), Error> {
         let res = self.server.handle_requests(requests).await;
-        self.server.session_manager().interface().client_closed();
+        self.server.session_manager().interface().client_closed()?;
         res
     }
 
@@ -231,13 +233,13 @@ impl BlockConnector for VmoBackedServerConnector {
 
 /// Keeps track of a sequence of writes since the last flush or barrier, and allows them to be
 /// arbitrarily modified or re-ordered.
-pub struct Writes {
+pub struct WriteCache {
     block_size: u64,
     block_offsets: Vec<u64>,
     buffer: Vec<u8>,
 }
 
-impl Writes {
+impl WriteCache {
     fn new(block_size: u64) -> Self {
         Self { block_size, block_offsets: vec![], buffer: vec![] }
     }
@@ -289,6 +291,11 @@ impl Writes {
         }
         self.buffer.clear();
         Ok(())
+    }
+
+    /// Returns the number of writes in the batch.
+    pub fn len(&self) -> usize {
+        self.block_offsets.len()
     }
 
     /// Returns an iterator over the batch of writes (in temporal sequence).
@@ -390,18 +397,28 @@ struct Data {
     block_size: u32,
     data: zx::Vmo,
     observer: Option<Box<dyn Observer>>,
-    write_tracking: Option<Mutex<Writes>>,
+    write_cache: Option<Mutex<WriteCache>>,
     fscrypt_info: Arc<Mutex<FscryptInfo>>,
+    max_jitter_usec: Option<u64>,
 }
 
 impl Data {
-    fn client_closed(&self) {
-        if let Some(observer) = self.observer.as_ref() {
-            let mut write_tracking = self.write_tracking.as_ref().map(|w| w.lock());
-            match write_tracking.as_mut() {
-                Some(w) => observer.close(Some(&mut *w)),
-                None => observer.close(None),
+    fn jitter(&self) -> Option<fuchsia_async::Timer> {
+        self.max_jitter_usec
+            .map(|max| fuchsia_async::Timer::new(Duration::from_micros(rand::random_range(0..max))))
+    }
+
+    fn client_closed(&self) -> Result<(), zx::Status> {
+        if let Some(mut cache) = self.write_cache.as_ref().map(|w| w.lock()) {
+            if let Some(observer) = self.observer.as_ref() {
+                observer.close(Some(&mut *cache));
             }
+            cache.apply(&self.data)
+        } else {
+            if let Some(observer) = self.observer.as_ref() {
+                observer.close(None);
+            }
+            Ok(())
         }
     }
 }
@@ -420,6 +437,9 @@ impl Interface for Data {
         opts: ReadOptions,
         _trace_flow_id: Option<NonZero<u64>>,
     ) -> Result<(), zx::Status> {
+        if let Some(jitter) = self.jitter() {
+            jitter.await;
+        }
         if let Some(observer) = self.observer.as_ref() {
             observer.read(device_block_offset, block_count, vmo, vmo_offset);
         }
@@ -430,7 +450,7 @@ impl Interface for Data {
         if device_block_offset + block_count as u64 > self.info.block_count().unwrap() {
             Err(zx::Status::OUT_OF_RANGE)
         } else {
-            let mut data = if let Some(tracking) = self.write_tracking.as_ref() {
+            let mut data = if let Some(tracking) = self.write_cache.as_ref() {
                 let mut data = vec![0u8; block_count as usize * self.block_size as usize];
                 tracking.lock().read(&self.data, device_block_offset, &mut data[..])?;
                 data
@@ -464,11 +484,19 @@ impl Interface for Data {
         opts: WriteOptions,
         _trace_flow_id: Option<NonZero<u64>>,
     ) -> Result<(), zx::Status> {
+        if let Some(jitter) = self.jitter() {
+            jitter.await;
+        }
         if let Some(observer) = self.observer.as_ref() {
             match observer.write(device_block_offset, block_count, vmo, vmo_offset, opts) {
                 WriteAction::Write => {}
                 WriteAction::Discard => return Ok(()),
                 WriteAction::Fail => return Err(zx::Status::IO),
+            }
+        }
+        if opts.flags.contains(WriteFlags::PRE_BARRIER) {
+            if let Some(cache) = self.write_cache.as_ref() {
+                cache.lock().apply(&self.data)?;
             }
         }
         if let Some(max) = self.info.max_transfer_blocks().as_ref() {
@@ -480,7 +508,9 @@ impl Interface for Data {
         } else {
             let mut data =
                 vmo.read_to_vec(vmo_offset, block_count as u64 * self.block_size as u64)?;
-            if let Some(tracking) = self.write_tracking.as_ref() {
+            if !opts.flags.contains(WriteFlags::FORCE_ACCESS)
+                && let Some(tracking) = self.write_cache.as_ref()
+            {
                 tracking.lock().insert(device_block_offset, &data[..]);
             }
             if opts.inline_crypto_options.slot != 0xff {
@@ -493,30 +523,23 @@ impl Interface for Data {
                         .map_err(|_| zx::Status::IO)?;
                 }
             }
-            self.data.write(&data[..], device_block_offset * self.block_size as u64)
+            self.data.write(&data[..], device_block_offset * self.block_size as u64)?;
+            Ok(())
         }
-    }
-
-    fn barrier(&self) -> Result<(), zx::Status> {
-        let mut write_tracking = self.write_tracking.as_ref().map(|w| w.lock());
-        if let Some(observer) = self.observer.as_ref() {
-            match write_tracking.as_mut() {
-                Some(w) => observer.barrier(Some(&mut *w)),
-                None => observer.barrier(None),
-            }
-        }
-        if let Some(w) = write_tracking.as_mut() { w.apply(&self.data) } else { Ok(()) }
     }
 
     async fn flush(&self, _trace_flow_id: Option<NonZero<u64>>) -> Result<(), zx::Status> {
-        let mut write_tracking = self.write_tracking.as_ref().map(|w| w.lock());
+        if let Some(jitter) = self.jitter() {
+            jitter.await;
+        }
+        let mut cache = self.write_cache.as_ref().map(|w| w.lock());
         if let Some(observer) = self.observer.as_ref() {
-            match write_tracking.as_mut() {
+            match cache.as_mut() {
                 Some(w) => observer.flush(Some(&mut *w)),
                 None => observer.flush(None),
             }
         }
-        if let Some(w) = write_tracking.as_mut() { w.apply(&self.data) } else { Ok(()) }
+        if let Some(w) = cache.as_mut() { w.apply(&self.data) } else { Ok(()) }
     }
 
     async fn trim(
@@ -525,6 +548,9 @@ impl Interface for Data {
         block_count: u32,
         _trace_flow_id: Option<NonZero<u64>>,
     ) -> Result<(), zx::Status> {
+        if let Some(jitter) = self.jitter() {
+            jitter.await;
+        }
         if let Some(observer) = self.observer.as_ref() {
             observer.trim(device_block_offset, block_count);
         }

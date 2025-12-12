@@ -49,6 +49,39 @@ closed protocol Session {
     }) error zx.Status;
 };
 
+type Flag = strict bits : uint32 {
+    /// All writes to the block device will fail.
+    READONLY = 0x00000001;
+
+    /// The block device may be removed from the device during operation.
+    REMOVABLE = 0x00000002;
+
+    /// The device has a bootdata partition map.
+    BOOTPART = 0x00000004;
+
+    /// The device provides trim support.
+    TRIM_SUPPORT = 0x00000008;
+
+    /// The device provides Force Unit Access (FUA) support.
+    ///
+    /// If this bit is unset, and a request is sent with the FORCE_ACCESS option set, the device
+    /// will simulate a FUA by executing a device flush after the request completes (but before
+    /// responding to the client).  Clients are strongly encouraged to probe for FUA support and
+    /// avoid usage of FORCE_ACCESS without device support, since this is expensive.
+    FUA_SUPPORT = 0x00000010;
+
+    /// The device provides zstd decompression support.
+    ZSTD_DECOMPRESSION_SUPPORT = 0x00000020;
+
+    /// The device provides Barrier support.
+    ///
+    /// If this bit is unset, and a request is sent with the PRE_BARRIER option set, the device
+    /// will simulate a barrier by executing a device flush before the request is submitted.
+    /// Clients are strongly encouraged to probe for barrier support and avoid usage of
+    /// PRE_BARRIER without device support, since this is expensive.
+    BARRIER_SUPPORT = 0x00000040;
+};
+
 type BlockInfo = struct {
     /// The number of blocks in this block device.
     block_count uint64;
@@ -61,25 +94,7 @@ type BlockInfo = struct {
     max_transfer_size uint32;
 
     /// Identifiers about the device.
-    flags @generated_name("Flag") strict bits : uint32 {
-        /// All writes to the block device will fail.
-        READONLY = 0x00000001;
-
-        /// The block device may be removed from the device during operation.
-        REMOVABLE = 0x00000002;
-
-        /// The device has a bootdata partition map.
-        BOOTPART = 0x00000004;
-
-        /// The device provides trim support.
-        TRIM_SUPPORT = 0x00000008;
-
-        /// The device provides fua support.
-        FUA_SUPPORT = 0x00000010;
-
-        /// The device provides zstd decompression support.
-        ZSTD_DECOMPRESSION_SUPPORT = 0x00000020;
-    };
+    flags Flag;
 };
 
 /// Describes a re-mapping of a block range.  See OffsetMap.

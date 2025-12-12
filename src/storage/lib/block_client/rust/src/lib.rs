@@ -1359,10 +1359,6 @@ mod tests {
                 unreachable!();
             }
 
-            fn barrier(&self) -> Result<(), zx::Status> {
-                unreachable!()
-            }
-
             async fn write(
                 &self,
                 _device_block_offset: u64,

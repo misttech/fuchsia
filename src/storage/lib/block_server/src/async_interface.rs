@@ -8,6 +8,7 @@ use super::{
 };
 use anyhow::Error;
 use block_protocol::{BlockFifoRequest, BlockFifoResponse, ReadOptions, WriteFlags, WriteOptions};
+use fidl_fuchsia_hardware_block::Flag;
 use futures::future::{Fuse, FusedFuture, join};
 use futures::stream::FuturesUnordered;
 use futures::{FutureExt, StreamExt, select_biased};
@@ -75,8 +76,7 @@ pub trait Interface: Send + Sync + Unpin + 'static {
         trace_flow_id: TraceFlowId,
     ) -> impl Future<Output = Result<(), zx::Status>> + Send;
 
-    /// Called for a request to write bytes. WriteOptions::PRE_BARRIER should never be seen
-    /// for this call. See barrier().
+    /// Called for a request to write bytes.
     fn write(
         &self,
         device_block_offset: u64,
@@ -86,14 +86,6 @@ pub trait Interface: Send + Sync + Unpin + 'static {
         opts: WriteOptions,
         trace_flow_id: TraceFlowId,
     ) -> impl Future<Output = Result<(), zx::Status>> + Send;
-
-    /// Indicates that all previously completed write operations should be made persistent prior to
-    /// any write operations issued after this call. It is not specified how the barrier affects
-    /// currently in-flight write operations. This corresponds to the use of the PRE_BARRIER flag
-    /// that can be used on a write request. Requests with that flag will be converted into
-    /// separate barrier and write calls, and the write call above will not ever include the
-    /// WriteOptions::PRE_BARRIER within opts.
-    fn barrier(&self) -> Result<(), zx::Status>;
 
     /// Called to flush the device.
     fn flush(
@@ -334,7 +326,7 @@ impl<I: Interface + ?Sized> Session<I> {
                             Ok((request, remainder, commit_decompression_buffers)) => {
                                 active_request_futures.push(self.process_fifo_request(
                                     request,
-                                    commit_decompression_buffers
+                                    commit_decompression_buffers,
                                 ));
                                 if let Some(remainder) = remainder {
                                     map_future.set(
@@ -375,19 +367,8 @@ impl<I: Interface + ?Sized> Session<I> {
                                 .map(|(_, response)| response),
                         );
                     }
-                    Ok(mut request) => {
-                        // If `request` contains WriteOptions::PRE_BARRIER, issue the barrier
-                        // prior to mapping the request. If the barrier fails, we can
-                        // immediately respond to the request without splitting it up.
-                        if let Err(status) = self.maybe_issue_barrier(&mut request) {
-                            let response = self
-                                .helper
-                                .session_manager
-                                .active_requests
-                                .complete_and_take_response(request.request_id, status)
-                                .map(|(_, r)| r);
-                            responses.extend(response);
-                        } else if map_future.is_terminated() {
+                    Ok(request) => {
+                        if map_future.is_terminated() {
                             map_future.set(self.map_request_or_get_response(request).fuse());
                         } else {
                             pending_mappings.push_back(request);
@@ -398,24 +379,6 @@ impl<I: Interface + ?Sized> Session<I> {
                 }
             }
         }
-    }
-
-    fn maybe_issue_barrier(&self, request: &mut DecodedRequest) -> Result<(), zx::Status> {
-        if let Operation::Write {
-            device_block_offset: _,
-            block_count: _,
-            _unused,
-            options,
-            vmo_offset: _,
-            ..
-        } = &mut request.operation
-        {
-            if options.flags.contains(WriteFlags::PRE_BARRIER) {
-                self.interface.barrier()?;
-                options.flags &= !WriteFlags::PRE_BARRIER;
-            }
-        }
-        Ok(())
     }
 
     async fn map_request_or_get_response(
@@ -441,6 +404,23 @@ impl<I: Interface + ?Sized> Session<I> {
         let mut active_requests;
         let active_request;
         let mut commit_decompression_buffers = false;
+        let flags = self.interface.get_info().as_ref().device_flags();
+        // Strip the PRE_BARRIER flag if we don't support it, and simulate the barrier with a
+        // pre-flush.
+        if !flags.contains(Flag::BARRIER_SUPPORT)
+            && request.operation.take_write_flag(WriteFlags::PRE_BARRIER)
+        {
+            if let Some(id) = request.trace_flow_id {
+                fuchsia_trace::async_instant!(
+                    fuchsia_trace::Id::from(id.get()),
+                    c"storage",
+                    c"block_server::SimulatedBarrier",
+                    "request_id" => request.request_id.0
+                );
+            }
+            self.interface.flush(request.trace_flow_id).await?;
+        }
+
         // Handle decompressed read operations by turning them into regular read operations.
         match request.operation {
             Operation::StartDecompressedRead {
@@ -538,6 +518,9 @@ impl<I: Interface + ?Sized> Session<I> {
             }
         }
 
+        // NB: We propagate the FORCE_ACCESS flag to *both* request and remainder, even if we're
+        // using simulated FUA.  However, in `process_fifo_request`, we'll only do the post-flush
+        // once the last request completes.
         self.helper
             .map_request(request, active_request)
             .map(|(request, remainder)| (request, remainder, commit_decompression_buffers))
@@ -549,6 +532,7 @@ impl<I: Interface + ?Sized> Session<I> {
         DecodedRequest { request_id, operation, vmo, trace_flow_id }: DecodedRequest,
         commit_decompression_buffers: bool,
     ) -> Option<BlockFifoResponse> {
+        let mut needs_postflush = false;
         let result = match operation {
             Operation::Read { device_block_offset, block_count, _unused, vmo_offset, options } => {
                 join(
@@ -607,7 +591,22 @@ impl<I: Interface + ?Sized> Session<I> {
                 .await
                 .0
             }
-            Operation::Write { device_block_offset, block_count, _unused, vmo_offset, options } => {
+            Operation::Write {
+                device_block_offset,
+                block_count,
+                _unused,
+                vmo_offset,
+                mut options,
+            } => {
+                // Strip the FORCE_ACCESS flag if we don't support it, and simulate the FUA with a
+                // post-flush.
+                if options.flags.contains(WriteFlags::FORCE_ACCESS) {
+                    let flags = self.interface.get_info().as_ref().device_flags();
+                    if !flags.contains(Flag::FUA_SUPPORT) {
+                        options.flags.remove(WriteFlags::FORCE_ACCESS);
+                        needs_postflush = true;
+                    }
+                }
                 self.interface
                     .write(
                         device_block_offset,
@@ -630,11 +629,30 @@ impl<I: Interface + ?Sized> Session<I> {
                 unreachable!()
             }
         };
-        self.helper
+        let response = self
+            .helper
             .session_manager
             .active_requests
             .complete_and_take_response(request_id, result.into())
-            .map(|(_, r)| r)
+            .map(|(_, r)| r);
+        if let Some(mut response) = response {
+            // Only do the post-flush on the very last request, and only if successful.
+            if zx::Status::from_raw(response.status) == zx::Status::OK && needs_postflush {
+                if let Some(id) = trace_flow_id {
+                    fuchsia_trace::async_instant!(
+                        fuchsia_trace::Id::from(id.get()),
+                        c"storage",
+                        c"block_server::SimulatedFUA",
+                        "request_id" => request_id.0
+                    );
+                }
+                response.status =
+                    zx::Status::from(self.interface.flush(trace_flow_id).await).into_raw();
+            }
+            Some(response)
+        } else {
+            response
+        }
     }
 }
 

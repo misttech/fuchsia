@@ -424,7 +424,7 @@ zx_status_t SdmmcBlockDevice::ProbeMmcLocked() {
       FDF_LOGL(ERROR, logger(), "Barriers are unexpectedly disabled.");
       return ZX_ERR_BAD_STATE;
     }
-    barrier_enabled_ = true;
+    block_info_.flags |= FLAG_BARRIER_SUPPORT;
   }
 
   if (raw_ext_csd_[MMC_EXT_CSD_CACHE_FLUSH_POLICY] & MMC_EXT_CSD_CACHE_FLUSH_POLICY_FIFO) {
@@ -694,8 +694,7 @@ void SdmmcBlockDevice::MmcSetInspectProperties() {
   properties_.cache_enabled_ = root_.CreateBool("cache_enabled", cache_enabled_);
   properties_.cache_flush_fifo_ = root_.CreateBool("cache_flush_fifo", cache_flush_fifo_);
   properties_.barrier_supported_ =
-      root_.CreateBool("barrier_supported",
-                       raw_ext_csd_[MMC_EXT_CSD_BARRIER_SUPPORT] & MMC_EXT_CSD_BARRIER_SUPPORTED);
+      root_.CreateBool("barrier_supported", block_info_.flags & FLAG_BARRIER_SUPPORT);
   properties_.trim_enabled_ =
       root_.CreateBool("trim_enabled", block_info_.flags & FLAG_TRIM_SUPPORT);
   properties_.max_packed_reads_ =

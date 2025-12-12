@@ -87,10 +87,6 @@ impl Interface for MockInterface {
         Ok(())
     }
 
-    fn barrier(&self) -> Result<(), zx::Status> {
-        Ok(())
-    }
-
     async fn trim(
         &self,
         _device_block_offset: u64,

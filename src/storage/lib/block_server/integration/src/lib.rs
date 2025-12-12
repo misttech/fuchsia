@@ -8,13 +8,13 @@ use block_server::{BlockInfo, DeviceInfo};
 use fidl_fuchsia_hardware_block_driver::{BlockIoFlag, BlockOpcode};
 use std::num::NonZero;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering};
 use test_case::test_case;
 use vmo_backed_block_server::{InitialContents, Observer, VmoBackedServerOptions};
 use zx::{AsHandleRef, HandleBased as _};
 use {
     fidl_fuchsia_hardware_block as fblock, fidl_fuchsia_hardware_block_volume as fvolume,
-    fidl_fuchsia_io as fio, fuchsia_async as fasync,
+    fidl_fuchsia_hardware_ramdisk as framdisk, fidl_fuchsia_io as fio, fuchsia_async as fasync,
 };
 
 // Make the block device big enough so that we can have a request which creates more than
@@ -553,4 +553,322 @@ async fn test_gpt_passthrough_is_enabled() {
 
     runner.shutdown().await;
     ramdisk.destroy_and_wait_for_removal().await.unwrap();
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BarrierFuaTestCase {
+    SimulatedBarrier,
+    Barrier,
+    SimulatedFua,
+    Fua,
+}
+
+#[test_case(BarrierFuaTestCase::SimulatedBarrier; "simulated_barrier")]
+#[test_case(BarrierFuaTestCase::Barrier; "barrier")]
+#[test_case(BarrierFuaTestCase::SimulatedFua; "simulated_fua")]
+#[test_case(BarrierFuaTestCase::Fua; "fua")]
+#[fuchsia::test]
+async fn test_barriers_and_fua_rust_server(case: BarrierFuaTestCase) {
+    let (proxy, stream) = fidl::endpoints::create_proxy_and_stream::<fvolume::VolumeMarker>();
+
+    /// An Observer that shuffles writes and discards some of the tail since last flush/barrier.
+    /// It also verifies the correct number of flushes occurred.
+    struct ShufflingObserver(AtomicUsize, Arc<AtomicBool>);
+    let closed: Arc<AtomicBool> = Arc::new(AtomicBool::new(false));
+    let closed_clone = closed.clone();
+
+    impl Drop for ShufflingObserver {
+        fn drop(&mut self) {
+            assert_eq!(self.0.load(Ordering::Relaxed), 0);
+        }
+    }
+
+    impl vmo_backed_block_server::Observer for ShufflingObserver {
+        fn flush(&self, _writes: Option<&mut vmo_backed_block_server::WriteCache>) {
+            assert_ne!(self.0.fetch_sub(1, Ordering::Relaxed), 0);
+        }
+        fn close(&self, writes: Option<&mut vmo_backed_block_server::WriteCache>) {
+            if let Some(writes) = writes {
+                writes.shuffle();
+                writes.discard_some();
+            }
+            self.1.store(true, Ordering::Relaxed);
+        }
+    }
+
+    let device_flags = match case {
+        BarrierFuaTestCase::Barrier => fblock::Flag::BARRIER_SUPPORT,
+        BarrierFuaTestCase::Fua => fblock::Flag::FUA_SUPPORT,
+        _ => fblock::Flag::empty(),
+    };
+    let expected_flushes = match case {
+        BarrierFuaTestCase::SimulatedBarrier | BarrierFuaTestCase::SimulatedFua => 1,
+        _ => 0,
+    };
+    let vmo = zx::Vmo::create(4 * BLOCK_SIZE as u64).unwrap();
+    let duplicate_vmo = vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap();
+    let server = fasync::Task::spawn(async move {
+        let block_server = VmoBackedServerOptions {
+            initial_contents: InitialContents::FromVmo(duplicate_vmo),
+            block_size: BLOCK_SIZE,
+            info: DeviceInfo::Block(BlockInfo {
+                device_flags,
+                max_transfer_blocks: NonZero::new(1),
+                ..Default::default()
+            }),
+            observer: Some(Box::new(ShufflingObserver(
+                AtomicUsize::new(expected_flushes),
+                closed_clone,
+            ))),
+            write_tracking: true,
+            max_jitter_usec: Some(5000),
+            ..Default::default()
+        }
+        .build()
+        .unwrap();
+        block_server.serve(stream).await.unwrap();
+    });
+
+    {
+        let (session_proxy, session_server) = fidl::endpoints::create_proxy();
+
+        proxy.open_session(session_server).unwrap();
+
+        let transfer_vmo = zx::Vmo::create(4 * BLOCK_SIZE as u64).unwrap();
+        let vmo_id = session_proxy
+            .attach_vmo(transfer_vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap())
+            .await
+            .unwrap()
+            .unwrap();
+
+        let mut fifo = fasync::Fifo::from_fifo(session_proxy.get_fifo().await.unwrap().unwrap());
+        let (mut reader, mut writer) = fifo.async_io();
+
+        // Perform two writes, with the first having FUA or the second having PRE_BARRIER.
+        // Both writes are big enough that they need to be split.
+        transfer_vmo.write(&[0x11u8; BLOCK_SIZE as usize], 0).expect("vmo write failed");
+        transfer_vmo
+            .write(&[0x22u8; BLOCK_SIZE as usize], 1 * BLOCK_SIZE as u64)
+            .expect("vmo write failed");
+        transfer_vmo
+            .write(&[0x33u8; BLOCK_SIZE as usize], 2 * BLOCK_SIZE as u64)
+            .expect("vmo write failed");
+        transfer_vmo
+            .write(&[0x44u8; BLOCK_SIZE as usize], 3 * BLOCK_SIZE as u64)
+            .expect("vmo write failed");
+
+        let write1_flags = match case {
+            BarrierFuaTestCase::Fua | BarrierFuaTestCase::SimulatedFua => {
+                BlockIoFlag::FORCE_ACCESS.bits()
+            }
+            _ => BlockIoFlag::empty().bits(),
+        };
+        let write2_flags = match case {
+            BarrierFuaTestCase::Barrier | BarrierFuaTestCase::SimulatedBarrier => {
+                BlockIoFlag::PRE_BARRIER.bits()
+            }
+            _ => BlockIoFlag::empty().bits(),
+        };
+
+        let mut response = BlockFifoResponse::default();
+        writer
+            .write_entries(&BlockFifoRequest {
+                command: BlockFifoCommand {
+                    opcode: BlockOpcode::Write.into_primitive(),
+                    flags: write1_flags,
+                    ..Default::default()
+                },
+                vmoid: vmo_id.id,
+                dev_offset: 0,
+                length: 2,
+                vmo_offset: 0,
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+        reader.read_entries(&mut response).await.unwrap();
+        assert_eq!(response.status, zx::sys::ZX_OK);
+        writer
+            .write_entries(&BlockFifoRequest {
+                command: BlockFifoCommand {
+                    opcode: BlockOpcode::Write.into_primitive(),
+                    flags: write2_flags,
+                    ..Default::default()
+                },
+                vmoid: vmo_id.id,
+                dev_offset: 2,
+                length: 2,
+                vmo_offset: 2,
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+        reader.read_entries(&mut response).await.unwrap();
+        assert_eq!(response.status, zx::sys::ZX_OK);
+    }
+    drop(proxy);
+    server.await;
+
+    assert!(closed.load(Ordering::Relaxed));
+
+    let bs = BLOCK_SIZE as usize;
+    let vmo_contents = vmo.read_to_vec::<u8>(0, 4 * BLOCK_SIZE as u64).unwrap();
+    // If *either* blocks 2,3 were written, then *both* of blocks 0,1 must have been written too.
+    if &vmo_contents[2 * bs..3 * bs] == &[0x33u8; BLOCK_SIZE as usize]
+        || &vmo_contents[3 * bs..] == &[0x44u8; BLOCK_SIZE as usize]
+    {
+        assert!(
+            &vmo_contents[0..bs] == &[0x11u8; BLOCK_SIZE as usize]
+                && &vmo_contents[bs..2 * bs] == &[0x22u8; BLOCK_SIZE as usize],
+            "Writes were reordered across barrier"
+        );
+    }
+}
+
+#[test_case(BarrierFuaTestCase::SimulatedBarrier; "simulated_barrier")]
+#[test_case(BarrierFuaTestCase::Barrier; "barrier")]
+#[test_case(BarrierFuaTestCase::SimulatedFua; "simulated_fua")]
+#[test_case(BarrierFuaTestCase::Fua; "fua")]
+// TODO(https://fxbug.dev/466455535): FUA/barrier tests causes deadlocks in the ramdisk driver
+#[ignore]
+#[fuchsia::test]
+async fn test_barriers_and_fua_cpp_server(case: BarrierFuaTestCase) {
+    let (proxy, server) = fidl::endpoints::create_proxy::<fvolume::VolumeMarker>();
+
+    let device_flags = match case {
+        BarrierFuaTestCase::Barrier => fblock::Flag::BARRIER_SUPPORT,
+        BarrierFuaTestCase::Fua => fblock::Flag::FUA_SUPPORT,
+        _ => fblock::Flag::empty(),
+    };
+    let ramdisk = ramdevice_client::RamdiskClientBuilder::new(BLOCK_SIZE as u64, NUM_BLOCKS)
+        .use_v2()
+        .max_transfer_blocks(MAX_TRANSFER_BLOCKS)
+        .device_flags(device_flags)
+        .build()
+        .await
+        .expect("Failed to create ramdisk");
+    ramdisk.connect(server.into_channel().into()).expect("Failed to connect to ramdisk");
+
+    let ramdisk_proxy = ramdisk.open_ramdisk().expect("failed to open ramdisk protocol");
+    ramdisk_proxy
+        .set_flags(
+            framdisk::RamdiskFlag::RESUME_ON_WAKE
+                | framdisk::RamdiskFlag::DISCARD_NOT_FLUSHED_ON_WAKE,
+        )
+        .await
+        .expect("set_flags failed");
+
+    ramdisk_proxy.sleep_after(2).await.expect("sleep_after failed");
+
+    let (session_proxy, session_server) = fidl::endpoints::create_proxy();
+    proxy.open_session(session_server).unwrap();
+
+    let vmo = zx::Vmo::create(REQ_SIZE).unwrap();
+    let vmo_id = session_proxy
+        .attach_vmo(vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap())
+        .await
+        .unwrap()
+        .unwrap();
+
+    let mut fifo = fasync::Fifo::from_fifo(session_proxy.get_fifo().await.unwrap().unwrap());
+    let (mut reader, mut writer) = fifo.async_io();
+
+    // Perform two writes, the second with PRE_BARRIER set.
+    vmo.write(&[0x11u8; BLOCK_SIZE as usize], 0).expect("vmo write failed");
+    vmo.write(&[0x22u8; BLOCK_SIZE as usize], BLOCK_SIZE as u64).expect("vmo write failed");
+
+    let write1_flags = match case {
+        BarrierFuaTestCase::Fua | BarrierFuaTestCase::SimulatedFua => {
+            BlockIoFlag::FORCE_ACCESS.bits()
+        }
+        _ => BlockIoFlag::empty().bits(),
+    };
+    let write2_flags = match case {
+        BarrierFuaTestCase::Barrier | BarrierFuaTestCase::SimulatedBarrier => {
+            BlockIoFlag::PRE_BARRIER.bits()
+        }
+        _ => BlockIoFlag::empty().bits(),
+    };
+
+    let mut response = BlockFifoResponse::default();
+    writer
+        .write_entries(&BlockFifoRequest {
+            command: BlockFifoCommand {
+                opcode: BlockOpcode::Write.into_primitive(),
+                flags: write1_flags,
+                ..Default::default()
+            },
+            vmoid: vmo_id.id,
+            dev_offset: 0,
+            length: 1,
+            vmo_offset: 0,
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+    reader.read_entries(&mut response).await.unwrap();
+    assert_eq!(response.status, zx::sys::ZX_OK);
+
+    writer
+        .write_entries(&BlockFifoRequest {
+            command: BlockFifoCommand {
+                opcode: BlockOpcode::Write.into_primitive(),
+                flags: write2_flags,
+                ..Default::default()
+            },
+            vmoid: vmo_id.id,
+            dev_offset: 1,
+            length: 1,
+            vmo_offset: 1,
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+
+    futures::join!(
+        async {
+            // Once we're received both writes, wake up, which will discard unflushed blocks.
+            loop {
+                let counts =
+                    ramdisk_proxy.get_block_counts().await.expect("get_block_counts failed");
+                if counts.received >= 2 {
+                    break;
+                }
+                fasync::Timer::new(std::time::Duration::from_millis(10)).await;
+            }
+            ramdisk_proxy.wake().await.expect("wake failed");
+        },
+        async {
+            // No response will be delivered until wake is called.
+            reader.read_entries(&mut response).await.unwrap();
+        },
+    );
+    assert_eq!(response.status, zx::sys::ZX_OK);
+
+    vmo.write(&[0u8; BLOCK_SIZE as usize * 2], 0).unwrap();
+    writer
+        .write_entries(&BlockFifoRequest {
+            command: BlockFifoCommand {
+                opcode: BlockOpcode::Read.into_primitive(),
+                ..Default::default()
+            },
+            vmoid: vmo_id.id,
+            dev_offset: 0,
+            length: 2,
+            vmo_offset: 0,
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+    reader.read_entries(&mut response).await.unwrap();
+    assert_eq!(response.status, zx::sys::ZX_OK);
+
+    let bs = BLOCK_SIZE as usize;
+    let vmo_contents = vmo.read_to_vec::<u8>(0, BLOCK_SIZE as u64 * 2).unwrap();
+
+    // Write 1 should be present.
+    assert_eq!(&vmo_contents[0..bs], &[0x11u8; BLOCK_SIZE as usize], "Write 1 was lost!");
+
+    // Write 2 should be discarded.
+    assert_ne!(&vmo_contents[bs..], &[0x22u8; BLOCK_SIZE as usize], "Write 2 was written!");
 }

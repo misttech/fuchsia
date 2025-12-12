@@ -1659,7 +1659,7 @@ mod tests {
     }
 
     impl vmo_backed_block_server::Observer for ShufflingObserver {
-        fn flush(&self, writes: Option<&mut vmo_backed_block_server::Writes>) {
+        fn flush(&self, writes: Option<&mut vmo_backed_block_server::WriteCache>) {
             if self.start.load(Ordering::Relaxed) {
                 let Some(writes) = writes else { unreachable!() };
                 if writes
@@ -1674,7 +1674,7 @@ mod tests {
             }
         }
 
-        fn close(&self, writes: Option<&mut vmo_backed_block_server::Writes>) {
+        fn close(&self, writes: Option<&mut vmo_backed_block_server::WriteCache>) {
             // Always shuffle every write which had yet to be flushed when the client closed.
             if self.start.load(Ordering::Relaxed) {
                 let Some(writes) = writes else { unreachable!() };

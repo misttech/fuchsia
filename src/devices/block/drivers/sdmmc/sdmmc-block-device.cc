@@ -738,6 +738,9 @@ zx_status_t SdmmcBlockDevice::Flush() {
 }
 
 zx_status_t SdmmcBlockDevice::Barrier() {
+  // If BARRIER_SUPPORT is unset, the block server library should never send PRE_BARRIER requests.
+  ZX_ASSERT(block_info_.flags & FLAG_BARRIER_SUPPORT);
+
   if (!cache_enabled_) {
     return ZX_OK;
   }
@@ -748,11 +751,6 @@ zx_status_t SdmmcBlockDevice::Barrier() {
   // If the device uses a FIFO cache policy, barriers do nothing so return early.
   if (cache_flush_fifo_) {
     return ZX_OK;
-  }
-
-  // If the device does not have barriers enabled, flush the device instead.
-  if (!barrier_enabled_) {
-    return Flush();
   }
 
   zx_status_t st = MmcDoSwitch(MMC_EXT_CSD_FLUSH_CACHE, MMC_EXT_CSD_BARRIER_MASK);

@@ -306,7 +306,6 @@ class SdmmcBlockDevice : public fidl::Server<fuchsia_power_broker::ElementRunner
   bool is_sd_ = false;
   bool cache_enabled_ = false;
   bool cache_flush_fifo_ = false;
-  bool barrier_enabled_ = false;
 
   uint32_t max_packed_reads_effective_ = 0;   // Use command packing up to this many reads.
   uint32_t max_packed_writes_effective_ = 0;  // Use command packing up to this many writes.

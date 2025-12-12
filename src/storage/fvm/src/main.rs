@@ -1746,10 +1746,6 @@ impl Interface for PartitionInterface {
         })
     }
 
-    fn barrier(&self) -> Result<(), zx::Status> {
-        return Err(zx::Status::NOT_SUPPORTED);
-    }
-
     async fn write(
         &self,
         device_block_offset: u64,
@@ -3246,6 +3242,10 @@ mod tests {
                 block_size: BLOCK_SIZE,
                 initial_contents: InitialContents::FromBuffer(&contents),
                 observer: Some(Box::new(Observer(expect_force_access.clone()))),
+                info: DeviceInfo::Block(BlockInfo {
+                    device_flags: fblock::Flag::FUA_SUPPORT,
+                    ..Default::default()
+                }),
                 ..Default::default()
             }
             .build()
@@ -3295,7 +3295,7 @@ mod tests {
         struct Observer(Arc<AtomicU64>);
 
         impl vmo_backed_block_server::Observer for Observer {
-            fn flush(&self, _writes: Option<&mut vmo_backed_block_server::Writes>) {
+            fn flush(&self, _writes: Option<&mut vmo_backed_block_server::WriteCache>) {
                 self.0.fetch_add(1, Ordering::Relaxed);
             }
         }
