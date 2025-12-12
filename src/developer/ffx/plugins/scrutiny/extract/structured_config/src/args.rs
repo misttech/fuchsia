@@ -33,5 +33,5 @@ pub struct ScrutinyStructuredConfigCommand {
     /// absolute or working path-relative path to component tree configuration file that affects
     /// how component tree data is gathered.
     #[argh(option)]
-    pub component_tree_config: Option<PathBuf>,
+    pub component_tree_config: Vec<PathBuf>,
 }

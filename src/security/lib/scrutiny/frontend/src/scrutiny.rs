@@ -25,8 +25,12 @@ impl Scrutiny {
         Ok(Self { model_config: ModelConfig::from_product_bundle_recovery(path)? })
     }
 
-    pub fn set_component_tree_config_path(&mut self, path: impl AsRef<Path>) {
-        self.model_config.component_tree_config_path = Some(path.as_ref().to_path_buf());
+    pub fn set_component_tree_config_paths(&mut self, paths: &Vec<impl AsRef<Path>>) {
+        let mut path_bufs = Vec::new();
+        for p in paths {
+            path_bufs.push(p.as_ref().to_path_buf());
+        }
+        self.model_config.component_tree_config_paths = path_bufs;
     }
 
     pub fn collect(self) -> Result<ScrutinyArtifacts> {

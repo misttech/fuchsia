@@ -190,44 +190,49 @@ impl V2ComponentModelDataCollector {
         }
     }
 
-    fn load_dynamic_config(component_tree_config_path: &Option<PathBuf>) -> Result<DynamicConfig> {
-        let Some(component_tree_config_path) = component_tree_config_path else {
+    // Dynamic config may be represented across multiple files, e.g. platform vs product.
+    fn load_dynamic_config(component_tree_config_paths: &Vec<PathBuf>) -> Result<DynamicConfig> {
+        if component_tree_config_paths.len() == 0 {
             return Ok(DynamicConfig::default());
         };
 
-        let mut component_tree_config_file = File::open(component_tree_config_path)
-            .context("Failed to open component tree configuration file")?;
-        let component_tree_config: ComponentTreeConfig =
-            from_reader(&mut component_tree_config_file)
-                .context("Failed to parse component tree configuration file")?;
-
         let mut dynamic_components = HashMap::new();
-        for (moniker, dynamic_component) in component_tree_config.dynamic_components {
-            dynamic_components
-                .insert(moniker, (dynamic_component.url, dynamic_component.environment));
-        }
-
         let mut dynamic_dictionaries = HashMap::new();
-        for (moniker, dynamic_dictionary) in component_tree_config.dynamic_dictionaries {
-            let map: &mut HashMap<Name, Vec<(CapabilityTypeName, Name)>> =
-                dynamic_dictionaries.entry(moniker).or_default();
-            for (dictionary_name, capabilities) in dynamic_dictionary {
-                map.entry(dictionary_name).or_default().extend(match capabilities {
-                    DictionaryCapabilities::Protocols(protocols) => Box::new(
-                        protocols
-                            .into_iter()
-                            .map(|protocol_name| (CapabilityTypeName::Protocol, protocol_name)),
-                    )
-                        as Box<dyn Iterator<Item = (CapabilityTypeName, Name)>>,
-                    DictionaryCapabilities::Configs(configs) => Box::new(
-                        configs
-                            .into_iter()
-                            .map(|config_name| (CapabilityTypeName::Config, config_name)),
-                    )
-                        as Box<dyn Iterator<Item = (CapabilityTypeName, Name)>>,
-                });
+
+        for config_path in component_tree_config_paths {
+            let mut component_tree_config_file = File::open(config_path)
+                .context("Failed to open component tree configuration file")?;
+            let component_tree_config: ComponentTreeConfig =
+                from_reader(&mut component_tree_config_file)
+                    .context("Failed to parse component tree configuration file")?;
+
+            for (moniker, dynamic_component) in component_tree_config.dynamic_components {
+                dynamic_components
+                    .insert(moniker, (dynamic_component.url, dynamic_component.environment));
+            }
+
+            for (moniker, dynamic_dictionary) in component_tree_config.dynamic_dictionaries {
+                let map: &mut HashMap<Name, Vec<(CapabilityTypeName, Name)>> =
+                    dynamic_dictionaries.entry(moniker).or_default();
+                for (dictionary_name, capabilities) in dynamic_dictionary {
+                    map.entry(dictionary_name).or_default().extend(match capabilities {
+                        DictionaryCapabilities::Protocols(protocols) => Box::new(
+                            protocols
+                                .into_iter()
+                                .map(|protocol_name| (CapabilityTypeName::Protocol, protocol_name)),
+                        )
+                            as Box<dyn Iterator<Item = (CapabilityTypeName, Name)>>,
+                        DictionaryCapabilities::Configs(configs) => Box::new(
+                            configs
+                                .into_iter()
+                                .map(|config_name| (CapabilityTypeName::Config, config_name)),
+                        )
+                            as Box<dyn Iterator<Item = (CapabilityTypeName, Name)>>,
+                    });
+                }
             }
         }
+
         Ok(DynamicConfig { components: dynamic_components, dictionaries: dynamic_dictionaries })
     }
 
@@ -250,7 +255,8 @@ impl V2ComponentModelDataCollector {
             "V2ComponentModelDataCollector: Found v2 component declarations",
         );
 
-        let dynamic_config = Self::load_dynamic_config(&model.config().component_tree_config_path)?;
+        let dynamic_config =
+            Self::load_dynamic_config(&model.config().component_tree_config_paths)?;
         let build_result = builder.build_with_dynamic_config(
             dynamic_config,
             decls_by_url,

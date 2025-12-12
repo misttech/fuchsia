@@ -25,9 +25,9 @@ pub struct ModelConfig {
     pub blobs_directory: PathBuf,
     /// The delivery blob type for the blobs in 'blobs_directory'.
     pub delivery_blob_type: DeliveryBlobType,
-    /// Optional path to a component tree configuration used for customizing
+    /// Optional paths to component tree configurations used for customizing
     /// component tree data collection.
-    pub component_tree_config_path: Option<PathBuf>,
+    pub component_tree_config_paths: Vec<PathBuf>,
     /// Whether the model is is based on recovery-mode build artifacts such as the `/recovery` file
     /// in an update package, which is the ZBI installed for booting into recovery mode when
     /// installing an update.
@@ -79,7 +79,7 @@ impl ModelConfig {
             update_package_path,
             blobs_directory,
             delivery_blob_type,
-            component_tree_config_path: None,
+            component_tree_config_paths: Vec::new(),
             is_recovery,
         })
     }

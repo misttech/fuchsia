@@ -27,9 +27,7 @@ pub async fn verify(
     } else {
         Scrutiny::from_product_bundle(&cmd.product_bundle)
     }?;
-    if let Some(config) = &cmd.component_tree_config {
-        scrutiny.set_component_tree_config_path(config);
-    }
+    scrutiny.set_component_tree_config_paths(&cmd.component_tree_config);
     let artifacts = scrutiny.collect()?;
     let mut route_analysis =
         artifacts.get_capability_route_results(capability_types, &cmd.response_level)?;

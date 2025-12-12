@@ -16,9 +16,7 @@ pub async fn verify(cmd: &Command, recovery: bool) -> Result<HashSet<PathBuf>> {
         Scrutiny::from_product_bundle(&cmd.product_bundle)
     }?;
 
-    if let Some(component_tree_config) = &cmd.component_tree_config {
-        scrutiny.set_component_tree_config_path(component_tree_config)
-    }
+    scrutiny.set_component_tree_config_paths(&cmd.component_tree_config);
 
     let artifacts = scrutiny.collect()?;
 

@@ -17,7 +17,8 @@ use std::path::PathBuf;
     $ ffx scrutiny verify structured-config \
         --product-bundle $(fx get-build-dir)/obj/build/images/fuchsia/product_bundle \
         --policy path/to/policy
-        --component_tree_config path/to/config"#
+        --component-tree-config path/to/platform
+        --component-tree-config path/to/product"#
 )]
 pub struct Command {
     /// absolute or working directory-relative path to a policy file for structured configuration
@@ -31,5 +32,5 @@ pub struct Command {
     /// absolute or working path-relative path to component tree configuration file that affects
     /// how component tree data is gathered.
     #[argh(option)]
-    pub component_tree_config: Option<PathBuf>,
+    pub component_tree_config: Vec<PathBuf>,
 }

@@ -55,7 +55,7 @@
           "arg_name": "component-tree-config"
         }
       },
-      "optionality": "optional",
+      "optionality": "repeating",
       "long": "--component-tree-config",
       "short": null,
       "description": "absolute or working path-relative path to component tree configuration file that affects how component tree data is gathered.",

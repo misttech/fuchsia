@@ -26,9 +26,7 @@ impl FfxMain for ScrutinyStructuredConfigTool {
             Scrutiny::from_product_bundle(&self.cmd.product_bundle)
         }?;
 
-        if let Some(component_tree_config) = &self.cmd.component_tree_config {
-            scrutiny.set_component_tree_config_path(component_tree_config)
-        }
+        scrutiny.set_component_tree_config_paths(&self.cmd.component_tree_config);
 
         let artifacts = scrutiny.collect()?;
         let response = artifacts.extract_structured_config()?;

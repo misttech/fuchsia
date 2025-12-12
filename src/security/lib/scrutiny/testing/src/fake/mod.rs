@@ -20,7 +20,7 @@ pub fn fake_model_config() -> ModelConfig {
         update_package_path,
         blobs_directory,
         delivery_blob_type: DeliveryBlobType::Reserved,
-        component_tree_config_path: None,
+        component_tree_config_paths: Vec::new(),
         is_recovery: false,
     }
 }
