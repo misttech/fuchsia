@@ -165,9 +165,9 @@ pub async fn start_component(
                             dir_handle.into_channel(),
                         )));
                     }
-                    "/custom_artifacts" | "/test_data" => {
-                        // Mount custom_artifacts and test_data directory at root of container
-                        // We may want to transition to have these directories unique per component
+                    "/custom_artifacts" => {
+                        // Mount custom_artifacts directory at root of container
+                        // We may want to transition to have this directory unique per component
                         let dir_proxy =
                             fio::DirectorySynchronousProxy::new(dir_handle.into_channel());
                         mount_record

@@ -19,7 +19,7 @@ const DYNAMIC_SKIP_RESULT: &str = "SKIPPED";
 
 const LIST_TESTS_ARG: &str = "list_tests";
 const FILTER_ARG: &str = "filter=";
-const OUTPUT_PATH: &str = "/test_data/";
+const OUTPUT_PATH: &str = "{component_path}/test_data/";
 
 /// Runs the test component with `--gunit_list_tests` and returns the parsed test cases list.
 pub async fn get_cases_list_for_gtests(
