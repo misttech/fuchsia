@@ -43,6 +43,7 @@ cc_test_executable("unittest_bin") {
     "//sdk/lib/async-loop:async-loop-cpp",
     "//sdk/lib/async-loop:async-loop-default",
     "//sdk/lib/fdio",
+    "//sdk/lib/sys/cpp",
     "//src/lib/fxl:fxl_cli",
     "//src/lib/fxl/test:gtest_main",
     "//src/lib/json_parser",

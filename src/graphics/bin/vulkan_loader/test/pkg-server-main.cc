@@ -97,6 +97,10 @@ int main(int argc, const char* const* argv) {
     auto magma_service_dir = fbl::MakeRefCounted<fs::PseudoDir>();
     svc_dir->AddEntry("fuchsia.gpu.magma.Service", magma_service_dir);
 
+    auto magma_dependency_injection_dir = fbl::MakeRefCounted<fs::PseudoDir>();
+    svc_dir->AddEntry("fuchsia.gpu.magma.DependencyInjectionService",
+                      magma_dependency_injection_dir);
+
     auto service_instance_dir = fbl::MakeRefCounted<fs::PseudoDir>();
     magma_service_dir->AddEntry("some-instance-name", service_instance_dir);
 

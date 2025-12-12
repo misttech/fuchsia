@@ -38,6 +38,7 @@
         {
             // This service replaces the directory capability above.
             service: [
+                "fuchsia.gpu.magma.DependencyInjectionService",
                 "fuchsia.gpu.magma.Service",
                 "fuchsia.gpu.magma.TrustedService",
             ],
@@ -93,19 +94,6 @@
         {
             // This service replaces the directory capability above.
             service: "fuchsia.hardware.goldfish.SyncService",
-            from: "#test_lib_provider",
-            to: [ "#vulkan_loader" ],
-        },
-        {
-            // TODO(https://fxbug.dev/324273348): Remove this capability once the clients have
-            // been migrated to services. The service capability has been added below.
-            directory: "dev-gpu-dependency-injection",
-            from: "#test_lib_provider",
-            to: [ "#vulkan_loader" ],
-        },
-        {
-            // This service replaces the directory capability above.
-            service: "fuchsia.gpu.magma.DependencyInjectionService",
             from: "#test_lib_provider",
             to: [ "#vulkan_loader" ],
         },

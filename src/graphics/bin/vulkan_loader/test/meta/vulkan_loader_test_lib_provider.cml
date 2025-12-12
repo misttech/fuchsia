@@ -26,6 +26,7 @@
         {
             // This service replaces the directory capability above.
             service: [
+                "fuchsia.gpu.magma.DependencyInjectionService",
                 "fuchsia.gpu.magma.Service",
                 "fuchsia.gpu.magma.TrustedService",
             ],
@@ -53,6 +54,7 @@
         {
             // This service replaces the directory capability above.
             service: [
+                "fuchsia.gpu.magma.DependencyInjectionService",
                 "fuchsia.gpu.magma.Service",
                 "fuchsia.gpu.magma.TrustedService",
             ],
@@ -86,12 +88,6 @@
             directory: "empty",
             from: "self",
             as: "dev-goldfish-sync",
-            rights: [ "r*" ],
-        },
-        {
-            directory: "empty",
-            from: "self",
-            as: "dev-gpu-dependency-injection",
             rights: [ "r*" ],
         },
     ],

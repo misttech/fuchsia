@@ -12,6 +12,9 @@
 #include <lib/async/cpp/task.h>
 #include <lib/fdio/directory.h>
 #include <lib/fdio/namespace.h>
+#include <lib/fidl/cpp/binding_set.h>
+#include <lib/sys/cpp/component_context.h>
+#include <lib/sys/cpp/outgoing_directory.h>
 #include <lib/zx/vmo.h>
 
 #include <fbl/unique_fd.h>
@@ -330,12 +333,20 @@ class FakeMagmaDependencyInjection
  public:
   explicit FakeMagmaDependencyInjection(async_dispatcher_t* dispatcher) : dispatcher_(dispatcher) {}
 
-  auto ProtocolConnector() {
-    return [this](
-               fidl::ServerEnd<fuchsia_gpu_magma::DependencyInjection> server_end) -> zx_status_t {
-      bindings_.AddBinding(dispatcher_, std::move(server_end), this, fidl::kIgnoreBindingClosure);
-      return ZX_OK;
-    };
+  zx::result<fidl::ClientEnd<fuchsia_gpu_magma::DependencyInjection>> Bind(
+      async_dispatcher_t* dispatcher) {
+    zx::result endpoints = fidl::CreateEndpoints<fuchsia_gpu_magma::DependencyInjection>();
+    if (endpoints.is_error()) {
+      return endpoints.take_error();
+    }
+    fidl::BindServer(dispatcher, std::move(endpoints->server), this);
+    return zx::ok(std::move(endpoints->client));
+  }
+
+  fuchsia_gpu_magma::DependencyInjectionService::InstanceHandler CreateHandler() {
+    return fuchsia_gpu_magma::DependencyInjectionService::InstanceHandler({
+        .device = bindings_.CreateHandler(this, dispatcher_, fidl::kIgnoreBindingClosure),
+    });
   }
 
   bool GotMemoryPressureProvider() const { return got_memory_pressure_provider_; }
@@ -363,31 +374,24 @@ class FakeMagmaDependencyInjection
 TEST_F(LoaderUnittest, MagmaDependencyInjection) {
   FakeMemoryPressureProvider provider;
 
-  fs::SynchronousVfs vfs(dispatcher());
-  auto root = fbl::MakeRefCounted<fs::PseudoDir>();
+  auto provider_factory = [&] { return provider.Bind(dispatcher()); };
+
+  auto service_instance_handler =
+      MagmaDependencyInjection::ServiceInstanceHandler(provider_factory);
 
   std::array<FakeMagmaDependencyInjection, 2> magma_dependency_injection{
       FakeMagmaDependencyInjection(dispatcher()), FakeMagmaDependencyInjection(dispatcher())};
-  ASSERT_EQ(root->AddEntry("000", fbl::MakeRefCounted<fs::Service>(
-                                      magma_dependency_injection[0].ProtocolConnector())),
-            ZX_OK);
-  ASSERT_EQ(root->AddEntry("001", fbl::MakeRefCounted<fs::Service>(
-                                      magma_dependency_injection[1].ProtocolConnector())),
-            ZX_OK);
-  auto gpu_dir = fidl::CreateEndpoints<fuchsia_io::Directory>();
-  ASSERT_EQ(vfs.ServeDirectory(root, std::move(gpu_dir->server), fuchsia_io::kRStarDir), ZX_OK);
 
-  fdio_ns_t* ns;
-  EXPECT_EQ(ZX_OK, fdio_ns_get_installed(&ns));
-  const char* kDependencyInjectionPath = "/dev/class/gpu-dependency-injection";
-  EXPECT_EQ(ZX_OK,
-            fdio_ns_bind(ns, kDependencyInjectionPath, gpu_dir->client.TakeChannel().release()));
-  auto defer_unbind = fit::defer([&]() { fdio_ns_unbind(ns, kDependencyInjectionPath); });
-
-  auto provider_factory = [&] { return provider.Bind(dispatcher()); };
-
-  zx::result dependency_injection = MagmaDependencyInjection::Create(provider_factory);
-  ASSERT_TRUE(dependency_injection.is_ok()) << dependency_injection.status_string();
+  {
+    auto bind_result = magma_dependency_injection[0].Bind(dispatcher());
+    ASSERT_TRUE(bind_result.is_ok());
+    service_instance_handler(std::move(bind_result.value()));
+  }
+  {
+    auto bind_result = magma_dependency_injection[1].Bind(dispatcher());
+    ASSERT_TRUE(bind_result.is_ok());
+    service_instance_handler(std::move(bind_result.value()));
+  }
 
   // Wait for the GPU dependency injection code to detect the device and call the method on it.
   RunLoopUntil([&magma_dependency_injection]() {

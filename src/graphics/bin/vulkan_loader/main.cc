@@ -83,7 +83,8 @@ int main(int argc, const char* const* argv) {
     return -1;
   }
 
-  zx::result manager = MagmaDependencyInjection::Create(&GetMemoryPressureProvider);
+  zx::result manager =
+      MagmaDependencyInjection::Create(loop.dispatcher(), &GetMemoryPressureProvider);
   if (manager.is_error()) {
     FX_LOGS(INFO) << "Failed to initialize gpu manager " << manager.status_string();
     return -1;

@@ -41,20 +41,10 @@
         {
             // This service replaces the directory capability above.
             service: [
+                "fuchsia.gpu.magma.DependencyInjectionService",
                 "fuchsia.gpu.magma.Service",
                 "fuchsia.gpu.magma.TrustedService",
             ],
-        },
-        {
-            // TODO(https://fxbug.dev/324273348): Remove this capability once the clients have
-            // been migrated to services. The service capability has been added below.
-            directory: "dev-gpu-dependency-injection",
-            rights: [ "r*" ],
-            path: "/dev/class/gpu-dependency-injection",
-        },
-        {
-            // This service replaces the directory capability above.
-            service: "fuchsia.gpu.magma.DependencyInjectionService",
         },
         {
             // TODO(https://fxbug.dev/324273348): Remove this capability once the clients have
