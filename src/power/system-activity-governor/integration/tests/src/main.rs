@@ -248,7 +248,7 @@ async fn test_activity_governor_increments_suspend_success_on_application_activi
 
     block_until_inspect_matches!(
         activity_governor_moniker,
-        root: {
+        root: contains {
             booting: false,
             power_elements: {
                 execution_state: {
@@ -311,7 +311,7 @@ async fn test_activity_governor_increments_suspend_success_on_application_activi
 
     block_until_inspect_matches!(
         activity_governor_moniker,
-        root: {
+        root: contains {
             booting: false,
             power_elements: {
                 execution_state: {
@@ -408,7 +408,7 @@ async fn test_activity_governor_increments_suspend_success_on_application_activi
 
     block_until_inspect_matches!(
         activity_governor_moniker,
-        root: {
+        root: contains {
             booting: false,
             power_elements: {
                 execution_state: {
@@ -500,7 +500,7 @@ async fn test_activity_governor_increments_fail_count_on_suspend_error() -> Resu
 
     block_until_inspect_matches!(
         activity_governor_moniker,
-        root: {
+        root: contains {
             booting: false,
             power_elements: {
                 execution_state: {
@@ -548,7 +548,7 @@ async fn test_activity_governor_increments_fail_count_on_suspend_error() -> Resu
 
     block_until_inspect_matches!(
         activity_governor_moniker,
-        root: {
+        root: contains {
             booting: false,
             power_elements: {
                 execution_state: {
@@ -650,7 +650,7 @@ async fn test_activity_governor_suspends_successfully_after_failure() -> Result<
 
     block_until_inspect_matches!(
         activity_governor_moniker,
-        root: {
+        root: contains {
             booting: false,
             power_elements: {
                 execution_state: {
@@ -698,7 +698,7 @@ async fn test_activity_governor_suspends_successfully_after_failure() -> Result<
 
     block_until_inspect_matches!(
         activity_governor_moniker,
-        root: {
+        root: contains {
             booting: false,
             power_elements: {
                 execution_state: {
@@ -859,11 +859,12 @@ async fn test_activity_governor_suspends_after_suspend_blocker_hanging_on_resume
     assert_eq!(None, current_stats.last_time_in_suspend);
     assert_eq!(Some(0), current_stats.total_time_in_suspend);
 
+    let blocker_name = "test_suspend_blocker".to_string();
     let (blocker_client_end, mut blocker_stream) = fidl::endpoints::create_request_stream();
     let registration_lease = activity_governor
         .register_suspend_blocker(fsystem::ActivityGovernorRegisterSuspendBlockerRequest {
             suspend_blocker: Some(blocker_client_end),
-            name: Some("test_suspend_blocker".into()),
+            name: Some(blocker_name.clone()),
             ..Default::default()
         })
         .await
@@ -974,6 +975,9 @@ async fn test_activity_governor_suspends_after_suspend_blocker_hanging_on_resume
                 status: "OK",
             },
             "fuchsia.inspect.Stats": contains {},
+            "suspend_blockers": {
+                "names": vec![blocker_name.clone()],
+            },
         }
     );
 
@@ -1066,6 +1070,11 @@ async fn test_activity_governor_suspends_after_suspend_blocker_hanging_on_resume
                 status: "OK",
             },
             "fuchsia.inspect.Stats": contains {},
+            "suspend_blockers": {
+                // When the SuspendBlocker dropped its responder without sending a response, the
+                // FIDL channel was closed, causing SAG to unregister the blocker.
+                "names": Vec::<String>::new(),
+            },
         }
     );
 
@@ -1081,11 +1090,12 @@ async fn test_activity_governor_handles_suspend_blocker_raising_power_levels() -
 
     let suspend_controller = create_suspend_topology(&realm).await?;
 
+    let blocker_name = "test_suspend_blocker".to_string();
     let (blocker_client_end, mut blocker_stream) = fidl::endpoints::create_request_stream();
     let registration_lease = activity_governor
         .register_suspend_blocker(fsystem::ActivityGovernorRegisterSuspendBlockerRequest {
             suspend_blocker: Some(blocker_client_end),
-            name: Some("test_suspend_blocker".into()),
+            name: Some(blocker_name.clone()),
             ..Default::default()
         })
         .await
@@ -1201,6 +1211,9 @@ async fn test_activity_governor_handles_suspend_blocker_raising_power_levels() -
                 status: "OK",
             },
             "fuchsia.inspect.Stats": contains {},
+            "suspend_blockers": {
+                "names": vec![blocker_name.clone()],
+            },
         }
     );
 
@@ -1283,6 +1296,9 @@ async fn test_activity_governor_handles_suspend_blocker_raising_power_levels() -
                 status: "OK",
             },
             "fuchsia.inspect.Stats": contains {},
+            "suspend_blockers": {
+                "names": vec![blocker_name.clone()],
+            },
         }
     );
 
@@ -1307,7 +1323,7 @@ async fn test_activity_governor_handles_boot_signal() -> Result<()> {
     // Initial state should show execution_state is active and booting is true.
     block_until_inspect_matches!(
         activity_governor_moniker,
-        root: {
+        root: contains {
             booting: true,
             power_elements: {
                 execution_state: {
@@ -1356,7 +1372,7 @@ async fn test_activity_governor_handles_boot_signal() -> Result<()> {
     // Now execution_state should have dropped and booting is false.
     block_until_inspect_matches!(
         activity_governor_moniker,
-        root: {
+        root: contains {
             booting: false,
             power_elements: {
                 execution_state: {
@@ -2966,12 +2982,13 @@ async fn test_activity_governor_suspends_after_suspend_blocker_hangs_after_resum
     assert_eq!(None, current_stats.last_time_in_suspend);
     assert_eq!(Some(0), current_stats.total_time_in_suspend);
 
+    let blocker_name = "hangs_after_resume".to_string();
     let (suspend_blocker_client_end, mut suspend_blocker_stream) =
         fidl::endpoints::create_request_stream();
     activity_governor
         .register_suspend_blocker(fsystem::ActivityGovernorRegisterSuspendBlockerRequest {
             suspend_blocker: Some(suspend_blocker_client_end),
-            name: Some("hangs_after_resume".to_string()),
+            name: Some(blocker_name.clone()),
             ..Default::default()
         })
         .await
@@ -3082,6 +3099,9 @@ async fn test_activity_governor_suspends_after_suspend_blocker_hangs_after_resum
                 status: "OK",
             },
             "fuchsia.inspect.Stats": contains {},
+            "suspend_blockers": {
+                "names": vec![blocker_name.clone()],
+            },
         }
     );
 
@@ -3174,6 +3194,11 @@ async fn test_activity_governor_suspends_after_suspend_blocker_hangs_after_resum
                 status: "OK",
             },
             "fuchsia.inspect.Stats": contains {},
+            "suspend_blockers": {
+                // When the SuspendBlocker dropped its responder without sending a response, the
+                // FIDL channel was closed, causing SAG to unregister the blocker.
+                "names": Vec::<String>::new(),
+            },
         }
     );
 

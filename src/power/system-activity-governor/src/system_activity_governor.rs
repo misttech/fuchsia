@@ -16,7 +16,8 @@ use fidl_fuchsia_power_system::{
 };
 use fuchsia_async::{self as fasync, TimeoutExt};
 use fuchsia_inspect::{
-    BoolProperty as IBool, IntProperty as IInt, Node as INode, Property, UintProperty as IUint,
+    ArrayProperty, BoolProperty as IBool, Inspector, IntProperty as IInt, LazyNode, Node as INode,
+    Property, UintProperty as IUint,
 };
 use fuchsia_inspect_contrib::nodes::NodeTimeExt;
 use futures::future::FutureExt;
@@ -418,6 +419,8 @@ impl LeaseManager {
     }
 }
 
+type SuspendBlockerVector = Vec<(fsystem::SuspendBlockerProxy, String)>;
+
 /// SystemActivityGovernor runs the server for fuchsia.power.suspend and fuchsia.power.system FIDL
 /// APIs.
 pub struct SystemActivityGovernor {
@@ -433,14 +436,14 @@ pub struct SystemActivityGovernor {
     /// The collection of fsystem::SuspendBlockerProxy that have
     /// been registered through
     /// fuchsia.power.system.ActivityGovernor/RegisterSuspendBlocker.
-    suspend_blockers: RefCell<Vec<(fsystem::SuspendBlockerProxy, String)>>,
+    suspend_blockers: Rc<RefCell<SuspendBlockerVector>>,
     /// The collection of fsystem::SuspendBlockerProxy that have
     /// been registered through
     /// fuchsia.power.system.ActivityGovernor/RegisterSuspendBlocker but are not
     /// active yet. Suspend blockers are moved to `suspend_blockers` at the
     /// beginning of the next suspend cycle to prevent unnecessary
     /// notifications during resume procedures.
-    pending_suspend_blockers: RefCell<Vec<(fsystem::SuspendBlockerProxy, String)>>,
+    pending_suspend_blockers: Rc<RefCell<SuspendBlockerVector>>,
     /// The manager used to modify cpu power element and trigger suspend.
     cpu_manager: Rc<CpuManager>,
     /// The context used to manage the boot_control power element.
@@ -470,6 +473,7 @@ pub struct SystemActivityGovernor {
     /// elements.
     execution_state_runner: Rc<RefCell<Option<ServerEnd<fbroker::ElementRunnerMarker>>>>,
     application_activity_runner: Rc<RefCell<Option<ServerEnd<fbroker::ElementRunnerMarker>>>>,
+    _suspend_blockers_node: LazyNode,
 }
 
 impl SystemActivityGovernor {
@@ -596,13 +600,45 @@ impl SystemActivityGovernor {
         let suspend_stats =
             SuspendStatsManager::new(inspect_root.create_child(fobs::SUSPEND_STATS_NODE));
 
+        // Create fields to record suspend blockers and the lazy Inspect node that reports their
+        // names.
+        let suspend_blockers = Rc::new(RefCell::new(SuspendBlockerVector::new()));
+        let pending_suspend_blockers = Rc::new(RefCell::new(SuspendBlockerVector::new()));
+        let suspend_blockers_clone = suspend_blockers.clone();
+        let pending_suspend_blockers_clone = pending_suspend_blockers.clone();
+        let callback = move || {
+            let suspend_blockers = suspend_blockers_clone.clone();
+            let pending_suspend_blockers = pending_suspend_blockers_clone.clone();
+            async move {
+                let inspector = Inspector::default();
+                let suspend_blockers = suspend_blockers.borrow();
+                let pending_suspend_blockers = pending_suspend_blockers.borrow();
+                let mut names: Vec<_> = suspend_blockers
+                    .iter()
+                    .chain(pending_suspend_blockers.iter())
+                    .map(|(_, name)| name.as_str())
+                    .collect();
+                names.sort();
+
+                let names_property = inspector.root().create_string_array("names", names.len());
+                for (i, name) in names.into_iter().enumerate() {
+                    names_property.set(i, name);
+                }
+                inspector.root().record(names_property);
+                Ok(inspector)
+            }
+            .boxed_local()
+        };
+        let suspend_blockers_node =
+            inspect_root.create_lazy_child_with_thread_local("suspend_blockers", callback);
+
         Ok(Rc::new(Self {
             execution_state,
             application_activity,
             suspend_stats,
             lease_manager,
-            suspend_blockers: RefCell::new(Vec::new()),
-            pending_suspend_blockers: RefCell::new(Vec::new()),
+            suspend_blockers,
+            pending_suspend_blockers,
             cpu_manager,
             boot_control,
             element_power_level_names,
@@ -613,6 +649,7 @@ impl SystemActivityGovernor {
             sag_event_logger,
             execution_state_runner: Rc::new(RefCell::new(Some(execution_state_runner))),
             application_activity_runner: Rc::new(RefCell::new(Some(application_activity_runner))),
+            _suspend_blockers_node: suspend_blockers_node,
         }))
     }
 
