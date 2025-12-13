@@ -177,7 +177,10 @@ impl AioContextInner {
         let closure = move |locked: &mut Locked<Unlocked>, current_task: &CurrentTask| {
             inner.perform_next_action(locked, current_task, worker_type)
         };
-        let req = SpawnRequestBuilder::new().with_sync_closure(closure).build();
+        let req = SpawnRequestBuilder::new()
+            .with_debug_name("aio-worker")
+            .with_sync_closure(closure)
+            .build();
         kthreads.spawner().spawn_from_request(req);
     }
 

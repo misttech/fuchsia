@@ -529,7 +529,10 @@ pub fn start_perfetto_consumer_thread(kernel: &Kernel, socket_path: FsString) ->
             })
         }
     };
-    let req = SpawnRequestBuilder::new().with_async_closure(closure).build();
+    let req = SpawnRequestBuilder::new()
+        .with_debug_name("perfetto-consumer")
+        .with_async_closure(closure)
+        .build();
     kernel.kthreads.spawner().spawn_from_request(req);
 
     Ok(())

@@ -54,7 +54,10 @@ impl ForwardTask {
                 }
             }();
         };
-        let req = SpawnRequestBuilder::new().with_sync_closure(closure).build();
+        let req = SpawnRequestBuilder::new()
+            .with_debug_name("serial-reader")
+            .with_sync_closure(closure)
+            .build();
         kernel.kthreads.spawner().spawn_from_request(req);
     }
 
@@ -83,7 +86,10 @@ impl ForwardTask {
                 }
             }();
         };
-        let req = SpawnRequestBuilder::new().with_sync_closure(closure).build();
+        let req = SpawnRequestBuilder::new()
+            .with_debug_name("serial-writer")
+            .with_sync_closure(closure)
+            .build();
         kernel.kthreads.spawner().spawn_from_request(req);
     }
 }

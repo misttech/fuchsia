@@ -900,8 +900,10 @@ mod test {
         let closure =
             move |locked: &mut Locked<Unlocked>, task: &CurrentTask| waiter.wait(locked, &task);
 
-        let (waiter_thread, req) =
-            SpawnRequestBuilder::new().with_sync_closure(closure).build_with_async_result();
+        let (waiter_thread, req) = SpawnRequestBuilder::new()
+            .with_debug_name("input-device-waiter")
+            .with_sync_closure(closure)
+            .build_with_async_result();
         kernel.kthreads.spawner().spawn_from_request(req);
 
         let mut waiter_thread = Box::pin(waiter_thread);

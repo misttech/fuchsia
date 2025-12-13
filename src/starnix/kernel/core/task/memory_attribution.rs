@@ -96,7 +96,10 @@ impl MemoryAttributionManager {
                 let closure = move |_: &mut Locked<Unlocked>, _: &CurrentTask| {
                     Self::run(weak_kernel, publisher_rx, initial_state_rx, pid_receiver);
                 };
-                let req = SpawnRequestBuilder::new().with_sync_closure(closure).build();
+                let req = SpawnRequestBuilder::new()
+                    .with_debug_name("memory-attribution-manager")
+                    .with_sync_closure(closure)
+                    .build();
                 kernel.kthreads.spawner().spawn_from_request(req);
                 kernel.pids.write().set_thread_group_notifier(pid_sender);
             }

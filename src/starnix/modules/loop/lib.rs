@@ -791,8 +791,10 @@ impl FileOps for LoopControlDevice {
                 let closure = move |locked: &mut Locked<Unlocked>, task: &CurrentTask| {
                     registry.add(locked, task, minor)
                 };
-                let (result, req) =
-                    SpawnRequestBuilder::new().with_sync_closure(closure).build_with_sync_result();
+                let (result, req) = SpawnRequestBuilder::new()
+                    .with_debug_name("loop-control-add")
+                    .with_sync_closure(closure)
+                    .build_with_sync_result();
                 current_task.kernel().kthreads.spawner().spawn_from_request(req);
 
                 result()??;

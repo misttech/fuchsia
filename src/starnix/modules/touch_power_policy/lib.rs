@@ -59,7 +59,10 @@ impl TouchPowerPolicyDevice {
             }
             log_error!("touch_standby relay was terminated unexpectedly.");
         };
-        let req = SpawnRequestBuilder::new().with_sync_closure(closure).build();
+        let req = SpawnRequestBuilder::new()
+            .with_debug_name("touch-power-policy-relay")
+            .with_sync_closure(closure)
+            .build();
         kernel.kthreads.spawner().spawn_from_request(req);
     }
 

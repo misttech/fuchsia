@@ -99,7 +99,10 @@ pub fn devtmpfs_create_device(
             }
         });
     };
-    let req = SpawnRequestBuilder::new().with_sync_closure(closure).build();
+    let req = SpawnRequestBuilder::new()
+        .with_debug_name("devtmpfs-create-device")
+        .with_sync_closure(closure)
+        .build();
     kernel.kthreads.spawner().spawn_from_request(req);
 }
 

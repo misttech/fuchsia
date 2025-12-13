@@ -448,6 +448,9 @@ pub fn start_presentation_loop(
             }
         }
     };
-    let req = SpawnRequestBuilder::new().with_async_closure(closure).build();
+    let req = SpawnRequestBuilder::new()
+        .with_debug_name("framebuffer-present")
+        .with_async_closure(closure)
+        .build();
     kernel.kthreads.spawner().spawn_from_request(req);
 }

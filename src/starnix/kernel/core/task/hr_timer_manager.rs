@@ -594,7 +594,10 @@ impl HrTimerManager {
             }
             log_warn!("hr_timer_manager: finished kernel thread. should never happen in prod code");
         };
-        let req = SpawnRequestBuilder::new().with_async_closure(closure).build();
+        let req = SpawnRequestBuilder::new()
+            .with_debug_name("hr-timer-manager")
+            .with_async_closure(closure)
+            .build();
         system_task.kernel().kthreads.spawner().spawn_from_request(req);
         wait_signaled_sync(&setup_done)
             .to_result()

@@ -322,6 +322,7 @@ impl InputEventsRelay {
             }
         };
         let req = SpawnRequestBuilder::new()
+            .with_debug_name("input-event-relay")
             .with_role(INPUT_RELAY_ROLE_NAME)
             .with_async_closure(f)
             .build();

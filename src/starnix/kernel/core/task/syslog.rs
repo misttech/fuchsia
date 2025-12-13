@@ -261,7 +261,10 @@ impl LogSubscription {
                 waiters_clone.notify_fd_events(FdEvents::POLLIN);
             }
         };
-        let req = SpawnRequestBuilder::new().with_sync_closure(closure).build();
+        let req = SpawnRequestBuilder::new()
+            .with_debug_name("syslog-listener")
+            .with_sync_closure(closure)
+            .build();
         current_task.kernel().kthreads.spawner().spawn_from_request(req);
 
         Ok(Self { receiver, waiters, pending: Default::default() })

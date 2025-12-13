@@ -126,7 +126,10 @@ fn spawn_qbg_device_tasks(
         )
         .await;
     };
-    let req = SpawnRequestBuilder::new().with_async_closure(closure).build();
+    let req = SpawnRequestBuilder::new()
+        .with_debug_name("qbg-device-events")
+        .with_async_closure(closure)
+        .build();
     current_task.kernel().kthreads.spawner().spawn_from_request(req);
 }
 

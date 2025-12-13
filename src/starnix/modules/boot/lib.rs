@@ -118,7 +118,10 @@ impl BootedDevice {
             }
             log_error!("booted relay was terminated unexpectedly.");
         };
-        let req = SpawnRequestBuilder::new().with_sync_closure(closure).build();
+        let req = SpawnRequestBuilder::new()
+            .with_debug_name("boot-notifier-relay")
+            .with_sync_closure(closure)
+            .build();
 
         kernel.kthreads.spawner().spawn_from_request(req);
     }

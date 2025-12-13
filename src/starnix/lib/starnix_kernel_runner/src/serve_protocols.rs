@@ -353,7 +353,10 @@ fn forward_to_pty(
         })()
         .await;
     };
-    let req = SpawnRequestBuilder::new().with_async_closure(closure).build();
+    let req = SpawnRequestBuilder::new()
+        .with_debug_name("forward-to-pty-in")
+        .with_async_closure(closure)
+        .build();
     kernel.kthreads.spawner().spawn_from_request(req);
 
     let pty_source = pty;
@@ -371,7 +374,10 @@ fn forward_to_pty(
                 }
             });
     };
-    let req = SpawnRequestBuilder::new().with_sync_closure(closure).build();
+    let req = SpawnRequestBuilder::new()
+        .with_debug_name("forward-to-pty-out")
+        .with_sync_closure(closure)
+        .build();
     kernel.kthreads.spawner().spawn_from_request(req);
 
     Ok(())

@@ -974,6 +974,7 @@ impl<F: RemoteControllerConnector> RemoteBinderHandle<F> {
             handle.lock().exit(result.map_err(|_| errno!(ENOENT)));
         };
         let req = SpawnRequestBuilder::new()
+            .with_debug_name("remote-binder-start")
             .with_role(EXECUTOR_THREAD_ROLE)
             .with_async_closure(closure)
             .build();

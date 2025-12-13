@@ -295,6 +295,7 @@ pub fn new_remote_vol(
             }
         };
         let req = SpawnRequestBuilder::new()
+            .with_debug_name("remote-volume-crypt")
             .with_role(CRYPT_THREAD_ROLE)
             .with_async_closure(closure)
             .build();

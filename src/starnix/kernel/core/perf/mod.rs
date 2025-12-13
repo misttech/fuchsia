@@ -1048,7 +1048,10 @@ pub fn sys_perf_event_open(
         }
         ()
     };
-    let req = SpawnRequestBuilder::new().with_async_closure(closure).build();
+    let req = SpawnRequestBuilder::new()
+        .with_debug_name("perf-event-sampler")
+        .with_async_closure(closure)
+        .build();
     current_task.kernel().kthreads.spawner().spawn_from_request(req);
 
     let file = Box::new(PerfEventFile {
