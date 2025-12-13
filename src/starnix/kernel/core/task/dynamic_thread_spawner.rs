@@ -353,28 +353,6 @@ impl DynamicThreadSpawner {
             .expect("persistent thread should not have ended.");
         state.threads.push(receiver.recv().expect("persistent thread should not have ended."));
     }
-
-    /// TODO: b/465144050: remove in favor of spawn_from_request.
-    /// Run an async function on a thread.
-    ///
-    /// The given function must return the async function to run. It will be passed as
-    /// instance of `LockedAndTask` than can be used to retrieve a `Locked` or `CurrentTask`.
-    ///
-    /// This method will use an idle thread in the pool if one is available, otherwise it will
-    /// start a new thread. When this method returns, it is guaranteed that a thread is
-    /// responsible to start running the closure.
-    pub fn spawn_async<F>(&self, f: F)
-    where
-        F: AsyncFnOnce(LockedAndTask<'_>) + Send + 'static,
-    {
-        self.spawn(move |locked, current_task| {
-            let mut exec = fuchsia_async::LocalExecutor::default();
-            let locked_and_task = LockedAndTask::new(locked, current_task);
-            let fut = f(locked_and_task.clone());
-            let wrapped_future = WrappedSpawnedFuture::new(locked_and_task, fut);
-            exec.run_singlethreaded(wrapped_future);
-        });
-    }
 }
 
 type WrappedSpawnedFuture<'a, F> = WrappedFuture<F, LockedAndTask<'a>>;

@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::execution::create_kernel_thread;
-use crate::task::dynamic_thread_spawner::{SpawnRequestBuilder, DynamicThreadSpawner};
+use crate::task::dynamic_thread_spawner::{DynamicThreadSpawner, SpawnRequestBuilder};
 use crate::task::{CurrentTask, DelayedReleaser, Kernel, Task, ThreadGroup};
 use fragile::Fragile;
 use fuchsia_async as fasync;
@@ -120,13 +120,11 @@ impl KernelThreads {
     where
         F: FnOnce(&mut Locked<Unlocked>, &CurrentTask) + Send + 'static,
     {
-        let req = SpawnRequestBuilder::new()
-            .with_role(role)
-            .with_sync_closure(f)
-            .build();
+        let req = SpawnRequestBuilder::new().with_role(role).with_sync_closure(f).build();
         self.spawner().spawn_from_request(req)
     }
 
+    /// TODO: b/465144050: remove in favor of spawn_from_request.
     /// Spawn a thread in the main starnix process to run the given async function.
     ///
     /// Use this function to work in the background that involves async functions. Prefer
@@ -139,9 +137,11 @@ impl KernelThreads {
     where
         F: AsyncFnOnce(LockedAndTask<'_>) + Send + 'static,
     {
-        self.spawner().spawn_async(f)
+        let req = SpawnRequestBuilder::new().with_async_closure(f).build();
+        self.spawner().spawn_from_request(req)
     }
 
+    /// TODO: b/465144050: remove in favor of spawn_from_request.
     /// Spawn a thread in the main starnix process to run the given async function with `role`
     /// applied if possible.
     ///
@@ -153,10 +153,7 @@ impl KernelThreads {
     where
         F: AsyncFnOnce(LockedAndTask<'_>) + Send + 'static,
     {
-        let req = SpawnRequestBuilder::new()
-            .with_role(role)
-            .with_async_closure(f)
-            .build();
+        let req = SpawnRequestBuilder::new().with_role(role).with_async_closure(f).build();
         self.spawner().spawn_from_request(req)
     }
 

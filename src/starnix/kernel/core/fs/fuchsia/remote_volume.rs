@@ -3,8 +3,8 @@
 // found in the LICENSE file.
 
 use crate::fs::fuchsia::{RemoteFs, RemoteNode};
-use crate::task::{CurrentTask, LockedAndTask};
 use crate::task::dynamic_thread_spawner::SpawnRequestBuilder;
+use crate::task::{CurrentTask, LockedAndTask};
 use crate::vfs::{
     CacheConfig, CacheMode, FileSystem, FileSystemHandle, FileSystemOps, FileSystemOptions,
     FsNodeHandle, FsStr,
@@ -289,12 +289,11 @@ pub fn new_remote_vol(
 
     {
         let crypt_service = Arc::clone(&crypt_service);
-        let closure =
-            async move |_: LockedAndTask<'_>| {
-                if let Err(e) = crypt_service.handle_connection(crypt_proxy.into_stream()).await {
-                    log_error!("Error while handling a Crypt request {e}");
-                }
-            };
+        let closure = async move |_: LockedAndTask<'_>| {
+            if let Err(e) = crypt_service.handle_connection(crypt_proxy.into_stream()).await {
+                log_error!("Error while handling a Crypt request {e}");
+            }
+        };
         let req = SpawnRequestBuilder::new()
             .with_role(CRYPT_THREAD_ROLE)
             .with_async_closure(closure)

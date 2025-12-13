@@ -26,7 +26,8 @@ use fuchsia_scenic::flatland::ViewCreationTokenPair;
 use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender, unbounded};
 use futures::{FutureExt, StreamExt};
 use starnix_core::mm::memory::MemoryObject;
-use starnix_core::task::Kernel;
+use starnix_core::task::dynamic_thread_spawner::SpawnRequestBuilder;
+use starnix_core::task::{Kernel, LockedAndTask};
 use starnix_lifecycle::AtomicU64Counter;
 use starnix_logging::log_error;
 use starnix_sync::Mutex;
@@ -283,44 +284,44 @@ pub fn start_presentation_loop(
     let flatland = server.flatland.clone();
     let mut flatland_event_stream = flatland.take_event_stream();
     let mut presentation_receiver = server.presentation_receiver.lock().deref_mut().take().unwrap();
-    kernel.kthreads.spawner().spawn_async(async move |locked_and_task| {
+    let closure = async move |locked_and_task: LockedAndTask<'_>| {
         let kernel = locked_and_task.current_task().kernel();
         let scheduler = ThroughputScheduler::new();
         let mut view_bound_protocols = Some(view_bound_protocols);
         let mut view_identity = Some(view_identity);
         let mut maybe_view_controller_proxy = None;
-            let mut scene_state = None;
-            let link_token_pair =
-                ViewCreationTokenPair::new().expect("failed to create ViewCreationTokenPair");
-            // We don't actually care about the parent viewport at the moment, because we don't resize.
-            let (_parent_viewport_watcher, parent_viewport_watcher_request) =
-                create_proxy::<fuicomposition::ParentViewportWatcherMarker>();
-            server
-                .flatland
-                .create_view2(
-                    link_token_pair.view_creation_token,
-                    view_identity
-                        .take()
-                        .expect("cannot create view because view identity has been consumed"),
-                    view_bound_protocols.take().expect(
-                        "cannot create view because view bound protocols have been consumed",
-                    ),
-                    parent_viewport_watcher_request,
-                )
-                .expect("FIDL error");
+        let mut scene_state = None;
+        let link_token_pair =
+            ViewCreationTokenPair::new().expect("failed to create ViewCreationTokenPair");
+        // We don't actually care about the parent viewport at the moment, because we don't resize.
+        let (_parent_viewport_watcher, parent_viewport_watcher_request) =
+            create_proxy::<fuicomposition::ParentViewportWatcherMarker>();
+        server
+            .flatland
+            .create_view2(
+                link_token_pair.view_creation_token,
+                view_identity
+                    .take()
+                    .expect("cannot create view because view identity has been consumed"),
+                view_bound_protocols
+                    .take()
+                    .expect("cannot create view because view bound protocols have been consumed"),
+                parent_viewport_watcher_request,
+            )
+            .expect("FIDL error");
 
-            // Now that the view has been created, start presenting to Flatland.
-            // We must do this first because GraphicalPresenter can only
-            // service `present_view` once a child view is attached to the view
-            // tree. In order to attach, the child must have presented at least
-            // once.
-            server.present();
-            let message = presentation_receiver.next().await;
-            if message.is_some() {
-                scene_state = message;
-                scheduler.request_present();
-                let present_parameters = scheduler.wait_to_update().await;
-                flatland
+        // Now that the view has been created, start presenting to Flatland.
+        // We must do this first because GraphicalPresenter can only
+        // service `present_view` once a child view is attached to the view
+        // tree. In order to attach, the child must have presented at least
+        // once.
+        server.present();
+        let message = presentation_receiver.next().await;
+        if message.is_some() {
+            scene_state = message;
+            scheduler.request_present();
+            let present_parameters = scheduler.wait_to_update().await;
+            flatland
                 .present(fuicomposition::PresentArgs {
                     requested_presentation_time: Some(
                         present_parameters.requested_presentation_time.into_nanos(),
@@ -331,116 +332,122 @@ pub fn start_presentation_loop(
                     ..Default::default()
                 })
                 .unwrap_or(());
-            };
+        };
 
-            let graphical_presenter = if let Some(incoming_dir) = incoming_dir {
-                connect_to_protocol_at_dir_root::<felement::GraphicalPresenterMarker>(&incoming_dir)
+        let graphical_presenter = if let Some(incoming_dir) = incoming_dir {
+            connect_to_protocol_at_dir_root::<felement::GraphicalPresenterMarker>(&incoming_dir)
                 .map_err(|_| errno!(ENOENT))
                 .expect("Failed to connect to GraphicalPresenter")
-            } else {
-                kernel.connect_to_protocol_at_container_svc::<felement::GraphicalPresenterMarker>()
+        } else {
+            kernel
+                .connect_to_protocol_at_container_svc::<felement::GraphicalPresenterMarker>()
                 .map_err(|_| errno!(ENOENT))
-                .expect("Failed to connect to GraphicalPresenter").into_proxy()
-            };
+                .expect("Failed to connect to GraphicalPresenter")
+                .into_proxy()
+        };
 
-            let (view_controller_proxy, view_controller_server_end) =
-                fidl::endpoints::create_proxy::<felement::ViewControllerMarker>();
-            let _ = maybe_view_controller_proxy.insert(view_controller_proxy);
+        let (view_controller_proxy, view_controller_server_end) =
+            fidl::endpoints::create_proxy::<felement::ViewControllerMarker>();
+        let _ = maybe_view_controller_proxy.insert(view_controller_proxy);
 
-            let view_spec = felement::ViewSpec {
-                annotations: Some(vec![felement::Annotation {
-                  key: felement::AnnotationKey {
+        let view_spec = felement::ViewSpec {
+            annotations: Some(vec![felement::Annotation {
+                key: felement::AnnotationKey {
                     namespace: "window_manager".to_string(),
                     value: "view_id".to_string(),
                 },
                 value: felement::AnnotationValue::Text("starnix_framebuffer".to_string()),
-                }]),
-                viewport_creation_token: Some(link_token_pair.viewport_creation_token),
-                ..Default::default()
-            };
+            }]),
+            viewport_creation_token: Some(link_token_pair.viewport_creation_token),
+            ..Default::default()
+        };
 
-            // TODO: b/307790211 - Service annotation controller stream.
-            let (annotation_controller_client_end, _annotation_controller_stream) =
-                create_request_stream::<felement::AnnotationControllerMarker>();
+        // TODO: b/307790211 - Service annotation controller stream.
+        let (annotation_controller_client_end, _annotation_controller_stream) =
+            create_request_stream::<felement::AnnotationControllerMarker>();
 
-            // Wait for present_view before processing Flatland events.
-            graphical_presenter
+        // Wait for present_view before processing Flatland events.
+        graphical_presenter
             .present_view(
                 view_spec,
                 Some(annotation_controller_client_end),
                 Some(view_controller_server_end),
-            ).await.expect("failed to present view")
+            )
+            .await
+            .expect("failed to present view")
             .unwrap_or_else(|e| println!("{:?}", e));
 
-            // Start presentation loop to prepare for display updates.
-            loop {
-                futures::select! {
-                    message = presentation_receiver.next() => {
-                        if message.is_some() {
-                            scene_state = message;
-                            scheduler.request_present();
-                        }
-                    }
-                    flatland_event = flatland_event_stream.next() => {
-                        match flatland_event {
-                            Some(Ok(fuicomposition::FlatlandEvent::OnNextFrameBegin{ values })) => {
-                                let credits = values
-                                            .additional_present_credits
-                                            .expect("Present credits must exist");
-                                let infos = values
-                                    .future_presentation_infos
-                                    .expect("Future presentation infos must exist")
-                                    .iter()
-                                    .map(
-                                    |x| PresentationInfo{
-                                        latch_point: zx::MonotonicInstant::from_nanos(x.latch_point.unwrap()),
-                                        presentation_time: zx::MonotonicInstant::from_nanos(
-                                                            x.presentation_time.unwrap())
-                                    })
-                                    .collect();
-                                scheduler.on_next_frame_begin(credits, infos);
-                                // Keep presenting as long as we are in Fb state.
-                                match scene_state {
-                                    Some(SceneState::Fb) => {
-                                        scheduler.request_present();
-                                    }
-                                    _ => {}
-                                }
-                            }
-                            Some(Ok(fuicomposition::FlatlandEvent::OnFramePresented{ frame_presented_info })) => {
-                                let actual_presentation_time =
-                                    zx::MonotonicInstant::from_nanos(frame_presented_info.actual_presentation_time);
-                                let presented_infos: Vec<PresentedInfo> =
-                                    frame_presented_info.presentation_infos
-                                    .into_iter()
-                                    .map(|x| x.into())
-                                    .collect();
-                                scheduler.on_frame_presented(actual_presentation_time, presented_infos);
-                            }
-                            Some(Ok(fuicomposition::FlatlandEvent::OnError{ error })) => {
-                                log_error!(
-                                    "Received FlatlandError code: {}; exiting listener loop",
-                                    error.into_primitive()
-                                );
-                                return;
-                            }
-                            _ => {}
-                        }
-                    }
-                    present_parameters = scheduler.wait_to_update().fuse() => {
-                        flatland
-                        .present(fuicomposition::PresentArgs {
-                            requested_presentation_time: Some(
-                                present_parameters.requested_presentation_time.into_nanos(),
-                            ),
-                            acquire_fences: None,
-                            release_fences: None,
-                            unsquashable: Some(present_parameters.unsquashable),
-                            ..Default::default()
-                        })
-                        .unwrap_or(());
+        // Start presentation loop to prepare for display updates.
+        loop {
+            futures::select! {
+                message = presentation_receiver.next() => {
+                    if message.is_some() {
+                        scene_state = message;
+                        scheduler.request_present();
                     }
                 }
+                flatland_event = flatland_event_stream.next() => {
+                    match flatland_event {
+                        Some(Ok(fuicomposition::FlatlandEvent::OnNextFrameBegin{ values })) => {
+                            let credits = values
+                                        .additional_present_credits
+                                        .expect("Present credits must exist");
+                            let infos = values
+                                .future_presentation_infos
+                                .expect("Future presentation infos must exist")
+                                .iter()
+                                .map(
+                                |x| PresentationInfo{
+                                    latch_point: zx::MonotonicInstant::from_nanos(x.latch_point.unwrap()),
+                                    presentation_time: zx::MonotonicInstant::from_nanos(
+                                                        x.presentation_time.unwrap())
+                                })
+                                .collect();
+                            scheduler.on_next_frame_begin(credits, infos);
+                            // Keep presenting as long as we are in Fb state.
+                            match scene_state {
+                                Some(SceneState::Fb) => {
+                                    scheduler.request_present();
+                                }
+                                _ => {}
+                            }
+                        }
+                        Some(Ok(fuicomposition::FlatlandEvent::OnFramePresented{ frame_presented_info })) => {
+                            let actual_presentation_time =
+                                zx::MonotonicInstant::from_nanos(frame_presented_info.actual_presentation_time);
+                            let presented_infos: Vec<PresentedInfo> =
+                                frame_presented_info.presentation_infos
+                                .into_iter()
+                                .map(|x| x.into())
+                                .collect();
+                            scheduler.on_frame_presented(actual_presentation_time, presented_infos);
+                        }
+                        Some(Ok(fuicomposition::FlatlandEvent::OnError{ error })) => {
+                            log_error!(
+                                "Received FlatlandError code: {}; exiting listener loop",
+                                error.into_primitive()
+                            );
+                            return;
+                        }
+                        _ => {}
+                    }
+                }
+                present_parameters = scheduler.wait_to_update().fuse() => {
+                    flatland
+                    .present(fuicomposition::PresentArgs {
+                        requested_presentation_time: Some(
+                            present_parameters.requested_presentation_time.into_nanos(),
+                        ),
+                        acquire_fences: None,
+                        release_fences: None,
+                        unsquashable: Some(present_parameters.unsquashable),
+                        ..Default::default()
+                    })
+                    .unwrap_or(());
+                }
             }
-    });
+        }
+    };
+    let req = SpawnRequestBuilder::new().with_async_closure(closure).build();
+    kernel.kthreads.spawner().spawn_from_request(req);
 }
