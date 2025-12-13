@@ -48,6 +48,7 @@ Screenshot::Screenshot(const zx::vmo& screenshot_vmo, uint64_t width, uint64_t h
   screenshot_vmo.get_prop_content_size(&vmo_size);
 
   FX_CHECK(vmo_size == kBytesPerPixel * width_ * height_);
+  size_ = vmo_size;
 
   uint8_t* vmo_host = nullptr;
   auto status = zx::vmar::root_self()->map(ZX_VM_PERM_READ, /*vmar_offset*/ 0, screenshot_vmo,
@@ -67,6 +68,10 @@ Screenshot::Screenshot(const zx::vmo& screenshot_vmo, uint64_t width, uint64_t h
 Screenshot::Screenshot() : width_(0), height_(0) {}
 
 Screenshot::Screenshot(const zx::vmo& png_vmo) {
+  size_t vmo_size;
+  png_vmo.get_size(&vmo_size);
+  size_ = vmo_size;
+
   zx::vmo vmo_copy;
   FX_CHECK(png_vmo.duplicate(ZX_RIGHT_SAME_RIGHTS, &vmo_copy) == ZX_OK);
   ExtractScreenshotFromPngVMO(vmo_copy);

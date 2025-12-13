@@ -899,6 +899,7 @@ TEST_F(FlatlandPixelTestBase, TakeScreenshotCompressionTest) {
   auto png_screenshot = TakeScreenshot(screenshotter_, display_width_, display_height_,
                                        fuchsia::ui::composition::ScreenshotFormat::PNG);
 
+  EXPECT_LT(png_screenshot.size(), raw_screenshot.size());
   EXPECT_GE(png_screenshot.ComputeSimilarity(raw_screenshot), 100.f);
 }
 
@@ -911,6 +912,7 @@ TEST_F(FlatlandPixelTestBase, TakeFileScreenshotCompressionTest) {
   auto png_screenshot = TakeFileScreenshot(screenshotter_, display_width_, display_height_,
                                            fuchsia::ui::composition::ScreenshotFormat::PNG);
 
+  EXPECT_LT(png_screenshot.size(), raw_screenshot.size());
   EXPECT_GE(png_screenshot.ComputeSimilarity(raw_screenshot), 100.f);
 }
 

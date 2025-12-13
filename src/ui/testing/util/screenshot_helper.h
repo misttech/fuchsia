@@ -81,6 +81,8 @@ class Screenshot {
 
   uint64_t height() const { return height_; }
 
+  size_t size() const { return size_; }
+
   // Loads the screenshot from a PNG file.
   bool LoadFromPng(const std::string& png_filename);
 
@@ -116,6 +118,7 @@ class Screenshot {
   uint64_t width_ = 0;
   uint64_t height_ = 0;
   std::vector<std::vector<Pixel>> screenshot_;
+  size_t size_;
 };
 
 }  // namespace ui_testing

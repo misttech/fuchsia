@@ -258,7 +258,7 @@ void FlatlandScreenshot::Take(fuchsia_ui_composition::ScreenshotTakeRequest para
           const auto response_vmo_size =
               display_size_.width * display_size_.height * kBytesPerPixel +
               zx_system_get_page_size();
-          FX_CHECK(zx::vmo::create(response_vmo_size, 0, &response_vmo) == ZX_OK);
+          FX_CHECK(zx::vmo::create(response_vmo_size, ZX_VMO_RESIZABLE, &response_vmo) == ZX_OK);
           FX_CHECK(response_vmo.duplicate(ZX_RIGHT_SAME_RIGHTS, &response_vmo_copy) == ZX_OK);
 
           fuchsia_ui_compression_internal::ImageCompressorEncodePngRequest request;
@@ -473,7 +473,7 @@ void FlatlandScreenshot::TakeFile(fuchsia_ui_composition::ScreenshotTakeFileRequ
           const auto response_vmo_size =
               display_size_.width * display_size_.height * kBytesPerPixel +
               zx_system_get_page_size();
-          FX_CHECK(zx::vmo::create(response_vmo_size, 0, &response_vmo) == ZX_OK);
+          FX_CHECK(zx::vmo::create(response_vmo_size, ZX_VMO_RESIZABLE, &response_vmo) == ZX_OK);
           FX_CHECK(response_vmo.duplicate(ZX_RIGHT_SAME_RIGHTS, &response_vmo_copy) == ZX_OK);
 
           fuchsia_ui_compression_internal::ImageCompressorEncodePngRequest request;

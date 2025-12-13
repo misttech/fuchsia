@@ -62,8 +62,6 @@ std::ostream& operator<<(std::ostream& os, const PointerEventType& value) {
 
 }  // namespace
 
-constexpr uint64_t kBytesPerPixel = 4;
-
 // Used to compare whether two values are nearly equal.
 // 1000 times machine limits to account for scaling from [0,1] to viewing volume [0,1000].
 constexpr float kEpsilon = std::numeric_limits<float>::epsilon() * 1000;
@@ -210,9 +208,13 @@ ui_testing::Screenshot TakeFileScreenshot(
 
   // Read img data from file.
   auto file = response.mutable_file()->BindSync();
+  fuchsia::io::Node_GetAttributes_Result attr_result;
+  file->GetAttributes(fuchsia::io::NodeAttributesQuery::CONTENT_SIZE, &attr_result);
+  FX_CHECK(attr_result.is_response());
+  FX_CHECK(attr_result.response().immutable_attributes.has_content_size());
+  auto screenshot_size = attr_result.response().immutable_attributes.content_size();
   zx::vmo vmo_from_file;
-  const auto vmo_size = width * height * kBytesPerPixel;
-  FX_CHECK(zx::vmo::create(vmo_size, 0, &vmo_from_file) == ZX_OK);
+  FX_CHECK(zx::vmo::create(screenshot_size, 0, &vmo_from_file) == ZX_OK);
   uint64_t offset = 0;
   uint64_t read_response_size = fuchsia::io::MAX_BUF;
   do {
