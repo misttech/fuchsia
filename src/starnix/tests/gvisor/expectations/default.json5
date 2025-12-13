@@ -759,12 +759,10 @@
                 // TODO(https://issuetracker.google.com/290605547): support
                 // replacing addresses.
                 "NetlinkRouteTest.AddAndRemoveAddr",
-                "NetlinkRouteTest.LinkedToNetns",
                 "NetlinkRouteTest.SpliceFromPipe",
                 "NetlinkRouteTest.GetLinkByIndex",
                 "NetlinkRouteTest.GetLinkByName",
                 "NetlinkRouteTest.LinkMulticastGroupBasic",
-                "NetlinkRouteTest.LinkMulticastGroupNamespaced",
                 "NetlinkRouteTest.LinkMulticastGroupNoop",
                 "NetlinkRouteTest.LinkMulticastGroupUserToUserSend",
                 "NetlinkRouteTest.LinkMulticastGroupCapNetAdmin",
@@ -773,6 +771,12 @@
                 "_/NetlinkSetLinkTest.ChangeLinkName/*",
                 "_/NetlinkSetLinkTest.ChangeMACAddress/*",
                 "_/NetlinkSetLinkTest.ChangeMTU/*",
+
+                // TODO(https://issuetracker.google.com/468074994): Support
+                // network namespaces.
+                "NetlinkRouteTest.ChangeNetnsAndOtherAttrsTogether",
+                "NetlinkRouteTest.LinkedToNetns",
+                "NetlinkRouteTest.LinkMulticastGroupNamespaced",
 
                 // socket_netlink_uevent
                 "NetlinkUeventTest.AttachFilter",
