@@ -292,21 +292,7 @@ impl DynamicThreadSpawner {
         }
     }
 
-    /// TODO: b/465144050: can be removed.
-    /// Run the given closure on a thread with `role` applied if possible.
-    ///
-    /// This method will use an idle thread in the pool if one is available, otherwise it will
-    /// start a new thread. When this method returns, it is guaranteed that a thread is
-    /// responsible to start running the closure.
-    pub fn spawn_with_role<F>(&self, role: &'static str, f: F)
-    where
-        F: FnOnce(&mut Locked<Unlocked>, &CurrentTask) + Send + 'static,
-    {
-        let req = SpawnRequestBuilder::new().with_role(role).with_sync_closure(f).build();
-        self.spawn_from_request(req);
-    }
-
-    // TODO(b/465144050): this will replace `spawn` once all extra methods are removed.
+    /// TODO: b/465144050: this will replace `spawn` once all extra methods are removed.
     pub fn spawn_from_request(&self, named_closure: SpawnRequest) {
         self.spawn(named_closure.closure)
     }

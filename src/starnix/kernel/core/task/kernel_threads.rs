@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::execution::create_kernel_thread;
-use crate::task::dynamic_thread_spawner::DynamicThreadSpawner;
+use crate::task::dynamic_thread_spawner::{SpawnRequestBuilder, DynamicThreadSpawner};
 use crate::task::{CurrentTask, DelayedReleaser, Kernel, Task, ThreadGroup};
 use fragile::Fragile;
 use fuchsia_async as fasync;
@@ -107,6 +107,7 @@ impl KernelThreads {
         self.spawner().spawn(f)
     }
 
+    /// TODO: b/465144050: remove in favor of spawn_from_request.
     /// Spawn a thread in the main starnix process to run the given function with `role` applied if
     /// possible.
     ///
@@ -119,7 +120,11 @@ impl KernelThreads {
     where
         F: FnOnce(&mut Locked<Unlocked>, &CurrentTask) + Send + 'static,
     {
-        self.spawner().spawn_with_role(role, f)
+        let req = SpawnRequestBuilder::new()
+            .with_role(role)
+            .with_sync_closure(f)
+            .build();
+        self.spawner().spawn_from_request(req)
     }
 
     /// Spawn a thread in the main starnix process to run the given async function.
