@@ -2311,9 +2311,12 @@ impl FileObject {
 #[cfg(test)]
 mod tests {
     use crate::fs::tmpfs::TmpFs;
+    use crate::task::CurrentTask;
+    use crate::task::dynamic_thread_spawner::SpawnRequestBuilder;
     use crate::testing::*;
     use crate::vfs::MountInfo;
     use crate::vfs::buffers::{VecInputBuffer, VecOutputBuffer};
+    use starnix_sync::{Locked, Unlocked};
     use starnix_uapi::auth::FsCred;
     use starnix_uapi::device_type::DeviceType;
     use starnix_uapi::file_mode::FileMode;
@@ -2355,31 +2358,35 @@ mod tests {
 
             let fh = file_handle.clone();
             let done_clone = done.clone();
-            let write_thread =
-                kernel.kthreads.spawner().spawn_and_get_result_sync(move |locked, current_task| {
-                    for i in 0..2000 {
-                        fh.write(
-                            locked,
-                            current_task,
-                            &mut VecInputBuffer::new(U64::<LE>::new(i).as_bytes()),
-                        )
-                        .expect("write failed");
-                    }
-                    done_clone.store(true, Ordering::SeqCst);
-                    let result: Result<(), starnix_uapi::errors::Errno> = Ok(());
-                    result
-                });
+            let closure = move |locked: &mut Locked<Unlocked>, current_task: &CurrentTask| {
+                for i in 0..2000 {
+                    fh.write(
+                        locked,
+                        current_task,
+                        &mut VecInputBuffer::new(U64::<LE>::new(i).as_bytes()),
+                    )
+                    .expect("write failed");
+                }
+                done_clone.store(true, Ordering::SeqCst);
+                let result: Result<(), starnix_uapi::errors::Errno> = Ok(());
+                result
+            };
+            let (write_thread, req) =
+                SpawnRequestBuilder::new().with_sync_closure(closure).build_with_sync_result();
+            kernel.kthreads.spawner().spawn_from_request(req);
 
             let fh = file_handle.clone();
             let done_clone = done.clone();
-            let truncate_thread =
-                kernel.kthreads.spawner().spawn_and_get_result_sync(move |locked, current_task| {
-                    while !done_clone.load(Ordering::SeqCst) {
-                        fh.ftruncate(locked, current_task, 0).expect("truncate failed");
-                    }
-                    let result: Result<(), starnix_uapi::errors::Errno> = Ok(());
-                    result
-                });
+            let closure = move |locked: &mut Locked<Unlocked>, current_task: &CurrentTask| {
+                while !done_clone.load(Ordering::SeqCst) {
+                    fh.ftruncate(locked, current_task, 0).expect("truncate failed");
+                }
+                let result: Result<(), starnix_uapi::errors::Errno> = Ok(());
+                result
+            };
+            let (truncate_thread, req) =
+                SpawnRequestBuilder::new().with_sync_closure(closure).build_with_sync_result();
+            kernel.kthreads.spawner().spawn_from_request(req);
 
             // If we read from the file, we should always find an increasing sequence. If there are
             // races, then we might unexpectedly see zeroes.
@@ -2400,8 +2407,8 @@ mod tests {
                 }
             }
 
-            let _ = write_thread.unwrap();
-            let _ = truncate_thread.unwrap();
+            let _ = write_thread().unwrap();
+            let _ = truncate_thread().unwrap();
         })
         .await;
     }

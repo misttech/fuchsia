@@ -10,6 +10,7 @@ use starnix_core::device::kobject::{Device, DeviceMetadata};
 use starnix_core::fs::sysfs::{BlockDeviceInfo, build_block_device_directory};
 use starnix_core::mm::memory::MemoryObject;
 use starnix_core::mm::{MemoryAccessorExt, PAGE_SIZE, ProtectionFlags};
+use starnix_core::task::dynamic_thread_spawner::SpawnRequestBuilder;
 use starnix_core::task::{CurrentTask, Kernel, KernelOrTask};
 use starnix_core::vfs::buffers::{InputBuffer, OutputBuffer};
 use starnix_core::vfs::pseudo::simple_file::{BytesFile, BytesFileOps};
@@ -787,9 +788,15 @@ impl FileOps for LoopControlDevice {
                 let minor = arg.into();
                 let registry = Arc::clone(&self.registry);
                 // Delegate to the system task to have the permission to create the loop device.
-                current_task.kernel().kthreads.spawner().spawn_and_get_result_sync(
-                    move |locked, task| registry.add(locked, task, minor),
-                )??;
+                let closure = move |locked: &mut Locked<Unlocked>, task: &CurrentTask| {
+                    registry.add(locked, task, minor)
+                };
+                let (result, req) =
+                    SpawnRequestBuilder::new().with_sync_closure(closure).build_with_sync_result();
+                current_task.kernel().kthreads.spawner().spawn_from_request(req);
+
+                result()??;
+
                 Ok(minor.into())
             }
             LOOP_CTL_REMOVE => {

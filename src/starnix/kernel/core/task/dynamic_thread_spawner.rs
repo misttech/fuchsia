@@ -293,22 +293,6 @@ impl DynamicThreadSpawner {
     }
 
     /// TODO: b/465144050: can be removed.
-    /// Run the given closure on a thread and block to get the result.
-    ///
-    /// This method will use an idle thread in the pool if one is available, otherwise it will
-    /// start a new thread.
-    pub fn spawn_and_get_result_sync<R, F>(&self, f: F) -> Result<R, Errno>
-    where
-        F: FnOnce(&mut Locked<Unlocked>, &CurrentTask) -> R + Send + 'static,
-        R: Send + 'static,
-    {
-        let (result, req) =
-            SpawnRequestBuilder::new().with_sync_closure(f).build_with_sync_result();
-        self.spawn_from_request(req);
-        result()
-    }
-
-    // TODO(b/465144050): can be removed.
     /// Run the given closure on a thread with `role` applied if possible.
     ///
     /// This method will use an idle thread in the pool if one is available, otherwise it will
