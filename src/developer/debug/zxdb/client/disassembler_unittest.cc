@@ -325,7 +325,7 @@ TEST(Disassembler, CallArm64) {
   EXPECT_EQ(Row(0xc55fc, &block_with_data.data[4], 4, "blr", "x0", "",
                 Disassembler::InstructionType::kCallIndirect),
             out[1]);
-  *out[0].call_dest;
+  std::ignore = *out[0].call_dest;
 }
 
 }  // namespace zxdb
