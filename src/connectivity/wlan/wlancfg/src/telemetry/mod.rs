@@ -38,7 +38,6 @@ use std::collections::{HashMap, HashSet};
 use std::ops::Add;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Once};
-use wlan_common::channel::Channel;
 use {
     fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211, fidl_fuchsia_wlan_internal as fidl_internal,
     fidl_fuchsia_wlan_sme as fidl_sme, wlan_metrics_registry as metrics,
@@ -289,8 +288,8 @@ pub enum TelemetryEvent {
     PolicyInitiatedRoamResult {
         iface_id: u16,
         result: fidl_sme::RoamResult,
-        ap_state: client::types::ApState,
-        origin_channel: Channel,
+        updated_ap_state: client::types::ApState,
+        original_ap_state: client::types::ApState,
         request: PolicyRoamRequest,
         request_time: fasync::MonotonicInstant,
         result_time: fasync::MonotonicInstant,
@@ -1368,8 +1367,8 @@ impl Telemetry {
             TelemetryEvent::PolicyInitiatedRoamResult {
                 iface_id,
                 result,
-                ap_state,
-                origin_channel,
+                updated_ap_state,
+                original_ap_state,
                 request,
                 request_time,
                 result_time,
@@ -1384,7 +1383,7 @@ impl Telemetry {
                                 new_connect_start_time: None,
                                 prev_connection_stats: None,
                                 multiple_bss_candidates: state.multiple_bss_candidates,
-                                ap_state,
+                                ap_state: updated_ap_state.clone(),
                                 network_is_likely_hidden: state.network_is_likely_hidden,
 
                                 // We have not received a signal report yet, but since this is used as
@@ -1423,7 +1422,8 @@ impl Telemetry {
                 self.stats_logger
                     .log_roam_result_metrics(
                         result,
-                        origin_channel,
+                        updated_ap_state,
+                        original_ap_state,
                         request,
                         request_time,
                         result_time,
@@ -3264,7 +3264,8 @@ impl StatsLogger {
     async fn log_roam_result_metrics(
         &mut self,
         result: fidl_sme::RoamResult,
-        origin_channel: Channel,
+        updated_ap_state: client::types::ApState,
+        original_ap_state: client::types::ApState,
         request: PolicyRoamRequest,
         request_time: fasync::MonotonicInstant,
         result_time: fasync::MonotonicInstant,
@@ -3276,9 +3277,10 @@ impl StatsLogger {
         } else {
             metrics::PolicyRoamAttemptCountDetailedMetricDimensionWasRoamSuccessful::No as u32
         };
-        let ghz_band_transition =
-            convert::get_ghz_band_transition(&origin_channel, &request.candidate.bss.channel)
-                as u32;
+        let ghz_band_transition = convert::get_ghz_band_transition(
+            &original_ap_state.tracked.channel,
+            &request.candidate.bss.channel,
+        ) as u32;
         for reason in &request.reasons {
             // TODO(https://fxbug.dev/455916035): Stop logging to this metric when
             // it's deleted during the next metric maintenance.
@@ -3344,7 +3346,7 @@ impl StatsLogger {
         ));
 
         if result.status_code == fidl_ieee80211::StatusCode::Success {
-            self.log_stat(StatOp::AddPolicyRoamSuccessfulCount(request.reasons)).await;
+            self.log_stat(StatOp::AddPolicyRoamSuccessfulCount(request.reasons.clone())).await;
             self.throttled_error_logger.throttle_error(log_cobalt!(
                 self.cobalt_proxy,
                 log_integer,
@@ -3352,6 +3354,19 @@ impl StatsLogger {
                 fasync::MonotonicDuration::from(result_time - request_time).into_micros(),
                 &[],
             ));
+
+            // Log the RSSI delta from before/after successful roam.
+            let rssi_delta = (updated_ap_state.tracked.signal.rssi_dbm)
+                .saturating_sub(original_ap_state.tracked.signal.rssi_dbm);
+            for reason in &request.reasons {
+                self.throttled_error_logger.throttle_error(log_cobalt!(
+                    self.cobalt_proxy,
+                    log_integer,
+                    metrics::POLICY_ROAM_TRANSITION_RSSI_DELTA_BY_ROAM_REASON_METRIC_ID,
+                    convert::calculate_rssi_delta_bucket(rssi_delta),
+                    &[convert::convert_roam_reason_dimension(*reason) as u32],
+                ))
+            }
         }
     }
 
@@ -4792,7 +4807,7 @@ mod tests {
     use test_case::test_case;
     use test_util::assert_gt;
     use wlan_common::bss::BssDescription;
-    use wlan_common::channel::Cbw;
+    use wlan_common::channel::{Cbw, Channel};
     use wlan_common::ie::IeType;
     use wlan_common::test_utils::fake_stas::IesOverrides;
     use wlan_common::{random_bss_description, random_fidl_bss_description};
@@ -5972,8 +5987,8 @@ mod tests {
         test_helper.telemetry_sender.send(TelemetryEvent::PolicyInitiatedRoamResult {
             iface_id: 1,
             result: roam_result.clone(),
-            ap_state: generate_random_ap_state(),
-            origin_channel: generate_random_channel(),
+            updated_ap_state: generate_random_ap_state(),
+            original_ap_state: generate_random_ap_state(),
             request: generate_policy_roam_request([1, 1, 1, 1, 1, 1].into()),
             request_time: fasync::MonotonicInstant::now(),
             result_time: fasync::MonotonicInstant::now(),
@@ -6006,8 +6021,8 @@ mod tests {
         test_helper.telemetry_sender.send(TelemetryEvent::PolicyInitiatedRoamResult {
             iface_id: 1,
             result: roam_result.clone(),
-            ap_state: generate_random_ap_state(),
-            origin_channel: generate_random_channel(),
+            updated_ap_state: generate_random_ap_state(),
+            original_ap_state: generate_random_ap_state(),
             request: generate_policy_roam_request([1, 1, 1, 1, 1, 1].into()),
             request_time: fasync::MonotonicInstant::now(),
             result_time: fasync::MonotonicInstant::now(),
@@ -6039,8 +6054,8 @@ mod tests {
         test_helper.telemetry_sender.send(TelemetryEvent::PolicyInitiatedRoamResult {
             iface_id: 1,
             result: roam_result,
-            ap_state: generate_random_ap_state(),
-            origin_channel: generate_random_channel(),
+            updated_ap_state: generate_random_ap_state(),
+            original_ap_state: generate_random_ap_state(),
             request: generate_policy_roam_request([1, 1, 1, 1, 1, 1].into()),
             request_time: fasync::MonotonicInstant::now(),
             result_time: fasync::MonotonicInstant::now(),
@@ -6612,8 +6627,8 @@ mod tests {
         test_helper.telemetry_sender.send(TelemetryEvent::PolicyInitiatedRoamResult {
             iface_id: 1,
             result: roam_result,
-            ap_state: generate_random_ap_state(),
-            origin_channel: generate_random_channel(),
+            updated_ap_state: generate_random_ap_state(),
+            original_ap_state: generate_random_ap_state(),
             request: generate_policy_roam_request([1, 1, 1, 1, 1, 1].into()),
             request_time: fasync::MonotonicInstant::now(),
             result_time: fasync::MonotonicInstant::now(),
@@ -6634,8 +6649,8 @@ mod tests {
         test_helper.telemetry_sender.send(TelemetryEvent::PolicyInitiatedRoamResult {
             iface_id: 1,
             result: roam_result,
-            ap_state: generate_random_ap_state(),
-            origin_channel: generate_random_channel(),
+            updated_ap_state: generate_random_ap_state(),
+            original_ap_state: generate_random_ap_state(),
             request: generate_policy_roam_request([2, 2, 2, 2, 2, 2].into()),
             request_time: fasync::MonotonicInstant::now(),
             result_time: fasync::MonotonicInstant::now(),
@@ -8633,8 +8648,8 @@ mod tests {
         let event = TelemetryEvent::PolicyInitiatedRoamResult {
             iface_id: IFACE_ID,
             result,
-            ap_state: random_bss_description!().into(),
-            origin_channel: generate_random_channel(),
+            updated_ap_state: random_bss_description!().into(),
+            original_ap_state: random_bss_description!().into(),
             request: request.clone(),
             request_time: fasync::MonotonicInstant::now(),
             result_time: fasync::MonotonicInstant::now(),

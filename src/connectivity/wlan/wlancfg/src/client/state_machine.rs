@@ -990,7 +990,7 @@ async fn handle_roam_result(
     options.pending_roam_timer.set(Fuse::terminated());
 
     let roam_succeeded = result.status_code == fidl_ieee80211::StatusCode::Success;
-    let origin_channel = options.ap_state.tracked.channel;
+    let original_ap_state = options.ap_state.clone();
     if roam_succeeded {
         // Record BSS disconnect to config manager. We do not report a disconnect to
         // telemetry, since we are still connected to the same ESS.
@@ -1024,8 +1024,7 @@ async fn handle_roam_result(
             .await;
         info!("Roam attempt failed, original association not maintained, disconnecting");
     }
-
-    notify_on_roam_result(common_options, options, result, origin_channel, pending_roam).await;
+    notify_on_roam_result(common_options, options, result, *original_ap_state, pending_roam).await;
     Ok(())
 }
 
@@ -1039,7 +1038,7 @@ async fn notify_on_roam_result(
     common_options: &mut CommonStateOptions,
     options: &mut ConnectedOptions,
     result: &fidl_sme::RoamResult,
-    origin_channel: types::WlanChan,
+    original_ap_state: types::ApState,
     pending_roam: PendingRoam,
 ) {
     // Record connect result to config manager, regardless of status.
@@ -1065,8 +1064,8 @@ async fn notify_on_roam_result(
     common_options.telemetry_sender.send(TelemetryEvent::PolicyInitiatedRoamResult {
         iface_id: common_options.iface_id,
         result: result.clone(),
-        ap_state: (*options.ap_state).clone(),
-        origin_channel,
+        updated_ap_state: (*options.ap_state).clone(),
+        original_ap_state,
         request: pending_roam.request.clone(),
         request_time: pending_roam.timestamp,
         result_time: fasync::MonotonicInstant::now(),

@@ -66,11 +66,7 @@ pub fn convert_channel_band(
     primary_channel: u8,
 ) -> metrics::SuccessfulConnectBreakdownByChannelBandMetricDimensionChannelBand {
     use metrics::SuccessfulConnectBreakdownByChannelBandMetricDimensionChannelBand::*;
-    if primary_channel > 14 {
-        Band5Ghz
-    } else {
-        Band2Dot4Ghz
-    }
+    if primary_channel > 14 { Band5Ghz } else { Band2Dot4Ghz }
 }
 
 pub fn convert_rssi_bucket(rssi: i8) -> metrics::ConnectivityWlanMetricDimensionRssiBucket {
@@ -153,5 +149,40 @@ pub fn get_ghz_band_transition(
             metrics::ConnectivityWlanMetricDimensionGhzBandTransition::From6gTo6g
         }
         _ => panic!("Invalid channel band combination"),
+    }
+}
+
+// Convert an RSSI delta (i8) into the bucket index for an RSSI delta based histogram, where bucket
+// indexes run from 0 to 128, covering delta values -128 to 127, with step size of 2.
+//
+// bucket_index = (delta + 129) / 2
+pub fn calculate_rssi_delta_bucket(delta: i8) -> i64 {
+    let num_buckets: i64 = metrics::POLICY_ROAM_TRANSITION_RSSI_DELTA_BY_ROAM_REASON_FLEETWIDE_HISTOGRAM_INT_BUCKETS_NUM_BUCKETS.into();
+    let step_size: i64 = metrics::POLICY_ROAM_TRANSITION_RSSI_DELTA_BY_ROAM_REASON_FLEETWIDE_HISTOGRAM_INT_BUCKETS_STEP_SIZE.into();
+    let idx = delta as i64 + num_buckets;
+
+    // "Euclidean" division floors towards -infinity (rather than toward zero).
+    // By subtracting 1 before dividing and adding 1 after, we achieve ceiling division
+    // that works across positive and negative numbers.
+    // TODO(https://github.com/rust-lang/rust/issues/88581): Replace with `{integer}::div_ceil()`
+    // when `int_roundings` is available.
+    (idx - 1).div_euclid(step_size) + 1
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[fuchsia::test]
+    fn test_calculate_rssi_delta_bucket() {
+        // Lowest bucket encompasses i8::MIN, so hitting underflow bucket (idx: 0)
+        // is not possible.
+        assert_eq!(calculate_rssi_delta_bucket(i8::MIN), 1);
+
+        // Linear buckets for deltas, with step size of 2
+        assert_eq!(calculate_rssi_delta_bucket(-127), 1);
+        assert_eq!(calculate_rssi_delta_bucket(0), 65);
+        assert_eq!(calculate_rssi_delta_bucket(1), 65);
+        assert_eq!(calculate_rssi_delta_bucket(i8::MAX), 128);
     }
 }
