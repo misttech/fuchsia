@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use fidl_fuchsia_pkg_ext::{MirrorConfig, RepositoryConfig};
+use fidl_fuchsia_pkg_ext::RepositoryConfig;
 use fuchsia_inspect::{self as inspect, NumericProperty};
 use fuchsia_inspect_contrib::inspectable::{Inspectable, Watch};
 use std::borrow::Cow;
@@ -12,11 +12,7 @@ pub type InspectableRepositoryConfig =
     Inspectable<Arc<RepositoryConfig>, InspectableRepositoryConfigWatcher>;
 
 pub struct InspectableRepositoryConfigWatcher {
-    mirror_configs_node: inspect::Node,
-    _mirror_configs_states: Vec<MirrorConfigInspectState>,
-    root_keys_node: inspect::Node,
-    _root_keys_properties: Vec<inspect::StringProperty>,
-    _node: inspect::Node,
+    node: inspect::Node,
 }
 
 impl Watch<Arc<RepositoryConfig>> for InspectableRepositoryConfigWatcher {
@@ -25,38 +21,37 @@ impl Watch<Arc<RepositoryConfig>> for InspectableRepositoryConfigWatcher {
         node: &inspect::Node,
         name: impl Into<Cow<'a, str>>,
     ) -> Self {
-        let repo_config_node = node.create_child(name);
-        let mut ret = Self {
-            root_keys_node: repo_config_node.create_child("root_keys"),
-            _root_keys_properties: vec![],
-            mirror_configs_node: repo_config_node.create_child("mirrors"),
-            _mirror_configs_states: vec![],
-            _node: repo_config_node,
-        };
+        let node = node.create_child(name);
+        let mut ret = Self { node };
         ret.watch(config);
         ret
     }
 
     fn watch(&mut self, config: &Arc<RepositoryConfig>) {
-        self._root_keys_properties = config
-            .root_keys()
-            .iter()
-            .enumerate()
-            .map(|(i, root_key)| {
-                self.root_keys_node.create_string(i.to_string(), format!("{root_key:?}"))
-            })
-            .collect();
-        self._mirror_configs_states = config
-            .mirrors()
-            .iter()
-            .enumerate()
-            .map(|(i, mirror_config)| {
-                MirrorConfigInspectState::new(
-                    mirror_config,
-                    self.mirror_configs_node.create_child(i.to_string()),
-                )
-            })
-            .collect();
+        self.node.clear_recorded();
+        self.node.record_string("repo_url", format!("{}", config.repo_url()));
+        self.node.record_uint("root_version", config.root_version().into());
+        self.node.record_uint("root_threshold", config.root_threshold().into());
+        self.node.record_bool("use_local_mirror", config.use_local_mirror());
+        self.node.record_string("repo_storage_type", format!("{:?}", config.repo_storage_type()));
+        self.node.record_child("root_keys", |n| {
+            let () =
+                config.root_keys().iter().enumerate().for_each(|(i, root_key)| {
+                    n.record_string(i.to_string(), format!("{root_key:?}"))
+                });
+        });
+        self.node.record_child("mirrors", |n| {
+            config.mirrors().iter().enumerate().for_each(|(i, mirror_config)| {
+                n.record_child(i.to_string(), |n| {
+                    n.record_string("mirror_url", format!("{}", mirror_config.mirror_url()));
+                    n.record_string("subscribe", format!("{:?}", &mirror_config.subscribe()));
+                    n.record_string(
+                        "blob_mirror_url",
+                        format!("{}", mirror_config.blob_mirror_url()),
+                    );
+                })
+            });
+        });
     }
 }
 
@@ -75,27 +70,6 @@ impl Counter {
     }
 }
 
-pub struct MirrorConfigInspectState {
-    _mirror_url_property: inspect::StringProperty,
-    _subscribe_property: inspect::StringProperty,
-    _blob_mirror_url_property: inspect::StringProperty,
-    _node: inspect::Node,
-}
-
-impl MirrorConfigInspectState {
-    fn new(mirror_config: &MirrorConfig, node: inspect::Node) -> Self {
-        MirrorConfigInspectState {
-            _mirror_url_property: node
-                .create_string("mirror_url", format!("{:?}", mirror_config.mirror_url())),
-            _subscribe_property: node
-                .create_string("subscribe", format!("{:?}", &mirror_config.subscribe())),
-            _blob_mirror_url_property: node
-                .create_string("blob_mirror_url", format!("{:?}", mirror_config.blob_mirror_url())),
-            _node: node,
-        }
-    }
-}
-
 #[cfg(test)]
 mod test_inspectable_repository_config {
     use super::*;
@@ -106,7 +80,7 @@ mod test_inspectable_repository_config {
     #[fuchsia::test]
     async fn test_initialization() {
         let inspector = inspect::Inspector::default();
-        let fuchsia_url = fuchsia_url::RepositoryUrl::parse("fuchsia-pkg://fuchsia.com/").unwrap();
+        let fuchsia_url = fuchsia_url::RepositoryUrl::parse("fuchsia-pkg://fuchsia.test/").unwrap();
         let mirror_config =
             MirrorConfigBuilder::new("http://fake-mirror.com".parse::<Uri>().unwrap())
                 .unwrap()
@@ -129,11 +103,16 @@ mod test_inspectable_repository_config {
                   },
                   mirrors: {
                     "0": {
-                        mirror_url: format!("{:?}", mirror_config.mirror_url()),
-                        subscribe: format!("{:?}", mirror_config.subscribe()),
-                        blob_mirror_url: format!("{:?}", mirror_config.blob_mirror_url())
+                        mirror_url: "http://fake-mirror.com/",
+                        subscribe: "false",
+                        blob_mirror_url: "http://fake-mirror.com/blobs",
                     }
                   },
+                  repo_storage_type: "Ephemeral",
+                  repo_url: "fuchsia-pkg://fuchsia.test",
+                  root_threshold: 1u64,
+                  root_version: 1u64,
+                  use_local_mirror: false,
                 }
             }
         );
@@ -142,7 +121,7 @@ mod test_inspectable_repository_config {
     #[fuchsia::test]
     async fn test_watcher() {
         let inspector = inspect::Inspector::default();
-        let fuchsia_url = fuchsia_url::RepositoryUrl::parse("fuchsia-pkg://fuchsia.com").unwrap();
+        let fuchsia_url = fuchsia_url::RepositoryUrl::parse("fuchsia-pkg://fuchsia.test").unwrap();
         let config = Arc::new(
             RepositoryConfigBuilder::new(fuchsia_url)
                 .add_root_key(RepositoryKey::Ed25519(vec![0]))
@@ -168,11 +147,16 @@ mod test_inspectable_repository_config {
                   },
                   mirrors: {
                     "0": {
-                        mirror_url: format!("{:?}", mirror_config.mirror_url()),
-                        subscribe: format!("{:?}", mirror_config.subscribe()),
-                        blob_mirror_url: format!("{:?}", mirror_config.blob_mirror_url())
+                        mirror_url: "http://fake-mirror.com/",
+                        subscribe: "false",
+                        blob_mirror_url: "http://fake-mirror.com/blobs",
                     }
                   },
+                  repo_storage_type: "Ephemeral",
+                  repo_url: "fuchsia-pkg://fuchsia.test",
+                  root_threshold: 1u64,
+                  root_version: 1u64,
+                  use_local_mirror: false,
                 }
             }
         );

@@ -39,6 +39,11 @@ pub use inspect::ResolverService as ResolverServiceInspectState;
 
 mod resolve_with_context;
 
+const SLOW_CACHE_FALLBACK_WARN_DURATION: zx::MonotonicDuration =
+    zx::MonotonicDuration::from_seconds(10);
+const SLOW_CACHE_FALLBACK_WARN_SQUELCH_DURATION: zx::MonotonicDuration =
+    zx::MonotonicDuration::from_minutes(10);
+
 /// Work-queue based package resolver. When all clones of
 /// [`QueuedResolver`] are dropped, the queue will resolve all remaining
 /// packages and terminate its output stream.
@@ -54,6 +59,7 @@ pub struct QueuedResolver {
     rewriter: Arc<AsyncRwLock<RewriteManager>>,
     system_cache_list: Arc<CachePackages>,
     inspect: Arc<ResolverServiceInspectState>,
+    last_slow_cache_fallback_log_time: Arc<fuchsia_sync::Mutex<zx::MonotonicInstant>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -222,8 +228,17 @@ impl QueuedResolver {
             },
         );
         let () = inspect.record_raw_queue(package_fetch_queue.record_lazy_inspect());
-        let fetcher =
-            Self { queue, inspect, base_package_index, cache, rewriter, system_cache_list };
+        let fetcher = Self {
+            queue,
+            inspect,
+            base_package_index,
+            cache,
+            rewriter,
+            system_cache_list,
+            last_slow_cache_fallback_log_time: Arc::new(fuchsia_sync::Mutex::new(
+                zx::MonotonicInstant::INFINITE_PAST,
+            )),
+        };
         (package_fetch_queue.into_future(), fetcher)
     }
 
@@ -234,6 +249,10 @@ impl QueuedResolver {
         eager_package_manager: Option<&AsyncRwLock<EagerPackageManager<Self>>>,
         trace_id: ftrace::Id,
     ) -> Result<PackageWithSourceAndBlobId, pkg::ResolveError> {
+        // Use boot timeline for inspect to correlate with the syslog, use monotonic timeline to
+        // warn about slow cache fallback to avoid warning just b/c the device suspended.
+        let start_boot = zx::BootInstant::get();
+        let start_mono = zx::MonotonicInstant::get();
         // Base pin.
         let package_inspect = self.inspect.resolve(&pkg_url, gc_protection);
         if let Some(blob) = self.base_package_index.is_unpinned_base_package(&pkg_url) {
@@ -242,7 +261,15 @@ impl QueuedResolver {
                 error!("failed to open base package url {:?}: {:#}", pkg_url, anyhow!(e));
                 error
             })?;
-            self.inspect.successful_resolve("base", &pkg_url, None, gc_protection, None, &blob);
+            self.inspect.successful_resolve(
+                "base",
+                &pkg_url,
+                None,
+                gc_protection,
+                None,
+                &blob,
+                start_boot,
+            );
             return Ok(PackageWithSourceAndBlobId::base(dir, blob));
         }
 
@@ -269,6 +296,7 @@ impl QueuedResolver {
                 gc_protection,
                 None,
                 &hash.into(),
+                start_boot,
             );
             return Ok(PackageWithSourceAndBlobId::eager(dir, hash.into()));
         }
@@ -286,6 +314,7 @@ impl QueuedResolver {
                     gc_protection,
                     None,
                     &hash,
+                    start_boot,
                 );
                 Ok(PackageWithSourceAndBlobId::tuf(dir, hash))
             }
@@ -299,7 +328,9 @@ impl QueuedResolver {
                             gc_protection,
                             Some(anyhow!(tuf_err)),
                             &hash,
+                            start_boot,
                         );
+                        let () = self.log_slow_cache_fallback(start_mono, &pkg_url, &rewritten_url);
                         Ok(PackageWithSourceAndBlobId::cache(pkg, hash))
                     }
                     Ok(None) => {
@@ -327,6 +358,37 @@ impl QueuedResolver {
                 }
             }
         }
+    }
+
+    fn log_slow_cache_fallback(
+        &self,
+        start_ts: zx::MonotonicInstant,
+        pkg_url: &AbsolutePackageUrl,
+        rewritten_url: &AbsolutePackageUrl,
+    ) {
+        let now = zx::MonotonicInstant::get();
+        let resolve_duration = now - start_ts;
+        if resolve_duration < SLOW_CACHE_FALLBACK_WARN_DURATION {
+            return;
+        }
+        {
+            let mut last = self.last_slow_cache_fallback_log_time.lock();
+            if now - *last < SLOW_CACHE_FALLBACK_WARN_SQUELCH_DURATION {
+                return;
+            } else {
+                *last = now;
+            }
+        }
+        warn!(
+            "Resolve of {} as {} via cache fallback took {} seconds. This could be slowing down \
+             your system, and may be due to trouble connecting to a remote repository. This log \
+             will only print every {} minutes, so the issue may be occuring more often. See \
+             inspect for more information.",
+            pkg_url,
+            rewritten_url,
+            resolve_duration.into_seconds(),
+            SLOW_CACHE_FALLBACK_WARN_SQUELCH_DURATION.into_minutes(),
+        );
     }
 
     // On success returns the package directory and the package's hash for easier logging (the

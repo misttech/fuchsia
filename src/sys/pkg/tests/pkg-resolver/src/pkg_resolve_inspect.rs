@@ -80,6 +80,11 @@ async fn adding_repo_updates_inspect_state() {
                     "example.com": {
                         root_keys: {},
                         mirrors: {},
+                        repo_storage_type: "Ephemeral",
+                        repo_url: "fuchsia-pkg://example.com",
+                        root_threshold: 1u64,
+                        root_version: 1u64,
+                        use_local_mirror: false,
                     },
                 },
             },
@@ -125,6 +130,11 @@ async fn resolving_package_updates_inspect_state() {
                             blob_mirror_url: format!("{:?}", config.mirrors()[0].blob_mirror_url())
                           }
                         },
+                        repo_storage_type: "Ephemeral",
+                        repo_url: "fuchsia-pkg://example.com",
+                        root_threshold: 1u64,
+                        root_version: 1u64,
+                        use_local_mirror: false,
                     }
                 },
                 repos: {

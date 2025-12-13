@@ -49,10 +49,6 @@ struct RepositoryManagerInspectState {
     node: inspect::Node,
     dynamic_configs_node: inspect::Node,
     static_configs_node: inspect::Node,
-    #[expect(dead_code)]
-    dynamic_configs_path_property: inspect::StringProperty,
-    #[expect(dead_code)]
-    persisted_repos_dir_property: inspect::StringProperty,
     stats: Arc<Mutex<Stats>>,
     repos_node: Arc<inspect::Node>,
 }
@@ -569,16 +565,14 @@ impl RepositoryManagerBuilder<ProtocolSender<MetricEvent>, inspect::Node> {
     pub fn build(self) -> RepositoryManager {
         self.inspect_node
             .record_uint("tuf_metadata_timeout_seconds", self.tuf_metadata_timeout.as_secs());
+        self.inspect_node
+            .record_string("dynamic_configs_path", format!("{:?}", self.dynamic_configs_path));
+        self.inspect_node
+            .record_string("persisted_repos_dir", format!("{:?}", self.persisted_repos_dir));
         let inspect = RepositoryManagerInspectState {
-            dynamic_configs_path_property: self
-                .inspect_node
-                .create_string("dynamic_configs_path", format!("{:?}", self.dynamic_configs_path)),
             dynamic_configs_node: self.inspect_node.create_child("dynamic_configs"),
             static_configs_node: self.inspect_node.create_child("static_configs"),
             stats: Arc::new(Mutex::new(Stats::new(self.inspect_node.create_child("stats")))),
-            persisted_repos_dir_property: self
-                .inspect_node
-                .create_string("persisted_repos_dir", format!("{:?}", self.persisted_repos_dir)),
             repos_node: Arc::new(self.inspect_node.create_child("repos")),
             node: self.inspect_node,
         };
@@ -1560,7 +1554,7 @@ mod tests {
 
     #[fasync::run_singlethreaded(test)]
     async fn test_building_repo_manager_with_static_configs_populates_inspect() {
-        let fuchsia_url = RepositoryUrl::parse("fuchsia-pkg://fuchsia.com").unwrap();
+        let fuchsia_url = RepositoryUrl::parse("fuchsia-pkg://fuchsia.test").unwrap();
         let mirror_config =
             MirrorConfigBuilder::new("http://fake-mirror.com".parse::<Uri>().unwrap())
                 .unwrap()
@@ -1592,7 +1586,7 @@ mod tests {
                     dynamic_configs_path: format!("{:?}", env.dynamic_configs_path),
                     dynamic_configs: {},
                     static_configs: {
-                        "fuchsia.com": {
+                        "fuchsia.test": {
                             root_keys: {
                                 "0": format!("{:?}", fuchsia_config.root_keys()[0])
                             },
@@ -1603,6 +1597,11 @@ mod tests {
                                     blob_mirror_url: format!("{:?}", mirror_config.blob_mirror_url())
                                 }
                             },
+                            repo_storage_type: "Ephemeral",
+                            repo_url: "fuchsia-pkg://fuchsia.test",
+                            root_threshold: 1u64,
+                            root_version: 1u64,
+                            use_local_mirror: false,
                         }
                     },
                     stats: {
@@ -1669,7 +1668,7 @@ mod tests {
             }
         );
 
-        let fuchsia_url = RepositoryUrl::parse("fuchsia-pkg://fuchsia.com").unwrap();
+        let fuchsia_url = RepositoryUrl::parse("fuchsia-pkg://fuchsia.test").unwrap();
         let mirror_config =
             MirrorConfigBuilder::new("http://fake-mirror.com".parse::<Uri>().unwrap())
                 .unwrap()
@@ -1689,7 +1688,7 @@ mod tests {
             root: {
                 repository_manager: contains {
                     dynamic_configs: {
-                        "fuchsia.com": {
+                        "fuchsia.test": {
                             root_keys: {
                                 "0": format!("{:?}", config.root_keys()[0])
                             },
@@ -1700,6 +1699,11 @@ mod tests {
                                     blob_mirror_url: format!("{:?}", mirror_config.blob_mirror_url())
                                 }
                             },
+                            repo_storage_type: "Ephemeral",
+                            repo_url: "fuchsia-pkg://fuchsia.test",
+                            root_threshold: 1u64,
+                            root_version: 1u64,
+                            use_local_mirror: false,
                         }
                     },
                 }

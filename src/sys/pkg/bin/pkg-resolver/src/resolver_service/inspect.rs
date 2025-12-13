@@ -84,6 +84,7 @@ impl ResolverService {
         gc_protection: fpkg::GcProtection,
         intermediate_error: Option<anyhow::Error>,
         blob: &pkg::BlobId,
+        start_ts: zx::BootInstant,
     ) {
         self.successful_resolves.lock().add_entry(|node| {
             node.record_string("source", source);
@@ -102,7 +103,8 @@ impl ResolverService {
                 node.record_string("intermediate_error", format!("{intermediate_error:#}"));
             }
             node.record_string("hash", blob.to_string());
-            node.record_int("boot_ns", zx::BootInstant::get().into_nanos());
+            node.record_int("end_boot_ns", zx::BootInstant::get().into_nanos());
+            node.record_int("start_boot_ns", start_ts.into_nanos())
         });
     }
 }
@@ -252,6 +254,7 @@ mod tests {
             fpkg::GcProtection::OpenPackageTracking,
             None,
             &[0; 32].into(),
+            zx::BootInstant::from_nanos(0),
         );
         assert_data_tree!(
             inspector,
@@ -264,7 +267,8 @@ mod tests {
                             "gc_protection": "open package tracking",
                             "hash":
                                 "0000000000000000000000000000000000000000000000000000000000000000",
-                            "boot_ns": AnyProperty,
+                            "start_boot_ns": AnyProperty,
+                            "end_boot_ns": AnyProperty,
                         }
                     }
                 }
@@ -278,6 +282,7 @@ mod tests {
             fpkg::GcProtection::Retained,
             Some(anyhow::anyhow!("i goofed")),
             &[1; 32].into(),
+            zx::BootInstant::from_nanos(0),
         );
         assert_data_tree!(
             inspector,
@@ -290,7 +295,8 @@ mod tests {
                             "gc_protection": "open package tracking",
                             "hash":
                                 "0000000000000000000000000000000000000000000000000000000000000000",
-                            "boot_ns": AnyProperty,
+                            "start_boot_ns": AnyProperty,
+                            "end_boot_ns": AnyProperty,
                         },
                         "1": {
                             "source": "source1",
@@ -300,7 +306,8 @@ mod tests {
                             "intermediate_error": "i goofed",
                             "hash":
                                 "0101010101010101010101010101010101010101010101010101010101010101",
-                            "boot_ns": AnyProperty,
+                            "start_boot_ns": AnyProperty,
+                            "end_boot_ns": AnyProperty,
                         }
                     }
                 }
