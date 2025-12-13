@@ -6,7 +6,7 @@ use core::ops::{Range, RangeBounds};
 
 use zerocopy::{SplitByteSlice, SplitByteSliceMut};
 
-use crate::{canonicalize_range, take_back, take_back_mut, take_front, take_front_mut};
+use crate::canonicalize_range;
 
 /// A wrapper for a sequence of byte slices.
 ///
@@ -22,19 +22,15 @@ pub trait Fragment: SplitByteSlice {
     ///
     /// After a call to `take_front(n)`, the fragment is `n` bytes shorter.
     ///
-    /// # Panics
-    ///
-    /// Panics if `n` is larger than the length of this `ByteSlice`.
-    fn take_front(&mut self, n: usize) -> Self;
+    /// Returns `None` if `n` is larger than the length of this `ByteSlice`.
+    fn take_front(&mut self, n: usize) -> Option<Self>;
 
     /// Takes `n` bytes from the back of this fragment.
     ///
     /// After a call to `take_back(n)`, the fragment is `n` bytes shorter.
     ///
-    /// # Panics
-    ///
-    /// Panics if `n` is larger than the length of this `ByteSlice`.
-    fn take_back(&mut self, n: usize) -> Self;
+    /// Returns `None` if `n` is larger than the length of this `ByteSlice`.
+    fn take_back(&mut self, n: usize) -> Option<Self>;
 
     /// Constructs a new empty `Fragment`.
     fn empty() -> Self;
@@ -57,12 +53,13 @@ where
 }
 
 impl<'a> Fragment for &'a [u8] {
-    fn take_front(&mut self, n: usize) -> Self {
-        take_front(self, n)
+    fn take_front(&mut self, n: usize) -> Option<Self> {
+        self.split_off(..n)
     }
 
-    fn take_back(&mut self, n: usize) -> Self {
-        take_back(self, n)
+    fn take_back(&mut self, n: usize) -> Option<Self> {
+        let split = <[u8]>::len(self).checked_sub(n)?;
+        Some(self.split_off(split..).unwrap())
     }
 
     fn empty() -> Self {
@@ -71,12 +68,13 @@ impl<'a> Fragment for &'a [u8] {
 }
 
 impl<'a> Fragment for &'a mut [u8] {
-    fn take_front(&mut self, n: usize) -> Self {
-        take_front_mut(self, n)
+    fn take_front(&mut self, n: usize) -> Option<Self> {
+        self.split_off_mut(..n)
     }
 
-    fn take_back(&mut self, n: usize) -> Self {
-        take_back_mut(self, n)
+    fn take_back(&mut self, n: usize) -> Option<Self> {
+        let split = <[u8]>::len(self).checked_sub(n)?;
+        Some(self.split_off_mut(split..).unwrap())
     }
 
     fn empty() -> Self {
@@ -143,7 +141,7 @@ impl<'a, B: 'a + Fragment> FragmentedByteSlice<'a, B> {
             if first.len() > c {
                 // if the first fragment contains more than c bytes, just take
                 // c bytes out of its front and we're done.
-                let _: B = first.take_front(c);
+                let _: B = first.take_front(c).unwrap();
                 break;
             } else {
                 // otherwise, just account for the first fragment's entire
@@ -161,7 +159,7 @@ impl<'a, B: 'a + Fragment> FragmentedByteSlice<'a, B> {
             if last.len() > c {
                 // if the last fragment contains more than c bytes, just take
                 // c bytes out of its back and we're done.
-                let _: B = last.take_back(c);
+                let _: B = last.take_back(c).unwrap();
                 break;
             } else {
                 // otherwise, just account for the last fragment's entire length
@@ -350,13 +348,13 @@ impl<'a, B: 'a + Fragment> FragmentedByteSlice<'a, B> {
         if foot.len() < take {
             return None;
         }
-        let foot = foot.take_back(take);
+        let foot = foot.take_back(take).unwrap();
 
         let head = self.0.first_mut()?;
         if head.len() < range.start {
             return None;
         }
-        let head = head.take_front(range.start);
+        let head = head.take_front(range.start).unwrap();
 
         Some((head, self, foot))
     }

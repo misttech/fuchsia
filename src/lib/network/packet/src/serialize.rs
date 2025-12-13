@@ -17,7 +17,7 @@ use crate::{
     AsFragmentedByteSlice, Buffer, BufferView, BufferViewMut, ContiguousBuffer, EmptyBuf,
     FragmentedBuffer, FragmentedBufferMut, FragmentedBytes, FragmentedBytesMut, GrowBuffer,
     GrowBufferMut, ParsablePacket, ParseBuffer, ParseBufferMut, ReusableBuffer, ShrinkBuffer,
-    canonicalize_range, take_back, take_back_mut, take_front, take_front_mut,
+    canonicalize_range,
 };
 
 /// Either of two buffers.
@@ -489,7 +489,7 @@ impl<'a> BufferView<&'a [u8]> for BufView<'a> {
             return None;
         }
         self.body.start += n;
-        Some(take_front(&mut self.buf, n))
+        self.buf.split_off(..n)
     }
 
     fn take_back(&mut self, n: usize) -> Option<&'a [u8]> {
@@ -497,7 +497,9 @@ impl<'a> BufferView<&'a [u8]> for BufView<'a> {
             return None;
         }
         self.body.end -= n;
-        Some(take_back(&mut self.buf, n))
+
+        let split = <[u8]>::len(self.buf).checked_sub(n).unwrap();
+        self.buf.split_off(split..)
     }
 
     fn into_rest(self) -> &'a [u8] {
@@ -527,7 +529,7 @@ impl<'a> BufferView<&'a mut [u8]> for BufViewMut<'a> {
             return None;
         }
         self.body.start += n;
-        Some(take_front_mut(&mut self.buf, n))
+        self.buf.split_off_mut(..n)
     }
 
     fn take_back(&mut self, n: usize) -> Option<&'a mut [u8]> {
@@ -535,7 +537,9 @@ impl<'a> BufferView<&'a mut [u8]> for BufViewMut<'a> {
             return None;
         }
         self.body.end -= n;
-        Some(take_back_mut(&mut self.buf, n))
+
+        let split = <[u8]>::len(self.buf).checked_sub(n)?;
+        Some(self.buf.split_off_mut(split..)?)
     }
 
     fn into_rest(self) -> &'a mut [u8] {

@@ -1715,9 +1715,7 @@ fn zero_iter<'a, I: Iterator<Item = &'a mut u8>>(bytes: I) {
 }
 
 fn zero(bytes: &mut [u8]) {
-    for byte in bytes.iter_mut() {
-        *byte = 0;
-    }
+    bytes.fill(0);
 }
 impl<'a> FragmentedBuffer for &'a [u8] {
     fragmented_buffer_method_impls!();
@@ -1725,10 +1723,11 @@ impl<'a> FragmentedBuffer for &'a [u8] {
 impl<'a> ContiguousBuffer for &'a [u8] {}
 impl<'a> ShrinkBuffer for &'a [u8] {
     fn shrink_front(&mut self, n: usize) {
-        let _: &[u8] = take_front(self, n);
+        let _: &[u8] = self.split_off(..n).unwrap();
     }
     fn shrink_back(&mut self, n: usize) {
-        let _: &[u8] = take_back(self, n);
+        let split = <[u8]>::len(self).checked_sub(n).unwrap();
+        let _: &[u8] = self.split_off(split..).unwrap();
     }
 }
 impl<'a> ParseBuffer for &'a [u8] {
@@ -1752,16 +1751,11 @@ impl<'a> ParseBuffer for &'a [u8] {
                 <[u8]>::len(self.0)
             }
             fn take_front(&mut self, n: usize) -> Option<&'b [u8]> {
-                if self.0.len() < n {
-                    return None;
-                }
-                Some(take_front(self.0, n))
+                self.0.split_off(..n)
             }
             fn take_back(&mut self, n: usize) -> Option<&'b [u8]> {
-                if self.0.len() < n {
-                    return None;
-                }
-                Some(take_back(self.0, n))
+                let split = <[u8]>::len(self.0).checked_sub(n)?;
+                self.0.split_off(split..)
             }
             fn into_rest(self) -> &'b [u8] {
                 self.0
@@ -1780,10 +1774,11 @@ impl<'a> FragmentedBufferMut for &'a mut [u8] {
 impl<'a> ContiguousBuffer for &'a mut [u8] {}
 impl<'a> ShrinkBuffer for &'a mut [u8] {
     fn shrink_front(&mut self, n: usize) {
-        let _: &[u8] = take_front_mut(self, n);
+        let _: &[u8] = self.split_off_mut(..n).unwrap();
     }
     fn shrink_back(&mut self, n: usize) {
-        let _: &[u8] = take_back_mut(self, n);
+        let split = <[u8]>::len(self).checked_sub(n).unwrap();
+        let _: &[u8] = self.split_off_mut(split..).unwrap();
     }
 }
 impl<'a> ParseBuffer for &'a mut [u8] {
@@ -1809,16 +1804,11 @@ impl<'b, 'a: 'b> BufferView<&'a [u8]> for &'b mut &'a [u8] {
         <[u8]>::len(self)
     }
     fn take_front(&mut self, n: usize) -> Option<&'a [u8]> {
-        if self.len() < n {
-            return None;
-        }
-        Some(take_front(self, n))
+        self.split_off(..n)
     }
     fn take_back(&mut self, n: usize) -> Option<&'a [u8]> {
-        if self.len() < n {
-            return None;
-        }
-        Some(take_back(self, n))
+        let split = <[u8]>::len(self).checked_sub(n)?;
+        Some(self.split_off(split..).unwrap())
     }
     fn into_rest(self) -> &'a [u8] {
         self
@@ -1830,16 +1820,11 @@ impl<'b, 'a: 'b> BufferView<&'b [u8]> for &'b mut &'a mut [u8] {
         <[u8]>::len(self)
     }
     fn take_front(&mut self, n: usize) -> Option<&'b [u8]> {
-        if <[u8]>::len(self) < n {
-            return None;
-        }
-        Some(take_front_mut(self, n))
+        self.split_off_mut(..n).map(|b| &*b)
     }
     fn take_back(&mut self, n: usize) -> Option<&'b [u8]> {
-        if <[u8]>::len(self) < n {
-            return None;
-        }
-        Some(take_back_mut(self, n))
+        let split = <[u8]>::len(self).checked_sub(n)?;
+        Some(self.split_off_mut(split..).unwrap())
     }
     fn into_rest(self) -> &'b [u8] {
         self
@@ -1851,16 +1836,11 @@ impl<'b, 'a: 'b> BufferView<&'b mut [u8]> for &'b mut &'a mut [u8] {
         <[u8]>::len(self)
     }
     fn take_front(&mut self, n: usize) -> Option<&'b mut [u8]> {
-        if <[u8]>::len(self) < n {
-            return None;
-        }
-        Some(take_front_mut(self, n))
+        self.split_off_mut(..n)
     }
     fn take_back(&mut self, n: usize) -> Option<&'b mut [u8]> {
-        if <[u8]>::len(self) < n {
-            return None;
-        }
-        Some(take_back_mut(self, n))
+        let split = <[u8]>::len(self).checked_sub(n)?;
+        Some(self.split_off_mut(split..).unwrap())
     }
     fn into_rest(self) -> &'b mut [u8] {
         self
@@ -1891,18 +1871,13 @@ impl<'a> SliceBufViewMut<'a> {
 impl<'a> BufferView<&'a mut [u8]> for SliceBufViewMut<'a> {
     fn take_front(&mut self, n: usize) -> Option<&'a mut [u8]> {
         let Self(buf) = self;
-        if <[u8]>::len(buf) < n {
-            return None;
-        }
-        Some(take_front_mut(buf, n))
+        buf.split_off_mut(..n)
     }
 
     fn take_back(&mut self, n: usize) -> Option<&'a mut [u8]> {
         let Self(buf) = self;
-        if <[u8]>::len(buf) < n {
-            return None;
-        }
-        Some(take_back_mut(buf, n))
+        let split = <[u8]>::len(buf).checked_sub(n)?;
+        Some(buf.split_off_mut(split..).unwrap())
     }
 
     fn into_rest(self) -> &'a mut [u8] {
@@ -1965,32 +1940,6 @@ impl<B: SplitByteSlice> BufferView<B> for SplitByteSliceBufView<B> {
         let Self(b) = self;
         b
     }
-}
-
-fn take_front<'a>(bytes: &mut &'a [u8], n: usize) -> &'a [u8] {
-    let (prefix, rest) = mem::replace(bytes, &[]).split_at(n);
-    *bytes = rest;
-    prefix
-}
-
-fn take_back<'a>(bytes: &mut &'a [u8], n: usize) -> &'a [u8] {
-    let split = bytes.len() - n;
-    let (rest, suffix) = mem::replace(bytes, &[]).split_at(split);
-    *bytes = rest;
-    suffix
-}
-
-fn take_front_mut<'a>(bytes: &mut &'a mut [u8], n: usize) -> &'a mut [u8] {
-    let (prefix, rest) = mem::replace(bytes, &mut []).split_at_mut(n);
-    *bytes = rest;
-    prefix
-}
-
-fn take_back_mut<'a>(bytes: &mut &'a mut [u8], n: usize) -> &'a mut [u8] {
-    let split = <[u8]>::len(bytes) - n;
-    let (rest, suffix) = mem::replace(bytes, &mut []).split_at_mut(split);
-    *bytes = rest;
-    suffix
 }
 
 // Returns the inclusive-exclusive equivalent of the bound, verifying that it is
