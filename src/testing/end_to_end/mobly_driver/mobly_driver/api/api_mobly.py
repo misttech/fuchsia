@@ -92,8 +92,8 @@ def new_testbed_config(
     """Returns a Mobly testbed config which is required for running Mobly tests.
 
     This method expects the |controller| object to follow the schema of
-    tools/botanist/cmd/target.go's |targetInfo| struct or the
-    tools/botanist/cmd/auxiliary.go's |Auxiliary| struct.
+    tools/botanist/targets/target.go's |FuchsiaTestbedConfig| struct or the
+    tools/botanist/targets/auxiliary.go's |Auxiliary| struct.
 
     Example |mobly_controllers|:
        [{

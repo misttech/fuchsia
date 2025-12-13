@@ -596,6 +596,10 @@ func (t *SubprocessTester) Reconnect(_ context.Context) error {
 	return nil
 }
 
+func (t *SubprocessTester) UpdateEnv(env []string) {
+	t.env = env
+}
+
 func (t *SubprocessTester) Close() error {
 	return nil
 }
@@ -636,6 +640,8 @@ type FFXTester struct {
 	ffx            FFXInstance
 	experiments    botanist.Experiments
 	localOutputDir string
+	target         targets.FuchsiaTarget
+	testbedConfig  []any
 
 	// The test output dirs from all the calls to Test().
 	testOutDirs []string
@@ -662,10 +668,12 @@ type ffxTestRun struct {
 }
 
 type FFXTesterOptions struct {
-	Ffx          FFXInstance
-	OutputDir    string
-	Experiments  botanist.Experiments
-	LLVMProfdata string
+	Ffx           FFXInstance
+	OutputDir     string
+	Experiments   botanist.Experiments
+	LLVMProfdata  string
+	Target        targets.FuchsiaTarget
+	TestbedConfig []any
 }
 
 // NewFFXTester returns an FFXTester.
@@ -695,6 +703,8 @@ func NewFFXTester(ctx context.Context, opts FFXTesterOptions) (*FFXTester, error
 		ffx:               opts.Ffx,
 		localOutputDir:    opts.OutputDir,
 		experiments:       opts.Experiments,
+		target:            opts.Target,
+		testbedConfig:     opts.TestbedConfig,
 		testRuns:          make(map[string]ffxTestRun),
 		llvmProfdata:      opts.LLVMProfdata,
 		llvmVersion:       llvmVersion,
@@ -711,10 +721,76 @@ func (t *FFXTester) Test(ctx context.Context, test testsharder.Test, stdout, std
 	return BaseTestResultFromTest(test), t.testWithFile(ctx, test, stdout, stderr, outDir)
 }
 
-func (t *FFXTester) Reconnect(ctx context.Context) error {
+// for testability
+var ffxTesterReconnect = reconnect
+
+func reconnect(t *FFXTester, ctx context.Context) error {
 	return retry.Retry(ctx, retry.WithMaxDuration(retry.NewConstantBackoff(time.Second), 30*time.Second), func() error {
 		return t.ffx.TargetWait(ctx, "-t", "10")
 	}, nil)
+}
+
+func (t *FFXTester) Reconnect(ctx context.Context) error {
+	if err := ffxTesterReconnect(t, ctx); err == nil || againstDevice() {
+		return err
+	}
+	if err := t.target.ResolveIP(); err != nil {
+		return fmt.Errorf("failed to resolve IP: %w", err)
+	}
+	ipv6, err := t.target.IPv6()
+	if err != nil {
+		return fmt.Errorf("failed to get ipv6 addr: %w", err)
+	}
+	ipv4, err := t.target.IPv4()
+	if err != nil {
+		return fmt.Errorf("failed to get ipv4 addr: %w", err)
+	}
+	addr, err := targets.IPAddr(t.target)
+	if err != nil {
+		return fmt.Errorf("failed to get device addr: %w", err)
+	}
+
+	env := map[string]string{
+		botanistconstants.DeviceAddrEnvKey: addr.String(),
+		botanistconstants.IPv4AddrEnvKey:   ipv4.String(),
+		botanistconstants.IPv6AddrEnvKey:   ipv6.String(),
+	}
+	for k, v := range env {
+		if err := os.Setenv(k, v); err != nil {
+			return fmt.Errorf("failed to reset env var %s to %s: %w", k, v, err)
+		}
+	}
+	for i, info := range t.testbedConfig {
+		targetInfo, ok := info.(targets.FuchsiaTestbedConfig)
+		if !ok {
+			continue
+		}
+		if targetInfo.Nodename == t.target.Nodename() {
+			targetInfo.IPv4 = ""
+			targetInfo.IPv6 = ""
+			if ipv4 != nil {
+				targetInfo.IPv4 = ipv4.String()
+			}
+			if ipv6 != nil {
+				targetInfo.IPv6 = ipv6.String()
+			}
+			t.testbedConfig[i] = targetInfo
+			testbedConfigPath := os.Getenv(botanistconstants.TestbedConfigEnvKey)
+			if testbedConfigPath != "" {
+				data, err := json.Marshal(t.testbedConfig)
+				if err != nil {
+					return err
+				}
+				logger.Debugf(ctx, "updating testbed config with new ip addresses")
+				if err := os.WriteFile(testbedConfigPath, data, os.ModePerm); err != nil {
+					return err
+				}
+			}
+			break
+		}
+	}
+	t.ffx.SetTarget(addr.String())
+	return ffxTesterReconnect(t, ctx)
 }
 
 // testWithFile runs `ffx test` with -test-file and returns the test result.

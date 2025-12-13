@@ -319,11 +319,11 @@ func (r *RunCommand) dispatchTests(ctx context.Context, cancel context.CancelFun
 
 		// Create a testbed config file. We have to do this after starting the
 		// targets so that we can get their IP addresses.
-		testbedConfig, err := r.createTestbedConfig(baseTargets)
+		testbedConfig, testbedConfigPath, err := r.createTestbedConfig(baseTargets)
 		if err != nil {
 			return err
 		}
-		defer os.Remove(testbedConfig)
+		defer os.Remove(testbedConfigPath)
 
 		if r.expectsSSH {
 			for _, t := range fuchsiaTargets {
@@ -427,7 +427,7 @@ func (r *RunCommand) dispatchTests(ctx context.Context, cancel context.CancelFun
 			}
 		}
 
-		err = r.runAgainstTarget(ctx, primaryTarget, testsPath, testbedConfig)
+		err = r.runAgainstTarget(ctx, primaryTarget, testsPath, testbedConfig, testbedConfigPath)
 		// Cancel ctx to notify other goroutines that this routine has completed.
 		// If another goroutine gets an error and the context is canceled, it
 		// should return nil so that we always prioritize the result from this
@@ -574,30 +574,30 @@ func (r *RunCommand) runPreflights(ctx context.Context) error {
 
 // createTestbedConfig creates a configuration file that describes the targets
 // attached and returns the path to the file.
-func (r *RunCommand) createTestbedConfig(baseTargets []targets.Base) (string, error) {
+func (r *RunCommand) createTestbedConfig(baseTargets []targets.Base) ([]any, string, error) {
 	var testbedConfig []any
 	for _, t := range baseTargets {
 		c, err := t.TestConfig(r.expectsSSH)
 		if err != nil {
-			return "", err
+			return nil, "", err
 		}
 		testbedConfig = append(testbedConfig, c)
 	}
 
 	data, err := json.Marshal(testbedConfig)
 	if err != nil {
-		return "", err
+		return nil, "", err
 	}
 
 	f, err := os.CreateTemp("", "testbed_config")
 	if err != nil {
-		return "", err
+		return nil, "", err
 	}
 	defer f.Close()
 	if _, err := f.Write(data); err != nil {
-		return "", err
+		return nil, "", err
 	}
-	return f.Name(), nil
+	return testbedConfig, f.Name(), nil
 }
 
 // dumpSyslogOverSerial runs log_listener over serial to collect logs that may
@@ -623,12 +623,12 @@ func (r *RunCommand) dumpSyslogOverSerial(ctx context.Context, socketPath string
 	return nil
 }
 
-func (r *RunCommand) runAgainstTarget(ctx context.Context, t targets.FuchsiaTarget, testsPath string, testbedConfig string) error {
+func (r *RunCommand) runAgainstTarget(ctx context.Context, t targets.FuchsiaTarget, testsPath string, testbedConfig []any, testbedConfigPath string) error {
 	testrunnerEnv := map[string]string{
 		constants.NodenameEnvKey:                   t.Nodename(),
 		constants.SerialSocketEnvKey:               t.SerialSocketPath(),
 		constants.ECCableEnvKey:                    os.Getenv(constants.ECCableEnvKey),
-		constants.TestbedConfigEnvKey:              testbedConfig,
+		constants.TestbedConfigEnvKey:              testbedConfigPath,
 		testrunnerconstants.TestTimeoutScaleFactor: strconv.Itoa(r.testTimeoutScaleFactor),
 	}
 
@@ -683,6 +683,7 @@ func (r *RunCommand) runAgainstTarget(ctx context.Context, t targets.FuchsiaTarg
 	r.testrunnerOptions.FFX = t.GetFFX().FFXInstance
 	r.testrunnerOptions.Experiments = botanist.GetExperiments(r.experiments)
 	r.testrunnerOptions.FuchsiaTarget = t
+	r.testrunnerOptions.TestbedConfig = testbedConfig
 
 	if err := testrunner.SetupAndExecute(ctx, r.testrunnerOptions, testsPath); err != nil {
 		return fmt.Errorf("testrunner with flags: %v, with timeout: %s, failed: %w", r.testrunnerOptions, r.timeout, err)

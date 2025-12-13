@@ -76,6 +76,9 @@ type Options struct {
 
 	// The Fuchsia target to run tests against.
 	FuchsiaTarget targets.FuchsiaTarget
+
+	// The testbed config written to the FUCHSIA_TESTBED_CONFIG env var.
+	TestbedConfig []any
 }
 
 // ScaleTestTimeout multiplies the timeout by a factor set by the TEST_TIMEOUT_SCALE_FACTOR
@@ -202,11 +205,25 @@ func execute(
 ) error {
 	var fuchsiaSinks, localSinks []runtests.DataSinkMap
 	var fuchsiaTester, localTester Tester
+	var reconnectSSH func() (func(), error)
 
 	localEnv := append(os.Environ(),
 		// Tell tests written in Rust to print stack on failures.
 		"RUST_BACKTRACE=1",
 	)
+	var err error
+	testerOpts := SubprocessTesterOptions{
+		Dir:        opts.LocalWD,
+		Env:        localEnv,
+		OutputDir:  outputs.OutDir,
+		NsjailPath: opts.NsjailPath,
+		NsjailRoot: opts.NsjailRoot,
+		Target:     opts.FuchsiaTarget,
+	}
+	localTester, err = NewSubprocessTester(testerOpts)
+	if err != nil {
+		return err
+	}
 
 	if !opts.UseSerial && sshKeyFile != "" {
 		ffx, err := ffxInstance(ctx, opts.FFX, opts.Experiments)
@@ -215,10 +232,12 @@ func execute(
 		}
 		if ffx != nil {
 			testerOpts := FFXTesterOptions{
-				Ffx:          ffx,
-				OutputDir:    outputs.OutDir,
-				Experiments:  opts.Experiments,
-				LLVMProfdata: opts.LLVMProfdataPath,
+				Ffx:           ffx,
+				OutputDir:     outputs.OutDir,
+				Experiments:   opts.Experiments,
+				LLVMProfdata:  opts.LLVMProfdataPath,
+				Target:        opts.FuchsiaTarget,
+				TestbedConfig: opts.TestbedConfig,
 			}
 			ffxTester, err := NewFFXTester(ctx, testerOpts)
 			if err != nil {
@@ -233,6 +252,14 @@ func execute(
 				}
 			}()
 			fuchsiaTester = ffxTester
+			reconnectSSH = func() (func(), error) {
+				cleanup, err := restartSSHControlMaster(ctx, opts.FuchsiaTarget, fuchsiaTester, sshKeyFile)
+				if err == nil && localTester != nil {
+					logger.Debugf(ctx, "updating local env")
+					localTester.(*SubprocessTester).UpdateEnv(append(os.Environ(), "RUST_BACKTRACE=1"))
+				}
+				return cleanup, err
+			}
 		}
 	}
 
@@ -262,21 +289,6 @@ func execute(
 			if test.OS == "mac" && runtime.GOOS != "darwin" {
 				return nil, nil, fmt.Errorf("cannot run mac tests when GOOS = %q", runtime.GOOS)
 			}
-			if localTester == nil {
-				var err error
-				testerOpts := SubprocessTesterOptions{
-					Dir:        opts.LocalWD,
-					Env:        localEnv,
-					OutputDir:  outputs.OutDir,
-					NsjailPath: opts.NsjailPath,
-					NsjailRoot: opts.NsjailRoot,
-					Target:     opts.FuchsiaTarget,
-				}
-				localTester, err = NewSubprocessTester(testerOpts)
-				if err != nil {
-					return nil, nil, err
-				}
-			}
 			return localTester, &localSinks, nil
 		default:
 			return nil, nil, fmt.Errorf("test %#v has unsupported OS: %q", test, test.OS)
@@ -284,7 +296,7 @@ func execute(
 	}
 
 	var finalError error
-	cleanup, err := runAndOutputTests(ctx, tests, testerForTest, outputs, outDir, fuchsiaTester, opts.FuchsiaTarget, sshKeyFile)
+	cleanup, err := runAndOutputTests(ctx, tests, testerForTest, outputs, outDir, fuchsiaTester, reconnectSSH, opts.FuchsiaTarget)
 	if err != nil {
 		finalError = err
 	}
@@ -430,8 +442,8 @@ func runAndOutputTests(
 	outputs *TestOutputs,
 	globalOutDir string,
 	fuchsiaTester Tester,
+	reconnectSSH func() (func(), error),
 	target targets.FuchsiaTarget,
-	sshKeyFile string,
 ) (func(), error) {
 	cleanup := func() {}
 	// Since only a single goroutine writes to and reads from the queue it would
@@ -461,10 +473,11 @@ func runAndOutputTests(
 			}
 			shouldRunHealthCheck = false
 		}
-		if _, ok := fuchsiaTester.(*FFXTester); ok && sshKeyFile != "" && !target.SSHControlMasterRunning() {
+
+		if _, ok := fuchsiaTester.(*FFXTester); ok && !target.SSHControlMasterRunning() {
 			cleanup()
 			var err error
-			if cleanup, err = restartSSHControlMaster(ctx, target, fuchsiaTester, sshKeyFile); err != nil {
+			if cleanup, err = reconnectSSH(); err != nil {
 				return cleanup, err
 			}
 		}

@@ -115,25 +115,25 @@ func TestTestbedConfig(t *testing.T) {
 		name       string
 		target     testTarget
 		expectsSSH bool
-		want       testbedConfig
+		want       FuchsiaTestbedConfig
 	}{
 		{
 			name:       "valid",
 			target:     testTarget{nodename: "node", serial: "serial", ipv4: net.IPv4zero, ipv6: &net.IPAddr{IP: net.IPv6zero}},
 			expectsSSH: true,
-			want:       testbedConfig{Type: "FuchsiaDevice", Nodename: "node", SerialSocket: "serial", IPv4: net.IPv4zero.String(), IPv6: net.IPv6zero.String(), PDU: nil, SharedData: "/tmp/shared_data"},
+			want:       FuchsiaTestbedConfig{Type: "FuchsiaDevice", Nodename: "node", SerialSocket: "serial", IPv4: net.IPv4zero.String(), IPv6: net.IPv6zero.String(), PDU: nil, SharedData: "/tmp/shared_data"},
 		},
 		{
 			name:       "valid without SSH",
 			target:     testTarget{nodename: "node", serial: "serial", ipv4: net.IPv4zero, ipv6: &net.IPAddr{IP: net.IPv6zero}},
 			expectsSSH: false,
-			want:       testbedConfig{Type: "FuchsiaDevice", Nodename: "node", SerialSocket: "serial", PDU: nil},
+			want:       FuchsiaTestbedConfig{Type: "FuchsiaDevice", Nodename: "node", SerialSocket: "serial", PDU: nil},
 		},
 		{
 			name:       "valid no ip addresses",
 			target:     testTarget{nodename: "node", serial: "serial"},
 			expectsSSH: true,
-			want:       testbedConfig{Type: "FuchsiaDevice", Nodename: "node", SerialSocket: "serial", PDU: nil, SharedData: "/tmp/shared_data"},
+			want:       FuchsiaTestbedConfig{Type: "FuchsiaDevice", Nodename: "node", SerialSocket: "serial", PDU: nil, SharedData: "/tmp/shared_data"},
 		},
 		{
 			name: "valid with pdu",
@@ -143,7 +143,7 @@ func TestTestbedConfig(t *testing.T) {
 				Port: 1,
 			}},
 			expectsSSH: true,
-			want: testbedConfig{Type: "FuchsiaDevice", Nodename: "node", SerialSocket: "serial", PDU: &targetPDU{
+			want: FuchsiaTestbedConfig{Type: "FuchsiaDevice", Nodename: "node", SerialSocket: "serial", PDU: &targetPDU{
 				IP:   "192.168.1.1",
 				MAC:  "12:34:56:78:9a:bc",
 				Port: 1,
@@ -155,7 +155,7 @@ func TestTestbedConfig(t *testing.T) {
 				Sernum: "12345",
 			}},
 			expectsSSH: true,
-			want: testbedConfig{Type: "FuchsiaDevice", Nodename: "node", SerialSocket: "serial", Monsoon: &targetMonsoon{
+			want: FuchsiaTestbedConfig{Type: "FuchsiaDevice", Nodename: "node", SerialSocket: "serial", Monsoon: &targetMonsoon{
 				Sernum: "12345",
 			}, SharedData: "/tmp/shared_data"},
 		},

@@ -98,6 +98,9 @@ type FuchsiaTarget interface {
 	// the IP address.
 	SetConnectionTimeout(time.Duration)
 
+	// ResolveIP resolves the IP addresses of the target.
+	ResolveIP() error
+
 	// SSHClient returns an SSH client to the device (if the device has SSH running).
 	SSHClient() (*sshutil.Client, error)
 
@@ -168,6 +171,7 @@ type genericFuchsiaTarget struct {
 
 	ipv4         net.IP
 	ipv6         *net.IPAddr
+	addrResolved bool
 	serialServer *serial.Server
 
 	ffx    *FFXInstance
@@ -249,9 +253,9 @@ func (t *genericFuchsiaTarget) StartSerialServer() error {
 	return nil
 }
 
-// resolveIP uses mDNS to resolve the IPv6 and IPv4 addresses of the
+// ResolveIP uses mDNS to resolve the IPv6 and IPv4 addresses of the
 // target. It then caches the results so future requests are fast.
-func (t *genericFuchsiaTarget) resolveIP() error {
+func (t *genericFuchsiaTarget) ResolveIP() error {
 	timeout := 2 * time.Minute
 	if t.connectionTimeout != 0 {
 		timeout = t.connectionTimeout
@@ -264,6 +268,7 @@ func (t *genericFuchsiaTarget) resolveIP() error {
 	}
 	t.ipv4 = ipv4
 	t.ipv6 = &ipv6
+	t.addrResolved = true
 	return nil
 }
 
@@ -275,8 +280,8 @@ func (t *genericFuchsiaTarget) SerialSocketPath() string {
 
 // IPv4 returns the IPv4 address of the target.
 func (t *genericFuchsiaTarget) IPv4() (net.IP, error) {
-	if t.ipv4 == nil {
-		if err := t.resolveIP(); err != nil {
+	if !t.addrResolved {
+		if err := t.ResolveIP(); err != nil {
 			return nil, err
 		}
 	}
@@ -285,8 +290,8 @@ func (t *genericFuchsiaTarget) IPv4() (net.IP, error) {
 
 // IPv6 returns the IPv6 address of the target.
 func (t *genericFuchsiaTarget) IPv6() (*net.IPAddr, error) {
-	if t.ipv6 == nil {
-		if err := t.resolveIP(); err != nil {
+	if !t.addrResolved {
+		if err := t.ResolveIP(); err != nil {
 			return nil, err
 		}
 	}
@@ -768,7 +773,7 @@ func StopTargets(ctx context.Context, targets []FuchsiaTarget) {
 }
 
 // LINT.IfChange
-type testbedConfig struct {
+type FuchsiaTestbedConfig struct {
 	// Type identifies the type of device.
 	Type string `json:"type"`
 
@@ -826,8 +831,8 @@ type testbedConfigOptions struct {
 
 // TestbedConfig returns config used to communicate with the target (device
 // properties, serial paths, SSH properties, etc.) for use by subprocesses.
-func TestbedConfig(t FuchsiaTarget, expectsSSH bool, opts *testbedConfigOptions) (testbedConfig, error) {
-	cfg := testbedConfig{
+func TestbedConfig(t FuchsiaTarget, expectsSSH bool, opts *testbedConfigOptions) (FuchsiaTestbedConfig, error) {
+	cfg := FuchsiaTestbedConfig{
 		Type:         "FuchsiaDevice",
 		Nodename:     t.Nodename(),
 		SerialSocket: t.SerialSocketPath(),

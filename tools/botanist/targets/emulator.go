@@ -28,7 +28,9 @@ import (
 
 const (
 	// DefaultEmulatorNodename is the default nodename given to an emulator target.
-	DefaultEmulatorNodename = "botanist-target-emu"
+	// See generate_mac_address() in //src/developer/ffx/plugins/emulator/commands/start/src/pbm.rs
+	// for rationale for choosing this nodename.
+	DefaultEmulatorNodename = "fuchsia-5254-1234-1234"
 
 	// Minimum number of bytes of entropy bits required for the kernel's PRNG.
 	minEntropyBytes uint = 32 // 256 bits

@@ -936,7 +936,7 @@ func TestRunAndOutputTests(t *testing.T) {
 			}()
 			connectionErrorRetryBackoff = &retry.ZeroBackoff{}
 
-			cleanup, err := runAndOutputTests(ctx, tc.tests, testerForTest, outputs, resultsDir, nil, nil, "")
+			cleanup, err := runAndOutputTests(ctx, tc.tests, testerForTest, outputs, resultsDir, nil, nil, nil)
 			cleanup()
 			if tc.wantErr != (err != nil) {
 				t.Errorf("want err: %t, got %s", tc.wantErr, err)
@@ -984,6 +984,18 @@ func (t *fuchsiaTarget) SSHControlMasterRunning() bool {
 func (t *fuchsiaTarget) SetupSSHControlMaster(_ context.Context, _, _ string) (func(), error) {
 	t.sshControlMasterRunning = true
 	return func() {}, nil
+}
+
+func (t *fuchsiaTarget) ResolveIP() error {
+	return nil
+}
+
+func (t *fuchsiaTarget) IPv4() (net.IP, error) {
+	return nil, nil
+}
+
+func (t *fuchsiaTarget) IPv6() (*net.IPAddr, error) {
+	return nil, nil
 }
 
 func TestExecute(t *testing.T) {
@@ -1065,7 +1077,24 @@ func TestExecute(t *testing.T) {
 			}
 			defer o.Close()
 			target := &fuchsiaTarget{}
-			testrunnerOpts := Options{SnapshotFile: "snapshot.zip", FuchsiaTarget: target}
+			testbedConfig := []any{
+				targets.FuchsiaTestbedConfig{Nodename: "target1", IPv4: "0.0.0.0", IPv6: "::"},
+				"non-fuchsia-target",
+				targets.FuchsiaTestbedConfig{Nodename: targets.DefaultEmulatorNodename, IPv4: "0.0.0.0", IPv6: "::"},
+			}
+			oldReconnect := ffxTesterReconnect
+			defer func() { ffxTesterReconnect = oldReconnect }()
+			reconnect := false
+			ffxTesterReconnect = func(t *FFXTester, ctx context.Context) error {
+				if !reconnect {
+					reconnect = true
+					return fmt.Errorf("failed to reconnect")
+				}
+				return nil
+			}
+			expectedTestbedConfig := make([]any, 3)
+			copy(expectedTestbedConfig, testbedConfig)
+			testrunnerOpts := Options{SnapshotFile: "snapshot.zip", FuchsiaTarget: target, TestbedConfig: testbedConfig}
 			if c.useFFX {
 				if _, err := ffx.WriteRunResult(build.TestList{}, filepath.Join(o.OutDir, "early-boot-profiles")); err != nil {
 					t.Errorf("failed to write early-boot profiles: %s", err)
@@ -1086,6 +1115,15 @@ func TestExecute(t *testing.T) {
 				t.Errorf("ssh controlmaster not running when it should be")
 			} else if c.sshKeyFile == "" && target.SSHControlMasterRunning() {
 				t.Errorf("ssh controlmaster running when it shouldn't be")
+			}
+			if c.useFFX {
+				// The fake target returns nil IP addresses so we should expect
+				// the testbed config to have the addresses cleared for the emulator
+				// target.
+				expectedTestbedConfig[2] = targets.FuchsiaTestbedConfig{Nodename: targets.DefaultEmulatorNodename}
+			}
+			if diff := cmp.Diff(expectedTestbedConfig, testbedConfig); diff != "" {
+				t.Errorf("Unexpected testbed config (-want +got):\n%s", diff)
 			}
 
 			funcCalls := strings.Join(fuchsiaTester.funcCalls, ",")
