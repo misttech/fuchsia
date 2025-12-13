@@ -30,7 +30,7 @@ async fn corrupt_create_fails_on_last_byte_write(implementation: Implementation)
     let mut bytes = vec![0u8; 8194];
     let hash = fuchsia_merkle::root_from_slice(&bytes);
     // Corrupt the last byte.
-    bytes[8193] = 1;
+    bytes[8193] ^= 1;
     let compressed = Type1Blob::generate(&bytes, CompressionMode::Never);
     let compressed_len: u64 = compressed.len().try_into().unwrap();
 
@@ -49,26 +49,51 @@ async fn corrupt_create_fails_on_last_byte_write(implementation: Implementation)
 }
 
 #[fuchsia_async::run_singlethreaded(test)]
+async fn cppblobfs_concurrent_create_fails() {
+    let blobfs = BlobfsRamdisk::builder().cpp_blobfs().start().await.unwrap();
+    let creator = blobfs.blob_creator_proxy().unwrap();
+
+    let bytes = [0u8; 1];
+    let hash = fuchsia_merkle::root_from_slice(&bytes[..]);
+
+    let _writer0 = creator.create(&hash, false).await.unwrap().unwrap().into_proxy();
+    assert_eq!(blobfs.list_blobs().unwrap(), BTreeSet::new());
+
+    assert_matches!(
+        creator.create(&hash, false).await.unwrap(),
+        Err(ffxfs::CreateBlobError::AlreadyExists)
+    );
+    assert_eq!(blobfs.list_blobs().unwrap(), BTreeSet::new());
+
+    blobfs.stop().await.unwrap();
+}
+
+#[fuchsia_async::run_singlethreaded(test)]
 async fn fxblob_concurrent_creation_succeeds() {
     let blobfs = BlobfsRamdisk::builder().fxblob().start().await.unwrap();
     let creator = blobfs.blob_creator_proxy().unwrap();
 
-    // 8,194 bytes so that the partial write exceeds 8,192 bytes.
-    let bytes = vec![0u8; 8194];
+    let bytes = vec![0u8; 100];
     let hash = fuchsia_merkle::root_from_slice(&bytes);
     let compressed = Type1Blob::generate(&bytes, CompressionMode::Never);
     let compressed_len: u64 = compressed.len().try_into().unwrap();
 
+    // Create and write all but the last byte.
     let writer0 = creator.create(&hash, false).await.unwrap().unwrap().into_proxy();
     let vmo0 = writer0.get_vmo(compressed_len).await.unwrap().unwrap();
     let () = vmo0.write(&compressed, 0).unwrap();
     let () = writer0.bytes_ready(compressed_len - 1).await.unwrap().unwrap();
     assert_eq!(blobfs.list_blobs().unwrap(), BTreeSet::new());
 
+    // Fully creating on another writer still works.
     let writer1 = creator.create(&hash, false).await.unwrap().unwrap().into_proxy();
     let vmo1 = writer1.get_vmo(compressed_len).await.unwrap().unwrap();
     let () = vmo1.write(&compressed, 0).unwrap();
     let () = writer1.bytes_ready(compressed_len).await.unwrap().unwrap();
+    assert_eq!(blobfs.list_blobs().unwrap(), BTreeSet::from([hash]));
+
+    // Finishing the initial create by writing the final byte also works.
+    let () = writer0.bytes_ready(1).await.unwrap().unwrap();
     assert_eq!(blobfs.list_blobs().unwrap(), BTreeSet::from([hash]));
 
     blobfs.stop().await.unwrap();
@@ -109,7 +134,7 @@ async fn readdirents_only_returns_valid_blobs(implementation: Implementation) {
     let blobfs_server =
         BlobfsRamdisk::builder().implementation(implementation).start().await.unwrap();
     let creator = blobfs_server.blob_creator_proxy().unwrap();
-    let bytes = vec![0u8; 1];
+    let bytes = vec![0u8; 2];
     let hash = fuchsia_merkle::root_from_slice(&bytes);
     let compressed = Type1Blob::generate(&bytes, CompressionMode::Never);
     let compressed_len: u64 = compressed.len().try_into().unwrap();
@@ -139,4 +164,41 @@ async fn readdirents_only_returns_valid_blobs(implementation: Implementation) {
     assert_eq!(blobfs_server.list_blobs().unwrap(), BTreeSet::new());
 
     let () = blobfs_server.stop().await.unwrap();
+}
+
+#[test_case(Implementation::CppBlobfs; "blobfs")]
+#[test_case(Implementation::Fxblob; "fxblob")]
+#[fuchsia_async::run_singlethreaded(test)]
+async fn create_partial_write_drop_create(implementation: Implementation) {
+    let blobfs = BlobfsRamdisk::builder().implementation(implementation).start().await.unwrap();
+    let creator = blobfs.blob_creator_proxy().unwrap();
+
+    let bytes = vec![0u8; 100];
+    let hash = fuchsia_merkle::root_from_slice(&bytes);
+    let compressed = Type1Blob::generate(&bytes, CompressionMode::Never);
+    let compressed_len: u64 = compressed.len().try_into().unwrap();
+
+    // Create and write all but the last byte.
+    let writer0 = creator.create(&hash, false).await.unwrap().unwrap().into_proxy();
+    let vmo0 = writer0.get_vmo(compressed_len).await.unwrap().unwrap();
+    let () = vmo0.write(&compressed, 0).unwrap();
+    let () = writer0.bytes_ready(compressed_len - 1).await.unwrap().unwrap();
+    assert_eq!(blobfs.list_blobs().unwrap(), BTreeSet::new());
+
+    // Dropping the writer should allow immediate re-creation, even for implementations that do not
+    // support concurrent creation (of course implementations that support concurrent creation, i.e.
+    // fxblob, would pass this test even without dropping the writer).
+    // This is because dropping the writer proxy synchronously closes the client end's zircon
+    // channel, and cppblobfs (which does not support concurrent creation) checks the client ends of
+    // outstanding creation attempts when it starts handling a new creation attempt, and will cancel
+    // any attempts with closed client ends before continuing.
+    drop(writer0);
+    let writer1 = creator.create(&hash, false).await.unwrap().unwrap().into_proxy();
+    assert_eq!(blobfs.list_blobs().unwrap(), BTreeSet::new());
+    let vmo1 = writer1.get_vmo(compressed_len).await.unwrap().unwrap();
+    let () = vmo1.write(&compressed, 0).unwrap();
+    let () = writer1.bytes_ready(compressed_len).await.unwrap().unwrap();
+    assert_eq!(blobfs.list_blobs().unwrap(), BTreeSet::from([hash]));
+
+    blobfs.stop().await.unwrap();
 }
