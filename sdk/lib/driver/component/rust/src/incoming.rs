@@ -138,10 +138,7 @@ impl fidl_next_protocol::ServiceConnector<fdf_fidl::DriverChannel> for ServiceMe
         server_end: fdf_fidl::DriverChannel,
     ) -> Result<(), Self::Error> {
         let (client_token, server_token) = zx::Channel::create();
-        connect(&self.0, member, server_token).map_err(|err| {
-            error!("Failed to connect to service member {member}: {err:?}");
-            Status::CONNECTION_REFUSED
-        })?;
+
         // SAFETY: client_token and server_end are valid by construction and `fdf_token_transfer`
         // consumes both handles and does not interact with rust memory.
         Status::ok(unsafe {
@@ -149,6 +146,11 @@ impl fidl_next_protocol::ServiceConnector<fdf_fidl::DriverChannel> for ServiceMe
                 client_token.into_raw(),
                 server_end.into_driver_handle().into_raw().get(),
             )
+        })?;
+
+        connect(&self.0, member, server_token).map_err(|err| {
+            error!("Failed to connect to service member {member}: {err:?}");
+            Status::CONNECTION_REFUSED
         })
     }
 }
