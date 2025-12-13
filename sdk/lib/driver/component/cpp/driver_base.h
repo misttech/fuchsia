@@ -7,6 +7,7 @@
 
 #include <fidl/fuchsia.driver.framework/cpp/natural_types.h>
 #include <lib/component/outgoing/cpp/structured_config.h>
+#include <lib/driver/component/cpp/internal/concepts.h>
 #include <lib/driver/component/cpp/prepare_stop_completer.h>
 #include <lib/driver/component/cpp/start_completer.h>
 #include <lib/driver/incoming/cpp/namespace.h>
@@ -23,7 +24,8 @@
 #include <memory>
 
 namespace fdf_internal {
-template <typename DriverBaseImpl>
+
+template <IsDriver DriverBaseImpl>
 class DriverServer;
 }  // namespace fdf_internal
 
@@ -166,10 +168,8 @@ class DriverBase {
   }
 
   template <typename StructuredConfig>
+    requires component::IsStructuredConfigV<StructuredConfig>
   StructuredConfig take_config() {
-    static_assert(component::IsStructuredConfigV<StructuredConfig>,
-                  "Invalid type supplied. StructuredConfig must be a "
-                  "structured config type. Example usage: take_config<my_driverconfig::Config>().");
     std::optional config_vmo = std::move(start_args_.config());
     ZX_ASSERT_MSG(config_vmo.has_value(),
                   "Config VMO handle must be provided and cannot already have been taken.");

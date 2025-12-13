@@ -26,6 +26,7 @@ sdk_source_set("cpp") {
     "driver_base.cc",
     "driver_base.h",
     "driver_export.h",
+    "internal/concepts.h",
     "internal/driver_server.h",
     "internal/start_args.h",
     "internal/symbols.h",
@@ -36,6 +37,7 @@ sdk_source_set("cpp") {
   ]
 
   sdk_headers_for_internal_use = [
+    "internal/concepts.h",
     "internal/driver_server.h",
     "internal/start_args.h",
     "internal/symbols.h",

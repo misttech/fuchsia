@@ -26,9 +26,9 @@ fuchsia_component_decl::wire::Offer MakeOffer(
     std::string_view instance_name = component::kDefaultInstance);
 
 template <typename Service>
+  requires fidl::IsServiceV<Service>
 fuchsia_driver_framework::Offer MakeOffer2(
     std::string_view instance_name = component::kDefaultInstance) {
-  static_assert(fidl::IsServiceV<Service>, "Service must be a fidl Service");
   if constexpr (std::is_same_v<typename Service::Transport, fidl::internal::DriverTransport>) {
     return fuchsia_driver_framework::Offer::WithDriverTransport(
         MakeOffer(Service::Name, instance_name));
@@ -42,9 +42,9 @@ fuchsia_driver_framework::Offer MakeOffer2(
 }
 
 template <typename Service>
+  requires fidl::IsServiceV<Service>
 fuchsia_driver_framework::wire::Offer MakeOffer2(
     fidl::AnyArena& arena, std::string_view instance_name = component::kDefaultInstance) {
-  static_assert(fidl::IsServiceV<Service>, "Service must be a fidl Service");
   if constexpr (std::is_same_v<typename Service::Transport, fidl::internal::DriverTransport>) {
     return fuchsia_driver_framework::wire::Offer::WithDriverTransport(
         arena, MakeOffer(arena, Service::Name, instance_name));

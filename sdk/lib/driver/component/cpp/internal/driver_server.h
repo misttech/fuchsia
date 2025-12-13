@@ -8,6 +8,7 @@
 #include <fidl/fuchsia.driver.framework/cpp/driver/wire.h>
 #include <fidl/fuchsia.driver.framework/cpp/type_conversions.h>
 #include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/component/cpp/internal/concepts.h>
 #include <lib/driver/component/cpp/prepare_stop_completer.h>
 #include <lib/driver/component/cpp/start_completer.h>
 #include <lib/driver/logging/cpp/logger.h>
@@ -16,21 +17,8 @@
 namespace fdf_internal {
 
 // This will shim a |DriverBase| based driver with the new FIDL based registration.
-template <typename DriverBaseImpl>
+template <IsDriver DriverBaseImpl>
 class DriverServer final : public fdf::WireServer<fuchsia_driver_framework::Driver> {
-  static_assert(std::is_base_of_v<fdf::DriverBase, DriverBaseImpl>,
-                "The driver type must implement the fdf::DriverBase class.");
-
-  static_assert(!std::is_abstract_v<DriverBaseImpl>,
-                "The driver class must not be abstract. Try making it a final class to "
-                "see the unimplemented pure virtual methods. Eg: "
-                "class Driver final : public fdf::DriverBase");
-
-  static_assert(std::is_constructible_v<DriverBaseImpl, fuchsia_driver_framework::DriverStartArgs,
-                                        fdf::UnownedSynchronizedDispatcher>,
-                "The driver must be constructible from "
-                "(DriverStartArgs, fdf::UnownedSynchronizedDispatcher)");
-
  public:
   // Initialize the fuchsia_driver_framework::Driver server.
   static void* initialize(fdf_handle_t server_handle) {
