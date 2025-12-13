@@ -68,6 +68,20 @@ std::pair<std::set<zx_koid_t>, std::set<zx_koid_t>> GetOutputKoids(zx::socket so
           tids.insert(pt.thread_koid());
         }
       }
+    } else if (record.type() == trace::RecordType::kLargeRecord) {
+      const auto& large_record = record.GetLargeRecord();
+      if (large_record.type() == trace::LargeRecordType::kBlob) {
+        const auto& blob = large_record.GetBlob();
+        if (std::holds_alternative<trace::LargeRecordData::BlobEvent>(blob)) {
+          const auto& event = std::get<trace::LargeRecordData::BlobEvent>(blob);
+          if (event.process_thread.process_koid() != 0) {
+            pids.insert(event.process_thread.process_koid());
+          }
+          if (event.process_thread.thread_koid() != 0) {
+            tids.insert(event.process_thread.thread_koid());
+          }
+        }
+      }
     }
   };
 
@@ -89,6 +103,19 @@ std::vector<fprofiler::SamplingConfig> default_sample_configs() {
       .sample = fprofiler::Sample{{
           .callgraph =
               fprofiler::CallgraphConfig{{.strategy = fprofiler::CallgraphStrategy::kFramePointer}},
+          .counters = std::vector<fprofiler::Counter>{},
+      }},
+  }}};
+}
+
+// Sample the stack via DWARF at 100hz.
+std::vector<fprofiler::SamplingConfig> dwarf_sample_configs() {
+  return std::vector{fprofiler::SamplingConfig{{
+      .period = 10'000'000,
+      .timebase = fprofiler::Counter::WithPlatformIndependent(fprofiler::CounterId::kNanoseconds),
+      .sample = fprofiler::Sample{{
+          .callgraph =
+              fprofiler::CallgraphConfig{{.strategy = fprofiler::CallgraphStrategy::kDwarf}},
           .counters = std::vector<fprofiler::Counter>{},
       }},
   }}};
@@ -903,5 +930,59 @@ TEST(ProfilerIntegrationTest, ExitedAfterConfigure) {
   ASSERT_TRUE(TearDownInstance(lifecycle_client, name, moniker).is_ok());
   ASSERT_TRUE(client->Start({{.buffer_results = true}}).is_ok());
   ASSERT_TRUE(client->Stop().is_ok());
+  ASSERT_TRUE(client->Reset().is_ok());
+}
+
+TEST(ProfilerIntegrationTest, StackSampling) {
+  zx::result client_end = component::Connect<fprofiler::Session>();
+  ASSERT_TRUE(client_end.is_ok());
+  const fidl::SyncClient client{std::move(*client_end)};
+
+  zx::socket in_socket;
+  zx::socket outgoing_socket;
+
+  ASSERT_EQ(zx::socket::create(0u, &in_socket, &outgoing_socket), ZX_OK);
+  zx::process self;
+  zx::process::self()->duplicate(ZX_RIGHT_SAME_RIGHTS, &self);
+
+  std::thread child(MakeWork);
+  const zx::unowned_thread child_handle{native_thread_get_zx_handle(child.native_handle())};
+  child.detach();
+
+  zx_status_t res =
+      child_handle->wait_one(ZX_THREAD_RUNNING, zx::deadline_after(zx::sec(1)), nullptr);
+  ASSERT_EQ(ZX_OK, res);
+
+  zx_info_handle_basic_t info;
+  res = child_handle->get_info(ZX_INFO_HANDLE_BASIC, &info, sizeof(info), nullptr, nullptr);
+  ASSERT_EQ(ZX_OK, res);
+
+  fprofiler::TargetConfig target_config =
+      fprofiler::TargetConfig::WithTasks(std::vector{fprofiler::Task::WithThread(info.koid)});
+  fprofiler::Config config{{
+      .configs = dwarf_sample_configs(),
+      .target = std::move(target_config),
+  }};
+
+  ASSERT_TRUE(client
+                  ->Configure({{
+                      .output = std::move(outgoing_socket),
+                      .config = std::move(config),
+                  }})
+                  .is_ok());
+
+  ASSERT_TRUE(client->Start({{.buffer_results = true}}).is_ok());
+  // Get some samples
+  sleep(1);
+
+  auto stop_response = client->Stop();
+  ASSERT_TRUE(stop_response.is_ok());
+  ASSERT_TRUE(stop_response.value().samples_collected().has_value());
+  EXPECT_GT(stop_response.value().samples_collected().value(), size_t{10});
+
+  auto [pids, tids] = GetOutputKoids(std::move(in_socket));
+  EXPECT_EQ(tids.size(), size_t{1});
+  EXPECT_EQ(pids.size(), size_t{1});
+
   ASSERT_TRUE(client->Reset().is_ok());
 }

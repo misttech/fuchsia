@@ -539,7 +539,7 @@ void profiler::ProfilerControllerImpl::Stop(StopCompleter::Sync& completer) {
     // We'll use the timestamp from the first sample of this process for these records.
     zx::ticks process_timestamp = samples[0].timestamp;
 
-    if (modules->process_contexts.contains(pid)) {
+    if (samples[0].stack_memory.empty() && modules->process_contexts.contains(pid)) {
       auto process_modules = modules->process_contexts[pid];
       for (const auto& [build_id, mod] : process_modules) {
         uint16_t module_id = next_module_id++;
@@ -563,10 +563,19 @@ void profiler::ProfilerControllerImpl::Stop(StopCompleter::Sync& completer) {
     }
 
     for (const Sample& sample : samples) {
-      fxt::WriteProfilerBacktraceRecord(
-          writer_.get(), sample.timestamp.get(),
-          fxt::ThreadRef<fxt::RefType::kInline>(fxt::Koid(pid), fxt::Koid(sample.tid)),
-          sample.stack.data(), sample.stack.size() * sizeof(uint64_t));
+      if (!sample.stack_memory.empty()) {
+        fxt::WriteLargeBlobRecordWithMetadata(
+            writer_.get(), sample.timestamp.get(),
+            fxt::StringRef<fxt::RefType::kInline>("cpu_profiler"),
+            fxt::StringRef<fxt::RefType::kInline>("stack_sample"),
+            fxt::ThreadRef<fxt::RefType::kInline>(fxt::Koid(pid), fxt::Koid(sample.tid)),
+            sample.stack_memory.data(), sample.stack_memory.size());
+      } else {
+        fxt::WriteProfilerBacktraceRecord(
+            writer_.get(), sample.timestamp.get(),
+            fxt::ThreadRef<fxt::RefType::kInline>(fxt::Koid(pid), fxt::Koid(sample.tid)),
+            sample.stack.data(), sample.stack.size() * sizeof(uint64_t));
+      }
     }
   }
 

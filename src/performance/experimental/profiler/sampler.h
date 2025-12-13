@@ -39,6 +39,9 @@ struct Sample {
   zx_koid_t tid;
   std::vector<uint64_t> stack;
   zx::ticks timestamp;
+  // TODO(https://fxbug.dev/466468564): Use std::variant<Backtrace, StackMemory> instead of separate
+  // fields.
+  std::vector<uint8_t> stack_memory;
 };
 
 class Sampler : public fxl::RefCountedThreadSafe<Sampler> {

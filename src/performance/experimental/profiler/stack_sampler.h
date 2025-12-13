@@ -17,6 +17,13 @@ class StackSampler : public Sampler {
 
   zx::result<> Start(size_t buffer_size_mb) override;
   zx::result<> Stop() override;
+
+ private:
+  void AddThread(std::vector<zx_koid_t> job_path, zx_koid_t pid, zx_koid_t tid,
+                 zx::thread t) override;
+  void CollectSamples(async_dispatcher_t* dispatcher, async::TaskBase* task, zx_status_t status);
+  async::TaskMethod<profiler::StackSampler, &profiler::StackSampler::CollectSamples> sample_task_{
+      this};
 };
 
 }  // namespace profiler
