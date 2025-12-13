@@ -57,6 +57,7 @@ const DEFAULT_THREAD_ROLE: &str = "fuchsia.starnix.fair.16";
 /// Call [SpawnRequestBuilder::new()] to start building. Refer to the unit tests in this module for
 /// usage examples.
 pub struct SpawnRequestBuilder<C: ClosureKind> {
+    debug_name: String,
     role: Option<&'static str>,
     closure_kind: C,
 }
@@ -65,15 +66,20 @@ pub struct SpawnRequestBuilder<C: ClosureKind> {
 impl SpawnRequestBuilder<ClosureNone> {
     /// Creates a new spawn request builder.
     pub fn new() -> Self {
-        Self { role: None, closure_kind: ClosureNone {} }
+        Self { role: None, closure_kind: ClosureNone {}, debug_name: "kthreadd".into() }
     }
 }
 
 /// You can call these at any point in the builder's lifecycle.
 impl<C: ClosureKind> SpawnRequestBuilder<C> {
-    /// Set a role to apply to the thread that will run your closure,
+    /// Set a role to apply to the thread that will run your closure.
     pub fn with_role(self, role: &'static str) -> Self {
         Self { role: Some(role), ..self }
+    }
+
+    /// Set a task name to apply to the thread that will run your closure.
+    pub fn with_debug_name(self, debug_name: &'static str) -> Self {
+        Self { debug_name: debug_name.into(), ..self }
     }
 }
 
@@ -85,13 +91,17 @@ impl SpawnRequestBuilder<ClosureNone> {
         F: FnOnce(&mut Locked<Unlocked>, &CurrentTask) -> T + Send + 'static,
         T: Send + 'static,
     {
-        let SpawnRequestBuilder { role, closure_kind: _ } = self;
+        let SpawnRequestBuilder { role, closure_kind: _, debug_name } = self;
         let (sender, receiver) = sync_channel::<T>(1);
         let _keepalive = sender.clone();
         let closure = Box::new(move |locked: &mut Locked<Unlocked>, current_task: &CurrentTask| {
             let _ = sender.send(f(locked, current_task));
         });
-        SpawnRequestBuilder { role, closure_kind: ClosureSome { closure, receiver, _keepalive } }
+        SpawnRequestBuilder {
+            role,
+            closure_kind: ClosureSome { closure, receiver, _keepalive },
+            debug_name,
+        }
     }
 
     /// Provides the closure that the spawner will run.
@@ -109,6 +119,8 @@ impl SpawnRequestBuilder<ClosureNone> {
 pub struct SpawnRequest {
     /// The closure to run.
     closure: BoxedClosure,
+    /// A name to give to the task.
+    debug_name: String,
 }
 
 impl<T> SpawnRequestBuilder<ClosureSome<T>>
@@ -132,7 +144,7 @@ where
     /// let result = result_fn();
     /// ```
     pub fn build_with_sync_result(self) -> (impl FnOnce() -> Result<T, Errno>, SpawnRequest) {
-        let Self { role, closure_kind } = self;
+        let Self { role, closure_kind, debug_name } = self;
         let ClosureSome { closure, receiver, _keepalive } = closure_kind;
         let result_fn = move || {
             let result =
@@ -143,7 +155,7 @@ where
             result
         };
         let run_fn = maybe_apply_role(role, closure);
-        (result_fn, SpawnRequest { closure: run_fn })
+        (result_fn, SpawnRequest { closure: run_fn, debug_name })
     }
 
     /// Like [build], but allows receiving a result as a future.
@@ -157,7 +169,7 @@ where
     /// let result = result_fut.await;
     /// ```
     pub fn build_with_async_result(self) -> (impl Future<Output = Result<T, Errno>>, SpawnRequest) {
-        let Self { role, closure_kind } = self;
+        let Self { role, closure_kind, debug_name } = self;
         let ClosureSome { closure, receiver, _keepalive } = closure_kind;
         let (sender_async, result_fut) = oneshot::channel::<Result<T, Errno>>();
         let maybe_with_role = maybe_apply_role(role, closure);
@@ -175,14 +187,12 @@ where
             });
         let result_fut = result_fut
             .unwrap_or_else(|err| Err(errno!(EINTR, format!("while receiving async: {err:?}"))));
-        (result_fut, SpawnRequest { closure: repackaged })
+        (result_fut, SpawnRequest { closure: repackaged, debug_name })
     }
 }
 
 /// A thread pool that immediately execute any new work sent to it and keep a maximum number of
 /// idle threads.
-///
-/// Call [DynamicThreadSpawner::new_with_max_idle_threads] to start creating a new instance.
 #[derive(Debug)]
 pub struct DynamicThreadSpawner {
     state: Arc<Mutex<DynamicThreadSpawnerState>>,
@@ -279,8 +289,13 @@ struct DynamicThreadSpawnerState {
 }
 
 impl DynamicThreadSpawner {
-    pub fn new(max_idle_threads: u8, system_task: WeakRef<Task>) -> Self {
-        let persistent_thread = RunningThread::new_persistent(system_task.clone());
+    pub fn new(
+        max_idle_threads: u8,
+        system_task: WeakRef<Task>,
+        debug_name: impl Into<String>,
+    ) -> Self {
+        let persistent_thread =
+            RunningThread::new_persistent(system_task.clone(), debug_name.into());
         Self {
             state: Arc::new(Mutex::new(DynamicThreadSpawnerState {
                 max_idle_threads,
@@ -299,9 +314,6 @@ impl DynamicThreadSpawner {
     /// This method will use an idle thread in the pool if one is available, otherwise it will
     /// start a new thread. When this method returns, it is guaranteed that a thread is
     /// responsible to start running the closure.
-    ///
-    /// Use [SpawnRequestBuilder::new()] to configure a closure to run and any other options
-    /// you might need.
     pub fn spawn_from_request(&self, spawn_request: SpawnRequest) {
         // Check whether a thread already exists to handle the request.
         let mut function: BoxedClosure = Box::new(spawn_request.closure);
@@ -341,7 +353,12 @@ impl DynamicThreadSpawner {
             let system_task = self.system_task.clone();
             move |_, _| {
                 sender
-                    .send(RunningThread::new(state, system_task, function))
+                    .send(RunningThread::new(
+                        state,
+                        system_task,
+                        spawn_request.debug_name,
+                        function,
+                    ))
                     .expect("receiver must not be dropped");
             }
         });
@@ -374,6 +391,7 @@ impl RunningThread {
     fn new(
         state: Arc<Mutex<DynamicThreadSpawnerState>>,
         system_task: WeakRef<Task>,
+        debug_task_name: String,
         f: BoxedClosure,
     ) -> Self {
         let (sender, receiver) = sync_channel::<BoxedClosure>(0);
@@ -387,8 +405,11 @@ impl RunningThread {
                         reason = "Force documented unsafe blocks in Starnix"
                     )]
                     let locked = unsafe { Unlocked::new() };
-                    let result =
-                        with_new_current_task(locked, &system_task, |locked, current_task| {
+                    let result = with_new_current_task(
+                        locked,
+                        &system_task,
+                        debug_task_name,
+                        |locked, current_task| {
                             while let Ok(f) = receiver.recv() {
                                 f(locked, &current_task);
                                 // Apply any delayed releasers.
@@ -403,7 +424,8 @@ impl RunningThread {
                                     return;
                                 }
                             }
-                        });
+                        },
+                    );
                     if let Err(e) = result {
                         log_error!("Unable to create a kernel thread: {e:?}");
                     }
@@ -422,7 +444,7 @@ impl RunningThread {
         result
     }
 
-    fn new_persistent(system_task: WeakRef<Task>) -> Self {
+    fn new_persistent(system_task: WeakRef<Task>, task_name: String) -> Self {
         // The persistent thread doesn't need to do any rendez-vous when received task.
         let (sender, receiver) = sync_channel::<BoxedClosure>(20);
         let thread = Some(
@@ -442,7 +464,7 @@ impl RunningThread {
                         match create_kernel_thread(
                             locked,
                             &system_task,
-                            TaskCommand::new(b"kthreadd"),
+                            TaskCommand::new(task_name.as_bytes()),
                         ) {
                             Ok(task) => task,
                             Err(e) => {
@@ -495,7 +517,7 @@ mod tests {
     #[fuchsia::test]
     async fn run_simple_task() {
         spawn_kernel_and_run(async |_, current_task| {
-            let spawner = DynamicThreadSpawner::new(2, current_task.weak_task());
+            let spawner = DynamicThreadSpawner::new(2, current_task.weak_task(), "kthreadd");
             // Type decorations are needed sometimes to avoid "closure type is
             // not general enough" error.
             let closure = move |_: &mut Locked<Unlocked>, _: &CurrentTask| {};
@@ -508,7 +530,7 @@ mod tests {
     #[fuchsia::test]
     async fn run_10_tasks() {
         spawn_kernel_and_run(async |_, current_task| {
-            let spawner = DynamicThreadSpawner::new(2, current_task.weak_task());
+            let spawner = DynamicThreadSpawner::new(2, current_task.weak_task(), "kthreadd");
             for _ in 0..10 {
                 let closure = move |_: &mut Locked<Unlocked>, _: &CurrentTask| {};
                 let opts = SpawnRequestBuilder::new().with_sync_closure(closure).build();
@@ -521,7 +543,7 @@ mod tests {
     #[fuchsia::test]
     async fn blocking_task_do_not_prevent_further_processing() {
         spawn_kernel_and_run(async |_, current_task| {
-            let spawner = DynamicThreadSpawner::new(1, current_task.weak_task());
+            let spawner = DynamicThreadSpawner::new(1, current_task.weak_task(), "kthreadd");
 
             let pair = Arc::new((fuchsia_sync::Mutex::new(false), fuchsia_sync::Condvar::new()));
             for _ in 0..10 {
@@ -556,7 +578,7 @@ mod tests {
     #[fuchsia::test]
     async fn run_spawn_and_get_result() {
         spawn_kernel_and_run(async |_, current_task| {
-            let spawner = DynamicThreadSpawner::new(2, current_task.weak_task());
+            let spawner = DynamicThreadSpawner::new(2, current_task.weak_task(), "kthreadd");
 
             let (result, req) =
                 SpawnRequestBuilder::new().with_sync_closure(|_, _| 3).build_with_sync_result();
@@ -569,7 +591,7 @@ mod tests {
     #[fuchsia::test]
     async fn test_spawn_async() {
         spawn_kernel_and_run(async |_, current_task| {
-            let spawner = DynamicThreadSpawner::new(2, current_task.weak_task());
+            let spawner = DynamicThreadSpawner::new(2, current_task.weak_task(), "kthreadd");
 
             // The closure free variables must be decorated with their respective types,
             // the rust compiler gets confused otherwise and is unable to infer the correct
@@ -590,7 +612,7 @@ mod tests {
     #[fuchsia::test]
     async fn test_spawn_async_closure() {
         spawn_kernel_and_run(async |_, current_task| {
-            let spawner = DynamicThreadSpawner::new(2, current_task.weak_task());
+            let spawner = DynamicThreadSpawner::new(2, current_task.weak_task(), "kthreadd");
             let fut = async |_: LockedAndTask<'_>| 42;
             let (result, req) =
                 SpawnRequestBuilder::new().with_async_closure(fut).build_with_sync_result();
@@ -603,7 +625,7 @@ mod tests {
     #[fuchsia::test]
     async fn test_spawn_sync_to_async_result() {
         spawn_kernel_and_run(async |_, current_task| {
-            let spawner = DynamicThreadSpawner::new(2, current_task.weak_task());
+            let spawner = DynamicThreadSpawner::new(2, current_task.weak_task(), "kthreadd");
             let fut = async |_: LockedAndTask<'_>| 42;
             let (result, req) =
                 SpawnRequestBuilder::new().with_async_closure(fut).build_with_sync_result();
@@ -621,7 +643,7 @@ mod tests {
     #[fuchsia::test]
     async fn test_spawn_async_to_async_result() {
         spawn_kernel_and_run(async |_, current_task| {
-            let spawner = DynamicThreadSpawner::new(2, current_task.weak_task());
+            let spawner = DynamicThreadSpawner::new(2, current_task.weak_task(), "kthreadd");
             let fut = async |_: LockedAndTask<'_>| 42;
             let (result_fut, req) =
                 SpawnRequestBuilder::new().with_async_closure(fut).build_with_async_result();

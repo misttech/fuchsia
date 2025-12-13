@@ -75,7 +75,7 @@ impl KernelThreads {
     pub fn init(&self, system_task: CurrentTask) -> Result<(), Errno> {
         self.system_task.set(SystemTask::new(system_task)).map_err(|_| errno!(EEXIST))?;
         self.spawner
-            .set(DynamicThreadSpawner::new(2, self.system_task().weak_task()))
+            .set(DynamicThreadSpawner::new(2, self.system_task().weak_task(), "kthreadd/init"))
             .map_err(|_| errno!(EEXIST))?;
         Ok(())
     }
@@ -148,6 +148,7 @@ impl Drop for KernelThreads {
 pub fn with_new_current_task<F, R>(
     locked: &mut Locked<Unlocked>,
     system_task: &WeakRef<Task>,
+    task_name: String,
     f: F,
 ) -> Result<R, Errno>
 where
@@ -157,7 +158,7 @@ where
         let Some(system_task) = system_task.upgrade() else {
             return error!(ESRCH);
         };
-        create_kernel_thread(locked, &system_task, TaskCommand::new(b"kthreadd")).unwrap()
+        create_kernel_thread(locked, &system_task, TaskCommand::new(task_name.as_bytes())).unwrap()
     };
     let result = f(locked, &current_task);
     current_task.release(locked);
