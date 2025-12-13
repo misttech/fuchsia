@@ -57,11 +57,11 @@ impl AttributionSnapshot {
     }
 
     pub async fn serve(self, socket: zx::Socket) -> anyhow::Result<()> {
-        duration!(CATEGORY_MEMORY_CAPTURE, c"AttributionSnapshot::serve");
+        duration!(CATEGORY_MEMORY_CAPTURE, "AttributionSnapshot::serve");
         let mut asocket = fidl::AsyncSocket::from_socket(socket);
 
         let data = {
-            duration!(CATEGORY_MEMORY_CAPTURE, c"AttributionSnapshot::serve persist");
+            duration!(CATEGORY_MEMORY_CAPTURE, "AttributionSnapshot::serve persist");
             fidl::persist(&self.0).unwrap()
         };
         asocket.write_all(&data).await?;

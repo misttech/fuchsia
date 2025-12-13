@@ -54,7 +54,7 @@ impl AttributionDataProvider for AttributionDataProviderImpl {
             &self.muted_principal,
         )?;
 
-        duration!(CATEGORY_MEMORY_CAPTURE, c"AttributionSnapshot::new");
+        duration!(CATEGORY_MEMORY_CAPTURE, "AttributionSnapshot::new");
         // Compute the capacity needed for |principals| and |attributions| to avoid
         // reallocations as we fill these vectors.
         let (num_principals, num_attributions) = attribution_state
@@ -159,8 +159,8 @@ mod tests {
         fidl_fuchsia_memory_attribution_plugin as fplugin,
     };
 
-    /// Projection of object state into a standardized (canonical) form that can be 
-    /// compared with equality. This usually removes variability of the state 
+    /// Projection of object state into a standardized (canonical) form that can be
+    /// compared with equality. This usually removes variability of the state
     /// representation, such as sequence orders or non-canonical field values.
     trait Normalize<T> {
         fn normalize(self) -> T;

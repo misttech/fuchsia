@@ -371,7 +371,7 @@ impl KernelResourcesExplorer {
         attribution_state: &AttributionState,
         muted_principal: &Option<PrincipalDescription>,
     ) -> Result<(), zx::Status> {
-        duration!(CATEGORY_MEMORY_CAPTURE, c"get_resources");
+        duration!(CATEGORY_MEMORY_CAPTURE, "get_resources");
 
         // Turn the description into a global identifier.
         let muted_principal = muted_principal
@@ -514,17 +514,17 @@ impl KernelResourcesExplorer {
     ) -> Result<(), zx::Status> {
         let process_name = process.get_name()?;
         let process_name_string = process_name.as_bstr().to_string();
-        duration!(CATEGORY_MEMORY_CAPTURE, c"explore_process", "name" => &*process_name_string);
+        duration!(CATEGORY_MEMORY_CAPTURE, "explore_process", "name" => &*process_name_string);
 
         let vmo_koids = if collection.collect_vmos() {
-            duration!(CATEGORY_MEMORY_CAPTURE, c"vmos:explore_process");
+            duration!(CATEGORY_MEMORY_CAPTURE, "vmos:explore_process");
             let (mut vmo_infos, available) = {
-                duration!(CATEGORY_MEMORY_CAPTURE, c"fetch:vmos:explore_process");
+                duration!(CATEGORY_MEMORY_CAPTURE, "fetch:vmos:explore_process");
                 process.info_vmos(self.cache.vmos_cache(0))?
             };
 
             if vmo_infos.len() < available {
-                duration!(CATEGORY_MEMORY_CAPTURE, c"refetch:vmos:explore_process",
+                duration!(CATEGORY_MEMORY_CAPTURE, "refetch:vmos:explore_process",
                     "initial_length" => vmo_infos.len(), "target_length" => available);
                 (vmo_infos, _) = process.info_vmos(self.cache.vmos_cache(available))?;
             }
@@ -563,14 +563,14 @@ impl KernelResourcesExplorer {
         };
 
         let process_maps = if let Some(selected_range) = collection.collect_maps {
-            duration!(CATEGORY_MEMORY_CAPTURE, c"maps:explore_process");
+            duration!(CATEGORY_MEMORY_CAPTURE, "maps:explore_process");
 
             let (mut info_maps, available) = {
-                duration!(CATEGORY_MEMORY_CAPTURE, c"fetch:maps:explore_process");
+                duration!(CATEGORY_MEMORY_CAPTURE, "fetch:maps:explore_process");
                 process.info_maps(self.cache.maps_cache(0))?
             };
             if info_maps.len() < available {
-                duration!(CATEGORY_MEMORY_CAPTURE, c"refetch:maps:explore_process",
+                duration!(CATEGORY_MEMORY_CAPTURE, "refetch:maps:explore_process",
                     "initial_length" => info_maps.len(), "target_length" => available);
                 (info_maps, _) = process.info_maps(self.cache.maps_cache(available))?;
             }

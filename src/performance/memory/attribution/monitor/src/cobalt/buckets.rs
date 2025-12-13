@@ -210,7 +210,7 @@ async fn collect_metrics_once(
     bucket_definitions: &[BucketDefinition],
     bucket_name_to_code: &HashMap<String, u32>,
 ) -> Result<()> {
-    duration!(CATEGORY_MEMORY_CAPTURE, c"cobalt");
+    duration!(CATEGORY_MEMORY_CAPTURE, "cobalt");
     let timestamp = zx::BootInstant::get();
     let (kmem_stats, kmem_stats_compression) = try_join!(
         kernel_stats_proxy.get_memory_stats().map_err(anyhow::Error::from),
