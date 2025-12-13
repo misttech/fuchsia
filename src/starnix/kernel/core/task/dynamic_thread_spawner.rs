@@ -354,24 +354,7 @@ impl DynamicThreadSpawner {
         state.threads.push(receiver.recv().expect("persistent thread should not have ended."));
     }
 
-    // TODO(b/465144050): remove in favor of spawn_from_request.
-    /// Run an async function on a thread with `role` applied if possible.
-    ///
-    /// The given function must return the async function to run. It will be passed as
-    /// instance of `LockedAndTask` than can be used to retrieve a `Locked` or `CurrentTask`.
-    ///
-    /// This method will use an idle thread in the pool if one is available, otherwise it will
-    /// start a new thread. When this method returns, it is guaranteed that a thread is
-    /// responsible to start running the closure.
-    pub fn spawn_async_with_role<'b, F: 'b>(&'b self, role: &'static str, f: F)
-    where
-        F: AsyncFnOnce(LockedAndTask<'_>) + Send + 'static,
-    {
-        let req = SpawnRequestBuilder::new().with_role(role).with_async_closure(f).build();
-        self.spawn_from_request(req);
-    }
-
-    // TODO(b/465144050): remove in favor of spawn_from_request.
+    /// TODO: b/465144050: remove in favor of spawn_from_request.
     /// Run an async function on a thread.
     ///
     /// The given function must return the async function to run. It will be passed as

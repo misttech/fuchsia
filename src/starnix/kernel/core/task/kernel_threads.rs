@@ -153,7 +153,11 @@ impl KernelThreads {
     where
         F: AsyncFnOnce(LockedAndTask<'_>) + Send + 'static,
     {
-        self.spawner().spawn_async_with_role(role, f)
+        let req = SpawnRequestBuilder::new()
+            .with_role(role)
+            .with_async_closure(f)
+            .build();
+        self.spawner().spawn_from_request(req)
     }
 
     /// The dynamic thread spawner used to spawn threads.
