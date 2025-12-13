@@ -6,6 +6,7 @@ use crate::device::kobject::DeviceMetadata;
 use crate::device::terminal::{Terminal, TtyState};
 use crate::device::{DeviceMode, DeviceOps};
 use crate::fs::devpts::{TtyFile, new_pts_fs_with_state};
+use crate::task::dynamic_thread_spawner::SpawnRequestBuilder;
 use crate::task::{CurrentTask, EventHandler, Kernel, Waiter};
 use crate::vfs::{FileOps, FsString, NamespaceNode, VecInputBuffer, VecOutputBuffer};
 use anyhow::Error;
@@ -33,7 +34,7 @@ impl ForwardTask {
     fn spawn_reader(&self, kernel: &Kernel) {
         let terminal = self.terminal.clone();
         let serial_proxy = self.serial_proxy.clone();
-        kernel.kthreads.spawn(move |locked, current_task| {
+        let closure = move |locked: &mut Locked<Unlocked>, current_task: &CurrentTask| {
             let _result = move || -> Result<(), Error> {
                 let waiter = Waiter::new();
                 loop {
@@ -52,13 +53,15 @@ impl ForwardTask {
                     terminal.main_write(locked, &mut VecInputBuffer::from(data))?;
                 }
             }();
-        });
+        };
+        let req = SpawnRequestBuilder::new().with_sync_closure(closure).build();
+        kernel.kthreads.spawner().spawn_from_request(req);
     }
 
     fn spawn_writer(&self, kernel: &Kernel) {
         let terminal = self.terminal.clone();
         let serial_proxy = self.serial_proxy.clone();
-        kernel.kthreads.spawn(move |locked, current_task| {
+        let closure = move |locked: &mut Locked<Unlocked>, current_task: &CurrentTask| {
             let _result = move || -> Result<(), Error> {
                 let waiter = Waiter::new();
                 loop {
@@ -79,7 +82,9 @@ impl ForwardTask {
                         .map_err(|e: i32| from_status_like_fdio!(zx::Status::from_raw(e)))?;
                 }
             }();
-        });
+        };
+        let req = SpawnRequestBuilder::new().with_sync_closure(closure).build();
+        kernel.kthreads.spawner().spawn_from_request(req);
     }
 }
 

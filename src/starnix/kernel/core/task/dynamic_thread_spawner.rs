@@ -292,22 +292,19 @@ impl DynamicThreadSpawner {
         }
     }
 
-    /// TODO: b/465144050: this will replace `spawn` once all extra methods are removed.
-    pub fn spawn_from_request(&self, named_closure: SpawnRequest) {
-        self.spawn(named_closure.closure)
-    }
-
-    /// Run the given closure on a thread.
+    /// Run a given closure on a thread based on the provided [SpawnRequest].
+    ///
+    /// Use [SpawnRequestBuilder::new()] to start configuring a [SpawnRequest].
     ///
     /// This method will use an idle thread in the pool if one is available, otherwise it will
     /// start a new thread. When this method returns, it is guaranteed that a thread is
     /// responsible to start running the closure.
-    pub fn spawn<F>(&self, f: F)
-    where
-        F: FnOnce(&mut Locked<Unlocked>, &CurrentTask) + Send + 'static,
-    {
+    ///
+    /// Use [SpawnRequestBuilder::new()] to configure a closure to run and any other options
+    /// you might need.
+    pub fn spawn_from_request(&self, spawn_request: SpawnRequest) {
         // Check whether a thread already exists to handle the request.
-        let mut function: BoxedClosure = Box::new(f);
+        let mut function: BoxedClosure = Box::new(spawn_request.closure);
         let mut state = self.state.lock();
         if state.idle_threads > 0 {
             let mut i = 0;

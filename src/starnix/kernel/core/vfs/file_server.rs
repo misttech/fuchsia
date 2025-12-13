@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 use crate::mm::ProtectionFlags;
+use crate::task::dynamic_thread_spawner::SpawnRequestBuilder;
 use crate::task::{CurrentTask, FullCredentials, Kernel, LockedAndTask};
 use crate::vfs::buffers::{VecInputBuffer, VecOutputBuffer};
 use crate::vfs::{
@@ -255,12 +256,14 @@ impl StarnixNodeConnection {
     fn new(kernel: &Kernel, file: FileHandle, credentials: FullCredentials) -> Arc<Self> {
         let (work_sender, receiver) = std::sync::mpsc::channel();
         let is_dir = file.node().is_dir();
-        kernel.kthreads.spawn_async({
+        let closure = {
             let credentials = credentials.clone();
-            async move |locked_and_task| {
+            async move |locked_and_task: LockedAndTask<'_>| {
                 handle_file(locked_and_task, credentials, file, receiver).await;
             }
-        });
+        };
+        let req = SpawnRequestBuilder::new().with_async_closure(closure).build();
+        kernel.kthreads.spawner().spawn_from_request(req);
         Arc::new(Self { is_dir, credentials, work_sender })
     }
 

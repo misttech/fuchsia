@@ -1,11 +1,13 @@
 // Copyright 2024 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+use crate::task::CurrentTask;
+use crate::task::dynamic_thread_spawner::SpawnRequestBuilder;
 use attribution_server::{AttributionServer, AttributionServerHandle};
 use fidl::AsHandleRef;
 use fidl_fuchsia_memory_attribution as fattribution;
 use starnix_logging::log_error;
-use starnix_sync::Mutex;
+use starnix_sync::{Locked, Mutex, Unlocked};
 use starnix_uapi::pid_t;
 use starnix_uapi::restricted_aspace::{RESTRICTED_ASPACE_BASE, RESTRICTED_ASPACE_SIZE};
 use std::collections::{HashMap, HashSet};
@@ -91,10 +93,12 @@ impl MemoryAttributionManager {
 
                 let (pid_sender, pid_receiver) = std::sync::mpsc::channel();
 
-                kernel.kthreads.spawn(move |_, _| {
+                let closure = move |_: &mut Locked<Unlocked>, _: &CurrentTask| {
                     Self::run(weak_kernel, publisher_rx, initial_state_rx, pid_receiver);
-                });
-                kernel.pids.read().set_thread_group_notifier(pid_sender);
+                };
+                let req = SpawnRequestBuilder::new().with_sync_closure(closure).build();
+                kernel.kthreads.spawner().spawn_from_request(req);
+                kernel.pids.write().set_thread_group_notifier(pid_sender);
             }
             events
         }));

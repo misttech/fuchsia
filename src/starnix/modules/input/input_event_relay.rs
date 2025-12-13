@@ -21,7 +21,8 @@ use futures::{FutureExt, StreamExt as _};
 use starnix_core::power::{
     ContainerWakingProxy, ContainerWakingStream, create_proxy_for_wake_events_counter,
 };
-use starnix_core::task::Kernel;
+use starnix_core::task::dynamic_thread_spawner::SpawnRequestBuilder;
+use starnix_core::task::{Kernel, LockedAndTask};
 use starnix_logging::{
     log_warn, trace_duration, trace_duration_begin, trace_duration_end, trace_flow_step,
 };
@@ -170,7 +171,7 @@ impl InputEventsRelay {
         default_keyboard_device_inspect: Option<Arc<InputDeviceStatus>>,
         default_mouse_device_inspect: Option<Arc<InputDeviceStatus>>,
     ) {
-        kernel.kthreads.spawn_async_with_role(INPUT_RELAY_ROLE_NAME, async move |locked_and_task| {
+        let f = async move |locked_and_task: LockedAndTask<'_>| {
             let kernel = locked_and_task.current_task().kernel();
             // touch
             let previous_touch_event_disposition: Rc<RefCell<Vec<FidlTouchResponse>>> =
@@ -178,29 +179,25 @@ impl InputEventsRelay {
             let touch_waking_fn = |p: &fuipointer::TouchSourceProxy| {
                 p.watch(&previous_touch_event_disposition.borrow_mut())
             };
-            let (mut default_touch_device, touch_waking_proxy) =
-                setup_touch_relay(
-                    kernel,
-                    event_proxy_mode,
-                    touch_source_client_end,
-                    default_touch_device_opened_files,
-                    default_touch_device_inspect,
-                );
+            let (mut default_touch_device, touch_waking_proxy) = setup_touch_relay(
+                kernel,
+                event_proxy_mode,
+                touch_source_client_end,
+                default_touch_device_opened_files,
+                default_touch_device_inspect,
+            );
             let mut touch_future = touch_waking_proxy.call(touch_waking_fn.clone()).fuse();
 
             // mouse
-            let (mut default_mouse_device, mouse_waking_proxy) =
-                setup_mouse_relay(
-                    kernel,
-                    event_proxy_mode,
-                    mouse_source_client_end,
-                    default_mouse_device_opened_files,
-                    default_mouse_device_inspect,
-
-                );
-            let mut mouse_future = mouse_waking_proxy
-                .call(fuipointer::MouseSourceProxy::watch)
-                .fuse();
+            let (mut default_mouse_device, mouse_waking_proxy) = setup_mouse_relay(
+                kernel,
+                event_proxy_mode,
+                mouse_source_client_end,
+                default_mouse_device_opened_files,
+                default_mouse_device_inspect,
+            );
+            let mut mouse_future =
+                mouse_waking_proxy.call(fuipointer::MouseSourceProxy::watch).fuse();
 
             // keyboard
             let (mut default_keyboard_device, mut keyboard_event_stream) = setup_keyboard_relay(
@@ -215,14 +212,13 @@ impl InputEventsRelay {
                 mut default_button_device,
                 mut media_buttons_waking_stream,
                 mut touch_buttons_waking_stream,
-            ) =
-                setup_button_relay(
-                    kernel,
-                    registry_proxy,
-                    event_proxy_mode,
-                    default_keyboard_device_opened_files,
-                    default_keyboard_device_inspect,
-                );
+            ) = setup_button_relay(
+                kernel,
+                registry_proxy,
+                event_proxy_mode,
+                default_keyboard_device_opened_files,
+                default_keyboard_device_inspect,
+            );
             let mut media_buttons_future = media_buttons_waking_stream.next();
             let mut touch_buttons_future = touch_buttons_waking_stream.next();
 
@@ -324,7 +320,12 @@ impl InputEventsRelay {
                     complete => break,
                 }
             }
-        });
+        };
+        let req = SpawnRequestBuilder::new()
+            .with_role(INPUT_RELAY_ROLE_NAME)
+            .with_async_closure(f)
+            .build();
+        kernel.kthreads.spawner().spawn_from_request(req);
     }
 
     fn process_touch_event(

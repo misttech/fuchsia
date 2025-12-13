@@ -17,7 +17,10 @@ use futures::{
 use starnix_core::execution::{create_init_child_process, execute_task_with_prerun_result};
 use starnix_core::fs::devpts::create_main_and_replica;
 use starnix_core::fs::fuchsia::create_fuchsia_pipe;
-use starnix_core::task::{CurrentTask, ExitStatus, FullCredentials, Kernel, ProcessEntryRef};
+use starnix_core::task::dynamic_thread_spawner::SpawnRequestBuilder;
+use starnix_core::task::{
+    CurrentTask, ExitStatus, FullCredentials, Kernel, LockedAndTask, ProcessEntryRef,
+};
 use starnix_core::vfs::buffers::{VecInputBuffer, VecOutputBuffer};
 use starnix_core::vfs::file_server::serve_file_at;
 use starnix_core::vfs::socket::VsockSocket;
@@ -333,7 +336,7 @@ fn forward_to_pty(
     let mut rx = fuchsia_async::Socket::from_socket(console_in);
     let mut tx = fuchsia_async::Socket::from_socket(console_out);
     let pty_sink = pty.clone();
-    kernel.kthreads.spawn_async(async move |locked_and_task| {
+    let closure = async move |locked_and_task: LockedAndTask<'_>| {
         let _result: Result<(), Error> = (async || {
             let mut buffer = vec![0u8; BUFFER_CAPACITY];
             loop {
@@ -349,25 +352,27 @@ fn forward_to_pty(
             }
         })()
         .await;
-    });
+    };
+    let req = SpawnRequestBuilder::new().with_async_closure(closure).build();
+    kernel.kthreads.spawner().spawn_from_request(req);
 
     let pty_source = pty;
-    kernel.kthreads.spawn({
-        move |locked, current_task| {
-            let _result: Result<(), Error> =
-                fasync::LocalExecutor::default().run_singlethreaded(async {
-                    let mut buffer = VecOutputBuffer::new(BUFFER_CAPACITY);
-                    loop {
-                        buffer.reset();
-                        let bytes = pty_source.read(locked, current_task, &mut buffer)?;
-                        if bytes == 0 {
-                            return Ok(());
-                        }
-                        tx.write_all(buffer.data()).await?;
+    let closure = move |locked: &mut Locked<Unlocked>, current_task: &CurrentTask| {
+        let _result: Result<(), Error> =
+            fasync::LocalExecutor::default().run_singlethreaded(async {
+                let mut buffer = VecOutputBuffer::new(BUFFER_CAPACITY);
+                loop {
+                    buffer.reset();
+                    let bytes = pty_source.read(locked, current_task, &mut buffer)?;
+                    if bytes == 0 {
+                        return Ok(());
                     }
-                });
-        }
-    });
+                    tx.write_all(buffer.data()).await?;
+                }
+            });
+    };
+    let req = SpawnRequestBuilder::new().with_sync_closure(closure).build();
+    kernel.kthreads.spawner().spawn_from_request(req);
 
     Ok(())
 }

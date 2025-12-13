@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 use starnix_core::device::DeviceOps;
+use starnix_core::task::dynamic_thread_spawner::SpawnRequestBuilder;
 use starnix_core::task::{CurrentTask, Kernel};
 use starnix_core::vfs::buffers::{InputBuffer, OutputBuffer};
 use starnix_core::vfs::{
@@ -10,7 +11,7 @@ use starnix_core::vfs::{
     fileops_impl_noop_sync,
 };
 use starnix_logging::{log_error, log_info};
-use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Mutex};
+use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Mutex, Unlocked};
 use starnix_uapi::device_type::DeviceType;
 use starnix_uapi::error;
 use starnix_uapi::errors::Errno;
@@ -48,7 +49,7 @@ impl TouchPowerPolicyDevice {
 
     pub fn start_relay(&self, kernel: &Kernel, touch_standby_receiver: Receiver<bool>) {
         let slf = self.clone();
-        kernel.kthreads.spawn(move |_lock_context, _current_task| {
+        let closure = move |_lock_context: &mut Locked<Unlocked>, _current_task: &CurrentTask| {
             let mut prev_enabled = true;
             while let Ok(touch_enabled) = touch_standby_receiver.recv() {
                 if touch_enabled != prev_enabled {
@@ -57,7 +58,9 @@ impl TouchPowerPolicyDevice {
                 prev_enabled = touch_enabled;
             }
             log_error!("touch_standby relay was terminated unexpectedly.");
-        });
+        };
+        let req = SpawnRequestBuilder::new().with_sync_closure(closure).build();
+        kernel.kthreads.spawner().spawn_from_request(req);
     }
 
     fn notify_standby_state_changed(&self, touch_enabled: bool) {

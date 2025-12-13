@@ -6,6 +6,7 @@ use crate::mm::{
     DesiredAddress, IOVecPtr, MappingName, MappingOptions, MemoryAccessorExt, ProtectionFlags,
     RemoteMemoryManager, TaskMemoryAccessor,
 };
+use crate::task::dynamic_thread_spawner::SpawnRequestBuilder;
 use crate::task::{CurrentTask, KernelThreads, SimpleWaiter, WaitQueue};
 use crate::vfs::eventfd::EventFdFileObject;
 use crate::vfs::syscalls::IocbPtr;
@@ -173,9 +174,11 @@ impl AioContextInner {
 
     fn spawn_worker(self: &Arc<Self>, kthreads: &KernelThreads, worker_type: WorkerType) {
         let inner = self.clone();
-        kthreads.spawn(move |locked, current_task| {
+        let closure = move |locked: &mut Locked<Unlocked>, current_task: &CurrentTask| {
             inner.perform_next_action(locked, current_task, worker_type)
-        });
+        };
+        let req = SpawnRequestBuilder::new().with_sync_closure(closure).build();
+        kthreads.spawner().spawn_from_request(req);
     }
 
     fn perform_next_action(

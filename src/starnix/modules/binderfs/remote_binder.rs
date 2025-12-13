@@ -15,7 +15,8 @@ use starnix_core::device::{DeviceMode, DeviceOps};
 use starnix_core::mm::memory::MemoryObject;
 use starnix_core::mm::{DesiredAddress, MappingOptions, MemoryAccessorExt, ProtectionFlags};
 use starnix_core::power::{ContainerWakingStream, LockSource, OwnedMessageCounterHandle};
-use starnix_core::task::{CurrentTask, Kernel, ThreadGroup, WaitQueue, Waiter};
+use starnix_core::task::dynamic_thread_spawner::SpawnRequestBuilder;
+use starnix_core::task::{CurrentTask, Kernel, LockedAndTask, ThreadGroup, WaitQueue, Waiter};
 use starnix_core::vfs::buffers::{InputBuffer, OutputBuffer};
 use starnix_core::vfs::{
     FileObject, FileObjectState, FileOps, FsString, NamespaceNode, fileops_impl_nonseekable,
@@ -936,45 +937,47 @@ impl<F: RemoteControllerConnector> RemoteBinderHandle<F> {
             })
             .map_err(|_| errno!(EINVAL))?;
         let handle = self.clone();
-        current_task.kernel().kthreads.spawn_async_with_role(
-            EXECUTOR_THREAD_ROLE,
-            async move |_locked_and_task| {
-                // Retrieve the Kernel and a `DropWaiter` for the thread_group, taking care not
-                // to keep a strong reference to the thread_group itself.
-                let kernel_and_drop_waiter = handle
-                    .state
-                    .lock()
-                    .thread_group
-                    .upgrade()
-                    .map(|tg| (tg.kernel.clone(), tg.drop_notifier.waiter()));
-                let Some((kernel, drop_waiter)) = kernel_and_drop_waiter else {
-                    return;
-                };
+        let closure = async move |_locked_and_task: LockedAndTask<'_>| {
+            // Retrieve the Kernel and a `DropWaiter` for the thread_group, taking care not
+            // to keep a strong reference to the thread_group itself.
+            let kernel_and_drop_waiter = handle
+                .state
+                .lock()
+                .thread_group
+                .upgrade()
+                .map(|tg| (tg.kernel.clone(), tg.drop_notifier.waiter()));
+            let Some((kernel, drop_waiter)) = kernel_and_drop_waiter else {
+                return;
+            };
 
-                let message_counter = kernel
-                    .suspend_resume_manager
-                    .add_message_counter(counter_name.as_str(), Some(counter));
+            let message_counter = kernel
+                .suspend_resume_manager
+                .add_message_counter(counter_name.as_str(), Some(counter));
 
-                // Start the 3 servers.
-                let binder_fut = handle.clone().serve_dev_binder(dev_binder_server_end.into());
-                let power_fut = Self::serve_container_power_controller(
-                    power_controller_server_end.into(),
-                    message_counter,
-                    kernel,
-                    &service_name,
-                );
-                // Wait until all are done, or the task exits.
-                let (binder_res, power_res) = futures::join!(
-                    future_or_task_end(&drop_waiter, binder_fut),
-                    future_or_task_end(&drop_waiter, power_fut),
-                );
-                let result = binder_res.and(power_res);
-                if let Err(e) = &result {
-                    log_error!("Error when servicing the DevBinder protocol: {e:#}");
-                }
-                handle.lock().exit(result.map_err(|_| errno!(ENOENT)));
-            },
-        );
+            // Start the 3 servers.
+            let binder_fut = handle.clone().serve_dev_binder(dev_binder_server_end.into());
+            let power_fut = Self::serve_container_power_controller(
+                power_controller_server_end.into(),
+                message_counter,
+                kernel,
+                &service_name,
+            );
+            // Wait until all are done, or the task exits.
+            let (binder_res, power_res) = futures::join!(
+                future_or_task_end(&drop_waiter, binder_fut),
+                future_or_task_end(&drop_waiter, power_fut),
+            );
+            let result = binder_res.and(power_res);
+            if let Err(e) = &result {
+                log_error!("Error when servicing the DevBinder protocol: {e:#}");
+            }
+            handle.lock().exit(result.map_err(|_| errno!(ENOENT)));
+        };
+        let req = SpawnRequestBuilder::new()
+            .with_role(EXECUTOR_THREAD_ROLE)
+            .with_async_closure(closure)
+            .build();
+        current_task.kernel().kthreads.spawner().spawn_from_request(req);
 
         error!(EAGAIN)
     }

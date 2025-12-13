@@ -571,6 +571,7 @@ mod tests {
     use super::*;
     use crate::fs::fuchsia::create_fuchsia_pipe;
     use crate::task::Waiter;
+    use crate::task::dynamic_thread_spawner::SpawnRequestBuilder;
     use crate::testing::spawn_kernel_and_run;
     use crate::vfs::buffers::{VecInputBuffer, VecOutputBuffer};
     use crate::vfs::eventfd::{EventFdType, new_eventfd};
@@ -613,14 +614,16 @@ mod tests {
 
             let (sender, receiver) = std::sync::mpsc::channel();
             let value = test_string.clone();
-            kernel.kthreads.spawner().spawn(move |locked, task| {
+            let closure = move |locked: &mut Locked<Unlocked>, task: &CurrentTask| {
                 let bytes_written = pipe_in
                     .write(locked, &task, &mut VecInputBuffer::new(value.as_bytes()))
                     .unwrap();
                 assert_eq!(bytes_written, test_len);
                 WRITE_COUNT.add(bytes_written);
                 sender.send(()).unwrap();
-            });
+            };
+            let req = SpawnRequestBuilder::new().with_sync_closure(closure).build();
+            kernel.kthreads.spawner().spawn_from_request(req);
             let events =
                 epoll_file.wait(locked, &current_task, 10, zx::MonotonicInstant::INFINITE).unwrap();
             receiver.recv().unwrap();

@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::execution::create_kernel_thread;
-use crate::task::dynamic_thread_spawner::{DynamicThreadSpawner, SpawnRequestBuilder};
+use crate::task::dynamic_thread_spawner::DynamicThreadSpawner;
 use crate::task::{CurrentTask, DelayedReleaser, Kernel, Task, ThreadGroup};
 use fragile::Fragile;
 use fuchsia_async as fasync;
@@ -90,71 +90,6 @@ impl KernelThreads {
         self.ehandle.spawn_detached(WrappedMainFuture::new(self.kernel.clone(), async move {
             fasync::Task::local(future()).await
         }));
-    }
-
-    /// Spawn a thread in the main starnix process to run the given function.
-    ///
-    /// Use this function to work in the background that involves blocking. Prefer `spawn_future`
-    /// for non-blocking work.
-    ///
-    /// The threads spawned by this function come from the `spawner()` thread pool, which means
-    /// they can be used either for long-lived work or for short-lived work. The thread pool keeps
-    /// a few idle threads around to reduce the overhead for spawning threads for short-lived work.
-    pub fn spawn<F>(&self, f: F)
-    where
-        F: FnOnce(&mut Locked<Unlocked>, &CurrentTask) + Send + 'static,
-    {
-        self.spawner().spawn(f)
-    }
-
-    /// TODO: b/465144050: remove in favor of spawn_from_request.
-    /// Spawn a thread in the main starnix process to run the given function with `role` applied if
-    /// possible.
-    ///
-    /// Use this function to work in the background that involves blocking. Prefer `spawn_future`
-    /// for non-blocking work that does not need a thread profile applied.
-    ///
-    /// There is some minor IPC overhead to applying thread roles, this method should not be used
-    /// for extremely short-lived tasks.
-    pub fn spawn_with_role<F>(&self, role: &'static str, f: F)
-    where
-        F: FnOnce(&mut Locked<Unlocked>, &CurrentTask) + Send + 'static,
-    {
-        let req = SpawnRequestBuilder::new().with_role(role).with_sync_closure(f).build();
-        self.spawner().spawn_from_request(req)
-    }
-
-    /// TODO: b/465144050: remove in favor of spawn_from_request.
-    /// Spawn a thread in the main starnix process to run the given async function.
-    ///
-    /// Use this function to work in the background that involves async functions. Prefer
-    /// `spawn_future` that uses the main starnix thread if possible.
-    ///
-    /// The threads spawned by this function come from the `spawner()` thread pool, which means
-    /// they can be used either for long-lived work or for short-lived work. The thread pool keeps
-    /// a few idle threads around to reduce the overhead for spawning threads for short-lived work.
-    pub fn spawn_async<F>(&self, f: F)
-    where
-        F: AsyncFnOnce(LockedAndTask<'_>) + Send + 'static,
-    {
-        let req = SpawnRequestBuilder::new().with_async_closure(f).build();
-        self.spawner().spawn_from_request(req)
-    }
-
-    /// TODO: b/465144050: remove in favor of spawn_from_request.
-    /// Spawn a thread in the main starnix process to run the given async function with `role`
-    /// applied if possible.
-    ///
-    /// Use this function to work in the background that involves async functions.
-    ///
-    /// There is some minor IPC overhead to applying thread roles, this method should not be used
-    /// for extremely short-lived tasks.
-    pub fn spawn_async_with_role<F>(&self, role: &'static str, f: F)
-    where
-        F: AsyncFnOnce(LockedAndTask<'_>) + Send + 'static,
-    {
-        let req = SpawnRequestBuilder::new().with_role(role).with_async_closure(f).build();
-        self.spawner().spawn_from_request(req)
     }
 
     /// The dynamic thread spawner used to spawn threads.

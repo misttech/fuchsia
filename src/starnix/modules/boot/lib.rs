@@ -7,6 +7,7 @@ use fidl_fuchsia_power_cpu_manager::{BoostMarker, BoostSynchronousProxy};
 use fidl_fuchsia_sys2 as fsys;
 use fuchsia_inspect::Property;
 use starnix_core::device::DeviceOps;
+use starnix_core::task::dynamic_thread_spawner::SpawnRequestBuilder;
 use starnix_core::task::{CurrentTask, Kernel};
 use starnix_core::vfs::buffers::{InputBuffer, OutputBuffer};
 use starnix_core::vfs::{
@@ -104,7 +105,7 @@ impl BootedDevice {
 
     pub fn start_relay(&self, kernel: &Kernel, booted_receiver: Receiver<bool>) {
         let this = self.inner.clone();
-        kernel.kthreads.spawn(move |_lock_context, _current_task| {
+        let closure = move |_lock_context: &mut Locked<Unlocked>, _current_task: &CurrentTask| {
             let mut prev_booted = false;
             while let Ok(booted) = booted_receiver.recv() {
                 if booted && !prev_booted {
@@ -116,7 +117,10 @@ impl BootedDevice {
                 prev_booted = booted;
             }
             log_error!("booted relay was terminated unexpectedly.");
-        });
+        };
+        let req = SpawnRequestBuilder::new().with_sync_closure(closure).build();
+
+        kernel.kthreads.spawner().spawn_from_request(req);
     }
 }
 

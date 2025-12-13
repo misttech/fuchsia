@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::task::dynamic_thread_spawner::SpawnRequestBuilder;
 use anyhow::Context;
 use fuchsia_component::client::connect_to_protocol;
 use futures::StreamExt;
@@ -1004,7 +1005,7 @@ pub fn sys_perf_event_open(
     // Pass cloned into the thread.
     let cloned_data_head_pointer = Arc::clone(&data_head_pointer);
 
-    current_task.kernel().kthreads.spawn_async(async move |_: LockedAndTask<'_>| {
+    let closure = async move |_: LockedAndTask<'_>| {
         // This loop will wait for messages from the sender.
         while let Some((command, profiling_complete_receiver)) = receiver.next().await {
             match command {
@@ -1046,7 +1047,9 @@ pub fn sys_perf_event_open(
             }
         }
         ()
-    });
+    };
+    let req = SpawnRequestBuilder::new().with_async_closure(closure).build();
+    current_task.kernel().kthreads.spawner().spawn_from_request(req);
 
     let file = Box::new(PerfEventFile {
         _tid: tid,

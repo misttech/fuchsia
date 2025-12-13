@@ -7,7 +7,10 @@ use futures::channel::oneshot;
 use futures_util::{FutureExt, select};
 use starnix_core::mm::MemoryAccessorExt;
 use starnix_core::power::{ContainerWakingStream, create_proxy_for_wake_events_counter};
-use starnix_core::task::{CurrentTask, EventHandler, WaitCanceler, WaitQueue, Waiter};
+use starnix_core::task::dynamic_thread_spawner::SpawnRequestBuilder;
+use starnix_core::task::{
+    CurrentTask, EventHandler, LockedAndTask, WaitCanceler, WaitQueue, Waiter,
+};
 use starnix_core::vfs::{
     FileObject, FileObjectState, FileOps, InputBuffer, NamespaceNode, OutputBuffer, VecInputBuffer,
     fileops_impl_nonseekable, fileops_impl_noop_sync,
@@ -103,7 +106,7 @@ fn spawn_qbg_device_tasks(
     }
     let (shutdown_tx, shutdown_rx) = oneshot::channel::<()>();
     *device_state.shutdown.lock() = Some(shutdown_tx);
-    current_task.kernel().kthreads.spawn_async(async move |locked_and_task| {
+    let closure = async move |locked_and_task: LockedAndTask<'_>| {
         let counter_name = "hvdcp_opti";
         let (proxy_channel, counter) =
             create_proxy_for_wake_events_counter(channel, counter_name.to_string());
@@ -122,7 +125,9 @@ fn spawn_qbg_device_tasks(
             shutdown_rx,
         )
         .await;
-    });
+    };
+    let req = SpawnRequestBuilder::new().with_async_closure(closure).build();
+    current_task.kernel().kthreads.spawner().spawn_from_request(req);
 }
 
 struct QbgDeviceFile {

@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 use crate::security;
+use crate::task::dynamic_thread_spawner::SpawnRequestBuilder;
 use crate::task::{CurrentTask, EventHandler, WaitCallback, WaitCanceler, WaitQueue, Waiter};
 use crate::vfs::OutputBuffer;
 use diagnostics_data::{Data, Logs, LogsData, Severity};
@@ -249,7 +250,7 @@ impl LogSubscription {
         let (snd, receiver) = mpsc::sync_channel(1);
         let waiters = Arc::new(WaitQueue::default());
         let waiters_clone = waiters.clone();
-        current_task.kernel().kthreads.spawner().spawn(move |_, _| {
+        let closure = move |_: &mut Locked<Unlocked>, _: &CurrentTask| {
             scopeguard::defer! {
                 waiters_clone.notify_fd_events(FdEvents::POLLHUP);
             };
@@ -259,7 +260,9 @@ impl LogSubscription {
                 };
                 waiters_clone.notify_fd_events(FdEvents::POLLIN);
             }
-        });
+        };
+        let req = SpawnRequestBuilder::new().with_sync_closure(closure).build();
+        current_task.kernel().kthreads.spawner().spawn_from_request(req);
 
         Ok(Self { receiver, waiters, pending: Default::default() })
     }

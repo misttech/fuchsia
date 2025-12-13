@@ -6,7 +6,8 @@ use crate::power::{
     OnWakeOps, OwnedMessageCounterHandle, SharedMessageCounter,
     create_proxy_for_wake_events_counter_zero,
 };
-use crate::task::{CurrentTask, Kernel, TargetTime};
+use crate::task::dynamic_thread_spawner::SpawnRequestBuilder;
+use crate::task::{CurrentTask, Kernel, LockedAndTask, TargetTime};
 use crate::vfs::timer::{TimelineChangeObserver, TimerOps};
 use anyhow::{Context, Result};
 use fuchsia_inspect::ArrayProperty;
@@ -571,7 +572,7 @@ impl HrTimerManager {
         let setup_done = zx::Event::create();
         let setup_done_clone = duplicate_handle(&setup_done)?;
 
-        system_task.kernel().kthreads.spawn_async(async move |locked_and_task| {
+        let closure = async move |locked_and_task: LockedAndTask<'_>| {
             let current_thread = std::thread::current();
             // Helps find the thread in backtraces, see wait_signaled_sync.
             log_info!(
@@ -592,7 +593,9 @@ impl HrTimerManager {
                 log_error!("while running watch_new_hrtimer_loop: {e:?}");
             }
             log_warn!("hr_timer_manager: finished kernel thread. should never happen in prod code");
-        });
+        };
+        let req = SpawnRequestBuilder::new().with_async_closure(closure).build();
+        system_task.kernel().kthreads.spawner().spawn_from_request(req);
         wait_signaled_sync(&setup_done)
             .to_result()
             .map_err(|status| from_status_like_fdio!(status))?;

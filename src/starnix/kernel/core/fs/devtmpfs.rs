@@ -6,6 +6,7 @@ use crate::device::DeviceMode;
 use crate::device::kobject::DeviceMetadata;
 use crate::fs::tmpfs::{TmpFs, TmpFsData, TmpFsNodeType};
 use crate::security;
+use crate::task::dynamic_thread_spawner::SpawnRequestBuilder;
 use crate::task::{CurrentTask, Kernel};
 use crate::vfs::{
     DirEntryHandle, FileSystemHandle, FileSystemOptions, FsStr, LookupContext, MountInfo,
@@ -87,7 +88,7 @@ pub fn devtmpfs_create_device(
     device_metadata: DeviceMetadata,
     event: Option<Arc<InterruptibleEvent>>,
 ) {
-    kernel.kthreads.spawn(move |locked, current_task| {
+    let closure = move |locked: &mut Locked<Unlocked>, current_task: &CurrentTask| {
         current_task.override_creds(security::creds_start_internal_operation, || {
             if let Err(e) = devtmpfs_create_device_internal(locked, current_task, &device_metadata)
             {
@@ -97,7 +98,9 @@ pub fn devtmpfs_create_device(
                 event.notify();
             }
         });
-    });
+    };
+    let req = SpawnRequestBuilder::new().with_sync_closure(closure).build();
+    kernel.kthreads.spawner().spawn_from_request(req);
 }
 
 fn devtmpfs_create_device_internal(
