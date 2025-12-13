@@ -133,6 +133,7 @@ TEST(GpioImplVisitorTest, TestGpiosProperty) {
                 fuchsia_hardware_pinimpl::InitCall::WithPinConfig({{
                     .pull = fuchsia_hardware_pin::Pull::kNone,
                     .drive_type = fuchsia_hardware_pin::DriveType::kOpenSource,
+                    .wake_vector = true,
                 }}));
 
       ASSERT_TRUE(init_steps[9].call());

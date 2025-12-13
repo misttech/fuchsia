@@ -34,6 +34,9 @@ type Configuration = table {
     4: drive_type DriveType;
     /// Selects the power source. Interpretation is controller dependent.
     5: power_source uint64;
+    /// Determines whether the interrupt is wakeable or not.
+    @available(added=NEXT)
+    6: wake_vector bool;
 };
 
 open protocol Pin {

@@ -318,6 +318,10 @@ zx::result<> GpioImplVisitor::ParsePinCtrlCfg(fdf_devicetree::Node& child,
     return power_source.take_error();
   }
 
+  if (cfg_node.GetProperty<bool>(kPinWakeVector)) {
+    config.wake_vector(true);
+  }
+
   std::optional<BufferMode> buffer_mode;
   if (cfg_node.GetProperty<bool>(kPinOutputDisable)) {
     buffer_mode = BufferMode::kInput;

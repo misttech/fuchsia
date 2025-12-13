@@ -47,6 +47,7 @@
         output-disable;
         bias-disable;
         drive-open-source;
+        fuchsia,interrupt-wake-vector;
       };
 
     };

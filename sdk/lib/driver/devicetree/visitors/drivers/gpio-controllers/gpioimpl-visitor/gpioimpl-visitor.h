@@ -35,6 +35,7 @@ class GpioImplVisitor : public fdf_devicetree::Visitor {
   static constexpr char kPinDriveOpenDrain[] = "drive-open-drain";
   static constexpr char kPinDriveOpenSource[] = "drive-open-source";
   static constexpr char kPinPowerSource[] = "power-source";
+  static constexpr char kPinWakeVector[] = "fuchsia,interrupt-wake-vector";
 
   GpioImplVisitor();
 

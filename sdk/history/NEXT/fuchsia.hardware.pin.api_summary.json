@@ -30,6 +30,12 @@
         "type": "fuchsia.hardware.pin/Pull"
     },
     {
+        "kind": "table/member",
+        "name": "fuchsia.hardware.pin/Configuration.wake_vector",
+        "ordinal": "6",
+        "type": "bool"
+    },
+    {
         "kind": "table",
         "name": "fuchsia.hardware.pin/Configuration"
     },
