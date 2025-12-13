@@ -9,7 +9,7 @@ use crate::bpf::syscalls::BpfTypeFormat;
 use crate::bpf::{BpfMapHandle, ProgramHandle};
 use crate::mm::memory::MemoryObject;
 use crate::mm::{PAGE_SIZE, ProtectionFlags};
-use crate::security;
+use crate::security::{self, PermissionFlags};
 use crate::task::{
     CurrentTask, EventHandler, SignalHandler, SignalHandlerInner, Task, WaitCanceler, Waiter,
 };
@@ -30,7 +30,7 @@ use starnix_types::vfs::default_statfs;
 use starnix_uapi::auth::FsCred;
 use starnix_uapi::device_type::DeviceType;
 use starnix_uapi::errors::Errno;
-use starnix_uapi::file_mode::{Access, FileMode, mode};
+use starnix_uapi::file_mode::{FileMode, mode};
 use starnix_uapi::math::round_up_to_increment;
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::vfs::FdEvents;
@@ -84,12 +84,20 @@ impl BpfHandle {
         }
     }
 
-    /// Performs security-related checks when opening a BPF map.
-    pub(super) fn security_check_open_fd(&self, current_task: &CurrentTask) -> Result<(), Errno> {
+    /// Performs security-related checks when opening a BPF map. If
+    /// `permission_flags` is `None`, then they are inferred from the map's
+    /// schema. `permission_flags` is ignored for programs.
+    pub(super) fn security_check_open_fd(
+        &self,
+        current_task: &CurrentTask,
+        permission_flags: Option<PermissionFlags>,
+    ) -> Result<(), Errno> {
         match self {
-            Self::Map(bpf_map) => {
-                security::check_bpf_map_access(current_task, &bpf_map, bpf_map.schema.flags.into())
-            }
+            Self::Map(bpf_map) => security::check_bpf_map_access(
+                current_task,
+                &bpf_map,
+                permission_flags.unwrap_or_else(|| bpf_map.schema.flags.into()),
+            ),
             Self::Program(program) => security::check_bpf_prog_access(current_task, &program),
             _ => Ok(()),
         }
@@ -476,13 +484,11 @@ pub fn resolve_pinned_bpf_object(
 ) -> Result<(BpfHandle, NamespaceNode), Errno> {
     let node = current_task.lookup_path_from_root(locked, path.as_ref())?;
 
-    let access = Access::from_open_flags(open_flags);
-    node.check_access(locked, current_task, access, CheckAccessReason::Access)?;
+    let permission_flags = PermissionFlags::from(open_flags);
+    node.check_access(locked, current_task, permission_flags, CheckAccessReason::Access)?;
 
     let object = node.entry.node.downcast_ops::<BpfFsObject>().ok_or_else(|| errno!(EPERM))?;
-
-    // TODO(https://fxbug.dev/467820683): Enforce BPF-specific MAC policy.
-    // (`check_access` call above performsfile system checks only).
+    object.handle.security_check_open_fd(current_task, Some(permission_flags))?;
 
     if !open_flags.contains(OpenFlags::NOATIME) {
         node.update_atime();

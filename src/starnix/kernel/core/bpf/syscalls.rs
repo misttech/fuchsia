@@ -80,11 +80,9 @@ fn reopen_bpf_fd(
     locked: &mut Locked<Unlocked>,
     current_task: &CurrentTask,
     node: NamespaceNode,
-    obj: impl Into<BpfHandle>,
+    handle: BpfHandle,
     open_flags: OpenFlags,
 ) -> Result<SyscallResult, Errno> {
-    let handle: BpfHandle = obj.into();
-    handle.security_check_open_fd(current_task)?;
     // All BPF FDs have the CLOEXEC flag turned on by default.
     let file = FileObject::new(
         locked,
@@ -103,7 +101,7 @@ fn install_bpf_fd(
 ) -> Result<SyscallResult, Errno> {
     let handle: BpfHandle = obj.into();
     let name = handle.type_name();
-    handle.security_check_open_fd(current_task)?;
+    handle.security_check_open_fd(current_task, None)?;
 
     // All BPF FDs have the CLOEXEC flag turned on by default.
     let file = Anon::new_private_file(

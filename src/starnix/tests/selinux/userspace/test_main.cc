@@ -67,6 +67,8 @@ void PrepareTestEnvironment() {
               SyscallSucceeds());
   ASSERT_THAT(mount("selinuxfs", "/sys/fs/selinux", "selinuxfs", MS_NOEXEC | MS_NOSUID, nullptr),
               SyscallSucceeds());
+  ASSERT_THAT(mount("bpf", "/sys/fs/bpf", "bpf", MS_NOEXEC | MS_NOSUID, nullptr),
+              SyscallSucceeds());
   ASSERT_THAT(mount("tmpfs", "/tmp", "tmpfs", MS_RELATIME, nullptr), SyscallSucceeds());
   ASSERT_THAT(
       mount("devtmpfs", "/dev", "devtmpfs", MS_NOEXEC | MS_NOSUID | MS_STRICTATIME, nullptr),
