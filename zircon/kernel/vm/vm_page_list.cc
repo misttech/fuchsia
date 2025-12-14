@@ -15,6 +15,7 @@
 #include <fbl/alloc_checker.h>
 #include <ktl/utility.h>
 #include <vm/compression.h>
+#include <vm/page_slab_allocator.h>
 #include <vm/pmm.h>
 #include <vm/vm.h>
 #include <vm/vm_object_paged.h>
@@ -24,6 +25,37 @@
 #include <ktl/enforce.h>
 
 #define LOCAL_TRACE VM_GLOBAL_TRACE(0)
+
+namespace {
+
+DECLARE_SINGLETON_CRITICAL_MUTEX(SlabLock);
+// Slab used for allocating all the page list nodes.
+constinit PageSlabAllocator<VmPageListNode> pln_slab_ TA_GUARDED(SlabLock::Get());
+
+// Assert the size of the page list node to prevent accidental size changes. By virtue of being
+// allocated from from a PageSlabAllocator there is some wastage due to the size of the object not
+// being a clean power of two (PageSlabAllocator does not cross objects over page boundaries).
+// At 112 bytes this is 16 bytes off the next power of two. Given that the metadata for a heap
+// allocation is 16 bytes, allocating from a slab will have, at worst, equivalent wastage compared
+// to general heap allocation.
+// In practice we can fit 36 allocations into a page, wasting a 64 (4096 - 36 * 112) bytes, which is
+// less than the 576 (16 * 36) bytes of wastage from heap allocations.
+static_assert(sizeof(VmPageListNode) == 112);
+}  // namespace
+
+void VmPageListNodeDeleter::operator()(VmPageListNode* node) {
+  Guard<CriticalMutex> guard{SlabLock::Get()};
+  pln_slab_.Delete(node);
+}
+
+VmPlnOwner VmPageListNode::Create(uint64_t offset) {
+  Guard<CriticalMutex> guard{SlabLock::Get()};
+  VmPageListNode* node = pln_slab_.New(offset);
+  if (!node) {
+    return nullptr;
+  }
+  return VmPlnOwner(node);
+}
 
 VmPageListNode::~VmPageListNode() {
   LTRACEF("%p offset %#" PRIx64 "\n", this, obj_offset_);
@@ -65,10 +97,8 @@ VmPageOrMarker* VmPageList::LookupOrAllocateInternal(uint64_t offset) {
     return &pln->Lookup(index);
   }
 
-  fbl::AllocChecker ac;
-  ktl::unique_ptr<VmPageListNode> pl =
-      ktl::unique_ptr<VmPageListNode>(new (&ac) VmPageListNode(node_offset));
-  if (!ac.check()) {
+  VmPlnOwner pl = VmPageListNode::Create(node_offset);
+  if (!pl) {
     return nullptr;
   }
 
@@ -267,10 +297,8 @@ ktl::pair<VmPageOrMarker*, bool> VmPageList::LookupOrAllocateCheckForInterval(ui
   // We won't have a valid slot if the node we looked up did not contain the required offset.
   if (!slot) {
     // Allocate the node that would contain offset and then get the slot.
-    fbl::AllocChecker ac;
-    ktl::unique_ptr<VmPageListNode> pl =
-        ktl::unique_ptr<VmPageListNode>(new (&ac) VmPageListNode(node_offset));
-    if (!ac.check()) {
+    VmPlnOwner pl = VmPageListNode::Create(node_offset);
+    if (!pl) {
       return {nullptr, is_in_interval};
     }
     VmPageListNode& raw_node = *pl;
@@ -336,10 +364,8 @@ ktl::pair<VmPageOrMarker*, bool> VmPageList::LookupOrAllocateCheckForInterval(ui
         new_end = &iter->Lookup(VmPageListNode::kPageFanOut - 1);
       } else {
         DEBUG_ASSERT(iter->offset() < prev_node_offset);
-        fbl::AllocChecker ac;
-        ktl::unique_ptr<VmPageListNode> pl =
-            ktl::unique_ptr<VmPageListNode>(new (&ac) VmPageListNode(prev_node_offset));
-        if (!ac.check()) {
+        VmPlnOwner pl = VmPageListNode::Create(prev_node_offset);
+        if (!pl) {
           if (slot->IsEmpty()) {
             ReturnEmptySlot(offset);
           }
@@ -372,10 +398,8 @@ ktl::pair<VmPageOrMarker*, bool> VmPageList::LookupOrAllocateCheckForInterval(ui
         new_start = &iter->Lookup(0);
       } else {
         DEBUG_ASSERT(iter->offset() > next_node_offset);
-        fbl::AllocChecker ac;
-        ktl::unique_ptr<VmPageListNode> pl =
-            ktl::unique_ptr<VmPageListNode>(new (&ac) VmPageListNode(next_node_offset));
-        if (!ac.check()) {
+        VmPlnOwner pl = VmPageListNode::Create(next_node_offset);
+        if (!pl) {
           if (slot->IsEmpty()) {
             ReturnEmptySlot(offset);
           }
@@ -539,10 +563,8 @@ zx_status_t VmPageList::PopulateSlotsInInterval(uint64_t start_offset, uint64_t 
     const uint64_t last_unpopulated = last_node_offset - VmPageListNode::kPageFanOut * kPageSize;
     for (uint64_t node_offset = first_unpopulated; node_offset <= last_unpopulated;
          node_offset += VmPageListNode::kPageFanOut * kPageSize) {
-      fbl::AllocChecker ac;
-      ktl::unique_ptr<VmPageListNode> pl =
-          ktl::unique_ptr<VmPageListNode>(new (&ac) VmPageListNode(node_offset));
-      if (!ac.check()) {
+      VmPlnOwner pl = VmPageListNode::Create(node_offset);
+      if (!pl) {
         // If allocating a new node fails, clean up all the new nodes we might have installed until
         // this point, which is all the empty nodes starting at first_unpopulated to before the node
         // that failed.

@@ -495,7 +495,17 @@ class VmPageOrMarkerRef {
   VmPageOrMarker* page_or_marker_ = nullptr;
 };
 
-class VmPageListNode final : public fbl::WAVLTreeContainable<ktl::unique_ptr<VmPageListNode>> {
+class VmPageListNode;
+// Deletes VmPageListNode's allocated from VmPageListNode::Create. Must not be used with nodes
+// created any other way.
+struct VmPageListNodeDeleter {
+  void operator()(VmPageListNode*);
+};
+
+// VmPlnOwner wraps VmPageListNode in a unique_ptr that has single ownership and deletes it using
+// VmPageListNodeDeleter when it goes out of scope.
+using VmPlnOwner = ktl::unique_ptr<VmPageListNode, VmPageListNodeDeleter>;
+class VmPageListNode final : public fbl::WAVLTreeContainable<VmPlnOwner> {
  public:
   explicit VmPageListNode(uint64_t offset) : obj_offset_(offset) {}
   ~VmPageListNode();
@@ -503,6 +513,9 @@ class VmPageListNode final : public fbl::WAVLTreeContainable<ktl::unique_ptr<VmP
   DISALLOW_COPY_ASSIGN_AND_MOVE(VmPageListNode);
 
   static constexpr size_t kPageFanOut = 16;
+
+  // Creates a new VmPageListNode. Must be deleted using the specified deleter.
+  static VmPlnOwner Create(uint64_t offset);
 
   // accessors
   uint64_t offset() const { return obj_offset_; }
@@ -749,7 +762,7 @@ class VMPLCursor {
  private:
   static constexpr size_t kPageFanOut = VmPageListNode::kPageFanOut;
 
-  VMPLCursor(fbl::WAVLTree<uint64_t, ktl::unique_ptr<VmPageListNode>>::iterator&& node, uint index)
+  VMPLCursor(fbl::WAVLTree<uint64_t, VmPlnOwner>::iterator&& node, uint index)
       : node_(node), index_(index) {}
 
   // Helper to increment the underlying node_, testing for contiguity.
@@ -773,7 +786,7 @@ class VMPLCursor {
 
   // Current node_ in the underlying page list currently being iterated. If this is invalid then
   // index_ will be kPageFanOut
-  fbl::WAVLTree<uint64_t, ktl::unique_ptr<VmPageListNode>>::iterator node_;
+  fbl::WAVLTree<uint64_t, VmPlnOwner>::iterator node_;
 
   // The index into node_ that is currently being pointed at to be returned by |current|. The
   // sentinel value of kPageFanOut is used to indicate that node_ is no longer valid.
@@ -1104,9 +1117,8 @@ class VmPageList final {
         // Allocate a new node if none was found.
         if (!cur_other) {
           fbl::AllocChecker ac;
-          ktl::unique_ptr<VmPageListNode> pl = ktl::unique_ptr<VmPageListNode>(
-              new (&ac) VmPageListNode(NodeOffset(other_start_off)));
-          if (!ac.check()) {
+          VmPlnOwner pl = VmPageListNode::Create(NodeOffset(other_start_off));
+          if (!pl) {
             return false;
           }
           VmPageListNode& raw = *pl;
@@ -1663,7 +1675,7 @@ class VmPageList final {
     return ZX_OK;
   }
 
-  using NodeList = fbl::WAVLTree<uint64_t, ktl::unique_ptr<VmPageListNode>>;
+  using NodeList = fbl::WAVLTree<uint64_t, VmPlnOwner>;
   NodeList list_;
 };
 
