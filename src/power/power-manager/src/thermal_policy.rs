@@ -281,14 +281,12 @@ impl ThermalPolicy {
         let time_delta = self.get_time_delta(timestamp);
 
         let temperature = self.state.temperature_filter.get_temperature(timestamp).await?;
-        warn!("Temperature: {temperature:?}");
         let error_integral = self.get_temperature_error(temperature.filtered, time_delta);
         let thermal_load = Self::calculate_thermal_load(
             error_integral,
             self.config.policy_params.controller_params.e_integral_min,
             self.config.policy_params.controller_params.e_integral_max,
         );
-        warn!("Thermal load: {thermal_load:?}");
 
         self.log_thermal_iteration_metrics(
             timestamp,
@@ -471,9 +469,6 @@ impl ThermalPolicy {
         error_integral_min: f64,
         error_integral_max: f64,
     ) -> ThermalLoad {
-        warn!(
-            "error_integral: {error_integral}, error_integral_min: {error_integral_min}, error_integral_max: {error_integral_max}"
-        );
         debug_assert!(
             error_integral >= error_integral_min,
             "error_integral ({}) less than error_integral_min ({})",
