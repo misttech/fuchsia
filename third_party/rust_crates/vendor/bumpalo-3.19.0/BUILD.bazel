@@ -22,7 +22,7 @@ package_info(
     name = "package_info",
     package_name = "bumpalo",
     package_url = "https://github.com/fitzgen/bumpalo",
-    package_version = "3.17.0",
+    package_version = "3.19.0",
 )
 
 license(
@@ -76,5 +76,5 @@ rust_library(
         "@rules_rust//rust/platform:x86_64-unknown-linux-gnu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    version = "3.17.0",
+    version = "3.19.0",
 )
