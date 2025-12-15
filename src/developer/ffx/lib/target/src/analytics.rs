@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 use crate::ConnectionError;
+use crate::target_connector::TargetConnectionError;
 use discovery::query::TargetInfoQuery;
 use discovery::{DiscoverySources, TargetState};
 use ffx_diagnostics_analytics::CustomEvent;
@@ -14,6 +15,9 @@ pub enum PointOfFailure<'a> {
 
     /// SSH into the target failed.
     SshConnectionFailed { state: TargetState, reason: &'a ConnectionError },
+
+    /// General connectivity error for the TargetConnector trait.
+    TargetConnectorFailure { connection_type: &'static str, error: &'a TargetConnectionError },
 
     /// Failed to connect to RCS. Contains a stringified FDomain error.
     FailedToConnectRCS { error: &'a ConnectionError },
@@ -40,6 +44,34 @@ fn sanitize_connection_error(error: &ConnectionError) -> String {
         InternalError(_) => "InternalError".to_owned(),
         KnockError(_) => "KnockError".to_owned(),
         OvernetUnsupported => "OvernetUnsupported".to_owned(),
+    }
+}
+
+fn format_target_connection_error(error: &TargetConnectionError) -> String {
+    use TargetConnectionError::*;
+    match error {
+        // TODO(468435084): Depending on the outputs here these might need to be
+        // cleaned-up/redacted. There's a rather large surface error, unfortunately, so it's
+        // difficult to be exhaustive. For the time being since this is going to be handled by
+        // internal-only sources it isn't that big of an issue, but it would be good to have some
+        // more exhaustive audit.
+        Fatal(e) => format!("fatal: {e}"),
+        // In all likelihood this will provide a lot of noise in analytics, but it wouldn't make
+        // sense to omit it entirely, as it could point to important trends. So if they prove
+        // unimportant for the majority case these can be filtered out in a query downstream.
+        NonFatal(e) => match e.downcast_ref::<ffx_ssh::ssh::SshError>() {
+            Some(ssh_error) => format!(
+                "non-fatal: {}",
+                match ssh_error {
+                    // If, for some reason, this shows up in analytics frequently it might make sense
+                    // to dig into this error further, but otherwise this is the only SshError that
+                    // contains a string, and for now we'll just omit it.
+                    ffx_ssh::ssh::SshError::Unknown(_) => "unknown".to_string(),
+                    e => format!("{e}"),
+                }
+            ),
+            None => format!("non-fatal: {e}"),
+        },
     }
 }
 
@@ -78,6 +110,16 @@ impl Into<CustomEvent> for PointOfFailure<'_> {
                 )]
                 .into_iter()
                 .collect(),
+            },
+            Self::TargetConnectorFailure { connection_type, error } => CustomEvent {
+                category: "target_connector_failure",
+                custom_dimensions: [
+                    ("error", format_target_connection_error(&error).into()),
+                    ("connection_type", connection_type.into()),
+                ]
+                .into_iter()
+                .collect(),
+                ..Default::default()
             },
             Self::NoMatchingTargets { query, discovery_sources } => CustomEvent {
                 category: "no_matching_targets",
@@ -193,5 +235,52 @@ mod tests {
         assert_eq!(event.category, "get_target_specifier");
         assert_eq!(event.action, None);
         assert!(event.custom_dimensions.is_empty());
+    }
+
+    #[test]
+    fn test_target_connection_error_fatal() {
+        let pof = PointOfFailure::TargetConnectorFailure {
+            connection_type: "ssh",
+            error: &TargetConnectionError::Fatal(anyhow::anyhow!("kaboom!")),
+        };
+        let event: CustomEvent = pof.into();
+        assert_eq!(event.category, "target_connector_failure");
+        assert_eq!(event.action, None);
+        assert_eq!(event.custom_dimensions.get("error"), Some(&"fatal: kaboom!".to_owned().into()));
+        assert_eq!(event.custom_dimensions.get("connection_type"), Some(&"ssh".to_owned().into()));
+    }
+
+    #[test]
+    fn test_target_connection_error_non_fatal() {
+        let pof = PointOfFailure::TargetConnectorFailure {
+            connection_type: "ssh",
+            error: &TargetConnectionError::NonFatal(anyhow::anyhow!("kaboom?")),
+        };
+        let event: CustomEvent = pof.into();
+        assert_eq!(event.category, "target_connector_failure");
+        assert_eq!(event.action, None);
+        assert_eq!(
+            event.custom_dimensions.get("error"),
+            Some(&"non-fatal: kaboom?".to_owned().into())
+        );
+        assert_eq!(event.custom_dimensions.get("connection_type"), Some(&"ssh".to_owned().into()));
+    }
+
+    #[test]
+    fn test_target_connection_error_ssh_stringifier() {
+        let pof = PointOfFailure::TargetConnectorFailure {
+            connection_type: "ssh",
+            error: &TargetConnectionError::NonFatal(
+                ffx_ssh::ssh::SshError::Unknown("foobar".into()).into(),
+            ),
+        };
+        let event: CustomEvent = pof.into();
+        assert_eq!(event.category, "target_connector_failure");
+        assert_eq!(event.action, None);
+        assert_eq!(
+            event.custom_dimensions.get("error"),
+            Some(&"non-fatal: unknown".to_owned().into())
+        );
+        assert_eq!(event.custom_dimensions.get("connection_type"), Some(&"ssh".to_owned().into()));
     }
 }

@@ -8,6 +8,7 @@ use crate::{ConnectionError, FDomainConnection};
 use anyhow::Result;
 use async_channel::Receiver;
 use compat_info::CompatibilityInfo;
+use ffx_diagnostics_analytics::ResultExt;
 use ffx_ssh::parse::HostAddr;
 use fuchsia_async::{Task, Timer};
 use futures::FutureExt;
@@ -96,7 +97,18 @@ impl FidlPipe {
         let mut wait_duration = Duration::from_millis(50);
 
         let (overnet_connection, fdomain_connection) = loop {
-            let error = match connector.connect().await {
+            let error = match connector
+                .connect()
+                .await
+                .or_else_analytics(|e| {
+                    crate::analytics::PointOfFailure::TargetConnectorFailure {
+                        connection_type: C::CONNECTION_TYPE,
+                        error: &e,
+                    }
+                    .into()
+                })
+                .await
+            {
                 Ok(TargetConnection::Overnet(o)) => break (Some(o), None),
                 Ok(TargetConnection::Both(f, o)) => break (Some(o), Some(f)),
                 Err(TargetConnectionError::Fatal(e)) => return Err(e),
