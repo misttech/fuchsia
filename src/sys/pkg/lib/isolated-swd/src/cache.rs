@@ -135,6 +135,23 @@ pub(crate) mod for_tests {
                 .add_child("pkg_cache", "#meta/pkg-cache.cm", ChildOptions::new())
                 .await
                 .unwrap();
+
+            realm_builder
+                .add_capability(cm_rust::CapabilityDecl::Config(cm_rust::ConfigurationDecl {
+                    name: "fuchsia.zircon.system.pkgfs.cmd".parse().unwrap(),
+                    value: "test".into(),
+                }))
+                .await
+                .unwrap();
+            realm_builder
+                .add_route(
+                    Route::new()
+                        .capability(Capability::configuration("fuchsia.zircon.system.pkgfs.cmd"))
+                        .from(Ref::self_())
+                        .to(&pkg_cache),
+                )
+                .await
+                .unwrap();
             let pkg_cache_config = realm_builder
                 .add_child("pkg_cache_config", "#meta/pkg-cache-config.cm", ChildOptions::new())
                 .await

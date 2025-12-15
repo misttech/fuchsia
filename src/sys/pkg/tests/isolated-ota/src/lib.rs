@@ -315,6 +315,22 @@ impl TestExecutor<TestResult> for IsolatedOtaTestExecutor {
             )
             .await
             .unwrap();
+        realm_builder
+            .add_capability(cm_rust::CapabilityDecl::Config(cm_rust::ConfigurationDecl {
+                name: "fuchsia.zircon.system.pkgfs.cmd".parse().unwrap(),
+                value: "".into(),
+            }))
+            .await
+            .unwrap();
+        realm_builder
+            .add_route(
+                Route::new()
+                    .capability(Capability::configuration("fuchsia.zircon.system.pkgfs.cmd"))
+                    .from(Ref::self_())
+                    .to(&pkg_component),
+            )
+            .await
+            .unwrap();
 
         let channel_clone = params.channel.clone();
 

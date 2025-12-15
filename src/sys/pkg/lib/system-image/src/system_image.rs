@@ -28,9 +28,9 @@ pub struct SystemImage {
 impl SystemImage {
     pub async fn new(
         blobfs: blobfs::Client,
-        boot_args: &fidl_fuchsia_boot::ArgumentsProxy,
+        system_image_hash: &str,
     ) -> Result<Self, anyhow::Error> {
-        let hash = get_system_image_hash(boot_args).await.context("getting system_image hash")?;
+        let hash = get_system_image_hash(system_image_hash).context("getting system_image hash")?;
         let root_dir = RootDir::new(blobfs, hash)
             .await
             .with_context(|| format!("creating RootDir for system_image: {hash}"))?;

@@ -87,6 +87,11 @@
             to: "#pkg-cache",
         },
         {
+            config: "fuchsia.zircon.system.pkgfs.cmd",
+            from: "parent",
+            to: "#pkg-cache",
+        },
+        {
             config: "fuchsia.system-updater.ManifestPublicKeys",
             from: "parent",
             to: "#system-updater",
@@ -117,10 +122,7 @@
             rights: [ "r*" ],
         },
         {
-            protocol: [
-                "fuchsia.boot.Arguments",
-                "fuchsia.metrics.MetricEventLoggerFactory",
-            ],
+            protocol: [ "fuchsia.metrics.MetricEventLoggerFactory" ],
             from: "parent",
             to: "#pkg-cache",
         },

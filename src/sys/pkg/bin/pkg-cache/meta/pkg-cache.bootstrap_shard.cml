@@ -28,6 +28,11 @@
             to: "#pkg-cache",
         },
         {
+            config: "fuchsia.zircon.system.pkgfs.cmd",
+            from: "#kernel-args-forwarder/boot_args",
+            to: "#pkg-cache",
+        },
+        {
             dictionary: "diagnostics",
             from: "self",
             to: [ "#pkg-cache" ],
@@ -39,10 +44,7 @@
             availability: "optional",
         },
         {
-            protocol: [
-                "fuchsia.boot.Arguments",
-                "fuchsia.kernel.VmexResource",
-            ],
+            protocol: [ "fuchsia.kernel.VmexResource" ],
             from: "parent",
             to: "#pkg-cache",
         },

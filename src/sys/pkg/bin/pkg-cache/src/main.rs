@@ -121,6 +121,7 @@ async fn main_inner() -> Result<(), Error> {
         all_packages_executable: _,
         use_system_image,
         enable_upgradable_packages,
+        system_image_hash,
     } = config;
     let blobfs = blobfs::Client::builder()
         .readable()
@@ -133,9 +134,7 @@ async fn main_inner() -> Result<(), Error> {
     let authenticator = base_resolver::context_authenticator::ContextAuthenticator::new();
 
     let (executability_restrictions, base_packages, cache_packages) = if use_system_image {
-        let boot_args = connect_to_protocol::<fidl_fuchsia_boot::ArgumentsMarker>()
-            .context("error connecting to fuchsia.boot/Arguments")?;
-        let system_image = system_image::SystemImage::new(blobfs.clone(), &boot_args)
+        let system_image = system_image::SystemImage::new(blobfs.clone(), &system_image_hash)
             .await
             .context("Accessing contents of system_image package")?;
         info!("system_image package: {}", system_image.hash());

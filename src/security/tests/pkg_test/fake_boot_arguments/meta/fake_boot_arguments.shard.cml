@@ -12,19 +12,26 @@
     },
     capabilities: [
         {
-            protocol: [
-                "fuchsia.boot.Arguments",
-                "fuchsia.boot.Items",
-            ],
+            protocol: [ "fuchsia.boot.Items" ],
+        },
+        {
+            dictionary: "boot_args",
+            path: "/svc/fuchsia.component.sandbox.DictionaryRouter",
+        },
+    ],
+    use: [
+        {
+            protocol: [ "fuchsia.component.sandbox.CapabilityStore" ],
+            from: "framework",
         },
     ],
     expose: [
         {
-            protocol: "fuchsia.boot.Arguments",
+            protocol: "fuchsia.boot.Items",
             from: "self",
         },
         {
-            protocol: "fuchsia.boot.Items",
+            dictionary: "boot_args",
             from: "self",
         },
     ],

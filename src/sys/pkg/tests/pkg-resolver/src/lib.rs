@@ -31,10 +31,8 @@ use fuchsia_pkg_testing::{Package, PackageBuilder};
 use fuchsia_sync::Mutex;
 use fuchsia_url::{PinnedAbsolutePackageUrl, RepositoryUrl};
 use futures::prelude::*;
-use mock_boot_arguments::MockBootArgumentsService;
 use mock_metrics::MockMetricEventLoggerFactory;
 use serde::Serialize;
-use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
@@ -44,7 +42,7 @@ use tempfile::TempDir;
 use vfs::directory::helper::DirectlyMutable as _;
 use zx::{self as zx, AsHandleRef as _, HandleBased as _};
 use {
-    fidl_fuchsia_boot as fboot, fidl_fuchsia_fxfs as ffxfs, fidl_fuchsia_io as fio,
+    fidl_fuchsia_fxfs as ffxfs, fidl_fuchsia_io as fio,
     fidl_fuchsia_pkg_garbagecollector as fpkg_gc, fidl_fuchsia_pkg_internal as fpkg_internal,
     fidl_fuchsia_pkg_rewrite as fpkg_rewrite, fidl_fuchsia_sys2 as fsys2,
     fidl_fuchsia_update as fupdate, fuchsia_async as fasync,
@@ -469,20 +467,6 @@ where
 
         let local_child_svc_dir = vfs::pseudo_directory! {};
 
-        let mut boot_arguments_service = MockBootArgumentsService::new(HashMap::new());
-        if let Some(hash) = &system_image {
-            boot_arguments_service.insert_pkgfs_boot_arg(*hash)
-        }
-        let boot_arguments_service = Arc::new(boot_arguments_service);
-        local_child_svc_dir
-            .add_entry(
-                fboot::ArgumentsMarker::PROTOCOL_NAME,
-                vfs::service::host(move |stream| {
-                    Arc::clone(&boot_arguments_service).handle_request_stream(stream)
-                }),
-            )
-            .unwrap();
-
         let logger_factory = Arc::new(MockMetricEventLoggerFactory::new());
         let logger_factory_clone = Arc::clone(&logger_factory);
         local_child_svc_dir
@@ -782,13 +766,37 @@ where
                             .path("/blob")
                             .rights(fio::RW_STAR_DIR | fio::Operations::EXECUTE),
                     )
-                    .capability(Capability::protocol::<fboot::ArgumentsMarker>())
                     .capability(Capability::protocol::<fupdate::CommitStatusProviderMarker>())
                     .from(&service_reflector)
                     .to(&pkg_cache),
             )
             .await
             .unwrap();
+
+        let system_image_value = if let Some(hash) = system_image {
+            static PKGFS_BOOT_ARG_VALUE_PREFIX: &str = "bin/pkgsvr+";
+            format!("{PKGFS_BOOT_ARG_VALUE_PREFIX}{hash}")
+        } else {
+            "".to_string()
+        };
+        builder
+            .add_capability(cm_rust::CapabilityDecl::Config(cm_rust::ConfigurationDecl {
+                name: "fuchsia.zircon.system.pkgfs.cmd".parse().unwrap(),
+                value: system_image_value.into(),
+            }))
+            .await
+            .unwrap();
+
+        builder
+            .add_route(
+                Route::new()
+                    .capability(Capability::configuration("fuchsia.zircon.system.pkgfs.cmd"))
+                    .from(Ref::self_())
+                    .to(&pkg_cache),
+            )
+            .await
+            .unwrap();
+
         builder
             .add_route(
                 Route::new()

@@ -72,7 +72,6 @@
         },
         {
             protocol: [
-                "fuchsia.boot.Arguments",
                 "fuchsia.fxfs.BlobCreator",
                 "fuchsia.fxfs.BlobReader",
                 "fuchsia.kernel.VmexResource",
@@ -110,6 +109,12 @@
             config: "fuchsia.pkgcache.EnableUpgradablePackages",
             key: "enable_upgradable_packages",
             type: "bool",
+        },
+        {
+            config: "fuchsia.zircon.system.pkgfs.cmd",
+            key: "system_image_hash",
+            type: "string",
+            max_size: 100,
         },
     ],
     expose: [

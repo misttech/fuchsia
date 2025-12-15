@@ -10,7 +10,6 @@
         "syslog/client.shard.cml",
     ],
     capabilities: [
-        { protocol: "fuchsia.boot.Arguments" },
         { protocol: "fuchsia.metrics.MetricEventLoggerFactory" },
         {
             directory: "blob-exec",
@@ -28,9 +27,20 @@
             protocol: "fuchsia.fxfs.BlobReader",
             path: "/fxfs-svc/fuchsia.fxfs.BlobReader",
         },
+        {
+            dictionary: "boot_args",
+            path: "/svc/fuchsia.component.sandbox.DictionaryRouter",
+        },
     ],
     use: [
         { protocol: "fuchsia.process.Launcher" },
+        {
+            protocol: [
+                "fuchsia.component.sandbox.CapabilityStore",
+                "fuchsia.component.sandbox.Factory",
+            ],
+            from: "framework",
+        },
         {
             directory: "the-subpackage",
             from: "parent",
@@ -39,10 +49,6 @@
         },
     ],
     expose: [
-        {
-            protocol: "fuchsia.boot.Arguments",
-            from: "self",
-        },
         {
             protocol: "fuchsia.metrics.MetricEventLoggerFactory",
             from: "self",
@@ -57,6 +63,10 @@
         },
         {
             protocol: "fuchsia.fxfs.BlobReader",
+            from: "self",
+        },
+        {
+            dictionary: "boot_args",
             from: "self",
         },
     ],

@@ -29,6 +29,7 @@ if (is_fuchsia) {
   fuchsia_test_component("fake_boot_arguments_v0-component") {
     component_name = "fake_boot_arguments_v0"
     manifest = "meta/fake_boot_arguments_v0.cml"
+    restricted_features = [ "dynamic_dictionaries" ]
     deps = [ "//src/security/tests/pkg_test/fake_boot_arguments:fake_boot_arguments-binary" ]
   }
 

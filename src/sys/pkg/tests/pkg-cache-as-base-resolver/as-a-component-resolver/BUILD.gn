@@ -48,18 +48,21 @@ fuchsia_test_component("root_fxblob") {
 }
 
 fake_dependencies_deps = [
-  "//sdk/fidl/fuchsia.boot:fuchsia.boot_rust",
+  "//sdk/fidl/fuchsia.component.decl:fuchsia.component.decl_rust",
+  "//sdk/fidl/fuchsia.component.sandbox:fuchsia.component.sandbox_rust",
   "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
   "//sdk/fidl/fuchsia.metrics:fuchsia.metrics_rust",
   "//src/lib/fidl/rust/fidl",
   "//src/lib/fuchsia",
+  "//src/lib/fuchsia-component",
   "//src/lib/fuchsia-runtime",
+  "//src/lib/sandbox",
   "//src/storage/lib/vfs/rust:vfs",
-  "//src/sys/pkg/lib/fuchsia-hash",
   "//src/sys/pkg/lib/fuchsia-pkg-testing",
   "//src/sys/pkg/lib/system-image",
   "//src/sys/pkg/testing/blobfs-ramdisk",
   "//src/sys/pkg/testing/mock-metrics",
+  "//third_party/rust_crates:anyhow",
   "//third_party/rust_crates:futures",
   "//third_party/rust_crates:log",
 ]
@@ -78,6 +81,7 @@ rustc_binary("fake_dependencies_fxblob_bin") {
 fuchsia_component("fake-dependencies-fxblob") {
   testonly = true
   manifest = "meta/fake-dependencies-fxblob.cml"
+  restricted_features = [ "dynamic_dictionaries" ]
   deps = [
     ":fake_dependencies_fxblob_bin",
     "//src/storage/testing:storage_driver_test_realm",
@@ -96,6 +100,7 @@ rustc_binary("fake_dependencies_bin") {
 fuchsia_component("fake-dependencies") {
   testonly = true
   manifest = "meta/fake-dependencies-blobfs.cml"
+  restricted_features = [ "dynamic_dictionaries" ]
   deps = [
     ":fake_dependencies_bin",
     "//src/storage/testing:storage_driver_test_realm",

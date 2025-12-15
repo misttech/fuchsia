@@ -2,13 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::Context as _;
+use anyhow::{Result, anyhow};
 use fidl::endpoints::DiscoverableProtocolMarker;
+use fuchsia_component::client;
 use futures::stream::{StreamExt as _, TryStreamExt as _};
-use log::{error, info};
+use log::{info, warn};
 use std::sync::Arc;
+use {fidl_fuchsia_component_decl as fdecl, fidl_fuchsia_component_sandbox as fsandbox};
 
-static PKGFS_BOOT_ARG_KEY: &'static str = "zircon.system.pkgfs.cmd";
 static PKGFS_BOOT_ARG_VALUE_PREFIX: &'static str = "bin/pkgsvr+";
 
 /// Flags for fake_boot_arguments.
@@ -19,9 +20,37 @@ pub struct Args {
     system_image_path: String,
 }
 
+async fn initialize_dictionary(
+    store: &fsandbox::CapabilityStoreProxy,
+    id_gen: &sandbox::CapabilityIdGenerator,
+    value: &str,
+) -> Result<u64> {
+    let dict_id = id_gen.next();
+    store
+        .dictionary_create(dict_id)
+        .await?
+        .map_err(|e| anyhow!("failed dictionary_create: {e:?}"))?;
+
+    let key = "fuchsia.zircon.system.pkgfs.cmd";
+
+    let config_id = id_gen.next();
+    let config = fdecl::ConfigValue::Single(fdecl::ConfigSingleValue::String(value.to_string()));
+    let config = fsandbox::Capability::Data(fsandbox::Data::Bytes(fidl::persist(&config)?));
+    store.import(config_id, config).await?.map_err(|e| anyhow!("failed import: {e:?}"))?;
+    store
+        .dictionary_insert(
+            dict_id,
+            &fsandbox::DictionaryItem { key: key.to_string(), value: config_id },
+        )
+        .await?
+        .map_err(|e| anyhow!("failed dictionary_insert: {e:?}"))?;
+
+    Ok(dict_id)
+}
+
 enum BootServices {
-    Arguments(fidl_fuchsia_boot::ArgumentsRequestStream),
     Items(fidl_fuchsia_boot::ItemsRequestStream),
+    Router(fsandbox::DictionaryRouterRequestStream),
 }
 
 #[fuchsia::main]
@@ -40,21 +69,47 @@ async fn main() {
     let system_image_merkle = fuchsia_merkle::root_from_slice(&system_image);
     let pkgfs_boot_arg_value = format!("{}{}", PKGFS_BOOT_ARG_VALUE_PREFIX, system_image_merkle);
 
+    let store = client::connect_to_protocol::<fsandbox::CapabilityStoreMarker>().unwrap();
+    let id_gen = sandbox::CapabilityIdGenerator::new();
+
+    let dict_id = initialize_dictionary(&store, &id_gen, &pkgfs_boot_arg_value).await.unwrap();
+
     let mut fs = fuchsia_component::server::ServiceFs::new();
-    fs.dir("svc").add_fidl_service(BootServices::Arguments);
     fs.dir("svc").add_fidl_service(BootServices::Items);
+    fs.dir("svc").add_fidl_service(BootServices::Router);
     fs.take_and_serve_directory_handle().unwrap();
 
-    fs.for_each_concurrent(None, |stream| async {
-        match stream {
-            BootServices::Arguments(stream) => {
-                let () = serve(stream, pkgfs_boot_arg_value.as_str()).await.unwrap_or_else(|err| {
-                    error!("error handling fuchsia.boot/Arguments stream: {:#}", err)
-                });
-            }
-            BootServices::Items(stream) => {
-                // The VMO provided here would be for the recovery case only, which isn't of interest for pkg_test.
-                run_boot_items(stream, None).await
+    fs.for_each_concurrent(None, move |stream| {
+        let store = store.clone();
+        let id_gen = id_gen.clone();
+        async move {
+            match stream {
+                BootServices::Items(stream) => {
+                    // The VMO provided here would be for the recovery case only, which isn't of interest for pkg_test.
+                    run_boot_items(stream, None).await
+                }
+                BootServices::Router(mut stream) => {
+                    while let Ok(Some(request)) = stream.try_next().await {
+                        match request {
+                            fsandbox::DictionaryRouterRequest::Route { payload: _, responder } => {
+                                let dup_dict_id = id_gen.next();
+                                store.duplicate(dict_id, dup_dict_id).await.unwrap().unwrap();
+                                let capability = store.export(dup_dict_id).await.unwrap().unwrap();
+                                let fsandbox::Capability::Dictionary(dict) = capability else {
+                                    panic!("capability was not a dictionary? {capability:?}");
+                                };
+                                let _ = responder.send(Ok(
+                                    fsandbox::DictionaryRouterRouteResponse::Dictionary(dict),
+                                ));
+                            }
+                            fsandbox::DictionaryRouterRequest::_UnknownMethod {
+                                ordinal, ..
+                            } => {
+                                warn!(ordinal:%; "Unknown DictionaryRouter request");
+                            }
+                        }
+                    }
+                }
             }
         }
     })
@@ -63,43 +118,6 @@ async fn main() {
 
 /// Identifier for ramdisk storage. Defined in sdk/lib/zbi-format/include/lib/zbi-format/zbi.h.
 const ZBI_TYPE_STORAGE_RAMDISK: u32 = 0x4b534452;
-
-async fn serve(
-    mut stream: fidl_fuchsia_boot::ArgumentsRequestStream,
-    pkgfs_boot_arg_value: &str,
-) -> anyhow::Result<()> {
-    while let Some(request) = stream.try_next().await.context("getting next request")? {
-        match request {
-            fidl_fuchsia_boot::ArgumentsRequest::GetString { key, responder } => {
-                let value = if key == PKGFS_BOOT_ARG_KEY {
-                    Some(pkgfs_boot_arg_value)
-                } else {
-                    // fshost may depend on using this interface, but not care about the return value.
-                    None
-                };
-                responder.send(value).unwrap();
-            }
-            fidl_fuchsia_boot::ArgumentsRequest::GetStrings { keys, responder } => {
-                responder.send(&vec![None; keys.len()]).unwrap();
-            }
-            fidl_fuchsia_boot::ArgumentsRequest::GetBool { key: _, defaultval, responder } => {
-                responder.send(defaultval).unwrap();
-            }
-            fidl_fuchsia_boot::ArgumentsRequest::GetBools { keys, responder } => {
-                let vec: Vec<_> = keys.iter().map(|bool_pair| bool_pair.defaultval).collect();
-                responder.send(&vec).unwrap();
-            }
-            fidl_fuchsia_boot::ArgumentsRequest::Collect { .. } => {
-                // This seems to be deprecated. Either way, fshost doesn't use it.
-                panic!(
-                    "unexpectedly called Collect on {}",
-                    fidl_fuchsia_boot::ArgumentsMarker::PROTOCOL_NAME
-                );
-            }
-        }
-    }
-    Ok(())
-}
 
 // Mocks for fshost, from https://cs.opensource.google/fuchsia/fuchsia/+/main:src/storage/fshost/integration/src/mocks.rs
 // fshost uses exactly one boot item - it checks to see if there is an item of type

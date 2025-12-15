@@ -12,7 +12,6 @@ rustc_library("lib") {
   edition = "2024"
   testonly = true
   deps = [
-    "//sdk/fidl/fuchsia.boot:fuchsia.boot_rust",
     "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
     "//sdk/fidl/fuchsia.logger:fuchsia.logger_rust",
     "//sdk/fidl/fuchsia.metrics:fuchsia.metrics_rust",
@@ -43,7 +42,6 @@ rustc_library("lib") {
     "//src/sys/pkg/lib/fuchsia-merkle",
     "//src/sys/pkg/lib/fuchsia-pkg-testing",
     "//src/sys/pkg/testing/blobfs-ramdisk",
-    "//src/sys/pkg/testing/mock-boot-arguments:lib",
     "//src/sys/pkg/testing/mock-metrics",
     "//third_party/cobalt/src/lib/client/rust:cobalt-client",
     "//third_party/rust_crates:assert_matches",

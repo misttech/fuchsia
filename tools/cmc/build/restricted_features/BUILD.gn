@@ -16,8 +16,10 @@ group("dynamic_dictionaries") {
     "//src/diagnostics/archivist/tests/integration/realm_factory:*",
     "//src/diagnostics/persistence:*",
     "//src/diagnostics/persistence/tests:*",
+    "//src/security/tests/pkg_test/*",
     "//src/sys/component_manager:dispatcher_cm",
     "//src/sys/component_manager/tests/*",
+    "//src/sys/pkg/tests/pkg-cache-as-base-resolver/as-a-component-resolver/*",
   ]
 }
 

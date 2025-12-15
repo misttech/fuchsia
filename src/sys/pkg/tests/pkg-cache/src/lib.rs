@@ -18,7 +18,6 @@ use fuchsia_pkg_testing::{BlobContents, Package, get_inspect_hierarchy};
 use fuchsia_sync::Mutex;
 use futures::future::BoxFuture;
 use futures::prelude::*;
-use mock_boot_arguments::MockBootArgumentsService;
 use mock_health_verification::MockHealthVerificationService;
 use mock_metrics::MockMetricEventLoggerFactory;
 use mock_paver::{MockPaverService, MockPaverServiceBuilder};
@@ -548,24 +547,6 @@ where
                 .unwrap();
         }
 
-        // fuchsia.boot/Arguments service to supply the hash of the system_image package.
-        let mut arguments_service = MockBootArgumentsService::new(HashMap::new());
-        if let Some(hash) = system_image {
-            arguments_service.insert_pkgfs_boot_arg(hash);
-        }
-        let arguments_service = Arc::new(arguments_service);
-        {
-            let arguments_service = Arc::clone(&arguments_service);
-            local_child_svc_dir
-                .add_entry(
-                    fboot::ArgumentsMarker::PROTOCOL_NAME,
-                    vfs::service::host(move |stream| {
-                        Arc::clone(&arguments_service).handle_request_stream(stream)
-                    }),
-                )
-                .unwrap();
-        }
-
         let bootfs_blobs = {
             // The capability is optional, so if there are no bootfs blobs give pkg-cache a broken
             // proxy.
@@ -791,6 +772,30 @@ where
                     ))
                     .from(Ref::self_())
                     .to(&system_update_committer),
+            )
+            .await
+            .unwrap();
+
+        let system_image_value = if let Some(hash) = system_image {
+            static PKGFS_BOOT_ARG_VALUE_PREFIX: &str = "bin/pkgsvr+";
+            format!("{PKGFS_BOOT_ARG_VALUE_PREFIX}{hash}")
+        } else {
+            "".to_string()
+        };
+        builder
+            .add_capability(cm_rust::CapabilityDecl::Config(cm_rust::ConfigurationDecl {
+                name: "fuchsia.zircon.system.pkgfs.cmd".parse().unwrap(),
+                value: system_image_value.into(),
+            }))
+            .await
+            .unwrap();
+
+        builder
+            .add_route(
+                Route::new()
+                    .capability(Capability::configuration("fuchsia.zircon.system.pkgfs.cmd"))
+                    .from(Ref::self_())
+                    .to(&pkg_cache),
             )
             .await
             .unwrap();

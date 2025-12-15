@@ -6,18 +6,13 @@ use assert_matches::assert_matches;
 use blobfs_ramdisk::BlobfsRamdisk;
 use fidl::endpoints::DiscoverableProtocolMarker as _;
 use fuchsia_component_test::{Capability, ChildOptions, RealmBuilder, RealmInstance, Ref, Route};
-use futures::future::{BoxFuture, FutureExt as _};
-use futures::stream::TryStreamExt as _;
-use std::sync::Arc;
+use futures::future::FutureExt as _;
 use vfs::execution_scope::ExecutionScope;
 use {
     fidl_fuchsia_boot as fboot, fidl_fuchsia_component_decl as fcomponent_decl,
     fidl_fuchsia_component_resolution as fcomponent_resolution, fidl_fuchsia_io as fio,
     fidl_fuchsia_pkg as fpkg, fidl_fuchsia_pkg_garbagecollector as fpkg_gc,
 };
-
-static PKGFS_BOOT_ARG_KEY: &'static str = "zircon.system.pkgfs.cmd";
-static PKGFS_BOOT_ARG_VALUE_PREFIX: &'static str = "bin/pkgsvr+";
 
 // When this feature is enabled, the base-resolver integration tests will start Fxblob.
 #[cfg(feature = "use_fxblob")]
@@ -30,10 +25,6 @@ static BLOB_IMPLEMENTATION: blobfs_ramdisk::Implementation =
 
 const OUT_DIR_FLAGS: fio::Flags =
     fio::PERM_READABLE.union(fio::PERM_WRITABLE).union(fio::PERM_EXECUTABLE);
-
-trait BootArgumentsStreamHandler: Send + Sync {
-    fn handle_stream(&self, stream: fboot::ArgumentsRequestStream) -> BoxFuture<'static, ()>;
-}
 
 struct TestEnvBuilder {
     blobfs: BlobfsRamdisk,
@@ -85,7 +76,6 @@ impl TestEnvBuilder {
 
         let system_image = self.system_image_builder.build().await;
         let () = system_image.write_to_blobfs(&blobfs).await;
-        let boot_args = Arc::new(BootArgsFixedHash::new(*system_image.hash()));
 
         let builder = RealmBuilder::new().await.unwrap();
 
@@ -103,6 +93,26 @@ impl TestEnvBuilder {
                     .capability(Capability::configuration("fuchsia.pkgcache.AllPackagesExecutable"))
                     .capability(Capability::configuration("fuchsia.pkgcache.UseSystemImage"))
                     .from(&pkg_cache_config)
+                    .to(&pkg_cache),
+            )
+            .await
+            .unwrap();
+
+        static PKGFS_BOOT_ARG_VALUE_PREFIX: &str = "bin/pkgsvr+";
+        let system_image_value = format!("{PKGFS_BOOT_ARG_VALUE_PREFIX}{}", *system_image.hash());
+        builder
+            .add_capability(cm_rust::CapabilityDecl::Config(cm_rust::ConfigurationDecl {
+                name: "fuchsia.zircon.system.pkgfs.cmd".parse().unwrap(),
+                value: system_image_value.into(),
+            }))
+            .await
+            .unwrap();
+
+        builder
+            .add_route(
+                Route::new()
+                    .capability(Capability::configuration("fuchsia.zircon.system.pkgfs.cmd"))
+                    .from(Ref::self_())
                     .to(&pkg_cache),
             )
             .await
@@ -138,15 +148,8 @@ impl TestEnvBuilder {
                 "local_mocks",
                 move |handles| {
                     let blobfs_dir = blobfs_dir.clone();
-                    let boot_args_clone = boot_args.clone();
                     let out_dir = vfs::pseudo_directory! {
                         "blob" => blobfs_dir,
-                        "svc" => vfs::pseudo_directory! {
-                            fboot::ArgumentsMarker::PROTOCOL_NAME =>
-                                vfs::service::host(move |stream|
-                                    boot_args_clone.handle_stream(stream)
-                                ),
-                        },
                     };
                     let scope = ExecutionScope::new();
                     vfs::directory::serve_on(
@@ -327,37 +330,6 @@ impl TestEnv {
         let urls: Vec<_> =
             urls.into_iter().map(|url| fpkg::PackageUrl { url: url.to_string() }).collect();
         self.package_cache().set_upgradable_urls(&urls).await.unwrap()
-    }
-}
-
-// Responds to requests for "zircon.system.pkgfs.cmd" with the provided hash.
-struct BootArgsFixedHash {
-    hash: fuchsia_hash::Hash,
-}
-
-impl BootArgsFixedHash {
-    fn new(hash: fuchsia_hash::Hash) -> Self {
-        Self { hash }
-    }
-}
-
-impl BootArgumentsStreamHandler for BootArgsFixedHash {
-    fn handle_stream(&self, mut stream: fboot::ArgumentsRequestStream) -> BoxFuture<'static, ()> {
-        let hash = self.hash;
-        async move {
-            while let Some(request) = stream.try_next().await.unwrap() {
-                match request {
-                    fboot::ArgumentsRequest::GetString { key, responder } => {
-                        assert_eq!(key, PKGFS_BOOT_ARG_KEY);
-                        responder
-                            .send(Some(&format!("{}{}", PKGFS_BOOT_ARG_VALUE_PREFIX, hash)))
-                            .unwrap();
-                    }
-                    req => panic!("unexpected request {:?}", req),
-                }
-            }
-        }
-        .boxed()
     }
 }
 

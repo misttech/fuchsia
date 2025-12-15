@@ -156,6 +156,12 @@
             to: "#pkg-cache",
         },
         {
+            config: "fuchsia.zircon.system.pkgfs.cmd",
+            from: "void",
+            to: "#pkg-cache",
+            availability: "optional",
+        },
+        {
             config: [
                 "fuchsia.fshost.Blobfs",
                 "fuchsia.fshost.BlobfsInitialInodes",
@@ -334,7 +340,6 @@
             from: "#fake_boot_arguments",
             to: [
                 "#fshost",
-                "#pkg-cache",
                 "#pkg-resolver",
             ],
         },

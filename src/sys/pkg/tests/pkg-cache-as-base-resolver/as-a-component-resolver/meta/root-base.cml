@@ -32,6 +32,11 @@
             to: "#pkg-cache",
         },
         {
+            config: "fuchsia.zircon.system.pkgfs.cmd",
+            from: "#fake_dependencies/boot_args",
+            to: "#pkg-cache",
+        },
+        {
             directory: "pkg",
             from: "#subpackage_exposer",
             as: "the-subpackage",
@@ -55,11 +60,6 @@
         {
             protocol: "fuchsia.kernel.VmexResource",
             from: "parent",
-            to: "#pkg-cache",
-        },
-        {
-            protocol: "fuchsia.boot.Arguments",
-            from: "#fake_dependencies",
             to: "#pkg-cache",
         },
         {

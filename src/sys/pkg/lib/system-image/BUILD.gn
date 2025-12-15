@@ -11,9 +11,7 @@ rustc_library("system-image") {
   with_unit_tests = true
 
   deps = [
-    "//sdk/fidl/fuchsia.boot:fuchsia.boot_rust",
     "//src/lib/diagnostics/inspect/rust",
-    "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia-url",
     "//src/sys/pkg/lib/blobfs",
     "//src/sys/pkg/lib/fuchsia-hash",
@@ -32,7 +30,6 @@ rustc_library("system-image") {
     "//src/lib/fuchsia-async",
     "//src/sys/pkg/lib/fuchsia-pkg-testing",
     "//src/sys/pkg/testing/blobfs-ramdisk",
-    "//src/sys/pkg/testing/mock-boot-arguments:lib",
     "//third_party/rust_crates:assert_matches",
     "//third_party/rust_crates:proptest",
   ]
