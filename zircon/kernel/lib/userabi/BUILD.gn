@@ -21,7 +21,14 @@ static_library("userabi") {
 }
 
 library_headers("headers") {
-  visibility = [ "//zircon/kernel/*" ]
+  visibility = [
+    "//zircon/kernel/*",
+
+    # Certain core tests rely on the presence of a file synthesized by
+    # userboot, and consult <lib/userabi/userboot.h> for an authoritative
+    # determination of when it is present.
+    "//zircon/system/utest/core/process:*",
+  ]
 
   headers = [
     "lib/userabi/userboot.h",
