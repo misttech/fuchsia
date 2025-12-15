@@ -671,6 +671,7 @@ template("fidl_library") {
               name = library_name
               ir = rebase_path(invoker.fidl_ir_json, root_build_dir)
               category = category
+              sdk_area = invoker.sdk_area
             },
           ]
         }

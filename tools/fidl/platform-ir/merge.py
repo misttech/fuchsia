@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import dataclasses
 import json
 import typing
 
@@ -63,8 +64,14 @@ def get_available_attribute(declaration):
     return None
 
 
+@dataclasses.dataclass
+class MergeInput:
+    ir_json: typing.TextIO
+    sdk_area: str
+
+
 def merge_irs(
-    inputs: typing.List[typing.TextIO],
+    inputs: typing.List[MergeInput],
     output: typing.TextIO,
     keep_location: bool = False,
     keep_documentation: bool = False,
@@ -80,7 +87,7 @@ def merge_irs(
     dependencies = set()
     declarations = {}
     for f in inputs:
-        ir = json.load(f, object_hook=json_object_hook)
+        ir = json.load(f.ir_json, object_hook=json_object_hook)
         # make sure the experiments match
         if experiments != ir.get("experiments"):
             if experiments is None:
@@ -115,6 +122,11 @@ def merge_irs(
         for name, kind in ir["declarations"].items():
             assert kind in KINDS
             decl = find_declaration(name, ir[f"{kind}_declarations"])
+
+            # Add the sdk_area, even though it's not in the actual IR.
+            decl["metadata"] = {
+                "sdk_area": f.sdk_area,
+            }
 
             # if the decl doesn't have an @available attribute, use the one from its library
             avail = get_available_attribute(decl)

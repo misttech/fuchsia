@@ -9,7 +9,7 @@ import json
 import os
 
 from depfile import DepFile
-from merge import merge_irs
+from merge import MergeInput, merge_irs
 
 
 def main():
@@ -46,11 +46,6 @@ def main():
     # Find the build root directory,
     root_build_dir = os.path.dirname(args.sdk_fidl_json.name)
 
-    # Extract the IR path for each library. This is the path for the in-tree version.
-    ir_paths = [
-        fidl_library["ir"] for fidl_library in json.load(args.sdk_fidl_json)
-    ]
-
     def patch_path(path: str, api_level: str) -> str:
         """Return the path for the specified `api_level` corresponding to the
         `path` for the "PLATFORM" build ."""
@@ -58,19 +53,32 @@ def main():
         # Make sure that worked as expected
         return os.path.join(d, api_level, f)
 
-    # If we're targeting a stable API level, tinker with the paths
-    if args.api_level:
-        ir_paths = [patch_path(p, args.api_level) for p in ir_paths]
+    ir_paths = []
+    inputs = []
+    for fidl_library in json.load(args.sdk_fidl_json):
+        # Extract the IR path for each library. This is the path for the in-tree version.
+        ir_path = fidl_library["ir"]
+
+        # If we're targeting a stable API level, tinker with the paths
+        if args.api_level:
+            ir_path = patch_path(ir_path, args.api_level)
+
+        ir_paths.append(ir_path)
+        inputs.append(
+            MergeInput(
+                ir_json=open(
+                    os.path.join(root_build_dir, ir_path), encoding="UTF8"
+                ),
+                sdk_area=fidl_library["sdk_area"],
+            )
+        )
 
     if args.depfile:
         DepFile.from_deps(args.output.name, ir_paths).write_to(args.depfile)
 
     # Merge those IRs
     merge_irs(
-        inputs=[
-            open(os.path.join(root_build_dir, ir), encoding="UTF8")
-            for ir in ir_paths
-        ],
+        inputs=inputs,
         output=args.output,
         keep_location=args.keep_location,
         keep_documentation=args.keep_documentation,
