@@ -336,14 +336,6 @@
             availability: "optional",
         },
         {
-            protocol: "fuchsia.boot.Arguments",
-            from: "#fake_boot_arguments",
-            to: [
-                "#fshost",
-                "#pkg-resolver",
-            ],
-        },
-        {
             protocol: "fuchsia.boot.Items",
             from: "#fake_boot_arguments",
             to: [ "#fshost" ],

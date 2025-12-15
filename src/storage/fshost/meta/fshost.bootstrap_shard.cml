@@ -19,7 +19,6 @@
         },
         {
             protocol: [
-                "fuchsia.boot.Arguments",
                 "fuchsia.boot.Items",
                 "fuchsia.boot.WriteOnlyLog",
                 "fuchsia.feedback.CrashReporter",

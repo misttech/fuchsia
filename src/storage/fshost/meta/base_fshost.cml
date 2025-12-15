@@ -51,7 +51,6 @@
         },
         {
             protocol: [
-                "fuchsia.boot.Arguments",
                 "fuchsia.boot.Items",
                 "fuchsia.boot.WriteOnlyLog",
                 "fuchsia.process.Launcher",
