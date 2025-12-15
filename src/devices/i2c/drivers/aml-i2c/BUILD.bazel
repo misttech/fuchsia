@@ -103,7 +103,6 @@ fuchsia_cc_test(
         "@fuchsia_sdk//pkg/driver_fake_platform_device_cpp",
         "@fuchsia_sdk//pkg/driver_mmio_cpp",
         "@fuchsia_sdk//pkg/driver_testing_cpp",
-        "@fuchsia_sdk//pkg/mmio",
         "@fuchsia_sdk//pkg/zx",
         "@internal_sdk//pkg/fake-mmio-reg",
     ],
