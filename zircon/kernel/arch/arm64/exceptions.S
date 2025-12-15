@@ -401,6 +401,31 @@
     // Don't touch shadow_call_sp, keep using the interrupted kernel value.
     iframe.exc.save.el1 0
 
+    // Load x29 with the value of the "exception frame".  This is not a real
+    // stack frame.  Instead, we have carefully arranged our iframe structure so
+    // that our layout looks like:
+    //
+    // ```
+    // x29  // the frame pointer (at exception time)
+    // elr  // the exception link register
+    // spsr // saved process stack register
+    // x30  // the link register (at exception time)
+    // ```
+    //
+    // instead of following x29 by x30, which might feel more natural.  By doing
+    // this, we can now load x29 with the pointer to x29 in our iframe, making
+    // it appear (to backtrace code) like we have another frame in our
+    // backtrace, but one where the instruction pointer of the frame is the
+    // address of the fault itself, instead of being where a `bl` would return
+    // to.  See comments in arch/arm64/include/arch/regs.h for more details.
+    //
+    // TODO(johngro): Currently this code assumes that backtraces will always be
+    // computed using frame pointers on the main stack.  Someday, if we want the
+    // option to use the SCS as well, we will need to push the value of the ELR
+    // onto the SCS and properly adjust (and later restore) the SCS pointer
+    // (x18) as well.
+    add x29, sp, #(ARM64_IFRAME_OFFSET_ELR - 8)
+
     // Call into the C++ code with iframe, flags, and ESR as arguments.
     mov x0, sp
     mov x1, xzr
