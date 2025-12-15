@@ -23,8 +23,6 @@ from mobly import asserts, signals, test_runner
 
 logger = logging.getLogger(__name__)
 
-SESSION_MANAGER_TIMEOUT_SEC = 10
-
 
 class StartStopClientConnectionsTest(
     fuchsia_wlan_base_test.FuchsiaWlanBaseTest
