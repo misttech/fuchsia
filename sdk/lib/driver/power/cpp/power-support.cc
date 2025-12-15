@@ -238,22 +238,9 @@ fit::result<Error> GetTokensFromSag(ElementDependencyMap& dependencies, TokenMap
       continue;
     }
 
-    // TODO(https://fxbug.dev/328527451): We should be respecting assertive vs
-    // opportunistic deps here. For the very short term we know what these will
-    // be for all clients, but very soon we should modify the return types and
-    // return the right tokens.
     switch (parent.GetSag().value()) {
       case SagElement::kExecutionState:
-        if (elements->has_execution_state() &&
-            elements->execution_state().has_opportunistic_dependency_token()) {
-          zx::event copy;
-          elements->execution_state().opportunistic_dependency_token().duplicate(
-              ZX_RIGHT_SAME_RIGHTS, &copy);
-          tokens.emplace(std::make_pair(parent, std::move(copy)));
-        } else {
-          return fit::error(Error::DEPENDENCY_NOT_FOUND);
-        }
-        break;
+        return fit::error(Error::INVALID_ARGS);
       case SagElement::kApplicationActivity:
         if (elements->has_application_activity() &&
             elements->application_activity().has_assertive_dependency_token()) {

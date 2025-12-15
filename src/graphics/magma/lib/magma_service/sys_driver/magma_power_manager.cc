@@ -122,12 +122,14 @@ zx::result<std::unique_ptr<PowerElementRunner>> PowerElementRunner::Create(
 
   zx::result power_config = GetPowerConfiguration(pdev);
   if (power_config.is_error()) {
+    MAGMA_LOG(ERROR, "Failed to GetPowerConfiguration: %s", power_config.status_string());
     return zx::error(ZX_ERR_INTERNAL);
   }
 
   zx::result power_info = CreatePowerInfo(incoming, power_broker.value(),
                                           std::move(power_config).value(), pdev_element_name);
   if (power_info.is_error()) {
+    MAGMA_LOG(ERROR, "Failed to CreatePowerInfo: %s", power_info.status_string());
     return zx::error(ZX_ERR_INTERNAL);
   }
 

@@ -23,9 +23,8 @@ using fdf_power::testing::FakeElementControl;
 class FakeSystemActivityGovernor
     : public fidl::testing::TestBase<fuchsia_power_system::ActivityGovernor> {
  public:
-  FakeSystemActivityGovernor(zx::event exec_state_opportunistic, zx::event wake_handling_assertive)
-      : exec_state_opportunistic_(std::move(exec_state_opportunistic)),
-        wake_handling_assertive_(std::move(wake_handling_assertive)) {}
+  explicit FakeSystemActivityGovernor(zx::event wake_handling_assertive)
+      : wake_handling_assertive_(std::move(wake_handling_assertive)) {}
 
   fidl::ProtocolHandler<fuchsia_power_system::ActivityGovernor> CreateHandler() {
     return bindings_.CreateHandler(this, fdf::Dispatcher::GetCurrent()->async_dispatcher(),
@@ -36,13 +35,12 @@ class FakeSystemActivityGovernor
     // The wake handling element isn't actually used by the mali driver, but is included for
     // completeness and consistency with the real implementation.
     fuchsia_power_system::PowerElements elements;
-    zx::event execution_element;
-    exec_state_opportunistic_.duplicate(ZX_RIGHT_SAME_RIGHTS, &execution_element);
-    fuchsia_power_system::ExecutionState exec_state = {
-        {.opportunistic_dependency_token = std::move(execution_element)}};
+    zx::event application_activity_element;
+    wake_handling_assertive_.duplicate(ZX_RIGHT_SAME_RIGHTS, &application_activity_element);
+    fuchsia_power_system::ApplicationActivity application_activity = {
+        {.assertive_dependency_token = std::move(application_activity_element)}};
 
-    elements = {{.execution_state = std::move(exec_state)}};
-
+    elements = {{.application_activity = std::move(application_activity)}};
     completer.Reply({{std::move(elements)}});
   }
 
@@ -56,7 +54,6 @@ class FakeSystemActivityGovernor
  private:
   fidl::ServerBindingGroup<fuchsia_power_system::ActivityGovernor> bindings_;
 
-  zx::event exec_state_opportunistic_;
   zx::event wake_handling_assertive_;
 };
 
@@ -212,19 +209,16 @@ class FakePowerOwner : public msd::PowerElementRunner::Owner {
 
 struct IncomingNamespace {
   IncomingNamespace() {
-    zx::event::create(0, &exec_opportunistic);
     zx::event::create(0, &wake_assertive);
-    zx::event exec_opportunistic_dupe, wake_assertive_dupe;
-    EXPECT_EQ(ZX_OK, exec_opportunistic.duplicate(ZX_RIGHT_SAME_RIGHTS, &exec_opportunistic_dupe));
+    zx::event wake_assertive_dupe;
     EXPECT_EQ(ZX_OK, wake_assertive.duplicate(ZX_RIGHT_SAME_RIGHTS, &wake_assertive_dupe));
-    system_activity_governor.emplace(std::move(exec_opportunistic_dupe),
-                                     std::move(wake_assertive_dupe));
+    system_activity_governor.emplace(std::move(wake_assertive_dupe));
   }
 
   fdf_testing::TestNode node{"root"};
   fdf_testing::internal::TestEnvironment env{fdf::Dispatcher::GetCurrent()->get()};
   fdf_fake::FakePDev pdev_server;
-  zx::event exec_opportunistic, wake_assertive;
+  zx::event wake_assertive;
   std::optional<FakeSystemActivityGovernor> system_activity_governor;
   FakePowerBroker power_broker;
 };
@@ -249,20 +243,20 @@ fuchsia_hardware_power::PowerElementConfiguration hardware_power_config() {
       .levels = {{off, on}},
   }};
 
-  fuchsia_hardware_power::LevelTuple on_to_wake_handling = {{
+  fuchsia_hardware_power::LevelTuple on_to_aa_active = {{
       .child_level = kPoweredUpPowerLevel,
-      .parent_level = static_cast<uint8_t>(fuchsia_power_system::ExecutionStateLevel::kSuspending),
+      .parent_level = static_cast<uint8_t>(fuchsia_power_system::ApplicationActivityLevel::kActive),
   }};
-  fuchsia_hardware_power::PowerDependency opportunistic_on_exec_state_wake_handling = {{
+  fuchsia_hardware_power::PowerDependency assertive_on_app_activity = {{
       .child = kHardwarePowerElementName,
       .parent = fuchsia_hardware_power::ParentElement::WithSag(
-          fuchsia_hardware_power::SagElement::kExecutionState),
-      .level_deps = {{on_to_wake_handling}},
-      .strength = fuchsia_hardware_power::RequirementType::kOpportunistic,
+          fuchsia_hardware_power::SagElement::kApplicationActivity),
+      .level_deps = {{on_to_aa_active}},
+      .strength = fuchsia_hardware_power::RequirementType::kAssertive,
   }};
 
   fuchsia_hardware_power::PowerElementConfiguration hardware_power_config = {
-      {.element = hardware_power, .dependencies = {{opportunistic_on_exec_state_wake_handling}}}};
+      {.element = hardware_power, .dependencies = {{assertive_on_app_activity}}}};
   return hardware_power_config;
 }
 
@@ -323,7 +317,7 @@ TEST(PowerElementRunner, Basic) {
 
   zx::result element = msd::PowerElementRunner::Create(pdev.value(), fdf_incoming.value(),
                                                        kHardwarePowerElementName, owner);
-  ASSERT_EQ(element.status_value(), ZX_OK);
+  ASSERT_EQ(element.status_value(), ZX_OK) << "status was: " << element.status_string();
 
   element->EnablePower();
 

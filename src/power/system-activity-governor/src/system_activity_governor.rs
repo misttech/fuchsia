@@ -794,14 +794,6 @@ impl SystemActivityGovernor {
             match request {
                 Ok(fsystem::ActivityGovernorRequest::GetPowerElements { responder }) => {
                     let result = responder.send(fsystem::PowerElements {
-                        execution_state: Some(fsystem::ExecutionState {
-                            opportunistic_dependency_token: Some(
-                                self.execution_state
-                                    .opportunistic_dependency_token()
-                                    .expect("token not registered"),
-                            ),
-                            ..Default::default()
-                        }),
                         application_activity: Some(fsystem::ApplicationActivity {
                             assertive_dependency_token: Some(
                                 self.application_activity

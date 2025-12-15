@@ -83,9 +83,6 @@ async fn test_activity_governor_returns_expected_power_elements() -> Result<()> 
     let activity_governor = realm.connect_to_protocol::<fsystem::ActivityGovernorMarker>().await?;
     let power_elements = activity_governor.get_power_elements().await?;
 
-    let es_token = power_elements.execution_state.unwrap().opportunistic_dependency_token.unwrap();
-    assert!(!es_token.is_invalid_handle());
-
     let aa_element = power_elements.application_activity.unwrap();
     let aa_assertive_token = aa_element.assertive_dependency_token.unwrap();
     assert!(!aa_assertive_token.is_invalid_handle());

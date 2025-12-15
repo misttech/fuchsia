@@ -131,17 +131,18 @@ async fn test_fsystem_activity_governor_suspend_blocker_and_get_power_element() 
     );
 
     let power_elements = activity_governor.get_power_elements().await?;
-    let es_token = power_elements.execution_state.unwrap().opportunistic_dependency_token.unwrap();
+    let application_activity_token =
+        power_elements.application_activity.unwrap().assertive_dependency_token.unwrap();
     let (td_runner_client, td_runner) = create_endpoints::<fbroker::ElementRunnerMarker>();
     let mut td_runner_stream = td_runner.into_stream();
 
     let test_driver =
         PowerElementContext::builder(&topology, "test_driver", &[0, 1], td_runner_client)
             .dependencies(vec![fbroker::LevelDependency {
-                dependency_type: fbroker::DependencyType::Opportunistic,
+                dependency_type: fbroker::DependencyType::Assertive,
                 dependent_level: 1,
-                requires_token: es_token,
-                requires_level_by_preference: vec![2],
+                requires_token: application_activity_token,
+                requires_level_by_preference: vec![1],
             }])
             .build()
             .await?;
@@ -277,7 +278,6 @@ async fn test_fsystem_activity_governor_suspend_blocker_and_get_power_element() 
         .unwrap();
     current_state.application_activity_level.replace(ApplicationActivityLevel::Active);
     current_state.execution_state_level.replace(ExecutionStateLevel::Active);
-    assert_eq!(sag_ctrl_state.watch().await.unwrap(), current_state);
 
     let (required_level, responder) = td_runner_stream
         .next()

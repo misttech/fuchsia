@@ -1266,15 +1266,12 @@ TEST_F(PowerLibTest, TestSagElements) {
   async::Loop loop(&kAsyncLoopConfigNoAttachToCurrentThread);
   loop.StartThread();
 
-  zx::event exec_opportunistic, wake_assertive;
-  zx::event::create(0, &exec_opportunistic);
+  zx::event wake_assertive;
   zx::event::create(0, &wake_assertive);
-  zx::event exec_opportunistic_dupe, wake_assertive_dupe;
-  exec_opportunistic.duplicate(ZX_RIGHT_SAME_RIGHTS, &exec_opportunistic_dupe);
+  zx::event wake_assertive_dupe;
   wake_assertive.duplicate(ZX_RIGHT_SAME_RIGHTS, &wake_assertive_dupe);
 
-  SystemActivityGovernor sag_server(std::move(exec_opportunistic_dupe),
-                                    std::move(wake_assertive_dupe), loop.dispatcher());
+  SystemActivityGovernor sag_server(std::move(wake_assertive_dupe), loop.dispatcher());
 
   fidl::ServerBindingGroup<fuchsia_power_system::ActivityGovernor> bindings;
   fbl::RefPtr<fs::Service> sag = fbl::MakeRefCounted<fs::Service>(
@@ -1297,7 +1294,7 @@ TEST_F(PowerLibTest, TestSagElements) {
   fdf::Namespace ns = fdf::Namespace::Create(namespace_entries).value();
 
   fdf_power::ParentElement parent =
-      fdf_power::ParentElement::WithSag(fdf_power::SagElement::kExecutionState);
+      fdf_power::ParentElement::WithSag(fdf_power::SagElement::kApplicationActivity);
   fdf_power::PowerLevel one{.level = 0, .name = "one", .transitions{}};
   fdf_power::PowerLevel two{.level = 1, .name = "two", .transitions{}};
   fdf_power::PowerLevel three{.level = 2, .name = "three", .transitions{}};
@@ -1320,7 +1317,7 @@ TEST_F(PowerLibTest, TestSagElements) {
       .child = "n/a",
       .parent = parent,
       .level_deps = {one_to_one, three_to_two},
-      .strength = fdf_power::RequirementType::kOpportunistic,
+      .strength = fdf_power::RequirementType::kAssertive,
   };
 
   fdf_power::PowerElementConfiguration df_config{.element = pe, .dependencies = {power_dep}};
@@ -1335,8 +1332,8 @@ TEST_F(PowerLibTest, TestSagElements) {
   fdf_power::TokenMap map = std::move(call_result.value());
   EXPECT_EQ(size_t(1), map.size());
   zx_info_handle_basic_t info1, info2;
-  exec_opportunistic.get_info(ZX_INFO_HANDLE_BASIC, &info1, sizeof(zx_info_handle_basic_t), nullptr,
-                              nullptr);
+  wake_assertive.get_info(ZX_INFO_HANDLE_BASIC, &info1, sizeof(zx_info_handle_basic_t), nullptr,
+                          nullptr);
   map.at(parent).get_info(ZX_INFO_HANDLE_BASIC, &info2, sizeof(zx_info_handle_basic_t), nullptr,
                           nullptr);
   EXPECT_EQ(info1.koid, info2.koid);
@@ -1585,7 +1582,7 @@ TEST_F(PowerLibTest, TestAllParentElementTypes) {
   fdf_power::ParentElement cpu_parent =
       fdf_power::ParentElement::WithCpu(fdf_power::CpuElement::kCpu);
   fdf_power::ParentElement sag_parent =
-      fdf_power::ParentElement::WithSag(fdf_power::SagElement::kExecutionState);
+      fdf_power::ParentElement::WithSag(fdf_power::SagElement::kApplicationActivity);
   std::string driver_parent_name = "driver_parent";
   fdf_power::ParentElement driver_parent =
       fdf_power::ParentElement::WithInstanceName(driver_parent_name);
@@ -1608,16 +1605,16 @@ TEST_F(PowerLibTest, TestAllParentElementTypes) {
       .strength = fdf_power::RequirementType::kAssertive,
   };
 
-  fdf_power::LevelTuple on_exec_state_active{
+  fdf_power::LevelTuple on_application_activity_active{
       .child_level = 1,
-      .parent_level = 2,
+      .parent_level = 1,
   };
 
   fdf_power::PowerDependency sag_dep{
       .child = "little_one",
       .parent = sag_parent,
-      .level_deps = {on_exec_state_active},
-      .strength = fdf_power::RequirementType::kOpportunistic,
+      .level_deps = {on_application_activity_active},
+      .strength = fdf_power::RequirementType::kAssertive,
   };
 
   fdf_power::LevelTuple two_on_parent{
@@ -1656,15 +1653,11 @@ TEST_F(PowerLibTest, TestAllParentElementTypes) {
       });
 
   // Set up the fake SAG server
-  // Note that `wake_assertive` we don't dupe because we aren't going to use
-  // it for validation.
-  zx::event exec_opportunistic, wake_assertive;
-  zx::event::create(0, &exec_opportunistic);
+  zx::event wake_assertive;
   zx::event::create(0, &wake_assertive);
-  zx::event exec_opportunistic_dupe;
-  exec_opportunistic.duplicate(ZX_RIGHT_SAME_RIGHTS, &exec_opportunistic_dupe);
-  SystemActivityGovernor sag(std::move(exec_opportunistic_dupe), std::move(wake_assertive),
-                             loop.dispatcher());
+  zx::event wake_assertive_dupe;
+  wake_assertive.duplicate(ZX_RIGHT_SAME_RIGHTS, &wake_assertive_dupe);
+  SystemActivityGovernor sag(std::move(wake_assertive_dupe), loop.dispatcher());
 
   fidl::ServerBindingGroup<fuchsia_power_system::ActivityGovernor> sag_bindings;
   fbl::RefPtr<fs::Service> sag_server = fbl::MakeRefCounted<fs::Service>(
@@ -1727,8 +1720,8 @@ TEST_F(PowerLibTest, TestAllParentElementTypes) {
   const zx::event& retrieved_token_sag = tokens.at(sag_parent);
   retrieved_token_sag.get_info(ZX_INFO_HANDLE_BASIC, &retreived_info,
                                sizeof(zx_info_handle_basic_t), nullptr, nullptr);
-  exec_opportunistic.get_info(ZX_INFO_HANDLE_BASIC, &original_info, sizeof(zx_info_handle_basic_t),
-                              nullptr, nullptr);
+  wake_assertive.get_info(ZX_INFO_HANDLE_BASIC, &original_info, sizeof(zx_info_handle_basic_t),
+                          nullptr, nullptr);
   EXPECT_EQ(retreived_info.koid, original_info.koid);
 
   const zx::event& retrieved_token_driver_parent = tokens.at(driver_parent);
@@ -1745,15 +1738,12 @@ TEST_F(PowerLibTest, TestDriverAndSagElements) {
   async::Loop loop(&kAsyncLoopConfigNoAttachToCurrentThread);
   loop.StartThread();
 
-  zx::event exec_opportunistic, wake_assertive;
-  zx::event::create(0, &exec_opportunistic);
+  zx::event wake_assertive;
   zx::event::create(0, &wake_assertive);
-  zx::event exec_opportunistic_dupe, wake_assertive_dupe;
-  exec_opportunistic.duplicate(ZX_RIGHT_SAME_RIGHTS, &exec_opportunistic_dupe);
+  zx::event wake_assertive_dupe;
   wake_assertive.duplicate(ZX_RIGHT_SAME_RIGHTS, &wake_assertive_dupe);
 
-  SystemActivityGovernor sag_server(std::move(exec_opportunistic_dupe),
-                                    std::move(wake_assertive_dupe), loop.dispatcher());
+  SystemActivityGovernor sag_server(std::move(wake_assertive_dupe), loop.dispatcher());
 
   fidl::ServerBindingGroup<fuchsia_power_system::ActivityGovernor> bindings;
   fbl::RefPtr<fs::Service> sag = fbl::MakeRefCounted<fs::Service>(
@@ -1786,7 +1776,7 @@ TEST_F(PowerLibTest, TestDriverAndSagElements) {
   vfs.ServeDirectory(std::move(svcs_dir), std::move(dir_endpoints.server));
 
   fdf_power::ParentElement parent =
-      fdf_power::ParentElement::WithSag(fdf_power::SagElement::kExecutionState);
+      fdf_power::ParentElement::WithSag(fdf_power::SagElement::kApplicationActivity);
   fdf_power::PowerLevel one{.level = 0, .name = "one", .transitions{}};
   fdf_power::PowerLevel two{.level = 1, .name = "two", .transitions{}};
   fdf_power::PowerLevel three{.level = 2, .name = "three", .transitions{}};
@@ -1802,26 +1792,26 @@ TEST_F(PowerLibTest, TestDriverAndSagElements) {
   };
   fdf_power::LevelTuple three_to_two{
       .child_level = 3,
-      .parent_level = 2,
+      .parent_level = 1,
   };
 
   fdf_power::PowerDependency power_dep{
       .child = "n/a",
       .parent = parent,
       .level_deps = {one_to_one, three_to_two},
-      .strength = fdf_power::RequirementType::kOpportunistic,
+      .strength = fdf_power::RequirementType::kAssertive,
   };
 
   fdf_power::LevelTuple two_to_two{
       .child_level = 2,
-      .parent_level = 2,
+      .parent_level = 1,
   };
 
   fdf_power::PowerDependency driver_power_dep{
       .child = "n/a",
       .parent = driver_parent,
       .level_deps = {two_to_two},
-      .strength = fdf_power::RequirementType::kOpportunistic,
+      .strength = fdf_power::RequirementType::kAssertive,
   };
 
   fdf_power::PowerElementConfiguration df_config{.element = pe,
@@ -1838,8 +1828,8 @@ TEST_F(PowerLibTest, TestDriverAndSagElements) {
   fdf_power::TokenMap map = std::move(call_result.value());
   EXPECT_EQ(size_t(2), map.size());
   zx_info_handle_basic_t info1, info2;
-  exec_opportunistic.get_info(ZX_INFO_HANDLE_BASIC, &info1, sizeof(zx_info_handle_basic_t), nullptr,
-                              nullptr);
+  wake_assertive.get_info(ZX_INFO_HANDLE_BASIC, &info1, sizeof(zx_info_handle_basic_t), nullptr,
+                          nullptr);
   map.at(parent).get_info(ZX_INFO_HANDLE_BASIC, &info2, sizeof(zx_info_handle_basic_t), nullptr,
                           nullptr);
   EXPECT_EQ(info1.koid, info2.koid);
@@ -1895,7 +1885,7 @@ TEST_F(PowerLibTest, TestDriverInstanceDep) {
       .child = "n/a",
       .parent = driver_parent,
       .level_deps = {two_to_two},
-      .strength = fdf_power::RequirementType::kOpportunistic,
+      .strength = fdf_power::RequirementType::kAssertive,
   };
 
   fdf_power::PowerElementConfiguration df_config{.element = pe, .dependencies = {driver_power_dep}};

@@ -41,10 +41,9 @@ class FuchsiaPowerManagerTest : public gtest::RealLoopFixture {
 
   void SetUp() override {
     sag_loop().StartThread();
-    zx::event exec_opportunistic_dupe, wake_assertive_dupe;
-    sag_ = std::make_unique<power_lib_test::SystemActivityGovernor>(
-        std::move(exec_opportunistic_dupe), std::move(wake_assertive_dupe),
-        sag_loop().dispatcher());
+    zx::event wake_assertive_dupe;
+    sag_ = std::make_unique<power_lib_test::SystemActivityGovernor>(std::move(wake_assertive_dupe),
+                                                                    sag_loop().dispatcher());
 
     fbl::RefPtr<fs::Service> sag = fbl::MakeRefCounted<fs::Service>(
         [this](fidl::ServerEnd<fuchsia_power_system::ActivityGovernor> chan) {

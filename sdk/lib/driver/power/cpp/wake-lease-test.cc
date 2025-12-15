@@ -42,8 +42,8 @@ void PrepFakeSag(
   zx::event exec_opportunistic, wake_assertive;
   zx::event::create(0, &exec_opportunistic);
   zx::event::create(0, &wake_assertive);
-  sag_server = std::make_shared<SystemActivityGovernor>(
-      std::move(exec_opportunistic), std::move(wake_assertive), loop.dispatcher());
+  sag_server =
+      std::make_shared<SystemActivityGovernor>(std::move(wake_assertive), loop.dispatcher());
 
   bindings = std::make_shared<fidl::ServerBindingGroup<fuchsia_power_system::ActivityGovernor>>();
   sag = fbl::MakeRefCounted<fs::Service>(

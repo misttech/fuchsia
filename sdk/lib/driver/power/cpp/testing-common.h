@@ -24,23 +24,20 @@ namespace power_lib_test {
 class SystemActivityGovernor
     : public fidl::testing::TestBase<fuchsia_power_system::ActivityGovernor> {
  public:
-  SystemActivityGovernor(zx::event exec_state_opportunistic, zx::event wake_handling_assertive,
-                         async_dispatcher_t* dispatcher)
+  SystemActivityGovernor(zx::event wake_handling_assertive, async_dispatcher_t* dispatcher)
       : suspend_blocker_(std::nullopt),
-        exec_state_opportunistic_(std::move(exec_state_opportunistic)),
         wake_handling_assertive_(std::move(wake_handling_assertive)),
         dispatcher_(dispatcher) {}
 
   void GetPowerElements(GetPowerElementsCompleter::Sync& completer) override {
     fuchsia_power_system::PowerElements elements;
-    zx::event execution_element;
-    exec_state_opportunistic_.duplicate(ZX_RIGHT_SAME_RIGHTS, &execution_element);
+    zx::event aa_element;
+    wake_handling_assertive_.duplicate(ZX_RIGHT_SAME_RIGHTS, &aa_element);
 
-    fuchsia_power_system::ExecutionState exec_state = {
-        {.opportunistic_dependency_token = std::move(execution_element)}};
+    fuchsia_power_system::ApplicationActivity application_activity = {
+        {.assertive_dependency_token = std::move(aa_element)}};
 
-    elements = {{.execution_state = std::move(exec_state)}};
-
+    elements = {{.application_activity = std::move(application_activity)}};
     completer.Reply({{std::move(elements)}});
   }
 
@@ -111,7 +108,6 @@ class SystemActivityGovernor
  private:
   std::optional<fidl::Client<fuchsia_power_system::SuspendBlocker>> suspend_blocker_;
   std::optional<zx::eventpair> server_lease_token_;
-  zx::event exec_state_opportunistic_;
   zx::event wake_handling_assertive_;
   async_dispatcher_t* dispatcher_;
 };
