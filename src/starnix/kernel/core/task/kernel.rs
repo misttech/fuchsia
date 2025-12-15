@@ -955,7 +955,8 @@ fn arm32_hwcap(cpu_feature_flags: CpuFeatureFlags) -> HwCap {
         | arch32::HWCAP_EDSP
         | arch32::HWCAP_TLS
         | arch32::HWCAP_IDIV // == IDIVA | IDIVT.
-        | arch32::HWCAP_LPAE;
+        | arch32::HWCAP_LPAE
+        | arch32::HWCAP_EVTSTRM;
 
     let mut hwcap = COMPAT_ARM32_ELF_HWCAP;
     let mut hwcap2 = 0;
