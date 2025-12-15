@@ -99,6 +99,7 @@ template("host_test") {
                              "timeout_secs",
                              "package_deps",
                              "product_bundle",
+                             "expects_ssh",
                            ])
 
     # If we have args, we put most deps on the script target,

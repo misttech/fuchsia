@@ -153,6 +153,8 @@ template("python_host_test") {
                              "package_deps",
                              "visibility",
                              "timeout_secs",
+                             "isolated",
+                             "expects_ssh",
                            ])
 
     binary_path = python_exe_src
