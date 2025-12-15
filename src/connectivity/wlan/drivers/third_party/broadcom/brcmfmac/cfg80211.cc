@@ -2214,6 +2214,7 @@ zx_status_t brcmf_cfg80211_connect(struct net_device* ndev,
   zx_status_t err = ZX_OK;
   bcme_status_t fw_err = BCME_OK;
   bool is_rsn_ie = true;
+  chanspec_t chspec = INVCHANSPEC;
 
   if (!req->selected_bss().has_value()) {
     BRCMF_ERR("Missing required field, selected_bss: %d", req->selected_bss().has_value());
@@ -2230,9 +2231,16 @@ zx_status_t brcmf_cfg80211_connect(struct net_device* ndev,
   const uint16_t old_chanspec = channel_to_chanspec(&cfg->d11inf, &chan_override);
 
   const auto chanspec_result = bss_chanspec(ifp, req->selected_bss().value());
-  if (chanspec_result.is_error()) {
-    BRCMF_ERR("Connect failed, chanspec conversion error: %s", chanspec_result.status_string());
-    goto fail;
+  if (chanspec_result.is_ok()) {
+    chspec = chanspec_result.value();
+  } else {
+    BRCMF_WARN("Connect chanspec conversion error: %s", chanspec_result.status_string());
+    if (old_chanspec == INVCHANSPEC) {
+      BRCMF_ERR("Connect failed due to chanspec conversion errors");
+      goto fail;
+    }
+    BRCMF_WARN("Connect using legacy chanspec 0x%x", old_chanspec);
+    chspec = old_chanspec;
   }
 
   // Wait until disconnect completes before proceeding with the connect.
@@ -2288,7 +2296,7 @@ zx_status_t brcmf_cfg80211_connect(struct net_device* ndev,
 
   brcmf_set_bit(brcmf_vif_status_bit_t::CONNECTING, &ifp->vif->sme_state);
 
-  cfg->channel = chanspec_result.value();
+  cfg->channel = chspec;
 
   ssid = brcmf_find_ssid_in_ies(ifp->connect_req.selected_bss()->ies().data(),
                                 ifp->connect_req.selected_bss()->ies().size());
@@ -2301,7 +2309,7 @@ zx_status_t brcmf_cfg80211_connect(struct net_device* ndev,
 
   memcpy(join_params.params_le.bssid, ifp->connect_req.selected_bss()->bssid().data(), ETH_ALEN);
   join_params.params_le.chanspec_num = 1;
-  join_params.params_le.chanspec_list[0] = chanspec_result.value();
+  join_params.params_le.chanspec_list[0] = chspec;
 
   // Attempt to clear counters here and ignore the error. Synaptics indicates that
   // some counters might be active even when the client is not connected.
@@ -5950,6 +5958,7 @@ zx_status_t brcmf_cfg80211_roam(struct net_device* ndev) {
   struct brcmf_if* ifp = ndev_to_if(ndev);
   struct brcmf_cfg80211_info* cfg = ifp->drvr->config;
   bcme_status_t fw_status = BCME_OK;
+  chanspec_t chspec = INVCHANSPEC;
 
   BRCMF_INFO("MLME-initiated roam requested");
   if (!ifp->roam_req.has_value() || ifp->roam_req->IsEmpty()) {
@@ -5969,14 +5978,21 @@ zx_status_t brcmf_cfg80211_roam(struct net_device* ndev) {
   const auto old_chanspec = channel_to_chanspec(&cfg->d11inf, &chan_override);
 
   const auto chanspec_result = bss_chanspec(ifp, ifp->roam_req->selected_bss().value());
-  if (chanspec_result.is_error()) {
-    BRCMF_ERR("Roam failed, chanspec conversion error: %s", chanspec_result.status_string());
-    return chanspec_result.error_value();
+  if (chanspec_result.is_ok()) {
+    chspec = chanspec_result.value();
+  } else {
+    BRCMF_WARN("Roam chanspec conversion error: %s", chanspec_result.status_string());
+    if (old_chanspec == INVCHANSPEC) {
+      BRCMF_ERR("Roam failed due to chanspec conversion errors");
+      return chanspec_result.error_value();
+    }
+    BRCMF_WARN("Roam using legacy chanspec 0x%x", old_chanspec);
+    chspec = old_chanspec;
   }
 
   reassoc_params.chanspec_num = 1;
-  reassoc_params.chanspec_list[0] = chanspec_result.value();
-  cfg->channel = chanspec_result.value();
+  reassoc_params.chanspec_list[0] = chspec;
+  cfg->channel = chspec;
 
   status = brcmf_fil_cmd_data_set(ifp, BRCMF_C_REASSOC, &reassoc_params, sizeof(reassoc_params),
                                   &fw_status);
