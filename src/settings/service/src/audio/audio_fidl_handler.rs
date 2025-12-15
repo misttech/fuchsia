@@ -174,7 +174,7 @@ enum Error {
 }
 
 fn to_request(settings: AudioSettings, id: ftrace::Id) -> Result<Vec<SetAudioStream>, Error> {
-    trace!(id, c"to_request");
+    trace!(id, "to_request");
     settings
         .streams
         .map(|streams| {
@@ -205,7 +205,7 @@ fn to_request(settings: AudioSettings, id: ftrace::Id) -> Result<Vec<SetAudioStr
 }
 
 fn to_request2(settings: AudioSettings2, id: ftrace::Id) -> Result<Vec<SetAudioStream>, Error> {
-    trace!(id, c"to_request2");
+    trace!(id, "to_request2");
     settings
         .streams
         .map(|streams| {
@@ -361,7 +361,7 @@ impl RequestHandler {
             }
             AudioRequest::Set { settings, responder } => {
                 let trace_id = ftrace::Id::new();
-                let _guard = trace_guard!(trace_id, c"audio fidl handler set");
+                let _guard = trace_guard!(trace_id, "audio fidl handler set");
                 let usage_res = self
                     .usage_publisher
                     .request(format!("Set{{settings:{settings:?}}}"), RequestType::Set);
@@ -375,7 +375,7 @@ impl RequestHandler {
             }
             AudioRequest::Set2 { settings, responder } => {
                 let trace_id = ftrace::Id::new();
-                let _guard = trace_guard!(trace_id, c"audio fidl handler set2");
+                let _guard = trace_guard!(trace_id, "audio fidl handler set2");
                 let usage_res = self
                     .usage_publisher
                     .request(format!("Set{{settings:{settings:?}}}"), RequestType::Set);

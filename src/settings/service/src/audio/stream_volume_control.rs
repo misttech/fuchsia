@@ -76,7 +76,7 @@ impl StreamVolumeControl {
         // and from set request has the validation.
         assert!(stream.has_valid_volume_level());
 
-        trace!(id, c"StreamVolumeControl ctor");
+        trace!(id, "StreamVolumeControl ctor");
         let mut control = StreamVolumeControl {
             stored_stream: stream,
             proxy: None,
@@ -142,7 +142,7 @@ impl StreamVolumeControl {
     }
 
     async fn bind_volume_control(&mut self, id: ftrace::Id) -> Result<(), AudioError> {
-        trace!(id, c"bind volume control");
+        trace!(id, "bind volume control");
         if self.proxy.is_some() {
             return Ok(());
         }
@@ -151,7 +151,7 @@ impl StreamVolumeControl {
         let stream_type = self.stored_stream.stream_type;
         let usage = Usage2::RenderUsage(stream_type.into());
 
-        let guard = trace_guard!(id, c"bind usage volume control");
+        let guard = trace_guard!(id, "bind usage volume control");
         if let Err(e) = call!(self.audio_service => bind_usage_volume_control2(&usage, server_end))
         {
             return Err(AudioError::ExternalFailure(
@@ -162,7 +162,7 @@ impl StreamVolumeControl {
         }
         drop(guard);
 
-        let guard = trace_guard!(id, c"set values");
+        let guard = trace_guard!(id, "set values");
         // Once the volume control is bound, apply the persisted audio settings to it.
         if let Err(e) = vol_control_proxy.set_volume(self.stored_stream.user_volume_level) {
             return Err(AudioError::ExternalFailure(
@@ -189,7 +189,7 @@ impl StreamVolumeControl {
             );
         }
 
-        trace!(id, c"setup listener");
+        trace!(id, "setup listener");
 
         let (exit_tx, mut exit_rx) = futures::channel::oneshot::channel::<()>();
         let mut volume_events = vol_control_proxy.take_event_stream();
@@ -199,11 +199,11 @@ impl StreamVolumeControl {
             let publisher = self.publisher.clone();
             async move {
                 let id = ftrace::Id::new();
-                trace!(id, c"bind volume handler");
+                trace!(id, "bind volume handler");
                 loop {
                     futures::select! {
                         _ = exit_rx => {
-                            trace!(id, c"exit");
+                            trace!(id, "exit");
                             #[cfg(test)]
                             {
                                 // Send UNKNOWN_INSPECT_STRING for request-related args because it
@@ -222,7 +222,7 @@ impl StreamVolumeControl {
                             return;
                         }
                         volume_event = volume_events.try_next() => {
-                            trace!(id, c"volume_event");
+                            trace!(id, "volume_event");
                             if let Err(_) | Ok(None) = volume_event {
                                 if let Some(action) = early_exit_action {
                                     (action)();

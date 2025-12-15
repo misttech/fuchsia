@@ -86,7 +86,7 @@ impl AudioController {
     /// persistent storage and restores it on the local state.
     pub(crate) async fn restore(&mut self) -> AudioInfo {
         let id = ftrace::Id::new();
-        trace!(id, c"restore");
+        trace!(id, "restore");
         self.restore_volume_state(id, true).await
     }
 
@@ -99,9 +99,9 @@ impl AudioController {
     ) -> AudioInfo {
         let audio_info = self.store.get::<AudioInfo>().await;
 
-        trace!(id, c"update volume streams from info");
+        trace!(id, "update volume streams from info");
         let new_streams = audio_info.streams.iter();
-        let _guard = trace_guard!(id, c"check and bind");
+        let _guard = trace_guard!(id, "check and bind");
         if let Err(e) = self.update_streams(push_to_audio_core, new_streams, id).await {
             log::error!("Failed to update streams: {e:?}");
         }
@@ -175,7 +175,7 @@ impl AudioController {
         volume: Vec<SetAudioStream>,
         id: ftrace::Id,
     ) -> Result<AudioInfo, AudioError> {
-        let guard = trace_guard!(id, c"set volume updating counters");
+        let guard = trace_guard!(id, "set volume updating counters");
         // Update counters for changed streams.
         for stream in &volume {
             // We don't care what the value of the counter is, just that it is different from the
@@ -210,7 +210,7 @@ impl AudioController {
         id: ftrace::Id,
     ) -> Result<(), AudioError> {
         if push_to_audio_core {
-            let guard = trace_guard!(id, c"push to core");
+            let guard = trace_guard!(id, "push to core");
             self.check_and_bind_volume_controls(
                 id,
                 self.audio_info_loader.default_value().streams.iter(),
@@ -218,7 +218,7 @@ impl AudioController {
             .await?;
             drop(guard);
 
-            trace!(id, c"setting core");
+            trace!(id, "setting core");
             for stream in new_streams {
                 if let Some(volume_control) =
                     self.stream_volume_controls.get_mut(&stream.stream_type)
@@ -227,7 +227,7 @@ impl AudioController {
                 }
             }
         } else {
-            trace!(id, c"without push to core");
+            trace!(id, "without push to core");
             self.check_and_bind_volume_controls(id, new_streams).await?;
         }
 
@@ -241,9 +241,9 @@ impl AudioController {
         id: ftrace::Id,
     ) -> Result<AudioInfo, AudioError> {
         let mut new_vec = vec![];
-        trace!(id, c"update volume streams from new streams");
-        let calculating_guard = trace_guard!(id, c"check and bind");
-        trace!(id, c"reading setting");
+        trace!(id, "update volume streams from new streams");
+        let calculating_guard = trace_guard!(id, "check and bind");
+        trace!(id, "reading setting");
         let mut stored_value = self.store.get::<AudioInfo>().await;
         for set_stream in streams.iter() {
             let stored_stream = stored_value
@@ -267,12 +267,12 @@ impl AudioController {
         self.update_streams(push_to_audio_core, new_streams, id).await?;
         drop(calculating_guard);
 
-        let guard = trace_guard!(id, c"updating streams and counters");
+        let guard = trace_guard!(id, "updating streams and counters");
         stored_value.streams = self.get_streams_array_from_map(&self.stream_volume_controls).await;
         stored_value.modified_counters = Some(self.modified_counters.clone());
         drop(guard);
 
-        let guard = trace_guard!(id, c"writing setting");
+        let guard = trace_guard!(id, "writing setting");
         let write_result = self.store.write(&stored_value).await;
         drop(guard);
         // Always return the stored value
@@ -285,12 +285,12 @@ impl AudioController {
         id: ftrace::Id,
         streams: impl Iterator<Item = &AudioStream>,
     ) -> Result<(), AudioError> {
-        trace!(id, c"check and bind fn");
+        trace!(id, "check and bind fn");
         if self.audio_service_connected {
             return Ok(());
         }
 
-        let guard = trace_guard!(id, c"connecting to service");
+        let guard = trace_guard!(id, "connecting to service");
         let service_result = self
             .service_context
             .connect_with_publisher::<fidl_fuchsia_media::AudioCoreMarker, _>(
@@ -312,7 +312,7 @@ impl AudioController {
         drop(guard);
         let mut stream_tuples = Vec::new();
         for stream in streams {
-            trace!(id, c"create stream volume control");
+            trace!(id, "create stream volume control");
             let restart_tx = self.restart_tx.clone();
 
             // Generate a tuple with stream type and StreamVolumeControl.
@@ -373,7 +373,7 @@ impl AudioController {
     async fn handle_request(&mut self, request: Request) {
         match request {
             Request::Get(id, tx) => {
-                trace!(id, c"controller get");
+                trace!(id, "controller get");
                 let res = self.get_info().await;
                 let _ = tx.send(res);
             }
@@ -381,7 +381,7 @@ impl AudioController {
                 self.register_listener(tx);
             }
             Request::Set(streams, id, tx) => {
-                trace!(id, c"controller set");
+                trace!(id, "controller set");
                 // Validate volume contains valid volume level numbers.
                 for audio_stream in &streams {
                     if !audio_stream.has_valid_volume_level() {
@@ -403,7 +403,7 @@ impl AudioController {
 
     async fn handle_restart(&mut self) {
         let id = ftrace::Id::new();
-        trace!(id, c"restart");
+        trace!(id, "restart");
         self.audio_service_connected = false;
         self.stream_volume_controls.clear();
         let _ = self.restore_volume_state(id, false).await;
