@@ -77,8 +77,6 @@ class MagmaDriverBase : public fdf::DriverBase,
 
   // Initialize MagmaDriver and MagmaSystemDevice.
   virtual zx::result<> MagmaStart() = 0;
-  // Called after MagmaStart to initialize devfs nodes.
-  virtual zx::result<> CreateAdditionalDevNodes() { return zx::ok(); }
 
   void GetPowerGoals(GetPowerGoalsCompleter::Sync& completer) override { completer.Reply({}); }
 

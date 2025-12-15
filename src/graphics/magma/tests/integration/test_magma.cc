@@ -1370,11 +1370,13 @@ class TestConnection {
     CheckAccessWithInvalidToken(MAGMA_STATUS_ACCESS_DENIED);
 
     bool success = false;
-    for (auto& p : std::filesystem::directory_iterator("/dev/class/gpu-performance-counters")) {
+    for (auto& p :
+         std::filesystem::directory_iterator("/svc/fuchsia.gpu.magma.PerformanceCounterService")) {
       zx::channel server_end, client_end;
       zx::channel::create(0, &server_end, &client_end);
 
-      zx_status_t zx_status = fdio_service_connect(p.path().c_str(), server_end.release());
+      zx_status_t zx_status = fdio_service_connect(
+          (static_cast<std::string>(p.path()) + "/access").c_str(), server_end.release());
       EXPECT_EQ(ZX_OK, zx_status);
       magma_status_t status =
           magma_connection_enable_performance_counter_access(connection_, client_end.release());

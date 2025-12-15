@@ -548,16 +548,6 @@
             to: [ "#vulkan_loader" ],
         },
         {
-            // TODO(https://fxbug.dev/324273348): Remove this capability once the clients have
-            // been migrated to services. The service capability has been added below.
-            directory: "dev-class",
-            from: "parent",
-            as: "dev-gpu-dependency-injection",
-            to: "#vulkan_loader",
-            subdir: "gpu-dependency-injection",
-        },
-        {
-            // This service replaces the directory capability above.
             service: "fuchsia.gpu.magma.DependencyInjectionService",
             from: "parent",
             to: "#vulkan_loader",

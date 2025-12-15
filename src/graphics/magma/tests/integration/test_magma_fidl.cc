@@ -663,13 +663,15 @@ TEST_F(TestMagmaFidl, FlowControl) {
 
 TEST_F(TestMagmaFidl, EnablePerformanceCounters) {
   bool success = false;
-  for (auto& p : std::filesystem::directory_iterator("/dev/class/gpu-performance-counters")) {
+  for (auto& p :
+       std::filesystem::directory_iterator("/svc/fuchsia.gpu.magma.PerformanceCounterService")) {
     fidl::WireSyncClient<fuchsia_gpu_magma::PerformanceCounterAccess> perf_counter_access;
 
     {
       auto endpoints = fidl::Endpoints<fuchsia_gpu_magma::PerformanceCounterAccess>::Create();
       ASSERT_EQ(ZX_OK,
-                fdio_service_connect(p.path().c_str(), endpoints.server.TakeChannel().release()));
+                fdio_service_connect((static_cast<std::string>(p.path()) + "/access").c_str(),
+                                     endpoints.server.TakeChannel().release()));
       perf_counter_access = fidl::WireSyncClient(std::move(endpoints.client));
     }
 

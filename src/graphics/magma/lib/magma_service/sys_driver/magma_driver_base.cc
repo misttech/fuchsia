@@ -17,22 +17,22 @@ zx::result<> MagmaDriverBase::Start() {
 
   InitializeInspector();
 
-  if (zx::result result = perf_counter_.Create(node().borrow()); result.is_error()) {
+  fdf::OutgoingDirectory* outgoing_ptr = outgoing().get();
+
+  if (zx::result result = perf_counter_.Create(outgoing_ptr); result.is_error()) {
     return result.take_error();
   }
+
   {
     std::lock_guard lock(magma_->magma_mutex);
     magma_->magma_system_device->set_perf_count_access_token_id(perf_counter_.GetEventKoid());
   }
 
-  if (zx::result result = dependency_injection_.Create(node().borrow()); result.is_error()) {
+  if (zx::result result = dependency_injection_.Create(outgoing_ptr); result.is_error()) {
     return result.take_error();
   }
 
   if (zx::result result = CreateDevfsNode(); result.is_error()) {
-    return result.take_error();
-  }
-  if (zx::result result = CreateAdditionalDevNodes(); result.is_error()) {
     return result.take_error();
   }
   MAGMA_LOG(INFO, "MagmaDriverBase::Start completed for MSD %s", std::string(name()).c_str());

@@ -152,8 +152,7 @@ TEST_F(MagmaDriverStarted, Query) {
 
 TEST_F(MagmaDriverStarted, PerformanceCounters) {
   zx::result client_end =
-      driver_test().ConnectThroughDevfs<fuchsia_gpu_magma::PerformanceCounterAccess>(
-          "gpu-performance-counters");
+      driver_test().Connect<fuchsia_gpu_magma::PerformanceCounterService::Access>();
   ASSERT_OK(client_end);
   fidl::WireSyncClient<fuchsia_gpu_magma::PerformanceCounterAccess> client{
       std::move(client_end.value())};
@@ -180,8 +179,8 @@ class MemoryPressureProviderServer : public fidl::WireServer<fuchsia_memorypress
 };
 
 TEST_F(MagmaDriverStarted, DependencyInjection) {
-  zx::result client_end = driver_test().ConnectThroughDevfs<fuchsia_gpu_magma::DependencyInjection>(
-      "gpu-dependency-injection");
+  zx::result client_end =
+      driver_test().Connect<fuchsia_gpu_magma::DependencyInjectionService::Device>();
   ASSERT_OK(client_end);
   fidl::WireSyncClient<fuchsia_gpu_magma::DependencyInjection> client{
       std::move(client_end.value())};

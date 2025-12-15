@@ -7,8 +7,7 @@
 #include <fidl/fuchsia.driver.framework/cpp/fidl.h>
 #include <fidl/fuchsia.gpu.magma/cpp/wire.h>
 #include <fidl/fuchsia.memorypressure/cpp/wire.h>
-#include <lib/driver/devfs/cpp/connector.h>
-#include <lib/driver/node/cpp/add_child.h>
+#include <lib/driver/outgoing/cpp/outgoing_directory.h>
 #include <lib/fdf/cpp/dispatcher.h>
 #include <lib/magma/util/macros.h>
 #include <lib/magma_service/msd.h>
@@ -23,11 +22,9 @@ class DependencyInjectionServer : public fidl::WireServer<fuchsia_gpu_magma::Dep
   };
 
   explicit DependencyInjectionServer(Owner* owner, async_dispatcher_t* dispatcher)
-      : owner_(owner),
-        devfs_connector_(fit::bind_member<&DependencyInjectionServer::BindConnector>(this)),
-        dispatcher_(dispatcher) {}
+      : owner_(owner), dispatcher_(dispatcher) {}
 
-  zx::result<> Create(fidl::UnownedClientEnd<fuchsia_driver_framework::Node> parent);
+  zx::result<> Create(fdf::OutgoingDirectory* outgoing);
 
   // fuchsia:gpu::magma::DependencyInjection implementation.
   void SetMemoryPressureProvider(
@@ -39,17 +36,11 @@ class DependencyInjectionServer : public fidl::WireServer<fuchsia_gpu_magma::Dep
                       OnLevelChangedCompleter::Sync& completer) override;
 
  private:
-  void BindConnector(fidl::ServerEnd<fuchsia_gpu_magma::DependencyInjection> server) {
-    fidl::BindServer(dispatcher_, std::move(server), this);
-  }
-
   static MagmaMemoryPressureLevel GetMagmaLevel(fuchsia_memorypressure::wire::Level level);
 
   Owner* owner_;
-  driver_devfs::Connector<fuchsia_gpu_magma::DependencyInjection> devfs_connector_;
-  fdf::OwnedChildNode child_;
-  std::optional<fidl::ServerBindingRef<fuchsia_memorypressure::Watcher>> pressure_server_;
   async_dispatcher_t* dispatcher_;
+  std::optional<fidl::ServerBindingRef<fuchsia_memorypressure::Watcher>> pressure_server_;
 };
 
 }  // namespace msd::internal

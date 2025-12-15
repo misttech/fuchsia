@@ -4,28 +4,33 @@
 
 #include "performance_counters_server.h"
 
+#include <lib/driver/logging/cpp/logger.h>
+
 namespace msd::internal {
-zx::result<> PerformanceCountersServer::Create(
-    fidl::UnownedClientEnd<fuchsia_driver_framework::Node> parent) {
+zx::result<> PerformanceCountersServer::Create(fdf::OutgoingDirectory* outgoing) {
   zx_status_t status = zx::event::create(0, &event_);
   if (status != ZX_OK) {
     return zx::error(status);
   }
-  zx::result connector = devfs_connector_.Bind(dispatcher_);
-  if (connector.is_error()) {
-    return connector.take_error();
-  }
 
-  fuchsia_driver_framework::DevfsAddArgs devfs{
-      {.connector{std::move(connector.value())}, .class_name{"gpu-performance-counters"}}};
+  auto perf_counter_access_protocol =
+      [this](fidl::ServerEnd<fuchsia_gpu_magma::PerformanceCounterAccess> server_end) mutable {
+        fidl::BindServer(dispatcher_, std::move(server_end), this);
+      };
 
-  zx::result child =
-      fdf::AddOwnedChild(parent, *fdf::Logger::GlobalInstance(), "gpu-performance-counters", devfs);
-  if (child.is_error()) {
-    MAGMA_LOG(ERROR, "Failed to add child: %s", child.status_string());
-    return child.take_error();
+  fuchsia_gpu_magma::PerformanceCounterService::InstanceHandler handler({
+      .access = std::move(perf_counter_access_protocol),
+  });
+
+  {
+    auto status = outgoing->template AddService<fuchsia_gpu_magma::PerformanceCounterService>(
+        std::move(handler));
+    if (status.is_error()) {
+      FDF_LOG(ERROR, "%s(): Failed to add service to outgoing directory: %s\n", __func__,
+              status.status_string());
+      return status.take_error();
+    }
   }
-  child_ = std::move(child.value());
 
   return zx::ok();
 }

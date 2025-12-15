@@ -18,7 +18,13 @@
         fallback: "false",
     },
     capabilities: [
-        { service: "fuchsia.gpu.magma.Service" },
+        {
+            service: [
+                "fuchsia.gpu.magma.DependencyInjectionService",
+                "fuchsia.gpu.magma.PerformanceCounterService",
+                "fuchsia.gpu.magma.Service",
+            ],
+        },
     ],
     use: [
         { protocol: "fuchsia.scheduler.RoleManager" },
@@ -28,7 +34,11 @@
     ],
     expose: [
         {
-            service: "fuchsia.gpu.magma.Service",
+            service: [
+                "fuchsia.gpu.magma.DependencyInjectionService",
+                "fuchsia.gpu.magma.PerformanceCounterService",
+                "fuchsia.gpu.magma.Service",
+            ],
             from: "self",
         },
     ],
