@@ -58,9 +58,10 @@ where
 {
     // We should really be monitoring the ThreadGroup's drop_notifier instead, but we also need to
     // ensure that we're not signalling the pidfd until after all memory resources associated with
-    // the process are released. In the current Starnix codebase, the MemoryManager of a process may
-    // outlive the ThreadGroup in some circumstances. Therefore, as a temporary workaround, here we
-    // monitor the MemoryManager's drop_notifier, which is guaranteed to only fire when all the
+    // the process are released. In the current Starnix codebase, there is a 1:1 correspondence
+    // between ThreadGroups (i.e. processes) and MemoryManagers, and the MemoryManager of a process
+    // may outlive the ThreadGroup in some circumstances. Therefore, as a temporary workaround, here
+    // we monitor the MemoryManager's drop_notifier, which is guaranteed to only fire when all the
     // memory mappings associated with the process have been released. To be revisited once Starnix
     // implements explicit cleanup of resources on process exit.
     let terminated_event = mm.drop_notifier.event();
