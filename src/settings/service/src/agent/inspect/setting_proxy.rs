@@ -214,7 +214,7 @@ impl SettingProxyInspectAgent {
     pub fn initialize(mut self) {
         fasync::Task::local(async move {
             let id = fuchsia_trace::Id::new();
-            trace!(id, c"setting_proxy_inspect_agent");
+            trace!(id, "setting_proxy_inspect_agent");
             let mut usage_rx = self.usage_rx.take().unwrap();
             while let Some(usage_event) = usage_rx.next().await {
                 if let Direction::Request(_) = usage_event.direction {

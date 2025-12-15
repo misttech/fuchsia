@@ -286,7 +286,7 @@ async fn match_background_to_media(audio_request_tx: Option<UnboundedSender<Audi
     // If they are different, set the background volume to match the media volume.
     if media_volume != background_volume {
         let id = ftrace::Id::new();
-        trace!(id, c"bluetooth_handler set background volume");
+        trace!(id, "bluetooth_handler set background volume");
         let streams = vec![SetAudioStream {
             stream_type: AudioStreamType::Background,
             source: AudioSettingSource::System,

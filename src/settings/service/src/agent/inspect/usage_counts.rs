@@ -89,7 +89,7 @@ impl SettingTypeUsageInspectAgent {
         fasync::Task::local({
             async move {
                 let id = fuchsia_trace::Id::new();
-                trace!(id, c"usage_counts_inspect_agent");
+                trace!(id, "usage_counts_inspect_agent");
                 let mut usage_rx = self.usage_rx.take().unwrap();
 
                 while let Some(usage_event) = usage_rx.next().await {

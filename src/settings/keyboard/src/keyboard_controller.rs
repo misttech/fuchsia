@@ -117,7 +117,7 @@ impl KeyboardController {
         keyboard_info: KeyboardInfo,
     ) -> Result<Option<KeyboardInfo>, KeyboardError> {
         let id = fuchsia_trace::Id::new();
-        trace!(id, c"set keyboard");
+        trace!(id, "set keyboard");
         let mut current = self.store.get::<KeyboardInfo>().await;
         if !keyboard_info.is_valid() {
             return Err(KeyboardError::InvalidArgument("keyboard", format!("{keyboard_info:?}")));

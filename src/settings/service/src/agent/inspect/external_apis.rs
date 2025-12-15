@@ -188,7 +188,7 @@ impl ExternalApiInspectAgent {
         fasync::Task::local({
             async move {
                 let id = fuchsia_trace::Id::new();
-                trace!(id, c"external_api_inspect_agent");
+                trace!(id, "external_api_inspect_agent");
                 let mut event_rx = self.event_rx.take().unwrap();
                 while let Some(event) = event_rx.next().await {
                     self.process_direct_event(event);
