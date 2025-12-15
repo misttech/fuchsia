@@ -260,8 +260,13 @@ impl PolicyIndex {
         };
 
         let type_ = override_type.unwrap_or_else(|| {
-            match self.type_transition_new_type(source.type_(), target.type_(), policy_class) {
-                Some(new_type) => new_type,
+            match self.parsed_policy.find_access_vector_rule(
+                source.type_(),
+                target.type_(),
+                policy_class.id(),
+                ACCESS_VECTOR_RULE_TYPE_TYPE_TRANSITION,
+            ) {
+                Some(new_type_rule) => new_type_rule.new_type().unwrap(),
                 None => match class_defaults.type_() {
                     ClassDefault::Source => source.type_(),
                     ClassDefault::Target => target.type_(),
@@ -432,21 +437,6 @@ impl PolicyIndex {
                 role_allow.source_role() == source_role && role_allow.new_role() == new_role
             })
             .is_some()
-    }
-
-    fn type_transition_new_type(
-        &self,
-        source_type: TypeId,
-        target_type: TypeId,
-        class: &Class,
-    ) -> Option<TypeId> {
-        let rule = self.parsed_policy.find_access_vector_rule(
-            source_type,
-            target_type,
-            class.id(),
-            ACCESS_VECTOR_RULE_TYPE_TYPE_TRANSITION,
-        )?;
-        Some(rule.new_type().unwrap())
     }
 
     fn type_transition_new_type_with_name(
