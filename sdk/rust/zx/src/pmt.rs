@@ -49,13 +49,6 @@ mod tests {
     use crate::Vmo;
 
     #[test]
-    fn pmt_unpin_invalid_handle() {
-        let pmt = Pmt::from(NullableHandle::invalid());
-        let status = unsafe { pmt.unpin() };
-        assert_eq!(status, Err(Status::BAD_HANDLE));
-    }
-
-    #[test]
     fn pmt_unpin_wrong_handle() {
         let vmo = Vmo::create(0).unwrap();
         let pmt = unsafe { Pmt::from(NullableHandle::from_raw(vmo.into_raw())) };

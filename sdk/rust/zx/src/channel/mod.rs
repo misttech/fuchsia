@@ -1711,6 +1711,16 @@ mod tests {
     }
 
     #[test]
+    fn channel_write_consumes_multiple_handles_on_failure() {
+        let (send, _recv) = Channel::create();
+        let event = crate::Event::create();
+        let event_dup_no_transfer =
+            event.duplicate_handle(crate::Rights::BASIC & !crate::Rights::TRANSFER).unwrap();
+        let mut handles = vec![event.into(), event_dup_no_transfer.into()];
+        let send_result = send.write(&[], &mut handles);
+        assert!(send_result.is_err());
+    }
+    #[test]
     fn channel_write_vectored_consumes_handles_on_failure() {
         let (send, recv) = Channel::create();
         drop(recv);

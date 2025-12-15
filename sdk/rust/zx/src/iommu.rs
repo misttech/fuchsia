@@ -65,15 +65,6 @@ mod tests {
     use fuchsia_component::client::connect_channel_to_protocol;
 
     #[test]
-    fn iommu_create_invalid_resource() {
-        let status = Iommu::create_stub(
-            &Resource::from(NullableHandle::invalid()),
-            IommuDescStub::default(),
-        );
-        assert_eq!(status, Err(Status::BAD_HANDLE));
-    }
-
-    #[test]
     fn iommu_create_valid() {
         use zx::{Channel, HandleBased, MonotonicInstant};
         let (client_end, server_end) = Channel::create();

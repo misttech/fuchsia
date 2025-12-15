@@ -9,6 +9,7 @@
     ],
     program: {
         binary: "bin/zx_tests",
+        job_policy_bad_handles: "allow_exception",
     },
     use: [
         {

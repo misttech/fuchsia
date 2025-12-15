@@ -357,16 +357,6 @@ mod tests {
     }
 
     #[test]
-    fn create_invalid() {
-        let result = Stream::create(
-            StreamOptions::MODE_READ,
-            &zx::Vmo::from(zx::NullableHandle::invalid()),
-            0,
-        );
-        assert_eq!(result, Err(zx::Status::BAD_HANDLE));
-    }
-
-    #[test]
     fn create_with_mode_append() {
         let size: u64 = zx::system_get_page_size().into();
         let vmo = zx::Vmo::create(size).unwrap();

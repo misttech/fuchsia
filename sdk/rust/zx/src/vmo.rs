@@ -525,12 +525,6 @@ mod tests {
     use zerocopy::KnownLayout;
 
     #[test]
-    fn vmo_create_contiguous_invalid_handle() {
-        let status = Vmo::create_contiguous(&Bti::from(NullableHandle::invalid()), 4096, 0);
-        assert_eq!(status, Err(Status::BAD_HANDLE));
-    }
-
-    #[test]
     fn vmo_create_contiguous() {
         use zx::{Channel, HandleBased, MonotonicInstant};
         let (client_end, server_end) = Channel::create();

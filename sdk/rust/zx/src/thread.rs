@@ -274,17 +274,3 @@ impl ExceptionChannelType {
         }
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use zx::{HandleBased, NullableHandle, Profile, Status};
-
-    #[test]
-    fn set_profile_invalid() {
-        let thread = fuchsia_runtime::with_thread_self(|thread| {
-            thread.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap()
-        });
-        let profile = Profile::from(NullableHandle::invalid());
-        assert_eq!(thread.set_profile(profile, 0), Err(Status::BAD_HANDLE));
-    }
-}

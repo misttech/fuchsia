@@ -132,12 +132,6 @@ mod tests {
     use fuchsia_component::client::connect_channel_to_protocol;
 
     #[test]
-    fn create_bti_invalid_handle() {
-        let status = Bti::create(&Iommu::from(NullableHandle::invalid()), 0);
-        assert_eq!(status, Err(Status::BAD_HANDLE));
-    }
-
-    #[test]
     fn create_bti_wrong_handle() {
         let vmo = Vmo::create(0).unwrap();
         let wrong_handle = unsafe { Iommu::from(NullableHandle::from_raw(vmo.into_raw())) };

@@ -122,25 +122,27 @@ mod private {
 
 #[cfg(test)]
 mod tests {
+    use zx_status::Status;
+
     use crate::{
-        BootInstant, Interrupt, MonotonicInstant, MonotonicTimeline, NullableHandle, Port,
-        PortOptions, Status, VirtualInterrupt, VirtualInterruptKind,
+        BootInstant, Interrupt, MonotonicInstant, MonotonicTimeline, Port, PortOptions,
+        VirtualInterrupt, VirtualInterruptKind,
     };
 
     #[test]
     fn bind() {
-        let interrupt: Interrupt = NullableHandle::invalid().into();
+        let interrupt = VirtualInterrupt::create_virtual().unwrap();
         let port = Port::create_with_opts(PortOptions::BIND_TO_INTERRUPT);
         let key = 1;
         let result = interrupt.bind_port(&port, key);
-        assert_eq!(result.err(), Some(Status::BAD_HANDLE));
+        assert_eq!(result, Ok(()));
     }
 
     #[test]
     fn ack() {
-        let interrupt: Interrupt = NullableHandle::invalid().into();
+        let interrupt = VirtualInterrupt::create_virtual().unwrap();
         let result = interrupt.ack();
-        assert_eq!(result.err(), Some(Status::BAD_HANDLE));
+        assert_eq!(result.err(), Some(Status::BAD_STATE));
     }
 
     #[test]
