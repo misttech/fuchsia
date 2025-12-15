@@ -268,6 +268,7 @@ TEST_F(MultipleDispatchersThreadPoolTest, NumThreads) {
 TEST_F(MultipleDispatchersThreadPoolTest, NumThreadsAllowSyncCalls) {
   constexpr std::string_view kSchedulerRole = "fuchsia.default";
 
+  // adding sync call dispatchers should always spawn a new thread.
   {
     auto dispatcher =
         CreateTestDispatcher(kSchedulerRole, fdf::SynchronizedDispatcher::Options::kAllowSyncCalls);
@@ -280,9 +281,16 @@ TEST_F(MultipleDispatchersThreadPoolTest, NumThreadsAllowSyncCalls) {
     ASSERT_OK(dispatcher.status_value());
     ASSERT_EQ(2u, GetThreadPool(*dispatcher)->num_threads());
   }
+  // adding a no-sync-calls dispatcher should add a thread if it's the first one.
   {
     auto dispatcher = CreateTestDispatcher(kSchedulerRole, {});
     ASSERT_OK(dispatcher.status_value());
-    ASSERT_EQ(2u, GetThreadPool(*dispatcher)->num_threads());
+    ASSERT_EQ(3u, GetThreadPool(*dispatcher)->num_threads());
+  }
+  // but adding more should not.
+  {
+    auto dispatcher = CreateTestDispatcher(kSchedulerRole, {});
+    ASSERT_OK(dispatcher.status_value());
+    ASSERT_EQ(3u, GetThreadPool(*dispatcher)->num_threads());
   }
 }

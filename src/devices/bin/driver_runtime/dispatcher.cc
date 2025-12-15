@@ -2103,19 +2103,18 @@ zx_status_t Dispatcher::ThreadPool::OnDispatcherAdded(Dispatcher& dispatcher) {
   fbl::AutoLock lock(&lock_);
   num_dispatchers_++;
 
-  if (!dispatcher.allow_sync_calls()) {
-    // only start a new thread if the dispatcher allows sync calls
-    return ZX_OK;
+  if (dispatcher.allow_sync_calls()) {
+    allow_sync_call_dispatchers_++;
   }
-  allow_sync_call_dispatchers_++;
 
   if (g_dynamic_thread_spawning) {
     // only start a new thread if we're not dynamically managing threads
     return ZX_OK;
   }
 
-  // This avoids starting an additional thread when there is only 1 dispatcher and
-  // we have already started an initial thread for the thread pool.
+  // We only want to spawn a thread if we don't have more threads than we should need to service
+  // the types of dispatchers we have. See |MaxThreadsLocked| for the criteria we use to decide
+  // on the maximum thread count.
   if (num_threads_ >= MaxThreadsLocked()) [[likely]] {
     LOGF(
         DEBUG,

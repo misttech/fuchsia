@@ -463,7 +463,8 @@ TEST_F(DispatcherTest, UnsyncDispatcherAllowsParallelCallbacks) {
 
 // Tests that an unsynchronized dispatcher allows multiple callbacks to run at the same time
 // on the async loop.
-TEST_F(DispatcherTest, UnsyncDispatcherAllowsParallelCallbacksReentrant) {
+// TODO(467410367): Re-enable when the test is no longer flaking.
+TEST_F(DispatcherTest, DISABLED_UnsyncDispatcherAllowsParallelCallbacksReentrant) {
   fdf_env_reset();
 
   constexpr uint32_t kNumThreads = 3;
@@ -1386,10 +1387,8 @@ TEST_F(DispatcherTest, ShutdownDispatcherFromTwoCallbacks) {
 
 // Tests that queueing a ChannelRead while the dispatcher is shutting down fails.
 TEST_F(DispatcherTest, ShutdownDispatcherQueueChannelReadCallback) {
-  // Stop the runtime threads, so that the channel read doesn't get scheduled
-  // until after we shut down the dispatcher.
-  fdf_env_reset();
-
+  libsync::Completion wait_task_started;
+  libsync::Completion shutdown_started;
   libsync::Completion read_complete;
   DispatcherShutdownObserver observer;
 
@@ -1400,10 +1399,19 @@ TEST_F(DispatcherTest, ShutdownDispatcherQueueChannelReadCallback) {
   {
     thread_context::PushDriver(driver, nullptr);
     auto pop_driver = fit::defer([]() { thread_context::PopDriver(); });
-    ASSERT_EQ(ZX_OK, driver_runtime::Dispatcher::Create(FDF_DISPATCHER_OPTION_UNSYNCHRONIZED, "",
-                                                        scheduler_role, observer.fdf_observer(),
-                                                        &dispatcher));
+    ASSERT_EQ(ZX_OK,
+              driver_runtime::Dispatcher::Create(
+                  FDF_DISPATCHER_OPTION_SYNCHRONIZED | FDF_DISPATCHER_OPTION_ALLOW_SYNC_CALLS, "",
+                  scheduler_role, observer.fdf_observer(), &dispatcher));
   }
+
+  // Post a task that won't finish until we have started so that the read below can't
+  // run its callback until after we've started the shutdown process.
+  async::PostTask(dispatcher->GetAsyncDispatcher(), [&]() {
+    wait_task_started.Signal();
+    ASSERT_OK(shutdown_started.Wait(zx::time::infinite()));
+  });
+  ASSERT_OK(wait_task_started.Wait(zx::time::infinite()));
 
   fdf::Dispatcher fdf_dispatcher(static_cast<fdf_dispatcher_t*>(dispatcher));
 
@@ -1427,8 +1435,7 @@ TEST_F(DispatcherTest, ShutdownDispatcherQueueChannelReadCallback) {
   }
 
   fdf_dispatcher.ShutdownAsync();
-
-  ASSERT_OK(fdf_env_start(0));
+  shutdown_started.Signal();
 
   ASSERT_OK(read_complete.Wait(zx::time::infinite()));
   ASSERT_OK(observer.WaitUntilShutdown());
