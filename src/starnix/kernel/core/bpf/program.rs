@@ -2,10 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::bpf::BpfMapHandle;
 use crate::bpf::fs::get_bpf_object;
-use crate::bpf::{BpfMapHandle, EbpfState};
 use crate::security;
-use crate::task::{CurrentTask, CurrentTaskAndLocked, register_delayed_release};
+use crate::task::{CurrentTask, CurrentTaskAndLocked, Kernel, register_delayed_release};
 use crate::vfs::{FdNumber, OutputBuffer};
 use ebpf::{
     BPF_LDDW, BPF_PSEUDO_BTF_ID, BPF_PSEUDO_FUNC, BPF_PSEUDO_MAP_FD, BPF_PSEUDO_MAP_IDX,
@@ -55,7 +55,7 @@ pub struct Program {
     maps: Vec<BpfMapHandle>,
 
     id: ProgramId,
-    ebpf_state: Weak<EbpfState>,
+    kernel: Weak<Kernel>,
 
     /// The security state associated with this bpf Program.
     pub security_state: security::BpfProgState,
@@ -103,7 +103,7 @@ impl Program {
                 program,
                 maps,
                 id: new_program_id(),
-                ebpf_state: Arc::downgrade(&current_task.kernel().ebpf_state),
+                kernel: Arc::downgrade(current_task.kernel()),
                 security_state: security::bpf_prog_alloc(current_task),
             }
             .into(),
@@ -192,8 +192,8 @@ impl Releasable for Program {
     type Context<'a> = CurrentTaskAndLocked<'a>;
 
     fn release<'a>(self, (locked, _current_task): CurrentTaskAndLocked<'a>) {
-        if let Some(state) = self.ebpf_state.upgrade() {
-            state.unregister_program(locked, self.id);
+        if let Some(kernel) = self.kernel.upgrade() {
+            kernel.ebpf_state.unregister_program(locked, self.id);
         }
     }
 }

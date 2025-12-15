@@ -19,7 +19,7 @@ use crate::bpf::attachments::EbpfAttachments;
 use crate::bpf::program::{ProgramHandle, ProgramId, WeakProgramHandle};
 use crate::mm::memory::MemoryObject;
 use crate::security;
-use crate::task::{CurrentTask, CurrentTaskAndLocked, register_delayed_release};
+use crate::task::{CurrentTask, CurrentTaskAndLocked, Kernel, register_delayed_release};
 use ebpf_api::PinnedMap;
 use starnix_lifecycle::{ObjectReleaser, ReleaserAction};
 use starnix_sync::{
@@ -59,9 +59,8 @@ pub struct BpfMap {
     /// The security state associated with this bpf Map.
     pub security_state: security::BpfMapState,
 
-    /// Reference to the `EbpfState`. Used to remove `self` from the state on
-    /// drop.
-    ebpf_state: Weak<EbpfState>,
+    /// Reference to the `Kernel`. Used to unregister `self` on drop.
+    kernel: Weak<Kernel>,
 }
 
 impl Deref for BpfMap {
@@ -87,7 +86,7 @@ impl BpfMap {
                 map,
                 state: Default::default(),
                 security_state,
-                ebpf_state: Arc::downgrade(&current_task.kernel().ebpf_state),
+                kernel: Arc::downgrade(current_task.kernel()),
             }
             .into(),
         );
@@ -156,8 +155,8 @@ impl Releasable for BpfMap {
     type Context<'a> = CurrentTaskAndLocked<'a>;
 
     fn release<'a>(self, (locked, _current_task): CurrentTaskAndLocked<'a>) {
-        if let Some(state) = self.ebpf_state.upgrade() {
-            state.unregister_map(locked, self.id);
+        if let Some(kernel) = self.kernel.upgrade() {
+            kernel.ebpf_state.unregister_map(locked, self.id);
         }
     }
 }

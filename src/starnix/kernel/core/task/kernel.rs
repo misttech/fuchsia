@@ -317,7 +317,7 @@ pub struct Kernel {
     pub container_control_handle: Mutex<Option<ComponentControllerControlHandle>>,
 
     /// eBPF state: loaded programs, eBPF maps, etc.
-    pub ebpf_state: Arc<EbpfState>,
+    pub ebpf_state: EbpfState,
 
     /// Cgroups of the kernel.
     pub cgroups: KernelCgroups,
