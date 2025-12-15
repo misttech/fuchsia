@@ -5,7 +5,7 @@
 use crate::fuchsia::file::FxFile;
 use crate::fuchsia::fxblob::BlobDirectory;
 use crate::fuchsia::fxblob::blob::FxBlob;
-use crate::fuchsia::node::FxNode;
+use crate::fuchsia::node::{FxNode, OpenedNode};
 use crate::fuchsia::pager::PagerBacked;
 use crate::fuchsia::volume::FxVolume;
 use anyhow::{Context as _, Error, anyhow, ensure};
@@ -55,7 +55,7 @@ trait RecordedVolume: Send + Sync + Sized + Unpin {
     fn open(
         &self,
         id: Self::IdType,
-    ) -> impl std::future::Future<Output = Result<Arc<Self::NodeType>, Error>> + Send;
+    ) -> impl std::future::Future<Output = Result<OpenedNode<Self::NodeType>, Error>> + Send;
 
     /// Filters out open markers for files that may not be usable in the profile.
     fn file_is_replayable(
@@ -67,7 +67,7 @@ trait RecordedVolume: Send + Sync + Sized + Unpin {
         &self,
         handle: Box<dyn ReadObjectHandle>,
         sender: &async_channel::Sender<Request<Self::NodeType>>,
-        local_cache: &mut BTreeMap<Self::IdType, Option<Arc<Self::NodeType>>>,
+        local_cache: &mut BTreeMap<Self::IdType, Option<OpenedNode<Self::NodeType>>>,
     ) -> impl std::future::Future<Output = Result<(), Error>> + Send {
         async move {
             let mut io_buf = handle.allocate_buffer(IO_SIZE).await;
@@ -105,7 +105,7 @@ trait RecordedVolume: Send + Sync + Sized + Unpin {
 
                     let file = match local_cache.entry(msg.id()) {
                         Entry::Occupied(entry) => match entry.get() {
-                            Some(file) => file.clone(),
+                            Some(opened_file) => (*opened_file).clone(),
                             // Found a cached error.
                             None => continue,
                         },
@@ -116,9 +116,10 @@ trait RecordedVolume: Send + Sync + Sized + Unpin {
                                 entry.insert(None);
                                 continue;
                             }
-                            Ok(file) => {
-                                entry.insert(Some(file.clone()));
-                                file
+                            Ok(opened_file) => {
+                                let file_clone = (*opened_file).clone();
+                                entry.insert(Some(opened_file));
+                                file_clone
                             }
                         },
                     };
@@ -276,7 +277,7 @@ impl RecordedVolume for BlobVolume {
         &self.volume
     }
 
-    async fn open(&self, id: Self::IdType) -> Result<Arc<Self::NodeType>, Error> {
+    async fn open(&self, id: Self::IdType) -> Result<OpenedNode<Self::NodeType>, Error> {
         let mut root_dir = self.root_dir.lock().await;
         if root_dir.is_none() {
             *root_dir = Some(
@@ -292,7 +293,12 @@ impl RecordedVolume for BlobVolume {
                     .map_err(|_| FxfsError::Inconsistent)?,
             );
         };
-        root_dir.as_ref().unwrap().lookup_blob(id).await
+        root_dir
+            .as_ref()
+            .unwrap()
+            .open_blob(&id.into())
+            .await?
+            .ok_or_else(|| FxfsError::NotFound.into())
     }
 
     async fn file_is_replayable(&self, _id: &Self::IdType) -> bool {
@@ -318,13 +324,15 @@ impl RecordedVolume for FileVolume {
         &self.volume
     }
 
-    async fn open(&self, id: Self::IdType) -> Result<Arc<Self::NodeType>, Error> {
+    async fn open(&self, id: Self::IdType) -> Result<OpenedNode<Self::NodeType>, Error> {
         self.volume
             .get_or_load_node(id, ObjectDescriptor::File, None)
             .await?
             .into_any()
             .downcast::<FxFile>()
-            .map_err(|_| anyhow!("Non-file opened"))
+            .map_err(|_| anyhow!("Non-file opened"))?
+            .into_opened_node()
+            .ok_or_else(|| anyhow!("File being purged"))
     }
 
     async fn file_is_replayable(&self, id: &Self::IdType) -> bool {
@@ -562,8 +570,10 @@ impl<T: RecordedVolume> ReplayState<T> {
                             // Hold the items in cache until replay is stopped. Optional as None
                             // indicates that the file could not be opened, and we want to cache that
                             // failure.
-                            let mut local_cache: BTreeMap<T::IdType, Option<Arc<T::NodeType>>> =
-                                BTreeMap::new();
+                            let mut local_cache: BTreeMap<
+                                T::IdType,
+                                Option<OpenedNode<T::NodeType>>,
+                            > = BTreeMap::new();
 
                             let volume_id = volume.id();
 
@@ -602,7 +612,7 @@ impl<T: RecordedVolume> ReplayState<T> {
     fn page_in_thread(queue: async_channel::Receiver<Request<T::NodeType>>) {
         while let Ok(request) = queue.recv_blocking() {
             let _ = request.file.vmo().op_range(
-                zx::VmoOp::COMMIT,
+                zx::VmoOp::PREFETCH,
                 request.offset,
                 zx::system_get_page_size() as u64,
             );
@@ -624,7 +634,7 @@ pub trait ProfileState: Send + Sync {
     fn record_new(&mut self, volume: &Arc<FxVolume>, name: &str) -> Box<dyn Recorder>;
 
     /// Reads given handle to parse a profile and replay it by requesting pages via
-    /// ZX_VMO_OP_COMMIT in blocking background threads. Stops any replay currently in progress.
+    /// ZX_VMO_OP_PREFETCH in blocking background threads. Stops any replay currently in progress.
     fn replay_profile(
         &mut self,
         handle: Box<dyn ReadObjectHandle>,
@@ -708,10 +718,9 @@ mod tests {
         Request, new_profile_state,
     };
     use crate::fuchsia::file::FxFile;
-    use crate::fuchsia::fxblob::BlobDirectory;
     use crate::fuchsia::fxblob::blob::FxBlob;
     use crate::fuchsia::fxblob::testing::{BlobFixture, new_blob_fixture, open_blob_fixture};
-    use crate::fuchsia::node::FxNode;
+    use crate::fuchsia::node::{FxNode, OpenedNode};
     use crate::fuchsia::pager::PagerBacked;
     use crate::fuchsia::testing::{TestFixture, TestFixtureOptions, open_file_checked};
     use crate::fuchsia::volume::FxVolume;
@@ -902,14 +911,7 @@ mod tests {
         let fixture = new_blob_fixture().await;
         {
             let hash = fixture.write_blob(&[88u8], CompressionMode::Never).await;
-            let dir = fixture
-                .volume()
-                .root()
-                .clone()
-                .into_any()
-                .downcast::<BlobDirectory>()
-                .expect("Root should be BlobDirectory");
-            let blob = dir.lookup_blob((*hash).into()).await.expect("Opening blob");
+            let blob = fixture.get_blob((*hash).into()).await.expect("Opening blob");
 
             let mut state = new_profile_state(true);
             let volume = fixture.volume().volume();
@@ -961,14 +963,7 @@ mod tests {
         let fixture = new_blob_fixture().await;
         {
             let hash = fixture.write_blob(&[88u8], CompressionMode::Never).await;
-            let dir = fixture
-                .volume()
-                .root()
-                .clone()
-                .into_any()
-                .downcast::<BlobDirectory>()
-                .expect("Root should be BlobDirectory");
-            let blob = dir.lookup_blob((*hash).into()).await.expect("Opening blob");
+            let blob = fixture.get_blob((*hash).into()).await.expect("Opening blob");
 
             let mut state = new_profile_state(true);
             let volume = fixture.volume().volume();
@@ -997,14 +992,7 @@ mod tests {
 
         {
             hash = fixture.write_blob(&[88u8], CompressionMode::Never).await;
-            let dir = fixture
-                .volume()
-                .root()
-                .clone()
-                .into_any()
-                .downcast::<BlobDirectory>()
-                .expect("Root should be BlobDirectory");
-            let blob = dir.lookup_blob((*hash).into()).await.expect("Opening blob");
+            let blob = fixture.get_blob((*hash).into()).await.expect("Opening blob");
             // Drop recorder when finished writing to flush data.
             let mut recorder = state.record_new(volume, TEST_PROFILE_NAME);
             recorder.record_open(blob.clone()).unwrap();
@@ -1016,7 +1004,7 @@ mod tests {
 
         assert_eq!(get_test_profile_contents(volume).await.len(), BLOCK_SIZE * 2);
 
-        let mut local_cache: BTreeMap<Hash, Option<Arc<FxBlob>>> = BTreeMap::new();
+        let mut local_cache: BTreeMap<Hash, Option<OpenedNode<FxBlob>>> = BTreeMap::new();
         let (sender, receiver) = async_channel::unbounded::<Request<FxBlob>>();
 
         let volume = fixture.volume().volume().clone();
@@ -1064,7 +1052,7 @@ mod tests {
 
         assert_eq!(get_test_profile_contents(volume).await.len(), BLOCK_SIZE * 2);
 
-        let mut local_cache: BTreeMap<u64, Option<Arc<FxFile>>> = BTreeMap::new();
+        let mut local_cache: BTreeMap<u64, Option<OpenedNode<FxFile>>> = BTreeMap::new();
         let (sender, receiver) = async_channel::unbounded::<Request<FxFile>>();
 
         let volume = fixture.volume().volume().clone();
@@ -1097,14 +1085,7 @@ mod tests {
             let volume = fixture.volume().volume();
             {
                 hash = fixture.write_blob(&[88u8], CompressionMode::Never).await;
-                let dir = fixture
-                    .volume()
-                    .root()
-                    .clone()
-                    .into_any()
-                    .downcast::<BlobDirectory>()
-                    .expect("Root should be BlobDirectory");
-                let blob = dir.lookup_blob((*hash).into()).await.expect("Opening blob");
+                let blob = fixture.get_blob((*hash).into()).await.expect("Opening blob");
                 // Drop recorder when finished writing to flush data.
                 let mut recorder = state.record_new(volume, TEST_PROFILE_NAME);
                 recorder.record_open(blob.clone()).unwrap();
@@ -1115,7 +1096,7 @@ mod tests {
             state.wait_for_recording_to_finish().await.unwrap();
             assert_eq!(get_test_profile_contents(volume).await.len(), IO_SIZE + BLOCK_SIZE);
 
-            let mut local_cache: BTreeMap<Hash, Option<Arc<FxBlob>>> = BTreeMap::new();
+            let mut local_cache: BTreeMap<Hash, Option<OpenedNode<FxBlob>>> = BTreeMap::new();
             let (sender, receiver) = async_channel::unbounded::<Request<FxBlob>>();
 
             let volume = volume.clone();
@@ -1150,20 +1131,13 @@ mod tests {
             assert_eq!(BLOCK_SIZE as u64, fixture.fs().block_size());
             let message_count = (fixture.fs().block_size() as usize / size_of::<BlobMessage>()) + 1;
 
-            let dir = fixture
-                .volume()
-                .root()
-                .clone()
-                .into_any()
-                .downcast::<BlobDirectory>()
-                .expect("Root should be BlobDirectory");
             let volume = fixture.volume().volume();
             let mut recorder = state.record_new(volume, TEST_PROFILE_NAME);
             // Page in the zero offsets only to avoid readahead strangeness.
             for i in 0..message_count {
                 let hash =
                     fixture.write_blob(i.to_le_bytes().as_slice(), CompressionMode::Never).await;
-                let blob = dir.lookup_blob((*hash).into()).await.expect("Opening blob");
+                let blob = fixture.get_blob((*hash).into()).await.expect("Opening blob");
                 recorder.record_open(blob.clone()).unwrap();
                 hashes.push(hash);
                 recorder.record(blob.clone(), 0).unwrap();
@@ -1177,16 +1151,9 @@ mod tests {
         let fixture = open_blob_fixture(device).await;
         {
             // Need to get the root vmo to check committed bytes.
-            let dir = fixture
-                .volume()
-                .root()
-                .clone()
-                .into_any()
-                .downcast::<BlobDirectory>()
-                .expect("Root should be BlobDirectory");
             // Ensure that nothing is paged in right now.
             for hash in &hashes {
-                let blob = dir.lookup_blob(*hash).await.expect("Opening blob");
+                let blob = fixture.get_blob(*hash).await.expect("Opening blob");
                 assert_eq!(blob.vmo().info().unwrap().committed_bytes, 0);
             }
 
@@ -1199,7 +1166,7 @@ mod tests {
 
             // Await all data being played back by checking that things have paged in.
             for hash in &hashes {
-                let blob = dir.lookup_blob(*hash).await.expect("Opening blob");
+                let blob = fixture.get_blob(*hash).await.expect("Opening blob");
                 while blob.vmo().info().unwrap().committed_bytes == 0 {
                     fasync::Timer::new(Duration::from_millis(25)).await;
                 }
@@ -1309,14 +1276,7 @@ mod tests {
         {
             let mut recorder = state.record_new(volume, TEST_PROFILE_NAME);
             hash = fixture.write_blob(&[0, 1, 2, 3], CompressionMode::Never).await;
-            let dir = fixture
-                .volume()
-                .root()
-                .clone()
-                .into_any()
-                .downcast::<BlobDirectory>()
-                .expect("Root should be BlobDirectory");
-            let blob = dir.lookup_blob((*hash).into()).await.expect("Opening blob");
+            let blob = fixture.get_blob((*hash).into()).await.expect("Opening blob");
             recorder.record_open(blob.clone()).unwrap();
             recorder.record(blob.clone(), 0).unwrap();
         }
@@ -1332,15 +1292,8 @@ mod tests {
 
         {
             // Need to get the root vmo to check committed bytes.
-            let dir = fixture
-                .volume()
-                .root()
-                .clone()
-                .into_any()
-                .downcast::<BlobDirectory>()
-                .expect("Root should be BlobDirectory");
             // Ensure that nothing is paged in right now.
-            let blob = dir.lookup_blob((*hash).into()).await.expect("Opening blob");
+            let blob = fixture.get_blob((*hash).into()).await.expect("Opening blob");
             assert_eq!(blob.vmo().info().unwrap().committed_bytes, 0);
 
             // Start recording
@@ -1358,7 +1311,7 @@ mod tests {
 
             // Await all data being played back by checking that things have paged in.
             {
-                let blob = dir.lookup_blob((*hash).into()).await.expect("Opening blob");
+                let blob = fixture.get_blob((*hash).into()).await.expect("Opening blob");
                 while blob.vmo().info().unwrap().committed_bytes == 0 {
                     fasync::Timer::new(Duration::from_millis(25)).await;
                 }
@@ -1387,21 +1340,13 @@ mod tests {
         let fixture = new_blob_fixture().await;
 
         {
-            let dir = fixture
-                .volume()
-                .root()
-                .clone()
-                .into_any()
-                .downcast::<BlobDirectory>()
-                .expect("Root should be BlobDirectory");
-
             let volume = fixture.volume().volume();
 
             // Create the file that we need first.
             let message;
             {
                 let hash = fixture.write_blob(&[0, 1, 2, 3], CompressionMode::Never).await;
-                let blob = dir.lookup_blob((*hash).into()).await.expect("Opening blob");
+                let blob = fixture.get_blob((*hash).into()).await.expect("Opening blob");
                 message = BlobMessage { id: blob.root(), offset: 0 };
             }
             state.wait_for_recording_to_finish().await.unwrap();
@@ -1437,6 +1382,162 @@ mod tests {
 
         // The reader should block indefinitely (we never notify delay2), but that shouldn't block
         // termination.
+        fixture.close().await;
+    }
+
+    #[fuchsia::test]
+    async fn test_replay_blob_missing() {
+        let fixture = new_blob_fixture().await;
+        // Create the blob that comes after the missing blob. Ensure it still gets
+        // recorded.
+        let hash = fixture.write_blob(&[0, 1, 2, 3], CompressionMode::Never).await;
+        let mut buff = vec![0u8; IO_SIZE];
+        {
+            // First encode the blob that is missing. Just make it up. This will be skipped during
+            // replay.
+            {
+                let message = BlobMessage { id: [42u8; 32].into(), offset: 0 };
+                message
+                    .encode_to_impl((&mut buff[0..size_of::<BlobMessage>()]).try_into().unwrap());
+            }
+
+            // Create the blob that won't be missing and encode that.
+            {
+                let blob = fixture.get_blob((*hash).into()).await.expect("Opening blob");
+                let message = BlobMessage { id: blob.root(), offset: 0 };
+                message.encode_to_impl(
+                    (&mut buff[size_of::<BlobMessage>()..(size_of::<BlobMessage>() * 2)])
+                        .try_into()
+                        .unwrap(),
+                );
+            }
+        }
+        let device = fixture.close().await;
+        device.ensure_unique();
+
+        device.reopen(false);
+        let fixture = open_blob_fixture(device).await;
+        {
+            let mut state = new_profile_state(true);
+            let volume = fixture.volume().volume();
+
+            let replay_handle = Box::new(FakeReaderWriter::new());
+            replay_handle.inner.lock().data = buff;
+
+            state.replay_profile(
+                replay_handle,
+                volume.clone(),
+                volume.scope().try_active_guard().unwrap(),
+            );
+
+            // Wait for the replay to populate the page.
+            let blob = fixture.get_blob((*hash).into()).await.expect("Opening blob");
+            while blob.vmo().info().unwrap().committed_bytes == 0 {
+                fasync::Timer::new(Duration::from_millis(25)).await;
+            }
+        }
+        fixture.close().await;
+    }
+
+    #[fuchsia::test]
+    async fn test_replay_file_missing_or_tombstoned() {
+        let fixture = TestFixture::new().await;
+        let mut buff = vec![0u8; IO_SIZE];
+        // Create the blob that comes after the missing blob. Ensure it still gets
+        // recorded.
+        let remaining_file_id;
+        let tombstoned_file_id;
+        // First encode the file that is missing.
+        {
+            let id = write_file(&fixture, "foo", &[1, 2, 3, 4]).await;
+            let message = FileMessage { id, offset: 0 };
+            message.encode_to_impl((&mut buff[0..size_of::<FileMessage>()]).try_into().unwrap());
+        }
+        // Remove the file now.
+        fixture
+            .root()
+            .unlink("foo", &fio::UnlinkOptions::default())
+            .await
+            .unwrap()
+            .expect("Unlinking");
+
+        // Encode the file that will be tombstoned during replay.
+        {
+            tombstoned_file_id = write_file(&fixture, "bar", &[1, 2, 3, 4]).await;
+            let message = FileMessage { id: tombstoned_file_id, offset: 0 };
+            message.encode_to_impl(
+                (&mut buff[size_of::<FileMessage>()..(size_of::<FileMessage>() * 2)])
+                    .try_into()
+                    .unwrap(),
+            );
+        }
+
+        // Encode the file that will remain and be replayed last.
+        {
+            remaining_file_id = write_file(&fixture, "baz", &[1, 2, 3, 4]).await;
+            let message = FileMessage { id: remaining_file_id, offset: 0 };
+            message.encode_to_impl(
+                (&mut buff[(size_of::<FileMessage>() * 2)..(size_of::<FileMessage>() * 3)])
+                    .try_into()
+                    .unwrap(),
+            );
+        }
+        let device = fixture.close().await;
+        device.ensure_unique();
+
+        device.reopen(false);
+        let fixture =
+            TestFixture::open(device, TestFixtureOptions { format: false, ..Default::default() })
+                .await;
+        {
+            // Get a ref to the Arc on the file, then unlink it. Since the open count is zero it
+            // should get marked for tombstone right away.
+            let tombstoned_file = fixture
+                .volume()
+                .volume()
+                .get_or_load_node(tombstoned_file_id, ObjectDescriptor::File, None)
+                .await
+                .expect("Opening file object")
+                .into_any()
+                .downcast::<FxFile>()
+                .unwrap();
+            fixture
+                .root()
+                .unlink("bar", &fio::UnlinkOptions::default())
+                .await
+                .unwrap()
+                .expect("Unlinking");
+
+            let mut state = new_profile_state(false);
+            let volume = fixture.volume().volume();
+
+            let replay_handle = Box::new(FakeReaderWriter::new());
+            replay_handle.inner.lock().data = buff;
+
+            state.replay_profile(
+                replay_handle,
+                volume.clone(),
+                volume.scope().try_active_guard().unwrap(),
+            );
+
+            // Wait for the replay to populate the page.
+            let remaining_file = fixture
+                .volume()
+                .volume()
+                .get_or_load_node(remaining_file_id, ObjectDescriptor::File, None)
+                .await
+                .expect("Opening file object")
+                .into_any()
+                .downcast::<FxFile>()
+                .unwrap();
+            while remaining_file.vmo().info().unwrap().committed_bytes == 0 {
+                fasync::Timer::new(Duration::from_millis(25)).await;
+            }
+
+            // The tombstoned file should not have anything committed because it shouldn't be able
+            // to open.
+            assert_eq!(tombstoned_file.vmo().info().unwrap().committed_bytes, 0);
+        }
         fixture.close().await;
     }
 }

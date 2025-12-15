@@ -124,16 +124,6 @@ impl BlobDirectory {
         self.directory.store()
     }
 
-    /// Attempt to lookup and cache the blob with `id` in this directory.
-    pub(crate) async fn lookup_blob(self: &Arc<Self>, hash: Hash) -> Result<Arc<FxBlob>, Error> {
-        // For simplify lookup logic, we re-use `open_blob` just decrement the open count before
-        // returning the node handle.
-        self.open_blob(&hash.into()).await?.ok_or_else(|| FxfsError::NotFound.into()).map(|blob| {
-            // Downgrade from an OpenedNode<Node> to a Node.
-            blob.clone()
-        })
-    }
-
     /// Open blob and get the child vmo. This allows the creation of the child vmo to be atomic with
     /// the open.
     pub(crate) async fn open_blob_get_vmo(
@@ -152,7 +142,7 @@ impl BlobDirectory {
     }
 
     /// Wraps ['open_blob_locked'] while taking the locks.
-    async fn open_blob(
+    pub(crate) async fn open_blob(
         self: &Arc<Self>,
         id: &Identifier,
     ) -> Result<Option<OpenedNode<FxBlob>>, Error> {

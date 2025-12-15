@@ -1214,9 +1214,7 @@ mod tests {
             assert_eq!(fixture.read_blob(hash).await, data);
         };
         {
-            let blob_dir =
-                fixture.volume().root().clone().into_any().downcast::<BlobDirectory>().unwrap();
-            let old_blob = blob_dir.lookup_blob(hash).await.expect("Looking up blob");
+            let old_blob = fixture.get_blob(hash).await.expect("Looking up blob");
             let old_id = old_blob.object_id();
 
             let writer =
@@ -1234,7 +1232,7 @@ mod tests {
                 .expect("transport error on bytes_ready")
                 .expect("failed to write data to vmo");
 
-            let new_blob = blob_dir.lookup_blob(hash).await.expect("Looking up blob");
+            let new_blob = fixture.get_blob(hash).await.expect("Looking up blob");
             assert_ne!(new_blob.object_id(), old_id);
 
             // Wait for our Arc to be the last strong ref, then it gets dropped. Nothing else
@@ -1400,7 +1398,7 @@ mod tests {
                 .expect("transport error on bytes_ready")
                 .expect("failed to write data to vmo");
 
-            let new_blob = blob_dir.lookup_blob(hash).await.expect("Looking up blob");
+            let new_blob = fixture.get_blob(hash).await.expect("Looking up blob");
             assert_ne!(new_blob.object_id(), old_id);
 
             fixture.fs().graveyard().flush().await;

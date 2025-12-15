@@ -100,8 +100,10 @@ impl BlobFixture for TestFixture {
             .into_any()
             .downcast::<BlobDirectory>()
             .unwrap()
-            .lookup_blob(hash)
-            .await
+            .open_blob(&(hash.into()))
+            .await?
+            .ok_or_else(|| FxfsError::NotFound.into())
+            .map(|blob| (*blob).clone()) // Downgrade from OpenedNode<FxBlob> to Arc<FxBlob>
     }
 
     async fn create_blob(

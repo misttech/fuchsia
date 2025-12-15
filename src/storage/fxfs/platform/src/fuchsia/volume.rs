@@ -960,7 +960,6 @@ pub fn info_to_filesystem_info(
 mod tests {
     use super::DIRENT_CACHE_LIMIT;
     use crate::fuchsia::file::FxFile;
-    use crate::fuchsia::fxblob::BlobDirectory;
     use crate::fuchsia::fxblob::testing::{self as blob_testing, BlobFixture};
     use crate::fuchsia::memory_pressure::MemoryPressureLevel;
     use crate::fuchsia::pager::PagerBacked;
@@ -2480,18 +2479,9 @@ mod tests {
             device.reopen(false);
             let fixture = blob_testing::open_blob_fixture(device).await;
             {
-                // Need to get the root vmo to check committed bytes.
-                let dir = fixture
-                    .volume()
-                    .root()
-                    .clone()
-                    .into_any()
-                    .downcast::<BlobDirectory>()
-                    .expect("Root should be BlobDirectory");
-
                 // Ensure that nothing is paged in right now.
                 for hash in &hashes {
-                    let blob = dir.lookup_blob(*hash).await.expect("Opening blob");
+                    let blob = fixture.get_blob(*hash).await.expect("Opening blob");
                     assert_eq!(blob.vmo().info().unwrap().committed_bytes, 0);
                 }
 
@@ -2534,7 +2524,7 @@ mod tests {
                     // Fetch vmo this way as well to ensure that the open is counting the file as
                     // used in the current recording.
                     let _vmo = fixture.get_blob_vmo(*hash).await;
-                    let blob = dir.lookup_blob(*hash).await.expect("Opening blob");
+                    let blob = fixture.get_blob(*hash).await.expect("Opening blob");
                     while blob.vmo().info().unwrap().committed_bytes == 0 {
                         fasync::Timer::new(Duration::from_millis(25)).await;
                     }
@@ -2820,17 +2810,9 @@ mod tests {
         let fixture = blob_testing::open_blob_fixture(device).await;
         {
             // Need to get the root vmo to check committed bytes.
-            let dir = fixture
-                .volume()
-                .root()
-                .clone()
-                .into_any()
-                .downcast::<BlobDirectory>()
-                .expect("Root should be BlobDirectory");
-
             // Ensure that nothing is paged in right now.
             for hash in &hashes {
-                let blob = dir.lookup_blob(*hash).await.expect("Opening blob");
+                let blob = fixture.get_blob(*hash).await.expect("Opening blob");
                 assert_eq!(blob.vmo().info().unwrap().committed_bytes, 0);
             }
 
@@ -2844,7 +2826,7 @@ mod tests {
             // Await all data being played back by checking that things have paged in.
             {
                 let hash = &hashes[0];
-                let blob = dir.lookup_blob(*hash).await.expect("Opening blob");
+                let blob = fixture.get_blob(*hash).await.expect("Opening blob");
                 while blob.vmo().info().unwrap().committed_bytes == 0 {
                     fasync::Timer::new(Duration::from_millis(25)).await;
                 }
@@ -2876,17 +2858,9 @@ mod tests {
         let fixture = blob_testing::open_blob_fixture(device).await;
         {
             // Need to get the root vmo to check committed bytes.
-            let dir = fixture
-                .volume()
-                .root()
-                .clone()
-                .into_any()
-                .downcast::<BlobDirectory>()
-                .expect("Root should be BlobDirectory");
-
             // Ensure that nothing is paged in right now.
             for hash in &hashes {
-                let blob = dir.lookup_blob(*hash).await.expect("Opening blob");
+                let blob = fixture.get_blob(*hash).await.expect("Opening blob");
                 assert_eq!(blob.vmo().info().unwrap().committed_bytes, 0);
             }
 
@@ -2900,7 +2874,7 @@ mod tests {
             // Await all data being played back by checking that things have paged in.
             {
                 let hash = &hashes[1];
-                let blob = dir.lookup_blob(*hash).await.expect("Opening blob");
+                let blob = fixture.get_blob(*hash).await.expect("Opening blob");
                 while blob.vmo().info().unwrap().committed_bytes == 0 {
                     fasync::Timer::new(Duration::from_millis(25)).await;
                 }
@@ -2912,7 +2886,7 @@ mod tests {
             // Verify that first blob was not paged in as the it should be dropped from the profile.
             {
                 let hash = &hashes[0];
-                let blob = dir.lookup_blob(*hash).await.expect("Opening blob");
+                let blob = fixture.get_blob(*hash).await.expect("Opening blob");
                 assert_eq!(blob.vmo().info().unwrap().committed_bytes, 0);
             }
         }
