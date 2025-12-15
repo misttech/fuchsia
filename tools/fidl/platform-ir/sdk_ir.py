@@ -12,7 +12,7 @@ from depfile import DepFile
 from merge import MergeInput, merge_irs
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(
         prog="sdk-ir",
         description="Create a merged JSON IR for all SDK FIDL libraries at a given API level.",

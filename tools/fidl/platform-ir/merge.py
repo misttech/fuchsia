@@ -5,6 +5,7 @@
 import dataclasses
 import json
 import typing
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 # kinds of FIDL declaration
 KINDS = [
@@ -23,7 +24,7 @@ KINDS = [
 ]
 
 
-def location_object_hook(d):
+def location_object_hook(d: Dict[str, Any]) -> Dict[str, Any]:
     if "location" in d:
         del d["location"]
     return d
@@ -37,7 +38,7 @@ class ObjectHook:
         self.keep_location = keep_location
         self.keep_documentation = keep_documentation
 
-    def __call__(self, d: dict) -> dict:
+    def __call__(self, d: Dict[str, Any]) -> Dict[str, Any]:
         if not self.keep_location and "location" in d:
             del d["location"]
         if not self.keep_documentation and "maybe_attributes" in d:
@@ -50,14 +51,18 @@ class ObjectHook:
         return d
 
 
-def find_declaration(name, declarations):
+def find_declaration(
+    name: str, declarations: List[Dict[str, Any]]
+) -> Dict[str, Any]:
     for decl in declarations:
         if decl["name"] == name:
             return decl
     raise Exception(f"{name} not found")
 
 
-def get_available_attribute(declaration):
+def get_available_attribute(
+    declaration: Dict[str, Any]
+) -> Optional[Dict[str, Any]]:
     for attr in declaration.get("maybe_attributes", []):
         if attr["name"] == "available":
             return attr
@@ -75,17 +80,19 @@ def merge_irs(
     output: typing.TextIO,
     keep_location: bool = False,
     keep_documentation: bool = False,
-):
+) -> None:
     # should we keep location and documentation?
-    json_object_hook = ObjectHook(keep_location, keep_documentation)
+    json_object_hook: Optional[ObjectHook] = ObjectHook(
+        keep_location, keep_documentation
+    )
     if keep_location and keep_documentation:
         json_object_hook = None
 
     # parse the inputs
     experiments = None
     available = None
-    dependencies = set()
-    declarations = {}
+    dependencies: Set[str] = set()
+    declarations: Dict[str, Tuple[str, Dict[str, Any]]] = {}
     for f in inputs:
         ir = json.load(f.ir_json, object_hook=json_object_hook)
         # make sure the experiments match
