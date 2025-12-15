@@ -37,26 +37,21 @@ use std::ops::Deref;
 use std::sync::atomic::{AtomicUsize, Ordering, fence};
 use std::sync::{Arc, Weak};
 
-/// Macro to build a specific Releasable and OwnedRef.
-#[macro_export]
-macro_rules! make_ownership_types {
-    ($($suffix:ident)?, $self:ty) => { paste::paste! {
-
 /// The base trait for explicit ownership. Any `Releasable` object must call `release` before
 /// being dropped.
-pub trait [< Releasable $($suffix)? >] {
+pub trait Releasable {
     type Context<'a>;
 
     // TODO(https://fxbug.dev/42081308): Only the `self` version should exist, but this is
     // problematic with Task and CurrentTask at this point.
-    fn release<'a>(self: $self, c: Self::Context<'a>);
+    fn release<'a>(self: Self, c: Self::Context<'a>);
 }
 
 /// Releasing an option calls release if the option is not empty.
-impl<T: [< Releasable $($suffix)? >]> [< Releasable $($suffix)? >] for Option<T> {
+impl<T: Releasable> Releasable for Option<T> {
     type Context<'a> = T::Context<'a>;
 
-    fn release<'a>(self: $self, c: Self::Context<'a>) {
+    fn release<'a>(self: Self, c: Self::Context<'a>) {
         if let Some(v) = self {
             v.release(c);
         }
@@ -64,12 +59,13 @@ impl<T: [< Releasable $($suffix)? >]> [< Releasable $($suffix)? >] for Option<T>
 }
 
 /// Releasing a vec calls release on each element
-impl<T: [< Releasable $($suffix)? >]> [< Releasable $($suffix)? >] for Vec<T>
-    where for <'a> T::Context<'a>: Clone
+impl<T: Releasable> Releasable for Vec<T>
+where
+    for<'a> T::Context<'a>: Clone,
 {
     type Context<'a> = T::Context<'a>;
 
-    fn release<'a>(self: $self, c: Self::Context<'a>) {
+    fn release<'a>(self: Self, c: Self::Context<'a>) {
         for v in self {
             v.release(c.clone());
         }
@@ -77,26 +73,24 @@ impl<T: [< Releasable $($suffix)? >]> [< Releasable $($suffix)? >] for Vec<T>
 }
 
 /// Releasing a result calls release on the value if the result is ok.
-impl<T: [< Releasable $($suffix)? >], E> [< Releasable $($suffix)? >] for Result<T, E> {
+impl<T: Releasable, E> Releasable for Result<T, E> {
     type Context<'a> = T::Context<'a>;
 
-    fn release<'a>(self: $self, c: Self::Context<'a>) {
+    fn release<'a>(self: Self, c: Self::Context<'a>) {
         if let Ok(v) = self {
             v.release(c);
         }
     }
 }
 
-impl<T: [< Releasable $($suffix)? >]> [< Releasable $($suffix)? >] for ReleaseGuard<T> {
+impl<T: Releasable> Releasable for ReleaseGuard<T> {
     type Context<'a> = T::Context<'a>;
 
-    fn release<'a>(self: $self, c: Self::Context<'a>) {
+    fn release<'a>(self: Self, c: Self::Context<'a>) {
         self.drop_guard.disarm();
         self.value.release(c);
     }
 }
-
-}}}
 
 /// Trait for object that can be shared. This is an equivalent of `Clone` for objects that require
 /// to be released.
@@ -817,9 +811,6 @@ impl<T> RefInner<T> {
     }
 }
 
-make_ownership_types!(ByMut, &mut Self);
-make_ownership_types!(, Self);
-
 /// Macro that ensure the releasable is released with the given context if the body returns an
 /// error.
 #[macro_export]
@@ -885,10 +876,6 @@ mod test {
     #[derive(Default)]
     struct Data;
 
-    impl ReleasableByMut for Data {
-        type Context<'a> = ();
-        fn release<'a>(&mut self, _: ()) {}
-    }
     impl Releasable for Data {
         type Context<'a> = ();
         fn release<'a>(self, _: ()) {}

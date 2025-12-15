@@ -37,7 +37,6 @@ rustc_library("starnix_types") {
     "//src/starnix/lib/syncio",
     "//third_party/rust_crates:cfg-if",
     "//third_party/rust_crates:memoffset",
-    "//third_party/rust_crates:paste",
     "//third_party/rust_crates:smallvec",
     "//third_party/rust_crates:static_assertions",
     "//third_party/rust_crates:zerocopy",
