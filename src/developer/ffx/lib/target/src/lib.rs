@@ -29,6 +29,7 @@ use timeout::timeout;
 #[cfg(test)]
 use mockall::predicate::*;
 
+pub mod analytics;
 pub mod connection;
 pub mod info;
 pub mod list;

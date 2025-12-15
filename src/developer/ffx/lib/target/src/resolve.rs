@@ -9,6 +9,7 @@ use discovery::{Discovery, DiscoveryBuilder, DiscoverySources, TargetEvent, Targ
 use fdomain_fuchsia_developer_remotecontrol::{IdentifyHostResponse, RemoteControlProxy};
 use ffx_command_error::{NonFatalError, user_error};
 use ffx_config::{EnvironmentContext, TryFromEnvContext, keys};
+use ffx_diagnostics_analytics::ResultExt;
 use fidl_fuchsia_developer_ffx::{self as ffx};
 use fuchsia_async::TimeoutExt;
 use futures::future::LocalBoxFuture;
@@ -22,6 +23,7 @@ use std::time::Duration;
 use target_errors::FfxTargetError;
 use tokio::sync::Mutex;
 
+use crate::analytics::PointOfFailure;
 use crate::connection::Connection;
 use crate::ssh_connector::SshConnector;
 use crate::usb_connector::{UsbConnector, try_daemon_autostart};
@@ -465,7 +467,10 @@ impl TargetResolver for DefaultTargetResolver {
         if !ctx.get(keys::NETWORK_ENABLED).unwrap_or(true) {
             sources.remove(DiscoverySources::MDNS);
         }
-        get_discovered_targets_with_sources(query, sources, ctx).await
+        get_discovered_targets_with_sources(query.clone(), sources, ctx)
+            .await
+            .or_analytics(PointOfFailure::DiscoveryFailure { query, discovery_sources: sources })
+            .await
     }
 
     async fn try_resolve_manual_target(

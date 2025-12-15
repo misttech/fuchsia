@@ -207,12 +207,9 @@ where
         _input: Self::Input,
         _notifier: &'a mut Self::Notifier,
     ) -> CheckFut<'a, Self::Output> {
-        Box::pin(async move {
-            ffx_target::get_target_specifier(self.0)
-                .map(Into::<Self::Output>::into)
-                .or_analytics(PointOfFailure::GetTargetSpecifier)
-                .await
-        })
+        Box::pin(std::future::ready(
+            ffx_target::get_target_specifier(self.0).map(Into::<Self::Output>::into),
+        ))
     }
 }
 
@@ -352,7 +349,7 @@ where
                     }
                 });
             let mut targets = targets
-                .or_analytics(PointOfFailure::DiscoveryFailure {
+                .or_analytics(ffx_target::analytics::PointOfFailure::DiscoveryFailure {
                     query: input.clone(),
                     discovery_sources: sources,
                 })
@@ -384,7 +381,7 @@ where
                     }
                 }
                 ffx_diagnostics_analytics::mark_point_of_failure(
-                    PointOfFailure::NoMatchingTargets {
+                    ffx_target::analytics::PointOfFailure::NoMatchingTargets {
                         query: input.clone(),
                         discovery_sources: sources,
                     },
@@ -394,7 +391,7 @@ where
             }
             if targets.len() > 1 {
                 ffx_diagnostics_analytics::mark_point_of_failure(
-                    PointOfFailure::TooManyMatchingTargets {
+                    ffx_target::analytics::PointOfFailure::TooManyMatchingTargets {
                         query: input,
                         discovery_sources: sources,
                     },
@@ -645,7 +642,10 @@ where
                 Ok(res) => Ok(res),
                 Err(e) => {
                     ffx_diagnostics_analytics::mark_point_of_failure(
-                        PointOfFailure::SshConnectionFailed { state: input.state, reason: &e },
+                        ffx_target::analytics::PointOfFailure::SshConnectionFailed {
+                            state: input.state,
+                            reason: &e,
+                        },
                     )
                     .await;
                     Err(anyhow::anyhow!(
@@ -705,7 +705,9 @@ where
             let proxy = input
                 .rcs_proxy_fdomain()
                 .await
-                .or_else_analytics(|e| PointOfFailure::FailedToConnectRCS { error: e })
+                .or_else_analytics(|e| {
+                    ffx_target::analytics::PointOfFailure::FailedToConnectRCS { error: e }.into()
+                })
                 .await?;
             let moniker = "/core/hwinfo";
             let product_proxy: ProductProxy = target_holders::fdomain::open_moniker_fdomain(
@@ -723,7 +725,7 @@ where
             let info = product_proxy
                 .get_info()
                 .await
-                .or_else_analytics(|e| PointOfFailure::UnableToGetInfo { error: e })
+                .or_else_analytics(|e| PointOfFailure::UnableToGetInfo { error: e }.into())
                 .await?;
             Ok(info)
         })

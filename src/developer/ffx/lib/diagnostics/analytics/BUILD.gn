@@ -9,12 +9,10 @@ rustc_library("lib") {
   edition = "2024"
   with_unit_tests = true
   deps = [
-    "//src/developer/ffx/command:lib",
     "//src/developer/ffx/lib/diagnostics/analytics/state:lib",
-    "//src/developer/ffx/lib/diagnostics/formatting:lib",
     "//src/developer/ffx/lib/discovery:lib",
     "//src/developer/ffx/lib/errors:lib",
-    "//src/developer/ffx/lib/target:lib",
+    "//src/developer/ffx/lib/metrics:lib",
     "//src/lib/analytics/rust:lib",
     "//src/lib/fidl/rust/fidl",
     "//third_party/rust_crates:log",
@@ -25,6 +23,7 @@ rustc_library("lib") {
     "//src/developer/ffx/lib/diagnostics:*",
     "//src/developer/ffx/lib/diagnostics/checks:*",
     "//src/developer/ffx/lib/fho:*",
+    "//src/developer/ffx/lib/target:*",
   ]
 
   test_deps = [ "//third_party/rust_crates:pretty_assertions" ]

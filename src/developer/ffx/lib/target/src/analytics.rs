@@ -1,0 +1,197 @@
+// Copyright 2025 The Fuchsia Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+use crate::ConnectionError;
+use discovery::query::TargetInfoQuery;
+use discovery::{DiscoverySources, TargetState};
+use ffx_diagnostics_analytics::CustomEvent;
+
+/// An enum to make easy-use of the ffx_diagnostics_analytics library code. Implements
+/// `Into<CustomEvent>`.
+pub enum PointOfFailure<'a> {
+    /// We've failed trying to get the target specifier.
+    GetTargetSpecifier,
+
+    /// SSH into the target failed.
+    SshConnectionFailed { state: TargetState, reason: &'a ConnectionError },
+
+    /// Failed to connect to RCS. Contains a stringified FDomain error.
+    FailedToConnectRCS { error: &'a ConnectionError },
+
+    /// This denotes a failure when we run `DiagnosticsResolver::discovered_targets`, specifically.
+    DiscoveryFailure { query: TargetInfoQuery, discovery_sources: DiscoverySources },
+
+    /// We were not able to find any matching targets.
+    NoMatchingTargets { query: TargetInfoQuery, discovery_sources: DiscoverySources },
+
+    /// We were not able to find any matching targets.
+    TooManyMatchingTargets { query: TargetInfoQuery, discovery_sources: DiscoverySources },
+}
+
+fn sanitize_connection_error(error: &ConnectionError) -> String {
+    use ConnectionError::*;
+    // Depending on the frequency with which these errors are hit, it may be necessary to dive
+    // deeper into the actual reason, but we want to avoid leaking PII by accident. A lot of
+    // connectivity error code contains hostnames, addresses, etc.
+    match error {
+        ConnectionStartError(_dbg, reason) => {
+            format!("ConnectionStartError: {reason}")
+        }
+        InternalError(_) => "InternalError".to_owned(),
+        KnockError(_) => "KnockError".to_owned(),
+        OvernetUnsupported => "OvernetUnsupported".to_owned(),
+    }
+}
+
+impl Into<CustomEvent> for PointOfFailure<'_> {
+    fn into(self) -> CustomEvent {
+        match self {
+            Self::GetTargetSpecifier => {
+                CustomEvent { category: "get_target_specifier", ..Default::default() }
+            }
+            Self::SshConnectionFailed { state, reason } => CustomEvent {
+                category: "ssh_connection",
+                custom_dimensions: [
+                    (
+                        "target_state",
+                        ffx_diagnostics_formatting::format_target_state(&state).into(),
+                    ),
+                    ("error", sanitize_connection_error(reason).into()),
+                ]
+                .into_iter()
+                .collect(),
+                ..Default::default()
+            },
+            Self::FailedToConnectRCS { error } => CustomEvent {
+                category: "connect_rcs",
+                custom_dimensions: [("error", sanitize_connection_error(error).into())]
+                    .into_iter()
+                    .collect(),
+                ..Default::default()
+            },
+            Self::DiscoveryFailure { query, discovery_sources } => CustomEvent {
+                category: "discovery_failed",
+                action: Some(ffx_diagnostics_formatting::format_query(&query).kind.to_owned()),
+                custom_dimensions: [(
+                    "discovery_sources",
+                    (discovery_sources.bits() as u64).into(),
+                )]
+                .into_iter()
+                .collect(),
+            },
+            Self::NoMatchingTargets { query, discovery_sources } => CustomEvent {
+                category: "no_matching_targets",
+                action: Some(ffx_diagnostics_formatting::format_query(&query).kind.to_owned()),
+                custom_dimensions: [(
+                    "discovery_sources",
+                    (discovery_sources.bits() as u64).into(),
+                )]
+                .into_iter()
+                .collect(),
+            },
+            Self::TooManyMatchingTargets { query, discovery_sources } => CustomEvent {
+                category: "too_many_matching_targets",
+                action: Some(ffx_diagnostics_formatting::format_query(&query).kind.to_owned()),
+                custom_dimensions: [(
+                    "discovery_sources",
+                    (discovery_sources.bits() as u64).into(),
+                )]
+                .into_iter()
+                .collect(),
+            },
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_too_many_matching_targets_conversion() {
+        let query = TargetInfoQuery::from("some-nodename");
+        let pof = PointOfFailure::TooManyMatchingTargets {
+            query: query.clone(),
+            discovery_sources: DiscoverySources::all(),
+        };
+        let event: CustomEvent = pof.into();
+        assert_eq!(event.category, "too_many_matching_targets");
+        assert_eq!(event.action, Some("nodename or serial".to_owned()));
+        assert_eq!(
+            event.custom_dimensions.get("discovery_sources"),
+            Some(&(DiscoverySources::all().bits() as u64).into())
+        );
+    }
+
+    #[test]
+    fn test_no_matching_targets_conversion() {
+        let query = TargetInfoQuery::from("some-nodename");
+        let pof = PointOfFailure::NoMatchingTargets {
+            query: query.clone(),
+            discovery_sources: DiscoverySources::all(),
+        };
+        let event: CustomEvent = pof.into();
+        assert_eq!(event.category, "no_matching_targets");
+        assert_eq!(event.action, Some("nodename or serial".to_owned()));
+        assert_eq!(
+            event.custom_dimensions.get("discovery_sources"),
+            Some(&(DiscoverySources::all().bits() as u64).into())
+        );
+    }
+
+    #[test]
+    fn test_discovery_failure_conversion() {
+        let query = TargetInfoQuery::from("some-nodename");
+        let pof = PointOfFailure::DiscoveryFailure {
+            query: query.clone(),
+            discovery_sources: DiscoverySources::all(),
+        };
+        let event: CustomEvent = pof.into();
+        assert_eq!(event.category, "discovery_failed");
+        assert_eq!(event.action, Some("nodename or serial".to_owned()));
+        assert_eq!(
+            event.custom_dimensions.get("discovery_sources"),
+            Some(&(DiscoverySources::all().bits() as u64).into())
+        );
+    }
+
+    #[test]
+    fn test_failed_to_connect_rcs_conversion() {
+        let error = ConnectionError::ConnectionStartError("foo".to_owned(), "bar".to_owned());
+        let pof = PointOfFailure::FailedToConnectRCS { error: &error };
+        let event: CustomEvent = pof.into();
+        assert_eq!(event.category, "connect_rcs");
+        assert_eq!(event.action, None);
+        assert_eq!(
+            event.custom_dimensions.get("error"),
+            Some(&sanitize_connection_error(&error).into())
+        );
+    }
+
+    #[test]
+    fn test_ssh_connection_failed_conversion() {
+        let reason = ConnectionError::ConnectionStartError("foo".to_owned(), "bar".to_owned());
+        let pof =
+            PointOfFailure::SshConnectionFailed { state: TargetState::Zedboot, reason: &reason };
+        let event: CustomEvent = pof.into();
+        assert_eq!(event.category, "ssh_connection");
+        assert_eq!(event.action, None);
+        assert_eq!(
+            event.custom_dimensions.get("target_state"),
+            Some(&"in zedboot".to_owned().into())
+        );
+        assert_eq!(
+            event.custom_dimensions.get("error"),
+            Some(&sanitize_connection_error(&reason).into())
+        );
+    }
+
+    #[test]
+    fn test_get_target_specifier_conversion() {
+        let pof = PointOfFailure::GetTargetSpecifier;
+        let event: CustomEvent = pof.into();
+        assert_eq!(event.category, "get_target_specifier");
+        assert_eq!(event.action, None);
+        assert!(event.custom_dimensions.is_empty());
+    }
+}

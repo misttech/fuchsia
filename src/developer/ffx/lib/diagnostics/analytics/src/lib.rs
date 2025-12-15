@@ -2,30 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use discovery::query::TargetInfoQuery;
-use discovery::{DiscoverySources, TargetHandle, TargetState};
+use discovery::{TargetHandle, TargetState};
 use std::collections::BTreeMap;
 
 /// An enum used for our analytics to have a well-defined way of specifying a point of failure.
 /// We can assume that all previous steps that would precede our checks would have succeeded.
+// TODO(468117635): Move these into their related libraries.
 pub enum PointOfFailure<'a> {
-    /// We've failed trying to get the target specifier.
-    GetTargetSpecifier,
-    /// This denotes a failure when we run `DiagnosticsResolver::discovered_targets`, specifically.
-    DiscoveryFailure {
-        query: TargetInfoQuery,
-        discovery_sources: DiscoverySources,
-    },
-    /// We were not able to find any matching targets.
-    NoMatchingTargets {
-        query: TargetInfoQuery,
-        discovery_sources: DiscoverySources,
-    },
-    /// We were not able to find any matching targets.
-    TooManyMatchingTargets {
-        query: TargetInfoQuery,
-        discovery_sources: DiscoverySources,
-    },
     /// A state possible if we discover a device but the device is not in the correct state.
     /// e.g. ffx_target::Resolution::from_target_handle(handle) fails.
     TargetHandleInBadState {
@@ -40,18 +23,8 @@ pub enum PointOfFailure<'a> {
     /// IPv6 scope wasn't valid.
     TargetAddressBadScope,
     UnableToBuildFDomainCommand,
-    /// SSH into the target failed.
-    SshConnectionFailed {
-        state: TargetState,
-        reason: &'a ffx_target::ConnectionError,
-    },
 
     /////////// RCS ERRORS ////////
-    /// Failed to connect to RCS. Contains a stringified FDomain error.
-    FailedToConnectRCS {
-        error: &'a ffx_target::ConnectionError,
-    },
-
     /// Failed to open HW info component. Contains a stringified FDomain error.
     FailedToOpenHWInfoComponent {
         moniker: &'static str,
@@ -82,9 +55,9 @@ pub enum PointOfFailure<'a> {
 
 #[derive(Default)]
 pub struct CustomEvent {
-    category: &'static str,
-    action: Option<String>,
-    custom_dimensions: BTreeMap<&'static str, analytics::GA4Value>,
+    pub category: &'static str,
+    pub action: Option<String>,
+    pub custom_dimensions: BTreeMap<&'static str, analytics::GA4Value>,
 }
 
 fn format_target_state(state: &TargetState) -> String {
@@ -106,12 +79,24 @@ pub trait ResultExt {
 
     /// In the event of an error, takes `self` and returns the same value. If the value of `self`
     /// is an error, then sends the `pof` analytics failure before returning.
-    async fn or_analytics(self, pof: PointOfFailure<'_>) -> Result<Self::Success, Self::Error>;
+    async fn or_analytics<I>(self, event: I) -> Result<Self::Success, Self::Error>
+    where
+        I: Into<CustomEvent>;
 
     /// In the event of an error, takes `self` and returns the same value. If the value of `self`
-    /// is an error, then sends the error to a closure to construct a `PointOfFailure` struct to
+    /// is an error, then sends the error to a closure to construct a CustomEvent struct to
     /// send to analytics.
-    async fn or_else_analytics<F: FnOnce(&Self::Error) -> PointOfFailure<'_>>(
+    ///
+    /// For convenience, and to avoid possible lifetime/borrow-checker issues, it is recommended
+    /// to follow the pattern of implementing `Into<CustomEvent>` for a particular struct, so you
+    /// would use this function like the following:
+    ///
+    /// ```rust
+    /// possible_failure_func()
+    ///     .or_else_analytics(|e| YouStruct(e).into())
+    ///     .await?;
+    /// ```
+    async fn or_else_analytics<F: FnOnce(&Self::Error) -> CustomEvent>(
         self,
         f: F,
     ) -> Result<Self::Success, Self::Error>;
@@ -121,17 +106,20 @@ impl<S, E> ResultExt for Result<S, E> {
     type Error = E;
     type Success = S;
 
-    async fn or_analytics(self, pof: PointOfFailure<'_>) -> Result<Self::Success, Self::Error> {
+    async fn or_analytics<I>(self, event: I) -> Result<Self::Success, Self::Error>
+    where
+        I: Into<CustomEvent>,
+    {
         match self {
             Ok(s) => Ok(s),
             Err(e) => {
-                mark_point_of_failure(pof).await;
+                mark_point_of_failure(event).await;
                 Err(e)
             }
         }
     }
 
-    async fn or_else_analytics<F: FnOnce(&Self::Error) -> PointOfFailure<'_>>(
+    async fn or_else_analytics<F: FnOnce(&Self::Error) -> CustomEvent>(
         self,
         f: F,
     ) -> Result<Self::Success, Self::Error> {
@@ -145,58 +133,10 @@ impl<S, E> ResultExt for Result<S, E> {
     }
 }
 
-fn sanitize_connection_error(error: &ffx_target::ConnectionError) -> String {
-    use ffx_target::ConnectionError::*;
-    // Depending on the frequency with which these errors are hit, it may be necessary to dive
-    // deeper into the actual reason, but we want to avoid leaking PII by accident. A lot of
-    // connectivity error code contains hostnames, addresses, etc.
-    match error {
-        ConnectionStartError(_dbg, reason) => {
-            format!("ConnectionStartError: {reason}")
-        }
-        InternalError(_) => "InternalError".to_owned(),
-        KnockError(_) => "KnockError".to_owned(),
-        OvernetUnsupported => "OvernetUnsupported".to_owned(),
-    }
-}
-
 impl From<PointOfFailure<'_>> for CustomEvent {
     fn from(pof: PointOfFailure<'_>) -> Self {
         use PointOfFailure::*;
         match pof {
-            GetTargetSpecifier => {
-                CustomEvent { category: "get_target_specifier", ..Default::default() }
-            }
-            DiscoveryFailure { query, discovery_sources } => CustomEvent {
-                category: "discovery_failed",
-                action: Some(ffx_diagnostics_formatting::format_query(&query).kind.to_owned()),
-                custom_dimensions: [(
-                    "discovery_sources",
-                    (discovery_sources.bits() as u64).into(),
-                )]
-                .into_iter()
-                .collect(),
-            },
-            NoMatchingTargets { query, discovery_sources } => CustomEvent {
-                category: "no_matching_targets",
-                action: Some(ffx_diagnostics_formatting::format_query(&query).kind.to_owned()),
-                custom_dimensions: [(
-                    "discovery_sources",
-                    (discovery_sources.bits() as u64).into(),
-                )]
-                .into_iter()
-                .collect(),
-            },
-            TooManyMatchingTargets { query, discovery_sources } => CustomEvent {
-                category: "too_many_matching_targets",
-                action: Some(ffx_diagnostics_formatting::format_query(&query).kind.to_owned()),
-                custom_dimensions: [(
-                    "discovery_sources",
-                    (discovery_sources.bits() as u64).into(),
-                )]
-                .into_iter()
-                .collect(),
-            },
             TargetHandleInBadState { state } => CustomEvent {
                 category: "target_hdl_in_bad_state",
                 custom_dimensions: [("target_state", format_target_state(&state).into())]
@@ -217,23 +157,6 @@ impl From<PointOfFailure<'_>> for CustomEvent {
             UnableToBuildFDomainCommand => {
                 CustomEvent { category: "build_fdomain_cmd", ..Default::default() }
             }
-            SshConnectionFailed { state, reason } => CustomEvent {
-                category: "ssh_connection",
-                custom_dimensions: [
-                    ("target_state", format_target_state(&state).into()),
-                    ("error", sanitize_connection_error(reason).into()),
-                ]
-                .into_iter()
-                .collect(),
-                ..Default::default()
-            },
-            FailedToConnectRCS { error } => CustomEvent {
-                category: "connect_rcs",
-                custom_dimensions: [("error", sanitize_connection_error(error).into())]
-                    .into_iter()
-                    .collect(),
-                ..Default::default()
-            },
             FailedToOpenHWInfoComponent { moniker, protocol } => CustomEvent {
                 category: "open_hwinfo_comp",
                 custom_dimensions: [("error", format!("{moniker}:{protocol}").into())]
@@ -273,7 +196,7 @@ impl From<PointOfFailure<'_>> for CustomEvent {
 
 pub async fn is_analytics_enabled() -> bool {
     // For the time being only enable enhanced analytics for internal users.
-    ffx_command::send_enhanced_analytics().await
+    ffx_metrics::enhanced_analytics().await
 }
 
 fn set_or_panic(
@@ -291,7 +214,7 @@ fn set_or_panic(
 
 /// Takes an error, and a "point of failure," and uploads the analytics for this specific type of
 /// failure for tracking.
-pub async fn mark_point_of_failure(failure_point: PointOfFailure<'_>) {
+pub async fn mark_point_of_failure(failure_point: impl Into<CustomEvent>) {
     let CustomEvent { category, action, mut custom_dimensions } = failure_point.into();
     if !is_analytics_enabled().await {
         return;
@@ -337,63 +260,6 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     #[test]
-    fn test_get_target_specifier_conversion() {
-        let pof = PointOfFailure::GetTargetSpecifier;
-        let event: CustomEvent = pof.into();
-        assert_eq!(event.category, "get_target_specifier");
-        assert_eq!(event.action, None);
-        assert!(event.custom_dimensions.is_empty());
-    }
-
-    #[test]
-    fn test_discovery_failure_conversion() {
-        let query = TargetInfoQuery::from("some-nodename");
-        let pof = PointOfFailure::DiscoveryFailure {
-            query: query.clone(),
-            discovery_sources: DiscoverySources::all(),
-        };
-        let event: CustomEvent = pof.into();
-        assert_eq!(event.category, "discovery_failed");
-        assert_eq!(event.action, Some("nodename or serial".to_owned()));
-        assert_eq!(
-            event.custom_dimensions.get("discovery_sources"),
-            Some(&(DiscoverySources::all().bits() as u64).into())
-        );
-    }
-
-    #[test]
-    fn test_no_matching_targets_conversion() {
-        let query = TargetInfoQuery::from("some-nodename");
-        let pof = PointOfFailure::NoMatchingTargets {
-            query: query.clone(),
-            discovery_sources: DiscoverySources::all(),
-        };
-        let event: CustomEvent = pof.into();
-        assert_eq!(event.category, "no_matching_targets");
-        assert_eq!(event.action, Some("nodename or serial".to_owned()));
-        assert_eq!(
-            event.custom_dimensions.get("discovery_sources"),
-            Some(&(DiscoverySources::all().bits() as u64).into())
-        );
-    }
-
-    #[test]
-    fn test_too_many_matching_targets_conversion() {
-        let query = TargetInfoQuery::from("some-nodename");
-        let pof = PointOfFailure::TooManyMatchingTargets {
-            query: query.clone(),
-            discovery_sources: DiscoverySources::all(),
-        };
-        let event: CustomEvent = pof.into();
-        assert_eq!(event.category, "too_many_matching_targets");
-        assert_eq!(event.action, Some("nodename or serial".to_owned()));
-        assert_eq!(
-            event.custom_dimensions.get("discovery_sources"),
-            Some(&(DiscoverySources::all().bits() as u64).into())
-        );
-    }
-
-    #[test]
     fn test_target_handle_in_bad_state_conversion() {
         let pof = PointOfFailure::TargetHandleInBadState { state: TargetState::Zedboot };
         let event: CustomEvent = pof.into();
@@ -427,36 +293,6 @@ mod tests {
         assert_eq!(event.category, "build_fdomain_cmd");
         assert_eq!(event.action, None);
         assert!(event.custom_dimensions.is_empty());
-    }
-
-    #[test]
-    fn test_ssh_connection_failed_conversion() {
-        let reason =
-            ffx_target::ConnectionError::ConnectionStartError("foo".to_owned(), "bar".to_owned());
-        let pof =
-            PointOfFailure::SshConnectionFailed { state: TargetState::Zedboot, reason: &reason };
-        let event: CustomEvent = pof.into();
-        assert_eq!(event.category, "ssh_connection");
-        assert_eq!(event.action, None);
-        assert_eq!(event.custom_dimensions.get("target_state"), Some(&"zedboot".to_owned().into()));
-        assert_eq!(
-            event.custom_dimensions.get("error"),
-            Some(&sanitize_connection_error(&reason).into())
-        );
-    }
-
-    #[test]
-    fn test_failed_to_connect_rcs_conversion() {
-        let error =
-            ffx_target::ConnectionError::ConnectionStartError("foo".to_owned(), "bar".to_owned());
-        let pof = PointOfFailure::FailedToConnectRCS { error: &error };
-        let event: CustomEvent = pof.into();
-        assert_eq!(event.category, "connect_rcs");
-        assert_eq!(event.action, None);
-        assert_eq!(
-            event.custom_dimensions.get("error"),
-            Some(&sanitize_connection_error(&error).into())
-        );
     }
 
     #[test]

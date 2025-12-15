@@ -17,6 +17,7 @@ rustc_library("lib") {
     "//src/developer/ffx/command:*",
     "//src/developer/ffx/daemon/proxy:*",
     "//src/developer/ffx/daemon/server:*",
+    "//src/developer/ffx/lib/diagnostics/analytics:*",
   ]
 
   deps = [
