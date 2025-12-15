@@ -28,6 +28,7 @@ extend uint fuchsia.BIND_PLATFORM_DEV_PID {
   LILAC = 0x15,
   SORREL = 0x16,
   MAPLE = 0x17,
+  KUDZU = 0x18,
 };
 
 extend uint fuchsia.BIND_PLATFORM_DEV_DID {
