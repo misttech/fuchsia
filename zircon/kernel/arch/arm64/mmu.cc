@@ -2307,9 +2307,9 @@ void ArmArchVmAspace::HandoffPageTablesFromPhysboot(list_node_t* mmu_pages) {
 }
 
 void arch_zero_page(void* _ptr) {
-  uintptr_t ptr = (uintptr_t)_ptr;
+  const uint32_t zva_size = arm64_cache_features.zva_size;
 
-  uint32_t zva_size = arm64_zva_size;
+  uintptr_t ptr = (uintptr_t)_ptr;
   uintptr_t end_ptr = ptr + kPageSize;
   do {
     __asm__ volatile("dc zva, %0" ::"r"(ptr));

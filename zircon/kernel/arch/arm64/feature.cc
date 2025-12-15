@@ -8,6 +8,7 @@
 #include <bits.h>
 #include <ctype.h>
 #include <inttypes.h>
+#include <lib/arch/arm64/cache.h>
 #include <lib/arch/arm64/feature.h>
 #include <lib/arch/intrin.h>
 
@@ -27,13 +28,22 @@ bool feat_pmuv3_enabled;
 // MMU features
 struct arm64_mmu_features arm64_mmu_features;
 
-// cache size parameters cpus, default to a reasonable minimum
-uint32_t arm64_zva_size = 32;
-uint32_t arm64_icache_size = 32;
+// Cache size parameters cpus, default to a reasonable minimum
+struct arm64_cache_features arm64_cache_features = {
+    .zva_size = 32,
+    .icache_size = 32,
+    .dcache_size = 32,
+
+    .idc = false,
+    .dic = false,
+    .pipt = false,
+};
+
+// Save another global version, used directly in some assembly
+extern uint32_t arm64_dcache_size;
 uint32_t arm64_dcache_size = 32;
 
 namespace {
-
 struct arm64_cache_desc {
   uint8_t ctype;
   uint32_t num_sets;
@@ -454,20 +464,27 @@ void arm64_feature_init() {
   cpu_num_t cpu = arch_curr_cpu_num();
   if (cpu == 0) {
     // read the block size of DC ZVA
-    uint64_t dczid = __arm_rsr64("dczid_el0");
-    uint32_t arm64_zva_shift = 0;
-    if (BIT(dczid, 4) == 0) {
-      arm64_zva_shift = (uint32_t)(__arm_rsr64("dczid_el0") & 0xf) + 2;
+    auto dczid = arch::ArmDataCacheZeroIdEl0::Read();
+    arm64_cache_features.zva_size = 0;
+    if (!dczid.dzp()) {
+      arm64_cache_features.zva_size = static_cast<uint32_t>(dczid.zva_line_size());
     }
-    ASSERT(arm64_zva_shift != 0);  // for now, fail if DC ZVA is unavailable
-    arm64_zva_size = (1u << arm64_zva_shift);
+    ASSERT(arm64_cache_features.zva_size > 0);
 
-    // read the dcache and icache line size
-    uint64_t ctr = __arm_rsr64("ctr_el0");
-    uint32_t arm64_dcache_shift = (uint32_t)BITS_SHIFT(ctr, 19, 16) + 2;
-    arm64_dcache_size = (1u << arm64_dcache_shift);
-    uint32_t arm64_icache_shift = (uint32_t)BITS(ctr, 3, 0) + 2;
-    arm64_icache_size = (1u << arm64_icache_shift);
+    // Read the dcache and icache line size
+    auto ctr = arch::ArmCacheTypeEl0::Read();
+    arm64_cache_features.dcache_size = static_cast<uint32_t>(ctr.dcache_line_size());
+    arm64_cache_features.icache_size = static_cast<uint32_t>(ctr.icache_line_size());
+    arm64_dcache_size = arm64_cache_features.dcache_size;
+
+    // Read instruction and data cache coherence feature bits.
+    arm64_cache_features.dic = ctr.dic();
+    arm64_cache_features.idc = ctr.idc();
+
+    // Read the icache type. Note: according to the spec only VIPT and PIPT are valid options,
+    // so just store whether or not it's PIPT and if a new value appears, fall back
+    // to assuming VIPT.
+    arm64_cache_features.pipt = ctr.l1_ip() == arch::ArmL1ICachePolicy::PIPT;
 
     // parse the ISA feature bits
     arm64_isa_features |= ZX_HAS_CPU_FEATURES;
@@ -738,8 +755,12 @@ void arm64_feature_debug(bool full) {
     dprintf(INFO, "ARM accessed bit %d, dirty bit %d\n", arm64_mmu_features.accessed_bit,
             arm64_mmu_features.dirty_bit);
     dprintf(INFO, "ARM PAN %d, UAO %d\n", arm64_mmu_features.pan, arm64_mmu_features.uao);
-    dprintf(INFO, "ARM cache line sizes: icache %u dcache %u zva %u\n", arm64_icache_size,
-            arm64_dcache_size, arm64_zva_size);
+    dprintf(INFO, "ARM cache line sizes: icache %u dcache %u zva %u\n",
+            arm64_cache_features.icache_size, arm64_cache_features.dcache_size,
+            arm64_cache_features.zva_size);
+    dprintf(INFO, "ARM cache I/D coherence: I2D %i D2I %i\n", arm64_cache_features.idc,
+            arm64_cache_features.dic);
+    dprintf(INFO, "ARM icache type: %s\n", arm64_cache_features.pipt ? "PIPT" : "VIPT");
     dprintf(INFO, "ARM VMID width %s\n",
             (arm64_asid_width() == arm64_asid_width::ASID_16) ? "16" : "8");
     dprintf(INFO, "ARM VHE %d, E2H0 %d\n", arm64_mmu_features.vhe, arm64_mmu_features.e2h0);

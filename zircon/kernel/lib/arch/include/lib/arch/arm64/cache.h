@@ -45,6 +45,17 @@ struct ArmCacheTypeEl0 : public SysRegBase<ArmCacheTypeEl0> {
 
 ARCH_ARM64_SYSREG(ArmCacheTypeEl0, "ctr_el0");
 
+// [arm/v8]: D13.2.36  DCZID_EL0, Data Cache Zero ID register
+struct ArmDataCacheZeroIdEl0 : public SysRegBase<ArmDataCacheZeroIdEl0> {
+  DEF_RSVDZ_FIELD(63, 5);
+  DEF_BIT(4, dzp);
+  DEF_FIELD(3, 0, bz);
+
+  size_t zva_line_size() const { return (1 << bz()) * sizeof(uint32_t); }
+};
+
+ARCH_ARM64_SYSREG(ArmDataCacheZeroIdEl0, "dczid_el0");
+
 }  // namespace arch
 
 #endif  // __ASSEMBLER__

@@ -71,10 +71,21 @@ extern bool feat_pmuv3_enabled;
 
 inline bool arm64_feature_test(uint32_t feature) { return arm64_isa_features & feature; }
 
-// block size of the dc zva instruction, dcache cache line and icache cache line
-extern uint32_t arm64_zva_size;
-extern uint32_t arm64_icache_size;
-extern uint32_t arm64_dcache_size;
+struct arm64_cache_features {
+  // block size of the dc zva instruction, dcache cache line and icache cache line
+  uint32_t zva_size;
+  uint32_t icache_size;
+  uint32_t dcache_size;
+
+  // Broken out versions of CTR_EL0 IDC and DIC
+  bool idc;  // Instruction-to-data coherence
+  bool dic;  // Data-to-Instruction coherence
+
+  // PIPT or VIPT?
+  bool pipt;  // PIPT is the newer, desired version
+};
+
+extern arm64_cache_features arm64_cache_features;
 
 // size of the asid
 enum class arm64_asid_width {
