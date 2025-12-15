@@ -16,6 +16,7 @@
 /*********************channel spec common functions*********************/
 
 #include <fidl/fuchsia.wlan.common/cpp/wire.h>
+#include <fidl/fuchsia.wlan.ieee80211/cpp/fidl.h>
 #include <fidl/fuchsia.wlan.ieee80211/cpp/wire.h>
 #include <zircon/assert.h>
 
@@ -313,4 +314,30 @@ void brcmu_d11_attach(struct brcmu_d11inf* d11inf) {
     d11inf->encchspec = brcmu_d11ac_encchspec;
     d11inf->decchspec = brcmu_d11ac_decchspec;
   }
+}
+
+fuchsia_wlan_ieee80211::WlanChannel override_wlan_channel_bandwidth(
+    const fuchsia_wlan_ieee80211::WlanChannel& wlan_channel) {
+  using fuchsia_wlan_ieee80211::ChannelBandwidth;
+  if (wlan_channel.cbw() == ChannelBandwidth::kCbw80P80) {
+    // Override the channel bandwidth with 20Mhz because `channel2chanspec` doesn't support
+    // encoding 80+80 Mhz, and we have always overridden to 20Mhz in this case.
+    // TODO(https://fxbug.dev/42144507) - Remove this override.
+    fuchsia_wlan_ieee80211::WlanChannel chan_override = wlan_channel;
+    chan_override.cbw() = ChannelBandwidth::kCbw20;
+    return chan_override;
+  }
+
+  return wlan_channel;
+}
+
+zx::result<chanspec_t> channel_to_chanspec_bw8080(
+    brcmu_d11inf* d11inf, const fuchsia_wlan_ieee80211::WlanChannel& wlan_channel) {
+  const fuchsia_wlan_ieee80211::WlanChannel chan_override =
+      override_wlan_channel_bandwidth(wlan_channel);
+  const uint16_t chanspec = channel_to_chanspec(d11inf, &chan_override);
+  if (chspec_malformed(chanspec)) {
+    return zx::error(ZX_ERR_INTERNAL);
+  }
+  return zx::ok(chanspec);
 }

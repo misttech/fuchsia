@@ -2155,36 +2155,18 @@ static zx::result<chanspec_t> bss_chanspec_2g_bw40(const fuchsia_wlan_common::Bs
   return zx::ok(chanspec);
 }
 
-// Construct chanspec manually for 80+80 MHz channels.
-// Note: bcmdhd functions may exist for this case, but it's difficult to test with existing test
-// infra.
-static zx::result<chanspec_t> bss_chanspec_bw8080(brcmf_if* ifp,
-                                                  const fuchsia_wlan_common::BssDescription& bss) {
-  using fuchsia_wlan_ieee80211::ChannelBandwidth;
-  struct brcmf_cfg80211_info* cfg = ifp->drvr->config;
-  if (bss.channel().cbw() != ChannelBandwidth::kCbw80P80) {
-    return zx::error(ZX_ERR_INVALID_ARGS);
-  }
-  // Override the channel bandwidth with 20Mhz because `channel2chanspec` doesn't support
-  // encoding 80+80 Mhz, and we have always overridden to 20Mhz in this case.
-  // TODO(https://fxbug.dev/42144507) - Remove this override.
-  fuchsia_wlan_ieee80211::WlanChannel chan_override = bss.channel();
-  chan_override.cbw() = ChannelBandwidth::kCbw20;
-  const uint16_t chanspec = channel_to_chanspec(&cfg->d11inf, &chan_override);
-  if (chspec_malformed(chanspec)) {
-    return zx::error(ZX_ERR_INTERNAL);
-  }
-  return zx::ok(chanspec);
-}
-
 // Return the chanspec for the given BSS description.
 static zx::result<chanspec_t> bss_chanspec(brcmf_if* ifp,
                                            const fuchsia_wlan_common::BssDescription& bss) {
   using fuchsia_wlan_ieee80211::ChannelBandwidth;
-  const auto& primary = bss.channel().primary();
-  const auto& cbw = bss.channel().cbw();
+  struct brcmf_cfg80211_info* cfg = ifp->drvr->config;
+
+  // Some scenarios require specific bandwidth overrides.
+  const fuchsia_wlan_ieee80211::WlanChannel channel =
+      override_wlan_channel_bandwidth(bss.channel());
+
   uint16_t bandwidth;
-  switch (cbw) {
+  switch (channel.cbw()) {
     case ChannelBandwidth::kCbw20:
       bandwidth = WL_CHANSPEC_BW_20;
       break;
@@ -2193,7 +2175,7 @@ static zx::result<chanspec_t> bss_chanspec(brcmf_if* ifp,
     case ChannelBandwidth::kCbw40Below:
       bandwidth = WL_CHANSPEC_BW_40;
       // Special case for 2.4 GHz 40 MHz channel, because channel2chanspec doesn't support it.
-      if (primary <= CH_MAX_2G_CHANNEL) {
+      if (channel.primary() <= CH_MAX_2G_CHANNEL) {
         return bss_chanspec_2g_bw40(bss);
       }
       break;
@@ -2205,14 +2187,14 @@ static zx::result<chanspec_t> bss_chanspec(brcmf_if* ifp,
       break;
     case ChannelBandwidth::kCbw80P80:
       // Special case for 80+80 MHz channel, because channel2chanspec doesn't support it.
-      return bss_chanspec_bw8080(ifp, bss);
+      return channel_to_chanspec_bw8080(&cfg->d11inf, bss.channel());
     default:
       BRCMF_ERR("Unsupported channel bandwidth");
       return zx::error(ZX_ERR_NOT_SUPPORTED);
   }
 
   chanspec_t chanspec;
-  const auto chanspec_status = channel2chspec(primary, bandwidth, &chanspec);
+  const auto chanspec_status = channel2chspec(channel.primary(), bandwidth, &chanspec);
   if (chanspec_status != ZX_OK) {
     return zx::error(chanspec_status);
   }

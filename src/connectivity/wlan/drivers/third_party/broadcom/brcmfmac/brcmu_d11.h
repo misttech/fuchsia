@@ -19,8 +19,11 @@
 
 #include <fidl/fuchsia.wlan.common/cpp/fidl.h>
 #include <fidl/fuchsia.wlan.common/cpp/wire.h>
+#include <fidl/fuchsia.wlan.ieee80211/cpp/fidl.h>
 #include <fidl/fuchsia.wlan.ieee80211/cpp/wire.h>
 #include <zircon/types.h>
+
+#include "third_party/bcmdhd/crossdriver/bcmwifi_channels.h"
 
 /* d11 io type */
 #define BRCMU_D11N_IOTYPE 1
@@ -180,5 +183,15 @@ uint16_t channel_to_chanspec(const brcmu_d11inf* d11inf,
                              const fuchsia_wlan_ieee80211::wire::WlanChannel* ch);
 void chanspec_to_channel(const brcmu_d11inf* d11_inf, uint16_t chanspec,
                          fuchsia_wlan_ieee80211::wire::WlanChannel* ch);
+
+// Override Fuchsia WLAN channel bandwidth, to account for driver/firmware limitations.
+fuchsia_wlan_ieee80211::WlanChannel override_wlan_channel_bandwidth(
+    const fuchsia_wlan_ieee80211::WlanChannel& wlan_channel);
+
+// Construct chanspec manually for 80+80 MHz channels.
+// Note: bcmdhd functions may exist for this case, but it's difficult to test with existing test
+// infra.
+zx::result<chanspec_t> channel_to_chanspec_bw8080(
+    brcmu_d11inf* d11inf, const fuchsia_wlan_ieee80211::WlanChannel& wlan_channel);
 
 #endif  // SRC_CONNECTIVITY_WLAN_DRIVERS_THIRD_PARTY_BROADCOM_BRCMFMAC_BRCMU_D11_H_
