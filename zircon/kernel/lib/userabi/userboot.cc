@@ -380,10 +380,8 @@ void bootstrap_vmos(HandoffEnd handoff_end, ktl::span<Handle*, userboot::kHandle
     constexpr ktl::string_view kMidrTxt = "midr.txt";
     VmoBuffer midr_txt;
     FILE midr_txt_file{&midr_txt};
-#ifdef __aarch64__
-    if constexpr (userboot::kArmMidrTxtIsPresent) {
-      arm64_print_midr_cpu_name(&midr_txt_file);
-    }
+#if defined(__aarch64__) && ZX_DEBUG_ASSERT_IMPLEMENTED
+    arm64_print_midr_cpu_name(&midr_txt_file);
 #endif
     if (midr_txt.stream_size() > 0) {
       midr_txt.vmo()->set_name(kMidrTxt.data(), kMidrTxt.size());

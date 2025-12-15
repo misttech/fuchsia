@@ -4,7 +4,6 @@
 
 #include <lib/fit/function.h>
 #include <lib/standalone-test/standalone.h>
-#include <lib/userabi/userboot.h>
 #include <lib/zx/clock.h>
 #include <lib/zx/event.h>
 #include <lib/zx/job.h>
@@ -55,17 +54,12 @@ constexpr std::string_view kCaviumMidr{};
 std::string ReadMidrTxt() {
   std::string midr;
   zx::unowned_vmo midr_vmo = standalone::GetVmo("midr.txt");
-  if constexpr (userboot::kArmMidrTxtIsPresent) {
-    ZX_ASSERT_MSG(*midr_vmo, "midr.txt was not present!?");
+  if (*midr_vmo) {
     uint64_t size = 0;
     EXPECT_OK(midr_vmo->get_prop_content_size(&size));
     midr.resize(size);
     EXPECT_OK(midr_vmo->read(midr.data(), 0, midr.size()));
     EXPECT_STRNE(midr, "");
-    printf("INFO: Contents of midr.txt: \"%s\"\n", midr.c_str());
-  } else {
-    ZX_ASSERT_MSG(!*midr_vmo, "midr.txt was unexpectedly present!?");
-    printf("INFO: No midr.txt was present, but this is expected\n");
   }
   return midr;
 }
@@ -74,10 +68,7 @@ bool CheckIsCavium() { return !kCaviumMidr.empty() && ReadMidrTxt().starts_with(
 
 bool SkipBug363254896() {
   static bool is_cavium = CheckIsCavium();
-
-  // If midr.txt is not present then we cannot reliably know if we can run
-  // this test, so we skip it altogether in that case to be safe.
-  return !userboot::kArmMidrTxtIsPresent || is_cavium;
+  return is_cavium;
 }
 
 TEST(ProcessTest, LongNameSucceeds) {

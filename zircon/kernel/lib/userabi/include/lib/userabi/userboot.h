@@ -84,17 +84,6 @@ constexpr uint32_t kFdioFlagUseForStdio = 0x8000;
 // value.
 constexpr uint32_t kProcessArgsMaxBytes = 128;
 
-// Whether the kernel synthesizes a midr.txt VMO to pass to Userboot, a
-// conventionally stringified version of MIDR_EL1. Certain core tests use this
-// to conditionalize test logic known to be faulty on certain hardware.
-constexpr bool kArmMidrTxtIsPresent =
-#ifdef __aarch64__
-    ZX_DEBUG_ASSERT_IMPLEMENTED
-#else
-    false
-#endif
-    ;
-
 }  // namespace userboot
 
 #ifdef _KERNEL
