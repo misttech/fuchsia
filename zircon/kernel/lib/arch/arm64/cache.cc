@@ -32,8 +32,12 @@ void GlobalCacheConsistencyContext::SyncRange(uintptr_t vaddr, size_t size) {
     for (uintptr_t line = aligned_addr; line < end_addr; line += dcache_line_size) {
       __asm__ volatile("dc cvau, %0" ::"r"(line) : "memory");
     }
-    __dsb(ARM_MB_ISH);
   }
+
+  // Regardless of if we had flushed or not we need to at least make sure all of
+  // the pending writes to this range have entered the cache system for any pending
+  // icache flushes.
+  __dsb(ARM_MB_ISH);
 
   // A continuation of the comment on a similar block in the destructor. If
   // CTR_EL0.DIC is unset, then we must invalidate - and if there is not
@@ -46,6 +50,12 @@ void GlobalCacheConsistencyContext::SyncRange(uintptr_t vaddr, size_t size) {
     for (uintptr_t line = aligned_addr; line < end_addr; line += icache_line_size) {
       __asm__ volatile("ic ivau, %0" ::"r"(line) : "memory");
     }
+    __isb(ARM_MB_SY);
+  } else if (ctr.dic()) {
+    // If CTR_EL0.DIC is set then we do not need to flush any icache, however we still
+    // need to add an instruction barrier to keep the cpu from prefetching any invalid
+    // instructions before the DSB is issued above.
+    // The ideal code sequence for a cpu with IDC & DIC == 1 is DSB ISH + ISB.
     __isb(ARM_MB_SY);
   }
 }
