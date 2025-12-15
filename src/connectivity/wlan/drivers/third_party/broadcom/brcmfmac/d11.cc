@@ -328,6 +328,12 @@ fuchsia_wlan_ieee80211::WlanChannel override_wlan_channel_bandwidth(
     return chan_override;
   }
 
+  if (wlan_channel.primary() >= 165 && wlan_channel.cbw() != ChannelBandwidth::kCbw20) {
+    fuchsia_wlan_ieee80211::WlanChannel chan_override = wlan_channel;
+    chan_override.cbw() = ChannelBandwidth::kCbw20;
+    return chan_override;
+  }
+
   return wlan_channel;
 }
 

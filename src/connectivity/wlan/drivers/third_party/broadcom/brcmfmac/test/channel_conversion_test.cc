@@ -145,6 +145,37 @@ TEST(ChannelConversion, Override80P80IgnoresOtherBandwidths) {
   }
 }
 
+TEST(ChannelConversion, OverrideWideBandwidthForChannel165) {
+  const std::array<ChannelBandwidth, 2> bandwidths{ChannelBandwidth::kCbw40,
+                                                   ChannelBandwidth::kCbw80};
+
+  for (const auto& bandwidth : bandwidths) {
+    const fuchsia_wlan_ieee80211::WlanChannel in_channel{
+        165,
+        bandwidth,
+        0,
+    };
+    const auto out_channel = override_wlan_channel_bandwidth(in_channel);
+    // Override should only change the bandwidth.
+    EXPECT_EQ(out_channel.cbw(), ChannelBandwidth::kCbw20);
+    EXPECT_EQ(out_channel.primary(), in_channel.primary());
+    EXPECT_EQ(out_channel.secondary80(), in_channel.secondary80());
+  }
+}
+
+TEST(ChannelConversion, OverrideWideBandwidthForChannel173) {
+  const fuchsia_wlan_ieee80211::WlanChannel in_channel{
+      173,
+      ChannelBandwidth::kCbw40,
+      0,
+  };
+  const auto out_channel = override_wlan_channel_bandwidth(in_channel);
+  // Override should only change the bandwidth.
+  EXPECT_EQ(out_channel.cbw(), ChannelBandwidth::kCbw20);
+  EXPECT_EQ(out_channel.primary(), in_channel.primary());
+  EXPECT_EQ(out_channel.secondary80(), in_channel.secondary80());
+}
+
 TEST(ChannelConversion, ChanspecFor80P80) {
   brcmu_d11inf d11_inf = {.io_type = BRCMU_D11AC_IOTYPE};
   brcmu_d11_attach(&d11_inf);
@@ -156,7 +187,8 @@ TEST(ChannelConversion, ChanspecFor80P80) {
   };
   const zx::result<chanspec_t> chspec_result = channel_to_chanspec_bw8080(&d11_inf, in_channel);
 
-  // Minimal tests for 80+80, since it's not something we can currently test in infra / real world.
+  // Minimal tests for 80+80, since we can't currently test in infra, or easily test in the real
+  // world.
   ASSERT_TRUE(chspec_result.is_ok());
   ASSERT_FALSE(chspec_malformed(chspec_result.value()));
   EXPECT_TRUE(CHSPEC_IS20(chspec_result.value()));
