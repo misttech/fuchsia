@@ -205,7 +205,7 @@
                 "unistd.vfork_with_sme_za_active",
                 "unistd.vfork_with_sme_za_off",
                 "unistd.vfork_with_sme_za_dormant_state",
-                "unistd.clone_with_sme_za_active:",
+                "unistd.clone_with_sme_za_active",
                 "unistd.clone_with_sme_za_off",
                 "unistd.clone_with_sme_za_dormant_state",
                 "unistd_nofortify.fork_with_sme_za_active",
