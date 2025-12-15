@@ -9,6 +9,7 @@ use starnix_core::bpf::fs::BpfFs;
 use starnix_core::device::kobject::DeviceMetadata;
 use starnix_core::device::mem::{DevRandom, mem_device_init};
 use starnix_core::device::{DeviceMode, simple_device_ops};
+use starnix_core::fs::debugfs::debug_fs;
 use starnix_core::fs::devpts::{dev_pts_fs, tty_device_init};
 use starnix_core::fs::devtmpfs::dev_tmp_fs;
 use starnix_core::fs::fuchsia::{new_remote_fs, new_remote_vol};
@@ -106,6 +107,7 @@ pub fn register_common_file_systems(_locked: &mut Locked<Unlocked>, kernel: &Ker
     // Cpusets use the generic cgroup (v1) subsystem.
     // From https://docs.kernel.org/admin-guide/cgroup-v1/cpusets.html
     registry.register(b"cpuset".into(), CgroupV1Fs::new_fs);
+    registry.register(b"debugfs".into(), debug_fs);
     registry.register(b"devpts".into(), dev_pts_fs);
     registry.register(b"devtmpfs".into(), dev_tmp_fs);
     registry.register(b"ext4".into(), ExtFilesystem::new_fs);

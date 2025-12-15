@@ -13,6 +13,7 @@ use starnix_uapi::file_mode::mode;
 /// the running kernel.
 pub fn build_kernel_directory(kernel: &Kernel, dir: &SimpleDirectoryMutator) {
     let dir_mode = 0o755;
+    dir.subdir("debug", dir_mode, |_| ());
     dir.subdir("tracing", dir_mode, |_| ());
     dir.subdir("wakeup_reasons", dir_mode, |dir| {
         let read_only_file_mode = mode!(IFREG, 0o444);
@@ -56,48 +57,6 @@ pub fn build_kernel_directory(kernel: &Kernel, dir: &SimpleDirectoryMutator) {
                 });
             }
         });
-    });
-    dir.subdir("debug", dir_mode, |dir| {
-        dir.subdir("binder", dir_mode, |dir| {
-            dir.entry(
-                "failed_transaction_log",
-                StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
-                mode!(IFREG, 0o444),
-            );
-            dir.entry(
-                "state",
-                StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
-                mode!(IFREG, 0o444),
-            );
-            dir.entry(
-                "stats",
-                StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
-                mode!(IFREG, 0o444),
-            );
-            dir.entry(
-                "transaction_log",
-                StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
-                mode!(IFREG, 0o444),
-            );
-            dir.entry(
-                "transactions",
-                StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
-                mode!(IFREG, 0o444),
-            );
-        });
-        dir.subdir("mmc0", dir_mode, |dir| {
-            dir.subdir("mmc0:0001", dir_mode, |dir| {
-                dir.entry(
-                    "ext_csd",
-                    StubEmptyFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
-                    mode!(IFREG, 0o444),
-                );
-            });
-        });
-        if kernel.features.selinux_test_suite {
-            // Necessary for the perf_event SELinux testsuite case. See https://fxbug.dev/398663320.
-            dir.subdir("tracing", 0o644, |_| ());
-        }
     });
     dir.subdir("dmabuf", dir_mode, |dir| {
         dir.entry(

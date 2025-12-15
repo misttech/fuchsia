@@ -44,6 +44,7 @@ _starnix_core_sources = [
   "execution/loop_entry.rs",
   "execution/mod.rs",
   "execution/task_creation.rs",
+  "fs/debugfs.rs",
   "fs/devpts.rs",
   "fs/devtmpfs.rs",
   "fs/fuchsia/mod.rs",
