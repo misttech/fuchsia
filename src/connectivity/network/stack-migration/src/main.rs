@@ -36,7 +36,12 @@ const CURRENT_EPOCH: u32 = 1;
 
 /// The number of failed healthchecks at which we begin generating crash
 /// reports.
-const HEALTHCHECK_FAILURE_THRESHOLD_FOR_CRASH_REPORTS: usize = 2;
+///
+/// By setting this to one less than the `rollback::MAX_FAILED_HEALTHCHECKS`, we
+/// ensure each rollback event will have two "failed healthcheck" reports from
+/// the previous boot.
+const HEALTHCHECK_FAILURE_THRESHOLD_FOR_CRASH_REPORTS: usize =
+    crate::rollback::MAX_FAILED_HEALTHCHECKS - 1;
 
 #[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize, Eq, PartialEq)]
 enum NetstackVersion {
