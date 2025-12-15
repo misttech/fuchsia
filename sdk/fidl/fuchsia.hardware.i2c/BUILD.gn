@@ -7,7 +7,7 @@ import("//build/fidl/fidl.gni")
 fidl("fuchsia.hardware.i2c") {
   sdk_category = "partner"
   stable = true
-  sdk_area = "Unknown"
+  sdk_area = "Drivers"
   sources = [ "i2c.fidl" ]
   public_deps = [ "//zircon/vdso/zx" ]
   enable_rust_next = true

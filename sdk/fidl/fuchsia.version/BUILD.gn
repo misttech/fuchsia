@@ -7,7 +7,7 @@ import("//build/fidl/fidl.gni")
 fidl("fuchsia.version") {
   sdk_category = "partner"
   stable = true
-  sdk_area = "Unknown"
+  sdk_area = "Component Framework"
   sources = [ "version.fidl" ]
   enable_hlcpp = true
   enable_rust_next = true

@@ -10,7 +10,9 @@ fidl("fuchsia.sysmem") {
 
   sdk_category = "partner"
   stable = true
-  sdk_area = "Unknown"
+
+  # Also Graphics
+  sdk_area = "Media"
   api = "fuchsia.sysmem.api"
   sources = [
     "allocator.fidl",

@@ -7,7 +7,7 @@ import("//build/fidl/fidl.gni")
 fidl("fuchsia.hardware.platform.device") {
   sdk_category = "partner"
   stable = true
-  sdk_area = "Unknown"
+  sdk_area = "Drivers"
   sources = [
     "overview.fidl",
     "platform-device.fidl",

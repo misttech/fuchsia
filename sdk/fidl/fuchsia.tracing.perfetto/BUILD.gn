@@ -7,7 +7,7 @@ import("//build/fidl/fidl.gni")
 fidl("fuchsia.tracing.perfetto") {
   sdk_category = "partner"
   stable = true
-  sdk_area = "Unknown"
+  sdk_area = "Diagnostics"
   sources = [
     "consumer.fidl",
     "overview.fidl",

@@ -8,7 +8,7 @@ import("//build/fidl/fidl.gni")
 # `fuchsia.component.*` libraries.
 fidl("fuchsia.sys2") {
   sdk_category = "host_tool"
-  sdk_area = "Unknown"
+  sdk_area = "Component Framework"
   stable = true
 
   public_deps = [

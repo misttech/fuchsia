@@ -5,7 +5,7 @@
 import("//build/fidl/fidl.gni")
 
 fidl("fuchsia.starnix.runner") {
-  sdk_area = "Unknown"
+  sdk_area = "Foreign ABI Compatibility"
   sources = [ "manager.fidl" ]
   public_deps = [ "//zircon/vdso/zx" ]
 }

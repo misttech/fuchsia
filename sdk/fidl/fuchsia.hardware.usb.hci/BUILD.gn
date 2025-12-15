@@ -6,6 +6,7 @@ import("//build/fidl/fidl.gni")
 
 fidl("fuchsia.hardware.usb.hci") {
   sources = [ "usb-hci.fidl" ]
+  sdk_area = "Drivers"
   public_deps = [
     "//sdk/fidl/fuchsia.hardware.usb.descriptor",
     "//sdk/fidl/fuchsia.hardware.usb.endpoint",

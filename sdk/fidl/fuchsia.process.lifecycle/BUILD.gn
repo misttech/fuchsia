@@ -7,7 +7,7 @@ import("//build/fidl/fidl.gni")
 fidl("fuchsia.process.lifecycle") {
   sdk_category = "partner"
   stable = true
-  sdk_area = "Unknown"
+  sdk_area = "Component Framework"
   api = "fuchsia.process.lifecycle.api"
   sources = [ "lifecycle.fidl" ]
   public_deps = [
