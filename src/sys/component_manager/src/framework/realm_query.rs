@@ -674,7 +674,11 @@ mod tests {
         // Try to create a manifest that will exceed the size of a Zircon channel message.
         let mut manifest = ComponentDeclBuilder::new();
 
-        for i in 0..10000 {
+        // This variable makes it easy to tune this to exactly the size manifest needed for
+        // ensuring that the serialized manifest is larger than a channel message.
+        let num_items = 200;
+
+        for i in 0..num_items {
             let use_name = format!("use_{}", i);
             let expose_name = format!("expose_{}", i);
             let capability_path = format!("/svc/capability_{}", i);
@@ -711,12 +715,23 @@ mod tests {
             bytes.append(&mut batch);
         }
 
+        // Validate that the manifest is actually large enough to span multiple messages, but not
+        // too large as to be burdensome when running the test.
+        assert!(
+            bytes.len() > 64 * 1024,
+            "Manifest is not larger than 64KiB in size, increase 'num_items' to make it larger"
+        );
+        assert!(
+            bytes.len() < 192 * 1024,
+            "Manifest is greater than than 192KB in size, decrease 'num_items' to make it smaller"
+        );
+
         let manifest = fidl::unpersist::<fcdecl::Component>(&bytes).unwrap();
 
-        // Component should have 10000 use and expose decls
+        // Component should have 'num_items' use and expose decls
         let uses = manifest.uses.unwrap();
         let exposes = manifest.exposes.unwrap();
-        assert_eq!(uses.len(), 10000);
+        assert_eq!(uses.len(), num_items);
 
         for use_ in uses {
             let use_ = use_.fidl_into_native();
@@ -724,7 +739,7 @@ mod tests {
             assert!(use_.path().unwrap().to_string().starts_with("/svc/capability_"));
         }
 
-        assert_eq!(exposes.len(), 10000);
+        assert_eq!(exposes.len(), num_items);
 
         for expose in exposes {
             let expose = expose.fidl_into_native();
