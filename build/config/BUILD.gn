@@ -488,11 +488,14 @@ config("optimize_size") {
   ldflags = cflags
 
   if (clang_ml_inliner) {
-    cflags += [
-      # `release` uses AOT model embedded inside the compiler.
-      "-mllvm",
-      "-enable-ml-inliner=release",
-    ]
+    # TODO(466160819): Remove conditional when tests compile on user.basic without it.
+    if (toolchain_environment != "user.basic") {
+      cflags += [
+        # `release` uses AOT model embedded inside the compiler.
+        "-mllvm",
+        "-enable-ml-inliner=release",
+      ]
+    }
   }
 
   rustflags = [ "-Copt-level=s" ]
