@@ -40,7 +40,7 @@
 //
 // TODO(https://fxbug.dev/416063207): Delete this and clean up the old path once
 // the new path is proven stable.
-static constexpr bool kDeveloperConsole = false;
+static constexpr bool kDeveloperConsole = true;
 
 namespace sshd_host {
 
