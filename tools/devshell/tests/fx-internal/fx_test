@@ -181,6 +181,35 @@ TEST_fx-run_from_different_version() {
   BT_EXPECT_STRING_CONTAINS_SUBSTRING "${output}" "${line2} ${BT_TEMP_DIR}"
 }
 
+# Test that fx runs correctly from a source tree where .jiri_root is a
+# symlink to a directory outside of the source tree. This is a common
+# setup in cog workspaces, where the source code is in one directory (cogFS) but
+# the build output and jiri root are in another (cartFS).
+TEST_fx_run_with_external_jiri_root() {
+  FUCHSIA_DIR_COG="$(mktemp -d)"
+  cp -RL "${BT_TEMP_DIR}/." "${FUCHSIA_DIR_COG}"
+
+  # Replace the mock .jiri_root directory with a symlink to an external dir,
+  # simulating the cartFS layout.
+  rm -rf "${FUCHSIA_DIR_COG}/.jiri_root"
+  CARTFS_BASE="$(mktemp -d)"
+  mkdir -p "${CARTFS_BASE}/.jiri_root"
+  mkdir -p "${CARTFS_BASE}/PROJECT_ROOT/.jiri_root"
+  ln -s "${CARTFS_BASE}/.jiri_root" "${FUCHSIA_DIR_COG}/.jiri_root"
+  cp -R "${FUCHSIA_DIR_COG}/tools" "${CARTFS_BASE}/tools"
+
+  # Execute from within the cartFS directory,
+  cd "${CARTFS_BASE}"
+
+  fx_in_tree="${FUCHSIA_DIR_COG}/scripts/fx"
+
+  # With the relaxed check, this should now succeed. The old check would fail
+  # because the fx script's path is not inside the determined fuchsia_dir.
+  output="$(${fx_in_tree} help 2>&1)"
+  BT_EXPECT_EQ $? 0 "fx help should succeed with external jiri_root"
+  BT_EXPECT_STRING_CONTAINS_SUBSTRING "${output}" "Run Fuchsia development commands"
+}
+
 # Tests that `fx -d` errors out with an appropariate error message.
 TEST_fx-deprecated-target-flag-test() {
   local subcommand="mycommand1"

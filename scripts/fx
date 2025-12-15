@@ -219,13 +219,20 @@ if ! fuchsia_dir="$(find_tree_root "$(pwd)")"; then
 fi
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
+# In cog workspace, .jiri_root in source tree would symlink to CartFS
+# workspace, where the out directory exist and tests executed.
+script_jiri_root="$(dirname $(readlink -f $(find_tree_root "${script_dir}")/.jiri_root))"
 
-if [[ "${script_dir}" != "${fuchsia_dir}"* ]]; then
+# In cog workspace, we will check if we are running fx in either source tree or
+# CartFS workspace.
+if [[ "${fuchsia_dir}" != "${script_jiri_root}"* && "${script_dir}" != "${fuchsia_dir}"* ]]; then
   echo >&2 "ERROR: You are executing fx from outside of the current source tree"
   echo >&2 "ERROR: This is not supported as fx does not have a stable internal API"
   echo >&2
   echo >&2 "    'fx' was executed from: ${BASH_SOURCE[0]}"
   echo >&2 "    'fuchsia directory' resolved to: ${fuchsia_dir}"
+  echo >&2 "    'script_dir' resolved to: ${script_dir}"
+  echo >&2 "    'script_jiri_root' resolved to: ${script_jiri_root}"
   echo >&2
   echo >&2 "To run a command in the current Fuchsia directory, run fx from:"
   echo >&2 "  ${fuchsia_dir}/scripts/fx"
