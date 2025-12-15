@@ -36,10 +36,11 @@ use fuchsia_async::{self as fasync, TimeoutExt};
 use fuchsia_runtime::{HandleInfo, HandleType, UtcClock, duplicate_utc_clock_handle, job_default};
 use futures::TryStreamExt;
 use futures::channel::oneshot;
-use log::warn;
+use log::{trace, warn};
 use moniker::Moniker;
 use runner::StartInfo;
 use runner::component::StopInfo;
+use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
 use vfs::execution_scope::ExecutionScope;
@@ -86,6 +87,29 @@ const DUPLICATE_CLOCK_RIGHTS: zx::Rights = zx::Rights::from_bits_truncate(
         // in this set of rights.
         | zx::Rights::MAP.bits(),
 );
+
+// Mapping of component monikers to "acceptable" exit codes
+//
+// There are some ELF programs that upon exit, produce certain exit codes that
+// are "normal" part of operation. The most interesting of these from Fuchsia's
+// perspective is the sshd binary, which returns a 255 exit code when the client
+// hangs up unexpectedly (e.g. sending SIGINT to a running ssh process).
+//
+// Due to how `ffx` interacts with the Target over ssh in a user-interactive mode,
+// it is commonplace for the user to SIGINT their locally running ffx processes
+// which SIGINT's the SSH process running on the Host, which causes misleading
+// logs on the Target, implying that sshd has had an error (when in-fact there is none).
+//
+// If this list grows significantly (not expected). We may consider adding
+// this as a formal configuration option somewhere. That said this is (currently)
+// only for suppressing diagnostic logs, so this is unlikely.
+static MONIKER_PREFIXES_TO_ACCEPTABLE_EXIT_CODES: std::sync::LazyLock<
+    HashMap<&'static str, Vec<i64>>,
+> = std::sync::LazyLock::new(|| {
+    let mut m = HashMap::new();
+    m.insert("core/sshd-host/shell:sshd-", vec![255]);
+    m
+});
 
 // Builds and serves the runtime directory
 /// Runs components with ELF binaries.
@@ -621,6 +645,13 @@ impl ScopedElfRunner {
     }
 }
 
+fn is_acceptable_exit_code(moniker: &Moniker, code: i64) -> bool {
+    let moniker_name = moniker.to_string();
+    MONIKER_PREFIXES_TO_ACCEPTABLE_EXIT_CODES
+        .iter()
+        .any(|(prefix, codes)| moniker_name.starts_with(*prefix) && codes.contains(&code))
+}
+
 /// Starts a component by creating a new Job and Process for the component.
 async fn start(
     runner: &ElfRunner,
@@ -642,6 +673,7 @@ async fn start(
             return;
         }
     };
+    let elf_component_moniker = elf_component.info().get_moniker().clone();
 
     let (termination_tx, termination_rx) = oneshot::channel::<StopInfo>();
     // This function waits for something from the channel and
@@ -710,8 +742,12 @@ async fn start(
                             Some(return_code),
                         ),
                         _ => {
-                            warn!(url:% = resolved_url, return_code:%;
-                                "process terminated with abnormal return code");
+                            if is_acceptable_exit_code(&elf_component_moniker, return_code) {
+                                trace!(url:% = resolved_url, return_code:%; "component terminated with an acceptable non-zero exit code");
+                            } else {
+                                warn!(url:% = resolved_url, return_code:%;
+                                    "process terminated with abnormal return code");
+                            }
                             StopInfo::from_error(fcomp::Error::InstanceDied, Some(return_code))
                         }
                     }
@@ -763,6 +799,7 @@ mod tests {
     use futures::lock::Mutex;
     use futures::{StreamExt, join};
     use runner::component::Controllable;
+    use std::str::FromStr;
     use std::task::Poll;
     use zx::{self as zx, Task};
     use {
@@ -1869,5 +1906,32 @@ mod tests {
         );
         expect_on_stop(&mut event_stream, s, Some(123)).await;
         expect_channel_closed(&mut event_stream).await;
+    }
+
+    #[fuchsia::test]
+    fn test_is_acceptable_exit_code() {
+        // Test sshd with its acceptable code
+        assert!(is_acceptable_exit_code(
+            &Moniker::from_str("core/sshd-host/shell:sshd-1").expect("valid moniker"),
+            255
+        ));
+
+        // Test sshd with a non-acceptable code
+        assert!(!is_acceptable_exit_code(
+            &Moniker::from_str("core/sshd-host/shell:sshd-1").expect("valid moniker"),
+            1
+        ));
+
+        // Test a URL that doesn't match
+        assert!(!is_acceptable_exit_code(
+            &Moniker::from_str("not_core/ssh-host/shell:sshd-1").expect("valid moniker"),
+            255
+        ));
+
+        // Test an unknown component with a code that happens to be acceptable for another
+        assert!(!is_acceptable_exit_code(
+            &Moniker::from_str("foo/debug").expect("valid moniker"),
+            255
+        ));
     }
 }
