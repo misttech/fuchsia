@@ -349,12 +349,10 @@ bool VkLoopTest::InitCommandBuffer() {
 
 void RestartDriver(uint32_t gpu_vendor_id) {
   std::string driver_url = GetConfig().gpu_driver_url();
-  if (!driver_url.empty()) {
-    magma::TestDeviceBase::RestartDFv2Driver(driver_url, gpu_vendor_id);
-  } else {
-    // Only dfv2 drivers are supported
-    ASSERT_TRUE(false);
-  }
+  ASSERT_TRUE(!driver_url.empty());
+
+  // Only dfv2 drivers are supported
+  magma::TestDeviceBase::RestartDFv2Driver(driver_url, gpu_vendor_id);
 }
 
 bool VkLoopTest::Exec(bool kill_driver, AllowSuccess allow_success) {
@@ -412,8 +410,11 @@ TEST(VkLoop, EventHang) {
 }
 
 TEST(VkLoop, DriverDeath) {
-  VkLoopTest test(true);
+  if (GetConfig().gpu_driver_url().empty()) {
+    GTEST_SKIP_("Skipping because no driver URL specified");
+  }
 
+  VkLoopTest test(true);
   ASSERT_TRUE(test.Initialize());
 
   // TODO(https://fxbug.dev/351097268): The test is currently disabled on Intel
@@ -422,7 +423,7 @@ TEST(VkLoop, DriverDeath) {
   // restart the driver.
   static constexpr uint32_t kIntelVendorId = 0x8086;  // MAGMA_VENDOR_ID_INTEL
   if (test.get_vendor_id() == kIntelVendorId) {
-    GTEST_SKIP();
+    GTEST_SKIP_("Skipping intel for b/351097268");
   }
 
   ASSERT_TRUE(test.Exec(true, VkLoopTest::AllowSuccess::kDisallow));
