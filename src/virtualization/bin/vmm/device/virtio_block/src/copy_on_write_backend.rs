@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::backend::{BlockBackend, DeviceAttrs, Request, Sector};
-use anyhow::{anyhow, Error};
+use anyhow::{Error, anyhow};
 use async_trait::async_trait;
 use fuchsia_trace as ftrace;
 use futures::future::try_join_all;
@@ -67,7 +67,7 @@ impl CopyOnWriteBackend {
         copied: Box<dyn BlockBackend>,
         trace_id: ftrace::Id,
     ) -> Result<Self, Error> {
-        let _trace = ftrace::async_enter!(trace_id, c"machina", c"CopyOnWriteBackend::new");
+        let _trace = ftrace::async_enter!(trace_id, "machina", "CopyOnWriteBackend::new");
         let (backing_attrs, copied_attrs) =
             futures::try_join!(backing.get_attrs(trace_id), copied.get_attrs(trace_id))?;
         if backing_attrs.capacity < copied_attrs.capacity {

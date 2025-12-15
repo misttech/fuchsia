@@ -20,7 +20,7 @@ use crate::file_backend::FileBackend;
 use crate::memory_backend::MemoryBackend;
 use crate::qcow_backend::QcowBackend;
 use crate::remote_backend::RemoteBackend;
-use anyhow::{anyhow, Context};
+use anyhow::{Context, anyhow};
 use fidl::endpoints::RequestStream;
 use fidl_fuchsia_virtualization::{BlockFormat, BlockMode, BlockSpec};
 use fidl_fuchsia_virtualization_hardware::VirtioBlockRequestStream;
@@ -35,7 +35,7 @@ async fn create_backend(
     mode: BlockMode,
 ) -> Result<Box<dyn BlockBackend>, anyhow::Error> {
     let trace_id = ftrace::Id::random();
-    let _trace = ftrace::async_enter!(trace_id, c"machina", c"create_backend");
+    let _trace = ftrace::async_enter!(trace_id, "machina", "create_backend");
     let backend: Box<dyn BlockBackend> = match format {
         BlockFormat::File(file) => Box::new(FileBackend::new(file)?),
         BlockFormat::Block(block) => Box::new(RemoteBackend::new(block).await?),

@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::backend::{BlockBackend, DeviceAttrs, Request, Sector};
-use anyhow::{anyhow, Error};
+use anyhow::{Error, anyhow};
 use async_lock::Semaphore;
 use async_trait::async_trait;
 use fidl::endpoints::ClientEnd;
@@ -40,7 +40,7 @@ impl FileBackend {
         range: DeviceRange<'a>,
         trace_id: ftrace::Id,
     ) -> Result<(), Error> {
-        let _trace = ftrace::async_enter!(trace_id, c"machina", c"FileBackend::read_range", "len" => range.len() as u64);
+        let _trace = ftrace::async_enter!(trace_id, "machina", "FileBackend::read_range", "len" => range.len() as u64);
         assert!(range.len() <= MAX_BUF as usize);
         let bytes = {
             let _ticket = self.semaphore.acquire().await;
@@ -72,7 +72,7 @@ impl FileBackend {
         range: DeviceRange<'a>,
         trace_id: ftrace::Id,
     ) -> Result<(), Error> {
-        let _trace = ftrace::async_enter!(trace_id, c"machina", c"FileBackend::write_range", "len" => range.len() as u64);
+        let _trace = ftrace::async_enter!(trace_id, "machina", "FileBackend::write_range", "len" => range.len() as u64);
         assert!(range.len() <= MAX_BUF as usize);
         // SAFETY: the range comes from the virtio chain and alignment is verified by `try_ptr`.
         let slice = unsafe { std::slice::from_raw_parts(range.try_ptr().unwrap(), range.len()) };
@@ -94,7 +94,7 @@ impl FileBackend {
 #[async_trait(?Send)]
 impl BlockBackend for FileBackend {
     async fn get_attrs(&self, trace_id: ftrace::Id) -> Result<DeviceAttrs, Error> {
-        let _trace = ftrace::async_enter!(trace_id, c"machina", c"FileBackend::get_attrs");
+        let _trace = ftrace::async_enter!(trace_id, "machina", "FileBackend::get_attrs");
         let (_, immutable_attributes) = self
             .file
             .get_attributes(fio::NodeAttributesQuery::CONTENT_SIZE)
@@ -113,7 +113,7 @@ impl BlockBackend for FileBackend {
         request: Request<'a, 'b>,
         trace_id: ftrace::Id,
     ) -> Result<(), Error> {
-        let _trace = ftrace::async_enter!(trace_id, c"machina", c"FileBackend::read");
+        let _trace = ftrace::async_enter!(trace_id, "machina", "FileBackend::read");
         try_join_all(
             request
                 .ranges_bounded(MAX_BUF as usize)
@@ -128,7 +128,7 @@ impl BlockBackend for FileBackend {
         request: Request<'a, 'b>,
         trace_id: ftrace::Id,
     ) -> Result<(), Error> {
-        let _trace = ftrace::async_enter!(trace_id, c"machina", c"FileBackend::write");
+        let _trace = ftrace::async_enter!(trace_id, "machina", "FileBackend::write");
         try_join_all(
             request
                 .ranges_bounded(MAX_BUF as usize)
@@ -139,7 +139,7 @@ impl BlockBackend for FileBackend {
     }
 
     async fn flush(&self, trace_id: ftrace::Id) -> Result<(), Error> {
-        let _trace = ftrace::async_enter!(trace_id, c"machina", c"FileBackend::flush");
+        let _trace = ftrace::async_enter!(trace_id, "machina", "FileBackend::flush");
         let _ticket = self.semaphore.acquire().await;
         self.file.sync().await?.map_err(zx_status::Status::from_raw)?;
         Ok(())

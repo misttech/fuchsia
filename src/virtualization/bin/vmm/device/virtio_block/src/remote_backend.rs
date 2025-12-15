@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::backend::{BlockBackend, DeviceAttrs, Request, Sector};
-use anyhow::{anyhow, Error};
+use anyhow::{Error, anyhow};
 use async_trait::async_trait;
 use block_client::{BlockClient, BufferSlice, MutableBufferSlice, RemoteBlockClient};
 use fidl_fuchsia_hardware_block::BlockMarker;
@@ -41,7 +41,7 @@ impl RemoteBackend {
         range: DeviceRange<'a>,
         trace_id: ftrace::Id,
     ) -> Result<(), Error> {
-        let _trace = ftrace::async_enter!(trace_id, c"machina", c"RemoteBackend::read_range", "len" => range.len() as u64);
+        let _trace = ftrace::async_enter!(trace_id, "machina", "RemoteBackend::read_range", "len" => range.len() as u64);
         let buffer = self.build_mutable_buffer_slice(offset, &range)?;
         self.block_client.read_at(buffer, offset).await?;
         Ok(())
@@ -53,7 +53,7 @@ impl RemoteBackend {
         range: DeviceRange<'a>,
         trace_id: ftrace::Id,
     ) -> Result<(), Error> {
-        let _trace = ftrace::async_enter!(trace_id, c"machina", c"RemoteBackend::write_range", "len" => range.len() as u64);
+        let _trace = ftrace::async_enter!(trace_id, "machina", "RemoteBackend::write_range", "len" => range.len() as u64);
         let buffer = self.build_buffer_slice(offset, &range)?;
         self.block_client.write_at(buffer, offset).await?;
         Ok(())
@@ -94,7 +94,7 @@ impl RemoteBackend {
 #[async_trait(?Send)]
 impl BlockBackend for RemoteBackend {
     async fn get_attrs(&self, trace_id: ftrace::Id) -> Result<DeviceAttrs, Error> {
-        let _trace = ftrace::async_enter!(trace_id, c"machina", c"RemoteBackend::get_attrs");
+        let _trace = ftrace::async_enter!(trace_id, "machina", "RemoteBackend::get_attrs");
         let block_size = self.block_client.block_size();
         let block_count = self.block_client.block_count();
         Ok(DeviceAttrs {
@@ -110,7 +110,7 @@ impl BlockBackend for RemoteBackend {
         request: Request<'a, 'b>,
         trace_id: ftrace::Id,
     ) -> Result<(), Error> {
-        let _trace = ftrace::async_enter!(trace_id, c"machina", c"RemoteBackend::read");
+        let _trace = ftrace::async_enter!(trace_id, "machina", "RemoteBackend::read");
         let mut offset = request.sector.to_bytes().unwrap();
         try_join_all(request.ranges.iter().cloned().map(|range| {
             let len = range.len() as u64;
@@ -127,7 +127,7 @@ impl BlockBackend for RemoteBackend {
         request: Request<'a, 'b>,
         trace_id: ftrace::Id,
     ) -> Result<(), Error> {
-        let _trace = ftrace::async_enter!(trace_id, c"machina", c"RemoteBackend::write");
+        let _trace = ftrace::async_enter!(trace_id, "machina", "RemoteBackend::write");
         let mut offset = request.sector.to_bytes().unwrap();
         try_join_all(request.ranges.iter().cloned().map(|range| {
             let len = range.len() as u64;
@@ -140,7 +140,7 @@ impl BlockBackend for RemoteBackend {
     }
 
     async fn flush(&self, trace_id: ftrace::Id) -> Result<(), Error> {
-        let _trace = ftrace::async_enter!(trace_id, c"machina", c"RemoteBackend::flush");
+        let _trace = ftrace::async_enter!(trace_id, "machina", "RemoteBackend::flush");
         Ok(self.block_client.flush().await?)
     }
 }
