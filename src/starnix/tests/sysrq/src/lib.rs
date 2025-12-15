@@ -20,8 +20,8 @@ use log::info;
 use std::collections::BTreeMap;
 
 // LINT.IfChange
-const SYSRQ_PANIC_MESSAGE: &str = "crashing from SysRq";
-// LINT.ThenChange(src/starnix/kernel/fs/proc/sysrq.rs)
+const SYSRQ_PANIC_MESSAGE: &str = "SysRq kernel crash request";
+// LINT.ThenChange(/src/starnix/modules/procfs/sysrq.rs)
 
 #[fuchsia::test]
 async fn c_crash() {
@@ -88,10 +88,10 @@ async fn c_crash() {
 }
 
 #[fuchsia::test]
-async fn c_reboot() {
+async fn b_reboot() {
     let builder = RealmBuilder::with_params(
         RealmBuilderParams::new()
-            .realm_name("c_reboot")
+            .realm_name("b_reboot")
             .from_relative_url("#meta/kernel_with_container.cm"),
     )
     .await
@@ -133,8 +133,8 @@ async fn c_reboot() {
 
     // Spawn a task to send the initial message, without blocking for a return since this won't.
     let _writer = Task::spawn(async move {
-        info!("writing c to sysrq");
-        fuchsia_fs::file::write(&sysrq, "c").await
+        info!("writing b to sysrq");
+        fuchsia_fs::file::write(&sysrq, "b").await
     });
 
     info!("waiting for power admin request");

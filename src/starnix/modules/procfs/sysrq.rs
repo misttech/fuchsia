@@ -131,11 +131,10 @@ impl FileOps for SysRqFile {
         let commands = data.read_all()?;
         for command in &commands {
             match *command {
-                b'b' => track_stub!(TODO("https://fxbug.dev/319745106"), "SysRqRebootNoSync"),
-                b'c' => {
-                    log_warn!("SysRq kernel crash request.");
+                b'b' => {
+                    log_warn!("SysRq reboot request.");
 
-                    // Attempt to "crash" the whole device, if that fails settle for just Starnix.
+                    // Attempt to reboot the device.
                     // When this call succeeds with a production implementation it should never
                     // return. If it returns at all it is a sign the kernel either doesn't have the
                     // capability or there was a problem with the shutdown request.
@@ -148,12 +147,15 @@ impl FileOps for SysRqFile {
                             zx::MonotonicInstant::INFINITE,
                         );
 
-                    // LINT.IfChange
                     panic!(
                         "reboot call returned unexpectedly ({:?}), crashing from SysRq",
                         reboot_res
                     );
-                    // LINT.ThenChange(src/starnix/tests/sysrq/src/lib.rs)
+                }
+                b'c' => {
+                    // LINT.IfChange
+                    panic!("SysRq kernel crash request",);
+                    // LINT.ThenChange(/src/starnix/tests/sysrq/src/lib.rs)
                 }
                 b'd' => track_stub!(TODO("https://fxbug.dev/319745106"), "SysRqDumpLocksHeld"),
                 b'e' => {
