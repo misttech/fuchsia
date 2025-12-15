@@ -93,15 +93,10 @@ impl SpawnRequestBuilder<ClosureNone> {
     {
         let SpawnRequestBuilder { role, closure_kind: _, debug_name } = self;
         let (sender, receiver) = sync_channel::<T>(1);
-        let _keepalive = sender.clone();
         let closure = Box::new(move |locked: &mut Locked<Unlocked>, current_task: &CurrentTask| {
             let _ = sender.send(f(locked, current_task));
         });
-        SpawnRequestBuilder {
-            role,
-            closure_kind: ClosureSome { closure, receiver, _keepalive },
-            debug_name,
-        }
+        SpawnRequestBuilder { role, closure_kind: ClosureSome { closure, receiver }, debug_name }
     }
 
     /// Provides the closure that the spawner will run.
@@ -145,14 +140,9 @@ where
     /// ```
     pub fn build_with_sync_result(self) -> (impl FnOnce() -> Result<T, Errno>, SpawnRequest) {
         let Self { role, closure_kind, debug_name } = self;
-        let ClosureSome { closure, receiver, _keepalive } = closure_kind;
+        let ClosureSome { closure, receiver } = closure_kind;
         let result_fn = move || {
-            let result =
-                receiver.recv().map_err(|err| errno!(EINTR, format!("while receiving: {err:?}")));
-            // Ok to allow _keepalive to close now that `result` was consumed from
-            // `receiver`.
-            std::mem::drop(_keepalive);
-            result
+            receiver.recv().map_err(|err| errno!(EINTR, format!("while receiving: {err:?}")))
         };
         let run_fn = maybe_apply_role(role, closure);
         (result_fn, SpawnRequest { closure: run_fn, debug_name })
@@ -170,7 +160,7 @@ where
     /// ```
     pub fn build_with_async_result(self) -> (impl Future<Output = Result<T, Errno>>, SpawnRequest) {
         let Self { role, closure_kind, debug_name } = self;
-        let ClosureSome { closure, receiver, _keepalive } = closure_kind;
+        let ClosureSome { closure, receiver } = closure_kind;
         let (sender_async, result_fut) = oneshot::channel::<Result<T, Errno>>();
         let maybe_with_role = maybe_apply_role(role, closure);
         let repackaged =
@@ -182,8 +172,6 @@ where
                     .recv()
                     .map_err(|err| errno!(EINTR, format!("while receiving: {err:?}")));
                 let _ = sender_async.send(result);
-                // Allows the channel for which `receiver` is the output end to close.
-                std::mem::drop(_keepalive);
             });
         let result_fut = result_fut
             .unwrap_or_else(|err| Err(errno!(EINTR, format!("while receiving async: {err:?}"))));
@@ -266,12 +254,6 @@ where
     closure: BoxedClosure,
     // Used to receive the computation result from `closure`.
     receiver: std::sync::mpsc::Receiver<T>,
-
-    // Unused, except to ensure that the channel for which `receiver` is the receiving end is not
-    // closed before receiver gets a value out. This avoids a race condition where the scheduling
-    // happens so that sender is dropped before the receive happens, resulting in a receive error.
-    // We prevent that by keeping around an extra sender end which we only release when appropriate.
-    _keepalive: std::sync::mpsc::SyncSender<T>,
 }
 impl<T> ClosureKind for ClosureSome<T> where T: Send + 'static {}
 
