@@ -2092,14 +2092,14 @@ impl CurrentTask {
         //      the CAP_SYS_PTRACE capability in the user namespace of the
         //      target process.
         let dumpable = *target.mm()?.dumpable.lock(locked);
-        if dumpable != DumpPolicy::User {
-            security::check_task_capable(self, CAP_SYS_PTRACE)?;
+        match dumpable {
+            DumpPolicy::User => (),
+            DumpPolicy::Disable => security::check_task_capable(self, CAP_SYS_PTRACE)?,
         }
 
-        // TODO(https://fxbug.dev/439897703): Implement the LSM security_ptrace_access_check() interface.
-        //
         // (5)  The kernel LSM security_ptrace_access_check() interface is
         //      invoked to see if ptrace access is permitted.
+        security::ptrace_access_check(self, target, mode)?;
 
         // (6)  If access has not been denied by any of the preceding steps,
         //      then access is allowed.

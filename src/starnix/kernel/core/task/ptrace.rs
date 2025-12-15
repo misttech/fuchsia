@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::arch::execution::new_syscall_from_state;
-use crate::mm::{DumpPolicy, IOVecPtr, MemoryAccessor, MemoryAccessorExt};
+use crate::mm::{IOVecPtr, MemoryAccessor, MemoryAccessorExt};
 use crate::security;
 use crate::signals::syscalls::WaitingOptions;
 use crate::signals::{
@@ -12,17 +12,16 @@ use crate::signals::{
 };
 use crate::task::waiter::WaitQueue;
 use crate::task::{
-    CurrentTask, Kernel, PidTable, ProcessSelector, StopState, Task, TaskMutableState, ThreadGroup,
+    CurrentTask, PidTable, ProcessSelector, StopState, Task, TaskMutableState, ThreadGroup,
     ThreadState, ZombieProcess,
 };
-use crate::vfs::pseudo::simple_file::parse_unsigned_file;
 use bitflags::bitflags;
 use starnix_logging::track_stub;
 use starnix_sync::{LockBefore, Locked, MmDumpable, ThreadGroupLimits, Unlocked};
 use starnix_syscalls::SyscallResult;
 use starnix_syscalls::decls::SyscallDecl;
 use starnix_types::ownership::{OwnedRef, Releasable, ReleaseGuard, WeakRef};
-use starnix_uapi::auth::{CAP_SYS_PTRACE, PTRACE_MODE_ATTACH_REALCREDS};
+use starnix_uapi::auth::PTRACE_MODE_ATTACH_REALCREDS;
 use starnix_uapi::elf::ElfNoteType;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::signals::{SIGKILL, SIGSTOP, SIGTRAP, SigSet, Signal, UncheckedSignal};
@@ -637,21 +636,12 @@ impl ZombiePtracees {
     }
 }
 
-/// Scope definitions for Yama.  For full details, see ptrace(2).
-/// 1 means tracer needs to have CAP_SYS_PTRACE or be a parent / child
-/// process. This is the default.
-const RESTRICTED_SCOPE: u8 = 1;
-/// 2 means tracer needs to have CAP_SYS_PTRACE
-const ADMIN_ONLY_SCOPE: u8 = 2;
-/// 3 means no process can attach.
-const NO_ATTACH_SCOPE: u8 = 3;
-
 // PR_SET_PTRACER_ANY is defined as ((unsigned long) -1),
 // which is not understood by bindgen.
 pub const PR_SET_PTRACER_ANY: i32 = -1;
 
 /// Indicates processes specifically allowed to trace a given process if using
-/// RESTRICTED_SCOPE.  Used by prctl(PR_SET_PTRACER).
+/// SCOPE_RESTRICTED.  Used by prctl(PR_SET_PTRACER).
 #[derive(Copy, Clone, Default, PartialEq)]
 pub enum PtraceAllowedPtracers {
     #[default]
@@ -1111,18 +1101,6 @@ fn do_attach(
     unreachable!("Tracee thread not found");
 }
 
-fn check_caps_for_attach(ptrace_scope: u8, current_task: &CurrentTask) -> Result<(), Errno> {
-    if ptrace_scope == ADMIN_ONLY_SCOPE {
-        // Admin only use of ptrace
-        security::check_task_capable(current_task, CAP_SYS_PTRACE)?;
-    }
-    if ptrace_scope == NO_ATTACH_SCOPE {
-        // No use of ptrace
-        return error!(EPERM);
-    }
-    Ok(())
-}
-
 /// Uses the given core ptrace state (including tracer, attach type, etc) to
 /// attach to another task, given by `tracee_task`.  Also sends a signal to stop
 /// tracee_task.  Typical for when inheriting ptrace state from another task.
@@ -1165,9 +1143,6 @@ where
 }
 
 pub fn ptrace_traceme(current_task: &mut CurrentTask) -> Result<SyscallResult, Errno> {
-    let ptrace_scope = current_task.kernel().ptrace_scope.load(Ordering::Relaxed);
-    check_caps_for_attach(ptrace_scope, current_task)?;
-
     let parent = current_task.thread_group().read().parent.clone();
     if let Some(parent) = parent {
         let parent = parent.upgrade();
@@ -1199,46 +1174,11 @@ pub fn ptrace_attach<L>(
 where
     L: LockBefore<MmDumpable>,
 {
-    let ptrace_scope = current_task.kernel().ptrace_scope.load(Ordering::Relaxed);
-    check_caps_for_attach(ptrace_scope, current_task)?;
-
     let weak_task = current_task.kernel().pids.read().get_task(pid);
     let tracee = weak_task.upgrade().ok_or_else(|| errno!(ESRCH))?;
-    security::ptrace_access_check(&current_task, &tracee)?;
 
     if tracee.thread_group == current_task.thread_group {
         return error!(EPERM);
-    }
-
-    if *tracee.mm()?.dumpable.lock(locked) == DumpPolicy::Disable {
-        return error!(EPERM);
-    }
-
-    if ptrace_scope == RESTRICTED_SCOPE {
-        // This only allows us to attach to descendants and tasks that have
-        // explicitly allowlisted us with PR_SET_PTRACER.
-        let mut ttg = tracee.thread_group().read().parent.clone();
-        let mut is_parent = false;
-        let my_pid = current_task.thread_group().leader;
-        while let Some(target) = ttg {
-            let target = target.upgrade();
-            if target.as_ref().leader == my_pid {
-                is_parent = true;
-                break;
-            }
-            ttg = target.read().parent.clone();
-        }
-        if !is_parent {
-            match tracee.thread_group().read().allowed_ptracers {
-                PtraceAllowedPtracers::None => return error!(EPERM),
-                PtraceAllowedPtracers::Some(pid) => {
-                    if my_pid != pid {
-                        return error!(EPERM);
-                    }
-                }
-                PtraceAllowedPtracers::Any => {}
-            }
-        }
     }
 
     current_task.check_ptrace_access_mode(locked, PTRACE_MODE_ATTACH_REALCREDS, &tracee)?;
@@ -1360,37 +1300,6 @@ pub fn ptrace_setregset(
     }
 }
 
-pub fn ptrace_set_scope(kernel: &Kernel, data: &[u8]) -> Result<(), Errno> {
-    loop {
-        let ptrace_scope = kernel.ptrace_scope.load(Ordering::Relaxed);
-        if let Ok(val) = parse_unsigned_file::<u8>(data) {
-            // Legal values are 0<=val<=3, unless scope is NO_ATTACH - see Yama
-            // documentation.
-            if ptrace_scope == NO_ATTACH_SCOPE && val != NO_ATTACH_SCOPE {
-                return error!(EINVAL);
-            }
-            if val <= NO_ATTACH_SCOPE {
-                match kernel.ptrace_scope.compare_exchange(
-                    ptrace_scope,
-                    val,
-                    Ordering::Relaxed,
-                    Ordering::Relaxed,
-                ) {
-                    Ok(_) => return Ok(()),
-                    Err(_) => continue,
-                }
-            }
-        }
-        return error!(EINVAL);
-    }
-}
-
-pub fn ptrace_get_scope(kernel: &Kernel) -> Vec<u8> {
-    let mut scope = kernel.ptrace_scope.load(Ordering::Relaxed).to_string();
-    scope.push('\n');
-    scope.into_bytes()
-}
-
 #[inline(never)]
 pub fn ptrace_syscall_enter(locked: &mut Locked<Unlocked>, current_task: &mut CurrentTask) {
     let block = {
@@ -1457,6 +1366,7 @@ mod tests {
     use crate::task::syscalls::sys_prctl;
     use crate::testing::{create_task, spawn_kernel_and_run};
     use starnix_uapi::PR_SET_PTRACER;
+    use starnix_uapi::auth::CAP_SYS_PTRACE;
 
     #[::fuchsia::test]
     async fn test_set_ptracer() {
@@ -1464,7 +1374,12 @@ mod tests {
             let kernel = current_task.kernel().clone();
             let mut tracee = create_task(locked, &kernel, "tracee");
             let mut tracer = create_task(locked, &kernel, "tracer");
-            kernel.ptrace_scope.store(RESTRICTED_SCOPE, Ordering::Relaxed);
+
+            let mut creds = tracer.real_creds().clone();
+            creds.cap_effective &= !CAP_SYS_PTRACE;
+            tracer.set_creds(creds);
+
+            kernel.ptrace_scope.store(security::yama::SCOPE_RESTRICTED, Ordering::Relaxed);
             assert_eq!(
                 sys_prctl(locked, &mut tracee, PR_SET_PTRACER, 0xFFF, 0, 0, 0),
                 error!(EINVAL)
@@ -1495,6 +1410,7 @@ mod tests {
             );
 
             let mut not_tracer = create_task(locked, &kernel, "not-tracer");
+            not_tracer.set_creds(tracer.real_creds());
             assert_eq!(
                 ptrace_attach(
                     locked,
@@ -1526,7 +1442,12 @@ mod tests {
             let kernel = current_task.kernel().clone();
             let mut tracee = create_task(locked, &kernel, "tracee");
             let mut tracer = create_task(locked, &kernel, "tracer");
-            kernel.ptrace_scope.store(RESTRICTED_SCOPE, Ordering::Relaxed);
+
+            let mut creds = tracer.real_creds().clone();
+            creds.cap_effective &= !CAP_SYS_PTRACE;
+            tracer.set_creds(creds);
+
+            kernel.ptrace_scope.store(security::yama::SCOPE_RESTRICTED, Ordering::Relaxed);
             assert_eq!(
                 sys_prctl(locked, &mut tracee, PR_SET_PTRACER, 0xFFF, 0, 0, 0),
                 error!(EINVAL)

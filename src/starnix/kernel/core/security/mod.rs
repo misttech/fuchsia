@@ -22,6 +22,9 @@ pub use selinux_hooks::audit::Auditable;
 /// Common capabilities hook implementations called by the LSM hooks.
 mod common_cap;
 
+/// YAMA hook implementations used to restirct ptrace access.
+pub mod yama;
+
 /// Linux Security Modules hooks for use within the Starnix kernel.
 mod hooks;
 pub use hooks::*;

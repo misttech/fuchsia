@@ -9,7 +9,7 @@ use crate::sys_net::{
 use fidl::endpoints::SynchronousProxy;
 use fidl_fuchsia_hardware_power_suspend as fhps;
 use starnix_core::security;
-use starnix_core::task::{CurrentTask, SeccompAction, ptrace_get_scope, ptrace_set_scope};
+use starnix_core::task::{CurrentTask, SeccompAction};
 use starnix_core::vfs::pseudo::simple_directory::{SimpleDirectory, SimpleDirectoryMutator};
 use starnix_core::vfs::pseudo::simple_file::{BytesFile, BytesFileOps, parse_unsigned_file};
 use starnix_core::vfs::pseudo::stub_bytes_file::StubBytesFile;
@@ -248,7 +248,7 @@ pub fn sysctl_directory(fs: &FileSystemHandle) -> FsNodeHandle {
             dir.entry("actions_logged", SeccompActionsLogged::new_node(), mode);
         });
         dir.subdir("yama", 0o555, |dir| {
-            dir.entry("ptrace_scope", PtraceYamaScope::new_node(), mode);
+            dir.entry("ptrace_scope", security::yama::PtraceScopeFile::new_node(), mode);
         });
     });
     dir.subdir("lsm", 0o555, |dir| {
@@ -599,25 +599,6 @@ impl BytesFileOps for SeccompActionsLogged {
     }
     fn read(&self, current_task: &CurrentTask) -> Result<Cow<'_, [u8]>, Errno> {
         Ok(SeccompAction::get_actions_logged(current_task.kernel()).into())
-    }
-}
-
-struct PtraceYamaScope {}
-
-impl PtraceYamaScope {
-    fn new_node() -> impl FsNodeOps {
-        BytesFile::new_node(Self {})
-    }
-}
-
-impl BytesFileOps for PtraceYamaScope {
-    fn write(&self, current_task: &CurrentTask, data: Vec<u8>) -> Result<(), Errno> {
-        security::check_task_capable(current_task, CAP_SYS_ADMIN)?;
-        ptrace_set_scope(current_task.kernel(), &data)?;
-        Ok(())
-    }
-    fn read(&self, current_task: &CurrentTask) -> Result<Cow<'_, [u8]>, Errno> {
-        Ok(ptrace_get_scope(current_task.kernel()).into())
     }
 }
 

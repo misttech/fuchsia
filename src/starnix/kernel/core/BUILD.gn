@@ -107,6 +107,7 @@ _starnix_core_sources = [
   "security/selinux_hooks/superblock.rs",
   "security/selinux_hooks/task.rs",
   "security/selinux_hooks/testing.rs",
+  "security/yama.rs",
   "signals/mod.rs",
   "signals/signal_handling.rs",
   "signals/signalfd.rs",

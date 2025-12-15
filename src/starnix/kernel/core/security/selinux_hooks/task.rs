@@ -18,6 +18,7 @@ use selinux::{
 };
 use starnix_sync::{LockBefore, Locked, ThreadGroupLimits};
 use starnix_types::ownership::TempRef;
+use starnix_uapi::auth::PtraceAccessMode;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::mount_flags::MountFlags;
 use starnix_uapi::resource_limits::Resource;
@@ -900,15 +901,16 @@ pub(in crate::security) fn ptrace_traceme(
     )
 }
 
-/// Checks if the task with `source_sid` is allowed to trace the task with `target_sid`.
+/// Checks if the `current_task` is permitted the to p-trace `target` with the specified `mode.
 pub(in crate::security) fn ptrace_access_check(
     permission_check: &PermissionCheck<'_>,
     current_task: &CurrentTask,
-    tracee: &Task,
+    target: &Task,
+    _mode: PtraceAccessMode,
 ) -> Result<(), Errno> {
     let audit_context = current_task.into();
     let tracer_sid = current_task_state(current_task).lock().current_sid;
-    let tracee_sid = tracee.security_state.lock().current_sid;
+    let tracee_sid = target.security_state.lock().current_sid;
     check_permission(
         permission_check,
         current_task,
@@ -1072,6 +1074,7 @@ mod tests {
     use crate::security::selinux_hooks::{InitialSid, TaskAttrs, testing};
     use crate::signals::SignalInfo;
     use crate::testing::create_task;
+    use starnix_uapi::auth::PTRACE_MODE_ATTACH;
     use starnix_uapi::signals::{SIGTERM, SigSet};
     use starnix_uapi::{CLONE_SIGHAND, CLONE_THREAD, CLONE_VM, error};
     use testing::spawn_kernel_with_selinux_hooks_test_policy_and_run;
@@ -1879,6 +1882,7 @@ mod tests {
                         &security_server.as_permission_check(),
                         &current_task,
                         &tracee_task,
+                        PTRACE_MODE_ATTACH
                     ),
                     Ok(())
                 );
@@ -1909,6 +1913,7 @@ mod tests {
                         &security_server.as_permission_check(),
                         &current_task,
                         &tracee_task,
+                        PTRACE_MODE_ATTACH
                     ),
                     error!(EACCES)
                 );

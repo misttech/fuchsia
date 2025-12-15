@@ -463,7 +463,7 @@ impl Kernel {
             next_inotify_cookie: AtomicU32Counter::new(1),
             next_file_object_id: Default::default(),
             system_limits,
-            ptrace_scope: AtomicU8::new(0),
+            ptrace_scope: AtomicU8::new(0), // Disable YAMA checks by default.
             restrict_dmesg: AtomicBool::new(false),
             disable_unprivileged_bpf: AtomicU8::new(0), // Enable unprivileged BPF by default.
             build_version: OnceCell::new(),

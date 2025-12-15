@@ -8,7 +8,7 @@
 use super::selinux_hooks::audit::Auditable;
 use super::{
     BinderConnectionState, BpfMapState, BpfProgState, FileObjectState, FileSystemState,
-    KernelState, PerfEventState, ResolvedElfState, TaskState, common_cap, selinux_hooks,
+    KernelState, PerfEventState, ResolvedElfState, TaskState, common_cap, selinux_hooks, yama,
 };
 use crate::bpf::BpfMap;
 use crate::bpf::program::Program;
@@ -37,6 +37,7 @@ use starnix_logging::{CATEGORY_STARNIX_SECURITY, log_debug, trace_duration};
 use starnix_sync::{FileOpsCore, LockBefore, LockEqualOrBefore, Locked, ThreadGroupLimits};
 use starnix_types::ownership::TempRef;
 use starnix_uapi::arc_key::WeakKey;
+use starnix_uapi::auth::PtraceAccessMode;
 use starnix_uapi::device_type::DeviceType;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::file_mode::{Access, FileMode};
@@ -1549,25 +1550,33 @@ pub fn check_syslog_access(source: &CurrentTask, action: SyslogAction) -> Result
 /// Corresponds to the `ptrace_traceme()` LSM hook.
 pub fn ptrace_traceme(current_task: &CurrentTask, parent_tracer_task: &Task) -> Result<(), Errno> {
     track_hook_duration!("security.hooks.ptrace_traceme");
+    yama::ptrace_traceme(current_task, parent_tracer_task)?;
+    common_cap::ptrace_traceme(current_task, parent_tracer_task)?;
     if_selinux_else_default_ok(current_task, |security_server| {
         selinux_hooks::task::ptrace_traceme(
             &security_server.as_permission_check(),
             current_task,
-            &parent_tracer_task,
+            parent_tracer_task,
         )
     })
 }
 
 /// Checks whether the current `current_task` is allowed to trace `tracee_task`.
-/// This fills the role of both of the LSM `ptrace_traceme` and `ptrace_access_check` hooks.
 /// Corresponds to the `ptrace_access_check()` LSM hook.
-pub fn ptrace_access_check(current_task: &CurrentTask, tracee_task: &Task) -> Result<(), Errno> {
+pub fn ptrace_access_check(
+    current_task: &CurrentTask,
+    tracee_task: &Task,
+    mode: PtraceAccessMode,
+) -> Result<(), Errno> {
     track_hook_duration!("security.hooks.ptrace_access_check");
+    yama::ptrace_access_check(current_task, tracee_task, mode)?;
+    common_cap::ptrace_access_check(current_task, tracee_task, mode)?;
     if_selinux_else_default_ok(current_task, |security_server| {
         selinux_hooks::task::ptrace_access_check(
             &security_server.as_permission_check(),
             current_task,
-            &tracee_task,
+            tracee_task,
+            mode,
         )
     })
 }
@@ -2146,6 +2155,7 @@ mod tests {
     use crate::testing::{create_task, spawn_kernel_and_run, spawn_kernel_with_selinux_and_run};
     use linux_uapi::XATTR_NAME_SELINUX;
     use selinux::InitialSid;
+    use starnix_uapi::auth::PTRACE_MODE_ATTACH;
     use starnix_uapi::signals::SIGTERM;
 
     const VALID_SECURITY_CONTEXT: &[u8] = b"u:object_r:test_valid_t:s0";
@@ -2472,7 +2482,10 @@ mod tests {
     async fn ptrace_attach_access_allowed_for_selinux_disabled() {
         spawn_kernel_and_run(async |locked, current_task| {
             let another_task = create_task(locked, &current_task.kernel(), "another-task");
-            assert_eq!(ptrace_access_check(current_task, &another_task), Ok(()));
+            assert_eq!(
+                ptrace_access_check(current_task, &another_task, PTRACE_MODE_ATTACH),
+                Ok(())
+            );
         })
         .await;
     }
@@ -2481,7 +2494,10 @@ mod tests {
     async fn ptrace_attach_access_allowed_for_permissive_mode() {
         spawn_kernel_with_selinux_and_run(async |locked, current_task, _security_server| {
             let another_task = create_task(locked, &current_task.kernel(), "another-task");
-            assert_eq!(ptrace_access_check(current_task, &another_task), Ok(()));
+            assert_eq!(
+                ptrace_access_check(current_task, &another_task, PTRACE_MODE_ATTACH),
+                Ok(())
+            );
         })
         .await;
     }
