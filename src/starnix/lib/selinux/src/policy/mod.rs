@@ -1232,6 +1232,38 @@ pub(super) mod tests {
     }
 
     #[test]
+    fn compute_ioctl_access_decision_denied() {
+        let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy.pp");
+        let unvalidated = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
+        let class_id = find_class_by_name(unvalidated.0.classes(), "class_one_ioctl")
+            .expect("look up class_one_ioctl")
+            .id();
+        let policy = unvalidated.validate().expect("validate policy");
+        let source_context: SecurityContext = policy
+            .parse_security_context(b"user0:object_r:type0:s0-s0".into())
+            .expect("create source security context");
+        let target_context_matched: SecurityContext = source_context.clone();
+
+        // `allowxperm` rules for the `class_one_ioctl` class:
+        //
+        // `allowxperm type0 self:class_one_ioctl ioctl { 0xabcd };`
+        let decision_single = policy.compute_xperms_access_decision(
+            XpermsKind::Ioctl,
+            &source_context,
+            &target_context_matched,
+            class_id,
+            0xdb,
+        );
+
+        let expected_decision = XpermsAccessDecision {
+            allow: XpermsBitmap::NONE,
+            auditallow: XpermsBitmap::NONE,
+            auditdeny: XpermsBitmap::ALL,
+        };
+        assert_eq!(decision_single, expected_decision);
+    }
+
+    #[test]
     fn compute_ioctl_access_decision_unmatched() {
         let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy.pp");
         let policy = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
