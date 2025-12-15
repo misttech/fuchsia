@@ -5,6 +5,7 @@
     include: [
         "//src/media/audio/audio_core/testing/integration/meta/shard.cml",
         "//src/sys/test_runners/gtest/default.shard.cml",
+        "driver_test_realm/realm_builder/client.shard.cml",
     ],
     program: {
         binary: "bin/audio-core-stress-tests-bin",

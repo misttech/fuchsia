@@ -36,9 +36,6 @@ fuchsia_unittest_package("package") {
     # Include the driver(s) you will be testing.
     "//examples/drivers/driver_test_realm/sample_driver",
 
-    # DTR requirements.
-    "//sdk/lib/driver_test_realm/realm_builder:client_includes",
-
     # Include the test parent (if your driver binds to it).
     "//src/devices/misc/drivers/test-parent",
   ]

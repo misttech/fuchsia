@@ -127,7 +127,6 @@ test("netsvc-test") {
     "//sdk/lib/component/incoming/cpp",
     "//sdk/lib/component/outgoing/cpp",
     "//sdk/lib/fdio",
-    "//src/devices/testing/devmgr-integration-test-shim",
     "//src/storage/lib/ramdevice_client/cpp",
     "//zircon/system/ulib/mock-boot-arguments",
     "//zircon/system/ulib/zircon-internal",

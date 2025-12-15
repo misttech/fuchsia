@@ -4,6 +4,8 @@
 {
     include: [
         "//src/sys/test_runners/rust/default.shard.cml",
+        "driver_test_realm/realm_builder/client.shard.cml",
+        "//src/sys/test_runners/rust/default.shard.cml",
         "sys/component/realm_builder.shard.cml",
         "syslog/client.shard.cml",
     ],

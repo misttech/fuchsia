@@ -21,6 +21,7 @@ sdk_source_set("cpp") {
 
   non_sdk_public_deps = [
     "//sdk/lib/driver_test_realm",
+    "//sdk/lib/driver_test_realm/realm_builder:client_includes",
     "//sdk/lib/sys/component/cpp/testing:cpp",
   ]
 
