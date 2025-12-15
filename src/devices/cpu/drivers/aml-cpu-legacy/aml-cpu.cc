@@ -312,16 +312,22 @@ void AmlCpu::SetCurrentOperatingPoint(SetCurrentOperatingPointRequestView reques
 }
 
 void AmlCpu::GetCurrentOperatingPoint(GetCurrentOperatingPointCompleter::Sync& completer) {
-  std::scoped_lock lock(lock_);
-  completer.Reply(current_operating_point_);
+  uint32_t operating_point = 0;
+  {
+    std::scoped_lock lock(lock_);
+    operating_point = current_operating_point_;
+  }
+  completer.Reply(operating_point);
 }
 
 void AmlCpu::GetOperatingPointCount(GetOperatingPointCountCompleter::Sync& completer) {
-  zx_status_t status;
+  zx_status_t status = ZX_ERR_INTERNAL;
   fuchsia_thermal::wire::OperatingPoint opps;
-  std::scoped_lock lock(lock_);
+  {
+    std::scoped_lock lock(lock_);
+    status = GetThermalOperatingPoints(&opps);
+  }
 
-  status = GetThermalOperatingPoints(&opps);
   if (status != ZX_OK) {
     zxlogf(ERROR, "%s: Failed to get Thermal operating points, st = %d", __func__, status);
     completer.ReplyError(status);

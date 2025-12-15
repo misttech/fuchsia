@@ -363,6 +363,7 @@ class AmlCpuTestFixture : public InspectTestHelper, public zxtest::Test {
  public:
   explicit AmlCpuTestFixture() : loop_(&kAsyncLoopConfigNoAttachToCurrentThread) {}
   void SetUp() override;
+  void TearDown() override { loop_.Shutdown(); }
 
  protected:
   FakeAmlThermal thermal_;
