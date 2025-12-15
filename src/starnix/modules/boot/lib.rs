@@ -14,7 +14,7 @@ use starnix_core::vfs::{
     CloseFreeSafe, FileObject, FileOps, NamespaceNode, fileops_impl_nonseekable,
     fileops_impl_noop_sync,
 };
-use starnix_logging::{log_error, log_info};
+use starnix_logging::{log_error, log_info, log_warn};
 use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Mutex, Unlocked};
 use starnix_uapi::device_type::DeviceType;
 use starnix_uapi::error;
@@ -62,16 +62,9 @@ impl BootedDevice {
         let boot_timestamp = inspect_node.create_uint(INSPECT_KEY, 0);
 
         let booster = if cpu_boost {
-            log_info!("Enabling boot-time CPU boost");
-            let booster = kernel
-                .connect_to_protocol_at_container_svc::<BoostMarker>()
-                .context("connecting to cpu boost protocol")?
-                .into_sync_proxy();
-            booster
-                .set_boost(true, zx::MonotonicInstant::INFINITE)
-                .context("sending set boost message")?
-                .map_err(|e| anyhow::format_err!("failed setting boost: {e:?}"))?;
-            Some(booster)
+            try_boost_cpu(kernel)
+                .inspect_err(|e| log_warn!(e:?; "Failed to enable boot-time CPU boost"))
+                .ok()
         } else {
             None
         };
@@ -224,4 +217,17 @@ impl DeviceOps for BootedDevice {
         let file = self.inner.file.clone();
         Ok(Box::new(file))
     }
+}
+
+fn try_boost_cpu(kernel: &Kernel) -> Result<BoostSynchronousProxy, anyhow::Error> {
+    log_info!("Enabling boot-time CPU boost");
+    let booster = kernel
+        .connect_to_protocol_at_container_svc::<BoostMarker>()
+        .context("connecting to cpu boost protocol")?
+        .into_sync_proxy();
+    booster
+        .set_boost(true, zx::MonotonicInstant::INFINITE)
+        .context("sending set boost message")?
+        .map_err(|e| anyhow::format_err!("failed setting boost: {e:?}"))?;
+    Ok(booster)
 }
