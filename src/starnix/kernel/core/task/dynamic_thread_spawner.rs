@@ -238,15 +238,9 @@ where
         let mut exec = fuchsia_async::LocalExecutor::default();
         let locked_and_task = LockedAndTask::new(locked, current_task);
 
-        let (sender, receiver) = sync_channel::<R>(1);
         let locked_and_task_clone = locked_and_task.clone();
-        let fut = async move {
-            let result = f(locked_and_task_clone).await;
-            let _ = sender.send(result);
-        };
-        let wrapped_future = WrappedSpawnedFuture::new(locked_and_task, fut);
-        exec.run_singlethreaded(wrapped_future);
-        receiver.recv().expect("recv call worked")
+        let wrapped_future = WrappedSpawnedFuture::new(locked_and_task, f(locked_and_task_clone));
+        exec.run_singlethreaded(wrapped_future)
     }
 }
 

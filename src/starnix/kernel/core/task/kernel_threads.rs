@@ -230,8 +230,8 @@ impl<F, C: Clone> WrappedFuture<F, C> {
     }
 }
 
-impl<F: Future<Output = ()>, C: Clone> Future for WrappedFuture<F, C> {
-    type Output = ();
+impl<F: Future, C: Clone> Future for WrappedFuture<F, C> {
+    type Output = F::Output;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = self.project();
