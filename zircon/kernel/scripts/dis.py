@@ -102,6 +102,13 @@ the build directory, using its name with a ".lst" suffix.""",
         action="store_false",
     )
     parser.add_argument(
+        "--inlined-funcs",
+        "-i",
+        help="Display inlined function information (llvm-objdump only)",
+        action="store_true",
+        default=False,
+    )
+    parser.add_argument(
         "-G",
         "--gnu",
         action="store_true",
@@ -145,6 +152,10 @@ the build directory, using its name with a ".lst" suffix.""",
         objdump_args.append("--reloc")
     if args.demangle:
         objdump_args.append("--demangle")
+
+    # Enable inlined function display support when using llvm-objdump.
+    if args.inlined_funcs and not args.gnu:
+        objdump_args.append("--debug-inlined-funcs=limits-only")
 
     build_dir = Path(getenv("FUCHSIA_BUILD_DIR"))
     (bin_path, bin_label) = find_binary(build_dir, args.binary)
