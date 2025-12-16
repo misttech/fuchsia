@@ -932,7 +932,7 @@ func (f *FFXInstance) Snapshot(ctx context.Context, outDir string, snapshotFilen
 
 // StartFFXMonitor start an ffx monitor instance.
 func (f *FFXInstance) StartFFXMonitor(ctx context.Context, port string) error {
-	return f.invoker([]string{"monitor", "start", "--nodename", f.target, "--port", port}).setTimeout(0).setStrict().run(ctx)
+	return f.invoker([]string{"monitor", "start", "--nodename", f.target, "--port", port, "--no-usb"}).setTimeout(0).setStrict().run(ctx)
 }
 
 // StopFFXMonitor stops the ffx monitor.
