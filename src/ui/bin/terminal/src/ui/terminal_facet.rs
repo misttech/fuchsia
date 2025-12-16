@@ -98,7 +98,7 @@ impl<T: 'static> Facet for TerminalFacet<T> {
         render_context: &mut RenderContext,
         view_context: &ViewAssistantContext,
     ) -> Result<(), Error> {
-        ftrace::duration!(c"terminal", c"TerminalFacet:update_layers");
+        ftrace::duration!("terminal", "TerminalFacet:update_layers");
 
         self.size = view_context.size;
 

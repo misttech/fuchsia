@@ -894,7 +894,7 @@ pub fn start_flatland_presentation_loop(
                 flatland_event = flatland_event_stream.next() => {
                     match flatland_event {
                         Some(Ok(ui_comp::FlatlandEvent::OnNextFrameBegin{ values })) => {
-                            trace::duration!(c"scene_manager", c"SceneManager::OnNextFrameBegin",
+                            trace::duration!("scene_manager", "SceneManager::OnNextFrameBegin",
                                              "debug_name" => &*debug_name);
                             let credits = values
                                           .additional_present_credits
@@ -913,7 +913,7 @@ pub fn start_flatland_presentation_loop(
                             scheduler.on_next_frame_begin(credits, infos);
                         }
                         Some(Ok(ui_comp::FlatlandEvent::OnFramePresented{ frame_presented_info })) => {
-                            trace::duration!(c"scene_manager", c"SceneManager::OnFramePresented",
+                            trace::duration!("scene_manager", "SceneManager::OnFramePresented",
                                              "debug_name" => &*debug_name);
                             let actual_presentation_time =
                                 zx::MonotonicInstant::from_nanos(frame_presented_info.actual_presentation_time);
@@ -944,18 +944,18 @@ pub fn start_flatland_presentation_loop(
                     }
                 }
                 present_parameters = scheduler.wait_to_update().fuse() => {
-                    trace::duration!(c"scene_manager", c"SceneManager::Present",
+                    trace::duration!("scene_manager", "SceneManager::Present",
                                      "debug_name" => &*debug_name);
 
                     match debug_name.as_str() {
                         ROOT_VIEW_DEBUG_NAME => {
-                            trace::flow_begin!(c"gfx", ROOT_VIEW_PRESENT_TRACING_NAME, present_count.into());
+                            trace::flow_begin!("gfx", ROOT_VIEW_PRESENT_TRACING_NAME, present_count.into());
                         }
                         POINTER_INJECTOR_DEBUG_NAME => {
-                            trace::flow_begin!(c"gfx", POINTER_INJECTOR_PRESENT_TRACING_NAME, present_count.into());
+                            trace::flow_begin!("gfx", POINTER_INJECTOR_PRESENT_TRACING_NAME, present_count.into());
                         }
                         SCENE_DEBUG_NAME => {
-                            trace::flow_begin!(c"gfx", SCENE_TRACING_NAME, present_count.into());
+                            trace::flow_begin!("gfx", SCENE_TRACING_NAME, present_count.into());
                         }
                         _ => {
                             warn!("SceneManager::Present with unknown debug_name {:?}", debug_name);

@@ -540,7 +540,7 @@ impl ViewStrategy for DisplayDirectViewStrategy {
         view_details: &ViewDetails,
         view_assistant: &mut ViewAssistantPtr,
     ) -> bool {
-        duration!(c"gfx", c"DisplayDirectViewStrategy::update");
+        duration!("gfx", "DisplayDirectViewStrategy::update");
         self.maybe_reallocate_display_resources()
             .await
             .expect("maybe_reallocate_display_resources");
@@ -563,7 +563,7 @@ impl ViewStrategy for DisplayDirectViewStrategy {
     }
 
     fn present(&mut self, view_details: &ViewDetails) {
-        duration!(c"gfx", c"DisplayDirectViewStrategy::present");
+        duration!("gfx", "DisplayDirectViewStrategy::present");
 
         if self.render_frame_count == 1 && self.presented.is_some() {
             return;
@@ -701,7 +701,7 @@ impl ViewStrategy for DisplayDirectViewStrategy {
             CoordinatorListenerRequest::OnVsync {
                 timestamp, cookie, applied_config_stamp, ..
             } => {
-                duration!(c"gfx", c"DisplayDirectViewStrategy::OnVsync");
+                duration!("gfx", "DisplayDirectViewStrategy::OnVsync");
                 let vsync_interval = MonotonicDuration::from_nanos(
                     1_000_000_000_000 / self.display.info.modes[0].refresh_rate_millihertz as i64,
                 );

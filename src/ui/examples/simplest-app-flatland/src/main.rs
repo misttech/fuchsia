@@ -319,28 +319,28 @@ async fn main() {
                       break;
                   }
                   InternalMessage::OnNextFrameBegin {} => {
-                    trace::duration!(c"gfx", c"SimplestApp::OnNextFrameBegin");
+                    trace::duration!("gfx", "SimplestApp::OnNextFrameBegin");
 
                     // End all flows from where the update was applied.
                     for trace_id in touch_updates.drain(..) {
-                        trace::flow_end!(c"input", c"touch_update", trace_id);
+                        trace::flow_end!("input", "touch_update", trace_id);
                     }
 
                     // Present all pending updates with a trace flow into Scenic based on
                     // present_count.
-                    trace::flow_begin!(c"gfx", c"Flatland::PerAppPresent[simplest-app-flatland]", present_count.into());
+                    trace::flow_begin!("gfx", "Flatland::PerAppPresent[simplest-app-flatland]", present_count.into());
                     flatland.present(fland::PresentArgs::default()).expect("Present call failed");
                     present_count += 1;
                   }
                   InternalMessage::TouchEvent{ phase, trace_id } => {
-                    trace::duration!(c"input", c"OnTouchEvent");
-                    trace::flow_end!(c"input", c"touch_in_simplest_app", trace_id);
+                    trace::duration!("input", "OnTouchEvent");
+                    trace::flow_end!("input", "touch_in_simplest_app", trace_id);
                     // Change color on every finger down event.
                     if phase == EventPhase::Add {
                         // Trace from now until the update is applied.
                         let trace_id = trace::Id::random();
                         touch_updates.push(trace_id);
-                        trace::flow_begin!(c"input", c"touch_update", trace_id);
+                        trace::flow_begin!("input", "touch_update", trace_id);
                         app.next_color();
                     }
                   },

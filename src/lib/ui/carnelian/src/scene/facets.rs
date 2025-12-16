@@ -624,7 +624,7 @@ impl Facet for RiveFacet {
         render_context: &mut RenderContext,
         _view_context: &ViewAssistantContext,
     ) -> Result<(), Error> {
-        duration!(c"gfx", c"render::RiveFacet::update_layers");
+        duration!("gfx", "render::RiveFacet::update_layers");
 
         let artboard_ref = self.artboard.as_ref();
         let width = self.size.width as f32;

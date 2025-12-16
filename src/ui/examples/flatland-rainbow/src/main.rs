@@ -272,7 +272,7 @@ impl<'a> AppModel<'a> {
         expected_presentation_time: zx::MonotonicInstant,
         renderer: &mut dyn Renderer,
     ) {
-        trace::duration!(c"gfx", c"FlatlandViewProvider::draw");
+        trace::duration!("gfx", "FlatlandViewProvider::draw");
 
         self.frame_count += 1;
         let buffer_index = self.frame_count % IMAGE_COUNT;
@@ -480,7 +480,7 @@ async fn main() {
                       additional_present_credits,
                       future_presentation_infos,
                   } => {
-                    trace::duration!(c"gfx", c"FlatlandViewProvider::OnNextFrameBegin");
+                    trace::duration!("gfx", "FlatlandViewProvider::OnNextFrameBegin");
                     let infos = future_presentation_infos
                     .iter()
                     .map(
@@ -492,7 +492,7 @@ async fn main() {
                     sched_lib.on_next_frame_begin(additional_present_credits, infos);
                   }
                   InternalMessage::OnFramePresented { frame_presented_info } => {
-                    trace::duration!(c"gfx", c"FlatlandViewProvider::OnFramePresented");
+                    trace::duration!("gfx", "FlatlandViewProvider::OnFramePresented");
                     let presented_infos = frame_presented_info.presentation_infos
                     .iter()
                     .map(|info| PresentedInfo{
@@ -528,9 +528,9 @@ async fn main() {
             }
           }
           present_parameters = sched_lib.wait_to_update().fuse() => {
-            trace::duration!(c"gfx", c"FlatlandApp::PresentBegin");
+            trace::duration!("gfx", "FlatlandApp::PresentBegin");
             app.draw(present_parameters.expected_presentation_time, renderer.deref_mut());
-            trace::flow_begin!(c"gfx", c"Flatland::PerAppPresent[flatland-rainbow-example]", present_count.into());
+            trace::flow_begin!("gfx", "Flatland::PerAppPresent[flatland-rainbow-example]", present_count.into());
             present_count += 1;
             flatland
                 .present(fland::PresentArgs {

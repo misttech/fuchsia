@@ -251,7 +251,7 @@ impl ViewAssistant for ShapeDropViewAssistant {
         ready_event: Event,
         context: &ViewAssistantContext,
     ) -> Result<(), Error> {
-        duration!(c"gfx", c"ShapeDropViewAssistant::render");
+        duration!("gfx", "ShapeDropViewAssistant::render");
 
         let background_color = self.background_color;
 

@@ -411,7 +411,7 @@ impl TerminalViewAssistant {
                             );
                             0
                         });
-                        ftrace::duration!(c"terminal", c"parse_bytes", "len" => read_count as u32);
+                        ftrace::duration!("terminal", "parse_bytes", "len" => read_count as u32);
                         let mut term = term_clone.borrow_mut();
                         if read_count > 0 {
                             for byte in &read_buf[0..read_count] {
@@ -591,7 +591,7 @@ impl ViewAssistant for TerminalViewAssistant {
         ready_event: zx::Event,
         context: &ViewAssistantContext,
     ) -> Result<(), Error> {
-        ftrace::duration!(c"terminal", c"TerminalViewAssistant:render");
+        ftrace::duration!("terminal", "TerminalViewAssistant:render");
 
         // we need to call spawn in this update block because calling it in the
         // setup method causes us to receive write events before the view is

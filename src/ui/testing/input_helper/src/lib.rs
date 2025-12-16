@@ -495,9 +495,9 @@ async fn handle_touchscreen_request_stream(
             Ok(TouchScreenRequest::SimulateTap { payload, responder }) => {
                 let tap_location = payload.tap_location.expect("missing tap location");
                 {
-                    fuchsia_trace::duration!(c"input", c"simulate_tap_down");
+                    fuchsia_trace::duration!("input", "simulate_tap_down");
                     let trace_id = fuchsia_trace::Id::random();
-                    fuchsia_trace::flow_begin!(c"input", c"input_report", trace_id);
+                    fuchsia_trace::flow_begin!("input", "input_report", trace_id);
                     touchscreen_device
                         .send_input_report(input_report_for_touch_contacts(
                             vec![(1, tap_location)],
@@ -508,9 +508,9 @@ async fn handle_touchscreen_request_stream(
 
                 // Send a report with an empty set of touch contacts, so that input
                 // pipeline generates a pointer event with phase == UP.
-                fuchsia_trace::duration!(c"input", c"simulate_tap_up");
+                fuchsia_trace::duration!("input", "simulate_tap_up");
                 let trace_id = fuchsia_trace::Id::random();
-                fuchsia_trace::flow_begin!(c"input", c"input_report", trace_id);
+                fuchsia_trace::flow_begin!("input", "input_report", trace_id);
                 touchscreen_device
                     .send_input_report(input_report_for_touch_contacts(
                         vec![],
@@ -546,9 +546,9 @@ async fn handle_touchscreen_request_stream(
                     let event_y = start_y_f + (i_f * step_size_y);
 
                     {
-                        fuchsia_trace::duration!(c"input", c"simulate_swipe_move", "idx"=>i);
+                        fuchsia_trace::duration!("input", "simulate_swipe_move", "idx"=>i);
                         let trace_id = fuchsia_trace::Id::random();
-                        fuchsia_trace::flow_begin!(c"input", c"input_report", trace_id);
+                        fuchsia_trace::flow_begin!("input", "input_report", trace_id);
 
                         touchscreen_device
                             .send_input_report(input_report_for_touch_contacts(
@@ -562,9 +562,9 @@ async fn handle_touchscreen_request_stream(
 
                 // Send a report with an empty set of touch contacts, so that input
                 // pipeline generates a pointer event with phase == UP.
-                fuchsia_trace::duration!(c"input", c"simulate_swipe_up");
+                fuchsia_trace::duration!("input", "simulate_swipe_up");
                 let trace_id = fuchsia_trace::Id::random();
-                fuchsia_trace::flow_begin!(c"input", c"input_report", trace_id);
+                fuchsia_trace::flow_begin!("input", "input_report", trace_id);
                 touchscreen_device
                     .send_input_report(input_report_for_touch_contacts(
                         vec![],
@@ -578,9 +578,9 @@ async fn handle_touchscreen_request_stream(
                 let tap_locations = payload.tap_locations.expect("missing tap locations");
 
                 {
-                    fuchsia_trace::duration!(c"input", c"simulate_multi_tap_down");
+                    fuchsia_trace::duration!("input", "simulate_multi_tap_down");
                     let trace_id = fuchsia_trace::Id::random();
-                    fuchsia_trace::flow_begin!(c"input", c"input_report", trace_id);
+                    fuchsia_trace::flow_begin!("input", "input_report", trace_id);
                     touchscreen_device
                         .send_input_report(input_report_for_touch_contacts(
                             tap_locations
@@ -595,9 +595,9 @@ async fn handle_touchscreen_request_stream(
 
                 // Send a report with an empty set of touch contacts, so that input
                 // pipeline generates a pointer event with phase == UP.
-                fuchsia_trace::duration!(c"input", c"simulate_multi_tap_up");
+                fuchsia_trace::duration!("input", "simulate_multi_tap_up");
                 let trace_id = fuchsia_trace::Id::random();
-                fuchsia_trace::flow_begin!(c"input", c"input_report", trace_id);
+                fuchsia_trace::flow_begin!("input", "input_report", trace_id);
                 touchscreen_device
                     .send_input_report(input_report_for_touch_contacts(
                         vec![],
@@ -642,9 +642,9 @@ async fn handle_touchscreen_request_stream(
                         contacts.push((finger as u32, math::Vec_ { x: event_x, y: event_y }));
                     }
 
-                    fuchsia_trace::duration!(c"input", c"simulate_multi_finger_gesture_move", "idx"=>i);
+                    fuchsia_trace::duration!("input", "simulate_multi_finger_gesture_move", "idx"=>i);
                     let trace_id = fuchsia_trace::Id::random();
-                    fuchsia_trace::flow_begin!(c"input", c"input_report", trace_id);
+                    fuchsia_trace::flow_begin!("input", "input_report", trace_id);
 
                     touchscreen_device
                         .send_input_report(input_report_for_touch_contacts(
@@ -656,9 +656,9 @@ async fn handle_touchscreen_request_stream(
 
                 // Send a report with an empty set of touch contacts, so that input
                 // pipeline generates a pointer event with phase == UP.
-                fuchsia_trace::duration!(c"input", c"simulate_multi_finger_gesture_up");
+                fuchsia_trace::duration!("input", "simulate_multi_finger_gesture_up");
                 let trace_id = fuchsia_trace::Id::random();
-                fuchsia_trace::flow_begin!(c"input", c"input_report", trace_id);
+                fuchsia_trace::flow_begin!("input", "input_report", trace_id);
                 touchscreen_device
                     .send_input_report(input_report_for_touch_contacts(
                         vec![],
@@ -669,9 +669,9 @@ async fn handle_touchscreen_request_stream(
                 responder.send().expect("Failed to send SimulateMultiFingerGesture response");
             }
             Ok(TouchScreenRequest::SimulateTouchEvent { report, responder }) => {
-                fuchsia_trace::duration!(c"input", c"simulate_touch_event");
+                fuchsia_trace::duration!("input", "simulate_touch_event");
                 let trace_id = fuchsia_trace::Id::random();
-                fuchsia_trace::flow_begin!(c"input", c"input_report", trace_id);
+                fuchsia_trace::flow_begin!("input", "input_report", trace_id);
                 let input_report = InputReport {
                     event_time: Some(fasync::MonotonicInstant::now().into_nanos()),
                     touch: Some(report),
