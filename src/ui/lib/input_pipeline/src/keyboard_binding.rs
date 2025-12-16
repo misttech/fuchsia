@@ -443,13 +443,13 @@ impl KeyboardBinding {
         inspect_status: &InputDeviceStatus,
         metrics_logger: &metrics::MetricsLogger,
     ) -> (Option<InputReport>, Option<UnboundedReceiver<InputEvent>>) {
-        fuchsia_trace::duration!(c"input", c"keyboard-binding-process-report");
+        fuchsia_trace::duration!("input", "keyboard-binding-process-report");
         if let Some(trace_id) = report.trace_id {
-            fuchsia_trace::flow_end!(c"input", c"input_report", trace_id.into());
+            fuchsia_trace::flow_end!("input", "input_report", trace_id.into());
         }
 
         let tracing_id = fuchsia_trace::Id::random();
-        fuchsia_trace::flow_begin!(c"input", c"key_event_thread", tracing_id);
+        fuchsia_trace::flow_begin!("input", "key_event_thread", tracing_id);
 
         inspect_status.count_received_report(&report);
         // Input devices can have multiple types so ensure `report` is a KeyboardInputReport.
@@ -547,14 +547,14 @@ impl KeyboardBinding {
             tracing_id: fuchsia_trace::Id,
         ) {
             fasync::Task::local(async move {
-                fuchsia_trace::duration!(c"input", c"key_event_thread");
-                fuchsia_trace::flow_end!(c"input", c"key_event_thread", tracing_id);
+                fuchsia_trace::duration!("input", "key_event_thread");
+                fuchsia_trace::flow_end!("input", "key_event_thread", tracing_id);
 
                 let mut event_time = event_time;
                 for (key, event_type) in key_events.into_iter() {
                     let trace_id = fuchsia_trace::Id::random();
-                    fuchsia_trace::duration!(c"input", c"keyboard_event_in_binding");
-                    fuchsia_trace::flow_begin!(c"input", c"event_in_input_pipeline", trace_id);
+                    fuchsia_trace::duration!("input", "keyboard_event_in_binding");
+                    fuchsia_trace::flow_begin!("input", "event_in_input_pipeline", trace_id);
 
                     let event = input_device::InputEvent {
                         device_event: input_device::InputDeviceEvent::Keyboard(

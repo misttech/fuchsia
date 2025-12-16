@@ -39,7 +39,7 @@ impl UnhandledInputHandler for KeymapHandler {
         self: Rc<Self>,
         input_event: input_device::UnhandledInputEvent,
     ) -> Vec<input_device::InputEvent> {
-        fuchsia_trace::duration!(c"input", c"keymap_handler");
+        fuchsia_trace::duration!("input", "keymap_handler");
         match input_event.clone() {
             // Decorate a keyboard event with key meaning.
             input_device::UnhandledInputEvent {
@@ -48,7 +48,7 @@ impl UnhandledInputHandler for KeymapHandler {
                 event_time,
                 trace_id,
             } => {
-                fuchsia_trace::duration!(c"input", c"keymap_handler[processing]");
+                fuchsia_trace::duration!("input", "keymap_handler[processing]");
                 self.inspect_status.count_received_event(&event_time);
                 vec![input_device::InputEvent::from(self.process_keyboard_event(
                     event,
@@ -95,7 +95,7 @@ impl KeymapHandler {
         trace_id: Option<fuchsia_trace::Id>,
     ) -> input_device::UnhandledInputEvent {
         if let Some(trace_id) = trace_id {
-            fuchsia_trace::flow_step!(c"input", c"event_in_input_pipeline", trace_id.into());
+            fuchsia_trace::flow_step!("input", "event_in_input_pipeline", trace_id.into());
         }
 
         let (key, event_type) = (event.get_key(), event.get_event_type());

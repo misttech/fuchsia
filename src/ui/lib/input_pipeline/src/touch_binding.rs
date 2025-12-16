@@ -583,8 +583,8 @@ fn process_touch_screen_reports(
     inspect_status: &InputDeviceStatus,
     metrics_logger: &metrics::MetricsLogger,
 ) -> (Option<InputReport>, Option<UnboundedReceiver<InputEvent>>) {
-    fuchsia_trace::duration!(c"input", c"touch-binding-process-report");
-    fuchsia_trace::flow_end!(c"input", c"input_report", report.trace_id.unwrap_or(0).into());
+    fuchsia_trace::duration!("input", "touch-binding-process-report");
+    fuchsia_trace::flow_end!("input", "input_report", report.trace_id.unwrap_or(0).into());
 
     // Input devices can have multiple types so ensure `report` is a TouchInputReport.
     let touch_report: &fidl_fuchsia_input_report::TouchInputReport = match &report.touch {
@@ -653,7 +653,7 @@ fn process_touch_screen_reports(
         }));
 
     let trace_id = fuchsia_trace::Id::random();
-    fuchsia_trace::flow_begin!(c"input", c"event_in_input_pipeline", trace_id);
+    fuchsia_trace::flow_begin!("input", "event_in_input_pipeline", trace_id);
     send_touch_screen_event(
         hashmap! {
             fidl_ui_input::PointerEventPhase::Add => added_contacts.clone(),
@@ -686,9 +686,9 @@ fn process_touchpad_reports(
     inspect_status: &InputDeviceStatus,
     metrics_logger: &metrics::MetricsLogger,
 ) -> (Option<InputReport>, Option<UnboundedReceiver<InputEvent>>) {
-    fuchsia_trace::duration!(c"input", c"touch-binding-process-report");
+    fuchsia_trace::duration!("input", "touch-binding-process-report");
     if let Some(trace_id) = report.trace_id {
-        fuchsia_trace::flow_end!(c"input", c"input_report", trace_id.into());
+        fuchsia_trace::flow_end!("input", "input_report", trace_id.into());
     }
 
     // Input devices can have multiple types so ensure `report` is a TouchInputReport.
@@ -721,7 +721,7 @@ fn process_touchpad_reports(
     };
 
     let trace_id = fuchsia_trace::Id::random();
-    fuchsia_trace::flow_begin!(c"input", c"event_in_input_pipeline", trace_id);
+    fuchsia_trace::flow_begin!("input", "event_in_input_pipeline", trace_id);
     send_touchpad_event(
         current_contacts,
         buttons,

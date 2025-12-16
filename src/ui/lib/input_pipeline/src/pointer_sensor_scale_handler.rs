@@ -45,7 +45,7 @@ impl UnhandledInputHandler for PointerSensorScaleHandler {
         self: Rc<Self>,
         unhandled_input_event: input_device::UnhandledInputEvent,
     ) -> Vec<input_device::InputEvent> {
-        fuchsia_trace::duration!(c"input", c"pointer_sensor_scale_handler");
+        fuchsia_trace::duration!("input", "pointer_sensor_scale_handler");
         match unhandled_input_event.clone() {
             input_device::UnhandledInputEvent {
                 device_event:
@@ -76,9 +76,9 @@ impl UnhandledInputHandler for PointerSensorScaleHandler {
                 event_time,
                 trace_id,
             } => {
-                fuchsia_trace::duration!(c"input", c"pointer_sensor_scale_handler[processing]");
+                fuchsia_trace::duration!("input", "pointer_sensor_scale_handler[processing]");
                 let tracing_id = trace_id.unwrap_or_else(|| 0.into());
-                fuchsia_trace::flow_step!(c"input", c"event_in_input_pipeline", tracing_id);
+                fuchsia_trace::flow_step!("input", "event_in_input_pipeline", tracing_id);
 
                 self.inspect_status.count_received_event(&event_time);
                 let scaled_motion = self.scale_motion(raw_motion, event_time);
@@ -139,7 +139,7 @@ impl UnhandledInputHandler for PointerSensorScaleHandler {
                 event_time,
                 trace_id,
             } => {
-                fuchsia_trace::duration!(c"input", c"pointer_sensor_scale_handler[processing]");
+                fuchsia_trace::duration!("input", "pointer_sensor_scale_handler[processing]");
                 if let Some(trace_id) = trace_id {
                     fuchsia_trace::flow_step!(
                         c"input",

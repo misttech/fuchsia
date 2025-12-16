@@ -410,7 +410,7 @@ impl UnhandledInputHandler for FactoryResetHandler {
         self: Rc<Self>,
         unhandled_input_event: input_device::UnhandledInputEvent,
     ) -> Vec<input_device::InputEvent> {
-        fuchsia_trace::duration!(c"input", c"factory_reset_handler");
+        fuchsia_trace::duration!("input", "factory_reset_handler");
         match unhandled_input_event {
             input_device::UnhandledInputEvent {
                 device_event: input_device::InputDeviceEvent::ConsumerControls(ref event),
@@ -418,7 +418,7 @@ impl UnhandledInputHandler for FactoryResetHandler {
                 event_time,
                 trace_id: _,
             } => {
-                fuchsia_trace::duration!(c"input", c"factory_reset_handler[processing]");
+                fuchsia_trace::duration!("input", "factory_reset_handler[processing]");
                 self.inspect_status.count_received_event(&event_time);
                 match self.factory_reset_state() {
                     FactoryResetState::Idle => {

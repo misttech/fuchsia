@@ -83,7 +83,7 @@ impl UnhandledInputHandler for TouchInjectorHandler {
         self: Rc<Self>,
         mut unhandled_input_event: input_device::UnhandledInputEvent,
     ) -> Vec<input_device::InputEvent> {
-        fuchsia_trace::duration!(c"input", c"touch_injector_handler");
+        fuchsia_trace::duration!("input", "touch_injector_handler");
         match unhandled_input_event {
             input_device::UnhandledInputEvent {
                 device_event: input_device::InputDeviceEvent::TouchScreen(ref mut touch_event),
@@ -93,9 +93,9 @@ impl UnhandledInputHandler for TouchInjectorHandler {
                 trace_id,
             } => {
                 self.inspect_status.count_received_event(&event_time);
-                fuchsia_trace::duration!(c"input", c"touch_injector_handler[processing]");
+                fuchsia_trace::duration!("input", "touch_injector_handler[processing]");
                 if let Some(trace_id) = trace_id {
-                    fuchsia_trace::flow_end!(c"input", c"event_in_input_pipeline", trace_id.into());
+                    fuchsia_trace::flow_end!("input", "event_in_input_pipeline", trace_id.into());
                 }
                 if touch_event.injector_contacts.values().all(|vec| vec.is_empty()) {
                     let mut touch_buttons_event = Self::create_touch_buttons_event(
@@ -352,7 +352,7 @@ impl TouchInjectorHandler {
         // The duration should start before the flow_begin is minted in
         // create_pointer_sample_event, and it should not include the injector.inject() call's
         // return from await.
-        fuchsia_trace::duration_begin!(c"input", c"touch-inject-into-scenic");
+        fuchsia_trace::duration_begin!("input", "touch-inject-into-scenic");
 
         let mut events: Vec<pointerinjector::Event> = vec![];
         for phase in ordered_phases {
@@ -377,11 +377,11 @@ impl TouchInjectorHandler {
             self.mutable_state.borrow().injectors.get(&touch_descriptor.device_id).cloned();
         if let Some(injector) = injector {
             // This trace duration ends before calling inject_events.
-            fuchsia_trace::duration_end!(c"input", c"touch-inject-into-scenic");
+            fuchsia_trace::duration_end!("input", "touch-inject-into-scenic");
             let _ = injector.inject_events(events);
             Ok(())
         } else {
-            fuchsia_trace::duration_end!(c"input", c"touch-inject-into-scenic");
+            fuchsia_trace::duration_end!("input", "touch-inject-into-scenic");
             Err(anyhow::format_err!(
                 "No injector found for touch device {}.",
                 touch_descriptor.device_id
@@ -428,7 +428,7 @@ impl TouchInjectorHandler {
             ..Default::default()
         };
 
-        fuchsia_trace::flow_begin!(c"input", c"dispatch_event_to_scenic", trace_flow_id);
+        fuchsia_trace::flow_begin!("input", "dispatch_event_to_scenic", trace_flow_id);
 
         event
     }

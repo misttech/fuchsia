@@ -258,9 +258,9 @@ impl ConsumerControlsBinding {
         inspect_status: &InputDeviceStatus,
         metrics_logger: &metrics::MetricsLogger,
     ) -> (Option<InputReport>, Option<UnboundedReceiver<InputEvent>>) {
-        fuchsia_trace::duration!(c"input", c"consumer-controls-binding-process-report");
+        fuchsia_trace::duration!("input", "consumer-controls-binding-process-report");
         if let Some(trace_id) = report.trace_id {
-            fuchsia_trace::flow_end!(c"input", c"input_report", trace_id.into());
+            fuchsia_trace::flow_end!("input", "input_report", trace_id.into());
         }
 
         inspect_status.count_received_report(&report);
@@ -279,7 +279,7 @@ impl ConsumerControlsBinding {
 
         let wake_lease = report.wake_lease.take();
         let trace_id = fuchsia_trace::Id::random();
-        fuchsia_trace::flow_begin!(c"input", c"event_in_input_pipeline", trace_id);
+        fuchsia_trace::flow_begin!("input", "event_in_input_pipeline", trace_id);
 
         send_consumer_controls_event(
             pressed_buttons,
