@@ -2,15 +2,16 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/cpp/sdk_cpp_test.gni")
-import("//build/cpp/sdk_cpp_unittest_package.gni")
+import("//build/components.gni")
+import("//build/test.gni")
 
 group("test") {
   testonly = true
   deps = [ ":async-test-pkg" ]
 }
 
-sdk_cpp_test("async") {
+test("async") {
+  output_name = "async-test"
   sources = [
     "default_tests.cc",
     "dispatcher_tests.cc",
@@ -41,9 +42,11 @@ sdk_cpp_test("async") {
   ]
 }
 
-sdk_cpp_unittest_package("async-test-pkg") {
-  sdk_cpp_test_deps = [ ":async" ]
-  deps = [ ":include-process-launcher" ]
+fuchsia_unittest_package("async-test-pkg") {
+  deps = [
+    ":async",
+    ":include-process-launcher",
+  ]
 }
 
 # Use this group to include fuchsia.process.Launcher in generated test manifests.

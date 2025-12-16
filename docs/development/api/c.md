@@ -87,8 +87,8 @@ make the names fit less well next to other functions like
 
 While C++ is not an exact superset of C, we still design C libraries
 to be usable from C++. Fuchsia C headers should be compatible with the
-C++17 and C++20 standards. In particular, function declarations must be
-`extern "C"`, as described below.
+C++11, C++14, and C++17 standards. In particular, function
+declarations must be `extern "C"`, as described below.
 
 C and C++ interfaces should not be mixed in one header. Instead,
 create a separate `cpp` subdirectory and place C++ interfaces in their

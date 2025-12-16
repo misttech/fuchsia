@@ -19,7 +19,7 @@ fuchsia_cxx_version = _default_cxx_version
 
 # The C++ standard versions supported by the Fuchsia SDK.
 #
-# This list is defined in //docs/development/idk/documentation/compilation.md.
+# https://fuchsia.dev/fuchsia-src/contribute/governance/rfcs/0258_update_from_c++17_to_c++20
 fuchsia_sdk_cxx_supported_versions = [
   17,
   20,

@@ -3,9 +3,8 @@
 # found in the LICENSE file.
 
 import("//build/components.gni")
-import("//build/cpp/sdk_cpp_test.gni")
-import("//build/cpp/sdk_cpp_unittest_package.gni")
 import("//build/cpp/sdk_source_set.gni")
+import("//build/testing/cc_test_executable.gni")
 
 sdk_source_set("cpp") {
   category = "partner"
@@ -28,7 +27,10 @@ sdk_source_set("cpp") {
   public_configs = [ "//sdk/config" ]
 }
 
-sdk_cpp_test("test_bin") {
+cc_test_executable("test_bin") {
+  testonly = true
+  output_name = "media_lib_timeline_tests"
+
   sources = [
     "test/timeline_function_test.cc",
     "test/timeline_rate_test.cc",
@@ -40,8 +42,8 @@ sdk_cpp_test("test_bin") {
   ]
 }
 
-sdk_cpp_unittest_package("media_lib_timeline_tests") {
-  sdk_cpp_test_deps = [ ":test_bin" ]
+fuchsia_unittest_package("media_lib_timeline_tests") {
+  deps = [ ":test_bin" ]
 }
 
 ## BAZEL2GN SENTINEL - DO NOT EDIT BELOW THIS LINE ##
