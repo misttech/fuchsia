@@ -162,9 +162,6 @@ def generate_honeydew_config() -> dict[str, Any]:
             "bluetooth": {
                 "implementation": "fuchsia-controller"
             }
-            "wlan": {
-                "implementation": "sl4f"
-            }
         }
     }
     """

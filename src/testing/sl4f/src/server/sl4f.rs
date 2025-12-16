@@ -10,7 +10,7 @@ use fuchsia_component::client::connect_to_protocol;
 use fuchsia_sync::RwLock;
 use log::{error, info, warn};
 use maplit::{convert_args, hashmap};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
@@ -125,19 +125,6 @@ use crate::weave::facade::WeaveFacade;
 // Webdriver related includes
 use crate::webdriver::facade::WebdriverFacade;
 
-// Wlan related includes
-use crate::wlan::facade::WlanFacade;
-
-// Wlan DeprecatedConfiguration related includes
-use crate::wlan_deprecated::facade::WlanDeprecatedConfigurationFacade;
-
-// WlanPhy related includes
-use crate::wlan_phy::facade::WlanPhyFacade;
-
-// Wlan Policy related includes
-use crate::wlan_policy::ap_facade::WlanApPolicyFacade;
-use crate::wlan_policy::facade::WlanPolicyFacade;
-
 // Wpan related includes
 use crate::wpan::facade::WpanFacade;
 
@@ -216,11 +203,6 @@ impl Sl4f {
                 "virtual_camera_facade" => VirtualCameraFacade::new(),
                 "weave_facade" => WeaveFacade::new(),
                 "webdriver_facade" => WebdriverFacade::new(),
-                "wlan" => WlanFacade::new()?,
-                "wlan_ap_policy" => WlanApPolicyFacade::new()?,
-                "wlan_deprecated" => WlanDeprecatedConfigurationFacade::new()?,
-                "wlan_phy" => WlanPhyFacade::new()?,
-                "wlan_policy" => WlanPolicyFacade::new()?,
                 "wpan_facade" => WpanFacade::new(),
             )
         );
@@ -520,11 +502,7 @@ async fn client_init(
     // Initialize client with key = id, val = client data
     let client_id = client_id_raw.as_str().map(String::from).unwrap();
 
-    if clients.write().init_client(client_id) {
-        json(&FAIL_INIT_ACK)
-    } else {
-        json(&INIT_ACK)
-    }
+    if clients.write().init_client(client_id) { json(&FAIL_INIT_ACK) } else { json(&INIT_ACK) }
 }
 
 /// Given a request, grabs the method id, name, and parameters

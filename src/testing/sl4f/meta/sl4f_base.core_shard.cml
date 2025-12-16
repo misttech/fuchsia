@@ -143,24 +143,6 @@
         },
         {
             protocol: [
-                "fuchsia.wlan.policy.AccessPointListener",
-                "fuchsia.wlan.policy.AccessPointProvider",
-                "fuchsia.wlan.policy.ClientListener",
-                "fuchsia.wlan.policy.ClientProvider",
-                "fuchsia.wlan.product.deprecatedconfiguration.DeprecatedConfigurator",
-            ],
-            from: "#wlancfg",
-            to: "#sl4f",
-            source_availability: "unknown",
-        },
-        {
-            protocol: [ "fuchsia.wlan.device.service.DeviceMonitor" ],
-            from: "#wlandevicemonitor",
-            to: "#sl4f",
-            source_availability: "unknown",
-        },
-        {
-            protocol: [
                 "fuchsia.device.NameProvider",
                 "fuchsia.hardware.power.statecontrol.Admin",
                 "fuchsia.paver.Paver",

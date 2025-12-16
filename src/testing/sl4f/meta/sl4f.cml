@@ -92,12 +92,6 @@
                 "fuchsia.ui.composition.Allocator",
                 "fuchsia.ui.composition.Flatland",
                 "fuchsia.ui.composition.Screenshot",
-                "fuchsia.wlan.device.service.DeviceMonitor",
-                "fuchsia.wlan.policy.AccessPointListener",
-                "fuchsia.wlan.policy.AccessPointProvider",
-                "fuchsia.wlan.policy.ClientListener",
-                "fuchsia.wlan.policy.ClientProvider",
-                "fuchsia.wlan.product.deprecatedconfiguration.DeprecatedConfigurator",
             ],
         },
         {

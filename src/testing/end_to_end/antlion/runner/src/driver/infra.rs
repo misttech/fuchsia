@@ -222,10 +222,6 @@ impl InfraDriver {
                                 ffx: config::HoneydewFfx { path: ffx_binary.clone() },
                             },
                             affordances: config::HoneydewAffordances {
-                                wlan: config::HoneydewAffordanceSpec {
-                                    implementation: config::HONEYDEW_IMPL_FUCHSIA_CONTROLLER
-                                        .to_string(),
-                                },
                                 bluetooth: config::HoneydewAffordanceSpec {
                                     implementation: config::HONEYDEW_IMPL_FUCHSIA_CONTROLLER
                                         .to_string(),
@@ -586,8 +582,6 @@ mod test {
                   ffx:
                     path: {ffx_path}
                 affordances:
-                  wlan:
-                    implementation: fuchsia-controller
                   bluetooth:
                     implementation: fuchsia-controller
         MoblyParams:
@@ -670,8 +664,6 @@ mod test {
                   ffx:
                     path: {ffx_path}
                 affordances:
-                  wlan:
-                    implementation: fuchsia-controller
                   bluetooth:
                     implementation: fuchsia-controller
           TestParams:
@@ -788,8 +780,6 @@ mod test {
                   ffx:
                     path: {ffx_path}
                 affordances:
-                  wlan:
-                    implementation: fuchsia-controller
                   bluetooth:
                     implementation: fuchsia-controller
             AccessPoint:

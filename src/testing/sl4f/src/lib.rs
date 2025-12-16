@@ -40,8 +40,4 @@ pub mod tracing;
 pub mod virtual_camera;
 pub mod weave;
 pub mod webdriver;
-pub mod wlan;
-pub mod wlan_deprecated;
-pub mod wlan_phy;
-pub mod wlan_policy;
 pub mod wpan;

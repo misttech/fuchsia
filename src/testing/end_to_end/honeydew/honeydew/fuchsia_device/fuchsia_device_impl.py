@@ -37,7 +37,6 @@ from honeydew.affordances.connectivity.netstack import (
     netstack,
     netstack_using_fc,
 )
-from honeydew.affordances.connectivity.wlan.utils import types as wlan_types
 from honeydew.affordances.connectivity.wlan.wlan_core import (
     wlan_core,
     wlan_core_using_fc,
@@ -1289,37 +1288,6 @@ class FuchsiaDeviceImpl(
                 f"Valid values are: {list(map(str, bluetooth_types.Implementation))}"
             ) from err
 
-    def _get_wlan_affordances_implementation(
-        self,
-        should_exist: bool = True,
-    ) -> wlan_types.Implementation | None:
-        """Parses the WLAN affordance config information and returns which WLAN implementation to use.
-
-        Returns:
-            wlan_types.Implementation
-
-        Raises:
-            ValueError: If wlan affordance implementation detail is missing or not valid.
-        """
-        if self._config is None:
-            return None
-
-        wlan_affordance_implementation: str | None = common.read_from_dict(
-            self._config,
-            key_path=("affordances", "wlan", "implementation"),
-            should_exist=should_exist,
-        )
-        if wlan_affordance_implementation is None:
-            return None
-
-        try:
-            return wlan_types.Implementation(wlan_affordance_implementation)
-        except ValueError as err:
-            raise ValueError(
-                f"Invalid value passed in config['affordances']['wlan']['implementation]. "
-                f"Valid values are: {list(map(str, wlan_types.Implementation))}"
-            ) from err
-
     @cached_property
     def _is_sl4f_needed(self) -> bool:
         """Returns whether or not SL4F will be used.
@@ -1328,11 +1296,7 @@ class FuchsiaDeviceImpl(
             True if SL4F is needed. False, otherwise.
         """
         if (
-            self._get_wlan_affordances_implementation(should_exist=False)
-            == wlan_types.Implementation.SL4F
-            or self._get_bluetooth_affordances_implementation(
-                should_exist=False
-            )
+            self._get_bluetooth_affordances_implementation(should_exist=False)
             == bluetooth_types.Implementation.SL4F
         ):
             return True

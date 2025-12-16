@@ -110,7 +110,6 @@ pub(crate) struct HoneydewFfx {
 
 #[derive(Clone, Debug, Serialize)]
 pub(crate) struct HoneydewAffordances {
-    pub wlan: HoneydewAffordanceSpec,
     pub bluetooth: HoneydewAffordanceSpec,
 }
 

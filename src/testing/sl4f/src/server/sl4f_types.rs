@@ -92,7 +92,7 @@ impl RequestId {
 /// The parsed `method` field from an incoming json-rpc request.
 #[derive(Debug, PartialEq, Eq, Clone, Default)]
 pub struct MethodId {
-    /// Method type of the request (e.g bluetooth, wlan, etc...)
+    /// Method type of the request (e.g bluetooth, etc...)
     pub facade: String,
 
     /// Name of the method
@@ -163,7 +163,7 @@ pub struct AsyncCommandRequest {
     pub tx: oneshot::Sender<AsyncResponse>,
 
     // method_id: struct containing:
-    //  * facade: Method type of the request (e.g bluetooth, wlan, etc...)
+    //  * facade: Method type of the request (e.g bluetooth, etc...)
     //  * method: Name of the method
     pub method_id: MethodId,
 
@@ -234,7 +234,7 @@ mod tests {
         assert_parse_error("bluetooth_send");
 
         // Too many separators in command
-        assert_parse_error("wlan.scan.start");
+        assert_parse_error("bluetooth.scan.start");
 
         // Empty command
         assert_parse_error("");
