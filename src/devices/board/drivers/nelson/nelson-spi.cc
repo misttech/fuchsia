@@ -126,9 +126,9 @@ zx_status_t Nelson::SpiInit() {
   // the dividers
   {
     zx::unowned_resource resource(get_mmio_resource(parent()));
+    const size_t rounded_size = fbl::round_up<size_t>(S905D3_HIU_LENGTH, zx_system_get_page_size());
     zx::vmo vmo;
-    zx_status_t status =
-        zx::vmo::create_physical(*resource, S905D3_HIU_BASE, S905D3_HIU_LENGTH, &vmo);
+    zx_status_t status = zx::vmo::create_physical(*resource, S905D3_HIU_BASE, rounded_size, &vmo);
     if (status != ZX_OK) {
       zxlogf(ERROR, "failed to create VMO: %s", zx_status_get_string(status));
       return status;
