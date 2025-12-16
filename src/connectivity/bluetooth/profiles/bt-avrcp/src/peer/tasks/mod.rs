@@ -256,7 +256,6 @@ fn handle_notification(
 }
 
 /// Attempt an outgoing L2CAP connection to remote's AVRCP control channel.
-/// The control channel should be in `Connecting` state before spawning this task.
 /// TODO(https://fxbug.dev/42166696): Refactor logic into RemotePeer to avoid multiple lock accesses.
 async fn make_connection(peer: Arc<RwLock<RemotePeer>>, conn_type: AVCTPConnectionType) {
     let random_delay: zx::MonotonicDuration =
@@ -265,6 +264,26 @@ async fn make_connection(peer: Arc<RwLock<RemotePeer>>, conn_type: AVCTPConnecti
         ));
     trace!("AVRCP waiting {:?} millis before establishing connection", random_delay.into_millis());
     fuchsia_async::Timer::new(random_delay.after_now()).await;
+
+    // While waiting to initiate an outgoing connection, if there was an incoming connection, don't
+    // make the outgoing connection.
+    {
+        let mut lock = peer.write();
+        match conn_type {
+            AVCTPConnectionType::Control => {
+                if lock.control_connected() {
+                    return;
+                }
+                lock.control_channel.connecting();
+            }
+            AVCTPConnectionType::Browse => {
+                if lock.browse_connected() {
+                    return;
+                }
+                lock.browse_channel.connecting();
+            }
+        }
+    }
 
     // Initiate outgoing connection.
     let peer_id = peer.read().peer_id;
@@ -426,7 +445,6 @@ pub(super) async fn state_watcher(peer: Arc<RwLock<RemotePeer>>) {
                 if peer_guard.discovered() && peer_guard.attempt_control_connection {
                     trace!("Starting make_connection task for peer {}", id);
                     peer_guard.attempt_control_connection = false;
-                    peer_guard.control_channel.connecting();
                     make_control_channel_task = fasync::Task::spawn(make_connection(
                         peer.clone(),
                         AVCTPConnectionType::Control,
@@ -464,7 +482,6 @@ pub(super) async fn state_watcher(peer: Arc<RwLock<RemotePeer>>) {
                 {
                     trace!("Starting make_connection task for browse channel on peer {}", id);
                     peer_guard.attempt_browse_connection = false;
-                    peer_guard.browse_channel.connecting();
                     make_browse_channel_task = fasync::Task::spawn(make_connection(
                         peer.clone(),
                         AVCTPConnectionType::Browse,
@@ -474,7 +491,7 @@ pub(super) async fn state_watcher(peer: Arc<RwLock<RemotePeer>>) {
             &PeerChannelState::Connected(_) => {
                 // The Browse channel must be established after the control channel.
                 // Ensure that the control channel exists before starting the browse task.
-                if control_channel_task.is_none() {
+                if !peer_guard.control_connected() {
                     trace!("Received Browse connection before Control .. disconnecting");
                     peer_guard.browse_channel.disconnect();
                     continue;

@@ -225,6 +225,10 @@ struct RemotePeer {
     profile_proxy: bredr::ProfileProxy,
 
     /// All stream listeners obtained by any `Controller`s around this peer that are listening for
+    /// connection events from this peer.
+    connection_listeners: Vec<mpsc::UnboundedSender<(AVCTPConnectionType, bool)>>,
+
+    /// All stream listeners obtained by any `Controller`s around this peer that are listening for
     /// events from this peer.
     controller_listeners: Vec<mpsc::Sender<ControllerEvent>>,
 
@@ -309,13 +313,14 @@ impl RemotePeer {
             controller_descriptor: None,
             control_channel: PeerChannel::default(),
             browse_channel: PeerChannel::default(),
+            connection_listeners: Vec::new(),
             controller_listeners: Vec::new(),
             profile_proxy,
             control_command_handler: ControlChannelHandler::new(target_delegate.clone()),
             browse_command_handler: BrowseChannelHandler::new(target_delegate),
             state_change_listener: StateChangeListener::new(),
-            attempt_control_connection: true,
-            attempt_browse_connection: true,
+            attempt_control_connection: false,
+            attempt_browse_connection: false,
             cancel_control_task: false,
             cancel_browse_task: false,
             last_control_connected_time: None,
@@ -358,6 +363,20 @@ impl RemotePeer {
         }
     }
 
+    /// Forwards the connection event to current listeners queues.
+    fn handle_new_connection_event(&mut self, type_: AVCTPConnectionType, connected: bool) {
+        // Remove all the dead listeners from the list.
+        self.connection_listeners.retain(|i| !i.is_closed());
+        for sender in self.connection_listeners.iter_mut() {
+            if let Err(send_error) = sender.unbounded_send((type_, connected)) {
+                warn!(
+                    "Error sending event to listener for peer {}: {:?}",
+                    self.peer_id, send_error
+                );
+            }
+        }
+    }
+
     fn control_connected(&self) -> bool {
         self.control_channel.connection().is_some()
     }
@@ -378,6 +397,7 @@ impl RemotePeer {
         self.cancel_control_task = true;
         self.control_channel.disconnect();
         self.last_control_connected_time = None;
+        self.handle_new_connection_event(AVCTPConnectionType::Control, false);
 
         self.attempt_control_connection = attempt_reconnection;
         self.wake_state_watcher();
@@ -394,6 +414,7 @@ impl RemotePeer {
         self.cancel_browse_task = true;
         self.browse_channel.disconnect();
         self.last_browse_connected_time = None;
+        self.handle_new_connection_event(AVCTPConnectionType::Browse, false);
 
         self.attempt_browse_connection = attempt_reconnection;
         self.wake_state_watcher();
@@ -517,7 +538,7 @@ impl RemotePeer {
             // This indicates that this is a new control channel connection.
             // Reset pre-existing channels before setting a new control channel.
             self.reset_connections(false);
-        } else {
+        } else if self.control_connected() {
             // Just reset existing control connection.
             self.reset_control_connection(false);
         }
@@ -525,6 +546,8 @@ impl RemotePeer {
         info!("{} connected new control channel", self.peer_id);
         self.last_control_connected_time = Some(current_time);
         self.control_channel.connected(Arc::new(peer));
+        self.handle_new_connection_event(AVCTPConnectionType::Control, true);
+
         // Since control connection was newly established, allow browse
         // connection to be attempted.
         self.attempt_browse_connection = true;
@@ -568,29 +591,30 @@ impl RemotePeer {
             }
         }
 
-        if self.control_connected() {
-            if self.browse_connected() {
-                // Just reset existing browse connection.
-                self.reset_browse_connection(false);
-            }
-
-            info!("{} connected new browse channel", self.peer_id);
-            self.last_browse_connected_time = Some(current_time);
-            self.browse_channel.connected(Arc::new(peer));
-            self.inspect.metrics().browse_connection();
-            self.wake_state_watcher();
+        // Browse connection should only be accepted if control connection
+        // was already established.
+        if !self.control_connected() {
+            self.reset_connections(true);
             return;
         }
 
-        // If control channel was not already established, don't set the
-        // browse channel and instead reset all connections.
-        self.reset_connections(true);
+        if self.browse_connected() {
+            // Just reset existing browse connection.
+            self.reset_browse_connection(false);
+        }
+
+        info!("{} connected new browse channel", self.peer_id);
+        self.last_browse_connected_time = Some(current_time);
+        self.browse_channel.connected(Arc::new(peer));
+        self.handle_new_connection_event(AVCTPConnectionType::Browse, true);
+
+        self.inspect.metrics().browse_connection();
+        self.wake_state_watcher();
     }
 
     fn set_target_descriptor(&mut self, service: AvrcpService) {
         trace!("Set target descriptor for {}", self.peer_id);
         self.target_descriptor = Some(service);
-        self.attempt_control_connection = true;
         // Record inspect target features.
         self.inspect.record_target_features(service);
         self.wake_state_watcher();
@@ -600,7 +624,6 @@ impl RemotePeer {
         trace!("Set controller descriptor for {}", self.peer_id);
         self.controller_descriptor = Some(service);
         self.control_command_handler.set_controller_descriptor(service);
-        self.attempt_control_connection = true;
         // Record inspect controller features.
         self.inspect.record_controller_features(service);
         self.wake_state_watcher();
@@ -910,9 +933,36 @@ impl RemotePeerHandle {
         peer_guard.controller_listeners.push(sender)
     }
 
+    /// Adds new connection listener to this remote peer.
+    pub fn add_connection_listener(
+        &self,
+        sender: mpsc::UnboundedSender<(AVCTPConnectionType, bool)>,
+    ) {
+        self.peer.write().connection_listeners.push(sender)
+    }
+
     /// Used by peer manager to get
     pub fn get_controller(&self) -> Controller {
         Controller::new(self.clone())
+    }
+
+    /// Sets the `attempt_control_connection` flag to true and wakes up the state watcher to
+    /// initiate a connection request if not already connected.
+    pub fn request_control_connection(&self) {
+        let mut peer = self.peer.write();
+        peer.attempt_control_connection = true;
+        peer.wake_state_watcher();
+    }
+
+    /// Sets the `attempt_browse_connection` flag to true and wakes up the state watcher to
+    /// initiate a browse connection request if not already connected.
+    pub fn request_browse_connection(&self) {
+        if !self.is_control_connected() {
+            self.peer.write().attempt_control_connection = true;
+        }
+        let mut lock = self.peer.write();
+        lock.attempt_browse_connection = true;
+        lock.wake_state_watcher();
     }
 }
 
@@ -1001,6 +1051,7 @@ pub(crate) mod tests {
             psm: peer_psm,
             protocol_version: AvrcpProtocolVersion(1, 6),
         });
+        peer_handle.request_control_connection();
 
         assert!(!peer_handle.is_control_connected());
 
@@ -1064,6 +1115,7 @@ pub(crate) mod tests {
             psm: peer_psm,
             protocol_version: AvrcpProtocolVersion(1, 6),
         });
+        peer_handle.request_control_connection();
 
         assert!(!peer_handle.is_control_connected());
 
@@ -1144,6 +1196,7 @@ pub(crate) mod tests {
             psm: peer_psm,
             protocol_version: AvrcpProtocolVersion(1, 6),
         });
+        peer_handle.request_control_connection();
 
         assert!(!peer_handle.is_control_connected());
 
@@ -1213,6 +1266,7 @@ pub(crate) mod tests {
             psm: Psm::AVCTP,
             protocol_version: AvrcpProtocolVersion(1, 6),
         });
+        peer_handle.request_control_connection();
 
         assert!(!peer_handle.is_control_connected());
 
@@ -1295,6 +1349,7 @@ pub(crate) mod tests {
             psm: Psm::AVCTP,
             protocol_version: AvrcpProtocolVersion(1, 6),
         });
+        peer_handle.request_control_connection();
 
         assert!(!peer_handle.is_control_connected());
 
@@ -1403,6 +1458,7 @@ pub(crate) mod tests {
             psm: Psm::AVCTP,
             protocol_version: AvrcpProtocolVersion(1, 6),
         });
+        peer_handle.request_control_connection();
 
         assert!(!peer_handle.is_control_connected());
 
@@ -1511,6 +1567,7 @@ pub(crate) mod tests {
             psm: Psm::AVCTP,
             protocol_version: AvrcpProtocolVersion(1, 6),
         });
+        peer_handle.request_control_connection();
 
         assert!(!peer_handle.is_control_connected());
 
@@ -1711,6 +1768,7 @@ pub(crate) mod tests {
             psm: Psm::AVCTP,
             protocol_version: AvrcpProtocolVersion(1, 6),
         });
+        peer_handle.request_control_connection();
 
         let mut next_request_fut = Box::pin(profile_requests.next());
         assert!(exec.run_until_stalled(&mut next_request_fut).is_pending());
@@ -1754,6 +1812,7 @@ pub(crate) mod tests {
             psm: Psm::AVCTP,
             protocol_version: AvrcpProtocolVersion(1, 6),
         });
+        peer_handle.request_control_connection();
         // Peer initiates connection to us.
         let remote1 = set_incoming_control_connection(&peer_handle);
 

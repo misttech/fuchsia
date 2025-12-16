@@ -7,71 +7,99 @@ use fidl::prelude::*;
 use fidl_fuchsia_bluetooth_avrcp::*;
 use fidl_fuchsia_bluetooth_avrcp_test::*;
 use fuchsia_async as fasync;
+use fuchsia_async::TimeoutExt;
 use fuchsia_bluetooth::types::PeerId;
 use fuchsia_component::server::{ServiceFs, ServiceObj};
 use futures::channel::mpsc;
 use futures::future::{FutureExt, TryFutureExt};
 use futures::stream::{StreamExt, TryStreamExt};
 use log::{info, warn};
+use zx::MonotonicDuration;
 
 use crate::peer::Controller;
 use crate::peer_manager::ServiceRequest;
+use crate::types::PeerError;
 use crate::{browse_controller_service, controller_service};
 
-/// Spawns a future that listens and responds to requests for a controller object over FIDL.
-fn spawn_avrcp_clients(
-    stream: PeerManagerRequestStream,
-    sender: mpsc::Sender<ServiceRequest>,
-) -> fasync::Task<()> {
-    info!("Spawning avrcp client handler");
-    fasync::Task::spawn(
-        handle_peer_manager_requests(
-            stream,
-            sender,
-            &controller_service::spawn_service,
-            &browse_controller_service::spawn_service,
-        )
-        .unwrap_or_else(|e: anyhow::Error| warn!("AVRCP client handler finished: {:?}", e)),
-    )
+async fn get_controller_for_peer(
+    peer_id: PeerId,
+    sender: &mut mpsc::Sender<ServiceRequest>,
+) -> Result<Controller, Error> {
+    let (response, pcr) = ServiceRequest::new_controller_request(peer_id);
+    sender.try_send(pcr)?;
+    match response.await {
+        Ok(controller) => Ok(controller),
+        Err(e) => Err(e.into()),
+    }
 }
 
 /// Polls the stream for the PeerManager FIDL interface to set target handlers and respond with
 /// new controller clients.
-pub async fn handle_peer_manager_requests<F, G>(
+pub async fn handle_peer_manager_requests(
     mut stream: PeerManagerRequestStream,
     mut sender: mpsc::Sender<ServiceRequest>,
-    mut spawn_controller_fn: F,
-    mut spawn_browse_controller_fn: G,
 ) -> Result<(), anyhow::Error>
 where
-    F: FnMut(Controller, ControllerRequestStream) -> fasync::Task<()>,
-    G: FnMut(Controller, BrowseControllerRequestStream) -> fasync::Task<()>,
 {
+    let connect_tasks = fasync::Scope::new();
     while let Some(req) = stream.try_next().await? {
         match req {
             PeerManagerRequest::GetBrowseControllerForTarget { peer_id, client, responder } => {
                 let peer_id = peer_id.into();
                 info!("Received client request for browse controller for peer {}", peer_id);
 
-                let client_stream = client.into_stream();
-                let (response, pcr) = ServiceRequest::new_controller_request(peer_id);
-                sender.try_send(pcr)?;
-                let controller = response.await?;
-                // BrowseController can remain connected after PeerManager disconnects.
-                spawn_browse_controller_fn(controller, client_stream).detach();
-                responder.send(Ok(()))?;
+                let controller = get_controller_for_peer(peer_id, &mut sender).await?;
+
+                let _ = connect_tasks.spawn(async move {
+                    let client_stream = client.into_stream();
+
+                    // Wait for browse connection.
+                    if let Err(e) = controller
+                        .wait_for_browse_connection()
+                        .on_timeout(MonotonicDuration::from_seconds(5), || {
+                            Err(PeerError::ConnectionFailure(format_err!(
+                                "browse connection timeout"
+                            )))
+                        })
+                        .await
+                    {
+                        warn!(peer_id:%, e:?; "Browse connection timeout");
+                        let _ = responder.send(Err(zx::Status::TIMED_OUT.into_raw()));
+                        return;
+                    }
+
+                    // BrowseController can remain connected after PeerManager disconnects.
+                    browse_controller_service::spawn_service(controller, client_stream).detach();
+                    let _ = responder.send(Ok(()));
+                });
             }
             PeerManagerRequest::GetControllerForTarget { peer_id, client, responder } => {
                 let peer_id = peer_id.into();
                 info!("Received client request for controller for peer {}", peer_id);
 
-                let client_stream = client.into_stream();
-                let (response, pcr) = ServiceRequest::new_controller_request(peer_id);
-                sender.try_send(pcr)?;
-                let controller = response.await?;
-                // Controller can remain connected after PeerManager disconnects.
-                spawn_controller_fn(controller, client_stream).detach();
-                responder.send(Ok(()))?;
+                let controller = get_controller_for_peer(peer_id, &mut sender).await?;
+
+                let _ = connect_tasks.spawn(async move {
+                    let client_stream = client.into_stream();
+
+                    // Wait for control connection.
+                    if let Err(e) = controller
+                        .wait_for_control_connection()
+                        .on_timeout(MonotonicDuration::from_seconds(5), || {
+                            Err(PeerError::ConnectionFailure(format_err!(
+                                "control connection timeout"
+                            )))
+                        })
+                        .await
+                    {
+                        warn!(peer_id:%, e:?; "Control connection timeout");
+                        let _ = responder.send(Err(zx::Status::TIMED_OUT.into_raw()));
+                        return;
+                    }
+                    // Controller can remain connected after PeerManager disconnects.
+                    controller_service::spawn_service(controller, client_stream).detach();
+                    let _ = responder.send(Ok(()));
+                });
             }
             PeerManagerRequest::SetAbsoluteVolumeHandler { handler, responder } => {
                 info!("Received client request to set absolute volume handler");
@@ -102,34 +130,11 @@ where
     Ok(())
 }
 
-/// spawns a future that listens and responds to requests for a controller object over FIDL.
-fn spawn_test_avrcp_clients(
-    stream: PeerManagerExtRequestStream,
-    sender: mpsc::Sender<ServiceRequest>,
-) -> fasync::Task<()> {
-    info!("Spawning test avrcp client handler");
-    fasync::Task::spawn(
-        handle_peer_manager_ext_requests(
-            stream,
-            sender,
-            &controller_service::spawn_ext_service,
-            &browse_controller_service::spawn_ext_service,
-        )
-        .unwrap_or_else(|e: anyhow::Error| warn!("Test AVRCP client handler finished: {:?}", e)),
-    )
-}
-
 /// Polls the stream for the PeerManagerExt FIDL interface and responds with new test controller clients.
-pub async fn handle_peer_manager_ext_requests<F, G>(
+pub async fn handle_peer_manager_ext_requests(
     mut stream: PeerManagerExtRequestStream,
     mut sender: mpsc::Sender<ServiceRequest>,
-    mut spawn_controller_fn: F,
-    mut spawn_browse_controller_fn: G,
-) -> Result<(), anyhow::Error>
-where
-    F: FnMut(Controller, ControllerExtRequestStream) -> fasync::Task<()>,
-    G: FnMut(Controller, BrowseControllerExtRequestStream) -> fasync::Task<()>,
-{
+) -> Result<(), anyhow::Error> {
     while let Some(req) = stream.try_next().await? {
         match req {
             PeerManagerExtRequest::GetBrowseControllerForTarget { peer_id, client, responder } => {
@@ -141,7 +146,7 @@ where
                 sender.try_send(pcr)?;
                 let controller = response.await?;
                 // BrowseControllerExt can remain connected after PeerManager disconnects.
-                spawn_browse_controller_fn(controller, client_stream).detach();
+                browse_controller_service::spawn_ext_service(controller, client_stream).detach();
                 responder.send(Ok(()))?;
             }
             PeerManagerExtRequest::GetControllerForTarget { peer_id, client, responder } => {
@@ -153,7 +158,7 @@ where
                 sender.try_send(pcr)?;
                 let controller = response.await?;
                 // ControllerExt can remain connected after PeerManager disconnects.
-                spawn_controller_fn(controller, client_stream).detach();
+                controller_service::spawn_ext_service(controller, client_stream).detach();
                 responder.send(Ok(()))?;
             }
         }
@@ -171,10 +176,20 @@ pub fn run_services(
     let _ = fs
         .dir("svc")
         .add_fidl_service_at(PeerManagerExtMarker::PROTOCOL_NAME, move |stream| {
-            spawn_test_avrcp_clients(stream, sender_test.clone()).detach();
+            fasync::Task::spawn(
+                handle_peer_manager_ext_requests(stream, sender_test.clone()).unwrap_or_else(
+                    |e: anyhow::Error| warn!("Test AVRCP client handler finished: {:?}", e),
+                ),
+            )
+            .detach();
         })
         .add_fidl_service_at(PeerManagerMarker::PROTOCOL_NAME, move |stream| {
-            spawn_avrcp_clients(stream, sender_avrcp.clone()).detach();
+            fasync::Task::spawn(
+                handle_peer_manager_requests(stream, sender_avrcp.clone()).unwrap_or_else(
+                    |e: anyhow::Error| warn!("AVRCP client handler finished: {:?}", e),
+                ),
+            )
+            .detach();
         });
     let _ = fs.take_and_serve_directory_handle()?;
     info!("Running fidl service");
@@ -184,9 +199,10 @@ pub fn run_services(
 #[cfg(test)]
 mod tests {
     use super::*;
+
     use assert_matches::assert_matches;
     use async_utils::PollExt;
-    use bt_avctp::{AvcCommand, AvcPeer, AvcResponseType};
+    use bt_avctp::{AvcCommand, AvcPeer, AvcResponseType, AvctpPeer};
     use fidl::endpoints::{create_endpoints, create_proxy, create_proxy_and_stream};
     use fidl_fuchsia_bluetooth_bredr::{ProfileMarker, ProfileProxy, ProfileRequestStream};
     use fuchsia_bluetooth::profile::Psm;
@@ -197,13 +213,17 @@ mod tests {
     use std::sync::Arc;
 
     use crate::packets::{PlaybackStatus as PacketPlaybackStatus, *};
-    use crate::peer::RemotePeerHandle;
+    use crate::peer::{Controller, RemotePeerHandle};
     use crate::peer_manager::{PeerManager, TargetDelegate};
     use fuchsia_bluetooth::profile::avrcp::{
         AvrcpProtocolVersion, AvrcpService, AvrcpTargetFeatures,
     };
 
-    fn handle_get_controller(profile_proxy: ProfileProxy, request: ServiceRequest) {
+    fn handle_get_controller(
+        exec: &mut fasync::TestExecutor,
+        profile_proxy: ProfileProxy,
+        request: ServiceRequest,
+    ) -> (Channel, Channel) {
         match request {
             ServiceRequest::GetController { peer_id, reply } => {
                 // TODO(jamuraa): Make Controller a trait so we can mock it here.
@@ -212,52 +232,41 @@ mod tests {
                     Arc::new(TargetDelegate::new()),
                     profile_proxy,
                 );
+                // Set a valid control connection and browse connection for the peer.
+                let (remote_control, local) = Channel::create();
+                let control_channel = AvcPeer::new(local);
+                peer.set_control_connection(control_channel);
+
+                let _ = exec.run_until_stalled(&mut futures::future::pending::<()>());
+
+                let (remote_browse, local) = Channel::create();
+                let browse_channel = AvctpPeer::new(local);
+                peer.set_browse_connection(browse_channel);
+
+                let _ = exec.run_until_stalled(&mut futures::future::pending::<()>());
+
                 reply.send(Controller::new(peer)).expect("reply should succeed");
+                return (remote_control, remote_browse);
             }
             x => panic!("Unexpected request from client stream: {:?}", x),
         }
     }
 
-    fn make_service_spawn_fn<T>()
-    -> (impl FnMut(Controller, T) -> fasync::Task<()>, mpsc::Receiver<()>) {
-        let (mut spawned_sender, spawned_receiver) = mpsc::channel::<()>(1);
-        let spawn_fn = move |_controller: Controller, _service_fidl_stream: T| {
-            // Signal that the client has been created.
-            spawned_sender.try_send(()).expect("couldn't send spawn signal");
-            fasync::Task::spawn(async {})
-        };
-        (spawn_fn, spawned_receiver)
-    }
-
     /// Tests that a request to register a target handler responds correctly.
     #[fuchsia::test]
     fn spawn_avrcp_target() {
-        let mut exec = fasync::TestExecutor::new();
+        let mut exec = fasync::TestExecutor::new_with_fake_time();
         let (peer_manager_proxy, peer_manager_requests) =
             create_proxy_and_stream::<PeerManagerMarker>();
 
         let (client_sender, mut service_request_receiver) = mpsc::channel(512);
-
-        let fail_fn = |_controller: Controller, _fidl_stream: ControllerRequestStream| {
-            panic!("Shouldn't have spawned a controller!");
-        };
-
-        let noop_browse_fn =
-            |_controller: Controller, _fidl_stream: BrowseControllerRequestStream| {
-                panic!("Shouldn't have spawned a controller!");
-            };
 
         let (target_client, _target_server) = create_endpoints::<TargetHandlerMarker>();
 
         let request_fut = peer_manager_proxy.register_target_handler(target_client);
         let mut request_fut = pin!(request_fut);
 
-        let handler_fut = handle_peer_manager_requests(
-            peer_manager_requests,
-            client_sender,
-            fail_fn,
-            noop_browse_fn,
-        );
+        let handler_fut = handle_peer_manager_requests(peer_manager_requests, client_sender);
         let mut handler_fut = pin!(handler_fut);
 
         // Make the request.
@@ -293,28 +302,18 @@ mod tests {
     /// successfully sets up a controller.
     #[fuchsia::test]
     fn spawn_avrcp_controllers() {
-        let mut exec = fasync::TestExecutor::new();
+        let mut exec = fasync::TestExecutor::new_with_fake_time();
         let (peer_manager_proxy, peer_manager_requests) =
             create_proxy_and_stream::<PeerManagerMarker>();
 
         let (client_sender, mut service_request_receiver) = mpsc::channel(512);
-
-        let (spawn_controller_fn, mut spawned_controller_receiver) =
-            make_service_spawn_fn::<ControllerRequestStream>();
-        let (spawn_browse_controller_fn, mut spawned_browse_controller_receiver) =
-            make_service_spawn_fn::<BrowseControllerRequestStream>();
 
         let (profile_proxy, _profile_requests) = create_proxy_and_stream::<ProfileMarker>();
 
         let (_c_proxy, controller_server) = create_proxy();
         let (_bc_proxy, bcontroller_server) = create_proxy();
 
-        let handler_fut = handle_peer_manager_requests(
-            peer_manager_requests,
-            client_sender,
-            spawn_controller_fn,
-            spawn_browse_controller_fn,
-        );
+        let handler_fut = handle_peer_manager_requests(peer_manager_requests, client_sender);
         let mut handler_fut = pin!(handler_fut);
 
         let request_fut =
@@ -329,12 +328,10 @@ mod tests {
 
         let request =
             service_request_receiver.try_next().unwrap().expect("a request should be made");
-        handle_get_controller(profile_proxy.clone(), request);
+        let _connections = handle_get_controller(&mut exec, profile_proxy.clone(), request);
 
         // The handler should spawn the request after the reply.
         assert!(exec.run_until_stalled(&mut handler_fut).is_pending());
-
-        spawned_controller_receiver.try_next().unwrap().expect("a client should have been spawned");
 
         assert_matches!(
             exec.run_until_stalled(&mut request_fut).expect("should be ready"),
@@ -346,22 +343,17 @@ mod tests {
         let mut request_fut = pin!(request_fut);
 
         // Make the request.
-        assert!(exec.run_until_stalled(&mut request_fut).is_pending());
+        exec.run_until_stalled(&mut request_fut).expect_pending("should be pending");
 
         // Running the stream handler should produce a request for a controller.
-        assert!(exec.run_until_stalled(&mut handler_fut).is_pending());
+        exec.run_until_stalled(&mut handler_fut).expect_pending("should be pending");
 
         let request =
             service_request_receiver.try_next().unwrap().expect("a request should be made");
-        handle_get_controller(profile_proxy.clone(), request);
+        let _connections = handle_get_controller(&mut exec, profile_proxy.clone(), request);
 
         // The handler should spawn the request after the reply.
-        assert!(exec.run_until_stalled(&mut handler_fut).is_pending());
-
-        spawned_browse_controller_receiver
-            .try_next()
-            .unwrap()
-            .expect("a client should have been spawned");
+        exec.run_until_stalled(&mut handler_fut).expect_pending("should be pending");
 
         assert_matches!(
             exec.run_until_stalled(&mut request_fut).expect("should be ready"),
@@ -377,28 +369,19 @@ mod tests {
     #[fuchsia::test]
     /// Test that getting a controller from the test server (PeerManagerExt) works.
     fn spawn_avrcp_extension_controllers() {
-        let mut exec = fasync::TestExecutor::new();
+        let mut exec = fasync::TestExecutor::new_with_fake_time();
         let (peer_manager_ext_proxy, peer_manager_ext_requests) =
             create_proxy_and_stream::<PeerManagerExtMarker>();
 
         let (client_sender, mut service_request_receiver) = mpsc::channel(512);
-
-        let (spawn_controller_fn, mut spawned_controller_receiver) =
-            make_service_spawn_fn::<ControllerExtRequestStream>();
-        let (spawn_browse_controller_fn, mut spawned_browse_controller_receiver) =
-            make_service_spawn_fn::<BrowseControllerExtRequestStream>();
 
         let (profile_proxy, _profile_requests) = create_proxy_and_stream::<ProfileMarker>();
 
         let (_c_proxy, controller_server) = create_proxy();
         let (_bc_proxy, bcontroller_server) = create_proxy();
 
-        let handler_fut = handle_peer_manager_ext_requests(
-            peer_manager_ext_requests,
-            client_sender,
-            spawn_controller_fn,
-            spawn_browse_controller_fn,
-        );
+        let handler_fut =
+            handle_peer_manager_ext_requests(peer_manager_ext_requests, client_sender);
         let mut handler_fut = pin!(handler_fut);
 
         let request_fut = peer_manager_ext_proxy
@@ -413,12 +396,10 @@ mod tests {
 
         let request =
             service_request_receiver.try_next().unwrap().expect("a request should be made");
-        handle_get_controller(profile_proxy.clone(), request);
+        let _connections = handle_get_controller(&mut exec, profile_proxy.clone(), request);
 
         // The handler should spawn the request after the reply.
         exec.run_until_stalled(&mut handler_fut).expect_pending("should be pending");
-
-        spawned_controller_receiver.try_next().unwrap().expect("a client should have been spawned");
 
         assert_matches!(
             exec.run_until_stalled(&mut request_fut).expect("should be ready"),
@@ -437,15 +418,10 @@ mod tests {
 
         let request =
             service_request_receiver.try_next().unwrap().expect("a request should be made");
-        handle_get_controller(profile_proxy.clone(), request);
+        let _connections = handle_get_controller(&mut exec, profile_proxy.clone(), request);
 
         // The handler should spawn the request after the reply.
         exec.run_until_stalled(&mut handler_fut).expect_pending("should be pending");
-
-        spawned_browse_controller_receiver
-            .try_next()
-            .unwrap()
-            .expect("a client should have been spawned");
 
         assert_matches!(
             exec.run_until_stalled(&mut request_fut).expect("should be ready"),
@@ -470,13 +446,7 @@ mod tests {
             create_proxy_and_stream::<PeerManagerMarker>();
 
         fasync::Task::spawn(async move {
-            let _ = handle_peer_manager_requests(
-                peer_manager_requests,
-                client_sender,
-                &controller_service::spawn_service,
-                &browse_controller_service::spawn_service,
-            )
-            .await;
+            let _ = handle_peer_manager_requests(peer_manager_requests, client_sender).await;
         })
         .detach();
 
@@ -689,22 +659,12 @@ mod tests {
 
         peer_manager.new_control_connection(&fake_peer_id, local);
 
-        let handler_fut = handle_peer_manager_requests(
-            peer_manager_requests,
-            client_sender.clone(),
-            &controller_service::spawn_service,
-            &browse_controller_service::spawn_service,
-        )
-        .fuse();
+        let handler_fut =
+            handle_peer_manager_requests(peer_manager_requests, client_sender.clone()).fuse();
         let mut handler_fut = pin!(handler_fut);
 
-        let test_handler_fut = handle_peer_manager_ext_requests(
-            ext_requests,
-            client_sender.clone(),
-            &controller_service::spawn_ext_service,
-            &browse_controller_service::spawn_ext_service,
-        )
-        .fuse();
+        let test_handler_fut =
+            handle_peer_manager_ext_requests(ext_requests, client_sender.clone()).fuse();
         let mut test_handler_fut = pin!(test_handler_fut);
 
         let (controller_proxy, controller_server) = create_proxy();

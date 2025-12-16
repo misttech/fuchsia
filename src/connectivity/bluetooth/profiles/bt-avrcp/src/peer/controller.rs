@@ -2,15 +2,16 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use anyhow::format_err;
 use fidl_fuchsia_bluetooth_avrcp as fidl_avrcp;
-use futures::Future;
 use futures::channel::mpsc;
+use futures::{Future, StreamExt};
 use log::trace;
 use packet_encoding::{Decodable, Encodable};
 use std::collections::HashSet;
 
 use crate::packets::{Error as PacketError, *};
-use crate::peer::{BrowsablePlayer, RemotePeerHandle};
+use crate::peer::{AVCTPConnectionType, BrowsablePlayer, RemotePeerHandle};
 use crate::types::PeerError as Error;
 
 #[derive(Debug, Clone)]
@@ -57,6 +58,47 @@ pub struct Controller {
 impl Controller {
     pub(crate) fn new(peer: RemotePeerHandle) -> Controller {
         Controller { peer }
+    }
+
+    // Waits for the underlying peer control connection to be established for this controller.
+    pub async fn wait_for_control_connection(&self) -> Result<(), Error> {
+        if self.peer.is_control_connected() {
+            return Ok(());
+        }
+        let (sender, mut receiver) = mpsc::unbounded();
+        self.peer.add_connection_listener(sender);
+        self.peer.request_control_connection();
+
+        while let Some(connection) = receiver.next().await {
+            match connection {
+                (AVCTPConnectionType::Control, true) => return Ok(()),
+                _ => {}
+            }
+        }
+        Err(Error::ConnectionFailure(format_err!(
+            "connection listener closed before control connection was completed"
+        )))
+    }
+
+    // Waits for the underlying peer browse connection to be established for this controller.
+    pub async fn wait_for_browse_connection(&self) -> Result<(), Error> {
+        if self.peer.is_browse_connected() {
+            return Ok(());
+        }
+
+        let (sender, mut receiver) = mpsc::unbounded();
+        self.peer.add_connection_listener(sender);
+        self.peer.request_browse_connection();
+
+        while let Some(connection) = receiver.next().await {
+            match connection {
+                (AVCTPConnectionType::Browse, true) => return Ok(()),
+                _ => {}
+            }
+        }
+        Err(Error::ConnectionFailure(format_err!(
+            "connection listener closed before browse connection was completed"
+        )))
     }
 
     /// Sends a AVC key press and key release passthrough command.

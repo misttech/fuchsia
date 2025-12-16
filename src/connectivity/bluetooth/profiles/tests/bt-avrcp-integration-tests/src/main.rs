@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{format_err, Context};
+use anyhow::{Context, format_err};
 use bt_avctp::{AvcPeer, AvcResponseType};
 use fidl::endpoints::{create_endpoints, create_proxy, create_request_stream};
 use fidl_fuchsia_bluetooth_avrcp::{
@@ -10,11 +10,11 @@ use fidl_fuchsia_bluetooth_avrcp::{
     ControllerMarker, PeerManagerMarker, TargetHandlerMarker,
 };
 use fixture::fixture;
-use fuchsia_bluetooth::profile::{l2cap_connect_parameters, Psm};
+use fuchsia_bluetooth::profile::{Psm, l2cap_connect_parameters};
 use fuchsia_bluetooth::types::{Channel, Uuid};
 use fuchsia_component_test::Capability;
 use futures::stream::StreamExt;
-use futures::{join, TryFutureExt};
+use futures::{TryFutureExt, join};
 use mock_piconet_client::{BtProfileComponent, PiconetHarness, PiconetMember};
 use {
     fidl_fuchsia_bluetooth as fidl_bt, fidl_fuchsia_bluetooth_bredr as bredr,
@@ -168,6 +168,20 @@ async fn avrcp_search_and_connect(mut tf: AvrcpIntegrationTest) {
 
     // We then expect AVRCP to discover the mock peer and attempt to connect to it
     tf.avrcp_observer.expect_observer_service_found_request(tf.mock_peer.peer_id()).await.unwrap();
+
+    // Connect to bt-avrcp.cm's controller service to request a connection.
+    let avrcp_svc = tf
+        .avrcp_observer
+        .connect_to_protocol::<PeerManagerMarker>(&tf.test_realm)
+        .context("Failed to connect to Bluetooth AVRCP interface")
+        .unwrap();
+    // Get controller for mock peer to initiate a connection.
+    let (_c_client, c_server) = create_endpoints::<ControllerMarker>();
+    let _ = avrcp_svc
+        .get_controller_for_target(&tf.mock_peer.peer_id().into(), c_server)
+        .await
+        .unwrap();
+
     let _channel = match connect_requests.select_next_some().await.unwrap() {
         bredr::ConnectionReceiverRequest::Connected { peer_id, channel, .. } => {
             assert_eq!(tf.avrcp_observer.peer_id(), peer_id.into());
@@ -190,29 +204,13 @@ async fn remote_initiates_connection_to_avrcp(mut tf: AvrcpIntegrationTest) {
 
     // Mock peer advertises an AVRCP CT service.
     let service_defs = vec![avrcp_controller_service_definition()];
-    let mut connect_requests = tf
+    let _connect_requests = tf
         .mock_peer
         .register_service_advertisement(service_defs)
         .expect("Mock peer failed to register service advertisement");
 
-    // We then expect AVRCP to discover the mock peer and attempt to connect to it
+    // We then expect AVRCP to discover the mock peer.
     tf.avrcp_observer.expect_observer_service_found_request(tf.mock_peer.peer_id()).await.unwrap();
-    match connect_requests.select_next_some().await.unwrap() {
-        // The `channel` associated with this connection is dropped as only one connection can be
-        // active at a time.
-        bredr::ConnectionReceiverRequest::Connected { peer_id, .. } => {
-            assert_eq!(avrcp_profile_id, peer_id.into());
-        }
-        bredr::ConnectionReceiverRequest::_UnknownMethod { .. } => {
-            panic!("unknown method");
-        }
-    };
-
-    // We wait `MAX_AVRCP_CONNECTION_ESTABLISHMENT` millis before attempting to connect, as per
-    // AVRCP 1.6.2, Section 4.1.1, to avoid conflict.
-    const MAX_AVRCP_CONNECTION_ESTABLISHMENT: zx::MonotonicDuration =
-        zx::MonotonicDuration::from_millis(1000);
-    fasync::Timer::new(fasync::MonotonicInstant::after(MAX_AVRCP_CONNECTION_ESTABLISHMENT)).await;
 
     // Mock peer attempts to connect to AVRCP.
     let params = l2cap_connect_parameters(Psm::AVCTP, fidl_bt::ChannelMode::Basic);
@@ -227,6 +225,18 @@ async fn remote_initiates_connection_to_avrcp(mut tf: AvrcpIntegrationTest) {
         }
         x => panic!("Expected PeerConnected but got: {:?}", x),
     }
+
+    // Connect to bt-avrcp.cm's controller service to request a connection to the mock peer.
+    let avrcp_svc = tf
+        .avrcp_observer
+        .connect_to_protocol::<PeerManagerMarker>(&tf.test_realm)
+        .context("Failed to connect to Bluetooth AVRCP interface")
+        .unwrap();
+    let (_c_client, c_server) = create_endpoints::<ControllerMarker>();
+    let _ = avrcp_svc
+        .get_controller_for_target(&tf.mock_peer.peer_id().into(), c_server)
+        .await
+        .unwrap();
 
     // Sending a random non-AVRCP data packet should be OK.
     let write_result = channel.write(&[0x00, 0x00, 0x00]);
@@ -254,21 +264,14 @@ async fn remote_initiates_browse_channel_before_control(mut tf: AvrcpIntegration
 
     // Mock peer advertises an AVRCP CT service.
     let service_defs = vec![avrcp_controller_service_definition()];
-    let mut connect_requests = tf
+    let _connect_requests = tf
         .mock_peer
         .register_service_advertisement(service_defs)
         .expect("Mock peer failed to register service advertisement");
 
-    // We then expect AVRCP to discover the mock peer and attempt to connect to it
+    // We then expect AVRCP to discover the mock peer.
     tf.avrcp_observer.expect_observer_service_found_request(tf.mock_peer.peer_id()).await.unwrap();
-    match connect_requests.select_next_some().await.unwrap() {
-        bredr::ConnectionReceiverRequest::Connected { peer_id, .. } => {
-            assert_eq!(avrcp_profile_id, peer_id.into());
-        }
-        bredr::ConnectionReceiverRequest::_UnknownMethod { .. } => {
-            panic!("unknown method");
-        }
-    };
+
     // Mock peer tries to initiate a browse channel connection.
     let params =
         l2cap_connect_parameters(Psm::AVCTP_BROWSE, fidl_bt::ChannelMode::EnhancedRetransmission);
@@ -303,6 +306,20 @@ async fn avrcp_disallows_handler_double_sets(mut tf: AvrcpIntegrationTest) {
 
     // We then expect AVRCP to discover the mock peer and attempt to connect to it
     tf.avrcp_observer.expect_observer_service_found_request(tf.mock_peer.peer_id()).await.unwrap();
+
+    // Connect to bt-avrcp.cm's controller service to request a connection.
+    let avrcp_svc = tf
+        .avrcp_observer
+        .connect_to_protocol::<PeerManagerMarker>(&tf.test_realm)
+        .context("Failed to connect to Bluetooth AVRCP interface")
+        .unwrap();
+    // Get controller for mock peer to initiate a connection.
+    let (_c_client, c_server) = create_endpoints::<ControllerMarker>();
+    let _ = avrcp_svc
+        .get_controller_for_target(&tf.mock_peer.peer_id().into(), c_server)
+        .await
+        .unwrap();
+
     let _channel = match connect_requests.select_next_some().await.unwrap() {
         bredr::ConnectionReceiverRequest::Connected { peer_id, channel, .. } => {
             assert_eq!(tf.avrcp_observer.peer_id(), peer_id.into());
@@ -379,6 +396,22 @@ async fn avrcp_remote_receives_set_absolute_volume_request(mut tf: AvrcpIntegrat
 
     // We then expect AVRCP to discover the mock peer and attempt to connect to it
     tf.avrcp_observer.expect_observer_service_found_request(tf.mock_peer.peer_id()).await.unwrap();
+
+    // Connect to avrcp controller service.
+    let avrcp_svc = tf
+        .avrcp_observer
+        .connect_to_protocol::<PeerManagerMarker>(&tf.test_realm)
+        .context("Failed to connect to Bluetooth AVRCP interface")
+        .unwrap();
+
+    // Get controller for mock peer to initiate a connection.
+    let (_c_proxy, c_server) = create_proxy::<ControllerMarker>();
+    avrcp_svc
+        .get_controller_for_target(&tf.mock_peer.peer_id().into(), c_server)
+        .await
+        .unwrap()
+        .expect("Failed to get controller for mock peer");
+
     let channel: Channel = match connect_requests.select_next_some().await.unwrap() {
         bredr::ConnectionReceiverRequest::Connected { peer_id, channel, .. } => {
             assert_eq!(tf.avrcp_observer.peer_id(), peer_id.into());
@@ -388,13 +421,6 @@ async fn avrcp_remote_receives_set_absolute_volume_request(mut tf: AvrcpIntegrat
             panic!("unknown method")
         }
     };
-
-    // Connect to avrcp controller service.
-    let avrcp_svc = tf
-        .avrcp_observer
-        .connect_to_protocol::<PeerManagerMarker>(&tf.test_realm)
-        .context("Failed to connect to Bluetooth AVRCP interface")
-        .unwrap();
 
     // Create absolute volume handler server which simply forwards the desired volume unmodified
     let (avh_client, avh_server) = create_request_stream::<AbsoluteVolumeHandlerMarker>();
