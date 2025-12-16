@@ -18,7 +18,7 @@ if (is_host) {
   }
 
   host_test_data("merge_policies_initial_sids") {
-    sources = [ "initial_sids" ]
+    sources = [ "../testdata/composite_policies/initial_sids" ]
     outputs = [
       "$target_out_dir/testdata/scripts/merge_policies/{{source_file_part}}",
     ]

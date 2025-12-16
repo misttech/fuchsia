@@ -3,35 +3,27 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 #
-################################################################################
-# WARNING: This script is currently not suitable for use in hermetic builds.   #
-# It depends on the SELinux utility, `checkpolicy`, which is not available in  #
-# the Fuchsia build.                                                           #
-################################################################################
-#
 # This tool invokes the `merge_policies` module to merge predefined collections
 # of partial policy files into a predefined binary policy files.
 
-import argparse
 import os
-import pathlib
+import sys
 import tempfile
 
 import merge_policies
 
-# Use the directory of this script to anchor paths. This logic would need to be
-# updated if/when this script is integrated into hermetic builds.
-_SCRIPT_DIRECTORY = os.path.dirname(os.path.realpath(__file__))
-
-_INPUT_POLICY_DIRECTORY = f"{_SCRIPT_DIRECTORY}/../testdata/composite_policies"
-
-_OUTPUT_POLICY_DIRECTORY = (
-    f"{_SCRIPT_DIRECTORY}/../testdata/composite_policies/compiled"
+# Derive the path to the top-level Fuchsia checkout directory from this script's path, unless
+# explicitly provided via the FUCHSIA_DIR environment variable.
+FUCHSIA_DIR = os.environ.get(
+    "FUCHSIA_DIR",
+    os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", ".."),
 )
 
-_LEGACY_POLICY_DIRECTORY = f"{_SCRIPT_DIRECTORY}/../testdata/micro_policies"
-
-_INITIAL_SIDS_PATH = os.path.join(_SCRIPT_DIRECTORY, "initial_sids")
+_TESTDATA_DIRECTORY = f"{FUCHSIA_DIR}/src/starnix/lib/selinux/testdata"
+_INPUT_POLICY_DIRECTORY = f"{_TESTDATA_DIRECTORY}/composite_policies"
+_OUTPUT_POLICY_DIRECTORY = f"{_TESTDATA_DIRECTORY}/composite_policies/compiled"
+_LEGACY_POLICY_DIRECTORY = f"{_TESTDATA_DIRECTORY}/micro_policies"
+_INITIAL_SIDS_PATH = f"{_INPUT_POLICY_DIRECTORY}/initial_sids"
 
 _COMPOSITE_POLICY_PATHS = [
     (
@@ -385,13 +377,13 @@ def compile_policies(checkpolicy_executable: str) -> None:
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--checkpolicy-executable",
-        required=True,
-        type=pathlib.Path,
-        help="Path to the SELinux checkpolicy utility executable",
-    )
-    args = parser.parse_args()
+    checkpolicy_executable = f"{FUCHSIA_DIR}/local/checkpolicy"
 
-    compile_policies(args.checkpolicy_executable)
+    if not os.path.exists(checkpolicy_executable):
+        print(
+            "This script should be run from the top-level directory of the Fuchsia checkout, and requires that there is an appropriate binary at local/checkpolicy.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    compile_policies(checkpolicy_executable)
