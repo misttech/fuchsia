@@ -5,15 +5,13 @@
 import("//build/compiled_action.gni")
 import("//build/fidl/fidl_summary.gni")
 
-# Generates a FIDL plasa fragment and metadata.
-#
-# The plasa fragment file is a JSON FIDL summary.
+# Generates a FIDL metadata for a plasa fragment file.
 #
 # The metadata is as follows:
 #
 # metadata = {
 #   plasa = [
-#     kind = ... # "api_fidl" if unset, or invoker.kind if set.
+#     kind = ... # "api_${dest}", e.g. "api_fidl".
 #     file = ... # The label of the generated output file.
 #     path = ... # The filesystem path of the generated summary file
 #     dest = ... # Placement of the generated output file in the manifest.
@@ -22,16 +20,12 @@ import("//build/fidl/fidl_summary.gni")
 #
 # Args:
 #
-# inputs: list(label)
-#   A singleton list naming the FIDL IR file to read.
-#
-# outputs: list(label)
-#   A singleton naming the output API summary file to generate.
-#
-# dest: "fidl"|"vdso"
+# dest: "fidl"
 #   The destination packaging directory for the code.
 #
-# applicable_licenses: list(label)
+# fragment_file: path
+#   A file containing a JSON FIDL summary.
+#
 # testonly: bool(optional)
 # deps: list(label)
 # visiblility: list(label)
@@ -40,22 +34,17 @@ template("plasa_fragment_fidl") {
   if (defined(invoker.dest)) {
     dest = invoker.dest
   }
-  assert(dest == "fidl" || dest == "vdso",
-         "dest must be either 'fidl' or 'vdso'")
+  assert(dest == "fidl", "`dest` must be 'fidl'.")
 
-  fragment_file = invoker.output_fragment_file
+  fragment_file = invoker.fragment_file
 
-  fidl_summary_json(target_name) {
+  group(target_name) {
     forward_variables_from(invoker,
                            [
-                             "applicable_licenses",
                              "deps",
                              "testonly",
                              "visibility",
                            ])
-    inputs = [ invoker.fidl_ir ]
-    outputs = [ fragment_file ]
-
     metadata = {
       plasa = [
         {
@@ -65,9 +54,6 @@ template("plasa_fragment_fidl") {
           dest = "${dest}/" + rebase_path(fragment_file, target_gen_dir)
         },
       ]
-      if (defined(invoker.metadata)) {
-        forward_variables_from(invoker.metadata, "*")
-      }
     }
   }
 }

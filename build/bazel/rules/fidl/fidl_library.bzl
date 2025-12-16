@@ -254,6 +254,10 @@ def _fidl_library_impl(
     fidl_gen_dir = "gen/%s" % name
     fidl_ir_json = "%s.fidl.json" % name
 
+    # Note that the naming restriction does not apply to this file because
+    # it is not used as an input to another target within the macro.
+    json_summary = "%s/%s.api_summary.json" % (fidl_gen_dir, library_name)
+
     compilation_target_name = "%s_compile" % name
 
     # TODO(https://fxbug.dev/428285014): Validate versioning-related attributes,
@@ -275,19 +279,12 @@ def _fidl_library_impl(
         deps = deps,
         gen_dir = fidl_gen_dir,
         json_representation = fidl_ir_json,
+        out_json_summary = json_summary,
         available = available,
         versioned = fidlc_versioned_arg,
         experimental_flags = experimental_flags,
         testonly = testonly,
         visibility = ["//visibility:private"],
-
-        # Temporary for testing.
-        # Note that the naming restriction does not apply to this file because
-        # it is not used as an input to another target within the macro.
-        # TODO(https://fxbug.dev/428285014): Remove this once this is being
-        # excercised as part of compatibility tests. We may then be able to
-        # change compilation_target_name to the desired value.
-        out_json_summary = "%s/%s.api_summary.json" % (fidl_gen_dir, library_name),
     )
     # TODO(https://fxbug.dev/428285014): Validate resulting JSON.
 

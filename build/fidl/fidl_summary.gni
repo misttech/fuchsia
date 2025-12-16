@@ -30,7 +30,6 @@ template("fidl_summary_json") {
                              "applicable_licenses",
                              "testonly",
                              "deps",
-                             "metadata",
                              "inputs",
                              "outputs",
                              "visibility",

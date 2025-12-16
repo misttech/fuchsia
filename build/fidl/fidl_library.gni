@@ -326,6 +326,10 @@ template("fidl_library") {
 
   # LINT.IfChange(fidl_library)
 
+  # Note that this file name may be different from those used for compatibility
+  # tests below.
+  summary_file_json = "$target_gen_dir/$target_name.api_summary.json"
+
   fidl_ir(compilation_target_name) {
     forward_variables_from(invoker, invoker_variables_to_forward_to_fidl_ir)
     testonly = testonly
@@ -342,26 +346,20 @@ template("fidl_library") {
     fidl_library_name = library_name
     gen_dir = target_gen_dir
     json_representation = invoker.fidl_ir_json
+    out_json_summary = summary_file_json
     versioned = fidlc_versioned_arg
     if (!defined(available)) {
       available = [ "fuchsia:$fidl_target_api_levels" ]
     }
   }
 
-  # Note that this file name may be different from those used for compatibility
-  # tests below.
-  summary_file_json = "$target_gen_dir/$target_name.api_summary.json"
-
-  plasa_fragment_file = summary_file_json
   plasa_fragment_fidl(plasa_fragment_target_name) {
-    forward_variables_from(invoker, [ "applicable_licenses" ])
     testonly = testonly
     visibility = [
       ":*",
       "//sdk/fidl:plasa",
     ]
-    fidl_ir = invoker.fidl_ir_json
-    output_fragment_file = plasa_fragment_file
+    fragment_file = summary_file_json
     dest = "fidl"
     deps = [ ":$compilation_target_name" ]
   }
