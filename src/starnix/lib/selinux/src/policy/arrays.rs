@@ -461,6 +461,9 @@ pub(super) enum PermissionData {
 #[repr(C, packed)]
 pub(super) struct ExtendedPermissions {
     pub(super) xperms_type: u8,
+    // xperms_optional_prefix is meaningful when xperms_type is
+    // XPERMS_TYPE_IOCTL_PREFIX_AND_POSTFIXES or XPERMS_TYPE_NLMSG and
+    // meaningless when xperms_type is XPERMS_TYPE_IOCTL_PREFIXES.
     pub(super) xperms_optional_prefix: u8,
     pub(super) xperms_bitmap: XpermsBitmap,
 }
@@ -1611,6 +1614,7 @@ mod tests {
         assert!(rules[0].metadata.is_allowxperm());
         if let Some(xperms) = rules[0].extended_permissions() {
             assert_eq!(xperms.xperms_type, XPERMS_TYPE_IOCTL_PREFIX_AND_POSTFIXES);
+            assert_eq!(xperms.xperms_optional_prefix, 0x12);
             assert_eq!(xperms.count(), 2);
             assert!(xperms.contains(0x1234));
             assert!(xperms.contains(0x1256));
@@ -1642,6 +1646,7 @@ mod tests {
         assert!(rules[0].metadata.is_allowxperm());
         if let Some(xperms) = rules[0].extended_permissions() {
             assert_eq!(xperms.xperms_type, XPERMS_TYPE_IOCTL_PREFIX_AND_POSTFIXES);
+            assert_eq!(xperms.xperms_optional_prefix, 0x30);
             assert_eq!(xperms.count(), 4);
             assert!(xperms.contains(0x3008));
             assert!(xperms.contains(0x3009));
@@ -1674,6 +1679,7 @@ mod tests {
         assert!(rules[0].metadata.is_allowxperm());
         if let Some(xperms) = rules[0].extended_permissions() {
             assert_eq!(xperms.xperms_type, XPERMS_TYPE_IOCTL_PREFIX_AND_POSTFIXES);
+            assert_eq!(xperms.xperms_optional_prefix, 0x56);
             assert_eq!(xperms.count(), 1);
             assert!(xperms.contains(0x5678));
         } else {
@@ -1682,6 +1688,7 @@ mod tests {
         assert!(rules[1].metadata.is_allowxperm());
         if let Some(xperms) = rules[1].extended_permissions() {
             assert_eq!(xperms.xperms_type, XPERMS_TYPE_IOCTL_PREFIX_AND_POSTFIXES);
+            assert_eq!(xperms.xperms_optional_prefix, 0x12);
             assert_eq!(xperms.count(), 1);
             assert!(xperms.contains(0x1234));
         } else {
@@ -1742,6 +1749,7 @@ mod tests {
         assert!(rules[0].metadata.is_allowxperm());
         if let Some(xperms) = rules[0].extended_permissions() {
             assert_eq!(xperms.xperms_type, XPERMS_TYPE_IOCTL_PREFIX_AND_POSTFIXES);
+            assert_eq!(xperms.xperms_optional_prefix, 0xff);
             assert_eq!(xperms.count(), 0xfe);
             for xperm in 0xff00..0xfffd {
                 assert!(xperms.contains(xperm));
@@ -1751,6 +1759,7 @@ mod tests {
         }
         if let Some(xperms) = rules[1].extended_permissions() {
             assert_eq!(xperms.xperms_type, XPERMS_TYPE_IOCTL_PREFIX_AND_POSTFIXES);
+            assert_eq!(xperms.xperms_optional_prefix, 0x00);
             assert_eq!(xperms.count(), 0xfe);
             for xperm in 0x0002..0x0100 {
                 assert!(xperms.contains(xperm));
@@ -1792,6 +1801,7 @@ mod tests {
         assert!(rules[0].metadata.is_allowxperm());
         if let Some(xperms) = rules[0].extended_permissions() {
             assert_eq!(xperms.xperms_type, XPERMS_TYPE_IOCTL_PREFIX_AND_POSTFIXES);
+            assert_eq!(xperms.xperms_optional_prefix, 0xff);
             assert_eq!(xperms.count(), 0xfe);
             for xperm in 0xff00..0xfffd {
                 assert!(xperms.contains(xperm));
@@ -1801,6 +1811,7 @@ mod tests {
         }
         if let Some(xperms) = rules[1].extended_permissions() {
             assert_eq!(xperms.xperms_type, XPERMS_TYPE_IOCTL_PREFIX_AND_POSTFIXES);
+            assert_eq!(xperms.xperms_optional_prefix, 0x40);
             assert_eq!(xperms.count(), 0xfe);
             for xperm in 0x4002..0x4100 {
                 assert!(xperms.contains(xperm));
@@ -1811,6 +1822,7 @@ mod tests {
         assert!(rules[0].metadata.is_allowxperm());
         if let Some(xperms) = rules[2].extended_permissions() {
             assert_eq!(xperms.xperms_type, XPERMS_TYPE_IOCTL_PREFIX_AND_POSTFIXES);
+            assert_eq!(xperms.xperms_optional_prefix, 0x2f);
             assert_eq!(xperms.count(), 0xfe);
             for xperm in 0x2f00..0x2ffd {
                 assert!(xperms.contains(xperm));
@@ -1820,6 +1832,7 @@ mod tests {
         }
         if let Some(xperms) = rules[3].extended_permissions() {
             assert_eq!(xperms.xperms_type, XPERMS_TYPE_IOCTL_PREFIX_AND_POSTFIXES);
+            assert_eq!(xperms.xperms_optional_prefix, 0x00);
             assert_eq!(xperms.count(), 0xfe);
             for xperm in 0x0002..0x0100 {
                 assert!(xperms.contains(xperm));
@@ -1904,6 +1917,7 @@ mod tests {
         assert!(rules[1].metadata.is_allowxperm());
         if let Some(xperms) = rules[1].extended_permissions() {
             assert_eq!(xperms.xperms_type, XPERMS_TYPE_IOCTL_PREFIX_AND_POSTFIXES);
+            assert_eq!(xperms.xperms_optional_prefix, 0x10);
             assert_eq!(xperms.count(), 2);
             assert!(xperms.contains(0x1000));
             assert!(xperms.contains(0x1001));
@@ -1932,6 +1946,7 @@ mod tests {
         assert!(rules[0].metadata.is_allowxperm());
         if let Some(xperms) = rules[0].extended_permissions() {
             assert_eq!(xperms.xperms_type, XPERMS_TYPE_NLMSG);
+            assert_eq!(xperms.xperms_optional_prefix, 0x00);
             assert_eq!(xperms.count(), 1);
             assert!(xperms.contains(0x12));
         } else {
@@ -1961,6 +1976,7 @@ mod tests {
         assert!(rules[0].metadata.is_allowxperm());
         if let Some(xperms) = rules[0].extended_permissions() {
             assert_eq!(xperms.xperms_type, XPERMS_TYPE_NLMSG);
+            assert_eq!(xperms.xperms_optional_prefix, 0x00);
             assert_eq!(xperms.count(), 2);
             assert!(xperms.contains(0x12));
             assert!(xperms.contains(0x24));
@@ -1991,6 +2007,7 @@ mod tests {
         assert!(rules[0].metadata.is_allowxperm());
         if let Some(xperms) = rules[0].extended_permissions() {
             assert_eq!(xperms.xperms_type, XPERMS_TYPE_NLMSG);
+            assert_eq!(xperms.xperms_optional_prefix, 0x10);
             assert_eq!(xperms.count(), 1);
             assert!(xperms.contains(0x1024));
         } else {
@@ -1999,6 +2016,7 @@ mod tests {
         assert!(rules[1].metadata.is_allowxperm());
         if let Some(xperms) = rules[1].extended_permissions() {
             assert_eq!(xperms.xperms_type, XPERMS_TYPE_NLMSG);
+            assert_eq!(xperms.xperms_optional_prefix, 0x00);
             assert_eq!(xperms.count(), 1);
             assert!(xperms.contains(0x12));
         } else {
@@ -2028,6 +2046,7 @@ mod tests {
         assert!(rules[0].metadata.is_allowxperm());
         if let Some(xperms) = rules[0].extended_permissions() {
             assert_eq!(xperms.xperms_type, XPERMS_TYPE_NLMSG);
+            assert_eq!(xperms.xperms_optional_prefix, 0x00);
             assert_eq!(xperms.count(), 0x100);
             for i in 0x0..0xff {
                 assert!(xperms.contains(i), "{i}");
@@ -2062,6 +2081,7 @@ mod tests {
         assert!(rules[0].metadata.is_allowxperm());
         if let Some(xperms) = rules[0].extended_permissions() {
             assert_eq!(xperms.xperms_type, XPERMS_TYPE_NLMSG);
+            assert_eq!(xperms.xperms_optional_prefix, 0x01);
             assert_eq!(xperms.count(), 0x100);
             for i in 0x0100..0x01ff {
                 assert!(xperms.contains(i), "{i}");
@@ -2071,6 +2091,7 @@ mod tests {
         }
         if let Some(xperms) = rules[1].extended_permissions() {
             assert_eq!(xperms.xperms_type, XPERMS_TYPE_NLMSG);
+            assert_eq!(xperms.xperms_optional_prefix, 0x00);
             assert_eq!(xperms.count(), 0x100);
             for i in 0x0..0xff {
                 assert!(xperms.contains(i), "{i}");
@@ -2107,6 +2128,7 @@ mod tests {
         assert!(rules[0].metadata.is_allowxperm());
         if let Some(xperms) = rules[0].extended_permissions() {
             assert_eq!(xperms.xperms_type, XPERMS_TYPE_NLMSG);
+            assert_eq!(xperms.xperms_optional_prefix, 0x20);
             assert_eq!(xperms.count(), 0x100);
             for i in 0x2000..0x20ff {
                 assert!(xperms.contains(i), "{i}");
@@ -2116,6 +2138,7 @@ mod tests {
         }
         if let Some(xperms) = rules[1].extended_permissions() {
             assert_eq!(xperms.xperms_type, XPERMS_TYPE_NLMSG);
+            assert_eq!(xperms.xperms_optional_prefix, 0x10);
             assert_eq!(xperms.count(), 0x100);
             for i in 0x1000..0x10ff {
                 assert!(xperms.contains(i), "{i}");
@@ -2125,6 +2148,7 @@ mod tests {
         }
         if let Some(xperms) = rules[2].extended_permissions() {
             assert_eq!(xperms.xperms_type, XPERMS_TYPE_NLMSG);
+            assert_eq!(xperms.xperms_optional_prefix, 0x00);
             assert_eq!(xperms.count(), 0x100);
             for i in 0x0..0xff {
                 assert!(xperms.contains(i), "{i}");
@@ -2161,6 +2185,7 @@ mod tests {
         assert!(rules[0].metadata.is_allowxperm());
         if let Some(xperms) = rules[0].extended_permissions() {
             assert_eq!(xperms.xperms_type, XPERMS_TYPE_NLMSG);
+            assert_eq!(xperms.xperms_optional_prefix, 0x02);
             assert_eq!(xperms.count(), 0x100);
             for i in 0x0200..0x02ff {
                 assert!(xperms.contains(i), "{i}");
@@ -2170,6 +2195,7 @@ mod tests {
         }
         if let Some(xperms) = rules[1].extended_permissions() {
             assert_eq!(xperms.xperms_type, XPERMS_TYPE_NLMSG);
+            assert_eq!(xperms.xperms_optional_prefix, 0x00);
             assert_eq!(xperms.count(), 0x100);
             for i in 0x0..0xff {
                 assert!(xperms.contains(i), "{i}");
@@ -2201,6 +2227,7 @@ mod tests {
         assert!(rules[0].metadata.is_auditallowxperm());
         if let Some(xperms) = rules[0].extended_permissions() {
             assert_eq!(xperms.xperms_type, XPERMS_TYPE_NLMSG);
+            assert_eq!(xperms.xperms_optional_prefix, 0x00);
             assert_eq!(xperms.count(), 1);
             assert!(xperms.contains(0x10));
         } else {
@@ -2208,6 +2235,7 @@ mod tests {
         }
         if let Some(xperms) = rules[1].extended_permissions() {
             assert_eq!(xperms.xperms_type, XPERMS_TYPE_IOCTL_PREFIX_AND_POSTFIXES);
+            assert_eq!(xperms.xperms_optional_prefix, 0x10);
             assert_eq!(xperms.count(), 1);
             assert!(xperms.contains(0x1000));
         } else {
@@ -2242,6 +2270,7 @@ mod tests {
         assert!(rules[0].metadata.is_dontauditxperm());
         if let Some(xperms) = rules[0].extended_permissions() {
             assert_eq!(xperms.xperms_type, XPERMS_TYPE_NLMSG);
+            assert_eq!(xperms.xperms_optional_prefix, 0x00);
             assert_eq!(xperms.count(), 1);
             assert!(xperms.contains(0x11));
         } else {
@@ -2249,6 +2278,7 @@ mod tests {
         }
         if let Some(xperms) = rules[1].extended_permissions() {
             assert_eq!(xperms.xperms_type, XPERMS_TYPE_IOCTL_PREFIX_AND_POSTFIXES);
+            assert_eq!(xperms.xperms_optional_prefix, 0x10);
             assert_eq!(xperms.count(), 1);
             assert!(xperms.contains(0x1000));
         } else {
