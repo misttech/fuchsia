@@ -21,11 +21,6 @@
             from: "self",
             to: "#remote-control",
         },
-        {
-            protocol: "fuchsia.boot.Arguments",
-            from: "parent",
-            to: "#remote-control",
-        },
 
         // Note: These protocols are scoped to the root of the component topoology,
         // hence the `.root` suffix

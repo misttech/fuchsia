@@ -54,7 +54,6 @@
         },
         {
             protocol: [
-                "fuchsia.boot.Arguments",
                 "fuchsia.device.NameProvider",
                 "fuchsia.kernel.Stats",
                 "fuchsia.sysinfo.SysInfo",
