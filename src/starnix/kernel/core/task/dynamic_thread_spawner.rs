@@ -25,7 +25,7 @@ use std::sync::Arc;
 use std::sync::mpsc::{SendError, SyncSender, TrySendError, sync_channel};
 use std::thread::JoinHandle;
 
-type BoxedClosure<T> = Box<dyn FnOnce(&mut Locked<Unlocked>, &CurrentTask) -> T + Send + 'static>;
+type BoxedClosure = Box<dyn FnOnce(&mut Locked<Unlocked>, &CurrentTask) -> () + Send + 'static>;
 
 const DEFAULT_THREAD_ROLE: &str = "fuchsia.starnix.fair.16";
 
@@ -86,20 +86,26 @@ impl<C: ClosureKind> SpawnRequestBuilder<C> {
 /// You can call these only if you have not provided a closure yet.
 impl SpawnRequestBuilder<ClosureNone> {
     /// Provides the closure that the spawner will run.
-    pub fn with_sync_closure<F, T>(self, f: F) -> SpawnRequestBuilder<ClosureSome<T>>
+    pub fn with_sync_closure<F, T>(
+        self,
+        f: F,
+    ) -> SpawnRequestBuilder<impl FnOnce(&mut Locked<Unlocked>, &CurrentTask) -> T + Send + 'static>
     where
-        F: FnOnce(&mut Locked<Unlocked>, &CurrentTask) -> T + Send + 'static,
         T: Send + 'static,
+        F: FnOnce(&mut Locked<Unlocked>, &CurrentTask) -> T + Send + 'static,
     {
         let SpawnRequestBuilder { role, closure_kind: _, debug_name } = self;
-        SpawnRequestBuilder { role, closure_kind: ClosureSome { closure: Box::new(f) }, debug_name }
+        SpawnRequestBuilder { role, closure_kind: f, debug_name }
     }
 
     /// Provides the closure that the spawner will run.
-    pub fn with_async_closure<F, T>(self, f: F) -> SpawnRequestBuilder<ClosureSome<T>>
+    pub fn with_async_closure<F, T>(
+        self,
+        f: F,
+    ) -> SpawnRequestBuilder<impl FnOnce(&mut Locked<Unlocked>, &CurrentTask) -> T + Send + 'static>
     where
-        F: AsyncFnOnce(LockedAndTask<'_>) -> T + Send + 'static,
         T: Send + 'static,
+        F: AsyncFnOnce(LockedAndTask<'_>) -> T + Send + 'static,
     {
         let sync_fn = async_to_sync(f);
         self.with_sync_closure(sync_fn)
@@ -109,19 +115,20 @@ impl SpawnRequestBuilder<ClosureNone> {
 /// A fully configured spawn request.
 pub struct SpawnRequest {
     /// The closure to run.
-    closure: BoxedClosure<()>,
+    closure: BoxedClosure,
     /// A name to give to the task.
     debug_name: String,
 }
 
-impl<T> SpawnRequestBuilder<ClosureSome<T>>
+impl<T, F> SpawnRequestBuilder<F>
 where
     T: Send + 'static,
+    F: FnOnce(&mut Locked<Unlocked>, &CurrentTask) -> T + Send + 'static,
 {
     /// Build a spawn request.
     pub fn build(self) -> SpawnRequest {
         let Self { role, closure_kind, debug_name } = self;
-        let ClosureSome { closure } = closure_kind;
+        let closure = closure_kind;
         let closure = maybe_apply_role(role, closure);
         let closure = Box::new(move |locked: &mut Locked<Unlocked>, current_task: &CurrentTask| {
             let _ = closure(locked, current_task);
@@ -141,7 +148,7 @@ where
     /// ```
     pub fn build_with_sync_result(self) -> (impl FnOnce() -> Result<T, Errno>, SpawnRequest) {
         let Self { role, closure_kind, debug_name } = self;
-        let ClosureSome { closure } = closure_kind;
+        let closure = closure_kind;
         let (sender, receiver) = sync_channel::<T>(0);
         let result_fn = move || {
             receiver.recv().map_err(|err| errno!(EINTR, format!("while receiving: {err:?}")))
@@ -165,7 +172,7 @@ where
     /// ```
     pub fn build_with_async_result(self) -> (impl Future<Output = Result<T, Errno>>, SpawnRequest) {
         let Self { role, closure_kind, debug_name } = self;
-        let ClosureSome { closure } = closure_kind;
+        let closure = closure_kind;
         let (sender_async, result_fut) = oneshot::channel::<T>();
         let maybe_with_role = maybe_apply_role(role, closure);
         let repackaged =
@@ -195,12 +202,12 @@ pub struct DynamicThreadSpawner {
 fn maybe_apply_role<R, F>(
     role: Option<&'static str>,
     f: F,
-) -> Box<dyn FnOnce(&mut Locked<Unlocked>, &CurrentTask) -> R + Send + 'static>
+) -> impl FnOnce(&mut Locked<Unlocked>, &CurrentTask) -> R + Send + 'static
 where
     F: FnOnce(&mut Locked<Unlocked>, &CurrentTask) -> R + Send + 'static,
 {
-    if let Some(role) = role {
-        Box::new(move |locked, current_task| {
+    move |locked, current_task| {
+        if let Some(role) = role {
             if let Err(e) = fuchsia_scheduler::set_role_for_this_thread(role) {
                 log_debug!(e:%; "failed to set kthread role");
             }
@@ -209,19 +216,19 @@ where
                 log_debug!(e:%; "failed to reset kthread role to default priority");
             }
             result
-        })
-    } else {
-        Box::new(f)
+        } else {
+            f(locked, current_task)
+        }
     }
 }
 
 /// Convert async closure to sync closure that can be submitted to the spawner.
-fn async_to_sync<F, R>(
+fn async_to_sync<T, F>(
     f: F,
-) -> impl FnOnce(&mut Locked<Unlocked>, &CurrentTask) -> R + Send + 'static
+) -> impl FnOnce(&mut Locked<Unlocked>, &CurrentTask) -> T + Send + 'static
 where
-    F: AsyncFnOnce(LockedAndTask<'_>) -> R + Send + 'static,
-    R: Send + 'static,
+    T: Send + 'static,
+    F: AsyncFnOnce(LockedAndTask<'_>) -> T + Send + 'static,
 {
     move |locked, current_task| {
         let mut exec = fuchsia_async::LocalExecutor::default();
@@ -246,15 +253,11 @@ pub struct ClosureNone {}
 impl ClosureKind for ClosureNone {}
 
 /// A builder type state where a closure has been provided.
-///
 /// See [SpawnRequestBuilder] for usage details.
-pub struct ClosureSome<T>
-where
-    T: Send + 'static,
+impl<T: Send + 'static, FN: FnOnce(&mut Locked<Unlocked>, &CurrentTask) -> T + Send + 'static>
+    ClosureKind for FN
 {
-    closure: BoxedClosure<T>,
 }
-impl<T> ClosureKind for ClosureSome<T> where T: Send + 'static {}
 
 #[derive(Debug)]
 struct DynamicThreadSpawnerState {
@@ -291,7 +294,7 @@ impl DynamicThreadSpawner {
     /// responsible to start running the closure.
     pub fn spawn_from_request(&self, spawn_request: SpawnRequest) {
         // Check whether a thread already exists to handle the request.
-        let mut function: BoxedClosure<()> = Box::new(spawn_request.closure);
+        let mut function: BoxedClosure = spawn_request.closure;
         let mut state = self.state.lock();
         if state.idle_threads > 0 {
             let mut i = 0;
@@ -323,7 +326,7 @@ impl DynamicThreadSpawner {
 
         // A new thread must be created. It needs to be done from the persistent thread.
         let (sender, receiver) = sync_channel::<RunningThread>(0);
-        let dispatch_function: BoxedClosure<()> = Box::new({
+        let dispatch_function: BoxedClosure = Box::new({
             let state = self.state.clone();
             let system_task = self.system_task.clone();
             move |_, _| {
@@ -359,7 +362,7 @@ fn trigger_delayed_releaser(locked_and_task: LockedAndTask<'_>) {
 #[derive(Debug)]
 struct RunningThread {
     thread: Option<JoinHandle<()>>,
-    sender: Option<SyncSender<BoxedClosure<()>>>,
+    sender: Option<SyncSender<BoxedClosure>>,
 }
 
 impl RunningThread {
@@ -367,9 +370,9 @@ impl RunningThread {
         state: Arc<Mutex<DynamicThreadSpawnerState>>,
         system_task: WeakRef<Task>,
         debug_task_name: String,
-        f: BoxedClosure<()>,
+        f: BoxedClosure,
     ) -> Self {
-        let (sender, receiver) = sync_channel::<BoxedClosure<()>>(0);
+        let (sender, receiver) = sync_channel::<BoxedClosure>(0);
         let thread = Some(
             std::thread::Builder::new()
                 .name("kthread-dynamic-worker".to_string())
@@ -421,7 +424,7 @@ impl RunningThread {
 
     fn new_persistent(system_task: WeakRef<Task>, task_name: String) -> Self {
         // The persistent thread doesn't need to do any rendez-vous when received task.
-        let (sender, receiver) = sync_channel::<BoxedClosure<()>>(20);
+        let (sender, receiver) = sync_channel::<BoxedClosure>(20);
         let thread = Some(
             std::thread::Builder::new()
                 .name("kthread-persistent-worker".to_string())
@@ -465,11 +468,11 @@ impl RunningThread {
         Self { thread, sender: Some(sender) }
     }
 
-    fn try_dispatch(&self, f: BoxedClosure<()>) -> Result<(), TrySendError<BoxedClosure<()>>> {
+    fn try_dispatch(&self, f: BoxedClosure) -> Result<(), TrySendError<BoxedClosure>> {
         self.sender.as_ref().expect("sender should never be None").try_send(f)
     }
 
-    fn dispatch(&self, f: BoxedClosure<()>) -> Result<(), SendError<BoxedClosure<()>>> {
+    fn dispatch(&self, f: BoxedClosure) -> Result<(), SendError<BoxedClosure>> {
         self.sender.as_ref().expect("sender should never be None").send(f)
     }
 }
