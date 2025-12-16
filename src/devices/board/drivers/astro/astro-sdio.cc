@@ -178,7 +178,9 @@ zx_status_t Astro::SdEmmcConfigurePortB() {
   gpio_init_steps_.push_back(GpioFunction(S905D2_WIFI_SDIO_WAKE_HOST, 0));
 
   // Configure clock settings
-  status = zx::vmo::create_physical(*resource, S905D2_HIU_BASE, S905D2_HIU_LENGTH, &vmo);
+
+  const size_t vmo_size = fbl::round_up<size_t>(S905D2_HIU_LENGTH, zx_system_get_page_size());
+  status = zx::vmo::create_physical(*resource, S905D2_HIU_BASE, vmo_size, &vmo);
   if (status != ZX_OK) {
     zxlogf(ERROR, "failed to create VMO: %s", zx_status_get_string(status));
     return status;

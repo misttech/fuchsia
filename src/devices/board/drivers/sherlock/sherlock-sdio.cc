@@ -300,10 +300,11 @@ zx_status_t Sherlock::SdioInit() {
   gpio_init_steps_.push_back(GpioFunction(T931_SDIO_CLK, T931_SDIO_CLK_FN));
   gpio_init_steps_.push_back(GpioFunction(T931_SDIO_CMD, T931_SDIO_CMD_FN));
 
+  const size_t rounded_size =
+      fbl::round_up<size_t>(GpioBaseOffset() + T931_GPIO_LENGTH, zx_system_get_page_size());
   zx::unowned_resource res(get_mmio_resource(parent()));
   zx::vmo vmo;
-  zx_status_t status =
-      zx::vmo::create_physical(*res, GpioBase(), GpioBaseOffset() + T931_GPIO_LENGTH, &vmo);
+  zx_status_t status = zx::vmo::create_physical(*res, GpioBase(), rounded_size, &vmo);
   if (status != ZX_OK) {
     zxlogf(ERROR, "failed to create VMO: %s", zx_status_get_string(status));
     return status;
