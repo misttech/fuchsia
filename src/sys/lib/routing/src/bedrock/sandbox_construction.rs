@@ -1563,14 +1563,6 @@ fn extend_dict_with_offer<T, C: ComponentInstanceInterface + 'static>(
     let source_path = offer.source_path();
     let target_name = offer.target_name();
     let porcelain_type = CapabilityTypeName::from(offer);
-    if target_dict.get_capability(&source_path).is_some()
-        && porcelain_type != CapabilityTypeName::Directory
-    {
-        warn!(
-            "duplicate sources for protocol {} in a dict, unable to populate dict entry",
-            target_name
-        );
-    }
     let router: Router<T> = match offer.source() {
         cm_rust::OfferSource::Parent => {
             let err = if component.moniker() == &Moniker::root() {
