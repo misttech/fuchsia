@@ -114,7 +114,6 @@ python_library("antlion") {
     "controllers/fuchsia_lib/lib_controllers/wlan_controller.py",
     "controllers/fuchsia_lib/lib_controllers/wlan_policy_controller.py",
     "controllers/fuchsia_lib/package_server.py",
-    "controllers/fuchsia_lib/sl4f.py",
     "controllers/fuchsia_lib/ssh.py",
     "controllers/iperf_client.py",
     "controllers/iperf_server.py",

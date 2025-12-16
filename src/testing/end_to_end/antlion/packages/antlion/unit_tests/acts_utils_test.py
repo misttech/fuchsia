@@ -14,7 +14,6 @@ from antlion import utils
 from antlion.capabilities.ssh import SSHConfig, SSHResult
 from antlion.controllers.android_device import AndroidDevice
 from antlion.controllers.fuchsia_device import FuchsiaDevice
-from antlion.controllers.fuchsia_lib.sl4f import SL4F
 from antlion.controllers.fuchsia_lib.ssh import FuchsiaSSHProvider
 from antlion.controllers.utils_lib.ssh.connection import SshConnection
 from antlion.libs.proc import job
@@ -204,14 +203,9 @@ class IpAddressUtilTest(unittest.TestCase):
         )
 
     @mock.patch(
-        "antlion.controllers.fuchsia_device.FuchsiaDevice.sl4f",
-        new_callable=mock.PropertyMock,
-    )
-    @mock.patch(
         "antlion.controllers.fuchsia_device.FuchsiaDevice.ffx",
         new_callable=mock.PropertyMock,
     )
-    @mock.patch("antlion.controllers.fuchsia_lib.sl4f.wait_for_port")
     @mock.patch("antlion.controllers.fuchsia_lib.ssh.FuchsiaSSHProvider.run")
     @mock.patch("antlion.capabilities.ssh.SSHProvider.wait_until_reachable")
     @mock.patch(
@@ -229,22 +223,16 @@ class IpAddressUtilTest(unittest.TestCase):
         generate_ssh_config_mock,
         ssh_wait_until_reachable_mock,
         ssh_run_mock,
-        wait_for_port_mock,
         ffx_mock,
-        sl4f_mock,
     ):
         # Configure the log path which is required by ACTS logger.
         logging.log_path = "/tmp/unit_test_garbage"
 
-        ssh = FuchsiaSSHProvider(SSHConfig("192.168.1.1", 22, "/dev/null"))
+        FuchsiaSSHProvider(SSHConfig("192.168.1.1", 22, "/dev/null"))
         ssh_run_mock.return_value = SSHResult(
             subprocess.CompletedProcess([], 0, stdout=b"", stderr=b"")
         )
 
-        # Don't try to wait for the SL4F server to start; it's not being used.
-        wait_for_port_mock.return_value = None
-
-        sl4f_mock.return_value = SL4F(ssh, "http://192.168.1.1:80")
         ssh_wait_until_reachable_mock.return_value = None
 
         list_interfaces_mock.return_value = FUCHSIA_INTERFACES
@@ -256,14 +244,9 @@ class IpAddressUtilTest(unittest.TestCase):
         )
 
     @mock.patch(
-        "antlion.controllers.fuchsia_device.FuchsiaDevice.sl4f",
-        new_callable=mock.PropertyMock,
-    )
-    @mock.patch(
         "antlion.controllers.fuchsia_device.FuchsiaDevice.ffx",
         new_callable=mock.PropertyMock,
     )
-    @mock.patch("antlion.controllers.fuchsia_lib.sl4f.wait_for_port")
     @mock.patch("antlion.controllers.fuchsia_lib.ssh.FuchsiaSSHProvider.run")
     @mock.patch("antlion.capabilities.ssh.SSHProvider.wait_until_reachable")
     @mock.patch(
@@ -281,22 +264,15 @@ class IpAddressUtilTest(unittest.TestCase):
         generate_ssh_config_mock,
         ssh_wait_until_reachable_mock,
         ssh_run_mock,
-        wait_for_port_mock,
         ffx_mock,
-        sl4f_mock,
     ):
         # Configure the log path which is required by ACTS logger.
         logging.log_path = "/tmp/unit_test_garbage"
 
-        ssh = FuchsiaSSHProvider(SSHConfig("192.168.1.1", 22, "/dev/null"))
+        FuchsiaSSHProvider(SSHConfig("192.168.1.1", 22, "/dev/null"))
         ssh_run_mock.return_value = SSHResult(
             subprocess.CompletedProcess([], 0, stdout=b"", stderr=b"")
         )
-
-        # Don't try to wait for the SL4F server to start; it's not being used.
-        wait_for_port_mock.return_value = None
-        ssh_wait_until_reachable_mock.return_value = None
-        sl4f_mock.return_value = SL4F(ssh, "http://192.168.1.1:80")
 
         list_interfaces_mock.return_value = FUCHSIA_INTERFACES
         self.assertEqual(

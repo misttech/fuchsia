@@ -26,7 +26,6 @@ from antlion.controllers.fuchsia_lib.lib_controllers.wlan_policy_controller impo
     WlanPolicyController,
 )
 from antlion.controllers.fuchsia_lib.package_server import PackageServer
-from antlion.controllers.fuchsia_lib.sl4f import SL4F
 from antlion.controllers.fuchsia_lib.ssh import (
     DEFAULT_SSH_PRIVATE_KEY,
     DEFAULT_SSH_USER,
@@ -116,7 +115,6 @@ class FuchsiaDevice:
             device at
         log: A logger object.
         ssh_port: The SSH TCP port number of the Fuchsia device.
-        sl4f_port: The SL4F HTTP port number of the Fuchsia device.
         ssh_config: The ssh_config for connecting to the Fuchsia device.
     """
 
@@ -132,7 +130,6 @@ class FuchsiaDevice:
                 # Scope ID is likely already the interface name, no change necessary.
                 pass
         self.orig_ip = self.ip
-        self.sl4f_port = config.get(int, "sl4f_port", 80)
         self.ssh_username = config.get(str, "ssh_username", DEFAULT_SSH_USER)
         self.ssh_port = config.get(int, "ssh_port", DEFAULT_SSH_PORT)
         self.ssh_binary_path = config.get(str, "ssh_binary_path", "ssh")
@@ -305,12 +302,6 @@ class FuchsiaDevice:
                 },
             },
         )
-
-    @cached_property
-    def sl4f(self) -> SL4F:
-        """Get the sl4f module configured for this device."""
-        self.log.info("Started SL4F server")
-        return SL4F(self.ssh, self.sl4f_port)
 
     @cached_property
     def ssh(self) -> FuchsiaSSHProvider:
@@ -504,8 +495,6 @@ class FuchsiaDevice:
                     "association mechanism (requires policy layer control)."
                 )
         else:
-            # This requires SL4F calls, so it can only happen with actual
-            # devices, not with unit tests.
             self.wlan_policy_controller.configure_wlan(preserve_saved_networks)
 
         # Retrieve WLAN client and AP interfaces
@@ -544,8 +533,6 @@ class FuchsiaDevice:
         it comes back online. Re-initializes services so the tests can continue.
 
         Args:
-            use_ssh: if True, use fuchsia shell command via ssh to reboot
-                instead of SL4F.
             unreachable_timeout: time to wait for device to become unreachable.
             reboot_type: 'soft' or 'hard'.
             testbed_pdus: all testbed PDUs.
@@ -795,7 +782,6 @@ class FuchsiaDevice:
         self.log.info("Stopping host device services.")
         del self.wlan_policy_controller
         del self.wlan_controller
-        del self.sl4f
         del self.ssh
 
     def take_bug_report(self) -> None:
