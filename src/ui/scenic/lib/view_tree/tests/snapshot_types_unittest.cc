@@ -58,9 +58,9 @@ TEST(SnapshotHitTestTest, MultipleSubtrees) {
   });
 
   // Add the starting nodes to the ViewTree,
-  snapshot.view_tree[1];
-  snapshot.view_tree[4];
-  snapshot.view_tree[5];
+  (void)snapshot.view_tree[1];
+  (void)snapshot.view_tree[4];
+  (void)snapshot.view_tree[5];
 
   // Test subtrees individually.
   {
@@ -129,10 +129,10 @@ TEST(SnapshotHitTestTest, ContinuationsShouldHonorInsertionOrder) {
   });
 
   // Add the starting nodes to the ViewTree.
-  snapshot.view_tree[4];
-  snapshot.view_tree[5];
-  snapshot.view_tree[100];
-  snapshot.view_tree[101];
+  (void)snapshot.view_tree[4];
+  (void)snapshot.view_tree[5];
+  (void)snapshot.view_tree[100];
+  (void)snapshot.view_tree[101];
 
   // Check that continuations honor insertion order for index ties.
   {

@@ -29,7 +29,7 @@ TEST(ViewRefInstalledImplTest, AlreadyInstalled_ShouldReturnImmediately) {
 
   // Koid is in the ViewTree.
   auto snapshot = std::make_shared<Snapshot>();
-  snapshot->view_tree[koid];
+  (void)snapshot->view_tree[koid];
   view_ref_installed_impl.OnNewViewTreeSnapshot(snapshot);
 
   bool was_installed = false;
@@ -51,7 +51,7 @@ TEST(ViewRefInstalledImplTest, AlreadyInstalledButDisconnected_ShouldReturnImmed
 
   {  // Koid is in the ViewTree.
     auto snapshot = std::make_shared<Snapshot>();
-    snapshot->view_tree[koid];
+    (void)snapshot->view_tree[koid];
     view_ref_installed_impl.OnNewViewTreeSnapshot(snapshot);
   }
 
@@ -141,7 +141,7 @@ TEST(ViewRefInstalledImplTest, OnViewRefInstalled_ShouldFireWaitingCallbacks) {
 
   // Submit a new snapshot where the koid is in the ViewTree.
   auto snapshot = std::make_shared<Snapshot>();
-  snapshot->view_tree[koid];
+  (void)snapshot->view_tree[koid];
   view_ref_installed_impl.OnNewViewTreeSnapshot(snapshot);
 
   test_loop.RunUntilIdle();
@@ -194,7 +194,7 @@ TEST(ViewRefInstalledImplTest, InstalledThenInvalidated) {
     // Submit a new snapshot where the koid is in the ViewTree.
     async::PostTask(test_loop.dispatcher(), [&view_ref_installed_impl, koid] {
       auto snapshot = std::make_shared<Snapshot>();
-      snapshot->view_tree[koid];
+      (void)snapshot->view_tree[koid];
       view_ref_installed_impl.OnNewViewTreeSnapshot(snapshot);
     });
   }  // ViewRefControl goes out of scope, invalidating the passed in ViewRef.
