@@ -205,12 +205,15 @@ type Permissions = strict bits : uint32 {
 /// Provides element-scoped access to request leases to raise the levels of an
 /// element previously added via Topology.AddElement.
 open protocol Lessor {
-    /// Request made to indicate client intends to raise the given element
-    /// to the given power level and wants to have its direct and transitive
-    /// power dependencies satisfied. When `LeaseControl.WatchStatus` reports
-    /// `LeaseStatus::SATISFIED` this does not indicate the `PowerElement` is at
-    /// the leased `PowerLevel`. Instead this indicates that the dependencies of
-    /// the leased `PowerLevel` are at level required by the `PowerLevel`.
+    /// Request made to indicate the client wants the element raised to the given
+    /// level. When the call returns this **does** **not** mean the
+    /// corresponding element is at the requested level, only that the requested
+    /// level is valid and request is being worked on.
+    ///
+    /// Fulfilling the request will raise the level of all the level's direct
+    /// and transitive power dependencies to their required levels. When
+    /// `LeaseControl.WatchStatus` reports `LeaseStatus::SATISFIED` this means
+    /// given element is at the level specified by the lease.
     ///
     /// Requesting an invalid level returns `LeaseError::INVALID_LEVEL`.
     flexible Lease(resource struct {
@@ -250,7 +253,7 @@ open protocol LeaseControl {
     /// with the current status. Otherwise, the call will block
     /// until the current status differs from last_status.
     // TODO(b/333947976): Remove this method once unused.
-    @available(deprecated=HEAD, note="Use CurrentLevel/RequiredLevel interface instead.")
+    @available(added=HEAD)
     flexible WatchStatus(struct {
         last_status LeaseStatus;
     }) -> (struct {
