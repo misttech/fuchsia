@@ -2,11 +2,10 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/components.gni")
-import("//build/test.gni")
+import("//build/cpp/sdk_cpp_test.gni")
+import("//build/cpp/sdk_cpp_unittest_package.gni")
 
-test("async-loop") {
-  output_name = "async-loop-test"
+sdk_cpp_test("async-loop") {
   sources = [ "loop_tests.cc" ]
   deps = [
     "//sdk/lib/async",
@@ -21,6 +20,6 @@ test("async-loop") {
   ]
 }
 
-fuchsia_unittest_package("async-loop-test-pkg") {
-  deps = [ ":async-loop" ]
+sdk_cpp_unittest_package("async-loop-test-pkg") {
+  sdk_cpp_test_deps = [ ":async-loop" ]
 }
