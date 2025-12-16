@@ -16,15 +16,21 @@
             availability: "optional",
         },
         {
+            config: [
+                "fuchsia.zircon.namegen",
+                "fuchsia.zircon.nodename",
+            ],
+            from: "#kernel-args-forwarder/boot_args",
+            to: "#device_name_provider",
+            availability: "optional",
+        },
+        {
             dictionary: "diagnostics",
             from: "self",
             to: "#device_name_provider",
         },
         {
-            protocol: [
-                "fuchsia.boot.Arguments",
-                "fuchsia.boot.WriteOnlyLog",
-            ],
+            protocol: "fuchsia.boot.WriteOnlyLog",
             from: "parent",
             to: "#device_name_provider",
         },

@@ -98,29 +98,10 @@ int main(int argc, char** argv) {
   // fools libc into block-buffering stdout.
   setlinebuf(stdout);
 
-  fdio_flat_namespace_t* ns;
-  if (zx_status_t status = fdio_ns_export_root(&ns); status != ZX_OK) {
-    printf("device-name-provider: FATAL: fdio_ns_export_root() = %s\n",
-           zx_status_get_string(status));
-    return -1;
-  }
-  auto free = fit::defer([ns]() { fdio_ns_free_flat_ns(ns); });
-  fidl::ClientEnd<fuchsia_io::Directory> svc_root;
-  for (size_t i = 0; i < ns->count; ++i) {
-    if (std::string_view{ns->path[i]} == "/svc") {
-      svc_root = decltype(svc_root){zx::channel{std::exchange(ns->handle[i], ZX_HANDLE_INVALID)}};
-      break;
-    }
-  }
-  if (!svc_root.is_valid()) {
-    printf("device-name-provider: FATAL: did not find /svc in namespace\n");
-    return -1;
-  }
-
   auto config = device_name_provider_config::Config::TakeFromStartupHandle();
   DeviceNameProviderArgs args;
   const char* errmsg = nullptr;
-  int err = ParseArgs(argc, argv, config, svc_root, &errmsg, &args);
+  int err = ParseArgs(argc, argv, config, &errmsg, &args);
   if (err) {
     printf("device-name-provider: FATAL: ParseArgs(_) = %d; %s\n", err, errmsg);
     return err;

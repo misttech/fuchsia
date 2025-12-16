@@ -5,8 +5,6 @@
 #ifndef SRC_BRINGUP_BIN_DEVICE_NAME_PROVIDER_ARGS_H_
 #define SRC_BRINGUP_BIN_DEVICE_NAME_PROVIDER_ARGS_H_
 
-#include <fidl/fuchsia.io/cpp/wire.h>
-
 #include <string>
 
 #include "src/bringup/bin/device-name-provider/device_name_provider_config.h"
@@ -33,7 +31,6 @@ struct DeviceNameProviderArgs {
 // Parses DeviceNameProviderArgs via the kernel commandline and the binary commandline (argv).
 // If ParseArgs returns < 0, an error string will be returned in |error|.
 int ParseArgs(int argc, char** argv, const device_name_provider_config::Config& config,
-              fidl::UnownedClientEnd<fuchsia_io::Directory> svc_root, const char** error,
-              DeviceNameProviderArgs* out);
+              const char** error, DeviceNameProviderArgs* out);
 
 #endif  // SRC_BRINGUP_BIN_DEVICE_NAME_PROVIDER_ARGS_H_

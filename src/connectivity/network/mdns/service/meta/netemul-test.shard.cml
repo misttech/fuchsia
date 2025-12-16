@@ -70,7 +70,11 @@
     ],
     offer: [
         {
-            config: [ "fuchsia.network.PrimaryInterface" ],
+            config: [
+              "fuchsia.network.PrimaryInterface",
+              "fuchsia.zircon.namegen",
+              "fuchsia.zircon.nodename",
+            ],
             from: "void",
             to: [
                 "#local-name-provider",

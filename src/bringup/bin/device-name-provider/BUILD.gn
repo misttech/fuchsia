@@ -14,7 +14,6 @@ source_set("args") {
   sources = [ "args.cc" ]
   deps = [
     ":device_name_provider_config",
-    "//sdk/fidl/fuchsia.boot:fuchsia.boot_cpp",
     "//sdk/lib/component/incoming/cpp",
     "//zircon/system/ulib/zx",
   ]

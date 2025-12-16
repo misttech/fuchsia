@@ -24,15 +24,28 @@
             service: "fuchsia.hardware.network.Service",
         },
         {
-            protocol: [ "fuchsia.boot.Arguments" ],
-        },
-        {
             config: "fuchsia.network.PrimaryInterface",
             key: "primary_interface",
             availability: "optional",
             type: "string",
             max_size: 200,
             default: "",
+        },
+        {
+            config: "fuchsia.zircon.nodename",
+            key: "nodename",
+            availability: "optional",
+            type: "string",
+            max_size: 200,
+            default: "",
+        },
+        {
+            config: "fuchsia.zircon.namegen",
+            key: "namegen",
+            availability: "optional",
+            type: "string",
+            max_size: 10,
+            default: "1",
         },
     ],
     expose: [

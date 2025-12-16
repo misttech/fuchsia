@@ -19,6 +19,8 @@ const IPERF_URL: &str = "#meta/iperf.cm";
 const NAME_PROVIDER_URL: &str = "#meta/device-name-provider.cm";
 const NAME_PROVIDER_MONIKER: &str = "device-name-provider";
 const PRIMARY_INTERFACE_CONFIGURATION: &str = "fuchsia.network.PrimaryInterface";
+const NAMEGEN_CONFIGURATION: &str = "fuchsia.zircon.namegen";
+const NODENAME_CONFIGURATION: &str = "fuchsia.zircon.nodename";
 const CUSTOM_ARTIFACTS_PATH: &str = "/custom_artifacts";
 
 fn iperf_component<'a>(
@@ -72,6 +74,18 @@ fn device_name_provider_component() -> fnetemul::ChildDef {
             fidl_fuchsia_netemul::Capability::ChildDep(fidl_fuchsia_netemul::ChildDep {
                 capability: Some(fidl_fuchsia_netemul::ExposedCapability::Configuration(
                     PRIMARY_INTERFACE_CONFIGURATION.to_string(),
+                )),
+                ..Default::default()
+            }),
+            fidl_fuchsia_netemul::Capability::ChildDep(fidl_fuchsia_netemul::ChildDep {
+                capability: Some(fidl_fuchsia_netemul::ExposedCapability::Configuration(
+                    NAMEGEN_CONFIGURATION.to_string(),
+                )),
+                ..Default::default()
+            }),
+            fidl_fuchsia_netemul::Capability::ChildDep(fidl_fuchsia_netemul::ChildDep {
+                capability: Some(fidl_fuchsia_netemul::ExposedCapability::Configuration(
+                    NODENAME_CONFIGURATION.to_string(),
                 )),
                 ..Default::default()
             }),

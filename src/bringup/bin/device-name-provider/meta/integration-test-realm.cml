@@ -23,10 +23,14 @@
             to: "#integration-test",
         },
         {
+            config: [
+                "fuchsia.network.PrimaryInterface",
+                "fuchsia.zircon.namegen",
+                "fuchsia.zircon.nodename",
+            ],
             from: "void",
             to: "#device-name-provider",
             availability: "optional",
-            config: [ "fuchsia.network.PrimaryInterface" ],
         },
     ],
     expose: [

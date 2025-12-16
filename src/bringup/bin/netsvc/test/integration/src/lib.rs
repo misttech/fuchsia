@@ -38,6 +38,8 @@ const MOCK_SERVICES_NAME: &str = "mock";
 const DEV_NETWORK_DIRECTORY: &str = "dev-class-network";
 
 const PRIMARY_INTERFACE_CONFIGURATION: &str = "fuchsia.network.PrimaryInterface";
+const NAMEGEN_CONFIGURATION: &str = "fuchsia.zircon.namegen";
+const NODENAME_CONFIGURATION: &str = "fuchsia.zircon.nodename";
 
 const BUFFER_SIZE: usize = 2048;
 
@@ -234,6 +236,26 @@ where
                                 capability: Some(
                                     fidl_fuchsia_netemul::ExposedCapability::Configuration(
                                         PRIMARY_INTERFACE_CONFIGURATION.to_string(),
+                                    ),
+                                ),
+                                ..Default::default()
+                            },
+                        ),
+                        fidl_fuchsia_netemul::Capability::ChildDep(
+                            fidl_fuchsia_netemul::ChildDep {
+                                capability: Some(
+                                    fidl_fuchsia_netemul::ExposedCapability::Configuration(
+                                        NODENAME_CONFIGURATION.to_string(),
+                                    ),
+                                ),
+                                ..Default::default()
+                            },
+                        ),
+                        fidl_fuchsia_netemul::Capability::ChildDep(
+                            fidl_fuchsia_netemul::ChildDep {
+                                capability: Some(
+                                    fidl_fuchsia_netemul::ExposedCapability::Configuration(
+                                        NAMEGEN_CONFIGURATION.to_string(),
                                     ),
                                 ),
                                 ..Default::default()
