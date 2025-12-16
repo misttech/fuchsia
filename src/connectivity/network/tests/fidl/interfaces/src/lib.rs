@@ -2057,3 +2057,145 @@ async fn test_lifetime_change_on_hidden_addr<N: Netstack>(
         Err(e) => panic!("wait for address to appear: {}", e),
     }
 }
+
+#[netstack_test]
+async fn watcher_port_identity_koid_filter(name: &str) {
+    let sandbox = netemul::TestSandbox::new().expect("create sandbox");
+    let realm = sandbox.create_netstack_realm::<Netstack3, _>(name).expect("create realm");
+    let endpoint = sandbox.create_endpoint("ep1").await.expect("create endpoint");
+    let endpoint2 = sandbox.create_endpoint("ep2").await.expect("create endpoint");
+    let id_event = endpoint.get_port_identity_koid().await.expect("get id event");
+    let other_id_event = endpoint2.get_port_identity_koid().await.expect("get id event");
+
+    let interface_state = realm
+        .connect_to_protocol::<fidl_fuchsia_net_interfaces::StateMarker>()
+        .expect("connect to protocol");
+
+    let mut watcher_match = pin!(
+        fnet_interfaces_ext::event_stream_from_state::<fnet_interfaces_ext::DefaultInterest>(
+            &interface_state,
+            fnet_interfaces_ext::WatchOptions {
+                port_identity_koid_filter: Some(id_event),
+                ..Default::default()
+            },
+        )
+        .expect("create watcher")
+    );
+    // Should not observe the loopback interface because we have a filter.
+    assert_eq!(
+        fnet_interfaces_ext::existing(
+            watcher_match.by_ref(),
+            HashMap::<u64, fnet_interfaces_ext::PropertiesAndState<(), _>>::new()
+        )
+        .await
+        .expect("read existing"),
+        HashMap::new()
+    );
+    let mut watcher_no_match = pin!(
+        fnet_interfaces_ext::event_stream_from_state::<fnet_interfaces_ext::DefaultInterest>(
+            &interface_state,
+            fnet_interfaces_ext::WatchOptions {
+                port_identity_koid_filter: Some(other_id_event),
+                ..Default::default()
+            },
+        )
+        .expect("create watcher")
+    );
+    // Should not observe the loopback interface because we have a filter.
+    assert_eq!(
+        fnet_interfaces_ext::existing(
+            watcher_no_match.by_ref(),
+            HashMap::<u64, fnet_interfaces_ext::PropertiesAndState<(), _>>::new()
+        )
+        .await
+        .expect("read existing"),
+        HashMap::new()
+    );
+
+    // Install the interface.
+    let interface =
+        endpoint.into_interface_in_realm(&realm).await.expect("add endpoint to Netstack");
+    let id = interface.id();
+
+    let event = watcher_match
+        .next()
+        .await
+        .expect("watcher ended unexpectedly")
+        .expect("watcher error")
+        .into_inner();
+    let got_id = assert_matches::assert_matches!(
+        event,
+        fnet_interfaces::Event::Added(fnet_interfaces::Properties{ id: Some(id), .. }) => id
+    );
+    assert_eq!(got_id, id);
+
+    // Change interface state and wait for a Changed event.
+    interface.set_link_up(true).await.expect("bring device up");
+    assert!(interface.control().enable().await.expect("send enable").expect("enable interface"));
+    let got_id = watcher_match
+        .by_ref()
+        .try_filter_map(|event| {
+            futures::future::ok(match event.into_inner() {
+                fnet_interfaces::Event::Changed(fnet_interfaces::Properties { id, .. }) => {
+                    Some(id.expect("missing id"))
+                }
+                _ => None,
+            })
+        })
+        .next()
+        .await
+        .expect("watcher ended unexpectedly")
+        .expect("watcher error");
+    assert_eq!(got_id, id);
+
+    // Drop the interface and wait for a removed event.
+    drop(interface);
+    let got_id = watcher_match
+        .by_ref()
+        .try_filter_map(|event| {
+            futures::future::ok(match event.into_inner() {
+                fnet_interfaces::Event::Removed(id) => Some(id),
+                _ => None,
+            })
+        })
+        .next()
+        .await
+        .expect("watcher ended unexpectedly")
+        .expect("watcher error");
+    assert_eq!(got_id, id);
+
+    // The other watcher shouldn't have received _any_ of these events. To prove
+    // it, add another interface that should make the other watcher unblock with
+    // a _single_ added event for the new interface.
+    let interface2 =
+        endpoint2.into_interface_in_realm(&realm).await.expect("add endpoint to Netstack");
+    let event = watcher_no_match
+        .next()
+        .await
+        .expect("watcher ended unexpectedly")
+        .expect("watcher error")
+        .into_inner();
+    let got_id = assert_matches::assert_matches!(
+        event,
+        fnet_interfaces::Event::Added(fnet_interfaces::Properties{ id: Some(id), .. }) => id
+    );
+    assert_eq!(got_id, interface2.id());
+
+    // Finally, show that creating new watchers correctly applies the filters to
+    // existing interfaces.
+
+    let existing = fnet_interfaces_ext::existing(
+        fnet_interfaces_ext::event_stream_from_state::<fnet_interfaces_ext::DefaultInterest>(
+            &interface_state,
+            fnet_interfaces_ext::WatchOptions {
+                port_identity_koid_filter: Some(other_id_event),
+                ..Default::default()
+            },
+        )
+        .expect("create watcher"),
+        HashMap::<u64, fnet_interfaces_ext::PropertiesAndState<(), _>>::new(),
+    )
+    .await
+    .expect("read existing");
+    assert_matches::assert_matches!(existing.get(&interface2.id()), Some(_));
+}

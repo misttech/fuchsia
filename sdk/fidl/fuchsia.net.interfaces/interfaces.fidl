@@ -188,6 +188,13 @@ closed protocol State {
             /// Optional; interpreted as false if not present.
             @available(added=HEAD)
             2: include_non_assigned_addresses bool;
+            /// If specified, only events pertaining the interface whose port
+            /// identity event matches the provided `port_identity_koid_filter`
+            /// are yielded.
+            ///
+            /// Optional; no port identity filtering is performed if absent.
+            @available(added=HEAD)
+            3: port_identity_koid_filter zx.Koid;
             // TODO(https://fxbug.dev/42061481): Add bitfield for registering
             // interest in the other interface property fields.
         };

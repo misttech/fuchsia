@@ -914,6 +914,8 @@ pub enum IncludedAddresses {
 pub struct WatchOptions {
     /// The addresses returned from the watcher.
     pub included_addresses: IncludedAddresses,
+    /// The port identity to filter on, if any.
+    pub port_identity_koid_filter: Option<PortIdentityKoid>,
 }
 
 /// Initialize a watcher with interest in all fields and return its events as a
@@ -929,7 +931,7 @@ pub fn event_stream_from_state<I: FieldInterests>(
     WatcherCreationError,
 > {
     let (watcher, server) = ::fidl::endpoints::create_proxy::<fnet_interfaces::WatcherMarker>();
-    let WatchOptions { included_addresses } = options;
+    let WatchOptions { included_addresses, port_identity_koid_filter } = options;
     let () = interface_state
         .get_watcher(
             &fnet_interfaces::WatcherOptions {
@@ -938,6 +940,7 @@ pub fn event_stream_from_state<I: FieldInterests>(
                     IncludedAddresses::All => true,
                     IncludedAddresses::OnlyAssigned => false,
                 }),
+                port_identity_koid_filter: port_identity_koid_filter.map(|p| p.raw_koid()),
                 ..Default::default()
             },
             server,
