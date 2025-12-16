@@ -33,7 +33,7 @@ pub async fn serve_controller(
     while let Some(request) = stream.try_next().await? {
         match request {
             fcomponent::ControllerRequest::Start { args, execution_controller, responder } => {
-                duration!(c"component_manager", c"Controller.Start");
+                duration!("component_manager", "Controller.Start");
                 let Ok(component) = weak_component_instance.upgrade() else {
                     // If the component doesn't exist anymore, then the execution scope we're
                     // scheduled in is being torn down and our task will end momentarily. To not

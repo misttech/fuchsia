@@ -88,10 +88,10 @@ where
     S: Stream<Item = Result<LogsData, Error>> + Unpin,
     W: Write,
 {
-    duration!(c"collect_logs");
+    duration!("collect_logs");
     let mut restricted_logs = vec![];
     while let Some(log) = stream.try_next().await? {
-        duration!(c"process_single_log");
+        duration!("process_single_log");
         let is_restricted = options.is_restricted_log(&log);
         let should_display = options.should_display(&log);
         if !should_display && !is_restricted {
