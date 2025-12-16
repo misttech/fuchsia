@@ -1,0 +1,112 @@
+#!/bin/bash
+# Copyright 2025 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+# This code is utilized by infra's run_script.py to automatically build and upload these
+# containers to CIPD as per b/427767342.
+set -e
+
+# If specified, infra uses this to upload the packages created here.
+CIPD_YAML_MANIFEST=""
+ARCHITECTURES="amd64 arm64"
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --cipd-yaml-manifest)
+      CIPD_YAML_MANIFEST="$2"
+      echo "Creating cipd YAML manifest at: ${CIPD_YAML_MANIFEST}"
+      shift
+      shift
+      ;;
+    --architectures)
+      ARCHITECTURES="$2"
+      shift
+      shift
+      ;;
+    *)
+      echo "Unrecognized argument: $1"
+      exit 1
+      ;;
+  esac
+done
+
+# Move to the directory of the script to find Dockerfile
+SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &> /dev/null && pwd)
+
+FUCHSIA_ROOT=$(git rev-parse --show-toplevel)
+if [ -z "${FUCHSIA_ROOT}" ]; then
+    echo "Could not find fuchsia root directory. Are you in a git repository?"
+    exit 1
+fi
+
+# Dockerfile is expected to be at src/starnix/containers/alpine/Dockerfile
+DOCKERFILE_DIR="${FUCHSIA_ROOT}/src/starnix/containers/alpine"
+
+echo "Building docker images for alpine..."
+for arch in ${ARCHITECTURES}; do
+  echo "Building for ${arch}..."
+  docker buildx build --platform "linux/${arch}" --load -t "alpine-${arch}" "${DOCKERFILE_DIR}"
+done
+
+
+OUT_DIR="${FUCHSIA_ROOT}/out/alpine_cipd"
+rm -rf "${OUT_DIR}"
+mkdir -p "${OUT_DIR}"
+
+echo "Saving docker images..."
+for arch in ${ARCHITECTURES}; do
+  arch_dir="${OUT_DIR}/${arch}"
+  mkdir -p "${arch_dir}"
+  docker save -o "${arch_dir}/alpine.tar" "alpine-${arch}:latest"
+done
+
+GIT_REV=$(git -C "${FUCHSIA_ROOT}" rev-parse HEAD)
+GIT_REPO=$(git -C "${FUCHSIA_ROOT}" config --get remote.origin.url)
+
+CIPD_CLIENT="cipd"
+
+function create_cipd_yaml() {
+  local arch=$1
+  local content_dir=$2
+  local cipd_package_name="fuchsia/starnix/alpine-image-${arch}"
+  local cipd_yaml_file="${OUT_DIR}/cipd-${arch}.yaml"
+  local generated_cipd_file="${OUT_DIR}/alpine-${arch}.cipd"
+
+  echo "Creating ${arch} package..."
+
+  tee <<EOF > "${cipd_yaml_file}"
+package: ${cipd_package_name}
+install_mode: copy
+data:
+  - file: alpine.tar
+EOF
+}
+
+for arch in ${ARCHITECTURES}; do
+  create_cipd_yaml "${arch}" "${OUT_DIR}/${arch}"
+done
+
+if [[ -n "$CIPD_YAML_MANIFEST" ]]; then
+  # The output file is a JSON file that contains a list of YAML files.
+  # It is consumed by the run_script recipe.
+  echo "[" > "${CIPD_YAML_MANIFEST}"
+  first=true
+  for arch in ${ARCHITECTURES}; do
+    if [ "$first" = true ]; then
+      first=false
+    else
+      echo "," >> "${CIPD_YAML_MANIFEST}"
+    fi
+    tee -a <<EOF >> "${CIPD_YAML_MANIFEST}"
+    {
+        "path": "${OUT_DIR}/cipd-${arch}.yaml",
+        "tags": {
+            "git_repository": "${GIT_REPO}",
+            "git_revision": "${GIT_REV}"
+        }
+    }
+EOF
+  done
+  echo "]" >> "${CIPD_YAML_MANIFEST}"
+fi
