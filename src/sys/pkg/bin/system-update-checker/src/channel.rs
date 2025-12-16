@@ -3,8 +3,6 @@
 // found in the LICENSE file.
 
 use crate::connect::*;
-use anyhow::anyhow;
-use fidl_fuchsia_boot::ArgumentsMarker;
 use fidl_fuchsia_pkg::RepositoryManagerMarker;
 use fidl_fuchsia_pkg_ext::RepositoryConfig;
 use fuchsia_sync::Mutex;
@@ -17,20 +15,6 @@ use std::{fs, io};
 use thiserror::Error;
 
 static CHANNEL_PACKAGE_MAP: &str = "channel_package_map.json";
-
-pub async fn build_current_channel_manager<S: ServiceConnect>(
-    service_connector: S,
-) -> Result<CurrentChannelManager, anyhow::Error> {
-    let current_channel = lookup_channel_from_vbmeta(&service_connector)
-        .await
-        .unwrap_or_else(|e| {
-            warn!("Failed to read current_channel from vbmeta: {:#}", anyhow!(e));
-            None
-        })
-        .unwrap_or_default();
-
-    Ok(CurrentChannelManager::new(current_channel))
-}
 
 #[derive(Clone)]
 pub struct CurrentChannelManager {
@@ -51,16 +35,20 @@ pub struct TargetChannelManager<S = ServiceConnector> {
     service_connector: S,
     target_channel: Mutex<Option<String>>,
     channel_package_map: HashMap<String, AbsolutePackageUrl>,
+    current_channel: String,
 }
 
 impl<S: ServiceConnect> TargetChannelManager<S> {
     /// Create a new |TargetChannelManager|.
     ///
     /// Arguments:
-    /// * `service_connector` - used to connect to fuchsia.pkg.RepositoryManager and
-    ///   fuchsia.boot.ArgumentsMarker.
+    /// * `service_connector` - used to connect to fuchsia.pkg.RepositoryManager.
     /// * `config_dir` - directory containing immutable configuration, usually /config/data.
-    pub fn new(service_connector: S, config_dir: impl Into<PathBuf>) -> Self {
+    pub fn new(
+        service_connector: S,
+        config_dir: impl Into<PathBuf>,
+        current_channel: String,
+    ) -> Self {
         let target_channel = Mutex::new(None);
         let mut config_path = config_dir.into();
         config_path.push(CHANNEL_PACKAGE_MAP);
@@ -69,23 +57,12 @@ impl<S: ServiceConnect> TargetChannelManager<S> {
             HashMap::new()
         });
 
-        Self { service_connector, target_channel, channel_package_map }
+        Self { service_connector, target_channel, channel_package_map, current_channel }
     }
 
-    /// Fetch the target channel from vbmeta, if one is present.
-    /// Otherwise, it will set the channel to an empty string.
-    pub async fn update(&self) -> Result<(), anyhow::Error> {
-        let target_channel = lookup_channel_from_vbmeta(&self.service_connector).await?;
-
-        // If the vbmeta has a channel, ensure our target channel matches and return.
-        if let Some(channel) = target_channel {
-            self.set_target_channel(channel);
-            return Ok(());
-        }
-
-        // Otherwise, set the target channel to "".
-        self.set_target_channel("".to_owned());
-        Ok(())
+    /// Set the target channel to the same channel as specified in vbmeta.
+    pub fn update(&self) {
+        self.set_target_channel(self.current_channel.clone());
     }
 
     pub fn get_target_channel(&self) -> Option<String> {
@@ -145,17 +122,6 @@ impl<S: ServiceConnect> TargetChannelManager<S> {
     }
 }
 
-/// Uses Zircon kernel arguments (typically provided by vbmeta) to determine the current channel.
-async fn lookup_channel_from_vbmeta(
-    service_connector: &impl ServiceConnect,
-) -> Result<Option<String>, anyhow::Error> {
-    let proxy = service_connector.connect_to_service::<ArgumentsMarker>()?;
-    let options = "ota_channel";
-    let result = proxy.get_string(options).await?;
-
-    Ok(result)
-}
-
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(tag = "version", content = "content", deny_unknown_fields)]
 pub enum ChannelPackageMap {
@@ -204,116 +170,31 @@ pub enum Error {
 mod tests {
     use super::*;
     use fidl::endpoints::{DiscoverableProtocolMarker, RequestStream};
-    use fidl_fuchsia_boot::{ArgumentsRequest, ArgumentsRequestStream};
     use fidl_fuchsia_pkg::{
         RepositoryIteratorRequest, RepositoryManagerRequest, RepositoryManagerRequestStream,
     };
     use fidl_fuchsia_pkg_ext::RepositoryConfigBuilder;
     use fuchsia_async as fasync;
-    use fuchsia_component::server::ServiceFs;
     use fuchsia_url::RepositoryUrl;
     use futures::prelude::*;
-    use futures::stream::StreamExt;
-    use std::sync::Arc;
 
-    fn serve_ota_channel_arguments(
-        mut stream: ArgumentsRequestStream,
-        channel: Option<&'static str>,
-    ) -> fasync::Task<()> {
-        fasync::Task::local(async move {
-            while let Some(req) = stream.try_next().await.unwrap_or(None) {
-                match req {
-                    ArgumentsRequest::GetString { key, responder } => {
-                        assert_eq!(key, "ota_channel");
-                        let response = channel;
-                        responder.send(response).expect("send ok");
-                    }
-                    _ => unreachable!(),
-                }
-            }
-        })
-    }
+    #[derive(Clone)]
+    struct Connector {}
 
-    #[fuchsia_async::run_singlethreaded(test)]
-    async fn test_current_channel_manager_uses_vbmeta() {
-        let (connector, svc_dir) =
-            NamespacedServiceConnector::bind("/test/current_channel_manager/svc")
-                .expect("ns to bind");
-
-        let mut fs = ServiceFs::new_local();
-
-        fs.add_fidl_service(move |stream: ArgumentsRequestStream| {
-            serve_ota_channel_arguments(stream, Some("stable")).detach()
-        })
-        .serve_connection(svc_dir)
-        .expect("serve_connection");
-
-        fasync::Task::local(fs.collect()).detach();
-        let m = build_current_channel_manager(connector).await.unwrap();
-
-        assert_eq!(&m.channel, "stable");
-    }
-
-    #[fuchsia_async::run_singlethreaded(test)]
-    async fn test_current_channel_manager_uses_fallback() {
-        let (connector, svc_dir) =
-            NamespacedServiceConnector::bind("/test/current_channel_manager/svc")
-                .expect("ns to bind");
-
-        let mut fs = ServiceFs::new_local();
-
-        fs.add_fidl_service(move |stream: ArgumentsRequestStream| {
-            serve_ota_channel_arguments(stream, None).detach()
-        })
-        .serve_connection(svc_dir)
-        .expect("serve_connection");
-
-        fasync::Task::local(fs.collect()).detach();
-        let m = build_current_channel_manager(connector).await.unwrap();
-
-        assert_eq!(m.channel, "");
-    }
-
-    async fn check_target_channel_manager_remembers_channel(
-        ota_channel: Option<String>,
-        initial_channel: String,
-    ) {
-        let dir = tempfile::tempdir().unwrap();
-
-        let connector = ArgumentsServiceConnector::new(ota_channel.clone());
-        let channel_manager = TargetChannelManager::new(connector.clone(), dir.path());
-
-        // Starts with expected initial channel
-        channel_manager.update().await.expect("channel update to succeed");
-        assert_eq!(channel_manager.get_target_channel(), Some(initial_channel.clone()));
-
-        // If the update package changes, or our vbmeta changes, the target_channel will be
-        // updated.
-        connector.set(Some("world".to_owned()));
-        channel_manager.update().await.expect("channel update to succeed");
-        assert_eq!(channel_manager.get_target_channel(), Some("world".to_string()));
-    }
-
-    #[fuchsia_async::run_singlethreaded(test)]
-    async fn test_target_channel_manager_remembers_channel_with_vbmeta() {
-        check_target_channel_manager_remembers_channel(
-            Some("devhost".to_string()),
-            "devhost".to_string(),
-        )
-        .await
-    }
-
-    #[fuchsia_async::run_singlethreaded(test)]
-    async fn test_target_channel_manager_remembers_channel_with_fallback() {
-        check_target_channel_manager_remembers_channel(None, String::new()).await
+    impl ServiceConnect for Connector {
+        fn connect_to_service<P: DiscoverableProtocolMarker>(
+            &self,
+        ) -> Result<P::Proxy, anyhow::Error> {
+            panic!("Unsupported service {}", P::DEBUG_NAME);
+        }
     }
 
     #[fuchsia_async::run_singlethreaded(test)]
     async fn test_target_channel_manager_set_target_channel() {
         let dir = tempfile::tempdir().unwrap();
 
-        let connector = ArgumentsServiceConnector::new(Some("not-target-channel".to_string()));
-        let channel_manager = TargetChannelManager::new(connector, dir.path());
+        let channel_manager =
+            TargetChannelManager::new(Connector {}, dir.path(), "not-target-channel".to_string());
         channel_manager.set_target_channel("target-channel".to_string());
         assert_eq!(channel_manager.get_target_channel(), Some("target-channel".to_string()));
     }
@@ -324,9 +205,9 @@ mod tests {
     ) {
         let dir = tempfile::tempdir().unwrap();
 
-        let connector = ArgumentsServiceConnector::new(ota_channel.clone());
-        let channel_manager = TargetChannelManager::new(connector, dir.path());
-        channel_manager.update().await.unwrap();
+        let channel_manager =
+            TargetChannelManager::new(Connector {}, dir.path(), ota_channel.unwrap_or_default());
+        channel_manager.update();
         assert_eq!(channel_manager.get_target_channel(), Some(expected_channel));
     }
 
@@ -344,51 +225,6 @@ mod tests {
         check_target_channel_manager_update(None, String::new()).await
     }
 
-    #[derive(Clone)]
-    struct ArgumentsServiceConnector {
-        ota_channel: Arc<Mutex<Option<String>>>,
-    }
-
-    impl ArgumentsServiceConnector {
-        fn new(ota_channel: Option<String>) -> Self {
-            Self { ota_channel: Arc::new(Mutex::new(ota_channel)) }
-        }
-        fn set(&self, target: Option<String>) {
-            *self.ota_channel.lock() = target;
-        }
-        fn handle_arguments_stream(&self, mut stream: ArgumentsRequestStream) {
-            let channel = self.ota_channel.lock().clone();
-            fasync::Task::local(async move {
-                while let Some(req) = stream.try_next().await.unwrap() {
-                    match req {
-                        ArgumentsRequest::GetString { key, responder } => {
-                            assert_eq!(key, "ota_channel");
-                            let response = channel.as_deref();
-                            responder.send(response).unwrap();
-                        }
-                        _ => unreachable!(),
-                    }
-                }
-            })
-            .detach();
-        }
-    }
-
-    impl ServiceConnect for ArgumentsServiceConnector {
-        fn connect_to_service<P: DiscoverableProtocolMarker>(
-            &self,
-        ) -> Result<P::Proxy, anyhow::Error> {
-            let (proxy, stream) = fidl::endpoints::create_proxy_and_stream::<P>();
-            match P::PROTOCOL_NAME {
-                ArgumentsMarker::PROTOCOL_NAME => {
-                    self.handle_arguments_stream(stream.cast_stream())
-                }
-                _ => panic!("Unsupported service {}", P::DEBUG_NAME),
-            }
-            Ok(proxy)
-        }
-    }
-
     #[fuchsia_async::run_singlethreaded(test)]
     async fn test_target_channel_manager_get_update_package_url() {
         let dir = tempfile::tempdir().unwrap();
@@ -402,7 +238,7 @@ mod tests {
             r#"{"version":"1","content":[{"channel":"first","package":"fuchsia-pkg://asdfghjkl.example.com/update"}]}"#,
         ).unwrap();
 
-        let channel_manager = TargetChannelManager::new(connector, dir.path());
+        let channel_manager = TargetChannelManager::new(connector, dir.path(), "".to_string());
         assert_eq!(channel_manager.get_target_channel_update_url(), None);
         channel_manager.set_target_channel("first".to_owned());
         assert_eq!(
@@ -439,7 +275,7 @@ mod tests {
             r#"{"version":"1","content":[{"channel":"first","package":"fuchsia-pkg://asdfghjkl.example.com/update"}]}"#,
         ).unwrap();
 
-        let channel_manager = TargetChannelManager::new(connector, dir.path());
+        let channel_manager = TargetChannelManager::new(connector, dir.path(), "".to_string());
         assert_eq!(
             channel_manager.get_channel_list().await.unwrap(),
             vec!["devhost", "first", "qwertyuiop.example.com"]
@@ -451,7 +287,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let connector =
             RepoMgrServiceConnector { channels: vec!["some-channel", "target-channel"] };
-        let channel_manager = TargetChannelManager::new(connector, dir.path());
+        let channel_manager = TargetChannelManager::new(connector, dir.path(), "".to_string());
         assert_eq!(
             channel_manager.get_channel_list().await.unwrap(),
             vec!["some-channel", "target-channel"]

@@ -58,10 +58,12 @@
             to: "#system-update-checker",
         },
         {
-            protocol: [
-                "fuchsia.boot.Arguments",
-                "fuchsia.paver.Paver",
-            ],
+            protocol: [ "fuchsia.paver.Paver" ],
+            from: "parent",
+            to: "#system-update-checker",
+        },
+        {
+            config: [ "fuchsia.ota_channel" ],
             from: "parent",
             to: "#system-update-checker",
         },

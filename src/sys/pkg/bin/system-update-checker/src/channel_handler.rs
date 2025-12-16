@@ -113,6 +113,7 @@ mod tests {
             target_channel_manager: Arc::new(TargetChannelManager::new(
                 crate::connect::ServiceConnector,
                 info_dir.path(),
+                "".to_string(),
             )),
             warn_rate_limiter: RateLimiterMonotonic::from_delay(GET_CURRENT_WARN_DELAY),
         }

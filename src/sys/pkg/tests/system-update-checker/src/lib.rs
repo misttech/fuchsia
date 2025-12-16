@@ -307,6 +307,15 @@ impl TestEnvBuilder {
             )
             .await
             .unwrap();
+        builder
+            .add_route(
+                Route::new()
+                    .capability(Capability::configuration("fuchsia.ota_channel"))
+                    .from(Ref::void())
+                    .to(&system_update_checker),
+            )
+            .await
+            .unwrap();
 
         let realm_instance = builder.build().await.unwrap();
         let channel_provider = realm_instance

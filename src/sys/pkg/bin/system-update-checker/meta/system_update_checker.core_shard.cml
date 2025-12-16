@@ -36,11 +36,13 @@
             subdir: "system-update-checker",
         },
         {
-            protocol: [
-                "fuchsia.boot.Arguments",
-                "fuchsia.paver.Paver",
-            ],
+            protocol: [ "fuchsia.paver.Paver" ],
             from: "parent",
+            to: "#system-update",
+        },
+        {
+            config: [ "fuchsia.ota_channel" ],
+            from: "parent/boot_args",
             to: "#system-update",
         },
     ],

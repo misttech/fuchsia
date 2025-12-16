@@ -30,6 +30,7 @@ use futures::prelude::*;
 use futures::stream::FuturesUnordered;
 use log::error;
 use std::sync::Arc;
+use system_update_checker_config::Config;
 
 const MAX_CONCURRENT_CONNECTIONS: usize = 200;
 const DEFAULT_UPDATE_PACKAGE_URL: &str = "fuchsia-pkg://fuchsia.com/update";
@@ -45,21 +46,22 @@ async fn main() -> Result<(), Error> {
 }
 
 async fn main_inner() -> Result<(), Error> {
+    let config = Config::take_from_startup_handle();
     let inspector = finspect::Inspector::default();
     let _inspect_server_task =
         inspect_runtime::publish(&inspector, inspect_runtime::PublishOptions::default());
 
-    let target_channel_manager =
-        channel::TargetChannelManager::new(connect::ServiceConnector, "/config/data");
-    if let Err(e) = target_channel_manager.update().await {
-        error!("while updating the target channel: {:#}", anyhow!(e));
-    }
+    let target_channel_manager = channel::TargetChannelManager::new(
+        connect::ServiceConnector,
+        "/config/data",
+        config.current_channel.clone(),
+    );
+    target_channel_manager.update();
     let target_channel_manager = Arc::new(target_channel_manager);
 
     let futures = FuturesUnordered::new();
 
-    let current_channel_manager =
-        channel::build_current_channel_manager(connect::ServiceConnector).await?;
+    let current_channel_manager = channel::CurrentChannelManager::new(config.current_channel);
     let current_channel_manager = Arc::new(current_channel_manager);
 
     let (completion_responder_state_reactor, completion_responder_fidl_server, waiter) =

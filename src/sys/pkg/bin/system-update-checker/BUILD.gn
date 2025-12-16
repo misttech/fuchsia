@@ -5,12 +5,21 @@
 import("//build/components.gni")
 import("//build/rust/rustc_binary.gni")
 
+fuchsia_component_manifest("manifest") {
+  component_name = "system-update-checker"
+  manifest = "meta/system-update-checker.cml"
+}
+
+fuchsia_structured_config_rust_lib("system_update_checker_config") {
+  cm_label = ":manifest"
+}
+
 rustc_binary("bin") {
   name = "system_update_checker"
   with_unit_tests = true
   edition = "2024"
   deps = [
-    "//sdk/fidl/fuchsia.boot:fuchsia.boot_rust",
+    ":system_update_checker_config",
     "//sdk/fidl/fuchsia.mem:fuchsia.mem_rust",
     "//sdk/fidl/fuchsia.paver:fuchsia.paver_rust",
     "//sdk/fidl/fuchsia.pkg:fuchsia.pkg_rust",
@@ -77,8 +86,7 @@ rustc_binary("bin") {
 }
 
 fuchsia_component("component") {
-  component_name = "system-update-checker"
-  manifest = "meta/system-update-checker.cml"
+  cm_label = ":manifest"
   deps = [ ":bin" ]
 }
 

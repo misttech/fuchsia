@@ -282,6 +282,11 @@
             to: "#core",
         },
         {
+            dictionary: "boot_args",
+            from: "#bootstrap",
+            to: "#core",
+        },
+        {
             service: [
                 "fuchsia.hardware.clock.DebugService",
                 "fuchsia.hardware.gnss.Service",

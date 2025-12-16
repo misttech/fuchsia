@@ -23,7 +23,6 @@
     use: [
         {
             protocol: [
-                "fuchsia.boot.Arguments",
                 "fuchsia.cobalt.SystemDataUpdater",
                 "fuchsia.paver.Paver",
                 "fuchsia.pkg.garbagecollector.Manager",
@@ -45,6 +44,14 @@
             from: "parent",
             rights: [ "r*" ],
             path: "/system",
+        },
+        {
+            config: "fuchsia.ota_channel",
+            key: "current_channel",
+            max_size: 100,
+            type: "string",
+            availability: "optional",
+            default: "",
         },
     ],
     expose: [
