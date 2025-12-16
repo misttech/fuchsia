@@ -159,6 +159,7 @@ impl CategoryString for &'static CStr {
         }
     }
 
+    #[inline]
     fn acquire_context_cached(&self, site: &sys::trace_site_t) -> Option<TraceCategoryContext> {
         unsafe {
             // SAFETY: The call to `trace_acquire_context_for_category_cached` is sound because
@@ -221,6 +222,7 @@ impl CategoryString for &'static str {
         }
     }
 
+    #[inline]
     fn acquire_context_cached(&self, site: &sys::trace_site_t) -> Option<TraceCategoryContext> {
         unsafe {
             // SAFETY: The call to `trace_acquire_context_for_category_bytestring_cached` is sound
@@ -286,6 +288,7 @@ pub trait AsTraceStrRef {
 }
 
 impl AsTraceStrRef for &'static CStr {
+    #[inline]
     fn as_trace_str_ref(&self, context: &TraceCategoryContext) -> sys::trace_string_ref_t {
         context.register_string_literal(*self)
     }
@@ -295,12 +298,14 @@ impl AsTraceStrRef for &'static CStr {
 // isn't a good way to do this right now because trait specialization is unstable. Hopefully
 // supporting inline refs for &String suffices in the meantime.
 impl AsTraceStrRef for &'static str {
+    #[inline]
     fn as_trace_str_ref(&self, context: &TraceCategoryContext) -> sys::trace_string_ref_t {
         context.register_str(self)
     }
 }
 
 impl AsTraceStrRef for String {
+    #[inline]
     fn as_trace_str_ref(&self, _context: &TraceCategoryContext) -> sys::trace_string_ref_t {
         trace_make_inline_string_ref(self.as_str())
     }
@@ -308,6 +313,7 @@ impl AsTraceStrRef for String {
 
 // This effectively makes deref coercion work for `as_trace_str_ref` calls.
 impl<T: AsTraceStrRef> AsTraceStrRef for &T {
+    #[inline]
     fn as_trace_str_ref(&self, context: &TraceCategoryContext) -> sys::trace_string_ref_t {
         (*self).as_trace_str_ref(context)
     }
