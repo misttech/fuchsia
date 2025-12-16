@@ -2,9 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use super::AccessibilityController;
-use super::accessibility_controller::{AccessibilityError, Request};
-use crate::accessibility::types::{AccessibilityInfo, CaptionsSettings, ColorBlindnessType};
+use crate::accessibility_controller::{AccessibilityController, AccessibilityError, Request};
+use crate::types::{AccessibilityInfo, CaptionsSettings, ColorBlindnessType};
 use async_utils::hanging_get::server;
 use fidl_fuchsia_settings::{
     AccessibilityRequest, AccessibilityRequestStream, AccessibilitySettings,
@@ -20,7 +19,7 @@ use settings_common::inspect::event::{
 
 impl From<AccessibilityInfo> for AccessibilitySettings {
     fn from(info: AccessibilityInfo) -> Self {
-        return AccessibilitySettings {
+        AccessibilitySettings {
             audio_description: info.audio_description,
             screen_reader: info.screen_reader,
             color_inversion: info.color_inversion,
@@ -28,7 +27,7 @@ impl From<AccessibilityInfo> for AccessibilitySettings {
             color_correction: info.color_correction.map(ColorBlindnessType::into),
             captions_settings: info.captions_settings.map(CaptionsSettings::into),
             ..Default::default()
-        };
+        }
     }
 }
 

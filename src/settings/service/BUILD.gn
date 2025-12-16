@@ -36,7 +36,6 @@ icu_rustc_library("lib") {
     "//sdk/fidl/fuchsia.media.sounds:fuchsia.media.sounds_rust",
     "//sdk/fidl/fuchsia.settings:fuchsia.settings_rust",
     "//sdk/fidl/fuchsia.stash:fuchsia.stash_rust",
-    "//sdk/fidl/fuchsia.ui.types:fuchsia.ui.types_rust",
     "//sdk/rust/zx",
     "//src/lib/async-utils",
     "//src/lib/diagnostics/inspect/derive",
@@ -46,6 +45,7 @@ icu_rustc_library("lib") {
     "//src/lib/fuchsia-component",
     "//src/lib/fuchsia-fs",
     "//src/lib/trace/rust:trace",
+    "//src/settings/accessibility:settings_accessibility",
     "//src/settings/camera_watcher_agent:settings_camera_watcher_agent",
     "//src/settings/common:settings_common",
     "//src/settings/display:settings_display",
@@ -81,6 +81,7 @@ icu_rustc_library("lib") {
   test_deps = [
     "//sdk/fidl/fuchsia.stash:fuchsia.stash_rust",
     "//sdk/fidl/fuchsia.ui.brightness:fuchsia.ui.brightness_rust",
+    "//sdk/fidl/fuchsia.ui.types:fuchsia.ui.types_rust",
     "//src/lib/diagnostics/testing/diagnostics-assertions/rust:diagnostics-assertions",
     "//src/lib/fuchsia",
     "//src/lib/fuchsia-sync",
@@ -91,10 +92,6 @@ icu_rustc_library("lib") {
   ]
 
   sources = [
-    "src/accessibility.rs",
-    "src/accessibility/accessibility_controller.rs",
-    "src/accessibility/accessibility_fidl_handler.rs",
-    "src/accessibility/types.rs",
     "src/agent.rs",
     "src/agent/earcons.rs",
     "src/agent/earcons/agent.rs",

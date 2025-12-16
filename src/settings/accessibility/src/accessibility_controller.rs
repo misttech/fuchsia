@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use super::accessibility_fidl_handler::Publisher;
-use crate::accessibility::types::AccessibilityInfo;
+use crate::accessibility_fidl_handler::Publisher;
+use crate::types::AccessibilityInfo;
 use anyhow::{Context, Error};
 use fuchsia_async as fasync;
 use futures::StreamExt;
@@ -48,7 +48,7 @@ impl StorageAccess for AccessibilityController {
     const STORAGE_KEY: &'static str = AccessibilityInfo::KEY;
 }
 
-pub(crate) struct AccessibilityController {
+pub struct AccessibilityController {
     store: Rc<DeviceStorage>,
     publisher: Option<Publisher>,
     setting_value_publisher: SettingValuePublisher<AccessibilityInfo>,

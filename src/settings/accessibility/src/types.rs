@@ -18,7 +18,7 @@ pub struct AccessibilityInfo {
 
 impl AccessibilityInfo {
     pub(crate) fn is_finite(&self) -> bool {
-        self.captions_settings.map_or(true, |captions| captions.is_finite())
+        self.captions_settings.is_none_or(|captions| captions.is_finite())
     }
 }
 
@@ -33,10 +33,7 @@ impl Merge for AccessibilityInfo {
             screen_reader: other.screen_reader.or(self.screen_reader),
             color_inversion: other.color_inversion.or(self.color_inversion),
             enable_magnification: other.enable_magnification.or(self.enable_magnification),
-            color_correction: other
-                .color_correction
-                .map(ColorBlindnessType::into)
-                .or(self.color_correction),
+            color_correction: other.color_correction.or(self.color_correction),
             captions_settings: match (self.captions_settings, other.captions_settings) {
                 (Some(caption_settings), Some(other_caption_settings)) => {
                     Some(caption_settings.merge(other_caption_settings))
@@ -108,9 +105,9 @@ pub(crate) struct CaptionsSettings {
 
 impl CaptionsSettings {
     pub(crate) fn is_finite(&self) -> bool {
-        self.font_style.map_or(true, |font_style| font_style.is_finite())
-            && self.window_color.map_or(true, |window_color| window_color.is_finite())
-            && self.background_color.map_or(true, |bkg_color| bkg_color.is_finite())
+        self.font_style.is_none_or(|font_style| font_style.is_finite())
+            && self.window_color.is_none_or(|window_color| window_color.is_finite())
+            && self.background_color.is_none_or(|bkg_color| bkg_color.is_finite())
     }
 }
 
@@ -164,8 +161,8 @@ pub(crate) struct CaptionFontStyle {
 
 impl CaptionFontStyle {
     pub(crate) fn is_finite(&self) -> bool {
-        self.color.map_or(true, |color| color.is_finite())
-            && self.relative_size.map_or(true, |size| size.is_finite())
+        self.color.is_none_or(|color| color.is_finite())
+            && self.relative_size.is_none_or(|size| size.is_finite())
     }
 }
 

@@ -27,6 +27,7 @@ use futures::{StreamExt, TryStreamExt};
 #[cfg(test)]
 use log as _;
 use serde::Deserialize;
+use settings_accessibility::accessibility_controller::AccessibilityController;
 use settings_common::config::default_settings::DefaultSetting;
 use settings_common::config::{AgentType, ControllerFlag};
 use settings_common::inspect::event::{
@@ -55,13 +56,11 @@ pub use settings_display::display_configuration::DisplayConfiguration;
 pub use settings_input::input_device_configuration::InputConfiguration;
 pub use settings_light::light_hardware_configuration::LightHardwareConfiguration;
 
-use crate::accessibility::accessibility_controller::AccessibilityController;
 use crate::audio::Request as AudioRequest;
 use crate::audio::audio_controller::AudioController;
 use crate::base::SettingType;
 use crate::ingress::fidl;
 
-mod accessibility;
 pub mod audio;
 mod clock;
 mod storage_migrations;
@@ -647,8 +646,8 @@ impl<T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilder<T>
 
         // Start handlers for all components.
         if components.contains(&SettingType::Accessibility) {
-            let accessibility::SetupResult { mut accessibility_fidl_handler, task } =
-                accessibility::setup_accessibility_api(
+            let settings_accessibility::SetupResult { mut accessibility_fidl_handler, task } =
+                settings_accessibility::setup_accessibility_api(
                     Rc::clone(&device_storage_factory),
                     SettingValuePublisher::new(setting_value_tx.clone()),
                     UsagePublisher::new(usage_event_tx.clone(), Rc::clone(&listener_logger)),
