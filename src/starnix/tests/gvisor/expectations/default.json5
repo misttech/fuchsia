@@ -778,6 +778,7 @@
                 "NetlinkRouteTest.ChangeNetnsAndOtherAttrsTogether",
                 "NetlinkRouteTest.LinkedToNetns",
                 "NetlinkRouteTest.LinkMulticastGroupNamespaced",
+                "NetworkNamespaceTest.CloneNewNetWithCloneNewUserDoesNotNeedCapSysAdmin",
 
                 // socket_netlink_uevent
                 "NetlinkUeventTest.AttachFilter",
