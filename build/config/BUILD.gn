@@ -1607,6 +1607,11 @@ config("Wno-deprecated-this-capture") {
   cflags_cc = [ "-Wno-deprecated-this-capture" ]
 }
 
+config("Wno-unused-result") {
+  visibility = [ "//third_party/*" ]
+  cflags = [ "-Wno-unused-result" ]
+}
+
 config("Wsystem-headers") {
   cflags = [ "-Wsystem-headers" ]
 }
