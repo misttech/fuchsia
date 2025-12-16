@@ -41,7 +41,6 @@ source_set("paver-core") {
     "validation.cc",
   ]
   deps = [
-    "//sdk/fidl/fuchsia.boot:fuchsia.boot_cpp",
     "//sdk/fidl/fuchsia.device:fuchsia.device_cpp",
     "//sdk/fidl/fuchsia.hardware.block:fuchsia.hardware.block_cpp",
     "//sdk/fidl/fuchsia.hardware.block.encrypted:fuchsia.hardware.block.encrypted_cpp",
@@ -113,7 +112,6 @@ source_set("astro") {
   public_deps = [
     ":paver-core",
     ":skip-block",
-    "//sdk/fidl/fuchsia.boot:fuchsia.boot_cpp",
     "//sdk/lib/component/incoming/cpp",
     "//src/devices/lib/amlogic",
     "//src/lib/uuid",

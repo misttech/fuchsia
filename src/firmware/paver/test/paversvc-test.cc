@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 #include <endian.h>
-#include <fidl/fuchsia.boot/cpp/wire.h>
 #include <fidl/fuchsia.device/cpp/wire.h>
 #include <fidl/fuchsia.fshost/cpp/wire.h>
 #include <fidl/fuchsia.hardware.block.partition/cpp/wire.h>
@@ -254,12 +253,11 @@ class PaverServiceTest : public PaverTest {
   virtual IsolatedDevmgr::Args DevmgrArgs() {
     IsolatedDevmgr::Args args;
     args.disable_block_watcher = false;
-    args.fake_boot_args = std::make_unique<FakeBootArgs>();
     return args;
   }
 
  protected:
-  virtual paver::PaverConfig Config() { return {}; }
+  virtual paver::PaverConfig Config() { return {.zvb_current_slot = "_a"}; }
 
   void StartPaver(fbl::unique_fd devfs_root, fidl::ClientEnd<fuchsia_io::Directory> svc_root) {
     zx::result paver = paver::Paver::Create(Config(), std::move(devfs_root));
@@ -367,15 +365,19 @@ class PaverServiceSkipBlockTest : public PaverServiceTest {
  public:
   void StartFixture(std::string boot_slot = "-a", bool astro_sysconfig_abr_wear_leveling = false) {
     IsolatedDevmgr::Args args = DevmgrArgs();
-    auto boot_args = std::make_unique<FakeBootArgs>();
-    boot_args->AddStringArgs("zvb.current_slot", std::move(boot_slot));
-    boot_args->SetAstroSysConfigAbrWearLeveling(astro_sysconfig_abr_wear_leveling);
-    args.fake_boot_args = std::move(boot_args);
+
+    paver_config_ = paver::PaverConfig{
+        .arch = paver::Arch::kX64,
+        .astro_sysconfig_abr_wear_leveling = astro_sysconfig_abr_wear_leveling,
+        .zvb_current_slot = std::move(boot_slot),
+    };
     ASSERT_NO_FATAL_FAILURE(PaverServiceTest::Init(std::move(args)));
     ASSERT_NO_FATAL_FAILURE(
         SkipBlockDevice::Create(devmgr_.devfs_root().duplicate(), NandInfo(), &device_));
     ASSERT_NO_FATAL_FAILURE(WaitForDevices());
   }
+
+  paver::PaverConfig Config() override { return paver_config_; }
 
   void SetUp() override {
     // Call PaverTest::SetUp, *not* PaverServiceTest::SetUp; we manually start the fixture
@@ -522,6 +524,8 @@ class PaverServiceSkipBlockTest : public PaverServiceTest {
       std::optional<uint8_t> expected_boot_attempts,
       std::optional<fuchsia_paver::wire::UnbootableReason> expected_unbootable_reason,
       std::string boot_slot = "_a");
+
+  paver::PaverConfig paver_config_;
 
   fidl::WireSyncClient<fuchsia_paver::BootManager> boot_manager_;
   fidl::WireSyncClient<fuchsia_paver::DataSink> data_sink_;
@@ -2433,9 +2437,6 @@ class PaverServiceLuisTest : public PaverServiceGptDeviceTest {
   IsolatedDevmgr::Args DevmgrArgs() override {
     IsolatedDevmgr::Args args = PaverServiceGptDeviceTest::DevmgrArgs();
     args.board_name = "luis";
-    auto boot_args = std::make_unique<FakeBootArgs>();
-    boot_args->AddStringArgs("zvb.current_slot", "_a");
-    args.fake_boot_args = std::move(boot_args);
     return args;
   }
 
@@ -2726,15 +2727,15 @@ std::vector<uint8_t> TestData(size_t size) {
 class PaverServiceMoonflowerTest : public PaverServiceGptDeviceTest {
  public:
   paver::PaverConfig Config() override {
-    return {.system_partition_names = {"super_and_userdata"}};
+    return {
+        .system_partition_names = {"super_and_userdata"},
+        .zvb_current_slot = "_a",
+    };
   }
 
   IsolatedDevmgr::Args DevmgrArgs() override {
     IsolatedDevmgr::Args args = PaverServiceGptDeviceTest::DevmgrArgs();
     args.board_name = "sorrel";  // Any moonflower board name is fine here
-    auto boot_args = std::make_unique<FakeBootArgs>();
-    boot_args->AddStringArgs("zvb.current_slot", "_a");
-    args.fake_boot_args = std::move(boot_args);
     args.enable_storage_host = true;
     args.fshost_config.emplace_back(
         component_testing::ConfigCapability{.name = "fuchsia.fshost.MergeSuperAndUserdata",

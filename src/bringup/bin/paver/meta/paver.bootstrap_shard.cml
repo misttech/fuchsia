@@ -20,7 +20,6 @@
         },
         {
             protocol: [
-                "fuchsia.boot.Arguments",
                 "fuchsia.boot.WriteOnlyLog",
                 "fuchsia.process.Launcher",
             ],
@@ -88,6 +87,16 @@
             from: "#paver",
             to: "self/toolbox",
             target_availability: "unknown",
+        },
+        {
+            config: [
+                "fuchsia.androidboot.slot_suffix",
+                "fuchsia.astro.sysconfig.abr-wear-leveling",
+                "fuchsia.zvb.boot-partition-uuid",
+                "fuchsia.zvb.current_slot",
+            ],
+            from: "#kernel-args-forwarder/boot_args",
+            to: "#paver",
         },
     ],
     expose: [

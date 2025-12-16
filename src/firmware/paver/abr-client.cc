@@ -6,7 +6,6 @@
 
 #include <dirent.h>
 #include <endian.h>
-#include <fidl/fuchsia.boot/cpp/wire.h>
 #include <fidl/fuchsia.device/cpp/wire.h>
 #include <fidl/fuchsia.io/cpp/wire.h>
 #include <fidl/fuchsia.paver/cpp/wire.h>
@@ -140,28 +139,12 @@ zx::result<Configuration> PartitionUuidToConfiguration(const paver::BlockDevices
 }
 
 zx::result<Configuration> QueryBootConfig(const paver::BlockDevices& devices,
-                                          fidl::UnownedClientEnd<fuchsia_io::Directory> svc_root) {
-  auto client_end = component::ConnectAt<fuchsia_boot::Arguments>(svc_root);
-  if (!client_end.is_ok()) {
-    return client_end.take_error();
+                                          const paver::PaverConfig& config) {
+  if (!config.zvb_current_slot.empty()) {
+    return CurrentSlotToConfiguration(config.zvb_current_slot);
   }
-  fidl::WireSyncClient client{std::move(*client_end)};
-  std::array<fidl::StringView, 3> arguments{
-      fidl::StringView{"zvb.current_slot"},
-      fidl::StringView{"zvb.boot-partition-uuid"},
-      fidl::StringView{"androidboot.slot_suffix"},
-  };
-  auto result = client->GetStrings(fidl::VectorView<fidl::StringView>::FromExternal(arguments));
-  if (!result.ok()) {
-    return zx::error(result.status());
-  }
-
-  const auto response = result.Unwrap();
-  if (!response->values[0].is_null()) {
-    return CurrentSlotToConfiguration(response->values[0].get());
-  }
-  if (!response->values[1].is_null()) {
-    std::string_view uuid_str = response->values[1].get();
+  if (!config.zvb_boot_partition_uuid.empty()) {
+    std::string_view uuid_str = config.zvb_boot_partition_uuid;
     auto uuid = uuid::Uuid::FromString(uuid_str);
     if (uuid == std::nullopt) {
       ERROR("Invalid UUID in zvb.boot-partition-uuid: %.*s \n", (int)uuid_str.size(),
@@ -171,8 +154,8 @@ zx::result<Configuration> QueryBootConfig(const paver::BlockDevices& devices,
 
     return PartitionUuidToConfiguration(devices, uuid.value());
   }
-  if (!response->values[2].is_null()) {
-    std::string_view prefix_str = response->values[2].get();
+  if (!config.android_boot_slot_suffix.empty()) {
+    std::string_view prefix_str = config.android_boot_slot_suffix;
     if (prefix_str.length() == 1) {
       return CurrentSlotToConfiguration(prefix_str.substr(0, 1));
     } else if (prefix_str.length() == 2 && prefix_str[0] == '_') {
@@ -190,8 +173,8 @@ zx::result<Configuration> QueryBootConfig(const paver::BlockDevices& devices,
 }
 
 zx::result<bool> SupportsVerifiedBoot(const paver::BlockDevices& devices,
-                                      fidl::UnownedClientEnd<fuchsia_io::Directory> svc_root) {
-  if (zx::result result = QueryBootConfig(devices, svc_root); result.is_error()) {
+                                      const paver::PaverConfig& config) {
+  if (zx::result result = QueryBootConfig(devices, config); result.is_error()) {
     if (result.error_value() == ZX_ERR_NOT_SUPPORTED) {
       return zx::ok(false);
     } else {

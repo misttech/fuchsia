@@ -706,7 +706,7 @@ void BootManager::Bind(async_dispatcher_t* dispatcher, BlockDevices devices,
                        fidl::ClientEnd<fuchsia_io::Directory> svc_root, const PaverConfig& config,
                        std::shared_ptr<Context> context,
                        fidl::ServerEnd<fuchsia_paver::BootManager> server) {
-  zx::result supports_abr = abr::SupportsVerifiedBoot(devices, svc_root);
+  zx::result supports_abr = abr::SupportsVerifiedBoot(devices, config);
   if (supports_abr.is_error()) {
     ERROR("Failed to check if system supports verified boot: %s\n", supports_abr.status_string());
     fidl_epitaph_write(server.channel().get(), supports_abr.error_value());
@@ -731,13 +731,13 @@ void BootManager::Bind(async_dispatcher_t* dispatcher, BlockDevices devices,
     return;
   }
 
-  auto boot_manager = std::make_unique<BootManager>(std::move(*partitioner), std::move(*abr));
+  auto boot_manager =
+      std::make_unique<BootManager>(std::move(*partitioner), std::move(*abr), config);
   fidl::BindServer(dispatcher, std::move(server), std::move(boot_manager));
 }
 
 void BootManager::QueryCurrentConfiguration(QueryCurrentConfigurationCompleter::Sync& completer) {
-  zx::result<Configuration> status =
-      abr::QueryBootConfig(partitioner_->Devices(), partitioner_->SvcRoot());
+  zx::result<Configuration> status = abr::QueryBootConfig(partitioner_->Devices(), config_);
   if (status.is_error()) {
     completer.ReplyError(status.status_value());
     return;
@@ -798,7 +798,7 @@ bool BootManager::IsFinalBootAttempt(const AbrSlotInfo& slot_info, Configuration
 
   // If the slot in question is our current boot slot, we're on our last attempt.
   zx::result<Configuration> current_configuration =
-      abr::QueryBootConfig(partitioner_->Devices(), partitioner_->SvcRoot());
+      abr::QueryBootConfig(partitioner_->Devices(), config_);
   return current_configuration.is_ok() && *current_configuration == configuration;
 }
 

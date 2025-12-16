@@ -4,7 +4,6 @@
 
 #include "src/firmware/paver/astro.h"
 
-#include <fidl/fuchsia.boot/cpp/wire.h>
 #include <lib/component/incoming/cpp/clone.h>
 #include <lib/component/incoming/cpp/protocol.h>
 #include <lib/fdio/cpp/caller.h>
@@ -23,36 +22,7 @@
 namespace paver {
 
 namespace {
-
 using uuid::Uuid;
-
-fidl::WireSyncClient<fuchsia_boot::Arguments> OpenBootArgumentClient(
-    fidl::UnownedClientEnd<fuchsia_io::Directory> svc_root) {
-  if (!svc_root.is_valid()) {
-    return {};
-  }
-
-  auto local = component::ConnectAt<fuchsia_boot::Arguments>(svc_root);
-  if (!local.is_ok()) {
-    ERROR("Failed to connect to boot::Arguments service.\n");
-    return {};
-  }
-
-  return {fidl::WireSyncClient(std::move(*local))};
-}
-
-bool GetBool(fidl::WireSyncClient<fuchsia_boot::Arguments>& client, ::fidl::StringView key,
-             bool default_on_missing_or_failure) {
-  auto key_data = key.data();
-  auto result = client->GetBool(key, default_on_missing_or_failure);
-  if (!result.ok()) {
-    ERROR("Failed to get boolean argument %s. Default to %d.\n", key_data,
-          default_on_missing_or_failure);
-    return default_on_missing_or_failure;
-  }
-  return result.value().value;
-}
-
 }  // namespace
 
 const paver::BlockDevices& AstroPartitioner::Devices() const { return skip_block_->devices(); }
@@ -140,8 +110,7 @@ zx::result<> AstroPartitioner::InitializeContext(const paver::BlockDevices& skip
 
 zx::result<std::unique_ptr<DevicePartitioner>> AstroPartitioner::Initialize(
     const paver::BlockDevices& devices, fidl::UnownedClientEnd<fuchsia_io::Directory> svc_root,
-    std::shared_ptr<Context> context) {
-  auto boot_arg_client = OpenBootArgumentClient(svc_root);
+    const PaverConfig& config, std::shared_ptr<Context> context) {
   // TODO(https://fxbug.dev/339491886): Support IsBoard with partitions directory
   zx::result<> status = IsBoard(svc_root, "astro");
   if (status.is_error()) {
@@ -156,10 +125,9 @@ zx::result<std::unique_ptr<DevicePartitioner>> AstroPartitioner::Initialize(
 
   // Enable abr wear-leveling only when we see an explicitly defined boot argument
   // "astro.sysconfig.abr-wear-leveling".
-  AbrWearLevelingOption option =
-      boot_arg_client && GetBool(boot_arg_client, "astro.sysconfig.abr-wear-leveling", false)
-          ? AbrWearLevelingOption::ON
-          : AbrWearLevelingOption::OFF;
+  AbrWearLevelingOption option = config.astro_sysconfig_abr_wear_leveling
+                                     ? AbrWearLevelingOption::ON
+                                     : AbrWearLevelingOption::OFF;
 
   if (auto status = InitializeContext(skip_block_devices.value(), option, context.get());
       status.is_error()) {
@@ -312,7 +280,7 @@ zx::result<std::unique_ptr<DevicePartitioner>> AstroPartitionerFactory::New(
     const paver::BlockDevices& devices, fidl::UnownedClientEnd<fuchsia_io::Directory> svc_root,
     const PaverConfig& config, std::shared_ptr<Context> context,
     fidl::ClientEnd<fuchsia_device::Controller> block_device) {
-  return AstroPartitioner::Initialize(devices, svc_root, context);
+  return AstroPartitioner::Initialize(devices, svc_root, config, context);
 }
 
 zx::result<std::unique_ptr<abr::Client>> AstroPartitioner::CreateAbrClient() const {

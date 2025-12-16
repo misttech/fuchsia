@@ -17,6 +17,7 @@
 #include <fbl/unique_fd.h>
 
 #include "src/firmware/paver/block-devices.h"
+#include "src/firmware/paver/config.h"
 #include "src/firmware/paver/partition-client.h"
 #include "src/firmware/paver/paver-context.h"
 #include "src/lib/uuid/uuid.h"
@@ -30,14 +31,14 @@ zx::result<fuchsia_paver::wire::Configuration> PartitionUuidToConfiguration(
 // For testing only.
 zx::result<fuchsia_paver::wire::Configuration> CurrentSlotToConfiguration(std::string_view slot);
 
-zx::result<fuchsia_paver::wire::Configuration> QueryBootConfig(
-    const paver::BlockDevices& devices, fidl::UnownedClientEnd<fuchsia_io::Directory> svc_root);
+zx::result<fuchsia_paver::wire::Configuration> QueryBootConfig(const paver::BlockDevices& devices,
+                                                               const paver::PaverConfig& config);
 
 /// Ensures the system supports verified boot.
 /// This should be called prior to creating a DevicePartitioner and its corresponding abr::Client
 /// (via DevicePartitioner::CreateAbrClient), as otherwise unexpected errors may be returned.
 zx::result<bool> SupportsVerifiedBoot(const paver::BlockDevices& devices,
-                                      fidl::UnownedClientEnd<fuchsia_io::Directory> svc_root);
+                                      const paver::PaverConfig& config);
 
 // Interface for interacting with ABR data.
 class Client {

@@ -246,8 +246,8 @@ class DynamicDataSink : public fidl::WireServer<fuchsia_paver::DynamicDataSink> 
 class BootManager : public fidl::WireServer<fuchsia_paver::BootManager> {
  public:
   BootManager(std::unique_ptr<DevicePartitioner> partitioner,
-              std::unique_ptr<abr::Client> abr_client)
-      : partitioner_(std::move(partitioner)), abr_client_(std::move(abr_client)) {}
+              std::unique_ptr<abr::Client> abr_client, const PaverConfig& config)
+      : partitioner_(std::move(partitioner)), abr_client_(std::move(abr_client)), config_(config) {}
 
   static void Bind(async_dispatcher_t* dispatcher, BlockDevices devices,
                    fidl::ClientEnd<fuchsia_io::Directory> svc_root, const PaverConfig& config,
@@ -286,6 +286,7 @@ class BootManager : public fidl::WireServer<fuchsia_paver::BootManager> {
  private:
   std::unique_ptr<DevicePartitioner> partitioner_;
   std::unique_ptr<abr::Client> abr_client_;
+  const PaverConfig& config_;
 
   // Returns true if we are currently executing the final boot attempt on the given slot.
   bool IsFinalBootAttempt(const AbrSlotInfo& slot_info,

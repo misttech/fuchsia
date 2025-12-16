@@ -292,41 +292,11 @@ zx::result<> FakePartitionClient::Trim() {
 
 zx::result<> FakePartitionClient::Flush() { return zx::ok(); }
 
-FakeBootArgs::FakeBootArgs(std::string slot_suffix) {
-  AddStringArgs("zvb.current_slot", std::move(slot_suffix));
+paver::PaverConfig FakePaverConfig(std::string slot_suffix) {
+  paver::PaverConfig config;
+  config.zvb_current_slot = std::move(slot_suffix);
+  return config;
 }
-
-void FakeBootArgs::GetString(GetStringRequestView request, GetStringCompleter::Sync& completer) {
-  auto iter = string_args_.find(std::string(request->key.data(), request->key.size()));
-  if (iter != string_args_.end()) {
-    completer.Reply(fidl::StringView::FromExternal(iter->second));
-  } else {
-    completer.Reply({});
-  }
-}
-
-void FakeBootArgs::GetStrings(GetStringsRequestView request, GetStringsCompleter::Sync& completer) {
-  std::vector<fidl::StringView> response;
-  for (const auto& key : request->keys) {
-    auto iter = string_args_.find(std::string(key.data(), key.size()));
-    if (iter != string_args_.end()) {
-      response.push_back(fidl::StringView::FromExternal(iter->second));
-    }
-  }
-  response.push_back(fidl::StringView());
-  completer.Reply(fidl::VectorView<fidl::StringView>::FromExternal(response));
-}
-
-void FakeBootArgs::GetBool(GetBoolRequestView request, GetBoolCompleter::Sync& completer) {
-  if (strncmp(request->key.data(), "astro.sysconfig.abr-wear-leveling",
-              sizeof("astro.sysconfig.abr-wear-leveling")) == 0) {
-    completer.Reply(astro_sysconfig_abr_wear_leveling_);
-  } else {
-    completer.Reply(request->defaultval);
-  }
-}
-void FakeBootArgs::GetBools(GetBoolsRequestView request, GetBoolsCompleter::Sync& completer) {}
-void FakeBootArgs::Collect(CollectRequestView request, CollectCompleter::Sync& completer) {}
 
 fbl::Array<uint8_t> CreateZbiHeader(paver::Arch arch, size_t payload_size,
                                     ZbiKernelImage** result_header, std::span<uint8_t>* span) {

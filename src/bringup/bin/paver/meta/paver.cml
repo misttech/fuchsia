@@ -36,7 +36,6 @@
         {
             protocol: [
                 // Services from bootsvc
-                "fuchsia.boot.Arguments",
                 "fuchsia.boot.WriteOnlyLog",
 
                 // Storage services
@@ -69,6 +68,37 @@
             config: "fuchsia.fshost.MergeSuperAndUserdata",
             key: "merge_super_and_userdata",
             type: "bool",
+        },
+        {
+            config: "fuchsia.androidboot.slot_suffix",
+            key: "android_boot_slot_suffix",
+            type: "string",
+            max_size: 20,
+            availability: "optional",
+            default: "",
+        },
+        {
+            config: "fuchsia.astro.sysconfig.abr-wear-leveling",
+            key: "astro_sysconfig_abr_wear_leveling",
+            type: "bool",
+            availability: "optional",
+            default: false,
+        },
+        {
+            config: "fuchsia.zvb.boot-partition-uuid",
+            key: "zvb_boot_partition_uuid",
+            max_size: 20,
+            type: "string",
+            availability: "optional",
+            default: "",
+        },
+        {
+            config: "fuchsia.zvb.current_slot",
+            key: "zvb_current_slot",
+            type: "string",
+            max_size: 20,
+            availability: "optional",
+            default: "",
         },
     ],
     expose: [

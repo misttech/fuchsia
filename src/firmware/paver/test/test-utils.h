@@ -5,7 +5,6 @@
 #ifndef SRC_FIRMWARE_PAVER_TEST_TEST_UTILS_H_
 #define SRC_FIRMWARE_PAVER_TEST_TEST_UTILS_H_
 
-#include <fidl/fuchsia.boot/cpp/wire.h>
 #include <fidl/fuchsia.hardware.block.volume/cpp/wire.h>
 #include <fidl/fuchsia.sysinfo/cpp/wire.h>
 #include <lib/component/incoming/cpp/protocol.h>
@@ -223,27 +222,7 @@ class FakePartitionClient : public paver::PartitionClient {
   size_t partition_size_;
 };
 
-class FakeBootArgs : public fidl::WireServer<fuchsia_boot::Arguments> {
- public:
-  explicit FakeBootArgs(std::string slot_suffix = "-a");
-
-  void GetString(GetStringRequestView request, GetStringCompleter::Sync& completer) override;
-  void GetStrings(GetStringsRequestView request, GetStringsCompleter::Sync& completer) override;
-  void GetBool(GetBoolRequestView request, GetBoolCompleter::Sync& completer) override;
-  void GetBools(GetBoolsRequestView request, GetBoolsCompleter::Sync& completer) override;
-  void Collect(CollectRequestView request, CollectCompleter::Sync& completer) override;
-
-  void SetAstroSysConfigAbrWearLeveling(bool value) { astro_sysconfig_abr_wear_leveling_ = value; }
-  void AddStringArgs(std::string key, std::string value) {
-    string_args_[std::move(key)] = std::move(value);
-  }
-
- private:
-  fidl::ServerBindingGroup<fuchsia_boot::Arguments> bindings_;
-
-  bool astro_sysconfig_abr_wear_leveling_ = false;
-  std::unordered_map<std::string, std::string> string_args_;
-};
+paver::PaverConfig FakePaverConfig(std::string slot_suffix = "-a");
 
 // Allocates a valid-looking ZBI header, and give it some basic defaults.
 //

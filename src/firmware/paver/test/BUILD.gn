@@ -10,7 +10,6 @@ source_set("test-utils") {
   testonly = true
   sources = [ "test-utils.cc" ]
   public_deps = [
-    "//sdk/fidl/fuchsia.boot:fuchsia.boot_cpp",
     "//sdk/fidl/fuchsia.hardware.block.volume:fuchsia.hardware.block.volume_cpp",
     "//sdk/fidl/fuchsia.sysinfo:fuchsia.sysinfo_cpp",
     "//sdk/lib/component/incoming/cpp",
@@ -51,7 +50,6 @@ executable("abr_test") {
     "//src/firmware/paver",
     "//src/storage/gpt",
     "//src/storage/lib/block_client/cpp",
-    "//zircon/system/ulib/mock-boot-arguments",
     "//zircon/system/ulib/zxtest",
     "//zircon/third_party/ulib/cksum",
   ]
@@ -141,7 +139,6 @@ executable("paversvc_test") {
   sources = [ "paversvc-test.cc" ]
   deps = [
     ":test-utils",
-    "//sdk/fidl/fuchsia.boot:fuchsia.boot_cpp",
     "//sdk/fidl/fuchsia.device:fuchsia.device_cpp",
     "//sdk/fidl/fuchsia.fshost:fuchsia.fshost_cpp",
     "//sdk/fidl/fuchsia.hardware.block.partition:fuchsia.hardware.block.partition_cpp",
@@ -248,7 +245,6 @@ fuchsia_library_fuzzer("paver-validation-fuzzer") {
   sources = [ "validation-fuzzer.cc" ]
 
   deps = [
-    "//sdk/fidl/fuchsia.boot:fuchsia.boot_cpp",
     "//sdk/fidl/fuchsia.device:fuchsia.device_cpp",
     "//sdk/fidl/fuchsia.fshost:fuchsia.fshost_cpp",
     "//sdk/fidl/fuchsia.hardware.block:fuchsia.hardware.block_cpp",

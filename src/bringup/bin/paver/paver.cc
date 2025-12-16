@@ -81,6 +81,10 @@ int main(int argc, char** argv) {
 
   auto config = config::Config::TakeFromStartupHandle();
   paver::PaverConfig paver_config;
+  paver_config.astro_sysconfig_abr_wear_leveling = config.astro_sysconfig_abr_wear_leveling();
+  paver_config.zvb_current_slot = config.zvb_current_slot();
+  paver_config.zvb_boot_partition_uuid = config.zvb_boot_partition_uuid();
+  paver_config.android_boot_slot_suffix = config.android_boot_slot_suffix();
   if (config.merge_super_and_userdata()) {
     // NB: This name is a hard-coded value from the GPT component implementation
     // (//src/storage/gpt/component).

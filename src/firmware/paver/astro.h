@@ -22,7 +22,7 @@ class AstroPartitioner : public DevicePartitioner {
 
   static zx::result<std::unique_ptr<DevicePartitioner>> Initialize(
       const paver::BlockDevices& devices, fidl::UnownedClientEnd<fuchsia_io::Directory> svc_root,
-      std::shared_ptr<Context> context);
+      const PaverConfig& config, std::shared_ptr<Context> context);
 
   zx::result<std::unique_ptr<abr::Client>> CreateAbrClient() const override;
 

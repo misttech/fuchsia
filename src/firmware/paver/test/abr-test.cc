@@ -17,7 +17,6 @@
 #include <algorithm>
 #include <iostream>
 
-#include <mock-boot-arguments/server.h>
 #include <zxtest/zxtest.h>
 
 #include "src/firmware/paver/abr-client.h"
@@ -49,8 +48,8 @@ TEST(AstroAbrTests, CreateFails) {
   ASSERT_OK(devices);
   std::shared_ptr<paver::Context> context;
   zx::result partitioner = paver::AstroPartitionerFactory().New(
-      *devices, devmgr.RealmExposedDir(), paver::PaverConfig{.arch = paver::Arch::kArm64}, context,
-      {});
+      *devices, devmgr.RealmExposedDir(),
+      paver::PaverConfig{.arch = paver::Arch::kArm64, .zvb_current_slot = "_a"}, context, {});
   ASSERT_NOT_OK(partitioner);
 }
 
@@ -67,8 +66,8 @@ TEST(SherlockAbrTests, CreateFails) {
   ASSERT_OK(devices);
   std::shared_ptr<paver::Context> context;
   zx::result partitioner = paver::SherlockPartitionerFactory().New(
-      *devices, devmgr.RealmExposedDir(), paver::PaverConfig{.arch = paver::Arch::kArm64}, context,
-      {});
+      *devices, devmgr.RealmExposedDir(),
+      paver::PaverConfig{.arch = paver::Arch::kArm64, .zvb_current_slot = "_a"}, context, {});
   ASSERT_NOT_OK(partitioner);
 }
 
@@ -85,8 +84,8 @@ TEST(MoonflowerAbrTests, CreateFails) {
   ASSERT_OK(devices);
   std::shared_ptr<paver::Context> context;
   zx::result partitioner = paver::MoonflowerPartitionerFactory().New(
-      *devices, devmgr.RealmExposedDir(), paver::PaverConfig{.arch = paver::Arch::kArm64}, context,
-      {});
+      *devices, devmgr.RealmExposedDir(),
+      paver::PaverConfig{.arch = paver::Arch::kArm64, .zvb_current_slot = "_a"}, context, {});
   ASSERT_NOT_OK(partitioner);
 }
 
@@ -103,8 +102,8 @@ TEST(LuisAbrTests, CreateFails) {
   ASSERT_OK(devices);
   std::shared_ptr<paver::Context> context;
   zx::result partitioner = paver::LuisPartitionerFactory().New(
-      *devices, devmgr.RealmExposedDir(), paver::PaverConfig{.arch = paver::Arch::kArm64}, context,
-      {});
+      *devices, devmgr.RealmExposedDir(),
+      paver::PaverConfig{.arch = paver::Arch::kArm64, .zvb_current_slot = "_a"}, context, {});
   ASSERT_NOT_OK(partitioner);
 }
 
@@ -121,8 +120,8 @@ TEST(X64AbrTests, CreateFails) {
   ASSERT_OK(devices);
   std::shared_ptr<paver::Context> context;
   zx::result partitioner = paver::UefiPartitionerFactory().New(
-      *devices, devmgr.RealmExposedDir(), paver::PaverConfig{.arch = paver::Arch::kX64}, context,
-      {});
+      *devices, devmgr.RealmExposedDir(),
+      paver::PaverConfig{.arch = paver::Arch::kX64, .zvb_current_slot = "_a"}, context, {});
   ASSERT_NOT_OK(partitioner);
 }
 
@@ -169,8 +168,8 @@ class CurrentSlotUuidTest : public PaverTest {
   void CreatePartitioner(std::unique_ptr<paver::GptDevicePartitioner>& out) {
     zx::result devices = CreateBlockDevices();
     ASSERT_OK(devices);
-    zx::result gpt = paver::GptDevicePartitioner::InitializeGpt(*devices, devmgr_.RealmExposedDir(),
-                                                                paver::PaverConfig{}, {});
+    zx::result gpt = paver::GptDevicePartitioner::InitializeGpt(
+        *devices, devmgr_.RealmExposedDir(), paver::PaverConfig{.zvb_current_slot = "_a"}, {});
     ASSERT_OK(gpt);
     out = std::move(gpt->gpt);
   }
@@ -283,24 +282,6 @@ TEST(CurrentSlotTest, TestInvalid) {
   ASSERT_EQ(result.error_value(), ZX_ERR_NOT_SUPPORTED);
 }
 
-class FakeBootArgs : public fidl::WireServer<fuchsia_boot::Arguments> {
- public:
-  void GetStrings(GetStringsRequestView request, GetStringsCompleter::Sync& completer) override {
-    std::vector<fidl::StringView> response = {
-        fidl::StringView(),
-        fidl::StringView(),
-        fidl::StringView::FromExternal("_a"),
-    };
-    completer.Reply(fidl::VectorView<fidl::StringView>::FromExternal(response));
-  }
-
-  // Not implemented.
-  void GetString(GetStringRequestView request, GetStringCompleter::Sync& completer) override {}
-  void GetBool(GetBoolRequestView request, GetBoolCompleter::Sync& completer) override {}
-  void GetBools(GetBoolsRequestView request, GetBoolsCompleter::Sync& completer) override {}
-  void Collect(CollectRequestView request, CollectCompleter::Sync& completer) override {}
-};
-
 class MoonflowerAbrClientTest : public CurrentSlotUuidTest {
  protected:
   // These GUIDs indicate the active partition.
@@ -315,7 +296,6 @@ class MoonflowerAbrClientTest : public CurrentSlotUuidTest {
   IsolatedDevmgr::Args DevmgrArgs() override {
     IsolatedDevmgr::Args args;
     args.board_name = "sorrel";
-    args.fake_boot_args = std::make_unique<FakeBootArgs>();
     args.disable_block_watcher = false;
     args.enable_storage_host = true;
     return args;
@@ -342,8 +322,8 @@ class MoonflowerAbrClientTest : public CurrentSlotUuidTest {
     ASSERT_OK(devices);
     std::shared_ptr<paver::Context> context;
     zx::result partitioner = paver::MoonflowerPartitionerFactory().New(
-        *devices, devmgr_.RealmExposedDir(), paver::PaverConfig{.arch = paver::Arch::kArm64},
-        context, {});
+        *devices, devmgr_.RealmExposedDir(),
+        paver::PaverConfig{.arch = paver::Arch::kArm64, .zvb_current_slot = "_a"}, context, {});
     ASSERT_OK(partitioner);
     zx::result abr_client = partitioner->CreateAbrClient();
     ASSERT_OK(abr_client);
