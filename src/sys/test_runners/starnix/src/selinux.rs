@@ -16,8 +16,6 @@ pub async fn run_selinux_cases(
     run_listener_proxy: &ftest::RunListenerProxy,
     component_runner: &frunner::ComponentRunnerProxy,
 ) -> Result<(), Error> {
-    helpers::read_tests_list(&mut start_info).await?;
-
     for test in tests {
         let test_name = test.name.as_ref().expect("No test name");
 
