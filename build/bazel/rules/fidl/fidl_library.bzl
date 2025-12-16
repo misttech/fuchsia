@@ -406,7 +406,7 @@ def _fidl_library_impl(
 
     native.filegroup(
         name = name,
-        srcs = [compilation_target_name],
+        srcs = [compilation_target_name] + deps,
         # For libraries in a category, add a deps on the allowlist to catch
         # cases where the macro is used but there is no dependency on the atom
         # target.

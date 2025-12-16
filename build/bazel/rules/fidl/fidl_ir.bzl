@@ -33,9 +33,11 @@ def _fidlc_impl(ctx):
     response_file = ctx.actions.declare_file(ctx.attr.fidl_library_target_name + ".args")
     libraries_file = ctx.actions.declare_file(ctx.attr.fidl_library_target_name + ".libraries")
 
-    dep_libraries = []
-    for dep in ctx.attr.deps:
-        dep_libraries.append(dep[FidlLibraryInfo].libraries_file)
+    dep_libraries = [dep[FidlLibraryInfo].libraries_file for dep in ctx.attr.deps]
+    srcs_depset = depset(
+        direct = ctx.files.srcs,
+        transitive = [dep[FidlLibraryInfo].srcs_depset for dep in ctx.attr.deps],
+    )
 
     response_file_args = ctx.actions.args()
     response_file_args.add_all([
@@ -51,7 +53,7 @@ def _fidlc_impl(ctx):
     response_file_args.add_all("--sources", ctx.files.srcs)
 
     if dep_libraries:
-        response_file_args.add("--dep-libraries", dep_libraries)
+        response_file_args.add_all("--dep-libraries", dep_libraries)
 
     if ctx.attr.versioned:
         response_file_args.add("--versioned", ctx.attr.versioned)
@@ -73,7 +75,7 @@ def _fidlc_impl(ctx):
     ctx.actions.run(
         executable = ctx.executable._fidlc,
         arguments = ["@" + response_file.path],
-        inputs = [response_file] + ctx.files.srcs,
+        inputs = [response_file] + srcs_depset.to_list(),
         outputs = [ctx.outputs.json_representation],
         mnemonic = "Fidlc",
     )
@@ -82,6 +84,7 @@ def _fidlc_impl(ctx):
         FidlLibraryInfo(
             name = library_name,
             ir = ctx.outputs.json_representation,
+            srcs_depset = srcs_depset,
             libraries_file = libraries_file,
         ),
     ]
@@ -105,7 +108,7 @@ fidlc = rule(
             allow_empty = False,
         ),
         "deps": attr.label_list(
-            doc = "List of labels of other FIDL libraries on which this library depends.",
+            doc = "List of labels of other fidlc targets on which this library depends.",
             mandatory = False,
             providers = [FidlLibraryInfo],
         ),
@@ -140,11 +143,12 @@ fidlc = rule(
     },
 )
 
-def fidl_ir(name, json_representation, out_json_summary, testonly, visibility, **kwargs):
+def fidl_ir(name, deps, json_representation, out_json_summary, testonly, visibility, **kwargs):
     """Defines a FIDL library that will be compiled to IR.
 
     Args:
       name: Standard meaning.
+      deps: List of labels of other FIDL libraries on which this library depends.
       json_representation: Where to generate the FIDL IR.
       out_json_summary: If set, a JSON API summary file will be generated at the given path.
       testonly: Standard meaning.
@@ -157,6 +161,7 @@ def fidl_ir(name, json_representation, out_json_summary, testonly, visibility, *
 
     fidlc(
         name = fidlc_target_name,
+        deps = ["//{}:{}_compile_fidlc".format(dep.package, dep.name) for dep in deps],
         json_representation = json_representation,
         testonly = testonly,
         visibility = ["//visibility:private"],
