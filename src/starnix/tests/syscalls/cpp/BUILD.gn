@@ -120,6 +120,7 @@ syscall_tests = [
   "vmsplice_test",
   "waitpid_exit_signal_test",
   "waitpid_flags_test",
+  "zombie_test",
 
   # go/keep-sorted end
 ]
