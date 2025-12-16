@@ -48,8 +48,10 @@ zx_status_t PmemDevice::Init() {
   ReadDeviceConfig(offsetof(virtio_pmem_config, size), &config.size);
   FDF_LOG(DEBUG, "config address: %#lx length %#lx", config.start, config.size);
 
+  const size_t rounded_size = fbl::round_up<size_t>(config.size, zx_system_get_page_size());
+
   zx_status_t status =
-      zx::vmo::create_physical(mmio_resource_, config.start, config.size, &phys_vmo_);
+      zx::vmo::create_physical(mmio_resource_, config.start, rounded_size, &phys_vmo_);
   if (status != ZX_OK) {
     FDF_LOG(ERROR, "failed to create VMO: %s", zx_status_get_string(status));
     return status;
