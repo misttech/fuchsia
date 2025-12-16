@@ -10,7 +10,7 @@ fn main() {
     // Make sure our provider knows about the trace that's already running before we emit events.
     fuchsia_trace_provider::trace_provider_wait_for_init();
 
-    instant!(c"test_puppet", c"puppet_instant", Scope::Thread);
+    instant!("test_puppet", "puppet_instant", Scope::Thread);
 
     counter!(c"test_puppet", c"puppet_counter", 0, "somedataseries" => 1);
     counter!(c"test_puppet", c"puppet_counter2", 1, "someotherdataseries" => u64::MAX - 1);
@@ -18,7 +18,7 @@ fn main() {
     duration_begin!(c"test_puppet", c"puppet_duration");
     duration_end!(c"test_puppet", c"puppet_duration");
 
-    duration!(c"test_puppet", c"puppet_duration_raii");
+    duration!("test_puppet", "puppet_duration_raii");
 
     {
         let async_id = Id::new();
@@ -32,25 +32,25 @@ fn main() {
     }
 
     let flow_id = Id::new();
-    flow_begin!(c"test_puppet", c"puppet_flow", flow_id);
+    flow_begin!("test_puppet", "puppet_flow", flow_id);
 
     std::thread::spawn(move || {
-        duration!(c"test_puppet", c"flow_thread");
+        duration!("test_puppet", "flow_thread");
         flow_step!(c"test_puppet", c"puppet_flow_step1", flow_id);
     })
     .join()
     .unwrap();
 
-    flow_end!(c"test_puppet", c"puppet_flow", flow_id);
+    flow_end!("test_puppet", "puppet_flow", flow_id);
 
-    instant!(c"test_puppet", c"puppet_instant_args", Scope::Thread, "SomeNullArg" => ());
-    instant!(c"test_puppet", c"puppet_instant_args", Scope::Thread, "SomeUint32" => 2145u32);
-    instant!(c"test_puppet", c"puppet_instant_args", Scope::Thread, "SomeUint64" => 423621626134123415u64);
-    instant!(c"test_puppet", c"puppet_instant_args", Scope::Thread, "SomeInt32" => -7i32);
-    instant!(c"test_puppet", c"puppet_instant_args", Scope::Thread, "SomeInt64" => -234516543631231i64);
-    instant!(c"test_puppet", c"puppet_instant_args", Scope::Thread, "SomeDouble" => std::f64::consts::PI);
-    instant!(c"test_puppet", c"puppet_instant_args", Scope::Thread, "SomeString" => "pong");
-    instant!(c"test_puppet", c"puppet_instant_args", Scope::Thread, "SomeBool" => true);
-    instant!(c"test_puppet", c"puppet_instant_args", Scope::Thread, "SomePointer" => 4096usize as *const u8);
-    instant!(c"test_puppet", c"puppet_instant_args", Scope::Thread, "SomeKoid" => zx::Koid::from_raw(10));
+    instant!("test_puppet", "puppet_instant_args", Scope::Thread, "SomeNullArg" => ());
+    instant!("test_puppet", "puppet_instant_args", Scope::Thread, "SomeUint32" => 2145u32);
+    instant!("test_puppet", "puppet_instant_args", Scope::Thread, "SomeUint64" => 423621626134123415u64);
+    instant!("test_puppet", "puppet_instant_args", Scope::Thread, "SomeInt32" => -7i32);
+    instant!("test_puppet", "puppet_instant_args", Scope::Thread, "SomeInt64" => -234516543631231i64);
+    instant!("test_puppet", "puppet_instant_args", Scope::Thread, "SomeDouble" => std::f64::consts::PI);
+    instant!("test_puppet", "puppet_instant_args", Scope::Thread, "SomeString" => "pong");
+    instant!("test_puppet", "puppet_instant_args", Scope::Thread, "SomeBool" => true);
+    instant!("test_puppet", "puppet_instant_args", Scope::Thread, "SomePointer" => 4096usize as *const u8);
+    instant!("test_puppet", "puppet_instant_args", Scope::Thread, "SomeKoid" => zx::Koid::from_raw(10));
 }
