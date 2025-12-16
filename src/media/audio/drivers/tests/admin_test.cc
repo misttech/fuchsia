@@ -1469,7 +1469,7 @@ void AdminTest::ValidateDynamicsElementState(const fhasp::Element& element,
     // id: Required. Must be found in Element.TypeSpecific.Dynamics.bands.
     ASSERT_TRUE(band_state.has_id());
     ASSERT_TRUE(band_ids.contains(band_state.id())) << "Unknown dynamics band ID";
-    band_ids.extract(band_state.id());
+    (void)band_ids.extract(band_state.id());
 
     // min_frequency and max_frequency: Required. Min must <= max.
     ASSERT_TRUE(band_state.has_min_frequency());
@@ -1532,7 +1532,7 @@ void AdminTest::ValidateEqualizerElementState(const fhasp::Element& element,
     // id: Required. Must be found in the element's TypeSpecific.Equalizer.bands.
     ASSERT_TRUE(band_state.has_id());
     ASSERT_TRUE(band_ids.contains(band_state.id())) << "Unknown EQ band ID";
-    band_ids.extract(band_state.id());
+    (void)band_ids.extract(band_state.id());
 
     // type: Required (Optional in FIDL definition, but without it a band has no function).
     ASSERT_TRUE(band_state.has_type());
