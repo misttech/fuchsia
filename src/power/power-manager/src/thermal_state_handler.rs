@@ -484,7 +484,7 @@ fn spawn_watcher_handler(
     mut stream: fthermal::ClientStateWatcherRequestStream,
     subscriber: ClientStateSubscriber,
 ) {
-    fuchsia_trace::duration!(c"power_manager", c"ThermalStateHandler::spawn_watcher_handler");
+    fuchsia_trace::duration!("power_manager", "ThermalStateHandler::spawn_watcher_handler");
 
     fasync::Task::local(
         async move {
@@ -582,7 +582,7 @@ impl ThermalStateHandler {
         self: Rc<Self>,
         mut stream: fthermal::ClientStateConnectorRequestStream,
     ) {
-        fuchsia_trace::duration!(c"power_manager", c"ThermalStateHandler::spawn_connector_handler");
+        fuchsia_trace::duration!("power_manager", "ThermalStateHandler::spawn_connector_handler");
 
         fasync::Task::local(
             async move {

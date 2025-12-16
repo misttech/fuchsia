@@ -348,7 +348,7 @@ fn spawn_watcher_handler(
     mut stream: fpowerclient::WatcherRequestStream,
     subscriber: PowerLevelSubscriber,
 ) {
-    fuchsia_trace::duration!(c"power_manager", c"SystemPowerModeHandler::spawn_watcher_handler");
+    fuchsia_trace::duration!("power_manager", "SystemPowerModeHandler::spawn_watcher_handler");
 
     fasync::Task::local(
         async move {

@@ -149,7 +149,7 @@ struct CpuStats {
 impl CpuStatsHandler {
     /// Calls out to the Kernel Stats service to retrieve the latest CPU stats
     async fn get_cpu_stats(&self) -> Result<fstats::CpuStats, Error> {
-        fuchsia_trace::duration!(c"cpu_manager", c"CpuStatsHandler::get_cpu_stats");
+        fuchsia_trace::duration!("cpu_manager", "CpuStatsHandler::get_cpu_stats");
         let result = self
             .stats_svc_proxy
             .get_cpu_stats()
@@ -168,13 +168,13 @@ impl CpuStatsHandler {
     }
 
     async fn handle_get_num_cpus(&self) -> Result<MessageReturn, CpuManagerError> {
-        fuchsia_trace::duration!(c"cpu_manager", c"CpuStatsHandler::handle_get_num_cpus");
+        fuchsia_trace::duration!("cpu_manager", "CpuStatsHandler::handle_get_num_cpus");
         let stats = self.get_cpu_stats().await?;
         Ok(MessageReturn::GetNumCpus(stats.actual_num_cpus as u32))
     }
 
     async fn handle_get_cpu_loads(&self) -> Result<MessageReturn, CpuManagerError> {
-        fuchsia_trace::duration!(c"cpu_manager", c"CpuStatsHandler::handle_get_cpu_loads");
+        fuchsia_trace::duration!("cpu_manager", "CpuStatsHandler::handle_get_cpu_loads");
 
         if self.is_cpu_load_stale() {
             self.update_cpu_stats().await?;
@@ -219,7 +219,7 @@ impl CpuStatsHandler {
     /// Updates the `cpu_stats` state by first requesting updated CPU stats from the server, then
     /// calculating refreshed CPU load values based on the new stats.
     async fn update_cpu_stats(&self) -> Result<(), Error> {
-        fuchsia_trace::duration!(c"cpu_manager", c"CpuStatsHandler::update_cpu_stats");
+        fuchsia_trace::duration!("cpu_manager", "CpuStatsHandler::update_cpu_stats");
 
         let mut new_stats = self.get_idle_stats().await?;
         let cpu_loads = Self::calculate_cpu_loads(&self.cpu_stats.borrow(), &new_stats)?;

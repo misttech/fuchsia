@@ -275,7 +275,7 @@ impl ThermalPolicy {
     ///     4. Use the integral error to derive thermal load and available power values
     ///     5. Update the relevant nodes with the new thermal load and available power information
     async fn iterate_thermal_control(&self) -> Result<(), Error> {
-        fuchsia_trace::duration!(c"power_manager", c"ThermalPolicy::iterate_thermal_control");
+        fuchsia_trace::duration!("power_manager", "ThermalPolicy::iterate_thermal_control");
 
         let timestamp = get_current_timestamp();
         let time_delta = self.get_time_delta(timestamp);

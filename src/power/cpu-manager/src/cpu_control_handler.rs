@@ -555,7 +555,7 @@ impl Node for CpuControlHandler {
     ///
     /// Connects to the cpu-ctrl driver unless a proxy was already provided (in a test).
     async fn init(&self) -> Result<(), Error> {
-        fuchsia_trace::duration!(c"cpu_manager", c"CpuControlHandler::init");
+        fuchsia_trace::duration!("cpu_manager", "CpuControlHandler::init");
 
         // Connect to the cpu-ctrl driver. Typically this is None, but it may be set by tests.
         let cpu_ctrl_proxy = match &self.mutable_inner.borrow().cpu_ctrl_proxy {

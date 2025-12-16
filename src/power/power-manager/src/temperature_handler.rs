@@ -334,7 +334,7 @@ impl Node for TemperatureHandler {
     ///
     /// Connects to the temperature driver unless a proxy was already provided (in a test).
     async fn init(&self) -> Result<(), Error> {
-        fuchsia_trace::duration!(c"power_manager", c"TemperatureHandler::init");
+        fuchsia_trace::duration!("power_manager", "TemperatureHandler::init");
 
         // Connect to the temperature driver. Typically this is None, but it may be set by tests.
         let driver_proxy = match &self.mutable_inner.borrow().driver_proxy {
@@ -699,7 +699,7 @@ impl TemperatureFilter {
         &self,
         timestamp: Nanoseconds,
     ) -> Result<TemperatureReadings, Error> {
-        fuchsia_trace::duration!(c"power_manager", c"TemperatureFilter::get_temperature");
+        fuchsia_trace::duration!("power_manager", "TemperatureFilter::get_temperature");
 
         let raw_temperature = self.read_temperature().await?;
         let filtered_temperature = match self.prev_temperature.get() {
@@ -728,7 +728,7 @@ impl TemperatureFilter {
 
     /// Queries the current temperature from the temperature handler node
     async fn read_temperature(&self) -> Result<Celsius, Error> {
-        fuchsia_trace::duration!(c"power_manager", c"TemperatureFilter::read_temperature");
+        fuchsia_trace::duration!("power_manager", "TemperatureFilter::read_temperature");
         match self.temperature_handler.handle_message(&Message::ReadTemperature).await {
             Ok(MessageReturn::ReadTemperature(t)) => Ok(t),
             Ok(r) => Err(format_err!("ReadTemperature had unexpected return value: {:?}", r)),

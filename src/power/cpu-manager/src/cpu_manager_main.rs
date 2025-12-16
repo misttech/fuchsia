@@ -611,7 +611,7 @@ impl PerformanceModel {
 impl CpuManagerMain {
     // Returns a Vec of all CPU loads as fractional utilizations.
     async fn get_cpu_loads(&self) -> Result<Vec<f32>, Error> {
-        fuchsia_trace::duration!(c"cpu_manager", c"CpuManagerMain::get_cpu_loads");
+        fuchsia_trace::duration!("cpu_manager", "CpuManagerMain::get_cpu_loads");
 
         // Get load for all CPUs in the system
         match self.send_message(&self.cpu_stats_handler, &Message::GetCpuLoads).await {
@@ -1052,7 +1052,7 @@ impl Node for CpuManagerMain {
 
     /// Initializes internal state.
     async fn init(&self) -> Result<(), Error> {
-        fuchsia_trace::duration!(c"cpu_manager", c"CpuManagerMain::init");
+        fuchsia_trace::duration!("cpu_manager", "CpuManagerMain::init");
 
         let cluster_configs =
             ok_or_default_err!(self.mutable_inner.lock().await.cluster_configs.take())
