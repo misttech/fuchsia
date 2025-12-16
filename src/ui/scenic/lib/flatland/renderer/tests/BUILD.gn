@@ -4,6 +4,7 @@
 
 import("//build/board.gni")
 import("//build/testing/cc_test_executable.gni")
+import("//build/toolchain/concurrent_jobs.gni")
 
 group("tests") {
   testonly = true
@@ -99,4 +100,9 @@ cc_test_executable("display_unittests") {
     "//src/ui/scenic/lib/utils",
     "//third_party/googletest:gtest",
   ]
+
+  # Remote linking requires a larger worker with more memory.
+  _concurrent_jobs = concurrent_jobs.link_highmem
+  configs += _concurrent_jobs.configs
+  forward_variables_from(_concurrent_jobs.vars, "*")
 }
