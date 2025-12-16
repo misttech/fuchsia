@@ -60,7 +60,15 @@ zx_status_t PowerButtonMonitor::SendPoweroff() {
     return connect_result.status_value();
   }
   fidl::WireSyncClient admin_client{std::move(connect_result.value())};
-  auto resp = admin_client->Poweroff();
+
+  fidl::Arena arena;
+  auto builder = statecontrol_fidl::wire::ShutdownOptions::Builder(arena);
+  statecontrol_fidl::ShutdownReason reasons[] = {statecontrol_fidl::ShutdownReason::kUserRequest};
+  auto vector_view = fidl::VectorView<statecontrol_fidl::ShutdownReason>::FromExternal(reasons);
+  builder.reasons(vector_view);
+  builder.action(statecontrol_fidl::ShutdownAction::kPoweroff);
+
+  auto resp = admin_client->Shutdown(builder.Build());
 
   // Check if there was any transport error, note that we don't actually wait
   // to see if the request is successful. In the success case the reboot call

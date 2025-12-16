@@ -64,7 +64,7 @@ async fn main() -> Result<(), Error> {
             async move {
                 info!("new connection to {}", statecontrol::AdminMarker::DEBUG_NAME);
                 match stream.try_next().await? {
-                    Some(statecontrol::AdminRequest::Poweroff { responder }) => {
+                    Some(statecontrol::AdminRequest::Shutdown { responder, options: _ }) => {
                         // If we respond to critical-services it will go back to check the signals
                         // on the event we gave it, see that ZX_USER_SIGNAL_0 is still set, and
                         // call this again, and thus be stuck in a loop until the test is torn
@@ -83,7 +83,7 @@ async fn main() -> Result<(), Error> {
                     }
 
                     Some(other) => {
-                        panic!("only expecting calls to Poweroff, but got: {:?}", other);
+                        panic!("only expecting calls to Shutdown, but got: {:?}", other);
                     }
                     None => {
                         // the connection closed
