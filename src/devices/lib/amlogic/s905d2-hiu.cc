@@ -12,6 +12,7 @@
 
 #include <utility>
 
+#include <fbl/algorithm.h>
 #include <soc/aml-s905d2/s905d2-hiu-regs.h>
 #include <soc/aml-s905d2/s905d2-hiu.h>
 #include <soc/aml-s905d2/s905d2-hw.h>
@@ -44,9 +45,10 @@ static inline uint32_t hiu_get_pll_offs(aml_pll_dev_t* pll_dev) {
 }
 
 zx_status_t s905d2_hiu_init(zx_handle_t mmio_resource, fdf::MmioBuffer* device) {
+  const size_t vmo_size = fbl::round_up<size_t>(S905D2_HIU_LENGTH, zx_system_get_page_size());
   zx::vmo vmo;
-  zx_status_t status = zx::vmo::create_physical(zx::resource(mmio_resource), S905D2_HIU_BASE,
-                                                S905D2_HIU_LENGTH, &vmo);
+  zx_status_t status =
+      zx::vmo::create_physical(zx::resource(mmio_resource), S905D2_HIU_BASE, vmo_size, &vmo);
   if (status != ZX_OK) {
     return status;
   }
