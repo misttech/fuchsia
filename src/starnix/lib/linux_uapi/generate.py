@@ -278,7 +278,7 @@ AUTO_DERIVE_TRAITS = [
         ["KnownLayout", "IntoBytes", "FromBytes", "Immutable", "PartialEq"],
     ),
     (r"xt_counters_info", ["KnownLayout", "FromBytes", "Immutable"]),
-    (r"xt_bpf_info_v1", ["KnownLayout", "FromBytes", "Immutable"]),
+    (r"xt_bpf_info_v1", ["KnownLayout", "FromBytes", "IntoBytes", "Immutable"]),
     (r"xt_tproxy_target_info_v1", ["KnownLayout", "FromBytes", "Immutable"]),
     (r"fastrpc_.*", ["IntoBytes, FromBytes, KnownLayout, Immutable"]),
     (r"remote_.*", ["IntoBytes, FromBytes, KnownLayout, Immutable"]),

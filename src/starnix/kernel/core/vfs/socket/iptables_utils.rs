@@ -5,6 +5,7 @@
 // This file contains translation between fuchsia.net.filter data structures and Linux
 // iptables structures.
 
+use bstr::BString;
 use itertools::Itertools;
 use starnix_logging::track_stub;
 use starnix_uapi::iptables_flags::{
@@ -18,7 +19,7 @@ use starnix_uapi::{
     ip6t_ip6, ip6t_replace, ipt_entry, ipt_ip, ipt_replace, nf_ip_hook_priorities_NF_IP_PRI_FILTER,
     nf_ip_hook_priorities_NF_IP_PRI_MANGLE, nf_ip_hook_priorities_NF_IP_PRI_NAT_DST,
     nf_ip_hook_priorities_NF_IP_PRI_NAT_SRC, nf_ip_hook_priorities_NF_IP_PRI_RAW,
-    nf_nat_ipv4_multi_range_compat, nf_nat_range,
+    nf_nat_ipv4_multi_range_compat, nf_nat_range, xt_bpf_info_v1,
     xt_entry_match__bindgen_ty_1__bindgen_ty_1 as xt_entry_match,
     xt_entry_target__bindgen_ty_1__bindgen_ty_1 as xt_entry_target, xt_mark_tginfo2, xt_tcp,
     xt_tproxy_target_info_v1, xt_udp,
@@ -31,8 +32,10 @@ use std::num::NonZeroU16;
 use std::ops::RangeInclusive;
 use thiserror::Error;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
+
 use {
-    fidl_fuchsia_net as fnet, fidl_fuchsia_net_filter_ext as fnet_filter_ext,
+    fidl_fuchsia_ebpf as febpf, fidl_fuchsia_net as fnet,
+    fidl_fuchsia_net_filter_ext as fnet_filter_ext,
     fidl_fuchsia_net_matchers_ext as fnet_matchers_ext,
 };
 
@@ -144,6 +147,12 @@ pub enum IpTableParseError {
     MatchExtensionDoesNotMatchProtocol,
     #[error("match extension would overwrite another matcher")]
     MatchExtensionOverwrite,
+    #[error("unsupported BPF mode {mode}")]
+    UnsupportedBpfMatcherMode { mode: u16 },
+    #[error("eBPF program path is not null terminated")]
+    NoNulInEbpfProgramPath,
+    #[error("Invalid eBPF program path: {path}")]
+    InvalidEbpfProgramPath { path: BString },
 }
 
 #[derive(Debug, Error, PartialEq)]
@@ -430,6 +439,7 @@ pub enum Matcher {
     Unknown,
     Tcp(xt_tcp),
     Udp(xt_udp),
+    Bpf { path: BString },
 }
 
 #[derive(Debug)]
@@ -500,8 +510,8 @@ pub struct ErrorNameWithPadding {
     pub _padding: [u8; 2usize],
 }
 
-#[derive(Debug)]
-enum Ip {
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+pub enum Ip {
     V4,
     V6,
 }
@@ -550,6 +560,13 @@ impl From<TableId> for usize {
     fn from(value: TableId) -> Self {
         value as usize
     }
+}
+
+pub trait IptReplaceContext {
+    fn resolve_ebpf_socket_filter(
+        &mut self,
+        path: &BString,
+    ) -> Result<febpf::ProgramId, IpTableParseError>;
 }
 
 /// A parser for both `ipt_replace` and `ip6t_replace`, and its subsequent entries.
@@ -791,12 +808,11 @@ impl IptReplaceParser {
             return Err(IpTableParseError::MatchSizeTooSmall { size: match_size });
         }
         let remaining_size = match_size - size_of::<xt_entry_match>();
+        let name = ascii_to_string(&match_info.name).map_err(IpTableParseError::AsciiConversion)?;
+        let revision = match_info.revision;
 
-        let matcher = match ascii_to_string(&match_info.name)
-            .map_err(IpTableParseError::AsciiConversion)?
-            .as_str()
-        {
-            "tcp" => {
+        let matcher = match (name.as_str(), revision) {
+            ("tcp", 0) => {
                 if remaining_size < size_of::<xt_tcp>() {
                     return Err(IpTableParseError::MatchSizeMismatch {
                         size: match_size,
@@ -807,7 +823,7 @@ impl IptReplaceParser {
                 Matcher::Tcp(tcp)
             }
 
-            "udp" => {
+            ("udp", 0) => {
                 if remaining_size < size_of::<xt_udp>() {
                     return Err(IpTableParseError::MatchSizeMismatch {
                         size: match_size,
@@ -818,10 +834,31 @@ impl IptReplaceParser {
                 Matcher::Udp(udp)
             }
 
-            matcher_name => {
+            ("bpf", 1) => {
+                if remaining_size < size_of::<xt_bpf_info_v1>() {
+                    return Err(IpTableParseError::MatchSizeMismatch {
+                        size: match_size,
+                        match_name: "bpf",
+                    });
+                }
+                let bpf = self.view_next_bytes_as::<xt_bpf_info_v1>()?;
+                if u32::from(bpf.mode) != starnix_uapi::xt_bpf_modes_XT_BPF_MODE_FD_PINNED {
+                    return Err(IpTableParseError::UnsupportedBpfMatcherMode { mode: bpf.mode });
+                }
+
+                // SAFETY: reading union variant.
+                let cpath = unsafe { &bpf.__bindgen_anon_1.path };
+                let path = CStr::from_bytes_until_nul(cpath.as_bytes())
+                    .map_err(|_| IpTableParseError::NoNulInEbpfProgramPath)?;
+                let path = BString::from(path.to_bytes());
+
+                Matcher::Bpf { path }
+            }
+
+            (matcher_name, revision) => {
                 track_stub!(
                     TODO("https://fxbug.dev/448203710"),
-                    format!("ignored matcher {matcher_name}").as_str()
+                    format!("ignored matcher {matcher_name}, revision {revision}").as_str()
                 );
                 Matcher::Unknown
             }
@@ -887,6 +924,7 @@ impl IptReplaceParser {
                     format!("ignored unknown target {target_name} with revision: {revision}")
                         .as_str()
                 );
+
                 let bytes = self
                     .get_next_bytes(remaining_size)
                     .ok_or(IpTableParseError::TargetSizeMismatch {
@@ -1027,15 +1065,24 @@ pub struct IpTable {
 }
 
 impl IpTable {
-    pub fn from_ipt_replace(bytes: Vec<u8>) -> Result<Self, IpTableParseError> {
-        Self::from_parser(IptReplaceParser::new_ipv4(bytes)?)
+    pub fn from_ipt_replace(
+        context: &mut impl IptReplaceContext,
+        bytes: Vec<u8>,
+    ) -> Result<Self, IpTableParseError> {
+        Self::from_parser(context, IptReplaceParser::new_ipv4(bytes)?)
     }
 
-    pub fn from_ip6t_replace(bytes: Vec<u8>) -> Result<Self, IpTableParseError> {
-        Self::from_parser(IptReplaceParser::new_ipv6(bytes)?)
+    pub fn from_ip6t_replace(
+        context: &mut impl IptReplaceContext,
+        bytes: Vec<u8>,
+    ) -> Result<Self, IpTableParseError> {
+        Self::from_parser(context, IptReplaceParser::new_ipv6(bytes)?)
     }
 
-    fn from_parser(mut parser: IptReplaceParser) -> Result<Self, IpTableParseError> {
+    fn from_parser(
+        context: &mut impl IptReplaceContext,
+        mut parser: IptReplaceParser,
+    ) -> Result<Self, IpTableParseError> {
         let mut entries = Vec::new();
 
         // Step 1: Parse entries table bytes into `Entry`s.
@@ -1116,6 +1163,7 @@ impl IpTable {
         for installed_routine in installed_routines.into_iter() {
             for (index, entry) in installed_routine.entries.into_iter().enumerate() {
                 if let Some(rule) = entry.translate_into_rule(
+                    context,
                     installed_routine.routine.id.clone(),
                     index,
                     &custom_routine_map,
@@ -1127,6 +1175,7 @@ impl IpTable {
         for custom_routine in custom_routines {
             for (index, entry) in custom_routine.entries.into_iter().enumerate() {
                 if let Some(rule) = entry.translate_into_rule(
+                    context,
                     custom_routine.routine.id.clone(),
                     index,
                     &custom_routine_map,
@@ -1486,13 +1535,16 @@ impl Entry {
     // Creates a `fnet_filter_ext::Matchers` object and populate it with IP matchers in `ip_info`,
     // and extension matchers like `xt_tcp`.
     // Returns None if any unsupported matchers are found.
-    fn get_rule_matchers(&self) -> Result<Option<fnet_filter_ext::Matchers>, IpTableParseError> {
+    fn get_rule_matchers(
+        &self,
+        context: &mut impl IptReplaceContext,
+    ) -> Result<Option<fnet_filter_ext::Matchers>, IpTableParseError> {
         let mut matchers = fnet_filter_ext::Matchers::default();
 
         if self.populate_matchers_with_ipt_ip(&mut matchers)?.is_none() {
             return Ok(None);
         }
-        if self.populate_matchers_with_match_extensions(&mut matchers)?.is_none() {
+        if self.populate_matchers_with_match_extensions(context, &mut matchers)?.is_none() {
             return Ok(None);
         }
 
@@ -1648,6 +1700,7 @@ impl Entry {
 
     fn populate_matchers_with_match_extensions(
         &self,
+        context: &mut impl IptReplaceContext,
         fnet_filter_matchers: &mut fnet_filter_ext::Matchers,
     ) -> Result<Option<()>, IpTableParseError> {
         for matcher in &self.matchers {
@@ -1721,6 +1774,10 @@ impl Entry {
                         .map_err(IpTableParseError::PortMatcher)?,
                     );
                 }
+                Matcher::Bpf { path } => {
+                    fnet_filter_matchers.ebpf_program =
+                        Some(context.resolve_ebpf_socket_filter(path)?);
+                }
                 Matcher::Unknown => return Ok(None),
             }
         }
@@ -1765,13 +1822,14 @@ impl Entry {
 
     fn translate_into_rule(
         self,
+        context: &mut impl IptReplaceContext,
         routine_id: fnet_filter_ext::RoutineId,
         index: usize,
         routine_map: &HashMap<usize, String>,
     ) -> Result<Option<fnet_filter_ext::Rule>, IpTableParseError> {
         let index = u32::try_from(index).map_err(|_| IpTableParseError::TooManyRules)?;
 
-        let Some(matchers) = self.get_rule_matchers()? else {
+        let Some(matchers) = self.get_rule_matchers(context)? else {
             return Ok(None);
         };
 
@@ -1936,9 +1994,13 @@ mod tests {
     const MARK: u32 = 1;
     const MASK: u32 = 2;
 
+    const STANDARD_TARGET_SIZE: usize =
+        size_of::<xt_entry_target>() + size_of::<VerdictWithPadding>();
+
     fn extend_with_standard_verdict(bytes: &mut Vec<u8>, verdict: i32) {
         bytes.extend_from_slice(
-            xt_entry_target { target_size: 40, ..Default::default() }.as_bytes(),
+            xt_entry_target { target_size: STANDARD_TARGET_SIZE as u16, ..Default::default() }
+                .as_bytes(),
         );
         bytes.extend_from_slice(VerdictWithPadding { verdict, ..Default::default() }.as_bytes());
     }
@@ -2545,22 +2607,27 @@ mod tests {
     }
 
     #[test_case(
-        IpTable::from_ipt_replace(ipv4_table_with_ip_matchers()).unwrap(),
+        ipv4_table_with_ip_matchers(),
+        IpTable::from_ipt_replace,
         filter_namespace_v4(),
         IPV4_SUBNET;
         "ipv4"
     )]
     #[test_case(
-        IpTable::from_ip6t_replace(ipv6_table_with_ip_matchers()).unwrap(),
+        ipv6_table_with_ip_matchers(),
+        IpTable::from_ip6t_replace,
         filter_namespace_v6(),
         IPV6_SUBNET;
         "ipv6"
     )]
     fn parse_ip_matchers_test(
-        table: IpTable,
+        table_bytes: Vec<u8>,
+        parse_fn: fn(&mut TestIpTablesContext, Vec<u8>) -> Result<IpTable, IpTableParseError>,
         expected_namespace: fnet_filter_ext::Namespace,
         expected_subnet: fnet::Subnet,
     ) {
+        let mut context = TestIpTablesContext::new();
+        let table = parse_fn(&mut context, table_bytes).unwrap();
         assert_eq!(table.namespace, expected_namespace);
 
         assert_eq!(
@@ -2688,13 +2755,16 @@ mod tests {
         }
     }
 
+    const TEST_EBPF_PROGRAM_PATH: &str = "/sys/fs/bpf/test_prog";
+    const TEST_EBPF_PROGRAM_ID: febpf::ProgramId = febpf::ProgramId { id: 42 };
+
     fn table_with_match_extensions() -> Vec<u8> {
         let mut entries_bytes = Vec::new();
 
         // Start of INPUT built-in chain.
         let input_hook_entry = entries_bytes.len() as u32;
 
-        // Entry 0: DROP all TCP packets except those destined to port 8000.
+        // Entry 0: DROP all TCP packets except those destined to port 8000. Offset 0
         entries_bytes.extend_from_slice(
             ipt_entry {
                 ip: ipt_ip { proto: IPPROTO_TCP as u16, ..Default::default() },
@@ -2748,14 +2818,46 @@ mod tests {
         entries_bytes.extend_from_slice(&[0, 0, 0, 0, 0, 0]);
         extend_with_standard_verdict(&mut entries_bytes, VERDICT_ACCEPT);
 
-        // Entry 2: policy of INPUT chain.
+        // Entry 2: Drop packets that match custom BPF matcher.
+        const BPF_MATCHER_SIZE: usize = size_of::<xt_entry_match>() + size_of::<xt_bpf_info_v1>();
+        const BPF_TARGET_OFFSET: usize = BPF_MATCHER_SIZE + size_of::<ipt_entry>();
+        entries_bytes.extend_from_slice(
+            ipt_entry {
+                ip: Default::default(),
+                target_offset: BPF_TARGET_OFFSET as u16,
+                next_offset: (BPF_TARGET_OFFSET + STANDARD_TARGET_SIZE) as u16,
+                ..Default::default()
+            }
+            .as_bytes(),
+        );
+        entries_bytes.extend_from_slice(
+            xt_entry_match {
+                match_size: BPF_MATCHER_SIZE as u16,
+                name: string_to_ascii_buffer("bpf").unwrap(),
+                revision: 1,
+            }
+            .as_bytes(),
+        );
+        let bpf_info = xt_bpf_info_v1 {
+            mode: starnix_uapi::xt_bpf_modes_XT_BPF_MODE_FD_PINNED as u16,
+            bpf_program_num_elem: 0,
+            fd: 0,
+            __bindgen_anon_1: starnix_uapi::xt_bpf_info_v1__bindgen_ty_1 {
+                path: string_to_ascii_buffer(TEST_EBPF_PROGRAM_PATH).unwrap(),
+            },
+            filter: starnix_uapi::uaddr::default().into(),
+        };
+        entries_bytes.extend_from_slice(bpf_info.as_bytes());
+        extend_with_standard_verdict(&mut entries_bytes, VERDICT_ACCEPT);
+
+        // Entry 3: policy of INPUT chain.
         let input_underflow = entries_bytes.len() as u32;
         extend_with_standard_target_ipv4_entry(&mut entries_bytes, VERDICT_ACCEPT);
 
         // Start of FORWARD built-in chain.
         let forward_hook_entry = entries_bytes.len() as u32;
 
-        // Entry 3: policy of FORWARD chain.
+        // Entry 4: policy of FORWARD chain.
         // Note: FORWARD chain has no other rules.
         let forward_underflow = entries_bytes.len() as u32;
         extend_with_standard_target_ipv4_entry(&mut entries_bytes, VERDICT_ACCEPT);
@@ -2763,17 +2865,17 @@ mod tests {
         // Start of OUTPUT built-in chain.
         let output_hook_entry = entries_bytes.len() as u32;
 
-        // Entry 4: policy of OUTPUT chain.
+        // Entry 5: policy of OUTPUT chain.
         // Note: OUTPUT chain has no other rules.
         let output_underflow = entries_bytes.len() as u32;
         extend_with_standard_target_ipv4_entry(&mut entries_bytes, VERDICT_DROP);
 
-        // Entry 5: end of input.
+        // Entry 6: end of input.
         extend_with_error_target_ipv4_entry(&mut entries_bytes, TARGET_ERROR);
 
         let mut bytes = ipt_replace {
             name: string_to_ascii_buffer("filter").unwrap(),
-            num_entries: 6,
+            num_entries: 7,
             size: entries_bytes.len() as u32,
             valid_hooks: NfIpHooks::FILTER.bits(),
             hook_entry: [0, input_hook_entry, forward_hook_entry, output_hook_entry, 0],
@@ -2788,7 +2890,8 @@ mod tests {
 
     #[fuchsia::test]
     fn parse_match_extensions_test() {
-        let table = IpTable::from_ipt_replace(table_with_match_extensions()).unwrap();
+        let mut context = TestIpTablesContext::new();
+        let table = IpTable::from_ipt_replace(&mut context, table_with_match_extensions()).unwrap();
 
         let expected_namespace = filter_namespace_v4();
         assert_eq!(table.namespace, expected_namespace);
@@ -2843,6 +2946,21 @@ mod tests {
             fnet_filter_ext::Rule {
                 id: fnet_filter_ext::RuleId {
                     index: 2,
+                    routine: filter_input_routine(&expected_namespace).id,
+                },
+                matchers: fnet_filter_ext::Matchers {
+                    ebpf_program: Some(TEST_EBPF_PROGRAM_ID),
+                    ..Default::default()
+                },
+                action: fnet_filter_ext::Action::Accept,
+            }
+        );
+
+        assert_eq!(
+            rules.next().unwrap(),
+            fnet_filter_ext::Rule {
+                id: fnet_filter_ext::RuleId {
+                    index: 3,
                     routine: filter_input_routine(&expected_namespace).id,
                 },
                 matchers: fnet_filter_ext::Matchers::default(),
@@ -3004,16 +3122,24 @@ mod tests {
     }
 
     #[test_case(
-        IpTable::from_ipt_replace(ipv4_table_with_jump_target()).unwrap(),
+        ipv4_table_with_jump_target(),
+        IpTable::from_ipt_replace,
         filter_namespace_v4();
         "ipv4"
     )]
     #[test_case(
-        IpTable::from_ip6t_replace(ipv6_table_with_jump_target()).unwrap(),
+        ipv6_table_with_jump_target(),
+        IpTable::from_ip6t_replace,
         filter_namespace_v6();
         "ipv6"
     )]
-    fn parse_jump_target_test(table: IpTable, expected_namespace: fnet_filter_ext::Namespace) {
+    fn parse_jump_target_test(
+        table_bytes: Vec<u8>,
+        parse_fn: fn(&mut TestIpTablesContext, Vec<u8>) -> Result<IpTable, IpTableParseError>,
+        expected_namespace: fnet_filter_ext::Namespace,
+    ) {
+        let mut context = TestIpTablesContext::new();
+        let table = parse_fn(&mut context, table_bytes).unwrap();
         assert_eq!(table.namespace, expected_namespace);
 
         assert_eq!(
@@ -3579,23 +3705,51 @@ mod tests {
         bytes
     }
 
+    struct TestIpTablesContext {
+        registered_ebpf_program: bool,
+    }
+
+    impl TestIpTablesContext {
+        fn new() -> Self {
+            Self { registered_ebpf_program: false }
+        }
+    }
+
+    impl IptReplaceContext for TestIpTablesContext {
+        fn resolve_ebpf_socket_filter(
+            &mut self,
+            path: &BString,
+        ) -> Result<febpf::ProgramId, IpTableParseError> {
+            if path == TEST_EBPF_PROGRAM_PATH {
+                self.registered_ebpf_program = true;
+                return Ok(TEST_EBPF_PROGRAM_ID);
+            }
+            Err(IpTableParseError::InvalidEbpfProgramPath { path: path.clone() })
+        }
+    }
+
     #[test_case(
-        IpTable::from_ipt_replace(ipv4_table_with_redirect_and_tproxy()).unwrap(),
+        ipv4_table_with_redirect_and_tproxy(),
+        IpTable::from_ipt_replace,
         nat_namespace_v4(),
         IPV4_ADDR;
         "ipv4"
     )]
     #[test_case(
-        IpTable::from_ip6t_replace(ipv6_table_with_redirect_and_tproxy()).unwrap(),
+        ipv6_table_with_redirect_and_tproxy(),
+        IpTable::from_ip6t_replace,
         nat_namespace_v6(),
         IPV6_ADDR;
         "ipv6"
     )]
     fn parse_redirect_tproxy_test(
-        table: IpTable,
+        table_bytes: Vec<u8>,
+        parse_table: fn(&mut TestIpTablesContext, Vec<u8>) -> Result<IpTable, IpTableParseError>,
         expected_namespace: fnet_filter_ext::Namespace,
         expected_ip_addr: fnet::IpAddress,
     ) {
+        let mut context = TestIpTablesContext::new();
+        let table = parse_table(&mut context, table_bytes).unwrap();
         assert_eq!(table.namespace, expected_namespace);
 
         assert_eq!(
@@ -3873,17 +4027,17 @@ mod tests {
         mangle_namespace_v6(); "ipv6"
     )]
     fn parse_mark_test(
-        parse_fn: fn(Vec<u8>) -> Result<IpTable, IpTableParseError>,
+        parse_fn: fn(&mut TestIpTablesContext, Vec<u8>) -> Result<IpTable, IpTableParseError>,
         xt_entry: &[u8],
         extend_with_standard_target: fn(&mut Vec<u8>, i32),
         extend_with_error_target: fn(&mut Vec<u8>, &str),
         expected_namespace: fnet_filter_ext::Namespace,
     ) {
-        let table = parse_fn(ip_table_with_mark(
-            xt_entry,
-            extend_with_standard_target,
-            extend_with_error_target,
-        ))
+        let mut context = TestIpTablesContext::new();
+        let table = parse_fn(
+            &mut context,
+            ip_table_with_mark(xt_entry, extend_with_standard_target, extend_with_error_target),
+        )
         .unwrap();
 
         assert_eq!(table.namespace, expected_namespace);
@@ -4182,7 +4336,8 @@ mod tests {
         "chain with no policy"
     )]
     fn parse_table_error(bytes: Vec<u8>, expected_error: IpTableParseError) {
-        assert_eq!(IpTable::from_ipt_replace(bytes).unwrap_err(), expected_error);
+        let mut context = TestIpTablesContext::new();
+        assert_eq!(IpTable::from_ipt_replace(&mut context, bytes).unwrap_err(), expected_error);
     }
 
     #[test_case(&[], Err(AsciiConversionError::NulByteNotFound { chars: vec![] }); "empty slice")]

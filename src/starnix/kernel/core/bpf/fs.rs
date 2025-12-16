@@ -68,6 +68,13 @@ impl BpfHandle {
         }
     }
 
+    pub fn into_program(self) -> Result<ProgramHandle, Errno> {
+        match self {
+            Self::Program(program) => Ok(program),
+            _ => error!(EINVAL),
+        }
+    }
+
     // Returns VMO and schema if this handle references a map.
     fn get_map_vmo(&self) -> Result<(&Arc<zx::Vmo>, MapSchema), Errno> {
         match self {
@@ -286,7 +293,6 @@ impl FileOps for BpfHandle {
 pub fn get_bpf_object(task: &Task, fd: FdNumber) -> Result<BpfHandle, Errno> {
     Ok((*task.files.get(fd)?.downcast_file::<BpfHandle>().ok_or_else(|| errno!(EBADF))?).clone())
 }
-
 pub struct BpfFs;
 impl BpfFs {
     pub fn new_fs(

@@ -2,13 +2,19 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::bpf::fs::resolve_pinned_bpf_object;
+use crate::bpf::program::{Program, ProgramHandle};
 use crate::security;
 use crate::task::CurrentTask;
-use crate::vfs::socket::iptables_utils::{self, TableId, string_to_ascii_buffer};
+use crate::vfs::socket::iptables_utils::{
+    self, Ip, IpTableParseError, IptReplaceContext, TableId, string_to_ascii_buffer,
+};
 use crate::vfs::socket::{SockOptValue, SocketDomain, SocketHandle, SocketType};
-use fidl_fuchsia_net_filter as fnet_filter;
+use bstr::BString;
 use fidl_fuchsia_net_filter_ext::sync::Controller;
-use fidl_fuchsia_net_filter_ext::{Change, CommitError, ControllerId, PushChangesError};
+use fidl_fuchsia_net_filter_ext::{
+    Change, CommitError, ControllerId, PushChangesError, RegisterEbpfProgramError,
+};
 use fuchsia_component::client::connect_to_protocol_sync;
 use itertools::Itertools;
 use starnix_logging::{log_error, log_warn, track_stub};
@@ -16,6 +22,7 @@ use starnix_sync::{KernelIpTables, Locked, OrderedRwLock, Unlocked};
 use starnix_uapi::auth::CAP_NET_ADMIN;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::iptables_flags::NfIpHooks;
+use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::{
     IP6T_SO_GET_ENTRIES, IP6T_SO_GET_INFO, IP6T_SO_GET_REVISION_MATCH, IP6T_SO_GET_REVISION_TARGET,
     IPT_SO_GET_ENTRIES, IPT_SO_GET_INFO, IPT_SO_GET_REVISION_MATCH, IPT_SO_GET_REVISION_TARGET,
@@ -26,9 +33,11 @@ use starnix_uapi::{
     xt_get_revision, xt_standard_target,
 };
 use static_assertions::const_assert_eq;
+use std::collections::HashMap;
 use std::mem::size_of;
-use std::ops::{Index, IndexMut};
+use std::ops::{Deref as _, Index, IndexMut};
 use zerocopy::{FromBytes, IntoBytes};
+use {fidl_fuchsia_ebpf as febpf, fidl_fuchsia_net_filter as fnet_filter};
 
 const NAMESPACE_ID_PREFIX: &str = "starnix";
 
@@ -366,6 +375,37 @@ fn default_ipv6_tables() -> IpTablesArray {
     ]
 }
 
+/// Defines a set of table.
+#[derive(Default, PartialEq, Eq, Copy, Clone)]
+struct IpTableSet(u64);
+
+impl IpTableSet {
+    fn element_index(ip: Ip, table: TableId) -> usize {
+        (ip as usize) * iptables_utils::NUM_TABLES + table as usize
+    }
+
+    fn add(&mut self, ip: Ip, table: TableId) {
+        self.0 |= 1 << Self::element_index(ip, table);
+    }
+
+    fn remove(&mut self, ip: Ip, table: TableId) {
+        self.0 &= !(1 << Self::element_index(ip, table));
+    }
+
+    fn is_empty(&self) -> bool {
+        *self == Self::default()
+    }
+}
+
+// `EbpfProgramState` keeps track of where an eBPF program is currently
+// installed. This ensures that we keep at least one reference to the program
+// while it is being used by a filter rule.
+struct EbpfProgramState {
+    #[allow(dead_code)]
+    program: ProgramHandle,
+    tables: IpTableSet,
+}
+
 #[derive(Default)]
 struct LazyController {
     controller: Option<Controller>,
@@ -400,9 +440,9 @@ struct IpTablesState {
     ipv6: IpTablesArray,
 
     /// Controller to configure net filtering state.
-    ///
-    /// Initialized lazily with `get_controller`.
     controller: LazyController,
+
+    ebpf_programs: HashMap<febpf::ProgramId, EbpfProgramState>,
 }
 
 impl IpTablesState {
@@ -461,6 +501,84 @@ impl IpTablesState {
             }
         }
     }
+
+    /// Registers eBPF programs with the controller and updates the state for the specified table.
+    fn register_ebpf_programs(
+        &mut self,
+        ip: Ip,
+        table_id: TableId,
+        ebpf_programs: HashMap<febpf::ProgramId, ProgramHandle>,
+    ) -> Result<(), Errno> {
+        // Register new programs with the controller.
+        let controller = self.controller.get()?;
+        for (id, program_handle) in &ebpf_programs {
+            if !self.ebpf_programs.contains_key(id) {
+                let program: &Program = program_handle.deref();
+                match controller.register_ebpf_program(
+                    program.fidl_handle(),
+                    program.try_into()?,
+                    zx::MonotonicInstant::INFINITE,
+                ) {
+                    Ok(_) => {}
+                    Err(RegisterEbpfProgramError::AlreadyRegistered) => {}
+                    Err(e) => {
+                        log_warn!("IpTables: failed to register eBPF program: {e}");
+                        return error!(EINVAL);
+                    }
+                }
+            }
+        }
+
+        // Cleanup programs used in the previous version of the table.
+        self.ebpf_programs.retain(|_id, program_state| {
+            program_state.tables.remove(ip, table_id);
+
+            !program_state.tables.is_empty()
+        });
+
+        // Update the state for the new programs.
+        for (id, program_handle) in &ebpf_programs {
+            let entry = self.ebpf_programs.entry(*id).or_insert_with(|| EbpfProgramState {
+                program: program_handle.clone(),
+                tables: IpTableSet::default(),
+            });
+            entry.tables.add(ip, table_id);
+        }
+
+        Ok(())
+    }
+
+    fn replace_table(
+        &mut self,
+        ip: Ip,
+        ebpf_programs: HashMap<febpf::ProgramId, ProgramHandle>,
+        table: iptables_utils::IpTable,
+    ) -> Result<(), Errno> {
+        let entries = table.parser.entries_bytes().to_vec();
+        let replace_info = table.parser.replace_info.clone();
+        let iptable_entry = IpTable {
+            num_entries: replace_info.num_entries as u32,
+            size: replace_info.size as u32,
+            entries,
+            num_counters: replace_info.num_counters,
+            valid_hooks: replace_info.valid_hooks.bits(),
+            hook_entry: replace_info.hook_entry,
+            underflow: replace_info.underflow,
+            counters: vec![],
+        };
+
+        let table_id = replace_info.table_id;
+        self.register_ebpf_programs(ip, table_id, ebpf_programs)?;
+
+        self.send_changes_to_net_filter(table.into_changes())?;
+
+        match ip {
+            Ip::V4 => self.ipv4[table_id] = iptable_entry,
+            Ip::V6 => self.ipv6[table_id] = iptable_entry,
+        }
+
+        Ok(())
+    }
 }
 
 /// Stores [`IpTable`]s associated with each protocol.
@@ -478,6 +596,7 @@ impl IpTables {
                 ipv4: default_ipv4_tables(),
                 ipv6: default_ipv6_tables(),
                 controller: LazyController::default(),
+                ebpf_programs: HashMap::new(),
             }),
         }
     }
@@ -636,9 +755,9 @@ impl IpTables {
             IPT_SO_SET_REPLACE => {
                 // TODO(https://fxbug.dev/407842082): The following logic needs to be fixed.
                 if socket.domain == SocketDomain::Inet {
-                    self.replace_ipv4_table(locked, bytes)
+                    self.replace_ipv4_table(locked, current_task, bytes)
                 } else {
-                    self.replace_ipv6_table(locked, bytes)
+                    self.replace_ipv6_table(locked, current_task, bytes)
                 }
             }
 
@@ -675,28 +794,17 @@ impl IpTables {
     fn replace_ipv4_table(
         &self,
         locked: &mut Locked<Unlocked>,
+        current_task: &CurrentTask,
         bytes: Vec<u8>,
     ) -> Result<(), Errno> {
-        let table = iptables_utils::IpTable::from_ipt_replace(bytes).map_err(|e| {
-            log_warn!("Iptables: encountered error while parsing rules: {e}");
-            errno!(EINVAL)
-        })?;
-        let entries = table.parser.entries_bytes().to_vec();
-        let replace_info = table.parser.replace_info.clone();
-        let iptable_entry = IpTable {
-            num_entries: replace_info.num_entries as u32,
-            size: replace_info.size as u32,
-            entries,
-            num_counters: replace_info.num_counters,
-            valid_hooks: replace_info.valid_hooks.bits(),
-            hook_entry: replace_info.hook_entry,
-            underflow: replace_info.underflow,
-            counters: vec![],
-        };
-
-        let mut state = self.state.write(locked);
-        state.send_changes_to_net_filter(table.into_changes())?;
-        state.ipv4[replace_info.table_id] = iptable_entry;
+        let mut ebpf_state = IpTablesEbpfState::new(locked, current_task);
+        let table =
+            iptables_utils::IpTable::from_ipt_replace(&mut ebpf_state, bytes).map_err(|e| {
+                log_warn!("Iptables: encountered error while parsing rules: {e}");
+                errno!(EINVAL)
+            })?;
+        let ebpf_programs = ebpf_state.take_programs();
+        self.state.write(locked).replace_table(Ip::V4, ebpf_programs, table)?;
 
         Ok(())
     }
@@ -704,29 +812,57 @@ impl IpTables {
     fn replace_ipv6_table(
         &self,
         locked: &mut Locked<Unlocked>,
+        current_task: &CurrentTask,
         bytes: Vec<u8>,
     ) -> Result<(), Errno> {
-        let table = iptables_utils::IpTable::from_ip6t_replace(bytes).map_err(|e| {
-            log_warn!("Iptables: encountered error while parsing rules: {e}");
-            errno!(EINVAL)
-        })?;
-        let entries = table.parser.entries_bytes().to_vec();
-        let replace_info = table.parser.replace_info.clone();
-        let iptable_entry = IpTable {
-            num_entries: replace_info.num_entries as u32,
-            size: replace_info.size as u32,
-            entries,
-            num_counters: replace_info.num_counters,
-            valid_hooks: replace_info.valid_hooks.bits(),
-            hook_entry: replace_info.hook_entry,
-            underflow: replace_info.underflow,
-            counters: vec![],
-        };
-
-        let mut state = self.state.write(locked);
-        state.send_changes_to_net_filter(table.into_changes())?;
-        state.ipv6[replace_info.table_id] = iptable_entry;
+        let mut ebpf_state = IpTablesEbpfState::new(locked, current_task);
+        let table =
+            iptables_utils::IpTable::from_ip6t_replace(&mut ebpf_state, bytes).map_err(|e| {
+                log_warn!("Iptables: encountered error while parsing rules: {e}");
+                errno!(EINVAL)
+            })?;
+        let ebpf_programs = ebpf_state.take_programs();
+        self.state.write(locked).replace_table(Ip::V6, ebpf_programs, table)?;
 
         Ok(())
+    }
+}
+
+struct IpTablesEbpfState<'a> {
+    locked: &'a mut Locked<Unlocked>,
+    current_task: &'a CurrentTask,
+    ebpf_programs: HashMap<febpf::ProgramId, ProgramHandle>,
+}
+
+impl<'a> IpTablesEbpfState<'a> {
+    fn new(locked: &'a mut Locked<Unlocked>, current_task: &'a CurrentTask) -> Self {
+        Self { locked, current_task, ebpf_programs: HashMap::default() }
+    }
+
+    fn take_programs(self) -> HashMap<febpf::ProgramId, ProgramHandle> {
+        self.ebpf_programs
+    }
+}
+
+impl<'a> IptReplaceContext for IpTablesEbpfState<'a> {
+    fn resolve_ebpf_socket_filter(
+        &mut self,
+        path: &BString,
+    ) -> Result<febpf::ProgramId, IpTableParseError> {
+        let program = resolve_pinned_bpf_object(
+            self.locked,
+            self.current_task,
+            path.as_ref(),
+            OpenFlags::RDONLY,
+        )
+        .and_then(|(handle, _node)| handle.into_program())
+        .map_err(|e| {
+            log_warn!("Failed to resolve eBPF program path {} for iptable matcher: {:?}", path, e);
+            IpTableParseError::InvalidEbpfProgramPath { path: path.clone() }
+        })?;
+
+        let id = program.fidl_id();
+        self.ebpf_programs.insert(id, program);
+        Ok(id)
     }
 }

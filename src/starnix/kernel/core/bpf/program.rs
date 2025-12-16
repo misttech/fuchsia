@@ -24,6 +24,7 @@ use starnix_uapi::errors::Errno;
 use starnix_uapi::{bpf_attr__bindgen_ty_4, errno, error};
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Weak};
+use zx::{AsHandleRef as _, HandleBased};
 
 #[derive(Clone, Debug)]
 pub struct ProgramInfo {
@@ -50,11 +51,32 @@ fn new_program_id() -> ProgramId {
 
 #[derive(Debug)]
 pub struct Program {
+    /// Program info specified during program initialization.
     pub info: ProgramInfo,
+
+    /// Verified program.
     program: VerifiedEbpfProgram,
+
+    /// eBPF maps used by the program. These should match the `maps` field in
+    /// the `program`.
     maps: Vec<BpfMapHandle>,
 
+    /// Integer program ID. This is dinstinct from `fidl_id` because `fidl_id`
+    /// is 64-bit, while Linux uses 32-bit IDs.
     id: ProgramId,
+
+    /// Handle used when the program is transferred over FIDL to other services.
+    fidl_handle: febpf::ProgramHandle,
+
+    /// ID of the program used in FIDL
+    fidl_id: febpf::ProgramId,
+
+    /// The service end of the `fidl_handle`. Should be moved to the BPF Service
+    /// once it's implemented.
+    #[allow(dead_code)]
+    service_handle: zx::EventPair,
+
+    /// Weak reference to the Kernel where this program is registered.
     kernel: Weak<Kernel>,
 
     /// The security state associated with this bpf Program.
@@ -97,12 +119,20 @@ impl Program {
             .map_err(map_ebpf_api_error)?;
         let program = verify_program(code, calling_context, &mut logger).map_err(map_ebpf_error)?;
 
+        let (fidl_handle, service_handle) = zx::EventPair::create();
+        let fidl_id =
+            febpf::ProgramId { id: fidl_handle.get_koid().expect("Failed to get koid").raw_koid() };
+        let fidl_handle = febpf::ProgramHandle { handle: fidl_handle };
+
         let program = ProgramHandle::new(
             Self {
                 info,
                 program,
                 maps,
                 id: new_program_id(),
+                fidl_handle,
+                fidl_id,
+                service_handle,
                 kernel: Arc::downgrade(current_task.kernel()),
                 security_state: security::bpf_prog_alloc(current_task),
             }
@@ -186,6 +216,19 @@ impl Program {
             | ProgramType::Fuse => Ok(()),
         }
     }
+
+    pub fn fidl_id(&self) -> febpf::ProgramId {
+        self.fidl_id
+    }
+
+    pub fn fidl_handle(&self) -> febpf::ProgramHandle {
+        let handle = self
+            .fidl_handle
+            .handle
+            .duplicate_handle(zx::Rights::TRANSFER | zx::Rights::SIGNAL | zx::Rights::WAIT)
+            .expect("Failed to duplicate handle");
+        febpf::ProgramHandle { handle }
+    }
 }
 
 impl Releasable for Program {
@@ -195,6 +238,16 @@ impl Releasable for Program {
         if let Some(kernel) = self.kernel.upgrade() {
             kernel.ebpf_state.unregister_program(locked, self.id);
         }
+
+        // Signal the FIDL handle to indicate that the program handle is defunct
+        // and should be closed.
+        self.fidl_handle
+            .handle
+            .signal_handle(
+                zx::Signals::NONE,
+                zx::Signals::from_bits_truncate(febpf::PROGRAM_DEFUNCT_SIGNAL),
+            )
+            .unwrap();
     }
 }
 

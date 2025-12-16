@@ -12359,7 +12359,7 @@ pub const xt_bpf_modes_XT_BPF_MODE_FD_PINNED: xt_bpf_modes = 1;
 pub const xt_bpf_modes_XT_BPF_MODE_FD_ELF: xt_bpf_modes = 2;
 pub type xt_bpf_modes = crate::types::c_uint;
 #[repr(C)]
-#[derive(Clone, Copy, FromBytes, Immutable, KnownLayout)]
+#[derive(Clone, Copy, FromBytes, Immutable, IntoBytes, KnownLayout)]
 pub struct xt_bpf_info_v1 {
     pub mode: __u16,
     pub bpf_program_num_elem: __u16,
@@ -12368,7 +12368,7 @@ pub struct xt_bpf_info_v1 {
     pub filter: uref<bpf_prog>,
 }
 #[repr(C)]
-#[derive(Clone, Copy, FromBytes, Immutable, KnownLayout)]
+#[derive(Clone, Copy, FromBytes, Immutable, IntoBytes, KnownLayout)]
 pub union xt_bpf_info_v1__bindgen_ty_1 {
     pub bpf_program: [sock_filter; 64usize],
     pub path: [crate::types::c_char; 512usize],
