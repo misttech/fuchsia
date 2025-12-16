@@ -391,6 +391,17 @@ impl<Id: Debug + Clone + Hash + Eq> FakeTimerCtx<Id> {
     }
 }
 
+impl<Id> FakeTimerCtx<Id> {
+    /// Pops the next timer to fire, returning its Id and advances the current
+    /// time.
+    pub fn pop_next_timer_and_advance_time(&mut self) -> Option<Id> {
+        let InstantAndData(instant, timer) = self.timers.pop()?;
+        assert!(instant >= self.instant.time);
+        self.instant.time = instant;
+        Some(timer.dispatch_id)
+    }
+}
+
 impl<Id: PartialEq> FakeTimerCtx<Id> {
     fn cancel_timer_inner(&mut self, timer: &FakeTimer<Id>) -> Option<FakeInstant> {
         let mut r: Option<FakeInstant> = None;

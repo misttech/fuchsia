@@ -11,6 +11,7 @@ use std::ops::RangeInclusive;
 use std::os::fd::{AsFd as _, AsRawFd as _};
 use std::pin::pin;
 use std::task::Poll;
+use std::time::Duration;
 
 use anyhow::{Context as _, anyhow};
 use assert_matches::assert_matches;
@@ -3767,6 +3768,65 @@ async fn tcp_connect_icmp_error<N: Netstack, I: TestIpExt, M: IcmpMessage<I> + D
         () = fake_ep_loop.fuse() => unreachable!("should never finish"),
         errno = connect.fuse() => return errno.expect("must have an errno"),
     }
+}
+
+// Regression test for https://fxbug.dev/468040882.
+//
+// Typically we'd write these as a syscall test, but having a TCP connection
+// timeout over loopback (the available interface) is not well supported to
+// compare with linux. Also there's a slight difference between how
+// fuchsia-async and fdio report errors, so it's good to show both here.
+#[netstack_test]
+#[variant(N, Netstack)]
+#[variant(I, Ip)]
+#[test_case(true; "sync-block")]
+#[test_case(false; "async-nonblock")]
+async fn tcp_connect_timeout<N: Netstack, I: TestIpExt>(name: &str, sync: bool) {
+    let sandbox = netemul::TestSandbox::new().expect("failed to create sandbox");
+    let net = sandbox.create_network("net").await.expect("failed to create network");
+    let realm = sandbox.create_netstack_realm::<N, _>(name).expect("failed to create client realm");
+    let client_interface =
+        realm.join_network(&net, "client-ep").await.expect("failed to join network in realm");
+    client_interface
+        .add_address_and_subnet_route(I::CLIENT_SUBNET)
+        .await
+        .expect("configure address");
+    let server_addr: net_types::ip::IpAddr = I::SERVER_ADDR.into();
+    let server_addr = std::net::SocketAddr::new(server_addr.into(), 8080);
+
+    let timeout = Duration::from_millis(100);
+
+    // This connect should timeout at neighbor resolution.
+    let error = if sync {
+        let socket = TcpSocket::new_in_realm::<I>(&realm).await.expect("open socket");
+        socket.set_tcp_user_timeout(Some(timeout)).expect("set user timeout");
+        socket.connect(&server_addr.into()).expect_err("connect should fail")
+    } else {
+        fasync::net::TcpStream::connect_in_realm_with_sock(&realm, server_addr, |socket| {
+            socket.set_tcp_user_timeout(Some(timeout)).expect("set user timeout");
+            Ok(())
+        })
+        .await
+        .expect_err("connect should fail")
+        .downcast::<std::io::Error>()
+        .expect("failed to cast to std::io::Result")
+    };
+
+    // NS2 returns the wrong error here. We don't have a linux syscall to prove
+    // it, but this is what sockscripter says, showing that ETIMEDOUT is the
+    // right value:
+    //
+    // $ fx sockscripter -C tcp set-tcp-user-timeout 200 connect '192.168.4.2:8080'
+    // sockscripter.cc[477]:Opened IPv4-STREAM socket (proto:TCP) fd:3
+    // sockscripter.cc[557]:Set IPPROTO_TCP:TCP_USER_TIMEOUT = 200
+    // sockscripter.cc[1140]:Connect(fd:3) to 192.168.4.2:8080
+    // sockscripter.cc[1145]:Error-Connect(fd:3) failed-[110]Connection timed out
+    let expect_error = match N::VERSION {
+        NetstackVersion::Netstack2 { .. } => libc::EHOSTUNREACH,
+        NetstackVersion::Netstack3 => libc::ETIMEDOUT,
+        v => panic!("unexpected netstack version {v:?}"),
+    };
+    assert_eq!(error.raw_os_error(), Some(expect_error));
 }
 
 fn try_parse_frame_as_tcp<I: TestIpExt>(

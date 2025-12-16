@@ -364,6 +364,7 @@ impl IntoErrno for ConnectError {
             ConnectError::Pending => fposix::Errno::Ealready,
             ConnectError::Completed => fposix::Errno::Eisconn,
             ConnectError::Aborted => fposix::Errno::Econnrefused,
+            ConnectError::ConnectionError(c) => c.to_errno(),
         }
     }
 }

@@ -2244,6 +2244,30 @@ where
     Ok(new_sharing)
 }
 
+struct ErrorReporter<'a, I, R, S, ActiveOpen> {
+    state: &'a mut State<I, R, S, ActiveOpen>,
+    soft_error: &'a mut Option<ConnectionError>,
+}
+
+impl<'a, I, R, S, ActiveOpen> ErrorReporter<'a, I, R, S, ActiveOpen> {
+    fn report_error(self) -> Option<ConnectionError> {
+        let Self { state, soft_error } = self;
+        if let State::Closed(Closed { reason }) = state {
+            if let Some(hard_error) = reason.take() {
+                return Some(hard_error);
+            }
+        }
+        soft_error.take()
+    }
+
+    fn new(
+        state: &'a mut State<I, R, S, ActiveOpen>,
+        soft_error: &'a mut Option<ConnectionError>,
+    ) -> Self {
+        Self { state, soft_error }
+    }
+}
+
 /// The TCP socket API.
 pub struct TcpApi<I: Ip, C>(C, IpVersionMarker<I>);
 
@@ -2681,25 +2705,35 @@ where
                         sharing: _,
                         timer: _,
                     }) => {
-                        let handshake_status = match core_ctx {
+                        let (handshake_status, error_reporter) = match core_ctx {
                             MaybeDualStack::NotDualStack((_core_ctx, converter)) => {
                                 let (conn, _addr) = converter.convert(conn);
-                                &mut conn.handshake_status
+                                (
+                                    &mut conn.handshake_status,
+                                    ErrorReporter::new(&mut conn.state, &mut conn.soft_error),
+                                )
                             }
                             MaybeDualStack::DualStack((_core_ctx, converter)) => {
                                 match converter.convert(conn) {
-                                    EitherStack::ThisStack((conn, _addr)) => {
-                                        &mut conn.handshake_status
-                                    }
-                                    EitherStack::OtherStack((conn, _addr)) => {
-                                        &mut conn.handshake_status
-                                    }
+                                    EitherStack::ThisStack((conn, _addr)) => (
+                                        &mut conn.handshake_status,
+                                        ErrorReporter::new(&mut conn.state, &mut conn.soft_error),
+                                    ),
+                                    EitherStack::OtherStack((conn, _addr)) => (
+                                        &mut conn.handshake_status,
+                                        ErrorReporter::new(&mut conn.state, &mut conn.soft_error),
+                                    ),
                                 }
                             }
                         };
                         match handshake_status {
                             HandshakeStatus::Pending => return Err(ConnectError::Pending),
-                            HandshakeStatus::Aborted => return Err(ConnectError::Aborted),
+                            HandshakeStatus::Aborted => {
+                                return Err(error_reporter
+                                    .report_error()
+                                    .map(ConnectError::ConnectionError)
+                                    .unwrap_or(ConnectError::Aborted));
+                            }
                             HandshakeStatus::Completed { reported } => {
                                 if *reported {
                                     return Err(ConnectError::Completed);
@@ -3861,6 +3895,18 @@ where
                                 }
                             });
                             let _: Option<_> = bindings_ctx.cancel_timer(timer);
+
+                            let Closed{ reason } = assert_matches!(
+                                &conn.state, State::Closed(c) => c
+                            );
+                            let _: bool = conn.handshake_status.update_if_pending(match reason {
+                                 None => {
+                                    HandshakeStatus::Completed {
+                                        reported: conn.accept_queue.is_some()
+                                    }
+                                }
+                                Some(_err) => HandshakeStatus::Aborted,
+                            });
                         }
                         (NewlyClosed::No, _) => {},
                     }
@@ -4332,26 +4378,21 @@ where
                     sharing: _,
                     timer: _,
                 }) => {
-                    let (state, soft_error) = match converter {
+                    let reporter = match converter {
                         MaybeDualStack::NotDualStack(converter) => {
                             let (conn, _addr) = converter.convert(conn);
-                            (&conn.state, &mut conn.soft_error)
+                            ErrorReporter::new(&mut conn.state, &mut conn.soft_error)
                         }
                         MaybeDualStack::DualStack(converter) => match converter.convert(conn) {
                             EitherStack::ThisStack((conn, _addr)) => {
-                                (&conn.state, &mut conn.soft_error)
+                                ErrorReporter::new(&mut conn.state, &mut conn.soft_error)
                             }
                             EitherStack::OtherStack((conn, _addr)) => {
-                                (&conn.state, &mut conn.soft_error)
+                                ErrorReporter::new(&mut conn.state, &mut conn.soft_error)
                             }
                         },
                     };
-                    let hard_error = if let State::Closed(Closed { reason: hard_error }) = state {
-                        hard_error.clone()
-                    } else {
-                        None
-                    };
-                    hard_error.or_else(|| soft_error.take())
+                    reporter.report_error()
                 }
             }
         })
@@ -5251,6 +5292,9 @@ pub enum ConnectError {
     /// The handshake is refused by the remote host.
     #[error("the handshake is aborted")]
     Aborted,
+    /// A connection error (ICMP error or timeout) occurred.
+    #[error("connection error: {0}")]
+    ConnectionError(#[from] ConnectionError),
 }
 
 /// Possible errors when connecting a socket.
@@ -6590,6 +6634,16 @@ mod tests {
         }
     }
 
+    impl<D: WeakDeviceIdentifier, BT: TcpBindingsTypes> TcpTimerId<D, BT> {
+        fn assert_ip_version<I: DualStackIpExt>(self) -> WeakTcpSocketId<I, D, BT> {
+            I::map_ip_out(
+                self,
+                |v4| assert_matches!(v4, TcpTimerId::V4(v4) => v4),
+                |v6| assert_matches!(v6, TcpTimerId::V6(v6) => v6),
+            )
+        }
+    }
+
     const LOCAL: &'static str = "local";
     const REMOTE: &'static str = "remote";
     pub(crate) const PORT_1: NonZeroU16 = NonZeroU16::new(42).unwrap();
@@ -7500,8 +7554,10 @@ mod tests {
                     Some(ZonedAddr::Unzoned(I::TEST_ADDRS.remote_ip)),
                     PORT_1
                 ),
-                Err(ConnectError::Aborted)
+                Err(ConnectError::ConnectionError(ConnectionError::ConnectionRefused))
             );
+            // Connect already yielded the error.
+            assert_eq!(ctx.tcp_api().get_socket_error(&client), None);
         });
     }
 
@@ -8205,7 +8261,8 @@ mod tests {
                             conn,
                             Connection {
                                 state: State::Closed(Closed {
-                                    reason: Some(ConnectionError::ConnectionReset)
+                                    // Error was cleared by get_socket_error.
+                                    reason: None
                                 }),
                                 ..
                             }
@@ -8642,12 +8699,14 @@ mod tests {
             &frame[0..8],
             icmp_error,
         );
-        // The TCP handshake should be aborted.
-        assert_eq!(
-            api.connect(&connection, Some(ZonedAddr::Unzoned(I::TEST_ADDRS.remote_ip)), PORT_1),
-            Err(ConnectError::Aborted)
-        );
-        api.get_socket_error(&connection).unwrap()
+        // The TCP handshake should fail.
+        let err = api
+            .connect(&connection, Some(ZonedAddr::Unzoned(I::TEST_ADDRS.remote_ip)), PORT_1)
+            .expect_err("should fail");
+        // The connect call should've taken the error.
+        assert_eq!(api.get_socket_error(&connection), None);
+        // Failure due to ICMP error.
+        assert_matches!(err, ConnectError::ConnectionError(e) => e)
     }
 
     #[test_case(Icmpv4ErrorCode::DestUnreachable(Icmpv4DestUnreachableCode::DestNetworkUnreachable, IcmpDestUnreachable::default()) => ConnectionError::NetworkUnreachable)]
@@ -9937,5 +9996,41 @@ mod tests {
             avail.len()
         });
         assert_eq!(read, payload.len());
+    }
+
+    #[ip_test(I)]
+    fn connect_timeout<I: TcpTestIpExt>()
+    where
+        TcpCoreCtx<FakeDeviceId, TcpBindingsCtx<FakeDeviceId>>: TcpContext<
+                I,
+                TcpBindingsCtx<FakeDeviceId>,
+                SingleStackConverter = I::SingleStackConverter,
+                DualStackConverter = I::DualStackConverter,
+            >,
+    {
+        let mut ctx = TcpCtx::with_core_ctx(TcpCoreCtx::new::<I>(
+            I::TEST_ADDRS.local_ip,
+            I::TEST_ADDRS.remote_ip,
+        ));
+        let mut api = ctx.tcp_api::<I>();
+        let socket = api.create(Default::default());
+        let connect_addr = Some(ZonedAddr::Unzoned(I::TEST_ADDRS.remote_ip));
+        api.connect(&socket, connect_addr, PORT_1).expect("first connect should succeed");
+        assert_eq!(api.connect(&socket, connect_addr, PORT_1), Err(ConnectError::Pending));
+        while let Some(id) = ctx.bindings_ctx.timers.pop_next_timer_and_advance_time() {
+            let mut api = ctx.tcp_api::<I>();
+            assert_eq!(api.connect(&socket, connect_addr, PORT_1), Err(ConnectError::Pending));
+            api.handle_timer(id.assert_ip_version());
+        }
+        // Once we timeout, we're done and an error should be reported.
+        let mut api = ctx.tcp_api::<I>();
+        assert_eq!(
+            api.connect(&socket, connect_addr, PORT_1),
+            Err(ConnectError::ConnectionError(ConnectionError::TimedOut))
+        );
+
+        // NB: This matches the linux behavior. Whenever errors are reported
+        // from the connect call, they're not observable from SO_ERROR later.
+        assert_eq!(api.get_socket_error(&socket), None);
     }
 }
