@@ -19,6 +19,7 @@ group("tests") {
     "camera_watcher_agent:tests",
     "common:tests",
     "config:tests",
+    "display:tests",
     "do_not_disturb:tests",
     "factory_reset:tests",
     "input:tests",

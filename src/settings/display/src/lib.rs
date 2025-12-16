@@ -47,7 +47,7 @@ where
         external_publisher,
     )
     .await
-    .context("Failed to initialize display: {e:?}")?;
+    .context("initializing display controller")?;
     let initial_value = display_controller.restore().await.context("Failed to restore display")?;
     let _ = setting_value_publisher.publish(&initial_value);
 

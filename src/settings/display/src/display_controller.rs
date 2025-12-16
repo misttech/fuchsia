@@ -2,12 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use super::types::SetDisplayInfo;
-use crate::display::display_configuration::{
+use crate::display_configuration::{
     ConfigurationThemeMode, ConfigurationThemeType, DisplayConfiguration,
 };
-use crate::display::display_fidl_handler::Publisher;
-use crate::display::types::{DisplayInfo, LowLightMode, Theme, ThemeBuilder, ThemeMode, ThemeType};
+use crate::display_fidl_handler::Publisher;
+use crate::types::{
+    DisplayInfo, LowLightMode, SetDisplayInfo, Theme, ThemeBuilder, ThemeMode, ThemeType,
+};
 use anyhow::{Context, Error};
 use async_trait::async_trait;
 use fidl_fuchsia_ui_brightness::{
@@ -52,7 +53,7 @@ pub struct DisplayInfoLoader {
 }
 
 impl DisplayInfoLoader {
-    pub(crate) fn new(default_setting: DefaultSetting<DisplayConfiguration, &'static str>) -> Self {
+    pub fn new(default_setting: DefaultSetting<DisplayConfiguration, &'static str>) -> Self {
         Self { display_configuration: Mutex::new(default_setting) }
     }
 }
@@ -176,7 +177,7 @@ impl BrightnessManager for () {
     }
 }
 
-pub(crate) struct ExternalBrightnessControl {
+pub struct ExternalBrightnessControl {
     brightness_service: ExternalServiceProxy<BrightnessControlProxy, ExternalEventPublisher>,
 }
 
@@ -220,11 +221,7 @@ impl BrightnessManager for ExternalBrightnessControl {
         }
         .map(|_| new_info)
         .map_err(|e| {
-            DisplayError::ExternalFailure(
-                "brightness_service".into(),
-                "set_brightness".into(),
-                format!("{e:?}").into(),
-            )
+            DisplayError::ExternalFailure("brightness_service", "set_brightness", format!("{e:?}"))
         })
     }
 }
@@ -233,7 +230,7 @@ pub(crate) enum Request {
     Set(SetDisplayInfo, Sender<Result<(), DisplayError>>),
 }
 
-pub(crate) struct DisplayController<T = ()> {
+pub struct DisplayController<T = ()> {
     brightness_manager: T,
     store: Rc<DeviceStorage>,
     publisher: Option<Publisher>,
@@ -632,8 +629,8 @@ impl Default for DisplayInfoV5 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::display::build_display_default_settings;
-    use crate::display::test_fakes::brightness_service::BrightnessService;
+    use crate::build_display_default_settings;
+    use crate::test_fakes::brightness_service::BrightnessService;
     use fuchsia_async::{Task, TestExecutor};
     use fuchsia_inspect::component;
     use futures::channel::mpsc;

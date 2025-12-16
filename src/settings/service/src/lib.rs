@@ -10,7 +10,6 @@ use anyhow::format_err;
 use anyhow::{Context, Error};
 use audio::AudioInfoLoader;
 use audio::types::AudioInfo;
-use display::display_controller::DisplayInfoLoader;
 use fidl_fuchsia_io::DirectoryProxy;
 use fidl_fuchsia_settings::{
     AccessibilityRequestStream, AudioRequestStream, DisplayRequestStream,
@@ -35,6 +34,9 @@ use settings_common::inspect::event::{
 };
 use settings_common::inspect::listener_logger::ListenerInspectLogger;
 use settings_common::service_context::{ExternalServiceEvent, GenerateService, ServiceContext};
+use settings_display::display_controller::{
+    DisplayController, DisplayInfoLoader, ExternalBrightnessControl,
+};
 use settings_do_not_disturb::do_not_disturb_controller::DoNotDisturbController;
 use settings_factory_reset::factory_reset_controller::FactoryResetController;
 use settings_input::input_controller::InputController;
@@ -49,7 +51,7 @@ use settings_storage::fidl_storage::FidlStorage;
 use settings_storage::storage_factory::{FidlStorageFactory, StorageFactory};
 use {fidl_fuchsia_update_verify as fupdate, fuchsia_async as fasync};
 
-pub use display::display_configuration::DisplayConfiguration;
+pub use settings_display::display_configuration::DisplayConfiguration;
 pub use settings_input::input_device_configuration::InputConfiguration;
 pub use settings_light::light_hardware_configuration::LightHardwareConfiguration;
 
@@ -57,13 +59,11 @@ use crate::accessibility::accessibility_controller::AccessibilityController;
 use crate::audio::Request as AudioRequest;
 use crate::audio::audio_controller::AudioController;
 use crate::base::SettingType;
-use crate::display::display_controller::{DisplayController, ExternalBrightnessControl};
 use crate::ingress::fidl;
 
 mod accessibility;
 pub mod audio;
 mod clock;
-pub mod display;
 mod storage_migrations;
 
 pub mod agent;
@@ -682,7 +682,7 @@ impl<T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilder<T>
 
         if components.contains(&SettingType::Display) {
             let result = if controller_flags.contains(&ControllerFlag::ExternalBrightnessControl) {
-                display::setup_display_api::<D, ExternalBrightnessControl>(
+                settings_display::setup_display_api::<D, ExternalBrightnessControl>(
                     &*service_context,
                     Rc::clone(&device_storage_factory),
                     SettingValuePublisher::new(setting_value_tx.clone()),
@@ -691,7 +691,7 @@ impl<T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilder<T>
                 )
                 .await
             } else {
-                display::setup_display_api::<D, ()>(
+                settings_display::setup_display_api::<D, ()>(
                     &*service_context,
                     Rc::clone(&device_storage_factory),
                     SettingValuePublisher::new(setting_value_tx.clone()),
@@ -701,7 +701,7 @@ impl<T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilder<T>
                 .await
             };
             match result {
-                Ok(display::SetupResult { mut display_fidl_handler, task }) => {
+                Ok(settings_display::SetupResult { mut display_fidl_handler, task }) => {
                     tasks.push(task);
                     let _ = service_dir.add_fidl_service(move |stream: DisplayRequestStream| {
                         display_fidl_handler.handle_stream(stream)

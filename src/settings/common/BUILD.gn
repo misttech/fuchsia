@@ -22,6 +22,7 @@ rustc_library("settings_common") {
     ":*",
     "//src/settings/camera:*",
     "//src/settings/camera_watcher_agent:*",
+    "//src/settings/display:*",
     "//src/settings/do_not_disturb:*",
     "//src/settings/factory_reset:*",
     "//src/settings/input:*",

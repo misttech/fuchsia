@@ -20,6 +20,7 @@ rustc_library("settings_test_common") {
     ":*",
     "//src/settings/camera_watcher_agent:*",
     "//src/settings/common:*",
+    "//src/settings/display:*",
     "//src/settings/input:*",
     "//src/settings/intl:*",
     "//src/settings/keyboard:*",

@@ -2,17 +2,16 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::display::build_display_default_settings;
 use crate::ingress::fidl::{Interface, display};
 use crate::{DisplayConfiguration, EnvironmentBuilder};
 use anyhow::{Result, anyhow};
-use fidl::endpoints::ServerEnd;
-use fidl::prelude::*;
+use fidl::endpoints::{DiscoverableProtocolMarker, ServerEnd};
 use fidl_fuchsia_settings::{DisplayMarker, IntlMarker};
 use fuchsia_inspect::component;
 use futures::future::LocalBoxFuture;
 use settings_common::config::default_settings::DefaultSetting;
 use settings_common::inspect::config_logger::InspectConfigLogger;
+use settings_display::build_display_default_settings;
 use settings_test_common::storage::InMemoryStorageFactory;
 use std::rc::Rc;
 

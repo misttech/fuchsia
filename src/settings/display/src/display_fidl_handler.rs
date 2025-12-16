@@ -2,10 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use super::DisplayController;
-use super::display_controller::{DisplayError, Request};
-use super::types::DisplayInfo;
-use crate::display::types::{LowLightMode, SetDisplayInfo, Theme, ThemeMode, ThemeType};
+use crate::display_controller::{DisplayController, DisplayError, Request};
+use crate::types::{DisplayInfo, LowLightMode, SetDisplayInfo, Theme, ThemeMode, ThemeType};
 use anyhow::{Error, anyhow};
 use async_utils::hanging_get::server;
 use fidl_fuchsia_settings::{
@@ -228,7 +226,7 @@ impl RequestHandler {
 
     async fn set(&self, settings: DisplaySettings) -> Result<(), HandlerError> {
         let (set_tx, set_rx) = oneshot::channel();
-        let info = to_request(settings).map_err(|e| HandlerError::InvalidArgument(e))?;
+        let info = to_request(settings).map_err(HandlerError::InvalidArgument)?;
         self.controller_tx
             .unbounded_send(Request::Set(info, set_tx))
             .map_err(|_| HandlerError::ControllerStopped)?;
