@@ -246,7 +246,8 @@ idk_molecule(
     testonly = True,
     deps = [
         ":test_submolecule",
-        "//sdk/fidl/fuchsia.math:fuchsia.math_idk",
+        # This tests direct FIDL library dependencies.
+        "//sdk/fidl/fuchsia.images2:fuchsia.images2_idk",
         "//sdk/lib/magma_common:magma_common_idk",
         "//sdk/lib/media/cpp:no_converters_idk",
         "//sdk/lib/memory_barriers:memory_barriers_idk",
@@ -370,8 +371,10 @@ build_idk_combinations(
         # "//sdk/lib/utf-utils",
 
         # Exercise FIDL.
-        # TODO(https://fxbug.dev/443762519): Remove once FIDL bindings are being
-        # used in API level configurations.
+        # TODO(https://fxbug.dev/443762519): Remove these once FIDL bindings are
+        # being used in API level configurations.
         "//examples/fidl/fuchsia.examples.docs:versioning",
+        # This tests direct FIDL library dependencies.
+        "//sdk/fidl/fuchsia.images2",
     ],
 )

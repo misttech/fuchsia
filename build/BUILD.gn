@@ -50,6 +50,7 @@ if (is_host) {
       "//build/tools/tarmaker:verify_bazel2gn",
       "//examples/fidl/fuchsia.examples.docs:verify_bazel2gn",
       "//sdk/fidl/fuchsia.hardware.spi.businfo:verify_bazel2gn",
+      "//sdk/fidl/fuchsia.images2:verify_bazel2gn",
       "//sdk/fidl/fuchsia.math:verify_bazel2gn",
       "//sdk/lib/fit:verify_bazel2gn",
       "//sdk/lib/magma_common:verify_bazel2gn",

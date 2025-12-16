@@ -12,6 +12,7 @@ load("//build/bazel/bazel_idk:defs.bzl", "idk_molecule")
 
 _partner_idk_stable_fidl_libraries_targets_list = [
     # keep-sorted: begin
+    "//sdk/fidl/fuchsia.images2:fuchsia.images2",
     "//sdk/fidl/fuchsia.math:fuchsia.math",
     # keep-sorted: end
 ]
@@ -41,6 +42,7 @@ filegroup(
     name = "partner_idk_fidl_library_allowlist",
     visibility = [
         "//build/bazel/bazel_idk/tests:__pkg__",
+        "//sdk/fidl/fuchsia.images2:__pkg__",
         "//sdk/fidl/fuchsia.math:__pkg__",
 
         # TODO(https://fxbug.dev/446911800): Remove when the issue is resolved.
