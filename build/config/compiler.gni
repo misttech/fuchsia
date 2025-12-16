@@ -38,11 +38,9 @@ if (is_kernel) {
     _optimize = optimize
   }
 
-  # 'user.basic' and 'user.libc' and should follow Fuchsia, except that they
-  # need to use a higher level of optimization at the moment
-} else if (toolchain_environment == "user.basic" ||
-           toolchain_environment == "user.libc") {
-  # Only use the following optimize modes
+  # 'user.libc' should follow Fuchsia, except that it needs to use a
+  # higher level of optimization at the moment
+} else if (toolchain_environment == "user.libc") {
   if (compilation_settings.fuchsia_optimize == "sanitizer" ||
       compilation_settings.fuchsia_optimize == "profile" ||
       compilation_settings.fuchsia_optimize == "size_lto" ||
