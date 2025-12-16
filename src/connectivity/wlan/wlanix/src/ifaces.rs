@@ -1018,7 +1018,7 @@ pub mod test_utils {
             Self {
                 client_iface: Mutex::new(None),
                 calls: Arc::new(Mutex::new(vec![])),
-                country: Arc::new(Mutex::new(*b"WW")),
+                country: Arc::new(Mutex::new(*b"XX")),
                 power_state: Arc::new(Mutex::new(true)),
                 mock_create_client_iface_result: Ok(FAKE_IFACE_RESPONSE.id),
                 mock_destroy_client_iface_result: Ok(()),

@@ -1683,7 +1683,14 @@ async fn handle_nl80211_message<I: IfaceManager>(
             info!("Nl80211Cmd::GetReg");
             match find_phy_id(&message.payload.attrs[..]) {
                 Some(phy_id) => match iface_manager.get_country(phy_id.try_into()?).await {
-                    Ok(country) => {
+                    Ok(mut country) => {
+                        // Fuchsia has used "WW" by convention, but the more broadly accepted value
+                        // for worldwide is "00".  Report that instead.
+                        if country == [b'W', b'W'] {
+                            country = [b'0', b'0'];
+                            info!("Converting country code from WW to 00 for GetReg response.");
+                        }
+
                         let resp = build_nl80211_message(
                             Nl80211Cmd::GetReg,
                             vec![Nl80211Attr::RegulatoryRegionAlpha2(country)],
@@ -2668,7 +2675,7 @@ mod tests {
     #[fuchsia::test]
     fn test_wifi_set_country_code() {
         let (mut test_helper, mut test_fut) = setup_wifi_test();
-        const COUNTRY_CODE: [u8; 2] = *b"WW";
+        const COUNTRY_CODE: [u8; 2] = *b"CA";
 
         let set_country_fut = test_helper.wifi_chip_proxy.set_country_code(
             fidl_wlanix::WifiChipSetCountryCodeRequest {
@@ -4425,7 +4432,46 @@ mod tests {
         assert_eq!(responses.len(), 1);
         let message = expect_nl80211_message(&responses[0]);
         assert_eq!(message.payload.cmd, Nl80211Cmd::GetReg);
-        assert!(message.payload.attrs.contains(&Nl80211Attr::RegulatoryRegionAlpha2([b'W', b'W'])));
+        // The default for the test class is XX
+        assert!(message.payload.attrs.contains(&Nl80211Attr::RegulatoryRegionAlpha2([b'X', b'X'])));
+    }
+
+    #[fuchsia::test]
+    fn get_reg_worldwide_is_zeroes() {
+        let mut exec = fasync::TestExecutor::new();
+        let (proxy, stream) = create_proxy_and_stream::<fidl_wlanix::Nl80211Marker>();
+
+        let state = Arc::new(Mutex::new(WifiState::default()));
+        let iface_manager = Arc::new(TestIfaceManager::new_with_client());
+        {
+            // Set the Fake IfaceManager to return country code WW
+            let set_country_fut = iface_manager.set_country(0, *b"WW");
+            let mut set_country_fut = pin!(set_country_fut);
+            assert_matches!(
+                exec.run_until_stalled(&mut set_country_fut),
+                Poll::Ready(Result::Ok(()))
+            );
+        }
+        let (telemetry_sender, _telemetry_receiver) = mpsc::channel::<TelemetryEvent>(100);
+        let telemetry_sender = TelemetrySender::new(telemetry_sender);
+        let nl80211_fut = serve_nl80211(stream, state, iface_manager, telemetry_sender);
+        let mut nl80211_fut = pin!(nl80211_fut);
+
+        let get_reg_message =
+            build_nl80211_message(Nl80211Cmd::GetReg, vec![Nl80211Attr::Wiphy(123)]);
+        let get_reg_fut = proxy.message_v2(&get_reg_message);
+
+        let mut get_reg_fut = pin!(get_reg_fut);
+        assert_matches!(exec.run_until_stalled(&mut nl80211_fut), Poll::Pending);
+        let responses = deserialize(assert_matches!(
+            exec.run_until_stalled(&mut get_reg_fut),
+            Poll::Ready(Ok(Ok(r))) => r));
+
+        assert_eq!(responses.len(), 1);
+        let message = expect_nl80211_message(&responses[0]);
+        assert_eq!(message.payload.cmd, Nl80211Cmd::GetReg);
+        // The country code 00 should be returned instead of WW
+        assert!(message.payload.attrs.contains(&Nl80211Attr::RegulatoryRegionAlpha2([b'0', b'0'])));
     }
 
     #[test]
