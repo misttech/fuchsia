@@ -52,7 +52,7 @@
 
 - name: 'Diagnostics'
   api_primary: 'crjohns@google.com'
-  api_secondary: 'miguelfrde@google.com'
+  api_secondary: ''
   description: |
     The set of APIs that are used to publish and query diagnostics data from
     components on the system. This includes the ability to <a
@@ -215,7 +215,7 @@
 
 - name: 'Media'
   api_primary: 'dalesat@google.com'
-  api_secondary: 'ypomortsev@google.com'
+  api_secondary: ''
   description: |
     The set of APIs used to capture, process and render audio and video streams.
     The media APIs also encompass adjacent concerns such as volume control and
@@ -369,8 +369,8 @@
     </ul>
 
 - name: 'Testing'
-  api_primary: 'anmittal@google.com'
-  api_secondary: 'crjohns@google.com'
+  api_primary: 'crjohns@google.com'
+  api_secondary: ''
   description: |
     The set of APIs responsible for executing, observing, and returning the results
     of tests executed on a device. These APIs abstract over different
