@@ -5,7 +5,6 @@
 use crate::helpers;
 use anyhow::Error;
 use fidl::endpoints::create_proxy;
-use std::collections::HashMap;
 use {
     fidl_fuchsia_component_runner as frunner, fidl_fuchsia_data as fdata,
     fidl_fuchsia_test as ftest,
@@ -17,10 +16,7 @@ pub async fn run_selinux_cases(
     run_listener_proxy: &ftest::RunListenerProxy,
     component_runner: &frunner::ComponentRunnerProxy,
 ) -> Result<(), Error> {
-    let mut test_commands = HashMap::<String, String>::new();
-    helpers::read_tests_list(&mut start_info).await?.drain(..).for_each(|t| {
-        test_commands.insert(t.name, t.command);
-    });
+    helpers::read_tests_list(&mut start_info).await?;
 
     for test in tests {
         let test_name = test.name.as_ref().expect("No test name");
