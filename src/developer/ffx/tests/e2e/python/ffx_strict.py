@@ -428,6 +428,20 @@ class FfxStrictTest(ffxtestcase.FfxTestCase):
                         f"Expected `{check}` in snapshot: {info}",
                     )
 
+    def test_target_ssh_strict(self) -> None:
+        """Test `ffx --strict target ssh`."""
+        (_code, stdout, _stderr) = self._run_strict_ffx_unchecked_with_format(
+            [
+                "target",
+                "ssh",
+                "echo",
+                "foo",
+            ],
+            f"{self.dut_ssh_address}",
+            "raw",
+        )
+        asserts.assert_equal(stdout, "foo")
+
 
 if __name__ == "__main__":
     test_runner.main()
