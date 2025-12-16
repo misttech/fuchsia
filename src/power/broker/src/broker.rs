@@ -357,18 +357,6 @@ impl Broker {
                     pending_assertive_claims_on_dependent,
                 );
             }
-            // For pending opportunistic claims, if the current level satisfies them,
-            // and their lease is no longer contingent, activate the claim.
-            for claim in self.catalog.opportunistic_claims.pending.for_required_element(element_id)
-            {
-                if !level.satisfies(claim.requires().level) {
-                    continue;
-                }
-                if self.is_lease_contingent(&claim.lease_id) {
-                    continue;
-                }
-                self.catalog.opportunistic_claims.activate_claim(&claim.id)
-            }
             // Find the set of leases for all claims satisfied:
             let leases_to_check_if_satisfied: HashSet<LeaseID> =
                 claims_satisfied.into_iter().map(|c| c.lease_id).collect();
@@ -550,20 +538,11 @@ impl Broker {
 
         let (lease, assertive_claims) =
             self.catalog.create_lease_and_claims(element_id, level, lease_control);
-        if self.is_lease_contingent(&lease.id) {
-            // Lease is blocked on opportunistic claims, update status and return.
-            log::debug!(
-                "acquire_lease({element_id}@{level}): {} is contingent on opportunistic claims",
-                &lease.id
-            );
-            self.update_lease_status(&lease.id);
-            return Ok(lease);
-        }
         // Activate all pending assertive claims that have all of their
         // dependencies satisfied.
-        self.activate_assertive_claims_if_dependencies_satisfied(assertive_claims.clone());
+        self.activate_assertive_claims_if_dependencies_satisfied(assertive_claims);
         // For pending opportunistic claims, if the current level satisfies them,
-        // and their lease is no longer contingent, activate the claim.
+        // activate the claim.
         // (If the current level does not satisfy the claim, it will be
         // activated as part of update_current_level once it does.)
         for claim in self.catalog.opportunistic_claims.pending.for_lease(&lease.id) {
@@ -572,73 +551,7 @@ impl Broker {
             }
         }
         self.update_lease_status(&lease.id);
-        // Other contingent leases may need to update their status if any new
-        // assertive claims would satisfy their opportunistic claims.
-        for assertive_claim in assertive_claims {
-            log::debug!(
-                "check if assertive claim {assertive_claim} would satisfy opportunistic claims"
-            );
-            let assertive_claim_requires = &assertive_claim.requires().clone();
-            let opportunistic_pending_claims_for_req_element = self
-                .catalog
-                .opportunistic_claims
-                .pending
-                .for_required_element(&assertive_claim_requires.element_id);
-            let opportunistic_activated_claims_for_req_element = self
-                .catalog
-                .opportunistic_claims
-                .activated
-                .for_required_element(&assertive_claim_requires.element_id);
-            let opportunistic_claims_possibly_affected =
-                opportunistic_pending_claims_for_req_element
-                    .iter()
-                    .chain(opportunistic_activated_claims_for_req_element.iter())
-                    // Only consider claims for leases other than active_claim's
-                    .filter(|c| c.lease_id != lease.id)
-                    // Only consider opportunistic claims that would be satisfied by assertive_claim
-                    .filter(|c| assertive_claim_requires.level.satisfies(c.requires().level));
-            for opportunistic_claim in opportunistic_claims_possibly_affected {
-                log::debug!(
-                    "assertive claim {assertive_claim} may have changed status of lease {}",
-                    &opportunistic_claim.lease_id
-                );
-                if !self.is_lease_contingent(&opportunistic_claim.lease_id) {
-                    log::debug!(
-                        "assertive claim {assertive_claim} changed status of lease {}",
-                        &opportunistic_claim.lease_id
-                    );
-                    self.on_lease_transition_to_noncontingent(&opportunistic_claim.lease_id)
-                }
-            }
-        }
         Ok(lease)
-    }
-
-    /// Runs when a lease becomes no longer contingent.
-    fn on_lease_transition_to_noncontingent(&mut self, lease_id: &LeaseID) {
-        log::debug!("on_lease_transition_to_noncontingent({lease_id})");
-        // Reset any assertive or opportunistic claims that were previously marked to
-        // deactivate. Since they weren't already deactivated, they must
-        // already be currently satisfied.
-        for claim in self.catalog.assertive_claims.activated.for_lease(lease_id) {
-            self.catalog.assertive_claims.activated.remove_from_claims_to_deactivate(&claim.id)
-        }
-        for claim in self.catalog.opportunistic_claims.activated.for_lease(lease_id) {
-            self.catalog.opportunistic_claims.activated.remove_from_claims_to_deactivate(&claim.id)
-        }
-        // Activate any pending assertive claims for this lease whose
-        // required elements have their dependencies satisfied.
-        let pending_claims = self.catalog.assertive_claims.pending.for_lease(&lease_id);
-        self.activate_assertive_claims_if_dependencies_satisfied(pending_claims);
-        // Activate pending opportunistic claims for this lease, if they are
-        // (already) currently satisfied.
-        for claim in self.catalog.opportunistic_claims.pending.for_lease(&lease_id) {
-            if !self.current_level_satisfies(claim.requires()) {
-                continue;
-            }
-            self.catalog.opportunistic_claims.activate_claim(&claim.id)
-        }
-        self.update_lease_status(&lease_id);
     }
 
     /// Drops the provided lease, which deactivates the claims associated with it and
@@ -672,51 +585,6 @@ impl Broker {
         Ok(())
     }
 
-    /// Returns true if the lease has one or more opportunistic claims with no assertive
-    /// claims belonging to other leases that would satisfy them. Such assertive claims
-    /// must not themselves be contingent. If a lease is contingent on any of its
-    /// opportunistic claims, none of its claims should be activated.
-    fn is_lease_contingent(&self, lease_id: &LeaseID) -> bool {
-        let opportunistic_claims = self
-            .catalog
-            .opportunistic_claims
-            .activated
-            .for_lease(lease_id)
-            .into_iter()
-            .chain(self.catalog.opportunistic_claims.pending.for_lease(lease_id).into_iter());
-        for claim in opportunistic_claims {
-            // If there is no other lease with an assertive or pending claim that
-            // would satisfy each opportunistic claim, the lease is Contingent.
-            let activated_claims = self
-                .catalog
-                .assertive_claims
-                .activated
-                .for_required_element(&claim.requires().element_id);
-            let pending_claims = self
-                .catalog
-                .assertive_claims
-                .pending
-                .for_required_element(&claim.requires().element_id);
-            let matching_assertive_claim = activated_claims
-                .into_iter()
-                .chain(pending_claims)
-                .filter(|c|
-                    // Consider an assertive claim to match only if its lease has not been dropped.
-                    !self.catalog.is_lease_dropped(&c.lease_id) &&
-                    // Consider an assertive claim to match if is part of this lease. This captures the
-                    // scenario where a lease is 'self-satisfying' - it holds an assertive claim for an
-                    // element and a opportunistic claim for the same element (at the same or lower level).
-                    (lease_id == &c.lease_id || !self.is_lease_contingent(&c.lease_id)))
-                .find(|c| c.requires().level.satisfies(claim.requires().level));
-            if let Some(matching_assertive_claim) = matching_assertive_claim {
-                log::debug!("{matching_assertive_claim} satisfies opportunistic {claim}");
-            } else {
-                return true;
-            }
-        }
-        false
-    }
-
     fn calculate_lease_status(&self, lease_id: &LeaseID) -> LeaseStatus {
         // If the lease has any Pending assertive claims, it is still Pending.
         if !self.catalog.assertive_claims.pending.for_lease(lease_id).is_empty() {
@@ -735,13 +603,6 @@ impl Broker {
             if !self.current_level_satisfies(claim.requires()) {
                 return LeaseStatus::Pending;
             }
-        }
-
-        // If the lease is contingent on any opportunistic claims, it is Pending.
-        // (The opportunistic claims could have been previously satisfied, but then
-        // an assertive claim was subsequently dropped).
-        if self.is_lease_contingent(lease_id) {
-            return LeaseStatus::Pending;
         }
 
         // If the lease has any assertive claims that have not been satisfied
@@ -780,24 +641,22 @@ impl Broker {
         }
     }
 
-    /// Re-evaluates the lease status and updates the status map. Returns the status
-    /// if the overall status has changed or the contingency has changed. Returns None
-    /// if no change occurred or if the lease has already been dropped.
+    /// Re-evaluates the lease status and updates the status map.
+    /// Returns the status if the overall status has changed.
+    /// Returns None if no change occurred or if the lease has already been dropped.
     pub fn update_lease_status(&mut self, lease_id: &LeaseID) -> Option<LeaseStatus> {
         // Return immediately if the lease has already dropped.
         if self.catalog.is_lease_dropped(lease_id) {
             return None;
         }
-        // Calculate the current and previous status and contingency state.
+        // Calculate the current and previous status state.
         let status = self.calculate_lease_status(lease_id);
-        let contingent = self.is_lease_contingent(lease_id);
         let prev_status = self.catalog.lease_status.update(lease_id, status);
-        let prev_contingent = self.catalog.lease_contingent.insert(lease_id.clone(), contingent);
         // Return if no state change has occurred.
-        if prev_status.as_ref() == Some(&status) && prev_contingent == Some(contingent) {
+        if prev_status.as_ref() == Some(&status) {
             return None;
         };
-        log::debug!("update_lease_status({lease_id}) to {status:?}, contingent: {contingent}");
+        log::debug!("update_lease_status({lease_id}) to {status:?}");
         // The lease_status changed, update the required level of the leased element.
         let (synthetic_element_id, underlying_element_id) = match self.catalog.leases.get(lease_id)
         {
@@ -814,25 +673,6 @@ impl Broker {
                 };
                 self.catalog.topology.inspect().on_update_lease_status(&element, &lease, &status);
             }
-        }
-        // If the lease is contingent, we know that it must be pending and must have
-        // changed from a pending, non-contingent lease or a satisfied lease, to a pending,
-        // contingent lease. Transitioning to contingent requires us to deactivate all claims
-        // on this lease, as opportunistic leases should reduce their usage when possible.
-        if contingent {
-            // Mark all activated claims of this lease to be deactivated once
-            // they are no longer in use.
-            let assertive_claims_to_deactivate =
-                self.catalog.assertive_claims.activated.mark_to_deactivate(&lease_id);
-            let assertive_claims_to_drop =
-                self.find_claims_to_drop_or_deactivate(&assertive_claims_to_deactivate);
-            let opportunistic_claims_to_deactivate =
-                self.catalog.opportunistic_claims.activated.mark_to_deactivate(&lease_id);
-            let opportunistic_claims_to_drop =
-                self.find_claims_to_drop_or_deactivate(&opportunistic_claims_to_deactivate);
-            self.drop_or_deactivate_assertive_claims(&assertive_claims_to_drop);
-            self.drop_or_deactivate_opportunistic_claims(&opportunistic_claims_to_drop);
-            self.update_opportunistic_leases(&assertive_claims_to_deactivate);
         }
         Some(status)
     }
@@ -864,9 +704,8 @@ impl Broker {
     }
 
     /// Examines a Vec of pending assertive claims and activates each for which
-    /// its lease is not contingent on its opportunistic claims and either the
-    /// required element is already at the required level (and thus the claim
-    /// is already satisfied) or all of the dependencies of its required
+    /// either the required element is already at the required level (and thus
+    /// the claim is already satisfied) or all of the dependencies of its required
     /// ElementLevel are met. Updates required levels of affected elements.
     /// For example, let us imagine elements A, B, C and D where A depends on B
     /// and B depends on C and D. In order to activate the A->B claim, all
@@ -879,15 +718,8 @@ impl Broker {
             "activate_assertive_claims_if_dependencies_satisfied: pending_assertive_claims[{}]",
             pending_assertive_claims.iter().join(", ")
         );
-        // Skip any claims whose leases are still contingent on opportunistic claims.
-        let contingent_lease_ids: HashSet<LeaseID> = pending_assertive_claims
-            .iter()
-            .filter(|c| self.is_lease_contingent(&c.lease_id))
-            .map(|c| c.lease_id.clone())
-            .collect();
         let claims_to_activate: Vec<Claim> = pending_assertive_claims
             .into_iter()
-            .filter(|c| !contingent_lease_ids.contains(&c.lease_id))
             .filter(|c| {
                 // If the required element is already at the required level,
                 // then the claim can immediately be activated (and is
@@ -945,7 +777,7 @@ impl Broker {
                 continue;
             }
             // If this is an assertive claim and there exists another activated assertive claim
-            // belonging to another lease that has not been dropped, is not contingent, and whose
+            // belonging to another lease that has not been dropped and whose
             // required level satisfies its required level, we can drop this claim immediately.
             if self.catalog.assertive_claims.activated.claims.contains_key(&claim_to_check.id) {
                 let mut related_claims = self
@@ -956,7 +788,6 @@ impl Broker {
                     .into_iter()
                     .filter(|c| c.lease_id != claim_to_check.lease_id)
                     .filter(|c| !self.catalog.is_lease_dropped(&c.lease_id))
-                    .filter(|c| !self.is_lease_contingent(&c.lease_id))
                     .into_iter();
                 let related_claim = related_claims.find(|related_claim| {
                     related_claim.dependent().satisfies(claim_to_check.dependent())
@@ -1033,34 +864,6 @@ impl Broker {
             element_ids_affected.iter().map(|id| *id),
             &mut EagerInspectWriter,
         );
-        // Update the status of all leases with opportunistic claims no longer satisfied.
-        let mut leases_affected = HashSet::new();
-        for element_id in element_ids_affected {
-            // Calculate the maximum level required by assertive claims only to
-            // determine if there are still any assertive claims that would
-            // satisfy these opportunistic claims.
-            let max_required_by_assertive = max_level_required_by_claims(
-                &self.catalog.assertive_claims.activated.for_required_element(&element_id),
-            )
-            .unwrap_or_else(|| self.catalog.minimum_level(&element_id));
-            for opportunistic_claim in
-                self.catalog.opportunistic_claims.activated.for_required_element(&element_id)
-            {
-                if !max_required_by_assertive.satisfies(opportunistic_claim.requires().level) {
-                    log::debug!(
-                        "opportunistic_claim {opportunistic_claim} no longer satisfied, must reevaluate lease {}",
-                        opportunistic_claim.lease_id
-                    );
-                    leases_affected.insert(opportunistic_claim.lease_id);
-                }
-            }
-        }
-        // These leases have opportunistic claims that are no longer satisfied,
-        // so update_lease_status will update them to pending since they are
-        // now contingent.
-        for lease_id in leases_affected {
-            self.update_lease_status(&lease_id);
-        }
     }
 
     /// Takes a Vec of opportunistic claims, deactivates them if their lease is open,
@@ -1335,7 +1138,6 @@ struct Catalog {
     topology: Topology,
     leases: HashMap<LeaseID, Lease>,
     lease_status: SubscribeMap<LeaseID, LeaseStatus>,
-    lease_contingent: HashMap<LeaseID, bool>,
     /// Assertive claims can be either Pending or Activated.
     /// Pending assertive claims do not yet affect the required levels of their
     /// required elements. Some dependencies of their required element are not
@@ -1365,7 +1167,6 @@ impl Catalog {
             topology: Topology::new(inspect_parent, INSPECT_GRAPH_EVENT_BUFFER_SIZE),
             leases: HashMap::new(),
             lease_status: SubscribeMap::new(Some(inspect_parent.create_child("leases"))),
-            lease_contingent: HashMap::new(),
             assertive_claims: ClaimActivationTracker::new(DependencyType::Assertive),
             opportunistic_claims: ClaimActivationTracker::new(DependencyType::Opportunistic),
             last_claim_id: ClaimID(0),
@@ -1580,7 +1381,6 @@ impl Catalog {
         log::debug!("drop(lease:{lease_id})");
         let lease = self.leases.remove(lease_id).ok_or_else(|| anyhow!("{lease_id} not found"))?;
         self.lease_status.remove(lease_id);
-        self.lease_contingent.remove(lease_id);
         if let Some(element) = self.topology.get_element(&lease.underlying_element_id) {
             self.topology.inspect().on_drop_lease(&element, &lease);
         }
@@ -2766,7 +2566,7 @@ mod tests {
     }
 
     struct LeaseMatcher {
-        leases: HashMap<LeaseID, (LeaseStatus, bool)>,
+        leases: HashMap<LeaseID, LeaseStatus>,
     }
 
     impl LeaseMatcher {
@@ -2774,8 +2574,8 @@ mod tests {
             Self { leases: HashMap::new() }
         }
 
-        fn update(&mut self, id: &LeaseID, status: LeaseStatus, contingent: bool) {
-            self.leases.insert(id.clone(), (status, contingent));
+        fn update(&mut self, id: &LeaseID, status: LeaseStatus) {
+            self.leases.insert(id.clone(), status);
         }
 
         fn remove(&mut self, id: &LeaseID) {
@@ -2784,18 +2584,13 @@ mod tests {
 
         #[track_caller]
         fn assert_matches(&self, broker: &Broker) {
-            for (id, (expected_status, expected_contingent)) in &self.leases {
+            for (id, expected_status) in &self.leases {
                 let status = broker.get_lease_status(id).expect(
                     "No lease exists with id ({id}), forgot to remove it from the matcher?",
                 );
-                let contingent = broker.is_lease_contingent(id);
                 assert_eq!(
                     status, *expected_status,
                     "get_lease_status({id}) = {status:?}, expected = {expected_status:?}"
-                );
-                assert_eq!(
-                    contingent, *expected_contingent,
-                    "is_lease_contingent({id}) = {contingent}, expected = {expected_contingent}"
                 );
             }
         }
@@ -2976,7 +2771,7 @@ mod tests {
             broker.acquire_lease(&child, ON, zx::Koid::from_raw(1)).expect("acquire failed");
         broker_status.required_level.update(&parent1, ON);
         broker_status.required_level.update(&parent2, ON);
-        broker_status.lease.update(&lease.id, LeaseStatus::Pending, false);
+        broker_status.lease.update(&lease.id, LeaseStatus::Pending);
         broker_status.assert_matches(&broker);
 
         assert_eq!(broker.adjust_lease_counter(&child, ON.level, 0), 1);
@@ -2995,7 +2790,7 @@ mod tests {
         // Update C's current level to ON.
         // The lease should now be satisfied.
         broker.update_current_level(&child, ON);
-        broker_status.lease.update(&lease.id, LeaseStatus::Satisfied, false);
+        broker_status.lease.update(&lease.id, LeaseStatus::Satisfied);
         broker_status.assert_matches(&broker);
 
         // We expect one synthetic element.
@@ -3225,7 +3020,7 @@ mod tests {
         let lease =
             broker.acquire_lease(&child, ON, zx::Koid::from_raw(1)).expect("acquire failed");
         broker_status.required_level.update(&grandparent, ON);
-        broker_status.lease.update(&lease.id, LeaseStatus::Pending, false);
+        broker_status.lease.update(&lease.id, LeaseStatus::Pending);
         broker_status.assert_matches(&broker);
 
         // Raise GP's level to ON.
@@ -3243,7 +3038,7 @@ mod tests {
         // Raise C's level to ON.
         // Lease C should now be satisfied as C is ON.
         broker.update_current_level(&child, ON);
-        broker_status.lease.update(&lease.id, LeaseStatus::Satisfied, false);
+        broker_status.lease.update(&lease.id, LeaseStatus::Satisfied);
         broker_status.assert_matches(&broker);
 
         // Drop Lease C.
@@ -3389,7 +3184,7 @@ mod tests {
         broker_status
             .required_level
             .update(&grandparent, IndexedPowerLevel { level: 200, index: 2 });
-        broker_status.lease.update(&lease1.id, LeaseStatus::Pending, false);
+        broker_status.lease.update(&lease1.id, LeaseStatus::Pending);
         broker_status.assert_matches(&broker);
 
         // Raise Grandparent's current level to 200. Now Parent claim should
@@ -3408,7 +3203,7 @@ mod tests {
         // Update Child 1's current level to 5.
         // Lease Child 1's is now satisfied.
         broker.update_current_level(&child1, IndexedPowerLevel { level: 5, index: 1 });
-        broker_status.lease.update(&lease1.id, LeaseStatus::Satisfied, false);
+        broker_status.lease.update(&lease1.id, LeaseStatus::Satisfied);
         broker_status.assert_matches(&broker);
 
         // Acquire a lease for Child 2. Though Child 2 has nominal
@@ -3418,13 +3213,13 @@ mod tests {
             .acquire_lease(&child2, IndexedPowerLevel { level: 3, index: 1 }, zx::Koid::from_raw(2))
             .expect("acquire failed");
         broker_status.required_level.update(&child2, IndexedPowerLevel { level: 3, index: 1 });
-        broker_status.lease.update(&lease2.id, LeaseStatus::Pending, false);
+        broker_status.lease.update(&lease2.id, LeaseStatus::Pending);
         broker_status.assert_matches(&broker);
 
         // Update Child 2's current level to 3.
         // Lease Child 2's is now satisfied.
         broker.update_current_level(&child2, IndexedPowerLevel { level: 3, index: 1 });
-        broker_status.lease.update(&lease2.id, LeaseStatus::Satisfied, false);
+        broker_status.lease.update(&lease2.id, LeaseStatus::Satisfied);
         broker_status.assert_matches(&broker);
 
         // Drop lease for Child 1.
@@ -3580,7 +3375,7 @@ mod tests {
         let lease1 =
             broker.acquire_lease(&child1, ON, zx::Koid::from_raw(1)).expect("acquire failed");
         broker_status.required_level.update(&grandparent, ON);
-        broker_status.lease.update(&lease1.id, LeaseStatus::Pending, false);
+        broker_status.lease.update(&lease1.id, LeaseStatus::Pending);
         broker_status.assert_matches(&broker);
 
         // Raise Grandparent's current level to ON. Now Parent claim should
@@ -3599,7 +3394,7 @@ mod tests {
         // Update Child 1's current level to ON.
         // Lease Child 1's is now satisfied.
         broker.update_current_level(&child1, ON);
-        broker_status.lease.update(&lease1.id, LeaseStatus::Satisfied, false);
+        broker_status.lease.update(&lease1.id, LeaseStatus::Satisfied);
         broker_status.assert_matches(&broker);
 
         // Acquire a lease for Child 2. Child 2 requires Parent and
@@ -3607,13 +3402,13 @@ mod tests {
         let lease2 =
             broker.acquire_lease(&child2, ON, zx::Koid::from_raw(2)).expect("acquire failed");
         broker_status.required_level.update(&child2, ON);
-        broker_status.lease.update(&lease2.id, LeaseStatus::Pending, false);
+        broker_status.lease.update(&lease2.id, LeaseStatus::Pending);
         broker_status.assert_matches(&broker);
 
         // Update Child 2's current level to ON.
         // Lease Child 2's is now satisfied.
         broker.update_current_level(&child2, ON);
-        broker_status.lease.update(&lease2.id, LeaseStatus::Satisfied, false);
+        broker_status.lease.update(&lease2.id, LeaseStatus::Satisfied);
         broker_status.assert_matches(&broker);
 
         // Drop lease for Child 1.
@@ -3780,7 +3575,7 @@ mod tests {
         let lease1 =
             broker.acquire_lease(&element_e, ON, zx::Koid::from_raw(1)).expect("acquire failed");
         broker_status.required_level.update(&element_c, ON);
-        broker_status.lease.update(&lease1.id, LeaseStatus::Pending, false);
+        broker_status.lease.update(&lease1.id, LeaseStatus::Pending);
         broker_status.assert_matches(&broker);
 
         // Raise C's current level to ON. Now D should have its required level on.
@@ -3795,7 +3590,7 @@ mod tests {
 
         // Raise E's current level to ON. Now the lease should be satisfied.
         broker.update_current_level(&element_e, ON);
-        broker_status.lease.update(&lease1.id, LeaseStatus::Satisfied, false);
+        broker_status.lease.update(&lease1.id, LeaseStatus::Satisfied);
         broker_status.assert_matches(&broker);
 
         // Acquire a lease for A. A requires B, which is currently OFF and
@@ -3803,7 +3598,7 @@ mod tests {
         let lease2 =
             broker.acquire_lease(&element_a, ON, zx::Koid::from_raw(2)).expect("acquire failed");
         broker_status.required_level.update(&element_b, ON);
-        broker_status.lease.update(&lease2.id, LeaseStatus::Pending, false);
+        broker_status.lease.update(&lease2.id, LeaseStatus::Pending);
         broker_status.assert_matches(&broker);
 
         // Update B's current level to ON.
@@ -3815,7 +3610,7 @@ mod tests {
         // Update A's current level to ON.
         // The lease on A is now satisfied.
         broker.update_current_level(&element_a, ON);
-        broker_status.lease.update(&lease2.id, LeaseStatus::Satisfied, false);
+        broker_status.lease.update(&lease2.id, LeaseStatus::Satisfied);
         broker_status.assert_matches(&broker);
 
         // Drop lease for A.
@@ -3977,7 +3772,7 @@ mod tests {
         let lease1 =
             broker.acquire_lease(&child, ON, zx::Koid::from_raw(1)).expect("acquire failed");
         broker_status.required_level.update(&grandparent, ON);
-        broker_status.lease.update(&lease1.id, LeaseStatus::Pending, false);
+        broker_status.lease.update(&lease1.id, LeaseStatus::Pending);
         broker_status.assert_matches(&broker);
 
         // Raise Grandparent's current level to ON. Now both Parent claims should
@@ -4002,7 +3797,7 @@ mod tests {
         // Update Child's current level to ON.
         // Lease on Child is now satisfied.
         broker.update_current_level(&child, ON);
-        broker_status.lease.update(&lease1.id, LeaseStatus::Satisfied, false);
+        broker_status.lease.update(&lease1.id, LeaseStatus::Satisfied);
         broker_status.assert_matches(&broker);
 
         // Drop lease for Child.
@@ -4125,7 +3920,7 @@ mod tests {
         // A's required level should not change.
         // B and C's required level should be 1.
         //
-        // A's lease is pending and not contingent.
+        // A's lease is pending.
         let lease_a =
             broker.acquire_lease(&element_a, TWO, zx::Koid::from_raw(1)).expect("acquire failed");
         let lease_a_id = lease_a.id.clone();
@@ -4133,14 +3928,13 @@ mod tests {
         broker_status.required_level.update(&element_c, ONE);
         broker_status.assert_matches(&broker);
         assert_eq!(broker.get_lease_status(&lease_a.id), Some(LeaseStatus::Pending));
-        assert_eq!(broker.is_lease_contingent(&lease_a.id), false);
 
         // Update B, C's current level to 1.
         //
         // A's current level should now be 2.
         // B and C's current level should not change.
         //
-        // A's lease should be satisfied and not contingent.
+        // A's lease should be satisfied.
         broker.update_current_level(&element_b, ONE);
         broker.update_current_level(&element_c, ONE);
         broker_status.required_level.update(&element_a, TWO);
@@ -4151,16 +3945,16 @@ mod tests {
         // A's current level should now be 2.
         // B and C's current level should not change.
         //
-        // A's lease should be satisfied and not contingent.
+        // A's lease should be satisfied.
         broker.update_current_level(&element_a, TWO);
-        broker_status.lease.update(&lease_a.id, LeaseStatus::Satisfied, false);
+        broker_status.lease.update(&lease_a.id, LeaseStatus::Satisfied);
         broker_status.assert_matches(&broker);
 
         // Drop Lease A.
         //
         // A's required level should become 0, as it is no longer leased.
         //
-        // Lease A should be pending and not contingent.
+        // Lease A should be pending.
         broker.drop_lease(&lease_a.id).expect("drop_lease failed");
         broker_status.required_level.update(&element_a, ZERO);
         broker_status.lease.remove(&lease_a.id);
@@ -4262,8 +4056,8 @@ mod tests {
         let lease_c =
             broker.acquire_lease(&element_c, ON, zx::Koid::from_raw(2)).expect("acquire failed");
         broker.update_current_level(&element_a, ON);
-        broker_status.lease.update(&lease_b.id, LeaseStatus::Pending, true);
-        broker_status.lease.update(&lease_c.id, LeaseStatus::Pending, true);
+        broker_status.lease.update(&lease_b.id, LeaseStatus::Pending);
+        broker_status.lease.update(&lease_c.id, LeaseStatus::Pending);
         broker_status.assert_matches(&broker);
 
         broker.drop_lease(&lease_b.id).expect("drop_lease failed");
@@ -4683,17 +4477,17 @@ mod tests {
         broker_status.required_level.update(&element_c2, ON);
         broker_status.required_level.update(&element_c3, ON);
         broker_status.required_level.update(&element_c4, ON);
-        broker_status.lease.update(&lease_gp2.id, LeaseStatus::Satisfied, false);
-        broker_status.lease.update(&lease_c1.id, LeaseStatus::Satisfied, false);
-        broker_status.lease.update(&lease_c2.id, LeaseStatus::Satisfied, false);
-        broker_status.lease.update(&lease_c3.id, LeaseStatus::Satisfied, false);
-        broker_status.lease.update(&lease_c4.id, LeaseStatus::Satisfied, false);
+        broker_status.lease.update(&lease_gp2.id, LeaseStatus::Satisfied);
+        broker_status.lease.update(&lease_c1.id, LeaseStatus::Satisfied);
+        broker_status.lease.update(&lease_c2.id, LeaseStatus::Satisfied);
+        broker_status.lease.update(&lease_c3.id, LeaseStatus::Satisfied);
+        broker_status.lease.update(&lease_c4.id, LeaseStatus::Satisfied);
         broker_status.assert_matches(&broker);
 
         // Trigger disorderly drop of X.
         // All parents and grandparents of X should immediately drop to OFF.
         // X's required level should also become OFF, to
-        // All leases, except for GP2, should now be pending and not-contingent.
+        // All leases, except for GP2, should now be pending.
         broker.update_current_level(&element_x, OFF);
         broker_status.required_level.update(&element_p1, OFF);
         broker_status.required_level.update(&element_p2, OFF);
@@ -4701,10 +4495,10 @@ mod tests {
         broker_status.required_level.update(&element_c2, OFF);
         broker_status.required_level.update(&element_c3, OFF);
         broker_status.required_level.update(&element_c4, OFF);
-        broker_status.lease.update(&lease_c1.id, LeaseStatus::Pending, false);
-        broker_status.lease.update(&lease_c2.id, LeaseStatus::Pending, false);
-        broker_status.lease.update(&lease_c3.id, LeaseStatus::Pending, false);
-        broker_status.lease.update(&lease_c4.id, LeaseStatus::Pending, false);
+        broker_status.lease.update(&lease_c1.id, LeaseStatus::Pending);
+        broker_status.lease.update(&lease_c2.id, LeaseStatus::Pending);
+        broker_status.lease.update(&lease_c3.id, LeaseStatus::Pending);
+        broker_status.lease.update(&lease_c4.id, LeaseStatus::Pending);
         broker_status.assert_matches(&broker);
 
         // Turn off all parent/child elements to preserve ordering.
@@ -4738,10 +4532,10 @@ mod tests {
         broker.update_current_level(&element_c2, ON);
         broker.update_current_level(&element_c3, ON);
         broker.update_current_level(&element_c4, ON);
-        broker_status.lease.update(&lease_c1.id, LeaseStatus::Satisfied, false);
-        broker_status.lease.update(&lease_c2.id, LeaseStatus::Satisfied, false);
-        broker_status.lease.update(&lease_c3.id, LeaseStatus::Satisfied, false);
-        broker_status.lease.update(&lease_c4.id, LeaseStatus::Satisfied, false);
+        broker_status.lease.update(&lease_c1.id, LeaseStatus::Satisfied);
+        broker_status.lease.update(&lease_c2.id, LeaseStatus::Satisfied);
+        broker_status.lease.update(&lease_c3.id, LeaseStatus::Satisfied);
+        broker_status.lease.update(&lease_c4.id, LeaseStatus::Satisfied);
         broker_status.assert_matches(&broker);
 
         // Drop all leases, power down children.
