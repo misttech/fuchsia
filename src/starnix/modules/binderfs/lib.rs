@@ -5,6 +5,10 @@
 #![recursion_limit = "256"]
 
 mod binder;
+mod fs;
 mod remote_binder;
+mod resource_accessor;
+mod shared_memory;
+mod user_memory_cursor;
 
-pub use binder::*;
+pub use fs::BinderFs;

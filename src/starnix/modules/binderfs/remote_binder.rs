@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::{BinderDevice, BinderDriver, RemoteBinderConnection};
+use crate::binder::{BinderDevice, BinderDriver, RemoteBinderConnection};
 use anyhow::{Context, Error};
 use derivative::Derivative;
 use fidl::AsHandleRef;
@@ -1079,7 +1079,7 @@ async fn select_first<O>(f1: impl Future<Output = O>, f2: impl Future<Output = O
 mod tests {
     use super::*;
     use crate::BinderFs;
-    use crate::tests::run_process_accessor;
+    use crate::binder::tests::run_process_accessor;
     use fidl::HandleBased;
     use fidl::endpoints::{Proxy, create_endpoints, create_proxy};
     use rand::distr::{Alphanumeric, SampleString};

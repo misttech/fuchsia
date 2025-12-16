@@ -19,8 +19,12 @@ rustc_library("binderfs") {
 
   sources = [
     "binder.rs",
+    "fs.rs",
     "lib.rs",
     "remote_binder.rs",
+    "resource_accessor.rs",
+    "shared_memory.rs",
+    "user_memory_cursor.rs",
   ]
 
   # TODO(https://fxbug.dev/42059075): Re-enable starnix in these environments.

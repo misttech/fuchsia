@@ -4,7 +4,12 @@
 
 #![allow(non_upper_case_globals)]
 
-use crate::remote_binder::RemoteBinderDevice;
+use crate::resource_accessor::{
+    RemoteIoctl, RemoteMemoryAccessor, RemoteResourceAccessor, ResourceAccessor,
+    get_resource_accessor,
+};
+use crate::shared_memory::{SharedBuffer, SharedMemory, TransactionBuffers};
+use crate::user_memory_cursor::UserMemoryCursor;
 use bitflags::bitflags;
 use fidl::endpoints::ClientEnd;
 use starnix_core::device::DeviceOps;
@@ -15,20 +20,16 @@ use starnix_core::mm::{
     DesiredAddress, MappingName, MappingOptions, MemoryAccessor, MemoryAccessorExt, ProtectionFlags,
 };
 use starnix_core::mutable_state::Guard;
+use starnix_core::security;
 use starnix_core::task::{
-    CurrentTask, CurrentTaskAndLocked, EventHandler, FullCredentials, Kernel, SchedulerState,
-    SimpleWaiter, Task, ThreadGroupKey, WaitCanceler, WaitQueue, Waiter,
+    CurrentTask, CurrentTaskAndLocked, EventHandler, Kernel, SchedulerState, SimpleWaiter, Task,
+    ThreadGroupKey, WaitCanceler, WaitQueue, Waiter,
 };
-use starnix_core::vfs::buffers::{InputBuffer, OutputBuffer, VecInputBuffer};
-use starnix_core::vfs::pseudo::simple_file::BytesFile;
-use starnix_core::vfs::pseudo::vec_directory::{VecDirectory, VecDirectoryEntry};
+use starnix_core::vfs::buffers::{InputBuffer, OutputBuffer};
 use starnix_core::vfs::{
-    CacheMode, DirEntry, DirectoryEntryType, FdFlags, FdNumber, FileHandle, FileObject,
-    FileObjectState, FileOps, FileSystem, FileSystemHandle, FileSystemOps, FileSystemOptions,
-    FsNode, FsNodeHandle, FsNodeInfo, FsNodeOps, FsStr, FsString, NamespaceNode, SpecialNode,
-    fileops_impl_nonseekable, fileops_impl_noop_sync, fs_node_impl_dir_readonly,
+    FdFlags, FdNumber, FileObject, FileObjectState, FileOps, FsStr, FsString, NamespaceNode,
+    fileops_impl_nonseekable, fileops_impl_noop_sync,
 };
-use starnix_core::{fileops_impl_dataless, security};
 use starnix_lifecycle::AtomicU64Counter;
 use starnix_logging::{
     CATEGORY_STARNIX, log_error, log_trace, log_warn, trace_duration, trace_instaflow_begin,
@@ -45,12 +46,9 @@ use starnix_types::ownership::{
     release_iter_after, release_on_error,
 };
 use starnix_types::user_buffer::UserBuffer;
-use starnix_types::vfs::default_statfs;
 use starnix_uapi::arc_key::ArcKey;
-use starnix_uapi::auth::FsCred;
 use starnix_uapi::device_type::DeviceType;
 use starnix_uapi::errors::{EACCES, EINTR, EPERM, Errno};
-use starnix_uapi::file_mode::mode;
 use starnix_uapi::math::round_up_to_increment;
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::union::struct_with_union_into_bytes;
@@ -58,9 +56,9 @@ use starnix_uapi::user_address::{UserAddress, UserRef};
 use starnix_uapi::vfs::FdEvents;
 use starnix_uapi::{
     BINDER_BUFFER_FLAG_HAS_PARENT, BINDER_CURRENT_PROTOCOL_VERSION, BINDER_TYPE_BINDER,
-    BINDER_TYPE_FD, BINDER_TYPE_FDA, BINDER_TYPE_HANDLE, BINDER_TYPE_PTR, BINDERFS_SUPER_MAGIC,
-    binder_buffer_object, binder_driver_command_protocol,
-    binder_driver_command_protocol_BC_ACQUIRE, binder_driver_command_protocol_BC_ACQUIRE_DONE,
+    BINDER_TYPE_FD, BINDER_TYPE_FDA, BINDER_TYPE_HANDLE, BINDER_TYPE_PTR, binder_buffer_object,
+    binder_driver_command_protocol, binder_driver_command_protocol_BC_ACQUIRE,
+    binder_driver_command_protocol_BC_ACQUIRE_DONE,
     binder_driver_command_protocol_BC_CLEAR_DEATH_NOTIFICATION,
     binder_driver_command_protocol_BC_CLEAR_FREEZE_NOTIFICATION,
     binder_driver_command_protocol_BC_DEAD_BINDER_DONE, binder_driver_command_protocol_BC_DECREFS,
@@ -87,54 +85,23 @@ use starnix_uapi::{
     binder_driver_return_protocol_BR_TRANSACTION_SEC_CTX, binder_fd_array_object, binder_fd_object,
     binder_freeze_info, binder_frozen_state_info, binder_frozen_status_info, binder_object_header,
     binder_transaction_data, binder_transaction_data__bindgen_ty_2__bindgen_ty_1,
-    binder_transaction_data_sg, binder_uintptr_t, binder_version, binder_write_read, errno,
-    errno_from_code, error, flat_binder_object, pid_t, statfs, transaction_flags_TF_ONE_WAY, uapi,
+    binder_transaction_data_sg, binder_uintptr_t, binder_version, binder_write_read, errno, error,
+    flat_binder_object, pid_t, transaction_flags_TF_ONE_WAY, uapi,
 };
 use std::cell::Cell;
-use std::collections::btree_map::Entry;
 use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
-use std::mem::MaybeUninit;
+
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 use std::vec::Vec;
 use zerocopy::{FromBytes, Immutable, IntoBytes};
-use {fidl_fuchsia_posix as fposix, fidl_fuchsia_starnix_binder as fbinder};
+use {fidl_fuchsia_starnix_binder as fbinder, zx};
 
 /// The trace category used for binder command tracing.
 const TRACE_CATEGORY: &'static str = "starnix:binder";
 
 /// The name used to track the duration of a local binder ioctl.
 const NAME_BINDER_IOCTL: &'static str = "binder_ioctl";
-
-/// Allows for sequential reading of a task's userspace memory.
-pub struct UserMemoryCursor {
-    buffer: VecInputBuffer,
-}
-
-impl UserMemoryCursor {
-    /// Create a new [`UserMemoryCursor`] starting at userspace address `addr` of length `len`.
-    /// Upon creation, the cursor reads the entire user buffer then caches it.
-    /// Any reads past `addr + len` will fail with `EINVAL`.
-    pub fn new(ma: &dyn MemoryAccessor, addr: UserAddress, len: u64) -> Result<Self, Errno> {
-        let buffer = ma.read_buffer(&UserBuffer { address: addr, length: len as usize })?;
-        Ok(Self { buffer: buffer.into() })
-    }
-
-    /// Increment the read position.
-    pub fn advance(&mut self, length: u64) -> Result<(), Errno> {
-        self.buffer.advance(length as usize)
-    }
-
-    /// Read an object from userspace memory and increment the read position.
-    pub fn read_object<T: FromBytes>(&mut self) -> Result<T, Errno> {
-        self.buffer.read_object::<T>()
-    }
-
-    /// The total number of bytes read.
-    pub fn bytes_read(&self) -> usize {
-        self.buffer.bytes_read()
-    }
-}
 
 #[derive(Debug, Default, Clone)]
 pub struct BinderDevice(Arc<BinderDriver>);
@@ -374,11 +341,6 @@ impl FileOps for BinderConnection {
             binder_process.kick_all_threads()
         });
     }
-}
-
-struct RemoteIoctl {
-    ioctl_writes: Cell<Vec<fbinder::IoctlWrite>>,
-    vmo: zx::Vmo,
 }
 
 /// A connection to a binder driver from a remote process.
@@ -1369,258 +1331,6 @@ fn generate_dead_replies_for_transactions(
             let _ = sender_thread.transactions.pop();
             sender_thread.enqueue_command(Command::DeadReply);
         }
-    }
-}
-
-/// The mapped VMO shared between userspace and the binder driver.
-///
-/// The binder driver copies messages from one process to another, which essentially amounts to
-/// a copy between VMOs. It is not possible to copy directly between VMOs without an intermediate
-/// copy, and the binder driver must only perform one copy for performance reasons.
-///
-/// The memory allocated to a binder process is shared with the binder driver, and mapped into
-/// the kernel's address space so that a VMO read operation can copy directly into the mapped VMO.
-#[derive(Debug)]
-struct SharedMemory {
-    /// The address in kernel address space where the VMO is mapped.
-    kernel_address: *mut u8,
-    /// The address in user address space where the VMO is mapped.
-    user_address: UserAddress,
-    /// The length of the shared memory mapping in bytes.
-    length: usize,
-    /// The map from offset to size of all the currently active allocations, ordered in ascending
-    /// order.
-    ///
-    /// This is used by the allocator to find new allocations.
-    ///
-    /// TODO(qsr): This should evolved into a better allocator for performance reason. Currently,
-    /// each new allocation is done in O(n) where n is the number of currently active allocations.
-    allocations: BTreeMap<usize, usize>,
-}
-
-/// The user buffers containing the data to send to the recipient of a binder transaction.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-struct TransactionBuffers {
-    /// The buffer containing the data of the transaction.
-    data: UserBuffer,
-    /// The buffer containing the offsets of objects inside the `data` buffer.
-    offsets: UserBuffer,
-    /// An optional buffer pointing to the security context of the client of the transaction.
-    security_context: Option<UserBuffer>,
-}
-
-/// Contains the allocations for a transaction.
-#[derive(Debug)]
-struct SharedMemoryAllocation<'a> {
-    data_buffer: SharedBuffer<'a, u8>,
-    offsets_buffer: SharedBuffer<'a, binder_uintptr_t>,
-    scatter_gather_buffer: SharedBuffer<'a, u8>,
-    security_context_buffer: Option<SharedBuffer<'a, u8>>,
-}
-
-impl From<SharedMemoryAllocation<'_>> for TransactionBuffers {
-    fn from(value: SharedMemoryAllocation<'_>) -> Self {
-        Self {
-            data: value.data_buffer.user_buffer(),
-            offsets: value.offsets_buffer.user_buffer(),
-            security_context: value.security_context_buffer.map(|x| x.user_buffer()),
-        }
-    }
-}
-
-impl Drop for SharedMemory {
-    fn drop(&mut self) {
-        log_trace!("Dropping shared memory allocation {:?}", self);
-        let kernel_root_vmar = fuchsia_runtime::vmar_root_self();
-
-        // SAFETY: This object hands out references to the mapped memory, but the borrow checker
-        // ensures correct lifetimes.
-        let res = unsafe { kernel_root_vmar.unmap(self.kernel_address as usize, self.length) };
-        match res {
-            Ok(()) => {}
-            Err(status) => {
-                log_error!("failed to unmap shared binder region from kernel: {:?}", status);
-            }
-        }
-    }
-}
-
-// SAFETY: SharedMemory has exclusive ownership of the `kernel_address` pointer, so it is safe to
-// send across threads.
-unsafe impl Send for SharedMemory {}
-
-impl SharedMemory {
-    fn map(memory: &MemoryObject, user_address: UserAddress, length: usize) -> Result<Self, Errno> {
-        // Map the VMO into the kernel's address space.
-        let kernel_root_vmar = fuchsia_runtime::vmar_root_self();
-        let kernel_address = memory
-            .map_in_vmar(
-                &kernel_root_vmar,
-                0,
-                0,
-                length,
-                zx::VmarFlags::PERM_READ | zx::VmarFlags::PERM_WRITE,
-            )
-            .map_err(|status| {
-                log_error!("failed to map shared binder region in kernel: {:?}", status);
-                errno!(ENOMEM)
-            })?;
-        Ok(Self {
-            kernel_address: kernel_address as *mut u8,
-            user_address,
-            length,
-            allocations: Default::default(),
-        })
-    }
-
-    /// Allocate a buffer of size `length` from this memory block.
-    fn allocate(&mut self, length: usize) -> Result<usize, TransactionError> {
-        // The current candidate for an allocation.
-        let mut candidate = 0;
-        for (&ptr, &size) in &self.allocations {
-            // If there is enough room at the current candidate location, stop looking.
-            if ptr - candidate >= length {
-                break;
-            }
-            // Otherwise, check after the current allocation.
-            candidate = ptr + size;
-        }
-        // At this point, either `candidate` is correct, or the only remaining position is at the
-        // end of the buffer. In both case, the allocation succeed if there is enough room between
-        // the candidate and the end of the buffer.
-        if self.length - candidate < length {
-            return Err(TransactionError::Failure);
-        }
-        self.allocations.insert(candidate, length);
-        Ok(candidate)
-    }
-
-    /// Allocates three buffers large enough to hold the requested data, offsets, and scatter-gather
-    /// buffer lengths, inserting padding between data and offsets as needed. `offsets_length` and
-    /// `sg_buffers_length` must be 8-byte aligned.
-    ///
-    /// NOTE: When `data_length` is zero, a minimum data buffer size of 8 bytes is still allocated.
-    /// This is because clients expect their buffer addresses to be uniquely associated with a
-    /// transaction. Returning the same address for different transactions will break oneway
-    /// transactions that have no payload.
-    //
-    // This is a temporary implementation of an allocator and should be replaced by something
-    // more sophisticated. It currently implements a bump allocator strategy.
-    fn allocate_buffers(
-        &mut self,
-        data_length: usize,
-        offsets_length: usize,
-        sg_buffers_length: usize,
-        security_context_buffer_length: usize,
-    ) -> Result<SharedMemoryAllocation<'_>, TransactionError> {
-        // Round `data_length` up to the nearest multiple of 8, so that the offsets buffer is
-        // aligned when we pack it next to the data buffer.
-        let data_cap = round_up_to_increment(data_length, std::mem::size_of::<binder_uintptr_t>())?;
-        // Ensure that we allocate at least 8 bytes, so that each buffer returned is uniquely
-        // associated with a transaction. Otherwise, multiple zero-sized allocations will have the
-        // same address and there will be no way of distinguishing which transaction they belong to.
-        let data_cap = std::cmp::max(data_cap, std::mem::size_of::<binder_uintptr_t>());
-        // Ensure that the offsets and buffers lengths are valid.
-        if offsets_length % std::mem::size_of::<binder_uintptr_t>() != 0
-            || sg_buffers_length % std::mem::size_of::<binder_uintptr_t>() != 0
-            || security_context_buffer_length % std::mem::size_of::<binder_uintptr_t>() != 0
-        {
-            return Err(TransactionError::Malformed(errno!(EINVAL)));
-        }
-        let total_length = data_cap
-            .checked_add(offsets_length)
-            .and_then(|v| v.checked_add(sg_buffers_length))
-            .and_then(|v| v.checked_add(security_context_buffer_length))
-            .ok_or_else(|| errno!(EINVAL))?;
-        let base_offset = self.allocate(total_length)?;
-        let security_context_buffer = if security_context_buffer_length > 0 {
-            Some(SharedBuffer::new(
-                self,
-                base_offset + data_cap + offsets_length + sg_buffers_length,
-                security_context_buffer_length,
-            )?)
-        } else {
-            None
-        };
-
-        Ok(SharedMemoryAllocation {
-            data_buffer: SharedBuffer::new(self, base_offset, data_length)?,
-            offsets_buffer: SharedBuffer::new(self, base_offset + data_cap, offsets_length)?,
-            scatter_gather_buffer: SharedBuffer::new(
-                self,
-                base_offset + data_cap + offsets_length,
-                sg_buffers_length,
-            )?,
-            security_context_buffer,
-        })
-    }
-
-    // Reclaim the buffer so that it can be reused.
-    fn free_buffer(&mut self, buffer: UserAddress) -> Result<(), Errno> {
-        // Sanity check that the buffer being freed came from this memory region.
-        if buffer < self.user_address || buffer >= (self.user_address + self.length)? {
-            return error!(EINVAL);
-        }
-        let offset = buffer - self.user_address;
-        self.allocations.remove(&offset);
-        Ok(())
-    }
-}
-
-/// A buffer of memory allocated from a binder process' [`SharedMemory`].
-#[derive(Debug)]
-struct SharedBuffer<'a, T> {
-    memory: &'a SharedMemory,
-    /// Offset into the shared memory region where the buffer begins.
-    offset: usize,
-    /// The length of the buffer in bytes.
-    length: usize,
-    /// The underlying buffer.
-    user_buffer: UserBuffer,
-    // A zero-sized type that satisfies the compiler's need for the struct to reference `T`, which
-    // is used in `as_mut_bytes` and `as_bytes`.
-    _phantom_data: std::marker::PhantomData<T>,
-}
-
-impl<'a, T: IntoBytes> SharedBuffer<'a, T> {
-    /// Creates a new `SharedBuffer`, which represents a sub-region of `memory` starting at `offset`
-    /// bytes, with `length` bytes. Will return EFAULT if the sub-region is not within memory bounds.
-    /// The caller is responsible for ensuring it is not aliased.
-    fn new(memory: &'a SharedMemory, offset: usize, length: usize) -> Result<Self, Errno> {
-        let memory_address = (memory.user_address + offset)?;
-        // Validate that the entire buffer length is valid as well.
-        let _ = (memory_address + length)?;
-        let user_buffer = UserBuffer { address: memory_address, length: length };
-        Ok(Self { memory, offset, length, user_buffer, _phantom_data: std::marker::PhantomData })
-    }
-
-    /// Returns a mutable slice of the buffer.
-    fn as_mut_bytes(&mut self) -> &'a mut [T] {
-        // SAFETY: `offset + length` was bounds-checked by `new`, and the memory region pointed to
-        // was zero-allocated by mapping a new VMO in `allocate_buffers`.
-        unsafe {
-            std::slice::from_raw_parts_mut(
-                self.memory.kernel_address.add(self.offset) as *mut T,
-                self.length / std::mem::size_of::<T>(),
-            )
-        }
-    }
-
-    /// Returns an immutable slice of the buffer.
-    fn as_bytes(&self) -> &'a [T] {
-        // SAFETY: `offset + length` was bounds-checked by `new`, and the memory region pointed to
-        // was zero-allocated by mapping a new VMO in `allocate_buffers`.
-        unsafe {
-            std::slice::from_raw_parts(
-                self.memory.kernel_address.add(self.offset) as *const T,
-                self.length / std::mem::size_of::<T>(),
-            )
-        }
-    }
-
-    /// The userspace address and length of the buffer.
-    fn user_buffer(&self) -> UserBuffer {
-        self.user_buffer
     }
 }
 
@@ -3212,387 +2922,6 @@ impl std::fmt::Display for Handle {
             Handle::ContextManager => f.write_str("0"),
             Handle::Object { index } => f.write_fmt(format_args!("{}", index + 1)),
         }
-    }
-}
-
-/// Abstraction for accessing resources of a given process, whether it is a current process or a
-/// remote one.
-trait ResourceAccessor: std::fmt::Debug {
-    // File related methods.
-    fn close_files(&self, fds: Vec<FdNumber>) -> Result<(), Errno>;
-    fn get_files_with_flags(
-        &self,
-        locked: &mut Locked<ResourceAccessorLevel>,
-        current_task: &CurrentTask,
-        fds: Vec<FdNumber>,
-    ) -> Result<Vec<(FileHandle, FdFlags)>, Errno>;
-    fn add_files_with_flags(
-        &self,
-        locked: &mut Locked<ResourceAccessorLevel>,
-        current_task: &CurrentTask,
-        files: Vec<(FileHandle, FdFlags)>,
-        add_action: &mut dyn FnMut(FdNumber),
-    ) -> Result<Vec<FdNumber>, Errno>;
-
-    // Convenience method to allow passing a MemoryAccessor as a parameter.
-    fn as_memory_accessor(&self) -> Option<&dyn MemoryAccessor>;
-}
-
-/// Return the `ResourceAccessor` to use to access the resources of `task`. If
-/// `remote_resource_accessor` is not empty, the task is remote, and it should be used instead.
-fn get_resource_accessor<'a>(
-    task: &'a dyn ResourceAccessor,
-    remote_resource_accessor: &'a Option<Arc<RemoteResourceAccessor>>,
-) -> &'a dyn ResourceAccessor {
-    if let Some(resource_accessor) = remote_resource_accessor {
-        resource_accessor.as_ref()
-    } else {
-        task
-    }
-}
-
-struct RemoteResourceAccessor {
-    process: zx::Process,
-    process_accessor: fbinder::ProcessAccessorSynchronousProxy,
-    remote_creds: FullCredentials,
-}
-
-impl RemoteResourceAccessor {
-    fn run_file_request(
-        &self,
-        request: fbinder::FileRequest,
-    ) -> Result<fbinder::FileResponse, Errno> {
-        let result = self
-            .process_accessor
-            .file_request(request, zx::MonotonicInstant::INFINITE)
-            .map_err(|_| errno!(ENOENT))?;
-        result.map_err(|e| errno_from_code!(e.into_primitive() as i16))
-    }
-
-    fn with_remote_creds<F, T>(&self, current_task: &CurrentTask, f: F) -> Result<T, Errno>
-    where
-        F: FnOnce() -> Result<T, Errno>,
-    {
-        current_task.override_creds(|temp_creds| *temp_creds = self.remote_creds.clone(), f)
-    }
-}
-
-impl std::fmt::Debug for RemoteResourceAccessor {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("RemoteResourceAccessor").finish()
-    }
-}
-
-struct RemoteMemoryAccessor<'b> {
-    remote_resource_accessor: Arc<RemoteResourceAccessor>,
-    remote_ioctl: &'b RemoteIoctl,
-}
-
-impl<'b> RemoteMemoryAccessor<'b> {
-    fn map_fidl_posix_errno(e: fposix::Errno) -> Errno {
-        errno_from_code!(e.into_primitive() as i16)
-    }
-}
-
-// The maximal size of buffers that zircon supports for process_{read|write}_memory.
-const MAX_PROCESS_READ_WRITE_MEMORY_BUFFER_SIZE: usize = 64 * 1024 * 1024;
-
-impl<'b> MemoryAccessor for RemoteMemoryAccessor<'b> {
-    fn read_memory<'a>(
-        &self,
-        addr: UserAddress,
-        mut unread_bytes: &'a mut [MaybeUninit<u8>],
-    ) -> Result<&'a mut [u8], Errno> {
-        let mut addr = addr.ptr();
-        let unread_bytes_ptr = unread_bytes.as_mut_ptr();
-        let unread_bytes_len = unread_bytes.len();
-        while !unread_bytes.is_empty() {
-            let len = std::cmp::min(unread_bytes.len(), MAX_PROCESS_READ_WRITE_MEMORY_BUFFER_SIZE);
-            let (read_bytes, _unread_bytes) = self
-                .remote_resource_accessor
-                .process
-                .read_memory_uninit(addr, &mut unread_bytes[..len])
-                .map_err(|_| errno!(EINVAL))?;
-            let bytes_count = read_bytes.len();
-            // bytes_count can be less than len when:
-            // - there is a fault
-            // - the reading is done across 2 mappings
-            // To detect this, this only fails when nothing could be read. Otherwise, a new
-            // read will be issued with the remaining of the buffer, and a fault will be
-            // detected when no byte can be read.
-            if bytes_count == 0 {
-                return error!(EFAULT);
-            }
-            addr += bytes_count;
-            // Note that we can't use `_unread_bytes` because it does not extend
-            // to the end of `unread_bytes`. We pass `unread_bytes[..len]` to
-            // `read_memory_uninit` so the returned unread bytes would be
-            // `unread_bytes[bytes_count..len]` vs. `unread_bytes[bytes_count..]`
-            // which is what we want.
-            unread_bytes = &mut unread_bytes[bytes_count..];
-        }
-
-        debug_assert_eq!(unread_bytes.len(), 0);
-        // SAFETY: [MaybeUninit<T>] and [T] have the same layout. All bytes have been
-        // initialized.
-        let bytes = unsafe {
-            std::slice::from_raw_parts_mut(unread_bytes_ptr as *mut u8, unread_bytes_len)
-        };
-        Ok(bytes)
-    }
-
-    fn read_memory_partial_until_null_byte<'a>(
-        &self,
-        _addr: UserAddress,
-        _bytes: &'a mut [MaybeUninit<u8>],
-    ) -> Result<&'a mut [u8], Errno> {
-        error!(ENOTSUP)
-    }
-
-    fn read_memory_partial<'a>(
-        &self,
-        _addr: UserAddress,
-        _bytes: &'a mut [MaybeUninit<u8>],
-    ) -> Result<&'a mut [u8], Errno> {
-        error!(ENOTSUP)
-    }
-
-    fn write_memory(&self, addr: UserAddress, bytes: &[u8]) -> Result<usize, Errno> {
-        // No bytes to write.
-        if bytes.is_empty() {
-            return Ok(0);
-        }
-        // Writes are returned through ioctl, if there is space.
-        let mut ioctl_writes = self.remote_ioctl.ioctl_writes.take();
-        if ioctl_writes.len() < fbinder::MAX_IOCTL_WRITE_COUNT as usize {
-            let last = ioctl_writes.last().unwrap_or(&fbinder::IoctlWrite {
-                address: 0,
-                offset: 0,
-                length: 0,
-            });
-            let offset = last.offset + last.length;
-            ioctl_writes.push(fbinder::IoctlWrite {
-                address: addr.ptr() as u64,
-                offset,
-                length: bytes.len() as u64,
-            });
-            self.remote_ioctl.ioctl_writes.set(ioctl_writes);
-            self.remote_ioctl.vmo.write(bytes, offset).map_err(|_| errno!(ENOENT))?;
-            return Ok(bytes.len());
-        }
-        self.remote_ioctl.ioctl_writes.set(ioctl_writes);
-        // Otherwise use ProcessAccessor to write to the process.
-        if bytes.len() <= fbinder::MAX_WRITE_BYTES as usize {
-            self.remote_resource_accessor.process_accessor.write_bytes(
-                addr.ptr() as u64,
-                bytes,
-                zx::MonotonicInstant::INFINITE,
-            )
-        } else {
-            let vmo = with_zx_name(
-                zx::Vmo::create(bytes.len() as u64).map_err(|_| errno!(EINVAL))?,
-                b"starnix:device_binder",
-            );
-            vmo.write(bytes, 0).map_err(|_| errno!(EFAULT))?;
-            vmo.set_content_size(&(bytes.len() as u64)).map_err(|_| errno!(EINVAL))?;
-            self.remote_resource_accessor.process_accessor.write_memory(
-                addr.ptr() as u64,
-                vmo,
-                zx::MonotonicInstant::INFINITE,
-            )
-        }
-        .map_err(|_| errno!(ENOENT))?
-        .map_err(Self::map_fidl_posix_errno)?;
-        Ok(bytes.len())
-    }
-
-    fn write_memory_partial(&self, _addr: UserAddress, _bytes: &[u8]) -> Result<usize, Errno> {
-        error!(ENOTSUP)
-    }
-
-    fn zero(&self, _addr: UserAddress, _length: usize) -> Result<usize, Errno> {
-        error!(ENOTSUP)
-    }
-}
-
-impl ResourceAccessor for RemoteResourceAccessor {
-    fn close_files(&self, fds: Vec<FdNumber>) -> Result<(), Errno> {
-        for chunk in fds.chunks(fbinder::MAX_REQUEST_COUNT as usize) {
-            self.run_file_request(fbinder::FileRequest {
-                close_requests: Some(chunk.into_iter().map(|fd| fd.raw()).collect()),
-                ..Default::default()
-            })?;
-        }
-        Ok(())
-    }
-
-    fn get_files_with_flags(
-        &self,
-        locked: &mut Locked<ResourceAccessorLevel>,
-        current_task: &CurrentTask,
-        fds: Vec<FdNumber>,
-    ) -> Result<Vec<(FileHandle, FdFlags)>, Errno> {
-        let num_fds = fds.len();
-        let mut files = Vec::with_capacity(num_fds);
-
-        self.with_remote_creds(current_task, || {
-            for chunk in fds.chunks(fbinder::MAX_REQUEST_COUNT as usize) {
-                let response = self.run_file_request(fbinder::FileRequest {
-                    get_requests: Some(chunk.into_iter().map(|fd| fd.raw()).collect()),
-                    ..Default::default()
-                })?;
-                for fbinder::FileHandle { file, flags, .. } in
-                    response.get_responses.into_iter().flatten()
-                {
-                    let Some(flags) = flags else {
-                        log_warn!("Incorrect response to file request. Missing flags.");
-                        return error!(ENOENT);
-                    };
-                    let file = if let Some(file) = file {
-                        new_remote_file(locked, current_task, file, flags.into_fidl())?
-                    } else {
-                        new_null_file(locked, current_task, flags.into_fidl())
-                    };
-                    files.push((file, FdFlags::empty()));
-                }
-            }
-
-            if files.len() != num_fds { error!(ENOENT) } else { Ok(files) }
-        })
-    }
-
-    fn add_files_with_flags(
-        &self,
-        _locked: &mut Locked<ResourceAccessorLevel>,
-        current_task: &CurrentTask,
-        files: Vec<(FileHandle, FdFlags)>,
-        add_action: &mut dyn FnMut(FdNumber),
-    ) -> Result<Vec<FdNumber>, Errno> {
-        let num_files = files.len();
-        let mut fds = Vec::with_capacity(num_files);
-
-        self.with_remote_creds(current_task, || {
-            for chunk in files.chunks(fbinder::MAX_REQUEST_COUNT as usize) {
-                let mut handles = Vec::with_capacity(chunk.len());
-                for (file, _) in chunk.into_iter() {
-                    handles.push(fbinder::FileHandle {
-                        file: file.to_handle(current_task)?,
-                        flags: Some(file.flags().into_fidl()),
-                        ..fbinder::FileHandle::default()
-                    });
-                }
-                let response = self.run_file_request(fbinder::FileRequest {
-                    add_requests: Some(handles),
-                    ..Default::default()
-                })?;
-                for fd in
-                    response.add_responses.into_iter().flatten().map(|fd| FdNumber::from_raw(fd))
-                {
-                    add_action(fd);
-                    fds.push(fd);
-                }
-            }
-
-            if fds.len() != num_files { error!(ENOENT) } else { Ok(fds) }
-        })
-    }
-
-    fn as_memory_accessor(&self) -> Option<&dyn MemoryAccessor> {
-        None
-    }
-}
-
-/// Implementation of `ResourceAccessor` for a local client represented as a `CurrentTask`.
-impl ResourceAccessor for CurrentTask {
-    fn close_files(&self, fds: Vec<FdNumber>) -> Result<(), Errno> {
-        for fd in fds {
-            log_trace!("Closing fd {:?}", fd);
-            self.files.close(fd)?;
-        }
-        Ok(())
-    }
-
-    fn get_files_with_flags(
-        &self,
-        _locked: &mut Locked<ResourceAccessorLevel>,
-        _current_task: &CurrentTask,
-        fds: Vec<FdNumber>,
-    ) -> Result<Vec<(FileHandle, FdFlags)>, Errno> {
-        let mut files = Vec::with_capacity(fds.len());
-        for fd in fds {
-            log_trace!("Getting file {:?} with flags", fd);
-            // TODO: Should we allow O_PATH here?
-            files.push(self.files.get_allowing_opath_with_flags(fd)?);
-        }
-        Ok(files)
-    }
-
-    fn add_files_with_flags(
-        &self,
-        locked: &mut Locked<ResourceAccessorLevel>,
-        _current_task: &CurrentTask,
-        files: Vec<(FileHandle, FdFlags)>,
-        add_action: &mut dyn FnMut(FdNumber),
-    ) -> Result<Vec<FdNumber>, Errno> {
-        let mut fds = Vec::with_capacity(files.len());
-        for (file, flags) in files {
-            log_trace!("Adding file {:?} with flags {:?}", file, flags);
-            let fd = self.add_file(locked, file, flags)?;
-            add_action(fd);
-            fds.push(fd);
-        }
-        Ok(fds)
-    }
-
-    fn as_memory_accessor(&self) -> Option<&dyn MemoryAccessor> {
-        Some(self)
-    }
-}
-
-/// Implementation of `ResourceAccessor` for a local client represented as a `Task`.
-impl ResourceAccessor for Task {
-    fn close_files(&self, fds: Vec<FdNumber>) -> Result<(), Errno> {
-        for fd in fds {
-            log_trace!("Closing fd {:?}", fd);
-            self.files.close(fd)?;
-        }
-        Ok(())
-    }
-
-    fn get_files_with_flags(
-        &self,
-        _locked: &mut Locked<ResourceAccessorLevel>,
-        _current_task: &CurrentTask,
-        fds: Vec<FdNumber>,
-    ) -> Result<Vec<(FileHandle, FdFlags)>, Errno> {
-        let mut files = Vec::with_capacity(fds.len());
-        for fd in fds {
-            log_trace!("Getting file {:?} with flags", fd);
-            // TODO: Should we allow O_PATH here?
-            files.push(self.files.get_allowing_opath_with_flags(fd)?);
-        }
-        Ok(files)
-    }
-
-    fn add_files_with_flags(
-        &self,
-        locked: &mut Locked<ResourceAccessorLevel>,
-        _current_task: &CurrentTask,
-        files: Vec<(FileHandle, FdFlags)>,
-        add_action: &mut dyn FnMut(FdNumber),
-    ) -> Result<Vec<FdNumber>, Errno> {
-        let mut fds = Vec::with_capacity(files.len());
-        for (file, flags) in files {
-            log_trace!("Adding file {:?} with flags {:?}", file, flags);
-            let fd = self.add_file(locked, file, flags)?;
-            add_action(fd);
-            fds.push(fd);
-        }
-        Ok(fds)
-    }
-
-    fn as_memory_accessor(&self) -> Option<&dyn MemoryAccessor> {
-        Some(self)
     }
 }
 
@@ -5310,7 +4639,7 @@ impl SerializedBinderObject {
 ///
 /// This type differentiates between these strategies.
 #[derive(Debug, Eq, PartialEq)]
-enum TransactionError {
+pub(crate) enum TransactionError {
     /// The transaction payload was malformed. Send a [`Command::Error`] command to the issuing
     /// thread.
     Malformed(Errno),
@@ -5358,272 +4687,6 @@ impl From<Errno> for TransactionError {
     }
 }
 
-pub struct BinderFs;
-impl FileSystemOps for BinderFs {
-    fn statfs(
-        &self,
-        _locked: &mut Locked<FileOpsCore>,
-        _fs: &FileSystem,
-        _current_task: &CurrentTask,
-    ) -> Result<statfs, Errno> {
-        Ok(default_statfs(BINDERFS_SUPER_MAGIC))
-    }
-    fn name(&self) -> &'static FsStr {
-        "binder".into()
-    }
-}
-
-const DEFAULT_BINDERS: [&str; 3] = ["binder", "hwbinder", "vndbinder"];
-const FEATURES_DIR: &str = "features";
-const BINDER_CONTROL_DEVICE: &str = "binder-control";
-// Binders with these names cannot be dynamically created using binder-control.
-const RESERVED_NAMES: [&str; 2] = [FEATURES_DIR, BINDER_CONTROL_DEVICE];
-
-#[derive(Debug)]
-struct BinderFsDir {
-    control_device: DeviceType,
-    state: Arc<BinderFsState>,
-}
-
-#[derive(Debug)]
-struct BinderFsState {
-    devices: Mutex<BTreeMap<FsString, DeviceType>>,
-}
-
-impl BinderFsDir {
-    fn new(locked: &mut Locked<Unlocked>, kernel: &Kernel) -> Result<Self, Errno> {
-        let registry = &kernel.device_registry;
-        let mut devices = BTreeMap::<FsString, DeviceType>::default();
-        let remote_device = registry.register_silent_dyn_device(
-            locked,
-            "remote-binder".into(),
-            RemoteBinderDevice {},
-        )?;
-        devices.insert("remote".into(), remote_device.device_type);
-
-        for name in DEFAULT_BINDERS {
-            let device_metadata = registry.register_silent_dyn_device(
-                locked,
-                name.into(),
-                BinderDevice::default(),
-            )?;
-            devices.insert(name.into(), device_metadata.device_type);
-        }
-        let state = Arc::new(BinderFsState { devices: devices.into() });
-
-        let control_device = registry
-            .register_silent_dyn_device(
-                locked,
-                BINDER_CONTROL_DEVICE.into(),
-                BinderControlDevice { state: state.clone() },
-            )?
-            .device_type;
-
-        Ok(Self { control_device, state })
-    }
-}
-
-impl FsNodeOps for BinderFsDir {
-    fs_node_impl_dir_readonly!();
-
-    fn create_file_ops(
-        &self,
-        _locked: &mut Locked<FileOpsCore>,
-        _node: &FsNode,
-        _current_task: &CurrentTask,
-        _flags: OpenFlags,
-    ) -> Result<Box<dyn FileOps>, Errno> {
-        let mut entries = self
-            .state
-            .devices
-            .lock()
-            .keys()
-            .map(|name| VecDirectoryEntry {
-                entry_type: DirectoryEntryType::CHR,
-                name: name.clone(),
-                inode: None,
-            })
-            .collect::<Vec<_>>();
-        entries.push(VecDirectoryEntry {
-            entry_type: DirectoryEntryType::DIR,
-            name: FEATURES_DIR.into(),
-            inode: None,
-        });
-        entries.push(VecDirectoryEntry {
-            entry_type: DirectoryEntryType::CHR,
-            name: BINDER_CONTROL_DEVICE.into(),
-            inode: None,
-        });
-        Ok(VecDirectory::new_file(entries))
-    }
-
-    fn lookup(
-        &self,
-        _locked: &mut Locked<FileOpsCore>,
-        node: &FsNode,
-        _current_task: &CurrentTask,
-        name: &FsStr,
-    ) -> Result<FsNodeHandle, Errno> {
-        if name == FEATURES_DIR {
-            Ok(node.fs().create_node_and_allocate_node_id(
-                BinderFeaturesDir::new(),
-                FsNodeInfo::new(mode!(IFDIR, 0o755), FsCred::root()),
-            ))
-        } else if name == BINDER_CONTROL_DEVICE {
-            let mut info = FsNodeInfo::new(mode!(IFCHR, 0o600), FsCred::root());
-            info.rdev = self.control_device;
-            Ok(node.fs().create_node_and_allocate_node_id(SpecialNode, info))
-        } else if let Some(dev) = self.state.devices.lock().get(name) {
-            let mode = if name == "remote" { mode!(IFCHR, 0o444) } else { mode!(IFCHR, 0o600) };
-            let mut info = FsNodeInfo::new(mode, FsCred::root());
-            info.rdev = *dev;
-            Ok(node.fs().create_node_and_allocate_node_id(SpecialNode, info))
-        } else {
-            error!(ENOENT, format!("looking for {name}"))
-        }
-    }
-}
-
-impl BinderFs {
-    pub fn new_fs(
-        locked: &mut Locked<Unlocked>,
-        current_task: &CurrentTask,
-        options: FileSystemOptions,
-    ) -> Result<FileSystemHandle, Errno> {
-        let kernel = current_task.kernel();
-        let fs = FileSystem::new(locked, kernel, CacheMode::Permanent, BinderFs, options)?;
-        let ops = BinderFsDir::new(locked, kernel)?;
-        let root_ino = fs.allocate_ino();
-        fs.create_root(root_ino, ops);
-        Ok(fs)
-    }
-}
-
-#[derive(Clone)]
-struct BinderControlDevice {
-    state: Arc<BinderFsState>,
-}
-
-impl DeviceOps for BinderControlDevice {
-    fn open(
-        &self,
-        _locked: &mut Locked<FileOpsCore>,
-        _current_task: &CurrentTask,
-        _device_type: DeviceType,
-        _node: &NamespaceNode,
-        _flags: OpenFlags,
-    ) -> Result<Box<dyn FileOps>, Errno> {
-        Ok(Box::new(self.clone()))
-    }
-}
-
-impl FileOps for BinderControlDevice {
-    fileops_impl_dataless!();
-    fileops_impl_nonseekable!();
-    fileops_impl_noop_sync!();
-
-    fn ioctl(
-        &self,
-        locked: &mut Locked<Unlocked>,
-        _file: &FileObject,
-        current_task: &CurrentTask,
-        request: u32,
-        arg: SyscallArg,
-    ) -> Result<SyscallResult, Errno> {
-        if request == uapi::BINDER_CTL_ADD {
-            let user_arg = UserAddress::from(arg);
-            if user_arg.is_null() {
-                return error!(EINVAL);
-            }
-            let user_ref = UserRef::<uapi::binderfs_device>::new(user_arg);
-            let mut request = current_task.read_object(user_ref)?;
-            let name: Vec<u8> =
-                request.name.iter().copied().map(|x| x as u8).take_while(|x| *x != 0).collect();
-            // Invalid names return EACCES.
-            if DirEntry::is_reserved_name((*name).into()) {
-                return error!(EACCES);
-            }
-            if name.contains(&('/' as u8)) {
-                return error!(EACCES);
-            }
-            // Names of already-existing objects return EEXIST.
-            for reserved_name in RESERVED_NAMES {
-                if *name == *reserved_name.as_bytes() {
-                    return error!(EEXIST);
-                }
-            }
-            let mut devices = self.state.devices.lock();
-            match devices.entry(FsString::from(name.clone())) {
-                Entry::Occupied(_) => error!(EEXIST),
-                Entry::Vacant(entry) => {
-                    let kernel = current_task.kernel();
-                    let device_metadata = kernel.device_registry.register_silent_dyn_device(
-                        locked,
-                        (*name).into(),
-                        BinderDevice::default(),
-                    )?;
-                    entry.insert(device_metadata.device_type);
-                    request.major = device_metadata.device_type.major();
-                    request.minor = device_metadata.device_type.minor();
-                    current_task.write_object(user_ref, &request)?;
-                    Ok(SUCCESS)
-                }
-            }
-        } else {
-            error!(EINVAL)
-        }
-    }
-}
-
-struct BinderFeaturesDir {
-    features: BTreeMap<FsString, bool>,
-}
-
-impl BinderFeaturesDir {
-    fn new() -> Self {
-        Self { features: BTreeMap::from([("freeze_notification".into(), false)]) }
-    }
-}
-
-impl FsNodeOps for BinderFeaturesDir {
-    fs_node_impl_dir_readonly!();
-
-    fn create_file_ops(
-        &self,
-        _locked: &mut Locked<FileOpsCore>,
-        _node: &FsNode,
-        _current_task: &CurrentTask,
-        _flags: OpenFlags,
-    ) -> Result<Box<dyn FileOps>, Errno> {
-        let entries = self
-            .features
-            .keys()
-            .map(|name| VecDirectoryEntry {
-                entry_type: DirectoryEntryType::REG,
-                name: name.clone(),
-                inode: None,
-            })
-            .collect::<Vec<_>>();
-        Ok(VecDirectory::new_file(entries))
-    }
-
-    fn lookup(
-        &self,
-        _locked: &mut Locked<FileOpsCore>,
-        node: &FsNode,
-        _current_task: &CurrentTask,
-        name: &FsStr,
-    ) -> Result<FsNodeHandle, Errno> {
-        if let Some(enable) = self.features.get(name) {
-            return Ok(node.fs().create_node_and_allocate_node_id(
-                BytesFile::new_node(if *enable { b"1\n" } else { b"0\n" }.to_vec()),
-                FsNodeInfo::new(mode!(IFREG, 0o444), FsCred::root()),
-            ));
-        }
-        error!(ENOENT, format!("looking for {name}"))
-    }
-}
-
 /// Returns a task in the process keyed by `key`.
 fn get_task_for_thread_group(key: &ThreadGroupKey) -> Option<TempRef<'_, Task>> {
     key.upgrade().and_then(|tg| {
@@ -5638,15 +4701,15 @@ pub mod tests {
     use assert_matches::assert_matches;
     use fidl::endpoints::{RequestStream, ServerEnd, create_endpoints};
     use fidl_fuchsia_starnix_binder::FileFlags;
-    use fuchsia_async as fasync;
     use fuchsia_async::LocalExecutor;
     use futures::TryStreamExt;
     use memoffset::offset_of;
     use starnix_core::mm::PAGE_SIZE;
-    use starnix_core::task::ExitStatus;
+    use starnix_core::task::{ExitStatus, FullCredentials};
     use starnix_core::testing::*;
-    use starnix_core::vfs::{Anon, anon_fs};
+    use starnix_core::vfs::{Anon, FileHandle, anon_fs};
     use starnix_uapi::errors::{EBADF, EINVAL};
+    use {fidl_fuchsia_posix as fposix, fuchsia_async as fasync};
 
     use starnix_uapi::{
         BINDER_TYPE_WEAK_HANDLE, binder_transaction_data__bindgen_ty_1,
@@ -8213,7 +7276,8 @@ pub mod tests {
 
             let thread = std::thread::spawn({
                 let task = current_task.weak_task();
-                let binder_proc = WeakRef::from(&binder_proc);
+                let binder_proc = WeakRef::<BinderProcess>::from(&binder_proc);
+
                 move || {
                     let task = if let Some(task) = task.upgrade() {
                         task
