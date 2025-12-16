@@ -30,7 +30,7 @@ pub struct ShellProcess {
 impl ServerPty {
     /// Creates a new instance of the Pty which must later be spawned.
     pub fn new() -> Result<Self, Error> {
-        ftrace::duration!(c"pty", c"Pty:new");
+        ftrace::duration!("pty", "Pty:new");
         let proxy =
             connect_to_protocol::<DeviceMarker>().context("could not connect to pty service")?;
         Ok(Self { proxy })
@@ -60,7 +60,7 @@ impl ServerPty {
         argv: &[&CStr],
         environ: Option<&[&CStr]>,
     ) -> Result<ShellProcess, Error> {
-        ftrace::duration!(c"pty", c"Pty:spawn");
+        ftrace::duration!("pty", "Pty:spawn");
         let client_pty = self.open_client_pty().await.context("unable to create client_pty")?;
         let process = match fdio::spawn_etc(
             &zx::Job::from_handle(zx::NullableHandle::invalid()),
@@ -112,7 +112,7 @@ impl ServerPty {
 
     /// Sends a message to the shell that the window has been resized.
     pub async fn resize(&self, window_size: WindowSize) -> Result<(), Error> {
-        ftrace::duration!(c"pty", c"Pty:resize");
+        ftrace::duration!("pty", "Pty:resize");
         let Self { proxy } = self;
         let () = proxy
             .set_window_size(&window_size)
@@ -125,7 +125,7 @@ impl ServerPty {
 
     /// Creates a File which is suitable to use as the client side of the Pty.
     async fn open_client_pty(&self) -> Result<OwnedFd, Error> {
-        ftrace::duration!(c"pty", c"Pty:open_client_pty");
+        ftrace::duration!("pty", "Pty:open_client_pty");
         let (client_end, server_end) = fidl::endpoints::create_endpoints();
         let () = self.open_client(server_end).await.context("failed to open client")?;
         let fd =
@@ -138,7 +138,7 @@ impl ServerPty {
     /// connection to the newly created device.
     pub async fn open_client(&self, server_end: ServerEnd<DeviceMarker>) -> Result<(), Error> {
         let Self { proxy } = self;
-        ftrace::duration!(c"pty", c"Pty:open_client");
+        ftrace::duration!("pty", "Pty:open_client");
 
         let () = proxy
             .open_client(0, server_end)
