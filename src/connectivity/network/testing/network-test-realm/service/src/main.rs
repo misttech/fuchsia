@@ -222,7 +222,7 @@ async fn wait_for_any_ip_address(
     let stream =
         fnet_interfaces_ext::event_stream_from_state::<fnet_interfaces_ext::DefaultInterest>(
             &state_proxy,
-            fnet_interfaces_ext::IncludedAddresses::OnlyAssigned,
+            Default::default(),
         )
         .map_err(|e| {
             error!("failed to read interface stream: {:?}", e);
@@ -255,7 +255,7 @@ async fn find_interface_id_and_status(
     let stream =
         fnet_interfaces_ext::event_stream_from_state::<fnet_interfaces_ext::DefaultInterest>(
             &state_proxy,
-            fnet_interfaces_ext::IncludedAddresses::OnlyAssigned,
+            Default::default(),
         )
         .map_err(|e| {
             error!("failed to read interface stream: {:?}", e);

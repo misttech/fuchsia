@@ -236,13 +236,10 @@ impl EventLoop {
             let interface_state = connect_to_protocol::<fnet_interfaces::StateMarker>()
                 .context("network_manager failed to connect to interface state")
                 .unwrap_or_else(|err| exit_with_anyhow_error(err));
-            fnet_interfaces_ext::event_stream_from_state(
-                &interface_state,
-                fnet_interfaces_ext::IncludedAddresses::OnlyAssigned,
-            )
-            .context("get interface event stream")
-            .unwrap_or_else(|err| exit_with_anyhow_error(err))
-            .fuse()
+            fnet_interfaces_ext::event_stream_from_state(&interface_state, Default::default())
+                .context("get interface event stream")
+                .unwrap_or_else(|err| exit_with_anyhow_error(err))
+                .fuse()
         };
 
         let neigh_watcher_stream = {

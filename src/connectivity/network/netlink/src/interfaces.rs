@@ -508,7 +508,10 @@ impl<H: InterfacesHandler, S: Sender<<NetlinkRoute as ProtocolFamily>::InnerMess
         let mut if_event_stream = Box::pin(
             fnet_interfaces_ext::event_stream_from_state(
                 &interfaces_state_proxy,
-                fnet_interfaces_ext::IncludedAddresses::All,
+                fnet_interfaces_ext::WatchOptions {
+                    included_addresses: fnet_interfaces_ext::IncludedAddresses::All,
+                    ..Default::default()
+                },
             )
             .expect("connecting to fuchsia.net.interfaces.State FIDL should succeed"),
         );

@@ -133,7 +133,7 @@ pub async fn get_interface_id<'a>(
     let stream =
         fnet_interfaces_ext::event_stream_from_state::<fnet_interfaces_ext::DefaultInterest>(
             &state_proxy,
-            fnet_interfaces_ext::IncludedAddresses::OnlyAssigned,
+            Default::default(),
         )
         .context("failed to get interface stream")?;
     let interfaces = fnet_interfaces_ext::existing(

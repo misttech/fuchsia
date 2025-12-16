@@ -359,7 +359,7 @@ impl NetstackFacade {
         // support unassigned addresses.
         let stream = fidl_fuchsia_net_interfaces_ext::event_stream_from_state(
             interfaces_state,
-            fidl_fuchsia_net_interfaces_ext::IncludedAddresses::OnlyAssigned,
+            Default::default(),
         )?;
         let response = fidl_fuchsia_net_interfaces_ext::existing(
             stream,

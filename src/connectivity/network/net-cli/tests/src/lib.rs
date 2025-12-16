@@ -504,7 +504,7 @@ async fn add_remove_blackhole() {
     let mut event_stream = std::pin::pin!(
         fnet_interfaces_ext::event_stream_from_state::<fnet_interfaces_ext::AllInterest>(
             &interfaces_state,
-            fnet_interfaces_ext::IncludedAddresses::OnlyAssigned,
+            Default::default(),
         )
         .expect("should succeed")
     );

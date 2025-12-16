@@ -29,7 +29,7 @@ async fn delegated_provisioning_test() {
             .expect("Failed to connect to State proxy");
     let event_stream = fnet_interfaces_ext::event_stream_from_state::<
         fnet_interfaces_ext::DefaultInterest,
-    >(&state_proxy, fnet_interfaces_ext::IncludedAddresses::OnlyAssigned)
+    >(&state_proxy, Default::default())
     .expect("failed to get interface event stream");
 
     info!(

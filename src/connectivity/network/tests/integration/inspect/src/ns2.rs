@@ -157,7 +157,7 @@ async fn inspect_nic(name: &str) {
     let (loopback_props, netdev_props) = fidl_fuchsia_net_interfaces_ext::wait_interface(
         fidl_fuchsia_net_interfaces_ext::event_stream_from_state(
             &interfaces_state,
-            fidl_fuchsia_net_interfaces_ext::IncludedAddresses::OnlyAssigned,
+            Default::default(),
         )
         .expect("failed to create event stream"),
         &mut HashMap::<u64, fidl_fuchsia_net_interfaces_ext::PropertiesAndState<(), _>>::new(),

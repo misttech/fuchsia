@@ -118,10 +118,7 @@ async fn assert_client_acquires_addr<D: DhcpClient>(
         .expect("failed to connect to client fuchsia.net.interfaces/State");
     let event_stream = fidl_fuchsia_net_interfaces_ext::event_stream_from_state::<
         fidl_fuchsia_net_interfaces_ext::AllInterest,
-    >(
-        &client_interface_state,
-        fidl_fuchsia_net_interfaces_ext::IncludedAddresses::OnlyAssigned,
-    )
+    >(&client_interface_state, Default::default())
     .expect("event stream from state");
     let mut event_stream = pin!(event_stream);
 
@@ -1004,10 +1001,7 @@ fn test_dhcp<'a, D: DhcpClient>(
 
         let all_server_macs_and_addrs = stream::iter(server_ifaces)
             .then(|iface| async move {
-                let addrs = iface
-                    .get_addrs(fidl_fuchsia_net_interfaces_ext::IncludedAddresses::OnlyAssigned)
-                    .await
-                    .expect("get addresses");
+                let addrs = iface.get_addrs(Default::default()).await.expect("get addresses");
                 (iface.mac().await, addrs.iter().map(|addr| addr.addr.addr).collect::<Vec<_>>())
             })
             .collect::<Vec<_>>()
@@ -1553,11 +1547,10 @@ async fn forfeit_address_on_conflict<SERVER: Netstack>(name: &str) {
         .realm
         .connect_to_protocol::<fidl_fuchsia_net_interfaces::StateMarker>()
         .expect("failed to connect to client fuchsia.net.interfaces/State");
-    let client_event_stream =
-        fidl_fuchsia_net_interfaces_ext::event_stream_from_state::<
-            fidl_fuchsia_net_interfaces_ext::AllInterest,
-        >(&client_state, fidl_fuchsia_net_interfaces_ext::IncludedAddresses::OnlyAssigned)
-        .expect("event stream from state");
+    let client_event_stream = fidl_fuchsia_net_interfaces_ext::event_stream_from_state::<
+        fidl_fuchsia_net_interfaces_ext::AllInterest,
+    >(&client_state, Default::default())
+    .expect("event stream from state");
     let mut client_event_stream = pin!(client_event_stream);
     let mut properties =
         fidl_fuchsia_net_interfaces_ext::InterfaceState::<(), _>::Unknown(client_iface.id());

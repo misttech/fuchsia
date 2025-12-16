@@ -582,32 +582,31 @@ async fn test_oir_interface_name_conflict_uninstall_existing<M: Manager, N: Nets
     let interface_state = realm
         .connect_to_protocol::<fnet_interfaces::StateMarker>()
         .expect("connect to fuchsia.net.interfaces/State service");
-    let interfaces_stream =
-        fidl_fuchsia_net_interfaces_ext::event_stream_from_state::<
-            fnet_interfaces_ext::DefaultInterest,
-        >(&interface_state, fnet_interfaces_ext::IncludedAddresses::OnlyAssigned)
-        .expect("get interface event stream")
-        .map(|r| r.expect("watcher error"))
-        .filter_map(|event| {
-            futures::future::ready(match event.into_inner() {
-                fidl_fuchsia_net_interfaces::Event::Added(
-                    fidl_fuchsia_net_interfaces::Properties { id, name, .. },
-                )
-                | fidl_fuchsia_net_interfaces::Event::Existing(
-                    fidl_fuchsia_net_interfaces::Properties { id, name, .. },
-                ) => Some(InterfaceWatcherEvent::Added {
-                    id: id.expect("missing interface ID"),
-                    name: name.expect("missing interface name"),
-                }),
-                fidl_fuchsia_net_interfaces::Event::Removed(id) => {
-                    Some(InterfaceWatcherEvent::Removed { id })
-                }
-                fidl_fuchsia_net_interfaces::Event::Idle(fidl_fuchsia_net_interfaces::Empty {})
-                | fidl_fuchsia_net_interfaces::Event::Changed(
-                    fidl_fuchsia_net_interfaces::Properties { .. },
-                ) => None,
-            })
-        });
+    let interfaces_stream = fidl_fuchsia_net_interfaces_ext::event_stream_from_state::<
+        fnet_interfaces_ext::DefaultInterest,
+    >(&interface_state, Default::default())
+    .expect("get interface event stream")
+    .map(|r| r.expect("watcher error"))
+    .filter_map(|event| {
+        futures::future::ready(match event.into_inner() {
+            fidl_fuchsia_net_interfaces::Event::Added(
+                fidl_fuchsia_net_interfaces::Properties { id, name, .. },
+            )
+            | fidl_fuchsia_net_interfaces::Event::Existing(
+                fidl_fuchsia_net_interfaces::Properties { id, name, .. },
+            ) => Some(InterfaceWatcherEvent::Added {
+                id: id.expect("missing interface ID"),
+                name: name.expect("missing interface name"),
+            }),
+            fidl_fuchsia_net_interfaces::Event::Removed(id) => {
+                Some(InterfaceWatcherEvent::Removed { id })
+            }
+            fidl_fuchsia_net_interfaces::Event::Idle(fidl_fuchsia_net_interfaces::Empty {})
+            | fidl_fuchsia_net_interfaces::Event::Changed(
+                fidl_fuchsia_net_interfaces::Properties { .. },
+            ) => None,
+        })
+    });
     let interfaces_stream = futures::stream::select(
         interfaces_stream,
         futures::stream::once(wait_for_netmgr.map(|r| panic!("network manager exited {:?}", r))),
@@ -730,32 +729,31 @@ async fn test_oir_interface_name_conflict_reject<M: Manager, N: Netstack>(
     let interface_state = realm
         .connect_to_protocol::<fnet_interfaces::StateMarker>()
         .expect("connect to fuchsia.net.interfaces/State service");
-    let interfaces_stream =
-        fidl_fuchsia_net_interfaces_ext::event_stream_from_state::<
-            fidl_fuchsia_net_interfaces_ext::DefaultInterest,
-        >(&interface_state, fnet_interfaces_ext::IncludedAddresses::OnlyAssigned)
-        .expect("get interface event stream")
-        .map(|r| r.expect("watcher error"))
-        .filter_map(|event| {
-            futures::future::ready(match event.into_inner() {
-                fidl_fuchsia_net_interfaces::Event::Added(
-                    fidl_fuchsia_net_interfaces::Properties { id, name, .. },
-                )
-                | fidl_fuchsia_net_interfaces::Event::Existing(
-                    fidl_fuchsia_net_interfaces::Properties { id, name, .. },
-                ) => Some(InterfaceWatcherEvent::Added {
-                    id: id.expect("missing interface ID"),
-                    name: name.expect("missing interface name"),
-                }),
-                fidl_fuchsia_net_interfaces::Event::Removed(id) => {
-                    Some(InterfaceWatcherEvent::Removed { id })
-                }
-                fidl_fuchsia_net_interfaces::Event::Idle(fidl_fuchsia_net_interfaces::Empty {})
-                | fidl_fuchsia_net_interfaces::Event::Changed(
-                    fidl_fuchsia_net_interfaces::Properties { .. },
-                ) => None,
-            })
-        });
+    let interfaces_stream = fidl_fuchsia_net_interfaces_ext::event_stream_from_state::<
+        fidl_fuchsia_net_interfaces_ext::DefaultInterest,
+    >(&interface_state, Default::default())
+    .expect("get interface event stream")
+    .map(|r| r.expect("watcher error"))
+    .filter_map(|event| {
+        futures::future::ready(match event.into_inner() {
+            fidl_fuchsia_net_interfaces::Event::Added(
+                fidl_fuchsia_net_interfaces::Properties { id, name, .. },
+            )
+            | fidl_fuchsia_net_interfaces::Event::Existing(
+                fidl_fuchsia_net_interfaces::Properties { id, name, .. },
+            ) => Some(InterfaceWatcherEvent::Added {
+                id: id.expect("missing interface ID"),
+                name: name.expect("missing interface name"),
+            }),
+            fidl_fuchsia_net_interfaces::Event::Removed(id) => {
+                Some(InterfaceWatcherEvent::Removed { id })
+            }
+            fidl_fuchsia_net_interfaces::Event::Idle(fidl_fuchsia_net_interfaces::Empty {})
+            | fidl_fuchsia_net_interfaces::Event::Changed(
+                fidl_fuchsia_net_interfaces::Properties { .. },
+            ) => None,
+        })
+    });
     let interfaces_stream = futures::stream::select(
         interfaces_stream,
         futures::stream::once(wait_for_netmgr.map(|r| panic!("network manager exited {:?}", r))),
@@ -925,11 +923,10 @@ async fn test_wlan_ap_dhcp_server<M: Manager, N: Netstack>(name: &str) {
         let interface_state = realm
             .connect_to_protocol::<fnet_interfaces::StateMarker>()
             .expect("connect to fuchsia.net.interfaces/State service");
-        let event_stream =
-            fidl_fuchsia_net_interfaces_ext::event_stream_from_state::<
-                fidl_fuchsia_net_interfaces_ext::DefaultInterest,
-            >(&interface_state, fnet_interfaces_ext::IncludedAddresses::OnlyAssigned)
-            .expect("get interface event stream");
+        let event_stream = fidl_fuchsia_net_interfaces_ext::event_stream_from_state::<
+            fidl_fuchsia_net_interfaces_ext::DefaultInterest,
+        >(&interface_state, Default::default())
+        .expect("get interface event stream");
         let mut event_stream = pin!(event_stream);
         let mut if_map =
             HashMap::<u64, fidl_fuchsia_net_interfaces_ext::PropertiesAndState<(), _>>::new();
@@ -2906,10 +2903,7 @@ async fn dhcpv4_client_restarts_after_delay() {
 
                 let if_event_stream = fnet_interfaces_ext::event_stream_from_state::<
                     fnet_interfaces_ext::DefaultInterest,
-                >(
-                    client_state,
-                    fnet_interfaces_ext::IncludedAddresses::OnlyAssigned,
-                )
+                >(client_state, Default::default())
                 .expect("event stream from state");
                 let mut if_event_stream = pin!(if_event_stream);
 
@@ -3081,32 +3075,31 @@ async fn add_blackhole_interface<M: Manager>(name: &str) {
     let interface_state = realm
         .connect_to_protocol::<fnet_interfaces::StateMarker>()
         .expect("connect to fuchsia.net.interfaces/State service");
-    let interfaces_stream =
-        fidl_fuchsia_net_interfaces_ext::event_stream_from_state::<
-            fidl_fuchsia_net_interfaces_ext::DefaultInterest,
-        >(&interface_state, fnet_interfaces_ext::IncludedAddresses::OnlyAssigned)
-        .expect("get interface event stream")
-        .map(|r| r.expect("watcher error"))
-        .filter_map(|event| {
-            futures::future::ready(match event.into_inner() {
-                fidl_fuchsia_net_interfaces::Event::Added(
-                    fidl_fuchsia_net_interfaces::Properties { id, name, .. },
-                )
-                | fidl_fuchsia_net_interfaces::Event::Existing(
-                    fidl_fuchsia_net_interfaces::Properties { id, name, .. },
-                ) => Some(InterfaceWatcherEvent::Added {
-                    id: id.expect("missing interface ID"),
-                    name: name.expect("missing interface name"),
-                }),
-                fidl_fuchsia_net_interfaces::Event::Removed(id) => {
-                    Some(InterfaceWatcherEvent::Removed { id })
-                }
-                fidl_fuchsia_net_interfaces::Event::Idle(fidl_fuchsia_net_interfaces::Empty {})
-                | fidl_fuchsia_net_interfaces::Event::Changed(
-                    fidl_fuchsia_net_interfaces::Properties { .. },
-                ) => None,
-            })
-        });
+    let interfaces_stream = fidl_fuchsia_net_interfaces_ext::event_stream_from_state::<
+        fidl_fuchsia_net_interfaces_ext::DefaultInterest,
+    >(&interface_state, Default::default())
+    .expect("get interface event stream")
+    .map(|r| r.expect("watcher error"))
+    .filter_map(|event| {
+        futures::future::ready(match event.into_inner() {
+            fidl_fuchsia_net_interfaces::Event::Added(
+                fidl_fuchsia_net_interfaces::Properties { id, name, .. },
+            )
+            | fidl_fuchsia_net_interfaces::Event::Existing(
+                fidl_fuchsia_net_interfaces::Properties { id, name, .. },
+            ) => Some(InterfaceWatcherEvent::Added {
+                id: id.expect("missing interface ID"),
+                name: name.expect("missing interface name"),
+            }),
+            fidl_fuchsia_net_interfaces::Event::Removed(id) => {
+                Some(InterfaceWatcherEvent::Removed { id })
+            }
+            fidl_fuchsia_net_interfaces::Event::Idle(fidl_fuchsia_net_interfaces::Empty {})
+            | fidl_fuchsia_net_interfaces::Event::Changed(
+                fidl_fuchsia_net_interfaces::Properties { .. },
+            ) => None,
+        })
+    });
     let interfaces_stream = futures::stream::select(
         interfaces_stream,
         futures::stream::once(wait_for_netmgr.map(|r| panic!("network manager exited {:?}", r))),

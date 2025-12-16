@@ -45,7 +45,7 @@ async fn create_blackhole_interface() {
     let mut event_stream = std::pin::pin!(
         fnet_interfaces_ext::event_stream_from_state::<fnet_interfaces_ext::DefaultInterest>(
             &interfaces_state,
-            fnet_interfaces_ext::IncludedAddresses::OnlyAssigned,
+            Default::default(),
         )
         .expect("create watcher event stream")
     );

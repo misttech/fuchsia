@@ -383,7 +383,7 @@ async fn do_if<C: NetCliDepsConnector>(
                 connect_with_context::<finterfaces::StateMarker, _>(connector).await?;
             let stream = finterfaces_ext::event_stream_from_state::<finterfaces_ext::AllInterest>(
                 &interface_state,
-                finterfaces_ext::IncludedAddresses::OnlyAssigned,
+                Default::default(),
             )?;
             let mut response = finterfaces_ext::existing(
                 stream,
@@ -429,7 +429,7 @@ async fn do_if<C: NetCliDepsConnector>(
                 connect_with_context::<finterfaces::StateMarker, _>(connector).await?;
             let stream = finterfaces_ext::event_stream_from_state::<finterfaces_ext::AllInterest>(
                 &interface_state,
-                finterfaces_ext::IncludedAddresses::OnlyAssigned,
+                Default::default(),
             )?;
             let response = finterfaces_ext::existing(
                 stream,
@@ -740,7 +740,7 @@ async fn do_if<C: NetCliDepsConnector>(
                 let assigned_addr = finterfaces_ext::wait_interface_with_id(
                     finterfaces_ext::event_stream_from_state::<finterfaces_ext::AllInterest>(
                         &interfaces_state,
-                        finterfaces_ext::IncludedAddresses::OnlyAssigned,
+                        Default::default(),
                     )?,
                     &mut state,
                     |finterfaces_ext::PropertiesAndState { properties, state: _ }| {
@@ -785,9 +785,7 @@ async fn do_if<C: NetCliDepsConnector>(
                     connect_with_context::<finterfaces::StateMarker, _>(connector).await?;
                 let stream = finterfaces_ext::event_stream_from_state::<
                     finterfaces_ext::AllInterest,
-                >(
-                    &interface_state, finterfaces_ext::IncludedAddresses::OnlyAssigned
-                )?;
+                >(&interface_state, Default::default())?;
                 let response = finterfaces_ext::existing(stream, HashMap::new()).await?;
                 Ok::<HashMap<String, u64>, Error>(
                     response

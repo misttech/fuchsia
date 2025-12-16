@@ -171,7 +171,7 @@ async fn update_address_lifetimes<N: Netstack>(name: &str) {
         .expect("connect to protocol");
     let event_stream = fidl_fuchsia_net_interfaces_ext::event_stream_from_state::<
         fnet_interfaces_ext::AllInterest,
-    >(&interface_state, fnet_interfaces_ext::IncludedAddresses::OnlyAssigned)
+    >(&interface_state, Default::default())
     .expect("event stream from state")
     .fuse();
     let mut event_stream = pin!(event_stream);
@@ -351,10 +351,7 @@ async fn add_address_sets_correct_valid_until<N: Netstack>(name: &str) {
         .expect("connect to protocol");
     let event_stream = fidl_fuchsia_net_interfaces_ext::event_stream_from_state::<
         fidl_fuchsia_net_interfaces_ext::AllInterest,
-    >(
-        &interface_state,
-        fidl_fuchsia_net_interfaces_ext::IncludedAddresses::OnlyAssigned,
-    )
+    >(&interface_state, Default::default())
     .expect("event stream from state")
     .fuse();
     let event_stream = pin!(event_stream);
@@ -830,7 +827,7 @@ async fn race_address_and_interface_removal<N: Netstack>(name: &str) {
 
     let watcher = fidl_fuchsia_net_interfaces_ext::event_stream_from_state::<
         fidl_fuchsia_net_interfaces_ext::DefaultInterest,
-    >(&interfaces_state, fnet_interfaces_ext::IncludedAddresses::OnlyAssigned)
+    >(&interfaces_state, Default::default())
     .expect("create event stream")
     .map(|r| r.expect("watcher error"))
     .fuse();
@@ -992,7 +989,7 @@ async fn create_realm_and_interface<'a, N: Netstack>(
     let interfaces = fidl_fuchsia_net_interfaces_ext::existing(
         fidl_fuchsia_net_interfaces_ext::event_stream_from_state::<
             fidl_fuchsia_net_interfaces_ext::DefaultInterest,
-        >(&interface_state, fnet_interfaces_ext::IncludedAddresses::OnlyAssigned)
+        >(&interface_state, Default::default())
         .expect("create watcher event stream"),
         HashMap::<_, fidl_fuchsia_net_interfaces_ext::PropertiesAndState<(), _>>::new(),
     )
@@ -1124,7 +1121,7 @@ async fn add_address_and_remove<N: Netstack>(
 
     let event_stream = fidl_fuchsia_net_interfaces_ext::event_stream_from_state::<
         fidl_fuchsia_net_interfaces_ext::DefaultInterest,
-    >(&interface_state, fnet_interfaces_ext::IncludedAddresses::OnlyAssigned)
+    >(&interface_state, Default::default())
     .expect("event stream from state");
     let mut event_stream = pin!(event_stream);
     let mut properties = fidl_fuchsia_net_interfaces_ext::InterfaceState::<(), _>::Unknown(id);
@@ -1227,7 +1224,7 @@ async fn add_address_and_remove<N: Netstack>(
     fnet_interfaces_ext::wait_interface_with_id(
         fnet_interfaces_ext::event_stream_from_state::<fnet_interfaces_ext::DefaultInterest>(
             &interface_state,
-            fnet_interfaces_ext::IncludedAddresses::OnlyAssigned,
+            Default::default(),
         )
         .expect("event stream from state"),
         &mut fnet_interfaces_ext::InterfaceState::Unknown(id),
@@ -1320,7 +1317,7 @@ async fn add_address_and_detach<N: Netstack>(
     let () = fidl_fuchsia_net_interfaces_ext::wait_interface_with_id(
         fidl_fuchsia_net_interfaces_ext::event_stream_from_state::<
             fidl_fuchsia_net_interfaces_ext::DefaultInterest,
-        >(&interface_state, fnet_interfaces_ext::IncludedAddresses::OnlyAssigned)
+        >(&interface_state, Default::default())
         .expect("get interface event stream"),
         &mut properties,
         |iface| {
@@ -1506,7 +1503,7 @@ async fn device_control_create_interface<N: Netstack>(name: &str) {
     let interface_state = fidl_fuchsia_net_interfaces_ext::existing(
         fidl_fuchsia_net_interfaces_ext::event_stream_from_state::<
             fidl_fuchsia_net_interfaces_ext::DefaultInterest,
-        >(&interfaces_state, fnet_interfaces_ext::IncludedAddresses::OnlyAssigned)
+        >(&interfaces_state, Default::default())
         .expect("create watcher event stream"),
         fidl_fuchsia_net_interfaces_ext::InterfaceState::<(), _>::Unknown(iface_id),
     )
@@ -1573,7 +1570,7 @@ async fn device_control_owns_interfaces_lifetimes<N: Netstack>(name: &str, detac
         .expect("connect to protocol");
     let watcher = fidl_fuchsia_net_interfaces_ext::event_stream_from_state::<
         fidl_fuchsia_net_interfaces_ext::DefaultInterest,
-    >(&interfaces_state, fnet_interfaces_ext::IncludedAddresses::OnlyAssigned)
+    >(&interfaces_state, Default::default())
     .expect("create event stream")
     .map(|r| r.expect("watcher error"))
     .fuse();
@@ -1966,7 +1963,7 @@ async fn device_control_closes_on_device_close<N: Netstack>(name: &str) {
         .expect("connect to protocol");
     let watcher = fidl_fuchsia_net_interfaces_ext::event_stream_from_state::<
         fnet_interfaces_ext::DefaultInterest,
-    >(&interfaces_state, fnet_interfaces_ext::IncludedAddresses::OnlyAssigned)
+    >(&interfaces_state, Default::default())
     .expect("create watcher");
     let mut watcher = pin!(watcher);
 
@@ -2293,7 +2290,7 @@ async fn control_enable_disable<N: Netstack>(name: &str) {
         .expect("connect to protocol");
     let watcher = fidl_fuchsia_net_interfaces_ext::event_stream_from_state::<
         fidl_fuchsia_net_interfaces_ext::DefaultInterest,
-    >(&interfaces_state, fnet_interfaces_ext::IncludedAddresses::OnlyAssigned)
+    >(&interfaces_state, Default::default())
     .expect("create event stream")
     .map(|r| r.expect("watcher error"))
     .fuse();
@@ -2385,7 +2382,7 @@ async fn link_state_interface_state_interaction<N: Netstack>(name: &str) {
         .expect("connect to protocol");
     let watcher = fidl_fuchsia_net_interfaces_ext::event_stream_from_state::<
         fidl_fuchsia_net_interfaces_ext::AllInterest,
-    >(&interfaces_state, fnet_interfaces_ext::IncludedAddresses::OnlyAssigned)
+    >(&interfaces_state, Default::default())
     .expect("create event stream")
     .map(|r| r.expect("watcher error"))
     .fuse();
@@ -2787,7 +2784,7 @@ async fn control_owns_interface_lifetime<N: Netstack>(name: &str, detach: bool) 
         .expect("connect to protocol");
     let watcher = fidl_fuchsia_net_interfaces_ext::event_stream_from_state::<
         fidl_fuchsia_net_interfaces_ext::DefaultInterest,
-    >(&interfaces_state, fnet_interfaces_ext::IncludedAddresses::OnlyAssigned)
+    >(&interfaces_state, Default::default())
     .expect("create event stream")
     .map(|r| r.expect("watcher error"))
     .fuse();
@@ -3807,7 +3804,13 @@ async fn temporary_address_generation<N: Netstack>(name: &str) {
     fnet_interfaces_ext::wait_interface_with_id(
         fidl_fuchsia_net_interfaces_ext::event_stream_from_state::<
             fidl_fuchsia_net_interfaces_ext::AllInterest,
-        >(&interface_state, fidl_fuchsia_net_interfaces_ext::IncludedAddresses::All)
+        >(
+            &interface_state,
+            fidl_fuchsia_net_interfaces_ext::WatchOptions {
+                included_addresses: fidl_fuchsia_net_interfaces_ext::IncludedAddresses::All,
+                ..Default::default()
+            },
+        )
         .expect("error getting interface state event stream"),
         &mut fnet_interfaces_ext::InterfaceState::<(), _>::Unknown(iface.id()),
         |iface| {

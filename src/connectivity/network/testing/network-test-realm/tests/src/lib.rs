@@ -96,7 +96,7 @@ async fn wait_interface_online_status<'a>(
     let () = fnet_interfaces_ext::wait_interface_with_id(
         fnet_interfaces_ext::event_stream_from_state::<fnet_interfaces_ext::DefaultInterest>(
             state_proxy,
-            fnet_interfaces_ext::IncludedAddresses::OnlyAssigned,
+            Default::default(),
         )
         .expect("watcher creation failed"),
         &mut fnet_interfaces_ext::InterfaceState::<(), _>::Unknown(id),
@@ -420,7 +420,7 @@ async fn add_interface(
         let ifaces_state = fnet_interfaces_ext::existing(
             fnet_interfaces_ext::event_stream_from_state::<fnet_interfaces_ext::DefaultInterest>(
                 &hermetic_network_state_proxy,
-                fnet_interfaces_ext::IncludedAddresses::OnlyAssigned,
+                Default::default(),
             )
             .expect("failed getting interfaces event stream"),
             HashMap::<u64, fnet_interfaces_ext::PropertiesAndState<(), _>>::new(),

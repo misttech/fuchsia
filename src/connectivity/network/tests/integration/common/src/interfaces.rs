@@ -36,9 +36,7 @@ pub async fn wait_for_non_loopback_interface_up<
         fidl_fuchsia_net_interfaces_ext::wait_interface(
             fidl_fuchsia_net_interfaces_ext::event_stream_from_state::<
                 fidl_fuchsia_net_interfaces_ext::DefaultInterest,
-            >(
-                interface_state, fidl_fuchsia_net_interfaces_ext::IncludedAddresses::OnlyAssigned,
-            )?,
+            >(interface_state, Default::default(),)?,
             &mut if_map,
             |if_map| {
                 if_map.iter().find_map(
@@ -226,9 +224,7 @@ where
     fidl_fuchsia_net_interfaces_ext::wait_interface_with_id(
         fidl_fuchsia_net_interfaces_ext::event_stream_from_state::<
             fidl_fuchsia_net_interfaces_ext::AllInterest,
-        >(
-            &interfaces_state, fidl_fuchsia_net_interfaces_ext::IncludedAddresses::OnlyAssigned
-        )
+        >(&interfaces_state, Default::default())
         .context("get interface event stream")?,
         &mut state,
         |properties_and_state| predicate(&properties_and_state.properties.addresses),
@@ -248,9 +244,7 @@ pub async fn wait_for_online(
     fidl_fuchsia_net_interfaces_ext::wait_interface_with_id(
         fidl_fuchsia_net_interfaces_ext::event_stream_from_state::<
             fidl_fuchsia_net_interfaces_ext::DefaultInterest,
-        >(
-            &interfaces_state, fidl_fuchsia_net_interfaces_ext::IncludedAddresses::OnlyAssigned
-        )
+        >(&interfaces_state, Default::default())
         .context("get interface event stream")?,
         &mut state,
         |properties_and_state| {

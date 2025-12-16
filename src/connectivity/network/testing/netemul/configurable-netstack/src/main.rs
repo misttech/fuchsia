@@ -205,7 +205,7 @@ async fn configure_interface(
     fnet_interfaces_ext::wait_interface_with_id(
         fnet_interfaces_ext::event_stream_from_state::<fnet_interfaces_ext::DefaultInterest>(
             &interface_state,
-            fnet_interfaces_ext::IncludedAddresses::OnlyAssigned,
+            Default::default(),
         )
         .context("get interface state watcher events")?,
         &mut fnet_interfaces_ext::InterfaceState::<(), _>::Unknown(nicid),
@@ -223,7 +223,7 @@ async fn configure_interface(
         let mut addresses = fnet_interfaces_ext::wait_interface_with_id(
             fnet_interfaces_ext::event_stream_from_state::<fnet_interfaces_ext::DefaultInterest>(
                 &interface_state,
-                fnet_interfaces_ext::IncludedAddresses::OnlyAssigned,
+                Default::default(),
             )
             .context("get interface state watcher events")?,
             &mut fnet_interfaces_ext::InterfaceState::<(), _>::Unknown(nicid),

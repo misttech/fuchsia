@@ -105,10 +105,7 @@ async fn disable_interface_loopback<N: Netstack>(name: &str) {
 
     let stream = fidl_fuchsia_net_interfaces_ext::event_stream_from_state::<
         fidl_fuchsia_net_interfaces_ext::DefaultInterest,
-    >(
-        &interface_state,
-        fidl_fuchsia_net_interfaces_ext::IncludedAddresses::OnlyAssigned,
-    )
+    >(&interface_state, Default::default())
     .expect("get interface event stream")
     .map_ok(|e| e.into_inner());
     let mut stream = pin!(stream);

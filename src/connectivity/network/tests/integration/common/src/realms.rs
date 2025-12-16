@@ -1081,11 +1081,8 @@ impl TestRealmExt for netemul::TestRealm<'_> {
             .context("failed to connect to fuchsia.net.interfaces/State")?;
 
         let properties = fnet_interfaces_ext::existing(
-            fnet_interfaces_ext::event_stream_from_state(
-                &interface_state,
-                fnet_interfaces_ext::IncludedAddresses::OnlyAssigned,
-            )
-            .expect("create watcher event stream"),
+            fnet_interfaces_ext::event_stream_from_state(&interface_state, Default::default())
+                .expect("create watcher event stream"),
             HashMap::<u64, fnet_interfaces_ext::PropertiesAndState<(), _>>::new(),
         )
         .await

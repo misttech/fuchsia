@@ -125,7 +125,7 @@ async fn install_and_get_stable_ipv6_addrs_for_endpoint<N: Netstack>(
     let ipv6_addresses = fnet_interfaces_ext::wait_interface_with_id(
         fnet_interfaces_ext::event_stream_from_state::<fnet_interfaces_ext::DefaultInterest>(
             &interface_state,
-            fnet_interfaces_ext::IncludedAddresses::OnlyAssigned,
+            Default::default(),
         )
         .expect("creating interface event stream"),
         &mut state,
@@ -487,8 +487,7 @@ async fn add_address_for_dad<
             .expect("Control.AddAddress FIDL error");
         // `Box::pin` rather than `pin_mut!` allows `get_addr_fut` to be
         // moved out of this scope.
-        let mut get_addrs_fut =
-            Box::pin(iface.get_addrs(fnet_interfaces_ext::IncludedAddresses::OnlyAssigned));
+        let mut get_addrs_fut = Box::pin(iface.get_addrs(Default::default()));
         let get_addrs_poll = futures::poll!(&mut get_addrs_fut);
         let ns_message =
             if interface_up { Some(expect_dad_neighbor_solicitation(fake_ep).await) } else { None };
@@ -633,8 +632,7 @@ async fn duplicate_address_detection<N: Netstack>(name: &str) {
 
     assert_dad_success(&mut state_stream).await;
 
-    let addresses =
-        iface.get_addrs(fnet_interfaces_ext::IncludedAddresses::OnlyAssigned).await.expect("addrs");
+    let addresses = iface.get_addrs(Default::default()).await.expect("addrs");
     assert!(
         addresses.iter().any(
             |&fnet_interfaces_ext::Address {
@@ -1017,7 +1015,10 @@ async fn slaac_regeneration_after_dad_failure<N: Netstack>(name: &str) {
         fnet_interfaces_ext::wait_interface_with_id(
             fnet_interfaces_ext::event_stream_from_state::<fnet_interfaces_ext::AllInterest>(
                 &interface_state,
-                fnet_interfaces_ext::IncludedAddresses::All,
+                fnet_interfaces_ext::WatchOptions {
+                    included_addresses: fnet_interfaces_ext::IncludedAddresses::All,
+                    ..Default::default()
+                },
             )
             .expect("error getting interfaces state event stream"),
             &mut state,
@@ -1342,7 +1343,7 @@ async fn sending_ra_with_autoconf_flag_triggers_slaac<N: Netstack>(name: &str) {
     fnet_interfaces_ext::wait_interface_with_id(
         fnet_interfaces_ext::event_stream_from_state::<fnet_interfaces_ext::DefaultInterest>(
             &interfaces_state,
-            fnet_interfaces_ext::IncludedAddresses::OnlyAssigned,
+            Default::default(),
         )
         .expect("creating interface event stream"),
         &mut fnet_interfaces_ext::InterfaceState::<(), _>::Unknown(iface.id()),

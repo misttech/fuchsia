@@ -438,10 +438,7 @@ async fn virtualization<N: Netstack>(name: &str, sub_name: &str, steps: &[Step])
                     let bridge_id = fnet_interfaces_ext::wait_interface(
                         fnet_interfaces_ext::event_stream_from_state::<
                             fidl_fuchsia_net_interfaces_ext::DefaultInterest,
-                        >(
-                            &host_interfaces_state,
-                            fnet_interfaces_ext::IncludedAddresses::OnlyAssigned,
-                        )
+                        >(&host_interfaces_state, Default::default())
                         .expect("initialize interface event stream"),
                         &mut interfaces_map,
                         |interfaces_map| {

@@ -219,7 +219,7 @@ async fn interface_disruption<N: Netstack>(name: &str, ip_supported: IpSupported
         let fnet::Subnet { addr, prefix_len: _ } = fnet_interfaces_ext::wait_interface_with_id(
             fnet_interfaces_ext::event_stream_from_state::<fnet_interfaces_ext::DefaultInterest>(
                 &client_interfaces_state,
-                fnet_interfaces_ext::IncludedAddresses::OnlyAssigned,
+                Default::default(),
             )
             .expect("get interface event stream"),
             &mut state,

@@ -899,11 +899,21 @@ where
 }
 
 /// The kind of addresses included from the watcher.
+#[derive(Default)]
 pub enum IncludedAddresses {
     /// All addresses are returned from the watcher.
     All,
     /// Only assigned addresses are returned rom the watcher.
+    #[default]
     OnlyAssigned,
+}
+
+/// The options given to [`event_stream_from_state`] for interface state
+/// observation.
+#[derive(Default)]
+pub struct WatchOptions {
+    /// The addresses returned from the watcher.
+    pub included_addresses: IncludedAddresses,
 }
 
 /// Initialize a watcher with interest in all fields and return its events as a
@@ -913,12 +923,13 @@ pub enum IncludedAddresses {
 /// just assigned addresses.
 pub fn event_stream_from_state<I: FieldInterests>(
     interface_state: &fnet_interfaces::StateProxy,
-    included_addresses: IncludedAddresses,
+    options: WatchOptions,
 ) -> Result<
     impl Stream<Item = Result<EventWithInterest<I>, fidl::Error>> + use<I>,
     WatcherCreationError,
 > {
     let (watcher, server) = ::fidl::endpoints::create_proxy::<fnet_interfaces::WatcherMarker>();
+    let WatchOptions { included_addresses } = options;
     let () = interface_state
         .get_watcher(
             &fnet_interfaces::WatcherOptions {

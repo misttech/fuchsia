@@ -1058,7 +1058,7 @@ async fn udp_send_msg_preflight_autogen_addr_invalidation<N: Netstack>(name: &st
     let autogen_address = fnet_interfaces_ext::wait_interface_with_id(
         fnet_interfaces_ext::event_stream_from_state::<fnet_interfaces_ext::DefaultInterest>(
             &interfaces_state,
-            fnet_interfaces_ext::IncludedAddresses::OnlyAssigned,
+            Default::default(),
         )
         .expect("create event stream"),
         &mut fnet_interfaces_ext::InterfaceState::<(), _>::Unknown(iface.id()),
@@ -1102,7 +1102,7 @@ async fn udp_send_msg_preflight_autogen_addr_invalidation<N: Netstack>(name: &st
     fnet_interfaces_ext::wait_interface_with_id(
         fnet_interfaces_ext::event_stream_from_state::<fnet_interfaces_ext::DefaultInterest>(
             &interfaces_state,
-            fnet_interfaces_ext::IncludedAddresses::OnlyAssigned,
+            Default::default(),
         )
         .expect("create event stream"),
         &mut fnet_interfaces_ext::InterfaceState::<(), _>::Unknown(iface.id()),
@@ -3241,7 +3241,7 @@ async fn get_bound_device_errors_after_device_deleted<N: Netstack>(name: &str) {
     let stream =
         fnet_interfaces_ext::event_stream_from_state::<fnet_interfaces_ext::DefaultInterest>(
             &interface_state,
-            fnet_interfaces_ext::IncludedAddresses::OnlyAssigned,
+            Default::default(),
         )
         .expect("error getting interface state event stream");
     let mut stream = pin!(stream);

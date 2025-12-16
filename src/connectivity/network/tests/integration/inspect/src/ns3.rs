@@ -953,7 +953,7 @@ async fn get_loopback_id_and_name(realm: &netemul::TestRealm<'_>) -> (u64, Strin
     fnet_interfaces_ext::wait_interface(
         fnet_interfaces_ext::event_stream_from_state::<fnet_interfaces_ext::DefaultInterest>(
             &interfaces_state,
-            fnet_interfaces_ext::IncludedAddresses::OnlyAssigned,
+            Default::default(),
         )
         .expect("failed to create event stream"),
         &mut HashMap::<u64, fnet_interfaces_ext::PropertiesAndState<(), _>>::new(),

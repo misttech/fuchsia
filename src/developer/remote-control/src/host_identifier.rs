@@ -78,15 +78,13 @@ impl HostIdentifier {
 #[async_trait::async_trait]
 impl Identifier for HostIdentifier {
     async fn identify(&self) -> Result<rcs::IdentifyHostResponse, rcs::IdentifyHostError> {
-        let stream =
-            fnet_interfaces_ext::event_stream_from_state::<fnet_interfaces_ext::DefaultInterest>(
-                &self.interface_state_proxy,
-                fnet_interfaces_ext::IncludedAddresses::OnlyAssigned,
-            )
-            .map_err(|e| {
-                error!(e:%; "Getting interface watcher failed");
-                rcs::IdentifyHostError::ListInterfacesFailed
-            })?;
+        let stream = fnet_interfaces_ext::event_stream_from_state::<
+            fnet_interfaces_ext::DefaultInterest,
+        >(&self.interface_state_proxy, Default::default())
+        .map_err(|e| {
+            error!(e:%; "Getting interface watcher failed");
+            rcs::IdentifyHostError::ListInterfacesFailed
+        })?;
         let ilist = fnet_interfaces_ext::existing(
             stream,
             HashMap::<u64, fnet_interfaces_ext::PropertiesAndState<(), _>>::new(),

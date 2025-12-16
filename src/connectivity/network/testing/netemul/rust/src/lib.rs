@@ -647,7 +647,7 @@ impl<'a> TestRealm<'a> {
         let () = fnet_interfaces_ext::wait_interface_with_id(
             fnet_interfaces_ext::event_stream_from_state::<fnet_interfaces_ext::DefaultInterest>(
                 &interface_state,
-                fnet_interfaces_ext::IncludedAddresses::OnlyAssigned,
+                Default::default(),
             )?,
             &mut fnet_interfaces_ext::InterfaceState::<(), _>::Unknown(id),
             |properties_and_state| properties_and_state.properties.online.then_some(()),
@@ -953,11 +953,8 @@ impl<'a> TestRealm<'a> {
         let interface_state = self
             .connect_to_protocol::<fnet_interfaces::StateMarker>()
             .context("connect to protocol")?;
-        fnet_interfaces_ext::event_stream_from_state::<I>(
-            &interface_state,
-            fnet_interfaces_ext::IncludedAddresses::OnlyAssigned,
-        )
-        .context("get interface event stream")
+        fnet_interfaces_ext::event_stream_from_state::<I>(&interface_state, Default::default())
+            .context("get interface event stream")
     }
 
     /// Gets the table ID for the main route table.
@@ -1791,7 +1788,10 @@ impl<'a> TestInterface<'a> {
     ) -> Result<fnet_interfaces_ext::Properties<fnet_interfaces_ext::AllInterest>> {
         let interface_state = self.realm.connect_to_protocol::<fnet_interfaces::StateMarker>()?;
         let properties = fnet_interfaces_ext::existing(
-            fnet_interfaces_ext::event_stream_from_state(&interface_state, included_addresses)?,
+            fnet_interfaces_ext::event_stream_from_state(
+                &interface_state,
+                fnet_interfaces_ext::WatchOptions { included_addresses, ..Default::default() },
+            )?,
             fnet_interfaces_ext::InterfaceState::<(), _>::Unknown(self.id),
         )
         .await
@@ -1821,14 +1821,14 @@ impl<'a> TestInterface<'a> {
     /// Gets the interface's device name.
     pub async fn get_interface_name(&self) -> Result<String> {
         let fnet_interfaces_ext::Properties { name, .. } =
-            self.get_properties(fnet_interfaces_ext::IncludedAddresses::OnlyAssigned).await?;
+            self.get_properties(Default::default()).await?;
         Ok(name)
     }
 
     /// Gets the interface's port class.
     pub async fn get_port_class(&self) -> Result<fnet_interfaces_ext::PortClass> {
         let fnet_interfaces_ext::Properties { port_class, .. } =
-            self.get_properties(fnet_interfaces_ext::IncludedAddresses::OnlyAssigned).await?;
+            self.get_properties(Default::default()).await?;
         Ok(port_class)
     }
 

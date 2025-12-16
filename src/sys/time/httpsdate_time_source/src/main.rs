@@ -21,7 +21,7 @@ use fidl_fuchsia_time_external::{
 };
 use fuchsia_component::server::{ServiceFs, ServiceObj};
 
-use futures::future::{join, Future};
+use futures::future::{Future, join};
 use futures::{FutureExt, StreamExt};
 use log::warn;
 use pull_source::PullSource;
@@ -272,7 +272,7 @@ async fn main() -> Result<(), Error> {
     >(
         fidl_fuchsia_net_interfaces_ext::event_stream_from_state(
             &interface_state_service,
-            fidl_fuchsia_net_interfaces_ext::IncludedAddresses::OnlyAssigned,
+            Default::default(),
         )
         .context("failed to create network interface event stream")?,
     )

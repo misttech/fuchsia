@@ -39,9 +39,7 @@ impl crate::Workload for Interfaces {
         let interfaces = {
             let stream = fnet_interfaces_ext::event_stream_from_state::<
                 fnet_interfaces_ext::DefaultInterest,
-            >(
-                &interfaces_state, fnet_interfaces_ext::IncludedAddresses::OnlyAssigned
-            )
+            >(&interfaces_state, Default::default())
             .expect("get interface event stream");
             let mut stream = pin!(stream);
             let mut if_state = fnet_interfaces_ext::existing(
@@ -83,9 +81,7 @@ impl crate::Workload for Interfaces {
         // Wait for the interfaces we installed to be removed.
         let stream = fnet_interfaces_ext::event_stream_from_state::<
             fnet_interfaces_ext::DefaultInterest,
-        >(
-            &interfaces_state, fnet_interfaces_ext::IncludedAddresses::OnlyAssigned
-        )
+        >(&interfaces_state, Default::default())
         .expect("get interface event stream");
         let mut stream = pin!(stream);
         let mut interfaces = fnet_interfaces_ext::existing(
@@ -163,7 +159,7 @@ async fn stress_interface(
     let stream =
         fnet_interfaces_ext::event_stream_from_state::<fnet_interfaces_ext::DefaultInterest>(
             &interfaces_state,
-            fnet_interfaces_ext::IncludedAddresses::OnlyAssigned,
+            Default::default(),
         )
         .expect("get interface event stream");
     let mut stream = pin!(stream);

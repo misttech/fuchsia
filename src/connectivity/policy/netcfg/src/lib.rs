@@ -1168,12 +1168,10 @@ impl<'a> NetCfg<'a> {
             self.create_device_stream().await.context("create netdevice stream")?.fuse();
         let mut netdev_stream = pin!(netdev_stream);
 
-        let if_watcher_event_stream = fnet_interfaces_ext::event_stream_from_state(
-            &self.interface_state,
-            fnet_interfaces_ext::IncludedAddresses::OnlyAssigned,
-        )
-        .context("error creating interface watcher event stream")?
-        .fuse();
+        let if_watcher_event_stream =
+            fnet_interfaces_ext::event_stream_from_state(&self.interface_state, Default::default())
+                .context("error creating interface watcher event stream")?
+                .fuse();
         let mut if_watcher_event_stream = pin!(if_watcher_event_stream);
 
         let dns_server_watcher =

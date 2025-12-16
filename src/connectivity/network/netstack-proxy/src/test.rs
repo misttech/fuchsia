@@ -126,10 +126,7 @@ async fn connects_to_stack(netstack_version: fnet_migration::NetstackVersion) {
                 .expect("connect to protocol");
             let event_stream = fidl_fuchsia_net_interfaces_ext::event_stream_from_state::<
                 fidl_fuchsia_net_interfaces_ext::DefaultInterest,
-            >(
-                &state,
-                fidl_fuchsia_net_interfaces_ext::IncludedAddresses::OnlyAssigned,
-            )
+            >(&state, Default::default())
             .expect("failed to create watcher");
             let _ = fidl_fuchsia_net_interfaces_ext::existing::<(), _, _>(
                 event_stream,

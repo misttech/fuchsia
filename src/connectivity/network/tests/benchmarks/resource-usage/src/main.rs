@@ -103,7 +103,7 @@ async fn run_benchmark<W: Workload, N: Netstack>(
         fnet_interfaces_ext::existing(
             fnet_interfaces_ext::event_stream_from_state::<fnet_interfaces_ext::DefaultInterest>(
                 &interfaces_state,
-                fnet_interfaces_ext::IncludedAddresses::OnlyAssigned,
+                Default::default(),
             )
             .expect("get interface event stream"),
             HashMap::<u64, fnet_interfaces_ext::PropertiesAndState<(), _>>::new(),

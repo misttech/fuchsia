@@ -115,11 +115,8 @@ async fn run_fuchsia_node() -> Result<(), Error> {
         fidl::endpoints::create_proxy::<fnet_routes_admin::RouteSetV6Marker>();
     route_table.new_route_set(server_end).context("failed to send NewRouteSet request")?;
 
-    let stream = fnet_interfaces_ext::event_stream_from_state(
-        &interface_state,
-        fnet_interfaces_ext::IncludedAddresses::OnlyAssigned,
-    )
-    .context("failed to get interface stream")?;
+    let stream = fnet_interfaces_ext::event_stream_from_state(&interface_state, Default::default())
+        .context("failed to get interface stream")?;
     let intf = fnet_interfaces_ext::existing(stream, HashMap::new())
         .await
         .context("failed to get existing interfaces")?;

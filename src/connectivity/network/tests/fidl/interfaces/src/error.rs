@@ -26,10 +26,7 @@ async fn interfaces_watcher_after_invalid_state_request<N: Netstack>(name: &str)
         .expect("failed to connect fuchsia.net.interfaces/State");
     let stream = fidl_fuchsia_net_interfaces_ext::event_stream_from_state::<
         fidl_fuchsia_net_interfaces_ext::AllInterest,
-    >(
-        &interfaces_state,
-        fidl_fuchsia_net_interfaces_ext::IncludedAddresses::OnlyAssigned,
-    )
+    >(&interfaces_state, Default::default())
     .expect("get interface event stream");
 
     // Writes some garbage into the channel and verify an error on the State
