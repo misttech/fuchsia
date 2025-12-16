@@ -26,6 +26,7 @@
 #include <zircon/syscalls/iommu.h>
 #include <zircon/syscalls/types.h>
 
+#include <fbl/algorithm.h>
 #include <fbl/alloc_checker.h>
 #include <region-alloc/region-alloc.h>
 
@@ -125,9 +126,10 @@ zx::result<> QemuRiscv64::PcirootInit() {
   pci_root_host_.Mmio64().AddRegion(kVirtPcieMmio);
 
   QemuRiscv64Pciroot::Context context{};
+  const size_t vmo_size = fbl::round_up<size_t>(kVirtPcieEcam.size, zx_system_get_page_size());
   zx_status_t status =
       zx::vmo::create_physical(/*resource=*/*mmio_resource, /*paddr=*/kVirtPcieEcam.base,
-                               /*size=*/kVirtPcieEcam.size, /*result=*/&context.ecam);
+                               /*size=*/vmo_size, /*result=*/&context.ecam);
   if (status != ZX_OK) {
     zxlogf(ERROR, "Failed to allocate ecam vmo for [%#lx, %#lx): %s", kVirtPcieEcam.base,
            kVirtPcieEcam.base + kVirtPcieEcam.size, zx_status_get_string(status));

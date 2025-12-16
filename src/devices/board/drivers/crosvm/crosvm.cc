@@ -128,9 +128,10 @@ zx::result<> Crosvm::CreatePciroot(const pci_dt::PciVisitor& pci_visitor) {
   const auto& pci_reg = pci_visitor.reg();
   zx_paddr_t ecam_address = *pci_reg->address();
   size_t ecam_size = *pci_reg->size();
+  const size_t vmo_size = fbl::round_up<size_t>(ecam_size, zx_system_get_page_size());
   zx::vmo ecam;
   zx_status_t status = zx::vmo::create_physical(/*resource=*/mmio_resource_, /*paddr=*/ecam_address,
-                                                /*size=*/ecam_size, /*result=*/&ecam);
+                                                /*size=*/vmo_size, /*result=*/&ecam);
   if (status != ZX_OK) {
     FDF_LOG(ERROR, "Failed to create allocate ECAM for PCI: %s", zx_status_get_string(status));
     return zx::error(status);

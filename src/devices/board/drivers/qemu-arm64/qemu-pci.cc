@@ -98,9 +98,10 @@ zx_status_t QemuArm64::PciAdd() {
 
   zxlogf(DEBUG, "%s ecam { %#lx - %#lx }\n", name.data(), PCIE_ECAM_BASE_PHYS,
          PCIE_ECAM_BASE_PHYS + PCIE_ECAM_SIZE);
+  const size_t vmo_size = fbl::round_up<size_t>(PCIE_ECAM_SIZE, zx_system_get_page_size());
   zx::vmo ecam_vmo = {};
   status = zx::vmo::create_physical(*zx::unowned_resource(get_mmio_resource(parent())),
-                                    PCIE_ECAM_BASE_PHYS, PCIE_ECAM_SIZE, &ecam_vmo);
+                                    PCIE_ECAM_BASE_PHYS, vmo_size, &ecam_vmo);
   if (status != ZX_OK) {
     return status;
   }

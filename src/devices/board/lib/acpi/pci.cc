@@ -374,7 +374,8 @@ zx_status_t pci_init_segment_and_ecam(zx_device_t* parent, acpi::Acpi* acpi, ACP
     // The range from start_bus_num to end_bus_num is inclusive.
     size_t ecam_size = (pinfo.end_bus_num - pinfo.start_bus_num + 1) * PCIE_ECAM_BYTES_PER_BUS;
     zx_paddr_t vmo_base = mcfg_alloc.address + (pinfo.start_bus_num * PCIE_ECAM_BYTES_PER_BUS);
-    status = zx_vmo_create_physical(get_mmio_resource(parent), vmo_base, ecam_size, &pinfo.cam.vmo);
+    const size_t vmo_size = fbl::round_up<size_t>(ecam_size, zx_system_get_page_size());
+    status = zx_vmo_create_physical(get_mmio_resource(parent), vmo_base, vmo_size, &pinfo.cam.vmo);
     if (status != ZX_OK) {
       zxlogf(ERROR, "couldn't create VMO for ecam, mmio cfg will not work: %s!",
              zx_status_get_string(status));
