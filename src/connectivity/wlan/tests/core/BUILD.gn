@@ -80,7 +80,7 @@ antlion_host_test("sar_setting_test") {
   ]
 }
 
-group("tests_no_ap") {
+group("tests_for_general_cq_dut_only") {
   testonly = true
   public_deps = [ ":phy_existence_test" ]
 }
