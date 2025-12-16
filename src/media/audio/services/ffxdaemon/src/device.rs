@@ -277,7 +277,7 @@ impl Device {
         mut socket: WavSocket,
         active_channels_bitmask: Option<u64>,
     ) -> Result<fac::PlayerPlayResponse, ControllerError> {
-        fuchsia_trace::duration!(c"audio-streaming", c"audio_ffx_daemon::Device::play");
+        fuchsia_trace::duration!("audio-streaming", "audio_ffx_daemon::Device::play");
 
         match fuchsia_scheduler::set_role_for_this_thread("fuchsia.audio.hal.worker") {
             Ok(_) => log::info!(
