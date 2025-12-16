@@ -78,7 +78,6 @@ test("console-test") {
     ":common",
     "//sdk/fidl/fuchsia.device:fuchsia.device_cpp",
     "//sdk/fidl/fuchsia.io:fuchsia.io_cpp",
-    "//zircon/system/ulib/mock-boot-arguments",
     "//zircon/system/ulib/sync",
     "//zircon/system/ulib/zxtest",
   ]
