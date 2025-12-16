@@ -71,6 +71,8 @@ class Device final : public fdf::DriverBase,
 
   void OnCriticalError(OnCriticalErrorRequestView request,
                        OnCriticalErrorCompleter::Sync& completer) override;
+  void OnCountryCodeChange(OnCountryCodeChangeRequestView request,
+                           OnCountryCodeChangeCompleter::Sync& completer) override;
   void handle_unknown_method(
       fidl::UnknownMethodMetadata<fuchsia_wlan_phyimpl::WlanPhyImplNotify> metadata,
       fidl::UnknownMethodCompleter::Sync& completer) override {}

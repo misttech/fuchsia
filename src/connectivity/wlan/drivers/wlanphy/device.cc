@@ -645,6 +645,11 @@ void Device::OnCriticalError(OnCriticalErrorRequestView request,
   completer.ReplyError(ConvertToPhyImplNotifyError(status));
 }
 
+void Device::OnCountryCodeChange(OnCountryCodeChangeRequestView request,
+                                 OnCountryCodeChangeCompleter::Sync& completer) {
+  completer.ReplyError(ConvertToPhyImplNotifyError(ZX_ERR_NOT_SUPPORTED));
+}
+
 zx_status_t Device::SendCriticalErrorEvent(fuchsia_wlan_phyimpl::CriticalErrorReason reason) {
   fuchsia_wlan_device::wire::CriticalErrorReason reason_code;
   switch (reason) {

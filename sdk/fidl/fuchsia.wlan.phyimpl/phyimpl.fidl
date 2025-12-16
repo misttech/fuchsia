@@ -79,6 +79,20 @@ open protocol WlanPhyImplNotify {
     flexible OnCriticalError(table {
         1: reason_code CriticalErrorReason;
     }) -> () error WlanPhyImplNotifyError;
+
+    /// Indicate to the receiver (wlanphy client) that the firmware running on wlan hardware
+    /// has detected a change in country code.  The client can decide to forward it to higher
+    /// layers of the wlan stack, handle it itself or ignore it.
+    /// The sender can decide to handle the error if the receiver responds with an error code.
+    /// Some possible error codes are:
+    /// NOT_SUPPORTED: receiver does not have support for handling the event.
+    /// INTERNAL: Error encountered during processing (including error returned by
+    /// a higher layer module if it was forwarded).
+    /// INVALID_ARGS: The country code is either missing or not in the correct format.
+    @available(added=HEAD)
+    flexible OnCountryCodeChange(table {
+        1: phy_country WlanPhyCountry;
+    }) -> () error WlanPhyImplNotifyError;
 };
 
 @discoverable
