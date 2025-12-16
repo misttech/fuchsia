@@ -39,10 +39,10 @@ fn start_selinux(
 ) -> Result<(frunner::ComponentControllerProxy, ftest::StdHandles), Error> {
     let mut program_entries = vec![fdata::DictionaryEntry {
         key: "environ".to_string(),
-        value: Some(Box::new(fdata::DictionaryValue::StrVec(vec![
-            format!("SUBDIRS={}", test_name.to_owned()),
-            "PATH=/usr/bin:/bin:/usr/sbin:/sbin:/tmp/selinux-testsuite/tests".to_string(),
-        ]))),
+        value: Some(Box::new(fdata::DictionaryValue::StrVec(vec![format!(
+            "SUBDIRS={}",
+            test_name.to_owned()
+        )]))),
     }];
 
     if let Some(fidl_fuchsia_data::Dictionary { entries: Some(entries), .. }) =
