@@ -49,17 +49,9 @@ class FakeShutdownShim : public fidl::WireServer<fuchsia_hardware_power_statecon
 
   void PerformReboot(PerformRebootRequestView view,
                      PerformRebootCompleter::Sync& completer) override {
-    if (!view->options.has_reasons() || view->options.reasons().size() != 1 ||
-        view->options.reasons().at(0) !=
-            fuchsia_hardware_power_statecontrol::RebootReason2::kOutOfMemory) {
-      unexpected_calls_ = true;
-      completer.Close(ZX_ERR_NOT_SUPPORTED);
-
-    } else {
-      reboot_signaled_ = true;
-      completer.ReplySuccess();
-      loop_->Quit();
-    }
+    unexpected_calls_ = true;
+    completer.Close(ZX_ERR_NOT_SUPPORTED);
+    loop_->Quit();
   }
 
   void RebootToBootloader(RebootToBootloaderCompleter::Sync& completer) override {

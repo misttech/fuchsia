@@ -29,12 +29,12 @@ void OomWatcher::OnOOM(async_dispatcher_t* dispatcher, async::WaitBase* wait, zx
   printf("critical-services: received kernel OOM signal\n");
   fidl::WireSyncClient sync_client{std::move(pwr_ctl_)};
   fidl::Arena arena;
-  auto builder = statecontrol_fidl::wire::RebootOptions::Builder(arena);
-  std::vector<statecontrol_fidl::RebootReason2> reasons = {
-      statecontrol_fidl::RebootReason2::kOutOfMemory};
-  auto vector_view = fidl::VectorView<statecontrol_fidl::RebootReason2>::FromExternal(reasons);
+  auto builder = statecontrol_fidl::wire::ShutdownOptions::Builder(arena);
+  statecontrol_fidl::ShutdownReason reasons[] = {statecontrol_fidl::ShutdownReason::kOutOfMemory};
+  auto vector_view = fidl::VectorView<statecontrol_fidl::ShutdownReason>::FromExternal(reasons);
   builder.reasons(vector_view);
-  fidl::WireResult r_status = sync_client->PerformReboot(builder.Build());
+  builder.action(statecontrol_fidl::ShutdownAction::kReboot);
+  fidl::WireResult r_status = sync_client->Shutdown(builder.Build());
   if (r_status.status() || r_status->is_error()) {
     printf("critical-services: got error trying reboot: %s\n",
            r_status.FormatDescription().c_str());
