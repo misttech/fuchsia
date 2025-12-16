@@ -254,6 +254,12 @@
     },
     {
         "kind": "table/member",
+        "name": "fuchsia.bluetooth.sys/BondingData.device_class",
+        "ordinal": "9",
+        "type": "fuchsia.bluetooth/DeviceClass"
+    },
+    {
+        "kind": "table/member",
         "name": "fuchsia.bluetooth.sys/BondingData.identifier",
         "ordinal": "1",
         "type": "fuchsia.bluetooth/PeerId"

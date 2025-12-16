@@ -104,6 +104,10 @@ type BondingData = table {
 
     /// Bonding data that is present when this peer is paired on the BR/EDR transport.
     8: bredr_bond BredrBondData;
+
+    /// The device class of the peer, if known.
+    @available(added=NEXT)
+    9: device_class bt.DeviceClass;
 };
 
 /// Represents persistent local host data.
