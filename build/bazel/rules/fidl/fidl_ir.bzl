@@ -4,10 +4,28 @@
 
 """Rules for generating FIDL IR."""
 
+load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
+load("@fuchsia_build_info//:args.bzl", "idk_buildable_cpus", "runtime_supported_api_levels")
 load(":fidl_summary.bzl", "fidl_summary")
 load(":providers.bzl", "FidlLibraryInfo")
 
 visibility("private")
+
+# LINT.IfChange(available_default)
+def _get_available(ctx):
+    if ctx.attr.available:
+        return ctx.attr.available
+
+    api_level = ctx.attr._current_api_level[BuildSettingInfo].value
+
+    if api_level == "PLATFORM":
+        # FIDL directly supports targeting multiple API levels. "PLATFORM" is a
+        # meta-level that refers to the set of all supported API levels.
+        return ["fuchsia:" + ",".join(runtime_supported_api_levels)]
+    else:
+        return ["fuchsia:" + api_level]
+
+# LINT.ThenChange(//build/fidl/fidl_library.gni:available_default)
 
 def _fidlc_impl(ctx):
     library_name = ctx.attr.library_name
@@ -38,8 +56,8 @@ def _fidlc_impl(ctx):
     if ctx.attr.versioned:
         response_file_args.add("--versioned", ctx.attr.versioned)
 
-    for available in ctx.attr.available:
-        response_file_args.add("--available", available)
+    for available_value in _get_available(ctx):
+        response_file_args.add("--available", available_value)
 
     for flag in ctx.attr.experimental_flags:
         response_file_args.add("--experimental", flag)
@@ -120,6 +138,9 @@ fidlc = rule(
             default = "//build/fidl:gen_response_file",
             executable = True,
             cfg = "exec",
+        ),
+        "_current_api_level": attr.label(
+            default = "@//build/bazel:fuchsia_api_level",
         ),
     },
 )

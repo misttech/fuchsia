@@ -239,6 +239,8 @@ def _fidl_library_impl(
         visibility):
     """Implementation of the fidl_library() macro."""
 
+    if available and not testonly:
+        fail("`available` is only allowed for `testonly` libraries.")
     if enable_rust_drivers and not enable_rust:
         fail("`enable_rust_drivers` requires `enable_rust`.")
     if additional_cpp_configs:
@@ -441,6 +443,7 @@ For more information, look for `--available` in `fidlc --help`.
 Warning: All dependencies must specify the same value for `available`;
 otherwise bindings will be inconsistent. Since this is easy to misuse,
 this parameter is only allowed on `testonly` libraries.
+If not specified, appropriate values will be determined based on the target API level.
 """,
             configurable = False,
         ),

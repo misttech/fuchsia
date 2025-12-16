@@ -85,6 +85,8 @@ import("//build/testing/host_test_data.gni")
 #     Warning: All dependencies must specify the same value for `available`,
 #     otherwise bindings will be inconsistent. Since this is easy to misuse,
 #     this parameter is only allowed on testonly libraries.
+#     If not specified, appropriate values will be determined based on the
+#     current target API level.
 #
 #   experimental_flags (optional)
 #     A list of experimental fidlc features to enable.
