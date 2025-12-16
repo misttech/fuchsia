@@ -598,16 +598,18 @@ template("fidl_library") {
     # Process sources.
     file_base = "fidl/$library_name"
     all_files = []
-    sdk_sources = []
     foreach(source, invoker.sources) {
+      file = get_path_info(source, "file")
       relative_source = rebase_path(source, ".")
-      if (string_replace(relative_source, "..", "bogus") != relative_source) {
-        # If the source file is not within the same directory, just use the file
-        # name.
-        relative_source = get_path_info(source, "file")
-      }
-      destination = "$file_base/$relative_source"
-      sdk_sources += [ destination ]
+      assert(
+          source == file ||
+              string_replace(relative_source, "..", "bogus") != relative_source,
+          "Source files under the library directory must not be in a subdirectory.")
+      not_needed([ relative_source ])
+
+      # Regardless of the source path, place the file in the root of the
+      # library's directory in the IDK.
+      destination = "$file_base/$file"
       all_files += [
         {
           source = source
@@ -645,8 +647,10 @@ template("fidl_library") {
 
         api_contents = [
           {
+            # Note: Unlike other atom types, the source is not in the IDK and
+            # there is no such destination in the IDK.
             source = summary_file_json
-            dest = "fidl/$library_name"
+            dest = file_base
           },
         ]
       } else {

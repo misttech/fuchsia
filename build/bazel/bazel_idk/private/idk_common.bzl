@@ -4,7 +4,7 @@
 
 """Common functions for IDK macros."""
 
-visibility("private")
+visibility(["//build/bazel/rules/fidl/..."])
 
 def json_encode_dict_values(dict):
     """Returns the dictionary with each top-level value encoded as a JSON string.
@@ -59,6 +59,12 @@ def get_allowlist_target(type, category, stable, prebuilt_library_format = None)
     elif type == "data":
         if category == "partner" and stable:
             return "//build/bazel/bazel_idk:partner_idk_data_allowlist"
+    elif type == "fidl_library":
+        if category == "partner":
+            if stable:
+                return "//sdk/fidl:partner_idk_fidl_library_allowlist"
+            else:
+                return "//sdk/fidl:partner_idk_unstable_fidl_library_allowlist"
     elif type == "host_tool":
         if category == "partner" and stable:
             return "//build/bazel/bazel_idk:partner_idk_host_tool_allowlist"

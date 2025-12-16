@@ -14,6 +14,7 @@ idk_molecule(
     ],
     deps = [
         ":cc_source_libraries",
+        "//sdk/fidl",
     ] + [
         ":build_host_tools",
         ":non_build_host_tools",

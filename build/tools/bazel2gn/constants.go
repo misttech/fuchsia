@@ -146,6 +146,7 @@ var rustBinMap = mustMergeMaps(rustCommonAttrMap, map[string]string{
 // fidlAttrMap maps from attribute names in Bazel FIDL rules to GN parameter names.
 // This map only includes attributes that have different names in Bazel and GN.
 var fidlAttrMap = map[string]string{
+	"category":     "sdk_category",
 	"deps":         "public_deps",
 	"library_name": "name",
 }
@@ -193,11 +194,14 @@ var genruleAttrMap = map[string]string{
 	"outs": "outputs",
 }
 
-// idkAttrMap maps from attribute name in Bazel IDK C++ rules to GN parameter names.
+// idkCcAttrMap maps from attribute name in Bazel IDK C++ rules to GN parameter names.
 var idkCcAttrMap = mustMergeMaps(idkAttrMap, ccLibAttrMap)
 
-// idkAttrMap maps from attribute name in Bazel IDK C++ ZX rules to GN parameter names.
+// idkZxAttrMap maps from attribute name in Bazel IDK C++ ZX rules to GN parameter names.
 var idkZxAttrMap = mustMergeMaps(idkCcAttrMap, zxInIDKAttrMap)
+
+// idkFIDLAttrMap maps from attribute name in Bazel IDK FIDL rules to GN parameter names.
+var idkFIDLAttrMap = mustMergeMaps(idkAttrMap, fidlAttrMap)
 
 // idkHostToolAttrMap maps from attribute name in Bazel IDK host tool rules to GN parameter names.
 var idkHostToolAttrMap = mustMergeMaps(idkAttrMap, hostToolAttrMap)
@@ -223,7 +227,7 @@ var attrMapsByRules = map[string]map[string]string{
 	"rustc_test":      rustCommonAttrMap,
 
 	// FIDL
-	"fidl_library":        fidlAttrMap,
+	"fidl_library":        idkFIDLAttrMap,
 	"zither_fidl_library": fidlAttrMap,
 
 	// IDK

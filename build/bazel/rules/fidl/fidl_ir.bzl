@@ -109,11 +109,6 @@ fidlc = rule(
             mandatory = False,
             providers = [FidlLibraryInfo],
         ),
-        "gen_dir": attr.string(
-            doc = "The directory into which intermediate output files should be written. " +
-                  "This is used to prevent multiple FIDL targets from generating the same output files.",
-            mandatory = True,
-        ),
         "json_representation": attr.output(
             doc = "Where to generate the FIDL IR.",
             mandatory = True,
@@ -151,7 +146,7 @@ def fidl_ir(name, json_representation, out_json_summary, testonly, visibility, *
     Args:
       name: Standard meaning.
       json_representation: Where to generate the FIDL IR.
-      out_json_summary: If set, a JSON API summary file will be generated at the given path. Should be in `gen_dir`.
+      out_json_summary: If set, a JSON API summary file will be generated at the given path.
       testonly: Standard meaning.
       visibility: Standard meaning.
 

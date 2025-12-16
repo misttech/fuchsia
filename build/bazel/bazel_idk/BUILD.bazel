@@ -69,6 +69,8 @@ filegroup(
     ],
 )
 
+# partner_idk*_fidl_library_allowlist are defined in //sdk/fidl/BUILD.bazel.
+
 filegroup(
     name = "partner_idk_host_tool_allowlist",
     visibility = [

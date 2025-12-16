@@ -11,7 +11,7 @@ load("//build/bazel/rules:current_platform_info.bzl", "CurrentPlatformInfo")
 load("//build/bazel/rules:golden_files.bzl", "verify_golden_files")
 load(":idk_common.bzl", "get_allowlist_target", "get_atom_visibility")
 
-visibility(["//build/bazel/bazel_idk/..."])
+visibility(["//build/bazel/bazel_idk/...", "//build/bazel/rules/fidl/..."])
 
 _TYPES_SUPPORTING_UNSTABLE_ATOMS = [
     # LINT.IfChange(unstable_atom_types)
@@ -58,13 +58,12 @@ def _compute_atom_api_impl(ctx):
     args = ctx.actions.args()
     args.add("--output", ctx.outputs.generated_api_file.path)
 
-    for dest_path, source_target in ctx.attr.api_contents_map.items():
-        source_label = source_target.label
-        source_path = source_label.package + "/" + source_label.name
-
+    # We must use `ctx.files` to ensure we can get the full path to the source,
+    # files, especially for generated files as is the case for FIDL atoms.
+    for dest_path, source_file in zip(ctx.attr.api_contents_map.keys(), ctx.files.api_contents_map):
         # `add()` supports at most two parameters, so add the third separately.
         args.add("--file", dest_path)
-        args.add(source_path)
+        args.add(source_file.path)
 
     # `ctx.files.api_contents_map` contains just the source files.
     inputs_depset = depset(ctx.files.api_contents_map)

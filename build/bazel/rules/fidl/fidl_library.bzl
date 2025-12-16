@@ -4,7 +4,15 @@
 
 """Rule for declaring a FIDL library"""
 
+load("@bazel_skylib//lib:paths.bzl", "paths")
 load(":fidl_ir.bzl", "fidl_ir")
+load(
+    "//build/bazel/bazel_idk/private:idk_common.bzl",
+    "get_allowlist_target",
+    "get_idk_deps",
+    "json_encode_dict_values",
+)
+load("//build/bazel/bazel_idk/private:idk_atom.bzl", "idk_atom")
 load("//zircon/tools/zither:zither_library.bzl", "zither_library")
 
 # LINT.IfChange(determine_fidlc_versioned_arg)
@@ -253,10 +261,7 @@ def _fidl_library_impl(
 
     fidl_gen_dir = "gen/%s" % name
     fidl_ir_json = "%s.fidl.json" % name
-
-    # Note that the naming restriction does not apply to this file because
-    # it is not used as an input to another target within the macro.
-    json_summary = "%s/%s.api_summary.json" % (fidl_gen_dir, library_name)
+    json_summary = "%s.api_summary.json" % name
 
     compilation_target_name = "%s_compile" % name
 
@@ -277,7 +282,6 @@ def _fidl_library_impl(
         fidl_library_target_name = name,
         srcs = srcs,
         deps = deps,
-        gen_dir = fidl_gen_dir,
         json_representation = fidl_ir_json,
         out_json_summary = json_summary,
         available = available,
@@ -302,7 +306,7 @@ def _fidl_library_impl(
 
     if enable_hlcpp:
         # TODO(https://fxbug.dev/454977301): Implement HLCPP bindings.
-        fail("HLCPP bindings are not yet supported.")
+        print("HLCPP bindings are not yet supported (%s)." % library_name)
 
     if enable_rust:
         # TODO(https://fxbug.dev/454452299): Implement Rust bindings.
@@ -342,8 +346,63 @@ def _fidl_library_impl(
     atom_type = "fidl_library"
 
     if category:
-        # TODO(https://fxbug.dev/428285014): Create an idk_atom().
-        fail("IDK atom creation is not yet supported.")
+        idk_name = library_name
+
+        file_base = "fidl/" + idk_name
+
+        idk_files_map = {}
+        for src in srcs:
+            # Regardless of the source path, place the file in the root of the
+            # library's directory in the IDK.
+            destination = file_base + "/" + src.name
+            idk_files_map |= {destination: src}
+
+        if stable:
+            api_path = idk_name + ".api"
+            if api_file_path:
+                # Check that `api_file_path` does not specify the default path.
+                # We must assume that absolute paths are not specifying the default
+                # path because `relativize()` fails with absolute paths and we
+                # cannot get the package path at this point.
+                if not paths.is_absolute(api_file_path):
+                    if paths.relativize(api_file_path, ".") == paths.relativize(api_path, "."):
+                        fail("The specified `api` file (`%s`) matches the default. `api` only needs to be specified when overriding the default." % api_file_path)
+                api_path = api_file_path
+
+            # Note: Unlike other atoms, the source is not in the IDK and there
+            # is no such destination in the IDK.
+            api_contents_map = {file_base: json_summary}
+        else:
+            if api_file_path:
+                fail("Unstable libraries do not require/support modification acknowledgement.")
+            api_path = None
+            api_contents_map = None
+
+        additional_prebuild_info_values = {
+            "file_base": file_base,
+        }
+
+        idk_atom(
+            name = name + "_idk",
+            idk_name = idk_name,
+            id = "sdk://fidl/" + idk_name,
+            meta_dest = file_base + "/meta.json",
+            type = atom_type,
+            category = category,
+            stable = stable,
+            api_area = api_area,
+            api_file_path = api_path,
+            api_contents_map = api_contents_map,
+            files_map = idk_files_map,
+            idk_deps = get_idk_deps(deps),
+            # TODO(https://fxbug.dev/428285014): Add validation, etc. targets.
+            atom_build_deps = [name],
+            additional_prebuild_info = json_encode_dict_values(additional_prebuild_info_values),
+            testonly = testonly,
+            visibility = visibility,
+        )
+
+        # TODO(https://fxbug.dev/428285014): Implmenent sdk_fidl_json_data.
 
     native.filegroup(
         name = name,
@@ -351,8 +410,7 @@ def _fidl_library_impl(
         # For libraries in a category, add a deps on the allowlist to catch
         # cases where the macro is used but there is no dependency on the atom
         # target.
-        # TODO(https://fxbug.dev/428285014): Uncomment when adding IDK atom support.
-        # data = [get_allowlist_target(atom_type, category, stable)] if category else [],
+        data = [get_allowlist_target(atom_type, category, stable)] if category else [],
         testonly = testonly,
         visibility = visibility,
     )
