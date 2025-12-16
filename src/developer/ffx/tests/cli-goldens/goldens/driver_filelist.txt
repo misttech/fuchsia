@@ -1,6 +1,8 @@
 ffx/driver.golden
 ffx/driver/disable.golden
 ffx/driver/dump.golden
+ffx/driver/host.golden
+ffx/driver/host/list.golden
 ffx/driver/list-composite-node-specs.golden
 ffx/driver/list-composites.golden
 ffx/driver/list-devices.golden

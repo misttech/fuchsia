@@ -4,6 +4,7 @@
 
 use super::subcommands::disable::args::DisableCommand;
 use super::subcommands::dump::args::DumpCommand;
+use super::subcommands::host::args::HostCommand;
 use super::subcommands::list::args::ListCommand;
 use super::subcommands::list_composite_node_specs::args::ListCompositeNodeSpecsCommand;
 use super::subcommands::list_composites::args::ListCompositesCommand;
@@ -45,6 +46,7 @@ pub enum DriverSubCommand {
     TestNode(TestNodeCommand),
     // New and improved driver commands.
     Node(NodeCommand),
+    Host(HostCommand),
 }
 
 // TODO(https://fxbug.dev/324167674): fix.
@@ -66,4 +68,5 @@ pub enum DriverSubCommand {
     TestNode(TestNodeCommand),
     // New and improved driver commands.
     Node(NodeCommand),
+    Host(HostCommand),
 }

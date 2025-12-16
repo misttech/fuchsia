@@ -4,6 +4,7 @@
 
 pub mod disable;
 pub mod dump;
+pub mod host;
 pub mod list;
 pub mod list_composite_node_specs;
 pub mod list_composites;

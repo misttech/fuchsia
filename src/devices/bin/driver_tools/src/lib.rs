@@ -135,6 +135,15 @@ pub async fn driver(
                 .await
                 .context("Node subcommand failed")?;
         }
+        DriverSubCommand::Host(subcmd) => {
+            let driver_development_proxy = driver_connector
+                .get_driver_development_proxy(cmd.select)
+                .await
+                .context("Failed to get driver development proxy")?;
+            subcommands::host::host(subcmd, writer, driver_development_proxy)
+                .await
+                .context("Host subcommand failed")?;
+        }
     };
     Ok(())
 }
