@@ -5,8 +5,8 @@
 use fidl::prelude::*;
 use futures::{Future, FutureExt as _, StreamExt as _, TryStreamExt as _};
 use net_declare::{fidl_mac, std_ip_v6};
-use net_types::ip::Ipv6;
 use net_types::Witness as _;
+use net_types::ip::Ipv6;
 use netemul::RealmUdpSocket as _;
 use netstack_testing_common::interfaces::TestInterfaceExt as _;
 use netstack_testing_common::realms::{Netstack2, TestSandboxExt as _};
@@ -40,6 +40,10 @@ const DEV_NETWORK_DIRECTORY: &str = "dev-class-network";
 const PRIMARY_INTERFACE_CONFIGURATION: &str = "fuchsia.network.PrimaryInterface";
 const NAMEGEN_CONFIGURATION: &str = "fuchsia.zircon.namegen";
 const NODENAME_CONFIGURATION: &str = "fuchsia.zircon.nodename";
+const DISABLE_CONFIGURATION: &str = "fuchsia.netsvc.disable";
+const NETBOOT_CONFIGURATION: &str = "fuchsia.netsvc.netboot";
+const ADVERTISE_CONFIGURATION: &str = "fuchsia.netsvc.advertise";
+const ALL_FEATURES_CONFIGURATION: &str = "fuchsia.netsvc.all-features";
 
 const BUFFER_SIZE: usize = 2048;
 
@@ -180,6 +184,46 @@ where
                         ),
                         fidl_fuchsia_netemul::Capability::ChildDep(
                             fidl_fuchsia_netemul::ChildDep {
+                                capability: Some(
+                                    fidl_fuchsia_netemul::ExposedCapability::Configuration(
+                                        DISABLE_CONFIGURATION.to_string(),
+                                    ),
+                                ),
+                                ..Default::default()
+                            },
+                        ),
+                        fidl_fuchsia_netemul::Capability::ChildDep(
+                            fidl_fuchsia_netemul::ChildDep {
+                                capability: Some(
+                                    fidl_fuchsia_netemul::ExposedCapability::Configuration(
+                                        NETBOOT_CONFIGURATION.to_string(),
+                                    ),
+                                ),
+                                ..Default::default()
+                            },
+                        ),
+                        fidl_fuchsia_netemul::Capability::ChildDep(
+                            fidl_fuchsia_netemul::ChildDep {
+                                capability: Some(
+                                    fidl_fuchsia_netemul::ExposedCapability::Configuration(
+                                        ADVERTISE_CONFIGURATION.to_string(),
+                                    ),
+                                ),
+                                ..Default::default()
+                            },
+                        ),
+                        fidl_fuchsia_netemul::Capability::ChildDep(
+                            fidl_fuchsia_netemul::ChildDep {
+                                capability: Some(
+                                    fidl_fuchsia_netemul::ExposedCapability::Configuration(
+                                        ALL_FEATURES_CONFIGURATION.to_string(),
+                                    ),
+                                ),
+                                ..Default::default()
+                            },
+                        ),
+                        fidl_fuchsia_netemul::Capability::ChildDep(
+                            fidl_fuchsia_netemul::ChildDep {
                                 name: Some(NAME_PROVIDER_NAME.to_string()),
                                 capability: Some(
                                     fidl_fuchsia_netemul::ExposedCapability::Protocol(
@@ -264,7 +308,7 @@ where
                         fidl_fuchsia_netemul::Capability::LogSink(fidl_fuchsia_netemul::Empty {}),
                     ])),
                     exposes: Some(vec![
-                        fidl_fuchsia_device::NameProviderMarker::PROTOCOL_NAME.to_string()
+                        fidl_fuchsia_device::NameProviderMarker::PROTOCOL_NAME.to_string(),
                     ]),
                     ..Default::default()
                 },
@@ -399,7 +443,7 @@ async fn with_netsvc_and_netstack_full<F1, F2, Fut2, X, A, V>(
     }
 }
 
-const DEFAULT_NETSVC_ARGS: [&str; 3] = ["--netboot", "--all-features", "--log-packets"];
+const DEFAULT_NETSVC_ARGS: [&str; 4] = ["--enable", "--netboot", "--all-features", "--log-packets"];
 
 async fn with_netsvc_and_netstack_bind_port<F, Fut, A, V>(
     port: Option<NonZeroU16>,

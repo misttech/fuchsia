@@ -4,9 +4,6 @@
 
 #include "src/bringup/bin/netsvc/args.h"
 
-#include <fidl/fuchsia.boot/cpp/wire.h>
-#include <lib/component/incoming/cpp/protocol.h>
-
 #include <cstring>
 
 namespace {
@@ -28,37 +25,17 @@ int ParseCommonArgs(int argc, char** argv, const char** error, std::string* inte
 }
 }  // namespace
 
-int ParseArgs(int argc, char** argv, const netsvc_structured_config::Config& config,
-              fidl::UnownedClientEnd<fuchsia_io::Directory> svc_dir, const char** error,
+int ParseArgs(int argc, char** argv, const netsvc_config::Config& config, const char** error,
               NetsvcArgs* out) {
   // Reset the args.
   *out = NetsvcArgs();
 
-  // First parse from kernel and config args, then use use cmdline args as overrides.
+  // First parse from config args, then use use cmdline args as overrides.
   out->interface = config.primary_interface();
-
-  zx::result client_end = component::ConnectAt<fuchsia_boot::Arguments>(svc_dir);
-  if (client_end.is_error()) {
-    *error = "netsvc: unable to connect to fuchsia.boot.Arguments";
-    return -1;
-  }
-
-  fidl::WireSyncClient client{std::move(client_end.value())};
-  fuchsia_boot::wire::BoolPair bool_keys[]{
-      {fidl::StringView{"netsvc.disable"}, true},
-      {fidl::StringView{"netsvc.netboot"}, false},
-      {fidl::StringView{"netsvc.advertise"}, true},
-      {fidl::StringView{"netsvc.all-features"}, false},
-  };
-
-  fidl::WireResult bool_resp =
-      client->GetBools(fidl::VectorView<fuchsia_boot::wire::BoolPair>::FromExternal(bool_keys));
-  if (bool_resp.ok()) {
-    out->disable = bool_resp->values[0];
-    out->netboot = bool_resp->values[1];
-    out->advertise = bool_resp->values[2];
-    out->all_features = bool_resp->values[3];
-  }
+  out->disable = config.disable();
+  out->netboot = config.netboot();
+  out->advertise = config.advertise();
+  out->all_features = config.all_features();
 
   int err = ParseCommonArgs(argc, argv, error, &out->interface);
   if (err) {
@@ -68,6 +45,7 @@ int ParseArgs(int argc, char** argv, const netsvc_structured_config::Config& con
     const struct {
       std::string_view name;
       bool* flag;
+      bool value = true;
     } flags[] = {
         {
             "--netboot",
@@ -89,10 +67,15 @@ int ParseArgs(int argc, char** argv, const netsvc_structured_config::Config& con
             "--log-packets",
             &out->log_packets,
         },
+        {
+            "--enable",
+            &out->disable,
+            false,
+        },
     };
     for (const auto& f : flags) {
       if (f.name == argv[1]) {
-        *(f.flag) = true;
+        *(f.flag) = f.value;
         break;
       }
     }

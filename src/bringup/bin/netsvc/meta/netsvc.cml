@@ -36,7 +36,6 @@
         },
         {
             protocol: [
-                "fuchsia.boot.Arguments",
                 "fuchsia.device.NameProvider",
                 "fuchsia.hardware.power.statecontrol.Admin",
                 "fuchsia.logger.Log",
@@ -50,6 +49,34 @@
             type: "string",
             max_size: 200,
             default: "",
+        },
+        {
+            config: "fuchsia.netsvc.disable",
+            key: "disable",
+            availability: "optional",
+            type: "bool",
+            default: true,
+        },
+        {
+            config: "fuchsia.netsvc.netboot",
+            key: "netboot",
+            availability: "optional",
+            type: "bool",
+            default: false,
+        },
+        {
+            config: "fuchsia.netsvc.advertise",
+            key: "advertise",
+            availability: "optional",
+            type: "bool",
+            default: true,
+        },
+        {
+            config: "fuchsia.netsvc.all-features",
+            key: "all_features",
+            availability: "optional",
+            type: "bool",
+            default: false,
         },
     ],
 }

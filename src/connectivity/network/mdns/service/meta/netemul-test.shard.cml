@@ -71,9 +71,9 @@
     offer: [
         {
             config: [
-              "fuchsia.network.PrimaryInterface",
-              "fuchsia.zircon.namegen",
-              "fuchsia.zircon.nodename",
+                "fuchsia.network.PrimaryInterface",
+                "fuchsia.zircon.namegen",
+                "fuchsia.zircon.nodename",
             ],
             from: "void",
             to: [

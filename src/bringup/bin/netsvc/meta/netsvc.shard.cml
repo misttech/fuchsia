@@ -17,9 +17,15 @@
             availability: "optional",
         },
         {
-            protocol: [ "fuchsia.boot.Arguments" ],
-            from: "parent",
+            config: [
+                "fuchsia.netsvc.advertise",
+                "fuchsia.netsvc.all-features",
+                "fuchsia.netsvc.disable",
+                "fuchsia.netsvc.netboot",
+            ],
+            from: "#kernel-args-forwarder/boot_args",
             to: "#netsvc",
+            availability: "optional",
         },
         {
             directory: "boot",
