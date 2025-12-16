@@ -41,7 +41,7 @@ name representing the interface’s MAC address.
 You must have a setup that will detect and name the Fuchsia CDC interfaces properly. Currently the
 Fuchsia source tree contains a [Puppet script][puppet-script] that can be run for machines that
 support it. Running this script requires that you're using **NetworkManager, Puppet, and
-a Debian-like Linux distribution.** If all of this applies to you, you can run this Pupptet script
+a Debian-like Linux distribution.** If all of this applies to you, you can run this Puppet script
 using the following command:
 
 ```posix-terminal
