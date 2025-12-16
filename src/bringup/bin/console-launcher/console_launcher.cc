@@ -5,7 +5,6 @@
 #include "src/bringup/bin/console-launcher/console_launcher.h"
 
 #include <fcntl.h>
-#include <fidl/fuchsia.boot/cpp/wire.h>
 #include <fidl/fuchsia.kernel/cpp/wire.h>
 #include <lib/component/incoming/cpp/protocol.h>
 #include <lib/fdio/fd.h>
@@ -50,67 +49,20 @@ zx::result<ConsoleLauncher> ConsoleLauncher::Create() {
   return zx::ok(std::move(launcher));
 }
 
-zx::result<Arguments> GetArguments(const fidl::ClientEnd<fuchsia_boot::Arguments>& client,
-                                   const console_launcher_config::Config& config) {
+zx::result<Arguments> GetArguments(const console_launcher_config::Config& config) {
   Arguments ret;
+  ret.run_shell = config.console_shell();
+  ret.virtcon_disabled = config.virtcon_disabled();
+  ret.virtual_console_need_debuglog = !config.netsvc_disable() && config.netsvc_netboot();
+  ret.use_virtio_console = config.use_virtio_console();
 
-  {
-    fuchsia_boot::wire::BoolPair bool_keys[]{{
-                                                 .key = "console.shell",
-                                                 .defaultval = false,
-                                             },
-                                             {
-                                                 .key = "netsvc.disable",
-                                                 .defaultval = true,
-                                             },
-                                             {
-                                                 .key = "netsvc.netboot",
-                                                 .defaultval = false,
-                                             },
-                                             {
-                                                 .key = "console.use_virtio_console",
-                                                 .defaultval = false,
-                                             }};
-    const fidl::WireResult result = fidl::WireCall(client)->GetBools(
-        fidl::VectorView<fuchsia_boot::wire::BoolPair>::FromExternal(bool_keys));
-    if (!result.ok()) {
-      FX_PLOGS(ERROR, result.status()) << "failed to get boot bools";
-      return zx::error(result.status());
-    }
-    const fidl::WireResponse response = result.value();
-    const bool console_shell = response.values[0];
-    ret.run_shell = console_shell;
-    ret.virtcon_disabled = config.virtcon_disabled();
-    const bool netsvc_disable = response.values[1];
-    const bool netsvc_netboot = response.values[2];
-    const bool netboot = !netsvc_disable && netsvc_netboot;
-    ret.virtual_console_need_debuglog = netboot;
-    ret.use_virtio_console = response.values[3];
-  }
-
-  fidl::StringView vars[]{
-      "TERM",
-      "zircon.autorun.boot",
-      "zircon.autorun.system",
-  };
-  const fidl::WireResult resp =
-      fidl::WireCall(client)->GetStrings(fidl::VectorView<fidl::StringView>::FromExternal(vars));
-  if (!resp.ok()) {
-    FX_PLOGS(ERROR, resp.status()) << "failed to get boot strings";
-    return zx::error(resp.status());
-  }
-
-  if (resp->values[0].is_null()) {
+  if (config.term().empty()) {
     ret.term += "uart";
   } else {
-    ret.term += resp->values[0].get();
+    ret.term += config.term();
   }
-  if (!resp->values[1].is_null()) {
-    ret.autorun_boot = resp->values[1].get();
-  }
-  if (!resp->values[2].is_null()) {
-    ret.autorun_system = resp->values[2].get();
-  }
+  ret.autorun_boot = config.autorun_boot();
+  ret.autorun_system = config.autorun_system();
 
   return zx::ok(ret);
 }

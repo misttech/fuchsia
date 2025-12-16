@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <fidl/fuchsia.boot/cpp/wire.h>
 #include <fidl/fuchsia.device/cpp/wire.h>
 #include <fidl/fuchsia.io/cpp/wire.h>
 #include <fidl/fuchsia.virtualconsole/cpp/wire.h>
@@ -266,15 +265,9 @@ int main(int argv, char** argc) {
 
   FX_LOGS(INFO) << "running";
 
-  zx::result boot_args = component::Connect<fuchsia_boot::Arguments>();
-  if (boot_args.is_error()) {
-    FX_PLOGS(FATAL, boot_args.status_value())
-        << "failed to connect to " << fidl::DiscoverableProtocolName<fuchsia_boot::Arguments>;
-  }
-
   auto config = console_launcher_config::Config::TakeFromStartupHandle();
 
-  zx::result get_args = console_launcher::GetArguments(boot_args.value(), config);
+  zx::result get_args = console_launcher::GetArguments(config);
   if (get_args.is_error()) {
     FX_PLOGS(FATAL, get_args.status_value()) << "failed to get arguments";
   }

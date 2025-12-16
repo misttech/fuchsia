@@ -29,6 +29,21 @@
             to: "#console-launcher",
             availability: "optional",
         },
+        {
+            config: [
+                "fuchsia.console.shell",
+                "fuchsia.console.use_virtio_console",
+                "fuchsia.netsvc.disable",
+                "fuchsia.netsvc.netboot",
+                "fuchsia.TERM",
+                "fuchsia.zircon.autorun.boot",
+                "fuchsia.zircon.autorun.system",
+            ],
+            from: "#kernel-args-forwarder/boot_args",
+            to: "#console-launcher",
+            availability: "optional",
+            source_availability: "unknown",
+        },
 
         // Offer the kernel serial console to the console-launcher
         {
@@ -152,7 +167,6 @@
         },
         {
             protocol: [
-                "fuchsia.boot.Arguments",
                 "fuchsia.boot.WriteOnlyLog",
                 "fuchsia.kernel.DebugResource",
                 "fuchsia.kernel.TracingResource",

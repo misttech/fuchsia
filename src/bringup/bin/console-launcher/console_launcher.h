@@ -5,7 +5,6 @@
 #ifndef SRC_BRINGUP_BIN_CONSOLE_LAUNCHER_CONSOLE_LAUNCHER_H_
 #define SRC_BRINGUP_BIN_CONSOLE_LAUNCHER_CONSOLE_LAUNCHER_H_
 
-#include <fidl/fuchsia.boot/cpp/wire.h>
 #include <fidl/fuchsia.hardware.pty/cpp/wire.h>
 #include <fidl/fuchsia.io/cpp/wire.h>
 #include <fidl/fuchsia.ldsvc/cpp/wire.h>
@@ -35,8 +34,7 @@ struct Arguments {
   bool virtual_console_need_debuglog = false;
 };
 
-zx::result<Arguments> GetArguments(const fidl::ClientEnd<fuchsia_boot::Arguments>& client,
-                                   const console_launcher_config::Config& config);
+zx::result<Arguments> GetArguments(const console_launcher_config::Config& config);
 
 class ConsoleLauncher {
  public:

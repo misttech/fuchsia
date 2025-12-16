@@ -31,9 +31,6 @@ source_set("lib") {
   public_deps = [
     ":console_launcher_config",
 
-    # console_launcher.h has #include <fidl/fuchsia.boot/cpp/wire.h>
-    "//sdk/fidl/fuchsia.boot:fuchsia.boot_cpp",
-
     # console_launcher.h has #include <fidl/fuchsia.hardware.pty/cpp/wire.h>
     "//sdk/fidl/fuchsia.hardware.pty:fuchsia.hardware.pty_cpp",
 
@@ -105,9 +102,6 @@ cc_test_executable("unittests") {
 
   deps = [
     ":lib",
-    "//sdk/lib/async-loop:async-loop-cpp",
-    "//sdk/lib/async-loop:async-loop-default",
-    "//zircon/system/ulib/mock-boot-arguments",
     "//zircon/system/ulib/zxtest",
   ]
 }
