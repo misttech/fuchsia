@@ -13,8 +13,6 @@ import("//build/testing/config.gni")
 import("//build/testing/fidl_api_compatibility_test.gni")
 import("//build/testing/golden_files.gni")
 
-# LINT.IfChange(fidl_library)
-
 if (current_build_target_api_level == "PLATFORM") {
   # FIDL directly supports targeting multiple API levels. "PLATFORM" is a
   # meta-level that refers to the set of all supported API levels.
@@ -89,6 +87,8 @@ template("fidl_library") {
 
   testonly = defined(invoker.testonly) && invoker.testonly
 
+  # LINT.IfChange(determine_fidlc_versioned_arg)
+
   target_dir = get_label_info(main_target_name, "dir")
   is_vendor_library = string_replace(target_dir, "//vendor/", "") != target_dir
   assert(
@@ -157,10 +157,10 @@ template("fidl_library") {
       requires_compatibility_tests && invoker.sdk_category == "partner"
 
   if (is_unversioned_vendor_sdk) {
-    # Override the values set above to account for this special case as
-    # described where the variable above was set.
+    # Ensure that the values for this special case are as described where the
+    # variable above was set.
+    assert(is_sdk_included_publishable)
     requires_compatibility_tests = false
-    is_sdk_included_publishable = true
   }
 
   assert(
@@ -318,6 +318,10 @@ template("fidl_library") {
                     fidlc_versioned_arg == "test:1")) ||
           (_is_internal_zx_library && fidlc_versioned_arg == "fuchsia"),
       "Library '$library_name' has an unexpected combination of stability ('$stable'), versioned ('$fidlc_versioned_arg'), SDK category ('${sdk_category_string_for_assert}'), publishable ('$is_sdk_included_publishable'), compatibility testing requirements ('$requires_compatibility_tests'), and `testonly` ('$testonly').")
+
+  # LINT.ThenChange(//build/bazel/rules/fidl/fidl_library.bzl:determine_fidlc_versioned_arg)
+
+  # LINT.IfChange(fidl_library)
 
   fidl_ir(compilation_target_name) {
     forward_variables_from(invoker, invoker_variables_to_forward_to_fidl_ir)

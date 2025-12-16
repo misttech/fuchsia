@@ -7,6 +7,207 @@
 load(":fidl_ir.bzl", "fidl_ir")
 load("//zircon/tools/zither:zither_library.bzl", "zither_library")
 
+# LINT.IfChange(determine_fidlc_versioned_arg)
+def _get_fidlc_versioned_arg(
+        library_name,
+        versioned,
+        category,
+        stable,
+        testonly):
+    """Determines the value of the `versioned` argument to pass to fidlc.
+
+    Also determines whether compatibility tests are required.
+
+    Args:
+        library_name: The name of the library.
+        versioned: The value of the `versioned` attribute.
+        category: The value of the `category` attribute.
+        stable: The value of the `stable` attribute.
+        testonly: The value of the `testonly` attribute.
+
+    Returns:
+        fidlc_versioned_arg: The value of the `versioned` argument to pass to fidlc.
+        requires_compatibility_tests: Whether compatibility tests are required.
+    """
+    # Assume `category` validation is done elsewhere.
+
+    # All libraries in an SDK category require compatibility tests.
+    requires_compatibility_tests = category != ""
+
+    # All publishable libraries must have compatibility tests.
+    # Only "partner" libraries are publishable.
+    is_idk_included_publishable = \
+        requires_compatibility_tests and category == "partner"
+
+    is_vendor_library = native.package_name().startswith("//vendor/")
+    if is_vendor_library:
+        if category and category != "partner":
+            fail(library_name + ": In vendor repos, only libraries in the vendor IDK should have `sdk_category` set.")
+        if versioned != "unversioned":
+            fail(library_name + ": `versioned` must be 'unversioned' for vendor IDK libraries.")
+
+        # Vendor IDK libraries are `is_idk_included_publishable` but not
+        # in the "fuchsia" namespace, not intended to be compaitibility
+        # tested, and do not appear in allowlists. They specify
+        # "unversioned" for clarity.
+        if not is_idk_included_publishable:
+            fail("Internal logic error")
+        requires_compatibility_tests = False
+
+        is_unversioned_vendor_idk = True
+    else:
+        is_unversioned_vendor_idk = False
+
+    # All stable libraries must be included in an SDK [category] and require
+    # compatibility tests, but the inverse is not always true.
+    # For unstable libraries with `requires_compatibility_tests=True`, although
+    # the build targets are created, the resulting API summery file will be empty.
+    if stable and not requires_compatibility_tests:
+        fail(library_name + ": Stable libraries must require compatibility tests.")
+
+    if not stable and category and category != "partner":
+        fail(
+            library_name + ": Libraries in category '%s' must specify `stable=True`." % category,
+        )
+
+    # Some IDK prebuilts depend on FIDL libraries that are currently internal
+    # and unstable. Treat such libraries as unversioned until each is resolved.
+    _libraries_in_unsupported_scenarios = [
+        # Do not add to this list without discussing with the FIDL team.
+        # It is likely that only instances of the scenarios described in
+        # https://fxbug.dev/369892217 should be added.
+
+        # TODO(https://fxbug.dev/364294648): Resolve heapdump instrumentation dependency on library.
+        "fuchsia.memory.heapdump.process",
+    ]
+    _is_library_in_unsupported_scenarios = \
+        library_name in _libraries_in_unsupported_scenarios
+
+    # TODO(https://fxbug.dev/364422340): Remove when the internal "zx" library is properly versioned.
+    _is_internal_zx_library = native.package_name() == "zircon/vdso" and library_name == "zx"
+
+    # //sdk/banjo/fuchsia.sysmem is the only Banjo library with versioning.
+    # Banjo libraries do not have an SDK category and are not marked stable,
+    # so it is not caught in an earlier condition.
+    # TODO(https://fxbug.dev/306258166): Determine an appropriate state for this
+    # library and remove this variable and related exceptions.
+    _is_banjo_sysmem = library_name == "fuchsia.sysmem" and not category
+
+    # If `versioned` is not specified, set the default as defined in the
+    # `fidl_library()` `versioned` attribute.
+    if versioned:
+        _platform_override_name = versioned.split(":")[0]
+        if not (is_idk_included_publishable or testonly or _is_internal_zx_library):
+            fail(
+                library_name + ": Non-test library is explicitly versioned but not included in an IDK.",
+            )
+        if requires_compatibility_tests and _platform_override_name != "fuchsia":
+            fail(
+                library_name + ": Overriding `versioned` is not allowed for IDK FIDL library, which is a Fuchsia platform API requiring compatibility tests.",
+            )
+
+        fidlc_versioned_arg = versioned
+    elif testonly and not category:
+        fidlc_versioned_arg = "unversioned"
+    elif library_name.startswith("fuchsia."):
+        # The library is in the "fuchsia" namespace and either not test-only or
+        # in an SDK category. Set `versioned` to appropriate default.
+        if stable:
+            if not category:
+                fail(library_name + ": Libraries cannot be stable but not in an SDK category.")
+
+            # Stable "fuchsia.*" library in an SDK category - must compile for all Supported API levels.
+            fidlc_versioned_arg = "fuchsia"
+        elif requires_compatibility_tests:
+            if not category:
+                fail(
+                    library_name + ": Libraries cannot require compatibility tests unless they are in an SDK category.",
+                )
+
+            # Unstable "fuchsia.*" library in an SDK category - can only be used at HEAD.
+            fidlc_versioned_arg = "fuchsia:HEAD"
+        else:
+            if category:
+                fail(
+                    library_name + ": Libraries with an SDK category should be stable or at least require compatibility tests.",
+                )
+
+            # All libraries in the "fuchsia" namespace must be versioned. For unstable
+            # and/or internal libraries, that means specifying `@available(added=HEAD)`.
+            fidlc_versioned_arg = "fuchsia:HEAD"
+
+            # Temporary exceptions to the above rule. See the TODOs where each
+            # variable is declared. Update the comment about "temporary exceptions" in
+            # the `fidl_library()` `versioned` attribute when removing the last one.
+            if _is_library_in_unsupported_scenarios:
+                fidlc_versioned_arg = "unversioned"
+            elif _is_banjo_sysmem:
+                fidlc_versioned_arg = "fuchsia"
+    else:
+        if stable or category:
+            fail(
+                library_name + ": Libraries that are stable and/or have an SDK category must be versioned. This is handled automatically for fuchsia.* libraries but must be displayed for other libraries.",
+            )
+        fidlc_versioned_arg = "unversioned"
+
+    # The examples in the documentation may not conform to the expectations
+    # for illustrative purposes, and it does not make sense to change them.
+    _is_documentation_example = library_name == "fuchsia.examples.docs"
+
+    # Verify the results are in one of the expected combinations.
+    if (fidlc_versioned_arg == "fuchsia" and stable and
+        requires_compatibility_tests and
+        (is_idk_included_publishable or
+         category == "compat_test" or
+         category == "host_tool" or
+         category == "prebuilt")):
+        # Stable libraries versioned in "fuchsia".
+        pass
+    elif (fidlc_versioned_arg == "fuchsia" and _is_banjo_sysmem and not stable and
+          not requires_compatibility_tests and not is_idk_included_publishable):
+        # The Banjo sysmem library is an exception.
+        pass
+    elif (fidlc_versioned_arg == "fuchsia:HEAD" and not stable and
+          requires_compatibility_tests == (category != "")):
+        # Unstable libraries versioned in "fuchsia".
+        pass
+    elif (fidlc_versioned_arg == "unversioned" and
+          _is_library_in_unsupported_scenarios):
+        # Unversioned libraries in unsupported scenarios.
+        pass
+    elif (fidlc_versioned_arg == "unversioned" and not stable and
+          not requires_compatibility_tests and
+          (not category or is_unversioned_vendor_idk)):
+        # Unversioned libraries.
+        pass
+    elif (testonly and not stable and not category and
+          not requires_compatibility_tests and
+          (fidlc_versioned_arg == "unversioned" or
+           _is_documentation_example or
+           fidlc_versioned_arg == "test:1")):
+        # Test-only libraries are either unversioned or versioned in "test" or
+        # documentation examples.
+        pass
+    elif (_is_internal_zx_library and fidlc_versioned_arg == "fuchsia"):
+        # The internal ZX library is an exception.
+        pass
+    else:
+        fail(
+            "Library '%s' has an unexpected combination of stability ('%s'), versioned ('%s'), SDK category ('%s'), publishable ('%s'), compatibility testing requirements ('%s'), and `testonly` ('%s')." % (
+                library_name,
+                stable,
+                fidlc_versioned_arg,
+                category,
+                is_idk_included_publishable,
+                requires_compatibility_tests,
+                testonly,
+            ),
+        )
+
+    return fidlc_versioned_arg, requires_compatibility_tests
+
+# LINT.ThenChange(//build/fidl/fidl_library.gni:determine_fidlc_versioned_arg)
+
 def _fidl_library_impl(
         name,
         srcs,
@@ -56,7 +257,13 @@ def _fidl_library_impl(
     # TODO(https://fxbug.dev/428285014): Validate versioning-related attributes,
     # determine the need for running compatibility tests, and determine the
     # value for the fidlc `versioned` argument.
-    fidlc_versioned_arg = versioned
+    fidlc_versioned_arg, requires_compatibility_tests = _get_fidlc_versioned_arg(
+        library_name = library_name,
+        versioned = versioned,
+        category = category,
+        stable = stable,
+        testonly = testonly,
+    )
 
     fidl_ir(
         name = compilation_target_name,
@@ -133,6 +340,8 @@ def _fidl_library_impl(
 
     # TODO(https://fxbug.dev/442637596): Implement host test data or similar in the proper conditions.
 
+    atom_type = "fidl_library"
+
     if category:
         # TODO(https://fxbug.dev/428285014): Create an idk_atom().
         fail("IDK atom creation is not yet supported.")
@@ -140,6 +349,11 @@ def _fidl_library_impl(
     native.filegroup(
         name = name,
         srcs = [compilation_target_name],
+        # For libraries in a category, add a deps on the allowlist to catch
+        # cases where the macro is used but there is no dependency on the atom
+        # target.
+        # TODO(https://fxbug.dev/428285014): Uncomment when adding IDK atom support.
+        # data = [get_allowlist_target(atom_type, category, stable)] if category else [],
         testonly = testonly,
         visibility = visibility,
     )
@@ -166,6 +380,7 @@ GN equivalent: `name`""",
         ),
         "category": attr.string(
             doc = "Publication level of the library in the IDK. See _create_idk_atom().",
+            values = ["compat_test", "host_tool", "prebuilt", "partner", ""],
             mandatory = False,
             configurable = False,
         ),
