@@ -28,9 +28,9 @@
             url: "#meta/system-updater.cm",
         },
         {
-            // TODO(https://fxbug.dev/42144087) investigate how isolated-ota should work with commits. GC is
-            // traditionally blocked on the previous updated being committed. Here, we relax this
-            // restriction because it does not make sense for recovery, and use a fake
+            // TODO(https://fxbug.dev/42144087) investigate how isolated-ota should work with
+            // commits. GC is traditionally blocked on the previous updated being committed. Here,
+            // we relax this restriction because it does not make sense for recovery, and use a fake
             // system-update-committer that always reports the system is committed.
             name: "fake-system-update-committer",
             url: "#meta/fake-system-update-committer.cm",
@@ -130,6 +130,7 @@
             protocol: [
                 "fuchsia.metrics.MetricEventLoggerFactory",
                 "fuchsia.net.name.Lookup",
+                "fuchsia.pkg.http.Client",
                 "fuchsia.posix.socket.Provider",
             ],
             from: "parent",

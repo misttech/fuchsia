@@ -89,6 +89,7 @@
                 "fuchsia.net.http.Loader",
                 "fuchsia.net.name.Lookup",
                 "fuchsia.paver.Paver",
+                "fuchsia.pkg.http.Client",
                 "fuchsia.posix.socket.Provider",
             ],
             from: "parent",

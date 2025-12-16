@@ -134,6 +134,56 @@ impl TestExecutor<TestResult> for IsolatedOtaTestExecutor {
             .await
             .unwrap();
 
+        let http_client_child = realm_builder
+            .add_child("http_client", "#meta/http-client.cm", ChildOptions::new())
+            .await
+            .unwrap();
+        realm_builder
+            .add_route(
+                Route::new()
+                    .capability(Capability::configuration(
+                        "fuchsia.http-client.StopOnIdleTimeoutMillis",
+                    ))
+                    .from(Ref::void())
+                    .to(&http_client_child),
+            )
+            .await
+            .unwrap();
+        realm_builder
+            .add_route(
+                Route::new()
+                    .capability(
+                        Capability::directory("root-ssl-certificates")
+                            .path(GLOBAL_SSL_CERTS_PATH)
+                            .rights(fio::R_STAR_DIR),
+                    )
+                    .from(&directories_component)
+                    .to(&http_client_child),
+            )
+            .await
+            .unwrap();
+        realm_builder
+            .add_route(
+                Route::new()
+                    .capability(Capability::protocol_by_name("fuchsia.logger.LogSink"))
+                    .capability(Capability::protocol_by_name("fuchsia.net.name.Lookup"))
+                    .capability(Capability::protocol_by_name("fuchsia.posix.socket.Provider"))
+                    .capability(Capability::protocol_by_name("fuchsia.tracing.provider.Registry"))
+                    .from(Ref::parent())
+                    .to(&http_client_child),
+            )
+            .await
+            .unwrap();
+        realm_builder
+            .add_route(
+                Route::new()
+                    .capability(Capability::protocol_by_name("fuchsia.pkg.http.Client"))
+                    .from(&http_client_child)
+                    .to(&pkg_component),
+            )
+            .await
+            .unwrap();
+
         let paver_dir_proxy = params.paver_connector.into_proxy();
         let paver_child = realm_builder
             .add_local_child(

@@ -54,6 +54,7 @@ fuchsia_test_package("isolated-ota-integration-tests") {
   deps = [
     "//src/connectivity/network:netstack-for-tests",
     "//src/connectivity/network/dns:component",
+    "//src/connectivity/policy/http-client:component",
     "//src/storage/testing:storage_driver_test_realm",
     "//src/storage/tools/blobfs-compression",
     "//src/sys/pkg/bin/fake-system-update-committer",

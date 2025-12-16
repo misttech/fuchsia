@@ -8,17 +8,21 @@ use fidl::prelude::*;
 use fuchsia_async::{self as fasync, TimeoutExt as _};
 use fuchsia_component::server::{Item, ServiceFs, ServiceFsDir};
 use fuchsia_runtime::{HandleInfo, HandleType};
+use futures::StreamExt;
 use futures::future::Either;
 use futures::prelude::*;
-use futures::StreamExt;
 use http_client_config::Config;
 use log::{debug, error, info, trace};
 use std::str::FromStr as _;
 use zx::{self as zx, AsHandleRef};
 use {
-    fidl_fuchsia_io as fio, fidl_fuchsia_net_http as net_http,
+    fidl_fuchsia_io as fio, fidl_fuchsia_net_http as net_http, fidl_fuchsia_pkg_http as fpkg_http,
     fidl_fuchsia_process_lifecycle as flifecycle, fuchsia_hyper as fhyper,
+    fuchsia_inspect as finspect,
 };
+
+mod pkg;
+mod resuming_get;
 
 static MAX_REDIRECTS: u8 = 10;
 static DEFAULT_DEADLINE_DURATION: zx::MonotonicDuration = zx::MonotonicDuration::from_seconds(15);
@@ -272,8 +276,7 @@ impl Loader {
                             self.method = redirect.method;
                             trace!(
                                 "Reporting redirect to OnResponse: {} {}",
-                                self.method,
-                                self.url
+                                self.method, self.url
                             );
                             let response = to_success_response(
                                 &self.url,
@@ -444,11 +447,19 @@ async fn loader_server(
 
 enum HttpServices {
     Loader(net_http::LoaderRequestStream),
+    PkgClient(fpkg_http::ClientRequestStream),
 }
 
 #[fuchsia::main]
 pub async fn main() -> Result<(), anyhow::Error> {
     log::info!("http-client starting");
+    fuchsia_trace_provider::trace_provider_create_with_fdio();
+    let inspector = finspect::Inspector::default();
+    let pkg_http_node = inspector.root().create_child("pkg-http");
+    let pkg_http_connections_node = pkg_http_node.create_child("connections");
+    let pkg_http_connection_count = std::sync::atomic::AtomicU64::new(0);
+    let _inspect_server_task =
+        inspect_runtime::publish(&inspector, inspect_runtime::PublishOptions::default());
 
     // TODO(https://fxbug.dev/333080598): This is quite some boilerplate to escrow the outgoing dir.
     // Design some library function to handle the lifecycle requests.
@@ -467,8 +478,11 @@ pub async fn main() -> Result<(), anyhow::Error> {
     };
 
     let mut fs = ServiceFs::new();
-    let _: &mut ServiceFsDir<'_, _> =
-        fs.take_and_serve_directory_handle()?.dir("svc").add_fidl_service(HttpServices::Loader);
+    let _: &mut ServiceFsDir<'_, _> = fs
+        .take_and_serve_directory_handle()?
+        .dir("svc")
+        .add_fidl_service(HttpServices::Loader)
+        .add_fidl_service(HttpServices::PkgClient);
 
     let lifecycle_task = async move {
         let Some(Ok(request)) = lifecycle_request_stream.next().await else {
@@ -488,12 +502,22 @@ pub async fn main() -> Result<(), anyhow::Error> {
         fs.until_stalled(idle_timeout)
             .for_each_concurrent(None, |item| async {
                 match item {
-                    Item::Request(services, _active_guard) => {
-                        let HttpServices::Loader(stream) = services;
-                        loader_server(stream, idle_timeout)
+                    Item::Request(services, _active_guard) => match services {
+                        HttpServices::Loader(stream) => loader_server(stream, idle_timeout)
                             .await
-                            .unwrap_or_else(|e: anyhow::Error| error!("{:?}", e))
-                    }
+                            .unwrap_or_else(|e: anyhow::Error| error!("{:?}", e)),
+                        HttpServices::PkgClient(stream) => pkg::serve_client_request_stream(
+                            stream,
+                            idle_timeout,
+                            pkg_http_connections_node.create_child(
+                                pkg_http_connection_count
+                                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+                                    .to_string(),
+                            ),
+                        )
+                        .await
+                        .unwrap_or_else(|e: anyhow::Error| error!("{e:#}")),
+                    },
                     Item::Stalled(outgoing_directory) => {
                         escrow_outgoing(lifecycle_control_handle.clone(), outgoing_directory.into())
                     }

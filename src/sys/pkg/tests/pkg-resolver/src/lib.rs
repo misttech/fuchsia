@@ -43,9 +43,9 @@ use vfs::directory::helper::DirectlyMutable as _;
 use zx::{self as zx, AsHandleRef as _, HandleBased as _};
 use {
     fidl_fuchsia_fxfs as ffxfs, fidl_fuchsia_io as fio,
-    fidl_fuchsia_pkg_garbagecollector as fpkg_gc, fidl_fuchsia_pkg_internal as fpkg_internal,
-    fidl_fuchsia_pkg_rewrite as fpkg_rewrite, fidl_fuchsia_sys2 as fsys2,
-    fidl_fuchsia_update as fupdate, fuchsia_async as fasync,
+    fidl_fuchsia_pkg_garbagecollector as fpkg_gc, fidl_fuchsia_pkg_http as fpkg_http,
+    fidl_fuchsia_pkg_internal as fpkg_internal, fidl_fuchsia_pkg_rewrite as fpkg_rewrite,
+    fidl_fuchsia_sys2 as fsys2, fidl_fuchsia_update as fupdate, fuchsia_async as fasync,
 };
 
 // If the body of an https response is not large enough, hyper will download the body
@@ -527,6 +527,10 @@ where
             )
             .await
             .unwrap();
+        let http_client = builder
+            .add_child("http_client", "#meta/http-client.cm", ChildOptions::new())
+            .await
+            .unwrap();
         let service_reflector = builder
             .add_local_child(
                 "service_reflector",
@@ -637,6 +641,31 @@ where
             }
         }
 
+        builder
+            .add_route(
+                Route::new()
+                    .capability(Capability::configuration(
+                        "fuchsia.http-client.StopOnIdleTimeoutMillis",
+                    ))
+                    .from(Ref::void())
+                    .to(&http_client),
+            )
+            .await
+            .unwrap();
+        builder
+            .add_route(
+                Route::new()
+                    .capability(
+                        Capability::directory("root-ssl-certificates")
+                            .path("/config/ssl")
+                            .rights(fio::R_STAR_DIR),
+                    )
+                    .from(&service_reflector)
+                    .to(&http_client),
+            )
+            .await
+            .unwrap();
+
         // Unconditionally overwrite `use_fxblob` because the value in the production config is
         // outside of SWD control.
         let pkg_cache_config = builder
@@ -680,19 +709,21 @@ where
                     .from(Ref::parent())
                     .to(&pkg_cache)
                     .to(&system_update_committer)
+                    .to(&http_client)
                     .to(&pkg_resolver),
             )
             .await
             .unwrap();
 
-        // Make sure pkg_resolver has network access as required by the hyper client shard
+        // Networking capabilities needed for the hyper client shard.
         builder
             .add_route(
                 Route::new()
                     .capability(Capability::protocol::<fidl_fuchsia_posix_socket::ProviderMarker>())
                     .capability(Capability::protocol::<fidl_fuchsia_net_name::LookupMarker>())
                     .from(Ref::parent())
-                    .to(&pkg_resolver),
+                    .to(&pkg_resolver)
+                    .to(&http_client),
             )
             .await
             .unwrap();
@@ -707,6 +738,15 @@ where
                     )
                     .from(&service_reflector)
                     .to(&pkg_cache)
+                    .to(&pkg_resolver),
+            )
+            .await
+            .unwrap();
+        builder
+            .add_route(
+                Route::new()
+                    .capability(Capability::protocol::<fpkg_http::ClientMarker>())
+                    .from(&http_client)
                     .to(&pkg_resolver),
             )
             .await

@@ -8,12 +8,14 @@ use component_events::events::*;
 use component_events::matcher::*;
 use fuchsia_component_test::ScopedInstance;
 use futures::stream::FuturesUnordered;
-use futures::{select, FutureExt as _, StreamExt as _, TryStreamExt as _};
+use futures::{FutureExt as _, StreamExt as _, TryStreamExt as _, select};
 use std::future::Future;
 use std::net::SocketAddr;
 use std::pin::pin;
 use test_case::test_case;
 use {fidl_fuchsia_net_http as http, fuchsia_async as fasync};
+
+mod pkg;
 
 const ROOT_DOCUMENT: &str = "Root document\n";
 
@@ -34,7 +36,7 @@ async fn run_without_connecting<F: Future<Output = ()>>(
 ) {
     use futures::future::Either;
     use hyper::service::{make_service_fn, service_fn};
-    use hyper::{header, Body, Method, Response, StatusCode};
+    use hyper::{Body, Method, Response, StatusCode, header};
     use std::convert::{Infallible, TryInto as _};
     use std::net::{IpAddr, Ipv6Addr};
 

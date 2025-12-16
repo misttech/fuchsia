@@ -490,6 +490,20 @@ impl Blob<NeedsTruncate> {
             })
         })
     }
+
+    /// Return the fields for manual handling of the protocol.
+    ///
+    /// The returned BlobWriter client end is in the initial state of the protocol (GetVmo has not
+    /// been called).
+    ///
+    /// Once the blob has been written through the BlobWriter, BlobWritten should be called on the
+    /// returned NeededBlobs proxy. The returned NeededBlobs proxy should not otherwise be used.
+    pub fn deconstruct(
+        self,
+    ) -> (fpkg::NeededBlobsProxy, BlobId, fidl::endpoints::ClientEnd<ffxfs::BlobWriterMarker>) {
+        let Blob { needed_blobs, blob_id, state: NeedsTruncate(client) } = self;
+        (needed_blobs, blob_id, client)
+    }
 }
 
 impl Blob<NeedsData> {

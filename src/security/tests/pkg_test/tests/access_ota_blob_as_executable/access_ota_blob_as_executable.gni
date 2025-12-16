@@ -166,6 +166,7 @@ template("access_ota_blob_as_executable") {
 
              # Production network components for OTA update.
              "//src/connectivity/network/netstack:component",
+             "//src/connectivity/policy/http-client:component",
 
              # Mock SWD component dependencies.
              "//src/cobalt/bin/testing/fake_cobalt:component_v2",

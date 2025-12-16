@@ -6,8 +6,6 @@
         "//src/sys/test_runners/rust/default.shard.cml",
         "inspect/offer.shard.cml",
         "sys/component/realm_builder.shard.cml",
-
-        // Depends on root ssl certificate which is a system capability.
         "syslog/client.shard.cml",
     ],
     program: {
@@ -72,13 +70,21 @@
                 "#never_idle",
             ],
         },
+
+        // fuchsia_hyper::new_https_client fails if there isn't a file at /config/ssl/cert.pem, but
+        // the unit tests don't actually make https connections and so don't need any certs, so we
+        // can just give them an empty file instead of making them a system test and giving them the
+        // system certs.
         {
-            directory: "root-ssl-certificates",
-            from: "parent",
+            directory: "pkg",
+            from: "framework",
+            as: "root-ssl-certificates",
             to: [
                 "#idle_1ms",
                 "#never_idle",
             ],
+            rights: [ "r*" ],
+            subdir: "fake-ssl-certs",
         },
     ],
 }

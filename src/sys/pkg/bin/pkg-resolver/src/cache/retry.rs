@@ -81,8 +81,7 @@ where
 mod tests {
     use super::*;
     use assert_matches::assert_matches;
-    use delivery_blob::DeliveryBlobType;
-    use hyper::StatusCode;
+    use fidl_fuchsia_pkg_http as fpkg_http;
 
     #[test]
     fn http_errors_aborts_on_io_error() {
@@ -97,21 +96,13 @@ mod tests {
     #[test]
     fn http_errors_retries_network_error_once() {
         let mut backoff = HttpErrors::default();
-        let err = FetchError::BadHttpStatus {
-            code: StatusCode::INTERNAL_SERVER_ERROR,
-            uri: "fake-uri".into(),
-            blob_type: DeliveryBlobType::Type1,
-        };
+        let err = FetchError::DownloadBlob(fpkg_http::ClientDownloadBlobError::Network);
         assert_eq!(backoff.next_backoff(&err), Some(Duration::from_secs(0)));
         assert_eq!(backoff.next_backoff(&err), None);
     }
 
     fn make_rate_limit_error() -> FetchError {
-        FetchError::BadHttpStatus {
-            code: StatusCode::TOO_MANY_REQUESTS,
-            uri: "fake-uri".into(),
-            blob_type: DeliveryBlobType::Type1,
-        }
+        FetchError::DownloadBlob(fpkg_http::ClientDownloadBlobError::NetworkRateLimit)
     }
 
     #[test]

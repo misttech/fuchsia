@@ -88,6 +88,22 @@ pub(crate) mod for_tests {
                 .await
                 .unwrap();
 
+            let http_client = realm_builder
+                .add_child("http-client", "#meta/http-client.cm", ChildOptions::new())
+                .await
+                .unwrap();
+            realm_builder
+                .add_route(
+                    Route::new()
+                        .capability(Capability::configuration(
+                            "fuchsia.http-client.StopOnIdleTimeoutMillis",
+                        ))
+                        .from(Ref::void())
+                        .to(&http_client),
+                )
+                .await
+                .unwrap();
+
             let pkg_resolver = realm_builder
                 .add_child("pkg-resolver", "#meta/pkg-resolver.cm", ChildOptions::new())
                 .await
@@ -108,7 +124,7 @@ pub(crate) mod for_tests {
             realm_builder
                 .read_only_directory(
                     "root-ssl-certificates",
-                    vec![&pkg_resolver],
+                    vec![&pkg_resolver, &http_client],
                     DirectoryContents::new().add_file(SSL_CERT_FILE_NAME, cert_bytes),
                 )
                 .await
@@ -118,19 +134,11 @@ pub(crate) mod for_tests {
                 .add_route(
                     Route::new()
                         .capability(Capability::protocol_by_name("fuchsia.logger.LogSink"))
-                        .from(Ref::parent())
-                        .to(&pkg_resolver),
-                )
-                .await
-                .unwrap();
-
-            realm_builder
-                .add_route(
-                    Route::new()
                         .capability(Capability::protocol_by_name("fuchsia.net.name.Lookup"))
                         .capability(Capability::protocol_by_name("fuchsia.posix.socket.Provider"))
                         .from(Ref::parent())
-                        .to(&pkg_resolver),
+                        .to(&pkg_resolver)
+                        .to(&http_client),
                 )
                 .await
                 .unwrap();
@@ -141,6 +149,16 @@ pub(crate) mod for_tests {
                         .capability(Capability::protocol_by_name("fuchsia.pkg.PackageResolver-ota"))
                         .from(&pkg_resolver)
                         .to(Ref::parent()),
+                )
+                .await
+                .unwrap();
+
+            realm_builder
+                .add_route(
+                    Route::new()
+                        .capability(Capability::protocol_by_name("fuchsia.pkg.http.Client"))
+                        .from(&http_client)
+                        .to(&pkg_resolver),
                 )
                 .await
                 .unwrap();

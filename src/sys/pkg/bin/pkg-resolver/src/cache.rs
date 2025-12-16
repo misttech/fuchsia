@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::TCP_KEEPALIVE_TIMEOUT;
 use crate::repository::Repository;
 use crate::repository_manager::Stats;
 use delivery_blob::DeliveryBlobType;
@@ -18,38 +17,38 @@ use futures::lock::Mutex as AsyncMutex;
 use futures::prelude::*;
 use futures::stream::FuturesUnordered;
 use http_uri_ext::HttpUriExt as _;
-use hyper::StatusCode;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::time::Duration;
+use std::sync::atomic::{AtomicBool, Ordering};
 use tuf::metadata::{MetadataPath, MetadataVersion, TargetPath};
 use zx::Status;
-use {cobalt_sw_delivery_registry as metrics, fuchsia_trace as ftrace};
+use {
+    cobalt_sw_delivery_registry as metrics, fidl_fuchsia_pkg_http as fpkg_http,
+    fuchsia_trace as ftrace,
+};
 
 pub use fidl_fuchsia_pkg_ext::BasePackageIndex;
 
 mod inspect;
-mod resume;
 mod retry;
 
 #[derive(Clone, Copy, Debug, typed_builder::TypedBuilder)]
 pub struct BlobFetchParams {
-    header_network_timeout: Duration,
-    body_network_timeout: Duration,
-    download_resumption_attempts_limit: u64,
+    header_network_timeout: zx::BootDuration,
+    body_network_timeout: zx::BootDuration,
+    download_resumption_attempts_limit: u32,
     blob_type: DeliveryBlobType,
 }
 
 impl BlobFetchParams {
-    pub fn header_network_timeout(&self) -> Duration {
+    pub fn header_network_timeout(&self) -> zx::BootDuration {
         self.header_network_timeout
     }
 
-    pub fn body_network_timeout(&self) -> Duration {
+    pub fn body_network_timeout(&self) -> zx::BootDuration {
         self.body_network_timeout
     }
 
-    pub fn download_resumption_attempts_limit(&self) -> u64 {
+    pub fn download_resumption_attempts_limit(&self) -> u32 {
         self.download_resumption_attempts_limit
     }
 
@@ -203,7 +202,7 @@ pub async fn cache_package<'a>(
 }
 
 #[derive(Debug, thiserror::Error)]
-pub enum CacheError {
+pub(crate) enum CacheError {
     #[error("fidl error")]
     Fidl(#[from] fidl::Error),
 
@@ -384,34 +383,22 @@ impl ToResolveError for FetchError {
         use FetchError::*;
         match self {
             CreateBlob(e) => e.to_resolve_error(),
-            BadHttpStatus { code: hyper::StatusCode::UNAUTHORIZED, .. } => {
-                pkg::ResolveError::AccessDenied
-            }
-            BadHttpStatus { code: hyper::StatusCode::FORBIDDEN, .. } => {
-                pkg::ResolveError::AccessDenied
-            }
-            BadHttpStatus { .. } => pkg::ResolveError::UnavailableBlob,
-            ContentLengthMismatch { .. } => pkg::ResolveError::UnavailableBlob,
-            UnknownLength { .. } => pkg::ResolveError::UnavailableBlob,
-            BlobTooSmall { .. } => pkg::ResolveError::UnavailableBlob,
-            BlobTooLarge { .. } => pkg::ResolveError::UnavailableBlob,
-            Hyper { .. } => pkg::ResolveError::UnavailableBlob,
-            Http { .. } => pkg::ResolveError::UnavailableBlob,
-            Truncate(e) => e.to_resolve_error(),
-            Write { e, .. } => e.to_resolve_error(),
             BlobWritten(_) => pkg::ResolveError::Internal,
             NoMirrors => pkg::ResolveError::Internal,
             BlobUrl(_) => pkg::ResolveError::Internal,
-            FidlError(_) => pkg::ResolveError::Internal,
-            IoError(_) => pkg::ResolveError::Io,
-            BlobHeaderTimeout { .. } => pkg::ResolveError::UnavailableBlob,
-            BlobBodyTimeout { .. } => pkg::ResolveError::UnavailableBlob,
-            ExpectedHttpStatus206 { .. } => pkg::ResolveError::UnavailableBlob,
-            MissingContentRangeHeader { .. } => pkg::ResolveError::UnavailableBlob,
-            MalformedContentRangeHeader { .. } => pkg::ResolveError::UnavailableBlob,
-            InvalidContentRangeHeader { .. } => pkg::ResolveError::UnavailableBlob,
-            ExceededResumptionAttemptLimit { .. } => pkg::ResolveError::UnavailableBlob,
-            ContentLengthContentRangeMismatch { .. } => pkg::ResolveError::UnavailableBlob,
+            DownloadBlobFidl(_) => pkg::ResolveError::Internal,
+            BlobWrittenFidl(_) => pkg::ResolveError::Internal,
+            DownloadBlob(fpkg_http::ClientDownloadBlobError::NoSpace) => pkg::ResolveError::NoSpace,
+            DownloadBlob(fpkg_http::ClientDownloadBlobError::Network) => {
+                pkg::ResolveError::UnavailableBlob
+            }
+            DownloadBlob(fpkg_http::ClientDownloadBlobError::NotFound) => {
+                pkg::ResolveError::UnavailableBlob
+            }
+            DownloadBlob(fpkg_http::ClientDownloadBlobError::NetworkRateLimit) => {
+                pkg::ResolveError::Io
+            }
+            DownloadBlob(fpkg_http::ClientDownloadBlobError::Other) => pkg::ResolveError::Io,
         }
     }
 }
@@ -533,15 +520,12 @@ impl BlobFetcher {
     ///   1. a Future to be awaited that processes the queue
     ///   2. a Self that enables pushing work onto the queue
     pub fn new(
+        client: fpkg_http::ClientProxy,
         node: fuchsia_inspect::Node,
         max_concurrency: usize,
         stats: Arc<Mutex<Stats>>,
-        cobalt_sender: ProtocolSender<MetricEvent>,
         blob_fetch_params: BlobFetchParams,
     ) -> (impl Future<Output = ()>, Self) {
-        let http_client = Arc::new(fuchsia_hyper::new_https_client_from_tcp_options(
-            fuchsia_hyper::TcpOptions::keepalive_timeout(TCP_KEEPALIVE_TIMEOUT),
-        ));
         let weak_node = node.clone_weak();
         let inspect = inspect::BlobFetcher::from_node_and_params(node, &blob_fetch_params);
 
@@ -549,22 +533,13 @@ impl BlobFetcher {
             max_concurrency,
             move |merkle: BlobId, context: FetchBlobContext| {
                 let inspect = inspect.fetch(&merkle);
-                let http_client = Arc::clone(&http_client);
+                let client = client.clone();
                 let stats = Arc::clone(&stats);
-                let cobalt_sender = cobalt_sender.clone();
 
                 async move {
-                    fetch_blob(
-                        inspect,
-                        &http_client,
-                        stats,
-                        cobalt_sender,
-                        merkle,
-                        context,
-                        blob_fetch_params,
-                    )
-                    .map_err(Arc::new)
-                    .await
+                    fetch_blob(inspect, &client, stats, merkle, context, blob_fetch_params)
+                        .map_err(Arc::new)
+                        .await
                 }
             },
         );
@@ -601,9 +576,8 @@ impl BlobFetcher {
 
 async fn fetch_blob(
     inspect: inspect::NeedsRemoteType,
-    http_client: &fuchsia_hyper::HttpsClient,
+    client: &fpkg_http::ClientProxy,
     stats: Arc<Mutex<Stats>>,
-    cobalt_sender: ProtocolSender<MetricEvent>,
     merkle: BlobId,
     context: FetchBlobContext,
     blob_fetch_params: BlobFetchParams,
@@ -623,13 +597,12 @@ async fn fetch_blob(
     let inspect = inspect.http();
     let res = fetch_blob_http(
         &inspect,
-        http_client,
+        client,
         mirror,
         merkle,
         &context.opener,
         blob_fetch_params,
         &stats,
-        cobalt_sender,
         trace_id,
     )
     .await;
@@ -639,31 +612,14 @@ async fn fetch_blob(
     res
 }
 
-#[derive(Default)]
-struct FetchStats {
-    // How many times the blob download was resumed, e.g. with Http Range requests
-    resumptions: AtomicU64,
-}
-
-impl FetchStats {
-    fn resume(&self) {
-        self.resumptions.fetch_add(1, Ordering::SeqCst);
-    }
-
-    fn resumptions(&self) -> u64 {
-        self.resumptions.load(Ordering::SeqCst)
-    }
-}
-
 async fn fetch_blob_http(
     inspect: &inspect::TriggerAttempt<inspect::Http>,
-    client: &fuchsia_hyper::HttpsClient,
+    client: &fpkg_http::ClientProxy,
     mirror: &MirrorConfig,
     merkle: BlobId,
     opener: &pkg::cache::DeferredOpenBlob,
     blob_fetch_params: BlobFetchParams,
     stats: &Mutex<Stats>,
-    cobalt_sender: ProtocolSender<MetricEvent>,
     trace_id: ftrace::Id,
 ) -> Result<(), FetchError> {
     let blob_mirror_url = mirror.blob_mirror_url().to_owned();
@@ -674,10 +630,7 @@ async fn fetch_blob_http(
     let flaked = &AtomicBool::new(false);
 
     fuchsia_backoff::retry_or_first_error(retry::blob_fetch(), || {
-        let mut cobalt_sender = cobalt_sender.clone();
-
         async move {
-            let fetch_stats = FetchStats::default();
             let res = async {
                 let inspect = inspect.attempt();
                 inspect.state(inspect::Http::CreateBlob);
@@ -691,16 +644,7 @@ async fn fetch_blob_http(
                         c"download_blob",
                         "hash" => merkle.to_string().as_str()
                     );
-                    let res = download_blob(
-                        &inspect,
-                        client,
-                        blob_url,
-                        blob,
-                        blob_fetch_params,
-                        &fetch_stats,
-                        trace_id,
-                    )
-                    .await;
+                    let res = download_blob(client, blob_url, blob, blob_fetch_params).await;
                     let (size_str, status_str) = match &res {
                         Ok(size) => (size.to_string(), "success".to_string()),
                         Err(e) => ("no size because download failed".to_string(), e.to_string()),
@@ -734,21 +678,6 @@ async fn fetch_blob_http(
                 }
             }
 
-            let result_event_code = match &res {
-                Ok(()) => metrics::FetchBlobMigratedMetricDimensionResult::Success,
-                Err(e) => e.into(),
-            };
-            let resumed_event_code = if fetch_stats.resumptions() != 0 {
-                metrics::FetchBlobMigratedMetricDimensionResumed::True
-            } else {
-                metrics::FetchBlobMigratedMetricDimensionResumed::False
-            };
-            cobalt_sender.send(
-                MetricEvent::builder(metrics::FETCH_BLOB_MIGRATED_METRIC_ID)
-                    .with_event_codes((result_event_code, resumed_event_code))
-                    .as_occurrence(1),
-            );
-
             res
         }
     })
@@ -765,299 +694,74 @@ fn make_blob_url(
 
 // On success, returns the size of the downloaded blob in bytes (useful for tracing).
 async fn download_blob(
-    inspect: &inspect::Attempt<inspect::Http>,
-    client: &fuchsia_hyper::HttpsClient,
+    client: &fpkg_http::ClientProxy,
     uri: &http::Uri,
     dest: pkg::cache::Blob<pkg::cache::NeedsTruncate>,
     blob_fetch_params: BlobFetchParams,
-    fetch_stats: &FetchStats,
-    trace_id: ftrace::Id,
 ) -> Result<u64, FetchError> {
-    inspect.state(inspect::Http::HttpGet);
-
-    let (expected_len, content) = {
-        let _guard = ftrace::async_enter(trace_id, c"app", c"http_get_startup", &[]);
-        resume::resuming_get(client, uri, blob_fetch_params, fetch_stats).await?
-    };
-    inspect.expected_size_bytes(expected_len);
-    inspect.state(inspect::Http::TruncateBlob);
-    let mut written = 0u64;
-
-    let truncate_success = {
-        let _guard = ftrace::async_enter(trace_id, c"app", c"truncating_blob", &[]);
-        dest.truncate(expected_len).await.map_err(FetchError::Truncate)?
-    };
-    let dest = match truncate_success {
-        pkg::cache::TruncateBlobSuccess::AllWritten(dest) => dest,
-        pkg::cache::TruncateBlobSuccess::NeedsData(mut dest) => {
-            futures::pin_mut!(content);
-            loop {
-                inspect.state(inspect::Http::ReadHttpBody);
-
-                let chunk = {
-                    let _guard =
-                        ftrace::async_enter(trace_id, c"app", c"reading_from_network", &[]);
-                    content.try_next().await?
-                };
-                let Some(chunk) = chunk else {
-                    return Err(FetchError::BlobTooSmall { uri: uri.to_string() });
-                };
-
-                if written + chunk.len() as u64 > expected_len {
-                    return Err(FetchError::BlobTooLarge { uri: uri.to_string() });
-                }
-
-                inspect.state(inspect::Http::WriteBlob);
-                dest = match dest
-                    .write_with_trace_callbacks(
-                        &chunk,
-                        &|size: u64| {
-                            ftrace::async_begin(
-                                trace_id,
-                                c"app",
-                                c"waiting_for_blob_write_ack",
-                                &[ftrace::ArgValue::of("size", size)],
-                            )
-                        },
-                        &|| ftrace::async_end(trace_id, c"app", c"waiting_for_blob_write_ack", &[]),
-                    )
-                    .await
-                    .map_err(|e| FetchError::Write { e, uri: uri.to_string() })?
-                {
-                    pkg::cache::BlobWriteSuccess::NeedsData(blob) => {
-                        written += chunk.len() as u64;
-                        blob
-                    }
-                    pkg::cache::BlobWriteSuccess::AllWritten(blob) => {
-                        written += chunk.len() as u64;
-                        break blob;
-                    }
-                };
-                inspect.write_bytes(chunk.len());
-            }
-        }
-    };
-    inspect.state(inspect::Http::WriteComplete);
-    if expected_len != written {
-        return Err(FetchError::BlobTooSmall { uri: uri.to_string() });
-    }
-
-    let () = dest.blob_written().await.map_err(FetchError::BlobWritten)?;
-
-    Ok(expected_len)
+    let (needed_blobs, blob_id, writer) = dest.deconstruct();
+    let size = client
+        .download_blob(
+            &uri.to_string(),
+            writer,
+            blob_fetch_params.header_network_timeout().into_nanos(),
+            blob_fetch_params.body_network_timeout().into_nanos(),
+            blob_fetch_params.download_resumption_attempts_limit(),
+        )
+        .await
+        .map_err(FetchError::DownloadBlobFidl)?
+        .map_err(FetchError::DownloadBlob)?;
+    let () = needed_blobs
+        .blob_written(&blob_id.into())
+        .await
+        .map_err(FetchError::BlobWrittenFidl)?
+        .map_err(FetchError::BlobWritten)?;
+    Ok(size)
 }
 
 #[derive(Debug, thiserror::Error)]
-pub enum FetchError {
+pub(crate) enum FetchError {
     #[error("could not create blob")]
     CreateBlob(#[source] pkg::cache::OpenBlobError),
-
-    #[error(
-        "Fetch of type {blob_type:?} delivery blob at {uri} failed: http request expected 200, got {code}"
-    )]
-    BadHttpStatus { code: hyper::StatusCode, uri: String, blob_type: DeliveryBlobType },
 
     #[error("repository has no configured mirrors")]
     NoMirrors,
 
-    #[error("Blob fetch of {uri}: expected blob length of {expected}, got {actual}")]
-    ContentLengthMismatch { expected: u64, actual: u64, uri: String },
-
-    #[error("Blob fetch of {uri}: blob length not known or provided by server")]
-    UnknownLength { uri: String },
-
-    #[error("Blob fetch of {uri}: downloaded blob was too small")]
-    BlobTooSmall { uri: String },
-
-    #[error("Blob fetch of {uri}: downloaded blob was too large")]
-    BlobTooLarge { uri: String },
-
-    #[error("failed to truncate blob")]
-    Truncate(#[source] pkg::cache::TruncateBlobError),
-
-    #[error("Blob fetch of {uri}: failed to write blob data")]
-    Write {
-        #[source]
-        e: pkg::cache::WriteBlobError,
-        uri: String,
-    },
-
-    #[error("error when telling pkg-cache the blob has been written")]
-    BlobWritten(#[source] pkg::cache::BlobWrittenError),
-
-    #[error("hyper error while fetching {uri}")]
-    Hyper {
-        #[source]
-        e: hyper::Error,
-        uri: String,
-    },
-
-    #[error("http error while fetching {uri}")]
-    Http {
-        #[source]
-        e: hyper::http::Error,
-        uri: String,
-    },
-
     #[error("blob url error")]
     BlobUrl(#[source] http_uri_ext::Error),
 
-    #[error("FIDL error while fetching blob")]
-    FidlError(#[source] fidl::Error),
+    #[error("FIDL error while calling fuchsia.pkg.http.Client.DownloadBlob")]
+    DownloadBlobFidl(#[source] fidl::Error),
 
-    #[error("IO error while reading blob")]
-    IoError(#[source] Status),
+    #[error("error while calling fuchsia.pkg.http.Client.DownloadBlob {0:?}")]
+    DownloadBlob(fpkg_http::ClientDownloadBlobError),
 
-    #[error(
-        // LINT.IfChange(blob_header_timeout)
-        "timed out waiting for http response header while downloading blob: {uri}"
-        // LINT.ThenChange(/tools/testing/tefmocheck/string_in_log_check.go:blob_header_timeout)
-    )]
-    BlobHeaderTimeout { uri: String },
+    #[error("FIDL error while calling fuchsia.pkg.cache.NeededBlobs.BlobWritten")]
+    BlobWrittenFidl(#[source] fidl::Error),
 
-    #[error(
-        "timed out waiting for bytes from the http response body while downloading blob: {uri}"
-    )]
-    BlobBodyTimeout { uri: String },
-
-    #[error(
-        "Blob fetch of {uri}: http request for range {first_byte_pos}-{last_byte_pos} expected 206, got {code}, \
-        headers {response_headers:?}"
-    )]
-    ExpectedHttpStatus206 {
-        code: hyper::StatusCode,
-        uri: String,
-        first_byte_pos: u64,
-        last_byte_pos: u64,
-        response_headers: http::header::HeaderMap,
-    },
-
-    #[error("Blob fetch of {uri}: http request expected Content-Range header")]
-    MissingContentRangeHeader { uri: String },
-
-    #[error(
-        "Blob fetch of {uri}: http request for range {first_byte_pos}-{last_byte_pos} returned malformed Content-Range header: {header:?}"
-    )]
-    MalformedContentRangeHeader {
-        #[source]
-        e: resume::ContentRangeParseError,
-        uri: String,
-        first_byte_pos: u64,
-        last_byte_pos: u64,
-        header: http::header::HeaderValue,
-    },
-
-    #[error(
-        "Blob fetch of {uri}: http request returned Content-Range: {content_range:?} but expected: {expected:?}"
-    )]
-    InvalidContentRangeHeader {
-        uri: String,
-        content_range: resume::HttpContentRange,
-        expected: resume::HttpContentRange,
-    },
-
-    #[error("Blob fetch of {uri}: exceeded resumption attempt limit of: {limit}")]
-    ExceededResumptionAttemptLimit { uri: String, limit: u64 },
-
-    #[error(
-        "Blob fetch of {uri}: Content-Length: {content_length} and Content-Range: {content_range:?} are inconsistent"
-    )]
-    ContentLengthContentRangeMismatch {
-        uri: String,
-        content_length: u64,
-        content_range: resume::HttpContentRange,
-    },
-}
-
-impl From<&FetchError> for metrics::FetchBlobMigratedMetricDimensionResult {
-    fn from(error: &FetchError) -> Self {
-        use FetchError::*;
-        use metrics::FetchBlobMigratedMetricDimensionResult as EventCodes;
-        match error {
-            CreateBlob { .. } => EventCodes::CreateBlob,
-            BadHttpStatus { code, .. } => match *code {
-                StatusCode::BAD_REQUEST => EventCodes::HttpBadRequest,
-                StatusCode::UNAUTHORIZED => EventCodes::HttpUnauthorized,
-                StatusCode::FORBIDDEN => EventCodes::HttpForbidden,
-                StatusCode::NOT_FOUND => EventCodes::HttpNotFound,
-                StatusCode::METHOD_NOT_ALLOWED => EventCodes::HttpMethodNotAllowed,
-                StatusCode::REQUEST_TIMEOUT => EventCodes::HttpRequestTimeout,
-                StatusCode::PRECONDITION_FAILED => EventCodes::HttpPreconditionFailed,
-                StatusCode::RANGE_NOT_SATISFIABLE => EventCodes::HttpRangeNotSatisfiable,
-                StatusCode::TOO_MANY_REQUESTS => EventCodes::HttpTooManyRequests,
-                StatusCode::INTERNAL_SERVER_ERROR => EventCodes::HttpInternalServerError,
-                StatusCode::BAD_GATEWAY => EventCodes::HttpBadGateway,
-                StatusCode::SERVICE_UNAVAILABLE => EventCodes::HttpServiceUnavailable,
-                StatusCode::GATEWAY_TIMEOUT => EventCodes::HttpGatewayTimeout,
-                _ => match code.as_u16() {
-                    100..=199 => EventCodes::Http1xx,
-                    200..=299 => EventCodes::Http2xx,
-                    300..=399 => EventCodes::Http3xx,
-                    400..=499 => EventCodes::Http4xx,
-                    500..=599 => EventCodes::Http5xx,
-                    _ => EventCodes::BadHttpStatus,
-                },
-            },
-            NoMirrors => EventCodes::NoMirrors,
-            ContentLengthMismatch { .. } => EventCodes::ContentLengthMismatch,
-            UnknownLength { .. } => EventCodes::UnknownLength,
-            BlobTooSmall { .. } => EventCodes::BlobTooSmall,
-            BlobTooLarge { .. } => EventCodes::BlobTooLarge,
-            Truncate { .. } => EventCodes::Truncate,
-            Write { .. } => EventCodes::Write,
-            BlobWritten { .. } => EventCodes::BlobWritten,
-            Hyper { .. } => EventCodes::Hyper,
-            Http { .. } => EventCodes::Http,
-            BlobUrl { .. } => EventCodes::BlobUrl,
-            FidlError { .. } => EventCodes::FidlError,
-            IoError { .. } => EventCodes::IoError,
-            BlobHeaderTimeout { .. } => EventCodes::BlobHeaderDeadlineExceeded,
-            BlobBodyTimeout { .. } => EventCodes::BlobBodyDeadlineExceeded,
-            ExpectedHttpStatus206 { .. } => EventCodes::ExpectedHttpStatus206,
-            MissingContentRangeHeader { .. } => EventCodes::MissingContentRangeHeader,
-            MalformedContentRangeHeader { .. } => EventCodes::MalformedContentRangeHeader,
-            InvalidContentRangeHeader { .. } => EventCodes::InvalidContentRangeHeader,
-            ExceededResumptionAttemptLimit { .. } => EventCodes::ExceededResumptionAttemptLimit,
-            ContentLengthContentRangeMismatch { .. } => {
-                EventCodes::ContentLengthContentRangeMismatch
-            }
-        }
-    }
+    #[error("error while calling fuchsia.pkg.cache.NeededBlobs.BlobWritten {0:?}")]
+    BlobWritten(fpkg::BlobWrittenError),
 }
 
 impl FetchError {
     fn kind(&self) -> FetchErrorKind {
         use FetchError::*;
         match self {
-            BadHttpStatus { code: StatusCode::TOO_MANY_REQUESTS, uri: _, blob_type: _ } => {
-                FetchErrorKind::NetworkRateLimit
-            }
-            BadHttpStatus { code: StatusCode::NOT_FOUND, uri: _, blob_type: _ } => {
-                FetchErrorKind::NotFound
-            }
-            Hyper { .. }
-            | Http { .. }
-            | BadHttpStatus { .. }
-            | BlobHeaderTimeout { .. }
-            | BlobBodyTimeout { .. }
-            | ExpectedHttpStatus206 { .. }
-            | MissingContentRangeHeader { .. }
-            | MalformedContentRangeHeader { .. }
-            | InvalidContentRangeHeader { .. }
-            | ExceededResumptionAttemptLimit { .. }
-            | ContentLengthContentRangeMismatch { .. } => FetchErrorKind::Network,
+            DownloadBlob(e) => match e {
+                fpkg_http::ClientDownloadBlobError::NetworkRateLimit => {
+                    FetchErrorKind::NetworkRateLimit
+                }
+                fpkg_http::ClientDownloadBlobError::Network => FetchErrorKind::Network,
+                fpkg_http::ClientDownloadBlobError::NotFound => FetchErrorKind::NotFound,
+                fpkg_http::ClientDownloadBlobError::NoSpace
+                | fpkg_http::ClientDownloadBlobError::Other => FetchErrorKind::Other,
+            },
             CreateBlob { .. }
             | NoMirrors
-            | ContentLengthMismatch { .. }
-            | UnknownLength { .. }
-            | BlobTooSmall { .. }
-            | BlobTooLarge { .. }
-            | Truncate { .. }
-            | Write { .. }
             | BlobWritten { .. }
             | BlobUrl { .. }
-            | FidlError { .. }
-            | IoError { .. } => FetchErrorKind::Other,
+            | DownloadBlobFidl { .. }
+            | BlobWrittenFidl { .. } => FetchErrorKind::Other,
         }
     }
 
@@ -1065,32 +769,9 @@ impl FetchError {
         use FetchError::*;
         match self {
             CreateBlob(pkg::cache::OpenBlobError::Fidl(e))
-            | Truncate(pkg::cache::TruncateBlobError::Fidl(e))
-            | Write { e: pkg::cache::WriteBlobError::Fidl(e), .. }
-            | BlobWritten(pkg::cache::BlobWrittenError::Fidl(e)) => Some(e),
-            CreateBlob(_)
-            | Truncate(_)
-            | Write { .. }
-            | BlobWritten(_)
-            | FidlError { .. }
-            | Hyper { .. }
-            | Http { .. }
-            | BadHttpStatus { .. }
-            | BlobHeaderTimeout { .. }
-            | BlobBodyTimeout { .. }
-            | ExpectedHttpStatus206 { .. }
-            | MissingContentRangeHeader { .. }
-            | MalformedContentRangeHeader { .. }
-            | InvalidContentRangeHeader { .. }
-            | ExceededResumptionAttemptLimit { .. }
-            | ContentLengthContentRangeMismatch { .. }
-            | NoMirrors
-            | ContentLengthMismatch { .. }
-            | UnknownLength { .. }
-            | BlobTooSmall { .. }
-            | BlobTooLarge { .. }
-            | BlobUrl { .. }
-            | IoError { .. } => None,
+            | DownloadBlobFidl(e)
+            | BlobWrittenFidl(e) => Some(e),
+            CreateBlob(_) | DownloadBlob(_) | BlobWritten(_) | NoMirrors | BlobUrl { .. } => None,
         }
     }
 

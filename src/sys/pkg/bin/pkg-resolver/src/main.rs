@@ -22,8 +22,8 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use {
     cobalt_sw_delivery_registry as metrics, fidl_fuchsia_io as fio,
-    fidl_fuchsia_metrics as fmetrics, fidl_fuchsia_pkg as fpkg, fuchsia_async as fasync,
-    fuchsia_inspect as inspect, fuchsia_trace as ftrace,
+    fidl_fuchsia_metrics as fmetrics, fidl_fuchsia_pkg as fpkg, fidl_fuchsia_pkg_http as fpkg_http,
+    fuchsia_async as fasync, fuchsia_inspect as inspect, fuchsia_trace as ftrace,
 };
 
 mod cache;
@@ -180,19 +180,20 @@ async fn main_inner_async(startup_time: Instant) -> Result<(), Error> {
         })?;
 
     let (blob_fetch_queue, blob_fetcher) = crate::cache::BlobFetcher::new(
+        fuchsia_component::client::connect_to_protocol::<fpkg_http::ClientMarker>()
+            .context("error connecting to fuchsia.pkg.http/Client")?,
         inspector.root().create_child("blob_fetcher"),
         structured_config.blob_download_concurrency_limit.into(),
         repo_manager.read().await.stats(),
-        cobalt_sender.clone(),
         cache::BlobFetchParams::builder()
-            .header_network_timeout(std::time::Duration::from_secs(
+            .header_network_timeout(zx::BootDuration::from_seconds(
                 structured_config.blob_network_header_timeout_seconds.into(),
             ))
-            .body_network_timeout(std::time::Duration::from_secs(
+            .body_network_timeout(zx::BootDuration::from_seconds(
                 structured_config.blob_network_body_timeout_seconds.into(),
             ))
             .download_resumption_attempts_limit(
-                structured_config.blob_download_resumption_attempts_limit.into(),
+                structured_config.blob_download_resumption_attempts_limit,
             )
             .blob_type(delivery_blob_type)
             .build(),

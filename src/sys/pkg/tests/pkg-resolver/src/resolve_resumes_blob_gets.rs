@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use cobalt_sw_delivery_registry as metrics;
 use fuchsia_pkg_testing::serve::{HttpRange, responder};
 use fuchsia_pkg_testing::{PackageBuilder, RepositoryBuilder};
 use futures::future::{BoxFuture, FutureExt as _};
@@ -69,15 +68,6 @@ async fn single_blob_resume_success() {
         env.resolve_package(&pkg_url).await.expect("package to resolve");
     pkg.verify_contents(&package_dir).await.expect("correct package contents");
 
-    env.assert_count_events(
-        metrics::FETCH_BLOB_MIGRATED_METRIC_ID,
-        vec![(
-            metrics::FetchBlobMigratedMetricDimensionResult::Success,
-            metrics::FetchBlobMigratedMetricDimensionResumed::True,
-        )],
-    )
-    .await;
-
     let history = history.take();
     assert_eq!(history.len(), 1);
     assert_eq!(history[0].uri_path().to_str().unwrap(), path_to_override);
@@ -136,15 +126,6 @@ async fn two_blob_resume_success() {
     let (package_dir, _resolved_context) =
         env.resolve_package(&pkg_url).await.expect("package to resolve");
     pkg.verify_contents(&package_dir).await.expect("correct package contents");
-
-    env.assert_count_events(
-        metrics::FETCH_BLOB_MIGRATED_METRIC_ID,
-        vec![(
-            metrics::FetchBlobMigratedMetricDimensionResult::Success,
-            metrics::FetchBlobMigratedMetricDimensionResumed::True,
-        )],
-    )
-    .await;
 
     let history = history.take();
     assert_eq!(history.len(), 2);
@@ -213,18 +194,6 @@ async fn resume_validates_content_range() {
         env.resolve_package(&pkg_url).await.unwrap_err(),
         fidl_fuchsia_pkg::ResolveError::UnavailableBlob
     );
-
-    env.assert_count_events(
-        metrics::FETCH_BLOB_MIGRATED_METRIC_ID,
-        vec![
-            (
-                metrics::FetchBlobMigratedMetricDimensionResult::InvalidContentRangeHeader,
-                metrics::FetchBlobMigratedMetricDimensionResumed::True,
-            );
-            2
-        ],
-    )
-    .await;
 
     env.stop().await;
 }
@@ -305,18 +274,6 @@ async fn resume_validates_content_length() {
         fidl_fuchsia_pkg::ResolveError::UnavailableBlob
     );
 
-    env.assert_count_events(
-        metrics::FETCH_BLOB_MIGRATED_METRIC_ID,
-        vec![
-            (
-                metrics::FetchBlobMigratedMetricDimensionResult::ContentLengthContentRangeMismatch,
-                metrics::FetchBlobMigratedMetricDimensionResumed::True,
-            );
-            2
-        ],
-    )
-    .await;
-
     env.stop().await;
 }
 
@@ -360,18 +317,6 @@ async fn resume_validates_206_status() {
         fidl_fuchsia_pkg::ResolveError::UnavailableBlob
     );
 
-    env.assert_count_events(
-        metrics::FETCH_BLOB_MIGRATED_METRIC_ID,
-        vec![
-            (
-                metrics::FetchBlobMigratedMetricDimensionResult::ExpectedHttpStatus206,
-                metrics::FetchBlobMigratedMetricDimensionResumed::True,
-            );
-            2
-        ],
-    )
-    .await;
-
     env.stop().await;
 }
 
@@ -410,18 +355,6 @@ async fn resume_enforces_max_resumption_limit() {
         env.resolve_package(&pkg_url).await.unwrap_err(),
         fidl_fuchsia_pkg::ResolveError::UnavailableBlob
     );
-
-    env.assert_count_events(
-        metrics::FETCH_BLOB_MIGRATED_METRIC_ID,
-        vec![
-            (
-                metrics::FetchBlobMigratedMetricDimensionResult::ExceededResumptionAttemptLimit,
-                metrics::FetchBlobMigratedMetricDimensionResumed::True,
-            );
-            2
-        ],
-    )
-    .await;
 
     env.stop().await;
 }

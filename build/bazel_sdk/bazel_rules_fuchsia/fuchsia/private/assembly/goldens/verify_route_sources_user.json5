@@ -39,6 +39,10 @@
                 },
                 {
                     use_type: "protocol",
+                    use_path: "/svc/fuchsia.pkg.http.Client",
+                },
+                {
+                    use_type: "protocol",
                     use_path: "/svc/fuchsia.pkg.LocalMirror",
                 },
                 {

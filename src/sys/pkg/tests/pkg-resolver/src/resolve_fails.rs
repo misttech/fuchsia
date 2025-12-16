@@ -101,17 +101,6 @@ async fn download_blob_header_timeout() {
     let result = env.resolve_package("fuchsia-pkg://test/test").await;
     assert_eq!(result.unwrap_err(), fpkg::ResolveError::UnavailableBlob);
 
-    env.assert_count_events(
-        metrics::FETCH_BLOB_MIGRATED_METRIC_ID,
-        vec![
-            (
-                metrics::FetchBlobMigratedMetricDimensionResult::BlobHeaderDeadlineExceeded,
-                metrics::FetchBlobMigratedMetricDimensionResumed::False
-            );
-            2
-        ],
-    )
-    .await;
     env.stop().await;
 }
 

@@ -62,6 +62,10 @@
             name: "netstack",
             url: "#meta/netstack.cm",
         },
+        {
+            name: "http-client",
+            url: "#meta/http-client.cm",
+        },
 
         // Production package delivery components.
         {
@@ -209,6 +213,12 @@
             availability: "optional",
         },
         {
+            config: [ "fuchsia.http-client.StopOnIdleTimeoutMillis" ],
+            from: "void",
+            to: "#http-client",
+            availability: "optional",
+        },
+        {
             config: [
                 "fuchsia.blobfs.CacheEvictionPolicy",
                 "fuchsia.blobfs.WriteCompressionAlgorithm",
@@ -305,6 +315,7 @@
             directory: "root-ssl-certificates",
             from: "#pkg-cache",
             to: [
+                "#http-client",
                 "#pkg-resolver",
                 "#pkg_server",
             ],
@@ -321,6 +332,7 @@
             protocol: "fuchsia.net.name.Lookup",
             from: "#dns_resolver",
             to: [
+                "#http-client",
                 "#pkg-resolver",
                 "#pkg_server",
             ],
@@ -329,6 +341,7 @@
             protocol: "fuchsia.posix.socket.Provider",
             from: "#netstack",
             to: [
+                "#http-client",
                 "#pkg-resolver",
                 "#pkg_server",
             ],
@@ -340,6 +353,11 @@
                 "#pkg-resolver",
                 "#system-updater",
             ],
+        },
+        {
+            protocol: "fuchsia.pkg.http.Client",
+            from: "#http-client",
+            to: "#pkg-resolver",
         },
         {
             protocol: "fuchsia.tracing.provider.Registry",

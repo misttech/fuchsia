@@ -436,7 +436,8 @@ impl HttpResponder for BlockResponseHeaders {
     }
 }
 
-/// Responder that blocks sending response bodies until unblocked by a test.
+/// Responder that blocks sending response body until unblocked by a test.
+/// Panics if requested more than once.
 pub struct BlockResponseBodyOnce {
     #[allow(clippy::type_complexity)]
     notify: Mutex<Option<oneshot::Sender<Box<dyn FnOnce() + Send>>>>,

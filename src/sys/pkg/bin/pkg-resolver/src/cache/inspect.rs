@@ -4,9 +4,7 @@
 
 use crate::cache::BlobFetchParams;
 use fidl_fuchsia_pkg_ext::BlobId;
-use fuchsia_inspect::{
-    IntProperty, Node, NumericProperty as _, Property as _, StringProperty, UintProperty,
-};
+use fuchsia_inspect::{IntProperty, Node, Property as _, StringProperty};
 
 use std::marker::PhantomData;
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -24,11 +22,14 @@ pub struct BlobFetcher {
 impl BlobFetcher {
     /// Create a `BlobFetcher` from an Inspect node.
     pub fn from_node_and_params(node: Node, params: &BlobFetchParams) -> Self {
-        node.record_uint("blob_header_timeout_seconds", params.header_network_timeout().as_secs());
-        node.record_uint("blob_body_timeout_seconds", params.body_network_timeout().as_secs());
+        node.record_int(
+            "blob_header_timeout_seconds",
+            params.header_network_timeout().into_seconds(),
+        );
+        node.record_int("blob_body_timeout_seconds", params.body_network_timeout().into_seconds());
         node.record_uint(
             "blob_download_resumption_attempts_limit",
-            params.download_resumption_attempts_limit(),
+            params.download_resumption_attempts_limit().into(),
         );
         node.record_uint("blob_type", u32::from(params.blob_type()).into());
         Self { queue: node.create_child("queue"), _node: node }
@@ -55,7 +56,7 @@ impl NeedsRemoteType {
     }
 }
 
-pub struct TriggerAttempt<S: State> {
+pub(crate) struct TriggerAttempt<S: State> {
     attempt_count: AtomicU32,
     attempts: Node,
     node: Node,
@@ -83,8 +84,7 @@ impl<S: State> TriggerAttempt<S> {
         let node = self.attempts.create_child(index.to_string());
         let state = node.create_string("state", "initial");
         let state_ts = node.create_int("state_ts", now_monotonic_nanos());
-        let bytes_written = node.create_uint("bytes_written", 0);
-        Attempt::<S> { state, state_ts, bytes_written, node, _phantom: PhantomData }
+        Attempt::<S> { state, state_ts, _node: node, _phantom: PhantomData }
     }
 }
 
@@ -93,11 +93,6 @@ pub enum Http {
     CreateBlob,
     DownloadBlob,
     CloseBlob,
-    HttpGet,
-    TruncateBlob,
-    ReadHttpBody,
-    WriteBlob,
-    WriteComplete,
 }
 
 /// A sub-state for a fetch. The stringification will be exported via Inspect.
@@ -111,11 +106,6 @@ impl State for Http {
             Http::CreateBlob => "create blob",
             Http::DownloadBlob => "download blob",
             Http::CloseBlob => "close blob",
-            Http::HttpGet => "http get",
-            Http::TruncateBlob => "truncate blob",
-            Http::ReadHttpBody => "read http body",
-            Http::WriteBlob => "write blob",
-            Http::WriteComplete => "write complete",
         }
     }
 }
@@ -126,24 +116,11 @@ impl State for Http {
 pub struct Attempt<S: State> {
     state: StringProperty,
     state_ts: IntProperty,
-    bytes_written: UintProperty,
-    node: Node,
+    _node: Node,
     _phantom: std::marker::PhantomData<S>,
 }
 
 impl<S: State> Attempt<S> {
-    /// Set the expected size in bytes of the blob.
-    pub fn expected_size_bytes(&self, size: u64) -> &Self {
-        self.node.record_uint("expected_size_bytes", size);
-        self
-    }
-
-    /// Mark that `bytes` more bytes of the blob have been written to blobfs.
-    pub fn write_bytes(&self, bytes: usize) -> &Self {
-        self.bytes_written.add(bytes as u64);
-        self
-    }
-
     /// Change the sub-state of this fetch.
     pub fn state(&self, state: S) {
         self.state.set(state.as_str());
@@ -156,7 +133,6 @@ mod tests {
     use super::*;
     use diagnostics_assertions::{AnyProperty, assert_data_tree};
     use fuchsia_inspect::Inspector;
-    use std::time::Duration;
 
     const ZEROES_HASH: &str = "0000000000000000000000000000000000000000000000000000000000000000";
     const ONES_HASH: &str = "1111111111111111111111111111111111111111111111111111111111111111";
@@ -166,8 +142,8 @@ mod tests {
             Self::from_node_and_params(
                 node,
                 &BlobFetchParams::builder()
-                    .header_network_timeout(Duration::from_secs(0))
-                    .body_network_timeout(Duration::from_secs(1))
+                    .header_network_timeout(zx::BootDuration::from_seconds(0))
+                    .body_network_timeout(zx::BootDuration::from_seconds(1))
                     .download_resumption_attempts_limit(2)
                     .blob_type(delivery_blob::DeliveryBlobType::Type1)
                     .build(),
@@ -184,8 +160,8 @@ mod tests {
             inspector,
             root: {
                 blob_fetcher: {
-                    blob_header_timeout_seconds: 0u64,
-                    blob_body_timeout_seconds: 1u64,
+                    blob_header_timeout_seconds: 0i64,
+                    blob_body_timeout_seconds: 1i64,
                     blob_download_resumption_attempts_limit: 2u64,
                     blob_type: 1u64,
                     queue: {}
@@ -260,7 +236,6 @@ mod tests {
                                 "1": {
                                     state: "initial",
                                     state_ts: AnyProperty,
-                                    bytes_written: 0u64,
                                 }
                             },
                         }
@@ -283,7 +258,6 @@ mod tests {
                                 "1": {
                                     state: "create blob",
                                     state_ts: AnyProperty,
-                                    bytes_written: 0u64,
                                 }
                             },
                         }
@@ -303,105 +277,6 @@ mod tests {
                             source: "http",
                             mirror: "fake-mirror",
                             attempts: {},
-                        }
-                    }
-                }
-            }
-        );
-    }
-
-    #[fuchsia::test]
-    async fn state_does_not_change_other_data() {
-        let inspector = Inspector::default();
-
-        let blob_fetcher = BlobFetcher::from_node(inspector.root().create_child("blob_fetcher"));
-        let inspect = blob_fetcher.fetch(&BlobId::parse(ZEROES_HASH).unwrap()).http();
-        let attempt = inspect.attempt();
-        attempt.expected_size_bytes(9);
-        attempt.write_bytes(6);
-
-        assert_data_tree!(
-            inspector,
-            root: {
-                blob_fetcher: contains {
-                    queue: {
-                        ZEROES_HASH.to_string() => contains {
-                            attempts: {
-                                "1": {
-                                    state: "initial",
-                                    state_ts: AnyProperty,
-                                    expected_size_bytes: 9u64,
-                                    bytes_written: 6u64,
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        );
-
-        attempt.state(Http::TruncateBlob);
-
-        assert_data_tree!(
-            inspector,
-            root: {
-                blob_fetcher: contains {
-                    queue: {
-                        ZEROES_HASH.to_string() => contains {
-                            attempts: {
-                                "1": {
-                                    state: "truncate blob",
-                                    state_ts: AnyProperty,
-                                    expected_size_bytes: 9u64,
-                                    bytes_written: 6u64,
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        );
-    }
-
-    #[fuchsia::test]
-    async fn write_bytes_is_cumulative() {
-        let inspector = Inspector::default();
-
-        let blob_fetcher = BlobFetcher::from_node(inspector.root().create_child("blob_fetcher"));
-        let inspect = blob_fetcher.fetch(&BlobId::parse(ZEROES_HASH).unwrap()).http();
-        let attempt = inspect.attempt();
-        attempt.write_bytes(7);
-
-        assert_data_tree!(
-            inspector,
-            root: {
-                blob_fetcher: contains {
-                    queue: {
-                        ZEROES_HASH.to_string() => contains {
-                            attempts: {
-                                "1": contains {
-                                    bytes_written: 7u64,
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        );
-
-        attempt.write_bytes(8);
-
-        assert_data_tree!(
-            inspector,
-            root: {
-                blob_fetcher: contains {
-                    queue: {
-                        ZEROES_HASH.to_string() => contains {
-                            attempts: {
-                                "1": contains {
-                                    bytes_written: 15u64,
-                                }
-                            }
                         }
                     }
                 }

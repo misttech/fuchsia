@@ -33,6 +33,7 @@
             protocol: [
                 "fuchsia.net.http.Loader",
                 "fuchsia.net.name.Lookup",
+                "fuchsia.pkg.http.Client",
                 "fuchsia.posix.socket.Provider",
             ],
             from: "#network",

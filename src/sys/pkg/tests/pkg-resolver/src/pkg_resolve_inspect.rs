@@ -198,7 +198,6 @@ async fn package_and_blob_queues() {
             .unwrap(),
     );
 
-    let meta_far_delivery_size = repo.read_delivery_blob(1, pkg.hash()).unwrap().len();
     let meta_far_blob_path = format!("/blobs/1/{}", pkg.hash());
 
     let flake_first_attempt = responder::ForPath::new(
@@ -242,7 +241,7 @@ async fn package_and_blob_queues() {
                         pkg.hash().to_string() => contains {
                             attempts: {
                                 "2": contains {
-                                    state: "read http body"
+                                    state: "download blob"
                                 }
                             }
                         }
@@ -273,10 +272,8 @@ async fn package_and_blob_queues() {
                         mirror: format!("{}{}", served_repository.local_url(), meta_far_blob_path),
                         attempts: {
                             "2": {
-                                state: "read http body",
+                                state: "download blob",
                                 state_ts: AnyProperty,
-                                expected_size_bytes: meta_far_delivery_size as u64,
-                                bytes_written: 0u64,
                             }
                         }
                     }

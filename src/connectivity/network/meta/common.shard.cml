@@ -255,7 +255,10 @@
             from: "#dns-resolver",
         },
         {
-            protocol: [ "fuchsia.net.http.Loader" ],
+            protocol: [
+                "fuchsia.net.http.Loader",
+                "fuchsia.pkg.http.Client",
+            ],
             from: "#http-client",
         },
         {

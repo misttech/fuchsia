@@ -4,7 +4,9 @@
 {
     include: [
         "//src/lib/fuchsia-hyper/hyper.shard.cml",
+        "inspect/client.shard.cml",
         "syslog/client.shard.cml",
+        "trace/use.shard.cml",
     ],
     program: {
         runner: "elf",
@@ -14,6 +16,10 @@
     capabilities: [
         {
             protocol: "fuchsia.net.http.Loader",
+            delivery: "on_readable",
+        },
+        {
+            protocol: "fuchsia.pkg.http.Client",
             delivery: "on_readable",
         },
     ],
@@ -44,10 +50,18 @@
             from: "self",
             path: "/escrow/fuchsia.net.http.Loader",
         },
+        {
+            protocol: "fuchsia.pkg.http.Client",
+            from: "self",
+            path: "/escrow/fuchsia.pkg.http.Client",
+        },
     ],
     expose: [
         {
-            protocol: "fuchsia.net.http.Loader",
+            protocol: [
+                "fuchsia.net.http.Loader",
+                "fuchsia.pkg.http.Client",
+            ],
             from: "self",
         },
     ],

@@ -632,24 +632,6 @@ async fn test_concurrent_blob_writes() {
     let send_shared_blob_body =
         unblocking_closure_receiver.await.expect("received unblocking future from hyper server");
 
-    // Wait to be blocked on http body read for the duplicate blob.
-    env.wait_for_pkg_resolver_inspect_state(tree_assertion!(
-        root: contains {
-            blob_fetcher: contains {
-                queue: contains {
-                    duplicate_blob_merkle => contains {
-                        attempts: {
-                            "1": contains {
-                                state: "read http body"
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    ))
-    .await;
-
     // At this point, we are confident that the duplicate blob is truncated. So, if we enqueue
     // another package resolve for a package that contains the duplicate blob the package resolver
     // should block resolving the package on that blob fetch finishing.
@@ -1133,7 +1115,7 @@ async fn already_cached_package_blob_queue_bypass_with_concurrent_meta_far_write
     // the optimization was performed while the other fetch was still in the queue.
     let sub_pkg_fut = resolve_package(&resolver_proxy_1, "fuchsia-pkg://test/subpackage");
     let () = env
-        .wait_for_pkg_resolver_inspect_state(diagnostics_assertions::tree_assertion!(
+        .wait_for_pkg_resolver_inspect_state(tree_assertion!(
             root: contains {
                 blob_fetcher: contains {
                     raw_queue: {
