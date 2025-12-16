@@ -583,6 +583,7 @@ mod tests {
             address: Address::Random([3, 0, 0, 0, 0, 0]),
             local_address: Address::Public([1, 0, 0, 0, 0, 0]),
             name: Some("Test Device 1".to_string()),
+            device_class: Some(fidl_fuchsia_bluetooth::DeviceClass { value: 42 }),
             data: OneOrBoth::Left(default_le_data()),
         }
     }
@@ -592,6 +593,7 @@ mod tests {
             address: Address::Random([4, 0, 0, 0, 0, 0]),
             local_address: Address::Public([1, 0, 0, 0, 0, 0]),
             name: Some("Test Device 2".to_string()),
+            device_class: None,
             data: OneOrBoth::Left(default_le_data()),
         }
     }
@@ -602,6 +604,7 @@ mod tests {
             address: Address::Random([3, 0, 0, 0, 0, 0]),
             local_address: Address::Public([2, 0, 0, 0, 0, 0]),
             name: None,
+            device_class: None,
             data: OneOrBoth::Left(default_le_data()),
         }
     }
@@ -612,6 +615,7 @@ mod tests {
             address: Address::Random([3, 0, 0, 0, 0, 0]),
             local_address: Address::Public([2, 0, 0, 0, 0, 0]),
             name: None,
+            device_class: None,
             data: OneOrBoth::Left(default_le_data()),
         }
     }
@@ -630,6 +634,9 @@ mod tests {
                     \"value\":[1,0,0,0,0,0]\
                 },\
                 \"name\":\"Test Device 1\",\
+                \"deviceClass\":{\
+                    \"value\":42\
+                },\
                 \"le\":{\
                     \"connectionParameters\":null,\
                     \"peerLtk\":null,\

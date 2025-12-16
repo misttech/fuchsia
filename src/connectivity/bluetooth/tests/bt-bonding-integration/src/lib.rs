@@ -17,6 +17,7 @@ fn new_le_bond_data(id: &PeerId, address: &Address, name: &str, has_ltk: bool) -
         local_address: Address::Public([0xFF, 0xEE, 0xDD, 0xCC, 0xBB, 0xAA]),
         address: (*address).clone(),
         name: Some(name.to_string()),
+        device_class: None,
         data: OneOrBoth::Left(LeBondData {
             connection_parameters: None,
             services: vec![],

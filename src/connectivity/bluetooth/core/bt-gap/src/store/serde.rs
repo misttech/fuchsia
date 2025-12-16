@@ -122,7 +122,7 @@ macro_rules! option_encoding {
 // Custom (de)serializer for fidl_fuchsia_bluetooth::ConnectionRole.
 mod connection_role_encoding {
     use fidl_fuchsia_bluetooth::ConnectionRole;
-    use serde::{de, Deserializer, Serializer};
+    use serde::{Deserializer, Serializer, de};
 
     pub fn serialize<S>(value: &ConnectionRole, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -169,7 +169,7 @@ option_encoding!(OptionConnectionRoleDef, bt::ConnectionRole, "connection_role_e
 mod address_encoding {
     use fuchsia_bluetooth::types::Address;
     use serde::ser::SerializeStruct;
-    use serde::{de, Deserialize, Deserializer, Serializer};
+    use serde::{Deserialize, Deserializer, Serializer, de};
 
     pub fn serialize<S>(address: &Address, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -257,6 +257,14 @@ option_encoding!(
 );
 
 #[derive(Serialize, Deserialize)]
+#[serde(remote = "bt::DeviceClass")]
+#[serde(rename_all = "camelCase")]
+struct DeviceClassDef {
+    pub value: u32,
+}
+option_encoding!(OptionDeviceClassDef, bt::DeviceClass, "DeviceClassDef");
+
+#[derive(Serialize, Deserialize)]
 #[serde(remote = "sys::Key")]
 #[serde(rename_all = "camelCase")]
 struct KeyDef {
@@ -338,6 +346,9 @@ struct BondingDataDef {
     #[serde(rename(serialize = "hostAddress", deserialize = "hostAddress"))]
     pub local_address: Address,
     pub name: Option<String>,
+    #[serde(default)]
+    #[serde(with = "OptionDeviceClassDef")]
+    pub device_class: Option<bt::DeviceClass>,
     #[serde(with = "OptionLeBondDataDef")]
     pub le: Option<LeBondData>,
     #[serde(with = "OptionBredrBondDataDef")]
@@ -359,6 +370,7 @@ impl From<&BondingData> for BondingDataDef {
             address: src.address.clone(),
             local_address: src.local_address.clone(),
             name: src.name.clone(),
+            device_class: src.device_class.clone(),
             le,
             bredr,
         }
@@ -387,6 +399,7 @@ impl TryInto<BondingData> for BondingDataDef {
             address: self.address,
             local_address: self.local_address,
             name: self.name,
+            device_class: self.device_class,
             data,
         })
     }
@@ -413,6 +426,7 @@ mod tests {
             address: Address::Public([6, 5, 4, 3, 2, 1]),
             local_address: Address::Public([0xFF, 0xEE, 0xDD, 0xCC, 0xBB, 0xAA]),
             name: Some("Device Name".to_string()),
+            device_class: Some(bt::DeviceClass { value: 256 }),
             data: OneOrBoth::Both(
                 LeBondData {
                     connection_parameters: Some(sys::LeConnectionParameters {
@@ -495,6 +509,9 @@ mod tests {
                 \"value\":[255,238,221,204,187,170]\
             },\
             \"name\":\"Device Name\",\
+            \"deviceClass\":{\
+                \"value\":256\
+            },\
             \"le\":{\
                 \"connectionParameters\":{\
                     \"connectionInterval\":1,\
@@ -567,6 +584,9 @@ mod tests {
                 "value": [255,238,221,204,187,170]
              },
              "name": "Device Name",
+             "deviceClass": {
+                 "value": 256
+             },
              "le": {
                  "connectionParameters": {
                      "connectionInterval": 1,
@@ -759,6 +779,81 @@ mod tests {
         let expected = HostData {
             irk: Some(sys::Key { value: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] }),
         };
+        assert_eq!(expected, deserialized);
+    }
+
+    #[test]
+    fn deserialize_missing_device_class_is_ok() {
+        let json_input = r#"{
+             "identifier": 1234,
+             "address":{
+                "type": "public",
+                "value": [6,5,4,3,2,1]
+             },
+             "hostAddress":{
+                "type": "public",
+                "value": [255,238,221,204,187,170]
+             },
+             "name": "Device Name",
+             "le": {
+                 "connectionParameters": {
+                     "connectionInterval": 1,
+                     "connectionLatency": 2,
+                     "supervisionTimeout": 3
+                 },
+                 "peerLtk": {
+                     "key": {
+                         "security": {
+                             "authenticated": true,
+                             "secureConnections": false,
+                             "encryptionKeySize": 16
+                         },
+                         "value": [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16]
+                     },
+                     "ediv": 1,
+                     "rand": 2
+                },
+                "localLtk": {
+                     "key": {
+                         "security": {
+                             "authenticated": true,
+                             "secureConnections": false,
+                             "encryptionKeySize": 16
+                         },
+                         "value": [16,15,14,13,12,11,10,9,8,7,6,5,4,3,2,1]
+                     },
+                     "ediv": 1,
+                     "rand": 2
+                },
+                "irk": {
+                     "security": {
+                         "authenticated": true,
+                         "secureConnections": false,
+                         "encryptionKeySize": 16
+                     },
+                     "value": [16,15,14,13,12,11,10,9,8,7,6,5,4,3,2,1]
+                 },
+                 "csrk": null
+             },
+             "bredr": {
+                 "rolePreference": "follower",
+                 "linkKey": {
+                     "security": {
+                         "authenticated": true,
+                         "secureConnections": true,
+                         "encryptionKeySize": 16
+                     },
+                     "value": [9,10,11,12,13,14,15,16,1,2,3,4,5,6,7,8]
+                 },
+                 "services": [
+                    "0000110a-0000-1000-8000-00805f9b34fb",
+                    "0000110b-0000-1000-8000-00805f9b34fb"
+                 ]
+             }
+        }"#;
+
+        let deserialized = BondingDataDeserializer::from_json(json_input).unwrap();
+        let expected = BondingData { device_class: None, ..build_bonding_data() };
         assert_eq!(expected, deserialized);
     }
 

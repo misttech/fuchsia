@@ -159,6 +159,7 @@ impl BredrInspect {
 pub struct BondingDataInspect {
     _inspect: inspect::Node,
     _address_type: inspect::StringProperty,
+    _device_class: Option<inspect::UintProperty>,
     _le_inspect: Option<LeInspect>,
     _bredr_inspect: Option<BredrInspect>,
 }
@@ -168,6 +169,9 @@ impl InspectData<BondingData> for BondingDataInspect {
     fn new(bd: &BondingData, inspect: inspect::Node) -> BondingDataInspect {
         BondingDataInspect {
             _address_type: inspect.create_string("address_type", bd.address.address_type_string()),
+            _device_class: bd
+                .device_class
+                .map(|d| inspect.create_uint("device_class", d.value.into())),
             _le_inspect: bd.le().map(|d| LeInspect::new(d, inspect.create_child("le"))),
             _bredr_inspect: bd.bredr().map(|d| BredrInspect::new(d, inspect.create_child("bredr"))),
             _inspect: inspect,
@@ -283,6 +287,9 @@ pub struct BondingData {
     /// The device name obtained using general discovery and name discovery procedures.
     pub name: Option<String>,
 
+    /// The device class of the peer, if known.
+    pub device_class: Option<bt::DeviceClass>,
+
     /// Valid Bonding Data must include at least one of LeBondData or BredrBondData.
     pub data: OneOrBoth<LeBondData, BredrBondData>,
 }
@@ -320,6 +327,7 @@ impl TryFrom<sys::BondingData> for BondingData {
                 .ok_or_else(|| Error::missing("BondingData local address"))?
                 .into(),
             name: fidl.name,
+            device_class: fidl.device_class,
             data,
         })
     }
@@ -350,6 +358,7 @@ impl From<BondingData> for sys::BondingData {
             address: Some(bd.address.into()),
             local_address: Some(bd.local_address.into()),
             name: bd.name,
+            device_class: bd.device_class,
             le_bond,
             bredr_bond,
             ..Default::default()
@@ -399,16 +408,27 @@ pub mod proptest_util {
     use proptest::option;
     use proptest::prelude::*;
 
+    fn any_device_class() -> impl Strategy<Value = bt::DeviceClass> {
+        any::<u32>().prop_map(|value| bt::DeviceClass { value })
+    }
+
     pub fn any_bonding_data() -> impl Strategy<Value = BondingData> {
         let any_data = prop_oneof![
             any_le_data().prop_map(OneOrBoth::Left),
             any_bredr_data().prop_map(OneOrBoth::Right),
             (any_le_data(), any_bredr_data()).prop_map(|(le, bredr)| OneOrBoth::Both(le, bredr)),
         ];
-        (any::<u64>(), any_address(), any_address(), option::of("[a-zA-Z][a-zA-Z0-9_]*"), any_data)
-            .prop_map(|(ident, address, local_address, name, data)| {
+        (
+            any::<u64>(),
+            any_address(),
+            any_address(),
+            option::of("[a-zA-Z][a-zA-Z0-9_]*"),
+            any_data,
+            option::of(any_device_class()),
+        )
+            .prop_map(|(ident, address, local_address, name, data, device_class)| {
                 let identifier = PeerId(ident);
-                BondingData { identifier, address, local_address, name, data }
+                BondingData { identifier, address, local_address, name, device_class, data }
             })
     }
 
@@ -508,6 +528,7 @@ pub mod example {
             address: peer_addr,
             local_address: host_addr,
             name: Some("name".into()),
+            device_class: Some(bt::DeviceClass { value: 0 }),
             data: OneOrBoth::Both(
                 LeBondData {
                     connection_parameters: Some(sys::LeConnectionParameters {
@@ -573,6 +594,7 @@ mod tests {
                     bytes: [0, 0, 0, 0, 0, 0],
                 }),
                 name: Some("name".into()),
+                device_class: Some(bt::DeviceClass { value: 1000 }),
                 le_bond: le_bond.clone(),
                 bredr_bond: bredr_bond.clone(),
                 ..Default::default()

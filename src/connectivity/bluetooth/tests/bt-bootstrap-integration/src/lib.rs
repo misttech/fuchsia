@@ -2,13 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{format_err, Context as _};
+use anyhow::{Context as _, format_err};
 use bt_test_harness::access::{AccessHarness, AccessState};
 use bt_test_harness::bootstrap::BootstrapHarness;
 use fidl_fuchsia_bluetooth_sys as sys;
 use fuchsia_bluetooth::constants::INTEGRATION_TIMEOUT;
-use fuchsia_bluetooth::expectation::asynchronous::{ExpectableExt, ExpectableStateExt};
 use fuchsia_bluetooth::expectation::Predicate;
+use fuchsia_bluetooth::expectation::asynchronous::{ExpectableExt, ExpectableStateExt};
 use fuchsia_bluetooth::types::{
     Address, BondingData, HostData, Identity, LeBondData, OneOrBoth, PeerId,
 };
@@ -44,6 +44,7 @@ fn example_emulator_identity() -> Identity {
         address: peer_address,
         local_address: emulator_address,
         name: None,
+        device_class: None,
         data: OneOrBoth::Left(le_data),
     }];
     Identity { host: host_data, bonds }
