@@ -73,7 +73,7 @@ impl<T: 'static> Facet for TextGridFacet<T> {
         render_context: &mut RenderContext,
         view_context: &ViewAssistantContext,
     ) -> std::result::Result<(), anyhow::Error> {
-        duration!(c"gfx", c"TextGrid::update_layers");
+        duration!("gfx", "TextGrid::update_layers");
 
         self.size = view_context.size;
 
