@@ -8,9 +8,6 @@ import ipaddress
 import logging
 
 from antlion.controllers.fuchsia_lib.ssh import FuchsiaSSHProvider
-from antlion.controllers.fuchsia_lib.wlan_deprecated_configuration_lib import (
-    FuchsiaWlanDeprecatedConfigurationLib,
-)
 from antlion.net import wait_for_port
 from antlion.runner import CalledProcessError
 from mobly import logger
@@ -70,11 +67,3 @@ class SL4F:
             self.log.info("SL4F server is reachable")
         except TimeoutError as e:
             raise TimeoutError("SL4F server is unreachable") from e
-
-        self._init_libraries()
-
-    def _init_libraries(self) -> None:
-        # Grabs command from FuchsiaWlanDeprecatedConfigurationLib
-        self.wlan_deprecated_configuration_lib = (
-            FuchsiaWlanDeprecatedConfigurationLib(self.address)
-        )

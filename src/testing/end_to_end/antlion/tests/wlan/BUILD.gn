@@ -8,7 +8,6 @@ group("e2e_tests") {
   testonly = true
   public_deps = [
     "compliance:e2e_tests",
-    "facade:e2e_tests",
     "functional:e2e_tests",
     "misc:e2e_tests",
     "performance:e2e_tests",
