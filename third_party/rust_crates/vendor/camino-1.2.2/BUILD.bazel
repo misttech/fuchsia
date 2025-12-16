@@ -23,7 +23,7 @@ package_info(
     name = "package_info",
     package_name = "camino",
     package_url = "https://github.com/camino-rs/camino",
-    package_version = "1.2.1",
+    package_version = "1.2.2",
 )
 
 license(
@@ -77,9 +77,9 @@ rust_library(
         "@rules_rust//rust/platform:x86_64-unknown-linux-gnu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    version = "1.2.1",
+    version = "1.2.2",
     deps = [
-        "//third_party/rust_crates/vendor/camino-1.2.1:build_script_build",
+        "//third_party/rust_crates/vendor/camino-1.2.2:build_script_build",
         "//third_party/rust_crates/vendor/proptest-1.7.0:proptest",
         "//third_party/rust_crates/vendor/serde_core-1.0.228:serde_core",
     ],
@@ -134,7 +134,7 @@ cargo_build_script(
         "noclippy",
         "norustfmt",
     ],
-    version = "1.2.1",
+    version = "1.2.2",
     visibility = ["//visibility:private"],
 )
 

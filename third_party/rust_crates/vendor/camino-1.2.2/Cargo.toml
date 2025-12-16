@@ -13,7 +13,7 @@
 edition = "2021"
 rust-version = "1.61.0"
 name = "camino"
-version = "1.2.1"
+version = "1.2.2"
 authors = [
     "Without Boats <saoirse@without.boats>",
     "Ashley Williams <ashley666ashley@gmail.com>",

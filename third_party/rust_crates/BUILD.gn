@@ -168,7 +168,7 @@ group("bytes") {
 }
 
 group("camino") {
-  public_deps = [ ":camino-v1_2_1" ]
+  public_deps = [ ":camino-v1_2_2" ]
 }
 
 if (!(current_os == "fuchsia")) {
@@ -3546,18 +3546,18 @@ rustc_library("bytes-v1_10_1") {
   applicable_licenses = [ ":bytes-v1_10_1.license" ]
 }
 
-license("camino-v1_2_1.license") {
+license("camino-v1_2_2.license") {
   public_package_name = "camino"
   license_files = [
-    "//third_party/rust_crates/vendor/camino-1.2.1/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/camino-1.2.1/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/camino-1.2.2/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/camino-1.2.2/LICENSE-MIT",
   ]
 }
 
-rustc_library("camino-v1_2_1") {
+rustc_library("camino-v1_2_2") {
   crate_name = "camino"
-  source_root = "//third_party/rust_crates/vendor/camino-1.2.1/src/lib.rs"
-  output_name = "camino-14e2d7f36fe1ff4b"
+  source_root = "//third_party/rust_crates/vendor/camino-1.2.2/src/lib.rs"
+  output_name = "camino-db48d32c28be2601"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -3571,20 +3571,22 @@ rustc_library("camino-v1_2_1") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=14e2d7f36fe1ff4b",
-    "-Cextra-filename=-14e2d7f36fe1ff4b",
+    "-Cmetadata=db48d32c28be2601",
+    "-Cextra-filename=-db48d32c28be2601",
     "--cfg=feature=\"proptest1\"",
     "--cfg=feature=\"serde1\"",
     "--cfg=absolute_path",
     "--cfg=os_str_bytes",
     "--cfg=os_string_pathbuf_leak",
+    "--cfg=path_add_extension",
     "--cfg=path_buf_deref_mut",
+    "--cfg=pathbuf_const_new",
     "--cfg=try_reserve_2",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":camino-v1_2_1.license" ]
+  applicable_licenses = [ ":camino-v1_2_2.license" ]
 }
 
 license("cargo_metadata-v0_23_1.license") {
@@ -3604,7 +3606,7 @@ rustc_library("cargo_metadata-v0_23_1") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":camino-v1_2_1" ]
+  deps += [ ":camino-v1_2_2" ]
   deps += [ ":cargo-platform-v0_3_1" ]
   deps += [ ":semver-v1_0_26" ]
   deps += [ ":serde-v1_0_228" ]
@@ -11966,7 +11968,7 @@ rustc_library("pathdiff-v0_2_3") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":camino-v1_2_1" ]
+  deps += [ ":camino-v1_2_2" ]
 
   rustenv = []
 
