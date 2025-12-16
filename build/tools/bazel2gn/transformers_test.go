@@ -210,6 +210,36 @@ func TestPathsConversion(t *testing.T) {
 	]
 }`,
 		},
+		{
+			name: "colon_in_path",
+			bazel: `go_library(
+	name = "test",
+	srcs = [
+		"//path/to:foo.go",
+		"//path/to:bar.go", # @bazel2gn:path_overwrite://path/to/bar_overwritten.go
+	],
+	outputs = [
+		"//path/for:foo.out",
+		"//path/for:bar.out", # @bazel2gn:path_overwrite:${target_out_dir}/bar.out
+	],
+	deps = [
+		"//path/to:baz",
+	]
+)`,
+			wantGN: `go_library("test") {
+	sources = [
+		"//path/to/foo.go",
+		"//path/to/bar_overwritten.go",
+	]
+	outputs = [
+		"//path/for/foo.out",
+		"${target_out_dir}/bar.out",
+	]
+	deps = [
+		"//path/to:baz",
+	]
+}`,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := toSyntaxFile(t, tc.bazel)

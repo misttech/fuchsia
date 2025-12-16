@@ -122,8 +122,9 @@ func overwrittenPath(lit *syntax.Literal) (string, bool) {
 	return "", false
 }
 
-// bazelPathsToGN converts Bazel paths to GN paths, handling overwritten paths.
-func bazelPathsToGN(expr syntax.Expr) (syntax.Expr, error) {
+// bazelFilePathsToGN converts Bazel file paths to GN file paths, handling
+// overwritten paths.
+func bazelFilePathsToGN(expr syntax.Expr) (syntax.Expr, error) {
 	lit, ok := expr.(*syntax.Literal)
 	if !ok {
 		return expr, nil
@@ -131,5 +132,6 @@ func bazelPathsToGN(expr syntax.Expr) (syntax.Expr, error) {
 	if path, ok := overwrittenPath(lit); ok {
 		lit.Raw = fmt.Sprintf(`"%s"`, path)
 	}
+	lit.Raw = strings.Replace(lit.Raw, ":", "/", 1)
 	return lit, nil
 }
