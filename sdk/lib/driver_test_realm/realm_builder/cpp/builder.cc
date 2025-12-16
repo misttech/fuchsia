@@ -408,10 +408,6 @@ void Setup(RealmBuilder& realm_builder, async_dispatcher_t* dispatcher, Options 
           .availability = fuchsia::component::decl::Availability::OPTIONAL,
       },
       Protocol{
-          .name = "fuchsia.boot.Arguments",
-          .availability = fuchsia::component::decl::Availability::OPTIONAL,
-      },
-      Protocol{
           .name = "fuchsia.kernel.IommuResource",
           .availability = fuchsia::component::decl::Availability::OPTIONAL,
       },

@@ -336,7 +336,6 @@ impl DriverTestRealmBuilder for RealmBuilder {
             Capability::protocol_by_name("fuchsia.boot.WriteOnlyLog").optional().into(),
             Capability::protocol_by_name("fuchsia.scheduler.RoleManager").optional().into(),
             Capability::protocol_by_name("fuchsia.boot.Items").optional().into(),
-            Capability::protocol_by_name("fuchsia.boot.Arguments").optional().into(),
             Capability::protocol_by_name("fuchsia.kernel.IommuResource").optional().into(),
             Capability::protocol_by_name("fuchsia.diagnostics.LogFlusher").optional().into(),
             Capability::protocol_by_name("fuchsia.kernel.MexecResource").optional().into(),

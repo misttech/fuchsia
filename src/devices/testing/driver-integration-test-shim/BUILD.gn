@@ -35,7 +35,6 @@ library_headers("driver-integration-test-shim-headers") {
   testonly = true
   headers = [ "lib/driver-integration-test/fixture.h" ]
   public_deps = [
-    "//sdk/fidl/fuchsia.boot:fuchsia.boot_cpp",
     "//sdk/fidl/fuchsia.driver.test:fuchsia.driver.test_hlcpp",
     "//sdk/fidl/fuchsia.io:fuchsia.io_cpp",
     "//sdk/fidl/fuchsia.process.lifecycle:fuchsia.process.lifecycle_cpp",
@@ -89,7 +88,6 @@ source_set("driver-integration-test-shim") {
     "//src/storage/fshost/testing:test-fshost-storage-host",
   ]
   deps = [
-    "//sdk/fidl/fuchsia.boot:fuchsia.boot_cpp",
     "//sdk/fidl/fuchsia.driver.framework:fuchsia.driver.framework_cpp",
     "//sdk/fidl/fuchsia.driver.test:fuchsia.driver.test_hlcpp",
     "//sdk/fidl/fuchsia.fshost:fuchsia.fshost_cpp",

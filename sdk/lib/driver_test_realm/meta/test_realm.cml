@@ -184,12 +184,6 @@
             to: [ "#boot-drivers" ],
         },
         {
-            protocol: [ "fuchsia.boot.Arguments" ],
-            from: "void",
-            to: [ "#boot-drivers" ],
-            availability: "optional",
-        },
-        {
             protocol: [
                 "fuchsia.boot.Items",
                 "fuchsia.kernel.RootJob",

@@ -5,7 +5,6 @@
 #include "include/lib/driver-integration-test/fixture.h"
 
 #include <fidl/fuchsia.board.test/cpp/wire.h>
-#include <fidl/fuchsia.boot/cpp/wire.h>
 #include <fidl/fuchsia.driver.framework/cpp/wire.h>
 #include <fidl/fuchsia.fshost/cpp/wire.h>
 #include <fidl/fuchsia.sysinfo/cpp/wire_test_base.h>
@@ -55,25 +54,6 @@ class FakeSysinfo : public LocalComponentImpl,
  private:
   fidl::ServerBindingGroup<fuchsia_sysinfo::SysInfo> bindings_;
   std::string board_name_;
-};
-
-class FakeBootArgsComponent : public LocalComponentImpl {
- public:
-  explicit FakeBootArgsComponent(std::unique_ptr<fidl::WireServer<fuchsia_boot::Arguments>> server)
-      : server_(std::move(server)) {}
-
-  void OnStart() override {
-    auto service = std::make_unique<vfs::Service>([this](zx::channel request,
-                                                         async_dispatcher_t* dispatcher) {
-      bindings_.AddBinding(dispatcher, fidl::ServerEnd<fuchsia_boot::Arguments>(std::move(request)),
-                           server_.get(), fidl::kIgnoreBindingClosure);
-    });
-    ZX_ASSERT(outgoing()->AddPublicService(std::move(service), "fuchsia.boot.Arguments") == ZX_OK);
-  }
-
- private:
-  std::unique_ptr<fidl::WireServer<fuchsia_boot::Arguments>> server_;
-  fidl::ServerBindingGroup<fuchsia_boot::Arguments> bindings_;
 };
 
 zx_status_t IsolatedDevmgr::Create(Args* args, IsolatedDevmgr* out) {
@@ -250,17 +230,6 @@ zx_status_t IsolatedDevmgr::Create(Args* args, IsolatedDevmgr* out) {
       .source = {ChildRef{"fake-sysinfo"}},
       .targets = {ParentRef()},
   });
-  if (args->fake_boot_args) {
-    realm_builder.AddLocalChild("fake-bootargs",
-                                [impl = std::move(args->fake_boot_args)]() mutable {
-                                  return std::make_unique<FakeBootArgsComponent>(std::move(impl));
-                                });
-    realm_builder.AddRoute(Route{
-        .capabilities = {Protocol{"fuchsia.boot.Arguments"}},
-        .source = {ChildRef{"fake-bootargs"}},
-        .targets = {ParentRef()},
-    });
-  }
 
   std::vector<fuchsia_component_test::Capability> exposes = {{
       fuchsia_component_test::Capability::WithService(

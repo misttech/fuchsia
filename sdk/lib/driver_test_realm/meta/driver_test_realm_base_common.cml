@@ -184,10 +184,7 @@
             availability: "optional",
         },
         {
-            protocol: [
-                "fuchsia.boot.Arguments",
-                "fuchsia.kernel.IommuResource",
-            ],
+            protocol: "fuchsia.kernel.IommuResource",
             from: "parent",
             to: [
                 "#base-drivers",

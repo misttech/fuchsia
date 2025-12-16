@@ -5,7 +5,6 @@
 #ifndef SRC_DEVICES_TESTING_DRIVER_INTEGRATION_TEST_SHIM_INCLUDE_LIB_DRIVER_INTEGRATION_TEST_FIXTURE_H_
 #define SRC_DEVICES_TESTING_DRIVER_INTEGRATION_TEST_SHIM_INCLUDE_LIB_DRIVER_INTEGRATION_TEST_FIXTURE_H_
 
-#include <fidl/fuchsia.boot/cpp/wire.h>
 #include <fidl/fuchsia.io/cpp/wire.h>
 #include <fuchsia/diagnostics/cpp/fidl.h>
 #include <fuchsia/driver/test/cpp/fidl.h>
@@ -44,8 +43,6 @@ class IsolatedDevmgr {
     fbl::String board_name;
     std::vector<std::string> driver_disable;
     std::vector<std::string> driver_bind_eager;
-
-    std::unique_ptr<fidl::WireServer<fuchsia_boot::Arguments>> fake_boot_args;
   };
 
   IsolatedDevmgr() = default;
