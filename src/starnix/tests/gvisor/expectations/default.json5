@@ -541,6 +541,7 @@
 
                 // packet_socket_test
                 "AllPacketSocketTests/PacketSocketTest.GetSockName/*",
+                "PacketSocketNoCapTest.CreationFailsWithEPERM",
 
                 // ping_socket_test
                 "PingSocket.ReceiveIPPacketInfo",
@@ -767,13 +768,13 @@
                 "NetlinkRouteTest.LinkMulticastGroupUserToUserSend",
                 "NetlinkRouteTest.LinkMulticastGroupCapNetAdmin",
                 "NetlinkRouteTest.LinkMulticastGroupNoSelfBroadcast",
+                "NetlinkRouteTest.NonGetRequestsRequireCapNetAdmin",
                 "NetlinkRouteIpv4AndIpv6Tests/NetlinkRouteIpInvariantTest.AddAndRemoveRoute/*",
                 "_/NetlinkSetLinkTest.ChangeLinkName/*",
                 "_/NetlinkSetLinkTest.ChangeMACAddress/*",
                 "_/NetlinkSetLinkTest.ChangeMTU/*",
 
-                // TODO(https://issuetracker.google.com/468074994): Support
-                // network namespaces.
+                // TODO(https://fxbug.dev/468074994): Support network namespaces.
                 "NetlinkRouteTest.ChangeNetnsAndOtherAttrsTogether",
                 "NetlinkRouteTest.LinkedToNetns",
                 "NetlinkRouteTest.LinkMulticastGroupNamespaced",
@@ -914,6 +915,7 @@
                 "ChownTest.SetGroupIdBitDeniedWithoutCapFsetIdOrRelevantGroup",
 
                 // raw_socket_test
+                "RawSocketNoCapTest.CreationFailsWithEPERM",
                 "RawSocketTest.SolIPSetSockOptOnRawV6SocketFails",
             ],
         },
@@ -1219,6 +1221,9 @@
 
                 // TODO(https://fxbug.dev/461828202): Test was changed upstream. Re-enable once the change is rolled in.
                 "EpollTest.DoubleLayerEpoll",
+
+                // TODO(https://fxbug.dev/468074994): Investigate and re-enable.
+                "NetlinkRouteTest.VethAdd",
             ],
         },
     ],
