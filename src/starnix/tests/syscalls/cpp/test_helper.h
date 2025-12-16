@@ -501,11 +501,16 @@ testing::AssertionResult TestThatAccessSegfaults(void *test_address, AccessType 
 // future wait) on a corresponding `Holder`.
 class Poker {
  public:
+  Poker() = default;
   explicit Poker(fbl::unique_fd pipe_write_side);
   Poker(Poker &&o);
   Poker &operator=(Poker &&o);
   Poker(const Poker &) = delete;
   Poker &operator=(const Poker &) = delete;
+
+  bool is_valid() const { return pipe_write_side_.is_valid(); }
+  explicit operator bool() const { return is_valid(); }
+
   void poke();
 
  private:
@@ -517,11 +522,16 @@ class Poker {
 // necessary.
 class Holder {
  public:
+  Holder() = default;
   explicit Holder(fbl::unique_fd pipe_read_side);
   Holder(Holder &&o);
   Holder &operator=(Holder &&o);
   Holder(const Holder &) = delete;
   Holder &operator=(const Holder &) = delete;
+
+  bool is_valid() const { return pipe_read_side_.is_valid(); }
+  explicit operator bool() const { return is_valid(); }
+
   void hold();
 
  private:
