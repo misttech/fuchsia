@@ -17,6 +17,7 @@
 #include <memory>
 
 #include <ddktl/device.h>
+#include <fbl/algorithm.h>
 #include <fbl/auto_lock.h>
 
 #include "src/camera/drivers/hw_accel/ge2d/ge2d_regs.h"
@@ -995,10 +996,12 @@ zx_status_t Ge2dDevice::Setup(zx_device_t* parent, std::unique_ptr<Ge2dDevice>* 
   GenCtrl1::Get().FromValue(0).set_soft_reset(0).WriteTo(&*ge2d_mmio);
   GenCtrl1::Get().FromValue(0).set_interrupt_on_idling(1).WriteTo(&*ge2d_mmio);
 
+  const size_t vmo_size = fbl::round_up<size_t>(kWatermarkMaxSize, zx_system_get_page_size());
+
   std::vector<zx::vmo> watermark_input_contiguous_vmos;
   for (uint32_t i = 0; i < kWatermarkInputBufferCount; i++) {
     zx::vmo vmo;
-    status = zx::vmo::create_contiguous(bti.value(), kWatermarkMaxSize, 0, &vmo);
+    status = zx::vmo::create_contiguous(bti.value(), vmo_size, 0, &vmo);
     if (status != ZX_OK) {
       zxlogf(ERROR, "Unable to create contiguous memory for input watermark VMO");
       return ZX_ERR_NO_MEMORY;
@@ -1007,8 +1010,7 @@ zx_status_t Ge2dDevice::Setup(zx_device_t* parent, std::unique_ptr<Ge2dDevice>* 
   }
 
   zx::vmo watermark_blended_contiguous_vmo;
-  status = zx::vmo::create_contiguous(bti.value(), kWatermarkMaxSize, 0,
-                                      &watermark_blended_contiguous_vmo);
+  status = zx::vmo::create_contiguous(bti.value(), vmo_size, 0, &watermark_blended_contiguous_vmo);
   if (status != ZX_OK) {
     zxlogf(ERROR, "Unable to create contiguous memory for blended watermark VMO");
     return ZX_ERR_NO_MEMORY;
