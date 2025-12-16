@@ -146,12 +146,12 @@ fdf::async_helpers::AsyncTask GetMetadataAsync(async_dispatcher_t* dispatcher,
 // Attempts to talk to a parent to acquire metadata with |type| and then decodes it into |FidlType|.
 // The result is only valid as long as |arena| remains alive.
 template <typename FidlType>
+#if __cplusplus >= 202002l
+  requires fidl::IsFidlObject<FidlType>::value
+#endif
 zx::result<fidl::ObjectView<FidlType>> GetMetadata(const std::shared_ptr<fdf::Namespace>& incoming,
                                                    fidl::AnyArena& arena, uint32_t type,
                                                    std::string_view instance = "default") {
-  static_assert(
-      fidl::IsFidlObject<FidlType>::value,
-      "GetMetadata with arena only supported for FIDL types. Check FidlType is correct or remove arena parameter.");
   return internal::GetMetadata<fidl::ObjectView<FidlType>>(
       incoming, type, instance,
       [&arena](const zx::vmo& vmo, size_t size) -> zx::result<fidl::ObjectView<FidlType>> {
@@ -172,14 +172,14 @@ zx::result<fidl::ObjectView<FidlType>> GetMetadata(const std::shared_ptr<fdf::Na
 // Attempts to talk to a parent to acquire metadata with |type| and then decodes it into |FidlType|.
 // The result is only valid as long as |arena| remains alive.
 template <typename FidlType>
+#if __cplusplus >= 202002l
+  requires fidl::IsFidlObject<FidlType>::value
+#endif
 fdf::async_helpers::AsyncTask GetMetadataAsync(
     async_dispatcher_t* dispatcher, const std::shared_ptr<fdf::Namespace>& incoming,
     fidl::AnyArena& arena, uint32_t type,
     fit::callback<void(zx::result<fidl::ObjectView<FidlType>>)> callback,
     std::string_view instance = "default") {
-  static_assert(
-      fidl::IsFidlObject<FidlType>::value,
-      "GetMetadata with arena only supported for FIDL types. Check FidlType is correct or remove arena parameter.");
   return internal::GetMetadataAsync<fidl::ObjectView<FidlType>>(
       dispatcher, incoming, type, instance,
       [&arena](const zx::vmo& vmo, size_t size) -> zx::result<fidl::ObjectView<FidlType>> {

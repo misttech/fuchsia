@@ -93,6 +93,9 @@ template <> struct IsFidlType<float> : public std::true_type {};
 template <> struct IsFidlType<double> : public std::true_type {};
 // clang-format on
 
+template <typename T>
+constexpr inline auto IsFidlTypeV = IsFidlType<T>::value;
+
 // A type trait that indicates whether the given type is a resource type
 // i.e. can contain handles.
 #if __FIDL_SUPPORT_HANDLES
@@ -106,6 +109,10 @@ struct IsResource : public std::false_type {
   static_assert(IsFidlType<T>::value, "IsResource only defined on FIDL types.");
 };
 #endif
+
+template <typename T>
+constexpr inline auto IsResourceV = fidl::IsResource<T>::value;
+
 // Code-gen will explicitly conform the generated FIDL types to IsResource.
 
 // A type trait that contains several properties of FIDL types which are

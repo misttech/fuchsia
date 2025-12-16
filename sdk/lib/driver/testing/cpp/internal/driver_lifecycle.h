@@ -50,18 +50,15 @@ class DriverUnderTestBase : public fdf::WireAsyncEventHandler<fuchsia_driver_fra
 
  protected:
   template <typename Driver>
+#if __cplusplus >= 202002l
+    requires std::is_same_v<decltype(&Driver::template GetInstanceFromTokenForTesting<Driver>),
+                            Driver* (*)(void*)>
+#endif
   Driver* GetDriver() {
     std::lock_guard guard(checker_);
     if (!token_.has_value()) {
       return nullptr;
     }
-
-    static_assert(
-        std::is_same_v<decltype(&Driver::template GetInstanceFromTokenForTesting<Driver>),
-                       Driver* (*)(void*)>,
-        "GetDriver requires that "
-        "Driver::GetInstanceFromTokenForTesting<Driver> must be a public static templated function "
-        "with signature 'Driver* (void*)'");
 
     return Driver::template GetInstanceFromTokenForTesting<Driver>(token_.value());
   }

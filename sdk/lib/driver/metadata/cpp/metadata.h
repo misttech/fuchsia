@@ -26,13 +26,12 @@ zx::result<fidl::ClientEnd<fuchsia_driver_metadata::Metadata>> ConnectToMetadata
 // Make sure that the component manifest specifies that it uses the `FidlType::kSerializableName`
 // FIDL service.
 template <typename FidlType>
+#if __cplusplus >= 202002l
+  requires(fidl::IsFidlTypeV<FidlType> && !fidl::IsResourceV<FidlType>)
+#endif
 zx::result<FidlType> GetMetadataFromFidlService(
     fidl::UnownedClientEnd<fuchsia_io::Directory> svc_dir, std::string_view service_name,
     std::string_view instance_name = component::OutgoingDirectory::kDefaultServiceInstance) {
-  static_assert(fidl::IsFidlType<FidlType>::value, "|FidlType| must be a FIDL domain object.");
-  static_assert(!fidl::IsResource<FidlType>::value,
-                "|FidlType| cannot be a resource type. Resources cannot be persisted.");
-
   fidl::WireSyncClient<fuchsia_driver_metadata::Metadata> client{};
   {
     zx::result result = ConnectToMetadataProtocol(svc_dir, service_name, instance_name);
@@ -98,13 +97,12 @@ zx::result<FidlType> GetMetadata(
 // `std::nullopt` if there is no metadata FIDL protocol within |device|'s service directory at
 // |instance_name| or if the FIDL server does not have metadata to provide.
 template <typename FidlType>
+#if __cplusplus >= 202002l
+  requires(fidl::IsFidlTypeV<FidlType> && !fidl::IsResourceV<FidlType>)
+#endif
 zx::result<std::optional<FidlType>> GetMetadataFromFidlServiceIfExists(
     fidl::UnownedClientEnd<fuchsia_io::Directory> svc_dir, std::string_view service_name,
     std::string_view instance_name = component::OutgoingDirectory::kDefaultServiceInstance) {
-  static_assert(fidl::IsFidlType<FidlType>::value, "|FidlType| must be a FIDL domain object.");
-  static_assert(!fidl::IsResource<FidlType>::value,
-                "|FidlType| cannot be a resource type. Resources cannot be persisted.");
-
   fidl::WireSyncClient<fuchsia_driver_metadata::Metadata> client{};
   {
     zx::result result = ConnectToMetadataProtocol(svc_dir, service_name, instance_name);

@@ -10,9 +10,10 @@
 namespace fdf_devicetree::testing {
 
 template <class VisitorImpl>
+#if __cplusplus >= 202002l
+  requires std::is_base_of_v<Visitor, VisitorImpl>
+#endif
 class VisitorTestHelper : public VisitorImpl, public ManagerTestHelper {
-  static_assert(std::is_base_of_v<Visitor, VisitorImpl>, "VisitorImpl has to inherit from Visitor");
-
  public:
   VisitorTestHelper(std::string_view dtb_path, std::string_view log_tag)
       : ManagerTestHelper(log_tag), dtb_path_(dtb_path) {}

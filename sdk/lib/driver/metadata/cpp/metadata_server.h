@@ -61,6 +61,9 @@ namespace fdf_metadata {
 //   ],
 //
 template <typename FidlType>
+#if __cplusplus >= 202002l
+  requires(fidl::IsFidlType<FidlType>::value && !fidl::IsResource<FidlType>::value)
+#endif
 class MetadataServer final : public fidl::WireServer<fuchsia_driver_metadata::Metadata> {
  public:
   // The caller's component manifest must specify `|FidlType|::kSerializableName` as a service
@@ -72,10 +75,6 @@ class MetadataServer final : public fidl::WireServer<fuchsia_driver_metadata::Me
   // Deprecated. Do not use. Use `Serve()` instead.
   // TODO(b/439047765): Remove once no longer used.
   zx::result<> SetMetadata(const FidlType& metadata) {
-    static_assert(fidl::IsFidlType<FidlType>::value, "|FidlType| must be a FIDL domain object.");
-    static_assert(!fidl::IsResource<FidlType>::value,
-                  "|FidlType| cannot be a resource type. Resources cannot be persisted.");
-
     fit::result persisted_metadata = fidl::Persist(metadata);
     if (persisted_metadata.is_error()) {
       fdf::error("Failed to persist metadata: {}",
@@ -318,10 +317,6 @@ class MetadataServer final : public fidl::WireServer<fuchsia_driver_metadata::Me
   // is the metadata to be served.
   zx::result<> Serve(fdf::OutgoingDirectory& outgoing, async_dispatcher_t* dispatcher,
                      const FidlType& metadata) {
-    static_assert(fidl::IsFidlType<FidlType>::value, "|FidlType| must be a FIDL domain object.");
-    static_assert(!fidl::IsResource<FidlType>::value,
-                  "|FidlType| cannot be a resource type. Resources cannot be persisted.");
-
     fit::result persisted_metadata = fidl::Persist(metadata);
     if (persisted_metadata.is_error()) {
       fdf::error("Failed to persist metadata: {}",

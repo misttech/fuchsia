@@ -91,50 +91,22 @@ class EnvWrapper {
   bool user_env_served_ = false;
 };
 
-// Helper macros to validate the incoming configuration.
+#if __cplusplus >= 202002l
+template <typename T>
+concept HasDriverType = requires { typename T::DriverType; };
 
-#define SETUP_HAS_USING(name)                                                    \
-  template <typename T, typename = void>                                         \
-  struct Has##name : public ::std::false_type {};                                \
-                                                                                 \
-  template <typename T>                                                          \
-  struct Has##name<T, std::void_t<typename T::name>> : public std::true_type {}; \
-                                                                                 \
-  template <typename T>                                                          \
-  constexpr inline auto Has##name##V = Has##name<T>::value;
+template <typename T>
+concept HasEnvironmentType =
+    requires { typename T::EnvironmentType; } &&
+    std::is_base_of_v<fdf_testing::Environment, typename T::EnvironmentType> &&
+    !std::is_abstract_v<typename T::EnvironmentType> &&
+    std::is_default_constructible_v<typename T::EnvironmentType>;
 
-SETUP_HAS_USING(DriverType)
-SETUP_HAS_USING(EnvironmentType)
-
-template <class Configuration>
-class ConfigurationExtractor {
- public:
-  // Validate DriverType.
-  static_assert(HasDriverTypeV<Configuration>,
-                "Ensure the Configuration class has defined a DriverType "
-                "through a using statement: 'using DriverType = MyDriverType;'");
-  using DriverType = typename Configuration::DriverType;
-
-  // Validate EnvironmentType.
-  static_assert(HasEnvironmentTypeV<Configuration>,
-                "Ensure the Configuration class has defined an EnvironmentType "
-                "through a using statement: 'using EnvironmentType = MyTestEnvironment;'");
-  using EnvironmentType = typename Configuration::EnvironmentType;
-
-  static_assert(std::is_base_of_v<fdf_testing::Environment, EnvironmentType>,
-                "The EnvironmentType must implement the fdf_testing::Environment class.");
-  static_assert(!std::is_abstract_v<EnvironmentType>, "The EnvironmentType cannot be abstract.");
-  static_assert(std::is_constructible_v<EnvironmentType>,
-                "The EnvironmentType must have a default constructor.");
+template <typename T>
+concept HasGetDriverRegistration = requires {
+  { T::GetDriverRegistration };
 };
-
-template <typename T, typename = void>
-struct HasGetDriverRegistration : public ::std::false_type {};
-template <typename T>
-struct HasGetDriverRegistration<T, std::void_t<decltype(T::GetDriverRegistration)>>
-    : public std::true_type {};
-template <typename T>
-constexpr static auto HasGetDriverRegistrationV = HasGetDriverRegistration<T>::value;
+#endif
 
 }  // namespace internal
 

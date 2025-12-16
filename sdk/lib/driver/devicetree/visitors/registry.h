@@ -18,8 +18,10 @@ class VisitorRegistry : public fdf_devicetree::Visitor {
   }
 
   template <class VisitorImpl, class... Args>
+#if __cplusplus >= 202002l
+    requires std::derived_from<VisitorImpl, Visitor>
+#endif
   zx::result<> RegisterVisitor(Args&&... args) {
-    static_assert(std::is_base_of_v<Visitor, VisitorImpl>, "VisitorImpl must derive from Visitor");
     visitors_.emplace_back(std::make_unique<VisitorImpl>(std::forward<Args>(args)...));
     return zx::ok();
   }

@@ -59,10 +59,13 @@ namespace internal {
 //
 // This class is not meant for direct use so its in the internal namespace.
 template <typename Configuration>
+#if __cplusplus >= 202002l
+  requires(HasDriverType<Configuration> && HasEnvironmentType<Configuration>)
+#endif
 class DriverTestCommon {
  public:
-  using DriverType = typename ConfigurationExtractor<Configuration>::DriverType;
-  using EnvironmentType = typename ConfigurationExtractor<Configuration>::EnvironmentType;
+  using DriverType = typename Configuration::DriverType;
+  using EnvironmentType = typename Configuration::EnvironmentType;
 
   DriverTestCommon()
       : env_dispatcher_(runtime_.StartBackgroundDispatcher()),
@@ -353,7 +356,7 @@ class BackgroundDriverTest final : public internal::DriverTestCommon<Configurati
  private:
   zx::result<> StartDriverInner(fdf::DriverStartArgs start_args) override {
     DriverRegistration symbol;
-    if constexpr (internal::HasGetDriverRegistrationV<DriverType>) {
+    if constexpr (internal::HasGetDriverRegistration<DriverType>) {
       symbol = DriverType::GetDriverRegistration();
     } else {
       symbol = __fuchsia_driver_registration__;
@@ -464,7 +467,7 @@ class ForegroundDriverTest final : public internal::DriverTestCommon<Configurati
  private:
   zx::result<> StartDriverInner(fdf::DriverStartArgs start_args) override {
     DriverRegistration symbol;
-    if constexpr (internal::HasGetDriverRegistrationV<DriverType>) {
+    if constexpr (internal::HasGetDriverRegistration<DriverType>) {
       symbol = DriverType::GetDriverRegistration();
     } else {
       symbol = __fuchsia_driver_registration__;

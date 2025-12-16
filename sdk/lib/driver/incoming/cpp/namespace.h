@@ -31,12 +31,12 @@ static constexpr std::false_type always_false{};
 
 // Returns a client_end to the connection.
 template <typename ServiceMember>
+#if __cplusplus >= 202002l
+  requires std::is_same_v<typename ServiceMember::ProtocolType::Transport,
+                          fidl::internal::DriverTransport>
+#endif
 zx::result<fdf::ClientEnd<typename ServiceMember::ProtocolType>> DriverTransportConnect(
     fidl::UnownedClientEnd<fuchsia_io::Directory> svc_dir, std::string_view instance) {
-  static_assert((std::is_same_v<typename ServiceMember::ProtocolType::Transport,
-                                fidl::internal::DriverTransport>),
-                "ServiceMember must use DriverTransport. Double check the FIDL protocol.");
-
   zx::channel client_token, server_token;
   if (zx_status_t status = zx::channel::create(0, &client_token, &server_token); status != ZX_OK) {
     return zx::error(status);
@@ -63,13 +63,13 @@ zx::result<fdf::ClientEnd<typename ServiceMember::ProtocolType>> DriverTransport
 
 // Uses the passed in server_end to make the connection.
 template <typename ServiceMember>
+#if __cplusplus >= 202002l
+  requires std::is_same_v<typename ServiceMember::ProtocolType::Transport,
+                          fidl::internal::DriverTransport>
+#endif
 zx::result<> DriverTransportConnect(fidl::UnownedClientEnd<fuchsia_io::Directory> svc_dir,
                                     fdf::ServerEnd<typename ServiceMember::ProtocolType> server_end,
                                     std::string_view instance) {
-  static_assert((std::is_same_v<typename ServiceMember::ProtocolType::Transport,
-                                fidl::internal::DriverTransport>),
-                "ServiceMember must use DriverTransport. Double check the FIDL protocol.");
-
   zx::channel client_token, server_token;
   if (zx_status_t status = zx::channel::create(0, &client_token, &server_token); status != ZX_OK) {
     return zx::error(status);
@@ -117,37 +117,42 @@ class Namespace final {
   // Connect to a protocol within a driver's namespace.
   // DriverTransport is not supported. Protocols using DriverTransport must be service members.
   template <typename Protocol, typename = std::enable_if_t<!fidl::IsServiceMemberV<Protocol>>>
+#if __cplusplus >= 202002l
+    requires std::is_same_v<typename Protocol::Transport, fidl::internal::ChannelTransport>
+#endif
   zx::result<fidl::ClientEnd<Protocol>> Connect(
       const char* protocol_name = fidl::DiscoverableProtocolName<Protocol>) const {
-    static_assert((std::is_same_v<typename Protocol::Transport, fidl::internal::ChannelTransport>),
-                  "Protocol must use ChannelTransport. Use a ServiceMember for DriverTransport.");
     return component::ConnectAt<Protocol>(svc_dir(), protocol_name);
   }
 
   // Connects |server_end| to a protocol within a driver's namespace.
   // DriverTransport is not supported. Protocols using DriverTransport must be service members.
   template <typename Protocol, typename = std::enable_if_t<!fidl::IsServiceMemberV<Protocol>>>
+#if __cplusplus >= 202002l
+    requires std::is_same_v<typename Protocol::Transport, fidl::internal::ChannelTransport>
+#endif
   zx::result<> Connect(fidl::ServerEnd<Protocol> server_end,
                        const char* protocol_name = fidl::DiscoverableProtocolName<Protocol>) const {
-    static_assert((std::is_same_v<typename Protocol::Transport, fidl::internal::ChannelTransport>),
-                  "Protocol must use ChannelTransport. Use a ServiceMember for DriverTransport.");
     return component::ConnectAt(svc_dir(), std::move(server_end), protocol_name);
   }
 
   // Connect to a service within a driver's namespace.
   template <typename FidlService>
+#if __cplusplus >= 202002l
+    requires fidl::IsServiceV<FidlService>
+#endif
   zx::result<typename FidlService::ServiceClient> OpenService(std::string_view instance) const {
-    static_assert(fidl::IsServiceV<FidlService>, "FidlService must be a service.");
     return component::OpenServiceAt<FidlService>(svc_dir(), instance);
   }
 
   // Protocol must compose fuchsia.io/Node.
   // DriverTransport is not supported. Protocols using DriverTransport must be service members.
   template <typename Protocol>
+#if __cplusplus >= 202002l
+    requires(!fidl::IsServiceMemberV<Protocol> &&
+             std::is_same_v<typename Protocol::Transport, fidl::internal::ChannelTransport>)
+#endif
   zx::result<fidl::ClientEnd<Protocol>> Open(const char* path, fuchsia_io::Flags flags) const {
-    static_assert(!fidl::IsServiceMemberV<Protocol>, "Protocol must not be a ServiceMember.");
-    static_assert((std::is_same_v<typename Protocol::Transport, fidl::internal::ChannelTransport>),
-                  "Protocol must use ChannelTransport. Use a ServiceMember for DriverTransport.");
     auto [client_end, server_end] = fidl::Endpoints<Protocol>::Create();
     zx::result result = Open(path, flags, server_end.TakeChannel());
     if (result.is_error()) {
@@ -163,11 +168,11 @@ class Namespace final {
   // Returns a ClientEnd of type corresponding to the given protocol
   // e.g. fidl::ClientEnd or fdf::ClientEnd.
   template <typename ServiceMember>
+#if __cplusplus >= 202002l
+    requires fidl::IsServiceMemberV<ServiceMember>
+#endif
   zx::result<fidl::internal::ClientEndType<typename ServiceMember::ProtocolType>> Connect(
       std::string_view instance = component::kDefaultInstance) const {
-    static_assert(
-        fidl::IsServiceMemberV<ServiceMember>,
-        "ServiceMember type must be the Protocol inside of a Service, eg: fuchsia_hardware_pci::Service::Device.");
     if constexpr (std::is_same_v<typename ServiceMember::ProtocolType::Transport,
                                  fidl::internal::ChannelTransport>) {
       if (service_validator_) {
@@ -199,12 +204,12 @@ class Namespace final {
   // The type of |server_end| must correspond to the given protocol's transport
   // e.g. fidl::ServerEnd for ChannelTransport or fdf::ServerEnd for DriverTransport.
   template <typename ServiceMember>
+#if __cplusplus >= 202002l
+    requires fidl::IsServiceMemberV<ServiceMember>
+#endif
   zx::result<> Connect(
       fidl::internal::ServerEndType<typename ServiceMember::ProtocolType> server_end,
       std::string_view instance = component::kDefaultInstance) const {
-    static_assert(
-        fidl::IsServiceMemberV<ServiceMember>,
-        "ServiceMember type must be the Protocol inside of a Service, eg: fuchsia_hardware_pci::Service::Device.");
     if constexpr (std::is_same_v<typename ServiceMember::ProtocolType::Transport,
                                  fidl::internal::ChannelTransport>) {
       if (service_validator_) {
