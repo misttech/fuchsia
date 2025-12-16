@@ -13,8 +13,8 @@ use ffx_writer::MachineWriter;
 use fho::{FfxContext, FfxMain, FfxTool, FhoEnvironment};
 use std::net::IpAddr;
 use std::path::PathBuf;
-use std::process::Command;
 use target_holders::SshAddrHolder;
+use tokio::process::Command;
 
 #[derive(FfxTool)]
 pub struct SshTool {
@@ -42,11 +42,12 @@ impl FfxMain for SshTool {
         }
         let addr = get_addr(&self.context, (*self.ssh_addr).into())?;
         let mut ssh_cmd = make_ssh_command(&self.context, self.cmd, addr)
+            .await
             .bug_context("Building command to ssh to target")?;
 
         log::debug!("About to ssh with command: {:#?}", ssh_cmd);
         let mut ssh = ssh_cmd.spawn().user_message("Failed to run ssh command to target")?;
-        let status = ssh.wait().user_message("Command 'ssh' exited with error.")?;
+        let status = ssh.wait().await.user_message("Command 'ssh' exited with error.")?;
 
         // We want to give callers of this command a meaningful error code if it fails. First,
         // check if it was terminated due to a signal and report that. If the process terminated
@@ -97,7 +98,7 @@ fn get_addr(ctx: &EnvironmentContext, addr: TargetIpAddr) -> fho::Result<TargetI
     })
 }
 
-fn make_ssh_command(
+async fn make_ssh_command(
     context: &EnvironmentContext,
     cmd: SshCommand,
     addr: TargetIpAddr,
@@ -111,7 +112,7 @@ fn make_ssh_command(
             context,
         )?
     } else {
-        build_ssh_command(context, addr, cmd.command.iter().map(|s| s.as_str()).collect())?
+        build_ssh_command(context, addr, cmd.command.iter().map(|s| s.as_str()).collect()).await?
     };
 
     Ok(ssh_cmd)
@@ -146,15 +147,15 @@ mod test {
             .set(&test_env.context, json!(&keys))?;
         let addr = TargetIpAddr::from_str("127.0.0.1:34522")?;
         let cmd = SshCommand { sshconfig: None, command: vec![] };
-        let ssh_cmd = make_ssh_command(&test_env.context, cmd, addr)?;
-        assert_eq!(ssh_cmd.get_program(), "ssh");
+        let ssh_cmd = make_ssh_command(&test_env.context, cmd, addr).await?;
+        assert_eq!(ssh_cmd.as_std().get_program(), "ssh");
 
         // assert that the keys are added,
         // the address family is ipv4
         // the port and address are correct.
         // ignore the configuration since that is tested in the make_ssh_command, and
         // could change over time.
-        let actual_command = ssh_cmd.get_args().filter_map(|a| a.to_str()).join(" ");
+        let actual_command = ssh_cmd.as_std().get_args().filter_map(|a| a.to_str()).join(" ");
         assert!(actual_command.contains("-o AddressFamily=inet"));
         let key_args =
             format!("-i {} -i {}", &keys[0].to_string_lossy(), &keys[1].to_string_lossy());
@@ -188,10 +189,10 @@ mod test {
             sshconfig: Some("/foo/bar/baz.conf".to_string()),
             command: vec!["echo".to_string(), "'foo'".to_string()],
         };
-        let ssh_cmd = make_ssh_command(&test_env.context, cmd, addr)?;
-        assert_eq!(ssh_cmd.get_program(), "ssh");
+        let ssh_cmd = make_ssh_command(&test_env.context, cmd, addr).await?;
+        assert_eq!(ssh_cmd.as_std().get_program(), "ssh");
         assert_eq!(
-            ssh_cmd.get_args().map(|a| a.to_str().unwrap()).collect::<Vec<&str>>(),
+            ssh_cmd.as_std().get_args().map(|a| a.to_str().unwrap()).collect::<Vec<&str>>(),
             vec![
                 "-F",
                 "/foo/bar/baz.conf",

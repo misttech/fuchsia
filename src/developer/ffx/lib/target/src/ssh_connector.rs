@@ -82,8 +82,8 @@ impl SshConnector {
 
     /// This is mainly for diagnostics/reporting info to the user. This takes the usual command
     /// with which fdomain is started and converts it into a readable string.
-    pub fn fdomain_command(&self) -> Result<String> {
-        let cmd = make_fdomain_ssh_command(self.target.clone(), &self.env_context)?;
+    pub async fn fdomain_command(&self) -> Result<String> {
+        let cmd = make_fdomain_ssh_command(self.target.clone(), &self.env_context).await?;
         let envs = cmd
             .as_std()
             .get_envs()
@@ -121,7 +121,8 @@ async fn read_stderr(
 
 impl SshConnector {
     async fn connect_overnet(&mut self) -> Result<OvernetConnection, TargetConnectionError> {
-        self.overnet_cmd = Some(start_overnet_ssh_command(self.target.clone(), &self.env_context)?);
+        self.overnet_cmd =
+            Some(start_overnet_ssh_command(self.target.clone(), &self.env_context).await?);
         let cmd = self.overnet_cmd.as_mut().unwrap();
         let mut stdout = BufReader::with_capacity(
             BUFFER_SIZE,
@@ -180,6 +181,7 @@ impl SshConnector {
     async fn connect_fdomain(&mut self) -> Result<FDomainConnection, FDomainConnectionError> {
         self.overnet_cmd = Some(
             start_fdomain_ssh_command(self.target.clone(), &self.env_context)
+                .await
                 .map_err(|x| FDomainConnectionError::ConnectionError(x.into()))?,
         );
         let cmd = self.overnet_cmd.as_mut().unwrap();
@@ -248,33 +250,30 @@ impl TryFromEnvContext for SshConnector {
     }
 }
 
-fn make_fdomain_ssh_command(
+async fn make_fdomain_ssh_command(
     target: ScopedSocketAddr,
     env_context: &EnvironmentContext,
 ) -> Result<tokio::process::Command> {
     let args = vec!["fdomain_runner"];
     // Use ssh from the environment.
     let ssh_path = "ssh";
-    let ssh = tokio::process::Command::from(build_ssh_command_with_env(
-        ssh_path,
-        target,
-        env_context,
-        args,
-    )?);
+    let ssh = tokio::process::Command::from(
+        build_ssh_command_with_env(ssh_path, target, env_context, args).await?,
+    );
     Ok(ssh)
 }
 
-fn start_fdomain_ssh_command(
+async fn start_fdomain_ssh_command(
     target: ScopedSocketAddr,
     env_context: &EnvironmentContext,
 ) -> Result<Child> {
-    let mut ssh = make_fdomain_ssh_command(target, env_context)?;
+    let mut ssh = make_fdomain_ssh_command(target, env_context).await?;
     log::debug!("SshConnector starting start_fdomain_ssh invoking:  {ssh:?}");
     let ssh_cmd = ssh.stdout(Stdio::piped()).stdin(Stdio::piped()).stderr(Stdio::piped());
     Ok(ssh_cmd.spawn().bug_context("spawning ssh command")?)
 }
 
-fn start_overnet_ssh_command(
+async fn start_overnet_ssh_command(
     target: ScopedSocketAddr,
     env_context: &EnvironmentContext,
 ) -> Result<Child> {
@@ -295,12 +294,9 @@ fn start_overnet_ssh_command(
     ];
     // Use ssh from the environment.
     let ssh_path = "ssh";
-    let mut ssh = tokio::process::Command::from(build_ssh_command_with_env(
-        ssh_path,
-        target,
-        env_context,
-        args,
-    )?);
+    let mut ssh = tokio::process::Command::from(
+        build_ssh_command_with_env(ssh_path, target, env_context, args).await?,
+    );
     log::debug!("SshConnector starting overnet invoking: {ssh:?}");
     let ssh_cmd = ssh.stdout(Stdio::piped()).stdin(Stdio::piped()).stderr(Stdio::piped());
     Ok(ssh_cmd.spawn().bug_context("spawning ssh command")?)

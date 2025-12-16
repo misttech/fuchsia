@@ -562,6 +562,7 @@ impl SshConnectorProvider for DefaultSshConnectorProvider {
         let fdomain_command = connector
             .0
             .fdomain_command()
+            .await
             .or_analytics(PointOfFailure::UnableToBuildFDomainCommand)
             .await?;
         notifier.info(format!("Executing the command: `{}`", fdomain_command))?;

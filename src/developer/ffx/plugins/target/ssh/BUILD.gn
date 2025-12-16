@@ -25,6 +25,7 @@ ffx_plugin("ffx_target_ssh") {
     "//third_party/rust_crates:async-trait",
     "//third_party/rust_crates:log",
     "//third_party/rust_crates:nix",
+    "//third_party/rust_crates:tokio",
   ]
   test_deps = [
     "//src/developer/ffx/config:lib",

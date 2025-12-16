@@ -26,10 +26,10 @@ use fidl_fuchsia_sys2 as fsys;
 use fuchsia_async::TimeoutExt;
 use futures::TryFutureExt;
 use std::net::SocketAddr;
-use std::process::Command;
 use std::rc::{Rc, Weak};
 use std::sync::Arc;
 use std::time::Duration;
+use tokio::process::Command;
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::{Receiver, Sender};
 
@@ -360,7 +360,7 @@ async fn run_ssh_command(
     let mut cmd = build_ssh_command_local(env, addr.into(), state).await?;
     log::debug!("About to run command on target to reboot: {:?}", cmd);
     let ssh = cmd.spawn()?;
-    let output = ssh.wait_with_output()?;
+    let output = ssh.wait_with_output().await?;
     match output.status.success() {
         true => Ok(()),
         _ => {
@@ -395,7 +395,8 @@ async fn build_ssh_command_local(
         env,
         netext::ScopedSocketAddr::from_socket_addr(addr.into())?,
         device_command,
-    )?)
+    )
+    .await?)
 }
 
 // END BLOCK

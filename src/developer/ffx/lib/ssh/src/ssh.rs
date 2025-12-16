@@ -10,8 +10,8 @@ use std::hash::{Hash, Hasher};
 use std::net::SocketAddr;
 use std::os::unix::fs::DirBuilderExt;
 use std::path::PathBuf;
-use std::process::Command;
 use thiserror::Error;
+use tokio::process::Command;
 
 const SSH_PRIV: &str = "ssh.priv";
 const SSH_CONTROLMASTER_MODE: &str = "ssh.controlmaster.mode";
@@ -105,34 +105,34 @@ fn apply_auth_sock(cmd: &mut Command, context: &EnvironmentContext) {
     }
 }
 
-fn build_ssh_command_with_ssh_path(
+async fn build_ssh_command_with_ssh_path(
     ssh_path: &str,
     addr: ScopedSocketAddr,
     command: Vec<&str>,
     env: &EnvironmentContext,
 ) -> Result<Command> {
     let mut config = SshConfig::new()?;
-    build_ssh_command_with_ssh_config(ssh_path, addr, &mut config, command, env)
+    build_ssh_command_with_ssh_config(ssh_path, addr, &mut config, command, env).await
 }
 
-pub fn build_ssh_command_with_env(
+pub async fn build_ssh_command_with_env(
     ssh_path: &str,
     addr: ScopedSocketAddr,
     env: &EnvironmentContext,
     command: Vec<&str>,
 ) -> Result<Command> {
     let mut ssh_config = SshConfig::new()?;
-    build_ssh_command_with_ssh_config_and_env(ssh_path, addr, &mut ssh_config, command, env)
+    build_ssh_command_with_ssh_config_and_env(ssh_path, addr, &mut ssh_config, command, env).await
 }
 
-pub fn build_ssh_command_with_ssh_config(
+pub async fn build_ssh_command_with_ssh_config(
     ssh_path: &str,
     addr: ScopedSocketAddr,
     config: &mut SshConfig,
     command: Vec<&str>,
     env: &EnvironmentContext,
 ) -> Result<Command> {
-    build_ssh_command_with_ssh_config_and_env(ssh_path, addr, config, command, env)
+    build_ssh_command_with_ssh_config_and_env(ssh_path, addr, config, command, env).await
 }
 
 fn get_addr_port(addr: &ScopedSocketAddr) -> (String, String) {
@@ -147,7 +147,7 @@ fn get_addr_port(addr: &ScopedSocketAddr) -> (String, String) {
     (addr_arg, colon_port[1..].to_string())
 }
 
-fn spawn_controlmaster(
+async fn spawn_controlmaster(
     ssh_path: &str,
     controlmaster_dir: PathBuf,
     ssh_keys: &[String],
@@ -209,7 +209,7 @@ fn spawn_controlmaster(
     c.stdout(std::process::Stdio::null());
     c.stderr(std::process::Stdio::piped());
     c.stdin(std::process::Stdio::null());
-    let output = c.output()?;
+    let output = c.output().await?;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr).to_string();
         let ssherr = SshError::from(stderr);
@@ -272,7 +272,7 @@ impl TryFrom<String> for ControlMasterMode {
     }
 }
 
-fn get_controlmaster_path(
+async fn get_controlmaster_path(
     env: &EnvironmentContext,
     ssh_path: &str,
     addr: &ScopedSocketAddr,
@@ -306,14 +306,16 @@ fn get_controlmaster_path(
             let Some(controlmaster_dir) = controlmaster_dir else {
                 return Err(ManageSshControlMasterError::ControlMasterDirNotSpecified);
             };
-            let path = spawn_controlmaster(ssh_path, controlmaster_dir.into(), &ssh_keys, addr)?;
+            let path =
+                Box::pin(spawn_controlmaster(ssh_path, controlmaster_dir.into(), &ssh_keys, addr))
+                    .await?;
             Ok(Some(path))
         }
     }
 }
 
 /// Builds the ssh command using the specified ssh configuration and path to the ssh command.
-fn build_ssh_command_with_ssh_config_and_env(
+async fn build_ssh_command_with_ssh_config_and_env(
     ssh_path: &str,
     addr: ScopedSocketAddr,
     config: &mut SshConfig,
@@ -336,7 +338,7 @@ fn build_ssh_command_with_ssh_config_and_env(
     // if we have config value ssh.controlmaster_dir, check the contents of that dir for a
     // properly named socket, use that one. Otherwise create one and then use iter
     // if neither of those config values are set, just dont use a ControlMaster
-    let controlmaster_path = get_controlmaster_path(env, ssh_path, &addr, &keys)?;
+    let controlmaster_path = get_controlmaster_path(env, ssh_path, &addr, &keys).await?;
 
     let mut c = Command::new(ssh_path);
     apply_auth_sock(&mut c, env);
@@ -372,12 +374,12 @@ fn build_ssh_command_with_ssh_config_and_env(
 }
 
 /// Build the ssh command using the default ssh command and configuration.
-pub fn build_ssh_command(
+pub async fn build_ssh_command(
     env: &EnvironmentContext,
     addr: ScopedSocketAddr,
     command: Vec<&str>,
 ) -> Result<Command> {
-    build_ssh_command_with_ssh_path("ssh", addr, command, env)
+    build_ssh_command_with_ssh_path("ssh", addr, command, env).await
 }
 
 /// Build the ssh command using a provided sshconfig file.
@@ -435,7 +437,7 @@ mod test {
     }
 
     #[fuchsia::test]
-    fn test_build_ssh_command_ipv4() {
+    async fn test_build_ssh_command_ipv4() {
         let env = ffx_config::test_env().build().unwrap();
         let (_dir, key) = init_ssh_key(&env.context).unwrap();
 
@@ -447,8 +449,9 @@ mod test {
             ScopedSocketAddr::from_socket_addr(addr).unwrap(),
             vec!["ls"],
         )
+        .await
         .unwrap();
-        let actual_args: Vec<_> = result.get_args().map(|a| a.to_string_lossy()).collect();
+        let actual_args: Vec<_> = result.as_std().get_args().map(|a| a.to_string_lossy()).collect();
         let mut expected_args: Vec<String> = vec!["-F".into(), "none".into()];
         expected_args.extend(config.to_args());
         expected_args.extend(
@@ -468,7 +471,7 @@ mod test {
     }
 
     #[fuchsia::test]
-    fn test_build_ssh_command_ipv6() {
+    async fn test_build_ssh_command_ipv6() {
         let env = ffx_config::test_env().build().unwrap();
         let (_dir, key) = init_ssh_key(&env.context).unwrap();
         let config = SshConfig::new().expect("default ssh config");
@@ -479,8 +482,9 @@ mod test {
             ScopedSocketAddr::from_socket_addr(addr).unwrap(),
             vec!["ls"],
         )
+        .await
         .unwrap();
-        let actual_args: Vec<_> = result.get_args().map(|a| a.to_string_lossy()).collect();
+        let actual_args: Vec<_> = result.as_std().get_args().map(|a| a.to_string_lossy()).collect();
         let mut expected_args: Vec<String> = vec!["-F".into(), "none".into()];
         expected_args.extend(config.to_args());
         expected_args.extend(
@@ -500,7 +504,7 @@ mod test {
     }
 
     #[fuchsia::test]
-    fn test_apply_auth_sock() {
+    async fn test_apply_auth_sock() {
         let env = ffx_config::test_env().build().unwrap();
         let expect_path =
             env.isolate_root.path().join("ssh-auth.sock").to_string_lossy().to_string();
@@ -513,8 +517,14 @@ mod test {
 
         let mut cmd = Command::new("env");
         apply_auth_sock(&mut cmd, &env.context);
-        let lines =
-            cmd.output().unwrap().stdout.lines().filter_map(|res| res.ok()).collect::<Vec<_>>();
+        let lines = cmd
+            .output()
+            .await
+            .unwrap()
+            .stdout
+            .lines()
+            .filter_map(|res| res.ok())
+            .collect::<Vec<_>>();
 
         let expected_var = format!("SSH_AUTH_SOCK={}", expect_path);
         assert!(
@@ -526,7 +536,7 @@ mod test {
     }
 
     #[fuchsia::test]
-    fn test_build_ssh_command_with_ssh_config() {
+    async fn test_build_ssh_command_with_ssh_config() {
         let env = ffx_config::test_env().build().unwrap();
         let (_dir, _key) = init_ssh_key(&env.context).unwrap();
         let mut config = SshConfig::new().expect("default ssh config");
@@ -542,9 +552,10 @@ mod test {
             vec!["ls"],
             &env.context,
         )
+        .await
         .unwrap();
         let actual_args: Vec<_> =
-            result.get_args().map(|a| a.to_string_lossy().to_string()).collect();
+            result.as_std().get_args().map(|a| a.to_string_lossy().to_string()).collect();
 
         // Check the default
         assert_eq!(config.get("CheckHostIP").expect("CheckHostIP value").unwrap(), "no");
@@ -622,7 +633,7 @@ mod test {
     }
 
     #[fuchsia::test]
-    fn test_get_controlmaster_path_mode_none() {
+    async fn test_get_controlmaster_path_mode_none() {
         let env = ffx_config::test_env().build().unwrap();
         env.context
             .query("ssh.controlmaster.mode")
@@ -635,12 +646,13 @@ mod test {
         let scoped_addr = ScopedSocketAddr::from_socket_addr(addr).unwrap();
         let ssh_keys = vec!["key".to_string()];
 
-        let res = get_controlmaster_path(&env.context, "ssh", &scoped_addr, &ssh_keys).unwrap();
+        let res =
+            get_controlmaster_path(&env.context, "ssh", &scoped_addr, &ssh_keys).await.unwrap();
         assert_eq!(res, None);
     }
 
     #[fuchsia::test]
-    fn test_get_controlmaster_path_mode_explicit() {
+    async fn test_get_controlmaster_path_mode_explicit() {
         let env = ffx_config::test_env().build().unwrap();
         env.context
             .query("ssh.controlmaster.mode")
@@ -660,12 +672,13 @@ mod test {
         let scoped_addr = ScopedSocketAddr::from_socket_addr(addr).unwrap();
         let ssh_keys = vec!["key".to_string()];
 
-        let res = get_controlmaster_path(&env.context, "ssh", &scoped_addr, &ssh_keys).unwrap();
+        let res =
+            get_controlmaster_path(&env.context, "ssh", &scoped_addr, &ssh_keys).await.unwrap();
         assert_eq!(res, Some(PathBuf::from(expected_path)));
     }
 
     #[fuchsia::test]
-    fn test_get_controlmaster_path_mode_explicit_no_path() {
+    async fn test_get_controlmaster_path_mode_explicit_no_path() {
         let env = ffx_config::test_env().build().unwrap();
         env.context
             .query("ssh.controlmaster.mode")
@@ -678,13 +691,13 @@ mod test {
         let scoped_addr = ScopedSocketAddr::from_socket_addr(addr).unwrap();
         let ssh_keys = vec!["key".to_string()];
 
-        let res = get_controlmaster_path(&env.context, "ssh", &scoped_addr, &ssh_keys);
+        let res = get_controlmaster_path(&env.context, "ssh", &scoped_addr, &ssh_keys).await;
         assert!(matches!(res, Err(ManageSshControlMasterError::ControlMasterPathNotSpecified)));
     }
 
     #[fuchsia::test]
     #[ignore = "dir is compiled in so cannot be unset"]
-    fn test_get_controlmaster_path_mode_managed_no_dir() {
+    async fn test_get_controlmaster_path_mode_managed_no_dir() {
         let env = ffx_config::test_env().build().unwrap();
         env.context
             .query("ssh.controlmaster.mode")
@@ -697,12 +710,12 @@ mod test {
         let scoped_addr = ScopedSocketAddr::from_socket_addr(addr).unwrap();
         let ssh_keys = vec!["key".to_string()];
 
-        let res = get_controlmaster_path(&env.context, "ssh", &scoped_addr, &ssh_keys);
+        let res = get_controlmaster_path(&env.context, "ssh", &scoped_addr, &ssh_keys).await;
         assert!(matches!(res, Err(ManageSshControlMasterError::ControlMasterDirNotSpecified)));
     }
 
     #[fuchsia::test]
-    fn test_get_controlmaster_path_socket_path_too_long() {
+    async fn test_get_controlmaster_path_socket_path_too_long() {
         let env = ffx_config::test_env().build().unwrap();
         env.context
             .query("ssh.controlmaster.mode")
@@ -723,7 +736,7 @@ mod test {
         let scoped_addr = ScopedSocketAddr::from_socket_addr(addr).unwrap();
         let ssh_keys = vec!["key".to_string()];
 
-        let res = get_controlmaster_path(&env.context, "ssh", &scoped_addr, &ssh_keys);
+        let res = get_controlmaster_path(&env.context, "ssh", &scoped_addr, &ssh_keys).await;
         assert!(matches!(
             res,
             Err(ManageSshControlMasterError::SpawnError(
