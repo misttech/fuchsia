@@ -90,7 +90,7 @@ class DriverTestCommon {
       return fdf::internal::DriverTransportConnect<ServiceMember>(ConnectToDriverSvcDir(),
                                                                   instance);
     } else {
-      static_assert(std::false_type{});
+      static_assert(false);
     }
   }
 

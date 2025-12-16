@@ -331,7 +331,7 @@ typename GetPropertyReturn<T>::type Node::GetProperty(std::string_view property_
         return zx::ok(result);
       }
     } else {
-      static_assert(std::is_void_v<T>, "Invalid type for Node::GetProperty");
+      static_assert(false, "Invalid type for Node::GetProperty");
     }
 
     return zx::error(ZX_ERR_WRONG_TYPE);

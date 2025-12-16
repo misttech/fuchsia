@@ -245,7 +245,7 @@ class MmioBuffer {
     } else if constexpr (sizeof(T) == sizeof(uint64_t)) {
       return Read64(offs);
     } else {
-      static_assert(always_false<T>);
+      static_assert(false);
     }
   }
 
@@ -276,7 +276,7 @@ class MmioBuffer {
     } else if constexpr (sizeof(T) == sizeof(uint64_t)) {
       Write64(val, offs);
     } else {
-      static_assert(always_false<T>);
+      static_assert(false);
     }
   }
 
@@ -358,9 +358,6 @@ class MmioBuffer {
   mmio_buffer_t mmio_;
   const MmioBufferOps* ops_;
   const void* ctx_;
-
-  template <typename T>
-  static constexpr std::false_type always_false{};
 
  private:
   void transfer(MmioBuffer&& other) {

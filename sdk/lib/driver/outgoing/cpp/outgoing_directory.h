@@ -111,7 +111,7 @@ class OutgoingDirectory final {
       it->second.insert(std::string(instance));
     } else {
       static_assert(
-          always_false<TransportHandler>,
+          false,
           "TransportHandler must be either fidl::internal::ChannelTransport or fidl::internal::DriverTransport");
     }
 
@@ -232,9 +232,6 @@ class OutgoingDirectory final {
   component::OutgoingDirectory& component() { return component_outgoing_dir_; }
 
  private:
-  template <typename T>
-  static constexpr std::false_type always_false{};
-
   // Registers |token| with the driver runtime. When the client attempts to connect using the
   // token channel peer, we will call |handler|.
   void RegisterRuntimeToken(zx::channel token, AnyHandler handler);

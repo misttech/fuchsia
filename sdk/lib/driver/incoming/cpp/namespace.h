@@ -25,10 +25,6 @@ class ComponentNamespaceEntry;
 namespace fdf {
 
 namespace internal {
-
-template <typename T>
-static constexpr std::false_type always_false{};
-
 // Returns a client_end to the connection.
 template <typename ServiceMember>
 #if __cplusplus >= 202002l
@@ -193,7 +189,7 @@ class Namespace final {
       }
       return internal::DriverTransportConnect<ServiceMember>(svc_dir(), instance);
     } else {
-      static_assert(internal::always_false<ServiceMember>);
+      static_assert(false);
     }
   }
 
@@ -231,7 +227,7 @@ class Namespace final {
       return internal::DriverTransportConnect<ServiceMember>(svc_dir(), std::move(server_end),
                                                              instance);
     } else {
-      static_assert(internal::always_false<ServiceMember>);
+      static_assert(false);
     }
   }
 

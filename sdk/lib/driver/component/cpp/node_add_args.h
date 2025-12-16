@@ -37,7 +37,7 @@ fuchsia_driver_framework::Offer MakeOffer2(
     return fuchsia_driver_framework::Offer::WithZirconTransport(
         MakeOffer(Service::Name, instance_name));
   } else {
-    static_assert(std::false_type{}, "Service must be using DriverTransport or ChannelTransport.");
+    static_assert(false, "Service must be using DriverTransport or ChannelTransport.");
   }
 }
 
@@ -53,7 +53,7 @@ fuchsia_driver_framework::wire::Offer MakeOffer2(
     return fuchsia_driver_framework::wire::Offer::WithZirconTransport(
         arena, MakeOffer(arena, Service::Name, instance_name));
   } else {
-    static_assert(std::false_type{}, "Service must be using DriverTransport or ChannelTransport.");
+    static_assert(false, "Service must be using DriverTransport or ChannelTransport.");
   }
 }
 
