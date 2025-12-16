@@ -6,6 +6,7 @@
 #include <lib/trace-engine/handler.h>
 #include <lib/trace/event.h>
 #include <lib/zx/event.h>
+#include <lib/zx/thread.h>
 #include <threads.h>
 
 #include <atomic>
@@ -331,34 +332,66 @@ Thread(index: 1, <>)
 TEST(EngineTests, TestRegisterCurrentThreadMultipleThreads) {
   BEGIN_TRACE_TEST;
 
+  auto GetCurrentThreadKoid = [&]() -> zx_koid_t {
+    zx_info_handle_basic_t self_info;
+    auto status = zx::thread::self()->get_info(ZX_INFO_HANDLE_BASIC, &self_info, sizeof(self_info),
+                                               nullptr, nullptr);
+    ZX_ASSERT(status == ZX_OK);
+    return self_info.koid;
+  };
+
   fixture_initialize_and_start_tracing();
+  zx_koid_t t1_koid, t2_koid;
 
   trace_thread_ref_t t1;
   {
     auto context = trace::TraceContext::Acquire();
 
     trace_context_register_current_thread(context.get(), &t1);
+    t1_koid = GetCurrentThreadKoid();
   }
 
   trace_thread_ref_t t2;
-  RunThread([&t2] {
+  RunThread([&] {
     auto context = trace::TraceContext::Acquire();
 
     trace_context_register_current_thread(context.get(), &t2);
+    t2_koid = GetCurrentThreadKoid();
   });
 
   EXPECT_TRUE(trace_is_indexed_thread_ref(&t1));
   EXPECT_TRUE(trace_is_indexed_thread_ref(&t2));
   EXPECT_NE(t1.encoded_value, t2.encoded_value);
 
-  ASSERT_RECORDS(R"X(String(index: 1, "process")
-KernelObject(koid: <>, type: thread, name: "initial-thread", {process: koid(<>)})
-Thread(index: 1, <>)
-String(index: 2, "process")
-KernelObject(koid: <>, type: thread, name: "thrd_t:<>/TLS=<>", {process: koid(<>)})
-Thread(index: 2, <>)
-)X",
-                 "");
+  fixture_stop_and_terminate_tracing();
+
+  fbl::Vector<trace::Record> records;
+  ASSERT_TRUE(fixture_read_records(&records));
+  EXPECT_EQ(records.size(), 7);
+
+  EXPECT_EQ(records[0].type(), trace::RecordType::kInitialization);
+
+  EXPECT_EQ(records[1].type(), trace::RecordType::kString);
+  EXPECT_EQ(records[1].GetString().index, 1);
+  EXPECT_EQ(records[1].GetString().string, "process");
+
+  EXPECT_EQ(records[2].type(), trace::RecordType::kKernelObject);
+  EXPECT_EQ(records[2].GetKernelObject().object_type, ZX_OBJ_TYPE_THREAD);
+  EXPECT_EQ(records[2].GetKernelObject().koid, t1_koid);
+
+  EXPECT_EQ(records[3].type(), trace::RecordType::kThread);
+  EXPECT_EQ(records[3].GetThread().index, 1);
+
+  EXPECT_EQ(records[4].type(), trace::RecordType::kString);
+  EXPECT_EQ(records[4].GetString().index, 2);
+  EXPECT_EQ(records[4].GetString().string, "process");
+
+  EXPECT_EQ(records[5].type(), trace::RecordType::kKernelObject);
+  EXPECT_EQ(records[5].GetKernelObject().object_type, ZX_OBJ_TYPE_THREAD);
+  EXPECT_EQ(records[5].GetKernelObject().koid, t2_koid);
+
+  EXPECT_EQ(records[6].type(), trace::RecordType::kThread);
+  EXPECT_EQ(records[6].GetThread().index, 2);
 
   END_TRACE_TEST;
 }
