@@ -100,7 +100,6 @@ _partner_idk_source_sets_list = [
   "//sdk/lib/fidl/cpp:natural_ostream",
   "//sdk/lib/fidl/cpp",
   "//sdk/lib/syslog/cpp",
-  "//src/devices/lib/mmio",
   "//zircon/system/ulib/hwreg:hwreg_public",
   "//zircon/system/ulib/inspect",
   "//zircon/system/ulib/mmio-ptr",
@@ -173,7 +172,6 @@ _internal_source_sets_list = [
 
   # TODO(https://fxbug.dev/444519345): Promote these to "partner".
   "//sdk/lib/driver/mmio/testing/cpp",
-  "//src/devices/lib/mmio:test_helper",
   "//src/devices/registers/testing/mock-registers:mock-registers",
   "//src/devices/testing/fake-mmio-reg:fake-mmio-reg",
   "//src/devices/testing/mock-mmio-reg:mock-mmio-reg",

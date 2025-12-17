@@ -757,7 +757,6 @@ sdk_molecule("core_cc_source_libraries") {
     "//sdk/lib/vfs/cpp:cpp_sdk",
     "//sdk/lib/virtgralloc:virtgralloc_headers_sdk",
     "//sdk/lib/zbi-format:zbi-format_sdk",
-    "//src/devices/lib/mmio:mmio_sdk",
     "//zircon/system/ulib/hwreg:hwreg_public_sdk",
     "//zircon/system/ulib/inspect:inspect_sdk",
     "//zircon/system/ulib/trace:trace_sdk",
@@ -895,7 +894,6 @@ if (current_toolchain == default_toolchain) {
       # TODO(https://fxbug.dev/444519345): Promote these to "partner".
       # Remove the `fbl` dependency from `mock-mmio-reg`.
       "//sdk/lib/driver/mmio/testing/cpp:cpp_sdk",
-      "//src/devices/lib/mmio:test_helper_sdk",
       "//src/devices/registers/testing/mock-registers:mock-registers_sdk",
       "//src/devices/testing/fake-mmio-reg:fake-mmio-reg_sdk",
       "//src/devices/testing/mock-mmio-reg:mock-mmio-reg_sdk",
