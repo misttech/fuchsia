@@ -158,10 +158,6 @@ def _get_fidlc_versioned_arg(
             )
         fidlc_versioned_arg = "unversioned"
 
-    # The examples in the documentation may not conform to the expectations
-    # for illustrative purposes, and it does not make sense to change them.
-    _is_documentation_example = library_name == "fuchsia.examples.docs"
-
     # Verify the results are in one of the expected combinations.
     if (fidlc_versioned_arg == "fuchsia" and stable and
         requires_compatibility_tests and
@@ -171,33 +167,37 @@ def _get_fidlc_versioned_arg(
          category == "prebuilt")):
         # Stable libraries versioned in "fuchsia".
         pass
-    elif (fidlc_versioned_arg == "fuchsia" and _is_banjo_sysmem and not stable and
-          not requires_compatibility_tests and not is_idk_included_publishable):
-        # The Banjo sysmem library is an exception.
+    elif (fidlc_versioned_arg == "fuchsia" and _is_internal_zx_library and
+          not stable and not requires_compatibility_tests and not category):
+        # Exception: internal ZX library.
+        pass
+    elif (fidlc_versioned_arg == "fuchsia" and _is_banjo_sysmem and
+          not stable and not requires_compatibility_tests and not category):
+        # Exception: Banjo sysmem library.
         pass
     elif (fidlc_versioned_arg == "fuchsia:HEAD" and not stable and
           requires_compatibility_tests == (category != "")):
         # Unstable libraries versioned in "fuchsia".
-        pass
-    elif (fidlc_versioned_arg == "unversioned" and
-          _is_library_in_unsupported_scenarios):
-        # Unversioned libraries in unsupported scenarios.
         pass
     elif (fidlc_versioned_arg == "unversioned" and not stable and
           not requires_compatibility_tests and
           (not category or is_unversioned_vendor_idk)):
         # Unversioned libraries.
         pass
+    elif (fidlc_versioned_arg == "unversioned" and not stable and
+          not category and not requires_compatibility_tests and
+          _is_library_in_unsupported_scenarios):
+        # Exception: Unversioned libraries in unsupported scenarios.
+        pass
     elif (testonly and not stable and not category and
           not requires_compatibility_tests and
           (fidlc_versioned_arg == "unversioned" or
-           _is_documentation_example or
-           fidlc_versioned_arg == "test:1")):
-        # Test-only libraries are either unversioned or versioned in "test" or
-        # documentation examples.
-        pass
-    elif (_is_internal_zx_library and fidlc_versioned_arg == "fuchsia"):
-        # The internal ZX library is an exception.
+           fidlc_versioned_arg == "test:1" or
+           (fidlc_versioned_arg == "fuchsia" and
+            library_name == "fuchsia.examples.docs"))):
+        # Test-only libraries are either unversioned or versioned in "test".
+        # The examples in the documentation may not conform to the expectations
+        # for illustrative purposes, and it does not make sense to change them.
         pass
     else:
         fail(

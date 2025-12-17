@@ -305,21 +305,27 @@ template("fidl_library") {
                 invoker.sdk_category == "compat_test" ||
                 invoker.sdk_category == "host_tool" ||
                 invoker.sdk_category == "prebuilt")) ||
+          (fidlc_versioned_arg == "fuchsia" && _is_internal_zx_library &&
+               !stable && !requires_compatibility_tests &&
+               !defined(invoker.sdk_category)) ||
           (fidlc_versioned_arg == "fuchsia" && _is_banjo_sysmem && !stable &&
-               !requires_compatibility_tests && !is_sdk_included_publishable) ||
+               !requires_compatibility_tests &&
+               !defined(invoker.sdk_category)) ||
           (fidlc_versioned_arg == "fuchsia:HEAD" && !stable &&
                requires_compatibility_tests == defined(invoker.sdk_category)) ||
-          (fidlc_versioned_arg == "unversioned" &&
-               _is_library_in_unsupported_scenarios) ||
           (fidlc_versioned_arg == "unversioned" && !stable &&
                !requires_compatibility_tests &&
                (!defined(invoker.sdk_category) || is_unversioned_vendor_sdk)) ||
+          (fidlc_versioned_arg == "unversioned" && !stable &&
+               !defined(invoker.sdk_category) &&
+               !requires_compatibility_tests &&
+               _is_library_in_unsupported_scenarios) ||
           (testonly && !stable && !defined(invoker.sdk_category) &&
                !requires_compatibility_tests &&
                (fidlc_versioned_arg == "unversioned" ||
-                    _is_documentation_example ||
-                    fidlc_versioned_arg == "test:1")) ||
-          (_is_internal_zx_library && fidlc_versioned_arg == "fuchsia"),
+                    fidlc_versioned_arg == "test:1" ||
+                    (fidlc_versioned_arg == "fuchsia" &&
+                         _is_documentation_example))),
       "Library '$library_name' has an unexpected combination of stability ('$stable'), versioned ('$fidlc_versioned_arg'), SDK category ('${sdk_category_string_for_assert}'), publishable ('$is_sdk_included_publishable'), compatibility testing requirements ('$requires_compatibility_tests'), and `testonly` ('$testonly').")
 
   # LINT.ThenChange(//build/bazel/rules/fidl/fidl_library.bzl:determine_fidlc_versioned_arg)
