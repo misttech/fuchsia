@@ -443,6 +443,7 @@ impl fidl::endpoints::ControlHandle for AnotherDiscoverableProtocolControlHandle
     fn shutdown(&self) {
         self.inner.shutdown()
     }
+
     fn shutdown_with_epitaph(&self, status: zx_status::Status) {
         self.inner.shutdown_with_epitaph(status)
     }
@@ -1039,6 +1040,7 @@ impl fidl::endpoints::ControlHandle for ChannelProtocolControlHandle {
     fn shutdown(&self) {
         self.inner.shutdown()
     }
+
     fn shutdown_with_epitaph(&self, status: zx_status::Status) {
         self.inner.shutdown_with_epitaph(status)
     }
@@ -1586,6 +1588,7 @@ impl fidl::endpoints::ControlHandle for DiscoverableProtocolControlHandle {
     fn shutdown(&self) {
         self.inner.shutdown()
     }
+
     fn shutdown_with_epitaph(&self, status: zx_status::Status) {
         self.inner.shutdown_with_epitaph(status)
     }
@@ -2030,6 +2033,7 @@ impl fidl::endpoints::ControlHandle for HandleRightsProtocolControlHandle {
     fn shutdown(&self) {
         self.inner.shutdown()
     }
+
     fn shutdown_with_epitaph(&self, status: zx_status::Status) {
         self.inner.shutdown_with_epitaph(status)
     }
@@ -2591,6 +2595,7 @@ impl fidl::endpoints::ControlHandle for ManyParametersControlHandle {
     fn shutdown(&self) {
         self.inner.shutdown()
     }
+
     fn shutdown_with_epitaph(&self, status: zx_status::Status) {
         self.inner.shutdown_with_epitaph(status)
     }
@@ -2977,6 +2982,7 @@ impl fidl::endpoints::ControlHandle for MethodWithUnionControlHandle {
     fn shutdown(&self) {
         self.inner.shutdown()
     }
+
     fn shutdown_with_epitaph(&self, status: zx_status::Status) {
         self.inner.shutdown_with_epitaph(status)
     }
@@ -3342,6 +3348,7 @@ impl fidl::endpoints::ControlHandle for PlatformServer_ControlHandle {
     fn shutdown(&self) {
         self.inner.shutdown()
     }
+
     fn shutdown_with_epitaph(&self, status: zx_status::Status) {
         self.inner.shutdown_with_epitaph(status)
     }
@@ -4120,6 +4127,7 @@ impl fidl::endpoints::ControlHandle for WithAndWithoutRequestResponseControlHand
     fn shutdown(&self) {
         self.inner.shutdown()
     }
+
     fn shutdown_with_epitaph(&self, status: zx_status::Status) {
         self.inner.shutdown_with_epitaph(status)
     }
@@ -5026,6 +5034,7 @@ impl fidl::endpoints::ControlHandle for WithErrorSyntaxControlHandle {
     fn shutdown(&self) {
         self.inner.shutdown()
     }
+
     fn shutdown_with_epitaph(&self, status: zx_status::Status) {
         self.inner.shutdown_with_epitaph(status)
     }
@@ -5890,6 +5899,7 @@ impl fidl::endpoints::ControlHandle for WithProtocolEndsControlHandle {
     fn shutdown(&self) {
         self.inner.shutdown()
     }
+
     fn shutdown_with_epitaph(&self, status: zx_status::Status) {
         self.inner.shutdown_with_epitaph(status)
     }

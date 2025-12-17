@@ -417,6 +417,10 @@ pub trait ControlHandle {
     /// next time the stream is polled.
     fn shutdown(&self);
 
+    /// Sets the server to shutdown with an epitaph. The underlying channel is
+    /// only closed the next time the stream is polled.
+    fn shutdown_with_epitaph(&self, status: zx_status::Status);
+
     /// Returns true if the server has received the `PEER_CLOSED` signal.
     fn is_closed(&self) -> bool;
 

@@ -1650,6 +1650,7 @@ impl fidl::endpoints::ControlHandle for MainProtocolControlHandle {
     fn shutdown(&self) {
         self.inner.shutdown()
     }
+
     fn shutdown_with_epitaph(&self, status: zx_status::Status) {
         self.inner.shutdown_with_epitaph(status)
     }
@@ -3303,6 +3304,7 @@ impl fidl::endpoints::ControlHandle for OpenProtocolControlHandle {
     fn shutdown(&self) {
         self.inner.shutdown()
     }
+
     fn shutdown_with_epitaph(&self, status: zx_status::Status) {
         self.inner.shutdown_with_epitaph(status)
     }
