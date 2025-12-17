@@ -42,16 +42,24 @@ namespace {
 
 class VkLoopTest {
  public:
-  enum class AllowSuccess {
-    // Test must get a VK_ERROR_DEVICE_LOST.
-    kDisallow,
-    // Test must get either VK_ERROR_DEVICE_LOST or VK_SUCCESS.
-    kAllow
+  enum class TestType {
+    // Here we wait on a vk Event that is never signaled.
+    kHangOnEvent,
+    // Here we run a shader that never exits.
+    kInfiniteLoop,
   };
-  explicit VkLoopTest(bool hang_on_event) : hang_on_event_(hang_on_event) {}
+  struct Config {
+    TestType test_type;
+    // If this is true, the test could pass with either VK_SUCCESS or VK_ERR_DEVICE_LOST.
+    // If this is false, the test must return VK_ERR_DEVICE_LOST.
+    bool allow_success;
+    // If this is true, the driver is restarted mid-test.
+    bool kill_driver;
+  };
+  explicit VkLoopTest(Config config) : config_(config) {}
 
   bool Initialize();
-  bool Exec(bool kill_driver, AllowSuccess allow_success);
+  bool Exec();
 
   uint32_t get_vendor_id() { return ctx_->physical_device().getProperties().vendorID; }
 
@@ -59,7 +67,7 @@ class VkLoopTest {
   bool InitBuffer();
   bool InitCommandBuffer();
 
-  bool hang_on_event_;
+  Config config_;
   bool is_initialized_ = false;
   std::unique_ptr<VulkanContext> ctx_;
   VkDescriptorSet vk_descriptor_set_;
@@ -316,7 +324,7 @@ bool VkLoopTest::InitCommandBuffer() {
   }
   vk_compute_pipeline_ = std::move(compute_pipeline.value);
 
-  if (hang_on_event_) {
+  if (config_.test_type == TestType::kHangOnEvent) {
     auto evt = ctx_->device()->createEventUnique(vk::EventCreateInfo());
     if (vk::Result::eSuccess != evt.result) {
       RTN_MSG(false, "VK Error: 0x%x - Create event.\n", static_cast<unsigned int>(evt.result));
@@ -326,7 +334,7 @@ bool VkLoopTest::InitCommandBuffer() {
     command_buffer->waitEvents(1, &vk_event_.get(), vk::PipelineStageFlagBits::eHost,
                                vk::PipelineStageFlagBits::eTransfer, 0, nullptr, 0, nullptr, 0,
                                nullptr);
-  } else {
+  } else if (config_.test_type == TestType::kInfiniteLoop) {
     vkCmdBindPipeline(*command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, *vk_compute_pipeline_);
 
     vkCmdBindDescriptorSets(*command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, *vk_pipeline_layout_,
@@ -355,7 +363,7 @@ void RestartDriver(uint32_t gpu_vendor_id) {
   magma::TestDeviceBase::RestartDFv2Driver(driver_url, gpu_vendor_id);
 }
 
-bool VkLoopTest::Exec(bool kill_driver, AllowSuccess allow_success) {
+bool VkLoopTest::Exec() {
   auto rv_wait = ctx_->queue().waitIdle();
   if (vk::Result::eSuccess != rv_wait) {
     RTN_MSG(false, "VK Error: 0x%x - Queue wait idle.\n", static_cast<unsigned int>(rv_wait));
@@ -372,7 +380,7 @@ bool VkLoopTest::Exec(bool kill_driver, AllowSuccess allow_success) {
     RTN_MSG(false, "VK Error: 0x%x - vk::Queue submit failed.\n", static_cast<unsigned int>(rv));
   }
 
-  if (kill_driver) {
+  if (config_.kill_driver) {
     RestartDriver(get_vendor_id());
   }
 
@@ -383,7 +391,7 @@ bool VkLoopTest::Exec(bool kill_driver, AllowSuccess allow_success) {
       break;
     }
   }
-  if (allow_success == AllowSuccess::kAllow) {
+  if (config_.allow_success) {
     EXPECT_TRUE(vk::Result::eErrorDeviceLost == rv_wait || vk::Result::eSuccess == rv_wait)
         << static_cast<int>(rv_wait);
   } else if (vk::Result::eErrorDeviceLost != rv_wait) {
@@ -396,17 +404,25 @@ bool VkLoopTest::Exec(bool kill_driver, AllowSuccess allow_success) {
 
 TEST(VkLoop, InfiniteLoop) {
   for (int i = 0; i < 2; i++) {
-    VkLoopTest test(false);
+    VkLoopTest test({
+        .test_type = VkLoopTest::TestType::kInfiniteLoop,
+        .allow_success = false,
+        .kill_driver = false,
+    });
     ASSERT_TRUE(test.Initialize());
-    ASSERT_TRUE(test.Exec(false, VkLoopTest::AllowSuccess::kDisallow));
+    ASSERT_TRUE(test.Exec());
   }
 }
 
 TEST(VkLoop, EventHang) {
-  VkLoopTest test(true);
+  VkLoopTest test({
+      .test_type = VkLoopTest::TestType::kHangOnEvent,
+      // TODO(https://fxbug.dev/42162524): Re-enable when the Mali MSD returns an error.
+      .allow_success = true,
+      .kill_driver = false,
+  });
   ASSERT_TRUE(test.Initialize());
-  // TODO(https://fxbug.dev/42162524): Re-enable when the Mali MSD returns an error.
-  ASSERT_TRUE(test.Exec(false, VkLoopTest::AllowSuccess::kAllow));
+  ASSERT_TRUE(test.Exec());
 }
 
 TEST(VkLoop, DriverDeath) {
@@ -414,7 +430,11 @@ TEST(VkLoop, DriverDeath) {
     GTEST_SKIP_("Skipping because no driver URL specified");
   }
 
-  VkLoopTest test(true);
+  VkLoopTest test({
+      .test_type = VkLoopTest::TestType::kHangOnEvent,
+      .allow_success = false,
+      .kill_driver = true,
+  });
   ASSERT_TRUE(test.Initialize());
 
   // TODO(https://fxbug.dev/351097268): The test is currently disabled on Intel
@@ -426,7 +446,7 @@ TEST(VkLoop, DriverDeath) {
     GTEST_SKIP_("Skipping intel for b/351097268");
   }
 
-  ASSERT_TRUE(test.Exec(true, VkLoopTest::AllowSuccess::kDisallow));
+  ASSERT_TRUE(test.Exec());
 }
 
 }  // namespace
