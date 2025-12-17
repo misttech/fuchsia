@@ -258,24 +258,21 @@ impl ParsedPolicy {
             XpermsKind::Nlmsg => [XPERMS_TYPE_NLMSG].as_slice(),
         };
         let bitmap_if_prefix_matches =
-            |xperms_kind: &XpermsKind, xperms_prefix: u8, xperms: &ExtendedPermissions| {
-                match xperms_kind {
-                    XpermsKind::Ioctl => match xperms.xperms_type {
-                        XPERMS_TYPE_IOCTL_PREFIX_AND_POSTFIXES => (xperms.xperms_optional_prefix
-                            == xperms_prefix)
-                            .then_some(xperms.xperms_bitmap),
-                        XPERMS_TYPE_IOCTL_PREFIXES => xperms
-                            .xperms_bitmap
-                            .contains(xperms_prefix)
-                            .then_some(XpermsBitmap::ALL),
-                        _ => None,
-                    },
-                    XpermsKind::Nlmsg => match xperms.xperms_type {
-                        XPERMS_TYPE_NLMSG => (xperms.xperms_optional_prefix == xperms_prefix)
-                            .then_some(xperms.xperms_bitmap),
-                        _ => None,
-                    },
-                }
+            |xperms_prefix: u8, xperms: &ExtendedPermissions| match xperms_kind {
+                XpermsKind::Ioctl => match xperms.xperms_type {
+                    XPERMS_TYPE_IOCTL_PREFIX_AND_POSTFIXES => (xperms.xperms_optional_prefix
+                        == xperms_prefix)
+                        .then_some(xperms.xperms_bitmap),
+                    XPERMS_TYPE_IOCTL_PREFIXES => {
+                        xperms.xperms_bitmap.contains(xperms_prefix).then_some(XpermsBitmap::ALL)
+                    }
+                    _ => None,
+                },
+                XpermsKind::Nlmsg => match xperms.xperms_type {
+                    XPERMS_TYPE_NLMSG => (xperms.xperms_optional_prefix == xperms_prefix)
+                        .then_some(xperms.xperms_bitmap),
+                    _ => None,
+                },
             };
 
         let source_attribute_bitmap: &ExtensibleBitmap =
@@ -310,8 +307,7 @@ impl ParsedPolicy {
                 if metadata.is_allowxperm() && xperms_types.contains(&xperms.xperms_type) {
                     explicit_allow.get_or_insert(XpermsBitmap::NONE);
                 }
-                let Some(ref xperms_bitmap) =
-                    bitmap_if_prefix_matches(&xperms_kind, xperms_prefix, xperms)
+                let Some(ref xperms_bitmap) = bitmap_if_prefix_matches(xperms_prefix, xperms)
                 else {
                     continue;
                 };
