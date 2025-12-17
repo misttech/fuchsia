@@ -585,6 +585,8 @@ impl StaticCommonInfo {
 pub(crate) struct DynamicCommonInfo {
     pub(crate) mtu: Mtu,
     pub(crate) admin_enabled: bool,
+    pub(crate) ipv4_enabled: bool,
+    pub(crate) ipv6_enabled: bool,
     pub(crate) events: super::InterfaceEventProducer,
     // An attach point to send `fuchsia.net.interfaces.admin/Control` handles to the Interfaces
     // Admin worker.
@@ -595,6 +597,8 @@ pub(crate) struct DynamicCommonInfo {
 
 impl DynamicCommonInfo {
     pub(crate) const DEFAULT_ADMIN_ENABLED: bool = false;
+    pub(crate) const DEFAULT_IPV4_ENABLED: bool = true;
+    pub(crate) const DEFAULT_IPV6_ENABLED: bool = true;
 
     pub(crate) fn new(
         mtu: Mtu,
@@ -604,6 +608,8 @@ impl DynamicCommonInfo {
         Self {
             mtu,
             admin_enabled: Self::DEFAULT_ADMIN_ENABLED,
+            ipv4_enabled: Self::DEFAULT_IPV4_ENABLED,
+            ipv6_enabled: Self::DEFAULT_IPV6_ENABLED,
             events,
             control_hook,
             addresses: HashMap::new(),
@@ -616,7 +622,15 @@ impl DynamicCommonInfo {
         events: super::InterfaceEventProducer,
         control_hook: futures::channel::mpsc::Sender<interfaces_admin::OwnedControlHandle>,
     ) -> Self {
-        Self { mtu, admin_enabled: true, events, control_hook, addresses: HashMap::new() }
+        Self {
+            mtu,
+            admin_enabled: true,
+            ipv4_enabled: true,
+            ipv6_enabled: true,
+            events,
+            control_hook,
+            addresses: HashMap::new(),
+        }
     }
 }
 

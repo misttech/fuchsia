@@ -269,6 +269,8 @@ fn flags_for_device(info: &DeviceSpecificInfo<'_>) -> psocket::InterfaceFlags {
             let DynamicCommonInfo {
                 mtu: _,
                 admin_enabled,
+                ipv4_enabled: _,
+                ipv6_enabled: _,
                 events: _,
                 control_hook: _,
                 addresses: _,

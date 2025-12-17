@@ -1313,7 +1313,7 @@ async fn inspect_multicast_routes(name: &str) {
 }
 
 #[netstack_test]
-async fn inspect_devices(name: &str) {
+async fn inspect_devices_ipv6_disabled(name: &str) {
     let sandbox = netemul::TestSandbox::new().expect("failed to create sandbox");
     let network = sandbox.create_network("net").await.expect("failed to create network");
 
@@ -1343,6 +1343,20 @@ async fn inspect_devices(name: &str) {
         .await
         .expect("failed to join network with netdevice endpoint");
 
+    // Disable IPv6.
+    let _ = netdev
+        .control()
+        .set_configuration(&fidl_fuchsia_net_interfaces_admin::Configuration {
+            ipv6: Some(fidl_fuchsia_net_interfaces_admin::Ipv6Configuration {
+                enabled: Some(false),
+                ..Default::default()
+            }),
+            ..Default::default()
+        })
+        .await
+        .expect("fidl")
+        .expect("set configuration");
+
     netdev
         .add_address_and_subnet_route(fidl_subnet!("192.168.0.1/24"))
         .await
@@ -1359,6 +1373,8 @@ async fn inspect_devices(name: &str) {
                 Name: "lo",
                 InterfaceId: 1u64,
                 AdminEnabled: true,
+                IPv4Enabled: true,
+                IPv6Enabled: true,
                 MTU: 65536u64,
                 Loopback: true,
                 IPv4: {
@@ -1584,6 +1600,503 @@ async fn inspect_devices(name: &str) {
                 Name: NETDEV_NAME,
                 InterfaceId: 2u64,
                 AdminEnabled: true,
+                IPv4Enabled: true,
+                IPv6Enabled: false,
+                MTU: u64::from(netemul::DEFAULT_MTU),
+                Loopback: false,
+                IPv4: {
+                    "Addresses": {
+                        "192.168.0.1/24": {
+                            ValidUntil: "infinite",
+                            PreferredLifetime: "infinite",
+                            Assigned: true,
+                        }
+                    },
+                    Configuration: {
+                        "GmpEnabled": true,
+                        "ForwardingEnabled": false,
+                        "MulticastForwardingEnabled": false,
+                        "DadTransmits": 3u64,
+                    },
+                    GMP: {
+                        Mode: "IGMPv3",
+                        Groups: {
+                            "224.0.0.1": {
+                                Refs: 1u64,
+                            }
+                        }
+                    }
+                },
+                IPv6: {
+                    "Addresses": {},
+                    Configuration: {
+                        "GmpEnabled": true,
+                        "ForwardingEnabled": false,
+                        "MulticastForwardingEnabled": false,
+                        "DadTransmits": u16::MAX,
+                    },
+                    GMP: {
+                        Mode: "MLDv2",
+                        Groups: {}
+                    }
+                },
+                NetworkDevice: {
+                    MacAddress: "02:00:00:00:00:01",
+                    PhyUp: true,
+                },
+                Counters: {
+                    Rx: {
+                        TotalFrames: 0u64,
+                        Malformed: 0u64,
+                        TotalBytes: 0u64,
+                        Ipv4Delivered: 0u64,
+                        Ipv6Delivered: 0u64,
+                    },
+                    Tx: {
+                        TotalFrames: diagnostics_assertions::AnyUintProperty,
+                        Sent: diagnostics_assertions::AnyUintProperty,
+                        SentBytes: diagnostics_assertions::AnyUintProperty,
+                        SendIpv4Frame: diagnostics_assertions::AnyUintProperty,
+                        SendIpv6Frame: diagnostics_assertions::AnyUintProperty,
+                        NoQueue: 0u64,
+                        QueueFull: 0u64,
+                        DequeueDrop: 0u64,
+                        SerializeError: 0u64,
+                    },
+                    Ethernet: {
+                        Rx: {
+                            NoEthertype: 0u64,
+                            UnsupportedEthertype: 0u64,
+                        },
+                    },
+                    IPv4: {
+                        PacketTx: {
+                            Sent: diagnostics_assertions::AnyUintProperty,
+                            IllegalLoopbackAddress: 0u64,
+                            SocketEgressFilterDropped: 0u64,
+                        },
+                        PacketRx: {
+                            Received: 0u64,
+                            Dispatched: 0u64,
+                            DeliveredUnicast: 0u64,
+                            DeliveredMulticast: 0u64,
+                            DeliveredBroadcast: 0u64,
+                            OtherHost: 0u64,
+                            ParameterProblem: 0u64,
+                            UnspecifiedDst: 0u64,
+                            UnspecifiedSrc: 0u64,
+                            InvalidSrc: 0u64,
+                            Dropped: 0u64,
+                            DroppedTentativeDst: 0u64,
+                            MulticastNoInterest: 0u64,
+                            InvalidCachedConntrackEntry: 0u64,
+                        },
+                        Forwarding: {
+                            Forwarded: 0u64,
+                            ForwardingDisabled: 0u64,
+                            NoRouteToHost: 0u64,
+                            MtuExceeded: 0u64,
+                            TtlExpired: 0u64,
+                        },
+                        RxIcmpError: 0u64,
+                        FragmentsRx: {
+                            ReassemblyError: 0u64,
+                            NeedMoreFragments: 0u64,
+                            InvalidFragment: 0u64,
+                            CacheFull: 0u64,
+                        },
+                        FragmentsTx: {
+                            FragmentationRequired: 0u64,
+                            Fragments: 0u64,
+                            ErrorNotAllowed: 0u64,
+                            ErrorMtuTooSmall: 0u64,
+                            ErrorBodyTooLong: 0u64,
+                            ErrorInnerSizeLimitExceeded: 0u64,
+                            ErrorFragmentedSerializer: 0u64,
+                        },
+                    },
+                    IPv6: {
+                        PacketTx: {
+                            Sent: diagnostics_assertions::AnyUintProperty,
+                            IllegalLoopbackAddress: 0u64,
+                            SocketEgressFilterDropped: 0u64,
+                        },
+                        PacketRx: {
+                            Received: 0u64,
+                            Dispatched: 0u64,
+                            DeliveredMulticast: 0u64,
+                            DeliveredUnicast: 0u64,
+                            OtherHost: 0u64,
+                            ParameterProblem: 0u64,
+                            UnspecifiedDst: 0u64,
+                            UnspecifiedSrc: 0u64,
+                            InvalidSrc: 0u64,
+                            Dropped: 0u64,
+                            DroppedTentativeDst: 0u64,
+                            DroppedExtensionHeader: 0u64,
+                            DroppedLoopedBackDadProbe: 0u64,
+                            MulticastNoInterest: 0u64,
+                            InvalidCachedConntrackEntry: 0u64,
+                        },
+                        Forwarding: {
+                            Forwarded: 0u64,
+                            ForwardingDisabled: 0u64,
+                            NoRouteToHost: 0u64,
+                            MtuExceeded: 0u64,
+                            TtlExpired: 0u64,
+                        },
+                        RxIcmpError: 0u64,
+                        FragmentsRx: {
+                            ReassemblyError: 0u64,
+                            NeedMoreFragments: 0u64,
+                            InvalidFragment: 0u64,
+                            CacheFull: 0u64,
+                        },
+                        FragmentsTx: {
+                            FragmentationRequired: 0u64,
+                            Fragments: 0u64,
+                            ErrorNotAllowed: 0u64,
+                            ErrorMtuTooSmall: 0u64,
+                            ErrorBodyTooLong: 0u64,
+                            ErrorInnerSizeLimitExceeded: 0u64,
+                            ErrorFragmentedSerializer: 0u64,
+                        },
+                    },
+                    IGMP: {
+                        Rx: {
+                            IGMPv1Query: 0u64,
+                            IGMPv2Query: 0u64,
+                            IGMPv3Query: 0u64,
+                            IGMPv1Report: 0u64,
+                            IGMPv2Report: 0u64,
+                            IGMPv3Report: 0u64,
+                            LeaveGroup: 0u64,
+                            Errors: {
+                                ParseFailed: 0u64,
+                                MissingRouterAlertInQuery: 0u64,
+                                RejectedGeneralQuery: 0u64,
+                                BadTTL: 0u64,
+                            },
+                        },
+                        Tx: {
+                            IGMPv1Report: 0u64,
+                            IGMPv2Report: 0u64,
+                            IGMPv3Report: 0u64,
+                            LeaveGroup: 0u64,
+                            Errors: {
+                                SendFailed: 0u64,
+                            },
+                        },
+                    },
+                    MLD: {
+                        Rx: {
+                            MLDv1Query: 0u64,
+                            MLDv2Query: 0u64,
+                            MLDv1Report: 0u64,
+                            MLDv2Report: 0u64,
+                            LeaveGroup: 0u64,
+                            Errors: {
+                                MissingRouterAlert: 0u64,
+                                BadSourceAddress: 0u64,
+                                BadHopLimit: 0u64,
+                            },
+                        },
+                        Tx: {
+                            MLDv1Report: 0u64,
+                            // Note: Duplicate address detection (DAD) joins the
+                            // solicited-node multicast group for the interface.
+                            // This may or may not cause a report to have been
+                            // sent by the netstack (depending on if the join
+                            // finishes before inspect counters are fetched).
+                            MLDv2Report: diagnostics_assertions::AnyUintProperty,
+                            LeaveGroup: 0u64,
+                            Errors: {
+                                SendFailed: 0u64,
+                            },
+                        },
+                    },
+                }
+            }
+        }
+    })
+}
+
+#[netstack_test]
+async fn inspect_devices(name: &str) {
+    let sandbox = netemul::TestSandbox::new().expect("failed to create sandbox");
+    let network = sandbox.create_network("net").await.expect("failed to create network");
+
+    // Disable the use of opaque IIDs in SLAAC address generation so addresses are
+    // deterministic (based on the MAC address) and we can assert on them below.
+    let mut netstack: fnetemul::ChildDef =
+        KnownServiceProvider::Netstack(NetstackVersion::Netstack3).into();
+    netstack_testing_common::realms::set_netstack3_opaque_iids(&mut netstack, false);
+    let realm = sandbox.create_realm(name, [netstack]).expect("failed to create realm");
+
+    // Install netdevice device so that non-Loopback device Inspect properties can be asserted upon.
+    const NETDEV_NAME: &str = "test-eth";
+    let max_frame_size = netemul::DEFAULT_MTU
+        + u16::try_from(ETHERNET_HDR_LEN_NO_TAG)
+            .expect("should fit ethernet header length in a u16");
+    let netdev = realm
+        .join_network_with(
+            &network,
+            "netdev-ep",
+            netemul::new_endpoint_config(max_frame_size, Some(fidl_mac!("02:00:00:00:00:01"))),
+            netemul::InterfaceConfig {
+                name: Some(NETDEV_NAME.into()),
+                ipv6_dad_transmits: Some(u16::MAX),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("failed to join network with netdevice endpoint");
+
+    netdev
+        .add_address_and_subnet_route(fidl_subnet!("192.168.0.1/24"))
+        .await
+        .expect("configure address");
+
+    let data =
+        get_inspect_data(&realm, "netstack", "root").await.expect("inspect data should be present");
+
+    // Debug print the tree to make debugging easier in case of failures.
+    println!("Got inspect data: {:#?}", data);
+    diagnostics_assertions::assert_data_tree!(data, "root": contains {
+        "Devices": {
+            "1": {
+                Name: "lo",
+                InterfaceId: 1u64,
+                AdminEnabled: true,
+                IPv4Enabled: true,
+                IPv6Enabled: true,
+                MTU: 65536u64,
+                Loopback: true,
+                IPv4: {
+                    Addresses: {
+                        "127.0.0.1/8": {
+                            ValidUntil: "infinite",
+                            PreferredLifetime: "infinite",
+                            Assigned: true,
+                        }
+                    },
+                    Configuration: {
+                        "GmpEnabled": false,
+                        "ForwardingEnabled": false,
+                        "MulticastForwardingEnabled": false,
+                        "DadTransmits": 0u64,
+                    },
+                    GMP: {
+                        Mode: "IGMPv3",
+                        Groups: {
+                            "224.0.0.1": {
+                                Refs: 1u64,
+                            }
+                        }
+                    }
+                },
+                IPv6: {
+                    Addresses: {
+                        "::1/128": {
+                            ValidUntil: "infinite",
+                            PreferredLifetime: "infinite",
+                            IsSlaac: false,
+                            Assigned: true,
+                            Temporary: false,
+                        }
+                    },
+                    Configuration: {
+                        "GmpEnabled": false,
+                        "ForwardingEnabled": false,
+                        "MulticastForwardingEnabled": false,
+                        "DadTransmits": 0u64,
+                    },
+                    GMP: {
+                        Mode: "MLDv2",
+                        Groups: {
+                            "ff02::1:ff00:1": {
+                                Refs: 1u64,
+                            },
+                            "ff02::1": {
+                                Refs: 1u64,
+                            }
+                        }
+                    }
+                },
+                Counters: {
+                    Rx: {
+                        TotalFrames: 0u64,
+                        TotalBytes: 0u64,
+                        Malformed: 0u64,
+                        Ipv4Delivered: 0u64,
+                        Ipv6Delivered: 0u64,
+                    },
+                    Tx: {
+                        TotalFrames: 0u64,
+                        Sent: 0u64,
+                        SentBytes: 0u64,
+                        SendIpv4Frame: 0u64,
+                        SendIpv6Frame: 0u64,
+                        NoQueue: 0u64,
+                        QueueFull: 0u64,
+                        DequeueDrop: 0u64,
+                        SerializeError: 0u64,
+                    },
+                    Ethernet: {
+                        Rx: {
+                            NoEthertype: 0u64,
+                            UnsupportedEthertype: 0u64,
+                        },
+                    },
+                    IPv4: {
+                        PacketTx: {
+                            Sent: 0u64,
+                            IllegalLoopbackAddress: 0u64,
+                            SocketEgressFilterDropped: 0u64,
+                        },
+                        PacketRx: {
+                            Received: 0u64,
+                            Dispatched: 0u64,
+                            DeliveredUnicast: 0u64,
+                            DeliveredMulticast: 0u64,
+                            DeliveredBroadcast: 0u64,
+                            OtherHost: 0u64,
+                            ParameterProblem: 0u64,
+                            UnspecifiedDst: 0u64,
+                            UnspecifiedSrc: 0u64,
+                            InvalidSrc: 0u64,
+                            Dropped: 0u64,
+                            DroppedTentativeDst: 0u64,
+                            MulticastNoInterest: 0u64,
+                            InvalidCachedConntrackEntry: 0u64,
+                        },
+                        Forwarding: {
+                            Forwarded: 0u64,
+                            ForwardingDisabled: 0u64,
+                            NoRouteToHost: 0u64,
+                            MtuExceeded: 0u64,
+                            TtlExpired: 0u64,
+                        },
+                        RxIcmpError: 0u64,
+                        FragmentsRx: {
+                            ReassemblyError: 0u64,
+                            NeedMoreFragments: 0u64,
+                            InvalidFragment: 0u64,
+                            CacheFull: 0u64,
+                        },
+                        FragmentsTx: {
+                            FragmentationRequired: 0u64,
+                            Fragments: 0u64,
+                            ErrorNotAllowed: 0u64,
+                            ErrorMtuTooSmall: 0u64,
+                            ErrorBodyTooLong: 0u64,
+                            ErrorInnerSizeLimitExceeded: 0u64,
+                            ErrorFragmentedSerializer: 0u64,
+                        },
+                    },
+                    IPv6: {
+                        PacketTx: {
+                            Sent: 0u64,
+                            IllegalLoopbackAddress: 0u64,
+                            SocketEgressFilterDropped: 0u64,
+                        },
+                        PacketRx: {
+                            Received: 0u64,
+                            Dispatched: 0u64,
+                            DeliveredMulticast: 0u64,
+                            DeliveredUnicast: 0u64,
+                            OtherHost: 0u64,
+                            ParameterProblem: 0u64,
+                            UnspecifiedDst: 0u64,
+                            UnspecifiedSrc: 0u64,
+                            InvalidSrc: 0u64,
+                            Dropped: 0u64,
+                            DroppedTentativeDst: 0u64,
+                            DroppedExtensionHeader: 0u64,
+                            DroppedLoopedBackDadProbe: 0u64,
+                            MulticastNoInterest: 0u64,
+                            InvalidCachedConntrackEntry: 0u64,
+                        },
+                        Forwarding: {
+                            Forwarded: 0u64,
+                            ForwardingDisabled: 0u64,
+                            NoRouteToHost: 0u64,
+                            MtuExceeded: 0u64,
+                            TtlExpired: 0u64,
+                        },
+                        RxIcmpError: 0u64,
+                        FragmentsRx: {
+                            ReassemblyError: 0u64,
+                            NeedMoreFragments: 0u64,
+                            InvalidFragment: 0u64,
+                            CacheFull: 0u64,
+                        },
+                        FragmentsTx: {
+                            FragmentationRequired: 0u64,
+                            Fragments: 0u64,
+                            ErrorNotAllowed: 0u64,
+                            ErrorMtuTooSmall: 0u64,
+                            ErrorBodyTooLong: 0u64,
+                            ErrorInnerSizeLimitExceeded: 0u64,
+                            ErrorFragmentedSerializer: 0u64,
+                        },
+                    },
+                    IGMP: {
+                        Rx: {
+                            IGMPv1Query: 0u64,
+                            IGMPv2Query: 0u64,
+                            IGMPv3Query: 0u64,
+                            IGMPv1Report: 0u64,
+                            IGMPv2Report: 0u64,
+                            IGMPv3Report: 0u64,
+                            LeaveGroup: 0u64,
+                            Errors: {
+                                ParseFailed: 0u64,
+                                MissingRouterAlertInQuery: 0u64,
+                                RejectedGeneralQuery: 0u64,
+                                BadTTL: 0u64,
+                            },
+                        },
+                        Tx: {
+                            IGMPv1Report: 0u64,
+                            IGMPv2Report: 0u64,
+                            IGMPv3Report: 0u64,
+                            LeaveGroup: 0u64,
+                            Errors: {
+                                SendFailed: 0u64,
+                            },
+                        },
+                    },
+                    MLD: {
+                        Rx: {
+                            MLDv1Query: 0u64,
+                            MLDv2Query: 0u64,
+                            MLDv1Report: 0u64,
+                            MLDv2Report: 0u64,
+                            LeaveGroup: 0u64,
+                            Errors: {
+                                MissingRouterAlert: 0u64,
+                                BadSourceAddress: 0u64,
+                                BadHopLimit: 0u64,
+                            },
+                        },
+                        Tx: {
+                            MLDv1Report: 0u64,
+                            MLDv2Report: 0u64,
+                            LeaveGroup: 0u64,
+                            Errors: {
+                                SendFailed: 0u64,
+                            },
+                        },
+                    },
+                }
+            },
+            "2": {
+                Name: NETDEV_NAME,
+                InterfaceId: 2u64,
+                AdminEnabled: true,
+                IPv4Enabled: true,
+                IPv6Enabled: true,
                 MTU: u64::from(netemul::DEFAULT_MTU),
                 Loopback: false,
                 IPv4: {

@@ -1913,9 +1913,12 @@ impl<'a> TestInterface<'a> {
         }
     }
 
-    /// Adds an address, waiting until the address assignment state is
-    /// `ASSIGNED`.
-    pub async fn add_address(&self, subnet: fnet::Subnet) -> Result<()> {
+    /// Adds an address, and waits for its assignment state.
+    pub async fn add_address_and_wait_until(
+        &self,
+        subnet: fnet::Subnet,
+        state: fnet_interfaces::AddressAssignmentState,
+    ) -> Result<()> {
         let (address_state_provider, server) =
             fidl::endpoints::create_proxy::<fnet_interfaces_admin::AddressStateProviderMarker>();
         let () = address_state_provider.detach().context("detach address lifetime")?;
@@ -1926,12 +1929,15 @@ impl<'a> TestInterface<'a> {
 
         let mut state_stream =
             fnet_interfaces_ext::admin::assignment_state_stream(address_state_provider);
-        fnet_interfaces_ext::admin::wait_assignment_state(
-            &mut state_stream,
-            fnet_interfaces::AddressAssignmentState::Assigned,
-        )
-        .await?;
+        fnet_interfaces_ext::admin::wait_assignment_state(&mut state_stream, state).await?;
         Ok(())
+    }
+
+    /// Adds an address, waiting until the address assignment state is
+    /// `ASSIGNED`.
+    pub async fn add_address(&self, subnet: fnet::Subnet) -> Result<()> {
+        self.add_address_and_wait_until(subnet, fnet_interfaces::AddressAssignmentState::Assigned)
+            .await
     }
 
     /// Adds an address and a subnet route, waiting until the address assignment

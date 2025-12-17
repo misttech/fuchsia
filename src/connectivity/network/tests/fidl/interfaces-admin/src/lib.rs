@@ -4101,3 +4101,83 @@ async fn perform_dad_parameter<I: Ip>(
 
     assert_eq!(sent_probe, expect_probe)
 }
+
+#[netstack_test]
+#[variant(I, Ip)]
+#[test_case(true; "initial_admin_up")]
+#[test_case(false; "initial_admin_down")]
+async fn interface_single_ip_version_enablement<I: Ip>(name: &str, initial_admin_up: bool) {
+    let sandbox = netemul::TestSandbox::new().expect("create sandbox");
+    let network = sandbox.create_network(name).await.expect("create network");
+    let realm = sandbox.create_netstack_realm::<Netstack3, _>(name).expect("create realm");
+    let ep = realm.join_network(&network, "ep").await.expect("join network");
+    if initial_admin_up {
+        // Assign some addresses to the interface so that we can observe them being removed.
+        ep.add_address(fidl_subnet!("192.0.2.1/24")).await.expect("add v4 address");
+        ep.add_address(fidl_subnet!("2001:db8::1/32")).await.expect("add v6 address");
+    } else {
+        assert!(
+            ep.control().disable().await.expect("interface removed").expect("disable interface")
+        );
+    }
+
+    // Disable an IP version.
+    let _old_config = ep
+        .control()
+        .set_configuration(&finterfaces_admin::Configuration {
+            ipv4: Some(finterfaces_admin::Ipv4Configuration {
+                enabled: Some(I::VERSION == IpVersion::V4),
+                ..Default::default()
+            }),
+            ipv6: Some(finterfaces_admin::Ipv6Configuration {
+                enabled: Some(I::VERSION == IpVersion::V6),
+                ..Default::default()
+            }),
+            ..Default::default()
+        })
+        .await
+        .expect("FIDL error")
+        .expect("set configuration");
+
+    if !initial_admin_up {
+        assert!(ep.control().enable().await.expect("interface removed").expect("enable interface"));
+    }
+
+    // Make sure that addresses are removed for the disabled version.
+    let addrs = ep
+        .get_addrs(fnet_interfaces_ext::IncludedAddresses::OnlyAssigned)
+        .await
+        .expect("get addrs");
+    assert!(
+        addrs.iter().all(|addr| {
+            if I::VERSION == IpVersion::V4 {
+                matches!(addr.addr.addr, fnet::IpAddress::Ipv4(_))
+            } else {
+                matches!(addr.addr.addr, fnet::IpAddress::Ipv6(_))
+            }
+        }),
+        "cannot have addresses of the version not enabled"
+    );
+
+    // Verify that the address of the version not enabled cannot be added.
+    ep.add_address_and_wait_until(
+        fidl_subnet!("192.0.2.2/24"),
+        if I::VERSION == IpVersion::V4 {
+            fnet_interfaces::AddressAssignmentState::Assigned
+        } else {
+            fnet_interfaces::AddressAssignmentState::Unavailable
+        },
+    )
+    .await
+    .expect("add v4 address");
+    ep.add_address_and_wait_until(
+        fidl_subnet!("2001:db8::2/32"),
+        if I::VERSION == IpVersion::V6 {
+            fnet_interfaces::AddressAssignmentState::Assigned
+        } else {
+            fnet_interfaces::AddressAssignmentState::Unavailable
+        },
+    )
+    .await
+    .expect("add v6 address");
+}

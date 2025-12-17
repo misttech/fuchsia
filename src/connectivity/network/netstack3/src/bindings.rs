@@ -625,7 +625,15 @@ fn send_netdevice_frame(
     DynamicNetdeviceInfo {
         phy_up,
         common_info:
-            DynamicCommonInfo { admin_enabled, mtu: _, events: _, control_hook: _, addresses: _ },
+            DynamicCommonInfo {
+                admin_enabled,
+                ipv4_enabled: _,
+                ipv6_enabled: _,
+                mtu: _,
+                events: _,
+                control_hook: _,
+                addresses: _,
+            },
     }: &DynamicNetdeviceInfo,
     frame: Buf<Vec<u8>>,
     frame_type: fhardware_network::FrameType,
@@ -903,6 +911,7 @@ impl Ctx {
         let ipv6_config = defaults.to_core_ipv6_update(config_type);
         let ipv4_config = defaults.to_core_ipv4_update(config_type);
         let device_config = defaults.to_core_device_update(config_type);
+        defaults.bindings_config.apply_interface_defaults(device_id);
 
         let _: Ipv6DeviceConfigurationUpdate =
             self.api().device_ip::<Ipv6>().update_configuration(&device_id, ipv6_config).unwrap();

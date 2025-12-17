@@ -7,7 +7,7 @@ use std::num::NonZeroU16;
 use net_types::ip::IpVersion;
 use netstack3_core::device::{
     ArpConfiguration, ArpConfigurationUpdate, DeviceConfiguration, DeviceConfigurationUpdate,
-    NdpConfiguration, NdpConfigurationUpdate,
+    DeviceId, NdpConfiguration, NdpConfigurationUpdate,
 };
 use netstack3_core::ip::{
     IgmpConfigMode, IidGenerationConfiguration, IpDeviceConfiguration, IpDeviceConfigurationUpdate,
@@ -22,6 +22,24 @@ use {
 };
 
 use crate::bindings::util::{self, IllegalNonPositiveValueError, IntoFidl, TryIntoCore as _};
+use crate::bindings::{BindingsCtx, DeviceIdExt as _};
+
+/// Configurations that live in Bindings.
+#[derive(Clone)]
+pub(crate) struct BindingsConfig {
+    pub(crate) ipv4_enabled: bool,
+    pub(crate) ipv6_enabled: bool,
+}
+
+impl BindingsConfig {
+    pub(crate) fn apply_interface_defaults(&self, device_id: &DeviceId<BindingsCtx>) {
+        device_id.external_state().with_common_info_mut(|common_info| {
+            let Self { ipv4_enabled, ipv6_enabled } = self;
+            common_info.ipv4_enabled = *ipv4_enabled;
+            common_info.ipv6_enabled = *ipv6_enabled;
+        });
+    }
+}
 
 /// Unified view of netstack interface configuration.
 #[derive(Clone)]
@@ -31,6 +49,7 @@ pub(crate) struct InterfaceConfig<D> {
     pub(crate) ipv6: Ipv6DeviceConfiguration,
     pub(crate) igmp: IgmpConfigMode,
     pub(crate) mld: MldConfigMode,
+    pub(crate) bindings_config: BindingsConfig,
 }
 
 impl<D> InterfaceConfig<D> {
@@ -78,11 +97,19 @@ impl<D> InterfaceConfig<D> {
             ip_config: ip_config(IpVersion::V6),
         };
 
-        Self { device: D::default(), ipv4, ipv6, igmp: IgmpConfigMode::V3, mld: MldConfigMode::V2 }
+        Self {
+            device: D::default(),
+            ipv4,
+            ipv6,
+            igmp: IgmpConfigMode::V3,
+            mld: MldConfigMode::V2,
+            bindings_config: BindingsConfig { ipv4_enabled: true, ipv6_enabled: true },
+        }
     }
 
     fn to_core_ip_update(
         ip_config: &IpDeviceConfiguration,
+        enabled: bool,
         config_type: InterfaceConfigType,
     ) -> IpDeviceConfigurationUpdate {
         let IpDeviceConfiguration {
@@ -103,7 +130,7 @@ impl<D> InterfaceConfig<D> {
         };
 
         IpDeviceConfigurationUpdate {
-            ip_enabled: Some(config_type.default_enabled()),
+            ip_enabled: Some(config_type.default_enabled() && enabled),
             unicast_forwarding_enabled: Some(*unicast_forwarding_enabled),
             multicast_forwarding_enabled: Some(*multicast_forwarding_enabled),
             gmp_enabled: Some(gmp_enabled),
@@ -116,8 +143,9 @@ impl<D> InterfaceConfig<D> {
         config_type: InterfaceConfigType,
     ) -> Ipv4DeviceConfigurationUpdate {
         let Ipv4DeviceConfiguration { ip_config } = &self.ipv4;
+        let BindingsConfig { ipv4_enabled, ipv6_enabled: _ } = &self.bindings_config;
         Ipv4DeviceConfigurationUpdate {
-            ip_config: Self::to_core_ip_update(ip_config, config_type),
+            ip_config: Self::to_core_ip_update(ip_config, *ipv4_enabled, config_type),
             igmp_mode: Some(self.igmp),
         }
     }
@@ -133,7 +161,9 @@ impl<D> InterfaceConfig<D> {
             ip_config,
         } = &self.ipv6;
 
-        let ip_config = Self::to_core_ip_update(ip_config, config_type);
+        let BindingsConfig { ipv4_enabled: _, ipv6_enabled } = &self.bindings_config;
+
+        let ip_config = Self::to_core_ip_update(ip_config, *ipv6_enabled, config_type);
 
         let max_router_solicitations = match config_type {
             InterfaceConfigType::Ethernet | InterfaceConfigType::PureIp => {
@@ -205,11 +235,12 @@ impl InterfaceConfig<DeviceNeighborConfig> {
     }
 
     pub(crate) fn update(&mut self, update: InterfaceConfigUpdate) -> InterfaceConfigUpdate {
-        let InterfaceConfigUpdate { ipv4, ipv6, device } = update;
+        let InterfaceConfigUpdate { bindings, ipv4, ipv6, device } = update;
         let ipv4 = ipv4.map(|u| self.update_ipv4(u));
         let ipv6 = ipv6.map(|u| self.update_ipv6(u));
         let device = device.map(|u| self.update_device(u));
-        InterfaceConfigUpdate { ipv4, ipv6, device }
+        let bindings = self.update_bindings(bindings);
+        InterfaceConfigUpdate { bindings, ipv4, ipv6, device }
     }
 
     fn update_ip_config(
@@ -239,6 +270,15 @@ impl InterfaceConfig<DeviceNeighborConfig> {
             gmp_enabled: update_and_take_prev(&mut config.gmp_enabled, gmp_enabled),
             dad_transmits: update_and_take_prev(&mut config.dad_transmits, dad_transmits),
         }
+    }
+
+    fn update_bindings(&mut self, update: BindingsConfigUpdate) -> BindingsConfigUpdate {
+        let BindingsConfigUpdate { ipv4_enabled, ipv6_enabled } = update;
+        let ipv4_enabled =
+            update_and_take_prev(&mut self.bindings_config.ipv4_enabled, ipv4_enabled);
+        let ipv6_enabled =
+            update_and_take_prev(&mut self.bindings_config.ipv6_enabled, ipv6_enabled);
+        BindingsConfigUpdate { ipv4_enabled, ipv6_enabled }
     }
 
     fn update_ipv4(
@@ -372,7 +412,23 @@ impl InterfaceConfigType {
     }
 }
 
+pub(crate) struct BindingsConfigUpdate {
+    pub(crate) ipv4_enabled: Option<bool>,
+    pub(crate) ipv6_enabled: Option<bool>,
+}
+
+impl BindingsConfigUpdate {
+    pub(crate) fn apply_to_device(self, device_id: &DeviceId<BindingsCtx>) -> BindingsConfigUpdate {
+        let Self { ipv4_enabled, ipv6_enabled } = self;
+        device_id.external_state().with_common_info_mut(|common_info| BindingsConfigUpdate {
+            ipv4_enabled: update_and_take_prev(&mut common_info.ipv4_enabled, ipv4_enabled),
+            ipv6_enabled: update_and_take_prev(&mut common_info.ipv6_enabled, ipv6_enabled),
+        })
+    }
+}
+
 pub(crate) struct InterfaceConfigUpdate {
+    pub(crate) bindings: BindingsConfigUpdate,
     pub(crate) ipv4: Option<Ipv4DeviceConfigurationUpdate>,
     pub(crate) ipv6: Option<Ipv6DeviceConfigurationUpdate>,
     pub(crate) device: Option<DeviceConfigurationUpdate>,
@@ -386,7 +442,14 @@ impl FidlInterfaceConfig {
     /// Creates a complete `FidlInterfaceConfig` from all the information kept by
     /// the stack.
     pub(crate) fn new_complete<D: Into<DeviceConfiguration>>(config: InterfaceConfig<D>) -> Self {
-        let InterfaceConfig { device, ipv4, ipv6, igmp, mld } = config;
+        let InterfaceConfig {
+            device,
+            bindings_config: BindingsConfig { ipv4_enabled, ipv6_enabled },
+            ipv4,
+            ipv6,
+            igmp,
+            mld,
+        } = config;
         let DeviceConfiguration { arp, ndp } = device.into();
 
         let Ipv4DeviceConfiguration {
@@ -416,6 +479,7 @@ impl FidlInterfaceConfig {
             igmp: Some(igmp),
             multicast_forwarding: Some(multicast_forwarding_enabled),
             arp,
+            enabled: Some(ipv4_enabled),
             __source_breaking: fidl::marker::SourceBreaking,
         });
 
@@ -452,6 +516,7 @@ impl FidlInterfaceConfig {
             mld: Some(mld),
             multicast_forwarding: Some(multicast_forwarding_enabled),
             ndp,
+            enabled: Some(ipv6_enabled),
             __source_breaking: fidl::marker::SourceBreaking,
         });
 
@@ -463,7 +528,7 @@ impl FidlInterfaceConfig {
     }
 
     pub(crate) fn new_update(update: InterfaceConfigUpdate) -> Self {
-        let InterfaceConfigUpdate { ipv4, ipv6, device } = update;
+        let InterfaceConfigUpdate { bindings, ipv4, ipv6, device } = update;
         let DeviceConfigurationUpdate { arp, ndp } = device.unwrap_or_default();
 
         let ipv4 = ipv4.map(|ipv4| {
@@ -499,6 +564,7 @@ impl FidlInterfaceConfig {
                 multicast_forwarding: multicast_forwarding_enabled,
                 igmp,
                 arp,
+                enabled: bindings.ipv4_enabled,
                 __source_breaking: fidl::marker::SourceBreaking,
             }
         });
@@ -542,6 +608,7 @@ impl FidlInterfaceConfig {
                 multicast_forwarding: multicast_forwarding_enabled,
                 mld,
                 ndp,
+                enabled: bindings.ipv6_enabled,
                 __source_breaking: fidl::marker::SourceBreaking,
             }
         });
@@ -555,12 +622,13 @@ impl FidlInterfaceConfig {
 
     pub(crate) fn try_into_update(self) -> Result<InterfaceConfigUpdate, ConfigError> {
         let Self(fnet_interfaces_admin::Configuration { ipv4, ipv6, __source_breaking }) = self;
-        let (ipv4, arp) = match ipv4 {
+        let (ipv4_enabled, ipv4, arp) = match ipv4 {
             Some(fnet_interfaces_admin::Ipv4Configuration {
                 igmp,
                 multicast_forwarding,
                 unicast_forwarding,
                 arp,
+                enabled: ipv4_enabled,
                 __source_breaking,
             }) => {
                 let fnet_interfaces_admin::IgmpConfiguration {
@@ -587,6 +655,7 @@ impl FidlInterfaceConfig {
                 } = dad.unwrap_or_default();
 
                 (
+                    ipv4_enabled,
                     Some(Ipv4DeviceConfigurationUpdate {
                         ip_config: IpDeviceConfigurationUpdate {
                             unicast_forwarding_enabled: unicast_forwarding,
@@ -604,15 +673,16 @@ impl FidlInterfaceConfig {
                     .transpose()?,
                 )
             }
-            None => (None, None),
+            None => (None, None, None),
         };
 
-        let (ipv6, ndp) = match ipv6 {
+        let (ipv6_enabled, ipv6, ndp) = match ipv6 {
             Some(fnet_interfaces_admin::Ipv6Configuration {
                 mld,
                 multicast_forwarding,
                 unicast_forwarding,
                 ndp,
+                enabled: ipv6_enabled,
                 __source_breaking,
             }) => {
                 let fnet_interfaces_admin::MldConfiguration {
@@ -651,6 +721,7 @@ impl FidlInterfaceConfig {
                 });
 
                 (
+                    ipv6_enabled,
                     Some(Ipv6DeviceConfigurationUpdate {
                         ip_config: IpDeviceConfigurationUpdate {
                             unicast_forwarding_enabled: unicast_forwarding,
@@ -674,12 +745,17 @@ impl FidlInterfaceConfig {
                     .transpose()?,
                 )
             }
-            None => (None, None),
+            None => (None, None, None),
         };
 
         let device = util::some_if_not_default(DeviceConfigurationUpdate { arp, ndp });
 
-        Ok(InterfaceConfigUpdate { ipv4, ipv6, device })
+        Ok(InterfaceConfigUpdate {
+            bindings: BindingsConfigUpdate { ipv4_enabled, ipv6_enabled },
+            ipv4,
+            ipv6,
+            device,
+        })
     }
 }
 

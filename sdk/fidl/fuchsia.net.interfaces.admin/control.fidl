@@ -84,6 +84,10 @@ type Configuration = table {
             /// Address Conflict Detection, as defined in RFC 5227.
             2: dad DadConfiguration;
         };
+        /// Controls whether or not IPv4 is enabled on the interface.
+        ///
+        /// If set to false, IPv4 is disabled on the interface.
+        5: enabled bool;
     };
 
     /// The IPv6 configuration for an interface.
@@ -129,6 +133,10 @@ type Configuration = table {
                 1: temporary_address bool;
             };
         };
+        /// Controls whether or not IPv6 is enabled on the interface.
+        ///
+        /// If set to false, IPv6 is disabled on the interface.
+        5: enabled bool;
     };
 };
 

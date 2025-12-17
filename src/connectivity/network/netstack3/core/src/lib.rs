@@ -152,9 +152,10 @@ pub mod ip {
         AddIpAddrSubnetError, AddrSubnetAndManualConfigEither, AddressRemovedReason,
         CommonAddressConfig, CommonAddressProperties, IidGenerationConfiguration, IidSecret,
         IpAddressState, IpDeviceConfiguration, IpDeviceConfigurationAndFlags,
-        IpDeviceConfigurationUpdate, IpDeviceEvent, Ipv4AddrConfig, Ipv4DeviceConfiguration,
-        Ipv4DeviceConfigurationUpdate, Ipv6AddrManualConfig, Ipv6DeviceConfiguration,
-        Ipv6DeviceConfigurationUpdate, Lifetime, PreferredLifetime, SetIpAddressPropertiesError,
+        IpDeviceConfigurationUpdate, IpDeviceEvent, IpDeviceIpExt, Ipv4AddrConfig,
+        Ipv4DeviceConfiguration, Ipv4DeviceConfigurationUpdate, Ipv6AddrManualConfig,
+        Ipv6DeviceConfiguration, Ipv6DeviceConfigurationUpdate, Lifetime,
+        PendingIpDeviceConfigurationUpdate, PreferredLifetime, SetIpAddressPropertiesError,
         SlaacConfiguration, SlaacConfigurationUpdate, StableSlaacAddressConfiguration,
         TemporarySlaacAddressConfiguration, UpdateIpConfigurationError,
     };

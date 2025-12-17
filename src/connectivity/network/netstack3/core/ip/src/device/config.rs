@@ -119,6 +119,16 @@ impl<'a, I: IpDeviceIpExt, D: DeviceIdentifier> PendingIpDeviceConfigurationUpda
 
         Ok(Self(config, device_id))
     }
+
+    /// Returns the configuration update.
+    pub fn config_update(&self) -> &I::ConfigurationUpdate {
+        &self.0
+    }
+
+    /// Returns the device ID.
+    pub fn device_id(&self) -> &'a D {
+        self.1
+    }
 }
 
 impl<CC, BC> IpDeviceConfigurationHandler<Ipv4, BC> for CC

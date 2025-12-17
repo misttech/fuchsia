@@ -150,12 +150,16 @@ pub(crate) fn devices(ctx: &mut Ctx) -> fuchsia_inspect::Inspector {
             external_state.with_common_info(
                 |DynamicCommonInfo {
                      admin_enabled,
+                     ipv4_enabled,
+                     ipv6_enabled,
                      mtu,
                      addresses: _,
                      control_hook: _,
                      events: _,
                  }| {
                     node.record_bool("AdminEnabled", *admin_enabled);
+                    node.record_bool("IPv4Enabled", *ipv4_enabled);
+                    node.record_bool("IPv6Enabled", *ipv6_enabled);
                     node.record_uint("MTU", mtu.get().into());
                 },
             );

@@ -45,14 +45,16 @@ use futures::future::{FusedFuture as _, OptionFuture};
 use futures::stream::FusedStream as _;
 use futures::{FutureExt as _, SinkExt as _, StreamExt as _, TryStreamExt as _};
 use log::{debug, error, info, warn};
-use net_types::ip::{AddrSubnetEither, IpAddr, IpVersion, Ipv4, Ipv6};
-use net_types::{SpecifiedAddr, Witness};
+use net_types::ip::{
+    AddrSubnetEither, GenericOverIp, Ip, IpAddr, IpInvariant, IpVersion, Ipv4, Ipv6,
+};
+use net_types::{SpecifiedAddr, Witness, map_ip_twice};
 use netstack3_core::device::{BlackholeDevice, DeviceConfigurationUpdateError, DeviceId};
 use netstack3_core::ip::{
     AddIpAddrSubnetError, AddrSubnetAndManualConfigEither, CommonAddressConfig,
     CommonAddressProperties, IpDeviceConfigurationAndFlags, IpDeviceConfigurationUpdate,
-    Ipv4AddrConfig, Ipv4DeviceConfigurationUpdate, Ipv6AddrManualConfig,
-    Ipv6DeviceConfigurationUpdate, Lifetime, PreferredLifetime, SetIpAddressPropertiesError,
+    IpDeviceIpExt, Ipv4AddrConfig, Ipv6AddrManualConfig, Lifetime,
+    PendingIpDeviceConfigurationUpdate, PreferredLifetime, SetIpAddressPropertiesError,
     UpdateIpConfigurationError,
 };
 use thiserror::Error;
@@ -71,8 +73,10 @@ use crate::bindings::devices::{
     OwnedDeviceSpecificInfo, PureIpDeviceInfo, StaticCommonInfo, TxTask, TxTaskError,
 };
 use crate::bindings::interface_config::{
-    FidlInterfaceConfig, InterfaceConfig, InterfaceConfigUpdate,
+    BindingsConfig, BindingsConfigUpdate, FidlInterfaceConfig, InterfaceConfig,
+    InterfaceConfigUpdate,
 };
+use crate::bindings::interfaces_admin::enabled::InterfaceEnabledController;
 use crate::bindings::netdevice_worker::LinkMulticastWorker;
 use crate::bindings::routes::TableIdOverflowsError;
 use crate::bindings::routes::admin::RouteSet;
@@ -83,8 +87,8 @@ use crate::bindings::util::{
     TryIntoCore,
 };
 use crate::bindings::{
-    BindingId, CoreRwLock, Ctx, DeviceIdExt as _, InterfaceProperties, LifetimeExt as _, Netstack,
-    netdevice_worker, routes,
+    BindingId, BindingsCtx, CoreRwLock, Ctx, DeviceIdExt as _, InterfaceProperties,
+    LifetimeExt as _, Netstack, netdevice_worker, routes,
 };
 
 pub(crate) async fn serve(
@@ -683,7 +687,7 @@ pub(crate) async fn run_interface_control<S: futures::Stream<Item = DeviceState>
     // An event indicating that the individual control request streams should stop.
     let cancel_request_streams = async_utils::event::Event::new();
 
-    let enabled_controller = enabled::InterfaceEnabledController::new(ctx.clone(), id);
+    let enabled_controller = InterfaceEnabledController::new(ctx.clone(), id);
     let enabled_controller = &enabled_controller;
     // A struct to retain per-handle state of the individual request streams in `control_receiver`.
     struct ReqStreamState {
@@ -887,7 +891,7 @@ async fn dispatch_control_request(
     id: BindingId,
     removable: bool,
     owns_interface: &mut bool,
-    enabled_controller: &enabled::InterfaceEnabledController,
+    enabled_controller: &InterfaceEnabledController,
 ) -> Result<ControlRequestResult, fidl::Error> {
     match req {
         fnet_interfaces_admin::ControlRequest::AddAddress {
@@ -901,7 +905,7 @@ async fn dispatch_control_request(
         }
         fnet_interfaces_admin::ControlRequest::GetId { responder } => responder.send(id.get()),
         fnet_interfaces_admin::ControlRequest::SetConfiguration { config, responder } => {
-            let result = set_configuration(ctx, id, config);
+            let result = set_configuration(enabled_controller, config).await;
             if let Err(e) = &result {
                 warn!("failed to set interface {id} configuration: {e:?}");
             }
@@ -1058,25 +1062,26 @@ async fn remove_address(ctx: &mut Ctx, id: BindingId, address: fnet::Subnet) -> 
     return did_cancel_worker;
 }
 
-/// Sets the provided `config` on the interface with the given `id`.
+/// Sets the provided `config` on the interface with the given `core_id`.
 ///
 /// Returns the previously set configuration on the interface.
-fn set_configuration(
-    ctx: &mut Ctx,
-    id: BindingId,
+async fn set_configuration(
+    enabled_controller: &InterfaceEnabledController,
     config: fnet_interfaces_admin::Configuration,
 ) -> fnet_interfaces_admin::ControlSetConfigurationResult {
-    let core_id = ctx
-        .bindings_ctx()
-        .devices
-        .get_core_id(id)
-        .expect("device lifetime should be tied to channel lifetime");
+    let InterfaceConfigUpdate {
+        bindings: bindings_update,
+        ipv4: ipv4_update,
+        ipv6: ipv6_update,
+        device: device_update,
+    } = FidlInterfaceConfig::from(config).try_into_update()?;
 
-    let InterfaceConfigUpdate { ipv4: ipv4_update, ipv6: ipv6_update, device: device_update } =
-        FidlInterfaceConfig::from(config).try_into_update()?;
+    let mut config_updater = enabled_controller.config_updater().await;
 
     let log_forwarding_change =
-        |version: IpVersion, ip_config: Option<&IpDeviceConfigurationUpdate>| {
+        |core_id: &DeviceId<BindingsCtx>,
+         version: IpVersion,
+         ip_config: Option<&IpDeviceConfigurationUpdate>| {
             if let Some(forwarding) = ip_config.and_then(|i| i.unicast_forwarding_enabled.as_ref())
             {
                 info!(
@@ -1094,12 +1099,40 @@ fn set_configuration(
             }
         };
 
-    log_forwarding_change(IpVersion::V4, ipv4_update.as_ref().map(|i| &i.ip_config));
-    log_forwarding_change(IpVersion::V6, ipv6_update.as_ref().map(|i| &i.ip_config));
+    log_forwarding_change(
+        config_updater.device_id(),
+        IpVersion::V4,
+        ipv4_update.as_ref().map(|i| &i.ip_config),
+    );
+    log_forwarding_change(
+        config_updater.device_id(),
+        IpVersion::V6,
+        ipv6_update.as_ref().map(|i| &i.ip_config),
+    );
+
+    let bindings @ BindingsConfigUpdate { ipv4_enabled, ipv6_enabled } =
+        bindings_update.apply_to_device(config_updater.device_id());
+
+    // If either the ip_enabled or ip_update is Some, we need to update the ip configuration.
+    // Note we don't care the value of ip_enabled, as the truth will be found in the
+    // `new_ip_configuration_update` later.
+    fn merge_ip_update<I: IpDeviceIpExt>(
+        ip_update: Option<I::ConfigurationUpdate>,
+        ip_enabled: Option<bool>,
+    ) -> Option<I::ConfigurationUpdate>
+    where
+        I::ConfigurationUpdate: Default,
+    {
+        if ip_enabled.is_some() { Some(ip_update.unwrap_or_default()) } else { ip_update }
+    }
+    let ipv4_update = merge_ip_update::<Ipv4>(ipv4_update, ipv4_enabled);
+    let ipv6_update = merge_ip_update::<Ipv6>(ipv6_update, ipv6_enabled);
+
+    let mut api_provider = config_updater.api_provider();
 
     let ipv4_update = ipv4_update
         .map(|ipv4_update| {
-            ctx.api().device_ip::<Ipv4>().new_configuration_update(&core_id, ipv4_update)
+            api_provider.new_ip_configuration_update::<Ipv4>(ipv4_update)
         })
         .transpose()
         .map_err(|e| match e {
@@ -1112,7 +1145,7 @@ fn set_configuration(
         })?;
     let ipv6_update = ipv6_update
         .map(|ipv6_update| {
-            ctx.api().device_ip::<Ipv6>().new_configuration_update(&core_id, ipv6_update)
+            api_provider.new_ip_configuration_update::<Ipv6>(ipv6_update)
         })
         .transpose()
         .map_err(|e| match e {
@@ -1123,28 +1156,57 @@ fn set_configuration(
                 fnet_interfaces_admin::ControlSetConfigurationError::Ipv6MulticastForwardingUnsupported
             }
         })?;
-    let device_update = device_update
-        .map(|device_update| {
-            ctx.api().device_any().new_configuration_update(&core_id, device_update)
-        })
-        .transpose()
-        .map_err(|e| match e {
-            DeviceConfigurationUpdateError::ArpNotSupported => {
-                fnet_interfaces_admin::ControlSetConfigurationError::ArpNotSupported
-            }
-            DeviceConfigurationUpdateError::NdpNotSupported => {
-                fnet_interfaces_admin::ControlSetConfigurationError::NdpNotSupported
-            }
-        })?;
 
-    let device = device_update.map(|u| ctx.api().device_any().apply_configuration(u));
+    let device = {
+        let device_id = api_provider.device_id().clone();
+        let device_update = device_update
+            .map(|device_update| {
+                api_provider.api().device_any().new_configuration_update(&device_id, device_update)
+            })
+            .transpose()
+            .map_err(|e| match e {
+                DeviceConfigurationUpdateError::ArpNotSupported => {
+                    fnet_interfaces_admin::ControlSetConfigurationError::ArpNotSupported
+                }
+                DeviceConfigurationUpdateError::NdpNotSupported => {
+                    fnet_interfaces_admin::ControlSetConfigurationError::NdpNotSupported
+                }
+            })?;
 
+        device_update.map(|u| api_provider.api().device_any().apply_configuration(u))
+    };
+
+    fn update_ip_configuration_and_log_enabled<'a, I: IpDeviceIpExt>(
+        api: netstack3_core::CoreApi<'a, &'a mut BindingsCtx>,
+        pending: PendingIpDeviceConfigurationUpdate<'a, I, DeviceId<BindingsCtx>>,
+    ) -> I::ConfigurationUpdate {
+        let want_ip_enabled = pending.config_update().as_ref().ip_enabled;
+        let core_id = pending.device_id();
+        #[derive(GenericOverIp)]
+        #[generic_over_ip(I, Ip)]
+        struct Output<I: IpDeviceIpExt>(I::ConfigurationUpdate);
+        let Output(update) =
+            map_ip_twice!(I, (IpInvariant(api), pending), |(IpInvariant(api), pending)| Output(
+                api.device_ip::<I>().apply_configuration(pending)
+            ));
+        if let Some(want_ip_enabled) = want_ip_enabled {
+            info!(
+                "updated {:?} ip_enabled on {core_id:?} to {want_ip_enabled}, was {}",
+                I::VERSION,
+                update.as_ref().ip_enabled.expect("ip_enabled should be set")
+            );
+        }
+        update
+    }
     // Apply both updates now that we have checked for errors and get the deltas
     // back.
-    let ipv4 = ipv4_update.map(|u| ctx.api().device_ip::<Ipv4>().apply_configuration(u));
-    let ipv6 = ipv6_update.map(|u| ctx.api().device_ip::<Ipv6>().apply_configuration(u));
+    let ipv4 =
+        ipv4_update.map(|u| update_ip_configuration_and_log_enabled::<Ipv4>(api_provider.api(), u));
+    let ipv6 =
+        ipv6_update.map(|u| update_ip_configuration_and_log_enabled::<Ipv6>(api_provider.api(), u));
 
-    Ok(FidlInterfaceConfig::new_update(InterfaceConfigUpdate { ipv4, ipv6, device }).into())
+    Ok(FidlInterfaceConfig::new_update(InterfaceConfigUpdate { bindings, ipv4, ipv6, device })
+        .into())
 }
 
 /// Returns the configuration used for the interface with the given `id`.
@@ -1155,6 +1217,10 @@ fn get_configuration(ctx: &mut Ctx, id: BindingId) -> fnet_interfaces_admin::Con
         .get_core_id(id)
         .expect("device lifetime should be tied to channel lifetime");
 
+    let (ipv4_enabled, ipv6_enabled) = core_id
+        .external_state()
+        .with_common_info(|common_info| (common_info.ipv4_enabled, common_info.ipv6_enabled));
+
     let device = ctx.api().device_any().get_configuration(&core_id);
 
     let IpDeviceConfigurationAndFlags { config: ipv4, flags: _, gmp_mode: igmp } =
@@ -1163,7 +1229,15 @@ fn get_configuration(ctx: &mut Ctx, id: BindingId) -> fnet_interfaces_admin::Con
     let IpDeviceConfigurationAndFlags { config: ipv6, flags: _, gmp_mode: mld } =
         ctx.api().device_ip::<Ipv6>().get_configuration(&core_id);
 
-    FidlInterfaceConfig::new_complete(InterfaceConfig { device, ipv4, ipv6, igmp, mld }).into()
+    FidlInterfaceConfig::new_complete(InterfaceConfig {
+        device,
+        bindings_config: BindingsConfig { ipv4_enabled, ipv6_enabled },
+        ipv4,
+        ipv6,
+        igmp,
+        mld,
+    })
+    .into()
 }
 
 /// Adds the given `address` to the interface with the given `id`.
@@ -1915,8 +1989,11 @@ fn send_address_removal_event(
 
 mod enabled {
     use super::*;
-    use crate::bindings::{DeviceSpecificInfo, DynamicEthernetInfo, DynamicNetdeviceInfo};
-    use futures::lock::Mutex as AsyncMutex;
+    use crate::bindings::{
+        BindingsCtx, DeviceSpecificInfo, DynamicEthernetInfo, DynamicNetdeviceInfo,
+    };
+    use futures::lock::{self, Mutex as AsyncMutex};
+    use netstack3_core::ip::{Ipv4DeviceConfigurationUpdate, Ipv6DeviceConfigurationUpdate};
 
     /// A helper that provides interface enabling and disabling under an
     /// interface-scoped lock.
@@ -1927,6 +2004,18 @@ mod enabled {
     pub(super) struct InterfaceEnabledController {
         id: BindingId,
         ctx: AsyncMutex<Ctx>,
+    }
+
+    /// Configuration updater that takes IP enablement into account.
+    ///
+    /// This is needed because all core IP enablement state is protected by the
+    /// lock on [`InterfaceEnabledController`].
+    ///
+    /// This struct encapsulates the lifetime of the lock by holding the lock
+    /// guard.
+    pub(super) struct InterfaceConfigurationUpdater<'ctx> {
+        ctx: lock::MutexGuard<'ctx, Ctx>,
+        device_id: DeviceId<BindingsCtx>,
     }
 
     impl InterfaceEnabledController {
@@ -2022,7 +2111,7 @@ mod enabled {
                     }
                 }
             }
-            Self::update_enabled_state(ctx.deref_mut(), *id);
+            Self::update_enabled_state(&mut ctx, &core_id);
 
             if let Some(status_sampler) = status_sampler {
                 status_sampler.report_admin_state(enabled).await;
@@ -2076,7 +2165,15 @@ mod enabled {
             // Enable or disable interface with context depending on new
             // online status. The helper functions take care of checking if
             // admin enable is the expected value.
-            Self::update_enabled_state(&mut ctx, *id);
+            Self::update_enabled_state(&mut ctx, &core_id);
+        }
+
+        pub(super) async fn config_updater(&self) -> InterfaceConfigurationUpdater<'_> {
+            let Self { ctx, id } = self;
+            let ctx = ctx.lock().await;
+            let device_id =
+                ctx.bindings_ctx().devices.get_core_id(*id).expect("device not present");
+            InterfaceConfigurationUpdater { ctx, device_id }
         }
 
         /// Commits interface enabled state to core.
@@ -2087,35 +2184,9 @@ mod enabled {
         ///
         /// Panics if `should_enable` is `false` but the device state reflects
         /// that it should be enabled.
-        fn update_enabled_state(ctx: &mut Ctx, id: BindingId) {
-            let core_id = ctx
-                .bindings_ctx()
-                .devices
-                .get_core_id(id)
-                .expect("tried to enable/disable nonexisting device");
-
-            let dev_enabled = match core_id.external_state() {
-                DeviceSpecificInfo::Ethernet(i) => i.with_dynamic_info(
-                    |DynamicEthernetInfo {
-                         netdevice: DynamicNetdeviceInfo { phy_up, common_info },
-                         neighbor_event_sink: _,
-                     }| *phy_up && common_info.admin_enabled,
-                ),
-                DeviceSpecificInfo::Loopback(i) => {
-                    i.with_dynamic_info(|common_info| common_info.admin_enabled)
-                }
-                DeviceSpecificInfo::Blackhole(i) => {
-                    i.with_dynamic_info(|common_info| common_info.admin_enabled)
-                }
-                DeviceSpecificInfo::PureIp(i) => {
-                    i.with_dynamic_info(|DynamicNetdeviceInfo { phy_up, common_info }| {
-                        *phy_up && common_info.admin_enabled
-                    })
-                }
-            };
-
-            let ip_config =
-                IpDeviceConfigurationUpdate { ip_enabled: Some(dev_enabled), ..Default::default() };
+        fn update_enabled_state(ctx: &mut Ctx, core_id: &DeviceId<BindingsCtx>) {
+            let EffectiveIpEnabledFlags { ipv4_enabled, ipv6_enabled } =
+                EffectiveIpEnabledFlags::from_device_info(core_id.external_state());
 
             // The update functions from core are already capable of identifying
             // deltas and return the previous values for us. Log the deltas for
@@ -2124,8 +2195,14 @@ mod enabled {
                 .api()
                 .device_ip::<Ipv4>()
                 .update_configuration(
-                    &core_id,
-                    Ipv4DeviceConfigurationUpdate { ip_config, ..Default::default() },
+                    core_id,
+                    Ipv4DeviceConfigurationUpdate {
+                        ip_config: IpDeviceConfigurationUpdate {
+                            ip_enabled: Some(ipv4_enabled),
+                            ..Default::default()
+                        },
+                        ..Default::default()
+                    },
                 )
                 .expect("changing ip_enabled should never fail")
                 .ip_config
@@ -2136,8 +2213,14 @@ mod enabled {
                 .api()
                 .device_ip::<Ipv6>()
                 .update_configuration(
-                    &core_id,
-                    Ipv6DeviceConfigurationUpdate { ip_config, ..Default::default() },
+                    core_id,
+                    Ipv6DeviceConfigurationUpdate {
+                        ip_config: IpDeviceConfigurationUpdate {
+                            ip_enabled: Some(ipv6_enabled),
+                            ..Default::default()
+                        },
+                        ..Default::default()
+                    },
                 )
                 .expect("changing ip_enabled should never fail")
                 .ip_config
@@ -2145,9 +2228,132 @@ mod enabled {
                 .expect("ip enabled must be informed");
 
             info!(
-                "updated core IPv4 and IPv6 enabled state to {dev_enabled} on {core_id:?}, \
+                "updated core state to ipv4_enabled={ipv4_enabled}, ipv6_enabled={ipv6_enabled} on {core_id:?}, \
                 prev v4={was_v4_previously_enabled},v6={was_v6_previously_enabled}"
             );
+        }
+    }
+
+    impl<'ctx> InterfaceConfigurationUpdater<'ctx> {
+        pub(super) fn api_provider(&mut self) -> ApiProvider<'_> {
+            ApiProvider { ctx: &mut *self.ctx, device_id: &self.device_id }
+        }
+
+        pub(super) fn device_id(&self) -> &DeviceId<BindingsCtx> {
+            &self.device_id
+        }
+    }
+
+    /// Provides access to the APIs to Core.
+    pub(super) struct ApiProvider<'a> {
+        ctx: &'a mut Ctx,
+        device_id: &'a DeviceId<BindingsCtx>,
+    }
+
+    impl<'a> ApiProvider<'a> {
+        /// Provides the core API struct.
+        pub(super) fn api(&mut self) -> netstack3_core::CoreApi<'_, &mut BindingsCtx> {
+            self.ctx.api()
+        }
+
+        /// Overrides the `new_ip_configuration_update` from the device_ip API with the
+        /// state kept in the `device_id`.
+        pub(super) fn new_ip_configuration_update<I: IpDeviceIpExt>(
+            &mut self,
+            update: I::ConfigurationUpdate,
+        ) -> Result<
+            PendingIpDeviceConfigurationUpdate<'a, I, DeviceId<BindingsCtx>>,
+            UpdateIpConfigurationError,
+        > {
+            let Self { ctx, device_id } = self;
+            let ip_enabled = EffectiveIpEnabledFlags::from_device_info(device_id.external_state())
+                .ip_enabled::<I>();
+
+            #[derive(GenericOverIp)]
+            #[generic_over_ip(I, Ip)]
+            struct Input<'a, I: IpDeviceIpExt>(&'a mut Ctx, I::ConfigurationUpdate);
+
+            #[derive(GenericOverIp)]
+            #[generic_over_ip(I, Ip)]
+            struct Output<'a, I: IpDeviceIpExt>(
+                Result<
+                    PendingIpDeviceConfigurationUpdate<'a, I, DeviceId<BindingsCtx>>,
+                    UpdateIpConfigurationError,
+                >,
+            );
+
+            let Output(result) = I::map_ip(
+                Input(ctx, update),
+                |Input(ctx, mut ipv4_update)| {
+                    ipv4_update.ip_config.ip_enabled = Some(ip_enabled);
+                    Output(
+                        ctx.api()
+                            .device_ip::<Ipv4>()
+                            .new_configuration_update(device_id, ipv4_update),
+                    )
+                },
+                |Input(ctx, mut ipv6_update)| {
+                    ipv6_update.ip_config.ip_enabled = Some(ip_enabled);
+                    Output(
+                        ctx.api()
+                            .device_ip::<Ipv6>()
+                            .new_configuration_update(device_id, ipv6_update),
+                    )
+                },
+            );
+            result
+        }
+
+        pub(super) fn device_id(&self) -> &DeviceId<BindingsCtx> {
+            self.device_id
+        }
+    }
+
+    struct EffectiveIpEnabledFlags {
+        ipv4_enabled: bool,
+        ipv6_enabled: bool,
+    }
+
+    impl EffectiveIpEnabledFlags {
+        fn from_device_info(device_info: DeviceSpecificInfo<'_>) -> Self {
+            let (dev_enabled, ipv4_enabled, ipv6_enabled) = match device_info {
+                DeviceSpecificInfo::Ethernet(i) => i.with_dynamic_info(
+                    |DynamicEthernetInfo {
+                         netdevice: DynamicNetdeviceInfo { phy_up, common_info },
+                         neighbor_event_sink: _,
+                     }| {
+                        (
+                            *phy_up && common_info.admin_enabled,
+                            common_info.ipv4_enabled,
+                            common_info.ipv6_enabled,
+                        )
+                    },
+                ),
+                DeviceSpecificInfo::Loopback(i) => i.with_dynamic_info(|common_info| {
+                    (common_info.admin_enabled, common_info.ipv4_enabled, common_info.ipv6_enabled)
+                }),
+                DeviceSpecificInfo::PureIp(i) => {
+                    i.with_dynamic_info(|DynamicNetdeviceInfo { phy_up, common_info }| {
+                        (
+                            *phy_up && common_info.admin_enabled,
+                            common_info.ipv4_enabled,
+                            common_info.ipv6_enabled,
+                        )
+                    })
+                }
+                DeviceSpecificInfo::Blackhole(i) => i.with_dynamic_info(|common_info| {
+                    (common_info.admin_enabled, common_info.ipv4_enabled, common_info.ipv6_enabled)
+                }),
+            };
+            Self {
+                ipv4_enabled: dev_enabled && ipv4_enabled,
+                ipv6_enabled: dev_enabled && ipv6_enabled,
+            }
+        }
+
+        /// Returns the enablement state of the given IP version.
+        fn ip_enabled<I: Ip>(&self) -> bool {
+            I::map_ip_in((), |()| self.ipv4_enabled, |()| self.ipv6_enabled)
         }
     }
 }

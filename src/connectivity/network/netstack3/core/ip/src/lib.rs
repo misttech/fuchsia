@@ -49,7 +49,8 @@ pub mod device {
     };
     pub use crate::internal::device::config::{
         IpDeviceConfigurationAndFlags, IpDeviceConfigurationHandler, IpDeviceConfigurationUpdate,
-        Ipv4DeviceConfigurationUpdate, Ipv6DeviceConfigurationUpdate, UpdateIpConfigurationError,
+        Ipv4DeviceConfigurationUpdate, Ipv6DeviceConfigurationUpdate,
+        PendingIpDeviceConfigurationUpdate, UpdateIpConfigurationError,
     };
     pub use crate::internal::device::dad::{
         DadAddressContext, DadAddressStateRef, DadContext, DadHandler, DadState, DadStateRef,

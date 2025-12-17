@@ -74,6 +74,7 @@ async fn interface_defaults(name: &str) {
         multicast_forwarding,
         igmp,
         arp,
+        enabled: ipv4_enabled,
         __source_breaking,
     } = ipv4.expect("missing ipv4");
 
@@ -98,6 +99,7 @@ async fn interface_defaults(name: &str) {
         multicast_forwarding: Some(!multicast_forwarding.expect("missing mcast fwd")),
         igmp: Some(igmp),
         arp: Some(arp),
+        enabled: Some(ipv4_enabled.expect("missing ipv4 enabled")),
         __source_breaking: fidl::marker::SourceBreaking,
     };
 
@@ -106,6 +108,7 @@ async fn interface_defaults(name: &str) {
         multicast_forwarding,
         mld,
         ndp,
+        enabled: ipv6_enabled,
         __source_breaking,
     } = ipv6.expect("missing ipv6");
     let fnet_interfaces_admin::MldConfiguration { version, __source_breaking } =
@@ -136,6 +139,7 @@ async fn interface_defaults(name: &str) {
         multicast_forwarding: Some(!multicast_forwarding.expect("missing mcast fwd")),
         mld: Some(mld),
         ndp: Some(ndp),
+        enabled: Some(!ipv6_enabled.expect("missing ipv6 enabled")),
         __source_breaking: fidl::marker::SourceBreaking,
     };
 
