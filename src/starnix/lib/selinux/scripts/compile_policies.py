@@ -183,6 +183,14 @@ _COMPOSITE_POLICY_PATHS = [
         [
             "base_policy.conf",
             "new_file/test_policy.conf",
+            "new_file/memfd_class.conf",
+        ],
+        "memfd_class.pp",
+    ),
+    (
+        [
+            "base_policy.conf",
+            "new_file/test_policy.conf",
             "new_file/pipe_policy.conf",
         ],
         "pipe_policy.pp",
