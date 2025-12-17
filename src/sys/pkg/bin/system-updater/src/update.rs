@@ -296,6 +296,7 @@ impl Updater for RealUpdater {
             reboot_controller,
             self.structured_config.concurrent_package_resolves.into(),
             self.structured_config.concurrent_blob_fetches.into(),
+            self.structured_config.verify_existing_blobs,
             manifest_public_keys,
             cancel_receiver,
         )
@@ -320,6 +321,7 @@ async fn update(
     reboot_controller: RebootController,
     concurrent_package_resolves: usize,
     concurrent_blob_fetches: usize,
+    verify_existing_blobs: bool,
     manifest_public_keys: Vec<ring::signature::UnparsedPublicKey<Vec<u8>>>,
     mut cancel_receiver: oneshot::Receiver<()>,
 ) -> (String, impl FusedStream<Item = fupdate_installer_ext::State>) {
@@ -363,6 +365,7 @@ async fn update(
                     config: &config,
                     env: &env,
                     concurrent_blob_fetches,
+                    verify_existing_blobs,
                     manifest_public_keys,
                 }
                 .run(&mut co, &mut phase, &mut target_version)
@@ -682,6 +685,25 @@ impl BootSlot {
         }
         urls
     }
+}
+
+async fn verify_blob(blobfs: &blobfs::Client, merkle: &Hash, size: u64) -> anyhow::Result<()> {
+    let vmo = blobfs.get_blob_vmo(merkle).await.context("getting blob vmo")?;
+
+    let vmo_size = vmo.get_stream_size().context("getting blob size")?;
+    if vmo_size != size {
+        anyhow::bail!("blob size {vmo_size} does not match expected size {size}");
+    }
+
+    let mut buf = [std::mem::MaybeUninit::<u8>::uninit(); 64 * 1024];
+    let mut offset = 0;
+    while offset < size {
+        let chunk_len = std::cmp::min(buf.len() as u64, size - offset);
+        let _: &mut [_] =
+            vmo.read_uninit(&mut buf[..chunk_len as usize], offset).context("reading blob")?;
+        offset += chunk_len;
+    }
+    Ok(())
 }
 
 struct Attempt<'a> {
@@ -1131,6 +1153,7 @@ struct PackagelessAttempt<'a> {
     config: &'a Config,
     env: &'a Environment,
     concurrent_blob_fetches: usize,
+    verify_existing_blobs: bool,
     manifest_public_keys: Vec<ring::signature::UnparsedPublicKey<Vec<u8>>>,
 }
 
@@ -1366,7 +1389,7 @@ impl PackagelessAttempt<'_> {
                     match self
                         .env
                         .ota_downloader
-                        .fetch_blob(&blob_id, blob_base_url.as_ref())
+                        .fetch_blob(&blob_id, blob_base_url.as_ref(), false)
                         .await
                         .map_err(StageError::Fidl)?
                     {
@@ -1394,7 +1417,7 @@ impl PackagelessAttempt<'_> {
                             let () = self
                                 .env
                                 .ota_downloader
-                                .fetch_blob(&blob_id, blob_base_url.as_ref())
+                                .fetch_blob(&blob_id, blob_base_url.as_ref(), false)
                                 .await
                                 .map_err(StageError::Fidl)?
                                 .map_err(|e| StageError::FetchBlob(e.into()))?;
@@ -1480,13 +1503,24 @@ impl PackagelessAttempt<'_> {
         let mut stream = futures::stream::iter(manifest.blobs.iter())
             .map(async |blob| {
                 if existing_blobs.contains(&blob.fuchsia_merkle_root) {
-                    return Ok(blob.uncompressed_size);
+                    if self.verify_existing_blobs
+                        && let Err(e) =
+                            verify_blob(blobfs, &blob.fuchsia_merkle_root, blob.uncompressed_size)
+                                .await
+                    {
+                        error!(
+                            "blob {} verification failed: {:#}. Re-fetching.",
+                            blob.fuchsia_merkle_root, e
+                        );
+                    } else {
+                        return Ok(blob.uncompressed_size);
+                    }
                 }
                 let blob_id = fpkg_ext::BlobId::from(blob.fuchsia_merkle_root).into();
                 let () = self
                     .env
                     .ota_downloader
-                    .fetch_blob(&blob_id, blob_base_url.as_ref())
+                    .fetch_blob(&blob_id, blob_base_url.as_ref(), self.verify_existing_blobs)
                     .await
                     .map_err(FetchError::Fidl)?
                     .map_err(|e| FetchError::FetchBlob(e.into()))?;

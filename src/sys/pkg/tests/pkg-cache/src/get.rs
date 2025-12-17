@@ -599,8 +599,13 @@ async fn get_with_specific_blobfs_implementation(blob_impl: blobfs_ramdisk::Impl
     let () = blob_written(&needed_blobs, meta_far.merkle).await;
 
     let [missing_blob]: [_; 1] = get_missing_blobs(&needed_blobs).await.try_into().unwrap();
-    let content_blob =
-        needed_blobs.open_blob(&missing_blob.blob_id).await.unwrap().unwrap().unwrap().into_proxy();
+    let content_blob = needed_blobs
+        .open_blob(&missing_blob.blob_id, false)
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap()
+        .into_proxy();
     let () = compress_and_write_blob(b"content-blob-contents", content_blob).await.unwrap();
     let () = blob_written(&needed_blobs, BlobId::from(missing_blob.blob_id).into()).await;
 
@@ -676,7 +681,7 @@ async fn get_with_retained_protection_refetches_blobs() {
         vec![BlobInfo { blob_id: BlobId::from(blob_hash).into(), length: 0 }]
     );
     let blob_writer = needed_blobs
-        .open_blob(&BlobId::from(blob_hash).into())
+        .open_blob(&BlobId::from(blob_hash).into(), false)
         .await
         .unwrap()
         .unwrap()

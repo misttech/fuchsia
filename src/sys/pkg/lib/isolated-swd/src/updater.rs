@@ -413,6 +413,17 @@ pub(crate) mod for_tests {
                 )
                 .await
                 .unwrap();
+            realm_builder
+                .add_route(
+                    Route::new()
+                        .capability(Capability::configuration(
+                            "fuchsia.system-updater.VerifyExistingBlobs",
+                        ))
+                        .from(Ref::void())
+                        .to(&system_updater),
+                )
+                .await
+                .unwrap();
 
             // Make sure the component under test can log.
             realm_builder

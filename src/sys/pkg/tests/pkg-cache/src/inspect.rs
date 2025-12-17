@@ -241,7 +241,7 @@ async fn package_cache_get() {
     let buf = contents.remove(&blob.blob_id.into()).unwrap();
 
     let content_blob =
-        needed_blobs.open_blob(&blob.blob_id).await.unwrap().unwrap().unwrap().into_proxy();
+        needed_blobs.open_blob(&blob.blob_id, false).await.unwrap().unwrap().unwrap().into_proxy();
 
     // Content blob open for writing.
     let hierarchy = expect_and_return_inspect(&env, "need-content-blobs").await;
@@ -258,7 +258,7 @@ async fn package_cache_get() {
     let buf = contents.remove(&blob.blob_id.into()).unwrap();
 
     let content_blob =
-        needed_blobs.open_blob(&blob.blob_id).await.unwrap().unwrap().unwrap().into_proxy();
+        needed_blobs.open_blob(&blob.blob_id, false).await.unwrap().unwrap().unwrap().into_proxy();
 
     // Last content blob open for writing.
     let hierarchy = expect_and_return_inspect(&env, "need-content-blobs").await;

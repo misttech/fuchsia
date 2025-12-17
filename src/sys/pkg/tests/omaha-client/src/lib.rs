@@ -612,6 +612,17 @@ impl TestEnvBuilder {
                 )
                 .await
                 .unwrap();
+            builder
+                .add_route(
+                    Route::new()
+                        .capability(Capability::configuration(
+                            "fuchsia.system-updater.VerifyExistingBlobs",
+                        ))
+                        .from(Ref::void())
+                        .to(&system_updater),
+                )
+                .await
+                .unwrap();
         } else {
             builder
                 .add_route(

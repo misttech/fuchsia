@@ -240,6 +240,7 @@ closed protocol NeededBlobs {
     /// Opens a blob for writing.
     ///
     /// + request `blob_id` the blob id describing this blob.
+    /// + request `allow_existing` whether to open the blob even if it is already present.
     /// - response `writer` is used to write the blob. If `writer` is absent,
     ///   the blob is already cached and so does not need to be written.
     /// * error an OpenBlobError indicating failure. Clients may retry this
@@ -247,6 +248,7 @@ closed protocol NeededBlobs {
     ///   errors it considers to be fatal.
     strict OpenBlob(struct {
         blob_id BlobId;
+        allow_existing bool;
     }) -> (resource struct {
         writer client_end:<fuchsia.fxfs.BlobWriter, optional>;
     }) error OpenBlobError;

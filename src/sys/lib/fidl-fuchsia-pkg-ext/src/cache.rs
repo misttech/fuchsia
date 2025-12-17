@@ -212,10 +212,11 @@ async fn open_blob(
     kind: OpenKind,
     blob_id: BlobId,
     pkg_present: Option<&SharedBoolEvent>,
+    allow_existing: bool,
 ) -> Result<Option<NeededBlob>, OpenBlobError> {
     let open_fut = match kind {
         OpenKind::Meta => needed_blobs.open_meta_blob(),
-        OpenKind::Content => needed_blobs.open_blob(&blob_id.into()),
+        OpenKind::Content => needed_blobs.open_blob(&blob_id.into(), allow_existing),
     };
     match open_fut.await {
         Err(fidl::Error::ClientChannelClosed { status: Status::OK, .. }) => {
@@ -252,6 +253,7 @@ pub struct DeferredOpenBlob {
     needed_blobs: fpkg::NeededBlobsProxy,
     kind: OpenKind,
     blob_id: BlobId,
+    allow_existing: bool,
     pkg_present: Option<SharedBoolEvent>,
 }
 
@@ -259,7 +261,14 @@ impl DeferredOpenBlob {
     /// Opens the blob for write, if it is still needed. The blob's data can be provided using the
     /// returned NeededBlob.
     pub async fn open(&self) -> Result<Option<NeededBlob>, OpenBlobError> {
-        open_blob(&self.needed_blobs, self.kind, self.blob_id, self.pkg_present.as_ref()).await
+        open_blob(
+            &self.needed_blobs,
+            self.kind,
+            self.blob_id,
+            self.pkg_present.as_ref(),
+            self.allow_existing,
+        )
+        .await
     }
 
     fn proxy_cmp_key(&self) -> u32 {
@@ -299,6 +308,7 @@ impl Get {
             needed_blobs: self.needed_blobs.clone(),
             kind: OpenKind::Meta,
             blob_id: self.meta_far,
+            allow_existing: false,
             pkg_present: Some(self.pkg_present.clone()),
         }
     }
@@ -306,7 +316,8 @@ impl Get {
     /// Opens the meta blob for write, if it is still needed. The blob's data can be provided using
     /// the returned NeededBlob.
     pub async fn open_meta_blob(&mut self) -> Result<Option<NeededBlob>, OpenBlobError> {
-        open_blob(&self.needed_blobs, OpenKind::Meta, self.meta_far, Some(&self.pkg_present)).await
+        open_blob(&self.needed_blobs, OpenKind::Meta, self.meta_far, Some(&self.pkg_present), false)
+            .await
     }
 
     fn start_get_missing_blobs(
@@ -354,6 +365,7 @@ impl Get {
             needed_blobs: self.needed_blobs.clone(),
             kind: OpenKind::Content,
             blob_id: content_blob,
+            allow_existing: false,
             pkg_present: None,
         }
     }
@@ -364,7 +376,7 @@ impl Get {
         &mut self,
         content_blob: BlobId,
     ) -> Result<Option<NeededBlob>, OpenBlobError> {
-        open_blob(&self.needed_blobs, OpenKind::Content, content_blob, None).await
+        open_blob(&self.needed_blobs, OpenKind::Content, content_blob, None, false).await
     }
 
     /// Notifies the endpoint that all blobs have been written and wait for the response to the
@@ -395,18 +407,23 @@ pub struct WriteBlobs {
 impl WriteBlobs {
     /// Returns an independent object that can be used to open the `blob` for write.  See
     /// [`Self::open_blob`].
-    pub fn make_open_blob(&mut self, blob: BlobId) -> DeferredOpenBlob {
+    pub fn make_open_blob(&mut self, blob: BlobId, allow_existing: bool) -> DeferredOpenBlob {
         DeferredOpenBlob {
             needed_blobs: self.needed_blobs.clone(),
             kind: OpenKind::Content,
             blob_id: blob,
+            allow_existing,
             pkg_present: None,
         }
     }
 
     /// Opens `blob` for write. The blob's data can be provided using the returned NeededBlob.
-    pub async fn open_blob(&mut self, blob: BlobId) -> Result<Option<NeededBlob>, OpenBlobError> {
-        open_blob(&self.needed_blobs, OpenKind::Content, blob, None).await
+    pub async fn open_blob(
+        &mut self,
+        blob: BlobId,
+        allow_existing: bool,
+    ) -> Result<Option<NeededBlob>, OpenBlobError> {
+        open_blob(&self.needed_blobs, OpenKind::Content, blob, None, allow_existing).await
     }
 }
 
@@ -802,7 +819,11 @@ mod tests {
             res: Result<Option<ClientEnd<ffxfs::BlobWriterMarker>>, fpkg::OpenBlobError>,
         ) -> Self {
             match self.stream.next().await {
-                Some(Ok(NeededBlobsRequest::OpenBlob { blob_id, responder })) => {
+                Some(Ok(NeededBlobsRequest::OpenBlob {
+                    blob_id,
+                    allow_existing: _,
+                    responder,
+                })) => {
                     assert_eq!(BlobId::from(blob_id), expected_blob_id);
                     responder.send(res).unwrap();
                 }

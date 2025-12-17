@@ -9,7 +9,6 @@ use fuchsia_component::client::connect_to_protocol;
 use futures::TryStreamExt as _;
 use isolated_swd::updater::Updater;
 use std::sync::Arc;
-use std::sync::atomic::AtomicBool;
 use vfs::directory::helper::DirectlyMutable as _;
 use {fidl_fuchsia_fxfs as ffxfs, fidl_fuchsia_io as fio};
 
@@ -25,18 +24,6 @@ pub async fn apply_update(
         .context("connecting to fshost Recovery")?;
     let (blob_exposed_dir, blob_exposed_dir_server) = create_proxy::<fio::DirectoryMarker>();
 
-    static FORMAT_BLOB_VOLUME: AtomicBool = AtomicBool::new(true);
-    if FORMAT_BLOB_VOLUME.load(std::sync::atomic::Ordering::Relaxed) {
-        // TODO(https://fxbug.dev/445907120): Use separate blob volume instead of formatting.
-        fshost_recovery
-            .format_system_blob_volume()
-            .await
-            .context("calling FormatSystemBlobVolume")?
-            .map_err(zx::Status::from_raw)
-            .context("formatting system blob volume")?;
-    } else {
-        log::info!("Skipping formatting of system blob volume");
-    }
     fshost_recovery
         .mount_system_blob_volume(blob_exposed_dir_server)
         .await
@@ -83,8 +70,6 @@ pub async fn apply_update(
 
     view_sender.queue_message(RecoveryMessages::Log(format!("Installing update...")));
     let res = install_update(url, signature, view_sender).await;
-    // Don't format blobs if we try to update again to allow resuming to maintain forward progress.
-    FORMAT_BLOB_VOLUME.store(false, std::sync::atomic::Ordering::Relaxed);
     // Explicitly closing the `blob_exposed_dir` to let fshost shutdown the filesystem and destroy
     // the fxblob component, if not closed, this should still happen when `blob_exposed_dir` goes
     // out of scope. The `blob_root` and `blob_svc` handles are connected directly to the fxblob

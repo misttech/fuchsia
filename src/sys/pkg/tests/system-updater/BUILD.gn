@@ -73,6 +73,7 @@ rustc_test("driver") {
     "src/reboot_controller.rs",
     "src/retained_packages.rs",
     "src/update_package.rs",
+    "src/verify_existing_blobs.rs",
     "src/writes_firmware.rs",
     "src/writes_images.rs",
   ]

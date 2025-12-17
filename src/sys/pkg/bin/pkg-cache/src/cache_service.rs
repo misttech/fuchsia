@@ -382,9 +382,9 @@ async fn write_blobs(
         stream.try_next().await.map_err(ServeNeededBlobsError::ReceiveRequest)?
     {
         match request {
-            NeededBlobsRequest::OpenBlob { blob_id, responder } => {
+            NeededBlobsRequest::OpenBlob { blob_id, allow_existing, responder } => {
                 let blob_id = Hash::from(BlobId::from(blob_id));
-                match open_blob(responder, blobfs, blob_id).await {
+                match open_blob(responder, blobfs, blob_id, allow_existing).await {
                     Ok(OpenBlobSuccess::AlreadyCached) => {
                         // A prior call to OpenBlob may have added the blob to the set.
                         open_blobs.remove(&blob_id);
@@ -599,7 +599,7 @@ async fn handle_open_meta_blob(
             Some(NeededBlobsRequest::OpenMetaBlob { responder }) => {
                 // Do not fail if already opened to allow retries.
                 opened = true;
-                match open_blob(responder, blobfs, hash).await? {
+                match open_blob(responder, blobfs, hash, false).await? {
                     OpenBlobSuccess::AlreadyCached => break,
                     OpenBlobSuccess::Needed => Ok(()),
                 }
@@ -692,12 +692,12 @@ async fn handle_open_blobs(
 
     while missing_blobs.count_not_cached() != 0 {
         match stream.try_next().await.map_err(ServeNeededBlobsError::ReceiveRequest)? {
-            Some(NeededBlobsRequest::OpenBlob { blob_id, responder }) => {
+            Some(NeededBlobsRequest::OpenBlob { blob_id, allow_existing, responder }) => {
                 let blob_id = Hash::from(BlobId::from(blob_id));
                 if !missing_blobs.should_cache(&blob_id) {
                     return Err(ServeNeededBlobsError::BlobNotNeeded(blob_id));
                 }
-                match open_blob(responder, blobfs, blob_id).await {
+                match open_blob(responder, blobfs, blob_id, allow_existing).await {
                     Ok(OpenBlobSuccess::AlreadyCached) => {
                         // A prior call to OpenBlob may have added the blob to the set.
                         open_blobs.remove(&blob_id);
@@ -787,8 +787,9 @@ async fn open_blob(
     responder: impl OpenBlobResponder,
     blobfs: &blobfs::Client,
     blob_id: Hash,
+    allow_existing: bool,
 ) -> Result<OpenBlobSuccess, ServeNeededBlobsError> {
-    let create_res = blobfs.open_blob_for_write(&blob_id).await;
+    let create_res = blobfs.open_blob_for_write(&blob_id, allow_existing).await;
     let is_readable = match &create_res {
         Err(blobfs::CreateError::AlreadyExists) => {
             // The blob may exist and be readable, or it may be in the process of being written.
@@ -1029,7 +1030,7 @@ mod serve_needed_blobs_tests {
         let (blobfs, _, _, _) = blobfs::Client::new_test();
 
         let mut response = FakeOpenBlobResponse::new();
-        let res = open_blob(response.responder(), &blobfs, [0; 32].into()).await;
+        let res = open_blob(response.responder(), &blobfs, [0; 32].into(), false).await;
 
         // The operation should succeed, to allow retries, but it should report the failure to the
         // fidl responder.
@@ -1741,7 +1742,7 @@ mod serve_needed_blobs_tests {
             },
             async {
                 let blob = proxy
-                    .open_blob(&BlobId::from([2; 32]).into())
+                    .open_blob(&BlobId::from([2; 32]).into(), false)
                     .await
                     .expect("open_blob failed")
                     .expect("open_blob error")
@@ -1806,7 +1807,7 @@ mod serve_needed_blobs_tests {
             },
             async {
                 let _: fidl::endpoints::ClientEnd<ffxfs::BlobWriterMarker> = proxy
-                    .open_blob(&BlobId::from([2; 32]).into())
+                    .open_blob(&BlobId::from([2; 32]).into(), false)
                     .await
                     .expect("open_blob failed")
                     .expect("open_blob error")
@@ -1814,7 +1815,7 @@ mod serve_needed_blobs_tests {
 
                 assert_eq!(
                     proxy
-                        .open_blob(&BlobId::from([2; 32]).into(),)
+                        .open_blob(&BlobId::from([2; 32]).into(), false)
                         .await
                         .expect("open_blob failed")
                         .expect("open_blob error"),
@@ -1875,7 +1876,7 @@ mod serve_needed_blobs_tests {
             async {
                 let () = stream::iter(content_blobs())
                     .for_each_concurrent(None, |hash| {
-                        let open_fut = proxy.open_blob(&BlobId::from(hash).into());
+                        let open_fut = proxy.open_blob(&BlobId::from(hash).into(), false);
                         let proxy = &proxy;
 
                         async move {
@@ -1941,7 +1942,7 @@ mod serve_needed_blobs_tests {
             async {
                 let () = stream::iter(content_blobs())
                     .for_each(|hash| {
-                        let open_fut = proxy.open_blob(&BlobId::from(hash).into());
+                        let open_fut = proxy.open_blob(&BlobId::from(hash).into(), false);
 
                         async move {
                             assert_eq!(open_fut.await.unwrap().unwrap(), None);
@@ -1984,7 +1985,7 @@ mod serve_needed_blobs_tests {
             },
             async {
                 let _: fidl::endpoints::ClientEnd<ffxfs::BlobWriterMarker> = proxy
-                    .open_blob(&BlobId::from([2; 32]).into())
+                    .open_blob(&BlobId::from([2; 32]).into(), false)
                     .await
                     .expect("open_blob failed")
                     .expect("open_blob error")
@@ -2074,7 +2075,7 @@ mod serve_needed_blobs_tests {
             },
             async {
                 assert_matches!(
-                    proxy.open_blob(&BlobId::from(content_blob).into(),).await,
+                    proxy.open_blob(&BlobId::from(content_blob).into(), false).await,
                     Ok(Err(fpkg::OpenBlobError::ConcurrentWrite))
                 );
             },
@@ -2094,7 +2095,7 @@ mod serve_needed_blobs_tests {
             },
             async {
                 let blob = proxy
-                    .open_blob(&BlobId::from(content_blob).into())
+                    .open_blob(&BlobId::from(content_blob).into(), false)
                     .await
                     .expect("open_blob failed")
                     .expect("open_blob error")
@@ -2121,7 +2122,7 @@ mod serve_needed_blobs_tests {
             },
             async {
                 let blob: fidl::endpoints::ClientEnd<ffxfs::BlobWriterMarker> = proxy
-                    .open_blob(&BlobId::from(content_blob).into())
+                    .open_blob(&BlobId::from(content_blob).into(), false)
                     .await
                     .unwrap()
                     .unwrap()
@@ -2139,7 +2140,7 @@ mod serve_needed_blobs_tests {
             },
             async {
                 let blob = proxy
-                    .open_blob(&BlobId::from(content_blob).into())
+                    .open_blob(&BlobId::from(content_blob).into(), false)
                     .await
                     .unwrap()
                     .unwrap()

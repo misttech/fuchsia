@@ -309,7 +309,7 @@ async fn blobs_protected_from_gc_during_get(gc_protection: fpkg::GcProtection) {
         let (i, needed_blobs, to_be_fetched) = (i, &needed_blobs, &to_be_fetched);
         async move {
             let blob = needed_blobs
-                .open_blob(&BlobId::from(to_be_fetched[i].0).into())
+                .open_blob(&BlobId::from(to_be_fetched[i].0).into(), false)
                 .await
                 .unwrap()
                 .unwrap()

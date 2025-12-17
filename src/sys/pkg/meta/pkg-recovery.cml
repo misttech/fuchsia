@@ -47,6 +47,11 @@
             type: "uint32",
             value: 300,
         },
+        {
+            config: "fuchsia.system-updater.VerifyExistingBlobs",
+            type: "bool",
+            value: true,
+        },
     ],
     offer: [
         {
@@ -94,6 +99,11 @@
         {
             config: "fuchsia.system-updater.ManifestPublicKeys",
             from: "parent",
+            to: "#system-updater",
+        },
+        {
+            config: "fuchsia.system-updater.VerifyExistingBlobs",
+            from: "self",
             to: "#system-updater",
         },
         {

@@ -45,6 +45,9 @@
             path: "/blob",
         },
         {
+            // The list of public Ed25519 keys used to verify manifest signature for packageless
+            // updates. The manifest will pass verification if the signature matches any of the
+            // public keys.
             config: "fuchsia.system-updater.ManifestPublicKeys",
             key: "manifest_public_keys",
             type: "vector",
@@ -53,6 +56,15 @@
                 type: "string",
                 max_size: 64, // hex encoded 32 bytes key
             },
+        },
+        {
+            // If true, system-updater will verify the blobs of the incoming system that are already
+            // present and overwrite any that fail verification.
+            config: "fuchsia.system-updater.VerifyExistingBlobs",
+            key: "verify_existing_blobs",
+            type: "bool",
+            availability: "optional",
+            default: false,
         },
     ],
     expose: [
@@ -67,16 +79,5 @@
 
         // The maximum number of outstanding blob fetch requests.
         concurrent_blob_fetches: { type: "uint16" },
-
-        // The list of public Ed25519 keys used to verify manifest signature for packageless updates.
-        // The manifest will pass verification if the signature matches any of the public keys.
-        manifest_public_keys: {
-            type: "vector",
-            max_count: 10,
-            element: {
-                type: "string",
-                max_size: 64, // hex encoded 32 bytes key
-            },
-        },
     },
 }

@@ -36,7 +36,11 @@ async fn write_blobs_existing() {
     let () = futures::stream::iter(&existing_blobs)
         .for_each_concurrent(None, async |hash| {
             assert_eq!(
-                needed_blobs.open_blob(&pkg::BlobId::from(*hash).into()).await.unwrap().unwrap(),
+                needed_blobs
+                    .open_blob(&pkg::BlobId::from(*hash).into(), false)
+                    .await
+                    .unwrap()
+                    .unwrap(),
                 None
             );
         })

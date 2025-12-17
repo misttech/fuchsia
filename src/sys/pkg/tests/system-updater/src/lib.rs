@@ -61,6 +61,7 @@ mod progress_reporting;
 mod reboot_controller;
 mod retained_packages;
 mod update_package;
+mod verify_existing_blobs;
 mod writes_firmware;
 mod writes_images;
 
@@ -182,6 +183,9 @@ struct TestEnvBuilder {
     system_image_hash: Option<fuchsia_hash::Hash>,
     ota_manifest: Option<String>,
     blobs: HashMap<Hash, Vec<u8>>,
+    verify_existing_blobs: bool,
+    blob_reader_mock:
+        Option<Box<dyn FnMut(ffxfs::BlobReaderRequestStream) + Send + Sync + 'static>>,
 }
 
 impl TestEnvBuilder {
@@ -194,6 +198,8 @@ impl TestEnvBuilder {
             system_image_hash: None,
             ota_manifest: None,
             blobs: HashMap::new(),
+            verify_existing_blobs: false,
+            blob_reader_mock: None,
         }
     }
 
@@ -238,6 +244,19 @@ impl TestEnvBuilder {
         self
     }
 
+    fn verify_existing_blobs(mut self, verify_existing_blobs: bool) -> Self {
+        self.verify_existing_blobs = verify_existing_blobs;
+        self
+    }
+
+    fn mock_blob_reader(
+        mut self,
+        mock: impl FnMut(ffxfs::BlobReaderRequestStream) + Send + Sync + 'static,
+    ) -> Self {
+        self.blob_reader_mock = Some(Box::new(mock));
+        self
+    }
+
     async fn build(self) -> TestEnv {
         let Self {
             paver_service_builder,
@@ -247,6 +266,8 @@ impl TestEnvBuilder {
             system_image_hash,
             ota_manifest,
             blobs,
+            verify_existing_blobs,
+            blob_reader_mock,
         } = self;
 
         let test_dir = TempDir::new().expect("create test tempdir");
@@ -298,6 +319,11 @@ impl TestEnvBuilder {
         let blobfs = Arc::new(blobfs);
         fs.add_remote("blob", blobfs.root_dir_handle().unwrap().into_proxy());
         fs.add_remote("blob-svc", blobfs.svc_dir().unwrap());
+
+        let use_blob_reader_mock = blob_reader_mock.is_some();
+        if let Some(mock) = blob_reader_mock {
+            fs.dir("svc").add_fidl_service(mock);
+        }
 
         // A buffer to store all the interactions the system-updater has with external services.
         let interactions = Arc::new(Mutex::new(vec![]));
@@ -534,13 +560,14 @@ impl TestEnvBuilder {
                     .capability(Capability::protocol::<
                         fidl_fuchsia_hardware_power_statecontrol::AdminMarker,
                     >())
-                    .capability(
-                        Capability::protocol::<ffxfs::BlobCreatorMarker>()
-                            .path(format!("/blob-svc/{}", ffxfs::BlobCreatorMarker::PROTOCOL_NAME)),
-                    )
-                    .capability(
+                    .capability(if use_blob_reader_mock {
                         Capability::protocol::<ffxfs::BlobReaderMarker>()
-                            .path(format!("/blob-svc/{}", ffxfs::BlobReaderMarker::PROTOCOL_NAME)),
+                    } else {
+                        Capability::protocol::<ffxfs::BlobReaderMarker>()
+                            .path(format!("/blob-svc/{}", ffxfs::BlobReaderMarker::PROTOCOL_NAME))
+                    })
+                    .capability(
+                        Capability::directory("blob").path("/blob").rights(fio::RW_STAR_DIR),
                     )
                     .capability(
                         Capability::directory("build-info")
@@ -581,8 +608,6 @@ impl TestEnvBuilder {
                 .unwrap();
         }
 
-        builder.init_mutable_config_from_package(&system_updater).await.unwrap();
-
         builder
             .add_capability(cm_rust::CapabilityDecl::Config(cm_rust::ConfigurationDecl {
                 name: "fuchsia.system-updater.ManifestPublicKeys".parse().unwrap(),
@@ -591,10 +616,20 @@ impl TestEnvBuilder {
             .await
             .unwrap();
         builder
+            .add_capability(cm_rust::CapabilityDecl::Config(cm_rust::ConfigurationDecl {
+                name: "fuchsia.system-updater.VerifyExistingBlobs".parse().unwrap(),
+                value: verify_existing_blobs.into(),
+            }))
+            .await
+            .unwrap();
+        builder
             .add_route(
                 Route::new()
                     .capability(Capability::configuration(
                         "fuchsia.system-updater.ManifestPublicKeys",
+                    ))
+                    .capability(Capability::configuration(
+                        "fuchsia.system-updater.VerifyExistingBlobs",
                     ))
                     .from(Ref::self_())
                     .to(&system_updater),
@@ -720,6 +755,10 @@ impl TestEnv {
             &history,
         )
         .unwrap()
+    }
+
+    async fn write_to_blobfs(&self, hash: Hash, content: &[u8]) {
+        self.blobfs.write_blob(hash, content).await.unwrap();
     }
 
     async fn start_update(&self) -> Result<UpdateAttempt, UpdateAttemptError> {
@@ -974,7 +1013,12 @@ impl MockOtaDownloaderService {
     ) -> Result<(), Error> {
         while let Some(event) = stream.try_next().await? {
             match event {
-                fpkg_internal::OtaDownloaderRequest::FetchBlob { hash, base_url, responder } => {
+                fpkg_internal::OtaDownloaderRequest::FetchBlob {
+                    hash,
+                    base_url,
+                    overwrite_existing: _,
+                    responder,
+                } => {
                     self.interactions
                         .lock()
                         .push(OtaDownloader(OtaDownloaderEvent::FetchBlob(hash.into())));

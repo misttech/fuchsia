@@ -306,11 +306,12 @@ impl Client {
     pub async fn open_blob_for_write(
         &self,
         blob: &Hash,
+        allow_existing: bool,
     ) -> Result<ClientEnd<ffxfs::BlobWriterMarker>, CreateError> {
         let Some(creator) = &self.creator else {
             return Err(CreateError::WritingNotConfigured);
         };
-        Ok(creator.create(blob, false).await??)
+        Ok(creator.create(blob, allow_existing).await??)
     }
 
     /// Returns whether blobfs has a blob with the given hash.
@@ -556,7 +557,7 @@ mod tests {
         let delivery_content =
             delivery_blob::Type1Blob::generate(content, delivery_blob::CompressionMode::Always);
 
-        let writer = client.open_blob_for_write(&hash).await.unwrap().into_proxy();
+        let writer = client.open_blob_for_write(&hash, false).await.unwrap().into_proxy();
         assert!(!client.has_blob(&hash).await);
 
         let n = delivery_content.len();
@@ -578,7 +579,7 @@ mod tests {
         let hash = fuchsia_merkle::root_from_slice(content);
         let delivery_content =
             delivery_blob::Type1Blob::generate(content, delivery_blob::CompressionMode::Always);
-        let writer = client.open_blob_for_write(&hash).await.unwrap().into_proxy();
+        let writer = client.open_blob_for_write(&hash, false).await.unwrap().into_proxy();
         let vmo = writer
             .get_vmo(delivery_content.len().try_into().unwrap())
             .await
@@ -668,7 +669,7 @@ mod tests {
         .detach();
 
         assert_matches!(
-            client.open_blob_for_write(&[0; 32].into()).await,
+            client.open_blob_for_write(&[0; 32].into(), false).await,
             Err(CreateError::AlreadyExists)
         );
     }

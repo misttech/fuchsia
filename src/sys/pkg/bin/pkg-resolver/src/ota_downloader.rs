@@ -20,15 +20,25 @@ pub(crate) async fn serve(
     stream
         .map_err(anyhow::Error::new)
         .try_for_each_concurrent(None, async |request| {
-            let fpkg_internal::OtaDownloaderRequest::FetchBlob { hash, base_url, responder } =
-                request;
+            let fpkg_internal::OtaDownloaderRequest::FetchBlob {
+                hash,
+                base_url,
+                overwrite_existing,
+                responder,
+            } = request;
             let () = responder.send(
-                fetch_blob(&blob_fetcher, write_blobs.clone(), hash.into(), base_url)
-                    .await
-                    .map_err(|(anyhow_error, resolve_error)| {
-                        log::error!("OtaDownloader: fetch_blob failed: {anyhow_error:#}");
-                        resolve_error.into()
-                    }),
+                fetch_blob(
+                    &blob_fetcher,
+                    write_blobs.clone(),
+                    hash.into(),
+                    base_url,
+                    overwrite_existing,
+                )
+                .await
+                .map_err(|(anyhow_error, resolve_error)| {
+                    log::error!("OtaDownloader: fetch_blob failed: {anyhow_error:#}");
+                    resolve_error.into()
+                }),
             )?;
             Ok(())
         })
@@ -40,6 +50,7 @@ async fn fetch_blob(
     mut write_blobs: pkg::cache::WriteBlobs,
     hash: pkg::BlobId,
     base_url: String,
+    overwrite_existing: bool,
 ) -> Result<(), (anyhow::Error, ResolveError)> {
     let base_url = base_url
         .parse::<http::Uri>()
@@ -51,7 +62,7 @@ async fn fetch_blob(
         .map_err(|(_buider, e)| (e.into(), ResolveError::Internal))?
         .build();
     let context = crate::cache::FetchBlobContext::new(
-        write_blobs.make_open_blob(hash),
+        write_blobs.make_open_blob(hash, overwrite_existing),
         [mirror].into(),
         ftrace::Id::random(),
     );

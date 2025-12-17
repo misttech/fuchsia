@@ -187,7 +187,7 @@ pub async fn write_needed_blob(
     contents: &[u8],
 ) {
     let blob_proxy = needed_blobs
-        .open_blob(&fpkg_ext::BlobId::from(blob_id).into())
+        .open_blob(&fpkg_ext::BlobId::from(blob_id).into(), false)
         .await
         .unwrap()
         .unwrap()
@@ -1014,7 +1014,7 @@ impl<B: Blobfs> TestEnv<B> {
         .unwrap();
         let () = compress_and_write_blob(
             contents,
-            blobfs.open_blob_for_write(hash).await.unwrap().into_proxy(),
+            blobfs.open_blob_for_write(hash, false).await.unwrap().into_proxy(),
         )
         .await
         .unwrap();

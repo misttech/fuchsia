@@ -68,6 +68,12 @@
             from: "parent",
             to: "#system-updater",
         },
+        {
+            config: "fuchsia.system-updater.VerifyExistingBlobs",
+            from: "void",
+            to: "#system-updater",
+            availability: "optional",
+        },
     ],
     expose: [
         {
