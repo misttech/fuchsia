@@ -22,7 +22,6 @@ from honeydew.utils import host_shell, properties
 _FFX_BINARY: str = "ffx"
 
 _FFX_CMDS: dict[str, list[str]] = {
-    "TARGET_ADD": ["target", "add"],
     "TARGET_SHOW": ["--machine", "json", "target", "show"],
     "TARGET_SSH_ADDRESS": [
         "--direct",
@@ -104,8 +103,6 @@ class FfxImpl(ffx_interface.FFX):
             )
         _LOGGER.info("Use FFX Monitor Session: %s", self._use_monitor)
 
-        if self._target_ip_port:
-            self.add_target()
         self.check_connection()
 
     @properties.PersistentProperty
@@ -117,27 +114,6 @@ class FfxImpl(ffx_interface.FFX):
             FFXConfig
         """
         return self._config_data
-
-    def add_target(self) -> None:
-        """Adds a target to the ffx collection
-
-        Raises:
-            DeviceNotConnectedError: If FFX fails to reach target.
-            FfxCommandError: In case of other FFX command failure.
-        """
-        cmd: list[str] = _FFX_CMDS["TARGET_ADD"] + [str(self._target_ip_port)]
-        ffx_cmd: list[str] = self.generate_ffx_cmd(
-            cmd=cmd, include_target=False
-        )
-
-        try:
-            host_shell.run(cmd=ffx_cmd)
-        except errors.HostCmdError as err:
-            if _DEVICE_NOT_CONNECTED in str(err):
-                raise errors.DeviceNotConnectedError(
-                    f"{self._target_name} is not connected to host"
-                ) from err
-            raise ffx_errors.FfxCommandError(err) from err
 
     # FFX monitor session management:
     # For infra runs, ffx monitor session is started and managed by botanist.

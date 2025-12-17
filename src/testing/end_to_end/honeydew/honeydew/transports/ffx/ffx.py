@@ -27,15 +27,6 @@ class FFX(abc.ABC):
         """
 
     @abc.abstractmethod
-    def add_target(self) -> None:
-        """Adds a target to the ffx collection
-
-        Raises:
-            DeviceNotConnectedError: If FFX fails to reach target.
-            FfxCommandError: In case of other FFX command failure.
-        """
-
-    @abc.abstractmethod
     def check_connection(self) -> None:
         """Checks the FFX connection from host to Fuchsia device.
 

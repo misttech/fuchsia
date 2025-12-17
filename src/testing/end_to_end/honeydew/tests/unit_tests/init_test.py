@@ -101,11 +101,6 @@ class InitTests(unittest.TestCase):
 
     @mock.patch.object(ffx_impl.FfxImpl, "check_connection", autospec=True)
     @mock.patch.object(
-        ffx_impl.FfxImpl,
-        "add_target",
-        autospec=True,
-    )
-    @mock.patch.object(
         fuchsia_controller_transport.FuchsiaControllerImpl,
         "check_connection",
         autospec=True,
@@ -122,7 +117,6 @@ class InitTests(unittest.TestCase):
         mock_ffx_check_running_monitor: mock.Mock,
         mock_fc_context: mock.Mock,
         mock_fc_check_connection: mock.Mock,
-        mock_ffx_add_target: mock.Mock,
         mock_ffx_check_connection: mock.Mock,
     ) -> None:
         """Test case for honeydew.create_device() where it returns a device
@@ -146,7 +140,6 @@ class InitTests(unittest.TestCase):
         )
         mock_fc_check_connection.assert_called()
 
-        mock_ffx_add_target.assert_called()
         mock_ffx_check_connection.assert_called()
 
     @mock.patch.object(

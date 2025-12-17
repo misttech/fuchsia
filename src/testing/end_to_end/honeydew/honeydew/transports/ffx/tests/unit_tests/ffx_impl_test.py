@@ -183,11 +183,6 @@ class FfxImplTests(unittest.TestCase):
                 "check_connection",
                 autospec=True,
             ) as mock_ffx_check_connection,
-            mock.patch.object(
-                ffx_impl.FfxImpl,
-                "add_target",
-                autospec=True,
-            ) as mock_ffx_add_target,
         ):
             self.ffx_obj_with_ip = ffx_impl.FfxImpl(
                 target_name=_INPUT_ARGS["target_name"],
@@ -195,7 +190,6 @@ class FfxImplTests(unittest.TestCase):
                 config_data=_INPUT_ARGS["ffx_config_data"],
             )
         mock_ffx_check_connection.assert_called()
-        mock_ffx_add_target.assert_called()
 
         mock_ffx_check_connection.reset_mock()
 
@@ -205,11 +199,6 @@ class FfxImplTests(unittest.TestCase):
                 "check_connection",
                 autospec=True,
             ) as mock_ffx_check_connection,
-            mock.patch.object(
-                ffx_impl.FfxImpl,
-                "add_target",
-                autospec=True,
-            ) as mock_ffx_add_target,
             mock.patch.object(
                 ffx_impl.FfxImpl,
                 "_check_running_monitor",
@@ -224,7 +213,6 @@ class FfxImplTests(unittest.TestCase):
                 use_monitor_state=True,
             )
         mock_ffx_check_connection.assert_called()
-        mock_ffx_add_target.assert_called()
         mock_ffx_check_running_monitor.assert_called()
 
     def test_ffx_init_with_ip_as_target_name(self) -> None:
@@ -516,56 +504,6 @@ class FfxImplTests(unittest.TestCase):
             + ["a", "b", "c"],
             stdout="abc",
         )
-
-    @mock.patch.object(host_shell, "run", autospec=True)
-    def test_add_target(self, mock_host_shell_run: mock.Mock) -> None:
-        """Test case for ffx_cli.add_target()."""
-        self.ffx_obj_with_ip.add_target()
-
-        mock_host_shell_run.assert_called_once()
-
-    @parameterized.expand(
-        [
-            (
-                {
-                    "label": "DeviceNotConnectedError",
-                    "side_effect": errors.HostCmdError(
-                        ffx_impl._DEVICE_NOT_CONNECTED,
-                    ),
-                    "expected_error": errors.DeviceNotConnectedError,
-                },
-            ),
-            (
-                {
-                    "label": "FfxCommandError",
-                    "side_effect": errors.HostCmdError(
-                        "command output and error",
-                    ),
-                    "expected_error": ffx_errors.FfxCommandError,
-                },
-            ),
-        ],
-        name_func=_custom_test_name_func,
-    )
-    @mock.patch.object(
-        host_shell,
-        "run",
-        autospec=True,
-    )
-    def test_add_target_exception(
-        self,
-        parameterized_dict: dict[str, Any],
-        mock_host_shell_run: mock.Mock,
-    ) -> None:
-        """Verify ffx_cli.add_target raise exception in failure cases."""
-        mock_host_shell_run.side_effect = parameterized_dict["side_effect"]
-
-        expected = parameterized_dict["expected_error"]
-
-        with self.assertRaises(expected):
-            self.ffx_obj_with_ip.add_target()
-
-        mock_host_shell_run.assert_called_once()
 
     @mock.patch.object(
         ffx_impl.FfxImpl,
