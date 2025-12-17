@@ -25,6 +25,7 @@ class Context:
 
         self.real_git: str = self.polyfill_options.real_git
         self.invoker_cwd: str = self.polyfill_options.invoker_cwd
+        self.repository_root: Path = Path(self.polyfill_options.repository_root)
         self.log_file: Optional[str] = self.polyfill_options.log_file
 
         self._log_file_path = Path(self.log_file) if self.log_file else None
@@ -82,34 +83,18 @@ class Context:
         return result.stdout
 
 
-def get_repository_root() -> Optional[Path]:
-    """Returns the repository root for the current directory.
-
-    The repository root is the directory that would contain the .git directory.
-    """
-    cwd = Path.cwd()
-    repository_root = None
-    for ancestor in [cwd] + list(cwd.parents):
-        if (ancestor.parent / ".citc").is_dir():
-            repository_root = ancestor
-            break
-    return repository_root
-
-
 def get_workspace_id_and_snapshot_version(
     context: Context,
-    repository_root: Path,
 ) -> Tuple[str, int]:
     """Returns the workspace id and snapshot version for the given repository root.
 
     Args:
         context: The execution context.
-        repository_root: The repository root to get the workspace id and snapshot version for.
 
     Returns:
         A tuple of the workspace id and snapshot version.
     """
-    citc_dir = repository_root.parent / ".citc"
+    citc_dir = context.repository_root.parent / ".citc"
     try:
         workspace_id = (citc_dir / "workspace_id").read_text().strip()
         snapshot_version = (citc_dir / "snapshot_version").read_text().strip()
@@ -202,10 +187,7 @@ class RevParseCommand(GitSubCommand):
         )
 
     def execute(self, context: Context) -> int:
-        repository_root = get_repository_root()
-        if not repository_root:
-            context.error("Not in a cog workspace")
-            return 1
+        repository_root = context.repository_root
 
         rev_cache = {}
 
@@ -216,7 +198,7 @@ class RevParseCommand(GitSubCommand):
             (
                 workspace_id,
                 snapshot_version,
-            ) = get_workspace_id_and_snapshot_version(context, repository_root)
+            ) = get_workspace_id_and_snapshot_version(context)
             if not workspace_id or not snapshot_version:
                 context.error("Not in a cog workspace")
                 return None
@@ -404,6 +386,12 @@ def _create_polyfill_parser() -> argparse.ArgumentParser:
         required=True,
     )
     parser.add_argument(
+        "--repository-root",
+        type=str,
+        help="Path to the repository root. This is the directory that would contain the .git directory for the root repository.",
+        required=True,
+    )
+    parser.add_argument(
         "--log-file",
         type=str,
         help="Path to a file to append logs to.",
@@ -467,6 +455,10 @@ class ArgsCollection:
         self.remaining_args = git_args[command_index + 1 :]
 
 
+def _verify_repository_root_is_cog(repository_root: Path) -> bool:
+    return (repository_root.parent / ".citc").is_dir()
+
+
 def main() -> int:
     if len(sys.argv) < 2:
         print("usage: git <command> [<args>]", file=sys.stderr)
@@ -481,6 +473,10 @@ def main() -> int:
 
     context = Context(args_collection)
     context.write_log("START", f"{shlex.join(sys.argv)}\n")
+
+    if not _verify_repository_root_is_cog(context.repository_root):
+        context.error("Not in a cog workspace.")
+        return 1
 
     command_class = _COMMANDS[args_collection.command_name]
     command = command_class()

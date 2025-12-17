@@ -5,9 +5,8 @@
 
 set -o errexit
 
-SCRIPTS_COG_BIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
-
-readonly PY_TOOL="${SCRIPTS_COG_BIN_DIR}/../../fuchsia-vendored-python"
+readonly GIT_POLYFILL_DIR="${FUCHSIA_DIR}/scripts/cog/git-polyfill"
+readonly PY_TOOL="${FUCHSIA_DIR}/scripts/fuchsia-vendored-python"
 
 # This script acts as a wrapper around the system 'git' command.
 # However, the underlying Python script (git.py) may still need to invoke the
@@ -51,7 +50,12 @@ function main() {
     # fuchsia directory and the hermetic-env will not work if we are not in the fuchsia directory.
     # We could run this from the FUCHSIA_DIR but this might not be set and we want to ensure that we
     # are using a variable that is set so we run it in the scripts/cog/bin directory.
-    exec env -C "${SCRIPTS_COG_BIN_DIR}" "$PY_TOOL" "git.py" "${log_args[@]}" --invoker-cwd "$(pwd)" --real-git "${real_git}" -- "$@"
+    exec env -C "${GIT_POLYFILL_DIR}" "$PY_TOOL" "git.py" \
+        "${log_args[@]}" \
+        --invoker-cwd "$(pwd)" \
+        --real-git "${real_git}" \
+        --repository-root "${FUCHSIA_DIR}" \
+        -- "$@"
 }
 
 main "$@"
