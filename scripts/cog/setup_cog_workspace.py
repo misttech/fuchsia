@@ -20,7 +20,7 @@ import workspace
 
 
 def prepare_workspace_instance(
-    use_snapshot: bool,
+    disable_snapshot: bool,
     use_local_mock_cartfs: bool,
 ) -> workspace.Workspace | None:
     """Prepares a workspace instance."""
@@ -52,12 +52,14 @@ def prepare_workspace_instance(
 
     # Attempt to snapshot the cartfs workspace from a previous instance.
     cartfs_workspace_dir = None
-    if use_snapshot:
+    if not disable_snapshot:
         logger.log_info(
             "Workspace is not linked to cartfs. Attempting to Snapshot from previous instance."
         )
         cartfs_workspace_dir = (
-            workspace_instance.snapshot_from_previous_instance()
+            workspace_instance.snapshot_from_previous_instance(
+                use_local_mock_cartfs=use_local_mock_cartfs
+            )
         )
         if not cartfs_workspace_dir:
             logger.log_info(
@@ -80,13 +82,11 @@ def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Set up a cog-based workspace for Fuchsia development."
     )
-    # TODO(https://fxbug.dev/462776797): Replace the opt-in `--snapshot` flag with an opt-out
-    # `--no-snapshot` flag once we're ready to use snapshots by default.
     parser.add_argument(
-        "--snapshot",
-        dest="use_snapshot",
+        "--no-snapshot",
+        dest="disable_snapshot",
         action="store_true",
-        help="Find a previous CartFS workspace snapshot to initialize this workspace.",
+        help="Disable snapshotting and initialize this workspace from scratch.",
     )
     parser.add_argument(
         "--local-mock-cartfs",
@@ -118,7 +118,7 @@ def main() -> int | None:
     logger.init_logger(level=log_level, colors=True)
 
     workspace_instance = prepare_workspace_instance(
-        args.use_snapshot, args.use_local_mock_cartfs
+        args.disable_snapshot, args.use_local_mock_cartfs
     )
     if not workspace_instance:
         logger.log_warn("Could not create workspace instance.")
