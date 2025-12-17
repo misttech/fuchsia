@@ -306,6 +306,7 @@ pub(super) trait ReceiveTaskOps {
     fn with_receive_buffer<F, R>(&mut self, f: F) -> Option<R>
     where
         F: FnOnce(&mut CoreReceiveBuffer) -> R;
+    fn has_send_buffer(&mut self) -> bool;
 }
 
 pub(super) struct ReceiveTaskArgs<I: IpExt> {
@@ -331,6 +332,11 @@ impl<I: IpExt> ReceiveTaskOps for ReceiveTaskArgs<I> {
     {
         let Self { ctx, id } = self;
         ctx.api().tcp().with_receive_buffer(id, f)
+    }
+
+    fn has_send_buffer(&mut self) -> bool {
+        let Self { ctx, id } = self;
+        ctx.api().tcp().with_send_buffer(id, |_| ()).is_some()
     }
 }
 
@@ -460,13 +466,17 @@ pub(super) async fn receive_task<O: ReceiveTaskOps>(
         }
     }
     // If core has dropped its sender it means we're not receiving data anymore.
-    // Notify applications so they're aware of it.
-    socket
-        .set_disposition(
-            /* disposition */ Some(zx::SocketWriteDisposition::Disabled),
-            /* peer_disposition */ None,
-        )
-        .expect("failed to set socket disposition");
+    // Notify applications so they're aware of it only if core is still holding
+    // on to the send buffer. If it's not, then the send task should also exit
+    // and the signal we want to send out is PEER_CLOSED instead.
+    if ops.has_send_buffer() {
+        socket
+            .set_disposition(
+                /* disposition */ Some(zx::SocketWriteDisposition::Disabled),
+                /* peer_disposition */ None,
+            )
+            .expect("failed to set socket disposition");
+    }
 }
 
 enum CoreSendBufferInner {
@@ -2002,6 +2012,10 @@ mod test {
         {
             None
         }
+
+        fn has_send_buffer(&mut self) -> bool {
+            false
+        }
     }
 
     impl ReceiveTaskOps for Rc<RefCell<CoreReceiveBuffer>> {
@@ -2016,6 +2030,10 @@ mod test {
             F: FnOnce(&mut CoreReceiveBuffer) -> R,
         {
             Some(f(&mut self.borrow_mut()))
+        }
+
+        fn has_send_buffer(&mut self) -> bool {
+            false
         }
     }
 

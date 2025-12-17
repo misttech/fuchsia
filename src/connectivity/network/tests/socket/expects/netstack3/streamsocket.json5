@@ -30,10 +30,6 @@
                 // TODO(https://fxbug.dev/42138506): Re-enable this once the test
                 // isn't trying to accomodate NS2 buffer size values.
                 "NetStreamSocketsTest.PartialWriteStress",
-
-                // TODO(https://fxbug.dev/469219374): Re-enable when flakes are
-                // solved.
-                "NetStreamTest/StopListenWhileConnect*",
                 "NetStreamTest/ConnectingIOTest.BlockedIO/CloseListener*",
                 "NetStreamTest/BlockedIOTest.CloseWhileBlocked/close*Linger*",
             ],
