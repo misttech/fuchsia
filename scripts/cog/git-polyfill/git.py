@@ -4,12 +4,13 @@
 
 import abc
 import argparse
+import configparser
 import shlex
 import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Type
+from typing import IO, Callable, Dict, List, Optional, Tuple, Type
 
 
 class Context:
@@ -36,31 +37,31 @@ class Context:
             args.global_git_args
         )
 
-    def write_log(self, level: str, message: str):
+    def write_log(self, level: str, message: str) -> None:
         if self._log_file_path:
             with self._log_file_path.open("a") as f:
                 f.write(f"[{level}] {message}\n")
 
-    def print(self, message: str, file=sys.stdout):
+    def print(self, message: str, file: Optional[IO[str]] = sys.stdout) -> None:
         """Prints a message and logs it."""
         print(message, file=file)
         self.write_log("PRINT", message)
 
-    def error(self, message: str):
+    def error(self, message: str) -> None:
         """Prints an error message to stderr and logs it."""
         print(message, file=sys.stderr)
         self.write_log("ERROR", message)
 
-    def fatal(self, message: str):
+    def fatal(self, message: str) -> None:
         """Prints a fatal error message to stderr and logs it."""
         print(f"fatal: {message}", file=sys.stderr)
         self.write_log("FATAL", message)
 
-    def log_info(self, message: str):
+    def log_info(self, message: str) -> None:
         """Logs an info message to the log."""
         self.write_log("INFO", message)
 
-    def output(self, message: str, end: str = ""):
+    def output(self, message: str, end: str = "") -> None:
         """Prints output to stdout and logs it."""
         sys.stdout.write(message)
         if end:
@@ -81,6 +82,30 @@ class Context:
         )
 
         return result.stdout
+
+    def get_relative_path(self) -> str:
+        """Returns the relative path to the repository root that we should be using based on the args."""
+        invoker_cwd = Path(self.invoker_cwd)
+        args = self.global_git_options
+
+        if args.C and args.git_dir:
+            raise ValueError("Cannot use both -C and --git-dir")
+
+        path: Path
+        if args.C:
+            path = Path(args.C)
+        elif args.git_dir:
+            path = Path(args.git_dir)
+            if path.name != ".git":
+                raise ValueError(f"git_dir must end in .git, got {path}")
+            path = path.parent
+        else:
+            path = invoker_cwd
+
+        if not path.is_absolute():
+            path = invoker_cwd / path
+
+        return str(path.relative_to(self.repository_root))
 
 
 def get_workspace_id_and_snapshot_version(
@@ -104,37 +129,109 @@ def get_workspace_id_and_snapshot_version(
     return workspace_id, int(snapshot_version)
 
 
-def get_relative_git_dir(
-    top_level_args: argparse.Namespace, repository_root: Path
-) -> Optional[Path]:
-    if top_level_args.git_dir and top_level_args.C:
-        raise ValueError("--git_dir and -C cannot be used together")
+def get_submodule_paths(repository_path: Path) -> List[str]:
+    """Returns a list of submodule paths from the .gitmodules file.
 
-    path = None
-    if top_level_args.git_dir:
-        git_dir = Path(top_level_args.git_dir).expanduser()
-        if git_dir.name != ".git":
-            raise ValueError("git_dir must end in .git")
+    This function returns a list of submodule paths from the .gitmodules file.
 
-        # remove the .git suffix
-        path = git_dir.parent
+    Args:
+        repository_path: The path to the repository. This path should be an
+        absolute path.
 
-    if top_level_args.C:
-        path = Path(top_level_args.C).expanduser()
+    Returns:
+        A list of submodule paths.
+    """
 
-    if path and path.is_absolute():
-        path = path.relative_to(repository_root)
+    gitmodules_path = repository_path / ".gitmodules"
+    paths: List[str] = []
+    if not gitmodules_path.exists():
+        return paths
 
-    # If the path is equal to the workspace root we want to return None which is the same as the
-    # user not specifying a git_dir or -C
-    if path == Path("."):
-        return None
+    config = configparser.ConfigParser()
+    try:
+        config.read(gitmodules_path)
+        for section in config.sections():
+            if "path" in config[section]:
+                paths.append(config[section]["path"])
+    except configparser.Error:
+        # If we can't parse the file, we assume there are no submodules.
+        pass
+    return paths
 
-    return path
+
+def get_target_repository_at_path(
+    relative_path: str, repository_root: Path
+) -> str:
+    """Returns the relative path to the repository root for the target path.
+
+    Args:
+        relative_path: The relative path to the root directory.
+        repository_root: The root of the repository.
+
+    Returns:
+        The relative path to the submodule from repository_root, or "" if it is the main repository.
+    """
+    current_path = repository_root / relative_path
+
+    # Ensure we are inside the repository root.
+    try:
+        current_path.relative_to(repository_root)
+    except ValueError:
+        # If the path is outside the repo root, assume main repo.
+        return ""
+
+    # Collect all ancestors that have .gitmodules entries
+    repos: List[Path] = [repository_root]
+
+    path_to_check = current_path
+    while True:
+        submodules = get_submodule_paths(path_to_check)
+        if submodules:
+            repos.extend(
+                [path_to_check / submodule for submodule in submodules]
+            )
+
+        if path_to_check == repository_root:
+            break
+
+        path_to_check = path_to_check.parent
+
+        if not str(path_to_check).startswith(str(repository_root)):
+            break
+
+    # Sort the repositories by length so that we check the deepest ones first.
+    repos.sort(key=lambda p: len(str(p)), reverse=True)
+
+    for repo in repos:
+        try:
+            current_path.relative_to(repo)
+            if repo == repository_root:
+                return ""
+            return str(repo.relative_to(repository_root))
+        except ValueError:
+            continue
+
+    return ""
+
+
+def get_repo_root_for_repo(repo_path: str) -> str:
+    """Returns the repo root string expected by the backend.
+
+    Args:
+        repo_path: The relative path of the repo (e.g. "" or "sub/module").
+
+    Returns:
+        The full repo root string (e.g. "fuchsia" or "fuchsia/sub/module").
+    """
+    if not repo_path:
+        return "fuchsia"
+    return f"fuchsia/{repo_path}"
 
 
 class GitSubCommand(abc.ABC):
     """Abstract base class for git subcommands."""
+
+    _command_name: str
 
     def add_arguments(self, parser: argparse.ArgumentParser) -> None:
         """Override to add subcommand-specific arguments."""
@@ -165,10 +262,12 @@ class GitSubCommand(abc.ABC):
 _COMMANDS: Dict[str, Type[GitSubCommand]] = {}
 
 
-def register_command(name: str):
+def register_command(
+    name: str,
+) -> Callable[[Type[GitSubCommand]], Type[GitSubCommand]]:
     """Decorator to register a GitSubCommand implementation."""
 
-    def decorator(cls: Type[GitSubCommand]):
+    def decorator(cls: Type[GitSubCommand]) -> Type[GitSubCommand]:
         _COMMANDS[name] = cls
         cls._command_name = name
         return cls
@@ -189,7 +288,12 @@ class RevParseCommand(GitSubCommand):
     def execute(self, context: Context) -> int:
         repository_root = context.repository_root
 
-        rev_cache = {}
+        rev_cache: Dict[str, str] = {}
+
+        target_repo = get_target_repository_at_path(
+            context.get_relative_path(), repository_root
+        )
+        repo_root = get_repo_root_for_repo(target_repo)
 
         def _get_rev(rev: str) -> Optional[str]:
             if rev in rev_cache:
@@ -202,14 +306,6 @@ class RevParseCommand(GitSubCommand):
             if not workspace_id or not snapshot_version:
                 context.error("Not in a cog workspace")
                 return None
-
-            # Determine repo_root
-            repo_root = "fuchsia"
-            relative_git_dir = get_relative_git_dir(
-                context.global_git_options, repository_root
-            )
-            if relative_git_dir:
-                repo_root = f"fuchsia/{relative_git_dir}"
 
             request = f'request_base {{ workspace_id: "{workspace_id}" base_snapshot_version: {snapshot_version}}} repo_root: "{repo_root}"'
 
@@ -228,6 +324,7 @@ class RevParseCommand(GitSubCommand):
                 context.error(e.stderr)
             except Exception as e:
                 context.fatal(f"{e}")
+            return None
 
         # Iterate over arguments in the order they were provided. This is important because
         # the order of arguments determines the order of the output. For example, if the
@@ -235,6 +332,7 @@ class RevParseCommand(GitSubCommand):
         # followed by the head revision.
         for arg in context.args.remaining_args:
             if arg == "--show-toplevel":
+                # TODO(469510407) Make sure this is using the active repo.
                 context.print(str(repository_root))
             elif arg.startswith("-"):
                 pass
@@ -341,7 +439,7 @@ class LsFilesCommand(GitSubCommand):
 
             stdout = context.run_real_git(git_args, cwd=context.invoker_cwd)
 
-            end = "\0" if args.z else "\n"
+            end = "\0" if args and args.z else "\n"
             context.output(stdout, end=end)
             return 0
         except subprocess.CalledProcessError as e:
@@ -349,7 +447,7 @@ class LsFilesCommand(GitSubCommand):
             return e.returncode
         except Exception as e:
             context.fatal(f"{e}")
-            return 10
+            return 1
 
 
 def _find_command_name_and_position(
