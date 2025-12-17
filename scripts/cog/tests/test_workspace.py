@@ -392,7 +392,6 @@ class TestWorkspace(unittest.TestCase):
                 _workspace_to_snapshot_from: Path,
                 _workspace_to_snapshot_to: Path,
                 cartfs_mount_point: Path,
-                _use_local_mock_cartfs: bool,
             ) -> None:
                 os.mkdir(
                     os.path.join(cartfs_mount_point, suggested_directory_name)
@@ -470,7 +469,6 @@ class TestWorkspace(unittest.TestCase):
                     _workspace_to_snapshot_from: Path,
                     _workspace_to_snapshot_to: Path,
                     _cartfs_mount_point: Path,
-                    _use_local_mock_cartfs: bool,
                 ) -> None:
                     raise ValueError("test error")
 
