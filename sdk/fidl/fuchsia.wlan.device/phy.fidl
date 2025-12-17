@@ -130,6 +130,12 @@ closed protocol Phy {
     strict -> OnCriticalError(struct {
         reason_code CriticalErrorReason;
     });
+    /// This message indicating country code change that was detected by the firmware
+    /// running on wlan hardware is sent to the server of this protocol from its
+    /// client.
+    strict -> OnCountryCodeChange(struct {
+        ind CountryCode;
+    });
 };
 
 // Temporary interface for bridging between the devhost-owned channel model and

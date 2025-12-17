@@ -579,6 +579,8 @@ TEST_F(WlanphyDeviceTest, CriticalErrorNotifyWaitAndRetry) {
       ASSERT_EQ(event->reason_code, fuchsia_wlan_device::CriticalErrorReason::kFwCrash);
       msgs_received_++;
     }
+    void OnCountryCodeChange(
+        fidl::WireEvent<fuchsia_wlan_device::Phy::OnCountryCodeChange>* event) override {}
 
     uint8_t GetReceivedMsgCount() { return msgs_received_; }
 
@@ -620,6 +622,8 @@ TEST_F(WlanphyDeviceTest, CriticalErrorNotify) {
       ASSERT_EQ(event->reason_code, fuchsia_wlan_device::CriticalErrorReason::kFwCrash);
       msgs_received_++;
     }
+    void OnCountryCodeChange(
+        fidl::WireEvent<fuchsia_wlan_device::Phy::OnCountryCodeChange>* event) override {}
 
     uint8_t GetReceivedMsgCount() { return msgs_received_; }
 

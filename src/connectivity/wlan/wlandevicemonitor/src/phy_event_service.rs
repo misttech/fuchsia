@@ -67,6 +67,9 @@ async fn notify_phy_event_watchers(
                                 }
                             }
                         }
+                        fidl_dev::PhyEvent::OnCountryCodeChange { .. } => {
+                            warn!("Received country code change indication");
+                        }
                     }
                 }
                 None => {

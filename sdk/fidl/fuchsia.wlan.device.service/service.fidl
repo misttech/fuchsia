@@ -87,6 +87,10 @@ open protocol PhyEventWatcher {
         phy_id uint16;
         reason_code CriticalErrorReason;
     });
+    strict -> OnCountryCodeChange(struct {
+        phy_id uint16;
+        alpha2 array<byte, 2>;
+    });
 };
 
 @discoverable
