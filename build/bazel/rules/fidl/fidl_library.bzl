@@ -265,9 +265,6 @@ def _fidl_library_impl(
 
     compilation_target_name = "%s_compile" % name
 
-    # TODO(https://fxbug.dev/428285014): Validate versioning-related attributes,
-    # determine the need for running compatibility tests, and determine the
-    # value for the fidlc `versioned` argument.
     fidlc_versioned_arg, requires_compatibility_tests = _get_fidlc_versioned_arg(
         library_name = library_name,
         versioned = versioned,
@@ -296,9 +293,9 @@ def _fidl_library_impl(
 
     # TODO(https://fxbug.dev/417306131): Implement PlaSA support.
 
-    # TODO(https://fxbug.dev/428285014): Implement compatibility tests. This
-    # may require making `fidl_ir()` a legacy macro due to the naming
-    # restrictions described for `compilation_target_name`.
+    if requires_compatibility_tests:
+        # TODO(https://fxbug.dev/428285014): Implement compatibility tests.
+        pass
 
     if enable_cpp:
         # TODO(https://fxbug.dev/454977301): Implement C++ bindings.
@@ -404,6 +401,10 @@ def _fidl_library_impl(
 
         # TODO(https://fxbug.dev/428285014): Implmenent sdk_fidl_json_data.
 
+    # TODO(https://fxbug.dev/428285014): This target may not be needed since
+    # dependencies should always be on the bindings or IDK targets. It may still
+    # be useful to have something like it to group together dependencies on
+    # other targets for the bindings and IDK atom target to depend on.
     native.filegroup(
         name = name,
         srcs = [compilation_target_name] + deps,
