@@ -1,9 +1,11 @@
-// Copyright 2022 The Fuchsia Authors. All rights reserved.
+// Copyright 2025 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 use fidl_fuchsia_fxfs::{BlobCreatorMarker, BlobReaderMarker};
+use fshost_assembly_config;
 use fuchsia_component_test::{Capability, ChildOptions, ChildRef, RealmBuilder, Ref, Route};
+use futures::future::FutureExt as _;
 use std::collections::HashMap;
 
 use {
@@ -58,6 +60,8 @@ pub struct FshostBuilder {
     component_name: &'static str,
     config_values: HashMap<&'static str, cm_rust::ConfigValueSpec>,
     create_starnix_volume_crypt: bool,
+    block_device_config_json: String,
+    crypt_policy: crypt_policy::Policy,
 }
 
 impl FshostBuilder {
@@ -66,6 +70,8 @@ impl FshostBuilder {
             component_name,
             config_values: HashMap::new(),
             create_starnix_volume_crypt: false,
+            block_device_config_json: String::from("[]"),
+            crypt_policy: crypt_policy::Policy::Null,
         }
     }
 
@@ -83,11 +89,64 @@ impl FshostBuilder {
         self
     }
 
-    pub(crate) async fn build(mut self, realm_builder: &RealmBuilder) -> ChildRef {
+    pub fn set_device_config(
+        &mut self,
+        config: Vec<fshost_assembly_config::BlockDeviceConfig>,
+    ) -> &mut Self {
+        self.block_device_config_json = serde_json::to_string(&config).unwrap();
+        self
+    }
+
+    pub fn set_crypt_policy(&mut self, policy: crypt_policy::Policy) -> &mut Self {
+        self.crypt_policy = policy;
+        self
+    }
+
+    pub async fn build(mut self, realm_builder: &RealmBuilder) -> ChildRef {
         let fshost_url = format!("#meta/{}.cm", self.component_name);
         log::info!(fshost_url:%; "building test fshost instance");
         let fshost = realm_builder
             .add_child("test-fshost", fshost_url, ChildOptions::new().eager())
+            .await
+            .unwrap();
+
+        let bootfs = vfs::pseudo_directory! {
+            "boot" => vfs::pseudo_directory! {
+                "config" => vfs::pseudo_directory! {
+                    "fshost" => vfs::file::read_only(&self.block_device_config_json),
+                    "zxcrypt" => vfs::file::read_only(&format!("{}", self.crypt_policy)),
+                },
+            },
+        };
+        let bootfs = realm_builder
+            .add_local_child(
+                "bootfs",
+                move |handles| {
+                    let bootfs = bootfs.clone();
+                    async move {
+                        let scope = vfs::ExecutionScope::new();
+                        vfs::directory::serve_on(
+                            bootfs,
+                            fio::PERM_READABLE,
+                            scope.clone(),
+                            handles.outgoing_dir,
+                        );
+                        scope.wait().await;
+                        Ok(())
+                    }
+                    .boxed()
+                },
+                ChildOptions::new(),
+            )
+            .await
+            .unwrap();
+        realm_builder
+            .add_route(
+                Route::new()
+                    .capability(Capability::directory("boot").rights(fio::R_STAR_DIR).path("/boot"))
+                    .from(&bootfs)
+                    .to(&fshost),
+            )
             .await
             .unwrap();
 

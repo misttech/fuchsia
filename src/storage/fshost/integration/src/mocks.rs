@@ -28,24 +28,14 @@ const ZBI_TYPE_STORAGE_RAMDISK: u32 = 0x4b534452;
 pub fn new_mocks(
     vmo: Option<zx::Vmo>,
     crash_reports_sink: mpsc::Sender<ffeedback::CrashReport>,
-    device_config: String,
-    crypt_policy: crypt_policy::Policy,
     force_fxfs_provisioner_failure: bool,
 ) -> impl Fn(LocalComponentHandles) -> BoxFuture<'static, Result<(), Error>> + Sync + Send + 'static
 {
     let vmo = vmo.map(Arc::new);
     let mock = move |handles: LocalComponentHandles| {
         let vmo_clone = vmo.clone();
-        let config_clone = device_config.clone();
-        run_mocks(
-            handles,
-            vmo_clone,
-            crash_reports_sink.clone(),
-            config_clone,
-            crypt_policy,
-            force_fxfs_provisioner_failure,
-        )
-        .boxed()
+        run_mocks(handles, vmo_clone, crash_reports_sink.clone(), force_fxfs_provisioner_failure)
+            .boxed()
     };
 
     mock
@@ -55,17 +45,9 @@ async fn run_mocks(
     handles: LocalComponentHandles,
     vmo: Option<Arc<zx::Vmo>>,
     crash_reports_sink: mpsc::Sender<ffeedback::CrashReport>,
-    device_config: String,
-    crypt_policy: crypt_policy::Policy,
     force_fxfs_provisioner_failure: bool,
 ) -> Result<(), Error> {
     let export = vfs::pseudo_directory! {
-        "boot" => vfs::pseudo_directory! {
-            "config" => vfs::pseudo_directory! {
-                "fshost" => vfs::file::read_only(&device_config),
-                "zxcrypt" => vfs::file::read_only(&format!("{crypt_policy}")),
-            },
-        },
         "svc" => vfs::pseudo_directory! {
             fkeymint::SealingKeysMarker::PROTOCOL_NAME => vfs::service::host(move |stream| {
                 run_keymint(stream)

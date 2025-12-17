@@ -27,7 +27,6 @@ use {
 };
 
 pub mod disk_builder;
-pub mod fshost_builder;
 mod mocks;
 
 pub use disk_builder::write_blob;
@@ -55,11 +54,9 @@ pub struct TestFixtureBuilder {
     no_fuchsia_boot: bool,
     disk: Option<Disk>,
     extra_disks: Vec<Disk>,
-    fshost: fshost_builder::FshostBuilder,
+    fshost: fshost_testing::FshostBuilder,
     zbi_ramdisk: Option<disk_builder::DiskBuilder>,
     storage_host: bool,
-    device_config: Vec<BlockDeviceConfig>,
-    crypt_policy: crypt_policy::Policy,
     force_fxfs_provisioner_failure: bool,
 }
 
@@ -69,16 +66,14 @@ impl TestFixtureBuilder {
             no_fuchsia_boot: false,
             disk: None,
             extra_disks: Vec::new(),
-            fshost: fshost_builder::FshostBuilder::new(fshost_component_name),
+            fshost: fshost_testing::FshostBuilder::new(fshost_component_name),
             zbi_ramdisk: None,
             storage_host,
-            device_config: Vec::new(),
-            crypt_policy: crypt_policy::Policy::Null,
             force_fxfs_provisioner_failure: false,
         }
     }
 
-    pub fn fshost(&mut self) -> &mut fshost_builder::FshostBuilder {
+    pub fn fshost(&mut self) -> &mut fshost_testing::FshostBuilder {
         &mut self.fshost
     }
 
@@ -113,12 +108,12 @@ impl TestFixtureBuilder {
     }
 
     pub fn with_device_config(mut self, device_config: Vec<BlockDeviceConfig>) -> Self {
-        self.device_config = device_config;
+        self.fshost.set_device_config(device_config);
         self
     }
 
     pub fn with_crypt_policy(mut self, policy: crypt_policy::Policy) -> Self {
-        self.crypt_policy = policy;
+        self.fshost.set_crypt_policy(policy);
         self
     }
 
@@ -131,19 +126,12 @@ impl TestFixtureBuilder {
         let builder = RealmBuilder::new().await.unwrap();
         let fshost = self.fshost.build(&builder).await;
 
-        let device_config = serde_json::to_string(&self.device_config).unwrap();
         let maybe_zbi_vmo = match self.zbi_ramdisk {
             Some(disk_builder) => Some(disk_builder.build_as_zbi_ramdisk().await),
             None => None,
         };
         let (tx, crash_reports) = mpsc::channel(32);
-        let mocks = mocks::new_mocks(
-            maybe_zbi_vmo,
-            tx,
-            device_config,
-            self.crypt_policy,
-            self.force_fxfs_provisioner_failure,
-        );
+        let mocks = mocks::new_mocks(maybe_zbi_vmo, tx, self.force_fxfs_provisioner_failure);
 
         let mocks = builder
             .add_local_child("mocks", move |h| mocks(h).boxed(), ChildOptions::new())
@@ -153,7 +141,6 @@ impl TestFixtureBuilder {
             .add_route(
                 Route::new()
                     .capability(Capability::protocol::<ffeedback::CrashReporterMarker>())
-                    .capability(Capability::directory("boot").rights(fio::R_STAR_DIR).path("/boot"))
                     .capability(Capability::protocol::<ffxfsprovisioner::FxfsProvisionerMarker>())
                     .capability(Capability::protocol::<fkeymint::SealingKeysMarker>())
                     .from(&mocks)
