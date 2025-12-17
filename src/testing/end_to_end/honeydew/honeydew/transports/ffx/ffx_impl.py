@@ -24,8 +24,14 @@ _FFX_BINARY: str = "ffx"
 _FFX_CMDS: dict[str, list[str]] = {
     "TARGET_ADD": ["target", "add"],
     "TARGET_SHOW": ["--machine", "json", "target", "show"],
-    "TARGET_SSH_ADDRESS": ["target", "list", "--format", "addresses"],
-    "TARGET_LIST": ["--machine", "json", "target", "list"],
+    "TARGET_SSH_ADDRESS": [
+        "--direct",
+        "target",
+        "list",
+        "--format",
+        "addresses",
+    ],
+    "TARGET_LIST": ["--direct", "--machine", "json", "target", "list"],
     "TARGET_WAIT": ["target", "wait", "--timeout", "0"],
     "TARGET_WAIT_DOWN": ["target", "wait", "--down", "--timeout", "0"],
     # Tell the daemon to drop its connection to the target
