@@ -5,14 +5,106 @@
 import unittest
 from pathlib import Path
 from typing import List
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
 from git import (
     ArgsCollection,
     Context,
+    RevParseCommand,
     get_repo_root_for_repo,
     get_target_repository_at_path,
 )
+
+
+class TestRevParseCommand(unittest.TestCase):
+    def setUp(self) -> None:
+        self.mock_context = MagicMock(spec=Context)
+        self.mock_context.args = MagicMock()
+        self.command = RevParseCommand()
+
+    def test_show_toplevel(self) -> None:
+        self.mock_context.get_repository_root.return_value = Path("/repo")
+        self.mock_context.args.remaining_args = ["--show-toplevel"]
+
+        # We need to mock get_relative_path because execute calls it
+        self.mock_context.get_relative_path.return_value = ""
+
+        self.assertEqual(self.command.execute(self.mock_context), 0)
+        self.mock_context.print.assert_called_with(str(Path("/repo")))
+
+    @patch("git.get_target_repository_at_path")
+    def test_show_toplevel_in_submodule(
+        self, mock_get_target_repo: MagicMock
+    ) -> None:
+        self.mock_context.get_repository_root.return_value = Path("/repo")
+        self.mock_context.args.remaining_args = ["--show-toplevel"]
+
+        # We are deep inside a submodule
+        self.mock_context.get_relative_path.return_value = "sub/module/dir"
+
+        # The target repo detection logic says we are in 'sub/module'
+        mock_get_target_repo.return_value = "sub/module"
+
+        self.assertEqual(self.command.execute(self.mock_context), 0)
+        self.mock_context.print.assert_called_with(
+            str(Path("/repo/sub/module"))
+        )
+
+    @patch("git.get_workspace_id_and_snapshot_version")
+    def test_head_revision(self, mock_get_workspace_info: MagicMock) -> None:
+        self.mock_context.get_repository_root.return_value = Path("/repo")
+        self.mock_context.get_relative_path.return_value = ""
+        self.mock_context.args.remaining_args = ["HEAD"]
+
+        mock_get_workspace_info.return_value = ("workspace-id", 123)
+
+        # Mock run_real_git response
+        self.mock_context.run_real_git.return_value = (
+            'result {\n  commit_hash: "abcdef123456"\n}'
+        )
+
+        self.assertEqual(self.command.execute(self.mock_context), 0)
+        self.mock_context.print.assert_called_with("abcdef123456")
+
+    @patch("git.get_workspace_id_and_snapshot_version")
+    def test_mixed_args_order(self, mock_get_workspace_info: MagicMock) -> None:
+        self.mock_context.get_repository_root.return_value = Path("/repo")
+        self.mock_context.get_relative_path.return_value = ""
+        mock_get_workspace_info.return_value = ("workspace-id", 123)
+        self.mock_context.run_real_git.return_value = (
+            'result {\n  commit_hash: "abcdef123456"\n}'
+        )
+
+        # Test order: --show-toplevel, HEAD
+        self.mock_context.args.remaining_args = ["--show-toplevel", "HEAD"]
+        self.assertEqual(self.command.execute(self.mock_context), 0)
+        self.mock_context.print.assert_has_calls(
+            [call(str(Path("/repo"))), call("abcdef123456")]
+        )
+
+        self.mock_context.print.reset_mock()
+
+        # Test order: HEAD, --show-toplevel
+        self.mock_context.args.remaining_args = ["HEAD", "--show-toplevel"]
+        self.assertEqual(self.command.execute(self.mock_context), 0)
+        self.mock_context.print.assert_has_calls(
+            [call("abcdef123456"), call(str(Path("/repo")))]
+        )
+
+    def test_unsupported_revision(self) -> None:
+        self.mock_context.get_repository_root.return_value = Path("/repo")
+        self.mock_context.get_relative_path.return_value = ""
+        self.mock_context.args.remaining_args = ["main"]
+
+        self.assertEqual(self.command.execute(self.mock_context), 1)
+        self.mock_context.error.assert_called_with(
+            "cog workspaces only support 'HEAD' revisions at this time"
+        )
+
+    def test_not_in_cog_workspace(self) -> None:
+        self.mock_context.get_repository_root.return_value = None
+        self.assertEqual(self.command.execute(self.mock_context), 1)
+        self.mock_context.error.assert_called_with("Not in a cog workspace")
 
 
 class TestGetRelativePathFromArgs(unittest.TestCase):

@@ -332,8 +332,7 @@ class RevParseCommand(GitSubCommand):
         # followed by the head revision.
         for arg in context.args.remaining_args:
             if arg == "--show-toplevel":
-                # TODO(469510407) Make sure this is using the active repo.
-                context.print(str(repository_root))
+                context.print(str(repository_root / target_repo))
             elif arg.startswith("-"):
                 pass
             else:
