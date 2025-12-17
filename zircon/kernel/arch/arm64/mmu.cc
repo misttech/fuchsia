@@ -2372,23 +2372,65 @@ vaddr_t ArmArchVmAspace::PickSpot(vaddr_t base, vaddr_t end, vaddr_t align, size
 void ArmVmICacheConsistencyManager::SyncAddr(vaddr_t start, size_t len) {
   // Validate we are operating on a kernel address range.
   DEBUG_ASSERT(is_kernel_address(start));
-  // use the physmap to clean the range. If we have been requested to clean to PoC then we must do
-  // that, otherwise we can just clean to the PoU, which is the point where the instruction cache
-  // pulls from. Cleaning to PoU is potentially cheaper than cleaning to PoC.
+
+  // Use the physmap to clean the range. If we have been requested to clean to PoC then we must do
+  // that now, otherwise we can either clean to POU or if the cpu allows it, skip cleaning.
+  // Both of the clean functions have a DSB at the end to synchronize the DC cache instructions.
   if (clean_poc_) {
     arch_clean_cache_range(start, len);
-  } else {
+  } else if (!arm64_cache_features.idc) {
+    // We need to clean to POU to maintain D->I cache coherency.
     arm64_clean_cache_range_pou(start, len);
+  } else {  // IDC == 1
+    need_dsb_ = true;
   }
-  // We can batch the icache invalidate and just perform it once at the end.
-  need_invalidate_ = true;
+
+  // Do we need to invalidate the icache?
+  if (!arm64_cache_features.dic) {  // yes
+    // Are we VIPT or PIPT?
+    if (arm64_cache_features.pipt) {
+      // We can invalidate just this alias of the page.
+      if (need_dsb_) {
+        // If we haven't DSBed earlier, we must now.
+        __dsb(ARM_MB_ISHST);
+      }
+      arch::InvalidateInstructionCacheRange(start, len);
+      __isb(ARM_MB_SY);
+    } else {
+      // We will batch the icache global invalidate and perform it at the end.
+      need_invalidate_ = need_dsb_ = true;
+    }
+  } else {
+    // IF ctr.dic == 1, we do not need to invalidate the icache at all, but we will need to
+    // insert an ISB at the end, so set need_invalidate here and sync later.
+    need_invalidate_ = true;
+  }
 }
+
 void ArmVmICacheConsistencyManager::Finish() {
   if (!need_invalidate_) {
     return;
   }
-  // Under the assumption our icache is VIPT then as we do not know all the virtual aliases of the
-  // sections we cleaned our only option is to dump the entire icache.
+
+  // Previously we were instructed to DSB, so do so here before any icache flushing or syncing.
+  if (need_dsb_) {
+    __dsb(ARM_MB_ISHST);
+  }
+
+  // In the ideal scenario where the cpu is both instruction to data and data to instruction
+  // coherent, we only need a data barrier and instruction barrier to keep the cpu from
+  // prefetching around the barrier.
+  // NOTE 1: if DIC is set, then we do not need to concern ourselves with aliased pages,
+  // and thus VIPT and PIPT are not relevant.
+  // NOTE 2: if DIC is 1 then IDC must also be 1.
+  if (arm64_cache_features.dic) {
+    __isb(ARM_MB_SY);
+    return;
+  }
+
+  // If we're here and need_invalidate_ is set we must be VIPT and we do not know all of
+  // the virtual aliases of the sections we cleaned so our only option is to
+  // dump the entire icache.
   arch::InvalidateGlobalInstructionCache();
   __isb(ARM_MB_SY);
   need_invalidate_ = false;
@@ -2404,7 +2446,8 @@ void arm64_mmu_early_init() {
   feat_asid_enabled =
       BootOptions::Get()->arm64_enable_asid && arm64_asid_width() != arm64_asid_width::ASID_8;
 
-  // After we've probed the feature set and parsed the boot options, initialize the asid allocator.
+  // After we've probed the feature set and parsed the boot options, initialize the asid
+  // allocator.
   if (feat_asid_enabled) {
     asid.Initialize();
   } else {

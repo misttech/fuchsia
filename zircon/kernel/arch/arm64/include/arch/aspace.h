@@ -289,8 +289,6 @@ inline ArmArchVmAspace::AutoPendingAccessFault::~AutoPendingAccessFault() {
   DEBUG_ASSERT(previous_value >= 1);
 }
 
-// TODO: Take advantage of information in the CTR to determine if icache is PIPT and whether
-// cleaning is required.
 class ArmVmICacheConsistencyManager final : public ArchVmICacheConsistencyManagerInterface {
  public:
   ArmVmICacheConsistencyManager() = default;
@@ -309,6 +307,7 @@ class ArmVmICacheConsistencyManager final : public ArchVmICacheConsistencyManage
   // When set SyncAddr will always clean to PoC, even if cleaning is not required by the
   // implementation.
   bool clean_poc_ = false;
+  bool need_dsb_ = false;
   bool need_invalidate_ = false;
 };
 
