@@ -13,6 +13,10 @@ use crate::resource_accessor::{
     get_resource_accessor,
 };
 use crate::shared_memory::{SharedBuffer, SharedMemory, TransactionBuffers};
+use crate::thread::{
+    BinderThread, BinderThreadState, Command, CommandQueueWithWaitQueue, RegistrationState,
+    SchedulerGuard, TransactionRole, TransactionSender, WeakBinderPeer, generate_dead_replies,
+};
 use crate::user_memory_cursor::UserMemoryCursor;
 use fidl::endpoints::ClientEnd;
 use starnix_core::device::DeviceOps;
@@ -26,7 +30,7 @@ use starnix_core::mutable_state::Guard;
 use starnix_core::security;
 use starnix_core::task::{
     CurrentTask, CurrentTaskAndLocked, EventHandler, Kernel, SchedulerState, SimpleWaiter, Task,
-    ThreadGroupKey, WaitCanceler, WaitQueue, Waiter,
+    ThreadGroupKey, WaitCanceler, Waiter,
 };
 use starnix_core::vfs::buffers::{InputBuffer, OutputBuffer};
 use starnix_core::vfs::{
@@ -35,12 +39,11 @@ use starnix_core::vfs::{
 };
 use starnix_lifecycle::AtomicU64Counter;
 use starnix_logging::{
-    CATEGORY_STARNIX, log_error, log_trace, log_warn, trace_duration, trace_instaflow_begin,
-    trace_instaflow_end, track_stub, with_zx_name,
+    CATEGORY_STARNIX, log_error, log_trace, log_warn, trace_duration, track_stub, with_zx_name,
 };
 use starnix_sync::{
     FileOpsCore, InterruptibleEvent, LockEqualOrBefore, Locked, Mutex, MutexGuard,
-    ResourceAccessorLevel, RwLock, Unlocked, ordered_lock, ordered_lock_vec,
+    ResourceAccessorLevel, RwLock, Unlocked, ordered_lock_vec,
 };
 use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
 use starnix_types::convert::IntoFidl as _;
@@ -69,34 +72,23 @@ use starnix_uapi::{
     binder_driver_command_protocol_BC_REQUEST_DEATH_NOTIFICATION,
     binder_driver_command_protocol_BC_REQUEST_FREEZE_NOTIFICATION,
     binder_driver_command_protocol_BC_TRANSACTION,
-    binder_driver_command_protocol_BC_TRANSACTION_SG, binder_driver_return_protocol,
-    binder_driver_return_protocol_BR_ACQUIRE,
-    binder_driver_return_protocol_BR_CLEAR_DEATH_NOTIFICATION_DONE,
-    binder_driver_return_protocol_BR_CLEAR_FREEZE_NOTIFICATION_DONE,
-    binder_driver_return_protocol_BR_DEAD_BINDER, binder_driver_return_protocol_BR_DEAD_REPLY,
-    binder_driver_return_protocol_BR_DECREFS, binder_driver_return_protocol_BR_ERROR,
-    binder_driver_return_protocol_BR_FAILED_REPLY, binder_driver_return_protocol_BR_FROZEN_BINDER,
-    binder_driver_return_protocol_BR_FROZEN_REPLY, binder_driver_return_protocol_BR_INCREFS,
-    binder_driver_return_protocol_BR_RELEASE, binder_driver_return_protocol_BR_REPLY,
-    binder_driver_return_protocol_BR_SPAWN_LOOPER, binder_driver_return_protocol_BR_TRANSACTION,
-    binder_driver_return_protocol_BR_TRANSACTION_COMPLETE,
-    binder_driver_return_protocol_BR_TRANSACTION_PENDING_FROZEN,
-    binder_driver_return_protocol_BR_TRANSACTION_SEC_CTX, binder_freeze_info,
-    binder_frozen_state_info, binder_frozen_status_info, binder_transaction_data,
-    binder_transaction_data_sg, binder_uintptr_t, binder_version, binder_write_read, errno, error,
-    flat_binder_object, pid_t, transaction_flags_TF_ONE_WAY, uapi,
+    binder_driver_command_protocol_BC_TRANSACTION_SG, binder_freeze_info, binder_frozen_state_info,
+    binder_frozen_status_info, binder_transaction_data, binder_transaction_data_sg,
+    binder_uintptr_t, binder_version, binder_write_read, errno, error, flat_binder_object, pid_t,
+    transaction_flags_TF_ONE_WAY, uapi,
 };
 use std::cell::Cell;
-use std::collections::{BTreeMap, HashMap, VecDeque};
+use std::collections::{BTreeMap, HashMap};
 
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 use std::vec::Vec;
-use zerocopy::{Immutable, IntoBytes};
+#[cfg(test)]
+use zerocopy::Immutable;
+use zerocopy::IntoBytes;
 use {fidl_fuchsia_starnix_binder as fbinder, zx};
 
 /// The trace category used for binder command tracing.
-const TRACE_CATEGORY: &'static str = "starnix:binder";
 
 /// The name used to track the duration of a local binder ioctl.
 const NAME_BINDER_IOCTL: &'static str = "binder_ioctl";
@@ -400,7 +392,7 @@ pub struct BinderProcessState {
     /// Maximum number of thread to spawn.
     max_thread_count: usize,
     /// Whether a new thread has been requested, but not registered yet.
-    thread_requested: bool,
+    pub thread_requested: bool,
     /// The set of threads that are interacting with the binder driver.
     thread_pool: ThreadPool,
     /// Binder objects hosted by the process shared with other processes.
@@ -476,54 +468,6 @@ struct FreezeStatus {
     /// Indicates whether the process has received any async calls since last
     /// freeze (cleared at freeze/unfreeze)
     has_async_recv: bool,
-}
-
-#[derive(Default, Debug)]
-struct CommandQueueWithWaitQueue {
-    commands: VecDeque<(Command, CommandTraceGuard)>,
-    waiters: WaitQueue,
-}
-
-impl CommandQueueWithWaitQueue {
-    fn is_empty(&self) -> bool {
-        self.commands.is_empty()
-    }
-
-    fn pop_front(&mut self) -> Option<Command> {
-        // Dropping the guard will terminate the trace flow.
-        self.commands.pop_front().map(|(command, _guard)| command)
-    }
-
-    fn push_back(&mut self, command: Command) {
-        let guard = command.begin_trace_flow();
-        self.commands.push_back((command, guard));
-        self.waiters.notify_fd_events(FdEvents::POLLIN);
-    }
-
-    fn has_waiters(&self) -> bool {
-        !self.waiters.is_empty()
-    }
-
-    fn query_events(&self) -> FdEvents {
-        if self.is_empty() { FdEvents::POLLOUT } else { FdEvents::POLLIN | FdEvents::POLLOUT }
-    }
-
-    fn wait_async_simple(&self, waiter: &mut SimpleWaiter) {
-        self.waiters.wait_async_simple(waiter);
-    }
-
-    fn wait_async_fd_events(
-        &self,
-        waiter: &Waiter,
-        events: FdEvents,
-        handler: EventHandler,
-    ) -> WaitCanceler {
-        self.waiters.wait_async_fd_events(waiter, events, handler)
-    }
-
-    fn notify_all(&self) {
-        self.waiters.notify_all();
-    }
 }
 
 /// An active binder transaction.
@@ -745,12 +689,10 @@ pub struct BinderProcess {
     ///
     /// When there are no commands in a thread's and the process' command queue, a binder thread can
     /// register with this [`WaitQueue`] to be notified when commands are available.
-    command_queue: Mutex<CommandQueueWithWaitQueue>,
+    pub command_queue: Mutex<CommandQueueWithWaitQueue>,
 }
 
-pub struct BinderProcessGuard<'a>(
-    Guard<'a, BinderProcess, MutexGuard<'a, BinderProcessState>>,
-);
+pub struct BinderProcessGuard<'a>(Guard<'a, BinderProcess, MutexGuard<'a, BinderProcessState>>);
 
 impl<'a> Deref for BinderProcessGuard<'a> {
     type Target = Guard<'a, BinderProcess, MutexGuard<'a, BinderProcessState>>;
@@ -1277,62 +1219,6 @@ impl Releasable for BinderProcess {
 ///
 /// If the top transaction of the transaction's `sender_thread` is targeting `target_thread` or
 /// `target_proc`, the transaction is popped and a `DeadReply` command is enqueued on the
-/// transaction's `sender_thread`.
-fn generate_dead_replies(
-    commands: VecDeque<(Command, CommandTraceGuard)>,
-    target_proc: u64,
-    target_thread: Option<i32>,
-) {
-    // Notify all callers that had transactions scheduled for this process that the recipient is
-    // dead.
-    for (command, _trace_guard) in commands {
-        if let Command::Transaction { sender, .. } = command {
-            if let Some(sender_thread) = sender.thread.upgrade() {
-                let sender_thread = &mut sender_thread.lock();
-
-                generate_dead_replies_for_transactions(sender_thread, target_proc, target_thread);
-            }
-        }
-    }
-}
-
-/// Generates dead replies for all the `sender_thread`'s transactions targeting `target_thread`
-/// and `target_proc`.
-///
-/// If a transaction has a target thread specified, it must match `target_thread` in order to be
-/// marked dead. If a transaction does not specify a target thread, it is marked dead if the
-/// target process matches `target_proc`.
-///
-/// If the top transaction of the transaction's `sender_thread` is targeting `target_thread` or
-/// `target_proc`, the transaction is popped and a `DeadReply` command is enqueued on the
-/// transaction's `sender_thread`.
-fn generate_dead_replies_for_transactions(
-    sender_thread: &mut BinderThreadState,
-    target_proc: u64,
-    target_thread: Option<i32>,
-) {
-    if let Some((top_transaction, remaining_transactions)) =
-        sender_thread.transactions.split_last_mut()
-    {
-        // Check if the currently active transaction of the sender_thread is
-        // targeting this process. If it is, that means that we might need
-        // to pop the transaction and schedule a dead reply.
-        let top_transaction_was_marked_dead = top_transaction.mark_dead(target_proc, target_thread);
-
-        // Mark all other sender_thread transactions as dead if they are targeting
-        // a dead process.
-        for transaction in remaining_transactions {
-            transaction.mark_dead(target_proc, target_thread);
-        }
-
-        // If the top transaction is targeting this process, then pop the
-        // transaction and enqueue the `DeadReply`.
-        if top_transaction_was_marked_dead {
-            let _ = sender_thread.transactions.pop();
-            sender_thread.enqueue_command(Command::DeadReply);
-        }
-    }
-}
 
 /// The set of threads that are interacting with the binder driver for a given process.
 #[derive(Debug, Default)]
@@ -1472,652 +1358,6 @@ impl HandleTable {
             self.table.remove(idx);
         }
         Ok(())
-    }
-}
-
-#[derive(Debug)]
-pub struct BinderThread {
-    /// Weak reference to self.
-    weak_self: WeakRef<BinderThread>,
-
-    tid: pid_t,
-
-    /// The mutable state of the binder thread, protected by a single lock.
-    state: Mutex<BinderThreadState>,
-}
-
-impl BinderThread {
-    fn new(binder_proc: &BinderProcessGuard<'_>, tid: pid_t) -> OwnedRef<Self> {
-        let state = Mutex::new(BinderThreadState::new(tid, binder_proc.base.identifier));
-        #[cfg(any(test, debug_assertions))]
-        {
-            // The state must be acquired after the mutable state from the `BinderProcess` and before
-            // `command_queue`. `binder_proc` being a guard, the mutable state of `BinderProcess` is
-            // already locked.
-            let _l1 = state.lock();
-            let _l2 = binder_proc.base.command_queue.lock();
-        }
-        OwnedRef::new_cyclic(|weak_self| Self { weak_self, tid, state })
-    }
-
-    /// Acquire the lock to the binder thread's mutable state.
-    pub fn lock(&self) -> MutexGuard<'_, BinderThreadState> {
-        self.state.lock()
-    }
-
-    pub fn lock_both<'a>(
-        t1: &'a Self,
-        t2: &'a Self,
-    ) -> (MutexGuard<'a, BinderThreadState>, MutexGuard<'a, BinderThreadState>) {
-        ordered_lock(&t1.state, &t2.state)
-    }
-}
-
-impl Releasable for BinderThread {
-    type Context<'a> = &'a Kernel;
-
-    fn release<'a>(self, context: Self::Context<'a>) {
-        self.state.into_inner().release(context);
-    }
-}
-
-/// The mutable state of a binder thread.
-#[derive(Debug)]
-pub struct BinderThreadState {
-    tid: pid_t,
-
-    /// The process identifier of the `BinderProcess` to which this thread belongs. Note that this
-    /// is not the same as the actual `pid` of the process.
-    process_identifier: u64,
-    /// The registered state of the thread.
-    registration: RegistrationState,
-    /// The stack of transactions that are active for this thread.
-    transactions: Vec<TransactionRole>,
-    /// The binder driver uses this queue to communicate with a binder thread. When a binder thread
-    /// issues a [`uapi::BINDER_WRITE_READ`] ioctl, it will read from this command queue.
-    command_queue: CommandQueueWithWaitQueue,
-    /// The thread should finish waiting without returning anything, then reset the flag. Used by
-    /// kick_all_threads by flush.
-    request_kick: bool,
-}
-
-impl BinderThreadState {
-    fn new(tid: pid_t, process_identifier: u64) -> Self {
-        Self {
-            tid,
-            process_identifier,
-            registration: RegistrationState::default(),
-            transactions: Default::default(),
-            command_queue: Default::default(),
-            request_kick: false,
-        }
-    }
-
-    pub fn is_main_or_registered(&self) -> bool {
-        self.registration != RegistrationState::Unregistered
-    }
-
-    pub fn is_registered(&self) -> bool {
-        self.registration == RegistrationState::Auxilliary
-    }
-
-    pub fn is_available(&self) -> bool {
-        if !self.is_main_or_registered() {
-            log_trace!("thread {:?} not registered {:?}", self.tid, self.registration);
-            return false;
-        }
-        if !self.command_queue.is_empty() {
-            log_trace!("thread {:?} has non empty queue", self.tid);
-            return false;
-        }
-        if !self.command_queue.has_waiters() {
-            log_trace!("thread {:?} is not waiting", self.tid);
-            return false;
-        }
-        if !self.transactions.is_empty() {
-            log_trace!("thread {:?} is in a transaction {:?}", self.tid, self.transactions);
-            return false;
-        }
-        log_trace!("thread {:?} is available", self.tid);
-        true
-    }
-
-    /// Handle a binder thread's request to register itself with the binder driver.
-    /// This makes the binder thread eligible for receiving commands from the driver.
-    pub fn handle_looper_registration(
-        &mut self,
-        binder_process: &mut BinderProcessGuard<'_>,
-        registration: RegistrationState,
-    ) -> Result<(), Errno> {
-        log_trace!("BinderThreadState id={} looper registration", self.tid);
-        if self.is_main_or_registered() {
-            // This thread is already registered.
-            error!(EINVAL)
-        } else {
-            if registration == RegistrationState::Auxilliary {
-                binder_process.thread_requested = false;
-            }
-            self.registration = registration;
-            Ok(())
-        }
-    }
-
-    /// Enqueues `command` for the thread and wakes it up if necessary.
-    pub fn enqueue_command(&mut self, command: Command) {
-        log_trace!("BinderThreadState id={} enqueuing command {:?}", self.tid, command);
-        self.command_queue.push_back(command);
-    }
-
-    /// Get the binder process and thread to reply to, or fail if there is no ongoing transaction or
-    /// the calling process/thread are dead.
-    pub fn pop_transaction_caller(
-        &mut self,
-        current_task: &CurrentTask,
-    ) -> Result<
-        (TempRef<'static, BinderProcess>, TempRef<'static, BinderThread>, SchedulerGuard),
-        TransactionError,
-    > {
-        let transaction = self.transactions.pop().ok_or_else(|| errno!(EINVAL))?;
-        match transaction {
-            TransactionRole::Receiver(peer, scheduler_state) => {
-                log_trace!(
-                    "binder transaction popped from thread {} for peer {:?}",
-                    self.tid,
-                    peer
-                );
-                let (process, thread) = release_on_error!(scheduler_state, current_task, {
-                    peer.upgrade().ok_or(TransactionError::Dead)
-                });
-                Ok((process, thread, scheduler_state))
-            }
-            TransactionRole::Sender(_) => {
-                log_warn!("caller got confused, nothing to reply to!");
-                error!(EINVAL)?
-            }
-        }
-    }
-
-    pub fn has_pending_transactions(&self) -> bool {
-        !self.transactions.is_empty()
-    }
-}
-
-impl Releasable for BinderThreadState {
-    type Context<'a> = &'a Kernel;
-
-    fn release<'a>(self, context: Self::Context<'a>) {
-        log_trace!("Dropping BinderThreadState id={}", self.tid);
-        // If there are any transactions queued, we need to tell the caller that this thread is now
-        // dead.
-        generate_dead_replies(self.command_queue.commands, self.process_identifier, Some(self.tid));
-
-        // If there are any transactions that this thread was processing, we need to tell the caller
-        // that this thread is now dead and to not expect a reply.
-
-        // The scheduler state need to be restored to the initial one.
-        let mut updated_scheduler_state = false;
-        for transaction in self.transactions {
-            if let TransactionRole::Receiver(peer, scheduler_state) = transaction {
-                if !updated_scheduler_state {
-                    updated_scheduler_state = scheduler_state.release_for_task(context, self.tid);
-                } else {
-                    scheduler_state.disarm();
-                }
-                if let Some(peer_thread) = peer.thread.upgrade() {
-                    let sender_thread = &mut peer_thread.lock();
-                    generate_dead_replies_for_transactions(
-                        sender_thread,
-                        self.process_identifier,
-                        Some(self.tid),
-                    );
-                }
-            }
-        }
-    }
-}
-
-/// The registration state of a thread.
-#[derive(Debug, PartialEq, Eq)]
-pub enum RegistrationState {
-    /// The thread is not registered.
-    Unregistered,
-    /// The thread is the main binder thread.
-    Main,
-    /// The thread is an auxiliary binder thread.
-    Auxilliary,
-}
-
-impl Default for RegistrationState {
-    fn default() -> Self {
-        Self::Unregistered
-    }
-}
-
-/// A pair of weak references to the process and thread of a binder transaction peer.
-#[derive(Debug)]
-pub struct WeakBinderPeer {
-    proc: WeakRef<BinderProcess>,
-    thread: WeakRef<BinderThread>,
-}
-
-impl WeakBinderPeer {
-    fn new(proc: &BinderProcess, thread: &BinderThread) -> Self {
-        Self { proc: proc.weak_self.clone(), thread: thread.weak_self.clone() }
-    }
-
-    /// Upgrades the process and thread weak references as a tuple.
-    fn upgrade(&self) -> Option<(TempRef<'static, BinderProcess>, TempRef<'static, BinderThread>)> {
-        self.proc
-            .upgrade()
-            .map(TempRef::into_static)
-            .zip(self.thread.upgrade().map(TempRef::into_static))
-    }
-}
-
-/// Commands for a binder thread to execute.
-#[derive(Debug)]
-pub enum Command {
-    /// Notifies a binder thread that a remote process acquired a strong reference to the specified
-    /// binder object. The object should not be destroyed until a [`Command::ReleaseRef`] is
-    /// delivered.
-    AcquireRef(LocalBinderObject),
-    /// Notifies a binder thread that there are no longer any remote processes holding strong
-    /// references to the specified binder object. The object may still have references within the
-    /// owning process.
-    ReleaseRef(LocalBinderObject),
-    /// Notifies a binder thread that a remote process acquired a weak reference to the specified
-    /// binder object. The object should not be destroyed until a [`Command::DecRef`] is
-    /// delivered.
-    IncRef(LocalBinderObject),
-    /// Notifies a binder thread that there are no longer any remote processes holding weak
-    /// references to the specified binder object. The object may still have references within the
-    /// owning process.
-    DecRef(LocalBinderObject),
-    /// Notifies a binder thread that the last processed command contained an error.
-    Error(i32),
-    /// Commands a binder thread to start processing an incoming oneway transaction, which requires
-    /// no reply.
-    OnewayTransaction(TransactionData),
-    /// Commands a binder thread to start processing an incoming synchronous transaction from
-    /// another binder process.
-    /// Sent from the client to the server.
-    Transaction {
-        /// The binder peer that sent this transaction.
-        sender: WeakBinderPeer,
-        /// The transaction payload.
-        data: TransactionData,
-        /// The eventual scheduler state to use when the transaction is running.
-        scheduler_state: Option<SchedulerState>,
-    },
-    /// Commands a binder thread to process an incoming reply to its transaction.
-    /// Sent from the server to the client.
-    Reply(TransactionData),
-    /// Notifies a binder thread that a transaction has completed.
-    /// Sent from binder to the server.
-    TransactionComplete,
-    /// Notifies a binder thread that a oneway transaction has been sent.
-    /// Sent from binder to the client.
-    OnewayTransactionComplete,
-    /// The transaction was well formed but failed. Possible causes are a nonexistent handle, no
-    /// more memory available to allocate a buffer.
-    FailedReply,
-    /// Notifies the initiator of a transaction that the recipient is dead.
-    DeadReply,
-    /// Notifies a binder process that a binder object has died.
-    DeadBinder(binder_uintptr_t),
-    /// Notifies the initiator of a sync transaction that the recipient is frozen.
-    FrozenReply,
-    /// Notifies the initiator of an async transaction that the recipient is frozen and transaction
-    /// is queued.
-    PendingFrozen,
-    /// Notifies a binder process that the death notification has been cleared.
-    ClearDeathNotificationDone(binder_uintptr_t),
-    /// Notified the binder process that it should spawn a new looper.
-    SpawnLooper,
-    /// Notifies a binder process whether it is transitioned into a frozen state.
-    FrozenBinder(binder_frozen_state_info),
-    /// Notifies a binder process that the freeze notification has been cleared.
-    ClearFreezeNotificationDone(binder_uintptr_t),
-}
-
-impl Command {
-    /// Initiates a trace flow for the command and returns a guard that will terminate the flow
-    /// when dropped
-    fn begin_trace_flow(&self) -> CommandTraceGuard {
-        CommandTraceGuard::begin(&self)
-    }
-
-    /// Returns the command's BR_* code for serialization.
-    fn driver_return_code(&self) -> binder_driver_return_protocol {
-        match self {
-            Self::AcquireRef(..) => binder_driver_return_protocol_BR_ACQUIRE,
-            Self::ReleaseRef(..) => binder_driver_return_protocol_BR_RELEASE,
-            Self::IncRef(..) => binder_driver_return_protocol_BR_INCREFS,
-            Self::DecRef(..) => binder_driver_return_protocol_BR_DECREFS,
-            Self::Error(..) => binder_driver_return_protocol_BR_ERROR,
-            Self::OnewayTransaction(data) | Self::Transaction { data, .. } => {
-                if data.buffers.security_context.is_none() {
-                    binder_driver_return_protocol_BR_TRANSACTION
-                } else {
-                    binder_driver_return_protocol_BR_TRANSACTION_SEC_CTX
-                }
-            }
-            Self::Reply(..) => binder_driver_return_protocol_BR_REPLY,
-            Self::TransactionComplete | Self::OnewayTransactionComplete => {
-                binder_driver_return_protocol_BR_TRANSACTION_COMPLETE
-            }
-            Self::FailedReply => binder_driver_return_protocol_BR_FAILED_REPLY,
-            Self::DeadReply { .. } => binder_driver_return_protocol_BR_DEAD_REPLY,
-            Self::DeadBinder(..) => binder_driver_return_protocol_BR_DEAD_BINDER,
-            Self::FrozenReply => binder_driver_return_protocol_BR_FROZEN_REPLY,
-            Self::PendingFrozen => binder_driver_return_protocol_BR_TRANSACTION_PENDING_FROZEN,
-            Self::ClearDeathNotificationDone(..) => {
-                binder_driver_return_protocol_BR_CLEAR_DEATH_NOTIFICATION_DONE
-            }
-            Self::SpawnLooper => binder_driver_return_protocol_BR_SPAWN_LOOPER,
-            Self::FrozenBinder(..) => binder_driver_return_protocol_BR_FROZEN_BINDER,
-            Self::ClearFreezeNotificationDone(..) => {
-                binder_driver_return_protocol_BR_CLEAR_FREEZE_NOTIFICATION_DONE
-            }
-        }
-    }
-
-    /// Serializes and writes the command into userspace memory at `buffer`.
-    fn write_to_memory(
-        &self,
-        memory_accessor: &dyn MemoryAccessor,
-        buffer: &UserBuffer,
-    ) -> Result<usize, Errno> {
-        match self {
-            Self::AcquireRef(obj)
-            | Self::ReleaseRef(obj)
-            | Self::IncRef(obj)
-            | Self::DecRef(obj) => {
-                #[repr(C, packed)]
-                #[derive(IntoBytes, Immutable)]
-                struct AcquireRefData {
-                    command: binder_driver_return_protocol,
-                    weak_ref_addr: u64,
-                    strong_ref_addr: u64,
-                }
-                if buffer.length < std::mem::size_of::<AcquireRefData>() {
-                    return error!(ENOMEM);
-                }
-                memory_accessor.write_object(
-                    UserRef::new(buffer.address),
-                    &AcquireRefData {
-                        command: self.driver_return_code(),
-                        weak_ref_addr: obj.weak_ref_addr.ptr() as u64,
-                        strong_ref_addr: obj.strong_ref_addr.ptr() as u64,
-                    },
-                )
-            }
-            Self::Error(error_val) => {
-                #[repr(C, packed)]
-                #[derive(IntoBytes, Immutable)]
-                struct ErrorData {
-                    command: binder_driver_return_protocol,
-                    error_val: i32,
-                }
-                if buffer.length < std::mem::size_of::<ErrorData>() {
-                    return error!(ENOMEM);
-                }
-                memory_accessor.write_object(
-                    UserRef::new(buffer.address),
-                    &ErrorData { command: self.driver_return_code(), error_val: *error_val },
-                )
-            }
-            Self::OnewayTransaction(data) | Self::Transaction { data, .. } | Self::Reply(data) => {
-                if let Some(security_context_buffer) = data.buffers.security_context.as_ref() {
-                    #[repr(C, packed)]
-                    #[derive(IntoBytes, Immutable)]
-                    struct TransactionData {
-                        command: binder_driver_return_protocol,
-                        data: [u8; std::mem::size_of::<binder_transaction_data>()],
-                        secctx: binder_uintptr_t,
-                    }
-
-                    if buffer.length < std::mem::size_of::<TransactionData>() {
-                        return error!(ENOMEM);
-                    }
-                    memory_accessor.write_object(
-                        UserRef::new(buffer.address),
-                        &TransactionData {
-                            command: self.driver_return_code(),
-                            data: data.as_bytes(),
-                            secctx: security_context_buffer.address.ptr() as binder_uintptr_t,
-                        },
-                    )
-                } else {
-                    #[repr(C, packed)]
-                    #[derive(IntoBytes, Immutable)]
-                    struct TransactionData {
-                        command: binder_driver_return_protocol,
-                        data: [u8; std::mem::size_of::<binder_transaction_data>()],
-                    }
-
-                    if buffer.length < std::mem::size_of::<TransactionData>() {
-                        return error!(ENOMEM);
-                    }
-                    memory_accessor.write_object(
-                        UserRef::new(buffer.address),
-                        &TransactionData {
-                            command: self.driver_return_code(),
-                            data: data.as_bytes(),
-                        },
-                    )
-                }
-            }
-            Self::TransactionComplete
-            | Self::OnewayTransactionComplete
-            | Self::FailedReply
-            | Self::FrozenReply
-            | Self::PendingFrozen
-            | Self::DeadReply { .. }
-            | Self::SpawnLooper => {
-                if buffer.length < std::mem::size_of::<binder_driver_return_protocol>() {
-                    return error!(ENOMEM);
-                }
-                memory_accessor
-                    .write_object(UserRef::new(buffer.address), &self.driver_return_code())
-            }
-            Self::DeadBinder(cookie)
-            | Self::ClearDeathNotificationDone(cookie)
-            | Self::ClearFreezeNotificationDone(cookie) => {
-                #[repr(C, packed)]
-                #[derive(IntoBytes, Immutable)]
-                struct CookieData {
-                    command: binder_driver_return_protocol,
-                    cookie: binder_uintptr_t,
-                }
-                if buffer.length < std::mem::size_of::<CookieData>() {
-                    return error!(ENOMEM);
-                }
-                memory_accessor.write_object(
-                    UserRef::new(buffer.address),
-                    &CookieData { command: self.driver_return_code(), cookie: *cookie },
-                )
-            }
-            Self::FrozenBinder(state) => {
-                #[repr(C, packed)]
-                #[derive(IntoBytes, Immutable)]
-                struct FreezeBinderData {
-                    command: binder_driver_return_protocol,
-                    state: binder_frozen_state_info,
-                }
-                if buffer.length < std::mem::size_of::<FreezeBinderData>() {
-                    return error!(ENOMEM);
-                }
-                memory_accessor.write_object(
-                    UserRef::new(buffer.address),
-                    &FreezeBinderData { command: self.driver_return_code(), state: *state },
-                )
-            }
-        }
-    }
-}
-
-#[derive(Debug)]
-struct CommandTraceGuard(Option<CommandTraceGuardInner>);
-
-#[derive(Debug)]
-struct CommandTraceGuardInner {
-    id: fuchsia_trace::Id,
-    kind: &'static str,
-}
-
-impl CommandTraceGuard {
-    fn begin(command: &Command) -> Self {
-        if !starnix_logging::regular_trace_category_enabled(TRACE_CATEGORY) {
-            return Self(None);
-        }
-        let kind = match command {
-            Command::AcquireRef(_) => "AcquireRef",
-            Command::ReleaseRef(_) => "ReleaseRef",
-            Command::IncRef(_) => "IncRef",
-            Command::DecRef(_) => "DecRef",
-            Command::Error(_) => "Error",
-            Command::OnewayTransaction(_) => "OnewayTransaction",
-            Command::Transaction { .. } => "Transaction",
-            Command::Reply(_) => "Reply",
-            Command::TransactionComplete => "TransactionComplete",
-            Command::OnewayTransactionComplete => "OnewayTransactionComplete",
-            Command::FailedReply => "FailedReply",
-            Command::DeadReply { .. } => "DeadReply",
-            Command::DeadBinder(_) => "DeadBinder",
-            Command::ClearDeathNotificationDone(_) => "ClearDeathNotificationDone",
-            Command::SpawnLooper => "SpawnLooper",
-            Command::FrozenReply => "FrozenReply",
-            Command::PendingFrozen => "PendingFrozen",
-            Command::FrozenBinder(_) => "FrozenBinder",
-            Command::ClearFreezeNotificationDone(_) => "ClearFreezeNotificationDone",
-        };
-        let id = fuchsia_trace::Id::random();
-        let f = format!("{:?}", command);
-        trace_instaflow_begin!(TRACE_CATEGORY, "BinderFlow", kind, id, "cmd" => &*f);
-        Self(Some(CommandTraceGuardInner { id, kind }))
-    }
-}
-
-impl Drop for CommandTraceGuard {
-    fn drop(&mut self) {
-        if let Some(CommandTraceGuardInner { id, kind }) = self.0.take() {
-            trace_instaflow_end!(TRACE_CATEGORY, "BinderFlow", kind, id);
-        }
-    }
-}
-
-/// A binder thread's role (sender or receiver) in a synchronous transaction. Oneway transactions
-/// do not record roles, since they end as soon as they begin.
-#[derive(Debug)]
-enum TransactionRole {
-    /// The binder thread initiated the transaction and is awaiting a reply from a peer.
-    Sender(TransactionSender),
-
-    /// The binder thread is receiving a transaction and is expected to reply to the peer binder
-    /// process and thread.
-    Receiver(WeakBinderPeer, SchedulerGuard),
-}
-
-#[derive(Debug)]
-struct TransactionSender {
-    /// The target process of the transaction. Used to determine whether or not this transaction is
-    /// still alive.
-    target_proc: u64,
-
-    /// The target thread of the transaction. Used to determine whether or not this transaction is
-    /// still alive. If `None`, the transaction will be marked dead when the handling thread in
-    /// `target_proc` is released.
-    target_thread: Option<i32>,
-
-    /// Whether or not the target of this transaction is still alive. Used to determine whether or
-    /// not a `DeadReply` should be inserted into the command queue when a thread is waiting for
-    /// this transaction to complete.
-    is_alive: bool,
-}
-
-impl TransactionRole {
-    /// Marks the transaction as dead if it is a `Sender` targeting `thread` or `process`.
-    fn mark_dead(&mut self, process: u64, thread: Option<i32>) -> bool {
-        match (thread, self) {
-            (
-                // If a thread is provided to `mark_dead`, it means that the transaction should
-                // only be marked dead if the `target_thread` actually matches `thread`.
-                Some(thread),
-                TransactionRole::Sender(TransactionSender {
-                    target_thread: Some(target),
-                    is_alive,
-                    ..
-                }),
-            ) if *target == thread => {
-                *is_alive = false;
-                true
-            }
-            (
-                // If there is no target thread for the transaction, the transaction is process
-                // bound. This means that the transaction should be marked dead if the
-                // `target_proc` matches `process`, regardless of whether or not a `thread` was
-                // provided to `mark_dead`.
-                _,
-                TransactionRole::Sender(TransactionSender {
-                    target_thread: None,
-                    target_proc,
-                    is_alive,
-                    ..
-                }),
-            ) if *target_proc == process => {
-                *is_alive = false;
-                true
-            }
-            // The transaction specifies a `target_thread` that does not match `thread`, or the
-            // transaction's `target_proc` does not match `process`.
-            _ => false,
-        }
-    }
-}
-
-#[derive(Debug, Default)]
-pub struct SchedulerGuard(Option<ReleaseGuard<SchedulerState>>);
-
-impl SchedulerGuard {
-    fn release_for_task(self, kernel: &Kernel, tid: pid_t) -> bool {
-        let task = kernel.pids.read().get_task(tid);
-        if let Some(task) = task.upgrade() {
-            self.release(&task);
-            return true;
-        } else {
-            // The task has been killed. There is no scheduler state to update.
-            self.disarm();
-            return false;
-        };
-    }
-
-    fn disarm(self) {
-        if let Some(scheduler_state) = self.0 {
-            ReleaseGuard::take(scheduler_state);
-        }
-    }
-}
-
-impl From<SchedulerState> for SchedulerGuard {
-    fn from(scheduler_state: SchedulerState) -> Self {
-        Self(Some(scheduler_state.into()))
-    }
-}
-
-impl Releasable for SchedulerGuard {
-    type Context<'a> = &'a Task;
-
-    fn release<'a>(self, task: &'a Task) {
-        if let Some(scheduler_state) = self.0 {
-            let scheduler_state = ReleaseGuard::take(scheduler_state);
-            if let Err(e) = task.set_scheduler_state(scheduler_state) {
-                log_warn!(
-                    "Unable to update scheduler state of task {} to {scheduler_state:?}: {e:?}",
-                    task.tid
-                );
-            }
-        }
     }
 }
 

@@ -2,8 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::binder::{BinderProcess, BinderThread, Command};
+use crate::binder::BinderProcess;
 use crate::shared_memory::TransactionBuffers;
+use crate::thread::{BinderThread, Command};
 use bitflags::bitflags;
 use starnix_core::task::SchedulerState;
 use starnix_core::vfs::FdNumber;
@@ -110,11 +111,7 @@ impl BinderObjectRef {
     /// reference guard on the object.
     /// Takes a `RefCountActions` that must be `release`d without holding a lock on
     /// `BinderProcess`.
-    pub fn inc_strong_with_guard(
-        &mut self,
-        guard: StrongRefGuard,
-        actions: &mut RefCountActions,
-    ) {
+    pub fn inc_strong_with_guard(&mut self, guard: StrongRefGuard, actions: &mut RefCountActions) {
         assert!(self.has_ref());
         if self.strong_count == 0 {
             self.strong_guard = Some(guard);
@@ -591,10 +588,7 @@ impl BinderObject {
 
     /// Increments the strong reference count of the binder object. Allows to raise the strong
     /// count from 0 to 1.
-    pub fn inc_strong_unchecked(
-        self: &Arc<Self>,
-        binder_thread: &BinderThread,
-    ) -> StrongRefGuard {
+    pub fn inc_strong_unchecked(self: &Arc<Self>, binder_thread: &BinderThread) -> StrongRefGuard {
         let mut state = self.lock();
         if state.strong_count.inc_immediate() {
             binder_thread.lock().enqueue_command(Command::AcquireRef(self.local));
@@ -628,10 +622,7 @@ impl BinderObject {
     /// Acknowledge the BC_ACQUIRE_DONE command received from the object owner.
     /// Takes a `RefCountActions` that must be `release`d without holding a lock on
     /// `BinderProcess`.
-    pub fn ack_acquire(
-        self: &Arc<Self>,
-        actions: &mut RefCountActions,
-    ) -> Result<(), Errno> {
+    pub fn ack_acquire(self: &Arc<Self>, actions: &mut RefCountActions) -> Result<(), Errno> {
         self.lock().strong_count.ack()?;
         actions.insert(ArcKey(self.clone()));
         Ok(())
