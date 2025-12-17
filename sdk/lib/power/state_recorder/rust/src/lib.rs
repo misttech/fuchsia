@@ -1,6 +1,18 @@
 // Copyright 2025 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+
+//! Standardized reporting of time series data via Inspect and trace. It supports recording of
+//! **enum states** and **numeric states**.
+//!
+//! For example use, see the [example code][strc].
+//!
+//! For the intro to the library, see the [README.md][rdme].
+//!
+//! [rdme]: https://cs.opensource.google/fuchsia/fuchsia/+/main:sdk/lib/power/state_recorder/README.md
+//! [strc]: https://cs.opensource.google/fuchsia/fuchsia/+/main:examples/power/state_recorder
+//!
+
 use fuchsia_inspect::Inspector;
 use fuchsia_inspect_contrib::nodes::BoundedListNode;
 use fuchsia_sync::Mutex;

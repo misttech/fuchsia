@@ -21,6 +21,14 @@ Numeric states can describe anything numeric-valued, including:
   and may be reported at every transition.
 * Estimated values of system properties, like CPU load and battery level.
 
+# Examples
+
+Examples in both Rust and C++ are located at
+[`//examples/power/state_recorder`][strc].
+
+When updating the libraries, these examples should be used to confirm that trace
+output behaves as expected, as that depends on visual expectations in the
+Perfetto UI for which we don't have automated tests.
 
 ## Output formats
 
@@ -145,11 +153,6 @@ range of battery levels and key behavior on abstract "ticks":
 
 ![Sample trace output showing charging state and battery level](trace_example.png)
 
-# Examples
 
-Examples in both Rust and C++ are located at
-[`//examples/power/state_recorder`](//examples.power/state_recorder).
+[strc]: https://cs.opensource.google/fuchsia/fuchsia/+/main:examples/power/state_recorder
 
-When updating the libraries, these examples should be used to confirm that trace
-output behaves as expected, as that depends on visual expectations in the
-Perfetto UI for which we don't have automated tests.
