@@ -258,6 +258,7 @@ var extraGnExpressionByRules = map[string]string{
 	"idk_cc_shared_library_zx": `sdk = "shared"`,
 	"idk_cc_source_library_zx": `sdk = "source"`,
 	"idk_cc_static_library_zx": `sdk = "static"`,
+	"test_suite":               `testonly = true`,
 }
 
 // These identifiers with the same meanings are represented differently in Bazel

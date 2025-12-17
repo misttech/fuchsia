@@ -139,6 +139,7 @@ go_test("bazel2gn_tests") {
 		"//tools/check-licenses/directory:directory_test",
 		"//tools/check-licenses/file:file_test",
 	]
+	testonly = true
 }`,
 		},
 	} {

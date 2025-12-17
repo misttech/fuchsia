@@ -22,7 +22,6 @@ install_host_tools(
 
 test_suite(
     name = "tests",
-    testonly = True,
     tests = [
         "//tools/check-licenses/directory:directory_test",
         "//tools/check-licenses/file:file_test",
