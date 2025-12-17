@@ -42,18 +42,8 @@ resource("shaders") {
   outputs = [ "data/{{source_file_part}}" ]
 }
 
-fuchsia_structured_config_values("default_config") {
+fuchsia_component("vkloop-test-child") {
   cm_label = ":config-manifest"
-  values = {
-    gpu_vendor_id = 0
-    gpu_driver_url = ""
-    disabled_test_pattern = ""
-  }
-}
-
-fuchsia_component("vkloop_cmp") {
-  cm_label = ":config-manifest"
-  component_name = "vkloop-test-child"
   deps = [
     ":shaders",
     ":vkloop_bin",
@@ -63,10 +53,7 @@ fuchsia_component("vkloop_cmp") {
 
 fuchsia_package("vkloop-child-package") {
   package_name = "vkloop-test"
-  deps = [
-    ":default_config",
-    ":vkloop_cmp",
-  ]
+  deps = [ ":vkloop-test-child" ]
 }
 
 if (current_toolchain == default_toolchain) {
@@ -79,16 +66,15 @@ if (current_toolchain == default_toolchain) {
   }
 }
 
-fuchsia_test_component("vkloop-test-cmp") {
-  component_name = "vkloop-test"
+fuchsia_test_component("vkloop-test") {
   manifest = "meta/vkloop.cml"
   test_type = "device"
 }
 
 fuchsia_test_package("vkloop-pkg") {
   package_name = "vkloop_test"
-  test_components = [ ":vkloop-test-cmp" ]
-  subpackages = [ ":vkloop-child-package" ]
+  test_components = [ ":vkloop-test" ]
+  deps = [ ":vkloop-test-child" ]
   test_specs = {
     # ARM hardware needs to use vkloop-mali-pkg below
     # Lavapipe (used on Intel NUC) is not supported.
@@ -100,16 +86,15 @@ fuchsia_test_package("vkloop-pkg") {
   }
 }
 
-fuchsia_test_component("vkloop-mali-test-cmp") {
-  component_name = "vkloop-mali-test"
+fuchsia_test_component("vkloop-mali-test") {
   manifest = "meta/vkloop-mali-test.cml"
   test_type = "device"
 }
 
 fuchsia_test_package("vkloop-mali-pkg") {
   package_name = "vkloop_mali_test"
-  test_components = [ ":vkloop-mali-test-cmp" ]
-  subpackages = [ ":vkloop-child-package" ]
+  test_components = [ ":vkloop-mali-test" ]
+  deps = [ ":vkloop-test-child" ]
   test_specs = {
     environments = magma_libvulkan_arm_hardware_envs
     log_settings = {

@@ -6,7 +6,7 @@
     children: [
         {
             name: "test",
-            url: "vkloop-test#meta/vkloop-test-child.cm",
+            url: "#meta/vkloop-test-child.cm",
         },
     ],
     capabilities: [
@@ -40,12 +40,10 @@
             to: [ "#test" ],
         },
         {
-            config: "fuchsia.gpu.test.GpuVendorId",
-            from: "self",
-            to: "#test",
-        },
-        {
-            config: "fuchsia.gpu.test.GpuDriverUrl",
+            config: [
+                "fuchsia.gpu.test.GpuDriverUrl",
+                "fuchsia.gpu.test.GpuVendorId",
+            ],
             from: "self",
             to: "#test",
         },

@@ -26,6 +26,7 @@
             key: "gpu_vendor_id",
             availability: "transitional",
             type: "uint32",
+            default: 0,
         },
         {
             config: "fuchsia.gpu.test.GpuDriverUrl",
@@ -34,6 +35,7 @@
             availability: "transitional",
             type: "string",
             max_size: 1024,
+            default: "",
         },
         {
             config: "fuchsia.gpu.test.DisabledTestPattern",
@@ -44,17 +46,7 @@
             availability: "transitional",
             type: "string",
             max_size: 1024,
+            default: "",
         },
     ],
-    config: {
-        gpu_vendor_id: { type: "uint32" },
-        gpu_driver_url: {
-            type: "string",
-            max_size: 1024,
-        },
-        disabled_test_pattern: {
-            type: "string",
-            max_size: 1024,
-        },
-    },
 }
