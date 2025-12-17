@@ -281,7 +281,7 @@ async fn main() -> Result<()> {
             &monitor_track,
             enable_user_utc_adjustment,
         ),
-        CobaltDiagnostics::new(cobalt_experiment, &primary_track, &monitor_track),
+        CobaltDiagnostics::new(cobalt_experiment),
     ));
 
     let persistence_node = inspector_root.create_child("persistence");

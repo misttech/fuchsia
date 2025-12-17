@@ -6,7 +6,6 @@ use crate::diagnostics::{Diagnostics, Event};
 use crate::enums::{
     ClockCorrectionStrategy, ClockUpdateReason, InitialClockState, StartClockSource, Track,
 };
-use crate::{MonitorTrack, PrimaryTrack};
 use anyhow::{Context as _, Error, format_err};
 use cobalt_client::traits::AsEventCodes;
 use fidl_contrib::ProtocolConnector;
@@ -17,18 +16,15 @@ use fidl_fuchsia_metrics::{
 use fuchsia_async as fasync;
 use fuchsia_cobalt_builders::MetricEventExt;
 use fuchsia_component::client::connect_to_protocol;
-use fuchsia_runtime::{UtcClock, UtcDuration};
+use fuchsia_runtime::UtcDuration;
 use fuchsia_sync::Mutex;
 use futures::{FutureExt as _, future};
-use std::sync::Arc;
 use time_metrics_registry::{
     PROJECT_ID, REAL_TIME_CLOCK_EVENTS_MIGRATED_METRIC_ID,
     RealTimeClockEventsMigratedMetricDimensionEventType as RtcEvent,
     TIMEKEEPER_CLOCK_CORRECTION_MIGRATED_METRIC_ID,
     TIMEKEEPER_FREQUENCY_ABS_ESTIMATE_MIGRATED_METRIC_ID,
-    TIMEKEEPER_LIFECYCLE_EVENTS_MIGRATED_METRIC_ID,
-    TIMEKEEPER_MONITOR_DIFFERENCE_MIGRATED_METRIC_ID,
-    TIMEKEEPER_SQRT_COVARIANCE_MIGRATED_METRIC_ID,
+    TIMEKEEPER_LIFECYCLE_EVENTS_MIGRATED_METRIC_ID, TIMEKEEPER_SQRT_COVARIANCE_MIGRATED_METRIC_ID,
     TIMEKEEPER_TIME_SOURCE_EVENTS_MIGRATED_METRIC_ID, TIMEKEEPER_TRACK_EVENTS_MIGRATED_METRIC_ID,
     TimeMetricDimensionDirection as Direction, TimeMetricDimensionExperiment as Experiment,
     TimeMetricDimensionIteration as Iteration, TimeMetricDimensionRole as CobaltRole,
@@ -37,7 +33,6 @@ use time_metrics_registry::{
     TimekeeperTimeSourceEventsMigratedMetricDimensionEventType as TimeSourceEvent,
     TimekeeperTrackEventsMigratedMetricDimensionEventType as TrackEvent,
 };
-use time_util::time_at_monotonic;
 
 /// The number of parts in a million.
 const ONE_MILLION: i64 = 1_000_000;
@@ -90,10 +85,6 @@ pub struct CobaltDiagnostics {
     sender: Mutex<ProtocolSender<MetricEvent>>,
     /// The experiment to record on all experiment-based events.
     experiment: Experiment,
-    /// The UTC clock used in the primary track.
-    primary_clock: Arc<UtcClock>,
-    /// The UTC clock used in the monitor track.
-    monitor_clock: Option<Arc<UtcClock>>,
     // TODO(https://fxbug.dev/42135549): Move back to an owned fasync::Task instead of detaching the spawned
     // Task once the lifecycle of timekeeper ensures CobaltDiagnostics objects will last long enough
     // to finish their logging.
@@ -101,19 +92,10 @@ pub struct CobaltDiagnostics {
 
 impl CobaltDiagnostics {
     /// Constructs a new `CobaltDiagnostics` instance.
-    pub(crate) fn new(
-        experiment: Experiment,
-        primary: &PrimaryTrack,
-        optional_monitor: &Option<MonitorTrack>,
-    ) -> Self {
+    pub(crate) fn new(experiment: Experiment) -> Self {
         let (sender, fut) = ProtocolConnector::new(CobaltConnectedService).serve_and_log_errors();
         fasync::Task::spawn(fut).detach();
-        Self {
-            sender: Mutex::new(sender),
-            experiment,
-            primary_clock: Arc::clone(&primary.clock),
-            monitor_clock: optional_monitor.as_ref().map(|track| Arc::clone(&track.clock)),
-        }
+        Self { sender: Mutex::new(sender), experiment }
     }
 
     /// Records an update to the Kalman filter state, including an event and a covariance report.
@@ -202,22 +184,6 @@ impl CobaltDiagnostics {
                 )
                 .as_occurrence(1),
         );
-        if track == Track::Monitor {
-            if let Some(monitor_clock) = self.monitor_clock.as_ref() {
-                let reference = zx::BootInstant::get();
-                let primary = time_at_monotonic(&self.primary_clock, reference);
-                let monitor = time_at_monotonic(monitor_clock, reference);
-                let direction =
-                    if monitor >= primary { Direction::Positive } else { Direction::Negative };
-                locked_sender.send(
-                    MetricEvent::builder(TIMEKEEPER_MONITOR_DIFFERENCE_MIGRATED_METRIC_ID)
-                        .with_event_codes((direction, self.experiment).as_event_codes())
-                        // This metric is configured to be microseconds, which does not follow
-                        // the standard of nanoseconds everywhere.
-                        .as_integer((monitor - primary).into_micros().abs()),
-                );
-            }
-        }
     }
 }
 
@@ -324,36 +290,19 @@ mod test {
         WriteRtcOutcome,
     };
     use fidl_fuchsia_metrics::MetricEventPayload;
-    use fuchsia_runtime::{UtcClockUpdate, UtcInstant};
+    use fuchsia_runtime::UtcInstant;
+    use futures::StreamExt;
     use futures::channel::mpsc;
-    use futures::{FutureExt, StreamExt};
-    use test_util::{assert_geq, assert_leq};
 
     const TEST_EXPERIMENT: Experiment = Experiment::B;
-    const MONITOR_OFFSET: UtcDuration = UtcDuration::from_seconds(444);
-    // The allowed half-interval of the offset error. Due to the non-determinism
-    // in timing, this interval may sometimes be too small and cause flaky
-    // tests. The flake rate for 10ms was 0.15 flakes/day, this should be
-    // somewhat better.
-    const MONITOR_OFFSET_ERROR: zx::BootDuration = zx::BootDuration::from_millis(40);
-
-    fn create_clock(time: UtcInstant) -> Arc<UtcClock> {
-        let clk = UtcClock::create(zx::ClockOpts::empty(), None).unwrap();
-        clk.update(UtcClockUpdate::builder().approximate_value(time)).unwrap();
-        Arc::new(clk)
-    }
 
     /// Creates a test CobaltDiagnostics and an mpsc receiver that may be used to verify the
-    /// events it sends. The primary and monitor clocks will have a difference of MONITOR_OFFSET.
+    /// events it sends.
     fn create_test_object() -> (CobaltDiagnostics, mpsc::Receiver<MetricEvent>) {
         let (mpsc_sender, mpsc_receiver) = futures::channel::mpsc::channel(1);
         let sender = ProtocolSender::new(mpsc_sender);
-        let diagnostics = CobaltDiagnostics {
-            sender: Mutex::new(sender),
-            experiment: TEST_EXPERIMENT,
-            primary_clock: create_clock(UtcInstant::ZERO),
-            monitor_clock: Some(create_clock(UtcInstant::ZERO + MONITOR_OFFSET)),
-        };
+        let diagnostics =
+            CobaltDiagnostics { sender: Mutex::new(sender), experiment: TEST_EXPERIMENT };
         (diagnostics, mpsc_receiver)
     }
 
@@ -556,65 +505,5 @@ mod test {
                 payload: MetricEventPayload::IntegerValue(777),
             })
         );
-    }
-
-    #[fuchsia::test(allow_stalls = false)]
-    async fn record_update_clock_events() {
-        let (diagnostics, mut mpsc_receiver) = create_test_object();
-
-        // Updates to the primary track should only log the reason.
-        diagnostics.record(Event::UpdateClock {
-            track: Track::Primary,
-            reason: ClockUpdateReason::TimeStep,
-        });
-        assert_eq!(
-            mpsc_receiver.next().await,
-            Some(MetricEvent {
-                metric_id: time_metrics_registry::TIMEKEEPER_TRACK_EVENTS_MIGRATED_METRIC_ID,
-                event_codes: vec![
-                    TrackEvent::ClockUpdateTimeStep as u32,
-                    CobaltTrack::Primary as u32,
-                    TEST_EXPERIMENT as u32
-                ],
-                payload: MetricEventPayload::Count(1),
-            })
-        );
-        assert!(mpsc_receiver.next().now_or_never().is_none());
-
-        // Updates to the monitor track should lead to an update event and a difference report.
-        // Unfortunately the latter is cumbersome to verify since we don't know the exact clock
-        // difference.
-        diagnostics.record(Event::UpdateClock {
-            track: Track::Monitor,
-            reason: ClockUpdateReason::BeginSlew,
-        });
-        assert_eq!(
-            mpsc_receiver.next().await,
-            Some(MetricEvent {
-                metric_id: time_metrics_registry::TIMEKEEPER_TRACK_EVENTS_MIGRATED_METRIC_ID,
-                event_codes: vec![
-                    TrackEvent::ClockUpdateBeginSlew as u32,
-                    CobaltTrack::Monitor as u32,
-                    TEST_EXPERIMENT as u32
-                ],
-                payload: MetricEventPayload::Count(1),
-            })
-        );
-        let event = mpsc_receiver.next().await.unwrap();
-        assert_eq!(event.metric_id, TIMEKEEPER_MONITOR_DIFFERENCE_MIGRATED_METRIC_ID);
-        assert_eq!(event.event_codes, vec![Direction::Positive as u32, TEST_EXPERIMENT as u32]);
-        match event.payload {
-            MetricEventPayload::IntegerValue(value) => {
-                assert_geq!(
-                    value,
-                    MONITOR_OFFSET.into_micros() - MONITOR_OFFSET_ERROR.into_micros()
-                );
-                assert_leq!(
-                    value,
-                    MONITOR_OFFSET.into_micros() + MONITOR_OFFSET_ERROR.into_micros()
-                );
-            }
-            _ => panic!("monitor clock update did not produce event count payload"),
-        }
     }
 }
