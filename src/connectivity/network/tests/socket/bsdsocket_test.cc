@@ -29,6 +29,13 @@
 #include <lib/zxio/zxio.h>
 
 #include <unordered_map>
+#else
+
+#ifndef SO_COOKIE
+// Our host toolchain doesn't define SO_COOKIE.
+#define SO_COOKIE 57
+#endif
+
 #endif
 
 namespace {
@@ -484,14 +491,12 @@ INSTANTIATE_TEST_SUITE_P(
                                .default_value = 0,
                                // -1 is not tested here, it is a special value which resets the
                                // traffic class to its default value.
-                               .valid_values = {0, 1, 2, 15, 255},
+                               // Given the test also reads TCLASS back, and the
+                               // ECN bits are cleared up on read make sure we
+                               // only use zeroes for the last 2 bits.
+                               .valid_values = {0x04, 0xC0, 0xFC},
                                .invalid_values = {-2, 256},
                            };
-                           if (kIsFuchsia) {
-                             // TODO(https://gvisor.dev/issues/6389): Remove once Fuchsia treats
-                             // IPV6_TCLASS differently than IP_TOS. See CheckSkipECN test.
-                             opt.valid_values = {0x04, 0xC0, 0xFC};
-                           }
                            return opt;
                          }(),
                          IntSocketOption{
@@ -845,14 +850,7 @@ TEST_P(SocketOptsTest, CheckSkipECN) {
   EXPECT_EQ(setsockopt(s.get(), t.level, t.option, &set, set_sz), 0) << strerror(errno);
   int expect = static_cast<uint8_t>(set);
   if (IsTCP()) {
-    if (kIsFuchsia || !IsIPv6()) {
-      // gvisor-netstack`s implementation of setsockopt(..IPV6_TCLASS..) clears
-      // the ECN bits from the TCLASS value. This keeps gvisor in parity with
-      // the Linux test-hosts that run a custom kernel. But that is not the
-      // behavior of vanilla Linux kernels. This can be removed when we migrate
-      // away from gvisor-netstack.
-      expect &= ~INET_ECN_MASK;
-    }
+    expect &= ~INET_ECN_MASK;
   }
   int get = -1;
   socklen_t get_sz = sizeof(get);

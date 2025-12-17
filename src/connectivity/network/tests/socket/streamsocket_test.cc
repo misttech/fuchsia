@@ -2160,7 +2160,15 @@ TEST(LocalhostTest, GetAddrInfo) {
       }
     }
   }
-  EXPECT_EQ(i, 2);
+  if (kIsFuchsia) {
+    EXPECT_EQ(i, 2);
+  } else {
+    // Configuration of /etc/hosts on Linux machines may yield a different
+    // result for localhost. Cover the common cases we see so we don't get tests
+    // that pass in infra but fail locally which is surprising.
+    EXPECT_THAT(i, ::testing::AnyOf(::testing::Eq(1), ::testing::Eq(2)));
+  }
+
   freeaddrinfo(result);
 }
 
