@@ -610,6 +610,9 @@ void Dispatcher::Destroy(bool user_initiated) {
         LOGF(ERROR, "%s", str.c_str());
       }
     }
+    if (state_ == DispatcherState::kDestroyed) {
+      return;
+    }
     ZX_ASSERT(state_ == DispatcherState::kShutdown);
     state_ = DispatcherState::kDestroyed;
 
