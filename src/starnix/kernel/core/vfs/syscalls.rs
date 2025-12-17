@@ -252,7 +252,7 @@ pub fn sys_close(
 }
 
 pub fn sys_close_range(
-    _locked: &mut Locked<Unlocked>,
+    locked: &mut Locked<Unlocked>,
     current_task: &CurrentTask,
     first: u32,
     last: u32,
@@ -266,14 +266,14 @@ pub fn sys_close_range(
     }
     let in_range = |fd: FdNumber| fd.raw() as u32 >= first && fd.raw() as u32 <= last;
     if flags & CLOSE_RANGE_CLOEXEC != 0 {
-        current_task.files.retain(|fd, flags| {
+        current_task.files.retain(locked, current_task, |fd, flags| {
             if in_range(fd) {
                 *flags |= FdFlags::CLOEXEC;
             }
             true
         });
     } else {
-        current_task.files.retain(|fd, _| !in_range(fd));
+        current_task.files.retain(locked, current_task, |fd, _| !in_range(fd));
     }
     Ok(())
 }

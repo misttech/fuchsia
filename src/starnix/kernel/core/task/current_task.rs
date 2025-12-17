@@ -437,6 +437,18 @@ impl CurrentTask {
             Some(Box::new(|locked, current_task| Ok(f(locked, current_task)?.into())));
     }
 
+    pub fn add_file<L>(
+        &self,
+        locked: &mut Locked<L>,
+        file: FileHandle,
+        flags: FdFlags,
+    ) -> Result<FdNumber, Errno>
+    where
+        L: LockEqualOrBefore<FileOpsCore>,
+    {
+        self.files.add(locked, self, file, flags)
+    }
+
     /// Sets the task's signal mask to `signal_mask` and runs `wait_function`.
     ///
     /// Signals are dequeued prior to the original signal mask being restored. This is done by the
@@ -1115,16 +1127,13 @@ impl CurrentTask {
     /// After the memory is unmapped, any failure in exec is unrecoverable and results in the
     /// process crashing. This function is for that second half; any error returned from this
     /// function will be considered unrecoverable.
-    fn finish_exec<L>(
+    fn finish_exec(
         &mut self,
-        locked: &mut Locked<L>,
+        locked: &mut Locked<Unlocked>,
         path: CString,
         resolved_elf: ResolvedElf,
         mut maybe_set_id: UserAndOrGroupId,
-    ) -> Result<(), Errno>
-    where
-        L: LockBefore<MmDumpable>,
-    {
+    ) -> Result<(), Errno> {
         // Now that the exec will definitely finish (or crash), notify owners of
         // locked futexes for the current process, which will be impossible to
         // update after process image is replaced.  See get_robust_list(2).
@@ -1232,7 +1241,7 @@ impl CurrentTask {
         // The file descriptor table is unshared, undoing the effect of the CLONE_FILES flag of
         // clone(2).
         self.files.unshare();
-        self.files.exec();
+        self.files.exec(locked, self);
 
         // If SELinux is enabled, enforce permissions related to inheritance of file descriptors
         // and resource limits. Then update the current task's SID.
@@ -1241,7 +1250,7 @@ impl CurrentTask {
         // signal state inheritance.
         //
         // This needs to be called after closing any files marked "close-on-exec".
-        security::exec_binprm(&mut locked.cast_locked::<MmDumpable>(), self, &security_state);
+        security::exec_binprm(locked, self, &security_state);
 
         self.thread_group().write().did_exec = true;
 

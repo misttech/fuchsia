@@ -2,13 +2,16 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::task::{CurrentTaskAndLocked, Task, register_delayed_release};
+use crate::task::{CurrentTask, CurrentTaskAndLocked, register_delayed_release};
 use crate::vfs::{FdNumber, FileHandle, FileReleaser};
 use bitflags::bitflags;
 use fuchsia_rcu::RcuReadScope;
 use fuchsia_rcu::rcu_arc::RcuArc;
 use fuchsia_rcu_collections::rcu_array::RcuArray;
-use starnix_sync::{LockBefore, Locked, Mutex, MutexGuard, ThreadGroupLimits};
+use starnix_sync::{
+    FileOpsCore, LockBefore, LockEqualOrBefore, Locked, Mutex, MutexGuard, ThreadGroupLimits,
+    Unlocked,
+};
 use starnix_syscalls::SyscallResult;
 use starnix_types::ownership::Releasable;
 use starnix_uapi::errors::Errno;
@@ -595,37 +598,23 @@ impl FdTable {
     }
 
     /// Trims close-on-exec file descriptors from the table.
-    pub fn exec(&self) {
-        self.retain(|_fd, flags| !flags.contains(FdFlags::CLOEXEC));
+    pub fn exec(&self, locked: &mut Locked<Unlocked>, current_task: &CurrentTask) {
+        self.retain(locked, current_task, |_fd, flags| !flags.contains(FdFlags::CLOEXEC));
     }
 
     /// Inserts a file descriptor into the table.
     pub fn insert<L>(
         &self,
         locked: &mut Locked<L>,
-        task: &Task,
+        current_task: &CurrentTask,
         fd: FdNumber,
         file: FileHandle,
     ) -> Result<(), Errno>
     where
         L: LockBefore<ThreadGroupLimits>,
     {
-        self.insert_with_flags(locked, task, fd, file, FdFlags::empty())
-    }
-
-    /// Inserts a file descriptor into the table with the specified flags.
-    pub fn insert_with_flags<L>(
-        &self,
-        locked: &mut Locked<L>,
-        task: &Task,
-        fd: FdNumber,
-        file: FileHandle,
-        flags: FdFlags,
-    ) -> Result<(), Errno>
-    where
-        L: LockBefore<ThreadGroupLimits>,
-    {
-        let rlimit = task.thread_group().get_rlimit(locked, Resource::NOFILE);
+        let flags = FdFlags::empty();
+        let rlimit = current_task.thread_group().get_rlimit(locked, Resource::NOFILE);
         let inner = self.inner.read();
         let guard = inner.write();
         guard.insert_entry(&inner.scope, fd, rlimit, FdTableEntry { file, flags })?;
@@ -639,17 +628,18 @@ impl FdTable {
     /// Returns the assigned file descriptor number.
     ///
     /// This function is the most common way to add a file descriptor to the table.
-    pub fn add_with_flags<L>(
+    pub fn add<L>(
         &self,
         locked: &mut Locked<L>,
-        task: &Task,
+        current_task: &CurrentTask,
         file: FileHandle,
         flags: FdFlags,
     ) -> Result<FdNumber, Errno>
     where
-        L: LockBefore<ThreadGroupLimits>,
+        L: LockEqualOrBefore<FileOpsCore>,
     {
-        let rlimit = task.thread_group().get_rlimit(locked, Resource::NOFILE);
+        let locked = locked.cast_locked::<FileOpsCore>();
+        let rlimit = current_task.thread_group().get_rlimit(locked, Resource::NOFILE);
         let inner = self.inner.read();
         let guard = inner.write();
         let fd = guard.next_fd();
@@ -664,7 +654,7 @@ impl FdTable {
     pub fn duplicate<L>(
         &self,
         locked: &mut Locked<L>,
-        task: &Task,
+        current_task: &CurrentTask,
         oldfd: FdNumber,
         target: TargetFdNumber,
         flags: FdFlags,
@@ -672,7 +662,7 @@ impl FdTable {
     where
         L: LockBefore<ThreadGroupLimits>,
     {
-        let rlimit = task.thread_group().get_rlimit(locked, Resource::NOFILE);
+        let rlimit = current_task.thread_group().get_rlimit(locked, Resource::NOFILE);
         let inner = self.inner.read();
         let guard = inner.write();
         let file = guard.get_file(&inner.scope, oldfd).ok_or_else(|| errno!(EBADF))?;
@@ -780,8 +770,9 @@ impl FdTable {
     /// The predicate is called with the `FdNumber` and a mutable reference to the `FdFlags` for
     /// each entry in the `FdTable`. If the predicate returns `false`, the entry is removed from
     /// the `FdTable`. Otherwise, the `FdFlags` are updated to the value modified by the predicate.
-    pub fn retain<F>(&self, predicate: F)
+    pub fn retain<L, F>(&self, _locked: &mut Locked<L>, _current_task: &CurrentTask, predicate: F)
     where
+        L: LockEqualOrBefore<FileOpsCore>,
         F: Fn(FdNumber, &mut FdFlags) -> bool,
     {
         let inner = self.inner.read();
@@ -806,7 +797,14 @@ impl FdTable {
     ///
     /// Replaces `file` with `replacement_file` in the table when
     /// `maybe_replacement == Some(replacement_file)`.
-    pub fn remap<F: Fn(&FileHandle) -> Option<FileHandle>>(&self, predicate: F) {
+    pub fn remap<L, F: Fn(&FileHandle) -> Option<FileHandle>>(
+        &self,
+        _locked: &mut Locked<L>,
+        _current_task: &CurrentTask,
+        predicate: F,
+    ) where
+        L: LockEqualOrBefore<FileOpsCore>,
+    {
         let inner = self.inner.read();
         let guard = inner.write();
         guard.remap(&inner.scope, predicate);
@@ -823,9 +821,7 @@ impl Clone for FdTable {
 mod test {
     use super::*;
     use crate::fs::fuchsia::SyslogFile;
-    use crate::task::*;
     use crate::testing::*;
-    use starnix_sync::Unlocked;
 
     fn add(
         locked: &mut Locked<Unlocked>,
@@ -833,7 +829,7 @@ mod test {
         files: &FdTable,
         file: FileHandle,
     ) -> Result<FdNumber, Errno> {
-        files.add_with_flags(locked, current_task, file, FdFlags::empty())
+        files.add(locked, current_task, file, FdFlags::empty())
     }
 
     #[::fuchsia::test]
@@ -903,7 +899,7 @@ mod test {
             assert!(files.get(fd0).is_ok());
             assert!(files.get(fd1).is_ok());
 
-            files.exec();
+            files.exec(locked, &current_task);
 
             assert!(files.get(fd0).is_err());
             assert!(files.get(fd1).is_ok());

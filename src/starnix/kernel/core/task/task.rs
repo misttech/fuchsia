@@ -15,14 +15,14 @@ use crate::task::{
     SeccompFilterContainer, SeccompState, SeccompStateValue, ThreadGroup, ThreadGroupKey,
     ThreadState, UtsNamespaceHandle, WaitCanceler, Waiter, ZombieProcess,
 };
-use crate::vfs::{FdFlags, FdNumber, FdTable, FileHandle, FsContext, FsNodeHandle, FsString};
+use crate::vfs::{FdTable, FsContext, FsNodeHandle, FsString};
 use bitflags::bitflags;
 use fuchsia_rcu::rcu_option_arc::RcuOptionArc;
 use macro_rules_attribute::apply;
 use starnix_logging::{log_warn, set_zx_name};
 use starnix_sync::{
-    FileOpsCore, LockBefore, LockEqualOrBefore, Locked, Mutex, MutexGuard, RwLock, RwLockReadGuard,
-    RwLockWriteGuard, TaskRelease, TerminalLock,
+    LockBefore, Locked, Mutex, MutexGuard, RwLock, RwLockReadGuard, RwLockWriteGuard, TaskRelease,
+    TerminalLock,
 };
 use starnix_task_command::TaskCommand;
 use starnix_types::arch::ArchWidth;
@@ -1230,18 +1230,6 @@ impl Task {
     }
 
     state_accessor!(Task, mutable_state);
-
-    pub fn add_file<L>(
-        &self,
-        locked: &mut Locked<L>,
-        file: FileHandle,
-        flags: FdFlags,
-    ) -> Result<FdNumber, Errno>
-    where
-        L: LockEqualOrBefore<FileOpsCore>,
-    {
-        self.files.add_with_flags(locked.cast_locked::<FileOpsCore>(), self, file, flags)
-    }
 
     /// Returns the real credentials of the task. These credentials are used to check permissions
     /// for actions performed on the task. If the task itself is performing an action, use

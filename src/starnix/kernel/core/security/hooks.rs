@@ -34,7 +34,7 @@ use linux_uapi::{
 };
 use selinux::{FileSystemMountOptions, SecurityPermission, SecurityServer};
 use starnix_logging::{CATEGORY_STARNIX_SECURITY, log_debug, trace_duration};
-use starnix_sync::{FileOpsCore, LockBefore, LockEqualOrBefore, Locked, ThreadGroupLimits};
+use starnix_sync::{FileOpsCore, LockEqualOrBefore, Locked, Unlocked};
 use starnix_types::ownership::TempRef;
 use starnix_uapi::arc_key::WeakKey;
 use starnix_uapi::auth::PtraceAccessMode;
@@ -1401,13 +1401,11 @@ pub fn check_tun_dev_create_access(current_task: &CurrentTask) -> Result<(), Err
 ///
 /// Resets state that should not be inherited during an `exec` domain transition. Then updates the
 /// current task's SID based on the security state of the resolved executable.
-pub fn exec_binprm<L>(
-    locked: &mut Locked<L>,
+pub fn exec_binprm(
+    locked: &mut Locked<Unlocked>,
     current_task: &CurrentTask,
     elf_security_state: &ResolvedElfState,
-) where
-    L: LockBefore<ThreadGroupLimits>,
-{
+) {
     track_hook_duration!("security.hooks.exec_binprm");
     if_selinux_else(
         current_task,

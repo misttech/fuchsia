@@ -16,7 +16,7 @@ use selinux::{
     Cap2Class, CapClass, CommonCap2Permission, CommonCapPermission, FilePermission, ForClass,
     InitialSid, KernelClass, NullessByteStr, PolicyCap, Process2Permission, SystemPermission,
 };
-use starnix_sync::{LockBefore, Locked, ThreadGroupLimits};
+use starnix_sync::{LockBefore, Locked, ThreadGroupLimits, Unlocked};
 use starnix_types::ownership::TempRef;
 use starnix_uapi::auth::PtraceAccessMode;
 use starnix_uapi::errors::Errno;
@@ -34,14 +34,12 @@ use starnix_uapi::{
 /// post-`exec` context.
 ///
 /// Corresponds to the `exec_binprm()` function described in the SELinux Notebook.
-pub(in crate::security) fn exec_binprm<L>(
-    locked: &mut Locked<L>,
+pub(in crate::security) fn exec_binprm(
+    locked: &mut Locked<Unlocked>,
     security_server: &Arc<SecurityServer>,
     current_task: &CurrentTask,
     elf_security_state: &ResolvedElfState,
-) where
-    L: LockBefore<ThreadGroupLimits>,
-{
+) {
     let new_sid = elf_security_state.sid.expect("SELinux enabled but missing resolved elf state");
     let previous_sid = task_consistent_attrs(current_task).current_sid;
 
@@ -83,19 +81,17 @@ pub(in crate::security) fn exec_binprm<L>(
 /// 2. Reset resource limits if `current_task` is not permitted to inherit rlimits.
 ///
 /// Corresponds to the `bprm_committing_creds()` LSM hook.
-fn bprm_committing_creds<L>(
-    locked: &mut Locked<L>,
+fn bprm_committing_creds(
+    locked: &mut Locked<Unlocked>,
     security_server: &Arc<SecurityServer>,
     current_task: &CurrentTask,
     previous_sid: SecurityId,
     new_sid: SecurityId,
-) where
-    L: LockBefore<ThreadGroupLimits>,
-{
+) {
     if new_sid == previous_sid {
         return;
     }
-    close_inaccessible_file_descriptors(security_server, current_task, new_sid);
+    close_inaccessible_file_descriptors(locked, security_server, current_task, new_sid);
     maybe_reset_rlimits(locked, security_server, current_task, previous_sid, new_sid);
 }
 
@@ -127,6 +123,7 @@ fn bprm_committed_creds(
 /// "Closes" file descriptors that `current_task` does not have permission to access by remapping
 /// those file descriptors to the null file in selinuxfs.
 fn close_inaccessible_file_descriptors(
+    locked: &mut Locked<Unlocked>,
     security_server: &Arc<SecurityServer>,
     current_task: &CurrentTask,
     new_sid: SecurityId,
@@ -147,7 +144,7 @@ fn close_inaccessible_file_descriptors(
     // Remap-to-null any fds that failed a check for allowing
     // `[child-process] [fd-from-child-fd-table]:fd { use }`,
     // or for any of the file permissions associated with the file mode and flags.
-    current_task.files.remap(|file| {
+    current_task.files.remap(locked, current_task, |file| {
         let permissions =
             permissions_from_flags(file.flags().into(), file.node().security_state.lock().class);
         let permission_result = has_file_permissions(
