@@ -115,6 +115,14 @@ zx_status_t sys_vmo_create_physical(zx_handle_t hrsrc, zx_paddr_t paddr, size_t 
                                     zx_handle_t* out) {
   LTRACEF("size 0x%zu\n", size);
 
+  if (size == 0) {
+    return ZX_ERR_INVALID_ARGS;
+  }
+
+  if (!IsPageRounded(size)) {
+    return ZX_ERR_INVALID_ARGS;
+  }
+
   auto up = ProcessDispatcher::GetCurrent();
   zx_status_t status = up->EnforceBasicPolicy(ZX_POL_NEW_VMO);
   if (status != ZX_OK) {
@@ -125,11 +133,6 @@ zx_status_t sys_vmo_create_physical(zx_handle_t hrsrc, zx_paddr_t paddr, size_t 
   // safe to assume that if the caller has access to a resource for this specified
   // region of MMIO space then it is safe to allow the vmo to be created.
   if ((status = validate_resource_mmio(hrsrc, paddr, size)) != ZX_OK) {
-    return status;
-  }
-
-  status = VmObject::RoundSize(size, &size);
-  if (status != ZX_OK) {
     return status;
   }
 

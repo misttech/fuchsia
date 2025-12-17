@@ -1261,8 +1261,8 @@ closed protocol Vmo {
     /// `ZER_ERR_ACCESS_DENIED` *resource* does not grant access to the requested
     /// range of memory.
     ///
-    /// `ZX_ERR_INVALID_ARGS`  *out* is an invalid pointer or NULL, or *paddr* or
-    /// *size* are not page-aligned.
+    /// `ZX_ERR_INVALID_ARGS`  *out* is an invalid pointer or NULL, *size* is zero,
+    /// or *paddr* or *size* are not page-aligned.
     ///
     /// `ZX_ERR_NO_MEMORY`  Failure due to lack of memory.
     /// There is no good way for userspace to handle this (unlikely) error.
