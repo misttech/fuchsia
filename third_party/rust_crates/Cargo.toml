@@ -42,7 +42,7 @@ async-ringbuf = "0.3.4"
 async-stream = "0.3.6"
 async-trait = "0.1.88"
 base64 = "0.22.1"
-bincode = "1.3"
+bincode = "1.3.3"
 bit-set = "0.8.0"
 bit-vec = { version = "0.8.0", features = [ "serde" ] }
 bitfield = "0.14.0"
@@ -561,6 +561,9 @@ env_vars = [
   "CARGO_PKG_VERSION_MINOR=1",
   "CARGO_PKG_VERSION_PATCH=10",
 ]
+
+[gn.package.bincode."1.3.3"]
+group_visibility = { import = "//third_party/rust_crates/visibility.gni", variable = "bincode_visibility" }
 
 [gn.package.bitflags."1.3.2"]
 visibility = [":*", "//third_party/alacritty/alacritty_terminal:*" ]

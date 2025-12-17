@@ -99,8 +99,12 @@ group("base64") {
   public_deps = [ ":base64-v0_22_1" ]
 }
 
+import("//third_party/rust_crates/visibility.gni")
+
 group("bincode") {
   public_deps = [ ":bincode-v1_3_3" ]
+
+  visibility = bincode_visibility
 }
 
 group("bit-set") {
@@ -559,8 +563,6 @@ group("maplit") {
 group("maybe-owned") {
   public_deps = [ ":maybe-owned-v0_3_4" ]
 }
-
-import("//third_party/rust_crates/visibility.gni")
 
 group("md-5") {
   public_deps = [ ":md-5-v0_10_6" ]

@@ -155,3 +155,29 @@ openssl_visibility = [
   # At this time only Android KeyMint is allowed to use it.
   "//third_party/android/platform/system/keymint:*",
 ]
+
+bincode_visibility = [
+  #  ________  _________  ________  ________
+  # |\   ____\|\___   ___\\   __  \|\   __  \
+  # \ \  \___|\|___ \  \_\ \  \|\  \ \  \|\  \
+  #  \ \_____  \   \ \  \ \ \  \\\  \ \   ____\
+  #   \|____|\  \   \ \  \ \ \  \\\  \ \  \___|
+  #     ____\_\  \   \ \__\ \ \_______\ \__\
+  #    |\_________\   \|__|  \|_______|\|__|
+  #    \|_________|
+  #
+  # This is an allowlist of targets that use the `bincode` Rust crate.
+  # Bincode is no longer maintained upstream, with an explanation to be found at:
+  # https://crates.io/crates/bincode/3.0.0
+  #
+  # To regenerate, run:
+  # (cd $FUCHSIA_DIR && git grep  --files-with-matches '//third_party/rust_crates:bincode' -- '*BUILD.gn' | sed 's|\(.*\)/BUILD.gn|"//\1:*",|')
+  "//src/devices/bin/driver-index:*",
+  "//src/security/bin/kms:*",
+  "//src/security/lib/scrutiny/utils:*",
+  "//src/storage/ext4/lib/metadata:*",
+  "//src/storage/fxfs/make-blob-image:*",
+  "//src/storage/fxfs/platform:*",
+  "//src/storage/fxfs:*",
+  "//src/storage/lib/sparse/rust:*",
+]
