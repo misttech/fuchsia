@@ -145,10 +145,10 @@ union error_or_value_type {
   constexpr error_or_value_type& operator=(error_or_value_type&&) = default;
 
   template <typename F>
-  constexpr error_or_value_type(error_t, F&& error) : error(std::forward<F>(error)) {}
+  constexpr error_or_value_type(error_t, F&& err) : error(std::forward<F>(err)) {}
 
   template <typename U>
-  constexpr error_or_value_type(value_t, U&& value) : value(std::forward<U>(value)) {}
+  constexpr error_or_value_type(value_t, U&& val) : value(std::forward<U>(val)) {}
 
   ~error_or_value_type() = default;
 
@@ -169,10 +169,10 @@ union error_or_value_type<E, T, storage_class_e::non_trivial> {
   constexpr error_or_value_type& operator=(error_or_value_type&&) = default;
 
   template <typename F>
-  constexpr error_or_value_type(error_t, F&& error) : error(std::forward<F>(error)) {}
+  constexpr error_or_value_type(error_t, F&& err) : error(std::forward<F>(err)) {}
 
   template <typename U>
-  constexpr error_or_value_type(value_t, U&& value) : value(std::forward<U>(value)) {}
+  constexpr error_or_value_type(value_t, U&& val) : value(std::forward<U>(val)) {}
 
   ~error_or_value_type() {}
 
