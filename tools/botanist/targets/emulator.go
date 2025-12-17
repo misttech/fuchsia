@@ -5,6 +5,7 @@
 package targets
 
 import (
+	"bufio"
 	"context"
 	"encoding/hex"
 	"fmt"
@@ -12,6 +13,7 @@ import (
 	"math/rand"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"syscall"
 	"time"
@@ -338,11 +340,43 @@ func (t *Emulator) Start(ctx context.Context, args []string, pbPath string, isBo
 		flush()
 		closeSerialLog()
 		if err != nil {
+			logger.Debugf(ctx, "processes using 'qemu' interface:\n%s", strings.Join(processesUsingQEMUInterface(), "\n"))
 			err = fmt.Errorf("%s invocation error: %w", t.binary, err)
 		}
 		t.c <- err
 	}()
 	return nil
+}
+
+// processesUsingQEMUInterface returns processes that have the 'qemu' interface open.
+func processesUsingQEMUInterface() (cmds []string) {
+	pattern := regexp.MustCompile(`iff:.*qemu`)
+	fdpaths, err := filepath.Glob("/proc/[1-9][0-9]*/fdinfo/*")
+	if err != nil {
+		return nil
+	}
+	for _, p := range fdpaths {
+		func() {
+			f, err := os.Open(p)
+			if err != nil {
+				// Just skip if we can't open the file.
+				return
+			}
+			defer f.Close()
+			matched := pattern.MatchReader(bufio.NewReader(f))
+			if !matched {
+				return
+			}
+			cmdPath := filepath.Clean(filepath.Join(p, "../../cmdline"))
+			cmdBytes, err := os.ReadFile(cmdPath)
+			if err != nil {
+				// Just skip if we can't read the file.
+				return
+			}
+			cmds = append(cmds, string(cmdBytes))
+		}()
+	}
+	return cmds
 }
 
 func (t *Emulator) CaptureSerialLog(filename string) error {
