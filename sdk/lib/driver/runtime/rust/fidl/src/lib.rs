@@ -26,6 +26,10 @@ use fdf_core::handle::{DriverHandle, MixedHandle, MixedHandleType};
 
 pub use self::wire::*;
 
+/// A wrapper around a dispatcher reference object that can be used with the [`fidl_next`] bindings
+/// to spawn client and server dispatchers on a driver runtime provided async dispatcher.
+pub type FidlExecutor<D = CurrentDispatcher> = libasync_fidl::FidlExecutor<D>;
+
 /// A fidl-compatible driver channel that also holds a reference to the
 /// dispatcher. Defaults to using [`CurrentDispatcher`].
 #[derive(Debug, PartialEq)]
@@ -466,90 +470,12 @@ impl<D: OnDispatcher> fidl_next::Transport for DriverChannel<D> {
 }
 
 impl<D> fidl_next::RunsTransport<DriverChannel<D>> for fidl_next::fuchsia_async::FuchsiaAsync {}
+impl<D: OnDispatcher> fidl_next::RunsTransport<DriverChannel<D>> for FidlExecutor<D> {}
 
 impl<D: OnDispatcher + 'static> HasExecutor for DriverChannel<D> {
-    type Executor = fidl_next::fuchsia_async::FuchsiaAsync;
+    type Executor = FidlExecutor<D>;
 
     fn executor(&self) -> Self::Executor {
-        fidl_next::fuchsia_async::FuchsiaAsync
-    }
-}
-
-#[cfg(test)]
-mod test {
-    // Normally, the FIDL types and traits used here would omit the `DriverChannel` type argument,
-    // since it can be inferred from the protocol. However, this test is in the crate which defines
-    // `DriverChannel` and the build system is set up in such a way that the generated FIDL crate we
-    // pull in references `DriverChannel` from a different crate. So for now, these have to keep
-    // their transport type arguments.
-
-    use fidl_next::{ClientDispatcher, ClientEnd, Responder, ServerDispatcher, ServerEnd};
-    use fidl_next_fuchsia_examples_gizmo::device::{GetEvent, GetHardwareId};
-    use fidl_next_fuchsia_examples_gizmo::{Device, DeviceClientHandler, DeviceServerHandler};
-    use fuchsia_async::OnSignals;
-    use zx::{AsHandleRef, Event, Signals};
-
-    use super::*;
-    use fdf_core::dispatcher::{CurrentDispatcher, OnDispatcher};
-    use fdf_env::test::spawn_in_driver;
-
-    struct DeviceServer;
-    impl DeviceServerHandler<DriverChannel> for DeviceServer {
-        async fn get_hardware_id(&mut self, responder: Responder<GetHardwareId, DriverChannel>) {
-            responder.respond(4004u32).await.unwrap();
-        }
-
-        async fn get_event(&mut self, responder: Responder<GetEvent, DriverChannel>) {
-            let event = Event::create();
-            event.signal_handle(Signals::empty(), Signals::USER_0).unwrap();
-            responder.respond(event).await.unwrap();
-        }
-    }
-
-    struct DeviceClient;
-    impl DeviceClientHandler<DriverChannel> for DeviceClient {}
-
-    #[test]
-    fn driver_fidl_server() {
-        spawn_in_driver("driver fidl server", async {
-            let (server_chan, client_chan) = Channel::<[Chunk]>::create();
-            let client_end: ClientEnd<Device, _> =
-                ClientEnd::<Device, _>::from_untyped(DriverChannel::new(client_chan));
-            let server_end: ServerEnd<Device, _> =
-                ServerEnd::from_untyped(DriverChannel::new(server_chan));
-            let client_dispatcher = ClientDispatcher::new(client_end);
-            let server_dispatcher = ServerDispatcher::new(server_end);
-            let client = client_dispatcher.client();
-
-            CurrentDispatcher
-                .spawn(async {
-                    server_dispatcher.run(DeviceServer).await.unwrap();
-                    println!("server task finished");
-                })
-                .unwrap();
-            CurrentDispatcher
-                .spawn(async {
-                    client_dispatcher.run(DeviceClient).await.unwrap();
-                    println!("client task finished");
-                })
-                .unwrap();
-
-            {
-                let res = client.get_hardware_id().await.unwrap();
-                let hardware_id = res.unwrap();
-                assert_eq!(hardware_id.response, 4004);
-            }
-
-            {
-                let res = client.get_event().await.unwrap();
-
-                // wait for the event on a fuchsia_async executor
-                let mut executor = fuchsia_async::LocalExecutor::default();
-                let signalled = executor
-                    .run_singlethreaded(OnSignals::new(res.event, Signals::USER_0))
-                    .unwrap();
-                assert_eq!(Signals::USER_0, signalled);
-            }
-        });
+        FidlExecutor::from(self.dispatcher.clone())
     }
 }

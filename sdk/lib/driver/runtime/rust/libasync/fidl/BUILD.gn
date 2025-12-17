@@ -4,9 +4,10 @@
 
 import("//build/components.gni")
 import("//build/rust/rustc_library.gni")
+import("//build/rust/rustc_test.gni")
 
 rustc_library("fidl") {
-  name = "fdf_fidl"
+  crate_name = "libasync_fidl"
   version = "0.1.0"
   edition = "2024"
   with_unit_tests = true
@@ -14,23 +15,31 @@ rustc_library("fidl") {
   configs += [ "//build/config/rust/lints:clippy_warn_all" ]
 
   deps = [
-    "//sdk/lib/driver/runtime/rust/channel",
-    "//sdk/lib/driver/runtime/rust/core",
-    "//sdk/lib/driver/runtime/rust/fdf_sys",
-    "//sdk/lib/driver/runtime/rust/libasync/fidl",
+    "//sdk/lib/driver/runtime/rust/libasync",
+    "//sdk/lib/driver/runtime/rust/libasync/sys",
     "//sdk/rust/zx",
-    "//src/devices/bin/driver_runtime",
     "//src/lib/fidl/rust_next/fidl_next",
-    "//src/lib/fuchsia-sync",
+    "//third_party/rust_crates:futures",
   ]
 
-  sources = [
-    "src/lib.rs",
-    "src/wire.rs",
+  test_deps = [
+    ":fuchsia.examples.gizmo_rust_next",
+    "//sdk/lib/driver/runtime/rust",
+    "//sdk/lib/driver/runtime/rust/env",
+    "//src/devices/bin/driver_runtime",
+    "//src/lib/fuchsia",
+  ]
+
+  sources = [ "src/lib.rs" ]
+
+  visibility = [
+    "//examples/*",
+    "//sdk/lib/driver/runtime/rust/fidl/*",
+    "//sdk/lib/driver/runtime/rust/libasync/*",
   ]
 }
 
-rustc_test("fdf_rust_fidl_integration_test") {
+rustc_test("libasync_rust_fidl_integration_test") {
   edition = "2024"
 
   source_root = "src/integration_test.rs"
@@ -39,6 +48,7 @@ rustc_test("fdf_rust_fidl_integration_test") {
   deps = [
     ":fidl",
     ":fuchsia.examples.gizmo_rust_next",
+    "//sdk/lib/driver/runtime/rust",
     "//sdk/lib/driver/runtime/rust/env",
     "//sdk/rust/zx",
     "//src/devices/bin/driver_runtime",
@@ -48,26 +58,25 @@ rustc_test("fdf_rust_fidl_integration_test") {
   ]
 }
 
-# Sample driver protocol using the Driver transport
+# Sample protocol using fidl transport
 fidl("fuchsia.examples.gizmo") {
   sources = [ "gizmo.test.fidl" ]
   public_deps = [ "//zircon/vdso/zx" ]
-  contains_drivers = true
   enable_rust_next = true
-  rust_next_emit_compat = false
 }
 
-fuchsia_unittest_package("fdf_rust_fidl_tests") {
+fuchsia_unittest_package("libasync_rust_fidl_unit_tests") {
   deps = [ ":fidl_test" ]
 }
 
-fuchsia_unittest_package("fdf_rust_fidl_integration_tests") {
-  deps = [ ":fdf_rust_fidl_integration_test" ]
+fuchsia_unittest_package("libasync_rust_fidl_integration_tests") {
+  deps = [ ":libasync_rust_fidl_integration_test" ]
 }
+
 group("tests") {
   testonly = true
   deps = [
-    ":fdf_rust_fidl_integration_tests",
-    ":fdf_rust_fidl_tests",
+    ":libasync_rust_fidl_integration_tests",
+    ":libasync_rust_fidl_unit_tests",
   ]
 }
