@@ -6,6 +6,7 @@
 
 mod binder;
 mod fs;
+mod objects;
 mod remote_binder;
 mod resource_accessor;
 mod shared_memory;
