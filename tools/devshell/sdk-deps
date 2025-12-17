@@ -4,6 +4,7 @@
 # found in the LICENSE file.
 
 #### CATEGORY=Other
+#### DEPRECATED
 ### List the dependencies of a target, and if dependencies are in SDK
 
 ## usage: fx sdk-deps [Options]
@@ -12,6 +13,8 @@
 ##     -t < target> : List all the deps of this target
 ##     -d < dep> : Determine if the dependency is in SDK
 ##     -o < filename> : Write output to CSV file. Default: sdk_deps_out.csv
+##
+## Deprecated: This command is deprecated as it only supports GN atoms.
 
 set -o errexit
 
@@ -116,8 +119,8 @@ main() {
 
     local partner_sdk_deps="${TEMPDIR}/partner_sdk_all_deps"
 
-    fx-info "Collecting Core SDK dependencies..."
-    fx-command-run gn desc "${build_dir}" "//sdk:core" deps --all > ${partner_sdk_deps} &
+    fx-info "Collecting IDK dependencies..."
+    fx-command-run gn desc "${build_dir}" "//sdk:fuchsia_collection" deps --all > ${partner_sdk_deps} &
 
     wait $(jobs -rp)
 
@@ -170,6 +173,9 @@ main() {
     echo "date_time_run,number_drivers,number_partner_sdk_deps,number_non_sdk_total_items,number_total_banjo" > "${output_csv}"
     echo "$(date +"%Y-%m-%d %H:%M:%S"),${num_drivers},${num_partner_sdk_deps},${num_non_sdk_total_items},${num_total_banjo}" >> "${output_csv}"
     fx-info "CSV output written to: ${output_csv}"
+
+    fx-warn "fx sdk-deps is deprecated."
+    fx-warn "Please file an SDK Experiences bug describing why you need it."
 }
 
 main "$@"
