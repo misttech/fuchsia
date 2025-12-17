@@ -495,7 +495,7 @@ pub trait TcpBindingsTypes:
 /// The bindings context for TCP.
 ///
 /// TCP timers are scoped by weak device IDs.
-pub trait TcpBindingsContext<D: StrongDeviceIdentifier>:
+pub trait TcpBindingsContext<D>:
     Sized
     + DeferredResourceRemovalContext
     + TimerContext
@@ -506,16 +506,14 @@ pub trait TcpBindingsContext<D: StrongDeviceIdentifier>:
 {
 }
 
-impl<D, BC> TcpBindingsContext<D> for BC
-where
-    D: StrongDeviceIdentifier,
+impl<D, BC> TcpBindingsContext<D> for BC where
     BC: Sized
         + DeferredResourceRemovalContext
         + TimerContext
         + RngContext
         + TcpBindingsTypes
         + SocketOpsFilterBindingContext<D>
-        + SettingsContext<TcpSettings>,
+        + SettingsContext<TcpSettings>
 {
 }
 

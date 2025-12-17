@@ -17,7 +17,7 @@ use ebpf_api::{
 use fidl_table_validation::ValidFidlTable;
 use log::{error, warn};
 use net_types::ip::IpVersion;
-use netstack3_core::device::{DeviceId, StrongDeviceIdentifier};
+use netstack3_core::device::DeviceId;
 use netstack3_core::filter::{
     BindingsPacketMatcher, FilterIpExt, IpPacket, SocketEgressFilterResult,
     SocketIngressFilterResult, SocketOpsFilter,
@@ -730,7 +730,7 @@ impl DeviceIfIndex for DeviceId<BindingsCtx> {
 // should fit in 128 bytes.
 const SERIALIZED_HEAD_SIZE: usize = 128;
 
-impl<D: StrongDeviceIdentifier + DeviceIfIndex> SocketOpsFilter<D> for &EbpfManager {
+impl<D: DeviceIfIndex> SocketOpsFilter<D> for &EbpfManager {
     fn on_egress<I: FilterIpExt, P: IpPacket<I> + PartialSerializer>(
         &self,
         packet: &P,

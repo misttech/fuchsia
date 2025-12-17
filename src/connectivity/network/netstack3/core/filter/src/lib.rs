@@ -66,8 +66,8 @@ pub mod testutil {
     use crate::{
         FilterIpExt, IpPacket, SocketEgressFilterResult, SocketIngressFilterResult, SocketOpsFilter,
     };
+    use netstack3_base::Marks;
     use netstack3_base::socket::SocketCookie;
-    use netstack3_base::{Marks, StrongDeviceIdentifier};
 
     #[cfg(test)]
     pub(crate) trait TestIpExt:
@@ -84,7 +84,7 @@ pub mod testutil {
     /// No-op implementation of `SocketOpsFilter`.
     pub struct NoOpSocketOpsFilter;
 
-    impl<D: StrongDeviceIdentifier> SocketOpsFilter<D> for NoOpSocketOpsFilter {
+    impl<D> SocketOpsFilter<D> for NoOpSocketOpsFilter {
         fn on_egress<I: FilterIpExt, P: IpPacket<I>>(
             &self,
             _packet: &P,

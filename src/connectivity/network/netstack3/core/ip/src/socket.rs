@@ -425,12 +425,12 @@ impl<I: IpExt, D> IpSock<I, D> {
 // raw IP sockets once we support those.
 
 /// The bindings execution context for IP sockets.
-pub trait IpSocketBindingsContext<D: StrongDeviceIdentifier>:
+pub trait IpSocketBindingsContext<D>:
     InstantContext + FilterBindingsContext + TxMetadataBindingsTypes + SocketOpsFilterBindingContext<D>
 {
 }
 impl<
-    D: StrongDeviceIdentifier,
+    D,
     BC: InstantContext
         + FilterBindingsContext
         + TxMetadataBindingsTypes

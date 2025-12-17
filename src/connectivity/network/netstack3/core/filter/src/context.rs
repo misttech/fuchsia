@@ -9,8 +9,7 @@ use net_types::ip::{IpVersion, Ipv4, Ipv6};
 use netstack3_base::socket::SocketCookie;
 use netstack3_base::{
     InstantBindingsTypes, InterfaceProperties, IpDeviceAddr, IpDeviceAddressIdContext, Marks,
-    MatcherBindingsTypes, RngContext, StrongDeviceIdentifier, TimerBindingsTypes, TimerContext,
-    TxMetadataBindingsTypes,
+    MatcherBindingsTypes, RngContext, TimerBindingsTypes, TimerContext, TxMetadataBindingsTypes,
 };
 use packet::{FragmentedByteSlice, PartialSerializer};
 use packet_formats::ip::IpExt;
@@ -141,7 +140,7 @@ pub enum SocketIngressFilterResult {
 }
 
 /// Trait for a socket operations filter.
-pub trait SocketOpsFilter<D: StrongDeviceIdentifier> {
+pub trait SocketOpsFilter<D> {
     /// Called on every outgoing packet originated from a local socket.
     fn on_egress<I: FilterIpExt, P: IpPacket<I> + PartialSerializer>(
         &self,
@@ -163,9 +162,7 @@ pub trait SocketOpsFilter<D: StrongDeviceIdentifier> {
 }
 
 /// Implemented by bindings to provide socket operations filtering.
-pub trait SocketOpsFilterBindingContext<D: StrongDeviceIdentifier>:
-    TxMetadataBindingsTypes
-{
+pub trait SocketOpsFilterBindingContext<D>: TxMetadataBindingsTypes {
     /// Returns the filter that should be called for socket ops.
     fn socket_ops_filter(&self) -> impl SocketOpsFilter<D>;
 }
@@ -176,7 +173,7 @@ impl<
     Event: Debug + 'static,
     State: 'static,
     FrameMeta: 'static,
-    D: StrongDeviceIdentifier,
+    D,
 > SocketOpsFilterBindingContext<D>
     for netstack3_base::testutil::FakeBindingsCtx<TimerId, Event, State, FrameMeta>
 {
