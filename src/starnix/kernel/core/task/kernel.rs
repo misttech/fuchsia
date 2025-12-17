@@ -854,10 +854,15 @@ impl Kernel {
 
     /// Opens and returns a directory proxy from the container's namespace, at
     /// the requested path, using the provided flags. This method will open the
-    /// closest existing path from the namespace hierarchy. For instance, if
-    /// the parameter provided is `/path/to/foo/bar` and the exists namespace
-    /// entries for `/path/to/foo` and `/path/to`, then the former will be used
-    /// as the root proxy and the subdir `bar` returned.
+    /// closest existing path from the namespace hierarchy, and then attempt
+    /// initialize an open on the remaining subdirectory path, using the given open_flags.
+    ///
+    /// For example, given the parameter provided is `/path/to/foo/bar` and there
+    /// are namespace entries already for `/path/to/foo` and `/path/to`. The entry
+    /// for /path/to/foo will be opened, and then the /bar will attempt to be opened
+    /// underneath that directory with the given open_flags. The returned value
+    /// will be the proxy to the parent (/path/to/foo) and the string to the child
+    /// path (/bar). The caller of this method can expect /bar to be initialized.
     pub fn open_ns_dir(
         &self,
         path: &str,

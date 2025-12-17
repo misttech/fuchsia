@@ -263,6 +263,7 @@ pub fn new_remote_vol(
     options: FileSystemOptions,
 ) -> Result<FileSystemHandle, Errno> {
     let kernel = current_task.kernel();
+    // TODO(https://fxbug.dev/460156877): Starnix cannot handle multiple volumes.
     let volume_provider = current_task
         .kernel()
         .connect_to_protocol_at_container_svc::<StarnixVolumeProviderMarker>()
@@ -271,15 +272,28 @@ pub fn new_remote_vol(
 
     let (crypt_client_end, crypt_proxy) = fidl::endpoints::create_endpoints::<CryptMarker>();
 
-    let data = match kernel.container_namespace.get_namespace_channel("/data") {
-        Ok(channel) => fio::DirectorySynchronousProxy::new(channel),
-        Err(err) => {
-            log_error!("Unable to find a channel for /data. Received error: {}", err);
-            return Err(errno!(ENOENT));
+    let key_location = match options.params.get(FsStr::new(b"keylocation")) {
+        Some(path) => str::from_utf8(path.as_bytes()).map_err(|_| errno!(EINVAL))?,
+        None => {
+            // TODO(https://fxbug.dev/460156877): Starnix cannot handle unencrypted volumes.
+            log_error!(
+                "TODO(b/460156877): Starnix is unable to mount remote volumes without encryption. \
+                Encrypted volumes should specify a keylocation in the mount flags."
+            );
+            return Err(errno!(EINVAL));
         }
     };
 
-    let (keys, created_key_file) = VolumeKeys::get_or_create(&data, KEY_FILE_PATH)?;
+    let open_flags =
+        fio::PERM_READABLE | fio::Flags::FLAG_MAYBE_CREATE | fio::Flags::PROTOCOL_DIRECTORY;
+    let (root, subdir) = kernel.open_ns_dir(key_location, open_flags)?;
+
+    let open_rights = fio::PERM_READABLE | fio::PERM_WRITABLE;
+    let subdir = if subdir.is_empty() { ".".to_string() } else { subdir };
+    let key_location_proxy = syncio::directory_open_directory_async(&root, &subdir, open_rights)
+        .map_err(|e| errno!(EIO, format!("Failed to open proxy for keylocation: {e}")))?;
+
+    let (keys, created_key_file) = VolumeKeys::get_or_create(&key_location_proxy, KEY_FILE_PATH)?;
 
     let crypt_service =
         Arc::new(CryptService::new(&keys.metadata, &keys.data, keys.use_lblk32_identifiers, None));

@@ -17,7 +17,7 @@
             "/tmp:tmpfs",
 
             // LINT.ThenChange(debian_container.cml, debian_container_profiled.cml)
-            "/data:remotevol::nosuid,nodev,relatime",
+            "/data:remotevol::nosuid,nodev,relatime,keylocation=/data",
         ],
     },
     use: [
