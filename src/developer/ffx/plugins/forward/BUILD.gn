@@ -27,7 +27,7 @@ if (is_host) {
       "//src/developer/ffx/lib/target/holders:lib",
       "//src/developer/ffx/lib/target_net:lib",
       "//src/developer/ffx/lib/writer:lib",
-      "//src/developer/ffx/plugins/speedtest/common:speedtest",
+      "//src/developer/ffx/tools/speedtest/common:speedtest",
       "//src/lib/fuchsia-async",
       "//third_party/rust_crates:async-trait",
       "//third_party/rust_crates:futures",

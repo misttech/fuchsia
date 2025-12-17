@@ -12,7 +12,6 @@ group("tools") {
     "//src/connectivity/bluetooth/tools",
     "//src/developer/debug/debug_agent",
     "//src/developer/fastboot",
-    "//src/developer/ffx/plugins/speedtest/target:speedtest",
     "//src/devices/bundles:tools",
     "//src/graphics/display:tools",
     "//src/graphics/lib/magma:magma-tools",
@@ -38,6 +37,7 @@ group("tools") {
 _host_tools = [
   "//build/bazel/host:bazel_root_host_tools.formatjson5.host_tool",
   "//src/developer/debug/zxdb:zxdb",
+  "//src/developer/ffx/tools/speedtest/target:speedtest",
   "//src/diagnostics/triage:install",
   "//src/lib/chunked-compression:chunked-compress-host-tool",
   "//src/lib/icu/tools/extractor:host",

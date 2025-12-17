@@ -10,7 +10,7 @@ rustc_binary("bin") {
   edition = "2024"
   deps = [
     "//sdk/fidl/fuchsia.developer.ffx.speedtest:fuchsia.developer.ffx.speedtest_rust",
-    "//src/developer/ffx/plugins/speedtest/common:speedtest",
+    "//src/developer/ffx/tools/speedtest/common:speedtest",
     "//src/lib/fuchsia",
     "//src/lib/fuchsia-component",
     "//third_party/rust_crates:futures",
