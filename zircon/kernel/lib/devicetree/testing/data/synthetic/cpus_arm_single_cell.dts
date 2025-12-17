@@ -12,7 +12,7 @@
         cpu@0 {
             device_type = "cpu";
             compatible = "arm,cortex-a57";
-            reg = <0x0 0x0>;
+            reg = <0x0>;
             enable-method = "spin-table";
             cpu-release-addr = <0x20000000>;
             phandle = <0x01>;
@@ -22,7 +22,7 @@
         cpu@1 {
             device_type = "cpu";
             compatible = "arm,cortex-a57";
-            reg = <0x0 0x1>;
+            reg = <0x1>;
             enable-method = "spin-table";
             cpu-release-addr = <0x20000000>;
             phandle = <0x03>;
@@ -32,7 +32,7 @@
         cpu@100 {
             device_type = "cpu";
             compatible = "arm,cortex-a57";
-            reg = <0x0 0x100>;
+            reg = <0x100>;
             enable-method = "spin-table";
             cpu-release-addr = <0x20000000>;
             phandle = <0x05>;
@@ -42,7 +42,7 @@
         cpu@101 {
             device_type = "cpu";
             compatible = "arm,cortex-a57";
-            reg = <0x0 0x101>;
+            reg = <0x101>;
             enable-method = "spin-table";
             cpu-release-addr = <0x20000000>;
             phandle = <0x07>;

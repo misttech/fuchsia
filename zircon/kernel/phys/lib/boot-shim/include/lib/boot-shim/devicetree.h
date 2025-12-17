@@ -876,82 +876,48 @@ class ArmDevicetreeCpuTopologyItem : public DevicetreeCpuTopologyItem {
           // The presence of "reg" should already have been validated.
           std::optional<devicetree::RegProperty> reg = cpu_entry.reg;
           ZX_DEBUG_ASSERT(reg);
-          if (reg->size() == 0 || reg->size() > 2) {
-            OnError("'reg' property in 'cpu' node contains an unexpected number of cells.");
+          // Note: this is the number of register elements and not the number of
+          // individual cells. The number of individual cells can be 1 or 2, but there
+          // should be only one register element.
+          if (reg->size() != 1) {
+            OnError("'reg' property in 'cpu' node must contain exactly one register element.");
             return false;
           }
           if (!(*reg)[0].address()) {
             OnError("Could not parse first cell of 'reg' property in 'cpu' node.");
             return false;
           }
-          if (reg->size() == 2 && !(*reg)[1].address()) {
-            OnError("Could not parse second cell of 'reg' property in 'cpu' node.");
-            return false;
-          }
           return true;
         },
         [](zbi_topology_processor_t& node, const CpuEntry& cpu_entry) {
           node.architecture_info.discriminant = ZBI_TOPOLOGY_ARCHITECTURE_INFO_ARM64;
-          devicetree::PropertyDecoder decoder(cpu_entry.properties);
 
-          // Even though the decoded "reg" property is readily available as
-          // cpu_entry.reg, it's more convenient to normalize it as an array of
-          // with elements containing only a single address cell, rather than
-          // conditionally dealing with the case with elements with two address
-          // cells.
-          //
-          // Validations of debug asserts below were made in the arch info
-          // checker.
-          auto reg_prop = decoder.FindProperty("reg");
-          ZX_DEBUG_ASSERT(reg_prop);
-          auto reg = devicetree::RegProperty::Create(1, 0, reg_prop->AsBytes());
-          ZX_DEBUG_ASSERT(reg);
-          ZX_DEBUG_ASSERT(reg->size() == 1 || reg->size() == 2);
-
-          auto set_affs = [&node](uint64_t cell) {
-            // AFF 0
-            node.architecture_info.arm64.cpu_id = cell & 0xff;
-            // AFF 1
-            node.architecture_info.arm64.cluster_1_id = (cell >> 8) & 0xff;
-            // AFF 2
-            node.architecture_info.arm64.cluster_2_id = (cell >> 16) & 0xff;
-          };
-
-          auto set_boot_cpu = [&node]() {
-            // Look for MPIDR 0.
-            const auto& arch_info = node.architecture_info.arm64;
-            if (arch_info.cpu_id == 0 && arch_info.cluster_1_id == 0 &&
-                arch_info.cluster_2_id == 0 && arch_info.cluster_3_id == 0) {
-              node.flags |= ZBI_TOPOLOGY_PROCESSOR_FLAGS_PRIMARY;
-            } else {
-              node.flags &= ~ZBI_TOPOLOGY_PROCESSOR_FLAGS_PRIMARY;
-            }
-          };
-
-          auto cell_0 = (*reg)[0].address();
-          ZX_DEBUG_ASSERT(cell_0);  // Validated in the arch info checker.
-
+          auto reg = cpu_entry.reg;
+          auto address = (*reg)[0].address();
+          ZX_DEBUG_ASSERT(address);  // Validated in the arch info checker.
           node.architecture_info.arm64.gic_id =
               static_cast<uint8_t>(node.logical_ids[node.logical_id_count - 1]);
 
-          // One cell.
-          // The reg cell bits [23:0] must be set to bits [23:0] of MPIDR_EL1.
-          if (reg->size() == 1) {
-            set_affs(*cell_0);
-            node.architecture_info.arm64.cluster_3_id = 0;
-            set_boot_cpu();
-            return;
+          // Save the CPU affinities for this node's address.
+          // AFF 0 [7:0]
+          node.architecture_info.arm64.cpu_id = *address & 0xff;
+          // AFF 1 [15:8]
+          node.architecture_info.arm64.cluster_1_id = (*address >> 8) & 0xff;
+          // AFF 2 [23:16]
+          node.architecture_info.arm64.cluster_2_id = (*address >> 16) & 0xff;
+          // AFF 3 [39:32]
+          node.architecture_info.arm64.cluster_3_id = (*address >> 32) & 0xff;
+
+          // TODO(https://fxbug.dev/469026173): Use the boot CPU's actual MPIDR instead of assuming
+          // it is the CPU with MPIDR 0 in the devicetree.
+          // Flag the boot CPU by looking for MPIDR 0.
+          const auto& arch_info = node.architecture_info.arm64;
+          if (arch_info.cpu_id == 0 && arch_info.cluster_1_id == 0 && arch_info.cluster_2_id == 0 &&
+              arch_info.cluster_3_id == 0) {
+            node.flags |= ZBI_TOPOLOGY_PROCESSOR_FLAGS_PRIMARY;
+          } else {
+            node.flags &= ~ZBI_TOPOLOGY_PROCESSOR_FLAGS_PRIMARY;
           }
-
-          // Two cells.
-          // The first reg cell bits [7:0] must be set to  bits [39:32] of MPIDR_EL1.
-          // The second reg cell bits [23:0] must be set to bits [23:0] of MPIDR_EL1.
-          auto cell_1 = (*reg)[1].address();
-          ZX_DEBUG_ASSERT(cell_1);  // Validated in the arch info checker.
-
-          set_affs(*cell_1);
-          node.architecture_info.arm64.cluster_3_id = *cell_0 & 0xFF;
-          set_boot_cpu();
         });
   }
 };

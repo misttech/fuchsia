@@ -113,6 +113,7 @@ class PropEncodedArray {
                        cells_for_elements_);
   }
 
+  // Returns the number of entries in the array, accounting for the number of cells per entry.
   constexpr size_t size() const {
     if (entry_size_ == 0) {
       return 0;
