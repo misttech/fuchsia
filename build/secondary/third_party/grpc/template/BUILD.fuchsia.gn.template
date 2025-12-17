@@ -118,6 +118,7 @@
       "-Wno-unreachable-code-break",
       "-Wno-unreachable-code-return",
       "-Wno-unused-variable",
+      "-Wno-unused-result",
 
       # TODO(https://fxbug.dev/42063413): Remove after integrating
       # https://github.com/grpc/grpc/pull/31306
