@@ -33,6 +33,9 @@ toc:
 - title: "Contributing to Netstack"
   section:
   - include: /docs/contribute/contributing-to-netstack/_toc.yaml
+- title: "Contributing to Zircon"
+  section:
+  - include: /docs/contribute/contributing-to-zircon/_toc.yaml
 - title: "Contributing to documentation"
   section:
   - include: /docs/contribute/docs/_toc.yaml
