@@ -6,6 +6,8 @@ This page lists common troubleshooting tips for `zxdb`:
 * [Ensure that ffx can communicate with the device](#ffx-device-communication)
 * [Ensure that the Fuchsia package server is running](#package-server-running)
 * [Diagnose problems with symbols](#diagnose-problems-symbols)
+* [Verify that package serving is working correctly for debug_agent](#verify-that-package-serving-is-working-correctly-for-debug-agent)
+* [Check if the debugger component exists](#check-if-the-debugger-component-exists)
 
 ## Ensure that ffx can communicate with the device {:#ffx-device-communication}
 
@@ -231,6 +233,44 @@ Breakpoint 1 (Software) @ file.cc:138
  ◉ 139   DoSomething(&my_value);    <- But ended up here.
    140   if (my_value > 0) {
 ```
+
+## Verify that package serving is working correctly for debug_agent {:#verify-that-package-serving-is-working-correctly-for-debug-agent}
+
+If you suspect that serving the `debug_agent` package is failing, check to make
+sure that package serving is working correctly in your Fuchsia checkout setup.
+
+Use `pkgctl` directly on the device shell to resolve the package:
+
+1. Run the `resolve` command for the `debug_agent` package, for example:
+
+   ```posix-terminal
+   fx shell pkgctl resolve fuchsia-pkg://fuchsia.com/debug_agent
+   ```
+
+2. To confirm that the package was successfully resolved, inspect the package
+   resolver stats:
+
+   ```posix-terminal
+   ffx inspect show core/pkg-resolver:root/resolver_service/successful_resolves
+   ```
+
+   Look for entries where `source = TUF` and the hash of the `debug_agent` package
+   matches the value from the `out/default/amber-files/repository/targets.json` file
+   in your Fuchsia source checkout setup.
+
+## Check if the debugger component exists {:#check-if-the-debugger-component-exists}
+
+If the `ffx debug connect` command fails while setting up `zxdb`, check if the
+`debugger` component actually exists on the target device using the
+`ffx component list` command, for example:
+
+```posix-terminal
+ffx component list | grep debugger
+```
+
+This command needs to return `core/debugger` for `ffx debug connect` to work.
+
+<!-- Reference links -->
 
 [fuchsia-dependency-sets]: /docs/get-started/learn/build/product-packages.md#dependency_sets
 [debug-symbols-location]: /docs/development/debugger/troubleshooting.md#set-symbol-location
