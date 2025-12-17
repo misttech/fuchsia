@@ -205,15 +205,14 @@ zx_status_t gic_init() {
   arm_gicv3_write32(GICD_CTLR, CTLR_ENABLE_G0 | CTLR_ENABLE_G1NS | CTLR_ARE_S);
   gic_wait_for_rwp(GICD_CTLR);
 
-  // ensure we're running on cpu 0 and that cpu 0 corresponds to affinity 0.0.0.0
+  // ensure we're running on cpu 0
   DEBUG_ASSERT(arch_curr_cpu_num() == 0);
-  DEBUG_ASSERT(arch_cpu_num_to_mpidr(0) == 0);
 
-  // set spi to target cpu 0 (affinity 0.0.0.0). must do this after ARE enable
+  // set spi to target cpu 0 and its associated affinity. must do this after ARE enable
   uint max_cpu = BITS_SHIFT(typer, 7, 5);
   if (max_cpu > 0) {
     for (i = 32; i < gic_max_int; i++) {
-      arm_gicv3_write64(GICD_IROUTER(i), 0);
+      arm_gicv3_write64(GICD_IROUTER(i), arch_cpu_num_to_mpidr(0));
     }
   }
 

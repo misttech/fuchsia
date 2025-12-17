@@ -29,7 +29,7 @@ namespace {
 constexpr uint64_t kMpidAffMask = ARM64_MPIDR_MASK;
 
 // A list of mpids, indexed by cpu_id.
-// We can leave this zero-initialized as MPID 0 is only valid on CPU 0.
+// We can leave this zero-initialized as MPID 0 can be a valid value for CPU 0.
 uint64_t arm64_cpu_list[SMP_MAX_CPUS];
 
 }  // namespace
@@ -53,13 +53,7 @@ cpu_num_t arm64_mpidr_to_cpu_num(uint64_t mpidr) {
       return i;
     }
   }
-
-  if (arm_num_cpus == 0) {
-    // The only time we shouldn't find a cpu is when the list isn't
-    // defined yet during early boot, in this case the only processor up is 0
-    // so returning 0 is correct.
-    return 0;
-  }
+  // Because early boot will register CPU 0's MPID, a matching CPU number should always be found.
   return INVALID_CPU;
 }
 

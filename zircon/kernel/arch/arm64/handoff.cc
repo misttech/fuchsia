@@ -25,6 +25,10 @@ void ArchPostHandoffBootstrap(const ArchPhysHandoff& arch_handoff) {
   __dsb(ARM_MB_SY);
   __isb(ARM_MB_SY);
 
+  // save the mpid for cpu 0
+  uint64_t mpidr = __arm_rsr64("mpidr_el1");
+  arch_register_mpid(0, mpidr & ARM64_MPIDR_MASK);
+
   // set the per cpu pointer for cpu 0
   arm64_init_percpu_early();
 }
