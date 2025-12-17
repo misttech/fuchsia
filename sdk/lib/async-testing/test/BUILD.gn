@@ -2,16 +2,15 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/components.gni")
-import("//build/test.gni")
+import("//build/cpp/sdk_cpp_test.gni")
+import("//build/cpp/sdk_cpp_unittest_package.gni")
 
 group("test") {
   testonly = true
   deps = [ ":async-testing-pkg" ]
 }
 
-test("async-testing") {
-  output_name = "async-testing-test"
+sdk_cpp_test("async-testing") {
   sources = [ "test_loop_tests.cc" ]
   deps = [
     "//sdk/lib/async",
@@ -26,6 +25,6 @@ test("async-testing") {
   ]
 }
 
-fuchsia_unittest_package("async-testing-pkg") {
-  deps = [ ":async-testing" ]
+sdk_cpp_unittest_package("async-testing-pkg") {
+  sdk_cpp_test_deps = [ ":async-testing" ]
 }

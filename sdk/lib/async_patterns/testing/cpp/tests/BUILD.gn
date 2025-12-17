@@ -2,11 +2,11 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/components.gni")
+import("//build/cpp/sdk_cpp_test.gni")
+import("//build/cpp/sdk_cpp_unittest_package.gni")
 
-executable("bin") {
+sdk_cpp_test("bin") {
   output_dir = target_out_dir
-  output_name = "async_patterns_testing_unittests"
 
   sources = [ "dispatcher_bound_test.cc" ]
 
@@ -22,8 +22,8 @@ executable("bin") {
   testonly = true
 }
 
-fuchsia_unittest_package("async_patterns_testing_tests") {
-  deps = [ ":bin" ]
+sdk_cpp_unittest_package("async_patterns_testing_tests") {
+  sdk_cpp_test_deps = [ ":bin" ]
 }
 
 group("tests") {

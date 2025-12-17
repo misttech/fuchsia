@@ -3,6 +3,8 @@
 # found in the LICENSE file.
 
 import("//build/components.gni")
+import("//build/cpp/sdk_cpp_test.gni")
+import("//build/cpp/sdk_cpp_unittest_package.gni")
 import("//build/cpp/sdk_shared_library.gni")
 import("//build/cpp/sdk_source_set.gni")
 import("//build/test.gni")
@@ -36,7 +38,7 @@ sdk_source_set("cpp") {
   public_configs = [ "//sdk/config" ]
 }
 
-test("vfs_cpp_unittests") {
+sdk_cpp_test("vfs_cpp_unittests") {
   sources = [
     "tests/composed_service_dir_test.cc",
     "tests/lazy_dir_test.cc",
@@ -56,8 +58,8 @@ test("vfs_cpp_unittests") {
   ]
 }
 
-fuchsia_unittest_package("vfs_cpp_tests") {
-  deps = [ ":vfs_cpp_unittests" ]
+sdk_cpp_unittest_package("vfs_cpp_tests") {
+  sdk_cpp_test_deps = [ ":vfs_cpp_unittests" ]
 }
 
 group("tests") {
