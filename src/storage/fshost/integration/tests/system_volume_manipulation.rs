@@ -63,7 +63,7 @@ async fn build_fxblob() -> Disk {
     let fixture = builder.build().await;
     fixture.check_fs_type("blob", blob_fs_type()).await;
     fixture.check_fs_type("data", data_fs_type()).await;
-    fixture.check_test_blob(true).await;
+    fixture.check_test_blob().await;
     fixture.tear_down().await.unwrap()
 }
 
@@ -555,7 +555,7 @@ async fn new_blob_volume_is_cleaned_up_on_install_failure() {
 
     // Now boot up normally and ensure the existing blob volume remains untouched.
     let fixture = new_builder().with_disk_from(system_container).build().await;
-    fixture.check_test_blob(true).await;
+    fixture.check_test_blob().await;
 
     // Now that we booted up normally, tear down the fixture again and ensure the extra volume is
     // gone without any explicit action on our part.

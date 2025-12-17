@@ -3,10 +3,12 @@
 // found in the LICENSE file.
 
 use assert_matches::assert_matches;
-use delivery_blob::{CompressionMode, Type1Blob, delivery_blob_path};
+use blob_writer::BlobWriter;
+use delivery_blob::{CompressionMode, Type1Blob};
 use fidl::endpoints::DiscoverableProtocolMarker as _;
 use fidl_fuchsia_fs_startup::VolumeMarker as FsStartupVolumeMarker;
 use fidl_fuchsia_fshost::AdminProxy;
+use fidl_fuchsia_fxfs::{BlobCreatorProxy, BlobReaderProxy};
 use fidl_fuchsia_hardware_block_volume::{VolumeManagerMarker, VolumeMarker};
 use fidl_fuchsia_update_verify::HealthStatus;
 use fs_management::DATA_TYPE_GUID;
@@ -26,12 +28,8 @@ use {fidl_fuchsia_io as fio, fuchsia_async as fasync};
 
 #[cfg(feature = "fxblob")]
 use {
-    blob_writer::BlobWriter,
-    diagnostics_assertions::assert_data_tree,
-    diagnostics_reader::ArchiveReader,
-    fidl::endpoints::Proxy,
-    fidl_fuchsia_fshost::StarnixVolumeProviderProxy,
-    fidl_fuchsia_fxfs::{BlobCreatorProxy, BlobReaderProxy},
+    diagnostics_assertions::assert_data_tree, diagnostics_reader::ArchiveReader,
+    fidl::endpoints::Proxy, fidl_fuchsia_fshost::StarnixVolumeProviderProxy,
     fshost_test_fixture::STARNIX_VOLUME_NAME,
 };
 
@@ -45,8 +43,8 @@ use {
 pub mod config;
 
 use config::{
-    DATA_FILESYSTEM_VARIANT, blob_fs_type, data_fs_spec, data_fs_type, data_fs_zxcrypt,
-    data_max_bytes, fvm_slice_size, new_builder, volumes_spec,
+    blob_fs_type, data_fs_spec, data_fs_type, data_fs_zxcrypt, data_max_bytes, fvm_slice_size,
+    new_builder, volumes_spec,
 };
 
 #[fuchsia::test]
@@ -61,7 +59,7 @@ async fn blobfs_and_data_mounted() {
     // Also make sure tmpfs is getting exported.
     fixture.check_fs_type("tmp", VFS_TYPE_MEMFS).await;
     fixture.check_test_data_file().await;
-    fixture.check_test_blob(DATA_FILESYSTEM_VARIANT == "fxblob").await;
+    fixture.check_test_blob().await;
 
     let blob_dir =
         fixture.dir("blob-exec", fio::PERM_READABLE | fio::PERM_WRITABLE | fio::PERM_EXECUTABLE);
@@ -84,7 +82,7 @@ async fn blobfs_and_data_mounted_with_extra_volume() {
     fixture.check_fs_type("blob-exec", blob_fs_type()).await;
     fixture.check_fs_type("data", data_fs_type()).await;
     fixture.check_test_data_file().await;
-    fixture.check_test_blob(DATA_FILESYSTEM_VARIANT == "fxblob").await;
+    fixture.check_test_blob().await;
 
     fixture.tear_down().await;
 }
@@ -102,7 +100,7 @@ async fn blobfs_and_data_mounted_legacy_label() {
     fixture.check_fs_type("blob", blob_fs_type()).await;
     fixture.check_fs_type("data", data_fs_type()).await;
     fixture.check_test_data_file().await;
-    fixture.check_test_blob(DATA_FILESYSTEM_VARIANT == "fxblob").await;
+    fixture.check_test_blob().await;
 
     fixture.tear_down().await;
 }
@@ -115,7 +113,7 @@ async fn data_formatted() {
 
     fixture.check_fs_type("blob", blob_fs_type()).await;
     fixture.check_fs_type("data", data_fs_type()).await;
-    fixture.check_test_blob(DATA_FILESYSTEM_VARIANT == "fxblob").await;
+    fixture.check_test_blob().await;
 
     fixture.tear_down().await;
 }
@@ -130,7 +128,7 @@ async fn data_partition_nonexistent() {
 
     fixture.check_fs_type("blob", blob_fs_type()).await;
     fixture.check_fs_type("data", data_fs_type()).await;
-    fixture.check_test_blob(DATA_FILESYSTEM_VARIANT == "fxblob").await;
+    fixture.check_test_blob().await;
 
     fixture.tear_down().await;
 }
@@ -199,7 +197,7 @@ async fn ramdisk_blob_and_data_mounted() {
     fixture.check_fs_type("blob", blob_fs_type()).await;
     fixture.check_fs_type("data", data_fs_type()).await;
     fixture.check_test_data_file().await;
-    fixture.check_test_blob(DATA_FILESYSTEM_VARIANT == "fxblob").await;
+    fixture.check_test_blob().await;
 
     fixture.tear_down().await;
 }
@@ -216,7 +214,7 @@ async fn ramdisk_blob_and_data_mounted_no_existing_data_partition() {
 
     fixture.check_fs_type("blob", blob_fs_type()).await;
     fixture.check_fs_type("data", data_fs_type()).await;
-    fixture.check_test_blob(DATA_FILESYSTEM_VARIANT == "fxblob").await;
+    fixture.check_test_blob().await;
 
     fixture.tear_down().await;
 }
@@ -717,39 +715,7 @@ async fn set_volume_bytes_limit() {
 }
 
 #[fuchsia::test]
-#[cfg_attr(feature = "fxblob", ignore)]
 async fn set_data_and_blob_max_bytes_zero() {
-    let mut builder = new_builder();
-    builder.fshost().set_config_value("data_max_bytes", 0).set_config_value("blobfs_max_bytes", 0);
-    builder.with_disk().format_volumes(volumes_spec());
-    let fixture = builder.build().await;
-
-    fixture.check_fs_type("blob", blob_fs_type()).await;
-    fixture.check_fs_type("data", data_fs_type()).await;
-    let flags = fio::Flags::FLAG_MAYBE_CREATE | fio::PERM_READABLE | fio::PERM_WRITABLE;
-
-    let data_root = fixture.dir("data", flags);
-    let file = fuchsia_fs::directory::open_file(&data_root, "file", flags).await.unwrap();
-    fuchsia_fs::file::write(&file, "file contents!").await.unwrap();
-
-    let blob_contents = vec![0; 8192];
-    let hash = fuchsia_merkle::root_from_slice(&blob_contents);
-
-    let blob_root = fixture.dir("blob", flags);
-    let blob =
-        fuchsia_fs::directory::open_file(&blob_root, &format!("{}", hash), flags).await.unwrap();
-    blob.resize(blob_contents.len() as u64)
-        .await
-        .expect("FIDL call failed")
-        .expect("truncate failed");
-    fuchsia_fs::file::write(&blob, &blob_contents).await.unwrap();
-
-    fixture.tear_down().await;
-}
-
-#[fuchsia::test]
-#[cfg(feature = "fxblob")]
-async fn set_data_and_blob_max_bytes_zero_new_write_api() {
     let mut builder = new_builder();
     builder.fshost().set_config_value("data_max_bytes", 0).set_config_value("blobfs_max_bytes", 0);
     builder.with_disk().format_volumes(volumes_spec());
@@ -1340,53 +1306,7 @@ async fn health_check_blobs() {
 }
 
 #[fuchsia::test]
-#[cfg_attr(feature = "fxblob", ignore)]
 async fn delivery_blob_support() {
-    let mut builder = new_builder();
-    builder.fshost().set_config_value("blobfs_max_bytes", BLOBFS_MAX_BYTES);
-    builder.with_disk().format_volumes(volumes_spec());
-    let fixture = builder.build().await;
-    // 65536 bytes of 0xff "small" f75f59a944d2433bc6830ec243bfefa457704d2aed12f30539cd4f18bf1d62cf
-    const HASH: &'static str = "f75f59a944d2433bc6830ec243bfefa457704d2aed12f30539cd4f18bf1d62cf";
-    let data: Vec<u8> = vec![0xff; 65536];
-    let payload = Type1Blob::generate(&data, CompressionMode::Always);
-    // `data` is highly compressible, so we should be able to transfer it in one write call.
-    assert!((payload.len() as u64) < fio::MAX_TRANSFER_SIZE, "Payload exceeds max transfer size!");
-    // Now attempt to write `payload` as we would any other blob, but using the delivery path.
-    let blob = fuchsia_fs::directory::open_file(
-        &fixture.dir("blob", fio::PERM_READABLE | fio::PERM_WRITABLE),
-        &delivery_blob_path(HASH),
-        fio::Flags::FLAG_MAYBE_CREATE | fio::PERM_WRITABLE,
-    )
-    .await
-    .expect("Failed to open delivery blob for writing.");
-    // Resize to required length.
-    blob.resize(payload.len() as u64).await.unwrap().map_err(zx::Status::from_raw).unwrap();
-    // Write payload.
-    let bytes_written = blob.write(&payload).await.unwrap().map_err(zx::Status::from_raw).unwrap();
-    assert_eq!(bytes_written, payload.len() as u64);
-    blob.close().await.unwrap().map_err(zx::Status::from_raw).unwrap();
-
-    // We should now be able to open the blob by its hash and read the contents back.
-    let blob = fuchsia_fs::directory::open_file(
-        &fixture.dir("blob", fio::PERM_READABLE),
-        HASH,
-        fio::PERM_READABLE,
-    )
-    .await
-    .expect("Failed to open delivery blob for reading.");
-    // Read the last 1024 bytes of the file and ensure the bytes match the original `data`.
-    let len: u64 = 1024;
-    let offset: u64 = data.len().checked_sub(1024).unwrap() as u64;
-    let contents = blob.read_at(len, offset).await.unwrap().map_err(zx::Status::from_raw).unwrap();
-    assert_eq!(contents.as_slice(), &data[offset as usize..]);
-
-    fixture.tear_down().await;
-}
-
-#[fuchsia::test]
-#[cfg(feature = "fxblob")]
-async fn delivery_blob_support_fxblob() {
     let mut builder = new_builder();
     builder.fshost().set_config_value("blobfs_max_bytes", BLOBFS_MAX_BYTES);
     builder.with_disk().format_volumes(volumes_spec());
@@ -1501,7 +1421,7 @@ async fn initialized_gpt() {
     fixture.check_fs_type("blob", blob_fs_type()).await;
     fixture.check_fs_type("data", data_fs_type()).await;
     fixture.check_test_data_file().await;
-    fixture.check_test_blob(DATA_FILESYSTEM_VARIANT == "fxblob").await;
+    fixture.check_test_blob().await;
 
     assert_eq!(gpt_num_partitions(&fixture).await, 1);
 
@@ -1851,7 +1771,7 @@ async fn merge_super_and_userdata() {
 
     fixture.check_fs_type("blob", blob_fs_type()).await;
     fixture.check_fs_type("data", data_fs_type()).await;
-    fixture.check_test_blob(DATA_FILESYSTEM_VARIANT == "fxblob").await;
+    fixture.check_test_blob().await;
 
     let partitions = fixture.dir(
         fidl_fuchsia_storage_partitions::PartitionServiceMarker::SERVICE_NAME,
@@ -1927,7 +1847,7 @@ async fn blobfs_and_data_mounted_with_keymint() {
     fixture.check_fs_type("blob", blob_fs_type()).await;
     fixture.check_fs_type("data", data_fs_type()).await;
     fixture.check_test_data_file().await;
-    fixture.check_test_blob(DATA_FILESYSTEM_VARIANT == "fxblob").await;
+    fixture.check_test_blob().await;
     fixture.tear_down().await;
 }
 
@@ -1940,7 +1860,7 @@ async fn data_formatted_keymint() {
 
     fixture.check_fs_type("blob", blob_fs_type()).await;
     fixture.check_fs_type("data", data_fs_type()).await;
-    fixture.check_test_blob(DATA_FILESYSTEM_VARIANT == "fxblob").await;
+    fixture.check_test_blob().await;
 
     fixture.tear_down().await;
 }

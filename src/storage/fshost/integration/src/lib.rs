@@ -320,22 +320,12 @@ impl TestFixture {
         assert_eq!(info_type, fs_type, "{:#08x} != {:#08x}", info_type, fs_type);
     }
 
-    pub async fn check_test_blob(&self, use_fxblob: bool) {
+    pub async fn check_test_blob(&self) {
         let expected_blob_hash = disk_builder::test_blob_hash();
-        if use_fxblob {
-            let reader = connect_to_protocol_at_dir_root::<BlobReaderMarker>(
-                self.realm.root.get_exposed_dir(),
-            )
-            .expect("failed to connect to the BlobReader");
-            let _vmo = reader.get_vmo(&expected_blob_hash.into()).await.unwrap().unwrap();
-        } else {
-            let (blob, server_end) = create_proxy::<fio::FileMarker>();
-            let path = &format!("{}", expected_blob_hash);
-            self.dir("blob", fio::PERM_READABLE)
-                .open(path, fio::PERM_READABLE, &fio::Options::default(), server_end.into_channel())
-                .expect("open failed");
-            blob.query().await.expect("open file failed");
-        }
+        let reader =
+            connect_to_protocol_at_dir_root::<BlobReaderMarker>(self.realm.root.get_exposed_dir())
+                .expect("failed to connect to the BlobReader");
+        let _vmo = reader.get_vmo(&expected_blob_hash.into()).await.unwrap().unwrap();
     }
 
     /// Check for the existence of a well-known set of test files in the data volume. These files

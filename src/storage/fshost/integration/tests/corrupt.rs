@@ -6,10 +6,7 @@
 //! messages since corruption is Bad, so they are in their own test package that allows error logs.
 
 pub mod config;
-use config::{
-    DATA_FILESYSTEM_VARIANT, blob_fs_type, data_fs_name, data_fs_spec, data_fs_type, new_builder,
-    volumes_spec,
-};
+use config::{blob_fs_type, data_fs_name, data_fs_spec, data_fs_type, new_builder, volumes_spec};
 
 #[fuchsia::test]
 async fn data_reformatted_when_corrupt() {
@@ -22,7 +19,7 @@ async fn data_reformatted_when_corrupt() {
 
     // Ensure blobs are not reformatted.
     fixture.check_fs_type("blob", blob_fs_type()).await;
-    fixture.check_test_blob(DATA_FILESYSTEM_VARIANT == "fxblob").await;
+    fixture.check_test_blob().await;
 
     fixture
         .wait_for_crash_reports(

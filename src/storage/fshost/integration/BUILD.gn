@@ -256,6 +256,8 @@ template("fshost_integration_test_package") {
       "//src/lib/fuchsia-component",
       "//src/lib/fuchsia-fs",
       "//src/storage/fidl/fuchsia.fs.startup:fuchsia.fs.startup_rust",
+      "//src/storage/fxfs/fidl/fuchsia.fxfs:fuchsia.fxfs_rust",
+      "//src/storage/lib/blob_writer:blob-writer",
       "//src/storage/lib/delivery_blob",
       "//src/storage/lib/fs_management/rust:fs_management",
       "//src/sys/pkg/fidl/fuchsia.update.verify:fuchsia.update.verify_rust",
@@ -274,8 +276,6 @@ template("fshost_integration_test_package") {
         "//src/lib/diagnostics/reader/rust",
         "//src/lib/diagnostics/testing/diagnostics-assertions/rust:diagnostics-assertions",
         "//src/storage/crypt/policy",
-        "//src/storage/fxfs/fidl/fuchsia.fxfs:fuchsia.fxfs_rust",
-        "//src/storage/lib/blob_writer:blob-writer",
       ]
     }
     if (defined(fshost_options.storage_host) && fshost_options.storage_host) {

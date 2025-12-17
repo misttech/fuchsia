@@ -10,9 +10,7 @@ use fshost_test_fixture::disk_builder::VolumesSpec;
 use {fidl_fuchsia_fshost as fshost, fidl_fuchsia_io as fio};
 
 pub mod config;
-use config::{
-    DATA_FILESYSTEM_VARIANT, blob_fs_type, data_fs_spec, data_fs_type, new_builder, volumes_spec,
-};
+use config::{blob_fs_type, data_fs_spec, data_fs_type, new_builder, volumes_spec};
 
 const PAYLOAD: &[u8] = b"top secret stuff";
 const SECRET_FILE_NAME: &'static str = "inconspicuous/secret.txt";
@@ -81,7 +79,7 @@ async fn no_existing_data_volume() {
 
     // Ensure the blob volume is present and unmodified.
     fixture.check_fs_type("blob", blob_fs_type()).await;
-    fixture.check_test_blob(DATA_FILESYSTEM_VARIANT == "fxblob").await;
+    fixture.check_test_blob().await;
 
     fixture.check_fs_type("data", data_fs_type()).await;
 
@@ -124,7 +122,7 @@ async fn unformatted_small_disk() {
 
     // Ensure the blob volume is present and unmodified.
     fixture.check_fs_type("blob", blob_fs_type()).await;
-    fixture.check_test_blob(DATA_FILESYSTEM_VARIANT == "fxblob").await;
+    fixture.check_test_blob().await;
 
     fixture.check_fs_type("data", data_fs_type()).await;
 
@@ -160,7 +158,7 @@ async fn formatted() {
 
     // Ensure the blob volume is present and unmodified.
     fixture.check_fs_type("blob", blob_fs_type()).await;
-    fixture.check_test_blob(DATA_FILESYSTEM_VARIANT == "fxblob").await;
+    fixture.check_test_blob().await;
 
     fixture.check_fs_type("data", data_fs_type()).await;
 
@@ -208,7 +206,7 @@ async fn formatted_file_in_root() {
 
     // Ensure the blob volume is present and unmodified.
     fixture.check_fs_type("blob", blob_fs_type()).await;
-    fixture.check_test_blob(DATA_FILESYSTEM_VARIANT == "fxblob").await;
+    fixture.check_test_blob().await;
 
     fixture.check_fs_type("data", data_fs_type()).await;
 
