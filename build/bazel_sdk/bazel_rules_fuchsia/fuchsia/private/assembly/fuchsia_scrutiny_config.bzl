@@ -40,7 +40,6 @@ def _fuchsia_scrutiny_config_impl(ctx):
             routes_config_golden = ctx.file.routes_config_golden,
             component_resolver_allowlist = ctx.file.component_resolver_allowlist,
             component_route_exceptions = ctx.files.component_route_exceptions,
-            component_tree_config = ctx.file.component_tree_config,
             component_tree_configs = ctx.files.component_tree_configs,
             static_packages = static_packages,
             structured_config_policy = ctx.file.structured_config_policy,
@@ -79,10 +78,6 @@ fuchsia_scrutiny_config = rule(
         "component_route_exceptions": attr.label_list(
             doc = "Allowlist of all capability routes that are exempt from route checking.",
             allow_files = True,
-        ),
-        "component_tree_config": attr.label(
-            doc = "Tree of expected component routes.",
-            allow_single_file = True,
         ),
         "component_tree_configs": attr.label_list(
             doc = "List of files of tree of expected component routes.",

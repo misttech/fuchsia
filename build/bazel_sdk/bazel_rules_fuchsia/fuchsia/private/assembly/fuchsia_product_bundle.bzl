@@ -144,12 +144,6 @@ def _scrutiny_validation(
         "verify",
     ]
 
-    # TODO(b/468009955): Remove single file config tree field once OOT usages migrated.
-    component_tree_configs = platform_scrutiny_config.component_tree_configs + scrutiny_config.component_tree_configs
-    if platform_scrutiny_config.component_tree_config:
-        component_tree_configs.append(platform_scrutiny_config.component_tree_config)
-    if scrutiny_config.component_tree_config:
-        component_tree_configs.append(scrutiny_config.component_tree_config)
     if is_recovery:
         ffx_invocation.append("--recovery")
     label_name = ctx.label.name + ("_recovery" if is_recovery else "")
@@ -216,7 +210,7 @@ def _scrutiny_validation(
                 ffx_scrutiny_inputs,
                 pb_out_dir,
                 platform_scrutiny_config.component_route_exceptions,
-                component_tree_configs,
+                platform_scrutiny_config.component_tree_configs + scrutiny_config.component_tree_configs,
             )
         if SCRUTINY_VERIFIERS.STRUCTURED_CONFIG not in scrutiny_config.excluded_verifiers:
             deps += _verify_structured_config(
@@ -225,7 +219,7 @@ def _scrutiny_validation(
                 ffx_scrutiny_inputs,
                 pb_out_dir,
                 platform_scrutiny_config.structured_config_policy,
-                component_tree_configs,
+                platform_scrutiny_config.component_tree_configs + scrutiny_config.component_tree_configs,
             )
 
         deps += _extract_structured_config(
@@ -234,7 +228,7 @@ def _scrutiny_validation(
             ffx_scrutiny_inputs,
             pb_out_dir,
             is_recovery,
-            component_tree_configs,
+            platform_scrutiny_config.component_tree_configs + scrutiny_config.component_tree_configs,
         )
     return deps
 
