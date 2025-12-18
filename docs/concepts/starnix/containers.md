@@ -1,4 +1,4 @@
-# Starnix container
+# Starnix containers
 
 Starnix containers enable running Linux binaries in different Linux
 environments.
@@ -142,7 +142,7 @@ that has the file system layout that matches their expectation.
 [debian-container]: https://fuchsia.googlesource.com/fuchsia/+/main/src/starnix/containers/debian
 [debian-container-cml]: https://fuchsia.googlesource.com/fuchsia/+/main/src/starnix/containers/debian/meta/debian_container.cml
 [container-shard-cml]: https://fuchsia.googlesource.com/fuchsia/+/main/src/starnix/containers/container.shard.cml
-[starnix-kernel]: /docs/concepts/starnix/making-linux-syscalls-in-fuchsia.md
+[starnix-kernel]: /docs/concepts/starnix/syscalls.md
 [starnix-runner]: /docs/concepts/components/v2/starnix.md
 [hello-starnix]: https://fuchsia.googlesource.com/fuchsia/+/main/src/starnix/examples/hello_starnix
 [hello-starnix-cml]: https://fuchsia.googlesource.com/fuchsia/+/main/src/starnix/examples/hello_starnix/meta/hello_starnix.cml

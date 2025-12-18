@@ -1,4 +1,4 @@
-# Making Linux syscalls in Fuchsia
+# Starnix syscalls
 
 This page describes how [Starnix][starnix-runner] handles Linux system calls
 (syscalls) in Fuchsia.
@@ -134,4 +134,4 @@ loop {
 [starnix-readme]: https://cs.opensource.google/fuchsia/fuchsia/+/main:src/starnix/kernel/README.md
 [restricted-enter]: /reference/syscalls/restricted_enter.md
 [restricted-bind-state]: /reference/syscalls/restricted_bind_state.md
-[starnix-container]: /docs/concepts/starnix/starnix-container.md
+[starnix-container]: /docs/concepts/starnix/containers.md

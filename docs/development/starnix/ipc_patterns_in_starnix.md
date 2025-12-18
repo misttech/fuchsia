@@ -251,8 +251,8 @@ container namespace:
 <!-- Reference links -->
 
 [starnix-concepts]: /docs/concepts/starnix/README.md
-[starnix-runner]: /docs/concepts/starnix/starnix-container.md#starnix-container-starnix-kernel-and-starnix-runner
-[making-linux-syscalls]: /docs/concepts/starnix/making-linux-syscalls-in-fuchsia.md
+[starnix-runner]: /docs/concepts/starnix/containers.md#starnix-container-starnix-kernel-and-starnix-runner
+[making-linux-syscalls]: /docs/concepts/starnix/syscalls.md
 [container-rs]: https://cs.opensource.google/fuchsia/fuchsia/+/main:src/starnix/kernel/runner/container.rs;l=480-482;drc=fde67e1fbce7b2e77ad28e14b34b80e9b95c5ee0
 [scheduler-rs]: https://cs.opensource.google/fuchsia/fuchsia/+/main:src/starnix/kernel/task/scheduler.rs;l=292-307;drc=e67d59f9bc9c30490cff16b773334cc8d834cf61
 [interval-timer-rs]: https://cs.opensource.google/fuchsia/fuchsia/+/main:src/starnix/kernel/task/interval_timer.rs;l=269-287;drc=e67d59f9bc9c30490cff16b773334cc8d834cf61

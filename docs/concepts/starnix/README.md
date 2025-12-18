@@ -31,8 +31,8 @@ appropriate Fuchsia subsystems.
 [starnix-runner]: /docs/concepts/components/v2/starnix.md
 [starnix-rfc]: /docs/contribute/governance/rfcs/0082_starnix.md
 [starnix-readme]: https://cs.opensource.google/fuchsia/fuchsia/+/main:/src/starnix/kernel/README.md
-[making-linux-syscalls]: /docs/concepts/starnix/making-linux-syscalls-in-fuchsia.md
-[starnix-container]: /docs/concepts/starnix/starnix-container.md
-[starnix-vfs]: /docs/concepts/starnix/architecture-of-the-starnix-vfs.md
+[making-linux-syscalls]: /docs/concepts/starnix/syscalls.md
+[starnix-container]: /docs/concepts/starnix/containers.md
+[starnix-vfs]: /docs/concepts/starnix/vfs.md
 [starnix-development]: /docs/development/starnix/common-coding-patterns-in-starnix.md
 

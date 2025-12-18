@@ -1,4 +1,4 @@
-# Architecture of the Starnix VFS
+# Starnix virtual file system (VFS)
 
 The page examines the key concepts and underlying structure of [Starnix][starnix]'s
 virtual file system (VFS):
@@ -222,7 +222,7 @@ resolved recursively from the `NamespaceNode`.
 
 <!-- Reference links -->
 
-[starnix]: /docs/concepts/starnix/making-linux-syscalls-in-fuchsia.md
+[starnix]: /docs/concepts/starnix/syscalls.md
 [fuchsia-vfs]: /docs/concepts/filesystems/filesystems.md
 [tmpfs]: https://en.wikipedia.org/wiki/Tmpfs
 [procfs]: https://en.wikipedia.org/wiki/Procfs

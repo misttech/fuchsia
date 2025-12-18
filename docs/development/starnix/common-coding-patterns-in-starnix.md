@@ -322,12 +322,12 @@ address space and will outlive all Linux processes in the container.
 ## Learning more {:#learning-more}
 
 To learn more about the execution model for Starnix, please see
-- [Making Linux syscalls in Fuchsia](/docs/concepts/starnix/making-linux-syscalls-in-fuchsia.md)
+- [Making Linux syscalls in Fuchsia](/docs/concepts/starnix/syscalls.md)
 - [RFC 0261: Fast and efficient user space kernel emulation](/docs/contribute/governance/rfcs/0261_fast_and_efficient_user_space_kernel_emulation.md)
 
 <!-- Reference links -->
 
 [starnix-concepts]: /docs/concepts/starnix/README.md
-[restricted-mode]: /docs/concepts/starnix/making-linux-syscalls-in-fuchsia.md#running-a-linux-program-in-restricted-mode
+[restricted-mode]: /docs/concepts/starnix/syscalls.md#running-a-linux-program-in-restricted-mode
 [ipc-patterns-in-starnix]: ipc_patterns_in_starnix.md
 [kernel-threads]: https://fuchsia-docs.firebaseapp.com/rust/starnix_core/task/struct.KernelThreads.html
