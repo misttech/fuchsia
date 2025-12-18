@@ -92,21 +92,18 @@ impl FfxCommandLine {
         let main_info = C::get_args_info();
         let mut info_ref = &main_info;
         let mut ffx_subcmd_iter = self.subcmd_iter();
-        // For single-argument commands (subtools) the first argument always matches, but
-        // for multi-argument subcommands (e.g. `target list`) we need to continue iterating
-        // through the remainder of the args.
-        let mut res = vec![ffx_subcmd_iter.next().unwrap().to_owned()];
-        // There's a bit of a fencepost problem here. If we have more arguments, the first of
-        // the list of the arguments needs to match the current subcommand's name before continuing
-        // to iterate, or else it indicates we're looking at flags for a single-argument
-        // subcommand.
-        if let Some(cmd) = ffx_subcmd_iter.next()
-            && cmd == info_ref.name
-        {
-            res.push(cmd.to_owned());
-        } else {
-            return res;
+        let mut res = Vec::<String>::new();
+        // We can't use take_while because when the argument is equal to the one we're looking at,
+        // we consume that part of the iterator, and we want to include it.
+        for sc in ffx_subcmd_iter.by_ref() {
+            res.push(sc.to_owned());
+            if sc == info_ref.name {
+                break;
+            }
         }
+        // For commands that are the root and contain subcommands, things are a little more
+        // involved.
+        //
         // The args info struct contains a list of _possible_ subcommands, so we need
         // to match until we've run out (as that means we're now dealing with positional
         // arguments or flags that would need to be otherwise redacted).
@@ -930,6 +927,21 @@ mod test {
         assert_eq!(
             cmd_line.redact_subcmd_for_enhanced_analytics(&TestCmd::default()),
             vec!["subcommand"],
+        );
+    }
+
+    #[test]
+    fn redact_subcmd_args_for_enhanced_analytics_single_arg() {
+        // For commands that have a single root arg structure but a long subcommand, ensure we
+        // include the leading subcommand invocation.
+        let args = ["ffx", "-v", "--env", "boom", "pow", "pop", "blip", "subcommand", "--arg"];
+        let cmd_line =
+            FfxCommandLine::new(None, &args).expect("Command line should parse correctly");
+        assert_eq!(cmd_line.command, vec!["ffx"]);
+        assert_eq!(cmd_line.ffx_args, vec!["-v", "--env", "boom"]);
+        assert_eq!(
+            cmd_line.redact_subcmd_for_enhanced_analytics(&TestCmd::default()),
+            vec!["pow", "pop", "blip", "subcommand"],
         );
     }
 
