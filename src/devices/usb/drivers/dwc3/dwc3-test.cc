@@ -154,9 +154,15 @@ class FakeUsbPhy : public fidl::Server<fphy::UsbPhy>, public fidl::Server<fphy::
     FDF_LOG(ERROR, "Unknown method %lu", metadata.method_ordinal);
   }
 
-  void WatchConnectStatusChanged(WatchConnectStatusChangedCompleter::Sync& completer) override {
+  void WatchConnectStatusChanged(WatchConnectStatusChangedRequest& request,
+                                 WatchConnectStatusChangedCompleter::Sync& completer) override {
     if (!watch_connection_status_changed_called_) {
-      completer.Reply(zx::ok(false));
+      fuchsia_hardware_usb_phy::ConnectionWatcherWatchConnectStatusChangedResponse response{{
+          .connected = false,
+          .wake_lease = {},
+      }};
+      completer.Reply(zx::ok(std::move(response)));
+
       watch_connection_status_changed_called_ = true;
       return;
     }

@@ -374,7 +374,7 @@ zx::result<> Dwc3::Start() {
                                fdf::Dispatcher::GetCurrent()->async_dispatcher());
 
       // Start the hanging-get call loop.
-      connection_watcher_->WatchConnectStatusChanged().Then(
+      connection_watcher_->WatchConnectStatusChanged({}).Then(
           fit::bind_member<&Dwc3::OnConnectStatusChanged>(this));
     }
   }
@@ -722,7 +722,8 @@ void Dwc3::ResetConfiguration() {
   }
 
   if (phy_.is_valid()) {
-    if (fidl::Result result = phy_->ConnectStatusChanged(true); result.is_error()) {
+    if (fidl::Result result = phy_->ConnectStatusChanged({{.connected = true, .wake_lease = {}}});
+        result.is_error()) {
       fdf::warn("Call to ConnectStatusChanged on USB phy failed: {}", result.error_value());
     }
   }
@@ -822,7 +823,8 @@ void Dwc3::HandleDisconnectedEvent() {
   ResetEndpoints();
 
   if (phy_.is_valid()) {
-    if (fidl::Result result = phy_->ConnectStatusChanged(false); result.is_error()) {
+    if (fidl::Result result = phy_->ConnectStatusChanged({{.connected = false, .wake_lease = {}}});
+        result.is_error()) {
       fdf::warn("Call to ConnectStatusChanged on USB phy failed: {}", result.error_value());
     }
   }
@@ -1160,7 +1162,7 @@ void Dwc3::OnConnectStatusChanged(
     return;
   }
 
-  connection_watcher_->WatchConnectStatusChanged().Then(
+  connection_watcher_->WatchConnectStatusChanged({}).Then(
       fit::bind_member<&Dwc3::OnConnectStatusChanged>(this));
 
   if (result.is_error()) {

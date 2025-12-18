@@ -4,13 +4,17 @@
 @available(added=HEAD)
 library fuchsia.hardware.usb.phy;
 
+using fuchsia.power.system;
 using zx;
 
 @discoverable
 open protocol UsbPhy {
-    /// Informs the PHY when peripheral role connect status changed.
-    flexible ConnectStatusChanged(struct {
+    /// Informs the PHY when the peripheral role connect status changes. If system suspend is
+    /// enabled, `wake_lease` will hold a wake lease that the callee can use to keep the system
+    /// awake while the call is being processed.
+    flexible ConnectStatusChanged(resource struct {
         connected bool;
+        wake_lease fuchsia.power.system.LeaseToken:optional;
     }) -> () error zx.Status;
 };
 
@@ -24,10 +28,19 @@ open protocol ConnectionWatcher {
     /// disconnected. Returns immediately on the first call, or if the
     /// connection status has changed since the last call.
     ///
+    /// If present, `setup_wake_lease` will be used to keep the system awake while the call is being
+    /// processed. In this case a new wake lease will be acquired and passed back through
+    /// `wake_lease`. `wake_lease` will be present iff `setup_wake_lease` was present.
+    ///
     /// Returns:
     ///   - `ZX_ERR_BAD_STATE`: A hanging-get call was already pending.
-    flexible WatchConnectStatusChanged() -> (struct {
+    ///   - `ZX_ERR_NO_RESOURCES`: `setup_wake_lease` was present but a new wake lease could not be
+    ///     acquired.
+    flexible WatchConnectStatusChanged(resource struct {
+        setup_wake_lease fuchsia.power.system.LeaseToken:optional;
+    }) -> (resource struct {
         connected bool;
+        wake_lease fuchsia.power.system.LeaseToken:optional;
     }) error zx.Status;
 };
 

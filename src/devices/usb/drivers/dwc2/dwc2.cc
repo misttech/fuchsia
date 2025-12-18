@@ -1021,7 +1021,7 @@ void Dwc2::SetConnected(bool connected) {
                   result.status_string());  // Never expected to fail.
   }
   if (phy_.is_valid()) {
-    auto connect = phy_->ConnectStatusChanged(connected);
+    auto connect = phy_->ConnectStatusChanged({{.connected = connected, .wake_lease = {}}});
     if (connect.is_error()) {
       FDF_LOG(WARNING, "Call to ConnectStatusChanged on usb phy failed: %s",
               connect.error_value().FormatDescription().c_str());

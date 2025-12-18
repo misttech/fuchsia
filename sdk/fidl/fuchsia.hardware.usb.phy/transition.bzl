@@ -2,4 +2,4 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-usb_phy_in_soft_transition = False
+usb_phy_in_soft_transition = True
