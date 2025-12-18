@@ -67,7 +67,12 @@ impl FfxMain for SshTool {
         }
 
         if let Some(status) = status.code() {
-            std::process::exit(status);
+            match status {
+                0 => Ok(()),
+                i => {
+                    ffx_command::exit_with_code!(i)
+                }
+            }
         } else {
             return Err(fho::Error::Unexpected(anyhow::format_err!(
                 "ssh exited without an exit status or due to receiving a signal."
