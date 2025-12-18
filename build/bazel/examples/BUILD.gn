@@ -41,6 +41,12 @@ bazel_build_group("host_examples") {
           bazel = "{{BAZEL_TARGET_OUT_DIR}}/{{BAZEL_TARGET_NAME}}"
           ninja = "hello_world_rust_from_bazel"
         },
+
+        # Ensure clippy is run for Rust targets.
+        {
+          bazel = "{{BAZEL_TARGET_OUT_DIR}}/{{BAZEL_TARGET_NAME}}.clippy.ok"
+          ninja = "hello_world_rust_from_bazel.clippy.ok"
+        },
       ]
     },
 
