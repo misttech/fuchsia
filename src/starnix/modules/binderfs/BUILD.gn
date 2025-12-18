@@ -25,6 +25,7 @@ rustc_library("binderfs") {
     "remote_binder.rs",
     "resource_accessor.rs",
     "shared_memory.rs",
+    "tests.rs",
     "thread.rs",
     "user_memory_cursor.rs",
   ]

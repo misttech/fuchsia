@@ -1079,7 +1079,7 @@ async fn select_first<O>(f1: impl Future<Output = O>, f2: impl Future<Output = O
 mod tests {
     use super::*;
     use crate::BinderFs;
-    use crate::binder::tests::run_process_accessor;
+    use crate::tests::tests::run_process_accessor;
     use fidl::HandleBased;
     use fidl::endpoints::{Proxy, create_endpoints, create_proxy};
     use rand::distr::{Alphanumeric, SampleString};

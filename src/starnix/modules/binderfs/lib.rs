@@ -10,6 +10,7 @@ mod objects;
 mod remote_binder;
 mod resource_accessor;
 mod shared_memory;
+mod tests;
 mod thread;
 mod user_memory_cursor;
 
