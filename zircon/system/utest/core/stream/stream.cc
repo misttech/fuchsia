@@ -888,7 +888,6 @@ TEST(StreamTestCase, ExtendFillsWithZeros) {
 }
 
 TEST(StreamTestCase, ReadShrinkRace) {
-  // This test is slow because of the `WaitForPageRead`. Be careful about the number of iterations.
   constexpr size_t kNumIterations = 10;
 
   constexpr size_t kInitialVmoSize = 80u;
@@ -925,11 +924,9 @@ TEST(StreamTestCase, ReadShrinkRace) {
 
     std::thread set_size_thread([&] { ASSERT_OK(vmo->vmo().set_size(truncate_to_size)); });
 
-    // Wait for and supply page read, in case |read_thread| wins. This is inherently a race we want
-    // to test, so waiting is the best we can do.
-    if (pager.WaitForPageRead(vmo, 0u, 1u, zx::deadline_after(zx::sec(5)).get())) {
-      pager.SupplyPages(vmo, 0u, 1u);
-    }
+    // Start a page fault handler to respond to read requests.
+    vmo->SetPageFaultSupplyLimit(1);
+    ASSERT_TRUE(pager.StartTaggedPageFaultHandler());
 
     set_size_thread.join();
     read_thread.join();
