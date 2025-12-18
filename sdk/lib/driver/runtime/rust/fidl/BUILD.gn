@@ -17,34 +17,22 @@ rustc_library("fidl") {
     "//sdk/lib/driver/runtime/rust/channel",
     "//sdk/lib/driver/runtime/rust/core",
     "//sdk/lib/driver/runtime/rust/fdf_sys",
-    "//sdk/lib/driver/runtime/rust/libasync/fidl",
     "//sdk/rust/zx",
     "//src/devices/bin/driver_runtime",
     "//src/lib/fidl/rust_next/fidl_next",
     "//src/lib/fuchsia-sync",
   ]
 
+  test_deps = [
+    ":fuchsia.examples.gizmo_rust_next",
+    "//sdk/lib/driver/runtime/rust/env",
+    "//src/devices/bin/driver_runtime",
+    "//src/lib/fuchsia-async",
+  ]
+
   sources = [
     "src/lib.rs",
     "src/wire.rs",
-  ]
-}
-
-rustc_test("fdf_rust_fidl_integration_test") {
-  edition = "2024"
-
-  source_root = "src/integration_test.rs"
-  sources = [ "src/integration_test.rs" ]
-
-  deps = [
-    ":fidl",
-    ":fuchsia.examples.gizmo_rust_next",
-    "//sdk/lib/driver/runtime/rust/env",
-    "//sdk/rust/zx",
-    "//src/devices/bin/driver_runtime",
-    "//src/lib/fidl/rust_next/fidl_next",
-    "//src/lib/fuchsia",
-    "//src/lib/fuchsia-async",
   ]
 }
 
@@ -61,13 +49,7 @@ fuchsia_unittest_package("fdf_rust_fidl_tests") {
   deps = [ ":fidl_test" ]
 }
 
-fuchsia_unittest_package("fdf_rust_fidl_integration_tests") {
-  deps = [ ":fdf_rust_fidl_integration_test" ]
-}
 group("tests") {
   testonly = true
-  deps = [
-    ":fdf_rust_fidl_integration_tests",
-    ":fdf_rust_fidl_tests",
-  ]
+  deps = [ ":fdf_rust_fidl_tests" ]
 }

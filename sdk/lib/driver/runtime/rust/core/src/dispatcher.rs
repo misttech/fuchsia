@@ -371,7 +371,7 @@ impl<'a> OnDispatcher for DispatcherRef<'a> {
 
 /// A placeholder for the currently active dispatcher. Use [`OnDispatcher::on_dispatcher`] to
 /// access it when needed.
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct CurrentDispatcher;
 
 impl OnDispatcher for CurrentDispatcher {

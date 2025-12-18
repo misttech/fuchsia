@@ -69,9 +69,10 @@ fn get_i2cimpl_device(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use fdf::WeakDispatcher;
+    use fdf::{OnDispatcher, WeakDispatcher};
     use fdf_component::ServiceOffer;
     use fdf_component::testing::harness::TestHarness;
+    use fidl_next::ServerDispatcher;
     use fuchsia_component::server::ServiceFs;
     use futures::lock::Mutex;
     use std::sync::Arc;
@@ -123,12 +124,12 @@ mod tests {
             server_end: fidl_next::ServerEnd<i2cimpl::Device, fdf_fidl::DriverChannel>,
         ) {
             let bitrate = self.bitrate.clone();
-            server_end
-                .spawn_on(
-                    I2cImplServer { bitrate },
-                    &fdf_fidl::FidlExecutor::from(self.dispatcher.clone()),
-                )
-                .detach();
+            self.dispatcher
+                .spawn(async move {
+                    let dispatcher = ServerDispatcher::new(server_end);
+                    dispatcher.run(I2cImplServer { bitrate }).await.unwrap();
+                })
+                .unwrap();
         }
     }
 
@@ -141,7 +142,7 @@ mod tests {
             .add_default_named_next(
                 &mut driver_incoming,
                 "default",
-                Service { dispatcher: harness.dispatcher(), bitrate: bitrate.clone() },
+                Service { dispatcher: harness.dispatcher().clone(), bitrate: bitrate.clone() },
             )
             .build_driver_offer();
 
