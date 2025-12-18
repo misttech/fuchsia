@@ -12,6 +12,7 @@ def _rustc_library_impl(name, with_unit_tests, test_deps, lint_config, **kwargs)
 
     rust_library(
         name = name,
+        lint_config = lint_config,
         **kwargs
     )
 
