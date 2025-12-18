@@ -19,6 +19,8 @@ use std::net::SocketAddr;
 use std::path::Path;
 use std::process::Command;
 use std::sync::Arc;
+use std::thread::sleep;
+use std::time::Duration;
 use target_formatter::{JsonTarget, JsonTargetFormatter};
 use tokio::net::TcpListener;
 use tokio::sync::Mutex;
@@ -80,6 +82,7 @@ async fn start_server(
                     log::error!("Task panicked while collecting target status: {:?}", e);
                 }
             }
+            sleep(Duration::from_secs(1));
         }
     });
 
