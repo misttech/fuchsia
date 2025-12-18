@@ -92,6 +92,30 @@ async fn locally_resolve_target_spec<T: TargetResolver>(
     Ok(Some(explicit_spec).into())
 }
 
+fn target_error_to_analytics<'a>(
+    err: &'a FfxTargetError,
+) -> Option<crate::analytics::PointOfFailure<'a>> {
+    match err {
+        FfxTargetError::OpenTargetError {
+            err: ffx::OpenTargetError::TargetNotFound,
+            target,
+            ..
+        } => Some(crate::analytics::PointOfFailure::NoMatchingTargets {
+            query: target.clone().into(),
+            discovery_sources: DiscoverySources::all(),
+        }),
+        FfxTargetError::OpenTargetError {
+            err: ffx::OpenTargetError::QueryAmbiguous,
+            target,
+            ..
+        } => Some(crate::analytics::PointOfFailure::TooManyMatchingTargets {
+            query: target.clone().into(),
+            discovery_sources: DiscoverySources::all(),
+        }),
+        _ => None,
+    }
+}
+
 pub(crate) fn expect_single_target<T>(
     query: &TargetInfoQuery,
     targets: Vec<T>,
@@ -124,14 +148,17 @@ pub async fn discover_single_default_target(ctx: &EnvironmentContext) -> Result<
     let query = TargetInfoQuery::from(query_s);
     // Note: this will use the target cache if it exists
     let handles = get_discovered_targets(query.clone(), true, true, ctx).await?;
-    expect_single_target(&query, handles).map_err(|e| {
-        // Going straight from e => anyhow::Error causes the error Framework we
-        // use to return a Bug since it cannot be properly downcast to an
-        // FfxError properly. Manually cast to a FfxError here before wrapping
-        // it.
-        let wrapped: errors::FfxError = e.into();
-        wrapped.into()
-    })
+    expect_single_target(&query, handles)
+        .or_else_maybe_analytics(|e| target_error_to_analytics(e).map(Into::into))
+        .await
+        .map_err(|e| {
+            // Going straight from e => anyhow::Error causes the error Framework we
+            // use to return a Bug since it cannot be properly downcast to an
+            // FfxError properly. Manually cast to a FfxError here before wrapping
+            // it.
+            let wrapped: errors::FfxError = e.into();
+            wrapped.into()
+        })
 }
 
 /// A trait for resolving target queries into concrete target information.
@@ -302,6 +329,8 @@ pub trait TargetResolver: Default {
         };
 
         expect_single_target(target_spec, resolutions)
+            .or_else_maybe_analytics(|e| target_error_to_analytics(e).map(Into::into))
+            .await
     }
 }
 

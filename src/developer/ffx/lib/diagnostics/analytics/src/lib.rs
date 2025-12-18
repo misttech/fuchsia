@@ -100,6 +100,12 @@ pub trait ResultExt {
         self,
         f: F,
     ) -> Result<Self::Success, Self::Error>;
+
+    /// See [or_else_analytics]. Behaves the same, but the closure can return None.
+    async fn or_else_maybe_analytics<F: FnOnce(&Self::Error) -> Option<CustomEvent>>(
+        self,
+        f: F,
+    ) -> Result<Self::Success, Self::Error>;
 }
 
 impl<S, E> ResultExt for Result<S, E> {
@@ -114,6 +120,22 @@ impl<S, E> ResultExt for Result<S, E> {
             Ok(s) => Ok(s),
             Err(e) => {
                 mark_point_of_failure(event).await;
+                Err(e)
+            }
+        }
+    }
+
+    async fn or_else_maybe_analytics<F: FnOnce(&Self::Error) -> Option<CustomEvent>>(
+        self,
+        f: F,
+    ) -> Result<Self::Success, Self::Error> {
+        match self {
+            Ok(s) => Ok(s),
+            Err(e) => {
+                match f(&e) {
+                    Some(r) => mark_point_of_failure(r).await,
+                    None => {}
+                };
                 Err(e)
             }
         }
