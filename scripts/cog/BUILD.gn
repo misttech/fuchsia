@@ -10,9 +10,7 @@ group("tests") {
     ":cartfs_out_directory_test($host_toolchain)",
     ":mock_fs_test($host_toolchain)",
     ":workspace_test($host_toolchain)",
-
-    # Enable this test when we fix the MyPy errors
-    #"git-polyfill:tests",
+    "git-polyfill:tests",
   ]
 }
 

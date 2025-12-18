@@ -9,7 +9,7 @@ import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Type
+from typing import Callable, Dict, List, Optional, TextIO, Tuple, Type
 
 
 class Context:
@@ -36,31 +36,31 @@ class Context:
             args.global_git_args
         )
 
-    def write_log(self, level: str, message: str):
+    def write_log(self, level: str, message: str) -> None:
         if self._log_file_path:
             with self._log_file_path.open("a") as f:
                 f.write(f"[{level}] {message}\n")
 
-    def print(self, message: str, file=sys.stdout):
+    def print(self, message: str, file: Optional[TextIO] = sys.stdout) -> None:
         """Prints a message and logs it."""
         print(message, file=file)
         self.write_log("PRINT", message)
 
-    def error(self, message: str):
+    def error(self, message: str) -> None:
         """Prints an error message to stderr and logs it."""
         print(message, file=sys.stderr)
         self.write_log("ERROR", message)
 
-    def fatal(self, message: str):
+    def fatal(self, message: str) -> None:
         """Prints a fatal error message to stderr and logs it."""
         print(f"fatal: {message}", file=sys.stderr)
         self.write_log("FATAL", message)
 
-    def log_info(self, message: str):
+    def log_info(self, message: str) -> None:
         """Logs an info message to the log."""
         self.write_log("INFO", message)
 
-    def output(self, message: str, end: str = ""):
+    def output(self, message: str, end: str = "") -> None:
         """Prints output to stdout and logs it."""
         sys.stdout.write(message)
         if end:
@@ -136,6 +136,9 @@ def get_relative_git_dir(
 class GitSubCommand(abc.ABC):
     """Abstract base class for git subcommands."""
 
+    # The command name which gets printed in help messages.
+    _command_name: str
+
     def add_arguments(self, parser: argparse.ArgumentParser) -> None:
         """Override to add subcommand-specific arguments."""
 
@@ -165,10 +168,12 @@ class GitSubCommand(abc.ABC):
 _COMMANDS: Dict[str, Type[GitSubCommand]] = {}
 
 
-def register_command(name: str):
+def register_command(
+    name: str,
+) -> Callable[[Type[GitSubCommand]], Type[GitSubCommand]]:
     """Decorator to register a GitSubCommand implementation."""
 
-    def decorator(cls: Type[GitSubCommand]):
+    def decorator(cls: Type[GitSubCommand]) -> Type[GitSubCommand]:
         _COMMANDS[name] = cls
         cls._command_name = name
         return cls
@@ -189,7 +194,7 @@ class RevParseCommand(GitSubCommand):
     def execute(self, context: Context) -> int:
         repository_root = context.repository_root
 
-        rev_cache = {}
+        rev_cache: Dict[str, str] = {}
 
         def _get_rev(rev: str) -> Optional[str]:
             if rev in rev_cache:
@@ -228,6 +233,7 @@ class RevParseCommand(GitSubCommand):
                 context.error(e.stderr)
             except Exception as e:
                 context.fatal(f"{e}")
+            return None
 
         # Iterate over arguments in the order they were provided. This is important because
         # the order of arguments determines the order of the output. For example, if the
