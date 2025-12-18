@@ -631,9 +631,9 @@ impl SignalTimeSeries {
     pub fn new<S: InspectSender>(client: &S, inspect_metadata_path: &str) -> Self {
         let wlan_channels = client.inspect_time_matrix_with_metadata(
             "wlan_channels",
-            TimeMatrix::<Union<u64>, LastSample>::new(
+            TimeMatrix::<Union<u64>, ConstantSample>::new(
                 SamplingProfile::highly_granular(),
-                LastSample::or(0),
+                ConstantSample::default(),
             ),
             BitSetNode::from_path(format!(
                 "{}/{}",
