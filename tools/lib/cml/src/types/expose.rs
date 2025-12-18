@@ -5,8 +5,8 @@
 use crate::types::common::*;
 use crate::types::right::{Rights, RightsClause};
 use crate::{
-    AnyRef, AsClause, AsClauseContext, Canonicalize, CapabilityClause, DictionaryRef, EventScope,
-    FilterClause, FromClause, FromClauseContext, PathClause, SourceAvailability,
+    AnyRef, AsClause, AsClauseContext, Canonicalize, CapabilityClause, DictionaryRef, Error,
+    EventScope, FilterClause, FromClause, FromClauseContext, PathClause, SourceAvailability,
 };
 
 use crate::one_or_many::{
@@ -522,8 +522,8 @@ impl FromClauseContext for ContextExpose {
 impl Hydrate for ParsedExpose {
     type Output = ContextExpose;
 
-    fn hydrate(self, file: &Arc<PathBuf>, buffer: &String) -> Self::Output {
-        ContextExpose {
+    fn hydrate(self, file: &Arc<PathBuf>, buffer: &String) -> Result<Self::Output, Error> {
+        Ok(ContextExpose {
             service: hydrate_opt_simple(self.service, file, buffer),
             protocol: hydrate_opt_simple(self.protocol, file, buffer),
             directory: hydrate_opt_simple(self.directory, file, buffer),
@@ -540,6 +540,6 @@ impl Hydrate for ParsedExpose {
             scope: hydrate_opt_simple(self.scope, file, buffer),
             availability: hydrate_opt_simple(self.availability, file, buffer),
             source_availability: hydrate_opt_simple(self.source_availability, file, buffer),
-        }
+        })
     }
 }

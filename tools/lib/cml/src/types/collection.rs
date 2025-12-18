@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::Error;
 use crate::types::common::*;
 use crate::types::environment::EnvironmentRef;
 pub use cm_types::{AllowedOffers, Durability, Name};
@@ -108,14 +109,14 @@ impl Eq for ContextCollection {}
 impl Hydrate for ParsedCollection {
     type Output = ContextCollection;
 
-    fn hydrate(self, file: &Arc<PathBuf>, buffer: &String) -> Self::Output {
-        ContextCollection {
+    fn hydrate(self, file: &Arc<PathBuf>, buffer: &String) -> Result<Self::Output, Error> {
+        Ok(ContextCollection {
             name: hydrate_simple(self.name, file, buffer),
             durability: hydrate_simple(self.durability, file, buffer),
             environment: hydrate_opt_simple(self.environment, file, buffer),
             allowed_offers: hydrate_opt_simple(self.allowed_offers, file, buffer),
             allow_long_names: hydrate_opt_simple(self.allow_long_names, file, buffer),
             persistent_storage: hydrate_opt_simple(self.persistent_storage, file, buffer),
-        }
+        })
     }
 }

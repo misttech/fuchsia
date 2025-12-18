@@ -27,6 +27,10 @@ pub enum Error {
     InvalidArgs(String),
     Io(io::Error),
     FidlEncoding(fidl::Error),
+    Merge {
+        err: String,
+        origin: Option<Origin>,
+    },
     MissingRights(String),
     Parse {
         err: String,
@@ -71,6 +75,10 @@ impl Error {
             location,
             filename: filename.map(|f| f.to_string_lossy().into_owned()),
         }
+    }
+
+    pub fn merge(err: impl fmt::Display, origin: Option<Origin>) -> Self {
+        Self::Merge { err: err.to_string(), origin }
     }
 
     pub fn validate(err: impl fmt::Display) -> Self {
@@ -132,6 +140,21 @@ impl fmt::Display for Error {
             Error::InvalidArgs(err) => write!(f, "Invalid args: {}", err),
             Error::Io(err) => write!(f, "IO error: {}", err),
             Error::FidlEncoding(err) => write!(f, "Fidl encoding error: {}", err),
+            Error::Merge { err, origin } => {
+                let mut prefix = String::new();
+
+                if let Some(origin) = origin {
+                    prefix.push_str(&format!("{:?}:", origin.file));
+                    prefix
+                        .push_str(&format!("{}:{}:", origin.location.line, origin.location.column));
+                }
+
+                if !prefix.is_empty() {
+                    write!(f, "Error merging at {} {}", prefix, err)
+                } else {
+                    write!(f, "{}", err)
+                }
+            }
             Error::MissingRights(err) => write!(f, "Missing rights: {}", err),
             Error::Parse { err, location, filename } => {
                 let mut prefix = String::new();

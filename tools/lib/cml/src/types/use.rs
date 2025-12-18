@@ -5,7 +5,7 @@
 use crate::types::common::*;
 use crate::{
     AnyRef, Canonicalize, CapabilityClause, ConfigNestedValueType, ConfigType, DictionaryRef,
-    EventScope, FilterClause, FromClause, PathClause,
+    Error, EventScope, FilterClause, FromClause, PathClause,
 };
 
 use crate::one_or_many::{OneOrMany, always_one, option_one_or_many_as_ref};
@@ -566,8 +566,8 @@ impl ContextPathClause for ContextUse {
 impl Hydrate for ParsedUse {
     type Output = ContextUse;
 
-    fn hydrate(self, file: &Arc<PathBuf>, buffer: &String) -> Self::Output {
-        ContextUse {
+    fn hydrate(self, file: &Arc<PathBuf>, buffer: &String) -> Result<Self::Output, Error> {
+        Ok(ContextUse {
             service: hydrate_opt_simple(self.service, file, buffer),
             protocol: hydrate_opt_simple(self.protocol, file, buffer),
             directory: hydrate_opt_simple(self.directory, file, buffer),
@@ -591,6 +591,6 @@ impl Hydrate for ParsedUse {
             config_max_count: hydrate_opt_simple(self.config_max_count, file, buffer),
             config_element_type: hydrate_opt_simple(self.config_element_type, file, buffer),
             config_default: hydrate_opt_simple(self.config_default, file, buffer),
-        }
+        })
     }
 }

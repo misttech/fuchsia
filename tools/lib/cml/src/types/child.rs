@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::Error;
 use crate::types::common::*;
 use crate::types::environment::EnvironmentRef;
 pub use cm_types::{Name, OnTerminate, StartupMode, Url};
@@ -100,13 +101,13 @@ impl Eq for ContextChild {}
 impl Hydrate for ParsedChild {
     type Output = ContextChild;
 
-    fn hydrate(self, file: &Arc<PathBuf>, buffer: &String) -> Self::Output {
-        ContextChild {
+    fn hydrate(self, file: &Arc<PathBuf>, buffer: &String) -> Result<Self::Output, Error> {
+        Ok(ContextChild {
             name: hydrate_simple(self.name, file, buffer),
             url: hydrate_simple(self.url, file, buffer),
             startup: hydrate_opt_simple(self.startup, file, buffer),
             on_terminate: hydrate_opt_simple(self.on_terminate, file, buffer),
             environment: hydrate_opt_simple(self.environment, file, buffer),
-        }
+        })
     }
 }

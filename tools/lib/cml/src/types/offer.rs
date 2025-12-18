@@ -756,8 +756,8 @@ impl FromClauseContext for ContextOffer {
 impl Hydrate for ParsedOffer {
     type Output = ContextOffer;
 
-    fn hydrate(self, file: &Arc<PathBuf>, buffer: &String) -> Self::Output {
-        ContextOffer {
+    fn hydrate(self, file: &Arc<PathBuf>, buffer: &String) -> Result<Self::Output, Error> {
+        Ok(ContextOffer {
             service: hydrate_opt_simple(self.service, file, buffer),
             protocol: hydrate_opt_simple(self.protocol, file, buffer),
             directory: hydrate_opt_simple(self.directory, file, buffer),
@@ -776,7 +776,7 @@ impl Hydrate for ParsedOffer {
             scope: hydrate_opt_simple(self.scope, file, buffer),
             availability: hydrate_opt_simple(self.availability, file, buffer),
             source_availability: hydrate_opt_simple(self.source_availability, file, buffer),
-        }
+        })
     }
 }
 

@@ -11,10 +11,11 @@ use crate::types::collection::{ContextCollection, ParsedCollection};
 use crate::types::common::*;
 use crate::types::expose::{ContextExpose, ParsedExpose};
 use crate::types::offer::{ContextOffer, ParsedOffer};
+use crate::types::program::{ContextProgram, ParsedProgram};
 use crate::types::r#use::{ContextUse, ParsedUse};
 use crate::{
     Canonicalize, Capability, CapabilityClause, CapabilityFromRef, Child, Collection, ConfigKey,
-    ConfigValueType, Environment, Error, Expose, Offer, Program, Use,
+    ConfigValueType, Environment, Error, Expose, Location, Offer, Program, Use,
 };
 
 pub use cm_types::{
@@ -1040,6 +1041,7 @@ macro_rules! merge_spanned_vec {
 #[derive(Deserialize, Debug, Default, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct ParsedDocument {
+    pub program: Option<Spanned<ParsedProgram>>,
     pub children: Option<Spanned<Vec<Spanned<ParsedChild>>>>,
     pub collections: Option<Spanned<Vec<Spanned<ParsedCollection>>>>,
     pub capabilities: Option<Spanned<Vec<Spanned<ParsedCapability>>>>,
@@ -1050,6 +1052,7 @@ pub struct ParsedDocument {
 
 #[derive(Debug, Default)]
 pub struct DocumentContext {
+    pub program: Option<ContextSpanned<ContextProgram>>,
     pub children: Option<Vec<ContextSpanned<ContextChild>>>,
     pub collections: Option<Vec<ContextSpanned<ContextCollection>>>,
     pub capabilities: Option<Vec<ContextSpanned<ContextCapability>>>,
@@ -1059,13 +1062,20 @@ pub struct DocumentContext {
 }
 
 impl DocumentContext {
-    pub fn merge_from(&mut self, mut other: DocumentContext) {
+    pub fn merge_from(
+        &mut self,
+        mut other: DocumentContext,
+        include_path: &path::Path,
+    ) -> Result<(), Error> {
+        self.merge_program(&mut other, include_path)?;
         merge_spanned_vec!(self, other, children);
         merge_spanned_vec!(self, other, collections);
         merge_spanned_vec!(self, other, capabilities);
         merge_spanned_vec!(self, other, r#use);
         merge_spanned_vec!(self, other, expose);
         merge_spanned_vec!(self, other, offer);
+
+        Ok(())
     }
 
     pub fn all_storage_with_sources<'a>(
@@ -1144,19 +1154,1203 @@ impl DocumentContext {
             HashMap::new()
         }
     }
+
+    fn merge_program(
+        &mut self,
+        other: &mut DocumentContext,
+        include_path: &path::Path,
+    ) -> Result<(), Error> {
+        if let None = other.program {
+            return Ok(());
+        }
+        if let None = self.program {
+            let synthetic_origin = Origin {
+                file: Arc::new(include_path.to_path_buf()),
+                location: Location { line: 0, column: 0 },
+            };
+
+            self.program =
+                Some(ContextSpanned { value: ContextProgram::default(), origin: synthetic_origin });
+        }
+        let my_program = &mut self.program.as_mut().unwrap().value;
+        let other_program = &mut other.program.as_mut().unwrap().value;
+        if let Some(other_runner_wrapper) = other_program.runner.take() {
+            if let Some(my_runner_wrapper) = my_program.runner.as_ref() {
+                if my_runner_wrapper.value != other_runner_wrapper.value {
+                    return Err(Error::merge(
+                        format!(
+                            "Manifest include had a conflicting `program.runner`: parent='{}', include='{}'",
+                            my_runner_wrapper.value, other_runner_wrapper.value
+                        ),
+                        Some(other_runner_wrapper.origin),
+                    ));
+                }
+            } else {
+                my_program.runner = Some(other_runner_wrapper);
+            }
+        }
+        Self::merge_maps_with_options(
+            &mut my_program.info,
+            &other_program.info,
+            "program",
+            include_path,
+            Some(vec!["environ", "features"]),
+        )
+    }
+
+    fn merge_maps<'s, Source, Dest>(
+        self_map: &mut Dest,
+        include_map: Source,
+        outer_key: &str,
+        include_path: &path::Path,
+    ) -> Result<(), Error>
+    where
+        Source: IntoIterator<Item = (&'s String, &'s Value)>,
+        Dest: ValueMap,
+    {
+        Self::merge_maps_with_options(self_map, include_map, outer_key, include_path, None)
+    }
+
+    /// If `allow_array_concatenation_keys` is None, all arrays present in both
+    /// `self_map` and `include_map` will be concatenated in the result. If it
+    /// is set to Some(vec), only those keys specified will allow concatenation,
+    /// with any others returning an error.
+    fn merge_maps_with_options<'s, Source, Dest>(
+        self_map: &mut Dest,
+        include_map: Source,
+        outer_key: &str,
+        include_path: &path::Path,
+        allow_array_concatenation_keys: Option<Vec<&str>>,
+    ) -> Result<(), Error>
+    where
+        Source: IntoIterator<Item = (&'s String, &'s Value)>,
+        Dest: ValueMap,
+    {
+        for (key, value) in include_map {
+            match self_map.get_mut(key) {
+                None => {
+                    // Key not present in self map, insert it from include map.
+                    self_map.insert(key.clone(), value.clone());
+                }
+                // Self and include maps share the same key
+                Some(Value::Object(self_nested_map)) => match value {
+                    // The include value is an object and can be recursively merged
+                    Value::Object(include_nested_map) => {
+                        let combined_key = format!("{}.{}", outer_key, key);
+
+                        // Recursively merge maps
+                        Self::merge_maps(
+                            self_nested_map,
+                            include_nested_map,
+                            &combined_key,
+                            include_path,
+                        )?;
+                    }
+                    _ => {
+                        // Cannot merge object and non-object
+                        return Err(Error::validate(format!(
+                            "manifest include had a conflicting `{}.{}`: {}",
+                            outer_key,
+                            key,
+                            include_path.display()
+                        )));
+                    }
+                },
+                Some(Value::Array(self_nested_vec)) => match value {
+                    // The include value is an array and can be merged, unless
+                    // `allow_array_concatenation_keys` is used and the key is not included.
+                    Value::Array(include_nested_vec) => {
+                        if let Some(allowed_keys) = &allow_array_concatenation_keys {
+                            if !allowed_keys.contains(&key.as_str()) {
+                                // This key wasn't present in `allow_array_concatenation_keys` and so
+                                // merging is disallowed.
+                                return Err(Error::validate(format!(
+                                    "manifest include had a conflicting `{}.{}`: {}",
+                                    outer_key,
+                                    key,
+                                    include_path.display()
+                                )));
+                            }
+                        }
+                        let mut new_values = include_nested_vec.clone();
+                        self_nested_vec.append(&mut new_values);
+                    }
+                    _ => {
+                        // Cannot merge array and non-array
+                        return Err(Error::validate(format!(
+                            "manifest include had a conflicting `{}.{}`: {}",
+                            outer_key,
+                            key,
+                            include_path.display()
+                        )));
+                    }
+                },
+                _ => {
+                    // Cannot merge object and non-object
+                    return Err(Error::validate(format!(
+                        "manifest include had a conflicting `{}.{}`: {}",
+                        outer_key,
+                        key,
+                        include_path.display()
+                    )));
+                }
+            }
+        }
+        Ok(())
+    }
 }
 
 pub fn convert_parsed_to_document(
     parsed_doc: ParsedDocument,
     file_arc: Arc<PathBuf>,
     buffer: &String,
-) -> DocumentContext {
-    DocumentContext {
-        children: hydrate_list(parsed_doc.children, &file_arc, buffer),
-        collections: hydrate_list(parsed_doc.collections, &file_arc, buffer),
-        capabilities: hydrate_list(parsed_doc.capabilities, &file_arc, buffer),
-        r#use: hydrate_list(parsed_doc.r#use, &file_arc, buffer),
-        expose: hydrate_list(parsed_doc.expose, &file_arc, buffer),
-        offer: hydrate_list(parsed_doc.offer, &file_arc, buffer),
+) -> Result<DocumentContext, Error> {
+    Ok(DocumentContext {
+        program: hydrate_opt(parsed_doc.program, &file_arc, buffer)?,
+        children: hydrate_list(parsed_doc.children, &file_arc, buffer)?,
+        collections: hydrate_list(parsed_doc.collections, &file_arc, buffer)?,
+        capabilities: hydrate_list(parsed_doc.capabilities, &file_arc, buffer)?,
+        r#use: hydrate_list(parsed_doc.r#use, &file_arc, buffer)?,
+        expose: hydrate_list(parsed_doc.expose, &file_arc, buffer)?,
+        offer: hydrate_list(parsed_doc.offer, &file_arc, buffer)?,
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::OneOrMany;
+    use crate::types::document::Document;
+    use crate::types::offer::OfferFromRef;
+    use crate::types::right::Right;
+    use difference::Changeset;
+    use serde_json::{json, to_string_pretty, to_value};
+    use std::path;
+    use std::path::Path;
+    use test_case::test_case;
+
+    fn document(contents: serde_json::Value) -> Document {
+        serde_json5::from_str::<Document>(&contents.to_string()).unwrap()
+    }
+
+    macro_rules! assert_json_eq {
+        ($a:expr, $e:expr) => {{
+            if $a != $e {
+                let expected = to_string_pretty(&$e).unwrap();
+                let actual = to_string_pretty(&$a).unwrap();
+                assert_eq!(
+                    $a,
+                    $e,
+                    "JSON actual != expected. Diffs:\n\n{}",
+                    Changeset::new(&actual, &expected, "\n")
+                );
+            }
+        }};
+    }
+
+    #[test]
+    fn test_includes() {
+        assert_eq!(document(json!({})).includes(), Vec::<String>::new());
+        assert_eq!(document(json!({ "include": []})).includes(), Vec::<String>::new());
+        assert_eq!(
+            document(json!({ "include": [ "foo.cml", "bar.cml" ]})).includes(),
+            vec!["foo.cml", "bar.cml"]
+        );
+    }
+
+    #[test]
+    fn test_merge_same_section() {
+        let mut some = document(json!({ "use": [{ "protocol": "foo" }] }));
+        let mut other = document(json!({ "use": [{ "protocol": "bar" }] }));
+        some.merge_from(&mut other, &Path::new("some/path")).unwrap();
+        let uses = some.r#use.as_ref().unwrap();
+        assert_eq!(uses.len(), 2);
+        assert_eq!(
+            uses[0].protocol.as_ref().unwrap(),
+            &OneOrMany::One("foo".parse::<Name>().unwrap())
+        );
+        assert_eq!(
+            uses[1].protocol.as_ref().unwrap(),
+            &OneOrMany::One("bar".parse::<Name>().unwrap())
+        );
+    }
+
+    #[test]
+    fn test_merge_upgraded_availability() {
+        let mut some =
+            document(json!({ "use": [{ "protocol": "foo", "availability": "optional" }] }));
+        let mut other1 = document(json!({ "use": [{ "protocol": "foo" }] }));
+        let mut other2 =
+            document(json!({ "use": [{ "protocol": "foo", "availability": "transitional" }] }));
+        let mut other3 =
+            document(json!({ "use": [{ "protocol": "foo", "availability": "same_as_target" }] }));
+        some.merge_from(&mut other1, &Path::new("some/path")).unwrap();
+        some.merge_from(&mut other2, &Path::new("some/path")).unwrap();
+        some.merge_from(&mut other3, &Path::new("some/path")).unwrap();
+        let uses = some.r#use.as_ref().unwrap();
+        assert_eq!(uses.len(), 2);
+        assert_eq!(
+            uses[0].protocol.as_ref().unwrap(),
+            &OneOrMany::One("foo".parse::<Name>().unwrap())
+        );
+        assert!(uses[0].availability.is_none());
+        assert_eq!(
+            uses[1].protocol.as_ref().unwrap(),
+            &OneOrMany::One("foo".parse::<Name>().unwrap())
+        );
+        assert_eq!(uses[1].availability.as_ref().unwrap(), &Availability::SameAsTarget,);
+    }
+
+    #[test]
+    fn test_merge_different_sections() {
+        let mut some = document(json!({ "use": [{ "protocol": "foo" }] }));
+        let mut other = document(json!({ "expose": [{ "protocol": "bar", "from": "self" }] }));
+        some.merge_from(&mut other, &Path::new("some/path")).unwrap();
+        let uses = some.r#use.as_ref().unwrap();
+        let exposes = some.expose.as_ref().unwrap();
+        assert_eq!(uses.len(), 1);
+        assert_eq!(exposes.len(), 1);
+        assert_eq!(
+            uses[0].protocol.as_ref().unwrap(),
+            &OneOrMany::One("foo".parse::<Name>().unwrap())
+        );
+        assert_eq!(
+            exposes[0].protocol.as_ref().unwrap(),
+            &OneOrMany::One("bar".parse::<Name>().unwrap())
+        );
+    }
+
+    #[test]
+    fn test_merge_environments() {
+        let mut some = document(json!({ "environments": [
+            {
+                "name": "one",
+                "extends": "realm",
+            },
+            {
+                "name": "two",
+                "extends": "none",
+                "runners": [
+                    {
+                        "runner": "r1",
+                        "from": "#c1",
+                    },
+                    {
+                        "runner": "r2",
+                        "from": "#c2",
+                    },
+                ],
+                "resolvers": [
+                    {
+                        "resolver": "res1",
+                        "from": "#c1",
+                        "scheme": "foo",
+                    },
+                ],
+                "debug": [
+                    {
+                        "protocol": "baz",
+                        "from": "#c2"
+                    }
+                ]
+            },
+        ]}));
+        let mut other = document(json!({ "environments": [
+            {
+                "name": "two",
+                "__stop_timeout_ms": 100,
+                "runners": [
+                    {
+                        "runner": "r3",
+                        "from": "#c3",
+                    },
+                ],
+                "resolvers": [
+                    {
+                        "resolver": "res2",
+                        "from": "#c1",
+                        "scheme": "bar",
+                    },
+                ],
+                "debug": [
+                    {
+                        "protocol": "faz",
+                        "from": "#c2"
+                    }
+                ]
+            },
+            {
+                "name": "three",
+                "__stop_timeout_ms": 1000,
+            },
+        ]}));
+        some.merge_from(&mut other, &Path::new("some/path")).unwrap();
+        assert_eq!(
+            to_value(some).unwrap(),
+            json!({"environments": [
+                {
+                    "name": "one",
+                    "extends": "realm",
+                },
+                {
+                    "name": "three",
+                    "__stop_timeout_ms": 1000,
+                },
+                {
+                    "name": "two",
+                    "extends": "none",
+                    "__stop_timeout_ms": 100,
+                    "runners": [
+                        {
+                            "runner": "r1",
+                            "from": "#c1",
+                        },
+                        {
+                            "runner": "r2",
+                            "from": "#c2",
+                        },
+                        {
+                            "runner": "r3",
+                            "from": "#c3",
+                        },
+                    ],
+                    "resolvers": [
+                        {
+                            "resolver": "res1",
+                            "from": "#c1",
+                            "scheme": "foo",
+                        },
+                        {
+                            "resolver": "res2",
+                            "from": "#c1",
+                            "scheme": "bar",
+                        },
+                    ],
+                    "debug": [
+                        {
+                            "protocol": "baz",
+                            "from": "#c2"
+                        },
+                        {
+                            "protocol": "faz",
+                            "from": "#c2"
+                        }
+                    ]
+                },
+            ]})
+        );
+    }
+
+    #[test]
+    fn test_merge_environments_errors() {
+        {
+            let mut some = document(json!({"environments": [{"name": "one", "extends": "realm"}]}));
+            let mut other = document(json!({"environments": [{"name": "one", "extends": "none"}]}));
+            assert!(some.merge_from(&mut other, &Path::new("some/path")).is_err());
+        }
+        {
+            let mut some =
+                document(json!({"environments": [{"name": "one", "__stop_timeout_ms": 10}]}));
+            let mut other =
+                document(json!({"environments": [{"name": "one", "__stop_timeout_ms": 20}]}));
+            assert!(some.merge_from(&mut other, &Path::new("some/path")).is_err());
+        }
+
+        // It's ok if the values match.
+        {
+            let mut some = document(json!({"environments": [{"name": "one", "extends": "realm"}]}));
+            let mut other =
+                document(json!({"environments": [{"name": "one", "extends": "realm"}]}));
+            some.merge_from(&mut other, &Path::new("some/path")).unwrap();
+            assert_eq!(
+                to_value(some).unwrap(),
+                json!({"environments": [{"name": "one", "extends": "realm"}]})
+            );
+        }
+        {
+            let mut some =
+                document(json!({"environments": [{"name": "one", "__stop_timeout_ms": 10}]}));
+            let mut other =
+                document(json!({"environments": [{"name": "one", "__stop_timeout_ms": 10}]}));
+            some.merge_from(&mut other, &Path::new("some/path")).unwrap();
+            assert_eq!(
+                to_value(some).unwrap(),
+                json!({"environments": [{"name": "one", "__stop_timeout_ms": 10}]})
+            );
+        }
+    }
+
+    #[test]
+    fn test_merge_from_other_config() {
+        let mut some = document(json!({}));
+        let mut other = document(json!({ "config": { "bar": { "type": "bool" } } }));
+
+        some.merge_from(&mut other, &path::Path::new("some/path")).unwrap();
+        let expected = document(json!({ "config": { "bar": { "type": "bool" } } }));
+        assert_eq!(some.config, expected.config);
+    }
+
+    #[test]
+    fn test_merge_from_some_config() {
+        let mut some = document(json!({ "config": { "bar": { "type": "bool" } } }));
+        let mut other = document(json!({}));
+
+        some.merge_from(&mut other, &path::Path::new("some/path")).unwrap();
+        let expected = document(json!({ "config": { "bar": { "type": "bool" } } }));
+        assert_eq!(some.config, expected.config);
+    }
+
+    #[test]
+    fn test_merge_from_config() {
+        let mut some = document(json!({ "config": { "foo": { "type": "bool" } } }));
+        let mut other = document(json!({ "config": { "bar": { "type": "bool" } } }));
+        some.merge_from(&mut other, &path::Path::new("some/path")).unwrap();
+
+        assert_eq!(
+            some,
+            document(json!({
+                "config": {
+                    "foo": { "type": "bool" },
+                    "bar": { "type": "bool" },
+                }
+            })),
+        );
+    }
+
+    #[test]
+    fn test_merge_from_config_dedupe_identical_fields() {
+        let mut some = document(json!({ "config": { "foo": { "type": "bool" } } }));
+        let mut other = document(json!({ "config": { "foo": { "type": "bool" } } }));
+        some.merge_from(&mut other, &path::Path::new("some/path")).unwrap();
+
+        assert_eq!(some, document(json!({ "config": { "foo": { "type": "bool" } } })));
+    }
+
+    #[test]
+    fn test_merge_from_config_conflicting_keys() {
+        let mut some = document(json!({ "config": { "foo": { "type": "bool" } } }));
+        let mut other = document(json!({ "config": { "foo": { "type": "uint8" } } }));
+
+        assert_matches::assert_matches!(
+            some.merge_from(&mut other, &path::Path::new("some/path")),
+            Err(Error::Validate { err, .. })
+                if err == "Found conflicting entry for config key `foo` in `some/path`."
+        );
+    }
+
+    #[test]
+    fn test_canonicalize() {
+        let mut some = document(json!({
+            "children": [
+                // Will be sorted by name
+                { "name": "b_child", "url": "http://foo/b" },
+                { "name": "a_child", "url": "http://foo/a" },
+            ],
+            "environments": [
+                // Will be sorted by name
+                { "name": "b_env" },
+                { "name": "a_env" },
+            ],
+            "collections": [
+                // Will be sorted by name
+                { "name": "b_coll", "durability": "transient" },
+                { "name": "a_coll", "durability": "transient" },
+            ],
+            // Will have entries sorted by capability type, then
+            // by capability name (using the first entry in Many cases).
+            "capabilities": [
+                // Will be merged with "bar"
+                { "protocol": ["foo"] },
+                { "protocol": "bar" },
+                // Will not be merged, but will be sorted before "bar"
+                { "protocol": "arg", "path": "/arg" },
+                // Will have list of names sorted
+                { "service": ["b", "a"] },
+                // Will have list of names sorted
+                { "event_stream": ["b", "a"] },
+                { "runner": "myrunner" },
+                // The following two will *not* be merged, because they have a `path`.
+                { "runner": "mypathrunner1", "path": "/foo" },
+                { "runner": "mypathrunner2", "path": "/foo" },
+            ],
+            // Same rules as for "capabilities".
+            "offer": [
+                // Will be sorted after "bar"
+                { "protocol": "baz", "from": "#a_child", "to": "#c_child"  },
+                // The following two entries will be merged
+                { "protocol": ["foo"], "from": "#a_child", "to": "#b_child"  },
+                { "protocol": "bar", "from": "#a_child", "to": "#b_child"  },
+                // Will have list of names sorted
+                { "service": ["b", "a"], "from": "#a_child", "to": "#b_child"  },
+                // Will have list of names sorted
+                {
+                    "event_stream": ["b", "a"],
+                    "from": "#a_child",
+                    "to": "#b_child",
+                    "scope": ["#b", "#c", "#a"]  // Also gets sorted
+                },
+                { "runner": [ "myrunner", "a" ], "from": "#a_child", "to": "#b_child"  },
+                { "runner": [ "b" ], "from": "#a_child", "to": "#b_child"  },
+                { "directory": [ "b" ], "from": "#a_child", "to": "#b_child"  },
+            ],
+            "expose": [
+                { "protocol": ["foo"], "from": "#a_child" },
+                { "protocol": "bar", "from": "#a_child" },  // Will appear before protocol: foo
+                // Will have list of names sorted
+                { "service": ["b", "a"], "from": "#a_child" },
+                // Will have list of names sorted
+                {
+                    "event_stream": ["b", "a"],
+                    "from": "#a_child",
+                    "scope": ["#b", "#c", "#a"]  // Also gets sorted
+                },
+                { "runner": [ "myrunner", "a" ], "from": "#a_child" },
+                { "runner": [ "b" ], "from": "#a_child" },
+                { "directory": [ "b" ], "from": "#a_child" },
+            ],
+            "use": [
+                // Will be sorted after "baz"
+                { "protocol": ["zazzle"], "path": "/zazbaz" },
+                // These will be merged
+                { "protocol": ["foo"] },
+                { "protocol": "bar" },
+                // Will have list of names sorted
+                { "service": ["b", "a"] },
+                // Will have list of names sorted
+                { "event_stream": ["b", "a"], "scope": ["#b", "#a"] },
+            ],
+        }));
+        some.canonicalize();
+
+        assert_json_eq!(
+            some,
+            document(json!({
+                "children": [
+                    { "name": "a_child", "url": "http://foo/a" },
+                    { "name": "b_child", "url": "http://foo/b" },
+                ],
+                "collections": [
+                    { "name": "a_coll", "durability": "transient" },
+                    { "name": "b_coll", "durability": "transient" },
+                ],
+                "environments": [
+                    { "name": "a_env" },
+                    { "name": "b_env" },
+                ],
+                "capabilities": [
+                    { "event_stream": ["a", "b"] },
+                    { "protocol": "arg", "path": "/arg" },
+                    { "protocol": ["bar", "foo"] },
+                    { "runner": "mypathrunner1", "path": "/foo" },
+                    { "runner": "mypathrunner2", "path": "/foo" },
+                    { "runner": "myrunner" },
+                    { "service": ["a", "b"] },
+                ],
+                "use": [
+                    { "event_stream": ["a", "b"], "scope": ["#a", "#b"] },
+                    { "protocol": ["bar", "foo"] },
+                    { "protocol": "zazzle", "path": "/zazbaz" },
+                    { "service": ["a", "b"] },
+                ],
+                "offer": [
+                    { "directory": "b", "from": "#a_child", "to": "#b_child" },
+                    {
+                        "event_stream": ["a", "b"],
+                        "from": "#a_child",
+                        "to": "#b_child",
+                        "scope": ["#a", "#b", "#c"],
+                    },
+                    { "protocol": ["bar", "foo"], "from": "#a_child", "to": "#b_child" },
+                    { "protocol": "baz", "from": "#a_child", "to": "#c_child"  },
+                    { "runner": [ "a", "b", "myrunner" ], "from": "#a_child", "to": "#b_child" },
+                    { "service": ["a", "b"], "from": "#a_child", "to": "#b_child" },
+                ],
+                "expose": [
+                    { "directory": "b", "from": "#a_child" },
+                    {
+                        "event_stream": ["a", "b"],
+                        "from": "#a_child",
+                        "scope": ["#a", "#b", "#c"],
+                    },
+                    { "protocol": ["bar", "foo"], "from": "#a_child" },
+                    { "runner": [ "a", "b", "myrunner" ], "from": "#a_child" },
+                    { "service": ["a", "b"], "from": "#a_child" },
+                ],
+            }))
+        )
+    }
+
+    #[test]
+    fn deny_unknown_config_type_fields() {
+        let input = json!({ "config": { "foo": { "type": "bool", "unknown": "should error" } } });
+        serde_json5::from_str::<Document>(&input.to_string())
+            .expect_err("must reject unknown config field attributes");
+    }
+
+    #[test]
+    fn deny_unknown_config_nested_type_fields() {
+        let input = json!({
+            "config": {
+                "foo": {
+                    "type": "vector",
+                    "max_count": 10,
+                    "element": {
+                        "type": "bool",
+                        "unknown": "should error"
+                    },
+
+                }
+            }
+        });
+        serde_json5::from_str::<Document>(&input.to_string())
+            .expect_err("must reject unknown config field attributes");
+    }
+
+    #[test]
+    fn test_merge_from_program() {
+        let mut some = document(json!({ "program": { "binary": "bin/hello_world" } }));
+        let mut other = document(json!({ "program": { "runner": "elf" } }));
+        some.merge_from(&mut other, &Path::new("some/path")).unwrap();
+        let expected =
+            document(json!({ "program": { "binary": "bin/hello_world", "runner": "elf" } }));
+        assert_eq!(some.program, expected.program);
+    }
+
+    #[test]
+    fn test_merge_from_program_without_runner() {
+        let mut some =
+            document(json!({ "program": { "binary": "bin/hello_world", "runner": "elf" } }));
+        // https://fxbug.dev/42160240: merging with a document that doesn't have a runner doesn't override the
+        // runner that we already have assigned.
+        let mut other = document(json!({ "program": {} }));
+        some.merge_from(&mut other, &Path::new("some/path")).unwrap();
+        let expected =
+            document(json!({ "program": { "binary": "bin/hello_world", "runner": "elf" } }));
+        assert_eq!(some.program, expected.program);
+    }
+
+    #[test]
+    fn test_merge_from_program_overlapping_environ() {
+        // It's ok to merge `program.environ` by concatenating the arrays together.
+        let mut some = document(json!({ "program": { "environ": ["1"] } }));
+        let mut other = document(json!({ "program": { "environ": ["2"] } }));
+        some.merge_from(&mut other, &Path::new("some/path")).unwrap();
+        let expected = document(json!({ "program": { "environ": ["1", "2"] } }));
+        assert_eq!(some.program, expected.program);
+    }
+
+    #[test]
+    fn test_merge_from_program_overlapping_runner() {
+        // It's ok to merge `program.runner = "elf"` with `program.runner = "elf"`.
+        let mut some =
+            document(json!({ "program": { "binary": "bin/hello_world", "runner": "elf" } }));
+        let mut other = document(json!({ "program": { "runner": "elf" } }));
+        some.merge_from(&mut other, &Path::new("some/path")).unwrap();
+        let expected =
+            document(json!({ "program": { "binary": "bin/hello_world", "runner": "elf" } }));
+        assert_eq!(some.program, expected.program);
+    }
+
+    #[test_case(
+        document(json!({ "program": { "runner": "elf" } })),
+        document(json!({ "program": { "runner": "fle" } })),
+        "runner"
+        ; "when_runner_conflicts"
+    )]
+    #[test_case(
+        document(json!({ "program": { "binary": "bin/hello_world" } })),
+        document(json!({ "program": { "binary": "bin/hola_mundo" } })),
+        "binary"
+        ; "when_binary_conflicts"
+    )]
+    #[test_case(
+        document(json!({ "program": { "args": ["a".to_owned()] } })),
+        document(json!({ "program": { "args": ["b".to_owned()] } })),
+        "args"
+        ; "when_args_conflicts"
+    )]
+    fn test_merge_from_program_error(mut some: Document, mut other: Document, field: &str) {
+        assert_matches::assert_matches!(
+            some.merge_from(&mut other, &path::Path::new("some/path")),
+            Err(Error::Validate {  err, .. })
+                if err == format!("manifest include had a conflicting `program.{}`: some/path", field)
+        );
+    }
+
+    #[test_case(
+        document(json!({ "facets": { "my.key": "my.value" } })),
+        document(json!({ "facets": { "other.key": "other.value" } })),
+        document(json!({ "facets": { "my.key": "my.value",  "other.key": "other.value" } }))
+        ; "two separate keys"
+    )]
+    #[test_case(
+        document(json!({ "facets": { "my.key": "my.value" } })),
+        document(json!({ "facets": {} })),
+        document(json!({ "facets": { "my.key": "my.value" } }))
+        ; "empty other facet"
+    )]
+    #[test_case(
+        document(json!({ "facets": {} })),
+        document(json!({ "facets": { "other.key": "other.value" } })),
+        document(json!({ "facets": { "other.key": "other.value" } }))
+        ; "empty my facet"
+    )]
+    #[test_case(
+        document(json!({ "facets": { "key": { "type": "some_type" } } })),
+        document(json!({ "facets": { "key": { "runner": "some_runner"} } })),
+        document(json!({ "facets": { "key": { "type": "some_type", "runner": "some_runner" } } }))
+        ; "nested facet key"
+    )]
+    #[test_case(
+        document(json!({ "facets": { "key": { "type": "some_type", "nested_key": { "type": "new type" }}}})),
+        document(json!({ "facets": { "key": { "nested_key": { "runner": "some_runner" }} } })),
+        document(json!({ "facets": { "key": { "type": "some_type", "nested_key": { "runner": "some_runner", "type": "new type" }}}}))
+        ; "double nested facet key"
+    )]
+    #[test_case(
+        document(json!({ "facets": { "key": { "array_key": ["value_1", "value_2"] } } })),
+        document(json!({ "facets": { "key": { "array_key": ["value_3", "value_4"] } } })),
+        document(json!({ "facets": { "key": { "array_key": ["value_1", "value_2", "value_3", "value_4"] } } }))
+        ; "merge array values"
+    )]
+    fn test_merge_from_facets(mut my: Document, mut other: Document, expected: Document) {
+        my.merge_from(&mut other, &Path::new("some/path")).unwrap();
+        assert_eq!(my.facets, expected.facets);
+    }
+
+    #[test_case(
+        document(json!({ "facets": { "key": "my.value" }})),
+        document(json!({ "facets": { "key": "other.value" }})),
+        "facets.key"
+        ; "conflict first level keys"
+    )]
+    #[test_case(
+        document(json!({ "facets": { "key":  {"type": "cts" }}})),
+        document(json!({ "facets": { "key":  {"type": "system" }}})),
+        "facets.key.type"
+        ; "conflict second level keys"
+    )]
+    #[test_case(
+        document(json!({ "facets": { "key":  {"type": {"key": "value" }}}})),
+        document(json!({ "facets": { "key":  {"type": "system" }}})),
+        "facets.key.type"
+        ; "incompatible self nested type"
+    )]
+    #[test_case(
+        document(json!({ "facets": { "key":  {"type": "system" }}})),
+        document(json!({ "facets": { "key":  {"type":  {"key": "value" }}}})),
+        "facets.key.type"
+        ; "incompatible other nested type"
+    )]
+    #[test_case(
+        document(json!({ "facets": { "key":  {"type": {"key": "my.value" }}}})),
+        document(json!({ "facets": { "key":  {"type":  {"key": "some.value" }}}})),
+        "facets.key.type.key"
+        ; "conflict third level keys"
+    )]
+    #[test_case(
+        document(json!({ "facets": { "key":  {"type": [ "value_1" ]}}})),
+        document(json!({ "facets": { "key":  {"type":  "value_2" }}})),
+        "facets.key.type"
+        ; "incompatible keys"
+    )]
+    fn test_merge_from_facet_error(mut my: Document, mut other: Document, field: &str) {
+        assert_matches::assert_matches!(
+            my.merge_from(&mut other, &path::Path::new("some/path")),
+            Err(Error::Validate {  err, .. })
+                if err == format!("manifest include had a conflicting `{}`: some/path", field)
+        );
+    }
+
+    #[test_case("protocol")]
+    #[test_case("service")]
+    #[test_case("event_stream")]
+    fn test_merge_from_duplicate_use_array(typename: &str) {
+        let mut my = document(json!({ "use": [{ typename: "a" }]}));
+        let mut other = document(json!({ "use": [
+            { typename: ["a", "b"], "availability": "optional"}
+        ]}));
+        let result = document(json!({ "use": [
+            { typename: "a" },
+            { typename: "b", "availability": "optional" },
+        ]}));
+
+        my.merge_from(&mut other, &path::Path::new("some/path")).unwrap();
+        assert_eq!(my, result);
+    }
+
+    #[test_case("directory")]
+    #[test_case("storage")]
+    fn test_merge_from_duplicate_use_noarray(typename: &str) {
+        let mut my = document(json!({ "use": [{ typename: "a", "path": "/a"}]}));
+        let mut other = document(json!({ "use": [
+            { typename: "a", "path": "/a", "availability": "optional" },
+            { typename: "b", "path": "/b", "availability": "optional" },
+        ]}));
+        let result = document(json!({ "use": [
+            { typename: "a", "path": "/a" },
+            { typename: "b", "path": "/b", "availability": "optional" },
+        ]}));
+        my.merge_from(&mut other, &path::Path::new("some/path")).unwrap();
+        assert_eq!(my, result);
+    }
+
+    #[test_case("protocol")]
+    #[test_case("service")]
+    #[test_case("event_stream")]
+    fn test_merge_from_duplicate_capabilities_array(typename: &str) {
+        let mut my = document(json!({ "capabilities": [{ typename: "a" }]}));
+        let mut other = document(json!({ "capabilities": [ { typename: ["a", "b"] } ]}));
+        let result = document(json!({ "capabilities": [ { typename: "a" }, { typename: "b" } ]}));
+
+        my.merge_from(&mut other, &path::Path::new("some/path")).unwrap();
+        assert_eq!(my, result);
+    }
+
+    #[test_case("directory")]
+    #[test_case("storage")]
+    #[test_case("runner")]
+    #[test_case("resolver")]
+    fn test_merge_from_duplicate_capabilities_noarray(typename: &str) {
+        let mut my = document(json!({ "capabilities": [{ typename: "a", "path": "/a"}]}));
+        let mut other = document(json!({ "capabilities": [
+            { typename: "a", "path": "/a" },
+            { typename: "b", "path": "/b" },
+        ]}));
+        let result = document(json!({ "capabilities": [
+            { typename: "a", "path": "/a" },
+            { typename: "b", "path": "/b" },
+        ]}));
+        my.merge_from(&mut other, &path::Path::new("some/path")).unwrap();
+        assert_eq!(my, result);
+    }
+
+    #[test]
+    fn test_merge_with_empty_names() {
+        // This document is an error because there is no capability name.
+        let mut my = document(json!({ "capabilities": [{ "path": "/a"}]}));
+
+        let mut other = document(json!({ "capabilities": [
+            { "directory": "a", "path": "/a" },
+            { "directory": "b", "path": "/b" },
+        ]}));
+        my.merge_from(&mut other, &path::Path::new("some/path")).unwrap_err();
+    }
+
+    #[test_case("protocol")]
+    #[test_case("service")]
+    #[test_case("event_stream")]
+    #[test_case("directory")]
+    #[test_case("storage")]
+    #[test_case("runner")]
+    #[test_case("resolver")]
+    fn test_merge_from_duplicate_offers(typename: &str) {
+        let mut my = document(json!({ "offer": [{ typename: "a", "from": "self", "to": "#c" }]}));
+        let mut other = document(json!({ "offer": [
+            { typename: ["a", "b"], "from": "self", "to": "#c", "availability": "optional" }
+        ]}));
+        let result = document(json!({ "offer": [
+            { typename: "a", "from": "self", "to": "#c" },
+            { typename: "b", "from": "self", "to": "#c", "availability": "optional" },
+        ]}));
+
+        my.merge_from(&mut other, &path::Path::new("some/path")).unwrap();
+        assert_eq!(my, result);
+    }
+
+    #[test_case("protocol")]
+    #[test_case("service")]
+    #[test_case("event_stream")]
+    #[test_case("directory")]
+    #[test_case("runner")]
+    #[test_case("resolver")]
+    fn test_merge_from_duplicate_exposes(typename: &str) {
+        let mut my = document(json!({ "expose": [{ typename: "a", "from": "self" }]}));
+        let mut other = document(json!({ "expose": [
+            { typename: ["a", "b"], "from": "self" }
+        ]}));
+        let result = document(json!({ "expose": [
+            { typename: "a", "from": "self" },
+            { typename: "b", "from": "self" },
+        ]}));
+
+        my.merge_from(&mut other, &path::Path::new("some/path")).unwrap();
+        assert_eq!(my, result);
+    }
+
+    #[test_case(
+        document(json!({ "use": [
+            { "protocol": "a", "availability": "required" },
+            { "protocol": "b", "availability": "optional" },
+            { "protocol": "c", "availability": "transitional" },
+            { "protocol": "d", "availability": "same_as_target" },
+        ]})),
+        document(json!({ "use": [
+            { "protocol": ["a"], "availability": "required" },
+            { "protocol": ["b"], "availability": "optional" },
+            { "protocol": ["c"], "availability": "transitional" },
+            { "protocol": ["d"], "availability": "same_as_target" },
+        ]})),
+        document(json!({ "use": [
+            { "protocol": "a", "availability": "required" },
+            { "protocol": "b", "availability": "optional" },
+            { "protocol": "c", "availability": "transitional" },
+            { "protocol": "d", "availability": "same_as_target" },
+        ]}))
+        ; "merge both same"
+    )]
+    #[test_case(
+        document(json!({ "use": [
+            { "protocol": "a", "availability": "optional" },
+            { "protocol": "b", "availability": "transitional" },
+            { "protocol": "c", "availability": "transitional" },
+        ]})),
+        document(json!({ "use": [
+            { "protocol": ["a", "x"], "availability": "required" },
+            { "protocol": ["b", "y"], "availability": "optional" },
+            { "protocol": ["c", "z"], "availability": "required" },
+        ]})),
+        document(json!({ "use": [
+            { "protocol": ["a", "x"], "availability": "required" },
+            { "protocol": ["b", "y"], "availability": "optional" },
+            { "protocol": ["c", "z"], "availability": "required" },
+        ]}))
+        ; "merge with upgrade"
+    )]
+    #[test_case(
+        document(json!({ "use": [
+            { "protocol": "a", "availability": "required" },
+            { "protocol": "b", "availability": "optional" },
+            { "protocol": "c", "availability": "required" },
+        ]})),
+        document(json!({ "use": [
+            { "protocol": ["a", "x"], "availability": "optional" },
+            { "protocol": ["b", "y"], "availability": "transitional" },
+            { "protocol": ["c", "z"], "availability": "transitional" },
+        ]})),
+        document(json!({ "use": [
+            { "protocol": "a", "availability": "required" },
+            { "protocol": "b", "availability": "optional" },
+            { "protocol": "c", "availability": "required" },
+            { "protocol": "x", "availability": "optional" },
+            { "protocol": "y", "availability": "transitional" },
+            { "protocol": "z", "availability": "transitional" },
+        ]}))
+        ; "merge with downgrade"
+    )]
+    #[test_case(
+        document(json!({ "use": [
+            { "protocol": "a", "availability": "optional" },
+            { "protocol": "b", "availability": "transitional" },
+            { "protocol": "c", "availability": "transitional" },
+        ]})),
+        document(json!({ "use": [
+            { "protocol": ["a", "x"], "availability": "same_as_target" },
+            { "protocol": ["b", "y"], "availability": "same_as_target" },
+            { "protocol": ["c", "z"], "availability": "same_as_target" },
+        ]})),
+        document(json!({ "use": [
+            { "protocol": "a", "availability": "optional" },
+            { "protocol": "b", "availability": "transitional" },
+            { "protocol": "c", "availability": "transitional" },
+            { "protocol": ["a", "x"], "availability": "same_as_target" },
+            { "protocol": ["b", "y"], "availability": "same_as_target" },
+            { "protocol": ["c", "z"], "availability": "same_as_target" },
+        ]}))
+        ; "merge with no replacement"
+    )]
+    #[test_case(
+        document(json!({ "use": [
+            { "protocol": ["a", "b", "c"], "availability": "optional" },
+            { "protocol": "d", "availability": "same_as_target" },
+            { "protocol": ["e", "f"] },
+        ]})),
+        document(json!({ "use": [
+            { "protocol": ["c", "e", "g"] },
+            { "protocol": ["d", "h"] },
+            { "protocol": ["f", "i"], "availability": "transitional" },
+        ]})),
+        document(json!({ "use": [
+            { "protocol": ["a", "b"], "availability": "optional" },
+            { "protocol": "d", "availability": "same_as_target" },
+            { "protocol": ["e", "f"] },
+            { "protocol": ["c", "g"] },
+            { "protocol": ["d", "h"] },
+            { "protocol": "i", "availability": "transitional" },
+        ]}))
+        ; "merge multiple"
+    )]
+
+    fn test_merge_from_duplicate_capability_availability(
+        mut my: Document,
+        mut other: Document,
+        result: Document,
+    ) {
+        my.merge_from(&mut other, &path::Path::new("some/path")).unwrap();
+        assert_eq!(my, result);
+    }
+
+    #[test_case(
+        document(json!({ "use": [{ "protocol": ["a", "b"] }]})),
+        document(json!({ "use": [{ "protocol": ["c", "d"] }]})),
+        document(json!({ "use": [
+            { "protocol": ["a", "b"] }, { "protocol": ["c", "d"] }
+        ]}))
+        ; "merge capabilities with disjoint sets"
+    )]
+    #[test_case(
+        document(json!({ "use": [
+            { "protocol": ["a"] },
+            { "protocol": "b" },
+        ]})),
+        document(json!({ "use": [{ "protocol": ["a", "b"] }]})),
+        document(json!({ "use": [
+            { "protocol": ["a"] }, { "protocol": "b" },
+        ]}))
+        ; "merge capabilities with equal set"
+    )]
+    #[test_case(
+        document(json!({ "use": [
+            { "protocol": ["a", "b"] },
+            { "protocol": "c" },
+        ]})),
+        document(json!({ "use": [{ "protocol": ["a", "b"] }]})),
+        document(json!({ "use": [
+            { "protocol": ["a", "b"] }, { "protocol": "c" },
+        ]}))
+        ; "merge capabilities with subset"
+    )]
+    #[test_case(
+        document(json!({ "use": [
+            { "protocol": ["a", "b"] },
+        ]})),
+        document(json!({ "use": [{ "protocol": ["a", "b", "c"] }]})),
+        document(json!({ "use": [
+            { "protocol": ["a", "b"] },
+            { "protocol": "c" },
+        ]}))
+        ; "merge capabilities with superset"
+    )]
+    #[test_case(
+        document(json!({ "use": [
+            { "protocol": ["a", "b"] },
+        ]})),
+        document(json!({ "use": [{ "protocol": ["b", "c", "d"] }]})),
+        document(json!({ "use": [
+            { "protocol": ["a", "b"] }, { "protocol": ["c", "d"] }
+        ]}))
+        ; "merge capabilities with intersection"
+    )]
+    #[test_case(
+        document(json!({ "use": [{ "protocol": ["a", "b"] }]})),
+        document(json!({ "use": [
+            { "protocol": ["c", "b", "d"] },
+            { "protocol": ["e", "d"] },
+        ]})),
+        document(json!({ "use": [
+            {"protocol": ["a", "b"] },
+            {"protocol": ["c", "d"] },
+            {"protocol": "e" }]}))
+        ; "merge capabilities from multiple arrays"
+    )]
+    #[test_case(
+        document(json!({ "use": [{ "protocol": "foo.bar.Baz", "from": "self"}]})),
+        document(json!({ "use": [{ "service": "foo.bar.Baz", "from": "self"}]})),
+        document(json!({ "use": [
+            {"protocol": "foo.bar.Baz", "from": "self"},
+            {"service": "foo.bar.Baz", "from": "self"}]}))
+        ; "merge capabilities, types don't match"
+    )]
+    #[test_case(
+        document(json!({ "use": [{ "protocol": "foo.bar.Baz", "from": "self"}]})),
+        document(json!({ "use": [{ "protocol": "foo.bar.Baz" }]})),
+        document(json!({ "use": [
+            {"protocol": "foo.bar.Baz", "from": "self"},
+            {"protocol": "foo.bar.Baz"}]}))
+        ; "merge capabilities, fields don't match"
+    )]
+
+    fn test_merge_from_duplicate_capability(
+        mut my: Document,
+        mut other: Document,
+        result: Document,
+    ) {
+        my.merge_from(&mut other, &path::Path::new("some/path")).unwrap();
+        assert_eq!(my, result);
+    }
+
+    #[test_case(&Right::Connect; "connect right")]
+    #[test_case(&Right::Enumerate; "enumerate right")]
+    #[test_case(&Right::Execute; "execute right")]
+    #[test_case(&Right::GetAttributes; "getattr right")]
+    #[test_case(&Right::ModifyDirectory; "modifydir right")]
+    #[test_case(&Right::ReadBytes; "readbytes right")]
+    #[test_case(&Right::Traverse; "traverse right")]
+    #[test_case(&Right::UpdateAttributes; "updateattrs right")]
+    #[test_case(&Right::WriteBytes; "writebytes right")]
+    #[test_case(&Right::ReadAlias; "r right")]
+    #[test_case(&Right::WriteAlias; "w right")]
+    #[test_case(&Right::ExecuteAlias; "x right")]
+    #[test_case(&Right::ReadWriteAlias; "rw right")]
+    #[test_case(&Right::ReadExecuteAlias; "rx right")]
+    #[test_case(&OfferFromRef::Self_; "offer from self")]
+    #[test_case(&OfferFromRef::Parent; "offer from parent")]
+    #[test_case(&OfferFromRef::Named(Name::new("child".to_string()).unwrap()); "offer from named")]
+    #[test_case(
+        &document(json!({}));
+        "empty document"
+    )]
+    #[test_case(
+        &document(json!({ "use": [{ "protocol": "foo.bar.Baz", "from": "self"}]}));
+        "use one from self"
+    )]
+    #[test_case(
+        &document(json!({ "use": [{ "protocol": ["foo.bar.Baz", "some.other.Protocol"], "from": "self"}]}));
+        "use multiple from self"
+    )]
+    #[test_case(
+        &document(json!({
+            "offer": [{ "protocol": "foo.bar.Baz", "from": "self", "to": "#elements"}],
+            "collections" :[{"name": "elements", "durability": "transient" }]
+        }));
+        "offer from self to collection"
+    )]
+    #[test_case(
+        &document(json!({
+            "offer": [
+                { "service": "foo.bar.Baz", "from": "self", "to": "#elements" },
+                { "service": "some.other.Service", "from": "self", "to": "#elements"},
+            ],
+            "collections":[ {"name": "elements", "durability": "transient"} ]}));
+        "service offers"
+    )]
+    #[test_case(
+        &document(json!({ "expose": [{ "protocol": ["foo.bar.Baz", "some.other.Protocol"], "from": "self"}]}));
+        "expose protocols from self"
+    )]
+    #[test_case(
+        &document(json!({ "expose": [{ "service": ["foo.bar.Baz", "some.other.Service"], "from": "self"}]}));
+        "expose service from self"
+    )]
+    #[test_case(
+        &document(json!({ "capabilities": [{ "protocol": "foo.bar.Baz", "from": "self"}]}));
+        "capabilities from self"
+    )]
+    #[test_case(
+        &document(json!({ "facets": { "my.key": "my.value" } }));
+        "facets"
+    )]
+    #[test_case(
+        &document(json!({ "program": { "binary": "bin/hello_world", "runner": "elf" } }));
+        "elf runner program"
+    )]
+    fn serialize_roundtrips<T>(val: &T)
+    where
+        T: serde::de::DeserializeOwned + Serialize + PartialEq + std::fmt::Debug,
+    {
+        let raw = serde_json::to_string(val).expect("serializing `val` should work");
+        let parsed: T =
+            serde_json::from_str(&raw).expect("must be able to parse back serialized value");
+        assert_eq!(val, &parsed, "parsed value must equal original value");
     }
 }

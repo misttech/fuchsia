@@ -4,7 +4,7 @@
 
 use crate::{
     AnyRef, AsClause, AsClauseContext, Canonicalize, CapabilityClause, ConfigNestedValueType,
-    ConfigType, FilterClause, PathClause,
+    ConfigType, Error, FilterClause, PathClause,
 };
 
 use crate::one_or_many::{OneOrMany, always_one, option_one_or_many_as_ref};
@@ -523,8 +523,8 @@ impl AsClauseContext for ContextCapability {
 impl Hydrate for ParsedCapability {
     type Output = ContextCapability;
 
-    fn hydrate(self, file: &Arc<PathBuf>, buffer: &String) -> Self::Output {
-        ContextCapability {
+    fn hydrate(self, file: &Arc<PathBuf>, buffer: &String) -> Result<Self::Output, Error> {
+        Ok(ContextCapability {
             service: hydrate_opt_simple(self.service, file, buffer),
             protocol: hydrate_opt_simple(self.protocol, file, buffer),
             directory: hydrate_opt_simple(self.directory, file, buffer),
@@ -546,6 +546,6 @@ impl Hydrate for ParsedCapability {
             config_element_type: hydrate_opt_simple(self.config_element_type, file, buffer),
             value: hydrate_opt_simple(self.value, file, buffer),
             delivery: hydrate_opt_simple(self.delivery, file, buffer),
-        }
+        })
     }
 }

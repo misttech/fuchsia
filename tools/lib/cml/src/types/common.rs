@@ -8,10 +8,10 @@ use std::sync::Arc;
 use crate::{Path, byte_index_to_location};
 use json_spanned_value::Spanned;
 
+use crate::OneOrMany;
 use crate::error::{Error, Location};
 use cm_types::BorrowedName;
-
-use crate::OneOrMany;
+use serde::{Serialize, Serializer};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Origin {
@@ -25,57 +25,73 @@ pub struct ContextSpanned<T> {
     pub origin: Origin,
 }
 
+impl<T> Serialize for ContextSpanned<T>
+where
+    T: Serialize,
+{
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        self.value.serialize(serializer)
+    }
+}
+
 /// Hydrate is used to translate a json_spanned::Spanned type to a
-/// ContextSpanned type. The ContextSpanned type is used by validation.
+/// Result<ContextSpanned> type. The ContextSpanned type is used by validation.
+///
+/// It is possible to error when merging if a field is defined as multiple,
+/// incompatible data structures.
 pub trait Hydrate {
     type Output;
 
-    fn hydrate(self, file: &Arc<PathBuf>, buffer: &String) -> Self::Output;
+    fn hydrate(self, file: &Arc<PathBuf>, buffer: &String) -> Result<Self::Output, Error>;
 }
 
 pub fn hydrate_list<P, C>(
     raw_list: Option<Spanned<Vec<Spanned<P>>>>,
     file: &Arc<PathBuf>,
     buffer: &String,
-) -> Option<Vec<ContextSpanned<C>>>
+) -> Result<Option<Vec<ContextSpanned<C>>>, Error>
 where
     P: Hydrate<Output = C>,
 {
-    raw_list.map(|spanned_vec| {
-        spanned_vec
-            .into_inner()
-            .into_iter()
-            .map(|spanned_item| {
-                let span = spanned_item.span();
-                let location = byte_index_to_location(buffer, span.0);
-                let parsed_item = spanned_item.into_inner();
+    raw_list
+        .map(|spanned_vec| {
+            spanned_vec
+                .into_inner()
+                .into_iter()
+                .map(|spanned_item| {
+                    let span = spanned_item.span();
+                    let location = byte_index_to_location(buffer, span.0);
+                    let parsed_item = spanned_item.into_inner();
 
-                let context_item = parsed_item.hydrate(file, buffer);
-
-                ContextSpanned {
-                    value: context_item,
-                    origin: Origin { file: file.clone(), location },
-                }
-            })
-            .collect()
-    })
+                    let context_item_result = parsed_item.hydrate(file, buffer);
+                    context_item_result.map(|c_value| ContextSpanned {
+                        value: c_value,
+                        origin: Origin { file: file.clone(), location },
+                    })
+                })
+                .collect::<Result<Vec<ContextSpanned<C>>, Error>>()
+        })
+        .transpose()
 }
 
 pub fn hydrate_required<P, C>(
     spanned: Spanned<P>,
     file: &Arc<PathBuf>,
     buffer: &String,
-) -> ContextSpanned<C>
+) -> Result<ContextSpanned<C>, Error>
 where
     P: Hydrate<Output = C>,
 {
     let span = spanned.span();
     let location = byte_index_to_location(buffer, span.0);
     let parsed_value = spanned.into_inner();
-    ContextSpanned {
-        value: parsed_value.hydrate(file, buffer),
-        origin: Origin { file: file.clone(), location },
-    }
+
+    let context_value = parsed_value.hydrate(file, buffer)?;
+
+    Ok(ContextSpanned { value: context_value, origin: Origin { file: file.clone(), location } })
 }
 
 pub fn hydrate_simple<T>(
@@ -92,11 +108,11 @@ pub fn hydrate_opt<P, C>(
     opt_spanned: Option<Spanned<P>>,
     file: &Arc<PathBuf>,
     buffer: &String,
-) -> Option<ContextSpanned<C>>
+) -> Result<Option<ContextSpanned<C>>, Error>
 where
     P: Hydrate<Output = C>,
 {
-    opt_spanned.map(|s| hydrate_required(s, file, buffer))
+    opt_spanned.map(|s| hydrate_required(s, file, buffer)).transpose()
 }
 
 pub fn hydrate_opt_simple<T>(
