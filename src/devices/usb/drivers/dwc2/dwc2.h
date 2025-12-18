@@ -11,7 +11,6 @@
 #include <fidl/fuchsia.hardware.usb.descriptor/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.usb.dwc2/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.usb.phy/cpp/fidl.h>
-#include <lib/async-loop/cpp/loop.h>
 #include <lib/component/outgoing/cpp/outgoing_directory.h>
 #include <lib/dma-buffer/buffer.h>
 #include <lib/driver/component/cpp/driver_base.h>
@@ -117,9 +116,7 @@ class Dwc2 : public fdf::DriverBase, public fidl::Server<fuchsia_hardware_usb_dc
 
   class Endpoint : public usb::EndpointServer {
    public:
-    Endpoint(uint8_t ep_num, Dwc2* dwc2) : usb::EndpointServer(dwc2->bti_, ep_num), dwc2_(dwc2) {
-      loop_.StartThread("dwc2-enpdoint-loop");
-    }
+    Endpoint(uint8_t ep_num, Dwc2* dwc2) : usb::EndpointServer(dwc2->bti_, ep_num), dwc2_(dwc2) {}
 
     // fuchsia_hardware_usb_endpoint::Endpoint protocol implementation.
     void GetInfo(GetInfoCompleter::Sync& completer) override {
@@ -134,8 +131,6 @@ class Dwc2 : public fdf::DriverBase, public fidl::Server<fuchsia_hardware_usb_dc
 
     void QueueRequest(usb::FidlRequest request);
     void CancelAll();
-
-    async_dispatcher_t* dispatcher() { return loop_.dispatcher(); }
 
     // Requests waiting to be processed.
     std::queue<usb::RequestVariant> queued_reqs __TA_GUARDED(lock);
@@ -160,8 +155,6 @@ class Dwc2 : public fdf::DriverBase, public fidl::Server<fuchsia_hardware_usb_dc
                    fidl::ServerEnd<fuchsia_hardware_usb_endpoint::Endpoint> server_end) override;
 
    private:
-    async::Loop loop_{&kAsyncLoopConfigNeverAttachToThread};
-
     Dwc2* dwc2_;
   };
 

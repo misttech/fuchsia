@@ -1181,8 +1181,7 @@ zx_status_t Dwc2::Init(const dwc2_config::Config& config) {
 
   zx::result result =
       outgoing()->AddService<fdci::UsbDciService>(fdci::UsbDciService::InstanceHandler({
-          .device = bindings_.CreateHandler(this, fdf::Dispatcher::GetCurrent()->async_dispatcher(),
-                                            fidl::kIgnoreBindingClosure),
+          .device = bindings_.CreateHandler(this, dispatcher(), fidl::kIgnoreBindingClosure),
       }));
   if (result.is_error()) {
     FDF_LOG(ERROR, "Failed to add service %s", result.status_string());
@@ -1296,7 +1295,7 @@ void Dwc2::ConnectToEndpoint(ConnectToEndpointRequest& request,
     return;
   }
 
-  endpoints_[ep_num]->Connect(endpoints_[ep_num]->dispatcher(), std::move(request.ep()));
+  endpoints_[ep_num]->Connect(dispatcher(), std::move(request.ep()));
   completer.Reply(fit::ok());
 }
 
