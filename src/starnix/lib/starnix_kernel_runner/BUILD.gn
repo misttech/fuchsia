@@ -80,6 +80,7 @@ rustc_library("starnix_kernel_runner") {
     "//src/starnix/modules/nmfs",
     "//src/starnix/modules/overlayfs",
     "//src/starnix/modules/perfetto_consumer",
+    "//src/starnix/modules/rtc",
     "//src/starnix/modules/thermal",
     "//src/starnix/modules/touch_power_policy",
     "//src/sys/lib/fuchsia-zbi",

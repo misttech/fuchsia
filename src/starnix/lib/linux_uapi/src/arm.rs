@@ -4667,6 +4667,27 @@ pub const RLIMIT_RTPRIO: u32 = 14;
 pub const RLIMIT_RTTIME: u32 = 15;
 pub const RLIM_NLIMITS: u32 = 16;
 pub const RLIM_INFINITY: i32 = -1;
+pub const RTC_IRQF: u32 = 128;
+pub const RTC_PF: u32 = 64;
+pub const RTC_AF: u32 = 32;
+pub const RTC_UF: u32 = 16;
+pub const RTC_FEATURE_ALARM: u32 = 0;
+pub const RTC_FEATURE_ALARM_RES_MINUTE: u32 = 1;
+pub const RTC_FEATURE_NEED_WEEK_DAY: u32 = 2;
+pub const RTC_FEATURE_ALARM_RES_2S: u32 = 3;
+pub const RTC_FEATURE_UPDATE_INTERRUPT: u32 = 4;
+pub const RTC_FEATURE_CORRECTION: u32 = 5;
+pub const RTC_FEATURE_BACKUP_SWITCH_MODE: u32 = 6;
+pub const RTC_FEATURE_ALARM_WAKEUP_ONLY: u32 = 7;
+pub const RTC_FEATURE_CNT: u32 = 8;
+pub const RTC_PARAM_FEATURES: u32 = 0;
+pub const RTC_PARAM_CORRECTION: u32 = 1;
+pub const RTC_PARAM_BACKUP_SWITCH_MODE: u32 = 2;
+pub const RTC_BSM_DISABLED: u32 = 0;
+pub const RTC_BSM_DIRECT: u32 = 1;
+pub const RTC_BSM_LEVEL: u32 = 2;
+pub const RTC_BSM_STANDBY: u32 = 3;
+pub const RTC_MAX_FREQ: u32 = 8192;
 pub const CSIGNAL: u32 = 255;
 pub const CLONE_VM: u32 = 256;
 pub const CLONE_FS: u32 = 512;
@@ -16154,6 +16175,71 @@ pub struct rlimit64 {
 }
 #[repr(C)]
 #[derive(Debug, Default, Copy, Clone, IntoBytes, FromBytes, KnownLayout, Immutable)]
+pub struct rtc_time {
+    pub tm_sec: crate::types::arch32::c_int,
+    pub tm_min: crate::types::arch32::c_int,
+    pub tm_hour: crate::types::arch32::c_int,
+    pub tm_mday: crate::types::arch32::c_int,
+    pub tm_mon: crate::types::arch32::c_int,
+    pub tm_year: crate::types::arch32::c_int,
+    pub tm_wday: crate::types::arch32::c_int,
+    pub tm_yday: crate::types::arch32::c_int,
+    pub tm_isdst: crate::types::arch32::c_int,
+}
+#[repr(C)]
+#[derive(Debug, Default, Copy, Clone, IntoBytes, FromBytes, KnownLayout, Immutable)]
+pub struct rtc_wkalrm {
+    pub enabled: crate::types::arch32::c_uchar,
+    pub pending: crate::types::arch32::c_uchar,
+    pub __bindgen_padding_0: [u8; 2usize],
+    pub time: rtc_time,
+}
+#[repr(C)]
+#[derive(Debug, Default, Copy, Clone, IntoBytes, FromBytes, KnownLayout, Immutable)]
+pub struct rtc_pll_info {
+    pub pll_ctrl: crate::types::arch32::c_int,
+    pub pll_value: crate::types::arch32::c_int,
+    pub pll_max: crate::types::arch32::c_int,
+    pub pll_min: crate::types::arch32::c_int,
+    pub pll_posmult: crate::types::arch32::c_int,
+    pub pll_negmult: crate::types::arch32::c_int,
+    pub pll_clock: crate::types::arch32::c_long,
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct rtc_param {
+    pub param: __u64,
+    pub __bindgen_anon_1: rtc_param__bindgen_ty_1,
+    pub index: __u32,
+    pub __pad: __u32,
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub union rtc_param__bindgen_ty_1 {
+    pub uvalue: __u64,
+    pub svalue: __s64,
+    pub ptr: __u64,
+}
+impl Default for rtc_param__bindgen_ty_1 {
+    fn default() -> Self {
+        let mut s = ::std::mem::MaybeUninit::<Self>::uninit();
+        unsafe {
+            ::std::ptr::write_bytes(s.as_mut_ptr(), 0, 1);
+            s.assume_init()
+        }
+    }
+}
+impl Default for rtc_param {
+    fn default() -> Self {
+        let mut s = ::std::mem::MaybeUninit::<Self>::uninit();
+        unsafe {
+            ::std::ptr::write_bytes(s.as_mut_ptr(), 0, 1);
+            s.assume_init()
+        }
+    }
+}
+#[repr(C)]
+#[derive(Debug, Default, Copy, Clone, IntoBytes, FromBytes, KnownLayout, Immutable)]
 pub struct clone_args {
     pub flags: __u64,
     pub pidfd: __u64,
@@ -20515,6 +20601,7 @@ pub const IOCTL_KGSL_TIMELINE_DESTROY: __u32 = 1074006365;
 pub const IOCTL_KGSL_GET_FAULT_REPORT: __u32 = 3222800734;
 pub const IOCTL_KGSL_RECURRING_COMMAND: __u32 = 3224373599;
 pub const IOCTL_KGSL_READ_CALIBRATED_TIMESTAMPS: __u32 = 3223325024;
+pub const RTC_SET_TIME: __u32 = 1076129802;
 pub const UI_DEV_CREATE: __u32 = 21761;
 pub const UI_DEV_DESTROY: __u32 = 21762;
 pub const UI_DEV_SETUP: __u32 = 1079792899;
@@ -20775,6 +20862,7 @@ pub struct xt_target {
 //    //third_party/android/platform/bionic/libc/kernel/uapi/linux/random.h |
 //    //third_party/android/platform/bionic/libc/kernel/uapi/linux/reboot.h |
 //    //third_party/android/platform/bionic/libc/kernel/uapi/linux/resource.h |
+//    //third_party/android/platform/bionic/libc/kernel/uapi/linux/rtc.h |
 //    //third_party/android/platform/bionic/libc/kernel/uapi/linux/rtnetlink.h |
 //    //third_party/android/platform/bionic/libc/kernel/uapi/linux/sched.h |
 //    //third_party/android/platform/bionic/libc/kernel/uapi/linux/sched/types.h |

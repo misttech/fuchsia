@@ -44,6 +44,7 @@ use starnix_modules::{init_common_devices, register_common_file_systems};
 use starnix_modules_layeredfs::LayeredFs;
 use starnix_modules_magma::get_magma_params;
 use starnix_modules_overlayfs::OverlayStack;
+use starnix_modules_rtc::rtc_device_init;
 use starnix_sync::{Locked, Unlocked};
 use starnix_task_command::TaskCommand;
 use starnix_uapi::errors::{ENOENT, SourceContext};
@@ -730,6 +731,10 @@ async fn create_container(
     if let Err(e) = kernel.suspend_resume_manager.init(&system_task) {
         log_warn!("Suspend/Resume manager initialization failed: ({e:?})");
     }
+
+    // Real Time clock is present in all configuration.
+    rtc_device_init(kernel.kthreads.unlocked_for_async().deref_mut(), &system_task)
+        .context("in starnix_kernel_runner, while initializing RTC")?;
 
     // Register common devices and add them in sysfs and devtmpfs.
     init_common_devices(kernel.kthreads.unlocked_for_async().deref_mut(), &kernel)?;

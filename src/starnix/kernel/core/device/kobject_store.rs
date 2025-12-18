@@ -98,6 +98,13 @@ impl KObjectStore {
         self.get_or_create_class("starnix".into(), self.virtual_bus())
     }
 
+    /// Real-time clock class.
+    ///
+    /// Becomes `/sys/class/rtc/...`.
+    pub fn rtc_class(&self) -> Class {
+        self.get_or_create_class("rtc".into(), self.virtual_bus())
+    }
+
     fn ensure_dir(&self, path: &[&FsStr]) -> Arc<SimpleDirectory> {
         let fs = self.fs();
         let mut dir = self.root.clone();

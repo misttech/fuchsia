@@ -82,10 +82,8 @@ struct remote_binder_wait_command {
   char spawn_thread;
 };
 
-const __u32 REMOTE_BINDER_START =
-    _IOR('R', 1, struct remote_binder_start_command);
-const __u32 REMOTE_BINDER_WAIT =
-    _IOW('R', 2, struct remote_binder_wait_command);
+const __u32 REMOTE_BINDER_START = _IOR('R', 1, struct remote_binder_start_command);
+const __u32 REMOTE_BINDER_WAIT = _IOW('R', 2, struct remote_binder_wait_command);
 
 C(BINDER_CTL_ADD);
 
@@ -207,6 +205,10 @@ C(IOCTL_KGSL_TIMELINE_DESTROY);
 C(IOCTL_KGSL_GET_FAULT_REPORT);
 C(IOCTL_KGSL_RECURRING_COMMAND);
 C(IOCTL_KGSL_READ_CALIBRATED_TIMESTAMPS);
+
+// Symbols for rtc
+
+C(RTC_SET_TIME);
 
 // Symbols for uinput
 
