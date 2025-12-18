@@ -4,7 +4,8 @@
 
 """A macro for defining a Rust library with optional unit tests."""
 
-load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+load("@rules_rust//rust:defs.bzl", "rust_library")
+load("//build/tools/bazel2gn/bazel_rules:rustc_test.bzl", "rustc_test")
 
 def _rustc_library_impl(name, with_unit_tests, test_deps, lint_config, **kwargs):
     if lint_config == None:
@@ -17,12 +18,11 @@ def _rustc_library_impl(name, with_unit_tests, test_deps, lint_config, **kwargs)
     )
 
     if with_unit_tests:
-        rust_test(
+        rustc_test(
             name = "{}_test".format(name),
             crate = ":{}".format(name),
             deps = test_deps,
             crate_features = kwargs.get("crate_features", []),
-            lint_config = "//build/config/rust/lints:clippy_warn_default",
         )
 
 rustc_library = macro(
