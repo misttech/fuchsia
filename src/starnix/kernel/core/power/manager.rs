@@ -126,6 +126,11 @@ impl Default for SuspendResumeManagerInner {
 }
 
 impl SuspendResumeManagerInner {
+    // Returns true if there are no wake locks preventing suspension.
+    fn can_suspend(&self) -> bool {
+        self.active_locks.is_empty() && self.active_epolls.is_empty()
+    }
+
     pub fn active_wake_locks(&self) -> Vec<String> {
         Vec::from_iter(self.active_locks.keys().cloned())
     }
@@ -425,103 +430,120 @@ impl SuspendResumeManager {
     pub fn suspend(
         &self,
         locked: &mut Locked<FileOpsCore>,
-        state: SuspendState,
+        suspend_state: SuspendState,
     ) -> Result<(), Errno> {
         let suspend_start_time = zx::BootInstant::get();
-
-        self.lock().add_suspend_event(SuspendEvent::Attempt {
+        let mut state = self.lock();
+        state.add_suspend_event(SuspendEvent::Attempt {
             time: suspend_start_time,
-            state: state.to_string(),
+            state: suspend_state.to_string(),
         });
 
-        let ebpf_lock = self.ebpf_suspend_lock.write(locked);
+        // Check if any wake locks are active. If they are, short-circuit the suspend attempt.
+        if !state.can_suspend() {
+            self.report_failed_suspension(state, "kernel wake lock");
+            return error!(EINVAL);
+        }
+
+        // Drop the state lock. This allows programs to acquire wake locks again. The runner will
+        // check that no wake locks were acquired once all the container threads have been
+        // suspended, and thus honor any wake locks that were acquired during suspension.
+        std::mem::drop(state);
+
+        // Take the ebpf lock to ensure that ebpf is not preventing suspension. This is necessary
+        // because other components in the system might be executing ebpf programs on our behalf.
+        let _ebpf_lock = self.ebpf_suspend_lock.write(locked);
 
         let manager = connect_to_protocol_sync::<frunner::ManagerMarker>()
             .expect("Failed to connect to manager");
         fuchsia_trace::duration!("power", "suspend_container:fidl");
-        log_info!("Asking runner to suspend container.");
+
+        let container_job = Some(
+            fuchsia_runtime::job_default()
+                .duplicate(zx::Rights::SAME_RIGHTS)
+                .expect("Failed to dup handle"),
+        );
+        let wake_lock_event = Some(self.duplicate_lock_event());
+
+        log_info!("Requesting container suspension.");
         match manager.suspend_container(
             frunner::ManagerSuspendContainerRequest {
-                container_job: Some(
-                    fuchsia_runtime::job_default()
-                        .duplicate(zx::Rights::SAME_RIGHTS)
-                        .expect("Failed to dup handle"),
-                ),
-                wake_locks: Some(self.duplicate_lock_event()),
+                container_job,
+                wake_locks: wake_lock_event,
                 ..Default::default()
             },
             zx::Instant::INFINITE,
         ) {
             Ok(Ok(res)) => {
-                log_info!("Resuming from container suspension.");
-                let wake_time = zx::BootInstant::get();
-                let resume_reason = res.resume_reason;
-                let mut state = self.lock();
-                state.update_suspend_stats(|suspend_stats| {
-                    suspend_stats.success_count += 1;
-                    suspend_stats.last_time_in_suspend_operations =
-                        (wake_time - suspend_start_time).into();
-                    suspend_stats.last_time_in_sleep =
-                        zx::BootDuration::from_nanos(res.suspend_time.unwrap_or(0));
-                    // The "0" here is to mimic the expected power management success string,
-                    // while we don't have IRQ numbers to report.
-                    suspend_stats.last_resume_reason =
-                        resume_reason.clone().map(|s| format!("0 {}", s));
-                });
-                state.add_suspend_event(SuspendEvent::Resume {
-                    time: wake_time,
-                    reason: resume_reason.unwrap_or_default(),
-                });
-                fuchsia_trace::instant!(
-                    "power",
-                    "suspend_container:done",
-                    fuchsia_trace::Scope::Process
-                );
+                self.report_container_resumed(suspend_start_time, res);
             }
             e => {
-                let wake_time = zx::BootInstant::get();
-                let mut state = self.lock();
-                state.update_suspend_stats(|suspend_stats| {
-                    suspend_stats.fail_count += 1;
-                    suspend_stats.last_failed_errno = Some(errno!(EINVAL));
-                    suspend_stats.last_resume_reason = None;
-                });
-
-                let (wake_lock_names, epoll_names) = match e {
-                    Ok(Err(frunner::SuspendError::WakeLocksExist)) => {
-                        let wake_lock_names = state.active_wake_locks();
-                        let epoll_names = state.active_epolls();
-                        let last_resume_reason = format!(
-                            "Abort: {}",
-                            wake_lock_names.join(" ") + &epoll_names.iter().join(" ")
-                        );
-                        state.update_suspend_stats(|suspend_stats| {
-                            // Power analysis tools require `Abort: ` in the case of failed suspends
-                            suspend_stats.last_resume_reason = Some(last_resume_reason);
-                        });
-                        (Some(wake_lock_names), Some(epoll_names))
-                    }
-                    _ => (None, None),
-                };
-
-                log_warn!(e:?; "Container suspension failed. wake locks: {:?}, epolls: {:?}", wake_lock_names, epoll_names);
-                state.add_suspend_event(SuspendEvent::Fail {
-                    time: wake_time,
-                    wake_locks: wake_lock_names,
-                    epolls: epoll_names,
-                });
-                fuchsia_trace::instant!(
-                    "power",
-                    "suspend_container:error",
-                    fuchsia_trace::Scope::Process
-                );
+                let state = self.lock();
+                self.report_failed_suspension(state, &format!("runner error {:?}", e));
                 return error!(EINVAL);
             }
         }
-
-        std::mem::drop(ebpf_lock);
-
         Ok(())
+    }
+
+    fn report_container_resumed(
+        &self,
+        suspend_start_time: zx::BootInstant,
+        res: frunner::ManagerSuspendContainerResponse,
+    ) {
+        let wake_time = zx::BootInstant::get();
+        // The "0" here is to mimic the expected power management success string,
+        // while we don't have IRQ numbers to report.
+        let resume_reason = res.resume_reason.clone().map(|s| format!("0 {}", s));
+        log_info!("Resuming from container suspension: {:?}", resume_reason);
+        let mut state = self.lock();
+        state.update_suspend_stats(|suspend_stats| {
+            suspend_stats.success_count += 1;
+            suspend_stats.last_time_in_suspend_operations = (wake_time - suspend_start_time).into();
+            suspend_stats.last_time_in_sleep =
+                zx::BootDuration::from_nanos(res.suspend_time.unwrap_or(0));
+            suspend_stats.last_resume_reason = resume_reason.clone();
+        });
+        state.add_suspend_event(SuspendEvent::Resume {
+            time: wake_time,
+            reason: resume_reason.unwrap_or_default(),
+        });
+        fuchsia_trace::instant!("power", "suspend_container:done", fuchsia_trace::Scope::Process);
+    }
+
+    fn report_failed_suspension(
+        &self,
+        mut state: MutexGuard<'_, SuspendResumeManagerInner>,
+        failure_reason: &str,
+    ) {
+        let wake_time = zx::BootInstant::get();
+        state.update_suspend_stats(|suspend_stats| {
+            suspend_stats.fail_count += 1;
+            suspend_stats.last_failed_errno = Some(errno!(EINVAL));
+            suspend_stats.last_resume_reason = None;
+        });
+
+        let wake_lock_names = state.active_wake_locks();
+        let epoll_names = state.active_epolls();
+        let last_resume_reason =
+            format!("Abort: {}", wake_lock_names.join(" ") + &epoll_names.iter().join(" "));
+        state.update_suspend_stats(|suspend_stats| {
+            // Power analysis tools require `Abort: ` in the case of failed suspends
+            suspend_stats.last_resume_reason = Some(last_resume_reason);
+        });
+
+        log_warn!(
+            "Suspend failed due to {:?}. Here are the active wake locks: {:?}, and epolls: {:?}",
+            failure_reason,
+            wake_lock_names,
+            epoll_names
+        );
+        state.add_suspend_event(SuspendEvent::Fail {
+            time: wake_time,
+            wake_locks: Some(wake_lock_names),
+            epolls: Some(epoll_names),
+        });
+        fuchsia_trace::instant!("power", "suspend_container:error", fuchsia_trace::Scope::Process);
     }
 
     pub fn acquire_ebpf_suspend_lock<'a, L>(
