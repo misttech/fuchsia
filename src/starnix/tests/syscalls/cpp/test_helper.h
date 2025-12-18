@@ -56,6 +56,12 @@
 
 namespace test_helper {
 
+struct ForkResult {
+  pid_t subprocess_id;
+  int subprocess_exit_status;
+  testing::AssertionResult determined_result;
+};
+
 // Helper class to handle test that needs to fork and do assertion on the child
 // process.
 class ForkHelper {
@@ -66,6 +72,12 @@ class ForkHelper {
   // Wait for all children of the current process, and return true if all exited
   // with a 0 status or with the expected signal.
   testing::AssertionResult WaitForChildren();
+
+  // Wait for a specific child of the current process, and return results on it.
+  ForkResult WaitForChild(pid_t child_pid);
+
+  // Wait for all children of the current process, and return results on each.
+  std::vector<ForkResult> WaitForChildrenWithResults();
 
   // For the current process and execute the given |action| inside the child,
   // then exit with a status equals to the number of failed expectation and
@@ -90,7 +102,8 @@ class ForkHelper {
   int death_signum_;
   int exit_value_;
 
-  ::testing::AssertionResult WaitForChildrenInternal(int exit_value, int death_signum);
+  std::vector<ForkResult> WaitForChildrenInternal(int exit_value, int death_signum);
+  ForkResult GenerateForkResult(pid_t pid, int wstatus, int exit_value, int death_signum);
 };
 
 // Helper class to handle tests that needs to clone processes.

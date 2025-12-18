@@ -48,8 +48,38 @@ int lambda_wrapper(void *func_ptr) {
 
 }  // namespace
 
-::testing::AssertionResult ForkHelper::WaitForChildrenInternal(int exit_value, int death_signum) {
-  ::testing::AssertionResult result = ::testing::AssertionSuccess();
+ForkResult ForkHelper::GenerateForkResult(pid_t pid, int wstatus, int exit_value,
+                                          int death_signum) {
+  // If we had a normal death signal wired up, only fail if the exit status wasn't expected.
+  if (death_signum == 0 && (!WIFEXITED(wstatus) || WEXITSTATUS(wstatus) != exit_value)) {
+    auto unexpected_exit = ::testing::AssertionFailure()
+                           << "wait_status: WIFEXITED(wstatus) = " << WIFEXITED(wstatus)
+                           << ", WEXITSTATUS(wstatus) = " << WEXITSTATUS(wstatus)
+                           << ", WTERMSIG(wstatus) = " << WTERMSIG(wstatus);
+    return {.subprocess_id = pid,
+            .subprocess_exit_status = WEXITSTATUS(wstatus),
+            .determined_result = unexpected_exit};
+  }
+  // If the death signal was set differently, fail if the termination signal didn't match.
+  else if (death_signum != 0 && (!WIFSIGNALED(wstatus) || WTERMSIG(wstatus) != death_signum)) {
+    auto unexpected_death = ::testing::AssertionFailure()
+                            << "wait_status: WIFSIGNALED(wstatus) = " << WIFSIGNALED(wstatus)
+                            << ", WEXITSTATUS(wstatus) = " << WEXITSTATUS(wstatus)
+                            << ", WTERMSIG(wstatus) = " << WTERMSIG(wstatus);
+    return {.subprocess_id = pid,
+            .subprocess_exit_status = WEXITSTATUS(wstatus),
+            .determined_result = unexpected_death};
+  }
+  // Otherwise, we can mark this forked process as successful.
+  else {
+    return {.subprocess_id = pid,
+            .subprocess_exit_status = WEXITSTATUS(wstatus),
+            .determined_result = testing::AssertionSuccess()};
+  }
+}
+
+std::vector<ForkResult> ForkHelper::WaitForChildrenInternal(int exit_value, int death_signum) {
+  std::vector<ForkResult> results;
   while (wait_for_all_children_ || !child_pids_.empty()) {
     int wstatus;
     pid_t pid = wait(&wstatus);
@@ -59,12 +89,17 @@ int lambda_wrapper(void *func_ptr) {
       }
       if (errno == ECHILD) {
         // No more children, reaping is done.
-        return result;
+        return results;
       }
-      // Another error is unexpected.
-      result = ::testing::AssertionFailure()
-               << "wait error: " << strerror(errno) << "(" << errno << ")";
+
+      // Another error is unexpected, so we'll push that to the results stack.
+      auto unexpected_failure = testing::AssertionFailure()
+                                << "wait error: " << strerror(errno) << "(" << errno << ")";
+      results.push_back({.subprocess_id = pid,
+                         .subprocess_exit_status = errno,
+                         .determined_result = unexpected_failure});
     }
+
     bool check_result = wait_for_all_children_;
     if (!check_result) {
       auto it = std::ranges::find(child_pids_, pid);
@@ -75,24 +110,11 @@ int lambda_wrapper(void *func_ptr) {
     }
 
     if (check_result) {
-      if (death_signum == 0) {
-        if (!WIFEXITED(wstatus) || WEXITSTATUS(wstatus) != exit_value) {
-          result = ::testing::AssertionFailure()
-                   << "wait_status: WIFEXITED(wstatus) = " << WIFEXITED(wstatus)
-                   << ", WEXITSTATUS(wstatus) = " << WEXITSTATUS(wstatus)
-                   << ", WTERMSIG(wstatus) = " << WTERMSIG(wstatus);
-        }
-      } else {
-        if (!WIFSIGNALED(wstatus) || WTERMSIG(wstatus) != death_signum) {
-          result = ::testing::AssertionFailure()
-                   << "wait_status: WIFSIGNALED(wstatus) = " << WIFSIGNALED(wstatus)
-                   << ", WEXITSTATUS(wstatus) = " << WEXITSTATUS(wstatus)
-                   << ", WTERMSIG(wstatus) = " << WTERMSIG(wstatus);
-        }
-      }
+      results.push_back(GenerateForkResult(pid, wstatus, exit_value, death_signum));
     }
   }
-  return result;
+
+  return results;
 }
 
 ForkHelper::ForkHelper() : wait_for_all_children_(true), death_signum_(0), exit_value_(0) {
@@ -103,8 +125,11 @@ ForkHelper::ForkHelper() : wait_for_all_children_(true), death_signum_(0), exit_
 
 ForkHelper::~ForkHelper() {
   // Wait for all remaining children, and ensure none failed.
-  EXPECT_TRUE(WaitForChildrenInternal(exit_value_, death_signum_))
-      << ": at least a child had a failure";
+  auto results = WaitForChildrenInternal(exit_value_, death_signum_);
+  for (const auto &result : results) {
+    // EXPECT_TRUE on the result directly will implicitly print failure details.!
+    EXPECT_TRUE(result.determined_result);
+  }
 }
 
 void ForkHelper::OnlyWaitForForkedChildren() { wait_for_all_children_ = false; }
@@ -114,6 +139,40 @@ void ForkHelper::ExpectSignal(int signum) { death_signum_ = signum; }
 void ForkHelper::ExpectExitValue(int value) { exit_value_ = value; }
 
 testing::AssertionResult ForkHelper::WaitForChildren() {
+  auto results = WaitForChildrenInternal(exit_value_, death_signum_);
+  for (const auto &result : results) {
+    if (result.determined_result != testing::AssertionSuccess()) {
+      return result.determined_result;
+    }
+  }
+
+  return testing::AssertionSuccess();
+}
+
+ForkResult ForkHelper::WaitForChild(pid_t child_pid) {
+  int wstatus;
+  int pid;
+
+  // Continually loop waitpid to handle EINTR signals.
+  while ((pid = waitpid(child_pid, &wstatus, 0)) == -1 && errno == EINTR) {
+  }
+
+  if (pid == -1) {
+    auto unexpected_failure = testing::AssertionFailure()
+                              << "wait error: " << strerror(errno) << "(" << errno << ")";
+    return {.subprocess_id = pid,
+            .subprocess_exit_status = errno,
+            .determined_result = unexpected_failure};
+  }
+
+  auto it = std::ranges::find(child_pids_, pid);
+  EXPECT_TRUE(it != child_pids_.end());
+  child_pids_.erase(it);
+
+  return GenerateForkResult(pid, wstatus, exit_value_, death_signum_);
+}
+
+std::vector<ForkResult> ForkHelper::WaitForChildrenWithResults() {
   return WaitForChildrenInternal(exit_value_, death_signum_);
 }
 
