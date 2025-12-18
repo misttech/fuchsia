@@ -177,7 +177,7 @@ pub async fn handle_suite_requests(
                         .await?
                     }
                     TestType::SeLinux => {
-                        run_selinux_cases(
+                        run_selinux_test_suite_cases(
                             tests,
                             test_start_info,
                             &run_listener_proxy,
