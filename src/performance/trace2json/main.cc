@@ -30,9 +30,7 @@ void PrintHelpMessage() {
   std::map<std::string, std::string> options = {
       {"help", "Print this help message."},
       {"input-file=[]", "Read trace from the specified file."},
-      {"output-file=[]",
-       "Write the converted trace to the specified file. If no file is "
-       "specified, the output is written to stdout."},
+      {"output-file=[]", "Write the converted trace to the specified file."},
       {"system-event-output-file=[]",
        "Optional. Write the system trace events to the specified file in jsonlines "
        "format. If provided, the main output file will not contain system trace events."},
@@ -47,16 +45,16 @@ void PrintHelpMessage() {
   std::cerr
       << "trace2json [options]: Convert a trace from fxt (Fuchsia trace format) to json (Chrome "
          "trace format)."
-      << std::endl
+      << "\n"
       << "Fuchsia trace format: "
          "https://fuchsia.googlesource.com/fuchsia/+/HEAD/docs/development/tracing/"
          "trace-format/"
-      << std::endl
+      << "\n"
       << "Chrome trace format: "
          "https://docs.google.com/document/d/1CvAClvFfyA5R-PhYUmn5OOQtYMH4h6I0nSsKchNAySU/edit"
-      << std::endl;
+      << "\n";
   for (const auto& option : options) {
-    std::cerr << "  --" << option.first << ": " << option.second << std::endl;
+    std::cerr << "  --" << option.first << ": " << option.second << "\n";
   }
 }
 
@@ -95,12 +93,16 @@ int main(int argc, char** argv) {
   if (command_line.HasOption(kInputFile)) {
     command_line.GetOptionValue(kInputFile, &settings.input_file_name);
   } else {
-    FX_LOGS(WARNING) << "Reading from stdin is no longer supported, please pass --" << kInputFile;
+    FX_LOGS(ERROR) << "Reading from stdin is no longer supported, please pass --" << kInputFile;
     PrintHelpMessage();
     return 1;
   }
   if (command_line.HasOption(kOutputFile)) {
     command_line.GetOptionValue(kOutputFile, &settings.output_file_name);
+  } else {
+    FX_LOGS(ERROR) << "Writing to stdout is no longer supported, please pass --" << kOutputFile;
+    PrintHelpMessage();
+    return 1;
   }
   if (command_line.HasOption(kSystemEventOutputFile)) {
     command_line.GetOptionValue(kSystemEventOutputFile, &settings.system_event_output_file_name);
