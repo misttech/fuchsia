@@ -224,7 +224,7 @@ impl ShutdownWatcher {
 
     /// Handles the SystemShutdown message by notifying the appropriate registered watchers.
     pub async fn handle_system_shutdown_message(&self, options: ShutdownOptionsWrapper) {
-        if options.action == ShutdownAction::Reboot {
+        if options.action == ShutdownAction::Reboot && !options.reasons.is_empty() {
             futures::join!(
                 self.notify_shutdown_watchers(
                     options.clone(),

@@ -351,9 +351,7 @@ impl<D: Directory + AsRefDirectory> ProgramContext<D> {
             *shutdown_pending = true;
         }
 
-        if let Some(options) = options
-            && !options.reasons.is_empty()
-        {
+        if let Some(options) = options {
             self.shutdown_watcher.handle_system_shutdown_message(options).await;
         }
 
