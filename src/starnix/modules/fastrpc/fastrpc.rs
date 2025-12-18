@@ -27,6 +27,7 @@ use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::user_address::{MultiArchUserRef, UserCString, UserRef};
 use starnix_uapi::{errno, error};
 use std::collections::VecDeque;
+use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::{Arc, OnceLock};
 use zx::{AsHandleRef, HandleBased};
 
@@ -115,7 +116,21 @@ impl Scalar {
 
 // All fidl transport errors should be considered as error, and converted to IO error.
 fn fidl_error_to_errno(info: &str, error: fidl::Error) -> starnix_uapi::errors::Errno {
-    log_error!("{}: {:?}", info, error);
+
+    if !error.is_closed() {
+        log_error!("{}: {:?}", info, error);
+        return errno!(EIO);
+    }
+
+    // Log at most once every 5 seconds for PEER_CLOSED errors which can spam if the driver
+    // has crashed.
+    static LAST_LOG_TIME: AtomicI64 = AtomicI64::new(0);
+    let now = zx::MonotonicInstant::get().into_nanos();
+    let last = LAST_LOG_TIME.load(Ordering::Relaxed);
+    if now - last > 5_000_000_000 {
+        LAST_LOG_TIME.store(now, Ordering::Relaxed);
+        log_error!("{}: {:?}", info, error);
+    }
     errno!(EIO)
 }
 
