@@ -1075,14 +1075,14 @@ alias(
 )
 
 alias(
-    name = "hashbrown-0.15.4",
-    actual = "//third_party/rust_crates/vendor/hashbrown-0.15.4:hashbrown",
+    name = "hashbrown-0.16.1",
+    actual = "//third_party/rust_crates/vendor/hashbrown-0.16.1:hashbrown",
     tags = ["manual"],
 )
 
 alias(
     name = "hashbrown",
-    actual = "//third_party/rust_crates/vendor/hashbrown-0.15.4:hashbrown",
+    actual = "//third_party/rust_crates/vendor/hashbrown-0.16.1:hashbrown",
     tags = ["manual"],
 )
 
@@ -1243,14 +1243,14 @@ alias(
 )
 
 alias(
-    name = "indexmap-1.9.2",
-    actual = "//third_party/rust_crates/vendor/indexmap-1.9.2:indexmap",
+    name = "indexmap-2.12.1",
+    actual = "//third_party/rust_crates/vendor/indexmap-2.12.1:indexmap",
     tags = ["manual"],
 )
 
 alias(
     name = "indexmap",
-    actual = "//third_party/rust_crates/vendor/indexmap-1.9.2:indexmap",
+    actual = "//third_party/rust_crates/vendor/indexmap-2.12.1:indexmap",
     tags = ["manual"],
 )
 
