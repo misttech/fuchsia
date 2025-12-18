@@ -632,7 +632,7 @@ func (r *RunCommand) runAgainstTarget(ctx context.Context, t targets.FuchsiaTarg
 		testrunnerconstants.TestTimeoutScaleFactor: strconv.Itoa(r.testTimeoutScaleFactor),
 	}
 
-	if botanist.GetExperiments(r.experiments).Contains(botanist.UseFFXMonitor) {
+	if r.expectsSSH && botanist.GetExperiments(r.experiments).Contains(botanist.UseFFXMonitor) {
 		// The shared_data directory is currently only created when using ffx monitor
 		// so we should only add the env var if we expect it to exist.
 		testrunnerEnv[constants.FFXSharedDataEnvKey] = t.GetSharedData()

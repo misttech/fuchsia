@@ -391,12 +391,17 @@ func (t *Emulator) CaptureSerialLog(filename string) error {
 // Stop stops the emulator target.
 func (t *Emulator) Stop() error {
 	var err error
-	if err = t.ffx.EmuStopAll(context.Background()); err != nil {
+	if err = t.ffx.EmuStopAll(botanist.GetLoggerCtx(t.targetCtx)); err != nil {
 		logger.Debugf(t.targetCtx, "failed to stop emulator: %s", err)
 		if t.process == nil {
 			return fmt.Errorf("%s target has not yet been started", t.binary)
 		}
-		logger.Debugf(t.targetCtx, "Sending SIGKILL to %d", t.process.Pid)
+	}
+	// Kill the process in case the ffx emu stop command failed to but didn't return
+	// an error, which might happen if it gets called before the start command has
+	// actually set up the emulator.
+	if t.process != nil {
+		logger.Debugf(t.targetCtx, "Sending SIGKILL to emulator process %d", t.process.Pid)
 		err = t.process.Kill()
 	}
 	t.process = nil
