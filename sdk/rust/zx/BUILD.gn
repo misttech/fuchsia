@@ -35,6 +35,7 @@ _common_sources = [
   "src/lib.rs",
   "src/macros.rs",
   "src/name.rs",
+  "src/object_type.rs",
   "src/pager.rs",
   "src/pmt.rs",
   "src/port.rs",

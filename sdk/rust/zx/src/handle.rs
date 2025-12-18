@@ -5,9 +5,9 @@
 //! Type-safe bindings for Zircon handles.
 
 use crate::{
-    Koid, MonotonicInstant, Name, ObjectQuery, Port, Property, PropertyQuery, Rights, Signals,
-    Status, Topic, WaitAsyncOpts, object_get_info_single, object_get_property, object_set_property,
-    ok, sys,
+    Koid, MonotonicInstant, Name, ObjectQuery, ObjectType, Port, Property, PropertyQuery, Rights,
+    Signals, Status, Topic, WaitAsyncOpts, object_get_info_single, object_get_property,
+    object_set_property, ok, sys,
 };
 use std::marker::PhantomData;
 use std::mem::{self, ManuallyDrop};
@@ -602,57 +602,6 @@ pub trait Peered: HandleBased {
     }
 }
 
-/// Zircon object types.
-#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
-#[repr(transparent)]
-pub struct ObjectType(sys::zx_obj_type_t);
-
-assoc_values!(ObjectType, [
-    NONE            = sys::ZX_OBJ_TYPE_NONE;
-    PROCESS         = sys::ZX_OBJ_TYPE_PROCESS;
-    THREAD          = sys::ZX_OBJ_TYPE_THREAD;
-    VMO             = sys::ZX_OBJ_TYPE_VMO;
-    CHANNEL         = sys::ZX_OBJ_TYPE_CHANNEL;
-    EVENT           = sys::ZX_OBJ_TYPE_EVENT;
-    PORT            = sys::ZX_OBJ_TYPE_PORT;
-    INTERRUPT       = sys::ZX_OBJ_TYPE_INTERRUPT;
-    PCI_DEVICE      = sys::ZX_OBJ_TYPE_PCI_DEVICE;
-    DEBUGLOG        = sys::ZX_OBJ_TYPE_DEBUGLOG;
-    SOCKET          = sys::ZX_OBJ_TYPE_SOCKET;
-    RESOURCE        = sys::ZX_OBJ_TYPE_RESOURCE;
-    EVENTPAIR       = sys::ZX_OBJ_TYPE_EVENTPAIR;
-    JOB             = sys::ZX_OBJ_TYPE_JOB;
-    VMAR            = sys::ZX_OBJ_TYPE_VMAR;
-    FIFO            = sys::ZX_OBJ_TYPE_FIFO;
-    GUEST           = sys::ZX_OBJ_TYPE_GUEST;
-    VCPU            = sys::ZX_OBJ_TYPE_VCPU;
-    TIMER           = sys::ZX_OBJ_TYPE_TIMER;
-    IOMMU           = sys::ZX_OBJ_TYPE_IOMMU;
-    BTI             = sys::ZX_OBJ_TYPE_BTI;
-    PROFILE         = sys::ZX_OBJ_TYPE_PROFILE;
-    PMT             = sys::ZX_OBJ_TYPE_PMT;
-    SUSPEND_TOKEN   = sys::ZX_OBJ_TYPE_SUSPEND_TOKEN;
-    PAGER           = sys::ZX_OBJ_TYPE_PAGER;
-    EXCEPTION       = sys::ZX_OBJ_TYPE_EXCEPTION;
-    CLOCK           = sys::ZX_OBJ_TYPE_CLOCK;
-    STREAM          = sys::ZX_OBJ_TYPE_STREAM;
-    MSI             = sys::ZX_OBJ_TYPE_MSI;
-    IOB             = sys::ZX_OBJ_TYPE_IOB;
-    COUNTER         = sys::ZX_OBJ_TYPE_COUNTER;
-]);
-
-impl ObjectType {
-    /// Creates an `ObjectType` from the underlying zircon type.
-    pub const fn from_raw(raw: sys::zx_obj_type_t) -> Self {
-        Self(raw)
-    }
-
-    /// Converts `ObjectType` into the underlying zircon type.
-    pub const fn into_raw(self) -> sys::zx_obj_type_t {
-        self.0
-    }
-}
-
 /// Basic information about a handle.
 ///
 /// Wrapper for data returned from [Handle::basic_info()].
@@ -679,7 +628,7 @@ impl From<sys::zx_info_handle_basic_t> for HandleBasicInfo {
         HandleBasicInfo {
             koid: Koid::from_raw(koid),
             rights: Rights::from_bits_truncate(rights),
-            object_type: ObjectType(type_),
+            object_type: ObjectType::from_raw(type_),
             related_koid: Koid::from_raw(related_koid),
         }
     }
@@ -815,14 +764,14 @@ impl<'a> HandleDisposition<'a> {
             HandleOp::Move(mut handle) => sys::zx_handle_disposition_t {
                 operation: sys::ZX_HANDLE_OP_MOVE,
                 handle: std::mem::replace(&mut handle, NullableHandle::invalid()).into_raw(),
-                type_: self.object_type.0,
+                type_: self.object_type.into_raw(),
                 rights: self.rights.bits(),
                 result: self.result.into_raw(),
             },
             HandleOp::Duplicate(handle_ref) => sys::zx_handle_disposition_t {
                 operation: sys::ZX_HANDLE_OP_DUPLICATE,
                 handle: handle_ref.raw_handle(),
-                type_: self.object_type.0,
+                type_: self.object_type.into_raw(),
                 rights: self.rights.bits(),
                 result: self.result.into_raw(),
             },
@@ -888,7 +837,7 @@ impl HandleInfo {
         HandleInfo::new(
             // SAFETY: invariants to not double-close are upheld by the caller.
             unsafe { NullableHandle::from_raw(raw.handle) },
-            ObjectType(raw.ty),
+            ObjectType::from_raw(raw.ty),
             Rights::from_bits_retain(raw.rights),
         )
     }
