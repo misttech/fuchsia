@@ -157,14 +157,7 @@ async fn timeouts<N: Netstack>(name: &str) {
 
     let mut connect_timeout = pin!(measure(connect_timeout).fuse());
     let mut keepalive_timeout = pin!(measure(verify_error(keepalive_timeout)).fuse());
-    let keepalive_usertimeout = if N::VERSION.is_netstack3() {
-        // TODO(https://fxbug.dev/469170628): Netstack3 is not correctly
-        // considering USERTIMEOUT, which causes this test to time out in CQ.
-        async {}.left_future()
-    } else {
-        verify_error(keepalive_usertimeout).right_future()
-    };
-    let mut keepalive_usertimeout = pin!(measure(keepalive_usertimeout).fuse());
+    let mut keepalive_usertimeout = pin!(measure(verify_error(keepalive_usertimeout)).fuse());
     let retransmit_timeout = pin!(measure(verify_error(retransmit_timeout)).fuse());
     let mut retransmit_usertimeout = pin!(measure(verify_error(retransmit_usertimeout)).fuse());
 

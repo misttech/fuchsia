@@ -902,12 +902,52 @@ enum ReceiveTimer<I> {
 struct KeepAliveTimer<I> {
     at: I,
     already_sent: u8,
+    user_timeout_until: Option<I>,
 }
 
 impl<I: Instant> KeepAliveTimer<I> {
     fn idle(now: I, keep_alive: &KeepAlive) -> Self {
+        // Guard against keep alive operations if disabled.
+        assert!(keep_alive.enabled);
         let at = now.saturating_add(keep_alive.idle.into());
-        Self { at, already_sent: 0 }
+        Self { at, already_sent: 0, user_timeout_until: None }
+    }
+
+    /// Checks if it's time to send a new keep alive packet.
+    ///
+    /// Updates the timer's internal state and returns true if a keep alive
+    /// segment must be sent now.
+    fn poll_send(
+        &mut self,
+        now: I,
+        keep_alive: &KeepAlive,
+        user_timeout: &Option<NonZeroDuration>,
+    ) -> bool {
+        // Guard against keep alive operations if disabled.
+        assert!(keep_alive.enabled);
+        let Self { at, already_sent, user_timeout_until } = self;
+        if *at > now {
+            return false;
+        }
+
+        // Only update the user timeout once. The timer is cleared when we call
+        // KeepAliveTimer::idle upon receiving ACKs.
+        if user_timeout_until.is_none() {
+            *user_timeout_until = user_timeout.map(|t| now.saturating_add(t.get()));
+        }
+
+        *already_sent = already_sent.saturating_add(1);
+        let interval = now.saturating_add(keep_alive.interval.into());
+        *at = user_timeout_until.map(|i| i.min(interval)).unwrap_or(interval);
+
+        true
+    }
+
+    fn timed_out(&self, now: I, keep_alive: &KeepAlive) -> bool {
+        // Guard against keep alive operations if disabled.
+        assert!(keep_alive.enabled);
+        let Self { at: _, already_sent, user_timeout_until } = self;
+        *already_sent >= keep_alive.count.get() || user_timeout_until.is_some_and(|t| now >= t)
     }
 }
 
@@ -920,7 +960,7 @@ impl<I: Instant> SendTimer<I> {
                 user_timeout_until: _,
                 remaining_retries: _,
             })
-            | SendTimer::KeepAlive(KeepAliveTimer { at, already_sent: _ })
+            | SendTimer::KeepAlive(KeepAliveTimer { at, already_sent: _, user_timeout_until: _ })
             | SendTimer::ZeroWindowProbe(RetransTimer {
                 at,
                 rto: _,
@@ -1456,10 +1496,16 @@ pub(crate) enum DataAcked {
 
 impl<I: Instant, S: SendBuffer, const FIN_QUEUED: bool> Send<I, S, FIN_QUEUED> {
     /// Returns true if the connection should still be alive per the send state.
-    fn timed_out(&self, now: I, keep_alive: &KeepAlive) -> bool {
+    fn timed_out(&mut self, now: I, keep_alive: &KeepAlive) -> bool {
         match self.timer {
             Some(SendTimer::KeepAlive(keep_alive_timer)) => {
-                keep_alive.enabled && keep_alive_timer.already_sent >= keep_alive.count.get()
+                if keep_alive.enabled {
+                    keep_alive_timer.timed_out(now, keep_alive)
+                } else {
+                    // Don't check keep alive timer if disabled, and clear it.
+                    self.timer = None;
+                    false
+                }
             }
             Some(SendTimer::Retrans(timer)) | Some(SendTimer::ZeroWindowProbe(timer)) => {
                 timer.timed_out(now)
@@ -1544,15 +1590,13 @@ impl<I: Instant, S: SendBuffer, const FIN_QUEUED: bool> Send<I, S, FIN_QUEUED> {
                     retrans_timer.backoff(now);
                 }
             }
-            Some(SendTimer::KeepAlive(KeepAliveTimer { at, already_sent })) => {
+            Some(SendTimer::KeepAlive(keep_alive_timer)) => {
                 // Per RFC 9293 Section 3.8.4:
                 //   Keep-alive packets MUST only be sent when no sent data is
                 //   outstanding, and no data or acknowledgment packets have
                 //   been received for the connection within an interval.
                 if keep_alive.enabled && !FIN_QUEUED && readable_bytes == 0 {
-                    if *at <= now {
-                        *at = now.saturating_add(keep_alive.interval.into());
-                        *already_sent = already_sent.saturating_add(1);
+                    if keep_alive_timer.poll_send(now, keep_alive, user_timeout) {
                         // Per RFC 9293 Section 3.8.4:
                         //   Such a segment generally contains SEG.SEQ = SND.NXT-1
                         return Some(rcv.make_ack(*snd_max - 1, now));
@@ -1868,9 +1912,9 @@ impl<I: Instant, S: SendBuffer, const FIN_QUEUED: bool> Send<I, S, FIN_QUEUED> {
         let seg_wnd = seg_wnd << *wnd_scale;
         match timer {
             Some(SendTimer::KeepAlive(_)) | None => {
-                if keep_alive.enabled {
-                    *timer = Some(SendTimer::KeepAlive(KeepAliveTimer::idle(now, keep_alive)));
-                }
+                *timer = keep_alive
+                    .enabled
+                    .then(|| SendTimer::KeepAlive(KeepAliveTimer::idle(now, keep_alive)));
             }
             Some(SendTimer::Retrans(retrans_timer)) => {
                 // Per https://tools.ietf.org/html/rfc6298#section-5:
@@ -6702,8 +6746,9 @@ mod test {
         .assert_counters(&counters);
     }
 
-    #[test]
-    fn keep_alive() {
+    #[test_case(true; "user timeout")]
+    #[test_case(false; "no user timeout")]
+    fn keep_alive(with_user_timeout: bool) {
         let mut clock = FakeInstantCtx::default();
         let counters = FakeTcpCounters::default();
         let mut state: State<_, _, _, ()> = State::Established(Established {
@@ -6711,10 +6756,17 @@ mod test {
             rcv: Recv::default_for_test_at(TEST_IRS, RingBuffer::default()).into(),
         });
 
-        let socket_options = {
-            let mut socket_options = SocketOptions::default_for_state_tests();
-            socket_options.keep_alive.enabled = true;
-            socket_options
+        let keep_alive = KeepAlive { enabled: true, ..Default::default() };
+        let num_probes_user_timeout = 3;
+        // Use a number slightly deviated from the interval period.
+        let user_timeout_duration = keep_alive
+            .interval
+            .saturating_mul(NonZeroU32::new(num_probes_user_timeout - 1).unwrap())
+            + NonZeroDuration::new(keep_alive.interval.get() / 2).unwrap();
+        let socket_options = SocketOptions {
+            keep_alive,
+            user_timeout: with_user_timeout.then_some(user_timeout_duration),
+            ..SocketOptions::default_for_state_tests()
         };
         let socket_options = &socket_options;
         let keep_alive = &socket_options.keep_alive;
@@ -6733,8 +6785,8 @@ mod test {
         // after `keep_alive.idle`.
         assert_eq!(state.poll_send_at(), Some(clock.now().panicking_add(keep_alive.idle.into())));
 
-        // Now we receive an ACK after an hour.
-        clock.sleep(Duration::from_secs(60 * 60));
+        // Now we receive an ACK after half the idle period.
+        clock.sleep(keep_alive.idle.get() / 2);
         assert_eq!(
             state.on_segment::<&[u8], ClientlessBufferProvider>(
                 &FakeStateMachineDebugId::default(),
@@ -6751,13 +6803,20 @@ mod test {
             ),
             (None, None, DataAcked::No, NewlyClosed::No)
         );
-        // the timer is reset to fire in 2 hours.
+        // the timer is reset to fire after the new keep alive interval.
         assert_eq!(state.poll_send_at(), Some(clock.now().panicking_add(keep_alive.idle.into())),);
         clock.sleep(keep_alive.idle.into());
 
         // Then there should be `count` probes being sent out after `count`
         // `interval` seconds.
-        for _ in 0..keep_alive.count.get() {
+        let (expect_probes, max_deadline) = if with_user_timeout {
+            // Prove we're actually testing a user timeout.
+            assert!(num_probes_user_timeout < keep_alive.count.get().into());
+            (num_probes_user_timeout, clock.time + user_timeout_duration.get())
+        } else {
+            (u32::from(keep_alive.count.get()), FakeInstant::LATEST)
+        };
+        for _ in 0..expect_probes {
             assert_eq!(
                 state.poll_send(
                     &FakeStateMachineDebugId::default(),
@@ -6772,8 +6831,10 @@ mod test {
                     default_segment_options(timestamp_now(&clock), DEFAULT_TIMESTAMP),
                 ))
             );
-            clock.sleep(keep_alive.interval.into());
             assert_matches!(state, State::Established(_));
+            let next = state.poll_send_at().expect("timer must be set");
+            assert_eq!(next, (clock.time + keep_alive.interval.get()).min(max_deadline));
+            clock.sleep_until(next);
         }
 
         // At this time the connection is closed and we don't have anything to
