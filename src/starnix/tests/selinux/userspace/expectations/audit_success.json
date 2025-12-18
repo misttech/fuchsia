@@ -454,17 +454,9 @@
             ]
         },
         {
-            "name": "MemFdClassTest/MemFdNoTransition",
+            "name": "MemFdClassTest/MemFdNoPermissions",
             "audit_expectations": [
-                "avc:  denied  { create } for anonclass=[memfd] scontext=test_u:test_r:test_memfd_no_transition_t:s0 tcontext=test_u:object_r:test_memfd_no_transition_t:s0 tclass=memfd_file permissive=1",
-                "avc:  denied  { getattr } for name=\"memfd:test\" dev=\"tmpfs\" ino=4 scontext=test_u:test_r:test_memfd_no_transition_t:s0 tcontext=test_u:object_r:test_memfd_no_transition_t:s0 tclass=memfd_file permissive=1"
-            ]
-        },
-        {
-            "name": "MemFdClassTest/MemFdTransition",
-            "audit_expectations": [
-                "avc:  denied  { create } for anonclass=[memfd] scontext=test_u:test_r:test_memfd_transition_t:s0 tcontext=test_u:object_r:test_memfd_transitioned_t:s0 tclass=memfd_file permissive=1",
-                "avc:  denied  { getattr } for name=\"memfd:test\" dev=\"tmpfs\" ino=3 scontext=test_u:test_r:test_memfd_transition_t:s0 tcontext=test_u:object_r:test_memfd_transitioned_t:s0 tclass=memfd_file permissive=1"
+                "avc:  denied  { create } for anonclass=[memfd] scontext=test_u:test_r:test_memfd_no_create_permission_t:s0 tcontext=test_u:object_r:test_memfd_no_create_permission_t:s0 tclass=memfd_file permissive=0"
             ]
         },
         {

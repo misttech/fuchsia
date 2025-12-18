@@ -1,5 +1,8 @@
 {
     "audit_failure": [
+        // TODO: https://fxbug.dev/455785957 - Apply "create" check to memfd_create() calls.
+        "MemFdClassTest.MemFdNoPermissions",
+
         // TODO(https://fxbug.dev/409256444) - Check `execmod`.
         "MProtectExecmod/MProtectExecmod/ExecMod/ExecmodNo_PrivateMapping_Modification_MprotectFailure",
 
