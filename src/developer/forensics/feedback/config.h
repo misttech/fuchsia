@@ -56,6 +56,8 @@ struct SnapshotExclusionConfig {
 // This should match FeedbackInternalConfig in
 // //src/lib/assembly/platform_configuration/src/subsystems/forensics.rs.
 struct FeedbackConfig {
+  StorageSize report_persistence_max_cache_size;
+  StorageSize report_persistence_max_tmp_size;
   std::optional<StorageSize> snapshot_persistence_max_cache_size;
   std::optional<StorageSize> snapshot_persistence_max_tmp_size;
   SpontaneousRebootReason spontaneous_reboot_reason;

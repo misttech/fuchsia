@@ -447,10 +447,10 @@ TEST_F(QueueTest, FilingStatusReportOnDisk) {
 }
 
 TEST_F(QueueTest, FilingStatusReportInMemory) {
-  report_store_ = std::make_unique<ScopedTestReportStore>(
-      &annotation_manager_, info_context_,
-      /*max_reports_tmp_size=*/crash_reports::kReportStoreMaxTmpSize,
-      /*max_reports_cache_size=*/StorageSize::Bytes(0));
+  report_store_ =
+      std::make_unique<ScopedTestReportStore>(&annotation_manager_, info_context_,
+                                              /*max_reports_tmp_size=*/StorageSize::Megabytes(5),
+                                              /*max_reports_cache_size=*/StorageSize::Bytes(0));
 
   SetUpQueue({kUploadFailed});
 
@@ -1040,7 +1040,7 @@ TEST_F(QueueTest, Check_SpecialCaseClientsRemoved) {
 TEST_F(QueueTest, PreventStrandedSnapshot) {
   report_store_ = std::make_unique<ScopedTestReportStore>(
       &annotation_manager_, info_context_,
-      /*max_reports_tmp_size=*/crash_reports::kReportStoreMaxTmpSize,
+      /*max_reports_tmp_size=*/StorageSize::Megabytes(5),
       /*max_reports_cache_size=*/StorageSize::Bytes(0),
       /*max_snapshots_tmp_size=*/StorageSize::Megabytes(1),
       /*max_snapshots_cache_size=*/StorageSize::Megabytes(1));
@@ -1085,7 +1085,7 @@ TEST_F(QueueTest, PreventStrandedSnapshot) {
 TEST_F(QueueTest, PreventStrandedSnapshot_FailedMove) {
   report_store_ = std::make_unique<ScopedTestReportStore>(
       &annotation_manager_, info_context_,
-      /*max_reports_tmp_size=*/crash_reports::kReportStoreMaxTmpSize,
+      /*max_reports_tmp_size=*/StorageSize::Megabytes(5),
       /*max_reports_cache_size=*/StorageSize::Bytes(0),
       /*max_snapshots_tmp_size=*/StorageSize::Bytes(0),
       /*max_snapshots_cache_size=*/StorageSize::Megabytes(1));
@@ -1143,8 +1143,8 @@ TEST_F(QueueTest, PreventStrandedSnapshot_FailedMove) {
 TEST_F(QueueTest, Check_SnapshotClientsReloaded) {
   report_store_ = std::make_unique<ScopedTestReportStore>(
       &annotation_manager_, info_context_,
-      /*max_reports_tmp_size=*/crash_reports::kReportStoreMaxTmpSize,
-      /*max_reports_cache_size=*/crash_reports::kReportStoreMaxCacheSize,
+      /*max_reports_tmp_size=*/StorageSize::Megabytes(5),
+      /*max_reports_cache_size=*/StorageSize::Kilobytes(500),
       /*max_snapshots_tmp_size=*/StorageSize::Bytes(0),
       /*max_snapshots_cache_size=*/StorageSize::Megabytes(1));
 
@@ -1200,8 +1200,8 @@ TEST_F(QueueTest, Check_SnapshotClientsReloaded) {
 TEST_F(QueueTest, Check_CleansUpStrandedSnapshotsInCache) {
   report_store_ = std::make_unique<ScopedTestReportStore>(
       &annotation_manager_, info_context_,
-      /*max_reports_tmp_size=*/crash_reports::kReportStoreMaxTmpSize,
-      /*max_reports_cache_size=*/crash_reports::kReportStoreMaxCacheSize,
+      /*max_reports_tmp_size=*/StorageSize::Megabytes(5),
+      /*max_reports_cache_size=*/StorageSize::Kilobytes(500),
       /*max_snapshots_tmp_size=*/StorageSize::Bytes(0),
       /*max_snapshots_cache_size=*/StorageSize::Megabytes(1));
 
@@ -1226,8 +1226,8 @@ TEST_F(QueueTest, Check_CleansUpStrandedSnapshotsInCache) {
 TEST_F(QueueTest, Check_CleansUpStrandedSnapshotsInTmp) {
   report_store_ = std::make_unique<ScopedTestReportStore>(
       &annotation_manager_, info_context_,
-      /*max_reports_tmp_size=*/crash_reports::kReportStoreMaxTmpSize,
-      /*max_reports_cache_size=*/crash_reports::kReportStoreMaxCacheSize,
+      /*max_reports_tmp_size=*/StorageSize::Megabytes(5),
+      /*max_reports_cache_size=*/StorageSize::Kilobytes(500),
       /*max_snapshots_tmp_size=*/StorageSize::Megabytes(1),
       /*max_snapshots_cache_size=*/StorageSize::Bytes(0));
 

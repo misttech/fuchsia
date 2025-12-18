@@ -25,6 +25,8 @@ class CrashReports {
  public:
   struct Options {
     BuildTypeConfig build_type_config;
+    StorageSize report_persistence_max_tmp_size;
+    StorageSize report_persistence_max_cache_size;
     StorageSize snapshot_store_max_archives_size;
     std::optional<StorageSize> snapshot_persistence_max_tmp_size;
     std::optional<StorageSize> snapshot_persistence_max_cache_size;

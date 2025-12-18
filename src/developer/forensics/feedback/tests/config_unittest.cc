@@ -604,8 +604,32 @@ TEST_F(FeedbackConfigTest, MissingConfigs) {
   EXPECT_FALSE(config.has_value());
 }
 
+TEST_F(FeedbackConfigTest, MissingReportPersistenceMaxCacheSizeKib) {
+  const std::optional<FeedbackConfig> config = ParseConfig(R"({
+    "report_persistence_max_tmp_size_kib": 1,
+    "snapshot_persistence_max_cache_size_mib": 1,
+    "snapshot_persistence_max_tmp_size_mib": 1,
+    "spontaneous_reboot_reason": "spontaneous"
+})");
+
+  EXPECT_FALSE(config.has_value());
+}
+
+TEST_F(FeedbackConfigTest, MissingReportPersistenceMaxTmpSizeKib) {
+  const std::optional<FeedbackConfig> config = ParseConfig(R"({
+    "report_persistence_max_cache_size_kib": 1,
+    "snapshot_persistence_max_cache_size_mib": 1,
+    "snapshot_persistence_max_tmp_size_mib": 1,
+    "spontaneous_reboot_reason": "spontaneous"
+})");
+
+  EXPECT_FALSE(config.has_value());
+}
+
 TEST_F(FeedbackConfigTest, MissingSnapshotPersistenceMaxCacheSizeMib) {
   const std::optional<FeedbackConfig> config = ParseConfig(R"({
+    "report_persistence_max_cache_size_kib": 1,
+    "report_persistence_max_tmp_size_kib": 1,
     "snapshot_persistence_max_tmp_size_mib": 1,
     "spontaneous_reboot_reason": "spontaneous"
 })");
@@ -615,6 +639,8 @@ TEST_F(FeedbackConfigTest, MissingSnapshotPersistenceMaxCacheSizeMib) {
 
 TEST_F(FeedbackConfigTest, MissingSnapshotPersistenceMaxTmpSizeMib) {
   const std::optional<FeedbackConfig> config = ParseConfig(R"({
+    "report_persistence_max_cache_size_kib": 1,
+    "report_persistence_max_tmp_size_kib": 1,
     "snapshot_persistence_max_cache_size_mib": 1,
     "spontaneous_reboot_reason": "spontaneous"
 })");
@@ -624,6 +650,8 @@ TEST_F(FeedbackConfigTest, MissingSnapshotPersistenceMaxTmpSizeMib) {
 
 TEST_F(FeedbackConfigTest, MissingSpontaneousRebootReason) {
   const std::optional<FeedbackConfig> config = ParseConfig(R"({
+    "report_persistence_max_cache_size_kib": 1,
+    "report_persistence_max_tmp_size_kib": 1,
     "snapshot_persistence_max_cache_size_mib": 1,
     "snapshot_persistence_max_tmp_size_mib": 1
 })");
@@ -633,6 +661,8 @@ TEST_F(FeedbackConfigTest, MissingSpontaneousRebootReason) {
 
 TEST_F(FeedbackConfigTest, SpuriousField) {
   const std::optional<FeedbackConfig> config = ParseConfig(R"({
+    "report_persistence_max_cache_size_kib": 1,
+    "report_persistence_max_tmp_size_kib": 1,
     "snapshot_persistence_max_cache_size_mib": 1,
     "snapshot_persistence_max_tmp_size_mib": 1,
     "spontaneous_reboot_reason": "spontaneous",
@@ -642,8 +672,106 @@ TEST_F(FeedbackConfigTest, SpuriousField) {
   EXPECT_FALSE(config.has_value());
 }
 
+TEST_F(FeedbackConfigTest, ReportPersistenceMaxCacheSizeMibPositive) {
+  const std::optional<FeedbackConfig> config = ParseConfig(R"({
+    "report_persistence_max_cache_size_kib": 1,
+    "report_persistence_max_tmp_size_kib": 1,
+    "snapshot_persistence_max_cache_size_mib": 1,
+    "snapshot_persistence_max_tmp_size_mib": 1,
+    "spontaneous_reboot_reason": "spontaneous"
+})");
+
+  EXPECT_EQ(config->report_persistence_max_cache_size, StorageSize::Kilobytes(1));
+}
+
+TEST_F(FeedbackConfigTest, ReportPersistenceMaxCacheSizeKibZero) {
+  const std::optional<FeedbackConfig> config = ParseConfig(R"({
+    "report_persistence_max_cache_size_kib": 0,
+    "report_persistence_max_tmp_size_kib": 1,
+    "snapshot_persistence_max_cache_size_mib": 1,
+    "snapshot_persistence_max_tmp_size_mib": 1,
+    "spontaneous_reboot_reason": "spontaneous"
+})");
+
+  EXPECT_FALSE(config.has_value());
+}
+
+TEST_F(FeedbackConfigTest, ReportPersistenceMaxCacheSizeKibNegative) {
+  const std::optional<FeedbackConfig> config = ParseConfig(R"({
+    "report_persistence_max_cache_size_kib": -1,
+    "report_persistence_max_tmp_size_kib": 1,
+    "snapshot_persistence_max_cache_size_mib": 1,
+    "snapshot_persistence_max_tmp_size_mib": 1,
+    "spontaneous_reboot_reason": "spontaneous"
+})");
+
+  EXPECT_FALSE(config.has_value());
+}
+
+TEST_F(FeedbackConfigTest, ReportPersistenceMaxCacheSizeKibNotNumber) {
+  const std::optional<FeedbackConfig> config = ParseConfig(R"({
+    "report_persistence_max_cache_size_kib": "",
+    "report_persistence_max_tmp_size_kib": 1,
+    "snapshot_persistence_max_cache_size_mib": 1,
+    "snapshot_persistence_max_tmp_size_mib": 1,
+    "spontaneous_reboot_reason": "spontaneous"
+})");
+
+  EXPECT_FALSE(config.has_value());
+}
+
+TEST_F(FeedbackConfigTest, ReportPersistenceMaxTmpSizeMibPositive) {
+  const std::optional<FeedbackConfig> config = ParseConfig(R"({
+    "report_persistence_max_cache_size_kib": 1,
+    "report_persistence_max_tmp_size_kib": 1,
+    "snapshot_persistence_max_cache_size_mib": 1,
+    "snapshot_persistence_max_tmp_size_mib": 1,
+    "spontaneous_reboot_reason": "spontaneous"
+})");
+
+  EXPECT_EQ(config->report_persistence_max_tmp_size, StorageSize::Kilobytes(1));
+}
+
+TEST_F(FeedbackConfigTest, ReportPersistenceMaxTmpSizeKibZero) {
+  const std::optional<FeedbackConfig> config = ParseConfig(R"({
+    "report_persistence_max_cache_size_kib": 1,
+    "report_persistence_max_tmp_size_kib": 0,
+    "snapshot_persistence_max_cache_size_mib": 1,
+    "snapshot_persistence_max_tmp_size_mib": 1,
+    "spontaneous_reboot_reason": "spontaneous"
+})");
+
+  EXPECT_FALSE(config.has_value());
+}
+
+TEST_F(FeedbackConfigTest, ReportPersistenceMaxTmpSizeKibNegative) {
+  const std::optional<FeedbackConfig> config = ParseConfig(R"({
+    "report_persistence_max_cache_size_kib": 1,
+    "report_persistence_max_tmp_size_kib": -1,
+    "snapshot_persistence_max_cache_size_mib": 1,
+    "snapshot_persistence_max_tmp_size_mib": 1,
+    "spontaneous_reboot_reason": "spontaneous"
+})");
+
+  EXPECT_FALSE(config.has_value());
+}
+
+TEST_F(FeedbackConfigTest, ReportPersistenceMaxTmpSizeKibNotNumber) {
+  const std::optional<FeedbackConfig> config = ParseConfig(R"({
+    "report_persistence_max_cache_size_kib": 1,
+    "report_persistence_max_tmp_size_kib": "",
+    "snapshot_persistence_max_cache_size_mib": 1,
+    "snapshot_persistence_max_tmp_size_mib": 1,
+    "spontaneous_reboot_reason": "spontaneous"
+})");
+
+  EXPECT_FALSE(config.has_value());
+}
+
 TEST_F(FeedbackConfigTest, SnapshotPersistenceMaxCacheSizeMibPositive) {
   const std::optional<FeedbackConfig> config = ParseConfig(R"({
+    "report_persistence_max_cache_size_kib": 1,
+    "report_persistence_max_tmp_size_kib": 1,
     "snapshot_persistence_max_cache_size_mib": 1,
     "snapshot_persistence_max_tmp_size_mib": 1,
     "spontaneous_reboot_reason": "spontaneous"
@@ -655,6 +783,8 @@ TEST_F(FeedbackConfigTest, SnapshotPersistenceMaxCacheSizeMibPositive) {
 
 TEST_F(FeedbackConfigTest, SnapshotPersistenceMaxCacheSizeMibZero) {
   const std::optional<FeedbackConfig> config = ParseConfig(R"({
+    "report_persistence_max_cache_size_kib": 1,
+    "report_persistence_max_tmp_size_kib": 1,
     "snapshot_persistence_max_cache_size_mib": 0,
     "snapshot_persistence_max_tmp_size_mib": 1,
     "spontaneous_reboot_reason": "spontaneous"
@@ -666,6 +796,8 @@ TEST_F(FeedbackConfigTest, SnapshotPersistenceMaxCacheSizeMibZero) {
 
 TEST_F(FeedbackConfigTest, SnapshotPersistenceMaxCacheSizeMibNegative) {
   const std::optional<FeedbackConfig> config = ParseConfig(R"({
+    "report_persistence_max_cache_size_kib": 1,
+    "report_persistence_max_tmp_size_kib": 1,
     "snapshot_persistence_max_cache_size_mib": -1,
     "snapshot_persistence_max_tmp_size_mib": 1,
     "spontaneous_reboot_reason": "spontaneous"
@@ -677,6 +809,8 @@ TEST_F(FeedbackConfigTest, SnapshotPersistenceMaxCacheSizeMibNegative) {
 
 TEST_F(FeedbackConfigTest, SnapshotPersistenceMaxCacheSizeMibNotNumber) {
   const std::optional<FeedbackConfig> config = ParseConfig(R"({
+    "report_persistence_max_cache_size_kib": 1,
+    "report_persistence_max_tmp_size_kib": 1,
     "snapshot_persistence_max_cache_size_mib": "",
     "snapshot_persistence_max_tmp_size_mib": 1,
     "spontaneous_reboot_reason": "spontaneous"
@@ -687,6 +821,8 @@ TEST_F(FeedbackConfigTest, SnapshotPersistenceMaxCacheSizeMibNotNumber) {
 
 TEST_F(FeedbackConfigTest, SnapshotPersistenceMaxTmpSizeMibPositive) {
   const std::optional<FeedbackConfig> config = ParseConfig(R"({
+    "report_persistence_max_cache_size_kib": 1,
+    "report_persistence_max_tmp_size_kib": 1,
     "snapshot_persistence_max_cache_size_mib": 1,
     "snapshot_persistence_max_tmp_size_mib": 1,
     "spontaneous_reboot_reason": "spontaneous"
@@ -698,6 +834,8 @@ TEST_F(FeedbackConfigTest, SnapshotPersistenceMaxTmpSizeMibPositive) {
 
 TEST_F(FeedbackConfigTest, SnapshotPersistenceMaxTmpSizeMibZero) {
   const std::optional<FeedbackConfig> config = ParseConfig(R"({
+    "report_persistence_max_cache_size_kib": 1,
+    "report_persistence_max_tmp_size_kib": 1,
     "snapshot_persistence_max_cache_size_mib": 1,
     "snapshot_persistence_max_tmp_size_mib": 0,
     "spontaneous_reboot_reason": "spontaneous"
@@ -709,6 +847,8 @@ TEST_F(FeedbackConfigTest, SnapshotPersistenceMaxTmpSizeMibZero) {
 
 TEST_F(FeedbackConfigTest, SnapshotPersistenceMaxTmpSizeMibNegative) {
   const std::optional<FeedbackConfig> config = ParseConfig(R"({
+    "report_persistence_max_cache_size_kib": 1,
+    "report_persistence_max_tmp_size_kib": 1,
     "snapshot_persistence_max_cache_size_mib": 1,
     "snapshot_persistence_max_tmp_size_mib": -1,
     "spontaneous_reboot_reason": "spontaneous"
@@ -720,6 +860,8 @@ TEST_F(FeedbackConfigTest, SnapshotPersistenceMaxTmpSizeMibNegative) {
 
 TEST_F(FeedbackConfigTest, SnapshotPersistenceMaxTmpSizeMibNotNumber) {
   const std::optional<FeedbackConfig> config = ParseConfig(R"({
+    "report_persistence_max_cache_size_kib": 1,
+    "report_persistence_max_tmp_size_kib": 1,
     "snapshot_persistence_max_cache_size_mib": 1,
     "snapshot_persistence_max_tmp_size_mib": "",
     "spontaneous_reboot_reason": "spontaneous"
@@ -730,6 +872,8 @@ TEST_F(FeedbackConfigTest, SnapshotPersistenceMaxTmpSizeMibNotNumber) {
 
 TEST_F(FeedbackConfigTest, SpontaneousRebootReasonNotAllowedValue) {
   const std::optional<FeedbackConfig> config = ParseConfig(R"({
+    "report_persistence_max_cache_size_kib": 1,
+    "report_persistence_max_tmp_size_kib": 1,
     "snapshot_persistence_max_cache_size_mib": 1,
     "snapshot_persistence_max_tmp_size_mib": 1,
     "spontaneous_reboot_reason": "not_allowed"
@@ -740,6 +884,8 @@ TEST_F(FeedbackConfigTest, SpontaneousRebootReasonNotAllowedValue) {
 
 TEST_F(FeedbackConfigTest, SpontaneousRebootReasonNotString) {
   const std::optional<FeedbackConfig> config = ParseConfig(R"({
+    "report_persistence_max_cache_size_kib": 1,
+    "report_persistence_max_tmp_size_kib": 1,
     "snapshot_persistence_max_cache_size_mib": 1,
     "snapshot_persistence_max_tmp_size_mib": 1,
     "spontaneous_reboot_reason": 0
@@ -750,6 +896,8 @@ TEST_F(FeedbackConfigTest, SpontaneousRebootReasonNotString) {
 
 TEST_F(FeedbackConfigTest, SpontaneousRebootReasonSpontaneous) {
   const std::optional<FeedbackConfig> config = ParseConfig(R"({
+    "report_persistence_max_cache_size_kib": 1,
+    "report_persistence_max_tmp_size_kib": 1,
     "snapshot_persistence_max_cache_size_mib": 1,
     "snapshot_persistence_max_tmp_size_mib": 1,
     "spontaneous_reboot_reason": "spontaneous"
@@ -761,6 +909,8 @@ TEST_F(FeedbackConfigTest, SpontaneousRebootReasonSpontaneous) {
 
 TEST_F(FeedbackConfigTest, SpontaneousRebootReasonBriefPowerLoss) {
   const std::optional<FeedbackConfig> config = ParseConfig(R"({
+    "report_persistence_max_cache_size_kib": 1,
+    "report_persistence_max_tmp_size_kib": 1,
     "snapshot_persistence_max_cache_size_mib": 1,
     "snapshot_persistence_max_tmp_size_mib": 1,
     "spontaneous_reboot_reason": "brief_power_loss"
@@ -772,6 +922,8 @@ TEST_F(FeedbackConfigTest, SpontaneousRebootReasonBriefPowerLoss) {
 
 TEST_F(FeedbackConfigTest, SpontaneousRebootReasonHardReset) {
   const std::optional<FeedbackConfig> config = ParseConfig(R"({
+    "report_persistence_max_cache_size_kib": 1,
+    "report_persistence_max_tmp_size_kib": 1,
     "snapshot_persistence_max_cache_size_mib": 1,
     "snapshot_persistence_max_tmp_size_mib": 1,
     "spontaneous_reboot_reason": "hard_reset"

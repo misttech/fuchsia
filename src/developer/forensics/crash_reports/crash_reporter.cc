@@ -52,10 +52,13 @@ constexpr zx::duration kSnapshotTimeout = zx::min(1);
 //
 // Note: This function traverses report store in the filesystem and should be used sparingly.
 ReportId SeedReportId() {
-  // The next ReportId will be one more than the largest in the report store.
-  auto all_report_ids = ReportStoreMetadata(kReportStoreTmpPath, kReportStoreMaxTmpSize).Reports();
+  // The next ReportId will be one more than the largest in the report store. We're just taking
+  // stock of what's already there, so we pass in very large max size.
+  auto all_report_ids =
+      ReportStoreMetadata(kReportStoreTmpPath, /*max_size=*/StorageSize::Megabytes(100)).Reports();
   const auto all_cache_report_ids =
-      ReportStoreMetadata(kReportStoreCachePath, kReportStoreMaxCacheSize).Reports();
+      ReportStoreMetadata(kReportStoreCachePath, /*max_size=*/StorageSize::Megabytes(100))
+          .Reports();
   all_report_ids.insert(all_report_ids.end(), all_cache_report_ids.begin(),
                         all_cache_report_ids.end());
 

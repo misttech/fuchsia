@@ -211,6 +211,14 @@ std::optional<SnapshotExclusionConfig> ParseSnapshotExclusionConfig(
 constexpr char kFeedbackConfigSchema[] = R"({
   "type": "object",
   "properties": {
+    "report_persistence_max_cache_size_kib": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "report_persistence_max_tmp_size_kib": {
+      "type": "integer",
+      "minimum": 1
+    },
     "snapshot_persistence_max_cache_size_mib": {
       "type": "number"
     },
@@ -227,6 +235,8 @@ constexpr char kFeedbackConfigSchema[] = R"({
     }
   },
   "required": [
+    "report_persistence_max_cache_size_kib",
+    "report_persistence_max_tmp_size_kib",
     "snapshot_persistence_max_cache_size_mib",
     "snapshot_persistence_max_tmp_size_mib",
     "spontaneous_reboot_reason"
@@ -236,6 +246,12 @@ constexpr char kFeedbackConfigSchema[] = R"({
 
 std::optional<FeedbackConfig> ParseFeedbackConfig(const rapidjson::Document& json) {
   FeedbackConfig config;
+
+  const uint64_t max_report_cache_size_kib = json[kReportPersistenceMaxCacheSizeKey].GetUint64();
+  config.report_persistence_max_cache_size = StorageSize::Kilobytes(max_report_cache_size_kib);
+
+  const uint64_t max_report_tmp_size_kib = json[kReportPersistenceMaxTmpSizeKey].GetUint64();
+  config.report_persistence_max_tmp_size = StorageSize::Kilobytes(max_report_tmp_size_kib);
 
   if (const int64_t max_cache_size_mib = json[kSnapshotPersistenceMaxCacheSizeKey].GetInt64();
       max_cache_size_mib > 0) {

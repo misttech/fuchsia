@@ -124,6 +124,9 @@ int main() {
           },
           CrashReports::Options{
               .build_type_config = *build_type_config,
+              .report_persistence_max_tmp_size = feedback_config->report_persistence_max_tmp_size,
+              .report_persistence_max_cache_size =
+                  feedback_config->report_persistence_max_cache_size,
               .snapshot_store_max_archives_size = kSnapshotArchivesMaxSize,
               .snapshot_persistence_max_tmp_size =
                   feedback_config->snapshot_persistence_max_tmp_size,

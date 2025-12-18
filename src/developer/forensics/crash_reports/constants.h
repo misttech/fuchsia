@@ -18,24 +18,15 @@ constexpr char kHourlySnapshotSignature[] = "fuchsia-hourly-snapshot";
 
 constexpr const char* kGarbageCollectedSnapshotsPath = "/tmp/garbage_collected_snapshots.txt";
 
-// Up to 512KiB of the non-snapshot portion of reports, like annotations and the minidump, are
-// stored on disk under /cache/reports. This allows some report data to be uploaded in the event of
-// a device shutdown.
+// The non-snapshot portion of reports, like annotations and the minidump, are stored on disk under
+// /cache/reports. This allows some report data to be uploaded in the event of a device shutdown.
 //
-// When a crash occurs, we check if its non-snapshot parts will fit in the remaining space
-// alloted to /cache. If there is enough space available, the report is written to /cache, otherwise
-// it is written to /tmp. Once in /cache those reports are not subject to garbage collection, unlike
-// /tmp; they are only deleted once the report is no longer needed by the component.
+// When a crash occurs, we check if its non-snapshot parts will fit in the remaining space allotted
+// to /cache. If there is enough space available, the report is written to /cache, otherwise it is
+// written to /tmp. Once in /cache those reports are not subject to garbage collection, unlike /tmp;
+// they are only deleted once the report is no longer needed by the component.
 constexpr const char* kReportStoreTmpPath = "/tmp/reports";
 constexpr const char* kReportStoreCachePath = "/cache/reports";
-
-// Other report data can occupy up to 5 MB of memory and disk.
-constexpr StorageSize kReportStoreMaxSize = StorageSize::Megabytes(5u);
-
-// Minidumps and annotations (the two most common non-snapshot files in crash reports) are usually
-// in the order of 64 - 128KiB. This lets a device store 4-8 of them on disk.
-constexpr StorageSize kReportStoreMaxCacheSize = StorageSize::Kilobytes(512);
-constexpr StorageSize kReportStoreMaxTmpSize = kReportStoreMaxSize - kReportStoreMaxCacheSize;
 
 // If a crash report is moved from memory to disk, the associated snapshot will do the same. To
 // prevent the possibility of a stranded snapshot, if the first report moved to disk that's

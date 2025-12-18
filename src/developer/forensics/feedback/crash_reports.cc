@@ -42,10 +42,10 @@ CrashReports::CrashReports(async_dispatcher_t* dispatcher,
       report_store_(&tags_, info_context_, annotation_manager,
                     /*temp_reports_root=*/
                     crash_reports::ReportStore::Root{crash_reports::kReportStoreTmpPath,
-                                                     crash_reports::kReportStoreMaxTmpSize},
+                                                     options.report_persistence_max_tmp_size},
                     /*persistent_reports_root=*/
                     crash_reports::ReportStore::Root{crash_reports::kReportStoreCachePath,
-                                                     crash_reports::kReportStoreMaxCacheSize},
+                                                     options.report_persistence_max_cache_size},
                     /*temp_snapshots_root=*/
                     GetSnapshotRoot(crash_reports::kSnapshotStoreTmpPath,
                                     options.snapshot_persistence_max_tmp_size),
