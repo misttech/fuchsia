@@ -1366,12 +1366,10 @@ fn rdnss_option_builder() -> packet_formats_ndp::options::NdpOptionBuilder<'stat
     builder
 }
 
-#[fuchsia::test]
-async fn join_leave_nduseropt_multicast_group() {
+#[netstack_test]
+async fn join_leave_nduseropt_multicast_group(name: &str) {
     let sandbox = netemul::TestSandbox::new().expect("create sandbox");
-    let main_realm = sandbox
-        .create_netstack_realm::<Netstack3, _>(format!("main-netstack"))
-        .expect("create realm");
+    let main_realm = sandbox.create_netstack_realm::<Netstack3, _>(name).expect("create realm");
 
     let (netlink, _join_handle) = start_test_netlink(&main_realm).await;
 
@@ -1446,10 +1444,10 @@ async fn join_leave_nduseropt_multicast_group() {
         .expect("del group should succeed");
 }
 
-#[fuchsia::test]
-async fn netlink_uses_local_route_table() {
+#[netstack_test]
+async fn netlink_uses_local_route_table(name: &str) {
     let sandbox = netemul::TestSandbox::new().expect("create sandbox");
-    let realm = sandbox.create_netstack_realm::<Netstack3, _>("netstack").expect("create realm");
+    let realm = sandbox.create_netstack_realm::<Netstack3, _>(name).expect("create realm");
 
     let (netlink, join_handle) = start_test_netlink(&realm).await;
 
