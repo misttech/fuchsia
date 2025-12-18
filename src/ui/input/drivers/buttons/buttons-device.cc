@@ -529,9 +529,6 @@ zx_status_t ButtonsDevice::ConfigureInterrupt(size_t idx, uint64_t int_port) {
     FDF_LOG(ERROR, "Config for gpio %zu missing flags", idx);
     return ZX_ERR_BAD_STATE;
   }
-  if (flags.value() & fuchsia_buttons::GpioFlag::kWakeVector) {
-    interrupt_options |= fuchsia_hardware_gpio::InterruptOptions::kWakeable;
-  }
 
   fidl::WireResult interrupt_result = gpio.client->GetInterrupt(interrupt_options);
   if (!interrupt_result.ok()) {

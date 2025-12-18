@@ -195,7 +195,6 @@ class AmlGpioTest : public testing::Test {
       interrupt_mmio[0x3c23 * sizeof(uint32_t)].ExpectRead(0x00000000).ExpectWrite(0x00000007);
     });
 
-    zx::interrupt out_int;
     fdf::Arena arena('GPIO');
 
     fdf::WireUnownedResult result = client().buffer(arena)->GetInterrupt(0x0B, {});
@@ -747,7 +746,6 @@ TEST_F(S905d2AmlGpioTest, TimestampMonoInterruptOption) {
 
   constexpr auto kOptions = fuchsia_hardware_gpio::InterruptOptions::kTimestampMono;
 
-  zx::interrupt out_int;
   fdf::Arena arena('GPIO');
   fdf::WireUnownedResult result = client().buffer(arena)->GetInterrupt(0x0B, kOptions);
   ASSERT_TRUE(result.ok());
@@ -768,11 +766,13 @@ TEST_F(S905d2AmlGpioTest, WakeableInterruptOption) {
     interrupt_mmio[0x3c23 * sizeof(uint32_t)].ExpectRead(0x00000000).ExpectWrite(0x00000007);
   });
 
-  constexpr auto kOptions = fuchsia_hardware_gpio::InterruptOptions::kWakeable;
-
-  zx::interrupt out_int;
   fdf::Arena arena('GPIO');
-  fdf::WireUnownedResult result = client().buffer(arena)->GetInterrupt(0x0B, kOptions);
+  {
+    auto config =
+        fuchsia_hardware_pin::wire::Configuration::Builder(arena).wake_vector(true).Build();
+    fdf::WireUnownedResult result = client().buffer(arena)->Configure(0x0B, config);
+  }
+  fdf::WireUnownedResult result = client().buffer(arena)->GetInterrupt(0x0B, {});
   ASSERT_TRUE(result.ok());
   EXPECT_TRUE(result->is_ok());
 }

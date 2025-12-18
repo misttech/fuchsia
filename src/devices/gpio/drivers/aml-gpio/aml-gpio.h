@@ -18,6 +18,7 @@
 #include <array>
 #include <cstdint>
 #include <optional>
+#include <set>
 
 #include <fbl/array.h>
 
@@ -117,6 +118,7 @@ class AmlGpio : public fdf::WireServer<fuchsia_hardware_pinimpl::PinImpl> {
   fbl::Array<InterruptInfo> irq_info_;
   uint8_t irq_status_{};
   std::array<std::optional<fuchsia_hardware_gpio::InterruptMode>, kMaxGpioIndex + 1> pin_irq_modes_;
+  std::set<uint32_t> wake_vector_pins_;
   fdf::ServerBindingGroup<fuchsia_hardware_pinimpl::PinImpl> bindings_;
 };
 

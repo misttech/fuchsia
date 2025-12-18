@@ -178,6 +178,7 @@
 		pins = <A311D_GPIOAO(7)>;
 		bias-disable;
 		function = <0 0>;
+		fuchsia,interrupt-wake-vector;
 	};
 
 	fusb302_pins: fusb302-pins {

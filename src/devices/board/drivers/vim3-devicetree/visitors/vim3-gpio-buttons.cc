@@ -22,7 +22,7 @@ zx::result<> Vim3GpioButtonsVisitor::DriverVisit(fdf_devicetree::Node& node,
 
   static const std::vector<fuchsia_buttons::GpioConfig> kGpios = {
       {{.type = fuchsia_buttons::GpioType::WithInterrupt({}),
-        .flags = fuchsia_buttons::GpioFlag::kInverted | fuchsia_buttons::GpioFlag::kWakeVector}},
+        .flags = fuchsia_buttons::GpioFlag::kInverted}},
   };
 
   static const fuchsia_buttons::GpioButtonsMetadata kMetadata(

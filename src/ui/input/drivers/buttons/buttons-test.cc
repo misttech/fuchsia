@@ -30,11 +30,6 @@ const std::vector<fuchsia_buttons::GpioConfig> kGpiosDirect = {
     {{.type = fuchsia_buttons::GpioType::WithInterrupt({}), .flags = {{}}}},
 };
 
-const std::vector<fuchsia_buttons::GpioConfig> kGpiosWakeable = {
-    {{.type = fuchsia_buttons::GpioType::WithInterrupt({}),
-      .flags = fuchsia_buttons::GpioFlag::kWakeVector}},
-};
-
 const std::vector<fuchsia_buttons::GpioButtonConfig> kButtonsMultiple = {
     {{
         .type = fuchsia_buttons::GpioButtonType::WithDirect({}),
@@ -136,7 +131,6 @@ static constexpr size_t kMaxGpioServers = 4;
 
 enum MetadataVersion : uint8_t {
   kMetadataSingleButtonDirect = 0,
-  kMetadataWakeable,
   kMetadataMultiple,
   kMetadataDuplicate,
   kMetadataMatrix,
@@ -280,11 +274,6 @@ class ButtonsTestEnvironment : public fdf_testing::Environment {
         buttons_names_ = {"volume-up"};
         buttons = kButtonsDirect;
         gpios_ = std::span(kGpiosDirect);
-      } break;
-      case kMetadataWakeable: {
-        buttons_names_ = {"volume-up"};
-        buttons = kButtonsDirect;
-        gpios_ = std::span(kGpiosWakeable);
       } break;
       case kMetadataMultiple: {
         buttons_names_ = {"volume-up", "mic-privacy", "cam-mute"};
@@ -829,67 +818,6 @@ TEST_P(ParameterizedButtonsTest, CamMute) {
     env.SetGpioReadResponse(2, 0);
 
     env.fake_gpio_interrupts_[2].trigger(0, zx::clock::get_boot());
-  });
-
-  {
-    auto result = reader->ReadInputReports();
-    ASSERT_TRUE(result.ok());
-    ASSERT_TRUE(result->is_ok());
-    auto& reports = result->value()->reports;
-
-    ASSERT_EQ(reports.size(), 1U);
-    auto& report = reports[0];
-
-    ASSERT_TRUE(report.has_event_time());
-    ASSERT_TRUE(report.has_consumer_control());
-    auto& consumer_control = report.consumer_control();
-
-    ASSERT_TRUE(consumer_control.has_pressed_buttons());
-    ASSERT_EQ(consumer_control.pressed_buttons().size(), 0U);
-  }
-}
-
-TEST_P(ParameterizedButtonsTest, DirectButtonWakeable) {
-  driver_test().RunInEnvironmentTypeContext([](ButtonsTestEnvironment& env) {
-    env.SetExpectedInterruptOptions(fuchsia_hardware_gpio::InterruptOptions::kWakeable);
-    env.SetExpectedInterruptMode(fuchsia_hardware_gpio::InterruptMode::kEdgeHigh);
-  });
-
-  auto result = Init(kMetadataWakeable, /* suspend_enabled */ GetParam());
-  ASSERT_TRUE(result.is_ok());
-
-  auto reader = GetReader();
-
-  // Push.
-  driver_test().RunInEnvironmentTypeContext([](ButtonsTestEnvironment& env) {
-    env.SetDefaultGpioReadResponse(0, 1);
-
-    env.fake_gpio_interrupts_[0].trigger(0, zx::clock::get_boot());
-  });
-
-  {
-    auto result = reader->ReadInputReports();
-    ASSERT_TRUE(result.ok());
-    ASSERT_TRUE(result->is_ok());
-    auto& reports = result->value()->reports;
-
-    ASSERT_EQ(reports.size(), 1U);
-    auto& report = reports[0];
-
-    ASSERT_TRUE(report.has_event_time());
-    ASSERT_TRUE(report.has_consumer_control());
-    auto& consumer_control = report.consumer_control();
-
-    ASSERT_TRUE(consumer_control.has_pressed_buttons());
-    ASSERT_EQ(consumer_control.pressed_buttons().size(), 1U);
-    EXPECT_EQ(consumer_control.pressed_buttons()[0],
-              fuchsia_input_report::wire::ConsumerControlButton::kVolumeUp);
-  }
-
-  // Release.
-  driver_test().RunInEnvironmentTypeContext([](ButtonsTestEnvironment& env) {
-    env.SetDefaultGpioReadResponse(0, 0);
-    env.fake_gpio_interrupts_[0].trigger(0, zx::clock::get_boot());
   });
 
   {

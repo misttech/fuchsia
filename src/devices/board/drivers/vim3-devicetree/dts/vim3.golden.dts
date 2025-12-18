@@ -636,6 +636,7 @@
 
 			gpio-buttons-pins {
 				bias-disable;
+				fuchsia,interrupt-wake-vector;
 				function = <0x00 0x00>;
 				phandle = <0x35>;
 				pins = <0x5c>;

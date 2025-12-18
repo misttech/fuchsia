@@ -515,7 +515,7 @@ void AmlGpio::GetInterrupt(fuchsia_hardware_pinimpl::wire::PinImplGetInterruptRe
   if (request->options & fuchsia_hardware_gpio::wire::InterruptOptions::kTimestampMono) {
     flags |= ZX_INTERRUPT_TIMESTAMP_MONO;
   }
-  if (request->options & fuchsia_hardware_gpio::wire::InterruptOptions::kWakeable) {
+  if (wake_vector_pins_.contains(request->pin)) {
     // TODO(b/361851116): Use ZX_INTERRUPT_WAKE_VECTOR when syscall-next is available.
     flags |= /* ZX_INTERRUPT_WAKE_VECTOR */ 0x20;
   }
@@ -675,6 +675,9 @@ void AmlGpio::Configure(fuchsia_hardware_pinimpl::wire::PinImplConfigureRequest*
   }
   if (request->config.has_drive_strength_ua()) {
     SetDriveStrength(request->pin, block, request->config.drive_strength_ua());
+  }
+  if (request->config.has_wake_vector() && request->config.wake_vector()) {
+    wake_vector_pins_.insert(request->pin);
   }
 
   auto new_config = fuchsia_hardware_pin::wire::Configuration::Builder(arena)

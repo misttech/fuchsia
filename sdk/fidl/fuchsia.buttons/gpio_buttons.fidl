@@ -69,9 +69,6 @@ type GpioType = flexible union {
 type GpioFlag = flexible bits {
     /// Invert the gpio's signal.
     INVERTED = 0x80;
-
-    /// Use the gpio as a wake vector.
-    WAKE_VECTOR = 0x40;
 };
 
 /// Configuration information of a button that uses gpios to function.
