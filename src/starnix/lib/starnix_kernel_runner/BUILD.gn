@@ -93,7 +93,6 @@ rustc_library("starnix_kernel_runner") {
 
   test_deps = [
     "//src/lib/fuchsia",
-    "//src/starnix/kernel/core:starnix_core_test",
     "//third_party/rust_crates:assert_matches",
   ]
 
