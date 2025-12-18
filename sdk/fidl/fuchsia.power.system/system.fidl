@@ -176,26 +176,24 @@ open protocol SuspendBlocker {
     /// SuspendBlocker wants to preempt suspend operations, it MUST call
     /// `ActivityGovernor.AcquireWakeLease` before replying to this call.
     ///
-    /// ExecutionState will be at its SUSPENDING level for the duration of this
-    /// call. Consequently, a SuspendBlocker MUST NOT call
-    /// `ActivityGovernor.TakeApplicationActivityLease` nor perform any other
-    ///  action that blocks on Execution State reaching a level other than
-    /// INACTIVE. Doing so will result in a deadlock. (However, AcquireWakeLease
-    /// does _not_ block in this way and is safe to call.)
+    /// SuspendBlocker MUST NOT call
+    /// `ActivityGovernor.TakeApplicationActivityLease` nor perform any action
+    /// that blocks on raising Execution State above its Inactive level.
+    /// (However, AcquireWakeLease does _not_ block in this way and is safe to
+    /// call.) Doing so will currently result in a deadlock. This constraint
+    /// will eventually be removed; see https://fxbug.dev/391429689.
     flexible BeforeSuspend() -> ();
 
     /// Called after system activity governor is aware that the hardware
     /// platform has resumed.
     ///
-    /// For the duration of this call, ExecutionState is at level INACTIVE,
-    /// but all dependencies of `ExecutionStateLevel::SUSPENDING` are guaranteed
-    /// be satisified.
+    /// All dependencies of `ExecutionStateLevel::SUSPENDING` are guaranteed to
+    /// be satisified when this call is issued, and the `BeforeSuspend` method
+    /// will be invoked before that guarantee is removed.
     ///
-    /// Consequently, a SuspendBlocker MUST NOT call
-    /// `ActivityGovernor.TakeApplicationActivityLease` nor perform any other
-    ///  action that blocks on Execution State reaching a level other than
-    /// INACTIVE. Doing so will result in a deadlock. (However, AcquireWakeLease
-    /// does _not_ block in this way and is safe to call.)
+    /// SAG does not block on the response to this method, so the SuspendBlocker
+    /// may safely take actions that block on raising Execution State's power
+    /// level. In particular, it is not affected by https://fxbug.dev/391429689.
     flexible AfterResume() -> ();
 };
 
