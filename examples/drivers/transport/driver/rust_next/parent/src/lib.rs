@@ -7,19 +7,20 @@ use fidl_next::{Request, Responder, ServerEnd};
 use fidl_next_fuchsia_hardware_i2cimpl::device::{GetMaxTransferSize, SetBitrate, Transact};
 use fidl_next_fuchsia_hardware_i2cimpl::generic::ReadData;
 use fidl_next_fuchsia_hardware_i2cimpl::{self as i2cimpl, DeviceSetBitrateResponse};
-use fuchsia_async::{Scope, ScopeHandle};
+use fuchsia_async::Scope;
 use fuchsia_component::server::ServiceFs;
 use futures::StreamExt as _;
 use log::{info, warn};
 use zx::Status;
 
 /// The implementation of our driver will live in this object, which implements [`Driver`].
-#[allow(unused)]
 struct DriverTransportParent {
     /// The [`NodeProxy`] is our handle to the node we bound to. We need to keep this handle
     /// open to keep the node around.
+    #[expect(unused)]
     node: Node,
     /// The scope for the driver.
+    #[expect(unused)]
     scope: Scope,
 }
 
@@ -63,13 +64,11 @@ impl i2cimpl::DeviceServerHandler for DeviceServer {
     }
 }
 
-struct Service {
-    scope: ScopeHandle,
-}
+struct Service;
 
 impl i2cimpl::ServiceHandler for Service {
     fn device(&self, server_end: ServerEnd<i2cimpl::Device>) {
-        server_end.spawn_on(DeviceServer, &self.scope).detach_on_drop();
+        server_end.spawn(DeviceServer).detach();
     }
 }
 
@@ -87,7 +86,7 @@ impl Driver for DriverTransportParent {
         info!("Offering an i2c service in the outgoing directory");
         let mut outgoing = ServiceFs::new();
         let offer = ServiceOffer::<i2cimpl::Service>::new_next()
-            .add_default_named_next(&mut outgoing, "default", Service { scope: scope.to_handle() })
+            .add_default_named_next(&mut outgoing, "default", Service)
             .build_driver_offer();
 
         info!("Creating child node with a service offer");
