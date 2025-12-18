@@ -119,7 +119,10 @@
             dependency: "weak",
         },
         {
-            config: "fuchsia.system-updater.ManifestPublicKeys",
+            config: [
+                "fuchsia.system-updater.ManifestPublicKeys",
+                "fuchsia.zircon.system.pkgfs.cmd",
+            ],
             from: "parent",
             to: "#pkg-recovery",
         },
