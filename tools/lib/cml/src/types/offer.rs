@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::error::Location;
 use crate::types::common::*;
 use crate::{
     AnyRef, AsClause, AsClauseContext, Canonicalize, CapabilityClause, CapabilityId, DictionaryRef,
@@ -228,6 +229,32 @@ impl Offer {
             dependency: None,
             rights: None,
             subdir: None,
+            event_stream: None,
+            scope: None,
+            availability: None,
+            source_availability: None,
+            target_availability: None,
+        }
+    }
+}
+
+impl Default for Offer {
+    fn default() -> Self {
+        Self {
+            from: OneOrMany::One(OfferFromRef::Self_),
+            to: OneOrMany::Many(vec![]),
+            service: None,
+            protocol: None,
+            directory: None,
+            storage: None,
+            runner: None,
+            resolver: None,
+            dictionary: None,
+            config: None,
+            r#as: None,
+            rights: None,
+            subdir: None,
+            dependency: None,
             event_stream: None,
             scope: None,
             availability: None,
@@ -614,6 +641,7 @@ pub struct ParsedOffer {
     pub scope: Option<Spanned<OneOrMany<EventScope>>>,
     pub availability: Option<Spanned<Availability>>,
     pub source_availability: Option<Spanned<SourceAvailability>>,
+    pub target_availability: Option<Spanned<TargetAvailability>>,
 }
 
 #[derive(Debug, Clone)]
@@ -636,6 +664,7 @@ pub struct ContextOffer {
     pub scope: Option<ContextSpanned<OneOrMany<EventScope>>>,
     pub availability: Option<ContextSpanned<Availability>>,
     pub source_availability: Option<ContextSpanned<SourceAvailability>>,
+    pub target_availability: Option<ContextSpanned<TargetAvailability>>,
 }
 
 impl ContextCapabilityClause for ContextOffer {
@@ -727,10 +756,46 @@ impl PartialEq for ContextOffer {
             && cmp!(scope)
             && cmp!(availability)
             && cmp!(source_availability)
+            && cmp!(target_availability)
     }
 }
 
 impl Eq for ContextOffer {}
+
+impl Default for ContextOffer {
+    fn default() -> Self {
+        let synthetic_origin = Origin {
+            file: Arc::new(PathBuf::from("synthetic")),
+            location: Location { line: 0, column: 0 },
+        };
+
+        Self {
+            from: ContextSpanned {
+                value: OneOrMany::One(OfferFromRef::Self_),
+                origin: synthetic_origin.clone(),
+            },
+            to: ContextSpanned { value: OneOrMany::Many(vec![]), origin: synthetic_origin },
+
+            service: None,
+            protocol: None,
+            directory: None,
+            storage: None,
+            runner: None,
+            resolver: None,
+            dictionary: None,
+            config: None,
+            r#as: None,
+            rights: None,
+            subdir: None,
+            dependency: None,
+            event_stream: None,
+            scope: None,
+            availability: None,
+            source_availability: None,
+            target_availability: None,
+        }
+    }
+}
 
 impl ContextPathClause for ContextOffer {
     fn path(&self) -> Option<&ContextSpanned<Path>> {
@@ -776,6 +841,7 @@ impl Hydrate for ParsedOffer {
             scope: hydrate_opt_simple(self.scope, file, buffer),
             availability: hydrate_opt_simple(self.availability, file, buffer),
             source_availability: hydrate_opt_simple(self.source_availability, file, buffer),
+            target_availability: hydrate_opt_simple(self.target_availability, file, buffer),
         })
     }
 }

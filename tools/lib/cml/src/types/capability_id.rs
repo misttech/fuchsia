@@ -916,3 +916,815 @@ impl fmt::Display for CapabilityId<'_> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::error::Location;
+    use crate::types::offer::Offer;
+    use crate::types::r#use::Use;
+    use assert_matches::assert_matches;
+    use std::path::PathBuf;
+    use std::sync::Arc;
+
+    #[test]
+    fn test_offer_service() -> Result<(), Error> {
+        let a: Name = "a".parse().unwrap();
+        let b: Name = "b".parse().unwrap();
+        assert_eq!(
+            CapabilityId::from_offer_expose(&Offer {
+                service: Some(OneOrMany::One(a.clone())),
+                ..Offer::default()
+            },)?,
+            vec![CapabilityId::Service(&a)]
+        );
+
+        let synthetic_origin = Origin {
+            file: Arc::new(PathBuf::from("synthetic")),
+            location: Location { line: 0, column: 0 },
+        };
+
+        assert_eq!(
+            CapabilityId::from_context_offer(&ContextSpanned {
+                value: ContextOffer {
+                    service: Some(ContextSpanned {
+                        value: OneOrMany::One(a.clone()),
+                        origin: synthetic_origin.clone(),
+                    }),
+                    ..ContextOffer::default()
+                },
+                origin: synthetic_origin.clone(),
+            })?,
+            vec![(CapabilityId::Service(&a), synthetic_origin.clone())]
+        );
+
+        assert_eq!(
+            CapabilityId::from_offer_expose(&Offer {
+                service: Some(OneOrMany::Many(vec![a.clone(), b.clone()],)),
+                ..Offer::default()
+            },)?,
+            vec![CapabilityId::Service(&a), CapabilityId::Service(&b)]
+        );
+
+        assert_eq!(
+            CapabilityId::from_context_offer(&ContextSpanned {
+                value: ContextOffer {
+                    service: Some(ContextSpanned {
+                        value: OneOrMany::Many(vec![a.clone(), b.clone()]),
+                        origin: synthetic_origin.clone(),
+                    }),
+                    ..ContextOffer::default()
+                },
+                origin: synthetic_origin.clone(),
+            })?,
+            vec![
+                (CapabilityId::Service(&a), synthetic_origin.clone()),
+                (CapabilityId::Service(&b), synthetic_origin.clone())
+            ]
+        );
+
+        // "as" aliasing.
+        assert_eq!(
+            CapabilityId::from_offer_expose(&Offer {
+                service: Some(OneOrMany::One(a.clone())),
+                r#as: Some(b.clone()),
+                ..Offer::default()
+            },)?,
+            vec![CapabilityId::Service(&b)]
+        );
+
+        assert_eq!(
+            CapabilityId::from_context_offer(&ContextSpanned {
+                value: ContextOffer {
+                    service: Some(ContextSpanned {
+                        value: OneOrMany::One(a.clone()),
+                        origin: synthetic_origin.clone(),
+                    }),
+                    r#as: Some(ContextSpanned {
+                        value: b.clone(),
+                        origin: synthetic_origin.clone()
+                    }),
+                    ..ContextOffer::default()
+                },
+                origin: synthetic_origin.clone(),
+            })?,
+            vec![(CapabilityId::Service(&b), synthetic_origin)]
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_use_service() -> Result<(), Error> {
+        let a: Name = "a".parse().unwrap();
+        let b: Name = "b".parse().unwrap();
+
+        let synthetic_origin = Origin {
+            file: Arc::new(PathBuf::from("synthetic")),
+            location: Location { line: 0, column: 0 },
+        };
+
+        assert_eq!(
+            CapabilityId::from_use(&Use {
+                service: Some(OneOrMany::One(a.clone())),
+                ..Use::default()
+            },)?,
+            vec![CapabilityId::UsedService("/svc/a".parse().unwrap())]
+        );
+
+        assert_eq!(
+            CapabilityId::from_context_use(&ContextSpanned {
+                value: ContextUse {
+                    service: Some(ContextSpanned {
+                        value: OneOrMany::One(a.clone()),
+                        origin: synthetic_origin.clone(),
+                    }),
+                    ..ContextUse::default()
+                },
+                origin: synthetic_origin.clone(),
+            })?,
+            vec![(CapabilityId::UsedService("/svc/a".parse().unwrap()), synthetic_origin.clone())]
+        );
+
+        assert_eq!(
+            CapabilityId::from_use(&Use {
+                service: Some(OneOrMany::Many(vec![a.clone(), b.clone(),],)),
+                ..Use::default()
+            },)?,
+            vec![
+                CapabilityId::UsedService("/svc/a".parse().unwrap()),
+                CapabilityId::UsedService("/svc/b".parse().unwrap())
+            ]
+        );
+
+        assert_eq!(
+            CapabilityId::from_context_use(&ContextSpanned {
+                value: ContextUse {
+                    service: Some(ContextSpanned {
+                        value: OneOrMany::Many(vec![a.clone(), b.clone(),]),
+                        origin: synthetic_origin.clone(),
+                    }),
+                    ..ContextUse::default()
+                },
+                origin: synthetic_origin.clone(),
+            })?,
+            vec![
+                (CapabilityId::UsedService("/svc/a".parse().unwrap()), synthetic_origin.clone()),
+                (CapabilityId::UsedService("/svc/b".parse().unwrap()), synthetic_origin.clone())
+            ]
+        );
+
+        assert_eq!(
+            CapabilityId::from_use(&Use {
+                service: Some(OneOrMany::One(a.clone())),
+                path: Some("/b".parse().unwrap()),
+                ..Use::default()
+            },)?,
+            vec![CapabilityId::UsedService("/b".parse().unwrap())]
+        );
+
+        assert_eq!(
+            CapabilityId::from_context_use(&ContextSpanned {
+                value: ContextUse {
+                    service: Some(ContextSpanned {
+                        value: OneOrMany::One(a.clone()),
+                        origin: synthetic_origin.clone(),
+                    }),
+                    path: Some(ContextSpanned {
+                        value: "/b".parse().unwrap(),
+                        origin: synthetic_origin.clone(),
+                    }),
+                    ..ContextUse::default()
+                },
+                origin: synthetic_origin.clone(),
+            })?,
+            vec![(CapabilityId::UsedService("/b".parse().unwrap()), synthetic_origin.clone())]
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_use_event_stream() -> Result<(), Error> {
+        let synthetic_origin = Origin {
+            file: Arc::new(PathBuf::from("synthetic")),
+            location: Location { line: 0, column: 0 },
+        };
+
+        assert_eq!(
+            CapabilityId::from_use(&Use {
+                event_stream: Some(OneOrMany::One(Name::new("test".to_string()).unwrap())),
+                path: Some(cm_types::Path::new("/svc/myevent".to_string()).unwrap()),
+                ..Use::default()
+            },)?,
+            vec![CapabilityId::UsedEventStream("/svc/myevent".parse().unwrap()),]
+        );
+
+        assert_eq!(
+            CapabilityId::from_context_use(&ContextSpanned {
+                value: ContextUse {
+                    event_stream: Some(ContextSpanned {
+                        value: OneOrMany::One(Name::new("test".to_string()).unwrap()),
+                        origin: synthetic_origin.clone(),
+                    }),
+                    path: Some(ContextSpanned {
+                        value: cm_types::Path::new("/svc/myevent".to_string()).unwrap(),
+                        origin: synthetic_origin.clone(),
+                    }),
+                    ..ContextUse::default()
+                },
+                origin: synthetic_origin.clone(),
+            })?,
+            vec![(
+                CapabilityId::UsedEventStream("/svc/myevent".parse().unwrap()),
+                synthetic_origin.clone()
+            )]
+        );
+
+        assert_eq!(
+            CapabilityId::from_use(&Use {
+                event_stream: Some(OneOrMany::One(Name::new("test".to_string()).unwrap())),
+                ..Use::default()
+            },)?,
+            vec![CapabilityId::UsedEventStream(
+                "/svc/fuchsia.component.EventStream".parse().unwrap()
+            ),]
+        );
+
+        assert_eq!(
+            CapabilityId::from_context_use(&ContextSpanned {
+                value: ContextUse {
+                    event_stream: Some(ContextSpanned {
+                        value: OneOrMany::One(Name::new("test".to_string()).unwrap()),
+                        origin: synthetic_origin.clone(),
+                    }),
+                    ..ContextUse::default()
+                },
+                origin: synthetic_origin.clone(),
+            })?,
+            vec![(
+                CapabilityId::UsedEventStream(
+                    "/svc/fuchsia.component.EventStream".parse().unwrap()
+                ),
+                synthetic_origin.clone()
+            )]
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_offer_protocol() -> Result<(), Error> {
+        let a: Name = "a".parse().unwrap();
+        let b: Name = "b".parse().unwrap();
+
+        let synthetic_origin = Origin {
+            file: Arc::new(PathBuf::from("synthetic")),
+            location: Location { line: 0, column: 0 },
+        };
+
+        assert_eq!(
+            CapabilityId::from_offer_expose(&Offer {
+                protocol: Some(OneOrMany::One(a.clone())),
+                ..Offer::default()
+            },)?,
+            vec![CapabilityId::Protocol(&a)]
+        );
+
+        assert_eq!(
+            CapabilityId::from_context_offer(&ContextSpanned {
+                value: ContextOffer {
+                    protocol: Some(ContextSpanned {
+                        value: OneOrMany::One(a.clone()),
+                        origin: synthetic_origin.clone(),
+                    }),
+                    ..ContextOffer::default()
+                },
+                origin: synthetic_origin.clone(),
+            })?,
+            vec![(CapabilityId::Protocol(&a), synthetic_origin.clone())]
+        );
+
+        assert_eq!(
+            CapabilityId::from_offer_expose(&Offer {
+                protocol: Some(OneOrMany::Many(vec![a.clone(), b.clone()],)),
+                ..Offer::default()
+            },)?,
+            vec![CapabilityId::Protocol(&a), CapabilityId::Protocol(&b)]
+        );
+
+        assert_eq!(
+            CapabilityId::from_context_offer(&ContextSpanned {
+                value: ContextOffer {
+                    protocol: Some(ContextSpanned {
+                        value: OneOrMany::Many(vec![a.clone(), b.clone()]),
+                        origin: synthetic_origin.clone(),
+                    }),
+                    ..ContextOffer::default()
+                },
+                origin: synthetic_origin.clone(),
+            })?,
+            vec![
+                (CapabilityId::Protocol(&a), synthetic_origin.clone()),
+                (CapabilityId::Protocol(&b), synthetic_origin)
+            ]
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_use_protocol() -> Result<(), Error> {
+        let a: Name = "a".parse().unwrap();
+        let b: Name = "b".parse().unwrap();
+
+        let synthetic_origin = Origin {
+            file: Arc::new(PathBuf::from("synthetic")),
+            location: Location { line: 0, column: 0 },
+        };
+
+        assert_eq!(
+            CapabilityId::from_use(&Use {
+                protocol: Some(OneOrMany::One(a.clone())),
+                ..Use::default()
+            },)?,
+            vec![CapabilityId::UsedProtocol("/svc/a".parse().unwrap())]
+        );
+
+        assert_eq!(
+            CapabilityId::from_context_use(&ContextSpanned {
+                value: ContextUse {
+                    protocol: Some(ContextSpanned {
+                        value: OneOrMany::One(a.clone()),
+                        origin: synthetic_origin.clone(),
+                    }),
+                    ..ContextUse::default()
+                },
+                origin: synthetic_origin.clone(),
+            })?,
+            vec![(CapabilityId::UsedProtocol("/svc/a".parse().unwrap()), synthetic_origin.clone())]
+        );
+        assert_eq!(
+            CapabilityId::from_use(&Use {
+                protocol: Some(OneOrMany::Many(vec![a.clone(), b.clone(),],)),
+                ..Use::default()
+            },)?,
+            vec![
+                CapabilityId::UsedProtocol("/svc/a".parse().unwrap()),
+                CapabilityId::UsedProtocol("/svc/b".parse().unwrap())
+            ]
+        );
+
+        assert_eq!(
+            CapabilityId::from_context_use(&ContextSpanned {
+                value: ContextUse {
+                    protocol: Some(ContextSpanned {
+                        value: OneOrMany::Many(vec![a.clone(), b.clone(),]),
+                        origin: synthetic_origin.clone(),
+                    }),
+                    ..ContextUse::default()
+                },
+                origin: synthetic_origin.clone(),
+            })?,
+            vec![
+                (CapabilityId::UsedProtocol("/svc/a".parse().unwrap()), synthetic_origin.clone()),
+                (CapabilityId::UsedProtocol("/svc/b".parse().unwrap()), synthetic_origin.clone())
+            ]
+        );
+
+        assert_eq!(
+            CapabilityId::from_use(&Use {
+                protocol: Some(OneOrMany::One(a.clone())),
+                path: Some("/b".parse().unwrap()),
+                ..Use::default()
+            },)?,
+            vec![CapabilityId::UsedProtocol("/b".parse().unwrap())]
+        );
+
+        assert_eq!(
+            CapabilityId::from_context_use(&ContextSpanned {
+                value: ContextUse {
+                    protocol: Some(ContextSpanned {
+                        value: OneOrMany::One(a.clone()),
+                        origin: synthetic_origin.clone(),
+                    }),
+                    path: Some(ContextSpanned {
+                        value: "/b".parse().unwrap(),
+                        origin: synthetic_origin.clone(),
+                    }),
+                    ..ContextUse::default()
+                },
+                origin: synthetic_origin.clone(),
+            })?,
+            vec![(CapabilityId::UsedProtocol("/b".parse().unwrap()), synthetic_origin.clone())]
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_offer_directory() -> Result<(), Error> {
+        let a: Name = "a".parse().unwrap();
+        let b: Name = "b".parse().unwrap();
+
+        let synthetic_origin = Origin {
+            file: Arc::new(PathBuf::from("synthetic")),
+            location: Location { line: 0, column: 0 },
+        };
+
+        assert_eq!(
+            CapabilityId::from_offer_expose(&Offer {
+                directory: Some(OneOrMany::One(a.clone())),
+                ..Offer::default()
+            },)?,
+            vec![CapabilityId::Directory(&a)]
+        );
+
+        assert_eq!(
+            CapabilityId::from_context_offer(&ContextSpanned {
+                value: ContextOffer {
+                    directory: Some(ContextSpanned {
+                        value: OneOrMany::One(a.clone()),
+                        origin: synthetic_origin.clone(),
+                    }),
+                    ..ContextOffer::default()
+                },
+                origin: synthetic_origin.clone(),
+            })?,
+            vec![(CapabilityId::Directory(&a), synthetic_origin.clone())]
+        );
+
+        assert_eq!(
+            CapabilityId::from_offer_expose(&Offer {
+                directory: Some(OneOrMany::Many(vec![a.clone(), b.clone()])),
+                ..Offer::default()
+            },)?,
+            vec![CapabilityId::Directory(&a), CapabilityId::Directory(&b),]
+        );
+
+        assert_eq!(
+            CapabilityId::from_context_offer(&ContextSpanned {
+                value: ContextOffer {
+                    directory: Some(ContextSpanned {
+                        value: OneOrMany::Many(vec![a.clone(), b.clone()]),
+                        origin: synthetic_origin.clone(),
+                    }),
+                    ..ContextOffer::default()
+                },
+                origin: synthetic_origin.clone(),
+            })?,
+            vec![
+                (CapabilityId::Directory(&a), synthetic_origin.clone()),
+                (CapabilityId::Directory(&b), synthetic_origin.clone())
+            ]
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_use_directory() -> Result<(), Error> {
+        let a: Name = "a".parse().unwrap();
+
+        let synthetic_origin = Origin {
+            file: Arc::new(PathBuf::from("synthetic")),
+            location: Location { line: 0, column: 0 },
+        };
+
+        assert_eq!(
+            CapabilityId::from_use(&Use {
+                directory: Some(a.clone()),
+                path: Some("/b".parse().unwrap()),
+                ..Use::default()
+            },)?,
+            vec![CapabilityId::UsedDirectory("/b".parse().unwrap())]
+        );
+
+        assert_eq!(
+            CapabilityId::from_context_use(&ContextSpanned {
+                value: ContextUse {
+                    directory: Some(ContextSpanned {
+                        value: a.clone(),
+                        origin: synthetic_origin.clone(),
+                    }),
+                    path: Some(ContextSpanned {
+                        value: "/b".parse().unwrap(),
+                        origin: synthetic_origin.clone(),
+                    }),
+                    ..ContextUse::default()
+                },
+                origin: synthetic_origin.clone(),
+            })?,
+            vec![(CapabilityId::UsedDirectory("/b".parse().unwrap()), synthetic_origin.clone())]
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_offer_storage() -> Result<(), Error> {
+        let a: Name = "a".parse().unwrap();
+        let b: Name = "b".parse().unwrap();
+
+        let synthetic_origin = Origin {
+            file: Arc::new(PathBuf::from("synthetic")),
+            location: Location { line: 0, column: 0 },
+        };
+
+        assert_eq!(
+            CapabilityId::from_offer_expose(&Offer {
+                storage: Some(OneOrMany::One(a.clone())),
+                ..Offer::default()
+            },)?,
+            vec![CapabilityId::Storage(&a)]
+        );
+
+        assert_eq!(
+            CapabilityId::from_context_offer(&ContextSpanned {
+                value: ContextOffer {
+                    storage: Some(ContextSpanned {
+                        value: OneOrMany::One(a.clone()),
+                        origin: synthetic_origin.clone(),
+                    }),
+                    ..ContextOffer::default()
+                },
+                origin: synthetic_origin.clone(),
+            })?,
+            vec![(CapabilityId::Storage(&a), synthetic_origin.clone())]
+        );
+
+        assert_eq!(
+            CapabilityId::from_offer_expose(&Offer {
+                storage: Some(OneOrMany::Many(vec![a.clone(), b.clone()])),
+                ..Offer::default()
+            },)?,
+            vec![CapabilityId::Storage(&a), CapabilityId::Storage(&b),]
+        );
+
+        assert_eq!(
+            CapabilityId::from_context_offer(&ContextSpanned {
+                value: ContextOffer {
+                    storage: Some(ContextSpanned {
+                        value: OneOrMany::Many(vec![a.clone(), b.clone()]),
+                        origin: synthetic_origin.clone(),
+                    }),
+                    ..ContextOffer::default()
+                },
+                origin: synthetic_origin.clone(),
+            })?,
+            vec![
+                (CapabilityId::Storage(&a), synthetic_origin.clone()),
+                (CapabilityId::Storage(&b), synthetic_origin.clone())
+            ]
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_use_storage() -> Result<(), Error> {
+        let a: Name = "a".parse().unwrap();
+
+        let synthetic_origin = Origin {
+            file: Arc::new(PathBuf::from("synthetic")),
+            location: Location { line: 0, column: 0 },
+        };
+
+        assert_eq!(
+            CapabilityId::from_use(&Use {
+                storage: Some(a.clone()),
+                path: Some("/b".parse().unwrap()),
+                ..Use::default()
+            },)?,
+            vec![CapabilityId::UsedStorage("/b".parse().unwrap())]
+        );
+
+        assert_eq!(
+            CapabilityId::from_context_use(&ContextSpanned {
+                value: ContextUse {
+                    storage: Some(ContextSpanned {
+                        value: a.clone(),
+                        origin: synthetic_origin.clone(),
+                    }),
+                    path: Some(ContextSpanned {
+                        value: "/b".parse().unwrap(),
+                        origin: synthetic_origin.clone(),
+                    }),
+                    ..ContextUse::default()
+                },
+                origin: synthetic_origin.clone(),
+            })?,
+            vec![(CapabilityId::UsedStorage("/b".parse().unwrap()), synthetic_origin.clone())]
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_use_runner() -> Result<(), Error> {
+        let synthetic_origin = Origin {
+            file: Arc::new(PathBuf::from("synthetic")),
+            location: Location { line: 0, column: 0 },
+        };
+
+        assert_eq!(
+            CapabilityId::from_use(&Use {
+                runner: Some("elf".parse().unwrap()),
+                ..Use::default()
+            })?,
+            vec![CapabilityId::UsedRunner(BorrowedName::new("elf").unwrap())]
+        );
+
+        assert_eq!(
+            CapabilityId::from_context_use(&ContextSpanned {
+                value: ContextUse {
+                    runner: Some(ContextSpanned {
+                        value: "elf".parse().unwrap(),
+                        origin: synthetic_origin.clone(),
+                    }),
+                    ..ContextUse::default()
+                },
+                origin: synthetic_origin.clone(),
+            })?,
+            vec![(
+                CapabilityId::UsedRunner(BorrowedName::new("elf").unwrap()),
+                synthetic_origin.clone()
+            )]
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_offer_dictionary() -> Result<(), Error> {
+        let a: Name = "a".parse().unwrap();
+        let b: Name = "b".parse().unwrap();
+
+        let synthetic_origin = Origin {
+            file: Arc::new(PathBuf::from("synthetic")),
+            location: Location { line: 0, column: 0 },
+        };
+
+        assert_eq!(
+            CapabilityId::from_offer_expose(&Offer {
+                dictionary: Some(OneOrMany::One(a.clone())),
+                ..Offer::default()
+            },)?,
+            vec![CapabilityId::Dictionary(&a)]
+        );
+
+        assert_eq!(
+            CapabilityId::from_context_offer(&ContextSpanned {
+                value: ContextOffer {
+                    dictionary: Some(ContextSpanned {
+                        value: OneOrMany::One(a.clone()),
+                        origin: synthetic_origin.clone(),
+                    }),
+                    ..ContextOffer::default()
+                },
+                origin: synthetic_origin.clone(),
+            })?,
+            vec![(CapabilityId::Dictionary(&a), synthetic_origin.clone())]
+        );
+
+        assert_eq!(
+            CapabilityId::from_offer_expose(&Offer {
+                dictionary: Some(OneOrMany::Many(vec![a.clone(), b.clone()],)),
+                ..Offer::default()
+            },)?,
+            vec![CapabilityId::Dictionary(&a), CapabilityId::Dictionary(&b)]
+        );
+
+        assert_eq!(
+            CapabilityId::from_context_offer(&ContextSpanned {
+                value: ContextOffer {
+                    dictionary: Some(ContextSpanned {
+                        value: OneOrMany::Many(vec![a.clone(), b.clone()]),
+                        origin: synthetic_origin.clone(),
+                    }),
+                    ..ContextOffer::default()
+                },
+                origin: synthetic_origin.clone(),
+            })?,
+            vec![
+                (CapabilityId::Dictionary(&a), synthetic_origin.clone()),
+                (CapabilityId::Dictionary(&b), synthetic_origin.clone())
+            ]
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_use_dictionary() -> Result<(), Error> {
+        let a: Name = "a".parse().unwrap();
+        let b: Name = "b".parse().unwrap();
+
+        let synthetic_origin = Origin {
+            file: Arc::new(PathBuf::from("synthetic")),
+            location: Location { line: 0, column: 0 },
+        };
+
+        assert_eq!(
+            CapabilityId::from_use(&Use {
+                dictionary: Some(OneOrMany::One(a.clone())),
+                ..Use::default()
+            },)?,
+            vec![CapabilityId::UsedDictionary("/svc/a".parse().unwrap())]
+        );
+
+        assert_eq!(
+            CapabilityId::from_context_use(&ContextSpanned {
+                value: ContextUse {
+                    dictionary: Some(ContextSpanned {
+                        value: OneOrMany::One(a.clone()),
+                        origin: synthetic_origin.clone(),
+                    }),
+                    ..ContextUse::default()
+                },
+                origin: synthetic_origin.clone(),
+            })?,
+            vec![(
+                CapabilityId::UsedDictionary("/svc/a".parse().unwrap()),
+                synthetic_origin.clone()
+            )]
+        );
+
+        assert_eq!(
+            CapabilityId::from_use(&Use {
+                dictionary: Some(OneOrMany::Many(vec![a.clone(), b.clone(),],)),
+                ..Use::default()
+            },)?,
+            vec![
+                CapabilityId::UsedDictionary("/svc/a".parse().unwrap()),
+                CapabilityId::UsedDictionary("/svc/b".parse().unwrap())
+            ]
+        );
+
+        assert_eq!(
+            CapabilityId::from_context_use(&ContextSpanned {
+                value: ContextUse {
+                    dictionary: Some(ContextSpanned {
+                        value: OneOrMany::Many(vec![a.clone(), b.clone()]),
+                        origin: synthetic_origin.clone(),
+                    }),
+                    ..ContextUse::default()
+                },
+                origin: synthetic_origin.clone(),
+            })?,
+            vec![
+                (CapabilityId::UsedDictionary("/svc/a".parse().unwrap()), synthetic_origin.clone()),
+                (CapabilityId::UsedDictionary("/svc/b".parse().unwrap()), synthetic_origin.clone())
+            ]
+        );
+
+        assert_eq!(
+            CapabilityId::from_use(&Use {
+                dictionary: Some(OneOrMany::One(a.clone())),
+                path: Some("/b".parse().unwrap()),
+                ..Use::default()
+            },)?,
+            vec![CapabilityId::UsedDictionary("/b".parse().unwrap())]
+        );
+
+        assert_eq!(
+            CapabilityId::from_context_use(&ContextSpanned {
+                value: ContextUse {
+                    dictionary: Some(ContextSpanned {
+                        value: OneOrMany::One(a.clone()),
+                        origin: synthetic_origin.clone(),
+                    }),
+                    path: Some(ContextSpanned {
+                        value: "/b".parse().unwrap(),
+                        origin: synthetic_origin.clone()
+                    }),
+                    ..ContextUse::default()
+                },
+                origin: synthetic_origin.clone(),
+            })?,
+            vec![(CapabilityId::UsedDictionary("/b".parse().unwrap()), synthetic_origin.clone())]
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_errors() -> Result<(), Error> {
+        assert_matches!(CapabilityId::from_offer_expose(&Offer::default()), Err(_));
+
+        let synthetic_origin = Origin {
+            file: Arc::new(PathBuf::from("synthetic")),
+            location: Location { line: 0, column: 0 },
+        };
+
+        assert_matches!(
+            CapabilityId::from_context_offer(&ContextSpanned {
+                value: ContextOffer::default(),
+                origin: synthetic_origin
+            }),
+            Err(_)
+        );
+
+        Ok(())
+    }
+}

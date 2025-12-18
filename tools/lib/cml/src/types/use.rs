@@ -429,7 +429,7 @@ pub struct ParsedUse {
     pub config_default: Option<Spanned<serde_json::Value>>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct ContextUse {
     pub service: Option<ContextSpanned<OneOrMany<Name>>>,
     pub protocol: Option<ContextSpanned<OneOrMany<Name>>>,
