@@ -58,7 +58,7 @@ INSTANTIATE_TEST_SUITE_P(
         ));
 
 TEST_P(NetlinkSocketXpermsTest, CheckNetlinkMsgXperms) {
-      const netlink_util::NetlinkSocketTestCase& test_case = GetParam();
+  const netlink_util::NetlinkSocketTestCase& test_case = GetParam();
 
   EXPECT_TRUE(RunSubprocessAs("test_u:test_r:nlmsg_xperms_test_t:s0", [test_case]() {
     int result = netlink_util::SendNetlinkMsg(test_case);

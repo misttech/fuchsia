@@ -63,7 +63,24 @@ int SendNetlinkMsg(const netlink_util::NetlinkSocketTestCase& test_case) {
   memset(&sa, 0, sizeof(sa));
   sa.nl_family = AF_NETLINK;
 
-  return (int)sendto(sock_fd.get(), nlh, nlh->nlmsg_len, 0, (struct sockaddr*)&sa, sizeof(sa));
+  int ret = (int)sendto(sock_fd.get(), nlh, nlh->nlmsg_len, 0, (struct sockaddr*)&sa, sizeof(sa));
+  if (ret < 0) {
+    return ret;
+  }
+
+  char recv_buffer[4096];
+  struct sockaddr_nl nladdr;
+  struct iovec iov = {recv_buffer, sizeof(recv_buffer)};
+  struct msghdr msg = {&nladdr, sizeof(nladdr), &iov, 1, NULL, 0, 0};
+
+  // Await for reply to synchronize after send which checks capabilities asynchronously in Starnix.
+  ret = (int)recvmsg(sock_fd.get(), &msg, 0);
+  if (ret < 0) {
+    ADD_FAILURE() << "recvmsg failed with error: " << strerror(errno);
+    return ret;
+  }
+
+  return 0;
 }
 
 }  // namespace netlink_util
