@@ -235,14 +235,8 @@ class RevParseCommand(GitSubCommand):
         # followed by the head revision.
         for arg in context.args.remaining_args:
             if arg == "--show-toplevel":
-<<<<<<< PATCH SET (6c1cb7dcd3067c1894052e66376aa75e9f2d050a Revert "Reland "[cog] refactor repository path logic"")
-                context.print(str(repository_root))
-||||||| BASE      (b9499a02cd707b5d8b709c1eb8979ad440d70024 Reland "[cog] refactor repository path logic")
                 # TODO(469510407) Make sure this is using the active repo.
                 context.print(str(repository_root))
-=======
-                context.print(str(repository_root / target_repo))
->>>>>>> BASE      (6b6ee4e85d2cfc7f0894f634b28b7d6b78d9696d [ffx][monitor] Add one second delay to background thread)
             elif arg.startswith("-"):
                 pass
             else:
@@ -348,7 +342,7 @@ class LsFilesCommand(GitSubCommand):
 
             stdout = context.run_real_git(git_args, cwd=context.invoker_cwd)
 
-            end = "\0" if args.z else "\n"
+            end = "\0" if args and args.z else "\n"
             context.output(stdout, end=end)
             return 0
         except subprocess.CalledProcessError as e:
