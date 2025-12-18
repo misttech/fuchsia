@@ -55,7 +55,7 @@ readonly DIRNAME="$(dirname "$0")"
 # We replicate the led-try-head launch logic but pipe the output of led launch
 # to led-wait-for-cas to get the digest.
 TOOLCHAIN_DIGEST="$(
-  led get-builder fuchsia/try:$TOOLCHAIN_BUILDER | \
+  led get-builder fuchsia/toolchain.ci:$TOOLCHAIN_BUILDER | \
     led edit -pa revision="$LLVM_COMMIT" | \
     led launch | \
     "$DIRNAME/led-wait-for-cas"
