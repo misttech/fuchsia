@@ -4,6 +4,14 @@
         "skips": [
             {
                 "notes": [
+                    "Licenses for the curl repo are verified elsewhere in the build."
+                ],
+                "paths": [
+                    "third_party/cobalt/third_party/curl"
+                ]
+            },
+            {
+                "notes": [
                     "Temporarily disabled to allow for third_party repository moves."
                 ],
                 "paths": [
