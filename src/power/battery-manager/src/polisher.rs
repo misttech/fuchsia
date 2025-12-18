@@ -221,7 +221,9 @@ impl CurveMapper {
             CurveState::Splicing(_mid_point_ref) => {
                 if level < Self::LEVEL_TRUE {
                     CurveState::Unmodified
-                } else if charge_status == Some(fpower::ChargeStatus::Full) {
+                } else if charge_status == Some(fpower::ChargeStatus::Full)
+                    && level > Self::LEVEL_SPOOF
+                {
                     CurveState::Spoofing
                 } else if self.prev_charge_status != charge_status {
                     // Assuming charge status direction changes without level changes
@@ -243,11 +245,8 @@ impl CurveMapper {
             CurveState::Splicing(mid_point) => {
                 if info.charge_status == Some(fpower::ChargeStatus::Charging) {
                     Self::splice_for_charging(level, mid_point)
-                } else if info.charge_status == Some(fpower::ChargeStatus::Discharging) {
-                    Self::splice_for_discharging(level, mid_point)
                 } else {
-                    warn!("Something is wrong, we are not charging, neither are we discharging");
-                    level
+                    Self::splice_for_discharging(level, mid_point)
                 }
             }
             _ => level,
@@ -350,6 +349,7 @@ impl RateLimiter {
 pub(crate) struct Polisher {
     curve_mapper: CurveMapper,
     last_level: Option<f32>,
+    last_post_curve: Option<f32>,
     estimator: ChargeTimeEstimator,
     rate_limiter: RateLimiter,
 }
@@ -359,6 +359,7 @@ impl Polisher {
         Polisher {
             curve_mapper: CurveMapper::new(),
             last_level: None,
+            last_post_curve: None,
             estimator: ChargeTimeEstimator::new(),
             rate_limiter: RateLimiter::default(),
         }
@@ -407,11 +408,12 @@ impl Polisher {
             warn!("Missing timestamp for rate limiter");
             return;
         };
-        let is_charging = info.charge_status == Some(fpower::ChargeStatus::Charging);
+        let is_charging_or_full = info.charge_status == Some(fpower::ChargeStatus::Charging)
+            || info.charge_status == Some(fpower::ChargeStatus::Full);
 
         // The curve-mapped level becomes the *target* for the rate limiter.
         let rate_limited_level =
-            self.rate_limiter.apply_rate_limit(level, is_charging, timestamp_ns);
+            self.rate_limiter.apply_rate_limit(level, is_charging_or_full, timestamp_ns);
 
         info.level_percent = Some(rate_limited_level);
     }
@@ -427,12 +429,13 @@ impl Polisher {
         let post_curve = info.level_percent;
         self.rate_limit_level(&mut info);
 
-        if self.last_level != original_level {
+        if self.last_level != original_level || self.last_post_curve != post_curve {
             info!(
                 "Levels - original: {:?}, scaled: {:?}, post curve mapping: {:?}, rate limited: {:?}",
                 original_level, scaled_level, post_curve, info.level_percent
             );
             self.last_level = original_level;
+            self.last_post_curve = post_curve;
         }
         info
     }
@@ -540,6 +543,148 @@ mod tests {
         let expected_level = InitialScaler::scale_level(96.0);
         assert_matches!(info.level_percent, Some(p) if (p - expected_level).abs() < f32::EPSILON);
         assert_matches!(polisher.curve_mapper.curve_state, CurveState::Unmodified);
+    }
+
+    // Helper to calculate the expected smooth level (from previous analysis)
+    fn calculate_expected_splice_level(raw_level: f32) -> f32 {
+        let left = CurvePoint { real: CurveMapper::LEVEL_TRUE, ui: CurveMapper::LEVEL_TRUE };
+        let right = CurvePoint { real: CurveMapper::LEVEL_SPOOF, ui: CurveMapper::LEVEL_FULL };
+
+        CurveMapper::splice_for_level(raw_level, left, right)
+    }
+
+    #[fuchsia::test]
+    fn test_drain_while_full() {
+        let mut polisher = Polisher::new();
+        const T_SEC: i64 = 1000;
+        let mut timestamp: zx::sys::zx_time_t = 0;
+
+        // --- SETUP: CHARGE TO 100% AND ENTER SPOOFING ---
+        let mut info = new_info(98.0, fpower::ChargeStatus::Charging);
+        info.timestamp = Some(timestamp);
+        let _ = polisher.polish_info(info);
+
+        timestamp += T_SEC * NANOS_PER_SEC;
+        let mut info = new_info(100.0, fpower::ChargeStatus::Full);
+        info.timestamp = Some(timestamp);
+        let polished = polisher.polish_info(info);
+
+        // Check Spoofing is active and UI is 100.0
+        assert_matches!(polisher.curve_mapper.curve_state, CurveState::Spoofing);
+        assert_eq!(polished.level_percent, Some(100.0), "Full level should be 100.0%");
+
+        timestamp += T_SEC * NANOS_PER_SEC;
+        let level_drops_to = 97.0;
+        let mut info = new_info(level_drops_to, fpower::ChargeStatus::Full);
+        info.timestamp = Some(timestamp);
+        let polished = polisher.polish_info(info);
+        assert_eq!(polished.level_percent, Some(100.0), "Spoofed level should be 100.0%");
+
+        // Just drops out of spoofing while on charger.
+        timestamp += T_SEC * NANOS_PER_SEC;
+        let level_drops_to = 94.0;
+        let mut info = new_info(level_drops_to, fpower::ChargeStatus::Full);
+        info.timestamp = Some(timestamp);
+        let polished = polisher.polish_info(info);
+
+        let scaled_level = InitialScaler::scale_level(level_drops_to);
+        let expected_level = calculate_expected_splice_level(scaled_level);
+        assert_ne!(polished.level_percent, Some(level_drops_to), "Spliced level should change");
+        assert_eq!(polished.level_percent, Some(expected_level));
+
+        // Check not zig zag
+        timestamp += T_SEC * NANOS_PER_SEC;
+        let level_drops_to = 93.0;
+        let mut info = new_info(level_drops_to, fpower::ChargeStatus::Full);
+        info.timestamp = Some(timestamp);
+        let polished = polisher.polish_info(info);
+
+        let scaled_level = InitialScaler::scale_level(level_drops_to);
+        let expected_level = calculate_expected_splice_level(scaled_level);
+        assert_ne!(polished.level_percent, Some(100.0), "Spliced level should change");
+        assert_eq!(polished.level_percent, Some(expected_level));
+    }
+
+    #[fuchsia::test]
+    fn test_comprehensive_cycle_without_zig_zag() {
+        let mut polisher = Polisher::new();
+        const T_SEC: i64 = 1000;
+        let mut timestamp: zx::sys::zx_time_t = 0;
+
+        // --- SETUP: Start with 10%  ---
+        let mut info = new_info(10.0, fpower::ChargeStatus::Charging);
+        info.timestamp = Some(timestamp);
+        let polished = polisher.polish_info(info);
+        assert!(polished.level_percent.is_some());
+        let mut previous_level = polished.level_percent.unwrap();
+
+        // --- CHARGE TO 90% ---
+        for i in 11..=90 {
+            timestamp += T_SEC * NANOS_PER_SEC;
+            let mut info = new_info(i as f32, fpower::ChargeStatus::Charging);
+            info.timestamp = Some(timestamp);
+            let polished = polisher.polish_info(info);
+
+            info!("Looping charging with input {}", i);
+            assert!(polished.level_percent.is_some());
+            let current_level = polished.level_percent.unwrap();
+            assert!(
+                current_level > previous_level,
+                "level_percent should increase during charging"
+            );
+            previous_level = current_level;
+        }
+
+        // --- DISCHARGING TO 50% ---
+        for i in (50..89).rev() {
+            timestamp += T_SEC * NANOS_PER_SEC;
+            let mut info = new_info(i as f32, fpower::ChargeStatus::Discharging);
+            info.timestamp = Some(timestamp);
+            let polished = polisher.polish_info(info);
+
+            info!("Looping discharging with input {}", i);
+            assert!(polished.level_percent.is_some());
+            let current_level = polished.level_percent.unwrap();
+            assert!(
+                current_level < previous_level,
+                "level_percent should decrease during charging"
+            );
+            previous_level = current_level;
+        }
+
+        // --- CHARGE TO 90% ---
+        for i in 51..=100 {
+            timestamp += T_SEC * NANOS_PER_SEC;
+            let mut info = new_info(i as f32, fpower::ChargeStatus::Charging);
+            info.timestamp = Some(timestamp);
+            let polished = polisher.polish_info(info);
+
+            info!("Looping charging with input {}", i);
+            assert!(polished.level_percent.is_some());
+            let current_level = polished.level_percent.unwrap();
+            assert!(
+                current_level > previous_level,
+                "level_percent should increase during charging"
+            );
+            previous_level = current_level;
+        }
+
+        // --- DISCHARGING TO 70% but FULL ---
+        for i in (70..100).rev() {
+            timestamp += T_SEC * NANOS_PER_SEC;
+            let mut info = new_info(i as f32, fpower::ChargeStatus::Full);
+            info.timestamp = Some(timestamp);
+            let polished = polisher.polish_info(info);
+
+            info!("Looping discharging with input {}", i);
+            assert!(polished.level_percent.is_some());
+            let current_level = polished.level_percent.unwrap();
+            assert!(
+                current_level <= previous_level,
+                "level_percent should not increase when draining while full"
+            );
+            previous_level = current_level;
+        }
     }
 
     #[fuchsia::test]
