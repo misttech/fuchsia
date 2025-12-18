@@ -6,12 +6,12 @@ use std::num::{NonZeroU32, TryFromIntError};
 use std::time::{Duration, Instant};
 use std::u64;
 
-use futures::{AsyncReadExt as _, AsyncWriteExt as _};
+use flex_fuchsia_developer_ffx_speedtest as fspeedtest;
+use futures::{AsyncReadExt, AsyncWriteExt as _};
 use thiserror::Error;
-use {fidl_fuchsia_developer_ffx_speedtest as fspeedtest, fuchsia_async as fasync};
 
 pub struct Transfer {
-    pub socket: fasync::Socket,
+    pub socket: flex_client::Socket,
     pub params: TransferParams,
 }
 
@@ -78,13 +78,16 @@ pub enum TransferError {
     IntConversion(#[from] TryFromIntError),
     #[error(transparent)]
     Io(#[from] std::io::Error),
+    #[error(transparent)]
+    FDomain(#[from] fdomain_client::Error),
     #[error("remote hung up before terminating transfer")]
     Hangup,
 }
 
 impl Transfer {
     pub async fn send(self) -> Result<Report, TransferError> {
-        let Self { mut socket, params: TransferParams { data_len, buffer_len } } = self;
+        let Self { socket, params: TransferParams { data_len, buffer_len } } = self;
+        let mut socket = flex_client::socket_to_async(socket);
         let buffer_len = usize::try_from(buffer_len.get())?;
         let mut data_len = usize::try_from(data_len.get())?;
         let buffer = vec![0xAA; buffer_len];
@@ -99,14 +102,15 @@ impl Transfer {
     }
 
     pub async fn receive(self) -> Result<Report, TransferError> {
-        let Self { mut socket, params: TransferParams { data_len, buffer_len } } = self;
+        let Self { socket, params: TransferParams { data_len, buffer_len } } = self;
+        let mut socket = flex_client::socket_to_async(socket);
         let buffer_len = usize::try_from(buffer_len.get())?;
         let mut data_len = usize::try_from(data_len.get())?;
         let mut buffer = vec![0x00; buffer_len];
         let start = Instant::now();
         while data_len != 0 {
             let recv = buffer_len.min(data_len);
-            let recv = socket.read(&mut buffer[..recv]).await?;
+            let recv = AsyncReadExt::read(&mut socket, &mut buffer[..recv]).await?;
             if recv == 0 {
                 return Err(TransferError::Hangup);
             }
@@ -123,11 +127,15 @@ mod test {
 
     use assert_matches::assert_matches;
 
-    #[fasync::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn receive_hangup() {
-        let (socket, _) = fidl::Socket::create_stream();
+        #[cfg(feature = "fdomain")]
+        let client = fdomain_local::local_client(|| Err(zx_status::Status::NOT_SUPPORTED));
+        #[cfg(not(feature = "fdomain"))]
+        let client = fidl::endpoints::ZirconClient;
+        let (socket, _) = client.create_stream_socket();
         let result = Transfer {
-            socket: fasync::Socket::from_socket(socket),
+            socket,
             params: TransferParams {
                 data_len: NonZeroU32::new(10).unwrap(),
                 buffer_len: NonZeroU32::new(100).unwrap(),

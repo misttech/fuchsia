@@ -7,14 +7,17 @@ use std::time::Duration;
 
 use futures::TryStreamExt as _;
 use test_case::test_case;
-use {fidl_fuchsia_developer_ffx_speedtest as fspeedtest, fuchsia_async as fasync};
+use {flex_fuchsia_developer_ffx_speedtest as fspeedtest, fuchsia_async as fasync};
 
 use crate::client::{self, PingReport, SocketTransferParams, SocketTransferReport};
 use crate::server;
 
 async fn with_client(f: impl AsyncFnOnce(client::Client)) {
-    let (client, mut server_rs) =
-        fidl::endpoints::create_proxy_and_stream::<fspeedtest::SpeedtestMarker>();
+    #[cfg(feature = "fdomain")]
+    let client = fdomain_local::local_client(|| Err(zx_status::Status::NOT_SUPPORTED));
+    #[cfg(not(feature = "fdomain"))]
+    let client = fidl::endpoints::ZirconClient;
+    let (client, mut server_rs) = client.create_proxy_and_stream::<fspeedtest::SpeedtestMarker>();
     let scope = fasync::Scope::new();
     let handle = scope.to_handle();
     let server = server::Server::new(scope);
@@ -28,7 +31,7 @@ async fn with_client(f: impl AsyncFnOnce(client::Client)) {
     handle.on_no_tasks().await;
 }
 
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn ping() {
     with_client(async |client| {
         let PingReport { max, avg, min } =
@@ -44,7 +47,7 @@ async fn ping() {
 
 #[test_case(client::Direction::Tx; "tx")]
 #[test_case(client::Direction::Rx; "rx")]
-#[fasync::run_singlethreaded(test)]
+#[fuchsia::test]
 async fn socket(direction: client::Direction) {
     with_client(async |client| {
         let data_len = NonZeroU32::new(10_000).unwrap();

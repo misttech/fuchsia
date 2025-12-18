@@ -3,9 +3,9 @@
 // found in the LICENSE file.
 
 use crate::socket;
-use fidl::endpoints::{ControlHandle as _, Responder as _};
+use flex_client::fidl::{ControlHandle as _, Responder as _};
 use log::{error, warn};
-use {fidl_fuchsia_developer_ffx_speedtest as fspeedtest, fuchsia_async as fasync};
+use {flex_fuchsia_developer_ffx_speedtest as fspeedtest, fuchsia_async as fasync};
 
 pub struct Server {
     scope: fasync::Scope,
@@ -26,7 +26,6 @@ impl Server {
         match req {
             fspeedtest::SpeedtestRequest::Ping { responder } => responder.send()?,
             fspeedtest::SpeedtestRequest::SocketDown { socket, params, responder } => {
-                let socket = fasync::Socket::from_socket(socket);
                 match params.try_into() {
                     Ok(params) => {
                         let _: fasync::JoinHandle<()> = self.scope.spawn(async move {
@@ -55,7 +54,6 @@ impl Server {
                 }
             }
             fspeedtest::SpeedtestRequest::SocketUp { socket, params, responder } => {
-                let socket = fasync::Socket::from_socket(socket);
                 match params.try_into() {
                     Ok(params) => {
                         let _: fasync::JoinHandle<()> = self.scope.spawn(async move {
@@ -70,7 +68,7 @@ impl Server {
                                     error!("SocketUp failed with {e:?}");
                                     responder
                                         .control_handle()
-                                        .shutdown_with_epitaph(zx_status::Status::INTERNAL);
+                                        .shutdown_with_epitaph(zx_status::Status::INTERNAL)
                                 }
                             }
                         });

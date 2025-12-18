@@ -6,9 +6,10 @@ use std::fmt::{self, Display};
 use std::num::{NonZeroU32, TryFromIntError};
 use std::time::{Duration, Instant};
 
+use flex_client::ProxyHasDomain;
+use flex_fuchsia_developer_ffx_speedtest as fspeedtest;
 use futures::TryFutureExt as _;
 use thiserror::Error;
-use {fidl_fuchsia_developer_ffx_speedtest as fspeedtest, fuchsia_async as fasync};
 
 use crate::throughput::BytesFormatter;
 use crate::{Throughput, socket};
@@ -143,8 +144,7 @@ impl Client {
         params: SocketTransferParams,
     ) -> Result<SocketTransferReport, ClientError> {
         let SocketTransferParams { direction, params } = params;
-        let (client, server) = fidl::Socket::create_stream();
-        let client = fasync::Socket::from_socket(client);
+        let (client, server) = self.proxy.domain().create_stream_socket();
         let transfer = socket::Transfer { socket: client, params: params.clone() };
         let (server_report, client_report) = match direction {
             Direction::Tx => {

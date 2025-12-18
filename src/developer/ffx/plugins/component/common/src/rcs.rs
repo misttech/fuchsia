@@ -20,6 +20,17 @@ pub async fn connect_to_lifecycle_controller(
     Ok(lifecycle_controller)
 }
 
+/// Obtain the root LifecycleController protocol using the RemoteControl protocol.
+pub async fn connect_to_lifecycle_controller_f(
+    rcs_proxy: &rc_f::RemoteControlProxy,
+) -> Result<fsys_f::LifecycleControllerProxy> {
+    let lifecycle_controller =
+        rcs_fdomain::root_lifecycle_controller(&rcs_proxy, std::time::Duration::from_secs(15))
+            .await
+            .map_err(|err| ffx_error!("Could not open LifecycleController: {err}"))?;
+    Ok(lifecycle_controller)
+}
+
 /// Obtain the root RealmQuery protocol using the RemoteControl protocol.
 pub async fn connect_to_realm_query(
     rcs_proxy: &rc::RemoteControlProxy,

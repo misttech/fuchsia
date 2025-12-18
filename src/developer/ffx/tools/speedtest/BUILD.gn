@@ -11,24 +11,28 @@ if (is_host) {
     edition = "2024"
     args_sources = [ "src/args.rs" ]
     args_deps = [
-      "//sdk/fidl/fuchsia.developer.ffx.speedtest:fuchsia.developer.ffx.speedtest_rust",
+      "//sdk/fidl/fuchsia.developer.ffx.speedtest:fuchsia.developer.ffx.speedtest_rust_fdomain",
       "//src/developer/ffx/core:lib",
       "//third_party/rust_crates:argh",
     ]
     sources = [ "src/lib.rs" ]
     deps = [
       "common:speedtest",
+      "common:speedtest_fdomain",
       "//sdk/fidl/fuchsia.developer.ffx.speedtest:fuchsia.developer.ffx.speedtest_rust",
+      "//sdk/fidl/fuchsia.developer.ffx.speedtest:fuchsia.developer.ffx.speedtest_rust_fdomain",
       "//src/developer/ffx/lib/errors:lib",
       "//src/developer/ffx/lib/fho:lib",
       "//src/developer/ffx/lib/rcs:lib",
+      "//src/developer/ffx/lib/rcs:lib_fdomain",
       "//src/developer/ffx/lib/target/holders:lib",
       "//src/developer/ffx/lib/writer:lib",
       "//src/developer/ffx/plugins/component/common:ffx_component",
-      "//src/developer/ffx/tools/speedtest/common:speedtest",
       "//src/lib/fuchsia-async",
       "//src/lib/fuchsia-url",
+      "//src/sys/lib/cm_types",
       "//src/sys/lib/component_debug",
+      "//src/sys/lib/component_debug:component_debug_fdomain",
       "//src/sys/lib/moniker",
       "//third_party/rust_crates:async-trait",
     ]

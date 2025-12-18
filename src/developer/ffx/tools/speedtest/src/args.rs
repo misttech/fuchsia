@@ -6,8 +6,8 @@ use std::num::NonZeroU32;
 use std::time::Duration;
 
 use argh::{ArgsInfo, FromArgs};
+use fdomain_fuchsia_developer_ffx_speedtest as fspeedtest;
 use ffx_core::ffx_command;
-use fidl_fuchsia_developer_ffx_speedtest as fspeedtest;
 
 #[ffx_command()]
 #[derive(ArgsInfo, FromArgs, Debug, PartialEq)]
@@ -17,6 +17,9 @@ use fidl_fuchsia_developer_ffx_speedtest as fspeedtest;
     description = "Developer tool for testing ffx latency and throughput to the target."
 )]
 pub struct SpeedtestCommand {
+    /// test the legacy Overnet connectivity.
+    #[argh(switch)]
+    pub overnet: bool,
     /// how many times to repeat the test. Set zero to run until interrupted.
     #[argh(option, short = 'r', default = "1")]
     pub repeat: usize,
