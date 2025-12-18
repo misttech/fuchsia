@@ -504,6 +504,7 @@ impl TemperatureHistoryInspect {
                 lazy_record: true,
                 capacity,
                 manager: Some(state_recorder_manager),
+                ..Default::default()
             },
         )
         .expect("NumericStateRecorder construction failed");

@@ -17,7 +17,7 @@ use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::pin::pin;
 use std::sync::Arc;
-use strum_macros::{Display, EnumIter};
+use strum_macros::{Display, EnumIter, EnumString};
 use wlan_common::bss::BssDescription;
 use wlan_common::scan::{Compatibility, CompatibilityExt as _};
 use wlan_telemetry::{TelemetryEvent, TelemetrySender};
@@ -297,7 +297,7 @@ pub(crate) enum ScanEnd {
     Cancelled,
 }
 
-#[derive(Copy, Clone, Debug, Display, EnumIter, Eq, PartialEq, Hash)]
+#[derive(Copy, Clone, Debug, Display, EnumIter, EnumString, Eq, PartialEq, Hash)]
 #[repr(u8)]
 enum StaIfacePowerLevel {
     Suspended = 0,
@@ -393,6 +393,7 @@ impl SmeClientIface {
                 capacity: NUM_POWER_OBSERVABILITY_SAMPLES_PER_IFACE,
                 lazy_record: true,
                 manager: None,
+                ..Default::default()
             },
         ) {
             Ok(mut r) => {
@@ -1354,6 +1355,7 @@ mod tests {
                             capacity: 1,
                             lazy_record: true,
                             manager: None,
+                            persistence: None,
                         },
                     )
                     .expect("StateRecorder construction failed"),
@@ -1581,6 +1583,7 @@ mod tests {
                             capacity: 1,
                             lazy_record: true,
                             manager: None,
+                            persistence: None,
                         },
                     )
                     .expect("StateRecorder construction failed"),

@@ -21,8 +21,12 @@ use std::cmp::Eq;
 pub use std::collections::HashMap;
 pub use std::ffi::{CStr, CString};
 use std::fmt::{Debug, Display};
+use std::fs::{self as fs, OpenOptions};
 use std::hash::Hash;
+use std::io::Write as OtherWrite;
 use std::marker::PhantomData;
+use std::path::Path;
+use std::str::FromStr;
 use std::sync::{Arc, LazyLock};
 use strum::IntoEnumIterator;
 use zx::AsHandleRef;
@@ -83,6 +87,8 @@ pub enum StateRecorderError {
     DuplicateName(String),
     #[error("String \"{0}\" cannot be converted to a CString")]
     IncompatibleString(String),
+    #[error("Invalid options: {0}")]
+    InvalidOptions(String),
 }
 
 /// Manages the parent node shared by StateRecorder instances, providing protection against name
@@ -123,11 +129,11 @@ impl StateRecorderManager {
 
 /// Supertrait that combines traits an enum type must satisfy to be compatible with StateRecorder.
 pub trait RecordableEnum:
-    Copy + Debug + Display + Eq + Hash + IntoEnumIterator + Into<u64> + Send
+    Copy + Debug + Display + FromStr + Eq + Hash + IntoEnumIterator + Into<u64> + Send + Sync
 {
 }
-impl<T: Copy + Debug + Display + Eq + Hash + IntoEnumIterator + Into<u64> + Send> RecordableEnum
-    for T
+impl<T: Copy + Debug + Display + FromStr + Eq + Hash + IntoEnumIterator + Into<u64> + Send + Sync>
+    RecordableEnum for T
 {
 }
 
@@ -152,6 +158,7 @@ pub struct EnumStateRecorder<T: RecordableEnum> {
     trace_category: &'static CStr,
     state_names: HashMap<T, StateName>,
     history: RecorderHistory<T>,
+    persistence: Option<PersistenceHandler<T>>,
     _root_node: inspect::Node,
     trace_id: ftrace::Id,
     trace_track_name: &'static CStr,
@@ -181,6 +188,7 @@ impl<T: RecordableEnum + 'static> EnumStateRecorder<T> {
     ///     associated with `manager`.
     ///   - StateRecorderError::IncompatibleString: Either `name` or the display name of a state
     ///     cannot be converted to a CString.
+    ///   - StateRecorderError::InvalidOptions: `options` is invalid for the given mode.
     pub fn new(
         name: String,
         trace_category: &'static CStr,
@@ -214,10 +222,42 @@ impl<T: RecordableEnum + 'static> EnumStateRecorder<T> {
             });
         });
 
+        let mut persistence_handler = None;
+
         let history = if options.lazy_record {
-            let buffer =
-                Arc::new(Mutex::new(TimestampRingBuffer::<T>::with_capacity(options.capacity)));
-            let buffer_cloned = buffer.clone();
+            let shared_buffer = if let Some(config) = options.persistence {
+                let (handler, buffer) = PersistenceHandler::new(config.clone(), options.capacity);
+
+                // Handle Previous Boot Node (Static read from disk)
+                let prev_data = PersistenceHandler::<T>::read_log(&config.previous_path);
+
+                if !prev_data.is_empty() {
+                    let data_arc = Arc::new(prev_data);
+                    node.record_lazy_child("previous_boot_history", move || {
+                        let data = data_arc.clone();
+                        async move {
+                            let inspector = Inspector::default();
+                            let root = inspector.root();
+                            for (i, (ts, val)) in data.iter().enumerate() {
+                                root.record_child(i.to_string(), |child| {
+                                    child.record_int("@time", *ts);
+                                    child.record_string("value", val.to_string());
+                                });
+                            }
+                            Ok(inspector)
+                        }
+                        .boxed()
+                    });
+                }
+
+                persistence_handler = Some(handler);
+                buffer
+            } else {
+                Arc::new(Mutex::new(TimestampRingBuffer::<T>::with_capacity(options.capacity)))
+            };
+
+            // "reset_info"
+            let buffer_cloned = shared_buffer.clone();
             node.record_lazy_child("reset_info", move || {
                 let history = buffer_cloned.clone();
                 async move {
@@ -230,7 +270,7 @@ impl<T: RecordableEnum + 'static> EnumStateRecorder<T> {
                 }
                 .boxed()
             });
-            let buffer_cloned = buffer.clone();
+            let buffer_cloned = shared_buffer.clone();
             node.record_lazy_child("history", move || {
                 let history = buffer_cloned.clone();
                 async move {
@@ -246,16 +286,24 @@ impl<T: RecordableEnum + 'static> EnumStateRecorder<T> {
                 }
                 .boxed()
             });
-            RecorderHistory::Lazy(buffer)
+
+            RecorderHistory::Lazy(shared_buffer)
         } else {
+            // --- EAGER MODE (Persistence NOT Supported for now) ---
+            if options.persistence.is_some() {
+                return Err(StateRecorderError::InvalidOptions(
+                    "Persistence not supported in eager mode".to_string(),
+                ));
+            }
+
             node.record_child("reset_info", |node| {
                 node.record_int("count", 0);
                 node.record_int("last_reset_ns", zx::BootInstant::get().into_nanos());
             });
-            RecorderHistory::Eager(BoundedListNode::new(
-                node.create_child("history"),
-                options.capacity,
-            ))
+
+            let history_node = BoundedListNode::new(node.create_child("history"), options.capacity);
+
+            RecorderHistory::Eager(history_node)
         };
 
         let trace_id = ftrace::Id::random();
@@ -268,6 +316,7 @@ impl<T: RecordableEnum + 'static> EnumStateRecorder<T> {
             trace_category,
             state_names,
             history,
+            persistence: persistence_handler,
             _root_node: node,
             trace_id,
             trace_track_name,
@@ -301,15 +350,22 @@ impl<T: RecordableEnum + 'static> EnumStateRecorder<T> {
 
         let timestamp = zx::BootInstant::get().into_nanos();
 
-        match &mut self.history {
-            RecorderHistory::Eager(history) => {
-                history.add_entry(|node| {
-                    node.record_int("@time", timestamp);
-                    node.record_string("value", inspect_name.as_ref());
-                });
-            }
-            RecorderHistory::Lazy(history) => {
-                history.lock().insert(timestamp, state_enum);
+        // If Persistence is on (Lazy), the handler OWNS the buffer update.
+        if let Some(handler) = &mut self.persistence {
+            // Updates the shared buffer inside its lock and handle persistence.
+            handler.append(timestamp, state_enum);
+        } else {
+            // Update manually
+            match &mut self.history {
+                RecorderHistory::Eager(history) => {
+                    history.add_entry(|node| {
+                        node.record_int("@time", timestamp);
+                        node.record_string("value", inspect_name.as_ref());
+                    });
+                }
+                RecorderHistory::Lazy(history) => {
+                    history.lock().insert(timestamp, state_enum);
+                }
             }
         }
     }
@@ -324,7 +380,9 @@ impl<T: RecordableEnum> Drop for EnumStateRecorder<T> {
 /// To be recordable, a numeric type must, in essence, be able to widen into a trace-compatible
 /// type and an Inspect-compatible type. Users are not expected to implement this trait; this
 /// module implements it for common numeric types below.
-pub trait RecordableNumericType: Copy + Debug + Sized + Send + 'static {
+pub trait RecordableNumericType:
+    Copy + Debug + Display + FromStr + Sized + Send + Sync + 'static
+{
     type TraceType: ftrace::ArgValue;
 
     fn trace_value(&self) -> Self::TraceType;
@@ -486,7 +544,154 @@ macro_rules! units {
     };
 }
 
+// Holds information for persistence
+#[derive(Clone, Debug)]
+pub struct PersistenceOptions {
+    /// Unique name for this recorder (e.g., "battery_level").
+    name: String,
+    /// For current history.
+    current_path: String,
+    /// For previous history.
+    previous_path: String,
+    // A temporary name for current history to achieve atomic persistence.
+    rename_path: String,
+}
+
+impl PersistenceOptions {
+    // Unique name and path to storage and path to volatile directory.
+    pub fn new(name: impl Into<String>) -> Self {
+        let name = name.into();
+        Self {
+            current_path: format!("/data/{}.csv", name),
+            previous_path: format!("/tmp/{}.csv", name),
+            rename_path: format!("/data/{}.tmp", name),
+            name,
+        }
+    }
+
+    pub fn storage_dir(mut self, dir: &str) -> Self {
+        self.current_path = format!("{}/{}.csv", dir, self.name);
+        self.rename_path = format!("{}/{}.tmp", dir, self.name);
+        self
+    }
+
+    pub fn volatile_dir(mut self, dir: &str) -> Self {
+        self.previous_path = format!("{}/{}.csv", dir, self.name);
+        self
+    }
+    // Helper to generate paths
+    fn paths(&self) -> (&str, &str, &str) {
+        (&self.current_path, &self.previous_path, &self.rename_path)
+    }
+}
+
+/// Handles persistence using TimestampRingBuffer as the backing store to save memory.
+struct PersistenceHandler<T: Copy> {
+    config: PersistenceOptions,
+    // We reuse TimestampRingBuffer for memory-optimized storage (i32 offsets)
+    buffer: Arc<Mutex<TimestampRingBuffer<T>>>,
+}
+
+impl<T: Copy + FromStr + Display> PersistenceHandler<T> {
+    fn new(
+        config: PersistenceOptions,
+        capacity: usize,
+    ) -> (Self, Arc<Mutex<TimestampRingBuffer<T>>>) {
+        let (curr, prev, _) = config.paths();
+
+        // Perform rotation before loading data
+        Self::prepare_files(&curr, &prev);
+
+        // Load any data remaining in 'current' (crash recovery)
+        let initial_data = Self::read_log(&curr);
+
+        // 3. Hydrate our internal ring buffer
+        let mut buffer = TimestampRingBuffer::with_capacity(capacity);
+        for (ts, val) in initial_data {
+            buffer.insert(ts, val);
+        }
+
+        let shared_buffer = Arc::new(Mutex::new(buffer));
+
+        (Self { config, buffer: shared_buffer.clone() }, shared_buffer)
+    }
+
+    /// Handles the rotation logic:
+    /// If PREV doesn't exist (reboot), move CURR to PREV.
+    /// If PREV exists (crash), leave CURR alone (it contains valuable pre-crash data).
+    fn prepare_files(curr_path: &str, prev_path: &str) {
+        if Path::new(prev_path).exists() {
+            // Previous file exists -> Crash recovery.
+            // Do not overwrite it. Do not touch current file.
+            log::warn!("Not moving history, {} already exists", prev_path);
+            return;
+        }
+
+        // Move content by reading then writing it for moves from /data to /tmp.
+        let Ok(content) = std::fs::read_to_string(curr_path).map_err(|e| {
+            log::info!("Could not read current history, not moving: {}", e);
+        }) else {
+            return;
+        };
+
+        if let Err(e) = std::fs::write(prev_path, &content) {
+            log::warn!("Could not write previous boot history: {}", e);
+            return;
+        }
+
+        if let Err(e) = std::fs::File::create(curr_path) {
+            log::warn!("Could not clear current boot history: {}", e);
+        }
+    }
+
+    fn flush(&self, buffer_guard: &TimestampRingBuffer<T>) {
+        let (curr, _, temp) = self.config.paths();
+        let try_write = || -> std::io::Result<()> {
+            let mut file =
+                OpenOptions::new().write(true).create(true).truncate(true).open(&temp)?;
+
+            // Iterate the ring buffer (which converts internal 32-bit offsets back to 64-bit TS)
+            for (ts, val) in buffer_guard.iter() {
+                writeln!(file, "{},{}", ts, val)?;
+            }
+
+            file.sync_data()?;
+            fs::rename(&temp, &curr)?;
+            Ok(())
+        };
+
+        if let Err(e) = try_write() {
+            log::error!("StateRecorder: Persist failed for {}: {:?}", self.config.name, e);
+        }
+    }
+
+    /// Appends data to memory and syncs to disk.
+    fn append(&mut self, timestamp: i64, value: T) {
+        let mut guard = self.buffer.lock();
+        guard.insert(timestamp, value);
+        self.flush(&guard);
+    }
+
+    /// Static helper to read log from disk into a vector.
+    fn read_log(path: &str) -> Vec<(i64, T)> {
+        let Ok(content) = fs::read_to_string(path) else {
+            return Vec::new();
+        };
+        content
+            .lines()
+            .filter_map(|line| {
+                let line = line.trim();
+                let mut parts = line.splitn(2, ',');
+                let ts = parts.next()?.trim().parse::<i64>().ok()?;
+                let val = parts.next()?.trim().parse::<T>().ok()?;
+                Some((ts, val))
+            })
+            .collect()
+    }
+}
+
 /// Options for NumericStateRecorder and EnumStateRecorder
+#[derive(Default)]
 pub struct RecorderOptions {
     // If true, recorder will lazily record values to inspect. Otherwise, will record eagerly.
     pub lazy_record: bool,
@@ -496,6 +701,8 @@ pub struct RecorderOptions {
     /// StateRecorderManager, which in turn corresponds to the singleton Inspector.
     /// If set, the manager supplied here will be used.
     pub manager: Option<Arc<Mutex<StateRecorderManager>>>,
+    // Optional persistence config
+    pub persistence: Option<PersistenceOptions>,
 }
 
 #[derive(Debug)]
@@ -634,6 +841,7 @@ pub struct NumericStateRecorder<T: RecordableNumericType> {
     trace_name: &'static CStr,
     units: String,
     history: RecorderHistory<T>,
+    persistence: Option<PersistenceHandler<T>>,
     _root_node: inspect::Node,
     trace_id: ftrace::Id,
     _phantom: PhantomData<T>,
@@ -649,6 +857,7 @@ impl<T: RecordableNumericType> NumericStateRecorder<T> {
     ///     associated with `manager`.
     ///   - StateRecorderError::IncompatibleString: Either `name` or the display name of a state
     ///     cannot be converted to a CString.
+    ///   - StateRecorderError::InvalidOptions: `options` is invalid for the given mode.
     pub fn new(
         name: String,
         trace_category: &'static CStr,
@@ -678,10 +887,44 @@ impl<T: RecordableNumericType> NumericStateRecorder<T> {
             }
         });
 
+        let mut persistence_handler = None;
         let history = if options.lazy_record {
-            let buffer =
-                Arc::new(Mutex::new(TimestampRingBuffer::<T>::with_capacity(options.capacity)));
-            let buffer_cloned = buffer.clone();
+            // --- LAZY MODE (Shared Buffer) ---
+
+            let shared_buffer = if let Some(config) = options.persistence {
+                let (handler, buffer) = PersistenceHandler::new(config.clone(), options.capacity);
+
+                // Handle Previous Boot Node (Static read from disk)
+                let prev_data = PersistenceHandler::<T>::read_log(&config.previous_path);
+
+                if !prev_data.is_empty() {
+                    let data_arc = Arc::new(prev_data);
+                    node.record_lazy_child("previous_boot_history", move || {
+                        let data = data_arc.clone();
+                        async move {
+                            let inspector = Inspector::default();
+                            let root = inspector.root();
+                            for (i, (ts, val)) in data.iter().enumerate() {
+                                root.record_child(i.to_string(), |child| {
+                                    child.record_int("@time", *ts);
+                                    // Use generic numeric record trait method
+                                    val.record(child, "value");
+                                });
+                            }
+                            Ok(inspector)
+                        }
+                        .boxed()
+                    });
+                }
+
+                persistence_handler = Some(handler);
+                buffer
+            } else {
+                Arc::new(Mutex::new(TimestampRingBuffer::<T>::with_capacity(options.capacity)))
+            };
+
+            // "reset_info"
+            let buffer_cloned = shared_buffer.clone();
             node.record_lazy_child("reset_info", move || {
                 let history = buffer_cloned.clone();
                 async move {
@@ -694,7 +937,9 @@ impl<T: RecordableNumericType> NumericStateRecorder<T> {
                 }
                 .boxed()
             });
-            let buffer_cloned = buffer.clone();
+
+            // "history"
+            let buffer_cloned = shared_buffer.clone();
             node.record_lazy_child("history", move || {
                 let history = buffer_cloned.clone();
                 async move {
@@ -703,6 +948,7 @@ impl<T: RecordableNumericType> NumericStateRecorder<T> {
                     for (i, (timestamp, state_value)) in history.lock().iter().enumerate() {
                         node.record_child(format!("{}", i), |node| {
                             node.record_int("@time", timestamp);
+                            // Numeric-specific record
                             state_value.record(&node, "value");
                         });
                     }
@@ -710,16 +956,24 @@ impl<T: RecordableNumericType> NumericStateRecorder<T> {
                 }
                 .boxed()
             });
-            RecorderHistory::Lazy(buffer)
+
+            RecorderHistory::Lazy(shared_buffer)
         } else {
+            // --- EAGER MODE (Persistence NOT Supported for now) ---
+            if options.persistence.is_some() {
+                return Err(StateRecorderError::InvalidOptions(
+                    "Persistence not supported in eager mode".to_string(),
+                ));
+            }
+
             node.record_child("reset_info", |node| {
                 node.record_int("count", 0);
                 node.record_int("last_reset_ns", zx::BootInstant::get().into_nanos());
             });
-            RecorderHistory::Eager(BoundedListNode::new(
-                node.create_child("history"),
-                options.capacity,
-            ))
+
+            let history_node = BoundedListNode::new(node.create_child("history"), options.capacity);
+
+            RecorderHistory::Eager(history_node)
         };
 
         Ok(Self {
@@ -729,6 +983,7 @@ impl<T: RecordableNumericType> NumericStateRecorder<T> {
             trace_name,
             units,
             history,
+            persistence: persistence_handler,
             _root_node: node,
             trace_id: ftrace::Id::random(),
             _phantom: PhantomData,
@@ -745,15 +1000,20 @@ impl<T: RecordableNumericType> NumericStateRecorder<T> {
             &self.units.to_string() => state_value.trace_value()
         );
 
-        match &mut self.history {
-            RecorderHistory::Eager(history) => {
-                history.add_entry(|node| {
-                    node.record_int("@time", timestamp);
-                    state_value.record(node, "value");
-                });
-            }
-            RecorderHistory::Lazy(history) => {
-                history.lock().insert(timestamp, state_value);
+        // If Persistence is on (Lazy), the handler OWNS the shared buffer update.
+        if let Some(handler) = &mut self.persistence {
+            handler.append(timestamp, state_value);
+        } else {
+            match &mut self.history {
+                RecorderHistory::Eager(history) => {
+                    history.add_entry(|node| {
+                        node.record_int("@time", timestamp);
+                        state_value.record(node, "value");
+                    });
+                }
+                RecorderHistory::Lazy(history) => {
+                    history.lock().insert(timestamp, state_value);
+                }
             }
         }
     }
@@ -770,10 +1030,10 @@ mod tests {
     use super::*;
     use diagnostics_assertions::{AnyIntProperty, assert_data_tree};
     use fuchsia_inspect::Inspector;
-    use strum_macros::{Display, EnumIter};
+    use strum_macros::{Display, EnumIter, EnumString};
     use test_case::test_case;
 
-    #[derive(Copy, Clone, Debug, Display, EnumIter, Eq, PartialEq, Hash)]
+    #[derive(Copy, Clone, Debug, Display, EnumIter, EnumString, Eq, PartialEq, Hash)]
     #[repr(u8)]
     enum SwitchState {
         OFF = 0,
@@ -843,7 +1103,12 @@ mod tests {
         let mut recorder = EnumStateRecorder::new(
             "my_switch".into(),
             c"power_test",
-            RecorderOptions { lazy_record, capacity: 10, manager: Some(manager) },
+            RecorderOptions {
+                lazy_record,
+                capacity: 10,
+                manager: Some(manager),
+                persistence: None,
+            },
         )
         .unwrap();
 
@@ -893,7 +1158,7 @@ mod tests {
     #[test_case(true; "lazy")]
     #[fuchsia::test]
     async fn test_multiple_recorders(lazy_record: bool) {
-        #[derive(Copy, Clone, Debug, Display, EnumIter, Eq, PartialEq, Hash)]
+        #[derive(Copy, Clone, Debug, Display, EnumIter, EnumString, Eq, PartialEq, Hash)]
         #[repr(u8)]
         enum EnablementState {
             DISABLED = 0,
@@ -911,13 +1176,23 @@ mod tests {
         let mut recorder_0 = EnumStateRecorder::new(
             "switch_0".into(),
             c"power_test",
-            RecorderOptions { lazy_record, capacity: 10, manager: Some(manager.clone()) },
+            RecorderOptions {
+                lazy_record,
+                capacity: 10,
+                manager: Some(manager.clone()),
+                persistence: None,
+            },
         )
         .unwrap();
         let mut recorder_1 = EnumStateRecorder::new(
             "switch_1".into(),
             c"power_test",
-            RecorderOptions { lazy_record, capacity: 10, manager: Some(manager) },
+            RecorderOptions {
+                lazy_record,
+                capacity: 10,
+                manager: Some(manager),
+                persistence: None,
+            },
         )
         .unwrap();
         recorder_0.record(SwitchState::OFF);
@@ -983,7 +1258,7 @@ mod tests {
     #[test_case(true; "lazy")]
     #[fuchsia::test]
     async fn test_enum_three_states(lazy_record: bool) {
-        #[derive(Copy, Clone, Debug, Display, EnumIter, Eq, PartialEq, Hash)]
+        #[derive(Copy, Clone, Debug, Display, EnumIter, EnumString, Eq, PartialEq, Hash)]
         #[repr(u8)]
         enum FanSpeed {
             OFF = 0,
@@ -1003,7 +1278,12 @@ mod tests {
         let mut recorder = EnumStateRecorder::new(
             "the_best_fan".into(),
             c"power_test",
-            RecorderOptions { lazy_record, capacity: 10, manager: Some(manager) },
+            RecorderOptions {
+                lazy_record,
+                capacity: 10,
+                manager: Some(manager),
+                persistence: None,
+            },
         )
         .unwrap();
 
@@ -1065,7 +1345,12 @@ mod tests {
         let recorder = EnumStateRecorder::<SwitchState>::new(
             "my_switch".into(),
             c"power_test",
-            RecorderOptions { lazy_record, capacity: 10, manager: Some(manager.clone()) },
+            RecorderOptions {
+                lazy_record,
+                capacity: 10,
+                manager: Some(manager.clone()),
+                persistence: None,
+            },
         )
         .unwrap();
 
@@ -1073,7 +1358,12 @@ mod tests {
         let result = EnumStateRecorder::<SwitchState>::new(
             "my_switch".into(),
             c"power_test",
-            RecorderOptions { lazy_record, capacity: 10, manager: Some(manager.clone()) },
+            RecorderOptions {
+                lazy_record,
+                capacity: 10,
+                manager: Some(manager.clone()),
+                persistence: None,
+            },
         );
         assert!(result.is_err());
 
@@ -1082,7 +1372,12 @@ mod tests {
         let result = EnumStateRecorder::<SwitchState>::new(
             "my_switch".into(),
             c"power_test",
-            RecorderOptions { lazy_record, capacity: 10, manager: Some(manager.clone()) },
+            RecorderOptions {
+                lazy_record,
+                capacity: 10,
+                manager: Some(manager.clone()),
+                persistence: None,
+            },
         );
         assert!(result.is_ok());
     }
@@ -1094,7 +1389,7 @@ mod tests {
         let mut recorder = EnumStateRecorder::new(
             "my_switch".into(),
             c"power_test",
-            RecorderOptions { lazy_record, capacity: 10, manager: None },
+            RecorderOptions { lazy_record, capacity: 10, manager: None, persistence: None },
         )
         .unwrap();
 
@@ -1147,7 +1442,12 @@ mod tests {
             c"power_test",
             units!(Percent),
             Some((T::from(0), T::from(255))),
-            RecorderOptions { lazy_record, capacity: 10, manager: Some(manager) },
+            RecorderOptions {
+                lazy_record,
+                capacity: 10,
+                manager: Some(manager),
+                persistence: None,
+            },
         )
         .unwrap();
 
@@ -1205,7 +1505,12 @@ mod tests {
             c"power_test",
             units!(Number),
             Some((T::from(-128), T::from(127))),
-            RecorderOptions { lazy_record, capacity: 10, manager: Some(manager) },
+            RecorderOptions {
+                lazy_record,
+                capacity: 10,
+                manager: Some(manager),
+                persistence: None,
+            },
         )
         .unwrap();
 
@@ -1263,7 +1568,12 @@ mod tests {
             c"power_test",
             units!(Kilo, Hertz),
             Some((T::from(0), T::from(255))),
-            RecorderOptions { lazy_record, capacity: 10, manager: Some(manager) },
+            RecorderOptions {
+                lazy_record,
+                capacity: 10,
+                manager: Some(manager),
+                persistence: None,
+            },
         )
         .unwrap();
 
@@ -1306,5 +1616,269 @@ mod tests {
     async fn test_float_numeric_types(lazy_record: bool) {
         test_float_numeric_type::<f32>(lazy_record).await;
         test_float_numeric_type::<f64>(lazy_record).await;
+    }
+
+    #[test_case(true; "lazy")]
+    #[fuchsia::test]
+    async fn test_persistence_crash_recovery(lazy_record: bool) {
+        use std::fs;
+        use tempfile::tempdir;
+
+        // 1. Setup isolated environment
+        let dir = tempdir().unwrap();
+        let storage_path = dir.path().join("data");
+        let volatile_path = dir.path().join("tmp");
+        fs::create_dir(&storage_path).unwrap();
+        fs::create_dir(&volatile_path).unwrap();
+
+        let inspector = Inspector::default();
+        let manager = StateRecorderManager::new(&inspector);
+
+        // Helper to generate options
+        let create_options = |manager_ref| RecorderOptions {
+            lazy_record, // Passed from test_case argument
+            capacity: 10,
+            manager: Some(manager_ref),
+            persistence: Some(
+                PersistenceOptions::new("crash_test".to_string())
+                    .storage_dir(storage_path.to_str().unwrap())
+                    .volatile_dir(volatile_path.to_str().unwrap()),
+            ),
+        };
+
+        // 2. START RECORDER 1 (Fill data)
+        {
+            let mut recorder = EnumStateRecorder::<SwitchState>::new(
+                "crash_test".into(),
+                c"power_test",
+                create_options(manager.clone()),
+            )
+            .unwrap();
+
+            recorder.record(SwitchState::ON);
+            recorder.record(SwitchState::OFF);
+
+            // Scope ends, data is persisted to disk
+        }
+
+        // Verify disk content
+        let curr_csv = storage_path.join("crash_test.csv");
+        let content = fs::read_to_string(curr_csv).unwrap();
+        assert!(content.contains("ON"));
+        assert!(content.contains("OFF"));
+
+        // 3. FORCE "CRASH" STATE
+        // Create 'Previous' file so library thinks this is a crash restart, not a reboot.
+        // This forces it to READ from storage_path without overwriting it.
+        let prev_csv = volatile_path.join("crash_test.csv");
+        fs::write(&prev_csv, "").unwrap();
+
+        // 4. START RECORDER 2 (Simulate Restart)
+        // This triggers hydration from disk into (Lazy: RingBuffer) or (Eager: BoundedListNode)
+        let mut recorder_restarted = EnumStateRecorder::<SwitchState>::new(
+            "crash_test".into(),
+            c"power_test",
+            create_options(manager),
+        )
+        .unwrap();
+
+        // ASSERTIONS
+        assert_data_tree!(inspector, root: {
+            power_observability_state_recorders: {
+                crash_test: {
+                    metadata: {
+                        name: "crash_test",
+                        type: "enum",
+                        states: {
+                            "OFF": 0u64,
+                            "ON": 1u64,
+                        }
+                    },
+                    history: {
+                        "0": {
+                            "@time": AnyIntProperty,
+                            "value": "ON",
+                        },
+                        "1": {
+                            "@time": AnyIntProperty,
+                            "value": "OFF",
+                        },
+                    },
+                    reset_info: {
+                        count: 0i64, // Matches both lazy (casted i64) and eager (0 literal)
+                        last_reset_ns: AnyIntProperty,
+                    },
+                }
+            }
+        });
+
+        // 5. RECORD NEW DATA
+        recorder_restarted.record(SwitchState::ON);
+        assert_data_tree!(inspector, root: {
+            power_observability_state_recorders: {
+                crash_test: {
+                    metadata: {
+                        name: "crash_test",
+                        type: "enum",
+                        states: {
+                            "OFF": 0u64,
+                            "ON": 1u64,
+                        }
+                    },
+                    history: {
+                        "0": {
+                            "@time": AnyIntProperty,
+                            "value": "ON",
+                        },
+                        "1": {
+                            "@time": AnyIntProperty,
+                            "value": "OFF",
+                        },
+                        "2": {
+                            "@time": AnyIntProperty,
+                            "value": "ON",
+                        },
+                    },
+                    reset_info: {
+                        count: 0i64,
+                        last_reset_ns: AnyIntProperty,
+                    },
+                }
+            }
+        });
+    }
+
+    #[test_case(true; "lazy")]
+    #[fuchsia::test]
+    async fn test_persistence_reboot(lazy_record: bool) {
+        use std::fs;
+        use tempfile::tempdir;
+
+        // 1. Setup isolated environment
+        let dir = tempdir().unwrap();
+        let storage_path = dir.path().join("data");
+        let volatile_path = dir.path().join("tmp");
+        fs::create_dir(&storage_path).unwrap();
+        fs::create_dir(&volatile_path).unwrap();
+
+        let inspector = Inspector::default();
+        let manager = StateRecorderManager::new(&inspector);
+
+        // Helper to generate options pointing to our temp dirs
+        let create_options = |manager_ref| RecorderOptions {
+            lazy_record,
+            capacity: 10,
+            manager: Some(manager_ref),
+            persistence: Some(
+                PersistenceOptions::new("reboot_test".to_string())
+                    .storage_dir(storage_path.to_str().unwrap())
+                    .volatile_dir(volatile_path.to_str().unwrap()),
+            ),
+        };
+
+        // 2. SIMULATE FRESH REBOOT STATE
+        // - "Current" file exists in persistent storage (saved from previous run).
+        // - "Previous" file in volatile storage is MISSING (cleared by OS reboot).
+        let curr_csv = storage_path.join("reboot_test.csv");
+        // Write raw CSV data simulating timestamps 1000 and 2000
+        fs::write(&curr_csv, "1000,ON\n2000,OFF\n").unwrap();
+
+        // Ensure volatile file doesn't exist (simulating clean /tmp)
+        let prev_csv = volatile_path.join("reboot_test.csv");
+        assert!(!prev_csv.exists());
+
+        // 3. START RECORDER (Trigger Logic)
+        let mut recorder = EnumStateRecorder::<SwitchState>::new(
+            "reboot_test".into(),
+            c"power_test",
+            create_options(manager),
+        )
+        .unwrap();
+
+        // 4. VERIFY FILESYSTEM (Rotation)
+        // The file should have been moved from 'data' to 'tmp'.
+        assert!(prev_csv.exists(), "Library should have rotated curr -> prev");
+        assert!(curr_csv.exists(), "Library should have create a new current file");
+
+        let rotated_content = fs::read_to_string(&prev_csv).unwrap();
+        assert!(rotated_content.contains("1000,ON"));
+        assert!(rotated_content.contains("2000,OFF"));
+
+        // 5. ASSERTIONS (Inspect)
+        assert_data_tree!(inspector, root: {
+            power_observability_state_recorders: {
+                reboot_test: {
+                    metadata: {
+                        name: "reboot_test",
+                        type: "enum",
+                        states: {
+                            "OFF": 0u64,
+                            "ON": 1u64,
+                        }
+                    },
+                    // DATA FROM FILE IS HERE (Read Only / Static)
+                    previous_boot_history: {
+                        "0": {
+                            "@time": 1000i64,
+                            "value": "ON",
+                        },
+                        "1": {
+                            "@time": 2000i64,
+                            "value": "OFF",
+                        },
+                    },
+                    // ACTIVE HISTORY IS EMPTY (Fresh start)
+                    history: {},
+                    reset_info: {
+                        count: 0i64,
+                        last_reset_ns: AnyIntProperty,
+                    },
+                }
+            }
+        });
+
+        // 6. RECORD NEW DATA AFTER REBOOT
+        recorder.record(SwitchState::ON);
+        recorder.record(SwitchState::OFF);
+        assert_data_tree!(inspector, root: {
+            power_observability_state_recorders: {
+                reboot_test: {
+                    metadata: {
+                        name: "reboot_test",
+                        type: "enum",
+                        states: {
+                            "OFF": 0u64,
+                            "ON": 1u64,
+                        }
+                    },
+                    // DATA FROM FILE IS HERE (Read Only / Static)
+                    previous_boot_history: {
+                        "0": {
+                            "@time": 1000i64,
+                            "value": "ON",
+                        },
+                        "1": {
+                            "@time": 2000i64,
+                            "value": "OFF",
+                        },
+                    },
+                    // ACTIVE HISTORY IS NOW POPULATED WITH NEW DATA
+                    history: {
+                        "0": {
+                            "@time": AnyIntProperty, // New timestamp
+                            "value": "ON",
+                        },
+                        "1": {
+                            "@time": AnyIntProperty, // New timestamp
+                            "value": "OFF",
+                        },
+                    },
+                    reset_info: {
+                        count: 0i64,
+                        last_reset_ns: AnyIntProperty,
+                    },
+                }
+            }
+        });
     }
 }

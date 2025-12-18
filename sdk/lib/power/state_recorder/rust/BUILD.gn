@@ -28,12 +28,14 @@ rustc_library("rust") {
     "//src/lib/diagnostics/testing/diagnostics-assertions/rust",
     "//src/lib/fuchsia",
     "//third_party/rust_crates:strum_macros",
+    "//third_party/rust_crates:tempfile",
     "//third_party/rust_crates:test-case",
   ]
 }
 
 fuchsia_unittest_package("power_state_recorder_rust_unittests") {
   deps = [ ":rust_test" ]
+  manifest = "meta/power_state_recorder_rust_unittests.cml"
 }
 
 group("tests") {

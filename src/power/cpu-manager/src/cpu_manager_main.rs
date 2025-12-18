@@ -20,7 +20,7 @@ use std::collections::HashMap;
 use std::convert::TryInto as _;
 use std::fmt::Debug;
 use std::rc::Rc;
-use strum_macros::{Display, EnumIter, FromRepr};
+use strum_macros::{Display, EnumIter, EnumString, FromRepr};
 use zx::sys;
 use {fidl_fuchsia_power_cpu as fcpu, fidl_fuchsia_thermal as fthermal, serde_json as json};
 
@@ -521,7 +521,12 @@ impl<'a> CpuManagerMainBuilder<'a> {
         let mut throttling_state_recorder = EnumStateRecorder::new(
             "cpu_throttling_state".into(),
             c"thermal",
-            RecorderOptions { capacity: 50, lazy_record: true, manager: None },
+            RecorderOptions {
+                capacity: 50,
+                lazy_record: true,
+                manager: None,
+                ..Default::default()
+            },
         )?;
         throttling_state_recorder.record(ThrottlingState::Inactive);
 
@@ -987,7 +992,7 @@ impl CpuManagerMain {
     }
 }
 
-#[derive(Copy, Clone, Debug, Display, EnumIter, Eq, PartialEq, Hash, FromRepr)]
+#[derive(Copy, Clone, Debug, Display, EnumIter, EnumString, Eq, PartialEq, Hash, FromRepr)]
 #[repr(u8)]
 enum ThrottlingState {
     Inactive = 0,
@@ -1927,7 +1932,12 @@ mod tests {
             throttling_state_recorder: EnumStateRecorder::new(
                 "cpu_throttling_state".into(),
                 c"thermal",
-                RecorderOptions { capacity: 1, lazy_record: true, manager: None },
+                RecorderOptions {
+                    capacity: 1,
+                    lazy_record: true,
+                    manager: None,
+                    ..Default::default()
+                },
             )
             .unwrap(),
         };

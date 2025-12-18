@@ -4,8 +4,12 @@ This directory provides Rust and C++ libraries that support standardized
 reporting of time series data via Inspect and trace. It supports recording of
 **enum states** and **numeric states**.
 
-Currently, the Rust API supports both enum and numeric states. The C++ API
-supports only enum states, but it will support numeric states soon.
+Currently, the Rust API supports both enum and numeric states, with an option
+to persist the states. The persisted states are recovered if the component
+crashes and comes back. Or if the device reboots, the persisted states are
+used to populated inspects nodes under a previous_boot_history. The C++ API
+supports only enum states, but it will support numeric states soon. There is
+no persistence option yet for the C++ API.
 
 Enum states generally correspond to categorical observations. They are
 well-suited for scenarios in which the name of the state, rather than an
@@ -74,7 +78,9 @@ receiving a unique track. Numeric states are recorded as counters.
 
 Below is a brief example involving a battery, with charge recorded as an
 integer percentage once per minute, and charging state -- one of `Charging`,
-`FullyCharged`, or `Discharging` -- recorded on transition.
+`FullyCharged`, or `Discharging` -- recorded on transition. Persistence is
+used by the battery level, but not the charging state to illustrate their
+differences.
 
 The specifications in the table result in the Inspect data that follows:
 
@@ -88,13 +94,6 @@ The specifications in the table result in the Inspect data that follows:
     root:
       power_observability_state_recorders:
         battery_level:
-          metadata:
-            name = battery_level
-            range:
-              min_inc = 0
-              max_inc = 100
-            type = numeric
-            units = percent
           history:
             0:
               @time = 0
@@ -120,14 +119,21 @@ The specifications in the table result in the Inspect data that follows:
             7:
               @time = 420000000000
               value = 98
-        charging_state:
           metadata:
-            name = charging_state
-            type = enum
-            states:
-              Charging = 1
-              Discharging = 0
-              FullyCharged = 2
+            name = battery_level
+            range:
+              min_inc = 0
+              max_inc = 100
+            type = numeric
+            units = percent
+          previous_boot_history:
+            0:
+              @time = 8000000000
+              value = 98
+            1:
+              @time = 110000000000
+              value = 99
+        charging_state:
           history:
             0:
               @time = 0
@@ -138,6 +144,13 @@ The specifications in the table result in the Inspect data that follows:
             2:
               @time = 240000000000
               value = Discharging
+          metadata:
+            name = charging_state
+            type = enum
+            states:
+              Charging = 1
+              Discharging = 0
+              FullyCharged = 2
 ```
 
 #### Trace
