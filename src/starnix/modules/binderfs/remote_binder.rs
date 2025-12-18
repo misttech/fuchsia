@@ -689,7 +689,7 @@ impl<F: RemoteControllerConnector> RemoteBinderHandle<F> {
             None,
             TaskRequest::Open { path, process_accessor, process, responder: sender },
         );
-        let remote_binder_connection = receiver.await??;
+        let remote_binder_connection: Arc<RemoteBinderConnection> = receiver.await??;
         let remote_binder_connection_for_close = remote_binder_connection.clone();
 
         scopeguard::defer! {

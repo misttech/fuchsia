@@ -4,19 +4,19 @@
 
 #[cfg(test)]
 pub mod tests {
-    use crate::binder::{
-        BinderConnection, BinderDevice, BinderDriver, BinderProcess, HandleTable, OperationContext,
-        TransactionError,
-    };
+    use crate::binder::{BinderConnection, BinderDevice, BinderDriver, OperationContext};
     use crate::objects::{
         BinderObject, BinderObjectFlags, Handle, LocalBinderObject, RefCountActions,
         SerializedBinderObject, StrongRefGuard, TransactionData,
     };
+    use crate::process::{BinderProcess, HandleTable};
     use crate::resource_accessor::{
         RemoteIoctl, RemoteMemoryAccessor, RemoteResourceAccessor, ResourceAccessor,
     };
     use crate::shared_memory::{SharedMemory, TransactionBuffers};
-    use crate::thread::{BinderThread, Command, RegistrationState, TransactionRole};
+    use crate::thread::{
+        BinderThread, Command, RegistrationState, TransactionError, TransactionRole,
+    };
     use crate::user_memory_cursor::UserMemoryCursor;
     use assert_matches::assert_matches;
     use fidl::endpoints::{RequestStream, ServerEnd, create_endpoints};

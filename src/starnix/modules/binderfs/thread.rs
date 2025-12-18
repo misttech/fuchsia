@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::binder::{BinderProcess, BinderProcessGuard};
 use crate::objects::{LocalBinderObject, TransactionData};
+use crate::process::{BinderProcess, BinderProcessGuard};
 
 use starnix_core::mm::{MemoryAccessor, MemoryAccessorExt};
 
@@ -20,7 +20,7 @@ use starnix_types::ownership::{
     OwnedRef, Releasable, ReleaseGuard, TempRef, WeakRef, release_on_error,
 };
 use starnix_types::user_buffer::UserBuffer;
-use starnix_uapi::errors::Errno;
+use starnix_uapi::errors::{EACCES, EPERM, Errno};
 use starnix_uapi::user_address::UserRef;
 use starnix_uapi::{
     binder_driver_return_protocol, binder_driver_return_protocol_BR_ACQUIRE,
@@ -40,8 +40,6 @@ use starnix_uapi::{
 use std::collections::VecDeque;
 
 use zerocopy::{Immutable, IntoBytes};
-
-use crate::binder::TransactionError;
 
 /// The trace category used for binder command tracing.
 const TRACE_CATEGORY: &'static str = "starnix:binder";
@@ -795,6 +793,62 @@ impl Releasable for SchedulerGuard {
                     task.tid
                 );
             }
+        }
+    }
+}
+
+/// An error processing a binder transaction/reply.
+///
+/// Some errors, like a malformed transaction request, should be propagated as the return value of
+/// an ioctl. Other errors, like a dead recipient or invalid binder handle, should be propagated
+/// through a command read by the binder thread.
+///
+/// This type differentiates between these strategies.
+#[derive(Debug, Eq, PartialEq)]
+pub enum TransactionError {
+    /// The transaction payload was malformed. Send a [`Command::Error`] command to the issuing
+    /// thread.
+    Malformed(Errno),
+    /// The transaction payload was correctly formed, but either the recipient, or a handle embedded
+    /// in the transaction, is invalid. Send a [`Command::FailedReply`] command to the issuing
+    /// thread.
+    Failure,
+    /// The transaction payload was correctly formed, but either the recipient, or a handle embedded
+    /// in the transaction, is dead. Send a [`Command::DeadReply`] command to the issuing thread.
+    Dead,
+    /// The binder thread is frozen. Send a [`Command::FrozenReply`] command to the issuing thread.
+    Frozen,
+}
+
+impl TransactionError {
+    /// Dispatches the error, by potentially queueing a command to `binder_thread` and/or returning
+    /// an error.
+    pub fn dispatch(&self, binder_thread: &BinderThread) -> Result<(), Errno> {
+        log_trace!("Dispatching transaction error {:?} for thread {}", self, binder_thread.tid);
+        binder_thread.lock().enqueue_command(match self {
+            TransactionError::Malformed(err) => {
+                log_warn!(
+                    "binder thread {} sent a malformed transaction: {:?}",
+                    binder_thread.tid,
+                    &err
+                );
+                // Negate the value, as the binder runtime assumes error values are already
+                // negative.
+                Command::Error(err.return_value() as i32)
+            }
+            TransactionError::Failure => Command::FailedReply,
+            TransactionError::Dead => Command::DeadReply,
+            TransactionError::Frozen => Command::FrozenReply,
+        });
+        Ok(())
+    }
+}
+
+impl From<Errno> for TransactionError {
+    fn from(errno: Errno) -> TransactionError {
+        match errno.code {
+            EACCES | EPERM => TransactionError::Failure,
+            _ => TransactionError::Malformed(errno),
         }
     }
 }

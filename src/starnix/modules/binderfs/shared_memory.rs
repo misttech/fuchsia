@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::binder::TransactionError;
+use crate::thread::TransactionError;
 use starnix_core::mm::memory::MemoryObject;
 use starnix_logging::{log_error, log_trace};
 use starnix_types::user_buffer::UserBuffer;
