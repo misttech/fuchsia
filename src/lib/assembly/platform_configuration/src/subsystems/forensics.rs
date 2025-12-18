@@ -22,6 +22,8 @@ const FEEDBACK_CONFIG_FILENAME: &str = "feedback_config.json";
 // Even on disk-constrained devices, we want to store a few reports in /cache if possible.
 const DEFAULT_REPORT_CACHE_SIZE_KIB: u64 = 512;
 const DEFAULT_REPORT_TMP_SIZE_KIB: u64 = 4608;
+const LARGE_DISK_REPORT_CACHE_SIZE_KIB: u64 = 10240;
+const LARGE_DISK_REPORT_TMP_SIZE_KIB: u64 = 10240;
 
 // -1 as the default value indicates that snapshots should not be persisted to disk.
 const DEFAULT_SNAPSHOT_STORAGE_SIZE_MIB: i64 = -1;
@@ -91,6 +93,18 @@ impl DefineSubsystemConfiguration<(&ForensicsConfig, &PlatformSessionConfig)>
                 &serde_json::to_string_pretty(&config.feedback.snapshot_exclusion)?,
             )?;
 
+            let report_persistence_max_cache_size_kib = if config.feedback.large_disk {
+                LARGE_DISK_REPORT_CACHE_SIZE_KIB
+            } else {
+                DEFAULT_REPORT_CACHE_SIZE_KIB
+            };
+
+            let report_persistence_max_tmp_size_kib = if config.feedback.large_disk {
+                LARGE_DISK_REPORT_TMP_SIZE_KIB
+            } else {
+                DEFAULT_REPORT_TMP_SIZE_KIB
+            };
+
             let snapshot_storage_size_mib = if config.feedback.large_disk {
                 LARGE_DISK_SNAPSHOT_STORAGE_SIZE_MIB
             } else {
@@ -98,8 +112,8 @@ impl DefineSubsystemConfiguration<(&ForensicsConfig, &PlatformSessionConfig)>
             };
 
             let feedback_config = FeedbackInternalConfig {
-                report_persistence_max_cache_size_kib: DEFAULT_REPORT_CACHE_SIZE_KIB,
-                report_persistence_max_tmp_size_kib: DEFAULT_REPORT_TMP_SIZE_KIB,
+                report_persistence_max_cache_size_kib,
+                report_persistence_max_tmp_size_kib,
                 snapshot_persistence_max_cache_size_mib: snapshot_storage_size_mib,
                 snapshot_persistence_max_tmp_size_mib: snapshot_storage_size_mib,
                 spontaneous_reboot_reason: config.feedback.spontaneous_reboot_reason,
@@ -540,8 +554,8 @@ mod test {
         };
 
         let config = serde_json::from_str::<FeedbackInternalConfig>(string_contents).unwrap();
-        assert_eq!(config.report_persistence_max_cache_size_kib, DEFAULT_REPORT_CACHE_SIZE_KIB);
-        assert_eq!(config.report_persistence_max_tmp_size_kib, DEFAULT_REPORT_TMP_SIZE_KIB);
+        assert_eq!(config.report_persistence_max_cache_size_kib, LARGE_DISK_REPORT_CACHE_SIZE_KIB);
+        assert_eq!(config.report_persistence_max_tmp_size_kib, LARGE_DISK_REPORT_TMP_SIZE_KIB);
         assert_eq!(
             config.snapshot_persistence_max_cache_size_mib,
             LARGE_DISK_SNAPSHOT_STORAGE_SIZE_MIB
