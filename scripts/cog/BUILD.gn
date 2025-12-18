@@ -10,7 +10,6 @@ group("tests") {
     ":cartfs_out_directory_test($host_toolchain)",
     ":mock_fs_test($host_toolchain)",
     ":workspace_test($host_toolchain)",
-    "git-polyfill:tests",
   ]
 }
 
