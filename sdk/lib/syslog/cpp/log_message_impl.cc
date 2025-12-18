@@ -41,7 +41,9 @@ LogMessage::LogMessage(RawLogSeverity severity, const char* file, int line, cons
 #endif
                        )
     : severity_(severity),
-      file_(severity_ > fuchsia_logging::LogSeverity::Info ? StripDots(file) : StripPath(file)),
+      file_(file ? (severity_ > fuchsia_logging::LogSeverity::Info ? StripDots(file)
+                                                                   : StripPath(file))
+                 : nullptr),
       line_(line),
       condition_(condition),
       tag_(tag)
