@@ -5,9 +5,9 @@
 //! Type-safe bindings for Zircon handles.
 
 use crate::{
-    MonotonicInstant, Name, ObjectQuery, Port, Property, PropertyQuery, Rights, Signals, Status,
-    Topic, WaitAsyncOpts, object_get_info_single, object_get_property, object_set_property, ok,
-    sys,
+    Koid, MonotonicInstant, Name, ObjectQuery, Port, Property, PropertyQuery, Rights, Signals,
+    Status, Topic, WaitAsyncOpts, object_get_info_single, object_get_property, object_set_property,
+    ok, sys,
 };
 use std::marker::PhantomData;
 use std::mem::{self, ManuallyDrop};
@@ -102,32 +102,6 @@ impl Drop for Handle {
     fn drop(&mut self) {
         // SAFETY: basic FFI call.
         unsafe { sys::zx_handle_close(self.0.get()) };
-    }
-}
-
-#[derive(
-    Debug,
-    Copy,
-    Clone,
-    Eq,
-    PartialEq,
-    Ord,
-    PartialOrd,
-    Hash,
-    zerocopy::FromBytes,
-    zerocopy::KnownLayout,
-    zerocopy::Immutable,
-)]
-#[repr(transparent)]
-pub struct Koid(sys::zx_koid_t);
-
-impl Koid {
-    pub const fn from_raw(raw: sys::zx_koid_t) -> Koid {
-        Koid(raw)
-    }
-
-    pub const fn raw_koid(&self) -> sys::zx_koid_t {
-        self.0
     }
 }
 
@@ -703,10 +677,10 @@ impl From<sys::zx_info_handle_basic_t> for HandleBasicInfo {
         // Note lossy conversion of Rights and HandleProperty here if either of those types are out
         // of date or incomplete.
         HandleBasicInfo {
-            koid: Koid(koid),
+            koid: Koid::from_raw(koid),
             rights: Rights::from_bits_truncate(rights),
             object_type: ObjectType(type_),
-            related_koid: Koid(related_koid),
+            related_koid: Koid::from_raw(related_koid),
         }
     }
 }
