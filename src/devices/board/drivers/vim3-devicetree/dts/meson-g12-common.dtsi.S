@@ -263,6 +263,10 @@
 					<GIC_SPI 61 GIC_IRQ_MODE_EDGE_RISING>, // Timer G
 					<GIC_SPI 62 GIC_IRQ_MODE_EDGE_RISING>, // Timer H
 					<GIC_SPI 63 GIC_IRQ_MODE_EDGE_RISING>; // Timer I
+					interrupt-names = "timer-a", "timer-b", "timer-c",
+						"timer-d", "timer-f", "timer-g", "timer-h", "timer-i";
+					fuchsia,interrupt-wake-vectors = "timer-a", "timer-b", "timer-c",
+						"timer-d", "timer-f", "timer-g", "timer-h", "timer-i";
 			};
 
 			reset: register-controller@1000 {
@@ -325,6 +329,8 @@
 			compatible = "snps,dwc2";
 			reg = <0x0 A311D_USB1_BASE 0x0 A311D_USB1_LENGTH>;
 			interrupts = <GIC_SPI 31 GIC_IRQ_MODE_EDGE_RISING>;
+			interrupt-names = "primary";
+			fuchsia,interrupt-wake-vectors = "primary";
 			iommus = <&stub_iommu DWC2_BTI>;
 			phys = <&usb_phy>;
 			phy-names = "dwc2-phy";
@@ -341,6 +347,8 @@
 			compatible = "generic-xhci";
 			reg = <0x0 A311D_USB0_BASE 0x0 A311D_USB0_LENGTH>;
 			interrupts = <GIC_SPI 30 GIC_IRQ_MODE_EDGE_RISING>;
+			interrupt-names = "primary";
+			fuchsia,interrupt-wake-vectors = "primary";
 			iommus = <&stub_iommu XHCI_BTI>;
 			phys = <&usb_phy>;
 			phy-names = "xhci-phy";

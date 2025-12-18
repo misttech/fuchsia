@@ -91,8 +91,7 @@ void AmlUartV2::Start(fdf::StartCompleter completer) {
     sag = std::move(result.value());
   }
 
-  aml_uart_.emplace(std::move(pdev), serial_port_info_, std::move(mmio.value()),
-                    driver_config_.enable_suspend(), std::move(sag));
+  aml_uart_.emplace(std::move(pdev), serial_port_info_, std::move(mmio.value()), std::move(sag));
 
   // Default configuration for the case that serial_impl_config is not called.
   constexpr uint32_t kDefaultBaudRate = 115200;

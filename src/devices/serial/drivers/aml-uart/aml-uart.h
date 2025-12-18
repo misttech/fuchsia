@@ -55,7 +55,7 @@ class AmlUart : public fdf::WireServer<fuchsia_hardware_serialimpl::Device> {
  public:
   explicit AmlUart(fdf::PDev pdev,
                    const fuchsia_hardware_serial::wire::SerialPortInfo& serial_port_info,
-                   fdf::MmioBuffer mmio, bool power_control_enabled = false,
+                   fdf::MmioBuffer mmio,
                    fidl::ClientEnd<fuchsia_power_system::ActivityGovernor> sag = {});
 
   zx_status_t Config(uint32_t baud_rate, uint32_t flags);
@@ -111,7 +111,6 @@ class AmlUart : public fdf::WireServer<fuchsia_hardware_serialimpl::Device> {
   zx::interrupt irq_;
   async::IrqMethod<AmlUart, &AmlUart::HandleIrq> irq_handler_{this};
 
-  bool power_control_enabled_;
   std::optional<fdf_power::TimeoutWakeLease> wake_lease_;
 };
 

@@ -44,12 +44,8 @@ fit::closure DriverTransportWriteOperation::MakeCallback(zx_status_t status) {
 
 AmlUart::AmlUart(fdf::PDev pdev,
                  const fuchsia_hardware_serial::wire::SerialPortInfo& serial_port_info,
-                 fdf::MmioBuffer mmio, bool power_control_enabled,
-                 fidl::ClientEnd<fuchsia_power_system::ActivityGovernor> sag)
-    : pdev_(std::move(pdev)),
-      serial_port_info_(serial_port_info),
-      mmio_(std::move(mmio)),
-      power_control_enabled_(power_control_enabled) {
+                 fdf::MmioBuffer mmio, fidl::ClientEnd<fuchsia_power_system::ActivityGovernor> sag)
+    : pdev_(std::move(pdev)), serial_port_info_(serial_port_info), mmio_(std::move(mmio)) {
   if (sag.is_valid()) {
     wake_lease_.emplace(fdf::Dispatcher::GetCurrent()->async_dispatcher(), "aml-uart-wake",
                         std::move(sag));
@@ -207,21 +203,12 @@ void AmlUart::HandleRXRaceForTest() {
 
 zx_status_t AmlUart::Enable(bool enable) {
   if (enable && !enabled_) {
-    if (power_control_enabled_) {
-      zx::result irq = pdev_.GetInterrupt(0, ZX_INTERRUPT_WAKE_VECTOR);
-      if (irq.is_error()) {
-        FDF_LOG(ERROR, "Failed to get pdev: %s", irq.status_string());
-        return irq.status_value();
-      }
-      irq_ = std::move(irq.value());
-    } else {
-      zx::result irq = pdev_.GetInterrupt(0, 0);
-      if (irq.is_error()) {
-        FDF_LOG(ERROR, "Failed to get pdev: %s", irq.status_string());
-        return irq.status_value();
-      }
-      irq_ = std::move(irq.value());
+    zx::result irq = pdev_.GetInterrupt(0, 0);
+    if (irq.is_error()) {
+      FDF_LOG(ERROR, "Failed to get pdev: %s", irq.status_string());
+      return irq.status_value();
     }
+    irq_ = std::move(irq.value());
 
     EnableInner(true);
 

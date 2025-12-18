@@ -46,9 +46,7 @@ zx::result<> AmlHrtimer::Start() {
   zx::interrupt irqs[kNumberOfIrqs];
   uint32_t count = 0;
   for (auto& irq : irqs) {
-    // In the future we could decide to not set ZX_INTERRUPT_WAKE_VECTOR based on
-    // configuration from the board driver.
-    auto result_irq = pdev->GetInterruptById(count++, ZX_INTERRUPT_WAKE_VECTOR);
+    auto result_irq = pdev->GetInterruptById(count++, 0);
     if (!result_irq.ok()) {
       FDF_LOG(ERROR, "Call to GetInterruptById failed: %s", result_irq.FormatDescription().c_str());
       return zx::error(result_irq->error_value());

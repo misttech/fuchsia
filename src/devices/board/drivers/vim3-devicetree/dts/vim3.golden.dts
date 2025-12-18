@@ -16,6 +16,8 @@
 	bt-uart@ffd24000 {
 		boot-metadata = "CAMm\0\0\0";
 		compatible = "amlogic,bt-uart";
+		fuchsia,interrupt-wake-vectors = "primary";
+		interrupt-names = "primary";
 		interrupts = <0x00 0x1a 0x01>;
 		pinctrl-0 = <0x34>;
 		pwm-init = <0x20>;
@@ -506,6 +508,8 @@
 
 			hrtimer@0 {
 				compatible = "amlogic,hrtimer";
+				fuchsia,interrupt-wake-vectors = "timer-a\0timer-b\0timer-c\0timer-d\0timer-f\0timer-g\0timer-h\0timer-i";
+				interrupt-names = "timer-a\0timer-b\0timer-c\0timer-d\0timer-f\0timer-g\0timer-h\0timer-i";
 				interrupts = <0x00 0x0a 0x01 0x00 0x0b 0x01 0x00 0x06 0x01 0x00 0x1d 0x01 0x00 0x3c 0x01 0x00 0x3d 0x01 0x00 0x3e 0x01 0x00 0x3f 0x01>;
 				reg = <0x00 0x00 0x00 0x10000>;
 			};
@@ -849,10 +853,12 @@
 			boot-metadata = "CAMm\0\0\0\0NLRS\0\0\0";
 			compatible = "snps,dwc2";
 			dma-burst-len = <0x05>;
+			fuchsia,interrupt-wake-vectors = "primary";
 			g-np-tx-fifo-size = <0x20>;
 			g-rx-fifo-size = <0x100>;
 			g-turnaround-time = <0x09>;
 			g-tx-fifo-size = <0x80 0x04 0x80 0x10>;
+			interrupt-names = "primary";
 			interrupts = <0x00 0x1f 0x01>;
 			iommus = <0x03 0x04>;
 			phy-names = "dwc2-phy";
@@ -862,6 +868,8 @@
 
 		usb@ff500000 {
 			compatible = "generic-xhci";
+			fuchsia,interrupt-wake-vectors = "primary";
+			interrupt-names = "primary";
 			interrupts = <0x00 0x1e 0x01>;
 			iommus = <0x03 0x06>;
 			phy-names = "xhci-phy";

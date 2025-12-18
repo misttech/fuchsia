@@ -130,6 +130,8 @@
 		compatible = "amlogic,bt-uart";
 		reg = <0x0 A311D_UART_EE_A_BASE 0x0 A311D_UART_EE_A_LENGTH>;
 		interrupts = <GIC_SPI 26 GIC_IRQ_MODE_EDGE_RISING>;
+		interrupt-names = "primary";
+		fuchsia,interrupt-wake-vectors = "primary";
 		serial-port = <2 6 3>;
 		boot-metadata = <0x43414D6D 0>;
 		pinctrl-0 = <&bt_uart_pins>;

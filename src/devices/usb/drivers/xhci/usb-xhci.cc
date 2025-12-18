@@ -1322,9 +1322,7 @@ zx_status_t UsbXhci::InitMmio() {
     return ZX_ERR_NO_MEMORY;
   }
   for (uint16_t i = 0; i < irq_count_; i++) {
-    // Set interrupt to wakeable if suspend is enabled.
-    zx::result interrupt =
-        pdev_.GetInterrupt(i, config_.enable_suspend() ? ZX_INTERRUPT_WAKE_VECTOR : 0);
+    zx::result interrupt = pdev_.GetInterrupt(i, 0);
     if (interrupt.is_error()) {
       FDF_LOG(ERROR, "Failed to get interrupt %u: %s", i, interrupt.status_string());
       return interrupt.status_value();
