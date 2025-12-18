@@ -13,8 +13,7 @@
 #include "bpf_helpers.h"
 
 // Struct stored in the `result_array` in order to pass results to the test.
-// It must match `TestResult` struct  used by the `skb_test_prog` test in
-// `src/connectivity/network/netstack3/src/bindings/bpf.rs` .
+// It must match `TestResult` struct in `ebpf_test_util`.
 // LINT.IfChange
 struct test_result {
   __u64 cookie;
@@ -23,7 +22,7 @@ struct test_result {
   __u32 proto;
   __u8 ip_proto;
 };
-// LINT.ThenChange(//src/connectivity/network/netstack3/src/bindings/bpf.rs)
+// LINT.ThenChange(//src/connectivity/network/testing/ebpf_test_util/src/lib.rs)
 
 SECTION("maps")
 struct bpf_map_def result_array = {

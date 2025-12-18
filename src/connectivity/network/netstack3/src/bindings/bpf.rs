@@ -825,7 +825,6 @@ mod tests {
     use packet_formats::udp::UdpPacketBuilder;
     use std::num::NonZeroU16;
     use test_case::test_case;
-    use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
     struct TestData;
     impl TestData {
@@ -1017,42 +1016,9 @@ mod tests {
     #[test_case(AttachType::CgroupInetEgress; "Egress")]
     #[test_case(AttachType::CgroupInetIngress; "Ingress")]
     fn run_skb_prog<I: TestIpExt + FilterIpExt>(attach_type: AttachType) {
-        let prog =
-            ebpf_loader::load_ebpf_program("/pkg/data/ebpf_test_progs.o", ".text", "skb_test_prog")
-                .expect("Failed to load test prog");
-        let maps_schema = prog.maps.iter().map(|m| m.schema).collect();
-        let calling_context = ProgramType::CgroupSkb
-            .create_calling_context(attach_type, maps_schema)
-            .expect("Failed to create CallingContext");
-        let verified =
-            ebpf::verify_program(prog.code, calling_context, &mut ebpf::NullVerifierLogger)
-                .expect("Failed to verify loaded program");
-
-        let maps: Vec<_> = prog
-            .maps
-            .iter()
-            .map(|def| ebpf_api::Map::new(def.schema, &def.name()).expect("Failed to create a map"))
-            .collect();
-        let shared_maps =
-            maps.iter().map(|map| map.share().expect("Failed to share a map")).collect();
-
         let manager = EbpfManager::default();
-
-        let code: Vec<u64> =
-            <[u64]>::ref_from_bytes(verified.code().as_bytes()).unwrap().to_owned();
-        let struct_access_instructions = verified
-            .struct_access_instructions()
-            .iter()
-            .map(|s| febpf::StructAccess {
-                pc: s.pc.try_into().unwrap(),
-                struct_memory_id: s.memory_id.id(),
-                field_offset: s.field_offset.try_into().unwrap(),
-                is_32_bit_ptr_load: s.is_32_bit_ptr_load,
-            })
-            .collect();
-
-        let program = ValidVerifiedProgram { code, struct_access_instructions, maps: shared_maps };
-        let program = CgroupSkbProgram::new(program, manager.maps_cache())
+        let (program, maps) = ebpf_test_util::load_test_program(ProgramType::CgroupSkb);
+        let program = CgroupSkbProgram::new(program.try_into().unwrap(), manager.maps_cache())
             .expect("Failed to initialize a program");
 
         match attach_type {
@@ -1125,24 +1091,10 @@ mod tests {
             attach_type => unreachable!("Unexpected attach_type: {:?}", attach_type),
         }
 
-        // Results struct. Must match the `struct test_result` in
-        // `ebpf_test_progs.c`.
-        #[derive(FromBytes, Immutable, KnownLayout)]
-        #[repr(C)]
-        // LINT.IfChange
-        struct TestResult {
-            cookie: u64,
-            uid: u32,
-            ifindex: u32,
-            proto: u32,
-            ip_proto: u8,
-        }
-        // LINT.ThenChange(//src/connectivity/network/netstack3/tests/ebpf/ebpf_test_progs.c)
-
         // Check the result.
         let result = maps[0].load(&[0; 4]).expect("Failed to retrieve test result");
-        let result =
-            TestResult::ref_from_bytes(&result).expect("Failed to convert test results struct");
+        let result = ebpf_test_util::TestResult::ref_from_bytes(&result)
+            .expect("Failed to convert test results struct");
 
         assert_eq!(result.cookie, socket_resource_token.token().export_value());
         assert_eq!(result.uid, UID);
