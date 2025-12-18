@@ -343,7 +343,6 @@ python_library("hdrgen.library") {
     "__init__.py",
     "enumeration.py",
     "function.py",
-    "gpu_headers.py",
     "header.py",
     "macro.py",
     "main.py",
