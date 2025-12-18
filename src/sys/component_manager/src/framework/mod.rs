@@ -22,6 +22,7 @@ use {
 };
 
 pub mod binder;
+pub mod capabilities;
 pub mod capability_factory;
 pub mod capability_store;
 pub mod component_sandbox_retriever;
@@ -72,6 +73,11 @@ impl Routable<Dict> for FrameworkRouter {
 
         let framework_dictionary = Dict::new();
         add_protocol::<fcomponent::BinderMarker>(&component, &framework_dictionary, binder::serve);
+        add_protocol::<fruntime::CapabilitiesMarker>(
+            &component,
+            &framework_dictionary,
+            capabilities::serve,
+        );
         add_protocol::<fsandbox::CapabilityStoreMarker>(
             &component,
             &framework_dictionary,

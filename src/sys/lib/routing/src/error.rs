@@ -382,6 +382,12 @@ pub enum RoutingError {
         conflicting_names.iter().map(|n| format!("{}", n)).join(", ")
     )]
     ConflictingDictionaryEntries { moniker: ExtendedMoniker, conflicting_names: Vec<Name> },
+
+    #[error("FIDL error encountered while talking to a router implemented by component {moniker}")]
+    RemoteFIDLError { moniker: Moniker },
+
+    #[error("error returned by a router implemented by component {moniker}")]
+    RemoteRouterError { moniker: Moniker },
 }
 
 impl Explain for RoutingError {
@@ -444,6 +450,8 @@ impl Explain for RoutingError {
             RoutingError::RouteUnexpectedDebug { .. }
             | RoutingError::RouteUnexpectedUnavailable { .. }
             | RoutingError::MissingPorcelainType { .. } => zx::Status::INTERNAL,
+            RoutingError::RemoteFIDLError { .. } => zx::Status::PEER_CLOSED,
+            RoutingError::RemoteRouterError { .. } => zx::Status::NOT_FOUND,
         }
     }
 }
@@ -481,7 +489,9 @@ impl From<RoutingError> for ExtendedMoniker {
             | RoutingError::DynamicDictionariesNotAllowed { moniker, .. }
             | RoutingError::RouteSourceShutdown { moniker }
             | RoutingError::UseFromSelfNotFound { moniker, .. }
-            | RoutingError::MissingPorcelainType { moniker, .. } => moniker.into(),
+            | RoutingError::MissingPorcelainType { moniker, .. }
+            | RoutingError::RemoteFIDLError { moniker }
+            | RoutingError::RemoteRouterError { moniker, .. } => moniker.into(),
             RoutingError::PathTooLong { moniker, .. } => moniker,
 
             RoutingError::BedrockMemberAccessUnsupported { moniker }

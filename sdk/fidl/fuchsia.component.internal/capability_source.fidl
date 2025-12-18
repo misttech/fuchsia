@@ -20,6 +20,7 @@ type CapabilitySource = strict union {
     8: filtered_aggregate_provider FilteredAggregateProvider;
     9: environment Environment;
     10: void Void;
+    11: remoted_at moniker;
 };
 
 type Component = table {

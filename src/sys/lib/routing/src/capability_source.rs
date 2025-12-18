@@ -197,6 +197,9 @@ pub enum CapabilitySource {
     /// This capability originates from "void". This is only a valid origination for optional
     /// capabilities.
     Void(VoidSource),
+    /// The route for this capability extended outside of component manager at the given moniker,
+    /// and we thus don't know where the ultimate terminus of it is.
+    RemotedAt(Moniker),
 }
 
 #[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
@@ -284,29 +287,6 @@ pub struct VoidSource {
 }
 
 impl CapabilitySource {
-    /// Returns whether the given CapabilitySourceInterface can be available in a component's
-    /// namespace.
-    pub fn can_be_in_namespace(&self) -> bool {
-        match self {
-            Self::Component(ComponentSource { capability, .. }) => capability.can_be_in_namespace(),
-            Self::Framework(FrameworkSource { capability, .. }) => capability.can_be_in_namespace(),
-            Self::Builtin(BuiltinSource { capability }) => capability.can_be_in_namespace(),
-            Self::Namespace(NamespaceSource { capability }) => capability.can_be_in_namespace(),
-            Self::Capability(CapabilityToCapabilitySource { .. }) => true,
-            Self::AnonymizedAggregate(AnonymizedAggregateSource { capability, .. }) => {
-                capability.can_be_in_namespace()
-            }
-            Self::FilteredProvider(FilteredProviderSource { capability, .. })
-            | Self::FilteredAggregateProvider(FilteredAggregateProviderSource {
-                capability, ..
-            }) => capability.can_be_in_namespace(),
-            Self::Environment(EnvironmentSource { capability, .. }) => {
-                capability.can_be_in_namespace()
-            }
-            Self::Void(VoidSource { capability, .. }) => capability.can_be_in_namespace(),
-        }
-    }
-
     pub fn source_name(&self) -> Option<&Name> {
         match self {
             Self::Component(ComponentSource { capability, .. }) => capability.source_name(),
@@ -323,6 +303,7 @@ impl CapabilitySource {
             }) => Some(capability.source_name()),
             Self::Environment(EnvironmentSource { capability, .. }) => capability.source_name(),
             Self::Void(VoidSource { capability, .. }) => Some(capability.source_name()),
+            Self::RemotedAt(_) => None,
         }
     }
 
@@ -344,6 +325,7 @@ impl CapabilitySource {
             }) => capability.type_name(),
             Self::Environment(EnvironmentSource { capability, .. }) => capability.type_name(),
             Self::Void(VoidSource { capability, .. }) => capability.type_name(),
+            Self::RemotedAt(_) => unimplemented!(),
         }
     }
 
@@ -358,7 +340,8 @@ impl CapabilitySource {
             | Self::FilteredProvider(FilteredProviderSource { moniker, .. })
             | Self::FilteredAggregateProvider(FilteredAggregateProviderSource {
                 moniker, ..
-            }) => ExtendedMoniker::ComponentInstance(moniker.clone()),
+            })
+            | Self::RemotedAt(moniker) => ExtendedMoniker::ComponentInstance(moniker.clone()),
             Self::Builtin(_) | Self::Namespace(_) => ExtendedMoniker::ComponentManager,
         }
     }
@@ -398,6 +381,7 @@ impl fmt::Display for CapabilitySource {
                 }
                 Self::Environment(EnvironmentSource { capability, .. }) => capability.to_string(),
                 Self::Void(VoidSource { capability, .. }) => capability.to_string(),
+                Self::RemotedAt(moniker) => format!("route left component manager at {}", moniker),
             }
         )
     }
@@ -537,16 +521,6 @@ impl InternalCapability {
         }
     }
 
-    /// Returns whether the given InternalCapability can be available in a component's namespace.
-    pub fn can_be_in_namespace(&self) -> bool {
-        matches!(
-            self,
-            InternalCapability::Service(_)
-                | InternalCapability::Protocol(_)
-                | InternalCapability::Directory(_)
-        )
-    }
-
     /// Returns a name for the capability type.
     pub fn type_name(&self) -> CapabilityTypeName {
         match self {
@@ -681,27 +655,6 @@ pub enum ComponentCapability {
 }
 
 impl ComponentCapability {
-    /// Returns whether the given ComponentCapability can be available in a component's namespace.
-    pub fn can_be_in_namespace(&self) -> bool {
-        match self {
-            ComponentCapability::Use_(use_) => {
-                matches!(use_, UseDecl::Protocol(_) | UseDecl::Directory(_) | UseDecl::Service(_))
-            }
-            ComponentCapability::Expose(expose) => matches!(
-                expose,
-                ExposeDecl::Protocol(_) | ExposeDecl::Directory(_) | ExposeDecl::Service(_)
-            ),
-            ComponentCapability::Offer(offer) => matches!(
-                offer,
-                OfferDecl::Protocol(_) | OfferDecl::Directory(_) | OfferDecl::Service(_)
-            ),
-            ComponentCapability::Protocol(_)
-            | ComponentCapability::Directory(_)
-            | ComponentCapability::Service(_) => true,
-            _ => false,
-        }
-    }
-
     /// Returns a name for the capability type.
     pub fn type_name(&self) -> CapabilityTypeName {
         match self {
@@ -913,11 +866,6 @@ pub enum AggregateCapability {
 }
 
 impl AggregateCapability {
-    /// Returns true if the AggregateCapability can be available in a component's namespace.
-    pub fn can_be_in_namespace(&self) -> bool {
-        matches!(self, AggregateCapability::Service(_))
-    }
-
     /// Returns a name for the capability type.
     pub fn type_name(&self) -> CapabilityTypeName {
         match self {

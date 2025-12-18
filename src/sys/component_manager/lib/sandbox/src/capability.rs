@@ -291,6 +291,17 @@ impl TryFrom<Capability> for Router<crate::Data> {
     }
 }
 
+impl TryFrom<Capability> for crate::WeakInstanceToken {
+    type Error = ();
+
+    fn try_from(c: Capability) -> Result<Self, Self::Error> {
+        match c {
+            Capability::Instance(i) => Ok(i),
+            _ => Err(()),
+        }
+    }
+}
+
 /// Parent trait implemented by all capability types. Useful for defining interfaces that
 /// generic over a capability type.
 pub trait CapabilityBound: Into<Capability> + TryFrom<Capability> + Send + Sync + 'static {

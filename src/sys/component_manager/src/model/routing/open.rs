@@ -176,7 +176,8 @@ impl<'a> CapabilityOpenRequest<'a> {
             | CapabilitySource::Void(_)
             | CapabilitySource::Capability(_)
             | CapabilitySource::Builtin(_)
-            | CapabilitySource::Environment(_) => Ok(None),
+            | CapabilitySource::Environment(_)
+            | CapabilitySource::RemotedAt(_) => Ok(None),
         }
     }
 }

@@ -112,6 +112,27 @@ open protocol Dictionary {
     });
 };
 
+/// A token representing a component instance.
+@available(added=HEAD)
+type WeakInstanceToken = resource struct {
+    token zx.Handle:EVENTPAIR;
+};
+
+/// Contains metadata on how to route a capability, and a token representing the
+/// component that started the route.
+///
+/// The contents of `metadata` are data capabilities used by component manager
+/// to track things like the type of the route (e.g. protocol, storage, runner,
+/// ...), the rights on a directory route, and the scope on an event stream
+/// route. Generally an empty dictionary is safe to pass to component manager.
+///
+/// Either both fields must be set, or neither.
+@available(added=HEAD)
+type DeprecatedRouteRequest = resource table {
+    1: target WeakInstanceToken;
+    2: metadata client_end:Dictionary;
+};
+
 /// A factory for `Connector` capabilities.
 @available(added=HEAD)
 open protocol ConnectorRouterDeprecated {
@@ -126,7 +147,7 @@ open protocol ConnectorRouterDeprecated {
     ///   void).
     /// - An error, if the operation failed.
     flexible Route(resource struct {
-        request RouteRequest;
+        request DeprecatedRouteRequest;
         connector_server_end server_end:<Connector>;
     }) -> (resource struct {
         response RouterResponse;
@@ -147,7 +168,7 @@ open protocol DirConnectorRouterDeprecated {
     ///   void).
     /// - An error, if the operation failed.
     flexible Route(resource struct {
-        request RouteRequest;
+        request DeprecatedRouteRequest;
         dir_connector_server_end server_end:<DirConnector>;
     }) -> (resource struct {
         response RouterResponse;
@@ -168,7 +189,7 @@ open protocol DictionaryRouterDeprecated {
     ///   void).
     /// - An error, if the operation failed.
     flexible Route(resource struct {
-        request RouteRequest;
+        request DeprecatedRouteRequest;
         dictionary_server_end server_end:<Dictionary>;
     }) -> (resource struct {
         response RouterResponse;
@@ -189,7 +210,7 @@ open protocol DataRouterDeprecated {
     ///   void).
     /// - An error, if the operation failed.
     flexible Route(resource struct {
-        request RouteRequest;
+        request DeprecatedRouteRequest;
     }) -> (resource struct {
         response RouterResponse;
         data Data:optional;

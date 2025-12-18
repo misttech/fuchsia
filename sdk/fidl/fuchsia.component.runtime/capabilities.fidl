@@ -18,6 +18,7 @@ type CapabilityType = flexible enum {
     DIR_CONNECTOR_ROUTER = 6;
     DICTIONARY_ROUTER = 7;
     DATA_ROUTER = 8;
+    INSTANCE_TOKEN = 9;
 };
 
 /// Static data which may be put in a dictionary or returned by a router. This
@@ -47,6 +48,7 @@ closed protocol DirReceiver {
     /// been given to any `DirConnector` associated with this `DirReceiver`.
     strict Receive(resource struct {
         channel server_end:fuchsia.io.Directory;
+        path fuchsia.io.Path;
         rights fuchsia.io.Flags;
     });
 };
@@ -55,17 +57,24 @@ closed protocol DirReceiver {
 @available(added=HEAD)
 open protocol ConnectorRouter {
     /// Attempts to produce a `Connector` capability from this
-    /// `ConnectorRouter`. This will return:
+    /// `ConnectorRouter`.
     ///
-    /// - A `Connector` if the operation is successful.
-    /// - An empty value if there is no issue found but the capability is not
-    ///   being provided (for example, an optional route ended in an offer from
-    ///   void).
+    /// `request` contains context for this route, and `instance_token`
+    /// references the component that the routing operation is being performed
+    /// for.
+    ///
+    /// This will return:
+    ///
+    /// - `SUCCESS` if `handle` has been associated with a connector.
+    /// - `UNAVAILABLE` if the capability is unavailable, in which case `handle`
+    ///   will be closed.
     /// - An error, if the operation failed.
     flexible Route(resource struct {
         request RouteRequest;
-    }) -> (resource struct {
-        handle zx.Handle:<EVENTPAIR, optional>;
+        instance_token zx.Handle:EVENTPAIR;
+        handle zx.Handle:EVENTPAIR;
+    }) -> (struct {
+        response RouterResponse;
     }) error RouterError;
 };
 
@@ -73,17 +82,24 @@ open protocol ConnectorRouter {
 @available(added=HEAD)
 open protocol DirConnectorRouter {
     /// Attempts to produce a `DirConnector` capability from this
-    /// `DirConnectorRouter`. This will return:
+    /// `DirConnectorRouter`.
     ///
-    /// - A `DirConnector` if the operation is successful.
-    /// - An empty value if there is no issue found but the capability is not
-    ///   being provided (for example, an optional route ended in an offer from
-    ///   void).
+    /// `request` contains context for this route, and `instance_token`
+    /// references the component that the routing operation is being performed
+    /// for.
+    ///
+    /// This will return:
+    ///
+    /// - `SUCCESS` if `handle` has been associated with a connector.
+    /// - `UNAVAILABLE` if the capability is unavailable, in which case `handle`
+    ///   will be closed.
     /// - An error, if the operation failed.
     flexible Route(resource struct {
         request RouteRequest;
-    }) -> (resource struct {
-        handle zx.Handle:<EVENTPAIR, optional>;
+        instance_token zx.Handle:EVENTPAIR;
+        handle zx.Handle:EVENTPAIR;
+    }) -> (struct {
+        response RouterResponse;
     }) error RouterError;
 };
 
@@ -91,17 +107,24 @@ open protocol DirConnectorRouter {
 @available(added=HEAD)
 open protocol DictionaryRouter {
     /// Attempts to produce a `Dictionary` capability from this
-    /// `DictionaryRouter`. This will return:
+    /// `DictionaryRouter`.
     ///
-    /// - A `Dictionary` if the operation is successful.
-    /// - An empty value if there is no issue found but the capability is not
-    ///   being provided (for example, an optional route ended in an offer from
-    ///   void).
+    /// `request` contains context for this route, and `instance_token`
+    /// references the component that the routing operation is being performed
+    /// for.
+    ///
+    /// This will return:
+    ///
+    /// - `SUCCESS` if `handle` has been associated with a connector.
+    /// - `UNAVAILABLE` if the capability is unavailable, in which case `handle`
+    ///   will be closed.
     /// - An error, if the operation failed.
     flexible Route(resource struct {
         request RouteRequest;
-    }) -> (resource struct {
-        handle zx.Handle:<EVENTPAIR, optional>;
+        instance_token zx.Handle:EVENTPAIR;
+        handle zx.Handle:EVENTPAIR;
+    }) -> (struct {
+        response RouterResponse;
     }) error RouterError;
 };
 
@@ -109,17 +132,24 @@ open protocol DictionaryRouter {
 @available(added=HEAD)
 open protocol DataRouter {
     /// Attempts to produce a `Data` capability from this
-    /// `DataRouter`. This will return:
+    /// `DataRouter`.
     ///
-    /// - A `Data` value if the operation is successful.
-    /// - An empty value if there is no issue found but the capability is not
-    ///   being provided (for example, an optional route ended in an offer from
-    ///   void).
+    /// `request` contains context for this route, and `instance_token`
+    /// references the component that the routing operation is being performed
+    /// for.
+    ///
+    /// This will return:
+    ///
+    /// - `SUCCESS` if `handle` has been associated with a connector.
+    /// - `UNAVAILABLE` if the capability is unavailable, in which case `handle`
+    ///   will be closed.
     /// - An error, if the operation failed.
     flexible Route(resource struct {
         request RouteRequest;
-    }) -> (resource struct {
-        data Data:optional;
+        instance_token zx.Handle:EVENTPAIR;
+        handle zx.Handle:EVENTPAIR;
+    }) -> (struct {
+        response RouterResponse;
     }) error RouterError;
 };
 
@@ -142,25 +172,19 @@ type RouterError = flexible enum : uint32 {
     UNKNOWN = 5;
 };
 
-/// A token representing a component instance.
-@available(added=HEAD)
-type WeakInstanceToken = resource struct {
-    token zx.Handle:EVENTPAIR;
-};
-
 /// Contains metadata on how to route a capability, and a token representing the
 /// component that started the route.
 ///
-/// The contents of `metadata` are data capabilities used by component manager
-/// to track things like the type of the route (e.g. protocol, storage, runner,
-/// ...), the rights on a directory route, and the scope on an event stream
-/// route. Generally an empty dictionary is safe to pass to component manager.
+/// `metadata` is a dictionary, which contains data capabilities used by
+/// component manager to track things like the type of the route (e.g. protocol,
+/// storage, runner, ...), the rights on a directory route, and the scope on an
+/// event stream route. Generally an empty dictionary is safe to pass to
+/// component manager.
 ///
 /// Either both fields must be set, or neither.
 @available(added=HEAD)
 type RouteRequest = resource table {
-    1: target WeakInstanceToken;
-    2: metadata client_end:Dictionary;
+    1: metadata zx.Handle:EVENTPAIR;
 };
 
 @available(added=HEAD)
@@ -180,6 +204,9 @@ type CapabilitiesError = flexible enum {
     INVALID_CAPABILITY_TYPE = 4;
     UNREGISTERED_CAPABILITY = 5;
     INVALID_HANDLE = 6;
+    HANDLE_ALREADY_REGISTERED = 7;
+    INVALID_DATA = 8;
+    INVALID_ARGS = 9;
 };
 
 /// An API for creating and manipulating references to runtime capabilities in
@@ -268,6 +295,16 @@ open protocol Capabilities {
         router_client_end client_end:DataRouter;
     }) -> () error CapabilitiesError;
 
+    /// Creates a new instance token, which is an opaque identifier associated
+    /// with a specific component. This instance token will be associated with
+    /// the component this connection is opened from.
+    ///
+    /// Make sure this method returns before passing the handle's peer to other
+    /// methods in this API. The creation may not be complete before then.
+    flexible InstanceTokenCreate(resource struct {
+        instance_token zx.Handle:EVENTPAIR;
+    }) -> () error CapabilitiesError;
+
     /// Uses the provided `connector` to open a new connection by delivering
     /// this channel to whoever created the connector.
     ///
@@ -290,13 +327,13 @@ open protocol Capabilities {
     /// If the `dir_connector` event pair handle is not correlated with a handle
     /// given to `DirConnectorCreate`, this connection will be closed.
     ///
-    /// `dir_connector` and `channel` are both required. `rights` and `subdir`
+    /// `dir_connector` and `channel` are both required. `flags` and `path`
     /// may be omitted.
     flexible DirConnectorOpen(resource table {
         1: dir_connector zx.Handle:EVENTPAIR;
         2: channel server_end:fuchsia.io.Directory;
-        3: rights fuchsia.io.Flags;
-        4: subdir string:fuchsia.component.decl.MAX_PATH_LENGTH;
+        3: flags fuchsia.io.Flags;
+        4: path fuchsia.io.Path;
     }) -> () error CapabilitiesError;
 
     /// Inserts a new `capability` into this `Dictionary` under the name `key`.
@@ -352,61 +389,96 @@ open protocol Capabilities {
         key_iterator server_end:DictionaryKeyIterator;
     }) -> () error CapabilitiesError;
 
-    /// Returns the `Data` value that was provided to the `DataCreate` call used with
-    /// `data_handle`.
+    /// Returns the `Data` value that was provided to the `DataCreate` call used
+    /// with `data_handle`.
     flexible DataGet(resource struct {
         data_handle zx.Handle:EVENTPAIR;
     }) -> (Data) error CapabilitiesError;
 
-    /// Attempts to produce a `Connector` capability from this `ConnectorRouter`.
+    /// Attempts to produce a `Connector` capability from this
+    /// `ConnectorRouter`.
     ///
-    /// Make sure this method returns before passing the peer of `capability` to other methods in
-    /// this API. The creation may not be complete before then.
+    /// `request` contains context for this route, and `instance_token`
+    /// references the component that the routing operation is being performed
+    /// for.
+    ///
+    /// This will return:
+    ///
+    /// - `SUCCESS` if `connector` has been associated with a connector.
+    /// - `UNAVAILABLE` if the capability is unavailable, in which case
+    ///   `connector` will be closed.
+    /// - An error, if the operation failed.
     flexible ConnectorRouterRoute(resource struct {
         router zx.Handle:EVENTPAIR;
         request RouteRequest;
+        instance_token zx.Handle:EVENTPAIR;
         connector zx.Handle:EVENTPAIR;
-    }) -> () error zx.Status;
+    }) -> (struct {
+        response RouterResponse;
+    }) error zx.Status;
 
     /// Attempts to produce a `DirConnector` capability from this
-    /// `DirConnectorRouter`. This will return:
+    /// `DirConnectorRouter`.
     ///
-    /// - A `DirConnector` if the operation is successful.
-    /// - An empty value if there is no issue found but the capability is not
-    ///   being provided (for example, an optional route ended in an offer from
-    ///   void).
+    /// `request` contains context for this route, and `instance_token`
+    /// references the component that the routing operation is being performed
+    /// for.
+    ///
+    /// This will return:
+    ///
+    /// - `SUCCESS` if `dir_connector` has been associated with a connector.
+    /// - `UNAVAILABLE` if the capability is unavailable, in which case
+    ///   `dir_connector` will be closed.
     /// - An error, if the operation failed.
     flexible DirConnectorRouterRoute(resource struct {
         router zx.Handle:EVENTPAIR;
         request RouteRequest;
+        instance_token zx.Handle:EVENTPAIR;
         dir_connector zx.Handle:EVENTPAIR;
-    }) -> () error zx.Status;
+    }) -> (struct {
+        response RouterResponse;
+    }) error zx.Status;
 
     /// Attempts to produce a `Dictionary` capability from this
-    /// `DictionaryRouter`. This will return:
+    /// `DictionaryRouter`.
     ///
-    /// - A `Dictionary` if the operation is successful.
-    /// - An empty value if there is no issue found but the capability is not
-    ///   being provided (for example, an optional route ended in an offer from
-    ///   void).
+    /// `request` contains context for this route, and `instance_token`
+    /// references the component that the routing operation is being performed
+    /// for.
+    ///
+    /// This will return:
+    ///
+    /// - `SUCCESS` if `dictionary` has been associated with a connector.
+    /// - `UNAVAILABLE` if the capability is unavailable, in which case
+    ///   `dictionary` will be closed.
     /// - An error, if the operation failed.
     flexible DictionaryRouterRoute(resource struct {
         router zx.Handle:EVENTPAIR;
         request RouteRequest;
+        instance_token zx.Handle:EVENTPAIR;
         dictionary zx.Handle:EVENTPAIR;
-    }) -> () error zx.Status;
+    }) -> (struct {
+        response RouterResponse;
+    }) error zx.Status;
 
-    /// Attempts to produce a `Data` value from this
-    /// `DataRouter`. This will return:
+    /// Attempts to produce a `Data` capability from this `DataRouter`.
     ///
-    /// - A `Data` value if the operation is successful.
-    /// - An empty value if there is no issue found but the capability is not
-    ///   being provided (for example, an optional route ended in an offer from
-    ///   void).
+    /// `request` contains context for this route, and `instance_token`
+    /// references the component that the routing operation is being performed
+    /// for.
+    ///
+    /// This will return:
+    ///
+    /// - `SUCCESS` if `data` has been associated with a connector.
+    /// - `UNAVAILABLE` if the capability is unavailable, in which case `data`
+    ///   will be closed.
     /// - An error, if the operation failed.
     flexible DataRouterRoute(resource struct {
         router zx.Handle:EVENTPAIR;
         request RouteRequest;
-        data_handle zx.Status;
-    }) -> () error zx.Status;
+        instance_token zx.Handle:EVENTPAIR;
+        data zx.Handle:EVENTPAIR;
+    }) -> (struct {
+        response RouterResponse;
+    }) error zx.Status;
 };

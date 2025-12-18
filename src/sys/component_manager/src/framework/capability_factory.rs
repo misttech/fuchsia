@@ -61,7 +61,8 @@ pub fn serve(
 ) -> BoxFuture<'static, Result<(), Error>> {
     async move {
         let source_component = weak_source_component.upgrade()?;
-        let remote_capabilities = source_component.context.remote_capabilities().clone();
+        let remote_capabilities =
+            source_component.context.remote_capabilities().remote_capabilities.clone();
         let weak_scope = source_component.execution_scope.as_weak();
         let stream = take_handle_as_stream::<fruntime::CapabilityFactoryMarker>(channel);
         let moniker = source_component.moniker.clone();
@@ -749,10 +750,14 @@ impl CapabilityFactory {
 
     async fn convert_route_request(
         &self,
-        request: fruntime::RouteRequest,
+        request: fruntime::DeprecatedRouteRequest,
     ) -> Result<(Option<Request>, Option<WeakInstanceToken>), fruntime::RouterError> {
         match request {
-            fruntime::RouteRequest { metadata: Some(metadata), target: Some(target), .. } => {
+            fruntime::DeprecatedRouteRequest {
+                metadata: Some(metadata),
+                target: Some(target),
+                ..
+            } => {
                 let metadata = Dict::from_remote(metadata, &self)
                     .await
                     .ok_or(fruntime::RouterError::InvalidArgs)?;
@@ -762,7 +767,9 @@ impl CapabilityFactory {
                     .ok_or(fruntime::RouterError::InvalidArgs)?;
                 Ok((Some(Request { metadata }), Some(target)))
             }
-            fruntime::RouteRequest { metadata: None, target: None, .. } => Ok((None, None)),
+            fruntime::DeprecatedRouteRequest { metadata: None, target: None, .. } => {
+                Ok((None, None))
+            }
             _ => Err(fruntime::RouterError::InvalidArgs),
         }
     }
@@ -830,7 +837,7 @@ trait Remotable: CapabilityBound {
     /// Performs a route operation for a capability of this type.
     async fn route(
         router_proxy: &Self::RouterProxy,
-        request: fruntime::RouteRequest,
+        request: fruntime::DeprecatedRouteRequest,
     ) -> Result<Option<Self::RemotedType>, fruntime::RouterError>;
 }
 
@@ -860,7 +867,7 @@ impl Remotable for Connector {
 
     async fn route(
         router_proxy: &Self::RouterProxy,
-        request: fruntime::RouteRequest,
+        request: fruntime::DeprecatedRouteRequest,
     ) -> Result<Option<Self::RemotedType>, fruntime::RouterError> {
         let (client_end, server_end) = create_endpoints();
         match router_proxy.route(request, server_end).await {
@@ -899,7 +906,7 @@ impl Remotable for DirConnector {
 
     async fn route(
         router_proxy: &Self::RouterProxy,
-        request: fruntime::RouteRequest,
+        request: fruntime::DeprecatedRouteRequest,
     ) -> Result<Option<Self::RemotedType>, fruntime::RouterError> {
         let (client_end, server_end) = create_endpoints();
         match router_proxy.route(request, server_end).await {
@@ -937,7 +944,7 @@ impl Remotable for Dict {
 
     async fn route(
         router_proxy: &Self::RouterProxy,
-        request: fruntime::RouteRequest,
+        request: fruntime::DeprecatedRouteRequest,
     ) -> Result<Option<Self::RemotedType>, fruntime::RouterError> {
         let (client_end, server_end) = create_endpoints();
         match router_proxy.route(request, server_end).await {
@@ -976,7 +983,7 @@ impl Remotable for Data {
 
     async fn route(
         router_proxy: &Self::RouterProxy,
-        request: fruntime::RouteRequest,
+        request: fruntime::DeprecatedRouteRequest,
     ) -> Result<Option<Self::RemotedType>, fruntime::RouterError> {
         match router_proxy.route(request).await {
             Ok(Ok((fruntime::RouterResponse::Success, Some(data)))) => Ok(Some(*data)),
@@ -1015,8 +1022,11 @@ where
             Some(Request { metadata }) => Some(metadata.to_remote(&self.factory).await),
             None => None,
         };
-        let request =
-            fruntime::RouteRequest { target: Some(target), metadata, ..Default::default() };
+        let request = fruntime::DeprecatedRouteRequest {
+            target: Some(target),
+            metadata,
+            ..Default::default()
+        };
         let result = R::route(&self.router_proxy, request).await;
         match result {
             Ok(Some(client_end)) => {

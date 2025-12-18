@@ -31,10 +31,14 @@ pub enum PolicyError {
     #[error("security policy disallows \"{policy}\" child policy for \"{moniker}\"")]
     ChildPolicyDisallowed { policy: String, moniker: Moniker },
 
-    #[error("security policy was unable to extract the source from the routed capability at component \"{moniker}\"")]
+    #[error(
+        "security policy was unable to extract the source from the routed capability at component \"{moniker}\""
+    )]
     InvalidCapabilitySource { moniker: ExtendedMoniker },
 
-    #[error("security policy disallows \"{cap}\" from \"{source_moniker}\" being used at \"{target_moniker}\"")]
+    #[error(
+        "security policy disallows \"{cap}\" from \"{source_moniker}\" being used at \"{target_moniker}\""
+    )]
     CapabilityUseDisallowed {
         cap: String,
         source_moniker: ExtendedMoniker,
@@ -180,6 +184,11 @@ impl GlobalPolicyChecker {
                     source: CapabilityAllowlistSource::Environment,
                     capability: capability.type_name(),
                 }
+            }
+            CapabilitySource::RemotedAt(moniker) => {
+                return Err(PolicyError::InvalidCapabilitySource {
+                    moniker: ExtendedMoniker::ComponentInstance(moniker.clone()),
+                });
             }
         })
     }

@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::framework::capability_factory::RemotedRuntimeCapabilities;
+use crate::framework::capabilities::RemotedRuntimeCapabilities;
 use crate::model::token::InstanceRegistry;
 use ::routing::policy::GlobalPolicyChecker;
 use cm_config::{AbiRevisionPolicy, RuntimeConfig};
@@ -24,7 +24,7 @@ pub struct ModelContext {
     instance_registry: Arc<InstanceRegistry>,
     config_developer_overrides: Mutex<HashMap<Moniker, HashMap<String, cm_rust::ConfigValue>>>,
     pub scope_factory: Box<dyn Fn() -> ExecutionScope + Send + Sync + 'static>,
-    remote_capabilities: Arc<Mutex<RemotedRuntimeCapabilities>>,
+    remote_capabilities: Arc<RemotedRuntimeCapabilities>,
     #[cfg(test)]
     pub extra_framework_capabilities: Mutex<HashMap<cm_types::Name, sandbox::Capability>>,
     inspector: Inspector,
@@ -53,7 +53,7 @@ impl ModelContext {
             instance_registry,
             config_developer_overrides: Mutex::new(HashMap::new()),
             scope_factory,
-            remote_capabilities: Arc::new(Mutex::new(HashMap::new())),
+            remote_capabilities: Arc::new(RemotedRuntimeCapabilities::new()),
             #[cfg(test)]
             extra_framework_capabilities: Mutex::new(HashMap::new()),
             inspector,
@@ -92,7 +92,7 @@ impl ModelContext {
         &self.instance_registry
     }
 
-    pub fn remote_capabilities(&self) -> &Arc<Mutex<RemotedRuntimeCapabilities>> {
+    pub fn remote_capabilities(&self) -> &Arc<RemotedRuntimeCapabilities> {
         &self.remote_capabilities
     }
 
