@@ -151,6 +151,11 @@ impl ZirconClient {
     pub fn create_proxy<T: ProtocolMarker>(&self) -> (T::Proxy, ServerEnd<T>) {
         create_proxy::<T>()
     }
+
+    /// Equivalent to the module level [`create_proxy_and_stream`]
+    pub fn create_proxy_and_stream<T: ProtocolMarker>(&self) -> (T::Proxy, T::RequestStream) {
+        create_proxy_and_stream::<T>()
+    }
 }
 
 /// A type which allows querying a remote FIDL server over a channel, blocking the calling thread.
