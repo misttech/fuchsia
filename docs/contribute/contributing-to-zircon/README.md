@@ -1,9 +1,5 @@
 # Zircon Contributor Guide
 
-Important: Zircon is under active development. At this time Zircon is
-not seeking major changes or new features from new contributors.
-However, small bug fixes are encouraged.
-
 Here are some general guidelines for patches to Zircon.
 
 ## Process
