@@ -81,7 +81,6 @@
         // Protocols in shell namespace.
         {
             protocol: [
-                "fuchsia.boot.Arguments",
                 "fuchsia.boot.FactoryItems",
                 "fuchsia.boot.Items",
                 "fuchsia.boot.ReadOnlyLog",

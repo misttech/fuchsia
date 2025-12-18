@@ -139,7 +139,6 @@
             // Used by console-launcher itself.
             protocol: [
                 "console", // Default device path, overriden by boot arguments.
-                "fuchsia.boot.Arguments",
                 "fuchsia.kernel.RootJob",
                 "fuchsia.process.Launcher",
                 "fuchsia.process.Resolver",

@@ -107,7 +107,6 @@
                 "fuchsia.bluetooth.sys.Configuration",
                 "fuchsia.bluetooth.sys.HostWatcher",
                 "fuchsia.bluetooth.sys.Pairing",
-                "fuchsia.boot.Arguments",
                 "fuchsia.boot.FactoryItems",
                 "fuchsia.boot.Items",
                 "fuchsia.boot.ReadOnlyLog",
