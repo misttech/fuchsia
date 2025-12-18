@@ -428,6 +428,11 @@
     // (e.g. NPM's project.json). This significantly speeds up task running.
     "task.autoDetect": "off",
     "rust-analyzer.runnables.command": null,
+
+    // Ensure the Source Control pane can see changes in normally gitignoredsubrepos.
+    "git.scanRepositories": [
+      "./vendor/google"
+    ],
   },
 
   // Tasks run with the "Tasks: Run Task" command (bind a shortcut!).
