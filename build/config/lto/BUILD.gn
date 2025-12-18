@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/config/compiler.gni")
 import("//build/config/lto/config.gni")
 import("//build/config/riscv64/riscv64.gni")
 import("//build/toolchain/toolchain_environment.gni")
@@ -172,7 +173,7 @@ variant("lto") {
 # Add the lto config only if no other LTO variant
 # or configuration is already active.
 config("lto-if-not-enabled") {
-  if (!is_lto_variant) {
+  if (!is_lto_variant && optimize != "size_lto") {
     configs = [ ":lto" ]
   }
 }
@@ -255,7 +256,7 @@ variant("thinlto") {
 # Add the thinlto config only if no other LTO variant
 # or configuration is already active.
 config("thinlto-if-not-enabled") {
-  if (!is_lto_variant) {
+  if (!is_lto_variant && optimize != "size_lto") {
     configs = [ ":thinlto" ]
   }
 }
