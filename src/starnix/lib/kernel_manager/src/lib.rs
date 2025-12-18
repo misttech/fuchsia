@@ -47,11 +47,6 @@ pub struct StarnixKernel {
     /// The name of the kernel intsance in the kernels collection.
     name: String,
 
-    /// The controller used to control the kernel component's lifecycle.
-    ///
-    /// The kernel runs in a "kernels" collection within that realm.
-    controller_proxy: fcomponent::ControllerProxy,
-
     /// The directory exposed by the Starnix kernel.
     ///
     /// This directory can be used to connect to services offered by the kernel.
@@ -107,14 +102,6 @@ impl StarnixKernel {
             .await?
             .map_err(|e| anyhow::anyhow!("failed to create kernel: {:?}", e))?;
 
-        // Start the kernel to obtain an `ExecutionController`.
-        let (execution_controller_proxy, execution_controller_server_end) =
-            fidl::endpoints::create_proxy();
-        controller_proxy
-            .start(fcomponent::StartChildArgs::default(), execution_controller_server_end)
-            .await?
-            .map_err(|e| anyhow::anyhow!("failed to start kernel: {:?}", e))?;
-
         let exposed_dir = open_exposed_directory(&realm, &kernel_name, KERNEL_COLLECTION).await?;
         let container_runner = fclient::connect_to_named_protocol_at_dir_root::<
             frunner::ComponentRunnerMarker,
@@ -134,14 +121,13 @@ impl StarnixKernel {
 
         let kernel = Self {
             name: kernel_name,
-            controller_proxy,
             exposed_dir,
             component_instance,
             job: Arc::new(job),
             wake_lease: Default::default(),
         };
         let on_stop = async move {
-            _ = execution_controller_proxy.into_channel().unwrap().on_closed().await;
+            _ = controller_proxy.into_channel().unwrap().on_closed().await;
         };
         Ok((kernel, on_stop))
     }
@@ -159,22 +145,6 @@ impl StarnixKernel {
     /// Connect to the specified protocol exposed by the kernel.
     pub fn connect_to_protocol<P: DiscoverableProtocolMarker>(&self) -> Result<P::Proxy, Error> {
         fclient::connect_to_protocol_at_dir_root::<P>(&self.exposed_dir)
-    }
-
-    /// Destroys the Starnix kernel that is running the given test.
-    pub async fn destroy(self) -> Result<(), Error> {
-        self.controller_proxy
-            .destroy()
-            .await?
-            .map_err(|e| anyhow!("kernel component destruction failed: {e:?}"))?;
-        let mut event_stream = self.controller_proxy.take_event_stream();
-        loop {
-            match event_stream.try_next().await {
-                Ok(Some(_)) => continue,
-                Ok(None) => return Ok(()),
-                Err(e) => return Err(e.into()),
-            }
-        }
     }
 }
 
