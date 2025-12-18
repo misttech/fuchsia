@@ -63,22 +63,40 @@ TEST(AnonInodeTest, PrivateFdIsUnchecked) {
 }
 
 TEST(AnonInodeTest, TmpFileHasLabel) {
-  constexpr char kTmpPath[] = "/tmp";
-  fbl::unique_fd fd(open(kTmpPath, O_RDWR | O_TMPFILE));
-  ASSERT_TRUE(fd.is_valid());
+  auto enforce = ScopedEnforcement::SetEnforcing();
 
-  EXPECT_EQ(GetLabel(fd.get()), fit::ok());
+  ASSERT_TRUE(RunSubprocessAs("test_u:test_r:anon_inode_test_t:s0", [] {
+    constexpr char kTmpPath[] = "/tmp";
+
+    fbl::unique_fd fd(open(kTmpPath, O_RDWR | O_TMPFILE, 0o600));
+    ASSERT_TRUE(fd.is_valid());
+
+    EXPECT_EQ(GetLabel(fd.get()), fit::ok());
+  }));
 }
 
 TEST(AnonInodeTest, UserfaultFdHasLabel) {
-  fbl::unique_fd fd(static_cast<int>(syscall(SYS_userfaultfd, O_CLOEXEC)));
-  ASSERT_TRUE(fd.is_valid());
+  auto enforce = ScopedEnforcement::SetEnforcing();
 
-  EXPECT_EQ(GetLabel(fd.get()),
-            fit::ok("system_u:object_r:anon_inode_unconfined_userfaultfd_t:s0"));
+  ASSERT_TRUE(RunSubprocessAs("test_u:test_r:anon_inode_test_t:s0", [] {
+    fbl::unique_fd fd(static_cast<int>(syscall(SYS_userfaultfd, O_CLOEXEC)));
+    ASSERT_TRUE(fd.is_valid());
+
+    EXPECT_EQ(GetLabel(fd.get()), fit::ok("test_u:object_r:anon_inode_test_userfaultfd_t:s0"));
+  }));
+}
+
+TEST(AnonInodeTest, UserfaultFdRequiresCreate) {
+  auto enforce = ScopedEnforcement::SetEnforcing();
+
+  ASSERT_TRUE(RunSubprocessAs("test_u:test_r:anon_inode_test_no_create_t:s0", [] {
+    EXPECT_THAT(syscall(SYS_userfaultfd, O_CLOEXEC), SyscallFailsWithErrno(EACCES));
+  }));
 }
 
 TEST(AnonInodeTest, EpollIsUnlabeled) {
+  auto enforce = ScopedEnforcement::SetEnforcing();
+
   fbl::unique_fd fd(epoll_create1(0));
   ASSERT_TRUE(fd.is_valid());
 
@@ -86,6 +104,8 @@ TEST(AnonInodeTest, EpollIsUnlabeled) {
 }
 
 TEST(AnonInodeTest, InotifyIsUnlabeled) {
+  auto enforce = ScopedEnforcement::SetEnforcing();
+
   fbl::unique_fd fd(inotify_init());
   ASSERT_TRUE(fd.is_valid());
 
@@ -93,6 +113,8 @@ TEST(AnonInodeTest, InotifyIsUnlabeled) {
 }
 
 TEST(AnonInodeTest, PidFdIsUnlabeled) {
+  auto enforce = ScopedEnforcement::SetEnforcing();
+
   fbl::unique_fd fd(static_cast<int>(syscall(SYS_pidfd_open, getpid(), 0)));
   ASSERT_TRUE(fd.is_valid());
 
@@ -100,6 +122,8 @@ TEST(AnonInodeTest, PidFdIsUnlabeled) {
 }
 
 TEST(AnonInodeTest, TimerFdIsUnlabeled) {
+  auto enforce = ScopedEnforcement::SetEnforcing();
+
   fbl::unique_fd fd(timerfd_create(CLOCK_MONOTONIC, 0));
   ASSERT_TRUE(fd.is_valid());
 
@@ -107,6 +131,8 @@ TEST(AnonInodeTest, TimerFdIsUnlabeled) {
 }
 
 TEST(AnonInodeTest, SignalFdIsUnlabeled) {
+  auto enforce = ScopedEnforcement::SetEnforcing();
+
   sigset_t signals;
   sigemptyset(&signals);
   fbl::unique_fd fd(signalfd(-1, &signals, SFD_CLOEXEC));
@@ -116,6 +142,8 @@ TEST(AnonInodeTest, SignalFdIsUnlabeled) {
 }
 
 TEST(AnonInodeTest, PerfEventFdIsUnlabeled) {
+  auto enforce = ScopedEnforcement::SetEnforcing();
+
   perf_event_attr attr{};
   attr.type = PERF_TYPE_SOFTWARE;
   attr.size = sizeof(attr);

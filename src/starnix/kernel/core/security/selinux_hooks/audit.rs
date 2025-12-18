@@ -69,7 +69,7 @@ fn should_audit(
 /// which will be automagically derived by Rust. Since they only consist of a type discriminator and
 /// reference they are cheap to copy, avoiding the need to pass them by-reference if the same
 /// context is to be applied to multiple permission checks.
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub enum Auditable<'a> {
     // keep-sorted start
     AuditContext(&'a [Auditable<'a>]),
