@@ -128,9 +128,9 @@ zither_golden_files("zx.legacy_syscall_cdecl.checked-in") {
   fidl = ":zx"
   backend = "legacy_syscall_cdecl"
   sources = [
-    "//zircon/system/public/zircon/syscalls/internal/cdecls-next.inc",
-    "//zircon/system/public/zircon/syscalls/internal/cdecls.inc",
-    "//zircon/system/public/zircon/syscalls/internal/testonly-cdecls.inc",
+    "//zircon/system/public/zircon/syscalls/gen/cdecls-next.inc",
+    "//zircon/system/public/zircon/syscalls/gen/cdecls.inc",
+    "//zircon/system/public/zircon/syscalls/gen/testonly-cdecls.inc",
   ]
 }
 

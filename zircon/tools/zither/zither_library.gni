@@ -198,7 +198,7 @@ supported_zither_backend_info = {
       prefix_parts = [
         "zircon",
         "syscalls",
-        "internal",
+        "gen",
       ]
     }
     _library_template = "_zither_legacy_syscall_cdecl_sources"

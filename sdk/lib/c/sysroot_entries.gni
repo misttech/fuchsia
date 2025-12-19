@@ -62,7 +62,7 @@ sysroot_uninstrumented_libc_entries = [
         "zircon/syscalls/profile.h",
         "zircon/syscalls/resource.h",
         "zircon/syscalls/scheduler.h",
-        "zircon/syscalls/internal/cdecls.inc",
+        "zircon/syscalls/gen/cdecls.inc",
         "zircon/syscalls/smc.h",
         "zircon/syscalls/system.h",
         "zircon/syscalls/types.h",
@@ -72,7 +72,7 @@ sysroot_uninstrumented_libc_entries = [
 
         # cdecls-next.inc is included in the SDK, but must only be included
         # in files that ensure the target API level is unstable.
-        "zircon/syscalls/internal/cdecls-next.inc",
+        "zircon/syscalls/gen/cdecls-next.inc",
 
         # Note: Most of zircon/device is excluded from SDKs.
         # TODO(https://fxbug.dev/42155967,https://fxbug.dev/42107431): remove this allowlist.
@@ -82,7 +82,7 @@ sysroot_uninstrumented_libc_entries = [
       if (!exclude_testonly_syscalls) {
         headers += [
           "zircon/testonly-syscalls.h",
-          "zircon/syscalls/internal/testonly-cdecls.inc",
+          "zircon/syscalls/gen/testonly-cdecls.inc",
         ]
       }
     }

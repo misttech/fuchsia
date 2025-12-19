@@ -68,7 +68,7 @@ func (gen *Generator) Generate(summary zither.LibrarySummary, outputDir string) 
 		{"testonly-cdecls.inc", "<zircon/testonly-syscalls.h>", testonly},
 		{"cdecls-next.inc", "<zircon/syscalls-next.h>", next},
 	} {
-		output := filepath.Join(outputDir, "zircon", "syscalls", "internal", file.name)
+		output := filepath.Join(outputDir, "zircon", "syscalls", "gen", file.name)
 		sort.Slice(file.Syscalls, func(i, j int) bool {
 			return strings.Compare(file.Syscalls[i].Name, file.Syscalls[j].Name) < 0
 		})

@@ -6,11 +6,11 @@ declarations in the public Zircon headers.
 
 ## Output layout
 
-* `internal/cdecls.inc`: macro-templated enumeration of syscalls meant
+* `gen/cdecls.inc`: macro-templated enumeration of syscalls meant
   for the public headers
-* `internal/testonly-cdecls.inc`: similar to cdecls.inc, but consisting
+* `gen/testonly-cdecls.inc`: similar to cdecls.inc, but consisting
   of the test-only syscalls.
-* `internal/cdecls-next.inc`: similar to cdecls.inc, but consisting
+* `gen/cdecls-next.inc`: similar to cdecls.inc, but consisting
   of the "next" syscalls.
 
 ## GN integration

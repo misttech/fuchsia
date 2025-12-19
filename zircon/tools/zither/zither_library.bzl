@@ -611,7 +611,7 @@ _SUPPORTED_ZITHER_BACKEND_INFO = {
             "prefix_parts": [
                 "zircon",
                 "syscalls",
-                "internal",
+                "gen",
             ],
         },
         "_library_template": _zither_legacy_syscall_cdecl_sources,
