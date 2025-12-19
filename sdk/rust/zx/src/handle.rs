@@ -10,7 +10,7 @@ use crate::{
     object_set_property, ok, sys,
 };
 use std::marker::PhantomData;
-use std::mem::{self, ManuallyDrop};
+use std::mem::ManuallyDrop;
 use std::num::NonZeroU32;
 
 /// An owned and valid Zircon
@@ -197,14 +197,6 @@ unsafe impl PropertyQuery for NameProperty {
 pub struct Unowned<'a, T: Into<NullableHandle>> {
     inner: ManuallyDrop<T>,
     marker: PhantomData<&'a T>,
-}
-
-impl<T: Into<NullableHandle>> Drop for Unowned<'_, T> {
-    fn drop(&mut self) {
-        // SAFETY: This is safe because we don't use this ManuallyDrop again.
-        let handle: NullableHandle = unsafe { ManuallyDrop::take(&mut self.inner).into() };
-        mem::forget(handle);
-    }
 }
 
 impl<'a, T: Into<NullableHandle>> ::std::ops::Deref for Unowned<'a, T> {

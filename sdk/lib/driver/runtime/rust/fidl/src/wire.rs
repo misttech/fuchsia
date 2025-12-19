@@ -303,7 +303,6 @@ mod tests {
         };
         assert_eq!(unsafe { handle.get_raw() }, handle_raw);
         assert_eq!(encoder.data, chunks![0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0x00],);
-        drop(driver_ref);
 
         let arena = Arena::new();
         let data = arena.insert_boxed_slice(encoder.data.into_boxed_slice());
@@ -336,7 +335,6 @@ mod tests {
         };
         assert_eq!(unsafe { handle.get_raw() }, handle_raw);
         assert_eq!(encoder.data, chunks![0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0x00],);
-        drop(driver_ref);
 
         let arena = Arena::new();
         let data = arena.insert_boxed_slice(encoder.data.into_boxed_slice());

@@ -270,7 +270,6 @@ impl Publisher {
         else {
             return Err(PublishError::MissingOnInit);
         };
-        drop(proxy);
 
         let publisher = Self::new(opts, iob);
 
