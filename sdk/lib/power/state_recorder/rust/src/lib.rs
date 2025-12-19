@@ -460,6 +460,7 @@ impl_recordable_numeric_type!(f64, f64, f64);
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum Units {
     Amps(Option<DecimalPrefix>),
+    AmpHours(Option<DecimalPrefix>),
     Hertz(Option<DecimalPrefix>),
     Joules(Option<DecimalPrefix>),
     Watts(Option<DecimalPrefix>),
@@ -484,6 +485,7 @@ impl Display for Units {
 
         match self {
             Units::Amps(prefix) => write_helper(f, prefix, "A"),
+            Units::AmpHours(prefix) => write_helper(f, prefix, "AH"),
             Units::Hertz(prefix) => write_helper(f, prefix, "Hz"),
             Units::Joules(prefix) => write_helper(f, prefix, "J"),
             Units::Watts(prefix) => write_helper(f, prefix, "W"),

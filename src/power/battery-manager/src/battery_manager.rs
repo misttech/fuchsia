@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::history_logger::HistoryLogger;
+use crate::history_logger::{BatteryInfoRecorders, HistoryLogger};
 use crate::polisher::Polisher;
 use anyhow::{Context, Error};
 use fidl::HandleBased;
@@ -53,7 +53,7 @@ pub struct BatteryManager {
     data_polisher: Arc<Mutex<Polisher>>,
     /// Publishes battery events to Inspect.
     history_logger: Arc<SMutex<HistoryLogger>>,
-
+    info_recorders: BatteryInfoRecorders,
     /// Blocking suspension if charging
     charge_wake_lease: Arc<Mutex<Option<fsystem::LeaseToken>>>,
 
@@ -94,6 +94,7 @@ impl BatteryManager {
             }),
             data_polisher: Arc::new(Mutex::new(Polisher::new())),
             history_logger: Arc::new(SMutex::new(logger)),
+            info_recorders: BatteryInfoRecorders::new(),
             charge_wake_lease: Arc::new(Mutex::new(None)),
             previous_level: Arc::new(Mutex::new(None)),
         }
@@ -204,6 +205,11 @@ impl BatteryManager {
         };
         let new_charge_status = info.charge_status;
         let new_charge_source = info.charge_source;
+        let new_present_voltage = info.present_voltage_mv;
+        let new_present_current = info.present_current_ua;
+        let new_average_current = info.average_current_ua;
+        let new_remaining_capacity = info.remaining_capacity_uah;
+
         self.determine_suspend_status(new_charge_source, sag).await;
         self.publish_battery_level_on_change(info.level_percent).await;
 
@@ -213,6 +219,10 @@ impl BatteryManager {
         new_battery_info.timestamp = Some(now);
 
         Self::publish_charge_status(self.history_logger.clone(), new_charge_status);
+        self.info_recorders.record_present_voltage(new_present_voltage);
+        self.info_recorders.record_remaining_capacity(new_remaining_capacity);
+        self.info_recorders.record_present_current(new_present_current);
+        self.info_recorders.record_average_current(new_average_current);
     }
 
     pub fn get_battery_info_copy(&self) -> fpower::BatteryInfo {

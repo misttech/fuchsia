@@ -6,7 +6,9 @@ use anyhow::Error;
 use fidl_fuchsia_power_battery::ChargeStatus;
 use fuchsia_inspect::{self as inspect};
 use fuchsia_inspect_contrib::nodes::BoundedListNode;
+use fuchsia_sync::Mutex;
 use log::{error, warn};
+use state_recorder::{NumericStateRecorder, PersistenceOptions, RecorderOptions, units};
 use std::collections::VecDeque;
 use std::fmt::Write;
 use std::fs::{self as fs, OpenOptions, read_to_string};
@@ -16,6 +18,8 @@ use std::str::FromStr;
 static BATTERY_LEVEL_HEADER: &str = "# BATTERY LEVEL";
 static CHARGE_STATUS_HEADER: &str = "# CHARGE STATUS";
 
+const MAX_POWER_CONSUMPTION_MEASUREMENTS: usize = 20;
+
 static BATTERY_HISTORY_FILE_FOR_RENAME: &str = "/data/history_before_rename.txt";
 
 #[derive(Clone)]
@@ -24,6 +28,103 @@ pub struct HistoryLoggerConfig {
     pub prev_boot_path: String,
     pub battery_level_buffer_capacity: usize,
     pub charge_status_buffer_capacity: usize,
+}
+
+pub struct BatteryInfoRecorders {
+    pub present_voltage: Mutex<NumericStateRecorder<u32>>,
+    pub remaining_capacity: Mutex<NumericStateRecorder<u32>>,
+    pub present_current: Mutex<NumericStateRecorder<i32>>,
+    pub average_current: Mutex<NumericStateRecorder<i32>>,
+}
+
+impl BatteryInfoRecorders {
+    pub fn new() -> Self {
+        let present_voltage_recorder = NumericStateRecorder::new(
+            "present_voltage".into(),
+            c"power",
+            units!(Milli, Volts),
+            None,
+            RecorderOptions {
+                lazy_record: true,
+                capacity: MAX_POWER_CONSUMPTION_MEASUREMENTS,
+                manager: None,
+                persistence: Some(PersistenceOptions::new("present_voltage".to_string())),
+            },
+        )
+        .expect("present_voltage_recorder construction failed");
+
+        let remaining_capacity_recorder = NumericStateRecorder::new(
+            "remaining_capacity".into(),
+            c"power",
+            units!(Micro, AmpHours),
+            None,
+            RecorderOptions {
+                lazy_record: true,
+                capacity: MAX_POWER_CONSUMPTION_MEASUREMENTS,
+                manager: None,
+                persistence: Some(PersistenceOptions::new("remaining_capacity".to_string())),
+            },
+        )
+        .expect("remaining_capacity_recorder construction failed");
+
+        let present_current_recorder = NumericStateRecorder::new(
+            "charge_current".into(),
+            c"power",
+            units!(Micro, Amps),
+            None,
+            RecorderOptions {
+                lazy_record: true,
+                capacity: MAX_POWER_CONSUMPTION_MEASUREMENTS,
+                manager: None,
+                persistence: Some(PersistenceOptions::new("present_current".to_string())),
+            },
+        )
+        .expect("present_current_recorder construction failed");
+
+        let average_current_recorder = NumericStateRecorder::new(
+            "average_current".into(),
+            c"power",
+            units!(Micro, Amps),
+            None,
+            RecorderOptions {
+                lazy_record: true,
+                capacity: MAX_POWER_CONSUMPTION_MEASUREMENTS,
+                manager: None,
+                persistence: Some(PersistenceOptions::new("average_current".to_string())),
+            },
+        )
+        .expect("average_current_recorder construction failed");
+
+        Self {
+            present_voltage: Mutex::new(present_voltage_recorder),
+            remaining_capacity: Mutex::new(remaining_capacity_recorder),
+            present_current: Mutex::new(present_current_recorder),
+            average_current: Mutex::new(average_current_recorder),
+        }
+    }
+    pub fn record_present_voltage(&self, voltage: Option<u32>) {
+        if let Some(voltage) = voltage {
+            self.present_voltage.lock().record(voltage);
+        }
+    }
+
+    pub fn record_remaining_capacity(&self, capacity: Option<u32>) {
+        if let Some(capacity) = capacity {
+            self.remaining_capacity.lock().record(capacity);
+        }
+    }
+
+    pub fn record_present_current(&self, current: Option<i32>) {
+        if let Some(current) = current {
+            self.present_current.lock().record(current);
+        }
+    }
+
+    pub fn record_average_current(&self, current: Option<i32>) {
+        if let Some(current) = current {
+            self.average_current.lock().record(current);
+        }
+    }
 }
 
 /// Manages publishing historical battery data to Inspect.
