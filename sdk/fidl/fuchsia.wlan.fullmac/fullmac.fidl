@@ -343,7 +343,7 @@ closed protocol WlanFullmacImplIfc {
 /// Protocol definition for communication from the platform to the fullmac
 /// vendor driver.
 @discoverable
-closed protocol WlanFullmacImpl {
+open protocol WlanFullmacImpl {
 
     /// Initialize the FullMAC driver. This is the first request that the platform will make to the
     /// FullMAC driver.
@@ -386,14 +386,14 @@ closed protocol WlanFullmacImpl {
         4: factory_addr ieee80211.MacAddr;
     }) error zx.Status;
 
-    strict QuerySecuritySupport() -> (struct {
-        resp fuchsia.wlan.common.SecuritySupport;
+    strict QuerySecuritySupport() -> (table {
+        1: resp fuchsia.wlan.common.SecuritySupport;
     }) error zx.Status;
-    strict QuerySpectrumManagementSupport() -> (struct {
-        resp fuchsia.wlan.common.SpectrumManagementSupport;
+    strict QuerySpectrumManagementSupport() -> (table {
+        1: resp fuchsia.wlan.common.SpectrumManagementSupport;
     }) error zx.Status;
-    strict QueryTelemetrySupport() -> (struct {
-        resp fuchsia.wlan.stats.TelemetrySupport;
+    strict QueryTelemetrySupport() -> (table {
+        1: resp fuchsia.wlan.stats.TelemetrySupport;
     }) error zx.Status;
 
     // MLME operations

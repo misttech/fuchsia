@@ -5139,27 +5139,33 @@ void brcmf_if_query(net_device* ndev, fuchsia_wlan_fullmac::WlanFullmacImplQuery
 }
 
 void brcmf_if_query_security_support(net_device* ndev,
-                                     fuchsia_wlan_common_wire::SecuritySupport* resp) {
+                                     fuchsia_wlan_common_wire::SecuritySupport* resp,
+                                     fidl::AnyArena& arena) {
   struct brcmf_if* ifp = ndev_to_if(ndev);
   BRCMF_IFDBG(WLANIF, ndev, "Query security feature support request received from SME.");
 
-  memset(resp, 0, sizeof(*resp));
-
-  if (brcmf_feat_is_enabled(ifp, BRCMF_FEAT_EXTSAE)) {
-    resp->sae.sme_handler_supported = true;
-  }
-
-  resp->mfp.supported = brcmf_feat_is_enabled(ifp, BRCMF_FEAT_MFP);
+  *resp = fuchsia_wlan_common_wire::SecuritySupport::Builder(arena)
+              .sae(fuchsia_wlan_common_wire::SaeFeature::Builder(arena)
+                       .sme_handler_supported(brcmf_feat_is_enabled(ifp, BRCMF_FEAT_EXTSAE))
+                       .driver_handler_supported(false)
+                       .Build())
+              .mfp(fuchsia_wlan_common_wire::MfpFeature::Builder(arena)
+                       .supported(brcmf_feat_is_enabled(ifp, BRCMF_FEAT_MFP))
+                       .Build())
+              .Build();
 }
 
 void brcmf_if_query_spectrum_management_support(
-    net_device* ndev, fuchsia_wlan_common_wire::SpectrumManagementSupport* resp) {
+    net_device* ndev, fuchsia_wlan_common_wire::SpectrumManagementSupport* resp,
+    fidl::AnyArena& arena) {
   struct brcmf_if* ifp = ndev_to_if(ndev);
   BRCMF_IFDBG(WLANIF, ndev, "Query spectrum management support request received from SME.");
 
-  memset(resp, 0, sizeof(*resp));
-
-  resp->dfs.supported = brcmf_feat_is_enabled(ifp, BRCMF_FEAT_DFS);
+  *resp = fuchsia_wlan_common_wire::SpectrumManagementSupport::Builder(arena)
+              .dfs(fuchsia_wlan_common_wire::DfsFeature::Builder(arena)
+                       .supported(brcmf_feat_is_enabled(ifp, BRCMF_FEAT_DFS))
+                       .Build())
+              .Build();
 }
 
 void brcmf_if_query_telemetry_support(net_device* ndev,

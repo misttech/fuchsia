@@ -1217,7 +1217,7 @@ mod tests {
         // WPA3 support is configurable.
         let cfg = ClientConfig::from_config(Config::default(), true);
         let mut security_support = fake_security_support_empty();
-        security_support.mfp.supported = true;
+        security_support.mfp.as_mut().unwrap().supported = Some(true);
         assert!(
             !cfg.security_protocol_intersection(&fake_bss_description!(Wpa3), &security_support)
                 .is_empty()

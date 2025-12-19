@@ -32,34 +32,46 @@ pub(crate) fn create_wlantap_config(
         name,
         quiet: false,
         discovery_support: fidl_softmac::DiscoverySupport {
-            scan_offload: fidl_softmac::ScanOffloadExtension {
-                supported: true,
-                scan_cancel_supported: false,
-            },
-            probe_response_offload: fidl_softmac::ProbeResponseOffloadExtension {
-                supported: false,
-            },
+            scan_offload: Some(fidl_softmac::ScanOffloadExtension {
+                supported: Some(true),
+                scan_cancel_supported: Some(false),
+                ..Default::default()
+            }),
+            probe_response_offload: Some(fidl_softmac::ProbeResponseOffloadExtension {
+                supported: Some(false),
+                ..Default::default()
+            }),
+            ..Default::default()
         },
         mac_sublayer_support: fidl_common::MacSublayerSupport {
-            rate_selection_offload: fidl_common::RateSelectionOffloadExtension { supported: false },
-            data_plane: fidl_common::DataPlaneExtension {
-                data_plane_type: fidl_common::DataPlaneType::EthernetDevice,
-            },
-            device: fidl_common::DeviceExtension {
-                is_synthetic: true,
-                mac_implementation_type: fidl_common::MacImplementationType::Softmac,
-                tx_status_report_supported: true,
-            },
+            rate_selection_offload: Some(fidl_common::RateSelectionOffloadExtension {
+                supported: Some(false),
+                ..Default::default()
+            }),
+            data_plane: Some(fidl_common::DataPlaneExtension {
+                data_plane_type: Some(fidl_common::DataPlaneType::EthernetDevice),
+                ..Default::default()
+            }),
+            device: Some(fidl_common::DeviceExtension {
+                is_synthetic: Some(true),
+                mac_implementation_type: Some(fidl_common::MacImplementationType::Softmac),
+                tx_status_report_supported: Some(true),
+                ..Default::default()
+            }),
+            ..Default::default()
         },
         security_support: fidl_common::SecuritySupport {
-            sae: fidl_common::SaeFeature {
-                driver_handler_supported: false,
-                sme_handler_supported: true,
-            },
-            mfp: fidl_common::MfpFeature { supported: true },
+            sae: Some(fidl_common::SaeFeature {
+                driver_handler_supported: Some(false),
+                sme_handler_supported: Some(true),
+                ..Default::default()
+            }),
+            mfp: Some(fidl_common::MfpFeature { supported: Some(true), ..Default::default() }),
+            ..Default::default()
         },
         spectrum_management_support: fidl_common::SpectrumManagementSupport {
-            dfs: fidl_common::DfsFeature { supported: false },
+            dfs: Some(fidl_common::DfsFeature { supported: Some(false), ..Default::default() }),
+            ..Default::default()
         },
     }
 }

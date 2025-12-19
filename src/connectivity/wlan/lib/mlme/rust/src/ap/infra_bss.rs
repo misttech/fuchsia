@@ -350,7 +350,8 @@ impl InfraBss {
                 .await
                 .map_err(anyhow::Error::from)?
                 .probe_response_offload
-                .supported
+                .and_then(|offload| offload.supported)
+                .unwrap_or(false)
             {
                 // We expected the probe response to be handled by hardware.
                 return Err(Rejection::Error(format_err!(
@@ -2160,7 +2161,10 @@ mod tests {
     async fn handle_probe_req_has_offload() {
         let (fake_device, _fake_device_state) = FakeDevice::new_with_config(
             FakeDeviceConfig::default().with_mock_probe_response_offload(
-                fidl_softmac::ProbeResponseOffloadExtension { supported: true },
+                fidl_softmac::ProbeResponseOffloadExtension {
+                    supported: Some(true),
+                    ..Default::default()
+                },
             ),
         )
         .await;

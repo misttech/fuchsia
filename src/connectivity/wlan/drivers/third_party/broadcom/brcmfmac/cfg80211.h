@@ -632,9 +632,11 @@ void brcmf_if_query(net_device* ndev, fuchsia_wlan_fullmac::WlanFullmacImplQuery
 void brcmf_if_query_mac_sublayer_support(net_device* ndev,
                                          fuchsia_wlan_common::wire::MacSublayerSupport* resp);
 void brcmf_if_query_security_support(net_device* ndev,
-                                     fuchsia_wlan_common::wire::SecuritySupport* resp);
+                                     fuchsia_wlan_common::wire::SecuritySupport* resp,
+                                     fidl::AnyArena& arena);
 void brcmf_if_query_spectrum_management_support(
-    net_device* ndev, fuchsia_wlan_common::wire::SpectrumManagementSupport* resp);
+    net_device* ndev, fuchsia_wlan_common::wire::SpectrumManagementSupport* resp,
+    fidl::AnyArena& arena);
 void brcmf_if_query_telemetry_support(net_device* ndev,
                                       fuchsia_wlan_stats::wire::TelemetrySupport* resp,
                                       fidl::AnyArena& arena);

@@ -2576,14 +2576,17 @@ mod tests {
             .await
             .expect("Failed to send MlmeRequest::Connect");
         let resp = receiver.await.unwrap();
-        assert_eq!(resp.rate_selection_offload.supported, false);
-        assert_eq!(resp.data_plane.data_plane_type, fidl_common::DataPlaneType::EthernetDevice);
-        assert_eq!(resp.device.is_synthetic, true);
+        assert_eq!(resp.rate_selection_offload.unwrap().supported, Some(false));
         assert_eq!(
-            resp.device.mac_implementation_type,
-            fidl_common::MacImplementationType::Softmac
+            resp.data_plane.unwrap().data_plane_type,
+            Some(fidl_common::DataPlaneType::EthernetDevice)
         );
-        assert_eq!(resp.device.tx_status_report_supported, true);
+        assert_eq!(resp.device.as_ref().unwrap().is_synthetic, Some(true));
+        assert_eq!(
+            resp.device.as_ref().unwrap().mac_implementation_type,
+            Some(fidl_common::MacImplementationType::Softmac)
+        );
+        assert_eq!(resp.device.unwrap().tx_status_report_supported, Some(true));
     }
 
     #[fuchsia::test(allow_stalls = false)]
@@ -2597,9 +2600,9 @@ mod tests {
             Ok(())
         );
         let resp = receiver.await.unwrap();
-        assert_eq!(resp.mfp.supported, false);
-        assert_eq!(resp.sae.driver_handler_supported, false);
-        assert_eq!(resp.sae.sme_handler_supported, false);
+        assert_eq!(resp.mfp.unwrap().supported, Some(false));
+        assert_eq!(resp.sae.as_ref().unwrap().driver_handler_supported, Some(false));
+        assert_eq!(resp.sae.unwrap().sme_handler_supported, Some(false));
     }
 
     #[fuchsia::test(allow_stalls = false)]
@@ -2611,7 +2614,7 @@ mod tests {
         me.handle_mlme_req(wlan_sme::MlmeRequest::QuerySpectrumManagementSupport(responder))
             .await
             .expect("Failed to send MlmeRequest::QuerySpectrumManagementSupport");
-        assert_eq!(receiver.await.unwrap().dfs.supported, true);
+        assert_eq!(receiver.await.unwrap().dfs.unwrap().supported, Some(true));
     }
 
     #[fuchsia::test(allow_stalls = false)]

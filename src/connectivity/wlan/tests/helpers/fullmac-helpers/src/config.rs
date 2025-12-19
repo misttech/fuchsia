@@ -59,25 +59,33 @@ pub fn default_fullmac_query_info() -> fidl_fullmac::WlanFullmacImplQueryRespons
 
 pub fn default_mac_sublayer_support() -> fidl_common::MacSublayerSupport {
     fidl_common::MacSublayerSupport {
-        rate_selection_offload: fidl_common::RateSelectionOffloadExtension { supported: false },
-        data_plane: fidl_common::DataPlaneExtension {
-            data_plane_type: fidl_common::DataPlaneType::GenericNetworkDevice,
-        },
-        device: fidl_common::DeviceExtension {
-            is_synthetic: false,
-            mac_implementation_type: fidl_common::MacImplementationType::Fullmac,
-            tx_status_report_supported: false,
-        },
+        rate_selection_offload: Some(fidl_common::RateSelectionOffloadExtension {
+            supported: Some(false),
+            ..Default::default()
+        }),
+        data_plane: Some(fidl_common::DataPlaneExtension {
+            data_plane_type: Some(fidl_common::DataPlaneType::GenericNetworkDevice),
+            ..Default::default()
+        }),
+        device: Some(fidl_common::DeviceExtension {
+            is_synthetic: Some(false),
+            mac_implementation_type: Some(fidl_common::MacImplementationType::Fullmac),
+            tx_status_report_supported: Some(false),
+            ..Default::default()
+        }),
+        ..Default::default()
     }
 }
 
 pub fn default_security_support() -> fidl_common::SecuritySupport {
     fidl_common::SecuritySupport {
-        sae: fidl_common::SaeFeature {
-            driver_handler_supported: false,
-            sme_handler_supported: true,
-        },
-        mfp: fidl_common::MfpFeature { supported: true },
+        sae: Some(fidl_common::SaeFeature {
+            driver_handler_supported: Some(false),
+            sme_handler_supported: Some(true),
+            ..Default::default()
+        }),
+        mfp: Some(fidl_common::MfpFeature { supported: Some(true), ..Default::default() }),
+        ..Default::default()
     }
 }
 
@@ -86,7 +94,10 @@ pub fn default_sme_legacy_privacy_support() -> fidl_sme::LegacyPrivacySupport {
 }
 
 fn default_spectrum_management_support() -> fidl_common::SpectrumManagementSupport {
-    fidl_common::SpectrumManagementSupport { dfs: fidl_common::DfsFeature { supported: false } }
+    fidl_common::SpectrumManagementSupport {
+        dfs: Some(fidl_common::DfsFeature { supported: Some(false), ..Default::default() }),
+        ..Default::default()
+    }
 }
 
 fn default_fullmac_band_capability() -> fidl_fullmac::BandCapability {

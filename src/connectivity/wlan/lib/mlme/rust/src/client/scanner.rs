@@ -148,7 +148,11 @@ impl<'a, D: DeviceOps> BoundScanner<'a, D> {
     pub async fn cancel_ongoing_scan(&mut self) -> Result<(), zx::Status> {
         if let Some(scan) = &self.scanner.ongoing_scan {
             let discovery_support = self.ctx.device.discovery_support().await?;
-            if discovery_support.scan_offload.scan_cancel_supported {
+            if discovery_support
+                .scan_offload
+                .and_then(|offload| offload.scan_cancel_supported)
+                .unwrap_or(false)
+            {
                 self.ctx
                     .device
                     .cancel_scan(&fidl_softmac::WlanSoftmacBaseCancelScanRequest {
@@ -188,7 +192,7 @@ impl<'a, D: DeviceOps> BoundScanner<'a, D> {
         let discovery_support = device::try_query_discovery_support(&mut self.ctx.device).await?;
 
         // TODO(https://fxbug.dev/321627682): MLME only supports offloaded scanning.
-        if discovery_support.scan_offload.supported {
+        if discovery_support.scan_offload.and_then(|offload| offload.supported).unwrap_or(false) {
             match req.scan_type {
                 fidl_mlme::ScanTypes::Passive => self.start_passive_scan(req).await,
                 fidl_mlme::ScanTypes::Active => self.start_active_scan(req, &query_response).await,

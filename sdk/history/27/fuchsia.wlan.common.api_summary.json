@@ -67,13 +67,13 @@
         "type": "uint32"
     },
     {
-        "kind": "struct/member",
+        "kind": "table/member",
         "name": "fuchsia.wlan.common/DataPlaneExtension.data_plane_type",
         "ordinal": "1",
         "type": "fuchsia.wlan.common/DataPlaneType"
     },
     {
-        "kind": "struct",
+        "kind": "table",
         "name": "fuchsia.wlan.common/DataPlaneExtension"
     },
     {
@@ -89,55 +89,55 @@
     {
         "kind": "enum",
         "name": "fuchsia.wlan.common/DataPlaneType",
-        "strictness": "strict",
+        "strictness": "flexible",
         "type": "uint8"
     },
     {
-        "kind": "struct/member",
+        "kind": "table/member",
         "name": "fuchsia.wlan.common/DeviceExtension.is_synthetic",
         "ordinal": "1",
         "type": "bool"
     },
     {
-        "kind": "struct/member",
+        "kind": "table/member",
         "name": "fuchsia.wlan.common/DeviceExtension.mac_implementation_type",
         "ordinal": "2",
         "type": "fuchsia.wlan.common/MacImplementationType"
     },
     {
-        "kind": "struct/member",
+        "kind": "table/member",
         "name": "fuchsia.wlan.common/DeviceExtension.tx_status_report_supported",
         "ordinal": "3",
         "type": "bool"
     },
     {
-        "kind": "struct",
+        "kind": "table",
         "name": "fuchsia.wlan.common/DeviceExtension"
     },
     {
-        "kind": "struct/member",
+        "kind": "table/member",
         "name": "fuchsia.wlan.common/DfsFeature.supported",
         "ordinal": "1",
         "type": "bool"
     },
     {
-        "kind": "struct",
+        "kind": "table",
         "name": "fuchsia.wlan.common/DfsFeature"
     },
     {
-        "kind": "struct/member",
+        "kind": "table/member",
         "name": "fuchsia.wlan.common/DiscoverySupport.probe_response_offload",
         "ordinal": "2",
         "type": "fuchsia.wlan.common/ProbeResponseOffloadExtension"
     },
     {
-        "kind": "struct/member",
+        "kind": "table/member",
         "name": "fuchsia.wlan.common/DiscoverySupport.scan_offload",
         "ordinal": "1",
         "type": "fuchsia.wlan.common/ScanOffloadExtension"
     },
     {
-        "kind": "struct",
+        "kind": "table",
         "name": "fuchsia.wlan.common/DiscoverySupport"
     },
     {
@@ -215,39 +215,39 @@
     {
         "kind": "enum",
         "name": "fuchsia.wlan.common/MacImplementationType",
-        "strictness": "strict",
+        "strictness": "flexible",
         "type": "uint8"
     },
     {
-        "kind": "struct/member",
+        "kind": "table/member",
         "name": "fuchsia.wlan.common/MacSublayerSupport.data_plane",
         "ordinal": "2",
         "type": "fuchsia.wlan.common/DataPlaneExtension"
     },
     {
-        "kind": "struct/member",
+        "kind": "table/member",
         "name": "fuchsia.wlan.common/MacSublayerSupport.device",
         "ordinal": "3",
         "type": "fuchsia.wlan.common/DeviceExtension"
     },
     {
-        "kind": "struct/member",
+        "kind": "table/member",
         "name": "fuchsia.wlan.common/MacSublayerSupport.rate_selection_offload",
         "ordinal": "1",
         "type": "fuchsia.wlan.common/RateSelectionOffloadExtension"
     },
     {
-        "kind": "struct",
+        "kind": "table",
         "name": "fuchsia.wlan.common/MacSublayerSupport"
     },
     {
-        "kind": "struct/member",
+        "kind": "table/member",
         "name": "fuchsia.wlan.common/MfpFeature.supported",
         "ordinal": "1",
         "type": "bool"
     },
     {
-        "kind": "struct",
+        "kind": "table",
         "name": "fuchsia.wlan.common/MfpFeature"
     },
     {
@@ -277,55 +277,55 @@
         "type": "uint32"
     },
     {
-        "kind": "struct/member",
+        "kind": "table/member",
         "name": "fuchsia.wlan.common/ProbeResponseOffloadExtension.supported",
         "ordinal": "1",
         "type": "bool"
     },
     {
-        "kind": "struct",
+        "kind": "table",
         "name": "fuchsia.wlan.common/ProbeResponseOffloadExtension"
     },
     {
-        "kind": "struct/member",
+        "kind": "table/member",
         "name": "fuchsia.wlan.common/RateSelectionOffloadExtension.supported",
         "ordinal": "1",
         "type": "bool"
     },
     {
-        "kind": "struct",
+        "kind": "table",
         "name": "fuchsia.wlan.common/RateSelectionOffloadExtension"
     },
     {
-        "kind": "struct/member",
+        "kind": "table/member",
         "name": "fuchsia.wlan.common/SaeFeature.driver_handler_supported",
         "ordinal": "1",
         "type": "bool"
     },
     {
-        "kind": "struct/member",
+        "kind": "table/member",
         "name": "fuchsia.wlan.common/SaeFeature.sme_handler_supported",
         "ordinal": "2",
         "type": "bool"
     },
     {
-        "kind": "struct",
+        "kind": "table",
         "name": "fuchsia.wlan.common/SaeFeature"
     },
     {
-        "kind": "struct/member",
+        "kind": "table/member",
         "name": "fuchsia.wlan.common/ScanOffloadExtension.scan_cancel_supported",
         "ordinal": "2",
         "type": "bool"
     },
     {
-        "kind": "struct/member",
+        "kind": "table/member",
         "name": "fuchsia.wlan.common/ScanOffloadExtension.supported",
         "ordinal": "1",
         "type": "bool"
     },
     {
-        "kind": "struct",
+        "kind": "table",
         "name": "fuchsia.wlan.common/ScanOffloadExtension"
     },
     {
@@ -345,29 +345,29 @@
         "type": "uint32"
     },
     {
-        "kind": "struct/member",
+        "kind": "table/member",
         "name": "fuchsia.wlan.common/SecuritySupport.mfp",
         "ordinal": "2",
         "type": "fuchsia.wlan.common/MfpFeature"
     },
     {
-        "kind": "struct/member",
+        "kind": "table/member",
         "name": "fuchsia.wlan.common/SecuritySupport.sae",
         "ordinal": "1",
         "type": "fuchsia.wlan.common/SaeFeature"
     },
     {
-        "kind": "struct",
+        "kind": "table",
         "name": "fuchsia.wlan.common/SecuritySupport"
     },
     {
-        "kind": "struct/member",
+        "kind": "table/member",
         "name": "fuchsia.wlan.common/SpectrumManagementSupport.dfs",
         "ordinal": "1",
         "type": "fuchsia.wlan.common/DfsFeature"
     },
     {
-        "kind": "struct",
+        "kind": "table",
         "name": "fuchsia.wlan.common/SpectrumManagementSupport"
     },
     {

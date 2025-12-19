@@ -140,7 +140,7 @@ impl ApSme {
                 let op_radio_cfg = match validate_radio_cfg(
                     &ctx.device_info.bands[..],
                     &config.radio_cfg,
-                    ctx.spectrum_management_support,
+                    ctx.spectrum_management_support.clone(),
                 ) {
                     Err(result) => {
                         responder.respond(result);
@@ -471,7 +471,12 @@ fn validate_radio_cfg(
 
     // Avoid hosting an AP on a 5 GHz channel on a non-DFS devices. There is no 5 GHz
     // channel that is valid in all regulatory domains.
-    if channel.is_5ghz() && !spectrum_management_support.dfs.supported {
+    if channel.is_5ghz()
+        && !spectrum_management_support
+            .dfs
+            .as_ref()
+            .is_some_and(|dfs| dfs.supported.unwrap_or(false))
+    {
         return Err(StartResult::InvalidArguments(format!(
             "5 GHz channels not supported: {channel}"
         )));
@@ -892,7 +897,7 @@ mod tests {
         }
     }
 
-    #[derive(Debug)]
+    #[derive(Clone, Debug)]
     struct ValidateRadioConfigArgs {
         bands: Vec<fidl_mlme::BandCapability>,
         radio_cfg: RadioConfig,
@@ -1189,7 +1194,7 @@ mod tests {
         match validate_radio_cfg(
             &fn_args.bands[..],
             &fn_args.radio_cfg,
-            fn_args.spectrum_management_support,
+            fn_args.spectrum_management_support.clone(),
         ) {
             Ok(op_radio_cfg) => {
                 if !expect_ok {

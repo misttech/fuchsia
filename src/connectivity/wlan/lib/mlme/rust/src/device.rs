@@ -804,7 +804,7 @@ pub mod test_utils {
         ) -> Self {
             if let None = self.mock_discovery_support {
                 let mut mock_value = Self::default_mock_discovery_support();
-                mock_value.as_mut().unwrap().probe_response_offload = mock_field;
+                mock_value.as_mut().unwrap().probe_response_offload = Some(mock_field);
                 return self.with_mock_discovery_support(mock_value);
             }
             let mock_value = self
@@ -813,19 +813,22 @@ pub mod test_utils {
                 .unwrap()
                 .as_mut()
                 .expect("Cannot overwrite an Err value mock");
-            mock_value.probe_response_offload = mock_field;
+            mock_value.probe_response_offload = Some(mock_field);
             self
         }
 
         fn default_mock_discovery_support() -> Result<fidl_softmac::DiscoverySupport, zx::Status> {
             Ok(fidl_softmac::DiscoverySupport {
-                scan_offload: fidl_softmac::ScanOffloadExtension {
-                    supported: true,
-                    scan_cancel_supported: false,
-                },
-                probe_response_offload: fidl_softmac::ProbeResponseOffloadExtension {
-                    supported: false,
-                },
+                scan_offload: Some(fidl_softmac::ScanOffloadExtension {
+                    supported: Some(true),
+                    scan_cancel_supported: Some(false),
+                    ..Default::default()
+                }),
+                probe_response_offload: Some(fidl_softmac::ProbeResponseOffloadExtension {
+                    supported: Some(false),
+                    ..Default::default()
+                }),
+                ..Default::default()
             })
         }
 
@@ -835,7 +838,8 @@ pub mod test_utils {
         ) -> Self {
             if let None = self.mock_mac_sublayer_support {
                 let mut mock_value = Self::default_mock_mac_sublayer_support();
-                mock_value.as_mut().unwrap().device.mac_implementation_type = mock_field;
+                mock_value.as_mut().unwrap().device.as_mut().unwrap().mac_implementation_type =
+                    Some(mock_field);
                 return self.with_mock_mac_sublayer_support(mock_value);
             }
             let mock_value = self
@@ -844,24 +848,28 @@ pub mod test_utils {
                 .unwrap()
                 .as_mut()
                 .expect("Cannot overwrite an Err value mock");
-            mock_value.device.mac_implementation_type = mock_field;
+            mock_value.device.as_mut().unwrap().mac_implementation_type = Some(mock_field);
             self
         }
 
         fn default_mock_mac_sublayer_support() -> Result<fidl_common::MacSublayerSupport, zx::Status>
         {
             Ok(fidl_common::MacSublayerSupport {
-                rate_selection_offload: fidl_common::RateSelectionOffloadExtension {
-                    supported: false,
-                },
-                data_plane: fidl_common::DataPlaneExtension {
-                    data_plane_type: fidl_common::DataPlaneType::EthernetDevice,
-                },
-                device: fidl_common::DeviceExtension {
-                    is_synthetic: true,
-                    mac_implementation_type: fidl_common::MacImplementationType::Softmac,
-                    tx_status_report_supported: true,
-                },
+                rate_selection_offload: Some(fidl_common::RateSelectionOffloadExtension {
+                    supported: Some(false),
+                    ..Default::default()
+                }),
+                data_plane: Some(fidl_common::DataPlaneExtension {
+                    data_plane_type: Some(fidl_common::DataPlaneType::EthernetDevice),
+                    ..Default::default()
+                }),
+                device: Some(fidl_common::DeviceExtension {
+                    is_synthetic: Some(true),
+                    mac_implementation_type: Some(fidl_common::MacImplementationType::Softmac),
+                    tx_status_report_supported: Some(true),
+                    ..Default::default()
+                }),
+                ..Default::default()
             })
         }
     }
@@ -1015,11 +1023,16 @@ pub mod test_utils {
             match state.config.mock_security_support.as_ref() {
                 Some(security_support) => security_support.clone(),
                 None => Ok(fidl_common::SecuritySupport {
-                    mfp: fidl_common::MfpFeature { supported: false },
-                    sae: fidl_common::SaeFeature {
-                        driver_handler_supported: false,
-                        sme_handler_supported: false,
-                    },
+                    mfp: Some(fidl_common::MfpFeature {
+                        supported: Some(false),
+                        ..Default::default()
+                    }),
+                    sae: Some(fidl_common::SaeFeature {
+                        driver_handler_supported: Some(false),
+                        sme_handler_supported: Some(false),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
                 }),
             }
         }
@@ -1031,7 +1044,11 @@ pub mod test_utils {
             match state.config.mock_spectrum_management_support.as_ref() {
                 Some(spectrum_management_support) => spectrum_management_support.clone(),
                 None => Ok(fidl_common::SpectrumManagementSupport {
-                    dfs: fidl_common::DfsFeature { supported: true },
+                    dfs: Some(fidl_common::DfsFeature {
+                        supported: Some(true),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
                 }),
             }
         }
@@ -1385,13 +1402,16 @@ mod tests {
         assert_eq!(
             discovery_support,
             fidl_softmac::DiscoverySupport {
-                scan_offload: fidl_softmac::ScanOffloadExtension {
-                    supported: true,
-                    scan_cancel_supported: false,
-                },
-                probe_response_offload: fidl_softmac::ProbeResponseOffloadExtension {
-                    supported: false,
-                },
+                scan_offload: Some(fidl_softmac::ScanOffloadExtension {
+                    supported: Some(true),
+                    scan_cancel_supported: Some(false),
+                    ..Default::default()
+                }),
+                probe_response_offload: Some(fidl_softmac::ProbeResponseOffloadExtension {
+                    supported: Some(false),
+                    ..Default::default()
+                }),
+                ..Default::default()
             }
         );
     }
@@ -1403,17 +1423,21 @@ mod tests {
         assert_eq!(
             mac_sublayer_support,
             fidl_common::MacSublayerSupport {
-                rate_selection_offload: fidl_common::RateSelectionOffloadExtension {
-                    supported: false,
-                },
-                data_plane: fidl_common::DataPlaneExtension {
-                    data_plane_type: fidl_common::DataPlaneType::EthernetDevice,
-                },
-                device: fidl_common::DeviceExtension {
-                    is_synthetic: true,
-                    mac_implementation_type: fidl_common::MacImplementationType::Softmac,
-                    tx_status_report_supported: true,
-                },
+                rate_selection_offload: Some(fidl_common::RateSelectionOffloadExtension {
+                    supported: Some(false),
+                    ..Default::default()
+                }),
+                data_plane: Some(fidl_common::DataPlaneExtension {
+                    data_plane_type: Some(fidl_common::DataPlaneType::EthernetDevice),
+                    ..Default::default()
+                }),
+                device: Some(fidl_common::DeviceExtension {
+                    is_synthetic: Some(true),
+                    mac_implementation_type: Some(fidl_common::MacImplementationType::Softmac),
+                    tx_status_report_supported: Some(true),
+                    ..Default::default()
+                }),
+                ..Default::default()
             }
         );
     }
@@ -1425,11 +1449,13 @@ mod tests {
         assert_eq!(
             security_support,
             fidl_common::SecuritySupport {
-                mfp: fidl_common::MfpFeature { supported: false },
-                sae: fidl_common::SaeFeature {
-                    driver_handler_supported: false,
-                    sme_handler_supported: false,
-                },
+                mfp: Some(fidl_common::MfpFeature { supported: Some(false), ..Default::default() }),
+                sae: Some(fidl_common::SaeFeature {
+                    driver_handler_supported: Some(false),
+                    sme_handler_supported: Some(false),
+                    ..Default::default()
+                }),
+                ..Default::default()
             }
         );
     }
@@ -1441,7 +1467,8 @@ mod tests {
         assert_eq!(
             spectrum_management_support,
             fidl_common::SpectrumManagementSupport {
-                dfs: fidl_common::DfsFeature { supported: true },
+                dfs: Some(fidl_common::DfsFeature { supported: Some(true), ..Default::default() }),
+                ..Default::default()
             }
         );
     }

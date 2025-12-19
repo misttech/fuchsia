@@ -16,10 +16,17 @@ pub fn fake_wpa2_a_rsne() -> Rsne {
     }
 }
 
-static EMPTY_SECURITY_SUPPORT: fidl_common::SecuritySupport = fidl_common::SecuritySupport {
-    mfp: fidl_common::MfpFeature { supported: false },
-    sae: fidl_common::SaeFeature { driver_handler_supported: false, sme_handler_supported: true },
-};
+use std::sync::LazyLock;
+static EMPTY_SECURITY_SUPPORT: LazyLock<fidl_common::SecuritySupport> =
+    LazyLock::new(|| fidl_common::SecuritySupport {
+        mfp: Some(fidl_common::MfpFeature { supported: Some(false), ..Default::default() }),
+        sae: Some(fidl_common::SaeFeature {
+            driver_handler_supported: Some(false),
+            sme_handler_supported: Some(true),
+            ..Default::default()
+        }),
+        ..Default::default()
+    });
 
 pub fn fake_wpa2_s_rsne() -> Rsne {
     fake_wpa2_a_rsne()
@@ -32,8 +39,8 @@ pub fn fake_wpa3_a_rsne() -> Rsne {
 }
 
 pub fn fake_wpa3_s_rsne() -> Rsne {
-    let mut security_support = EMPTY_SECURITY_SUPPORT;
-    security_support.mfp.supported = true;
+    let mut security_support = EMPTY_SECURITY_SUPPORT.clone();
+    security_support.mfp.as_mut().unwrap().supported = Some(true);
     fake_wpa3_a_rsne()
         .derive_wpa3_s_rsne(&security_support)
         .expect("Unable to derive supplicant RSNE")

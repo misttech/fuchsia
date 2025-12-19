@@ -118,9 +118,11 @@ pub async fn handle_fullmac_startup(
         Some(Ok(fidl_fullmac::WlanFullmacImpl_Request::QuerySecuritySupport {
             responder,
         })) => {
-            responder
-                .send(Ok(&config.security_support))
-                .expect("Failed to respond to QuerySecuritySupport");
+            let resp = fidl_fullmac::WlanFullmacImplQuerySecuritySupportResponse {
+                resp: Some(config.security_support.clone()),
+                ..Default::default()
+            };
+            responder.send(Ok(&resp)).expect("Failed to respond to QuerySecuritySupport");
         }
     );
 
@@ -128,9 +130,11 @@ pub async fn handle_fullmac_startup(
         Some(Ok(fidl_fullmac::WlanFullmacImpl_Request::QuerySpectrumManagementSupport {
                 responder,
         })) => {
-            responder
-                .send(Ok(&config.spectrum_management_support))
-                .expect("Failed to respond to QuerySpectrumManagementSupport");
+            let resp = fidl_fullmac::WlanFullmacImplQuerySpectrumManagementSupportResponse {
+                resp: Some(config.spectrum_management_support.clone()),
+                ..Default::default()
+            };
+            responder.send(Ok(&resp)).expect("Failed to respond to QuerySpectrumManagementSupport");
         }
     );
 

@@ -263,7 +263,8 @@ zx_status_t SoftmacDriver::EthernetImplQuery(uint32_t options, ethernet_info_t* 
             FDF_LOG(ERROR, "Failed getting mac sublayer result (FIDL error %s)",
                     zx_status_get_string(status));
           } else {
-            if (result.value().resp().device().is_synthetic()) {
+            if (result.value().resp().device() &&
+                result.value().resp().device()->is_synthetic().value_or(false)) {
               out_info->features |= ETHERNET_FEATURE_SYNTH;
             }
           }

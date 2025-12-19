@@ -335,6 +335,13 @@ class WlanFullmacImplBridgeServer : public fidl::Server<fuchsia_wlan_fullmac::Wl
         ForwardResult<WlanFullmacImpl::OnLinkStateChanged>(completer.ToAsync()));
   }
 
+  void handle_unknown_method(
+      fidl::UnknownMethodMetadata<fuchsia_wlan_fullmac::WlanFullmacImpl> metadata,
+      fidl::UnknownMethodCompleter::Sync& completer) override {
+    FDF_SLOG(ERROR, "Unexpected call to unsupported method",
+             KV("ordinal", metadata.method_ordinal));
+  }
+
   void SetMacAddress(SetMacAddressRequest& request,
                      SetMacAddressCompleter::Sync& completer) override {
     WLAN_TRACE_DURATION();
@@ -449,8 +456,10 @@ class TestController : public fdf::DriverBase,
           // exist. This ensures that once this callback runs we can drop async_completer.
           ZX_ASSERT(async_completer && async_completer.use_count() == 1);
 
-          fullmac_bridges_.try_emplace(id, dispatcher(), std::move(server_end),
-                                       std::move(bridge_client), std::move(controller_client));
+          fullmac_bridges_.try_emplace(
+              id, std::make_unique<WlanFullmacImplBridgeServer>(dispatcher(), std::move(server_end),
+                                                                std::move(bridge_client),
+                                                                std::move(controller_client)));
           async_completer->Reply(zx::ok(id));
           async_completer.reset();
         };
@@ -501,7 +510,7 @@ class TestController : public fdf::DriverBase,
       return;
     }
 
-    WlanFullmacImplBridgeServer& bridge = bridge_iter->second;
+    WlanFullmacImplBridgeServer& bridge = *bridge_iter->second;
     auto node_remove_result = bridge.RemoveChild(
         // After the bridge server unbinds, we know that wlanif is fully torn down.
         // It is then safe to delete the bridge server and reply to the FIDL call.
@@ -553,7 +562,8 @@ class TestController : public fdf::DriverBase,
 
   // Maps from id -> bridge server.
   // This should only be accessed from the default dispatcher.
-  std::map<test_wlan_testcontroller::FullmacId, WlanFullmacImplBridgeServer> fullmac_bridges_;
+  std::map<test_wlan_testcontroller::FullmacId, std::unique_ptr<WlanFullmacImplBridgeServer>>
+      fullmac_bridges_;
 };
 
 }  // namespace wlan_testcontroller

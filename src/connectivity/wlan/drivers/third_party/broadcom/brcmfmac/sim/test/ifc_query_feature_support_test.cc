@@ -29,9 +29,14 @@ TEST_F(SimTest, ClientIfcQuerySecuritySupport) {
                              zx::sec(1));
   env_->Run(kSimulatedClockDuration);
 
-  EXPECT_FALSE(resp.sae.driver_handler_supported);
-  EXPECT_TRUE(resp.sae.sme_handler_supported);
-  EXPECT_TRUE(resp.mfp.supported);
+  ASSERT_TRUE(resp.has_sae());
+  ASSERT_TRUE(resp.sae().has_driver_handler_supported());
+  EXPECT_FALSE(resp.sae().driver_handler_supported());
+  ASSERT_TRUE(resp.sae().has_sme_handler_supported());
+  EXPECT_TRUE(resp.sae().sme_handler_supported());
+  ASSERT_TRUE(resp.has_mfp());
+  ASSERT_TRUE(resp.mfp().has_supported());
+  EXPECT_TRUE(resp.mfp().supported());
 }
 
 // Verify that a query for spectrum management features support works on a client interface
@@ -46,7 +51,9 @@ TEST_F(SimTest, ClientIfcQuerySpectrumManagementSupport) {
       std::bind(&SimInterface::QuerySpectrumManagementSupport, &client_ifc, &resp), zx::sec(1));
   env_->Run(kSimulatedClockDuration);
 
-  EXPECT_TRUE(resp.dfs.supported);
+  ASSERT_TRUE(resp.has_dfs());
+  ASSERT_TRUE(resp.dfs().has_supported());
+  EXPECT_TRUE(resp.dfs().supported());
 }
 
 // Verify that there's no duplicate counter/gauge ID or counter/gauge name returned

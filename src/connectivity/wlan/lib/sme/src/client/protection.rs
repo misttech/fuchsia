@@ -154,14 +154,26 @@ impl SecurityContext<'_, wpa::Wpa3PersonalCredentials> {
         match self.security {
             wpa::Wpa3PersonalCredentials::Passphrase(passphrase) => {
                 // Prefer SAE in SME.
-                if self.security_support.sae.sme_handler_supported {
+                if self
+                    .security_support
+                    .sae
+                    .as_ref()
+                    .and_then(|sae| sae.sme_handler_supported)
+                    .unwrap_or(false)
+                {
                     Ok(auth::Config::Sae {
                         ssid: self.bss.ssid.clone(),
                         password: passphrase.clone().into(),
                         mac: self.device.sta_addr.into(),
                         peer_mac: self.bss.bssid.into(),
                     })
-                } else if self.security_support.sae.driver_handler_supported {
+                } else if self
+                    .security_support
+                    .sae
+                    .as_ref()
+                    .and_then(|sae| sae.driver_handler_supported)
+                    .unwrap_or(false)
+                {
                     Ok(auth::Config::DriverSae { password: passphrase.clone().into() })
                 } else {
                     Err(format_err!(
@@ -665,8 +677,9 @@ mod tests {
     fn wpa3_personal_passphrase_rsna_driver_auth() {
         let device = crate::test_utils::fake_device_info([1u8; 6].into());
         let mut security_support = fake_security_support_empty();
-        security_support.mfp.supported = true;
-        security_support.sae.driver_handler_supported = true;
+        security_support.mfp.get_or_insert_with(Default::default).supported = Some(true);
+        security_support.sae.get_or_insert_with(Default::default).driver_handler_supported =
+            Some(true);
         let config = ClientConfig { wpa3_supported: true, ..Default::default() };
         let bss = fake_bss_description!(Wpa3);
         let credentials =
@@ -691,9 +704,11 @@ mod tests {
     fn wpa3_personal_passphrase_prefer_sme_auth() {
         let device = crate::test_utils::fake_device_info([1u8; 6].into());
         let mut security_support = fake_security_support_empty();
-        security_support.mfp.supported = true;
-        security_support.sae.driver_handler_supported = true;
-        security_support.sae.sme_handler_supported = true;
+        security_support.mfp.get_or_insert_with(Default::default).supported = Some(true);
+        security_support.sae.get_or_insert_with(Default::default).driver_handler_supported =
+            Some(true);
+        security_support.sae.get_or_insert_with(Default::default).sme_handler_supported =
+            Some(true);
         let config = ClientConfig { wpa3_supported: true, ..Default::default() };
         let bss = fake_bss_description!(Wpa3);
         let credentials =

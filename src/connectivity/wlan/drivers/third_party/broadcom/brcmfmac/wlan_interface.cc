@@ -336,23 +336,38 @@ void WlanInterface::Query(QueryCompleter::Sync& completer) {
   completer.ReplySuccess(info);
 }
 
+void WlanInterface::handle_unknown_method(
+    fidl::UnknownMethodMetadata<fuchsia_wlan_fullmac::WlanFullmacImpl> metadata,
+    fidl::UnknownMethodCompleter::Sync& completer) {
+  BRCMF_ERR("Unknown method in WlanFullmacImpl protocol: 0x%llx", metadata.method_ordinal);
+}
+
 void WlanInterface::QuerySecuritySupport(QuerySecuritySupportCompleter::Sync& completer) {
   std::shared_lock<std::shared_mutex> guard(lock_);
   fuchsia_wlan_common::wire::SecuritySupport resp;
+  fidl::Arena arena;
   if (wdev_ != nullptr) {
-    brcmf_if_query_security_support(wdev_->netdev, &resp);
+    brcmf_if_query_security_support(wdev_->netdev, &resp, arena);
   }
-  completer.ReplySuccess(resp);
+  completer.ReplySuccess(
+      fuchsia_wlan_fullmac::wire::WlanFullmacImplQuerySecuritySupportResponse::Builder(arena)
+          .resp(resp)
+          .Build());
 }
 
 void WlanInterface::QuerySpectrumManagementSupport(
     QuerySpectrumManagementSupportCompleter::Sync& completer) {
   std::shared_lock<std::shared_mutex> guard(lock_);
   fuchsia_wlan_common::wire::SpectrumManagementSupport resp;
+  fidl::Arena arena;
   if (wdev_ != nullptr) {
-    brcmf_if_query_spectrum_management_support(wdev_->netdev, &resp);
+    brcmf_if_query_spectrum_management_support(wdev_->netdev, &resp, arena);
   }
-  completer.ReplySuccess(resp);
+  completer.ReplySuccess(
+      fuchsia_wlan_fullmac::wire::WlanFullmacImplQuerySpectrumManagementSupportResponse::Builder(
+          arena)
+          .resp(resp)
+          .Build());
 }
 
 void WlanInterface::QueryTelemetrySupport(QueryTelemetrySupportCompleter::Sync& completer) {
@@ -365,7 +380,10 @@ void WlanInterface::QueryTelemetrySupport(QueryTelemetrySupportCompleter::Sync& 
   if (wdev_ != nullptr) {
     brcmf_if_query_telemetry_support(wdev_->netdev, &resp, table_arena);
   }
-  completer.ReplySuccess(resp);
+  completer.ReplySuccess(
+      fuchsia_wlan_fullmac::wire::WlanFullmacImplQueryTelemetrySupportResponse::Builder(table_arena)
+          .resp(resp)
+          .Build());
 }
 
 void WlanInterface::StartScan(StartScanRequestView request, StartScanCompleter::Sync& completer) {

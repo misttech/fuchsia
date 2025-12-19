@@ -42,9 +42,12 @@ pub fn serve(
     inspect_node: fuchsia_inspect::Node,
     persistence_req_sender: auto_persist::PersistenceReqSender,
 ) -> (MlmeSink, MlmeStream, impl Future<Output = Result<(), anyhow::Error>>) {
-    let wpa3_supported = security_support.mfp.supported
-        && (security_support.sae.driver_handler_supported
-            || security_support.sae.sme_handler_supported);
+    let wpa3_supported =
+        security_support.mfp.as_ref().is_some_and(|mfp| mfp.supported.unwrap_or(false))
+            && security_support.sae.as_ref().is_some_and(|sae| {
+                sae.driver_handler_supported.unwrap_or(false)
+                    || sae.sme_handler_supported.unwrap_or(false)
+            });
     let cfg = client_sme::ClientConfig::from_config(cfg, wpa3_supported);
     let (sme, mlme_sink, mlme_stream, time_stream) = Sme::new(
         cfg,

@@ -319,7 +319,7 @@ void SimInterface::QuerySecuritySupport(wlan_common::SecuritySupport* out_resp) 
   ZX_ASSERT(result.ok());
   ZX_ASSERT(!result->is_error());
 
-  *out_resp = result->value()->resp;
+  *out_resp = result->value()->resp();
 }
 
 void SimInterface::QuerySpectrumManagementSupport(
@@ -328,7 +328,7 @@ void SimInterface::QuerySpectrumManagementSupport(
   ZX_ASSERT(result.ok());
   ZX_ASSERT(!result->is_error());
 
-  *out_resp = result->value()->resp;
+  *out_resp = result->value()->resp();
 }
 
 void SimInterface::QueryTelemetrySupport(fuchsia_wlan_stats::wire::TelemetrySupport* out_resp) {
@@ -336,7 +336,7 @@ void SimInterface::QueryTelemetrySupport(fuchsia_wlan_stats::wire::TelemetrySupp
   ZX_ASSERT(result.ok());
   ZX_ASSERT(!result->is_error());
 
-  *out_resp = result->value()->resp;
+  *out_resp = result->value()->resp();
 }
 
 void SimInterface::GetMacAddr(common::MacAddr* out_macaddr) {

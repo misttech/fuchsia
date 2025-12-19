@@ -22,13 +22,13 @@ pub mod error;
 mod minstrel;
 mod probe_sequence;
 
-use anyhow::{bail, format_err, Error};
+use anyhow::{Error, bail, format_err};
 pub use ddk_converter::*;
 use device::DeviceOps;
 use fuchsia_sync::Mutex;
 use futures::channel::mpsc::{self, TrySendError};
 use futures::channel::oneshot;
-use futures::{select, Future, StreamExt};
+use futures::{Future, StreamExt, select};
 use log::info;
 use std::sync::Arc;
 use std::time::Duration;
@@ -280,7 +280,16 @@ impl fmt::Debug for DriverEvent {
 }
 
 fn should_enable_minstrel(mac_sublayer: &fidl_common::MacSublayerSupport) -> bool {
-    mac_sublayer.device.tx_status_report_supported && !mac_sublayer.rate_selection_offload.supported
+    mac_sublayer
+        .device
+        .as_ref()
+        .and_then(|device| device.tx_status_report_supported)
+        .unwrap_or(false)
+        && !mac_sublayer
+            .rate_selection_offload
+            .as_ref()
+            .and_then(|selection| selection.supported)
+            .unwrap_or(false)
 }
 
 const MINSTREL_UPDATE_INTERVAL: std::time::Duration = std::time::Duration::from_millis(100);
@@ -305,7 +314,11 @@ pub async fn mlme_main_loop<T: MlmeImpl>(
         |mac_sublayer_support| {
             let minstrel = Arc::new(Mutex::new(minstrel::MinstrelRateSelector::new(
                 MinstrelTimer { timer: minstrel_timer, current_timer: None },
-                if mac_sublayer_support.device.is_synthetic {
+                if mac_sublayer_support
+                    .device
+                    .and_then(|device| device.is_synthetic)
+                    .unwrap_or(false)
+                {
                     MINSTREL_UPDATE_INTERVAL_HW_SIM
                 } else {
                     MINSTREL_UPDATE_INTERVAL

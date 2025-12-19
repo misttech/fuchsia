@@ -65,19 +65,37 @@ struct BaseWlanFullmacServerForStartup
   }
 
   void QuerySecuritySupport(QuerySecuritySupportCompleter::Sync& completer) override {
-    fuchsia_wlan_common::SecuritySupport response(fuchsia_wlan_common::SaeFeature(false, true),
-                                                  fuchsia_wlan_common::MfpFeature(false));
-    completer.Reply(fit::ok(response));
+    fuchsia_wlan_fullmac::WlanFullmacImplQuerySecuritySupportResponse response;
+
+    fuchsia_wlan_common::SecuritySupport support;
+    support.sae(
+        fuchsia_wlan_common::SaeFeature().driver_handler_supported(false).sme_handler_supported(
+            true));
+    support.mfp(fuchsia_wlan_common::MfpFeature().supported(false));
+
+    response.resp(support);
+
+    completer.Reply(fit::ok(std::move(response)));
   }
 
   void QuerySpectrumManagementSupport(
       QuerySpectrumManagementSupportCompleter::Sync& completer) override {
-    fuchsia_wlan_common::SpectrumManagementSupport response;
-    completer.Reply(fit::ok(response));
+    fuchsia_wlan_fullmac::WlanFullmacImplQuerySpectrumManagementSupportResponse response;
+
+    fuchsia_wlan_common::SpectrumManagementSupport support;
+    response.resp(support);
+
+    completer.Reply(fit::ok(std::move(response)));
   }
 
   void NotImplemented_(const std::string& name, ::fidl::CompleterBase& completer) override {
     ZX_PANIC("Not implemented: %s", name.c_str());
+  }
+
+  void handle_unknown_method(
+      fidl::UnknownMethodMetadata<fuchsia_wlan_fullmac::WlanFullmacImpl> metadata,
+      fidl::UnknownMethodCompleter::Sync& completer) override {
+    ZX_PANIC("Unknown method ordinal: %lu", metadata.method_ordinal);
   }
 
   std::optional<fidl::ServerBinding<fuchsia_wlan_fullmac::WlanFullmacImpl>> binding_;

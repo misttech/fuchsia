@@ -15,7 +15,7 @@ use nom::branch::alt;
 use nom::bytes::streaming::take;
 use nom::combinator::{eof, map, map_res};
 use nom::multi::length_count;
-use nom::number::streaming::{le_u16, le_u8};
+use nom::number::streaming::{le_u8, le_u16};
 use nom::sequence::terminated;
 use nom::{IResult, Parser};
 use wlan_bitfield::bitfield;
@@ -123,7 +123,8 @@ impl RsnCapabilities {
         &self,
         security_support: &fidl_common::SecuritySupport,
     ) -> bool {
-        !self.mgmt_frame_protection_req() || security_support.mfp.supported
+        !self.mgmt_frame_protection_req()
+            || security_support.mfp.as_ref().map_or(false, |mfp| mfp.supported.unwrap_or(false))
     }
 
     /// Returns true if RsnCapabilities contains a capability
@@ -228,7 +229,12 @@ impl Rsne {
         // Enable management frame protection if supported.
         let rsn_capabilities = match self.rsn_capabilities.clone() {
             Some(cap) => {
-                if cap.mgmt_frame_protection_cap() && security_support.mfp.supported {
+                if cap.mgmt_frame_protection_cap()
+                    && security_support
+                        .mfp
+                        .as_ref()
+                        .map_or(false, |mfp| mfp.supported.unwrap_or(false))
+                {
                     Some(cap.with_mgmt_frame_protection_req(true))
                 } else {
                     Some(cap)
@@ -361,11 +367,7 @@ impl Rsne {
             }
         } else {
             if self.group_mgmt_cipher_suite.is_none() {
-                if self.pmkids.is_empty() {
-                    FinalField::Caps
-                } else {
-                    FinalField::Pmkid
-                }
+                if self.pmkids.is_empty() { FinalField::Caps } else { FinalField::Pmkid }
             } else {
                 FinalField::GroupMgmt
             }
@@ -535,7 +537,8 @@ impl Rsne {
             .is_compatible_with_features(security_support);
         // WFA WPA3 specification v3.0: 2.3 rule 7: Verify that we actually support MFP, regardless of whether
         // the features bits indicate we need that support. SAE without MFP is not a valid configuration.
-        features_supported &= security_support.mfp.supported;
+        features_supported &=
+            security_support.mfp.as_ref().map_or(false, |mfp| mfp.supported.unwrap_or(false));
         group_data_supported
             && pairwise_supported
             && sae_supported
@@ -623,8 +626,8 @@ mod tests {
     use super::cipher::{CIPHER_BIP_CMAC_256, CIPHER_GCMP_256, CIPHER_TKIP};
     use super::*;
     use crate::append::TrackedAppend;
-    use crate::test_utils::fake_features::fake_security_support_empty;
     use crate::test_utils::FixedSizedTestBuffer;
+    use crate::test_utils::fake_features::fake_security_support_empty;
     use test_case::test_case;
 
     #[cfg(feature = "benchmark")]
@@ -768,15 +771,19 @@ mod tests {
         assert!(!caps.is_wpa2_compatible());
     }
 
-    static MFP_SUPPORT_ONLY: fidl_common::SecuritySupport = fidl_common::SecuritySupport {
-        mfp: fidl_common::MfpFeature { supported: true },
-        sae: fidl_common::SaeFeature {
-            driver_handler_supported: false,
-            sme_handler_supported: false,
-        },
-    };
+    use std::sync::LazyLock;
+    static MFP_SUPPORT_ONLY: LazyLock<fidl_common::SecuritySupport> =
+        LazyLock::new(|| fidl_common::SecuritySupport {
+            mfp: Some(fidl_common::MfpFeature { supported: Some(true), ..Default::default() }),
+            sae: Some(fidl_common::SaeFeature {
+                driver_handler_supported: Some(false),
+                sme_handler_supported: Some(false),
+                ..Default::default()
+            }),
+            ..Default::default()
+        });
 
-    #[test_case(MFP_SUPPORT_ONLY, true)]
+    #[test_case(MFP_SUPPORT_ONLY.clone(), true)]
     #[test_case(fake_security_support_empty(), false)]
     #[fuchsia::test]
     fn test_wpa2_enables_pmf_if_supported(
@@ -880,7 +887,7 @@ mod tests {
             ..Default::default()
         };
         let mut security_support = fake_security_support_empty();
-        security_support.mfp.supported = true;
+        security_support.mfp.as_mut().unwrap().supported = Some(true);
         assert_eq!(rsne.is_wpa3_rsn_compatible(&security_support), false);
     }
 

@@ -143,18 +143,25 @@ class BasicWlanSoftmacServer : public UnimplementedWlanSoftmacServer {
   }
 
   void QueryMacSublayerSupport(QueryMacSublayerSupportCompleter::Sync& completer) override {
-    fuchsia_wlan_common::MacSublayerSupport response(
-        fuchsia_wlan_common::RateSelectionOffloadExtension(true),
-        fuchsia_wlan_common::DataPlaneExtension(
-            fuchsia_wlan_common::DataPlaneType::kEthernetDevice),
-        fuchsia_wlan_common::DeviceExtension(
-            true, fuchsia_wlan_common::MacImplementationType::kSoftmac, false));
+    fuchsia_wlan_common::MacSublayerSupport response;
+    response.rate_selection_offload(
+        fuchsia_wlan_common::RateSelectionOffloadExtension().supported(true));
+    response.data_plane(fuchsia_wlan_common::DataPlaneExtension().data_plane_type(
+        fuchsia_wlan_common::DataPlaneType::kEthernetDevice));
+    response.device(
+        fuchsia_wlan_common::DeviceExtension()
+            .is_synthetic(true)
+            .mac_implementation_type(fuchsia_wlan_common::MacImplementationType::kSoftmac)
+            .tx_status_report_supported(false));
     completer.Reply(fit::ok(response));
   }
 
   void QuerySecuritySupport(QuerySecuritySupportCompleter::Sync& completer) override {
-    fuchsia_wlan_common::SecuritySupport response(fuchsia_wlan_common::SaeFeature(false, true),
-                                                  fuchsia_wlan_common::MfpFeature(false));
+    fuchsia_wlan_common::SecuritySupport response;
+    response.sae(
+        fuchsia_wlan_common::SaeFeature().driver_handler_supported(false).sme_handler_supported(
+            true));
+    response.mfp(fuchsia_wlan_common::MfpFeature().supported(false));
     completer.Reply(fit::ok(response));
   }
 

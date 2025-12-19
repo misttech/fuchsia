@@ -119,6 +119,10 @@ class WlanInterface : public fidl::WireServer<fuchsia_wlan_fullmac::WlanFullmacI
     BRCMF_WARN("Received unknown event: event_ordinal(%lu)", metadata.event_ordinal);
   }
 
+  void handle_unknown_method(
+      fidl::UnknownMethodMetadata<fuchsia_wlan_fullmac::WlanFullmacImpl> metadata,
+      fidl::UnknownMethodCompleter::Sync& completer) override;
+
  protected:
   // NetworkPort::Callbacks implementation
   uint32_t PortGetMtu() override;

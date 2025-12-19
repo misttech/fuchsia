@@ -7,26 +7,26 @@ library fuchsia.wlan.softmac;
 /// See IEEE 802.11-2016 11.1.4.2 and 11.1.4.3.
 /// This is a discovery extension, expected to be used for softmac only.
 @available(added=HEAD)
-type ScanOffloadExtension = struct {
+type ScanOffloadExtension = table {
     /// If true, driver orchestrates scans; otherwise MLME must do so.
     // TODO(https://fxbug.dev/321627682): Deprecate and remove this field.
-    supported bool;
-    scan_cancel_supported bool;
+    1: supported bool;
+    2: scan_cancel_supported bool;
 };
 
 /// Indicates where and how probe responses are to be handled.
 /// See IEEE 802.11-2016 11.1.4.3.
 /// This is a discovery extension, expected to be used for softmac only.
 @available(added=HEAD)
-type ProbeResponseOffloadExtension = struct {
+type ProbeResponseOffloadExtension = table {
     /// If true, driver responds to probe requests; otherwise MLME must respond.
-    supported bool;
+    1: supported bool;
 };
 
 /// Features related to discovery of potential BSSs.
 /// See IEEE 802.11-2016 11.1.4.2 and 11.1.4.3.
 @available(added=HEAD)
-type DiscoverySupport = struct {
-    scan_offload ScanOffloadExtension;
-    probe_response_offload ProbeResponseOffloadExtension;
+type DiscoverySupport = table {
+    1: scan_offload ScanOffloadExtension;
+    2: probe_response_offload ProbeResponseOffloadExtension;
 };

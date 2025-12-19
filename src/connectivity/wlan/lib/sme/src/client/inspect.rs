@@ -91,7 +91,10 @@ impl SmeTree {
             },
             spectrum_management_support: {
                 dfs: {
-                    supported: spectrum_management_support.dfs.supported,
+                    supported: spectrum_management_support
+                        .dfs
+                        .as_ref()
+                        .is_some_and(|dfs| dfs.supported.unwrap_or(false)),
                 }
             }
         });

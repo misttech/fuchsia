@@ -154,7 +154,7 @@ impl<T> ScanScheduler<T> {
                 self.last_mlme_txn_id,
                 &scan_cmd,
                 &self.device_info,
-                self.spectrum_management_support,
+                self.spectrum_management_support.clone(),
             );
             self.current = ScanState::ScanningToDiscover {
                 cmd: scan_cmd,
@@ -310,7 +310,11 @@ fn get_operating_channels_for_scan(
                 return true;
             };
             if channel.is_5ghz() {
-                return spectrum_management_support.dfs.supported;
+                return spectrum_management_support
+                    .dfs
+                    .as_ref()
+                    .and_then(|dfs| dfs.supported)
+                    .unwrap_or(false);
             };
             true
         })
@@ -617,7 +621,7 @@ mod tests {
         let device_info = device_info_with_channel(vec![1, 36, 165]);
         let mut spectrum_management = fake_spectrum_management_support_empty();
         if dfs_supported {
-            spectrum_management.dfs.supported = true;
+            spectrum_management.dfs.get_or_insert_with(Default::default).supported = Some(true);
         }
         let mut sched: ScanScheduler<i32> =
             ScanScheduler::new(Arc::new(device_info), spectrum_management);

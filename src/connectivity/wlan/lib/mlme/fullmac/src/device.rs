@@ -107,6 +107,11 @@ impl DeviceOps for FullmacDevice {
             .query_security_support(zx::MonotonicInstant::INFINITE)
             .context("FIDL error on QuerySecuritySupport")?
             .map_err(|e| format_err!("Driver returned error on QuerySecuritySupport: {}", e))
+            .and_then(|support| {
+                support.resp.ok_or_else(|| {
+                    format_err!("Driver returned empty QuerySecuritySupport response")
+                })
+            })
     }
 
     fn query_spectrum_management_support(
@@ -118,12 +123,26 @@ impl DeviceOps for FullmacDevice {
             .map_err(|e| {
                 format_err!("Driver returned error on QuerySpectrumManagementSupport: {}", e)
             })
+            .and_then(|support| {
+                support.resp.ok_or_else(|| {
+                    format_err!("Driver returned empty QuerySpectrumManagementSupport response")
+                })
+            })
     }
 
     fn query_telemetry_support(&self) -> anyhow::Result<Result<fidl_stats::TelemetrySupport, i32>> {
         self.fullmac_impl_sync_proxy
             .query_telemetry_support(zx::MonotonicInstant::INFINITE)
             .context("FIDL error on QueryTelemetrySupport")
+            .and_then(|support| match support {
+                Ok(response) => response
+                    .resp
+                    .ok_or_else(|| {
+                        format_err!("Driver returned empty QuerySpectrumManagementSupport response")
+                    })
+                    .map(Ok),
+                Err(e) => Ok(Err(e)),
+            })
     }
 
     fn start_scan(&self, req: fidl_fullmac::WlanFullmacImplStartScanRequest) -> anyhow::Result<()> {
@@ -347,15 +366,24 @@ pub mod test_utils {
                         ..Default::default()
                     }),
                     query_security_support_mock: Some(fidl_common::SecuritySupport {
-                        sae: fidl_common::SaeFeature {
-                            driver_handler_supported: false,
-                            sme_handler_supported: true,
-                        },
-                        mfp: fidl_common::MfpFeature { supported: false },
+                        sae: Some(fidl_common::SaeFeature {
+                            driver_handler_supported: Some(false),
+                            sme_handler_supported: Some(true),
+                            ..Default::default()
+                        }),
+                        mfp: Some(fidl_common::MfpFeature {
+                            supported: Some(false),
+                            ..Default::default()
+                        }),
+                        ..Default::default()
                     }),
                     query_spectrum_management_support_mock: Some(
                         fidl_common::SpectrumManagementSupport {
-                            dfs: fidl_common::DfsFeature { supported: false },
+                            dfs: Some(fidl_common::DfsFeature {
+                                supported: Some(false),
+                                ..Default::default()
+                            }),
+                            ..Default::default()
                         },
                     ),
                     query_telemetry_support_mock: Some(Ok(fidl_stats::TelemetrySupport {
