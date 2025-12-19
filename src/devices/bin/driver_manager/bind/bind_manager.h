@@ -11,7 +11,7 @@
 
 #include "src/devices/bin/driver_manager/bind/bind_node_set.h"
 #include "src/devices/bin/driver_manager/bind/bind_result_tracker.h"
-#include "src/devices/bin/driver_manager/composite_node_spec/composite_node_spec_manager.h"
+#include "src/devices/bin/driver_manager/composite/composite_node_spec_manager.h"
 #include "src/devices/bin/driver_manager/node.h"
 
 namespace driver_manager {

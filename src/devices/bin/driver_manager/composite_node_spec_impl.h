@@ -5,7 +5,7 @@
 #ifndef SRC_DEVICES_BIN_DRIVER_MANAGER_COMPOSITE_NODE_SPEC_IMPL_H_
 #define SRC_DEVICES_BIN_DRIVER_MANAGER_COMPOSITE_NODE_SPEC_IMPL_H_
 
-#include "src/devices/bin/driver_manager/composite_node_spec/composite_node_spec.h"
+#include "src/devices/bin/driver_manager/composite/composite_node_spec.h"
 #include "src/devices/bin/driver_manager/parent_set_collector.h"
 
 namespace driver_manager {

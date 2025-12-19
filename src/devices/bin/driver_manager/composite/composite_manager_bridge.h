@@ -2,10 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef SRC_DEVICES_BIN_DRIVER_MANAGER_COMPOSITE_NODE_SPEC_COMPOSITE_MANAGER_BRIDGE_H_
-#define SRC_DEVICES_BIN_DRIVER_MANAGER_COMPOSITE_NODE_SPEC_COMPOSITE_MANAGER_BRIDGE_H_
+#ifndef SRC_DEVICES_BIN_DRIVER_MANAGER_COMPOSITE_COMPOSITE_MANAGER_BRIDGE_H_
+#define SRC_DEVICES_BIN_DRIVER_MANAGER_COMPOSITE_COMPOSITE_MANAGER_BRIDGE_H_
 
-#include "src/devices/bin/driver_manager/composite_node_spec/composite_node_spec.h"
+#include "src/devices/bin/driver_manager/composite/composite_node_spec.h"
 
 namespace driver_manager {
 using AddToIndexCallback = fit::callback<void(zx::result<>)>;
@@ -30,4 +30,4 @@ class CompositeManagerBridge {
 };
 }  // namespace driver_manager
 
-#endif  // SRC_DEVICES_BIN_DRIVER_MANAGER_COMPOSITE_NODE_SPEC_COMPOSITE_MANAGER_BRIDGE_H_
+#endif  // SRC_DEVICES_BIN_DRIVER_MANAGER_COMPOSITE_COMPOSITE_MANAGER_BRIDGE_H_

@@ -2,15 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef SRC_DEVICES_BIN_DRIVER_MANAGER_COMPOSITE_NODE_SPEC_COMPOSITE_NODE_SPEC_MANAGER_H_
-#define SRC_DEVICES_BIN_DRIVER_MANAGER_COMPOSITE_NODE_SPEC_COMPOSITE_NODE_SPEC_MANAGER_H_
+#ifndef SRC_DEVICES_BIN_DRIVER_MANAGER_COMPOSITE_COMPOSITE_NODE_SPEC_MANAGER_H_
+#define SRC_DEVICES_BIN_DRIVER_MANAGER_COMPOSITE_COMPOSITE_NODE_SPEC_MANAGER_H_
 
 #include <fidl/fuchsia.driver.framework/cpp/wire.h>
 #include <lib/zx/result.h>
 
 #include <unordered_map>
 
-#include "src/devices/bin/driver_manager/composite_node_spec/composite_manager_bridge.h"
+#include "src/devices/bin/driver_manager/composite/composite_manager_bridge.h"
 
 namespace driver_manager {
 struct CompositeNodeAndDriver {
@@ -72,4 +72,4 @@ class CompositeNodeSpecManager {
 
 }  // namespace driver_manager
 
-#endif  // SRC_DEVICES_BIN_DRIVER_MANAGER_COMPOSITE_NODE_SPEC_COMPOSITE_NODE_SPEC_MANAGER_H_
+#endif  // SRC_DEVICES_BIN_DRIVER_MANAGER_COMPOSITE_COMPOSITE_NODE_SPEC_MANAGER_H_

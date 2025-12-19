@@ -255,7 +255,6 @@ test("composite_node_spec_manager_test") {
     "//sdk/lib/driver/component/cpp",
     "//sdk/lib/fdio",
     "//src/devices/bin/driver_manager:driver_runner",
-    "//src/devices/bin/driver_manager/composite_node_spec:lib",
     "//zircon/system/ulib/zxtest",
   ]
 }
