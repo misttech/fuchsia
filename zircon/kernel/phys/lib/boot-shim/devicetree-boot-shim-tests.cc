@@ -26,6 +26,14 @@
 
 namespace {
 
+struct ArmZeroMpidr {
+  static arch::ArmMultiprocessorAffinityRegister Read() {
+    arch::ArmMultiprocessorAffinityRegister mpidr;
+    mpidr.set_reg_value(0);
+    return mpidr;
+  }
+};
+
 class FakeMatcher : public boot_shim::DevicetreeItemBase<FakeMatcher, 2> {
  public:
   template <typename T>
@@ -228,7 +236,7 @@ TEST_F(DevicetreeBootShimTest, ItemsWithoutMatchingNodes) {
   boot_shim::DevicetreeBootShim<
       DevicetreeItem1, DevicetreeItem2, NonDeviceTreeItem, boot_shim::UartItem<>,
       boot_shim::ArmDevicetreePsciItem, boot_shim::ArmDevicetreeGicItem,
-      boot_shim::ArmDevicetreeCpuTopologyItem, boot_shim::ArmDevicetreeTimerItem,
+      boot_shim::ArmDevicetreeCpuTopologyItem<ArmZeroMpidr>, boot_shim::ArmDevicetreeTimerItem,
       boot_shim::RiscvDevicetreePlicItem, boot_shim::RiscvDevicetreeTimerItem>
       shim("devicetree-boot-shim-test", fdt());
   shim.set_allocator([&allocs](size_t size, size_t alignment, fbl::AllocChecker& ac) -> void* {

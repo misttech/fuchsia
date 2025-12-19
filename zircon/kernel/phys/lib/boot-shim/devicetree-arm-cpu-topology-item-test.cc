@@ -19,6 +19,19 @@ namespace {
 using boot_shim::testing::LoadDtb;
 using boot_shim::testing::LoadedDtb;
 
+template <uint64_t Value>
+struct MockArmMpidr {
+  static arch::ArmMultiprocessorAffinityRegister Read() {
+    arch::ArmMultiprocessorAffinityRegister mpidr;
+    mpidr.set_reg_value(Value);
+    return mpidr;
+  }
+};
+
+template <uint64_t BootMpidr>
+using ArmDevicetreeCpuTopologyItem =
+    boot_shim::ArmDevicetreeCpuTopologyItem<MockArmMpidr<BootMpidr>>;
+
 class TestAllocator {
  public:
   TestAllocator() = default;
@@ -232,7 +245,7 @@ TEST_F(ArmCpuTopologyItemTest, CpusMultipleCells) {
   ASSERT_TRUE(image.clear().is_ok());
 
   auto fdt = cpus();
-  boot_shim::DevicetreeBootShim<boot_shim::ArmDevicetreeCpuTopologyItem> shim("test", fdt);
+  boot_shim::DevicetreeBootShim<ArmDevicetreeCpuTopologyItem<0>> shim("test", fdt);
   shim.set_allocator(TestAllocator());
 
   shim.Init();
@@ -399,7 +412,7 @@ TEST_F(ArmCpuTopologyItemTest, CpusSingleCell) {
   ASSERT_TRUE(image.clear().is_ok());
 
   auto fdt = cpus_single_cell();
-  boot_shim::DevicetreeBootShim<boot_shim::ArmDevicetreeCpuTopologyItem> shim("test", fdt);
+  boot_shim::DevicetreeBootShim<ArmDevicetreeCpuTopologyItem<0>> shim("test", fdt);
   shim.set_allocator(TestAllocator());
   shim.Init();
   auto clear_errors = fit::defer([&]() { image.ignore_error(); });
@@ -533,7 +546,175 @@ TEST_F(ArmCpuTopologyItemTest, CpusNoCpuMap) {
   ASSERT_TRUE(image.clear().is_ok());
 
   auto fdt = cpus_no_cpu_map();
-  boot_shim::DevicetreeBootShim<boot_shim::ArmDevicetreeCpuTopologyItem> shim("test", fdt);
+  boot_shim::DevicetreeBootShim<ArmDevicetreeCpuTopologyItem<0>> shim("test", fdt);
+  shim.set_allocator(TestAllocator());
+
+  shim.Init();
+  auto clear_errors = fit::defer([&]() { image.ignore_error(); });
+  ASSERT_TRUE(shim.AppendItems(image).is_ok());
+  bool present = false;
+  for (auto [header, payload] : image) {
+    if (header->type == ZBI_TYPE_CPU_TOPOLOGY) {
+      present = true;
+      cpp20::span<zbi_topology_node_t> nodes(reinterpret_cast<zbi_topology_node_t*>(payload.data()),
+                                             payload.size() / sizeof(zbi_topology_node_t));
+      boot_shim::testing::CheckCpuTopology(nodes, kExpectedTopology);
+    }
+  }
+  ASSERT_TRUE(present);
+}
+
+TEST_F(ArmCpuTopologyItemTest, CpusBootCpuWithNonZeroMpidr) {
+  constexpr uint64_t kBootMpidr = 0x700000101;  // Matches cpu@11100000101
+  constexpr std::array kExpectedTopology = {
+
+      // socket0
+      zbi_topology_node_t{
+          .entity = {.discriminant = ZBI_TOPOLOGY_ENTITY_SOCKET},
+          .parent_index = ZBI_TOPOLOGY_NO_PARENT,
+      },
+
+      // cluster0
+      zbi_topology_node_t{
+          .entity =
+              {
+                  .discriminant = ZBI_TOPOLOGY_ENTITY_CLUSTER,
+                  .cluster =
+                      {
+                          .performance_class = 0x7F,
+                      },
+              },
+          .parent_index = 0,
+      },
+
+      // cpu@11100000101
+      zbi_topology_node_t{
+          .entity =
+              {
+                  .discriminant = ZBI_TOPOLOGY_ENTITY_PROCESSOR,
+                  .processor =
+                      {
+                          .architecture_info =
+                              {
+                                  .discriminant = ZBI_TOPOLOGY_ARCHITECTURE_INFO_ARM64,
+                                  .arm64 =
+                                      {
+                                          .cluster_1_id = 1,
+                                          .cluster_2_id = 0,
+                                          .cluster_3_id = 7,
+                                          .cpu_id = 1,
+                                          .gic_id = 0,
+                                      },
+                              },
+                          .flags = ZBI_TOPOLOGY_PROCESSOR_FLAGS_PRIMARY,
+                          .logical_ids = {0, 0, 0, 0},
+                          .logical_id_count = 1,
+                      },
+              },
+          .parent_index = 1,
+      },
+
+      // cpu@11100000100
+      zbi_topology_node_t{
+          .entity =
+              {
+                  .discriminant = ZBI_TOPOLOGY_ENTITY_PROCESSOR,
+                  .processor =
+                      {
+                          .architecture_info =
+                              {
+                                  .discriminant = ZBI_TOPOLOGY_ARCHITECTURE_INFO_ARM64,
+                                  .arm64 =
+                                      {
+                                          .cluster_1_id = 1,
+                                          .cluster_2_id = 0,
+                                          .cluster_3_id = 7,
+                                          .cpu_id = 0,
+                                          .gic_id = 1,
+                                      },
+                              },
+                          .flags = 0,
+                          .logical_ids = {1, 0, 0, 0},
+                          .logical_id_count = 1,
+                      },
+              },
+          .parent_index = 1,
+      },
+
+      // cluster1
+      zbi_topology_node_t{
+          .entity =
+              {
+                  .discriminant = ZBI_TOPOLOGY_ENTITY_CLUSTER,
+                  .cluster =
+                      {
+                          .performance_class = 0xFF,
+                      },
+              },
+          .parent_index = 0,
+      },
+
+      // cpu@1
+      zbi_topology_node_t{
+          .entity =
+              {
+                  .discriminant = ZBI_TOPOLOGY_ENTITY_PROCESSOR,
+                  .processor =
+                      {
+                          .architecture_info =
+                              {
+                                  .discriminant = ZBI_TOPOLOGY_ARCHITECTURE_INFO_ARM64,
+                                  .arm64 =
+                                      {
+                                          .cluster_1_id = 0,
+                                          .cluster_2_id = 0,
+                                          .cluster_3_id = 0,
+                                          .cpu_id = 1,
+                                          .gic_id = 2,
+                                      },
+                              },
+                          .flags = 0,
+                          .logical_ids = {2, 0, 0, 0},
+                          .logical_id_count = 1,
+                      },
+              },
+          .parent_index = 4,
+      },
+
+      // cpu@0
+      zbi_topology_node_t{
+          .entity =
+              {
+                  .discriminant = ZBI_TOPOLOGY_ENTITY_PROCESSOR,
+                  .processor =
+                      {
+                          .architecture_info =
+                              {
+                                  .discriminant = ZBI_TOPOLOGY_ARCHITECTURE_INFO_ARM64,
+                                  .arm64 =
+                                      {
+                                          .cluster_1_id = 0,
+                                          .cluster_2_id = 0,
+                                          .cluster_3_id = 0,
+                                          .cpu_id = 0,
+                                          .gic_id = 3,
+                                      },
+                              },
+                          .flags = 0,
+                          .logical_ids = {3, 0, 0, 0},
+                          .logical_id_count = 1,
+                      },
+              },
+          .parent_index = 4,
+      },
+  };
+
+  std::array<std::byte, 1024> image_buffer;
+  zbitl::Image<cpp20::span<std::byte>> image(image_buffer);
+  ASSERT_TRUE(image.clear().is_ok());
+
+  auto fdt = cpus();
+  boot_shim::DevicetreeBootShim<ArmDevicetreeCpuTopologyItem<kBootMpidr>> shim("test", fdt);
   shim.set_allocator(TestAllocator());
 
   shim.Init();
@@ -668,7 +849,7 @@ TEST_F(ArmCpuTopologyItemTest, Qemu) {
   ASSERT_TRUE(image.clear().is_ok());
 
   auto fdt = qemu_arm_gic3();
-  boot_shim::DevicetreeBootShim<boot_shim::ArmDevicetreeCpuTopologyItem> shim("test", fdt);
+  boot_shim::DevicetreeBootShim<ArmDevicetreeCpuTopologyItem<0>> shim("test", fdt);
   shim.set_allocator(TestAllocator());
 
   shim.Init();
@@ -721,7 +902,7 @@ TEST_F(ArmCpuTopologyItemTest, Crosvm) {
   ASSERT_TRUE(image.clear().is_ok());
 
   auto fdt = crosvm_arm();
-  boot_shim::DevicetreeBootShim<boot_shim::ArmDevicetreeCpuTopologyItem> shim("test", fdt);
+  boot_shim::DevicetreeBootShim<ArmDevicetreeCpuTopologyItem<0>> shim("test", fdt);
   shim.set_allocator(TestAllocator());
   shim.Init();
   auto clear_errors = fit::defer([&]() { image.ignore_error(); });
@@ -937,7 +1118,7 @@ TEST_F(ArmCpuTopologyItemTest, KhadasVim3) {
   ASSERT_TRUE(image.clear().is_ok());
 
   auto fdt = khadas_vim3();
-  boot_shim::DevicetreeBootShim<boot_shim::ArmDevicetreeCpuTopologyItem> shim("test", fdt);
+  boot_shim::DevicetreeBootShim<ArmDevicetreeCpuTopologyItem<0>> shim("test", fdt);
   shim.set_allocator(TestAllocator());
 
   shim.Init();

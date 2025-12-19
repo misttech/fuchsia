@@ -76,6 +76,34 @@ ARCH_ARM64_SYSREG(ArmCurrentEl, "CurrentEL");
 // the stack and only uses scratch registers.
 extern "C" void ArmDropToEl1WithoutEl2Monitor();
 
+// This type covers the following register formats:
+// * [arm/sysreg]/mpidr_el1: Multiprocessor Affinity Register (EL1)
+// * [arm/sysreg]/vmpidr_el2: Virtualization Multiprocessor ID Register (EL2)
+struct ArmMultiprocessorAffinityRegister
+    : public SysRegDerivedBase<ArmMultiprocessorAffinityRegister, uint64_t> {
+  uint64_t affinity() const { return reg_value() & kAffinityMask; }
+
+  DEF_RSVDZ_FIELD(63, 40);
+  DEF_FIELD(39, 32, aff3);  // Affinity level 3
+  DEF_BIT(31, res1_bit32);  // RES1
+  DEF_BIT(30, u);           // Uniprocessor system
+  DEF_RSVDZ_FIELD(29, 25);  // RES0
+  DEF_BIT(24, mt);          // Multithreading
+  DEF_FIELD(23, 16, aff2);  // Affinity level 2
+  DEF_FIELD(15, 8, aff1);   // Affinity level 1
+  DEF_FIELD(7, 0, aff0);    // Affinity level 0
+
+ private:
+  static constexpr uint64_t kAff0Mask = 0xffULL << 0;   // Bits [7:0]
+  static constexpr uint64_t kAff1Mask = 0xffULL << 8;   // Bits [15:8]
+  static constexpr uint64_t kAff2Mask = 0xffULL << 16;  // Bits [23:16]
+  static constexpr uint64_t kAff3Mask = 0xffULL << 32;  // Bits [39:32]
+  static constexpr uint64_t kAffinityMask = kAff0Mask | kAff1Mask | kAff2Mask | kAff3Mask;
+};
+
+struct ArmMpidrEl1 : public arch::SysRegDerived<ArmMpidrEl1, ArmMultiprocessorAffinityRegister> {};
+ARCH_ARM64_SYSREG(ArmMpidrEl1, "mpidr_el1");
+
 // This type covers three register formats:
 //  * [arm/sysreg]/sctlr_el1: System Control Register (EL1)
 //  * [arm/sysreg]/sctlr_el2: System Control Register (EL2)

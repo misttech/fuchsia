@@ -7,6 +7,7 @@
 #ifndef ZIRCON_KERNEL_PHYS_LIB_BOOT_SHIM_INCLUDE_LIB_BOOT_SHIM_DEVICETREE_H_
 #define ZIRCON_KERNEL_PHYS_LIB_BOOT_SHIM_INCLUDE_LIB_BOOT_SHIM_DEVICETREE_H_
 
+#include <lib/arch/arm64/system.h>
 #include <lib/boot-shim/devicetree-boot-shim.h>
 #include <lib/boot-shim/item-base.h>
 #include <lib/boot-shim/tty.h>
@@ -866,6 +867,9 @@ class RiscvDevicetreeCpuTopologyItem : public RiscvDevicetreeCpuTopologyItemBase
   RiscvDevicetreeCpuTopologyItem() : RiscvDevicetreeCpuTopologyItemBase(BootHartIdGetter::Get()) {}
 };
 
+// ArmMpidr is expected to have a static `Read()` method that returns an
+// `arch::ArmMultiprocessorAffinityRegister`.
+template <typename ArmMpidr = arch::ArmMpidrEl1>
 class ArmDevicetreeCpuTopologyItem : public DevicetreeCpuTopologyItem {
  public:
   template <typename Shim>
@@ -898,22 +902,17 @@ class ArmDevicetreeCpuTopologyItem : public DevicetreeCpuTopologyItem {
           node.architecture_info.arm64.gic_id =
               static_cast<uint8_t>(node.logical_ids[node.logical_id_count - 1]);
 
-          // Save the CPU affinities for this node's address.
-          // AFF 0 [7:0]
-          node.architecture_info.arm64.cpu_id = *address & 0xff;
-          // AFF 1 [15:8]
-          node.architecture_info.arm64.cluster_1_id = (*address >> 8) & 0xff;
-          // AFF 2 [23:16]
-          node.architecture_info.arm64.cluster_2_id = (*address >> 16) & 0xff;
-          // AFF 3 [39:32]
-          node.architecture_info.arm64.cluster_3_id = (*address >> 32) & 0xff;
+          // Save the CPU affinities from this node's reg's "address" element,
+          // which is the mpidr value.
+          auto entry_mpidr = arch::ArmMultiprocessorAffinityRegister{};
+          entry_mpidr.set_reg_value(*address);
+          node.architecture_info.arm64.cpu_id = static_cast<uint8_t>(entry_mpidr.aff0());
+          node.architecture_info.arm64.cluster_1_id = static_cast<uint8_t>(entry_mpidr.aff1());
+          node.architecture_info.arm64.cluster_2_id = static_cast<uint8_t>(entry_mpidr.aff2());
+          node.architecture_info.arm64.cluster_3_id = static_cast<uint8_t>(entry_mpidr.aff3());
 
-          // TODO(https://fxbug.dev/469026173): Use the boot CPU's actual MPIDR instead of assuming
-          // it is the CPU with MPIDR 0 in the devicetree.
-          // Flag the boot CPU by looking for MPIDR 0.
-          const auto& arch_info = node.architecture_info.arm64;
-          if (arch_info.cpu_id == 0 && arch_info.cluster_1_id == 0 && arch_info.cluster_2_id == 0 &&
-              arch_info.cluster_3_id == 0) {
+          // Flag the boot CPU by comparing the entry's affinity with the boot CPU's affinity.
+          if (entry_mpidr.affinity() == ArmMpidr::Read().affinity()) {
             node.flags |= ZBI_TOPOLOGY_PROCESSOR_FLAGS_PRIMARY;
           } else {
             node.flags &= ~ZBI_TOPOLOGY_PROCESSOR_FLAGS_PRIMARY;
