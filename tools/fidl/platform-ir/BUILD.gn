@@ -37,6 +37,8 @@ template("platform_ir") {
       rebase_path(platform_ir, root_build_dir),
       "--depfile",
       rebase_path(depfile, root_build_dir),
+      "--keep-location",
+      "true",
     ]
     if (defined(invoker.api_level)) {
       args += [

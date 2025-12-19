@@ -6,6 +6,7 @@ group("fidl") {
   public_deps = [
     ":fidl-lint",
     ":fidlfmt",
+    "compat_audit($host_toolchain)",
     "fidl_api_diff:host",
     "fidl_api_summarize:host",
     "fidl_ir",
