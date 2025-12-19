@@ -60,6 +60,7 @@ zx_status_t vmm_page_fault_handler(vaddr_t addr, uint flags) {
 
   Thread* current_thread = Thread::Current::Get();
   zx_instant_mono_ticks_t start_time = current_mono_ticks();
+  zx_instant_boot_ticks_t trace_start_time = KTrace::Timestamp();
   PageFaultTimer timer(current_thread, start_time);
 
   if (TRACE_PAGE_FAULT || LOCAL_TRACE) {
@@ -92,7 +93,7 @@ zx_status_t vmm_page_fault_handler(vaddr_t addr, uint flags) {
     status = ZX_OK;
   }
 
-  KTRACE_COMPLETE("kernel:vm", "page_fault", start_time, ("vaddr", ktrace::Pointer{addr}),
+  KTRACE_COMPLETE("kernel:vm", "page_fault", trace_start_time, ("vaddr", ktrace::Pointer{addr}),
                   ("flags", FlagsString{flags}));
 
   return status;
