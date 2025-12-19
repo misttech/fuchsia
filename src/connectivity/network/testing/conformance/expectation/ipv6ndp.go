@@ -366,24 +366,36 @@ var ipv6ndpExpectationsNS3 map[AnvlCaseNumber]outcome.Outcome = map[AnvlCaseNumb
 	{21, 3}:  Pass,
 	{21, 4}:  Pass,
 	{21, 5}:  Pass,
-	{21, 6}:  Inconclusive,
-	{21, 7}:  Inconclusive,
+	// TODO(https://fxbug.dev/469720574): Stale default routes from 21.4 + 21.5
+	// contaminate this test. Support for Default Route Selection will fix this.
+	{21, 6}: Inconclusive,
+	// TODO(https://fxbug.dev/469720574): Stale default routes from 21.4 + 21.5
+	// contaminate this test. Support for Default Route Selection will fix this.
+	{21, 7}: Inconclusive,
+	// TODO(https://fxbug.dev/469720574): Stale default routes from 21.4 + 21.5
+	// contaminate this test. Support for Default Route Selection will fix this.
 	{21, 8}:  Inconclusive,
 	{21, 9}:  Pass,
 	{21, 10}: Pass,
 	{21, 11}: Pass,
 	{21, 12}: Pass,
 	{21, 13}: Pass,
+	// TODO(https://fxbug.dev/469720574): Stale default routes from 21.4 + 21.5
+	// contaminate this test. Support for Default Route Selection will fix this.
 	{21, 14}: Fail,
+	// TODO(https://fxbug.dev/469720574): Stale default routes from 21.4 + 21.5
+	// contaminate this test. Support for Default Route Selection will fix this.
 	{21, 15}: Inconclusive,
+	// TODO(https://fxbug.dev/469720574): Stale default routes from 21.4 + 21.5
+	// contaminate this test. Support for Default Route Selection will fix this.
 	{21, 16}: Inconclusive,
-	// TODO(https://fxbug.dev/328058848): This test is sometimes inconclusive and
-	// sometimes passes when run on its own locally.
+	// TODO(https://fxbug.dev/469720574): Stale default routes from 21.4 + 21.5
+	// contaminate this test. Support for Default Route Selection will fix this.
 	{21, 17}: Flaky,
 	{21, 18}: Pass,
-	// TODO(https://fxbug.dev/328058848): This test is inconclusive when run on
-	// its own locally.
-	{22, 1}:  Pass,
+	// TODO(https://fxbug.dev/469720574): Support Default Route Selection.
+	{22, 1}: Flaky,
+	// TODO(https://fxbug.dev/469720574): Support Default Route Selection.
 	{22, 2}:  Fail,
 	{23, 1}:  Pass,
 	{23, 2}:  Pass,
