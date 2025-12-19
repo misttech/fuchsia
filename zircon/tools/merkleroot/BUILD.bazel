@@ -2,13 +2,14 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-cc_binary(
+load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
+load("//build/bazel/rules/host:defs.bzl", "cc_binary_host_tool")
+
+cc_binary_host_tool(
     name = "merkleroot",
     srcs = ["merkleroot.cc"],
-    # Intentionally not setting CPU because we use this target to test cross-compiled on other CPUs.
-    target_compatible_with = [
-        "@platforms//os:linux",
-    ],
+    # This tool is in the IDK and can be cross-compiled for other CPUs.
+    target_compatible_with = HOST_OS_CONSTRAINTS,
     deps = [
         "//src/lib/digest",
         "//zircon/system/ulib/fbl",

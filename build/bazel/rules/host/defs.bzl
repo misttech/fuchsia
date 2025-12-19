@@ -7,6 +7,7 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_binary")
 load("@platforms//host:constraints.bzl", "HOST_CONSTRAINTS")
 load("@rules_cc//cc:defs.bzl", "cc_binary")
+load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
 
 def _fuchsia_less_transition_impl(_settings, _attr):
     # Set build settings to their `build_setting_default` value.
@@ -58,12 +59,12 @@ _to_fuchsia_less_config = rule(
 )
 
 def _cc_binary_host_tool_impl(name, target_compatible_with, testonly, visibility, **kwargs):
-    if target_compatible_with != HOST_CONSTRAINTS:
-        fail("`target_compatible_with` must be `%s`." % HOST_CONSTRAINTS)
+    if target_compatible_with != HOST_CONSTRAINTS and target_compatible_with != HOST_OS_CONSTRAINTS:
+        fail("`target_compatible_with` must be `%s` or `%s`." % (HOST_CONSTRAINTS, HOST_OS_CONSTRAINTS))
 
     cc_binary(
         name = name,
-        target_compatible_with = HOST_CONSTRAINTS,
+        target_compatible_with = target_compatible_with,
         testonly = testonly,
         # Prevent use of the tool directly without going through the fuchsia-less transition.
         visibility = ["//visibility:private"],
@@ -73,7 +74,7 @@ def _cc_binary_host_tool_impl(name, target_compatible_with, testonly, visibility
     _to_fuchsia_less_config(
         name = name + "_tool",
         actual = name,
-        target_compatible_with = HOST_CONSTRAINTS,
+        target_compatible_with = target_compatible_with,
         testonly = testonly,
         visibility = visibility,
     )
@@ -113,14 +114,8 @@ work would be needed to support cross-compiling for other host configurations.
     # cannot be used with `inherit_attrs`. Use the rule directly instead.
     inherit_attrs = native.cc_binary,
     attrs = {
-        # Ideally, `target_compatible_with` would never be specified because
-        # we can set the value in the implementation. However, it must be
-        # specified for bazel2gn to work.
-        # TODO(https://fxbug.dev/460538634): Replace with the following once
-        # bazel2gn is no longer being used for host tools.
-        # "target_compatible_with": None,
         "target_compatible_with": attr.string_list(
-            doc = "Standard meaning. Must be `HOST_CONSTRAINTS`.",
+            doc = "Standard meaning. Must be `HOST_CONSTRAINTS` or `HOST_OS_CONSTRAINTS`.",
             mandatory = False,
             configurable = False,
             default = HOST_CONSTRAINTS,
@@ -133,8 +128,6 @@ work would be needed to support cross-compiling for other host configurations.
 # `inherit_attrs` in a symbolic macro.
 def go_binary_host_tool(
         name,
-        # TODO(https://fxbug.dev/460538634): Remove once bazel2gn is no longer
-        # being used for host tools.
         target_compatible_with,
         testonly = False,
         visibility = None,
@@ -170,17 +163,17 @@ def go_binary_host_tool(
 
     Args:
         name: The name of the tool.
-        target_compatible_with: Standard meaning. Must be `HOST_CONSTRAINTS`.
+        target_compatible_with: Standard meaning. Must be `HOST_CONSTRAINTS` or `HOST_OS_CONSTRAINTS`.
         testonly: Standard meaning.
         visibility: Standard meaning.
         **kwargs: Passed to `go_binary()`.
     """
-    if target_compatible_with != HOST_CONSTRAINTS:
-        fail("`target_compatible_with` must be `%s`." % HOST_CONSTRAINTS)
+    if target_compatible_with != HOST_CONSTRAINTS and target_compatible_with != HOST_OS_CONSTRAINTS:
+        fail("`target_compatible_with` must be `%s` or `%s`." % (HOST_CONSTRAINTS, HOST_OS_CONSTRAINTS))
 
     go_binary(
         name = name,
-        target_compatible_with = HOST_CONSTRAINTS,
+        target_compatible_with = target_compatible_with,
         testonly = testonly,
         # Prevent use of the tool directly without going through the fuchsia-less transition.
         visibility = ["//visibility:private"],
@@ -190,7 +183,7 @@ def go_binary_host_tool(
     _to_fuchsia_less_config(
         name = name + "_tool",
         actual = name,
-        target_compatible_with = HOST_CONSTRAINTS,
+        target_compatible_with = target_compatible_with,
         testonly = testonly,
         visibility = visibility,
     )
