@@ -206,7 +206,8 @@ zx::result<zx::interrupt> PlatformDevice::GetInterrupt(uint32_t index, uint32_t 
   }
 
   if (flags & ZX_INTERRUPT_WAKE_VECTOR) {
-    fdf::warn("Client passing in ZX_INTERRUPT_WAKE_VECTOR. This will be an error in the future.");
+    fdf::error("Client passing in ZX_INTERRUPT_WAKE_VECTOR. Not allowed");
+    return zx::error(ZX_ERR_INVALID_ARGS);
   }
   if (bus_->suspend_enabled() && irq.wake_vector().has_value() && irq.wake_vector().value()) {
     flags |= ZX_INTERRUPT_WAKE_VECTOR;
