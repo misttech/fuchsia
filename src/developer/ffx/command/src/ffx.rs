@@ -41,6 +41,39 @@ impl FfxCommandLine {
         Self::new(wrapper_name.as_deref(), &argv)
     }
 
+    // argh will reject duplicate machine values, even if they are all the same. This
+    // situation often come ups in tests which have been ported to using an `ffx-strict`-
+    // based framework. So let's remove any duplicates. (Conflicting machine types are
+    // retained, so argh can report an error in its normal way.)
+    fn deduplicate_machine_flags(args: Vec<&str>) -> Vec<&str> {
+        let mut machine_val: Option<&str> = None;
+        let mut skip_next = false;
+
+        args.iter()
+            .enumerate()
+            .filter_map(|(i, &item)| {
+                if skip_next {
+                    skip_next = false;
+                    return None;
+                }
+
+                if item == "--machine" {
+                    if let Some(&next_val) = args.get(i + 1) {
+                        if machine_val == Some(next_val) {
+                            skip_next = true;
+                            return None;
+                        }
+                        if machine_val.is_none() {
+                            machine_val = Some(next_val);
+                        }
+                    }
+                }
+
+                Some(item)
+            })
+            .collect()
+    }
+
     /// Extract the command name from the given argument list, allowing for an overridden command name
     /// from a wrapper invocation so we provide useful information to the user. If the override has spaces, it will
     /// be split into multiple commands.
@@ -48,6 +81,7 @@ impl FfxCommandLine {
         let mut args = argv.iter().map(AsRef::as_ref);
         let arg0 = args.next().ok_or_else(|| bug!("No first argument in argument vector"))?;
         let args = Vec::from_iter(args);
+        let args = Self::deduplicate_machine_flags(args);
         let command =
             wrapper_name.map_or_else(|| vec![Self::base_cmd(&arg0)], |s| s.split(" ").collect());
         let global =
@@ -1165,6 +1199,17 @@ mod test {
         let cmd_line =
             FfxCommandLine::new(Some("tools/ffx"), &args).expect("Command line should parse");
         assert_eq!(cmd_line.global.machine, Some(MachineFormat::Raw));
+    }
+
+    #[test]
+    fn cmd_machine_duplicate() {
+        let args = ["test/things/ffx", "--machine", "json", "--machine", "json"].map(String::from);
+        let cmd_line =
+            FfxCommandLine::new(Some("tools/ffx"), &args).expect("Command line should parse");
+        assert_eq!(cmd_line.global.machine, Some(MachineFormat::Json));
+        let args = ["test/things/ffx", "--machine", "json", "--machine", "foo"].map(String::from);
+        let res = FfxCommandLine::new(Some("tools/ffx"), &args);
+        assert!(res.is_err());
     }
 
     #[test]
