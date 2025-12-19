@@ -65,7 +65,6 @@ impl WriteOnlyLog {
 mod tests {
     use super::*;
     use fuchsia_component::client::connect_to_protocol;
-    use zx::AsHandleRef;
     use {fidl_fuchsia_kernel as fkernel, fuchsia_async as fasync};
 
     async fn get_debuglog_resource() -> Result<zx::Resource, Error> {

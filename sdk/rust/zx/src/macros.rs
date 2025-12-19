@@ -24,6 +24,33 @@ macro_rules! impl_handle_based {
         }
 
         impl HandleBased for $type_name {}
+
+        impl $type_name {
+            delegated_concrete_handle_based_impls!(Self);
+        }
+    };
+}
+
+macro_rules! delegated_concrete_handle_based_impls {
+    ($ctor:expr) => {
+        /// Return the raw handle's integer value without closing it when `self` is dropped.
+        pub fn into_raw(self) -> $crate::sys::zx_handle_t {
+            self.0.into_raw()
+        }
+
+        /// Wraps the
+        /// [zx_handle_duplicate](https://fuchsia.dev/fuchsia-src/reference/syscalls/handle_duplicate)
+        /// syscall.
+        pub fn duplicate(&self, rights: $crate::Rights) -> Result<Self, $crate::Status> {
+            self.0.duplicate(rights).map($ctor)
+        }
+
+        /// Wraps the
+        /// [zx_handle_replace](https://fuchsia.dev/fuchsia-src/reference/syscalls/handle_replace)
+        /// syscall.
+        pub fn replace(self, rights: $crate::Rights) -> Result<Self, $crate::Status> {
+            self.0.replace(rights).map($ctor)
+        }
     };
 }
 
@@ -72,7 +99,7 @@ macro_rules! unsafe_handle_properties {
             $(
                 impl $object_ty {
                     pub fn $get(&self) -> Result<$prop_ty, Status> {
-                        object_get_property::<$query_tag>(self.as_handle_ref())
+                        self.0.get_property::<$query_tag>()
                     }
                 }
             )*
@@ -80,7 +107,7 @@ macro_rules! unsafe_handle_properties {
             $(
                 impl $object_ty {
                     pub fn $set(&self, val: &$prop_ty) -> Result<(), Status> {
-                        object_set_property::<$query_tag>(self.as_handle_ref(), val)
+                        self.0.set_property::<$query_tag>(val)
                     }
                 }
             )*

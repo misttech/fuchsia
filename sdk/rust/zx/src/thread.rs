@@ -6,12 +6,12 @@
 
 use crate::{
     AsHandleRef, ExceptionReport, HandleBased, HandleRef, MonotonicDuration, NullableHandle,
-    ObjectQuery, Profile, Status, Task, Topic, object_get_info_single, ok, sys,
+    ObjectQuery, Profile, Status, Task, Topic, ok, sys,
 };
 use bitflags::bitflags;
 
 #[cfg(target_arch = "x86_64")]
-use crate::{Property, PropertyQuery, object_set_property};
+use crate::{Property, PropertyQuery};
 
 bitflags! {
     /// Options that may be used with `Thread::raise_exception`
@@ -83,7 +83,7 @@ impl Thread {
     /// [zx_object_get_info](https://fuchsia.dev/fuchsia-src/reference/syscalls/object_get_info.md)
     /// syscall for the ZX_INFO_THREAD_EXCEPTION_REPORT topic.
     pub fn exception_report(&self) -> Result<ExceptionReport, Status> {
-        let raw = object_get_info_single::<ThreadExceptionReport>(self.as_handle_ref())?;
+        let raw = self.0.get_info_single::<ThreadExceptionReport>()?;
 
         // SAFETY: this value was provided by the kernel, the union is valid.
         Ok(unsafe { ExceptionReport::from_raw(raw) })
@@ -93,14 +93,14 @@ impl Thread {
     /// [zx_object_get_info](https://fuchsia.dev/fuchsia-src/reference/syscalls/object_get_info.md)
     /// syscall for the ZX_INFO_THREAD topic.
     pub fn info(&self) -> Result<ThreadInfo, Status> {
-        Ok(ThreadInfo::from_raw(object_get_info_single::<ThreadInfoQuery>(self.as_handle_ref())?))
+        Ok(ThreadInfo::from_raw(self.0.get_info_single::<ThreadInfoQuery>()?))
     }
 
     /// Wraps the
     /// [zx_object_get_info](https://fuchsia.dev/fuchsia-src/reference/syscalls/object_get_info.md)
     /// syscall for the ZX_INFO_THREAD_STATS topic.
     pub fn stats(&self) -> Result<ThreadStats, Status> {
-        Ok(ThreadStats::from_raw(object_get_info_single::<ThreadStatsQuery>(self.as_handle_ref())?))
+        Ok(ThreadStats::from_raw(self.0.get_info_single::<ThreadStatsQuery>()?))
     }
 
     pub fn read_state_general_regs(&self) -> Result<sys::zx_thread_state_general_regs_t, Status> {

@@ -6,8 +6,7 @@
 
 use crate::{
     AsHandleRef, HandleBased, HandleRef, Koid, MonotonicDuration, NullableHandle, ObjectQuery,
-    Process, ProcessOptions, Rights, Status, Task, Topic, Vmar, object_get_info_single,
-    object_get_info_vec, ok, sys,
+    Process, ProcessOptions, Rights, Status, Task, Topic, Vmar, ok, sys,
 };
 use bitflags::bitflags;
 
@@ -117,7 +116,7 @@ impl Job {
     /// [zx_object_get_info](https://fuchsia.dev/fuchsia-src/reference/syscalls/object_get_info.md)
     /// syscall for the ZX_INFO_JOB topic.
     pub fn info(&self) -> Result<JobInfo, Status> {
-        Ok(JobInfo::from(object_get_info_single::<JobInfoQuery>(self.as_handle_ref())?))
+        Ok(JobInfo::from(self.0.get_info_single::<JobInfoQuery>()?))
     }
 
     /// Wraps the [zx_job_set_policy](//docs/reference/syscalls/job_set_policy.md) syscall.
@@ -185,14 +184,14 @@ impl Job {
     /// [zx_object_get_info](https://fuchsia.dev/fuchsia-src/reference/syscalls/object_get_info.md)
     /// syscall for the ZX_INFO_JOB_PROCESSES topic.
     pub fn processes(&self) -> Result<Vec<Koid>, Status> {
-        object_get_info_vec::<JobProcessesInfo>(self.as_handle_ref())
+        self.0.get_info_vec::<JobProcessesInfo>()
     }
 
     /// Wraps the
     /// [zx_object_get_info](https://fuchsia.dev/fuchsia-src/reference/syscalls/object_get_info.md)
     /// syscall for the ZX_INFO_JOB_CHILDREN topic.
     pub fn children(&self) -> Result<Vec<Koid>, Status> {
-        object_get_info_vec::<JobChildrenInfo>(self.as_handle_ref())
+        self.0.get_info_vec::<JobChildrenInfo>()
     }
 
     /// Wraps the

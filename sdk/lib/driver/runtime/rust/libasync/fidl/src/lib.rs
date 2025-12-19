@@ -29,7 +29,7 @@ use zx::sys::{
     ZX_ERR_PEER_CLOSED, ZX_ERR_SHOULD_WAIT, ZX_OK, zx_channel_read, zx_channel_write, zx_handle_t,
     zx_packet_signal_t, zx_status_t,
 };
-use zx::{AsHandleRef, Channel, HandleBased, NullableHandle, Status};
+use zx::{AsHandleRef, Channel, NullableHandle, Status};
 
 /// A fidl-compatible channel that uses a [`libasync`] dispatcher.
 #[derive(Debug, PartialEq)]

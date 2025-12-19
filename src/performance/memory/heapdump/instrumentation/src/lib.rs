@@ -6,7 +6,6 @@ use std::cell::RefCell;
 use std::ffi::c_char;
 use std::sync::LazyLock;
 use zx::sys::zx_handle_t;
-use zx::{self as zx, AsHandleRef};
 
 mod allocations_table;
 mod profiler;

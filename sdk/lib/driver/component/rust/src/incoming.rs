@@ -16,7 +16,7 @@ use fuchsia_component::directory::{AsRefDirectory, Directory, open_directory_asy
 use fuchsia_component::{DEFAULT_SERVICE_INSTANCE, SVC_DIR};
 use log::error;
 use namespace::{Entry, Namespace};
-use zx::{HandleBased, Status};
+use zx::Status;
 
 /// Implements access to the incoming namespace for a driver. It provides methods
 /// for accessing incoming protocols and services by either their marker or proxy

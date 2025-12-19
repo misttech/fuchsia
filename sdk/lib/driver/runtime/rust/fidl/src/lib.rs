@@ -15,7 +15,7 @@ use std::ptr::NonNull;
 use std::task::{Context, Poll};
 
 use fidl_next::{Chunk, HasExecutor};
-use zx::{HandleBased, Status};
+use zx::Status;
 
 use fdf_channel::arena::{Arena, ArenaBox};
 use fdf_channel::channel::Channel;

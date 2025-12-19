@@ -8,7 +8,7 @@
 
 use crate::{
     AsHandleRef, Event, HandleBased, HandleRef, MonotonicDuration, NullableHandle, ObjectQuery,
-    Status, Topic, object_get_info_single, object_get_info_vec, ok,
+    Status, Topic, ok,
 };
 use bitflags::bitflags;
 use zx_sys::{self as sys, ZX_MAX_NAME_LEN, zx_duration_mono_t, zx_duration_t};
@@ -308,42 +308,42 @@ impl Resource {
     /// [zx_object_get_info](https://fuchsia.dev/fuchsia-src/reference/syscalls/object_get_info.md)
     /// syscall for the ZX_INFO_RESOURCE topic.
     pub fn info(&self) -> Result<ResourceInfo, Status> {
-        object_get_info_single::<ResourceInfo>(self.as_handle_ref())
+        self.0.get_info_single::<ResourceInfo>()
     }
 
     /// Wraps the
     /// [zx_object_get_info](https://fuchsia.dev/fuchsia-src/reference/syscalls/object_get_info.md)
     /// syscall for the ZX_INFO_CPU_STATS topic.
     pub fn cpu_stats(&self) -> Result<Vec<PerCpuStats>, Status> {
-        object_get_info_vec::<PerCpuStats>(self.as_handle_ref())
+        self.0.get_info_vec::<PerCpuStats>()
     }
 
     /// Wraps the
     /// [zx_object_get_info](https://fuchsia.dev/fuchsia-src/reference/syscalls/object_get_info.md)
     /// syscall for the ZX_INFO_KMEM_STATS topic.
     pub fn mem_stats(&self) -> Result<MemStats, Status> {
-        object_get_info_single::<MemStats>(self.as_handle_ref())
+        self.0.get_info_single::<MemStats>()
     }
 
     /// Wraps the
     /// [zx_object_get_info](https://fuchsia.dev/fuchsia-src/reference/syscalls/object_get_info.md)
     /// syscall for the ZX_INFO_KMEM_STATS_EXTENDED topic.
     pub fn mem_stats_extended(&self) -> Result<MemStatsExtended, Status> {
-        object_get_info_single::<MemStatsExtended>(self.as_handle_ref())
+        self.0.get_info_single::<MemStatsExtended>()
     }
 
     /// Wraps the
     /// [zx_object_get_info](https://fuchsia.dev/fuchsia-src/reference/syscalls/object_get_info.md)
     /// syscall for the ZX_INFO_KMEM_STATS_COMPRESSION topic.
     pub fn mem_stats_compression(&self) -> Result<MemStatsCompression, Status> {
-        object_get_info_single::<MemStatsCompression>(self.as_handle_ref())
+        self.0.get_info_single::<MemStatsCompression>()
     }
 
     /// Wraps the
     /// [zx_object_get_info](https://fuchsia.dev/fuchsia-src/reference/syscalls/object_get_info.md)
     /// syscall for the ZX_INFO_MEMORY_STALL topic.
     pub fn memory_stall(&self) -> Result<MemoryStall, Status> {
-        object_get_info_single::<MemoryStall>(self.as_handle_ref())
+        self.0.get_info_single::<MemoryStall>()
     }
 
     /// Retrieve an event that becomes signaled if the memory stall level exceeds a given threshold

@@ -6,8 +6,7 @@
 
 use crate::{
     AsHandleRef, Bti, HandleBased, HandleRef, Koid, Name, NullableHandle, ObjectQuery, Property,
-    PropertyQuery, Resource, Rights, Status, Topic, object_get_info_single, object_get_property,
-    object_set_property, ok, sys,
+    PropertyQuery, Resource, Rights, Status, Topic, ok, sys,
 };
 use bitflags::bitflags;
 use std::mem::MaybeUninit;
@@ -344,7 +343,7 @@ impl Vmo {
     /// Wraps the [zx_object_get_info](https://fuchsia.dev/fuchsia-src/reference/syscalls/object_get_info.md)
     /// syscall for the ZX_INFO_VMO topic.
     pub fn info(&self) -> Result<VmoInfo, Status> {
-        Ok(VmoInfo::from(object_get_info_single::<VmoInfoQuery>(self.as_handle_ref())?))
+        Ok(VmoInfo::from(self.0.get_info_single::<VmoInfoQuery>()?))
     }
 
     /// Create a new virtual memory object that clones a range of this one.
@@ -526,7 +525,7 @@ mod tests {
 
     #[test]
     fn vmo_create_contiguous() {
-        use zx::{Channel, HandleBased, MonotonicInstant};
+        use zx::{Channel, MonotonicInstant};
         let (client_end, server_end) = Channel::create();
         connect_channel_to_protocol::<fkernel::IommuResourceMarker>(server_end).unwrap();
         let service = fkernel::IommuResourceSynchronousProxy::new(client_end);
@@ -784,7 +783,7 @@ mod tests {
 
     #[test]
     fn vmo_replace_as_executeable() {
-        use zx::{Channel, HandleBased, MonotonicInstant};
+        use zx::{Channel, MonotonicInstant};
 
         let vmo = Vmo::create(16).unwrap();
 

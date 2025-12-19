@@ -5,8 +5,7 @@
 //! Type-safe bindings for Zircon timer objects.
 
 use crate::{
-    AsHandleRef, HandleBased, HandleRef, NullableHandle, ObjectQuery, Status, Topic,
-    object_get_info_single, ok, sys,
+    AsHandleRef, HandleBased, HandleRef, NullableHandle, ObjectQuery, Status, Topic, ok, sys,
 };
 use std::cmp::{Eq, Ord, PartialEq, PartialOrd};
 use std::hash::Hash;
@@ -467,7 +466,7 @@ impl<T: Timeline> Timer<T> {
     /// [zx_object_get_info](https://fuchsia.dev/fuchsia-src/reference/syscalls/object_get_info.md)
     /// syscall for the ZX_INFO_TIMER_T topic.
     pub fn info(&self) -> Result<TimerInfo<T>, Status> {
-        Ok(TimerInfo::from_raw(object_get_info_single::<TimerInfoQuery>(self.as_handle_ref())?))
+        Ok(TimerInfo::from_raw(self.0.get_info_single::<TimerInfoQuery>()?))
     }
 }
 

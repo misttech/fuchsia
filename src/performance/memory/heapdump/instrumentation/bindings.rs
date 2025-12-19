@@ -5,7 +5,6 @@
 // This crate provides Rust bindings for the Heapdump instrumentation API.
 
 use std::ffi::{CStr, c_char};
-use zx::HandleBased;
 use zx::sys::zx_handle_t;
 
 // From heapdump/bind.h

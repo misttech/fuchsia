@@ -89,7 +89,6 @@ mod tests {
     use crate::Resource;
     use fidl_fuchsia_kernel as fkernel;
     use fuchsia_component::client::connect_to_protocol;
-    use zx::HandleBased;
 
     async fn get_hypervisor() -> Resource {
         let resource = connect_to_protocol::<fkernel::HypervisorResourceMarker>()

@@ -28,7 +28,6 @@ mod tests {
     use super::*;
     use fuchsia_async as fasync;
     use futures::TryFutureExt;
-    use zx::AsHandleRef;
 
     #[fuchsia::test]
     async fn has_correct_rights() -> Result<(), Error> {

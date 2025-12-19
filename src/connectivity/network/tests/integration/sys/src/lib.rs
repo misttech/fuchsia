@@ -4,7 +4,6 @@
 
 #![cfg(test)]
 
-use fidl::AsHandleRef as _;
 use fidl::endpoints::{DiscoverableProtocolMarker, RequestStream};
 use fuchsia_component::server::{ServiceFs, ServiceFsDir, ServiceObj};
 use futures::StreamExt as _;

@@ -19,7 +19,7 @@ use zx::sys::{
     ZX_ERR_BUFFER_TOO_SMALL, ZX_ERR_PEER_CLOSED, ZX_ERR_SHOULD_WAIT, ZX_OK, zx_channel_read,
     zx_channel_write, zx_handle_t,
 };
-use zx::{AsHandleRef as _, Channel, HandleBased, NullableHandle, Status};
+use zx::{AsHandleRef as _, Channel, NullableHandle, Status};
 
 use crate::{NonBlockingTransport, Transport};
 

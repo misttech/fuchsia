@@ -10,7 +10,7 @@ use zx_sys::zx_paddr_t;
 
 use crate::{
     AsHandleRef, HandleBased, HandleRef, Iommu, NullableHandle, ObjectQuery, Pmt, Status, Topic,
-    Vmo, object_get_info_single, ok, sys,
+    Vmo, ok, sys,
 };
 
 /// An object representing a Zircon Bus Transaction Initiator object.
@@ -86,7 +86,7 @@ impl Bti {
     /// Wraps the [zx_object_get_info](https://fuchsia.dev/fuchsia-src/reference/syscalls/object_get_info.md)
     /// syscall for the ZX_INFO_BTI topic.
     pub fn info(&self) -> Result<BtiInfo, Status> {
-        Ok(BtiInfo::from(object_get_info_single::<BtiInfoQuery>(self.as_handle_ref())?))
+        Ok(BtiInfo::from(self.0.get_info_single::<BtiInfoQuery>()?))
     }
 
     // Pins pages in a VMO.
@@ -141,7 +141,7 @@ mod tests {
     }
 
     fn create_iommu() -> Iommu {
-        use zx::{Channel, HandleBased, MonotonicInstant};
+        use zx::{Channel, MonotonicInstant};
         let (client_end, server_end) = Channel::create();
         connect_channel_to_protocol::<fkernel::IommuResourceMarker>(server_end).unwrap();
         let service = fkernel::IommuResourceSynchronousProxy::new(client_end);

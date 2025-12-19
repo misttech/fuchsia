@@ -3633,7 +3633,7 @@ pub fn with_tls_encoded<T: TypeMarker, D: ResourceDialect, Out>(
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::handle::{AsHandleRef, convert_handle_dispositions_to_infos};
+    use crate::handle::convert_handle_dispositions_to_infos;
     use crate::time::{BootInstant, BootTicks, MonotonicInstant, MonotonicTicks};
     use assert_matches::assert_matches;
     use std::fmt;

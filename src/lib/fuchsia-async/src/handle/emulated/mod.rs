@@ -64,6 +64,11 @@ impl<'a> HandleRef<'a> {
         Self(INVALID_HANDLE, std::marker::PhantomData)
     }
 
+    /// Returns the integer value of this handle.
+    pub fn raw_handle(&self) -> u32 {
+        self.0
+    }
+
     /// Duplicate this handle. The new handle will have the given `rights`, which must be a subset
     /// of the rights the existing handle has.
     pub fn duplicate(&self, mut rights: Rights) -> Result<Handle, Status> {
@@ -111,6 +116,26 @@ impl<'a> HandleRef<'a> {
 
             Ok(())
         }
+    }
+
+    /// Return basic information about the handle.
+    pub fn basic_info(&self) -> Result<HandleBasicInfo, Status> {
+        if self.is_invalid() {
+            return Err(zx_status::Status::BAD_HANDLE);
+        }
+        let koids = with_handle(self.raw_handle(), |mut h, side| {
+            let h = h.as_hdl_data();
+            h.koids(side)
+        });
+        let ty = get_hdl_type(self.raw_handle()).ok_or(Status::BAD_HANDLE)?;
+        let rights = get_hdl_rights(self.raw_handle()).ok_or(Status::BAD_HANDLE)?;
+        Ok(HandleBasicInfo {
+            koid: Koid(koids.0),
+            rights,
+            object_type: ty.object_type(),
+            related_koid: Koid(koids.1),
+            reserved: 0,
+        })
     }
 }
 
@@ -162,23 +187,8 @@ pub trait AsHandleRef {
     /// Wraps the
     /// [zx_object_get_info](https://fuchsia.dev/fuchsia-src/reference/syscalls/object_get_info.md)
     /// syscall for the ZX_INFO_HANDLE_BASIC topic.
-    fn basic_info(&self) -> Result<HandleBasicInfo, zx_status::Status> {
-        if self.is_invalid() {
-            return Err(zx_status::Status::BAD_HANDLE);
-        }
-        let koids = with_handle(self.raw_handle(), |mut h, side| {
-            let h = h.as_hdl_data();
-            h.koids(side)
-        });
-        let ty = get_hdl_type(self.raw_handle()).ok_or(zx_status::Status::BAD_HANDLE)?;
-        let rights = get_hdl_rights(self.raw_handle()).ok_or(zx_status::Status::BAD_HANDLE)?;
-        Ok(HandleBasicInfo {
-            koid: Koid(koids.0),
-            rights,
-            object_type: ty.object_type(),
-            related_koid: Koid(koids.1),
-            reserved: 0,
-        })
+    fn basic_info(&self) -> Result<HandleBasicInfo, Status> {
+        self.as_handle_ref().basic_info()
     }
 
     /// Returns the koid (kernel object ID) for this handle.
@@ -357,6 +367,16 @@ impl Handle {
     /// after calling `from_raw`.
     pub const unsafe fn from_raw(hdl: u32) -> Handle {
         Handle(hdl)
+    }
+
+    /// Returns the raw handle's integer value.
+    pub fn raw_handle(&self) -> u32 {
+        self.0
+    }
+
+    /// Return basic information about the handle.
+    pub fn basic_info(&self) -> Result<HandleBasicInfo, Status> {
+        self.as_handle_ref().basic_info()
     }
 
     /// Take this handle and return a new handle (leaves this handle invalid)

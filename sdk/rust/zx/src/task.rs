@@ -3,9 +3,7 @@
 // found in the LICENSE file.
 
 use crate::sys::{self as sys, zx_duration_t};
-use crate::{
-    AsHandleRef, Channel, NullableHandle, ObjectQuery, Status, Topic, object_get_info_single, ok,
-};
+use crate::{AsHandleRef, Channel, NullableHandle, ObjectQuery, Status, Topic, ok};
 use bitflags::bitflags;
 
 bitflags! {
@@ -130,6 +128,6 @@ pub trait Task: AsHandleRef {
     /// Wraps the
     /// [zx_object_get_info]() syscall with `ZX_INFO_TASK_RUNTIME` as the topic.
     fn get_runtime_info(&self) -> Result<TaskRuntimeInfo, Status> {
-        object_get_info_single::<TaskRuntimeInfo>(self.as_handle_ref())
+        self.as_handle_ref().get_info_single::<TaskRuntimeInfo>()
     }
 }

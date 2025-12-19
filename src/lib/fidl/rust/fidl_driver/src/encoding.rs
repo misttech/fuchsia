@@ -8,10 +8,7 @@ use fidl::encoding::{
 };
 
 use fdf::{Channel, MixedHandle, MixedHandleType};
-use zx::{
-    AsHandleRef, HandleBased, HandleDisposition, HandleInfo, HandleOp, NullableHandle, ObjectType,
-    Rights, Status,
-};
+use zx::{HandleDisposition, HandleInfo, HandleOp, NullableHandle, ObjectType, Rights, Status};
 
 use std::marker::PhantomData;
 

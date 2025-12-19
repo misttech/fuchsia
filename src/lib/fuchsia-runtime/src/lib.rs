@@ -17,8 +17,8 @@ use num_traits::cast::FromPrimitive;
 use thiserror::Error;
 use zx::sys::{ZX_HANDLE_INVALID, zx_handle_t, zx_status_t};
 use zx::{
-    BootTimeline, Clock, ClockDetails, ClockTransformation, ClockUpdate, Duration, HandleBased,
-    Instant, Job, NullableHandle, Process, Rights, Status, Thread, Timeline, Unowned, Vmar,
+    BootTimeline, Clock, ClockDetails, ClockTransformation, ClockUpdate, Duration, Instant, Job,
+    NullableHandle, Process, Rights, Status, Thread, Timeline, Unowned, Vmar,
 };
 
 // TODO(https://fxbug.dev/42139436): Document these.

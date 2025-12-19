@@ -12,7 +12,6 @@ use core::mem::ManuallyDrop;
 use core::num::NonZero;
 use core::ops::Deref;
 
-use zx::HandleBased;
 use zx::sys::zx_handle_t;
 pub use zx::{HandleRef as ZirconHandleRef, NullableHandle as ZirconHandle};
 

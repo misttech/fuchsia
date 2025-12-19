@@ -165,7 +165,7 @@ mod tests {
     // for a message that equals `sent_msg`. If found, the function returns. If the first 10,000
     // messages doesn't contain `sent_msg`, it will panic.
     fn expect_message_in_debuglog(sent_msg: String) {
-        use zx::{Channel, HandleBased};
+        use zx::Channel;
         let (client_end, server_end) = Channel::create();
         connect_channel_to_protocol::<fkernel::DebuglogResourceMarker>(server_end).unwrap();
         let service = fkernel::DebuglogResourceSynchronousProxy::new(client_end);

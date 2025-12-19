@@ -5,7 +5,6 @@
 use crate::driver::Driver;
 use crate::utils::update_process_name;
 use anyhow::{Context, Result};
-use fidl::HandleBased;
 use fidl::encoding::{DefaultFuchsiaResourceDialect, clear_tls_buf};
 use fidl::endpoints::{ClientEnd, ServerEnd};
 use fuchsia_async::Timer;

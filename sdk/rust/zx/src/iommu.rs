@@ -66,7 +66,7 @@ mod tests {
 
     #[test]
     fn iommu_create_valid() {
-        use zx::{Channel, HandleBased, MonotonicInstant};
+        use zx::{Channel, MonotonicInstant};
         let (client_end, server_end) = Channel::create();
         connect_channel_to_protocol::<fkernel::IommuResourceMarker>(server_end).unwrap();
         let service = fkernel::IommuResourceSynchronousProxy::new(client_end);

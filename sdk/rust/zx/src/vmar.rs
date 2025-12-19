@@ -8,7 +8,7 @@ use crate::clock::Clock;
 use crate::iob::Iob;
 use crate::{
     AsHandleRef, HandleBased, HandleRef, Koid, Name, NullableHandle, ObjectQuery, Status, Timeline,
-    Topic, Vmo, object_get_info, object_get_info_single, object_get_info_vec, ok, sys,
+    Topic, Vmo, ok, sys,
 };
 use bitflags::bitflags;
 use std::mem::MaybeUninit;
@@ -338,7 +338,7 @@ impl Vmar {
     /// [zx_object_get_info](https://fuchsia.dev/fuchsia-src/reference/syscalls/object_get_info.md)
     /// syscall for the ZX_INFO_VMAR topic.
     pub fn info(&self) -> Result<VmarInfo, Status> {
-        Ok(object_get_info_single::<VmarInfo>(self.as_handle_ref())?)
+        Ok(self.0.get_info_single::<VmarInfo>()?)
     }
 
     /// Wraps the
@@ -351,14 +351,14 @@ impl Vmar {
         &self,
         buf: &'a mut [MaybeUninit<MapInfo>],
     ) -> Result<(&'a mut [MapInfo], &'a mut [MaybeUninit<MapInfo>], usize), Status> {
-        object_get_info::<VmarMapsInfo>(self.as_handle_ref(), buf)
+        self.0.get_info::<VmarMapsInfo>(buf)
     }
 
     /// Wraps the
     /// [zx_object_get_info](https://fuchsia.dev/fuchsia-src/reference/syscalls/object_get_info.md)
     /// syscall for the ZX_INFO_VMAR_MAPS topic.
     pub fn maps_vec(&self) -> Result<Vec<MapInfo>, Status> {
-        object_get_info_vec::<VmarMapsInfo>(self.as_handle_ref())
+        self.0.get_info_vec::<VmarMapsInfo>()
     }
 
     /// Wraps the [zx_vmar_map_iob](https://fuchsia.dev/fuchsia-src/reference/syscalls/zx_vmar_map_iob.md)

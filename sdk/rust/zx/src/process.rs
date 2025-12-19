@@ -8,8 +8,7 @@ use crate::sys::{self as sys, PadByte, ZX_OBJ_TYPE_UPPER_BOUND, zx_handle_t};
 use crate::{
     AsHandleRef, HandleBased, HandleRef, Job, Koid, MapInfo, MonotonicInstant, Name,
     NullableHandle, ObjectQuery, Property, PropertyQuery, Rights, Status, Task, Thread, Topic,
-    Vmar, VmoInfo, object_get_info, object_get_info_single, object_get_info_vec,
-    object_get_property, object_set_property, ok,
+    Vmar, VmoInfo, ok,
 };
 use bitflags::bitflags;
 use static_assertions::const_assert_eq;
@@ -313,28 +312,28 @@ impl Process {
     /// [zx_object_get_info](https://fuchsia.dev/fuchsia-src/reference/syscalls/object_get_info.md)
     /// syscall for the ZX_INFO_PROCESS topic.
     pub fn info(&self) -> Result<ProcessInfo, Status> {
-        object_get_info_single::<ProcessInfo>(self.as_handle_ref())
+        self.0.get_info_single::<ProcessInfo>()
     }
 
     /// Wraps the
     /// [zx_object_get_info](https://fuchsia.dev/fuchsia-src/reference/syscalls/object_get_info.md)
     /// syscall for the ZX_INFO_PROCESS_THREADS topic.
     pub fn threads(&self) -> Result<Vec<Koid>, Status> {
-        object_get_info_vec::<ProcessThreadsInfo>(self.as_handle_ref())
+        self.0.get_info_vec::<ProcessThreadsInfo>()
     }
 
     /// Wraps the
     /// [zx_object_get_info](https://fuchsia.dev/fuchsia-src/reference/syscalls/object_get_info.md)
     /// syscall for the ZX_INFO_TASK_STATS topic.
     pub fn task_stats(&self) -> Result<TaskStatsInfo, Status> {
-        object_get_info_single::<TaskStatsInfo>(self.as_handle_ref())
+        self.0.get_info_single::<TaskStatsInfo>()
     }
 
     /// Wraps the
     /// [zx_object_get_info](https://fuchsia.dev/fuchsia-src/reference/syscalls/object_get_info.md)
     /// syscall for the ZX_INFO_PROCESS_MAPS topic.
     pub fn info_maps_vec(&self) -> Result<Vec<MapInfo>, Status> {
-        object_get_info_vec::<ProcessMapsInfo>(self.as_handle_ref())
+        self.0.get_info_vec::<ProcessMapsInfo>()
     }
 
     /// Exit the current process with the given return code.
@@ -355,7 +354,7 @@ impl Process {
     /// [zx_object_get_info](https://fuchsia.dev/fuchsia-src/reference/syscalls/object_get_info.md)
     /// syscall for the ZX_INFO_PROCESS_HANDLE_STATS topic.
     pub fn handle_stats(&self) -> Result<ProcessHandleStats, Status> {
-        object_get_info_single::<ProcessHandleStats>(self.as_handle_ref())
+        self.0.get_info_single::<ProcessHandleStats>()
     }
 
     /// Wraps the
@@ -374,8 +373,7 @@ impl Process {
     /// [zx_object_get_info](https://fuchsia.dev/fuchsia-src/reference/syscalls/object_get_info.md)
     /// syscall for the ZX_INFO_PROCESS_VMO topic.
     pub fn info_vmos_vec(&self) -> Result<Vec<VmoInfo>, Status> {
-        let raw_info = object_get_info_vec::<ProcessVmoInfo>(self.as_handle_ref())?;
-        Ok(raw_info)
+        self.0.get_info_vec::<ProcessVmoInfo>()
     }
 
     /// Wraps the
@@ -387,7 +385,7 @@ impl Process {
         &self,
         info_out: &'a mut [std::mem::MaybeUninit<MapInfo>],
     ) -> Result<(&'a mut [MapInfo], &'a mut [std::mem::MaybeUninit<MapInfo>], usize), Status> {
-        object_get_info::<ProcessMapsInfo>(self.as_handle_ref(), info_out)
+        self.0.get_info::<ProcessMapsInfo>(info_out)
     }
 
     /// Wraps the
@@ -399,7 +397,7 @@ impl Process {
         &self,
         info_out: &'a mut [std::mem::MaybeUninit<VmoInfo>],
     ) -> Result<(&'a mut [VmoInfo], &'a mut [std::mem::MaybeUninit<VmoInfo>], usize), Status> {
-        object_get_info::<ProcessVmoInfo>(self.as_handle_ref(), info_out)
+        self.0.get_info::<ProcessVmoInfo>(info_out)
     }
 }
 

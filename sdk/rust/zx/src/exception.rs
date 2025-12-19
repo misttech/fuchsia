@@ -6,7 +6,7 @@
 
 use crate::{
     AsHandleRef, HandleBased, HandleRef, NullableHandle, Process, Property, PropertyQuery, Status,
-    Thread, object_get_property, object_set_property, ok, sys,
+    Thread, ok, sys,
 };
 
 /// An object representing a Zircon

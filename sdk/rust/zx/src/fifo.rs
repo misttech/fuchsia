@@ -158,6 +158,8 @@ impl<R: IntoBytes + FromBytes, W: IntoBytes + FromBytes> Fifo<R, W> {
         };
         ok(status).map(|()| actual_count)
     }
+
+    delegated_concrete_handle_based_impls!(|h| Self(h, std::marker::PhantomData));
 }
 
 impl Fifo<UnspecifiedFifoElement> {

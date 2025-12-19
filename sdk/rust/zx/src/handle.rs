@@ -6,12 +6,15 @@
 
 use crate::{
     Koid, MonotonicInstant, Name, ObjectQuery, ObjectType, Port, Property, PropertyQuery, Rights,
-    Signals, Status, Topic, WaitAsyncOpts, object_get_info_single, object_get_property,
-    object_set_property, ok, sys,
+    Signals, Status, Topic, WaitAsyncOpts, ok, sys,
 };
 use std::marker::PhantomData;
-use std::mem::ManuallyDrop;
+use std::mem::{ManuallyDrop, MaybeUninit};
 use std::num::NonZeroU32;
+use zerocopy::{FromBytes, Immutable, IntoBytes};
+
+/// Tuning constant for Handle::get_info_vec(). pub(crate) to support unit tests.
+pub(crate) const INFO_VEC_SIZE_INITIAL: usize = 16;
 
 /// An owned and valid Zircon
 /// [handle](https://fuchsia.dev/fuchsia-src/concepts/objects/handles) to a kernel object.
@@ -77,14 +80,28 @@ impl Handle {
     }
 
     /// Return the raw handle's integer value without closing it when `self` is dropped.
-    pub const fn into_raw(self) -> sys::zx_handle_t {
+    pub fn into_raw(self) -> sys::zx_handle_t {
         let ret = self.0.get();
         std::mem::forget(self);
         ret
     }
 
     /// Wraps the
-    /// [zx_handle_replace](https://fuchsia.dev/fuchsia-src/reference/syscalls/handle_replace.md)
+    /// [`zx_handle_duplicate`](https://fuchsia.dev/fuchsia-src/reference/syscalls/handle_duplicate)
+    /// syscall.
+    pub fn duplicate(&self, rights: Rights) -> Result<Self, Status> {
+        let mut out = 0;
+        // SAFETY: basic FFI call.
+        let status =
+            unsafe { sys::zx_handle_duplicate(self.raw_handle(), rights.bits(), &mut out) };
+        ok(status)?;
+
+        // SAFETY: zx_handle_duplicate returns a valid handle that this function owns.
+        Ok(unsafe { Self::from_raw(out) })
+    }
+
+    /// Wraps the
+    /// [`zx_handle_replace`](https://fuchsia.dev/fuchsia-src/reference/syscalls/handle_replace)
     /// syscall.
     pub fn replace(self, rights: Rights) -> Result<Self, Status> {
         let mut out = 0;
@@ -95,6 +112,203 @@ impl Handle {
 
         // SAFETY: zx_handle_replace gives us a valid owned handle if the call succeeded.
         unsafe { Ok(Self::from_raw(out)) }
+    }
+
+    /// Wraps the [`zx_object_signal`](https://fuchsia.dev/reference/syscalls/object_signal) syscall.
+    pub fn signal(&self, clear_mask: Signals, set_mask: Signals) -> Result<(), Status> {
+        // SAFETY: basic FFI call.
+        ok(unsafe { sys::zx_object_signal(self.raw_handle(), clear_mask.bits(), set_mask.bits()) })
+    }
+
+    /// Wraps the [`zx_object_wait_one`](https://fuchsia.dev/reference/syscalls/object_wait_one)
+    /// syscall.
+    pub fn wait(&self, signals: Signals, deadline: MonotonicInstant) -> WaitResult {
+        let mut pending = Signals::empty().bits();
+        // SAFETY: basic FFI call.
+        let status = unsafe {
+            sys::zx_object_wait_one(
+                self.raw_handle(),
+                signals.bits(),
+                deadline.into_nanos(),
+                &mut pending,
+            )
+        };
+        let signals = Signals::from_bits_truncate(pending);
+        match ok(status) {
+            Ok(()) => WaitResult::Ok(signals),
+            Err(Status::TIMED_OUT) => WaitResult::TimedOut(signals),
+            Err(Status::CANCELED) => WaitResult::Canceled(signals),
+            Err(e) => WaitResult::Err(e),
+        }
+    }
+
+    /// Wraps the [zx_object_wait_async](https://fuchsia.dev/reference/syscalls/object_wait_async)
+    /// syscall.
+    pub fn wait_async(
+        &self,
+        port: &Port,
+        key: u64,
+        signals: Signals,
+        options: WaitAsyncOpts,
+    ) -> Result<(), Status> {
+        // SAFETY: basic FFI call.
+        ok(unsafe {
+            sys::zx_object_wait_async(
+                self.raw_handle(),
+                port.raw_handle(),
+                key,
+                signals.bits(),
+                options.bits(),
+            )
+        })
+    }
+
+    /// Get the [Property::NAME] property for this object.
+    ///
+    /// Wraps a call to the
+    /// [zx_object_get_property](https://fuchsia.dev/fuchsia-src/reference/syscalls/object_get_property.md)
+    /// syscall for the `ZX_PROP_NAME` property.
+    pub fn get_name(&self) -> Result<Name, Status> {
+        self.get_property::<NameProperty>()
+    }
+
+    /// Set the [Property::NAME] property for this object.
+    ///
+    /// The name's length must be less than [sys::ZX_MAX_NAME_LEN], i.e.
+    /// name.[to_bytes_with_nul()](CStr::to_bytes_with_nul()).len() <= [sys::ZX_MAX_NAME_LEN], or
+    /// Err([Status::INVALID_ARGS]) will be returned.
+    ///
+    /// Wraps a call to the
+    /// [`zx_object_get_property`](https://fuchsia.dev/fuchsia-src/reference/syscalls/object_get_property.md)
+    /// syscall for the `ZX_PROP_NAME` property.
+    pub fn set_name(&self, name: &Name) -> Result<(), Status> {
+        self.set_property::<NameProperty>(&name)
+    }
+
+    /// Get a property on a zircon object
+    pub(crate) fn get_property<P: PropertyQuery>(&self) -> Result<P::PropTy, Status>
+    where
+        P::PropTy: FromBytes + Immutable,
+    {
+        let mut out = ::std::mem::MaybeUninit::<P::PropTy>::uninit();
+
+        // SAFETY: safe due to the contract on the P::PropTy type in the ObjectProperty trait.
+        let status = unsafe {
+            sys::zx_object_get_property(
+                self.raw_handle(),
+                *P::PROPERTY,
+                out.as_mut_ptr().cast::<u8>(),
+                std::mem::size_of::<P::PropTy>(),
+            )
+        };
+        Status::ok(status).map(|_| unsafe { out.assume_init() })
+    }
+
+    /// Set a property on a zircon object
+    pub(crate) fn set_property<P: PropertyQuery>(&self, val: &P::PropTy) -> Result<(), Status>
+    where
+        P::PropTy: IntoBytes + Immutable,
+    {
+        let status = unsafe {
+            sys::zx_object_set_property(
+                self.raw_handle(),
+                *P::PROPERTY,
+                std::ptr::from_ref(val).cast::<u8>(),
+                std::mem::size_of::<P::PropTy>(),
+            )
+        };
+        Status::ok(status)
+    }
+
+    /// Wraps the
+    /// [zx_object_get_info](https://fuchsia.dev/fuchsia-src/reference/syscalls/object_get_info.md)
+    /// syscall for the ZX_INFO_HANDLE_BASIC topic.
+    pub fn basic_info(&self) -> Result<HandleBasicInfo, Status> {
+        Ok(HandleBasicInfo::from(self.get_info_single::<HandleBasicInfoQuery>()?))
+    }
+
+    /// Wraps the
+    /// [zx_object_get_info](https://fuchsia.dev/fuchsia-src/reference/syscalls/object_get_info.md)
+    /// syscall for the ZX_INFO_HANDLE_COUNT topic.
+    pub fn count_info(&self) -> Result<HandleCountInfo, Status> {
+        Ok(HandleCountInfo::from(self.get_info_single::<HandleCountInfoQuery>()?))
+    }
+
+    /// Returns the koid (kernel object ID) for the object to which this handle refers.
+    pub fn koid(&self) -> Result<Koid, Status> {
+        self.basic_info().map(|info| info.koid)
+    }
+
+    /// Query information about a zircon object. Returns a valid slice and any remaining capacity on
+    /// success, along with a count of how many infos the kernel had available.
+    pub(crate) fn get_info<'a, Q: ObjectQuery>(
+        &self,
+        out: &'a mut [MaybeUninit<Q::InfoTy>],
+    ) -> Result<(&'a mut [Q::InfoTy], &'a mut [MaybeUninit<Q::InfoTy>], usize), Status>
+    where
+        Q::InfoTy: FromBytes + Immutable,
+    {
+        let mut actual = 0;
+        let mut avail = 0;
+
+        // SAFETY: The slice pointer is known valid to write to for `size_of_val` because it came
+        // from a mutable reference.
+        let status = unsafe {
+            sys::zx_object_get_info(
+                self.raw_handle(),
+                *Q::TOPIC,
+                out.as_mut_ptr().cast::<u8>(),
+                std::mem::size_of_val(out),
+                &mut actual,
+                &mut avail,
+            )
+        };
+        ok(status)?;
+
+        let (initialized, uninit) = out.split_at_mut(actual);
+
+        // TODO(https://fxbug.dev/352398385) switch to MaybeUninit::slice_assume_init_mut
+        // SAFETY: these values have been initialized by the kernel and implement the right zerocopy
+        // traits to be instantiated from arbitrary bytes.
+        let initialized: &mut [Q::InfoTy] = unsafe {
+            std::slice::from_raw_parts_mut(
+                initialized.as_mut_ptr().cast::<Q::InfoTy>(),
+                initialized.len(),
+            )
+        };
+
+        Ok((initialized, uninit, avail))
+    }
+
+    /// Query information about a zircon object, expecting only a single info in the return.
+    pub(crate) fn get_info_single<Q: ObjectQuery>(&self) -> Result<Q::InfoTy, Status>
+    where
+        Q::InfoTy: Copy + FromBytes + Immutable,
+    {
+        let mut info = MaybeUninit::<Q::InfoTy>::uninit();
+        let (info, _uninit, _avail) = self.get_info::<Q>(std::slice::from_mut(&mut info))?;
+        Ok(info[0])
+    }
+
+    /// Query multiple records of information about a zircon object.
+    /// Returns a vec of Q::InfoTy on success.
+    /// Intended for calls that return multiple small objects.
+    pub(crate) fn get_info_vec<Q: ObjectQuery>(&self) -> Result<Vec<Q::InfoTy>, Status> {
+        // Start with a few slots
+        let mut out = Vec::<Q::InfoTy>::with_capacity(INFO_VEC_SIZE_INITIAL);
+        loop {
+            let (init, _uninit, avail) = self.get_info::<Q>(out.spare_capacity_mut())?;
+            let num_initialized = init.len();
+            if num_initialized == avail {
+                // SAFETY: the kernel has initialized all of these values.
+                unsafe { out.set_len(num_initialized) };
+                return Ok(out);
+            } else {
+                if avail > out.capacity() {
+                    out.reserve_exact(avail - out.len());
+                }
+            }
+        }
     }
 }
 
@@ -168,8 +382,23 @@ impl NullableHandle {
         if let Some(inner) = NonZeroU32::new(raw) { Self(Some(Handle(inner))) } else { Self(None) }
     }
 
-    pub fn is_invalid(&self) -> bool {
+    pub const fn raw_handle(&self) -> sys::zx_handle_t {
+        if let Some(inner) = &self.0 { inner.raw_handle() } else { sys::ZX_HANDLE_INVALID }
+    }
+
+    pub fn into_raw(self) -> sys::zx_handle_t {
+        self.0.map(Handle::into_raw).unwrap_or(sys::ZX_HANDLE_INVALID)
+    }
+
+    pub const fn is_invalid(&self) -> bool {
         self.0.is_none()
+    }
+
+    pub fn duplicate(&self, rights: Rights) -> Result<Self, Status> {
+        self.0
+            .as_ref()
+            .map(|h| h.duplicate(rights).map(|new| Self(Some(new))))
+            .unwrap_or(Err(Status::BAD_HANDLE))
     }
 
     pub fn replace(mut self, rights: Rights) -> Result<Self, Status> {
@@ -180,7 +409,87 @@ impl NullableHandle {
             Ok(Self(None))
         }
     }
+
+    pub fn signal(&self, clear_mask: Signals, set_mask: Signals) -> Result<(), Status> {
+        self.0.as_ref().map(|h| h.signal(clear_mask, set_mask)).unwrap_or(Err(Status::BAD_HANDLE))
+    }
+
+    pub fn wait(&self, signals: Signals, deadline: MonotonicInstant) -> WaitResult {
+        self.0
+            .as_ref()
+            .map(|h| h.wait(signals, deadline))
+            .unwrap_or(WaitResult::Err(Status::BAD_HANDLE))
+    }
+
+    pub fn wait_async(
+        &self,
+        port: &Port,
+        key: u64,
+        signals: Signals,
+        options: WaitAsyncOpts,
+    ) -> Result<(), Status> {
+        self.0
+            .as_ref()
+            .map(|h| h.wait_async(port, key, signals, options))
+            .unwrap_or(Err(Status::BAD_HANDLE))
+    }
+
+    pub fn get_name(&self) -> Result<Name, Status> {
+        self.0.as_ref().map(Handle::get_name).unwrap_or(Err(Status::BAD_HANDLE))
+    }
+
+    pub fn set_name(&self, name: &Name) -> Result<(), Status> {
+        self.0.as_ref().map(|h| h.set_name(name)).unwrap_or(Err(Status::BAD_HANDLE))
+    }
+
+    pub fn basic_info(&self) -> Result<HandleBasicInfo, Status> {
+        self.0.as_ref().map(Handle::basic_info).unwrap_or(Err(Status::BAD_HANDLE))
+    }
+
+    pub fn count_info(&self) -> Result<HandleCountInfo, Status> {
+        self.0.as_ref().map(Handle::count_info).unwrap_or(Err(Status::BAD_HANDLE))
+    }
+
+    pub fn koid(&self) -> Result<Koid, Status> {
+        self.0.as_ref().map(Handle::koid).unwrap_or(Err(Status::BAD_HANDLE))
+    }
+
+    pub(crate) fn get_info<'a, Q: ObjectQuery>(
+        &self,
+        out: &'a mut [MaybeUninit<Q::InfoTy>],
+    ) -> Result<(&'a mut [Q::InfoTy], &'a mut [MaybeUninit<Q::InfoTy>], usize), Status>
+    where
+        Q::InfoTy: FromBytes + Immutable,
+    {
+        self.0.as_ref().map(|h| h.get_info::<Q>(out)).unwrap_or(Err(Status::BAD_HANDLE))
+    }
+
+    pub(crate) fn get_info_single<Q: ObjectQuery>(&self) -> Result<Q::InfoTy, Status>
+    where
+        Q::InfoTy: Copy + FromBytes + Immutable,
+    {
+        self.0.as_ref().map(|h| h.get_info_single::<Q>()).unwrap_or(Err(Status::BAD_HANDLE))
+    }
+
+    pub(crate) fn get_info_vec<Q: ObjectQuery>(&self) -> Result<Vec<Q::InfoTy>, Status> {
+        self.0.as_ref().map(|h| h.get_info_vec::<Q>()).unwrap_or(Err(Status::BAD_HANDLE))
+    }
+
+    pub(crate) fn get_property<P: PropertyQuery>(&self) -> Result<P::PropTy, Status>
+    where
+        P::PropTy: FromBytes + Immutable,
+    {
+        self.0.as_ref().map(|h| h.get_property::<P>()).unwrap_or(Err(Status::BAD_HANDLE))
+    }
+
+    pub(crate) fn set_property<P: PropertyQuery>(&self, val: &P::PropTy) -> Result<(), Status>
+    where
+        P::PropTy: IntoBytes + Immutable,
+    {
+        self.0.as_ref().map(|h| h.set_property::<P>(val)).unwrap_or(Err(Status::BAD_HANDLE))
+    }
 }
+
 struct NameProperty();
 unsafe impl PropertyQuery for NameProperty {
     const PROPERTY: Property = Property::NAME;
@@ -194,7 +503,7 @@ unsafe impl PropertyQuery for NameProperty {
 /// This is primarily used for working with borrowed values of `HandleBased` types.
 #[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 #[repr(transparent)]
-pub struct Unowned<'a, T: Into<NullableHandle>> {
+pub struct Unowned<'a, T> {
     inner: ManuallyDrop<T>,
     marker: PhantomData<&'a T>,
 }
@@ -204,6 +513,17 @@ impl<'a, T: Into<NullableHandle>> ::std::ops::Deref for Unowned<'a, T> {
 
     fn deref(&self) -> &Self::Target {
         &*self.inner
+    }
+}
+
+impl<'a, T: AsHandleRef> AsHandleRef for Unowned<'a, T> {
+    fn as_handle_ref(&self) -> HandleRef<'_> {
+        Unowned {
+            // SAFETY: our raw handle is guaranteed to be valid and Unowned promises to not drop it
+            // during its lifetime which is bound to ours.
+            inner: ManuallyDrop::new(unsafe { NullableHandle::from_raw(self.inner.raw_handle()) }),
+            marker: PhantomData,
+        }
     }
 }
 
@@ -253,63 +573,9 @@ impl<'a, T: HandleBased> Unowned<'a, T> {
         }
     }
 
+    /// Returns the raw handle's integer value.
     pub fn raw_handle(&self) -> sys::zx_handle_t {
         self.inner.raw_handle()
-    }
-
-    pub fn duplicate(&self, rights: Rights) -> Result<T, Status> {
-        let mut out = 0;
-        // SAFETY: basic FFI call.
-        let status =
-            unsafe { sys::zx_handle_duplicate(self.raw_handle(), rights.bits(), &mut out) };
-        ok(status)?;
-
-        // SAFETY: zx_handle_duplicate returns a valid handle that this function owns.
-        Ok(T::from(unsafe { NullableHandle::from_raw(out) }))
-    }
-
-    pub fn signal(&self, clear_mask: Signals, set_mask: Signals) -> Result<(), Status> {
-        let status =
-            unsafe { sys::zx_object_signal(self.raw_handle(), clear_mask.bits(), set_mask.bits()) };
-        ok(status)
-    }
-
-    pub fn wait(&self, signals: Signals, deadline: MonotonicInstant) -> WaitResult {
-        let mut pending = Signals::empty().bits();
-        let status = unsafe {
-            sys::zx_object_wait_one(
-                self.raw_handle(),
-                signals.bits(),
-                deadline.into_nanos(),
-                &mut pending,
-            )
-        };
-        let signals = Signals::from_bits_truncate(pending);
-        match ok(status) {
-            Ok(()) => WaitResult::Ok(signals),
-            Err(Status::TIMED_OUT) => WaitResult::TimedOut(signals),
-            Err(Status::CANCELED) => WaitResult::Canceled(signals),
-            Err(e) => WaitResult::Err(e),
-        }
-    }
-
-    pub fn wait_async(
-        &self,
-        port: &Port,
-        key: u64,
-        signals: Signals,
-        options: WaitAsyncOpts,
-    ) -> Result<(), Status> {
-        let status = unsafe {
-            sys::zx_object_wait_async(
-                self.raw_handle(),
-                port.raw_handle(),
-                key,
-                signals.bits(),
-                options.bits(),
-            )
-        };
-        ok(status)
     }
 }
 
@@ -416,21 +682,21 @@ pub trait AsHandleRef {
     /// handles will have different raw values (so it can perhaps be used as a
     /// key in a data structure).
     fn raw_handle(&self) -> sys::zx_handle_t {
-        self.as_handle_ref().inner.raw_handle()
+        NullableHandle::raw_handle(&self.as_handle_ref())
     }
 
     /// Set and clear userspace-accessible signal bits on an object. Wraps the
     /// [zx_object_signal](https://fuchsia.dev/fuchsia-src/reference/syscalls/object_signal.md)
     /// syscall.
     fn signal_handle(&self, clear_mask: Signals, set_mask: Signals) -> Result<(), Status> {
-        self.as_handle_ref().signal(clear_mask, set_mask)
+        NullableHandle::signal(&self.as_handle_ref(), clear_mask, set_mask)
     }
 
     /// Waits on a handle. Wraps the
     /// [zx_object_wait_one](https://fuchsia.dev/fuchsia-src/reference/syscalls/object_wait_one.md)
     /// syscall.
     fn wait_handle(&self, signals: Signals, deadline: MonotonicInstant) -> WaitResult {
-        self.as_handle_ref().wait(signals, deadline)
+        NullableHandle::wait(&self.as_handle_ref(), signals, deadline)
     }
 
     /// Causes packet delivery on the given port when the object changes state and matches signals.
@@ -443,7 +709,7 @@ pub trait AsHandleRef {
         signals: Signals,
         options: WaitAsyncOpts,
     ) -> Result<(), Status> {
-        self.as_handle_ref().wait_async(port, key, signals, options)
+        NullableHandle::wait_async(&self.as_handle_ref(), port, key, signals, options)
     }
 
     /// Get the [Property::NAME] property for this object.
@@ -452,7 +718,7 @@ pub trait AsHandleRef {
     /// [zx_object_get_property](https://fuchsia.dev/fuchsia-src/reference/syscalls/object_get_property.md)
     /// syscall for the ZX_PROP_NAME property.
     fn get_name(&self) -> Result<Name, Status> {
-        object_get_property::<NameProperty>(self.as_handle_ref())
+        NullableHandle::get_name(&self.as_handle_ref())
     }
 
     /// Set the [Property::NAME] property for this object.
@@ -465,36 +731,26 @@ pub trait AsHandleRef {
     /// [zx_object_get_property](https://fuchsia.dev/fuchsia-src/reference/syscalls/object_get_property.md)
     /// syscall for the ZX_PROP_NAME property.
     fn set_name(&self, name: &Name) -> Result<(), Status> {
-        object_set_property::<NameProperty>(self.as_handle_ref(), &name)
+        NullableHandle::set_name(&self.as_handle_ref(), name)
     }
 
     /// Wraps the
     /// [zx_object_get_info](https://fuchsia.dev/fuchsia-src/reference/syscalls/object_get_info.md)
     /// syscall for the ZX_INFO_HANDLE_BASIC topic.
     fn basic_info(&self) -> Result<HandleBasicInfo, Status> {
-        Ok(HandleBasicInfo::from(object_get_info_single::<HandleBasicInfoQuery>(
-            self.as_handle_ref(),
-        )?))
+        NullableHandle::basic_info(&self.as_handle_ref())
     }
 
     /// Wraps the
     /// [zx_object_get_info](https://fuchsia.dev/fuchsia-src/reference/syscalls/object_get_info.md)
     /// syscall for the ZX_INFO_HANDLE_COUNT topic.
     fn count_info(&self) -> Result<HandleCountInfo, Status> {
-        Ok(HandleCountInfo::from(object_get_info_single::<HandleCountInfoQuery>(
-            self.as_handle_ref(),
-        )?))
+        NullableHandle::count_info(&self.as_handle_ref())
     }
 
     /// Returns the koid (kernel object ID) for this handle.
     fn get_koid(&self) -> Result<Koid, Status> {
-        self.basic_info().map(|info| info.koid)
-    }
-}
-
-impl<'a, T: HandleBased> AsHandleRef for Unowned<'a, T> {
-    fn as_handle_ref(&self) -> HandleRef<'_> {
-        self.inner.as_handle_ref()
+        NullableHandle::koid(&self.as_handle_ref())
     }
 }
 
@@ -745,7 +1001,10 @@ impl<'a> HandleDisposition<'a> {
             sys::ZX_HANDLE_OP_DUPLICATE => {
                 // SAFETY: this is guaranteed to be a valid handle number by a combination of this
                 // type's public API and the kernel's guarantees.
-                HandleOp::Duplicate(unsafe { Unowned::from_raw_handle(self.handle) })
+                HandleOp::Duplicate(Unowned {
+                    inner: ManuallyDrop::new(unsafe { NullableHandle::from_raw(self.handle) }),
+                    marker: PhantomData,
+                })
             }
             _ => unreachable!(),
         }

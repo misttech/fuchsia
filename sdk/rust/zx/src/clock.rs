@@ -6,8 +6,7 @@
 
 use crate::{
     AsHandleRef, BootTimeline, ClockUpdate, HandleBased, HandleRef, Instant, MonotonicTimeline,
-    NullableHandle, ObjectQuery, SyntheticTimeline, Ticks, Timeline, Topic, object_get_info_single,
-    ok, sys,
+    NullableHandle, ObjectQuery, SyntheticTimeline, Ticks, Timeline, Topic, ok, sys,
 };
 use bitflags::bitflags;
 use std::mem::MaybeUninit;
@@ -165,7 +164,7 @@ impl<Reference: Timeline, Output: Timeline> Clock<Reference, Output> {
 
     // Returns the memory size for the memory region used to store clock details.
     pub fn get_mapped_size(clock: &Clock<Reference, Output>) -> Result<usize, Status> {
-        Ok(object_get_info_single::<MappedSizeQuery>(clock.as_handle_ref())?)
+        Ok(clock.0.get_info_single::<MappedSizeQuery>()?)
     }
 
     /// Make adjustments to this clock. Wraps the [zx_clock_update] syscall. Requires
@@ -188,6 +187,8 @@ impl<Reference: Timeline, Output: Timeline> Clock<Reference, Output> {
     pub fn downcast<NewReference: Timeline>(self) -> Clock<NewReference, SyntheticTimeline> {
         Clock(self.0, std::marker::PhantomData)
     }
+
+    delegated_concrete_handle_based_impls!(|h| Self(h, std::marker::PhantomData));
 }
 
 impl<Reference: Timeline> Clock<Reference, SyntheticTimeline> {

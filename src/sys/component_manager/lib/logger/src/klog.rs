@@ -5,7 +5,7 @@
 use std::fmt::Write;
 use std::os::fd::AsFd;
 use std::sync::LazyLock;
-use zx::{self as zx, AsHandleRef, ObjectType};
+use zx::{self as zx, ObjectType};
 
 static LOGGER: LazyLock<KernelLogger> = LazyLock::new(KernelLogger::new);
 
@@ -129,7 +129,7 @@ mod tests {
     use log::{error, info, warn};
     use rand::Rng;
     use std::panic;
-    use zx::HandleBased;
+    use zx::{AsHandleRef, HandleBased};
 
     const MAX_INFO_LINE_LEN: usize =
         zx::sys::ZX_LOG_RECORD_DATA_MAX - "[component_manager] INFO: ".len();

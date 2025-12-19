@@ -5,9 +5,7 @@
 //! This crate contains utility functions used in GIDL tests and benchmarks.
 
 use fidl::encoding::{Context, Decode, Decoder, DefaultFuchsiaResourceDialect, TypeMarker};
-use fidl::{
-    AsHandleRef, HandleBased, HandleDisposition, HandleInfo, HandleOp, NullableHandle, Rights,
-};
+use fidl::{HandleBased, HandleDisposition, HandleInfo, HandleOp, NullableHandle, Rights};
 use zx_status::Status;
 use zx_types;
 

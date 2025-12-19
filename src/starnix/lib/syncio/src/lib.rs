@@ -21,7 +21,7 @@ use std::os::raw::{c_char, c_int, c_uint, c_void};
 use std::pin::Pin;
 use std::sync::Arc;
 use zerocopy::{FromBytes, Immutable, IntoBytes, TryFromBytes};
-use zx::{self as zx, AsHandleRef as _, HandleBased as _};
+use zx::{self as zx, AsHandleRef as _};
 use zxio::{
     ZXIO_SELINUX_CONTEXT_STATE_DATA, ZXIO_SHUTDOWN_OPTIONS_READ, ZXIO_SHUTDOWN_OPTIONS_WRITE,
     ZXIO_SOCKET_MARK_DOMAIN_1, ZXIO_SOCKET_MARK_DOMAIN_2, msghdr, sockaddr, sockaddr_storage,
@@ -2111,6 +2111,7 @@ mod test {
     use super::*;
 
     use anyhow::Error;
+    use fidl::HandleBased;
     use fidl::endpoints::Proxy as _;
     use fuchsia_fs::directory;
     use {fidl_fuchsia_io as fio, fuchsia_async as fasync};

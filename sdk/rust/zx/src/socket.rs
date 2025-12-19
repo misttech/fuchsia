@@ -8,8 +8,7 @@
 
 use crate::{
     AsHandleRef, HandleBased, HandleRef, NullableHandle, ObjectQuery, Peered, Property,
-    PropertyQuery, Status, Topic, object_get_info_single, object_get_property, object_set_property,
-    ok, sys,
+    PropertyQuery, Status, Topic, ok, sys,
 };
 use bitflags::bitflags;
 use std::mem::MaybeUninit;
@@ -346,7 +345,7 @@ impl Socket {
     /// [zx_object_get_info](https://fuchsia.dev/fuchsia-src/reference/syscalls/object_get_info.md)
     /// syscall for the ZX_INFO_SOCKET topic.
     pub fn info(&self) -> Result<SocketInfo, Status> {
-        Ok(SocketInfo::from(object_get_info_single::<SocketInfoQuery>(self.as_handle_ref())?))
+        Ok(SocketInfo::from(self.0.get_info_single::<SocketInfoQuery>()?))
     }
 }
 

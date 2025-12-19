@@ -11,7 +11,6 @@ use magma::{
 use starnix_logging::log_error;
 use std::panic::Location;
 use std::sync::Arc;
-use zx::HandleBased;
 
 fn magma_result(status: magma_status_t) -> Result<(), magma_status_t> {
     if status == MAGMA_STATUS_OK { Ok(()) } else { Err(status) }
