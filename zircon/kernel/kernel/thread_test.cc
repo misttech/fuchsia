@@ -688,6 +688,7 @@ bool set_migrate_fn_stress_test() {
         if (rand() & 1) {
           const zx_instant_mono_t spin_end = zx_time_add_duration(current_mono_time(), delay);
           while (current_mono_time() < spin_end) {
+            arch::Yield();
           }
         } else {
           Thread::Current::SleepRelative(delay);
@@ -723,21 +724,26 @@ bool set_migrate_fn_stress_test() {
     thread.should_stop.store(true);
 
     // Wait for it to finish.
-    int ret;
-    zx_status_t result = thread.thread->Join(&ret, Deadline::after_mono(ZX_SEC(5)).when());
-    if (result != ZX_OK) {
-      // If the thread has not completed in 5 seconds, it is likely that the
-      // thread has hung for an unknown reason.
+    while (true) {
+      int ret;
+      zx_status_t result = thread.thread->Join(&ret, Deadline::after_mono(ZX_SEC(5)).when());
+      if (result == ZX_OK) {
+        break;
+      }
+
+      // If the thread has not completed in 5 seconds, either the thread has
+      // hung for an unknown reason or there may have been lost time due to
+      // virtualization. Keep trying until the overall test times out to
+      // differentiate between an indefinite hang and virtualization time
+      // loss.
       //
-      // TODO(https://fxbug.dev/42158849): We are currently seeing some flakes in CI/CQ
-      // that cannot be reproduced locally. Once resolved, this additional
-      // logging can be removed.
+      // TODO(https://fxbug.dev/42158849): We are currently seeing some flakes
+      // in CI/CQ that cannot be reproduced locally. Once resolved, this
+      // additional logging can be removed.
       thread.thread->Dump(/*full=*/true);
       Backtrace bt;
       thread.thread->GetBacktrace(bt);
       bt.Print();
-
-      ZX_ASSERT_MSG(result == ZX_OK, "Failed to join worker thread: %d\n", result);
     }
   }
 
