@@ -5,6 +5,7 @@
 #include <fidl/fuchsia.hardware.usb.descriptor/cpp/wire.h>
 #include <lib/driver/logging/cpp/logger.h>
 #include <lib/fit/defer.h>
+#include <zircon/errors.h>
 
 #include <mutex>
 
@@ -211,7 +212,11 @@ void Dwc3::HandleEp0Setup(size_t length) {
               return;
             }
             if (result->is_error()) {
-              fdf::error("Control(): {}", zx_status_get_string(result->error_value()));
+              if (result->error_value() != ZX_ERR_NOT_SUPPORTED) {
+                fdf::error("Control(): {}", zx_status_get_string(result->error_value()));
+              } else {
+                fdf::debug("Control(): {}", zx_status_get_string(result->error_value()));
+              }
               fail();
               return;
             }

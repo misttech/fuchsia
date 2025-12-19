@@ -595,7 +595,7 @@ zx_status_t UsbPeripheral::GetDescriptor(uint8_t request_type, uint16_t value, u
     return ZX_OK;
   }
 
-  fdf::error("Unsupported value: {:#x} index: {}", value, index);
+  fdf::debug("Unsupported value: {:#x} index: {}", value, index);
   return ZX_ERR_NOT_SUPPORTED;
 }
 
