@@ -49,32 +49,18 @@ impl LogServer {
                 protocol: flogger::LogMarker::PROTOCOL_NAME,
                 source,
             })?;
-
-            let (listener, options, dump_logs, selectors) = match request {
+            let listener = match request {
                 flogger::LogRequest::ListenSafe { log_listener, options, .. } => {
-                    (log_listener, options, false, None)
+                    Listener::new(log_listener, options)?
                 }
-                flogger::LogRequest::DumpLogsSafe { log_listener, options, .. } => {
-                    (log_listener, options, true, None)
-                }
-                flogger::LogRequest::ListenSafeWithSelectors {
-                    log_listener,
-                    options,
-                    selectors,
-                    ..
-                } => (log_listener, options, false, Some(selectors)),
             };
-
-            let listener = Listener::new(listener, options)?;
-            let mode =
-                if dump_logs { StreamMode::Snapshot } else { StreamMode::SnapshotThenSubscribe };
             // NOTE: The LogListener code path isn't instrumented for tracing at the moment.
-            let logs = logs_repo.logs_cursor(mode, None, ftrace::Id::random());
-            if let Some(s) = selectors {
-                logs_repo.update_logs_interest(connection_id, s);
-            }
-
-            scope.spawn(listener.run(logs, dump_logs));
+            let logs = logs_repo.logs_cursor(
+                StreamMode::SnapshotThenSubscribe,
+                None,
+                ftrace::Id::random(),
+            );
+            scope.spawn(listener.run(logs));
         }
         logs_repo.finish_interest_connection(connection_id);
         Ok(())

@@ -93,7 +93,7 @@
             },
             "26": {
                 "abi_revision": "0xB5D2EBDA9DA50585",
-                "phase": "supported"
+                "phase": "retired"
             },
             "27": {
                 "abi_revision": "0x826AF640460EC304",

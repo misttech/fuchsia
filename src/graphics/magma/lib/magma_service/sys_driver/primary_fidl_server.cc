@@ -341,13 +341,6 @@ void PrimaryFidlServer::ExecuteCommand(ExecuteCommandRequestView request,
   }
 }
 
-void PrimaryFidlServer::ExecuteImmediateCommands(
-    ExecuteImmediateCommandsRequestView request,
-    ExecuteImmediateCommandsCompleter::Sync& completer) {
-  MAGMA_DMESSAGE("ExecuteImmediateCommand: unimplemented");
-  SetError(&completer, MAGMA_STATUS_UNIMPLEMENTED);
-}
-
 void PrimaryFidlServer::ExecuteInlineCommands(ExecuteInlineCommandsRequestView request,
                                               ExecuteInlineCommandsCompleter::Sync& completer) {
   TRACE_DURATION("magma", "PrimaryFidlServer::ExecuteInlineCommands");

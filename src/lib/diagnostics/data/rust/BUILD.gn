@@ -51,6 +51,10 @@ rustc_library("lib") {
       "//third_party/rust_crates:thiserror",
     ]
 
+    test_deps += [
+      "//sdk/fidl/fuchsia.diagnostics.types:fuchsia.diagnostics.types_rust",
+    ]
+
     sources += [ "src/logs_legacy.rs" ]
   }
 

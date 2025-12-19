@@ -618,8 +618,6 @@ where
             vmo.read(&mut buf, 0).map_err(Error::ReadVmo)?;
             Ok(ciborium::from_reader(buf.as_slice()).map_err(|err| Error::ReadCbor(err.into()))?)
         }
-        #[cfg(fuchsia_api_level_at_least = "PLATFORM")]
-        FormattedContent::Text(_) => unreachable!("We never expect Text"),
         #[cfg(fuchsia_api_level_at_least = "HEAD")]
         FormattedContent::Fxt(_) => unreachable!("We never expect FXT for Inspect"),
         FormattedContent::__SourceBreaking { unknown_ordinal: _ } => {
@@ -658,8 +656,6 @@ fn drain_batch_iterator_for_logs(
             }
             Ok(OneOrMany::Many(items))
         }
-        #[cfg(fuchsia_api_level_at_least = "PLATFORM")]
-        FormattedContent::Text(_) => unreachable!("We never expect Text"),
         #[cfg(fuchsia_api_level_at_least = "HEAD")]
         FormattedContent::Cbor(_) => unreachable!("We never expect CBOR"),
         FormattedContent::__SourceBreaking { unknown_ordinal: _ } => {

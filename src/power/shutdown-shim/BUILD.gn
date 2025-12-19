@@ -45,7 +45,6 @@ rustc_library("lib") {
     "//src/lib/fuchsia-sync",
     "//src/lib/trace/rust:trace",
     "//third_party/rust_crates:anyhow",
-    "//third_party/rust_crates:either",
     "//third_party/rust_crates:futures",
   ]
 

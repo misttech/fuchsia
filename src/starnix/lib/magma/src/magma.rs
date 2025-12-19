@@ -323,15 +323,6 @@ unsafe extern "C" {
 }
 unsafe extern "C" {
     #[doc = "\n \\brief Submits a series of commands for execution on the hardware without using a command\n        buffer.\n \\param connection An open connection.\n \\param context_id A valid context ID.\n \\param command_count The number of commands in the provided buffer.\n \\param command_buffers An array of command_count magma_inline_command_buffer structs.\n"]
-    pub fn magma_connection_execute_immediate_commands(
-        connection: magma_connection_t,
-        context_id: u32,
-        command_count: u64,
-        command_buffers: *mut magma_inline_command_buffer_t,
-    ) -> magma_status_t;
-}
-unsafe extern "C" {
-    #[doc = "\n \\brief Submits a series of commands for execution on the hardware without using a command\n        buffer.\n \\param connection An open connection.\n \\param context_id A valid context ID.\n \\param command_count The number of commands in the provided buffer.\n \\param command_buffers An array of command_count magma_inline_command_buffer structs.\n"]
     pub fn magma_connection_execute_inline_commands(
         connection: magma_connection_t,
         context_id: u32,

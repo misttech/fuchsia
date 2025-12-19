@@ -42,11 +42,6 @@ class FakeShutdownShim : public fidl::WireServer<fuchsia_hardware_power_statecon
     loop_->Quit();
   }
 
-  void Reboot(RebootRequestView view, RebootCompleter::Sync& completer) override {
-    unexpected_calls_ = true;
-    completer.Close(ZX_ERR_NOT_SUPPORTED);
-  }
-
   void PerformReboot(PerformRebootRequestView view,
                      PerformRebootCompleter::Sync& completer) override {
     unexpected_calls_ = true;

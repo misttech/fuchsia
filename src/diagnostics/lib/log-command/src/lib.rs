@@ -558,7 +558,8 @@ impl LogCommand {
             } else {
                 (&self.set_severity, self.force_set_severity, false)
             };
-        if persist {
+
+        if persist || !set_severity.is_empty() {
             let selectors = if force_set_severity {
                 set_severity.clone().into_iter().flatten().collect::<Vec<_>>()
             } else {
@@ -577,28 +578,11 @@ impl LogCommand {
                 .set_component_interest(
                     &fidl_fuchsia_diagnostics::LogSettingsSetComponentInterestRequest {
                         selectors: Some(selectors),
-                        persist: Some(true),
+                        persist: Some(persist),
                         ..Default::default()
                     },
                 )
                 .await?;
-        } else if !set_severity.is_empty() {
-            let selectors = if force_set_severity {
-                set_severity.clone().into_iter().flatten().collect::<Vec<_>>()
-            } else {
-                let new_selectors =
-                    Self::map_interest_selectors(realm_query, set_severity.iter().flatten())
-                        .await?
-                        .map(|s| s.into_owned())
-                        .collect::<Vec<_>>();
-                if new_selectors.is_empty() {
-                    set_severity.clone().into_iter().flatten().collect::<Vec<_>>()
-                } else {
-                    new_selectors
-                }
-            };
-
-            log_settings_client.set_interest(&selectors).await?;
         }
 
         Ok(())
@@ -807,15 +791,17 @@ ffx log --force-set-severity.
         }));
         scheduler.push(Either::Right(async {
             let request = settings_server.into_stream().next().await;
-            let (selectors, responder) = assert_matches!(
+            let (payload, responder) = assert_matches!(
                 request,
-                Some(Ok(LogSettingsRequest::SetInterest { selectors, responder })) =>
-                (selectors, responder)
+                Some(Ok(LogSettingsRequest::SetComponentInterest { payload, responder })) =>
+                (payload, responder)
             );
             responder.send().unwrap();
             assert_eq!(
-                selectors,
-                vec![parse_log_interest_selector("core/some/ambiguous_selector#INFO").unwrap()]
+                payload.selectors,
+                Some(vec![
+                    parse_log_interest_selector("core/some/ambiguous_selector#INFO").unwrap()
+                ])
             );
         }));
         while scheduler.next().await.is_some() {}
@@ -846,20 +832,20 @@ ffx log --force-set-severity.
         }));
         scheduler.push(Either::Right(async {
             let request = settings_server.into_stream().next().await;
-            let (selectors, responder) = assert_matches!(
+            let (payload, responder) = assert_matches!(
                 request,
-                Some(Ok(LogSettingsRequest::SetInterest { selectors, responder })) =>
-                (selectors, responder)
+                Some(Ok(LogSettingsRequest::SetComponentInterest { payload, responder })) =>
+                (payload, responder)
             );
             responder.send().unwrap();
             assert_eq!(
-                selectors,
-                vec![
+                payload.selectors,
+                Some(vec![
                     parse_log_interest_selector(
                         "core/something/a:b/elements:main/otherstuff:*#DEBUG"
                     )
                     .unwrap()
-                ]
+                ])
             );
         }));
         scheduler.map(|_| Ok(())).forward(futures::sink::drain()).await.unwrap();
@@ -894,15 +880,15 @@ ffx log --force-set-severity.
         }));
         scheduler.push(Either::Right(async {
             let request = settings_server.into_stream().next().await;
-            let (selectors, responder) = assert_matches!(
+            let (payload, responder) = assert_matches!(
                 request,
-                Some(Ok(LogSettingsRequest::SetInterest { selectors, responder })) =>
-                (selectors, responder)
+                Some(Ok(LogSettingsRequest::SetComponentInterest { payload, responder })) =>
+                (payload, responder)
             );
             responder.send().unwrap();
             assert_eq!(
-                selectors,
-                vec![parse_log_interest_selector("ambiguous_selector#INFO").unwrap()]
+                payload.selectors,
+                Some(vec![parse_log_interest_selector("ambiguous_selector#INFO").unwrap()])
             );
         }));
         while scheduler.next().await.is_some() {}
@@ -943,12 +929,12 @@ ffx log --force-set-severity.
                 Some(Ok(LogSettingsRequest::SetComponentInterest { payload, responder })) =>
                 (payload, responder)
             );
-            assert_eq!(payload.persist, Some(true));
             responder.send().unwrap();
             assert_eq!(
-                payload.selectors.unwrap(),
-                vec![parse_log_interest_selector("ambiguous_selector#INFO").unwrap()]
+                payload.selectors,
+                Some(vec![parse_log_interest_selector("ambiguous_selector#INFO").unwrap()])
             );
+            assert_eq!(payload.persist, Some(true));
         }));
         while scheduler.next().await.is_some() {}
         drop(scheduler);
@@ -981,15 +967,15 @@ ffx log --force-set-severity.
         }));
         scheduler.push(Either::Right(async {
             let request = settings_server.into_stream().next().await;
-            let (selectors, responder) = assert_matches!(
+            let (payload, responder) = assert_matches!(
                 request,
-                Some(Ok(LogSettingsRequest::SetInterest { selectors, responder })) =>
-                (selectors, responder)
+                Some(Ok(LogSettingsRequest::SetComponentInterest { payload, responder })) =>
+                (payload, responder)
             );
             responder.send().unwrap();
             assert_eq!(
-                selectors,
-                vec![parse_log_interest_selector("ambiguous_selector#INFO").unwrap()]
+                payload.selectors,
+                Some(vec![parse_log_interest_selector("ambiguous_selector#INFO").unwrap()])
             );
         }));
         while scheduler.next().await.is_some() {}

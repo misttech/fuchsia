@@ -113,7 +113,7 @@ impl From<Data<Logs>> for LogMessage {
 mod test {
     use super::*;
     use crate::{BuilderArgs, LogsDataBuilder, Severity, Timestamp};
-    use fidl_fuchsia_diagnostics as fdiagnostics;
+    use fidl_fuchsia_diagnostics_types as fdiagnostics_types;
 
     const TEST_URL: &str = "fuchsia-pkg://test";
     const TEST_MONIKER: &str = "fake-test/moniker";
@@ -145,96 +145,96 @@ mod test {
     #[fuchsia::test]
     fn raw_severity_roundtrip_trace() {
         severity_roundtrip_test!(
-            fdiagnostics::Severity::Trace.into_primitive() - 1,
-            fdiagnostics::Severity::Trace.into_primitive()
+            fdiagnostics_types::Severity::Trace.into_primitive() - 1,
+            fdiagnostics_types::Severity::Trace.into_primitive()
         );
         severity_roundtrip_test!(
-            fdiagnostics::Severity::Trace.into_primitive(),
-            fdiagnostics::Severity::Trace.into_primitive()
+            fdiagnostics_types::Severity::Trace.into_primitive(),
+            fdiagnostics_types::Severity::Trace.into_primitive()
         );
         severity_roundtrip_test!(
-            fdiagnostics::Severity::Trace.into_primitive() + 1,
-            fdiagnostics::Severity::Debug.into_primitive()
+            fdiagnostics_types::Severity::Trace.into_primitive() + 1,
+            fdiagnostics_types::Severity::Debug.into_primitive()
         );
     }
 
     #[fuchsia::test]
     fn severity_roundtrip_debug() {
         severity_roundtrip_test!(
-            fdiagnostics::Severity::Debug.into_primitive() - 1,
-            fdiagnostics::Severity::Debug.into_primitive()
+            fdiagnostics_types::Severity::Debug.into_primitive() - 1,
+            fdiagnostics_types::Severity::Debug.into_primitive()
         );
         severity_roundtrip_test!(
-            fdiagnostics::Severity::Debug.into_primitive(),
-            fdiagnostics::Severity::Debug.into_primitive()
+            fdiagnostics_types::Severity::Debug.into_primitive(),
+            fdiagnostics_types::Severity::Debug.into_primitive()
         );
         severity_roundtrip_test!(
-            fdiagnostics::Severity::Debug.into_primitive() + 1,
-            fdiagnostics::Severity::Info.into_primitive()
+            fdiagnostics_types::Severity::Debug.into_primitive() + 1,
+            fdiagnostics_types::Severity::Info.into_primitive()
         );
     }
 
     #[fuchsia::test]
     fn severity_roundtrip_info() {
         severity_roundtrip_test!(
-            fdiagnostics::Severity::Info.into_primitive() - 1,
-            fdiagnostics::Severity::Info.into_primitive()
+            fdiagnostics_types::Severity::Info.into_primitive() - 1,
+            fdiagnostics_types::Severity::Info.into_primitive()
         );
         severity_roundtrip_test!(
-            fdiagnostics::Severity::Info.into_primitive(),
-            fdiagnostics::Severity::Info.into_primitive()
+            fdiagnostics_types::Severity::Info.into_primitive(),
+            fdiagnostics_types::Severity::Info.into_primitive()
         );
         severity_roundtrip_test!(
-            fdiagnostics::Severity::Info.into_primitive() + 1,
-            fdiagnostics::Severity::Warn.into_primitive()
+            fdiagnostics_types::Severity::Info.into_primitive() + 1,
+            fdiagnostics_types::Severity::Warn.into_primitive()
         );
     }
 
     #[fuchsia::test]
     fn severity_roundtrip_warn() {
         severity_roundtrip_test!(
-            fdiagnostics::Severity::Warn.into_primitive() - 1,
-            fdiagnostics::Severity::Warn.into_primitive()
+            fdiagnostics_types::Severity::Warn.into_primitive() - 1,
+            fdiagnostics_types::Severity::Warn.into_primitive()
         );
         severity_roundtrip_test!(
-            fdiagnostics::Severity::Warn.into_primitive(),
-            fdiagnostics::Severity::Warn.into_primitive()
+            fdiagnostics_types::Severity::Warn.into_primitive(),
+            fdiagnostics_types::Severity::Warn.into_primitive()
         );
         severity_roundtrip_test!(
-            fdiagnostics::Severity::Warn.into_primitive() + 1,
-            fdiagnostics::Severity::Error.into_primitive()
+            fdiagnostics_types::Severity::Warn.into_primitive() + 1,
+            fdiagnostics_types::Severity::Error.into_primitive()
         );
     }
 
     #[fuchsia::test]
     fn severity_roundtrip_error() {
         severity_roundtrip_test!(
-            fdiagnostics::Severity::Error.into_primitive() - 1,
-            fdiagnostics::Severity::Error.into_primitive()
+            fdiagnostics_types::Severity::Error.into_primitive() - 1,
+            fdiagnostics_types::Severity::Error.into_primitive()
         );
         severity_roundtrip_test!(
-            fdiagnostics::Severity::Error.into_primitive(),
-            fdiagnostics::Severity::Error.into_primitive()
+            fdiagnostics_types::Severity::Error.into_primitive(),
+            fdiagnostics_types::Severity::Error.into_primitive()
         );
         severity_roundtrip_test!(
-            fdiagnostics::Severity::Error.into_primitive() + 1,
-            fdiagnostics::Severity::Fatal.into_primitive()
+            fdiagnostics_types::Severity::Error.into_primitive() + 1,
+            fdiagnostics_types::Severity::Fatal.into_primitive()
         );
     }
 
     #[fuchsia::test]
     fn severity_roundtrip_fatal() {
         severity_roundtrip_test!(
-            fdiagnostics::Severity::Fatal.into_primitive() - 1,
-            fdiagnostics::Severity::Fatal.into_primitive()
+            fdiagnostics_types::Severity::Fatal.into_primitive() - 1,
+            fdiagnostics_types::Severity::Fatal.into_primitive()
         );
         severity_roundtrip_test!(
-            fdiagnostics::Severity::Fatal.into_primitive(),
-            fdiagnostics::Severity::Fatal.into_primitive()
+            fdiagnostics_types::Severity::Fatal.into_primitive(),
+            fdiagnostics_types::Severity::Fatal.into_primitive()
         );
         severity_roundtrip_test!(
-            fdiagnostics::Severity::Fatal.into_primitive() + 1,
-            fdiagnostics::Severity::Fatal.into_primitive()
+            fdiagnostics_types::Severity::Fatal.into_primitive() + 1,
+            fdiagnostics_types::Severity::Fatal.into_primitive()
         );
     }
 }

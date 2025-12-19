@@ -29,13 +29,8 @@ mod tests {
     use std::sync::Arc;
 
     #[fuchsia::test]
-    async fn test_log_manager_simple() {
-        Box::pin(TestHarness::default().manager_test(false)).await;
-    }
-
-    #[fuchsia::test]
-    async fn test_log_manager_dump() {
-        Box::pin(TestHarness::default().manager_test(true)).await;
+    async fn test_log_manager() {
+        Box::pin(TestHarness::default().manager_test()).await;
     }
 
     #[fuchsia::test]

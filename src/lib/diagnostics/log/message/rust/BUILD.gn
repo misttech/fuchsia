@@ -42,6 +42,7 @@ rustc_library("lib") {
   }
 
   test_deps = [
+    "//sdk/fidl/fuchsia.diagnostics.types:fuchsia.diagnostics.types_rust",
     "//src/lib/fuchsia",
     "//third_party/rust_crates:assert_matches",
   ]

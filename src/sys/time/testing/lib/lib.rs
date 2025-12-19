@@ -598,11 +598,6 @@ async fn serve_fake_rtc(
                 // don't attempt to update the sent time.
                 responder.send(Ok(&zx_time_to_rtc_time(initial_time))).unwrap();
             }
-            DeviceRequest::Set { rtc, responder } => {
-                log::debug!("serve_fake_rtc: DeviceRequest::Set");
-                rtc_updates.0.lock().push(rtc);
-                responder.send(zx::Status::OK.into_raw()).unwrap();
-            }
             DeviceRequest::Set2 { rtc, responder } => {
                 log::debug!("serve_fake_rtc: DeviceRequest::Set2");
                 rtc_updates.0.lock().push(rtc);

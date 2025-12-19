@@ -5,14 +5,14 @@
 use crate::manager::{FidlEndpoint, Manager};
 use anyhow::{Context as _, Error, Result};
 use fidl::endpoints::{
-    create_proxy, create_proxy_and_stream, create_request_stream, ClientEnd, ControlHandle,
-    ServerEnd,
+    ClientEnd, ControlHandle, ServerEnd, create_proxy, create_proxy_and_stream,
+    create_request_stream,
 };
 use futures::channel::mpsc;
 use futures::future::join_all;
 use futures::{
-    join, pin_mut, select, try_join, AsyncReadExt, AsyncWriteExt, FutureExt, SinkExt, StreamExt,
-    TryStreamExt,
+    AsyncReadExt, AsyncWriteExt, FutureExt, SinkExt, StreamExt, TryStreamExt, join, pin_mut,
+    select, try_join,
 };
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -483,7 +483,7 @@ async fn serve_batch_iterator(
                         let size = msg.len() as u64;
                         let buf = fmem::Buffer { vmo, size };
                         buf.vmo.write(msg.as_bytes(), 0).context("failed to write to VMO")?;
-                        batch.push(fdiagnostics::FormattedContent::Text(buf));
+                        batch.push(fdiagnostics::FormattedContent::Json(buf));
                     }
                     responder.send(Ok(batch))
                 }

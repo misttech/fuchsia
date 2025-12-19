@@ -260,7 +260,6 @@ async fn handle_invocation(moniker: &str, stdout: zx::Socket) -> Result<(), Erro
                     for content in contents.into_iter() {
                         let buffer = match content {
                             fidl_fuchsia_diagnostics::FormattedContent::Json(buffer) => buffer,
-                            fidl_fuchsia_diagnostics::FormattedContent::Text(buffer) => buffer,
                             _ => {
                                 bail!("Unknown format returned for batch");
                             }

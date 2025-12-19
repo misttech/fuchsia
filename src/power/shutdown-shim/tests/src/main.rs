@@ -6,7 +6,9 @@ use crate::shutdown_mocks::{LeaseState, Signal, new_mocks_provider};
 use anyhow::Error;
 use assert_matches::assert_matches;
 use fidl::marker::SourceBreaking;
-use fidl_fuchsia_hardware_power_statecontrol::{ShutdownAction, ShutdownOptions, ShutdownReason};
+use fidl_fuchsia_hardware_power_statecontrol::{
+    RebootReason2, ShutdownAction, ShutdownOptions, ShutdownReason,
+};
 use fuchsia_component_test::{Capability, ChildOptions, RealmBuilder, RealmInstance, Ref, Route};
 use futures::StreamExt;
 use futures::channel::mpsc;
@@ -18,9 +20,7 @@ use {
     fidl_fuchsia_system_state as fdevicemanager, fuchsia_async as fasync,
 };
 
-use crate::reboot_watcher_client::{
-    DeprecatedRebootWatcherClient, RebootWatcherClient, ShutdownWatcherClient,
-};
+use crate::reboot_watcher_client::{RebootWatcherClient, ShutdownWatcherClient};
 
 mod reboot_watcher_client;
 mod shutdown_mocks;
@@ -170,41 +170,6 @@ async fn new_realm(
     Ok((builder.build().await?, recv_signals))
 }
 
-enum RebootType {
-    // Corresponds to the deprecated `Admin.Reboot` method.
-    Reboot,
-    // Corresponds to the `Admin.PerformReboot` method.
-    PerformReboot,
-}
-
-enum RebootReason {
-    SystemUpdate,
-    SessionFailure,
-    Oom,
-}
-
-impl RebootReason {
-    fn as_reboot_reason(&self) -> fstatecontrol::RebootReason {
-        match self {
-            Self::SystemUpdate => fstatecontrol::RebootReason::SystemUpdate,
-            Self::SessionFailure => fstatecontrol::RebootReason::SessionFailure,
-            Self::Oom => fstatecontrol::RebootReason::OutOfMemory,
-        }
-    }
-
-    fn as_reboot_options(&self) -> fstatecontrol::RebootOptions {
-        let reason = match self {
-            Self::SystemUpdate => fstatecontrol::RebootReason2::SystemUpdate,
-            Self::SessionFailure => fstatecontrol::RebootReason2::SessionFailure,
-            Self::Oom => fstatecontrol::RebootReason2::OutOfMemory,
-        };
-        fstatecontrol::RebootOptions {
-            reasons: Some(vec![reason]),
-            __source_breaking: fidl::marker::SourceBreaking,
-        }
-    }
-}
-
 async fn verify_shutdown_shim_common_behavior(
     realm_instance: RealmInstance,
     is_power_framework_available: bool,
@@ -273,27 +238,22 @@ async fn test_mexec(is_power_framework_available: bool) -> Result<(), Error> {
 
 #[test_matrix(
     [true, false],
-    [RebootType::Reboot, RebootType::PerformReboot],
-    [RebootReason::SystemUpdate, RebootReason::Oom, RebootReason::SessionFailure]
+    [RebootReason2::SystemUpdate, RebootReason2::OutOfMemory, RebootReason2::SessionFailure]
 )]
 #[fuchsia::test]
 async fn test_reboot(
     is_power_framework_available: bool,
-    reboot_type: RebootType,
-    reason: RebootReason,
+    reason: RebootReason2,
 ) -> Result<(), Error> {
     let (realm_instance, recv_signals) = new_realm(is_power_framework_available).await?;
     let shim_statecontrol: fstatecontrol::AdminProxy =
         realm_instance.root.connect_to_protocol_at_exposed_dir()?;
 
     fasync::Task::spawn(async move {
-        match reboot_type {
-            RebootType::Reboot => shim_statecontrol.reboot(reason.as_reboot_reason()).await,
-            RebootType::PerformReboot => {
-                shim_statecontrol.perform_reboot(&reason.as_reboot_options()).await
-            }
-        }
-        .expect_err(
+        shim_statecontrol.perform_reboot(&fstatecontrol::RebootOptions {
+            reasons: Some(vec![reason]),
+            ..Default::default()
+        }).await.expect_err(
             "the shutdown shim should close the channel when manual shutdown driving is complete",
         );
     })
@@ -372,9 +332,7 @@ async fn test_shutdown_request_reboot_watchers(
     let (realm_instance, recv_signals) = new_realm(is_power_framework_available).await?;
 
     // Only ShutdownAction::Reboot will forward shutdown reasons to reboot watchers.
-    // Verify both the "current" and "deprecated" watcher APIs.
     let mut reboot_watcher = RebootWatcherClient::new(&realm_instance).await;
-    let mut deprecated_reboot_watcher = DeprecatedRebootWatcherClient::new(&realm_instance).await;
 
     let shim_statecontrol: fstatecontrol::AdminProxy =
         realm_instance.root.connect_to_protocol_at_exposed_dir()?;
@@ -397,14 +355,7 @@ async fn test_shutdown_request_reboot_watchers(
         reboot_watcher.get_reboot_options().await,
         fstatecontrol::RebootOptions{ reasons: Some(reasons), ..} => reasons
     );
-    assert_eq!(&reasons[..], [fstatecontrol::RebootReason2::SystemUpdate]);
-
-    // TODO(https://fxbug.dev/385742868): Delete the deprecated watcher assertions once the API
-    // is removed. For now, verify that a backwards-compatible reason is provided.
-    assert_eq!(
-        deprecated_reboot_watcher.get_reboot_reason().await,
-        fstatecontrol::RebootReason::SystemUpdate
-    );
+    assert_eq!(&reasons[..], [RebootReason2::SystemUpdate]);
 
     verify_shutdown_shim_common_behavior(realm_instance, is_power_framework_available, recv_signals)
         .await
@@ -435,42 +386,6 @@ async fn test_collaborative_reboot(is_power_framework_available: bool) -> Result
         .await
 }
 
-/// Verifies that `fuchsia.hardware.power.statecontrol/Admin.Reboot` requests
-/// sent to shutdown-shim are handled as expected:
-///     1) forward the reboot reason to connected RebootWatcher clients
-///     2) send a shutdown request to the system controller
-// TODO(https://fxbug.dev/385742868): Delete this test once the API is removed.
-#[test_case(true; "with_power_framework")]
-#[test_case(false; "without_power_framework")]
-#[fuchsia::test]
-async fn deprecated_shutdown_test(is_power_framework_available: bool) -> Result<(), Error> {
-    let (realm_instance, recv_signals) = new_realm(is_power_framework_available).await?;
-
-    // Verify both the "current" and "deprecated" watcher APIs.
-    let mut reboot_watcher = RebootWatcherClient::new(&realm_instance).await;
-    let mut deprecated_reboot_watcher = DeprecatedRebootWatcherClient::new(&realm_instance).await;
-
-    // Send a reboot request to shutdown-shim (in a separate Task because it never returns)
-    let shim_statecontrol: fstatecontrol::AdminProxy =
-        realm_instance.root.connect_to_protocol_at_exposed_dir()?;
-    let _shutdown_task =
-        fasync::Task::local(shim_statecontrol.reboot(fstatecontrol::RebootReason::SystemUpdate));
-
-    // Verify shutdown-shim forwards the reboot reason to the watcher client
-    let reasons = assert_matches!(
-        reboot_watcher.get_reboot_options().await,
-        fstatecontrol::RebootOptions{ reasons: Some(reasons), ..} => reasons
-    );
-    assert_eq!(&reasons[..], [fstatecontrol::RebootReason2::SystemUpdate]);
-    assert_eq!(
-        deprecated_reboot_watcher.get_reboot_reason().await,
-        fstatecontrol::RebootReason::SystemUpdate
-    );
-
-    verify_shutdown_shim_common_behavior(realm_instance, is_power_framework_available, recv_signals)
-        .await
-}
-
 /// Verifies that `fuchsia.hardware.power.statecontrol/Admin.PerformReboot`
 /// requests sent to shutdown-shim are handled as expected:
 ///     1) forward the reboot reason to connected RebootWatcher clients
@@ -481,18 +396,13 @@ async fn deprecated_shutdown_test(is_power_framework_available: bool) -> Result<
 async fn shutdown_test(is_power_framework_available: bool) -> Result<(), Error> {
     let (realm_instance, recv_signals) = new_realm(is_power_framework_available).await?;
 
-    // Verify both the "current" and "deprecated" watcher APIs.
     let mut reboot_watcher = RebootWatcherClient::new(&realm_instance).await;
-    let mut deprecated_reboot_watcher = DeprecatedRebootWatcherClient::new(&realm_instance).await;
 
     // Send a reboot request to the shutdown-shim (in a separate Task because it never returns)
     let shim_statecontrol: fstatecontrol::AdminProxy =
         realm_instance.root.connect_to_protocol_at_exposed_dir()?;
     let options = fstatecontrol::RebootOptions {
-        reasons: Some(vec![
-            fstatecontrol::RebootReason2::SystemUpdate,
-            fstatecontrol::RebootReason2::NetstackMigration,
-        ]),
+        reasons: Some(vec![RebootReason2::SystemUpdate, RebootReason2::NetstackMigration]),
         __source_breaking: SourceBreaking,
     };
     let _shutdown_task = fasync::Task::local(shim_statecontrol.perform_reboot(&options));
@@ -502,19 +412,7 @@ async fn shutdown_test(is_power_framework_available: bool) -> Result<(), Error> 
         reboot_watcher.get_reboot_options().await,
         fstatecontrol::RebootOptions{ reasons: Some(reasons), ..} => reasons
     );
-    assert_eq!(
-        &reasons[..],
-        [
-            fstatecontrol::RebootReason2::SystemUpdate,
-            fstatecontrol::RebootReason2::NetstackMigration
-        ]
-    );
-    // TODO(https://fxbug.dev/385742868): Delete the deprecated watcher assertions once the API
-    // is removed. For now, verify that a backwards-compatible reason is provided.
-    assert_eq!(
-        deprecated_reboot_watcher.get_reboot_reason().await,
-        fstatecontrol::RebootReason::SystemUpdate
-    );
+    assert_eq!(&reasons[..], [RebootReason2::SystemUpdate, RebootReason2::NetstackMigration]);
 
     verify_shutdown_shim_common_behavior(realm_instance, is_power_framework_available, recv_signals)
         .await

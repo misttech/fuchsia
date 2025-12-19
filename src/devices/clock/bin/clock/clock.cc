@@ -7,6 +7,7 @@
 #include <lib/component/incoming/cpp/protocol.h>
 #include <libgen.h>
 #include <stdio.h>
+#include <zircon/status.h>
 
 #include "src/lib/files/directory.h"
 
@@ -60,7 +61,7 @@ int set_rtc(const fidl::SyncClient<fuchsia_hardware_rtc::Device> &client, const 
     return -1;
   }
 
-  auto result = client->Set({{{{
+  auto result = client->Set2({{{{
       .seconds = seconds,
       .minutes = minutes,
       .hours = hours,
@@ -68,11 +69,24 @@ int set_rtc(const fidl::SyncClient<fuchsia_hardware_rtc::Device> &client, const 
       .month = month,
       .year = year,
   }}}});
-  if (result.is_error()) {
-    return result.error_value().status();
+
+  if (result.is_ok()) {
+    return ZX_OK;
   }
 
-  return result->status();
+  if (result.error_value().is_framework_error()) {
+    fprintf(stderr, "Set RTC failed with framework error: %s\n",
+            result.error_value().framework_error().status_string());
+    return result.error_value().framework_error().status();
+  }
+
+  if (result.error_value().is_domain_error()) {
+    fprintf(stderr, "Set RTC failed with domain error: %s\n",
+            zx_status_get_string(result.error_value().domain_error()));
+    return result.error_value().domain_error();
+  }
+
+  return ZX_ERR_INTERNAL;
 }
 
 void print_monotonic() { printf("%lu\n", zx_clock_get_monotonic()); }

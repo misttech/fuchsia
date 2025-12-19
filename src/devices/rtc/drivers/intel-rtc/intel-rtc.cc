@@ -159,11 +159,6 @@ void RtcDevice::Get(GetCompleter::Sync& completer) {
   completer.ReplySuccess(ReadTime());
 }
 
-void RtcDevice::Set(SetRequestView request, SetCompleter::Sync& completer) {
-  WriteTime(request->rtc);
-  completer.Reply(ZX_OK);
-}
-
 void RtcDevice::Set2(Set2RequestView request, Set2Completer::Sync& completer) {
   WriteTime(request->rtc);
   completer.ReplySuccess();

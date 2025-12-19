@@ -94,12 +94,6 @@ where
                                 assert_eq!(options, None);
                                 log_listener.into_proxy()
                             }
-                            r @ fidl_fuchsia_logger::LogRequest::ListenSafeWithSelectors {
-                                ..
-                            }
-                            | r @ fidl_fuchsia_logger::LogRequest::DumpLogsSafe { .. } => {
-                                panic!("unsupported request {:?}", r)
-                            }
                         };
                         // NB: Start iterator at 1 so it matches debuglog
                         // sequence numbers.

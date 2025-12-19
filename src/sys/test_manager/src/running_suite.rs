@@ -212,7 +212,13 @@ impl RunningSuite {
                     }
                 };
 
-            let fut = log_settings.set_interest(&log_interest);
+            let fut = log_settings.set_component_interest(
+                &fdiagnostics::LogSettingsSetComponentInterestRequest {
+                    selectors: Some(log_interest),
+                    persist: Some(false),
+                    ..Default::default()
+                },
+            );
             if let Err(e) = fut.await {
                 warn!("Error setting log interest");
                 sender.send(Err(LaunchTestError::SetLogInterest(e.into()).into())).await.unwrap();

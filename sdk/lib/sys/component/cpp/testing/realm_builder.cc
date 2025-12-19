@@ -113,7 +113,6 @@ Realm Realm::AddChildRealm(const std::string& child_name, const ChildOptions& op
   return sub_realm;
 }
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(26)
 Realm Realm::AddChildRealmFromDecl(const std::string& child_name,
                                    fuchsia::component::decl::Component& decl,
                                    const ChildOptions& options) {
@@ -131,7 +130,6 @@ Realm Realm::AddChildRealmFromDecl(const std::string& child_name,
       result);
   return sub_realm;
 }
-#endif
 
 Realm& Realm::AddRoute(Route route) {
   auto capabilities = internal::ConvertToFidlVec<Capability, fuchsia::component::test::Capability>(
@@ -378,14 +376,12 @@ Realm RealmBuilder::AddChildRealm(const std::string& child_name, const ChildOpti
   return root_.AddChildRealm(child_name, options);
 }
 
-#if FUCHSIA_API_LEVEL_AT_LEAST(26)
 Realm RealmBuilder::AddChildRealmFromDecl(const std::string& child_name,
                                           fuchsia::component::decl::Component& decl,
                                           const ChildOptions& options) {
   ZX_ASSERT_MSG(!child_name.empty(), "child_name can't be empty");
   return root_.AddChildRealmFromDecl(child_name, decl, options);
 }
-#endif
 
 RealmBuilder& RealmBuilder::AddRoute(Route route) {
   ZX_ASSERT_MSG(!route.capabilities.empty(), "route.capabilities can't be empty");

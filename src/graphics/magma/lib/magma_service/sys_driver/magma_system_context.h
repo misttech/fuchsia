@@ -33,8 +33,6 @@ class MagmaSystemContext {
                                       std::vector<magma_exec_resource>& resources,
                                       std::vector<uint64_t>& wait_semaphores_ids,
                                       std::vector<uint64_t>& signal_semaphores_ids, uint64_t flags);
-  magma::Status ExecuteImmediateCommands(uint64_t commands_size, void* commands,
-                                         uint64_t semaphore_count, uint64_t* semaphore_ids);
   magma::Status ExecuteInlineCommands(std::vector<magma_inline_command_buffer> commands);
 
  private:

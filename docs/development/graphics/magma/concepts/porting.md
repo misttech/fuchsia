@@ -145,7 +145,6 @@ Here is an organized list of the [main functions][msdheader] the driver can impl
 	* *msd_context_destroy*
 * Command buffer scheduling
 	* *msd_context_execute_command_buffer*
-	* *msd_context_execute_immediate_commands*
 	* *msd_connection_set_notification_callback*
 * Create semaphores
 	* *msd_semaphore_import*

@@ -15,7 +15,7 @@ from typing import Any
 
 import fidl_fuchsia_buildinfo as f_buildinfo
 import fidl_fuchsia_developer_remotecontrol as fd_remotecontrol
-import fidl_fuchsia_diagnostics as f_diagnostics
+import fidl_fuchsia_diagnostics_types as f_diagnostics_types
 import fidl_fuchsia_feedback as f_feedback
 import fidl_fuchsia_hardware_power_statecontrol as fhp_statecontrol
 import fidl_fuchsia_hwinfo as f_hwinfo
@@ -116,10 +116,10 @@ _FC_PROXIES: dict[str, custom_types.FidlEndpoint] = {
     ),
 }
 
-_LOG_SEVERITIES: dict[custom_types.LEVEL, f_diagnostics.Severity] = {
-    custom_types.LEVEL.INFO: f_diagnostics.Severity.INFO,
-    custom_types.LEVEL.WARNING: f_diagnostics.Severity.WARN,
-    custom_types.LEVEL.ERROR: f_diagnostics.Severity.ERROR,
+_LOG_SEVERITIES: dict[custom_types.LEVEL, f_diagnostics_types.Severity] = {
+    custom_types.LEVEL.INFO: f_diagnostics_types.Severity.INFO,
+    custom_types.LEVEL.WARNING: f_diagnostics_types.Severity.WARN,
+    custom_types.LEVEL.ERROR: f_diagnostics_types.Severity.ERROR,
 }
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)

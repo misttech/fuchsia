@@ -400,11 +400,10 @@ async fn handle_archive_accessor(mut stream: ArchiveAccessorRequestStream, state
 async fn handle_log_settings(mut stream: LogSettingsRequestStream, state: Rc<State>) {
     while let Some(Ok(request)) = stream.next().await {
         match request {
-            LogSettingsRequest::SetComponentInterest { .. } => {
-                panic!("fuchsia.diagnostics/LogSettings.SetComponentInterest is not supported");
-            }
-            LogSettingsRequest::SetInterest { selectors, responder } => {
-                let _ = state.event_snd.unbounded_send(TestEvent::SetInterest(selectors));
+            LogSettingsRequest::SetComponentInterest { payload, responder } => {
+                let _ = state
+                    .event_snd
+                    .unbounded_send(TestEvent::SetInterest(payload.selectors.unwrap_or_default()));
                 responder.send().unwrap();
             }
         }

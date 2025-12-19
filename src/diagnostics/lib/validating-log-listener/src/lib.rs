@@ -26,22 +26,7 @@ pub async fn validate_log_stream(
     proxy: LogProxy,
     filter_options: Option<LogFilterOptions>,
 ) {
-    ValidatingListener::new(expected).run(proxy, filter_options, false).await;
-}
-
-/// Test that all of the expected message arrive over `proxy` after requesting a log dump, with no
-/// unexpected records appearing. Returns once all expected messages have been observed.
-///
-/// # Panics
-///
-/// Panics when validation fails due to an unexpected message, missing messages when the sink says
-/// it is done dumping, or due to connection failures.
-pub async fn validate_log_dump(
-    expected: impl IntoIterator<Item = LogMessage>,
-    proxy: LogProxy,
-    filter_options: Option<LogFilterOptions>,
-) {
-    ValidatingListener::new(expected).run(proxy, filter_options, true).await;
+    ValidatingListener::new(expected).run(proxy, filter_options).await;
 }
 
 enum Outcome {
@@ -65,21 +50,12 @@ impl ValidatingListener {
 
     /// Drive a LogListenerSafe request stream. Signals for channel close and test completion are
     /// send on the futures-aware channels with which ValidatingListener is constructed.
-    async fn run(
-        mut self,
-        proxy: LogProxy,
-        filter_options: Option<LogFilterOptions>,
-        dump_logs: bool,
-    ) {
+    async fn run(mut self, proxy: LogProxy, filter_options: Option<LogFilterOptions>) {
         let (client_end, stream) =
             fidl::endpoints::create_request_stream::<LogListenerSafeMarker>();
         let filter_options = filter_options.as_ref();
 
-        if dump_logs {
-            proxy.dump_logs_safe(client_end, filter_options).expect("failed to register listener");
-        } else {
-            proxy.listen_safe(client_end, filter_options).expect("failed to register listener");
-        }
+        proxy.listen_safe(client_end, filter_options).expect("failed to register listener");
 
         let mut sink_says_done = false;
         let mut all_expected = false;
@@ -93,20 +69,12 @@ impl ValidatingListener {
                 Outcome::UnexpectedMessage(msg) => panic!("unexpected log message {msg:?}"),
             }
 
-            if all_expected && (!dump_logs || sink_says_done) {
-                // only stop looking at outcomes if we have all the messages we expect AND
-                // if we either don't care about log dumps terminating because we didn't ask for one
-                // or it has terminated as we expect
+            if all_expected || sink_says_done {
                 break 'observe_outcomes;
             }
         }
 
-        if dump_logs {
-            assert!(sink_says_done, "must have received all expected messages");
-        } else {
-            // FIXME(41966): this should be tested for both streaming and dumping modes
-            assert!(all_expected, "must have received all expected messages");
-        }
+        assert!(all_expected, "must have received all expected messages");
     }
 
     async fn handle_stream(mut self, mut stream: LogListenerSafeRequestStream) {

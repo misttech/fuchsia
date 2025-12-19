@@ -11,8 +11,8 @@ use fidl::HandleBased;
 use fidl::endpoints::{DiscoverableProtocolMarker, ServerEnd};
 use fidl_fuchsia_hardware_power_statecontrol::{
     AdminMexecRequest, AdminRequest, AdminRequestStream, AdminShutdownResponder,
-    RebootMethodsWatcherRegisterRequestStream, RebootReason, ShutdownAction, ShutdownOptions,
-    ShutdownReason, ShutdownWatcherRegisterRequestStream,
+    RebootMethodsWatcherRegisterRequestStream, ShutdownAction, ShutdownOptions, ShutdownReason,
+    ShutdownWatcherRegisterRequestStream,
 };
 use fidl_fuchsia_power::CollaborativeRebootInitiatorRequestStream;
 use fidl_fuchsia_power_internal::{
@@ -164,25 +164,6 @@ impl<D: Directory + AsRefDirectory> ProgramContext<D> {
                 }
                 AdminRequest::Shutdown { options, responder } => {
                     self.shutdown_request(options, responder).await;
-                }
-                // TODO(https://fxbug.dev/385742868): Delete this method once
-                // it's removed from the API.
-                AdminRequest::Reboot { reason, responder } => {
-                    let _reboot_control_lease = self.acquire_shutdown_control_lease().await;
-                    let target_state = if reason == RebootReason::OutOfMemory {
-                        SystemPowerState::RebootKernelInitiated
-                    } else {
-                        SystemPowerState::Reboot
-                    };
-                    set_system_power_state(target_state);
-                    let res = self
-                        .forward_command(
-                            target_state,
-                            Some(ShutdownOptionsWrapper::from_reboot_reason_deprecated(&reason)),
-                            None,
-                        )
-                        .await;
-                    let _ = responder.send(res.map_err(|s| s.into_raw()));
                 }
                 AdminRequest::PerformReboot { options, responder } => {
                     let options = match options.reasons {

@@ -36,22 +36,6 @@ pub fn serve_reboot_server(
     fasync::Task::spawn(async move {
         while let Some(req) = stream.try_next().await.unwrap() {
             match req {
-                // TODO(https://fxbug.dev/385742868): Remove this once the
-                // method is deleted from the FIDL API.
-                reboot::RebootMethodsWatcherRegisterRequest::Register {
-                    watcher: _,
-                    control_handle: _,
-                } => {
-                    panic!("`Register` is deprecated, use `RegisterWatcher` instead");
-                }
-                // TODO(https://fxbug.dev/385742868): Remove this once the
-                // method is deleted from the FIDL API.
-                reboot::RebootMethodsWatcherRegisterRequest::RegisterWithAck {
-                    watcher: _,
-                    responder: _,
-                } => {
-                    panic!("`RegisterWithAck` is deprecated, use `RegisterWatcher` instead");
-                }
                 reboot::RebootMethodsWatcherRegisterRequest::RegisterWatcher {
                     watcher,
                     responder,

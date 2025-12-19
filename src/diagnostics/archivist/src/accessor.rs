@@ -356,7 +356,6 @@ fn get_buffer_from_formatted_content(
 ) -> Result<Buffer, AccessorError> {
     match content {
         FormattedContent::Json(json) => Ok(json),
-        FormattedContent::Text(text) => Ok(text),
         _ => Err(AccessorError::UnsupportedFormat),
     }
 }
@@ -986,7 +985,7 @@ mod tests {
         drop(client);
         assert_matches!(
             server
-                .write(vec![FormattedContent::Text(Buffer {
+                .write(vec![FormattedContent::Json(Buffer {
                     size: 1,
                     vmo: zx::Vmo::create(1).unwrap(),
                 })])
@@ -996,11 +995,11 @@ mod tests {
     }
 
     #[fuchsia::test]
-    fn socket_writer_handles_text() {
+    fn socket_writer_handles_json() {
         let vmo = zx::Vmo::create(1).unwrap();
         vmo.write(&[5u8], 0).unwrap();
         let koid = vmo.get_koid().unwrap();
-        let text = FormattedContent::Text(Buffer { size: 1, vmo });
+        let text = FormattedContent::Json(Buffer { size: 1, vmo });
         let result = get_buffer_from_formatted_content(text).unwrap();
         assert_eq!(result.size, 1);
         assert_eq!(result.vmo.get_koid().unwrap(), koid);
@@ -1026,7 +1025,7 @@ mod tests {
         {
             let result = ArchiveAccessorWriter::write(
                 &mut remote,
-                vec![FormattedContent::Text(Buffer { size: 1, vmo: zx::Vmo::create(1).unwrap() })],
+                vec![FormattedContent::Json(Buffer { size: 1, vmo: zx::Vmo::create(1).unwrap() })],
             )
             .await;
             assert_matches!(result, Ok(()));

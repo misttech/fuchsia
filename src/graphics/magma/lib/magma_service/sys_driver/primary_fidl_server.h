@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef ZIRCON_PLATFORM_CONNECTION_H
-#define ZIRCON_PLATFORM_CONNECTION_H
+#ifndef SRC_GRAPHICS_MAGMA_LIB_MAGMA_SERVICE_SYS_DRIVER_PRIMARY_FIDL_SERVER_H_
+#define SRC_GRAPHICS_MAGMA_LIB_MAGMA_SERVICE_SYS_DRIVER_PRIMARY_FIDL_SERVER_H_
 
 #include <fidl/fuchsia.gpu.magma/cpp/wire.h>
 #include <lib/async-loop/cpp/loop.h>
@@ -144,8 +144,6 @@ class PrimaryFidlServer : public fidl::WireServer<fuchsia_gpu_magma::Primary>,
                       CreateContext2Completer::Sync& _completer) override;
   void DestroyContext(DestroyContextRequestView request,
                       DestroyContextCompleter::Sync& _completer) override;
-  void ExecuteImmediateCommands(ExecuteImmediateCommandsRequestView request,
-                                ExecuteImmediateCommandsCompleter::Sync& _completer) override;
   void ExecuteInlineCommands(ExecuteInlineCommandsRequestView request,
                              ExecuteInlineCommandsCompleter::Sync& _completer) override;
   void ExecuteCommand(ExecuteCommandRequestView request,
@@ -261,4 +259,4 @@ class PrimaryFidlServerHolder : public std::enable_shared_from_this<PrimaryFidlS
 
 }  // namespace msd
 
-#endif  // ZIRCON_PLATFORM_CONNECTION_H
+#endif  // SRC_GRAPHICS_MAGMA_LIB_MAGMA_SERVICE_SYS_DRIVER_PRIMARY_FIDL_SERVER_H_

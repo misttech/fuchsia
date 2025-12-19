@@ -7,7 +7,7 @@ use anyhow::{Context as _, Result};
 use async_trait::async_trait;
 use fidl::endpoints::ClientEnd;
 use futures::channel::mpsc;
-use futures::{join, pin_mut, select, AsyncWriteExt, FutureExt, SinkExt, StreamExt};
+use futures::{AsyncWriteExt, FutureExt, SinkExt, StreamExt, join, pin_mut, select};
 use log::{info, warn};
 use std::cell::RefCell;
 use std::collections::LinkedList;
@@ -316,7 +316,6 @@ impl ArtifactBridgeInternal for LogBridge {
         }
         let buf = match queue.pop_front() {
             Some(diagnostics::FormattedContent::Json(buf)) => buf,
-            Some(diagnostics::FormattedContent::Text(buf)) => buf,
             Some(_) => unreachable!("unsupported FormattedContent"),
             None => {
                 *artifact = None;

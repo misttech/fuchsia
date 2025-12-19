@@ -74,11 +74,7 @@ impl Listener {
 
     /// Send messages to the listener. First eagerly collects any backlog and sends it out in
     /// batches before waiting for wakeups.
-    pub async fn run(
-        mut self,
-        mut logs: impl Stream<Item = Arc<LogsData>> + Unpin,
-        call_done: bool,
-    ) {
+    pub async fn run(mut self, mut logs: impl Stream<Item = Arc<LogsData>> + Unpin) {
         debug!("Backfilling from cursor until pending.");
         let mut backlog = vec![];
         futures::future::poll_fn(|cx| {
@@ -97,9 +93,6 @@ impl Listener {
         }
 
         self.send_new_logs(logs).await;
-        if call_done {
-            self.listener.done().ok();
-        }
         debug!("Listener exiting.");
     }
 

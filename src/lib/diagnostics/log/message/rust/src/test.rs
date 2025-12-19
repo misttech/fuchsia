@@ -12,7 +12,7 @@ use assert_matches::assert_matches;
 use diagnostics_data::*;
 use diagnostics_log_encoding::Record;
 use diagnostics_log_encoding::encode::{Encoder, EncoderOpts};
-use fidl_fuchsia_diagnostics::Severity as StreamSeverity;
+use fidl_fuchsia_diagnostics_types::Severity as StreamSeverity;
 use fidl_fuchsia_logger::{LogLevelFilter, LogMessage};
 use std::io::Cursor;
 use std::sync::{Arc, LazyLock};
@@ -591,7 +591,7 @@ fn test_from_structured() {
     // multiple tags
     let record = Record {
         timestamp: zx::BootInstant::from_nanos(72),
-        severity: StreamSeverity::Error as u8,
+        severity: StreamSeverity::Error.into_primitive(),
         arguments: vec![Argument::tag("tag1"), Argument::tag("tag2"), Argument::tag("tag3")],
     };
     let mut buffer = Cursor::new(vec![0u8; MAX_DATAGRAM_LEN]);

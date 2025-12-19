@@ -462,7 +462,6 @@ impl Realm {
                         }
                     }
                 }
-                #[cfg(fuchsia_api_level_at_least = "26")]
                 ftest::RealmRequest::AddChildRealmFromRelativeUrl {
                     name,
                     relative_url,
@@ -494,7 +493,6 @@ impl Realm {
                         }
                     }
                 }
-                #[cfg(fuchsia_api_level_at_least = "26")]
                 fidl_fuchsia_component_test::RealmRequest::AddChildRealmFromDecl {
                     name,
                     decl,
@@ -564,7 +562,6 @@ impl Realm {
                         }
                     }
                 }
-                #[cfg(fuchsia_api_level_at_least = "26")]
                 ftest::RealmRequest::UseNestedComponentManager {
                     component_manager_relative_url,
                     responder,

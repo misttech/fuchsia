@@ -30,7 +30,7 @@ use std::io::Cursor;
 use std::marker::PhantomData;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Weak};
-use validating_log_listener::{validate_log_dump, validate_log_stream};
+use validating_log_listener::validate_log_stream;
 use {fidl_fuchsia_component as fcomponent, fidl_fuchsia_io as fio, fuchsia_async as fasync};
 
 pub struct TestHarness {
@@ -151,7 +151,7 @@ impl TestHarness {
         self.inspector
     }
 
-    pub async fn manager_test(mut self, test_dump_logs: bool) {
+    pub async fn manager_test(mut self) {
         let lm1 = LogMessage {
             time: zx::BootInstant::get(),
             pid: 1,
@@ -177,11 +177,7 @@ impl TestHarness {
         stream.write_packet(p);
         drop(stream);
         self.check_pending_streams();
-        if test_dump_logs {
-            validate_log_dump(vec![lm1, lm2, lm3], self.log_proxy, None).await;
-        } else {
-            validate_log_stream(vec![lm1, lm2, lm3], self.log_proxy, None).await;
-        }
+        validate_log_stream(vec![lm1, lm2, lm3], self.log_proxy, None).await;
     }
 
     /// Create a [`TestStream`] which should be dropped before calling `filter_test` or

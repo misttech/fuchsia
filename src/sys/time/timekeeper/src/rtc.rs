@@ -346,15 +346,16 @@ impl Rtc for RtcImpl {
             .await;
             zx_time_to_fidl_time(value + UtcDuration::from_seconds(1))
         };
-        let status = self
+        let result = self
             .proxy
-            .set(&fidl_time)
+            .set2(&fidl_time)
             .map_err(|err| anyhow!("FIDL error on Rtc::set: {}", err))
             .on_timeout(zx::MonotonicInstant::after(FIDL_TIMEOUT), || {
                 Err(anyhow!("FIDL timeout on Rtc::set"))
             })
-            .await?;
-        zx::Status::ok(status).map_err(|stat| anyhow!("Bad status on Rtc::set: {:?}", stat))
+            .await?
+            .map_err(zx::Status::from_raw);
+        result.map_err(|stat| anyhow!("Bad status on Rtc::set: {:?}", stat))
     }
 }
 
@@ -473,12 +474,10 @@ mod test {
 
         let rtc_impl = new_rw_rtc(proxy);
         let _responder = fasync::Task::spawn(async move {
-            if let Some(Ok(frtc::DeviceRequest::Set { rtc, responder })) = stream.next().await {
-                let status = match rtc {
-                    TEST_FIDL_TIME => zx::Status::OK,
-                    _ => zx::Status::INVALID_ARGS,
-                };
-                responder.send(status.into_raw()).expect("Failed response");
+            if let Some(Ok(frtc::DeviceRequest::Set2 { rtc, responder })) = stream.next().await {
+                let response =
+                    if rtc == TEST_FIDL_TIME { Ok(()) } else { Err(zx::Status::INVALID_ARGS) };
+                responder.send(response.map_err(zx::Status::into_raw)).expect("Failed response");
             }
         });
         let before = zx::MonotonicInstant::get();
@@ -495,12 +494,10 @@ mod test {
 
         let rtc_impl = new_rw_rtc(proxy);
         let _responder = fasync::Task::spawn(async move {
-            if let Some(Ok(frtc::DeviceRequest::Set { rtc, responder })) = stream.next().await {
-                let status = match rtc {
-                    TEST_FIDL_TIME => zx::Status::OK,
-                    _ => zx::Status::INVALID_ARGS,
-                };
-                responder.send(status.into_raw()).expect("Failed response");
+            if let Some(Ok(frtc::DeviceRequest::Set2 { rtc, responder })) = stream.next().await {
+                let response =
+                    if rtc == TEST_FIDL_TIME { Ok(()) } else { Err(zx::Status::INVALID_ARGS) };
+                responder.send(response.map_err(zx::Status::into_raw)).expect("Failed response");
             }
         });
         let before = zx::MonotonicInstant::get();

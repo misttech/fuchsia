@@ -181,7 +181,6 @@ fuchsia::component::test::Capability ConvertToFidl(Capability capability) {
     return fuchsia::component::test::Capability::WithStorage(std::move(fidl_capability));
   }
   if ([[maybe_unused]] auto dictionary = std::get_if<Dictionary>(&capability)) {
-#if FUCHSIA_API_LEVEL_AT_LEAST(26)
     fuchsia::component::test::Dictionary fidl_capability;
 
     fidl_capability.set_name(std::string(dictionary->name));
@@ -189,9 +188,6 @@ fuchsia::component::test::Capability ConvertToFidl(Capability capability) {
     ZX_COMPONENT_ADD_IF_PRESENT(dictionary, availability, fidl_capability);
 
     return fuchsia::component::test::Capability::WithDictionary(std::move(fidl_capability));
-#else
-    ZX_PANIC("Dictionary capabilities are not supported in this API level.");
-#endif
   }
   if ([[maybe_unused]] auto config = std::get_if<Config>(&capability)) {
     fuchsia::component::test::Config fidl_capability;

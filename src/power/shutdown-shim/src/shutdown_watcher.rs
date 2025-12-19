@@ -4,7 +4,6 @@
 
 use crate::reboot_reasons::ShutdownOptionsWrapper;
 
-use either::Either;
 use fidl::endpoints::Proxy;
 use fidl_fuchsia_hardware_power_statecontrol::{self as fpower, ShutdownAction};
 use fuchsia_async::{self as fasync, DurationExt, TimeoutExt};
@@ -36,14 +35,7 @@ use zx::sys::zx_handle_t;
 pub struct ShutdownWatcher {
     /// Contains all the registered RebootMethodsWatcher channels to be notified when a reboot
     /// request is received.
-    reboot_watchers: Arc<
-        Mutex<
-            // TODO(https://fxbug.dev/385742868): The value is the proxy (either
-            // deprecated or not). Clean this up once the deprecated version is
-            // removed from the API.
-            HashMap<u32, Either<fpower::RebootMethodsWatcherProxy, fpower::RebootWatcherProxy>>,
-        >,
-    >,
+    reboot_watchers: Arc<Mutex<HashMap<u32, fpower::RebootWatcherProxy>>>,
     /// Contains all the registered ShutdownWatcher channels to be notified when a shutdown request
     /// is received.
     shutdown_watchers: Arc<Mutex<HashMap<zx_handle_t, fpower::ShutdownWatcherProxy>>>,
@@ -85,23 +77,6 @@ impl ShutdownWatcher {
     ) {
         while let Ok(Some(req)) = stream.try_next().await {
             match req {
-                // TODO(https://fxbug.dev/385742868): Delete this method
-                // once it's removed from the API.
-                fpower::RebootMethodsWatcherRegisterRequest::Register {
-                    watcher,
-                    control_handle: _,
-                } => {
-                    self.add_deprecated_reboot_watcher(watcher.into_proxy()).await;
-                }
-                // TODO(https://fxbug.dev/385742868): Delete this method
-                // once it's removed from the API.
-                fpower::RebootMethodsWatcherRegisterRequest::RegisterWithAck {
-                    watcher,
-                    responder,
-                } => {
-                    self.add_deprecated_reboot_watcher(watcher.into_proxy()).await;
-                    let _ = responder.send();
-                }
                 fpower::RebootMethodsWatcherRegisterRequest::RegisterWatcher {
                     watcher,
                     responder,
@@ -132,37 +107,6 @@ impl ShutdownWatcher {
     }
 
     /// Adds a new RebootMethodsWatcher channel to the list of registered watchers.
-    async fn add_deprecated_reboot_watcher(&self, watcher: fpower::RebootMethodsWatcherProxy) {
-        fuchsia_trace::duration!(
-            c"shutdown-shim",
-            c"ShutdownWatcher::add_deprecated_reboot_watcher",
-            "watcher" => watcher.as_channel().raw_handle()
-        );
-
-        println!("[shutdown-shim] Adding a deprecated reboot watcher");
-        // If the client closes the watcher channel, remove it from our `reboot_watchers` map and
-        // notify all clients
-        let key = watcher.as_channel().raw_handle();
-        let proxy = watcher.clone();
-        let reboot_watchers = self.reboot_watchers.clone();
-        let inspect = self.inspect.clone();
-        fasync::Task::spawn(async move {
-            let _ = proxy.on_closed().await;
-            {
-                reboot_watchers.lock().await.remove(&key);
-            }
-            inspect.lock().await.remove_reboot_watcher();
-        })
-        .detach();
-
-        {
-            let mut watchers_mut = self.reboot_watchers.lock().await;
-            watchers_mut.insert(key, Either::Left(watcher));
-        }
-        self.inspect.lock().await.add_reboot_watcher();
-    }
-
-    /// Adds a new RebootMethodsWatcher channel to the list of registered watchers.
     async fn add_reboot_watcher(&self, watcher: fpower::RebootWatcherProxy) {
         fuchsia_trace::duration!(
             c"shutdown-shim",
@@ -187,7 +131,7 @@ impl ShutdownWatcher {
 
         {
             let mut watchers_mut = self.reboot_watchers.lock().await;
-            watchers_mut.insert(key, Either::Right(watcher));
+            watchers_mut.insert(key, watcher);
         }
         self.inspect.lock().await.add_reboot_watcher();
     }
@@ -262,18 +206,11 @@ impl ShutdownWatcher {
                 let options = options.clone();
                 async move {
                     let deadline = timeout.after_now();
-                    let result = match &watcher_proxy {
-                        Either::Left(proxy) => futures::future::Either::Left(
-                            proxy.on_reboot(options.to_reboot_reason_deprecated()),
-                        ),
-                        Either::Right(proxy) => {
-                            futures::future::Either::Right(proxy.on_reboot(&options.into()))
-                        }
-                    }
-                    .map_err(|_| ())
-                    .on_timeout(deadline, || Err(()))
-                    .await;
-
+                    let result = watcher_proxy
+                        .on_reboot(&options.into())
+                        .map_err(|_| ())
+                        .on_timeout(deadline, || Err(()))
+                        .await;
                     match result {
                         Ok(()) => Some((key, watcher_proxy)),
                         Err(()) => None,
