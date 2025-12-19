@@ -70,6 +70,8 @@
 				<GIC_SPI 69 GIC_IRQ_MODE_EDGE_RISING>,
 				<GIC_SPI 70 GIC_IRQ_MODE_EDGE_RISING>,
 				<GIC_SPI 71 GIC_IRQ_MODE_EDGE_RISING>;
+			interrupt-names = "0", "1", "2", "3", "4", "5", "6", "7";
+			fuchsia,interrupt-wake-vectors = "0";
 			gpio-controller;
 			#gpio-cells = <2>;
 

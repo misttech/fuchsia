@@ -104,6 +104,10 @@ class AmlGpio : public fdf::WireServer<fuchsia_hardware_pinimpl::PinImpl> {
   uint64_t GetDriveStrength(uint32_t index, const AmlGpioBlock* block);
   void SetDriveStrength(uint32_t index, const AmlGpioBlock* block, uint64_t drive_strength_ua);
 
+  uint32_t GetUnusedIrqIndex(uint32_t pin) const;
+  void SetIrqIndex(uint32_t pin, uint8_t index);
+  void ClearIrqIndex(uint32_t pin, uint8_t index);
+
   zx_status_t AmlPinToBlock(uint32_t pin, const AmlGpioBlock** out_block,
                             uint32_t* out_pin_index) const;
 
@@ -117,6 +121,7 @@ class AmlGpio : public fdf::WireServer<fuchsia_hardware_pinimpl::PinImpl> {
   const uint32_t pid_;
   fbl::Array<InterruptInfo> irq_info_;
   uint8_t irq_status_{};
+  uint8_t wake_irq_status_{};
   std::array<std::optional<fuchsia_hardware_gpio::InterruptMode>, kMaxGpioIndex + 1> pin_irq_modes_;
   std::set<uint32_t> wake_vector_pins_;
   fdf::ServerBindingGroup<fuchsia_hardware_pinimpl::PinImpl> bindings_;

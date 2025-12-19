@@ -30,13 +30,6 @@ constexpr int kGpioInterruptPolarityShift = 16;
 constexpr int kBitsPerGpioInterrupt = 8;
 constexpr int kBitsPerFilterSelect = 4;
 
-uint32_t GetUnusedIrqIndex(uint8_t status) {
-  // First isolate the rightmost 0-bit
-  auto zero_bit_set = static_cast<uint8_t>(~status & (status + 1));
-  // Count no. of leading zeros
-  return __builtin_ctz(zero_bit_set);
-}
-
 // Supported Drive Strengths
 enum DriveStrength {
   DRV_500UA,
@@ -320,6 +313,7 @@ void AmlGpioDriver::InitDevice(uint32_t pid, uint32_t irq_count, std::vector<fdf
 
   fbl::AllocChecker ac;
 
+  // Wakeable IRQs are expected to be enumerated first.
   fbl::Array<AmlGpio::InterruptInfo> irq_info(new (&ac) AmlGpio::InterruptInfo[irq_count],
                                               irq_count);
   if (!ac.check()) {
@@ -398,6 +392,35 @@ void AmlGpioDriver::AddNode(fdf::StartCompleter completer) {
 
         completer(zx::ok());
       });
+}
+
+uint32_t AmlGpio::GetUnusedIrqIndex(uint32_t pin) const {
+  if (wake_vector_pins_.contains(pin)) {
+    // First isolate the rightmost 0-bit
+    auto zero_bit_set = static_cast<uint8_t>(~wake_irq_status_ & (wake_irq_status_ + 1));
+    // Count no. of leading zeros
+    return __builtin_ctz(zero_bit_set);
+  }
+  // First isolate the rightmost 0-bit
+  auto zero_bit_set = static_cast<uint8_t>(~irq_status_ & (irq_status_ + 1));
+  // Count no. of leading zeros
+  return __builtin_ctz(zero_bit_set) + wake_vector_pins_.size();
+}
+
+void AmlGpio::SetIrqIndex(uint32_t pin, uint8_t index) {
+  if (wake_vector_pins_.contains(pin)) {
+    wake_irq_status_ |= static_cast<uint8_t>(1 << index);
+  } else {
+    irq_status_ |= static_cast<uint8_t>(1 << (index - wake_vector_pins_.size()));
+  }
+}
+
+void AmlGpio::ClearIrqIndex(uint32_t pin, uint8_t index) {
+  if (wake_vector_pins_.contains(pin)) {
+    wake_irq_status_ &= static_cast<uint8_t>(~(1 << index));
+  } else {
+    irq_status_ &= static_cast<uint8_t>(~(1 << (index - wake_vector_pins_.size())));
+  }
 }
 
 zx_status_t AmlGpio::AmlPinToBlock(const uint32_t pin, const AmlGpioBlock** out_block,
@@ -488,7 +511,7 @@ void AmlGpio::GetInterrupt(fuchsia_hardware_pinimpl::wire::PinImplGetInterruptRe
     return completer.buffer(arena).ReplyError(ZX_ERR_INVALID_ARGS);
   }
 
-  uint32_t index = GetUnusedIrqIndex(irq_status_);
+  uint32_t index = GetUnusedIrqIndex(request->pin);
   if (index > irq_info_.size()) {
     FDF_LOG(ERROR, "No free IRQ indicies %u, irq_count = %zu", (int)index, irq_info_.size());
     return completer.buffer(arena).ReplyError(ZX_ERR_NO_RESOURCES);
@@ -514,10 +537,6 @@ void AmlGpio::GetInterrupt(fuchsia_hardware_pinimpl::wire::PinImplGetInterruptRe
   uint32_t flags = 0;
   if (request->options & fuchsia_hardware_gpio::wire::InterruptOptions::kTimestampMono) {
     flags |= ZX_INTERRUPT_TIMESTAMP_MONO;
-  }
-  if (wake_vector_pins_.contains(request->pin)) {
-    // TODO(b/361851116): Use ZX_INTERRUPT_WAKE_VECTOR when syscall-next is available.
-    flags |= /* ZX_INTERRUPT_WAKE_VECTOR */ 0x20;
   }
 
   if (pin_irq_modes_[request->pin]) {
@@ -560,7 +579,7 @@ void AmlGpio::GetInterrupt(fuchsia_hardware_pinimpl::wire::PinImplGetInterruptRe
                                pin_select_offset * sizeof(uint32_t));
 
   // Hold this IRQ index while the GetInterrupt call is pending.
-  irq_status_ |= static_cast<uint8_t>(1 << index);
+  SetIrqIndex(request->pin, index);
   irq_info_[index].pin = static_cast<uint16_t>(request->pin);
 
   pdev_->GetInterruptById(index, flags)
@@ -576,7 +595,7 @@ void AmlGpio::GetInterrupt(fuchsia_hardware_pinimpl::wire::PinImplGetInterruptRe
 
         // The call failed, release this IRQ index.
         if (!out_irq.ok() || out_irq->is_error()) {
-          irq_status_ &= static_cast<uint8_t>(~(1 << index));
+          ClearIrqIndex(irq_index, index);
           irq_info_[index] = InterruptInfo{};
         }
 
@@ -596,7 +615,7 @@ void AmlGpio::GetInterrupt(fuchsia_hardware_pinimpl::wire::PinImplGetInterruptRe
           completer.buffer(arena).ReplySuccess(std::move(out_irq->value()->irq));
         } else {
           FDF_LOG(ERROR, "Failed to duplicate interrupt handle: %s", zx_status_get_string(status));
-          irq_status_ &= static_cast<uint8_t>(~(1 << index));
+          ClearIrqIndex(irq_index, index);
           irq_info_[index] = InterruptInfo{};
           completer.buffer(arena).ReplyError(status);
         }
@@ -637,7 +656,7 @@ void AmlGpio::ReleaseInterrupt(
     ReleaseInterruptCompleter::Sync& completer) {
   for (uint32_t i = 0; i < irq_info_.size(); i++) {
     if (irq_info_[i].pin == request->pin) {
-      irq_status_ &= static_cast<uint8_t>(~(1 << i));
+      ClearIrqIndex(request->pin, i);
       // Destroy the interrupt so that platform-bus will be able to create a new one for this vector
       // the next time we need it.
       irq_info_[i].interrupt.destroy();
@@ -677,6 +696,26 @@ void AmlGpio::Configure(fuchsia_hardware_pinimpl::wire::PinImplConfigureRequest*
     SetDriveStrength(request->pin, block, request->config.drive_strength_ua());
   }
   if (request->config.has_wake_vector() && request->config.wake_vector()) {
+    // Validate there are enough wake vector interrupts.
+    auto result = pdev_.sync()->GetInterruptById(wake_vector_pins_.size(), 0);
+    if (!result.ok() || result->is_error()) {
+      FDF_LOG(ERROR, "Not enough interrupts");
+      completer.buffer(arena).ReplyError(ZX_ERR_IO_INVALID);
+      return;
+    }
+    zx_info_interrupt_t info{};
+    zx_status_t status =
+        result->value()->irq.get_info(ZX_INFO_INTERRUPT, &info, sizeof(info), nullptr, nullptr);
+    if (status != ZX_OK) {
+      FDF_LOG(ERROR, "Failed to get interrupt info");
+      completer.buffer(arena).ReplyError(status);
+      return;
+    }
+    if (!(info.options & /* ZX_INTERRUPT_WAKE_VECTOR */ 0x20)) {
+      FDF_LOG(ERROR, "Not enough wake vector interrupts");
+      completer.buffer(arena).ReplyError(status);
+      return;
+    }
     wake_vector_pins_.insert(request->pin);
   }
 

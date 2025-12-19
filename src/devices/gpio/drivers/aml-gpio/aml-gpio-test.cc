@@ -19,7 +19,24 @@ constexpr size_t kGpioRegSize = 0x100;
 constexpr size_t kInterruptRegSize = 0x30;
 constexpr size_t kInterruptRegOffset = 0x3c00;
 
+std::atomic<uint32_t> g_options = ZX_INTERRUPT_VIRTUAL;
+
 }  // namespace
+
+extern "C" {
+zx_status_t zx_object_get_info(zx_handle_t handle, uint32_t topic, void* buffer, size_t buffer_size,
+                               size_t* actual_count, size_t* avail_count) {
+  if (topic == ZX_INFO_INTERRUPT) {
+    zx_info_interrupt_t info = {
+        .options = g_options.load(),
+    };
+    ZX_ASSERT(buffer_size >= sizeof(info));
+    memcpy(buffer, &info, sizeof(info));
+    return ZX_OK;
+  }
+  return _zx_object_get_info(handle, topic, buffer, buffer_size, actual_count, avail_count);
+}
+}
 
 namespace gpio {
 
@@ -753,10 +770,7 @@ TEST_F(S905d2AmlGpioTest, TimestampMonoInterruptOption) {
 }
 
 TEST_F(S905d2AmlGpioTest, WakeableInterruptOption) {
-  constexpr uint32_t kWakeableZirconInterruptOption = 0x20;
-  WithPDev([](auto& pdev) {
-    pdev.SetExpectedInterruptFlags(ZX_INTERRUPT_MODE_EDGE_HIGH | kWakeableZirconInterruptOption);
-  });
+  WithPDev([](auto& pdev) { pdev.SetExpectedInterruptFlags(0); });
   WithInterruptMmio([](auto& interrupt_mmio) {
     interrupt_mmio[0x3c20 * sizeof(uint32_t)].ExpectRead(0x0001'0001);
 
@@ -765,6 +779,7 @@ TEST_F(S905d2AmlGpioTest, WakeableInterruptOption) {
     // Interrupt select filter.
     interrupt_mmio[0x3c23 * sizeof(uint32_t)].ExpectRead(0x00000000).ExpectWrite(0x00000007);
   });
+  g_options = ZX_INTERRUPT_VIRTUAL & 0x20;
 
   fdf::Arena arena('GPIO');
   {
@@ -772,6 +787,7 @@ TEST_F(S905d2AmlGpioTest, WakeableInterruptOption) {
         fuchsia_hardware_pin::wire::Configuration::Builder(arena).wake_vector(true).Build();
     fdf::WireUnownedResult result = client().buffer(arena)->Configure(0x0B, config);
   }
+  WithPDev([](auto& pdev) { pdev.SetExpectedInterruptFlags(ZX_INTERRUPT_MODE_EDGE_HIGH); });
   fdf::WireUnownedResult result = client().buffer(arena)->GetInterrupt(0x0B, {});
   ASSERT_TRUE(result.ok());
   EXPECT_TRUE(result->is_ok());
