@@ -7,7 +7,6 @@
 
 #include <fidl/fuchsia.hardware.usb.endpoint/cpp/fidl.h>
 #include <fuchsia/hardware/usb/request/c/banjo.h>
-#include <lib/async-loop/cpp/loop.h>
 #include <lib/sync/cpp/completion.h>
 
 #include <fbl/ref_ptr.h>
@@ -54,7 +53,6 @@ class Endpoint : public usb::EndpointServer {
   void CancelAll(CancelAllCompleter::Sync& completer) override;
 
   TransferRing& transfer_ring() { return transfer_ring_; }
-  async_dispatcher_t* dispatcher() { return loop_.dispatcher(); }
 
   void QueueRequest(usb::RequestVariant request);
 
@@ -124,7 +122,6 @@ class Endpoint : public usb::EndpointServer {
   zx_status_t ContinueNormalTransaction(UsbRequestState* state);
   void CommitNormalTransaction(UsbRequestState* state);
 
-  async::Loop loop_{&kAsyncLoopConfigNeverAttachToThread};
   UsbXhci* hci_;
   uint32_t device_id_;
   TransferRing transfer_ring_;

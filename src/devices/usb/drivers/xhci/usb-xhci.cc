@@ -1661,7 +1661,7 @@ void UsbXhci::ConnectToEndpoint(ConnectToEndpointRequest& request,
     return;
   }
   auto& ep = state->GetEndpoint(index - 1);
-  ep.Connect(ep.dispatcher(), std::move(request.ep()));
+  ep.Connect(dispatcher(), std::move(request.ep()));
   completer.Reply(fit::ok());
 }
 

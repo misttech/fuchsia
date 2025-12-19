@@ -4,6 +4,7 @@
 
 #include "src/devices/usb/drivers/xhci/xhci-endpoint.h"
 
+#include <lib/async-loop/cpp/loop.h>
 #include <lib/driver/fake-bti/cpp/fake-bti.h>
 
 #include <list>
@@ -37,12 +38,13 @@ class EndpointHarness : public ::testing::Test {
   }
 
   void Init(uint8_t ep_addr) {
+    loop_.StartThread("ep-thread");
     ep_ = std::make_unique<Endpoint>(driver_test().driver(), kDeviceId, ep_addr);
     EXPECT_OK(ep_->Init(nullptr, nullptr));
 
     // Connect client
     auto endpoints = fidl::Endpoints<fuchsia_hardware_usb_endpoint::Endpoint>::Create();
-    ep_->Connect(ep_->dispatcher(), std::move(endpoints.server));
+    ep_->Connect(loop_.dispatcher(), std::move(endpoints.server));
     client_.Bind(std::move(endpoints.client));
   }
 
@@ -53,6 +55,7 @@ class EndpointHarness : public ::testing::Test {
 
       auto unused = std::move(client_);
     }
+    loop_.Shutdown();
     ep_.reset();
 
     EXPECT_TRUE(expected_cancel_all_.empty());
@@ -92,6 +95,7 @@ class EndpointHarness : public ::testing::Test {
   fidl::SyncClient<fuchsia_hardware_usb_endpoint::Endpoint> client_;
 
  private:
+  async::Loop loop_{&kAsyncLoopConfigNeverAttachToThread};
   fdf_testing::ForegroundDriverTest<EmptyTestConfig> driver_test_;
   std::list<std::unique_ptr<FakeTRB>> trbs_;
 };
