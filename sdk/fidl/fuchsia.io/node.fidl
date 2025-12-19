@@ -262,6 +262,7 @@ const NODE_PROTOCOL_NAME string = "fuchsia.io/Node";
 
 /// The fields of 'attributes' which are used to update the Node are indicated
 /// by the 'flags' argument.
+@strict_audit(bug="https://fxbug.dev/467128288", state="PENDING_REVIEW")
 type NodeAttributeFlags = strict bits : uint32 {
     CREATION_TIME = 0x00000001;
     MODIFICATION_TIME = 0x00000002;
@@ -339,7 +340,10 @@ open protocol Node {
     @selector("fuchsia.io1/Node.OnOpen")
     flexible -> OnOpen(resource struct {
         s zx.Status;
-        info @generated_name("NodeInfoDeprecated") strict resource union {
+        info
+                @generated_name("NodeInfoDeprecated")
+                @strict_audit(bug="https://fxbug.dev/467128288", state="PENDING_REVIEW")
+                strict resource union {
             /// No protocol information was supplied by the connection.
             1: service struct {};
 
@@ -668,7 +672,10 @@ open protocol Node {
         name ExtendedAttributeName;
         value ExtendedAttributeValue;
         /// Specifies the behavior based on the current state of the attribute.
-        mode @generated_name("SetExtendedAttributeMode") strict enum {
+        mode
+                @generated_name("SetExtendedAttributeMode")
+                @strict_audit(bug="https://fxbug.dev/467128288", state="PENDING_REVIEW")
+                strict enum {
             /// Set the value of the extended attribute regardless of whether it
             /// already exists.
             SET = 1;

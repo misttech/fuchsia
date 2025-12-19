@@ -86,7 +86,7 @@ closed protocol Device {
     /// On success, returns a result either in a buffer or a simple value.
     strict Query(struct {
         query_id QueryId;
-    }) -> (strict resource union {
+    }) -> (@strict_audit(bug="https://fxbug.dev/467127396", state="PENDING_REVIEW") strict resource union {
         1: simple_result uint64;
         2: buffer_result zx.Handle:VMO;
     }) error zx.Status;

@@ -89,6 +89,7 @@ type Theme = table {
     2: theme_mode ThemeMode;
 };
 
+@strict_audit(bug="https://fxbug.dev/467128325", state="PENDING_REVIEW")
 type LowLightMode = strict enum {
     /// Device should not be in low-light mode.
     DISABLE = 0;
@@ -102,6 +103,7 @@ type LowLightMode = strict enum {
 // Specifies a specific theme that should be used by the UI.
 // Any other theme information, such as guidance as to how to pick a theme,
 // should be communicated using `ThemeMode`.
+@strict_audit(bug="https://fxbug.dev/467128325", state="PENDING_REVIEW")
 type ThemeType = strict enum {
     /// When `ThemeType` is set to `DEFAULT` it is up to the specific
     /// [product](https://fuchsia.dev/fuchsia-src/concepts/build_system/boards_and_products#products)
@@ -114,6 +116,7 @@ type ThemeType = strict enum {
 // Specifies options that pertain to selection or display of a theme in the
 // UI. If a specific theme needs to be specified, that should be done using
 // `ThemeType`.
+@strict_audit(bug="https://fxbug.dev/467128325", state="PENDING_REVIEW")
 type ThemeMode = strict bits {
     /// Product can choose a theme based on ambient cues.
     AUTO = 0x01;

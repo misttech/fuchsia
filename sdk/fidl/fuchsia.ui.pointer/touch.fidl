@@ -240,6 +240,7 @@ type TouchInteractionResult = struct {
 };
 
 /// A description of the interaction's relationship to this client.
+@strict_audit(bug="https://fxbug.dev/467128273", state="PENDING_REVIEW")
 type TouchInteractionStatus = strict enum {
     /// The client has been denied ownership of the interaction.
     DENIED = 1;
@@ -268,6 +269,7 @@ type TouchResponse = table {
 /// The responses are based on the idea of an ownership claim on a interaction.
 /// Clients may assert a claim of ownership on an open interaction, but only one
 /// client's claim is granted by the server; other clients' claims are denied.
+@strict_audit(bug="https://fxbug.dev/467128273", state="PENDING_REVIEW")
 type TouchResponseType = strict enum {
     /// The client has no further interest in this interaction; it declines
     /// ownership of the interaction. The client will stop receiving events for

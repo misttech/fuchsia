@@ -26,6 +26,7 @@ type PixelFormat = struct {
 /// This should be kept in sync with fuchsia.sysmem2.PixelFormatType.
 ///
 /// This type is deprecated for new code, but is still used by some camera code.
+@strict_audit(bug="https://fxbug.dev/467128527", state="PENDING_REVIEW")
 type PixelFormatType = strict enum {
     INVALID = 0;
 
@@ -146,6 +147,7 @@ type ColorSpace = struct {
 /// insufficiently-defined combos).
 ///
 /// This type is deprecated for new code, but is still used by some camera code.
+@strict_audit(bug="https://fxbug.dev/467128527", state="PENDING_REVIEW")
 type ColorSpaceType = strict enum {
     /// Not a valid color space type.
     INVALID = 0;

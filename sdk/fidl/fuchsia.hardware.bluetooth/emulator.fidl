@@ -211,6 +211,7 @@ type LeScanState = table {
 };
 
 /// LE legacy advertising types from Bluetooth Core Specification v5.4, Vol 4, Part E, 7.8.5.
+@strict_audit(bug="https://fxbug.dev/467127725", state="PENDING_REVIEW")
 type LegacyAdvertisingType = strict enum : uint8 {
     /// Connectable and scannable.
     ADV_IND = 0;

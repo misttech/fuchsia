@@ -97,6 +97,7 @@ type ProposeElementError = strict enum {
 };
 
 @available(added=19)
+@strict_audit(bug="https://fxbug.dev/467128273", state="PENDING_REVIEW")
 type ManagerError = strict enum {
     /// The element spec was malformed.
     INVALID_ARGS = 1;

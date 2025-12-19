@@ -10,6 +10,7 @@ using zx;
 /// Maximum length of the pin name.
 const MAX_PIN_NAME_LEN uint32 = 64;
 
+@strict_audit(bug="https://fxbug.dev/467128430", state="PENDING_REVIEW")
 type Pull = strict enum {
     DOWN = 0;
     UP = 1;

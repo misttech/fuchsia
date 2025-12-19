@@ -31,6 +31,7 @@ const SIGNAL_STREAM_INCOMING uint32 = USER_SIGNAL_0;
 const SIGNAL_STREAM_CONNECTED uint32 = USER_SIGNAL_3;
 
 /// Socket shutdown mode.
+@strict_audit(bug="https://fxbug.dev/467128725", state="PENDING_REVIEW")
 type ShutdownMode = strict bits : uint16 {
     /// Shutdown socket read endpoint.
     READ = 1;
@@ -39,6 +40,7 @@ type ShutdownMode = strict bits : uint16 {
 };
 
 /// Packet timestamp reporting precision options.
+@strict_audit(bug="https://fxbug.dev/467128725", state="PENDING_REVIEW")
 type TimestampOption = strict enum {
     /// Do not report timestamp.
     DISABLED = 0;
@@ -54,6 +56,7 @@ alias SharingDomainToken = zx.Handle:<EVENT, zx.Rights.TRANSFER>;
 
 /// SO_REUSEPORT option.
 @available(added=NEXT)
+@strict_audit(bug="https://fxbug.dev/467128725", state="PENDING_REVIEW")
 type ReusePortOption = strict resource union {
     /// SO_REUSEPORT disabled.
     1: disabled Empty;
@@ -506,6 +509,7 @@ type Ipv6MulticastMembership = struct {
 
 /// An optional byte value.
 // This exists because FIDL does not allow optional integers.
+@strict_audit(bug="https://fxbug.dev/467128725", state="PENDING_REVIEW")
 type OptionalUint8 = strict union {
     1: value uint8;
     2: unset Empty;
@@ -513,6 +517,7 @@ type OptionalUint8 = strict union {
 
 /// An optional uint32 value.
 // This exists because FIDL does not allow optional integers.
+@strict_audit(bug="https://fxbug.dev/467128725", state="PENDING_REVIEW")
 type OptionalUint32 = strict union {
     1: value uint32;
     2: unset Empty;
@@ -653,6 +658,7 @@ type NetworkSocketSendControlData = table {
 };
 
 /// Flags controlling RecvMsg behavior.
+@strict_audit(bug="https://fxbug.dev/467128725", state="PENDING_REVIEW")
 type RecvMsgFlags = strict bits : uint16 {
     /// Returns data from the receive queue without removing from it.
     ///
@@ -661,6 +667,7 @@ type RecvMsgFlags = strict bits : uint16 {
 };
 
 // Flags controlling SendMsg behavior.
+@strict_audit(bug="https://fxbug.dev/467128725", state="PENDING_REVIEW")
 type SendMsgFlags = strict bits : uint16 {
     // NOTE We don't currently support any flags, but we need at least one
     // definition.
@@ -1055,6 +1062,7 @@ closed protocol StreamSocket {
 };
 
 /// TCP congestion control modes.
+@strict_audit(bug="https://fxbug.dev/467128725", state="PENDING_REVIEW")
 type TcpCongestionControl = strict enum {
     RENO = 1;
     CUBIC = 2;
@@ -1080,6 +1088,7 @@ type TcpState = strict enum {
 alias TcpState = fuchsia.net.tcp.State;
 
 /// TCP congestion control state machine state.
+@strict_audit(bug="https://fxbug.dev/467128725", state="PENDING_REVIEW")
 type TcpCongestionControlState = strict enum {
     OPEN = 0;
     DISORDER = 1;
@@ -1164,6 +1173,7 @@ type InterfaceAddresses = table {
 /// A socket's domain.
 ///
 /// Determines the addressing domain for a socket.
+@strict_audit(bug="https://fxbug.dev/467128725", state="PENDING_REVIEW")
 type Domain = strict enum : int16 {
     /// An IPv4 socket. Equivalent to `AF_INET`.
     IPV4 = 0;
@@ -1178,6 +1188,7 @@ type Domain = strict enum : int16 {
 // NOTE: This list can be expanded to accommodate other protocols should the
 // need arise. Most notably, there exists the question on whether to support
 // raw IP sockets and what the access model for those should be.
+@strict_audit(bug="https://fxbug.dev/467128725", state="PENDING_REVIEW")
 type DatagramSocketProtocol = strict enum {
     /// UDP (User Datagram Protocol).
     ///
@@ -1199,6 +1210,7 @@ type DatagramSocketProtocol = strict enum {
 ///
 /// `StreamSocketProtocol` enumerates the protocols supported by the network
 /// stack over stream sockets.
+@strict_audit(bug="https://fxbug.dev/467128725", state="PENDING_REVIEW")
 type StreamSocketProtocol = strict enum {
     /// TCP (Transmission Control Protocol).
     ///
@@ -1210,6 +1222,7 @@ type StreamSocketProtocol = strict enum {
 /// Bits representing the interface flags as returned by the SIOCGIFFLAGS ioctl
 /// operation. These bitmasks are intended to track the C API definition. For
 /// example, `InterfaceFlags.UP` corresponds to `IFF_UP`, etc.
+@strict_audit(bug="https://fxbug.dev/467128725", state="PENDING_REVIEW")
 type InterfaceFlags = strict bits : uint16 {
     UP = 0x1;
     BROADCAST = 0x2;
@@ -1286,7 +1299,7 @@ closed protocol Provider {
     strict DatagramSocket(struct {
         domain Domain;
         proto DatagramSocketProtocol;
-    }) -> (strict resource union {
+    }) -> (@strict_audit(bug="https://fxbug.dev/467128725", state="PENDING_REVIEW") strict resource union {
         1: datagram_socket client_end:DatagramSocket;
         2: synchronous_datagram_socket client_end:SynchronousDatagramSocket;
     }) error fuchsia.posix.Errno;
@@ -1298,7 +1311,7 @@ closed protocol Provider {
         domain Domain;
         proto DatagramSocketProtocol;
         opts SocketCreationOptions;
-    }) -> (strict resource union {
+    }) -> (@strict_audit(bug="https://fxbug.dev/467128725", state="PENDING_REVIEW") strict resource union {
         1: datagram_socket client_end:DatagramSocket;
         2: synchronous_datagram_socket client_end:SynchronousDatagramSocket;
     }) error fuchsia.posix.Errno;

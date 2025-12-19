@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 library fuchsia.weave;
 
+@strict_audit(bug="https://fxbug.dev/467128885", state="PENDING_REVIEW")
 type ErrorCode = strict enum : uint32 {
     /// Key/pairing code not found in storage.
     FILE_NOT_FOUND = 1;

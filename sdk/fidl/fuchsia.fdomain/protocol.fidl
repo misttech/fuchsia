@@ -108,6 +108,7 @@ type Error = flexible union {
 
 // A handle, paired with an operation to perform on that handle (move or
 // duplicate).
+@strict_audit(bug="https://fxbug.dev/467127620", state="PENDING_REVIEW")
 type HandleOp = strict union {
     1: move HandleId;
     2: duplicate HandleId;

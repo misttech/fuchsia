@@ -14,6 +14,7 @@ using fuchsia.diagnostics.types;
 /// greater than the threshold being included in the
 /// printable logs.
 // TODO(https://fxbug.dev/42055808): Change this from `strict` to `flexible` #strictaudit
+@strict_audit(bug="https://fxbug.dev/467128231", state="PENDING_REVIEW")
 type LogLevelFilter = strict enum : int8 {
     TRACE = 0x10;
     DEBUG = 0x20;
@@ -123,6 +124,7 @@ closed protocol Log {
 };
 
 // TODO(https://fxbug.dev/42055808): Change this from `strict` to `flexible`. #strictaudit
+@strict_audit(bug="https://fxbug.dev/467128231", state="PENDING_REVIEW")
 type InterestChangeError = strict enum : uint32 {
     /// Incorrectly called WaitForInterestChange twice
     /// without waiting for the first call to return.

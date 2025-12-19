@@ -6,6 +6,7 @@
 library fuchsia.location;
 
 /// Describes possible errors.
+@strict_audit(bug="https://fxbug.dev/467128325", state="PENDING_REVIEW")
 type Error = strict enum {
     GENERAL_ERROR = 1;
 };

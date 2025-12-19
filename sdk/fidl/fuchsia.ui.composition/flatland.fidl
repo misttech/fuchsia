@@ -11,6 +11,7 @@ using zx;
 
 /// The set of error codes returned in [`OnError`]. Everything except NO_ERROR, causes Flatland
 /// channel to be closed.
+@strict_audit(bug="https://fxbug.dev/467128273", state="PENDING_REVIEW")
 type FlatlandError = strict enum {
     /// Indicates that the parameters used the function calls are invalid.
     BAD_OPERATION = 1;
@@ -26,6 +27,7 @@ type FlatlandError = strict enum {
 /// left) with respect to rotation. Thus, we define a counter-clockwise rotation in the same way
 /// as if a skeuomorphic clock were to be displayed on the screen, with the hands of said clock
 /// moving in a CCW motion from the POV of the observer.
+@strict_audit(bug="https://fxbug.dev/467128273", state="PENDING_REVIEW")
 type Orientation = strict enum {
     CCW_0_DEGREES = 1;
     CCW_90_DEGREES = 2;
@@ -35,6 +37,7 @@ type Orientation = strict enum {
 
 /// The set of possible blending functions to choose from when determining how an image should
 /// be composited on top of other images.
+@strict_audit(bug="https://fxbug.dev/467128273", state="PENDING_REVIEW")
 type BlendMode = strict enum {
     /// Indicates that the source pixels replace the destination pixels. In other words,
     /// the source pixels are treated as opaque, regardless of what alpha values are set.
@@ -74,6 +77,7 @@ type ColorRgba = struct {
 /// The set of possible image flip functions to choose from when determining how the image texture
 /// should be displayed.
 @available(added=10)
+@strict_audit(bug="https://fxbug.dev/467128273", state="PENDING_REVIEW")
 type ImageFlip = strict enum {
     NONE = 0;
     /// Let V be the vertical axis of reflection, positioned at width/2. Then each pixel's x
@@ -132,6 +136,7 @@ type LayoutInfo = table {
 /// ParentViewportWatchers will be informed when they are actively attached to a output display
 /// (either directly, or through a chain of parent Viewports) and when they are not. Until they are
 /// connected to a display, some pieces of information (such as pixel scale) may be unavailable.
+@strict_audit(bug="https://fxbug.dev/467128273", state="PENDING_REVIEW")
 type ParentViewportStatus = strict enum {
     CONNECTED_TO_DISPLAY = 1;
     DISCONNECTED_FROM_DISPLAY = 2;
@@ -178,6 +183,7 @@ closed protocol ParentViewportWatcher {
     });
 };
 
+@strict_audit(bug="https://fxbug.dev/467128273", state="PENDING_REVIEW")
 type ChildViewStatus = strict enum {
     /// The underlying Flatland instance has connected its View, called [`Present`], and the
     /// acquisition fences of the [`Present`] call have all be reached, indicating that it has some

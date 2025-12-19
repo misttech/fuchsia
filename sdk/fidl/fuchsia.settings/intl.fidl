@@ -31,6 +31,7 @@ closed protocol Intl {
 
 /// Whether if the time format should be using 12 hour or 24 hour clock. H indicates the
 /// maximum number that the hour indicator will ever show.
+@strict_audit(bug="https://fxbug.dev/467128325", state="PENDING_REVIEW")
 type HourCycle = strict enum {
     UNKNOWN = 0;
 

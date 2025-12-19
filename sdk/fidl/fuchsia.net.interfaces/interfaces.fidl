@@ -22,6 +22,7 @@ type Empty = struct {};
 /// Information about the preferred lifetime of an IP address or delegated
 /// prefix.
 @available(added=9)
+@strict_audit(bug="https://fxbug.dev/467128725", state="PENDING_REVIEW")
 type PreferredLifetimeInfo = strict union {
     /// The end of the preferred lifetime.
     ///
@@ -225,7 +226,9 @@ closed protocol Watcher {
     ///
     /// - response `event` the interface change event.
     strict Watch() -> (struct {
-        event strict union {
+        event
+                @strict_audit(bug="https://fxbug.dev/467128725", state="PENDING_REVIEW")
+                strict union {
             /// Properties of an interface that existed when watching started.
             ///
             /// All interested fields and [`Properties.id`] are set.

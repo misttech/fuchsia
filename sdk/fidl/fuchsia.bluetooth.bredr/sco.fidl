@@ -27,6 +27,7 @@ type HfpParameterSet = flexible enum : uint8 {
 
 /// Indicates the audio transport that should be used for the data on a synchronous
 /// connection.
+@strict_audit(bug="https://fxbug.dev/467127725", state="PENDING_REVIEW")
 type DataPath = strict enum : uint8 {
     /// The HCI transport. Data will be sent/received through the ScoConnection protocol.
     HOST = 1;
@@ -90,6 +91,7 @@ type ScoConnectionParameters = table {
 };
 
 /// Inbound SCO data has a RxPacketStatus that indicates possible data loss or corruption.
+@strict_audit(bug="https://fxbug.dev/467127725", state="PENDING_REVIEW")
 type RxPacketStatus = strict enum : uint8 {
     /// The controller marked all data as "good data".
     CORRECTLY_RECEIVED_DATA = 0x0;

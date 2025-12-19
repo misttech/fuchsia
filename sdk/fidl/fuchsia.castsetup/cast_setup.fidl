@@ -14,6 +14,7 @@ closed protocol StateWatcher {
 };
 
 /// Enum of different possible setup states
+@strict_audit(bug="https://fxbug.dev/467128325", state="PENDING_REVIEW")
 type State = strict enum {
     /// State is not determined.
     UNKNOWN = 0;

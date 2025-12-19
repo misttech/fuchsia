@@ -50,6 +50,7 @@ closed(removed=26) open(added=26) protocol Audio {
 };
 
 /// The source of the volume settings. The volume is set according to the source.
+@strict_audit(bug="https://fxbug.dev/467128325", state="PENDING_REVIEW")
 type AudioStreamSettingSource = strict enum {
 
     /// The volume is set by the user. When the `source` in AudioStreamSettings is

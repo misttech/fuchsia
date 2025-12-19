@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 library fuchsia.media.audio;
 
+@strict_audit(bug="https://fxbug.dev/467128527", state="PENDING_REVIEW")
 type UpdateEffectError = strict enum {
     INVALID_CONFIG = 1;
     NOT_FOUND = 2;

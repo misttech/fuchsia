@@ -8,6 +8,7 @@ using fuchsia.net;
 
 /// Represents error statuses returned by
 /// [`fuchsia.wlan.product.deprecatedconfiguration/DeprecatedConfigurator.SuggestAccessPointMacAddress`]
+@strict_audit(bug="https://fxbug.dev/467128644", state="PENDING_REVIEW")
 type SuggestMacAddressError = strict enum {
     NOT_SUPPORTED = 1;
     INVALID_ARGUMENTS = 2;

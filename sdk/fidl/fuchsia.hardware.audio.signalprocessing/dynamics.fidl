@@ -8,6 +8,7 @@ using zx;
 const MAX_COUNT_DYNAMICS_BANDS uint32 = 64;
 
 /// Level type.
+@strict_audit(bug="https://fxbug.dev/467128527", state="PENDING_REVIEW")
 type LevelType = strict enum : uint8 {
     /// Level Gain specified as peak.
     PEAK = 1;
@@ -17,6 +18,7 @@ type LevelType = strict enum : uint8 {
 };
 
 /// Threshold type.
+@strict_audit(bug="https://fxbug.dev/467128527", state="PENDING_REVIEW")
 type ThresholdType = strict enum : uint8 {
     /// Apply dynamics processing above the threshold.
     ABOVE = 1;

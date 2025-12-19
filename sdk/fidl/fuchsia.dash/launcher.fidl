@@ -12,6 +12,7 @@ using fuchsia.url;
 const MAX_URLS uint64 = 20;
 
 /// Standard errors for the Launcher protocol
+@strict_audit(bug="https://fxbug.dev/467128325", state="PENDING_REVIEW")
 type LauncherError = strict enum {
     /// Launcher encountered an unspecified error
     INTERNAL = 1;
@@ -48,6 +49,7 @@ type LauncherError = strict enum {
 };
 
 /// The namespace layout to create for the dash process.
+@strict_audit(bug="https://fxbug.dev/467128325", state="PENDING_REVIEW")
 type DashNamespaceLayout = strict enum {
     /// All instance directories are nested under subdirectories.
     /// e.g - namespace is under /ns, outgoing dir is under /out, etc.

@@ -23,6 +23,7 @@ type Offer = flexible union {
 };
 
 /// Describes the type of dependency implied by the capability.
+@strict_audit(bug="https://fxbug.dev/467128242", state="PENDING_REVIEW")
 type DependencyType = strict enum {
     /// A strong dependency which may be required by components that use it.
     STRONG = 1;
@@ -50,6 +51,7 @@ type NameMapping = struct {
 /// exposes/offers/uses, and the capability would be routed from `void` on
 /// system configurations where it does not make sense to route or provide a
 /// particular capability (e.g. graphical capabilities on a headless system).
+@strict_audit(bug="https://fxbug.dev/467128242", state="PENDING_REVIEW")
 type Availability = strict enum {
     /// The capability must be available. Failure to route the capability is an
     /// error.

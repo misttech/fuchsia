@@ -61,6 +61,7 @@ type ServiceInstancePublicationOptions = table {
 
 /// Error values for `ServiceInstancePublisher.PublishServiceInstance`.
 @available(added=9)
+@strict_audit(bug="https://fxbug.dev/467128725", state="PENDING_REVIEW")
 type PublishServiceInstanceError = strict enum : uint32 {
     /// The specified service instance is already being published by the mDNS local implementation.
     ALREADY_PUBLISHED_LOCALLY = 1;
@@ -110,6 +111,7 @@ closed protocol ServiceInstancePublicationResponder {
 
 /// Error values for `ServiceInstancePublicationResponder.OnPublication`.
 @available(added=9)
+@strict_audit(bug="https://fxbug.dev/467128725", state="PENDING_REVIEW")
 type OnPublicationError = strict enum : uint32 {
     /// Indicates the publisher should not respond to this publication request.
     DO_NOT_RESPOND = 1;
@@ -117,6 +119,7 @@ type OnPublicationError = strict enum : uint32 {
 
 /// Describes the cause of a publication.
 @available(added=9)
+@strict_audit(bug="https://fxbug.dev/467128725", state="PENDING_REVIEW")
 type ServiceInstancePublicationCause = strict enum : uint32 {
     /// Indicates the publication is part of an initial announcement.
     ANNOUNCEMENT = 1;

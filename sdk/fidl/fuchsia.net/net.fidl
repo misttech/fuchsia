@@ -21,6 +21,7 @@ alias Hostname = string:MAX_HOSTNAME_SIZE;
 alias InterfaceId = uint64;
 
 /// IpVersion is an IP version.
+@strict_audit(bug="https://fxbug.dev/467128725", state="PENDING_REVIEW")
 type IpVersion = strict enum {
     V4 = 1;
     V6 = 2;
@@ -41,6 +42,7 @@ type Ipv6Address = struct {
 };
 
 /// Represents an IP address that may be either v4 or v6.
+@strict_audit(bug="https://fxbug.dev/467128725", state="PENDING_REVIEW")
 type IpAddress = strict union {
     1: ipv4 Ipv4Address;
     2: ipv6 Ipv6Address;

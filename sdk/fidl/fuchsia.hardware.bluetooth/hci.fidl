@@ -52,6 +52,7 @@ type SnoopPacket = flexible union {
     5: iso vector<byte>:ISO_PACKET_MAX;
 };
 
+@strict_audit(bug="https://fxbug.dev/467127725", state="PENDING_REVIEW")
 type PacketDirection = strict enum {
     HOST_TO_CONTROLLER = 1;
     CONTROLLER_TO_HOST = 2;

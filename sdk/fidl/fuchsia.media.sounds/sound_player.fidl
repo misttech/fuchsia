@@ -78,6 +78,7 @@ open protocol Player {
 };
 
 /// Error type for `Player.PlaySound`.
+@strict_audit(bug="https://fxbug.dev/467128527", state="PENDING_REVIEW")
 type PlaySoundError = strict enum {
     /// The `id` passed to `PlaySound` is not recognized.
     NO_SUCH_SOUND = 1;

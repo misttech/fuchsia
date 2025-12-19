@@ -6,6 +6,7 @@ library fuchsia.bluetooth;
 /// Refers to the role of a Bluetooth device (local or peer) in a physical channel piconet. See
 /// [Bluetooth Vocabulary Guide](https://cs.opensource.google/fuchsia/fuchsia/+/main:src/connectivity/bluetooth/docs/vocabulary.md)
 /// for more information.
+@strict_audit(bug="https://fxbug.dev/467127725", state="PENDING_REVIEW")
 type ConnectionRole = strict enum {
     /// The role of the device that defines the piconet physical channel in BR/EDR or the
     /// "initiating" device in LE.

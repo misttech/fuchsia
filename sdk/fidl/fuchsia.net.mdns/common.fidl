@@ -37,6 +37,7 @@ alias subtype_name = string:63;
 alias txt_character_string = vector<uint8>:255;
 
 /// Specifies network media on which a service instance should be published.
+@strict_audit(bug="https://fxbug.dev/467128725", state="PENDING_REVIEW")
 type Media = strict bits : uint32 {
     /// Specifies wired interfaces.
     WIRED = 1;
@@ -46,6 +47,7 @@ type Media = strict bits : uint32 {
 };
 
 /// Specifies IP versions on which a service instance should be published.
+@strict_audit(bug="https://fxbug.dev/467128725", state="PENDING_REVIEW")
 type IpVersions = strict bits : uint32 {
     /// Specifies IPv4.
     V4 = 1;

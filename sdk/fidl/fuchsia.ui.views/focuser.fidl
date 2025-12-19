@@ -4,6 +4,7 @@
 library fuchsia.ui.views;
 
 /// Problematic situations that occur on Focuser.RequestFocus.
+@strict_audit(bug="https://fxbug.dev/467128273", state="PENDING_REVIEW")
 type Error = strict enum {
     /// Value returned when RequestFocus is denied.
     DENIED = 1;

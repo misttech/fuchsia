@@ -30,6 +30,7 @@ type ScreenCaptureError = flexible enum {
 /// Clients should allocate an image according to the final dimensions they
 /// ultimately want to use, i.e. after rotation. These would be identical
 /// to the `width` and `height` values found in the `display_info` config file.
+@strict_audit(bug="https://fxbug.dev/467128273", state="PENDING_REVIEW")
 type Rotation = strict enum {
     CW_0_DEGREES = 0;
     CW_90_DEGREES = 1;

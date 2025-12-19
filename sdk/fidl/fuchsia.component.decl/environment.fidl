@@ -41,6 +41,7 @@ type Environment = table {
 };
 
 /// Specifies how a declared environment's initial set of properties are assigned.
+@strict_audit(bug="https://fxbug.dev/467128242", state="PENDING_REVIEW")
 type EnvironmentExtends = strict enum {
     /// The environment has no initial set of properties.
     NONE = 0;

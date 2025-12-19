@@ -4,6 +4,7 @@
 library fuchsia.bluetooth.le;
 using fuchsia.bluetooth as bt;
 
+@strict_audit(bug="https://fxbug.dev/467127725", state="PENDING_REVIEW")
 type PeripheralError = strict enum {
     /// The operation or parameters requested are not supported on the current hardware.
     NOT_SUPPORTED = 1;
@@ -32,6 +33,7 @@ type PeripheralError = strict enum {
 /// The mode affects how quickly a scanner or central is able to discover the peripheral; however it
 /// can have an adverse effect on power consumption. While the system will try to honor a client's
 /// request, it is not guaranteed to do so.
+@strict_audit(bug="https://fxbug.dev/467127725", state="PENDING_REVIEW")
 type AdvertisingModeHint = strict enum : uint8 {
     /// Advertise with a very short interval and window for fast discovery at the cost of higher
     /// power consumption. This corresponds to a 30-60ms interval on the 1M PHYs and 90-180ms on the

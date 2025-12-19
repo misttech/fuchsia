@@ -10,6 +10,7 @@ using zx;
 /// driver.
 const VMO_VECTOR_MAX_COUNT uint32 = 300;
 
+@strict_audit(bug="https://fxbug.dev/467128430", state="PENDING_REVIEW")
 type StatusCode = strict enum {
     /// An unspecified error occurred (generally should not be used).
     UNSPECIFIED = 0;

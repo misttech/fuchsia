@@ -11,6 +11,7 @@ using zx;
 alias Method = string:1024;
 
 /// An error occurred during the HTTP transaction.
+@strict_audit(bug="https://fxbug.dev/467128725", state="PENDING_REVIEW")
 type Error = strict enum {
     /// Some other problem occurred that cannot be classified using one of the
     /// more specific statuses. Retry is optional.
@@ -45,6 +46,7 @@ type Header = struct {
 };
 
 /// The body of an HTTP request.
+@strict_audit(bug="https://fxbug.dev/467128725", state="PENDING_REVIEW")
 type Body = strict resource union {
     /// A buffer that will contain the complete request or response body.
     1: buffer fuchsia.mem.Buffer;

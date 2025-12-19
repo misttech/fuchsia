@@ -64,6 +64,7 @@ type NodeBindingInfo = table {
 };
 
 /// Contains information for a composite.
+@strict_audit(bug="https://fxbug.dev/467128685", state="PENDING_REVIEW")
 type CompositeInfo = strict union {
     2: composite fuchsia.driver.framework.CompositeInfo;
 };

@@ -13,6 +13,7 @@ const LICENSE_INIT_DATA_TYPE_KEYIDS LicenseInitDataType = "keyids";
 const LICENSE_INIT_DATA_TYPE_WEBM LicenseInitDataType = "webm";
 const LICENSE_INIT_DATA_TYPE_HLS LicenseInitDataType = "hls";
 
+@strict_audit(bug="https://fxbug.dev/467128527", state="PENDING_REVIEW")
 type LicenseSessionType = strict enum {
     /// A session for which the license, keys, and record of the session are not
     /// persisted.
@@ -23,6 +24,7 @@ type LicenseSessionType = strict enum {
     PERSISTENT_LICENSE = 2;
 };
 
+@strict_audit(bug="https://fxbug.dev/467128527", state="PENDING_REVIEW")
 type LicenseMessageType = strict enum {
     REQUEST = 1;
     RENEWAL = 2;
@@ -50,6 +52,7 @@ type LicenseServerMessage = resource struct {
     message fuchsia.mem.Buffer;
 };
 
+@strict_audit(bug="https://fxbug.dev/467128527", state="PENDING_REVIEW")
 type KeyStatus = strict enum {
     /// The key is currently usable for decryption.
     USABLE = 0;

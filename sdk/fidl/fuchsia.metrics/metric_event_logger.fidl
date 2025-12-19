@@ -37,6 +37,7 @@ const MAX_METRIC_DIMENSIONS uint32 = 10;
 const MAX_EXPERIMENT_IDS uint32 = 100;
 
 /// Error codes for MetricEventLogger operations.
+@strict_audit(bug="https://fxbug.dev/467128803", state="PENDING_REVIEW")
 type Error = strict enum : int32 {
     /// For example, the supplied metric id is invalid.
     INVALID_ARGUMENTS = 1;

@@ -29,6 +29,7 @@ library fuchsia.ui.pointer;
 ///
 /// For example, touch events are typically observed as a succession of
 /// interactions, as fingers engage and disengage with the display.
+@strict_audit(bug="https://fxbug.dev/467128273", state="PENDING_REVIEW")
 type EventPhase = strict enum {
     /// The device has started tracking the pointer.
     ADD = 1;

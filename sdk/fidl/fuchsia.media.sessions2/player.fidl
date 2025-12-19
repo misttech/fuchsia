@@ -94,6 +94,7 @@ closed protocol PlayerControl {
 
 /// The type of content playing back, which should be set to the largest
 /// applicable value.
+@strict_audit(bug="https://fxbug.dev/467128527", state="PENDING_REVIEW")
 type ContentType = strict enum {
     /// Content does not qualify for any of the other values.
     OTHER = 1;
@@ -163,6 +164,7 @@ type PlayerStatus = table {
 };
 
 /// State of a media player.
+@strict_audit(bug="https://fxbug.dev/467128527", state="PENDING_REVIEW")
 type PlayerState = strict enum {
     /// The initial state of a session if there is no associated media.
     IDLE = 0;
@@ -181,11 +183,13 @@ type PlayerState = strict enum {
 };
 
 // TODO(dalesat): Add error codes for frontends as they are discovered to be useful.
+@strict_audit(bug="https://fxbug.dev/467128527", state="PENDING_REVIEW")
 type Error = strict enum {
     OTHER = 1;
 };
 
 /// Modes of repeating playback of the current media.
+@strict_audit(bug="https://fxbug.dev/467128527", state="PENDING_REVIEW")
 type RepeatMode = strict enum {
     /// No repeat.
     OFF = 0;
@@ -197,6 +201,7 @@ type RepeatMode = strict enum {
     SINGLE = 2;
 };
 
+@strict_audit(bug="https://fxbug.dev/467128527", state="PENDING_REVIEW")
 type PlayerCapabilityFlags = strict bits : uint32 {
     /// If set, the player can `Play()`.
     PLAY = 0x1;
@@ -248,6 +253,7 @@ type PlayerCapabilities = table {
 /// Interruptions are detected using the player's usage.
 ///
 /// By default the interruption behavior is `NONE`.
+@strict_audit(bug="https://fxbug.dev/467128527", state="PENDING_REVIEW")
 type InterruptionBehavior = strict enum {
     /// Interruptions have no effect on the player
     /// and it may continue in spite of reduced audibility.

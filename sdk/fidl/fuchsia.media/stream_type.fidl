@@ -27,6 +27,7 @@ type StreamType = struct {
 };
 
 /// A union of all medium-specific stream type structs.
+@strict_audit(bug="https://fxbug.dev/467128527", state="PENDING_REVIEW")
 type MediumSpecificStreamType = strict union {
     1: audio AudioStreamType;
     2: video VideoStreamType;
@@ -86,6 +87,7 @@ type AudioStreamType = struct {
 };
 
 /// Enumerates the supported audio sample formats.
+@strict_audit(bug="https://fxbug.dev/467128527", state="PENDING_REVIEW")
 type AudioSampleFormat = strict enum {
     /// 8-bit unsigned samples, sample size 1 byte.
     UNSIGNED_8 = 1;
@@ -129,6 +131,7 @@ type VideoStreamType = struct {
 };
 
 // TODO(dalesat): Replace with fuchsia.images.ColorSpace.
+@strict_audit(bug="https://fxbug.dev/467128527", state="PENDING_REVIEW")
 type ColorSpace = strict enum {
     UNKNOWN = 0;
     NOT_APPLICABLE = 1;

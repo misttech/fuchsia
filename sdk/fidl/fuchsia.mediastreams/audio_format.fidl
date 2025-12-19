@@ -24,6 +24,7 @@ type AudioFormat = struct {
 };
 
 /// Expresses the format of individual audio samples.
+@strict_audit(bug="https://fxbug.dev/467128527", state="PENDING_REVIEW")
 type AudioSampleFormat = strict enum {
     UNSIGNED_8 = 1;
     SIGNED_16 = 2;
@@ -32,6 +33,7 @@ type AudioSampleFormat = strict enum {
     FLOAT = 5;
 };
 
+@strict_audit(bug="https://fxbug.dev/467128527", state="PENDING_REVIEW")
 type AudioChannelLayout = strict union {
     1: placeholder uint8;
 };

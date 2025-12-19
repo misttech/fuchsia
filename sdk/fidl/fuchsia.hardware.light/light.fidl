@@ -6,6 +6,7 @@ library fuchsia.hardware.light;
 
 const LIGHT_NAME_LEN uint8 = 32;
 
+@strict_audit(bug="https://fxbug.dev/467128430", state="PENDING_REVIEW")
 type Capability = strict enum {
     /// This capability indicates that the light supports setting brightness to a uint8_t value.
     /// If this capability is not supported, the light only supports off and on state.
@@ -33,6 +34,7 @@ type GroupInfo = struct {
     capability Capability;
 };
 
+@strict_audit(bug="https://fxbug.dev/467128430", state="PENDING_REVIEW")
 type LightError = strict enum {
     OK = 0;
     NOT_SUPPORTED = 1;

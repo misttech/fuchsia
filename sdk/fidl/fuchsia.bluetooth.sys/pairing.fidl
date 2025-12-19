@@ -57,6 +57,7 @@ closed protocol Pairing {
 /// These should be set based on the ability of the local system to enter
 /// responses to pairing requests.
 /// See Volume 3, Part C, Table 5.3 for more information.
+@strict_audit(bug="https://fxbug.dev/467127725", state="PENDING_REVIEW")
 type InputCapability = strict enum {
     /// There is no user input method available for responding 'yes' or 'no' to
     /// a pairing request.
@@ -74,6 +75,7 @@ type InputCapability = strict enum {
 /// These should be set based on the ability of the local system to display
 /// information to the user initiating or accepting a Bluetooth pairing.
 /// See Volume 3, Part C, Table 5.4 for more information.
+@strict_audit(bug="https://fxbug.dev/467127725", state="PENDING_REVIEW")
 type OutputCapability = strict enum {
     /// There is no display available for pairing.
     NONE = 1;
@@ -83,6 +85,7 @@ type OutputCapability = strict enum {
 
 /// Different types required by the Security Manager for pairing methods.
 /// Bluetooth SIG has different requirements for different device capabilities.
+@strict_audit(bug="https://fxbug.dev/467127725", state="PENDING_REVIEW")
 type PairingMethod = strict enum {
     /// The user is asked to accept or reject pairing.
     /// This is the minimum method - even when both devices do not support
@@ -108,6 +111,7 @@ type PairingMethod = strict enum {
 /// Used to convey information to the peer on progress typing a passkey. The
 /// various types of keypresses can be used to customize what is communicated to
 /// the user requesting a pairing.
+@strict_audit(bug="https://fxbug.dev/467127725", state="PENDING_REVIEW")
 type PairingKeypress = strict enum {
     /// The user has entered a single digit.
     DIGIT_ENTERED = 1;

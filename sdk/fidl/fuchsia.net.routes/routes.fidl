@@ -31,7 +31,10 @@ type Empty = struct {};
 type SpecifiedRouteProperties = table {
     /// The route's effective metric will be determined by whichever value is
     /// specified below.
-    1: metric @generated_name("SpecifiedMetric") strict union {
+    1: metric
+            @generated_name("SpecifiedMetric")
+            @strict_audit(bug="https://fxbug.dev/467128725", state="PENDING_REVIEW")
+            strict union {
         /// The route's metric will be this explicitly specified value.
         1: explicit_metric fuchsia.net.RouteMetric;
         /// The route's metric is inherited from its outbound interface, and
@@ -98,7 +101,10 @@ closed protocol State {
         /// Contains the information for the "next-hop" or immediate-destination
         /// that is the result of a route resolution. A resolved route is only
         /// meaningful in the context of a requested destination.
-        result @generated_name("Resolved") strict union {
+        result
+                @generated_name("Resolved")
+                @strict_audit(bug="https://fxbug.dev/467128725", state="PENDING_REVIEW")
+                strict union {
             /// The requested destination is directly reachable.
             1: direct Destination;
             /// The requested destination is reachable through a gateway, thus
@@ -156,7 +162,7 @@ closed protocol State {
         table_id TableId;
     }) -> (struct {
         table_name TableName;
-    }) error strict enum {
+    }) error @strict_audit(bug="https://fxbug.dev/467128725", state="PENDING_REVIEW") strict enum {
         NO_TABLE = 1;
     };
 };

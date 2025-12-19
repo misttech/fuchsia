@@ -19,6 +19,7 @@ type ZirconChannelMessage = struct {
 
 /// A single handle to be proxied.
 /// Not all Zircon types are supported.
+@strict_audit(bug="https://fxbug.dev/467127620", state="PENDING_REVIEW")
 type ZirconHandle = strict union {
     /// A proxied channel.
     1: channel ChannelHandle;
@@ -38,6 +39,7 @@ type ChannelHandle = struct {
 };
 
 /// The type of socket being communicated via [`fuchsia.overnet.protocol/SocketHandle`].
+@strict_audit(bug="https://fxbug.dev/467127620", state="PENDING_REVIEW")
 type SocketType = strict enum {
     /// A datagram oriented socket.
     DATAGRAM = 0;
@@ -69,6 +71,7 @@ type EventPairHandle = struct {
 /// Channel rights.
 /// Overnet treats rights as per-object type, to reduce the space of things that can be communicated
 /// over its wire format. Transfer rights are always assumed present.
+@strict_audit(bug="https://fxbug.dev/467127620", state="PENDING_REVIEW")
 type ChannelRights = strict bits : uint32 {
     READ = 0x01;
     WRITE = 0x02;
@@ -77,6 +80,7 @@ type ChannelRights = strict bits : uint32 {
 /// Socket rights.
 /// Overnet treats rights as per-object type, to reduce the space of things that can be communicated
 /// over its wire format. Transfer rights are always assumed present.
+@strict_audit(bug="https://fxbug.dev/467127620", state="PENDING_REVIEW")
 type SocketRights = strict bits : uint32 {
     READ = 0x01;
     WRITE = 0x02;
@@ -85,6 +89,7 @@ type SocketRights = strict bits : uint32 {
 /// EventPair rights.
 /// Overnet treats rights as per-object type, to reduce the space of things that can be communicated
 /// over its wire format. Transfer rights are always assumed present.
+@strict_audit(bug="https://fxbug.dev/467127620", state="PENDING_REVIEW")
 type EventPairRights = strict bits : uint32 {
     DO_NOT_USE = 0x80000000;
 };
@@ -92,6 +97,7 @@ type EventPairRights = strict bits : uint32 {
 /// Signals that can be propagated.
 /// These are deliberately chosen to be different bits than defined in Zircon, to force mapping code
 /// to exist, and minimize the chance that Zircon ABI accidentally becomes Overnet protocol.
+@strict_audit(bug="https://fxbug.dev/467127620", state="PENDING_REVIEW")
 type Signals = strict bits : uint32 {
     USER_0 = 0x01;
     USER_1 = 0x02;

@@ -4,6 +4,7 @@
 library fuchsia.settings.policy;
 
 /// Common error code used across policies.
+@strict_audit(bug="https://fxbug.dev/467128325", state="PENDING_REVIEW")
 type Error = strict enum {
     /// Generic internal failure.
     FAILED = 1;

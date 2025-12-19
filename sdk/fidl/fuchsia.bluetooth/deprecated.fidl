@@ -22,6 +22,7 @@ type UInt16 = struct {
 };
 
 @deprecated("Use protocol specific error enums and zx.Status instead")
+@strict_audit(bug="https://fxbug.dev/467127725", state="PENDING_REVIEW")
 type ErrorCode = strict enum {
     UNKNOWN = 0;
     FAILED = 1;

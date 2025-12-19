@@ -5,6 +5,7 @@ library fuchsia.bluetooth.sys;
 
 using fuchsia.bluetooth as bt;
 
+@strict_audit(bug="https://fxbug.dev/467127725", state="PENDING_REVIEW")
 type TechnologyType = strict enum {
     LOW_ENERGY = 1;
     CLASSIC = 2;

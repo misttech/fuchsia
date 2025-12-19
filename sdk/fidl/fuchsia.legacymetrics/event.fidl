@@ -6,6 +6,7 @@ library fuchsia.legacymetrics;
 using zx;
 
 /// A single metric event to be recorded and sent to the UMA backend.
+@strict_audit(bug="https://fxbug.dev/467128803", state="PENDING_REVIEW")
 type Event = strict union {
     1: user_action_event UserActionEvent;
     2: histogram Histogram;

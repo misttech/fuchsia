@@ -32,6 +32,7 @@ closed protocol BufferReceiver {
 };
 
 /// Specifies how the trace buffer should be exchanged.
+@strict_audit(bug="https://fxbug.dev/467128231", state="PENDING_REVIEW")
 type TraceBuffer = strict resource union {
     /// Used to receive the trace buffer from the system tracing service.
     1: from_server client_end:<BufferReceiver>;

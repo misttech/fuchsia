@@ -15,6 +15,7 @@ const MAX_SERVICE_NAME_LENGTH uint64 = fuchsia.io.MAX_NAME_LENGTH;
 
 /// Peer-to-peer protocol between two Overnet nodes.
 /// Client QUIC connections send this xunion to servers over QUIC stream 0.
+@strict_audit(bug="https://fxbug.dev/467127620", state="PENDING_REVIEW")
 type PeerMessage = strict union {
     /// Request to create a channel to a service exported by this peer.
     1: connect_to_service ConnectToService;
@@ -33,6 +34,7 @@ type ConfigResponse = table {};
 
 /// Reply messages for PeerMessage, where appropriate.
 /// The ConfigResponse message must have been sent already.
+@strict_audit(bug="https://fxbug.dev/467127620", state="PENDING_REVIEW")
 type PeerReply = strict union {
     /// Acknowledge an UpdateLinkStatus message
     1: update_link_status_ack Empty;
@@ -74,6 +76,7 @@ type PeerDescription = table {
 /// Stream control message: sent instead of usual stream frames if the frame
 /// type is 1 (StreamControl).
 /// TODO: consider defining the stream framing format in FIDL also.
+@strict_audit(bug="https://fxbug.dev/467127620", state="PENDING_REVIEW")
 type StreamControl = strict union {
     /// A transfer is beginning: the sending node would like to transfer
     /// control.
@@ -99,6 +102,7 @@ type BeginTransfer = struct {
 
 /// A StreamRef identifies a new proxied stream, and details how that stream
 /// will come to be on the receiving node.
+@strict_audit(bug="https://fxbug.dev/467127620", state="PENDING_REVIEW")
 type StreamRef = strict union {
     /// A new proxy is being created, and the other end of the proxy is on the
     /// sending node. This is the simple case, and we just communicate the QUIC

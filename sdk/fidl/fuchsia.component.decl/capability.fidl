@@ -102,6 +102,7 @@ type Storage = table {
 
 /// Declares which identifier to use to key a component's isolated storage
 /// directory.
+@strict_audit(bug="https://fxbug.dev/467128242", state="PENDING_REVIEW")
 type StorageId = strict enum {
     /// Isolated storage directories are keyed using a component's instance ID
     /// specified in the component ID index. Components which are not listed in

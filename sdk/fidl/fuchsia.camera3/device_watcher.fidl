@@ -40,6 +40,7 @@ closed protocol DeviceWatcher {
     });
 };
 
+@strict_audit(bug="https://fxbug.dev/467128527", state="PENDING_REVIEW")
 type WatchDevicesEvent = strict union {
     /// Indicates an existing camera with the provided ID is still available.
     1: existing DeviceId;

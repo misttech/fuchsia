@@ -35,6 +35,7 @@ closed protocol NavigationPolicyProvider {
 };
 
 /// Represents the return status of a [`NavigationController`] method.
+@strict_audit(bug="https://fxbug.dev/467127821", state="PENDING_REVIEW")
 type NavigationControllerError = strict enum : int32 {
     /// The provided URL is invalid.
     INVALID_URL = 1;
@@ -131,6 +132,7 @@ type NavigationState = resource table {
 };
 
 /// Characterizes the type of reload.
+@strict_audit(bug="https://fxbug.dev/467127821", state="PENDING_REVIEW")
 type ReloadType = strict enum : uint32 {
     /// Reloads the current entry, bypassing the cache for the main resource.
     PARTIAL_CACHE = 0;
@@ -140,6 +142,7 @@ type ReloadType = strict enum : uint32 {
 };
 
 /// Characterizes the origin of a [`NavigationController.LoadUrl`] request.
+@strict_audit(bug="https://fxbug.dev/467127821", state="PENDING_REVIEW")
 type LoadUrlReason = strict enum : uint32 {
     /// Navigation was initiated by the user following a link.
     LINK = 0;
@@ -149,6 +152,7 @@ type LoadUrlReason = strict enum : uint32 {
 };
 
 /// Characterizes the page type in a [`NavigationState`].
+@strict_audit(bug="https://fxbug.dev/467127821", state="PENDING_REVIEW")
 type PageType = strict enum {
     /// Regular web page.
     NORMAL = 0;
@@ -177,6 +181,7 @@ type ErrorDetail = flexible enum {
 alias NavigationId = uint64;
 
 /// Identifies a navigation phase.
+@strict_audit(bug="https://fxbug.dev/467127821", state="PENDING_REVIEW")
 type NavigationPhase = strict bits : uint32 {
     /// Navigation is being started.
     START = 0x1;
@@ -234,6 +239,7 @@ type NoArgumentsAction = struct {};
 
 /// Navigation action that should be taken in response to a navigation request. Returned from
 /// [`NavigationPolicyProvider.EvaluateRequestedNavigation`].
+@strict_audit(bug="https://fxbug.dev/467127821", state="PENDING_REVIEW")
 type NavigationDecision = strict resource union {
     /// Navigation should proceed normally.
     1: proceed NoArgumentsAction;

@@ -7,6 +7,7 @@ using fuchsia.io;
 using fuchsia.mem;
 using fuchsia.net.http;
 
+@strict_audit(bug="https://fxbug.dev/467127821", state="PENDING_REVIEW")
 type ContextError = strict enum : int32 {
     /// The remote debugging service was not opened.
     REMOTE_DEBUGGING_PORT_NOT_OPENED = 1;
@@ -60,6 +61,7 @@ type ContentDirectoryProvider = resource table {
 /// Feature flags that allow augmenting Context behavior. Some features require additional services
 /// in the service directory provided during context initialization. See
 /// [`CreateContextParams.service_directory`].
+@strict_audit(bug="https://fxbug.dev/467127821", state="PENDING_REVIEW")
 type ContextFeatureFlags = strict bits : uint64 {
     /// Enables network access. Requires the following services:
     /// - [`fuchsia.net.interfaces/State`]
@@ -320,6 +322,7 @@ closed protocol FrameHost {
 };
 
 /// Specifies the policy for automatic (non user-initiated) playback of video and audio content.
+@strict_audit(bug="https://fxbug.dev/467127821", state="PENDING_REVIEW")
 type AutoplayPolicy = strict enum : int32 {
     /// All media is permitted to autoplay.
     ALLOW = 1;

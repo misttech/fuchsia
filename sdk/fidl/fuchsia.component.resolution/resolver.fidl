@@ -54,6 +54,7 @@ closed(removed=24) open(added=24) protocol Resolver {
 
 /// The possible error conditions returned by ComponentResolver.
 // TODO(https://fxbug.dev/42151567): API review of ResolverError.
+@strict_audit(bug="https://fxbug.dev/467128242", state="PENDING_REVIEW")
 type ResolverError = strict enum {
     /// An unexpected error occurred.
     INTERNAL = 1;

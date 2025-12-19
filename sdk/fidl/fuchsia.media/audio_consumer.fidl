@@ -118,6 +118,7 @@ closed protocol AudioConsumer {
 };
 
 /// Flags passed to `AudioConsumer.Start`.
+@strict_audit(bug="https://fxbug.dev/467128527", state="PENDING_REVIEW")
 type AudioConsumerStartFlags = strict bits {
     /// Indicates that latency should be kept as low as possible.
     LOW_LATENCY = 0x01;
@@ -160,6 +161,7 @@ type AudioConsumerStatus = table {
 type Void = struct {};
 
 /// Represents a `AudioConsumer` error condition.
+@strict_audit(bug="https://fxbug.dev/467128527", state="PENDING_REVIEW")
 type AudioConsumerError = strict union {
     1: place_holder Void;
 };

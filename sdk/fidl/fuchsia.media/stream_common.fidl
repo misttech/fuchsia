@@ -12,6 +12,7 @@ const MAX_ENCRYPTION_SCHEME_SIZE uint32 = 100;
 /// Value
 ///
 /// Generic "value" for use within generic "Parameter" struct.
+@strict_audit(bug="https://fxbug.dev/467128527", state="PENDING_REVIEW")
 type Value = strict union {
     1: bool_value bool;
     2: uint64_value uint64;
@@ -44,6 +45,7 @@ type Parameter = struct {
 /// This error code encapsulates various errors that might emanate from a
 /// StreamProcessor server. It can be sent either as an OnStreamFailed event or
 /// as an epitaph for the channel.
+@strict_audit(bug="https://fxbug.dev/467128527", state="PENDING_REVIEW")
 type StreamError = strict enum : uint32 {
     // Common errors 0x00
     /// An internal error with an unspecified reason.
@@ -88,6 +90,7 @@ type AudioCompressedFormat = flexible union {
     4: lc3 AudioCompressedFormatLc3;
 };
 
+@strict_audit(bug="https://fxbug.dev/467128527", state="PENDING_REVIEW")
 type AudioBitrateMode = strict enum {
     // Used mainly when a client is configuring an encoder's output format.  May
     // also be present in an OnOutputConstraints() message from an encoder, but
@@ -118,6 +121,7 @@ type AudioCompressedFormatLc3 = table {};
 ///
 // TODO(dustingreen): Keep or discard any non-linear formats for purposes of the
 // Codec interface?
+@strict_audit(bug="https://fxbug.dev/467128527", state="PENDING_REVIEW")
 type AudioPcmMode = strict enum {
     // 16 bit signed int linear or 32 bit float linear, for now
     // 1-N channels ok, with "A.B" channels designated as A+B channel_count -
@@ -142,6 +146,7 @@ type AudioPcmMode = strict enum {
 // LR/RR - probably LR/RR being first would make more sense re. how channels
 // get added incrementally, but changing the order would no longer match
 // Android's ordering.
+@strict_audit(bug="https://fxbug.dev/467128527", state="PENDING_REVIEW")
 type AudioChannelId = strict enum {
     SKIP = 0; // unused channel
     LF = 1; // left front
@@ -211,6 +216,7 @@ type PcmFormat = struct {
 /// AudioUncompressedFormat
 ///
 // Uncompressed audio format details.
+@strict_audit(bug="https://fxbug.dev/467128527", state="PENDING_REVIEW")
 type AudioUncompressedFormat = strict union {
     1: pcm PcmFormat;
 };
@@ -218,6 +224,7 @@ type AudioUncompressedFormat = strict union {
 /// AudioFormat
 ///
 // Audio format details.
+@strict_audit(bug="https://fxbug.dev/467128527", state="PENDING_REVIEW")
 type AudioFormat = strict union {
     1: compressed AudioCompressedFormat;
     2: uncompressed AudioUncompressedFormat;
@@ -230,6 +237,7 @@ type AudioFormat = strict union {
 // If a compressed video format has no fields here, it's because it's a good
 // format and is already self-describing given the mime_type + format-defined
 // oob_bytes as appropriate + in-band data.
+@strict_audit(bug="https://fxbug.dev/467128527", state="PENDING_REVIEW")
 type VideoCompressedFormat = strict union {
     // TODO(dustingreen): Any compressed video formats that aren't sufficiently
     // self-describing to select and create a Codec instance to decode it?
@@ -239,6 +247,7 @@ type VideoCompressedFormat = strict union {
     1: temp_field_todo_remove uint32;
 };
 
+@strict_audit(bug="https://fxbug.dev/467128527", state="PENDING_REVIEW")
 type VideoColorSpace = strict enum {
     // TODO(dustingreen): add to this list
     INVALID = 0;
@@ -352,6 +361,7 @@ type VideoUncompressedFormat = struct {
 /// Video (compress or uncompressed) format details.  In this context,
 /// "uncompressed" can include block-based image compression formats that still
 /// permit fairly fast random access to image data.
+@strict_audit(bug="https://fxbug.dev/467128527", state="PENDING_REVIEW")
 type VideoFormat = strict union {
     1: compressed VideoCompressedFormat;
     2: uncompressed VideoUncompressedFormat;
@@ -466,6 +476,7 @@ type CryptoFormat = flexible union {
 /// DomainFormat
 ///
 // Domain-specific format details (audio or video, compressed or uncompressed).
+@strict_audit(bug="https://fxbug.dev/467128527", state="PENDING_REVIEW")
 type DomainFormat = strict union {
     1: audio AudioFormat;
     2: video VideoFormat;
@@ -474,11 +485,13 @@ type DomainFormat = strict union {
 
 const kMaxOobBytesSize uint64 = 8192;
 
+@strict_audit(bug="https://fxbug.dev/467128527", state="PENDING_REVIEW")
 type SbcSubBands = strict enum {
     SUB_BANDS_4 = 4;
     SUB_BANDS_8 = 8;
 };
 
+@strict_audit(bug="https://fxbug.dev/467128527", state="PENDING_REVIEW")
 type SbcBlockCount = strict enum {
     BLOCK_COUNT_4 = 4;
     BLOCK_COUNT_8 = 8;
@@ -486,11 +499,13 @@ type SbcBlockCount = strict enum {
     BLOCK_COUNT_16 = 16;
 };
 
+@strict_audit(bug="https://fxbug.dev/467128527", state="PENDING_REVIEW")
 type SbcAllocation = strict enum {
     ALLOC_LOUDNESS = 0;
     ALLOC_SNR = 1;
 };
 
+@strict_audit(bug="https://fxbug.dev/467128527", state="PENDING_REVIEW")
 type SbcChannelMode = strict enum {
     MONO = 0;
     DUAL = 1;
@@ -535,6 +550,7 @@ type AacTransport = flexible union {
     3: adts AacTransportAdts;
 };
 
+@strict_audit(bug="https://fxbug.dev/467128527", state="PENDING_REVIEW")
 type AacChannelMode = strict enum {
     MONO = 0;
     STEREO = 2;
@@ -549,6 +565,7 @@ type AacConstantBitRate = struct {
 /// varies based on input signal and other encoding settings.
 ///
 /// See https://wiki.hydrogenaud.io/index.php?title=Fraunhofer_FDK_AAC#Bitrate_Modes
+@strict_audit(bug="https://fxbug.dev/467128527", state="PENDING_REVIEW")
 type AacVariableBitRate = strict enum {
     V1 = 1;
     V2 = 2;
@@ -557,11 +574,13 @@ type AacVariableBitRate = strict enum {
     V5 = 5;
 };
 
+@strict_audit(bug="https://fxbug.dev/467128527", state="PENDING_REVIEW")
 type AacBitRate = strict union {
     1: constant AacConstantBitRate;
     2: variable AacVariableBitRate;
 };
 
+@strict_audit(bug="https://fxbug.dev/467128527", state="PENDING_REVIEW")
 type AacAudioObjectType = strict enum {
     /// MPEG-2 Low Complexity
     MPEG2_AAC_LC = 0;

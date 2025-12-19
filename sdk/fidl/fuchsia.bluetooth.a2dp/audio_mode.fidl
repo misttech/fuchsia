@@ -6,6 +6,7 @@ library fuchsia.bluetooth.a2dp;
 
 /// Enum corresponding to the A2DP SRC/SNK roles as defined in the
 /// A2DP v1.3.2 profile specification, section 2.2.
+@strict_audit(bug="https://fxbug.dev/467127725", state="PENDING_REVIEW")
 type Role = strict enum {
     /// Act as a source of digital audio streams, sending audio to peers.
     SOURCE = 1;

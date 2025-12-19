@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 library fuchsia.media.drm;
 
+@strict_audit(bug="https://fxbug.dev/467128527", state="PENDING_REVIEW")
 type Features = strict bits : uint32 {
     /// All key management and crypto operations are performed in a hardware
     /// based trusted execution environment. If not set, a software
@@ -12,6 +13,7 @@ type Features = strict bits : uint32 {
     SECURE_OUTPUT = 0x02;
 };
 
+@strict_audit(bug="https://fxbug.dev/467128527", state="PENDING_REVIEW")
 type Requirement = strict enum {
     NOT_SUPPORTED = 1;
     OPTIONAL = 2;

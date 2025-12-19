@@ -11,6 +11,7 @@ using zx;
 const MAX_IMAGE_FORMATS uint64 = 256;
 
 /// Status to be set when a frame is signalled available.
+@strict_audit(bug="https://fxbug.dev/467128527", state="PENDING_REVIEW")
 type FrameStatus = strict enum {
     OK = 0;
     /// An error occurred during the production of a frame.
@@ -51,6 +52,7 @@ type FrameRate = struct {
 };
 
 /// Different Stream types provided by the camera stack.
+@strict_audit(bug="https://fxbug.dev/467128527", state="PENDING_REVIEW")
 type CameraStreamType = strict bits : uint32 {
     /// ML request FR(Full Resolution) stream as well as
     /// a DS(Down Scaled Resolution) stream for Security Use Case

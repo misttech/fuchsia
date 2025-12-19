@@ -31,6 +31,7 @@ type L2capParameters = table {
 };
 
 /// The channel and relevant parameters for a connection.
+@strict_audit(bug="https://fxbug.dev/467127725", state="PENDING_REVIEW")
 type ConnectParameters = strict union {
     /// An L2CAP connection.
     1: l2cap L2capParameters;
@@ -71,6 +72,7 @@ type Channel = resource table {
 
 /// A2DP packet priority used in `AudioDirectionExt`. `NORMAL` should be used whenever audio is not
 /// streaming, and `SOURCE`/`SINK` should match the direction audio is being streamed.
+@strict_audit(bug="https://fxbug.dev/467127725", state="PENDING_REVIEW")
 type A2dpDirectionPriority = strict enum {
     NORMAL = 1;
     SOURCE = 2;

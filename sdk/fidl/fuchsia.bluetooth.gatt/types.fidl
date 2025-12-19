@@ -7,6 +7,7 @@ using fuchsia.bluetooth as bt;
 
 /// Codes that can be returned in the `protocol_error_code` field of a
 /// bluetooth.Error.
+@strict_audit(bug="https://fxbug.dev/467127725", state="PENDING_REVIEW")
 type ErrorCode = strict enum {
     /// Indicates that the operation was successful.
     NO_ERROR = 0;
@@ -24,6 +25,7 @@ type ErrorCode = strict enum {
 };
 
 /// Errors that are returned by bluetooth.gatt methods.
+@strict_audit(bug="https://fxbug.dev/467127725", state="PENDING_REVIEW")
 type Error = strict enum {
     /// A general error occurred that can not be classified as one of the more specific statuses.
     FAILURE = 1;
@@ -167,6 +169,7 @@ type Descriptor = struct {
 ///
 /// If enabled, every value blob is verified against an echo response from the server.
 /// The procedure is aborted if a value blob has not been reliably delivered to the peer.
+@strict_audit(bug="https://fxbug.dev/467127725", state="PENDING_REVIEW")
 type ReliableMode = strict enum {
     DISABLED = 1;
     ENABLED = 2;

@@ -10,6 +10,7 @@ const MAX_COUNT_DAI_SUPPORTED_RATES uint32 = 64;
 const MAX_COUNT_DAI_SUPPORTED_BITS_PER_SLOT uint32 = 8;
 const MAX_COUNT_DAI_SUPPORTED_BITS_PER_SAMPLE uint32 = 8;
 
+@strict_audit(bug="https://fxbug.dev/467128527", state="PENDING_REVIEW")
 type DaiSampleFormat = strict enum : uint8 {
     /// Pulse Density Modulation samples.
     PDM = 1;
@@ -25,6 +26,7 @@ type DaiSampleFormat = strict enum : uint8 {
 };
 
 /// Either a standard or custom frame format.
+@strict_audit(bug="https://fxbug.dev/467128527", state="PENDING_REVIEW")
 type DaiFrameFormat = strict union {
     /// The format type of all samples in the DAI, listed in `DaiFrameFormatStandard`.
     1: frame_format_standard DaiFrameFormatStandard;
@@ -34,6 +36,7 @@ type DaiFrameFormat = strict union {
 };
 
 /// Standard Frame format.
+@strict_audit(bug="https://fxbug.dev/467128527", state="PENDING_REVIEW")
 type DaiFrameFormatStandard = strict enum : uint8 {
     /// No frame format as in samples without a frame sync like PDM.
     NONE = 1;

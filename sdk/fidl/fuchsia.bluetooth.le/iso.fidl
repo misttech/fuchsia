@@ -75,6 +75,7 @@ type CisEstablishedParameters = table {
 
 /// Flags indicating validity of data received from an isochronous channel.
 @available(added=24)
+@strict_audit(bug="https://fxbug.dev/467127725", state="PENDING_REVIEW")
 type IsoPacketStatusFlag = strict enum : uint8 {
     /// Valid data. The complete SDU was received correctly.
     VALID_DATA = 0;
@@ -88,6 +89,7 @@ type IsoPacketStatusFlag = strict enum : uint8 {
 };
 
 @available(added=27)
+@strict_audit(bug="https://fxbug.dev/467127725", state="PENDING_REVIEW")
 type CigFramingOptions = strict enum {
     UNFRAMED = 0x00;
     FRAMED = 0x01;

@@ -4,6 +4,7 @@
 library fuchsia.castsetup;
 
 /// Specifies the required security for a client of the API.
+@strict_audit(bug="https://fxbug.dev/467128325", state="PENDING_REVIEW")
 type SecurityState = strict enum : uint32 {
     SECURITY_STATE_NONE = 0;
     SECURITY_STATE_ENCRYPTED = 1;
@@ -23,6 +24,7 @@ closed protocol ApiRequestHandler {
 };
 
 /// API operation mode to specify during registration.
+@strict_audit(bug="https://fxbug.dev/467128325", state="PENDING_REVIEW")
 type ApiMode = strict enum : uint32 {
     ACCEPTS_NO_DATA = 1;
     ACCEPTS_DATA = 2;

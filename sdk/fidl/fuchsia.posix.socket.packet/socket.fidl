@@ -12,6 +12,7 @@ using zx;
 type Empty = struct {};
 
 /// A kind of packet socket.
+@strict_audit(bug="https://fxbug.dev/467128725", state="PENDING_REVIEW")
 type Kind = strict enum {
     /// A packet socket that operates with network-layer packets.
     NETWORK = 1;
@@ -34,6 +35,7 @@ type Kind = strict enum {
 alias Protocol = uint16;
 
 /// The protocol association for a packet socket.
+@strict_audit(bug="https://fxbug.dev/467128725", state="PENDING_REVIEW")
 type ProtocolAssociation = strict union {
     /// An association with all protocols.
     1: all Empty;
@@ -45,6 +47,7 @@ type ProtocolAssociation = strict union {
 /// The type of a hardware.
 // `ARPHDR_*` values from
 // `//zircon/third_party/ulib/musl/include/net/if_arp.h`.
+@strict_audit(bug="https://fxbug.dev/467128725", state="PENDING_REVIEW")
 type HardwareType = strict enum {
     /// Hardware that operates only at the network layer; a pure L3 interface.
     ///
@@ -64,6 +67,7 @@ type HardwareType = strict enum {
 /// The type of a packet.
 // `PACKET_*` values from
 // `//zircon/third_party/ulib/musl/include/netpacket/packet.h`.
+@strict_audit(bug="https://fxbug.dev/467128725", state="PENDING_REVIEW")
 type PacketType = strict enum {
     /// A packet that arrived at its destination.
     HOST = 1;
@@ -150,7 +154,9 @@ closed protocol Socket {
     /// + request `bound_interface_id` the socket's new interface binding.
     strict Bind(struct {
         protocol ProtocolAssociation:optional;
-        bound_interface_id strict union {
+        bound_interface_id
+                @strict_audit(bug="https://fxbug.dev/467128725", state="PENDING_REVIEW")
+                strict union {
             1: all Empty;
             2: specified fuchsia.net.InterfaceId;
         };
@@ -165,7 +171,9 @@ closed protocol Socket {
     strict GetInfo() -> (struct {
         kind Kind;
         protocol ProtocolAssociation:optional;
-        bound_interface strict union {
+        bound_interface
+                @strict_audit(bug="https://fxbug.dev/467128725", state="PENDING_REVIEW")
+                strict union {
             1: all Empty;
             2: specified InterfaceProperties;
         };

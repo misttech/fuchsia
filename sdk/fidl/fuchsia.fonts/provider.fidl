@@ -34,6 +34,7 @@ type FamilyName = struct {
 };
 
 /// Boolean flags for `TypefaceRequest`.
+@strict_audit(bug="https://fxbug.dev/467128273", state="PENDING_REVIEW")
 type TypefaceRequestFlags = strict bits : uint32 {
     /// Disables font family fallback. The service won't try to search the fallback font set if the
     /// requested font family doesn't exist or if it doesn't contain the requested code point.
@@ -47,6 +48,7 @@ type TypefaceRequestFlags = strict bits : uint32 {
 
 /// Options for what the font server should do if the client requests a typeface that is not yet
 /// cached.
+@strict_audit(bug="https://fxbug.dev/467128273", state="PENDING_REVIEW")
 type CacheMissPolicy = strict enum {
     /// The server will attempt to load the uncached typeface before providing a response. This is
     /// the *default* behavior.

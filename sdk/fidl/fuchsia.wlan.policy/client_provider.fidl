@@ -145,6 +145,7 @@ closed protocol ScanResultIterator {
 };
 
 /// Wlan scan error codes.
+@strict_audit(bug="https://fxbug.dev/467128644", state="PENDING_REVIEW")
 type ScanErrorCode = strict enum {
     /// Unexpected scan error without a specific cause.
     GENERAL_ERROR = 1;
@@ -235,6 +236,7 @@ type NetworkState = table {
 };
 
 /// Wlan operating state for client connections
+@strict_audit(bug="https://fxbug.dev/467128644", state="PENDING_REVIEW")
 type WlanClientState = strict enum {
     CONNECTIONS_DISABLED = 1;
     CONNECTIONS_ENABLED = 2;
@@ -244,6 +246,7 @@ type WlanClientState = strict enum {
 /// are supported.  New protocols may be detected before they are connectable
 /// and deprecated protocols may explicitly be unsupported due to security and
 /// privacy concerns.
+@strict_audit(bug="https://fxbug.dev/467128644", state="PENDING_REVIEW")
 type Compatibility = strict enum {
     /// Denotes that the network is supported and connections can be attempted (given
     /// appropriate credentials when required).
@@ -257,6 +260,7 @@ type Compatibility = strict enum {
 };
 
 /// Potential error cases for saving and removing network configurations.
+@strict_audit(bug="https://fxbug.dev/467128644", state="PENDING_REVIEW")
 type NetworkConfigChangeError = strict enum {
     GENERAL_ERROR = 1;
 
@@ -280,6 +284,7 @@ type NetworkConfigChangeError = strict enum {
 };
 
 /// Connection states used to update registered wlan observers.
+@strict_audit(bug="https://fxbug.dev/467128644", state="PENDING_REVIEW")
 type ConnectionState = strict enum {
     /// The connection attempt was terminated due to an error.
     FAILED = 1;
@@ -296,6 +301,7 @@ type ConnectionState = strict enum {
 };
 
 /// Disconnect and connection attempt failure status codes
+@strict_audit(bug="https://fxbug.dev/467128644", state="PENDING_REVIEW")
 type DisconnectStatus = strict enum {
     /// The requested connection attempt failed due to timeout.
     TIMED_OUT = 1;

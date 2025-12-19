@@ -191,6 +191,7 @@ type Options = table {
 };
 
 /// DEPRECATED - Use Flags instead.
+@strict_audit(bug="https://fxbug.dev/467128288", state="PENDING_REVIEW")
 type OpenFlags = strict bits : uint32 {
     /// Can read from target object.
     RIGHT_READABLE = 0x00000001;
@@ -282,6 +283,7 @@ const OPEN_RIGHTS OpenFlags
 const OPEN_FLAGS_ALLOWED_WITH_NODE_REFERENCE OpenFlags
         = OpenFlags.DIRECTORY | OpenFlags.NOT_DIRECTORY | OpenFlags.DESCRIBE | OpenFlags.NODE_REFERENCE;
 
+@strict_audit(bug="https://fxbug.dev/467128288", state="PENDING_REVIEW")
 type ModeType = strict bits : uint32 {
     DO_NOT_USE = 0x80000000;
 };
@@ -331,6 +333,7 @@ const INO_UNKNOWN uint64 = 0xFFFFFFFFFFFFFFFF;
 /// `IDLE` event).
 closed protocol DirectoryWatcher {};
 
+@strict_audit(bug="https://fxbug.dev/467128288", state="PENDING_REVIEW")
 type WatchEvent = strict enum : uint8 {
     /// Indicates the directory being watched has been deleted. The name returned for this event
     /// will be `.` (dot), as it is refering to the directory itself.
@@ -346,6 +349,7 @@ type WatchEvent = strict enum : uint8 {
     IDLE = 4;
 };
 
+@strict_audit(bug="https://fxbug.dev/467128288", state="PENDING_REVIEW")
 type WatchMask = strict bits : uint32 {
     /// Used by `Directory.Watch`. Requests transmission of `WatchEvent.DELETED`.
     DELETED = 0x00000001;

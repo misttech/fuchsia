@@ -9,6 +9,7 @@ library fuchsia.media.drm;
 ///
 /// [`W3C Encrypted Media Extensions`]:
 ///   https://www.w3.org/TR/encrypted-media
+@strict_audit(bug="https://fxbug.dev/467128527", state="PENDING_REVIEW")
 type Error = strict enum {
     // Encrypted Media Extension error codes
     /// An error that occurs when the client provides invalid parameter data to

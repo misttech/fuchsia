@@ -53,6 +53,7 @@ type AccessibilitySettings = table {
     6: captions_settings CaptionsSettings;
 };
 
+@strict_audit(bug="https://fxbug.dev/467128325", state="PENDING_REVIEW")
 type ColorBlindnessType = strict enum {
     /// No color blindness.
     NONE = 0;
@@ -109,6 +110,7 @@ type CaptionFontStyle = table {
 };
 
 /// Font family groups for closed captions, specified by 47 CFR §79.102(k).
+@strict_audit(bug="https://fxbug.dev/467128325", state="PENDING_REVIEW")
 type CaptionFontFamily = strict enum {
     UNKNOWN = 0;
     MONOSPACED_SERIF = 1;
@@ -121,6 +123,7 @@ type CaptionFontFamily = strict enum {
 };
 
 /// Edge style for fonts as specified in 47 CFR §79.103(c)(7)
+@strict_audit(bug="https://fxbug.dev/467128325", state="PENDING_REVIEW")
 type EdgeStyle = strict enum {
     /// No border around fonts.
     NONE = 0;

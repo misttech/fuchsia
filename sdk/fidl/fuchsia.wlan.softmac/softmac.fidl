@@ -260,6 +260,7 @@ type WlanTxInfo = struct {
 
 // TODO(b/309634989) Soft transition to use fuchsia.wlan.common.WlanProtection
 @available(added=15)
+@strict_audit(bug="https://fxbug.dev/467128644", state="PENDING_REVIEW")
 type WlanProtection = strict enum : uint8 {
     NONE = 0;
     RX = 1;

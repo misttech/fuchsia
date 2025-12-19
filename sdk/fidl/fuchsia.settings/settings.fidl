@@ -4,12 +4,14 @@
 library fuchsia.settings;
 
 /// Common error code used across different settings.
+@strict_audit(bug="https://fxbug.dev/467128325", state="PENDING_REVIEW")
 type Error = strict enum {
     FAILED = 1;
     UNSUPPORTED = 2;
 };
 
 /// Common epitaph messages used across different settings.
+@strict_audit(bug="https://fxbug.dev/467128325", state="PENDING_REVIEW")
 type SettingsEpitaph = strict enum {
     // The request to the service is not supported. The client should not try to reconnect.
     REQUEST_NOT_SUPPORTED = 1;

@@ -17,6 +17,7 @@ type TransferActive = struct {};
 
 /// Represents the signal strength of a connection between the Audio Gateway and
 /// a network.
+@strict_audit(bug="https://fxbug.dev/467127725", state="PENDING_REVIEW")
 type SignalStrength = strict enum : int8 {
     NONE = 1;
     VERY_LOW = 2;
@@ -41,6 +42,7 @@ type NetworkInformation = table {
 };
 
 /// A command from the HF with a value representing what number to dial.
+@strict_audit(bug="https://fxbug.dev/467127725", state="PENDING_REVIEW")
 type CallAction = strict union {
     /// A complete number to be dialed by the call handler service. See HFP v1.8
     /// Section 4.18.
@@ -286,6 +288,7 @@ type CallState = flexible enum {
 };
 
 /// The direction of call initiation.
+@strict_audit(bug="https://fxbug.dev/467127725", state="PENDING_REVIEW")
 type CallDirection = strict enum {
     /// Call originated on this device. This is also known as an Outgoing call.
     MOBILE_ORIGINATED = 1;
@@ -311,6 +314,7 @@ type NextCall = resource table {
 };
 
 /// Dual-tone multi-frequency signaling codes.
+@strict_audit(bug="https://fxbug.dev/467127725", state="PENDING_REVIEW")
 type DtmfCode = strict enum : uint8 {
     /// Represented by ASCII "1" in AT commands.
     ONE = 49;

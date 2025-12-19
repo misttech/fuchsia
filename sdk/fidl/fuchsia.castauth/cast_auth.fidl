@@ -6,12 +6,14 @@ library fuchsia.castauth;
 
 /// Input hash to be signed by Cast key.
 /// It must be ASN1-encoded SHA1 or SHA256 hash, with sizes 35 or 51 bytes.
+@strict_audit(bug="https://fxbug.dev/467128325", state="PENDING_REVIEW")
 type Asn1EncodedHash = strict union {
     1: sha1 array<byte, 35>;
     2: sha256 array<byte, 51>;
 };
 
 /// Error codes for CastKeySigner operations.
+@strict_audit(bug="https://fxbug.dev/467128325", state="PENDING_REVIEW")
 type ErrorCode = strict enum {
     /// Key/cert not found in storage.
     FILE_NOT_FOUND = 1;

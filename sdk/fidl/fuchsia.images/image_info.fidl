@@ -4,6 +4,7 @@
 library fuchsia.images;
 
 /// Specifies how pixels are represented in the image buffer.
+@strict_audit(bug="https://fxbug.dev/467128527", state="PENDING_REVIEW")
 type PixelFormat = strict enum {
     /// BGRA_8
     ///
@@ -80,11 +81,13 @@ type PixelFormat = strict enum {
 };
 
 /// Specifies how pixel color information should be interpreted.
+@strict_audit(bug="https://fxbug.dev/467128527", state="PENDING_REVIEW")
 type ColorSpace = strict enum {
     SRGB = 0;
 };
 
 /// Specifies how pixels are arranged in memory.
+@strict_audit(bug="https://fxbug.dev/467128527", state="PENDING_REVIEW")
 type Tiling = strict enum {
     /// Pixels are packed linearly.
     /// Equivalent to `VK_IMAGE_TILING_LINEAR`.
@@ -96,6 +99,7 @@ type Tiling = strict enum {
 };
 
 /// Specifies how alpha information should be interpreted.
+@strict_audit(bug="https://fxbug.dev/467128527", state="PENDING_REVIEW")
 type AlphaFormat = strict enum {
     /// Image is considered to be opaque.  Alpha channel is ignored.
     /// Blend function is: src.RGB
@@ -108,6 +112,7 @@ type AlphaFormat = strict enum {
     NON_PREMULTIPLIED = 2;
 };
 
+@strict_audit(bug="https://fxbug.dev/467128527", state="PENDING_REVIEW")
 type Transform = strict enum {
     /// Pixels are displayed normally.
     NORMAL = 0;

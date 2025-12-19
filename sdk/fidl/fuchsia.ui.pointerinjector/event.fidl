@@ -10,6 +10,7 @@ using zx;
 ///
 /// A typical pointer will move through this state machine:
 /// ADD - CHANGE* - REMOVE
+@strict_audit(bug="https://fxbug.dev/467128273", state="PENDING_REVIEW")
 type EventPhase = strict enum {
     /// The device has started tracking the pointer.
     ADD = 1;

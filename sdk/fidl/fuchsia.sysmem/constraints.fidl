@@ -216,6 +216,7 @@ type SingleBufferSettings = struct {
 /// and should not be set.
 ///
 /// This type is deprecated for new code, but is still used by some camera code.
+@strict_audit(bug="https://fxbug.dev/467128527", state="PENDING_REVIEW")
 type HeapType = strict enum : uint64 {
     SYSTEM_RAM = 0x0000000000000000;
 

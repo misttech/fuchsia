@@ -21,6 +21,7 @@ using zx;
 /// warnings/errors when a new value is added.
 //
 // Later we can add DYNAMIC, as needed.
+@strict_audit(bug="https://fxbug.dev/467128527", state="PENDING_REVIEW")
 type SecureMemoryMode = strict enum : uint32 {
     // Normal memory.  This is the default if a field of this type is not set.
     OFF = 0;
@@ -237,6 +238,7 @@ type CreateEncoder_Params = table {
     2: require_hw bool;
 };
 
+@strict_audit(bug="https://fxbug.dev/467128527", state="PENDING_REVIEW")
 type CodecType = strict enum {
     DECODER = 0;
     ENCODER = 1;
@@ -499,6 +501,7 @@ type EncoderProfileDescription = table {
 };
 
 @available(added=11)
+@strict_audit(bug="https://fxbug.dev/467128527", state="PENDING_REVIEW")
 type ProfileDescriptions = strict union {
     /// A list of |DecoderProfileDescription| that describe what codec profiles this
     /// decoder supports along with requirements that must be adhered to if the client

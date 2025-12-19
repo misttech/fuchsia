@@ -153,6 +153,7 @@ type Description = table {
 };
 
 /// Capabilities of the target.
+@strict_audit(bug="https://fxbug.dev/467128527", state="PENDING_REVIEW")
 type CapabilityFlags = strict bits : uint64 {
     /// Indicates the target can receive a transfer of a
     /// media session from another target.
@@ -192,6 +193,7 @@ closed protocol Selector {
     }) error Error;
 };
 
+@strict_audit(bug="https://fxbug.dev/467128527", state="PENDING_REVIEW")
 type Error = strict enum {
     NOT_A_GROUP = 0;
     UNKNOWN_ON_DOMAIN = 1;

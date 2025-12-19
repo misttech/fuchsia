@@ -6,6 +6,7 @@ library fuchsia.fdomain;
 using zx;
 
 // Result from a channel write operation.
+@strict_audit(bug="https://fxbug.dev/467127620", state="PENDING_REVIEW")
 type WriteChannelError = strict union {
     1: error Error;
     2: op_errors vector<Error:optional>;
@@ -39,7 +40,9 @@ open protocol Channel {
     flexible WriteChannel(struct {
         handle HandleId;
         data vector<uint8>:zx.CHANNEL_MAX_MSG_BYTES;
-        handles strict union {
+        handles
+                @strict_audit(bug="https://fxbug.dev/467127620", state="PENDING_REVIEW")
+                strict union {
             1: handles vector<HandleId>:zx.CHANNEL_MAX_MSG_HANDLES;
             2: dispositions vector<HandleDisposition>:zx.CHANNEL_MAX_MSG_HANDLES;
         };

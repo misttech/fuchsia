@@ -48,7 +48,10 @@ closed protocol AdvisoryLocking {
             ///
             /// If this field is absent, the [`AdvisoryLock`] method will fail
             /// with ZX_ERR_INVALID_ARGS.
-            1: type @generated_name("AdvisoryLockType") strict enum : uint32 {
+            1: type
+                    @generated_name("AdvisoryLockType")
+                    @strict_audit(bug="https://fxbug.dev/467128288", state="PENDING_REVIEW")
+                    strict enum : uint32 {
                 /// Zero or more connections can hold read locks on a file simultaneously.
                 READ = 1;
 

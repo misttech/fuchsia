@@ -4,6 +4,7 @@
 library fuchsia.ui.activity;
 
 /// State is an enumeration of the activity states the system may be in.
+@strict_audit(bug="https://fxbug.dev/467128273", state="PENDING_REVIEW")
 type State = strict enum {
     UNKNOWN = 0;
     /// IDLE implies that the system is not currently being used by a user.

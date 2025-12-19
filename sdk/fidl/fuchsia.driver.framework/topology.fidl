@@ -60,6 +60,7 @@ type NodeSymbol = table {
     2: address uint64;
 };
 
+@strict_audit(bug="https://fxbug.dev/467128685", state="PENDING_REVIEW")
 type NodePropertyKey = strict union {
     /// Integer-based keys are no longer supported. Use |string_value| instead.
     1: int_value NodePropertyKeyUint;

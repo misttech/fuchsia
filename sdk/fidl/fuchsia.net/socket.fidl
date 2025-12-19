@@ -40,6 +40,7 @@ type Ipv6SocketAddress = struct {
 };
 
 /// Represents an IP socket address that may be either v4 or v6.
+@strict_audit(bug="https://fxbug.dev/467128725", state="PENDING_REVIEW")
 type SocketAddress = strict union {
     1: ipv4 Ipv4SocketAddress;
     2: ipv6 Ipv6SocketAddress;

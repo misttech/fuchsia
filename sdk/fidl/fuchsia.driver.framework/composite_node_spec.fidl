@@ -4,6 +4,7 @@
 library fuchsia.driver.framework;
 
 /// Represents a bind rule condition.
+@strict_audit(bug="https://fxbug.dev/467128685", state="PENDING_REVIEW")
 type Condition = strict enum {
     UNKNOWN = 0;
     ACCEPT = 1;

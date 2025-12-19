@@ -34,6 +34,7 @@ type SetupSettings = table {
     1: enabled_configuration_interfaces ConfigurationInterfaces;
 };
 
+@strict_audit(bug="https://fxbug.dev/467128325", state="PENDING_REVIEW")
 type ConfigurationInterfaces = strict bits : uint32 {
     // Configuration over ethernet.
     ETHERNET = 0x1;

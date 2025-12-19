@@ -10,6 +10,7 @@ using fuchsia.media.audio;
 /// AudioRenderUsage is used by audio policy to dictate how audio streams
 /// interact with each other.
 // TODO(https://fxbug.dev/384934089): deprecate and remove |AudioRenderUsage|
+@strict_audit(bug="https://fxbug.dev/467128527", state="PENDING_REVIEW")
 type AudioRenderUsage = strict enum {
     /// Stream is intended to be used for ambient or background sound. Streams
     /// that can be interrupted without consequence should use this.
@@ -70,6 +71,7 @@ const RENDER_USAGE2_COUNT uint8 = 6;
 /// AudioCaptureUsage is used by audio policy to dictate how audio streams
 /// interact with each other.
 // TODO(https://fxbug.dev/384934089): deprecate and remove |AudioCaptureUsage|
+@strict_audit(bug="https://fxbug.dev/467128527", state="PENDING_REVIEW")
 type AudioCaptureUsage = strict enum {
     /// Stream is used to capture audio while in the background. These streams
     /// may be active at any the time and are considered privileged.
@@ -137,6 +139,7 @@ type Behavior = flexible enum : uint32 {
 };
 
 // TODO(https://fxbug.dev/384934089): deprecate and remove |AudioRenderUsage| (and |Usage|)
+@strict_audit(bug="https://fxbug.dev/467128527", state="PENDING_REVIEW")
 type Usage = strict union {
     1: render_usage AudioRenderUsage;
     2: capture_usage AudioCaptureUsage;
@@ -295,6 +298,7 @@ open protocol AudioCore {
 
 // Placeholder for routing policies.
 @deprecated
+@strict_audit(bug="https://fxbug.dev/467128527", state="PENDING_REVIEW")
 type AudioOutputRoutingPolicy = strict enum {
     // AudioRenderers are always connected to all audio outputs which currently
     // in the plugged state (eg; have a connector attached to them)

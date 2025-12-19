@@ -190,7 +190,10 @@ open protocol File {
     /// * [`Rights.EXECUTE`] if `flags` includes [`VmoFlags.EXECUTE`].
     @selector("fuchsia.io/File.GetBackingMemory")
     strict GetBackingMemory(struct {
-        flags @generated_name("VmoFlags") strict bits : uint32 {
+        flags
+                @generated_name("VmoFlags")
+                @strict_audit(bug="https://fxbug.dev/467128288", state="PENDING_REVIEW")
+                strict bits : uint32 {
             /// Requests that the VMO be readable.
             READ = 0x00000001;
 
@@ -337,6 +340,7 @@ closed protocol Writable {
 /// The reference point for updating the seek offset. See [`File.Seek`].
 ///
 /// This enum matches the `zx_stream_seek_origin_t` enum.
+@strict_audit(bug="https://fxbug.dev/467128288", state="PENDING_REVIEW")
 type SeekOrigin = strict enum : uint32 {
     /// Seek from the start of the file.
     /// The seek offset will be set to `offset` bytes.
@@ -352,6 +356,7 @@ type SeekOrigin = strict enum : uint32 {
     END = 2;
 };
 
+@strict_audit(bug="https://fxbug.dev/467128288", state="PENDING_REVIEW")
 type FileSignal = strict bits : uint32 {
     /// Indicates the file is ready for reading.
     READABLE = 0x01000000; // ZX_USER_SIGNAL_0

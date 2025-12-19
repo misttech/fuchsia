@@ -12,6 +12,7 @@ library fuchsia.ui.input;
 /// between runs of bidirectional text.)
 ///
 /// We do not expect new values to be added to this enum.
+@strict_audit(bug="https://fxbug.dev/467128273", state="PENDING_REVIEW")
 type TextAffinity = strict enum {
     /// The position has affinity for the upstream side of the text position.
     ///

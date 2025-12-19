@@ -38,6 +38,7 @@ type AnnotationKey = struct {
 /// The value of an [`fuchsia.element/Annotation`].
 ///
 /// The actual field used depends on the type of annotation.
+@strict_audit(bug="https://fxbug.dev/467128273", state="PENDING_REVIEW")
 type AnnotationValue = strict resource union {
     1: text string:MAX;
     2: buffer fuchsia.mem.Buffer;
@@ -115,6 +116,7 @@ closed protocol AnnotationController {
 };
 
 /// An error returned from `AnnotationController/UpdateAnnotations`
+@strict_audit(bug="https://fxbug.dev/467128273", state="PENDING_REVIEW")
 type UpdateAnnotationsError = strict enum {
     /// The arguments passed to `UpdateAnnotations` are malformed.
     INVALID_ARGS = 1;
@@ -125,6 +127,7 @@ type UpdateAnnotationsError = strict enum {
 };
 
 /// An error returned from `ElementController/GetAnnotations`.
+@strict_audit(bug="https://fxbug.dev/467128273", state="PENDING_REVIEW")
 type GetAnnotationsError = strict enum {
     /// The `AnnotationValue.buffer` of an annotation could not be read.
     BUFFER_READ_FAILED = 1;

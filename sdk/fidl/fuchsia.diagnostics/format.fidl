@@ -6,6 +6,7 @@ library fuchsia.diagnostics;
 /// Enum used to specify the output format for
 /// Reader results.
 // TODO(https://fxbug.dev/42055808): Change this from `strict` to `flexible`. #strictaudit
+@strict_audit(bug="https://fxbug.dev/467128231", state="PENDING_REVIEW")
 type Format = strict enum {
     /// Dump read results per the Diagnostics Json
     /// Schema specifications.

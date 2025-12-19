@@ -8,6 +8,7 @@ library fuchsia.fonts;
 using fuchsia.mem;
 
 /// Deprecated. See `GenericFontFamily`.
+@strict_audit(bug="https://fxbug.dev/467128273", state="PENDING_REVIEW")
 type FallbackGroup = strict enum {
     NONE = 0;
     SERIF = 1;

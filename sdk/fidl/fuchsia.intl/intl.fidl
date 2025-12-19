@@ -56,6 +56,7 @@ type TimeZoneId = struct {
 };
 
 /// Selection of [temperature units](https://en.wikipedia.org/wiki/Degree_(temperature)).
+@strict_audit(bug="https://fxbug.dev/467128325", state="PENDING_REVIEW")
 type TemperatureUnit = strict enum {
     /// The temperature should be formatted to show temperature in degrees Celsius.
     CELSIUS = 0;

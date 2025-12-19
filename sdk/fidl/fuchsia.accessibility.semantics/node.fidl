@@ -9,6 +9,7 @@ using fuchsia.ui.gfx;
 const MAX_SET_ELEMENTS uint32 = 100;
 
 /// Represents actions that can be applied to Nodes.
+@strict_audit(bug="https://fxbug.dev/467128273", state="PENDING_REVIEW")
 type Action = strict enum {
     /// The default action associated with the element.
     DEFAULT = 1;
@@ -34,6 +35,7 @@ type Action = strict enum {
 };
 
 /// Represents a role of an element on a UI.
+@strict_audit(bug="https://fxbug.dev/467128273", state="PENDING_REVIEW")
 type Role = strict enum {
     /// Role used to represent elements which role is not currently supported.
     UNKNOWN = 1;
@@ -107,6 +109,7 @@ type Role = strict enum {
 };
 
 /// The possible origins of a label.
+@strict_audit(bug="https://fxbug.dev/467128273", state="PENDING_REVIEW")
 type LabelOrigin = strict enum {
     /// The node does not have a label yet.
     UNITIALIZED = 1;
@@ -261,6 +264,7 @@ type Attributes = table {
 };
 
 /// Represents the state of a UI checkbox.
+@strict_audit(bug="https://fxbug.dev/467128273", state="PENDING_REVIEW")
 type CheckedState = strict enum {
     /// Used when no data is entered or the element is not a check box.
     NONE = 1;
@@ -273,6 +277,7 @@ type CheckedState = strict enum {
 };
 
 /// Represents the state of a UI toggle switch.
+@strict_audit(bug="https://fxbug.dev/467128273", state="PENDING_REVIEW")
 type ToggledState = strict enum {
     /// Toggle switch is on.
     ON = 1;
@@ -284,6 +289,7 @@ type ToggledState = strict enum {
 
 /// Represents the enabled/disabled state of an element.
 @available(added=15)
+@strict_audit(bug="https://fxbug.dev/467128273", state="PENDING_REVIEW")
 type EnabledState = strict enum {
     /// Element is enabled.
     ENABLED = 1;

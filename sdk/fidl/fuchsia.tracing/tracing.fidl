@@ -53,6 +53,7 @@ type KnownCategory = struct {
 /// trace_encoded_thread_ref_t). The non-durable portion contains the rest of
 /// the trace data like events); this is the portion that, for example, is
 /// discarded in circular buffering mode when the (non-durable) buffer fills.
+@strict_audit(bug="https://fxbug.dev/467128231", state="PENDING_REVIEW")
 type BufferDisposition = strict enum : uint8 {
     /// Clear the entire buffer, including durable buffer contents.
     /// N.B. If this is done mid-session, then string and thread references
@@ -79,6 +80,7 @@ type BufferDisposition = strict enum : uint8 {
 };
 
 /// The trace buffering mode.
+@strict_audit(bug="https://fxbug.dev/467128231", state="PENDING_REVIEW")
 type BufferingMode = strict enum : uint8 {
     /// In oneshot mode there is only one buffer that is not reused. When the
     /// buffer fills the provider just keeps dropping records, keeping a count,

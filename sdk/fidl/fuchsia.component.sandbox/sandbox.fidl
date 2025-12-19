@@ -552,7 +552,7 @@ type Unavailable = struct {};
 @discoverable
 @available(added=HEAD)
 open protocol ConnectorRouter {
-    flexible Route(RouteRequest) -> (strict resource union {
+    flexible Route(RouteRequest) -> (@strict_audit(bug="https://fxbug.dev/467128242", state="PENDING_REVIEW") strict resource union {
         1: connector Connector;
         2: unavailable Unit;
     }) error RouterError;
@@ -561,7 +561,7 @@ open protocol ConnectorRouter {
 @discoverable
 @available(added=HEAD)
 open protocol DictionaryRouter {
-    flexible Route(RouteRequest) -> (strict resource union {
+    flexible Route(RouteRequest) -> (@strict_audit(bug="https://fxbug.dev/467128242", state="PENDING_REVIEW") strict resource union {
         1: dictionary DictionaryRef;
         2: unavailable Unit;
     }) error RouterError;
@@ -571,7 +571,7 @@ open protocol DictionaryRouter {
 @discoverable
 @available(added=HEAD)
 open protocol DirectoryRouter {
-    flexible Route(RouteRequest) -> (strict resource union {
+    flexible Route(RouteRequest) -> (@strict_audit(bug="https://fxbug.dev/467128242", state="PENDING_REVIEW") strict resource union {
         1: directory client_end:fuchsia.io.Directory;
         2: unavailable Unit;
     }) error RouterError;
@@ -580,7 +580,7 @@ open protocol DirectoryRouter {
 @discoverable
 @available(added=HEAD)
 open protocol DirEntryRouter {
-    flexible Route(RouteRequest) -> (strict resource union {
+    flexible Route(RouteRequest) -> (@strict_audit(bug="https://fxbug.dev/467128242", state="PENDING_REVIEW") strict resource union {
         1: dir_entry DirEntry;
         2: unavailable Unit;
     }) error RouterError;
@@ -589,7 +589,7 @@ open protocol DirEntryRouter {
 @discoverable
 @available(added=HEAD)
 open protocol DataRouter {
-    flexible Route(RouteRequest) -> (strict resource union {
+    flexible Route(RouteRequest) -> (@strict_audit(bug="https://fxbug.dev/467128242", state="PENDING_REVIEW") strict resource union {
         1: data Data;
         2: unavailable Unit;
     }) error RouterError;
@@ -598,7 +598,7 @@ open protocol DataRouter {
 @discoverable
 @available(added=HEAD)
 open protocol DirConnectorRouter {
-    flexible Route(RouteRequest) -> (strict resource union {
+    flexible Route(RouteRequest) -> (@strict_audit(bug="https://fxbug.dev/467128242", state="PENDING_REVIEW") strict resource union {
         1: dir_connector DirConnector;
         2: unavailable Unit;
     }) error RouterError;

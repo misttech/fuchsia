@@ -87,6 +87,7 @@ const MUTED_GAIN_DB float32 = -160.0;
 const MAX_GAIN_DB float32 = 24.0;
 
 /// Enumerates gain control ramp types.
+@strict_audit(bug="https://fxbug.dev/467128527", state="PENDING_REVIEW")
 type RampType = strict enum : uint16 {
     /// Amplitude scale changes at a fixed rate across the ramp duration.
     SCALE_LINEAR = 1;

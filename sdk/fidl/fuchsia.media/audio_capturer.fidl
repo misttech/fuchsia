@@ -20,6 +20,7 @@ type InputAudioCapturerConfiguration = table {
 };
 
 /// Configuration for an audio Capturer.
+@strict_audit(bug="https://fxbug.dev/467128527", state="PENDING_REVIEW")
 type AudioCapturerConfiguration = strict union {
     1: loopback LoopbackAudioCapturerConfiguration;
     2: input InputAudioCapturerConfiguration;

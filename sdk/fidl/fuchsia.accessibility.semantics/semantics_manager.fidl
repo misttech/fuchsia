@@ -41,6 +41,7 @@ closed protocol SemanticsManager {
 };
 
 /// Represents a Semantic Event that is fired on a Semantic Tree.
+@strict_audit(bug="https://fxbug.dev/467128273", state="PENDING_REVIEW")
 type SemanticEvent = strict union {
     1: announce AnnounceEvent;
 };

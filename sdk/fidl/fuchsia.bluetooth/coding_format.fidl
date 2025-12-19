@@ -55,6 +55,7 @@ type CodecAttributes = table {
 /// Indicates direction of data in a stream. Note that these values do not correspond to constants
 /// from the Bluetooth Core specification.
 @available(added=24)
+@strict_audit(bug="https://fxbug.dev/467127725", state="PENDING_REVIEW")
 type DataDirection = strict enum : uint8 {
     /// Host => Controller
     INPUT = 1;

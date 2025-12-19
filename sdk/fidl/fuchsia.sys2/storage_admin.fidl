@@ -11,6 +11,7 @@ using fuchsia.io;
 /// in hex notation is 64 characters long.
 const MAX_STORAGE_ID_LENGTH uint32 = 64;
 
+@strict_audit(bug="https://fxbug.dev/467128242", state="PENDING_REVIEW")
 type StatusError = strict enum {
     /// The storage provider returned an error to a request or the connection
     /// to the provider unexpectedly closed.
@@ -27,6 +28,7 @@ type StatusError = strict enum {
     UNSUPPORTED = 4;
 };
 
+@strict_audit(bug="https://fxbug.dev/467128242", state="PENDING_REVIEW")
 type DeletionError = strict enum {
     /// There was an error sending a request to the storage provider.
     CONNECTION = 1;

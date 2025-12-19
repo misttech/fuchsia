@@ -21,6 +21,7 @@
 library fuchsia.net.stackmigrationdeprecated;
 
 /// Known Network Stack versions.
+@strict_audit(bug="https://fxbug.dev/467128725", state="PENDING_REVIEW")
 type NetstackVersion = strict enum {
     NETSTACK2 = 1;
     NETSTACK3 = 2;

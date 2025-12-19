@@ -13,6 +13,7 @@ using fuchsia.ui.views;
 using zx;
 
 // TODO(https://fxbug.dev/42104732): Consider using [`fuchsia.logger/LogLevelFilter`] if possible.
+@strict_audit(bug="https://fxbug.dev/467127821", state="PENDING_REVIEW")
 type ConsoleLogLevel = strict enum : int32 {
     /// No logging.
     NONE = 100;
@@ -31,6 +32,7 @@ type ConsoleLogLevel = strict enum : int32 {
 };
 
 /// Identifies the types of input events which may be handled by a View.
+@strict_audit(bug="https://fxbug.dev/467127821", state="PENDING_REVIEW")
 type InputTypes = strict bits : uint64 {
     /// Keyboard events.
     KEY = 0x1;
@@ -59,12 +61,14 @@ type InputTypes = strict bits : uint64 {
 
 /// Controls whether [`Frame.ConfigureInputTypes()`] should allow or deny processing of the
 /// specified [`InputTypes`].
+@strict_audit(bug="https://fxbug.dev/467127821", state="PENDING_REVIEW")
 type AllowInputState = strict enum : int32 {
     ALLOW = 1;
     DENY = 2;
 };
 
 /// Represents the return status of a [`Frame`] method.
+@strict_audit(bug="https://fxbug.dev/467127821", state="PENDING_REVIEW")
 type FrameError = strict enum : int32 {
     /// An internal error occurred.
     INTERNAL_ERROR = 1;
@@ -80,6 +84,7 @@ type FrameError = strict enum : int32 {
 };
 
 /// Identifies a type of permission that may be granted to a web origin.
+@strict_audit(bug="https://fxbug.dev/467127821", state="PENDING_REVIEW")
 type PermissionType = strict enum : uint16 {
     /// Permission to access microphone(s).
     MICROPHONE = 1;
@@ -107,6 +112,7 @@ type PermissionDescriptor = table {
 };
 
 /// A state for a web permission.
+@strict_audit(bug="https://fxbug.dev/467127821", state="PENDING_REVIEW")
 type PermissionState = strict enum : uint8 {
     /// Permission is denied.
     DENIED = 1;
@@ -585,6 +591,7 @@ closed protocol PopupFrameCreationListener {
 
 /// Flags clients can set when connecting a [`NavigationEventListener`] to indicates interest in
 /// optional features.
+@strict_audit(bug="https://fxbug.dev/467127821", state="PENDING_REVIEW")
 type NavigationEventListenerFlags = strict bits : uint64 {
     /// Enables `favicon` field in [`NavigationState`].
     FAVICON = 0x1;

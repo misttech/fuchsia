@@ -9,6 +9,7 @@ using zx;
 /// Type of the keyboard key input event.
 ///
 /// We do not expect new values to be added into this enum.
+@strict_audit(bug="https://fxbug.dev/467128273", state="PENDING_REVIEW")
 type KeyEventType = strict enum {
     /// Key is actuated.
     ///
@@ -427,6 +428,7 @@ type NonPrintableKey = flexible enum : uint32 {
 /// The meaning of the key press. This is typically the Unicode codepoint inserted
 /// by this event, or an enum representing a key that corresponds to whitespace or
 /// is otherwise unprintable.
+@strict_audit(bug="https://fxbug.dev/467128273", state="PENDING_REVIEW")
 type KeyMeaning = strict union {
     /// The Unicode codepoint representing character typed, if any.
     /// * In Dart and Go, this corresponds to a `rune`.

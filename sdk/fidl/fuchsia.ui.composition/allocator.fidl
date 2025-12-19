@@ -8,6 +8,7 @@ using fuchsia.sysmem2;
 using zx;
 
 /// The set of error codes returned by Allocator::RegisterBufferCollection().
+@strict_audit(bug="https://fxbug.dev/467128273", state="PENDING_REVIEW")
 type RegisterBufferCollectionError = strict enum {
     BAD_OPERATION = 1;
 };
@@ -24,6 +25,7 @@ type BufferCollectionImportToken = resource struct {
 };
 
 /// The possible usages for registered buffer collection.
+@strict_audit(bug="https://fxbug.dev/467128273", state="PENDING_REVIEW")
 type RegisterBufferCollectionUsage = strict enum {
     /// DEFAULT means that the specified buffer collection will be used for
     /// Flatland and gfx image creation.

@@ -6,6 +6,7 @@ library fuchsia.net.name;
 using fuchsia.net;
 
 /// Lookup operation errors.
+@strict_audit(bug="https://fxbug.dev/467128725", state="PENDING_REVIEW")
 type LookupError = strict enum {
     /// No result was found for this query.
     NOT_FOUND = 1;

@@ -81,6 +81,7 @@ closed protocol ServiceSubscriptionListener {
 };
 
 /// DNS resource types.
+@strict_audit(bug="https://fxbug.dev/467128725", state="PENDING_REVIEW")
 type ResourceType = strict enum {
     /// Domain name pointer.
     PTR = 12;

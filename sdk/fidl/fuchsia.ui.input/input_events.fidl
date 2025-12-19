@@ -189,6 +189,7 @@ type MediaButtonsEvent = resource table {
     8: wake_lease zx.Handle:EVENTPAIR;
 };
 
+@strict_audit(bug="https://fxbug.dev/467128273", state="PENDING_REVIEW")
 type InputEvent = strict union {
     @available(deprecated=10, note="Instead, use fuchsia.ui.pointer")
     1: pointer PointerEvent;

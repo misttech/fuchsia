@@ -36,6 +36,7 @@ closed protocol GraphicalPresenter {
 };
 
 /// An error returned when `GraphicalPresenter` fails to present a view.
+@strict_audit(bug="https://fxbug.dev/467128273", state="PENDING_REVIEW")
 type PresentViewError = strict enum {
     /// The provided `ViewSpec` is invalid.
     INVALID_ARGS = 1;

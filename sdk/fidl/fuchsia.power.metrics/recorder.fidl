@@ -18,6 +18,7 @@ alias ClientId = string:16;
 /// Errors associated with Recorder methods.
 /// If the request contains any of the following errors, it will fail without
 /// affecting the existing logging tasks.
+@strict_audit(bug="https://fxbug.dev/467127481", state="PENDING_REVIEW")
 type RecorderError = strict enum : uint32 {
     /// Indicates that no driver is found for requested metric logging.
     NO_DRIVERS = 1;
@@ -40,6 +41,7 @@ type RecorderError = strict enum : uint32 {
 };
 
 /// Metric type requested in Recorder methods.
+@strict_audit(bug="https://fxbug.dev/467127481", state="PENDING_REVIEW")
 type Metric = strict union {
     1: temperature Temperature;
     2: cpu_load CpuLoad;

@@ -20,6 +20,7 @@ const MAX_ERROR_DESCRIPTION_LENGTH uint64 = 100;
 /// They are FIDL versions of the EventType enum in hooks.rs and have
 /// the same meaning.
 @available(added=11)
+@strict_audit(bug="https://fxbug.dev/467128242", state="PENDING_REVIEW")
 type EventType = strict enum {
     /// A capability provided by this component has been requested. The event
     /// payload carries the request channel.

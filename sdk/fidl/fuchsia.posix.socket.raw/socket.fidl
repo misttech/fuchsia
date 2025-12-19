@@ -15,6 +15,7 @@ type Empty = struct {};
 alias Protocol = uint8;
 
 /// The protocol a raw socket is associated with.
+@strict_audit(bug="https://fxbug.dev/467128725", state="PENDING_REVIEW")
 type ProtocolAssociation = strict union {
     /// Indicates no association with any protocol.
     ///
@@ -64,6 +65,7 @@ type Icmpv6Filter = struct {
 };
 
 /// IPv6 socket checksum configuration.
+@strict_audit(bug="https://fxbug.dev/467128725", state="PENDING_REVIEW")
 type Ipv6ChecksumConfiguration = strict union {
     /// Indicates that the stack should not calculate checksums for outgoing
     /// packets and valiate checksums for incoming packets.

@@ -51,6 +51,7 @@ closed protocol Input {
 };
 
 /// A series of flags determining the state of an input device mute toggle.
+@strict_audit(bug="https://fxbug.dev/467128325", state="PENDING_REVIEW")
 type ToggleStateFlags = strict bits : uint64 {
     /// The input device exists and is neither muted nor disabled.
     AVAILABLE = 0x01;
@@ -64,11 +65,13 @@ type ToggleStateFlags = strict bits : uint64 {
     ERROR = 0x10;
 };
 
+@strict_audit(bug="https://fxbug.dev/467128325", state="PENDING_REVIEW")
 type DeviceType = strict enum {
     MICROPHONE = 1;
     CAMERA = 2;
 };
 
+@strict_audit(bug="https://fxbug.dev/467128325", state="PENDING_REVIEW")
 type DeviceStateSource = strict enum {
     HARDWARE = 1;
     SOFTWARE = 2;

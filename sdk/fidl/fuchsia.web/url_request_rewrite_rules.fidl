@@ -22,6 +22,7 @@ type UrlRequestRewriteRule = table {
     4: action UrlRequestAction;
 };
 
+@strict_audit(bug="https://fxbug.dev/467127821", state="PENDING_REVIEW")
 type UrlRequestAction = strict enum : int32 {
     /// Allow the request to be processed.
     ALLOW = 1;

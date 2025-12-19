@@ -99,6 +99,7 @@ const MAX_SUPPORTED_MAC_ROLES uint8 = 16;
 @namespaced
 const MAX_BANDS uint8 = 16;
 
+@strict_audit(bug="https://fxbug.dev/467128644", state="PENDING_REVIEW")
 type ScanType = strict enum {
     ACTIVE = 1;
     PASSIVE = 2;
@@ -106,6 +107,7 @@ type ScanType = strict enum {
 
 /// HT and VHT guard interval.
 /// See IEEE 802.11-2016 Table 19-1 and Table 21-1.
+@strict_audit(bug="https://fxbug.dev/467128644", state="PENDING_REVIEW")
 type GuardInterval = strict enum : uint8 {
     LONG_GI = 1; // 800 ns
     SHORT_GI = 2; // 400 ns
@@ -114,6 +116,7 @@ type GuardInterval = strict enum : uint8 {
 // Powersave types. Since vendor implementations of power save mode vary
 // greatly, this is an attempt to generalize the setting and indicated
 // as an enum (bitfield).
+@strict_audit(bug="https://fxbug.dev/467128644", state="PENDING_REVIEW")
 type PowerSaveType = strict enum : uint32 {
     // Close to power off state.
     PS_MODE_ULTRA_LOW_POWER = 0x0;
@@ -162,6 +165,7 @@ type WlanTxResult = struct {
     result_code WlanTxResultCode;
 };
 
+@strict_audit(bug="https://fxbug.dev/467128644", state="PENDING_REVIEW")
 type WlanSoftmacHardwareCapabilityBit = strict enum : uint32 {
     /// Short packet preamble.
     SHORT_PREAMBLE = 0x0020;

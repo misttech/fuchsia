@@ -7,6 +7,7 @@ using fuchsia.wlan.ieee80211 as ieee80211;
 
 // Basic definitions for wlan APIs.
 @available(added=25)
+@strict_audit(bug="https://fxbug.dev/467128644", state="PENDING_REVIEW")
 type RequestStatus = strict enum {
     ACKNOWLEDGED = 0;
     REJECTED_NOT_SUPPORTED = 1;
@@ -19,6 +20,7 @@ type RequestStatus = strict enum {
 /// High level protection type for the network.  This does not convey all details needed
 /// for the mechanism of the connection, but is primarily used to map the target network
 /// to proper scan results.
+@strict_audit(bug="https://fxbug.dev/467128644", state="PENDING_REVIEW")
 type SecurityType = strict enum {
     NONE = 1;
     WEP = 2;
@@ -60,6 +62,7 @@ type Credential = flexible union {
 };
 
 /// Operating band for wlan control request and status updates.
+@strict_audit(bug="https://fxbug.dev/467128644", state="PENDING_REVIEW")
 type OperatingBand = strict enum {
     /// Allows for band switching depending on device operating mode and environment.
     ANY = 1;

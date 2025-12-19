@@ -84,6 +84,7 @@ closed protocol KeyEventInjector {
 /// Return type for clients key events listener.
 ///
 /// We do not expect new values to be added to this enum.
+@strict_audit(bug="https://fxbug.dev/467128273", state="PENDING_REVIEW")
 type KeyEventStatus = strict enum {
     /// The key event was handled and its further propagation should be stopped.
     HANDLED = 1;

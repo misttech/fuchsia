@@ -222,6 +222,7 @@ type MouseEventStreamInfo = struct {
 };
 
 /// A description of mouse event stream's relationship to this view.
+@strict_audit(bug="https://fxbug.dev/467128273", state="PENDING_REVIEW")
 type MouseViewStatus = strict enum {
     /// The stream is directed towards this view.
     ENTERED = 1;

@@ -54,6 +54,7 @@ type VhtOperation = struct {
 
 /// IEEE Std 802.11-2020 9.4.2.173
 @available(added=13)
+@strict_audit(bug="https://fxbug.dev/467128644", state="PENDING_REVIEW")
 type WlanAccessCategory = strict enum {
     BACKGROUND = 1;
     BEST_EFFORT = 2;

@@ -15,6 +15,7 @@ using fuchsia.bluetooth as bt;
 ///
 /// Only certain errors can be returned by LocalService methods.  Those are noted
 /// in comments.
+@strict_audit(bug="https://fxbug.dev/467127725", state="PENDING_REVIEW")
 type Error = strict enum {
     // ATT Errors
 
@@ -161,6 +162,7 @@ type ServiceHandle = struct {
 };
 
 /// The kind ("type") of a GATT Service as outlined in Bluetooth Core Spec v5.3 Vol. 1 Part A 6.5.1.
+@strict_audit(bug="https://fxbug.dev/467127725", state="PENDING_REVIEW")
 type ServiceKind = strict enum {
     /// A "service that provides functionality of a device that can be used on its own" (Ibid)
     PRIMARY = 1;
@@ -210,6 +212,7 @@ type AttributePermissions = table {
 
 /// Possible values for the characteristic properties bitfield. These specify the
 /// GATT procedures that are allowed for a particular characteristic.
+@strict_audit(bug="https://fxbug.dev/467127725", state="PENDING_REVIEW")
 type CharacteristicPropertyBits = strict bits : uint16 {
     BROADCAST = 0x1;
     READ = 0x2;

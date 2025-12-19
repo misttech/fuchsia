@@ -82,6 +82,7 @@ type Config = resource table {
 };
 
 /// A characterization of a device that issues pointer event streams.
+@strict_audit(bug="https://fxbug.dev/467128273", state="PENDING_REVIEW")
 type DeviceType = strict enum {
     /// A device intended for manipulation by direct contact over its surface.
     TOUCH = 1;
@@ -97,6 +98,7 @@ type DeviceType = strict enum {
 ///     ancestor of the target.
 /// (2) Coordinate System. It provides the reference coordinate system to define
 ///     the viewport's position and size, relative to the target.
+@strict_audit(bug="https://fxbug.dev/467128273", state="PENDING_REVIEW")
 type Context = strict resource union {
     /// A Scenic view from which injection is attempted for injected events.
     /// - This view must be connected to the scene graph for injection.
@@ -106,6 +108,7 @@ type Context = strict resource union {
 
 /// The region in which dispatch is attempted for injected events.
 /// The particular dispatch policy is specified in |Config|.
+@strict_audit(bug="https://fxbug.dev/467128273", state="PENDING_REVIEW")
 type Target = strict resource union {
     /// A Scenic view in which dispatch is attempted for injected events.
     /// - This view must be connected to the scene graph for dispatch.
@@ -179,6 +182,7 @@ type Viewport = table {
 ///   surface is owned by a client outside of |Target|. Conversely, these
 ///   occluding clients cannot latch, because latched clients must be in
 ///   |Target|'s view tree.
+@strict_audit(bug="https://fxbug.dev/467128273", state="PENDING_REVIEW")
 type DispatchPolicy = strict enum {
     /// A single client latches onto a pointer event stream, where:
     /// - the pointer event stream starts within the viewport rectangle,

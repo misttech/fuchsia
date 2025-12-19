@@ -11,6 +11,7 @@ library fuchsia.accessibility.gesture;
 const MAX_UTTERANCE_SIZE uint64 = 16384;
 
 /// Gestures types that accessibility offers to a UI component for listening.
+@strict_audit(bug="https://fxbug.dev/467128273", state="PENDING_REVIEW")
 type Type = strict enum {
     /// A three-finger swipe up.
     THREE_FINGER_SWIPE_UP = 1;

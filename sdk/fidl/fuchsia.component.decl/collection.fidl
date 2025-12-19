@@ -52,6 +52,7 @@ type Collection = table {
 };
 
 /// The durability of component instances created in a collection.
+@strict_audit(bug="https://fxbug.dev/467128242", state="PENDING_REVIEW")
 type Durability = strict enum {
     /// An instance exists until either its parent instance is stopped
     /// or it is explicitly destroyed.
@@ -62,6 +63,7 @@ type Durability = strict enum {
 };
 
 /// The kinds of offers that can target the children in a collection.
+@strict_audit(bug="https://fxbug.dev/467128242", state="PENDING_REVIEW")
 type AllowedOffers = strict enum {
     /// Only static offers may target components in the collection. "Static
     /// offers" are the offers in the `ComponentDecl` that target the collection

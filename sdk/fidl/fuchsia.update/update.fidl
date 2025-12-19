@@ -86,6 +86,7 @@ type CheckOptions = table {
 };
 
 /// Who or what initiated the update check.
+@strict_audit(bug="https://fxbug.dev/467128508", state="PENDING_REVIEW")
 type Initiator = strict enum {
     /// The update check was initiated by an interactive user, or the user is
     /// otherwise blocked and waiting for the result of this update check.  This
@@ -183,6 +184,7 @@ closed protocol Monitor {
 ///                +---------------->|       waiting_for_reboot        |
 ///                                  +---------------------------------+
 /// ```
+@strict_audit(bug="https://fxbug.dev/467128508", state="PENDING_REVIEW")
 type State = strict union {
 
     /// The Manager is currently checking for an update.
@@ -298,6 +300,7 @@ type InstallationProgress = table {
 
 /// This is the set of values that are returned by an request to immediately
 /// check for an update.
+@strict_audit(bug="https://fxbug.dev/467128508", state="PENDING_REVIEW")
 type CheckNotStartedReason = strict enum {
 
     /// There was an internal error in starting the update check.  The client

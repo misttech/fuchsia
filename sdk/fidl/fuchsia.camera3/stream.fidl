@@ -206,6 +206,7 @@ type StreamProperties2 = table {
 /// Describes the intended orientation of a given stream relative to its encoded data. For clarity,
 /// the documentation for each enum value is accompanied by an orientation of the chiral '⮬' symbol
 /// illustrating the orientation of the stream's encoded data.
+@strict_audit(bug="https://fxbug.dev/467128527", state="PENDING_REVIEW")
 type Orientation = strict enum {
     /// ⮬: The content is already in the correct orientation.
     UP = 1;

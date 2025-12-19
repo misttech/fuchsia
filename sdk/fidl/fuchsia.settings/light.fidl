@@ -8,6 +8,7 @@ using fuchsia.ui.types;
 const MAX_LIGHT_NAME_LENGTH uint8 = 32;
 
 /// Enum describing the possible types of values for controlling a light.
+@strict_audit(bug="https://fxbug.dev/467128325", state="PENDING_REVIEW")
 type LightType = strict enum {
     /// This type of light supports setting brightness to a uint8_t value.
     BRIGHTNESS = 1;
@@ -26,6 +27,7 @@ type LightState = table {
 
 /// Value of a light. Only one of the three values in the union will be present,
 /// depending on the light's LightType.
+@strict_audit(bug="https://fxbug.dev/467128325", state="PENDING_REVIEW")
 type LightValue = strict union {
     /// Lights with LightType.SIMPLE will have this value.
     1: on bool;
@@ -64,6 +66,7 @@ type LightGroup = table {
     4: lights vector<LightState>:MAX;
 };
 
+@strict_audit(bug="https://fxbug.dev/467128325", state="PENDING_REVIEW")
 type LightError = strict enum {
     /// Call failed for unspecified reasons.
     FAILED = 1;

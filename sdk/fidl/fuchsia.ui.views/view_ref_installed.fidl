@@ -4,6 +4,7 @@
 library fuchsia.ui.views;
 
 /// A collection of error codes related to |ViewRefInstalled|.
+@strict_audit(bug="https://fxbug.dev/467128273", state="PENDING_REVIEW")
 type ViewRefInstalledError = strict enum {
     /// The ViewRef being watched is invalid, or has become invalid.
     INVALID_VIEW_REF = 1;

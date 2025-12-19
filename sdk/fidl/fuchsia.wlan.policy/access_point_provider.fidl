@@ -114,6 +114,7 @@ type AccessPointState = table {
 };
 
 /// Connectivity operating mode for the access point.
+@strict_audit(bug="https://fxbug.dev/467128644", state="PENDING_REVIEW")
 type ConnectivityMode = strict enum {
     /// Allows for connectivity between co-located devices.  Local only access points do not
     /// forward traffic to other network connections.
@@ -125,6 +126,7 @@ type ConnectivityMode = strict enum {
 };
 
 /// Current detailed operating state for an access point.
+@strict_audit(bug="https://fxbug.dev/467128644", state="PENDING_REVIEW")
 type OperatingState = strict enum {
     /// Access point operation failed.  Access points that enter the failed state will
     /// have one update informing registered listeners of the failure and then an

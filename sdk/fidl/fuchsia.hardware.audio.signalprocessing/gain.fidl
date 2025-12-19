@@ -16,6 +16,7 @@ type GainDomain = flexible enum : uint8 {
 };
 
 /// Gain type of representation.
+@strict_audit(bug="https://fxbug.dev/467128527", state="PENDING_REVIEW")
 type GainType = strict enum : uint8 {
     /// Gain specified in dB, for example -103.0dB or +3.2dB.
     DECIBELS = 1;

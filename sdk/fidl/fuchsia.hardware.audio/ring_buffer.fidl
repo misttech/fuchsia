@@ -111,6 +111,7 @@ type RingBufferPositionInfo = struct {
     position uint32;
 };
 
+@strict_audit(bug="https://fxbug.dev/467128527", state="PENDING_REVIEW")
 type GetVmoError = strict enum {
     /// The ring buffer setup failed due to an invalid argument, e.g. min_frames is too big.
     INVALID_ARGS = 1;
