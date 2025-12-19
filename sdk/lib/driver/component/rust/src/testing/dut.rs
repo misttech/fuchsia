@@ -7,11 +7,14 @@ use crate::testing::get_driver_from_token;
 use crate::testing::harness::TestHarness;
 use crate::testing::node::NodeHandle;
 use crate::{Driver, Incoming};
-use fdf::{AutoReleaseDispatcher, DispatcherBuilder, OnDispatcher, WeakDispatcher};
+use fdf::{
+    AsyncDispatcher, AutoReleaseDispatcher, DispatcherBuilder, OnDispatcher, WeakDispatcher,
+};
 use fdf_env::Environment;
 use fdf_fidl::DriverChannel;
 use fidl_next::{Client as NextClient, ClientDispatcher, ClientEnd as NextClientEnd};
 use fidl_next_fuchsia_driver_framework::{Driver as NextDriver, DriverStartArgs};
+use futures::channel::oneshot;
 use std::marker::PhantomData;
 use std::sync::{Arc, mpsc};
 use zx::Status;
@@ -90,15 +93,17 @@ impl<'a, D: Driver> DriverUnderTest<'a, D> {
         let (server_chan, client_chan) = fdf::Channel::<[fidl_next::Chunk]>::create();
         let channel_handle = server_chan.into_driver_handle().into_raw().get();
         let (client_exit_tx, client_exit_rx) = mpsc::channel();
+        let (token_tx, token_rx) = oneshot::channel();
         let initialize_fn = registration.v1.initialize.unwrap();
-        let token = WeakDispatcher::from(&dispatcher)
-            .compute(async move {
+        dispatcher
+            .post_task_sync(move |status| {
+                assert_eq!(status, Status::OK);
                 // SAFETY: We know it's safe to call initialize from the initial dispatcher and we
                 // know channel_handle is non-zero.
-                unsafe { initialize_fn(channel_handle) }.addr()
+                token_tx.send(unsafe { initialize_fn(channel_handle) }.addr()).unwrap();
             })
-            .await
             .unwrap();
+        let token = token_rx.await.unwrap();
 
         let client_end: NextClientEnd<NextDriver, DriverChannel> =
             NextClientEnd::from_untyped(DriverChannel::new(client_chan));

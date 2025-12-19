@@ -12,8 +12,6 @@ use fuchsia_component::client::Service;
 use fuchsia_component_test::{Capability, RealmBuilder};
 use fuchsia_driver_test::{DriverTestRealmBuilder, DriverTestRealmInstance};
 
-// TODO(https://fxbug.dev/470088116): re-enable after fixing flake.
-#[ignore]
 #[fuchsia::test]
 async fn test_sample_driver() -> Result<()> {
     // Create the RealmBuilder.

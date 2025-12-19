@@ -58,8 +58,6 @@ mod tests {
     use super::*;
     use fdf_component::testing::harness::TestHarness;
 
-    // TODO(https://fxbug.dev/470088116): re-enable after fixing flake.
-    #[ignore]
     #[fuchsia::test]
     async fn test_driver_start() {
         let mut harness = TestHarness::<SimpleRustDriver>::new();

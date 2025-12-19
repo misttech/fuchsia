@@ -146,6 +146,9 @@ pub trait OnDispatcher: Clone + Send + Sync {
     /// shutting down).
     ///
     /// Returns a [`Task`] that will cancel the future when dropped.
+    ///
+    /// TODO(470088116): This may be the cause of some flakes, so care should be used with it
+    /// in critical paths for now.
     fn compute<T: Send + 'static>(
         &self,
         future: impl Future<Output = T> + Send + 'static,

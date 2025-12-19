@@ -251,6 +251,20 @@ impl AutoReleaseDispatcher {
     }
 }
 
+impl AsyncDispatcher for AutoReleaseDispatcher {
+    fn as_async_dispatcher_ref(&self) -> AsyncDispatcherRef<'_> {
+        let dispatcher = NonNull::new(self.0.load(Ordering::Relaxed))
+            .expect("tried to obtain async dispatcher after drop");
+        // SAFETY: the validity of this dispatcher is ensured by use of NonNull above and this
+        // object's exclusive ownership over the dispatcher while it's alive.
+        unsafe {
+            AsyncDispatcherRef::from_raw(
+                NonNull::new(fdf_dispatcher_get_async_dispatcher(dispatcher.as_ptr())).unwrap(),
+            )
+        }
+    }
+}
+
 impl From<Dispatcher> for AutoReleaseDispatcher {
     fn from(dispatcher: Dispatcher) -> Self {
         let dispatcher_ptr = dispatcher.release().0.0.as_ptr();

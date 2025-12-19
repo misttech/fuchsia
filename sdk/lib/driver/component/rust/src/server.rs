@@ -259,9 +259,11 @@ mod tests {
             let dispatcher = ClientDispatcher::new(client_end);
             let client = dispatcher.client();
 
-            let client_task = CurrentDispatcher.compute(async move {
-                dispatcher.run(DriverClient).await.unwrap_err();
-            });
+            let client_task = CurrentDispatcher
+                .spawn(async move {
+                    dispatcher.run(DriverClient).await.unwrap_err();
+                })
+                .unwrap();
 
             let channel_handle = server_chan.into_driver_handle().into_raw().get();
             let driver_server = unsafe { initialize_func(channel_handle) } as usize;
