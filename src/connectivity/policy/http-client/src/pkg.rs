@@ -30,36 +30,42 @@ pub async fn serve_client_request_stream(
 
     let () = stream
         .err_into::<anyhow::Error>()
-        .try_for_each_concurrent(None, |message| async {
-            match message {
-                fpkg_http::ClientRequest::DownloadBlob {
-                    url,
-                    destination,
-                    header_timeout,
-                    body_timeout,
-                    resumption_attempt_limit,
-                    responder,
-                } => {
-                    let r = download_blob(
-                        &client,
+        .try_for_each_concurrent(None, |message| {
+            // NB: Shadow variables with a reference that we don't want to move
+            // into the async closure.
+            let client = &client;
+            let inspect = &inspect;
+            let request_count = &request_count;
+            async move {
+                match message {
+                    fpkg_http::ClientRequest::DownloadBlob {
                         url,
-                        destination.into_proxy(),
-                        crate::resuming_get::Params {
-                            header_timeout: zx::BootDuration::from_nanos(header_timeout),
-                            body_timeout: zx::BootDuration::from_nanos(body_timeout),
-                            resumption_attempt_limit,
-                        },
-                        inspect.create_child(
-                            request_count
-                                .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-                                .to_string(),
-                        ),
-                    )
-                    .await;
-                    let () = responder.send(r)?;
+                        destination,
+                        header_timeout,
+                        body_timeout,
+                        resumption_attempt_limit,
+                        responder,
+                    } => {
+                        let r = download_blob(
+                            client,
+                            url,
+                            destination.into_proxy(),
+                            crate::resuming_get::Params {
+                                header_timeout: zx::BootDuration::from_nanos(header_timeout),
+                                body_timeout: zx::BootDuration::from_nanos(body_timeout),
+                                resumption_attempt_limit,
+                            },
+                            inspect.create_child(
+                                request_count
+                                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+                                    .to_string(),
+                            ),
+                        )
+                        .await;
+                        responder.send(r).map_err(anyhow::Error::from)
+                    }
                 }
             }
-            Ok(())
         })
         .await?;
 

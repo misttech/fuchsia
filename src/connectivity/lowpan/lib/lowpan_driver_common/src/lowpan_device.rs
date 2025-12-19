@@ -4,8 +4,8 @@
 
 use crate::prelude_internal::*;
 
-use crate::lowpan_fidl::*;
 use crate::ServeTo;
+use crate::lowpan_fidl::*;
 use anyhow::Error;
 use core::future::ready;
 use futures::stream::BoxStream;
@@ -1233,7 +1233,7 @@ impl<T: Driver> ServeTo<LegacyJoiningRequestStream> for T {
     async fn serve_to(&self, request_stream: LegacyJoiningRequestStream) -> anyhow::Result<()> {
         let request_control_handle = request_stream.control_handle();
 
-        let closure = |command| async {
+        let closure = |command| async move {
             match command {
                 LegacyJoiningRequest::MakeJoinable { duration, port, responder, .. } => {
                     let responder = ResponderNoShutdown::wrap(responder);

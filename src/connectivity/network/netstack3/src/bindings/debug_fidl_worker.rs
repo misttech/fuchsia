@@ -19,13 +19,13 @@ pub(crate) async fn serve_interfaces(
     ctx: crate::bindings::Ctx,
     rs: fnet_debug::InterfacesRequestStream,
 ) -> Result<(), fidl::Error> {
-    rs.try_for_each(|req| async {
-        match req {
+    rs.try_for_each(|req| {
+        futures::future::ready(match req {
             fnet_debug::InterfacesRequest::GetPort { id, port, control_handle: _ } => {
                 handle_get_port(ctx.bindings_ctx(), id, port);
+                Ok(())
             }
-        }
-        Ok(())
+        })
     })
     .await
 }
