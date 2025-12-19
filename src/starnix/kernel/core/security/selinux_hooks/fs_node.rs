@@ -471,39 +471,6 @@ pub(in crate::security) fn fs_node_init_on_create(
     Ok(xattr)
 }
 
-/// Called to label mem-FD file nodes.
-pub(in crate::security) fn fs_node_init_memfd(
-    security_server: &SecurityServer,
-    current_task: &CurrentTask,
-    new_node: &FsNode,
-) {
-    if !security_server.is_policycap_enabled(PolicyCap::MemfdClass) {
-        if current_task.kernel().features.selinux_test_suite {
-            return;
-        }
-        track_stub!(
-            TODO("https://fxbug.dev/458332374"),
-            "Applying memfd_class in spite of missing policycap"
-        );
-    }
-
-    let fs_node_class = FileClass::MemFdFile.into();
-    let sid = if current_task.kernel().security_state.state.as_ref().unwrap().has_policy() {
-        let task_sid = current_task_state(current_task).lock().current_sid;
-        security_server
-            .as_permission_check()
-            .compute_new_fs_node_sid(task_sid, task_sid, fs_node_class, "".into())
-            .expect("Compute label for memfd")
-    } else {
-        // If no policy has been loaded then `memfd`s receive the "unlabeled" context.
-        InitialSid::Unlabeled.into()
-    };
-
-    let mut state = new_node.security_state.lock();
-    state.class = fs_node_class;
-    state.label = FsNodeLabel::SecurityId { sid };
-}
-
 /// Called to label file nodes not linked in any filesystem's directory structure, e.g.
 /// usereventfds, kernel-private sockets, etc.
 pub(in crate::security) fn fs_node_init_anon(
@@ -512,7 +479,17 @@ pub(in crate::security) fn fs_node_init_anon(
     new_node: &FsNode,
     node_type: &str,
 ) -> Result<(), Errno> {
-    let fs_node_class = FileClass::AnonFsNode.into();
+    let (node_class, node_type) = if node_type == "[memfd]" {
+        // If the "memfd_class" policy capability is enabled then mem-FD nodes use the anon_inode
+        // labeling scheme, but receive their own dedicated security class.
+        if !security_server.is_policycap_enabled(PolicyCap::MemfdClass) {
+            return Ok(());
+        }
+        (FileClass::MemFdFile.into(), "")
+    } else {
+        (FileClass::AnonFsNode.into(), node_type)
+    };
+
     let is_private_node = Anon::is_private(new_node);
     // TODO: https://fxbug.dev/405062002 - Fold this into the `fs_node_init_with_dentry*()` logic?
     let sid = if is_private_node {
@@ -522,14 +499,14 @@ pub(in crate::security) fn fs_node_init_anon(
         let task_sid = current_task_state(current_task).lock().current_sid;
         let new_sid = security_server
             .as_permission_check()
-            .compute_new_fs_node_sid(task_sid, task_sid, fs_node_class, node_type.into())
+            .compute_new_fs_node_sid(task_sid, task_sid, node_class, node_type.into())
             .expect("Compute label for anon_inode");
         check_permission(
             &security_server.as_permission_check(),
             current_task,
             task_sid,
             new_sid,
-            CommonFsNodePermission::Create.for_class(fs_node_class),
+            CommonFsNodePermission::Create.for_class(node_class),
             Auditable::Name(node_type.into()),
         )?;
         new_sid
@@ -545,7 +522,7 @@ pub(in crate::security) fn fs_node_init_anon(
     // the class for kernel-private sockets.
     if !is_private_node {
         assert!(matches!(state.class, FsNodeClass::File(_)));
-        state.class = fs_node_class;
+        state.class = node_class;
     }
     state.label = FsNodeLabel::SecurityId { sid };
 

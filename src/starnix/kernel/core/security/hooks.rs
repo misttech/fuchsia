@@ -599,15 +599,6 @@ pub fn fs_node_init_anon(
     }
 }
 
-/// Called on creation of mem-FD [`crate::vfs::FsNode`]s.
-/// Corresponds to the `inode_init_security_anon()` LSM hook, called with the mem-FD node-type.
-pub fn fs_node_init_memfd(current_task: &CurrentTask, new_node: &FsNode) {
-    track_hook_duration!("security.hooks.fs_node_init_anon");
-    if let Some(state) = current_task.kernel().security_state.state.as_ref() {
-        selinux_hooks::fs_node::fs_node_init_memfd(&state.server, current_task, new_node)
-    }
-}
-
 /// Validate that `current_task` has permission to create a regular file in the `parent` directory,
 /// with the specified file `mode`.
 /// Corresponds to the `inode_create()` LSM hook.

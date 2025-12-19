@@ -451,17 +451,19 @@ pub fn new_memfd(
     // TODO: https://fxbug.dev/455785957 - Validate whether any access-checks should be performed
     // during "memfd" creation.
     let fs_node = current_task.override_creds(security::creds_start_internal_operation, || {
-        let node = fs.tmpfs.root().node.create_tmpfile(
+        fs.tmpfs.root().node.create_tmpfile(
             locked,
             current_task,
             &MountInfo::detached(),
             mode!(IFREG, 0o600),
             current_task.current_fscred(),
             FsNodeLinkBehavior::Disallowed,
-        )?;
-        security::fs_node_init_memfd(current_task, &node);
-        Ok(node)
+        )
     })?;
+
+    // LSM allows security modules to choose to treat mem-FDs as a kind of anonymous inode.
+    security::fs_node_init_anon(current_task, &fs_node, "[memfd]")?;
+
     fs_node.write_guard_state.lock().enable_sealing(seals);
 
     // memfd instances appear in /proc[pid]/fd as though they are O_TMPFILE files with names of
