@@ -19,7 +19,7 @@ type BufferMode = strict enum {
 type InterruptOptions = flexible bits {
     /// The interrupt wakes up the system if the system is suspended.
     /// Must not be set if system suspend / resume is disabled.
-    @available(added=27)
+    @available(added=27, removed=NEXT)
     WAKEABLE = 0x01;
 
     /// The interrupt returns a monotonic timestamp from synchronous and
