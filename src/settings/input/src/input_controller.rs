@@ -462,10 +462,10 @@ impl InputController {
         // push the state if it has changed. If the device does not have a camera,
         // it should be None both here and above, and thus not detect a change.
         let modified_cam_state = self.get_cam_sw_state().ok();
-        if cam_state != modified_cam_state {
-            if let Some(state) = modified_cam_state {
-                self.push_cam_sw_state(state).await?;
-            }
+        if cam_state != modified_cam_state
+            && let Some(state) = modified_cam_state
+        {
+            self.push_cam_sw_state(state).await?;
         }
 
         self.store

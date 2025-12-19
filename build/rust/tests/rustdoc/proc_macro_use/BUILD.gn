@@ -34,7 +34,7 @@ if (is_host) {
 }
 
 rustc_library("charlie") {
-  edition = 2021
+  edition = "2024"
   define_rustdoc_test_override = true
   name = "charlie"
   deps = []
@@ -48,7 +48,7 @@ rustc_library("charlie") {
   zip_rustdoc_to = "$target_gen_dir/charlie.doc.zip"
 }
 rustc_macro("march") {
-  edition = 2021
+  edition = "2024"
   define_rustdoc_test_override = true
   name = "march"
   deps = [ ":charlie" ]
@@ -62,7 +62,7 @@ rustc_macro("march") {
   zip_rustdoc_to = "$target_gen_dir/march.doc.zip"
 }
 rustc_library("november") {
-  edition = 2021
+  edition = "2024"
   define_rustdoc_test_override = true
   name = "november"
   deps = [ ":march" ]

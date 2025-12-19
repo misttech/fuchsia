@@ -44,7 +44,7 @@ fuchsia_test_component("integration_test") {
 
 starnix_linux_rustc_binary("thermal_client_bin") {
   testonly = true
-  edition = 2021
+  edition = "2024"
   source_root = "src/thermal_client.rs"
   sources = [ "src/thermal_client.rs" ]
   deps = [

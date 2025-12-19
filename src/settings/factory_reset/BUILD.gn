@@ -16,7 +16,7 @@ group("factory_reset") {
 rustc_library("settings_factory_reset") {
   name = "settings_factory_reset"
   with_unit_tests = true
-  edition = "2021"
+  edition = "2024"
 
   visibility = [
     ":*",

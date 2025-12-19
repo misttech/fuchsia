@@ -16,7 +16,7 @@ group("intl") {
 icu_rustc_library("settings_intl") {
   name = "settings_intl"
   with_unit_tests = true
-  edition = "2021"
+  edition = "2024"
 
   visibility = [
     ":*",

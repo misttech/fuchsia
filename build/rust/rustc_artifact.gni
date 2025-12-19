@@ -324,6 +324,15 @@ template("rustc_artifact") {
     if (defined(invoker.configs)) {
       configs = invoker.configs
     }
+
+    # By default, only the "2024" edition is allowed. To use an older edition, the target must be
+    # included in the `edition_legacy_allowlist`. However, if `allow_legacy_edition` is true, this
+    # specific target is explicitly permitted to use a legacy edition, bypassing the need to be in
+    # the global allowlist.
+    if (invoker.edition != "2024" && (!defined(invoker.allow_legacy_edition) ||
+                                      !invoker.allow_legacy_edition)) {
+      deps += [ "//build/rust:edition_legacy_allowlist" ]
+    }
     configs += [ "//build/config/rust:edition_${invoker.edition}" ]
 
     inputs = _local_inputs + _flag_inputs

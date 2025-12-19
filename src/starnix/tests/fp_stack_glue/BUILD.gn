@@ -44,7 +44,7 @@ fuchsia_test_component("integration_test") {
 
 starnix_linux_rustc_binary("print_uname_bin") {
   testonly = true
-  edition = 2021
+  edition = "2024"
   source_root = "src/print_uname.rs"
   sources = [ source_root ]
   deps = [ "//third_party/rust_crates:nix" ]

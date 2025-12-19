@@ -16,7 +16,7 @@ group("accessibility") {
 rustc_library("settings_accessibility") {
   name = "settings_accessibility"
   with_unit_tests = true
-  edition = "2021"
+  edition = "2024"
 
   visibility = [
     ":*",

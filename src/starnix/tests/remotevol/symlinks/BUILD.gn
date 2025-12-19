@@ -13,7 +13,7 @@ group("tests") {
 
 starnix_linux_rustc_binary("create_encrypted_symlink_bin") {
   testonly = true
-  edition = 2021
+  edition = "2024"
   source_root = "src/debian_programs/create_encrypted_symlink.rs"
   sources = [ source_root ]
   deps = [
@@ -30,7 +30,7 @@ fuchsia_component("create_encrypted_symlink") {
 
 starnix_linux_rustc_binary("read_encrypted_symlink_bin") {
   testonly = true
-  edition = 2021
+  edition = "2024"
   source_root = "src/debian_programs/read_encrypted_symlink.rs"
   sources = [ source_root ]
   deps = [ "//src/starnix/tests/remotevol:remotevol_linux_test_util" ]

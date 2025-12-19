@@ -13,7 +13,7 @@ group("tests") {
 
 starnix_linux_rustc_binary("create_encrypted_file_bin") {
   testonly = true
-  edition = 2021
+  edition = "2024"
   source_root = "src/debian_programs/create_encrypted_file.rs"
   sources = [ source_root ]
   deps = [
@@ -30,7 +30,7 @@ fuchsia_component("create_encrypted_file") {
 
 starnix_linux_rustc_binary("stat_encrypted_file_bin") {
   testonly = true
-  edition = 2021
+  edition = "2024"
   source_root = "src/debian_programs/stat_encrypted_file.rs"
   sources = [ source_root ]
   deps = [ "//src/starnix/tests/remotevol:remotevol_linux_test_util" ]

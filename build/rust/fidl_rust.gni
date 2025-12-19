@@ -108,6 +108,7 @@ template("_fidl_rust_crate") {
       version = "0.1.0"
       edition = "2018"
       disable_clippy = true
+      allow_legacy_edition = true
 
       deps = [
         "//sdk/rust/zx-status",

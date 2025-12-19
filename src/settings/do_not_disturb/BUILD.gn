@@ -16,7 +16,7 @@ group("do_not_disturb") {
 rustc_library("settings_do_not_disturb") {
   name = "settings_do_not_disturb"
   with_unit_tests = true
-  edition = "2021"
+  edition = "2024"
 
   visibility = [
     ":*",

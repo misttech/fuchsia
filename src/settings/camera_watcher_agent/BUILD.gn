@@ -16,7 +16,7 @@ group("camera_watcher_agent") {
 rustc_library("settings_camera_watcher_agent") {
   name = "settings_camera_watcher_agent"
   with_unit_tests = true
-  edition = "2021"
+  edition = "2024"
 
   visibility = [
     ":*",

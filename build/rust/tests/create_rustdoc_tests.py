@@ -384,7 +384,7 @@ document-{self.name}: {self.name}/lib.rs {dep_meta} {dep_touch}
         )
         target = (
             f'{crate_type_target}("{self.name}") {{\n'
-            f"  edition = 2021\n"
+            f'  edition = "2024"\n'
             f"  define_rustdoc_test_override = true\n"
             f'  name = "{self.name}"\n'
             f"  deps = [{deps}]\n"

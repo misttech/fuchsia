@@ -424,10 +424,10 @@ impl DeviceState {
 
 impl From<FidlDeviceState> for DeviceState {
     fn from(device_state: FidlDeviceState) -> Self {
-        if let Some(toggle_flags) = device_state.toggle_flags {
-            if let Some(res) = Self::from_bits(toggle_flags.bits()) {
-                return res;
-            }
+        if let Some(toggle_flags) = device_state.toggle_flags
+            && let Some(res) = Self::from_bits(toggle_flags.bits())
+        {
+            return res;
         }
         Self::default_mutable_toggle_state()
     }

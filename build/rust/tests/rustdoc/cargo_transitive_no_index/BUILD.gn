@@ -34,7 +34,7 @@ if (is_host) {
 }
 
 rustc_library("quebec") {
-  edition = 2021
+  edition = "2024"
   define_rustdoc_test_override = true
   name = "quebec"
   deps = []
@@ -48,7 +48,7 @@ rustc_library("quebec") {
   zip_rustdoc_to = "$target_gen_dir/quebec.doc.zip"
 }
 rustc_library("tango") {
-  edition = 2021
+  edition = "2024"
   define_rustdoc_test_override = true
   name = "tango"
   deps = [ ":quebec" ]
@@ -62,7 +62,7 @@ rustc_library("tango") {
   zip_rustdoc_to = "$target_gen_dir/tango.doc.zip"
 }
 rustc_library("sierra") {
-  edition = 2021
+  edition = "2024"
   define_rustdoc_test_override = true
   name = "sierra"
   deps = [ ":tango" ]

@@ -33,7 +33,7 @@ if (is_host) {
 }
 
 rustc_library("foxtrot") {
-  edition = 2021
+  edition = "2024"
   define_rustdoc_test_override = true
   name = "foxtrot"
   deps = []
@@ -47,7 +47,7 @@ rustc_library("foxtrot") {
   zip_rustdoc_to = "$target_gen_dir/foxtrot.doc.zip"
 }
 rustc_library("echo") {
-  edition = 2021
+  edition = "2024"
   define_rustdoc_test_override = true
   name = "echo"
   deps = [ ":foxtrot" ]

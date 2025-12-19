@@ -35,6 +35,29 @@ group("disable_strict_sources_check_allowlist") {
   visibility += [ "//third_party/rust_crates:*" ]
 }
 
+group("edition_legacy_allowlist") {
+  #  ________  _________  ________  ________
+  # |\   ____\|\___   ___\\   __  \|\   __  \
+  # \ \  \___|\|___ \  \_\ \  \|\  \ \  \|\  \
+  #  \ \_____  \   \ \  \ \ \  \\\  \ \   ____\
+  #   \|____|\  \   \ \  \ \ \  \\\  \ \  \___|
+  #     ____\_\  \   \ \__\ \ \_______\ \__\
+  #    |\_________\   \|__|  \|_______|\|__|
+  #    \|_________|
+  # This is an allowlist of packages that do not enforce that the edition is
+  # set to 2024.
+  visibility = [
+    "//sdk/fidl/*",
+    "//src/lib/android/binder/rust:*",
+    "//src/lib/mundane:*",
+    "//src/sys/pkg/lib/tuf:*",
+    "//third_party/*",
+    "//vendor/*",
+    "//zircon/tools/zither:*",
+    "//zircon/vdso:*",
+  ]
+}
+
 # NOTE: This target is used by "fx set --cargo-toml-gen ..." which
 # will do the following:
 #

@@ -167,6 +167,7 @@ template("rustc_test_internal") {
   rustc_artifact(exe_target_name) {
     forward_variables_from(invoker,
                            [
+                             "allow_legacy_edition",
                              "check_cfgs",
                              "data_deps",
                              "disable_clippy",

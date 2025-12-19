@@ -285,6 +285,7 @@ template("rustc_binary") {
   rustc_artifact(target_name) {
     forward_variables_from(invoker,
                            [
+                             "allow_legacy_edition",
                              "assert_no_deps",
                              "check_cfgs",
                              "data_deps",

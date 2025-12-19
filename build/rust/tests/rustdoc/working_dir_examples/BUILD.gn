@@ -30,7 +30,7 @@ if (is_host) {
 }
 
 rustc_library("quebec") {
-  edition = 2021
+  edition = "2024"
   define_rustdoc_test_override = true
   name = "quebec"
   deps = []
