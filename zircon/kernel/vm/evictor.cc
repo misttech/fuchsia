@@ -88,7 +88,7 @@ struct ReclaimFailureStats {
   // will be overwritten anyway by the actual result of eviction when one happens.
   VmCowReclaimResult prev_eviction_result = fit::ok(
       VmCowReclaimSuccess{.type = VmCowReclaimSuccess::Type::EvictNonLoaned, .num_pages = 0});
-  bool printed_same_page_oops = false;
+  bool printed_same_page_log = false;
 
   struct FailureReasons {
     uint64_t compress_failed = 0;
@@ -167,17 +167,19 @@ struct ReclaimFailureStats {
     // can't expect the VmCowPages to have moved a page it does not own out of the way. Every other
     // failure case should have moved the page out of the way (by calling MarkAccessed), so we
     // should not see the same page in the next eviction attempt.
+    //
+    // It is also possible to see the same page in rare hard-to-check-for cases after having been
+    // reclaimed and reused. See the discussion in https://fxbug.dev/434361683.
     if (prev_eviction_result.is_error() &&
         prev_eviction_result.error_value() == VmCowReclaimFailure::IncorrectPage) {
       return;
     }
 
     prev_page_evictions++;
-    // Print the OOPS only once per eviction attempt to prevent log spam.
-    if (!printed_same_page_oops) {
-      printed_same_page_oops = true;
-      // TODO(https://fxbug.dev/434361683): Temporarily downgrade to printf. This should be an OOPS.
-      printf("WARNING: Evictor reclaiming the same page again %p [prev %s cur %s]\n", evicted_page,
+    // Print only once per eviction attempt to prevent log spam.
+    if (!printed_same_page_log) {
+      printed_same_page_log = true;
+      printf("Evictor reclaiming the same page again %p [prev %s cur %s]\n", evicted_page,
              ToResultString(prev_eviction_result), ToResultString(reclaimed.first));
     }
   }
@@ -216,7 +218,7 @@ void DiagnoseReclamationFailure(ktl::pair<VmCowReclaimResult, const vm_page_t*>*
   failure_stats->Update(reclaim_failed);
   if (unlikely(failure_stats->ShouldPrintLivelock())) {
     printf(
-        "WARNING: Evictor failed %zu reclaims in a row (%zu for prev page), possible livelock\n"
+        "Evictor failed %zu reclaims in a row (%zu for prev page), possible livelock\n"
         "compress_failed %zu compress_accessed %zu evict_accessed %zu incorrect_page %zu other %zu\n",
         failure_stats->consecutive_reclaim_failures, failure_stats->prev_page_evictions,
         failure_stats->failure_reasons.compress_failed,
