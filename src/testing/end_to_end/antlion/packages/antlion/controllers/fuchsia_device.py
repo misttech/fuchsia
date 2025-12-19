@@ -25,7 +25,6 @@ from antlion.controllers.fuchsia_lib.lib_controllers.wlan_controller import (
 from antlion.controllers.fuchsia_lib.lib_controllers.wlan_policy_controller import (
     WlanPolicyController,
 )
-from antlion.controllers.fuchsia_lib.package_server import PackageServer
 from antlion.controllers.fuchsia_lib.ssh import (
     DEFAULT_SSH_PRIVATE_KEY,
     DEFAULT_SSH_USER,
@@ -268,7 +267,6 @@ class FuchsiaDevice:
             r"RTT Min/Max/Avg = \[ ([0-9.]+) / ([0-9.]+) / ([0-9.]+) \] ms"
         )
         self.serial = re.sub("[.:%]", "_", self.ip)
-        self.package_server: PackageServer | None = None
 
         # Create honeydew fuchsia_device.
         if not self.name:
@@ -373,27 +371,6 @@ class FuchsiaDevice:
 
         with open(file_path, "w", encoding="utf-8") as file:
             file.write(content)
-
-    def start_package_server(self) -> None:
-        if not self.packages_archive_path:
-            self.log.warn(
-                "packages_archive_path is not specified. "
-                "Assuming a package server is already running and configured on "
-                "the DUT. If this is not the case, either run your own package "
-                "server, or configure these fields appropriately. "
-                "This is usually required for the Fuchsia iPerf3 client or "
-                "other testing utilities not on device cache."
-            )
-            return
-        if self.package_server:
-            self.log.warn(
-                "Skipping to start the package server since is already running"
-            )
-            return
-
-        self.package_server = PackageServer(self.packages_archive_path)
-        self.package_server.start()
-        self.package_server.configure_device(self.ssh)
 
     def update_wlan_interfaces(self) -> None:
         """Retrieves WLAN interfaces from device and sets the FuchsiaDevice
@@ -702,9 +679,6 @@ class FuchsiaDevice:
                 self.log.warning(f"Unable to clean up WLAN Policy layer: {err}")
 
         self.stop_services()
-
-        if self.package_server:
-            self.package_server.clean_up()
 
     def get_interface_ip_addresses(
         self, interface: str
