@@ -4,7 +4,7 @@
 
 #![cfg(test)]
 use assert_matches::assert_matches;
-use fidl_fuchsia_hardware_power_statecontrol::{RebootOptions, RebootReason2};
+use fidl_fuchsia_hardware_power_statecontrol::{ShutdownAction, ShutdownOptions, ShutdownReason};
 use fidl_fuchsia_paver::Configuration;
 use fidl_fuchsia_update_ext::{
     InstallationErrorData, InstallationProgress, InstallingData, State, UpdateInfo,
@@ -788,7 +788,7 @@ async fn revert_success() {
     #[derive(Debug, PartialEq)]
     enum Interaction {
         Paver(PaverEvent),
-        Reboot(RebootOptions),
+        Reboot(ShutdownOptions),
     }
     let interactions = Arc::new(Mutex::new(vec![]));
     let env = TestEnv::builder()
@@ -821,8 +821,9 @@ async fn revert_success() {
                 configuration: Configuration::A
             }),
             Interaction::Paver(PaverEvent::BootManagerFlush),
-            Interaction::Reboot(RebootOptions {
-                reasons: Some(vec![RebootReason2::DeveloperRequest]),
+            Interaction::Reboot(ShutdownOptions {
+                action: Some(ShutdownAction::Reboot),
+                reasons: Some(vec![ShutdownReason::DeveloperRequest]),
                 ..Default::default()
             }),
         ]

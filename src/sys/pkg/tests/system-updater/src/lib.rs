@@ -12,7 +12,7 @@ use anyhow::{Context as _, Error, anyhow};
 use assert_matches::assert_matches;
 use blobfs_ramdisk::BlobfsRamdisk;
 use fidl::endpoints::{DiscoverableProtocolMarker as _, ServerEnd};
-use fidl_fuchsia_hardware_power_statecontrol::{RebootOptions, RebootReason2};
+use fidl_fuchsia_hardware_power_statecontrol::{ShutdownAction, ShutdownOptions, ShutdownReason};
 use fidl_fuchsia_update_installer_ext::{
     Initiator, Options, UpdateAttempt, UpdateAttemptError, start_update,
 };
@@ -348,8 +348,9 @@ impl TestEnvBuilder {
             Arc::new(MockRebootService::new(Box::new(move |options| {
                 assert_eq!(
                     options,
-                    RebootOptions {
-                        reasons: Some(vec![RebootReason2::SystemUpdate]),
+                    ShutdownOptions {
+                        action: Some(ShutdownAction::Reboot),
+                        reasons: Some(vec![ShutdownReason::SystemUpdate]),
                         ..Default::default()
                     }
                 );

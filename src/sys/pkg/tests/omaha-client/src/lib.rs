@@ -10,7 +10,7 @@ use diagnostics_assertions::{AnyProperty, TreeAssertion, assert_data_tree, tree_
 use diagnostics_hierarchy::DiagnosticsHierarchy;
 use diagnostics_reader::ArchiveReader;
 use fidl_fuchsia_feedback::FileReportResults;
-use fidl_fuchsia_hardware_power_statecontrol::{RebootOptions, RebootReason2};
+use fidl_fuchsia_hardware_power_statecontrol::{ShutdownAction, ShutdownOptions, ShutdownReason};
 use fidl_fuchsia_pkg::{self as fpkg, PackageCacheRequestStream, PackageResolverRequestStream};
 use fidl_fuchsia_update::{
     AttemptsMonitorMarker, AttemptsMonitorRequest, AttemptsMonitorRequestStream,
@@ -271,8 +271,9 @@ impl TestEnvBuilder {
         let reboot_service = Arc::new(MockRebootService::new(Box::new(move |options| {
             assert_eq!(
                 options,
-                RebootOptions {
-                    reasons: Some(vec![RebootReason2::SystemUpdate]),
+                ShutdownOptions {
+                    action: Some(ShutdownAction::Reboot),
+                    reasons: Some(vec![ShutdownReason::SystemUpdate]),
                     ..Default::default()
                 }
             );

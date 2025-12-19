@@ -33,6 +33,9 @@ pub(super) async fn wait_and_reboot(timer: fasync::Timer, proxy: &PowerStateCont
 #[cfg(test)]
 mod tests {
     use super::*;
+    use fidl_fuchsia_hardware_power_statecontrol::{
+        ShutdownAction, ShutdownOptions, ShutdownReason,
+    };
     use fuchsia_sync::Mutex;
     use futures::channel::oneshot;
     use futures::pin_mut;
@@ -48,7 +51,7 @@ mod tests {
         // Create a mock reboot service.
         let (sender, recv) = oneshot::channel();
         let sender = Arc::new(Mutex::new(Some(sender)));
-        let mock = Arc::new(MockRebootService::new(Box::new(move |options: RebootOptions| {
+        let mock = Arc::new(MockRebootService::new(Box::new(move |options: ShutdownOptions| {
             sender.lock().take().unwrap().send(options).unwrap();
             Ok(())
         })));
@@ -91,8 +94,9 @@ mod tests {
         match executor.run_until_stalled(&mut recv) {
             Poll::Ready(res) => assert_eq!(
                 res,
-                Ok(RebootOptions {
-                    reasons: Some(vec![RebootReason2::RetrySystemUpdate]),
+                Ok(ShutdownOptions {
+                    action: Some(ShutdownAction::Reboot),
+                    reasons: Some(vec![ShutdownReason::RetrySystemUpdate]),
                     ..Default::default()
                 })
             ),

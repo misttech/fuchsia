@@ -4,8 +4,8 @@
 
 use anyhow::Error;
 use fidl_fuchsia_hardware_power_statecontrol::{
-    AdminPerformRebootResult, AdminProxy, AdminRequest, AdminRequestStream, RebootOptions,
-    RebootReason2, ShutdownOptions, ShutdownReason,
+    AdminProxy, AdminRequest, AdminRequestStream, AdminShutdownResult, RebootOptions,
+    RebootReason2, ShutdownAction, ShutdownOptions, ShutdownReason,
 };
 use fuchsia_async as fasync;
 use futures::{TryFutureExt, TryStreamExt};
@@ -13,37 +13,37 @@ use std::sync::Arc;
 
 // TODO(https://fxbug.dev/465530639): remove once clients are migrated from PerformReboot to
 // Shutdown.
-fn shutdown_reason_to_reboot_reason(reason: ShutdownReason) -> Option<RebootReason2> {
+fn reboot_reason_to_shutdown_reason(reason: RebootReason2) -> Option<ShutdownReason> {
     match reason {
-        ShutdownReason::UserRequest => Some(RebootReason2::UserRequest),
-        ShutdownReason::DeveloperRequest => Some(RebootReason2::DeveloperRequest),
-        ShutdownReason::SystemUpdate => Some(RebootReason2::SystemUpdate),
-        ShutdownReason::RetrySystemUpdate => Some(RebootReason2::RetrySystemUpdate),
-        ShutdownReason::HighTemperature => Some(RebootReason2::HighTemperature),
-        ShutdownReason::FactoryDataReset => Some(RebootReason2::FactoryDataReset),
-        ShutdownReason::SessionFailure => Some(RebootReason2::SessionFailure),
-        ShutdownReason::CriticalComponentFailure => Some(RebootReason2::CriticalComponentFailure),
-        ShutdownReason::ZbiSwap => Some(RebootReason2::ZbiSwap),
-        ShutdownReason::OutOfMemory => Some(RebootReason2::OutOfMemory),
-        ShutdownReason::NetstackMigration => Some(RebootReason2::NetstackMigration),
-        ShutdownReason::AndroidUnexpectedReason => Some(RebootReason2::AndroidUnexpectedReason),
-        ShutdownReason::AndroidRescueParty => Some(RebootReason2::AndroidRescueParty),
-        ShutdownReason::AndroidCriticalProcessFailure => {
-            Some(RebootReason2::AndroidCriticalProcessFailure)
+        RebootReason2::UserRequest => Some(ShutdownReason::UserRequest),
+        RebootReason2::DeveloperRequest => Some(ShutdownReason::DeveloperRequest),
+        RebootReason2::SystemUpdate => Some(ShutdownReason::SystemUpdate),
+        RebootReason2::RetrySystemUpdate => Some(ShutdownReason::RetrySystemUpdate),
+        RebootReason2::HighTemperature => Some(ShutdownReason::HighTemperature),
+        RebootReason2::FactoryDataReset => Some(ShutdownReason::FactoryDataReset),
+        RebootReason2::SessionFailure => Some(ShutdownReason::SessionFailure),
+        RebootReason2::CriticalComponentFailure => Some(ShutdownReason::CriticalComponentFailure),
+        RebootReason2::ZbiSwap => Some(ShutdownReason::ZbiSwap),
+        RebootReason2::OutOfMemory => Some(ShutdownReason::OutOfMemory),
+        RebootReason2::NetstackMigration => Some(ShutdownReason::NetstackMigration),
+        RebootReason2::AndroidUnexpectedReason => Some(ShutdownReason::AndroidUnexpectedReason),
+        RebootReason2::AndroidRescueParty => Some(ShutdownReason::AndroidRescueParty),
+        RebootReason2::AndroidCriticalProcessFailure => {
+            Some(ShutdownReason::AndroidCriticalProcessFailure)
         }
         _ => None,
     }
 }
 
-fn shutdown_options_to_reboot_options(options: ShutdownOptions) -> RebootOptions {
+fn reboot_options_to_shutdown_options(options: RebootOptions) -> ShutdownOptions {
     let reasons = options
         .reasons
-        .map(|reasons| reasons.into_iter().filter_map(shutdown_reason_to_reboot_reason).collect());
-    RebootOptions { reasons, ..Default::default() }
+        .map(|reasons| reasons.into_iter().filter_map(reboot_reason_to_shutdown_reason).collect());
+    ShutdownOptions { action: Some(ShutdownAction::Reboot), reasons, ..Default::default() }
 }
 
 pub struct MockRebootService {
-    call_hook: Box<dyn Fn(RebootOptions) -> AdminPerformRebootResult + Send + Sync>,
+    call_hook: Box<dyn Fn(ShutdownOptions) -> AdminShutdownResult + Send + Sync>,
 }
 
 impl MockRebootService {
@@ -51,7 +51,7 @@ impl MockRebootService {
     /// `call_hook` must return a `Result` for each call, which will be sent to
     /// the caller as the result of the reboot call.
     pub fn new(
-        call_hook: Box<dyn Fn(RebootOptions) -> AdminPerformRebootResult + Send + Sync>,
+        call_hook: Box<dyn Fn(ShutdownOptions) -> AdminShutdownResult + Send + Sync>,
     ) -> Self {
         Self { call_hook }
     }
@@ -65,11 +65,11 @@ impl MockRebootService {
         while let Some(event) = stream.try_next().await.expect("received request") {
             match event {
                 AdminRequest::PerformReboot { options, responder } => {
-                    let result = (self.call_hook)(options);
+                    let result = (self.call_hook)(reboot_options_to_shutdown_options(options));
                     responder.send(result)?;
                 }
                 AdminRequest::Shutdown { options, responder } => {
-                    let result = (self.call_hook)(shutdown_options_to_reboot_options(options));
+                    let result = (self.call_hook)(options);
                     responder.send(result)?;
                 }
                 _ => {
@@ -144,7 +144,7 @@ mod tests {
         let reboot_service = Arc::new(MockRebootService::new(Box::new(|options| {
             if let Some(reasons) = options.reasons {
                 match &reasons[..] {
-                    [RebootReason2::DeveloperRequest] => Ok(()),
+                    [ShutdownReason::DeveloperRequest] => Ok(()),
                     _ => Err(zx::Status::NOT_SUPPORTED.into_raw()),
                 }
             } else {
@@ -174,6 +174,16 @@ mod tests {
             .await
             .expect("made reboot call");
         assert_eq!(error_reboot_result, Err(zx::Status::NOT_SUPPORTED.into_raw()));
+
+        // Succeed when given expected shutdown reason.
+        let () = proxy
+            .shutdown(&ShutdownOptions {
+                reasons: Some(vec![ShutdownReason::DeveloperRequest]),
+                ..Default::default()
+            })
+            .await
+            .expect("made shutdown call")
+            .expect("shutdown call succeeded");
     }
 
     #[fasync::run_singlethreaded(test)]

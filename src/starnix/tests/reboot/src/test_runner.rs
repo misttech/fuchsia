@@ -3,7 +3,9 @@
 // found in the LICENSE file.
 
 use anyhow::anyhow;
-use fidl_fuchsia_hardware_power_statecontrol::{self as fpower, RebootOptions, RebootReason2};
+use fidl_fuchsia_hardware_power_statecontrol::{
+    self as fpower, ShutdownAction, ShutdownOptions, ShutdownReason,
+};
 use fuchsia_component::server::ServiceFs;
 use fuchsia_component_test::{
     Capability, ChildOptions, ChildRef, RealmBuilder, RealmBuilderParams, RealmInstance, Ref, Route,
@@ -15,13 +17,13 @@ use mock_reboot::MockRebootService;
 use std::sync::Arc;
 use {fidl_fuchsia_sys2 as fsys2, fuchsia_async as fasync};
 
-async fn build_realm() -> (RealmInstance, oneshot::Receiver<RebootOptions>) {
+async fn build_realm() -> (RealmInstance, oneshot::Receiver<ShutdownOptions>) {
     let builder =
         RealmBuilder::with_params(RealmBuilderParams::new().from_relative_url("#meta/realm.cm"))
             .await
             .expect("created");
 
-    let (sender, reboot_reason_receiver) = oneshot::channel();
+    let (sender, shutdown_reason_receiver) = oneshot::channel();
     let sender = Mutex::new(Some(sender));
     let reboot_service = Arc::new(MockRebootService::new(Box::new(move |reason| {
         sender.lock().take().unwrap().send(reason).unwrap();
@@ -76,12 +78,12 @@ async fn build_realm() -> (RealmInstance, oneshot::Receiver<RebootOptions>) {
         .await
         .unwrap();
 
-    (builder.build().await.unwrap(), reboot_reason_receiver)
+    (builder.build().await.unwrap(), shutdown_reason_receiver)
 }
 
 #[fasync::run_singlethreaded(test)]
 async fn test_reboot_ota_update() {
-    let (realm_instance, reboot_options_receiver) = build_realm().await;
+    let (realm_instance, shutdown_options_receiver) = build_realm().await;
     let lifecycle_controller: fsys2::LifecycleControllerProxy =
         realm_instance.root.connect_to_protocol_at_exposed_dir().unwrap();
 
@@ -93,14 +95,18 @@ async fn test_reboot_ota_update() {
         .unwrap();
 
     assert_eq!(
-        reboot_options_receiver.await.unwrap(),
-        RebootOptions { reasons: Some(vec![RebootReason2::SystemUpdate]), ..Default::default() }
+        shutdown_options_receiver.await.unwrap(),
+        ShutdownOptions {
+            action: Some(ShutdownAction::Reboot),
+            reasons: Some(vec![ShutdownReason::SystemUpdate]),
+            ..Default::default()
+        }
     );
 }
 
 #[fasync::run_singlethreaded(test)]
 async fn test_reboot_no_args() {
-    let (realm_instance, reboot_options_receiver) = build_realm().await;
+    let (realm_instance, shutdown_options_receiver) = build_realm().await;
     let lifecycle_controller: fsys2::LifecycleControllerProxy =
         realm_instance.root.connect_to_protocol_at_exposed_dir().unwrap();
 
@@ -109,7 +115,11 @@ async fn test_reboot_no_args() {
 
     fasync::Timer::new(std::time::Duration::from_secs(1)).await;
     assert_eq!(
-        reboot_options_receiver.await.unwrap(),
-        RebootOptions { reasons: Some(vec![RebootReason2::UserRequest]), ..Default::default() }
+        shutdown_options_receiver.await.unwrap(),
+        ShutdownOptions {
+            action: Some(ShutdownAction::Reboot),
+            reasons: Some(vec![ShutdownReason::UserRequest]),
+            ..Default::default()
+        }
     );
 }

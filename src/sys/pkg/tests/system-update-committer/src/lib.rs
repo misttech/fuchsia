@@ -9,7 +9,7 @@ use assert_matches::assert_matches;
 use diagnostics_assertions::{AnyProperty, assert_data_tree};
 use diagnostics_hierarchy::DiagnosticsHierarchy;
 use diagnostics_reader::ArchiveReader;
-use fidl_fuchsia_hardware_power_statecontrol::{RebootOptions, RebootReason2};
+use fidl_fuchsia_hardware_power_statecontrol::{ShutdownAction, ShutdownOptions, ShutdownReason};
 use fidl_fuchsia_paver::{self as fpaver, Configuration, ConfigurationStatus};
 use fidl_fuchsia_update::{CommitStatusProviderMarker, CommitStatusProviderProxy};
 use fuchsia_async::{self as fasync, OnSignals, TimeoutExt};
@@ -511,7 +511,7 @@ async fn inspect_multiple_failures(idle_timeout_millis: i64) {
             }),
         ))
         .health_verification_service(MockHealthVerificationService::new(|| zx::Status::INTERNAL))
-        .reboot_service(MockRebootService::new(Box::new(move |options: RebootOptions| {
+        .reboot_service(MockRebootService::new(Box::new(move |options: ShutdownOptions| {
             reboot_sender.lock().take().unwrap().send(options).unwrap();
             Ok(())
         })))
@@ -520,8 +520,9 @@ async fn inspect_multiple_failures(idle_timeout_millis: i64) {
 
     assert_eq!(
         reboot_recv.await,
-        Ok(RebootOptions {
-            reasons: Some(vec![RebootReason2::RetrySystemUpdate]),
+        Ok(ShutdownOptions {
+            action: Some(ShutdownAction::Reboot),
+            reasons: Some(vec![ShutdownReason::RetrySystemUpdate]),
             ..Default::default()
         })
     );
@@ -571,7 +572,7 @@ async fn paver_failure_causes_reboot(idle_timeout_millis: i64) {
             },
         )))
         // Handle the reboot requests.
-        .reboot_service(MockRebootService::new(Box::new(move |options: RebootOptions| {
+        .reboot_service(MockRebootService::new(Box::new(move |options: ShutdownOptions| {
             reboot_sender.lock().take().unwrap().send(options).unwrap();
             Ok(())
         })))
@@ -580,8 +581,9 @@ async fn paver_failure_causes_reboot(idle_timeout_millis: i64) {
 
     assert_eq!(
         reboot_recv.await,
-        Ok(RebootOptions {
-            reasons: Some(vec![RebootReason2::RetrySystemUpdate]),
+        Ok(ShutdownOptions {
+            action: Some(ShutdownAction::Reboot),
+            reasons: Some(vec![ShutdownReason::RetrySystemUpdate]),
             ..Default::default()
         })
     );
@@ -624,7 +626,7 @@ async fn paver_timeout_causes_reboot(idle_timeout_millis: i64) {
             ),
         )
         // Handle the reboot requests.
-        .reboot_service(MockRebootService::new(Box::new(move |options: RebootOptions| {
+        .reboot_service(MockRebootService::new(Box::new(move |options: ShutdownOptions| {
             reboot_sender.lock().take().unwrap().send(options).unwrap();
             Ok(())
         })))
@@ -633,8 +635,9 @@ async fn paver_timeout_causes_reboot(idle_timeout_millis: i64) {
 
     assert_eq!(
         reboot_recv.await,
-        Ok(RebootOptions {
-            reasons: Some(vec![RebootReason2::RetrySystemUpdate]),
+        Ok(ShutdownOptions {
+            action: Some(ShutdownAction::Reboot),
+            reasons: Some(vec![ShutdownReason::RetrySystemUpdate]),
             ..Default::default()
         })
     );
@@ -676,7 +679,7 @@ async fn health_verification_failure_causes_reboot(idle_timeout_millis: i64) {
         // Make the health verifications fail.
         .health_verification_service(MockHealthVerificationService::new(|| zx::Status::INTERNAL))
         // Handle the reboot requests.
-        .reboot_service(MockRebootService::new(Box::new(move |options: RebootOptions| {
+        .reboot_service(MockRebootService::new(Box::new(move |options: ShutdownOptions| {
             reboot_sender.lock().take().unwrap().send(options).unwrap();
             Ok(())
         })))
@@ -686,8 +689,9 @@ async fn health_verification_failure_causes_reboot(idle_timeout_millis: i64) {
     // We should observe a reboot.
     assert_eq!(
         reboot_recv.await,
-        Ok(RebootOptions {
-            reasons: Some(vec![RebootReason2::RetrySystemUpdate]),
+        Ok(ShutdownOptions {
+            action: Some(ShutdownAction::Reboot),
+            reasons: Some(vec![ShutdownReason::RetrySystemUpdate]),
             ..Default::default()
         })
     );
@@ -733,7 +737,7 @@ async fn recovery_mode_does_not_verify_health(idle_timeout_millis: i64) {
         // Make the health verifications fail which in other modes triggers a reboot.
         .health_verification_service(MockHealthVerificationService::new(|| zx::Status::INTERNAL))
         // Handle the reboot requests.
-        .reboot_service(MockRebootService::new(Box::new(move |options: RebootOptions| {
+        .reboot_service(MockRebootService::new(Box::new(move |options: ShutdownOptions| {
             reboot_sender.lock().take().unwrap().send(options).unwrap();
             Ok(())
         })))
