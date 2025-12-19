@@ -51,24 +51,54 @@ constexpr std::string_view kCaviumMidr = "Cavium CN99XX";
 constexpr std::string_view kCaviumMidr{};
 #endif
 
-std::string ReadMidrTxt() {
+// Returns std::nullopt if no midr.txt was present (as distinguished from the
+// empty string, which indicates that it was present and empty).
+std::optional<std::string> ReadMidrTxt() {
   std::string midr;
   zx::unowned_vmo midr_vmo = standalone::GetVmo("midr.txt");
-  if (*midr_vmo) {
-    uint64_t size = 0;
-    EXPECT_OK(midr_vmo->get_prop_content_size(&size));
-    midr.resize(size);
-    EXPECT_OK(midr_vmo->read(midr.data(), 0, midr.size()));
-    EXPECT_STRNE(midr, "");
+  if (!*midr_vmo) {
+    return std::nullopt;
   }
+
+  uint64_t size = 0;
+  EXPECT_OK(midr_vmo->get_prop_content_size(&size));
+  midr.resize(size);
+  EXPECT_OK(midr_vmo->read(midr.data(), 0, midr.size()));
+  EXPECT_STRNE(midr, "");
+  printf("INFO: Contents of midr.txt: \"%s\"\n", midr.c_str());
   return midr;
 }
 
-bool CheckIsCavium() { return !kCaviumMidr.empty() && ReadMidrTxt().starts_with(kCaviumMidr); }
+// Returns std::nullopt if we were unable to determine for certain whether we
+// are on a Cavium (i.e., if no midr.txt was present on arm64).
+[[maybe_unused]] std::optional<bool> CheckIsCavium() {
+  if (kCaviumMidr.empty()) {
+    return false;
+  }
 
-bool SkipBug363254896() {
-  static bool is_cavium = CheckIsCavium();
-  return is_cavium;
+  // No midr.txt, so cannot determine Cavium-ness at this stage.
+  std::optional<std::string> midr = ReadMidrTxt();
+  if (!midr) {
+    return std::nullopt;
+  }
+  return midr->starts_with(kCaviumMidr);
+}
+
+// Returns std::nullopt if skipping should not occur, or else will return the
+// message that should be passed to ZXTEST_SKIP().
+std::optional<std::string_view> SkipBug363254896() {
+#ifdef __aarch64__
+  static std::optional<bool> is_cavium = CheckIsCavium();
+
+  if (!is_cavium.has_value()) {
+    return "WARNING: No midr.txt was present, so assuming the worst (i.e., that "
+           "we're on a Cavium) and skipping per https://fxbug.dev/363254896\n";
+  }
+  if (*is_cavium) {
+    return "We are on a Cavium, so skipping per https://fxbug.dev/363254896\n";
+  }
+#endif
+  return std::nullopt;
 }
 
 TEST(ProcessTest, LongNameSucceeds) {
@@ -729,8 +759,8 @@ TEST(ProcessTest, SuspendWithDyingThread) {
 
 template <typename InfoT>
 static void TestProcessGetInfoRuntime(const uint32_t topic) {
-  if (SkipBug363254896()) {
-    ZXTEST_SKIP("https://fxbug.dev/363254896 skipped on buggy hardware");
+  if (std::optional<std::string_view> skip = SkipBug363254896(); skip) {
+    ZXTEST_SKIP(*skip);
   }
 
   TestProcess test_process;
