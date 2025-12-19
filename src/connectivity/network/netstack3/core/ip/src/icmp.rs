@@ -1491,14 +1491,6 @@ fn receive_ndp_packet<
 
             let target_address = p.message().target_address();
 
-            let src_ip = match src_ip {
-                Ipv6SourceAddr::Unicast(src_ip) => src_ip,
-                Ipv6SourceAddr::Unspecified => {
-                    trace!("dropping NA with unspecified source and target = {:?}", target_address);
-                    return;
-                }
-            };
-
             let target_address = match UnicastAddr::new(*target_address) {
                 Some(a) => a,
                 None => {

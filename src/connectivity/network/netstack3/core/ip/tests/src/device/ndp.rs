@@ -995,7 +995,7 @@ fn test_receiving_router_advertisement_validity_check() {
     assert_eq!(ctx.core_ctx.ipv6().icmp.ndp_counters.rx.router_advertisement.get(), 1);
 }
 
-const NS_TARGET_ADDR: Ipv6Addr = net_ip_v6!("2001:db8::3");
+const TARGET_ADDR: Ipv6Addr = net_ip_v6!("2001:db8::3");
 const NS_SOURCE_LINK_ADDR: Mac = mac!("aa:bb:cc:dd:ee:ff");
 
 // Neighbor Solicitations with a hop-limit != 255 should be ignored.
@@ -1007,7 +1007,7 @@ const NS_SOURCE_LINK_ADDR: Mac = mac!("aa:bb:cc:dd:ee:ff");
 // solicited-node multicast group as their destination.
 #[test_case(Ipv6::UNSPECIFIED_ADDRESS, TEST_ADDRS_V6.local_ip.get(),
     REQUIRED_NDP_IP_PACKET_HOP_LIMIT, &[], false; "invalid_dst_ip")]
-#[test_case(Ipv6::UNSPECIFIED_ADDRESS, NS_TARGET_ADDR.to_solicited_node_address().get(),
+#[test_case(Ipv6::UNSPECIFIED_ADDRESS, TARGET_ADDR.to_solicited_node_address().get(),
     REQUIRED_NDP_IP_PACKET_HOP_LIMIT, &[], true; "valid_dst_ip")]
 // Neighbor Solicitations with an unspecified source and the source link-layer
 // address option should be ignored
@@ -1031,7 +1031,7 @@ fn test_receiving_neighbor_solicitation_validity_check(
             src_ip,
             dst_ip,
             IcmpZeroCode,
-            NeighborSolicitation::new(NS_TARGET_ADDR),
+            NeighborSolicitation::new(TARGET_ADDR),
         ))
         .wrap_in(Ipv6PacketBuilder::new(src_ip, dst_ip, hop_limit, Ipv6Proto::Icmpv6))
         .serialize_vec_outer()
@@ -1041,7 +1041,7 @@ fn test_receiving_neighbor_solicitation_validity_check(
     let (mut ctx, device_ids) = FakeCtxBuilder::with_addrs(Ipv6::TEST_ADDRS).build();
     let device_id: DeviceId<_> = device_ids[0].clone().into();
 
-    ctx.test_api().join_ip_multicast(&device_id, NS_TARGET_ADDR.to_solicited_node_address());
+    ctx.test_api().join_ip_multicast(&device_id, TARGET_ADDR.to_solicited_node_address());
 
     ctx.test_api().receive_ip_packet::<Ipv6, _>(
         &device_id,
@@ -1056,51 +1056,46 @@ fn test_receiving_neighbor_solicitation_validity_check(
     );
 }
 
-#[test]
-fn test_receiving_neighbor_advertisement_validity_check() {
-    fn neighbor_advertisement_message(hop_limit: u8) -> Buf<Vec<u8>> {
-        let src_ip = Ipv6Addr::from([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 192, 168, 0, 10]);
-        let dst_ip = Ipv6::TEST_ADDRS.local_ip.get();
-        let target_ip = Ipv6Addr::from([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 192, 168, 0, 11]);
-        EmptyBuf
-            .wrap_in(IcmpPacketBuilder::<Ipv6, _>::new(
-                src_ip,
-                dst_ip,
-                IcmpZeroCode,
-                NeighborAdvertisement::new(
-                    false, /* router_flag */ false, /* solicited_flag */ false,
-                    /* override_flag */ target_ip,
-                ),
-            ))
-            .wrap_in(Ipv6PacketBuilder::new(src_ip, dst_ip, hop_limit, Ipv6Proto::Icmpv6))
-            .serialize_vec_outer()
-            .unwrap()
-            .unwrap_b()
-    }
+#[test_case(TEST_ADDRS_V6.remote_ip.get(), REQUIRED_NDP_IP_PACKET_HOP_LIMIT, true; "accepted")]
+#[test_case(Ipv6::UNSPECIFIED_ADDRESS, REQUIRED_NDP_IP_PACKET_HOP_LIMIT, true;
+    "accepted_with_unspecified_source")]
+#[test_case(TEST_ADDRS_V6.remote_ip.get(), 3, false; "rejected_with_invalid_hop_limit")]
+fn test_receiving_neighbor_advertisement_validity_check(
+    src_ip: Ipv6Addr,
+    hop_limit: u8,
+    expect_delivered: bool,
+) {
+    let dst_ip = Ipv6::TEST_ADDRS.local_ip.get();
+    let icmpv6_packet_buf = EmptyBuf
+        .wrap_in(IcmpPacketBuilder::<Ipv6, _>::new(
+            src_ip,
+            dst_ip,
+            IcmpZeroCode,
+            NeighborAdvertisement::new(
+                false, // router_flag
+                false, // solicited_flag
+                false, // override_flag
+                TARGET_ADDR,
+            ),
+        ))
+        .wrap_in(Ipv6PacketBuilder::new(src_ip, dst_ip, hop_limit, Ipv6Proto::Icmpv6))
+        .serialize_vec_outer()
+        .unwrap()
+        .unwrap_b();
 
     let (mut ctx, device_ids) = FakeCtxBuilder::with_addrs(Ipv6::TEST_ADDRS).build();
     let device_id: DeviceId<_> = device_ids[0].clone().into();
 
-    let invalid_hop_limit = 3;
-    let hop_limit = REQUIRED_NDP_IP_PACKET_HOP_LIMIT;
-
-    // Test receiving NDP NS where hop limit is not 255 (should not receive).
-    let icmpv6_packet_buf = neighbor_advertisement_message(invalid_hop_limit);
     ctx.test_api().receive_ip_packet::<Ipv6, _>(
         &device_id,
         Some(FrameDestination::Individual { local: true }),
         icmpv6_packet_buf,
     );
-    assert_eq!(ctx.core_ctx.ipv6().icmp.ndp_counters.rx.neighbor_advertisement.get(), 0);
-
-    // Test receiving NDP NS where hop limit is 255 (should receive).
-    let icmpv6_packet_buf = neighbor_advertisement_message(hop_limit);
-    ctx.test_api().receive_ip_packet::<Ipv6, _>(
-        &device_id,
-        Some(FrameDestination::Individual { local: true }),
-        icmpv6_packet_buf,
+    let expected_na_count = if expect_delivered { 1 } else { 0 };
+    assert_eq!(
+        ctx.core_ctx.ipv6().icmp.ndp_counters.rx.neighbor_advertisement.get(),
+        expected_na_count
     );
-    assert_eq!(ctx.core_ctx.ipv6().icmp.ndp_counters.rx.neighbor_advertisement.get(), 1);
 }
 
 #[test]
