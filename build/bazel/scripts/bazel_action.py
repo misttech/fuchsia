@@ -512,7 +512,7 @@ def copy_directory_threaded(src_dir: FilePath, dst_dir: FilePath) -> None:
 setattr(filecmp, "BUFSIZE", 256 * 1024)
 
 
-def check_if_need_to_copy_file(args: tuple[str, str]) -> bool:
+def check_if_need_to_copy_file(args: tuple[Path, Path]) -> bool:
     """Check if the file copy given as a src,dst tuple needs to be performed.
 
     This compares the files and returns true if they need to be copied.
@@ -1070,7 +1070,10 @@ def list_to_pairs(l: T.Iterable[T.Any]) -> T.Iterable[tuple[T.Any, T.Any]]:
             last_val = val
             is_first = False
         else:
-            yield (last_val, val)
+            yield (
+                last_val,
+                val,
+            )  # pyright: ignore[reportPossiblyUnboundVariable]
             is_first = True
 
 
@@ -1092,7 +1095,7 @@ class FileOutputsAction(argparse.Action):
             raise ValueError("default not allowed")
         super().__init__(option_strings, dest, nargs="+", default=[], **kwargs)
 
-    def __call__(self, parser, namespace, values, option_string):  # type: ignore
+    def __call__(self, parser, namespace, values: list[T.Any], option_string):  # type: ignore
         if len(values) < 2:
             raise ValueError(
                 f"expected at least 2 arguments for {option_string}"
@@ -1131,7 +1134,7 @@ class DirectoryOutputsAction(argparse.Action):
             raise ValueError("default not allowed")
         super().__init__(option_strings, dest, nargs="+", default=[], **kwargs)
 
-    def __call__(self, parser, namespace, values, option_string):  # type: ignore
+    def __call__(self, parser, namespace, values: list[T.Any], option_string):  # type: ignore
         if len(values) < 3:
             raise ValueError(
                 f"expected at least 3 arguments for {option_string}"
@@ -1167,7 +1170,7 @@ class FinalSymlinkOutputsAction(argparse.Action):
             raise ValueError("default not allowed")
         super().__init__(option_strings, dest, nargs="+", default=[], **kwargs)
 
-    def __call__(self, parser, namespace, values, option_string):  # type: ignore
+    def __call__(self, parser, namespace, values: list[T.Any], option_string):  # type: ignore
         if len(values) != 2:
             raise ValueError(f"expected 2 arguments for {option_string}")
         dest_list = getattr(namespace, self.dest, [])
@@ -1197,7 +1200,7 @@ class PackageOutputsAction(argparse.Action):
             raise ValueError("default not allowed")
         super().__init__(option_strings, dest, nargs=4, default=[], **kwargs)
 
-    def __call__(self, parser, namespace, values, option_string):  # type: ignore
+    def __call__(self, parser, namespace, values: list[T.Any], option_string):  # type: ignore
         assert len(values) == 4
         if not values[0]:
             raise ValueError("expected non-empty Bazel package label.")
@@ -1336,6 +1339,12 @@ def main() -> int:
 
     if not args.bazel_targets:
         return parser.error("A least one --bazel-targets value is needed!")
+
+    for target in args.bazel_targets:
+        if "*" in target:
+            return parser.error(
+                f"Wildcards are not allowed in --bazel-targets:  {target}"
+            )
 
     _build_fuchsia_package = args.command == "build" and args.package_outputs
 
@@ -1873,7 +1882,7 @@ def main() -> int:
         )
         compile_commands = bazel_compdb_utils.compdb_for_labels(
             build_dir,
-            bazel_paths.launcher,
+            str(bazel_paths.launcher),
             configured_args,
             args.bazel_targets,
         )
