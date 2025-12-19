@@ -379,6 +379,19 @@ impl Capabilities {
                         }
                     }
                 }
+                fruntime::CapabilitiesRequest::CapabilityAssociateHandle {
+                    capability_handle,
+                    other_handle,
+                    responder,
+                    ..
+                } => {
+                    let res = (|| {
+                        let capability: Capability =
+                            self.remote_capabilities.get(capability_handle)?;
+                        self.remote_capabilities.store(other_handle, capability)
+                    })();
+                    let _ = responder.send(res);
+                }
                 fruntime::CapabilitiesRequest::ConnectorRouterRoute {
                     router,
                     request,

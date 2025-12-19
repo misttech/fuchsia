@@ -481,4 +481,16 @@ open protocol Capabilities {
     }) -> (struct {
         response RouterResponse;
     }) error zx.Status;
+
+    /// Associates `other_handle` with the same capability referenced by
+    /// `capability_handle`.
+    ///
+    /// Typically if one already has `capability_handle` the handle can be
+    /// duplicated to make a new handle that references the same object, but
+    /// this doesn't work when someone else has provided a handle that should be
+    /// associated with an existing object.
+    flexible CapabilityAssociateHandle(resource struct {
+        capability_handle zx.Handle:EVENTPAIR;
+        other_handle zx.Handle:EVENTPAIR;
+    }) -> () error CapabilitiesError;
 };
