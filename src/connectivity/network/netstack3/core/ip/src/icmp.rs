@@ -1344,6 +1344,34 @@ fn receive_ndp_packet<
                 }
             };
 
+            // Extract the options relevant to Neighbor Solicitations
+            let (source_link_addr, nonce) = p.body().iter().fold(
+                (None, None),
+                |(found_source_link_addr, found_nonce), option| {
+                    match option {
+                        NdpOption::Nonce(nonce) => (found_source_link_addr, Some(nonce)),
+                        NdpOption::SourceLinkLayerAddress(source_link_addr) => {
+                            (Some(source_link_addr), found_nonce)
+                        }
+                        // The following options are not expected to be present
+                        // in Neighbor Solicitations. As per RFC 4861,
+                        // section 7.1.1:
+                        //   The contents of any defined options that are not
+                        //   specified to be used with Neighbor Solicitation
+                        //   messages MUST be ignored and the packet processed
+                        //   as normal.
+                        NdpOption::Mtu(_)
+                        | NdpOption::PrefixInformation(_)
+                        | NdpOption::RecursiveDnsServer(_)
+                        | NdpOption::RedirectedHeader { .. }
+                        | NdpOption::RouteInformation(_)
+                        | NdpOption::TargetLinkLayerAddress(_) => {
+                            (found_source_link_addr, found_nonce)
+                        }
+                    }
+                },
+            );
+
             if src_ip == Ipv6SourceAddr::Unspecified {
                 // Per RFC 4861, section 7.1.1:
                 //   A node MUST silently discard any received Neighbor
@@ -1360,12 +1388,17 @@ fn receive_ndp_packet<
                     );
                     return;
                 }
-
-                // TODO(https://fxbug.dev/454387514): Once the Source
-                // Link-Layer Address NDP option is supported, we'll need to
-                // check for its presence here. RFC 4861, section 7.1.1
-                // states we should discard the Neighbor Solicitation if it
-                // includes the option alongside an unspecified source.
+                //   [...]
+                //     - If the IP source address is the unspecified address,
+                //       there is no source link-layer address option in the
+                //       message.
+                if let Some(addr) = source_link_addr {
+                    debug!(
+                        "dropping NS from {} for {} with source link-layer addr option ({:?}).",
+                        src_ip, target_address, addr
+                    );
+                    return;
+                }
             }
 
             core_ctx.counters().rx.neighbor_solicitation.increment();
@@ -1386,7 +1419,7 @@ fn receive_ndp_packet<
                         bindings_ctx,
                         &device_id,
                         target_address.into_specified(),
-                        p.body().iter().find_map(|option| option.nonce()),
+                        nonce,
                     ) {
                         Some(IpAddressState::Assigned) => {
                             // Address is assigned to us to we let the
@@ -1431,9 +1464,7 @@ fn receive_ndp_packet<
                         }
                     }
 
-                    let link_addr = p.body().iter().find_map(|o| o.source_link_layer_address());
-
-                    if let Some(link_addr) = link_addr {
+                    if let Some(link_addr) = source_link_addr {
                         NudIpHandler::handle_neighbor_probe(
                             core_ctx,
                             bindings_ctx,

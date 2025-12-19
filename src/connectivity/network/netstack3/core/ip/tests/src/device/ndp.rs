@@ -996,25 +996,37 @@ fn test_receiving_router_advertisement_validity_check() {
 }
 
 const NS_TARGET_ADDR: Ipv6Addr = net_ip_v6!("2001:db8::3");
+const NS_SOURCE_LINK_ADDR: Mac = mac!("aa:bb:cc:dd:ee:ff");
 
 // Neighbor Solicitations with a hop-limit != 255 should be ignored.
 #[test_case(TEST_ADDRS_V6.remote_ip.get(), TEST_ADDRS_V6.local_ip.get(),
-    3, false; "invalid_hop_limit")]
+    3, &[], false; "invalid_hop_limit")]
 #[test_case(TEST_ADDRS_V6.remote_ip.get(), TEST_ADDRS_V6.local_ip.get(),
-    REQUIRED_NDP_IP_PACKET_HOP_LIMIT, true; "valid_hop_limit")]
+    REQUIRED_NDP_IP_PACKET_HOP_LIMIT, &[], true; "valid_hop_limit")]
 // Neighbor Solicitations with an unspecified source must use the
 // solicited-node multicast group as their destination.
 #[test_case(Ipv6::UNSPECIFIED_ADDRESS, TEST_ADDRS_V6.local_ip.get(),
-    REQUIRED_NDP_IP_PACKET_HOP_LIMIT, false; "invalid_dst_ip")]
+    REQUIRED_NDP_IP_PACKET_HOP_LIMIT, &[], false; "invalid_dst_ip")]
 #[test_case(Ipv6::UNSPECIFIED_ADDRESS, NS_TARGET_ADDR.to_solicited_node_address().get(),
-    REQUIRED_NDP_IP_PACKET_HOP_LIMIT, true; "valid_dst_ip")]
+    REQUIRED_NDP_IP_PACKET_HOP_LIMIT, &[], true; "valid_dst_ip")]
+// Neighbor Solicitations with an unspecified source and the source link-layer
+// address option should be ignored
+#[test_case(
+    Ipv6::UNSPECIFIED_ADDRESS,
+    TEST_ADDRS_V6.local_ip.get(),
+    REQUIRED_NDP_IP_PACKET_HOP_LIMIT,
+    &[NdpOptionBuilder::SourceLinkLayerAddress(NS_SOURCE_LINK_ADDR.as_ref())],
+    false;
+    "unspecified_source_with_source_link_addr")]
 fn test_receiving_neighbor_solicitation_validity_check(
     src_ip: Ipv6Addr,
     dst_ip: Ipv6Addr,
     hop_limit: u8,
+    options: &[NdpOptionBuilder<'_>],
     expect_delivered: bool,
 ) {
-    let icmpv6_packet_buf = EmptyBuf
+    let icmpv6_packet_buf = OptionSequenceBuilder::new(options.iter())
+        .into_serializer()
         .wrap_in(IcmpPacketBuilder::<Ipv6, _>::new(
             src_ip,
             dst_ip,
