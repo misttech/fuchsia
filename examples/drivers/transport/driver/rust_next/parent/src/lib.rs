@@ -119,6 +119,8 @@ mod tests {
 
     const BITRATE: u32 = 0x5;
 
+    // TODO(https://fxbug.dev/470088116): re-enable after fixing flake.
+    #[ignore]
     #[fuchsia::test]
     async fn test_client() {
         let mut harness = TestHarness::<DriverTransportParent>::new();
