@@ -44,7 +44,7 @@ use zx::{AsHandleRef, HandleBased};
 const SYNC_IOC_MERGE: u8 = 3;
 const SYNC_IOC_FILE_INFO: u8 = 4;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum Timeline {
     Magma,
     Hwc,
@@ -118,7 +118,14 @@ impl FileOps for SyncFile {
         _file: &FileObject,
         _current_task: &CurrentTask,
     ) -> Result<Option<zx::NullableHandle>, Errno> {
-        assert!(self.fence.sync_points.len() == 1);
+        if self.fence.sync_points.len() != 1 {
+            log_warn!(
+                "SyncFile::to_handle failed: multiple sync points ({}) not supported: {:?}",
+                self.fence.sync_points.len(),
+                self.fence.sync_points.iter().map(|p| p.timeline.clone()).collect::<Vec<_>>()
+            );
+            return error!(ENOTSUP);
+        }
         let dup = self.fence.sync_points[0]
             .counter
             .duplicate_handle(zx::Rights::SAME_RIGHTS)
