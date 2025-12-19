@@ -78,10 +78,7 @@
             dependency: "weak",
         },
         {
-            protocol: [
-                "fuchsia.boot.Arguments",
-                "fuchsia.paver.Paver",
-            ],
+            protocol: [ "fuchsia.paver.Paver" ],
             from: "parent",
             to: "#omaha-client-service",
         },
@@ -103,6 +100,28 @@
         },
         {
             directory: "root-ssl-certificates",
+            from: "parent",
+            to: "#omaha-client-service",
+        },
+        {
+            config: [
+                "fuchsia.omaha.AllowRebootWhenIdle",
+                "fuchsia.omaha.FuzzPercentageRange",
+                "fuchsia.omaha.PeriodicIntervalMinutes",
+                "fuchsia.omaha.RetryDelaySeconds",
+                "fuchsia.omaha.StartupDelaySeconds",
+            ],
+            from: "parent",
+            to: "#omaha-client-service",
+        },
+        {
+            config: [
+                "fuchsia.omaha_app_id",
+                "fuchsia.omaha_url",
+                "fuchsia.ota_channel",
+                "fuchsia.ota_realm",
+                "fuchsia.product_id",
+            ],
             from: "parent",
             to: "#omaha-client-service",
         },

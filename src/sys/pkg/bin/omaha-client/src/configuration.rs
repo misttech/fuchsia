@@ -6,7 +6,6 @@ use crate::app_set::{AppIdSource, AppMetadata, EagerPackage, FuchsiaAppSet};
 use anyhow::{Error, anyhow};
 use channel_config::{ChannelConfig, ChannelConfigs};
 use eager_package_config::omaha_client::{EagerPackageConfig, EagerPackageConfigs};
-use fidl_fuchsia_boot::{ArgumentsMarker, ArgumentsProxy};
 use fidl_fuchsia_pkg::{self as fpkg, CupMarker, CupProxy, GetInfoError};
 use log::{error, info, warn};
 use omaha_client::common::App;
@@ -68,12 +67,12 @@ impl ClientConfiguration {
     /// Given an (optional) set of ChannelConfigs, load all the other configs that are needed, and
     /// construct an overall configuration struct that can then be used.
     /// TODO: Move the reading of channel_configs.json into this.
-    pub async fn initialize(channel_configs: Option<&ChannelConfigs>) -> Result<Self, io::Error> {
+    pub async fn initialize(
+        channel_configs: Option<&ChannelConfigs>,
+        config: &omaha_client_structured_config::Config,
+    ) -> Result<Self, io::Error> {
         let version = get_version()?;
-        let vbmeta_data = VbMetaData::from_namespace().await.unwrap_or_else(|e| {
-            warn!("Failed to get data from vbmeta {:?}", e);
-            VbMetaData::default()
-        });
+        let vbmeta_data = VbMetaData::from_config(config);
         Ok(Self::initialize_from(&version, channel_configs, vbmeta_data).await)
     }
 
@@ -291,29 +290,13 @@ struct VbMetaData {
 }
 
 impl VbMetaData {
-    async fn from_namespace() -> Result<Self, Error> {
-        let proxy = fuchsia_component::client::connect_to_protocol::<ArgumentsMarker>()?;
-        Self::from_proxy(proxy).await
-    }
-    async fn from_proxy(proxy: ArgumentsProxy) -> Result<Self, Error> {
-        let keys = &[
-            "omaha_app_id".to_owned(),
-            "ota_channel".to_owned(),
-            "ota_realm".to_owned(),
-            "product_id".to_owned(),
-            "omaha_url".to_owned(),
-        ];
-        let mut res = proxy.get_strings(keys).await?;
-        if res.len() != 5 {
-            Err(anyhow!("Remote endpoint returned {} values, expected 5", res.len()))
-        } else {
-            Ok(Self {
-                appid: res[0].take(),
-                channel_name: res[1].take(),
-                realm_id: res[2].take(),
-                product_id: res[3].take(),
-                service_url: res[4].take(),
-            })
+    fn from_config(config: &omaha_client_structured_config::Config) -> Self {
+        Self {
+            appid: Some(config.app_id.clone()),
+            channel_name: Some(config.ota_channel.clone()),
+            realm_id: Some(config.ota_realm.clone()),
+            product_id: Some(config.product_id.clone()),
+            service_url: Some(config.omaha_url.clone()),
         }
     }
 }
@@ -323,7 +306,6 @@ mod tests {
     use super::*;
     use eager_package_config::omaha_client::OmahaServer;
     use fidl::endpoints::create_proxy_and_stream;
-    use fidl_fuchsia_boot::ArgumentsRequest;
     use fidl_fuchsia_pkg::CupRequest;
     use fuchsia_async as fasync;
     use fuchsia_url::UnpinnedAbsolutePackageUrl;
@@ -534,76 +516,28 @@ mod tests {
 
     #[fasync::run_singlethreaded(test)]
     async fn test_get_data_from_vbmeta() {
-        let (proxy, mut stream) = create_proxy_and_stream::<ArgumentsMarker>();
-        let fut = async move {
-            assert_eq!(
-                VbMetaData::from_proxy(proxy).await.unwrap(),
-                VbMetaData {
-                    appid: Some("test-appid".to_string()),
-                    channel_name: Some("test-channel".to_string()),
-                    realm_id: Some("test-realm".to_string()),
-                    product_id: Some("test-product".to_string()),
-                    service_url: Some("test-url".to_string())
-                }
-            );
+        let config = omaha_client_structured_config::Config {
+            allow_reboot_when_idle: true,
+            fuzz_percentage_range: 201,
+            periodic_interval_minutes: 1,
+            retry_delay_seconds: 1,
+            startup_delay_seconds: 1,
+            app_id: "test-appid".to_owned(),
+            ota_channel: "test-channel".to_owned(),
+            ota_realm: "test-realm".to_owned(),
+            product_id: "test-product".to_owned(),
+            omaha_url: "test-url".to_owned(),
         };
-        let stream_fut = async move {
-            match stream.next().await.unwrap() {
-                Ok(ArgumentsRequest::GetStrings { keys, responder }) => {
-                    assert_eq!(
-                        keys,
-                        vec!["omaha_app_id", "ota_channel", "ota_realm", "product_id", "omaha_url"]
-                    );
-                    let values = &[
-                        Some("test-appid".to_owned()),
-                        Some("test-channel".to_owned()),
-                        Some("test-realm".to_owned()),
-                        Some("test-product".to_owned()),
-                        Some("test-url".to_owned()),
-                    ];
-                    responder.send(values).expect("send failed");
-                }
-                request => panic!("Unexpected request: {request:?}"),
+        assert_eq!(
+            VbMetaData::from_config(&config),
+            VbMetaData {
+                appid: Some("test-appid".to_string()),
+                channel_name: Some("test-channel".to_string()),
+                realm_id: Some("test-realm".to_string()),
+                product_id: Some("test-product".to_string()),
+                service_url: Some("test-url".to_string())
             }
-        };
-        future::join(fut, stream_fut).await;
-    }
-
-    #[fasync::run_singlethreaded(test)]
-    async fn test_get_data_from_vbmeta_missing() {
-        let (proxy, mut stream) = create_proxy_and_stream::<ArgumentsMarker>();
-        let fut = async move {
-            let vbmeta_data = VbMetaData::from_proxy(proxy).await.unwrap();
-            assert_eq!(vbmeta_data, VbMetaData::default());
-        };
-        let stream_fut = async move {
-            match stream.next().await.unwrap() {
-                Ok(ArgumentsRequest::GetStrings { keys, responder }) => {
-                    assert_eq!(keys.len(), 5);
-                    const NONE: Option<String> = None;
-                    responder.send(&[NONE; 5]).expect("send failed");
-                }
-                request => panic!("Unexpected request: {request:?}"),
-            }
-        };
-        future::join(fut, stream_fut).await;
-    }
-
-    #[fasync::run_singlethreaded(test)]
-    async fn test_get_data_from_vbmeta_error() {
-        let (proxy, mut stream) = create_proxy_and_stream::<ArgumentsMarker>();
-        let fut = async move {
-            assert!(VbMetaData::from_proxy(proxy).await.is_err());
-        };
-        let stream_fut = async move {
-            match stream.next().await.unwrap() {
-                Ok(ArgumentsRequest::GetStrings { .. }) => {
-                    // Don't respond.
-                }
-                request => panic!("Unexpected request: {request:?}"),
-            }
-        };
-        future::join(fut, stream_fut).await;
+        );
     }
 
     #[fasync::run_singlethreaded(test)]
