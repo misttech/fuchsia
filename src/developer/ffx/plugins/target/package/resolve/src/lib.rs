@@ -39,7 +39,11 @@ impl FfxMain for ResolveTool {
     async fn main(self, mut writer: Self::Writer) -> Result<()> {
         match self.resolve_cmd().await {
             Ok(()) => {
-                writer.machine(&CommandStatus::Ok {})?;
+                let package = self.cmd.package.as_ref().map(|p| p.to_string()).unwrap_or_default();
+                writer.machine_or(
+                    &CommandStatus::Ok {},
+                    format!("Successfully resolved {package}"),
+                )?;
                 Ok(())
             }
             Err(e @ Error::User(_)) => {
@@ -124,6 +128,10 @@ mod test {
             resolver_proxy: resolver,
         };
         assert!(tool.main(writer).await.is_ok());
+        assert_eq!(
+            test_buffers.into_stdout_str(),
+            "Successfully resolved fuchsia-pkg://fuchsia.com/existing_package\n"
+        );
     }
 
     #[fuchsia::test]
