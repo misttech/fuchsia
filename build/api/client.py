@@ -19,6 +19,7 @@ import os
 import sys
 import typing as T
 from pathlib import Path
+from typing import Optional
 
 _SCRIPT_FILE = Path(__file__)
 _SCRIPT_DIR = _SCRIPT_FILE.parent
@@ -1059,6 +1060,147 @@ class AffectedTestsCommand(CommandBase):
         return 0
 
 
+class FileToTestPackageCache(object):
+    """Caches the mapping from source files to the test packages that depend on them."""
+
+    def __init__(self, build_dir: Path) -> None:
+        self.cache_path = build_dir / "file_to_test_package_cache.json"
+        self.build_dir = build_dir
+        self.cache: dict[str, list[str]] = {}
+        self.dirty = False
+        self._load()
+
+    def _load(self) -> None:
+        if not self.cache_path.exists():
+            return
+
+        # Check if cache is stale
+        cache_mtime = self.cache_path.stat().st_mtime
+        for name in [
+            "tests.json",
+            "rust-project.json",
+            "compile_commands.json",
+            "args.gn",
+        ]:
+            p = self.build_dir / name
+            if p.exists() and p.stat().st_mtime > cache_mtime:
+                # Cache is stale
+                return
+
+        try:
+            import json
+
+            self.cache = json.loads(self.cache_path.read_text())
+        except Exception as e:
+            print(
+                f"ERROR: Failed to load cache from {self.cache_path}: {e}",
+                file=sys.stderr,
+            )
+
+    def get(self, source_path: str) -> Optional[list[str]]:
+        """Retrieves the list of test packages associated with a source file.
+
+        Args:
+            source_path: The path to the source file.
+
+        Returns:
+            A list of test package names if found, otherwise None.
+        """
+        return self.cache.get(source_path)
+
+    def set(self, source_path: str, packages: list[str]):
+        """Sets the list of test packages associated with a source file.
+
+        Args:
+            source_path: The path to the source file.
+            packages: The list of test package names.
+        """
+        if self.cache.get(source_path) != packages:
+            self.cache[source_path] = packages
+            self.dirty = True
+
+    def save(self) -> None:
+        """Saves the cache to disk."""
+        if self.dirty:
+            import json
+
+            self.cache_path.write_text(json.dumps(self.cache))
+            self.dirty = False
+
+
+class FileToTestPackageCommand(CommandBase):
+    PARSER_KWARGS = {
+        "name": "file_to_test_package",
+        "help": "Find the fuchsia_test_package(s) that depend on a given source file.",
+    }
+
+    @staticmethod
+    def add_arguments(parser: argparse.ArgumentParser) -> None:
+        parser.add_argument(
+            "--source-path",
+            required=True,
+            help="The source file path.",
+        )
+
+    def run(self, args: argparse.Namespace) -> int:
+        import json
+        import sys
+        import time
+
+        def _log(msg: str):
+            print(f"[{time.strftime('%H:%M:%S')}] {msg}", file=sys.stderr)
+
+        cache = FileToTestPackageCache(args.build_dir)
+        cached_result = cache.get(args.source_path)
+        if cached_result is not None:
+            print(json.dumps(cached_result))
+            return 0
+
+        test_packages = set()
+
+        outputs = OutputsDatabase()
+        if not outputs.load(args.build_dir):
+            _log("Failed to load OutputsDatabase.")
+            return 1
+
+        from file_to_test_package import FileToTestPackageFinder
+
+        finder = FileToTestPackageFinder(
+            args.build_dir,
+            args.fuchsia_dir,
+            outputs,
+            _log,
+        )
+
+        try:
+            fast_packages = finder.find_test_packages_fast(args.source_path)
+            if fast_packages:
+                test_packages.update(fast_packages)
+                _log(f"Fast path found {len(test_packages)} packages.")
+        except Exception as e:
+            _log(f"Fast path failed: {e}")
+
+        if not test_packages:
+            _log(
+                f"No test packages found for {args.source_path}.",
+            )
+            _log(
+                "If this file contains a test, make sure it is included in your build configuration.",
+            )
+            _log(
+                "You can add it using `fx set ... --with //path/to:your-test-package`",
+            )
+            return 1
+
+        result_list = sorted(list(test_packages))
+        print(json.dumps(result_list))
+
+        cache.set(args.source_path, result_list)
+        cache.save()
+
+        return 0
+
+
 ###########################################################################################
 ###########################################################################################
 #####
@@ -1100,6 +1242,7 @@ def main(main_args: T.Sequence[str]) -> int:
     commands.add_command(FxBuildArgsToLabelsCommand())
     commands.add_command(ShouldFileChangesTriggerBuildCommand())
     commands.add_command(AffectedTestsCommand())
+    commands.add_command(FileToTestPackageCommand())
 
     args = parser.parse_args(main_args)
 
