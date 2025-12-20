@@ -115,6 +115,9 @@ zx::result<fdd::wire::NodeInfo> CreateDeviceInfo(fidl::AnyArena& allocator,
         case OfferTransport::ZirconTransport:
           node_offers[i] = fidl::ToWire(allocator, ToFidl(offer).zircon_transport().value());
           break;
+        case OfferTransport::Dictionary:
+          node_offers[i] = fidl::ToWire(allocator, ToFidl(offer).dictionary_offer().value());
+          break;
       }
     }
 

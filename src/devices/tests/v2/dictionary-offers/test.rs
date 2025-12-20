@@ -9,7 +9,7 @@ use fuchsia_component::server::ServiceFs;
 use fuchsia_component_test::{
     Capability, ChildOptions, LocalComponentHandles, RealmBuilder, Ref, Route,
 };
-use fuchsia_driver_test::{DriverTestRealmBuilder, DriverTestRealmInstance};
+use fuchsia_driver_test::{DriverTestRealmBuilder2, DriverTestRealmInstance2, Options2};
 use fuchsia_sync::Mutex;
 use futures::TryStreamExt;
 use futures::channel::mpsc;
@@ -39,7 +39,7 @@ async fn data_plane_component(
     sender: Arc<Mutex<mpsc::Sender<()>>>,
 ) -> Result<()> {
     let mut fs = ServiceFs::new();
-    fs.dir("svc").add_fidl_service_instance("default", move |i: ft::DataServiceRequest| {
+    fs.dir("svc").add_fidl_service_instance("non-default", move |i: ft::DataServiceRequest| {
         let ft::DataServiceRequest::Data(request_stream) = i;
         fasync::Task::spawn(data_plane_serve(request_stream, sender.clone())).detach()
     });
@@ -50,15 +50,17 @@ async fn data_plane_component(
 #[fuchsia::test]
 async fn test_dictionary_offers() -> Result<()> {
     let builder = RealmBuilder::new().await?;
-    builder.driver_test_realm_setup().await?;
+
+    let expose = Capability::service::<ft::ControlServiceMarker>().into();
+    let dtr_exposes = vec![expose];
+    let args =
+        fdt::RealmArgs { root_driver: Some("#meta/root.cm".to_string()), ..Default::default() };
+    let options = Options2::new().driver_exposes(dtr_exposes);
+    builder.driver_test_realm_setup(options, args).await?;
 
     let (sender, mut receiver) = mpsc::channel(1);
     let sender = Arc::new(Mutex::new(sender));
 
-    let expose = Capability::service::<ft::ControlServiceMarker>().into();
-    let dtr_exposes = vec![expose];
-
-    builder.driver_test_realm_add_dtr_exposes(&dtr_exposes).await?;
     let data_plane_ref = builder
         .add_local_child(
             "data_plane_component",
@@ -91,14 +93,7 @@ async fn test_dictionary_offers() -> Result<()> {
         .await?;
 
     let realm = builder.build().await?;
-
-    let args = fdt::RealmArgs {
-        root_driver: Some("#meta/root.cm".to_string()),
-        dtr_exposes: Some(dtr_exposes),
-        ..Default::default()
-    };
-
-    realm.driver_test_realm_start(args).await?;
+    realm.wait_for_bootup().await?;
 
     let device = Service::open_from_dir(realm.root.get_exposed_dir(), ft::ControlServiceMarker)
         .context("Failed to open service")?
@@ -119,19 +114,21 @@ async fn test_dictionary_offers() -> Result<()> {
             .map_err(|e| format_err!("Failed to call get child output dictionary: {:?}", e))?
             .map_err(|e| format_err!("Failed to get child output dictionary: {:?}", e))?;
 
-        // We don't necessarily need to use the service as our property, but just doing so to make
-        // it easier. The dictionary offers are opaque so the DF can't make auto properties like it
-        // does with offers2.
         let args = fdf::NodeAddArgs {
             name: Some("test".to_string()),
             offers_dictionary: Some(dictionary_ref),
-            properties2: Some(vec![fdf::NodeProperty2 {
-                key: ft::DataServiceMarker::SERVICE_NAME.to_string(),
-                value: fdf::NodePropertyValue::StringValue(format!(
-                    "{}.ZirconTransport",
-                    ft::DataServiceMarker::SERVICE_NAME
-                )),
-            }]),
+            offers2: Some(vec![fdf::Offer::DictionaryOffer(fdecl::Offer::Service(
+                fdecl::OfferService {
+                    source_name: Some(ft::DataServiceMarker::SERVICE_NAME.to_string()),
+                    target_name: Some(ft::DataServiceMarker::SERVICE_NAME.to_string()),
+                    source_instance_filter: Some(vec!["default".to_string()]),
+                    renamed_instances: Some(vec![fdecl::NameMapping {
+                        source_name: "non-default".to_string(),
+                        target_name: "default".to_string(),
+                    }]),
+                    ..Default::default()
+                },
+            ))]),
             ..Default::default()
         };
 
@@ -161,6 +158,18 @@ async fn test_dictionary_offers() -> Result<()> {
                     bind_fuchsia_nodegroupbind_test::TEST_BIND_PROPERTY_ONE_LEFT.to_string(),
                 ),
             }]),
+            offers2: Some(vec![fdf::Offer::DictionaryOffer(fdecl::Offer::Service(
+                fdecl::OfferService {
+                    source_name: Some(ft::DataServiceMarker::SERVICE_NAME.to_string()),
+                    target_name: Some(ft::DataServiceMarker::SERVICE_NAME.to_string()),
+                    source_instance_filter: Some(vec!["default".to_string()]),
+                    renamed_instances: Some(vec![fdecl::NameMapping {
+                        source_name: "non-default".to_string(),
+                        target_name: "default".to_string(),
+                    }]),
+                    ..Default::default()
+                },
+            ))]),
             ..Default::default()
         };
 
@@ -195,6 +204,8 @@ async fn test_dictionary_offers() -> Result<()> {
     // One is the non-composite, and the other is the composite.
     receiver.next().await;
     receiver.next().await;
+
+    realm.destroy().await?;
 
     Ok(())
 }

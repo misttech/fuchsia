@@ -30,6 +30,7 @@
 #include "src/devices/bin/driver_manager/bootup_tracker.h"
 #include "src/devices/bin/driver_manager/composite/composite_manager_bridge.h"
 #include "src/devices/bin/driver_manager/composite/composite_node_spec_manager.h"
+#include "src/devices/bin/driver_manager/dictionary_util.h"
 #include "src/devices/bin/driver_manager/driver_host.h"
 #include "src/devices/bin/driver_manager/driver_host_runner.h"
 #include "src/devices/bin/driver_manager/node.h"
@@ -204,8 +205,7 @@ class DriverRunner : public fidl::WireServer<fuchsia_driver_framework::Composite
       fit::callback<void(zx::result<DriverHost*>)> completion_cb) override;
   bool IsDriverHostValid(DriverHost* driver_host) const override;
 
-  void ImportDictionary(fuchsia_component_sandbox::DictionaryRef dictionary,
-                        fit::callback<void(zx::result<uint64_t>)> callback) override;
+  DictionaryUtil& dictionary_util() override { return dictionary_util_; }
 
   // BindManagerBridge interface.
   zx::result<std::string> StartDriver(
@@ -230,9 +230,8 @@ class DriverRunner : public fidl::WireServer<fuchsia_driver_framework::Composite
 
   uint64_t next_driver_host_id_ = 0;
   fidl::WireClient<fuchsia_driver_index::DriverIndex> driver_index_;
-  fidl::WireClient<fuchsia_component_sandbox::CapabilityStore> capability_store_;
-  uint64_t cap_id_ = 0;
   LoaderServiceFactory loader_service_factory_;
+  DictionaryUtil dictionary_util_;
   fidl::ServerBindingGroup<fuchsia_driver_framework::CompositeNodeManager> manager_bindings_;
   fidl::ServerBindingGroup<fuchsia_driver_crash::CrashIntrospect> crash_introspect_bindings_;
   fidl::ServerBindingGroup<fuchsia_driver_token::NodeBusTopology> bus_topo_bindings_;

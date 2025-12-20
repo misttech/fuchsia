@@ -58,16 +58,25 @@ void Runner::CreateDriverComponent(const std::shared_ptr<ComponentOwner>& owner,
 
   auto offers_dictionary = owner->TakeDictionary();
 
+  auto offers_filtered = offers;
+  for (auto it = offers_filtered.begin(); it != offers_filtered.end();) {
+    if (it->transport == OfferTransport::Dictionary) {
+      it = offers_filtered.erase(it);
+    } else {
+      ++it;
+    }
+  }
+
   size_t offers_count;
   if (!owner->SkipInjectedOffers()) {
-    offers_count = offers.size() + offer_injector_.ExtraOffersCount();
+    offers_count = offers_filtered.size() + offer_injector_.ExtraOffersCount();
   } else {
-    offers_count = offers.size();
+    offers_count = offers_filtered.size();
   }
   fidl::VectorView<fdecl::wire::Offer> dynamic_offers(arena, offers_count);
-  if (!offers.empty()) {
-    for (size_t i = 0; i < offers.size(); i++) {
-      const NodeOffer& offer = offers[i];
+  if (!offers_filtered.empty()) {
+    for (size_t i = 0; i < offers_filtered.size(); i++) {
+      const NodeOffer& offer = offers_filtered[i];
       switch (offer.transport) {
         case OfferTransport::DriverTransport:
           dynamic_offers[i] = fidl::ToWire(arena, ToFidl(offer).driver_transport().value());
@@ -75,11 +84,13 @@ void Runner::CreateDriverComponent(const std::shared_ptr<ComponentOwner>& owner,
         case OfferTransport::ZirconTransport:
           dynamic_offers[i] = fidl::ToWire(arena, ToFidl(offer).zircon_transport().value());
           break;
+        case OfferTransport::Dictionary:
+          __UNREACHABLE;
       }
     }
   }
   if (!owner->SkipInjectedOffers()) {
-    offer_injector_.Inject(arena, dynamic_offers, offers.size());
+    offer_injector_.Inject(arena, dynamic_offers, offers_filtered.size());
   }
 
   child_args_builder.dynamic_offers(dynamic_offers);

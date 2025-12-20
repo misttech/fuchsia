@@ -94,11 +94,23 @@ class RootDriver final : public fdf::DriverBase, public fidl::WireServer<ft::Con
 
  private:
   // fidl::WireServer<ft::ControlPlane>
-  void AddChild(fuchsia_dictionaryoffers_test::wire::ControlPlaneAddChildRequest* request,
+  void AddChild(ft::wire::ControlPlaneAddChildRequest* request,
                 AddChildCompleter::Sync& completer) override {
     fdf::info("adding child...");
     auto [node_controller_client_end, node_controller_server_end] =
         fidl::Endpoints<fuchsia_driver_framework::NodeController>::Create();
+    // We want to add an extra offer to the right child to make sure the child can connect to
+    // both parents when one of them has a dictionary.
+    if (request->args.name().get() == "right") {
+      ZX_ASSERT(!request->args.has_offers2());
+      auto offers = fidl::VectorView<fuchsia_driver_framework::wire::Offer>(arena_, 1);
+      offers[0] = fdf::MakeOffer2<ft::ControlService>(arena_);
+      request->args = fuchsia_driver_framework::wire::NodeAddArgs::Builder(arena_)
+                          .name(request->args.name())
+                          .properties2(request->args.properties2())
+                          .offers2(offers)
+                          .Build();
+    }
     fidl::WireResult result =
         fidl::WireCall(node())->AddChild(request->args, std::move(node_controller_server_end), {});
 
@@ -114,6 +126,10 @@ class RootDriver final : public fdf::DriverBase, public fidl::WireServer<ft::Con
 
     completer.ReplySuccess();
   }
+
+  void Check(CheckCompleter::Sync& completer) override { completer.Reply(); }
+
+  fidl::Arena<> arena_;
 };
 
 }  // namespace

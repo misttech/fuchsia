@@ -1026,6 +1026,12 @@
     },
     {
         "kind": "union/member",
+        "name": "fuchsia.driver.framework/Offer.dictionary_offer",
+        "ordinal": "3",
+        "type": "fuchsia.component.decl/Offer"
+    },
+    {
+        "kind": "union/member",
         "name": "fuchsia.driver.framework/Offer.driver_transport",
         "ordinal": "2",
         "type": "fuchsia.component.decl/Offer"

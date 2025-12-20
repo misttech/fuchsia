@@ -24,6 +24,7 @@
 #include "src/devices/bin/driver_manager/component_owner.h"
 #include "src/devices/bin/driver_manager/controller_allowlist_passthrough.h"
 #include "src/devices/bin/driver_manager/devfs/devfs.h"
+#include "src/devices/bin/driver_manager/dictionary_util.h"
 #include "src/devices/bin/driver_manager/driver_host.h"
 #include "src/devices/bin/driver_manager/node_types.h"
 #include "src/devices/bin/driver_manager/shutdown/node_removal_tracker.h"
@@ -34,6 +35,7 @@ namespace driver_manager {
 enum class OfferTransport : std::uint8_t {
   DriverTransport,
   ZirconTransport,
+  Dictionary,
 };
 
 struct NodeOffer {
@@ -138,15 +140,12 @@ class NodeManager {
 
   virtual void WaitForBootup(fit::callback<void()> callback) { callback(); }
 
-  virtual void ImportDictionary(fuchsia_component_sandbox::DictionaryRef dictionary,
-                                fit::callback<void(zx::result<uint64_t>)> callback) {
-    callback(zx::error(ZX_ERR_NOT_SUPPORTED));
-  }
-
   virtual zx::result<PowerElementHandles> CreatePowerElement(
       std::span<fuchsia_power_broker::DependencyToken> deps) {
     return zx::error(ZX_ERR_NOT_SUPPORTED);
   }
+
+  virtual DictionaryUtil& dictionary_util() { ZX_PANIC("Unimplemented dictionary_util"); }
 };
 
 class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
@@ -355,25 +354,23 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
 
   fuchsia_driver_framework::NodePropertyDictionary2 GetNodePropertyDict() const;
 
-  void SetSubtreeDictionaryRef(std::optional<uint64_t> dictionary_ref) {
-    dictionary_for_subtree_ = dictionary_ref.has_value();
-    dictionary_ref_ = dictionary_ref;
+  void PrepareDictionary(fit::callback<void(zx::result<>)> callback);
+
+  void SetSubtreeDictionaryRef(
+      std::optional<fuchsia_component_sandbox::CapabilityId> subtree_dictionary_ref) {
+    if (subtree_dictionary_ref.has_value()) {
+      ZX_ASSERT_MSG(!dictionary_ref_.has_value(), "cannot use SubtreeDictionaryRef on this node");
+    }
+    subtree_dictionary_ref_ = subtree_dictionary_ref;
   }
 
   void MarkAsCompositeParent() { state_ = CompositeParent{}; }
 
   void UnmarkAsCompositeParent() { state_ = Unbound{}; }
 
-  std::optional<uint64_t> dictionary_ref() { return dictionary_ref_; }
+  bool HasSubtreeDictionaryRef() const { return subtree_dictionary_ref_.has_value(); }
 
-  bool has_dictionary() const { return offers_dictionary_.has_value(); }
-
-  void SetDictionary(fuchsia_component_sandbox::DictionaryRef dictionary) {
-    ZX_ASSERT_MSG(!offers_dictionary_, "cannot SetDictionary when one already exists.");
-    offers_dictionary_ = std::move(dictionary);
-  }
-
-  bool SkipInjectedOffers() const override { return dictionary_for_subtree_; }
+  bool SkipInjectedOffers() const override { return HasSubtreeDictionaryRef(); }
 
   std::optional<fuchsia_component_sandbox::DictionaryRef> TakeDictionary() override {
     std::optional<fuchsia_component_sandbox::DictionaryRef> temp;
@@ -600,13 +597,18 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
 
   // A component framework dictionary that should be provided to the driver
   // that binds to this node.
-  // This ref will become an offers_dictionary_ in the driver_runner when the driver is starting.
-  std::optional<uint64_t> dictionary_ref_;
+  // This ref will become an offers_dictionary_ in PrepareDictionary before the driver starts.
+  //
+  // The difference between |subtree_dictionary_ref_| and |dictionary_ref_| is the subtree one
+  // is always passed down the node tree to children, as it contains non-driver protocol
+  // capabilities for testing (the ones injected in offer_injection). This is only used for system
+  // testing at the moment through |RestartWithDictionary|. |dictionary_ref_| is the node specific
+  // dictionary that contains offers that the node provides that are type |kDictionaryOffer|.
+  // These two cannot be used together as it is.
+  std::optional<fuchsia_component_sandbox::CapabilityId> subtree_dictionary_ref_;
+  std::optional<fuchsia_component_sandbox::CapabilityId> dictionary_ref_;
   std::optional<fuchsia_component_sandbox::DictionaryRef> offers_dictionary_;
-
-  // Whether the dictionary_ref_ should be passed down the node subtree. If false, the dictionary
-  // is only for the current node (or the composite parented by this node).
-  bool dictionary_for_subtree_ = false;
+  std::list<DirReceiverImpl> dir_receivers_;
 
   Collection collection_ = Collection::kNone;
   fuchsia_driver_framework::DriverPackageType driver_package_type_;

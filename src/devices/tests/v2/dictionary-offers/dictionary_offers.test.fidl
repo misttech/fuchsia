@@ -10,6 +10,8 @@ closed protocol ControlPlane {
     strict AddChild(resource struct {
         args fuchsia.driver.framework.NodeAddArgs;
     }) -> () error fuchsia.driver.framework.NodeError;
+
+    strict Check() -> ();
 };
 
 @discoverable

@@ -5,11 +5,13 @@
 #include "src/devices/bin/driver_manager/node.h"
 
 #include <fidl/fuchsia.component/cpp/wire_test_base.h>
+#include <fidl/fuchsia.driver.framework/cpp/common_types_format.h>
 #include <fidl/fuchsia.driver.host/cpp/test_base.h>
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/async-loop/default.h>
 #include <lib/async/default.h>
 #include <lib/async_patterns/testing/cpp/dispatcher_bound.h>
+#include <lib/component/incoming/cpp/protocol.h>
 #include <lib/driver/component/cpp/node_add_args.h>
 #include <lib/sync/cpp/completion.h>
 
@@ -145,10 +147,55 @@ class StopListener final
   fidl::WireClient<fuchsia_component_runner::ComponentController> client_;
 };
 
+class FakeDictionaryUtil : public driver_manager::DictionaryUtil {
+ public:
+  FakeDictionaryUtil(async_dispatcher_t* dispatcher)
+      : driver_manager::DictionaryUtil(
+            fidl::Endpoints<fuchsia_component_sandbox::CapabilityStore>::Create().client,
+            dispatcher) {}
+
+  void DictionaryDirConnectorOpen(
+      fuchsia_component_sandbox::CapabilityId dictionary, std::string_view key,
+      fit::callback<void(zx::result<fidl::ClientEnd<fuchsia_io::Directory>>)> callback) override {
+    auto [client, server] = fidl::Endpoints<fuchsia_io::Directory>::Create();
+    callback(zx::ok(std::move(client)));
+  }
+
+  void CreateDictionaryWith(
+      std::unordered_map<std::string, fidl::ClientEnd<fuchsia_component_sandbox::DirReceiver>>
+          receivers,
+      fit::callback<void(zx::result<fuchsia_component_sandbox::CapabilityId>)> callback) override {
+    receivers_ = std::move(receivers);
+    callback(zx::ok(1234));
+  }
+
+  void ImportDictionary(fuchsia_component_sandbox::DictionaryRef dictionary,
+                        fit::callback<void(zx::result<fuchsia_component_sandbox::NewCapabilityId>)>
+                            callback) override {
+    callback(zx::ok(1234));
+  }
+
+  void ImportDictionaryWire(
+      fuchsia_component_sandbox::wire::DictionaryRef dictionary,
+      fit::callback<void(zx::result<fuchsia_component_sandbox::wire::NewCapabilityId>)> callback)
+      override {
+    callback(zx::ok(1234));
+  }
+
+  void CopyExportDictionary(
+      fuchsia_component_sandbox::CapabilityId dictionary,
+      fit::callback<void(zx::result<fuchsia_component_sandbox::DictionaryRef>)> callback) override {
+    callback(zx::ok(fuchsia_component_sandbox::DictionaryRef(zx::eventpair{})));
+  }
+
+  std::unordered_map<std::string, fidl::ClientEnd<fuchsia_component_sandbox::DirReceiver>>
+      receivers_;
+};
+
 class FakeNodeManager : public TestNodeManagerBase {
  public:
   FakeNodeManager(async_dispatcher_t* dispatcher, fidl::WireClient<fuchsia_component::Realm> realm)
-      : dispatcher_(dispatcher), realm_(std::move(realm)) {}
+      : dispatcher_(dispatcher), realm_(std::move(realm)), dictionary_util_(dispatcher) {}
 
   zx::result<driver_manager::DriverHost*> CreateDriverHost(bool use_next_vdso) override {
     return zx::ok(&driver_host_);
@@ -172,12 +219,15 @@ class FakeNodeManager : public TestNodeManagerBase {
 
   void RemoveController(const std::string& name) { controllers_.erase(name); }
 
+  driver_manager::DictionaryUtil& dictionary_util() override { return dictionary_util_; }
+
  private:
   async_dispatcher_t* dispatcher_;
   fidl::WireClient<fuchsia_component::Realm> realm_;
   std::list<StopListener> stop_listeners_;
   std::unordered_map<std::string, TestController> controllers_;
   FakeDriverHost driver_host_;
+  FakeDictionaryUtil dictionary_util_;
 };
 
 void TestController::Destroy(DestroyCompleter::Sync& completer) {
@@ -718,4 +768,109 @@ TEST_F(Dfv2NodeTest, ScheduleUnbind) {
       [](auto& result) { ASSERT_EQ(result.status(), ZX_OK); });
   RunLoopUntilIdle();
   ASSERT_FALSE(node->HasDriverComponent());
+}
+
+TEST_F(Dfv2NodeTest, PrepareDictionaryComposite) {
+  auto node = CreateNode("test");
+  StartTestDriver(node);
+  ASSERT_TRUE(node->HasDriverComponent());
+  ASSERT_EQ(driver_manager::NodeState::kRunning, node->GetNodeState());
+
+  // Parent 1
+  auto [controller1, server1] = fidl::Endpoints<fuchsia_driver_framework::NodeController>::Create();
+  auto [node1, node_server1] = fidl::Endpoints<fuchsia_driver_framework::Node>::Create();
+
+  fuchsia_driver_framework::NodeAddArgs args_p1;
+  args_p1.name("parent_1");
+
+  fuchsia_component_decl::OfferService service_decl_1;
+  service_decl_1.source_name("service_1");
+  service_decl_1.target_name("service_1");
+  service_decl_1.renamed_instances(std::vector<::fuchsia_component_decl::NameMapping>{
+      fuchsia_component_decl::NameMapping("default", "default")});
+  service_decl_1.source_instance_filter(std::vector<std::string>{"default"});
+
+  fuchsia_driver_framework::Offer offer_1_fidl =
+      fuchsia_driver_framework::Offer::WithDictionaryOffer(
+          fuchsia_component_decl::Offer::WithService(service_decl_1));
+
+  args_p1.offers2(std::vector{std::move(offer_1_fidl)});
+  args_p1.offers_dictionary(fuchsia_component_sandbox::DictionaryRef{zx::eventpair{}});
+
+  std::shared_ptr<driver_manager::Node> parent_node_1;
+  node->AddChild(
+      std::move(args_p1), std::move(server1), std::move(node_server1),
+      [&](fit::result<fuchsia_driver_framework::NodeError, std::shared_ptr<driver_manager::Node>>
+              result) {
+        if (result.is_error()) {
+          fdf_log::info("result {}", result.error_value());
+        }
+
+        ASSERT_TRUE(result.is_ok());
+        parent_node_1 = result.value();
+      });
+
+  RunLoopUntilIdle();
+
+  // Parent 2
+  auto [controller2, server2] = fidl::Endpoints<fuchsia_driver_framework::NodeController>::Create();
+  auto [node2, node_server2] = fidl::Endpoints<fuchsia_driver_framework::Node>::Create();
+
+  fuchsia_driver_framework::NodeAddArgs args_p2;
+  args_p2.name("parent_2");
+
+  fuchsia_component_decl::OfferService service_decl_2;
+  service_decl_2.source_name("service_2");
+  service_decl_2.target_name("service_2");
+  service_decl_2.renamed_instances(std::vector<::fuchsia_component_decl::NameMapping>{
+      fuchsia_component_decl::NameMapping("default", "default")});
+  service_decl_2.source_instance_filter(std::vector<std::string>{"default"});
+
+  fuchsia_driver_framework::Offer offer_2_fidl =
+      fuchsia_driver_framework::Offer::WithDictionaryOffer(
+          fuchsia_component_decl::Offer::WithService(service_decl_2));
+
+  args_p2.offers2(std::vector{std::move(offer_2_fidl)});
+  args_p2.offers_dictionary(fuchsia_component_sandbox::DictionaryRef{zx::eventpair{}});
+
+  std::shared_ptr<driver_manager::Node> parent_node_2;
+  node->AddChild(
+      std::move(args_p2), std::move(server2), std::move(node_server2),
+      [&](fit::result<fuchsia_driver_framework::NodeError, std::shared_ptr<driver_manager::Node>>
+              result) {
+        if (result.is_error()) {
+          fdf_log::info("result {}", result.error_value());
+        }
+        ASSERT_TRUE(result.is_ok());
+        parent_node_2 = result.value();
+      });
+
+  RunLoopUntilIdle();
+
+  ASSERT_TRUE(parent_node_1);
+  ASSERT_TRUE(parent_node_2);
+
+  // Create Composite
+  auto composite = CreateCompositeNode("composite", {parent_node_1, parent_node_2}, {{}, {}});
+
+  // Verify composite has offers
+  ASSERT_FALSE(composite->offers().empty());
+
+  // Call PrepareDictionary
+  bool callback_called = false;
+  composite->PrepareDictionary([&](zx::result<> result) {
+    ASSERT_TRUE(result.is_ok());
+    callback_called = true;
+  });
+
+  RunLoopUntilIdle();
+  ASSERT_TRUE(callback_called);
+
+  // Verify that CreateDictionaryWith was called with correct receivers
+  auto& util = static_cast<FakeNodeManager*>(GetNodeManager())->dictionary_util();
+  auto& fake_util = static_cast<FakeDictionaryUtil&>(util);
+
+  ASSERT_EQ(fake_util.receivers_.size(), 2u);
+  ASSERT_TRUE(fake_util.receivers_.count("service_1"));
+  ASSERT_TRUE(fake_util.receivers_.count("service_2"));
 }

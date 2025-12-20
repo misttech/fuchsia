@@ -123,6 +123,7 @@ fuchsia_unittest_package("dictionary_offers_test") {
     ":child",
     ":composite_child",
     ":root",
-    "//sdk/lib/driver_test_realm:driver_test_realm_component",
+    "//sdk/lib/driver_test_realm/realm_builder:client_includes",
   ]
+  subpackages = [ "//sdk/lib/driver_test_realm:package" ]
 }

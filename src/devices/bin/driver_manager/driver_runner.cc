@@ -23,6 +23,7 @@
 #include <stack>
 #include <utility>
 
+#include "src/devices/bin/driver_manager/async_sharder.h"
 #include "src/devices/bin/driver_manager/composite/composite_node_spec.h"
 #include "src/devices/bin/driver_manager/node_property_conversion.h"
 #include "src/devices/lib/log/log.h"
@@ -237,26 +238,6 @@ void CallStartDriverOnRunner(Runner& runner, Node& node, const std::string& moni
   }
 }
 
-// Helper class to make sending out concurrent async requests and making a callback when they have
-// all finished easier.
-class AsyncSharder {
- public:
-  AsyncSharder(size_t count, fit::callback<void()> complete_callback)
-      : remaining_(count), complete_callback_(std::move(complete_callback)) {}
-
-  ~AsyncSharder() { ZX_ASSERT_MSG(remaining_ == 0, "Sharder not complete"); }
-
-  void CompleteShard() {
-    if (--remaining_ == 0) {
-      complete_callback_();
-    }
-  }
-
- private:
-  size_t remaining_;
-  fit::callback<void()> complete_callback_;
-};
-
 }  // namespace
 
 Collection ToCollection(const Node& node, fdf::DriverPackageType package_type) {
@@ -274,8 +255,8 @@ DriverRunner::DriverRunner(
     std::optional<DynamicLinkerArgs> dynamic_linker_args,
     std::optional<fidl::ClientEnd<fuchsia_power_broker::Topology>> topology_client)
     : driver_index_(std::move(driver_index), dispatcher),
-      capability_store_(std::move(capability_store), dispatcher),
       loader_service_factory_(std::move(loader_service_factory)),
+      dictionary_util_(std::move(capability_store), dispatcher),
       dispatcher_(dispatcher),
       root_node_(std::make_shared<Node>(kRootDeviceName, std::weak_ptr<Node>{}, this, dispatcher)),
       composite_node_spec_manager_(this),
@@ -618,43 +599,19 @@ zx::result<> DriverRunner::StartDriver(Node& node, std::string_view url,
   auto moniker = node.MakeComponentMoniker();
   bootup_tracker_->NotifyNewStartRequest(moniker, url_string);
 
-  if (node.dictionary_ref().has_value() && !node.has_dictionary()) {
-    uint64_t dest = cap_id_++;
-    capability_store_->DictionaryCopy(node.dictionary_ref().value(), dest)
-        .Then(
-            [this, dest, node_weak, moniker, url_string,
-             bootup_tracker = std::weak_ptr<BootupTracker>(bootup_tracker_)](
-                fidl::WireUnownedResult<fuchsia_component_sandbox::CapabilityStore::DictionaryCopy>&
-                    result) {
-              if (!result.ok() || result->is_error()) {
-                fdf_log::error("Failed to copy dictionary.");
-                return;
-              }
+  node.PrepareDictionary([this, node_weak, moniker, url_string](zx::result<> result) {
+    if (!result.is_ok()) {
+      return;
+    }
 
-              capability_store_->Export(dest).Then(
-                  [this, node_weak, moniker, url_string](
-                      fidl::WireUnownedResult<fuchsia_component_sandbox::CapabilityStore::Export>&
-                          result) {
-                    if (!result.ok() || result->is_error()) {
-                      fdf_log::error("Failed to export dictionary.");
-                      return;
-                    }
+    std::shared_ptr node = node_weak.lock();
+    if (!node) {
+      return;
+    }
 
-                    std::shared_ptr node = node_weak.lock();
-                    if (!node) {
-                      return;
-                    }
+    CallStartDriverOnRunner(runner_, *node, moniker, url_string, bootup_tracker_);
+  });
 
-                    node->SetDictionary(
-                        fidl::ToNatural(std::move(result->value()->capability.dictionary())));
-
-                    CallStartDriverOnRunner(runner_, *node, moniker, url_string, bootup_tracker_);
-                  });
-            });
-    return zx::ok();
-  }
-
-  CallStartDriverOnRunner(runner_, node, moniker, url, bootup_tracker_);
   return zx::ok();
 }
 
@@ -691,8 +648,8 @@ void DriverRunner::RebindCompositesWithDriver(const std::string& url,
     return;
   }
 
-  auto complete_wrapper = [complete_callback = std::move(complete_callback),
-                           count = names.size()]() mutable { complete_callback(count); };
+  auto complete_wrapper = [complete_callback = std::move(complete_callback), count = names.size()](
+                              zx::result<>) mutable { complete_callback(count); };
 
   std::shared_ptr<AsyncSharder> sharder =
       std::make_shared<AsyncSharder>(names.size(), std::move(complete_wrapper));
@@ -796,31 +753,6 @@ bool DriverRunner::IsDriverHostValid(DriverHost* driver_host) const {
   return driver_hosts_.find_if([driver_host](const DriverHostComponent& host) {
     return &host == driver_host;
   }) != driver_hosts_.end();
-}
-
-void DriverRunner::ImportDictionary(fuchsia_component_sandbox::DictionaryRef dictionary,
-                                    fit::callback<void(zx::result<uint64_t>)> callback) {
-  uint64_t imported = cap_id_++;
-  capability_store_
-      ->Import(imported, fuchsia_component_sandbox::wire::Capability::WithDictionary(
-                             fuchsia_component_sandbox::wire::DictionaryRef{
-                                 .token = std::move(dictionary.token())}))
-      .Then([imported, callback = std::move(callback)](
-                fidl::WireUnownedResult<fuchsia_component_sandbox::CapabilityStore::Import>&
-                    result) mutable {
-        if (!result.ok()) {
-          fdf_log::warn("failed to call import dictionary ref {}", result.FormatDescription());
-          callback(zx::error(result.status()));
-          return;
-        }
-        if (result->is_error()) {
-          fdf_log::warn("failed to import dictionary ref {}", result->error_value());
-          callback(zx::error(ZX_ERR_INTERNAL));
-          return;
-        }
-
-        callback(zx::ok(imported));
-      });
 }
 
 zx::result<std::string> DriverRunner::StartDriver(
@@ -986,57 +918,55 @@ zx::result<uint32_t> DriverRunner::RestartNodesColocatedWithDriverUrl(
 void DriverRunner::RestartWithDictionary(fidl::StringView moniker,
                                          fuchsia_component_sandbox::wire::DictionaryRef dictionary,
                                          zx::eventpair reset_eventpair) {
-  uint64_t imported = cap_id_++;
-  capability_store_
-      ->Import(imported,
-               fuchsia_component_sandbox::wire::Capability::WithDictionary(std::move(dictionary)))
-      .Then([this, moniker = std::string(moniker.get()),
-             reset_eventpair = std::move(reset_eventpair),
-             imported](fidl::WireUnownedResult<fuchsia_component_sandbox::CapabilityStore::Import>&
-                           result) mutable {
-        if (!result.ok() || result->is_error()) {
-          fdf_log::error("RestartWithDictionary failed to import the dictionary.");
-          return;
+  dictionary_util_.ImportDictionaryWire(std::move(dictionary), [this,
+                                                                moniker =
+                                                                    std::string(moniker.get()),
+                                                                reset_eventpair =
+                                                                    std::move(reset_eventpair)](
+                                                                   zx::result<
+                                                                       fuchsia_component_sandbox::
+                                                                           NewCapabilityId>
+                                                                       result) mutable {
+    if (result.is_error()) {
+      return;
+    }
+
+    std::shared_ptr<driver_manager::Node> restarted_node = nullptr;
+    PerformBFS(root_node_, [&](const std::shared_ptr<driver_manager::Node>& current) {
+      if (current->MakeComponentMoniker() == moniker && current->HasDriverComponent()) {
+        if (current->HasSubtreeDictionaryRef()) {
+          fdf_log::error(
+              "RestartWithDictionary requested node id already contains a dictionary_ref from another RestartWithDictionary operation.");
+          return false;
         }
+        ZX_ASSERT_MSG(restarted_node == nullptr, "Multiple nodes with same moniker not possible.");
+        restarted_node = current;
+        current->SetSubtreeDictionaryRef(result.value());
+        current->RestartNode();
+        return false;
+      }
 
-        std::shared_ptr<driver_manager::Node> restarted_node = nullptr;
-        PerformBFS(root_node_, [&](const std::shared_ptr<driver_manager::Node>& current) {
-          if (current->MakeComponentMoniker() == moniker && current->HasDriverComponent()) {
-            if (current->dictionary_ref().has_value()) {
-              fdf_log::error(
-                  "RestartWithDictionary requested node id already contains a dictionary_ref from another RestartWithDictionary operation.");
-              return false;
-            }
-            ZX_ASSERT_MSG(restarted_node == nullptr,
-                          "Multiple nodes with same moniker not possible.");
-            restarted_node = current;
-            current->SetSubtreeDictionaryRef(imported);
-            current->RestartNode();
-            return false;
-          }
+      return true;
+    });
 
-          return true;
-        });
+    if (restarted_node != nullptr) {
+      std::unique_ptr<async::WaitOnce> wait = std::make_unique<async::WaitOnce>(
+          reset_eventpair.release(), ZX_EVENTPAIR_PEER_CLOSED | ZX_EVENTPAIR_SIGNALED);
+      async::WaitOnce* wait_ptr = wait.get();
+      zx_status_t status = wait_ptr->Begin(
+          dispatcher_, [restarted_node = std::move(restarted_node), moved_wait = std::move(wait)](
+                           async_dispatcher_t* dispatcher, async::WaitOnce* wait,
+                           zx_status_t status, const zx_packet_signal_t* signal) {
+            fdf_log::info("RestartWithDictionary operation released.");
+            restarted_node->SetSubtreeDictionaryRef(std::nullopt);
+            restarted_node->RestartNode();
+          });
 
-        if (restarted_node != nullptr) {
-          std::unique_ptr<async::WaitOnce> wait = std::make_unique<async::WaitOnce>(
-              reset_eventpair.release(), ZX_EVENTPAIR_PEER_CLOSED | ZX_EVENTPAIR_SIGNALED);
-          async::WaitOnce* wait_ptr = wait.get();
-          zx_status_t status = wait_ptr->Begin(
-              dispatcher_,
-              [restarted_node = std::move(restarted_node), moved_wait = std::move(wait)](
-                  async_dispatcher_t* dispatcher, async::WaitOnce* wait, zx_status_t status,
-                  const zx_packet_signal_t* signal) {
-                fdf_log::info("RestartWithDictionary operation released.");
-                restarted_node->SetSubtreeDictionaryRef(std::nullopt);
-                restarted_node->RestartNode();
-              });
-
-          if (status != ZX_OK) {
-            fdf_log::error("Failed to Begin async::Wait for RestartWithDictionary.");
-          }
-        }
-      });
+      if (status != ZX_OK) {
+        fdf_log::error("Failed to Begin async::Wait for RestartWithDictionary.");
+      }
+    }
+  });
 }
 
 std::unordered_set<const DriverHost*> DriverRunner::DriverHostsWithDriverUrl(std::string_view url) {

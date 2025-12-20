@@ -59,6 +59,8 @@ source_set("component_owner") {
 
 source_set("driver_runner") {
   sources = [
+    "async_sharder.cc",
+    "async_sharder.h",
     "bind/bind_manager.cc",
     "bind/bind_manager.h",
     "bind/bind_node_set.cc",
@@ -76,6 +78,8 @@ source_set("driver_runner") {
     "composite/parent_set_collector.h",
     "controller_allowlist_passthrough.cc",
     "controller_allowlist_passthrough.h",
+    "dictionary_util.cc",
+    "dictionary_util.h",
     "driver_host.cc",
     "driver_host.h",
     "driver_host_runner.cc",
