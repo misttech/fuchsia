@@ -3,15 +3,13 @@
 // found in the LICENSE file.
 
 use crate::root_dir::RootDir;
-use fidl::endpoints::ServerEnd;
 use fidl_fuchsia_io as fio;
 use std::sync::Arc;
-use vfs::common::send_on_open_with_error;
 use vfs::directory::entry::EntryInfo;
 use vfs::directory::immutable::connection::ImmutableConnection;
 use vfs::directory::traversal_position::TraversalPosition;
 use vfs::execution_scope::ExecutionScope;
-use vfs::{ObjectRequestRef, ToObjectRequest as _, immutable_attributes};
+use vfs::{ObjectRequestRef, immutable_attributes};
 
 pub(crate) struct MetaSubdir<S: crate::NonMetaStorage> {
     root_dir: Arc<RootDir<S>>,
@@ -52,75 +50,6 @@ impl<S: crate::NonMetaStorage> vfs::node::Node for MetaSubdir<S> {
 }
 
 impl<S: crate::NonMetaStorage> vfs::directory::entry_container::Directory for MetaSubdir<S> {
-    fn deprecated_open(
-        self: Arc<Self>,
-        scope: ExecutionScope,
-        flags: fio::OpenFlags,
-        path: vfs::Path,
-        server_end: ServerEnd<fio::NodeMarker>,
-    ) {
-        let flags = flags & !(fio::OpenFlags::POSIX_WRITABLE | fio::OpenFlags::POSIX_EXECUTABLE);
-        let describe = flags.contains(fio::OpenFlags::DESCRIBE);
-        // Disallow creating a writable or executable connection to this node or any children. We
-        // also disallow file flags which do not apply. Note that the latter is not required for
-        // Open3, as we require writable rights for the latter flags already.
-        if flags.intersects(
-            fio::OpenFlags::RIGHT_WRITABLE
-                | fio::OpenFlags::RIGHT_EXECUTABLE
-                | fio::OpenFlags::TRUNCATE,
-        ) {
-            let () = send_on_open_with_error(describe, server_end, zx::Status::NOT_SUPPORTED);
-            return;
-        }
-        // The VFS should disallow file creation since we cannot serve a mutable connection.
-        assert!(!flags.intersects(fio::OpenFlags::CREATE | fio::OpenFlags::CREATE_IF_ABSENT));
-
-        // Handle case where the request is for this directory itself (e.g. ".").
-        if path.is_empty() {
-            flags.to_object_request(server_end).handle(|object_request| {
-                // NOTE: Some older CTF tests still rely on being able to use the APPEND flag in
-                // some cases, so we cannot check this flag above. Appending is still not possible.
-                // As we plan to remove this method entirely, we can just leave this for now.
-                if flags.intersects(fio::OpenFlags::APPEND) {
-                    return Err(zx::Status::NOT_SUPPORTED);
-                }
-                object_request
-                    .take()
-                    .create_connection_sync::<ImmutableConnection<_>, _>(scope, self, flags);
-                Ok(())
-            });
-            return;
-        }
-
-        // `path` is relative, and may include a trailing slash.
-        let file_path = format!(
-            "{}{}",
-            self.path,
-            path.as_ref().strip_suffix('/').unwrap_or_else(|| path.as_ref())
-        );
-
-        match self.root_dir.get_meta_file(&file_path) {
-            Ok(Some(meta_file)) => {
-                flags.to_object_request(server_end).handle(|object_request| {
-                    vfs::file::serve(meta_file, scope, &flags, object_request)
-                });
-                return;
-            }
-            Ok(None) => {}
-            Err(status) => {
-                let () = send_on_open_with_error(describe, server_end, status);
-                return;
-            }
-        }
-
-        if let Some(subdir) = self.root_dir.get_meta_subdir(file_path + "/") {
-            let () = subdir.deprecated_open(scope, flags, vfs::Path::dot(), server_end);
-            return;
-        }
-
-        let () = send_on_open_with_error(describe, server_end, zx::Status::NOT_FOUND);
-    }
-
     fn open(
         self: Arc<Self>,
         scope: ExecutionScope,
@@ -307,44 +236,6 @@ mod tests {
         for path in ["dir", "dir/"] {
             let proxy = fuchsia_fs::directory::open_directory(&sub_dir, path, fio::PERM_READABLE)
                 .await
-                .unwrap();
-            assert_eq!(
-                fuchsia_fs::directory::readdir(&proxy).await.unwrap(),
-                vec![fuchsia_fs::directory::DirEntry {
-                    name: "file".to_string(),
-                    kind: fuchsia_fs::directory::DirentKind::File
-                }]
-            );
-        }
-    }
-
-    #[fuchsia_async::run_singlethreaded(test)]
-    async fn meta_subdir_deprecated_open_file() {
-        let (_env, sub_dir) = TestEnv::new().await;
-        let (proxy, server_end) = fidl::endpoints::create_proxy::<fio::FileMarker>();
-        sub_dir
-            .deprecated_open(
-                fio::OpenFlags::RIGHT_READABLE,
-                Default::default(),
-                "dir/file",
-                server_end.into_channel().into(),
-            )
-            .unwrap();
-        assert_eq!(fuchsia_fs::file::read(&proxy).await.unwrap(), b"contents".to_vec());
-    }
-
-    #[fuchsia_async::run_singlethreaded(test)]
-    async fn meta_subdir_deprecated_open_directory() {
-        let (_env, sub_dir) = TestEnv::new().await;
-        for path in ["dir", "dir/"] {
-            let (proxy, server_end) = fidl::endpoints::create_proxy::<fio::DirectoryMarker>();
-            sub_dir
-                .deprecated_open(
-                    fio::OpenFlags::RIGHT_READABLE,
-                    Default::default(),
-                    path,
-                    server_end.into_channel().into(),
-                )
                 .unwrap();
             assert_eq!(
                 fuchsia_fs::directory::readdir(&proxy).await.unwrap(),

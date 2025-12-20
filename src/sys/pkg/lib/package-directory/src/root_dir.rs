@@ -6,19 +6,17 @@ use crate::meta_as_dir::MetaAsDir;
 use crate::meta_subdir::MetaSubdir;
 use crate::non_meta_subdir::NonMetaSubdir;
 use crate::{Error, NonMetaStorageError, usize_to_u64_safe};
-use fidl::endpoints::ServerEnd;
 use fidl_fuchsia_io as fio;
 use fuchsia_pkg::MetaContents;
 use log::error;
 use std::collections::HashMap;
 use std::sync::Arc;
-use vfs::common::send_on_open_with_error;
 use vfs::directory::entry::{EntryInfo, OpenRequest};
 use vfs::directory::immutable::connection::ImmutableConnection;
 use vfs::directory::traversal_position::TraversalPosition;
 use vfs::execution_scope::ExecutionScope;
 use vfs::file::vmo::VmoFile;
-use vfs::{ObjectRequestRef, ProtocolsExt as _, ToObjectRequest as _, immutable_attributes};
+use vfs::{ObjectRequestRef, ProtocolsExt as _, immutable_attributes};
 
 /// The root directory of Fuchsia package.
 #[derive(Debug)]
@@ -255,115 +253,6 @@ impl<S: crate::NonMetaStorage> vfs::node::Node for RootDir<S> {
 }
 
 impl<S: crate::NonMetaStorage> vfs::directory::entry_container::Directory for RootDir<S> {
-    fn deprecated_open(
-        self: Arc<Self>,
-        scope: ExecutionScope,
-        flags: fio::OpenFlags,
-        path: vfs::Path,
-        server_end: ServerEnd<fio::NodeMarker>,
-    ) {
-        let flags = flags & !fio::OpenFlags::POSIX_WRITABLE;
-        let describe = flags.contains(fio::OpenFlags::DESCRIBE);
-        // Disallow creating a writable connection to this node or any children. We also disallow
-        // file flags which do not apply. Note that the latter is not required for Open3, as we
-        // require writable rights for the latter flags already.
-        if flags.intersects(fio::OpenFlags::RIGHT_WRITABLE | fio::OpenFlags::TRUNCATE) {
-            let () = send_on_open_with_error(describe, server_end, zx::Status::NOT_SUPPORTED);
-            return;
-        }
-        // The VFS should disallow file creation since we cannot serve a mutable connection.
-        assert!(!flags.intersects(fio::OpenFlags::CREATE | fio::OpenFlags::CREATE_IF_ABSENT));
-
-        // Handle case where the request is for this directory itself (e.g. ".").
-        if path.is_empty() {
-            flags.to_object_request(server_end).handle(|object_request| {
-                // NOTE: Some older CTF tests still rely on being able to use the APPEND flag in
-                // some cases, so we cannot check this flag above. Appending is still not possible.
-                // As we plan to remove this method entirely, we can just leave this for now.
-                if flags.intersects(fio::OpenFlags::APPEND) {
-                    return Err(zx::Status::NOT_SUPPORTED);
-                }
-                object_request
-                    .take()
-                    .create_connection_sync::<ImmutableConnection<_>, _>(scope, self, flags);
-                Ok(())
-            });
-            return;
-        }
-
-        // `path` is relative, and may include a trailing slash.
-        let canonical_path = path.as_ref().strip_suffix('/').unwrap_or_else(|| path.as_ref());
-
-        if canonical_path == "meta" {
-            // This branch is done here instead of in MetaAsDir so that Clone'ing MetaAsDir yields
-            // MetaAsDir. See the MetaAsDir::open impl for more.
-
-            // To remain POSIX compliant, we must default to opening meta as a file unless the
-            // DIRECTORY flag (which maps to O_DIRECTORY) is specified. Otherwise, it would be
-            // impossible to open as a directory, as there is no POSIX equivalent for NOT_DIRECTORY.
-            let open_meta_as_file =
-                !flags.intersects(fio::OpenFlags::DIRECTORY | fio::OpenFlags::NODE_REFERENCE);
-            if open_meta_as_file {
-                flags.to_object_request(server_end).handle(|object_request| {
-                    let file = self.create_meta_as_file().map_err(|e| {
-                        error!("Error creating the meta file: {:?}", e);
-                        zx::Status::INTERNAL
-                    })?;
-                    vfs::file::serve(file, scope, &flags, object_request)
-                });
-            } else {
-                let () = MetaAsDir::new(self).deprecated_open(
-                    scope,
-                    flags,
-                    vfs::Path::dot(),
-                    server_end,
-                );
-            }
-            return;
-        }
-
-        if canonical_path.starts_with("meta/") {
-            match self.get_meta_file(canonical_path) {
-                Ok(Some(meta_file)) => {
-                    flags.to_object_request(server_end).handle(|object_request| {
-                        vfs::file::serve(meta_file, scope, &flags, object_request)
-                    });
-                    return;
-                }
-                Ok(None) => {}
-                Err(status) => {
-                    let () = send_on_open_with_error(describe, server_end, status);
-                    return;
-                }
-            }
-
-            if let Some(subdir) = self.get_meta_subdir(canonical_path.to_string() + "/") {
-                let () = subdir.deprecated_open(scope, flags, vfs::Path::dot(), server_end);
-                return;
-            }
-
-            let () = send_on_open_with_error(describe, server_end, zx::Status::NOT_FOUND);
-            return;
-        }
-
-        if let Some(blob) = self.non_meta_files.get(canonical_path) {
-            let () = self
-                .non_meta_storage
-                .deprecated_open(blob, flags, scope, server_end)
-                .unwrap_or_else(|e| {
-                    error!("Error forwarding content blob open to blobfs: {:#}", anyhow::anyhow!(e))
-                });
-            return;
-        }
-
-        if let Some(subdir) = self.get_non_meta_subdir(canonical_path.to_string() + "/") {
-            let () = subdir.deprecated_open(scope, flags, vfs::Path::dot(), server_end);
-            return;
-        }
-
-        let () = send_on_open_with_error(describe, server_end, zx::Status::NOT_FOUND);
-    }
-
     fn open(
         self: Arc<Self>,
         scope: ExecutionScope,
@@ -520,7 +409,7 @@ pub(crate) struct MetaFileLocation {
 mod tests {
     use super::*;
     use assert_matches::assert_matches;
-    use fidl::endpoints::{Proxy as _, create_proxy};
+    use fidl::endpoints::create_proxy;
     use fuchsia_fs::directory::{DirEntry, DirentKind};
     use fuchsia_pkg_testing::PackageBuilder;
     use fuchsia_pkg_testing::blobfs::Fake as FakeBlobfs;
@@ -950,172 +839,6 @@ mod tests {
         for path in ["dir", "dir/"] {
             let proxy = fuchsia_fs::directory::open_directory(&root_dir, path, fio::PERM_READABLE)
                 .await
-                .unwrap();
-            assert_eq!(
-                fuchsia_fs::directory::readdir(&proxy).await.unwrap(),
-                vec![DirEntry { name: "file".to_string(), kind: DirentKind::File }]
-            );
-        }
-    }
-
-    #[fuchsia_async::run_singlethreaded(test)]
-    async fn root_dir_deprecated_open_self() {
-        let (_env, root_dir) = TestEnv::new().await;
-        let (proxy, server_end) = create_proxy::<fio::DirectoryMarker>();
-        root_dir
-            .deprecated_open(
-                fio::OpenFlags::RIGHT_READABLE,
-                Default::default(),
-                ".",
-                server_end.into_channel().into(),
-            )
-            .unwrap();
-        assert_eq!(
-            fuchsia_fs::directory::readdir(&proxy).await.unwrap(),
-            vec![
-                DirEntry { name: "dir".to_string(), kind: DirentKind::Directory },
-                DirEntry { name: "meta".to_string(), kind: DirentKind::Directory },
-                DirEntry { name: "resource".to_string(), kind: DirentKind::File }
-            ]
-        );
-    }
-
-    #[fuchsia_async::run_singlethreaded(test)]
-    async fn root_dir_deprecated_open_non_meta_file() {
-        let (_env, root_dir) = TestEnv::new().await;
-        let (proxy, server_end) = create_proxy();
-        root_dir
-            .deprecated_open(
-                fio::OpenFlags::RIGHT_READABLE,
-                Default::default(),
-                "resource",
-                server_end,
-            )
-            .unwrap();
-        assert_eq!(
-            fuchsia_fs::file::read(&fio::FileProxy::from_channel(proxy.into_channel().unwrap()))
-                .await
-                .unwrap(),
-            b"blob-contents".to_vec()
-        );
-    }
-
-    #[fuchsia_async::run_singlethreaded(test)]
-    async fn root_dir_deprecated_open_meta_as_file() {
-        let (env, root_dir) = TestEnv::new().await;
-        let (proxy, server_end) = create_proxy::<fio::FileMarker>();
-        root_dir
-            .deprecated_open(
-                fio::OpenFlags::RIGHT_READABLE | fio::OpenFlags::NOT_DIRECTORY,
-                Default::default(),
-                "meta",
-                server_end.into_channel().into(),
-            )
-            .unwrap();
-        assert_eq!(
-            fuchsia_fs::file::read(&proxy).await.unwrap(),
-            env.root_dir.hash.to_string().as_bytes()
-        );
-    }
-
-    #[fuchsia_async::run_singlethreaded(test)]
-    async fn root_dir_deprecated_open_meta_as_dir() {
-        let (_env, root_dir) = TestEnv::new().await;
-        for path in ["meta", "meta/"] {
-            let (proxy, server_end) = create_proxy::<fio::DirectoryMarker>();
-            root_dir
-                .deprecated_open(
-                    fio::OpenFlags::RIGHT_READABLE | fio::OpenFlags::DIRECTORY,
-                    Default::default(),
-                    path,
-                    server_end.into_channel().into(),
-                )
-                .unwrap();
-            assert_eq!(
-                fuchsia_fs::directory::readdir(&proxy).await.unwrap(),
-                vec![
-                    DirEntry { name: "contents".to_string(), kind: DirentKind::File },
-                    DirEntry { name: "dir".to_string(), kind: DirentKind::Directory },
-                    DirEntry { name: "file".to_string(), kind: DirentKind::File },
-                    DirEntry { name: "fuchsia.abi".to_string(), kind: DirentKind::Directory },
-                    DirEntry { name: "package".to_string(), kind: DirentKind::File },
-                ]
-            );
-        }
-    }
-
-    #[fuchsia_async::run_singlethreaded(test)]
-    async fn root_dir_deprecated_open_meta_as_node_reference() {
-        let (_env, root_dir) = TestEnv::new().await;
-        for path in ["meta", "meta/"] {
-            let (proxy, server_end) = create_proxy::<fio::NodeMarker>();
-            root_dir
-                .deprecated_open(
-                    fio::OpenFlags::RIGHT_READABLE | fio::OpenFlags::NODE_REFERENCE,
-                    Default::default(),
-                    path,
-                    server_end.into_channel().into(),
-                )
-                .unwrap();
-            // Check that open as a node reference passed by calling `get_attributes()` on the
-            // proxy. The returned attributes should indicate the meta is a directory.
-            let (_, immutable_attributes) =
-                proxy.get_attributes(fio::NodeAttributesQuery::PROTOCOLS).await.unwrap().unwrap();
-
-            assert_eq!(
-                immutable_attributes.protocols.unwrap_or_default(),
-                fio::NodeProtocolKinds::DIRECTORY
-            );
-        }
-    }
-
-    #[fuchsia_async::run_singlethreaded(test)]
-    async fn root_dir_deprecated_open_meta_file() {
-        let (_env, root_dir) = TestEnv::new().await;
-        let (proxy, server_end) = create_proxy::<fio::FileMarker>();
-        root_dir
-            .deprecated_open(
-                fio::OpenFlags::RIGHT_READABLE,
-                Default::default(),
-                "meta/file",
-                server_end.into_channel().into(),
-            )
-            .unwrap();
-        assert_eq!(fuchsia_fs::file::read(&proxy).await.unwrap(), b"meta-contents0".to_vec());
-    }
-
-    #[fuchsia_async::run_singlethreaded(test)]
-    async fn root_dir_deprecated_open_meta_subdir() {
-        let (_env, root_dir) = TestEnv::new().await;
-        for path in ["meta/dir", "meta/dir/"] {
-            let (proxy, server_end) = create_proxy::<fio::DirectoryMarker>();
-            root_dir
-                .deprecated_open(
-                    fio::OpenFlags::RIGHT_READABLE,
-                    Default::default(),
-                    path,
-                    server_end.into_channel().into(),
-                )
-                .unwrap();
-            assert_eq!(
-                fuchsia_fs::directory::readdir(&proxy).await.unwrap(),
-                vec![DirEntry { name: "file".to_string(), kind: DirentKind::File }]
-            );
-        }
-    }
-
-    #[fuchsia_async::run_singlethreaded(test)]
-    async fn root_dir_deprecated_open_non_meta_subdir() {
-        let (_env, root_dir) = TestEnv::new().await;
-        for path in ["dir", "dir/"] {
-            let (proxy, server_end) = create_proxy::<fio::DirectoryMarker>();
-            root_dir
-                .deprecated_open(
-                    fio::OpenFlags::RIGHT_READABLE,
-                    Default::default(),
-                    path,
-                    server_end.into_channel().into(),
-                )
                 .unwrap();
             assert_eq!(
                 fuchsia_fs::directory::readdir(&proxy).await.unwrap(),

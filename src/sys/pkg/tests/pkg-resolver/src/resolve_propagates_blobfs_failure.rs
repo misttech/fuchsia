@@ -10,7 +10,7 @@
 use {
     assert_matches::assert_matches,
     blobfs_ramdisk::BlobfsRamdisk,
-    fidl::endpoints::{ClientEnd, DiscoverableProtocolMarker, RequestStream, ServerEnd},
+    fidl::endpoints::{ClientEnd, DiscoverableProtocolMarker, RequestStream},
     fidl_fuchsia_fxfs as ffxfs, fidl_fuchsia_io as fio,
     fuchsia_async::{self as fasync, Task},
     fuchsia_merkle::Hash,
@@ -75,34 +75,6 @@ impl ServiceDirectoryWithBlobCreateOverride {
     async fn serve(self, mut stream: fio::DirectoryRequestStream) {
         while let Some(req) = stream.next().await {
             match req.unwrap() {
-                fio::DirectoryRequest::DeprecatedOpen {
-                    flags,
-                    mode,
-                    path,
-                    object,
-                    control_handle: _,
-                } => {
-                    if path == "." {
-                        let stream = object.into_stream().cast_stream();
-                        self.clone().spawn(stream);
-                    } else if path == ffxfs::BlobReaderMarker::PROTOCOL_NAME {
-                        self.inner.deprecated_open(flags, mode, &path, object).unwrap();
-                    } else if path == ffxfs::BlobCreatorMarker::PROTOCOL_NAME {
-                        let (client, server) =
-                            fidl::endpoints::create_proxy::<ffxfs::BlobCreatorMarker>();
-                        self.inner
-                            .deprecated_open(flags, mode, &path, server.into_channel().into())
-                            .unwrap();
-                        FakeCreator { inner: client, target: self.target.clone() }.spawn(
-                            <zx::Channel as Into<ServerEnd<ffxfs::BlobCreatorMarker>>>::into(
-                                object.into_channel(),
-                            )
-                            .into_stream(),
-                        );
-                    } else {
-                        let () = self.inner.deprecated_open(flags, mode, &path, object).unwrap();
-                    }
-                }
                 fio::DirectoryRequest::Open { path, flags, options, object, control_handle: _ } => {
                     ObjectRequest::new(flags, &options, object).handle(|request| {
                         if path == "." {

@@ -6,17 +6,16 @@
 
 //! Typesafe wrappers around the /blob filesystem.
 
-use fidl::endpoints::{ClientEnd, ServerEnd};
+use fidl::endpoints::ClientEnd;
 use fuchsia_hash::{Hash, ParseHashError};
 use futures::{StreamExt as _, stream};
 use log::{error, info};
 use std::collections::HashSet;
 use thiserror::Error;
-use vfs::common::send_on_open_with_error;
 use vfs::execution_scope::ExecutionScope;
 use vfs::file::StreamIoConnection;
-use vfs::{ObjectRequest, ObjectRequestRef, ProtocolsExt, ToObjectRequest as _};
-use zx::Status;
+use vfs::{ObjectRequest, ObjectRequestRef, ProtocolsExt};
+use zx::{self as zx, Status};
 use {fidl_fuchsia_fxfs as ffxfs, fidl_fuchsia_io as fio};
 
 pub mod mock;
@@ -233,31 +232,8 @@ impl Client {
             .map_err(|s| GetBlobVmoError::GetVmo(Status::from_raw(s)))
     }
 
-    /// Open a blob for read.
-    pub fn deprecated_open_blob_for_read(
-        &self,
-        blob: &Hash,
-        flags: fio::OpenFlags,
-        scope: ExecutionScope,
-        server_end: ServerEnd<fio::NodeMarker>,
-    ) -> Result<(), fidl::Error> {
-        let describe = flags.contains(fio::OpenFlags::DESCRIBE);
-        // Reject requests that attempt to open blobs as writable.
-        if flags.contains(fio::OpenFlags::RIGHT_WRITABLE) {
-            send_on_open_with_error(describe, server_end, zx::Status::ACCESS_DENIED);
-            return Ok(());
-        }
-        // Reject requests that attempt to create new blobs.
-        if flags.intersects(fio::OpenFlags::CREATE | fio::OpenFlags::CREATE_IF_ABSENT) {
-            send_on_open_with_error(describe, server_end, zx::Status::NOT_SUPPORTED);
-            return Ok(());
-        }
-        let object_request = flags.to_object_request(server_end);
-        let () = open_blob_with_reader(self.reader.clone(), *blob, scope, flags, object_request);
-        Ok(())
-    }
-
-    /// Open a blob for read using open3.
+    /// Open a blob for read using open3. `scope` will only be used if the client was configured to
+    /// use fuchsia.fxfs.BlobReader.
     pub fn open_blob_for_read(
         &self,
         blob: &Hash,

@@ -117,15 +117,6 @@ impl From<&NonMetaStorageError> for zx::Status {
 /// blobfs).
 pub trait NonMetaStorage: Send + Sync + Sized + 'static {
     /// Open a non-meta file by hash. `scope` may complete while there are still open connections.
-    fn deprecated_open(
-        &self,
-        blob: &fuchsia_hash::Hash,
-        flags: fio::OpenFlags,
-        scope: ExecutionScope,
-        server_end: ServerEnd<fio::NodeMarker>,
-    ) -> Result<(), NonMetaStorageError>;
-
-    /// Open a non-meta file by hash. `scope` may complete while there are still open connections.
     fn open(
         &self,
         _blob: &fuchsia_hash::Hash,
@@ -148,18 +139,6 @@ pub trait NonMetaStorage: Send + Sync + Sized + 'static {
 }
 
 impl NonMetaStorage for blobfs::Client {
-    fn deprecated_open(
-        &self,
-        blob: &fuchsia_hash::Hash,
-        flags: fio::OpenFlags,
-        scope: ExecutionScope,
-        server_end: ServerEnd<fio::NodeMarker>,
-    ) -> Result<(), NonMetaStorageError> {
-        self.deprecated_open_blob_for_read(blob, flags, scope, server_end).map_err(|e| {
-            NonMetaStorageError::OpenBlob(fuchsia_fs::node::OpenError::SendOpenRequest(e))
-        })
-    }
-
     fn open(
         &self,
         blob: &fuchsia_hash::Hash,
@@ -193,19 +172,6 @@ impl NonMetaStorage for blobfs::Client {
 
 /// Assumes the directory is a flat container and the files are named after their hashes.
 impl NonMetaStorage for fio::DirectoryProxy {
-    fn deprecated_open(
-        &self,
-        blob: &fuchsia_hash::Hash,
-        flags: fio::OpenFlags,
-        _scope: ExecutionScope,
-        server_end: ServerEnd<fio::NodeMarker>,
-    ) -> Result<(), NonMetaStorageError> {
-        self.deprecated_open(flags, fio::ModeType::empty(), blob.to_string().as_str(), server_end)
-            .map_err(|e| {
-                NonMetaStorageError::OpenBlob(fuchsia_fs::node::OpenError::SendOpenRequest(e))
-            })
-    }
-
     fn open(
         &self,
         blob: &fuchsia_hash::Hash,
