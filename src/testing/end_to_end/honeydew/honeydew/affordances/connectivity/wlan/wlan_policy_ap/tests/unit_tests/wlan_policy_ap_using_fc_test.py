@@ -10,6 +10,8 @@ from contextlib import contextmanager
 from typing import TypeVar
 from unittest import mock
 
+import fidl_fuchsia_wlan_common as f_wlan_common
+import fidl_fuchsia_wlan_device_service as f_wlan_device_service
 import fidl_fuchsia_wlan_policy as f_wlan_policy
 from fuchsia_controller_py import Channel, ZxStatus
 
@@ -105,6 +107,7 @@ class WlanPolicyApFCTests(unittest.TestCase):
             self.mock_ap_provider(),
             self.mock_ap_listener(),
             self.mock_ap_controller() as ap_controller_client,
+            self.mock_device_monitor(),
         ):
             self.access_point_controller_obj = ap_controller_client
 
@@ -189,6 +192,33 @@ class WlanPolicyApFCTests(unittest.TestCase):
         ) as fidl_mock:
             fidl_mock.return_value = ap_controller_client
             yield ap_controller_client
+
+    @contextmanager
+    def mock_device_monitor(self) -> Iterator[mock.MagicMock]:
+        """Mock requests to fuchsia.wlan.device.service/DeviceMonitorClient."""
+        device_monitor_client = mock.MagicMock(
+            spec=f_wlan_device_service.DeviceMonitorClient,
+            autospec=True,
+        )
+        device_monitor_client.list_phys.return_value = _async_response(
+            f_wlan_device_service.DeviceMonitorListPhysResponse(phy_list=[1])
+        )
+
+        mock_get_supported_mac_roles_response = mock.Mock()
+        mock_get_supported_mac_roles_response.unwrap.return_value.supported_mac_roles = [
+            f_wlan_common.WlanMacRole.AP
+        ]
+
+        device_monitor_client.get_supported_mac_roles.return_value = (
+            _async_response(mock_get_supported_mac_roles_response)
+        )
+
+        with mock.patch(
+            "fidl_fuchsia_wlan_device_service.DeviceMonitorClient",
+            autospec=True,
+        ) as fidl_mock:
+            fidl_mock.return_value = device_monitor_client
+            yield device_monitor_client
 
     def test_verify_supported(self) -> None:
         """Verify verify_supported fails."""

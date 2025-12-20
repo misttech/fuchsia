@@ -1,0 +1,169 @@
+# Copyright 2025 The Fuchsia Authors
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+import asyncio
+import logging
+
+logger = logging.getLogger(__name__)
+
+import fidl_fuchsia_location_namedplace as f_location_namedplace
+import fuchsia_wlan_base_test
+from honeydew.affordances.connectivity.wlan.utils import errors as wlan_errors
+from honeydew.affordances.connectivity.wlan.utils.types import (
+    ClientStateSummary,
+    ConnectivityMode,
+    CountryCode,
+    OperatingBand,
+    SecurityType,
+    WlanClientState,
+)
+from honeydew.typing.custom_types import FidlEndpoint
+from mobly import asserts, signals, test_runner
+
+
+class RegulatoryRecoveryTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
+    def setup_class(self) -> None:
+        super().setup_class()
+
+        if len(self.fuchsia_devices) < 1:
+            raise EnvironmentError("No Fuchsia devices found.")
+
+        self.device = self.fuchsia_devices[0]
+        regulatory_region_watcher = (
+            f_location_namedplace.RegulatoryRegionWatcherClient(
+                self.device.fuchsia_controller.connect_device_proxy(
+                    FidlEndpoint(
+                        "core/regulatory_region",
+                        "fuchsia.location.namedplace.RegulatoryRegionWatcher",
+                    )
+                )
+            )
+        )
+        get_region_update_response = asyncio.run(
+            regulatory_region_watcher.get_region_update()
+        )
+
+        # If no region was set before this test runs, then the result could be None.
+        # In that case, the only reasonable choice is to set the region to worldwide.
+        if get_region_update_response.new_region is None:
+            self.device.wlan_policy.set_country_code(CountryCode.WORLDWIDE)
+            self.before_test_country_code = CountryCode.WORLDWIDE
+        else:
+            self.before_test_country_code = CountryCode(
+                get_region_update_response.new_region
+            )
+        logger.info(
+            f"Country code before tests is {self.before_test_country_code}."
+        )
+
+        self.device.wlan_policy.create_client_controller()
+        self.device.wlan_policy.start_client_connections()
+        self.device_supports_ap = True
+        try:
+            self.device.wlan_policy_ap
+        except wlan_errors.HoneydewWlanError:
+            logger.info(
+                "Detected this device does not support an access point interface."
+            )
+            self.device_supports_ap = False
+        else:
+            logger.info(
+                "Detected this device supports an access point interface."
+            )
+            self.device_supports_ap = True
+
+    def teardown_class(self) -> None:
+        logger.info(
+            f"Finishing test suite by setting country code back to {self.before_test_country_code}..."
+        )
+        self.device.wlan_policy.set_country_code(self.before_test_country_code)
+        super().teardown_class()
+
+    def test_interfaces_not_recreated_when_initially_disabled(self) -> None:
+        """Test no interfaces created after applying a new country code."""
+
+        # With the country code set to US, destroy all interfaces
+        self.device.wlan_policy.set_country_code(CountryCode("US"))
+        self.device.wlan_policy.stop_client_connections()
+        self.device.wlan_policy.wait_until_update(
+            ClientStateSummary(
+                state=WlanClientState.CONNECTIONS_DISABLED,
+                networks=[],
+            )
+        )
+        if self.device_supports_ap:
+            self.device.wlan_policy_ap.stop_all()
+
+        # Change the country code while all interfaces are destroyed
+        self.device.wlan_policy.set_country_code(CountryCode("AU"))
+
+        # Verify changing the country code does not create interfaces
+        self.device.wlan_policy.set_new_update_listener()
+        self.device.wlan_policy.wait_until_update(
+            ClientStateSummary(
+                state=WlanClientState.CONNECTIONS_DISABLED,
+                networks=[],
+            )
+        )
+
+        if self.device_supports_ap:
+            self.device.wlan_policy_ap.set_new_update_listener()
+            ap_updates = self.device.wlan_policy_ap.get_update()
+            if ap_updates:
+                raise signals.TestFailure(
+                    f"AP in unexpected state: {ap_updates}"
+                )
+
+    def test_interfaces_recreated_when_initially_enabled(self) -> None:
+        """Test client and AP interfaces are automatically recreated after applying a new country code."""
+
+        # With the country code set to US, create interfaces.
+        self.device.wlan_policy.set_country_code(CountryCode("US"))
+        self.device.wlan_policy.start_client_connections()
+        self.device.wlan_policy.wait_until_update(
+            ClientStateSummary(
+                state=WlanClientState.CONNECTIONS_ENABLED,
+                networks=[],
+            )
+        )
+        if self.device_supports_ap:
+            self.device.wlan_policy_ap.start(
+                "test_ssid",
+                SecurityType.NONE,
+                None,
+                ConnectivityMode.LOCAL_ONLY,
+                OperatingBand.ANY,
+            )
+
+        # Change the country code while interfaces are up.
+        self.device.wlan_policy.set_country_code(CountryCode("AU"))
+
+        # Verify changing the country code cycles the client back to enabled.
+        self.device.wlan_policy.wait_until_update(
+            ClientStateSummary(
+                state=WlanClientState.CONNECTIONS_ENABLED,
+                networks=[],
+            )
+        )
+
+        # Don't reset the update listener so that this verifies
+        # changing the country code recreates the interfaces.
+        if self.device_supports_ap:
+            self.device.wlan_policy_ap.set_new_update_listener()
+            ap_updates = self.device.wlan_policy_ap.get_update()
+            if len(ap_updates) != 1:
+                raise signals.TestFailure(f"No APs are running: {ap_updates}")
+            asserts.assert_equal(
+                ap_updates[0].id_.ssid, "test_ssid", "Wrong ssid", ap_updates
+            )
+            asserts.assert_equal(
+                ap_updates[0].id_.security_type,
+                SecurityType.NONE,
+                "Wrong security type",
+                ap_updates,
+            )
+
+
+if __name__ == "__main__":
+    test_runner.main()

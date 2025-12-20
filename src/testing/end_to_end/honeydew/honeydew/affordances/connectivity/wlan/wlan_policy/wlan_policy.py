@@ -11,6 +11,7 @@ import fidl_fuchsia_wlan_policy as f_wlan_policy
 from honeydew.affordances import affordance
 from honeydew.affordances.connectivity.wlan.utils.types import (
     ClientStateSummary,
+    CountryCode,
     NetworkConfig,
     SecurityType,
     WlanClientState,
@@ -28,6 +29,10 @@ class WlanPolicy(affordance.Affordance):
         client_connections_state: WlanClientState | None
 
     # List all the public methods
+    @abc.abstractmethod
+    def set_country_code(self, country_code: CountryCode) -> None:
+        """Set regulatory region and wait for wlancfg to change country code of each phy."""
+
     @abc.abstractmethod
     def connect(
         self,

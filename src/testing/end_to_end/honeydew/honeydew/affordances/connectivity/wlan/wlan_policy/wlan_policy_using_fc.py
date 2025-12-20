@@ -10,8 +10,10 @@ import inspect
 import logging
 import pprint
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 from typing import Awaitable, Callable
 
+import fidl_fuchsia_wlan_device_service as f_wlan_device_service
 import fidl_fuchsia_wlan_policy as f_wlan_policy
 from fuchsia_controller_py import Channel, ZxStatus
 from fuchsia_controller_py.wrappers import AsyncAdapter, asyncmethod
@@ -21,6 +23,7 @@ from honeydew.affordances.connectivity.wlan.utils import errors as wlan_errors
 from honeydew.affordances.connectivity.wlan.utils.types import (
     ClientStateSummary,
     ConnectionState,
+    CountryCode,
     Credential,
     NetworkConfig,
     NetworkIdentifier,
@@ -28,6 +31,7 @@ from honeydew.affordances.connectivity.wlan.utils.types import (
     WlanClientState,
 )
 from honeydew.affordances.connectivity.wlan.wlan_policy import wlan_policy
+from honeydew.affordances.location.location import Location
 from honeydew.transports.ffx import ffx as ffx_transport
 from honeydew.transports.fuchsia_controller import (
     fuchsia_controller as fc_transport,
@@ -49,6 +53,12 @@ _CLIENT_PROVIDER_PROXY = FidlEndpoint(
 _CLIENT_LISTENER_PROXY = FidlEndpoint(
     "core/wlancfg", "fuchsia.wlan.policy.ClientListener"
 )
+_DEVICE_MONITOR_PROXY = FidlEndpoint(
+    "core/wlandevicemonitor", "fuchsia.wlan.device.service.DeviceMonitor"
+)
+
+_SET_COUNTRY_CODE_TIMEOUT = timedelta(seconds=10)
+_COUNTRY_CODE_CHECK_INTERVAL = timedelta(seconds=1)
 
 
 async def collect_network_config_iterator(
@@ -153,6 +163,7 @@ class WlanPolicy(AsyncAdapter, wlan_policy.WlanPolicy):
         fuchsia_controller: fc_transport.FuchsiaController,
         reboot_affordance: affordances_capable.RebootCapableDevice,
         fuchsia_device_close: affordances_capable.FuchsiaDeviceClose,
+        location: Location,
     ) -> None:
         """Create a WlanPolicy Fuchsia Controller affordance.
 
@@ -171,6 +182,7 @@ class WlanPolicy(AsyncAdapter, wlan_policy.WlanPolicy):
         self._reboot_affordance = reboot_affordance
         self._fuchsia_device_close = fuchsia_device_close
         self._client_controller: ClientControllerState | None = None
+        self._location = location
 
         self.verify_supported()
 
@@ -230,6 +242,68 @@ class WlanPolicy(AsyncAdapter, wlan_policy.WlanPolicy):
         """Re-initializes connection to the WLAN stack."""
         self._client_provider_proxy = f_wlan_policy.ClientProviderClient(
             self._fc_transport.connect_device_proxy(_CLIENT_PROVIDER_PROXY)
+        )
+        self._device_monitor_proxy = f_wlan_device_service.DeviceMonitorClient(
+            self._fc_transport.connect_device_proxy(_DEVICE_MONITOR_PROXY)
+        )
+
+    @asyncmethod
+    # pylint: disable-next=invalid-overridden-method
+    async def set_country_code(self, country_code: CountryCode) -> None:
+        await self._set_country_code(country_code)
+
+    async def _set_country_code(self, country_code: CountryCode) -> None:
+        _LOGGER.info(f"Setting DUT country code to {country_code}...")
+        self._location.set_region(country_code)
+        _LOGGER.info(
+            f"Waiting for configuration of all PHYs with country code {country_code}..."
+        )
+
+        phy_list = (await self._device_monitor_proxy.list_phys()).phy_list
+
+        deadline = datetime.now() + _SET_COUNTRY_CODE_TIMEOUT
+        while datetime.now() < deadline:
+            phy_country_codes = [
+                CountryCode.from_bytes(
+                    bytes(
+                        (
+                            await self._device_monitor_proxy.get_country(
+                                phy_id=phy_id
+                            )
+                        )
+                        .unwrap()
+                        .resp.alpha2
+                    )
+                )
+                for phy_id in phy_list
+            ]
+
+            # TODO(https://fxbug.dev/469784448): USER_XZ is the equivalent of WORLDWIDE
+            # on some devices.
+            if country_code == CountryCode.USER_XZ:
+                if all(
+                    [CountryCode.WORLDWIDE == cc for cc in phy_country_codes]
+                ):
+                    # Mutate country_code to what was actually set in each PHY.
+                    country_code = CountryCode.WORLDWIDE
+                    break
+            else:
+                if all([country_code == cc for cc in phy_country_codes]):
+                    break
+
+            await asyncio.sleep(_COUNTRY_CODE_CHECK_INTERVAL.total_seconds())
+        else:
+            if country_code == CountryCode.WORLDWIDE:
+                _LOGGER.warning(
+                    f"Failed to set {CountryCode.WORLDWIDE}. Trying {CountryCode.USER_XZ}."
+                )
+                return await self._set_country_code(CountryCode.USER_XZ)
+            else:
+                raise RuntimeError(
+                    f"Failed to set DUT country code to {country_code}."
+                )
+        _LOGGER.info(
+            f"All PHYs configured for new country code: {country_code}"
         )
 
     @asyncmethod

@@ -9,7 +9,7 @@ from __future__ import annotations
 import enum
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Protocol, Self
 
 import fidl_fuchsia_wlan_common as f_wlan_common
 import fidl_fuchsia_wlan_device_service as f_wlan_device_service
@@ -776,8 +776,23 @@ class CountryCode(enum.StrEnum):
     TAIWAN = "TW"
     UNITED_STATES_OF_AMERICA = "US"
     WORLDWIDE = "WW"
+    USER_XZ = "XZ"
     # WW and 00 both refer to worldwide mode
     WORLDWIDE_ZEROES = "00"
+
+    @classmethod
+    def from_bytes(cls, data: bytes) -> Self:
+        if len(data) != 2:
+            raise ValueError(
+                f"Expected exactly 2 bytes, got {len(data)}: {data!r}"
+            )
+
+        try:
+            code_str = data.decode("utf-8")
+        except UnicodeDecodeError as e:
+            raise ValueError(f"Bytes {data!r} are not valid UTF-8") from e
+
+        return cls(code_str)
 
 
 class ConnectivityMode(enum.IntEnum):

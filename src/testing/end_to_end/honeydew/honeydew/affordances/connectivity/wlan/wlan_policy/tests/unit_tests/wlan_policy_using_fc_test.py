@@ -29,6 +29,7 @@ from honeydew.affordances.connectivity.wlan.utils.types import (
 from honeydew.affordances.connectivity.wlan.wlan_policy import (
     wlan_policy_using_fc,
 )
+from honeydew.affordances.location.location import Location
 from honeydew.errors import NotSupportedError
 from honeydew.transports.ffx import ffx as ffx_transport
 from honeydew.transports.fuchsia_controller import (
@@ -148,6 +149,10 @@ class WlanPolicyFCTests(unittest.TestCase):
             spec=ffx_transport.FFX,
             autospec=True,
         )
+        self.location_obj = mock.MagicMock(
+            spec=Location,
+            autospec=True,
+        )
 
         self.ffx_transport_obj.run.return_value = "".join(
             wlan_policy_using_fc._REQUIRED_CAPABILITIES
@@ -159,6 +164,7 @@ class WlanPolicyFCTests(unittest.TestCase):
             fuchsia_controller=self.fc_transport_obj,
             reboot_affordance=self.reboot_affordance_obj,
             fuchsia_device_close=self.fuchsia_device_close_obj,
+            location=self.location_obj,
         )
         self.client_state_updates_proxy: (
             f_wlan_policy.ClientStateUpdatesClient | None
@@ -225,6 +231,7 @@ class WlanPolicyFCTests(unittest.TestCase):
                 fuchsia_controller=self.fc_transport_obj,
                 reboot_affordance=self.reboot_affordance_obj,
                 fuchsia_device_close=self.fuchsia_device_close_obj,
+                location=self.location_obj,
             )
 
     def test_init_connect_proxy(self) -> None:

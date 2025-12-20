@@ -31,6 +31,7 @@ from honeydew.affordances.connectivity.wlan.wlan_core import wlan_core_using_fc
 from honeydew.affordances.connectivity.wlan.wlan_policy import (
     wlan_policy_using_fc,
 )
+from honeydew.affordances.location import location_using_fc
 from honeydew.affordances.power.system_power_state_controller import (
     system_power_state_controller_using_starnix,
 )
@@ -578,6 +579,12 @@ class FuchsiaDeviceImplTests(unittest.TestCase):
         )
 
     @mock.patch.object(
+        location_using_fc.LocationUsingFc,
+        "__init__",
+        autospec=True,
+        return_value=None,
+    )
+    @mock.patch.object(
         ffx_impl.FfxImpl,
         "run",
         return_value="".join(wlan_policy_using_fc._REQUIRED_CAPABILITIES),
@@ -594,6 +601,7 @@ class FuchsiaDeviceImplTests(unittest.TestCase):
         wlan_policy_using_fc_init: mock.Mock,
         # pylint: disable-next=unused-argument
         mock_ffx_run: mock.Mock,
+        location_using_fc_init: mock.Mock,
     ) -> None:
         """Test case to make sure fuchsia_device supports Fuchsia-Controller based wlan_policy
         affordance."""
@@ -608,6 +616,7 @@ class FuchsiaDeviceImplTests(unittest.TestCase):
             fuchsia_controller=self.fd_fc_obj.fuchsia_controller,
             reboot_affordance=self.fd_fc_obj,
             fuchsia_device_close=self.fd_fc_obj,
+            location=self.fd_fc_obj.location,
         )
 
     @mock.patch.object(

@@ -8,6 +8,8 @@ import asyncio
 import logging
 from dataclasses import dataclass
 
+import fidl_fuchsia_wlan_common as f_wlan_common
+import fidl_fuchsia_wlan_device_service as f_wlan_device_service
 import fidl_fuchsia_wlan_policy as f_wlan_policy
 from fuchsia_controller_py import Channel, ZxStatus
 from fuchsia_controller_py.wrappers import AsyncAdapter, asyncmethod
@@ -85,6 +87,34 @@ class WlanPolicyAp(AsyncAdapter, wlan_policy_ap.WlanPolicyAp):
         self._fuchsia_device_close = fuchsia_device_close
 
         self.verify_supported()
+
+        device_monitor_proxy = f_wlan_device_service.DeviceMonitorClient(
+            self._fc_transport.connect_device_proxy(
+                FidlEndpoint(
+                    "core/wlandevicemonitor",
+                    "fuchsia.wlan.device.service.DeviceMonitor",
+                )
+            )
+        )
+        phy_list = asyncio.run(device_monitor_proxy.list_phys()).phy_list
+
+        phy_supported_roles = [
+            asyncio.run(
+                device_monitor_proxy.get_supported_mac_roles(phy_id=phy_id)
+            )
+            .unwrap()
+            .supported_mac_roles
+            for phy_id in phy_list
+        ]
+        if not any(
+            [
+                f_wlan_common.WlanMacRole.AP in roles
+                for roles in phy_supported_roles
+            ]
+        ):
+            raise wlan_errors.HoneydewWlanError(
+                "Device does not support an access point interface."
+            )
 
         self._connect_proxy()
         self._reboot_affordance.register_for_on_device_boot(self._connect_proxy)
