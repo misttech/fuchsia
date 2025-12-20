@@ -34,13 +34,9 @@ alias ProviderId = uint32;
 /// The value returned by `GetKnownCategories`.
 type KnownCategory = struct {
     // Category name.
-    @available(replaced=18)
-    name string:MAX_CATEGORY_NAME_LENGTH;
     @available(added=18)
     name CategoryName;
     // Category description.
-    @available(replaced=18)
-    description string:MAX_CATEGORY_DESCRIPTION_LENGTH;
     @available(added=18)
     description CategoryDescription;
 };

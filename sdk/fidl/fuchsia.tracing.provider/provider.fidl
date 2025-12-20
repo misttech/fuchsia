@@ -7,21 +7,6 @@ library fuchsia.tracing.provider;
 using fuchsia.tracing;
 using zx;
 
-/// The maximum length of a provider's name.
-@available(deprecated=11, removed=12, note="Use fuchsia.tracing.MAX_PROVIDER_NAME_LENGTH instead")
-const MAX_PROVIDER_NAME_LENGTH uint32 = 100;
-
-/// The maximum number of categories supported.
-@available(
-        deprecated=11,
-        removed=12,
-        note="Use fuchsia.tracing.MAX_NUM_ENABLED_CATEGORIES or fuchsia.tracing.MAX_NUM_KNOWN_CATEGORIES instead")
-const MAX_NUM_CATEGORIES uint32 = 100;
-
-/// The maximum length of a category name.
-@available(deprecated=11, removed=12, note="Use fuchsia.tracing.MAX_CATEGORY_NAME_LENGTH instead")
-const MAX_CATEGORY_NAME_LENGTH uint32 = 100;
-
 /// The provider interface which applications must implement and register
 /// with the `TraceRegistry` to participate in tracing.
 ///
@@ -89,8 +74,6 @@ closed protocol Registry {
     strict RegisterProvider(resource struct {
         provider client_end:Provider;
         pid zx.Koid;
-        @available(replaced=11)
-        name string:MAX_PROVIDER_NAME_LENGTH;
         @available(added=11)
         name string:fuchsia.tracing.MAX_PROVIDER_NAME_LENGTH;
     });
@@ -107,37 +90,12 @@ closed protocol Registry {
     strict RegisterProviderSynchronously(resource struct {
         provider client_end:Provider;
         pid zx.Koid;
-        @available(replaced=11)
-        name string:MAX_PROVIDER_NAME_LENGTH;
         @available(added=11)
         name string:fuchsia.tracing.MAX_PROVIDER_NAME_LENGTH;
     }) -> (struct {
         s zx.Status;
         started bool;
     });
-};
-
-/// The trace buffering mode.
-@available(deprecated=11, removed=12)
-type BufferingMode = strict enum : uint8 {
-    /// In oneshot mode there is only one buffer that is not reused. When the
-    /// buffer fills the provider just keeps dropping records, keeping a count,
-    /// and then when tracing stops the header is updated to record final
-    /// state.
-    ONESHOT = 1;
-
-    /// In circular mode, the buffer is continually written to until tracing
-    /// stops. When the buffer fills older records are discarded as needed.
-    CIRCULAR = 2;
-
-    /// In streaming mode, the buffer is effectively split into two pieces.
-    /// When one half of the buffer fills the provider notifies the trace
-    /// manager via the provided fifo, and then starts filling the other half
-    /// of the buffer. When the buffer is saved, the manager responds via the
-    /// provided fifo. If trace manager hasn't saved the buffer in time, and
-    /// the other buffer fills, then the provider is required to drop records
-    /// until space becomes available.
-    STREAMING = 3;
 };
 
 /// Trace provider configuration.
@@ -147,8 +105,6 @@ type BufferingMode = strict enum : uint8 {
 // tables are ready for use in zircon.
 type ProviderConfig = resource struct {
     /// `buffering_mode` specifies what happens when the buffer fills.
-    @available(replaced=11)
-    buffering_mode BufferingMode;
     @available(added=11)
     buffering_mode fuchsia.tracing.BufferingMode;
 
@@ -162,45 +118,9 @@ type ProviderConfig = resource struct {
     fifo zx.Handle:FIFO;
 
     /// What trace categories to collect data for.
-    @available(replaced=11)
-    categories vector<string:MAX_CATEGORY_NAME_LENGTH>:MAX_NUM_CATEGORIES;
     @available(added=11)
     categories
             vector<string:fuchsia.tracing.MAX_CATEGORY_NAME_LENGTH>:fuchsia.tracing.MAX_NUM_ENABLED_CATEGORIES;
-};
-
-/// Choices for clearing/retaining trace buffer contents at Start.
-/// A brief summary of buffer contents:
-/// The trace buffer is divided into two main pieces: durable and non-durable.
-/// The durable portion contains things like the string and thread data for
-/// their respective references (trace_encoded_string_ref_t and
-/// trace_encoded_thread_ref_t). The non-durable portion contains the rest of
-/// the trace data like events); this is the portion that, for example, is
-/// discarded in circular buffering mode when the (non-durable) buffer fills.
-@available(deprecated=11, removed=12)
-type BufferDisposition = strict enum : uint8 {
-    /// Clear the entire buffer, including durable buffer contents.
-    /// N.B. If this is done mid-session, then string and thread references
-    /// from prior to this point will become invalid - the underlying data
-    /// will be gone. To prevent this save buffer contents before clearing.
-    ///
-    /// This is typically used when buffer contents were saved after the
-    /// preceding Stop.
-    CLEAR_ENTIRE = 1;
-
-    /// Clear the non-durable portion of the buffer, retaining the durable
-    /// portion.
-    ///
-    /// This is typically used when buffer contents were not saved after the
-    /// preceding Stop and the current contents are to be discarded.
-    CLEAR_NONDURABLE = 2;
-
-    /// Retain buffer contents. New trace data is added where the previous
-    /// trace run left off.
-    ///
-    /// This is typically used when buffer contents were not saved after the
-    /// preceding Stop and the current contents are to be retained.
-    RETAIN = 3;
 };
 
 /// Additional options to control tracing at start.
@@ -208,15 +128,11 @@ type StartOptions = struct {
     /// Whether and how to clear the buffer when starting data collection.
     /// This allows, for example, multiple Start/Stop trace runs to be
     /// collected in the same buffer.
-    @available(replaced=11)
-    buffer_disposition BufferDisposition;
     @available(added=11)
     buffer_disposition fuchsia.tracing.BufferDisposition;
 
     /// The trace categories to add to the initial set provided in
     /// `ProviderConfig`.
-    @available(replaced=11)
-    additional_categories vector<string:MAX_CATEGORY_NAME_LENGTH>:MAX_NUM_CATEGORIES;
     @available(added=11)
     additional_categories
             vector<string:fuchsia.tracing.MAX_CATEGORY_NAME_LENGTH>:fuchsia.tracing.MAX_NUM_ENABLED_CATEGORIES;
