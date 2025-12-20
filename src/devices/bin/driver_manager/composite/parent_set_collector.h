@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef SRC_DEVICES_BIN_DRIVER_MANAGER_PARENT_SET_COLLECTOR_H_
-#define SRC_DEVICES_BIN_DRIVER_MANAGER_PARENT_SET_COLLECTOR_H_
+#ifndef SRC_DEVICES_BIN_DRIVER_MANAGER_COMPOSITE_PARENT_SET_COLLECTOR_H_
+#define SRC_DEVICES_BIN_DRIVER_MANAGER_COMPOSITE_PARENT_SET_COLLECTOR_H_
 
 #include <fidl/fuchsia.driver.development/cpp/fidl.h>
 #include <fidl/fuchsia.driver.framework/cpp/fidl.h>
@@ -80,4 +80,4 @@ class ParentSetCollector {
 
 }  // namespace driver_manager
 
-#endif  // SRC_DEVICES_BIN_DRIVER_MANAGER_PARENT_SET_COLLECTOR_H_
+#endif  // SRC_DEVICES_BIN_DRIVER_MANAGER_COMPOSITE_PARENT_SET_COLLECTOR_H_

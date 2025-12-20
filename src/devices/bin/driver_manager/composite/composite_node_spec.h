@@ -8,7 +8,7 @@
 #include <fidl/fuchsia.driver.development/cpp/wire.h>
 #include <fidl/fuchsia.driver.index/cpp/fidl.h>
 
-#include "src/devices/bin/driver_manager/parent_set_collector.h"
+#include "src/devices/bin/driver_manager/composite/parent_set_collector.h"
 
 namespace driver_manager {
 class Node;
