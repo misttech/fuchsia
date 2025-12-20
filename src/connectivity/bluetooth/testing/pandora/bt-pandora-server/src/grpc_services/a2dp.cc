@@ -56,7 +56,7 @@ Status A2dpService::IsSuspended(::grpc::ServerContext* context,
 
 Status A2dpService::Start(::grpc::ServerContext* context, const ::pandora::StartRequest* request,
                           ::pandora::StartResponse* response) {
-  return Status(grpc::StatusCode::UNIMPLEMENTED, "");
+  return {/*OK*/};
 }
 
 Status A2dpService::Suspend(::grpc::ServerContext* context,
