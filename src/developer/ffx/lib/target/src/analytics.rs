@@ -59,19 +59,10 @@ fn format_target_connection_error(error: &TargetConnectionError) -> String {
         // In all likelihood this will provide a lot of noise in analytics, but it wouldn't make
         // sense to omit it entirely, as it could point to important trends. So if they prove
         // unimportant for the majority case these can be filtered out in a query downstream.
-        NonFatal(e) => match e.downcast_ref::<ffx_ssh::ssh::SshError>() {
-            Some(ssh_error) => format!(
-                "non-fatal: {}",
-                match ssh_error {
-                    // If, for some reason, this shows up in analytics frequently it might make sense
-                    // to dig into this error further, but otherwise this is the only SshError that
-                    // contains a string, and for now we'll just omit it.
-                    ffx_ssh::ssh::SshError::Unknown(_) => "unknown".to_string(),
-                    e => format!("{e}"),
-                }
-            ),
-            None => format!("non-fatal: {e}"),
-        },
+        //
+        // It turns out there may still be unhandled ssh errors, so, since this includes the
+        // `ffx_ssh::ssh::SshError::Unknown(_)` case that is not omitted (it was previously).
+        NonFatal(e) => format!("non-fatal: {e}"),
     }
 }
 
@@ -279,7 +270,7 @@ mod tests {
         assert_eq!(event.action, None);
         assert_eq!(
             event.custom_dimensions.get("error"),
-            Some(&"non-fatal: unknown".to_owned().into())
+            Some(&"non-fatal: unknown ssh error: foobar".to_owned().into())
         );
         assert_eq!(event.custom_dimensions.get("connection_type"), Some(&"ssh".to_owned().into()));
     }
