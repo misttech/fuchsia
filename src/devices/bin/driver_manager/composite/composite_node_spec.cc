@@ -13,10 +13,9 @@ namespace driver_manager {
 CompositeNodeSpec::CompositeNodeSpec(CompositeNodeSpecCreateInfo create_info,
                                      async_dispatcher_t* dispatcher, NodeManager* node_manager)
     : name_(create_info.name),
-      parent_set_collector_(std::nullopt),
+      parent_set_collector_(create_info.parents.size()),
       dispatcher_(dispatcher),
       node_manager_(node_manager) {
-  parent_nodes_ = std::vector<std::optional<NodeWkPtr>>(create_info.parents.size(), std::nullopt);
   parent_specs_ = std::move(create_info.parents);
 }
 
@@ -24,18 +23,8 @@ zx::result<std::optional<NodeWkPtr>> CompositeNodeSpec::BindParent(
     fuchsia_driver_framework::wire::CompositeParent composite_parent, const NodeWkPtr& node_ptr) {
   ZX_ASSERT(composite_parent.has_index());
   auto node_index = composite_parent.index();
-  if (node_index >= parent_nodes_.size()) {
+  if (node_index >= parent_set_collector_.size()) {
     return zx::error(ZX_ERR_OUT_OF_RANGE);
-  }
-
-  const std::optional<NodeWkPtr>& current_at_index = parent_nodes_[node_index];
-  if (current_at_index.has_value()) {
-    const NodeWkPtr& existing_node = current_at_index.value();
-    // If the driver_manager::Node no longer exists (for example because of a reload) then we don't
-    // want to return an ALREADY_BOUND error.
-    if (!existing_node.expired()) {
-      return zx::error(ZX_ERR_ALREADY_BOUND);
-    }
   }
 
   if (!composite_info_.has_value()) {
@@ -59,8 +48,8 @@ zx::result<std::optional<NodeWkPtr>> CompositeNodeSpec::BindParent(
   auto& parent_names = matched_driver->parent_names().value();
   auto& primary_index = matched_driver->primary_parent_index();
 
-  if (!parent_set_collector_) {
-    parent_set_collector_ = ParentSetCollector(parent_names, primary_index.value_or(0));
+  if (!parent_set_collector_.HasCompositeInfo()) {
+    parent_set_collector_.BindToComposite(parent_names, primary_index.value_or(0));
     driver_url_ = driver_info->url().value();
   }
 
@@ -68,14 +57,12 @@ zx::result<std::optional<NodeWkPtr>> CompositeNodeSpec::BindParent(
       parent_specs()[composite_parent.index()].properties();
 
   zx::result<> add_result =
-      parent_set_collector_->AddNode(composite_parent.index(), properties, node_ptr);
+      parent_set_collector_.AddNode(composite_parent.index(), properties, node_ptr);
   if (add_result.is_error()) {
     return add_result.take_error();
   }
 
-  parent_nodes_[node_index] = node_ptr;
-
-  auto composite_node = parent_set_collector_->TryToAssemble(name_, node_manager_, dispatcher_);
+  auto composite_node = parent_set_collector_.TryToAssemble(name_, node_manager_, dispatcher_);
   if (composite_node.is_error()) {
     if (composite_node.status_value() != ZX_ERR_SHOULD_WAIT) {
       return composite_node.take_error();
@@ -86,53 +73,27 @@ zx::result<std::optional<NodeWkPtr>> CompositeNodeSpec::BindParent(
 }
 
 void CompositeNodeSpec::Remove(RemoveCompositeNodeCallback callback) {
-  std::fill(parent_nodes_.begin(), parent_nodes_.end(), std::nullopt);
-  if (!parent_set_collector_) {
-    callback(zx::ok());
-    return;
-  }
-
-  parent_set_collector_->ReleaseNodes();
+  parent_set_collector_.ReleaseNodes();
 
   // TODO(https://fxbug.dev/42075799): Once we start enforcing the multibind composite flag, move
   // the parent nodes back to the orphaned nodes if they can't multibind.
-  auto node = parent_set_collector_->completed_composite_node();
+  auto node = parent_set_collector_.completed_composite_node();
   if (node && !node->expired()) {
     node->lock()->RemoveCompositeNodeForRebind(std::move(callback));
-    parent_set_collector_.reset();
+    parent_set_collector_ = ParentSetCollector(parent_specs_.size());
     driver_url_ = "";
     composite_info_.reset();
     return;
   }
 
-  parent_set_collector_.reset();
+  parent_set_collector_ = ParentSetCollector(parent_specs_.size());
   driver_url_ = "";
   composite_info_.reset();
   callback(zx::ok());
 }
 
 fdd::wire::CompositeNodeInfo CompositeNodeSpec::GetCompositeInfo(fidl::AnyArena& arena) const {
-  auto composite_info = fdd::wire::CompositeNodeInfo::Builder(arena);
-  if (!parent_set_collector_) {
-    fidl::VectorView<fidl::StringView> parent_topological_paths(arena, size());
-    composite_info.parent_topological_paths(parent_topological_paths);
-    return composite_info.Build();
-  }
-
-  if (composite_info_.has_value()) {
-    composite_info.composite(fdd::wire::CompositeInfo::WithComposite(
-        arena, fidl::ToWire(arena, composite_info_.value())));
-  }
-
-  composite_info.parent_topological_paths(parent_set_collector_->GetParentTopologicalPaths(arena));
-
-  std::optional<NodeWkPtr> composite_node = parent_set_collector_->completed_composite_node();
-  if (composite_node) {
-    if (auto node_ptr = composite_node->lock(); node_ptr) {
-      composite_info.topological_path(node_ptr->MakeTopologicalPath());
-    }
-  }
-  return composite_info.Build();
+  return parent_set_collector_.GetCompositeInfo(arena, composite_info_);
 }
 
 }  // namespace driver_manager

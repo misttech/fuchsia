@@ -5,6 +5,7 @@
 #ifndef SRC_DEVICES_BIN_DRIVER_MANAGER_PARENT_SET_COLLECTOR_H_
 #define SRC_DEVICES_BIN_DRIVER_MANAGER_PARENT_SET_COLLECTOR_H_
 
+#include <fidl/fuchsia.driver.development/cpp/fidl.h>
 #include <fidl/fuchsia.driver.framework/cpp/fidl.h>
 #include <fidl/fuchsia.driver.index/cpp/wire.h>
 
@@ -14,16 +15,23 @@
 
 namespace driver_manager {
 
+using NodeWkPtr = std::weak_ptr<Node>;
+
 // |ParentSetCollector| wraps functionality for collecting multiple parent nodes for composites.
 // The parent set starts out empty and gets nodes added to it until it is complete. Once complete
 // it will return a vector containing all the parent node pointers.
 class ParentSetCollector {
  public:
-  explicit ParentSetCollector(std::vector<std::string> parent_names, uint32_t primary_index)
-      : parents_(parent_names.size()),
-        parent_names_(std::move(parent_names)),
-        parent_properties_(parent_names_.size()),
-        primary_index_(primary_index) {}
+  explicit ParentSetCollector(size_t size) : parents_(size), parent_properties_(size) {}
+
+  void BindToComposite(std::vector<std::string> parent_names, uint32_t primary_index) {
+    parent_names_ = std::move(parent_names);
+    primary_index_ = primary_index;
+  }
+
+  bool HasCompositeInfo() const {
+    return primary_index_ != std::nullopt && parent_names_ != std::nullopt;
+  }
 
   // Add a node to the parent set at the specified index.
   // Caller should check that |ContainsNode| is false for the index before calling this.
@@ -39,26 +47,32 @@ class ParentSetCollector {
   zx::result<std::shared_ptr<Node>> TryToAssemble(std::string_view name, NodeManager* node_manager,
                                                   async_dispatcher_t* dispatcher);
 
+  fuchsia_driver_development::wire::CompositeNodeInfo GetCompositeInfo(
+      fidl::AnyArena& arena,
+      const std::optional<fuchsia_driver_framework::CompositeInfo>& composite_info) const;
+
   fidl::VectorView<fidl::StringView> GetParentTopologicalPaths(fidl::AnyArena& arena) const;
 
-  const std::weak_ptr<Node>& get(uint32_t index) const { return parents_[index]; }
+  const std::optional<std::weak_ptr<Node>>& get(uint32_t index) const { return parents_[index]; }
 
-  uint32_t primary_index() const { return primary_index_; }
-
-  std::optional<std::weak_ptr<driver_manager::Node>> completed_composite_node() const {
+  std::optional<std::weak_ptr<Node>> completed_composite_node() const {
     return completed_composite_node_;
   }
+
+  size_t size() const { return parents_.size(); }
+
+  // Exposed for testing.
+  const std::vector<std::optional<NodeWkPtr>>& parents() const { return parents_; }
 
  private:
   // Nodes are stored as weak_ptrs. Only when trying to collect the completed set are they
   // locked into shared_ptrs and validated to not be null.
-  std::vector<std::weak_ptr<Node>> parents_;
-
-  std::vector<std::string> parent_names_;
+  std::vector<std::optional<NodeWkPtr>> parents_;
 
   std::vector<fuchsia_driver_framework::NodePropertyEntry2> parent_properties_;
 
-  uint32_t primary_index_;
+  std::optional<uint32_t> primary_index_;
+  std::optional<std::vector<std::string>> parent_names_;
 
   // Contains a weak pointer to the composite node when the parent set is assembled.
   std::optional<std::weak_ptr<driver_manager::Node>> completed_composite_node_;

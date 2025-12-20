@@ -13,7 +13,7 @@
 namespace driver_manager {
 class Node;
 
-using NodeWkPtr = std::weak_ptr<driver_manager::Node>;
+using NodeWkPtr = std::weak_ptr<Node>;
 using RemoveCompositeNodeCallback = fit::callback<void(zx::result<>)>;
 
 struct CompositeNodeSpecCreateInfo {
@@ -52,24 +52,18 @@ class CompositeNodeSpec {
   const std::string& name() const { return name_; }
 
   std::optional<NodeWkPtr> completed_composite_node() const {
-    return parent_set_collector_ ? parent_set_collector_->completed_composite_node() : std::nullopt;
+    return parent_set_collector_.completed_composite_node();
   }
 
   // Exposed for testing.
-  const std::vector<std::optional<NodeWkPtr>>& parent_nodes() const { return parent_nodes_; }
-  bool has_parent_set_collector_for_testing() const { return parent_set_collector_.has_value(); }
-  size_t size() const { return parent_nodes_.size(); }
-
- protected:
-  // TODO(https://fxbug.dev/469556012): Replace this with the stored parent nodes in
-  // |parent_set_collector_|.
-  std::vector<std::optional<NodeWkPtr>> parent_nodes_;
+  virtual const std::vector<std::optional<NodeWkPtr>>& GetParentNodes() const {
+    return parent_set_collector_.parents();
+  }
 
  private:
   std::string name_;
 
-  // TODO(https://fxbug.dev/469556012): Make this not optional.
-  std::optional<ParentSetCollector> parent_set_collector_;
+  ParentSetCollector parent_set_collector_;
 
   std::string driver_url_;
 

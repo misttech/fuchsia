@@ -97,8 +97,6 @@ TEST_F(CompositeNodeSpecTest, RemoveWithCompositeNode) {
   ASSERT_TRUE(result.is_ok());
   ASSERT_FALSE(result.value());
 
-  ASSERT_TRUE(spec.has_parent_set_collector_for_testing());
-
   // Bind the second node.
   std::shared_ptr parent_2 = CreateNode("spec_parent_2");
   result = MatchAndBindParentSpec(spec, parent_2, {"node-0", "node-1"}, 1);
@@ -115,8 +113,7 @@ TEST_F(CompositeNodeSpecTest, RemoveWithCompositeNode) {
   spec.Remove([](zx::result<> result) {});
   ASSERT_EQ(driver_manager::ShutdownIntent::kRebindComposite,
             composite_node_ptr->shutdown_intent());
-  ASSERT_FALSE(spec.completed_composite_node().has_value());
-  ASSERT_FALSE(spec.has_parent_set_collector_for_testing());
+  ASSERT_FALSE(spec.completed_composite_node());
 }
 
 TEST_F(CompositeNodeSpecTest, RemoveWithNoCompositeNode) {
@@ -128,11 +125,9 @@ TEST_F(CompositeNodeSpecTest, RemoveWithNoCompositeNode) {
   ASSERT_TRUE(result.is_ok());
   ASSERT_FALSE(result.value());
 
-  ASSERT_TRUE(spec.has_parent_set_collector_for_testing());
-  ASSERT_FALSE(spec.completed_composite_node().has_value());
+  ASSERT_FALSE(spec.completed_composite_node());
 
   // Invoke remove.
   spec.Remove([](zx::result<> result) {});
-  ASSERT_FALSE(spec.completed_composite_node().has_value());
-  ASSERT_FALSE(spec.has_parent_set_collector_for_testing());
+  ASSERT_FALSE(spec.completed_composite_node());
 }
