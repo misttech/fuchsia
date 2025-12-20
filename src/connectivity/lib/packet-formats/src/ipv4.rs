@@ -10,6 +10,7 @@
 
 use alloc::vec::Vec;
 use core::borrow::Borrow;
+use core::convert::Infallible as Never;
 use core::fmt::{self, Debug, Formatter};
 use core::ops::Range;
 
@@ -21,8 +22,8 @@ use packet::records::options::{OptionSequenceBuilder, OptionsRaw};
 use packet::{
     BufferProvider, BufferView, BufferViewMut, EmptyBuf, FragmentedBytesMut, FromRaw,
     GrowBufferMut, InnerPacketBuilder, LayoutBufferAlloc, MaybeParsed, PacketBuilder,
-    PacketConstraints, ParsablePacket, ParseMetadata, PartialPacketBuilder, SerializeError,
-    SerializeTarget, Serializer,
+    PacketConstraints, ParsablePacket, ParseMetadata, PartialPacketBuilder, PartialSerializeResult,
+    PartialSerializer, SerializeError, SerializeTarget, Serializer,
 };
 use zerocopy::byteorder::network_endian::U16;
 use zerocopy::{
@@ -263,12 +264,32 @@ impl<B: SplitByteSlice> Ipv4Header for Ipv4Packet<B> {
     }
 }
 
+impl<B: SplitByteSlice> PartialSerializer for Ipv4Packet<B> {
+    fn partial_serialize(
+        &self,
+        _outer: PacketConstraints,
+        buffer: &mut [u8],
+    ) -> Result<PartialSerializeResult, SerializeError<Never>> {
+        let hdr_prefix = Ref::bytes(&self.hdr_prefix);
+        let options = self.options.bytes();
+        let header_len = hdr_prefix.len() + options.len();
+        assert!(buffer.len() >= header_len);
+
+        buffer[..hdr_prefix.len()].copy_from_slice(&hdr_prefix[..]);
+        buffer[hdr_prefix.len()..header_len].copy_from_slice(&options[..]);
+
+        Ok(PartialSerializeResult {
+            bytes_written: header_len,
+            total_size: header_len + self.body.len(),
+        })
+    }
+}
+
 impl<B: SplitByteSlice> ParsablePacket<B, ()> for Ipv4Packet<B> {
     type Error = IpParseError<Ipv4>;
 
     fn parse_metadata(&self) -> ParseMetadata {
-        let header_len = Ref::bytes(&self.hdr_prefix).len() + self.options.bytes().len();
-        ParseMetadata::from_packet(header_len, self.body.len(), 0)
+        ParseMetadata::from_packet(self.header_len(), self.body.len(), 0)
     }
 
     fn parse<BV: BufferView<B>>(buffer: BV, _args: ()) -> IpParseResult<Ipv4, Self> {
@@ -1556,6 +1577,43 @@ mod tests {
         assert!(packet.mf_flag());
         assert_eq!(packet.fragment_offset().into_raw(), 0x0607);
         assert_eq!(packet.fragment_type(), Ipv4FragmentType::NonInitialFragment);
+    }
+
+    #[test]
+    fn test_partial_serialize() {
+        let mut builder = new_builder();
+        builder.dscp_and_ecn(DscpAndEcn::new(0x12, 3));
+        builder.id(0x0405);
+        builder.df_flag(true);
+        builder.mf_flag(true);
+        builder.fragment_offset(FragmentOffset::new(0x0607).unwrap());
+        let body = [0, 1, 2, 3, 3, 4, 5, 7, 8, 9];
+        let packet = (&body).into_serializer().wrap_in(builder);
+        const HEADER_LEN: usize = 20;
+
+        // Note that this header is different from the one in test_serialize
+        // because the checksum is not calculated.
+        const HEADER: [u8; HEADER_LEN] =
+            [69, 75, 0, 30, 4, 5, 102, 7, 64, 6, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8];
+        let mut expected_partial = HEADER.to_vec();
+        expected_partial.resize(expected_partial.len() + body.len(), 0);
+
+        for i in 1..expected_partial.len() {
+            let mut buf = vec![0u8; i];
+            let result =
+                packet.partial_serialize(PacketConstraints::UNCONSTRAINED, buf.as_mut_slice());
+
+            // PartialSerializer serializes the header only if the buffer is
+            // large enough to fit the whole header.
+            let bytes_written = if i >= HEADER_LEN { HEADER_LEN } else { 0 };
+            assert_eq!(
+                result,
+                Ok(PartialSerializeResult { bytes_written, total_size: body.len() + HEADER_LEN })
+            );
+            if bytes_written > 0 {
+                assert_eq!(buf, expected_partial[..i]);
+            }
+        }
     }
 
     #[test]

@@ -39,7 +39,7 @@ use netstack3_base::{
 use netstack3_filter::{
     self as filter, ConnectionDirection, ConntrackConnection, FilterBindingsContext,
     FilterBindingsTypes, FilterHandler as _, FilterIpContext, FilterIpExt, FilterIpMetadata,
-    FilterMarkMetadata, FilterTimerId, ForwardedPacket, IngressVerdict, IpPacket, MarkAction,
+    FilterIpPacket, FilterMarkMetadata, FilterTimerId, ForwardedPacket, IngressVerdict, MarkAction,
     TransportPacketSerializer, Tuple, WeakConnectionError, WeakConntrackConnection,
 };
 use netstack3_hashmap::HashMap;
@@ -2912,7 +2912,7 @@ where
     I: IpLayerIpExt,
     BC: FilterBindingsContext + TxMetadataBindingsTypes,
     CC: IpLayerEgressContext<I, BC> + IpDeviceMtuContext<I> + IpDeviceAddressIdContext<I>,
-    S: FragmentableIpSerializer<I, Buffer: BufferMut> + IpPacket<I>,
+    S: FragmentableIpSerializer<I, Buffer: BufferMut> + FilterIpPacket<I>,
 {
     let (verdict, proof) = core_ctx.filter_handler().egress_hook(
         bindings_ctx,
@@ -4612,7 +4612,7 @@ pub trait IpLayerHandler<I: IpExt + FragmentationIpExt + FilterIpExt, BC>:
         body: S,
     ) -> Result<(), IpSendFrameError<S>>
     where
-        S: FragmentableIpSerializer<I, Buffer: BufferMut> + IpPacket<I>;
+        S: FragmentableIpSerializer<I, Buffer: BufferMut> + FilterIpPacket<I>;
 }
 
 impl<
@@ -4642,7 +4642,7 @@ impl<
         body: S,
     ) -> Result<(), IpSendFrameError<S>>
     where
-        S: FragmentableIpSerializer<I, Buffer: BufferMut> + IpPacket<I>,
+        S: FragmentableIpSerializer<I, Buffer: BufferMut> + FilterIpPacket<I>,
     {
         send_ip_frame(
             self,

@@ -16,7 +16,7 @@ use packet_formats::ip::IpExt;
 
 use crate::conntrack::{Connection, FinalizeConnectionError, GetConnectionError};
 use crate::context::{FilterBindingsContext, FilterBindingsTypes, FilterIpContext};
-use crate::packets::{FilterIpExt, IpPacket, MaybeTransportPacket};
+use crate::packets::{FilterIpExt, FilterIpPacket, MaybeTransportPacket};
 use crate::state::{
     Action, FilterIpMetadata, FilterMarkMetadata, Hook, Routine, Rule, TransparentProxy,
 };
@@ -160,7 +160,7 @@ fn check_routine<I, P, D, BT: FilterBindingsTypes, M>(
 ) -> RoutineResult<I>
 where
     I: FilterIpExt,
-    P: IpPacket<I>,
+    P: FilterIpPacket<I>,
     D: InterfaceProperties<BT::DeviceClass>,
     M: FilterMarkMetadata,
 {
@@ -214,7 +214,7 @@ fn check_routines_for_hook<I, P, D, BT: FilterBindingsTypes, M>(
 ) -> Verdict
 where
     I: FilterIpExt,
-    P: IpPacket<I>,
+    P: FilterIpPacket<I>,
     D: InterfaceProperties<BT::DeviceClass>,
     M: FilterMarkMetadata,
 {
@@ -244,7 +244,7 @@ fn check_routines_for_ingress<I, P, D, BT: FilterBindingsTypes, M>(
 ) -> IngressVerdict<I>
 where
     I: FilterIpExt,
-    P: IpPacket<I>,
+    P: FilterIpPacket<I>,
     D: InterfaceProperties<BT::DeviceClass>,
     M: FilterMarkMetadata,
 {
@@ -279,7 +279,7 @@ pub trait FilterHandler<I: FilterIpExt, BC: FilterBindingsTypes>:
         metadata: &mut M,
     ) -> IngressVerdict<I>
     where
-        P: IpPacket<I>,
+        P: FilterIpPacket<I>,
         M: FilterIpMetadata<I, Self::WeakAddressId, BC>;
 
     /// The local ingress hook intercepts incoming traffic that is destined for
@@ -292,7 +292,7 @@ pub trait FilterHandler<I: FilterIpExt, BC: FilterBindingsTypes>:
         metadata: &mut M,
     ) -> Verdict
     where
-        P: IpPacket<I>,
+        P: FilterIpPacket<I>,
         M: FilterIpMetadata<I, Self::WeakAddressId, BC>;
 
     /// The forwarding hook intercepts incoming traffic that is destined for
@@ -305,7 +305,7 @@ pub trait FilterHandler<I: FilterIpExt, BC: FilterBindingsTypes>:
         metadata: &mut M,
     ) -> Verdict
     where
-        P: IpPacket<I>,
+        P: FilterIpPacket<I>,
         M: FilterIpMetadata<I, Self::WeakAddressId, BC>;
 
     /// The local egress hook intercepts locally-generated traffic before a
@@ -318,7 +318,7 @@ pub trait FilterHandler<I: FilterIpExt, BC: FilterBindingsTypes>:
         metadata: &mut M,
     ) -> Verdict
     where
-        P: IpPacket<I>,
+        P: FilterIpPacket<I>,
         M: FilterIpMetadata<I, Self::WeakAddressId, BC>;
 
     /// The egress hook intercepts all outgoing traffic after a routing decision
@@ -331,7 +331,7 @@ pub trait FilterHandler<I: FilterIpExt, BC: FilterBindingsTypes>:
         metadata: &mut M,
     ) -> (Verdict, ProofOfEgressCheck)
     where
-        P: IpPacket<I>,
+        P: FilterIpPacket<I>,
         M: FilterIpMetadata<I, Self::WeakAddressId, BC>;
 }
 
@@ -369,7 +369,7 @@ where
         metadata: &mut M,
     ) -> IngressVerdict<I>
     where
-        P: IpPacket<I>,
+        P: FilterIpPacket<I>,
         M: FilterIpMetadata<I, Self::WeakAddressId, BC>,
     {
         let Self(this) = self;
@@ -446,7 +446,7 @@ where
         metadata: &mut M,
     ) -> Verdict
     where
-        P: IpPacket<I>,
+        P: FilterIpPacket<I>,
         M: FilterIpMetadata<I, Self::WeakAddressId, BC>,
     {
         let Self(this) = self;
@@ -518,7 +518,7 @@ where
         metadata: &mut M,
     ) -> Verdict
     where
-        P: IpPacket<I>,
+        P: FilterIpPacket<I>,
         M: FilterIpMetadata<I, Self::WeakAddressId, BC>,
     {
         let Self(this) = self;
@@ -540,7 +540,7 @@ where
         metadata: &mut M,
     ) -> Verdict
     where
-        P: IpPacket<I>,
+        P: FilterIpPacket<I>,
         M: FilterIpMetadata<I, Self::WeakAddressId, BC>,
     {
         let Self(this) = self;
@@ -601,7 +601,7 @@ where
         metadata: &mut M,
     ) -> (Verdict, ProofOfEgressCheck)
     where
-        P: IpPacket<I>,
+        P: FilterIpPacket<I>,
         M: FilterIpMetadata<I, Self::WeakAddressId, BC>,
     {
         let Self(this) = self;
@@ -748,7 +748,7 @@ pub mod testutil {
             _: &mut M,
         ) -> IngressVerdict<I>
         where
-            P: IpPacket<I>,
+            P: FilterIpPacket<I>,
             M: FilterIpMetadata<I, Self::WeakAddressId, BC>,
         {
             Verdict::Accept(()).into()
@@ -762,7 +762,7 @@ pub mod testutil {
             _: &mut M,
         ) -> Verdict
         where
-            P: IpPacket<I>,
+            P: FilterIpPacket<I>,
             M: FilterIpMetadata<I, Self::WeakAddressId, BC>,
         {
             Verdict::Accept(())
@@ -776,7 +776,7 @@ pub mod testutil {
             _: &mut M,
         ) -> Verdict
         where
-            P: IpPacket<I>,
+            P: FilterIpPacket<I>,
             M: FilterIpMetadata<I, Self::WeakAddressId, BC>,
         {
             Verdict::Accept(())
@@ -790,7 +790,7 @@ pub mod testutil {
             _: &mut M,
         ) -> Verdict
         where
-            P: IpPacket<I>,
+            P: FilterIpPacket<I>,
             M: FilterIpMetadata<I, Self::WeakAddressId, BC>,
         {
             Verdict::Accept(())
@@ -804,7 +804,7 @@ pub mod testutil {
             _: &mut M,
         ) -> (Verdict, ProofOfEgressCheck)
         where
-            P: IpPacket<I>,
+            P: FilterIpPacket<I>,
             M: FilterIpMetadata<I, Self::WeakAddressId, BC>,
         {
             (Verdict::Accept(()), ProofOfEgressCheck::forge_proof_for_test())
@@ -843,6 +843,7 @@ mod tests {
     use crate::context::testutil::{FakeBindingsCtx, FakeCtx, FakeWeakAddressId};
     use crate::logic::nat::NatConfig;
     use crate::matchers::{PacketMatcher, TransportProtocolMatcher};
+    use crate::packets::IpPacket;
     use crate::packets::testutil::internal::{
         ArbitraryValue, FakeIpPacket, FakeTcpSegment, FakeUdpPacket, TransportPacketExt,
     };

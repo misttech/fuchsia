@@ -29,8 +29,8 @@ use crate::conntrack::{
 use crate::context::{FilterBindingsContext, FilterBindingsTypes, NatContext};
 use crate::logic::{IngressVerdict, Interfaces, RoutineResult, Verdict};
 use crate::packets::{
-    FilterIpExt, IcmpErrorMut, IpPacket, MaybeIcmpErrorMut as _, MaybeTransportPacketMut as _,
-    TransportPacketMut as _,
+    FilterIpExt, FilterIpPacket, IcmpErrorMut, IpPacket, MaybeIcmpErrorMut as _,
+    MaybeTransportPacketMut as _, TransportPacketMut as _,
 };
 use crate::state::{FilterMarkMetadata, Hook};
 
@@ -214,7 +214,7 @@ pub(crate) trait NatHook<I: FilterIpExt> {
         result: RoutineResult<I>,
     ) -> ControlFlow<Self::Verdict<NatConfigurationResult<I, CC::WeakAddressId, BC>>>
     where
-        P: IpPacket<I>,
+        P: FilterIpPacket<I>,
         CC: NatContext<I, BC>,
         BC: FilterBindingsContext;
 
@@ -294,7 +294,7 @@ impl<I: FilterIpExt> NatHook<I> for IngressHook {
         result: RoutineResult<I>,
     ) -> ControlFlow<Self::Verdict<NatConfigurationResult<I, CC::WeakAddressId, BC>>>
     where
-        P: IpPacket<I>,
+        P: FilterIpPacket<I>,
         CC: NatContext<I, BC>,
         BC: FilterBindingsContext,
     {
@@ -395,7 +395,7 @@ impl<I: FilterIpExt> NatHook<I> for LocalEgressHook {
         result: RoutineResult<I>,
     ) -> ControlFlow<Self::Verdict<NatConfigurationResult<I, CC::WeakAddressId, BC>>>
     where
-        P: IpPacket<I>,
+        P: FilterIpPacket<I>,
         CC: NatContext<I, BC>,
         BC: FilterBindingsContext,
     {
@@ -525,7 +525,7 @@ impl<I: FilterIpExt> NatHook<I> for EgressHook {
         result: RoutineResult<I>,
     ) -> ControlFlow<Self::Verdict<NatConfigurationResult<I, CC::WeakAddressId, BC>>>
     where
-        P: IpPacket<I>,
+        P: FilterIpPacket<I>,
         CC: NatContext<I, BC>,
         BC: FilterBindingsContext,
     {
@@ -657,7 +657,7 @@ pub(crate) fn perform_nat<N, I, P, CC, BC>(
 where
     N: NatHook<I>,
     I: FilterIpExt,
-    P: IpPacket<I>,
+    P: FilterIpPacket<I>,
     CC: NatContext<I, BC>,
     BC: FilterBindingsContext,
 {
@@ -816,7 +816,7 @@ fn configure_nat<N, I, P, CC, BC>(
 where
     N: NatHook<I>,
     I: FilterIpExt,
-    P: IpPacket<I>,
+    P: FilterIpPacket<I>,
     CC: NatContext<I, BC>,
     BC: FilterBindingsContext,
 {
@@ -845,7 +845,7 @@ fn configure_redirect_nat<N, I, P, CC, BC>(
 where
     N: NatHook<I>,
     I: FilterIpExt,
-    P: IpPacket<I>,
+    P: FilterIpPacket<I>,
     CC: NatContext<I, BC>,
     BC: FilterBindingsContext,
 {
@@ -905,7 +905,7 @@ fn configure_masquerade_nat<I, P, CC, BC>(
 ) -> Verdict<NatConfigurationResult<I, CC::WeakAddressId, BC>>
 where
     I: FilterIpExt,
-    P: IpPacket<I>,
+    P: FilterIpPacket<I>,
     CC: NatContext<I, BC>,
     BC: FilterBindingsContext,
 {

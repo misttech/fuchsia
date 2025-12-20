@@ -19,14 +19,14 @@ use log::{error, warn};
 use net_types::ip::IpVersion;
 use netstack3_core::device::DeviceId;
 use netstack3_core::filter::{
-    BindingsPacketMatcher, FilterIpExt, IpPacket, SocketEgressFilterResult,
+    BindingsPacketMatcher, FilterIpExt, FilterIpPacket, SocketEgressFilterResult,
     SocketIngressFilterResult, SocketOpsFilter,
 };
 use netstack3_core::ip::{Mark, MarkDomain, Marks};
 use netstack3_core::socket::SocketCookie;
 use netstack3_core::sync::{Mutex, RwLock};
 use netstack3_core::trace::trace_duration;
-use packet::{FragmentedByteSlice, PacketConstraints, PartialSerializer};
+use packet::{FragmentedByteSlice, PacketConstraints};
 use packet_formats::ethernet::EtherType;
 use std::collections::{HashMap, hash_map};
 use std::mem::offset_of;
@@ -104,7 +104,7 @@ impl<'a, C> SkBuff<'a, C> {
         }
     }
 
-    fn from_ip_packet<I: FilterIpExt, P: IpPacket<I> + PartialSerializer>(
+    fn from_ip_packet<I: FilterIpExt, P: FilterIpPacket<I>>(
         packet: &P,
         ifindex: u32,
         data_buffer: &'a mut [u8],
@@ -381,12 +381,20 @@ impl diagnostics_traits::InspectableValue for SocketFilterProgram {
 }
 
 impl BindingsPacketMatcher for SocketFilterProgram {
-    fn matches<I: FilterIpExt, P: IpPacket<I>>(&self, _packet: &P) -> bool {
+    fn matches<I: FilterIpExt, P: FilterIpPacket<I>>(&self, packet: &P) -> bool {
         trace_duration!(c"ebpf::packet_matcher");
 
-        // TODO(https://fxbug.dev/455585276): Wire `PartialSerializer` for the
-        // `packet`. Use it to construct `SkBuff` and run the program.
-        false
+        // TODO(https://fxbug.dev/455585276): Use actual socket info and ifindex.
+        let socket_info = SocketInfo { socket_cookie: 0, socket_uid: None };
+        let ifindex = 0;
+        let mut data_buffer = [0u8; SERIALIZED_HEAD_SIZE];
+        let sk_buff =
+            SkBuff::<'_, SocketFilterProgram>::from_ip_packet(packet, ifindex, &mut data_buffer);
+
+        match self.run(socket_info, sk_buff) {
+            SocketFilterResult::Accept(_) => true,
+            SocketFilterResult::Reject => false,
+        }
     }
 }
 
@@ -731,7 +739,7 @@ impl DeviceIfIndex for DeviceId<BindingsCtx> {
 const SERIALIZED_HEAD_SIZE: usize = 128;
 
 impl<D: DeviceIfIndex> SocketOpsFilter<D> for &EbpfManager {
-    fn on_egress<I: FilterIpExt, P: IpPacket<I> + PartialSerializer>(
+    fn on_egress<I: FilterIpExt, P: FilterIpPacket<I>>(
         &self,
         packet: &P,
         device: &D,
@@ -1017,7 +1025,8 @@ mod tests {
     #[test_case(AttachType::CgroupInetIngress; "Ingress")]
     fn run_skb_prog<I: TestIpExt + FilterIpExt>(attach_type: AttachType) {
         let manager = EbpfManager::default();
-        let (program, maps) = ebpf_test_util::load_test_program(ProgramType::CgroupSkb);
+        let test_program = ebpf_test_util::TestProgram::load(ProgramType::CgroupSkb);
+        let program = test_program.get_fidl_program();
         let program = CgroupSkbProgram::new(program.try_into().unwrap(), manager.maps_cache())
             .expect("Failed to initialize a program");
 
@@ -1092,10 +1101,7 @@ mod tests {
         }
 
         // Check the result.
-        let result = maps[0].load(&[0; 4]).expect("Failed to retrieve test result");
-        let result = ebpf_test_util::TestResult::ref_from_bytes(&result)
-            .expect("Failed to convert test results struct");
-
+        let result = test_program.read_test_result();
         assert_eq!(result.cookie, socket_resource_token.token().export_value());
         assert_eq!(result.uid, UID);
         assert_eq!(result.ifindex, TEST_IFINDEX);

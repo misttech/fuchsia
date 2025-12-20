@@ -19,6 +19,7 @@ rustc_library("ebpf_test_util") {
   deps = [
     ":ebpf_test_progs",
     "//sdk/fidl/fuchsia.ebpf:fuchsia.ebpf_rust",
+    "//sdk/rust/zx",
     "//src/starnix/lib/ebpf",
     "//src/starnix/lib/ebpf_api",
     "//src/starnix/lib/ebpf_loader",

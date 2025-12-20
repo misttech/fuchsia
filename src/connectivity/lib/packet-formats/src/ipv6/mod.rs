@@ -12,6 +12,7 @@ pub mod ext_hdrs;
 
 use alloc::vec::Vec;
 use core::borrow::Borrow;
+use core::convert::Infallible as Never;
 use core::fmt::{self, Debug, Formatter};
 use core::ops::Range;
 
@@ -21,8 +22,8 @@ use packet::records::{AlignedRecordSequenceBuilder, Records, RecordsRaw};
 use packet::{
     BufferProvider, BufferView, BufferViewMut, EmptyBuf, FragmentedBytesMut, FromRaw,
     GrowBufferMut, InnerPacketBuilder, LayoutBufferAlloc, MaybeParsed, PacketBuilder,
-    PacketConstraints, ParsablePacket, ParseMetadata, PartialPacketBuilder, SerializeError,
-    SerializeTarget, Serializer,
+    PacketConstraints, ParsablePacket, ParseMetadata, PartialPacketBuilder, PartialSerializeResult,
+    PartialSerializer, SerializeError, SerializeTarget, Serializer,
 };
 use zerocopy::byteorder::network_endian::{U16, U32};
 use zerocopy::{
@@ -390,6 +391,27 @@ impl<B: SplitByteSlice> FromRaw<Ipv6PacketRaw<B>, ()> for Ipv6Packet<B> {
         }
 
         Ok(Ipv6Packet { fixed_hdr, extension_hdrs, body, proto })
+    }
+}
+
+impl<B: SplitByteSlice> PartialSerializer for Ipv6Packet<B> {
+    fn partial_serialize(
+        &self,
+        _outer: PacketConstraints,
+        buffer: &mut [u8],
+    ) -> Result<PartialSerializeResult, SerializeError<Never>> {
+        let fixed_hdr = Ref::bytes(&self.fixed_hdr);
+        let extension_hdrs = self.extension_hdrs.bytes();
+        let header_len = fixed_hdr.len() + extension_hdrs.len();
+        assert!(buffer.len() >= header_len);
+
+        buffer[..fixed_hdr.len()].copy_from_slice(&fixed_hdr[..]);
+        buffer[fixed_hdr.len()..header_len].copy_from_slice(&extension_hdrs[..]);
+
+        Ok(PartialSerializeResult {
+            bytes_written: header_len,
+            total_size: header_len + self.body.len(),
+        })
     }
 }
 
@@ -2091,6 +2113,42 @@ mod tests {
         assert_eq!(packet.dscp_and_ecn().dscp(), 0x12);
         assert_eq!(packet.dscp_and_ecn().ecn(), 3);
         assert_eq!(packet.flowlabel(), 0x10405);
+    }
+
+    #[test]
+    fn test_partial_serialize() {
+        let mut builder = new_builder();
+        builder.dscp_and_ecn(DscpAndEcn::new(0x12, 3));
+        builder.flowlabel(0x10405);
+        let body = [0, 1, 2, 3, 3, 4, 5, 7, 8, 9];
+        let packet = (&body).into_serializer().wrap_in(builder);
+
+        // Note that this header is different from the one in test_serialize
+        // because the checksum is not calculated.
+        const HEADER_LEN: usize = 40;
+        const HEADER: [u8; HEADER_LEN] = [
+            100, 177, 4, 5, 0, 10, 6, 64, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
+            17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32,
+        ];
+        let mut expected_partial = HEADER.to_vec();
+        expected_partial.resize(expected_partial.len() + body.len(), 0);
+
+        for i in 1..expected_partial.len() {
+            let mut buf = vec![0u8; i];
+            let result =
+                packet.partial_serialize(PacketConstraints::UNCONSTRAINED, buf.as_mut_slice());
+
+            // PartialSerializer serializes the header only if the buffer is
+            // large enough to fit the whole header.
+            let bytes_written = if i >= HEADER_LEN { HEADER_LEN } else { 0 };
+            assert_eq!(
+                result,
+                Ok(PartialSerializeResult { bytes_written, total_size: body.len() + HEADER_LEN })
+            );
+            if bytes_written > 0 {
+                assert_eq!(buf, expected_partial[..i]);
+            }
+        }
     }
 
     #[test]

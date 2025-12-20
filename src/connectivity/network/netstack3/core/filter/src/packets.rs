@@ -46,7 +46,7 @@ use crate::conntrack;
 /// An IP extension trait for the filtering crate.
 pub trait FilterIpExt: IpExt {
     /// A marker type to add an [`IpPacket`] bound to [`Self::Packet`].
-    type FilterIpPacket<B: SplitByteSliceMut>: IpPacket<Self>;
+    type FilterIpPacket<B: SplitByteSliceMut>: FilterIpPacket<Self>;
 
     /// A marker type to add an [`IpPacket`] bound to
     /// [`Self::PacketRaw`].
@@ -261,6 +261,13 @@ pub trait IpPacket<I: FilterIpExt> {
         }
     }
 }
+
+/// An `IpPacket` that allows to access raw packet contents.
+// TODO(https://fxbug.dev/424212358): Currently this trait relies on
+// PartialSerializer to access raw packet contents. It should be replaced with
+// direct access to the packet contents when the packet is already serialized.
+pub trait FilterIpPacket<I: FilterIpExt>: IpPacket<I> + PartialSerializer {}
+impl<I: FilterIpExt, P: IpPacket<I> + PartialSerializer> FilterIpPacket<I> for P {}
 
 /// A payload of an IP packet that may be a valid transport layer packet.
 ///
@@ -1251,6 +1258,16 @@ impl<I: IpExt, B: BufferMut> Serializer for ForwardedPacket<I, B> {
         alloc: A,
     ) -> Result<BB, packet::SerializeError<A::Error>> {
         self.buffer.serialize_new_buf(outer, alloc)
+    }
+}
+
+impl<I: IpExt, B: BufferMut> PartialSerializer for ForwardedPacket<I, B> {
+    fn partial_serialize(
+        &self,
+        outer: PacketConstraints,
+        buffer: &mut [u8],
+    ) -> Result<PartialSerializeResult, SerializeError<Never>> {
+        self.buffer.partial_serialize(outer, buffer)
     }
 }
 
@@ -2991,7 +3008,7 @@ pub mod testutil {
         use net_declare::{net_ip_v4, net_ip_v6, net_subnet_v4, net_subnet_v6};
         use net_types::ip::Subnet;
         use netstack3_base::{SeqNum, UnscaledWindowSize};
-        use packet::{PacketBuilder as _, TruncateDirection};
+        use packet::{PacketBuilder as _, PartialPacketBuilder as _, TruncateDirection};
         use packet_formats::icmp::{Icmpv4DestUnreachableCode, Icmpv6DestUnreachableCode};
 
         use super::*;
@@ -3006,6 +3023,7 @@ pub mod testutil {
             const DST_IP_3: Self::Addr;
             const IP_OUTSIDE_SUBNET: Self::Addr;
             const SUBNET: Subnet<Self::Addr>;
+            const PACKET_TTL: u8 = u8::MAX;
         }
 
         impl TestIpExt for Ipv4 {
@@ -3048,6 +3066,7 @@ pub mod testutil {
             MaybeTransportPacket + MaybeIcmpErrorPayload<I>
         {
             fn proto() -> Option<I::Proto>;
+            fn len(&self) -> usize;
         }
 
         impl<I: FilterIpExt, T> IpPacket<I> for FakeIpPacket<I, T>
@@ -3109,6 +3128,37 @@ pub mod testutil {
             }
         }
 
+        impl<I: TestIpExt, T> PartialSerializer for FakeIpPacket<I, T>
+        where
+            for<'a> &'a T: TransportPacketExt<I>,
+        {
+            fn partial_serialize(
+                &self,
+                _outer: PacketConstraints,
+                buffer: &mut [u8],
+            ) -> Result<PartialSerializeResult, SerializeError<Never>> {
+                let Some(proto) = <&T>::proto() else {
+                    return Ok(PartialSerializeResult { bytes_written: 0, total_size: 0 });
+                };
+                let builder = I::PacketBuilder::new(self.src_ip, self.dst_ip, I::PACKET_TTL, proto);
+                let constraints = builder.constraints();
+                let body_len = (&self.body).len();
+
+                if constraints.header_len() > buffer.len() {
+                    return Ok(PartialSerializeResult {
+                        bytes_written: 0,
+                        total_size: constraints.header_len() + body_len,
+                    });
+                }
+                builder.partial_serialize(body_len, buffer);
+
+                Ok(PartialSerializeResult {
+                    bytes_written: constraints.header_len(),
+                    total_size: constraints.header_len() + body_len,
+                })
+            }
+        }
+
         #[derive(Clone, Debug, PartialEq)]
         pub struct FakeTcpSegment {
             pub src_port: u16,
@@ -3124,6 +3174,10 @@ pub mod testutil {
                     |()| Ipv4Proto::Proto(IpProto::Tcp),
                     |()| Ipv6Proto::Proto(IpProto::Tcp),
                 ))
+            }
+
+            fn len(&self) -> usize {
+                packet_formats::tcp::HDR_PREFIX_LEN + self.payload_len
             }
         }
 
@@ -3184,6 +3238,8 @@ pub mod testutil {
         }
 
         impl FakeUdpPacket {
+            const PAYLOAD_LEN: usize = 4;
+
             fn reply(&self) -> Self {
                 Self { src_port: self.dst_port, dst_port: self.src_port }
             }
@@ -3196,6 +3252,10 @@ pub mod testutil {
                     |()| Ipv4Proto::Proto(IpProto::Udp),
                     |()| Ipv6Proto::Proto(IpProto::Udp),
                 ))
+            }
+
+            fn len(&self) -> usize {
+                packet_formats::udp::HEADER_BYTES + FakeUdpPacket::PAYLOAD_LEN
             }
         }
 
@@ -3254,6 +3314,10 @@ pub mod testutil {
             fn proto() -> Option<I::Proto> {
                 None
             }
+
+            fn len(&self) -> usize {
+                0
+            }
         }
 
         impl MaybeTransportPacket for &FakeNullPacket {
@@ -3294,6 +3358,11 @@ pub mod testutil {
         impl<I: FilterIpExt> TransportPacketExt<I> for &FakeIcmpEchoRequest {
             fn proto() -> Option<I::Proto> {
                 Some(I::map_ip_out((), |()| Ipv4Proto::Icmp, |()| Ipv6Proto::Icmpv6))
+            }
+
+            fn len(&self) -> usize {
+                // ICMP header is 8 bytes.
+                8
             }
         }
 
@@ -3478,7 +3547,7 @@ pub mod testutil {
         dst_addr: I::Addr,
         protocol: I::Proto,
         body: &'_ mut S,
-    ) -> impl IpPacket<I> + PartialSerializer + use<'_, I, S> {
+    ) -> impl FilterIpPacket<I> + use<'_, I, S> {
         TxPacket::new(src_addr, dst_addr, protocol, body)
     }
 }
@@ -4065,9 +4134,9 @@ mod tests {
         assert_eq!(equivalent, serializer);
     }
 
-    fn ip_packet<I: FilterIpExt, P: Protocol>(src: I::Addr, dst: I::Addr) -> Buf<Vec<u8>> {
+    fn ip_packet<I: TestIpExt, P: Protocol>(src: I::Addr, dst: I::Addr) -> Buf<Vec<u8>> {
         Buf::new(P::make_packet::<I>(src, dst), ..)
-            .wrap_in(I::PacketBuilder::new(src, dst, /* ttl */ u8::MAX, P::proto::<I>()))
+            .wrap_in(I::PacketBuilder::new(src, dst, I::PACKET_TTL, P::proto::<I>()))
             .serialize_vec_outer()
             .expect("serialize IP packet")
             .unwrap_b()
@@ -4163,18 +4232,14 @@ mod tests {
         _proto: PhantomData<P>,
     ) {
         let mut packet =
-            I::PacketBuilder::new(I::SRC_IP, I::DST_IP, /* ttl */ u8::MAX, P::proto::<I>())
+            I::PacketBuilder::new(I::SRC_IP, I::DST_IP, I::PACKET_TTL, P::proto::<I>())
                 .wrap_body(P::make_serializer::<I>(I::SRC_IP, I::DST_IP));
         packet.set_src_addr(I::SRC_IP_2);
         packet.set_dst_addr(I::DST_IP_2);
 
-        let equivalent =
-            P::make_serializer::<I>(I::SRC_IP_2, I::DST_IP_2).wrap_in(I::PacketBuilder::new(
-                I::SRC_IP_2,
-                I::DST_IP_2,
-                /* ttl */ u8::MAX,
-                P::proto::<I>(),
-            ));
+        let equivalent = P::make_serializer::<I>(I::SRC_IP_2, I::DST_IP_2).wrap_in(
+            I::PacketBuilder::new(I::SRC_IP_2, I::DST_IP_2, I::PACKET_TTL, P::proto::<I>()),
+        );
 
         assert_eq!(equivalent, packet);
     }

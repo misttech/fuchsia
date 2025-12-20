@@ -11,12 +11,13 @@ use netstack3_base::{
     InstantBindingsTypes, InterfaceProperties, IpDeviceAddr, IpDeviceAddressIdContext, Marks,
     MatcherBindingsTypes, RngContext, TimerBindingsTypes, TimerContext, TxMetadataBindingsTypes,
 };
-use packet::{FragmentedByteSlice, PartialSerializer};
+use packet::FragmentedByteSlice;
 use packet_formats::ip::IpExt;
 
+use crate::FilterIpExt;
 use crate::matchers::BindingsPacketMatcher;
+use crate::packets::FilterIpPacket;
 use crate::state::State;
-use crate::{FilterIpExt, IpPacket};
 
 /// Trait defining required types for filtering provided by bindings.
 pub trait FilterBindingsTypes:
@@ -142,7 +143,7 @@ pub enum SocketIngressFilterResult {
 /// Trait for a socket operations filter.
 pub trait SocketOpsFilter<D> {
     /// Called on every outgoing packet originated from a local socket.
-    fn on_egress<I: FilterIpExt, P: IpPacket<I> + PartialSerializer>(
+    fn on_egress<I: FilterIpExt, P: FilterIpPacket<I>>(
         &self,
         packet: &P,
         device: &D,
@@ -204,11 +205,11 @@ pub(crate) mod testutil {
     use netstack3_hashmap::HashMap;
 
     use super::*;
-    use crate::conntrack;
     use crate::logic::FilterTimerId;
     use crate::logic::nat::NatConfig;
     use crate::state::validation::ValidRoutines;
     use crate::state::{IpRoutines, NatRoutines, OneWayBoolean, Routines};
+    use crate::{IpPacket, conntrack};
 
     pub trait TestIpExt: FilterIpExt + AssignedAddrIpExt {}
 

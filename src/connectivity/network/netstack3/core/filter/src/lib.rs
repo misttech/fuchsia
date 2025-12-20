@@ -45,9 +45,9 @@ pub use logic::{
 };
 pub use matchers::{BindingsPacketMatcher, PacketMatcher, TransportProtocolMatcher};
 pub use packets::{
-    DynTransportSerializer, DynamicTransportSerializer, FilterIpExt, ForwardedPacket, IcmpMessage,
-    IpPacket, MaybeTransportPacket, MaybeTransportPacketMut, RawIpBody, TransportPacketSerializer,
-    TxPacket,
+    DynTransportSerializer, DynamicTransportSerializer, FilterIpExt, FilterIpPacket,
+    ForwardedPacket, IcmpMessage, IpPacket, MaybeTransportPacket, MaybeTransportPacketMut,
+    RawIpBody, TransportPacketSerializer, TxPacket,
 };
 pub use state::validation::{ValidRoutines, ValidationError};
 pub use state::{

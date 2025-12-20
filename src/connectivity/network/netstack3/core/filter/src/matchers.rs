@@ -15,7 +15,7 @@ use packet_formats::ip::IpExt;
 
 use crate::FilterBindingsTypes;
 use crate::logic::Interfaces;
-use crate::packets::{FilterIpExt, IpPacket, MaybeTransportPacket, TransportPacketData};
+use crate::packets::{FilterIpExt, FilterIpPacket, MaybeTransportPacket, TransportPacketData};
 
 /// A matcher for transport-layer protocol or port numbers.
 #[derive(Debug, Clone)]
@@ -61,17 +61,17 @@ impl<P: PartialEq, T: MaybeTransportPacket> Matcher<(Option<P>, T)>
 /// A trait for external matchers supplied by bindings.
 pub trait BindingsPacketMatcher {
     /// Returns `true` if the packet matches.
-    fn matches<I: FilterIpExt, P: IpPacket<I>>(&self, packet: &P) -> bool;
+    fn matches<I: FilterIpExt, P: FilterIpPacket<I>>(&self, packet: &P) -> bool;
 }
 
 impl BindingsPacketMatcher for Never {
-    fn matches<I: FilterIpExt, P: IpPacket<I>>(&self, _packet: &P) -> bool {
+    fn matches<I: FilterIpExt, P: FilterIpPacket<I>>(&self, _packet: &P) -> bool {
         match *self {}
     }
 }
 
 impl<M: BindingsPacketMatcher> BindingsPacketMatcher for Arc<M> {
-    fn matches<I: FilterIpExt, P: IpPacket<I>>(&self, packet: &P) -> bool {
+    fn matches<I: FilterIpExt, P: FilterIpPacket<I>>(&self, packet: &P) -> bool {
         self.as_ref().matches(packet)
     }
 }
@@ -99,7 +99,7 @@ pub struct PacketMatcher<I: IpExt, BT: MatcherBindingsTypes> {
 }
 
 impl<I: FilterIpExt, BT: FilterBindingsTypes> PacketMatcher<I, BT> {
-    pub(crate) fn matches<P: IpPacket<I>, D: InterfaceProperties<BT::DeviceClass>>(
+    pub(crate) fn matches<P: FilterIpPacket<I>, D: InterfaceProperties<BT::DeviceClass>>(
         &self,
         packet: &P,
         interfaces: &Interfaces<'_, D>,
@@ -328,10 +328,11 @@ mod tests {
     #[test_case(Protocol::Icmp, FakeIpPacket::<Ipv4, FakeTcpSegment>::arbitrary_value() => false)]
     #[test_case(Protocol::Icmp, FakeIpPacket::<Ipv4, FakeUdpPacket>::arbitrary_value() => false)]
     #[test_case(Protocol::Icmp, FakeIpPacket::<Ipv4, FakeNullPacket>::arbitrary_value() => false)]
-    fn match_on_transport_protocol<I: TestIpExt, P: IpPacket<I>>(
-        protocol: Protocol,
-        packet: P,
-    ) -> bool {
+    fn match_on_transport_protocol<I, P>(protocol: Protocol, packet: P) -> bool
+    where
+        I: TestIpExt,
+        P: FilterIpPacket<I>,
+    {
         let matcher = PacketMatcher::<I, FakeBindingsCtx<I>> {
             transport_protocol: Some(TransportProtocolMatcher {
                 proto: protocol.ip_proto::<I>().unwrap(),
