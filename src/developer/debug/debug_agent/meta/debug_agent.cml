@@ -27,12 +27,17 @@
                 // To launch components.
                 "fuchsia.sys2.LifecycleController.root",
                 "fuchsia.sys2.RealmQuery.root",
-
+            ],
+            from: "parent",
+        },
+        {
+            protocol: [
                 // To launch tests.
                 "fuchsia.test.manager.SuiteRunner",
                 "fuchsia.test.manager.TestCaseEnumerator",
             ],
             from: "parent",
+            availability: "optional",
         },
         {
             // To watch and attach to components.

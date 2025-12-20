@@ -52,6 +52,7 @@
             from: "parent",
             to: "#agents",
             source_availability: "unknown",
+            availability: "optional",
         },
     ],
     expose: [

@@ -156,6 +156,7 @@
                     // capability no longer run in the sshd realm.
                     "/toolbox",
                     "/core/sshd-host/shell:**",
+                    "/core/debugger/agents:**",
                 ],
             },
             {
