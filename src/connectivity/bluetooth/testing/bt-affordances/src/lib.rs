@@ -313,6 +313,23 @@ pub extern "C" fn disconnect_l2cap() -> i32 {
     zx::Status::OK.into_raw()
 }
 
+/// Write data over the L2CAP channel if one exists.
+///
+/// Returns ZX_STATUS_INTERNAL on error (check logs).
+///
+/// # Safety
+///
+/// The caller must ensure that `data` points to a valid buffer of `len` bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn write_l2cap(data: *const u8, len: usize) -> i32 {
+    let data = unsafe { std::slice::from_raw_parts(data, len).to_vec() };
+    if let Err(err) = block_on(STATE.worker.write_l2cap(data)) {
+        eprintln!("write_l2cap encountered error: {err:?}");
+        return zx::Status::INTERNAL.into_raw();
+    }
+    zx::Status::OK.into_raw()
+}
+
 /// Start or stop general discovery procedure.
 ///
 /// Returns ZX_STATUS_INTERNAL on error (check logs).

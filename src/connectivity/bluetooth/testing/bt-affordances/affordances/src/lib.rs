@@ -47,6 +47,7 @@ enum Request {
     Forget(PeerId, oneshot::Sender<Result<(), anyhow::Error>>),
     ConnectL2cap(PeerId, u16, oneshot::Sender<Result<(), anyhow::Error>>),
     DisconnectL2cap(oneshot::Sender<Result<(), anyhow::Error>>),
+    WriteL2cap(Vec<u8>, oneshot::Sender<Result<(), anyhow::Error>>),
     SetDiscovery(bool, oneshot::Sender<Result<(), anyhow::Error>>),
     SetDiscoverability(bool, oneshot::Sender<Result<(), anyhow::Error>>),
     SetConnectability(bool, oneshot::Sender<Result<(), anyhow::Error>>),
@@ -202,6 +203,18 @@ impl WorkThread {
                         println!("L2CAP channel disconnected");
                     }
                     result_sender.send(Ok(())).unwrap();
+                }
+                Request::WriteL2cap(data, result_sender) => {
+                    if let Some(ref l2cap_channel) = l2cap_channel {
+                        match l2cap_channel.write(&data) {
+                            Ok(_) => result_sender.send(Ok(())).unwrap(),
+                            Err(err) => result_sender
+                                .send(Err(anyhow!("Failed to write to L2CAP channel: {}", err)))
+                                .unwrap(),
+                        }
+                    } else {
+                        result_sender.send(Err(anyhow!("L2CAP channel not connected"))).unwrap();
+                    }
                 }
                 Request::SetDiscovery(discovery, result_sender) => {
                     result_sender.send(proxies.set_discovery(discovery).await).unwrap();
@@ -409,6 +422,13 @@ impl WorkThread {
     pub async fn disconnect_l2cap(&self) -> Result<(), anyhow::Error> {
         let (sender, receiver) = oneshot::channel::<Result<(), anyhow::Error>>();
         self.sender.clone().unbounded_send(Request::DisconnectL2cap(sender))?;
+        receiver.await?
+    }
+
+    // Write data over the L2CAP channel if one exists.
+    pub async fn write_l2cap(&self, data: Vec<u8>) -> Result<(), anyhow::Error> {
+        let (sender, receiver) = oneshot::channel::<Result<(), anyhow::Error>>();
+        self.sender.clone().unbounded_send(Request::WriteL2cap(data, sender))?;
         receiver.await?
     }
 

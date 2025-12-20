@@ -130,6 +130,15 @@ int32_t connect_l2cap_channel(uint64_t peer_id, uint16_t psm);
 /// Returns ZX_STATUS_INTERNAL on error (check logs).
 int32_t disconnect_l2cap();
 
+/// Write data over the L2CAP channel if one exists.
+///
+/// Returns ZX_STATUS_INTERNAL on error (check logs).
+///
+/// # Safety
+///
+/// The caller must ensure that `data` points to a valid buffer of `len` bytes.
+int32_t write_l2cap(const uint8_t *data, uintptr_t len);
+
 /// Start or stop general discovery procedure.
 ///
 /// Returns ZX_STATUS_INTERNAL on error (check logs).

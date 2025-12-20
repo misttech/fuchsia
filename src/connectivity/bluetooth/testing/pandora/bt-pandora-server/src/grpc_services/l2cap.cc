@@ -65,5 +65,10 @@ grpc::Status L2capService::Connect(::grpc::ServerContext* context,
 ::grpc::Status L2capService::Send(::grpc::ServerContext* context,
                                   const ::pandora::l2cap::SendRequest* request,
                                   ::pandora::l2cap::SendResponse* response) {
-  return Status(StatusCode::UNIMPLEMENTED, "");
+  if (write_l2cap(reinterpret_cast<const uint8_t*>(request->data().data()),
+                  request->data().size()) != ZX_OK) {
+    return Status(StatusCode::INTERNAL, "Error in Rust affordances (check logs)");
+  }
+  response->mutable_success();
+  return Status::OK;
 }
