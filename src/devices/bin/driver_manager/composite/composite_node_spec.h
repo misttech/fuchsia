@@ -8,6 +8,8 @@
 #include <fidl/fuchsia.driver.development/cpp/wire.h>
 #include <fidl/fuchsia.driver.index/cpp/fidl.h>
 
+#include "src/devices/bin/driver_manager/parent_set_collector.h"
+
 namespace driver_manager {
 class Node;
 
@@ -24,50 +26,61 @@ struct CompositeNodeSpecCreateInfo {
 // nodes while its subclasses manage the composite node under the spec.
 class CompositeNodeSpec {
  public:
-  explicit CompositeNodeSpec(CompositeNodeSpecCreateInfo create_info);
+  explicit CompositeNodeSpec(CompositeNodeSpecCreateInfo create_info,
+                             async_dispatcher_t* dispatcher, NodeManager* node_manager);
 
   virtual ~CompositeNodeSpec() = default;
 
   // Called when CompositeNodeManager receives a MatchedNodeRepresentation.
-  // Returns ZX_ERR_ALREADY_BOUND if it's already bound. See BindParentImpl() for return type
-  // details.
-  zx::result<std::optional<NodeWkPtr>> BindParent(
+  // Return ZX_ERR_ALREADY_BOUND if it's already bound. If the composite is complete, return
+  // a pointer to the new node. Otherwise, return a std::nullopt. The lifetime of this
+  // node object is managed by the parent nodes. Virtual for testing.
+  virtual zx::result<std::optional<NodeWkPtr>> BindParent(
       fuchsia_driver_framework::wire::CompositeParent composite_parent, const NodeWkPtr& node_ptr);
 
   virtual fuchsia_driver_development::wire::CompositeNodeInfo GetCompositeInfo(
-      fidl::AnyArena& arena) const = 0;
+      fidl::AnyArena& arena) const;
 
   // Remove the underlying composite node and unmatch all of its parents. Called for
-  // rebind.
-  void Remove(RemoveCompositeNodeCallback callback);
+  // rebind. Virtual for testing.
+  virtual void Remove(RemoveCompositeNodeCallback callback);
 
   const std::vector<fuchsia_driver_framework::ParentSpec2>& parent_specs() const {
     return parent_specs_;
   }
 
-  // Exposed for testing.
-  const std::vector<std::optional<NodeWkPtr>>& parent_nodes() const { return parent_nodes_; }
-
   const std::string& name() const { return name_; }
 
- protected:
-  // Subclass implementation for binding the NodeWkPtr to its composite.
-  // If the composite is complete, it should return a pointer to the new node. Otherwise, it returns
-  // a std::nullopt. The lifetime of this node object is managed by the parent nodes.
-  virtual zx::result<std::optional<NodeWkPtr>> BindParentImpl(
-      fuchsia_driver_framework::wire::CompositeParent composite_parent,
-      const NodeWkPtr& node_ptr) = 0;
+  std::optional<NodeWkPtr> completed_composite_node() const {
+    return parent_set_collector_ ? parent_set_collector_->completed_composite_node() : std::nullopt;
+  }
 
-  // Subclass implementation for Remove(). Subclasses are expected to remove the underlying
-  // composite node and unmatch all of the parents from it.
-  virtual void RemoveImpl(RemoveCompositeNodeCallback callback) = 0;
-
+  // Exposed for testing.
+  const std::vector<std::optional<NodeWkPtr>>& parent_nodes() const { return parent_nodes_; }
+  bool has_parent_set_collector_for_testing() const { return parent_set_collector_.has_value(); }
   size_t size() const { return parent_nodes_.size(); }
+
+ protected:
+  // TODO(https://fxbug.dev/469556012): Replace this with the stored parent nodes in
+  // |parent_set_collector_|.
+  std::vector<std::optional<NodeWkPtr>> parent_nodes_;
 
  private:
   std::string name_;
-  std::vector<std::optional<NodeWkPtr>> parent_nodes_;
+
+  // TODO(https://fxbug.dev/469556012): Make this not optional.
+  std::optional<ParentSetCollector> parent_set_collector_;
+
+  std::string driver_url_;
+
+  async_dispatcher_t* const dispatcher_;
+  NodeManager* node_manager_;
+
   std::vector<fuchsia_driver_framework::ParentSpec2> parent_specs_;
+
+  // Store our composite_info for easy responses to GetCompositeInfo.
+  // This is set the first time |BindParentImpl| is called.
+  std::optional<fuchsia_driver_framework::CompositeInfo> composite_info_ = std::nullopt;
 };
 
 }  // namespace driver_manager

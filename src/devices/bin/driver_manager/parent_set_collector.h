@@ -19,10 +19,8 @@ namespace driver_manager {
 // it will return a vector containing all the parent node pointers.
 class ParentSetCollector {
  public:
-  explicit ParentSetCollector(std::string composite_name, std::vector<std::string> parent_names,
-                              uint32_t primary_index)
-      : composite_name_(std::move(composite_name)),
-        parents_(parent_names.size()),
+  explicit ParentSetCollector(std::vector<std::string> parent_names, uint32_t primary_index)
+      : parents_(parent_names.size()),
         parent_names_(std::move(parent_names)),
         parent_properties_(parent_names_.size()),
         primary_index_(primary_index) {}
@@ -38,7 +36,7 @@ class ParentSetCollector {
 
   // Check if all parents are found. If so, then create and return the composite node. If the
   // node is already created, return ZX_ERR_ALREADY_EXISTS.
-  zx::result<std::shared_ptr<Node>> TryToAssemble(NodeManager* node_manager,
+  zx::result<std::shared_ptr<Node>> TryToAssemble(std::string_view name, NodeManager* node_manager,
                                                   async_dispatcher_t* dispatcher);
 
   fidl::VectorView<fidl::StringView> GetParentTopologicalPaths(fidl::AnyArena& arena) const;
@@ -52,8 +50,6 @@ class ParentSetCollector {
   }
 
  private:
-  std::string composite_name_;
-
   // Nodes are stored as weak_ptrs. Only when trying to collect the completed set are they
   // locked into shared_ptrs and validated to not be null.
   std::vector<std::weak_ptr<Node>> parents_;

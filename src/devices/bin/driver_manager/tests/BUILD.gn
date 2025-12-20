@@ -143,7 +143,7 @@ cc_test_executable("node_test") {
   ]
 }
 
-fuchsia_unittest_component("composite-node-spec-v2-test") {
+fuchsia_unittest_component("composite-node-spec-impl-test") {
   deps = [ ":composite_node_spec_impl_test" ]
 }
 
@@ -187,7 +187,7 @@ fuchsia_test_package("driver-runner-tests") {
   test_components = [
     ":driver_runner_death_test_component",
     ":bind-manager-test",
-    ":composite-node-spec-v2-test",
+    ":composite-node-spec-impl-test",
     ":driver-runner-test",
     ":node-removal-tracker-test",
     ":node-shutdown-test",
@@ -255,7 +255,9 @@ test("composite_node_spec_manager_test") {
     "//sdk/lib/driver/component/cpp",
     "//sdk/lib/fdio",
     "//src/devices/bin/driver_manager:driver_runner",
-    "//zircon/system/ulib/zxtest",
+    "//src/lib/fxl/test:gtest_main",
+    "//src/lib/testing/loop_fixture",
+    "//zircon/system/ulib/zircon-internal",
   ]
 }
 

@@ -2,11 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "src/devices/bin/driver_manager/composite_node_spec_impl.h"
-
+#include "src/devices/bin/driver_manager/composite/composite_node_spec.h"
 #include "src/devices/bin/driver_manager/tests/driver_manager_test_base.h"
 
-class CompositeNodeSpecImplTest : public DriverManagerTestBase {
+class CompositeNodeSpecTest : public DriverManagerTestBase {
  public:
   void SetUp() override {
     DriverManagerTestBase::SetUp();
@@ -15,9 +14,9 @@ class CompositeNodeSpecImplTest : public DriverManagerTestBase {
 
   driver_manager::NodeManager* GetNodeManager() override { return &node_manager; }
 
-  driver_manager::CompositeNodeSpecImpl CreateCompositeNodeSpec(std::string name, size_t size) {
+  driver_manager::CompositeNodeSpec CreateCompositeNodeSpec(std::string name, size_t size) {
     std::vector<fuchsia_driver_framework::ParentSpec2> parents(size);
-    return driver_manager::CompositeNodeSpecImpl(
+    return driver_manager::CompositeNodeSpec(
         driver_manager::CompositeNodeSpecCreateInfo{
             .name = std::move(name),
             .parents = std::move(parents),
@@ -26,7 +25,7 @@ class CompositeNodeSpecImplTest : public DriverManagerTestBase {
   }
 
   zx::result<std::optional<driver_manager::NodeWkPtr>> MatchAndBindParentSpec(
-      driver_manager::CompositeNodeSpecImpl& spec, std::weak_ptr<driver_manager::Node> parent_node,
+      driver_manager::CompositeNodeSpec& spec, std::weak_ptr<driver_manager::Node> parent_node,
       std::vector<std::string> parent_names, uint32_t node_index, uint32_t primary_index = 0) {
     fuchsia_driver_framework::CompositeParent matched_parent({
         .composite = fuchsia_driver_framework::CompositeInfo{{
@@ -69,7 +68,7 @@ class CompositeNodeSpecImplTest : public DriverManagerTestBase {
   std::unique_ptr<fidl::Arena<512>> arena_;
 };
 
-TEST_F(CompositeNodeSpecImplTest, SpecBind) {
+TEST_F(CompositeNodeSpecTest, SpecBind) {
   auto spec = CreateCompositeNodeSpec("spec", 2);
 
   // Bind the first node.
@@ -89,7 +88,7 @@ TEST_F(CompositeNodeSpecImplTest, SpecBind) {
   VerifyCompositeNode(composite_node, {"spec_parent_1", "spec_parent_2"}, 0);
 }
 
-TEST_F(CompositeNodeSpecImplTest, RemoveWithCompositeNode) {
+TEST_F(CompositeNodeSpecTest, RemoveWithCompositeNode) {
   auto spec = CreateCompositeNodeSpec("spec", 2);
 
   // Bind the first node.
@@ -120,7 +119,7 @@ TEST_F(CompositeNodeSpecImplTest, RemoveWithCompositeNode) {
   ASSERT_FALSE(spec.has_parent_set_collector_for_testing());
 }
 
-TEST_F(CompositeNodeSpecImplTest, RemoveWithNoCompositeNode) {
+TEST_F(CompositeNodeSpecTest, RemoveWithNoCompositeNode) {
   auto spec = CreateCompositeNodeSpec("spec", 2);
 
   // Bind the second node.

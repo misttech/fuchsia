@@ -72,8 +72,6 @@ source_set("driver_runner") {
     "composite/composite_node_spec.h",
     "composite/composite_node_spec_manager.cc",
     "composite/composite_node_spec_manager.h",
-    "composite_node_spec_impl.cc",
-    "composite_node_spec_impl.h",
     "controller_allowlist_passthrough.cc",
     "controller_allowlist_passthrough.h",
     "driver_host.cc",

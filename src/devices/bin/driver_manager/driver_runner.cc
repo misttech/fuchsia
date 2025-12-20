@@ -23,7 +23,7 @@
 #include <stack>
 #include <utility>
 
-#include "src/devices/bin/driver_manager/composite_node_spec_impl.h"
+#include "src/devices/bin/driver_manager/composite/composite_node_spec.h"
 #include "src/devices/bin/driver_manager/node_property_conversion.h"
 #include "src/devices/lib/log/log.h"
 #include "src/lib/fxl/strings/join_strings.h"
@@ -367,7 +367,7 @@ void DriverRunner::AddSpec(AddSpecRequestView request, AddSpecCompleter::Sync& c
     parents = fidl::ToNatural(request->parents2()).value();
   }
 
-  auto spec = std::make_unique<CompositeNodeSpecImpl>(
+  auto spec = std::make_unique<CompositeNodeSpec>(
       CompositeNodeSpecCreateInfo{
           .name = std::string(request->name().get()),
           .parents = std::move(parents),

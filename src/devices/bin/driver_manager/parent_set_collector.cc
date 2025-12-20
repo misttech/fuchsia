@@ -39,7 +39,7 @@ void ParentSetCollector::ReleaseNodes() {
 }
 
 zx::result<std::shared_ptr<Node>> ParentSetCollector::TryToAssemble(
-    NodeManager* node_manager, async_dispatcher_t* dispatcher) {
+    std::string_view name, NodeManager* node_manager, async_dispatcher_t* dispatcher) {
   if (completed_composite_node_ && !completed_composite_node_->expired()) {
     return zx::error(ZX_ERR_ALREADY_EXISTS);
   }
@@ -52,13 +52,13 @@ zx::result<std::shared_ptr<Node>> ParentSetCollector::TryToAssemble(
   }
 
   auto result =
-      Node::CreateCompositeNode(composite_name_, parents_, parent_names_, parent_properties_,
+      Node::CreateCompositeNode(std::string(name), parents_, parent_names_, parent_properties_,
                                 node_manager, dispatcher, primary_index_);
   if (result.is_error()) {
     return result.take_error();
   }
 
-  fdf_log::info("Built composite node '{}' for completed composite node spec", composite_name_);
+  fdf_log::info("Built composite node '{}' for completed composite node spec", name);
   completed_composite_node_.emplace(result.value());
   return zx::ok(result.value());
 }

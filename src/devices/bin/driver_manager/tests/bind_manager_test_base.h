@@ -10,7 +10,7 @@
 #include <queue>
 
 #include "src/devices/bin/driver_manager/bind/bind_manager.h"
-#include "src/devices/bin/driver_manager/composite_node_spec_impl.h"
+#include "src/devices/bin/driver_manager/composite/composite_node_spec.h"
 #include "src/devices/bin/driver_manager/tests/driver_manager_test_base.h"
 
 // Test class to expose protected functions.
@@ -74,7 +74,7 @@ class TestBindManagerBridge final : public driver_manager::BindManagerBridge,
                                     public driver_manager::CompositeManagerBridge {
  public:
   struct CompositeNodeSpecData {
-    driver_manager::CompositeNodeSpecImpl* spec;
+    driver_manager::CompositeNodeSpec* spec;
     fuchsia_driver_framework::CompositeInfo fidl_info;
   };
 
@@ -109,7 +109,7 @@ class TestBindManagerBridge final : public driver_manager::BindManagerBridge,
 
   void AddCompositeNodeSpec(std::string composite, std::vector<std::string> parent_names,
                             std::vector<fuchsia_driver_framework::ParentSpec2> parents,
-                            std::unique_ptr<driver_manager::CompositeNodeSpecImpl> spec);
+                            std::unique_ptr<driver_manager::CompositeNodeSpec> spec);
 
   const std::unordered_map<std::string, CompositeNodeSpecData>& specs() const { return specs_; }
 

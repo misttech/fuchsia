@@ -19,7 +19,7 @@
 #include <bind/fuchsia/platform/cpp/bind.h>
 
 #include "gmock/gmock.h"
-#include "src/devices/bin/driver_manager/composite_node_spec_impl.h"
+#include "src/devices/bin/driver_manager/composite/composite_node_spec.h"
 #include "src/devices/bin/driver_manager/node.h"
 #include "src/devices/bin/driver_manager/testing/fake_driver_index.h"
 #include "src/devices/bin/driver_manager/tests/driver_runner_test_fixture.h"
@@ -1275,7 +1275,7 @@ TEST_P(DriverRunnerTest, CreateAndBindCompositeNodeSpec) {
                .properties = std::vector<fuchsia_driver_framework::NodeProperty2>(),
            })}});
 
-  auto spec = std::make_unique<driver_manager::CompositeNodeSpecImpl>(
+  auto spec = std::make_unique<driver_manager::CompositeNodeSpec>(
       driver_manager::CompositeNodeSpecCreateInfo{
           .name = name,
           .parents = fidl_spec.parents2().value(),
