@@ -504,41 +504,51 @@ void Flatland::Present(fuchsia_ui_composition::PresentArgs args) {
                         SESSION_TRACE_ID(session_id_, present_id), "session_id",
                         TA_UINT64(session_id_), "present_id", TA_UINT64(present_id));
 
+  // Decide whether this present requires recomputation of the view tree.  The current heuristic can
+  // result in false positives (for example, just because a session has viewports doesn't mean that
+  // this presentation affects those child views), but it works well in practice:
+  // - components like window managers don't present often, and when they do they often do affect
+  //   the view tree
+  // - "leaf node" applications typically don't have child views
+  const bool recompute_view_tree = !links_to_children_.empty() || view_tree_dirty_;
+  view_tree_dirty_ = false;
+
   // Safe to capture |this| because the Flatland is guaranteed to outlive |fence_queue_|,
   // Flatland is non-movable and FenceQueue does not fire closures after destruction.
   // TODO(https://fxbug.dev/42156567): make the fences be the first arg, and the closure be the
   // second.
-  auto task =
-      [this, present_id, requested_presentation_time = args.requested_presentation_time().value(),
-       unsquashable = args.unsquashable().value(), uber_struct = std::move(uber_struct),
-       link_operations = std::move(pending_link_operations_),
-       release_fences = std::move(*args.release_fences()), kLoadBearingTraceNonce]() mutable {
-        // NOTE: this name is important for benchmarking.  Do not remove or modify it
-        // without also updating the "process_gfx_trace.go" script.
-        TRACE_DURATION("gfx", "scenic_impl::Session::ScheduleNextPresent", "session_id",
-                       session_id_, "requested_presentation_time", requested_presentation_time);
+  auto task = [this, present_id,
+               requested_presentation_time = args.requested_presentation_time().value(),
+               unsquashable = args.unsquashable().value(), uber_struct = std::move(uber_struct),
+               link_operations = std::move(pending_link_operations_),
+               release_fences = std::move(*args.release_fences()), kLoadBearingTraceNonce,
+               recompute_view_tree]() mutable {
+    // NOTE: this name is important for benchmarking.  Do not remove or modify it
+    // without also updating the "process_gfx_trace.go" script.
+    TRACE_DURATION("gfx", "scenic_impl::Session::ScheduleNextPresent", "session_id", session_id_,
+                   "requested_presentation_time", requested_presentation_time);
 
-        // TODO(https://fxbug.dev/414450649): Load-bearing.  See discussion at flow start.
-        TRACE_FLOW_END("gfx", "wait_for_fences", kLoadBearingTraceNonce);
+    // TODO(https://fxbug.dev/414450649): Load-bearing.  See discussion at flow start.
+    TRACE_FLOW_END("gfx", "wait_for_fences", kLoadBearingTraceNonce);
 
-        TRACE_INSTAFLOW_STEP("gfx", "scenic_session_present", "acquire_fences_signaled",
-                             SESSION_TRACE_ID(session_id_, present_id), "session_id",
-                             TA_UINT64(session_id_), "present_id", TA_UINT64(present_id));
+    TRACE_INSTAFLOW_STEP("gfx", "scenic_session_present", "acquire_fences_signaled",
+                         SESSION_TRACE_ID(session_id_, present_id), "session_id",
+                         TA_UINT64(session_id_), "present_id", TA_UINT64(present_id));
 
-        // Push the UberStruct, then schedule the associated Present that will eventually publish
-        // it to the InstanceMap used for rendering.
-        uber_struct_queue_->Push(present_id, std::move(uber_struct));
-        flatland_presenter_->ScheduleUpdateForSession(
-            zx::time(requested_presentation_time), {session_id_, present_id}, unsquashable,
-            std::move(release_fences), config_.schedule_asap().value_or(false));
+    // Push the UberStruct, then schedule the associated Present that will eventually publish
+    // it to the InstanceMap used for rendering.
+    uber_struct_queue_->Push(present_id, std::move(uber_struct), recompute_view_tree);
+    flatland_presenter_->ScheduleUpdateForSession(
+        zx::time(requested_presentation_time), {session_id_, present_id}, unsquashable,
+        std::move(release_fences), config_.schedule_asap().value_or(false));
 
-        // Finalize Link destruction operations after publishing the new UberStruct. This
-        // ensures that any local Transforms referenced by the to-be-deleted Links are already
-        // removed from the now-published UberStruct.
-        for (auto& operation : link_operations) {
-          operation();
-        }
-      };
+    // Finalize Link destruction operations after publishing the new UberStruct. This
+    // ensures that any local Transforms referenced by the to-be-deleted Links are already
+    // removed from the now-published UberStruct.
+    for (auto& operation : link_operations) {
+      operation();
+    }
+  };
 
   if (config_.pass_acquire_fences().value_or(false)) {
     task();
@@ -651,6 +661,8 @@ void Flatland::CreateViewHelper(
     FX_DCHECK(child_added);
   }
   link_to_parent_ = std::move(new_link_to_parent);
+
+  view_tree_dirty_ = true;
 }
 
 void Flatland::RegisterViewBoundProtocols(fuchsia_ui_composition::ViewBoundProtocols protocols,

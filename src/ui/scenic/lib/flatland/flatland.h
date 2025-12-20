@@ -502,6 +502,10 @@ class Flatland : public fidl::Server<fuchsia_ui_composition::Flatland>,
   // this code was written).
   std::shared_ptr<std::unordered_set<allocation::GlobalImageId>> images_to_release_;
 
+  // Tracks API calls which have the potential to modify the view tree.  If true, the next-presented
+  // frame will trigger view tree recomputation.
+  bool view_tree_dirty_ = false;
+
   // Callbacks for registering View-bound protocols.
   fit::function<void(fidl::ServerEnd<fuchsia_ui_views::Focuser>, zx_koid_t)> register_view_focuser_;
   fit::function<void(fidl::ServerEnd<fuchsia_ui_views::ViewRefFocused>, zx_koid_t)>

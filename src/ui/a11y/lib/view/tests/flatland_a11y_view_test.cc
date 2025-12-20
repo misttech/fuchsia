@@ -237,7 +237,8 @@ TEST_F(CoordinateGridTest, TestMagnification) {
   auto translation_y = 1.5f;
 
   // HACK HACK HACK
-  // TODO(https://fxbug.dev/42081619): Remove this when we move to the new gesture disambiguation protocols.
+  // TODO(https://fxbug.dev/42081619): Remove this when we move to the new gesture disambiguation
+  // protocols.
   auto rotated_translation_x = translation_y;
   auto rotated_translation_y = -translation_x;
 

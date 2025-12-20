@@ -271,18 +271,36 @@ view_tree::BoundingBox ComputeBoundingBox(
     const std::unordered_map<TransformHandle, TransformClipRegion>& clip_regions,
     const std::unordered_map<TransformHandle, TransformHandle>&
         link_child_to_parent_transform_map) {
-  std::array<float, 2> max_bounds = {0, 0};
+  // We only need the global clip region from the immediate parent, because it is already the
+  // intersection with all parent clip regions.
   if (const auto it = link_child_to_parent_transform_map.find(transform_handle);
       it != link_child_to_parent_transform_map.end()) {
     const TransformHandle parent_transform_handle = it->second;
     if (const auto clip_region_it = clip_regions.find(parent_transform_handle);
         clip_region_it != clip_regions.end()) {
-      const auto& extent = clip_region_it->second.extent();
-      max_bounds = {static_cast<float>(extent.width()), static_cast<float>(extent.height())};
+      const auto& rect = clip_region_it->second;
+
+      // TODO(https://fxbug.dev/465563593): There might be a bug here.  fxr/643755 is the first CL
+      // to compute the bounding box; previously it was hardcoded to:
+      //      const auto full_screen_bounding_box = view_tree::BoundingBox{
+      //          .min = {0, 0},
+      //          .max = {display_width, display_height},
+      //
+      // Ever since fxr/643755, the clip extent has been computed dynamically, but the origin has
+      // always been assumed to be (0,0).  Through many refactorings, the general approach has not
+      // changed.
+      //
+      // We've never noticed this to cause problems, but we might just be getting lucky.  Certainly,
+      // it seems e.g. a tiling WM should have child views whose global clip regions have a non-zero
+      // origin.  Until we can investigate this properly, this DCHECK will serve as a canary.
+      FX_DCHECK(rect.origin() == types::Point2({.x = 0, .y = 0}));
+
+      return {.min = {0, 0},
+              .max = {static_cast<float>(rect.width()), static_cast<float>(rect.height())}};
     }
   }
 
-  return {.min = {0, 0}, .max = max_bounds};
+  return {.min = {0, 0}, .max = {0, 0}};
 }
 
 // Return value struct for ComputeViewTree().

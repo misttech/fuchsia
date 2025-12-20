@@ -70,25 +70,26 @@ class DisplayCompositorTestBase : public gtest::RealLoopFixture {
     for (const auto& [display_id, display_data] : display_map) {
       const auto& transform = display_data.second;
 
-      const auto topology_data =
-          GlobalTopologyData::ComputeGlobalTopologyData(snapshot, links, link_system_id, transform);
-      const auto global_matrices = ComputeGlobalMatrices(topology_data.topology_vector,
-                                                         topology_data.parent_indices, snapshot);
+      const auto topology_data = GlobalTopologyData::ComputeGlobalTopologyData(
+          snapshot.map, links, link_system_id, transform);
+      const auto global_matrices = ComputeGlobalMatrices(
+          topology_data.topology_vector, topology_data.parent_indices, snapshot.map);
 
       const auto global_sample_regions = ComputeGlobalImageSampleRegions(
-          topology_data.topology_vector, topology_data.parent_indices, snapshot);
+          topology_data.topology_vector, topology_data.parent_indices, snapshot.map);
 
       const auto global_clip_regions = ComputeGlobalTransformClipRegions(
-          topology_data.topology_vector, topology_data.parent_indices, global_matrices, snapshot);
+          topology_data.topology_vector, topology_data.parent_indices, global_matrices,
+          snapshot.map);
 
-      auto [image_indices, images] = ComputeGlobalImageData(topology_data.topology_vector,
-                                                            topology_data.parent_indices, snapshot);
+      auto [image_indices, images] = ComputeGlobalImageData(
+          topology_data.topology_vector, topology_data.parent_indices, snapshot.map);
 
       auto image_rectangles = ComputeGlobalRectangles(global_matrices, global_sample_regions,
                                                       global_clip_regions, image_indices, images);
 
       link_system_->UpdateLinkWatchers(topology_data.topology_vector, topology_data.live_handles,
-                                       global_matrices, snapshot);
+                                       global_matrices, snapshot.map);
       link_system_->UpdateDevicePixelRatio(glm::vec2(1.0));
 
       CullRectanglesInPlace(&image_rectangles, &images, display_data.first.dimensions.x,

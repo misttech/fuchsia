@@ -152,6 +152,7 @@ LinkSystem::LinkToParent LinkSystem::CreateLinkToParent(
           // LinkToParent object, so that its destruction (which depends on the
           // internal_link_handle) can occur on the same endpoint.
           ref->link_topologies_[*topology_map_key] = child_transform_handle;
+          ref->link_topology_changed_ = true;
         }
       },
       /* link_invalidated = */
@@ -169,6 +170,7 @@ LinkSystem::LinkToParent LinkSystem::CreateLinkToParent(
 
           ref->link_topologies_.erase(*topology_map_key);
           ref->link_graph_.ReleaseTransform(*topology_map_key);
+          ref->link_topology_changed_ = true;
         }
 
         // Avoid race conditions by destroying ParentViewportWatcher on its "own" thread.  For
@@ -316,15 +318,22 @@ GlobalTopologyData::LinkTopologyMap LinkSystem::GetResolvedTopologyLinks() {
 
 TransformHandle::InstanceId LinkSystem::GetInstanceId() const { return instance_id_; }
 
-std::unordered_map<TransformHandle, TransformHandle> const
+std::pair<std::unordered_map<TransformHandle, TransformHandle>, bool> const
 LinkSystem::GetLinkChildToParentTransformMap() {
   TRACE_DURATION("gfx", "LinkSystem::GetLinkChildToParentTransformMap");
-  std::unordered_map<TransformHandle, TransformHandle> child_to_parent_map;
+  std::pair<std::unordered_map<TransformHandle, TransformHandle>, bool> result;
+  auto& child_to_parent_map = result.first;
+  auto& link_topology_changed = result.second;
+
   std::scoped_lock lock(mutex_);
   for (const auto& [parent_transform_handle, child_end] : parent_to_child_map_) {
     child_to_parent_map.try_emplace(child_end.child_transform_handle, parent_transform_handle);
   }
-  return child_to_parent_map;
+
+  link_topology_changed = link_topology_changed_;
+  link_topology_changed_ = false;
+
+  return result;
 }
 
 }  // namespace flatland

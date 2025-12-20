@@ -170,7 +170,7 @@ class FlatlandManagerTest : public LoggingEventLoop, public ::testing::Test {
     }
 
     auto snapshot = uber_struct_system_->Snapshot();
-    EXPECT_TRUE(snapshot.empty());
+    EXPECT_TRUE(snapshot.map.empty());
 
     manager_.reset();
     RunLoopUntilIdle();
@@ -363,7 +363,7 @@ TEST_F(FlatlandManagerTest, FirstPresentReturnsMaxPresentCredits) {
   PRESENT(flatland, id, true);
 
   auto snapshot = uber_struct_system_->Snapshot();
-  EXPECT_TRUE(snapshot.empty());
+  EXPECT_TRUE(snapshot.map.empty());
 
   EXPECT_EQ(GetNumPendingSessionUpdates(id), 1ul);
 
@@ -375,8 +375,8 @@ TEST_F(FlatlandManagerTest, FirstPresentReturnsMaxPresentCredits) {
   manager_->SendHintsToStartRendering();
 
   snapshot = uber_struct_system_->Snapshot();
-  EXPECT_EQ(snapshot.size(), 1u);
-  EXPECT_TRUE(snapshot.contains(id));
+  EXPECT_EQ(snapshot.map.size(), 1u);
+  EXPECT_TRUE(snapshot.map.contains(id));
 
   RunLoopUntil([&returned_tokens] { return returned_tokens != 0; });
   EXPECT_EQ(returned_tokens, scheduling::FrameScheduler::kMaxPresentsInFlight);
@@ -463,9 +463,9 @@ TEST_F(FlatlandManagerTest, UpdateInstancesReturnsPresentCredits) {
   manager_->SendHintsToStartRendering();
 
   const auto snapshot = uber_struct_system_->Snapshot();
-  EXPECT_EQ(snapshot.size(), 2u);
-  EXPECT_TRUE(snapshot.contains(id1));
-  EXPECT_TRUE(snapshot.contains(id2));
+  EXPECT_EQ(snapshot.map.size(), 2u);
+  EXPECT_TRUE(snapshot.map.contains(id1));
+  EXPECT_TRUE(snapshot.map.contains(id2));
 
   RunLoopUntil([&returned_tokens2] { return returned_tokens2 != 0; });
 
@@ -521,8 +521,8 @@ TEST_F(FlatlandManagerTest, ConsecutiveUpdateInstances_ReturnsCorrectPresentCred
   manager_->SendHintsToStartRendering();
 
   const auto snapshot = uber_struct_system_->Snapshot();
-  EXPECT_EQ(snapshot.size(), 1u);
-  EXPECT_TRUE(snapshot.contains(id));
+  EXPECT_EQ(snapshot.map.size(), 1u);
+  EXPECT_TRUE(snapshot.map.contains(id));
 
   RunLoopUntil([&returned_tokens] { return returned_tokens != 0; });
 

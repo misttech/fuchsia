@@ -384,7 +384,8 @@ class LinkSystem : public std::enable_shared_from_this<LinkSystem> {
 
   // Returns the mapping from the child_transform_handle of each LinkToParent to the corresponding
   // parent_transform_handle from each LinkToChild.
-  std::unordered_map<TransformHandle, TransformHandle> const GetLinkChildToParentTransformMap();
+  std::pair<std::unordered_map<TransformHandle, TransformHandle>, bool> const
+  GetLinkChildToParentTransformMap();
 
   // Updates |device_pixel_ratio_| for the View with parent |handle|. If the value changed it sends
   // updates to all waiting clients, otherwise it does nothing.
@@ -451,6 +452,13 @@ class LinkSystem : public std::enable_shared_from_this<LinkSystem> {
   // UpdateLinkWatchers() may be different from this value.
   // TODO(https://fxbug.dev/42059985): This will need to be updated once we have multidisplay setup.
   std::atomic<fuchsia::math::VecF> device_pixel_ratio_;
+
+  // Tracks whether a link between sessions has been established/broken since the last time that
+  // `GetLinkChildToParentTransformMap()` was called.  This is used as a signal that indicates that
+  // the ViewTree needs to be recomputed.  Starting as true guarantees that the ViewTree is always
+  // generated the first time (necessary because it is illegal for a subtree generator to say
+  // "no diff" the first time).
+  bool link_topology_changed_ = true;
 };
 
 }  // namespace flatland
