@@ -4,6 +4,7 @@
 
 import abc
 import argparse
+import configparser
 import shlex
 import subprocess
 import sys
@@ -67,6 +68,34 @@ class Context:
             sys.stdout.write(end)
         self.write_log("OUTPUT", message.strip())
 
+    def get_repository_root(self) -> Path:
+        """Returns the repository root."""
+        return self.repository_root
+
+    def get_relative_path(self) -> str:
+        """Returns the relative path to the repository root that we should be using based on the args."""
+        invoker_cwd = Path(self.invoker_cwd)
+        args = self.global_git_options
+
+        if args.C and args.git_dir:
+            raise ValueError("Cannot use both -C and --git-dir")
+
+        path: Path
+        if args.C:
+            path = Path(args.C)
+        elif args.git_dir:
+            path = Path(args.git_dir)
+            if path.name != ".git":
+                raise ValueError(f"git_dir must end in .git, got {path}")
+            path = path.parent
+        else:
+            path = invoker_cwd
+
+        if not path.is_absolute():
+            path = invoker_cwd / path
+
+        return str(path.relative_to(self.repository_root))
+
     def run_real_git(self, args: List[str], cwd: Optional[str] = None) -> str:
         """Runs the real git command with the given arguments."""
         full_command = [self.real_git] + args
@@ -104,33 +133,98 @@ def get_workspace_id_and_snapshot_version(
     return workspace_id, int(snapshot_version)
 
 
-def get_relative_git_dir(
-    top_level_args: argparse.Namespace, repository_root: Path
-) -> Optional[Path]:
-    if top_level_args.git_dir and top_level_args.C:
-        raise ValueError("--git_dir and -C cannot be used together")
+def get_repo_root_for_repo(repo_path: str) -> str:
+    """Returns the repo root string expected by the backend.
 
-    path = None
-    if top_level_args.git_dir:
-        git_dir = Path(top_level_args.git_dir).expanduser()
-        if git_dir.name != ".git":
-            raise ValueError("git_dir must end in .git")
+    Args:
+        repo_path: The relative path of the repo (e.g. "" or "sub/module").
 
-        # remove the .git suffix
-        path = git_dir.parent
+    Returns:
+        The full repo root string (e.g. "fuchsia" or "fuchsia/sub/module").
+    """
+    if not repo_path:
+        return "fuchsia"
+    return f"fuchsia/{repo_path}"
 
-    if top_level_args.C:
-        path = Path(top_level_args.C).expanduser()
 
-    if path and path.is_absolute():
-        path = path.relative_to(repository_root)
+def get_submodule_paths(repository_path: Path) -> List[str]:
+    """Returns a list of submodule paths from the .gitmodules file.
 
-    # If the path is equal to the workspace root we want to return None which is the same as the
-    # user not specifying a git_dir or -C
-    if path == Path("."):
-        return None
+    This function returns a list of submodule paths from the .gitmodules file.
 
-    return path
+    Args:
+        repository_path: The path to the repository. This path should be an
+        absolute path.
+
+    Returns:
+        A list of submodule paths.
+    """
+
+    gitmodules_path = repository_path / ".gitmodules"
+    paths: List[str] = []
+    if not gitmodules_path.exists():
+        return paths
+
+    config = configparser.ConfigParser()
+    try:
+        config.read(gitmodules_path)
+        for section in config.sections():
+            if "path" in config[section]:
+                paths.append(config[section]["path"])
+    except configparser.Error:
+        # If we can't parse the file, we assume there are no submodules.
+        pass
+    return paths
+
+
+def get_target_repository_at_path(
+    relative_path: str, repository_root: Path
+) -> str:
+    """Returns the relative path to the repository root for the target path.
+
+    Args:
+        relative_path: The relative path to the root directory.
+        repository_root: The root of the repository.
+
+    Returns:
+        The relative path to the submodule from repository_root, or "" if it is the main repository.
+    """
+    current_repo_root = repository_root
+    target_full_path = repository_root / relative_path
+
+    # Ensure target_full_path is inside repository_root
+    try:
+        target_full_path.relative_to(repository_root)
+    except ValueError:
+        # If the path is outside the repo root, assume main repo.
+        return ""
+
+    while True:
+        # Check for submodules in the current repo root
+        submodule_paths = get_submodule_paths(current_repo_root)
+
+        found_submodule = False
+        for submodule_path_str in submodule_paths:
+            submodule_path = current_repo_root / submodule_path_str
+
+            # Check if target_full_path is inside this submodule
+            try:
+                target_full_path.relative_to(submodule_path)
+                # If it is inside, update current_repo_root and break to outer loop to continue searching deeper
+                current_repo_root = submodule_path
+                found_submodule = True
+                break
+            except ValueError:
+                continue
+
+        if not found_submodule:
+            # We are in the deepest submodule containing the target path
+            break
+
+    if current_repo_root == repository_root:
+        return ""
+
+    return str(current_repo_root.relative_to(repository_root))
 
 
 class GitSubCommand(abc.ABC):
@@ -192,9 +286,13 @@ class RevParseCommand(GitSubCommand):
         )
 
     def execute(self, context: Context) -> int:
-        repository_root = context.repository_root
+        repository_root = context.get_repository_root()
 
         rev_cache: Dict[str, str] = {}
+
+        target_repo = get_target_repository_at_path(
+            context.get_relative_path(), repository_root
+        )
 
         def _get_rev(rev: str) -> Optional[str]:
             if rev in rev_cache:
@@ -205,16 +303,13 @@ class RevParseCommand(GitSubCommand):
                 snapshot_version,
             ) = get_workspace_id_and_snapshot_version(context)
             if not workspace_id or not snapshot_version:
-                context.error("Not in a cog workspace")
+                context.error(
+                    "Cannot determine workspace id or snapshot version"
+                )
                 return None
 
             # Determine repo_root
-            repo_root = "fuchsia"
-            relative_git_dir = get_relative_git_dir(
-                context.global_git_options, repository_root
-            )
-            if relative_git_dir:
-                repo_root = f"fuchsia/{relative_git_dir}"
+            repo_root = get_repo_root_for_repo(target_repo)
 
             request = f'request_base {{ workspace_id: "{workspace_id}" base_snapshot_version: {snapshot_version}}} repo_root: "{repo_root}"'
 
@@ -229,6 +324,7 @@ class RevParseCommand(GitSubCommand):
                             fetched_rev = parts[1]
                             rev_cache[rev] = fetched_rev
                             return fetched_rev
+                context.error("Could not find commit hash in citc output")
             except subprocess.CalledProcessError as e:
                 context.error(e.stderr)
             except Exception as e:
@@ -241,8 +337,7 @@ class RevParseCommand(GitSubCommand):
         # followed by the head revision.
         for arg in context.args.remaining_args:
             if arg == "--show-toplevel":
-                # TODO(469510407) Make sure this is using the active repo.
-                context.print(str(repository_root))
+                context.print(str(repository_root / target_repo))
             elif arg.startswith("-"):
                 pass
             else:
@@ -254,6 +349,10 @@ class RevParseCommand(GitSubCommand):
 
                 if rev := _get_rev(arg):
                     context.print(rev)
+                else:
+                    # Do not print an error here since the error was already printed by
+                    # _get_rev failing.
+                    return 1
 
         return 0
 
@@ -462,7 +561,7 @@ class ArgsCollection:
         self.remaining_args = git_args[command_index + 1 :]
 
 
-def _verify_repository_root_is_cog(repository_root: Path) -> bool:
+def verify_repository_root_is_cog(repository_root: Path) -> bool:
     return (repository_root.parent / ".citc").is_dir()
 
 
@@ -481,7 +580,7 @@ def main() -> int:
     context = Context(args_collection)
     context.write_log("START", f"{shlex.join(sys.argv)}\n")
 
-    if not _verify_repository_root_is_cog(context.repository_root):
+    if not verify_repository_root_is_cog(context.repository_root):
         context.error("Not in a cog workspace.")
         return 1
 
