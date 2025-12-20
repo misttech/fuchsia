@@ -35,6 +35,71 @@ use {
     fidl_fuchsia_starnix_runner as frunner, fuchsia_inspect as inspect,
 };
 
+// Remember at most this many past durations.
+const MAX_PAST_DURATIONS_COUNT: usize = 10;
+
+/// Epoll persistent info, exposed in inspect diagnostics.
+#[derive(Debug, Hash)]
+struct EpollInfo {
+    // The name of the command that this epoll was created for.
+    command: TaskCommand,
+    // When this epoll was created, used for detecting long-running epolls.
+    added_timestamp: Option<zx::BootInstant>,
+    // Records a limited number of past durations for this epoll.
+    past_durations: VecDeque<zx::BootDuration>,
+}
+
+impl EpollInfo {
+    fn new(
+        command: TaskCommand,
+        added_timestamp: zx::BootInstant,
+        past_durations: Option<VecDeque<zx::BootDuration>>,
+    ) -> Self {
+        Self {
+            command,
+            added_timestamp: Some(added_timestamp),
+            past_durations: past_durations
+                .unwrap_or_else(|| VecDeque::with_capacity(MAX_PAST_DURATIONS_COUNT)),
+        }
+    }
+
+    /// Moves the current epoll duration into past durations, computed based off
+    /// of the provided epoll end timestamp.
+    fn update_lifecycle(self, end_timestamp: zx::BootInstant) -> Self {
+        let past_durations = if let Some(start_timestamp) = self.added_timestamp {
+            let duration = end_timestamp - start_timestamp;
+            let mut past_durations = self.past_durations;
+            past_durations.push_front(duration);
+            past_durations.into_iter().take(MAX_PAST_DURATIONS_COUNT).collect()
+        } else {
+            VecDeque::with_capacity(MAX_PAST_DURATIONS_COUNT)
+        };
+        Self { added_timestamp: None, past_durations, ..self }
+    }
+
+    /// Records the contents of this `EpollInfo` into the provided inspect `node`. The
+    /// current epoll is terminated at `stop_timestamp`.
+    fn record_into(&self, node: &inspect::Node, stop_timestamp: zx::BootInstant) {
+        let this_node = node.create_child(&self.command.to_string());
+        if let Some(added_timestamp) = self.added_timestamp {
+            this_node.record_int("created_timestamp_ns", added_timestamp.into_nanos());
+            let duration = stop_timestamp - added_timestamp;
+            this_node.record_int("this_duration_ns", duration.into_nanos());
+        }
+        let len = std::cmp::min(self.past_durations.len(), MAX_PAST_DURATIONS_COUNT);
+        let past_durations_node = this_node.create_int_array("past_durations_ns", len);
+        let _ = self
+            .past_durations
+            .iter()
+            .take(len)
+            .enumerate()
+            .map(|(i, d)| past_durations_node.set(i, d.into_nanos()))
+            .collect::<Vec<_>>();
+        this_node.record(past_durations_node);
+        node.record(this_node);
+    }
+}
+
 /// Manager for suspend and resume.
 pub struct SuspendResumeManager {
     // The mutable state of [SuspendResumeManager].
@@ -63,8 +128,10 @@ pub struct SuspendResumeManagerInner {
 
     /// The currently active EPOLLWAKEUPs in the system. If non-empty, this prevents
     /// the container from suspending.
-    active_epolls: HashMap<EpollKey, TaskCommand>,
-    inactive_epolls: HashSet<TaskCommand>,
+    active_epolls: HashMap<EpollKey, EpollInfo>,
+
+    /// Previous, but now inactive epolls.
+    inactive_epolls: HashMap<EpollKey, EpollInfo>,
 
     /// The event pair that is passed to the Starnix runner so it can observe whether
     /// or not any wake locks are active before completing a suspend operation.
@@ -140,7 +207,7 @@ impl SuspendResumeManagerInner {
     }
 
     fn active_epolls(&self) -> Vec<TaskCommand> {
-        Vec::from_iter(self.active_epolls.values().cloned())
+        Vec::from_iter(self.active_epolls.values().map(|e| &e.command).cloned())
     }
 
     fn update_suspend_stats<UpdateFn>(&mut self, update: UpdateFn)
@@ -186,10 +253,11 @@ impl SuspendResumeManagerInner {
     fn record_active_epolls(&self, node: &inspect::Node) {
         let active_epolls = &self.active_epolls;
         let len = min(active_epolls.len(), INSPECT_MAX_EPOLLS);
-        let active_epolls_node = node.create_string_array(fobs::ACTIVE_EPOLLS, len);
-        for (i, key) in active_epolls.keys().sorted().rev().take(len).enumerate() {
-            if let Some(name) = active_epolls.get(key) {
-                active_epolls_node.set(i, name.to_string());
+        let active_epolls_node = node.create_child(fobs::ACTIVE_EPOLLS);
+        let now = zx::BootInstant::get();
+        for key in active_epolls.keys().take(len) {
+            if let Some(epoll_info) = active_epolls.get(key) {
+                epoll_info.record_into(&active_epolls_node, now);
             }
         }
         node.record(active_epolls_node);
@@ -198,9 +266,10 @@ impl SuspendResumeManagerInner {
     fn record_inactive_epolls(&self, node: &inspect::Node) {
         let inactive_epolls = &self.inactive_epolls;
         let len = min(inactive_epolls.len(), INSPECT_MAX_WAKE_LOCK_NAMES);
-        let inactive_epolls_node = node.create_string_array(fobs::INACTIVE_EPOLLS, len);
-        for (i, name) in inactive_epolls.iter().sorted().take(len).enumerate() {
-            inactive_epolls_node.set(i, name.to_string());
+        let inactive_epolls_node = node.create_child(fobs::INACTIVE_EPOLLS);
+        let now = zx::BootInstant::get();
+        for epoll in inactive_epolls.values().take(len) {
+            epoll.record_into(&inactive_epolls_node, now);
         }
         node.record(inactive_epolls_node);
     }
@@ -358,16 +427,20 @@ impl SuspendResumeManager {
     /// Adds a wake lock `key` to the active epoll wake locks.
     pub fn add_epoll(&self, current_task: &CurrentTask, key: EpollKey) {
         let mut state = self.lock();
-        state.active_epolls.insert(key, current_task.command());
+        let past_durations = state.inactive_epolls.remove(&key).map(|info| info.past_durations);
+        let epoll_info = state.active_epolls.remove(&key).unwrap_or_else(|| {
+            EpollInfo::new(current_task.command(), zx::BootInstant::get(), past_durations)
+        });
+        state.active_epolls.insert(key, epoll_info);
         state.signal_wake_events();
     }
 
     /// Removes a wake lock `key` from the active epoll wake locks.
     pub fn remove_epoll(&self, key: EpollKey) {
         let mut state = self.lock();
-        let epoll = state.active_epolls.remove(&key);
-        if let Some(epoll) = epoll {
-            state.inactive_epolls.insert(epoll);
+        let epoll_info = state.active_epolls.remove(&key);
+        if let Some(epoll_info) = epoll_info {
+            state.inactive_epolls.insert(key, epoll_info.update_lifecycle(zx::BootInstant::get()));
         }
         state.signal_wake_events();
     }
