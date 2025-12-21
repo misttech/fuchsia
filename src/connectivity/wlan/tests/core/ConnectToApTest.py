@@ -54,7 +54,7 @@ class ConnectToApTest(base_test.ConnectionBaseTestClass):
         ssid = utils.rand_ascii_str(AP_SSID_LENGTH_2G)
 
         setup_ap(
-            access_point=self.access_point(),
+            access_point=self.test_kit.access_point,
             profile_name="whirlwind",
             channel=AP_DEFAULT_CHANNEL_2G,
             ssid=ssid,
@@ -63,7 +63,7 @@ class ConnectToApTest(base_test.ConnectionBaseTestClass):
 
         scan_results = (
             (
-                await self.client_sme_proxy.scan_for_controller(
+                await self.test_kit.client_sme.scan_for_controller(
                     req=fidl_sme.ScanRequest(
                         passive=fidl_sme.PassiveScanRequest()
                     )
@@ -128,7 +128,7 @@ class ConnectToApTest(base_test.ConnectionBaseTestClass):
                 deprecated_scan_type=fidl_common.ScanType.PASSIVE,
             )
             logger.info(f"ConnectRequest: {connect_request!r}")
-            self.client_sme_proxy.connect(
+            self.test_kit.client_sme.connect(
                 req=connect_request, txn=server.take()
             )
 

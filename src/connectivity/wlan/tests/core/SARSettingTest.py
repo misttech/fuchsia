@@ -26,7 +26,7 @@ from honeydew.typing.custom_types import FidlEndpoint
 from mobly import asserts, signals, test_runner
 
 
-class SARSettingTest(base_test.ConnectionBaseTestClassSync):
+class SARSettingTest(base_test.ConnectionBaseTestClass):
     def pre_run(self) -> None:
         self.generate_tests(
             test_logic=self._test_logic,
@@ -46,7 +46,7 @@ class SARSettingTest(base_test.ConnectionBaseTestClassSync):
         # Setup AP
         ssid: str = utils.rand_ascii_str(AP_SSID_LENGTH_2G)
         setup_ap(
-            access_point=self.access_point,
+            access_point=self.test_kit.access_point,
             profile_name="whirlwind",
             channel=AP_DEFAULT_CHANNEL_2G,
             ssid=ssid,
@@ -65,7 +65,7 @@ class SARSettingTest(base_test.ConnectionBaseTestClassSync):
         # Set the SAR scenario
         asyncio.run(
             device_monitor_proxy.set_tx_power_scenario(
-                phy_id=self.phy_id,
+                phy_id=self.test_kit.phy_id,
                 scenario=scenario,
             )
         ).unwrap()
@@ -93,7 +93,7 @@ class SARSettingTest(base_test.ConnectionBaseTestClassSync):
         # confirm the SAR scenario is still set
         get_sar_resp = asyncio.run(
             device_monitor_proxy.get_tx_power_scenario(
-                phy_id=self.phy_id,
+                phy_id=self.test_kit.phy_id,
             )
         ).unwrap()
         asserts.assert_equal(

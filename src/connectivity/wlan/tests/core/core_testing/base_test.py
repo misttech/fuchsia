@@ -1,108 +1,49 @@
 # Copyright 2024 The Fuchsia Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
-"""
-Base test classes for antlion tests of WLAN core.
-"""
 
+import asyncio
 import logging
+from dataclasses import dataclass
+
+from antlion.controllers.access_point import AccessPoint
 
 logger = logging.getLogger(__name__)
 
+from datetime import timedelta
 
-import fidl_fuchsia_wlan_common as fidl_common
-import fidl_fuchsia_wlan_device_service as fidl_svc
-import fidl_fuchsia_wlan_sme as fidl_sme
-import honeydew.affordances.connectivity.wlan.utils.types as hd_util_types
+import fidl_fuchsia_wlan_common as fw_common
+import fidl_fuchsia_wlan_device_service as fw_device_service
+import fidl_fuchsia_wlan_sme as fw_sme
 from antlion import controllers
-from antlion.controllers.access_point import AccessPoint
+from core_testing.handlers import DeviceWatcherEventHandler
 from fuchsia_controller_py import Channel, ZxStatus
 from fuchsia_controller_py.wrappers import AsyncAdapter, asyncmethod
 from fuchsia_wlan_base_test import FuchsiaWlanBaseTest
 from honeydew.typing.custom_types import FidlEndpoint
 from mobly import signals
-from mobly.asserts import abort_class_if, assert_equal, fail
+from mobly.asserts import abort_class_if, assert_equal
 from mobly.records import TestResultRecord
 
 
-class ConnectionBaseTestClassSync(FuchsiaWlanBaseTest):
-    iface_id: int | None = None
-    access_point: AccessPoint
-
-    def setup_class(self) -> None:
-        super().setup_class()
-
-        abort_class_if(
-            len(self.fuchsia_devices) != 1,
-            "Requires exactly one Fuchsia device",
-        )
-        self.fuchsia_device = self.fuchsia_devices[0]
-
-        access_points = self.register_controller(
-            controllers.access_point, min_number=1
-        )
-        if access_points is None or len(access_points) == 0:
-            raise signals.TestAbortClass("Requires at least one access point")
-        self.access_point = access_points[0]
-        self.access_point.stop_all_aps()
-
-        # Get the phy
-        phy_id_list = self.fuchsia_device.wlan_core.get_phy_id_list()
-        assert_equal(
-            len(phy_id_list),
-            1,
-            "Expecting exactly one phy_id",
-        )
-        self.phy_id = phy_id_list[0]
-        logger.info(f"Using phy_id {self.phy_id}")
-
-        # Check we have no interfaces
-        ifaces = self.fuchsia_device.wlan_core.get_iface_id_list()
-        assert len(ifaces) == 0, "Every test suite should start with no ifaces."
-
-        # Set the country code to US, to allow for 2.4 and 5 GHz connections.
-        self.fuchsia_device.wlan_core.set_country(
-            self.phy_id, hd_util_types.CountryCode("US")
-        )
-
-        # Create an iface
-        self.iface_id = self.fuchsia_device.wlan_core.create_iface(
-            phy_id=self.phy_id,
-            role=fidl_common.WlanMacRole.CLIENT,
-            sta_addr=None,
-        )
-
-    def teardown_test(self) -> None:
-        # Maintain the invariant that every test starts with no access points.
-        self.access_point.download_ap_logs(self.log_path)
-        self.access_point.stop_all_aps()
-        self.fuchsia_device.wlan_core.disconnect()
-        super().teardown_test()
-
-    def teardown_class(self) -> None:
-        if self.iface_id is not None:
-            logger.info(f"Destroying iface_id {self.iface_id}")
-            self.fuchsia_device.wlan_core.destroy_iface(self.iface_id)
-        self.iface_id = None
-        super().teardown_class()
-
-    def on_fail(self, record: TestResultRecord) -> None:
-        """A function that is executed upon a test failure.
-
-        Args:
-        record: A copy of the test record for this test, containing all information of
-            the test execution including exception objects.
-        """
-        super().on_fail(record)
-
-        # Maintain the invariant that every test starts with no access points.
-        self.access_point.stop_all_aps()
+@dataclass(frozen=True)
+class CoreTestKit:
+    device_monitor: fw_device_service.DeviceMonitorClient
+    phy_id: int
 
 
 class CoreBaseTestClass(AsyncAdapter, FuchsiaWlanBaseTest):
-    device_monitor_proxy: fidl_svc.DeviceMonitorClient
+    _core_test_kit: CoreTestKit
 
-    def setup_class(self) -> None:
+    _PAUSE_FOR_ADDITIONAL_PHY_DEVICES = timedelta(seconds=1)
+
+    @property
+    def test_kit(self) -> CoreTestKit:
+        return self._core_test_kit
+
+    @asyncmethod
+    # pylint: disable-next=invalid-overridden-method
+    async def setup_class(self) -> None:
         super().setup_class()
 
         abort_class_if(
@@ -111,7 +52,7 @@ class CoreBaseTestClass(AsyncAdapter, FuchsiaWlanBaseTest):
         )
         self.fuchsia_device = self.fuchsia_devices[0]
 
-        self.device_monitor_proxy = fidl_svc.DeviceMonitorClient(
+        device_monitor = fw_device_service.DeviceMonitorClient(
             self.fuchsia_device.fuchsia_controller.connect_device_proxy(
                 FidlEndpoint(
                     "core/wlandevicemonitor",
@@ -120,42 +61,104 @@ class CoreBaseTestClass(AsyncAdapter, FuchsiaWlanBaseTest):
             )
         )
 
+        proxy, server = Channel.create()
 
-class ConnectionBaseTestClass(CoreBaseTestClass):
-    iface_id: int | None
+        # Wait for first phy device to appear, and assert no additional
+        # phy devices are added after a brief pause.
+        phy_id = None
+        device_monitor.watch_devices(watcher=server.take())
+        async with DeviceWatcherEventHandler(
+            client=fw_device_service.DeviceWatcherClient(proxy.take()),
+            verbose=True,
+        ) as ctx:
+            try:
+                while next_txn := await asyncio.wait_for(
+                    ctx.txn_queue.get(),
+                    timeout=self._PAUSE_FOR_ADDITIONAL_PHY_DEVICES.total_seconds(),
+                ):
+                    if isinstance(
+                        next_txn,
+                        fw_device_service.DeviceWatcherOnPhyAddedRequest,
+                    ):
+                        if phy_id is not None:
+                            raise signals.TestAbortClass(
+                                "Detected second phy device."
+                            )
+                        phy_id = next_txn.phy_id
+                    elif isinstance(
+                        next_txn,
+                        fw_device_service.DeviceWatcherOnIfaceAddedRequest,
+                    ):
+                        logger.info(
+                            f"Ignoring notification of existing iface {next_txn.iface_id}"
+                        )
+                    else:
+                        raise signals.TestFailure(
+                            f"Expected OnPhyAdded, but received: {next_txn}"
+                        )
+            except asyncio.TimeoutError:
+                logger.info(
+                    f"Assuming all DeviceWatcher events observed. No new events "
+                    f"after waiting "
+                    f"{self._PAUSE_FOR_ADDITIONAL_PHY_DEVICES.total_seconds()} second(s)."
+                )
 
-    @asyncmethod
-    async def setup_class(self) -> None:
-        super().setup_class()
+        assert phy_id is not None, "DeviceWatcher failed to report a phy."
 
-        list_phys_response = await self.device_monitor_proxy.list_phys()
-        assert (
-            list_phys_response.phy_list is not None
-        ), "DeviceMonitor.ListPhys() response is missing a phy_list value"
-        assert_equal(
-            len(list_phys_response.phy_list),
-            1,
-            "DeviceMonitor.ListPhys() should return exactly one phy_id.",
+        self._core_test_kit = CoreTestKit(
+            device_monitor=device_monitor, phy_id=phy_id
         )
 
-        self.phy_id = list_phys_response.phy_list[0]
-        logger.info(f"Using phy_id {self.phy_id}")
+    def setup_test(self) -> None:
+        super().setup_test()
+        self.loop().run_until_complete(self._destroy_all_ifaces())
 
-        list_ifaces_response = await self.device_monitor_proxy.list_ifaces()
-        assert (
-            list_ifaces_response.iface_list is not None
-        ), "DeviceMonitor.ListIfaces() response is missing iface_list"
-        if len(list_ifaces_response.iface_list) > 0:
-            fail(
-                f"Found existing ifaces: {list_ifaces_response.iface_list}. Every test suite should start with no ifaces."
+    def teardown_class(self) -> None:
+        self.loop().run_until_complete(self._destroy_all_ifaces())
+        super().teardown_class()
+
+    async def _destroy_all_ifaces(self) -> None:
+        list_ifaces_response = (
+            await self._core_test_kit.device_monitor.list_ifaces()
+        )
+        for iface_id in list_ifaces_response.iface_list:
+            logger.info(f"Destroying iface {iface_id} before next test...")
+            await self._core_test_kit.device_monitor.destroy_iface(
+                req=fw_device_service.DestroyIfaceRequest(iface_id=iface_id)
             )
 
+
+@dataclass(frozen=True)
+class ClassTestKit:
+    access_point: AccessPoint
+
+
+@dataclass(frozen=True)
+class ConnectionTestKit(CoreTestKit):
+    access_point: AccessPoint
+    iface_id: int
+    client_sme: fw_sme.ClientSmeClient
+
+
+class ConnectionBaseTestClass(CoreBaseTestClass):
+    _connection_test_kit: ConnectionTestKit
+
+    @property
+    def test_kit(self) -> ConnectionTestKit:
+        return self._connection_test_kit
+
+    def setup_class(self) -> None:
+        super().setup_class()
+
         # Set the country code to US, to allow for 2.4 and 5 GHz connections.
-        set_country_request = fidl_svc.SetCountryRequest(
-            phy_id=self.phy_id, alpha2=[ord("U"), ord("S")]
+        set_country_request = fw_device_service.SetCountryRequest(
+            phy_id=self._core_test_kit.phy_id,
+            alpha2=[ord("U"), ord("S")],
         )
-        set_country_response = await self.device_monitor_proxy.set_country(
-            req=set_country_request
+        set_country_response = self.loop().run_until_complete(
+            self._core_test_kit.device_monitor.set_country(
+                req=set_country_request
+            )
         )
         assert_equal(
             set_country_response.status,
@@ -163,71 +166,67 @@ class ConnectionBaseTestClass(CoreBaseTestClass):
             "DeviceMonitor.SetCountry() failed",
         )
 
+        access_points = self.register_controller(
+            controllers.access_point, min_number=1
+        )
+
+        if access_points is None or len(access_points) == 0:
+            raise signals.TestAbortClass("Requires at least one access point")
+        self.class_test_kit = ClassTestKit(access_point=access_points[0])
+        self.class_test_kit.access_point.stop_all_aps()
+
+    def setup_test(self) -> None:
+        super().setup_test()
+
+        self.class_test_kit.access_point.stop_all_aps()
+
         create_iface_response = (
-            await self.device_monitor_proxy.create_iface(
-                phy_id=self.phy_id,
-                role=fidl_common.WlanMacRole.CLIENT,
-                sta_address=[0, 0, 0, 0, 0, 0],
+            self.loop().run_until_complete(
+                self._core_test_kit.device_monitor.create_iface(
+                    phy_id=self._core_test_kit.phy_id,
+                    role=fw_common.WlanMacRole.CLIENT,
+                    sta_address=[0, 0, 0, 0, 0, 0],
+                )
             )
         ).unwrap()
         assert (
             create_iface_response.iface_id is not None
         ), "DeviceMonitor.CreateIface() response is missing a iface_id"
-        self.iface_id = create_iface_response.iface_id
+        iface_id = create_iface_response.iface_id
 
         proxy, server = Channel.create()
         (
-            await self.device_monitor_proxy.get_client_sme(
-                iface_id=self.iface_id,
-                sme_server=server.take(),
+            self.loop().run_until_complete(
+                self._core_test_kit.device_monitor.get_client_sme(
+                    iface_id=iface_id,
+                    sme_server=server.take(),
+                )
             )
         ).unwrap()
-        self.client_sme_proxy = fidl_sme.ClientSmeClient(proxy)
-
-        access_points = self.register_controller(
-            controllers.access_point, min_number=1
+        self._connection_test_kit = ConnectionTestKit(
+            device_monitor=self._core_test_kit.device_monitor,
+            phy_id=self._core_test_kit.phy_id,
+            access_point=self.class_test_kit.access_point,
+            iface_id=iface_id,
+            client_sme=fw_sme.ClientSmeClient(proxy),
         )
-        if access_points is None or len(access_points) == 0:
-            raise signals.TestAbortClass("Requires at least one access point")
-        self.__access_point = access_points[0]
-
-        self.access_point().stop_all_aps()
 
     def teardown_test(self) -> None:
         # Maintain the invariant that every test starts with no access points.
-        self.access_point().download_ap_logs(self.log_path)
-        self.access_point().stop_all_aps()
+        self._connection_test_kit.access_point.download_ap_logs(self.log_path)
+        self._connection_test_kit.access_point.stop_all_aps()
         self.loop().run_until_complete(
-            self.client_sme_proxy.disconnect(
-                reason=fidl_sme.UserDisconnectReason.UNKNOWN
+            self._connection_test_kit.client_sme.disconnect(
+                reason=fw_sme.UserDisconnectReason.UNKNOWN
             )
         )
         super().teardown_test()
-
-    @asyncmethod
-    async def teardown_class(self) -> None:
-        if self.iface_id is not None:
-            logger.info(f"Destroying iface_id {self.iface_id}")
-            req = fidl_svc.DestroyIfaceRequest(iface_id=self.iface_id)
-            response = await self.device_monitor_proxy.destroy_iface(req=req)
-            assert_equal(
-                response.status,
-                ZxStatus.ZX_OK,
-                "DeviceMonitor.DestroyIface() failed",
-            )
-        self.iface_id = None
-        super().teardown_class()
-
-    def access_point(self) -> AccessPoint:
-        if self.__access_point is None:
-            raise RuntimeError("Connection tests require an access point.")
-        return self.__access_point
 
     def on_fail(self, record: TestResultRecord) -> None:
         super().on_fail(record)
 
         # Maintain the invariant that every test starts with no access points.
-        self.access_point().stop_all_aps()
+        self.class_test_kit.access_point.stop_all_aps()
 
     def ping(
         self,

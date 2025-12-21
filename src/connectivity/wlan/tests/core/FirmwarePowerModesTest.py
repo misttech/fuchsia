@@ -6,6 +6,8 @@ Tests for validating performance of firmware PM_MODEs.
 """
 import logging
 
+from fuchsia_controller_py.wrappers import asyncmethod
+
 logger = logging.getLogger(__name__)
 
 
@@ -41,22 +43,22 @@ class FirmwarePowerModesTest(base_test.ConnectionBaseTestClass):
     def name_func(self, mode: fidl_common.PowerSaveType) -> str:
         return f"test_pm_mode_{mode.name.replace('PS_MODE_', '').lower()}"
 
-    def _test_logic(self, ps_mode: fidl_common.PowerSaveType) -> None:
+    @asyncmethod
+    async def _test_logic(self, ps_mode: fidl_common.PowerSaveType) -> None:
         ssid = utils.rand_ascii_str(AP_SSID_LENGTH_5G)
 
         setup_ap(
-            access_point=self.access_point(),
+            access_point=self.test_kit.access_point,
             profile_name="whirlwind",
             channel=AP_DEFAULT_CHANNEL_5G,
             ssid=ssid,
             security=Security(security_mode=SecurityMode.OPEN),
         )
 
-        ps_resp = self.loop().run_until_complete(
-            self.device_monitor_proxy.set_power_save_mode(
-                req=fidl_device_svc.SetPowerSaveModeRequest(
-                    phy_id=self.phy_id, ps_mode=ps_mode
-                )
+        ps_resp = await self.test_kit.device_monitor.set_power_save_mode(
+            req=fidl_device_svc.SetPowerSaveModeRequest(
+                phy_id=self.test_kit.phy_id,
+                ps_mode=ps_mode,
             )
         )
         assert (
@@ -65,11 +67,9 @@ class FirmwarePowerModesTest(base_test.ConnectionBaseTestClass):
 
         scan_results = (
             (
-                self.loop().run_until_complete(
-                    self.client_sme_proxy.scan_for_controller(
-                        req=fidl_sme.ScanRequest(
-                            passive=fidl_sme.PassiveScanRequest()
-                        )
+                await self.test_kit.client_sme.scan_for_controller(
+                    req=fidl_sme.ScanRequest(
+                        passive=fidl_sme.PassiveScanRequest()
                     )
                 )
             )
@@ -110,11 +110,11 @@ class FirmwarePowerModesTest(base_test.ConnectionBaseTestClass):
                 deprecated_scan_type=fidl_common.ScanType.PASSIVE,
             )
             logger.info(f"ConnectRequest: {connect_request!r}")
-            self.client_sme_proxy.connect(
+            self.test_kit.client_sme.connect(
                 req=connect_request, txn=server.take()
             )
 
-            next_txn = self.loop().run_until_complete(txn_queue.get())
+            next_txn = await txn_queue.get()
             assert_equal(
                 next_txn,
                 fidl_sme.ConnectTransactionOnConnectResultRequest(
@@ -142,8 +142,10 @@ class FirmwarePowerModesTest(base_test.ConnectionBaseTestClass):
         # This should take no more than 5 seconds, typically.
         time.sleep(10)
 
-        ap_test_interface = self.access_point().wlan_5g
-        ap_address = utils.get_addr(self.access_point().ssh, ap_test_interface)
+        ap_test_interface = self.test_kit.access_point.wlan_5g
+        ap_address = utils.get_addr(
+            self.test_kit.access_point.ssh, ap_test_interface
+        )
         try:
             ping_result = self.ping(ap_address)
             logger.info(f"Ping succeeded: {ping_result}")

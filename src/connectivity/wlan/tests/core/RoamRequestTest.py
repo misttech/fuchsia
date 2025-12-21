@@ -222,7 +222,7 @@ class RoamRequestTest(base_test.ConnectionBaseTestClass):
 
         # Setup 2.4GHz AP
         setup_ap(
-            access_point=self.access_point(),
+            access_point=self.test_kit.access_point,
             profile_name="whirlwind",
             channel=AP_DEFAULT_CHANNEL_2G,
             ssid=ssid,
@@ -231,7 +231,7 @@ class RoamRequestTest(base_test.ConnectionBaseTestClass):
 
         # Setup 5GHz AP
         setup_ap(
-            access_point=self.access_point(),
+            access_point=self.test_kit.access_point,
             profile_name="whirlwind",
             channel=AP_DEFAULT_CHANNEL_5G,
             ssid=ssid,
@@ -255,7 +255,7 @@ class RoamRequestTest(base_test.ConnectionBaseTestClass):
         # Passive scan
         scan_results = (
             (
-                await self.client_sme_proxy.scan_for_controller(
+                await self.test_kit.client_sme.scan_for_controller(
                     req=fidl_sme.ScanRequest(
                         passive=fidl_sme.PassiveScanRequest()
                     )
@@ -383,7 +383,7 @@ class RoamRequestTest(base_test.ConnectionBaseTestClass):
                 deprecated_scan_type=fidl_common.ScanType.PASSIVE,
             )
             logger.info(f"ConnectRequest: {connect_request!r}")
-            self.client_sme_proxy.connect(
+            self.test_kit.client_sme.connect(
                 req=connect_request, txn=server.take()
             )
 
@@ -415,25 +415,29 @@ class RoamRequestTest(base_test.ConnectionBaseTestClass):
             # Verify that DUT is actually associated (as seen from AP).
             client_mac = await self._get_client_mac()
             if test_params.origin_band == BandType.BAND_2G:
-                origin_iface = self.access_point().wlan_2g
-                target_iface = self.access_point().wlan_5g
+                origin_iface = self.test_kit.access_point.wlan_2g
+                target_iface = self.test_kit.access_point.wlan_5g
             else:
-                origin_iface = self.access_point().wlan_5g
-                target_iface = self.access_point().wlan_2g
+                origin_iface = self.test_kit.access_point.wlan_5g
+                target_iface = self.test_kit.access_point.wlan_2g
 
-            if not self.access_point().sta_authenticated(
+            if not self.test_kit.access_point.sta_authenticated(
                 origin_iface, client_mac
             ):
                 raise signals.TestError(
                     f"DUT is not authenticated on the {test_params.origin_band} band"
                 )
 
-            if not self.access_point().sta_associated(origin_iface, client_mac):
+            if not self.test_kit.access_point.sta_associated(
+                origin_iface, client_mac
+            ):
                 raise signals.TestError(
                     f"DUT is not associated on the {test_params.origin_band} band"
                 )
 
-            if not self.access_point().sta_authorized(origin_iface, client_mac):
+            if not self.test_kit.access_point.sta_authorized(
+                origin_iface, client_mac
+            ):
                 raise signals.TestError(
                     f"DUT is not authorized on the {test_params.origin_band} band"
                 )
@@ -442,7 +446,7 @@ class RoamRequestTest(base_test.ConnectionBaseTestClass):
             # to the roam attempt.
             roam_request = fidl_sme.RoamRequest(bss_description=target_bss_desc)
             logger.info(f"RoamRequest: {roam_request!r}")
-            self.client_sme_proxy.roam(req=roam_request)
+            self.test_kit.client_sme.roam(req=roam_request)
 
             # Verify a successful roam result is received. Filter out any signal reports. Waits up
             # to NEXT_TXN_WAIT_TIME_SECONDS for the next txn, and up to
@@ -490,19 +494,19 @@ class RoamRequestTest(base_test.ConnectionBaseTestClass):
                             )
                             # Verify DUT is connected to the AP using the target interface
                             assert_true(
-                                self.access_point().sta_authenticated(
+                                self.test_kit.access_point.sta_authenticated(
                                     target_iface, client_mac
                                 ),
                                 f"DUT is not authenticated on the {test_params.target_band} band",
                             )
                             assert_true(
-                                self.access_point().sta_associated(
+                                self.test_kit.access_point.sta_associated(
                                     target_iface, client_mac
                                 ),
                                 f"DUT is not associated on the {test_params.target_band} band",
                             )
                             assert_true(
-                                self.access_point().sta_authorized(
+                                self.test_kit.access_point.sta_authorized(
                                     target_iface, client_mac
                                 ),
                                 f"DUT is not 802.1X authorized on the {test_params.target_band} band",
@@ -535,22 +539,18 @@ class RoamRequestTest(base_test.ConnectionBaseTestClass):
         Raises:
             RuntimeError if there is no DUT client interface or if the DUT interface query fails.
         """
-        if self.iface_id is not None:
-            try:
-                query_iface_response = (
-                    await self.device_monitor_proxy.query_iface(
-                        iface_id=self.iface_id
-                    )
-                ).unwrap()
-            except Exception as e:
-                raise RuntimeError(
-                    f"DeviceMonitor.QueryIface() error: {e}"
-                ) from e
-            mac_addr = MacAddress.from_bytes(
-                bytes(query_iface_response.resp.sta_addr)
-            )
-            return str(mac_addr)
-        raise RuntimeError("Interface id is not set.")
+        try:
+            query_iface_response = (
+                await self.test_kit.device_monitor.query_iface(
+                    iface_id=self.test_kit.iface_id
+                )
+            ).unwrap()
+        except Exception as e:
+            raise RuntimeError(f"DeviceMonitor.QueryIface() error: {e}") from e
+        mac_addr = MacAddress.from_bytes(
+            bytes(query_iface_response.resp.sta_addr)
+        )
+        return str(mac_addr)
 
 
 if __name__ == "__main__":
