@@ -545,19 +545,19 @@ impl<'a> ArgValue for sys::trace_string_ref_t {
 /// Example:
 ///
 /// ```rust
-/// instant!(c"foo", c"bar", Scope::Process, "x" => 5, "y" => "boo");
+/// instant!("foo", "bar", Scope::Process, "x" => 5, "y" => "boo");
 /// ```
 ///
 /// is equivalent to
 ///
 /// ```rust
-/// instant(c"foo", c"bar", Scope::Process,
+/// instant("foo", "bar", Scope::Process,
 ///     &[ArgValue::of("x", 5), ArgValue::of("y", "boo")]);
 /// ```
 /// or
 /// ```rust
-/// const FOO: &'static CStr = c"foo";
-/// const BAR: &'static CStr = c"bar";
+/// const FOO: &'static str = "foo";
+/// const BAR: &'static str = "bar";
 /// instant(FOO, BAR, Scope::Process,
 ///     &[ArgValue::of("x", 5), ArgValue::of("y", "boo")]);
 /// ```
@@ -594,13 +594,13 @@ pub fn instant<S: AsTraceStrRef>(
 /// Example:
 ///
 /// ```rust
-/// alert!(c"foo", c"bar");
+/// alert!("foo", "bar");
 /// ```
 ///
 /// is equivalent to
 ///
 /// ```rust
-/// alert(c"foo", c"bar");
+/// alert("foo", "bar");
 /// ```
 #[macro_export]
 macro_rules! alert {
@@ -622,14 +622,14 @@ pub fn alert<C: CategoryString, S: AlertString>(category: C, name: S) {
 ///
 /// ```rust
 /// let id = 555;
-/// counter!(c"foo", c"bar", id, "x" => 5, "y" => 10);
+/// counter!("foo", "bar", id, "x" => 5, "y" => 10);
 /// ```
 ///
 /// is equivalent to
 ///
 /// ```rust
 /// let id = 555;
-/// counter(c"foo", c"bar", id,
+/// counter("foo", "bar", id,
 ///     &[ArgValue::of("x", 5), ArgValue::of("y", 10)]);
 /// ```
 #[macro_export]
@@ -717,7 +717,7 @@ pub fn complete_duration<C: CategoryString, S: AsTraceStrRef>(
 ///
 /// ```rust
 ///   {
-///       duration!(c"foo", c"bar", "x" => 5, "y" => 10);
+///       duration!("foo", "bar", "x" => 5, "y" => 10);
 ///       ...
 ///       ...
 ///       // event will be recorded on drop.
@@ -731,9 +731,9 @@ pub fn complete_duration<C: CategoryString, S: AsTraceStrRef>(
 ///       let mut args;
 ///       let _scope =  {
 ///           static CACHE: trace_site_t = trace_site_t::new(0);
-///           if let Some(_context) = TraceCategoryContext::acquire_cached(c"foo", &CACHE) {
+///           if let Some(_context) = TraceCategoryContext::acquire_cached("foo", &CACHE) {
 ///               args = [ArgValue::of("x", 5), ArgValue::of("y", 10)];
-///               Some($crate::duration(c"foo", c"bar", &args))
+///               Some($crate::duration("foo", "bar", &args))
 ///           } else {
 ///               None
 ///           }
@@ -792,12 +792,12 @@ pub fn duration<'a, C: CategoryString, S: AsTraceStrRef>(
 /// Examples:
 ///
 /// ```rust
-/// duration_begin!(c"foo", c"bar", "x" => 5, "y" => "boo");
+/// duration_begin!("foo", "bar", "x" => 5, "y" => "boo");
 /// ```
 ///
 /// ```rust
-/// const FOO: &'static CStr = c"foo";
-/// const BAR: &'static CStr = c"bar";
+/// const FOO: &'static str = "foo";
+/// const BAR: &'static str = "bar";
 /// duration_begin!(FOO, BAR, "x" => 5, "y" => "boo");
 /// ```
 #[macro_export]
@@ -819,12 +819,12 @@ macro_rules! duration_begin {
 /// Examples:
 ///
 /// ```rust
-/// duration_end!(c"foo", c"bar", "x" => 5, "y" => "boo");
+/// duration_end!("foo", "bar", "x" => 5, "y" => "boo");
 /// ```
 ///
 /// ```rust
-/// const FOO: &'static CStr = c"foo";
-/// const BAR: &'static CStr = c"bar";
+/// const FOO: &'static str = "foo";
+/// const BAR: &'static str = "bar";
 /// duration_end!(FOO, BAR, "x" => 5, "y" => "boo");
 /// ```
 #[macro_export]
@@ -939,7 +939,7 @@ pub fn async_enter<C: CategoryString, S: AsTraceStrRef>(
 /// ```rust
 /// {
 ///     let id = Id::new();
-///     let _guard = async_enter!(id, c"foo", c"bar", "x" => 5, "y" => 10);
+///     let _guard = async_enter!(id, "foo", "bar", "x" => 5, "y" => 10);
 ///     ...
 ///     ...
 ///     // event recorded on drop
@@ -951,7 +951,7 @@ pub fn async_enter<C: CategoryString, S: AsTraceStrRef>(
 /// ```rust
 /// {
 ///     let id = Id::new();
-///     let _guard = AsyncScope::begin(id, c"foo", c"bar", &[ArgValue::of("x", 5),
+///     let _guard = AsyncScope::begin(id, "foo", "bar", &[ArgValue::of("x", 5),
 ///         ArgValue::of("y", 10)]);
 ///     ...
 ///     ...
@@ -983,7 +983,7 @@ macro_rules! async_enter {
 /// ```rust
 /// {
 ///     let id = Id::new();
-///     async_instant!(id, c"foo", c"bar", "x" => 5, "y" => 10);
+///     async_instant!(id, "foo", "bar", "x" => 5, "y" => 10);
 /// }
 /// ```
 ///
@@ -993,8 +993,8 @@ macro_rules! async_enter {
 /// {
 ///     let id = Id::new();
 ///     async_instant(
-///         id, c"foo", c"bar",
-///         &[ArgValue::of(c"x", 5), ArgValue::of("y", 10)]
+///         id, "foo", "bar",
+///         &[ArgValue::of("x", 5), ArgValue::of("y", 10)]
 ///     );
 /// }
 /// ```
@@ -1112,13 +1112,13 @@ pub fn blob_fn<S: AsTraceStrRef>(
 ///
 /// ```rust
 /// let flow_id = 1234;
-/// flow_begin!(c"foo", c"bar", flow_id, "x" => 5, "y" => "boo");
+/// flow_begin!("foo", "bar", flow_id, "x" => 5, "y" => "boo");
 /// ```
 ///
 /// ```rust
-/// const FOO: &'static CStr = c"foo";
-/// const BAR: &'static CStr = c"bar";
-/// flow_begin!(c"foo", c"bar", flow_id);
+/// const FOO: &'static str = "foo";
+/// const BAR: &'static str = "bar";
+/// flow_begin!("foo", "bar", flow_id);
 /// ```
 #[macro_export]
 macro_rules! flow_begin {
@@ -1140,13 +1140,13 @@ macro_rules! flow_begin {
 ///
 /// ```rust
 /// let flow_id = 1234;
-/// flow_step!(c"foo", c"bar", flow_id, "x" => 5, "y" => "boo");
+/// flow_step!("foo", "bar", flow_id, "x" => 5, "y" => "boo");
 /// ```
 ///
 /// ```rust
-/// const FOO: &'static CStr = c"foo";
-/// const BAR: &'static CStr = c"bar";
-/// flow_step!(c"foo", c"bar", flow_id);
+/// const FOO: &'static str = "foo";
+/// const BAR: &'static str = "bar";
+/// flow_step!("foo", "bar", flow_id);
 /// ```
 #[macro_export]
 macro_rules! flow_step {
@@ -1168,13 +1168,13 @@ macro_rules! flow_step {
 ///
 /// ```rust
 /// let flow_id = 1234;
-/// flow_end!(c"foo", c"bar", flow_id, "x" => 5, "y" => "boo");
+/// flow_end!("foo", "bar", flow_id, "x" => 5, "y" => "boo");
 /// ```
 ///
 /// ```rust
-/// const FOO: &'static CStr = c"foo";
-/// const BAR: &'static CStr = c"bar";
-/// flow_end!(c"foo", c"bar", flow_id);
+/// const FOO: &'static str = "foo";
+/// const BAR: &'static str = "bar";
+/// flow_end!("foo", "bar", flow_id);
 /// ```
 #[macro_export]
 macro_rules! flow_end {
@@ -1290,7 +1290,7 @@ pub fn flow_step<S: AsTraceStrRef>(
 ///
 /// ```rust
 /// let flow_id = 1234;
-/// instaflow_begin!(c"category", c"flow", c"step", flow_id, "x" => 5, "y" => "boo");
+/// instaflow_begin!("category", "flow", "step", flow_id, "x" => 5, "y" => "boo");
 /// ```
 #[macro_export]
 macro_rules! instaflow_begin {
@@ -1328,7 +1328,7 @@ macro_rules! instaflow_begin {
 ///
 /// ```rust
 /// let flow_id = 1234;
-/// instaflow_end!(c"category", c"flow", c"step", flow_id, "x" => 5, "y" => "boo");
+/// instaflow_end!("category", "flow", "step", flow_id, "x" => 5, "y" => "boo");
 /// ```
 #[macro_export]
 macro_rules! instaflow_end {
@@ -1366,7 +1366,7 @@ macro_rules! instaflow_end {
 ///
 /// ```rust
 /// let flow_id = 1234;
-/// instaflow_step!(c"category", c"flow", c"step", flow_id, "x" => 5, "y" => "boo");
+/// instaflow_step!("category", "flow", "step", flow_id, "x" => 5, "y" => "boo");
 /// ```
 #[macro_export]
 macro_rules! instaflow_step {
@@ -2448,7 +2448,7 @@ macro_rules! __impl_trace_future_args {
 /// ```
 /// async move {
 ///     ....
-/// }.trace(trace_future_args!(c"category", c"name", "x" => 5, "y" => 10)).await;
+/// }.trace(trace_future_args!("category", "name", "x" => 5, "y" => 10)).await;
 /// ```
 #[macro_export]
 macro_rules! trace_future_args {
@@ -2467,13 +2467,13 @@ pub trait TraceFutureExt: Future + Sized {
     /// Example:
     ///
     /// ```rust
-    /// future.trace(trace_future_args!(c"category", c"name")).await;
+    /// future.trace(trace_future_args!("category", "name")).await;
     /// ```
     ///
     /// Which is equivalent to:
     ///
     /// ```rust
-    /// TraceFuture::new(trace_future_args!(c"category", c"name"), future).await;
+    /// TraceFuture::new(trace_future_args!("category", "name"), future).await;
     /// ```
     #[inline(always)]
     fn trace<'a, C: CategoryString, S: AsTraceStrRef>(

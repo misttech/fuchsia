@@ -111,7 +111,7 @@ it:
 * {Rust}
 
   ```rust
-  instant!(c"{{ '<var>trace_category</var>' }}", c"{{ '<var>trace_name</var>' }}", Scope::Thread);
+  instant!("{{ '<var>trace_category</var>' }}", "{{ '<var>trace_name</var>' }}", Scope::Thread);
   ```
 
 You can also make an instant event that includes additional arguments:
@@ -133,7 +133,7 @@ Note: For more information on arguments, see [Arguments](#arguments).
 * {Rust}
 
   ```rust
-  instant!(c"{{ '<var>trace_category</var>' }}", c"{{ '<var>trace_name</var>' }}", Scope::Thread, {{ '<var>argument_1</var>' }} => {{ '<var>argument_1_value</var>' }}, {{ '<var>argument_2</var>' }} => "{{ '<var>argument_2_string</var>' }}");
+  instant!("{{ '<var>trace_category</var>' }}", "{{ '<var>trace_name</var>' }}", Scope::Thread, {{ '<var>argument_1</var>' }} => {{ '<var>argument_1_value</var>' }}, {{ '<var>argument_2</var>' }} => "{{ '<var>argument_2_string</var>' }}");
   ```
 
 In Perfetto, an instant event is indicated by a small arrow as shown in this
@@ -177,9 +177,9 @@ Note: Duration events must **begin** and **end** as last in, first out.
 * {Rust}
 
   ```rust
-  duration_begin!(c"{{ '<var>trace_category</var>' }}", c"example_duration");
+  duration_begin!("{{ '<var>trace_category</var>' }}", "example_duration");
   // Do some work
-  duration_end!(c"{{ '<var>trace_category</var>' }}", c"example_duration");
+  duration_end!("{{ '<var>trace_category</var>' }}", "example_duration");
   ```
 
 Alternatively, you can define a duration event and automatically close it when
@@ -191,7 +191,7 @@ it goes out of scope using RAII (Resource acquisition is initialization) as foll
   {
     TRACE_DURATION("{{ '<var>trace_category</var>' }}", "example_duration_raii");
     // Do some work
-    TRACE_DURATION(c"{{ '<var>trace_category</var>' }}", "nested duration", "{{ '<var>argument_3</var>' }}", {{ '<var>argument_3_value</var>' }}, "{{ '<var>argument_4</var>' }}", {{ '<var>argument_4_string</var>' }});
+    TRACE_DURATION("{{ '<var>trace_category</var>' }}", "nested duration", "{{ '<var>argument_3</var>' }}", {{ '<var>argument_3_value</var>' }}, "{{ '<var>argument_4</var>' }}", {{ '<var>argument_4_string</var>' }});
     // nested_duration closes due to RAII
     // trace_duration_raii closes due to RAII
   }
@@ -203,7 +203,7 @@ it goes out of scope using RAII (Resource acquisition is initialization) as foll
   {
     TRACE_DURATION("{{ '<var>trace_category</var>' }}", "example_duration_raii");
     // Do some work
-    TRACE_DURATION(c"{{ '<var>trace_category</var>' }}", "nested duration", "{{ '<var>argument_3</var>' }}", {{ '<var>argument_3_value</var>' }}, "{{ '<var>argument_4</var>' }}", {{ '<var>argument_4_string</var>' }});
+    TRACE_DURATION("{{ '<var>trace_category</var>' }}", "nested duration", "{{ '<var>argument_3</var>' }}", {{ '<var>argument_3_value</var>' }}, "{{ '<var>argument_4</var>' }}", {{ '<var>argument_4_string</var>' }});
     // nested_duration closes due to RAII
     // trace_duration_raii closes due to RAII
   }
@@ -213,9 +213,9 @@ it goes out of scope using RAII (Resource acquisition is initialization) as foll
 
   ```rust
   {
-    duration!(c"{{ '<var>trace_category</var>' }}", c"example_duration_raii");
+    duration!("{{ '<var>trace_category</var>' }}", "example_duration_raii");
     // Do some work
-    duration!(c"{{ '<var>trace_category</var>' }}", c"nested duration", {{ '<var>argument_3</var>' }} => {{ '<var>argument_3_value</var>' }}, {{ '<var>argument_4</var>' }} => {{ '<var>argument_4_string</var>' }});
+    duration!("{{ '<var>trace_category</var>' }}", "nested duration", {{ '<var>argument_3</var>' }} => {{ '<var>argument_3_value</var>' }}, {{ '<var>argument_4</var>' }} => {{ '<var>argument_4_string</var>' }});
     // nested_duration closes due to RAII
     // trace_duration_raii closes due to RAII
   }
@@ -311,9 +311,9 @@ For example:
 
   ```rust
   let flow_id = 555;
-  flow_begin!(c"{{ '<var>trace_category</var>' }}", c"{{ '<var>trace_flow_name</var>' }}", flow_id, "{{ '<var>argument_1</var>' }}" => {{ '<var>argument_1_value</var>' }});
-  flow_step!(c"{{ '<var>trace_category</var>' }}", c"{{ '<var>trace_flow_step_name</var>' }}", flow_id);
-  flow_end!(c"{{ '<var>trace_category</var>' }}", c"{{ '<var>trace_flow_name</var>' }}", flow_id);
+  flow_begin!("{{ '<var>trace_category</var>' }}", "{{ '<var>trace_flow_name</var>' }}", flow_id, "{{ '<var>argument_1</var>' }}" => {{ '<var>argument_1_value</var>' }});
+  flow_step!("{{ '<var>trace_category</var>' }}", "{{ '<var>trace_flow_step_name</var>' }}", flow_id);
+  flow_end!("{{ '<var>trace_category</var>' }}", "{{ '<var>trace_flow_name</var>' }}", flow_id);
   ```
 
 A flow event is represented as arrows in Perfetto, for example:
@@ -369,9 +369,9 @@ are combined together in the trace; you do not need to repeat them.
 
   ```rust
   let async_id = 555;
-  async_begin!(async_id, c"{{ '<var>trace_category</var>' }}", c"{{ '<var>trace_async_name</var>' }}", "{{ '<var>argument_1</var>' }}" => {{ '<var>argument_1_value</var>' }});
-  async_instant!(async_id, c"{{ '<var>trace_category</var>' }}", c"{{ '<var>trace_async_instant_name</var>' }}");
-  async_end!(async_id, c"{{ '<var>trace_category</var>' }}", c"{{ '<var>trace_async_name</var>' }}");
+  async_begin!(async_id, "{{ '<var>trace_category</var>' }}", "{{ '<var>trace_async_name</var>' }}", "{{ '<var>argument_1</var>' }}" => {{ '<var>argument_1_value</var>' }});
+  async_instant!(async_id, "{{ '<var>trace_category</var>' }}", "{{ '<var>trace_async_instant_name</var>' }}");
+  async_end!(async_id, "{{ '<var>trace_category</var>' }}", "{{ '<var>trace_async_name</var>' }}");
   ```
 
 In Perfetto, an async event is placed on its own named track and isn't placed
@@ -416,7 +416,7 @@ For example:
 * {Rust}
 
   ```rust
-  instant!(c"{{ '<var>trace_category</var>' }}", c"{{ '<var>trace_name</var>' }}", Scope::Thread, c"SomeNullArg" => ());
+  instant!("{{ '<var>trace_category</var>' }}", "{{ '<var>trace_name</var>' }}", Scope::Thread, "SomeNullArg" => ());
   ```
 
 ### Numeric types {#numeric-types}
@@ -453,12 +453,12 @@ For example:
 
   ```rust
   // Standard int types
-  instant!(c"{{ '<var>trace_category</var>' }}", c"{{ '<var>trace_name</var>' }}", Scope::Thread, c"Someuint32" => 2145);
-  instant!(c"{{ '<var>trace_category</var>' }}", c"{{ '<var>trace_name</var>' }}", Scope::Thread, c"Someuint64" => 423621626134123415);
-  instant!(c"{{ '<var>trace_category</var>' }}", c"{{ '<var>trace_name</var>' }}", Scope::Thread, c"Someint32" => -7);
-  instant!(c"{{ '<var>trace_category</var>' }}", c"{{ '<var>trace_name</var>' }}", Scope::Thread, c"Someint64" => -234516543631231);
+  instant!("{{ '<var>trace_category</var>' }}", "{{ '<var>trace_name</var>' }}", Scope::Thread, "Someuint32" => 2145);
+  instant!("{{ '<var>trace_category</var>' }}", "{{ '<var>trace_name</var>' }}", Scope::Thread, "Someuint64" => 423621626134123415);
+  instant!("{{ '<var>trace_category</var>' }}", "{{ '<var>trace_name</var>' }}", Scope::Thread, "Someint32" => -7);
+  instant!("{{ '<var>trace_category</var>' }}", "{{ '<var>trace_name</var>' }}", Scope::Thread, "Someint64" => -234516543631231);
   // Doubles
-  instant!(c"{{ '<var>trace_category</var>' }}", c"{{ '<var>trace_name</var>' }}", Scope::Thread, c"Somedouble" => 3.1415);
+  instant!("{{ '<var>trace_category</var>' }}", "{{ '<var>trace_name</var>' }}", Scope::Thread, "Somedouble" => 3.1415);
   ```
 
 ### String types {#string-types}
@@ -482,7 +482,7 @@ For example:
 * {Rust}
 
   ```rust
-  instant!(c"{{ '<var>trace_category</var>' }}", c"{{ '<var>trace_name</var>' }}", Scope::Thread, "ping" => "pong");
+  instant!("{{ '<var>trace_category</var>' }}", "{{ '<var>trace_name</var>' }}", Scope::Thread, "ping" => "pong");
   ```
 
 ### Pointers {#pointers}
@@ -509,7 +509,7 @@ For example:
 
   ```rust
   let x: u64 = 123;
-  instant!(c"{{ '<var>trace_category</var>' }}", c"{{ '<var>trace_name</var>' }}", Scope::Thread, "SomeOtherPointer" => &x as *const u64);
+  instant!("{{ '<var>trace_category</var>' }}", "{{ '<var>trace_name</var>' }}", Scope::Thread, "SomeOtherPointer" => &x as *const u64);
   ```
 
 ### KOID {#koid}
@@ -535,7 +535,7 @@ For example:
 
   ```rust
   let koid: zx::Koid = vmo.get_koid()?;
-  instant!(c"{{ '<var>trace_category</var>' }}", c"{{ '<var>trace_name</var>' }}", Scope::Thread, "somekoid" => koid);
+  instant!("{{ '<var>trace_category</var>' }}", "{{ '<var>trace_name</var>' }}", Scope::Thread, "somekoid" => koid);
   ```
 
 ### Booleans {#booleans}
@@ -561,8 +561,8 @@ For example:
 * {Rust}
 
   ```rust
-  instant!(c"{{ '<var>trace_category</var>' }}", c"{{ '<var>trace_name</var>' }}", Scope::Thread, "somebool" => true);
-  instant!(c"{{ '<var>trace_category</var>' }}", c"{{ '<var>trace_name</var>' }}", Scope::Thread, "someotherbool" => false);
+  instant!("{{ '<var>trace_category</var>' }}", "{{ '<var>trace_name</var>' }}", Scope::Thread, "somebool" => true);
+  instant!("{{ '<var>trace_category</var>' }}", "{{ '<var>trace_name</var>' }}", Scope::Thread, "someotherbool" => false);
   ```
 
 [trace-format-event-record]: /docs/reference/tracing/trace-format.md#event-record
