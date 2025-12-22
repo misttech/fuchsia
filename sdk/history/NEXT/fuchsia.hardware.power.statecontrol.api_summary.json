@@ -380,6 +380,11 @@
     },
     {
         "kind": "enum/member",
+        "name": "fuchsia.hardware.power.statecontrol/ShutdownReason.STARNIX_CONTAINER_NO_REASON",
+        "value": "15"
+    },
+    {
+        "kind": "enum/member",
         "name": "fuchsia.hardware.power.statecontrol/ShutdownReason.SYSTEM_UPDATE",
         "value": "3"
     },

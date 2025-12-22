@@ -262,6 +262,12 @@ INSTANTIATE_TEST_SUITE_P(WithVariousReasons, FinalGracefulShutdownInfoNoReportTe
                                  cobalt::LastRebootReason::kNetstackMigration,
                                  fuchsia::feedback::RebootReason::NETSTACK_MIGRATION,
                              },
+                             {
+                                 "AndroidNoReason",
+                                 {GracefulShutdownReason::kAndroidNoReason},
+                                 cobalt::LastRebootReason::kAndroidNoReason,
+                                 fuchsia::feedback::RebootReason::ANDROID_NO_REASON,
+                             },
                          })),
                          [](const testing::TestParamInfo<GracefulNoReportTestParams>& info) {
                            return info.param.test_name;

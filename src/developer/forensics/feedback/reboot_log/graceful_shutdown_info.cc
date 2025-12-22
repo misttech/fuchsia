@@ -44,6 +44,7 @@ constexpr char kReasonZbiSwap[] = "ZBI SWAP";
 constexpr char kOutOfMemory[] = "OUT OF MEMORY";
 constexpr char kReasonNetstackMigration[] = "NETSTACK MIGRATION";
 constexpr char kAndroidUnexpectedReason[] = "ANDROID UNEXPECTED REASON";
+constexpr char kAndroidNoReason[] = "ANDROID NO REASON";
 constexpr char kAndroidRescueParty[] = "ANDROID RESCUE PARTY";
 constexpr char kAndroidCriticalProcessFailure[] = "ANDROID CRITICAL PROCESS FAILURE";
 constexpr char kDeveloperRequest[] = "DEVELOPER REQUEST";
@@ -178,6 +179,8 @@ std::string ToString(const GracefulShutdownReason reason) {
       return kReasonNetstackMigration;
     case GracefulShutdownReason::kAndroidUnexpectedReason:
       return kAndroidUnexpectedReason;
+    case GracefulShutdownReason::kAndroidNoReason:
+      return kAndroidNoReason;
     case GracefulShutdownReason::kAndroidRescueParty:
       return kAndroidRescueParty;
     case GracefulShutdownReason::kAndroidCriticalProcessFailure:
@@ -216,6 +219,8 @@ GracefulShutdownReason GracefulShutdownReasonFromString(const std::string_view r
     return GracefulShutdownReason::kNetstackMigration;
   } else if (reason == kAndroidUnexpectedReason) {
     return GracefulShutdownReason::kAndroidUnexpectedReason;
+  } else if (reason == kAndroidNoReason) {
+    return GracefulShutdownReason::kAndroidNoReason;
   } else if (reason == kAndroidRescueParty) {
     return GracefulShutdownReason::kAndroidRescueParty;
   } else if (reason == kAndroidCriticalProcessFailure) {
@@ -265,6 +270,7 @@ std::vector<std::string> ToReasonStrings(const std::vector<GracefulShutdownReaso
       case GracefulShutdownReason::kOutOfMemory:
       case GracefulShutdownReason::kNetstackMigration:
       case GracefulShutdownReason::kAndroidUnexpectedReason:
+      case GracefulShutdownReason::kAndroidNoReason:
       case GracefulShutdownReason::kAndroidRescueParty:
       case GracefulShutdownReason::kAndroidCriticalProcessFailure:
       case GracefulShutdownReason::kDeveloperRequest:
@@ -458,6 +464,8 @@ GracefulShutdownReason FromReason(
       return GracefulShutdownReason::kNetstackMigration;
     case ShutdownReason::ANDROID_UNEXPECTED_REASON:
       return GracefulShutdownReason::kAndroidUnexpectedReason;
+    case ShutdownReason::STARNIX_CONTAINER_NO_REASON:
+      return GracefulShutdownReason::kAndroidNoReason;
     case ShutdownReason::ANDROID_RESCUE_PARTY:
       return GracefulShutdownReason::kAndroidRescueParty;
     case ShutdownReason::ANDROID_CRITICAL_PROCESS_FAILURE:

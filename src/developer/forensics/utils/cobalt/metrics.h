@@ -97,6 +97,8 @@ enum class LastRebootReason {
       cobalt_registry::LastRebootUptimeMigratedMetricDimensionReason::NetstackMigration,
   kAndroidUnexpectedReason =
       cobalt_registry::LastRebootUptimeMigratedMetricDimensionReason::AndroidUnexpectedReason,
+  kAndroidNoReason =
+      cobalt_registry::LastRebootUptimeMigratedMetricDimensionReason::AndroidNoReason,
   kAndroidRescueParty =
       cobalt_registry::LastRebootUptimeMigratedMetricDimensionReason::AndroidRescueParty,
   kAndroidCriticalProcessFailure =

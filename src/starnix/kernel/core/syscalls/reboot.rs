@@ -178,10 +178,12 @@ pub fn sys_reboot(
                         || reboot_args.contains(&&b"rescueparty"[..])
                     {
                         fpower::ShutdownReason::AndroidRescueParty
-                    } else if reboot_args == [b""] // args empty? splitting "" returns [""], not []
-                    || reboot_args.contains(&&b"userrequested"[..])
-                    {
+                    } else if reboot_args.contains(&&b"userrequested"[..]) {
                         fpower::ShutdownReason::UserRequest
+                    } else if reboot_args == [b""]
+                    // args empty? splitting "" returns [""], not []
+                    {
+                        fpower::ShutdownReason::StarnixContainerNoReason
                     } else {
                         log_warn!("Unknown reboot args: {arg_bytes:?}");
                         track_stub!(

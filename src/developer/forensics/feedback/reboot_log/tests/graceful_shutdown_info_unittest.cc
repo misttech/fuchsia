@@ -103,6 +103,7 @@ TEST(GracefulShutdownInfoTest, VerifyContentConversion) {
       GracefulShutdownReason::kZbiSwap,
       GracefulShutdownReason::kNotSupported,
       GracefulShutdownReason::kNetstackMigration,
+      GracefulShutdownReason::kAndroidNoReason,
   };
 
   for (const auto reason : reasons) {
@@ -126,6 +127,7 @@ TEST(GracefulShutdownInfoTest, VerifyContentConversionWithMultipleReasons) {
       GracefulShutdownReason::kZbiSwap,
       GracefulShutdownReason::kNotSupported,
       GracefulShutdownReason::kNetstackMigration,
+      GracefulShutdownReason::kAndroidNoReason,
   };
 
   // Verify all reasons at once.
@@ -363,13 +365,18 @@ INSTANTIATE_TEST_SUITE_P(WithVariousShutdownReasons, WriteGracefulShutdownReason
                                  static_cast<GracefulShutdownReason>(100u),
                                  "NOT SUPPORTED",
                              },
+                             {
+                                 "AndroidNoReason",
+                                 GracefulShutdownReason::kAndroidNoReason,
+                                 "ANDROID NO REASON",
+                             },
                          })),
                          [](const testing::TestParamInfo<ReasonTestParam>& info) {
                            return info.param.test_name;
                          });
 
 TEST_P(WriteGracefulShutdownReasonsTest, WritesReasons) {
-  const auto param = GetParam();
+  const auto& param = GetParam();
 
   WriteGracefulShutdownInfo(GracefulShutdownAction::kReboot, {param.input_shutdown_reason}, Path());
 

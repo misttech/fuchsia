@@ -118,7 +118,7 @@ async fn test_reboot_no_args() {
         shutdown_options_receiver.await.unwrap(),
         ShutdownOptions {
             action: Some(ShutdownAction::Reboot),
-            reasons: Some(vec![ShutdownReason::UserRequest]),
+            reasons: Some(vec![ShutdownReason::StarnixContainerNoReason]),
             ..Default::default()
         }
     );

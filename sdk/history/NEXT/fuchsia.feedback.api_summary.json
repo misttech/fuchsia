@@ -645,6 +645,11 @@
     },
     {
         "kind": "enum/member",
+        "name": "fuchsia.feedback/RebootReason.ANDROID_NO_REASON",
+        "value": "25"
+    },
+    {
+        "kind": "enum/member",
         "name": "fuchsia.feedback/RebootReason.ANDROID_RESCUE_PARTY",
         "value": "23"
     },

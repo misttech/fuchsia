@@ -79,6 +79,8 @@ std::string LastRebootReasonAnnotation(const FinalShutdownInfo& final_shutdown_i
       return "netstack migration";
     case FuchsiaRebootReason::ANDROID_UNEXPECTED_REASON:
       return "android unexpected reason";
+    case FuchsiaRebootReason::ANDROID_NO_REASON:
+      return "android no reason";
     case FuchsiaRebootReason::ANDROID_RESCUE_PARTY:
       return "android rescue party";
     case FuchsiaRebootReason::ANDROID_CRITICAL_PROCESS_FAILURE:

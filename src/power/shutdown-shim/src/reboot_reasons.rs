@@ -80,6 +80,7 @@ impl ShutdownOptionsWrapper {
                 ShutdownReason::OutOfMemory => RebootReason2::OutOfMemory,
                 ShutdownReason::NetstackMigration => RebootReason2::NetstackMigration,
                 ShutdownReason::AndroidUnexpectedReason => RebootReason2::AndroidUnexpectedReason,
+                ShutdownReason::StarnixContainerNoReason => RebootReason2::UserRequest,
                 ShutdownReason::AndroidRescueParty => RebootReason2::AndroidRescueParty,
                 ShutdownReason::AndroidCriticalProcessFailure => {
                     RebootReason2::AndroidCriticalProcessFailure

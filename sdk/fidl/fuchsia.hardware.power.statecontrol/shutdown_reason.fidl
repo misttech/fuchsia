@@ -47,6 +47,10 @@ type ShutdownReason = flexible enum {
     /// An Android-initiated shutdown reason that Starnix doesn't recognize.
     ANDROID_UNEXPECTED_REASON = 12;
 
+    /// A Starnix container initiated the shutdown but Starnix doesn't know why.
+    @available(added=NEXT)
+    STARNIX_CONTAINER_NO_REASON = 15;
+
     /// Android called for the "RescueParty".
     ANDROID_RESCUE_PARTY = 13;
 

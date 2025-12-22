@@ -34,6 +34,7 @@ enum class GracefulShutdownReason {
   // fully migrated to Netstack3.
   kNetstackMigration,
   kAndroidUnexpectedReason,
+  kAndroidNoReason,
   kAndroidRescueParty,
   kAndroidCriticalProcessFailure,
   kDeveloperRequest,

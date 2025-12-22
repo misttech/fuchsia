@@ -74,6 +74,7 @@ async fn update_android_bootreason(dir: Option<fio::DirectoryProxy>) -> Result<S
         Some(RebootReason::SystemUpdate) => "reboot,ota",
         Some(RebootReason::NetstackMigration) => "reboot,normal",
         Some(RebootReason::AndroidUnexpectedReason) => "reboot,normal",
+        Some(RebootReason::AndroidNoReason) => "reboot",
         Some(RebootReason::AndroidRescueParty) => "reboot,rescueparty",
         Some(RebootReason::AndroidCriticalProcessFailure) => "reboot,userspace_failed",
         Some(RebootReason::__SourceBreaking { .. }) => "reboot,normal",

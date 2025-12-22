@@ -88,6 +88,7 @@ bool FinalGracefulShutdownInfo::IsFatal() const {
     case FinalGracefulShutdownReason::kZbiSwap:
     case FinalGracefulShutdownReason::kNetstackMigration:
     case FinalGracefulShutdownReason::kDeveloperRequest:
+    case FinalGracefulShutdownReason::kAndroidNoReason:
       return false;
   }
 }
@@ -133,6 +134,7 @@ bool FinalGracefulShutdownInfo::IsCrash() const {
     case FinalGracefulShutdownReason::kZbiSwap:
     case FinalGracefulShutdownReason::kNetstackMigration:
     case FinalGracefulShutdownReason::kDeveloperRequest:
+    case FinalGracefulShutdownReason::kAndroidNoReason:
       return false;
   }
 }
@@ -173,6 +175,7 @@ std::optional<bool> FinalGracefulShutdownInfo::OptionallyGraceful() const {
     case FinalGracefulShutdownReason::kZbiSwap:
     case FinalGracefulShutdownReason::kNetstackMigration:
     case FinalGracefulShutdownReason::kAndroidUnexpectedReason:
+    case FinalGracefulShutdownReason::kAndroidNoReason:
     case FinalGracefulShutdownReason::kAndroidRescueParty:
     case FinalGracefulShutdownReason::kAndroidCriticalProcessFailure:
     case FinalGracefulShutdownReason::kDeveloperRequest:
@@ -220,6 +223,7 @@ std::optional<bool> FinalGracefulShutdownInfo::OptionallyPlanned() const {
     case FinalGracefulShutdownReason::kZbiSwap:
     case FinalGracefulShutdownReason::kOutOfMemory:
     case FinalGracefulShutdownReason::kAndroidUnexpectedReason:
+    case FinalGracefulShutdownReason::kAndroidNoReason:
     case FinalGracefulShutdownReason::kAndroidRescueParty:
     case FinalGracefulShutdownReason::kAndroidCriticalProcessFailure:
     case FinalGracefulShutdownReason::kDeveloperRequest:
@@ -286,6 +290,8 @@ std::string FinalGracefulShutdownInfo::ToRebootReasonString() const {
       return "NETSTACK MIGRATION";
     case FinalGracefulShutdownReason::kAndroidUnexpectedReason:
       return "ANDROID UNEXPECTED REASON";
+    case FinalGracefulShutdownReason::kAndroidNoReason:
+      return "ANDROID NO REASON";
     case FinalGracefulShutdownReason::kAndroidRescueParty:
       return "ANDROID RESCUE PARTY";
     case FinalGracefulShutdownReason::kAndroidCriticalProcessFailure:
@@ -353,6 +359,8 @@ std::optional<fuchsia::feedback::RebootReason> FinalGracefulShutdownInfo::ToFidl
       return fuchsia::feedback::RebootReason::NETSTACK_MIGRATION;
     case FinalGracefulShutdownReason::kAndroidUnexpectedReason:
       return fuchsia::feedback::RebootReason::ANDROID_UNEXPECTED_REASON;
+    case FinalGracefulShutdownReason::kAndroidNoReason:
+      return fuchsia::feedback::RebootReason::ANDROID_NO_REASON;
     case FinalGracefulShutdownReason::kAndroidRescueParty:
       return fuchsia::feedback::RebootReason::ANDROID_RESCUE_PARTY;
     case FinalGracefulShutdownReason::kAndroidCriticalProcessFailure:
@@ -420,6 +428,8 @@ cobalt::LastRebootReason FinalGracefulShutdownInfo::ToCobaltLastRebootReason() c
       return cobalt::LastRebootReason::kNetstackMigration;
     case FinalGracefulShutdownReason::kAndroidUnexpectedReason:
       return cobalt::LastRebootReason::kAndroidUnexpectedReason;
+    case FinalGracefulShutdownReason::kAndroidNoReason:
+      return cobalt::LastRebootReason::kAndroidNoReason;
     case FinalGracefulShutdownReason::kAndroidRescueParty:
       return cobalt::LastRebootReason::kAndroidRescueParty;
     case FinalGracefulShutdownReason::kAndroidCriticalProcessFailure:
@@ -466,6 +476,7 @@ std::string FinalGracefulShutdownInfo::ToCrashProgramName() const {
     case FinalGracefulShutdownReason::kOutOfMemory:
       return "system";
     case FinalGracefulShutdownReason::kAndroidUnexpectedReason:
+    case FinalGracefulShutdownReason::kAndroidNoReason:
     case FinalGracefulShutdownReason::kAndroidRescueParty:
     case FinalGracefulShutdownReason::kAndroidCriticalProcessFailure:
       return "android";
@@ -545,6 +556,7 @@ std::string FinalGracefulShutdownInfo::ToCrashSignature(
     case FinalGracefulShutdownReason::kFdr:
     case FinalGracefulShutdownReason::kZbiSwap:
     case FinalGracefulShutdownReason::kNetstackMigration:
+    case FinalGracefulShutdownReason::kAndroidNoReason:
     case FinalGracefulShutdownReason::kDeveloperRequest:
       FX_LOGS(FATAL) << "Not expecting a crash for reason: " << ToRebootReasonString();
       return "FATAL ERROR";
@@ -592,6 +604,8 @@ FinalGracefulShutdownInfo::ConsolidateGracefulShutdownReasons(
         return FinalGracefulShutdownReason::kNetstackMigration;
       case GracefulShutdownReason::kAndroidUnexpectedReason:
         return FinalGracefulShutdownReason::kAndroidUnexpectedReason;
+      case GracefulShutdownReason::kAndroidNoReason:
+        return FinalGracefulShutdownReason::kAndroidNoReason;
       case GracefulShutdownReason::kAndroidRescueParty:
         return FinalGracefulShutdownReason::kAndroidRescueParty;
       case GracefulShutdownReason::kAndroidCriticalProcessFailure:

@@ -159,6 +159,7 @@ class FinalGracefulShutdownInfo : public FinalShutdownInfo {
     kOutOfMemory,
     kNetstackMigration,
     kAndroidUnexpectedReason,
+    kAndroidNoReason,
     kAndroidRescueParty,
     kAndroidCriticalProcessFailure,
     kDeveloperRequest,
