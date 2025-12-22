@@ -72,10 +72,7 @@ icu_rustc_library("lib") {
     "//third_party/rust_crates:thiserror",
   ]
 
-  test_configs = [
-    "//build/config/rust:codegen_units_16",
-    "//build/config/lto:no-lto",
-  ]
+  test_configs = [ "//build/config/lto:no-lto" ]
 
   test_deps = [
     "//sdk/fidl/fuchsia.stash:fuchsia.stash_rust",
@@ -116,9 +113,6 @@ icu_rustc_library("lib") {
     "src/tests/environment_tests.rs",
     "src/tests/service_configuration_tests.rs",
   ]
-
-  # TODO(https://fxbug.dev/42166874): Split this library up to be less monolithic.
-  # If building this massive crate runs into OOM issues on RBE, `disable_rbe = true`
 
   configs -= [ "//build/config/rust/lints:allow_unused_results" ]
   configs += [ "//build/config/rust/lints:clippy_warn_all" ]
