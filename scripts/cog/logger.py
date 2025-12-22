@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import functools
 import logging
 import sys
 from typing import Any, Optional
@@ -59,9 +60,13 @@ def init_logger(level: int = logging.INFO, colors: bool = False) -> None:
 
     formatter: logging.Formatter
     if colors:
-        formatter = ColoredFormatter("%(levelname)s: %(message)s")
+        formatter = ColoredFormatter(
+            "%(levelname)s: [%(filename)s:%(lineno)d] %(message)s"
+        )
     else:
-        formatter = logging.Formatter("%(levelname)s: %(message)s")
+        formatter = logging.Formatter(
+            "%(levelname)s: [%(filename)s:%(lineno)d] %(message)s"
+        )
 
     handler.setFormatter(formatter)
     logger.addHandler(handler)
@@ -89,16 +94,37 @@ def log(level: int, *args: Any, **kwargs: Any) -> None:
     # Needed to make mypy happy
     assert _logger
 
+    # The stacklevel keyword argument allows wrappers to adjust which stack frame
+    # is reported as the source of the log message. We default to 1, which refers
+    # to the caller of this function. We add 1 to this value later to account
+    # for this wrapper function.
+    stacklevel = kwargs.pop("stacklevel", 1)
+
     sep = kwargs.get("sep", " ")
     message = sep.join(map(str, args))
 
     if level == _EXCEPTION:
-        _logger.exception(message)
+        _logger.exception(message, stacklevel=stacklevel + 1)
         return
 
-    _logger.log(level, message)
+    _logger.log(level, message, stacklevel=stacklevel + 1)
 
 
+def _add_stacklevel(func: Any) -> Any:
+    """Decorator to increase the stacklevel for log helper functions."""
+
+    @functools.wraps(func)
+    def wrapper(*args: Any, **kwargs: Any) -> Any:
+        # Increase stacklevel so that the log message is attributed to the caller
+        # of the helper function, rather than the helper itself. We add 2 to
+        # account for this wrapper and the decorated log helper.
+        kwargs["stacklevel"] = kwargs.get("stacklevel", 1) + 2
+        return func(*args, **kwargs)
+
+    return wrapper
+
+
+@_add_stacklevel
 def log_info(*args: Any, **kwargs: Any) -> None:
     """
     Logs a message with level INFO.
@@ -112,6 +138,7 @@ def log_info(*args: Any, **kwargs: Any) -> None:
     log(logging.INFO, *args, **kwargs)
 
 
+@_add_stacklevel
 def log_debug(*args: Any, **kwargs: Any) -> None:
     """
     Logs a message with level DEBUG.
@@ -125,6 +152,7 @@ def log_debug(*args: Any, **kwargs: Any) -> None:
     log(logging.DEBUG, *args, **kwargs)
 
 
+@_add_stacklevel
 def log_warn(*args: Any, **kwargs: Any) -> None:
     """
     Logs a message with level WARNING.
@@ -138,6 +166,7 @@ def log_warn(*args: Any, **kwargs: Any) -> None:
     log(logging.WARNING, *args, **kwargs)
 
 
+@_add_stacklevel
 def log_error(*args: Any, **kwargs: Any) -> None:
     """
     Logs a message with level ERROR.
@@ -151,6 +180,7 @@ def log_error(*args: Any, **kwargs: Any) -> None:
     log(logging.ERROR, *args, **kwargs)
 
 
+@_add_stacklevel
 def log_critical(*args: Any, **kwargs: Any) -> None:
     """
     Logs a message with level CRITICAL.
@@ -164,6 +194,7 @@ def log_critical(*args: Any, **kwargs: Any) -> None:
     log(logging.CRITICAL, *args, **kwargs)
 
 
+@_add_stacklevel
 def log_exception(*args: Any, **kwargs: Any) -> None:
     """
     Logs a message with level ERROR, including exception information.
