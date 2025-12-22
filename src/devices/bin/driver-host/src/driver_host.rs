@@ -240,12 +240,6 @@ impl DriverHost {
         let (driver, start_args) =
             Driver::load(&self.env, start_args).await.map_err(Status::into_raw)?;
         let (shutdown_signaler, shutdown_event) = oneshot::channel();
-        driver
-            .start(start_args, request, shutdown_signaler, &self.scope)
-            .await
-            .map_err(Status::into_raw)?;
-        update_process_name(driver.get_url(), self.drivers.borrow().len());
-        self.drivers.borrow_mut().insert(WeakDriver(Arc::downgrade(&driver)));
 
         // We carry a weak reference to avoid accidentally extending the lifetime of the
         // driver_host.
@@ -277,6 +271,14 @@ impl DriverHost {
                 }
             }
         });
+
+        driver
+            .start(start_args, request, shutdown_signaler, &self.scope)
+            .await
+            .map_err(Status::into_raw)?;
+        update_process_name(driver.get_url(), self.drivers.borrow().len());
+        self.drivers.borrow_mut().insert(WeakDriver(Arc::downgrade(&driver)));
+
         Ok(())
     }
 
@@ -290,12 +292,6 @@ impl DriverHost {
             .await
             .map_err(Status::into_raw)?;
         let (shutdown_signaler, shutdown_event) = oneshot::channel();
-        driver
-            .start(start_args, request, shutdown_signaler, &self.scope)
-            .await
-            .map_err(Status::into_raw)?;
-        update_process_name(driver.get_url(), self.drivers.borrow().len());
-        self.drivers.borrow_mut().insert(WeakDriver(Arc::downgrade(&driver)));
 
         // We carry a weak reference to avoid accidentally extending the lifetime of the
         // driver_host.
@@ -317,6 +313,13 @@ impl DriverHost {
                 }
             }
         });
+
+        driver
+            .start(start_args, request, shutdown_signaler, &self.scope)
+            .await
+            .map_err(Status::into_raw)?;
+        update_process_name(driver.get_url(), self.drivers.borrow().len());
+        self.drivers.borrow_mut().insert(WeakDriver(Arc::downgrade(&driver)));
         Ok(())
     }
 
