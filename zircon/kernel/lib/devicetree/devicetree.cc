@@ -202,7 +202,7 @@ std::optional<RegProperty> RegProperty::Create(uint32_t num_address_cells, uint3
   if (num_address_cells > 2 || num_size_cells > 2) {
     return std::nullopt;
   }
-  if (bytes.size() % (num_address_cells + num_size_cells)) {
+  if (bytes.size() % (sizeof(uint32_t) * (num_address_cells + num_size_cells))) {
     return std::nullopt;
   }
   return RegProperty(bytes, num_address_cells, num_size_cells);

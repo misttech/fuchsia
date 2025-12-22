@@ -1008,6 +1008,32 @@ TEST(RegisterBlockPropertyTest, AccessorsMultipleAddressCells) {
   EXPECT_EQ(*(*reg_block)[2].size(), 0xBEEF);
 }
 
+TEST(RegisterBlockPropertyTest, IncorrectCellCountIsNullopt) {
+  // Malformed: missing one cell (24 bytes).
+  RegisterBlockPropertyBuilder register_block{.address_cells = 1, .size_cells = 1};
+  register_block.Add(0xACED, 0xD1CE);
+  register_block.Add(0xDEED, 0xFEE7);
+  register_block.Add(0xDEAD, 0xBEEF);
+
+  // Expecting one reg element that is 4 cells (32 bytes).
+  PropertyBuilder parent_builder;
+  parent_builder.Add("#address-cells", 2);
+  parent_builder.Add("#size-cells", 2);
+  auto parent_props = parent_builder.Build();
+  devicetree::PropertyDecoder parent_decoder(parent_props);
+
+  PropertyBuilder builder;
+  builder.Add("reg", register_block.property_value);
+  auto props = builder.Build();
+  devicetree::PropertyDecoder decoder(&parent_decoder, props);
+
+  auto reg = decoder.FindProperty("reg");
+  ASSERT_TRUE(reg);
+
+  auto reg_block = reg->AsReg(decoder);
+  ASSERT_FALSE(reg_block);
+}
+
 TEST(RangesPropertyTest, Accessors) {
   struct Range {
     std::array<uint32_t, 2> child;
