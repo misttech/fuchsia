@@ -1,0 +1,16 @@
+# Copyright 2025 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+# These lists provide a level of indirection that allows
+# product_bundle_test_groups to optionally exclude some tests. This
+# could be a permanent exclusion because the product is missing
+# features for the test to pass, or a temporary exclusion because a
+# bug is causing the test to fail too often.
+
+core_tests_for_fyi = [
+  "//src/connectivity/wlan/tests/core:create_ap_iface_with_null_mac_test",
+  "//src/connectivity/wlan/tests/core:create_ap_iface_with_particular_mac_test",
+  "//src/connectivity/wlan/tests/core:create_client_iface_with_null_mac_test",
+  "//src/connectivity/wlan/tests/core:create_client_iface_with_particular_mac_test",
+]
