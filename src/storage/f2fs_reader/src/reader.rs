@@ -63,6 +63,7 @@ pub struct F2fsReader {
     device: Arc<dyn Device>,
     superblock: SuperBlock,     // 1kb, points at checkpoints
     checkpoint: CheckpointPack, // pair of a/b segments (alternating versions)
+    cp_start_block: u32,        // Start block of the active checkpoint
     nat: Option<Nat>,
 
     // A simple key store.
@@ -89,58 +90,93 @@ impl F2fsReader {
     }
 
     pub async fn open_device(device: Arc<dyn Device>) -> Result<Self, Error> {
-        let (superblock, checkpoint) =
+        let (superblock, checkpoints) =
             match Self::try_from_superblock(device.as_ref(), SUPERBLOCK_OFFSET).await {
                 Ok(x) => x,
                 Err(e) => Self::try_from_superblock(device.as_ref(), SUPERBLOCK_OFFSET * 2)
                     .await
                     .map_err(|_| e)?,
             };
-        let mut this = Self {
-            device,
-            superblock,
-            checkpoint,
-            nat: None,
-            keys: HashMap::with_capacity(16),
-            cache: BlockCache::new(1024, BLOCK_SIZE),
-        };
-        let nat_journal = this.read_nat_journal().await?;
-        this.nat = Some(Nat::new(
-            this.superblock.nat_blkaddr,
-            this.checkpoint.nat_bitmap.clone(),
-            nat_journal,
-        ));
-        Ok(this)
+
+        let mut last_error = anyhow!("No checkpoints found");
+
+        for (checkpoint, cp_start_block) in checkpoints {
+            let mut this = Self {
+                device: device.clone(),
+                superblock,
+                checkpoint,
+                cp_start_block,
+                nat: None,
+                keys: HashMap::with_capacity(16),
+                cache: BlockCache::new(1024, BLOCK_SIZE),
+            };
+
+            match this.read_nat_journal().await {
+                Ok(nat_journal) => {
+                    this.nat = Some(Nat::new(
+                        this.superblock.nat_blkaddr,
+                        this.checkpoint.nat_bitmap.clone(),
+                        nat_journal,
+                    ));
+                    return Ok(this);
+                }
+                Err(e) => {
+                    let ver = this.checkpoint.header.checkpoint_ver;
+                    log::warn!(
+                        "Failed to initialize from checkpoint (Ver {} at {}): {}. Trying next.",
+                        ver,
+                        cp_start_block,
+                        e
+                    );
+                    last_error = e;
+                    // Continue loop to try next checkpoint
+                }
+            }
+        }
+
+        Err(last_error)
     }
 
     async fn try_from_superblock(
         device: &dyn Device,
         superblock_offset: u64,
-    ) -> Result<(SuperBlock, CheckpointPack), Error> {
+    ) -> Result<(SuperBlock, Vec<(CheckpointPack, u32)>), Error> {
         let superblock = SuperBlock::read_from_device(device, superblock_offset).await?;
         let checkpoint_addr = superblock.cp_blkaddr;
         let checkpoint_a_offset = BLOCK_SIZE as u64 * checkpoint_addr as u64;
         let checkpoint_b_offset = checkpoint_a_offset + SEGMENT_SIZE as u64;
-        // There are two checkpoint packs in consecutive segments.
-        let checkpoint = match (
-            CheckpointPack::read_from_device(device, checkpoint_a_offset).await,
-            CheckpointPack::read_from_device(device, checkpoint_b_offset).await,
-        ) {
-            (Ok(a), Ok(b)) => {
-                Ok(if a.header.checkpoint_ver > b.header.checkpoint_ver { a } else { b })
-            }
-            (Ok(a), Err(_b)) => Ok(a),
-            (Err(_), Ok(b)) => Ok(b),
-            (Err(a), Err(_b)) => Err(a),
-        }?;
+
+        let mut checkpoints = Vec::new();
+
+        // Read both checkpoints and collect valid ones with their block addresses
+        if let Ok(cp) = CheckpointPack::read_from_device(device, checkpoint_a_offset).await {
+            checkpoints.push((cp, checkpoint_addr));
+        }
+        if let Ok(cp) = CheckpointPack::read_from_device(device, checkpoint_b_offset).await {
+            checkpoints.push((cp, checkpoint_addr + BLOCKS_PER_SEGMENT as u32));
+        }
+
+        if checkpoints.is_empty() {
+            bail!("Failed to read any valid checkpoint");
+        }
+
+        // Sort by version descending (newest first)
+        checkpoints.sort_by(|(a, _), (b, _)| {
+            let va = a.header.checkpoint_ver;
+            let vb = b.header.checkpoint_ver;
+            vb.cmp(&va)
+        });
 
         // Min metadata segment count is 1 superblock, 1 ssa, (ckpt + sit + nat) * 2
         const MIN_METADATA_SEGMENT_COUNT: u32 = 8;
 
-        // Make sure the metadata fits on the device (according to the superblock)
+        // Use newest for validation
+        let first_cp = &checkpoints[0].0;
+
+        // Make sure the metadata fits on the device
         let metadata_segment_count = superblock.segment_count_sit
             + superblock.segment_count_nat
-            + checkpoint.header.rsvd_segment_count
+            + first_cp.header.rsvd_segment_count
             + superblock.segment_count_ssa
             + superblock.segment_count_ckpt;
         ensure!(
@@ -148,32 +184,35 @@ impl F2fsReader {
                 && metadata_segment_count >= MIN_METADATA_SEGMENT_COUNT,
             "Bad segment counts in checkpoint"
         );
-        Ok((superblock, checkpoint))
+        Ok((superblock, checkpoints))
     }
 
     /// Returns the block address that the checkpoint starts at.
     pub fn checkpoint_start_addr(&self) -> u32 {
-        self.superblock.cp_blkaddr
-            + if self.checkpoint.header.checkpoint_ver % 2 == 1 {
-                0
-            } else {
-                BLOCKS_PER_SEGMENT as u32
-            }
+        self.cp_start_block
     }
 
     fn nat(&self) -> &Nat {
         self.nat.as_ref().unwrap()
+    }
+    /// Returns the absolute block address of the summary block (default or compact).
+    /// handles CP_ORPHAN_PRESENT_FLAG for compact summaries.
+    pub fn summary_block_addr(&self) -> u32 {
+        let mut offset = self.checkpoint.header.cp_pack_start_sum;
+        if self.checkpoint.header.ckpt_flags & CP_ORPHAN_PRESENT_FLAG != 0 {
+            // If orphans are present, they occupy the block at `cp_pack_start_sum`.
+            // The actual summary block follows it.
+            offset += 1;
+        }
+        self.checkpoint_start_addr() + offset
     }
 
     async fn read_nat_journal(&mut self) -> Result<HashMap<u32, RawNatEntry>, Error> {
         if self.checkpoint.header.ckpt_flags & CKPT_FLAG_COMPACT_SUMMARY != 0 {
             // The "compact summary" feature packs NAT/SIT/summary into one block.
             // The NAT journal entries come first.
-            let block = self
-                .read_raw_block(
-                    self.checkpoint_start_addr() + self.checkpoint.header.cp_pack_start_sum,
-                )
-                .await?;
+            let summary_addr = self.summary_block_addr();
+            let block = self.read_raw_block(summary_addr).await?;
             let n_nats = u16::read_from_bytes(&block.as_slice()[..2]).unwrap();
             let nat_journal = NatJournal::read_from_bytes(
                 &block.as_slice()[2..2 + std::mem::size_of::<NatJournal>()],
@@ -181,20 +220,21 @@ impl F2fsReader {
             .unwrap();
             ensure!(
                 (n_nats as usize) <= nat_journal.entries.len(),
-                "n_nats larger than block size"
+                "n_nats {} larger than block size {}",
+                n_nats,
+                nat_journal.entries.len()
             );
             Ok(HashMap::from_iter(
                 nat_journal.entries[..n_nats as usize].into_iter().map(|e| (e.ino, e.entry)),
             ))
         } else {
             // Read the default summary block location from the "hot data" segment.
-            let blk_addr = if self.checkpoint.header.ckpt_flags & CKPT_FLAG_UNMOUNT != 0 {
-                self.checkpoint_start_addr() + self.checkpoint.header.cp_pack_total_block_count - 5
-            } else {
-                self.checkpoint_start_addr() + self.checkpoint.header.cp_pack_total_block_count - 2
-            };
-            let block = self.read_raw_block(blk_addr).await?;
-            let summary = SummaryBlock::read_from_bytes(block.as_slice()).unwrap();
+            // If orphans are present, `summary_block_addr` automatically skips the orphan block.
+            let summary_addr = self.summary_block_addr();
+            let block = self.read_raw_block(summary_addr).await?;
+
+            let summary = SummaryBlock::read_from_bytes(block.as_slice())
+                .map_err(|_| anyhow!("Failed to parse SummaryBlock"))?;
             ensure!(summary.footer.entry_type == 0u8, "sum_type != 0 in summary footer");
             let actual_checksum = f2fs_crc32(F2FS_MAGIC, &block.as_slice()[..BLOCK_SIZE - 4]);
             let expected_checksum = summary.footer.check_sum;
@@ -705,5 +745,25 @@ mod test {
         let symlink_inode = Inode::try_load(&f2fs, symlink_ino).await.expect("load symlink inode");
         let symlink = f2fs.read_symlink(&symlink_inode).expect("read_symlink");
         assert_eq!(*symlink, *b"inlined");
+    }
+
+    #[fuchsia::test]
+    async fn test_summary_block_addr() {
+        let device = open_test_image("/pkg/testdata/f2fs.img.zst");
+        let mut f2fs = F2fsReader::open_device(Arc::new(device)).await.expect("open ok");
+
+        // Case 1: No Orphan Flag
+        f2fs.checkpoint.header.ckpt_flags = 0; // Clear all
+        f2fs.checkpoint.header.cp_pack_start_sum = 100;
+        let base = f2fs.checkpoint_start_addr();
+        assert_eq!(f2fs.summary_block_addr(), base + 100);
+
+        // Case 2: With Orphan Flag
+        f2fs.checkpoint.header.ckpt_flags = CP_ORPHAN_PRESENT_FLAG;
+        assert_eq!(f2fs.summary_block_addr(), base + 100 + 1);
+
+        // Case 3: Compact Summary + Orphan (Real crash case)
+        f2fs.checkpoint.header.ckpt_flags = CP_ORPHAN_PRESENT_FLAG | CKPT_FLAG_COMPACT_SUMMARY;
+        assert_eq!(f2fs.summary_block_addr(), base + 100 + 1);
     }
 }
