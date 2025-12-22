@@ -2,6 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// TODO(https://github.com/rust-lang/rust-clippy/issues/13885) Upstream issue
+// Clippy lints on the license comment above.
+#![allow(clippy::literal_string_with_formatting_args)]
+
 use std::collections::HashSet;
 use std::rc::Rc;
 
@@ -619,6 +623,7 @@ impl<T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilder<T>
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn register_controllers<F, D>(
         components: &HashSet<SettingType>,
         service_context: Rc<ServiceContext>,
@@ -683,7 +688,7 @@ impl<T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilder<T>
         if components.contains(&SettingType::Display) {
             let result = if controller_flags.contains(&ControllerFlag::ExternalBrightnessControl) {
                 settings_display::setup_display_api::<D, ExternalBrightnessControl>(
-                    &*service_context,
+                    &service_context,
                     Rc::clone(&device_storage_factory),
                     SettingValuePublisher::new(setting_value_tx.clone()),
                     UsagePublisher::new(usage_event_tx.clone(), Rc::clone(&listener_logger)),
@@ -692,7 +697,7 @@ impl<T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilder<T>
                 .await
             } else {
                 settings_display::setup_display_api::<D, ()>(
-                    &*service_context,
+                    &service_context,
                     Rc::clone(&device_storage_factory),
                     SettingValuePublisher::new(setting_value_tx.clone()),
                     UsagePublisher::new(usage_event_tx.clone(), Rc::clone(&listener_logger)),
@@ -729,7 +734,7 @@ impl<T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilder<T>
 
         if components.contains(&SettingType::FactoryReset) {
             match settings_factory_reset::setup_factory_reset_api(
-                &*service_context,
+                &service_context,
                 Rc::clone(&device_storage_factory),
                 SettingValuePublisher::new(setting_value_tx.clone()),
                 UsagePublisher::new(usage_event_tx.clone(), Rc::clone(&listener_logger)),
@@ -908,6 +913,7 @@ struct AgentResult {
     inspect_usages_agent: Option<agent::inspect::usage_counts::SettingTypeUsageInspectAgent>,
 }
 
+#[allow(clippy::too_many_arguments)]
 fn create_agents(
     settings: &HashSet<SettingType>,
     agent_types: HashSet<AgentType>,
@@ -999,16 +1005,16 @@ async fn run_agents(agent_result: AgentResult, service_context: Rc<ServiceContex
         inspect_usages_agent.initialize();
     }
 
-    if let Some(camera_watcher_agent) = agent_result.camera_watcher_agent {
-        if let Err(e) = camera_watcher_agent.spawn(&*service_context).await {
-            log::error!("Failed to spawn camera watcher agent: {e:?}");
-        }
+    if let Some(camera_watcher_agent) = agent_result.camera_watcher_agent
+        && let Err(e) = camera_watcher_agent.spawn(&service_context).await
+    {
+        log::error!("Failed to spawn camera watcher agent: {e:?}");
     }
 
-    if let Some(media_buttons_agent) = agent_result.media_buttons_agent {
-        if let Err(e) = media_buttons_agent.spawn(&*service_context).await {
-            log::error!("Failed to spawn camera watcher agent: {e:?}");
-        }
+    if let Some(media_buttons_agent) = agent_result.media_buttons_agent
+        && let Err(e) = media_buttons_agent.spawn(&service_context).await
+    {
+        log::error!("Failed to spawn media buttons agent: {e:?}");
     }
 }
 

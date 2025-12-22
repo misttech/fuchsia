@@ -67,7 +67,7 @@ impl VolumeChangeHandler {
                     .map(|stream| (stream.stream_type, stream.user_volume_level))
                     .collect()
             })
-            .unwrap_or_else(|| HashMap::new());
+            .unwrap_or_else(HashMap::new);
 
         fasync::Task::local(async move {
             let mut handler = Self {

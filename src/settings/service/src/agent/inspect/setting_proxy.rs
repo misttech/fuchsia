@@ -707,6 +707,8 @@ mod tests {
         let _ = done_rx.next().await;
 
         clock::mock::set(MonotonicInstant::from_nanos(200));
+        // For direction arg.
+        #[allow(clippy::literal_string_with_formatting_args)]
         let _ = tx.unbounded_send(UsageEvent {
             setting: "Display",
             request_type: RequestType::Set,

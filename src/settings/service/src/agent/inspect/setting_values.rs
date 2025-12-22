@@ -80,6 +80,8 @@ pub(crate) struct SettingValuesInspectAgent {
 }
 
 impl SettingValuesInspectAgent {
+    // Returns Self along with receiver.
+    #[allow(clippy::new_ret_no_self)]
     pub(crate) fn new(
         settings: Vec<String>,
         rx: UnboundedReceiver<(&'static str, String)>,

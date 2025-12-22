@@ -531,6 +531,7 @@ mod tests {
             if stream.stream_type == AudioStreamType::Media {
                 stream.user_volume_level = expected_info.0;
                 stream.user_volume_muted = expected_info.1;
+                log::info!("test");
             }
         }
 

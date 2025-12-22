@@ -295,12 +295,12 @@ async fn match_background_to_media(audio_request_tx: Option<UnboundedSender<Audi
         }];
         if let Some(audio_request_tx) = audio_request_tx {
             let (tx, rx) = oneshot::channel();
-            if audio_request_tx.unbounded_send(AudioRequest::Set(streams, id, tx)).is_ok() {
-                if let Err(e) = rx.await {
-                    log::error!(
-                        "Failed to play bluetooth connection sound after waiting for request response: {e:?}"
-                    );
-                }
+            if audio_request_tx.unbounded_send(AudioRequest::Set(streams, id, tx)).is_ok()
+                && let Err(e) = rx.await
+            {
+                log::error!(
+                    "Failed to play bluetooth connection sound after waiting for request response: {e:?}"
+                );
             }
         }
     }

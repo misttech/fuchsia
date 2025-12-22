@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::migration::{FileGenerator, Migration, MigrationError};
-use anyhow::{anyhow, Context};
+use anyhow::{Context, anyhow};
 use fidl::endpoints::create_proxy;
 use fidl::persist;
 use fidl_fuchsia_io::FileProxy;
@@ -58,10 +58,7 @@ impl Migration for V1653667208LightMigration {
                 {
                     MigrationError::DiskFull
                 }
-                _ => Err::<(), _>(file_error)
-                    .context("unable to open new_file: {:?}")
-                    .unwrap_err()
-                    .into(),
+                _ => Err::<(), _>(file_error).context("Creating new file").unwrap_err().into(),
             })?;
         let encoded = persist(&light_groups).context("failed to serialize new fidl format")?;
         let _ = file.write(&encoded).await.context("file to call write")?.map_err(|e| {
