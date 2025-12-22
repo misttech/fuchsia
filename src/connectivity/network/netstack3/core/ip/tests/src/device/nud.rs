@@ -155,7 +155,7 @@ fn neighbor_advertisement_without_target_link_layer_address_option_should_be_pro
 ) {
     set_logger_for_test();
 
-    let TestAddrs { local_mac, remote_mac, .. } = Ipv6::TEST_ADDRS;
+    let TestAddrs { local_mac, remote_mac, local_ip, .. } = Ipv6::TEST_ADDRS;
 
     let mut ctx = FakeCtx::default();
     let device_id = ctx
@@ -186,6 +186,12 @@ fn neighbor_advertisement_without_target_link_layer_address_option_should_be_pro
             },
         )
         .unwrap();
+    // Add our local IP to the interface so that we can receive NDP messages
+    // that are unicasted to us.
+    ctx.core_api()
+        .device_ip::<Ipv6>()
+        .add_ip_addr_subnet(&device_id, AddrSubnet::new(*local_ip, 128).unwrap())
+        .expect("add local_ip should succeed");
     assert_eq!(ctx.test_api().set_ip_device_enabled::<Ipv6>(&device_id, true), false);
 
     // First receive a Neighbor Solicitation; this should result in a neighbor being
@@ -222,7 +228,7 @@ fn neighbor_advertisement_without_target_link_layer_address_option_should_be_pro
     // layer address option. Because we have a cached link-layer address, we should
     // still process the advertisement (updating the neighbor to REACHABLE).
     let src_ip = remote_mac.to_ipv6_link_local().addr();
-    let dst_ip = Ipv6::ALL_NODES_LINK_LOCAL_MULTICAST_ADDRESS.get();
+    let dst_ip = *local_ip;
     ctx.test_api().receive_ip_packet::<Ipv6, _>(
         &device_id,
         Some(FrameDestination::Multicast),
@@ -524,8 +530,7 @@ fn ns_response(target_addr: Ipv6Addr, dad_transmits: Option<NonZeroU16>, expect_
 
 #[test]
 fn ipv6_integration() {
-    let TestAddrs { local_mac, remote_mac, local_ip: _, remote_ip: _, subnet: _ } =
-        Ipv6::TEST_ADDRS;
+    let TestAddrs { local_mac, remote_mac, local_ip, remote_ip: _, subnet: _ } = Ipv6::TEST_ADDRS;
 
     let mut ctx = FakeCtx::default();
     let eth_device_id =
@@ -554,11 +559,17 @@ fn ipv6_integration() {
             },
         )
         .unwrap();
+    // Add our local IP to the interface so that we can receive NDP messages
+    // that are unicasted to us.
+    ctx.core_api()
+        .device_ip::<Ipv6>()
+        .add_ip_addr_subnet(&device_id, AddrSubnet::new(*local_ip, 128).unwrap())
+        .expect("add local_ip should succeed");
     assert_eq!(ctx.test_api().set_ip_device_enabled::<Ipv6>(&device_id, true), false);
 
     let neighbor_ip = remote_mac.to_ipv6_link_local().addr();
     let neighbor_ip: UnicastAddr<_> = neighbor_ip.into_addr();
-    let dst_ip = Ipv6::ALL_NODES_LINK_LOCAL_MULTICAST_ADDRESS.get();
+    let dst_ip = *local_ip;
     let na_packet_buf = |solicited_flag, override_flag| {
         icmp::testutil::neighbor_advertisement_ip_packet(
             *neighbor_ip,

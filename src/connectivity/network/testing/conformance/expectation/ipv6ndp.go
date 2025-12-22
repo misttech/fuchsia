@@ -414,7 +414,7 @@ var ipv6ndpExpectationsNS3 map[AnvlCaseNumber]outcome.Outcome = map[AnvlCaseNumb
 	{24, 3}:  Pass,
 	{24, 4}:  Pass,
 	{24, 5}:  Pass,
-	{24, 6}:  Fail,
+	{24, 6}:  Pass,
 	{24, 7}:  Pass,
 	{24, 8}:  Pass,
 	{24, 9}:  Pass,

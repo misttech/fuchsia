@@ -15,8 +15,8 @@ use net_types::ip::{
     Ipv6SourceAddr, Mtu, SubnetError,
 };
 use net_types::{
-    LinkLocalAddress, LinkLocalUnicastAddr, MulticastAddress, NonMulticastAddr, SpecifiedAddr,
-    UnicastAddr, Witness,
+    LinkLocalAddress, LinkLocalUnicastAddr, MulticastAddr, MulticastAddress, NonMulticastAddr,
+    SpecifiedAddr, UnicastAddr, Witness,
 };
 use netstack3_base::socket::{AddrIsMappedError, SocketIpAddr, SocketIpAddrExt as _};
 use netstack3_base::sync::Mutex;
@@ -1491,16 +1491,34 @@ fn receive_ndp_packet<
 
             let target_address = p.message().target_address();
 
+            // As Per RFC 4861, section 7.1.2:
+            //   A node MUST silently discard any received Neighbor
+            //   Advertisement messages that do not satisfy all of the following
+            //   validity checks:
+            //   [...]
+            //     - Target Address is not a multicast address.
             let target_address = match UnicastAddr::new(*target_address) {
                 Some(a) => a,
                 None => {
-                    trace!(
+                    debug!(
                         "dropping NA from {} with non-unicast target={:?}",
                         src_ip, target_address
                     );
                     return;
                 }
             };
+            //   [...]
+            //     - If the IP Destination Address is a multicast address the
+            //       Solicited flag is zero.
+            if let Some(dst_ip) = MulticastAddr::new(dst_ip.get())
+                && p.message().solicited_flag()
+            {
+                debug!(
+                    "dropping NA from {} with solicited flag and multicast dst {}",
+                    src_ip, dst_ip
+                );
+                return;
+            }
 
             core_ctx.counters().rx.neighbor_advertisement.increment();
 

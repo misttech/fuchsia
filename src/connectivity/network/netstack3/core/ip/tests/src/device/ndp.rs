@@ -1056,16 +1056,43 @@ fn test_receiving_neighbor_solicitation_validity_check(
     );
 }
 
-#[test_case(TEST_ADDRS_V6.remote_ip.get(), REQUIRED_NDP_IP_PACKET_HOP_LIMIT, true; "accepted")]
-#[test_case(Ipv6::UNSPECIFIED_ADDRESS, REQUIRED_NDP_IP_PACKET_HOP_LIMIT, true;
-    "accepted_with_unspecified_source")]
-#[test_case(TEST_ADDRS_V6.remote_ip.get(), 3, false; "rejected_with_invalid_hop_limit")]
+#[test_case(
+    TEST_ADDRS_V6.remote_ip.get(),
+    TEST_ADDRS_V6.local_ip.get(),
+    REQUIRED_NDP_IP_PACKET_HOP_LIMIT,
+    false,
+    true; "accepted")]
+#[test_case(
+    Ipv6::UNSPECIFIED_ADDRESS,
+    TEST_ADDRS_V6.local_ip.get(),
+    REQUIRED_NDP_IP_PACKET_HOP_LIMIT,
+    false,
+    true; "accepted_with_unspecified_source")]
+#[test_case(
+    TEST_ADDRS_V6.remote_ip.get(),
+    TEST_ADDRS_V6.local_ip.get(),
+    3,
+    false,
+    false; "rejected_with_invalid_hop_limit")]
+#[test_case(
+    TEST_ADDRS_V6.remote_ip.get(),
+    TARGET_ADDR.to_solicited_node_address().get(),
+    REQUIRED_NDP_IP_PACKET_HOP_LIMIT,
+    false,
+    true; "accepted_with_multicast_dst")]
+#[test_case(
+    TEST_ADDRS_V6.remote_ip.get(),
+    TARGET_ADDR.to_solicited_node_address().get(),
+    REQUIRED_NDP_IP_PACKET_HOP_LIMIT,
+    true,
+    false; "rejected_with_multicast_dst_and_solicited_flag")]
 fn test_receiving_neighbor_advertisement_validity_check(
     src_ip: Ipv6Addr,
+    dst_ip: Ipv6Addr,
     hop_limit: u8,
+    solicited_flag: bool,
     expect_delivered: bool,
 ) {
-    let dst_ip = Ipv6::TEST_ADDRS.local_ip.get();
     let icmpv6_packet_buf = EmptyBuf
         .wrap_in(IcmpPacketBuilder::<Ipv6, _>::new(
             src_ip,
@@ -1073,7 +1100,7 @@ fn test_receiving_neighbor_advertisement_validity_check(
             IcmpZeroCode,
             NeighborAdvertisement::new(
                 false, // router_flag
-                false, // solicited_flag
+                solicited_flag,
                 false, // override_flag
                 TARGET_ADDR,
             ),
@@ -1085,6 +1112,8 @@ fn test_receiving_neighbor_advertisement_validity_check(
 
     let (mut ctx, device_ids) = FakeCtxBuilder::with_addrs(Ipv6::TEST_ADDRS).build();
     let device_id: DeviceId<_> = device_ids[0].clone().into();
+
+    ctx.test_api().join_ip_multicast(&device_id, TARGET_ADDR.to_solicited_node_address());
 
     ctx.test_api().receive_ip_packet::<Ipv6, _>(
         &device_id,
