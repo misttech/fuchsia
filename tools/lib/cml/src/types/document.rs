@@ -9,13 +9,14 @@ use crate::types::capability::{ContextCapability, ParsedCapability};
 use crate::types::child::{ContextChild, ParsedChild};
 use crate::types::collection::{ContextCollection, ParsedCollection};
 use crate::types::common::*;
+use crate::types::environment::{ContextEnvironment, ParsedEnvironment};
 use crate::types::expose::{ContextExpose, ParsedExpose};
 use crate::types::offer::{ContextOffer, ParsedOffer};
 use crate::types::program::{ContextProgram, ParsedProgram};
 use crate::types::r#use::{ContextUse, ParsedUse};
 use crate::{
     Canonicalize, Capability, CapabilityClause, CapabilityFromRef, Child, Collection, ConfigKey,
-    ConfigValueType, Environment, Error, Expose, Location, Offer, Program, Use,
+    ConfigValueType, Environment, Error, Expose, Location, Offer, Program, Use, merge_spanned_vec,
 };
 
 pub use cm_types::{
@@ -1023,18 +1024,6 @@ impl ValueMap for IndexMap<String, Value> {
     }
 }
 
-macro_rules! merge_spanned_vec {
-    ($self:expr, $other:expr, $field:ident) => {
-        if let Some(other_vec) = $other.$field.take() {
-            if let Some(self_vec) = $self.$field.as_mut() {
-                self_vec.extend(other_vec);
-            } else {
-                $self.$field = Some(other_vec);
-            }
-        }
-    };
-}
-
 /// # Component manifest (`.cml`) reference
 ///
 /// A `.cml` file contains a single spanned json5 object literal with the keys below.
@@ -1044,6 +1033,7 @@ pub struct ParsedDocument {
     pub program: Option<Spanned<ParsedProgram>>,
     pub children: Option<Spanned<Vec<Spanned<ParsedChild>>>>,
     pub collections: Option<Spanned<Vec<Spanned<ParsedCollection>>>>,
+    pub environments: Option<Spanned<Vec<Spanned<ParsedEnvironment>>>>,
     pub capabilities: Option<Spanned<Vec<Spanned<ParsedCapability>>>>,
     pub r#use: Option<Spanned<Vec<Spanned<ParsedUse>>>>,
     pub expose: Option<Spanned<Vec<Spanned<ParsedExpose>>>>,
@@ -1055,6 +1045,7 @@ pub struct DocumentContext {
     pub program: Option<ContextSpanned<ContextProgram>>,
     pub children: Option<Vec<ContextSpanned<ContextChild>>>,
     pub collections: Option<Vec<ContextSpanned<ContextCollection>>>,
+    pub environments: Option<Vec<ContextSpanned<ContextEnvironment>>>,
     pub capabilities: Option<Vec<ContextSpanned<ContextCapability>>>,
     pub r#use: Option<Vec<ContextSpanned<ContextUse>>>,
     pub expose: Option<Vec<ContextSpanned<ContextExpose>>>,
@@ -1070,6 +1061,7 @@ impl DocumentContext {
         self.merge_program(&mut other, include_path)?;
         merge_spanned_vec!(self, other, children);
         merge_spanned_vec!(self, other, collections);
+        self.merge_environment(&mut other)?;
         merge_spanned_vec!(self, other, capabilities);
         merge_spanned_vec!(self, other, r#use);
         merge_spanned_vec!(self, other, expose);
@@ -1298,6 +1290,48 @@ impl DocumentContext {
         }
         Ok(())
     }
+
+    fn merge_environment(&mut self, other: &mut DocumentContext) -> Result<(), Error> {
+        if other.environments.is_none() {
+            return Ok(());
+        }
+        if self.environments.is_none() {
+            self.environments = Some(vec![]);
+        }
+
+        let merged_results = {
+            let my_environments = self.environments.as_mut().unwrap();
+            let other_environments = other.environments.as_mut().unwrap();
+
+            my_environments.sort_by(|x, y| x.value.name.value.cmp(&y.value.name.value));
+            other_environments.sort_by(|x, y| x.value.name.value.cmp(&y.value.name.value));
+
+            let all_environments =
+                my_environments.drain(..).merge_by(other_environments.drain(..), |x, y| {
+                    x.value.name.value <= y.value.name.value
+                });
+
+            let groups = all_environments.chunk_by(|e| e.value.name.value.clone());
+
+            let mut results = vec![];
+            for (_name_value, group) in &groups {
+                let mut group_iter = group.into_iter();
+                let first_wrapper = group_iter.next().expect("chunk cannot be empty");
+                let first_origin = first_wrapper.origin.clone();
+                let mut merged_inner = first_wrapper.value;
+
+                for subsequent in group_iter {
+                    merged_inner.merge_from(subsequent.value)?;
+                }
+
+                results.push(ContextSpanned { value: merged_inner, origin: first_origin });
+            }
+            results
+        };
+
+        self.environments = Some(merged_results);
+        Ok(())
+    }
 }
 
 pub fn convert_parsed_to_document(
@@ -1309,6 +1343,7 @@ pub fn convert_parsed_to_document(
         program: hydrate_opt(parsed_doc.program, &file_arc, buffer)?,
         children: hydrate_list(parsed_doc.children, &file_arc, buffer)?,
         collections: hydrate_list(parsed_doc.collections, &file_arc, buffer)?,
+        environments: hydrate_list(parsed_doc.environments, &file_arc, buffer)?,
         capabilities: hydrate_list(parsed_doc.capabilities, &file_arc, buffer)?,
         r#use: hydrate_list(parsed_doc.r#use, &file_arc, buffer)?,
         expose: hydrate_list(parsed_doc.expose, &file_arc, buffer)?,

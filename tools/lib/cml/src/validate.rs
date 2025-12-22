@@ -8,7 +8,9 @@ use crate::types::capability_id::CapabilityId;
 use crate::types::child::{Child, ContextChild};
 use crate::types::collection::{Collection, ContextCollection};
 use crate::types::document::{Document, DocumentContext};
-use crate::types::environment::{Environment, EnvironmentExtends, RegistrationRef};
+use crate::types::environment::{
+    ContextEnvironment, Environment, EnvironmentExtends, RegistrationRef,
+};
 use crate::types::expose::{ContextExpose, Expose, ExposeFromRef, ExposeToRef};
 use crate::types::offer::{
     ContextOffer, Offer, OfferFromRef, OfferToAllCapability, OfferToRef, TargetAvailability,
@@ -113,9 +115,11 @@ struct ValidationContextV2<'a> {
     _capability_requirements: &'a CapabilityRequirements<'a>,
     all_children: HashSet<&'a BorrowedName>,
     all_collections: HashSet<&'a BorrowedName>,
+    all_runners: HashSet<&'a BorrowedName>,
     all_storages: HashMap<&'a BorrowedName, &'a CapabilityFromRef>,
     all_capability_names: HashSet<&'a BorrowedName>,
     all_dictionaries: HashMap<&'a BorrowedName, &'a ContextCapability>,
+    all_protocols: HashSet<&'a BorrowedName>,
 }
 
 impl<'a> ValidationContextV2<'a> {
@@ -124,25 +128,49 @@ impl<'a> ValidationContextV2<'a> {
         features: &'a FeatureSet,
         _capability_requirements: &'a CapabilityRequirements<'a>,
     ) -> Self {
+        let all_children = document.all_children_names();
+        let all_collections = document.all_collection_names();
+        let all_storages = document.all_storage_with_sources();
+        let all_capability_names = document.all_capability_names();
+        let all_dictionaries = document.all_dictionaries();
+
+        let all_runners = document
+            .capabilities
+            .as_ref()
+            .map(|caps| {
+                caps.iter()
+                    .filter(|c| c.value.runner.is_some())
+                    .flat_map(|c| c.value.names())
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let all_protocols = document
+            .capabilities
+            .as_ref()
+            .map(|caps| {
+                caps.iter()
+                    .filter(|c| c.value.protocol.is_some())
+                    .flat_map(|c| c.value.names())
+                    .collect()
+            })
+            .unwrap_or_default();
+
         ValidationContextV2 {
             document,
             features,
             _capability_requirements,
-            all_children: HashSet::new(),
-            all_collections: HashSet::new(),
-            all_storages: HashMap::new(),
-            all_capability_names: HashSet::new(),
-            all_dictionaries: HashMap::new(),
+            all_children,
+            all_collections,
+            all_runners,
+            all_storages,
+            all_capability_names,
+            all_dictionaries,
+            all_protocols,
         }
     }
 
     fn validate(&mut self) -> Result<(), Error> {
-        self.all_children = self.document.all_children_names();
-        self.all_collections = self.document.all_collection_names();
-        self.all_storages = self.document.all_storage_with_sources();
-        self.all_capability_names = self.document.all_capability_names();
-        self.all_dictionaries = self.document.all_dictionaries();
-
         if let Some(children) = self.document.children.as_ref() {
             for child in children {
                 self.validate_child(&child)?;
@@ -244,6 +272,11 @@ impl<'a> ValidationContextV2<'a> {
             }
         }
 
+        if let Some(environments) = self.document.environments.as_ref() {
+            for environment in environments {
+                self.validate_environment(&environment)?;
+            }
+        }
         Ok(())
     }
 
@@ -1053,6 +1086,104 @@ which is almost certainly a mistake: {}",
         Ok(())
     }
 
+    fn validate_environment(
+        &mut self,
+        environment_wrapper: &'a ContextSpanned<ContextEnvironment>,
+    ) -> Result<(), Error> {
+        let environment = &environment_wrapper.value;
+
+        if let Some(extends_span) = &environment.extends {
+            if extends_span.value == EnvironmentExtends::None {
+                if environment.stop_timeout_ms.is_none() {
+                    return Err(Error::validate_context(
+                        "'__stop_timeout_ms' must be provided if the environment extends 'none'",
+                        Some(extends_span.origin.clone()),
+                    ));
+                }
+            }
+        }
+
+        if let Some(runners) = &environment.runners {
+            let mut used_names = HashMap::new();
+            for registration_span in runners {
+                let reg = &registration_span.value;
+
+                let (target_name, name_origin) = if let Some(as_span) = &reg.r#as {
+                    (&as_span.value, &as_span.origin)
+                } else {
+                    (&reg.runner.value, &reg.runner.origin)
+                };
+
+                if let Some((prev_runner, prev_origin)) =
+                    used_names.insert(target_name, (&reg.runner.value, name_origin))
+                {
+                    return Err(Error::validate_contexts(
+                        format!(
+                            "Duplicate runners registered under name \"{}\": \"{}\" and \"{}\".",
+                            target_name, &reg.runner.value, prev_runner
+                        ),
+                        vec![prev_origin.clone(), name_origin.clone()],
+                    ));
+                }
+
+                // Ensure runner exists if source is 'self'
+                let runner_ref: &BorrowedName = reg.runner.value.as_ref();
+                if reg.from.value == RegistrationRef::Self_
+                    && !self.all_runners.contains(runner_ref)
+                {
+                    return Err(Error::validate_context(
+                        format!(
+                            "Runner \"{}\" is not defined in the root \"runners\" section",
+                            &reg.runner.value
+                        ),
+                        Some(reg.runner.origin.clone()),
+                    ));
+                }
+
+                self.validate_component_child_ref(
+                    &format!("\"{}\" runner source", &reg.runner.value),
+                    &AnyRef::from(&reg.from.value),
+                    Some(&reg.from.origin),
+                )?;
+            }
+        }
+
+        if let Some(resolvers) = &environment.resolvers {
+            let mut used_schemes = HashMap::new();
+            for registration_span in resolvers {
+                let reg = &registration_span.value;
+
+                if let Some((prev_resolver, prev_origin)) = used_schemes
+                    .insert(&reg.scheme.value, (&reg.resolver.value, &reg.scheme.origin))
+                {
+                    return Err(Error::validate_contexts(
+                        format!(
+                            "scheme \"{}\" for resolver \"{}\" is already registered to \"{}\".",
+                            &reg.scheme.value, &reg.resolver.value, prev_resolver
+                        ),
+                        vec![prev_origin.clone(), reg.scheme.origin.clone()],
+                    ));
+                }
+
+                self.validate_component_child_ref(
+                    &format!("\"{}\" resolver source", &reg.resolver.value),
+                    &AnyRef::from(&reg.from.value),
+                    Some(&reg.from.origin),
+                )?;
+            }
+        }
+
+        if let Some(debug_capabilities) = &environment.debug {
+            for debug_span in debug_capabilities {
+                let debug = &debug_span.value;
+                self.protocol_from_self_checker(debug).validate("registered as debug")?;
+                self.validate_from_clause("debug", debug, &None, &None, debug.from.origin.clone())?;
+            }
+        }
+
+        Ok(())
+    }
+
     /// Validates that directory rights for all route types are valid, i.e that it does not
     /// contain duplicate rights.
     fn validate_directory_rights(
@@ -1307,6 +1438,26 @@ which is almost certainly a mistake: {}",
             ));
         }
         Ok(())
+    }
+
+    fn protocol_from_self_checker<'b>(
+        &'b self,
+        input: &'b (impl ContextCapabilityClause + FromClauseContext),
+    ) -> RouteFromSelfCheckerV2<'b> {
+        RouteFromSelfCheckerV2 {
+            capability_name: input.protocol().map(|spanned| {
+                spanned.map(|one_or_many| match one_or_many {
+                    OneOrMany::One(name) => OneOrMany::One(AnyRef::from(name)),
+                    OneOrMany::Many(names) => {
+                        OneOrMany::Many(names.iter().cloned().map(AnyRef::from).collect())
+                    }
+                })
+            }),
+            from: input.from_(),
+            container: &self.all_protocols,
+            all_dictionaries: &self.all_dictionaries,
+            typename: "protocol",
+        }
     }
 }
 
@@ -2873,6 +3024,63 @@ impl<'a> RouteFromSelfChecker<'a> {
                                 "{typename} \"{capability}\" is {operand} from \"self/{path}\", so \
                                 \"{first_segment}\" must be declared as a \"dictionary\" in \"capabilities\"",
                             )));
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+struct RouteFromSelfCheckerV2<'a> {
+    capability_name: Option<ContextSpanned<OneOrMany<AnyRef<'a>>>>,
+
+    from: ContextSpanned<OneOrMany<AnyRef<'a>>>,
+
+    container: &'a dyn Container,
+
+    all_dictionaries: &'a HashMap<&'a BorrowedName, &'a ContextCapability>,
+
+    typename: &'static str,
+}
+
+impl<'a> RouteFromSelfCheckerV2<'a> {
+    fn validate(self, operand: &'static str) -> Result<(), Error> {
+        let Self { capability_name, from, container, all_dictionaries, typename } = self;
+
+        let Some(capability_span) = capability_name else {
+            return Ok(());
+        };
+
+        for capability in capability_span.value.iter() {
+            let AnyRef::Named(name) = capability else {
+                continue;
+            };
+
+            for from_ref in from.value.iter() {
+                match from_ref {
+                    AnyRef::Self_ if !container.contains(name) => {
+                        return Err(Error::validate_context(
+                            format!(
+                                "{typename} \"{name}\" is {operand} from self, so it \
+                                must be declared as a \"{typename}\" in \"capabilities\"",
+                            ),
+                            Some(capability_span.origin.clone()),
+                        ));
+                    }
+
+                    AnyRef::Dictionary(DictionaryRef { root: RootDictionaryRef::Self_, path }) => {
+                        let first_segment = path.iter_segments().next().unwrap();
+                        if !all_dictionaries.contains_key(first_segment) {
+                            return Err(Error::validate_context(
+                                format!(
+                                    "{typename} \"{capability}\" is {operand} from \"self/{path}\", so \
+                                    \"{first_segment}\" must be declared as a \"dictionary\" in \"capabilities\"",
+                                ),
+                                Some(from.origin.clone()),
+                            ));
                         }
                     }
                     _ => {}
@@ -4923,6 +5131,194 @@ mod tests {
                     file:  Arc::new("test.cml".into()),
                     location: Location {line: 11, column: 34}}]
         ),
+
+        test_cml_children_bad_environment(
+            json!({
+                "children": [
+                    {
+                        "name": "logger",
+                        "url": "fuchsia-pkg://fuchsia.com/logger/stable#meta/logger.cm",
+                        "environment": "parent",
+                    }
+                ]
+            }),
+            Err(Error::Parse { err, .. }) if err.starts_with("invalid value: string \"parent\", expected \"#<environment-name>\"")
+        ),
+        test_cml_children_environment(
+            json!({
+                "children": [
+                    {
+                        "name": "logger",
+                        "url": "fuchsia-pkg://fuchsia.com/logger/stable#meta/logger.cm",
+                        "environment": "#foo_env",
+                    }
+                ],
+                "environments": [
+                    {
+                        "name": "foo_env",
+                    }
+                ]
+            }),
+            Ok(())
+        ),
+        test_cml_collections_bad_environment(
+            json!({
+                "collections": [
+                    {
+                        "name": "tests",
+                        "durability": "transient",
+                        "environment": "parent",
+                    }
+                ]
+            }),
+            Err(Error::Parse { err, .. }) if err.starts_with("invalid value: string \"parent\", expected \"#<environment-name>\"")
+        ),
+        test_cml_collections_environment(
+            json!({
+                "collections": [
+                    {
+                        "name": "tests",
+                        "durability": "transient",
+                        "environment": "#foo_env",
+                    }
+                ],
+                "environments": [
+                    {
+                        "name": "foo_env",
+                    }
+                ]
+            }),
+            Ok(())
+        ),
+
+        test_cml_environment_timeout(
+            json!({
+                "environments": [
+                    {
+                        "name": "foo_env",
+                        "__stop_timeout_ms": 10000,
+                    }
+                ]
+            }),
+            Ok(())
+        ),
+        test_cml_environment_bad_timeout(
+            json!({
+                "environments": [
+                    {
+                        "name": "foo_env",
+                        "__stop_timeout_ms": -3,
+                    }
+                ]
+            }),
+            Err(Error::Parse { err, .. }) if err.starts_with("invalid value: integer `-3`, expected an unsigned 32-bit integer")
+        ),
+
+        test_cml_environment_debug(
+            json!({
+                "capabilities": [
+                    {
+                        "protocol": "fuchsia.logger.Log2",
+                    },
+                ],
+                "environments": [
+                    {
+                        "name": "foo_env",
+                        "extends": "realm",
+                        "debug": [
+                            {
+                                "protocol": "fuchsia.module.Module",
+                                "from": "#modular",
+                            },
+                            {
+                                "protocol": "fuchsia.logger.OtherLog",
+                                "from": "parent",
+                            },
+                            {
+                                "protocol": "fuchsia.logger.Log2",
+                                "from": "self",
+                            },
+                        ]
+                    }
+                ],
+                "children": [
+                    {
+                        "name": "modular",
+                        "url": "fuchsia-pkg://fuchsia.com/modular#meta/modular.cm"
+                    },
+                ],
+            }),
+           Ok(())
+        ),
+
+        test_cml_environment_debug_missing_capability(
+            json!({
+                "environments": [
+                    {
+                        "name": "foo_env",
+                        "extends": "realm",
+                        "debug": [
+                            {
+                                "protocol": "fuchsia.module.Module",
+                                "from": "#modular",
+                            },
+                            {
+                                "protocol": "fuchsia.logger.OtherLog",
+                                "from": "parent",
+                            },
+                            {
+                                "protocol": "fuchsia.logger.Log2",
+                                "from": "self",
+                            },
+                        ]
+                    }
+                ],
+                "children": [
+                    {
+                        "name": "modular",
+                        "url": "fuchsia-pkg://fuchsia.com/modular#meta/modular.cm"
+                    },
+                ],
+            }),
+            Err(Error::ValidateContext { err, .. }) if &err == "protocol \"fuchsia.logger.Log2\" is registered as debug from self, so it must be declared as a \"protocol\" in \"capabilities\""
+        ),
+
+        test_cml_environment_invalid_from_child(
+            json!({
+                "capabilities": [
+                    {
+                        "protocol": "fuchsia.logger.Log2",
+                    },
+                ],
+                "environments": [
+                    {
+                        "name": "foo_env",
+                        "extends": "realm",
+                        "debug": [
+                            {
+                                "protocol": "fuchsia.module.Module",
+                                "from": "#missing",
+                            },
+                            {
+                                "protocol": "fuchsia.logger.OtherLog",
+                                "from": "parent",
+                            },
+                            {
+                                "protocol": "fuchsia.logger.Log2",
+                                "from": "self",
+                            },
+                        ]
+                    }
+                ],
+                "children": [
+                    {
+                        "name": "modular",
+                        "url": "fuchsia-pkg://fuchsia.com/modular#meta/modular.cm"
+                    },
+                ],
+            }),
+            Err(Error::ValidateContext { err, .. }) if &err == "\"debug\" source \"#missing\" does not appear in \"children\" or \"capabilities\""
+        ),
     }
 
     test_validate_cml! {
@@ -6856,7 +7252,7 @@ mod tests {
         ),
 
 
-        test_cml_children_bad_environment(
+        test_cml_children_bad_environment_no_span(
             json!({
                 "children": [
                     {
@@ -6868,7 +7264,7 @@ mod tests {
             }),
             Err(Error::Parse { err, .. }) if &err == "invalid value: string \"parent\", expected \"#<environment-name>\""
         ),
-        test_cml_children_environment(
+        test_cml_children_environment_no_span(
             json!({
                 "children": [
                     {
@@ -6885,7 +7281,7 @@ mod tests {
             }),
             Ok(())
         ),
-        test_cml_collections_bad_environment(
+        test_cml_collections_bad_environment_no_span(
             json!({
                 "collections": [
                     {
@@ -6897,7 +7293,7 @@ mod tests {
             }),
             Err(Error::Parse { err, .. }) if &err == "invalid value: string \"parent\", expected \"#<environment-name>\""
         ),
-        test_cml_collections_environment(
+        test_cml_collections_environment_no_span(
             json!({
                 "collections": [
                     {
@@ -6915,7 +7311,7 @@ mod tests {
             Ok(())
         ),
 
-        test_cml_environment_timeout(
+        test_cml_environment_timeout_no_span(
             json!({
                 "environments": [
                     {
@@ -6927,7 +7323,7 @@ mod tests {
             Ok(())
         ),
 
-        test_cml_environment_bad_timeout(
+        test_cml_environment_bad_timeout_no_span(
             json!({
                 "environments": [
                     {
@@ -6938,7 +7334,7 @@ mod tests {
             }),
             Err(Error::Parse { err, .. }) if &err == "invalid value: integer `-3`, expected an unsigned 32-bit integer"
         ),
-        test_cml_environment_debug(
+        test_cml_environment_debug_no_span(
             json!({
                 "capabilities": [
                     {
@@ -6974,7 +7370,7 @@ mod tests {
             }),
            Ok(())
         ),
-        test_cml_environment_debug_missing_capability(
+        test_cml_environment_debug_missing_capability_no_span(
             json!({
                 "environments": [
                     {
@@ -7005,7 +7401,7 @@ mod tests {
             }),
             Err(Error::Validate { err, .. }) if &err == "protocol \"fuchsia.logger.Log2\" is registered as debug from self, so it must be declared as a \"protocol\" in \"capabilities\""
         ),
-        test_cml_environment_invalid_from_child(
+        test_cml_environment_invalid_from_child_no_span(
             json!({
                 "capabilities": [
                     {

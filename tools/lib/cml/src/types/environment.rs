@@ -2,18 +2,24 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::{AnyRef, AsClause, CapabilityClause, Error, FromClause, OfferFromRef, PathClause};
-
 use crate::one_or_many::{OneOrMany, option_one_or_many_as_ref};
+use crate::types::common::*;
+use crate::{
+    AnyRef, AsClause, CapabilityClause, Error, FromClause, FromClauseContext, OfferFromRef,
+    PathClause, merge_spanned_vec,
+};
 pub use cm_types::{
     Availability, BorrowedName, BoundedName, DeliveryType, DependencyType, HandleType, Name,
     OnTerminate, ParseError, Path, RelativePath, StartupMode, StorageId, Url,
 };
 use cml_macro::Reference;
+use json_spanned_value::Spanned;
 use reference_doc::ReferenceDoc;
 use serde::{Deserialize, Serialize, de};
 
 use std::fmt;
+use std::path::PathBuf;
+use std::sync::Arc;
 
 /// Example:
 ///
@@ -220,6 +226,41 @@ pub struct RunnerRegistration {
     pub r#as: Option<Name>,
 }
 
+#[derive(Deserialize, Debug, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct ParsedRunnerRegistration {
+    pub runner: Spanned<Name>,
+    pub from: Spanned<RegistrationRef>,
+    pub r#as: Option<Spanned<Name>>,
+}
+
+impl Hydrate for ParsedRunnerRegistration {
+    type Output = ContextRunnerRegistration;
+
+    fn hydrate(self, file: &Arc<PathBuf>, buffer: &String) -> Result<Self::Output, Error> {
+        let runner = hydrate_simple(self.runner, file, buffer);
+
+        let r#as = hydrate_opt_simple(self.r#as, file, buffer);
+
+        let from = hydrate_simple(self.from, file, buffer);
+
+        Ok(ContextRunnerRegistration { runner, r#as, from })
+    }
+}
+
+#[derive(Debug, PartialEq)]
+pub struct ContextRunnerRegistration {
+    pub runner: ContextSpanned<Name>,
+    pub from: ContextSpanned<RegistrationRef>,
+    pub r#as: Option<ContextSpanned<Name>>,
+}
+
+impl FromClause for RunnerRegistration {
+    fn from_(&self) -> OneOrMany<AnyRef<'_>> {
+        OneOrMany::One(AnyRef::from(&self.from))
+    }
+}
+
 #[derive(Deserialize, Debug, PartialEq, ReferenceDoc, Serialize)]
 #[serde(deny_unknown_fields)]
 #[reference_doc(fields_as = "list")]
@@ -240,10 +281,32 @@ pub struct ResolverRegistration {
     pub scheme: cm_types::UrlScheme,
 }
 
-impl FromClause for RunnerRegistration {
-    fn from_(&self) -> OneOrMany<AnyRef<'_>> {
-        OneOrMany::One(AnyRef::from(&self.from))
+#[derive(Deserialize, Debug, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct ParsedResolverRegistration {
+    pub resolver: Spanned<Name>,
+    pub from: Spanned<RegistrationRef>,
+    pub scheme: Spanned<cm_types::UrlScheme>,
+}
+
+impl Hydrate for ParsedResolverRegistration {
+    type Output = ContextResolverRegistration;
+
+    fn hydrate(self, file: &Arc<PathBuf>, buffer: &String) -> Result<Self::Output, Error> {
+        let resolver = hydrate_simple(self.resolver, file, buffer);
+
+        let from = hydrate_simple(self.from, file, buffer);
+        let scheme = hydrate_simple(self.scheme, file, buffer);
+
+        Ok(ContextResolverRegistration { resolver, from, scheme })
     }
+}
+
+#[derive(Debug, PartialEq, Serialize)]
+pub struct ContextResolverRegistration {
+    pub resolver: ContextSpanned<Name>,
+    pub from: ContextSpanned<RegistrationRef>,
+    pub scheme: ContextSpanned<cm_types::UrlScheme>,
 }
 
 impl FromClause for ResolverRegistration {
@@ -270,6 +333,82 @@ pub struct DebugRegistration {
     /// available as to clients. Disallowed if `protocol` is an array.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub r#as: Option<Name>,
+}
+
+#[derive(Deserialize, Debug, Clone, PartialEq)]
+pub struct ParsedDebugRegistration {
+    pub protocol: Option<Spanned<OneOrMany<Name>>>,
+    pub from: Spanned<OfferFromRef>,
+    pub r#as: Option<Spanned<Name>>,
+}
+
+impl Hydrate for ParsedDebugRegistration {
+    type Output = ContextDebugRegistration;
+
+    fn hydrate(self, file: &Arc<PathBuf>, buffer: &String) -> Result<Self::Output, Error> {
+        let protocol = hydrate_opt_simple(self.protocol, file, buffer);
+
+        let from = hydrate_simple(self.from, file, buffer);
+        let r#as = hydrate_opt_simple(self.r#as, file, buffer);
+
+        Ok(ContextDebugRegistration { protocol, from, r#as })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ContextDebugRegistration {
+    pub protocol: Option<ContextSpanned<OneOrMany<Name>>>,
+    pub from: ContextSpanned<OfferFromRef>,
+    pub r#as: Option<ContextSpanned<Name>>,
+}
+
+impl FromClauseContext for ContextDebugRegistration {
+    fn from_(&self) -> ContextSpanned<OneOrMany<AnyRef<'_>>> {
+        let origin = self.from.origin.clone();
+        let value = OneOrMany::One(AnyRef::from(&self.from.value));
+
+        ContextSpanned { value, origin }
+    }
+}
+
+impl ContextCapabilityClause for ContextDebugRegistration {
+    fn service(&self) -> Option<ContextSpanned<OneOrMany<&BorrowedName>>> {
+        None
+    }
+    fn protocol(&self) -> Option<ContextSpanned<OneOrMany<&BorrowedName>>> {
+        option_one_or_many_as_ref_context(&self.protocol)
+    }
+    fn directory(&self) -> Option<ContextSpanned<OneOrMany<&BorrowedName>>> {
+        None
+    }
+    fn storage(&self) -> Option<ContextSpanned<OneOrMany<&BorrowedName>>> {
+        None
+    }
+    fn runner(&self) -> Option<ContextSpanned<OneOrMany<&BorrowedName>>> {
+        None
+    }
+    fn resolver(&self) -> Option<ContextSpanned<OneOrMany<&BorrowedName>>> {
+        None
+    }
+    fn event_stream(&self) -> Option<ContextSpanned<OneOrMany<&BorrowedName>>> {
+        None
+    }
+    fn dictionary(&self) -> Option<ContextSpanned<OneOrMany<&BorrowedName>>> {
+        None
+    }
+    fn config(&self) -> Option<ContextSpanned<OneOrMany<&BorrowedName>>> {
+        None
+    }
+
+    fn decl_type(&self) -> &'static str {
+        "debug"
+    }
+    fn supported(&self) -> &[&'static str] {
+        &["service", "protocol"]
+    }
+    fn are_many_names_allowed(&self) -> bool {
+        ["protocol"].contains(&self.capability_type(None).unwrap())
+    }
 }
 
 impl AsClause for DebugRegistration {
@@ -344,5 +483,86 @@ impl CapabilityClause for DebugRegistration {
     }
     fn are_many_names_allowed(&self) -> bool {
         ["protocol"].contains(&self.capability_type().unwrap())
+    }
+}
+
+#[derive(Deserialize, Debug, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct ParsedEnvironment {
+    pub name: Spanned<Name>,
+    pub extends: Option<Spanned<EnvironmentExtends>>,
+    pub runners: Option<Spanned<Vec<Spanned<ParsedRunnerRegistration>>>>,
+    pub resolvers: Option<Spanned<Vec<Spanned<ParsedResolverRegistration>>>>,
+    pub debug: Option<Spanned<Vec<Spanned<ParsedDebugRegistration>>>>,
+    #[serde(rename = "__stop_timeout_ms")]
+    pub stop_timeout_ms: Option<Spanned<StopTimeoutMs>>,
+}
+
+impl Hydrate for ParsedEnvironment {
+    type Output = ContextEnvironment;
+
+    fn hydrate(self, file: &Arc<PathBuf>, buffer: &String) -> Result<Self::Output, Error> {
+        let name = hydrate_simple(self.name, file, buffer);
+
+        let extends = hydrate_opt_simple(self.extends, file, buffer);
+        let stop_timeout_ms = hydrate_opt_simple(self.stop_timeout_ms, file, buffer);
+
+        let runners = hydrate_list(self.runners, file, buffer)?;
+        let resolvers = hydrate_list(self.resolvers, file, buffer)?;
+        let debug = hydrate_list(self.debug, file, buffer)?;
+
+        Ok(ContextEnvironment { name, extends, runners, resolvers, debug, stop_timeout_ms })
+    }
+}
+
+#[derive(Debug, PartialEq)]
+pub struct ContextEnvironment {
+    pub name: ContextSpanned<Name>,
+    pub extends: Option<ContextSpanned<EnvironmentExtends>>,
+    pub runners: Option<Vec<ContextSpanned<ContextRunnerRegistration>>>,
+    pub resolvers: Option<Vec<ContextSpanned<ContextResolverRegistration>>>,
+    pub debug: Option<Vec<ContextSpanned<ContextDebugRegistration>>>,
+    pub stop_timeout_ms: Option<ContextSpanned<StopTimeoutMs>>,
+}
+
+impl ContextEnvironment {
+    pub fn merge_from(&mut self, mut other: Self) -> Result<(), Error> {
+        if let Some(other_extends) = other.extends.take() {
+            if let Some(my_extends) = &self.extends {
+                if my_extends.value != other_extends.value {
+                    return Err(Error::merge(
+                        format!(
+                            "Conflicting 'extends' field in environment '{}': found '{:?}' and '{:?}'",
+                            self.name.value, my_extends.value, other_extends.value
+                        ),
+                        Some(other_extends.origin),
+                    ));
+                }
+            } else {
+                self.extends = Some(other_extends);
+            }
+        }
+
+        if let Some(other_timeout) = other.stop_timeout_ms.take() {
+            if let Some(my_timeout) = &self.stop_timeout_ms {
+                if my_timeout.value != other_timeout.value {
+                    return Err(Error::merge(
+                        format!(
+                            "Conflicting 'stop_timeout_ms' in environment '{}'",
+                            self.name.value
+                        ),
+                        Some(other_timeout.origin),
+                    ));
+                }
+            } else {
+                self.stop_timeout_ms = Some(other_timeout);
+            }
+        }
+
+        merge_spanned_vec!(self, other, runners);
+        merge_spanned_vec!(self, other, resolvers);
+        merge_spanned_vec!(self, other, debug);
+
+        Ok(())
     }
 }

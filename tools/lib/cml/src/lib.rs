@@ -267,6 +267,18 @@ impl<'a> From<&'a DictionaryRef> for AnyRef<'a> {
     }
 }
 
+impl<'a> From<&'a Name> for AnyRef<'a> {
+    fn from(name: &'a Name) -> Self {
+        AnyRef::Named(name.as_ref())
+    }
+}
+
+impl<'a> From<&'a BorrowedName> for AnyRef<'a> {
+    fn from(name: &'a BorrowedName) -> Self {
+        AnyRef::Named(name)
+    }
+}
+
 impl FromStr for DictionaryRef {
     type Err = ParseError;
 

@@ -25,6 +25,15 @@ pub struct ContextSpanned<T> {
     pub origin: Origin,
 }
 
+impl<T> ContextSpanned<T> {
+    pub fn map<U, F>(self, f: F) -> ContextSpanned<U>
+    where
+        F: FnOnce(T) -> U,
+    {
+        ContextSpanned { value: f(self.value), origin: self.origin }
+    }
+}
+
 impl<T> Serialize for ContextSpanned<T>
 where
     T: Serialize,
@@ -244,4 +253,17 @@ pub trait ContextCapabilityClause {
 
     fn decl_type(&self) -> &'static str;
     fn supported(&self) -> &[&'static str];
+}
+
+#[macro_export]
+macro_rules! merge_spanned_vec {
+    ($self:expr, $other:expr, $field:ident) => {
+        if let Some(other_vec) = $other.$field.take() {
+            if let Some(self_vec) = $self.$field.as_mut() {
+                self_vec.extend(other_vec);
+            } else {
+                $self.$field = Some(other_vec);
+            }
+        }
+    };
 }
