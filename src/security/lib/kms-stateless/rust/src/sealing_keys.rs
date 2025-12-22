@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use fidl_fuchsia_security_keymint::{CreateError, SealError, UnsealError};
+use fidl_fuchsia_security_keymint::{CreateError, SealError, UnsealError, UpgradeError};
 use fuchsia_component::client;
 
 #[derive(Debug, thiserror::Error)]
@@ -17,6 +17,8 @@ pub enum SealingKeysError {
     Seal(SealError),
     #[error("Failed to unseal {0:?}")]
     Unseal(UnsealError),
+    #[error("Failed to upgrade {0:?}")]
+    Upgrade(UpgradeError),
 }
 
 impl From<CreateError> for SealingKeysError {
@@ -34,6 +36,12 @@ impl From<SealError> for SealingKeysError {
 impl From<UnsealError> for SealingKeysError {
     fn from(e: UnsealError) -> Self {
         Self::Unseal(e)
+    }
+}
+
+impl From<UpgradeError> for SealingKeysError {
+    fn from(e: UpgradeError) -> Self {
+        Self::Upgrade(e)
     }
 }
 
@@ -77,6 +85,21 @@ pub async fn unseal(
 ) -> Result<Vec<u8>, SealingKeysError> {
     client::connect_to_protocol::<fidl_fuchsia_security_keymint::SealingKeysMarker>()?
         .unseal(key_info, key_blob, sealed_secret)
+        .await?
+        .map_err(Into::into)
+}
+
+/// Convenience wrapper around fuchsia.security.keymint/SealingKeys::UpgradeSealingKey()
+///
+/// See //sdk/fidl/fuchsia.security.keymint/sealing_keys.fidl for more details.
+///
+/// Requires the caller to have the capability fuchsia.security.keymint.SealingKeys
+pub async fn upgrade_sealing_key(
+    key_info: &[u8],
+    key_blob: &[u8],
+) -> Result<Vec<u8>, SealingKeysError> {
+    client::connect_to_protocol::<fidl_fuchsia_security_keymint::SealingKeysMarker>()?
+        .upgrade_sealing_key(key_info, key_blob)
         .await?
         .map_err(Into::into)
 }
