@@ -133,10 +133,6 @@ impl ServiceConfiguration {
     fn set_fidl_interfaces(&mut self, interfaces: HashSet<fidl::Interface>) {
         self.fidl_interfaces = interfaces;
     }
-
-    fn set_controller_flags(&mut self, controller_flags: HashSet<ControllerFlag>) {
-        self.controller_flags = controller_flags;
-    }
 }
 
 /// Environment is handed back when an environment is spawned from the
@@ -180,16 +176,13 @@ pub struct EnvironmentBuilder<T: StorageFactory<Storage = DeviceStorage>> {
     configuration: Option<ServiceConfiguration>,
     storage_factory: Rc<T>,
     generate_service: Option<GenerateService>,
-    settings: Vec<SettingType>,
     active_listener_inspect_logger: Option<Rc<ListenerInspectLogger>>,
     storage_dir: Option<DirectoryProxy>,
     store_proxy: Option<StoreProxy>,
-    fidl_storage_factory: Option<Rc<FidlStorageFactory>>,
     display_configuration: Option<DefaultSetting<DisplayConfiguration, &'static str>>,
     audio_configuration: Option<DefaultSetting<AudioInfo, &'static str>>,
     input_configuration: Option<DefaultSetting<InputConfiguration, &'static str>>,
     light_configuration: Option<DefaultSetting<LightHardwareConfiguration, &'static str>>,
-    media_buttons_event_txs: Vec<UnboundedSender<settings_media_buttons::Event>>,
 }
 
 impl<T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilder<T> {
@@ -200,16 +193,13 @@ impl<T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilder<T>
             configuration: None,
             storage_factory,
             generate_service: None,
-            settings: vec![],
             active_listener_inspect_logger: None,
             storage_dir: None,
             store_proxy: None,
-            fidl_storage_factory: None,
             display_configuration: None,
             audio_configuration: None,
             input_configuration: None,
             light_configuration: None,
-            media_buttons_event_txs: vec![],
         }
     }
 
@@ -272,26 +262,6 @@ impl<T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilder<T>
         self
     }
 
-    /// Setting types to participate.
-    pub fn settings(mut self, settings: &[SettingType]) -> Self {
-        self.settings.extend(settings);
-
-        self
-    }
-
-    /// Setting types to participate with customized controllers.
-    pub fn flags(mut self, controller_flags: &[ControllerFlag]) -> Self {
-        if self.configuration.is_none() {
-            self.configuration = Some(ServiceConfiguration::default());
-        }
-
-        if let Some(c) = self.configuration.as_mut() {
-            c.set_controller_flags(controller_flags.iter().copied().collect());
-        }
-
-        self
-    }
-
     /// Sets the inspect node for setting proxy inspect information and any required
     /// inspect loggers.
     pub fn listener_inspect_logger(
@@ -312,23 +282,10 @@ impl<T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilder<T>
         self
     }
 
-    pub fn fidl_storage_factory(mut self, fidl_storage_factory: Rc<FidlStorageFactory>) -> Self {
-        self.fidl_storage_factory = Some(fidl_storage_factory);
-        self
-    }
-
-    pub fn media_buttons_event_txs(
-        mut self,
-        media_buttons_event_txs: Vec<UnboundedSender<settings_media_buttons::Event>>,
-    ) -> Self {
-        self.media_buttons_event_txs.extend(media_buttons_event_txs);
-        self
-    }
-
     /// Prepares an environment so that it may be spawned. This ensures that all necessary
     /// components are spawned and ready to handle events and FIDL requests.
     async fn prepare_env(
-        mut self,
+        self,
         mut fs: ServiceFs<ServiceObjLocal<'_, ()>>,
         runtime: Runtime,
     ) -> Result<(ServiceFs<ServiceObjLocal<'_, ()>>, HashSet<SettingType>), Error> {
@@ -366,53 +323,17 @@ impl<T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilder<T>
             _ => (HashSet::new(), HashSet::new(), HashSet::new()),
         };
 
-        let mut settings: HashSet<_> = fidl_interfaces.into_iter().map(SettingType::from).collect();
-        settings.extend(self.settings);
-
-        let fidl_storage_factory = if let Some(factory) = self.fidl_storage_factory {
-            factory
-        } else {
-            let (migration_id, storage_dir) = if let Some(storage_dir) = self.storage_dir {
-                let store_proxy = self.store_proxy.unwrap_or_else(|| {
-                    let store_proxy = connect_to_protocol::<fidl_fuchsia_stash::StoreMarker>()
-                        .expect("failed to connect to stash");
-                    store_proxy
-                        .identify("setting_service")
-                        .expect("should be able to identify to stash");
-                    store_proxy
-                });
-
-                let migration_manager = storage_migrations::register_migrations(
-                    &settings,
-                    Clone::clone(&storage_dir),
-                    store_proxy,
-                )
-                .context("failed to register migrations")?;
-                let migration_id = match migration_manager.run_migrations().await {
-                    Ok(id) => {
-                        log::info!("migrated storage to {id:?}");
-                        id
-                    }
-                    Err((id, e)) => {
-                        log::error!("Settings migration failed: {e:?}");
-                        id
-                    }
-                };
-                let migration_id = migration_id.map(|migration| migration.migration_id);
-                (migration_id, storage_dir)
-            } else {
-                (None, init_storage_dir())
-            };
-
-            Rc::new(FidlStorageFactory::new(migration_id.unwrap_or(0), storage_dir))
-        };
-
+        let settings: HashSet<_> = fidl_interfaces.into_iter().map(SettingType::from).collect();
+        let fidl_storage_factory = Rc::new(
+            Self::initialize_fidl_storage_factory(&settings, self.storage_dir, self.store_proxy)
+                .await
+                .context("initializing fidl storage factory")?,
+        );
         let service_context = Rc::new(ServiceContext::new(self.generate_service));
-
         let audio_info_loader = self.audio_configuration.map(AudioInfoLoader::new);
         Self::initialize_storage(
             &settings,
-            &*fidl_storage_factory,
+            &fidl_storage_factory,
             &*self.storage_factory,
             audio_info_loader.clone(),
             self.display_configuration.map(DisplayInfoLoader::new),
@@ -451,13 +372,11 @@ impl<T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilder<T>
             task.detach();
         }
 
-        self.media_buttons_event_txs.extend(media_buttons_event_txs);
-
         let agent_result = create_agents(
             &settings,
             agent_types,
             camera_watcher_event_txs,
-            self.media_buttons_event_txs,
+            media_buttons_event_txs,
             setting_value_rx,
             external_event_rx,
             external_publisher,
@@ -512,6 +431,45 @@ impl<T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilder<T>
 
         environment.connector.ok_or_else(|| format_err!("connector not created"))
     }
+
+    async fn initialize_fidl_storage_factory(
+        settings: &HashSet<SettingType>,
+        storage_dir: Option<DirectoryProxy>,
+        store_proxy: Option<StoreProxy>,
+    ) -> Result<FidlStorageFactory, Error> {
+        let (migration_id, storage_dir) = if let Some(storage_dir) = storage_dir {
+            let store_proxy = store_proxy.unwrap_or_else(|| {
+                let store_proxy = connect_to_protocol::<fidl_fuchsia_stash::StoreMarker>()
+                    .expect("failed to connect to stash");
+                store_proxy
+                    .identify("setting_service")
+                    .expect("should be able to identify to stash");
+                store_proxy
+            });
+
+            let migration_manager = storage_migrations::register_migrations(
+                settings,
+                Clone::clone(&storage_dir),
+                store_proxy,
+            )
+            .context("failed to register migrations")?;
+            let migration_id = match migration_manager.run_migrations().await {
+                Ok(id) => {
+                    log::info!("migrated storage to {id:?}");
+                    id
+                }
+                Err((id, e)) => {
+                    log::error!("Settings migration failed: {e:?}");
+                    id
+                }
+            };
+            let migration_id = migration_id.map(|migration| migration.migration_id);
+            (migration_id, storage_dir)
+        } else {
+            (None, init_storage_dir())
+        };
+        Ok(FidlStorageFactory::new(migration_id.unwrap_or(0), storage_dir))
+    }
 }
 
 struct RegistrationResult {
@@ -524,14 +482,13 @@ struct RegistrationResult {
 }
 
 impl<T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilder<T> {
-    async fn initialize_storage<F, D>(
+    async fn initialize_storage<D>(
         components: &HashSet<SettingType>,
-        fidl_storage_factory: &F,
+        fidl_storage_factory: &FidlStorageFactory,
         device_storage_factory: &D,
         audio_info_loader: Option<AudioInfoLoader>,
         display_loader: Option<DisplayInfoLoader>,
     ) where
-        F: StorageFactory<Storage = FidlStorage>,
         D: StorageFactory<Storage = DeviceStorage>,
     {
         if components.contains(&SettingType::Accessibility) {
