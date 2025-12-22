@@ -124,18 +124,6 @@ nuc11_ap_iperf_attenuator_env = {
   tags = [ "antlion" ]
 }
 
-# Display environments supported by antlion.
-display_envs = [
-  astro_env,
-  sherlock_env,
-  nelson_env,
-  nuc11_env,
-  wlan_astro_env,
-  wlan_sherlock_env,
-  wlan_nelson_env,
-  wlan_nuc11_env,
-]
-
 display_ap_envs = [
   astro_ap_env,
   sherlock_ap_env,
