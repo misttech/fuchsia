@@ -79,7 +79,7 @@ pub fn new_netlink_socket(
         NetlinkFamily::KobjectUevent => Box::new(UEventNetlinkSocket::default()),
         NetlinkFamily::Route => Box::new(RouteNetlinkSocket::new(kernel)?),
         NetlinkFamily::Generic => Box::new(GenericNetlinkSocket::new(kernel)?),
-        NetlinkFamily::SockDiag => Box::new(DiagnosticNetlinkSocket::default()),
+        NetlinkFamily::SockDiag => Box::new(SockDiagNetlinkSocket::default()),
         NetlinkFamily::Audit => Box::new(AuditNetlinkSocket::new(kernel)?),
         NetlinkFamily::Usersock
         | NetlinkFamily::Firewall
@@ -1244,18 +1244,18 @@ impl SocketOps for RouteNetlinkSocket {
 }
 
 /// Socket implementation for the NETLINK_SOCK_DIAG family of netlink sockets.
-struct DiagnosticNetlinkSocket {
+struct SockDiagNetlinkSocket {
     /// The inner Netlink socket implementation
     inner: Arc<Mutex<NetlinkSocketInner>>,
 }
 
-impl Default for DiagnosticNetlinkSocket {
+impl Default for SockDiagNetlinkSocket {
     fn default() -> Self {
         Self { inner: Arc::new(Mutex::new(NetlinkSocketInner::new(NetlinkFamily::SockDiag))) }
     }
 }
 
-impl SocketOps for DiagnosticNetlinkSocket {
+impl SocketOps for SockDiagNetlinkSocket {
     fn connect(
         &self,
         _locked: &mut Locked<FileOpsCore>,
