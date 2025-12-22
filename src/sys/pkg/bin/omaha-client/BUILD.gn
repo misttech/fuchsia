@@ -17,6 +17,7 @@ rustc_library("lib") {
   deps = [
     ":mos_metrics_registry_rustlib",
     ":omaha-client-structured-config-lib",
+    "//sdk/fidl/fuchsia.boot:fuchsia.boot_rust",
     "//sdk/fidl/fuchsia.feedback:fuchsia.feedback_rust",
     "//sdk/fidl/fuchsia.metrics:fuchsia.metrics_rust",
     "//sdk/fidl/fuchsia.pkg:fuchsia.pkg_rust",
@@ -159,6 +160,17 @@ group("hermetic_tests") {
     ":omaha-client-channels-test-config",
     ":omaha-client-service-bin-tests",
   ]
+}
+
+fuchsia_structured_config_values("omaha-client-structured-config-test") {
+  cm_label = ":manifest"
+  values = {
+    allow_reboot_when_idle = true
+    fuzz_percentage_range = 25
+    periodic_interval_minutes = 60
+    retry_delay_seconds = 300
+    startup_delay_seconds = 60
+  }
 }
 
 fuchsia_structured_config_rust_lib("omaha-client-structured-config-lib") {

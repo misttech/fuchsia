@@ -48,10 +48,8 @@ async fn main_inner() -> Result<(), Error> {
     let channel_configs = channel::get_configs().ok();
     info!("Omaha channel config: {:?}", channel_configs);
 
-    let config = omaha_client_structured_config::Config::take_from_startup_handle();
-
     let ClientConfiguration { platform_config, app_set, channel_data } =
-        ClientConfiguration::initialize(channel_configs.as_ref(), &config)
+        ClientConfiguration::initialize(channel_configs.as_ref())
             .await
             .expect("Unable to read necessary client configuration");
 
@@ -102,7 +100,7 @@ async fn main_inner() -> Result<(), Error> {
     let stash_ref = Rc::new(Mutex::new(stash));
 
     // Policy
-    let mut policy_engine_builder = policy::FuchsiaPolicyEngineBuilder::new_from_config(config)
+    let mut policy_engine_builder = policy::FuchsiaPolicyEngineBuilder::new_from_args()
         .time_source(StandardTimeSource)
         .metrics_reporter(metrics_reporter.clone());
 

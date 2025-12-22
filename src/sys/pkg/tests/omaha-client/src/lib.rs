@@ -29,6 +29,7 @@ use fuchsia_sync::Mutex;
 use fuchsia_url::{PinnedAbsolutePackageUrl, UnpinnedAbsolutePackageUrl};
 use futures::channel::{mpsc, oneshot};
 use futures::prelude::*;
+use mock_boot_arguments::MockBootArgumentsService;
 use mock_crash_reporter::{CrashReport, MockCrashReporterService, ThrottleHook};
 use mock_health_verification::MockHealthVerificationService;
 use mock_installer::MockUpdateInstallerService;
@@ -49,9 +50,10 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tempfile::TempDir;
 use {
-    fidl_fuchsia_io as fio, fidl_fuchsia_metrics as fmetrics, fidl_fuchsia_paver as fpaver,
-    fidl_fuchsia_update_installer as finstaller, fidl_fuchsia_update_installer_ext as installer,
-    fidl_fuchsia_update_verify as fupdate_verify, fuchsia_async as fasync,
+    fidl_fuchsia_boot as fboot, fidl_fuchsia_io as fio, fidl_fuchsia_metrics as fmetrics,
+    fidl_fuchsia_paver as fpaver, fidl_fuchsia_update_installer as finstaller,
+    fidl_fuchsia_update_installer_ext as installer, fidl_fuchsia_update_verify as fupdate_verify,
+    fuchsia_async as fasync,
 };
 
 const OMAHA_CLIENT_CML: &str = "#meta/omaha-client-service.cm";
@@ -107,6 +109,8 @@ struct TestEnvBuilder {
     paver: Option<MockPaverService>,
     crash_reporter: Option<MockCrashReporterService>,
     eager_package_config_builder: Option<EagerPackageConfigBuilder>,
+    omaha_client_config_bool_overrides: Vec<(String, bool)>,
+    omaha_client_config_uint16_overrides: Vec<(String, u16)>,
     cup_info_map: HashMap<UnpinnedAbsolutePackageUrl, (String, String)>,
     private_keys: Option<PrivateKeys>,
     etag_override: Option<String>,
@@ -121,6 +125,8 @@ impl TestEnvBuilder {
             paver: None,
             crash_reporter: None,
             eager_package_config_builder: None,
+            omaha_client_config_bool_overrides: vec![],
+            omaha_client_config_uint16_overrides: vec![],
             cup_info_map: HashMap::new(),
             private_keys: None,
             etag_override: None,
@@ -165,6 +171,16 @@ impl TestEnvBuilder {
         eager_package_config_builder: EagerPackageConfigBuilder,
     ) -> Self {
         Self { eager_package_config_builder: Some(eager_package_config_builder), ..self }
+    }
+
+    fn omaha_client_override_config_bool(mut self, key: String, value: bool) -> Self {
+        self.omaha_client_config_bool_overrides.push((key, value));
+        self
+    }
+
+    fn omaha_client_override_config_uint16(mut self, key: String, value: u16) -> Self {
+        self.omaha_client_config_uint16_overrides.push((key, value));
+        self
     }
 
     fn add_cup_info(
@@ -308,6 +324,15 @@ impl TestEnvBuilder {
                 .detach()
         });
 
+        let boot_arguments_service = Arc::new(MockBootArgumentsService::new(HashMap::from([
+            ("omaha_app_id".into(), Some(APP_ID.into())),
+            ("omaha_url".into(), Some(url)),
+        ])));
+        svc.add_fidl_service(move |stream| {
+            fasync::Task::spawn(Arc::clone(&boot_arguments_service).handle_request_stream(stream))
+                .detach()
+        });
+
         let mut use_real_system_updater = true;
         if let Some(installer) = self.installer {
             use_real_system_updater = false;
@@ -326,6 +351,13 @@ impl TestEnvBuilder {
             .add_child("omaha_client_service", OMAHA_CLIENT_CML, ChildOptions::new().eager())
             .await
             .unwrap();
+        builder.init_mutable_config_from_package(&omaha_client_service).await.unwrap();
+        for (k, v) in self.omaha_client_config_bool_overrides {
+            builder.set_config_value(&omaha_client_service, &k, v.into()).await.unwrap();
+        }
+        for (k, v) in self.omaha_client_config_uint16_overrides {
+            builder.set_config_value(&omaha_client_service, &k, v.into()).await.unwrap();
+        }
 
         let system_update_committer = builder
             .add_child(
@@ -397,6 +429,7 @@ impl TestEnvBuilder {
                     >())
                     .capability(Capability::protocol::<fpkg::CupMarker>())
                     .capability(Capability::protocol::<fidl_fuchsia_update_config::OptOutMarker>())
+                    .capability(Capability::protocol::<fboot::ArgumentsMarker>())
                     .from(&fake_capabilities)
                     .to(&omaha_client_service),
             )
@@ -507,94 +540,6 @@ impl TestEnvBuilder {
                     .capability(Capability::protocol::<ManagerMarker>())
                     .from(&omaha_client_service)
                     .to(Ref::parent()),
-            )
-            .await
-            .unwrap();
-        builder
-            .add_capability(cm_rust::CapabilityDecl::Config(cm_rust::ConfigurationDecl {
-                name: "fuchsia.omaha.PeriodicIntervalMinutes".parse().unwrap(),
-                value: 60u16.into(),
-            }))
-            .await
-            .unwrap();
-        builder
-            .add_capability(cm_rust::CapabilityDecl::Config(cm_rust::ConfigurationDecl {
-                name: "fuchsia.omaha.StartupDelaySeconds".parse().unwrap(),
-                value: 60u16.into(),
-            }))
-            .await
-            .unwrap();
-        builder
-            .add_capability(cm_rust::CapabilityDecl::Config(cm_rust::ConfigurationDecl {
-                name: "fuchsia.omaha.AllowRebootWhenIdle".parse().unwrap(),
-                value: true.into(),
-            }))
-            .await
-            .unwrap();
-        builder
-            .add_capability(cm_rust::CapabilityDecl::Config(cm_rust::ConfigurationDecl {
-                name: "fuchsia.omaha.RetryDelaySeconds".parse().unwrap(),
-                value: 300u16.into(),
-            }))
-            .await
-            .unwrap();
-        builder
-            .add_capability(cm_rust::CapabilityDecl::Config(cm_rust::ConfigurationDecl {
-                name: "fuchsia.omaha.FuzzPercentageRange".parse().unwrap(),
-                value: 25u8.into(),
-            }))
-            .await
-            .unwrap();
-        builder
-            .add_capability(cm_rust::CapabilityDecl::Config(cm_rust::ConfigurationDecl {
-                name: "fuchsia.omaha_app_id".parse().unwrap(),
-                value: APP_ID.into(),
-            }))
-            .await
-            .unwrap();
-        builder
-            .add_capability(cm_rust::CapabilityDecl::Config(cm_rust::ConfigurationDecl {
-                name: "fuchsia.omaha_url".parse().unwrap(),
-                value: url.into(),
-            }))
-            .await
-            .unwrap();
-        builder
-            .add_capability(cm_rust::CapabilityDecl::Config(cm_rust::ConfigurationDecl {
-                name: "fuchsia.ota_channel".parse().unwrap(),
-                value: "".into(),
-            }))
-            .await
-            .unwrap();
-        builder
-            .add_capability(cm_rust::CapabilityDecl::Config(cm_rust::ConfigurationDecl {
-                name: "fuchsia.ota_realm".parse().unwrap(),
-                value: "".into(),
-            }))
-            .await
-            .unwrap();
-        builder
-            .add_capability(cm_rust::CapabilityDecl::Config(cm_rust::ConfigurationDecl {
-                name: "fuchsia.product_id".parse().unwrap(),
-                value: "".into(),
-            }))
-            .await
-            .unwrap();
-        builder
-            .add_route(
-                Route::new()
-                    .capability(Capability::configuration("fuchsia.omaha.AllowRebootWhenIdle"))
-                    .capability(Capability::configuration("fuchsia.omaha.FuzzPercentageRange"))
-                    .capability(Capability::configuration("fuchsia.omaha.PeriodicIntervalMinutes"))
-                    .capability(Capability::configuration("fuchsia.omaha.RetryDelaySeconds"))
-                    .capability(Capability::configuration("fuchsia.omaha.StartupDelaySeconds"))
-                    .capability(Capability::configuration("fuchsia.omaha_app_id"))
-                    .capability(Capability::configuration("fuchsia.omaha_url"))
-                    .capability(Capability::configuration("fuchsia.ota_channel"))
-                    .capability(Capability::configuration("fuchsia.ota_realm"))
-                    .capability(Capability::configuration("fuchsia.product_id"))
-                    .from(Ref::self_())
-                    .to(&omaha_client_service),
             )
             .await
             .unwrap();
@@ -1991,7 +1936,11 @@ async fn test_omaha_client_invalid_app_set() {
 
 #[fasync::run_singlethreaded(test)]
 async fn test_omaha_client_policy_config_inspect() {
-    let env = TestEnvBuilder::new().build().await;
+    let env = TestEnvBuilder::new()
+        .omaha_client_override_config_bool("allow_reboot_when_idle".into(), false)
+        .omaha_client_override_config_uint16("startup_delay_seconds".into(), 61u16)
+        .build()
+        .await;
 
     // Wait for omaha client to start.
     let _ = env.proxies.channel_control.get_current().await;
@@ -2001,9 +1950,9 @@ async fn test_omaha_client_policy_config_inspect() {
         "root": contains {
             "policy_config": {
                 "periodic_interval": 60 * 60u64,
-                "startup_delay": 60u64,
+                "startup_delay": 61u64,
                 "retry_delay": 5 * 60u64,
-                "allow_reboot_when_idle": true,
+                "allow_reboot_when_idle": false,
                 "fuzz_percentage_range": 25u64,
             }
         }

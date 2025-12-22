@@ -290,10 +290,11 @@ impl FuchsiaPolicyEngineBuilder {
     pub fn new(config: impl Into<PolicyConfig>) -> FuchsiaPolicyEngineBuilder {
         FuchsiaPolicyEngineBuilder { config: config.into() }
     }
-    pub fn new_from_config(
-        config: omaha_client_structured_config::Config,
-    ) -> FuchsiaPolicyEngineBuilder {
-        let policy_config: PolicyConfig = config.try_into().expect("Invalid config arguments.");
+    pub fn new_from_args() -> FuchsiaPolicyEngineBuilder {
+        let policy_config: PolicyConfig =
+            omaha_client_structured_config::Config::take_from_startup_handle()
+                .try_into()
+                .expect("Invalid config arguments.");
         FuchsiaPolicyEngineBuilder::new(policy_config)
     }
     pub fn time_source<T>(self, time_source: T) -> FuchsiaPolicyEngineBuilderWithTime<T>
@@ -1814,11 +1815,6 @@ mod tests {
             periodic_interval_minutes: 1,
             retry_delay_seconds: 1,
             startup_delay_seconds: 1,
-            app_id: "".to_string(),
-            omaha_url: "".to_string(),
-            ota_channel: "".to_string(),
-            ota_realm: "".to_string(),
-            product_id: "".to_string(),
         };
         let maybe_policy_config: Result<PolicyConfig, _> = manifest_config.try_into();
         assert!(maybe_policy_config.is_err());

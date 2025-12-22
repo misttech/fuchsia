@@ -172,32 +172,14 @@ impl SwdSubsystemConfig {
                 }
 
                 builder.platform_bundle("omaha_client");
-                builder.set_config_capability(
-                    "fuchsia.omaha.PeriodicIntervalMinutes",
-                    Config::new(
-                        ConfigValueType::Uint16,
-                        policy_config.periodic_interval_minutes.into(),
-                    ),
-                )?;
-                builder.set_config_capability(
-                    "fuchsia.omaha.StartupDelaySeconds",
-                    Config::new(
-                        ConfigValueType::Uint16,
-                        policy_config.startup_delay_seconds.into(),
-                    ),
-                )?;
-                builder.set_config_capability(
-                    "fuchsia.omaha.AllowRebootWhenIdle",
-                    Config::new(ConfigValueType::Bool, policy_config.allow_reboot_when_idle.into()),
-                )?;
-                builder.set_config_capability(
-                    "fuchsia.omaha.RetryDelaySeconds",
-                    Config::new(ConfigValueType::Uint16, policy_config.retry_delay_seconds.into()),
-                )?;
-                builder.set_config_capability(
-                    "fuchsia.omaha.FuzzPercentageRange",
-                    Config::new(ConfigValueType::Uint8, policy_config.fuzz_percentage_range.into()),
-                )?;
+                let mut omaha_config =
+                    builder.package("omaha-client").component("meta/omaha-client-service.cm")?;
+                omaha_config
+                    .field("periodic_interval_minutes", policy_config.periodic_interval_minutes)?
+                    .field("startup_delay_seconds", policy_config.startup_delay_seconds)?
+                    .field("allow_reboot_when_idle", policy_config.allow_reboot_when_idle)?
+                    .field("retry_delay_seconds", policy_config.retry_delay_seconds)?
+                    .field("fuzz_percentage_range", policy_config.fuzz_percentage_range)?;
 
                 if let Some(channel_config) = channels_path {
                     builder.package("omaha-client").config_data(FileEntry {

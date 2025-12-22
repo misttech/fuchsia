@@ -103,10 +103,10 @@ type ServerUrl = String;
 #[serde(default, deny_unknown_fields)]
 pub struct PolicyConfig {
     pub allow_reboot_when_idle: bool,
-    pub startup_delay_seconds: u16,
-    pub periodic_interval_minutes: u16,
-    pub fuzz_percentage_range: u8,
-    pub retry_delay_seconds: u16,
+    pub startup_delay_seconds: u32,
+    pub periodic_interval_minutes: u32,
+    pub fuzz_percentage_range: u32,
+    pub retry_delay_seconds: u32,
 }
 
 impl Default for PolicyConfig {
