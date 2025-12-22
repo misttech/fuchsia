@@ -130,9 +130,9 @@ class Cartfs:
         Returns:
             A path to a directory that does not yet exist.
         """
-        path = self.mount_point / workspace_name
+        path = Path(workspace_name)
         counter = 1
-        while path.exists():
-            path = self.mount_point / f"{workspace_name}-{counter}"
+        while (self.mount_point / path).exists():
+            path = Path(f"{workspace_name}-{counter}")
             counter += 1
         return path

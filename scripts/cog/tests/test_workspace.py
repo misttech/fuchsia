@@ -392,6 +392,7 @@ class TestWorkspace(unittest.TestCase):
                 _workspace_to_snapshot_from: Path,
                 _workspace_to_snapshot_to: Path,
                 cartfs_mount_point: Path,
+                _use_local_mock_cartfs: bool,
             ) -> None:
                 os.mkdir(
                     os.path.join(cartfs_mount_point, suggested_directory_name)
@@ -469,6 +470,7 @@ class TestWorkspace(unittest.TestCase):
                     _workspace_to_snapshot_from: Path,
                     _workspace_to_snapshot_to: Path,
                     _cartfs_mount_point: Path,
+                    _use_local_mock_cartfs: bool,
                 ) -> None:
                     raise ValueError("test error")
 
@@ -569,7 +571,7 @@ class TestWorkspace(unittest.TestCase):
             )
 
             result = ws._find_previous_instance()
-            self.assertEqual(result, candidate_dir)
+            self.assertEqual(result, Path("candidate"))
 
     def test_find_previous_instance_ignores_current_workspace(self) -> None:
         """Test that the current workspace is ignored."""

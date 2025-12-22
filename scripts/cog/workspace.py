@@ -238,12 +238,13 @@ class Workspace:
     def snapshot_from_previous_instance(
         self,
         snapshot_function: Callable[
-            [Path, Path, Path], None
+            [Path, Path, Path, bool], None
         ] = snapshotter.snapshot_workspace,
+        use_local_mock_cartfs: bool = False,
     ) -> Path | None:
         """Snapshots the workspace from the most recent cartfs directory."""
-        previous_cartfs_instance = self._find_previous_instance()
-        if not previous_cartfs_instance:
+        previous_cartfs_instance_rel_path = self._find_previous_instance()
+        if not previous_cartfs_instance_rel_path:
             return None
 
         suggested_directory_name = (
@@ -253,9 +254,10 @@ class Workspace:
         )
         try:
             snapshot_function(
-                previous_cartfs_instance,
+                previous_cartfs_instance_rel_path,
                 suggested_directory_name,
                 self.cartfs_instance.mount_point,
+                use_local_mock_cartfs,
             )
         except ValueError as e:
             logger.log_error(f"Error during snapshotting: {e}")
@@ -333,8 +335,8 @@ class Workspace:
         most recent modification time.
 
         Returns:
-            The path to the newest directory found, or None if no instances are
-            found.
+            The path, relative to the cartfs mount point, to the newest
+            directory found, or None if no instances are found.
         """
         mount_point = Path(self.cartfs_instance.mount_point)
         if not mount_point or not mount_point.is_dir():
@@ -342,13 +344,10 @@ class Workspace:
 
         candidates = set()
         for entry in mount_point.iterdir():
-            entry_path = mount_point / entry
-            if not entry_path.is_dir():
+            if not entry.is_dir():
                 continue
 
-            metadata = CogMetadata.from_file(
-                entry_path / COG_METADATA_FILE_NAME
-            )
+            metadata = CogMetadata.from_file(entry / COG_METADATA_FILE_NAME)
             if not metadata:
                 continue
 
@@ -358,7 +357,7 @@ class Workspace:
             if repo_name != self.repo_name:
                 continue
 
-            candidates.add(entry_path)
+            candidates.add(entry)
 
         newest_candidate = None
         newest_mtime = -1.0
@@ -371,4 +370,8 @@ class Workspace:
             except FileNotFoundError:
                 # The directory was deleted between listing and stat-ing.
                 continue
-        return newest_candidate
+        return (
+            newest_candidate.relative_to(mount_point)
+            if newest_candidate
+            else None
+        )
