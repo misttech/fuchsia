@@ -5,16 +5,16 @@
 use crate::agent::earcons::agent::CommonEarconsParams;
 use crate::agent::earcons::sound_ids::{VOLUME_CHANGED_SOUND_ID, VOLUME_MAX_SOUND_ID};
 use crate::agent::earcons::utils::{connect_to_sound_player, play_sound};
-use crate::audio::types::{
-    AUDIO_STREAM_TYPE_COUNT, AudioInfo, AudioSettingSource, AudioStream, AudioStreamType,
-    SetAudioStream,
-};
-use crate::audio::{ModifiedCounters, Request as AudioRequest, create_default_modified_counters};
 use anyhow::Error;
 use futures::StreamExt;
 use futures::channel::mpsc::{self, UnboundedSender};
 use futures::channel::oneshot;
 use futures::future::OptionFuture;
+use settings_audio::types::{
+    AUDIO_STREAM_TYPE_COUNT, AudioInfo, AudioSettingSource, AudioStream, AudioStreamType,
+    SetAudioStream,
+};
+use settings_audio::{ModifiedCounters, Request as AudioRequest, create_default_modified_counters};
 use settings_common::inspect::event::ExternalEventPublisher;
 use settings_common::trace;
 use std::collections::{HashMap, HashSet};
@@ -289,9 +289,9 @@ impl VolumeChangeHandler {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::audio::build_audio_default_settings;
     use fuchsia_inspect::component;
     use futures::lock::Mutex;
+    use settings_audio::build_audio_default_settings;
     use settings_common::inspect::config_logger::InspectConfigLogger;
     use settings_common::service_context::ServiceContext;
     use std::rc::Rc;

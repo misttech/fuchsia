@@ -18,6 +18,7 @@ rustc_library("settings_test_common") {
 
   visibility = [
     ":*",
+    "//src/settings/audio:*",
     "//src/settings/camera_watcher_agent:*",
     "//src/settings/common:*",
     "//src/settings/display:*",

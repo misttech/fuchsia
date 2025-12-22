@@ -3,13 +3,12 @@
 // found in the LICENSE file.
 
 pub use self::audio_controller::Request;
-pub use self::audio_default_settings::build_audio_default_settings;
-#[cfg(test)]
-pub(crate) use self::audio_default_settings::create_default_audio_stream;
-pub(crate) use self::audio_default_settings::{
-    AudioInfoLoader, ModifiedCounters, create_default_modified_counters,
+pub use self::audio_default_settings::{
+    AudioInfoLoader, ModifiedCounters, build_audio_default_settings, create_default_audio_stream,
+    create_default_modified_counters,
 };
 pub use self::stream_volume_control::StreamVolumeControl;
+pub use self::types::AUDIO_STREAM_TYPE_COUNT;
 pub mod audio_controller;
 pub mod types;
 

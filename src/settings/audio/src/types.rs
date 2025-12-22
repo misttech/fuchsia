@@ -2,9 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::audio::audio_default_settings::{AudioInfoLoader, create_default_audio_stream};
-use crate::audio::{ModifiedCounters, create_default_modified_counters};
-use crate::base::SettingType;
+use crate::audio_default_settings::{AudioInfoLoader, create_default_audio_stream};
+use crate::{ModifiedCounters, create_default_modified_counters};
 use anyhow::{Error, anyhow};
 use serde::{Deserialize, Serialize};
 use settings_common::inspect::event::{Nameable, ResponseType};
@@ -32,8 +31,8 @@ pub enum AudioStreamType {
     Accessibility,
 }
 
-pub(crate) const AUDIO_STREAM_TYPE_COUNT: usize = 6;
-pub const LEGACY_AUDIO_STREAM_TYPE_COUNT: usize = 5;
+pub const AUDIO_STREAM_TYPE_COUNT: usize = 6;
+pub(crate) const LEGACY_AUDIO_STREAM_TYPE_COUNT: usize = 5;
 
 impl AudioStreamType {
     /// Legacy stream types are the subset of AudioStreamType values which correspond to values in
@@ -44,14 +43,14 @@ impl AudioStreamType {
     /// |AudioStreamType| is based on |AudioRenderUsage2|, and |AudioRenderUsage2| is used with
     /// tables |AudioSettings2| and |AudioStreamSettings2|, and with methods |Set2| and |Watch2|.
     pub fn is_legacy(&self) -> bool {
-        match *self {
+        matches!(
+            self,
             AudioStreamType::Background
-            | AudioStreamType::Communication
-            | AudioStreamType::Interruption
-            | AudioStreamType::Media
-            | AudioStreamType::SystemAgent => true,
-            _ => false,
-        }
+                | AudioStreamType::Communication
+                | AudioStreamType::Interruption
+                | AudioStreamType::Media
+                | AudioStreamType::SystemAgent
+        )
     }
 }
 
@@ -108,12 +107,6 @@ impl Nameable for AudioInfo {
     const NAME: &str = "Audio";
 }
 
-impl From<&AudioInfo> for SettingType {
-    fn from(_: &AudioInfo) -> SettingType {
-        SettingType::Audio
-    }
-}
-
 impl DeviceStorageCompatible for AudioInfo {
     type Loader = AudioInfoLoader;
     const KEY: &'static str = "audio_info";
@@ -123,14 +116,14 @@ impl DeviceStorageCompatible for AudioInfo {
     }
 }
 
-////////////////////////////////////////////////////////////////
-/// Past versions of AudioInfo.
-////////////////////////////////////////////////////////////////
+// /////////////////////////////////////////////////////////////
+//  Past versions of AudioInfo.
+// /////////////////////////////////////////////////////////////
 
 /// The following struct should never be modified. It represents an old
 /// version of the audio settings.
 #[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
-pub struct AudioInfoV3 {
+pub(crate) struct AudioInfoV3 {
     pub streams: [AudioStream; LEGACY_AUDIO_STREAM_TYPE_COUNT],
     pub modified_counters: Option<ModifiedCounters>,
 }
@@ -171,7 +164,7 @@ pub struct AudioInputInfo {
 /// The following struct should never be modified. It represents an old
 /// version of the audio settings.
 #[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
-pub struct AudioInfoV2 {
+pub(crate) struct AudioInfoV2 {
     pub streams: [AudioStream; LEGACY_AUDIO_STREAM_TYPE_COUNT],
     pub input: AudioInputInfo,
     pub modified_counters: Option<ModifiedCounters>,
@@ -203,7 +196,7 @@ impl From<AudioInfoV2> for AudioInfoV3 {
 /// The following struct should never be modified. It represents an old
 /// version of the audio settings.
 #[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
-pub struct AudioInfoV1 {
+pub(crate) struct AudioInfoV1 {
     pub streams: [AudioStream; LEGACY_AUDIO_STREAM_TYPE_COUNT],
     pub input: AudioInputInfo,
     pub modified_timestamps: Option<HashMap<AudioStreamType, String>>,
@@ -213,7 +206,7 @@ impl AudioInfoV1 {
     pub(super) fn try_deserialize_from(value: &str) -> Result<Self, Error> {
         serde_json::from_str(value)
             .map_err(|e| anyhow!("could not deserialize: {e:?}"))
-            .or_else(|_| AudioInfoV1::try_deserialize_from(value).map(Self::from))
+            .or_else(|_| AudioInfoV1::try_deserialize_from(value))
     }
 
     #[cfg(test)]

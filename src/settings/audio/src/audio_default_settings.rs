@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::audio::types::{
+use crate::types::{
     AUDIO_STREAM_TYPE_COUNT, AudioInfo, AudioSettingSource, AudioStream, AudioStreamType,
 };
 use settings_common::config::default_settings::DefaultSetting;
@@ -32,7 +32,7 @@ const DEFAULT_AUDIO_INFO: AudioInfo =
 /// volume has changed.
 pub type ModifiedCounters = HashMap<AudioStreamType, usize>;
 
-pub(crate) fn create_default_modified_counters() -> ModifiedCounters {
+pub fn create_default_modified_counters() -> ModifiedCounters {
     IntoIterator::into_iter([
         AudioStreamType::Background,
         AudioStreamType::Media,
@@ -45,7 +45,7 @@ pub(crate) fn create_default_modified_counters() -> ModifiedCounters {
     .collect()
 }
 
-pub(crate) const fn create_default_audio_stream(stream_type: AudioStreamType) -> AudioStream {
+pub const fn create_default_audio_stream(stream_type: AudioStreamType) -> AudioStream {
     AudioStream {
         stream_type,
         source: AudioSettingSource::User,
@@ -75,7 +75,7 @@ pub struct AudioInfoLoader {
 }
 
 impl AudioInfoLoader {
-    pub(crate) fn new(audio_default_settings: DefaultSetting<AudioInfo, &'static str>) -> Self {
+    pub fn new(audio_default_settings: DefaultSetting<AudioInfo, &'static str>) -> Self {
         Self { audio_default_settings: Rc::new(Mutex::new(audio_default_settings)) }
     }
 }
@@ -97,8 +97,11 @@ impl DefaultLoader for AudioInfoLoader {
 
 #[cfg(test)]
 mod tests {
+    // assert_eq!(..., false) is easier to read than assert!(!...).
+    #![allow(clippy::bool_assert_comparison)]
+
     use super::*;
-    use crate::audio::types::{AudioInfoV1, AudioInfoV2, AudioInfoV3};
+    use crate::types::{AudioInfoV1, AudioInfoV2, AudioInfoV3};
     use fuchsia_async::TestExecutor;
     use fuchsia_inspect::component;
     use settings_storage::device_storage::DeviceStorageCompatible;

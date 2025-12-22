@@ -37,7 +37,7 @@ mod tests {
         assert_eq!(round_volume_level(-1.0), 0.0);
         assert_eq!(round_volume_level(-0.1), 0.0);
         assert_eq!(round_volume_level(-0.0), 0.0);
-        assert_eq!(round_volume_level(std::f32::MIN), 0.0);
+        assert_eq!(round_volume_level(f32::MIN), 0.0);
     }
 
     // Verifies that values above 1.0 round to 1.0.
@@ -47,6 +47,6 @@ mod tests {
     fn test_round_volume_above_range() {
         assert_eq!(round_volume_level(2.0), 1.0);
         assert_eq!(round_volume_level(1.1), 1.0);
-        assert_eq!(round_volume_level(std::f32::MAX), 1.0);
+        assert_eq!(round_volume_level(f32::MAX), 1.0);
     }
 }

@@ -9,12 +9,12 @@ use fuchsia_component::client::connect_to_protocol;
 use fuchsia_component::server::ServiceFs;
 use fuchsia_inspect::component;
 use futures::lock::Mutex;
-use settings::audio::build_audio_default_settings;
 use settings::base::get_default_interfaces;
 use settings::{
     AgentConfiguration, EnabledInterfacesConfiguration, EnvironmentBuilder, ServiceConfiguration,
     ServiceFlags,
 };
+use settings_audio::build_audio_default_settings;
 use settings_common::config::default_settings::DefaultSetting;
 use settings_common::config::get_default_agent_types;
 use settings_common::inspect::config_logger::InspectConfigLogger;

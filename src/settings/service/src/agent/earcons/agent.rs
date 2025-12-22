@@ -4,10 +4,10 @@
 
 use crate::agent::earcons::bluetooth_handler::BluetoothHandler;
 use crate::agent::earcons::volume_change_handler::VolumeChangeHandler;
-use crate::audio::Request as AudioRequest;
 use fidl_fuchsia_media_sounds::PlayerProxy;
 use futures::channel::mpsc::UnboundedSender;
 use futures::lock::Mutex;
+use settings_audio::Request as AudioRequest;
 use settings_common::inspect::event::ExternalEventPublisher;
 use settings_common::service_context::{ExternalServiceProxy, ServiceContext};
 use std::collections::HashSet;

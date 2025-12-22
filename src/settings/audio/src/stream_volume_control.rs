@@ -2,10 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::audio::types::{AudioError, AudioStream};
-use crate::audio::utils::round_volume_level;
-#[cfg(test)]
-use crate::clock;
+use crate::types::{AudioError, AudioStream};
+use crate::utils::round_volume_level;
 use fidl::endpoints::create_proxy;
 use fidl_fuchsia_media::Usage2;
 use fidl_fuchsia_media_audio::VolumeControlProxy;
@@ -13,6 +11,8 @@ use futures::TryStreamExt;
 #[cfg(test)]
 use futures::channel::mpsc::UnboundedSender;
 use futures::channel::oneshot::Sender;
+#[cfg(test)]
+use settings_common::clock::mock as clock;
 use settings_common::inspect::event::ExternalEventPublisher;
 #[cfg(test)]
 use settings_common::service_context::ExternalServiceEvent;
@@ -76,11 +76,11 @@ impl StreamVolumeControl {
         // and from set request has the validation.
         assert!(stream.has_valid_volume_level());
 
-        trace!(id, "StreamVolumeControl ctor");
+        trace!(id, c"StreamVolumeControl ctor");
         let mut control = StreamVolumeControl {
             stored_stream: stream,
             proxy: None,
-            audio_service: audio_service,
+            audio_service,
             listen_exit_tx: None,
             early_exit_action,
             #[cfg(test)]
@@ -114,27 +114,25 @@ impl StreamVolumeControl {
 
         if (self.stored_stream.user_volume_level - new_stream_value.user_volume_level).abs()
             > f32::EPSILON
+            && let Err(e) = proxy.set_volume(new_stream_value.user_volume_level)
         {
-            log::info!("PAUL: Setting volume to {new_stream_value:?}");
-            if let Err(e) = proxy.set_volume(new_stream_value.user_volume_level) {
-                self.stored_stream = new_stream_value;
-                return Err(AudioError::ExternalFailure(
-                    CONTROLLER_ERROR_DEPENDENCY,
-                    "set volume".into(),
-                    format!("{e:?}"),
-                ));
-            }
+            self.stored_stream = new_stream_value;
+            return Err(AudioError::ExternalFailure(
+                CONTROLLER_ERROR_DEPENDENCY,
+                "set volume".into(),
+                format!("{e:?}"),
+            ));
         }
 
-        if self.stored_stream.user_volume_muted != new_stream_value.user_volume_muted {
-            if let Err(e) = proxy.set_mute(stream.user_volume_muted) {
-                self.stored_stream = new_stream_value;
-                return Err(AudioError::ExternalFailure(
-                    CONTROLLER_ERROR_DEPENDENCY,
-                    "set mute".into(),
-                    format!("{e:?}"),
-                ));
-            }
+        if self.stored_stream.user_volume_muted != new_stream_value.user_volume_muted
+            && let Err(e) = proxy.set_mute(stream.user_volume_muted)
+        {
+            self.stored_stream = new_stream_value;
+            return Err(AudioError::ExternalFailure(
+                CONTROLLER_ERROR_DEPENDENCY,
+                "set mute".into(),
+                format!("{e:?}"),
+            ));
         }
 
         self.stored_stream = new_stream_value;
@@ -142,7 +140,7 @@ impl StreamVolumeControl {
     }
 
     async fn bind_volume_control(&mut self, id: ftrace::Id) -> Result<(), AudioError> {
-        trace!(id, "bind volume control");
+        trace!(id, c"bind volume control");
         if self.proxy.is_some() {
             return Ok(());
         }
@@ -151,7 +149,7 @@ impl StreamVolumeControl {
         let stream_type = self.stored_stream.stream_type;
         let usage = Usage2::RenderUsage(stream_type.into());
 
-        let guard = trace_guard!(id, "bind usage volume control");
+        let guard = trace_guard!(id, c"bind usage volume control");
         if let Err(e) = call!(self.audio_service => bind_usage_volume_control2(&usage, server_end))
         {
             return Err(AudioError::ExternalFailure(
@@ -162,7 +160,7 @@ impl StreamVolumeControl {
         }
         drop(guard);
 
-        let guard = trace_guard!(id, "set values");
+        let guard = trace_guard!(id, c"set values");
         // Once the volume control is bound, apply the persisted audio settings to it.
         if let Err(e) = vol_control_proxy.set_volume(self.stored_stream.user_volume_level) {
             return Err(AudioError::ExternalFailure(
@@ -189,7 +187,7 @@ impl StreamVolumeControl {
             );
         }
 
-        trace!(id, "setup listener");
+        trace!(id, c"setup listener");
 
         let (exit_tx, mut exit_rx) = futures::channel::oneshot::channel::<()>();
         let mut volume_events = vol_control_proxy.take_event_stream();
@@ -199,11 +197,11 @@ impl StreamVolumeControl {
             let publisher = self.publisher.clone();
             async move {
                 let id = ftrace::Id::new();
-                trace!(id, "bind volume handler");
+                trace!(id, c"bind volume handler");
                 loop {
                     futures::select! {
                         _ = exit_rx => {
-                            trace!(id, "exit");
+                            trace!(id, c"exit");
                             #[cfg(test)]
                             {
                                 // Send UNKNOWN_INSPECT_STRING for request-related args because it
@@ -222,7 +220,7 @@ impl StreamVolumeControl {
                             return;
                         }
                         volume_event = volume_events.try_next() => {
-                            trace!(id, "volume_event");
+                            trace!(id, c"volume_event");
                             if let Err(_) | Ok(None) = volume_event {
                                 if let Some(action) = early_exit_action {
                                     (action)();
@@ -245,12 +243,9 @@ impl StreamVolumeControl {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::audio::test_fakes::audio_core_service;
-    use crate::audio::types::{AudioInfo, AudioStreamType};
-    use crate::audio::{
-        StreamVolumeControl, build_audio_default_settings, create_default_audio_stream,
-    };
-    use crate::clock;
+    use crate::test_fakes::audio_core_service;
+    use crate::types::{AudioInfo, AudioStreamType};
+    use crate::{StreamVolumeControl, build_audio_default_settings, create_default_audio_stream};
     use fuchsia_inspect::component;
     use futures::StreamExt;
     use futures::channel::mpsc;

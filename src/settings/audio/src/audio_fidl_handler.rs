@@ -2,9 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use super::audio_controller::{AudioController, Request};
-use super::types::{AudioError, AudioInfo};
-use crate::audio::types::{AudioSettingSource, AudioStream, AudioStreamType, SetAudioStream};
+use crate::audio_controller::{AudioController, Request};
+use crate::types::{
+    AudioError, AudioInfo, AudioSettingSource, AudioStream, AudioStreamType, SetAudioStream,
+};
 use async_utils::hanging_get::server;
 use fidl_fuchsia_media::{AudioRenderUsage, AudioRenderUsage2};
 use fidl_fuchsia_settings::{
@@ -26,8 +27,8 @@ impl From<&AudioInfo> for AudioSettings {
         let mut streams = Vec::new();
         for stream in &info.streams {
             let stream_settings = AudioStreamSettings::try_from(*stream);
-            if stream_settings.is_ok() {
-                streams.push(stream_settings.unwrap());
+            if let Ok(stream_settings) = stream_settings {
+                streams.push(stream_settings);
             }
         }
 
@@ -174,7 +175,7 @@ enum Error {
 }
 
 fn to_request(settings: AudioSettings, id: ftrace::Id) -> Result<Vec<SetAudioStream>, Error> {
-    trace!(id, "to_request");
+    trace!(id, c"to_request");
     settings
         .streams
         .map(|streams| {
@@ -205,7 +206,7 @@ fn to_request(settings: AudioSettings, id: ftrace::Id) -> Result<Vec<SetAudioStr
 }
 
 fn to_request2(settings: AudioSettings2, id: ftrace::Id) -> Result<Vec<SetAudioStream>, Error> {
-    trace!(id, "to_request2");
+    trace!(id, c"to_request2");
     settings
         .streams
         .map(|streams| {
@@ -361,7 +362,7 @@ impl RequestHandler {
             }
             AudioRequest::Set { settings, responder } => {
                 let trace_id = ftrace::Id::new();
-                let _guard = trace_guard!(trace_id, "audio fidl handler set");
+                let _guard = trace_guard!(trace_id, c"audio fidl handler set");
                 let usage_res = self
                     .usage_publisher
                     .request(format!("Set{{settings:{settings:?}}}"), RequestType::Set);
@@ -375,7 +376,7 @@ impl RequestHandler {
             }
             AudioRequest::Set2 { settings, responder } => {
                 let trace_id = ftrace::Id::new();
-                let _guard = trace_guard!(trace_id, "audio fidl handler set2");
+                let _guard = trace_guard!(trace_id, c"audio fidl handler set2");
                 let usage_res = self
                     .usage_publisher
                     .request(format!("Set{{settings:{settings:?}}}"), RequestType::Set);

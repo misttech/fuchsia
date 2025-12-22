@@ -8,8 +8,6 @@ use std::rc::Rc;
 #[cfg(test)]
 use anyhow::format_err;
 use anyhow::{Context, Error};
-use audio::AudioInfoLoader;
-use audio::types::AudioInfo;
 use fidl_fuchsia_io::DirectoryProxy;
 use fidl_fuchsia_settings::{
     AccessibilityRequestStream, AudioRequestStream, DisplayRequestStream,
@@ -28,6 +26,9 @@ use futures::{StreamExt, TryStreamExt};
 use log as _;
 use serde::Deserialize;
 use settings_accessibility::accessibility_controller::AccessibilityController;
+use settings_audio::AudioInfoLoader;
+use settings_audio::audio_controller::{AudioController, Request as AudioRequest};
+use settings_audio::types::AudioInfo;
 use settings_common::config::default_settings::DefaultSetting;
 use settings_common::config::{AgentType, ControllerFlag};
 use settings_common::inspect::event::{
@@ -56,12 +57,9 @@ pub use settings_display::display_configuration::DisplayConfiguration;
 pub use settings_input::input_device_configuration::InputConfiguration;
 pub use settings_light::light_hardware_configuration::LightHardwareConfiguration;
 
-use crate::audio::Request as AudioRequest;
-use crate::audio::audio_controller::AudioController;
 use crate::base::SettingType;
 use crate::ingress::fidl;
 
-pub mod audio;
 mod clock;
 mod storage_migrations;
 
@@ -660,16 +658,19 @@ impl<T: StorageFactory<Storage = DeviceStorage> + 'static> EnvironmentBuilder<T>
         }
 
         let audio_request_tx = if components.contains(&SettingType::Audio) {
-            let audio::SetupResult { mut audio_fidl_handler, request_tx: audio_request_tx, task } =
-                audio::setup_audio_api(
-                    Rc::clone(&service_context),
-                    audio_info_loader.expect("Audio controller requires audio configuration"),
-                    Rc::clone(&device_storage_factory),
-                    SettingValuePublisher::new(setting_value_tx.clone()),
-                    UsagePublisher::new(usage_event_tx.clone(), Rc::clone(&listener_logger)),
-                    external_publisher.clone(),
-                )
-                .await;
+            let settings_audio::SetupResult {
+                mut audio_fidl_handler,
+                request_tx: audio_request_tx,
+                task,
+            } = settings_audio::setup_audio_api(
+                Rc::clone(&service_context),
+                audio_info_loader.expect("Audio controller requires audio configuration"),
+                Rc::clone(&device_storage_factory),
+                SettingValuePublisher::new(setting_value_tx.clone()),
+                UsagePublisher::new(usage_event_tx.clone(), Rc::clone(&listener_logger)),
+                external_publisher.clone(),
+            )
+            .await;
             tasks.push(task);
             let _ = service_dir.add_fidl_service(move |stream: AudioRequestStream| {
                 audio_fidl_handler.handle_stream(stream)
