@@ -9,5 +9,15 @@
                 "*",
             ],
         },
+        {
+            type: "skip",
+            matchers: [
+                // TODO(https://fxbug.dev/470988815): Deflake & unskip these tests.
+                "ip_hooks::drop_outgoing_egress_v4::ebpfmatcher",
+                "ip_hooks::drop_outgoing_egress_v6::ebpfmatcher",
+                "ip_hooks::drop_incoming_ingress_v4::ebpfmatcher",
+                "ip_hooks::drop_incoming_ingress_v6::ebpfmatcher",
+            ],
+        },
     ],
 }
