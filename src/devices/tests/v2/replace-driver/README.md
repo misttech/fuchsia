@@ -3,11 +3,45 @@
 This test checks that we can disable a driver and replace the driver by matching again with another
 driver. It uses the same drivers and topology described in the `reload-driver` test with the
 following changes:
-- target 1 is not colocated with its parent
+
 - target 1 replacement driver will create a child called 'Z' (instead of 'I')
 - target 2 replacement driver will create a child called 'Y' (instead of 'K')
 - The composite replacement will create a child called 'J_replaced' (instead of 'J')
 - The composite replacement will have E as the primary node (instead of 'D').
+
+```
+               dev(root)
+               /       \
+              /         \
+             X           X
+            /             \
+           /               \
+    B(left-parent)      C(right-parent)
+           |                 / | \
+           |                /  |  \
+           |               /   |   X
+           |              /    |    \
+           |             /     |     \
+          D()           E()    F()    G(target-1)
+           |             |     |       |
+           |             |     |       |
+           X--------------------       X
+           |                           |
+           |                           |
+      H(composite)                    I(leaf)
+           |
+           |
+           |
+           |
+           |
+        J(target-2)
+           |
+           |
+           X
+           |
+           |
+        K(leaf)
+```
 
 See `//src/devices/tests/v2/reload-driver/README.md`.
 

@@ -2,10 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{anyhow, Context, Error, Result};
+use anyhow::{Context, Error, Result, anyhow};
 use fuchsia_component::server::ServiceFs;
 use fuchsia_component_test::{ChildOptions, LocalComponentHandles, RealmBuilder};
-use fuchsia_driver_test::{DriverTestRealmBuilder, DriverTestRealmInstance};
+use fuchsia_driver_test::{DriverTestRealmBuilder2, DriverTestRealmInstance2, Options2};
 use futures::channel::mpsc;
 use futures::{StreamExt, TryStreamExt};
 use std::collections::{HashMap, HashSet};
@@ -80,7 +80,6 @@ async fn test_replace_target() -> Result<()> {
 
     // Create the RealmBuilder.
     let builder = RealmBuilder::new().await?;
-    builder.driver_test_realm_setup().await?;
     let waiter = builder
         .add_local_child(
             WAITER_NAME,
@@ -93,23 +92,26 @@ async fn test_replace_target() -> Result<()> {
     let offer = fuchsia_component_test::Capability::protocol::<ft::WaiterMarker>().into();
     let dtr_offers = vec![offer];
 
-    builder.driver_test_realm_add_dtr_offers(&dtr_offers, (&waiter).into()).await?;
-    // Build the Realm.
-    let instance = builder.build().await?;
-
-    // Start the DriverTestRealm.
-    // The drivers listed in driver_disable are unavailable at first, but when they go through
-    // the register flow, they will be available as ephemeral drivers.
     let args = fdt::RealmArgs {
         root_driver: Some("fuchsia-boot:///dtr#meta/root.cm".to_string()),
         driver_disable: Some(vec![
             "fuchsia-boot:///dtr#meta/target_2_replacement.cm".to_string(),
             "fuchsia-boot:///dtr#meta/composite_replacement.cm".to_string(),
         ]),
-        dtr_offers: Some(dtr_offers),
         ..Default::default()
     };
-    instance.driver_test_realm_start(args).await?;
+
+    builder
+        .driver_test_realm_setup(Options2::new().driver_offers((&waiter).into(), dtr_offers), args)
+        .await?;
+    // Build the Realm.
+    let instance = builder.build().await?;
+
+    // Start the DriverTestRealm.
+    // The drivers listed in driver_disable are unavailable at first, but when they go through
+    // the register flow, they will be available as ephemeral drivers.
+
+    instance.wait_for_bootup().await?;
 
     let driver_dev = instance.root.connect_to_protocol_at_exposed_dir()?;
     let driver_registrar: fdr::DriverRegistrarProxy =
@@ -184,6 +186,7 @@ async fn test_replace_target() -> Result<()> {
     if disable_2_result.is_err() {
         return Err(anyhow!("Failed to disable target_2."));
     }
+
     // Now we can restart the second target driver with the rematch flag.
     let restart_result =
         driver_dev.restart_driver_hosts(target_2_url, fdd::RestartRematchFlags::REQUESTED).await?;
@@ -228,6 +231,7 @@ async fn test_replace_target() -> Result<()> {
             return Err(anyhow!("Failed to register target_2 replacement: {}.", err));
         }
     };
+
     // And now that we have registered the replacement we call to bind all available nodes.
     let bind_result = driver_dev.bind_all_unbound_nodes2().await;
     match bind_result {
@@ -324,6 +328,7 @@ async fn test_replace_target() -> Result<()> {
             return Err(anyhow!("Failed to register composite replacement: {}.", err));
         }
     };
+
     // And now that we have registered the replacement we call to bind all available nodes.
     let bind_result = driver_dev.bind_all_unbound_nodes2().await;
     match bind_result {
@@ -369,5 +374,6 @@ async fn test_replace_target() -> Result<()> {
     )
     .await?;
 
+    instance.destroy().await?;
     Ok(())
 }

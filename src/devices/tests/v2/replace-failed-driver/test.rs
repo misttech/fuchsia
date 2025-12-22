@@ -2,9 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use fuchsia_component_test::RealmBuilder;
-use fuchsia_driver_test::{DriverTestRealmBuilder, DriverTestRealmInstance};
+use fuchsia_driver_test::{DriverTestRealmBuilder2, DriverTestRealmInstance2, Options2};
 use {
     fidl_fuchsia_driver_development as fdd, fidl_fuchsia_driver_registrar as fdr,
     fidl_fuchsia_driver_test as fdt, fuchsia_async as fasync,
@@ -52,20 +52,19 @@ async fn test_replace_failed_driver() -> Result<()> {
 
     // Create the RealmBuilder.
     let builder = RealmBuilder::new().await?;
-    builder.driver_test_realm_setup().await?;
 
-    // Build the Realm.
-    let instance = builder.build().await?;
-
-    // Start the DriverTestRealm.
-    // Keep the replacement disabled until we disable the original.
     let args = fdt::RealmArgs {
         driver_disable: Some(vec![
-            "fuchsia-boot:///dtr#meta/fail-to-start-replacement.cm".to_string()
+            // Keep the replacement disabled until we disable the original.
+            "fuchsia-boot:///dtr#meta/fail-to-start-replacement.cm".to_string(),
         ]),
         ..Default::default()
     };
-    instance.driver_test_realm_start(args).await?;
+    builder.driver_test_realm_setup(Options2::default(), args).await?;
+
+    // Build the Realm.
+    let instance = builder.build().await?;
+    instance.wait_for_bootup().await?;
 
     let driver_dev = instance.root.connect_to_protocol_at_exposed_dir()?;
     let driver_registrar: fdr::DriverRegistrarProxy =
@@ -142,5 +141,6 @@ async fn test_replace_failed_driver() -> Result<()> {
         }
     }
 
+    instance.destroy().await?;
     Ok(())
 }

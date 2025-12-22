@@ -4,23 +4,26 @@
 
 use anyhow::Result;
 use fuchsia_component_test::RealmBuilder;
-use fuchsia_driver_test::{DriverTestRealmBuilder, DriverTestRealmInstance};
+use fuchsia_driver_test::{DriverTestRealmBuilder2, DriverTestRealmInstance2, Options2};
 use {fidl_fuchsia_devfs_test as ft, fidl_fuchsia_driver_test as fdt, fuchsia_async as fasync};
 
 #[fasync::run_singlethreaded(test)]
 async fn test_devfs_exporter() -> Result<()> {
     // Create the RealmBuilder.
     let builder = RealmBuilder::new().await?;
-    builder.driver_test_realm_setup().await?;
-    // Build the Realm.
+    builder
+        .driver_test_realm_setup(
+            Options2::default(),
+            fdt::RealmArgs { root_driver: Some("#meta/root.cm".to_string()), ..Default::default() },
+        )
+        .await?;
     let instance = builder.build().await?;
-    // Start the DriverTestRealm.
-    let args =
-        fdt::RealmArgs { root_driver: Some("#meta/root.cm".to_string()), ..Default::default() };
-    instance.driver_test_realm_start(args).await?;
+    instance.wait_for_bootup().await?;
     // Connect to our driver.
     let dev = instance.driver_test_realm_connect_to_dev()?;
     let device =
         device_watcher::recursive_wait_and_open::<ft::DeviceMarker>(&dev, "root-device").await?;
-    Ok(device.ping().await?)
+    device.ping().await?;
+    instance.destroy().await?;
+    Ok(())
 }

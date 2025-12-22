@@ -8,7 +8,7 @@ use component_events::matcher::EventMatcher;
 use diagnostics_assertions::assert_data_tree;
 use diagnostics_reader::ArchiveReader;
 use fuchsia_component_test::RealmBuilder;
-use fuchsia_driver_test::{DriverTestRealmBuilder, DriverTestRealmInstance};
+use fuchsia_driver_test::{DriverTestRealmBuilder2, DriverTestRealmInstance2, Options2};
 use futures::StreamExt;
 use {fidl_fuchsia_driver_test as fdt, fuchsia_async as fasync};
 
@@ -33,10 +33,6 @@ async fn driver_runner_test() -> Result<(), anyhow::Error> {
     let mut started_stream = EventStream::open().await?;
 
     let builder = RealmBuilder::new().await?;
-    // TODO(https://fxbug.dev/42166832): This should be a relative URL but then driver_host.cm doesn't resolve correctly.
-    let _ = builder.driver_test_realm_setup().await?;
-
-    let instance = builder.build().await?;
 
     let args = fdt::RealmArgs {
         root_driver: Some(
@@ -45,7 +41,10 @@ async fn driver_runner_test() -> Result<(), anyhow::Error> {
         ),
         ..Default::default()
     };
-    instance.driver_test_realm_start(args).await?;
+
+    builder.driver_test_realm_setup(Options2::default(), args).await?;
+    let instance = builder.build().await?;
+    instance.wait_for_bootup().await?;
 
     let _ = instance.driver_test_realm_connect_to_dev()?;
 
@@ -59,7 +58,7 @@ async fn driver_runner_test() -> Result<(), anyhow::Error> {
     //   /driver-hosts:driver-host-{DRIVER_NUMBER}
     let events = vec![
         EventMatcher::ok().r#type(events::Started::TYPE).moniker_regex(r".*/driver_manager$"),
-        EventMatcher::ok().r#type(events::Started::TYPE).moniker_regex(r".*/driver-index$"),
+        EventMatcher::ok().r#type(events::Started::TYPE).moniker_regex(r".*/driver_index$"),
         EventMatcher::ok().r#type(events::Started::TYPE).moniker_regex(r".*/base-drivers:root$"),
         EventMatcher::ok()
             .r#type(events::Started::TYPE)
@@ -95,5 +94,6 @@ async fn driver_runner_test() -> Result<(), anyhow::Error> {
     if !found {
         panic!("hello world not found");
     }
+    instance.destroy().await?;
     Ok(())
 }

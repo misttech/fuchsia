@@ -6,7 +6,7 @@ use anyhow::{Error, Result, format_err};
 use diagnostics_assertions::assert_data_tree;
 use diagnostics_reader::{ArchiveReader, DiagnosticsHierarchy};
 use fuchsia_component_test::RealmBuilder;
-use fuchsia_driver_test::{DriverTestRealmBuilder, DriverTestRealmInstance};
+use fuchsia_driver_test::{DriverTestRealmBuilder2, DriverTestRealmInstance2, Options2};
 use {fidl_fuchsia_driver_test as fdt, fuchsia_async as fasync};
 
 async fn get_inspect_hierarchy(moniker: String) -> Result<DiagnosticsHierarchy, Error> {
@@ -24,15 +24,13 @@ async fn get_inspect_hierarchy(moniker: String) -> Result<DiagnosticsHierarchy, 
 async fn test_driver_inspect() -> Result<()> {
     // Create the RealmBuilder.
     let builder = RealmBuilder::new().await?;
-    builder.driver_test_realm_setup().await?;
-    // Build the Realm.
-    let instance = builder.build().await?;
-    // Start DriverTestRealm
     let args = fdt::RealmArgs {
         root_driver: Some("fuchsia-boot:///dtr#meta/test-parent-sys.cm".to_string()),
         ..Default::default()
     };
-    instance.driver_test_realm_start(args).await?;
+    builder.driver_test_realm_setup(Options2::new(), args).await?;
+    let instance = builder.build().await?;
+    instance.wait_for_bootup().await?;
 
     // Connect to our driver.
     let dev = instance.driver_test_realm_connect_to_dev()?;
@@ -42,7 +40,7 @@ async fn test_driver_inspect() -> Result<()> {
     .await?;
 
     let moniker = format!(
-        "realm_builder\\:{}/driver_test_realm/realm_builder\\:0/boot-drivers\\:dev.sys.test",
+        "realm_builder\\:{}/driver_test_realm/boot-drivers\\:dev.sys.test",
         instance.root.child_name()
     );
     // Check the inspect metrics.
@@ -63,5 +61,6 @@ async fn test_driver_inspect() -> Result<()> {
         }
     });
 
+    instance.destroy().await?;
     Ok(())
 }

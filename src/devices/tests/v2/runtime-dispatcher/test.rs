@@ -5,7 +5,7 @@
 use anyhow::{Error, Result, anyhow};
 use fuchsia_component::server::ServiceFs;
 use fuchsia_component_test::{ChildOptions, LocalComponentHandles, RealmBuilder};
-use fuchsia_driver_test::{DriverTestRealmBuilder, DriverTestRealmInstance};
+use fuchsia_driver_test::{DriverTestRealmBuilder2, DriverTestRealmInstance2, Options2};
 use futures::channel::mpsc;
 use futures::{StreamExt, TryStreamExt};
 use {fidl_fuchsia_driver_test as fdt, fidl_fuchsia_runtime_test as ft, fuchsia_async as fasync};
@@ -37,7 +37,6 @@ async fn test_runtime_dispatcher() -> Result<()> {
 
     // Create the RealmBuilder.
     let builder = RealmBuilder::new().await?;
-    builder.driver_test_realm_setup().await?;
     let waiter = builder
         .add_local_child(
             WAITER_NAME,
@@ -48,20 +47,19 @@ async fn test_runtime_dispatcher() -> Result<()> {
         )
         .await?;
     let offer = fuchsia_component_test::Capability::protocol::<ft::WaiterMarker>().into();
-    let dtr_offers = vec![offer];
+    let offers = vec![offer];
+    let args =
+        fdt::RealmArgs { root_driver: Some("#meta/root.cm".to_string()), ..Default::default() };
+    builder
+        .driver_test_realm_setup(Options2::new().driver_offers((&waiter).into(), offers), args)
+        .await?;
 
-    builder.driver_test_realm_add_dtr_offers(&dtr_offers, (&waiter).into()).await?;
     // Build the Realm.
     let instance = builder.build().await?;
-
-    // Start the DriverTestRealm.
-    let args = fdt::RealmArgs {
-        root_driver: Some("#meta/root.cm".to_string()),
-        dtr_offers: Some(dtr_offers),
-        ..Default::default()
-    };
-    instance.driver_test_realm_start(args).await?;
+    instance.wait_for_bootup().await?;
 
     // Wait for the driver to call Waiter.Done.
-    receiver.next().await.ok_or_else(|| anyhow!("Receiver failed"))
+    receiver.next().await.ok_or_else(|| anyhow!("Receiver failed"))?;
+    instance.destroy().await?;
+    Ok(())
 }

@@ -4,7 +4,7 @@
 
 use anyhow::Result;
 use fuchsia_component_test::{RealmBuilder, Ref};
-use fuchsia_driver_test::{DriverTestRealmBuilder, DriverTestRealmInstance};
+use fuchsia_driver_test::{DriverTestRealmBuilder2, DriverTestRealmInstance2, Options2};
 use {
     fidl_fuchsia_compat_runtime_test as ft, fidl_fuchsia_driver_test as fdt,
     fuchsia_async as fasync,
@@ -14,26 +14,24 @@ use {
 async fn test_compat_runtime() -> Result<()> {
     // Create the RealmBuilder.
     let builder = RealmBuilder::new().await?;
-    builder.driver_test_realm_setup().await?;
 
     let offer = fuchsia_component_test::Capability::protocol::<ft::WaiterMarker>().into();
-    let dtr_offers = vec![offer];
+    let offers = vec![offer];
 
-    builder.driver_test_realm_add_dtr_offers(&dtr_offers, Ref::parent()).await?;
+    let args =
+        fdt::RealmArgs { root_driver: Some("#meta/root.cm".to_string()), ..Default::default() };
+    builder
+        .driver_test_realm_setup(Options2::new().driver_offers(Ref::parent(), offers), args)
+        .await?;
+    // Build the Realm.
     let instance = builder.build().await?;
-
-    // Start the DriverTestRealm.
-    let args = fdt::RealmArgs {
-        root_driver: Some("#meta/root.cm".to_string()),
-        dtr_offers: Some(dtr_offers),
-        ..Default::default()
-    };
-    instance.driver_test_realm_start(args).await?;
+    instance.wait_for_bootup().await?;
 
     // Connect to our driver.
     let dev = instance.driver_test_realm_connect_to_dev()?;
     let driver = device_watcher::recursive_wait_and_open::<ft::LeafMarker>(&dev, "v1/leaf").await?;
     let response = driver.get_string().await.unwrap();
     assert_eq!(response, "hello world!");
+    instance.destroy().await?;
     Ok(())
 }

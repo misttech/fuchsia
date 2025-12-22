@@ -5,23 +5,22 @@
 use anyhow::{Context, Result};
 use fidl::endpoints::Proxy as _;
 use fuchsia_component_test::{RealmBuilder, RealmInstance};
-use fuchsia_driver_test::{DriverTestRealmBuilder, DriverTestRealmInstance};
+use fuchsia_driver_test::{DriverTestRealmBuilder2, DriverTestRealmInstance2, Options2};
 use {fidl_fuchsia_driver_test as fdt, fidl_fuchsia_rebind_test as frt, fuchsia_async as fasync};
 
 async fn start_driver_test_realm() -> Result<RealmInstance> {
     const ROOT_DRIVER_URL: &str = "fuchsia-boot:///dtr#meta/test-parent-sys.cm";
 
     let builder = RealmBuilder::new().await.context("Failed to create realm builder")?;
-    builder.driver_test_realm_setup().await.context("Failed to setup driver test realm")?;
-    let instance = builder.build().await.context("Failed to build realm instance")?;
-
-    let mut realm_args = fdt::RealmArgs::default();
-    realm_args.root_driver = Some(ROOT_DRIVER_URL.to_owned());
-    instance
-        .driver_test_realm_start(realm_args)
+    builder
+        .driver_test_realm_setup(
+            Options2::new(),
+            fdt::RealmArgs { root_driver: Some(ROOT_DRIVER_URL.to_owned()), ..Default::default() },
+        )
         .await
-        .context("Failed to start driver test realm")?;
-
+        .context("Failed to setup driver test realm")?;
+    let instance = builder.build().await.context("Failed to build realm instance")?;
+    instance.wait_for_bootup().await.context("Failed to wait for bootup")?;
     Ok(instance)
 }
 
@@ -49,5 +48,6 @@ async fn test_rebind() -> Result<()> {
     child_controller.on_closed().await?;
     parent.add_child().await?.map_err(|e| zx::Status::from_raw(e))?;
     device_watcher::recursive_wait(&dev, CHILD_DEV_PATH).await?;
+    instance.destroy().await?;
     Ok(())
 }

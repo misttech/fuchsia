@@ -4,7 +4,7 @@
 
 use anyhow::Result;
 use fuchsia_component_test::RealmBuilder;
-use fuchsia_driver_test::{DriverTestRealmBuilder, DriverTestRealmInstance};
+use fuchsia_driver_test::{DriverTestRealmBuilder2, DriverTestRealmInstance2, Options2};
 use {fidl_fuchsia_driver_test as fdt, fuchsia_async as fasync};
 
 // This test checks for a very specific bug in the compat driver, where
@@ -14,15 +14,15 @@ use {fidl_fuchsia_driver_test as fdt, fuchsia_async as fasync};
 async fn test_adding_children() -> Result<()> {
     // Create the RealmBuilder.
     let builder = RealmBuilder::new().await?;
-    builder.driver_test_realm_setup().await?;
-    // Build the Realm.
-    let instance = builder.build().await?;
-    // Start DriverTestRealm
+
     let args = fdt::RealmArgs {
         root_driver: Some("fuchsia-boot:///dtr#meta/test-parent-sys.cm".to_string()),
         ..Default::default()
     };
-    instance.driver_test_realm_start(args).await?;
+    builder.driver_test_realm_setup(Options2::default(), args).await?;
+    // Build the Realm.
+    let instance = builder.build().await?;
+    instance.wait_for_bootup().await?;
 
     // Connect to our root-a/leaf driver.
     let dev = instance.driver_test_realm_connect_to_dev()?;
@@ -55,6 +55,7 @@ async fn test_adding_children() -> Result<()> {
     device_watcher::recursive_wait(&dev, "sys/test/root-a/leaf/child").await?;
     device_watcher::recursive_wait(&dev, "sys/test/root-b/leaf/child").await?;
 
+    instance.destroy().await?;
     Ok(())
 }
 
@@ -64,15 +65,14 @@ async fn test_adding_children() -> Result<()> {
 async fn test_sharing_globals() -> Result<()> {
     // Create the RealmBuilder.
     let builder = RealmBuilder::new().await?;
-    builder.driver_test_realm_setup().await?;
-    // Build the Realm.
-    let instance = builder.build().await?;
-    // Start DriverTestRealm
     let args = fdt::RealmArgs {
         root_driver: Some("fuchsia-boot:///#meta/test-parent-sys.cm".to_string()),
         ..Default::default()
     };
-    instance.driver_test_realm_start(args).await?;
+    builder.driver_test_realm_setup(Options2::default(), args).await?;
+    // Build the Realm.
+    let instance = builder.build().await?;
+    instance.wait_for_bootup().await?;
 
     // Connect to our root-a/leaf driver.
     let dev = instance.driver_test_realm_connect_to_dev()?;
@@ -100,5 +100,6 @@ async fn test_sharing_globals() -> Result<()> {
     let counter = driver.global_counter().await.unwrap();
     assert_eq!(counter, 1);
 
+    instance.destroy().await?;
     Ok(())
 }

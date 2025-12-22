@@ -7,7 +7,7 @@ use fidl::endpoints::ServiceMarker;
 use fuchsia_async::{self as fasync, DurationExt, Timer};
 use fuchsia_component::client;
 use fuchsia_component_test::RealmBuilder;
-use fuchsia_driver_test::{DriverTestRealmBuilder, DriverTestRealmInstance};
+use fuchsia_driver_test::{DriverTestRealmBuilder2, DriverTestRealmInstance2, Options2};
 use {
     fidl_fuchsia_component_test as ftest, fidl_fuchsia_crashdriver_test as fcdt,
     fidl_fuchsia_driver_development as fdd, fidl_fuchsia_driver_test as fdt,
@@ -58,6 +58,8 @@ async fn wait_for_instance(realm: &fuchsia_component_test::RealmInstance) -> Res
 
 #[fasync::run_singlethreaded(test)]
 async fn test_restart_on_crash() -> Result<()> {
+    let args =
+        fdt::RealmArgs { root_driver: Some("#meta/crasher.cm".to_string()), ..Default::default() };
     let exposes = vec![ftest::Capability::Service(ftest::Service {
         name: Some(fcdt::DeviceMarker::SERVICE_NAME.to_string()),
         ..Default::default()
@@ -65,18 +67,12 @@ async fn test_restart_on_crash() -> Result<()> {
 
     // Create the RealmBuilder.
     let builder = RealmBuilder::new().await?;
-    builder.driver_test_realm_setup().await?;
-    builder.driver_test_realm_add_dtr_exposes(&exposes).await?;
+
+    builder.driver_test_realm_setup(Options2::new().driver_exposes(exposes), args).await?;
+
     // Build the Realm.
     let realm = builder.build().await?;
-
-    // Start the DriverTestRealm.
-    let args = fdt::RealmArgs {
-        root_driver: Some("#meta/crasher.cm".to_string()),
-        dtr_exposes: Some(exposes),
-        ..Default::default()
-    };
-    realm.driver_test_realm_start(args).await?;
+    realm.wait_for_bootup().await?;
 
     // Find an instance of the `Device` service.
     wait_for_instance(&realm).await?;
@@ -123,5 +119,6 @@ async fn test_restart_on_crash() -> Result<()> {
     // Check that it is able to communicate with the new one.
     let pong_2 = crasher.ping().await?;
     assert_ne!(pong_1, pong_2);
+    realm.destroy().await?;
     Ok(())
 }

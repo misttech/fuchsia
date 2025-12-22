@@ -5,29 +5,23 @@
 use anyhow::{Context, Result};
 use fuchsia_component::client;
 use fuchsia_component_test::RealmBuilder;
-use fuchsia_driver_test::{DriverTestRealmBuilder, DriverTestRealmInstance};
+use fuchsia_driver_test::{DriverTestRealmBuilder2, DriverTestRealmInstance2, Options2};
 use {fidl_fuchsia_driver_test as fdt, fidl_fuchsia_services_test as ft, fuchsia_async as fasync};
 
 #[fasync::run_singlethreaded(test)]
 async fn test_services() -> Result<()> {
     // Create the RealmBuilder.
     let builder = RealmBuilder::new().await?;
-    builder.driver_test_realm_setup().await?;
 
     let expose = fuchsia_component_test::Capability::service::<ft::DeviceMarker>().into();
-    let dtr_exposes = vec![expose];
+    let exposes = vec![expose];
+    let args =
+        fdt::RealmArgs { root_driver: Some("#meta/root.cm".to_string()), ..Default::default() };
 
-    builder.driver_test_realm_add_dtr_exposes(&dtr_exposes).await?;
+    builder.driver_test_realm_setup(Options2::new().driver_exposes(exposes), args).await?;
     // Build the Realm.
     let realm = builder.build().await?;
-
-    // Start the DriverTestRealm.
-    let args = fdt::RealmArgs {
-        root_driver: Some("#meta/root.cm".to_string()),
-        dtr_exposes: Some(dtr_exposes),
-        ..Default::default()
-    };
-    realm.driver_test_realm_start(args).await?;
+    realm.wait_for_bootup().await?;
 
     // Connect to the `Device` service.
     let device = client::Service::open_from_dir(realm.root.get_exposed_dir(), ft::DeviceMarker)
@@ -42,6 +36,7 @@ async fn test_services() -> Result<()> {
     let data = device.connect_to_data()?;
     data.data_do().await?;
 
+    realm.destroy().await?;
     Ok(())
 }
 
@@ -49,22 +44,18 @@ async fn test_services() -> Result<()> {
 async fn test_services_v1() -> Result<()> {
     // Create the RealmBuilder.
     let builder = RealmBuilder::new().await?;
-    builder.driver_test_realm_setup().await?;
 
     let expose = fuchsia_component_test::Capability::service::<ft::DeviceMarker>().into();
-    let dtr_exposes = vec![expose];
-
-    builder.driver_test_realm_add_dtr_exposes(&dtr_exposes).await?;
-    // Build the Realm.
-    let realm = builder.build().await?;
-
-    // Start the DriverTestRealm.
+    let exposes = vec![expose];
     let args = fdt::RealmArgs {
         root_driver: Some("#meta/v1_driver.cm".to_string()),
-        dtr_exposes: Some(dtr_exposes),
         ..Default::default()
     };
-    realm.driver_test_realm_start(args).await?;
+
+    builder.driver_test_realm_setup(Options2::new().driver_exposes(exposes), args).await?;
+    // Build the Realm.
+    let realm = builder.build().await?;
+    realm.wait_for_bootup().await?;
 
     // Connect to the `Device` service.
     let device = client::Service::open_from_dir(realm.root.get_exposed_dir(), ft::DeviceMarker)
@@ -79,5 +70,6 @@ async fn test_services_v1() -> Result<()> {
     let data = device.connect_to_data()?;
     data.data_do().await?;
 
+    realm.destroy().await?;
     Ok(())
 }

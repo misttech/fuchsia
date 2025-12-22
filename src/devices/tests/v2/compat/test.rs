@@ -4,22 +4,22 @@
 
 use anyhow::Result;
 use fuchsia_component_test::RealmBuilder;
-use fuchsia_driver_test::{DriverTestRealmBuilder, DriverTestRealmInstance};
+use fuchsia_driver_test::{DriverTestRealmBuilder2, DriverTestRealmInstance2, Options2};
 use {fidl_fuchsia_driver_test as fdt, fuchsia_async as fasync};
 
 #[fasync::run_singlethreaded(test)]
 async fn test_sample_driver() -> Result<()> {
     // Create the RealmBuilder.
     let builder = RealmBuilder::new().await?;
-    builder.driver_test_realm_setup().await?;
-    // Build the Realm.
-    let instance = builder.build().await?;
-    // Start DriverTestRealm
+
     let args = fdt::RealmArgs {
         root_driver: Some("fuchsia-boot:///dtr#meta/test-parent-sys.cm".to_string()),
         ..Default::default()
     };
-    instance.driver_test_realm_start(args).await?;
+    builder.driver_test_realm_setup(Options2::default(), args).await?;
+    // Build the Realm.
+    let instance = builder.build().await?;
+    instance.wait_for_bootup().await?;
 
     // Connect to our driver.
     let dev = instance.driver_test_realm_connect_to_dev()?;
@@ -31,5 +31,6 @@ async fn test_sample_driver() -> Result<()> {
         .await?;
     let response = driver.get_string().await.unwrap();
     assert_eq!(response, "hello world!");
+    instance.destroy().await?;
     Ok(())
 }

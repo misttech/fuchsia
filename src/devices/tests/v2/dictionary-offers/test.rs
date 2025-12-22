@@ -51,13 +51,6 @@ async fn data_plane_component(
 async fn test_dictionary_offers() -> Result<()> {
     let builder = RealmBuilder::new().await?;
 
-    let expose = Capability::service::<ft::ControlServiceMarker>().into();
-    let dtr_exposes = vec![expose];
-    let args =
-        fdt::RealmArgs { root_driver: Some("#meta/root.cm".to_string()), ..Default::default() };
-    let options = Options2::new().driver_exposes(dtr_exposes);
-    builder.driver_test_realm_setup(options, args).await?;
-
     let (sender, mut receiver) = mpsc::channel(1);
     let sender = Arc::new(Mutex::new(sender));
 
@@ -92,6 +85,12 @@ async fn test_dictionary_offers() -> Result<()> {
         )
         .await?;
 
+    let args =
+        fdt::RealmArgs { root_driver: Some("#meta/root.cm".to_string()), ..Default::default() };
+    let expose = Capability::service::<ft::ControlServiceMarker>().into();
+    let exposes = vec![expose];
+
+    builder.driver_test_realm_setup(Options2::new().driver_exposes(exposes), args).await?;
     let realm = builder.build().await?;
     realm.wait_for_bootup().await?;
 
@@ -206,6 +205,5 @@ async fn test_dictionary_offers() -> Result<()> {
     receiver.next().await;
 
     realm.destroy().await?;
-
     Ok(())
 }

@@ -6,7 +6,7 @@ use anyhow::Result;
 use component_events::events::{EventStream, Started, Stopped};
 use component_events::matcher::EventMatcher;
 use fuchsia_component_test::RealmBuilder;
-use fuchsia_driver_test::{DriverTestRealmBuilder, DriverTestRealmInstance};
+use fuchsia_driver_test::{DriverTestRealmBuilder2, DriverTestRealmInstance2, Options2};
 use {
     fidl_fuchsia_driver_development as fdd, fidl_fuchsia_driver_framework as fdf,
     fidl_fuchsia_driver_test as fdt, fuchsia_async as fasync,
@@ -18,12 +18,11 @@ async fn test_index_stop_on_idle() -> Result<()> {
 
     // Create the RealmBuilder.
     let builder = RealmBuilder::new().await?;
-    builder.driver_test_realm_setup().await?;
+    let args = fdt::RealmArgs { driver_index_stop_timeout_millis: Some(100), ..Default::default() };
+    builder.driver_test_realm_setup(Options2::new(), args).await?;
     // Build the Realm.
     let realm = builder.build().await?;
-    // Start the DriverTestRealm.
-    let args = fdt::RealmArgs { driver_index_stop_timeout_millis: Some(100), ..Default::default() };
-    realm.driver_test_realm_start(args).await?;
+    realm.wait_for_bootup().await?;
 
     // Add some composite node specs to the index.
     {
@@ -103,7 +102,7 @@ async fn test_index_stop_on_idle() -> Result<()> {
 
     // Make sure index is started.
     let _started = EventMatcher::ok()
-        .moniker_regex(".+driver-index")
+        .moniker_regex(".+driver_index")
         .wait::<Started>(&mut event_stream)
         .await
         .unwrap();
@@ -129,7 +128,7 @@ async fn test_index_stop_on_idle() -> Result<()> {
 
     // Wait for stop event.
     let _stopped = EventMatcher::ok()
-        .moniker_regex(".+driver-index")
+        .moniker_regex(".+driver_index")
         .wait::<Stopped>(&mut event_stream)
         .await
         .unwrap();
@@ -171,17 +170,18 @@ async fn test_index_stop_on_idle() -> Result<()> {
 
     // Catch the start event (for when we called into it again earlier).
     let _started = EventMatcher::ok()
-        .moniker_regex(".+driver-index")
+        .moniker_regex(".+driver_index")
         .wait::<Started>(&mut event_stream)
         .await
         .unwrap();
 
     // Wait for it to go back to idle and stop again.
     let _stopped = EventMatcher::ok()
-        .moniker_regex(".+driver-index")
+        .moniker_regex(".+driver_index")
         .wait::<Stopped>(&mut event_stream)
         .await
         .unwrap();
 
+    realm.destroy().await?;
     Ok(())
 }
