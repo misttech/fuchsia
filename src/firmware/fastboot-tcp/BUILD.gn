@@ -75,6 +75,13 @@ shared_library("fastboot-shared-lib") {
   configs += [ "//build/config/lto" ]
   configs -= [ "//build/config/lto" ]
   configs += [ "//build/config/lto:no-lto" ]
+  configs += [ ":exclude-libs" ]
+}
+
+config("exclude-libs") {
+  # We're including a rust static library that adds a bunch of dependencies
+  # that we don't want to link against if they're not needed.
+  ldflags = [ "-Wl,--exclude-libs=ALL" ]
 }
 
 test("fastboot-shared-lib-test") {
