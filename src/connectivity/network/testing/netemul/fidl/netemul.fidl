@@ -124,6 +124,9 @@ closed protocol Sandbox {
                             /// NOTE: this value may only be set for [`capability`] of type
                             ///       [`protocol`].
                             3: is_weak bool;
+                            /// Whether to dynamically offer this capability from void when the used
+                            /// protocol has not been exposed by another child in the realm.
+                            4: dynamically_offer_from_void bool;
                         };
 
                         /// A dependency on a storage capability offered by

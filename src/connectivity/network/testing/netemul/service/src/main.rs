@@ -216,6 +216,7 @@ async fn create_realm_instance(
             ChildOptions::new(),
         )
         .await?;
+    let mut children_with_uses = vec![];
     for ChildDef {
         source,
         name,
@@ -303,6 +304,20 @@ async fn create_realm_instance(
                     .to(Ref::parent()),
             )
             .await?;
+        let config_values = config_values.unwrap_or_default();
+        if !config_values.is_empty() {
+            builder.init_mutable_config_from_package(&child_ref).await?;
+            for fnetemul::ChildConfigValue { key, value } in config_values {
+                builder.set_config_value(&child_ref, &key, value.fidl_into_native()).await?;
+            }
+        }
+        children_with_uses.push((name, uses));
+    }
+    // Iterate through the "uses" statements after we iterate through all the "exposes"
+    // statements, so that if a capability specifies `dynamically_offer_from_void` then
+    // there is enough information to infer whether the capability is present.
+    for (name, uses) in children_with_uses {
+        let child_ref = fuchsia_component_test::ChildRef::from(name.clone());
         if let Some(uses) = uses {
             match uses {
                 ChildUses::Capabilities(caps) => {
@@ -389,16 +404,38 @@ async fn create_realm_instance(
                                 name: source,
                                 capability,
                                 is_weak,
+                                dynamically_offer_from_void,
                                 ..
                             }) => {
-                                let source = source
-                                    .map(|source| Ref::child(source))
-                                    .unwrap_or_else(|| Ref::void());
+                                let exposed_capability = capability
+                                    .ok_or(CreateRealmError::CapabilityNameNotProvided)?;
+                                let source = |name| {
+                                    source
+                                        .and_then(|source| {
+                                            // If the `dynamically_offer_from_void` option is set
+                                            // for the Realm, when there is a child in the realm
+                                            // offering the capability, route the capability from
+                                            // that child. Otherwise, route the capability from
+                                            // void and mark it as optional.
+                                            // Don't consider offering from void.
+                                            if !dynamically_offer_from_void.unwrap_or(false) {
+                                                return Some(Ref::child(source));
+                                            }
+                                            // Offer from void if we don't have offering chidlren.
+                                            capability_from_children.get(name).and_then(
+                                                |offering_children| {
+                                                    offering_children
+                                                        .contains(&source)
+                                                        .then_some(Ref::child(source))
+                                                },
+                                            )
+                                        })
+                                        .unwrap_or_else(|| Ref::void())
+                                };
                                 let is_weak = is_weak.unwrap_or(false);
-                                match capability
-                                    .ok_or(CreateRealmError::CapabilityNameNotProvided)?
-                                {
+                                match exposed_capability {
                                     fnetemul::ExposedCapability::Protocol(capability) => {
+                                        let source = source(&capability);
                                         debug!(
                                             "{}routing capability '{}' from component '{}' to '{}'",
                                             if is_weak { "weakly " } else { "" },
@@ -409,8 +446,11 @@ async fn create_realm_instance(
                                         let () = child_dep_routes.push(
                                             Route::new()
                                                 .capability({
-                                                    let cap =
+                                                    let mut cap =
                                                         Capability::protocol_by_name(&capability);
+                                                    if source == Ref::void() {
+                                                        cap = cap.optional();
+                                                    }
                                                     if is_weak { cap.weak() } else { cap }
                                                 })
                                                 .from(source)
@@ -419,6 +459,7 @@ async fn create_realm_instance(
                                         UniqueCapability::Protocol { proto_name: capability.into() }
                                     }
                                     fnetemul::ExposedCapability::Configuration(capability) => {
+                                        let source = source(&capability);
                                         if is_weak {
                                             error!(
                                                 "is_weak is unsupported for capabilities of type \
@@ -441,6 +482,7 @@ async fn create_realm_instance(
                                         UniqueCapability::Configuration { name: capability.into() }
                                     }
                                     fnetemul::ExposedCapability::Service(capability) => {
+                                        let source = source(&capability);
                                         if is_weak {
                                             error!(
                                                 "is_weak is unsupported for capabilities of type \
@@ -561,13 +603,6 @@ async fn create_realm_instance(
                         }
                     }
                 }
-            }
-        }
-        let config_values = config_values.unwrap_or_default();
-        if !config_values.is_empty() {
-            builder.init_mutable_config_from_package(&child_ref).await?;
-            for fnetemul::ChildConfigValue { key, value } in config_values {
-                builder.set_config_value(&child_ref, &key, value.fidl_into_native()).await?;
             }
         }
     }
@@ -2040,24 +2075,6 @@ mod tests {
                 children: vec![fnetemul::ChildDef {
                     source: Some(fnetemul::ChildSource::Component(COUNTER_URL.to_string())),
                     name: None,
-                    ..Default::default()
-                }],
-                epitaph: zx::Status::INVALID_ARGS,
-            },
-            TestCase {
-                name: "name not specified for child dependency",
-                children: vec![fnetemul::ChildDef {
-                    name: Some(COUNTER_COMPONENT_NAME.to_string()),
-                    source: Some(fnetemul::ChildSource::Component(COUNTER_URL.to_string())),
-                    uses: Some(fnetemul::ChildUses::Capabilities(vec![
-                        fnetemul::Capability::ChildDep(fnetemul::ChildDep {
-                            name: None,
-                            capability: Some(fnetemul::ExposedCapability::Protocol(
-                                CounterMarker::PROTOCOL_NAME.to_string(),
-                            )),
-                            ..Default::default()
-                        }),
-                    ])),
                     ..Default::default()
                 }],
                 epitaph: zx::Status::INVALID_ARGS,

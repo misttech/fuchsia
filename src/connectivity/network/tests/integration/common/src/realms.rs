@@ -519,16 +519,18 @@ impl<'a> From<&'a KnownServiceProvider> for fnetemul::ChildDef {
                             .chain(
                                 [
                                     fnetemul::Capability::LogSink(fnetemul::Empty {}),
-                                    fnetemul::Capability::ChildDep(protocol_dep::<
-                                        fnet_filter::ControlMarker,
-                                    >(
-                                        constants::netstack::COMPONENT_NAME,
-                                    )),
-                                    fnetemul::Capability::ChildDep(protocol_dep::<
-                                        fnet_filter_deprecated::FilterMarker,
-                                    >(
-                                        constants::netstack::COMPONENT_NAME,
-                                    )),
+                                    fnetemul::Capability::ChildDep(fnetemul::ChildDep {
+                                        dynamically_offer_from_void: Some(true),
+                                        ..protocol_dep::<fnet_filter::ControlMarker>(
+                                            constants::netstack::COMPONENT_NAME,
+                                        )
+                                    }),
+                                    fnetemul::Capability::ChildDep(fnetemul::ChildDep {
+                                        dynamically_offer_from_void: Some(true),
+                                        ..protocol_dep::<fnet_filter_deprecated::FilterMarker>(
+                                            constants::netstack::COMPONENT_NAME,
+                                        )
+                                    }),
                                     fnetemul::Capability::ChildDep(protocol_dep::<
                                         fnet_interfaces::StateMarker,
                                     >(
