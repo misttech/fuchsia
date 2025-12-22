@@ -131,3 +131,116 @@ pub struct Rights(pub Vec<Right>);
 pub trait RightsClause {
     fn rights(&self) -> Option<&Rights>;
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::types::right::Right;
+    use fidl_fuchsia_io as fio;
+
+    macro_rules! test_parse_rights {
+        (
+            $(
+                ($input:expr, $expected:expr),
+            )+
+        ) => {
+            #[test]
+            fn parse_rights() {
+                $(
+                    parse_rights_test($input, $expected);
+                )+
+            }
+        }
+    }
+
+    fn parse_rights_test(input: &str, expected: Right) {
+        let r: Right = serde_json5::from_str(&format!("\"{}\"", input)).expect("invalid json");
+        assert_eq!(r, expected);
+    }
+
+    test_parse_rights! {
+        ("connect", Right::Connect),
+        ("enumerate", Right::Enumerate),
+        ("execute", Right::Execute),
+        ("get_attributes", Right::GetAttributes),
+        ("modify_directory", Right::ModifyDirectory),
+        ("read_bytes", Right::ReadBytes),
+        ("traverse", Right::Traverse),
+        ("update_attributes", Right::UpdateAttributes),
+        ("write_bytes", Right::WriteBytes),
+        ("r*", Right::ReadAlias),
+        ("w*", Right::WriteAlias),
+        ("x*", Right::ExecuteAlias),
+        ("rw*", Right::ReadWriteAlias),
+        ("rx*", Right::ReadExecuteAlias),
+    }
+
+    macro_rules! test_expand_rights {
+        (
+            $(
+                ($input:expr, $expected:expr),
+            )+
+        ) => {
+            #[test]
+            fn expand_rights() {
+                $(
+                    expand_rights_test($input, $expected);
+                )+
+            }
+        }
+    }
+
+    fn expand_rights_test(input: Right, expected: Vec<fio::Operations>) {
+        assert_eq!(input.expand(), expected);
+    }
+
+    test_expand_rights! {
+        (Right::Connect, vec![fio::Operations::CONNECT]),
+        (Right::Enumerate, vec![fio::Operations::ENUMERATE]),
+        (Right::Execute, vec![fio::Operations::EXECUTE]),
+        (Right::GetAttributes, vec![fio::Operations::GET_ATTRIBUTES]),
+        (Right::ModifyDirectory, vec![fio::Operations::MODIFY_DIRECTORY]),
+        (Right::ReadBytes, vec![fio::Operations::READ_BYTES]),
+        (Right::Traverse, vec![fio::Operations::TRAVERSE]),
+        (Right::UpdateAttributes, vec![fio::Operations::UPDATE_ATTRIBUTES]),
+        (Right::WriteBytes, vec![fio::Operations::WRITE_BYTES]),
+        (Right::ReadAlias, vec![
+            fio::Operations::CONNECT,
+            fio::Operations::ENUMERATE,
+            fio::Operations::TRAVERSE,
+            fio::Operations::READ_BYTES,
+            fio::Operations::GET_ATTRIBUTES,
+        ]),
+        (Right::WriteAlias, vec![
+            fio::Operations::CONNECT,
+            fio::Operations::ENUMERATE,
+            fio::Operations::TRAVERSE,
+            fio::Operations::WRITE_BYTES,
+            fio::Operations::MODIFY_DIRECTORY,
+            fio::Operations::UPDATE_ATTRIBUTES,
+        ]),
+        (Right::ExecuteAlias, vec![
+            fio::Operations::CONNECT,
+            fio::Operations::ENUMERATE,
+            fio::Operations::TRAVERSE,
+            fio::Operations::EXECUTE,
+        ]),
+        (Right::ReadWriteAlias, vec![
+            fio::Operations::CONNECT,
+            fio::Operations::ENUMERATE,
+            fio::Operations::TRAVERSE,
+            fio::Operations::READ_BYTES,
+            fio::Operations::WRITE_BYTES,
+            fio::Operations::MODIFY_DIRECTORY,
+            fio::Operations::GET_ATTRIBUTES,
+            fio::Operations::UPDATE_ATTRIBUTES,
+        ]),
+        (Right::ReadExecuteAlias, vec![
+            fio::Operations::CONNECT,
+            fio::Operations::ENUMERATE,
+            fio::Operations::TRAVERSE,
+            fio::Operations::READ_BYTES,
+            fio::Operations::GET_ATTRIBUTES,
+            fio::Operations::EXECUTE,
+        ]),
+    }
+}
