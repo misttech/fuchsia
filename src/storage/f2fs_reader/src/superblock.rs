@@ -142,10 +142,10 @@ impl SuperBlock {
             // We expect NO_COMPAT_FALLBACK to always be set.
             // Without this flag, missing hashes will be handled by exhaustive search of directories.
             const NO_COMPAT_FALLBACK: u16 = 2;
-            ensure!(
-                superblock.charset_encoding_flags == NO_COMPAT_FALLBACK,
-                "Unsupported charset_encoding_flags"
-            );
+            let charset_encoding_flags = superblock.charset_encoding_flags;
+            if charset_encoding_flags != NO_COMPAT_FALLBACK {
+                log::warn!("Unsupported charset_encoding_flags {charset_encoding_flags:04x}");
+            }
         }
 
         Ok(superblock)
