@@ -113,10 +113,6 @@ rustc_binary("fatfs") {
   ]
 }
 
-fuchsia_package("fuchsia-fatfs") {
-  deps = [ "//src/storage/fuchsia-fatfs/mounter:fatfs-mounter" ]
-}
-
 fuchsia_package("fatfs-bin") {
   deps = [ ":fatfs" ]
 }
@@ -208,7 +204,6 @@ group("tests") {
     ":fatfs-slow-fs-tests",
     ":fuchsia-fatfs-fuzzer",
     ":fuchsia-fatfs-tests",
-    "//src/storage/fuchsia-fatfs/mounter:tests",
   ]
 }
 
