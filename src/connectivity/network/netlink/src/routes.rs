@@ -208,7 +208,7 @@ fn map_route_set_error<I: Ip + fnet_routes_ext::FidlRouteIpExt>(
 #[derive(Derivative, GenericOverIp)]
 #[derivative(Debug(bound = ""))]
 #[generic_over_ip(I, Ip)]
-pub(crate) struct Request<S: Sender<<NetlinkRoute as ProtocolFamily>::InnerMessage>, I: Ip> {
+pub(crate) struct Request<S: Sender<<NetlinkRoute as ProtocolFamily>::Response>, I: Ip> {
     /// The resource and operation-specific argument(s) for this request.
     pub args: RequestArgs<I>,
     /// The request's sequence number.
@@ -257,10 +257,8 @@ pub(crate) enum PendingRouteRequestArgs<I: Ip> {
 
 #[derive(Derivative)]
 #[derivative(Debug(bound = ""))]
-pub(crate) struct PendingRouteRequest<
-    S: Sender<<NetlinkRoute as ProtocolFamily>::InnerMessage>,
-    I: Ip,
-> {
+pub(crate) struct PendingRouteRequest<S: Sender<<NetlinkRoute as ProtocolFamily>::Response>, I: Ip>
+{
     request_args: PendingRouteRequestArgs<I>,
     client: InternalClient<NetlinkRoute, S>,
     completer: oneshot::Sender<Result<(), RequestError>>,
@@ -327,7 +325,7 @@ impl<I: fnet_routes_ext::FidlRouteIpExt + fnet_routes_ext::admin::FidlRouteAdmin
     /// Panics if an unexpected Route Watcher Event is published by the
     /// Netstack.
     pub(crate) fn handle_route_watcher_event<
-        S: Sender<<NetlinkRoute as ProtocolFamily>::InnerMessage>,
+        S: Sender<<NetlinkRoute as ProtocolFamily>::Response>,
     >(
         &mut self,
         route_table_map: &mut RouteTableMap<I>,
@@ -601,9 +599,7 @@ impl<I: fnet_routes_ext::FidlRouteIpExt + fnet_routes_ext::admin::FidlRouteAdmin
     /// Returns a [`PendingRouteRequest`] if a route was updated and the caller
     /// needs to make sure the update has been propagated to the local state
     /// (the routes watcher has sent an event for our update).
-    pub(crate) async fn handle_request<
-        S: Sender<<NetlinkRoute as ProtocolFamily>::InnerMessage>,
-    >(
+    pub(crate) async fn handle_request<S: Sender<<NetlinkRoute as ProtocolFamily>::Response>>(
         &mut self,
         route_tables: &mut RouteTableMap<I>,
         interfaces_proxy: &fnet_root::InterfacesProxy,
@@ -615,7 +611,7 @@ impl<I: fnet_routes_ext::FidlRouteIpExt + fnet_routes_ext::admin::FidlRouteAdmin
         #[derivative(Debug(bound = ""))]
         enum RequestHandled<S, I>
         where
-            S: Sender<<NetlinkRoute as ProtocolFamily>::InnerMessage>,
+            S: Sender<<NetlinkRoute as ProtocolFamily>::Response>,
             I: Ip,
         {
             Pending(PendingRouteRequest<S, I>),
@@ -702,9 +698,7 @@ impl<I: fnet_routes_ext::FidlRouteIpExt + fnet_routes_ext::admin::FidlRouteAdmin
     /// Checks whether a `PendingRequest` can be marked completed given the current state of the
     /// worker. If so, notifies the request's completer and returns `None`. If not, returns
     /// the `PendingRequest` as `Some`.
-    pub(crate) fn handle_pending_request<
-        S: Sender<<NetlinkRoute as ProtocolFamily>::InnerMessage>,
-    >(
+    pub(crate) fn handle_pending_request<S: Sender<<NetlinkRoute as ProtocolFamily>::Response>>(
         &self,
         route_tables: &mut RouteTableMap<I>,
         pending_route_request: PendingRouteRequest<S, I>,
@@ -799,7 +793,7 @@ fn routes_conflict<I: Ip>(
 
 fn handle_route_watcher_event<
     I: Ip + fnet_routes_ext::admin::FidlRouteAdminIpExt + fnet_routes_ext::FidlRouteIpExt,
-    S: Sender<<NetlinkRoute as ProtocolFamily>::InnerMessage>,
+    S: Sender<<NetlinkRoute as ProtocolFamily>::Response>,
 >(
     route_table_map: &mut RouteTableMap<I>,
     fidl_route_map: &mut FidlRouteMap<I>,

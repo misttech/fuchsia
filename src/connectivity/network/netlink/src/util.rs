@@ -13,7 +13,7 @@ use crate::protocol_family::ProtocolFamily;
 use crate::protocol_family::route::NetlinkRoute;
 
 pub(crate) fn respond_to_completer<
-    S: Sender<<NetlinkRoute as ProtocolFamily>::InnerMessage>,
+    S: Sender<<NetlinkRoute as ProtocolFamily>::Response>,
     D: Debug,
     E: Debug + PartialEq + Copy,
 >(

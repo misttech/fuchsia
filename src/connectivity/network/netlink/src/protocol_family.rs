@@ -28,16 +28,18 @@ use crate::route_tables::{NetlinkRouteTableIndex, NonZeroNetlinkRouteTableIndex}
 
 /// A type representing a Netlink Protocol Family.
 pub(crate) trait ProtocolFamily: MulticastCapableNetlinkFamily + Send + Sized {
-    /// The message type associated with the protocol family.
-    type InnerMessage: Clone
+    /// The request message type associated with the protocol family.
+    type Request: Clone
         + Debug
-        + NetlinkSerializable
         + NetlinkDeserializable<Error: Into<DecodeError>>
         + MessageWithPermission
         + Send;
 
+    /// The response message type associated with the protocol family.
+    type Response: Clone + Debug + NetlinkSerializable + Send;
+
     /// The implementation for handling requests from this protocol family.
-    type RequestHandler<S: Sender<Self::InnerMessage>>: NetlinkFamilyRequestHandler<Self, S>;
+    type RequestHandler<S: Sender<Self::Response>>: NetlinkFamilyRequestHandler<Self, S>;
 
     const NAME: &'static str;
 
@@ -52,13 +54,13 @@ pub(crate) trait ProtocolFamily: MulticastCapableNetlinkFamily + Send + Sized {
 
 #[async_trait]
 /// A request handler implementation for a particular Netlink protocol family.
-pub(crate) trait NetlinkFamilyRequestHandler<F: ProtocolFamily, S: Sender<F::InnerMessage>>:
+pub(crate) trait NetlinkFamilyRequestHandler<F: ProtocolFamily, S: Sender<F::Response>>:
     Clone + Send
 {
     /// Handles the given request and generates the associated response(s).
     async fn handle_request(
         &mut self,
-        req: NetlinkMessage<F::InnerMessage>,
+        req: NetlinkMessage<F::Request>,
         client: &mut InternalClient<F, S>,
     );
 }
@@ -211,8 +213,9 @@ pub mod route {
     }
 
     impl ProtocolFamily for NetlinkRoute {
-        type InnerMessage = RouteNetlinkMessage;
-        type RequestHandler<S: Sender<Self::InnerMessage>> = NetlinkRouteRequestHandler<S>;
+        type Request = RouteNetlinkMessage;
+        type Response = RouteNetlinkMessage;
+        type RequestHandler<S: Sender<Self::Response>> = NetlinkRouteRequestHandler<S>;
         type NotifiedMulticastGroup = NetlinkRouteNotifiedGroup;
 
         const NAME: &'static str = "NETLINK_ROUTE";
@@ -1429,8 +1432,9 @@ pub(crate) mod testutil {
     }
 
     impl ProtocolFamily for FakeProtocolFamily {
-        type InnerMessage = FakeNetlinkInnerMessage;
-        type RequestHandler<S: Sender<Self::InnerMessage>> = FakeNetlinkRequestHandler;
+        type Request = FakeNetlinkInnerMessage;
+        type Response = FakeNetlinkInnerMessage;
+        type RequestHandler<S: Sender<Self::Response>> = FakeNetlinkRequestHandler;
         type NotifiedMulticastGroup = ();
 
         const NAME: &'static str = "FAKE_PROTOCOL_FAMILY";

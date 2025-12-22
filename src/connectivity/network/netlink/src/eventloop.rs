@@ -35,7 +35,7 @@ use crate::{
 
 #[derive(Derivative)]
 #[derivative(Debug(bound = ""))]
-pub(crate) enum UnifiedRequest<S: Sender<<NetlinkRoute as ProtocolFamily>::InnerMessage>> {
+pub(crate) enum UnifiedRequest<S: Sender<<NetlinkRoute as ProtocolFamily>::Response>> {
     InterfacesRequest(interfaces::Request<S>),
     RoutesV4Request(routes::Request<S, Ipv4>),
     RoutesV6Request(routes::Request<S, Ipv6>),
@@ -43,7 +43,7 @@ pub(crate) enum UnifiedRequest<S: Sender<<NetlinkRoute as ProtocolFamily>::Inner
     RuleV6Request(rules::RuleRequest<S, Ipv6>, oneshot::Sender<Result<(), Errno>>),
 }
 
-impl<S: Sender<<NetlinkRoute as ProtocolFamily>::InnerMessage>, I: Ip> From<routes::Request<S, I>>
+impl<S: Sender<<NetlinkRoute as ProtocolFamily>::Response>, I: Ip> From<routes::Request<S, I>>
     for UnifiedRequest<S>
 {
     fn from(request: routes::Request<S, I>) -> Self {
@@ -51,7 +51,7 @@ impl<S: Sender<<NetlinkRoute as ProtocolFamily>::InnerMessage>, I: Ip> From<rout
     }
 }
 
-impl<S: Sender<<NetlinkRoute as ProtocolFamily>::InnerMessage>> UnifiedRequest<S> {
+impl<S: Sender<<NetlinkRoute as ProtocolFamily>::Response>> UnifiedRequest<S> {
     pub(crate) fn rule_request<I: Ip>(
         request: rules::RuleRequest<S, I>,
         sender: oneshot::Sender<Result<(), Errno>>,
@@ -72,7 +72,7 @@ pub(crate) enum UnifiedEvent {
 
 #[derive(Derivative)]
 #[derivative(Debug(bound = ""))]
-pub(crate) enum UnifiedPendingRequest<S: Sender<<NetlinkRoute as ProtocolFamily>::InnerMessage>> {
+pub(crate) enum UnifiedPendingRequest<S: Sender<<NetlinkRoute as ProtocolFamily>::Response>> {
     RoutesV4(crate::routes::PendingRouteRequest<S, Ipv4>),
     RoutesV6(crate::routes::PendingRouteRequest<S, Ipv6>),
     Interfaces(crate::interfaces::PendingRequest<S>),
@@ -84,7 +84,7 @@ pub(crate) enum UnifiedPendingRequest<S: Sender<<NetlinkRoute as ProtocolFamily>
 /// incoming `UnifiedRequest`s.
 pub(crate) struct EventLoop<
     H,
-    S: crate::messaging::Sender<<NetlinkRoute as ProtocolFamily>::InnerMessage>,
+    S: crate::messaging::Sender<<NetlinkRoute as ProtocolFamily>::Response>,
 > {
     pub(crate) interfaces_proxy: fnet_root::InterfacesProxy,
     pub(crate) interfaces_state_proxy: fnet_interfaces::StateProxy,
@@ -226,7 +226,7 @@ impl EventLoopSpec for AllWorkers {
 
 pub(crate) struct EventLoopInputs<
     H,
-    S: crate::messaging::Sender<<NetlinkRoute as ProtocolFamily>::InnerMessage>,
+    S: crate::messaging::Sender<<NetlinkRoute as ProtocolFamily>::Response>,
     E: EventLoopSpec,
 > {
     pub(crate) interfaces_proxy: EventLoopComponent<fnet_root::InterfacesProxy, E::InterfacesProxy>,
@@ -260,7 +260,7 @@ pub(crate) struct EventLoopInputs<
 
 impl<
     H: interfaces::InterfacesHandler,
-    S: crate::messaging::Sender<<NetlinkRoute as ProtocolFamily>::InnerMessage>,
+    S: crate::messaging::Sender<<NetlinkRoute as ProtocolFamily>::Response>,
     E: EventLoopSpec,
 > EventLoopInputs<H, S, E>
 {
@@ -445,7 +445,7 @@ impl<
 /// incoming `UnifiedRequest`s.
 pub(crate) struct EventLoopState<
     H: interfaces::InterfacesHandler,
-    S: Sender<<NetlinkRoute as ProtocolFamily>::InnerMessage>,
+    S: Sender<<NetlinkRoute as ProtocolFamily>::Response>,
     E: EventLoopSpec,
 > {
     routes_v4_worker: EventLoopComponent<routes::RoutesWorker<Ipv4>, E::RoutesV4Worker>,
@@ -470,7 +470,7 @@ pub(crate) struct EventLoopState<
 
 impl<
     H: interfaces::InterfacesHandler,
-    S: Sender<<NetlinkRoute as ProtocolFamily>::InnerMessage>,
+    S: Sender<<NetlinkRoute as ProtocolFamily>::Response>,
     E: EventLoopSpec,
 > EventLoopState<H, S, E>
 {
@@ -920,7 +920,7 @@ impl<
 
 impl<
     H: interfaces::InterfacesHandler,
-    S: crate::messaging::Sender<<NetlinkRoute as ProtocolFamily>::InnerMessage>,
+    S: crate::messaging::Sender<<NetlinkRoute as ProtocolFamily>::Response>,
 > EventLoop<H, S>
 {
     pub(crate) async fn run(self, on_initialized: Option<oneshot::Sender<()>>) -> Never {

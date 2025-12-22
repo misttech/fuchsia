@@ -684,7 +684,7 @@ pub(crate) enum RuleRequestArgs {
 #[derive(Derivative, GenericOverIp)]
 #[derivative(Debug(bound = ""))]
 #[generic_over_ip(I, Ip)]
-pub(crate) struct RuleRequest<S: Sender<<NetlinkRoute as ProtocolFamily>::InnerMessage>, I: Ip> {
+pub(crate) struct RuleRequest<S: Sender<<NetlinkRoute as ProtocolFamily>::Response>, I: Ip> {
     /// The arguments for this request.
     pub(crate) args: RuleRequestArgs,
     /// The request's sequence number.
@@ -696,9 +696,7 @@ pub(crate) struct RuleRequest<S: Sender<<NetlinkRoute as ProtocolFamily>::InnerM
 }
 
 impl<I: IpExt> RulesWorker<I> {
-    pub(crate) async fn handle_request<
-        S: Sender<<NetlinkRoute as ProtocolFamily>::InnerMessage>,
-    >(
+    pub(crate) async fn handle_request<S: Sender<<NetlinkRoute as ProtocolFamily>::Response>>(
         &mut self,
         req: RuleRequest<S, I>,
         route_table_map: &mut RouteTableMap<I>,

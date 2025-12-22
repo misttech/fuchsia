@@ -97,43 +97,43 @@ impl<F: ProtocolFamily> Display for InnerClient<F> {
 /// by ['ExternalClient'].
 #[derive(Derivative)]
 #[derivative(Clone(bound = ""))]
-pub(crate) struct InternalClient<F: ProtocolFamily, S: Sender<F::InnerMessage>> {
+pub(crate) struct InternalClient<F: ProtocolFamily, S: Sender<F::Response>> {
     /// The inner client.
     inner: Arc<InnerClient<F>>,
     /// The [`Sender`] of messages from Netlink to the Client.
     sender: S,
 }
 
-impl<F: ProtocolFamily, S: Sender<F::InnerMessage>> Debug for InternalClient<F, S> {
+impl<F: ProtocolFamily, S: Sender<F::Response>> Debug for InternalClient<F, S> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         Display::fmt(self, f)
     }
 }
 
-impl<F: ProtocolFamily, S: Sender<F::InnerMessage>> Display for InternalClient<F, S> {
+impl<F: ProtocolFamily, S: Sender<F::Response>> Display for InternalClient<F, S> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let InternalClient { inner, sender: _ } = self;
         write!(f, "{}", inner)
     }
 }
 
-impl<F: ProtocolFamily, S: Sender<F::InnerMessage>> InternalClient<F, S> {
+impl<F: ProtocolFamily, S: Sender<F::Response>> InternalClient<F, S> {
     /// Returns true if this client is a member of the provided group.
     pub(crate) fn member_of_group(&self, group: ModernGroup) -> bool {
         self.inner.group_memberships.lock().memberships.member_of_group(group)
     }
 
     /// Sends the given unicast message to the external half of this client.
-    pub(crate) fn send_unicast(&mut self, message: NetlinkMessage<F::InnerMessage>) {
+    pub(crate) fn send_unicast(&mut self, message: NetlinkMessage<F::Response>) {
         self.send(message, None)
     }
 
     /// Sends the given multicast message to the external half of this client.
-    fn send_multicast(&mut self, message: NetlinkMessage<F::InnerMessage>, group: ModernGroup) {
+    fn send_multicast(&mut self, message: NetlinkMessage<F::Response>, group: ModernGroup) {
         self.send(message, Some(group))
     }
 
-    fn send(&mut self, mut message: NetlinkMessage<F::InnerMessage>, group: Option<ModernGroup>) {
+    fn send(&mut self, mut message: NetlinkMessage<F::Response>, group: Option<ModernGroup>) {
         if let Some(port_number) = *self.inner.port_number.lock() {
             message.header.port_number = port_number.into();
         }
@@ -357,7 +357,7 @@ impl<F: ProtocolFamily> ExternalClient<F> {
 }
 
 // Instantiate a new client pair.
-pub(crate) fn new_client_pair<F: ProtocolFamily, S: Sender<F::InnerMessage>>(
+pub(crate) fn new_client_pair<F: ProtocolFamily, S: Sender<F::Response>>(
     id: ClientId,
     sender: S,
     async_work_sink: futures::channel::mpsc::UnboundedSender<
@@ -389,11 +389,11 @@ impl ClientIdGenerator {
 /// The table of connected clients for a given ProtocolFamily.
 #[derive(Derivative)]
 #[derivative(Clone(bound = ""), Default(bound = ""))]
-pub(crate) struct ClientTable<F: ProtocolFamily, S: Sender<F::InnerMessage>> {
+pub(crate) struct ClientTable<F: ProtocolFamily, S: Sender<F::Response>> {
     clients: Arc<Mutex<HashMap<ClientId, InternalClient<F, S>>>>,
 }
 
-impl<F: ProtocolFamily, S: Sender<F::InnerMessage>> ClientTable<F, S> {
+impl<F: ProtocolFamily, S: Sender<F::Response>> ClientTable<F, S> {
     /// Adds the given client to this [`ClientTable`].
     ///
     /// # Panics
@@ -421,7 +421,7 @@ impl<F: ProtocolFamily, S: Sender<F::InnerMessage>> ClientTable<F, S> {
     /// Sends the message to all clients who are members of the multicast group.
     pub(crate) fn send_message_to_group(
         &self,
-        message: NetlinkMessage<F::InnerMessage>,
+        message: NetlinkMessage<F::Response>,
         group: ModernGroup,
     ) {
         let count = self.clients.lock().iter_mut().fold(0, |count, (_client_id, client)| {
@@ -461,8 +461,8 @@ pub(crate) mod testutil {
         id: ClientId,
         group_memberships: impl IntoIterator<Item = ModernGroup>,
     ) -> (
-        FakeSenderSink<F::InnerMessage>,
-        InternalClient<F, FakeSender<F::InnerMessage>>,
+        FakeSenderSink<F::Response>,
+        InternalClient<F, FakeSender<F::Response>>,
         impl Future<Output = ()>,
     ) {
         let (sender, sender_sink) = crate::messaging::testutil::fake_sender_with_sink();
@@ -500,7 +500,7 @@ mod tests {
         new_fake_netlink_message,
     };
 
-    impl<F: ProtocolFamily, S: Sender<F::InnerMessage>> ClientTable<F, S> {
+    impl<F: ProtocolFamily, S: Sender<F::Response>> ClientTable<F, S> {
         /// Test helper to return the IDs of clients in this [`ClientTable`].
         pub(crate) fn client_ids(&self) -> Vec<ClientId> {
             let mut ids = self.clients.lock().keys().cloned().collect::<Vec<_>>();

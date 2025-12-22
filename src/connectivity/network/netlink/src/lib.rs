@@ -155,8 +155,8 @@ impl<C: NetlinkContext> Netlink<C> {
 
 /// A wrapper to hold an [`InternalClient`], and its [`Receiver`] of requests.
 struct ClientWithReceiver<C: NetlinkContext, F: ProtocolFamily> {
-    client: InternalClient<F, C::Sender<F::InnerMessage>>,
-    receiver: C::Receiver<F::InnerMessage>,
+    client: InternalClient<F, C::Sender<F::Response>>,
+    receiver: C::Receiver<F::Request>,
 }
 
 /// The possible error types when instantiating a new client.
@@ -358,9 +358,9 @@ pub async fn run_netlink_worker_with_protocols<
 /// A "Request Handler" Task will be spawned for each received client. The given
 /// `request_handler_impl` defines how the requests will be handled.
 async fn connect_new_clients<C: NetlinkContext, F: ProtocolFamily>(
-    client_table: ClientTable<F, C::Sender<F::InnerMessage>>,
+    client_table: ClientTable<F, C::Sender<F::Response>>,
     client_receiver: UnboundedReceiver<ClientWithReceiver<C, F>>,
-    request_handler_impl: F::RequestHandler<C::Sender<F::InnerMessage>>,
+    request_handler_impl: F::RequestHandler<C::Sender<F::Response>>,
     access_control: C::AccessControl<'_>,
 ) {
     client_receiver
@@ -384,11 +384,11 @@ async fn connect_new_clients<C: NetlinkContext, F: ProtocolFamily>(
 /// The task terminates when the underlying `Receiver` closes, yielding the
 /// original client.
 async fn run_client_request_handler<C: NetlinkContext, F: ProtocolFamily>(
-    client: InternalClient<F, C::Sender<F::InnerMessage>>,
-    receiver: C::Receiver<F::InnerMessage>,
-    handler: F::RequestHandler<C::Sender<F::InnerMessage>>,
+    client: InternalClient<F, C::Sender<F::Response>>,
+    receiver: C::Receiver<F::Request>,
+    handler: F::RequestHandler<C::Sender<F::Response>>,
     access_control: C::AccessControl<'_>,
-) -> InternalClient<F, C::Sender<F::InnerMessage>> {
+) -> InternalClient<F, C::Sender<F::Response>> {
     // State needed to handle an individual request, that is cycled through the
     // `fold` combinator below.
     struct FoldState<C, H, P> {

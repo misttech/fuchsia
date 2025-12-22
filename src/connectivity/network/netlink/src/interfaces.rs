@@ -234,7 +234,7 @@ fn map_existing_interface_terminal_error(
 /// A request associated with links or addresses.
 #[derive(Derivative)]
 #[derivative(Debug(bound = ""))]
-pub(crate) struct Request<S: Sender<<NetlinkRoute as ProtocolFamily>::InnerMessage>> {
+pub(crate) struct Request<S: Sender<<NetlinkRoute as ProtocolFamily>::Response>> {
     /// The resource and operation-specific argument(s) for this request.
     pub args: RequestArgs,
     /// The request's sequence number.
@@ -252,10 +252,7 @@ pub(crate) struct Request<S: Sender<<NetlinkRoute as ProtocolFamily>::InnerMessa
 ///
 /// Can respond to interface watcher events and RTM_LINK and RTM_ADDR
 /// message requests.
-pub(crate) struct InterfacesWorkerState<
-    H,
-    S: Sender<<NetlinkRoute as ProtocolFamily>::InnerMessage>,
-> {
+pub(crate) struct InterfacesWorkerState<H, S: Sender<<NetlinkRoute as ProtocolFamily>::Response>> {
     /// A handler for interface events.
     interfaces_handler: H,
     /// An `InterfacesProxy` to get controlling access to interfaces.
@@ -476,13 +473,13 @@ enum PendingRequestKind {
 
 #[derive(Derivative)]
 #[derivative(Debug(bound = ""))]
-pub(crate) struct PendingRequest<S: Sender<<NetlinkRoute as ProtocolFamily>::InnerMessage>> {
+pub(crate) struct PendingRequest<S: Sender<<NetlinkRoute as ProtocolFamily>::Response>> {
     kind: PendingRequestKind,
     client: InternalClient<NetlinkRoute, S>,
     completer: oneshot::Sender<Result<(), RequestError>>,
 }
 
-impl<H: InterfacesHandler, S: Sender<<NetlinkRoute as ProtocolFamily>::InnerMessage>>
+impl<H: InterfacesHandler, S: Sender<<NetlinkRoute as ProtocolFamily>::Response>>
     InterfacesWorkerState<H, S>
 {
     /// Create the Netlink Interfaces Worker.
@@ -1137,7 +1134,7 @@ impl<H: InterfacesHandler, S: Sender<<NetlinkRoute as ProtocolFamily>::InnerMess
     }
 }
 
-fn update_addresses<S: Sender<<NetlinkRoute as ProtocolFamily>::InnerMessage>>(
+fn update_addresses<S: Sender<<NetlinkRoute as ProtocolFamily>::Response>>(
     existing_addresses: &mut BTreeMap<fnet::IpAddress, NetlinkAddressMessage>,
     updated_addresses: BTreeMap<fnet::IpAddress, NetlinkAddressMessage>,
     route_clients: &ClientTable<NetlinkRoute, S>,
