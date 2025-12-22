@@ -44,7 +44,7 @@
     ],
     use: [
         {
-            storage: "data",
+            storage: "cache",
             path: "/traces",
         },
         {
@@ -90,7 +90,7 @@
             to: "#trace_session_manager",
         },
         {
-            storage: "data",
+            storage: "cache",
             from: "parent",
             to: "#trace_session_manager",
         },

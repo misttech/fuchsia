@@ -22,7 +22,7 @@
     ],
     use: [
         {
-            storage: "data",
+            storage: "cache",
             path: "/traces",
         },
         {

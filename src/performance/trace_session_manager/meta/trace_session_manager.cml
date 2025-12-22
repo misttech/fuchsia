@@ -15,7 +15,7 @@
         { protocol: "fuchsia.tracing.controller.Controller" },
         { protocol: "fuchsia.tracing.controller.Session" },
         {
-            storage: "data",
+            storage: "cache",
             rights: [ "rw*" ],
             path: "/traces",
         },

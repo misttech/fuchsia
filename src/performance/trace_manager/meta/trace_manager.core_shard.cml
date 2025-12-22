@@ -23,7 +23,7 @@
         },
         {
             storage: [
-                "data",
+                "cache",
                 "tmp",
             ],
             from: "self",
