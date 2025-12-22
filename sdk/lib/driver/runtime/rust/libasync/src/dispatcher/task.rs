@@ -120,12 +120,12 @@ impl<T> Future for Task<T> {
     type Output = Result<T, Status>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        use std::sync::mpsc::TryRecvError;
+        self.state.waker.register(cx.waker());
         match self.result_receiver.try_recv() {
             Ok(res) => Poll::Ready(res),
-            Err(_) => {
-                self.state.waker.register(cx.waker());
-                Poll::Pending
-            }
+            Err(TryRecvError::Disconnected) => Poll::Ready(Err(Status::CANCELED)),
+            Err(TryRecvError::Empty) => Poll::Pending,
         }
     }
 }
