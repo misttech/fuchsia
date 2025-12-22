@@ -211,7 +211,7 @@ class Workspace:
         repo_dir = workspace_dir / repo_name
         symlink_path = repo_dir / CARTFS_SYMLINK_NAME
         if not symlink_path.is_symlink():
-            logger.log_warn(f"symlink_path is not a link: {symlink_path}")
+            logger.log_info(f"symlink_path is not a link: {symlink_path}")
             return None
 
         target_path = symlink_path.readlink()
