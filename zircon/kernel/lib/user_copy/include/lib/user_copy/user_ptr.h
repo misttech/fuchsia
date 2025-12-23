@@ -154,35 +154,8 @@ class user_ptr {
     return arch_copy_to_user_capture_faults(ptr_, &src, sizeof(S));
   }
 
-  // Copies an array of T to user memory. Note: This takes a count not a size, unless T is |void|.
-  [[nodiscard]] zx_status_t copy_array_to_user(const T* src, size_t count) const {
-    static_assert(!ktl::is_void<T>::value, "Type cannot be void. Use .reinterpret<>().");
-    static_assert(is_copy_allowed<T>::value, "Type must be ABI-safe.");
-    static_assert(Policy & kOut, "Can only copy to user for kOut or kInOut user_ptr.");
-    size_t len;
-    if (mul_overflow(count, sizeof(T), &len)) {
-      return ZX_ERR_INVALID_ARGS;
-    }
-    return arch_copy_to_user(ptr_, src, len);
-  }
-
-  // Copies an array of T to user memory. Note: This takes a count not a size, unless T is |void|.
-  //
-  // On success ZX_OK is returned and the values in pf_va and pf_flags are undefined, otherwise they
-  // are filled with fault information.
-  [[nodiscard]] UserCopyCaptureFaultsResult copy_array_to_user_capture_faults(const T* src,
-                                                                              size_t count) const {
-    static_assert(!ktl::is_void<T>::value, "Type cannot be void. Use .reinterpret<>().");
-    static_assert(is_copy_allowed<T>::value, "Type must be ABI-safe.");
-    static_assert(Policy & kOut, "Can only copy to user for kOut or kInOut user_ptr.");
-    size_t len;
-    if (mul_overflow(count, sizeof(T), &len)) {
-      return UserCopyCaptureFaultsResult{ZX_ERR_INVALID_ARGS};
-    }
-    return arch_copy_to_user_capture_faults(ptr_, src, len);
-  }
-
-  // Copies an array of T to user memory. Note: This takes a count not a size, unless T is |void|.
+  // Copies a sub-array of T to user memory. Note: This takes a count not a size. T cannot be
+  // |void|.
   [[nodiscard]] zx_status_t copy_array_to_user(const T* src, size_t count, size_t offset) const {
     static_assert(!ktl::is_void<T>::value, "Type cannot be void. Use .reinterpret<>().");
     static_assert(is_copy_allowed<T>::value, "Type must be ABI-safe.");
@@ -194,7 +167,13 @@ class user_ptr {
     return arch_copy_to_user(ptr_ + offset, src, len);
   }
 
-  // Copies an array of T to user memory. Note: This takes a count not a size, unless T is |void|.
+  // Copies an array of T to user memory. Note: This takes a count not a size. T cannot be |void|.
+  [[nodiscard]] zx_status_t copy_array_to_user(const T* src, size_t count) const {
+    return copy_array_to_user(src, count, 0);
+  }
+
+  // Copies a sub-array array of T to user memory. Note: This takes a count not a size. T cannot be
+  // |void|.
   //
   // On success ZX_OK is returned and the values in pf_va and pf_flags are undefined, otherwise they
   // are filled with fault information.
@@ -209,6 +188,15 @@ class user_ptr {
       return UserCopyCaptureFaultsResult{ZX_ERR_INVALID_ARGS};
     }
     return arch_copy_to_user_capture_faults(ptr_ + offset, src, len);
+  }
+
+  // Copies an array of T to user memory. Note: This takes a count not a size. T cannot be |void|.
+  //
+  // On success ZX_OK is returned and the values in pf_va and pf_flags are undefined, otherwise they
+  // are filled with fault information.
+  [[nodiscard]] UserCopyCaptureFaultsResult copy_array_to_user_capture_faults(const T* src,
+                                                                              size_t count) const {
+    return copy_array_to_user_capture_faults(src, count, 0);
   }
 
   // Copies a single T from user memory. T must not be |void|.
@@ -232,36 +220,7 @@ class user_ptr {
     return arch_copy_from_user_capture_faults(dst, ptr_, sizeof(T));
   }
 
-  // Copies an array of T from user memory. Note: This takes a count not a size, unless T is |void|.
-  [[nodiscard]] zx_status_t copy_array_from_user(typename ktl::remove_const<T>::type* dst,
-                                                 size_t count) const {
-    static_assert(!ktl::is_void<T>::value, "Type cannot be void. Use .reinterpret<>().");
-    static_assert(is_copy_allowed<T>::value, "Type must be ABI-safe.");
-    static_assert(Policy & kIn, "Can only copy from user for kIn or kInOut user_ptr.");
-    size_t len;
-    if (mul_overflow(count, sizeof(T), &len)) {
-      return ZX_ERR_INVALID_ARGS;
-    }
-    return arch_copy_from_user(dst, ptr_, len);
-  }
-
-  // Copies an array of T from user memory. Note: This takes a count not a size, unless T is |void|.
-  //
-  // On success ZX_OK is returned and the values in pf_va and pf_flags are undefined, otherwise they
-  // are filled with fault information.
-  [[nodiscard]] UserCopyCaptureFaultsResult copy_array_from_user_capture_faults(
-      typename ktl::remove_const<T>::type* dst, size_t count) const {
-    static_assert(!ktl::is_void<T>::value, "Type cannot be void. Use .reinterpret<>().");
-    static_assert(is_copy_allowed<T>::value, "Type must be ABI-safe.");
-    static_assert(Policy & kIn, "Can only copy from user for kIn or kInOut user_ptr.");
-    size_t len;
-    if (mul_overflow(count, sizeof(T), &len)) {
-      return UserCopyCaptureFaultsResult{ZX_ERR_INVALID_ARGS};
-    }
-    return arch_copy_from_user_capture_faults(dst, ptr_, len);
-  }
-
-  // Copies a sub-array of T from user memory. Note: This takes a count not a size, unless T is
+  // Copies a sub-array of T from user memory. Note: This takes a count not a size. T cannot be
   // |void|.
   [[nodiscard]] zx_status_t copy_array_from_user(typename ktl::remove_const<T>::type* dst,
                                                  size_t count, size_t offset) const {
@@ -275,7 +234,14 @@ class user_ptr {
     return arch_copy_from_user(dst, ptr_ + offset, len);
   }
 
-  // Copies a sub-array of T from user memory. Note: This takes a count not a size, unless T is
+  // Copies an array of T from user memory. Note: This takes a count not a size. T cannot be
+  // |void|.
+  [[nodiscard]] zx_status_t copy_array_from_user(typename ktl::remove_const<T>::type* dst,
+                                                 size_t count) const {
+    return copy_array_from_user(dst, count, 0);
+  }
+
+  // Copies an array of T from user memory. Note: This takes a count not a size. T cannot be
   // |void|.
   //
   // On success ZX_OK is returned and the values in pf_va and pf_flags are undefined, otherwise they
@@ -290,6 +256,11 @@ class user_ptr {
       return UserCopyCaptureFaultsResult{ZX_ERR_INVALID_ARGS};
     }
     return arch_copy_from_user_capture_faults(dst, ptr_ + offset, len);
+  }
+
+  [[nodiscard]] UserCopyCaptureFaultsResult copy_array_from_user_capture_faults(
+      typename ktl::remove_const<T>::type* dst, size_t count) const {
+    return copy_array_from_user_capture_faults(dst, count, 0);
   }
 
  private:
