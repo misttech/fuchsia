@@ -3,13 +3,13 @@
 // found in the LICENSE file.
 
 use super::PolicyValidationContext;
+use super::arrays::SimpleArrayView;
 use super::parser::{PolicyCursor, PolicyData, PolicyOffset};
 use crate::policy::{Counted, Parse, Validate};
 use hashbrown::hash_table::HashTable;
 use std::fmt::Debug;
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::marker::PhantomData;
-use std::ops::Deref;
 use zerocopy::FromBytes;
 
 /// A trait for types that have metadata.
@@ -51,6 +51,11 @@ impl<T> View<T> {
     /// Creates a new view from the start and end offsets.
     pub fn new(start: PolicyOffset, end: PolicyOffset) -> Self {
         Self { phantom: PhantomData, start, end }
+    }
+
+    /// The start offset of the object in the policy data.
+    fn start(&self) -> PolicyOffset {
+        self.start
     }
 }
 
@@ -233,25 +238,55 @@ impl<M: Counted + Parse + Sized, D: Parse> Parse for ArrayView<M, D> {
     }
 }
 
+/// An iterator giving views of the objects in the underlying [`policy_data`] found from
+/// a single entry of a `HashedArrayView`.
+struct HashedArrayViewEntryIter<'a, D: HasMetadata> {
+    policy_data: &'a PolicyData,
+    limit: PolicyOffset,
+    metadata: D::Metadata,
+    offset: Option<PolicyOffset>,
+}
+
+impl<'a, D: HasMetadata + Walk> Iterator for HashedArrayViewEntryIter<'a, D>
+where
+    D::Metadata: Eq,
+{
+    type Item = View<D>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if let Some(offset) = self.offset
+            && offset < self.limit
+        {
+            let element = View::<D>::at(offset);
+            let metadata = element.read_metadata(&self.policy_data);
+            if metadata == self.metadata {
+                self.offset = Some(D::walk(&self.policy_data, offset));
+                Some(element)
+            } else {
+                self.offset = None;
+                None
+            }
+        } else {
+            None
+        }
+    }
+}
+
 /// A view into the data of an array of objects, with efficient lookup based on metadata hash.
 ///
 /// This struct contains only a vector of offsets into the policy data, to allow efficient lookup
 /// of vector elements with matching metadata.
 #[derive(Debug, Clone)]
-pub(crate) struct HashedArrayView<M, D: HasMetadata> {
-    array_view: ArrayView<M, D>,
+pub(crate) struct HashedArrayView<D: HasMetadata> {
+    phantom: PhantomData<D>,
     index: HashTable<PolicyOffset>,
+    /// The offset in the policy data at which the elements indexed by this [`HashedArrayView`]
+    /// end. Iteration of elements by this [`HashedArrayView`] must not look for an element at
+    /// or beyond this offset.
+    limit: PolicyOffset,
 }
 
-impl<M, D: HasMetadata> Deref for HashedArrayView<M, D> {
-    type Target = ArrayView<M, D>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.array_view
-    }
-}
-
-impl<D: HasMetadata, M> HashedArrayView<M, D>
+impl<D: HasMetadata> HashedArrayView<D>
 where
     D::Metadata: Hash,
 {
@@ -262,11 +297,14 @@ where
     }
 }
 
-impl<D: Parse + HasMetadata, M> HashedArrayView<M, D>
+impl<D: Parse + HasMetadata + Walk> HashedArrayView<D>
 where
     D::Metadata: Eq + PartialEq + Hash + Debug,
 {
     /// Looks up the entry with the specified metadata `key`, and parsed & returns the value.
+    /// This method is only appropriate to call when expecting to find at most one entry for
+    /// `key`; if there is a possibility of more than one element in the underlying
+    /// `policy_data` being associated with `key`, call `iterate` instead.
     pub fn find(&self, key: D::Metadata, policy_data: &PolicyData) -> Option<D> {
         let key_hash = Self::metadata_hash(&key);
         let offset = self.index.find(key_hash, |&offset| {
@@ -276,39 +314,109 @@ where
         let element = View::<D>::at(*offset);
         Some(element.parse(policy_data))
     }
+
+    /// Looks up all entries with the specified metadata `key` and parses and emits those
+    /// values.
+    pub(super) fn iterate(
+        &self,
+        key: D::Metadata,
+        policy_data: &PolicyData,
+    ) -> impl Iterator<Item = D> {
+        let key_hash = Self::metadata_hash(&key);
+        let offset = self.index.find(key_hash, |&offset| {
+            let element = View::<D>::at(offset);
+            key == element.read_metadata(policy_data)
+        });
+        (HashedArrayViewEntryIter {
+            policy_data: policy_data,
+            limit: self.limit,
+            metadata: key,
+            offset: offset.cloned(),
+        })
+        .map(|element| element.parse(policy_data))
+    }
+
+    /// Emits a view for each reachable element.
+    pub(super) fn iterate_all(&self, policy_data: &PolicyData) -> impl Iterator<Item = View<D>> {
+        self.index
+            .iter()
+            .map(|offset| {
+                let element = View::<D>::at(*offset);
+                HashedArrayViewEntryIter {
+                    policy_data: policy_data,
+                    limit: self.limit,
+                    metadata: element.read_metadata(policy_data),
+                    offset: Some(*offset),
+                }
+            })
+            .flatten()
+    }
 }
 
-impl<M: Counted + Parse + Sized, D: Parse + HasMetadata> Parse for HashedArrayView<M, D>
+impl<D: Parse + HasMetadata + Walk> Parse for HashedArrayView<D>
 where
     D::Metadata: Eq + Debug + PartialEq + Parse + Hash,
 {
-    /// [`HashedArrayView`] abstracts over two types (`M` and `D`) that may have different
-    /// [`Parse::Error`] types. Unify error return type via [`anyhow::Error`].
     type Error = anyhow::Error;
 
     fn parse(cursor: PolicyCursor) -> Result<(Self, PolicyCursor), Self::Error> {
-        // Parse the array using `ArrayView<>` rather than replicating that logic, for now.
-        let (array_view, _) =
-            ArrayView::<M, D>::parse(cursor.clone()).map_err(Into::<anyhow::Error>::into)?;
+        let (array_view, cursor) = SimpleArrayView::<D>::parse(cursor)?;
 
         // Allocate a hash table sized appropriately for the array size.
         let mut index = HashTable::with_capacity(array_view.count as usize);
 
-        // Iterate over the elements inserting their offsets into hash buckets.
-        let (_, mut cursor) = M::parse(cursor).map_err(Into::<anyhow::Error>::into)?;
-        for _ in 0..array_view.count {
-            let (metadata, _) =
-                D::Metadata::parse(cursor.clone()).map_err(Into::<anyhow::Error>::into)?;
-            let (_, next) = D::parse(cursor.clone()).map_err(Into::<anyhow::Error>::into)?;
+        // Record the offset at which the last array element ends.
+        let limit = cursor.offset();
 
-            index.insert_unique(Self::metadata_hash(&metadata), cursor.offset(), |&offset| {
-                let element = View::<D>::at(offset);
-                Self::metadata_hash(&element.read_metadata(cursor.data()))
-            });
+        // Iterate over the elements inserting the first offset at which each is
+        // seen into a hash bucket.
+        for view in array_view.data().iter(cursor.data()) {
+            let metadata = view.read_metadata(cursor.data());
 
-            cursor = next;
+            index
+                .entry(
+                    Self::metadata_hash(&metadata),
+                    |&offset| {
+                        let element = View::<D>::at(offset);
+                        metadata == element.read_metadata(cursor.data())
+                    },
+                    |&offset| {
+                        let element = View::<D>::at(offset);
+                        Self::metadata_hash(&element.read_metadata(cursor.data()))
+                    },
+                )
+                .or_insert(view.start());
         }
 
-        Ok((Self { array_view, index }, cursor))
+        Ok((Self { phantom: PhantomData, index, limit }, cursor))
+    }
+}
+
+impl<D: Validate + Parse + HasMetadata + Walk> Validate for HashedArrayView<D>
+where
+    D::Metadata: Eq,
+{
+    type Error = anyhow::Error;
+
+    fn validate(&self, context: &mut PolicyValidationContext) -> Result<(), Self::Error> {
+        let policy_data = context.data.clone();
+        for element in self
+            .index
+            .iter()
+            .map(|offset| {
+                let element = View::<D>::at(*offset);
+                HashedArrayViewEntryIter::<D> {
+                    policy_data: &policy_data,
+                    limit: self.limit,
+                    metadata: element.read_metadata(&policy_data),
+                    offset: Some(*offset),
+                }
+            })
+            .flatten()
+        {
+            element.validate(context)?;
+        }
+
+        Ok(())
     }
 }

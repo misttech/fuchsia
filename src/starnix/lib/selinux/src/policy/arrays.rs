@@ -106,8 +106,6 @@ impl<T: Validate> Validate for SimpleArray<T> {
     }
 }
 
-// TODO(https://fxbug.dev/440396781): Removed once SimpleArrayView is in use.
-#[allow(dead_code)]
 pub(super) type SimpleArrayView<T> = ArrayView<le::U32, T>;
 
 impl<T: Validate + Parse + Walk> Validate for SimpleArrayView<T> {
@@ -404,49 +402,6 @@ impl AccessVectorRuleMetadata {
         } else {
             std::mem::size_of::<le::U32>()
         }
-    }
-
-    /// Returns whether this access vector rule comes from an
-    /// `allowxperm [source] [target]:[class] [permission] {
-    /// [extended_permissions] };` policy statement.
-    pub fn is_allowxperm(&self) -> bool {
-        (self.access_vector_rule_type & ACCESS_VECTOR_RULE_TYPE_ALLOWXPERM) != 0
-    }
-
-    /// Returns whether this access vector rule comes from an
-    /// `auditallowxperm [source] [target]:[class] [permission] {
-    /// [extended_permissions] };` policy statement.
-    pub fn is_auditallowxperm(&self) -> bool {
-        (self.access_vector_rule_type & ACCESS_VECTOR_RULE_TYPE_AUDITALLOWXPERM) != 0
-    }
-
-    /// Returns whether this access vector rule comes from a
-    /// `dontauditxperm [source] [target]:[class] [permission] {
-    /// [extended_permissions] };` policy statement.
-    pub fn is_dontauditxperm(&self) -> bool {
-        (self.access_vector_rule_type & ACCESS_VECTOR_RULE_TYPE_DONTAUDITXPERM) != 0
-    }
-
-    /// Returns the source type id in this access vector rule. This id
-    /// corresponds to the [`super::symbols::Type`] `id()` of some type or
-    /// attribute in the same policy.
-    pub fn source_type(&self) -> TypeId {
-        TypeId(NonZeroU32::new(self.source_type.into()).unwrap())
-    }
-
-    /// Returns the target type id in this access vector rule. This id
-    /// corresponds to the [`super::symbols::Type`] `id()` of some type or
-    /// attribute in the same policy.
-    pub fn target_type(&self) -> TypeId {
-        TypeId(NonZeroU32::new(self.target_type.into()).unwrap())
-    }
-
-    /// Returns the target class id in this access vector rule. This id
-    /// corresponds to the [`super::symbols::Class`] `id()` of some class in the
-    /// same policy. Although the index is returned as a 32-bit value, the field
-    /// itself is 16-bit
-    pub fn target_class(&self) -> ClassId {
-        ClassId(NonZeroU32::new(self.class.into()).unwrap())
     }
 }
 
@@ -1585,10 +1540,44 @@ pub(super) mod testing {
 
 #[cfg(test)]
 mod tests {
-    use super::super::{find_class_by_name, parse_policy_by_value};
+    use super::super::{ClassId, find_class_by_name, parse_policy_by_value};
     use super::{
-        XPERMS_TYPE_IOCTL_PREFIX_AND_POSTFIXES, XPERMS_TYPE_IOCTL_PREFIXES, XPERMS_TYPE_NLMSG,
+        ACCESS_VECTOR_RULE_TYPE_ALLOWXPERM, ACCESS_VECTOR_RULE_TYPE_AUDITALLOWXPERM,
+        ACCESS_VECTOR_RULE_TYPE_DONTAUDITXPERM, XPERMS_TYPE_IOCTL_PREFIX_AND_POSTFIXES,
+        XPERMS_TYPE_IOCTL_PREFIXES, XPERMS_TYPE_NLMSG,
     };
+    use std::num::NonZeroU32;
+
+    impl super::AccessVectorRuleMetadata {
+        /// Returns whether this access vector rule comes from an
+        /// `allowxperm [source] [target]:[class] [permission] {
+        /// [extended_permissions] };` policy statement.
+        pub fn is_allowxperm(&self) -> bool {
+            (self.access_vector_rule_type & ACCESS_VECTOR_RULE_TYPE_ALLOWXPERM) != 0
+        }
+
+        /// Returns whether this access vector rule comes from an
+        /// `auditallowxperm [source] [target]:[class] [permission] {
+        /// [extended_permissions] };` policy statement.
+        pub fn is_auditallowxperm(&self) -> bool {
+            (self.access_vector_rule_type & ACCESS_VECTOR_RULE_TYPE_AUDITALLOWXPERM) != 0
+        }
+
+        /// Returns whether this access vector rule comes from a
+        /// `dontauditxperm [source] [target]:[class] [permission] {
+        /// [extended_permissions] };` policy statement.
+        pub fn is_dontauditxperm(&self) -> bool {
+            (self.access_vector_rule_type & ACCESS_VECTOR_RULE_TYPE_DONTAUDITXPERM) != 0
+        }
+
+        /// Returns the target class id in this access vector rule. This id
+        /// corresponds to the [`super::symbols::Class`] `id()` of some class in the
+        /// same policy. Although the index is returned as a 32-bit value, the field
+        /// itself is 16-bit
+        pub fn target_class(&self) -> ClassId {
+            ClassId(NonZeroU32::new(self.class.into()).unwrap())
+        }
+    }
 
     #[test]
     fn parse_allowxperm_one_ioctl() {

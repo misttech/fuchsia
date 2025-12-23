@@ -2,20 +2,17 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::policy::arrays::{
-    ACCESS_VECTOR_RULE_TYPE_ALLOW, ACCESS_VECTOR_RULE_TYPE_AUDITALLOW,
-    ACCESS_VECTOR_RULE_TYPE_DONTAUDIT, AccessVectorRuleMetadata, ExtendedPermissions,
-    XPERMS_TYPE_NLMSG,
-};
-use crate::{NullessByteStr, PolicyCap};
-
 use super::arrays::{
-    AccessVectorRule, ConditionalNodes, Context, DeprecatedFilenameTransitions,
-    FilenameTransitionList, FilenameTransitions, FsUses, GenericFsContexts, IPv6Nodes,
-    InfinitiBandEndPorts, InfinitiBandPartitionKeys, InitialSids,
+    ACCESS_VECTOR_RULE_TYPE_ALLOW, ACCESS_VECTOR_RULE_TYPE_ALLOWXPERM,
+    ACCESS_VECTOR_RULE_TYPE_AUDITALLOW, ACCESS_VECTOR_RULE_TYPE_AUDITALLOWXPERM,
+    ACCESS_VECTOR_RULE_TYPE_DONTAUDIT, ACCESS_VECTOR_RULE_TYPE_DONTAUDITXPERM, AccessVectorRule,
+    AccessVectorRuleMetadata, ConditionalNodes, Context, DeprecatedFilenameTransitions,
+    ExtendedPermissions, FilenameTransitionList, FilenameTransitions, FsUses, GenericFsContexts,
+    IPv6Nodes, InfinitiBandEndPorts, InfinitiBandPartitionKeys, InitialSids,
     MIN_POLICY_VERSION_FOR_INFINITIBAND_PARTITION_KEY, NamedContextPairs, Nodes, Ports,
     RangeTransitions, RoleAllow, RoleAllows, RoleTransition, RoleTransitions, SimpleArray,
-    XPERMS_TYPE_IOCTL_PREFIX_AND_POSTFIXES, XPERMS_TYPE_IOCTL_PREFIXES,
+    XPERMS_TYPE_IOCTL_PREFIX_AND_POSTFIXES, XPERMS_TYPE_IOCTL_PREFIXES, XPERMS_TYPE_NLMSG,
+    XpermsBitmap,
 };
 use super::error::{ParseError, ValidateError};
 use super::extensible_bitmap::ExtensibleBitmap;
@@ -30,8 +27,9 @@ use super::view::{HashedArrayView, View};
 use super::{
     AccessDecision, AccessVector, CategoryId, ClassId, Parse, PolicyValidationContext, RoleId,
     SELINUX_AVD_FLAGS_PERMISSIVE, SensitivityId, TypeId, UserId, Validate, XpermsAccessDecision,
-    XpermsBitmap, XpermsKind,
+    XpermsKind,
 };
+use crate::{NullessByteStr, PolicyCap};
 
 use anyhow::Context as _;
 use std::collections::HashSet;
@@ -77,7 +75,7 @@ pub struct ParsedPolicy {
     /// The set of categories referenced by this policy.
     categories: SymbolList<Category>,
     /// The set of access vector rules referenced by this policy.
-    access_vector_rules: HashedArrayView<le::U32, AccessVectorRule>,
+    access_vector_rules: HashedArrayView<AccessVectorRule>,
     conditional_lists: SimpleArray<ConditionalNodes>,
     /// The set of role transitions to apply when instantiating new objects.
     role_transitions: RoleTransitions,
@@ -280,45 +278,56 @@ impl ParsedPolicy {
         let target_attribute_bitmap: &ExtensibleBitmap =
             &self.attribute_maps[(target_context.type_().0.get() - 1) as usize];
 
-        for access_vector_rule_view in self.access_vector_rules() {
-            let metadata = access_vector_rule_view.read_metadata(&self.data);
+        for source_bit_index in source_attribute_bitmap.indices_of_set_bits() {
+            let source_id = TypeId(NonZeroU32::new(source_bit_index + 1).unwrap());
+            for target_bit_index in target_attribute_bitmap.indices_of_set_bits() {
+                let target_id = TypeId(NonZeroU32::new(target_bit_index + 1).unwrap());
 
-            if !metadata.is_allowxperm()
-                && !metadata.is_auditallowxperm()
-                && !metadata.is_dontauditxperm()
-            {
-                continue;
-            }
-            if metadata.target_class() != target_class_id {
-                continue;
-            }
-            if !source_attribute_bitmap.is_set(metadata.source_type().0.get() - 1) {
-                continue;
-            }
-            if !target_attribute_bitmap.is_set(metadata.target_type().0.get() - 1) {
-                continue;
-            }
+                for xperms_allow_rule in self.iterate_access_vector_rules(
+                    source_id,
+                    target_id,
+                    target_class_id,
+                    ACCESS_VECTOR_RULE_TYPE_ALLOWXPERM,
+                ) {
+                    let xperms = xperms_allow_rule.extended_permissions().unwrap();
 
-            let access_control_rule = access_vector_rule_view.parse(&self.data);
-            if let Some(xperms) = access_control_rule.extended_permissions() {
-                // Only filter xperms if there is at least one `allowxperm` rule for the relevant
-                // kind of extended permission. If this condition is not satisfied by any
-                // access vector rule, then all xperms of the relevant type are allowed.
-                if metadata.is_allowxperm() && xperms_types.contains(&xperms.xperms_type) {
-                    explicit_allow.get_or_insert(XpermsBitmap::NONE);
+                    // Only filter xperms if there is at least one `allowxperm` rule for the relevant
+                    // kind of extended permission. If this condition is not satisfied by any
+                    // access vector rule, then all xperms of the relevant type are allowed.
+                    if xperms_types.contains(&xperms.xperms_type) {
+                        explicit_allow.get_or_insert(XpermsBitmap::NONE);
+                    }
+
+                    if let Some(ref xperms_bitmap) = bitmap_if_prefix_matches(xperms_prefix, xperms)
+                    {
+                        (*explicit_allow.get_or_insert(XpermsBitmap::NONE)) |= xperms_bitmap;
+                    }
                 }
-                let Some(ref xperms_bitmap) = bitmap_if_prefix_matches(xperms_prefix, xperms)
-                else {
-                    continue;
-                };
-                if metadata.is_allowxperm() {
-                    (*explicit_allow.get_or_insert(XpermsBitmap::NONE)) |= xperms_bitmap;
+
+                for xperms_auditallow_rule in self.iterate_access_vector_rules(
+                    source_id,
+                    target_id,
+                    target_class_id,
+                    ACCESS_VECTOR_RULE_TYPE_AUDITALLOWXPERM,
+                ) {
+                    let xperms = xperms_auditallow_rule.extended_permissions().unwrap();
+                    if let Some(ref xperms_bitmap) = bitmap_if_prefix_matches(xperms_prefix, xperms)
+                    {
+                        auditallow |= xperms_bitmap;
+                    }
                 }
-                if metadata.is_auditallowxperm() {
-                    auditallow |= xperms_bitmap;
-                }
-                if metadata.is_dontauditxperm() {
-                    auditdeny -= xperms_bitmap;
+
+                for xperms_dontaudit_rule in self.iterate_access_vector_rules(
+                    source_id,
+                    target_id,
+                    target_class_id,
+                    ACCESS_VECTOR_RULE_TYPE_DONTAUDITXPERM,
+                ) {
+                    let xperms = xperms_dontaudit_rule.extended_permissions().unwrap();
+                    if let Some(ref xperms_bitmap) = bitmap_if_prefix_matches(xperms_prefix, xperms)
+                    {
+                        auditdeny -= xperms_bitmap;
+                    }
                 }
             }
         }
@@ -427,7 +436,7 @@ impl ParsedPolicy {
     }
 
     pub(super) fn access_vector_rules(&self) -> impl Iterator<Item = View<AccessVectorRule>> {
-        self.access_vector_rules.data().iter(&self.data)
+        self.access_vector_rules.iterate_all(&self.data)
     }
 
     pub(super) fn find_access_vector_rule(
@@ -439,6 +448,17 @@ impl ParsedPolicy {
     ) -> Option<AccessVectorRule> {
         let query = AccessVectorRuleMetadata::for_query(source, target, class, rule_type);
         self.access_vector_rules.find(query, &self.data)
+    }
+
+    pub(super) fn iterate_access_vector_rules(
+        &self,
+        source: TypeId,
+        target: TypeId,
+        class: ClassId,
+        rule_type: u16,
+    ) -> impl Iterator<Item = AccessVectorRule> {
+        let query = AccessVectorRuleMetadata::for_query(source, target, class, rule_type);
+        self.access_vector_rules.iterate(query, &self.data)
     }
 
     #[cfg(test)]
@@ -597,7 +617,7 @@ fn parse_policy_internal(
         .map_err(Into::<anyhow::Error>::into)
         .context("parsing categories")?;
 
-    let (access_vector_rules, tail) = HashedArrayView::<le::U32, AccessVectorRule>::parse(tail)
+    let (access_vector_rules, tail) = HashedArrayView::<AccessVectorRule>::parse(tail)
         .map_err(Into::<anyhow::Error>::into)
         .context("parsing access vector rules")?;
 
