@@ -1833,6 +1833,94 @@ pub(super) mod tests {
     }
 
     #[test]
+    fn compute_ioctl_grant_does_not_cause_nlmsg_deny() {
+        let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy.pp");
+        let unvalidated = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
+        let class_id = find_class_by_name(
+            unvalidated.0.classes(),
+            "class_ioctl_grant_does_not_cause_nlmsg_deny",
+        )
+        .expect("look up class_ioctl_grant_does_not_cause_nlmsg_deny")
+        .id();
+        let policy = unvalidated.validate().expect("validate policy");
+        let source_context: SecurityContext = policy
+            .parse_security_context(b"user0:object_r:type0:s0-s0".into())
+            .expect("create source security context");
+        let target_context_matched: SecurityContext = source_context.clone();
+
+        // `allowxperm` rules for the `class_ioctl_grant_does_not_cause_nlmsg_deny` class:
+        //
+        // `allowxperm type0 self:class_ioctl_grant_does_not_cause_nlmsg_deny ioctl { 0x0002 };`
+        let ioctl_decision = policy.compute_xperms_access_decision(
+            XpermsKind::Ioctl,
+            &source_context,
+            &target_context_matched,
+            class_id,
+            0x00,
+        );
+        assert_eq!(
+            ioctl_decision,
+            XpermsAccessDecision {
+                allow: xperms_bitmap_from_elements(&[0x0002]),
+                auditallow: XpermsBitmap::NONE,
+                auditdeny: XpermsBitmap::ALL,
+            }
+        );
+        let nlmsg_decision = policy.compute_xperms_access_decision(
+            XpermsKind::Nlmsg,
+            &source_context,
+            &target_context_matched,
+            class_id,
+            0x00,
+        );
+        assert_eq!(nlmsg_decision, XpermsAccessDecision::ALLOW_ALL);
+    }
+
+    #[test]
+    fn compute_nlmsg_grant_does_not_cause_ioctl_deny() {
+        let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy.pp");
+        let unvalidated = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
+        let class_id = find_class_by_name(
+            unvalidated.0.classes(),
+            "class_nlmsg_grant_does_not_cause_ioctl_deny",
+        )
+        .expect("look up class_nlmsg_grant_does_not_cause_ioctl_deny")
+        .id();
+        let policy = unvalidated.validate().expect("validate policy");
+        let source_context: SecurityContext = policy
+            .parse_security_context(b"user0:object_r:type0:s0-s0".into())
+            .expect("create source security context");
+        let target_context_matched: SecurityContext = source_context.clone();
+
+        // `allowxperm` rules for the `class_nlmsg_grant_does_not_cause_ioctl_deny` class:
+        //
+        // `allowxperm type0 self:class_nlmsg_grant_does_not_cause_ioctl_deny nlmsg { 0x0003 };`
+        let nlmsg_decision = policy.compute_xperms_access_decision(
+            XpermsKind::Nlmsg,
+            &source_context,
+            &target_context_matched,
+            class_id,
+            0x00,
+        );
+        assert_eq!(
+            nlmsg_decision,
+            XpermsAccessDecision {
+                allow: xperms_bitmap_from_elements(&[0x0003]),
+                auditallow: XpermsBitmap::NONE,
+                auditdeny: XpermsBitmap::ALL,
+            }
+        );
+        let ioctl_decision = policy.compute_xperms_access_decision(
+            XpermsKind::Ioctl,
+            &source_context,
+            &target_context_matched,
+            class_id,
+            0x00,
+        );
+        assert_eq!(ioctl_decision, XpermsAccessDecision::ALLOW_ALL);
+    }
+
+    #[test]
     fn compute_create_context_minimal() {
         let policy_bytes =
             include_bytes!("../../testdata/composite_policies/compiled/minimal_policy.pp");
