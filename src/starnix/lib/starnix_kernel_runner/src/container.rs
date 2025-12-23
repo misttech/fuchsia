@@ -605,6 +605,11 @@ async fn create_container(
                             // TODO(https://fxbug.dev/424152964): Support force_normal_boot.
                             continue;
                         }
+                        if item.starts_with("androidboot.bootreason") && features.android_bootreason
+                        {
+                            // androidboot.rebootreason is sourced from the Fuchsia reboot reason.
+                            continue;
+                        }
                         kernel_cmdline.extend(b" ");
                         kernel_cmdline.extend(item.bytes());
                     }
