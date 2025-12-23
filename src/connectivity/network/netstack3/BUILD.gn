@@ -239,11 +239,6 @@ config("netstack3_configs") {
       # Always optimize speed, even if it increases size.
       "//build/config:optimize_speed",
     ]
-
-    # Add thinlto config.
-    # Allow cross-crate optimization since netstack3 is split between multiple
-    # crates.
-    configs += [ "//build/config/lto:thinlto-if-not-enabled" ]
   }
 }
 
@@ -254,11 +249,6 @@ config("netstack3_debug_configs") {
       # closer to zero-cost.
       "//build/config:optimize_debug",
     ]
-
-    # Add thinlto config.
-    # Allow cross-crate optimization since netstack3 is split between multiple
-    # crates.
-    configs += [ "//build/config/lto:thinlto-if-not-enabled" ]
   }
 }
 
