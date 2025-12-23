@@ -690,8 +690,24 @@ pub(crate) trait QemuBasedEngine: EmulatorEngine {
                         {
                             log::info!("Compatibility status: {:?}", compatibility.state)
                         }
+                        // Add a new check and present an actionable message to the user. As an
+                        // example, this was noticed when starting the emulator and it was unclear
+                        // what to do next.
+                        Some(compatibility)
+                            if compatibility
+                                .message
+                                .contains("timed out during banner exchange") =>
+                        {
+                            println!("Compatibility status: {:?}", compatibility.state);
+                            println!(
+                                "There was a timeout during SSH banner exchange,\n client was
+                            unable to establish a connection to the SSH server\n within the timeout
+                            period. Please check target logs or restart the emulator\n
+                            by running `ffx emu stop --all && ffx emu start`."
+                            );
+                        }
                         Some(compatibility) => eprintln!(
-                            "Compatibility status: {:?} {}",
+                            "Compatibility status: {:?}\n {}",
                             compatibility.state, compatibility.message
                         ),
                         None => eprintln!("Warning: no compatibility information is available"),

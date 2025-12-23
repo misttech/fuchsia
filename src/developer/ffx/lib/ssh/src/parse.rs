@@ -251,8 +251,14 @@ pub async fn parse_ssh_output(
             (Some(HostAddr(addr)), connection_info)
         }
         Err(e) => {
-            let error_message = format!("Failed to read ssh client address: {e:?}");
-            log::error!("{error_message}");
+            // Upon a successful connection, OpenSSH sets several environment variables.
+            // SSH_CONNECTION shows the address of the client, the outgoing port on the client,
+            // the address of the server and the incoming port on the server. In this error
+            // message, parse_ssh_connection_with_info function failed to parse the client
+            // address.
+            log::debug!("Failed to parse ssh connection from stdout: {:?}", e);
+            let error_message = format!("Could not parse the client address from $SSH_CONNECTION.");
+            log::warn!("{error_message}");
             (None, None)
         }
     };
@@ -261,6 +267,8 @@ pub async fn parse_ssh_output(
         Ok((addr, compat))
     } else {
         // If we failed to parse the ssh connection, there might be information in stderr
+        // We seem to always come here even if the error above was successfully parsed because we
+        // return (None, None) for res.
         Err(parse_ssh_error(stderr, ctx).await)
     }
 }
