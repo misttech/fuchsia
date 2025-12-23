@@ -1553,9 +1553,9 @@ pub(crate) mod testutil {
     use net_declare::{fidl_subnet, net_addr_subnet};
 
     use crate::client::AsyncWorkItem;
-    use crate::eventloop::{EventLoopComponent, IncludedWorkers, Optional, Required};
     use crate::messaging::testutil::FakeSender;
     use crate::protocol_family::route::NetlinkRouteNotifiedGroup;
+    use crate::route_eventloop::{EventLoopComponent, IncludedWorkers, Optional, Required};
 
     pub(crate) const LO_INTERFACE_ID: u64 = 1;
     pub(crate) const LO_NAME: &str = "lo";
@@ -1643,7 +1643,7 @@ pub(crate) mod testutil {
     }
 
     enum OnlyInterfaces {}
-    impl crate::eventloop::EventLoopSpec for OnlyInterfaces {
+    impl crate::route_eventloop::EventLoopSpec for OnlyInterfaces {
         type InterfacesProxy = Required;
         type InterfacesStateProxy = Required;
         type InterfacesHandler = Required;
@@ -1668,7 +1668,7 @@ pub(crate) mod testutil {
         pub event_loop_fut: E,
         pub watcher_stream: W,
         pub request_sink:
-            mpsc::Sender<crate::eventloop::UnifiedRequest<FakeSender<RouteNetlinkMessage>>>,
+            mpsc::Sender<crate::route_eventloop::UnifiedRequest<FakeSender<RouteNetlinkMessage>>>,
         pub interfaces_request_stream: fnet_root::InterfacesRequestStream,
         pub interfaces_handler_sink: FakeInterfacesHandlerSink,
         pub _async_work_sink: mpsc::UnboundedSender<AsyncWorkItem<NetlinkRouteNotifiedGroup>>,
@@ -1685,7 +1685,7 @@ pub(crate) mod testutil {
         let (interfaces_state_proxy, interfaces_state) =
             fidl::endpoints::create_proxy::<fnet_interfaces::StateMarker>();
         let (async_work_sink, async_work_receiver) = mpsc::unbounded();
-        let event_loop_inputs = crate::eventloop::EventLoopInputs::<_, _, OnlyInterfaces> {
+        let event_loop_inputs = crate::route_eventloop::EventLoopInputs::<_, _, OnlyInterfaces> {
             route_clients: EventLoopComponent::Present(route_clients),
             interfaces_handler: EventLoopComponent::Present(interfaces_handler),
             interfaces_proxy: EventLoopComponent::Present(interfaces_proxy),
@@ -2509,7 +2509,7 @@ mod tests {
                 |(mut results, mut request_sink), args| async move {
                     let (completer, waiter) = oneshot::channel();
                     request_sink
-                        .send(crate::eventloop::UnifiedRequest::InterfacesRequest(Request {
+                        .send(crate::route_eventloop::UnifiedRequest::InterfacesRequest(Request {
                             args,
                             sequence_number: TEST_SEQUENCE_NUMBER,
                             client: expected_client.clone(),

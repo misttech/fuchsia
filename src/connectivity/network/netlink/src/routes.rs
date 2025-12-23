@@ -1351,10 +1351,10 @@ mod tests {
     use test_case::test_case;
 
     use crate::client::AsyncWorkItem;
-    use crate::eventloop::{EventLoopComponent, Optional, Required};
     use crate::interfaces::testutil::FakeInterfacesHandler;
     use crate::messaging::testutil::{FakeSender, SentMessage};
     use crate::protocol_family::route::NetlinkRouteNotifiedGroup;
+    use crate::route_eventloop::{EventLoopComponent, Optional, Required};
 
     const V4_SUB1: Subnet<Ipv4Addr> = net_subnet_v4!("192.0.2.0/32");
     const V4_SUB2: Subnet<Ipv4Addr> = net_subnet_v4!("192.0.2.1/32");
@@ -2142,7 +2142,7 @@ mod tests {
     }
 
     enum OnlyRoutes {}
-    impl crate::eventloop::EventLoopSpec for OnlyRoutes {
+    impl crate::route_eventloop::EventLoopSpec for OnlyRoutes {
         type InterfacesProxy = Required;
         type InterfacesHandler = Required;
         type RouteClients = Required;
@@ -2166,7 +2166,7 @@ mod tests {
     }
 
     struct Setup<W, R> {
-        pub event_loop_inputs: crate::eventloop::EventLoopInputs<
+        pub event_loop_inputs: crate::route_eventloop::EventLoopInputs<
             FakeInterfacesHandler,
             FakeSender<RouteNetlinkMessage>,
             OnlyRoutes,
@@ -2175,7 +2175,7 @@ mod tests {
         pub route_sets: R,
         pub interfaces_request_stream: fnet_root::InterfacesRequestStream,
         pub request_sink:
-            mpsc::Sender<crate::eventloop::UnifiedRequest<FakeSender<RouteNetlinkMessage>>>,
+            mpsc::Sender<crate::route_eventloop::UnifiedRequest<FakeSender<RouteNetlinkMessage>>>,
         pub async_work_sink: mpsc::UnboundedSender<AsyncWorkItem<NetlinkRouteNotifiedGroup>>,
     }
 
@@ -2203,7 +2203,7 @@ mod tests {
             route_table_provider: ServerEnd<I::RouteTableProviderMarker>,
         }
 
-        let base_inputs = crate::eventloop::EventLoopInputs {
+        let base_inputs = crate::route_eventloop::EventLoopInputs {
             interfaces_handler: EventLoopComponent::Present(interfaces_handler),
             route_clients: EventLoopComponent::Present(route_clients),
             interfaces_proxy: EventLoopComponent::Present(interfaces_proxy),
@@ -2233,7 +2233,7 @@ mod tests {
                 let (v4_route_table_provider, route_table_provider) = fidl::endpoints::create_proxy::<
                     fnet_routes_admin::RouteTableProviderV4Marker,
                 >();
-                let inputs = crate::eventloop::EventLoopInputs {
+                let inputs = crate::route_eventloop::EventLoopInputs {
                     v4_routes_state: EventLoopComponent::Present(v4_routes_state),
                     v4_main_route_table: EventLoopComponent::Present(v4_main_route_table),
                     v4_route_table_provider: EventLoopComponent::Present(v4_route_table_provider),
@@ -2251,7 +2251,7 @@ mod tests {
                 let (v6_route_table_provider, route_table_provider) = fidl::endpoints::create_proxy::<
                     fnet_routes_admin::RouteTableProviderV6Marker,
                 >();
-                let inputs = crate::eventloop::EventLoopInputs {
+                let inputs = crate::route_eventloop::EventLoopInputs {
                     v6_routes_state: EventLoopComponent::Present(v6_routes_state),
                     v6_main_route_table: EventLoopComponent::Present(v6_main_route_table),
                     v6_route_table_provider: EventLoopComponent::Present(v6_route_table_provider),
@@ -2436,14 +2436,14 @@ mod tests {
     }
 
     async fn run_event_loop<I: Ip>(
-        inputs: crate::eventloop::EventLoopInputs<
+        inputs: crate::route_eventloop::EventLoopInputs<
             FakeInterfacesHandler,
             FakeSender<RouteNetlinkMessage>,
             OnlyRoutes,
         >,
     ) -> Never {
         let included_workers = match I::VERSION {
-            IpVersion::V4 => crate::eventloop::IncludedWorkers {
+            IpVersion::V4 => crate::route_eventloop::IncludedWorkers {
                 routes_v4: EventLoopComponent::Present(()),
                 routes_v6: EventLoopComponent::Absent(Optional),
                 interfaces: EventLoopComponent::Absent(Optional),
@@ -2451,7 +2451,7 @@ mod tests {
                 rules_v6: EventLoopComponent::Absent(Optional),
                 nduseropt: EventLoopComponent::Absent(Optional),
             },
-            IpVersion::V6 => crate::eventloop::IncludedWorkers {
+            IpVersion::V6 => crate::route_eventloop::IncludedWorkers {
                 routes_v4: EventLoopComponent::Absent(Optional),
                 routes_v6: EventLoopComponent::Present(()),
                 interfaces: EventLoopComponent::Absent(Optional),
@@ -4821,7 +4821,7 @@ mod tests {
 
             let mut event_loop = {
                 let included_workers = match I::VERSION {
-                    IpVersion::V4 => crate::eventloop::IncludedWorkers {
+                    IpVersion::V4 => crate::route_eventloop::IncludedWorkers {
                         routes_v4: EventLoopComponent::Present(()),
                         routes_v6: EventLoopComponent::Absent(Optional),
                         interfaces: EventLoopComponent::Absent(Optional),
@@ -4829,7 +4829,7 @@ mod tests {
                         rules_v6: EventLoopComponent::Absent(Optional),
                         nduseropt: EventLoopComponent::Absent(Optional),
                     },
-                    IpVersion::V6 => crate::eventloop::IncludedWorkers {
+                    IpVersion::V6 => crate::route_eventloop::IncludedWorkers {
                         routes_v4: EventLoopComponent::Absent(Optional),
                         routes_v6: EventLoopComponent::Present(()),
                         interfaces: EventLoopComponent::Absent(Optional),

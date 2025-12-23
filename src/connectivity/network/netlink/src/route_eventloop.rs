@@ -82,7 +82,7 @@ pub(crate) enum UnifiedPendingRequest<S: Sender<<NetlinkRoute as ProtocolFamily>
 /// routes and interface hanging get watchers and connects to route and
 /// interface administration protocols in order to single-threadedly service
 /// incoming `UnifiedRequest`s.
-pub(crate) struct EventLoop<
+pub(crate) struct RouteEventLoop<
     H,
     S: crate::messaging::Sender<<NetlinkRoute as ProtocolFamily>::Response>,
 > {
@@ -101,7 +101,7 @@ pub(crate) struct EventLoop<
     pub(crate) route_clients: ClientTable<NetlinkRoute, S>,
     pub(crate) async_work_receiver:
         futures::channel::mpsc::UnboundedReceiver<AsyncWorkItem<NetlinkRouteNotifiedGroup>>,
-    pub(crate) unified_request_stream: mpsc::Receiver<UnifiedRequest<S>>,
+    pub(crate) request_stream: mpsc::Receiver<UnifiedRequest<S>>,
 }
 
 /// The types that implement this trait ([`Optional`] and [`Required`]) are used to signify whether
@@ -921,7 +921,7 @@ impl<
 impl<
     H: interfaces::InterfacesHandler,
     S: crate::messaging::Sender<<NetlinkRoute as ProtocolFamily>::Response>,
-> EventLoop<H, S>
+> RouteEventLoop<H, S>
 {
     pub(crate) async fn run(self, on_initialized: Option<oneshot::Sender<()>>) -> Never {
         let Self {
@@ -939,7 +939,7 @@ impl<
             interfaces_handler,
             route_clients,
             async_work_receiver,
-            unified_request_stream,
+            request_stream: unified_request_stream,
         } = self;
 
         let state = EventLoopInputs::<_, _, AllWorkers> {

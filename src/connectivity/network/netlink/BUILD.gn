@@ -68,7 +68,6 @@ rustc_library("netlink") {
 
   sources = [
     "src/client.rs",
-    "src/eventloop.rs",
     "src/interfaces.rs",
     "src/lib.rs",
     "src/logging.rs",
@@ -77,6 +76,7 @@ rustc_library("netlink") {
     "src/nduseropt.rs",
     "src/netlink_packet.rs",
     "src/protocol_family.rs",
+    "src/route_eventloop.rs",
     "src/route_tables.rs",
     "src/routes.rs",
     "src/rules.rs",

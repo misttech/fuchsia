@@ -108,10 +108,10 @@ pub mod route {
     use netlink_packet_route::{AddressFamily, RouteNetlinkMessage};
 
     use crate::client::AsyncWorkCompletionWaiter;
-    use crate::eventloop::UnifiedRequest;
     use crate::messaging::{MessageWithPermission, Permission};
     use crate::netlink_packet::errno::Errno;
     use crate::netlink_packet::{self};
+    use crate::route_eventloop::UnifiedRequest;
     use crate::rules::{RuleRequest, RuleRequestArgs};
     use crate::{interfaces, routes};
 
@@ -1487,11 +1487,11 @@ mod test {
     use test::testutil::AF_PACKET;
     use test_case::test_case;
 
-    use crate::eventloop::UnifiedRequest;
     use crate::messaging::testutil::{FakeSender, SentMessage};
     use crate::netlink_packet::errno::Errno;
     use crate::netlink_packet::{self};
     use crate::protocol_family::route::{NetlinkRoute, NetlinkRouteRequestHandler};
+    use crate::route_eventloop::UnifiedRequest;
     use crate::rules::{RuleRequest, RuleRequestArgs};
     use crate::{interfaces, routes};
 
