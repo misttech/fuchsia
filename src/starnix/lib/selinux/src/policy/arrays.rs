@@ -1908,48 +1908,6 @@ mod tests {
         }
     }
 
-    // Distinct xperm rules with the same source, target, class, and permission are
-    // represented by distinct `AccessVectorRule`s in the compiled policy, even if
-    // they have overlapping xperm ranges.
-    #[test]
-    fn parse_allowxperm_overlapping_ranges() {
-        let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy.pp");
-        let policy = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
-        let parsed_policy = &policy.0;
-        parsed_policy.validate().expect("validate policy");
-
-        let class_id = find_class_by_name(parsed_policy.classes(), "class_overlapping_ranges")
-            .expect("look up class_overlapping_ranges")
-            .id();
-
-        let rules: Vec<_> = parsed_policy
-            .access_vector_rules_for_test()
-            .filter(|rule| rule.metadata.target_class() == class_id)
-            .collect();
-
-        assert_eq!(rules.len(), 2);
-        assert!(rules[0].metadata.is_allowxperm());
-        if let Some(xperms) = rules[0].extended_permissions() {
-            assert_eq!(xperms.xperms_type, XPERMS_TYPE_IOCTL_PREFIXES);
-            assert_eq!(xperms.count(), 0x100);
-            // Any ioctl in the range 0x10?? should be in the set.
-            assert!(xperms.contains(0x1000));
-            assert!(xperms.contains(0x10ab));
-        } else {
-            panic!("unexpected permission data type")
-        }
-        assert!(rules[1].metadata.is_allowxperm());
-        if let Some(xperms) = rules[1].extended_permissions() {
-            assert_eq!(xperms.xperms_type, XPERMS_TYPE_IOCTL_PREFIX_AND_POSTFIXES);
-            assert_eq!(xperms.xperms_optional_prefix, 0x10);
-            assert_eq!(xperms.count(), 2);
-            assert!(xperms.contains(0x1000));
-            assert!(xperms.contains(0x1001));
-        } else {
-            panic!("unexpected permission data type")
-        }
-    }
-
     #[test]
     fn parse_allowxperm_one_nlmsg() {
         let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy.pp");

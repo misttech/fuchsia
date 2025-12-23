@@ -1291,6 +1291,459 @@ pub(super) mod tests {
     }
 
     #[test]
+    fn compute_ioctl_earlier_redundant_prefixful_not_coalesced_into_prefixless() {
+        let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy.pp");
+        let unvalidated = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
+        let class_id = find_class_by_name(
+            unvalidated.0.classes(),
+            "class_earlier_redundant_prefixful_not_coalesced_into_prefixless",
+        )
+        .expect("look up class_earlier_redundant_prefixful_not_coalesced_into_prefixless")
+        .id();
+        let policy = unvalidated.validate().expect("validate policy");
+        let source_context: SecurityContext = policy
+            .parse_security_context(b"user0:object_r:type0:s0-s0".into())
+            .expect("create source security context");
+        let target_context_matched: SecurityContext = source_context.clone();
+
+        // `allowxperm` rules for the `class_earlier_redundant_prefixful_not_coalesced_into_prefixless` class:
+        //
+        // `allowxperm type0 self:class_earlier_redundant_prefixful_not_coalesced_into_prefixless ioctl { 0x8001-0x8002 };`
+        // `allowxperm type0 self:class_earlier_redundant_prefixful_not_coalesced_into_prefixless ioctl { 0x8000-0x80ff };`
+        let decision = policy.compute_xperms_access_decision(
+            XpermsKind::Ioctl,
+            &source_context,
+            &target_context_matched,
+            class_id,
+            0x7f,
+        );
+        assert_eq!(decision, XpermsAccessDecision::DENY_ALL);
+        let decision = policy.compute_xperms_access_decision(
+            XpermsKind::Ioctl,
+            &source_context,
+            &target_context_matched,
+            class_id,
+            0x80,
+        );
+        assert_eq!(decision, XpermsAccessDecision::ALLOW_ALL);
+        let decision = policy.compute_xperms_access_decision(
+            XpermsKind::Ioctl,
+            &source_context,
+            &target_context_matched,
+            class_id,
+            0x81,
+        );
+        assert_eq!(decision, XpermsAccessDecision::DENY_ALL);
+    }
+
+    #[test]
+    fn compute_ioctl_later_redundant_prefixful_not_coalesced_into_prefixless() {
+        let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy.pp");
+        let unvalidated = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
+        let class_id = find_class_by_name(
+            unvalidated.0.classes(),
+            "class_later_redundant_prefixful_not_coalesced_into_prefixless",
+        )
+        .expect("look up class_later_redundant_prefixful_not_coalesced_into_prefixless")
+        .id();
+        let policy = unvalidated.validate().expect("validate policy");
+        let source_context: SecurityContext = policy
+            .parse_security_context(b"user0:object_r:type0:s0-s0".into())
+            .expect("create source security context");
+        let target_context_matched: SecurityContext = source_context.clone();
+
+        // `allowxperm` rules for the `class_later_redundant_prefixful_not_coalesced_into_prefixless` class:
+        //
+        // `allowxperm type0 self:class_later_redundant_prefixful_not_coalesced_into_prefixless ioctl { 0x9000-0x90ff };`
+        // `allowxperm type0 self:class_later_redundant_prefixful_not_coalesced_into_prefixless ioctl { 0x90fd-0x90fe };`
+        let decision = policy.compute_xperms_access_decision(
+            XpermsKind::Ioctl,
+            &source_context,
+            &target_context_matched,
+            class_id,
+            0x8f,
+        );
+        assert_eq!(decision, XpermsAccessDecision::DENY_ALL);
+        let decision = policy.compute_xperms_access_decision(
+            XpermsKind::Ioctl,
+            &source_context,
+            &target_context_matched,
+            class_id,
+            0x90,
+        );
+        assert_eq!(decision, XpermsAccessDecision::ALLOW_ALL);
+        let decision = policy.compute_xperms_access_decision(
+            XpermsKind::Ioctl,
+            &source_context,
+            &target_context_matched,
+            class_id,
+            0x91,
+        );
+        assert_eq!(decision, XpermsAccessDecision::DENY_ALL);
+    }
+
+    #[test]
+    fn compute_ioctl_earlier_and_later_redundant_prefixful_not_coalesced_into_prefixless() {
+        let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy.pp");
+        let unvalidated = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
+        let class_id = find_class_by_name(
+            unvalidated.0.classes(),
+            "class_earlier_and_later_redundant_prefixful_not_coalesced_into_prefixless",
+        )
+        .expect("look up class_earlier_and_later_redundant_prefixful_not_coalesced_into_prefixless")
+        .id();
+        let policy = unvalidated.validate().expect("validate policy");
+        let source_context: SecurityContext = policy
+            .parse_security_context(b"user0:object_r:type0:s0-s0".into())
+            .expect("create source security context");
+        let target_context_matched: SecurityContext = source_context.clone();
+
+        // `allowxperm` rules for the `class_earlier_and_later_redundant_prefixful_not_coalesced_into_prefixless` class:
+        //
+        // `allowxperm type0 self:class_earlier_and_later_redundant_prefixful_not_coalesced_into_prefixless ioctl { 0xa001-0xa002 };`
+        // `allowxperm type0 self:class_earlier_and_later_redundant_prefixful_not_coalesced_into_prefixless ioctl { 0xa000-0xa03f 0xa040-0xa0ff };`
+        // `allowxperm type0 self:class_earlier_and_later_redundant_prefixful_not_coalesced_into_prefixless ioctl { 0xa0fd-0xa0fe };`
+        let decision = policy.compute_xperms_access_decision(
+            XpermsKind::Ioctl,
+            &source_context,
+            &target_context_matched,
+            class_id,
+            0x9f,
+        );
+        assert_eq!(decision, XpermsAccessDecision::DENY_ALL);
+        let decision = policy.compute_xperms_access_decision(
+            XpermsKind::Ioctl,
+            &source_context,
+            &target_context_matched,
+            class_id,
+            0xa0,
+        );
+        assert_eq!(decision, XpermsAccessDecision::ALLOW_ALL);
+        let decision = policy.compute_xperms_access_decision(
+            XpermsKind::Ioctl,
+            &source_context,
+            &target_context_matched,
+            class_id,
+            0xa1,
+        );
+        assert_eq!(decision, XpermsAccessDecision::DENY_ALL);
+    }
+
+    #[test]
+    fn compute_ioctl_prefixfuls_that_coalesce_to_prefixless() {
+        let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy.pp");
+        let unvalidated = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
+        let class_id = find_class_by_name(
+            unvalidated.0.classes(),
+            "class_prefixfuls_that_coalesce_to_prefixless",
+        )
+        .expect("look up class_prefixfuls_that_coalesce_to_prefixless")
+        .id();
+        let policy = unvalidated.validate().expect("validate policy");
+        let source_context: SecurityContext = policy
+            .parse_security_context(b"user0:object_r:type0:s0-s0".into())
+            .expect("create source security context");
+        let target_context_matched: SecurityContext = source_context.clone();
+
+        // `allowxperm` rules for the `class_prefixfuls_that_coalesce_to_prefixless` class:
+        //
+        // `allowxperm type0 self:class_prefixfuls_that_coalesce_to_prefixless ioctl { 0xb000 0xb001 0xb002 };`
+        // `allowxperm type0 self:class_prefixfuls_that_coalesce_to_prefixless ioctl { 0xb003-0xb0fc };`
+        // `allowxperm type0 self:class_prefixfuls_that_coalesce_to_prefixless ioctl { 0xb0fd 0xb0fe 0xb0ff };`
+        let decision = policy.compute_xperms_access_decision(
+            XpermsKind::Ioctl,
+            &source_context,
+            &target_context_matched,
+            class_id,
+            0xaf,
+        );
+        assert_eq!(decision, XpermsAccessDecision::DENY_ALL);
+        let decision = policy.compute_xperms_access_decision(
+            XpermsKind::Ioctl,
+            &source_context,
+            &target_context_matched,
+            class_id,
+            0xb0,
+        );
+        assert_eq!(decision, XpermsAccessDecision::ALLOW_ALL);
+        let decision = policy.compute_xperms_access_decision(
+            XpermsKind::Ioctl,
+            &source_context,
+            &target_context_matched,
+            class_id,
+            0xb1,
+        );
+        assert_eq!(decision, XpermsAccessDecision::DENY_ALL);
+    }
+
+    #[test]
+    fn compute_ioctl_prefixfuls_that_coalesce_to_prefixless_just_before_prefixless() {
+        let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy.pp");
+        let unvalidated = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
+        let class_id = find_class_by_name(
+            unvalidated.0.classes(),
+            "class_prefixfuls_that_coalesce_to_prefixless_just_before_prefixless",
+        )
+        .expect("look up class_prefixfuls_that_coalesce_to_prefixless_just_before_prefixless")
+        .id();
+        let policy = unvalidated.validate().expect("validate policy");
+        let source_context: SecurityContext = policy
+            .parse_security_context(b"user0:object_r:type0:s0-s0".into())
+            .expect("create source security context");
+        let target_context_matched: SecurityContext = source_context.clone();
+
+        // `allowxperm` rules for the `class_prefixfuls_that_coalesce_to_prefixless_just_before_prefixless` class:
+        //
+        // `allowxperm type0 self:class_prefixfuls_that_coalesce_to_prefixless_just_before_prefixless ioctl { 0xc000 0xc001 0xc002 0xc003 };`
+        // `allowxperm type0 self:class_prefixfuls_that_coalesce_to_prefixless_just_before_prefixless ioctl { 0xc004-0xc0fb };`
+        // `allowxperm type0 self:class_prefixfuls_that_coalesce_to_prefixless_just_before_prefixless ioctl { 0xc0fc 0xc0fd 0xc0fe 0xc0ff };`
+        // `allowxperm type0 self:class_prefixfuls_that_coalesce_to_prefixless_just_before_prefixless ioctl { 0xc100-0xc1ff };`
+        let decision = policy.compute_xperms_access_decision(
+            XpermsKind::Ioctl,
+            &source_context,
+            &target_context_matched,
+            class_id,
+            0xbf,
+        );
+        assert_eq!(decision, XpermsAccessDecision::DENY_ALL);
+        let decision = policy.compute_xperms_access_decision(
+            XpermsKind::Ioctl,
+            &source_context,
+            &target_context_matched,
+            class_id,
+            0xc0,
+        );
+        assert_eq!(decision, XpermsAccessDecision::ALLOW_ALL);
+        let decision = policy.compute_xperms_access_decision(
+            XpermsKind::Ioctl,
+            &source_context,
+            &target_context_matched,
+            class_id,
+            0xc1,
+        );
+        assert_eq!(decision, XpermsAccessDecision::ALLOW_ALL);
+        let decision = policy.compute_xperms_access_decision(
+            XpermsKind::Ioctl,
+            &source_context,
+            &target_context_matched,
+            class_id,
+            0xc2,
+        );
+        assert_eq!(decision, XpermsAccessDecision::DENY_ALL);
+    }
+
+    #[test]
+    fn compute_ioctl_prefixless_just_before_prefixfuls_that_coalesce_to_prefixless() {
+        let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy.pp");
+        let unvalidated = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
+        let class_id = find_class_by_name(
+            unvalidated.0.classes(),
+            "class_prefixless_just_before_prefixfuls_that_coalesce_to_prefixless",
+        )
+        .expect("look up class_prefixless_just_before_prefixfuls_that_coalesce_to_prefixless")
+        .id();
+        let policy = unvalidated.validate().expect("validate policy");
+        let source_context: SecurityContext = policy
+            .parse_security_context(b"user0:object_r:type0:s0-s0".into())
+            .expect("create source security context");
+        let target_context_matched: SecurityContext = source_context.clone();
+
+        // `allowxperm` rules for the `class_prefixless_just_before_prefixfuls_that_coalesce_to_prefixless` class:
+        //
+        // `allowxperm type0 self:class_prefixless_just_before_prefixfuls_that_coalesce_to_prefixless ioctl { 0xd600-0xd6ff };`
+        // `allowxperm type0 self:class_prefixless_just_before_prefixfuls_that_coalesce_to_prefixless ioctl { 0xd700 0xd701 0xd702 0xd703 };`
+        // `allowxperm type0 self:class_prefixless_just_before_prefixfuls_that_coalesce_to_prefixless ioctl { 0xd704-0xd7fb };`
+        // `allowxperm type0 self:class_prefixless_just_before_prefixfuls_that_coalesce_to_prefixless ioctl { 0xd7fc 0xd7fd 0xd7fe 0xd7ff };`
+        let decision = policy.compute_xperms_access_decision(
+            XpermsKind::Ioctl,
+            &source_context,
+            &target_context_matched,
+            class_id,
+            0xd5,
+        );
+        assert_eq!(decision, XpermsAccessDecision::DENY_ALL);
+        let decision = policy.compute_xperms_access_decision(
+            XpermsKind::Ioctl,
+            &source_context,
+            &target_context_matched,
+            class_id,
+            0xd6,
+        );
+        assert_eq!(decision, XpermsAccessDecision::ALLOW_ALL);
+        let decision = policy.compute_xperms_access_decision(
+            XpermsKind::Ioctl,
+            &source_context,
+            &target_context_matched,
+            class_id,
+            0xd7,
+        );
+        assert_eq!(decision, XpermsAccessDecision::ALLOW_ALL);
+        let decision = policy.compute_xperms_access_decision(
+            XpermsKind::Ioctl,
+            &source_context,
+            &target_context_matched,
+            class_id,
+            0xd8,
+        );
+        assert_eq!(decision, XpermsAccessDecision::DENY_ALL);
+    }
+
+    // As of 2025-12, the policy compiler generates allow rules in an unexpected order in the
+    // policy binary for this oddly-expressed policy text content (with one "prefixful" rule
+    // of type [`XPERMS_TYPE_IOCTL_PREFIX_AND_POSTFIXES`], then the "prefixless" rule of type
+    // `XPERMS_TYPE_IOCTL_PREFIXES`, and then two more rules of type
+    // `XPERMS_TYPE_IOCTL_PREFIX_AND_POSTFIXES`). These rules are still contiguous and without
+    // interruption by rules of other source-target-class-type quadruplets; it's just unexpected
+    // that the "prefixless" one falls in the middle of the "prefixful" ones rather than
+    // consistently at the beginning or the end of the "prefixful" ones. We don't directly test
+    // that our odd text content leads to this curious binary content, but we do test that we
+    // make correct access decisions.
+    #[test]
+    fn compute_ioctl_ridiculous_permission_ordering() {
+        let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy.pp");
+        let unvalidated = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
+        let class_id =
+            find_class_by_name(unvalidated.0.classes(), "class_ridiculous_permission_ordering")
+                .expect("look up class_ridiculous_permission_ordering")
+                .id();
+        let policy = unvalidated.validate().expect("validate policy");
+        let source_context: SecurityContext = policy
+            .parse_security_context(b"user0:object_r:type0:s0-s0".into())
+            .expect("create source security context");
+        let target_context_matched: SecurityContext = source_context.clone();
+
+        // `allowxperm` rules for the `class_ridiculous_permission_ordering` class:
+        //
+        // `allowxperm type0 self:class_ridiculous_permission_ordering ioctl { 0xfdfa-0xfdfd 0xf001 };`
+        // `allowxperm type0 self:class_ridiculous_permission_ordering ioctl { 0x0080-0x00ff 0xfdfa-0xfdfd 0x0011-0x0017 0x0001 0x0001 0x0001 0xc000-0xcff2 0x0000 0x0011-0x0017 0x0001 0x0005-0x0015 0x0002-0x007f };`
+        let decision = policy.compute_xperms_access_decision(
+            XpermsKind::Ioctl,
+            &source_context,
+            &target_context_matched,
+            class_id,
+            0x00,
+        );
+        assert_eq!(decision, XpermsAccessDecision::ALLOW_ALL);
+        let decision = policy.compute_xperms_access_decision(
+            XpermsKind::Ioctl,
+            &source_context,
+            &target_context_matched,
+            class_id,
+            0x01,
+        );
+        assert_eq!(decision, XpermsAccessDecision::DENY_ALL);
+        let decision = policy.compute_xperms_access_decision(
+            XpermsKind::Ioctl,
+            &source_context,
+            &target_context_matched,
+            class_id,
+            0xbf,
+        );
+        assert_eq!(decision, XpermsAccessDecision::DENY_ALL);
+        let decision = policy.compute_xperms_access_decision(
+            XpermsKind::Ioctl,
+            &source_context,
+            &target_context_matched,
+            class_id,
+            0xc0,
+        );
+        assert_eq!(decision, XpermsAccessDecision::ALLOW_ALL);
+        let decision = policy.compute_xperms_access_decision(
+            XpermsKind::Ioctl,
+            &source_context,
+            &target_context_matched,
+            class_id,
+            0xce,
+        );
+        assert_eq!(decision, XpermsAccessDecision::ALLOW_ALL);
+        let decision = policy.compute_xperms_access_decision(
+            XpermsKind::Ioctl,
+            &source_context,
+            &target_context_matched,
+            class_id,
+            0xcf,
+        );
+        assert_eq!(
+            decision,
+            XpermsAccessDecision {
+                allow: xperms_bitmap_from_elements((0x0..=0xf2).collect::<Vec<_>>().as_slice()),
+                auditallow: XpermsBitmap::NONE,
+                auditdeny: XpermsBitmap::ALL,
+            }
+        );
+        let decision = policy.compute_xperms_access_decision(
+            XpermsKind::Ioctl,
+            &source_context,
+            &target_context_matched,
+            class_id,
+            0xd0,
+        );
+        assert_eq!(decision, XpermsAccessDecision::DENY_ALL);
+        let decision = policy.compute_xperms_access_decision(
+            XpermsKind::Ioctl,
+            &source_context,
+            &target_context_matched,
+            class_id,
+            0xe9,
+        );
+        assert_eq!(decision, XpermsAccessDecision::DENY_ALL);
+        let decision = policy.compute_xperms_access_decision(
+            XpermsKind::Ioctl,
+            &source_context,
+            &target_context_matched,
+            class_id,
+            0xf0,
+        );
+        assert_eq!(
+            decision,
+            XpermsAccessDecision {
+                allow: xperms_bitmap_from_elements(&[0x01]),
+                auditallow: XpermsBitmap::NONE,
+                auditdeny: XpermsBitmap::ALL,
+            }
+        );
+        let decision = policy.compute_xperms_access_decision(
+            XpermsKind::Ioctl,
+            &source_context,
+            &target_context_matched,
+            class_id,
+            0xf1,
+        );
+        assert_eq!(decision, XpermsAccessDecision::DENY_ALL);
+        let decision = policy.compute_xperms_access_decision(
+            XpermsKind::Ioctl,
+            &source_context,
+            &target_context_matched,
+            class_id,
+            0xfc,
+        );
+        assert_eq!(decision, XpermsAccessDecision::DENY_ALL);
+        let decision = policy.compute_xperms_access_decision(
+            XpermsKind::Ioctl,
+            &source_context,
+            &target_context_matched,
+            class_id,
+            0xfd,
+        );
+        assert_eq!(
+            decision,
+            XpermsAccessDecision {
+                allow: xperms_bitmap_from_elements((0xfa..=0xfd).collect::<Vec<_>>().as_slice()),
+                auditallow: XpermsBitmap::NONE,
+                auditdeny: XpermsBitmap::ALL,
+            }
+        );
+        let decision = policy.compute_xperms_access_decision(
+            XpermsKind::Ioctl,
+            &source_context,
+            &target_context_matched,
+            class_id,
+            0xfe,
+        );
+        assert_eq!(decision, XpermsAccessDecision::DENY_ALL);
+    }
+
+    #[test]
     fn compute_nlmsg_access_decision_explicitly_allowed() {
         let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy.pp");
         let policy = parse_policy_by_value(policy_bytes.to_vec()).expect("parse policy");
