@@ -18,6 +18,5 @@ fidl("fuchsia.wlan.sme") {
     "//sdk/fidl/fuchsia.wlan.stats",
     "//zircon/vdso/zx",
   ]
-  enable_banjo = true
   enable_hlcpp = true
 }

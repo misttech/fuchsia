@@ -26,5 +26,4 @@ fidl("fuchsia.hardware.network") {
   ]
 
   enable_hlcpp = true
-  enable_banjo = true
 }

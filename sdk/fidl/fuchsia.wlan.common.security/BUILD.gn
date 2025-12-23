@@ -9,6 +9,5 @@ fidl("fuchsia.wlan.common.security") {
   excluded_checks = [ "disallowed-library-name-component" ]
 
   sources = [ "security.fidl" ]
-  enable_banjo = true
   enable_hlcpp = true
 }

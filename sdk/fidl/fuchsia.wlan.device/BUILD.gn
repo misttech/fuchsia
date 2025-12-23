@@ -13,6 +13,5 @@ fidl("fuchsia.wlan.device") {
     "//sdk/fidl/fuchsia.wlan.internal",
     "//zircon/vdso/zx",
   ]
-  enable_banjo = true
   enable_hlcpp = true
 }

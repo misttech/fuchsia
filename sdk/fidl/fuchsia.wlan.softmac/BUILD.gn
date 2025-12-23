@@ -19,5 +19,4 @@ fidl("fuchsia.wlan.softmac") {
     "//zircon/vdso/zx",
   ]
   contains_drivers = true
-  enable_banjo = true
 }

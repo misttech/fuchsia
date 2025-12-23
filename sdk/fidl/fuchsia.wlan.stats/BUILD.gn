@@ -12,7 +12,5 @@ fidl("fuchsia.wlan.stats") {
 
   public_deps = [ "//sdk/fidl/fuchsia.wlan.ieee80211" ]
 
-  enable_banjo = true
-
   enable_hlcpp = true
 }
