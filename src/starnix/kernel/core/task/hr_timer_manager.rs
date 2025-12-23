@@ -714,6 +714,10 @@ impl HrTimerManager {
         message_counter_for_test: Option<zx::Counter>,
         setup_done: Option<zx::Event>,
     ) -> Result<()> {
+        // The values assigned to the counter are arbitrary, but unique for each assignment.
+        // This should give us hints as to where any deadlocks might occur if they do.
+        // We also take stack traces, but stack traces do not capture async stacks presently.
+        self.lock().debug_start_stage_counter = 1005;
         ftrace::instant!("alarms", "watch_new_hrtimer_loop:init", ftrace::Scope::Process);
         defer! {
             log_warn!("watch_new_hrtimer_loop: exiting. This should only happen in tests.");
@@ -722,6 +726,7 @@ impl HrTimerManager {
         let wake_channel = wake_channel_for_test.take().unwrap_or_else(|| {
             connect_to_wake_alarms_async().expect("connection to wake alarms async proxy")
         });
+        self.lock().debug_start_stage_counter = 1004;
 
         let counter_name = "wake-alarms";
         let (device_channel, counter) = if let Some(message_counter) = message_counter_for_test {
@@ -730,6 +735,7 @@ impl HrTimerManager {
         } else {
             create_proxy_for_wake_events_counter_zero(wake_channel, counter_name.to_string())
         };
+        self.lock().debug_start_stage_counter = 1003;
         let message_counter = system_task
             .kernel()
             .suspend_resume_manager
@@ -739,6 +745,7 @@ impl HrTimerManager {
             .as_ref()
             .map(|e| signal_handle(e, zx::Signals::NONE, zx::Signals::EVENT_SIGNALED));
 
+        self.lock().debug_start_stage_counter = 1002;
         let device_async_proxy =
             fta::WakeAlarmsProxy::new(fidl::AsyncChannel::from_channel(device_channel));
 
@@ -753,6 +760,7 @@ impl HrTimerManager {
         // Per timer tasks.
         let mut task_by_timer_id: HashMap<zx::Koid, fasync::Task<()>> = HashMap::new();
 
+        self.lock().debug_start_stage_counter = 1001;
         ftrace::instant!("alarms", "watch_new_hrtimer_loop:init_done", ftrace::Scope::Process);
         while let Some(cmd) = start_next_receiver.next().await {
             self.lock().last_loop_started_timestamp = zx::BootInstant::get();
