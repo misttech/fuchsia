@@ -466,7 +466,7 @@ struct SharedMetadataTraits final {
     std::atomic<float> cta861_3__maxContentLightLevel;
     std::atomic<float> cta861_3__maxFrameAverageLightLevel;
 
-    // SMPTE2094_10 and SMPTE2094_40
+    // SMPTE2094_10 and SMPTE2094_40 and SMPTE2094_50
     //
     // For consistency with how StandardMetadataType.aidl says it encodes these into a byte stream,
     // and consistent with the std::optional<std::vector<uint8_t>> type used (see
@@ -493,6 +493,14 @@ struct SharedMetadataTraits final {
     std::atomic<uint32_t> smpte2094_40__size_bytes;
     // Will only ever read up to kSmpte2094_40_MaxSizeBytes regardless of smpte2094_40__size_bytes.
     std::atomic<uint8_t> smpte2094_40__bytes[kSmpte2094_40_MaxSizeBytes];
+
+    static constexpr uint32_t kSmpte2094_50_MaxSizeBytes = 1024;
+    // non-zero if std::optional.has_value() (see StandardMetadata<SMPTE2094_50>).
+    std::atomic<uint32_t> smpte2094_50__has_value;
+    // Validated to be <= kSmpte2094_50_MaxSizeBytes.
+    std::atomic<uint32_t> smpte2094_50__size_bytes;
+    // Will only ever read up to kSmpte2094_50_MaxSizeBytes regardless of smpte2094_50__size_bytes.
+    std::atomic<uint8_t> smpte2094_50__bytes[kSmpte2094_50_MaxSizeBytes];
   };
   struct SharedMutableMetadata final : public SharedMutableMetadataBase {};
 
@@ -525,6 +533,9 @@ struct SharedMetadataTraits final {
       static_assert(offsetof(PrivateSharedMutableMetadata, smpte2094_40__has_value) == 1096);
       static_assert(offsetof(PrivateSharedMutableMetadata, smpte2094_40__size_bytes) == 1100);
       static_assert(offsetof(PrivateSharedMutableMetadata, smpte2094_40__bytes) == 1104);
+      static_assert(offsetof(PrivateSharedMutableMetadata, smpte2094_50__has_value) == 2128);
+      static_assert(offsetof(PrivateSharedMutableMetadata, smpte2094_50__size_bytes) == 2132);
+      static_assert(offsetof(PrivateSharedMutableMetadata, smpte2094_50__bytes) == 2136);
       return true;
     }
   };
