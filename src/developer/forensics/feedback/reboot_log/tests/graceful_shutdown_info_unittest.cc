@@ -103,7 +103,11 @@ TEST(GracefulShutdownInfoTest, VerifyContentConversion) {
       GracefulShutdownReason::kZbiSwap,
       GracefulShutdownReason::kNotSupported,
       GracefulShutdownReason::kNetstackMigration,
+      GracefulShutdownReason::kAndroidUnexpectedReason,
       GracefulShutdownReason::kAndroidNoReason,
+      GracefulShutdownReason::kAndroidRescueParty,
+      GracefulShutdownReason::kAndroidCriticalProcessFailure,
+      GracefulShutdownReason::kDeveloperRequest,
   };
 
   for (const auto reason : reasons) {
@@ -127,7 +131,11 @@ TEST(GracefulShutdownInfoTest, VerifyContentConversionWithMultipleReasons) {
       GracefulShutdownReason::kZbiSwap,
       GracefulShutdownReason::kNotSupported,
       GracefulShutdownReason::kNetstackMigration,
+      GracefulShutdownReason::kAndroidUnexpectedReason,
       GracefulShutdownReason::kAndroidNoReason,
+      GracefulShutdownReason::kAndroidRescueParty,
+      GracefulShutdownReason::kAndroidCriticalProcessFailure,
+      GracefulShutdownReason::kDeveloperRequest,
   };
 
   // Verify all reasons at once.
@@ -366,9 +374,29 @@ INSTANTIATE_TEST_SUITE_P(WithVariousShutdownReasons, WriteGracefulShutdownReason
                                  "NOT SUPPORTED",
                              },
                              {
+                                 "AndroidUnexpectedReason",
+                                 GracefulShutdownReason::kAndroidUnexpectedReason,
+                                 "ANDROID UNEXPECTED REASON",
+                             },
+                             {
                                  "AndroidNoReason",
                                  GracefulShutdownReason::kAndroidNoReason,
                                  "ANDROID NO REASON",
+                             },
+                             {
+                                 "AndroidRescueParty",
+                                 GracefulShutdownReason::kAndroidRescueParty,
+                                 "ANDROID RESCUE PARTY",
+                             },
+                             {
+                                 "AndroidCriticalProcessFailure",
+                                 GracefulShutdownReason::kAndroidCriticalProcessFailure,
+                                 "ANDROID CRITICAL PROCESS FAILURE",
+                             },
+                             {
+                                 "DeveloperRequest",
+                                 GracefulShutdownReason::kDeveloperRequest,
+                                 "DEVELOPER REQUEST",
                              },
                          })),
                          [](const testing::TestParamInfo<ReasonTestParam>& info) {
