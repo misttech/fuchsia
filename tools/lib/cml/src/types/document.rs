@@ -1038,6 +1038,7 @@ pub struct ParsedDocument {
     pub r#use: Option<Spanned<Vec<Spanned<ParsedUse>>>>,
     pub expose: Option<Spanned<Vec<Spanned<ParsedExpose>>>>,
     pub offer: Option<Spanned<Vec<Spanned<ParsedOffer>>>>,
+    pub facets: Option<IndexMap<String, Spanned<Value>>>,
 }
 
 #[derive(Debug, Default)]
@@ -1050,6 +1051,7 @@ pub struct DocumentContext {
     pub r#use: Option<Vec<ContextSpanned<ContextUse>>>,
     pub expose: Option<Vec<ContextSpanned<ContextExpose>>>,
     pub offer: Option<Vec<ContextSpanned<ContextOffer>>>,
+    pub facets: Option<IndexMap<String, ContextSpanned<Value>>>,
 }
 
 impl DocumentContext {
@@ -1066,7 +1068,7 @@ impl DocumentContext {
         merge_spanned_vec!(self, other, r#use);
         merge_spanned_vec!(self, other, expose);
         merge_spanned_vec!(self, other, offer);
-
+        self.merge_facets(&mut other, include_path)?;
         Ok(())
     }
 
@@ -1181,114 +1183,14 @@ impl DocumentContext {
                 my_program.runner = Some(other_runner_wrapper);
             }
         }
-        Self::merge_maps_with_options(
+        Self::merge_maps_unified(
             &mut my_program.info,
             &other_program.info,
             "program",
             include_path,
-            Some(vec!["environ", "features"]),
+            None,
+            Some(&vec!["environ", "features"]),
         )
-    }
-
-    fn merge_maps<'s, Source, Dest>(
-        self_map: &mut Dest,
-        include_map: Source,
-        outer_key: &str,
-        include_path: &path::Path,
-    ) -> Result<(), Error>
-    where
-        Source: IntoIterator<Item = (&'s String, &'s Value)>,
-        Dest: ValueMap,
-    {
-        Self::merge_maps_with_options(self_map, include_map, outer_key, include_path, None)
-    }
-
-    /// If `allow_array_concatenation_keys` is None, all arrays present in both
-    /// `self_map` and `include_map` will be concatenated in the result. If it
-    /// is set to Some(vec), only those keys specified will allow concatenation,
-    /// with any others returning an error.
-    fn merge_maps_with_options<'s, Source, Dest>(
-        self_map: &mut Dest,
-        include_map: Source,
-        outer_key: &str,
-        include_path: &path::Path,
-        allow_array_concatenation_keys: Option<Vec<&str>>,
-    ) -> Result<(), Error>
-    where
-        Source: IntoIterator<Item = (&'s String, &'s Value)>,
-        Dest: ValueMap,
-    {
-        for (key, value) in include_map {
-            match self_map.get_mut(key) {
-                None => {
-                    // Key not present in self map, insert it from include map.
-                    self_map.insert(key.clone(), value.clone());
-                }
-                // Self and include maps share the same key
-                Some(Value::Object(self_nested_map)) => match value {
-                    // The include value is an object and can be recursively merged
-                    Value::Object(include_nested_map) => {
-                        let combined_key = format!("{}.{}", outer_key, key);
-
-                        // Recursively merge maps
-                        Self::merge_maps(
-                            self_nested_map,
-                            include_nested_map,
-                            &combined_key,
-                            include_path,
-                        )?;
-                    }
-                    _ => {
-                        // Cannot merge object and non-object
-                        return Err(Error::validate(format!(
-                            "manifest include had a conflicting `{}.{}`: {}",
-                            outer_key,
-                            key,
-                            include_path.display()
-                        )));
-                    }
-                },
-                Some(Value::Array(self_nested_vec)) => match value {
-                    // The include value is an array and can be merged, unless
-                    // `allow_array_concatenation_keys` is used and the key is not included.
-                    Value::Array(include_nested_vec) => {
-                        if let Some(allowed_keys) = &allow_array_concatenation_keys {
-                            if !allowed_keys.contains(&key.as_str()) {
-                                // This key wasn't present in `allow_array_concatenation_keys` and so
-                                // merging is disallowed.
-                                return Err(Error::validate(format!(
-                                    "manifest include had a conflicting `{}.{}`: {}",
-                                    outer_key,
-                                    key,
-                                    include_path.display()
-                                )));
-                            }
-                        }
-                        let mut new_values = include_nested_vec.clone();
-                        self_nested_vec.append(&mut new_values);
-                    }
-                    _ => {
-                        // Cannot merge array and non-array
-                        return Err(Error::validate(format!(
-                            "manifest include had a conflicting `{}.{}`: {}",
-                            outer_key,
-                            key,
-                            include_path.display()
-                        )));
-                    }
-                },
-                _ => {
-                    // Cannot merge object and non-object
-                    return Err(Error::validate(format!(
-                        "manifest include had a conflicting `{}.{}`: {}",
-                        outer_key,
-                        key,
-                        include_path.display()
-                    )));
-                }
-            }
-        }
-        Ok(())
     }
 
     fn merge_environment(&mut self, other: &mut DocumentContext) -> Result<(), Error> {
@@ -1332,6 +1234,103 @@ impl DocumentContext {
         self.environments = Some(merged_results);
         Ok(())
     }
+
+    fn merge_facets(
+        &mut self,
+        other: &mut DocumentContext,
+        include_path: &path::Path,
+    ) -> Result<(), Error> {
+        if let None = other.facets {
+            return Ok(());
+        }
+        if let None = self.facets {
+            self.facets = Some(Default::default());
+        }
+        let other_facets = other.facets.as_ref().unwrap();
+
+        for (key, include_spanned) in other_facets {
+            let entry_origin = Some(&include_spanned.origin);
+            let my_facets = self.facets.as_mut().unwrap();
+
+            if !my_facets.contains_key(key) {
+                my_facets.insert(key.clone(), include_spanned.clone());
+            } else {
+                let self_spanned = my_facets.get_mut(key).unwrap();
+                Self::merge_maps_unified(
+                    self_spanned.value.as_object_mut().unwrap(),
+                    include_spanned.value.as_object().unwrap(),
+                    &format!("facets.{}", key),
+                    include_path,
+                    entry_origin,
+                    Some(&vec![]),
+                )?;
+            }
+        }
+        Ok(())
+    }
+
+    fn merge_maps_unified<'s, Source, Dest>(
+        self_map: &mut Dest,
+        include_map: Source,
+        outer_key: &str,
+        include_path: &path::Path,
+        origin: Option<&Origin>,
+        allow_array_concatenation_keys: Option<&Vec<&str>>,
+    ) -> Result<(), Error>
+    where
+        Source: IntoIterator<Item = (&'s String, &'s serde_json::Value)>,
+        Dest: ValueMap,
+    {
+        for (key, include_val) in include_map {
+            match self_map.get_mut(key) {
+                None => {
+                    self_map.insert(key.clone(), include_val.clone());
+                }
+                Some(self_val) => match (self_val, include_val) {
+                    (serde_json::Value::Object(s_inner), serde_json::Value::Object(i_inner)) => {
+                        let combined_key = format!("{}.{}", outer_key, key);
+                        Self::merge_maps_unified(
+                            s_inner,
+                            i_inner,
+                            &combined_key,
+                            include_path,
+                            origin,
+                            allow_array_concatenation_keys,
+                        )?;
+                    }
+                    (serde_json::Value::Array(s_arr), serde_json::Value::Array(i_arr)) => {
+                        let is_allowed = allow_array_concatenation_keys
+                            .map_or(true, |keys| keys.contains(&key.as_str()));
+
+                        if is_allowed {
+                            s_arr.extend(i_arr.clone());
+                        } else if s_arr != i_arr {
+                            return Err(Error::merge(
+                                format!(
+                                    "Conflicting array values for field \"{}.{}\"",
+                                    outer_key, key
+                                ),
+                                origin.cloned(),
+                            ));
+                        }
+                    }
+                    (v1, v2) if v1 == v2 => {}
+                    _ => {
+                        return Err(Error::merge(
+                            format!(
+                                "Manifest include '{}' had a conflicting value for field \"{}.{}\"",
+                                include_path.display(),
+                                outer_key,
+                                key
+                            ),
+                            origin.cloned(),
+                        ));
+                    }
+                },
+            }
+        }
+        Ok(())
+    }
 }
 
 pub fn convert_parsed_to_document(
@@ -1339,6 +1338,16 @@ pub fn convert_parsed_to_document(
     file_arc: Arc<PathBuf>,
     buffer: &String,
 ) -> Result<DocumentContext, Error> {
+    let facets = parsed_doc.facets.map(|raw_facets| {
+        raw_facets
+            .into_iter()
+            .map(|(key, spanned_val)| {
+                let context_val = hydrate_simple(spanned_val, &file_arc, buffer);
+                (key, context_val)
+            })
+            .collect::<IndexMap<String, ContextSpanned<serde_json::Value>>>()
+    });
+
     Ok(DocumentContext {
         program: hydrate_opt(parsed_doc.program, &file_arc, buffer)?,
         children: hydrate_list(parsed_doc.children, &file_arc, buffer)?,
@@ -1348,6 +1357,7 @@ pub fn convert_parsed_to_document(
         r#use: hydrate_list(parsed_doc.r#use, &file_arc, buffer)?,
         expose: hydrate_list(parsed_doc.expose, &file_arc, buffer)?,
         offer: hydrate_list(parsed_doc.offer, &file_arc, buffer)?,
+        facets,
     })
 }
 

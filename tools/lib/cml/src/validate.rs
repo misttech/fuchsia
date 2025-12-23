@@ -277,6 +277,9 @@ impl<'a> ValidationContextV2<'a> {
                 self.validate_environment(&environment)?;
             }
         }
+
+        self.validate_facets()?;
+
         Ok(())
     }
 
@@ -1178,6 +1181,78 @@ which is almost certainly a mistake: {}",
                 let debug = &debug_span.value;
                 self.protocol_from_self_checker(debug).validate("registered as debug")?;
                 self.validate_from_clause("debug", debug, &None, &None, debug.from.origin.clone())?;
+            }
+        }
+
+        Ok(())
+    }
+
+    fn get_test_facet(&self) -> Option<&ContextSpanned<serde_json::Value>> {
+        match &self.document.facets {
+            Some(m) => m.get(TEST_FACET_KEY),
+            None => None,
+        }
+    }
+
+    fn validate_facets(&self) -> Result<(), Error> {
+        let test_facet_spanned = self.get_test_facet();
+        let enable_allow_non_hermetic_packages =
+            self.features.has(&Feature::EnableAllowNonHermeticPackagesFeature);
+
+        if let Some(spanned) = test_facet_spanned {
+            let test_facet_origin = &spanned.origin;
+            let test_facet_map = match &spanned.value {
+                serde_json::Value::Object(m) => m,
+                _ => {
+                    return Err(Error::validate_context(
+                        format!("'{}' is not an object", TEST_FACET_KEY),
+                        Some(test_facet_origin.clone()),
+                    ));
+                }
+            };
+
+            let restrict_test_type = self.features.has(&Feature::RestrictTestTypeInFacet);
+
+            if restrict_test_type {
+                if test_facet_map.contains_key(TEST_TYPE_FACET_KEY) {
+                    return Err(Error::validate_context(
+                        format!(
+                            "'{}' is not allowed in facets. Refer to: \
+                            https://fuchsia.dev/fuchsia-src/development/testing/components/test_runner_framework#non-hermetic_tests",
+                            TEST_TYPE_FACET_KEY
+                        ),
+                        Some(test_facet_origin.clone()),
+                    ));
+                }
+            }
+        }
+
+        if enable_allow_non_hermetic_packages {
+            let allow_non_hermetic_packages = self.features.has(&Feature::AllowNonHermeticPackages);
+
+            let has_deprecated_facet = test_facet_spanned
+                .and_then(|s| s.value.as_object())
+                .map_or(false, |m| m.contains_key(TEST_DEPRECATED_ALLOWED_PACKAGES_FACET_KEY));
+
+            if allow_non_hermetic_packages && !has_deprecated_facet {
+                return Err(Error::validate(format!(
+                    "Remove restricted_feature '{}' as manifest does not contain facet '{}'",
+                    Feature::AllowNonHermeticPackages,
+                    TEST_DEPRECATED_ALLOWED_PACKAGES_FACET_KEY
+                )));
+            }
+
+            if has_deprecated_facet && !allow_non_hermetic_packages {
+                let origin = test_facet_spanned.map(|s| s.origin.clone());
+
+                return Err(Error::validate_context(
+                    format!(
+                        "restricted_feature '{}' should be present with facet '{}'",
+                        Feature::AllowNonHermeticPackages,
+                        TEST_DEPRECATED_ALLOWED_PACKAGES_FACET_KEY
+                    ),
+                    origin,
+                ));
             }
         }
 
@@ -3324,6 +3399,27 @@ mod tests {
         }
     }
 
+    macro_rules! test_validate_cml_with_feature_context {
+        (
+            $features:expr,
+            {
+                $(
+                    $test_name:ident($input:expr, $($pattern:tt)+),
+                )+
+            }
+        ) => {
+            $(
+                #[test]
+                fn $test_name() {
+                    let input = format!("{}", $input);
+                    let features = $features;
+                    let result = validate_with_features_for_test_context("test.cml", &input.as_bytes(), &features, &vec![], &vec![], &vec![]);
+                    assert_matches!(result, $($pattern)+);
+                }
+            )+
+        }
+    }
+
     fn validate_for_test(filename: &str, input: &[u8]) -> Result<(), Error> {
         validate_with_features_for_test(filename, input, &FeatureSet::empty(), &[], &[], &[])
     }
@@ -5318,6 +5414,25 @@ mod tests {
                 ],
             }),
             Err(Error::ValidateContext { err, .. }) if &err == "\"debug\" source \"#missing\" does not appear in \"children\" or \"capabilities\""
+        ),
+
+        test_cml_facets(
+            json!({
+                "facets": {
+                    "metadata": {
+                        "title": "foo",
+                        "authors": [ "me", "you" ],
+                        "year": 2018
+                    }
+                }
+            }),
+            Ok(())
+        ),
+        test_cml_facets_wrong_type(
+            json!({
+                "facets": 55
+            }),
+            Err(Error::Parse { err, .. }) if err.starts_with("invalid type: integer `55`, expected a map")
         ),
     }
 
@@ -8018,7 +8133,7 @@ mod tests {
         ),
 
         // facets
-        test_cml_facets(
+        test_cml_facets_no_span(
             json!({
                 "facets": {
                     "metadata": {
@@ -8030,7 +8145,7 @@ mod tests {
             }),
             Ok(())
         ),
-        test_cml_facets_wrong_type(
+        test_cml_facets_wrong_type_no_span(
             json!({
                 "facets": 55
             }),
@@ -9323,6 +9438,41 @@ mod tests {
 
     // Tests validate_facets function without the feature set
     test_validate_cml! {
+        test_valid_empty_facets_no_span(
+            json!({
+                "facets": {}
+            }),
+            Ok(())
+        ),
+
+        test_invalid_empty_facets_no_span(
+            json!({
+                "facets": ""
+            }),
+            Err(err) if err.to_string().contains("invalid type: string")
+        ),
+        test_valid_empty_fuchsia_test_facet_no_span(
+            json!({
+                "facets": {TEST_FACET_KEY: {}}
+            }),
+            Ok(())
+        ),
+
+        test_valid_allowed_pkg_without_feature_no_span(
+            json!({
+                "facets": {
+                    TEST_TYPE_FACET_KEY: "some_realm",
+                    TEST_FACET_KEY: {
+                        TEST_DEPRECATED_ALLOWED_PACKAGES_FACET_KEY: [ "some_pkg" ]
+                    }
+                }
+            }),
+            Ok(())
+        ),
+    }
+
+    // Tests validate_facets function without the feature set
+    test_validate_cml_with_context! {
         test_valid_empty_facets(
             json!({
                 "facets": {}
@@ -9358,6 +9508,33 @@ mod tests {
 
     // Tests validate_facets function with the RestrictTestTypeInFacet enabled.
     test_validate_cml_with_feature! { FeatureSet::from(vec![Feature::RestrictTestTypeInFacet]), {
+        test_valid_empty_facets_with_test_type_feature_enabled_no_span(
+            json!({
+                "facets": {}
+            }),
+            Ok(())
+        ),
+        test_valid_empty_fuchsia_test_facet_with_test_type_feature_enabled_no_span(
+            json!({
+                "facets": {TEST_FACET_KEY: {}}
+            }),
+            Ok(())
+        ),
+
+        test_invalid_test_type_with_feature_enabled_no_span(
+            json!({
+                "facets": {
+                    TEST_FACET_KEY: {
+                        TEST_TYPE_FACET_KEY: "some_realm",
+                    }
+                }
+            }),
+            Err(err) if err.to_string().contains(TEST_TYPE_FACET_KEY)
+        ),
+    }}
+
+    // Tests validate_facets function with the RestrictTestTypeInFacet enabled.
+    test_validate_cml_with_feature_context! { FeatureSet::from(vec![Feature::RestrictTestTypeInFacet]), {
         test_valid_empty_facets_with_test_type_feature_enabled(
             json!({
                 "facets": {}
@@ -9385,6 +9562,33 @@ mod tests {
 
     // Tests validate_facets function with the EnableAllowNonHermeticPackagesFeature disabled.
     test_validate_cml_with_feature! { FeatureSet::from(vec![Feature::AllowNonHermeticPackages]), {
+        test_valid_empty_facets_with_feature_disabled_no_span(
+            json!({
+                "facets": {}
+            }),
+            Ok(())
+        ),
+        test_valid_empty_fuchsia_test_facet_with_feature_disabled_no_span(
+            json!({
+                "facets": {TEST_FACET_KEY: {}}
+            }),
+            Ok(())
+        ),
+
+        test_valid_allowed_pkg_with_feature_disabled_no_span(
+            json!({
+                "facets": {
+                    TEST_FACET_KEY: {
+                        TEST_DEPRECATED_ALLOWED_PACKAGES_FACET_KEY: [ "some_pkg" ]
+                    }
+                }
+            }),
+            Ok(())
+        ),
+    }}
+
+    // Tests validate_facets function with the EnableAllowNonHermeticPackagesFeature disabled.
+    test_validate_cml_with_feature_context! { FeatureSet::from(vec![Feature::AllowNonHermeticPackages]), {
         test_valid_empty_facets_with_feature_disabled(
             json!({
                 "facets": {}
@@ -9412,6 +9616,33 @@ mod tests {
 
     // Tests validate_facets function with the EnableAllowNonHermeticPackagesFeature enabled.
     test_validate_cml_with_feature! { FeatureSet::from(vec![Feature::EnableAllowNonHermeticPackagesFeature]), {
+        test_valid_empty_facets_with_feature_enabled_no_span(
+            json!({
+                "facets": {}
+            }),
+            Ok(())
+        ),
+        test_valid_empty_fuchsia_test_facet_with_feature_enabled_no_span(
+            json!({
+                "facets": {TEST_FACET_KEY: {}}
+            }),
+            Ok(())
+        ),
+
+        test_invalid_allowed_pkg_with_feature_enabled_no_span(
+            json!({
+                "facets": {
+                    TEST_FACET_KEY: {
+                        TEST_DEPRECATED_ALLOWED_PACKAGES_FACET_KEY: [ "some_pkg" ]
+                    }
+                }
+            }),
+            Err(err) if err.to_string().contains(&Feature::AllowNonHermeticPackages.to_string())
+        ),
+    }}
+
+    // Tests validate_facets function with the EnableAllowNonHermeticPackagesFeature enabled.
+    test_validate_cml_with_feature_context! { FeatureSet::from(vec![Feature::EnableAllowNonHermeticPackagesFeature]), {
         test_valid_empty_facets_with_feature_enabled(
             json!({
                 "facets": {}
@@ -9439,12 +9670,40 @@ mod tests {
 
     // Tests validate_facets function with the feature enabled and allowed pkg feature set.
     test_validate_cml_with_feature! { FeatureSet::from(vec![Feature::EnableAllowNonHermeticPackagesFeature, Feature::AllowNonHermeticPackages]), {
+        test_invalid_empty_facets_with_feature_enabled_no_span(
+            json!({
+                "facets": {}
+            }),
+            Err(err) if err.to_string().contains(&Feature::AllowNonHermeticPackages.to_string())
+        ),
+        test_invalid_empty_fuchsia_test_facet_with_feature_enabled_no_span(
+            json!({
+                "facets": {TEST_FACET_KEY: {}}
+            }),
+            Err(err) if err.to_string().contains(&Feature::AllowNonHermeticPackages.to_string())
+        ),
+
+        test_valid_allowed_pkg_with_feature_enabled_no_span(
+            json!({
+                "facets": {
+                    TEST_FACET_KEY: {
+                        TEST_DEPRECATED_ALLOWED_PACKAGES_FACET_KEY: [ "some_pkg" ]
+                    }
+                }
+            }),
+            Ok(())
+        ),
+    }}
+
+    // Tests validate_facets function with the feature enabled and allowed pkg feature set.
+    test_validate_cml_with_feature_context! { FeatureSet::from(vec![Feature::EnableAllowNonHermeticPackagesFeature, Feature::AllowNonHermeticPackages]), {
         test_invalid_empty_facets_with_feature_enabled(
             json!({
                 "facets": {}
             }),
             Err(err) if err.to_string().contains(&Feature::AllowNonHermeticPackages.to_string())
         ),
+
         test_invalid_empty_fuchsia_test_facet_with_feature_enabled(
             json!({
                 "facets": {TEST_FACET_KEY: {}}
