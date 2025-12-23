@@ -237,6 +237,8 @@
                 "fuchsia.net.routes.State",
                 "fuchsia.net.routes.StateV4",
                 "fuchsia.net.routes.StateV6",
+                "fuchsia.net.sockets.Control",
+                "fuchsia.net.sockets.Diagnostics",
                 "fuchsia.net.stack.Stack",
                 "fuchsia.posix.socket.packet.Provider",
             ],

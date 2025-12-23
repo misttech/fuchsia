@@ -164,6 +164,8 @@
                 "fuchsia.net.routes.admin.RuleTableV6",
                 "fuchsia.net.routes.StateV4",
                 "fuchsia.net.routes.StateV6",
+                "fuchsia.net.sockets.Control",
+                "fuchsia.net.sockets.Diagnostics",
                 "fuchsia.net.tun.Control",
                 "fuchsia.posix.socket.packet.Provider",
                 "fuchsia.posix.socket.Provider",
