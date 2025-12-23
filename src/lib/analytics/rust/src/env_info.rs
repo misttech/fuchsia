@@ -169,6 +169,7 @@ fn get_home_dir() -> PathBuf {
 
 const TEST_ENV_VAR: &'static str = "FUCHSIA_TEST_OUTDIR";
 const ANALYTICS_DISABLED_ENV_VAR: &'static str = "FUCHSIA_ANALYTICS_DISABLED";
+const HOME_VAR: &'static str = "HOME";
 
 // To detect certain bot environmments that run as USER "builder"
 #[cfg(not(test))]
@@ -204,6 +205,7 @@ const HOSTNAME_REDACTED: &str = "$HOSTNAME";
 
 pub fn is_test_env() -> bool {
     std::env::var(TEST_ENV_VAR).is_ok()
+    || std::env::var(HOME_VAR).is_err()
 }
 
 pub fn is_fuchsia_analytics_disabled_set() -> bool {
