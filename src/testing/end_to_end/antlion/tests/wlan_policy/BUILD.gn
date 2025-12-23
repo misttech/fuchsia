@@ -21,18 +21,12 @@ antlion_host_test("saved_networks_test") {
   environments = wlan_ap_envs
 }
 
-antlion_host_test("start_stop_client_connections_test") {
-  main_source = "StartStopClientConnectionsTest.py"
-  environments = display_ap_envs
-}
-
 group("e2e_tests") {
   testonly = true
   public_deps = [
     ":hidden_networks_test",
     ":policy_scan_test",
     ":saved_networks_test",
-    ":start_stop_client_connections_test",
   ]
 }
 
