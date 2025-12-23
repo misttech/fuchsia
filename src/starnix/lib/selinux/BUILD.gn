@@ -80,6 +80,7 @@ rustc_library("selinux") {
     "//third_party/rust_crates:zerocopy",
   ]
   test_deps = [
+    "//third_party/rust_crates:itertools",
     "//third_party/rust_crates:serde",
     "//third_party/rust_crates:serde_json5",
   ]

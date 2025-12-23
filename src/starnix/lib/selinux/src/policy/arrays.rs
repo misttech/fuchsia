@@ -1560,6 +1560,30 @@ pub(super) struct RangeTransitionMetadata {
 }
 
 #[cfg(test)]
+pub(super) mod testing {
+    use super::AccessVectorRule;
+    use std::cmp::Ordering;
+
+    pub(in super::super) fn access_vector_rule_ordering(
+        left: &AccessVectorRule,
+        right: &AccessVectorRule,
+    ) -> Ordering {
+        (
+            left.metadata.source_type,
+            left.metadata.target_type,
+            left.metadata.class,
+            left.metadata.access_vector_rule_type,
+        )
+            .cmp(&(
+                right.metadata.source_type,
+                right.metadata.target_type,
+                right.metadata.class,
+                right.metadata.access_vector_rule_type,
+            ))
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::super::{find_class_by_name, parse_policy_by_value};
     use super::{

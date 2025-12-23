@@ -445,7 +445,12 @@ impl ParsedPolicy {
     pub(super) fn access_vector_rules_for_test(
         &self,
     ) -> impl Iterator<Item = AccessVectorRule> + use<'_> {
-        self.access_vector_rules().map(|view| view.parse(&self.data))
+        use super::arrays::testing::access_vector_rule_ordering;
+        use itertools::Itertools;
+
+        self.access_vector_rules()
+            .map(|view| view.parse(&self.data))
+            .sorted_by(access_vector_rule_ordering)
     }
 
     pub(super) fn compute_filename_transition(
