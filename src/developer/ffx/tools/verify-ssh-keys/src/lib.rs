@@ -14,7 +14,12 @@ use target_holders::SshAddrHolder;
 #[argh(
     subcommand,
     name = "verify-ssh-keys",
-    description = "Checks the device's authorized keys to determine whether we have any of the available public keys locally. Checks for public keys in the fuchsia directory (if set in $FUCHSIA_DIR), the home directory under `.ssh` and also checks the ssh agent."
+    description = "Check target access keys in $FUCHSIA_DIR, ~/.ssh, or agent.",
+    note = "Checks the device's authorized keys to determine whether we have any of the available
+public keys locally.
+
+Also, checks for public keys in the fuchsia directory (if set in $FUCHSIA_DIR), the home directory
+under `.ssh` and also checks the ssh agent."
 )]
 pub struct VerifyCommand {}
 

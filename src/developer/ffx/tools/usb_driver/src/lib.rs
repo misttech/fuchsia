@@ -13,8 +13,7 @@ use std::sync::{Arc, Mutex};
 // [START command_struct]
 #[derive(ArgsInfo, FromArgs, Debug, PartialEq)]
 #[argh(subcommand, name = "usb-driver")]
-/// Start a long-running process to drive USB-connected Fuchsia devices and
-/// allow them to be connected to from FFX.
+/// Drive USB devices to/from ffx
 pub struct UsbDriverCommand {
     #[argh(switch)]
     /// whether to fork the driver process into the background rather than run

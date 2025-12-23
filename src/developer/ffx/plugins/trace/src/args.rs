@@ -10,9 +10,12 @@ use fdomain_fuchsia_tracing_controller::{Action, Trigger};
 #[argh(
     subcommand,
     name = "trace",
-    description = "Tracing is a tool that allows you to collect, aggregate, and visualize \
-diagnostic tracing information from both userspace processes and the Zircon kernel on a \
-Fuchsia device.",
+    description = "Collect, aggregate, and visualize traces",
+    note = "Tracing is a tool that allows you to collect, aggregate, and visualize diagnostic
+tracing information from both userspace processes and the Zircon kernel on a Fuchsia device.
+
+For a full tutorial, visit https://fuchsia.dev/fuchsia-src/development/sdk/ffx/record-traces.
+",
     example = "
 
 [Quick Start]:
@@ -22,8 +25,7 @@ Fuchsia device.",
 This will record a trace using the default categories, which are suitable for getting a high
 level overview.
 
-This will produce a file `trace.fxt` which can be uploaded to ui.perfetto.dev to be viewed.",
-    note = "For a full tutorial, visit https://fuchsia.dev/fuchsia-src/development/sdk/ffx/record-traces"
+This will produce a file `trace.fxt` which can be uploaded to ui.perfetto.dev to be viewed."
 )]
 pub struct TraceCommand {
     #[argh(subcommand)]

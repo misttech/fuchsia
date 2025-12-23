@@ -20,7 +20,7 @@
       "optionality": "repeating",
       "long": "--config",
       "short": "c",
-      "description": "override configuration values (key=value, JSON string, or path to a JSON config file)",
+      "description": "set config values (key=value, JSON string, or file path).",
       "hidden": false
     },
     {
@@ -32,7 +32,7 @@
       "optionality": "optional",
       "long": "--env",
       "short": "e",
-      "description": "override the path to the environment configuration file (file path)",
+      "description": "override path to environment config file.",
       "hidden": false
     },
     {
@@ -56,7 +56,7 @@
       "optionality": "optional",
       "long": "--machine",
       "short": null,
-      "description": "produce output for a machine in the specified format; available formats: \"json\", \"json-pretty\", \"raw\"",
+      "description": "machine output format: json, json-pretty, raw.",
       "hidden": false
     },
     {
@@ -64,7 +64,7 @@
       "optionality": "optional",
       "long": "--schema",
       "short": null,
-      "description": "produce the JSON schema for the MachineWriter output. The `--machine` option is required when producing the schema.",
+      "description": "output JSON schema for machine output. Requires --machine.",
       "hidden": false
     },
     {
@@ -76,7 +76,7 @@
       "optionality": "optional",
       "long": "--stamp",
       "short": null,
-      "description": "create a stamp file at the given path containing the exit code",
+      "description": "write exit code to stamp file (file path).",
       "hidden": false
     },
     {
@@ -88,7 +88,7 @@
       "optionality": "optional",
       "long": "--target",
       "short": "t",
-      "description": "apply operations across single or multiple targets",
+      "description": "apply operations to single or multiple targets.",
       "hidden": false
     },
     {
@@ -100,7 +100,7 @@
       "optionality": "optional",
       "long": "--timeout",
       "short": null,
-      "description": "override default proxy timeout (default is 1 second)",
+      "description": "override proxy timeout (default: 1s).",
       "hidden": false
     },
     {
@@ -112,7 +112,7 @@
       "optionality": "optional",
       "long": "--log-level",
       "short": "l",
-      "description": "sets the log level for ffx output (default = Info). Other possible values are Info, Error, Warn, and Trace. Can be persisted via log.level config setting.",
+      "description": "set log level: Info (default), Error, Warn, Trace.",
       "hidden": false
     },
     {
@@ -124,7 +124,7 @@
       "optionality": "optional",
       "long": "--isolate-dir",
       "short": null,
-      "description": "turn on isolation mode using the given directory to isolate all config and socket files into the specified directory. This overrides the FFX_ISOLATE_DIR env variable, which can also put ffx into this mode.",
+      "description": "isolate config/sockets in dir (overrides FFX_ISOLATE_DIR).",
       "hidden": false
     },
     {
@@ -132,7 +132,7 @@
       "optionality": "optional",
       "long": "--verbose",
       "short": "v",
-      "description": "logs ffx output to stdio according to log level",
+      "description": "log output to stdio based on log level.",
       "hidden": false
     },
     {
@@ -144,7 +144,7 @@
       "optionality": "optional",
       "long": "--log-output",
       "short": "o",
-      "description": "specify destination of log output. \"-\" or \"stdout\" for stdout, \"stderr\" for stderr. If no destination is specified, log.dir will be used. If a destination is specified, then log.dir will be ignored.",
+      "description": "log destination: stdout/stderr. Overrides log.dir.",
       "hidden": false
     },
     {
@@ -152,7 +152,7 @@
       "optionality": "optional",
       "long": "--no-environment",
       "short": null,
-      "description": "disables loading configuration from the file system and only uses configuration specified on the command line or the compiled in default values. Intended for use when running ffx as part of a hermetic build.",
+      "description": "disable file config; use CLI/defaults only (hermetic).",
       "hidden": false
     },
     {
@@ -160,7 +160,7 @@
       "optionality": "optional",
       "long": "--strict",
       "short": null,
-      "description": "switch which enables the 'strict' feature set. When set, ffx has stricter behavioual patterns. Including but not limited to:   * Not doing discovery   * Not starting the daemon   * Communicating directly with the target from the ffx cli (not the daemon)   * Configuration is read only The features in this flag are currently under active development.",
+      "description": "strict mode: no daemon/discovery, direct connect, RO config.",
       "hidden": false
     },
     {
@@ -168,7 +168,7 @@
       "optionality": "optional",
       "long": "--direct",
       "short": "d",
-      "description": "make a direct connection to the target",
+      "description": "connect directly to the target.",
       "hidden": false
     }
   ],

@@ -14,7 +14,7 @@ use ffx_core::ffx_command;
 #[argh(
     subcommand,
     name = "speedtest",
-    description = "Developer tool for testing ffx latency and throughput to the target."
+    description = "Test ffx latency and throughput between the host and target."
 )]
 pub struct SpeedtestCommand {
     /// test the legacy Overnet connectivity.

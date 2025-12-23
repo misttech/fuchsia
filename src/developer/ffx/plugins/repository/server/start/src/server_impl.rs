@@ -283,7 +283,7 @@ pub async fn serve_impl_validate_args(
                         "Repository address conflict. \
                 Cannot start a server named {repo_name} serving {repo_path:?}. \
                 Repository server  \"{}\" is already running on {addr} serving a different path: {}\n\
-                Use `ffx  repository server list` to list running servers",
+                Use `ffx repository server list` to list running servers",
                         duplicate.name,
                         duplicate.repo_path_display()
                     );
@@ -294,7 +294,7 @@ pub async fn serve_impl_validate_args(
                         "Repository address conflict. \
                 Cannot start a server named {repo_name} serving {repo_path:?}. \
                 Repository server  \"{}\" is already running on {addr} serving a different path: {}\n\
-                Use `ffx  repository server list` to list running servers",
+                Use `ffx repository server list` to list running servers",
                         duplicate.name,
                         duplicate.repo_path_display()
                     );
@@ -311,7 +311,7 @@ pub async fn serve_impl_validate_args(
                     "Repository name conflict. \
             Cannot start a server named {repo_name} serving {repo_path:?}. \
             Repository server  \"{dupe_name}\" is already running on {dupe_addr} serving a different path: {dupe_path}\n\
-            Use `ffx  repository server list` to list running servers",
+            Use `ffx repository server list` to list running servers",
                     dupe_name = duplicate.name,
                     dupe_addr = duplicate.address,
                     dupe_path = duplicate.repo_path_display()
@@ -1361,7 +1361,7 @@ mod test {
                     "Repository address conflict. \
             Cannot start a server named another-name serving {repo_path:?}. \
             Repository server  \"{name}\" is already running on {addr} serving a different path: {dupe_path}\n\
-            Use `ffx  repository server list` to list running servers",
+            Use `ffx repository server list` to list running servers",
                     addr = server_info.address,
                     name = server_info.name,
                     dupe_path = server_info.repo_path_display()
@@ -1415,7 +1415,7 @@ mod test {
                     "Repository name conflict. \
     Cannot start a server named {name} serving {repo_path:?}. \
     Repository server  \"{dupe_name}\" is already running on {addr} serving a different path: {dupe_path}\n\
-    Use `ffx  repository server list` to list running servers",
+    Use `ffx repository server list` to list running servers",
                     name = instance_name,
                     dupe_name = instance_name,
                     addr = server_info.address,

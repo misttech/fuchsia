@@ -271,12 +271,11 @@ impl FfxCommandLine {
 /// Fuchsia's developer tool
 pub struct Ffx {
     #[argh(option, short = 'c')]
-    /// override configuration values (key=value, JSON string, or path
-    /// to a JSON config file)
+    /// set config values (key=value, JSON string, or file path).
     pub config: Vec<String>,
 
     #[argh(option, short = 'e')]
-    /// override the path to the environment configuration file (file path)
+    /// override path to environment config file.
     pub env: Option<String>,
 
     #[argh(option, hidden_help)]
@@ -285,72 +284,57 @@ pub struct Ffx {
     pub env_root: Option<Utf8PathBuf>,
 
     #[argh(option)]
-    /// produce output for a machine in the specified format; available formats: "json",
-    /// "json-pretty", "raw"
+    /// machine output format: json, json-pretty, raw.
     pub machine: Option<MachineFormat>,
 
     #[argh(switch)]
-    /// produce the JSON schema for the MachineWriter output. The `--machine` option
-    /// is required when producing the schema.
+    /// output JSON schema for machine output. Requires --machine.
     pub schema: bool,
 
     #[argh(option)]
-    /// create a stamp file at the given path containing the exit code
+    /// write exit code to stamp file (file path).
     pub stamp: Option<String>,
 
     #[argh(option, short = 't')]
     #[ffx_config_default("target.default")]
-    /// apply operations across single or multiple targets
+    /// apply operations to single or multiple targets.
     pub target: Option<String>,
 
     #[argh(option)]
     #[ffx_config_default(key = "proxy.timeout_secs", default = "1.0")]
-    /// override default proxy timeout (default is 1 second)
+    /// override proxy timeout (default: 1s).
     pub timeout: Option<f64>,
 
     #[argh(option, short = 'l', long = "log-level")]
     #[ffx_config_default(key = "log.level", default = "Info")]
-    /// sets the log level for ffx output (default = Info). Other possible values are Info, Error,
-    /// Warn, and Trace. Can be persisted via log.level config setting.
+    /// set log level: Info (default), Error, Warn, Trace.
     pub log_level: Option<String>,
 
     #[argh(option, long = "isolate-dir")]
-    /// turn on isolation mode using the given directory to isolate all config and socket files into
-    /// the specified directory. This overrides the FFX_ISOLATE_DIR env variable, which can also put
-    /// ffx into this mode.
+    /// isolate config/sockets in dir (overrides FFX_ISOLATE_DIR).
     pub isolate_dir: Option<PathBuf>,
 
     #[argh(switch, short = 'v', long = "verbose")]
-    /// logs ffx output to stdio according to log level
+    /// log output to stdio based on log level.
     pub verbose: bool,
 
     #[argh(positional, greedy)]
     pub subcommand: Vec<String>,
 
     #[argh(option, short = 'o', long = "log-output")]
-    /// specify destination of log output. "-" or "stdout" for stdout, "stderr"
-    /// for stderr. If no destination is specified, log.dir will be used. If a
-    /// destination is specified, then log.dir will be ignored.
+    /// log destination: stdout/stderr. Overrides log.dir.
     pub log_destination: Option<LogDestination>,
 
     #[argh(switch)]
-    /// disables loading configuration from the file system and only uses
-    /// configuration specified on the command line or the compiled in default values.
-    /// Intended for use when running ffx as part of a hermetic build.
+    /// disable file config; use CLI/defaults only (hermetic).
     pub no_environment: bool,
 
     #[argh(switch)]
-    /// switch which enables the 'strict' feature set. When set, ffx has stricter
-    /// behavioual patterns. Including but not limited to:
-    ///   * Not doing discovery
-    ///   * Not starting the daemon
-    ///   * Communicating directly with the target from the ffx cli (not the daemon)
-    ///   * Configuration is read only
-    /// The features in this flag are currently under active development.
+    /// strict mode: no daemon/discovery, direct connect, RO config.
     pub strict: bool,
 
     #[argh(switch, short = 'd', long = "direct")]
-    /// make a direct connection to the target
+    /// connect directly to the target.
     pub direct: bool,
 }
 
