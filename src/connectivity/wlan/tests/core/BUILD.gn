@@ -118,16 +118,12 @@ group("tests_for_fyi") {
   public_deps = core_tests_for_fyi
 }
 
+group("tests_for_general_cq") {
+  testonly = true
+  public_deps = core_tests_for_general_cq
+}
+
 group("tests_for_general_cq_dut_only") {
   testonly = true
   public_deps = [ ":phy_existence_test" ]
-}
-
-group("tests_with_ap") {
-  testonly = true
-  public_deps = [
-    ":connect_to_ap_test",
-    ":firmware_power_modes_test",
-    ":sar_setting_test",
-  ]
 }

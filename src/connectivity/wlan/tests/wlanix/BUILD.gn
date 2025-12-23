@@ -75,7 +75,7 @@ group("tests_for_general_cq_dut_only") {
   ]
 }
 
-group("tests_with_ap") {
+group("tests_for_general_cq") {
   testonly = true
   public_deps = [ ":connect_to_ap_test" ]
 }

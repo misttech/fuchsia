@@ -40,7 +40,7 @@ antlion_host_test("suggest_ap_mac_address_test") {
   ]
 }
 
-group("tests_in_fyi") {
+group("tests_for_fyi") {
   testonly = true
   public_deps = [ ":start_stop_client_connections_test" ]
 }
