@@ -106,25 +106,109 @@ bt_lacewing_sorrel_env = {
 
 wlan_astro_ap_env = {
   dimensions = {
-    access_points = "1"
-    device_type = device_types.astro
     pool = "fuchsia.tests.connectivity"
+    device_type = device_types.astro
+    access_points = "1"
+  }
+}
+
+wlan_astro_ap_iperf_env = {
+  dimensions = {
+    pool = "fuchsia.tests.connectivity"
+    device_type = device_types.astro
+    access_points = "1"
+    iperf_servers = "1"
+  }
+}
+
+wlan_astro_ap_iperf_attenuator_env = {
+  dimensions = {
+    pool = "fuchsia.tests.connectivity"
+    device_type = device_types.astro
+    access_points = "1"
+    iperf_servers = "1"
+    attenuators = "1"
   }
 }
 
 wlan_sherlock_ap_env = {
   dimensions = {
-    access_points = "1"
-    device_type = device_types.sherlock
     pool = "fuchsia.tests.connectivity"
+    device_type = device_types.sherlock
+    access_points = "1"
+  }
+}
+
+wlan_sherlock_ap_iperf_env = {
+  dimensions = {
+    pool = "fuchsia.tests.connectivity"
+    device_type = device_types.sherlock
+    access_points = "1"
+    iperf_servers = "1"
+  }
+}
+
+wlan_sherlock_ap_iperf_attenuator_env = {
+  dimensions = {
+    pool = "fuchsia.tests.connectivity"
+    device_type = device_types.sherlock
+    access_points = "1"
+    iperf_servers = "1"
+    attenuators = "1"
   }
 }
 
 wlan_nelson_ap_env = {
   dimensions = {
-    access_points = "1"
-    device_type = device_types.nelson
     pool = "fuchsia.tests.connectivity"
+    device_type = device_types.nelson
+    access_points = "1"
+  }
+}
+
+wlan_nelson_ap_iperf_env = {
+  dimensions = {
+    pool = "fuchsia.tests.connectivity"
+    device_type = device_types.nelson
+    access_points = "1"
+    iperf_servers = "1"
+  }
+}
+
+wlan_nelson_ap_iperf_attenuator_env = {
+  dimensions = {
+    pool = "fuchsia.tests.connectivity"
+    device_type = device_types.nelson
+    access_points = "1"
+    iperf_servers = "1"
+    attenuators = "1"
+  }
+}
+
+wlan_nuc11_ap_env = {
+  dimensions = {
+    pool = "fuchsia.tests.connectivity"
+    device_type = device_types.nuc11
+    access_points = "1"
+  }
+}
+
+wlan_nuc11_ap_iperf_env = {
+  dimensions = {
+    pool = "fuchsia.tests.connectivity"
+    device_type = device_types.nuc11
+    access_points = "1"
+    iperf_servers = "1"
+  }
+}
+
+wlan_nuc11_ap_iperf_attenuator_env = {
+  dimensions = {
+    pool = "fuchsia.tests.connectivity"
+    device_type = device_types.nuc11
+    access_points = "1"
+    iperf_servers = "1"
+    attenuators = "1"
   }
 }
 
@@ -391,11 +475,34 @@ lacewing_bluetooth_envs = [
   bt_lacewing_sorrel_env,
 ]
 
-# Set of environments for Honeydew WLAN testing with AP present.
-lacewing_wlan_ap_envs = [
+# TODO(https://fxbug.dev/465744822): Each environment should be specified in
+# a product_bundle_test_group individually instead of adding all environments
+# to each test.
+wlan_ap_envs = [
   wlan_astro_ap_env,
   wlan_sherlock_ap_env,
   wlan_nelson_ap_env,
+  wlan_nuc11_ap_env,
+]
+
+# TODO(https://fxbug.dev/465744822): Each environment should be specified in
+# a product_bundle_test_group individually instead of adding all environments
+# to each test.
+wlan_ap_iperf_envs = [
+  wlan_astro_ap_iperf_env,
+  wlan_sherlock_ap_iperf_env,
+  wlan_nelson_ap_iperf_env,
+  wlan_nuc11_ap_iperf_env,
+]
+
+# TODO(https://fxbug.dev/465744822): Each environment should be specified in
+# a product_bundle_test_group individually instead of adding all environments
+# to each test.
+wlan_ap_iperf_attenuator_envs = [
+  wlan_astro_ap_iperf_attenuator_env,
+  wlan_sherlock_ap_iperf_attenuator_env,
+  wlan_nelson_ap_iperf_attenuator_env,
+  wlan_nuc11_ap_iperf_attenuator_env,
 ]
 
 basic_envs = []
