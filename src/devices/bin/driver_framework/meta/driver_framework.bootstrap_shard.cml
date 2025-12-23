@@ -458,7 +458,9 @@
         },
         {
             service: [
+                "fuchsia.hardware.backlight.Service",
                 "fuchsia.hardware.cpu.ctrl.Service",
+                "fuchsia.hardware.display.Service",
                 "fuchsia.hardware.nfc.Service",
                 "fuchsia.hardware.rtc.Service",
                 "fuchsia.hardware.spmi.DebugService",
