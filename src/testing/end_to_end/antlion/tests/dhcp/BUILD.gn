@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/testing/environments.gni")
 import("//src/testing/end_to_end/antlion/antlion_host_test.gni")
 import("//src/testing/end_to_end/antlion/environments.gni")
 
@@ -9,22 +10,22 @@ assert(is_host, "antlion tests only supported for host testing")
 
 antlion_host_test("dhcpv4_duplicate_address_test") {
   main_source = "Dhcpv4DuplicateAddressTest.py"
-  environments = display_ap_envs
+  environments = display_ap_envs + wlan_ap_envs
 }
 
 antlion_host_test("dhcpv4_interop_basic_test") {
   main_source = "Dhcpv4InteropBasicTest.py"
-  environments = display_ap_envs
+  environments = display_ap_envs + wlan_ap_envs
 }
 
 antlion_host_test("dhcpv4_interop_combinatorial_options_test") {
   main_source = "Dhcpv4InteropCombinatorialOptionsTest.py"
-  environments = display_ap_envs
+  environments = display_ap_envs + wlan_ap_envs
 }
 
 antlion_host_test("dhcpv4_interop_fixture_test") {
   main_source = "Dhcpv4InteropFixtureTest.py"
-  environments = display_ap_envs
+  environments = display_ap_envs + wlan_ap_envs
 }
 
 group("e2e_tests") {
