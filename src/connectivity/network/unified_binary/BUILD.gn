@@ -34,10 +34,5 @@ rustc_binary("network_unified_binary") {
 }
 
 config("config") {
-  # Add thinlto config.
-  # Allow cross-crate optimization since each binary that is unified here is a
-  # different crate.
-  configs = [ "//build/config/lto:thinlto-if-not-enabled" ]
-
   visibility = [ ":*" ]
 }

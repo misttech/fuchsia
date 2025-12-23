@@ -133,9 +133,6 @@ config("carnelian-performance") {
   # Enable all optimizations that benefit speed, even if they increase size
   configs = [ "//build/config:optimize_speed" ]
 
-  # Add thinlto config.
-  configs += [ "//build/config/lto:thinlto-if-not-enabled" ]
-
   if (target_cpu == "x64") {
     # TODO(https://fxbug.dev/42168719): not all x64 targets are haswell.
     # Consider moving this to a board config.

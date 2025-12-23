@@ -39,9 +39,6 @@ rustc_test("netstack3_core_threading_test") {
   # the number of iterations can be large enough to make tests unreasonably
   # slow otherwise.
   configs += [ "//build/config:optimize_moderate" ]
-
-  # Add thinlto config.
-  configs += [ "//build/config/lto:thinlto-if-not-enabled" ]
 }
 
 group("tests") {

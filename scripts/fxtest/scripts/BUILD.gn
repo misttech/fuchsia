@@ -52,9 +52,6 @@ if (is_host) {
 
     configs -= [ "//build/config/rust/lints:allow_unused_results" ]
     configs += [ "//build/config:optimize_speed" ]
-
-    # Add thinlto config.
-    configs += [ "//build/config/lto:thinlto-if-not-enabled" ]
   }
 
   # Rename the resulting .pyz for the host tool
