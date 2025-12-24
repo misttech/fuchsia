@@ -29,7 +29,7 @@ impl PowerWakeupCountFile {
 impl BytesFileOps for PowerWakeupCountFile {
     fn write(&self, current_task: &CurrentTask, data: Vec<u8>) -> Result<(), Errno> {
         let expected_count: u64 = parse_unsigned_file(&data)?;
-        let real_count = current_task.kernel().suspend_resume_manager.suspend_stats().wakeup_count;
+        let real_count = current_task.kernel().suspend_resume_manager.suspend_stats().success_count;
         if expected_count != real_count {
             return error!(EINVAL);
         }
@@ -38,7 +38,7 @@ impl BytesFileOps for PowerWakeupCountFile {
 
     fn read(&self, current_task: &CurrentTask) -> Result<Cow<'_, [u8]>, Errno> {
         let wakeup_count =
-            current_task.kernel().suspend_resume_manager.suspend_stats().wakeup_count;
+            current_task.kernel().suspend_resume_manager.suspend_stats().success_count;
         Ok(serialize_for_file(wakeup_count).into())
     }
 }

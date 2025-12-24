@@ -18,8 +18,6 @@ pub struct SuspendStats {
     pub last_failed_errno: Option<Errno>,
     /// The name of the device that last failed suspend.
     pub last_failed_device: Option<String>,
-    /// Number of times a wakeup occurred.
-    pub wakeup_count: u64,
     /// Last reason for resume.
     pub last_resume_reason: Option<String>,
     /// The amount of time spent in the previous suspend state.
