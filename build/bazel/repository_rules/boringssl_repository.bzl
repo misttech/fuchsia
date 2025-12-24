@@ -13,16 +13,23 @@ def _boringssl_repository_impl(repo_ctx):
     # generated_repository_inputs['boringssl'] in
     # //build/bazel/workspace_utils.py.
     if hasattr(repo_ctx.attr, "content_hash_file"):
-        repo_ctx.path(workspace_dir + "/" + repo_ctx.attr.content_hash_file)
+        repo_ctx.watch(workspace_dir + "/" + repo_ctx.attr.content_hash_file)
+
+    hardlink_script_path = repo_ctx.path(repo_ctx.attr._hardlink_script)
+    repo_ctx.watch(hardlink_script_path)
 
     # Link the contents of the repo into the bazel sandbox. We cannot use a
     # local_repository here because we need to execute the python script below
     # which generates the build file contents.
     repo_ctx.execute(
         [
-            repo_ctx.path(Label("@//build/bazel:scripts/hardlink-directory.py")),
+            str(hardlink_script_path),
             "--fuchsia-dir",
             workspace_dir,
+            # The .git directory is 413 MiB and not needed to build.
+            "--ignore-pattern=.git",
+            # The src/fuzz directory is 19 MiB and not needed to build.
+            "--ignore-pattern=fuzz",
             src_dir,
             dest_dir,
         ],
@@ -37,7 +44,7 @@ def _boringssl_repository_impl(repo_ctx):
 
     for generated_file in generated_files:
         content = repo_ctx.read(
-            repo_ctx.path(workspace_dir + "/third_party/boringssl/" + generated_file),
+            workspace_dir + "/third_party/boringssl/" + generated_file,
         )
 
         # See https://fxbug.dev/426143514
@@ -49,9 +56,11 @@ def _boringssl_repository_impl(repo_ctx):
         )
 
     # Add a BUILD file which exposes the cc_library target.
-    repo_ctx.file("BUILD.bazel", content = repo_ctx.read(
-        repo_ctx.path(Label("@//build/bazel/repository_rules:boringssl_BUILD.bazel")),
-    ), executable = False)
+    repo_ctx.file(
+        "BUILD.bazel",
+        content = repo_ctx.read(repo_ctx.path(repo_ctx.attr._build_file_template)),
+        executable = False,
+    )
 
 boringssl_repository = repository_rule(
     implementation = _boringssl_repository_impl,
@@ -61,6 +70,14 @@ boringssl_repository = repository_rule(
         "content_hash_file": attr.string(
             doc = "Path to content hash file for this repository, relative to workspace root.",
             mandatory = False,
+        ),
+        "_hardlink_script": attr.label(
+            allow_single_file = True,
+            default = "@//build/bazel:scripts/hardlink-directory.py",
+        ),
+        "_build_file_template": attr.label(
+            allow_single_file = True,
+            default = "@//build/bazel/repository_rules:boringssl_BUILD.bazel",
         ),
     },
 )

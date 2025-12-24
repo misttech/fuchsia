@@ -23,6 +23,12 @@ def main():
         "--fuchsia-dir", help="Specify alternate Fuchsia root path."
     )
     parser.add_argument(
+        "--ignore-pattern",
+        action="append",
+        default=[],
+        help="Specify glob pattern (e.g. '*.py') to ignore during the copy. Can be used multiple times.",
+    )
+    parser.add_argument(
         "source_dir", help="Source directory, relative to Fuchsia root path."
     )
     parser.add_argument("destination_dir", help="Destination directory.")
@@ -41,12 +47,19 @@ def main():
 
     # Using hard-links could fail due copying to a different mount point,
     # so first try with hard links, then do a normal copy otherwise.
+    ignore = None
+    if args.ignore_pattern:
+        ignore = shutil.ignore_patterns(*args.ignore_pattern)
     try:
         shutil.copytree(
-            src_dir, dst_dir, copy_function=os.link, dirs_exist_ok=True
+            src_dir,
+            dst_dir,
+            ignore=ignore,
+            copy_function=os.link,
+            dirs_exist_ok=True,
         )
     except OSError:
-        shutil.copytree(src_dir, dst_dir, dirs_exist_ok=True)
+        shutil.copytree(src_dir, dst_dir, ignore=ignore, dirs_exist_ok=True)
 
     return 0
 
