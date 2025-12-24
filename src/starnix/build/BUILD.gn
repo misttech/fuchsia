@@ -20,13 +20,8 @@ python_binary("generate_container_config_shard") {
 config("kernel_library_config") {
   configs = [ "//src/starnix/config:starnix_clippy_lints" ]
 
-  # Enable performance features in release mode.
+  # Enable moderate level of optimization for better performance.
   if (compilation_mode == "release") {
-    # Enable linker-plugin-based LTO to only generate LLVM bitcode for
-    # this library because it is only used in a binary that has LTO enabled.
-    configs += [ "//build/config/lto:lto-rust-linker-plugin" ]
-
-    # Enable moderate level of optimization for better performance.
     configs += [ "//build/config:optimize_moderate" ]
   }
 }

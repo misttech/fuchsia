@@ -15,13 +15,8 @@ config("vdso_config") {
     "-nostdlib",
   ]
 
-  # Force LTO so that functions are inlined when appropriate even across
-  # different compilation units.
   # TODO(https://fxbug.dev/378658421): Disable lto on arm32 because it doesn't compile
-  if (!is_debug && current_cpu != "arm") {
-    # Add thinlto config.
-    configs = [ "//build/config/lto:thinlto-if-not-enabled" ]
-  } else {
+  if (!is_debug && current_cpu == "arm") {
     configs = [ "//build/config/lto:no-lto" ]
   }
 
