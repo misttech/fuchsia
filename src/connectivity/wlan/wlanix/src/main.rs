@@ -1504,6 +1504,7 @@ async fn handle_nl80211_message<I: IfaceManager>(
                 resp.push(build_nl80211_message(
                     Nl80211Cmd::NewInterface,
                     vec![
+                        Nl80211Attr::Wiphy(iface_info.phy_id.into()),
                         Nl80211Attr::IfaceIndex(iface.into()),
                         Nl80211Attr::IfaceName(IFACE_NAME.to_string()),
                         Nl80211Attr::Mac(iface_info.sta_addr),
@@ -4120,6 +4121,11 @@ mod tests {
         assert_eq!(responses.len(), 2);
         let message = expect_nl80211_message(&responses[0]);
         assert_eq!(message.payload.cmd, Nl80211Cmd::NewInterface);
+        assert!(
+            message.payload.attrs.contains(&Nl80211Attr::Wiphy(
+                ifaces::test_utils::FAKE_IFACE_RESPONSE.phy_id.into()
+            ))
+        );
         assert!(message.payload.attrs.iter().any(|attr| *attr
             == Nl80211Attr::IfaceIndex(ifaces::test_utils::FAKE_IFACE_RESPONSE.id.into())));
         assert!(

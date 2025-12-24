@@ -6,6 +6,7 @@ Testing utilities for antlion tests of wlanix.
 """
 
 import asyncio
+import struct
 from typing import Any
 
 import fidl_fuchsia_wlan_wlanix as fidl_wlanix
@@ -19,8 +20,85 @@ from antlion.test_utils.wifi import wifi_test_utils as wutils
 from fuchsia_controller_py import Channel
 from honeydew.typing.custom_types import FidlEndpoint
 from mobly import base_test, signals
-from mobly.asserts import abort_class_if, assert_equal
+from mobly.asserts import abort_class_if, assert_equal, fail
 from mobly.records import TestResultRecord
+
+NL80211_ATTR_WIPHY = 1
+NL80211_ATTR_IFINDEX = 3
+NL80211_ATTR_IFNAME = 4
+NL80211_ATTR_MAC = 6
+
+
+def verify_new_interface_response(
+    response_list: list[fidl_wlanix.Nl80211Message],
+) -> dict[int, bytes]:
+    last_response_index = len(response_list) - 1
+    for response_index, response in enumerate(response_list):
+        if response.done:
+            assert_equal(
+                response_index,
+                last_response_index,
+                "Nl80211 DONE message before end of response",
+            )
+            break
+        elif response.error:
+            fail(
+                "Received an error Nl80211 message type: %s",
+                response.error,
+            )
+        elif not response.message:
+            fail(
+                "Received an unexpected Nl80211 message: %s",
+                response,
+            )
+
+        assert response.message
+        assert (
+            response.message.payload is not None
+        ), "MESSAGE must contain a payload"
+
+        payload = bytes(response.message.payload)
+        formatted_response_payload = [
+            format(b, "#04x") for b in response.message.payload
+        ]
+        assert_equal(
+            response.message.payload[0],
+            7,
+            f"Payload is not a NewInterface message: {formatted_response_payload}",
+        )
+
+        attrs = {}
+        offset = 4  # Skip GenNetlink header
+        while offset + 4 <= len(payload):
+            nla_len, nla_type = struct.unpack_from("<HH", payload, offset)
+            if nla_len < 4:
+                break
+            # The most significant bits are reserved for NLA_F_NESTED
+            # and NLA_F_NET_BYTEORDER.
+            nla_type &= 0x3FFF
+            value = payload[offset + 4 : offset + nla_len]
+            attrs[nla_type] = value
+            # Move offset forward to the next 4-byte boundary.
+            offset += (nla_len + 3) & ~3
+
+        assert (
+            NL80211_ATTR_IFINDEX in attrs
+        ), f"Response missing attribute NL80211_ATTR_IFINDEX: {formatted_response_payload}"
+        assert (
+            NL80211_ATTR_WIPHY in attrs
+        ), f"Response missing attribute NL80211_ATTR_WIPHY: {formatted_response_payload}"
+        assert (
+            NL80211_ATTR_IFNAME in attrs
+        ), f"Response missing attribute NL80211_ATTR_IFNAME: {formatted_response_payload}"
+        assert (
+            NL80211_ATTR_MAC in attrs
+        ), f"Response missing attribute NL80211_ATTR_MAC: {formatted_response_payload}"
+
+        return attrs
+
+    raise RuntimeError(
+        f"Did not find an iface index in the response list: {response_list}"
+    )
 
 
 class WlanixBaseTestClass(base_test.BaseTestClass):
@@ -141,6 +219,10 @@ class IfaceBaseTestClass(WifiChipBaseTestClass):
         supplicant_proxy = fidl_wlanix.SupplicantClient(proxy)
 
         proxy, server = Channel.create()
+        self.wlanix_proxy.get_nl80211(nl80211=server.take())
+        self.nl80211_proxy = fidl_wlanix.Nl80211Client(proxy)
+
+        proxy, server = Channel.create()
         supplicant_proxy.add_sta_interface(
             iface=server.take(),
             iface_name=self.iface_name,
@@ -191,10 +273,6 @@ class ConnectionBaseTestClass(IfaceBaseTestClass):
         self.packet_capture = None
         self.packet_logger = None
         self.packet_log_pid = {}
-
-        proxy, server = Channel.create()
-        self.wlanix_proxy.get_nl80211(nl80211=server.take())
-        self.nl80211_proxy = fidl_wlanix.Nl80211Client(proxy)
 
         access_points = self.register_controller(
             controllers.access_point, min_number=1

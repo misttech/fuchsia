@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 import asyncio
 import struct
 from dataclasses import dataclass
-from typing import Any, List
+from typing import Any
 
 import fidl_fuchsia_wlan_wlanix as fidl_wlanix
 from antlion import utils
@@ -26,7 +26,7 @@ from antlion.controllers.ap_lib.hostapd_utils import generate_random_password
 from fuchsia_controller_py import Channel
 from fuchsia_controller_py.wrappers import AsyncAdapter, asyncmethod
 from mobly import base_test, signals, test_runner
-from mobly.asserts import assert_equal, assert_true, fail
+from mobly.asserts import assert_equal, assert_true
 from wlanix_testing import base_test
 
 
@@ -86,7 +86,10 @@ class ConnectToApTest(AsyncAdapter, base_test.ConnectionBaseTestClass):
             .unwrap()
             .responses
         )
-        iface_index = await read_iface_index_or_fail(response_list)
+        attrs = base_test.verify_new_interface_response(response_list)
+        iface_index = struct.unpack(
+            "<I", attrs[base_test.NL80211_ATTR_IFINDEX]
+        )[0]
         logger.info("Using IfaceIndex %d for connection test", iface_index)
 
         logger.info("Triggering a scan on IfaceIndex %d", iface_index)
@@ -290,55 +293,6 @@ class Nl80211MulticastServer(fidl_wlanix.Nl80211MulticastServer):
     def __exit__(self, *args: Any, **kwargs: Any) -> None:
         if self.server_task:
             self.server_task.cancel()
-
-
-async def read_iface_index_or_fail(
-    response_list: List[fidl_wlanix.Nl80211Message],
-) -> int:
-    last_response_index = len(response_list) - 1
-    for response_index, response in enumerate(response_list):
-        if response.done:
-            assert_equal(
-                response_index,
-                last_response_index,
-                "Nl80211 DONE message before end of response",
-            )
-            break
-        elif response.error:
-            fail(
-                "Received an error Nl80211 message type: %s",
-                response.error,
-            )
-        elif not response.message:
-            fail(
-                "Received an unexpected Nl80211 message: %s",
-                response,
-            )
-
-        assert response.message
-        assert (
-            response.message.payload is not None
-        ), "MESSAGE must contain a payload"
-
-        formatted_response_payload = [
-            format(b, "#04x") for b in response.message.payload
-        ]
-        assert_equal(
-            response.message.payload[0],
-            7,
-            f"Payload is not a NewInterface message: {formatted_response_payload}",
-        )
-        assert_equal(
-            response.message.payload[6],
-            3,
-            f"First attribute is not an IfaceIndex: {formatted_response_payload}",
-        )
-
-        return struct.unpack("<I", bytes(response.message.payload[8:12]))[0]
-
-    raise RuntimeError(
-        f"Did not find an iface index in the response list: {response_list}"
-    )
 
 
 if __name__ == "__main__":
