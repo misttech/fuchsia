@@ -3,22 +3,23 @@
 # found in the LICENSE file.
 
 import("//src/testing/end_to_end/antlion/antlion_host_test.gni")
+import("//src/testing/end_to_end/antlion/environments.gni")
 
 assert(is_host, "antlion tests only supported for host testing")
 
 antlion_host_test("hidden_networks_test") {
   main_source = "HiddenNetworksTest.py"
-  environments = wlan_ap_envs
+  environments = display_ap_envs + wlan_ap_envs
 }
 
 antlion_host_test("policy_scan_test") {
   main_source = "PolicyScanTest.py"
-  environments = wlan_ap_envs
+  environments = display_ap_envs + wlan_ap_envs
 }
 
 antlion_host_test("saved_networks_test") {
   main_source = "SavedNetworksTest.py"
-  environments = wlan_ap_envs
+  environments = display_ap_envs + wlan_ap_envs
 }
 
 group("e2e_tests") {

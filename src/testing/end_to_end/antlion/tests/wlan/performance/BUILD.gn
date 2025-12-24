@@ -4,18 +4,19 @@
 
 import("//build/testing/environments.gni")
 import("//src/testing/end_to_end/antlion/antlion_host_test.gni")
+import("//src/testing/end_to_end/antlion/environments.gni")
 
 assert(is_host, "antlion tests only supported for host testing")
 
 antlion_host_test("channel_sweep_test") {
   main_source = "ChannelSweepTest.py"
-  environments = wlan_ap_iperf_envs
+  environments = display_ap_iperf_envs + wlan_ap_iperf_envs
   deps = [ "//third_party/iperf" ]
 }
 
 antlion_host_test("channel_sweep_test_quick") {
   main_source = "ChannelSweepTest.py"
-  environments = wlan_ap_iperf_envs
+  environments = display_ap_iperf_envs + wlan_ap_iperf_envs
   test_cases = [
     "test_US_wpa2_channel_8_20mhz",
     "test_US_wpa2_channel_40_80mhz",  # non-DFS 5GHz channel
@@ -28,7 +29,8 @@ antlion_host_test("channel_sweep_test_quick") {
 antlion_host_test("wlan_rvr_test_2g_open") {
   main_source = "WlanRvrTest.py"
   test_params = "rvr_settings.yaml"
-  environments = wlan_ap_iperf_attenuator_envs
+  environments =
+      display_ap_iperf_attenuator_envs + wlan_ap_iperf_attenuator_envs
   test_cases = [ "re:test_rvr_11n_2g_20mhz_open_.*" ]
   deps = [ "//third_party/iperf" ]
 }
@@ -36,7 +38,8 @@ antlion_host_test("wlan_rvr_test_2g_open") {
 antlion_host_test("wlan_rvr_test_2g_wpa2") {
   main_source = "WlanRvrTest.py"
   test_params = "rvr_settings.yaml"
-  environments = wlan_ap_iperf_attenuator_envs
+  environments =
+      display_ap_iperf_attenuator_envs + wlan_ap_iperf_attenuator_envs
   test_cases = [ "re:test_rvr_11n_2g_20mhz_wpa2_.*" ]
   deps = [ "//third_party/iperf" ]
 }
@@ -44,7 +47,8 @@ antlion_host_test("wlan_rvr_test_2g_wpa2") {
 antlion_host_test("wlan_rvr_test_5g_open") {
   main_source = "WlanRvrTest.py"
   test_params = "rvr_settings.yaml"
-  environments = wlan_ap_iperf_attenuator_envs
+  environments =
+      display_ap_iperf_attenuator_envs + wlan_ap_iperf_attenuator_envs
   test_cases = [ "re:test_rvr_11ac_5g_80mhz_open_.*" ]
   deps = [ "//third_party/iperf" ]
 }
@@ -52,7 +56,8 @@ antlion_host_test("wlan_rvr_test_5g_open") {
 antlion_host_test("wlan_rvr_test_5g_wpa2") {
   main_source = "WlanRvrTest.py"
   test_params = "rvr_settings.yaml"
-  environments = wlan_ap_iperf_attenuator_envs
+  environments =
+      display_ap_iperf_attenuator_envs + wlan_ap_iperf_attenuator_envs
   test_cases = [ "re:test_rvr_11ac_5g_80mhz_wpa2_.*" ]
   deps = [ "//third_party/iperf" ]
 }

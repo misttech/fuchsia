@@ -4,28 +4,29 @@
 
 import("//build/testing/environments.gni")
 import("//src/testing/end_to_end/antlion/antlion_host_test.gni")
+import("//src/testing/end_to_end/antlion/environments.gni")
 
 assert(is_host, "antlion tests only supported for host testing")
 
 antlion_host_test("beacon_loss_test") {
   main_source = "BeaconLossTest.py"
-  environments = wlan_ap_envs
+  environments = display_ap_envs + wlan_ap_envs
   timeout_secs = 900
 }
 
 antlion_host_test("channel_switch_test") {
   main_source = "ChannelSwitchTest.py"
-  environments = wlan_ap_envs
+  environments = display_ap_envs + wlan_ap_envs
 }
 
 antlion_host_test("connection_stress_test") {
   main_source = "ConnectionStressTest.py"
-  environments = wlan_ap_envs
+  environments = display_ap_envs + wlan_ap_envs
 }
 
 antlion_host_test("ping_stress_test") {
   main_source = "PingStressTest.py"
-  environments = wlan_ap_envs
+  environments = display_ap_envs + wlan_ap_envs
 }
 
 antlion_host_test("soft_ap_test") {
@@ -49,28 +50,28 @@ antlion_host_test("wlan_driver_restart_test") {
 
 antlion_host_test("wlan_policy_initiated_roam_test") {
   main_source = "WlanPolicyInitiatedRoamTest.py"
-  environments = wlan_ap_envs
+  environments = display_ap_envs + wlan_ap_envs
 }
 
 # wlan reboot tests
 # ap tests
 antlion_host_test("wlan_reboot_ap_open_test") {
   main_source = "WlanRebootTest.py"
-  environments = wlan_ap_envs
+  environments = display_ap_envs + wlan_ap_envs
   test_cases = [ "re:test.+ap.+open.+" ]
   deps = [ "//third_party/iperf" ]
 }
 
 antlion_host_test("wlan_reboot_ap_wpa2_test") {
   main_source = "WlanRebootTest.py"
-  environments = wlan_ap_envs
+  environments = display_ap_envs + wlan_ap_envs
   test_cases = [ "re:test.+ap.+wpa2.+" ]
   deps = [ "//third_party/iperf" ]
 }
 
 antlion_host_test("wlan_reboot_ap_wpa3_test") {
   main_source = "WlanRebootTest.py"
-  environments = wlan_ap_envs
+  environments = display_ap_envs + wlan_ap_envs
   test_cases = [ "re:test.+ap.+wpa3.+" ]
   deps = [ "//third_party/iperf" ]
 }
@@ -78,21 +79,21 @@ antlion_host_test("wlan_reboot_ap_wpa3_test") {
 # dut tests
 antlion_host_test("wlan_reboot_dut_open_test") {
   main_source = "WlanRebootTest.py"
-  environments = wlan_ap_envs
+  environments = display_ap_envs + wlan_ap_envs
   test_cases = [ "re:test.+dut.+open.+" ]
   deps = [ "//third_party/iperf" ]
 }
 
 antlion_host_test("wlan_reboot_dut_wpa2_test") {
   main_source = "WlanRebootTest.py"
-  environments = wlan_ap_envs
+  environments = display_ap_envs + wlan_ap_envs
   test_cases = [ "re:test.+dut.+wpa2.+" ]
   deps = [ "//third_party/iperf" ]
 }
 
 antlion_host_test("wlan_reboot_dut_wpa3_test") {
   main_source = "WlanRebootTest.py"
-  environments = wlan_ap_envs
+  environments = display_ap_envs + wlan_ap_envs
   test_cases = [ "re:test.+dut.+wpa3.+" ]
   deps = [ "//third_party/iperf" ]
 }
@@ -100,21 +101,21 @@ antlion_host_test("wlan_reboot_dut_wpa3_test") {
 # quick tests
 antlion_host_test("wlan_reboot_ap_test_quick") {
   main_source = "WlanRebootTest.py"
-  environments = wlan_ap_envs
+  environments = display_ap_envs + wlan_ap_envs
   test_cases = [ "test_soft_reboot_ap_5g_open_ipv4" ]
   deps = [ "//third_party/iperf" ]
 }
 
 antlion_host_test("wlan_reboot_dut_test_quick") {
   main_source = "WlanRebootTest.py"
-  environments = wlan_ap_envs
+  environments = display_ap_envs + wlan_ap_envs
   test_cases = [ "test_soft_reboot_dut_5g_open_ipv4" ]
   deps = [ "//third_party/iperf" ]
 }
 
 antlion_host_test("wlan_scan_test") {
   main_source = "WlanScanTest.py"
-  environments = wlan_ap_envs
+  environments = display_ap_envs + wlan_ap_envs
 }
 
 # iwlwifi AX201 does not support WPA2 yet.
@@ -131,12 +132,12 @@ antlion_host_test("wlan_scan_test_without_wpa2") {
 
 antlion_host_test("wlan_target_security_test") {
   main_source = "WlanTargetSecurityTest.py"
-  environments = wlan_ap_envs
+  environments = display_ap_envs + wlan_ap_envs
 }
 
 antlion_host_test("wlan_wireless_network_management_test") {
   main_source = "WlanWirelessNetworkManagementTest.py"
-  environments = wlan_ap_envs
+  environments = display_ap_envs + wlan_ap_envs
 }
 
 group("e2e_tests") {
