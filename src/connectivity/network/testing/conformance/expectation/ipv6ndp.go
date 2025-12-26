@@ -432,6 +432,7 @@ var ipv6ndpExpectationsNS3 map[AnvlCaseNumber]outcome.Outcome = map[AnvlCaseNumb
 	{27, 6}:  Pass,
 	{28, 1}:  Pass,
 	{28, 4}:  Pass,
+	// TODO(https://fxbug.dev/42083367): Implement the IsRouter flag.
 	{28, 5}:  Fail,
 	{28, 6}:  Pass,
 	{29, 1}:  Pass,
