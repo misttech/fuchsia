@@ -71,7 +71,7 @@ TEST_F(ViewRefFocusedTest, NoFocus_NoResponse) {
 }
 
 TEST_F(ViewRefFocusedTest, BasicTree_ParentGetsFocus) {
-	focus_manager_.OnNewViewTreeSnapshot(TwoNodeSnapshot());
+  focus_manager_.OnNewViewTreeSnapshot(TwoNodeSnapshot());
 
   std::optional<bool> node_a_focus;
   node_a_focused_->Watch([&node_a_focus](auto update) {
@@ -89,7 +89,7 @@ TEST_F(ViewRefFocusedTest, BasicTree_ParentGetsFocus) {
 }
 
 TEST_F(ViewRefFocusedTest, ChildFocus_FalseToTrue) {
-	focus_manager_.OnNewViewTreeSnapshot(TwoNodeSnapshot());
+  focus_manager_.OnNewViewTreeSnapshot(TwoNodeSnapshot());
 
   // Poll after node B gains focus.
   std::optional<bool> node_b_focus;
@@ -109,7 +109,7 @@ TEST_F(ViewRefFocusedTest, ChildFocus_FalseToTrue) {
 }
 
 TEST_F(ViewRefFocusedTest, ChildFocus_FalseToFalse) {
-	focus_manager_.OnNewViewTreeSnapshot(TwoNodeSnapshot());
+  focus_manager_.OnNewViewTreeSnapshot(TwoNodeSnapshot());
   focus_manager_.RequestFocus(kNodeA, kNodeB);
   focus_manager_.RequestFocus(kNodeA, kNodeA);
 
@@ -126,7 +126,7 @@ TEST_F(ViewRefFocusedTest, ChildFocus_FalseToFalse) {
 }
 
 TEST_F(ViewRefFocusedTest, ChildFocus_TrueToFalse) {
-	focus_manager_.OnNewViewTreeSnapshot(TwoNodeSnapshot());
+  focus_manager_.OnNewViewTreeSnapshot(TwoNodeSnapshot());
   focus_manager_.RequestFocus(kNodeA, kNodeB);
 
   // First poll by node B sees focus gained.
@@ -155,7 +155,7 @@ TEST_F(ViewRefFocusedTest, ChildFocus_TrueToFalse) {
 }
 
 TEST_F(ViewRefFocusedTest, ChildFocus_TrueToTrue) {
-	focus_manager_.OnNewViewTreeSnapshot(TwoNodeSnapshot());
+  focus_manager_.OnNewViewTreeSnapshot(TwoNodeSnapshot());
   focus_manager_.RequestFocus(kNodeA, kNodeB);
 
   // First poll by node B sees focus gained.
@@ -183,4 +183,5 @@ TEST_F(ViewRefFocusedTest, ChildFocus_TrueToTrue) {
   ASSERT_TRUE(node_b_focus.has_value());
   EXPECT_TRUE(node_b_focus.value());
 }
+
 }  // namespace

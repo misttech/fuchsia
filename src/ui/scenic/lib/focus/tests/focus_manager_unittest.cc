@@ -94,7 +94,9 @@ std::shared_ptr<const view_tree::Snapshot> FourNodeSnapshot() {
 //   B     C
 //   |
 //   D
-static std::shared_ptr<const view_tree::Snapshot> FourNodeSnapshotWithViewRefs() {
+//
+// TODO(https://fxbug.dev/471250287): ViewRef koids don't match keys in view tree!
+std::shared_ptr<const view_tree::Snapshot> FourNodeSnapshotWithViewRefs() {
   auto snapshot = std::make_shared<view_tree::Snapshot>();
 
   snapshot->root = kNodeA;

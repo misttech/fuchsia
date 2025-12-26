@@ -367,7 +367,7 @@ TEST_F(GeometryProviderTest, ExtractObservationSnapshotTest) {
   // views.
   {
     auto view_tree_snapshot = view_tree::GeometryProvider::ExtractObservationSnapshot(
-        /*context_view*/ std::nullopt, snapshot);
+        /*context_view*/ std::nullopt, *snapshot);
     ASSERT_TRUE(view_tree_snapshot);
     ASSERT_TRUE(view_tree_snapshot->has_views());
     EXPECT_TRUE(view_tree_snapshot->views().empty());
@@ -382,7 +382,7 @@ TEST_F(GeometryProviderTest, ExtractObservationSnapshotTest) {
   // is the context view.
   {
     auto view_tree_snapshot = view_tree::GeometryProvider::ExtractObservationSnapshot(
-        /*context_view*/ node_a_koid, snapshot);
+        /*context_view*/ node_a_koid, *snapshot);
 
     ASSERT_TRUE(view_tree_snapshot);
     ASSERT_TRUE(view_tree_snapshot->has_views());
@@ -522,7 +522,7 @@ TEST_F(GeometryProviderTest, ExtractObservationSnapshotTest) {
   // leaf node.
   {
     auto view_tree_snapshot = view_tree::GeometryProvider::ExtractObservationSnapshot(
-        /*context_view*/ node_c_koid, snapshot);
+        /*context_view*/ node_c_koid, *snapshot);
 
     ASSERT_TRUE(view_tree_snapshot);
     ASSERT_TRUE(view_tree_snapshot->has_views());
@@ -666,6 +666,27 @@ TEST_F(GeometryProviderTest, ZeroSizedWindows_AreOmitted) {
   // However, the zero-sized views are not listed.
   ASSERT_EQ(client_result->updates().size(), 1UL);
   EXPECT_EQ(client_result->updates()[0].views().size(), 0UL);
+}
+
+// If there was a previous update before a client is registered, then the first watch should succeed
+// even if there isn't a subsequent update.
+TEST_F(GeometryProviderTest, UpdateBeforeWatch) {
+  const uint32_t num_snapshots = fuog_BUFFER_SIZE;
+  const uint64_t num_nodes = 1;
+
+  PopulateEndpointsWithSnapshots(geometry_provider_, num_snapshots, num_nodes);
+
+  fuog_ProviderPtr new_client;
+  geometry_provider_.Register(new_client.NewRequest(), kNodeA);
+
+  std::optional<fuog_WatchResponse> client_result;
+  new_client->Watch([&client_result](auto response) { client_result = std::move(response); });
+
+  RunLoopUntilIdle();
+
+  EXPECT_TRUE(client_.is_bound());
+  ASSERT_TRUE(client_result.has_value());
+  EXPECT_EQ(client_result->updates().size(), 1UL);
 }
 
 }  // namespace geometry_provider::test

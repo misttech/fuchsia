@@ -43,8 +43,7 @@ class GeometryProvider {
   // extracting information about the |context_view| and its descendant views from
   // |snapshot|.
   static fuchsia::ui::observation::geometry::ViewTreeSnapshotPtr ExtractObservationSnapshot(
-      std::optional<zx_koid_t> endpoint_context_view,
-      std::shared_ptr<const view_tree::Snapshot> snapshot);
+      std::optional<zx_koid_t> endpoint_context_view, const view_tree::Snapshot& snapshot);
 
  private:
   using ProviderEndpointId = int64_t;
@@ -121,17 +120,24 @@ class GeometryProvider {
     fuchsia::ui::observation::geometry::Error error_;
   };
 
+  // Common impl for `Register()` and `RegisterGlobalViewTreeWatcher()`.
+  void RegisterViewTreeWatcherImpl(
+      fidl::InterfaceRequest<fuchsia::ui::observation::geometry::ViewTreeWatcher> endpoint,
+      std::optional<zx_koid_t> context_view);
+
   // Generates a fuchsia.ui.observation.geometry.ViewDescriptor from the |snapshot|'s view node by
   // extracting information about the |view_ref_koid| from the view node.
   // The view nodes corresponding to views with 0x0 size are *not* reported.
   static fuchsia::ui::observation::geometry::ViewDescriptor ExtractViewDescriptor(
-      zx_koid_t view_ref_koid, zx_koid_t context_view,
-      std::shared_ptr<const view_tree::Snapshot> snapshot);
+      zx_koid_t view_ref_koid, zx_koid_t context_view, const view_tree::Snapshot& snapshot);
 
   std::unordered_map<ProviderEndpointId, ProviderEndpoint> endpoints_;
 
   // Incremented when Register() is called.
   ProviderEndpointId endpoint_counter_ = 0;
+
+  // Stashes the latest snapshot, so that we can provide it to newly-registered clients.
+  std::shared_ptr<const view_tree::Snapshot> latest_view_tree_;
 
   FXL_DISALLOW_COPY_ASSIGN_AND_MOVE(GeometryProvider);
 };

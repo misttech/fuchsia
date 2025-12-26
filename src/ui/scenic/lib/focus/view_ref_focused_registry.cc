@@ -11,6 +11,10 @@ namespace focus {
 void ViewRefFocusedRegistry::Register(
     zx_koid_t view_ref_koid, fidl::InterfaceRequest<fuchsia::ui::views::ViewRefFocused> endpoint) {
   auto [_, inserted] = pending_requests_.try_emplace(view_ref_koid, std::move(endpoint));
+  // This DCHECK does not assert an internally-guaranteed invariant: nothing prevents a client from
+  // calling `Flatland.CreateView2` multiple times with the same control-ref/view-ref pair (in the
+  // same or different Flatland sessions).  Instead, this DCHECK serves to catch accidental client
+  // misuse; in release builds the new endpoint is simply dropped immediately.
   FX_DCHECK(inserted) << "endpoint emplace should always succeed";
 }
 

@@ -30,27 +30,33 @@ const auto fuog_MAX_VIEW_COUNT = fuchsia::ui::observation::geometry::MAX_VIEW_CO
 
 void GeometryProvider::Register(fidl::InterfaceRequest<fuog_ViewTreeWatcher> endpoint,
                                 zx_koid_t context_view) {
-  FX_DCHECK(endpoint.is_valid()) << "precondition";
-  FX_DCHECK(context_view != ZX_KOID_INVALID) << "precondition";
-
-  auto endpoint_id = endpoint_counter_++;
-  endpoints_.insert({endpoint_id, ProviderEndpoint(std::move(endpoint), context_view, endpoint_id,
-                                                   [this, endpoint_id] {
-                                                     auto count = endpoints_.erase(endpoint_id);
-                                                     FX_DCHECK(count > 0);
-                                                   })});
+  RegisterViewTreeWatcherImpl(std::move(endpoint), context_view);
 }
 
 void GeometryProvider::RegisterGlobalViewTreeWatcher(
     fidl::InterfaceRequest<fuchsia::ui::observation::geometry::ViewTreeWatcher> endpoint) {
+  RegisterViewTreeWatcherImpl(std::move(endpoint), std::nullopt);
+}
+
+void GeometryProvider::RegisterViewTreeWatcherImpl(
+    fidl::InterfaceRequest<fuchsia::ui::observation::geometry::ViewTreeWatcher> endpoint,
+    std::optional<zx_koid_t> context_view) {
   FX_DCHECK(endpoint.is_valid()) << "precondition";
+  // If the optional `context` view is provided, it must not be `ZX_KOID_INVALID`.
+  FX_DCHECK(!context_view.has_value() || context_view.value() != ZX_KOID_INVALID) << "precondition";
+
   auto endpoint_id = endpoint_counter_++;
-  endpoints_.insert(
-      {endpoint_id, ProviderEndpoint(std::move(endpoint), /*context_view*/ std::nullopt,
-                                     endpoint_id, [this, endpoint_id] {
-                                       auto count = endpoints_.erase(endpoint_id);
-                                       FX_DCHECK(count > 0);
-                                     })});
+  auto [it, _] =
+      endpoints_.insert({endpoint_id, ProviderEndpoint(std::move(endpoint), context_view,
+                                                       endpoint_id, [this, endpoint_id] {
+                                                         auto count = endpoints_.erase(endpoint_id);
+                                                         FX_DCHECK(count > 0);
+                                                       })});
+  // Notify new endpoint of latest snapshot.
+  if (latest_view_tree_) {
+    it->second.AddViewTreeSnapshot(
+        ExtractObservationSnapshot(it->second.context_view(), *latest_view_tree_));
+  }
 }
 
 void GeometryProvider::OnNewViewTreeSnapshot(std::shared_ptr<const view_tree::Snapshot> snapshot) {
@@ -65,13 +71,15 @@ void GeometryProvider::OnNewViewTreeSnapshot(std::shared_ptr<const view_tree::Sn
 
   // Add snapshot to each endpoint's buffer.
   for (auto& [_, endpoint] : endpoints_) {
-    endpoint.AddViewTreeSnapshot(ExtractObservationSnapshot(endpoint.context_view(), snapshot));
+    endpoint.AddViewTreeSnapshot(ExtractObservationSnapshot(endpoint.context_view(), *snapshot));
   }
+
+  // Stash for later.
+  latest_view_tree_ = std::move(snapshot);
 }
 
 fuog_ViewTreeSnapshotPtr GeometryProvider::ExtractObservationSnapshot(
-    std::optional<zx_koid_t> endpoint_context_view,
-    std::shared_ptr<const view_tree::Snapshot> snapshot) {
+    std::optional<zx_koid_t> endpoint_context_view, const view_tree::Snapshot& snapshot) {
   auto view_tree_snapshot = fuog_ViewTreeSnapshot::New();
   view_tree_snapshot->set_time(utils::dispatcher_clock_now());
   std::vector<fuog_ViewDescriptor> views;
@@ -83,18 +91,18 @@ fuog_ViewTreeSnapshotPtr GeometryProvider::ExtractObservationSnapshot(
   if (endpoint_context_view.has_value()) {
     context_view = endpoint_context_view.value();
   } else {
-    context_view = snapshot->root;
+    context_view = snapshot.root;
   }
 
   // Empty snapshot case.
-  if (context_view == ZX_KOID_INVALID && snapshot->view_tree.empty()) {
+  if (context_view == ZX_KOID_INVALID && snapshot.view_tree.empty()) {
     view_tree_snapshot->set_views({});
     return view_tree_snapshot;
   }
 
   // It is possible that |context_view| has not yet connected to the view tree or it has
   // disconnected. In either case, send an empty snapshot.
-  if (!snapshot->view_tree.contains(context_view)) {
+  if (!snapshot.view_tree.contains(context_view)) {
     view_tree_snapshot->set_views({});
     return view_tree_snapshot;
   }
@@ -109,7 +117,7 @@ fuog_ViewTreeSnapshotPtr GeometryProvider::ExtractObservationSnapshot(
     stack.pop();
     FX_DCHECK(!visited.contains(view_node)) << "Cycle detected in the view tree";
     visited.insert(view_node);
-    const auto& view = snapshot->view_tree.at(view_node);
+    const auto& view = snapshot.view_tree.at(view_node);
 
     // Do not set a view vector in the |ViewTreeSnapshot| as the size of |views| will exceed
     // fuog_MAX_VIEW_COUNT, since the number of |children| of the |view_node| exceeds
@@ -149,10 +157,10 @@ fuog_ViewTreeSnapshotPtr GeometryProvider::ExtractObservationSnapshot(
   return view_tree_snapshot;
 }
 
-fuog_ViewDescriptor GeometryProvider::ExtractViewDescriptor(
-    zx_koid_t view_ref_koid, zx_koid_t context_view,
-    std::shared_ptr<const view_tree::Snapshot> snapshot) {
-  auto& view_node = snapshot->view_tree.at(view_ref_koid);
+fuog_ViewDescriptor GeometryProvider::ExtractViewDescriptor(zx_koid_t view_ref_koid,
+                                                            zx_koid_t context_view,
+                                                            const view_tree::Snapshot& snapshot) {
+  auto& view_node = snapshot.view_tree.at(view_ref_koid);
 
   std::array<float, 2> pixel_scale = utils::kDefaultPixelScale;
 
@@ -165,7 +173,7 @@ fuog_ViewDescriptor GeometryProvider::ExtractViewDescriptor(
 
   auto world_from_local_transform = glm::inverse(view_node.local_from_world_transform);
   auto extent_in_context_transform =
-      snapshot->view_tree.at(context_view).local_from_world_transform * world_from_local_transform;
+      snapshot.view_tree.at(context_view).local_from_world_transform * world_from_local_transform;
 
   // The coordinates of a view_node's bounding box in context_view's coordinate system.
   auto extent_in_context_top_left = utils::TransformPointerCoords(
@@ -207,7 +215,7 @@ fuog_ViewDescriptor GeometryProvider::ExtractViewDescriptor(
   // extent_in_parent_transform will be an identity matrix.
   if (view_node.parent != ZX_KOID_INVALID) {
     extent_in_parent_transform =
-        snapshot->view_tree.at(view_node.parent).local_from_world_transform *
+        snapshot.view_tree.at(view_node.parent).local_from_world_transform *
         world_from_local_transform;
   }
 
