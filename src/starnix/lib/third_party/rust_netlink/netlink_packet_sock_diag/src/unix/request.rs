@@ -84,7 +84,7 @@ bitflags! {
     }
 }
 
-impl<'a, T: AsRef<[u8]> + 'a> Parseable<UnixRequestBuffer<&'a T>> for UnixRequest {
+impl<'a, T: AsRef<[u8]> + ?Sized + 'a> Parseable<UnixRequestBuffer<&'a T>> for UnixRequest {
     type Error = DecodeError;
     fn parse(buf: &UnixRequestBuffer<&'a T>) -> Result<Self, DecodeError> {
         Ok(Self {

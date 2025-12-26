@@ -4,6 +4,7 @@ use std::net::{IpAddr, Ipv4Addr};
 use std::sync::LazyLock;
 use std::time::Duration;
 
+use netlink_packet_core::{NetlinkDeserializable, NetlinkHeader, NetlinkSerializable};
 use netlink_packet_utils::traits::{Emitable, Parseable};
 
 use crate::constants::*;
@@ -12,6 +13,7 @@ use crate::inet::{
     ExtensionFlags, InetRequest, InetRequestBuffer, InetResponse, InetResponseBuffer,
     InetResponseHeader, SocketId, StateFlags, Timer,
 };
+use crate::message::SockDiagRequest;
 
 static REQ_UDP: LazyLock<InetRequest> = LazyLock::new(|| InetRequest {
     family: AF_INET,
@@ -55,6 +57,35 @@ fn emit_udp_req() {
     REQ_UDP.emit(&mut buf);
     assert_eq!(&buf[..], &REQ_UDP_BUF[..]);
 }
+
+static REQ_TCP: LazyLock<InetRequest> = LazyLock::new(|| InetRequest {
+    family: AF_INET,
+    protocol: IPPROTO_TCP,
+    extensions: ExtensionFlags::empty(),
+    states: StateFlags::ESTABLISHED,
+    socket_id: SocketId::new_v4(),
+});
+
+#[rustfmt::skip]
+const REQ_TCP_BUF: [u8; 56] = [
+    0x02, // family (AF_INET)
+    0x06, // protocol (IPPROTO_TCP)
+    0x00, // extensions
+    0x00, // padding
+    0x02, 0x00, 0x00, 0x00, // states
+
+    // socket id
+    0x00, 0x00, // source port
+    0x00, 0x00, // destination port
+    // source address
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    // destination address
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, // interface id
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // cookie
+];
 
 static RESP_TCP: LazyLock<InetResponse> = LazyLock::new(|| InetResponse {
     header: InetResponseHeader {
@@ -122,4 +153,23 @@ fn emit_tcp_resp() {
     let mut buf = vec![0; RESP_TCP.buffer_len()];
     RESP_TCP.emit(&mut buf);
     assert_eq!(&buf[..], &RESP_TCP_BUF[..]);
+}
+
+#[test]
+fn sock_destroy_serialization() {
+    let msg = SockDiagRequest::InetSockDestroy(REQ_TCP.clone());
+
+    assert_eq!(msg.message_type(), SOCK_DESTROY);
+
+    let mut buf = vec![0; Emitable::buffer_len(&msg)];
+    msg.serialize(&mut buf);
+
+    assert_eq!(&buf[..], &REQ_TCP_BUF[..]);
+
+    let mut header = NetlinkHeader::default();
+    header.message_type = SOCK_DESTROY;
+    header.length = (buf.len() + 16) as u32;
+
+    let parsed = SockDiagRequest::deserialize(&header, &buf).unwrap();
+    assert_eq!(parsed, msg);
 }

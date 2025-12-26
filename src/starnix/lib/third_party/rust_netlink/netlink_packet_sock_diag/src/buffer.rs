@@ -5,7 +5,7 @@ use netlink_packet_utils::DecodeError;
 use netlink_packet_utils::traits::{Parseable, ParseableParametrized};
 
 use crate::constants::*;
-use crate::{SockDiagMessage, inet, unix};
+use crate::{SockDiagRequest, SockDiagResponse, inet, unix};
 
 const BUF_MIN_LEN: usize = 2;
 
@@ -56,29 +56,55 @@ impl<'a, T: AsRef<[u8]> + AsMut<[u8]> + ?Sized> SockDiagBuffer<&'a mut T> {
     }
 }
 
-impl<'a, T: AsRef<[u8]>> ParseableParametrized<SockDiagBuffer<&'a T>, u16> for SockDiagMessage {
+impl<'a, T: AsRef<[u8]>> ParseableParametrized<SockDiagBuffer<&'a T>, u16> for SockDiagRequest {
     type Error = DecodeError;
     fn parse_with_param(
         buf: &SockDiagBuffer<&'a T>,
         message_type: u16,
     ) -> Result<Self, DecodeError> {
-        use self::SockDiagMessage::*;
+        use crate::SockDiagRequest::*;
         buf.check_len()?;
         let message = match (message_type, buf.family()) {
-            (SOCK_DIAG_BY_FAMILY, AF_INET) => {
-                let err = "invalid AF_INET response";
-                let buf = inet::InetResponseBuffer::new(buf.inner()).context(err)?;
-                InetResponse(Box::new(inet::InetResponse::parse(&buf).context(err)?))
+            (SOCK_DIAG_BY_FAMILY, AF_INET | AF_INET6) => {
+                let err = "invalid AF_INET/AF_INET6 request";
+                let buf = inet::InetRequestBuffer::new(buf.inner()).context(err)?;
+                InetRequest(inet::InetRequest::parse(&buf).context(err)?)
             }
-            (SOCK_DIAG_BY_FAMILY, AF_INET6) => {
-                let err = "invalid AF_INET6 response";
+            (SOCK_DIAG_BY_FAMILY, AF_UNIX) => {
+                let err = "invalid AF_UNIX request";
+                let buf = unix::UnixRequestBuffer::new(buf.inner()).context(err)?;
+                UnixRequest(unix::UnixRequest::parse(&buf).context(err)?)
+            }
+            (SOCK_DIAG_BY_FAMILY, af) => return Err(format!("unknown address family {af}").into()),
+            (SOCK_DESTROY, AF_INET | AF_INET6) => {
+                let err = "invalid AF_INET/AF_INET6 request";
+                let buf = inet::InetRequestBuffer::new(buf.inner()).context(err)?;
+                InetSockDestroy(inet::InetRequest::parse(&buf).context(err)?)
+            }
+            _ => return Err(format!("unknown message type {message_type}").into()),
+        };
+        Ok(message)
+    }
+}
+
+impl<'a, T: AsRef<[u8]>> ParseableParametrized<SockDiagBuffer<&'a T>, u16> for SockDiagResponse {
+    type Error = DecodeError;
+    fn parse_with_param(
+        buf: &SockDiagBuffer<&'a T>,
+        message_type: u16,
+    ) -> Result<Self, DecodeError> {
+        use crate::SockDiagResponse::*;
+        buf.check_len()?;
+        let message = match (message_type, buf.family()) {
+            (SOCK_DIAG_BY_FAMILY, AF_INET | AF_INET6) => {
+                let err = "invalid AF_INET/AF_INET6 response";
                 let buf = inet::InetResponseBuffer::new(buf.inner()).context(err)?;
-                InetResponse(Box::new(inet::InetResponse::parse(&buf).context(err)?))
+                InetResponse(inet::InetResponse::parse(&buf).context(err)?)
             }
             (SOCK_DIAG_BY_FAMILY, AF_UNIX) => {
                 let err = "invalid AF_UNIX response";
                 let buf = unix::UnixResponseBuffer::new(buf.inner()).context(err)?;
-                UnixResponse(Box::new(unix::UnixResponse::parse(&buf).context(err)?))
+                UnixResponse(unix::UnixResponse::parse(&buf).context(err)?)
             }
             (SOCK_DIAG_BY_FAMILY, af) => return Err(format!("unknown address family {af}").into()),
             _ => return Err(format!("unknown message type {message_type}").into()),

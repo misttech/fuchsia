@@ -6,62 +6,45 @@ use netlink_packet_core::{
 use netlink_packet_utils::DecodeError;
 use netlink_packet_utils::traits::{Emitable, ParseableParametrized};
 
-use crate::{SOCK_DIAG_BY_FAMILY, SockDiagBuffer, inet, unix};
+use crate::{SOCK_DESTROY, SOCK_DIAG_BY_FAMILY, SockDiagBuffer, inet, unix};
 
 #[derive(Debug, PartialEq, Eq, Clone)]
-pub enum SockDiagMessage {
+pub enum SockDiagRequest {
     InetRequest(inet::InetRequest),
-    InetResponse(Box<inet::InetResponse>),
     UnixRequest(unix::UnixRequest),
-    UnixResponse(Box<unix::UnixResponse>),
+    InetSockDestroy(inet::InetRequest),
 }
 
-impl SockDiagMessage {
-    pub fn is_inet_request(&self) -> bool {
-        matches!(self, SockDiagMessage::InetRequest(_))
-    }
-
-    pub fn is_inet_response(&self) -> bool {
-        matches!(self, SockDiagMessage::InetResponse(_))
-    }
-    pub fn is_unix_request(&self) -> bool {
-        matches!(self, SockDiagMessage::UnixRequest(_))
-    }
-
-    pub fn is_unix_response(&self) -> bool {
-        matches!(self, SockDiagMessage::UnixResponse(_))
-    }
-
+impl SockDiagRequest {
     pub fn message_type(&self) -> u16 {
-        SOCK_DIAG_BY_FAMILY
+        match self {
+            SockDiagRequest::InetRequest(_) | SockDiagRequest::UnixRequest(_) => {
+                SOCK_DIAG_BY_FAMILY
+            }
+            SockDiagRequest::InetSockDestroy(_) => SOCK_DESTROY,
+        }
     }
 }
 
-impl Emitable for SockDiagMessage {
+impl Emitable for SockDiagRequest {
     fn buffer_len(&self) -> usize {
-        use SockDiagMessage::*;
-
         match self {
-            InetRequest(msg) => msg.buffer_len(),
-            InetResponse(msg) => msg.buffer_len(),
-            UnixRequest(msg) => msg.buffer_len(),
-            UnixResponse(msg) => msg.buffer_len(),
+            SockDiagRequest::InetRequest(msg) => msg.buffer_len(),
+            SockDiagRequest::UnixRequest(msg) => msg.buffer_len(),
+            SockDiagRequest::InetSockDestroy(msg) => msg.buffer_len(),
         }
     }
 
     fn emit(&self, buffer: &mut [u8]) {
-        use SockDiagMessage::*;
-
         match self {
-            InetRequest(msg) => msg.emit(buffer),
-            InetResponse(msg) => msg.emit(buffer),
-            UnixRequest(msg) => msg.emit(buffer),
-            UnixResponse(msg) => msg.emit(buffer),
+            SockDiagRequest::InetRequest(msg) => msg.emit(buffer),
+            SockDiagRequest::UnixRequest(msg) => msg.emit(buffer),
+            SockDiagRequest::InetSockDestroy(msg) => msg.emit(buffer),
         }
     }
 }
 
-impl NetlinkSerializable for SockDiagMessage {
+impl NetlinkSerializable for SockDiagRequest {
     fn message_type(&self) -> u16 {
         self.message_type()
     }
@@ -75,16 +58,76 @@ impl NetlinkSerializable for SockDiagMessage {
     }
 }
 
-impl NetlinkDeserializable for SockDiagMessage {
+impl NetlinkDeserializable for SockDiagRequest {
     type Error = DecodeError;
     fn deserialize(header: &NetlinkHeader, payload: &[u8]) -> Result<Self, Self::Error> {
         let buffer = SockDiagBuffer::new(&payload)?;
-        SockDiagMessage::parse_with_param(&buffer, header.message_type)
+        SockDiagRequest::parse_with_param(&buffer, header.message_type)
     }
 }
 
-impl From<SockDiagMessage> for NetlinkPayload<SockDiagMessage> {
-    fn from(message: SockDiagMessage) -> Self {
+impl From<SockDiagRequest> for NetlinkPayload<SockDiagRequest> {
+    fn from(message: SockDiagRequest) -> Self {
+        NetlinkPayload::InnerMessage(message)
+    }
+}
+
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub enum SockDiagResponse {
+    InetResponse(inet::InetResponse),
+    UnixResponse(unix::UnixResponse),
+}
+
+impl SockDiagResponse {
+    pub fn message_type(&self) -> u16 {
+        match self {
+            SockDiagResponse::InetResponse(_) | SockDiagResponse::UnixResponse(_) => {
+                SOCK_DIAG_BY_FAMILY
+            }
+        }
+    }
+}
+
+impl Emitable for SockDiagResponse {
+    fn buffer_len(&self) -> usize {
+        match self {
+            SockDiagResponse::InetResponse(msg) => msg.buffer_len(),
+            SockDiagResponse::UnixResponse(msg) => msg.buffer_len(),
+        }
+    }
+
+    fn emit(&self, buffer: &mut [u8]) {
+        match self {
+            SockDiagResponse::InetResponse(msg) => msg.emit(buffer),
+            SockDiagResponse::UnixResponse(msg) => msg.emit(buffer),
+        }
+    }
+}
+
+impl NetlinkSerializable for SockDiagResponse {
+    fn message_type(&self) -> u16 {
+        self.message_type()
+    }
+
+    fn buffer_len(&self) -> usize {
+        <Self as Emitable>::buffer_len(self)
+    }
+
+    fn serialize(&self, buffer: &mut [u8]) {
+        self.emit(buffer)
+    }
+}
+
+impl NetlinkDeserializable for SockDiagResponse {
+    type Error = DecodeError;
+    fn deserialize(header: &NetlinkHeader, payload: &[u8]) -> Result<Self, Self::Error> {
+        let buffer = SockDiagBuffer::new(&payload)?;
+        SockDiagResponse::parse_with_param(&buffer, header.message_type)
+    }
+}
+
+impl From<SockDiagResponse> for NetlinkPayload<SockDiagResponse> {
+    fn from(message: SockDiagResponse) -> Self {
         NetlinkPayload::InnerMessage(message)
     }
 }

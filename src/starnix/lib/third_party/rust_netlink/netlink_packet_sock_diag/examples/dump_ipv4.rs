@@ -3,9 +3,9 @@
 use netlink_packet_core::{
     NLM_F_DUMP, NLM_F_REQUEST, NetlinkHeader, NetlinkMessage, NetlinkPayload,
 };
-use netlink_packet_sock_diag::SockDiagMessage;
 use netlink_packet_sock_diag::constants::*;
 use netlink_packet_sock_diag::inet::{ExtensionFlags, InetRequest, SocketId, StateFlags};
+use netlink_packet_sock_diag::{SockDiagRequest, SockDiagResponse};
 use netlink_sys::protocols::NETLINK_SOCK_DIAG;
 use netlink_sys::{Socket, SocketAddr};
 
@@ -18,7 +18,7 @@ fn main() {
     nl_hdr.flags = NLM_F_REQUEST | NLM_F_DUMP;
     let mut packet = NetlinkMessage::new(
         nl_hdr,
-        SockDiagMessage::InetRequest(InetRequest {
+        SockDiagRequest::InetRequest(InetRequest {
             family: AF_INET,
             protocol: IPPROTO_TCP,
             extensions: ExtensionFlags::empty(),
@@ -50,12 +50,12 @@ fn main() {
     while let Ok(size) = socket.recv(&mut &mut receive_buffer[..], 0) {
         loop {
             let bytes = &receive_buffer[offset..];
-            let rx_packet = <NetlinkMessage<SockDiagMessage>>::deserialize(bytes).unwrap();
+            let rx_packet = <NetlinkMessage<SockDiagResponse>>::deserialize(bytes).unwrap();
             println!("<<< {rx_packet:?}");
 
             match rx_packet.payload {
                 NetlinkPayload::Noop | NetlinkPayload::Ack(_) => {}
-                NetlinkPayload::InnerMessage(SockDiagMessage::InetResponse(response)) => {
+                NetlinkPayload::InnerMessage(SockDiagResponse::InetResponse(response)) => {
                     println!("{response:#?}");
                 }
                 NetlinkPayload::Done => {
