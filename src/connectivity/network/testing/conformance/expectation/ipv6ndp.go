@@ -433,16 +433,23 @@ var ipv6ndpExpectationsNS3 map[AnvlCaseNumber]outcome.Outcome = map[AnvlCaseNumb
 	{28, 1}:  Pass,
 	{28, 4}:  Pass,
 	// TODO(https://fxbug.dev/42083367): Implement the IsRouter flag.
-	{28, 5}:  Fail,
-	{28, 6}:  Pass,
-	{29, 1}:  Pass,
-	{29, 2}:  AnvlSkip, // Router test but this is the host suite.
-	{29, 3}:  Pass,
-	{29, 4}:  Pass,
-	{29, 5}:  Pass,
-	{30, 1}:  Pass,
-	{30, 2}:  Pass,
-	{30, 3}:  Pass,
+	{28, 5}: Fail,
+	{28, 6}: Pass,
+	{29, 1}: Pass,
+	{29, 2}: AnvlSkip, // Router test but this is the host suite.
+	{29, 3}: Pass,
+	{29, 4}: Pass,
+	{29, 5}: Pass,
+	{30, 1}: Pass,
+	{30, 2}: Pass,
+	{30, 3}: Pass,
+	// The test makes assertions that are not grounded in RFC text. When the DUT
+	// transitions from UNREACHABLE to STALE, it sends any packets that had
+	// been queued. The test asserts that the sending of queued packets then
+	// causes the DUT to enter DELAY, and after a wait, PROBE. The RFC does not
+	// state to do this, and as such our implementation remains in STALE.
+	//
+	// See https://fxbug.dev/455545032#comment9 for details.
 	{30, 4}:  Inconclusive,
 	{30, 5}:  Pass,
 	{30, 6}:  Pass,
