@@ -1324,7 +1324,9 @@ fn receive_ndp_packet<
     }
 
     match packet {
-        NdpPacket::RouterSolicitation(_) | NdpPacket::Redirect(_) => {}
+        NdpPacket::RouterSolicitation(_) => {}
+        // TODO(https://fxbug.dev/42095002): Support NDP Redirect messages.
+        NdpPacket::Redirect(_) => {}
         NdpPacket::NeighborSolicitation(ref p) => {
             // Per RFC 4861, section 7.1.1:
             //   A node MUST silently discard any received Neighbor Solicitation

@@ -471,8 +471,11 @@ var ipv6ndpExpectationsNS3 map[AnvlCaseNumber]outcome.Outcome = map[AnvlCaseNumb
 	{33, 8}:  Pass,
 	{33, 9}:  Pass,
 	{33, 10}: Pass,
+	// TODO(https://fxbug.dev/42095002): Support NDP Redirect Messages.
 	{33, 11}: Inconclusive,
+	// TODO(https://fxbug.dev/42095002): Support NDP Redirect Messages.
 	{33, 12}: Inconclusive,
+	// TODO(https://fxbug.dev/42095002): Support NDP Redirect Messages.
 	{33, 13}: Inconclusive,
 	{33, 14}: AnvlSkip, // Router test but this is the host suite.
 	{33, 15}: AnvlSkip, // Router test but this is the host suite.
