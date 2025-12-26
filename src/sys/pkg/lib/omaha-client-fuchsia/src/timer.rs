@@ -38,33 +38,32 @@ impl FuchsiaTimer {
 impl Timer for FuchsiaTimer {
     /// Wait until at least one of the given time bounds has been reached.
     fn wait_until(&mut self, time: impl Into<PartialComplexTime>) -> BoxFuture<'static, ()> {
-        fasync::Timer::new(Self::determine_wait_until(time.into())).boxed()
+        self.wait_for(Self::determine_wait_until(time.into()))
     }
 
     /// Wait for the given duration (from now).
     fn wait_for(&mut self, duration: Duration) -> BoxFuture<'static, ()> {
-        fasync::Timer::new(duration).boxed()
+        fasync::Timer::new(zx::BootDuration::from(duration)).boxed()
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use fuchsia_async::TestExecutor;
     use std::task::Poll;
 
-    #[fuchsia::test(allow_stalls = false)]
-    async fn test_timer() {
-        let start_time = fasync::MonotonicInstant::now();
+    #[test]
+    fn test_timer() {
+        let mut exec = fasync::TestExecutor::new();
+        let start_time = fasync::BootInstant::now();
 
         let mut timer = FuchsiaTimer;
         let mut future = timer.wait_for(Duration::from_secs(1234));
-        assert_eq!(Poll::Pending, TestExecutor::poll_until_stalled(&mut future).await);
+        assert_eq!(Poll::Pending, exec.run_until_stalled(&mut future));
 
-        let future_time = TestExecutor::next_timer().unwrap();
-        TestExecutor::advance_to(future_time).await;
+        let future_time = exec.wake_next_boot_timer().unwrap();
         assert_eq!(1234, (future_time - start_time).into_seconds());
 
-        let () = future.await;
+        assert_eq!(Poll::Ready(()), exec.run_until_stalled(&mut future));
     }
 }
