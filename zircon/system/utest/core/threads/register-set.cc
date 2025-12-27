@@ -37,8 +37,10 @@ void general_regs_fill_test_values(zx_thread_state_general_regs_t* regs) {
   for (uint32_t index = 0; index < sizeof(*regs); ++index) {
     ((uint8_t*)regs)[index] = static_cast<uint8_t>(index + 1);
   }
-// Set various flags bits that will read back the same.
+
+  // Set various flags bits that will read back the same.
 #if defined(__x86_64__)
+
   // Here we set all flag bits that are modifiable from user space or
   // that are not modifiable but are expected to read back as 1, with the
   // exception of the trap flag (bit 8, which would interfere with
@@ -64,11 +66,20 @@ void general_regs_fill_test_values(zx_thread_state_general_regs_t* regs) {
   regs->fs_base = 0x0;
   regs->gs_base = 0x0;
   regs->rip = 0x0;
+
 #elif defined(__aarch64__)
+
   // Only set the 4 flag bits that are readable and writable by the
   // instructions "msr nzcv, REG" and "mrs REG, nzcv".
   regs->cpsr = 0xf0000000;
   regs->tpidr = 0;
+
+#elif defined(__riscv)
+
+  // spin_with_general_regs needs t0 for its final jump, so it doesn't have the
+  // arbitrary value set generically above.
+  regs->t0 = reinterpret_cast<uintptr_t>(spin_address);
+
 #endif
 }
 

@@ -6,27 +6,10 @@
 
 #include "register-set-asm.h"
 
-#if defined(__aarch64__)
-
-#define JUMP b
-
-#elif defined(__riscv)
 
 // If vector instructions are not already enabled, do so at the assembler level.
-#ifndef __riscv_v
+#if defined(__riscv) && !defined(__riscv_v)
 .option arch, +v
-#endif
-
-#define JUMP j
-
-#elif defined(__x86_64__)
-
-#define JUMP jmp
-
-#else
-
-#error "what machine?"
-
 #endif
 
 .macro on_32 macro
@@ -64,8 +47,20 @@
   \macro 31
 .endm
 
+.macro spin_body
+#if defined(__aarch64__)
+  b spin_address
+#elif defined(__riscv)
+  j spin_address
+#elif defined(__x86_64__)
+  jmp spin_address
+#else
+#error "what machine?"
+#endif
+.endm
+
 .function spin_address, global
-  JUMP spin_address
+  spin_body
 .end_function
 
 .function spin_with_general_regs, global
@@ -98,6 +93,8 @@
   mov REGS_R15(%rdi), %r15
   mov REGS_RDI(%rdi), %rdi
 
+  jmp spin_address
+
 #elif defined(__aarch64__)
 
   // Load sp via a temporary register.
@@ -127,13 +124,15 @@
   ldr x30, [x0, REGS_X(30)]
   ldp x0, x1, [x0, REGS_X(0)]
 
+  b spin_address
+
 #elif defined(__riscv)
 
   ld ra, REGS_RA(a0)    // x1
   ld sp, REGS_SP(a0)    // x2
   ld gp, REGS_GP(a0)    // x3
   ld tp, REGS_TP(a0)    // x4
-  ld t0, REGS_T0(a0)    // x5
+  // t0 is used for the jump.
   ld t1, REGS_T1(a0)    // x6
   ld t2, REGS_T2(a0)    // x7
   ld s0, REGS_S0(a0)    // x8
@@ -160,7 +159,14 @@
   ld t4, REGS_T4(a0)    // x29
   ld t5, REGS_T5(a0)    // x30
   ld t6, REGS_T6(a0)    // x31
-  ld a0, REGS_A0(a0)    // X10
+  ld a0, REGS_A0(a0)    // x10
+
+  // A plain `j` has limited range.  The `tail` pseudo-instruction gets relaxed
+  // to just `j` when possible.  But when it can't be relaxed, it clobbers a
+  // temporary register.  So just always do something that clobbers a known
+  // register with a known value instead.
+  lla t0, spin_address
+  jr t0
 
 #else
 
@@ -168,7 +174,6 @@
 
 #endif
 
-  JUMP spin_address
 .end_function
 
 .function spin_with_fp_regs, global
@@ -187,10 +192,13 @@
   movq REGS_ST(6)(%rdi), %mm6
   movq REGS_ST(7)(%rdi), %mm7
 
+  jmp spin_address
+
 #elif defined(__aarch64__)
 
-// Just spins and does nothing. ARM64 doesn't define a separate FP state,
-// but doing this allows the rest of the code to be platform-independent.
+  // Just spins and does nothing. ARM64 doesn't define a separate FP state,
+  // but doing this allows the rest of the code to be platform-independent.
+  b spin_address
 
 #elif defined(__riscv)
 
@@ -199,13 +207,14 @@
   .endm
   on_32 load_fp
 
+  tail spin_address
+
 #else
 
 #error Unsupported architecture
 
 #endif
 
-  JUMP spin_address
 .end_function
 
 .function spin_with_vector_regs, global
@@ -229,6 +238,8 @@
   movdqu REGS_ZMM(13)(%rdi), %xmm13
   movdqu REGS_ZMM(14)(%rdi), %xmm14
   movdqu REGS_ZMM(15)(%rdi), %xmm15
+
+  jmp spin_address
 
 #elif defined(__aarch64__)
 
@@ -259,7 +270,10 @@
   ldp q28, q29, [x0], #32
   ldp q30, q31, [x0]
 
+  b spin_address
+
 #elif defined(__riscv)
+
   // For indexing into the memory from which we want to load 8 vector
   // registers at a time, compute 8 * VLENB.
   csrr  a1, vlenb
@@ -286,21 +300,22 @@
   lw      a1, RISCV64_VECTOR_STATE_VSTART(a0)
   csrw    vstart, a1
 
+  tail spin_address
+
 #else
 
 #error Unsupported architecture
 
 #endif
 
-  JUMP spin_address
 .end_function
 
 .function spin_with_debug_regs, global
 
   // Do nothing.  The register state will be set through syscalls because
   // setting the debug registers is a privileged instruction.
+  spin_body
 
-  JUMP spin_address
 .end_function
 
 .function save_general_regs_and_exit_thread, global
