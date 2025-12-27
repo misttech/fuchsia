@@ -5,6 +5,7 @@
 #ifndef SRC_LIB_ELFLDLTL_TESTING_INCLUDE_LIB_ELFLDLTL_TESTING_TEST_PIPE_READER_H_
 #define SRC_LIB_ELFLDLTL_TESTING_INCLUDE_LIB_ELFLDLTL_TESTING_TEST_PIPE_READER_H_
 
+#include <concepts>
 #include <string>
 #include <thread>
 
@@ -14,6 +15,13 @@ namespace elfldltl::testing {
 
 class TestPipeReader {
  public:
+  TestPipeReader() = default;
+
+  // The object cannot be safely moved after Init() since the reader thread
+  // will use its this pointer to the members.
+  TestPipeReader(TestPipeReader&&) = delete;
+  TestPipeReader& operator=(TestPipeReader&&) = delete;
+
   // This creates a pipe and yields the write half.
   void Init(fbl::unique_fd& write_pipe);
 
@@ -33,6 +41,8 @@ class TestPipeReader {
   size_t pipe_buf_size_;
   std::thread thread_;
 };
+static_assert(!std::copyable<TestPipeReader>);
+static_assert(!std::movable<TestPipeReader>);
 
 }  // namespace elfldltl::testing
 
