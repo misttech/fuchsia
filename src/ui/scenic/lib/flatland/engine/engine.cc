@@ -216,11 +216,7 @@ view_tree::GeneratedSubtreeSnapshot Engine::GenerateViewTreeSnapshot(
 
   FX_DCHECK(current_scene_state_);
 
-  // Everything is in place to skip unnecessary ViewTree recomputation, just delete this.
-  const bool kAlwaysRecomputeViewTree = true;
-
-  if (!uber_struct_system_->MustRecomputeViewTree() && !link_topology_changed &&
-      !kAlwaysRecomputeViewTree) {
+  if (!uber_struct_system_->MustRecomputeViewTree() && !link_topology_changed) {
     return view_tree::SubtreeSnapshotNoDiff();
   }
 
