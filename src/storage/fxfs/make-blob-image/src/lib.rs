@@ -198,9 +198,8 @@ impl FxBlobBuilder {
     /// Finalizes building the FxBlob instance this builder represents. The filesystem will not be
     /// usable unless this is called. Returns the last offset in bytes which was used on the device.
     pub async fn finalize(self) -> Result<u64, Error> {
-        self.filesystem.finalize().await?;
-        let actual_size = self.filesystem.allocator().maximum_offset();
         self.filesystem.close().await?;
+        let actual_size = self.filesystem.allocator().maximum_offset();
         Ok(actual_size)
     }
 

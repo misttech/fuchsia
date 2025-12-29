@@ -1089,13 +1089,6 @@ pub async fn migrate_device(
         // from here on to perform allocations.
         fxfs.enable_allocations();
         deep_copy_files(offset, &f2fs, &mut fxfs, vol, files_to_copy).await?;
-
-        // finalize() mutates disk, leave as rw.
-        fxfs.finalize().await.expect("finalize");
-
-        // TODO(https://fxbug.dev/439971580): Double check that after finalize, we still don't allow any old
-        // extents to be deleted and we must not write to the super block.
-
         fxfs.close().await.expect("close fxfs");
     }
     let actual_size = fxfs.allocator().maximum_offset();

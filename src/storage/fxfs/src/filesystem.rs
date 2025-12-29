@@ -20,7 +20,7 @@ use crate::object_store::volume::{VOLUMES_DIRECTORY, root_volume};
 use crate::object_store::{NewChildStoreOptions, ObjectStore, StoreOptions};
 use crate::range::RangeExt;
 use crate::serialized_types::{LATEST_VERSION, Version};
-use anyhow::{Context, Error, anyhow, bail, ensure};
+use anyhow::{Context, Error, anyhow, bail};
 use async_trait::async_trait;
 use event_listener::Event;
 use fuchsia_async as fasync;
@@ -92,8 +92,8 @@ pub struct Options {
     // Default values are (5 minutes, 24 hours).
     pub trim_config: Option<(std::time::Duration, std::time::Duration)>,
 
-    // If set, journal will not be used for writes. The user must call 'finalize' when finished.
-    // The provided superblock instance will be written upon finalize().
+    // If set, journal will not be used for writes. The user must call 'close' when finished.
+    // The provided superblock instance will be written upon close().
     pub image_builder_mode: Option<SuperBlockInstance>,
 
     // If true, the filesystem will use the hardware's inline crypto engine to write encrypted
@@ -207,19 +207,6 @@ impl OpenFxFilesystem {
         std::mem::drop(self);
         debug_assert_not_too_long!(fut)
     }
-
-    /// Used to finalize a filesystem image when in image_builder_mode.
-    pub async fn finalize(&self) -> Result<(), Error> {
-        ensure!(
-            self.journal().image_builder_mode().is_some(),
-            "finalize() only valid in image_builder_mode."
-        );
-        self.journal().allocate_journal().await?;
-        self.journal().set_image_builder_mode(None);
-        // Note that when we compact the journal we will write a new superblock.
-        self.journal().compact().await?;
-        Ok(())
-    }
 }
 
 impl From<Arc<FxFilesystem>> for OpenFxFilesystem {
@@ -233,7 +220,7 @@ impl Drop for OpenFxFilesystem {
         if self.options.image_builder_mode.is_some()
             && self.journal().image_builder_mode().is_some()
         {
-            error!("OpenFxFilesystem in image_builder_mode dropped without calling finalize().");
+            error!("OpenFxFilesystem in image_builder_mode dropped without calling close().");
         }
         if !self.options.read_only && !self.closed.load(Ordering::SeqCst) {
             error!("OpenFxFilesystem dropped without first being closed. Data loss may occur.");
@@ -294,7 +281,7 @@ impl FxFilesystemBuilder {
     /// For image building and in-place migration.
     ///
     /// This mode avoids the initial write of super blocks and skips the journal for all
-    /// transactions. The user *must* call `finalize()` before closing the filesystem to trigger
+    /// transactions. The user *must* call `close()` before dropping the filesystem to trigger
     /// a compaction of in-memory data structures, a minimal journal and a write to one
     /// superblock (as specified).
     pub fn image_builder_mode(mut self, mode: Option<SuperBlockInstance>) -> Self {
@@ -577,6 +564,11 @@ impl FxFilesystem {
     }
 
     pub async fn close(&self) -> Result<(), Error> {
+        if self.journal().image_builder_mode().is_some() {
+            self.journal().allocate_journal().await?;
+            self.journal().set_image_builder_mode(None);
+            self.journal().compact().await?;
+        }
         assert_eq!(self.closed.swap(true, Ordering::SeqCst), false);
         self.shutdown_event.notify(usize::MAX);
         debug_assert_not_too_long!(self.graveyard.wait_for_reap());
@@ -585,14 +577,12 @@ impl FxFilesystem {
             debug_assert_not_too_long!(task);
         }
         self.journal.stop_compactions().await;
-        let sync_status = if self.options().image_builder_mode.is_some() || self.options().read_only
-        {
-            // We don't want a final sync if we are in image_builder_mode (already done in
-            // finalize()), or read-only mode (no changes).
-            Ok(None)
-        } else {
-            self.journal.sync(SyncOptions { flush_device: true, ..Default::default() }).await
-        };
+        let sync_status =
+            if self.journal().image_builder_mode().is_some() || self.options().read_only {
+                Ok(None)
+            } else {
+                self.journal.sync(SyncOptions { flush_device: true, ..Default::default() }).await
+            };
         match &sync_status {
             Ok(None) => {}
             Ok(checkpoint) => info!(
@@ -771,6 +761,9 @@ impl FxFilesystem {
     }
 
     fn maybe_start_flush_task(&self) {
+        if self.journal.image_builder_mode().is_some() {
+            return;
+        }
         let mut flush_task = self.flush_task.lock();
         if flush_task.is_none() {
             let journal = self.journal.clone();
@@ -1202,10 +1195,10 @@ mod tests {
 
             // 3. finalize() works regardless of whether enable_allocations() is called.
             // (We already called it above, so this verifies it works after it was called).
-            fs.finalize().await.expect("finalize failed");
+
             fs.close().await.expect("close failed");
         }
-        // TODO(https://fxbug.dev/467401079): Add a failure test where we finalize without
+        // TODO(https://fxbug.dev/467401079): Add a failure test where we close without
         // enabling allocations. (Trivial to do, but causes error logs, which are interpreted as
         // test failures and only seem controllable at the BUILD target level).
     }
@@ -2029,8 +2022,8 @@ mod tests {
             .await
             .expect("open failed");
         fs.enable_allocations();
-        // Image builder mode only writes when data is written or fs.finalize() is called, so
-        // we shouldn't see any errors here.
+        // fs.close() now performs compaction (writing superblock), so device must be writable.
+        fs.device().reopen(false);
         fs.close().await.expect("closed");
     }
 
@@ -2087,7 +2080,6 @@ mod tests {
                 }
             }
             fs.device().reopen(false);
-            fs.finalize().await.expect("finalize");
             fs.close().await.expect("close");
             fs.take_device().await
         };
@@ -2168,5 +2160,75 @@ mod tests {
         let fs =
             FxFilesystemBuilder::new().read_only(true).open(device).await.expect("open failed");
         fs.close().await.expect("Close failed");
+    }
+
+    #[test_case(SuperBlockInstance::A; "Superblock instance A")]
+    #[test_case(SuperBlockInstance::B; "Superblock instance B")]
+    #[fuchsia::test]
+    async fn test_image_builder_mode_flush_on_close_sb_a(target_sb: SuperBlockInstance) {
+        const BLOCK_SIZE: u32 = 4096;
+        let device = DeviceHolder::new(FakeDevice::new(2048, BLOCK_SIZE));
+
+        // 1. Initialize in image_builder_mode
+        device.reopen(true);
+        let fs = FxFilesystemBuilder::new()
+            .format(true)
+            .image_builder_mode(Some(target_sb))
+            .open(device)
+            .await
+            .expect("open failed");
+
+        fs.enable_allocations();
+
+        // 2. Finalize logic (via close)
+        fs.device().reopen(false);
+
+        // 3. Write data
+        {
+            let root_store = fs.root_store();
+            let root_directory =
+                Directory::open(&root_store, root_store.root_directory_object_id())
+                    .await
+                    .expect("open failed");
+
+            let mut transaction = fs
+                .clone()
+                .new_transaction(
+                    lock_keys![LockKey::object(
+                        root_directory.store().store_object_id(),
+                        root_directory.object_id()
+                    )],
+                    Options::default(),
+                )
+                .await
+                .expect("new transaction");
+            let handle = root_directory
+                .create_child_file(&mut transaction, "post_finalize_file")
+                .await
+                .expect("create file");
+            transaction.commit().await.expect("commit");
+
+            let mut buf = handle.allocate_buffer(BLOCK_SIZE as usize).await;
+            buf.as_mut_slice().fill(0xaa);
+            handle.write_or_append(None, buf.as_ref()).await.expect("write failed");
+        }
+
+        // 4. Close. Should flush to `target_sb` only.
+        fs.close().await.expect("close failed");
+
+        let other_sb = target_sb.next();
+
+        // 5. Verify `target_sb` is valid and `other_sb` is empty.
+        let device = fs.take_device().await;
+        device.reopen(true); // Read-only is fine for verifying.
+        let mut buf = device.allocate_buffer(BLOCK_SIZE as usize).await;
+
+        device.read(target_sb.first_extent().start, buf.as_mut()).await.expect("read target_sb");
+        assert_eq!(&buf.as_slice()[..8], b"FxfsSupr", "target_sb should have magic bytes");
+
+        buf.as_mut_slice().fill(0); // Clear buffer
+        device.read(other_sb.first_extent().start, buf.as_mut()).await.expect("read other_sb");
+        // Expecting all zeros for `other_sb`
+        assert_eq!(buf.as_slice(), &[0; 4096], "other_sb should be zeroed");
     }
 }
