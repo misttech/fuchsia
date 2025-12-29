@@ -6,6 +6,7 @@ use fidl::HandleBased;
 use fidl::endpoints::{Proxy, create_endpoints, create_proxy};
 use fuchsia_component::client::connect_to_protocol;
 use realm_client::{InstalledNamespace, extend_namespace};
+use std::sync::Arc;
 use test_realm_helpers::constants::TESTCONTROLLER_DRIVER_TOPOLOGICAL_PATH;
 use test_realm_helpers::tracing::Tracing;
 use {fidl_test_wlan_realm as fidl_realm, fidl_test_wlan_testcontroller as fidl_testcontroller};
@@ -15,7 +16,7 @@ pub mod sme_helpers;
 pub struct DriversOnlyTestRealm {
     testcontroller_proxy: Option<fidl_testcontroller::TestControllerProxy>,
     _tracing: Tracing,
-    _test_ns: InstalledNamespace,
+    _test_ns: Arc<InstalledNamespace>,
 }
 
 impl DriversOnlyTestRealm {
@@ -65,9 +66,10 @@ impl DriversOnlyTestRealm {
         .await
         .expect("Could not open testcontroller_proxy");
 
-        let test_ns =
-            extend_namespace(realm_factory, dict_client).await.expect("Failed to extend ns");
-        let tracing = Tracing::start_at(test_ns.prefix()).await.unwrap();
+        let test_ns = Arc::new(
+            extend_namespace(realm_factory, dict_client).await.expect("Failed to extend ns"),
+        );
+        let tracing = Tracing::start_at(Arc::clone(&test_ns)).await.unwrap();
 
         Self {
             testcontroller_proxy: Some(testcontroller_proxy),

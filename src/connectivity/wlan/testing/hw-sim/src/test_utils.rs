@@ -60,8 +60,9 @@ const TIMEOUT_WARN_THRESHOLD: f64 = 0.8;
 //  )?;
 pub struct TestRealmContext {
     // The test namespace, which allows the test suite to connect to protocols exposed by
-    // the test realm.
-    test_ns: InstalledNamespace,
+    // the test realm. The test namespace must outlive any dependencies on components that
+    // run within it.
+    test_ns: Arc<InstalledNamespace>,
 
     // A directory proxy connected to "/dev" in the test realm.
     devfs: fidl_fuchsia_io::DirectoryProxy,
@@ -94,12 +95,13 @@ impl TestRealmContext {
             .create_realm2(options, dict_server)
             .await
             .expect("Could not create realm");
-        let test_ns =
-            extend_namespace(realm_factory, dict_client).await.expect("failed to extend ns");
+        let test_ns = Arc::new(
+            extend_namespace(realm_factory, dict_client).await.expect("failed to extend ns"),
+        );
 
         // Start the driver test realm
         let driver_test_realm_proxy =
-            connect_to_protocol_at::<fidl_driver_test::RealmMarker>(&test_ns)
+            connect_to_protocol_at::<fidl_driver_test::RealmMarker>(&*test_ns)
                 .expect("Failed to connect to driver test realm");
 
         let (pkg_client, pkg_server) = create_endpoints();
@@ -129,7 +131,7 @@ impl TestRealmContext {
 
         let _tracing = match trace_manager_hermeticity {
             Some(fidl_realm::TraceManagerHermeticity::Hermetic) | None => {
-                Tracing::start_at(test_ns.prefix()).await.unwrap()
+                Tracing::start_at(Arc::clone(&test_ns)).await.unwrap()
             }
             Some(fidl_realm::TraceManagerHermeticity::NonHermetic) => {
                 Tracing::start_non_hermetic(test_ns.prefix().strip_prefix("/").unwrap())

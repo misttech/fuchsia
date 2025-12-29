@@ -5,6 +5,8 @@
 use crate::trace_runner::{TerminationResult, TraceRunner};
 use anyhow::format_err;
 use log::{info, warn};
+use realm_client::InstalledNamespace;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
@@ -18,6 +20,14 @@ pub struct Tracing {
     output_trace_path: std::ffi::OsString,
     tracer: TraceRunner,
     always_record_trace: bool,
+
+    // Hermetic tracing keeps a reference to the test namespace so the realm factory does
+    // not destroy the trace_manager component before the test drops an instance of Tracing.
+    //
+    // Non-hermetic tracing relies on the trace_manager running on the system. There is no
+    // need to keep a reference to the test namespace in that case since trace_manager will
+    // always outlive the test.
+    _test_ns: Option<Arc<InstalledNamespace>>,
 }
 
 pub(crate) struct HermeticityParameters {
@@ -43,19 +53,22 @@ impl Tracing {
             false,
             DEFAULT_TRACE_TIMEOUT,
             DEFAULT_TRACE_FILE_MAX_BYTES,
+            None,
         )
         .await
     }
 
-    pub async fn start_at(service_prefix: &str) -> Result<Self, anyhow::Error> {
+    pub async fn start_at(test_ns: Arc<InstalledNamespace>) -> Result<Self, anyhow::Error> {
+        let service_prefix = test_ns.prefix().to_owned();
         Self::start_(
             service_prefix.strip_prefix("/").ok_or_else(|| {
                 format_err!("Provided service prefix does not start with '/': {service_prefix}")
             })?,
-            Hermeticity::new_hermetic(service_prefix),
+            Hermeticity::new_hermetic(&service_prefix),
             false,
             DEFAULT_TRACE_TIMEOUT,
             DEFAULT_TRACE_FILE_MAX_BYTES,
+            Some(test_ns),
         )
         .await
     }
@@ -66,6 +79,7 @@ impl Tracing {
         always_record_trace: bool,
         trace_timeout: Duration,
         trace_file_max_bytes: usize,
+        test_ns: Option<Arc<InstalledNamespace>>,
     ) -> Result<Self, anyhow::Error> {
         // The test namespace prefix ensures all generated trace files for a test suite
         // are unique per test realm.  In case multiple trace files are generated in the
@@ -85,7 +99,12 @@ impl Tracing {
         )
         .await?;
 
-        Ok(Tracing { output_trace_path: output_trace_path.into(), tracer, always_record_trace })
+        Ok(Tracing {
+            output_trace_path: output_trace_path.into(),
+            tracer,
+            always_record_trace,
+            _test_ns: test_ns,
+        })
     }
 }
 
