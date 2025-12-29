@@ -122,7 +122,7 @@ antlion_host_test("wlan_scan_test") {
 # TODO(b/328494216): Remove then add nuc11_env to wlan_scan_test.
 antlion_host_test("wlan_scan_test_without_wpa2") {
   main_source = "WlanScanTest.py"
-  environments = [ nuc11_ap_env ]
+  environments = [ wlan_nuc11_ap_env ]
   test_cases = [
     "test_basic_scan_request",
     "test_scan_while_connected_open_network_2g",
