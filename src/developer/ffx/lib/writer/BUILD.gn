@@ -14,12 +14,14 @@ rustc_library("lib") {
   sources = [
     "src/lib.rs",
     "src/machine_writer.rs",
+    "src/raw_writer.rs",
     "src/simple_writer.rs",
     "src/verified_machine_writer.rs",
   ]
   deps = [
     "//src/developer/ffx/lib/fho:lib",
     "//src/developer/lib/writer:lib",
+    "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:async-trait",
     "//third_party/rust_crates:schemars",
     "//third_party/rust_crates:serde",
