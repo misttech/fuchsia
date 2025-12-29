@@ -37,7 +37,6 @@ fuchsia_cc_driver("wlantap_driver-driver") {
 
   deps = [
     ":wlantapctl_bind",
-    "//sdk/fidl/fuchsia.wlan.common:fuchsia.wlan.common_banjo_c",
     "//sdk/fidl/fuchsia.wlan.common:fuchsia.wlan.common_hlcpp",
     "//sdk/fidl/fuchsia.wlan.phyimpl:fuchsia.wlan.phyimpl_cpp",
     "//sdk/fidl/fuchsia.wlan.softmac:fuchsia.wlan.softmac_cpp",

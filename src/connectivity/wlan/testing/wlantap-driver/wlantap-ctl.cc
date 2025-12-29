@@ -6,7 +6,6 @@
 
 #include <fidl/fuchsia.wlan.tap/cpp/fidl.h>
 #include <fidl/fuchsia.wlan.tap/cpp/wire.h>
-#include <lib/ddk/driver.h>
 #include <lib/driver/component/cpp/node_add_args.h>
 
 #include <wlan/drivers/log.h>

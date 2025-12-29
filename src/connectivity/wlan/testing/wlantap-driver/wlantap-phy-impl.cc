@@ -4,7 +4,6 @@
 
 #include "wlantap-phy-impl.h"
 
-#include <lib/ddk/driver.h>
 #include <lib/driver/component/cpp/node_add_args.h>
 #include <lib/fidl/cpp/wire/status.h>
 #include <zircon/errors.h>

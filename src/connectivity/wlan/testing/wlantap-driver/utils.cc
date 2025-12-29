@@ -5,7 +5,6 @@
 #include "utils.h"
 
 #include <fuchsia/wlan/common/cpp/fidl.h>
-#include <lib/ddk/debug.h>
 
 #include <wlan/common/channel.h>
 #include <wlan/common/element.h>
