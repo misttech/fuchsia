@@ -9,8 +9,8 @@ use ffx_config::EnvironmentContext;
 use ffx_config::environment::EnvironmentKind;
 use ffx_ssh::ssh::{build_ssh_command, build_ssh_command_with_config_file};
 use ffx_target_ssh_args::SshCommand;
-use ffx_writer::MachineWriter;
-use fho::{FfxContext, FfxMain, FfxTool, FhoEnvironment};
+use ffx_writer::RawWriter;
+use fho::{FfxContext, FfxMain, FfxTool};
 use std::net::IpAddr;
 use std::path::PathBuf;
 use target_holders::SshAddrHolder;
@@ -22,7 +22,6 @@ pub struct SshTool {
     cmd: SshCommand,
     ssh_addr: SshAddrHolder,
     context: EnvironmentContext,
-    fho_env: FhoEnvironment,
 }
 
 fho::embedded_plugin!(SshTool);
@@ -30,16 +29,8 @@ fho::embedded_plugin!(SshTool);
 #[async_trait(?Send)]
 impl FfxMain for SshTool {
     // This command doesn't actually produce any normal output itself.
-    type Writer = MachineWriter<()>;
+    type Writer = RawWriter;
     async fn main(self, _writer: Self::Writer) -> fho::Result<()> {
-        match self.fho_env.ffx_command().global.machine {
-            None | Some(ffx_command::MachineFormat::Raw) => (),
-            _ => {
-                return Err(fho::Error::User(anyhow::anyhow!(
-                    "invalid machine format: only raw supported"
-                )));
-            }
-        }
         let addr = get_addr(&self.context, (*self.ssh_addr).into())?;
         let mut ssh_cmd = make_ssh_command(&self.context, self.cmd, addr)
             .await

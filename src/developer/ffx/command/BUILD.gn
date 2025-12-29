@@ -40,7 +40,7 @@ rustc_library("lib") {
     # ffx-target-list depends on the FfxCommandLine directly
     "//src/developer/ffx/plugins/target/list:*",
 
-    # ffx-target-ssh explicitly checks the Writer type
+    # ffx-target-ssh explicitly specifies the exit code
     "//src/developer/ffx/plugins/target/ssh:*",
   ]
 
