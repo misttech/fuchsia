@@ -8,6 +8,7 @@
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+#include <rapidjson/document.h>
 
 #include "src/lib/files/directory.h"
 #include "src/lib/files/file.h"
@@ -30,220 +31,269 @@ class NmfsTest : public ::testing::Test {
   }
 };
 
-TEST_F(NmfsTest, NmfsNetworkFileWriteFailure) {
+bool IsValidJsonString(const std::string& json_string) {
+  if (json_string.empty()) {
+    return false;
+  }
+
+  rapidjson::Document document;
+  document.Parse(json_string.c_str());
+
+  return !document.HasParseError();
+}
+
+void ExpectFileWriteSuccess(const std::string& file_location, const std::string& json_string,
+                            const std::string& err_msg) {
+  EXPECT_TRUE(IsValidJsonString(json_string)) << "improper JSON format";
+  EXPECT_TRUE(files::WriteFile(file_location, json_string)) << err_msg;
+}
+
+void ExpectFileWriteFailure(const std::string& file_location, const std::string& json_string,
+                            const std::string& err_msg) {
+  EXPECT_TRUE(IsValidJsonString(json_string)) << "improper JSON format";
+  EXPECT_FALSE(files::WriteFile(file_location, json_string)) << err_msg;
+}
+
+TEST_F(NmfsTest, NmfsCoreNetworkFileWriteFailure) {
   // Any string that is not the expected JSON format should not result in a write.
   EXPECT_FALSE(files::WriteFile("/tmp/fuchsia_network_monitor/1", "test"))
       << "File contents must be in the proper JSON format";
+
   EXPECT_FALSE(files::WriteFile("/tmp/fuchsia_network_monitor/1", "1"))
       << "File contents must be in the proper JSON format";
 
   // The name of the file must be an unsigned integer.
-  EXPECT_FALSE(files::WriteFile("/tmp/fuchsia_network_monitor/test",
-                                R"({
+  ExpectFileWriteFailure("/tmp/fuchsia_network_monitor/test",
+                         R"({
     "version": "V1",
     "netid": 1,
     "mark": 56,
     "handle": 78,
     "dnsv4": [],
     "dnsv6": []
-})")) << "File name must be parseable as an unsigned integer, was string";
-  EXPECT_FALSE(files::WriteFile("/tmp/fuchsia_network_monitor/1.0",
-                                R"({
+})",
+                         "File name must be parseable as an unsigned integer, was string");
+  ExpectFileWriteFailure("/tmp/fuchsia_network_monitor/test",
+                         R"({
     "version": "V1",
     "netid": 1,
     "mark": 56,
     "handle": 78,
     "dnsv4": [],
     "dnsv6": []
-})")) << "File name must be parseable as an unsigned integer, was float";
+})",
+                         "File name must be parseable as an unsigned integer, was float");
 
   // The version must be a currently supported enum type.
-  EXPECT_FALSE(files::WriteFile("/tmp/fuchsia_network_monitor/1",
-                                R"({
+  ExpectFileWriteFailure("/tmp/fuchsia_network_monitor/1",
+                         R"({
     "version": "V9999",
     "netid": 1,
     "mark": 56,
     "handle": 78,
     "dnsv4": [],
     "dnsv6": []
-})")) << "Version must match a currently supported version";
+})",
+                         "Version must match a currently supported version");
 
   // The netid must match the integer provided for the file name.
-  EXPECT_FALSE(files::WriteFile("/tmp/fuchsia_network_monitor/1",
-                                R"({
+  ExpectFileWriteFailure("/tmp/fuchsia_network_monitor/1",
+                         R"({
     "version": "V1",
     "netid": 2,
     "mark": 56,
     "handle": 78,
     "dnsv4": [],
     "dnsv6": []
-})")) << "Network id must match the name of the file";
+})",
+                         "Network id must match the name of the file");
 
   // The netid must be a non-negative integer.
-  EXPECT_FALSE(files::WriteFile("/tmp/fuchsia_network_monitor/1",
-                                R"({
+  ExpectFileWriteFailure("/tmp/fuchsia_network_monitor/1",
+                         R"({
     "version": "V1",
     "netid": 1.0,
     "mark": 56,
     "handle": 78,
     "dnsv4": [],
     "dnsv6": []
-})")) << "Network id must be parseable as an unsigned integer, was float";
-  EXPECT_FALSE(files::WriteFile("/tmp/fuchsia_network_monitor/1",
-                                R"({
+})",
+                         "Network id must be parseable as an unsigned integer, was float");
+
+  ExpectFileWriteFailure("/tmp/fuchsia_network_monitor/1",
+                         R"({
     "version": "V1",
     "netid": -1,
     "mark": 56,
     "handle": 78,
     "dnsv4": [],
     "dnsv6": []
-})")) << "Network id must be parseable as an unsigned integer, was negative";
+})",
+                         "Network id must be parseable as an unsigned integer, was negative");
 
   // The mark must be a non-negative integer.
-  EXPECT_FALSE(files::WriteFile("/tmp/fuchsia_network_monitor/1",
-                                R"({
+  ExpectFileWriteFailure("/tmp/fuchsia_network_monitor/1",
+                         R"({
     "version": "V1",
     "netid": 1,
     "mark": 56.0,
     "handle": 78,
     "dnsv4": [],
     "dnsv6": []
-})")) << "Mark must be parseable as an unsigned integer, was float";
-  EXPECT_FALSE(files::WriteFile("/tmp/fuchsia_network_monitor/1",
-                                R"({
+})",
+                         "Mark must be parseable as an unsigned integer, was float");
+
+  ExpectFileWriteFailure("/tmp/fuchsia_network_monitor/1",
+                         R"({
     "version": "V1",
     "netid": 1,
     "mark": -56,
     "handle": 78,
     "dnsv4": [],
     "dnsv6": []
-})")) << "Mark must be parseable as an unsigned integer, was negative";
+})",
+                         "Mark must be parseable as an unsigned integer, was negative");
 
   // The handle must be a non-negative integer.
-  EXPECT_FALSE(files::WriteFile("/tmp/fuchsia_network_monitor/1",
-                                R"({
+  ExpectFileWriteFailure("/tmp/fuchsia_network_monitor/1",
+                         R"({
     "version": "V1",
     "netid": 1,
     "mark": 56,
     "handle": 78.0,
     "dnsv4": [],
     "dnsv6": []
-})")) << "Handle must be parseable as an unsigned integer, was float";
-  EXPECT_FALSE(files::WriteFile("/tmp/fuchsia_network_monitor/1",
-                                R"({
+})",
+                         "Handle must be parseable as an unsigned integer, was float");
+
+  ExpectFileWriteFailure("/tmp/fuchsia_network_monitor/1",
+                         R"({
     "version": "V1",
     "netid": 1,
     "mark": 56,
     "handle": -78,
     "dnsv4": [],
     "dnsv6": []
-})")) << "Handle must be parseable as an unsigned integer, was negative";
+})",
+                         "Handle must be parseable as an unsigned integer, was negative");
 
   // The DNS fields must be arrays with correctly formatted addresses.
-  EXPECT_FALSE(files::WriteFile("/tmp/fuchsia_network_monitor/1",
-                                R"({
+  ExpectFileWriteFailure("/tmp/fuchsia_network_monitor/1",
+                         R"({
     "version": "V1",
     "netid": 1,
     "mark": 56,
     "handle": 78,
     "dnsv4": ["foo"],
     "dnsv6": []
-})")) << "DNS v4 addresses must be in the proper format";
-  EXPECT_FALSE(files::WriteFile("/tmp/fuchsia_network_monitor/1",
-                                R"({
+})",
+                         "DNS v4 addresses must be in the proper format");
+  ExpectFileWriteFailure("/tmp/fuchsia_network_monitor/1",
+                         R"({
     "version": "V1",
     "netid": 1,
     "mark": 56,
     "handle": 78,
     "dnsv4": [],
     "dnsv6": ["foo"]
-})")) << "DNS v6 addresses must be in the proper format";
-  EXPECT_FALSE(files::WriteFile("/tmp/fuchsia_network_monitor/1",
-                                R"({
+})",
+                         "DNS v6 addresses must be in the proper format");
+  ExpectFileWriteFailure("/tmp/fuchsia_network_monitor/1",
+                         R"({
     "version": "V1",
     "netid": 1,
     "mark": 56,
     "handle": 78,
     "dnsv4": "192.0.2.0",
     "dnsv6": []
-})")) << "DNS v4 addresses must be provided in an array";
-  EXPECT_FALSE(files::WriteFile("/tmp/fuchsia_network_monitor/1",
-                                R"({
+})",
+                         "DNS v4 addresses must be provided in an array");
+  ExpectFileWriteFailure("/tmp/fuchsia_network_monitor/1",
+                         R"({
     "version": "V1",
     "netid": 1,
     "mark": 56,
     "handle": 78,
     "dnsv4": [],
     "dnsv6": "2001:db8::"
-})")) << "DNS v6 addresses must be provided in an array";
-  EXPECT_FALSE(files::WriteFile("/tmp/fuchsia_network_monitor/1",
-                                R"({
+})",
+                         "DNS v6 addresses must be provided in an array");
+  ExpectFileWriteFailure("/tmp/fuchsia_network_monitor/1",
+                         R"({
     "version": "V1",
     "netid": 1,
     "mark": 56,
     "handle": 78,
     "dnsv4": [],
     "dnsv6": ["192.0.2.0"]
-})")) << "DNS v4 addresses must be present in the v6 address list";
-  EXPECT_FALSE(files::WriteFile("/tmp/fuchsia_network_monitor/1",
-                                R"({
+})",
+                         "DNS v4 addresses must be present in the v6 address list");
+  ExpectFileWriteFailure("/tmp/fuchsia_network_monitor/1",
+                         R"({
     "version": "V1",
     "netid": 1,
     "mark": 56,
     "handle": 78,
     "dnsv4": ["2001:db8::"],
     "dnsv6": []
-})")) << "DNS v6 addresses must be present in the v4 address list";
+})",
+                         "DNS v6 addresses must be present in the v4 address list");
 
   // All fields must be provided.
-  EXPECT_FALSE(files::WriteFile("/tmp/fuchsia_network_monitor/1",
-                                R"({
+  ExpectFileWriteFailure("/tmp/fuchsia_network_monitor/1",
+                         R"({
     "netid": 1,
     "mark": 56,
     "handle": 78,
     "dnsv4": [],
     "dnsv6": []
-})")) << "All fields must be provided in JSON, missing version";
-  EXPECT_FALSE(files::WriteFile("/tmp/fuchsia_network_monitor/1",
-                                R"({
+})",
+                         "All fields must be provided in JSON, missing version");
+  ExpectFileWriteFailure("/tmp/fuchsia_network_monitor/1",
+                         R"({
     "version": "V1",
     "mark": 56,
     "handle": 78,
     "dnsv4": [],
     "dnsv6": []
-})")) << "All fields must be provided in JSON, missing netid";
-  EXPECT_FALSE(files::WriteFile("/tmp/fuchsia_network_monitor/1",
-                                R"({
+})",
+                         "All fields must be provided in JSON, missing netid");
+  ExpectFileWriteFailure("/tmp/fuchsia_network_monitor/1",
+                         R"({
     "version": "V1",
     "netid": 1,
     "handle": 78,
     "dnsv4": [],
     "dnsv6": []
-})")) << "All fields must be provided in JSON, missing mark";
-  EXPECT_FALSE(files::WriteFile("/tmp/fuchsia_network_monitor/1",
-                                R"({
+})",
+                         "All fields must be provided in JSON, missing mark");
+  ExpectFileWriteFailure("/tmp/fuchsia_network_monitor/1",
+                         R"({
     "version": "V1",
     "netid": 1,
     "mark": 56,
     "dnsv4": [],
     "dnsv6": []
-})")) << "All fields must be provided in JSON, missing handle";
-  EXPECT_FALSE(files::WriteFile("/tmp/fuchsia_network_monitor/1",
-                                R"({
+})",
+                         "All fields must be provided in JSON, missing handle");
+  ExpectFileWriteFailure("/tmp/fuchsia_network_monitor/1",
+                         R"({
     "version": "V1",
     "netid": 1,
     "mark": 56,
     "handle": 78,
     "dnsv6": []
-})")) << "All fields must be provided in JSON, missing dnsv4";
-  EXPECT_FALSE(files::WriteFile("/tmp/fuchsia_network_monitor/1",
-                                R"({
+})",
+                         "All fields must be provided in JSON, missing dnsv4");
+  ExpectFileWriteFailure("/tmp/fuchsia_network_monitor/1",
+                         R"({
     "version": "V1",
     "netid": 1,
     "mark": 56,
     "handle": 78,
     "dnsv4": []
-})")) << "All fields must be provided in JSON, missing dnsv6";
+})",
+                         "All fields must be provided in JSON, missing dnsv6");
 }
 
 TEST_F(NmfsTest, NmfsCannotCreateDir) {
@@ -251,16 +301,16 @@ TEST_F(NmfsTest, NmfsCannotCreateDir) {
 }
 
 TEST_F(NmfsTest, NmfsNetworkFileWriteSuccessNoAddresses) {
-  EXPECT_TRUE(files::WriteFile("/tmp/fuchsia_network_monitor/3",
-                               R"({
+  ExpectFileWriteSuccess("/tmp/fuchsia_network_monitor/3",
+                         R"({
     "version": "V1",
     "netid": 3,
     "mark": 56,
     "handle": 78,
     "dnsv4": [],
     "dnsv6": []
-  })"))
-      << "All JSON fields must be provided with proper formatting";
+  })",
+                         "All JSON fields must be provided with proper formatting");
   // File output should be able to be rewritten to the file without formatting changes.
   std::string network_info;
   EXPECT_TRUE(files::ReadFileToString("/tmp/fuchsia_network_monitor/3", &network_info))
@@ -270,16 +320,16 @@ TEST_F(NmfsTest, NmfsNetworkFileWriteSuccessNoAddresses) {
 }
 
 TEST_F(NmfsTest, NmfsNetworkFileWriteSuccessV4Addresses) {
-  EXPECT_TRUE(files::WriteFile("/tmp/fuchsia_network_monitor/4",
-                               R"({
+  ExpectFileWriteSuccess("/tmp/fuchsia_network_monitor/4",
+                         R"({
     "version": "V1",
     "netid": 4,
     "mark": 56,
     "handle": 78,
     "dnsv4": ["192.0.2.0", "192.0.2.1"],
     "dnsv6": []
-  })"))
-      << "All JSON fields must be provided with proper formatting";
+  })",
+                         "All JSON fields must be provided with proper formatting");
   // File output should be able to be rewritten to the file without formatting changes.
   std::string network_info;
   EXPECT_TRUE(files::ReadFileToString("/tmp/fuchsia_network_monitor/4", &network_info))
@@ -289,16 +339,16 @@ TEST_F(NmfsTest, NmfsNetworkFileWriteSuccessV4Addresses) {
 }
 
 TEST_F(NmfsTest, NmfsNetworkFileWriteSuccessV6Addresses) {
-  EXPECT_TRUE(files::WriteFile("/tmp/fuchsia_network_monitor/5",
-                               R"({
+  ExpectFileWriteSuccess("/tmp/fuchsia_network_monitor/5",
+                         R"({
     "version": "V1",
     "netid": 5,
     "mark": 56,
     "handle": 78,
     "dnsv4": [],
     "dnsv6": ["2001:db8::", "2001:db8::1"]
-  })"))
-      << "All JSON fields must be provided with proper formatting";
+  })",
+                         "All JSON fields must be provided with proper formatting");
   // File output should be able to be rewritten to the file without formatting changes.
   std::string network_info;
   EXPECT_TRUE(files::ReadFileToString("/tmp/fuchsia_network_monitor/5", &network_info))
@@ -316,16 +366,16 @@ TEST_F(NmfsTest, NmfsDefaultNetworkFile) {
       << "The default network id file must not be readable";
 
   // Create the network and set it as the default.
-  EXPECT_TRUE(files::WriteFile("/tmp/fuchsia_network_monitor/6",
-                               R"({
+  ExpectFileWriteSuccess("/tmp/fuchsia_network_monitor/6",
+                         R"({
     "version": "V1",
     "netid": 6,
     "mark": 56,
     "handle": 78,
     "dnsv4": [],
     "dnsv6": []
-  })"))
-      << "All JSON fields must be provided with proper formatting";
+  })",
+                         "All JSON fields must be provided with proper formatting");
   EXPECT_FALSE(files::WriteFile("/tmp/fuchsia_network_monitor/default", "9999"))
       << "The default network id file must not accept a network id that does not exist";
   EXPECT_FALSE(files::WriteFile("/tmp/fuchsia_network_monitor/default", "null"))
