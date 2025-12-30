@@ -76,4 +76,14 @@ pub struct Socket {
     /// default.
     #[argh(switch, short = 'R')]
     pub rx: bool,
+    /// suppress the use of FDomain's streaming read API and instead receive
+    /// data by making individual read requests. This means more round trips and
+    /// less efficient use of the stream.
+    #[argh(switch)]
+    pub fdomain_individual_reads: bool,
+    /// how many writes to send via FDomain at a time before waiting for a
+    /// response. More writes in flight means better chance of saturating the
+    /// outgoing stream. Defaults to enough to send the whole transfer at once.
+    #[argh(option)]
+    pub fdomain_writes_in_flight: Option<NonZeroU32>,
 }

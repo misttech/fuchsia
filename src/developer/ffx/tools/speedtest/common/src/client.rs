@@ -13,6 +13,8 @@ use thiserror::Error;
 
 use crate::throughput::BytesFormatter;
 use crate::{Throughput, socket};
+#[cfg(feature = "fdomain")]
+pub use socket::FDomainTransferParams;
 pub use socket::TransferParams;
 
 pub struct Client {

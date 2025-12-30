@@ -67,7 +67,13 @@ impl FfxMain for SpeedtestTool {
                         writer.line(report)?;
                     }
                 },
-                Subcommand::Socket(Socket { transfer_mb, buffer_kb, rx }) => {
+                Subcommand::Socket(Socket {
+                    transfer_mb,
+                    buffer_kb,
+                    rx,
+                    fdomain_individual_reads,
+                    fdomain_writes_in_flight,
+                }) => {
                     let data_len = transfer_mb
                         .checked_mul(NonZeroU32::new(1_000_000).unwrap())
                         .ok_or_else(|| fho::user_error!("transfer too large"))?;
@@ -76,17 +82,39 @@ impl FfxMain for SpeedtestTool {
                         .ok_or_else(|| fho::user_error!("buffer size too large"))?;
                     match &client {
                         Client::Regular(client) => {
+                            let writes_in_flight = fdomain_writes_in_flight
+                                .unwrap_or_else(|| data_len.div_ceil(buffer_len));
                             let direction =
                                 if rx { client::Direction::Rx } else { client::Direction::Tx };
                             let params = client::SocketTransferParams {
                                 direction,
-                                params: client::TransferParams { data_len, buffer_len },
+                                params: client::TransferParams {
+                                    data_len,
+                                    buffer_len,
+                                    fdomain_params: client::FDomainTransferParams {
+                                        streaming_read: !fdomain_individual_reads,
+                                        writes_in_flight,
+                                    },
+                                },
                             };
 
                             let report = client.socket(params).await.map_err(|e| fho::bug!(e))?;
                             writer.line(report)?;
                         }
                         Client::Overnet(client) => {
+                            if fdomain_individual_reads {
+                                return Err(fho::user_error!(
+                                    "--fdomain-individual-reads and --overnet \
+                                    are mutually exclusive"
+                                ));
+                            }
+
+                            if fdomain_writes_in_flight.is_some() {
+                                return Err(fho::user_error!(
+                                    "--fdomain-writes-in-flight and --overnet \
+                                    are mutually exclusive"
+                                ));
+                            }
                             let direction = if rx {
                                 client_overnet::Direction::Rx
                             } else {

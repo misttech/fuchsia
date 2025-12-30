@@ -7,7 +7,11 @@ use std::time::{Duration, Instant};
 use std::u64;
 
 use flex_fuchsia_developer_ffx_speedtest as fspeedtest;
-use futures::{AsyncReadExt, AsyncWriteExt as _};
+use futures::AsyncReadExt;
+#[cfg(not(feature = "fdomain"))]
+use futures::AsyncWriteExt;
+#[cfg(feature = "fdomain")]
+use futures::StreamExt;
 use thiserror::Error;
 
 pub struct Transfer {
@@ -19,6 +23,15 @@ pub struct Transfer {
 pub struct TransferParams {
     pub data_len: NonZeroU32,
     pub buffer_len: NonZeroU32,
+    #[cfg(feature = "fdomain")]
+    pub fdomain_params: FDomainTransferParams,
+}
+
+#[cfg(feature = "fdomain")]
+#[derive(Debug, Clone)]
+pub struct FDomainTransferParams {
+    pub streaming_read: bool,
+    pub writes_in_flight: NonZeroU32,
 }
 
 impl TryFrom<fspeedtest::TransferParams> for TransferParams {
@@ -28,6 +41,11 @@ impl TryFrom<fspeedtest::TransferParams> for TransferParams {
         Ok(Self {
             data_len: len_bytes.unwrap_or(fspeedtest::DEFAULT_TRANSFER_SIZE).try_into()?,
             buffer_len: buffer_bytes.unwrap_or(fspeedtest::DEFAULT_BUFFER_SIZE).try_into()?,
+            #[cfg(feature = "fdomain")]
+            fdomain_params: FDomainTransferParams {
+                streaming_read: false,
+                writes_in_flight: NonZeroU32::new(1).unwrap(),
+            },
         })
     }
 }
@@ -35,7 +53,7 @@ impl TryFrom<fspeedtest::TransferParams> for TransferParams {
 impl TryFrom<TransferParams> for fspeedtest::TransferParams {
     type Error = TryFromIntError;
     fn try_from(value: TransferParams) -> Result<Self, Self::Error> {
-        let TransferParams { data_len, buffer_len } = value;
+        let TransferParams { data_len, buffer_len, .. } = value;
         Ok(Self {
             len_bytes: Some(data_len.try_into()?),
             buffer_bytes: Some(buffer_len.try_into()?),
@@ -84,7 +102,36 @@ pub enum TransferError {
     Hangup,
 }
 
+enum ReadSocket {
+    Normal(flex_client::AsyncSocket),
+    #[cfg(feature = "fdomain")]
+    Stream(flex_client::SocketReadStream),
+}
+
+impl ReadSocket {
+    fn from_socket(socket: flex_client::AsyncSocket, stream: bool) -> Result<Self, TransferError> {
+        #[cfg(feature = "fdomain")]
+        if stream {
+            let (socket, _) = socket.stream()?;
+            return Ok(ReadSocket::Stream(socket));
+        }
+
+        debug_assert!(!stream);
+        Ok(ReadSocket::Normal(socket))
+    }
+
+    async fn read(&mut self, buf: &mut [u8]) -> Result<usize, TransferError> {
+        let bytes = match self {
+            ReadSocket::Normal(s) => s.read(buf).await?,
+            #[cfg(feature = "fdomain")]
+            ReadSocket::Stream(s) => s.read(buf).await?,
+        };
+        Ok(bytes)
+    }
+}
+
 impl Transfer {
+    #[cfg(not(feature = "fdomain"))]
     pub async fn send(self) -> Result<Report, TransferError> {
         let Self { socket, params: TransferParams { data_len, buffer_len } } = self;
         let mut socket = flex_client::socket_to_async(socket);
@@ -101,16 +148,64 @@ impl Transfer {
         Ok(Report { duration: end - start })
     }
 
+    #[cfg(feature = "fdomain")]
+    pub async fn send(self) -> Result<Report, TransferError> {
+        let Self {
+            socket,
+            params:
+                TransferParams {
+                    data_len,
+                    buffer_len,
+                    fdomain_params: FDomainTransferParams { writes_in_flight, .. },
+                },
+        } = self;
+        let buffer_len = usize::try_from(buffer_len.get())?;
+        let mut data_len = usize::try_from(data_len.get())?;
+        let buffer = vec![0xAA; buffer_len];
+        let start = Instant::now();
+
+        let mut stream = futures::stream::iter(std::iter::from_fn(|| {
+            if data_len == 0 {
+                return None;
+            }
+
+            let send = buffer_len.min(data_len);
+            data_len -= send;
+            Some(socket.write_all(&buffer[..send]))
+        }))
+        .buffered(writes_in_flight.get() as usize);
+
+        while let Some(res) = stream.next().await {
+            let _: () = res?;
+        }
+
+        let end = Instant::now();
+        Ok(Report { duration: end - start })
+    }
+
     pub async fn receive(self) -> Result<Report, TransferError> {
-        let Self { socket, params: TransferParams { data_len, buffer_len } } = self;
-        let mut socket = flex_client::socket_to_async(socket);
+        let Self {
+            socket,
+            params:
+                TransferParams {
+                    data_len,
+                    buffer_len,
+                    #[cfg(feature = "fdomain")]
+                        fdomain_params: FDomainTransferParams { streaming_read, .. },
+                },
+        } = self;
+        #[cfg(not(feature = "fdomain"))]
+        let streaming_read = false;
+        let mut socket =
+            ReadSocket::from_socket(flex_client::socket_to_async(socket), streaming_read)?;
         let buffer_len = usize::try_from(buffer_len.get())?;
         let mut data_len = usize::try_from(data_len.get())?;
         let mut buffer = vec![0x00; buffer_len];
         let start = Instant::now();
+
         while data_len != 0 {
             let recv = buffer_len.min(data_len);
-            let recv = AsyncReadExt::read(&mut socket, &mut buffer[..recv]).await?;
+            let recv = socket.read(&mut buffer[..recv]).await?;
             if recv == 0 {
                 return Err(TransferError::Hangup);
             }
@@ -139,6 +234,11 @@ mod test {
             params: TransferParams {
                 data_len: NonZeroU32::new(10).unwrap(),
                 buffer_len: NonZeroU32::new(100).unwrap(),
+                #[cfg(feature = "fdomain")]
+                fdomain_params: FDomainTransferParams {
+                    streaming_read: false,
+                    writes_in_flight: NonZeroU32::new(1).unwrap(),
+                },
             },
         }
         .receive()

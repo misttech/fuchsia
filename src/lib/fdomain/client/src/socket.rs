@@ -58,7 +58,7 @@ impl Socket {
     }
 
     /// Write all of the given data to the socket.
-    pub fn write_all(&self, bytes: &[u8]) -> impl Future<Output = Result<(), Error>> {
+    pub fn write_all(&self, bytes: &[u8]) -> impl Future<Output = Result<(), Error>> + use<> {
         let data = bytes.to_vec();
         let len = bytes.len();
         let hid = self.0.proto();

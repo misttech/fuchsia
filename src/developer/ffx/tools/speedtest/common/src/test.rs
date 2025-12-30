@@ -45,10 +45,16 @@ async fn ping() {
     .await;
 }
 
-#[test_case(client::Direction::Tx; "tx")]
-#[test_case(client::Direction::Rx; "rx")]
+#[test_case(client::Direction::Tx, false, 1; "tx")]
+#[test_case(client::Direction::Rx, false, 1; "rx")]
+#[cfg_attr(feature = "fdomain", test_case(client::Direction::Tx, false, 5; "tx_multi"))]
+#[cfg_attr(feature = "fdomain", test_case(client::Direction::Rx, true, 1; "rx_streaming"))]
 #[fuchsia::test]
-async fn socket(direction: client::Direction) {
+async fn socket(
+    direction: client::Direction,
+    #[cfg_attr(not(feature = "fdomain"), expect(unused))] streaming_read: bool,
+    #[cfg_attr(not(feature = "fdomain"), expect(unused))] writes_in_flight: u32,
+) {
     with_client(async |client| {
         let data_len = NonZeroU32::new(10_000).unwrap();
         let SocketTransferReport { direction: got_direction, client, server } = client
@@ -57,6 +63,11 @@ async fn socket(direction: client::Direction) {
                 params: client::TransferParams {
                     data_len,
                     buffer_len: NonZeroU32::new(fspeedtest::DEFAULT_BUFFER_SIZE).unwrap(),
+                    #[cfg(feature = "fdomain")]
+                    fdomain_params: client::FDomainTransferParams {
+                        streaming_read,
+                        writes_in_flight: NonZeroU32::new(writes_in_flight).unwrap(),
+                    },
                 },
             })
             .await
