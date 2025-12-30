@@ -388,3 +388,60 @@ async fn test_dictionary_from_program() {
     )
     .await;
 }
+
+#[fuchsia::test]
+async fn use_dictionary_with_service_from_collection() {
+    // Tests using a dictionary through an aggregate router for an offered
+    // service.
+    //
+    // This is a regression test for https://fxbug.dev/471268867.
+
+    let components = vec![
+        (
+            "a",
+            ComponentDeclBuilder::new()
+                .dictionary_default("my_dictionary")
+                .child_default("b")
+                .offer(
+                    OfferBuilder::dictionary()
+                        .name("my_dictionary")
+                        .source(OfferSource::Self_)
+                        .target_static_child("b"),
+                )
+                .offer(
+                    OfferBuilder::service()
+                        .name("foo")
+                        .source(OfferSource::Collection("coll".parse().unwrap()))
+                        .target_capability("my_dictionary"),
+                )
+                .collection_default("coll")
+                .use_(
+                    UseBuilder::protocol()
+                        .source(UseSource::Framework)
+                        .name("fuchsia.component.Realm"),
+                )
+                .build(),
+        ),
+        (
+            "b",
+            ComponentDeclBuilder::new()
+                .use_(UseBuilder::dictionary().name("my_dictionary").path("/my_dictionary"))
+                .build(),
+        ),
+        (
+            "child",
+            ComponentDeclBuilder::new()
+                .expose(ExposeBuilder::service().name("foo").source(ExposeSource::Self_))
+                .capability(CapabilityBuilder::service().name("foo").path("/svc/foo.service"))
+                .build(),
+        ),
+    ];
+    let test = RoutingTestBuilder::new("a", components).build().await;
+
+    test.create_dynamic_child(&Moniker::root(), "coll", ChildBuilder::new().name("child")).await;
+    test.start_instance_and_wait_start(&["coll:child"].try_into().unwrap())
+        .await
+        .expect("failed to start `child`");
+
+    test.check_open_node(["b"].try_into().unwrap(), "/my_dictionary/foo".parse().unwrap()).await;
+}

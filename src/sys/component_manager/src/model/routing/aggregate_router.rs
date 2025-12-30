@@ -71,8 +71,6 @@ impl sandbox::Routable<DirConnector> for AggregateRouter {
         debug: bool,
         _target: WeakInstanceToken,
     ) -> Result<RouterResponse<DirConnector>, RouterError> {
-        let request = request.ok_or(RouterError::InvalidArgs)?;
-
         let aggregate_dir = self.get_aggregate_dir(request).await?;
         if debug {
             let data: Data = self
@@ -146,7 +144,10 @@ impl AggregateRouter {
     }
 
     /// Returns the directory containing aggregated entries, and initializes it if necessary.
-    async fn get_aggregate_dir(&self, request: Request) -> Result<DirConnector, RouterError> {
+    async fn get_aggregate_dir(
+        &self,
+        request: Option<Request>,
+    ) -> Result<DirConnector, RouterError> {
         let mut maybe_directory = self.aggregate_directory.lock().await;
         if let Some(aggregate_directory) = &*maybe_directory {
             return Ok(aggregate_directory.clone());
@@ -198,7 +199,7 @@ impl AggregateRouter {
 
     async fn create_filtered_aggregate(
         &self,
-        request: Request,
+        request: Option<Request>,
     ) -> Result<DirConnector, RouterError> {
         let source_dir_routers = self.sources.iter().filter_map(|source| match source {
             AggregateSource::DirectoryRouter { source_instance: _, router } => Some(router),
@@ -207,7 +208,7 @@ impl AggregateRouter {
         let mut routing_futures = FuturesUnordered::new();
         for router in source_dir_routers {
             routing_futures.push(router.route(
-                Some(request.try_clone()?),
+                request.as_ref().map(|r| r.try_clone()).transpose()?,
                 false,
                 self.component.clone().into(),
             ));
