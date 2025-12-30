@@ -268,20 +268,18 @@ impl<B: SplitByteSlice> PartialSerializer for Ipv4Packet<B> {
     fn partial_serialize(
         &self,
         _outer: PacketConstraints,
-        buffer: &mut [u8],
+        mut buffer: &mut [u8],
     ) -> Result<PartialSerializeResult, SerializeError<Never>> {
         let hdr_prefix = Ref::bytes(&self.hdr_prefix);
         let options = self.options.bytes();
-        let header_len = hdr_prefix.len() + options.len();
-        assert!(buffer.len() >= header_len);
 
-        buffer[..hdr_prefix.len()].copy_from_slice(&hdr_prefix[..]);
-        buffer[hdr_prefix.len()..header_len].copy_from_slice(&options[..]);
+        let mut buffer = &mut buffer;
+        let bytes_written = buffer.write_bytes_front_allow_partial(hdr_prefix)
+            + buffer.write_bytes_front_allow_partial(options)
+            + buffer.write_bytes_front_allow_partial(&self.body);
+        let total_size = hdr_prefix.len() + options.len() + self.body.len();
 
-        Ok(PartialSerializeResult {
-            bytes_written: header_len,
-            total_size: header_len + self.body.len(),
-        })
+        Ok(PartialSerializeResult { bytes_written, total_size })
     }
 }
 
@@ -1912,5 +1910,30 @@ mod tests {
             expected_v6_pkt_buf.to_flattened_vec(),
             translated_v6_pkt_buf.to_flattened_vec()
         );
+    }
+
+    #[test]
+    fn test_partial_serialize_parsed() {
+        let packet_bytes = [
+            69, 75, 0, 30, 4, 5, 102, 7, 64, 6, 0, 112, 1, 2, 3, 4, 5, 6, 7, 8, 0, 1, 2, 3, 3, 4,
+            5, 7, 8, 9,
+        ];
+        let packet_len = packet_bytes.len();
+        let mut packet_bytes_copy = packet_bytes;
+        let mut packet_bytes_ref: &mut [u8] = &mut packet_bytes_copy[..];
+        let packet = packet_bytes_ref.parse::<Ipv4Packet<_>>().unwrap();
+
+        for i in 1..(packet_len + 1) {
+            let mut buf = vec![0u8; i];
+            let result =
+                packet.partial_serialize(PacketConstraints::UNCONSTRAINED, buf.as_mut_slice());
+
+            let bytes_written = if i >= packet_len { packet_len } else { i };
+            assert_eq!(
+                result,
+                Ok(PartialSerializeResult { bytes_written, total_size: packet_len })
+            );
+            assert_eq!(buf[..bytes_written], packet_bytes[..bytes_written]);
+        }
     }
 }

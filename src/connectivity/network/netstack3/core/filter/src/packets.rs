@@ -1264,10 +1264,14 @@ impl<I: IpExt, B: BufferMut> Serializer for ForwardedPacket<I, B> {
 impl<I: IpExt, B: BufferMut> PartialSerializer for ForwardedPacket<I, B> {
     fn partial_serialize(
         &self,
-        outer: PacketConstraints,
-        buffer: &mut [u8],
+        _outer: PacketConstraints,
+        mut buffer: &mut [u8],
     ) -> Result<PartialSerializeResult, SerializeError<Never>> {
-        self.buffer.partial_serialize(outer, buffer)
+        let mut buffer = &mut buffer;
+        Ok(PartialSerializeResult {
+            bytes_written: buffer.write_bytes_front_allow_partial(self.buffer.as_ref()),
+            total_size: self.buffer.len(),
+        })
     }
 }
 
@@ -3562,7 +3566,8 @@ mod tests {
     use assert_matches::assert_matches;
     use ip_test_macro::ip_test;
     use packet::{
-        EmptyBuf, InnerPacketBuilder as _, PacketBuilder as _, ParseBufferMut, PartialSerializer,
+        EmptyBuf, FragmentedBuffer as _, InnerPacketBuilder as _, PacketBuilder as _,
+        ParseBufferMut, PartialSerializer,
     };
     use packet_formats::icmp::IcmpZeroCode;
     use packet_formats::tcp::TcpSegmentBuilder;
@@ -4915,5 +4920,31 @@ mod tests {
         // differ from a fully-serialized packet.
         let checksum_bytes = I::map_ip((), |()| 4, |()| 2);
         assert!(num_bytes_differ <= checksum_bytes);
+    }
+
+    #[ip_test(I)]
+    #[test_case(PhantomData::<Udp>)]
+    #[test_case(PhantomData::<Tcp>)]
+    #[test_case(PhantomData::<IcmpEchoRequest>)]
+    fn forwarded_packet_partial_serialize<I: TestIpExt, P: Protocol>(_proto: PhantomData<P>) {
+        let mut packet_buf = ip_packet::<I, P>(I::SRC_IP, I::DST_IP);
+        let packet_bytes = packet_buf.to_flattened_vec();
+        let packet_len = packet_bytes.len();
+        let meta = packet_buf.parse::<I::Packet<_>>().expect("parse IP packet").parse_metadata();
+        let packet =
+            ForwardedPacket::<I, _>::new(I::SRC_IP, I::DST_IP, P::proto::<I>(), meta, packet_buf);
+
+        for i in 1..(packet_len + 1) {
+            let mut buf = alloc::vec![0u8; i];
+            let result =
+                packet.partial_serialize(PacketConstraints::UNCONSTRAINED, buf.as_mut_slice());
+
+            let bytes_written = if i >= packet_len { packet_len } else { i };
+            assert_eq!(
+                result,
+                Ok(PartialSerializeResult { bytes_written, total_size: packet_len })
+            );
+            assert_eq!(buf[..bytes_written], packet_bytes[..bytes_written]);
+        }
     }
 }

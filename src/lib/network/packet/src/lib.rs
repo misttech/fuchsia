@@ -1547,6 +1547,16 @@ pub trait BufferViewMut<B: SplitByteSliceMut>: BufferView<B> + AsMut<[u8]> {
         bytes.copy_from_slice(obj.as_bytes());
         Some(())
     }
+
+    /// Writes specified `bytes` to the front of the buffer.
+    ///
+    /// If `bytes` is larger than `self` then only bytes that fit in `self` are
+    /// written. Returns the number of bytes actually written to the buffer.
+    fn write_bytes_front_allow_partial(&mut self, bytes: &[u8]) -> usize {
+        let len = bytes.len().min(self.len());
+        self.take_front(len).unwrap().copy_from_slice(&bytes[..len]);
+        len
+    }
 }
 
 // NOTE on undo_parse algorithm: It's important that ParseMetadata only describe

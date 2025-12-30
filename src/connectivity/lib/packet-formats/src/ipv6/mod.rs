@@ -398,20 +398,18 @@ impl<B: SplitByteSlice> PartialSerializer for Ipv6Packet<B> {
     fn partial_serialize(
         &self,
         _outer: PacketConstraints,
-        buffer: &mut [u8],
+        mut buffer: &mut [u8],
     ) -> Result<PartialSerializeResult, SerializeError<Never>> {
         let fixed_hdr = Ref::bytes(&self.fixed_hdr);
         let extension_hdrs = self.extension_hdrs.bytes();
-        let header_len = fixed_hdr.len() + extension_hdrs.len();
-        assert!(buffer.len() >= header_len);
 
-        buffer[..fixed_hdr.len()].copy_from_slice(&fixed_hdr[..]);
-        buffer[fixed_hdr.len()..header_len].copy_from_slice(&extension_hdrs[..]);
+        let mut buffer = &mut buffer;
+        let bytes_written = buffer.write_bytes_front_allow_partial(Ref::bytes(&self.fixed_hdr))
+            + buffer.write_bytes_front_allow_partial(self.extension_hdrs.bytes())
+            + buffer.write_bytes_front_allow_partial(&self.body);
+        let total_size = fixed_hdr.len() + extension_hdrs.len() + self.body.len();
 
-        Ok(PartialSerializeResult {
-            bytes_written: header_len,
-            total_size: header_len + self.body.len(),
-        })
+        Ok(PartialSerializeResult { bytes_written, total_size })
     }
 }
 
@@ -2841,5 +2839,31 @@ mod tests {
             builder.constraints().max_body_len(),
             IPV6_MAX_PAYLOAD_LENGTH - IPV6_FRAGMENT_EXT_HDR_LEN
         );
+    }
+
+    #[test]
+    fn test_partial_serialize_parsed() {
+        let packet_bytes = [
+            100, 177, 4, 5, 0, 10, 6, 64, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
+            17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 0, 1, 2, 3, 4, 5, 6, 7,
+            8, 9,
+        ];
+        let packet_len = packet_bytes.len();
+        let mut packet_bytes_copy = packet_bytes;
+        let mut packet_bytes_ref: &mut [u8] = &mut packet_bytes_copy[..];
+        let packet = packet_bytes_ref.parse::<Ipv6Packet<_>>().unwrap();
+
+        for i in 1..(packet_len + 1) {
+            let mut buf = vec![0u8; i];
+            let result =
+                packet.partial_serialize(PacketConstraints::UNCONSTRAINED, buf.as_mut_slice());
+
+            let bytes_written = if i >= packet_len { packet_len } else { i };
+            assert_eq!(
+                result,
+                Ok(PartialSerializeResult { bytes_written, total_size: packet_len })
+            );
+            assert_eq!(buf[..bytes_written], packet_bytes[..bytes_written]);
+        }
     }
 }
