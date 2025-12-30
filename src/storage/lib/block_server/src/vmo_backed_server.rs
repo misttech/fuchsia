@@ -6,8 +6,10 @@ use anyhow::{Error, anyhow};
 use block_server::async_interface::{Interface, SessionManager};
 use block_server::{BlockInfo, BlockServer, DeviceInfo, ReadOptions, WriteFlags, WriteOptions};
 use fidl::endpoints::{ClientEnd, FromClient, RequestStream, ServerEnd, create_endpoints};
+use fidl_fuchsia_hardware_inlineencryption::{DeviceMarker, DeviceRequest, DeviceRequestStream};
 use fs_management::filesystem::BlockConnector;
 use fuchsia_sync::Mutex;
+use futures::stream::StreamExt;
 use fxfs_crypto::{FscryptSoftwareInoLblk32FileCipher, UnwrappedKey};
 use rand::Rng as _;
 use std::borrow::Cow;
@@ -195,7 +197,9 @@ impl VmoBackedServer {
     /// Implements software-fallback for fuchsia_hardware_inlineencryption.ProgramKey. There is no
     /// limit on keyslots with the software fallback. As such, there is no mapping between keyslots
     /// and FIDL connections or key eviction.
-    pub fn program_key(&self, xts_key: &[u8; 64]) -> u8 {
+    ///
+    /// *WARNING*: This is only intended for testing and is not considered secure.
+    fn program_key(&self, xts_key: &[u8; 64]) -> u8 {
         let unwrapped_key = UnwrappedKey::new(xts_key.to_vec());
         let cipher = FscryptSoftwareInoLblk32FileCipher::new(&unwrapped_key);
         let mut fscrypt_info = self.fscrypt_info.lock();
@@ -203,6 +207,31 @@ impl VmoBackedServer {
         fscrypt_info.fscrypt_keys.insert(slot, cipher);
         fscrypt_info.next_key_slot += 1;
         slot
+    }
+
+    async fn serve_insecure_inline_encryption_device_requests(
+        &self,
+        mut requests: DeviceRequestStream,
+        uuid: [u8; 16],
+    ) {
+        while let Some(Ok(request)) = requests.next().await {
+            match request {
+                DeviceRequest::ProgramKey { wrapped_key, data_unit_size: _, responder } => {
+                    responder
+                        .send(Ok(self.program_key(&fscrypt::to_xts_key(&wrapped_key, uuid))))
+                        .unwrap_or_else(|e| {
+                            log::error!("failed to send ProgramKey response. error: {:?}", e);
+                        });
+                }
+                DeviceRequest::DeriveRawSecret { mut wrapped_key, responder } => {
+                    // Swap the nibbles.
+                    for b in &mut wrapped_key {
+                        *b = *b >> 4 | *b << 4;
+                    }
+                    responder.send(Ok(&wrapped_key)).unwrap();
+                }
+            }
+        }
     }
 }
 
@@ -342,6 +371,11 @@ pub trait VmoBackedServerTestingExt {
     fn from_vmo(block_size: u32, vmo: zx::Vmo) -> Self;
     fn connect_server(self: &Arc<Self>, server: ServerEnd<fvolume::VolumeMarker>);
     fn connect<R: BlockClient>(self: &Arc<Self>) -> R;
+    fn connect_insecure_inline_encryption_server(
+        self: &Arc<Self>,
+        server: ServerEnd<DeviceMarker>,
+        uuid: [u8; 16],
+    ) -> impl Future<Output = ()> + Send;
 }
 
 pub trait BlockClient: FromClient {}
@@ -389,6 +423,17 @@ impl VmoBackedServerTestingExt for VmoBackedServer {
             let _ = this.serve(server.into_stream()).await;
         })
         .detach();
+    }
+
+    fn connect_insecure_inline_encryption_server(
+        self: &Arc<Self>,
+        server: ServerEnd<DeviceMarker>,
+        uuid: [u8; 16],
+    ) -> impl Future<Output = ()> + Send {
+        let this = self.clone();
+        async move {
+            this.serve_insecure_inline_encryption_device_requests(server.into_stream(), uuid).await;
+        }
     }
 }
 

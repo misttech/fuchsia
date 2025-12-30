@@ -407,45 +407,20 @@ mod tests {
     use block_client::RemoteBlockClient;
     use fidl_fuchsia_fxfs::{FxfsKey, KeyPurpose, WrappedKey};
     use fidl_fuchsia_hardware_block::BlockProxy;
-    use fidl_fuchsia_hardware_inlineencryption::{
-        DeviceMarker, DeviceRequest, DeviceRequestStream,
-    };
+    use fidl_fuchsia_hardware_inlineencryption::{DeviceMarker, DeviceRequest};
+
     use fuchsia_async::LocalExecutor;
     use starnix_uapi::errno;
     use std::sync::Arc;
     use storage_device::block_device::BlockDevice;
     use storage_device::{Device, InlineCryptoOptions, ReadOptions, WriteOptions};
     use vmo_backed_block_server::{
-        InitialContents, VmoBackedServer, VmoBackedServerOptions, VmoBackedServerTestingExt,
+        InitialContents, VmoBackedServerOptions, VmoBackedServerTestingExt,
     };
 
     const BLOCK_SIZE: u32 = 4096;
     const TEST_UUID: [u8; 16] =
         [75, 146, 230, 48, 132, 165, 68, 97, 141, 247, 22, 242, 153, 171, 153, 38];
-
-    async fn handle_inline_crypto_requests(
-        mut stream: DeviceRequestStream,
-        server: Arc<VmoBackedServer>,
-    ) {
-        while let Some(Ok(request)) = stream.next().await {
-            match request {
-                DeviceRequest::ProgramKey { wrapped_key, data_unit_size: _, responder } => {
-                    responder
-                        .send(Ok(server.program_key(&fscrypt::to_xts_key(&wrapped_key, TEST_UUID))))
-                        .unwrap_or_else(|e| {
-                            log::error!("failed to send ProgramKey response. error: {:?}", e);
-                        });
-                }
-                DeviceRequest::DeriveRawSecret { mut wrapped_key, responder } => {
-                    // Swap the nibbles.
-                    for b in &mut wrapped_key {
-                        *b = *b >> 4 | *b << 4;
-                    }
-                    responder.send(Ok(&wrapped_key)).unwrap();
-                }
-            }
-        }
-    }
 
     #[test]
     fn add_and_forget_wrapping_keys() {
@@ -524,14 +499,18 @@ mod tests {
         );
 
         let block_server_clone = block_server.clone();
-        let (client, server) = fidl::endpoints::create_sync_proxy::<DeviceMarker>();
+        let (insecure_inilne_crypto_proxy, server) =
+            fidl::endpoints::create_sync_proxy::<DeviceMarker>();
         std::thread::spawn(|| {
-            LocalExecutor::default().run_singlethreaded(async {
-                handle_inline_crypto_requests(server.into_stream(), block_server_clone).await
+            LocalExecutor::default().run_singlethreaded(async move {
+                block_server_clone
+                    .connect_insecure_inline_encryption_server(server, TEST_UUID)
+                    .await;
             })
         });
 
-        let service = CryptService::new(&[0; 32], &[1; 32], true, Some(client));
+        let service =
+            CryptService::new(&[0; 32], &[1; 32], true, Some(insecure_inilne_crypto_proxy));
         service.set_uuid(TEST_UUID);
         let wrapping_key_id = service.add_wrapping_key(&[0xdc; 32], 0).unwrap();
         assert_eq!(wrapping_key_id, EXPECTED_WRAPPING_KEY_ID);
@@ -589,14 +568,18 @@ mod tests {
         );
 
         let block_server_clone = block_server.clone();
-        let (client, server) = fidl::endpoints::create_sync_proxy::<DeviceMarker>();
+        let (insecure_inilne_crypto_proxy, server) =
+            fidl::endpoints::create_sync_proxy::<DeviceMarker>();
         std::thread::spawn(|| {
-            LocalExecutor::default().run_singlethreaded(async {
-                handle_inline_crypto_requests(server.into_stream(), block_server_clone).await
+            LocalExecutor::default().run_singlethreaded(async move {
+                block_server_clone
+                    .connect_insecure_inline_encryption_server(server, TEST_UUID)
+                    .await;
             })
         });
 
-        let service = CryptService::new(&[0; 32], &[1; 32], true, Some(client));
+        let service =
+            CryptService::new(&[0; 32], &[1; 32], true, Some(insecure_inilne_crypto_proxy));
         let wrapping_key_id = service.add_wrapping_key(&[0xcd; 32], 0).unwrap();
 
         let (wrapped_key, unwrapped_key) = service
@@ -673,14 +656,19 @@ mod tests {
             .build()
             .expect("build failed"),
         );
-        let (client, server) = fidl::endpoints::create_sync_proxy::<DeviceMarker>();
+        let block_server_clone = block_server.clone();
+        let (insecure_inilne_crypto_proxy, server) =
+            fidl::endpoints::create_sync_proxy::<DeviceMarker>();
         std::thread::spawn(|| {
-            LocalExecutor::default().run_singlethreaded(async {
-                handle_inline_crypto_requests(server.into_stream(), block_server).await
+            LocalExecutor::default().run_singlethreaded(async move {
+                block_server_clone
+                    .connect_insecure_inline_encryption_server(server, TEST_UUID)
+                    .await;
             })
         });
 
-        let service = CryptService::new(&[0; 32], &[1; 32], true, Some(client));
+        let service =
+            CryptService::new(&[0; 32], &[1; 32], true, Some(insecure_inilne_crypto_proxy));
         service.set_uuid(TEST_UUID);
         let wrapping_key_id =
             service.add_wrapping_key(&[0xcd; 32], 0).expect("add wrapping key failed");

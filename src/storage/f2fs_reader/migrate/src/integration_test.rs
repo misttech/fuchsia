@@ -10,9 +10,9 @@ use fidl::endpoints::Proxy;
 use fidl_fuchsia_fxfs::CryptMarker;
 use fidl_fuchsia_hardware_block::BlockProxy;
 use fidl_fuchsia_hardware_block_volume::VolumeMarker;
-use fidl_fuchsia_hardware_inlineencryption::{DeviceMarker, DeviceRequest, DeviceRequestStream};
+use fidl_fuchsia_hardware_inlineencryption::DeviceMarker;
 use fuchsia_async::{LocalExecutor, LocalExecutorBuilder};
-use futures::stream::StreamExt;
+
 use fxfs::filesystem::{FxFilesystemBuilder, OpenFxFilesystem};
 use fxfs::object_handle::ReadObjectHandle;
 use fxfs::object_store::journal::super_block::SuperBlockInstance;
@@ -85,28 +85,6 @@ fn create_device_with_image_at_offset(path: &str, offset: u64) -> Arc<VmoBackedS
     Arc::new(VmoBackedServer::from_vmo(F2FS_BLOCK_SIZE as u32, vmo))
 }
 
-async fn handle_inline_crypto_requests(
-    mut stream: DeviceRequestStream,
-    server: Arc<VmoBackedServer>,
-    uuid: [u8; 16],
-) {
-    while let Some(Ok(request)) = stream.next().await {
-        match request {
-            DeviceRequest::ProgramKey { wrapped_key, data_unit_size: _, responder } => {
-                responder
-                    .send(Ok(server.program_key(&fscrypt::to_xts_key(&wrapped_key, uuid))))
-                    .unwrap_or_else(|e| {
-                        log::error!("failed to send ProgramKey response. error: {:?}", e);
-                    });
-            }
-            DeviceRequest::DeriveRawSecret { wrapped_key, responder } => {
-                // Send the key back unchanged.
-                responder.send(Ok(&wrapped_key)).unwrap();
-            }
-        }
-    }
-}
-
 async fn test_fxfs_migration_at_offset(offset: u64) {
     let block_server = create_device_with_image_at_offset("/pkg/testdata/f2fs.img.zst", offset);
     let (client, server_end) = fidl::endpoints::create_proxy::<VolumeMarker>();
@@ -148,19 +126,18 @@ async fn test_fxfs_migration_at_offset(offset: u64) {
     };
 
     let block_server_clone = block_server.clone();
-    let (client, server) = fidl::endpoints::create_sync_proxy::<DeviceMarker>();
+    let (insecure_inline_crypto_proxy, server) =
+        fidl::endpoints::create_sync_proxy::<DeviceMarker>();
     std::thread::spawn(move || {
         LocalExecutor::default().run_singlethreaded(async {
-            handle_inline_crypto_requests(
-                server.into_stream(),
-                block_server_clone,
-                original_superblock.uuid,
-            )
-            .await
+            block_server_clone
+                .connect_insecure_inline_encryption_server(server, original_superblock.uuid)
+                .await
         })
     });
 
-    let crypt_service = Arc::new(CryptService::new(&[0; 32], &[1; 32], true, Some(client)));
+    let crypt_service =
+        Arc::new(CryptService::new(&[0; 32], &[1; 32], true, Some(insecure_inline_crypto_proxy)));
 
     let (crypt_client_end, crypt_proxy) = fidl::endpoints::create_endpoints::<CryptMarker>();
 
@@ -303,15 +280,18 @@ async fn test_fxfs_read_lblk32_ino_file() {
     let device = Arc::try_unwrap(device).map_err(|_| ()).expect("only one ref to device");
 
     let block_server_clone = block_server.clone();
-    let (client, server) = fidl::endpoints::create_sync_proxy::<DeviceMarker>();
+    let (insecure_inline_crypto_proxy, server) =
+        fidl::endpoints::create_sync_proxy::<DeviceMarker>();
     std::thread::spawn(move || {
         LocalExecutor::default().run_singlethreaded(async {
-            handle_inline_crypto_requests(server.into_stream(), block_server_clone, superblock.uuid)
+            block_server_clone
+                .connect_insecure_inline_encryption_server(server, superblock.uuid)
                 .await
         })
     });
 
-    let crypt_service = Arc::new(CryptService::new(&[1; 32], &[2; 32], true, Some(client)));
+    let crypt_service =
+        Arc::new(CryptService::new(&[1; 32], &[2; 32], true, Some(insecure_inline_crypto_proxy)));
     crypt_service.set_uuid(superblock.uuid);
     crypt_service.add_wrapping_key(&[0; 64], 0).expect("add wrapping key failed");
 
@@ -443,14 +423,16 @@ async fn test_fxfs_verify_encrypted_data() {
     let device = Arc::try_unwrap(device).map_err(|_| ()).expect("only one ref to device");
 
     let block_server_clone = block_server.clone();
-    let (client, server) = fidl::endpoints::create_sync_proxy::<DeviceMarker>();
+    let (insecure_inline_crypto_proxy, server) =
+        fidl::endpoints::create_sync_proxy::<DeviceMarker>();
     std::thread::spawn(move || {
         LocalExecutor::default().run_singlethreaded(async {
-            handle_inline_crypto_requests(server.into_stream(), block_server_clone, uuid).await
+            block_server_clone.connect_insecure_inline_encryption_server(server, uuid).await
         })
     });
 
-    let crypt_service = Arc::new(CryptService::new(&[1; 32], &[2; 32], true, Some(client)));
+    let crypt_service =
+        Arc::new(CryptService::new(&[1; 32], &[2; 32], true, Some(insecure_inline_crypto_proxy)));
     crypt_service.set_uuid(uuid);
     crypt_service.add_wrapping_key(&[0; 64], 0).expect("add wrapping key failed");
 

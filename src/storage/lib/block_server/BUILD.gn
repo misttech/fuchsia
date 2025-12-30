@@ -58,13 +58,17 @@ rustc_library("vmo_backed_block_server") {
     ":block_server",
     "//sdk/fidl/fuchsia.hardware.block:fuchsia.hardware.block_rust",
     "//sdk/fidl/fuchsia.hardware.block.volume:fuchsia.hardware.block.volume_rust",
+    "//sdk/fidl/fuchsia.hardware.inlineencryption:fuchsia.hardware.inlineencryption_rust",
     "//sdk/rust/zx",
     "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-sync",
     "//src/storage/fxfs/crypto",
     "//src/storage/lib/fs_management/rust:fs_management",
+    "//src/storage/lib/fscrypt",
     "//third_party/rust_crates:anyhow",
+    "//third_party/rust_crates:futures",
+    "//third_party/rust_crates:log",
     "//third_party/rust_crates:rand",
   ]
 }
