@@ -104,6 +104,7 @@ group("tests_no_e2e") {
     "//tools/component_manager_config:tests($host_toolchain)",
     "//tools/configc:tests",
     "//tools/create:tests",
+    "//tools/dart_test_parser:tests($host_toolchain)",
     "//tools/debug:tests($host_toolchain)",
     "//tools/devshell:tests($host_toolchain)",
     "//tools/doc_checker:tests",

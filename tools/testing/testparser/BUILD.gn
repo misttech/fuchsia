@@ -8,7 +8,6 @@ import("//build/go/go_test.gni")
 
 go_library("testparser") {
   sources = [
-    "dartsystemtest.go",
     "googletest.go",
     "moblytest.go",
     "testparser.go",

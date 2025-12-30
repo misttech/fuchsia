@@ -2,14 +2,20 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-package testparser
+package dart_test_parser
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"time"
 
 	"go.fuchsia.dev/fuchsia/tools/testing/runtests"
+)
+
+var (
+	dartSystemTestPreamblePattern = regexp.MustCompile(`^\[----------\] Test results JSON:$`)
 )
 
 type dartSystemTestResults struct {
@@ -27,9 +33,30 @@ type TestCase struct {
 	DurationInSeconds int
 }
 
+// Parse takes stdout from a dart test program and returns structured results.
+// If no structured results were identified, an empty slice is returned.
+func Parse(stdout []byte) []runtests.TestCaseResult {
+	lines := bytes.Split(stdout, []byte{'\n'})
+	cases := parseDartSystemTest(lines)
+
+	// Ensure that an empty set of cases is serialized to JSON as an empty
+	// array, not as null.
+	if cases == nil {
+		cases = []runtests.TestCaseResult{}
+	}
+	return cases
+}
+
 func parseDartSystemTest(lines [][]byte) []runtests.TestCaseResult {
 	var jsonBytes []byte
-	for _, line := range lines[1:] {
+	foundTestResultsStart := false
+	for _, line := range lines {
+		if !foundTestResultsStart {
+			if dartSystemTestPreamblePattern.Match(line) {
+				foundTestResultsStart = true
+			}
+			continue
+		}
 		jsonBytes = append(jsonBytes, line...)
 	}
 	parsed := dartSystemTestResults{}

@@ -38,6 +38,12 @@ def main():
         required=False,
         default="",
     )
+    parser.add_argument(
+        "--results-parser",
+        help="Path to the parser tool to write structured test results based on the output",
+        required=False,
+        default="",
+    )
     args = parser.parse_args()
 
     app_file = args.out
@@ -57,7 +63,7 @@ def main():
 
 cd "$$(dirname $$0)/$wd"
 
-$dart \\
+$results_parser $dart \\
   $snapshot \\
   $args \\
   "$$@"
