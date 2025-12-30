@@ -344,6 +344,54 @@ zx_status_t CacheFlushInvalidate(dma_buffer::ContiguousBuffer* buffer, zx_off_t 
   return CacheFlushCommon(buffer, offset, length, ZX_CACHE_FLUSH_DATA | ZX_CACHE_FLUSH_INVALIDATE);
 }
 
+zx::eventpair Dwc3::AcquireWakeLease() {
+  if (!config_.enable_suspend()) {
+    return {};
+  }
+
+  zx::result<fidl::ClientEnd<fuchsia_power_system::ActivityGovernor>> connect_sag_result =
+      incoming()->Connect<fuchsia_power_system::ActivityGovernor>();
+  if (connect_sag_result.is_error()) {
+    fdf::warn("Failed to connect to SystemActivityGovernor: {}.",
+              connect_sag_result.status_string());
+    return {};
+  }
+
+  zx::eventpair client_end, server_end;
+  zx_status_t status = zx::eventpair::create(0, &client_end, &server_end);
+  if (status != ZX_OK) {
+    fdf::error("Failed to create eventpair: {}", zx_status_get_string(status));
+    return {};
+  }
+
+  auto result =
+      fidl::Call(*connect_sag_result)
+          ->AcquireWakeLeaseWithToken({{.name = "dwc3", .server_token = std::move(server_end)}});
+  if (result.is_ok()) {
+    return client_end;
+  }
+
+  if (result.error_value().is_framework_error()) {
+    fdf::warn("Failed to acquire wake lease: {}", result.error_value());
+    return {};
+  }
+
+  switch (result.error_value().domain_error()) {
+    case fuchsia_power_system::AcquireWakeLeaseError::kInternal:
+      fdf::warn("Failed to acquire wake lease: Internal");
+      break;
+    case fuchsia_power_system::AcquireWakeLeaseError::kInvalidName:
+      fdf::warn("Failed to acquire wake lease: Invalid name");
+      break;
+    default:
+      ZX_PANIC("Unknown AcquireWakeLeaseError value: %u",
+               static_cast<uint32_t>(result.error_value().domain_error()));
+      break;
+  }
+
+  return {};
+}
+
 zx::result<> Dwc3::Start() {
   auto phy_client_end = incoming()->Connect<fphy::Service::Device>("dwc3-phy");
   if (phy_client_end.is_ok()) {
@@ -374,8 +422,8 @@ zx::result<> Dwc3::Start() {
                                fdf::Dispatcher::GetCurrent()->async_dispatcher());
 
       // Start the hanging-get call loop.
-      connection_watcher_->WatchConnectStatusChanged({}).Then(
-          fit::bind_member<&Dwc3::OnConnectStatusChanged>(this));
+      connection_watcher_->WatchConnectStatusChanged({AcquireWakeLease()})
+          .Then(fit::bind_member<&Dwc3::OnConnectStatusChanged>(this));
     }
   }
 
@@ -1162,12 +1210,22 @@ void Dwc3::OnConnectStatusChanged(
     return;
   }
 
-  connection_watcher_->WatchConnectStatusChanged({}).Then(
-      fit::bind_member<&Dwc3::OnConnectStatusChanged>(this));
+  zx::eventpair wake_lease{};
+  auto next_call = fit::defer([&]() {
+    connection_watcher_->WatchConnectStatusChanged({std::move(wake_lease)})
+        .Then(fit::bind_member<&Dwc3::OnConnectStatusChanged>(this));
+  });
 
-  if (result.is_error()) {
+  if (result.is_ok()) {
+    // The USB phy driver must provide a wake lease since we passed one to it.
+    ZX_DEBUG_ASSERT_MSG(!config_.enable_suspend() || result->wake_lease().is_valid(),
+                        "USB phy driver did not provide a wake lease");
+    wake_lease = std::move(result->wake_lease());
+  } else {
     fdf::error("WatchConnectStatusChanged returned {}",
                zx_status_get_string(result.error_value().domain_error()));
+    // Best-effort error recovery for domain errors.
+    wake_lease = AcquireWakeLease();
     return;
   }
 
@@ -1181,6 +1239,13 @@ void Dwc3::OnConnectStatusChanged(
 
     if (controller_started_) {
       StartPeripheralMode();
+    }
+
+    if (wake_lease.is_valid()) {
+      zx_status_t status = wake_lease.duplicate(ZX_RIGHT_SAME_RIGHTS, &connection_lease_);
+      if (status != ZX_OK) {
+        fdf::error("Failed to duplicate wake lease: {}", status);
+      }
     }
   } else {
     fdf::debug("OnConnectStatusChanged: now disconnected");
@@ -1206,6 +1271,10 @@ void Dwc3::OnConnectStatusChanged(
             fdf::error("SetConnected(): {}", zx_status_get_string(result->error_value()));
           }
         });
+  }
+
+  if (!power_on_) {
+    connection_lease_.reset();
   }
 }
 

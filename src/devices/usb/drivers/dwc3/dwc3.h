@@ -21,6 +21,7 @@
 #include <lib/driver/power/cpp/suspend.h>
 #include <lib/inspect/component/cpp/component.h>
 #include <lib/inspect/cpp/inspect.h>
+#include <lib/zx/eventpair.h>
 #include <lib/zx/result.h>
 #include <zircon/compiler.h>
 #include <zircon/errors.h>
@@ -277,6 +278,8 @@ class Dwc3 : public fdf::DriverBase,
 
   bool power_on() const { return power_on_; }
 
+  zx::eventpair AcquireWakeLease();
+
   zx_status_t AcquirePDevResources();
   zx_status_t Init();
   // This method is safe to call with the core powered down.
@@ -374,6 +377,7 @@ class Dwc3 : public fdf::DriverBase,
 
   fidl::SyncClient<fuchsia_hardware_usb_phy::UsbPhy> phy_;
   fidl::Client<fuchsia_hardware_usb_phy::ConnectionWatcher> connection_watcher_;
+  zx::eventpair connection_lease_;
 
   fidl::ServerBindingGroup<fuchsia_hardware_usb_dci::UsbDci> bindings_;
   fidl::SyncClient<fuchsia_driver_framework::NodeController> child_;
