@@ -7,6 +7,7 @@
 
 #include <fidl/fuchsia.ui.composition/cpp/fidl.h>
 #include <fuchsia/sysmem2/cpp/fidl.h>
+#include <lib/inspect/cpp/inspect.h>
 #include <lib/sys/cpp/component_context.h>
 
 #include <memory>
@@ -27,7 +28,8 @@ class Allocator : public fidl::Server<fuchsia_ui_composition::Allocator> {
                 default_buffer_collection_importers,
             const std::vector<std::shared_ptr<BufferCollectionImporter>>&
                 screenshot_buffer_collection_importers,
-            fuchsia::sysmem2::AllocatorSyncPtr sysmem_allocator);
+            fuchsia::sysmem2::AllocatorSyncPtr sysmem_allocator,
+            inspect::Node inspect_node = inspect::Node());
   ~Allocator() override;
 
   // |fuchsia_ui_composition::Allocator|
@@ -40,6 +42,11 @@ class Allocator : public fidl::Server<fuchsia_ui_composition::Allocator> {
 
  private:
   void ReleaseBufferCollection(GlobalBufferCollectionId collection_id);
+
+  // Update inspect values.
+  void IncrementRegisteredBufferCollections();
+  void IncrementReleasedBufferCollections();
+  void IncrementFailedBufferCollections();
 
   // Returns a list of references to all importers to be used for a buffer collection with |usages|.
   std::vector<std::pair<BufferCollectionImporter&, allocation::BufferCollectionUsage>> GetImporters(
@@ -66,6 +73,12 @@ class Allocator : public fidl::Server<fuchsia_ui_composition::Allocator> {
   std::unordered_map<GlobalBufferCollectionId,
                      fuchsia_ui_composition::RegisterBufferCollectionUsages>
       buffer_collections_;
+
+  inspect::Node inspect_node_;
+  inspect::UintProperty inspect_registered_buffer_collections_;
+  inspect::UintProperty inspect_released_buffer_collections_;
+  inspect::UintProperty inspect_failed_buffer_collections_;
+  inspect::UintProperty inspect_outstanding_buffer_collections_;
 
   // Should be last.
   fxl::WeakPtrFactory<Allocator> weak_factory_;

@@ -19,6 +19,7 @@ source_set("allocation") {
     "//src/lib/fxl",
     "//src/ui/scenic/lib/display:types",
     "//src/ui/scenic/lib/types",
+    "//zircon/system/ulib/inspect",
   ]
 
   deps = [

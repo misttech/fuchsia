@@ -164,15 +164,24 @@ Allocator::Allocator(sys::ComponentContext* app_context,
                          default_buffer_collection_importers,
                      const std::vector<std::shared_ptr<BufferCollectionImporter>>&
                          screenshot_buffer_collection_importers,
-                     fuchsia::sysmem2::AllocatorSyncPtr sysmem_allocator)
+                     fuchsia::sysmem2::AllocatorSyncPtr sysmem_allocator,
+                     inspect::Node inspect_node)
     : dispatcher_(async_get_default_dispatcher()),
       default_buffer_collection_importers_(default_buffer_collection_importers),
       screenshot_buffer_collection_importers_(screenshot_buffer_collection_importers),
       sysmem_allocator_(std::move(sysmem_allocator)),
+      inspect_node_(std::move(inspect_node)),
       weak_factory_(this) {
   FX_DCHECK(app_context);
   app_context->outgoing()->AddProtocol<fuchsia_ui_composition::Allocator>(
       bindings_.CreateHandler(this, dispatcher_, fidl::kIgnoreBindingClosure));
+
+  inspect_registered_buffer_collections_ =
+      inspect_node_.CreateUint("Registered Buffer Collections", 0);
+  inspect_released_buffer_collections_ = inspect_node_.CreateUint("Released Buffer Collections", 0);
+  inspect_failed_buffer_collections_ = inspect_node_.CreateUint("Failed Buffer Collections", 0);
+  inspect_outstanding_buffer_collections_ =
+      inspect_node_.CreateUint("Outstanding Buffer Collections", 0);
 }
 
 Allocator::~Allocator() {
@@ -199,8 +208,12 @@ void Allocator::RegisterBufferCollection(
   TRACE_DURATION("gfx", "allocation::Allocator::RegisterBufferCollection");
   FX_DCHECK(dispatcher_ == async_get_default_dispatcher());
 
+  IncrementRegisteredBufferCollections();
+
   auto parsed_args = ParseArgs(std::move(args));
   if (!parsed_args) {
+    FX_LOGS(ERROR) << "RegisterBufferCollection failed to parse args";
+    IncrementFailedBufferCollections();
     completer(fit::error(RegisterBufferCollectionError::kBadOperation));
     return;
   }
@@ -211,6 +224,7 @@ void Allocator::RegisterBufferCollection(
   // Check if this export token has already been used.
   if (buffer_collections_.find(koid) != buffer_collections_.end()) {
     FX_LOGS(ERROR) << "RegisterBufferCollection called with pre-registered export token";
+    IncrementFailedBufferCollections();
     completer(fit::error(RegisterBufferCollectionError::kBadOperation));
     return;
   }
@@ -218,6 +232,7 @@ void Allocator::RegisterBufferCollection(
   if (!BufferCollectionTokenIsValid(sysmem_allocator_, buffer_collection_token)) {
     FX_LOGS(ERROR) << "RegisterBufferCollection called with a buffer collection token where "
                       "ValidateBufferCollectionToken() failed";
+    IncrementFailedBufferCollections();
     completer(fit::error(RegisterBufferCollectionError::kBadOperation));
     return;
   }
@@ -229,6 +244,7 @@ void Allocator::RegisterBufferCollection(
   if (tokens.empty()) {
     FX_LOGS(ERROR) << "RegisterBufferCollection called with a buffer collection token where "
                       "Duplicate() failed";
+    IncrementFailedBufferCollections();
     completer(fit::error(RegisterBufferCollectionError::kBadOperation));
     return;
   }
@@ -250,6 +266,7 @@ void Allocator::RegisterBufferCollection(
         importer.ReleaseBufferCollection(koid, usage);
       }
       FX_LOGS(ERROR) << "Failed to import the buffer collection to the BufferCollectionimporter.";
+      IncrementFailedBufferCollections();
       completer(fit::error(RegisterBufferCollectionError::kBadOperation));
       return;
     }
@@ -265,16 +282,16 @@ void Allocator::RegisterBufferCollection(
   const zx_status_t status =
       wait->Begin(async_get_default_dispatcher(),
                   [keepalive_wait = wait, keepalive_export_token = std::move(export_token.value()),
-                   weak_ptr = weak_factory_.GetWeakPtr(),
+                   weak_this = weak_factory_.GetWeakPtr(),
                    koid = koid](async_dispatcher_t*, async::WaitOnce*, zx_status_t status,
                                 const zx_packet_signal_t* /*signal*/) mutable {
                     FX_DCHECK(status == ZX_OK || status == ZX_ERR_CANCELED);
-                    if (!weak_ptr)
+                    if (!weak_this)
                       return;
                     // Because Flatland::CreateImage() holds an import token, this
                     // is guaranteed to be called after all images are created, so
                     // it is safe to release buffer collection.
-                    weak_ptr->ReleaseBufferCollection(koid);
+                    weak_this->ReleaseBufferCollection(koid);
                   });
   FX_DCHECK(status == ZX_OK);
 
@@ -304,10 +321,26 @@ void Allocator::ReleaseBufferCollection(GlobalBufferCollectionId collection_id) 
 
   const auto usages = buffer_collections_.at(collection_id);
   buffer_collections_.erase(collection_id);
+  IncrementReleasedBufferCollections();
 
   for (auto& [importer, usage] : GetImporters(usages)) {
     importer.ReleaseBufferCollection(collection_id, usage);
   }
+}
+
+void Allocator::IncrementRegisteredBufferCollections() {
+  inspect_registered_buffer_collections_.Add(1);
+  inspect_outstanding_buffer_collections_.Add(1);
+}
+
+void Allocator::IncrementReleasedBufferCollections() {
+  inspect_released_buffer_collections_.Add(1);
+  inspect_outstanding_buffer_collections_.Subtract(1);
+}
+
+void Allocator::IncrementFailedBufferCollections() {
+  inspect_failed_buffer_collections_.Add(1);
+  inspect_outstanding_buffer_collections_.Subtract(1);
 }
 
 }  // namespace allocation

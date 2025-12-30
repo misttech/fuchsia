@@ -521,7 +521,8 @@ void App::InitializeGraphics(std::shared_ptr<display::Display> display) {
 
     allocator_ = std::make_shared<allocation::Allocator>(
         app_context_.get(), default_importers, screen_capture_importers,
-        utils::CreateSysmemAllocatorSyncPtr("ScenicAllocator"));
+        utils::CreateSysmemAllocatorSyncPtr("ScenicAllocator"),
+        inspect_node_.CreateChild("Allocator API"));
   }
 
   // Flatland engine requires FlatlandManager and DisplayCompositor to be constructed first.
