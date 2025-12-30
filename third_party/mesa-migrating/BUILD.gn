@@ -54,7 +54,7 @@ config("build_config") {
   }
 }
 
-# TODO(https://fxbug.dev/321122796): temporary, this should be replaced by
+# Note, this should perhaps be replaced by
 # `//src/lib/llvm:LLVMHeader_config` at some point, once that one uses platform-specific headers,
 # not just the ${host_platform} ones.  This also works around a versioning problem: the sandbox
 # version of LLVM used by Mesa is newer than the prebuilt headers.

@@ -23,6 +23,20 @@ import("../../../mesa.gni")
 
 src_dir = "$mesa_source_root/src/gallium/auxiliary"
 
+mesa_source_set("fuchsia_memory_mapper") {
+  sources = [
+    "$src_dir/gallivm/lp_bld_fuchsia_memory_mapper.cpp",
+    "$src_dir/gallivm/lp_bld_fuchsia_memory_mapper.hpp",
+  ]
+  deps = [
+    # These are for marking JIT memory as executable in lp_bld_fuchsia_memory_mapper.cpp.
+    "$mesa_build_root/src/util",
+    "//sdk/fidl/fuchsia.vulkan.loader:fuchsia.vulkan.loader_cpp",
+  ]
+  public_deps = [ "//zircon/system/ulib/zx" ]
+  configs = [ "$mesa_build_root/..:LLVMHeader_config" ]
+}
+
 mesa_source_set("gallivm") {
   sources = [
     "$src_dir/draw/draw_llvm.c",
@@ -61,8 +75,6 @@ mesa_source_set("gallivm") {
     "$src_dir/gallivm/lp_bld_format_soa.c",
     "$src_dir/gallivm/lp_bld_format_srgb.c",
     "$src_dir/gallivm/lp_bld_format_yuv.c",
-    "$src_dir/gallivm/lp_bld_fuchsia_memory_mapper.cpp",
-    "$src_dir/gallivm/lp_bld_fuchsia_memory_mapper.hpp",
     "$src_dir/gallivm/lp_bld_gather.c",
     "$src_dir/gallivm/lp_bld_gather.h",
     "$src_dir/gallivm/lp_bld_init.c",
@@ -127,13 +139,9 @@ mesa_source_set("gallivm") {
   ]
 
   deps = [
+    ":fuchsia_memory_mapper",
     ":gen",
     "$mesa_build_root/src/compiler/nir",
-
-    # TODO(https://fxbug.dev/321122796):
-    # These are for marking JIT memory as executable in lp_bld_fuchsia_memory_mapper.cpp.
-    # Perhaps this functionality should be moved into a separate target?
-    "//sdk/fidl/fuchsia.vulkan.loader:fuchsia.vulkan.loader_cpp",
   ]
 
   # Suppress warnings.

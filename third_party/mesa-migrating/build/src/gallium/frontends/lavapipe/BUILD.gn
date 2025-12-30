@@ -78,12 +78,6 @@ config("lavapipe_config") {
     # Unnecessary because we hardcode GALLIUM_STATIC_TARGETS=1.
     "PIPE_SEARCH_DIR=\"UNNECESSARY\"",
 
-    # TODO(https://fxbug.dev/321122796): otherwise get "use of undeclared identifier 'NULL'"
-    # in u_dl.c etc.  Is there some better way to define this?  If we do decide to define NULL
-    # (vs e.g. adding a header include), is this the best place?  Probably, since this is closest
-    # to where it's needed.
-    "NULL=0",
-
     # So that sw_screen_create_vk() is customized to use lavapipe.
     "GALLIUM_LLVMPIPE",
   ]
