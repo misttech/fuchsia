@@ -30,8 +30,9 @@ impl PolicyCursor {
     pub fn parse<P: Clone + Debug + FromBytes + KnownLayout + Immutable + PartialEq + Unaligned>(
         mut self,
     ) -> Option<(P, Self)> {
-        let (output, _) = P::read_from_prefix(self.remaining_slice()).ok()?;
-        self.seek_forward(std::mem::size_of_val(&output)).ok()?;
+        let remaining_slice = &(self.data.as_ref()[self.offset as usize..]);
+        let (output, _) = P::read_from_prefix(remaining_slice).ok()?;
+        self.offset += std::mem::size_of_val(&output) as PolicyOffset;
         Some((output, self))
     }
 
@@ -43,24 +44,8 @@ impl PolicyCursor {
         self.data.len() - self.offset as usize
     }
 
-    /// Seeks forward by `num_bytes`, returning a `std::io::Error` if seeking fails.
-    fn seek_forward(&mut self, num_bytes: usize) -> Result<(), std::io::Error> {
-        if num_bytes > self.len() {
-            return Err(std::io::Error::from(std::io::ErrorKind::UnexpectedEof));
-        }
-        self.offset += num_bytes as PolicyOffset;
-        Ok(())
-    }
-
     pub fn data(&self) -> &PolicyData {
         &self.data
-    }
-
-    /// Returns a slice of remaining data.
-    fn remaining_slice(&self) -> &[u8] {
-        let s: &[u8] = self.data.as_ref();
-        let p = self.offset as usize;
-        &s[p..]
     }
 }
 
