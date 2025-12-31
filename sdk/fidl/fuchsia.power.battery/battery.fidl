@@ -110,7 +110,7 @@ type BatteryInfo = table {
     /// Time remaining relative to the current charge status.
     7: time_remaining TimeRemaining;
 
-    /// Timestamp to distinguish between latest and stale status.
+    /// Marking the time for measurement of battery level.
     8: timestamp zx.Time;
 
     /// Forward the voltage level in mv.
