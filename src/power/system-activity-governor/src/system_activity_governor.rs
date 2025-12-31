@@ -7,7 +7,6 @@ use crate::cpu_manager::{
 };
 use crate::events::{SagEvent, SagEventLogger};
 use anyhow::Result;
-use async_lock::{Semaphore, SemaphoreGuardArc};
 use async_trait::async_trait;
 use async_utils::hanging_get::server::{HangingGet, Publisher};
 use fidl::endpoints::{Proxy, ServerEnd, create_endpoints};
@@ -27,7 +26,6 @@ use futures::stream::StreamExt;
 use power_broker_client::{LeaseHelper, PowerElementContext};
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
-use std::sync::Arc;
 use zx::{AsHandleRef, HandleBased};
 use {
     fidl_fuchsia_power_broker as fbroker, fidl_fuchsia_power_observability as fobs,
@@ -280,15 +278,11 @@ impl LeaseManager {
         Ok(client_token)
     }
 
-    async fn create_wake_lease_using_token<F>(
+    async fn create_wake_lease_using_token(
         &self,
         name: String,
-        once_closure: F,
         server_token: fsystem::LeaseToken,
-    ) -> Result<()>
-    where
-        F: FnOnce() + 'static,
-    {
+    ) -> Result<()> {
         let suspend_blocker = match self.suspend_block_manager.try_get_blocker() {
             None => {
                 log::info!(
@@ -388,8 +382,8 @@ impl LeaseManager {
             // Keep wake lease alive for as long as the client keeps it alive.
             // The power element lease will be dropped once all references to lease have
             // been been dropped.
-            once_closure();
             let _ = fasync::OnSignals::new(server_token, zx::Signals::EVENTPAIR_PEER_CLOSED).await;
+
             log::debug!("Dropping wake lease for '{}'", name);
             sag_event_logger.log(SagEvent::WakeLeaseDropped { name: name.clone() });
             drop(lease_status_property);
@@ -399,22 +393,22 @@ impl LeaseManager {
             // unlikely) that the lease drop leads to a suspend attempt before the suspend blocker
             // is removed.
             drop(suspend_blocker);
+
+            // Before dropping `lease`, yield to other async tasks. If another wake lease request
+            // is queued, this can prevent unnecessary recreation of the Execution State lease. The
+            // practical performance impact is unclear, but in benchmarks that rapidly acquire and
+            // drop leases, this does prevent Inspect errors due to max heap utilization.
+            fasync::yield_now().await;
+
             drop(lease);
         })
         .detach();
         Ok(())
     }
 
-    async fn create_wake_lease<F>(
-        &self,
-        name: String,
-        once_closure: F,
-    ) -> Result<fsystem::LeaseToken>
-    where
-        F: FnOnce() + 'static,
-    {
+    async fn create_wake_lease(&self, name: String) -> Result<fsystem::LeaseToken> {
         let (server_token, client_token) = fsystem::LeaseToken::create();
-        self.create_wake_lease_using_token(name, once_closure, server_token).await?;
+        self.create_wake_lease_using_token(name, server_token).await?;
         Ok(client_token)
     }
 }
@@ -788,8 +782,6 @@ impl SystemActivityGovernor {
     ) {
         // Before handling requests, ensure power elements are initialized and handlers are running.
         self.is_running_signal.wait().await;
-        // Semaphore to flow control the call from each client
-        let flow_control = Arc::new(Semaphore::new(1));
         while let Some(request) = stream.next().await {
             match request {
                 Ok(fsystem::ActivityGovernorRequest::GetPowerElements { responder }) => {
@@ -836,15 +828,7 @@ impl SystemActivityGovernor {
                     }
                 }
                 Ok(fsystem::ActivityGovernorRequest::TakeWakeLease { responder, name }) => {
-                    let guard: SemaphoreGuardArc = flow_control.acquire_arc().await;
-                    let once_closure = move || {
-                        drop(guard);
-                    };
-                    let client_token = match self
-                        .lease_manager
-                        .create_wake_lease(name, once_closure)
-                        .await
-                    {
+                    let client_token = match self.lease_manager.create_wake_lease(name).await {
                         Ok(client_token) => client_token,
                         Err(error) => {
                             log::warn!(error:?; "Encountered error while registering wake lease");
@@ -860,16 +844,12 @@ impl SystemActivityGovernor {
                     }
                 }
                 Ok(fsystem::ActivityGovernorRequest::AcquireWakeLease { responder, name }) => {
-                    let guard: SemaphoreGuardArc = flow_control.acquire_arc().await;
-                    let once_closure = move || {
-                        drop(guard);
-                    };
                     let client_token_res = if name.is_empty() {
                         log::warn!("Received invalid name while acquiring wake lease");
                         Err(fsystem::AcquireWakeLeaseError::InvalidName)
                     } else {
                         self.lease_manager
-                            .create_wake_lease(name, once_closure)
+                            .create_wake_lease(name)
                             .await
                             .and_then(|client_token| {
                                 client_token
@@ -906,16 +886,12 @@ impl SystemActivityGovernor {
                     name,
                     server_token,
                 }) => {
-                    let guard: SemaphoreGuardArc = flow_control.acquire_arc().await;
-                    let once_closure = move || {
-                        drop(guard);
-                    };
                     let client_token_res = if name.is_empty() {
                         log::warn!("Received invalid name while acquiring wake lease");
                         Err(fsystem::AcquireWakeLeaseError::InvalidName)
                     } else {
                         self.lease_manager
-                            .create_wake_lease_using_token(name, once_closure, server_token)
+                            .create_wake_lease_using_token(name, server_token)
                             .await
                             .or_else(|error| {
                                 log::warn!(
@@ -950,7 +926,7 @@ impl SystemActivityGovernor {
                             }
 
                             self.lease_manager
-                                .create_wake_lease(name.clone(), || {})
+                                .create_wake_lease(name.clone())
                                 .await
                                 .and_then(|client_token| {
                                     client_token

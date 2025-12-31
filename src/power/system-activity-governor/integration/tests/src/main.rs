@@ -3315,11 +3315,19 @@ async fn test_acquire_wake_lease_doesnt_deadlock_in_before_suspend() -> Result<(
                 }
                 fsystem::SuspendBlockerRequest::BeforeSuspend { responder } => {
                     log::info!("Running BeforeSuspend");
-                    let lease = activity_governor
-                        .acquire_wake_lease("before_suspend_wake_lease")
-                        .await
-                        .unwrap()
-                        .unwrap();
+
+                    // Ensure that multiple leases can be obtained. In http://fxbug.dev/470037379,
+                    // lease requests beyond the first would block.
+                    let mut leases = Vec::new();
+                    for _ in 0..10 {
+                        let lease = activity_governor
+                            .acquire_wake_lease("before_suspend_wake_lease")
+                            .await
+                            .unwrap()
+                            .unwrap();
+                        leases.push(lease);
+                    }
+
                     before_suspend_tx.try_send(lease).unwrap();
                     responder.send().unwrap()
                 }
