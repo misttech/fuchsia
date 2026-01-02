@@ -763,7 +763,11 @@ impl HrTimerManager {
         self.lock().debug_start_stage_counter = 1001;
         ftrace::instant!("alarms", "watch_new_hrtimer_loop:init_done", ftrace::Scope::Process);
         while let Some(cmd) = start_next_receiver.next().await {
-            self.lock().last_loop_started_timestamp = zx::BootInstant::get();
+            {
+                let mut guard = self.lock();
+                guard.debug_start_stage_counter = 1002;
+                guard.last_loop_started_timestamp = zx::BootInstant::get();
+            }
             ftrace::duration!("alarms", "start_next_receiver:loop");
 
             log_debug!("watch_new_hrtimer_loop: got command: {cmd:?}");
@@ -896,6 +900,7 @@ impl HrTimerManager {
                     guard.debug_start_stage_counter = 999;
                 }
                 Cmd::Alarm { new_timer_node, lease, message_counter } => {
+                    self.lock().debug_start_stage_counter = 10;
                     let timer = &new_timer_node.hr_timer;
                     let timer_id = timer.get_id();
                     ftrace::duration!("alarms", "starnix:hrtimer:alarm", "timer_id" => timer_id);
@@ -920,8 +925,10 @@ impl HrTimerManager {
                         interval_timers_pending_reschedule.insert(timer_id, message_counter);
                     }
                     log_debug!("Cmd::Alarm done: timer_id: {timer_id:?}");
+                    self.lock().debug_start_stage_counter = 19;
                 }
                 Cmd::Stop { timer, done, message_counter } => {
+                    self.lock().debug_start_stage_counter = 20;
                     defer! {
                         signal_handle(&done, zx::Signals::NONE, zx::Signals::EVENT_SIGNALED).expect("can signal");
                     }
@@ -953,17 +960,21 @@ impl HrTimerManager {
                         self.record_inspect_on_stop(&mut guard, prev_len);
                     }
                     log_debug!("Cmd::Stop done: {timer_id:?}");
+                    self.lock().debug_start_stage_counter = 29;
                 }
                 Cmd::MonitorUtc { timer, counter, recv } => {
+                    self.lock().debug_start_stage_counter = 30;
                     ftrace::duration!("alarms", "starnix:hrtimer:monitor_utc", "timer_id" => timer.get_id());
                     ftrace::flow_step!("alarms", "hrtimer_lifecycle", timer.trace_id());
                     let monitor_task = fasync::Task::local(async move {
                         run_utc_timeline_monitor(counter, recv).await;
                     });
                     task_by_timer_id.insert(timer.get_id(), monitor_task);
+                    self.lock().debug_start_stage_counter = 39;
                 }
             }
             let mut guard = self.lock();
+            guard.debug_start_stage_counter = 90;
 
             log_debug!(
                 "watch_new_hrtimer_loop: pending timers count: {}",
@@ -980,6 +991,7 @@ impl HrTimerManager {
             );
 
             guard.last_loop_completed_timestamp = zx::BootInstant::get();
+            guard.debug_start_stage_counter = 99;
         } // while
 
         Ok(())
