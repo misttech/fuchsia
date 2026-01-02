@@ -2743,14 +2743,14 @@ alias(
 )
 
 alias(
-    name = "tokio-stream-0.1.14",
-    actual = "//third_party/rust_crates/vendor/tokio-stream-0.1.14:tokio_stream",
+    name = "tokio-stream-0.1.17",
+    actual = "//third_party/rust_crates/vendor/tokio-stream-0.1.17:tokio_stream",
     tags = ["manual"],
 )
 
 alias(
     name = "tokio-stream",
-    actual = "//third_party/rust_crates/vendor/tokio-stream-0.1.14:tokio_stream",
+    actual = "//third_party/rust_crates/vendor/tokio-stream-0.1.17:tokio_stream",
     tags = ["manual"],
 )
 
