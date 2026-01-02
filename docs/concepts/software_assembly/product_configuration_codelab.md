@@ -1,9 +1,12 @@
-# Codelab: Defining a new product configuration
+# Codelab: Defining and building a product bundle
 
-This codelab walks through the process of defining a new product configuration in
-Fuchsia using the Bazel build system. Product configurations are used to specify
-the software features, settings, and packages that make up a Fuchsia product,
-independent of the hardware it runs on.
+This codelab walks through the process of defining and building a new product
+bundle in Fuchsia using the Bazel build system. A product bundle is the
+distributable artifact that contains all the images and metadata needed to
+flash, update, or emulate a Fuchsia product.
+
+As part of this process, you will also define a product configuration to specify
+the software features, settings, and packages that make up the product.
 
 ## Prerequisites {:#prerequisites}
 
@@ -75,9 +78,11 @@ the Fuchsia system. Common fields include:
         self-update capabilities. This is the default.
 *   `storage`: Configures the filesystem (e.g., Fxfs) and storage layout.
 
-For a full list of platform settings, see the [PlatformSettings documentation][platform-settings-docs].
+For a full list of platform settings, see the
+[PlatformSettings documentation][platform-settings-docs].
 
-For example, a Fuchsia product configuration with platform settings may look like the following:
+For example, a Fuchsia product configuration with platform settings may look
+like the following:
 
 ```bazel
 fuchsia_product_configuration(
@@ -89,9 +94,7 @@ fuchsia_product_configuration(
             "feature_set_level": "standard",
             "storage": {
                 "filesystems": {
-                    "volume": {
-                        "fxfs": {},
-                    },
+                    "volume": "fxfs",
                 },
             },
         },
@@ -116,7 +119,8 @@ component is included in the **base packages**.
 They are available immediately at boot, are immutable (read-only), and are
 updated as part of the system OTA.
 
-For example, a Fuchsia product configuration with product settings may look like the following:
+For example, a Fuchsia product configuration with product settings may look like
+the following:
 
 Example:
 
@@ -142,7 +146,8 @@ fuchsia_product_configuration(
 )
 ```
 
-For a full list of product settings, see the [ProductSettings documentation][product-settings-docs].
+For a full list of product settings, see the
+[ProductSettings documentation][product-settings-docs].
 
 ### Assembling the product image {:#assembling-the-product-image}
 
@@ -182,7 +187,7 @@ load(
 )
 
 fuchsia_product_bundle(
-    name = "product_bundle.x64",
+    name = "my_product.x64",
     product_bundle_name = "my_product.x64",
 {{"<strong>"}}
     main = ":image.x64",
@@ -196,19 +201,160 @@ For example:
 
 *   **Run in emulator:**
 
-    ```bash
+    ```posix-terminal
     ffx emu start my_product.x64
     ```
 
 *   **Flash to device:**
 
-    ```bash
+    ```posix-terminal
     ffx target flash -b my_product.x64
     ```
 
+## Registering with the build system {:#registering-with-the-build-system}
+
+To build your product bundle, it must be registered with the GN build system.
+This involves the following steps:
+
+* [Registering with the build system](#bridging-to-gn)
+* [Building the product](#building-the-product)
+
+### Bridging to GN {:#bridging-to-gn}
+
+Fuchsia's build system uses GN, but your product bundle is defined in Bazel. You
+need to use the `bazel_product_bundle` GN template to create a bridge.
+
+Note: The `bazel_inputs_from_gn` list ensures that necessary board artifacts
+(like the drivers and bootloader) are available to Bazel. The
+`allow_eng_platform_bundle_use` flag is required because this example uses an `eng`
+build type in the product configuration.
+
+Create a `BUILD.gn` file in your product directory (e.g.,
+`//products/my_product/BUILD.gn`):
+
+```gn
+# //products/my_product/BUILD.gn
+import("//build/bazel/assembly/bazel_product_bundle.gni")
+
+bazel_product_bundle("my_product.x64") {
+  testonly = true
+  product_bundle_name = "my_product.x64"
+  bazel_product_bundle_target = ":my_product.x64"
+  bazel_product_image_target = ":image.x64"
+  bazel_inputs_from_gn = [
+    "//boards/x64:x64.bazel_input",
+    "//build/images/flash:esp.bazel_input",
+  ]
+  allow_eng_platform_bundle_use = true
+}
+```
+
+### Adding to allowlists {:#adding-to-allowlists}
+
+You may need to add your new product to the `bazel_action_allowlist` in
+`//build/bazel/BUILD.gn` to avoid visibility errors:
+
+```gn
+# //build/bazel/BUILD.gn
+group("bazel_action_allowlist") {
+  visibility = [
+    # ...
+    "//products/my_product:*",
+  ]
+  # ...
+}
+```
+
+You may also need to add it to the `non_hermetic_deps` visibility list in `//build/BUILD.gn`:
+
+```gn
+# //build/BUILD.gn
+group("non_hermetic_deps") {
+  visibility = [
+    # ...
+    "//products/my_product:*",
+  ]
+  # ...
+}
+```
+
+This GN target (`:my_product.x64`) now represents your Bazel product bundle
+in the GN build graph.
+
+### Adding to available products {:#adding-to-available-products}
+
+Finally, add this new GN target to the global list of product bundles in
+`//products/BUILD.gn` to make it discoverable by `fx`:
+
+```gn
+# //products/BUILD.gn
+group("product_bundles") {
+  testonly = true
+  deps = [
+    # ... other products
+    "//products/my_product:my_product.x64",
+  ]
+}
+```
+
+## Building the product {:#building-the-product}
+
+Fuchsia supports multi-product builds, meaning you can have multiple products
+available in the same build directory.
+
+### Configuring the build
+
+Configure your build environment using `fx set`. You should use a product
+configuration that enables the Bazel build system, such as `fuchsia.x64`:
+
+```posix-terminal
+fx set fuchsia.x64
+```
+
+### Setting the main product
+
+To work with your specific product, set it as the "main" product bundle. This
+configures `fx` tools to target your product by default:
+
+```posix-terminal
+fx set-main-pb my_product.x64
+```
+
+### Building the product
+
+To build your currently selected main product (and its dependencies):
+
+```posix-terminal
+fx build
+```
+
+If you want to explicitly build a specific product bundle regardless of the main
+setting:
+
+```posix-terminal
+fx build my_product.x64
+```
+
+### Switching products
+
+You can switch the active "main" product bundle at any time without re-running
+`fx set` by running `fx set-main-pb` again:
+
+```posix-terminal
+fx set-main-pb minimal.x64
+```
+
+### GN Arguments vs Assembly
+
+In a multi-product build environment, all products share the same GN arguments
+(defined by `fx set`). Therefore, you cannot use `fx set ... --args` to
+configure product-specific features. Instead, all product configuration must
+be done via the `fuchsia_product_configuration` Bazel rule as demonstrated in
+this codelab.
+
 ## Next steps {:#next-steps}
 
-This codelab covered the basics of defining a new product configuration.
+This codelab covered the basics of defining and building a new product bundle.
 
 To continue learning, you can:
 

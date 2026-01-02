@@ -12,5 +12,5 @@ toc:
   path: /docs/concepts/software_assembly/implementing_platform_feature.md
 - title: "Codelab: Defining a new board configuration"
   path: /docs/concepts/software_assembly/board_configuration_codelab.md
-- title: "Codelab: Defining a new product configuration"
+- title: "Codelab: Defining and building a product bundle"
   path: /docs/concepts/software_assembly/product_configuration_codelab.md
