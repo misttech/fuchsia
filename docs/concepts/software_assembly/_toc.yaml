@@ -13,4 +13,4 @@ toc:
 - title: "Codelab: Defining a new board configuration"
   path: /docs/concepts/software_assembly/board_configuration_codelab.md
 - title: "Codelab: Defining and building a product bundle"
-  path: /docs/concepts/software_assembly/product_configuration_codelab.md
+  path: /docs/concepts/software_assembly/product_bundle_codelab.md
