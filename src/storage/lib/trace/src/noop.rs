@@ -8,7 +8,6 @@
 //! built with tracing enabled and with tracing disabled which will ensure that these functions
 //! can't diverge from the real ones.
 
-use std::ffi::CStr;
 use std::future::Future;
 use std::marker::PhantomData;
 
@@ -56,7 +55,7 @@ macro_rules! duration {
 }
 
 #[inline]
-pub const fn use_duration_args<'a>(_category: &'static CStr, _name: &'static CStr) {}
+pub const fn use_duration_args<'a>(_category: &'static str, _name: &'static str) {}
 
 /// Convenience macro for creating an instant event.
 ///
@@ -72,7 +71,7 @@ macro_rules! instant {
 }
 
 #[inline]
-pub const fn use_instant_args<'a>(_category: &'static CStr, _name: &'static CStr, _scope: Scope) {}
+pub const fn use_instant_args<'a>(_category: &'static str, _name: &'static str, _scope: Scope) {}
 
 /// Writes a flow begin event with the specified id.
 ///
@@ -114,7 +113,7 @@ macro_rules! flow_end {
 }
 
 #[inline]
-pub const fn use_flow_args(_category: &'static CStr, _name: &'static CStr, _flow_id: Id) {}
+pub const fn use_flow_args(_category: &'static str, _name: &'static str, _flow_id: Id) {}
 
 pub trait TraceFutureExt: Future + Sized {
     #[inline(always)]
@@ -143,7 +142,7 @@ pub struct TraceFutureArgs {
 }
 
 #[inline]
-pub fn trace_future_args<'a>(_category: &'static CStr, _name: &'static CStr) -> TraceFutureArgs {
+pub fn trace_future_args<'a>(_category: &'static str, _name: &'static str) -> TraceFutureArgs {
     TraceFutureArgs { _use_trace_future_args: () }
 }
 

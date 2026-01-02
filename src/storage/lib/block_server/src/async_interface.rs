@@ -413,8 +413,8 @@ impl<I: Interface + ?Sized> Session<I> {
             if let Some(id) = request.trace_flow_id {
                 fuchsia_trace::async_instant!(
                     fuchsia_trace::Id::from(id.get()),
-                    c"storage",
-                    c"block_server::SimulatedBarrier",
+                    "storage",
+                    "block_server::SimulatedBarrier",
                     "request_id" => request.request_id.0
                 );
             }
@@ -641,8 +641,8 @@ impl<I: Interface + ?Sized> Session<I> {
                 if let Some(id) = trace_flow_id {
                     fuchsia_trace::async_instant!(
                         fuchsia_trace::Id::from(id.get()),
-                        c"storage",
-                        c"block_server::SimulatedFUA",
+                        "storage",
+                        "block_server::SimulatedFUA",
                         "request_id" => request_id.0
                     );
                 }

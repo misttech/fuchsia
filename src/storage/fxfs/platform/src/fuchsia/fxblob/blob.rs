@@ -333,7 +333,7 @@ impl PagerBacked for FxBlob {
 
                     let buf = buffer.as_mut_slice();
                     match DECOMPRESSOR.with(|decompressor| {
-                        fxfs_trace::duration!(c"blob-decompress", "len" => len);
+                        fxfs_trace::duration!("blob-decompress", "len" => len);
                         let mut decompressor = decompressor.borrow_mut();
                         decompressor.decompress_to_buffer(
                             &compressed_buf.as_slice()[compressed_buf_range],
@@ -412,7 +412,7 @@ impl PagerBacked for FxBlob {
         {
             // TODO(https://fxbug.dev/42073035): This should be offloaded to the kernel at which
             // point we can delete this.
-            fxfs_trace::duration!(c"blob-verify", "len" => read);
+            fxfs_trace::duration!("blob-verify", "len" => read);
             self.merkle_verifier.verify(range.start as usize, &buffer.as_slice()[..read])?;
         }
         // Zero the tail.

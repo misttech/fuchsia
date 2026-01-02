@@ -170,15 +170,15 @@ impl<S> ActiveRequestsInner<S> {
         }
 
         fuchsia_trace::duration!(
-            c"storage",
-            c"block_server::finish_transaction",
+            "storage",
+            "block_server::finish_transaction",
             "request_id" => request_id.0,
             "group_completed" => group.count == 0,
             "status" => status.into_raw());
         if let Some(trace_flow_id) = group.trace_flow_id {
             fuchsia_trace::flow_step!(
-                c"storage",
-                c"block_server::finish_request",
+                "storage",
+                "block_server::finish_request",
                 trace_flow_id.get().into()
             );
         }
@@ -1036,22 +1036,19 @@ impl<SM: SessionManager> SessionHelper<SM> {
         }
         static CACHE: AtomicU64 = AtomicU64::new(0);
         if let Some(context) =
-            fuchsia_trace::TraceCategoryContext::acquire_cached(c"storage", &CACHE)
+            fuchsia_trace::TraceCategoryContext::acquire_cached("storage", &CACHE)
         {
             use fuchsia_trace::ArgValue;
             let trace_args = [
                 ArgValue::of("request_id", request.request_id.0),
                 ArgValue::of("opcode", request.operation.trace_label()),
             ];
-            let _scope = fuchsia_trace::duration(
-                c"storage",
-                c"block_server::start_transaction",
-                &trace_args,
-            );
+            let _scope =
+                fuchsia_trace::duration("storage", "block_server::start_transaction", &trace_args);
             if let Some(trace_flow_id) = active_request.trace_flow_id {
                 fuchsia_trace::flow_step(
                     &context,
-                    c"block_server::start_transaction",
+                    "block_server::start_transaction",
                     trace_flow_id.get().into(),
                     &[],
                 );

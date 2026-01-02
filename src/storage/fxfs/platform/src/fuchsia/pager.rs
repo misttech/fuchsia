@@ -479,7 +479,7 @@ pub fn default_page_in<P: PagerBacked>(
     read_ahead_size: u64,
 ) {
     fxfs_trace::duration!(
-        c"start-page-in",
+        "start-page-in",
         "offset" => pager_range.start(),
         "len" => pager_range.len()
     );

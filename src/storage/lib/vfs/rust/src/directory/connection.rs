@@ -88,7 +88,7 @@ impl<DirectoryType: Directory> BaseConnection<DirectoryType> {
                 not(fuchsia_api_level_at_least = "29")
             ))]
             fio::DirectoryRequest::DeprecatedClone { flags, object, control_handle: _ } => {
-                trace::duration!(c"storage", c"Directory::DeprecatedClone");
+                trace::duration!("storage", "Directory::DeprecatedClone");
                 crate::common::send_on_open_with_error(
                     flags.contains(fio::OpenFlags::DESCRIBE),
                     object,
@@ -96,11 +96,11 @@ impl<DirectoryType: Directory> BaseConnection<DirectoryType> {
                 );
             }
             fio::DirectoryRequest::Clone { request, control_handle: _ } => {
-                trace::duration!(c"storage", c"Directory::Clone");
+                trace::duration!("storage", "Directory::Clone");
                 self.handle_clone(request.into_channel());
             }
             fio::DirectoryRequest::Close { responder } => {
-                trace::duration!(c"storage", c"Directory::Close");
+                trace::duration!("storage", "Directory::Close");
                 responder.send(Ok(()))?;
                 return Ok(ConnectionState::Closed);
             }
@@ -114,7 +114,7 @@ impl<DirectoryType: Directory> BaseConnection<DirectoryType> {
                     .await;
                     responder.send(status.into_raw(), &attrs)
                 }
-                .trace(trace::trace_future_args!(c"storage", c"Directory::GetAttr"))
+                .trace(trace::trace_future_args!("storage", "Directory::GetAttr"))
                 .await?;
             }
             #[cfg(not(fuchsia_api_level_at_least = "28"))]
@@ -127,7 +127,7 @@ impl<DirectoryType: Directory> BaseConnection<DirectoryType> {
                     .await;
                     responder.send(status.into_raw(), &attrs)
                 }
-                .trace(trace::trace_future_args!(c"storage", c"Directory::GetAttr"))
+                .trace(trace::trace_future_args!("storage", "Directory::GetAttr"))
                 .await?;
             }
             fio::DirectoryRequest::GetAttributes { query, responder } => {
@@ -141,19 +141,19 @@ impl<DirectoryType: Directory> BaseConnection<DirectoryType> {
                             .map_err(|status| status.into_raw()),
                     )
                 }
-                .trace(trace::trace_future_args!(c"storage", c"Directory::GetAttributes"))
+                .trace(trace::trace_future_args!("storage", "Directory::GetAttributes"))
                 .await?;
             }
             fio::DirectoryRequest::UpdateAttributes { payload: _, responder } => {
-                trace::duration!(c"storage", c"Directory::UpdateAttributes");
+                trace::duration!("storage", "Directory::UpdateAttributes");
                 // TODO(https://fxbug.dev/324112547): Handle unimplemented io2 method.
                 responder.send(Err(Status::NOT_SUPPORTED.into_raw()))?;
             }
             fio::DirectoryRequest::ListExtendedAttributes { iterator, control_handle: _ } => {
                 self.handle_list_extended_attribute(iterator)
                     .trace(trace::trace_future_args!(
-                        c"storage",
-                        c"Directory::ListExtendedAttributes"
+                        "storage",
+                        "Directory::ListExtendedAttributes"
                     ))
                     .await;
             }
@@ -163,7 +163,7 @@ impl<DirectoryType: Directory> BaseConnection<DirectoryType> {
                         self.handle_get_extended_attribute(name).await.map_err(Status::into_raw);
                     responder.send(res)
                 }
-                .trace(trace::trace_future_args!(c"storage", c"Directory::GetExtendedAttribute"))
+                .trace(trace::trace_future_args!("storage", "Directory::GetExtendedAttribute"))
                 .await?;
             }
             fio::DirectoryRequest::SetExtendedAttribute { name, value, mode, responder } => {
@@ -174,7 +174,7 @@ impl<DirectoryType: Directory> BaseConnection<DirectoryType> {
                         .map_err(Status::into_raw);
                     responder.send(res)
                 }
-                .trace(trace::trace_future_args!(c"storage", c"Directory::SetExtendedAttribute"))
+                .trace(trace::trace_future_args!("storage", "Directory::SetExtendedAttribute"))
                 .await?;
             }
             fio::DirectoryRequest::RemoveExtendedAttribute { name, responder } => {
@@ -183,37 +183,37 @@ impl<DirectoryType: Directory> BaseConnection<DirectoryType> {
                         self.handle_remove_extended_attribute(name).await.map_err(Status::into_raw);
                     responder.send(res)
                 }
-                .trace(trace::trace_future_args!(c"storage", c"Directory::RemoveExtendedAttribute"))
+                .trace(trace::trace_future_args!("storage", "Directory::RemoveExtendedAttribute"))
                 .await?;
             }
             #[cfg(fuchsia_api_level_at_least = "27")]
             fio::DirectoryRequest::GetFlags { responder } => {
-                trace::duration!(c"storage", c"Directory::GetFlags");
+                trace::duration!("storage", "Directory::GetFlags");
                 responder.send(Ok(fio::Flags::from(&self.options)))?;
             }
             #[cfg(fuchsia_api_level_at_least = "27")]
             fio::DirectoryRequest::SetFlags { flags: _, responder } => {
-                trace::duration!(c"storage", c"Directory::SetFlags");
+                trace::duration!("storage", "Directory::SetFlags");
                 responder.send(Err(Status::NOT_SUPPORTED.into_raw()))?;
             }
             #[cfg(fuchsia_api_level_at_least = "27")]
             fio::DirectoryRequest::DeprecatedGetFlags { responder } => {
-                trace::duration!(c"storage", c"Directory::DeprecatedGetFlags");
+                trace::duration!("storage", "Directory::DeprecatedGetFlags");
                 responder.send(Status::OK.into_raw(), self.options.to_io1())?;
             }
             #[cfg(fuchsia_api_level_at_least = "27")]
             fio::DirectoryRequest::DeprecatedSetFlags { flags: _, responder } => {
-                trace::duration!(c"storage", c"Directory::DeprecatedSetFlags");
+                trace::duration!("storage", "Directory::DeprecatedSetFlags");
                 responder.send(Status::NOT_SUPPORTED.into_raw())?;
             }
             #[cfg(not(fuchsia_api_level_at_least = "27"))]
             fio::DirectoryRequest::GetFlags { responder } => {
-                trace::duration!(c"storage", c"Directory::GetFlags");
+                trace::duration!("storage", "Directory::GetFlags");
                 responder.send(Status::OK.into_raw(), self.options.to_io1())?;
             }
             #[cfg(not(fuchsia_api_level_at_least = "27"))]
             fio::DirectoryRequest::SetFlags { flags: _, responder } => {
-                trace::duration!(c"storage", c"Directory::SetFlags");
+                trace::duration!("storage", "Directory::SetFlags");
                 responder.send(Status::NOT_SUPPORTED.into_raw())?;
             }
             #[cfg(fuchsia_api_level_at_least = "27")]
@@ -225,7 +225,7 @@ impl<DirectoryType: Directory> BaseConnection<DirectoryType> {
                 control_handle: _,
             } => {
                 {
-                    trace::duration!(c"storage", c"Directory::Open");
+                    trace::duration!("storage", "Directory::Open");
                     self.handle_deprecated_open(flags, path, object);
                 }
                 // Since open typically spawns a task, yield to the executor now to give that task a
@@ -235,7 +235,7 @@ impl<DirectoryType: Directory> BaseConnection<DirectoryType> {
             #[cfg(not(fuchsia_api_level_at_least = "27"))]
             fio::DirectoryRequest::Open { flags, mode: _, path, object, control_handle: _ } => {
                 {
-                    trace::duration!(c"storage", c"Directory::Open");
+                    trace::duration!("storage", "Directory::Open");
                     self.handle_deprecated_open(flags, path, object);
                 }
                 // Since open typically spawns a task, yield to the executor now to give that task a
@@ -243,7 +243,7 @@ impl<DirectoryType: Directory> BaseConnection<DirectoryType> {
                 yield_to_executor().await;
             }
             fio::DirectoryRequest::AdvisoryLock { request: _, responder } => {
-                trace::duration!(c"storage", c"Directory::AdvisoryLock");
+                trace::duration!("storage", "Directory::AdvisoryLock");
                 responder.send(Err(Status::NOT_SUPPORTED.into_raw()))?;
             }
             fio::DirectoryRequest::ReadDirents { max_bytes, responder } => {
@@ -251,11 +251,11 @@ impl<DirectoryType: Directory> BaseConnection<DirectoryType> {
                     let (status, entries) = self.handle_read_dirents(max_bytes).await;
                     responder.send(status.into_raw(), entries.as_slice())
                 }
-                .trace(trace::trace_future_args!(c"storage", c"Directory::ReadDirents"))
+                .trace(trace::trace_future_args!("storage", "Directory::ReadDirents"))
                 .await?;
             }
             fio::DirectoryRequest::Rewind { responder } => {
-                trace::duration!(c"storage", c"Directory::Rewind");
+                trace::duration!("storage", "Directory::Rewind");
                 self.seek = Default::default();
                 responder.send(Status::OK.into_raw())?;
             }
@@ -264,11 +264,11 @@ impl<DirectoryType: Directory> BaseConnection<DirectoryType> {
                     let status: Status = self.handle_link(&src, dst_parent_token, dst).await.into();
                     responder.send(status.into_raw())
                 }
-                .trace(trace::trace_future_args!(c"storage", c"Directory::Link"))
+                .trace(trace::trace_future_args!("storage", "Directory::Link"))
                 .await?;
             }
             fio::DirectoryRequest::Watch { mask, options, watcher, responder } => {
-                trace::duration!(c"storage", c"Directory::Watch");
+                trace::duration!("storage", "Directory::Watch");
                 let status = if options != 0 {
                     Status::INVALID_ARGS
                 } else {
@@ -280,7 +280,7 @@ impl<DirectoryType: Directory> BaseConnection<DirectoryType> {
                 let () = responder.send(fio::DirectoryMarker::PROTOCOL_NAME.as_bytes())?;
             }
             fio::DirectoryRequest::QueryFilesystem { responder } => {
-                trace::duration!(c"storage", c"Directory::QueryFilesystem");
+                trace::duration!("storage", "Directory::QueryFilesystem");
                 match self.directory.query_filesystem() {
                     Err(status) => responder.send(status.into_raw(), None)?,
                     Ok(info) => responder.send(0, Some(&info))?,
@@ -322,7 +322,7 @@ impl<DirectoryType: Directory> BaseConnection<DirectoryType> {
 
                     ObjectRequest::new(flags, &options, object)
                         .handle_async(async |req| self.handle_open(path, flags, req).await)
-                        .trace(trace::trace_future_args!(c"storage", c"Directory::Open3"))
+                        .trace(trace::trace_future_args!("storage", "Directory::Open3"))
                         .await;
                 }
                 // Since open typically spawns a task, yield to the executor now to give that task a
@@ -348,7 +348,7 @@ impl<DirectoryType: Directory> BaseConnection<DirectoryType> {
 
                     ObjectRequest::new(flags, &options, object)
                         .handle_async(async |req| self.handle_open(path, flags, req).await)
-                        .trace(trace::trace_future_args!(c"storage", c"Directory::Open3"))
+                        .trace(trace::trace_future_args!("storage", "Directory::Open3"))
                         .await;
                 }
                 // Since open typically spawns a task, yield to the executor now to give that task a

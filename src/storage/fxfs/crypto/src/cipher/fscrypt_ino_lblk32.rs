@@ -278,7 +278,7 @@ impl FscryptSoftwareInoLblk32FileCipher {
     }
 
     pub fn encrypt(&self, buffer: &mut [u8], tweak: u128) -> Result<(), Error> {
-        fxfs_trace::duration!(c"encrypt", "len" => buffer.len());
+        fxfs_trace::duration!("encrypt", "len" => buffer.len());
         assert_eq!(buffer.len() % BLOCK_SIZE, 0);
         let mut tweak = tweak;
 
@@ -291,7 +291,7 @@ impl FscryptSoftwareInoLblk32FileCipher {
     }
 
     pub fn decrypt(&self, buffer: &mut [u8], mut tweak: u128) -> Result<(), Error> {
-        fxfs_trace::duration!(c"decrypt", "len" => buffer.len());
+        fxfs_trace::duration!("decrypt", "len" => buffer.len());
         assert_eq!(buffer.len() % BLOCK_SIZE, 0);
         for block in buffer.chunks_exact_mut(BLOCK_SIZE) {
             self.xts_key2.encrypt_block(GenericArray::from_mut_slice(tweak.as_mut_bytes()));

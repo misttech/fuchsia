@@ -242,12 +242,12 @@ impl StreamCipher {
     }
 
     pub fn encrypt(&mut self, buffer: &mut [u8]) {
-        fxfs_trace::duration!(c"StreamCipher::encrypt", "len" => buffer.len());
+        fxfs_trace::duration!("StreamCipher::encrypt", "len" => buffer.len());
         self.0.apply_keystream(buffer);
     }
 
     pub fn decrypt(&mut self, buffer: &mut [u8]) {
-        fxfs_trace::duration!(c"StreamCipher::decrypt", "len" => buffer.len());
+        fxfs_trace::duration!("StreamCipher::decrypt", "len" => buffer.len());
         self.0.apply_keystream(buffer);
     }
 

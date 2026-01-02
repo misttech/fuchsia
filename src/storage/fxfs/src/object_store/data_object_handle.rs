@@ -321,7 +321,7 @@ impl<S: HandleOwner> DataObjectHandle<S> {
                 let hasher = metadata.get_hasher_for_block_size(block_size);
                 let leaf_nodes: Vec<&[u8]> =
                     metadata.merkle_tree.chunks(hasher.hash_size()).collect();
-                fxfs_trace::duration!(c"fsverity-verify", "len" => buffer.len());
+                fxfs_trace::duration!("fsverity-verify", "len" => buffer.len());
                 // TODO(b/318880297): Consider parallelizing computation.
                 for b in buffer.chunks(block_size) {
                     ensure!(

@@ -5,13 +5,12 @@
 use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
 use quote::{ToTokens, TokenStreamExt, quote};
-use std::ffi::CString;
 use syn::parse::{Parse, ParseStream};
 use syn::spanned::Spanned;
 use syn::visit_mut::VisitMut;
 use syn::{
-    Attribute, Block, Expr, Ident, ImplItem, ItemFn, ItemImpl, LitCStr, LitStr, Path, ReturnType,
-    Token, Type, parse_macro_input, parse_quote,
+    Attribute, Block, Expr, Ident, ImplItem, ItemFn, ItemImpl, LitStr, Path, ReturnType, Token,
+    Type, parse_macro_input, parse_quote,
 };
 
 enum TraceItem {
@@ -183,7 +182,7 @@ impl VisitMut for RemoveImplTrait {
     }
 }
 
-type TraceName = LitCStr;
+type TraceName = LitStr;
 
 fn path_to_trace_name(path: &Path) -> TraceName {
     let name = path
@@ -192,10 +191,7 @@ fn path_to_trace_name(path: &Path) -> TraceName {
         .map(|segment| segment.ident.to_string())
         .collect::<Vec<_>>()
         .join("::");
-    LitCStr::new(
-        &CString::new(name).expect("Identifiers shouldn't contain the null character"),
-        path.span(),
-    )
+    LitStr::new(&name, path.span())
 }
 
 fn add_tracing_to_async_block(
@@ -369,7 +365,7 @@ fn add_tracing_to_fn(mut item_fn: ItemFn, args: TraceFnArgs) -> syn::Result<Toke
 /// }
 /// // Expands to:
 /// fn example_function() {
-///     fxfs_trace::duration!(c"example_function");
+///     fxfs_trace::duration!("example_function");
 ///     ...
 /// }
 /// ```

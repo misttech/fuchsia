@@ -29,7 +29,7 @@ impl Cipher for FxfsCipher {
         file_offset: u64,
         buffer: &mut [u8],
     ) -> Result<(), Error> {
-        fxfs_trace::duration!(c"encrypt", "len" => buffer.len());
+        fxfs_trace::duration!("encrypt", "len" => buffer.len());
         assert_eq!(file_offset % SECTOR_SIZE, 0);
         let mut sector_offset = file_offset / SECTOR_SIZE;
         assert_eq!(buffer.len() % (SECTOR_SIZE as usize), 0);
@@ -50,7 +50,7 @@ impl Cipher for FxfsCipher {
         file_offset: u64,
         buffer: &mut [u8],
     ) -> Result<(), Error> {
-        fxfs_trace::duration!(c"decrypt", "len" => buffer.len());
+        fxfs_trace::duration!("decrypt", "len" => buffer.len());
         assert_eq!(file_offset % SECTOR_SIZE, 0);
         let mut sector_offset = file_offset / SECTOR_SIZE;
         assert_eq!(buffer.len() % (SECTOR_SIZE as usize), 0);

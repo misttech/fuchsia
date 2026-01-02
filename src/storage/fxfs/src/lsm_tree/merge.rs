@@ -342,7 +342,7 @@ impl<'a, K: Key + LayerKey + OrdLowerBound, V: Value> Merger<'a, K, V> {
         };
         let len = self.iterators.len();
         let pending_iterators = {
-            fxfs_trace::duration!(c"Merger::filter_layer_files", "len" => len);
+            fxfs_trace::duration!("Merger::filter_layer_files", "len" => len);
             self.iterators
                 .iter_mut()
                 .rev()

@@ -557,7 +557,7 @@ impl<T: 'static + File, U: Deref<Target = OpenNode<T>> + DerefMut + IoOpHandler 
                 not(fuchsia_api_level_at_least = "29")
             ))]
             fio::FileRequest::DeprecatedClone { flags, object, control_handle: _ } => {
-                trace::duration!(c"storage", c"File::DeprecatedClone");
+                trace::duration!("storage", "File::DeprecatedClone");
                 crate::common::send_on_open_with_error(
                     flags.contains(fio::OpenFlags::DESCRIBE),
                     object,
@@ -565,7 +565,7 @@ impl<T: 'static + File, U: Deref<Target = OpenNode<T>> + DerefMut + IoOpHandler 
                 );
             }
             fio::FileRequest::Clone { request, control_handle: _ } => {
-                trace::duration!(c"storage", c"File::Clone");
+                trace::duration!("storage", "File::Clone");
                 self.handle_clone(ServerEnd::new(request.into_channel()));
             }
             fio::FileRequest::Close { responder } => {
@@ -577,7 +577,7 @@ impl<T: 'static + File, U: Deref<Target = OpenNode<T>> + DerefMut + IoOpHandler 
             }
             #[cfg(target_os = "fuchsia")]
             fio::FileRequest::Describe { responder } => {
-                trace::duration!(c"storage", c"File::Describe");
+                trace::duration!("storage", "File::Describe");
                 let stream = self.file.duplicate_stream()?;
                 responder.send(fio::FileInfo { stream, ..Default::default() })?;
             }
@@ -589,14 +589,14 @@ impl<T: 'static + File, U: Deref<Target = OpenNode<T>> + DerefMut + IoOpHandler 
                             .map_err(Status::into_raw),
                     )
                 }
-                .trace(trace::trace_future_args!(c"storage", c"File::LinkInto"))
+                .trace(trace::trace_future_args!("storage", "File::LinkInto"))
                 .await?;
             }
             fio::FileRequest::Sync { responder } => {
                 async move {
                     responder.send(self.file.sync(SyncMode::Normal).await.map_err(Status::into_raw))
                 }
-                .trace(trace::trace_future_args!(c"storage", c"File::Sync"))
+                .trace(trace::trace_future_args!("storage", "File::Sync"))
                 .await?;
             }
             #[cfg(fuchsia_api_level_at_least = "28")]
@@ -607,7 +607,7 @@ impl<T: 'static + File, U: Deref<Target = OpenNode<T>> + DerefMut + IoOpHandler 
                             .await;
                     responder.send(status.into_raw(), &attrs)
                 }
-                .trace(trace::trace_future_args!(c"storage", c"File::GetAttr"))
+                .trace(trace::trace_future_args!("storage", "File::GetAttr"))
                 .await?;
             }
             #[cfg(not(fuchsia_api_level_at_least = "28"))]
@@ -618,7 +618,7 @@ impl<T: 'static + File, U: Deref<Target = OpenNode<T>> + DerefMut + IoOpHandler 
                             .await;
                     responder.send(status.into_raw(), &attrs)
                 }
-                .trace(trace::trace_future_args!(c"storage", c"File::GetAttr"))
+                .trace(trace::trace_future_args!("storage", "File::GetAttr"))
                 .await?;
             }
             #[cfg(fuchsia_api_level_at_least = "28")]
@@ -628,7 +628,7 @@ impl<T: 'static + File, U: Deref<Target = OpenNode<T>> + DerefMut + IoOpHandler 
                         self.handle_update_attributes(io1_to_io2_attrs(flags, attributes)).await;
                     responder.send(Status::from_result(result).into_raw())
                 }
-                .trace(trace::trace_future_args!(c"storage", c"File::SetAttr"))
+                .trace(trace::trace_future_args!("storage", "File::SetAttr"))
                 .await?;
             }
             #[cfg(not(fuchsia_api_level_at_least = "28"))]
@@ -638,7 +638,7 @@ impl<T: 'static + File, U: Deref<Target = OpenNode<T>> + DerefMut + IoOpHandler 
                         self.handle_update_attributes(io1_to_io2_attrs(flags, attributes)).await;
                     responder.send(Status::from_result(result).into_raw())
                 }
-                .trace(trace::trace_future_args!(c"storage", c"File::SetAttr"))
+                .trace(trace::trace_future_args!("storage", "File::SetAttr"))
                 .await?;
             }
             fio::FileRequest::GetAttributes { query, responder } => {
@@ -652,7 +652,7 @@ impl<T: 'static + File, U: Deref<Target = OpenNode<T>> + DerefMut + IoOpHandler 
                             .map_err(|status| status.into_raw()),
                     )
                 }
-                .trace(trace::trace_future_args!(c"storage", c"File::GetAttributes"))
+                .trace(trace::trace_future_args!("storage", "File::GetAttributes"))
                 .await?;
             }
             fio::FileRequest::UpdateAttributes { payload, responder } => {
@@ -661,12 +661,12 @@ impl<T: 'static + File, U: Deref<Target = OpenNode<T>> + DerefMut + IoOpHandler 
                         self.handle_update_attributes(payload).await.map_err(Status::into_raw);
                     responder.send(result)
                 }
-                .trace(trace::trace_future_args!(c"storage", c"File::UpdateAttributes"))
+                .trace(trace::trace_future_args!("storage", "File::UpdateAttributes"))
                 .await?;
             }
             fio::FileRequest::ListExtendedAttributes { iterator, control_handle: _ } => {
                 self.handle_list_extended_attribute(iterator)
-                    .trace(trace::trace_future_args!(c"storage", c"File::ListExtendedAttributes"))
+                    .trace(trace::trace_future_args!("storage", "File::ListExtendedAttributes"))
                     .await;
             }
             fio::FileRequest::GetExtendedAttribute { name, responder } => {
@@ -675,7 +675,7 @@ impl<T: 'static + File, U: Deref<Target = OpenNode<T>> + DerefMut + IoOpHandler 
                         self.handle_get_extended_attribute(name).await.map_err(Status::into_raw);
                     responder.send(res)
                 }
-                .trace(trace::trace_future_args!(c"storage", c"File::GetExtendedAttribute"))
+                .trace(trace::trace_future_args!("storage", "File::GetExtendedAttribute"))
                 .await?;
             }
             fio::FileRequest::SetExtendedAttribute { name, value, mode, responder } => {
@@ -686,7 +686,7 @@ impl<T: 'static + File, U: Deref<Target = OpenNode<T>> + DerefMut + IoOpHandler 
                         .map_err(Status::into_raw);
                     responder.send(res)
                 }
-                .trace(trace::trace_future_args!(c"storage", c"File::SetExtendedAttribute"))
+                .trace(trace::trace_future_args!("storage", "File::SetExtendedAttribute"))
                 .await?;
             }
             fio::FileRequest::RemoveExtendedAttribute { name, responder } => {
@@ -695,7 +695,7 @@ impl<T: 'static + File, U: Deref<Target = OpenNode<T>> + DerefMut + IoOpHandler 
                         self.handle_remove_extended_attribute(name).await.map_err(Status::into_raw);
                     responder.send(res)
                 }
-                .trace(trace::trace_future_args!(c"storage", c"File::RemoveExtendedAttribute"))
+                .trace(trace::trace_future_args!("storage", "File::RemoveExtendedAttribute"))
                 .await?;
             }
             #[cfg(fuchsia_api_level_at_least = "HEAD")]
@@ -704,12 +704,12 @@ impl<T: 'static + File, U: Deref<Target = OpenNode<T>> + DerefMut + IoOpHandler 
                     let res = self.handle_enable_verity(options).await.map_err(Status::into_raw);
                     responder.send(res)
                 }
-                .trace(trace::trace_future_args!(c"storage", c"File::EnableVerity"))
+                .trace(trace::trace_future_args!("storage", "File::EnableVerity"))
                 .await?;
             }
             fio::FileRequest::Read { count, responder } => {
                 let trace_args =
-                    trace::trace_future_args!(c"storage", c"File::Read", "bytes" => count);
+                    trace::trace_future_args!("storage", "File::Read", "bytes" => count);
                 async move {
                     let result = self.handle_read(count).await;
                     responder.send(result.as_deref().map_err(|s| s.into_raw()))
@@ -719,8 +719,8 @@ impl<T: 'static + File, U: Deref<Target = OpenNode<T>> + DerefMut + IoOpHandler 
             }
             fio::FileRequest::ReadAt { offset, count, responder } => {
                 let trace_args = trace::trace_future_args!(
-                    c"storage",
-                    c"File::ReadAt",
+                    "storage",
+                    "File::ReadAt",
                     "offset" => offset,
                     "bytes" => count
                 );
@@ -733,7 +733,7 @@ impl<T: 'static + File, U: Deref<Target = OpenNode<T>> + DerefMut + IoOpHandler 
             }
             fio::FileRequest::Write { data, responder } => {
                 let trace_args =
-                    trace::trace_future_args!(c"storage", c"File::Write", "bytes" => data.len());
+                    trace::trace_future_args!("storage", "File::Write", "bytes" => data.len());
                 async move {
                     let result = self.handle_write(data).await;
                     responder.send(result.map_err(Status::into_raw))
@@ -743,8 +743,8 @@ impl<T: 'static + File, U: Deref<Target = OpenNode<T>> + DerefMut + IoOpHandler 
             }
             fio::FileRequest::WriteAt { offset, data, responder } => {
                 let trace_args = trace::trace_future_args!(
-                    c"storage",
-                    c"File::WriteAt",
+                    "storage",
+                    "File::WriteAt",
                     "offset" => offset,
                     "bytes" => data.len()
                 );
@@ -760,7 +760,7 @@ impl<T: 'static + File, U: Deref<Target = OpenNode<T>> + DerefMut + IoOpHandler 
                     let result = self.handle_seek(offset, origin).await;
                     responder.send(result.map_err(Status::into_raw))
                 }
-                .trace(trace::trace_future_args!(c"storage", c"File::Seek"))
+                .trace(trace::trace_future_args!("storage", "File::Seek"))
                 .await?;
             }
             fio::FileRequest::Resize { length, responder } => {
@@ -768,17 +768,17 @@ impl<T: 'static + File, U: Deref<Target = OpenNode<T>> + DerefMut + IoOpHandler 
                     let result = self.handle_truncate(length).await;
                     responder.send(result.map_err(Status::into_raw))
                 }
-                .trace(trace::trace_future_args!(c"storage", c"File::Resize"))
+                .trace(trace::trace_future_args!("storage", "File::Resize"))
                 .await?;
             }
             #[cfg(fuchsia_api_level_at_least = "27")]
             fio::FileRequest::GetFlags { responder } => {
-                trace::duration!(c"storage", c"File::GetFlags");
+                trace::duration!("storage", "File::GetFlags");
                 responder.send(Ok(fio::Flags::from(&self.options)))?;
             }
             #[cfg(fuchsia_api_level_at_least = "27")]
             fio::FileRequest::SetFlags { flags, responder } => {
-                trace::duration!(c"storage", c"File::SetFlags");
+                trace::duration!("storage", "File::SetFlags");
                 // The only supported flag is APPEND.
                 if flags.is_empty() || flags == fio::Flags::FILE_APPEND {
                     self.options.is_append = flags.contains(fio::Flags::FILE_APPEND);
@@ -789,12 +789,12 @@ impl<T: 'static + File, U: Deref<Target = OpenNode<T>> + DerefMut + IoOpHandler 
             }
             #[cfg(fuchsia_api_level_at_least = "27")]
             fio::FileRequest::DeprecatedGetFlags { responder } => {
-                trace::duration!(c"storage", c"File::DeprecatedGetFlags");
+                trace::duration!("storage", "File::DeprecatedGetFlags");
                 responder.send(Status::OK.into_raw(), self.options.to_io1())?;
             }
             #[cfg(fuchsia_api_level_at_least = "27")]
             fio::FileRequest::DeprecatedSetFlags { flags, responder } => {
-                trace::duration!(c"storage", c"File::DeprecatedSetFlags");
+                trace::duration!("storage", "File::DeprecatedSetFlags");
                 // The only supported flag is APPEND.
                 let is_append = flags.contains(fio::OpenFlags::APPEND);
                 self.options.is_append = is_append;
@@ -803,12 +803,12 @@ impl<T: 'static + File, U: Deref<Target = OpenNode<T>> + DerefMut + IoOpHandler 
             }
             #[cfg(not(fuchsia_api_level_at_least = "27"))]
             fio::FileRequest::GetFlags { responder } => {
-                trace::duration!(c"storage", c"File::GetFlags");
+                trace::duration!("storage", "File::GetFlags");
                 responder.send(Status::OK.into_raw(), self.options.to_io1())?;
             }
             #[cfg(not(fuchsia_api_level_at_least = "27"))]
             fio::FileRequest::SetFlags { flags, responder } => {
-                trace::duration!(c"storage", c"File::SetFlags");
+                trace::duration!("storage", "File::SetFlags");
                 // The only supported flag is APPEND.
                 let is_append = flags.contains(fio::OpenFlags::APPEND);
                 self.options.is_append = is_append;
@@ -821,7 +821,7 @@ impl<T: 'static + File, U: Deref<Target = OpenNode<T>> + DerefMut + IoOpHandler 
                     let result = self.handle_get_backing_memory(flags).await;
                     responder.send(result.map_err(Status::into_raw))
                 }
-                .trace(trace::trace_future_args!(c"storage", c"File::GetBackingMemory"))
+                .trace(trace::trace_future_args!("storage", "File::GetBackingMemory"))
                 .await?;
             }
 
@@ -830,15 +830,15 @@ impl<T: 'static + File, U: Deref<Target = OpenNode<T>> + DerefMut + IoOpHandler 
                 responder.send(Err(Status::NOT_SUPPORTED.into_raw()))?;
             }
             fio::FileRequest::AdvisoryLock { request: _, responder } => {
-                trace::duration!(c"storage", c"File::AdvisoryLock");
+                trace::duration!("storage", "File::AdvisoryLock");
                 responder.send(Err(Status::NOT_SUPPORTED.into_raw()))?;
             }
             fio::FileRequest::Query { responder } => {
-                trace::duration!(c"storage", c"File::Query");
+                trace::duration!("storage", "File::Query");
                 responder.send(fio::FileMarker::PROTOCOL_NAME.as_bytes())?;
             }
             fio::FileRequest::QueryFilesystem { responder } => {
-                trace::duration!(c"storage", c"File::QueryFilesystem");
+                trace::duration!("storage", "File::QueryFilesystem");
                 match self.file.query_filesystem() {
                     Err(status) => responder.send(status.into_raw(), None)?,
                     Ok(info) => responder.send(0, Some(&info))?,
@@ -850,7 +850,7 @@ impl<T: 'static + File, U: Deref<Target = OpenNode<T>> + DerefMut + IoOpHandler 
                     let result = self.handle_allocate(offset, length, mode).await;
                     responder.send(result.map_err(Status::into_raw))
                 }
-                .trace(trace::trace_future_args!(c"storage", c"File::Allocate"))
+                .trace(trace::trace_future_args!("storage", "File::Allocate"))
                 .await?;
             }
             fio::FileRequest::_UnknownMethod { .. } => (),
@@ -1087,7 +1087,7 @@ impl<T: 'static + File, U: Deref<Target = OpenNode<T>> + DerefMut + IoOpHandler 
                         result
                     });
                 }
-                .trace(trace::trace_future_args!(c"storage", c"File::Close"))
+                .trace(trace::trace_future_args!("storage", "File::Close"))
                 .await;
                 ControlFlow::Break(())
             }

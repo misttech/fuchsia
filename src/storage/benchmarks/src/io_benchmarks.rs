@@ -36,8 +36,8 @@ impl ReadSequentialCold {
 impl<T: CacheClearableFilesystem> Benchmark<T> for ReadSequentialCold {
     async fn run(&self, fs: &mut T) -> Vec<OperationDuration> {
         storage_trace::duration!(
-            c"benchmark",
-            c"ReadSequentialCold",
+            "benchmark",
+            "ReadSequentialCold",
             "op_size" => self.op_size,
             "op_count" => self.op_count
         );
@@ -77,8 +77,8 @@ impl ReadSequentialWarm {
 impl<T: Filesystem> Benchmark<T> for ReadSequentialWarm {
     async fn run(&self, fs: &mut T) -> Vec<OperationDuration> {
         storage_trace::duration!(
-            c"benchmark",
-            c"ReadSequentialWarm",
+            "benchmark",
+            "ReadSequentialWarm",
             "op_size" => self.op_size,
             "op_count" => self.op_count
         );
@@ -117,8 +117,8 @@ impl ReadRandomCold {
 impl<T: CacheClearableFilesystem> Benchmark<T> for ReadRandomCold {
     async fn run(&self, fs: &mut T) -> Vec<OperationDuration> {
         storage_trace::duration!(
-            c"benchmark",
-            c"ReadRandomCold",
+            "benchmark",
+            "ReadRandomCold",
             "op_size" => self.op_size,
             "op_count" => self.op_count
         );
@@ -160,8 +160,8 @@ impl ReadSparseCold {
 impl<T: CacheClearableFilesystem> Benchmark<T> for ReadSparseCold {
     async fn run(&self, fs: &mut T) -> Vec<OperationDuration> {
         storage_trace::duration!(
-            c"benchmark",
-            c"ReadSparseCold",
+            "benchmark",
+            "ReadSparseCold",
             "op_size" => self.op_size,
             "op_count" => self.op_count
         );
@@ -201,8 +201,8 @@ impl ReadRandomWarm {
 impl<T: Filesystem> Benchmark<T> for ReadRandomWarm {
     async fn run(&self, fs: &mut T) -> Vec<OperationDuration> {
         storage_trace::duration!(
-            c"benchmark",
-            c"ReadRandomWarm",
+            "benchmark",
+            "ReadRandomWarm",
             "op_size" => self.op_size,
             "op_count" => self.op_count
         );
@@ -240,8 +240,8 @@ impl WriteSequentialCold {
 impl<T: Filesystem> Benchmark<T> for WriteSequentialCold {
     async fn run(&self, fs: &mut T) -> Vec<OperationDuration> {
         storage_trace::duration!(
-            c"benchmark",
-            c"WriteSequentialCold",
+            "benchmark",
+            "WriteSequentialCold",
             "op_size" => self.op_size,
             "op_count" => self.op_count
         );
@@ -273,8 +273,8 @@ impl WriteSequentialWarm {
 impl<T: Filesystem> Benchmark<T> for WriteSequentialWarm {
     async fn run(&self, fs: &mut T) -> Vec<OperationDuration> {
         storage_trace::duration!(
-            c"benchmark",
-            c"WriteSequentialWarm",
+            "benchmark",
+            "WriteSequentialWarm",
             "op_size" => self.op_size,
             "op_count" => self.op_count
         );
@@ -311,8 +311,8 @@ impl WriteRandomCold {
 impl<T: Filesystem> Benchmark<T> for WriteRandomCold {
     async fn run(&self, fs: &mut T) -> Vec<OperationDuration> {
         storage_trace::duration!(
-            c"benchmark",
-            c"WriteRandomCold",
+            "benchmark",
+            "WriteRandomCold",
             "op_size" => self.op_size,
             "op_count" => self.op_count
         );
@@ -345,8 +345,8 @@ impl WriteRandomWarm {
 impl<T: Filesystem> Benchmark<T> for WriteRandomWarm {
     async fn run(&self, fs: &mut T) -> Vec<OperationDuration> {
         storage_trace::duration!(
-            c"benchmark",
-            c"WriteRandomWarm",
+            "benchmark",
+            "WriteRandomWarm",
             "op_size" => self.op_size,
             "op_count" => self.op_count
         );
@@ -383,8 +383,8 @@ impl WriteSequentialFsyncCold {
 impl<T: Filesystem> Benchmark<T> for WriteSequentialFsyncCold {
     async fn run(&self, fs: &mut T) -> Vec<OperationDuration> {
         storage_trace::duration!(
-            c"benchmark",
-            c"WriteSequentialFsyncCold",
+            "benchmark",
+            "WriteSequentialFsyncCold",
             "op_size" => self.op_size,
             "op_count" => self.op_count
         );
@@ -416,8 +416,8 @@ impl WriteSequentialFsyncWarm {
 impl<T: Filesystem> Benchmark<T> for WriteSequentialFsyncWarm {
     async fn run(&self, fs: &mut T) -> Vec<OperationDuration> {
         storage_trace::duration!(
-            c"benchmark",
-            c"WriteSequentialFsyncWarm",
+            "benchmark",
+            "WriteSequentialFsyncWarm",
             "op_size" => self.op_size,
             "op_count" => self.op_count
         );
@@ -456,8 +456,8 @@ impl WriteRandomFsyncCold {
 impl<T: Filesystem> Benchmark<T> for WriteRandomFsyncCold {
     async fn run(&self, fs: &mut T) -> Vec<OperationDuration> {
         storage_trace::duration!(
-            c"benchmark",
-            c"WriteRandomFsyncCold",
+            "benchmark",
+            "WriteRandomFsyncCold",
             "op_size" => self.op_size,
             "op_count" => self.op_count
         );
@@ -490,8 +490,8 @@ impl WriteRandomFsyncWarm {
 impl<T: Filesystem> Benchmark<T> for WriteRandomFsyncWarm {
     async fn run(&self, fs: &mut T) -> Vec<OperationDuration> {
         storage_trace::duration!(
-            c"benchmark",
-            c"WriteRandomFsyncWarm",
+            "benchmark",
+            "WriteRandomFsyncWarm",
             "op_size" => self.op_size,
             "op_count" => self.op_count
         );
@@ -542,7 +542,7 @@ fn read_sequential<F: AsRawFd>(
     let mut durations = Vec::new();
     let fd = file.as_raw_fd();
     for i in 0..op_count {
-        storage_trace::duration!(c"benchmark", c"read", "op_number" => i);
+        storage_trace::duration!("benchmark", "read", "op_number" => i);
         let timer = OperationTimer::start();
         let result = unsafe { libc::read(fd, data.as_mut_ptr() as *mut libc::c_void, data.len()) };
         durations.push(timer.stop());
@@ -564,7 +564,7 @@ fn read_sparse<F: AsRawFd>(
     let fd = file.as_raw_fd();
     let sparse_offset = ((1 + block_skip) * op_size) as i64;
     for i in 0..op_count as i64 {
-        storage_trace::duration!(c"benchmark", c"pread", "op_number" => i);
+        storage_trace::duration!("benchmark", "pread", "op_number" => i);
         let timer = OperationTimer::start();
         let result = unsafe {
             libc::pread(fd, data.as_mut_ptr() as *mut libc::c_void, data.len(), i * sparse_offset)
@@ -585,7 +585,7 @@ fn write_sequential<F: AsRawFd>(
     let mut durations = Vec::new();
     let fd = file.as_raw_fd();
     for i in 0..op_count {
-        storage_trace::duration!(c"benchmark", c"write", "op_number" => i);
+        storage_trace::duration!("benchmark", "write", "op_number" => i);
         let timer = OperationTimer::start();
         let result = unsafe { libc::write(fd, data.as_ptr() as *const libc::c_void, data.len()) };
         durations.push(timer.stop());
@@ -605,7 +605,7 @@ fn write_sequential_fsync<F: AsRawFd>(
     let mut durations = Vec::new();
     let fd = file.as_raw_fd();
     for i in 0..op_count {
-        storage_trace::duration!(c"benchmark", c"write", "op_number" => i);
+        storage_trace::duration!("benchmark", "write", "op_number" => i);
         let timer = OperationTimer::start();
         let write_result =
             unsafe { libc::write(fd, data.as_ptr() as *const libc::c_void, data.len()) };
@@ -639,7 +639,7 @@ fn read_random<F: AsRawFd, R: Rng>(
     let mut durations = Vec::new();
     let fd = file.as_raw_fd();
     for (i, offset) in offsets.iter().enumerate() {
-        storage_trace::duration!(c"benchmark", c"pread", "op_number" => i, "offset" => *offset);
+        storage_trace::duration!("benchmark", "pread", "op_number" => i, "offset" => *offset);
         let timer = OperationTimer::start();
         let result =
             unsafe { libc::pread(fd, data.as_mut_ptr() as *mut libc::c_void, data.len(), *offset) };
@@ -663,7 +663,7 @@ fn write_random<F: AsRawFd, R: Rng>(
     let mut durations = Vec::new();
     let fd = file.as_raw_fd();
     for (i, offset) in offsets.iter().enumerate() {
-        storage_trace::duration!(c"benchmark", c"pwrite", "op_number" => i, "offset" => *offset);
+        storage_trace::duration!("benchmark", "pwrite", "op_number" => i, "offset" => *offset);
         let timer = OperationTimer::start();
         let result =
             unsafe { libc::pwrite(fd, data.as_ptr() as *const libc::c_void, data.len(), *offset) };
@@ -687,7 +687,7 @@ fn write_random_fsync<F: AsRawFd, R: Rng>(
     let mut durations = Vec::new();
     let fd = file.as_raw_fd();
     for (i, offset) in offsets.iter().enumerate() {
-        storage_trace::duration!(c"benchmark", c"pwrite", "op_number" => i, "offset" => *offset);
+        storage_trace::duration!("benchmark", "pwrite", "op_number" => i, "offset" => *offset);
         let timer = OperationTimer::start();
         let result =
             unsafe { libc::pwrite(fd, data.as_ptr() as *const libc::c_void, data.len(), *offset) };

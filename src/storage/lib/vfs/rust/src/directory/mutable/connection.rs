@@ -123,7 +123,7 @@ impl<DirectoryType: MutableDirectory> MutableConnection<DirectoryType> {
                         this.handle_update_attributes(payload).await.map_err(Status::into_raw),
                     )
                 }
-                .trace(trace::trace_future_args!(c"storage", c"Directory::UpdateAttributes"))
+                .trace(trace::trace_future_args!("storage", "Directory::UpdateAttributes"))
                 .await?;
             }
             request => {

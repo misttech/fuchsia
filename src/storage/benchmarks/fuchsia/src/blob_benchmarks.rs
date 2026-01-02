@@ -22,7 +22,7 @@ const RNG_SEED: u64 = 0xda782a0c3ce1819a;
 
 #[derive(Clone)]
 pub struct OpenAndGetVmoBenchmark {
-    name: &'static std::ffi::CStr,
+    name: &'static str,
     resource_path: String,
     cold: bool,
 }
@@ -30,23 +30,19 @@ pub struct OpenAndGetVmoBenchmark {
 impl OpenAndGetVmoBenchmark {
     pub fn new_content_blob_cold() -> Self {
         Self {
-            name: c"OpenAndGetVmoContentBlobCold",
+            name: "OpenAndGetVmoContentBlobCold",
             resource_path: "data/foo".to_owned(),
             cold: true,
         }
     }
 
     pub fn new_meta_file_cold() -> Self {
-        Self {
-            name: c"OpenAndGetVmoMetaFileCold",
-            resource_path: "meta/bar".to_owned(),
-            cold: true,
-        }
+        Self { name: "OpenAndGetVmoMetaFileCold", resource_path: "meta/bar".to_owned(), cold: true }
     }
 
     pub fn new_meta_file_warm() -> Self {
         Self {
-            name: c"OpenAndGetVmoMetaFileWarm",
+            name: "OpenAndGetVmoMetaFileWarm",
             resource_path: "meta/bar".to_owned(),
             cold: false,
         }
@@ -54,7 +50,7 @@ impl OpenAndGetVmoBenchmark {
 
     pub fn new_content_blob_warm() -> Self {
         Self {
-            name: c"OpenAndGetVmoContentBlobWarm",
+            name: "OpenAndGetVmoContentBlobWarm",
             resource_path: "data/foo".to_owned(),
             cold: false,
         }
@@ -63,12 +59,12 @@ impl OpenAndGetVmoBenchmark {
     async fn run_test(&self, pkgdir: &fio::DirectoryProxy) -> OperationDuration {
         let timer = OperationTimer::start();
         let file = {
-            storage_trace::duration!(c"benchmark", c"open-file");
+            storage_trace::duration!("benchmark", "open-file");
             fuchsia_fs::directory::open_file(pkgdir, &self.resource_path, fio::PERM_READABLE)
                 .await
                 .expect("failed to open blob")
         };
-        storage_trace::duration!(c"benchmark", c"get-vmo");
+        storage_trace::duration!("benchmark", "get-vmo");
         let _ = file.get_backing_memory(fio::VmoFlags::READ).await.unwrap().unwrap();
 
         timer.stop()
@@ -78,7 +74,7 @@ impl OpenAndGetVmoBenchmark {
 #[async_trait]
 impl Benchmark<PkgDirInstance> for OpenAndGetVmoBenchmark {
     async fn run(&self, fs: &mut PkgDirInstance) -> Vec<OperationDuration> {
-        storage_trace::duration!(c"benchmark", self.name);
+        storage_trace::duration!("benchmark", self.name);
         let package = PackageBuilder::new("pkg")
             .add_resource_at(&self.resource_path, "data".as_bytes())
             .build()
@@ -87,7 +83,7 @@ impl Benchmark<PkgDirInstance> for OpenAndGetVmoBenchmark {
         let (meta, map) = package.contents();
 
         {
-            storage_trace::duration!(c"benchmark", c"write-package");
+            storage_trace::duration!("benchmark", "write-package");
             fs.write_blob(&DeliveryBlob::new(meta.contents, CompressionMode::Always)).await;
             for (_, content) in map.clone() {
                 fs.write_blob(&DeliveryBlob::new(content, CompressionMode::Always)).await;
@@ -122,7 +118,7 @@ impl Benchmark<PkgDirInstance> for OpenAndGetVmoBenchmark {
     }
 
     fn name(&self) -> String {
-        String::from_utf8_lossy(self.name.to_bytes()).to_string()
+        self.name.into()
     }
 }
 
@@ -140,7 +136,7 @@ enum PageIteration {
 
 #[derive(Clone)]
 pub struct PageInBlobBenchmark {
-    name: &'static std::ffi::CStr,
+    name: &'static str,
     page_iter: PageIteration,
     data_gen: DataGeneration,
     blob_size: usize,
@@ -149,7 +145,7 @@ pub struct PageInBlobBenchmark {
 impl PageInBlobBenchmark {
     pub fn new_sequential_uncompressed(blob_size: usize) -> Self {
         Self {
-            name: c"PageInBlobSequentialUncompressed",
+            name: "PageInBlobSequentialUncompressed",
             page_iter: PageIteration::Sequential,
             data_gen: DataGeneration::Incompressible,
             blob_size,
@@ -158,7 +154,7 @@ impl PageInBlobBenchmark {
 
     pub fn new_sequential_compressed(blob_size: usize) -> Self {
         Self {
-            name: c"PageInBlobSequentialCompressed",
+            name: "PageInBlobSequentialCompressed",
             page_iter: PageIteration::Sequential,
             data_gen: DataGeneration::Compressible,
             blob_size,
@@ -167,7 +163,7 @@ impl PageInBlobBenchmark {
 
     pub fn new_random_compressed(blob_size: usize) -> Self {
         Self {
-            name: c"PageInBlobRandomCompressed",
+            name: "PageInBlobRandomCompressed",
             page_iter: PageIteration::Random,
             data_gen: DataGeneration::Compressible,
             blob_size,
@@ -179,7 +175,7 @@ impl PageInBlobBenchmark {
 impl<T: BlobFilesystem> Benchmark<T> for PageInBlobBenchmark {
     async fn run(&self, fs: &mut T) -> Vec<OperationDuration> {
         storage_trace::duration!(
-            c"benchmark",
+            "benchmark",
             self.name,
             "blob_size" => self.blob_size
         );
@@ -196,7 +192,7 @@ impl<T: BlobFilesystem> Benchmark<T> for PageInBlobBenchmark {
     }
 
     fn name(&self) -> String {
-        String::from_utf8_lossy(self.name.to_bytes()).to_string()
+        self.name.into()
     }
 }
 
@@ -215,8 +211,8 @@ impl WriteBlob {
 impl<T: BlobFilesystem> Benchmark<T> for WriteBlob {
     async fn run(&self, fs: &mut T) -> Vec<OperationDuration> {
         storage_trace::duration!(
-            c"benchmark",
-            c"WriteBlob",
+            "benchmark",
+            "WriteBlob",
             "blob_size" => self.blob_size
         );
         const SAMPLES: usize = 5;
@@ -248,7 +244,7 @@ impl WriteRealisticBlobs {
 #[async_trait]
 impl<T: BlobFilesystem> Benchmark<T> for WriteRealisticBlobs {
     async fn run(&self, fs: &mut T) -> Vec<OperationDuration> {
-        storage_trace::duration!(c"benchmark", c"WriteRealisticBlobs");
+        storage_trace::duration!("benchmark", "WriteRealisticBlobs");
         // Only write 2 blobs at once to match pkg-cache.
         const CONCURRENT_WRITE_COUNT: usize = 2;
 
@@ -392,7 +388,7 @@ async fn page_in_blob_benchmark(
     page_iter: Vec<usize>,
 ) -> Vec<OperationDuration> {
     {
-        storage_trace::duration!(c"benchmark", c"write-blob");
+        storage_trace::duration!("benchmark", "write-blob");
         fs.write_blob(&blob).await;
     };
 
@@ -411,7 +407,7 @@ async fn page_in_blob_benchmark(
     let data = mapped_blob.data();
     let mut durations = Vec::new();
     for i in page_iter {
-        storage_trace::duration!(c"benchmark", c"page_in", "offset" => i);
+        storage_trace::duration!("benchmark", "page_in", "offset" => i);
         let timer = OperationTimer::start();
         std::hint::black_box(data[i]);
         durations.push(timer.stop());
