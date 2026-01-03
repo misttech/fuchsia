@@ -9,16 +9,14 @@ use packet_formats::ip::IpExt;
 use {fidl_fuchsia_net as fnet, fidl_fuchsia_net_filter_ext as fnet_filter_ext};
 
 use crate::bindings::filter::conversion::{
-    ConversionError, ConversionResult, ConvertToCoreStateContext, IpVersionStrictness,
-    TryConvertToCoreState,
+    ConversionError, ConversionResult, IpVersionStrictness, TryConvertToCoreState,
 };
 
 impl TryConvertToCoreState for fnet::IpAddress {
     type CoreState<I: IpExt> = I::Addr;
 
-    fn try_convert<C: ConvertToCoreStateContext, I: IpExt>(
+    fn try_convert<I: IpExt>(
         self,
-        _ctx: &C,
         ip_version_strictness: IpVersionStrictness,
     ) -> Result<ConversionResult<Self::CoreState<I>>, ConversionError> {
         #[derive(GenericOverIp)]
@@ -42,9 +40,8 @@ impl TryConvertToCoreState for fnet::IpAddress {
 impl TryConvertToCoreState for fnet_filter_ext::TransparentProxy {
     type CoreState<I: IpExt> = netstack3_core::filter::TransparentProxy<I>;
 
-    fn try_convert<C: ConvertToCoreStateContext, I: IpExt>(
+    fn try_convert<I: IpExt>(
         self,
-        ctx: &C,
         ip_version_strictness: IpVersionStrictness,
     ) -> Result<ConversionResult<Self::CoreState<I>>, ConversionError> {
         match self {
@@ -52,7 +49,7 @@ impl TryConvertToCoreState for fnet_filter_ext::TransparentProxy {
                 netstack3_core::filter::TransparentProxy::LocalPort(port),
             )),
             Self::LocalAddr(addr) => {
-                let addr = match addr.try_convert::<C, I>(ctx, ip_version_strictness) {
+                let addr = match addr.try_convert::<I>(ip_version_strictness) {
                     Ok(ConversionResult::State(addr)) => addr,
                     Ok(ConversionResult::Omit) => return Ok(ConversionResult::Omit),
                     Err(e) => return Err(e),
@@ -62,7 +59,7 @@ impl TryConvertToCoreState for fnet_filter_ext::TransparentProxy {
                 )))
             }
             Self::LocalAddrAndPort(addr, port) => {
-                let addr = match addr.try_convert::<C, I>(ctx, ip_version_strictness) {
+                let addr = match addr.try_convert::<I>(ip_version_strictness) {
                     Ok(ConversionResult::State(addr)) => addr,
                     Ok(ConversionResult::Omit) => return Ok(ConversionResult::Omit),
                     Err(e) => return Err(e),

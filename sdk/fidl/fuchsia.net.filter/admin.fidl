@@ -210,6 +210,8 @@ closed protocol NamespaceController {
             ALREADY_EXISTS = 6;
             /// The change includes a rule that jumps to an installed routine.
             TARGET_ROUTINE_IS_INSTALLED = 7;
+            /// Invalid eBPF program Id.
+            INVALID_EBPF_PROGRAM_ID = 8;
         }>:MAX_COMMIT_SIZE;
         /// A rule has a TransparentProxy action without a corresponding valid
         /// matcher: the rule must match on transport protocol to ensure that

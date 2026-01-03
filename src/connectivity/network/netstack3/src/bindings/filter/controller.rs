@@ -11,16 +11,84 @@ use net_types::ip::{Ipv4, Ipv6};
 use {
     fidl_fuchsia_ebpf as febpf, fidl_fuchsia_net_filter as fnet_filter,
     fidl_fuchsia_net_filter_ext as fnet_filter_ext,
+    fidl_fuchsia_net_matchers_ext as fnet_matchers_ext,
 };
 
 use super::CommitError;
-use super::conversion::ConvertToCoreStateContext;
 use crate::bindings::BindingsCtx;
 use crate::bindings::bpf::{SocketFilterProgram, ValidVerifiedProgram};
 
+#[derive(Debug, Clone)]
+pub(super) struct SocketFilterProgramWithId {
+    pub id: febpf::ProgramId,
+    pub program: Arc<SocketFilterProgram>,
+}
+
+impl PartialEq for SocketFilterProgramWithId {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id
+    }
+}
+
+/// Equivalent of `fnet_filter_ext::Matchers` that keeps a reference to the
+/// `ebpf_program` instead of just the ID.
+#[derive(Debug, Clone, PartialEq)]
+pub(super) struct Matchers {
+    pub in_interface: Option<fnet_matchers_ext::Interface>,
+    pub out_interface: Option<fnet_matchers_ext::Interface>,
+    pub src_addr: Option<fnet_matchers_ext::Address>,
+    pub dst_addr: Option<fnet_matchers_ext::Address>,
+    pub transport_protocol: Option<fnet_matchers_ext::TransportProtocol>,
+    pub ebpf_program: Option<SocketFilterProgramWithId>,
+}
+
+impl Matchers {
+    fn new(
+        matchers: fnet_filter_ext::Matchers,
+        ebpf_registry: &EbpfProgramRegistry,
+    ) -> Result<Self, fnet_filter::CommitError> {
+        let fnet_filter_ext::Matchers {
+            in_interface,
+            out_interface,
+            src_addr,
+            dst_addr,
+            transport_protocol,
+            ebpf_program,
+        } = matchers;
+
+        let ebpf_program = ebpf_program
+            .map(|id| {
+                let program =
+                    ebpf_registry.get(&id).ok_or(fnet_filter::CommitError::InvalidEbpfProgramId)?;
+                Ok(SocketFilterProgramWithId { id, program })
+            })
+            .transpose()?;
+
+        Ok(Self {
+            in_interface,
+            out_interface,
+            src_addr,
+            dst_addr,
+            transport_protocol,
+            ebpf_program,
+        })
+    }
+
+    pub(super) fn to_fidl(&self) -> fnet_filter_ext::Matchers {
+        fnet_filter_ext::Matchers {
+            in_interface: self.in_interface.clone(),
+            out_interface: self.out_interface.clone(),
+            src_addr: self.src_addr.clone(),
+            dst_addr: self.dst_addr.clone(),
+            transport_protocol: self.transport_protocol.clone(),
+            ebpf_program: self.ebpf_program.as_ref().map(|program| program.id),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub(super) struct Rule {
-    pub matchers: fnet_filter_ext::Matchers,
+    pub matchers: Matchers,
     pub action: fnet_filter_ext::Action,
 }
 
@@ -199,6 +267,7 @@ pub(crate) enum Event {
     Removed(fnet_filter_ext::ResourceId),
 }
 
+#[derive(Default, Debug)]
 pub(super) struct EbpfProgramRegistry {
     // Programs that are registered with the `Controller`.
     programs: HashMap<febpf::ProgramId, Arc<SocketFilterProgram>>,
@@ -232,11 +301,9 @@ impl EbpfProgramRegistry {
         let removed = self.programs.remove(&id);
         assert!(removed.is_some());
     }
-}
 
-impl ConvertToCoreStateContext for EbpfProgramRegistry {
-    fn get_ebpf_program(&self, program_id: febpf::ProgramId) -> Option<Arc<SocketFilterProgram>> {
-        self.programs.get(&program_id).map(|program| program.clone())
+    pub(super) fn get(&self, id: &febpf::ProgramId) -> Option<Arc<SocketFilterProgram>> {
+        self.programs.get(id).cloned()
     }
 }
 
@@ -299,7 +366,7 @@ impl Controller {
                                 },
                                 index: *index,
                             },
-                            matchers: matchers.clone(),
+                            matchers: matchers.to_fidl(),
                             action: action.clone(),
                         })
                     });
@@ -316,9 +383,9 @@ impl Controller {
         ebpf_registry: &EbpfProgramRegistry,
     ) -> Result<CommitResult, CommitError> {
         let validator = Validator::new(self.namespaces.clone());
-        let (new_state, events) = validator.validate(changes, idempotent)?;
+        let (new_state, events) = validator.validate(changes, idempotent, ebpf_registry)?;
 
-        let (v4, v6) = super::conversion::convert_to_core(ebpf_registry, new_state.clone())?;
+        let (v4, v6) = super::conversion::convert_to_core(new_state.clone())?;
 
         Ok(CommitResult { events, new_state, core_state_v4: v4, core_state_v6: v6 })
     }
@@ -348,12 +415,13 @@ impl Validator {
         mut self,
         changes: Vec<fnet_filter_ext::Change>,
         idempotent: bool,
+        ebpf_registry: &EbpfProgramRegistry,
     ) -> Result<(HashMap<fnet_filter_ext::NamespaceId, Namespace>, Vec<Event>), CommitError> {
         let mut events = Vec::new();
         for (i, change) in changes.into_iter().enumerate() {
             match change {
                 fnet_filter_ext::Change::Create(resource) => {
-                    self.add_resource(resource, idempotent).map(|event| {
+                    self.add_resource(resource, idempotent, ebpf_registry).map(|event| {
                         if let Some(event) = event {
                             events.push(event);
                         }
@@ -373,6 +441,7 @@ impl Validator {
         &mut self,
         resource: fnet_filter_ext::Resource,
         idempotent: bool,
+        ebpf_registry: &EbpfProgramRegistry,
     ) -> Result<Option<Event>, fnet_filter::CommitError> {
         match resource.clone() {
             fnet_filter_ext::Resource::Namespace(fnet_filter_ext::Namespace { id, domain }) => {
@@ -426,6 +495,8 @@ impl Validator {
                     .namespaces
                     .get_mut(&namespace)
                     .ok_or(fnet_filter::CommitError::NamespaceNotFound)?;
+
+                let matchers = Matchers::new(matchers, ebpf_registry)?;
 
                 match &action {
                     fnet_filter_ext::Action::Jump(target) => {

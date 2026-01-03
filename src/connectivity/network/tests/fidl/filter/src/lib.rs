@@ -2171,3 +2171,75 @@ async fn ebpf_program_registration(name: &str) {
             .on_timeout(ASYNC_EVENT_NEGATIVE_CHECK_TIMEOUT.after_now(), || panic!("timeout"))
             .await;
 }
+
+#[netstack_test]
+async fn ebpf_matcher(name: &str) {
+    let sandbox = netemul::TestSandbox::new().expect("create sandbox");
+    let realm = sandbox.create_netstack_realm::<Netstack3, _>(name).expect("create realm");
+    let control =
+        realm.connect_to_protocol::<fnet_filter::ControlMarker>().expect("connect to protocol");
+    let mut controller =
+        Controller::new(&control, &ControllerId(name.to_owned())).await.expect("create controller");
+
+    let program = ebpf_test_util::TestProgram::load(ebpf_api::ProgramType::SocketFilter);
+    let program_id = program.get_program_id();
+    controller
+        .register_ebpf_program(program.get_program_handle(), program.get_fidl_program())
+        .await
+        .expect("register ebpf program");
+
+    let namespace_id = NamespaceId(String::from("namespace"));
+    const TARGET_ROUTINE: &str = "target-routine";
+    let target_routine_id =
+        RoutineId { namespace: namespace_id.clone(), name: TARGET_ROUTINE.to_owned() };
+    let resources = [
+        Resource::Namespace(Namespace { id: namespace_id.clone(), domain: Domain::AllIp }),
+        Resource::Routine(Routine {
+            id: target_routine_id.clone(),
+            routine_type: RoutineType::Ip(Some(InstalledIpRoutine {
+                hook: IpHook::Ingress,
+                priority: 0,
+            })),
+        }),
+        Resource::Rule(Rule {
+            id: RuleId { routine: target_routine_id.clone(), index: 0 },
+            matchers: Matchers { ebpf_program: Some(program_id), ..Default::default() },
+            action: Action::Drop,
+        }),
+    ];
+    controller
+        .push_changes(resources.iter().cloned().map(Change::Create).collect())
+        .await
+        .expect("push changes");
+    controller.commit().await.expect("commit pending changes");
+
+    // Drop the program and then add another rule to the same routine. This
+    // should not fail even though the `program_id` is no longer registered.
+    std::mem::drop(program);
+
+    let changes = vec![Change::Create(Resource::Rule(Rule {
+        id: RuleId { routine: target_routine_id.clone(), index: 2 },
+        matchers: Matchers {
+            transport_protocol: Some(fnet_matchers_ext::TransportProtocol::Icmp),
+            ..Default::default()
+        },
+        action: Action::Drop,
+    }))];
+    controller.push_changes(changes).await.expect("push changes");
+    controller.commit().await.expect("commit pending changes");
+
+    // Try registering another rule using the same `program_id`. This is
+    // expected to fail since the program is no longer registered.
+    let changes = vec![Change::Create(Resource::Rule(Rule {
+        id: RuleId { routine: target_routine_id.clone(), index: 3 },
+        matchers: Matchers { ebpf_program: Some(program_id), ..Default::default() },
+        action: Action::Drop,
+    }))];
+    controller.push_changes(changes.clone()).await.expect("push changes");
+    let error = controller.commit().await.expect_err("commit should fail");
+    let errors = assert_matches!(
+        error,
+        CommitError::ErrorOnChange(errors) => errors
+    );
+    assert_eq!(errors, vec![(changes[0].clone(), ChangeCommitError::InvalidEbpfProgramId)])
+}

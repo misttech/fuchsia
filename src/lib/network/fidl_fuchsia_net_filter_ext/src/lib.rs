@@ -1261,6 +1261,8 @@ pub enum ChangeCommitError {
     AlreadyExists,
     #[error("the change includes a rule that jumps to an installed routine")]
     TargetRoutineIsInstalled,
+    #[error("the change includes an eBPF matcher with an invalid program ID")]
+    InvalidEbpfProgramId,
 }
 
 impl TryFrom<fnet_filter::CommitError> for ChangeCommitError {
@@ -1275,6 +1277,7 @@ impl TryFrom<fnet_filter::CommitError> for ChangeCommitError {
             fnet_filter::CommitError::TargetRoutineIsInstalled => {
                 Ok(Self::TargetRoutineIsInstalled)
             }
+            fnet_filter::CommitError::InvalidEbpfProgramId => Ok(Self::InvalidEbpfProgramId),
             fnet_filter::CommitError::Ok | fnet_filter::CommitError::NotReached => {
                 Err(FidlConversionError::NotAnError)
             }
@@ -1529,7 +1532,8 @@ pub(crate) fn handle_commit_result(
                     | fnet_filter::CommitError::RoutineNotFound
                     | fnet_filter::CommitError::RuleNotFound
                     | fnet_filter::CommitError::AlreadyExists
-                    | fnet_filter::CommitError::TargetRoutineIsInstalled) => {
+                    | fnet_filter::CommitError::TargetRoutineIsInstalled
+                    | fnet_filter::CommitError::InvalidEbpfProgramId) => {
                         let error = error
                             .try_into()
                             .expect("`Ok` and `NotReached` are handled in another arm");
