@@ -90,8 +90,8 @@ async fn redirect_ingress_no_assigned_address<I: TestIpExt, S: SocketType>(
             Action::Redirect { dst_port: None },
         )
         .await;
-    let _handles = net
-        .run_test_with::<I, S, _>(
+    let ((), _handles) = net
+        .run_test_with::<I, S, _, _>(
             ExpectedConnectivity::None,
             |TestNet { client: _, server }, _addrs, ()| {
                 Box::pin(async move {
@@ -148,8 +148,8 @@ async fn masquerade_egress_no_assigned_address<I: TestIpExt, S: SocketType>(
             Action::Masquerade { src_port: None },
         )
         .await;
-    let _handles = net
-        .run_test_with::<I, S, _>(
+    let ((), _handles) = net
+        .run_test_with::<I, S, _, _>(
             ExpectedConnectivity::None,
             |TestNet { client: _, server }, _addrs, ()| {
                 Box::pin(async move {

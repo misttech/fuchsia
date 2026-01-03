@@ -15,7 +15,7 @@ set -e
 DIR=$(realpath $(dirname "$0"))
 ROOT_DIR=$(realpath $(dirname "$0")/../../../../../..)
 
-CFLAGS="-target bpf -mcpu=v3 -O2 -Wno-macro-redefined -nostdinc"
+CFLAGS="-target bpf -mcpu=v2 -O2 -Wno-macro-redefined -nostdinc"
 CFLAGS="$CFLAGS -I$ROOT_DIR/third_party/android/platform/bionic/libc/include"
 CFLAGS="$CFLAGS -I$ROOT_DIR/third_party/android/platform/bionic/libc/kernel/uapi"
 CFLAGS="$CFLAGS -I$ROOT_DIR/third_party/android/platform/bionic/libc/kernel/uapi/linux"

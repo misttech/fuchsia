@@ -18,79 +18,46 @@ use crate::ip_hooks::{
     IcmpSocket, Interfaces, IrrelevantToTest, Ports, SocketType, Subnets, TcpSocket, UdpSocket,
 };
 
-/// Defines a matcher used in tests.
-///
-/// Matchers may be stateful. For stateful matchers `clone()` creates a new
-/// instance of the matcher that still shares the internal state with the
-/// original instances. `split()` can be used to create an equivalent matcher
-/// that doesn't share any state with the original. `verify_called()` and
-/// `verify_not_called()` can used to verify that the matcher was executed or
-/// not executed, respectively. These methods should be called only on a
-/// brand new instance produced by `split()`.
-pub(crate) trait Matcher: Clone + Debug {
-    type SocketType: SocketType;
-
-    /// Returns an eBPF program used by the matcher, if any. The program should
-    /// be registered with the filter controller before the matcher is
-    /// installed.
-    fn ebpf_program(&self) -> Option<(febpf::ProgramHandle, febpf::VerifiedProgram)>;
-
-    /// Returns matcher defiition that can be used to install the matcher in a
-    /// filter rule.
-    async fn matcher<I: Ip>(
-        &self,
-        interfaces: Interfaces<'_>,
-        subnets: Subnets,
-        ports: Ports,
-    ) -> Matchers;
-
-    /// Creates an equivalent matcher that doesn't share any state with the
-    /// original.
-    fn split(&self) -> Self;
-
+pub(crate) trait MatcherState {
     /// If possible, verifies that the matcher was executed with the specified
     /// parameters.
-    fn verify_called(&self, _ip_version: IpVersion);
+    fn verify_matched(&self, ip_version: IpVersion);
 
-    /// If possible, verifies that the matcher was not executed.
-    fn verify_not_called(&self);
+    // If possible, verifies that the matcher was not executed.
+    fn verify_not_matched(&self);
 }
 
-pub(crate) trait StatelessMatcher {
+/// `MatcherState` implementation that's used for stateless matchers, i.e. all
+/// but eBPF matchers.
+pub(crate) struct NoState;
+
+impl MatcherState for NoState {
+    fn verify_matched(&self, _ip_version: IpVersion) {}
+    fn verify_not_matched(&self) {}
+}
+
+pub(crate) trait MatcherDefinition: Clone + Debug {
+    type State: MatcherState;
     type SocketType: SocketType;
 
-    async fn matcher<I: Ip>(
+    async fn create_matcher<I: Ip>(
         &self,
         interfaces: Interfaces<'_>,
         subnets: Subnets,
         ports: Ports,
-    ) -> Matchers;
+    ) -> Matcher<Self::State>;
 }
 
-impl<T> Matcher for T
-where
-    T: StatelessMatcher + Clone + Debug,
-{
-    type SocketType = T::SocketType;
+pub(crate) struct Matcher<S> {
+    pub ebpf_program: Option<(febpf::ProgramHandle, febpf::VerifiedProgram)>,
+    pub fidl_def: Matchers,
+    pub state: S,
+}
 
-    fn ebpf_program(&self) -> Option<(febpf::ProgramHandle, febpf::VerifiedProgram)> {
-        None
+impl Matcher<NoState> {
+    fn new(fidl_def: Matchers) -> Self {
+        Matcher { ebpf_program: None, fidl_def, state: NoState }
     }
-
-    async fn matcher<I: Ip>(
-        &self,
-        interfaces: Interfaces<'_>,
-        subnets: Subnets,
-        ports: Ports,
-    ) -> Matchers {
-        <Self as StatelessMatcher>::matcher::<I>(self, interfaces, subnets, ports).await
-    }
-
-    fn split(&self) -> Self {
-        self.clone()
-    }
-    fn verify_called(&self, _ip_version: IpVersion) {}
-    fn verify_not_called(&self) {}
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -102,33 +69,35 @@ pub(crate) enum Inversion {
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct AllTraffic;
 
-impl StatelessMatcher for AllTraffic {
+impl MatcherDefinition for AllTraffic {
+    type State = NoState;
     type SocketType = IrrelevantToTest;
 
-    async fn matcher<I: Ip>(
+    async fn create_matcher<I: Ip>(
         &self,
         _interfaces: Interfaces<'_>,
         _subnets: Subnets,
         _ports: Ports,
-    ) -> Matchers {
-        Matchers::default()
+    ) -> Matcher<NoState> {
+        Matcher::new(Matchers::default())
     }
 }
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct InterfaceId;
 
-impl StatelessMatcher for InterfaceId {
+impl MatcherDefinition for InterfaceId {
+    type State = NoState;
     type SocketType = IrrelevantToTest;
 
-    async fn matcher<I: Ip>(
+    async fn create_matcher<I: Ip>(
         &self,
         interfaces: Interfaces<'_>,
         _subnets: Subnets,
         _ports: Ports,
-    ) -> Matchers {
+    ) -> Matcher<NoState> {
         let Interfaces { ingress, egress } = interfaces;
-        Matchers {
+        Matcher::new(Matchers {
             in_interface: ingress.map(|interface| {
                 fnet_matchers_ext::Interface::Id(
                     NonZeroU64::new(interface.id()).expect("interface ID should be nonzero"),
@@ -140,22 +109,23 @@ impl StatelessMatcher for InterfaceId {
                 )
             }),
             ..Default::default()
-        }
+        })
     }
 }
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct InterfaceName;
 
-impl StatelessMatcher for InterfaceName {
+impl MatcherDefinition for InterfaceName {
+    type State = NoState;
     type SocketType = IrrelevantToTest;
 
-    async fn matcher<I: Ip>(
+    async fn create_matcher<I: Ip>(
         &self,
         interfaces: Interfaces<'_>,
         _subnets: Subnets,
         _ports: Ports,
-    ) -> Matchers {
+    ) -> Matcher<NoState> {
         async fn get_interface_name(
             interface: &netemul::TestInterface<'_>,
         ) -> fnet_matchers_ext::Interface {
@@ -173,22 +143,23 @@ impl StatelessMatcher for InterfaceName {
             Some(egress) => Some(get_interface_name(egress).await),
             None => None,
         };
-        Matchers { in_interface, out_interface, ..Default::default() }
+        Matcher::new(Matchers { in_interface, out_interface, ..Default::default() })
     }
 }
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct InterfaceDeviceClass;
 
-impl StatelessMatcher for InterfaceDeviceClass {
+impl MatcherDefinition for InterfaceDeviceClass {
+    type State = NoState;
     type SocketType = IrrelevantToTest;
 
-    async fn matcher<I: Ip>(
+    async fn create_matcher<I: Ip>(
         &self,
         interfaces: Interfaces<'_>,
         _subnets: Subnets,
         _ports: Ports,
-    ) -> Matchers {
+    ) -> Matcher<NoState> {
         async fn get_port_class(
             interface: &netemul::TestInterface<'_>,
         ) -> fnet_matchers_ext::Interface {
@@ -206,26 +177,27 @@ impl StatelessMatcher for InterfaceDeviceClass {
             Some(egress) => Some(get_port_class(egress).await),
             None => None,
         };
-        Matchers { in_interface, out_interface, ..Default::default() }
+        Matcher::new(Matchers { in_interface, out_interface, ..Default::default() })
     }
 }
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct SrcAddressSubnet(pub(crate) Inversion);
 
-impl StatelessMatcher for SrcAddressSubnet {
+impl MatcherDefinition for SrcAddressSubnet {
+    type State = NoState;
     type SocketType = IrrelevantToTest;
 
-    async fn matcher<I: Ip>(
+    async fn create_matcher<I: Ip>(
         &self,
         _interfaces: Interfaces<'_>,
         subnets: Subnets,
         _ports: Ports,
-    ) -> Matchers {
+    ) -> Matcher<NoState> {
         let Self(inversion) = self;
         let Subnets { src, other, dst: _ } = subnets;
 
-        Matchers {
+        Matcher::new(Matchers {
             src_addr: Some(match inversion {
                 Inversion::Default => fnet_matchers_ext::Address {
                     matcher: fnet_matchers_ext::AddressMatcherType::Subnet(
@@ -243,26 +215,27 @@ impl StatelessMatcher for SrcAddressSubnet {
                 },
             }),
             ..Default::default()
-        }
+        })
     }
 }
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct SrcAddressRange(pub(crate) Inversion);
 
-impl StatelessMatcher for SrcAddressRange {
+impl MatcherDefinition for SrcAddressRange {
+    type State = NoState;
     type SocketType = IrrelevantToTest;
 
-    async fn matcher<I: Ip>(
+    async fn create_matcher<I: Ip>(
         &self,
         _interfaces: Interfaces<'_>,
         subnets: Subnets,
         _ports: Ports,
-    ) -> Matchers {
+    ) -> Matcher<NoState> {
         let Self(inversion) = self;
         let Subnets { src, other, dst: _ } = subnets;
 
-        Matchers {
+        Matcher::new(Matchers {
             src_addr: Some(match inversion {
                 Inversion::Default => fnet_matchers_ext::Address {
                     matcher: fnet_matchers_ext::AddressMatcherType::Range(
@@ -282,26 +255,27 @@ impl StatelessMatcher for SrcAddressRange {
                 },
             }),
             ..Default::default()
-        }
+        })
     }
 }
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct DstAddressSubnet(pub(crate) Inversion);
 
-impl StatelessMatcher for DstAddressSubnet {
+impl MatcherDefinition for DstAddressSubnet {
+    type State = NoState;
     type SocketType = IrrelevantToTest;
 
-    async fn matcher<I: Ip>(
+    async fn create_matcher<I: Ip>(
         &self,
         _interfaces: Interfaces<'_>,
         subnets: Subnets,
         _ports: Ports,
-    ) -> Matchers {
+    ) -> Matcher<NoState> {
         let Self(inversion) = self;
         let Subnets { dst, other, src: _ } = subnets;
 
-        Matchers {
+        Matcher::new(Matchers {
             dst_addr: Some(match inversion {
                 Inversion::Default => fnet_matchers_ext::Address {
                     matcher: fnet_matchers_ext::AddressMatcherType::Subnet(
@@ -319,26 +293,27 @@ impl StatelessMatcher for DstAddressSubnet {
                 },
             }),
             ..Default::default()
-        }
+        })
     }
 }
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct DstAddressRange(pub(crate) Inversion);
 
-impl StatelessMatcher for DstAddressRange {
+impl MatcherDefinition for DstAddressRange {
+    type State = NoState;
     type SocketType = IrrelevantToTest;
 
-    async fn matcher<I: Ip>(
+    async fn create_matcher<I: Ip>(
         &self,
         _interfaces: Interfaces<'_>,
         subnets: Subnets,
         _ports: Ports,
-    ) -> Matchers {
+    ) -> Matcher<NoState> {
         let Self(inversion) = self;
         let Subnets { dst, other, src: _ } = subnets;
 
-        Matchers {
+        Matcher::new(Matchers {
             dst_addr: Some(match inversion {
                 Inversion::Default => fnet_matchers_ext::Address {
                     matcher: fnet_matchers_ext::AddressMatcherType::Range(
@@ -358,7 +333,7 @@ impl StatelessMatcher for DstAddressRange {
                 },
             }),
             ..Default::default()
-        }
+        })
     }
 }
 
@@ -376,41 +351,43 @@ fn unique_ephemeral_port(exclude: &[u16]) -> u16 {
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Tcp;
 
-impl StatelessMatcher for Tcp {
+impl MatcherDefinition for Tcp {
+    type State = NoState;
     type SocketType = TcpSocket;
 
-    async fn matcher<I: Ip>(
+    async fn create_matcher<I: Ip>(
         &self,
         _interfaces: Interfaces<'_>,
         _subnets: Subnets,
         _ports: Ports,
-    ) -> Matchers {
-        Matchers {
+    ) -> Matcher<NoState> {
+        Matcher::new(Matchers {
             transport_protocol: Some(fnet_matchers_ext::TransportProtocol::Tcp {
                 src_port: None,
                 dst_port: None,
             }),
             ..Default::default()
-        }
+        })
     }
 }
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct TcpSrcPort(pub(crate) Inversion);
 
-impl StatelessMatcher for TcpSrcPort {
+impl MatcherDefinition for TcpSrcPort {
+    type State = NoState;
     type SocketType = TcpSocket;
 
-    async fn matcher<I: Ip>(
+    async fn create_matcher<I: Ip>(
         &self,
         _interfaces: Interfaces<'_>,
         _subnets: Subnets,
         ports: Ports,
-    ) -> Matchers {
+    ) -> Matcher<NoState> {
         let Self(inversion) = self;
         let Ports { src, dst } = ports;
 
-        Matchers {
+        Matcher::new(Matchers {
             transport_protocol: Some(fnet_matchers_ext::TransportProtocol::Tcp {
                 src_port: Some(match inversion {
                     Inversion::Default => {
@@ -426,26 +403,27 @@ impl StatelessMatcher for TcpSrcPort {
                 dst_port: None,
             }),
             ..Default::default()
-        }
+        })
     }
 }
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct TcpDstPort(pub(crate) Inversion);
 
-impl StatelessMatcher for TcpDstPort {
+impl MatcherDefinition for TcpDstPort {
+    type State = NoState;
     type SocketType = TcpSocket;
 
-    async fn matcher<I: Ip>(
+    async fn create_matcher<I: Ip>(
         &self,
         _interfaces: Interfaces<'_>,
         _subnets: Subnets,
         ports: Ports,
-    ) -> Matchers {
+    ) -> Matcher<NoState> {
         let Self(inversion) = self;
         let Ports { src, dst } = ports;
 
-        Matchers {
+        Matcher::new(Matchers {
             transport_protocol: Some(fnet_matchers_ext::TransportProtocol::Tcp {
                 src_port: None,
                 dst_port: Some(match inversion {
@@ -461,48 +439,50 @@ impl StatelessMatcher for TcpDstPort {
                 }),
             }),
             ..Default::default()
-        }
+        })
     }
 }
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Udp;
 
-impl StatelessMatcher for Udp {
+impl MatcherDefinition for Udp {
+    type State = NoState;
     type SocketType = UdpSocket;
 
-    async fn matcher<I: Ip>(
+    async fn create_matcher<I: Ip>(
         &self,
         _interfaces: Interfaces<'_>,
         _subnets: Subnets,
         _ports: Ports,
-    ) -> Matchers {
-        Matchers {
+    ) -> Matcher<NoState> {
+        Matcher::new(Matchers {
             transport_protocol: Some(fnet_matchers_ext::TransportProtocol::Udp {
                 src_port: None,
                 dst_port: None,
             }),
             ..Default::default()
-        }
+        })
     }
 }
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct UdpSrcPort(pub(crate) Inversion);
 
-impl StatelessMatcher for UdpSrcPort {
+impl MatcherDefinition for UdpSrcPort {
+    type State = NoState;
     type SocketType = UdpSocket;
 
-    async fn matcher<I: Ip>(
+    async fn create_matcher<I: Ip>(
         &self,
         _interfaces: Interfaces<'_>,
         _subnets: Subnets,
         ports: Ports,
-    ) -> Matchers {
+    ) -> Matcher<NoState> {
         let Self(inversion) = self;
         let Ports { src, dst } = ports;
 
-        Matchers {
+        Matcher::new(Matchers {
             transport_protocol: Some(fnet_matchers_ext::TransportProtocol::Udp {
                 src_port: Some(match inversion {
                     Inversion::Default => {
@@ -518,26 +498,27 @@ impl StatelessMatcher for UdpSrcPort {
                 dst_port: None,
             }),
             ..Default::default()
-        }
+        })
     }
 }
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct UdpDstPort(pub(crate) Inversion);
 
-impl StatelessMatcher for UdpDstPort {
+impl MatcherDefinition for UdpDstPort {
+    type State = NoState;
     type SocketType = UdpSocket;
 
-    async fn matcher<I: Ip>(
+    async fn create_matcher<I: Ip>(
         &self,
         _interfaces: Interfaces<'_>,
         _subnets: Subnets,
         ports: Ports,
-    ) -> Matchers {
+    ) -> Matcher<NoState> {
         let Self(inversion) = self;
         let Ports { src, dst } = ports;
 
-        Matchers {
+        Matcher::new(Matchers {
             transport_protocol: Some(fnet_matchers_ext::TransportProtocol::Udp {
                 src_port: None,
                 dst_port: Some(match inversion {
@@ -553,23 +534,24 @@ impl StatelessMatcher for UdpDstPort {
                 }),
             }),
             ..Default::default()
-        }
+        })
     }
 }
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Icmp;
 
-impl StatelessMatcher for Icmp {
+impl MatcherDefinition for Icmp {
+    type State = NoState;
     type SocketType = IcmpSocket;
 
-    async fn matcher<I: Ip>(
+    async fn create_matcher<I: Ip>(
         &self,
         _interfaces: Interfaces<'_>,
         _subnets: Subnets,
         _ports: Ports,
-    ) -> Matchers {
-        Matchers {
+    ) -> Matcher<NoState> {
+        Matcher::new(Matchers {
             transport_protocol: Some({
                 match I::VERSION {
                     IpVersion::V4 => fnet_matchers_ext::TransportProtocol::Icmp,
@@ -577,55 +559,19 @@ impl StatelessMatcher for Icmp {
                 }
             }),
             ..Default::default()
-        }
+        })
     }
 }
 
-#[derive(Clone)]
-pub(crate) struct EbpfMatcher {
-    program: Arc<ebpf_test_util::TestProgram>,
+pub(crate) struct EbpfMatcherState {
+    program: ebpf_test_util::TestProgram,
 }
 
-impl Debug for EbpfMatcher {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("EbpfMatcher").field("id", &self.program.get_program_id().id).finish()
-    }
-}
-
-impl EbpfMatcher {
-    pub(crate) fn new() -> Self {
-        Self {
-            program: Arc::new(ebpf_test_util::TestProgram::load(
-                ebpf_api::ProgramType::SocketFilter,
-            )),
-        }
-    }
-}
-
-impl Matcher for EbpfMatcher {
-    type SocketType = UdpSocket;
-
-    fn ebpf_program(&self) -> Option<(febpf::ProgramHandle, febpf::VerifiedProgram)> {
-        Some((self.program.get_program_handle(), self.program.get_fidl_program()))
-    }
-
-    async fn matcher<I: Ip>(
-        &self,
-        _interfaces: Interfaces<'_>,
-        _subnets: Subnets,
-        _ports: Ports,
-    ) -> Matchers {
-        Matchers { ebpf_program: Some(self.program.get_program_id()), ..Default::default() }
-    }
-
-    fn split(&self) -> Self {
-        Self::new()
-    }
-
-    fn verify_called(&self, ip_version: IpVersion) {
+impl MatcherState for EbpfMatcherState {
+    fn verify_matched(&self, ip_version: IpVersion) {
         let result = self.program.read_test_result();
         assert_eq!(
-            result.proto,
+            result.ether_type,
             u32::from(u16::from(packet_formats::ethernet::EtherType::from_ip_version(ip_version)))
         );
 
@@ -633,9 +579,56 @@ impl Matcher for EbpfMatcher {
         assert_ne!(result.ip_proto, 0);
     }
 
-    fn verify_not_called(&self) {
+    fn verify_not_matched(&self) {
         let result = self.program.read_test_result();
-        assert_eq!(result.proto, 0);
+        assert_eq!(result.ether_type, 0);
         assert_eq!(result.ip_proto, 0);
+    }
+}
+
+#[derive(Clone)]
+pub(crate) struct EbpfMatcher {
+    program: Arc<ebpf_test_util::TestProgramDefinition>,
+}
+
+impl Debug for EbpfMatcher {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("EbpfMatcher").finish()
+    }
+}
+
+impl EbpfMatcher {
+    pub(crate) fn new() -> Self {
+        Self {
+            program: Arc::new(ebpf_test_util::TestProgramDefinition::load(
+                ebpf_api::ProgramType::SocketFilter,
+            )),
+        }
+    }
+}
+
+impl MatcherDefinition for EbpfMatcher {
+    type State = EbpfMatcherState;
+    type SocketType = UdpSocket;
+
+    async fn create_matcher<I: Ip>(
+        &self,
+        _interfaces: Interfaces<'_>,
+        _subnets: Subnets,
+        ports: Ports,
+    ) -> Matcher<EbpfMatcherState> {
+        let program = self.program.instantiate();
+        program.write_test_config(ebpf_test_util::TestConfig {
+            src_port: ports.src,
+            dst_port: ports.dst,
+        });
+        Matcher {
+            ebpf_program: Some((program.get_program_handle(), program.get_fidl_program())),
+            fidl_def: Matchers {
+                ebpf_program: Some(program.get_program_id()),
+                ..Default::default()
+            },
+            state: EbpfMatcherState { program },
+        }
     }
 }

@@ -32,4 +32,6 @@ struct bpf_map_def {
   unsigned int map_flags;
 };
 
+#define BPF_HDR_START_NET 1
+
 #define SECTION(name) __attribute__((section(name), used))

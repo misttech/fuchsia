@@ -7,19 +7,84 @@ use fidl_fuchsia_ebpf as febpf;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 use zx::{AsHandleRef as _, HandleBased as _};
 
-// Results struct. Must match the `struct test_result` in
-// `ebpf_test_progs.c`.
-#[derive(Clone, FromBytes, Immutable, KnownLayout)]
-#[repr(C)]
+// The structs below must match the structs in `ebpf_test_progs.c`.
 // LINT.IfChange
+
+/// Configuration for the test program. If either field is not zero then the
+/// test program will try to match these fields against the corresponding
+/// fields in UDP packets. In that case, if a packet doesn't match or it's not
+/// a UDP packet the program returns 0 without updating the `TestResult`. If
+/// both fields are zero or the packet matches then `TestResult` is updated
+/// and the program returns 1.
+#[derive(Clone, FromBytes, IntoBytes, Immutable, KnownLayout)]
+#[repr(C)]
+pub struct TestConfig {
+    /// Source port to match. Any port matches if set to 0.
+    pub src_port: u16,
+    /// Destination port to match. Any port matches if set to 0.
+    pub dst_port: u16,
+}
+
+/// Struct used to store results of the last invocation of the test program
+/// to test. The program copies the corresponding fields from the packet to
+/// this struct. Test can read it using `TestProgram::read_test_result()`.
+#[derive(Clone, FromBytes, IntoBytes, Immutable, KnownLayout)]
+#[repr(C)]
 pub struct TestResult {
     pub cookie: u64,
     pub uid: u32,
     pub ifindex: u32,
-    pub proto: u32,
+    pub ether_type: u32,
+    pub src_port: u16,
+    pub dst_port: u16,
     pub ip_proto: u8,
+    pub _padding: [u8; 7],
 }
+
+#[derive(Clone, FromBytes, IntoBytes, Immutable, KnownLayout)]
+#[repr(C)]
+pub struct TestProgramState {
+    pub config: TestConfig,
+    pub _padding: [u8; 4],
+    pub result: TestResult,
+}
+
 // LINT.ThenChange(//src/connectivity/network/testing/ebpf_test_util/ebpf/ebpf_test_progs.c)
+
+pub struct TestProgramDefinition {
+    program: ebpf::VerifiedEbpfProgram,
+    maps: Vec<ebpf_loader::MapDefinition>,
+}
+
+impl TestProgramDefinition {
+    /// Loads the test program, verifies it for the specified `program_type`.
+    pub fn load(program_type: ProgramType) -> Self {
+        let prog =
+            ebpf_loader::load_ebpf_program("/pkg/data/ebpf_test_progs.o", ".text", "skb_test_prog")
+                .expect("Failed to load test prog");
+        let maps_schema = prog.maps.iter().map(|m| m.schema).collect();
+        let calling_context = program_type
+            .create_calling_context(AttachType::Unspecified, maps_schema)
+            .expect("Failed to create CallingContext");
+        let program =
+            ebpf::verify_program(prog.code, calling_context, &mut ebpf::NullVerifierLogger)
+                .expect("Failed to verify loaded program");
+        Self { program, maps: prog.maps }
+    }
+
+    /// Initializes all maps used by the program.
+    pub fn instantiate(&self) -> TestProgram {
+        let maps = self
+            .maps
+            .iter()
+            .map(|def| ebpf_api::Map::new(def.schema, &def.name()).expect("Failed to create a map"))
+            .collect();
+
+        let (handle, server_handle) = zx::EventPair::create();
+        let handle = febpf::ProgramHandle { handle };
+        TestProgram { program: self.program.clone(), maps, handle, server_handle }
+    }
+}
 
 #[derive(Debug)]
 pub struct TestProgram {
@@ -30,30 +95,6 @@ pub struct TestProgram {
 }
 
 impl TestProgram {
-    /// Loads the test program, verifies it for the specified `program_type`.
-    pub fn load(program_type: ProgramType) -> Self {
-        let prog =
-            ebpf_loader::load_ebpf_program("/pkg/data/ebpf_test_progs.o", ".text", "skb_test_prog")
-                .expect("Failed to load test prog");
-        let maps_schema = prog.maps.iter().map(|m| m.schema).collect();
-        let calling_context = program_type
-            .create_calling_context(AttachType::Unspecified, maps_schema)
-            .expect("Failed to create CallingContext");
-        let verified =
-            ebpf::verify_program(prog.code, calling_context, &mut ebpf::NullVerifierLogger)
-                .expect("Failed to verify loaded program");
-
-        let maps = prog
-            .maps
-            .iter()
-            .map(|def| ebpf_api::Map::new(def.schema, &def.name()).expect("Failed to create a map"))
-            .collect();
-
-        let (handle, server_handle) = zx::EventPair::create();
-        let handle = febpf::ProgramHandle { handle };
-        Self { program: verified, maps, handle, server_handle }
-    }
-
     pub fn maps(&self) -> &[ebpf_api::PinnedMap] {
         &self.maps
     }
@@ -107,8 +148,20 @@ impl TestProgram {
         server_handle
     }
 
+    pub fn read_test_state(&self) -> TestProgramState {
+        let state = self.maps[0].load(&[0; 4]).expect("retrieve test state");
+        TestProgramState::ref_from_bytes(&state).expect("convert test state struct").clone()
+    }
+
     pub fn read_test_result(&self) -> TestResult {
-        let result = self.maps[0].load(&[0; 4]).expect("retrieve test result");
-        TestResult::ref_from_bytes(&result).expect("convert test results struct").clone()
+        self.read_test_state().result
+    }
+
+    pub fn write_test_config(&self, config: TestConfig) {
+        let mut state = self.read_test_state();
+        state.config = config;
+        self.maps[0]
+            .update(ebpf_api::MapKey::from_slice(&[0; 4]), state.as_bytes(), 0)
+            .expect("store test state");
     }
 }

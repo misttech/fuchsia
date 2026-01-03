@@ -768,7 +768,7 @@ pub struct StructAccess {
     pub is_32_bit_ptr_load: bool,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct VerifiedEbpfProgram {
     pub(crate) code: Vec<EbpfInstruction>,
     pub(crate) args: Vec<Type>,
@@ -800,6 +800,10 @@ impl VerifiedEbpfProgram {
         maps: Vec<MapSchema>,
     ) -> Self {
         Self { code, args, struct_access_instructions, maps }
+    }
+
+    pub fn maps(&self) -> &[MapSchema] {
+        &self.maps
     }
 }
 

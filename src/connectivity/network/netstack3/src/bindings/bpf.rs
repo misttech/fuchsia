@@ -1025,7 +1025,8 @@ mod tests {
     #[test_case(AttachType::CgroupInetIngress; "Ingress")]
     fn run_skb_prog<I: TestIpExt + FilterIpExt>(attach_type: AttachType) {
         let manager = EbpfManager::default();
-        let test_program = ebpf_test_util::TestProgram::load(ProgramType::CgroupSkb);
+        let test_program =
+            ebpf_test_util::TestProgramDefinition::load(ProgramType::CgroupSkb).instantiate();
         let program = test_program.get_fidl_program();
         let program = CgroupSkbProgram::new(program.try_into().unwrap(), manager.maps_cache())
             .expect("Failed to initialize a program");
@@ -1105,7 +1106,7 @@ mod tests {
         assert_eq!(result.cookie, socket_resource_token.token().export_value());
         assert_eq!(result.uid, UID);
         assert_eq!(result.ifindex, TEST_IFINDEX);
-        assert_eq!(result.proto, u32::from(u16::from(I::ETHER_TYPE)));
+        assert_eq!(result.ether_type, u32::from(u16::from(I::ETHER_TYPE)));
         assert_eq!(result.ip_proto, u8::from(IpProto::Udp));
     }
 }

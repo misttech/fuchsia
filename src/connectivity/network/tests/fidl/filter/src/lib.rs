@@ -23,6 +23,7 @@ use fidl_fuchsia_net_filter_ext::{
     Resource, ResourceId, Routine, RoutineId, RoutineType, Rule, RuleId, TransparentProxy,
 };
 use fidl_fuchsia_net_interfaces_ext::PortClass;
+use fidl_fuchsia_net_matchers_ext::TransportProtocol;
 use fuchsia_async::{DurationExt as _, OnSignals, TimeoutExt as _};
 use futures::{FutureExt as _, StreamExt as _, TryFutureExt as _};
 use itertools::Itertools as _;
@@ -2138,7 +2139,8 @@ async fn ebpf_program_registration(name: &str) {
     let mut controller =
         Controller::new(&control, &ControllerId(name.to_owned())).await.expect("create controller");
 
-    let program = ebpf_test_util::TestProgram::load(ebpf_api::ProgramType::SocketFilter);
+    let program = ebpf_test_util::TestProgramDefinition::load(ebpf_api::ProgramType::SocketFilter)
+        .instantiate();
     controller
         .register_ebpf_program(program.get_program_handle(), program.get_fidl_program())
         .await
@@ -2181,7 +2183,8 @@ async fn ebpf_matcher(name: &str) {
     let mut controller =
         Controller::new(&control, &ControllerId(name.to_owned())).await.expect("create controller");
 
-    let program = ebpf_test_util::TestProgram::load(ebpf_api::ProgramType::SocketFilter);
+    let program = ebpf_test_util::TestProgramDefinition::load(ebpf_api::ProgramType::SocketFilter)
+        .instantiate();
     let program_id = program.get_program_id();
     controller
         .register_ebpf_program(program.get_program_handle(), program.get_fidl_program())
@@ -2220,7 +2223,7 @@ async fn ebpf_matcher(name: &str) {
     let changes = vec![Change::Create(Resource::Rule(Rule {
         id: RuleId { routine: target_routine_id.clone(), index: 2 },
         matchers: Matchers {
-            transport_protocol: Some(fnet_matchers_ext::TransportProtocol::Icmp),
+            transport_protocol: Some(TransportProtocol::Icmp),
             ..Default::default()
         },
         action: Action::Drop,
