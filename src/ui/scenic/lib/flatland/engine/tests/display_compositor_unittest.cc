@@ -1098,7 +1098,7 @@ TEST_F(DisplayCompositorTest, HardwareFrameCorrectnessTest) {
   // Setup the EXPECT_CALLs for gmock.
   uint64_t layer_id_value = 1;
   EXPECT_CALL(*mock_display_coordinator_, CreateLayer(_))
-      .Times(2)
+      .Times(3)
       .WillRepeatedly(
           testing::Invoke([&](MockDisplayCoordinator::CreateLayerCompleter::Sync& completer) {
             fuchsia_hardware_display::wire::CoordinatorCreateLayerResponse response{
@@ -1106,8 +1106,9 @@ TEST_F(DisplayCompositorTest, HardwareFrameCorrectnessTest) {
             };
             completer.Reply(fit::ok(&response));
           }));
+  EXPECT_CALL(*mock_display_coordinator_, SetLayerColorConfig(_, _)).Times(1).WillOnce(Return());
 
-  std::vector<display::WireLayerId> layers = {{.value = 1}, {.value = 2}};
+  std::vector<display::WireLayerId> layers = {{.value = 2}, {.value = 3}};
 
   EXPECT_CALL(
       *mock_display_coordinator_,
@@ -1185,9 +1186,12 @@ TEST_F(DisplayCompositorTest, HardwareFrameCorrectnessTest) {
       GenerateDisplayListForTest({{kDisplayId, {display_info, parent_root_handle}}}), {},
       [](const scheduling::Timestamps&) {});
 
-  for (uint32_t i = 0; i < 2; i++) {
-    EXPECT_CALL(*mock_display_coordinator_,
-                DestroyLayer(MatchRequestField(DestroyLayer, layer_id, Eq(layers[i])), _))
+  // Cleanup: All layers should be destroyed.
+  for (uint64_t i = 1; i < layer_id_value; ++i) {
+    EXPECT_CALL(
+        *mock_display_coordinator_,
+        DestroyLayer(
+            MatchRequestField(DestroyLayer, layer_id, Eq(display::WireLayerId{.value = i})), _))
         .Times(1)
         .WillOnce(Return());
   }
@@ -1303,7 +1307,7 @@ void DisplayCompositorTest::HardwareFrameCorrectnessWithRotationTester(
   // Note that a couple of layers are created upfront for the display.
   uint64_t layer_id_value = 1;
   EXPECT_CALL(*mock_display_coordinator_, CreateLayer(_))
-      .Times(2)
+      .Times(3)
       .WillRepeatedly(
           testing::Invoke([&](MockDisplayCoordinator::CreateLayerCompleter::Sync& completer) {
             fuchsia_hardware_display::wire::CoordinatorCreateLayerResponse response{
@@ -1311,9 +1315,10 @@ void DisplayCompositorTest::HardwareFrameCorrectnessWithRotationTester(
             };
             completer.Reply(fit::ok(&response));
           }));
+  EXPECT_CALL(*mock_display_coordinator_, SetLayerColorConfig(_, _)).Times(1).WillOnce(Return());
 
   // However, we only set one display layer for the image.
-  const std::vector<fuchsia_hardware_display::wire::LayerId> layers = {{.value = 1}};
+  const std::vector<fuchsia_hardware_display::wire::LayerId> layers = {{.value = 2}};
   EXPECT_CALL(
       *mock_display_coordinator_,
       SetDisplayLayers(
@@ -1579,6 +1584,73 @@ TEST_F(DisplayCompositorTest, RendererOnly_ImportAndReleaseBufferCollectionTest)
                                                BufferCollectionUsage::kClientImage);
 
   EXPECT_CALL(*mock_display_coordinator_, DiscardConfig(_)).Times(1).WillOnce(Return());
+}
+
+TEST_F(DisplayCompositorTest, SetDisplayLayers_WithNoImages_UsesEmptySceneLayer) {
+  const display::DisplayId kDisplayId(1);
+  glm::uvec2 resolution(1024, 768);
+  DisplayInfo display_info = {resolution, {kPixelFormat}};
+
+  EXPECT_CALL(*mock_display_coordinator_, DiscardConfig(_)).Times(1).WillOnce(Return());
+  EXPECT_CALL(*mock_display_coordinator_, SetDisplayMode(_, _)).Times(testing::AnyNumber());
+  EXPECT_CALL(*mock_display_coordinator_, CheckConfig(_))
+      .Times(1)
+      .WillRepeatedly(
+          testing::Invoke([&](MockDisplayCoordinator::CheckConfigCompleter::Sync& completer) {
+            completer.Reply(display::WireConfigResult::kOk);
+          }));
+
+  // Setup the EXPECT_CALLs for gmock.
+  // We expect 1 layer for empty scene, and 2 layers for the pool (configured in SetUp).
+  uint64_t layer_id_value = 1;
+  EXPECT_CALL(*mock_display_coordinator_, CreateLayer(_))
+      .Times(3)
+      .WillRepeatedly(
+          testing::Invoke([&](MockDisplayCoordinator::CreateLayerCompleter::Sync& completer) {
+            fuchsia_hardware_display::wire::CoordinatorCreateLayerResponse response{
+                .layer_id = {.value = layer_id_value++},
+            };
+            completer.Reply(fit::ok(&response));
+          }));
+
+  EXPECT_CALL(*mock_display_coordinator_, SetLayerColorConfig(_, _)).Times(1).WillOnce(Return());
+
+  display::Display display({kDisplayId.ToFidl()}, resolution.x, resolution.y);
+  display_compositor_->AddDisplay(&display, display_info, /*num_vmos*/ 0,
+                                  /*out_buffer_collection*/ nullptr);
+
+  // We expect SetDisplayLayers to be called with the FIRST layer created (empty scene layer).
+  std::vector<display::WireLayerId> expected_layers = {{.value = 1}};
+  EXPECT_CALL(
+      *mock_display_coordinator_,
+      SetDisplayLayers(
+          testing::AllOf(MatchRequestField(SetDisplayLayers, display_id, Eq(kDisplayId.ToFidl())),
+                         MatchRequestField(SetDisplayLayers, layer_ids,
+                                           testing::ElementsAreArray(expected_layers))),
+          _))
+      .Times(1)
+      .WillOnce(Return());
+
+  EXPECT_CALL(*mock_display_coordinator_, ApplyConfig3(_, _)).Times(1).WillOnce(Return());
+
+  // RenderFrame with empty render data list for the display.
+  // This triggers SetRenderDataOnDisplay with 0 images.
+  auto session = CreateSession();
+  const TransformHandle root_handle = session.graph().CreateTransform();
+  display_compositor_->RenderFrame(
+      1, zx::time_monotonic(1),
+      GenerateDisplayListForTest({{kDisplayId, {display_info, root_handle}}}), {},
+      [](const scheduling::Timestamps&) {});
+
+  // Cleanup: All layers should be destroyed.
+  for (uint64_t i = 1; i < layer_id_value; ++i) {
+    EXPECT_CALL(
+        *mock_display_coordinator_,
+        DestroyLayer(
+            MatchRequestField(DestroyLayer, layer_id, Eq(display::WireLayerId{.value = i})), _))
+        .Times(1)
+        .WillOnce(Return());
+  }
 }
 
 }  // namespace flatland::test

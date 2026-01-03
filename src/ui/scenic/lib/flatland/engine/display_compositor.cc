@@ -260,15 +260,19 @@ DisplayCompositor::~DisplayCompositor() {
       FX_LOGS(ERROR) << "Failed to call FIDL DiscardConfig method: " << result.status_string();
     }
     for (const auto& [_, data] : display_engine_data_map_) {
+      fidl::OneWayStatus result =
+          display_coordinator_.raw().sync()->DestroyLayer(data.empty_scene_layer.ToFidl());
+      if (!result.ok()) {
+        FX_LOGS(ERROR) << "Failed to call FIDL DestroyLayer method: " << result.status_string();
+      }
       for (const display::LayerId& layer : data.layers) {
-        fidl::OneWayStatus result = display_coordinator_.raw().sync()->DestroyLayer(layer.ToFidl());
+        result = display_coordinator_.raw().sync()->DestroyLayer(layer.ToFidl());
         if (!result.ok()) {
           FX_LOGS(ERROR) << "Failed to call FIDL DestroyLayer method: " << result.status_string();
         }
       }
       for (const auto& event_data : data.frame_event_datas) {
-        fidl::OneWayStatus result =
-            display_coordinator_.raw().sync()->ReleaseEvent(event_data.wait_id.ToFidl());
+        result = display_coordinator_.raw().sync()->ReleaseEvent(event_data.wait_id.ToFidl());
         if (!result.ok()) {
           FX_LOGS(ERROR) << "Failed to call FIDL ReleaseEvent on wait event ("
                          << event_data.wait_id.value() << "): " << result.status_string();
@@ -500,17 +504,15 @@ bool DisplayCompositor::SetRenderDataOnDisplay(const RenderData& data) {
   // Every rectangle should have an associated image.
   const uint32_t num_images = static_cast<uint32_t>(data.images.size());
 
+  DisplayEngineData& display_engine_data = display_engine_data_map_.at(data.display_id);
   if (num_images == 0) {
-    // The Coordinator API doesn't allow zero layers.
-    // TODO(https://fxbug.dev/399228128): Use a Coordinator color layer instead of Vulkan fallback.
-    TRACE_INSTANT("gfx", "scenic_d2d_failed: zero layers provided", TRACE_SCOPE_THREAD);
-    FLATLAND_VERBOSE_LOG << "SetRenderDataOnDisplay() failed: zero layers provided.";
-    return false;
+    SetDisplayLayers(data.display_id, std::span(&display_engine_data.empty_scene_layer, 1));
+    return true;
   }
 
   // Since we map 1 image to 1 layer, if there are more images than layers available for
   // the given display, then they cannot be directly composited to the display in hardware.
-  std::vector<display::LayerId>& layers = display_engine_data_map_.at(data.display_id).layers;
+  std::vector<display::LayerId>& layers = display_engine_data.layers;
   if (layers.size() < num_images) {
     TRACE_INSTANT("gfx", "scenic_d2d_failed: insufficient layers available", TRACE_SCOPE_THREAD);
     FLATLAND_VERBOSE_LOG << "SetRenderDataOnDisplay() failed: insufficient layers available.";
@@ -976,6 +978,18 @@ void DisplayCompositor::AddDisplay(display::Display* display, const DisplayInfo 
 
   {
     std::scoped_lock lock(lock_);
+
+    // Prepare the black layer to render an empty scene to the display.
+    display_engine_data.empty_scene_layer = display_coordinator_.CreateLayer();
+    const display::Rectangle display_destination({.x = 0,
+                                                  .y = 0,
+                                                  .width = static_cast<int32_t>(size.width),
+                                                  .height = static_cast<int32_t>(size.height)});
+    display_coordinator_.SetLayerColorConfig(
+        display_engine_data.empty_scene_layer,
+        {.format = fuchsia_images2::PixelFormat::kB8G8R8A8, .bytes = {0, 0, 0, 255, 0, 0, 0, 0}},
+        display_destination);
+
     // When we add in a new display, we create a couple of layers for that display upfront to be
     // used when we directly composite render data in hardware via the display coordinator.
     // TODO(https://fxbug.dev/42157936): per-display layer lists are probably a bad idea; this

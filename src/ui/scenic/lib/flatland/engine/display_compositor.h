@@ -172,6 +172,9 @@ class DisplayCompositor final : public allocation::BufferCollectionImporter,
   };
 
   struct DisplayEngineData {
+    // The layer used to render an empty scene to the display through a solid black color.
+    display::LayerId empty_scene_layer;
+
     // The hardware layers we've created to use on this display.
     std::vector<display::LayerId> layers;
 

@@ -2405,6 +2405,81 @@ VK_TEST_F(DisplayCompositorPixelTest, SwitchDisplayMode) {
       << "Failed to call FIDL ReleaseImage: " << release_image_result.status_string();
 }
 
+// Tests that the DisplayCompositor can render an empty scene (black background) correctly.
+VK_TEST_F(DisplayCompositorPixelTest, EmptySceneLayerTest) {
+  SKIP_TEST_IF_ESCHER_USES_DEVICE(VirtualGpu);
+
+  // Create a display realm and DisplayCompositor.
+  auto renderer = NewNullRenderer();
+  auto display_compositor = std::make_shared<flatland::DisplayCompositor>(
+      dispatcher(), display_manager_->coordinator_proxy(), renderer,
+      utils::CreateSysmemAllocatorSyncPtr("display_compositor_pixeltest"),
+      flatland::DisplayCompositorConfig{});
+
+  auto display = display_manager_->default_display();
+  const auto kPixelFormat = fuchsia::images2::PixelFormat::B8G8R8A8;
+  const uint64_t kCompareCollectionId = allocation::GenerateUniqueBufferCollectionId();
+  const uint64_t kCaptureCollectionId = allocation::GenerateUniqueBufferCollectionId();
+
+  // Set up buffer collection and image for display_coordinator capture.
+  allocation::GlobalImageId capture_image_id = allocation::GenerateUniqueImageId();
+  fuchsia::sysmem2::BufferCollectionInfo capture_info;
+  auto capture_collection_result =
+      SetupCapture(kCaptureCollectionId, kPixelFormat, &capture_info, capture_image_id);
+  if (capture_collection_result.is_error() &&
+      capture_collection_result.error() == ZX_ERR_NOT_SUPPORTED) {
+    GTEST_SKIP();
+  }
+  EXPECT_TRUE(capture_collection_result.is_ok());
+  auto capture_collection = std::move(capture_collection_result.value());
+  auto release_capture_collection = fit::defer(
+      [this, kCaptureCollectionId] { ReleaseCaptureBufferCollection(kCaptureCollectionId); });
+
+  // Create a flatland session with a root and image handle. Import to the engine as display root.
+  auto session = CreateSession();
+  const TransformHandle root_handle = session.graph().CreateTransform();
+  const TransformHandle child_handle = session.graph().CreateTransform();
+  session.graph().AddChild(root_handle, child_handle);
+  fuchsia::sysmem2::BufferCollectionInfo unused_render_target_info;
+  DisplayInfo display_info{
+      .dimensions = glm::uvec2(display->width_in_px(), display->height_in_px()),
+      .formats = {kDisplayPixelFormat}};
+  // Create display VMOs for the boards where color layers are not supported.
+  display_compositor->AddDisplay(display, display_info, /*num_vmos*/ 2, &unused_render_target_info);
+
+  // Render an empty frame.
+  auto render_frame_result = display_compositor->RenderFrame(
+      1, zx::time(1),
+      GenerateDisplayListForTest(
+          {{display->display_id(), std::make_pair(display_info, root_handle)}}),
+      {}, [](const scheduling::Timestamps&) {}, {.force_gpu_composition = false});
+  EXPECT_NE(render_frame_result, DisplayCompositor::RenderFrameResult::kFailure);
+
+  // Grab the capture vmo data.
+  std::vector<uint8_t> read_values;
+  CaptureDisplayOutput(*display_compositor->GetDisplayCoordinatorForTest(), capture_info,
+                       capture_image_id, &read_values);
+
+  // Verify the output is black.
+  // We expect a black image.
+  const uint32_t width = display->width_in_px();
+  const uint32_t height = display->height_in_px();
+  PixelFormatAndModifier pixel_format_and_modifier(
+      static_cast<fuchsia_images2::wire::PixelFormat>(kPixelFormat),
+      fuchsia_images2::PixelFormatModifier::kLinear);
+  const uint32_t expected_image_bytes_per_pixel =
+      ImageFormatStrideBytesPerWidthPixel(pixel_format_and_modifier);
+  constexpr uint32_t kExpectedImageRowByteAlignment = 64;
+  std::vector<uint8_t> expected_black_image =
+      GetColoredPixels(static_cast<int>(fbl::round_up(width * expected_image_bytes_per_pixel,
+                                                      kExpectedImageRowByteAlignment)),
+                       width, height, kPixelFormat, {0, 0, 0, 255});
+
+  bool images_are_same =
+      CaptureCompare(read_values, expected_black_image, kPixelFormat, height, width);
+  EXPECT_TRUE(images_are_same);
+}
+
 }  // namespace
 }  // namespace test
 }  // namespace flatland
