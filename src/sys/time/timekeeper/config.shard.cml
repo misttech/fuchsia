@@ -104,5 +104,9 @@
         /// external time sources. Specifically, if we know that we do not have
         /// network access, we don't sample time sources at all.
         use_connectivity: { type: "bool" },
+
+        /// If we receive a UTC reference timestamp that is
+        /// less than this amount of time away from backstop, we reject it.
+        min_utc_reference_to_backstop_diff_minutes: { type: "uint64" },
     },
 }

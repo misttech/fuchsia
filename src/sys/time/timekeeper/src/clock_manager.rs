@@ -71,10 +71,6 @@ const ZX_CLOCK_UNKNOWN_ERROR_BOUND: u64 = u64::MAX;
 /// 50ms is about the largest nonzero, but not broken typical value for standard deviation.
 const USER_SAMPLE_DEFAULT_STD_DEV: zx::BootDuration = zx::BootDuration::from_millis(50);
 
-/// If we receive a UTC reference timestamp that is less than this amount of time away from
-/// backstop, we reject it.
-const MIN_UTC_REFERENCE_TO_BACKSTOP_DIFF: UtcDuration = UtcDuration::from_hours(1);
-
 /// Describes how a correction will be made to a clock.
 enum ClockCorrection {
     Step(Step),
@@ -740,7 +736,7 @@ impl<R: Rtc, D: 'static + Diagnostics> ClockManager<R, D> {
                             info!("manage_clock: got a reference time sample: {:?}", sample);
                             let utc_reference_to_backstop_diff = (utc_reference - utc_backstop).max(UtcDuration::from_nanos(0));
 
-                            if utc_reference_to_backstop_diff < MIN_UTC_REFERENCE_TO_BACKSTOP_DIFF {
+                            if utc_reference_to_backstop_diff < self.config.get_min_utc_reference_to_backstop_diff() {
                                 warn!(
                                     concat!(
                                         "manage_clock: UTC clock not started, ",

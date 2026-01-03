@@ -174,6 +174,12 @@ impl Config {
     fn use_connectivity(&self) -> bool {
         self.source_config.use_connectivity
     }
+
+    fn get_min_utc_reference_to_backstop_diff(&self) -> UtcDuration {
+        UtcDuration::from_minutes(
+            self.source_config.min_utc_reference_to_backstop_diff_minutes as i64,
+        )
+    }
 }
 
 /// A definition which time sources to install, along with the URL and child names for each.
@@ -875,6 +881,7 @@ mod tests {
             utc_max_allowed_delta_past_sec: 0,
             serve_test_protocols: false,
             use_connectivity: false,
+            min_utc_reference_to_backstop_diff_minutes: 0,
         };
         Arc::new(Config::from(adjust_fn(config)))
     }

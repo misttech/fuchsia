@@ -56,6 +56,9 @@ pub struct TimekeeperConfig {
     /// If set, Timekeeper will use connectivity information to gauge whether
     /// to sample external time sources or not.
     pub use_connectivity: bool,
+    /// If we receive a UTC reference timestamp that is less than this amount of time away from
+    /// backstop, we reject it.
+    pub min_utc_reference_to_backstop_diff_minutes: u64,
 }
 
 impl Default for TimekeeperConfig {
@@ -75,6 +78,7 @@ impl Default for TimekeeperConfig {
             utc_max_allowed_delta_future_sec: 0,
             power_topology_integration_enabled: false,
             use_connectivity: false,
+            min_utc_reference_to_backstop_diff_minutes: 60,
         }
     }
 }
