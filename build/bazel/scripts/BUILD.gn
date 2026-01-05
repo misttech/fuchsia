@@ -83,11 +83,6 @@ if (is_host) {
     inputs = [ "stdio_redirection.py" ]
   }
 
-  python_build_time_tests("discover_migration_candidates_test") {
-    tests = [ "discover_migration_candidates_test.py" ]
-    inputs = [ "discover_migration_candidates.py" ]
-  }
-
   python_host_test("minimal_workspace_test") {
     main_source = "minimal_workspace_test.py"
     sources = [
@@ -107,7 +102,6 @@ group("tests") {
     ":bazel_compdb_utils_test($host_toolchain)",
     ":bazel_rust_analyzer_utils_test($host_toolchain)",
     ":build_utils_test($host_toolchain)",
-    ":discover_migration_candidates_test($host_toolchain)",
     ":export_host_tests_test($host_toolchain)",
     ":minimal_workspace_test($host_toolchain)",
     ":remote_services_utils_test($host_toolchain)",

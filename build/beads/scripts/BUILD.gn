@@ -1,0 +1,17 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+import("//build/testing/python_build_time_tests.gni")
+
+if (is_host) {
+  python_build_time_tests("discover_migration_candidates_test") {
+    tests = [ "discover_migration_candidates_test.py" ]
+    inputs = [ "discover_migration_candidates.py" ]
+  }
+}
+
+group("tests") {
+  testonly = true
+  deps = [ ":discover_migration_candidates_test($host_toolchain)" ]
+}
