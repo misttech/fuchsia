@@ -4,29 +4,36 @@
 
 import("//build/testing/python_build_time_tests.gni")
 
-python_build_time_tests("tests") {
-  tests = [
-    "affected_tests_test.py",
-    "build_api_filter_test.py",
-    "client_test.py",
-    "debug_symbols_test.py",
-    "gn_labels_test.py",
-    "gn_ninja_outputs_test.py",
-    "ninja_artifacts_test.py",
-    "file_to_test_package_test.py",
-  ]
-  inputs = [
-    "affected_tests.py",
-    "build_api_filter.py",
-    "client",
-    "client.py",
-    "debug_symbols.py",
-    "gn_labels.py",
-    "gn_ninja_outputs.py",
-    "ninja_artifacts.py",
-    "file_to_test_package.py",
+if (is_host) {
+  python_build_time_tests("api_tests") {
+    tests = [
+      "affected_tests_test.py",
+      "build_api_filter_test.py",
+      "client_test.py",
+      "debug_symbols_test.py",
+      "gn_labels_test.py",
+      "gn_ninja_outputs_test.py",
+      "ninja_artifacts_test.py",
+      "file_to_test_package_test.py",
+    ]
+    inputs = [
+      "affected_tests.py",
+      "build_api_filter.py",
+      "client",
+      "client.py",
+      "debug_symbols.py",
+      "gn_labels.py",
+      "gn_ninja_outputs.py",
+      "ninja_artifacts.py",
+      "file_to_test_package.py",
 
-    # Ninja is accessed implicitly by the test now.
-    "//prebuilt/third_party/ninja/${host_os}-${host_cpu}/ninja",
-  ]
+      # Ninja is accessed implicitly by the test now.
+      "//prebuilt/third_party/ninja/${host_os}-${host_cpu}/ninja",
+    ]
+  }
+}
+
+group("tests") {
+  testonly = true
+  deps = [ ":api_tests($host_toolchain)" ]
 }

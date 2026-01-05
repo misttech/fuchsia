@@ -21,15 +21,17 @@ action("integration_test") {
   hermetic_inputs_file = "$target_out_dir/$target_name.hermetic_inputs"
 }
 
-python_build_time_tests("unit_tests") {
-  tests = [ "generate_repository_test.py" ]
-  inputs = [ "generate_repository.py" ] + libc_headers.idk_generate_inputs
+if (is_host) {
+  python_build_time_tests("unit_tests") {
+    tests = [ "generate_repository_test.py" ]
+    inputs = [ "generate_repository.py" ] + libc_headers.idk_generate_inputs
+  }
 }
 
 group("tests") {
   testonly = true
   deps = [
     ":integration_test",
-    ":unit_tests",
+    ":unit_tests($host_toolchain)",
   ]
 }

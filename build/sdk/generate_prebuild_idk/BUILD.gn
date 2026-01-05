@@ -5,7 +5,6 @@
 import("//build/python/python_binary.gni")
 import("//build/python/python_host_test.gni")
 import("//build/python/python_library.gni")
-import("//build/testing/python_build_time_tests.gni")
 
 group("tests") {
   testonly = true

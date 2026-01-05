@@ -5,89 +5,89 @@
 import("//build/python/python_host_test.gni")
 import("//build/testing/python_build_time_tests.gni")
 
-python_build_time_tests("bazel_compdb_utils_test") {
-  tests = [ "bazel_compdb_utils_tests.py" ]
-  inputs = [ "bazel_compdb_utils.py" ]
-}
-
-python_build_time_tests("get_git_head_commit_test") {
-  tests = [ "get_git_head_commit_test.py" ]
-  inputs = [ "get_git_head_commit.py" ]
-}
-
-python_build_time_tests("build_utils_test") {
-  tests = [ "build_utils_test.py" ]
-  inputs = [ "build_utils.py" ]
-}
-
-python_build_time_tests("compute_content_hash_test") {
-  tests = [ "compute_content_hash_test.py" ]
-  inputs = [
-    "compute_content_hash.py",
-    "get_git_head_commit.py",
-  ]
-}
-
-python_build_time_tests("bazel_action_utils_test") {
-  tests = [ "bazel_action_utils_test.py" ]
-  inputs = [
-    "bazel_action_utils.py",
-    "stdio_redirection.py",
-  ]
-}
-
-python_build_time_tests("remote_services_utils_test") {
-  tests = [ "remote_services_utils_test.py" ]
-  inputs = [ "remote_services_utils_test.py" ]
-}
-
-python_build_time_tests("starlark_utils_test") {
-  tests = [ "starlark_utils_test.py" ]
-  inputs = [ "starlark_utils.py" ]
-}
-
-python_build_time_tests("workspace_utils_test") {
-  tests = [ "workspace_utils_test.py" ]
-  inputs = [
-    "build_utils.py",
-    "workspace_utils.py",
-  ]
-}
-
-python_build_time_tests("runfiles_utils_test") {
-  tests = [ "runfiles_utils_test.py" ]
-  inputs = [ "runfiles_utils.py" ]
-}
-
-python_build_time_tests("export_host_tests_test") {
-  tests = [ "export_host_tests_test.py" ]
-  inputs = [
-    "build_utils.py",
-    "export_host_tests.py",
-    "runfiles_utils.py",
-    "workspace_utils.py",
-  ]
-}
-
-python_build_time_tests("bazel_rust_analyzer_utils_test") {
-  tests = [ "bazel_rust_analyzer_utils_test.py" ]
-  inputs = [
-    "bazel_rust_analyzer_utils.py",
-    "build_utils.py",
-  ]
-}
-
-python_build_time_tests("stdio_redirection_test") {
-  tests = [ "stdio_redirection_test.py" ]
-  inputs = [ "stdio_redirection.py" ]
-}
-
-python_build_time_tests("discover_migration_candidates_test") {
-  tests = [ "discover_migration_candidates_test.py" ]
-  inputs = [ "discover_migration_candidates.py" ]
-}
-
 if (is_host) {
+  python_build_time_tests("bazel_compdb_utils_test") {
+    tests = [ "bazel_compdb_utils_tests.py" ]
+    inputs = [ "bazel_compdb_utils.py" ]
+  }
+
+  python_build_time_tests("get_git_head_commit_test") {
+    tests = [ "get_git_head_commit_test.py" ]
+    inputs = [ "get_git_head_commit.py" ]
+  }
+
+  python_build_time_tests("build_utils_test") {
+    tests = [ "build_utils_test.py" ]
+    inputs = [ "build_utils.py" ]
+  }
+
+  python_build_time_tests("compute_content_hash_test") {
+    tests = [ "compute_content_hash_test.py" ]
+    inputs = [
+      "compute_content_hash.py",
+      "get_git_head_commit.py",
+    ]
+  }
+
+  python_build_time_tests("bazel_action_utils_test") {
+    tests = [ "bazel_action_utils_test.py" ]
+    inputs = [
+      "bazel_action_utils.py",
+      "stdio_redirection.py",
+    ]
+  }
+
+  python_build_time_tests("remote_services_utils_test") {
+    tests = [ "remote_services_utils_test.py" ]
+    inputs = [ "remote_services_utils_test.py" ]
+  }
+
+  python_build_time_tests("starlark_utils_test") {
+    tests = [ "starlark_utils_test.py" ]
+    inputs = [ "starlark_utils.py" ]
+  }
+
+  python_build_time_tests("workspace_utils_test") {
+    tests = [ "workspace_utils_test.py" ]
+    inputs = [
+      "build_utils.py",
+      "workspace_utils.py",
+    ]
+  }
+
+  python_build_time_tests("runfiles_utils_test") {
+    tests = [ "runfiles_utils_test.py" ]
+    inputs = [ "runfiles_utils.py" ]
+  }
+
+  python_build_time_tests("export_host_tests_test") {
+    tests = [ "export_host_tests_test.py" ]
+    inputs = [
+      "build_utils.py",
+      "export_host_tests.py",
+      "runfiles_utils.py",
+      "workspace_utils.py",
+    ]
+  }
+
+  python_build_time_tests("bazel_rust_analyzer_utils_test") {
+    tests = [ "bazel_rust_analyzer_utils_test.py" ]
+    inputs = [
+      "bazel_rust_analyzer_utils.py",
+      "build_utils.py",
+    ]
+  }
+
+  python_build_time_tests("stdio_redirection_test") {
+    tests = [ "stdio_redirection_test.py" ]
+    inputs = [ "stdio_redirection.py" ]
+  }
+
+  python_build_time_tests("discover_migration_candidates_test") {
+    tests = [ "discover_migration_candidates_test.py" ]
+    inputs = [ "discover_migration_candidates.py" ]
+  }
+
   python_host_test("minimal_workspace_test") {
     main_source = "minimal_workspace_test.py"
     sources = [
@@ -110,7 +110,7 @@ group("tests") {
     ":discover_migration_candidates_test($host_toolchain)",
     ":export_host_tests_test($host_toolchain)",
     ":minimal_workspace_test($host_toolchain)",
-    ":remote_services_utils_test",
+    ":remote_services_utils_test($host_toolchain)",
     ":runfiles_utils_test($host_toolchain)",
     ":starlark_utils_test($host_toolchain)",
     ":stdio_redirection_test($host_toolchain)",
@@ -121,9 +121,9 @@ group("tests") {
   # CI bots can run git commands properly.
   if (false) {
     deps += [
-      ":compute_content_hash_test",
-      ":get_git_head_commit_test",
-      ":runfiles_utils_test",
+      ":compute_content_hash_test($host_toolchain)",
+      ":get_git_head_commit_test($host_toolchain)",
+      ":runfiles_utils_test($host_toolchain)",
     ]
   }
 }

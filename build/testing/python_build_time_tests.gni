@@ -26,35 +26,24 @@
 #   deps, data_deps: Usual GN meaning
 #
 template("python_build_time_tests") {
-  if (current_toolchain == default_toolchain) {
-    action(target_name) {
-      testonly = true
-      script = "//build/testing/python_build_time_tests.py"
-      inputs = invoker.tests + invoker.inputs
-      outputs = [ "$target_out_dir/$target_name.check" ]
-      args = [
-               "--quiet",
-               "--stamp",
-               rebase_path(outputs[0], root_build_dir),
-               "--test-files",
-             ] + rebase_path(invoker.tests, root_build_dir)
-      forward_variables_from(invoker,
-                             [
-                               "deps",
-                               "data_deps",
-                             ])
-    }
-  } else {
-    group(target_name) {
-      testonly = true
-      public_deps = [ ":$target_name($default_toolchain)" ]
-    }
-    not_needed(invoker,
-               [
-                 "deps",
-                 "data_deps",
-                 "inputs",
-                 "tests",
-               ])
+  assert(is_host,
+         "python_build_time_tests can only be expanded in the host_toolchain")
+
+  action(target_name) {
+    testonly = true
+    script = "//build/testing/python_build_time_tests.py"
+    inputs = invoker.tests + invoker.inputs
+    outputs = [ "$target_out_dir/$target_name.check" ]
+    args = [
+             "--quiet",
+             "--stamp",
+             rebase_path(outputs[0], root_build_dir),
+             "--test-files",
+           ] + rebase_path(invoker.tests, root_build_dir)
+    forward_variables_from(invoker,
+                           [
+                             "deps",
+                             "data_deps",
+                           ])
   }
 }
