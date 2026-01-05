@@ -234,6 +234,8 @@
                 "ExceptionTest.AlignmentCheck",
 
                 // exec_test
+                "ExecveatTest.MemfdScript",
+
                 // Disable InterpreterScript because the script has the path /bin/bash which is not
                 // where bash is located on the Android system image.
                 "ExecTest.InterpreterScript",
@@ -1130,6 +1132,10 @@
                 // on x86, but not on ARM, where it seems to be implemented with
                 // rt_sigsuspend.
                 "PauseTest.OnlyReturnsWhenSignalHandled",
+
+                // unshare_test
+                // These tests hard crash.
+                "UnshareCapTest/UnshareCapTest.*",
 
                 // SignalMask[Blocks/Allows]Signal require timers to send signals.
                 // Passes sometimes, so it has to be skipped.
