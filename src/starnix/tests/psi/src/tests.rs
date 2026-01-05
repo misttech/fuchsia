@@ -8,7 +8,7 @@ use fidl_fuchsia_starnix_psi::{
 };
 use std::sync::Arc;
 use test_case::test_case;
-use zx::{AsHandleRef, HandleBased};
+use zx::HandleBased;
 
 mod event_waiter;
 use event_waiter::{EventWaiter, make_epoll_waiter, make_poll_waiter};
@@ -177,8 +177,8 @@ where
 
     // Pulse the event and sleep for longer than the window. A PSI event should be latched and
     // delivered, even if the wait starts after the sleep.
-    event.signal_handle(zx::Signals::empty(), zx::Signals::EVENT_SIGNALED).unwrap();
-    event.signal_handle(zx::Signals::EVENT_SIGNALED, zx::Signals::empty()).unwrap();
+    event.signal(zx::Signals::empty(), zx::Signals::EVENT_SIGNALED).unwrap();
+    event.signal(zx::Signals::EVENT_SIGNALED, zx::Signals::empty()).unwrap();
     std::thread::sleep(std::time::Duration::from_secs(3));
     assert_eq!(waiter.wait(0).await, true);
 
@@ -186,7 +186,7 @@ where
     assert_eq!(waiter.wait(100).await, false);
 
     // Signal it again and expect the wait result to reflect it.
-    event.signal_handle(zx::Signals::empty(), zx::Signals::EVENT_SIGNALED).unwrap();
+    event.signal(zx::Signals::empty(), zx::Signals::EVENT_SIGNALED).unwrap();
     assert_eq!(waiter.wait(5000).await, true);
 
     // The next wait, however, should not report any event until the window has elapsed.

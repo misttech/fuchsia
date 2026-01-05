@@ -5,7 +5,7 @@
 use fidl_next::{Client, ClientEnd, Responder, ServerEnd};
 use fidl_next_fuchsia_examples_gizmo::device::{GetEvent, GetHardwareId};
 use fidl_next_fuchsia_examples_gizmo::{Device, DeviceServerHandler};
-use zx::{AsHandleRef, Channel, Event, Signals};
+use zx::{Channel, Event, Signals};
 
 use fdf::CurrentDispatcher;
 use fdf_env::test::spawn_in_driver;
@@ -22,7 +22,7 @@ impl DeviceServerHandler<AsyncChannel> for DeviceServer {
 
     async fn get_event(&mut self, responder: Responder<GetEvent, AsyncChannel>) {
         let event = Event::create();
-        event.signal_handle(Signals::empty(), Signals::USER_0).unwrap();
+        event.signal(Signals::empty(), Signals::USER_0).unwrap();
         responder.respond(event).await.unwrap();
     }
 }

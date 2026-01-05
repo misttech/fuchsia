@@ -1048,7 +1048,7 @@ mod tests {
         mock_clock.increment(&increment);
         assert!(check_signaled(&client));
         // clear the signal, reschedule once more and see that it gets hit again.
-        client.signal_handle(zx::Signals::EVENTPAIR_SIGNALED, zx::Signals::NONE).unwrap();
+        client.signal(zx::Signals::EVENTPAIR_SIGNALED, zx::Signals::NONE).unwrap();
         assert!(!check_signaled(&client));
         let sched = mock_clock.mono_clock.time + TEN_MILLIS;
         let res = mock_clock.reschedule_event_in_mono(sched, client.get_koid().unwrap());

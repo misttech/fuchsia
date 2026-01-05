@@ -323,7 +323,7 @@ impl LibraryCommand {
             }
             Self::ObjectSignal { handle, clear_mask, set_mask, responder } => {
                 let handle = ManuallyDrop::new(handle);
-                let status = match handle.signal_handle(clear_mask, set_mask) {
+                let status = match handle.signal(clear_mask, set_mask) {
                     Ok(_) => zx_status::Status::OK,
                     Err(e) => e,
                 };

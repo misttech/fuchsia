@@ -430,7 +430,7 @@ impl<T: TimeInterface> Timers<T> {
             if self.fake {
                 // Clear the signal used for fake timers so that we can use it to trigger
                 // next time.
-                self.timer.signal_handle(zx::Signals::USER_0, zx::Signals::empty()).unwrap();
+                self.timer.signal(zx::Signals::USER_0, zx::Signals::empty()).unwrap();
             }
 
             self.timer
@@ -525,7 +525,7 @@ impl<T: TimeInterface> Timers<T> {
             .peek()
             .is_some_and(|state| unsafe { state.nanos() } <= now.into_nanos())
         {
-            self.timer.signal_handle(zx::Signals::empty(), zx::Signals::USER_0).unwrap();
+            self.timer.signal(zx::Signals::empty(), zx::Signals::USER_0).unwrap();
         }
     }
 }

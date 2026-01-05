@@ -291,7 +291,7 @@ mod test {
 
         // signal the event and check that `signals` has been woken up and is
         // no longer pending
-        event.signal_handle(zx::Signals::NONE, zx::Signals::EVENT_SIGNALED)?;
+        event.signal(zx::Signals::NONE, zx::Signals::EVENT_SIGNALED)?;
         deliver_events();
         assert_eq!(waker_count, 1);
         assert_eq!(signals.poll_unpin(cx), Poll::Ready(Ok(zx::Signals::EVENT_SIGNALED)));

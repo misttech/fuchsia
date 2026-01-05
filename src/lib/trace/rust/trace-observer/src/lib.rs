@@ -82,7 +82,7 @@ impl TraceObserver {
         // b) clear signal
         //
         // In this case, we would return STOPPING and never check for STOPPED
-        self.event.signal_handle(zx::Signals::EVENT_SIGNALED, zx::Signals::NONE)?;
+        self.event.signal(zx::Signals::EVENT_SIGNALED, zx::Signals::NONE)?;
         let state = trace_state();
         unsafe { sys::trace_notify_observer_updated(self.event.raw_handle()) };
         Ok(state)

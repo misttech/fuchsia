@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::{sys, HandleRef, MonotonicInstant, Signals, Status};
+use crate::{HandleRef, MonotonicInstant, Signals, Status, sys};
 
 /// A "wait item" containing a handle reference and information about what signals
 /// to wait on, and, on return from `object_wait_many`, which are pending.
@@ -53,7 +53,7 @@ mod tests {
         );
 
         // If we set a signal, we should be able to wait for it.
-        assert!(event.signal_handle(Signals::NONE, Signals::USER_0).is_ok());
+        assert!(event.signal(Signals::NONE, Signals::USER_0).is_ok());
         assert_eq!(
             event.wait_handle(Signals::USER_0, MonotonicInstant::after(ten_ms)).unwrap(),
             Signals::USER_0
@@ -66,7 +66,7 @@ mod tests {
         );
 
         // Now clear it, and waiting should time out again.
-        assert!(event.signal_handle(Signals::USER_0, Signals::NONE).is_ok());
+        assert!(event.signal(Signals::USER_0, Signals::NONE).is_ok());
         assert_eq!(
             event.wait_handle(Signals::USER_0, MonotonicInstant::after(ten_ms)),
             WaitResult::TimedOut(Signals::empty())
@@ -100,20 +100,20 @@ mod tests {
         assert_eq!(items[1].pending, Signals::NONE);
 
         // Signal one object and it should return success.
-        assert!(e1.signal_handle(Signals::NONE, Signals::USER_0).is_ok());
+        assert!(e1.signal(Signals::NONE, Signals::USER_0).is_ok());
         assert!(object_wait_many(&mut items, MonotonicInstant::after(ten_ms)).is_ok());
         assert_eq!(items[0].pending, Signals::USER_0);
         assert_eq!(items[1].pending, Signals::NONE);
 
         // Signal the other and it should return both.
-        assert!(e2.signal_handle(Signals::NONE, Signals::USER_1).is_ok());
+        assert!(e2.signal(Signals::NONE, Signals::USER_1).is_ok());
         assert!(object_wait_many(&mut items, MonotonicInstant::after(ten_ms)).is_ok());
         assert_eq!(items[0].pending, Signals::USER_0);
         assert_eq!(items[1].pending, Signals::USER_1);
 
         // Clear signals on both; now it should time out again.
-        assert!(e1.signal_handle(Signals::USER_0, Signals::NONE).is_ok());
-        assert!(e2.signal_handle(Signals::USER_1, Signals::NONE).is_ok());
+        assert!(e1.signal(Signals::USER_0, Signals::NONE).is_ok());
+        assert!(e2.signal(Signals::USER_1, Signals::NONE).is_ok());
         assert_eq!(
             object_wait_many(&mut items, MonotonicInstant::after(ten_ms)),
             Err(Status::TIMED_OUT)

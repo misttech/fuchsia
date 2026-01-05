@@ -40,7 +40,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use tempfile::TempDir;
 use vfs::directory::helper::DirectlyMutable as _;
-use zx::{self as zx, AsHandleRef as _, HandleBased as _};
+use zx::HandleBased as _;
 use {
     fidl_fuchsia_fxfs as ffxfs, fidl_fuchsia_io as fio,
     fidl_fuchsia_pkg_garbagecollector as fpkg_gc, fidl_fuchsia_pkg_http as fpkg_http,
@@ -1269,7 +1269,7 @@ struct MockCommitStatusProviderService {
 impl MockCommitStatusProviderService {
     fn new() -> Self {
         let (_local, remote) = zx::EventPair::create();
-        let () = remote.signal_handle(zx::Signals::NONE, zx::Signals::USER_0).unwrap();
+        let () = remote.signal(zx::Signals::NONE, zx::Signals::USER_0).unwrap();
         Self { _local, remote }
     }
 

@@ -468,6 +468,8 @@ impl<T: Timeline> Timer<T> {
     pub fn info(&self) -> Result<TimerInfo<T>, Status> {
         Ok(TimerInfo::from_raw(self.0.get_info_single::<TimerInfoQuery>()?))
     }
+
+    delegated_concrete_handle_based_impls!(|h| Self(h, std::marker::PhantomData));
 }
 
 impl Timer<MonotonicTimeline> {

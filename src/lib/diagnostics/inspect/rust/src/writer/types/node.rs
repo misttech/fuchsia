@@ -1106,14 +1106,14 @@ mod fuchsia_tests {
             () => {
                 p1.signal_peer(zx::Signals::NONE, zx::Signals::USER_0).unwrap();
                 p1.wait_handle(zx::Signals::USER_0, zx::MonotonicInstant::INFINITE).unwrap();
-                p1.signal_handle(zx::Signals::USER_0, zx::Signals::NONE).unwrap();
+                p1.signal(zx::Signals::USER_0, zx::Signals::NONE).unwrap();
             };
         }
 
         macro_rules! wait_and_notify_writer {
             ($code:block) => {
               p2.wait_handle(zx::Signals::USER_0, zx::MonotonicInstant::INFINITE).unwrap();
-              p2.signal_handle(zx::Signals::USER_0, zx::Signals::NONE).unwrap();
+              p2.signal(zx::Signals::USER_0, zx::Signals::NONE).unwrap();
               $code
               p2.signal_peer(zx::Signals::NONE, zx::Signals::USER_0).unwrap();
             }

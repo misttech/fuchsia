@@ -10,7 +10,6 @@ use fuchsia_component_test::LocalComponentHandles;
 use futures::lock::Mutex;
 use futures::{StreamExt, TryStreamExt};
 use log::{error, info};
-use zx::AsHandleRef;
 use {fidl_fuchsia_hardware_google_nanohub as fuchsia_nanohub, fuchsia_async};
 
 pub struct FakeDataChannel {
@@ -56,7 +55,7 @@ impl FakeDataChannel {
                         .into_stream();
 
                     let event = payload.event.expect("Event not provided");
-                    if let Err(e) = event.signal_handle(
+                    if let Err(e) = event.signal(
                         zx::Signals::empty(),
                         zx::Signals::from_bits_truncate(*self.stat_flags.lock().await),
                     ) {
@@ -99,7 +98,7 @@ impl FakeDataChannel {
                     let mut stat_flags = self.stat_flags.lock().await;
                     *stat_flags |= fuchsia_nanohub::SIGNAL_READABLE;
                     if let Some(event) = &*self.event.lock().await {
-                        if let Err(e) = event.signal_handle(
+                        if let Err(e) = event.signal(
                             zx::Signals::empty(),
                             zx::Signals::from_bits_truncate(*stat_flags),
                         ) {

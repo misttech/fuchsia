@@ -10,7 +10,7 @@ use fuchsia_component::server as fserver;
 use futures::channel::mpsc;
 use futures::{StreamExt, TryFutureExt, TryStreamExt};
 use log::{info, warn};
-use zx::{self as zx, AsHandleRef, HandleBased};
+use zx::HandleBased;
 use {
     fidl_fuchsia_hardware_hidbus as fhidbus, fidl_fuchsia_hardware_input as finput,
     fidl_fuchsia_hardware_power_statecontrol as statecontrol,
@@ -71,8 +71,7 @@ async fn main() -> Result<(), Error> {
                         // down. This isn't useful, and generates quite a bit of log noise at
                         // the end of the test. To avoid this, we need to clear the signal on
                         // the event.
-                        event_for_test_protocol
-                            .signal_handle(zx::Signals::USER_0, zx::Signals::NONE)?;
+                        event_for_test_protocol.signal(zx::Signals::USER_0, zx::Signals::NONE)?;
 
                         // Failing to send the response is fine, the critical-services code doesn't
                         // wait for a reply to this call and therefore it might have closed the
@@ -143,7 +142,7 @@ async fn main() -> Result<(), Error> {
                                                     let event_dup = event.duplicate_handle(event_handle_rights())?;
                                                     responder.send(Ok(event_dup))
                                                         .expect("failed sending reports event");
-                                                    event.signal_handle(zx::Signals::NONE, zx::Signals::USER_0)?;
+                                                    event.signal(zx::Signals::NONE, zx::Signals::USER_0)?;
                                                 }
                                                 finput::DeviceRequest::ReadReport { responder } => {
                                                     info!("sending report");

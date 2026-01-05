@@ -592,7 +592,7 @@ async fn set_clock_from_rtc<R: Rtc, D: Diagnostics>(
             .record(Event::StartClock { track: Track::Primary, source: StartClockSource::Rtc });
         info!("started UTC clock from RTC at time: {}", rtc_chrono);
 
-        if let Err(status) = clock.signal_handle(
+        if let Err(status) = clock.signal(
             zx::Signals::NONE,
             zx::Signals::from_bits(ftime::SIGNAL_UTC_CLOCK_LOGGING_QUALITY).unwrap(),
         ) {

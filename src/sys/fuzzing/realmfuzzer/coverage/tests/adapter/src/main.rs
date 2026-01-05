@@ -6,7 +6,7 @@ use anyhow::{Context as _, Result};
 use fuchsia_component::client::connect_to_protocol;
 use fuchsia_component::server::ServiceFs;
 use fuchsia_runtime::process_self;
-use futures::{try_join, StreamExt, TryFutureExt, TryStreamExt};
+use futures::{StreamExt, TryFutureExt, TryStreamExt, try_join};
 use log::warn;
 use zx::{self as zx, AsHandleRef, HandleBased, Peered};
 use {fidl_fuchsia_fuzzer as fuzz, fuchsia_async as fasync};
@@ -54,7 +54,7 @@ impl Instrumentation {
                 .await
                 .context("failed to receive signal from module eventpair")?;
             self.eventpair
-                .signal_handle(zx::Signals::USER_0, zx::Signals::NONE)
+                .signal(zx::Signals::USER_0, zx::Signals::NONE)
                 .context("failed to clear module eventpair")?;
             let data = "world".as_bytes();
             let content_size = self
@@ -114,7 +114,7 @@ async fn run_target_adapter(
                             .await
                             .context("failed to receive signal from test input eventpair")?;
                         eventpair
-                            .signal_handle(zx::Signals::USER_0, zx::Signals::NONE)
+                            .signal(zx::Signals::USER_0, zx::Signals::NONE)
                             .context("failed to clear adapter eventpair")?;
                         let test_input_size = test_input
                             .get_content_size()

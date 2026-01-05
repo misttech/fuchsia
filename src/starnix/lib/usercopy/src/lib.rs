@@ -669,7 +669,7 @@ impl Usercopy {
 
 impl Drop for Usercopy {
     fn drop(&mut self) {
-        self.shutdown_event.signal_handle(zx::Signals::empty(), zx::Signals::USER_0).unwrap();
+        self.shutdown_event.signal(zx::Signals::empty(), zx::Signals::USER_0).unwrap();
         self.join_handle.take().unwrap().join().unwrap();
     }
 }

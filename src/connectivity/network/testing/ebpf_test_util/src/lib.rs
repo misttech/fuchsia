@@ -140,7 +140,7 @@ impl TestProgram {
         let Self { handle, server_handle, .. } = self;
         handle
             .handle
-            .signal_handle(
+            .signal(
                 zx::Signals::empty(),
                 zx::Signals::from_bits_truncate(febpf::PROGRAM_DEFUNCT_SIGNAL),
             )

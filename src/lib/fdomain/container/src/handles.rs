@@ -327,6 +327,17 @@ impl AnyHandle {
         })
     }
 
+    pub fn signal(&self, clear: fidl::Signals, set: fidl::Signals) -> Result<(), proto::Error> {
+        match self {
+            AnyHandle::Socket(s) => s.signal(clear, set),
+            AnyHandle::EventPair(e) => e.signal(clear, set),
+            AnyHandle::Event(e) => e.signal(clear, set),
+            AnyHandle::Channel(c) => c.signal(clear, set),
+            AnyHandle::Unknown(u) => u.0.signal(clear, set),
+        }
+        .map_err(|e| proto::Error::TargetError(e.into_raw()))
+    }
+
     pub fn signal_peer(
         &self,
         clear: fidl::Signals,

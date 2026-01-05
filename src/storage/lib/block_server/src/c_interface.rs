@@ -143,7 +143,7 @@ impl super::SessionManager for SessionManager {
         .await
         .unwrap_or_else(|e| Err(e.into()));
 
-        let _ = session.fifo.signal_handle(zx::Signals::empty(), zx::Signals::USER_0);
+        let _ = session.fifo.signal(zx::Signals::empty(), zx::Signals::USER_0);
 
         result
     }
@@ -289,7 +289,7 @@ impl Session {
                     }
                     // Clear USER_1 signal if it's set.
                     if signals.contains(zx::Signals::USER_1) {
-                        let _ = self.fifo.signal_handle(zx::Signals::USER_1, zx::Signals::empty());
+                        let _ = self.fifo.signal(zx::Signals::USER_1, zx::Signals::empty());
                     }
                 }
                 Err(_) => return,
@@ -446,7 +446,7 @@ impl Session {
                 }
                 Err(_) => {
                     // Wake `fifo_loop`.
-                    let _ = self.fifo.signal_handle(zx::Signals::empty(), zx::Signals::USER_1);
+                    let _ = self.fifo.signal(zx::Signals::empty(), zx::Signals::USER_1);
                 }
             }
         }
@@ -454,7 +454,7 @@ impl Session {
     }
 
     fn terminate(&self) {
-        let _ = self.fifo.signal_handle(zx::Signals::empty(), zx::Signals::USER_0);
+        let _ = self.fifo.signal(zx::Signals::empty(), zx::Signals::USER_0);
         self.abort_handle.abort();
     }
 }

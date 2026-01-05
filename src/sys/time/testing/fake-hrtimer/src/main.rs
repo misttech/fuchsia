@@ -142,7 +142,7 @@ impl FakeHrtimerServer {
                 guard.timers.remove(&id);
                 // For alarms that have a bound event, signal the event.
                 guard.events.remove(&id).map(|v| {
-                    v.as_handle_ref().signal_handle(zx::Signals::NONE, zx::Signals::EVENT_SIGNALED)
+                    v.as_handle_ref().signal(zx::Signals::NONE, zx::Signals::EVENT_SIGNALED)
                 });
             }
         };
@@ -338,7 +338,7 @@ impl FakeHrtimerServer {
                     } else {
                         defer! {
                             setup_event.as_handle_ref()
-                                .signal_handle(
+                                .signal(
                                     zx::Signals::NONE,
                                     zx::Signals::EVENT_SIGNALED)
                                .expect("setup event should be signaled");

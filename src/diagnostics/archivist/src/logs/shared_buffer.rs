@@ -213,7 +213,7 @@ impl SharedBuffer {
     pub async fn flush(&self) {
         let (sender, receiver) = oneshot::channel();
         self.inner.lock().thread_msg_queue.push_back(ThreadMessage::Flush(sender));
-        self.event.signal_handle(zx::Signals::empty(), zx::Signals::USER_0).unwrap();
+        self.event.signal(zx::Signals::empty(), zx::Signals::USER_0).unwrap();
         // Ignore failure if Archivist is shutting down.
         let _ = receiver.await;
     }
@@ -227,7 +227,7 @@ impl SharedBuffer {
     /// Terminates the socket thread. The socket thread will drain the sockets before terminating.
     pub async fn terminate(&self) {
         self.inner.lock().thread_msg_queue.push_back(ThreadMessage::Terminate);
-        self.event.signal_handle(zx::Signals::empty(), zx::Signals::USER_0).unwrap();
+        self.event.signal(zx::Signals::empty(), zx::Signals::USER_0).unwrap();
         let join_handle = self.socket_thread.lock().take().unwrap();
         fasync::unblock(|| {
             let _ = join_handle.join();
@@ -346,7 +346,7 @@ impl SharedBuffer {
                     // If there are no more messages, we must clear the signal so that we get
                     // notified when the next message arrives. This must be done whilst we are
                     // holding the lock.
-                    self.event.signal_handle(zx::Signals::USER_0, zx::Signals::empty()).unwrap();
+                    self.event.signal(zx::Signals::USER_0, zx::Signals::empty()).unwrap();
                 }
             }
         }

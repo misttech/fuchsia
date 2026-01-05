@@ -525,7 +525,6 @@ mod tests {
     use std::cell::{Cell, RefCell};
     use std::rc::Rc;
     use std::task::Waker;
-    use zx::{self as zx, AsHandleRef};
 
     fn spawn(future: impl Future<Output = ()> + Send + 'static) {
         crate::EHandle::local().spawn_detached(future);
@@ -591,7 +590,7 @@ mod tests {
 
         let _ = executor.run_until_stalled(&mut fut);
 
-        event.signal_handle(zx::Signals::NONE, zx::Signals::USER_0).unwrap();
+        event.signal(zx::Signals::NONE, zx::Signals::USER_0).unwrap();
         assert_matches!(executor.run_until_stalled(&mut fut), Poll::Ready(Ok(zx::Signals::USER_0)));
     }
 

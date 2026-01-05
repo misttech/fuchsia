@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use fidl::AsHandleRef;
 use fidl_fuchsia_developer_remotecontrol::RemoteControlProxy;
 use fidl_fuchsia_net_ext::SocketAddress as SocketAddressExt;
 use futures::{AsyncRead, AsyncWrite, Stream};
@@ -140,7 +139,7 @@ impl TargetTcpListener {
                 return Err(Error::Hangup);
             }
             socket
-                .signal_handle(incoming_signal, fidl::Signals::empty())
+                .signal(incoming_signal, fidl::Signals::empty())
                 .map_err(Error::ClearingSignal)?;
         }
     }
@@ -227,7 +226,7 @@ impl SocketProvider {
                 return Err(Error::Hangup);
             }
             socket
-                .signal_handle(connected_signal, fidl::Signals::empty())
+                .signal(connected_signal, fidl::Signals::empty())
                 .map_err(Error::ClearingSignal)?;
         }
 

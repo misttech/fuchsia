@@ -11,8 +11,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use explicit::ResultExt as _;
+use fidl::HandleBased as _;
 use fidl::endpoints::{ClientEnd, DiscoverableProtocolMarker as _, RequestStream as _};
-use fidl::{AsHandleRef as _, HandleBased as _};
 use futures::channel::{mpsc, oneshot};
 use log::{debug, error, warn};
 use net_types::ip::{GenericOverIp, Ip, IpAddress, IpVersion, Ipv4, Ipv6};
@@ -602,7 +602,7 @@ impl<I: IpSockAddrExt + IpExt> RequestHandler<'_, I> {
             .into_sock_addr();
         let PeerZirconSocketAndTaskData { peer, spawn_data } = peer;
         let (client, request_stream) = crate::bindings::socket::create_request_stream();
-        peer.signal_handle(zx::Signals::NONE, ZXSIO_SIGNAL_CONNECTED)
+        peer.signal(zx::Signals::NONE, ZXSIO_SIGNAL_CONNECTED)
             .expect("failed to signal connection established");
         spawn_connected_socket_task(ctx.clone(), accepted, peer, request_stream, spawn_data);
         Ok((want_addr.then_some(addr), client))

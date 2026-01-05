@@ -719,8 +719,8 @@ async fn wait_signaled<H: HandleBased>(handle: &H) {
     fasync::OnSignals::new(handle, zx::Signals::EVENT_SIGNALED).await.expect("infallible");
 }
 
-pub(crate) fn signal<H: HandleBased>(handle: &H) {
-    handle.signal_handle(zx::Signals::NONE, zx::Signals::EVENT_SIGNALED).expect("infallible");
+pub(crate) fn signal(event: &zx::Event) {
+    event.signal(zx::Signals::NONE, zx::Signals::EVENT_SIGNALED).expect("infallible");
 }
 
 /// A [TimerDuration] represents a duration of time that can be expressed by

@@ -179,11 +179,6 @@ pub trait AsHandleRef {
         self.as_handle_ref().0
     }
 
-    /// Set and clear userspace-accessible signal bits on an object.
-    fn signal_handle(&self, clear_mask: Signals, set_mask: Signals) -> Result<(), Status> {
-        self.as_handle_ref().signal(clear_mask, set_mask)
-    }
-
     /// Wraps the
     /// [zx_object_get_info](https://fuchsia.dev/fuchsia-src/reference/syscalls/object_get_info.md)
     /// syscall for the ZX_INFO_HANDLE_BASIC topic.
@@ -426,6 +421,11 @@ impl Handle {
         entry.rights = target_rights;
         let _ = table.insert(new_handle, entry);
         Ok(Handle(new_handle))
+    }
+
+    /// Signal the object referred to by the handle.
+    pub fn signal(&self, clear: Signals, set: Signals) -> Result<(), Status> {
+        self.as_handle_ref().signal(clear, set)
     }
 }
 
@@ -745,6 +745,11 @@ impl Channel {
         })
         .map_err(|(_handles_to_drop, err)| err)
     }
+
+    /// Signal the channel.
+    pub fn signal(&self, clear: Signals, set: Signals) -> Result<(), Status> {
+        self.as_handle_ref().signal(clear, set)
+    }
 }
 
 /// Socket options available portable
@@ -989,6 +994,11 @@ impl Socket {
             _ => panic!("Non socket passed to Socket::info"),
         })
     }
+
+    /// Signal the socket.
+    pub fn signal(&self, clear: Signals, set: Signals) -> Result<(), Status> {
+        self.as_handle_ref().signal(clear, set)
+    }
 }
 
 /// Emulation of Zircon EventPair.
@@ -1036,6 +1046,11 @@ impl EventPair {
         let (left, right, _) = new_handle_pair(HdlType::EventPair, rights);
         Ok((EventPair(left), EventPair(right)))
     }
+
+    /// Signal the eventpair.
+    pub fn signal(&self, clear: Signals, set: Signals) -> Result<(), Status> {
+        self.as_handle_ref().signal(clear, set)
+    }
 }
 
 /// Emulation of Zircon Event.
@@ -1070,9 +1085,14 @@ impl Drop for Event {
 }
 
 impl Event {
-    /// Create an event .
+    /// Create an event.
     pub fn create() -> Event {
         Event(new_handle(HdlType::Event, Rights::EVENT_DEFAULT).0)
+    }
+
+    /// Signal the event.
+    pub fn signal(&self, clear: Signals, set: Signals) -> Result<(), Status> {
+        self.as_handle_ref().signal(clear, set)
     }
 }
 
@@ -2584,16 +2604,16 @@ mod test {
         let mut ctx = Context::from_waker(&waker);
         assert_eq!(on_sig.poll_unpin(&mut ctx), Poll::Pending);
         assert_eq!(count, 0);
-        c1.signal_handle(Signals::empty(), Signals::USER_1).unwrap();
+        c1.signal(Signals::empty(), Signals::USER_1).unwrap();
         assert_eq!(count, 0);
-        c1.signal_handle(Signals::empty(), Signals::USER_0).unwrap();
+        c1.signal(Signals::empty(), Signals::USER_0).unwrap();
         assert_eq!(count, 1);
         assert_eq!(on_sig.poll_unpin(&mut ctx), Poll::Ready(Ok(Signals::USER_0)));
-        c1.signal_handle(Signals::USER_0, Signals::empty()).unwrap();
+        c1.signal(Signals::USER_0, Signals::empty()).unwrap();
         let mut on_sig = on_signals::OnSignalsRef::new(&c1, Signals::USER_0);
         assert_eq!(on_sig.poll_unpin(&mut ctx), Poll::Pending);
         assert_eq!(count, 1);
-        c1.signal_handle(Signals::empty(), Signals::USER_0).unwrap();
+        c1.signal(Signals::empty(), Signals::USER_0).unwrap();
         assert_eq!(count, 2);
         assert_eq!(on_sig.poll_unpin(&mut ctx), Poll::Ready(Ok(Signals::USER_0)));
     }
@@ -2628,9 +2648,9 @@ mod test {
         let mut ctx = Context::from_waker(&waker);
         assert_eq!(on_sig.poll_unpin(&mut ctx), Poll::Pending);
         assert_eq!(count, 0);
-        c1.signal_handle(Signals::empty(), Signals::USER_1).unwrap();
+        c1.signal(Signals::empty(), Signals::USER_1).unwrap();
         assert_eq!(count, 0);
-        c1.signal_handle(Signals::empty(), Signals::USER_0).unwrap();
+        c1.signal(Signals::empty(), Signals::USER_0).unwrap();
         assert_eq!(count, 0);
         std::mem::drop(c2);
         assert_eq!(count, 1);
@@ -2641,7 +2661,7 @@ mod test {
     fn user_signal_no_rights() {
         let (c1, _) = EventPair::create();
         let c1 = c1.into_handle().replace(Rights::EVENTPAIR_DEFAULT & !Rights::SIGNAL).unwrap();
-        assert_eq!(c1.signal_handle(Signals::empty(), Signals::USER_1), Err(Status::ACCESS_DENIED));
+        assert_eq!(c1.signal(Signals::empty(), Signals::USER_1), Err(Status::ACCESS_DENIED));
     }
 
     #[test]
@@ -2657,7 +2677,7 @@ mod test {
     fn kernel_signal_denied() {
         let (c1, _) = EventPair::create();
         assert_eq!(
-            c1.signal_handle(Signals::empty(), Signals::OBJECT_WRITABLE),
+            c1.signal(Signals::empty(), Signals::OBJECT_WRITABLE),
             Err(Status::INVALID_ARGS)
         );
     }
@@ -2731,7 +2751,7 @@ mod test {
         let mut ctx = Context::from_waker(&waker);
         assert_eq!(on_sig.poll_unpin(&mut ctx), Poll::Pending);
         assert_eq!(count, 0);
-        assert_eq!(e.signal_handle(Signals::empty(), Signals::USER_0), Ok(()));
+        assert_eq!(e.signal(Signals::empty(), Signals::USER_0), Ok(()));
         assert_eq!(count, 1);
         assert_eq!(on_sig.poll_unpin(&mut ctx), Poll::Ready(Ok(Signals::USER_0)));
     }

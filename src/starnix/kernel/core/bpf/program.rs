@@ -243,7 +243,7 @@ impl Releasable for Program {
         // and should be closed.
         self.fidl_handle
             .handle
-            .signal_handle(
+            .signal(
                 zx::Signals::NONE,
                 zx::Signals::from_bits_truncate(febpf::PROGRAM_DEFUNCT_SIGNAL),
             )

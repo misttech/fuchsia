@@ -31,15 +31,14 @@ fn to_errno_with_log<T: std::fmt::Debug>(v: T) -> Errno {
     from_status_like_fdio!(zx::Status::IO)
 }
 
-fn signal_handle<H: HandleBased>(
-    handle: &H,
+fn signal_event(
+    event: &zx::Event,
     clear_mask: zx::Signals,
     set_mask: zx::Signals,
 ) -> Result<(), zx::Status> {
-    handle.signal_handle(clear_mask, set_mask).map_err(|err| {
-        log_error!("while signaling handle: {err:?}: clear: {clear_mask:?}, set: {set_mask:?}");
-        err
-    })
+    event
+        .signal(clear_mask, set_mask)
+        .inspect_err(|err| log_error!(err:?, clear_mask:?, set_mask:?; "while signaling event"))
 }
 
 fn duplicate_handle<H: HandleBased>(h: &H) -> Result<H, Errno> {
@@ -617,7 +616,7 @@ impl HrTimerManager {
         log_debug!("watch_new_hrtimer_loop: Cmd::Alarm: triggered alarm: {:?}", timer_id);
         ftrace::duration!("alarms", "starnix:hrtimer:notify_timer", "timer_id" => timer_id);
         self.lock().pending_timers.remove(&timer_id).map(|s| s.task.detach());
-        signal_handle(&timer.hr_timer.event(), zx::Signals::NONE, zx::Signals::TIMER_SIGNALED)
+        signal_event(&timer.hr_timer.event(), zx::Signals::NONE, zx::Signals::TIMER_SIGNALED)
             .context("notify_timer: hrtimer signal handle")?;
 
         // Handle wake source here.
@@ -743,7 +742,7 @@ impl HrTimerManager {
         self.inject_or_set_message_counter(message_counter.clone());
         setup_done
             .as_ref()
-            .map(|e| signal_handle(e, zx::Signals::NONE, zx::Signals::EVENT_SIGNALED));
+            .map(|e| signal_event(e, zx::Signals::NONE, zx::Signals::EVENT_SIGNALED));
 
         self.lock().debug_start_stage_counter = 1002;
         let device_async_proxy =
@@ -780,7 +779,7 @@ impl HrTimerManager {
                     self.lock().debug_start_stage_counter = 1;
                     defer! {
                         // Allow add_timer to proceed once command processing is done.
-                        signal_handle(&done, zx::Signals::NONE, zx::Signals::EVENT_SIGNALED).map_err(|err| to_errno_with_log(err)).expect("event can be signaled");
+                        signal_event(&done, zx::Signals::NONE, zx::Signals::EVENT_SIGNALED).map_err(|err| to_errno_with_log(err)).expect("event can be signaled");
                     }
 
                     let hr_timer = &new_timer_node.hr_timer;
@@ -930,7 +929,7 @@ impl HrTimerManager {
                 Cmd::Stop { timer, done, message_counter } => {
                     self.lock().debug_start_stage_counter = 20;
                     defer! {
-                        signal_handle(&done, zx::Signals::NONE, zx::Signals::EVENT_SIGNALED).expect("can signal");
+                        signal_event(&done, zx::Signals::NONE, zx::Signals::EVENT_SIGNALED).expect("can signal");
                     }
                     let timer_id = timer.get_id();
                     log_debug!("watch_new_hrtimer_loop: Cmd::Stop: timer_id: {:?}", timer_id);
@@ -1150,7 +1149,7 @@ impl TimerOps for HrTimerHandle {
         deadline: TargetTime,
     ) -> Result<(), Errno> {
         // Before (re)starting the timer, ensure the signal is cleared.
-        signal_handle(&self.event, zx::Signals::TIMER_SIGNALED, zx::Signals::NONE)
+        signal_event(&self.event, zx::Signals::TIMER_SIGNALED, zx::Signals::NONE)
             .map_err(|status| from_status_like_fdio!(status))?;
         current_task.kernel().hrtimer_manager.add_timer(
             source,
@@ -1162,7 +1161,7 @@ impl TimerOps for HrTimerHandle {
 
     fn stop(&self, kernel: &Arc<Kernel>) -> Result<(), Errno> {
         // Clear the signal when removing the hrtimer.
-        signal_handle(&self.event, zx::Signals::TIMER_SIGNALED, zx::Signals::NONE)
+        signal_event(&self.event, zx::Signals::TIMER_SIGNALED, zx::Signals::NONE)
             .map_err(|status| from_status_like_fdio!(status))?;
         Ok(kernel.hrtimer_manager.remove_timer(self)?)
     }

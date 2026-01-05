@@ -1236,9 +1236,7 @@ impl FDomain {
         let set = fidl::Signals::from_bits_retain(request.set);
         let clear = fidl::Signals::from_bits_retain(request.clear);
 
-        self.using_handle(request.handle, |h| {
-            h.handle.signal_handle(clear, set).map_err(|e| proto::Error::TargetError(e.into_raw()))
-        })
+        self.using_handle(request.handle, |h| h.handle.signal(clear, set))
     }
 
     pub fn signal_peer(&mut self, request: proto::FDomainSignalPeerRequest) -> Result<()> {

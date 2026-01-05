@@ -269,7 +269,6 @@ mod test {
     use std::sync::Arc;
 
     use test_case::test_case;
-    use zx::AsHandleRef as _;
 
     use super::*;
 
@@ -293,12 +292,7 @@ mod test {
             );
         });
 
-        object
-            .signal_handle(
-                /*clear_mask=*/ zx::Signals::NONE,
-                /*set_mask=*/ ASSERTED_SIGNAL,
-            )
-            .unwrap();
+        object.signal(/*clear_mask=*/ zx::Signals::NONE, /*set_mask=*/ ASSERTED_SIGNAL).unwrap();
         thread.join().expect("join thread");
     }
 
@@ -313,12 +307,7 @@ mod test {
             event.object_wait_async(&object, KEY, ASSERTED_SIGNAL, zx::WaitAsyncOpts::empty()),
             Ok(())
         );
-        object
-            .signal_handle(
-                /*clear_mask=*/ zx::Signals::NONE,
-                /*set_mask=*/ ASSERTED_SIGNAL,
-            )
-            .unwrap();
+        object.signal(/*clear_mask=*/ zx::Signals::NONE, /*set_mask=*/ ASSERTED_SIGNAL).unwrap();
 
         assert_eq!(
             event.wait(zx::MonotonicInstant::INFINITE_PAST),
@@ -338,12 +327,7 @@ mod test {
             event.object_wait_async(&object, KEY, ASSERTED_SIGNAL, zx::WaitAsyncOpts::empty()),
             Ok(())
         );
-        object
-            .signal_handle(
-                /*clear_mask=*/ zx::Signals::NONE,
-                /*set_mask=*/ ASSERTED_SIGNAL,
-            )
-            .unwrap();
+        object.signal(/*clear_mask=*/ zx::Signals::NONE, /*set_mask=*/ ASSERTED_SIGNAL).unwrap();
 
         event.cancel(KEY);
         assert_eq!(event.wait(zx::MonotonicInstant::INFINITE_PAST), PortWaitResult::TimedOut);

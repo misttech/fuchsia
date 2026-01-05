@@ -685,13 +685,6 @@ pub trait AsHandleRef {
         NullableHandle::raw_handle(&self.as_handle_ref())
     }
 
-    /// Set and clear userspace-accessible signal bits on an object. Wraps the
-    /// [zx_object_signal](https://fuchsia.dev/fuchsia-src/reference/syscalls/object_signal.md)
-    /// syscall.
-    fn signal_handle(&self, clear_mask: Signals, set_mask: Signals) -> Result<(), Status> {
-        NullableHandle::signal(&self.as_handle_ref(), clear_mask, set_mask)
-    }
-
     /// Waits on a handle. Wraps the
     /// [zx_object_wait_one](https://fuchsia.dev/fuchsia-src/reference/syscalls/object_wait_one.md)
     /// syscall.

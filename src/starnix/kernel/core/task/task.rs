@@ -1340,7 +1340,7 @@ impl Task {
     /// Signals the vfork event, if any, to unblock waiters.
     pub fn signal_vfork(&self) {
         if let Some(event) = &self.vfork_event {
-            if let Err(status) = event.signal_handle(Signals::NONE, Signals::USER_0) {
+            if let Err(status) = event.signal(Signals::NONE, Signals::USER_0) {
                 log_warn!("Failed to set vfork signal {status}");
             }
         };

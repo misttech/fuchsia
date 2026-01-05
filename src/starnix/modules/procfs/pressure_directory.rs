@@ -31,7 +31,7 @@ use starnix_uapi::{errno, error};
 use std::ops::DerefMut;
 use std::pin::pin;
 use std::sync::{Arc, Weak};
-use zx::{AsHandleRef, HandleBased};
+use zx::HandleBased;
 
 /// Creates the /proc/pressure directory. https://docs.kernel.org/accounting/psi.html
 pub fn pressure_directory(kernel: &Kernel, fs: &FileSystemHandle) -> Option<FsNodeHandle> {
@@ -248,7 +248,7 @@ impl FileOps for MemoryPressureFile {
         monitor.client_state.lock(locked).mutate_in_place(|old_value| match old_value {
             // If a signal has already been latched, deliver it immediately and start a new cycle.
             PressureMonitorClientState::PressureLatched => {
-                event.signal_handle(zx::Signals::empty(), zx::Signals::EVENT_SIGNALED).unwrap();
+                event.signal(zx::Signals::empty(), zx::Signals::EVENT_SIGNALED).unwrap();
                 PressureMonitorClientState::Idle
             }
             // Otherwise, ask to be notified in the future.
@@ -350,7 +350,7 @@ impl PressureMonitorThread {
     }
 
     fn stop(&self) {
-        self.should_stop.signal_handle(zx::Signals::empty(), zx::Signals::EVENT_SIGNALED).unwrap();
+        self.should_stop.signal(zx::Signals::empty(), zx::Signals::EVENT_SIGNALED).unwrap();
     }
 
     async fn worker(
@@ -390,7 +390,7 @@ impl PressureMonitorThread {
                     // If a client is currently waiting, notify it and start a new cycle.
                     PressureMonitorClientState::WaitingForPressure { target_event } => {
                         target_event
-                            .signal_handle(zx::Signals::empty(), zx::Signals::EVENT_SIGNALED)
+                            .signal(zx::Signals::empty(), zx::Signals::EVENT_SIGNALED)
                             .unwrap();
                         PressureMonitorClientState::Idle
                     }

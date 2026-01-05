@@ -2,10 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{bail, Context as _, Result};
+use anyhow::{Context as _, Result, bail};
 use fuchsia_component::client::connect_to_protocol;
 use std::str::from_utf8;
-use zx::{self as zx, AsHandleRef, HandleBased, Peered, Task};
+use zx::{HandleBased, Peered, Task};
 use {fidl_fuchsia_fuzzer as fuzz, fuchsia_async as fasync};
 
 #[fuchsia::main(logging = true)]
@@ -71,7 +71,7 @@ async fn main() -> Result<()> {
         .await
         .context("failed to receive signal from adapter eventpair")?;
     local
-        .signal_handle(zx::Signals::USER_1, zx::Signals::NONE)
+        .signal(zx::Signals::USER_1, zx::Signals::NONE)
         .context("failed to clear adapter eventpair")?;
 
     // Simulate collecting coverage data from the module.
@@ -84,7 +84,7 @@ async fn main() -> Result<()> {
         .context("failed to receive signal from module eventpair")?;
     remote
         .eventpair
-        .signal_handle(zx::Signals::USER_1, zx::Signals::NONE)
+        .signal(zx::Signals::USER_1, zx::Signals::NONE)
         .context("failed to clear module eventpair")?;
 
     let content_size =

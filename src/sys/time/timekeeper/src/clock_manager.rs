@@ -974,7 +974,7 @@ fn update_clock(clock: &Arc<UtcClock>, track: &Track, update: impl Into<UtcClock
     }
     // Signal any waiters that the UTC clock has been synchronized with an external
     // time source.
-    if let Err(status) = clock.signal_handle(
+    if let Err(status) = clock.signal(
         zx::Signals::NONE,
         zx::Signals::from_bits(
             fft::SIGNAL_UTC_CLOCK_SYNCHRONIZED | fft::SIGNAL_UTC_CLOCK_LOGGING_QUALITY,

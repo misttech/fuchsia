@@ -38,18 +38,30 @@ macro_rules! delegated_concrete_handle_based_impls {
             self.0.into_raw()
         }
 
+        // TODO(https://fxbug.dev/384752843) only generate on types that can be duped
         /// Wraps the
-        /// [zx_handle_duplicate](https://fuchsia.dev/fuchsia-src/reference/syscalls/handle_duplicate)
+        /// [`zx_handle_duplicate`](https://fuchsia.dev/fuchsia-src/reference/syscalls/handle_duplicate)
         /// syscall.
         pub fn duplicate(&self, rights: $crate::Rights) -> Result<Self, $crate::Status> {
             self.0.duplicate(rights).map($ctor)
         }
 
         /// Wraps the
-        /// [zx_handle_replace](https://fuchsia.dev/fuchsia-src/reference/syscalls/handle_replace)
+        /// [`zx_handle_replace`](https://fuchsia.dev/fuchsia-src/reference/syscalls/handle_replace)
         /// syscall.
         pub fn replace(self, rights: $crate::Rights) -> Result<Self, $crate::Status> {
             self.0.replace(rights).map($ctor)
+        }
+
+        /// Wraps the
+        /// [`zx_object_signal`](https://fuchsia.dev/fuchsia-src/reference/syscalls/object_signal)
+        /// syscall.
+        pub fn signal(
+            &self,
+            clear_mask: $crate::Signals,
+            set_mask: $crate::Signals,
+        ) -> Result<(), $crate::Status> {
+            self.0.signal(clear_mask, set_mask)
         }
     };
 }

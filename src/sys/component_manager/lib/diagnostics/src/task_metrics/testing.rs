@@ -13,7 +13,7 @@ use futures::channel::oneshot;
 use injectable_time::{IncrementingFakeTime, TimeSource};
 use std::collections::VecDeque;
 use std::sync::Arc;
-use zx::{self as zx, sys as zx_sys, AsHandleRef};
+use zx::{self as zx, AsHandleRef, sys as zx_sys};
 
 /// Mock for a Task. Holds a queue of runtime infos (measurements) that will be fetched for test
 /// purposes.
@@ -41,7 +41,7 @@ impl FakeTask {
 
     pub fn terminate(&self) {
         self.event
-            .signal_handle(zx::Signals::NONE, zx::Signals::TASK_TERMINATED)
+            .signal(zx::Signals::NONE, zx::Signals::TASK_TERMINATED)
             .expect("signal task terminated");
     }
 }

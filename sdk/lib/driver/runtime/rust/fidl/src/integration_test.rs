@@ -6,7 +6,7 @@ use fidl_next::{ClientEnd, Responder, ServerEnd};
 use fidl_next_fuchsia_examples_gizmo::device::{GetEvent, GetHardwareId};
 use fidl_next_fuchsia_examples_gizmo::{Device, DeviceServerHandler};
 use fuchsia_async::OnSignals;
-use zx::{AsHandleRef, Event, Signals};
+use zx::{Event, Signals};
 
 use fdf_env::test::spawn_in_driver;
 use fdf_fidl::DriverChannel;
@@ -19,7 +19,7 @@ impl DeviceServerHandler for DeviceServer {
 
     async fn get_event(&mut self, responder: Responder<GetEvent>) {
         let event = Event::create();
-        event.signal_handle(Signals::empty(), Signals::USER_0).unwrap();
+        event.signal(Signals::empty(), Signals::USER_0).unwrap();
         responder.respond(event).await.unwrap();
     }
 }

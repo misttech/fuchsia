@@ -27,7 +27,6 @@
 use futures::stream::StreamExt;
 use scopeguard::defer;
 use std::collections::HashMap;
-use zx::{self as zx, HandleBased};
 use {fidl_fuchsia_time_alarms as fta, fuchsia_async as fasync, fuchsia_runtime as fxr};
 
 /// Configure the response of [serve_fake_wake_alarms].
@@ -77,15 +76,14 @@ impl Drop for ResponderCleanup {
     }
 }
 
-fn signal_handle<H: HandleBased>(
-    handle: &H,
+fn signal_event(
+    event: &zx::Event,
     clear_mask: zx::Signals,
     set_mask: zx::Signals,
 ) -> Result<(), zx::Status> {
-    handle.signal_handle(clear_mask, set_mask).map_err(|err| {
-        log::error!("while signaling handle: {err:?}: clear: {clear_mask:?}, set: {set_mask:?}");
-        err
-    })
+    event
+        .signal(clear_mask, set_mask)
+        .inspect_err(|err| log::error!(err:?, clear_mask:?, set_mask:?; "while signaling event"))
 }
 
 /// A representation of deadlines with different reference points.
@@ -140,7 +138,7 @@ async fn handle_set_like_method(
     defer! {
         if let fta::SetMode::NotifySetupDone(setup_done) = mode {
             // Caller blocks until this event is signaled.
-            signal_handle(&setup_done, zx::Signals::NONE, zx::Signals::EVENT_SIGNALED).unwrap();
+            signal_event(&setup_done, zx::Signals::NONE, zx::Signals::EVENT_SIGNALED).unwrap();
         }
     };
     match response_type {
