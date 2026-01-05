@@ -1404,18 +1404,12 @@ TEST(Threads, ThreadLocalRegisterState) {
 #include <cpuid.h>
 
 // This is based on code from kernel/ which isn't usable by code in system/.
-enum { X86_CPUID_ADDR_WIDTH = 0x80000008, X86_CPUID_HYP_VENDOR = 0x40000000 };
+enum { X86_CPUID_ADDR_WIDTH = 0x80000008 };
 
 uint32_t x86_linear_address_width() {
   uint32_t eax, ebx, ecx, edx;
   __cpuid(X86_CPUID_ADDR_WIDTH, eax, ebx, ecx, edx);
   return (eax >> 8) & 0xff;
-}
-
-bool x86_is_kvm_hypervisor() {
-  uint32_t regs[4];
-  __cpuid(X86_CPUID_HYP_VENDOR, regs[0], regs[1], regs[2], regs[3]);
-  return memcmp(&regs[1], "KVMKVMKVM\0\0\0", 12) == 0;
 }
 
 #endif
@@ -1802,12 +1796,7 @@ TEST(Threads, DebugRegistersDr6ResetOnDebugException) {
   }
 
   // See that all 4 breakpoints were hit.
-  //
-  // TODO(https://fxbug.dev/453746441): Remove this when no longer running on buggy hosts.
-  // Due to CVE-2025-21839 we cannot rely on dr6 being accurate if being emulated.
-  if (!x86_is_kvm_hypervisor()) {
-    EXPECT_EQ(debug_regs.dr6, DR6_ZERO_MASK | 0b1111);
-  }
+  EXPECT_EQ(debug_regs.dr6, DR6_ZERO_MASK | 0b1111);
 
   // Clear the status register and set 4 new breakpoints that should never be hit.
   debug_regs.dr6 = DR6_ZERO_MASK;
@@ -1835,11 +1824,7 @@ TEST(Threads, DebugRegistersDr6ResetOnDebugException) {
     EXPECT_EQ(debug_regs.dr[i], reinterpret_cast<uintptr_t>(&zx_handle_close));
   }
 
-  // TODO(https://fxbug.dev/453746441): See comment above.
-  if (!x86_is_kvm_hypervisor()) {
-    EXPECT_EQ(debug_regs.dr6, DR6_ZERO_MASK);
-  }
-
+  EXPECT_EQ(debug_regs.dr6, DR6_ZERO_MASK);
   EXPECT_EQ(debug_regs.dr7, DR7_ZERO_MASK | 0xff);
 }
 
@@ -1884,13 +1869,7 @@ TEST(Threads, DebugRegistersDr6CorrectAfterBreakpointRemoval) {
   EXPECT_EQ(general_regs.rip, reinterpret_cast<uintptr_t>(&spin_address));
 
   // See that all 4 breakpoints were hit.
-  // TODO(https://fxbug.dev/453746441): Remove this when no longer running on older hosts.
-  // Due to CVE-2025-21839 we cannot rely on dr6 being accurate if being emulated, but we can at
-  // least validate that the value we read now is unchanged over the course of this test.
-  const uint64_t orig_dr6 = debug_regs.dr6;
-  if (!x86_is_kvm_hypervisor()) {
-    EXPECT_EQ(debug_regs.dr6, DR6_ZERO_MASK | 0b1111);
-  }
+  EXPECT_EQ(debug_regs.dr6, DR6_ZERO_MASK | 0b1111);
 
   // Remove the hardware breakpoint.
   for (size_t i = 0; i < 4; ++i) {
@@ -1904,11 +1883,7 @@ TEST(Threads, DebugRegistersDr6CorrectAfterBreakpointRemoval) {
   // hit.
   ASSERT_OK(zx_thread_read_state(setup.thread_handle(), ZX_THREAD_STATE_DEBUG_REGS, &debug_regs,
                                  sizeof(debug_regs)));
-  if (x86_is_kvm_hypervisor()) {
-    EXPECT_EQ(orig_dr6, debug_regs.dr6);
-  } else {
-    EXPECT_EQ(debug_regs.dr6, DR6_ZERO_MASK | 0b1111);
-  }
+  EXPECT_EQ(debug_regs.dr6, DR6_ZERO_MASK | 0b1111);
 
   // Handle the exception so that the thread continues.
   uint32_t state = ZX_EXCEPTION_STATE_HANDLED;
