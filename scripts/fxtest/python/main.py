@@ -660,9 +660,20 @@ class AsyncMain:
                         package_server_event,
                     ) = self._start_package_server()
 
+        async def end_execution(
+            error: str | None = None, id: event.Id | None = None
+        ) -> None:
+            if (
+                package_server_event is not None
+                and package_server_task is not None
+            ):
+                package_server_event.set()
+                await package_server_task
+            recorder.emit_end(error=error, id=id)
+
         # If enabled, try to build and update the selected tests.
         if flags.build and not await self._do_build(selections):
-            recorder.emit_end("Failed to build.")
+            await end_execution("Failed to build.")
             return 1
 
         if flags.updateifinbase and self._has_tests_in_base(selections):
@@ -681,7 +692,7 @@ class AsyncMain:
                 show_output=not exec_env.log_to_stdout(),
             )
             if build_return_code != 0:
-                recorder.emit_end(
+                await end_execution(
                     f"Failed to build update package ({build_return_code})"
                 )
                 return 1
@@ -702,7 +713,7 @@ class AsyncMain:
         try:
             test_list_entries = await self._generate_test_list()
         except (ValueError, RuntimeError) as e:
-            recorder.emit_end(
+            await end_execution(
                 f"Failed to generate and load test-list.json: {e}"
             )
             return 1
@@ -712,7 +723,7 @@ class AsyncMain:
                 selections.selected, test_list_entries
             )
         except ValueError as e:
-            recorder.emit_end(
+            await end_execution(
                 f"Generated test-list.json is inconsistent: {e}.\nThis is a bug."
             )
             return 1
@@ -725,7 +736,7 @@ class AsyncMain:
                 "Will not run any tests, --list specified"
             )
             enumeration_result = await self._enumerate_test_cases(selections)
-            recorder.emit_end()
+            await end_execution()
             return enumeration_result
 
         if flags.list_runtime_deps:
@@ -734,7 +745,7 @@ class AsyncMain:
                 "Will not run any tests, --list-host-test-data specified"
             )
             self._list_runtime_deps(selections)
-            recorder.emit_end()
+            await end_execution()
             return 0
 
         # From this point on, separately handle exit requests so that tests can
@@ -758,15 +769,11 @@ class AsyncMain:
                     )
                 )
 
-            recorder.emit_end("Failed to run all tests")
+            await end_execution("Failed to run all tests")
 
             return 1
 
-        if package_server_event is not None and package_server_task is not None:
-            package_server_event.set()
-            await package_server_task
-
-        recorder.emit_end()
+        await end_execution()
         return 0
 
     async def _load_test_list(

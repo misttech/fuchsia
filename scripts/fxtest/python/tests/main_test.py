@@ -642,8 +642,16 @@ class TestMainIntegration(unittest.IsolatedAsyncioTestCase):
         expect_to_serve: bool,
     ) -> None:
         """Test different behaviors when a package server is missing"""
+        serve_abort_signal: asyncio.Event | None = None
 
-        command_mock = self._mock_run_command(0)
+        async def command_handler(
+            *args: typing.Any, **kwargs: typing.Any
+        ) -> None:
+            nonlocal serve_abort_signal
+            if "serve" in args:
+                serve_abort_signal = kwargs.get("abort_signal")
+
+        command_mock = self._mock_run_command(0, async_handler=command_handler)
         subprocess_mock = self._mock_subprocess_call(0)
         self._mock_has_package_server_connected_to_device(False)
         self._mock_has_tests_in_base([])
@@ -669,10 +677,83 @@ class TestMainIntegration(unittest.IsolatedAsyncioTestCase):
                 {("fx", "--dir", self.out_dir, "serve")},
                 call_prefixes,
             )
+            self.assertIsNotNone(serve_abort_signal)
+            self.assertTrue(serve_abort_signal.is_set())  # type: ignore
         else:
             self.assertNotIn(
                 ("fx", "--dir", self.out_dir, "serve"), call_prefixes
             )
+
+    async def test_list_command_starts_and_terminates_package_server(
+        self,
+    ) -> None:
+        """Test that we start and terminate a package server for the list command"""
+
+        serve_abort_signal: asyncio.Event | None = None
+
+        async def command_handler(
+            *args: typing.Any, **kwargs: typing.Any
+        ) -> None:
+            nonlocal serve_abort_signal
+            if "serve" in args:
+                serve_abort_signal = kwargs.get("abort_signal")
+
+        command_mock = self._mock_run_command(0, async_handler=command_handler)
+        self._mock_run_commands_in_parallel("foo::test")
+        self._mock_has_package_server_connected_to_device(False)
+        self._mock_has_tests_in_base([])
+
+        ret = await main.async_main_wrapper(
+            args.parse_args(["--simple", "--no-build", "--list"])
+        )
+        self.assertEqual(ret, 0)
+
+        call_prefixes = self._make_call_args_prefix_set(
+            command_mock.call_args_list
+        )
+
+        self.assertIsSubset(
+            {("fx", "--dir", self.out_dir, "serve")},
+            call_prefixes,
+        )
+        self.assertIsNotNone(serve_abort_signal)
+        self.assertTrue(serve_abort_signal.is_set())  # type: ignore
+
+    async def test_package_server_termination_on_generation_error(self) -> None:
+        """Test that we terminate the package server if generation fails"""
+
+        serve_abort_signal: asyncio.Event | None = None
+
+        async def command_handler(
+            *args: typing.Any, **kwargs: typing.Any
+        ) -> None:
+            nonlocal serve_abort_signal
+            if "serve" in args:
+                serve_abort_signal = kwargs.get("abort_signal")
+
+        command_mock = self._mock_run_command(0, async_handler=command_handler)
+        self._mock_has_package_server_connected_to_device(False)
+        self._mock_has_tests_in_base([])
+
+        with mock.patch(
+            "main.AsyncMain._generate_test_list",
+            side_effect=ValueError("Generation failed"),
+        ):
+            ret = await main.async_main_wrapper(
+                args.parse_args(["--simple", "--no-build"])
+            )
+            self.assertEqual(ret, 1)
+
+        call_prefixes = self._make_call_args_prefix_set(
+            command_mock.call_args_list
+        )
+
+        self.assertIsSubset(
+            {("fx", "--dir", self.out_dir, "serve")},
+            call_prefixes,
+        )
+        self.assertIsNotNone(serve_abort_signal)
+        self.assertTrue(serve_abort_signal.is_set())  # type: ignore
 
     async def test_full_success(self) -> None:
         """Test that we can run all tests and report success"""
