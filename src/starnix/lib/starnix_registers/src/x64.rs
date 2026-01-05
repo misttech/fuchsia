@@ -9,13 +9,13 @@ use starnix_uapi::{__NR_restart_syscall, error, user_regs_struct};
 const SYSCALL_INSTRUCTION_SIZE_BYTES: u64 = 2;
 
 /// The state of the task's registers when the thread of execution entered the kernel.
-/// This is a thin wrapper around [`zx::sys::zx_thread_state_general_regs_t`].
+/// This is a thin wrapper around [`zx::sys::zx_restricted_state_t`].
 ///
 /// Implements [`std::ops::Deref`] and [`std::ops::DerefMut`] as a way to get at the underlying
-/// [`zx::sys::zx_thread_state_general_regs_t`] that this type wraps.
+/// [`zx::sys::zx_restricted_state_t`] that this type wraps.
 #[derive(Default, Clone, Copy, Eq, PartialEq)]
 pub struct RegisterState {
-    real_registers: zx::sys::zx_thread_state_general_regs_t,
+    real_registers: zx::sys::zx_restricted_state_t,
 
     /// A copy of the x64 `rax` register at the time of the `syscall` instruction. This is important
     /// to store, as the return value of a syscall overwrites `rax`, making it impossible to recover
@@ -49,18 +49,18 @@ impl RegisterState {
     /// Returns the register that indicates the single-machine-word return value from a
     /// function call.
     pub fn instruction_pointer_register(&self) -> u64 {
-        self.rip
+        self.ip
     }
 
     /// Sets the register that indicates the single-machine-word return value from a
     /// function call.
     pub fn set_instruction_pointer_register(&mut self, new_ip: u64) {
-        self.rip = new_ip;
+        self.ip = new_ip;
     }
 
     /// Rewind the the register that indicates the instruction pointer by one syscall instruction.
     pub fn rewind_syscall_instruction(&mut self) {
-        self.rip -= SYSCALL_INSTRUCTION_SIZE_BYTES;
+        self.ip -= SYSCALL_INSTRUCTION_SIZE_BYTES;
     }
 
     /// Returns the register that indicates the single-machine-word return value from a
@@ -112,7 +112,7 @@ impl RegisterState {
 
     /// Resets the register that contains the application status flags.
     pub fn reset_flags(&mut self) {
-        self.rflags = 0;
+        self.flags = 0;
     }
 
     /// Executes the given predicate on the register.
@@ -154,12 +154,12 @@ impl RegisterState {
         } else if offset == memoffset::offset_of!(user_regs_struct, orig_rax) {
             f(&mut self.orig_rax);
         } else if offset == memoffset::offset_of!(user_regs_struct, rip) {
-            f(&mut self.rip);
+            f(&mut self.ip);
         } else if offset == memoffset::offset_of!(user_regs_struct, cs) {
             let mut val = 0;
             f(&mut val);
         } else if offset == memoffset::offset_of!(user_regs_struct, eflags) {
-            f(&mut self.rflags);
+            f(&mut self.flags);
         } else if offset == memoffset::offset_of!(user_regs_struct, rsp) {
             f(&mut self.rsp);
         } else if offset == memoffset::offset_of!(user_regs_struct, ss) {
@@ -199,12 +199,12 @@ impl std::fmt::Debug for RegisterState {
 
 impl From<zx::sys::zx_thread_state_general_regs_t> for RegisterState {
     fn from(regs: zx::sys::zx_thread_state_general_regs_t) -> Self {
-        RegisterState { real_registers: regs, orig_rax: regs.rax }
+        RegisterState { real_registers: (&regs).into(), orig_rax: regs.rax }
     }
 }
 
 impl std::ops::Deref for RegisterState {
-    type Target = zx::sys::zx_thread_state_general_regs_t;
+    type Target = zx::sys::zx_restricted_state_t;
 
     fn deref(&self) -> &Self::Target {
         &self.real_registers
@@ -219,6 +219,6 @@ impl std::ops::DerefMut for RegisterState {
 
 impl From<RegisterState> for zx::sys::zx_thread_state_general_regs_t {
     fn from(register_state: RegisterState) -> Self {
-        register_state.real_registers
+        (&register_state.real_registers).into()
     }
 }

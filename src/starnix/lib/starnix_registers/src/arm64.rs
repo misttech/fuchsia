@@ -12,13 +12,13 @@ const SYSCALL_ARM_INSTRUCTION_SIZE_BYTES: u64 = 4;
 const SYSCALL_THUMBS_INSTRUCTION_SIZE_BYTES: u64 = 2;
 
 /// The state of the task's registers when the thread of execution entered the kernel.
-/// This is a thin wrapper around [`zx::sys::zx_thread_state_general_regs_t`].
+/// This is a thin wrapper around [`zx::sys::zx_restricted_state_t`].
 ///
 /// Implements [`std::ops::Deref`] and [`std::ops::DerefMut`] as a way to get at the underlying
-/// [`zx::sys::zx_thread_state_general_regs_t`] that this type wraps.
+/// [`zx::sys::zx_restricted_state_t`] that this type wraps.
 #[derive(Default, Clone, Copy, Eq, PartialEq)]
 pub struct RegisterState {
-    real_registers: zx::sys::zx_thread_state_general_regs_t,
+    real_registers: zx::sys::zx_restricted_state_t,
 
     /// A copy of the aarch64 `x0` register at the time of the `syscall` instruction. This is
     /// important to store, as the return value of a syscall overwrites `x0`, making it impossible
@@ -78,9 +78,9 @@ impl RegisterState {
             let is_thumb = new_ip & 1 == 1;
             if is_thumb {
                 new_ip -= 1;
-                self.cpsr = self.cpsr | zx::sys::ZX_REG_CPSR_THUMB_MASK;
+                self.cpsr = self.cpsr | zx::sys::ZX_REG_CPSR_THUMB_MASK as u32;
             } else {
-                self.cpsr = self.cpsr & !zx::sys::ZX_REG_CPSR_THUMB_MASK;
+                self.cpsr = self.cpsr & !zx::sys::ZX_REG_CPSR_THUMB_MASK as u32;
             }
             self.r[15] = new_ip;
         }
@@ -127,7 +127,7 @@ impl RegisterState {
 
     /// Sets the register that indicates the TLS.
     pub fn set_thread_pointer_register(&mut self, tp: u64) {
-        self.tpidr = tp;
+        self.tpidr_el0 = tp;
     }
 
     /// Sets the register that indicates the first argument to a function.
@@ -153,8 +153,8 @@ impl RegisterState {
     /// Resets the register that contains the application status flags.
     pub fn reset_flags(&mut self) {
         // Reset all the flags except the aarch32 and thumb bits.
-        self.cpsr =
-            self.cpsr & (zx::sys::ZX_REG_CPSR_ARCH_32_MASK | zx::sys::ZX_REG_CPSR_THUMB_MASK);
+        self.cpsr = self.cpsr
+            & (zx::sys::ZX_REG_CPSR_ARCH_32_MASK | zx::sys::ZX_REG_CPSR_THUMB_MASK) as u32;
     }
 
     /// Executes the given predicate on the register.
@@ -198,14 +198,16 @@ impl RegisterState {
                 self.r[15] = self.pc;
             }
         } else if offset == memoffset::offset_of!(user_regs_struct, pstate) {
-            final_f(&mut self.cpsr);
+            let mut cpsr = self.cpsr as u64;
+            final_f(&mut cpsr);
+            self.cpsr = cpsr as u32;
         } else if offset == reg_offset(30) || (offset == reg_offset(14) && is_arch32) {
             // The 30th register is stored as lr in self.real_registers
-            final_f(&mut self.lr);
+            final_f(&mut self.r[30]);
             if is_arch32 {
                 // The 14th register is stored as lr in self.real_registers for
                 // arm
-                self.r[14] = self.lr;
+                self.r[14] = self.r[30];
             }
         } else if offset % LongPtr::align_of_object_for(self) == 0 {
             let index = offset / LongPtr::size_of_object_for(self);
@@ -238,12 +240,12 @@ impl From<zx::sys::zx_thread_state_general_regs_t> for RegisterState {
             // done in zircon.
             regs.r[15] = regs.pc;
         }
-        RegisterState { real_registers: regs, orig_x0: regs.r[0], elr: 0 }
+        RegisterState { real_registers: (&regs).into(), orig_x0: regs.r[0], elr: 0 }
     }
 }
 
 impl std::ops::Deref for RegisterState {
-    type Target = zx::sys::zx_thread_state_general_regs_t;
+    type Target = zx::sys::zx_restricted_state_t;
 
     fn deref(&self) -> &Self::Target {
         &self.real_registers
@@ -263,9 +265,9 @@ impl From<RegisterState> for zx::sys::zx_thread_state_general_regs_t {
         // Check that the special registers stayed synchronized.
         if register_state.is_arch32() {
             assert_eq!(regs.sp, regs.r[13]);
-            assert_eq!(regs.lr, regs.r[14]);
+            assert_eq!(regs.r[30], regs.r[14]);
             assert_eq!(regs.pc, regs.r[15]);
         }
-        regs
+        (&regs).into()
     }
 }

@@ -108,8 +108,8 @@ impl SignalStackFrame {
                 rax: registers.rax,
                 rcx: registers.rcx,
                 rsp: registers.rsp,
-                rip: registers.rip,
-                eflags: registers.rflags,
+                rip: registers.ip,
+                eflags: registers.flags,
                 oldmask: signal_state.mask().into(),
                 fpstate: fpstate_addr,
                 ..Default::default()
@@ -310,7 +310,7 @@ mod tests {
             current_task.thread_state.registers.r8 = SYSCALL_ARGS.4;
             current_task.thread_state.registers.r9 = SYSCALL_ARGS.5;
             current_task.thread_state.registers.orig_rax = SYSCALL_NUMBER;
-            current_task.thread_state.registers.rip =
+            current_task.thread_state.registers.ip =
                 (SYSCALL_INSTRUCTION_ADDRESS + 2u64).unwrap().ptr() as u64;
 
             // Queue the signal that interrupted the syscall.
@@ -324,7 +324,7 @@ mod tests {
             dequeue_signal(locked, current_task);
 
             // The instruction pointer should have changed to the signal handling address.
-            assert_eq!(current_task.thread_state.registers.rip, SA_HANDLER_ADDRESS.ptr() as u64);
+            assert_eq!(current_task.thread_state.registers.ip, SA_HANDLER_ADDRESS.ptr() as u64);
 
             // The syscall arguments should be overwritten with signal handling args.
             assert_ne!(current_task.thread_state.registers.rdi, SYSCALL_ARGS.0);
@@ -349,7 +349,7 @@ mod tests {
             assert_eq!(current_task.thread_state.registers.r8, SYSCALL_ARGS.4);
             assert_eq!(current_task.thread_state.registers.r9, SYSCALL_ARGS.5);
             assert_eq!(
-                current_task.thread_state.registers.rip,
+                current_task.thread_state.registers.ip,
                 SYSCALL_INSTRUCTION_ADDRESS.ptr() as u64
             );
         })
@@ -393,7 +393,7 @@ mod tests {
             current_task.thread_state.registers.r8 = SYSCALL_ARGS.4;
             current_task.thread_state.registers.r9 = SYSCALL_ARGS.5;
             current_task.thread_state.registers.orig_rax = SYSCALL_NUMBER;
-            current_task.thread_state.registers.rip =
+            current_task.thread_state.registers.ip =
                 (SYSCALL_INSTRUCTION_ADDRESS + 2u64).unwrap().ptr() as u64;
 
             // Queue the signal that interrupted the syscall.
@@ -407,7 +407,7 @@ mod tests {
             dequeue_signal(locked, current_task);
 
             // The instruction pointer should have changed to the signal handling address.
-            assert_eq!(current_task.thread_state.registers.rip, SA_HANDLER_ADDRESS.ptr() as u64);
+            assert_eq!(current_task.thread_state.registers.ip, SA_HANDLER_ADDRESS.ptr() as u64);
 
             // The syscall arguments should be overwritten with signal handling args.
             assert_ne!(current_task.thread_state.registers.rdi, SYSCALL_ARGS.0);
@@ -424,7 +424,7 @@ mod tests {
             current_task.thread_state.registers.r8 = SYSCALL2_ARGS.4;
             current_task.thread_state.registers.r9 = SYSCALL2_ARGS.5;
             current_task.thread_state.registers.orig_rax = SYSCALL2_NUMBER;
-            current_task.thread_state.registers.rip =
+            current_task.thread_state.registers.ip =
                 (SYSCALL2_INSTRUCTION_ADDRESS + 2u64).unwrap().ptr() as u64;
 
             // Queue the signal that interrupted the syscall.
@@ -438,7 +438,7 @@ mod tests {
             dequeue_signal(locked, current_task);
 
             // The instruction pointer should have changed to the signal handling address.
-            assert_eq!(current_task.thread_state.registers.rip, SA_HANDLER2_ADDRESS.ptr() as u64);
+            assert_eq!(current_task.thread_state.registers.ip, SA_HANDLER2_ADDRESS.ptr() as u64);
 
             // The syscall arguments should be overwritten with signal handling args.
             assert_ne!(current_task.thread_state.registers.rdi, SYSCALL2_ARGS.0);
@@ -463,7 +463,7 @@ mod tests {
             assert_eq!(current_task.thread_state.registers.r8, SYSCALL2_ARGS.4);
             assert_eq!(current_task.thread_state.registers.r9, SYSCALL2_ARGS.5);
             assert_eq!(
-                current_task.thread_state.registers.rip,
+                current_task.thread_state.registers.ip,
                 SYSCALL2_INSTRUCTION_ADDRESS.ptr() as u64
             );
 
@@ -485,7 +485,7 @@ mod tests {
             assert_eq!(current_task.thread_state.registers.r8, SYSCALL_ARGS.4);
             assert_eq!(current_task.thread_state.registers.r9, SYSCALL_ARGS.5);
             assert_eq!(
-                current_task.thread_state.registers.rip,
+                current_task.thread_state.registers.ip,
                 SYSCALL_INSTRUCTION_ADDRESS.ptr() as u64
             );
         })
@@ -520,7 +520,7 @@ mod tests {
             current_task.thread_state.registers.r8 = SYSCALL_ARGS.4;
             current_task.thread_state.registers.r9 = SYSCALL_ARGS.5;
             current_task.thread_state.registers.orig_rax = SYSCALL_NUMBER;
-            current_task.thread_state.registers.rip =
+            current_task.thread_state.registers.ip =
                 (SYSCALL_INSTRUCTION_ADDRESS + 2u64).unwrap().ptr() as u64;
 
             // Queue the signal that interrupted the syscall.
@@ -534,7 +534,7 @@ mod tests {
             dequeue_signal(locked, current_task);
 
             // The instruction pointer should have changed to the signal handling address.
-            assert_eq!(current_task.thread_state.registers.rip, SA_HANDLER_ADDRESS.ptr() as u64);
+            assert_eq!(current_task.thread_state.registers.ip, SA_HANDLER_ADDRESS.ptr() as u64);
 
             // The syscall arguments should be overwritten with signal handling args.
             assert_ne!(current_task.thread_state.registers.rdi, SYSCALL_ARGS.0);
@@ -553,7 +553,7 @@ mod tests {
             // restored into the registers.
             assert_eq!(current_task.thread_state.registers.rax, EINTR.return_value());
             assert_eq!(
-                current_task.thread_state.registers.rip,
+                current_task.thread_state.registers.ip,
                 (SYSCALL_INSTRUCTION_ADDRESS + 2u64).unwrap().ptr() as u64
             );
         })

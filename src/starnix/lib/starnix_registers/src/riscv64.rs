@@ -11,13 +11,13 @@ use starnix_uapi::{__NR_restart_syscall, error};
 const SYSCALL_INSTRUCTION_SIZE_BYTES: u64 = 4;
 
 /// The state of the task's registers when the thread of execution entered the kernel.
-/// This is a thin wrapper around [`zx::sys::zx_thread_state_general_regs_t`].
+/// This is a thin wrapper around [`zx::sys::zx_restricted_state_t`].
 ///
 /// Implements [`std::ops::Deref`] and [`std::ops::DerefMut`] as a way to get at the underlying
-/// [`zx::sys::zx_thread_state_general_regs_t`] that this type wraps.
+/// [`zx::sys::zx_restricted_state_t`] that this type wraps.
 #[derive(Default, Clone, Copy, Eq, PartialEq)]
 pub struct RegisterState {
-    real_registers: zx::sys::zx_thread_state_general_regs_t,
+    real_registers: zx::sys::zx_restricted_state_t,
 
     /// A copy of the `a0` register at the time of the `syscall` instruction. This is
     /// important to store, as the return value of a syscall overwrites `a0`, making it impossible
@@ -242,12 +242,12 @@ impl std::fmt::Debug for RegisterState {
 
 impl From<zx::sys::zx_thread_state_general_regs_t> for RegisterState {
     fn from(regs: zx::sys::zx_thread_state_general_regs_t) -> Self {
-        RegisterState { real_registers: regs, orig_a0: regs.a0 }
+        RegisterState { real_registers: (&regs).into(), orig_a0: regs.a0 }
     }
 }
 
 impl std::ops::Deref for RegisterState {
-    type Target = zx::sys::zx_thread_state_general_regs_t;
+    type Target = zx::sys::zx_restricted_state_t;
 
     fn deref(&self) -> &Self::Target {
         &self.real_registers
@@ -262,6 +262,6 @@ impl std::ops::DerefMut for RegisterState {
 
 impl From<RegisterState> for zx::sys::zx_thread_state_general_regs_t {
     fn from(register_state: RegisterState) -> Self {
-        register_state.real_registers
+        (&register_state.real_registers).into()
     }
 }

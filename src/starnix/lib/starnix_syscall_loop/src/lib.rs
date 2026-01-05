@@ -221,7 +221,7 @@ fn run_task(
         return Ok(exit_status);
     }
 
-    let state = zx::sys::zx_restricted_state_t::from(&*current_task.thread_state.registers);
+    let state = *current_task.thread_state.registers;
     // Copy the initial register state into the mapped VMO.
     restricted_state.write_state(&state);
 
@@ -376,8 +376,7 @@ fn process_restricted_exit(
     }
 
     // Copy the updated register state into the mapped VMO.
-    let state = zx::sys::zx_restricted_state_t::from(&*current_task.thread_state.registers);
-    restricted_state.write_state(&state);
+    restricted_state.write_state(&*current_task.thread_state.registers);
 
     Ok(None)
 }

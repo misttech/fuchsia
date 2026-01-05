@@ -95,8 +95,7 @@ impl SignalStackFrame {
             };
             context32.write_to_prefix(&mut context).unwrap();
         } else {
-            let mut regs = registers.r.to_vec();
-            regs.push(registers.lr);
+            let regs = registers.r.to_vec();
             let context64 = uapi::ucontext {
                 uc_flags: 0,
                 uc_link: Default::default(),
@@ -106,7 +105,7 @@ impl SignalStackFrame {
                     regs: regs.try_into().unwrap(),
                     sp: registers.sp,
                     pc: registers.pc,
-                    pstate: registers.cpsr,
+                    pstate: registers.cpsr as u64,
                     fault_address,
                     __reserved: get_pstate_extended_data(extended_pstate),
                     ..Default::default()
@@ -122,9 +121,9 @@ impl SignalStackFrame {
             task.kernel().vdso.sigreturn_offset
         };
         let sigreturn_addr = task.mm()?.state.read().vdso_base.ptr() as u64 + vdso_sigreturn_offset;
-        registers.lr = sigreturn_addr;
+        registers.r[30] = sigreturn_addr;
         if arch_width.is_arch32() {
-            registers.r[14] = registers.lr;
+            registers.r[14] = registers.r[30];
         }
 
         Ok(SignalStackFrame {
@@ -197,7 +196,7 @@ fn restore_registers_32(
         sp,
         pc,
         cpsr,
-        tpidr: current_task.thread_state.registers.tpidr,
+        tpidr: current_task.thread_state.registers.tpidr_el0,
     };
     current_task.thread_state.registers = restored_regs.into();
 
@@ -226,7 +225,7 @@ fn restore_registers_64(
         sp: uctx.sp,
         pc: uctx.pc,
         cpsr: uctx.pstate,
-        tpidr: current_task.thread_state.registers.tpidr,
+        tpidr: current_task.thread_state.registers.tpidr_el0,
     };
     current_task.thread_state.registers = restored_regs.into();
 
