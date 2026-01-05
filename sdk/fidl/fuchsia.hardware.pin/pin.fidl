@@ -15,6 +15,8 @@ type Pull = strict enum {
     DOWN = 0;
     UP = 1;
     NONE = 2;
+    @available(added=NEXT)
+    BUS_HOLD = 3;
 };
 
 type DriveType = flexible enum {
@@ -38,6 +40,10 @@ type Configuration = table {
     /// Determines whether the interrupt is wakeable or not.
     @available(added=NEXT)
     6: wake_vector bool;
+    /// Configures how quickly the pin can transition between high and low states. The
+    /// interpretation of `slew_rate` is controller dependent.
+    @available(added=NEXT)
+    7: slew_rate uint64;
 };
 
 open protocol Pin {

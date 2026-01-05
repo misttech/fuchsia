@@ -31,6 +31,12 @@
     },
     {
         "kind": "table/member",
+        "name": "fuchsia.hardware.pin/Configuration.slew_rate",
+        "ordinal": "7",
+        "type": "uint64"
+    },
+    {
+        "kind": "table/member",
         "name": "fuchsia.hardware.pin/Configuration.wake_vector",
         "ordinal": "6",
         "type": "bool"
@@ -173,6 +179,11 @@
     {
         "kind": "struct",
         "name": "fuchsia.hardware.pin/Pin_Configure_Response"
+    },
+    {
+        "kind": "enum/member",
+        "name": "fuchsia.hardware.pin/Pull.BUS_HOLD",
+        "value": "3"
     },
     {
         "kind": "enum/member",
