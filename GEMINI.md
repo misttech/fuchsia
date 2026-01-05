@@ -166,6 +166,28 @@ type of file you are adding. For example, in C++ and Rust files each line
 should start with `//`, while in GN and Python files each line should start
 with `#`.
 
+## Workflow shell commands
+
+### Building
+
+`fx build` wraps GN, Bazel, and Ninja to build Fuchsia.
+
+When running `fx build` give your shell command tool longer wait intervals than
+the default. Consider waiting 1+ minutes at minimum each time you build
+depending on the number of targets you're building.
+
+### Linting
+
+`fx clippy` runs the Rust linter and for Rust-only changes it can be very useful
+for iteration. It is usually a bit faster than running `fx build`.
+
+### Testing
+
+`fx test` wraps building, running a package server, and running actual tests.
+
+When running `fx test` give your shell command tool longer wait intervals than
+the default. Consider waiting 2+ minutes at minimum each time you test.
+
 # Code reviews
 
 ## Fetching Change List (CL) diffs
