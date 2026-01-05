@@ -115,11 +115,15 @@ struct ValidationContextV2<'a> {
     _capability_requirements: &'a CapabilityRequirements<'a>,
     all_children: HashSet<&'a BorrowedName>,
     all_collections: HashSet<&'a BorrowedName>,
+    all_resolvers: HashSet<&'a BorrowedName>,
     all_runners: HashSet<&'a BorrowedName>,
     all_storages: HashMap<&'a BorrowedName, &'a CapabilityFromRef>,
     all_capability_names: HashSet<&'a BorrowedName>,
     all_dictionaries: HashMap<&'a BorrowedName, &'a ContextCapability>,
+    all_directories: HashSet<&'a BorrowedName>,
     all_protocols: HashSet<&'a BorrowedName>,
+    all_configs: HashSet<&'a BorrowedName>,
+    all_services: HashSet<&'a BorrowedName>,
 }
 
 impl<'a> ValidationContextV2<'a> {
@@ -133,6 +137,28 @@ impl<'a> ValidationContextV2<'a> {
         let all_storages = document.all_storage_with_sources();
         let all_capability_names = document.all_capability_names();
         let all_dictionaries = document.all_dictionaries();
+        let all_configs = document.all_config_names();
+        let all_services = document
+            .capabilities
+            .as_ref()
+            .map(|caps| {
+                caps.iter()
+                    .filter(|c| c.value.service.is_some())
+                    .flat_map(|c| c.value.names())
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let all_directories = document
+            .capabilities
+            .as_ref()
+            .map(|caps| {
+                caps.iter()
+                    .filter(|c| c.value.directory.is_some())
+                    .flat_map(|c| c.value.names())
+                    .collect()
+            })
+            .unwrap_or_default();
 
         let all_runners = document
             .capabilities
@@ -140,6 +166,17 @@ impl<'a> ValidationContextV2<'a> {
             .map(|caps| {
                 caps.iter()
                     .filter(|c| c.value.runner.is_some())
+                    .flat_map(|c| c.value.names())
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let all_resolvers = document
+            .capabilities
+            .as_ref()
+            .map(|caps| {
+                caps.iter()
+                    .filter(|c| c.value.resolver.is_some())
                     .flat_map(|c| c.value.names())
                     .collect()
             })
@@ -162,11 +199,15 @@ impl<'a> ValidationContextV2<'a> {
             _capability_requirements,
             all_children,
             all_collections,
+            all_resolvers,
             all_runners,
             all_storages,
             all_capability_names,
             all_dictionaries,
+            all_directories,
             all_protocols,
+            all_configs,
+            all_services,
         }
     }
 
@@ -279,6 +320,8 @@ impl<'a> ValidationContextV2<'a> {
         }
 
         self.validate_facets()?;
+
+        self.validate_config()?;
 
         Ok(())
     }
@@ -692,6 +735,18 @@ which is almost certainly a mistake: {}",
 
         expose.capability_type(Some(expose_wrapper.origin.clone()))?;
 
+        for checker in [
+            self.service_from_self_checker(expose),
+            self.protocol_from_self_checker(expose),
+            self.directory_from_self_checker(expose),
+            self.runner_from_self_checker(expose),
+            self.resolver_from_self_checker(expose),
+            self.dictionary_from_self_checker(expose),
+            self.config_from_self_checker(expose),
+        ] {
+            checker.validate("exposed")?;
+        }
+
         // Ensure directory rights are valid.
         if let Some(_) = expose.directory.as_ref() {
             if expose.from.value.iter().any(|r| *r == ExposeFromRef::Self_)
@@ -830,6 +885,19 @@ which is almost certainly a mistake: {}",
     ) -> Result<(), Error> {
         let offer = &offer_wrapper.value;
         offer.capability_type(Some(offer_wrapper.origin.clone()))?;
+
+        for checker in [
+            self.service_from_self_checker(offer),
+            self.protocol_from_self_checker(offer),
+            self.directory_from_self_checker(offer),
+            self.storage_from_self_checker(offer),
+            self.runner_from_self_checker(offer),
+            self.resolver_from_self_checker(offer),
+            self.dictionary_from_self_checker(offer),
+            self.config_from_self_checker(offer),
+        ] {
+            checker.validate("offered")?;
+        }
 
         let from_wrapper = &offer.from;
         let from_one_or_many = &from_wrapper.value;
@@ -1259,6 +1327,72 @@ which is almost certainly a mistake: {}",
         Ok(())
     }
 
+    fn validate_config(&self) -> Result<(), Error> {
+        let fields = self.document.config.as_ref();
+
+        let optional_use_keys: BTreeMap<ConfigKey, ContextSpanned<ConfigValueType>> = self
+            .document
+            .r#use
+            .iter()
+            .flatten()
+            .filter_map(|u_spanned| {
+                let u = &u_spanned.value;
+                if u.config.is_none() {
+                    return None;
+                }
+
+                if u.availability.as_ref().map(|s| s.value) != Some(Availability::Optional) {
+                    return None;
+                }
+
+                if u.config_default.is_some() {
+                    return None;
+                }
+
+                let key =
+                    ConfigKey(u.key.as_ref().expect("key should be set").value.clone().into());
+                let value_type =
+                    use_config_to_value_type_context(u).expect("config type should be valid");
+
+                Some((key, ContextSpanned { value: value_type, origin: u_spanned.origin.clone() }))
+            })
+            .collect();
+
+        let Some(fields_map) = fields else {
+            if !optional_use_keys.is_empty() {
+                return Err(Error::validate(
+                    "Optionally using a config capability without a default requires a matching 'config' section.",
+                ));
+            }
+            return Ok(());
+        };
+
+        if fields_map.is_empty() {
+            return Err(Error::validate("'config' section is empty"));
+        }
+
+        for (key, use_spanned) in optional_use_keys {
+            match fields_map.get(&key) {
+                None => {
+                    return Err(Error::validate_context(
+                        format!("'config' section must contain key for optional use '{}'", key),
+                        Some(use_spanned.origin),
+                    ));
+                }
+                Some(config_spanned) => {
+                    if config_spanned.value != use_spanned.value {
+                        return Err(Error::validate_contexts(
+                            format!("Use and config block differ on type for key '{}'", key),
+                            vec![use_spanned.origin, config_spanned.origin.clone()],
+                        ));
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+
     /// Validates that directory rights for all route types are valid, i.e that it does not
     /// contain duplicate rights.
     fn validate_directory_rights(
@@ -1532,6 +1666,146 @@ which is almost certainly a mistake: {}",
             container: &self.all_protocols,
             all_dictionaries: &self.all_dictionaries,
             typename: "protocol",
+        }
+    }
+
+    fn resolver_from_self_checker<'b>(
+        &'b self,
+        input: &'b (impl ContextCapabilityClause + FromClauseContext),
+    ) -> RouteFromSelfCheckerV2<'b> {
+        RouteFromSelfCheckerV2 {
+            capability_name: input.resolver().map(|spanned| {
+                spanned.map(|one_or_many| match one_or_many {
+                    OneOrMany::One(name) => OneOrMany::One(AnyRef::from(name)),
+                    OneOrMany::Many(names) => {
+                        OneOrMany::Many(names.iter().cloned().map(AnyRef::from).collect())
+                    }
+                })
+            }),
+            from: input.from_(),
+            container: &self.all_resolvers,
+            all_dictionaries: &self.all_dictionaries,
+            typename: "resolver",
+        }
+    }
+
+    fn runner_from_self_checker<'b>(
+        &'b self,
+        input: &'b (impl ContextCapabilityClause + FromClauseContext),
+    ) -> RouteFromSelfCheckerV2<'b> {
+        RouteFromSelfCheckerV2 {
+            capability_name: input.runner().map(|spanned| {
+                spanned.map(|one_or_many| match one_or_many {
+                    OneOrMany::One(name) => OneOrMany::One(AnyRef::from(name)),
+                    OneOrMany::Many(names) => {
+                        OneOrMany::Many(names.iter().cloned().map(AnyRef::from).collect())
+                    }
+                })
+            }),
+            from: input.from_(),
+            container: &self.all_runners,
+            all_dictionaries: &self.all_dictionaries,
+            typename: "runner",
+        }
+    }
+
+    fn service_from_self_checker<'b>(
+        &'b self,
+        input: &'b (impl ContextCapabilityClause + FromClauseContext),
+    ) -> RouteFromSelfCheckerV2<'b> {
+        RouteFromSelfCheckerV2 {
+            capability_name: input.service().map(|spanned| {
+                spanned.map(|one_or_many| match one_or_many {
+                    OneOrMany::One(name) => OneOrMany::One(AnyRef::from(name)),
+                    OneOrMany::Many(names) => {
+                        OneOrMany::Many(names.iter().cloned().map(AnyRef::from).collect())
+                    }
+                })
+            }),
+            from: input.from_(),
+            container: &self.all_services,
+            all_dictionaries: &self.all_dictionaries,
+            typename: "service",
+        }
+    }
+
+    fn config_from_self_checker<'b>(
+        &'b self,
+        input: &'b (impl ContextCapabilityClause + FromClauseContext),
+    ) -> RouteFromSelfCheckerV2<'b> {
+        RouteFromSelfCheckerV2 {
+            capability_name: input.config().map(|spanned| {
+                spanned.map(|one_or_many| match one_or_many {
+                    OneOrMany::One(name) => OneOrMany::One(AnyRef::from(name)),
+                    OneOrMany::Many(names) => {
+                        OneOrMany::Many(names.iter().cloned().map(AnyRef::from).collect())
+                    }
+                })
+            }),
+            from: input.from_(),
+            container: &self.all_configs,
+            all_dictionaries: &self.all_dictionaries,
+            typename: "config",
+        }
+    }
+
+    fn dictionary_from_self_checker<'b>(
+        &'b self,
+        input: &'b (impl ContextCapabilityClause + FromClauseContext),
+    ) -> RouteFromSelfCheckerV2<'b> {
+        RouteFromSelfCheckerV2 {
+            capability_name: input.dictionary().map(|spanned| {
+                spanned.map(|one_or_many| match one_or_many {
+                    OneOrMany::One(name) => OneOrMany::One(AnyRef::from(name)),
+                    OneOrMany::Many(names) => {
+                        OneOrMany::Many(names.iter().cloned().map(AnyRef::from).collect())
+                    }
+                })
+            }),
+            from: input.from_(),
+            container: &self.all_dictionaries,
+            all_dictionaries: &self.all_dictionaries,
+            typename: "dictionary",
+        }
+    }
+
+    fn directory_from_self_checker<'b>(
+        &'b self,
+        input: &'b (impl ContextCapabilityClause + FromClauseContext),
+    ) -> RouteFromSelfCheckerV2<'b> {
+        RouteFromSelfCheckerV2 {
+            capability_name: input.directory().map(|spanned| {
+                spanned.map(|one_or_many| match one_or_many {
+                    OneOrMany::One(name) => OneOrMany::One(AnyRef::from(name)),
+                    OneOrMany::Many(names) => {
+                        OneOrMany::Many(names.iter().cloned().map(AnyRef::from).collect())
+                    }
+                })
+            }),
+            from: input.from_(),
+            container: &self.all_directories,
+            all_dictionaries: &self.all_dictionaries,
+            typename: "directory",
+        }
+    }
+
+    fn storage_from_self_checker<'b>(
+        &'b self,
+        input: &'b (impl ContextCapabilityClause + FromClauseContext),
+    ) -> RouteFromSelfCheckerV2<'b> {
+        RouteFromSelfCheckerV2 {
+            capability_name: input.storage().map(|spanned| {
+                spanned.map(|one_or_many| match one_or_many {
+                    OneOrMany::One(name) => OneOrMany::One(AnyRef::from(name)),
+                    OneOrMany::Many(names) => {
+                        OneOrMany::Many(names.iter().cloned().map(AnyRef::from).collect())
+                    }
+                })
+            }),
+            from: input.from_(),
+            container: &self.all_storages,
+            all_dictionaries: &self.all_dictionaries,
+            typename: "storage",
         }
     }
 }
@@ -3130,16 +3404,18 @@ impl<'a> RouteFromSelfCheckerV2<'a> {
         };
 
         for capability in capability_span.value.iter() {
-            let AnyRef::Named(name) = capability else {
+            let AnyRef::Named(name_ref) = capability else {
                 continue;
             };
 
+            let capability_name = name_ref.as_str();
+
             for from_ref in from.value.iter() {
                 match from_ref {
-                    AnyRef::Self_ if !container.contains(name) => {
+                    AnyRef::Self_ if !container.contains(name_ref) => {
                         return Err(Error::validate_context(
                             format!(
-                                "{typename} \"{name}\" is {operand} from self, so it \
+                                "{typename} \"{capability_name}\" is {operand} from self, so it \
                                 must be declared as a \"{typename}\" in \"capabilities\"",
                             ),
                             Some(capability_span.origin.clone()),
@@ -3151,7 +3427,7 @@ impl<'a> RouteFromSelfCheckerV2<'a> {
                         if !all_dictionaries.contains_key(first_segment) {
                             return Err(Error::validate_context(
                                 format!(
-                                    "{typename} \"{capability}\" is {operand} from \"self/{path}\", so \
+                                    "{typename} \"{capability_name}\" is {operand} from \"self/{path}\", so \
                                     \"{first_segment}\" must be declared as a \"dictionary\" in \"capabilities\"",
                                 ),
                                 Some(from.origin.clone()),
@@ -5097,6 +5373,15 @@ mod tests {
             Err(Error::ValidateContext { err, .. }) if &err == "Cannot expose event_streams from self"
         ),
 
+        test_cml_offer_event_stream_from_self(
+            json!({
+                "offer": [
+                    { "event_stream": ["started", "stopped"], "from" : "self", "to": "#self" },
+                ]
+            }),
+            Err(Error::ValidateContext { err, .. }) if &err == "cannot offer an event_stream from self"
+        ),
+
         test_cml_rights_alias_star_expansion_collision(
             r##"{
                 "use": [
@@ -5180,6 +5465,401 @@ mod tests {
                 })
         ),
 
+        test_cml_expose_from_self(
+            json!({
+                "expose": [
+                    {
+                        "protocol": "foo_protocol",
+                        "from": "self",
+                    },
+                    {
+                        "protocol": [ "bar_protocol", "baz_protocol" ],
+                        "from": "self",
+                    },
+                    {
+                        "directory": "foo_directory",
+                        "from": "self",
+                    },
+                    {
+                        "runner": "foo_runner",
+                        "from": "self",
+                    },
+                    {
+                        "resolver": "foo_resolver",
+                        "from": "self",
+                    },
+                ],
+                "capabilities": [
+                    {
+                        "protocol": "foo_protocol",
+                    },
+                    {
+                        "protocol": "bar_protocol",
+                    },
+                    {
+                        "protocol": "baz_protocol",
+                    },
+                    {
+                        "directory": "foo_directory",
+                        "path": "/dir",
+                        "rights": [ "r*" ],
+                    },
+                    {
+                        "runner": "foo_runner",
+                        "path": "/svc/runner",
+                    },
+                    {
+                        "resolver": "foo_resolver",
+                        "path": "/svc/resolver",
+                    },
+                ]
+            }),
+            Ok(())
+        ),
+        test_cml_expose_protocol_from_self_missing(
+            json!({
+                "expose": [
+                    {
+                        "protocol": "pkg_protocol",
+                        "from": "self",
+                    },
+                ],
+            }),
+            Err(Error::ValidateContext { err, .. }) if &err == "protocol \"pkg_protocol\" is exposed from self, so it must be declared as a \"protocol\" in \"capabilities\""
+        ),
+        test_cml_expose_protocol_from_self_missing_multiple(
+            json!({
+                "expose": [
+                    {
+                        "protocol": [ "foo_protocol", "bar_protocol" ],
+                        "from": "self",
+                    },
+                ],
+            }),
+            Err(Error::ValidateContext { err, .. }) if &err == "protocol \"foo_protocol\" is exposed from self, so it must be declared as a \"protocol\" in \"capabilities\""
+        ),
+        test_cml_expose_directory_from_self_missing(
+            json!({
+                "expose": [
+                    {
+                        "directory": "pkg_directory",
+                        "from": "self",
+                    },
+                ],
+            }),
+            Err(Error::ValidateContext { err, .. }) if &err == "directory \"pkg_directory\" is exposed from self, so it must be declared as a \"directory\" in \"capabilities\""
+        ),
+        test_cml_expose_service_from_self_missing(
+            json!({
+                "expose": [
+                    {
+                        "service": "pkg_service",
+                        "from": "self",
+                    },
+                ],
+            }),
+            Err(Error::ValidateContext { err, .. }) if &err == "service \"pkg_service\" is exposed from self, so it must be declared as a \"service\" in \"capabilities\""
+        ),
+        test_cml_expose_runner_from_self_missing(
+            json!({
+                "expose": [
+                    {
+                        "runner": "dart",
+                        "from": "self",
+                    },
+                ],
+            }),
+            Err(Error::ValidateContext { err, .. }) if &err == "runner \"dart\" is exposed from self, so it must be declared as a \"runner\" in \"capabilities\""
+        ),
+        test_cml_expose_resolver_from_self_missing(
+            json!({
+                "expose": [
+                    {
+                        "resolver": "pkg_resolver",
+                        "from": "self",
+                    },
+                ],
+            }),
+            Err(Error::ValidateContext { err, .. }) if &err == "resolver \"pkg_resolver\" is exposed from self, so it must be declared as a \"resolver\" in \"capabilities\""
+        ),
+        test_cml_expose_from_self_missing_dictionary(
+            json!({
+                "expose": [
+                    {
+                        "protocol": "foo_protocol",
+                        "from": "self/dict/inner",
+                    },
+                ],
+            }),
+            Err(Error::ValidateContext { err, .. }) if &err == "protocol \"foo_protocol\" is exposed from \"self/dict/inner\", so \"dict\" must be declared as a \"dictionary\" in \"capabilities\""
+        ),
+
+                test_cml_expose_from_dictionary_parent(
+            json!({
+                "expose": [
+                    {
+                        "protocol": "pkg_protocol",
+                        "from": "parent/a",
+                    },
+                ],
+            }),
+            Err(Error::ValidateContext { err, .. }) if &err == "`expose` dictionary path must begin with `self` or `#<child-name>`"
+        ),
+        test_cml_expose_protocol_from_collection_invalid(
+            json!({
+                "collections": [ {
+                    "name": "coll",
+                    "durability": "transient",
+                } ],
+                "expose": [
+                    { "protocol": "fuchsia.logger.Log", "from": "#coll" },
+                ]
+            }),
+            Err(Error::ValidateContext { err, .. }) if &err == "\"expose\" source \"#coll\" does not appear in \"children\" or \"capabilities\""
+        ),
+        test_cml_expose_directory_from_collection_invalid(
+            json!({
+                "collections": [ {
+                    "name": "coll",
+                    "durability": "transient",
+                } ],
+                "expose": [
+                    { "directory": "temp", "from": "#coll" },
+                ]
+            }),
+            Err(Error::ValidateContext { err, .. }) if &err == "\"expose\" source \"#coll\" does not appear in \"children\""
+        ),
+        test_cml_expose_runner_from_collection_invalid(
+            json!({
+                "collections": [ {
+                    "name": "coll",
+                    "durability": "transient",
+                } ],
+                "expose": [
+                    { "runner": "elf", "from": "#coll" },
+                ]
+            }),
+            Err(Error::ValidateContext { err, .. }) if &err == "\"expose\" source \"#coll\" does not appear in \"children\""
+        ),
+        test_cml_expose_resolver_from_collection_invalid(
+            json!({
+                "collections": [ {
+                    "name": "coll",
+                    "durability": "transient",
+                } ],
+                "expose": [
+                    { "resolver": "base", "from": "#coll" },
+                ]
+            }),
+            Err(Error::ValidateContext { err, .. }) if &err == "\"expose\" source \"#coll\" does not appear in \"children\""
+        ),
+
+        test_cml_offer_from_self(
+            json!({
+                "offer": [
+                    {
+                        "protocol": "foo_protocol",
+                        "from": "self",
+                        "to": [ "#modular" ],
+                    },
+                    {
+                        "protocol": [ "bar_protocol", "baz_protocol" ],
+                        "from": "self",
+                        "to": [ "#modular" ],
+                    },
+                    {
+                        "directory": "foo_directory",
+                        "from": "self",
+                        "to": [ "#modular" ],
+                    },
+                    {
+                        "runner": "foo_runner",
+                        "from": "self",
+                        "to": [ "#modular" ],
+                    },
+                    {
+                        "resolver": "foo_resolver",
+                        "from": "self",
+                        "to": [ "#modular" ],
+                    },
+                ],
+                "children": [
+                    {
+                        "name": "modular",
+                        "url": "fuchsia-pkg://fuchsia.com/modular#meta/modular.cm"
+                    },
+                ],
+                "capabilities": [
+                    {
+                        "protocol": "foo_protocol",
+                    },
+                    {
+                        "protocol": "bar_protocol",
+                    },
+                    {
+                        "protocol": "baz_protocol",
+                    },
+                    {
+                        "directory": "foo_directory",
+                        "path": "/dir",
+                        "rights": [ "r*" ],
+                    },
+                    {
+                        "runner": "foo_runner",
+                        "path": "/svc/fuchsia.sys2.ComponentRunner",
+                    },
+                    {
+                        "resolver": "foo_resolver",
+                        "path": "/svc/fuchsia.component.resolution.Resolver",
+                    },
+                ]
+            }),
+            Ok(())
+        ),
+        test_cml_offer_service_from_self_missing(
+            json!({
+                "offer": [
+                    {
+                        "service": "pkg_service",
+                        "from": "self",
+                        "to": [ "#modular" ],
+                    },
+                ],
+                "children": [
+                    {
+                        "name": "modular",
+                        "url": "fuchsia-pkg://fuchsia.com/modular#meta/modular.cm"
+                    },
+                ],
+            }),
+            Err(Error::ValidateContext { err, .. }) if &err == "service \"pkg_service\" is offered from self, so it must be declared as a \"service\" in \"capabilities\""
+        ),
+        test_cml_offer_protocol_from_self_missing(
+            json!({
+                "offer": [
+                    {
+                        "protocol": "pkg_protocol",
+                        "from": "self",
+                        "to": [ "#modular" ],
+                    },
+                ],
+                "children": [
+                    {
+                        "name": "modular",
+                        "url": "fuchsia-pkg://fuchsia.com/modular#meta/modular.cm"
+                    },
+                ],
+            }),
+            Err(Error::ValidateContext { err, .. }) if &err == "protocol \"pkg_protocol\" is offered from self, so it must be declared as a \"protocol\" in \"capabilities\""
+        ),
+        test_cml_offer_protocol_from_self_missing_multiple(
+            json!({
+                "offer": [
+                    {
+                        "protocol": [ "foo_protocol", "bar_protocol" ],
+                        "from": "self",
+                        "to": [ "#modular" ],
+                    },
+                ],
+                "children": [
+                    {
+                        "name": "modular",
+                        "url": "fuchsia-pkg://fuchsia.com/modular#meta/modular.cm"
+                    },
+                ],
+            }),
+            Err(Error::ValidateContext { err, .. }) if &err == "protocol \"foo_protocol\" is offered from self, so it must be declared as a \"protocol\" in \"capabilities\""
+        ),
+        test_cml_offer_directory_from_self_missing(
+            json!({
+                "offer": [
+                    {
+                        "directory": "pkg_directory",
+                        "from": "self",
+                        "to": [ "#modular" ],
+                    },
+                ],
+                "children": [
+                    {
+                        "name": "modular",
+                        "url": "fuchsia-pkg://fuchsia.com/modular#meta/modular.cm"
+                    },
+                ],
+            }),
+            Err(Error::ValidateContext { err, .. }) if &err == "directory \"pkg_directory\" is offered from self, so it must be declared as a \"directory\" in \"capabilities\""
+        ),
+        test_cml_offer_runner_from_self_missing(
+            json!({
+                "offer": [
+                    {
+                        "runner": "dart",
+                        "from": "self",
+                        "to": [ "#modular" ],
+                    },
+                ],
+                "children": [
+                    {
+                        "name": "modular",
+                        "url": "fuchsia-pkg://fuchsia.com/modular#meta/modular.cm"
+                    },
+                ],
+            }),
+            Err(Error::ValidateContext { err, .. }) if &err == "runner \"dart\" is offered from self, so it must be declared as a \"runner\" in \"capabilities\""
+        ),
+        test_cml_offer_resolver_from_self_missing(
+            json!({
+                "offer": [
+                    {
+                        "resolver": "pkg_resolver",
+                        "from": "self",
+                        "to": [ "#modular" ],
+                    },
+                ],
+                "children": [
+                    {
+                        "name": "modular",
+                        "url": "fuchsia-pkg://fuchsia.com/modular#meta/modular.cm"
+                    },
+                ],
+            }),
+            Err(Error::ValidateContext { err, .. }) if &err == "resolver \"pkg_resolver\" is offered from self, so it must be declared as a \"resolver\" in \"capabilities\""
+        ),
+        test_cml_offer_storage_from_self_missing(
+            json!({
+                    "offer": [
+                        {
+                            "storage": "cache",
+                            "from": "self",
+                            "to": [ "#echo_server" ],
+                        },
+                    ],
+                    "children": [
+                        {
+                            "name": "echo_server",
+                            "url": "fuchsia-pkg://fuchsia.com/echo_server#meta/echo_server.cm",
+                        },
+                    ],
+                }),
+            Err(Error::ValidateContext { err, .. }) if &err == "storage \"cache\" is offered from self, so it must be declared as a \"storage\" in \"capabilities\""
+        ),
+        test_cml_offer_from_self_missing_dictionary(
+            json!({
+                "offer": [
+                    {
+                        "protocol": "foo_protocol",
+                        "from": "self/dict/inner",
+                        "to": [ "#modular" ],
+                    },
+                ],
+                "children": [
+                    {
+                        "name": "modular",
+                        "url": "fuchsia-pkg://fuchsia.com/modular#meta/modular.cm"
+                    },
+                ],
+            }),
+            Err(Error::ValidateContext { err, .. }) if &err == "protocol \"foo_protocol\" is offered from \"self/dict/inner\", so \"dict\" must be declared as a \"dictionary\" in \"capabilities\""
+        ),
 
         test_cml_storage_offer_from_child(
             r##"{
@@ -5613,7 +6293,7 @@ mod tests {
             }),
             Err(Error::Validate { err, .. }) if &err == "Cannot expose event_streams from self"
         ),
-        test_cml_offer_event_stream_from_self(
+        test_cml_offer_event_stream_from_self_no_span(
             json!({
                 "offer": [
                     { "event_stream": ["started", "stopped"], "from" : "self", "to": "#self" },
@@ -6278,7 +6958,7 @@ mod tests {
             }),
             Err(Error::Validate { err, .. }) if &err == "`subdir` is not supported for expose to framework. Directly expose the subdirectory instead."
         ),
-        test_cml_expose_from_self(
+        test_cml_expose_from_self_no_span(
             json!({
                 "expose": [
                     {
@@ -6329,7 +7009,7 @@ mod tests {
             }),
             Ok(())
         ),
-        test_cml_expose_protocol_from_self_missing(
+        test_cml_expose_protocol_from_self_missing_no_span(
             json!({
                 "expose": [
                     {
@@ -6340,7 +7020,7 @@ mod tests {
             }),
             Err(Error::Validate { err, .. }) if &err == "protocol \"pkg_protocol\" is exposed from self, so it must be declared as a \"protocol\" in \"capabilities\""
         ),
-        test_cml_expose_protocol_from_self_missing_multiple(
+        test_cml_expose_protocol_from_self_missing_multiple_no_span(
             json!({
                 "expose": [
                     {
@@ -6351,7 +7031,7 @@ mod tests {
             }),
             Err(Error::Validate { err, .. }) if &err == "protocol \"foo_protocol\" is exposed from self, so it must be declared as a \"protocol\" in \"capabilities\""
         ),
-        test_cml_expose_directory_from_self_missing(
+        test_cml_expose_directory_from_self_missing_no_span(
             json!({
                 "expose": [
                     {
@@ -6362,7 +7042,7 @@ mod tests {
             }),
             Err(Error::Validate { err, .. }) if &err == "directory \"pkg_directory\" is exposed from self, so it must be declared as a \"directory\" in \"capabilities\""
         ),
-        test_cml_expose_service_from_self_missing(
+        test_cml_expose_service_from_self_missing_no_span(
             json!({
                 "expose": [
                     {
@@ -6373,7 +7053,7 @@ mod tests {
             }),
             Err(Error::Validate { err, .. }) if &err == "service \"pkg_service\" is exposed from self, so it must be declared as a \"service\" in \"capabilities\""
         ),
-        test_cml_expose_runner_from_self_missing(
+        test_cml_expose_runner_from_self_missing_no_span(
             json!({
                 "expose": [
                     {
@@ -6384,7 +7064,7 @@ mod tests {
             }),
             Err(Error::Validate { err, .. }) if &err == "runner \"dart\" is exposed from self, so it must be declared as a \"runner\" in \"capabilities\""
         ),
-        test_cml_expose_resolver_from_self_missing(
+        test_cml_expose_resolver_from_self_missing_no_span(
             json!({
                 "expose": [
                     {
@@ -6395,7 +7075,7 @@ mod tests {
             }),
             Err(Error::Validate { err, .. }) if &err == "resolver \"pkg_resolver\" is exposed from self, so it must be declared as a \"resolver\" in \"capabilities\""
         ),
-        test_cml_expose_from_self_missing_dictionary(
+        test_cml_expose_from_self_missing_dictionary_no_span(
             json!({
                 "expose": [
                     {
@@ -6417,7 +7097,7 @@ mod tests {
             }),
             Err(Error::Parse { err, .. }) if &err == "invalid value: string \"bad/a\", expected one or an array of \"framework\", \"self\", \"#<child-name>\", or a dictionary path"
         ),
-        test_cml_expose_from_dictionary_parent(
+        test_cml_expose_from_dictionary_parent_no_span(
             json!({
                 "expose": [
                     {
@@ -6428,7 +7108,7 @@ mod tests {
             }),
             Err(Error::Validate { err, .. }) if &err == "`expose` dictionary path must begin with `self` or `#<child-name>`"
         ),
-                test_cml_expose_protocol_from_collection_invalid(
+        test_cml_expose_protocol_from_collection_invalid_no_span(
             json!({
                 "collections": [ {
                     "name": "coll",
@@ -6440,7 +7120,7 @@ mod tests {
             }),
             Err(Error::Validate { err, .. }) if &err == "\"expose\" source \"#coll\" does not appear in \"children\" or \"capabilities\""
         ),
-        test_cml_expose_directory_from_collection_invalid(
+        test_cml_expose_directory_from_collection_invalid_no_span(
             json!({
                 "collections": [ {
                     "name": "coll",
@@ -6452,7 +7132,7 @@ mod tests {
             }),
             Err(Error::Validate { err, .. }) if &err == "\"expose\" source \"#coll\" does not appear in \"children\""
         ),
-        test_cml_expose_runner_from_collection_invalid(
+        test_cml_expose_runner_from_collection_invalid_no_span(
             json!({
                 "collections": [ {
                     "name": "coll",
@@ -6464,7 +7144,7 @@ mod tests {
             }),
             Err(Error::Validate { err, .. }) if &err == "\"expose\" source \"#coll\" does not appear in \"children\""
         ),
-        test_cml_expose_resolver_from_collection_invalid(
+        test_cml_expose_resolver_from_collection_invalid_no_span(
             json!({
                 "collections": [ {
                     "name": "coll",
@@ -7069,7 +7749,7 @@ mod tests {
             }),
             Err(Error::Parse { err, .. }) if &err == "invalid value: string \"/\", expected a path with no leading `/` and non-empty segments"
         ),
-        test_cml_offer_from_self(
+        test_cml_offer_from_self_no_span(
             json!({
                 "offer": [
                     {
@@ -7131,7 +7811,7 @@ mod tests {
             }),
             Ok(())
         ),
-        test_cml_offer_service_from_self_missing(
+        test_cml_offer_service_from_self_missing_no_span(
             json!({
                 "offer": [
                     {
@@ -7149,7 +7829,7 @@ mod tests {
             }),
             Err(Error::Validate { err, .. }) if &err == "service \"pkg_service\" is offered from self, so it must be declared as a \"service\" in \"capabilities\""
         ),
-        test_cml_offer_protocol_from_self_missing(
+        test_cml_offer_protocol_from_self_missing_no_span(
             json!({
                 "offer": [
                     {
@@ -7167,7 +7847,7 @@ mod tests {
             }),
             Err(Error::Validate { err, .. }) if &err == "protocol \"pkg_protocol\" is offered from self, so it must be declared as a \"protocol\" in \"capabilities\""
         ),
-        test_cml_offer_protocol_from_self_missing_multiple(
+        test_cml_offer_protocol_from_self_missing_multiple_no_span(
             json!({
                 "offer": [
                     {
@@ -7185,7 +7865,7 @@ mod tests {
             }),
             Err(Error::Validate { err, .. }) if &err == "protocol \"foo_protocol\" is offered from self, so it must be declared as a \"protocol\" in \"capabilities\""
         ),
-        test_cml_offer_directory_from_self_missing(
+        test_cml_offer_directory_from_self_missing_no_span(
             json!({
                 "offer": [
                     {
@@ -7203,7 +7883,7 @@ mod tests {
             }),
             Err(Error::Validate { err, .. }) if &err == "directory \"pkg_directory\" is offered from self, so it must be declared as a \"directory\" in \"capabilities\""
         ),
-        test_cml_offer_runner_from_self_missing(
+        test_cml_offer_runner_from_self_missing_no_span(
             json!({
                 "offer": [
                     {
@@ -7221,7 +7901,7 @@ mod tests {
             }),
             Err(Error::Validate { err, .. }) if &err == "runner \"dart\" is offered from self, so it must be declared as a \"runner\" in \"capabilities\""
         ),
-        test_cml_offer_resolver_from_self_missing(
+        test_cml_offer_resolver_from_self_missing_no_span(
             json!({
                 "offer": [
                     {
@@ -7239,7 +7919,7 @@ mod tests {
             }),
             Err(Error::Validate { err, .. }) if &err == "resolver \"pkg_resolver\" is offered from self, so it must be declared as a \"resolver\" in \"capabilities\""
         ),
-        test_cml_offer_storage_from_self_missing(
+        test_cml_offer_storage_from_self_missing_no_span(
             json!({
                     "offer": [
                         {
@@ -7257,7 +7937,7 @@ mod tests {
                 }),
             Err(Error::Validate { err, .. }) if &err == "storage \"cache\" is offered from self, so it must be declared as a \"storage\" in \"capabilities\""
         ),
-        test_cml_offer_from_self_missing_dictionary(
+        test_cml_offer_from_self_missing_dictionary_no_span(
             json!({
                 "offer": [
                     {

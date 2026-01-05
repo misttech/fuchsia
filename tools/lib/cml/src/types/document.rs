@@ -1039,6 +1039,7 @@ pub struct ParsedDocument {
     pub expose: Option<Spanned<Vec<Spanned<ParsedExpose>>>>,
     pub offer: Option<Spanned<Vec<Spanned<ParsedOffer>>>>,
     pub facets: Option<IndexMap<String, Spanned<Value>>>,
+    pub config: Option<BTreeMap<ConfigKey, Spanned<ConfigValueType>>>,
 }
 
 #[derive(Debug, Default)]
@@ -1052,6 +1053,7 @@ pub struct DocumentContext {
     pub expose: Option<Vec<ContextSpanned<ContextExpose>>>,
     pub offer: Option<Vec<ContextSpanned<ContextOffer>>>,
     pub facets: Option<IndexMap<String, ContextSpanned<Value>>>,
+    pub config: Option<BTreeMap<ConfigKey, ContextSpanned<ConfigValueType>>>,
 }
 
 impl DocumentContext {
@@ -1069,6 +1071,7 @@ impl DocumentContext {
         merge_spanned_vec!(self, other, expose);
         merge_spanned_vec!(self, other, offer);
         self.merge_facets(&mut other, include_path)?;
+        self.merge_config(&mut other)?;
         Ok(())
     }
 
@@ -1119,6 +1122,21 @@ impl DocumentContext {
         } else {
             HashSet::new()
         }
+    }
+
+    pub fn all_config_names(&self) -> HashSet<&BorrowedName> {
+        self.capabilities
+            .as_ref()
+            .map(|caps| {
+                caps.iter()
+                    .filter_map(|cap_wrapper| {
+                        let cap = &cap_wrapper.value;
+
+                        cap.config.as_ref().map(|spanned_key| spanned_key.value.as_ref())
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
     }
 
     pub fn all_children_names(&self) -> HashSet<&BorrowedName> {
@@ -1269,6 +1287,32 @@ impl DocumentContext {
         Ok(())
     }
 
+    fn merge_config(&mut self, other: &mut DocumentContext) -> Result<(), Error> {
+        if other.config.is_none() {
+            return Ok(());
+        }
+        if self.config.is_none() {
+            self.config = Some(BTreeMap::new());
+        }
+
+        let my_config = self.config.as_mut().unwrap();
+        let other_config = other.config.as_ref().unwrap();
+
+        for (key, other_spanned) in other_config {
+            if let Some(my_spanned) = my_config.get(key) {
+                if my_spanned.value != other_spanned.value {
+                    return Err(Error::merge(
+                        format!("Conflicting configuration key found: '{}'", key),
+                        Some(other_spanned.origin.clone()),
+                    ));
+                }
+            } else {
+                my_config.insert(key.clone(), other_spanned.clone());
+            }
+        }
+        Ok(())
+    }
+
     fn merge_maps_unified<'s, Source, Dest>(
         self_map: &mut Dest,
         include_map: Source,
@@ -1348,6 +1392,16 @@ pub fn convert_parsed_to_document(
             .collect::<IndexMap<String, ContextSpanned<serde_json::Value>>>()
     });
 
+    let config = parsed_doc.config.map(|raw_config| {
+        raw_config
+            .into_iter()
+            .map(|(key, spanned_val)| {
+                let context_val = hydrate_simple(spanned_val, &file_arc, buffer);
+                (key, context_val)
+            })
+            .collect::<BTreeMap<ConfigKey, ContextSpanned<ConfigValueType>>>()
+    });
+
     Ok(DocumentContext {
         program: hydrate_opt(parsed_doc.program, &file_arc, buffer)?,
         children: hydrate_list(parsed_doc.children, &file_arc, buffer)?,
@@ -1358,6 +1412,7 @@ pub fn convert_parsed_to_document(
         expose: hydrate_list(parsed_doc.expose, &file_arc, buffer)?,
         offer: hydrate_list(parsed_doc.offer, &file_arc, buffer)?,
         facets,
+        config,
     })
 }
 
