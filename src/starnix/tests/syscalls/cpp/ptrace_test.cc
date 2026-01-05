@@ -10,6 +10,7 @@
 #include <string.h>
 #include <sys/prctl.h>
 #include <sys/ptrace.h>
+#include <sys/signalfd.h>
 #include <sys/uio.h>
 #include <sys/user.h>
 #include <sys/wait.h>
@@ -1147,64 +1148,200 @@ __attribute__((noinline)) void FunctionToBreak() {
 
 // Sets a breakpoint in the child process using PTRACE_POKEDATA and expects that the child process
 // triggers the breakpoint.
-TEST(PtraceTest, PokeToSetBreakpoint) {
-  test_helper::ForkHelper helper;
-  helper.ExpectSignal(SIGTRAP);
-  pid_t child_pid = helper.RunInForkedProcess([] {
-    SAFE_SYSCALL(ptrace(PTRACE_TRACEME, 0, 0, 0));
-    raise(SIGSTOP);
-    FunctionToBreak();
-  });
-  ASSERT_NE(child_pid, 0);
+class SoftwareBreakpointTest : public ::testing::Test {
+ public:
+  void TearDown() override {
+#if defined(__x86_64__)
+    // On x86_64, PC is advanced after a breakpoint instruction, so the child should continue
+    // execution and terminate successfully.
+    helper_.ExpectSignal(0);
+#else
+    helper_.ExpectSignal(SIGTRAP);
+#endif
+    SAFE_SYSCALL(ptrace(PTRACE_DETACH, child_pid_, 0, 0));
+    ASSERT_TRUE(helper_.WaitForChildren());
 
-  // Reach child stop
-  int status;
-  ASSERT_EQ(SAFE_SYSCALL(waitpid(child_pid, &status, 0)), child_pid);
-  ASSERT_TRUE(WIFSTOPPED(status) && WSTOPSIG(status) == SIGSTOP)
-      << "status = " << status << " WIFSTOPPED = " << WIFSTOPPED(status)
-      << " WSTOPSIG = " << WSTOPSIG(status);
-
-  // Depending on the architecture and bitness, the breakpoint instruction could be smaller than
-  // word length. Read original word, and overwrite the breakpoint instruction to it but keep the
-  // rest as is.
-  const void *breakpoint_addr = reinterpret_cast<void *>(&FunctionToBreak);
-  errno = 0;
-  long original_data = ptrace(PTRACE_PEEKDATA, child_pid, breakpoint_addr, 0);
-  if (original_data == -1 && errno != 0) {
-    kill(child_pid, SIGKILL);
-    FAIL() << "PTRACE_PEEKDATA failed: " << strerror(errno) << "(" << errno << ")";
+    RestoreSignalMask();
+    RestoreSignalAction();
   }
 
+ protected:
+  // Set a breakpoint at the given address in the process with ptrace POKEDATA.
+  void SetBreakpointAndContinue() const {
+    const void *breakpoint_addr = reinterpret_cast<void *>(&FunctionToBreak);
+    errno = 0;
+    long original_data = ptrace(PTRACE_PEEKDATA, child_pid_, breakpoint_addr, 0);
+    if (original_data == -1 && errno != 0) {
+      kill(child_pid_, SIGKILL);
+      FAIL() << "PTRACE_PEEKDATA failed: " << strerror(errno) << "(" << errno << ")";
+    }
+
+    // Depending on the architecture and bitness, the breakpoint instruction could be smaller than
+    // word length. Read original word, and overwrite the breakpoint instruction to it but keep the
+    // rest as is.
 #if defined(__x86_64__)
-  const long break_insn = 0xCC;
-  long breakpoint_data = (original_data & ~0xFFL) | break_insn;
-  // On x86_64, PC is advanced after a breakpoint instruction, so the child should continue
-  // execution and terminate successfully.
-  helper.ExpectSignal(0);
+    const long break_insn = 0xCC;
+    long breakpoint_data = (original_data & ~0xFFL) | break_insn;
 #elif defined(__aarch64__)
-  const long break_insn = 0xD4200000;
-  long breakpoint_data = (original_data & ~0xFFFFFFFFL) | break_insn;
+    const long break_insn = 0xD4200000;
+    long breakpoint_data = (original_data & ~0xFFFFFFFFL) | break_insn;
 #elif defined(__arm__)
-  const long break_insn = 0xE1200070;
-  long breakpoint_data = (original_data & ~0xFFFFFFFFL) | break_insn;
+    const long break_insn = 0xE1200070;
+    long breakpoint_data = (original_data & ~0xFFFFFFFFL) | break_insn;
 #elif defined(__riscv)
-  const long break_insn = 0x00100073;
-  long breakpoint_data = (original_data & ~0xFFFFFFFFL) | break_insn;
+    const long break_insn = 0x00100073;
+    long breakpoint_data = (original_data & ~0xFFFFFFFFL) | break_insn;
 #else
 #error "Unsupported architecture"
 #endif
 
-  SAFE_SYSCALL(ptrace(PTRACE_POKEDATA, child_pid, breakpoint_addr, breakpoint_data));
-  SAFE_SYSCALL(ptrace(PTRACE_CONT, child_pid, 0, 0));
+    SAFE_SYSCALL(ptrace(PTRACE_POKEDATA, child_pid_, breakpoint_addr, breakpoint_data));
+    SAFE_SYSCALL(ptrace(PTRACE_CONT, child_pid_, 0, 0));
+  }
 
-  // Child process should stop at the newly placed breakpoint.
-  ASSERT_EQ(SAFE_SYSCALL(waitpid(child_pid, &status, 0)), child_pid);
-  ASSERT_TRUE(WIFSTOPPED(status) && WSTOPSIG(status) == SIGTRAP)
-      << "status = " << status << " WIFSTOPPED = " << WIFSTOPPED(status)
-      << " WSTOPSIG = " << WSTOPSIG(status);
+  void RunChildInForkedProcess() {
+    child_pid_ = helper_.RunInForkedProcess([] {
+      SAFE_SYSCALL(ptrace(PTRACE_TRACEME, 0, 0, 0));
+      raise(SIGSTOP);
+      FunctionToBreak();
+    });
+    ASSERT_NE(child_pid_, 0);
+  }
 
-  SAFE_SYSCALL(ptrace(PTRACE_DETACH, child_pid, 0, 0));
-  ASSERT_TRUE(helper.WaitForChildren());
+  void WaitForChildStop(int expected_status) {
+    int status;
+    ASSERT_EQ(SAFE_SYSCALL(waitpid(child_pid_, &status, 0)), child_pid_);
+    ASSERT_TRUE(WIFSTOPPED(status));
+    ASSERT_EQ(WSTOPSIG(status), expected_status);
+  }
+
+  pid_t ChildPid() const { return child_pid_; }
+
+  int CreateSignalFd(int signum) {
+    sigset_t new_mask, old_mask;
+    sigemptyset(&new_mask);
+    sigaddset(&new_mask, signum);
+    SAFE_SYSCALL(sigprocmask(SIG_BLOCK, &new_mask, &old_mask));
+    old_sigmask_ = old_mask;
+
+    return SAFE_SYSCALL(signalfd(-1, &new_mask, SFD_CLOEXEC));
+  }
+
+  void RestoreSignalMask() {
+    if (old_sigmask_) {
+      SAFE_SYSCALL(sigprocmask(SIG_SETMASK, &old_sigmask_.value(), nullptr));
+      old_sigmask_.reset();
+    }
+  }
+
+  void SetSignalAction(int signum) {
+    ASSERT_TRUE(old_signum_and_sa_ == std::nullopt) << "Signal action already set";
+
+    struct sigaction new_sa, old_sa;
+    new_sa.sa_sigaction = [](int, siginfo_t *info, void *) {
+      signal_received_ = 1;
+      signal_code_ = info->si_code;
+      signal_status_ = info->si_status;
+    };
+    new_sa.sa_flags = SA_SIGINFO | SA_RESTART;
+
+    SAFE_SYSCALL(sigaction(signum, &new_sa, &old_sa));
+    old_signum_and_sa_ = std::make_pair(signum, old_sa);
+  }
+
+  void RestoreSignalAction() {
+    if (old_signum_and_sa_) {
+      auto [signum, sa] = old_signum_and_sa_.value();
+      SAFE_SYSCALL(sigaction(signum, &sa, nullptr));
+      old_signum_and_sa_.reset();
+    }
+  }
+
+  static void ResetSignalReceived() {
+    signal_received_ = 0;
+    signal_code_ = 0;
+    signal_status_ = 0;
+  }
+
+  // Static inline so that they can be used in signal handlers.
+  static inline volatile sig_atomic_t signal_received_ = 0;
+  static inline volatile sig_atomic_t signal_code_ = 0;
+  static inline volatile sig_atomic_t signal_status_ = 0;
+
+ private:
+  test_helper::ForkHelper helper_;
+  pid_t child_pid_;
+
+  std::optional<sigset_t> old_sigmask_;
+  std::optional<std::pair<int, struct sigaction>> old_signum_and_sa_;
+};
+
+TEST_F(SoftwareBreakpointTest, Waitpid) {
+  RunChildInForkedProcess();
+
+  // Wait for initial SIGSTOP.
+  WaitForChildStop(SIGSTOP);
+
+  SetBreakpointAndContinue();
+
+  // Wait for breakpoint.
+  WaitForChildStop(SIGTRAP);
+}
+
+TEST_F(SoftwareBreakpointTest, Sigaction) {
+  ResetSignalReceived();
+
+  SetSignalAction(SIGCHLD);
+
+  RunChildInForkedProcess();
+
+  // Wait for initial SIGSTOP.
+  WaitForChildStop(SIGSTOP);
+
+  ASSERT_TRUE(signal_received_);
+  EXPECT_EQ(signal_code_, CLD_TRAPPED);
+  EXPECT_EQ(signal_status_, SIGSTOP);
+  ResetSignalReceived();
+
+  SetBreakpointAndContinue();
+
+  // Wait for breakpoint.
+  WaitForChildStop(SIGTRAP);
+
+  ASSERT_TRUE(signal_received_);
+  EXPECT_EQ(signal_code_, CLD_TRAPPED);
+  EXPECT_EQ(signal_status_, SIGTRAP);
+}
+
+TEST_F(SoftwareBreakpointTest, Signalfd) {
+  int sfd = CreateSignalFd(SIGCHLD);
+
+  RunChildInForkedProcess();
+
+  // Wait for initial SIGSTOP.
+  WaitForChildStop(SIGSTOP);
+
+  // Expect initial SIGSTOP via signalfd
+  struct signalfd_siginfo ssi;
+  ASSERT_EQ(SAFE_SYSCALL(read(sfd, &ssi, sizeof(ssi))), static_cast<ssize_t>(sizeof(ssi)));
+  EXPECT_EQ(ssi.ssi_signo, static_cast<uint32_t>(SIGCHLD));
+  EXPECT_EQ(ssi.ssi_pid, static_cast<uint32_t>(ChildPid()));
+  EXPECT_EQ(ssi.ssi_code, CLD_TRAPPED);
+  EXPECT_EQ(ssi.ssi_status, SIGSTOP);
+
+  SetBreakpointAndContinue();
+
+  // Wait for breakpoint.
+  WaitForChildStop(SIGTRAP);
+
+  // Expect breakpoint SIGCHLD via signalfd
+  ASSERT_EQ(SAFE_SYSCALL(read(sfd, &ssi, sizeof(ssi))), static_cast<ssize_t>(sizeof(ssi)));
+  EXPECT_EQ(ssi.ssi_signo, static_cast<uint32_t>(SIGCHLD));
+  EXPECT_EQ(ssi.ssi_pid, static_cast<uint32_t>(ChildPid()));
+  EXPECT_EQ(ssi.ssi_code, CLD_TRAPPED);
+  EXPECT_EQ(ssi.ssi_status, SIGTRAP);
+
+  close(sfd);
 }
 
 // Create 2 memory mappings next to each other, and poke to a memory address that spans both

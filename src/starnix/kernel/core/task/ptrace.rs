@@ -193,6 +193,9 @@ pub struct PtraceCoreState {
     /// The pid of the tracer
     pub pid: pid_t,
 
+    /// The thread group of the tracer
+    pub thread_group: Weak<ThreadGroup>,
+
     /// Whether the attach was a seize or an attach.  There are a few subtle
     /// differences in behavior of the different attach types - see ptrace(2).
     pub attach_type: PtraceAttachType,
@@ -240,10 +243,16 @@ pub struct PtraceState {
 }
 
 impl PtraceState {
-    pub fn new(pid: pid_t, attach_type: PtraceAttachType, options: PtraceOptions) -> Box<Self> {
+    pub fn new(
+        pid: pid_t,
+        thread_group: Weak<ThreadGroup>,
+        attach_type: PtraceAttachType,
+        options: PtraceOptions,
+    ) -> Box<Self> {
         Box::new(PtraceState {
             core_state: PtraceCoreState {
                 pid,
+                thread_group,
                 attach_type,
                 options,
                 tracer_waiters: Arc::new(WaitQueue::default()),
@@ -301,6 +310,10 @@ impl PtraceState {
         if event.is_some() {
             self.event_data = event;
         }
+    }
+
+    pub fn get_last_signal_ref(&self) -> Option<&SignalInfo> {
+        self.last_signal.as_ref()
     }
 
     // Gets the last signal, and optionally clears the wait state of the ptrace.
@@ -1082,7 +1095,12 @@ fn do_attach(
         {
             let process_state = &mut task_ref.thread_group().write();
             let mut state = task_ref.write();
-            state.set_ptrace(Some(PtraceState::new(thread_group.leader, attach_type, options)))?;
+            state.set_ptrace(Some(PtraceState::new(
+                thread_group.leader,
+                thread_group.weak_self.clone(),
+                attach_type,
+                options,
+            )))?;
             // If the tracee is already stopped, make sure that the tracer can
             // identify that right away.
             if process_state.is_waitable()

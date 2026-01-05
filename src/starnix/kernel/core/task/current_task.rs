@@ -1851,12 +1851,19 @@ impl CurrentTask {
     }
 
     /// Sets the stop state (per set_stopped), and also notifies all listeners,
-    /// including the parent process if appropriate.
+    /// including the parent process and the tracer if appropriate.
     pub fn set_stopped_and_notify(&self, stopped: StopState, siginfo: Option<SignalInfo>) {
-        {
+        let maybe_signal_info = {
             let mut state = self.write();
             state.copy_state_from(self);
             state.set_stopped(stopped, siginfo, Some(self), None);
+            state.prepare_signal_info(stopped)
+        };
+
+        if let Some((tracer, signal_info)) = maybe_signal_info {
+            if let Some(tracer) = tracer.upgrade() {
+                tracer.write().send_signal(signal_info);
+            }
         }
 
         if !stopped.is_in_progress() {

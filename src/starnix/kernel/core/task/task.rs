@@ -5,7 +5,7 @@
 use crate::mm::{MemoryAccessor, MemoryAccessorExt, MemoryManager, TaskMemoryAccessor};
 use crate::mutable_state::{state_accessor, state_implementation};
 use crate::security;
-use crate::signals::{KernelSignal, RunState, SignalInfo, SignalState};
+use crate::signals::{KernelSignal, RunState, SignalDetail, SignalInfo, SignalState};
 use crate::task::memory_attribution::MemoryAttributionLifecycleEvent;
 use crate::task::tracing::KoidPair;
 use crate::task::{
@@ -30,18 +30,19 @@ use starnix_types::ownership::{OwnedRef, Releasable, ReleaseGuard, TempRef, Weak
 use starnix_types::stats::TaskTimeStats;
 use starnix_uapi::auth::{Credentials, FsCred};
 use starnix_uapi::errors::Errno;
-use starnix_uapi::signals::{SigSet, Signal, sigaltstack_contains_pointer};
+use starnix_uapi::signals::{SIGCHLD, SigSet, Signal, sigaltstack_contains_pointer};
 use starnix_uapi::user_address::{
     ArchSpecific, MappingMultiArchUserRef, UserAddress, UserCString, UserRef,
 };
 use starnix_uapi::{
-    CLD_CONTINUED, CLD_DUMPED, CLD_EXITED, CLD_KILLED, CLD_STOPPED, FUTEX_BITSET_MATCH_ANY, errno,
-    error, from_status_like_fdio, pid_t, sigaction_t, sigaltstack, tid_t, uapi,
+    CLD_CONTINUED, CLD_DUMPED, CLD_EXITED, CLD_KILLED, CLD_STOPPED, CLD_TRAPPED,
+    FUTEX_BITSET_MATCH_ANY, errno, error, from_status_like_fdio, pid_t, sigaction_t, sigaltstack,
+    tid_t, uapi,
 };
 use std::collections::VecDeque;
 use std::mem::MaybeUninit;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
+use std::sync::{Arc, Weak};
 use std::{cmp, fmt};
 use zx::{
     AsHandleRef, Signals, Task as _, {self as zx},
@@ -688,6 +689,34 @@ impl TaskMutableState<Base = Task> {
         if !stopped.is_in_progress() {
             self.notify_ptracers();
         }
+    }
+
+    // Prepare a SignalInfo to be sent to the tracer, if any.
+    pub fn prepare_signal_info(
+        &mut self,
+        stopped: StopState,
+    ) -> Option<(Weak<ThreadGroup>, SignalInfo)> {
+        if !stopped.is_stopped() {
+            return None;
+        }
+
+        if let Some(ptrace) = &self.ptrace {
+            if let Some(last_signal) = ptrace.get_last_signal_ref() {
+                let signal_info = SignalInfo::new(
+                    SIGCHLD,
+                    CLD_TRAPPED as i32,
+                    SignalDetail::SIGCHLD {
+                        pid: self.base.tid,
+                        uid: self.base.real_creds().uid,
+                        status: last_signal.signal.number() as i32,
+                    },
+                );
+
+                return Some((ptrace.core_state.thread_group.clone(), signal_info));
+            }
+        }
+
+        None
     }
 
     pub fn set_ptrace(&mut self, tracer: Option<Box<PtraceState>>) -> Result<(), Errno> {
