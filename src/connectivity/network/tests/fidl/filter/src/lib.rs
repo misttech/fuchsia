@@ -2170,7 +2170,7 @@ async fn ebpf_program_registration(name: &str) {
     // Wait for the program to be dropped by the netstack.
     let _: Result<zx::Signals, zx::Status> =
         OnSignals::new(&server_handle, zx::Signals::EVENTPAIR_PEER_CLOSED)
-            .on_timeout(ASYNC_EVENT_NEGATIVE_CHECK_TIMEOUT.after_now(), || panic!("timeout"))
+            .on_timeout(ASYNC_EVENT_POSITIVE_CHECK_TIMEOUT.after_now(), || panic!("timeout"))
             .await;
 }
 
@@ -2216,10 +2216,18 @@ async fn ebpf_matcher(name: &str) {
         .expect("push changes");
     controller.commit().await.expect("commit pending changes");
 
-    // Drop the program and then add another rule to the same routine. This
-    // should not fail even though the `program_id` is no longer registered.
-    std::mem::drop(program);
+    // Raising `PROGRAM_DEFUNCT_SIGNAL` should result in the program being dropped
+    // by the netstack.
+    let server_handle = program.mark_defunct();
 
+    // Wait for the program to be dropped by the netstack.
+    let _: Result<zx::Signals, zx::Status> =
+        OnSignals::new(&server_handle, zx::Signals::EVENTPAIR_PEER_CLOSED)
+            .on_timeout(ASYNC_EVENT_POSITIVE_CHECK_TIMEOUT.after_now(), || panic!("timeout"))
+            .await;
+
+    // Try adding another rule to the same routine. This
+    // should not fail even though the `program_id` is no longer registered.
     let changes = vec![Change::Create(Resource::Rule(Rule {
         id: RuleId { routine: target_routine_id.clone(), index: 2 },
         matchers: Matchers {
