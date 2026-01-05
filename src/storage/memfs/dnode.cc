@@ -60,7 +60,6 @@ void Dnode::Detach() {
   auto self = RemoveFromParent();
   // Detach from vnode
   self->vnode_->dnode_ = nullptr;
-  self->vnode_->dnode_parent_ = nullptr;
   self->vnode_ = nullptr;
 }
 
@@ -72,7 +71,6 @@ void Dnode::AddChild(Dnode* parent, std::unique_ptr<Dnode> child) {
   ZX_DEBUG_ASSERT(parent->IsDirectory());
 
   child->parent_ = parent;
-  child->vnode_->dnode_parent_ = parent;
   child->vnode_->link_count_++;
   if (child->IsDirectory()) {
     // Child has '..' pointing back at parent.

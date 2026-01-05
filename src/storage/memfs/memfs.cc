@@ -69,7 +69,6 @@ zx::result<std::pair<std::unique_ptr<Memfs>, fbl::RefPtr<VnodeDir>>> Memfs::Crea
     return dn.take_error();
   }
   root->dnode_ = dn.value().get();
-  root->dnode_parent_ = dn->GetParent();
   fs->root_ = std::move(dn).value();
 
   if (zx::result<> result = fs->Init(); result.is_error()) {

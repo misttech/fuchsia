@@ -48,8 +48,6 @@ class Vnode : public fs::PagedVnode {
   // Caution must be taken when detaching Dnodes from their parents to avoid leaving
   // this reference dangling.
   Dnode* dnode_ = nullptr;
-  // The Dnode to parent pointer is always set for both directory and file.
-  Dnode* dnode_parent_ = nullptr;
   uint32_t link_count_ = 0;
 
  protected:
