@@ -938,9 +938,22 @@ struct TraceEvent {
     args: [u64; 16],
 }
 
+#[repr(C)]
+#[derive(Copy, Clone, IntoBytes, Immutable, KnownLayout, FromBytes)]
+struct RawTraceEvent {
+    // This is defined a being big enough for all expected tracepoint. It is not clear how the
+    // verifier can know which tracepoint is targeted when the program is loaded. Instead, this
+    // array will be big enough, and will be filled with 0 when running a given program.
+    args: [u64; 2],
+}
+
 static BPF_TRACEPOINT_ID: LazyLock<MemoryId> = LazyLock::new(MemoryId::new);
 static BPF_TRACEPOINT_ARGS: LazyLock<Vec<Type>> =
     LazyLock::new(|| vec![ptr_to_mem_type::<TraceEvent>(BPF_TRACEPOINT_ID.clone())]);
+
+static BPF_RAW_TRACEPOINT_ID: LazyLock<MemoryId> = LazyLock::new(MemoryId::new);
+static BPF_RAW_TRACEPOINT_ARGS: LazyLock<Vec<Type>> =
+    LazyLock::new(|| vec![ptr_to_mem_type::<RawTraceEvent>(BPF_RAW_TRACEPOINT_ID.clone())]);
 
 /// The different type of BPF programs.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -1109,6 +1122,7 @@ impl ProgramType {
             Self::Xdp => &XDP_MD_ARGS,
             Self::Kprobe => &BPF_USER_PT_REGS_T_ARGS,
             Self::Tracepoint => &BPF_TRACEPOINT_ARGS,
+            Self::RawTracepoint => &BPF_RAW_TRACEPOINT_ARGS,
 
             Self::CgroupSock => match expected_attach_type {
                 AttachType::Unspecified
@@ -1157,7 +1171,6 @@ impl ProgramType {
             | Self::LwtXmit
             | Self::Netfilter
             | Self::PerfEvent
-            | Self::RawTracepoint
             | Self::RawTracepointWritable
             | Self::SkLookup
             | Self::SkMsg
