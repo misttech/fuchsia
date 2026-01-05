@@ -5565,7 +5565,7 @@ rustc_macro("derivative-v2_2_0") {
   deps = []
   deps += [ ":proc-macro2-v1_0_97" ]
   deps += [ ":quote-v1_0_42" ]
-  deps += [ ":syn-v1_0_98" ]
+  deps += [ ":syn-v1_0_109" ]
 
   rustenv = []
 
@@ -5602,7 +5602,7 @@ rustc_macro("derive_arbitrary-v1_0_2") {
   deps = []
   deps += [ ":proc-macro2-v1_0_97" ]
   deps += [ ":quote-v1_0_42" ]
-  deps += [ ":syn-v1_0_98" ]
+  deps += [ ":syn-v1_0_109" ]
 
   rustenv = []
 
@@ -6174,7 +6174,7 @@ rustc_macro("enum-as-inner-v0_5_1") {
   deps += [ ":heck-v0_4_1" ]
   deps += [ ":proc-macro2-v1_0_97" ]
   deps += [ ":quote-v1_0_42" ]
-  deps += [ ":syn-v1_0_98" ]
+  deps += [ ":syn-v1_0_109" ]
 
   rustenv = []
 
@@ -13177,7 +13177,7 @@ rustc_library("proc-macro-error-v1_0_4") {
   deps += [ ":proc-macro-error-attr-v1_0_4($host_toolchain)" ]
   deps += [ ":proc-macro2-v1_0_97" ]
   deps += [ ":quote-v1_0_42" ]
-  deps += [ ":syn-v1_0_98" ]
+  deps += [ ":syn-v1_0_109" ]
 
   rustenv = []
 
@@ -13306,7 +13306,7 @@ rustc_macro("proptest-derive-v0_4_0") {
   deps = []
   deps += [ ":proc-macro2-v1_0_97" ]
   deps += [ ":quote-v1_0_42" ]
-  deps += [ ":syn-v1_0_98" ]
+  deps += [ ":syn-v1_0_109" ]
 
   rustenv = []
 
@@ -13419,7 +13419,7 @@ rustc_macro("prost-derive-v0_11_0") {
   deps += [ ":itertools-v0_10_1" ]
   deps += [ ":proc-macro2-v1_0_97" ]
   deps += [ ":quote-v1_0_42" ]
-  deps += [ ":syn-v1_0_98" ]
+  deps += [ ":syn-v1_0_109" ]
 
   rustenv = []
 
@@ -16562,7 +16562,7 @@ rustc_macro("serde_repr-v0_1_7") {
   deps = []
   deps += [ ":proc-macro2-v1_0_97" ]
   deps += [ ":quote-v1_0_42" ]
-  deps += [ ":syn-v1_0_98" ]
+  deps += [ ":syn-v1_0_109" ]
 
   rustenv = []
 
@@ -16746,7 +16746,7 @@ rustc_macro("serial_test_derive-v0_8_0") {
   deps += [ ":proc-macro-error-v1_0_4" ]
   deps += [ ":proc-macro2-v1_0_97" ]
   deps += [ ":quote-v1_0_42" ]
-  deps += [ ":syn-v1_0_98" ]
+  deps += [ ":syn-v1_0_109" ]
 
   rustenv = []
 
@@ -17623,18 +17623,18 @@ rustc_library("subtle-v2_6_1") {
   applicable_licenses = [ ":subtle-v2_6_1.license" ]
 }
 
-license("syn-v1_0_98.license") {
+license("syn-v1_0_109.license") {
   public_package_name = "syn"
   license_files = [
-    "//third_party/rust_crates/vendor/syn-1.0.98/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/syn-1.0.98/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/syn-1.0.109/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/syn-1.0.109/LICENSE-MIT",
   ]
 }
 
-rustc_library("syn-v1_0_98") {
+rustc_library("syn-v1_0_109") {
   crate_name = "syn"
-  source_root = "//third_party/rust_crates/vendor/syn-1.0.98/src/lib.rs"
-  output_name = "syn-84bcb8bd88e897cd"
+  source_root = "//third_party/rust_crates/vendor/syn-1.0.109/src/lib.rs"
+  output_name = "syn-1f55ec6ab1286b6d"
   edition = "2018"
   disable_clippy = true
   enforce_source_listing = false
@@ -17649,8 +17649,8 @@ rustc_library("syn-v1_0_98") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=84bcb8bd88e897cd",
-    "-Cextra-filename=-84bcb8bd88e897cd",
+    "-Cmetadata=1f55ec6ab1286b6d",
+    "-Cextra-filename=-1f55ec6ab1286b6d",
     "--cfg=feature=\"clone-impls\"",
     "--cfg=feature=\"default\"",
     "--cfg=feature=\"derive\"",
@@ -17706,7 +17706,7 @@ rustc_library("syn-v1_0_98") {
   visibility += [ "//tools/lib/config_client:*" ]
   visibility += [ "//tools/lib/reference_doc/macro:*" ]
 
-  applicable_licenses = [ ":syn-v1_0_98.license" ]
+  applicable_licenses = [ ":syn-v1_0_109.license" ]
 }
 
 license("syn-v2_0_113.license") {

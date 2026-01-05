@@ -21,9 +21,9 @@ package(
 
 package_info(
     name = "package_info",
-    package_name = "proc-macro-error",
-    package_url = "https://gitlab.com/CreepySkeleton/proc-macro-error",
-    package_version = "1.0.4",
+    package_name = "syn",
+    package_url = "https://github.com/dtolnay/syn",
+    package_version = "1.0.109",
 )
 
 license(
@@ -36,7 +36,7 @@ license(
 )
 
 rust_library(
-    name = "proc_macro_error",
+    name = "syn",
     srcs = glob(
         include = ["**/*.rs"],
         allow_empty = False,
@@ -54,21 +54,25 @@ rust_library(
         ],
     ),
     crate_features = [
+        "clone-impls",
         "default",
-        "syn",
-        "syn-error",
+        "derive",
+        "extra-traits",
+        "full",
+        "parsing",
+        "printing",
+        "proc-macro",
+        "quote",
+        "visit",
     ],
     crate_root = "src/lib.rs",
     edition = "2018",
-    proc_macro_deps = [
-        "//third_party/rust_crates/vendor/proc-macro-error-attr-1.0.4:proc_macro_error_attr",
-    ],
     rustc_flags = [
         "--cap-lints=allow",
     ],
     tags = [
         "cargo-bazel",
-        "crate-name=proc-macro-error",
+        "crate-name=syn",
         "manual",
         "noclippy",
         "norustfmt",
@@ -81,12 +85,12 @@ rust_library(
         "@rules_rust//rust/platform:x86_64-unknown-linux-gnu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    version = "1.0.4",
+    version = "1.0.109",
     deps = [
-        "//third_party/rust_crates/vendor/proc-macro-error-1.0.4:build_script_build",
         "//third_party/rust_crates/vendor/proc-macro2-1.0.97:proc_macro2",
         "//third_party/rust_crates/vendor/quote-1.0.42:quote",
-        "//third_party/rust_crates/vendor/syn-1.0.109:syn",
+        "//third_party/rust_crates/vendor/syn-1.0.109:build_script_build",
+        "//third_party/rust_crates/vendor/unicode-ident-1.0.19:unicode_ident",
     ],
 )
 
@@ -110,9 +114,16 @@ cargo_build_script(
         ],
     ),
     crate_features = [
+        "clone-impls",
         "default",
-        "syn",
-        "syn-error",
+        "derive",
+        "extra-traits",
+        "full",
+        "parsing",
+        "printing",
+        "proc-macro",
+        "quote",
+        "visit",
     ],
     crate_name = "build_script_build",
     crate_root = "build.rs",
@@ -129,22 +140,19 @@ cargo_build_script(
         ],
     ),
     edition = "2018",
-    pkg_name = "proc-macro-error",
+    pkg_name = "syn",
     rustc_flags = [
         "--cap-lints=allow",
     ],
     tags = [
         "cargo-bazel",
-        "crate-name=proc-macro-error",
+        "crate-name=syn",
         "manual",
         "noclippy",
         "norustfmt",
     ],
-    version = "1.0.4",
+    version = "1.0.109",
     visibility = ["//visibility:private"],
-    deps = [
-        "//third_party/rust_crates/vendor/version_check-0.9.4:version_check",
-    ],
 )
 
 alias(

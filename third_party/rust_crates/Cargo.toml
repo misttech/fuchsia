@@ -1069,10 +1069,10 @@ rustflags = []
 [gn.package.slab."0.4.11"]
 rustflags = []
 
-[gn.package.syn."1.0.98"]
+[gn.package.syn."1.0.109"]
 # Has build script but no config needed.
 # FIXME(https://fxbug.dev/332277415): temporarily allow legacy targets to
-# depend on 1.0.98 to enable a soft migration. New projects should be using syn
+# depend on 1.0.109 to enable a soft migration. New projects should be using syn
 # 2.x.
 visibility = [
   ":*",
