@@ -64,7 +64,7 @@ static zx_status_t handle_dup_replace(bool is_replace, zx_handle_t handle_value,
     return ZX_ERR_INVALID_ARGS;
   }
 
-  HandleOwner handle = Handle::Dup(source, rights);
+  HandleOwner handle = Handle::Dup(*source, rights);
   if (!handle) {
     return ZX_ERR_NO_MEMORY;
   }

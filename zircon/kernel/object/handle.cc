@@ -151,9 +151,9 @@ Handle::Handle(fbl::RefPtr<Dispatcher> dispatcher, zx_rights_t rights, uint32_t 
       rights_(rights),
       base_value_(base_value) {}
 
-HandleOwner Handle::Dup(Handle* source, zx_rights_t rights) {
+HandleOwner Handle::Dup(const Handle& source, zx_rights_t rights) {
   uint32_t base_value;
-  void* addr = gHandleTableArena.Alloc(source->dispatcher(), "duplicate", &base_value);
+  void* addr = gHandleTableArena.Alloc(source.dispatcher(), "duplicate", &base_value);
   if (unlikely(!addr))
     return nullptr;
   kcounter_add(handle_count_duped, 1);
@@ -162,12 +162,12 @@ HandleOwner Handle::Dup(Handle* source, zx_rights_t rights) {
 }
 
 // Called only by Dup.
-Handle::Handle(Handle* rhs, zx_rights_t rights, uint32_t base_value)
-    // Although this handle is intended to become owned by rhs->handle_table_id_ at the point of
+Handle::Handle(const Handle& rhs, zx_rights_t rights, uint32_t base_value)
+    // Although this handle is intended to become owned by rhs.handle_table_id_ at the point of
     // creation it is stack owned and may be destroyed without actually being assigned to the
     // handle table. If this happens the assert in TearDown would get triggered.
     : handle_table_id_(ZX_KOID_INVALID),
-      dispatcher_(rhs->dispatcher_),
+      dispatcher_(rhs.dispatcher_),
       rights_(rights),
       base_value_(base_value) {}
 

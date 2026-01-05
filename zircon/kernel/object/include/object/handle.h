@@ -86,7 +86,7 @@ class Handle final {
   // Handle should never be created by anything other than Make or Dup.
   static HandleOwner Make(fbl::RefPtr<Dispatcher> dispatcher, zx_rights_t rights);
   static HandleOwner Make(KernelHandle<Dispatcher> kernel_handle, zx_rights_t rights);
-  static HandleOwner Dup(Handle* source, zx_rights_t rights);
+  static HandleOwner Dup(const Handle& source, zx_rights_t rights);
 
   // Use a manually declared linked list node state instead of inheriting so that the early
   // memory of the class can be used by the members we want to preserve, and our NodeState can
@@ -102,7 +102,7 @@ class Handle final {
   // Called only by Make.
   Handle(fbl::RefPtr<Dispatcher> dispatcher, zx_rights_t rights, uint32_t base_value);
   // Called only by Dup.
-  Handle(Handle* rhs, zx_rights_t rights, uint32_t base_value);
+  Handle(const Handle& rhs, zx_rights_t rights, uint32_t base_value);
 
   // Handle should never be destroyed by anything other than HandleTableArena::Delete.
   ~Handle() = default;

@@ -29,7 +29,7 @@ const fbl::RefPtr<JobDispatcher>& GetRootJobDispatcher() {
   return gExecutor.GetRootJobDispatcher();
 }
 
-Handle* GetRootJobHandle() { return gExecutor.GetRootJobHandle(); }
+const Handle& GetRootJobHandle() { return gExecutor.GetRootJobHandle(); }
 
 fbl::RefPtr<EventDispatcher> GetMemPressureEvent(uint32_t kind) {
   return gExecutor.GetMemPressureEvent(kind);

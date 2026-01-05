@@ -34,7 +34,7 @@ class Executor {
 
   const fbl::RefPtr<JobDispatcher>& GetRootJobDispatcher() { return root_job_; }
 
-  Handle* GetRootJobHandle() { return root_job_handle_.get(); }
+  const Handle& GetRootJobHandle() { return *root_job_handle_; }
 
   fbl::RefPtr<EventDispatcher> GetMemPressureEvent(uint32_t kind) {
     return memory_watchdog_.GetMemPressureEvent(kind);
