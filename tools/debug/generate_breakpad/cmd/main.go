@@ -239,13 +239,16 @@ func main() {
 		log.Fatalf("Failed to get current working directory: %v", err)
 	}
 
+	bfrs := []binaryRef{}
+
 	// If the input .build-id directory is empty, then there is no real work to do: bail.
 	empty, err := osmisc.DirIsEmpty(buildIDDirIn)
 	if err != nil {
 		log.Fatalf("while checking if build-id-dir-in existed: %v", err)
 	}
 	if empty {
-		if err := writeManifest(nil, buildDir); err != nil {
+		// Write an empty list.
+		if err := writeManifest(bfrs, buildDir); err != nil {
 			log.Fatalf("failed to write empty manifest: %v", err)
 		}
 		log.Tracef("%s does not exist, no work needed", buildIDDirIn)
@@ -253,8 +256,6 @@ func main() {
 	}
 
 	br := newBatchRunner(ctx, &subprocess.Runner{}, tasks)
-
-	bfrs := []binaryRef{}
 
 	log.Tracef("producing symbols!")
 	bfrs, err = produceSymbols(ctx, buildIDDirIn, br)

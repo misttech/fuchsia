@@ -260,6 +260,13 @@ class DebugSymbolsManifestParser(object):
             ValueError if the manifest, or one of its includes is
             malformed, or if there is a cycle in the include chain.
         """
+        # As a special case, the prebuilt_binaries.json file can be 'None'
+        # instead of an empty list in a clean Fuchsia checkout that didn't
+        # use `jiri init -fetch-optional=debug-symbols`. Convert it here
+        # to avoid crashing the debug symbol extraction process on infra.
+        if manifest_json is None:
+            manifest_json = []
+
         if not isinstance(manifest_json, list):
             raise ValueError(
                 f"Malformed manifest at {manifest_path}: expected list, got {type(manifest_json)}"
