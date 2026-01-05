@@ -302,6 +302,8 @@ pub enum Type {
     ReleasableParameter { id: MemoryId, inner: Box<Type> },
     /// A function parameter that will release the value.
     ReleaseParameter { id: MemoryId },
+    /// A function parameter that is not checked.
+    AnyParameter,
 }
 
 /// Defines a partial ordering on `Type` instances, capturing the notion of how "broad"
@@ -663,6 +665,7 @@ impl Type {
             (_, Type::Releasable { inner, .. }) => {
                 inner.match_parameter_type(context, parameter_type, index, next)
             }
+            (Type::AnyParameter, _) => Ok(()),
 
             _ => Err(format!("incorrect parameter for index {index}")),
         }
