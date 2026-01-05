@@ -217,6 +217,17 @@ impl RegisterState {
         };
         Ok(())
     }
+
+    /// Check that the special registers stayed synchronized.
+    ///
+    /// This is primarily called when returning from restricted mode.
+    pub fn assert_sync(&self) {
+        if self.is_arch32() {
+            assert_eq!(self.sp, self.r[13]);
+            assert_eq!(self.r[30], self.r[14]);
+            assert_eq!(self.pc, self.r[15]);
+        }
+    }
 }
 
 impl std::fmt::Debug for RegisterState {
@@ -229,18 +240,18 @@ impl std::fmt::Debug for RegisterState {
     }
 }
 
-impl From<zx::sys::zx_thread_state_general_regs_t> for RegisterState {
-    fn from(mut regs: zx::sys::zx_thread_state_general_regs_t) -> Self {
+impl From<zx::sys::zx_restricted_state_t> for RegisterState {
+    fn from(mut regs: zx::sys::zx_restricted_state_t) -> Self {
         // We should synchronize the stack pointer with the aarch32 registers.
-        if regs.cpsr & zx::sys::ZX_REG_CPSR_ARCH_32_MASK != 0 {
+        if regs.cpsr & zx::sys::ZX_REG_CPSR_ARCH_32_MASK as u32 != 0 {
             regs.sp = regs.r[13];
-            regs.lr = regs.r[14];
+            regs.r[30] = regs.r[14];
             // The PC appears to advance properly and _not_ prefer r[15]
             // TODO(https://fxbug.dev/380402551): Make sure this isn't because of anything
             // done in zircon.
             regs.r[15] = regs.pc;
         }
-        RegisterState { real_registers: (&regs).into(), orig_x0: regs.r[0], elr: 0 }
+        RegisterState { real_registers: regs, orig_x0: regs.r[0], elr: 0 }
     }
 }
 
@@ -255,19 +266,5 @@ impl std::ops::Deref for RegisterState {
 impl std::ops::DerefMut for RegisterState {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.real_registers
-    }
-}
-
-impl From<RegisterState> for zx::sys::zx_thread_state_general_regs_t {
-    fn from(register_state: RegisterState) -> Self {
-        let regs = register_state.real_registers;
-        // This is primarily called when returning from restricted mode.
-        // Check that the special registers stayed synchronized.
-        if register_state.is_arch32() {
-            assert_eq!(regs.sp, regs.r[13]);
-            assert_eq!(regs.r[30], regs.r[14]);
-            assert_eq!(regs.pc, regs.r[15]);
-        }
-        (&regs).into()
     }
 }

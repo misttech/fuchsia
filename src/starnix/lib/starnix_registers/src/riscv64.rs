@@ -240,9 +240,9 @@ impl std::fmt::Debug for RegisterState {
     }
 }
 
-impl From<zx::sys::zx_thread_state_general_regs_t> for RegisterState {
-    fn from(regs: zx::sys::zx_thread_state_general_regs_t) -> Self {
-        RegisterState { real_registers: (&regs).into(), orig_a0: regs.a0 }
+impl From<zx::sys::zx_restricted_state_t> for RegisterState {
+    fn from(regs: zx::sys::zx_restricted_state_t) -> Self {
+        RegisterState { real_registers: regs, orig_a0: regs.a0 }
     }
 }
 
@@ -257,11 +257,5 @@ impl std::ops::Deref for RegisterState {
 impl std::ops::DerefMut for RegisterState {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.real_registers
-    }
-}
-
-impl From<RegisterState> for zx::sys::zx_thread_state_general_regs_t {
-    fn from(register_state: RegisterState) -> Self {
-        (&register_state.real_registers).into()
     }
 }

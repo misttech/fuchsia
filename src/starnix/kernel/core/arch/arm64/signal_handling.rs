@@ -181,23 +181,18 @@ fn restore_registers_32(
 ) -> Result<(), Errno> {
     let uctx = &signal_stack_frame.get_ucontext32().uc_mcontext;
     let regs: &[u32; 21] = transmute_ref!(uctx);
-    const NUM_REGS: usize = 30;
+    const NUM_REGS: usize = 31;
     let mut registers = [0u64; NUM_REGS];
     for i in 0..16 {
         registers[i] = regs[i + 3].into();
     }
-    let sp = registers[13];
-    let lr = registers[14];
-    let pc = registers[15];
-    let cpsr = regs[19].into();
-    let restored_regs = zx::sys::zx_thread_state_general_regs_t {
-        r: registers,
-        lr,
-        sp,
-        pc,
-        cpsr,
-        tpidr: current_task.thread_state.registers.tpidr_el0,
-    };
+
+    let mut restored_regs = zx::sys::zx_restricted_state_t::default();
+    restored_regs.r = registers;
+    restored_regs.sp = registers[13];
+    restored_regs.pc = registers[15];
+    restored_regs.cpsr = regs[19].into();
+    restored_regs.tpidr_el0 = current_task.thread_state.registers.tpidr_el0;
     current_task.thread_state.registers = restored_regs.into();
 
     parse_pstate_extended_data(
@@ -211,22 +206,17 @@ fn restore_registers_64(
     signal_stack_frame: &SignalStackFrame,
 ) -> Result<(), Errno> {
     let uctx = &signal_stack_frame.get_ucontext64().uc_mcontext;
-    // `zx_thread_state_general_regs_t` stores the link register separately from the other general
-    // purpose registers, but the uapi struct does not. Thus we just need to copy out the first 30
-    // values to store in `r`, and then we read `lr` separately.
-    const NUM_REGS_WITHOUT_LINK_REGISTER: usize = 30;
-    let mut registers = [0; NUM_REGS_WITHOUT_LINK_REGISTER];
-    registers.copy_from_slice(&uctx.regs[..NUM_REGS_WITHOUT_LINK_REGISTER]);
+    const NUM_REGS: usize = 31;
+    let mut registers = [0; NUM_REGS];
+    registers.copy_from_slice(&uctx.regs[..NUM_REGS]);
 
     // Restore the register state from before executing the signal handler.
-    let restored_regs = zx::sys::zx_thread_state_general_regs_t {
-        r: registers,
-        lr: uctx.regs[NUM_REGS_WITHOUT_LINK_REGISTER],
-        sp: uctx.sp,
-        pc: uctx.pc,
-        cpsr: uctx.pstate,
-        tpidr: current_task.thread_state.registers.tpidr_el0,
-    };
+    let mut restored_regs = zx::sys::zx_restricted_state_t::default();
+    restored_regs.r = registers;
+    restored_regs.sp = uctx.sp;
+    restored_regs.pc = uctx.pc;
+    restored_regs.cpsr = uctx.pstate as u32;
+    restored_regs.tpidr_el0 = current_task.thread_state.registers.tpidr_el0;
     current_task.thread_state.registers = restored_regs.into();
 
     parse_pstate_extended_data(&uctx.__reserved, &mut current_task.thread_state.extended_pstate)

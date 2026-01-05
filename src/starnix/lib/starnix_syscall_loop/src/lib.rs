@@ -131,23 +131,23 @@ impl RestrictedState {
         Ok(Self { state_size, bound_state })
     }
 
-    pub fn write_state(&mut self, state: &zx::sys::zx_restricted_state_t) {
+    pub fn write_state(&mut self, current_task: &mut CurrentTask) {
         firehose_trace_duration!(CATEGORY_STARNIX, NAME_WRITE_RESTRICTED_STATE);
 
         // SAFETY: `bound_state` is valid to write to as long as `RestrictedState` is live.
         unsafe {
             let state_ptr = std::ptr::addr_of_mut!((*self.bound_state.as_ptr()).state);
-            state_ptr.write(*state);
+            state_ptr.write(*current_task.thread_state.registers);
         }
     }
 
-    pub fn read_state(&self, state: &mut zx::sys::zx_restricted_state_t) {
+    pub fn read_state(&self, current_task: &mut CurrentTask) {
         firehose_trace_duration!(CATEGORY_STARNIX, NAME_READ_RESTRICTED_STATE);
 
         // SAFETY: `bound_state` is valid to read from as long as `RestrictedState` is live.
         unsafe {
             let state_ptr = std::ptr::addr_of!((*self.bound_state.as_ptr()).state);
-            *state = state_ptr.read();
+            current_task.thread_state.registers = state_ptr.read().into();
         }
     }
 
@@ -178,7 +178,6 @@ const RESTRICTED_ENTER_OPTIONS: u32 = 0;
 struct RestrictedEnterContext<'a> {
     current_task: &'a mut CurrentTask,
     restricted_state: RestrictedState,
-    state: zx::sys::zx_restricted_state_t,
     error_context: Option<ErrorContext>,
     exit_status: Result<ExitStatus, Error>,
 }
@@ -221,9 +220,8 @@ fn run_task(
         return Ok(exit_status);
     }
 
-    let state = *current_task.thread_state.registers;
     // Copy the initial register state into the mapped VMO.
-    restricted_state.write_state(&state);
+    restricted_state.write_state(current_task);
 
     let restricted_state_ptr = restricted_state.bound_state.as_ptr();
     let extended_pstate_ptr = &current_task.thread_state.extended_pstate as *const _;
@@ -231,7 +229,6 @@ fn run_task(
     let mut restricted_enter_context = RestrictedEnterContext {
         current_task,
         restricted_state,
-        state,
         error_context,
         exit_status: Err(errno!(ENOEXEC).into()),
     };
@@ -264,7 +261,6 @@ extern "C" fn restricted_exit_callback_c(
         reason_code,
         restricted_context.current_task,
         &mut restricted_context.restricted_state,
-        &mut restricted_context.state,
         &mut restricted_context.error_context,
         &mut restricted_context.exit_status,
     )
@@ -274,7 +270,6 @@ fn restricted_exit_callback(
     reason_code: zx::sys::zx_restricted_reason_t,
     current_task: &mut CurrentTask,
     restricted_state: &mut RestrictedState,
-    state: &mut zx::sys::zx_restricted_state_t,
     error_context: &mut Option<ErrorContext>,
     exit_status: &mut Result<ExitStatus, Error>,
 ) -> bool {
@@ -283,26 +278,21 @@ fn restricted_exit_callback(
         "restart_code should only ever be Some() in normal mode",
     );
 
-    let ret = match process_restricted_exit(
-        reason_code,
-        current_task,
-        restricted_state,
-        state,
-        error_context,
-    ) {
-        Ok(None) => {
-            // Keep going!
-            true
-        }
-        Ok(Some(completed_exit_status)) => {
-            *exit_status = Ok(completed_exit_status);
-            false
-        }
-        Err(error) => {
-            *exit_status = Err(error);
-            false
-        }
-    };
+    let ret =
+        match process_restricted_exit(reason_code, current_task, restricted_state, error_context) {
+            Ok(None) => {
+                // Keep going!
+                true
+            }
+            Ok(Some(completed_exit_status)) => {
+                *exit_status = Ok(completed_exit_status);
+                false
+            }
+            Err(error) => {
+                *exit_status = Err(error);
+                false
+            }
+        };
 
     debug_assert_eq!(
         current_task.thread_state.restart_code, None,
@@ -316,7 +306,6 @@ fn process_restricted_exit(
     reason_code: zx::sys::zx_restricted_reason_t,
     current_task: &mut CurrentTask,
     restricted_state: &mut RestrictedState,
-    state: &mut zx::sys::zx_restricted_state_t,
     error_context: &mut Option<ErrorContext>,
 ) -> Result<Option<ExitStatus>, Error> {
     // We can't hold any locks entering restricted mode so we can't be holding any locks on exit.
@@ -327,11 +316,10 @@ fn process_restricted_exit(
     let locked = unsafe { Unlocked::new() };
 
     // Copy the register state out of the VMO.
-    restricted_state.read_state(state);
+    restricted_state.read_state(current_task);
 
-    // Store the new register state in the current task before dispatching the exit.
-    current_task.thread_state.registers =
-        zx::sys::zx_thread_state_general_regs_t::from(&*state).into();
+    #[cfg(target_arch = "aarch64")]
+    current_task.thread_state.registers.assert_sync();
 
     match reason_code {
         zx::sys::ZX_RESTRICTED_REASON_SYSCALL => {
@@ -376,7 +364,7 @@ fn process_restricted_exit(
     }
 
     // Copy the updated register state into the mapped VMO.
-    restricted_state.write_state(&*current_task.thread_state.registers);
+    restricted_state.write_state(current_task);
 
     Ok(None)
 }

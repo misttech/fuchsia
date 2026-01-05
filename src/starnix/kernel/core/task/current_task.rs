@@ -62,7 +62,7 @@ use std::fmt;
 use std::marker::PhantomData;
 use std::mem::MaybeUninit;
 use std::sync::Arc;
-use zx::sys::zx_thread_state_general_regs_t;
+use zx::sys::zx_restricted_state_t;
 
 use super::ThreadGroupLifecycleWaitValue;
 
@@ -1215,7 +1215,7 @@ impl CurrentTask {
         // Before consuming start_info below, note if the task is 32-bit.
         self.thread_state.arch_width = start_info.arch_width;
 
-        let regs: zx_thread_state_general_regs_t = start_info.into();
+        let regs: zx_restricted_state_t = start_info.into();
         self.thread_state.registers = regs.into();
         self.thread_state.extended_pstate.reset();
         self.thread_group().signal_actions.reset_for_exec();

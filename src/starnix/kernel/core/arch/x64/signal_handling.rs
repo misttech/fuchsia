@@ -204,7 +204,7 @@ pub fn restore_registers(
 ) -> Result<(), Errno> {
     let uctx = &signal_stack_frame.context.uc_mcontext;
     // Restore the register state from before executing the signal handler.
-    current_task.thread_state.registers = zx::sys::zx_thread_state_general_regs_t {
+    current_task.thread_state.registers = zx::sys::zx_restricted_state_t {
         r8: uctx.r8,
         r9: uctx.r9,
         r10: uctx.r10,
@@ -221,8 +221,8 @@ pub fn restore_registers(
         rdi: uctx.rdi,
         rbp: uctx.rbp,
         rsp: uctx.rsp,
-        rip: uctx.rip,
-        rflags: uctx.eflags,
+        ip: uctx.rip,
+        flags: uctx.eflags,
         fs_base: current_task.thread_state.registers.fs_base,
         gs_base: current_task.thread_state.registers.gs_base,
     }
