@@ -23,7 +23,7 @@ use super::symbols::{
     Category, Class, Classes, CommonSymbol, CommonSymbols, ConditionalBoolean, MlsLevel, Role,
     Sensitivity, SymbolList, Type, User,
 };
-use super::view::{HashedArrayView, View};
+use super::view::HashedArrayView;
 use super::{
     AccessDecision, AccessVector, CategoryId, ClassId, Parse, PolicyValidationContext, RoleId,
     SELINUX_AVD_FLAGS_PERMISSIVE, SensitivityId, TypeId, UserId, Validate, XpermsAccessDecision,
@@ -435,10 +435,6 @@ impl ParsedPolicy {
         &self.range_transitions.data
     }
 
-    pub(super) fn access_vector_rules(&self) -> impl Iterator<Item = View<AccessVectorRule>> {
-        self.access_vector_rules.iterate_all(&self.data)
-    }
-
     pub(super) fn find_access_vector_rule(
         &self,
         source: TypeId,
@@ -468,7 +464,8 @@ impl ParsedPolicy {
         use super::arrays::testing::access_vector_rule_ordering;
         use itertools::Itertools;
 
-        self.access_vector_rules()
+        self.access_vector_rules
+            .iterate_all(&self.data)
             .map(|view| view.parse(&self.data))
             .sorted_by(access_vector_rule_ordering)
     }
@@ -950,7 +947,7 @@ impl ParsedPolicy {
         }
 
         // Validate that types output by access vector rules are defined.
-        for access_vector_rule_view in self.access_vector_rules() {
+        for access_vector_rule_view in self.access_vector_rules.iterate_all(&self.data) {
             let access_vector_rule = access_vector_rule_view.parse(&self.data);
             if let Some(type_id) = access_vector_rule.new_type() {
                 validate_id(&type_ids, type_id, "new_type")?;
