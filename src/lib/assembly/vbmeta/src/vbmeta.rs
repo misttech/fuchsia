@@ -421,7 +421,7 @@ mod tests {
         }
         test::hash_data_and_expect(
             &vbmeta_bytes,
-            "9d9718f1fc21542f4db9eb7416592f6198f889fbf68b17f43031da58829ae6f1",
+            "bb68ffc6bb7b3a74013de4187f67fe01e897e01818420e38201e41d8a8a823d8",
         );
     }
 }

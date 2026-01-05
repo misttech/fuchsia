@@ -15,7 +15,7 @@ pub mod builder;
 
 const ALGORITHM: &str = "sha256";
 
-const PROPERTY_DESCRIPTOR_TAG: u64 = 1;
+const PROPERTY_DESCRIPTOR_TAG: u64 = 0;
 const HASH_DESCRIPTOR_TAG: u64 = 2;
 
 /// A VBMeta descriptor.
@@ -85,11 +85,13 @@ struct PropertyDescriptorHeader {
 
 impl PropertyDescriptorHeader {
     fn new(key: &str, value: &str) -> Self {
-        let key_len = (key.len() + 1) as u64; // + NUL
-        let value_len = (value.len() + 1) as u64; // + NUL
+        let key_len = key.len() as u64;
+        let value_len = value.len() as u64;
+        // sizeof(key_num_bytes) + sizeof(value_num_bytes) + (key_len + NUL) + (value_len + NUL)
+        let num_bytes_following_unaligned = 8 + 8 + (key_len + 1) + (value_len + 1);
         Self {
             tag: PROPERTY_DESCRIPTOR_TAG.into(),
-            num_bytes_following: (8 + 8 + key_len + value_len).next_multiple_of(8).into(),
+            num_bytes_following: num_bytes_following_unaligned.next_multiple_of(8).into(),
             key_num_bytes: key_len.into(),
             value_num_bytes: value_len.into(),
         }
@@ -530,14 +532,14 @@ mod tests {
         #[rustfmt::skip]
         let expected_bytes: [u8; 80] = [
             // Header
-            // tag: 1
-            0, 0, 0, 0, 0, 0, 0, 1,
+            // tag: 0
+            0, 0, 0, 0, 0, 0, 0, 0,
             // num_bytes_following: 64
             0, 0, 0, 0, 0, 0, 0, 0x40,
-            // key_num_bytes: 33
-            0, 0, 0, 0, 0, 0, 0, 0x21,
-            // value_num_bytes: 11
-            0, 0, 0, 0, 0, 0, 0, 0x0B,
+            // key_num_bytes: 32
+            0, 0, 0, 0, 0, 0, 0, 0x20,
+            // value_num_bytes: 10
+            0, 0, 0, 0, 0, 0, 0, 0x0a,
 
             // Key: "com.fuchsia.vbmeta.some_property"
             0x63, 0x6F, 0x6D, 0x2E, 0x66, 0x75, 0x63, 0x68,
