@@ -107,6 +107,21 @@ async fn serve_inner(scope: WeakComponentInstance, mut stream: fsys::RealmQueryR
                     connect_to_storage_admin(&scope, &moniker, storage_name, server_end).await;
                 responder.send(result)
             }
+            fsys::RealmQueryRequest::OpenStorageAdmin {
+                moniker,
+                storage_name,
+                server_end,
+                responder,
+            } => {
+                let result = connect_to_storage_admin(
+                    &scope,
+                    &moniker,
+                    storage_name,
+                    ServerEnd::new(server_end.into_channel()),
+                )
+                .await;
+                responder.send(result)
+            }
         };
         if let Err(error) = result {
             warn!(error:?; "Could not respond to RealmQuery request");

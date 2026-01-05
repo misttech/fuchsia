@@ -312,11 +312,20 @@ closed protocol RealmQuery {
     }) -> () error OpenError;
 
     /// Connects to the StorageAdmin protocol of a storage declared by an instance.
-    @available(added=11)
+    /// Deprecated, use OpenStorageAdmin instead.
+    @available(added=11, removed=NEXT)
     strict ConnectToStorageAdmin(resource struct {
         moniker string:fuchsia.component.MAX_MONIKER_LENGTH;
         storage_name fuchsia.component.decl.name;
         server_end server_end:StorageAdmin;
+    }) -> () error ConnectToStorageAdminError;
+
+    /// Connects to the StorageAdmin protocol of a storage declared by an instance.
+    @available(added=NEXT)
+    strict OpenStorageAdmin(resource struct {
+        moniker string:fuchsia.component.MAX_MONIKER_LENGTH;
+        storage_name fuchsia.component.decl.name;
+        server_end server_end:fuchsia.component.StorageAdmin;
     }) -> () error ConnectToStorageAdminError;
 
     /// [DEPRECATED - Use OpenDirectory instead.]

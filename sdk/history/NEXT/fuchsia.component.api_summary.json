@@ -161,6 +161,32 @@
         "resourceness": "resource"
     },
     {
+        "kind": "enum/member",
+        "name": "fuchsia.component/DeletionError.CONNECTION",
+        "value": "1"
+    },
+    {
+        "kind": "enum/member",
+        "name": "fuchsia.component/DeletionError.NONE_AVAILABLE",
+        "value": "3"
+    },
+    {
+        "kind": "enum/member",
+        "name": "fuchsia.component/DeletionError.PROTOCOL",
+        "value": "2"
+    },
+    {
+        "kind": "enum/member",
+        "name": "fuchsia.component/DeletionError.UNSUPPORTED",
+        "value": "4"
+    },
+    {
+        "kind": "enum",
+        "name": "fuchsia.component/DeletionError",
+        "strictness": "strict",
+        "type": "uint32"
+    },
+    {
         "kind": "table",
         "name": "fuchsia.component/DestroyedPayload"
     },
@@ -531,6 +557,12 @@
     },
     {
         "kind": "const",
+        "name": "fuchsia.component/MAX_STORAGE_ID_LENGTH",
+        "type": "uint32",
+        "value": "64"
+    },
+    {
+        "kind": "const",
         "name": "fuchsia.component/MAX_SUBSCRIPTION_REQUESTS",
         "type": "uint32",
         "value": "2"
@@ -787,6 +819,32 @@
         "name": "fuchsia.component/StartedPayload"
     },
     {
+        "kind": "enum/member",
+        "name": "fuchsia.component/StatusError.PROVIDER",
+        "value": "1"
+    },
+    {
+        "kind": "enum/member",
+        "name": "fuchsia.component/StatusError.RESPONSE_INVALID",
+        "value": "2"
+    },
+    {
+        "kind": "enum/member",
+        "name": "fuchsia.component/StatusError.STATUS_UNKNOWN",
+        "value": "3"
+    },
+    {
+        "kind": "enum/member",
+        "name": "fuchsia.component/StatusError.UNSUPPORTED",
+        "value": "4"
+    },
+    {
+        "kind": "enum",
+        "name": "fuchsia.component/StatusError",
+        "strictness": "strict",
+        "type": "uint32"
+    },
+    {
         "kind": "table/member",
         "name": "fuchsia.component/StoppedPayload.exit_code",
         "ordinal": "2",
@@ -801,6 +859,171 @@
     {
         "kind": "table",
         "name": "fuchsia.component/StoppedPayload"
+    },
+    {
+        "kind": "protocol/member",
+        "name": "fuchsia.component/StorageAdmin.DeleteAllStorageContents",
+        "strictness": "strict",
+        "ordinal": "3380374508900862683",
+        "direction": "two_way",
+        "response": "fuchsia.component/StorageAdmin_DeleteAllStorageContents_Response",
+        "error": "fuchsia.component/DeletionError"
+    },
+    {
+        "kind": "protocol/member",
+        "name": "fuchsia.component/StorageAdmin.DeleteComponentStorage",
+        "strictness": "strict",
+        "ordinal": "1618975681517712474",
+        "direction": "two_way",
+        "request": "fuchsia.component/StorageAdminDeleteComponentStorageRequest",
+        "response": "fuchsia.component/StorageAdmin_DeleteComponentStorage_Response",
+        "error": "fuchsia.component/Error"
+    },
+    {
+        "kind": "protocol/member",
+        "name": "fuchsia.component/StorageAdmin.GetStatus",
+        "strictness": "strict",
+        "ordinal": "8586643915409794760",
+        "direction": "two_way",
+        "response": "fuchsia.component/StorageStatus",
+        "error": "fuchsia.component/StatusError"
+    },
+    {
+        "kind": "protocol/member",
+        "name": "fuchsia.component/StorageAdmin.ListStorageInRealm",
+        "strictness": "strict",
+        "ordinal": "8525152599685368827",
+        "direction": "two_way",
+        "request": "fuchsia.component/StorageAdminListStorageInRealmRequest",
+        "response": "fuchsia.component/StorageAdmin_ListStorageInRealm_Response",
+        "error": "fuchsia.component/Error"
+    },
+    {
+        "kind": "protocol/member",
+        "name": "fuchsia.component/StorageAdmin.OpenComponentStorageById",
+        "strictness": "strict",
+        "ordinal": "5188727505160068593",
+        "direction": "two_way",
+        "request": "fuchsia.component/StorageAdminOpenComponentStorageByIdRequest",
+        "response": "fuchsia.component/StorageAdmin_OpenComponentStorageById_Response",
+        "error": "fuchsia.component/Error"
+    },
+    {
+        "kind": "protocol/member",
+        "name": "fuchsia.component/StorageAdmin.OpenStorage",
+        "strictness": "strict",
+        "ordinal": "7848267339832116087",
+        "direction": "two_way",
+        "request": "fuchsia.component/StorageAdminOpenStorageRequest",
+        "response": "fuchsia.component/StorageAdmin_OpenStorage_Response",
+        "error": "fuchsia.component/Error"
+    },
+    {
+        "kind": "protocol",
+        "name": "fuchsia.component/StorageAdmin",
+        "openness": "closed",
+        "transport": "channel"
+    },
+    {
+        "kind": "struct/member",
+        "name": "fuchsia.component/StorageAdminDeleteComponentStorageRequest.relative_moniker",
+        "ordinal": "1",
+        "type": "string:4096"
+    },
+    {
+        "kind": "struct",
+        "name": "fuchsia.component/StorageAdminDeleteComponentStorageRequest"
+    },
+    {
+        "kind": "struct/member",
+        "name": "fuchsia.component/StorageAdminListStorageInRealmRequest.iterator",
+        "ordinal": "2",
+        "type": "server_end:fuchsia.component/StorageIterator"
+    },
+    {
+        "kind": "struct/member",
+        "name": "fuchsia.component/StorageAdminListStorageInRealmRequest.relative_moniker",
+        "ordinal": "1",
+        "type": "string:4096"
+    },
+    {
+        "kind": "struct",
+        "name": "fuchsia.component/StorageAdminListStorageInRealmRequest",
+        "resourceness": "resource"
+    },
+    {
+        "kind": "struct/member",
+        "name": "fuchsia.component/StorageAdminOpenComponentStorageByIdRequest.id",
+        "ordinal": "1",
+        "type": "string:64"
+    },
+    {
+        "kind": "struct/member",
+        "name": "fuchsia.component/StorageAdminOpenComponentStorageByIdRequest.object",
+        "ordinal": "2",
+        "type": "server_end:fuchsia.io/Node"
+    },
+    {
+        "kind": "struct",
+        "name": "fuchsia.component/StorageAdminOpenComponentStorageByIdRequest",
+        "resourceness": "resource"
+    },
+    {
+        "kind": "struct/member",
+        "name": "fuchsia.component/StorageAdminOpenStorageRequest.object",
+        "ordinal": "2",
+        "type": "server_end:fuchsia.io/Node"
+    },
+    {
+        "kind": "struct/member",
+        "name": "fuchsia.component/StorageAdminOpenStorageRequest.relative_moniker",
+        "ordinal": "1",
+        "type": "string:4096"
+    },
+    {
+        "kind": "struct",
+        "name": "fuchsia.component/StorageAdminOpenStorageRequest",
+        "resourceness": "resource"
+    },
+    {
+        "kind": "protocol/member",
+        "name": "fuchsia.component/StorageIterator.Next",
+        "strictness": "strict",
+        "ordinal": "8821181615713557362",
+        "direction": "two_way",
+        "response": "fuchsia.component/StorageIteratorNextResponse"
+    },
+    {
+        "kind": "protocol",
+        "name": "fuchsia.component/StorageIterator",
+        "openness": "closed",
+        "transport": "channel"
+    },
+    {
+        "kind": "struct/member",
+        "name": "fuchsia.component/StorageIteratorNextResponse.relative_monikers",
+        "ordinal": "1",
+        "type": "vector<string:4096>"
+    },
+    {
+        "kind": "struct",
+        "name": "fuchsia.component/StorageIteratorNextResponse"
+    },
+    {
+        "kind": "table/member",
+        "name": "fuchsia.component/StorageStatus.total_size",
+        "ordinal": "1",
+        "type": "uint64"
+    },
+    {
+        "kind": "table/member",
+        "name": "fuchsia.component/StorageStatus.used_size",
+        "ordinal": "2",
+        "type": "uint64"
+    },
+    {
+        "kind": "table",
+        "name": "fuchsia.component/StorageStatus"
     },
     {
         "kind": "table",
