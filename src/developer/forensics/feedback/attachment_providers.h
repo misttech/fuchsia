@@ -46,7 +46,6 @@ class AttachmentProviders {
   Inspect inspect_;
   PreviousBootLog previous_boot_log_;
   PreviousBootKernelLog previous_boot_kernel_log_;
-  FileBackedProvider build_snapshot_;
   FileBackedProvider kernel_boot_options_;
 
   AttachmentManager attachment_manager_;

@@ -23,7 +23,6 @@ AttachmentProviders::AttachmentProviders(async_dispatcher_t* dispatcher,
       inspect_(dispatcher, services, AttachmentProviderBackoff(), inspect_data_budget, redactor),
       previous_boot_log_(dispatcher, clock, delete_previous_boot_log_at, kPreviousLogsFilePath),
       previous_boot_kernel_log_(std::move(dlog), redactor),
-      build_snapshot_(kBuildSnapshotPath),
       kernel_boot_options_(kKernelBootOptionsPath),
       attachment_manager_(
           dispatcher, allowlist,
@@ -33,7 +32,6 @@ AttachmentProviders::AttachmentProviders(async_dispatcher_t* dispatcher,
               {feedback_data::kAttachmentLogSystem, &system_log_},
               {feedback_data::kAttachmentLogSystemPrevious, &previous_boot_log_},
               {feedback_data::kAttachmentInspect, &inspect_},
-              {feedback_data::kAttachmentBuildSnapshot, &build_snapshot_},
               {feedback_data::kAttachmentKernelBootOptions, &kernel_boot_options_},
           }) {
   if (allowlist.empty()) {

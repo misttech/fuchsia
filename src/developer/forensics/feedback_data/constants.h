@@ -19,7 +19,6 @@ namespace feedback_data {
 
 // Platform attachments keys.
 constexpr char kAttachmentAnnotations[] = "annotations.json";
-constexpr char kAttachmentBuildSnapshot[] = "build.snapshot.xml";
 constexpr char kAttachmentInspect[] = "inspect.json";
 constexpr char kAttachmentKernelBootOptions[] = "build.kernel-boot-options.txt";
 constexpr char kAttachmentLogKernel[] = "log.kernel.txt";

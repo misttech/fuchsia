@@ -97,7 +97,6 @@ constexpr zx::duration kSnapshotSharedRequestWindow = zx::sec(5);
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 // Feedback data
 ///////////////////////////////////////////////////////////////////////////////////////////////////
-constexpr char kBuildSnapshotPath[] = "/config/build-info/snapshot";
 constexpr char kDeviceIdPath[] = "/data/device_id.txt";
 constexpr char kCurrentLogsDir[] = "/cache/current_system_logs";
 constexpr char kPreviousLogsFilePath[] = "/tmp/log.system.previous_boot.txt";

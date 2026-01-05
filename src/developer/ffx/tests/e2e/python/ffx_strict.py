@@ -406,7 +406,6 @@ class FfxStrictTest(ffxtestcase.FfxTestCase):
             # Archive:  snapshot.zip
             #   inflating: annotations.json
             #   inflating: build.kernel-boot-options.txt
-            #   inflating: build.snapshot.xml
             #   inflating: inspect.json
             #   inflating: log.kernel.txt
             #   inflating: log.system.txt
@@ -416,7 +415,6 @@ class FfxStrictTest(ffxtestcase.FfxTestCase):
                 checks = [
                     "annotations.json",
                     "build.kernel-boot-options.txt",
-                    "build.snapshot.xml",
                     "inspect.json",
                     "log.kernel.txt",
                     "log.system.txt",
