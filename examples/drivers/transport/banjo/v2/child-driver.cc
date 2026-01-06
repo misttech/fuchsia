@@ -15,13 +15,22 @@ zx::result<> ChildBanjoTransportDriver::Start() {
   zx::result<ddk::MiscProtocolClient> client =
       compat::ConnectBanjo<ddk::MiscProtocolClient>(incoming());
 
+  // Since we set the dispatcher to "ALLOW_SYNC_CALLS" in the driver CML, we
+  // need to seal the option after we finish all our sync calls.
+  zx_status_t status =
+      fdf_dispatcher_seal(driver_dispatcher()->get(), FDF_DISPATCHER_OPTION_ALLOW_SYNC_CALLS);
+  if (status != ZX_OK) {
+    fdf::error("Failed to seal ALLOW_SYNC_CALLS: {}", zx::make_result(status));
+    return zx::error(status);
+  }
+
   if (client.is_error()) {
     fdf::error("Failed to connect client: {}", client);
     return client.take_error();
   }
   client_ = *client;
 
-  zx_status_t status = QueryParent();
+  status = QueryParent();
   if (status != ZX_OK) {
     return zx::error(status);
   }
@@ -33,6 +42,7 @@ zx::result<> ChildBanjoTransportDriver::Start() {
   }
 
   controller_.Bind(std::move(child_result.value()), dispatcher());
+
   return zx::ok();
 }
 

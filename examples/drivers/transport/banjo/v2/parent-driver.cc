@@ -12,7 +12,7 @@
 namespace banjo_transport {
 
 zx::result<> ParentBanjoTransportDriver::Start() {
-  auto child_name = "banjo-transport-child";
+  auto child_name = "transport-parent";
 
   // Initialize our compat server with a banjo config from |banjo_server_|.
   {

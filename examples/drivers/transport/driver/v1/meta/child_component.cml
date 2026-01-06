@@ -15,5 +15,7 @@
         compat: "driver/driver_transport_child_v1.so",
         colocate: "true",
     },
-    use: [],
+    use: [
+        { service: 'fuchsia.examples.gizmo.Service' },
+    ],
 }
